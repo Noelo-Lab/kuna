@@ -1269,6 +1269,13 @@ pub struct Architecture {
     pub analysis_poolentry: bool,
     /// (kuna) Gate the ARM/Thumb decode-mode marker pass (`arm_markers`); default on.
     pub analysis_arm_markers: bool,
+    /// (kuna) Gate the entry-reachable Thumb context walk (`entrythumbflow`) for a
+    /// mixed ARM image whose container entry carries the Thumb bit but whose
+    /// machine word makes no whole-image mode claim; default on. The walk decodes
+    /// the flow reachable from the entry as Thumb and paints exactly those
+    /// instruction ranges, so a mixed image keeps its A32 code; off leaves the
+    /// entry with the language default mode.
+    pub analysis_entrythumbflow: bool,
     /// (kuna) Gate the MIPS `$gp`-recovery (`t9` tracking) pass (`mips_gp`); default on.
     pub analysis_mips_gp: bool,
     /// (kuna) Gate the i386-PIE PLT-stub decode (`i386_pie_plt`); default on. The
@@ -2087,6 +2094,7 @@ impl Architecture {
             analysis_ptrentry: false,
             analysis_poolentry: false,
             analysis_arm_markers: false,
+            analysis_entrythumbflow: false,
             analysis_mips_gp: false,
             analysis_i386_pie_plt: false,
             analysis_ifuncfpret: false, // (kuna) option ifuncfpret, default off (opt-in)
@@ -2343,6 +2351,7 @@ impl Architecture {
         self.analysis_ptrentry = false; // (kuna) pointer-referenced ARM entries default-off (output-changing)
         self.analysis_poolentry = false; // (kuna) ARM literal-pool inference default-off
         self.analysis_arm_markers = true;
+        self.analysis_entrythumbflow = true; // (kuna) entry-reachable Thumb context default-on; inert without a Thumb-bit entry
         self.analysis_mips_gp = true;
         self.analysis_i386_pie_plt = true; // (kuna) i386-PIE PLT decode default-on (angr)
         self.analysis_relocrebase = true; // (kuna) DIV-79 relocatable-object analysis rebase default-ON (GH-289)
@@ -2902,6 +2911,9 @@ impl Architecture {
                 )
             }
             "arm_markers" => on_off!(analysis_arm_markers, "ARM/Thumb decode-mode marker pass"),
+            "entrythumbflow" => {
+                on_off!(analysis_entrythumbflow, "Entry-reachable Thumb context walk")
+            }
             "mips_gp" => on_off!(analysis_mips_gp, "MIPS $gp-recovery (t9 tracking) pass"),
             // (kuna) Loader-tier gate: also bridge to the env var the loader reads
             // (the PLT map is baked at `load file`, upstream of this `option`), so

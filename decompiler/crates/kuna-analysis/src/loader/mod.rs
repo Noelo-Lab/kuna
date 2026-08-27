@@ -53,6 +53,7 @@ mod reloc_apply;
 // (kuna) `relocrebase`: rebase the load-time analysis facts of a relocatable
 // object into the loaded image's address space (GH-289).
 pub mod kuna_relocrebase;
+pub(crate) mod le;
 // (kuna) `dynrelocs`: apply a LINKED image's dynamic relocations (.rela.dyn /
 // .rel.dyn / .rela.plt) so a GOT slot holds the value the run-time loader
 // would write, and report the PT_GNU_RELRO-frozen slots as constant.

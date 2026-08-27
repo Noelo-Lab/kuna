@@ -128,6 +128,11 @@ pub fn run(argv: &[String]) -> i32 {
 fn export(args: &Args, label: &str) -> Result<String, String> {
     let binary_path = std::fs::canonicalize(&args.binary)
         .map_err(|_| format!("binary not found: {}", args.binary))?;
+    // The object view first: an input without one (a UEFI TE) is refused
+    // before anything is loaded or decompiled for nothing.
+    let bytes = crate::decompile_all::image_bytes(&args.binary, args.slice_pref())?;
+    let file = kuna_analysis::loadimage_object::parse_object(&*bytes)
+        .map_err(|error| format!("could not parse {}: {error}", args.binary))?;
     let load_started = std::time::Instant::now();
     let mut prog = load_program(args, DriverDefaults::Decompile)?;
     let load_seconds = load_started.elapsed().as_secs_f64();
@@ -194,9 +199,6 @@ fn export(args: &Args, label: &str) -> Result<String, String> {
     let by_address: BTreeMap<u64, &FuncResult> =
         results.iter().map(|result| (result.byte_address, result)).collect();
 
-    let bytes = crate::decompile_all::image_bytes(&args.binary, args.slice_pref())?;
-    let file = kuna_analysis::loadimage_object::parse_object(&*bytes)
-        .map_err(|error| format!("could not parse {}: {error}", args.binary))?;
     let graph = CallGraph::build_from(&prog, &file);
     // PE already inventories both halves of an import. ELF names its PLT veneer
     // but not the GOT slot, so materialize the missing half from the very same

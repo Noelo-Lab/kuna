@@ -203,14 +203,18 @@ fn query(args: &XrefArgs) -> Result<String, String> {
         base: None,
         ..Args::serial()
     };
-    let prog = load_program(&load, DriverDefaults::Query)?;
-
+    // The object view first: an input without one (a UEFI TE) is refused
+    // before the engine is brought up for nothing. A missing file keeps the
+    // message `load_program` would have given it.
+    std::fs::canonicalize(&args.binary)
+        .map_err(|_| format!("binary not found: {}", args.binary))?;
     let bytes = crate::decompile_all::image_bytes(
         &args.binary,
         kuna_analysis::loader::macho_fat::slice_pref(args.slice.as_deref(), args.target.as_deref()),
     )?;
     let file = kuna_analysis::loadimage_object::parse_object(&*bytes)
         .map_err(|e| format!("could not parse {}: {e}", args.binary))?;
+    let prog = load_program(&load, DriverDefaults::Query)?;
 
     let entries = prog.function_entries_canonical();
     let inventory: Vec<u64> = entries.iter().map(|e| e.addr.get_offset()).collect();

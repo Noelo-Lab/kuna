@@ -22,6 +22,8 @@
 //!
 //! - [`loadimage_object`] -- the real-object `LoadImage` backend (ELF/Mach-O/
 //!   PE/COFF byte mapping + section/segment/symbol enumeration).
+//! - [`loadimage_te`] -- bounded UEFI TE header/section parsing and direct
+//!   stripped-offset-to-load-address mapping.
 //! - [`loader`] -- image-format markup: PLT/GOT import naming, relocations,
 //!   ARM/MIPS mapping markers, the known no-return name lists.
 //! - [`analyzers`] -- the metadata analyzers, one module per pass (strings,
@@ -50,6 +52,7 @@
 pub mod pass;
 pub mod passes;
 pub mod loadimage_object;
+pub mod loadimage_te;
 pub mod loader;
 pub mod analyzers;
 pub mod listing;

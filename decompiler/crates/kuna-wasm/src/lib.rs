@@ -1,7 +1,7 @@
 //! kuna-wasm: the in-browser decompiler front-end.
 //!
 //! This is the *engine's* in-process path (`kuna_console::engine::
-//! bootstrap_from_object` → `commit_pending_analysis` → loop
+//! bootstrap_from_image` → `commit_pending_analysis` → loop
 //! `decompile_func_full_with_override_dyn` + `print_c`) wrapped in a tiny,
 //! dependency-light CLI that reads its inputs from the (virtual) filesystem and
 //! writes JSON/C to stdout — exactly the contract a browser WASI shim provides.
@@ -23,7 +23,7 @@
 //! changes. See `docs/web-integration.md`.
 
 use kuna_console::engine::{
-    bootstrap_from_object, ConsoleProgram, EntrySelector, FunctionEntry, ObjectLocation,
+    bootstrap_from_image, ConsoleProgram, EntrySelector, FunctionEntry, ObjectLocation,
 };
 use kuna_console::project::{
     build_asm, build_c, build_header, build_readme, collect_dat_addrs, decompile_targets,
@@ -326,7 +326,7 @@ fn load_program(
     }
 
     let spec_roots = vec![spec_root.to_string()];
-    let bootstrap = bootstrap_from_object(binary, "", &spec_roots);
+    let bootstrap = bootstrap_from_image(binary, "", &spec_roots);
     if owns_arm64e {
         match previous_arm64e {
             Some(value) => std::env::set_var("KUNA_MACHO_ARM64E", value),

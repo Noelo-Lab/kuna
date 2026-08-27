@@ -569,10 +569,12 @@ and the `default` sentinel select the detected architecture and retain the
 compiler-model fallback; the loader and console normalize these requests
 identically.
 This separation lets a recognized container remain loadable when `object` reports
-its architecture as unknown. In particular, PE/COFF machine `0x01c2`
-(`IMAGE_FILE_MACHINE_THUMB`) is treated as little-endian ARM32 for language
-selection and supplies whole-image Thumb context; its sections and PE image base
-still come from the container parser.
+its architecture as unknown. In particular, PE/COFF machines `0x01c0`
+(`IMAGE_FILE_MACHINE_ARM`) and `0x01c2` (`IMAGE_FILE_MACHINE_THUMB`) are both
+treated as little-endian ARM32 for language selection; what each says about the
+decode mode is the shared ARM mode table's answer (§ the TE paragraph below), a
+whole-image Thumb paint for `THUMB` on a PE and the entry-bit walk for `ARM`.
+Their sections and PE image base still come from the container parser.
 
 Bare THUMB COFF objects use the typed COFF reader before architecture selection:
 the generic `object` magic dispatcher omits machine `0x01c2`. The shared
@@ -580,6 +582,98 @@ the generic `object` magic dispatcher omits machine `0x01c2`. The shared
 sections, and symbols, and is also used when analysis or a CLI inspection
 command reopens the image. It retains the typed reader's header and section
 validation; it does not rewrite the machine bytes to another architecture.
+
+(kuna) **UEFI TE images take a bounded container path of their own.**
+`decompiler/crates/kuna-analysis/src/loadimage_te.rs (TeLoadImage)` parses a
+file the format probe claims. That probe reads more than the `VZ` signature —
+two ASCII letters an unrelated file can open with — and also requires an EFI
+subsystem and a `StrippedSize` leaving room for the header it counts, so a
+non-container keeps the headerless-image guidance instead of being routed into
+the TE parser or refused as a TE; the machine word is deliberately not part of
+the claim, so a TE for a machine kuna has no binding for is told so by name. One
+dispatcher (`decompiler/crates/kuna-console/src/engine.rs (bootstrap_from_image_with_isa)`)
+routes every front-end's file load to the TE or the object loader, and the
+section table is classified by the same `SectionKind` rule and flag rule the PE
+loader applies to the same characteristics. The TE header remains authoritative for
+the machine, image base, entry point, data directories, and section table; an
+explicit target can select only a width- and data-endianness-compatible SLEIGH
+language. Each section's file offset subtracts the stripped-header bias while
+its loaded address retains the original image-base-relative VMA. File offset zero
+is retained at `ImageBase + StrippedSize - 40`, and the read-only mapping
+continues up to the adjusted `BaseOfCode`, so it covers the TE header, the
+section table, and the alignment slack behind them. That region has two extents
+and they coincide only when the image was linked with SectionAlignment equal to
+FileAlignment: the file BACKS it up to the first section's adjusted raw offset,
+while it is MAPPED up to the adjusted `BaseOfCode`, with the difference reading
+as zero. Deriving the file length from the RVA delta instead refuses an
+ordinary 0x200-file-aligned image outright. The file-backed part must lie
+inside the file, and a section's adjusted raw range must begin at or after the
+section table describing it — the TE analog of a PE section starting at or
+after `SizeOfHeaders`; truncated or overlapping input is rejected rather than
+completed with synthetic bytes.
+`VirtualSize` bounds each section's mapped extent when nonzero, file-alignment
+padding beyond that extent is not exposed, and a virtual tail beyond the
+initialized bytes reads as zero — a firmware module is loaded into a zeroed
+buffer, so unlike the object loader's packer-staging refusal that tail is
+faithful. It is still not *evidence*: the literal-pool constant ranges are built
+from the file-backed extents only, so a read landing in a tail the image carries
+no copy of is never folded to a constant. The parser rejects arithmetic overflow,
+overlapping or out-of-file ranges, directories outside mapped sections, and
+entries outside file-backed code before allocating section contents. Byte
+assertions atomically replace a complete span within one mapped header or
+section and may materialize a zero-filled virtual tail; unmapped,
+cross-boundary, and wrong-address-space writes are rejected. The entry is named
+at the analysis commit, after options such as `namestyle` are applied.
+
+Language selection reuses the object loader's `compose_language_id` over the PE
+machine word, so a TE and a PE carrying the same machine select the same SLEIGH
+variant; only the compiler model follows the UEFI bindings (C/cdecl for IA-32,
+the UEFI x64 convention with the arch-default fallback for x64, AAPCS for
+AArch32, AAPCS64/LP64 for AArch64), and an explicit compatible target remains
+authoritative. The ARM decode-mode policy is one table in
+`decompiler/crates/kuna-analysis/src/loadimage_object.rs (pe_arm_mode_policy)`,
+read by both PE-family loaders: `ARMNT` declares a wholly Thumb image on every
+container and is painted as such; `ARM` may interwork on every container; and
+machine `0x1c2` is read as its container family names it — `THUMB` on a PE,
+painted wholly Thumb, and `ARMTHUMB_MIXED` on a TE, interworking — a decision
+made once there rather than in each loader. Where the policy leaves the mode to
+the entry bit, on a TE or a PE alike, an odd entry arms the `entrythumbflow` pass
+(`decompiler/crates/kuna-analysis/src/listing/kuna_entrythumbflow.rs (entry_thumb_flow)`,
+default on), run at the deferred analysis commit after image-scoped overlays so
+it follows the effective instruction stream: it seeds `TMode=1` over each
+executable range as one region write, decodes the flow reachable from the
+normalized entry through fall-through, direct branches, and direct
+mode-preserving `BL` calls (an interworking `BLX` target keeps the mode its
+encoding selects), restores every run of values the range already held rather
+than the one at its start, and publishes exactly the decoded instruction ranges
+as bounded `TMode=1` paints under its own gated pass id — written to the
+context database at once as well as stashed, because the deferred Listing
+consumers decode the same bytes before the stash is committed. Decoding inside
+the walk runs with the language's context writes suppressed
+(`allow_context_set`): a Thumb `blx` runs `globalset(TMode=0)` at its target,
+which would flatten every Thumb address above that target for the rest of the
+walk, and the seed already answers the mode question for the whole range. The
+walk covers only file-backed bytes — a zero-filled tail decodes as a run of
+Thumb no-ops — and a direct call to a callee the load-time no-return facts name
+has no fall-through. The
+walk is bounded at 4096 instructions; reaching the bound publishes the ranges
+walked so far, reports the truncation once on stderr, and leaves the unreached
+code at the language default, so the load never fails on the size of the image.
+The pending entry is consumed before the walk runs, so a failure cannot re-arm
+it, and a walk that publishes nothing leaves the context partition as it found
+it. A wholly Thumb image can opt into the explicit `--isa thumb` range paint
+instead.
+
+The parsed entry and named sections are retained as format-neutral program
+metadata (`decompiler/crates/kuna-console/src/engine.rs (ProgramImageMetadata)`),
+populated by the object loader as well, so the project README no longer
+re-parses the input and reports the entry through the inventory on every path.
+A TE image has no `object::File`, so the Listing discovery tier cannot run over
+it: the deferred consumers are skipped and the load says so once on stderr —
+unconditionally, because it is a property of the container rather than of a
+run's options — and the object-view consumers (`strings`, `xrefs`, `decompile-graph`,
+and the graph-backed `functions`/`decompile-all` filters) report one capability
+error from the shared image read rather than the object crate's parse failure.
 
 (kuna) **Static unpacking.** A packed image is the one input on which the whole
 tier is honestly useless: it maps a loader stub and a compressed blob, so every

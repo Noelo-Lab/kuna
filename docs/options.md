@@ -435,6 +435,10 @@ Three tiers:
 | a shared ISR handler is swallowed by the two-instruction stub that branches to it | [`tailcallentry`](#tailcallentry) |
 | function entry missing where the previous function ends in an unconditional branch | [`tailcallentry`](#tailcallentry) |
 | kuna emits one oversized function where the ground truth has two | [`tailcallentry`](#tailcallentry) |
+| a uefi te entry function decompiles as garbage a32 although its entry address is odd | [`entrythumbflow`](#entrythumbflow) |
+| a callee reached by bl from a thumb entry decodes as a32 | [`entrythumbflow`](#entrythumbflow) |
+| a32 code in the same section as a thumb entry decodes as thumb | [`entrythumbflow`](#entrythumbflow) |
+| loading a te reports the thumb context walk stopped | [`entrythumbflow`](#entrythumbflow) |
 | stripped go binary renders sub_<addr> instead of main.main and runtime.* names | [`gopclntab`](#gopclntab) |
 | go package function names missing | [`gopclntab`](#gopclntab) |
 | objective-c methods render as sub_<addr> instead of -[Class sel] | [`objc`](#objc) |
@@ -1633,6 +1637,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** Off in the shipped catalog (it discovers more functions, so it changes emitted C by construction), but the `aggressive` preset carries it together with `listing` (DIV-93) and `auto` selects `aggressive` under 500 KiB, so on the whole-binary surfaces it is live by default for a stripped image of that size; the catalog default is what the datatest corpus and an explicit `--mode reliable` see. Flip on (with option listing on) on stripped ARM firmware when a routine reached only by a tail `B` — a shared ISR stub's handler, a `pop {r4,lr} ; b helper` tail call, a jump-thunk target — produces no output at all because the walk absorbed it into an earlier function. Measured on 96 Cortex-M images: +561 ground-truth functions, 94.6% of the new entries are real function starts, zero real bodies split, zero entries lost.
 - **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-tailcallentry
 - **Example:** `option listing on --option tailcallentry on`
+
+### `entrythumbflow` -- on | off, default `on`
+
+- **Symptoms:** a uefi te entry function decompiles as garbage a32 although its entry address is odd; a callee reached by bl from a thumb entry decodes as a32; a32 code in the same section as a thumb entry decodes as thumb; loading a te reports the thumb context walk stopped.
+- **What it does:** Carry the Thumb decode mode a container entry proves along the flow reachable from that entry, and nowhere else. The PE-family loaders share one ARM mode table: ARMNT declares a wholly Thumb stream on every container, ARM may interwork on every container, and machine 0x1c2 is read as its container family names it (THUMB on a PE, painted wholly Thumb; ARMTHUMB_MIXED on a UEFI TE, interworking). Where that table leaves the mode to the entry bit, the container makes no whole-image claim and the one fact it states is the entry's low bit. Ghidra's disassembler propagates that context along the flow it follows, but kuna's decompiler reads context per address and follows nothing, so this pass runs the same walk once at the analysis commit: decode from the even entry as Thumb through fall-through, direct branches, and direct BL calls (a BLX interworks and its target keeps the mode its own encoding selects), and paint TMode=1 over exactly the instruction bytes decoded, never a whole section, so A32 code elsewhere in the same section keeps its mode. The walk is bounded at 4096 instructions; reaching the bound keeps the ranges walked so far, says so once on stderr, and leaves the unreached code at the language default, which is what an even entry would have produced. Byte overlays are applied first, so the walk follows the effective instruction stream. Inert on every image without a Thumb-bit entry and on every non-ARM language.
+- **When to flip:** On (default): a mixed ARM TE whose entry has the Thumb bit decompiles its entry function and the callees it reaches as Thumb while A32 code elsewhere stays A32. Flip off to decode the entry with the language default mode, or use --isa thumb when the whole image is Thumb and the 4096-instruction bound would otherwise leave code unpainted.
+- **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-entrythumbflow
+- **Example:** `option entrythumbflow off`
 
 ### `gopclntab` -- on | off, default `on`
 

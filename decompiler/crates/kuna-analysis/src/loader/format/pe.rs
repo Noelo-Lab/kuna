@@ -31,7 +31,36 @@ pub struct PeFormat;
 /// model (a linked PE *is* a COFF-flavored image), so [`crate::loader::format::coff::CoffFormat`]
 /// reuses this. Mirrors the BFD `SEC_*` derivation Ghidra's `CoffLoader` /
 /// `PeLoader` perform from `IMAGE_SCN_*`.
-pub(super) fn coff_section_bits(kind: SectionKind, flags: SectionFlags) -> u32 {
+/// The `object` crate's neutral section kind for a COFF `Characteristics`
+/// word, the rule its own PE reader applies, for a section table read without
+/// a parsed object (a TE's). One derivation, so the same characteristics yield
+/// the same kind, the same [`coff_section_bits`], and the same export label on
+/// every PE-family container.
+pub(crate) fn coff_section_kind(characteristics: u32) -> SectionKind {
+    use object::pe::{
+        IMAGE_SCN_CNT_CODE, IMAGE_SCN_CNT_INITIALIZED_DATA, IMAGE_SCN_CNT_UNINITIALIZED_DATA,
+        IMAGE_SCN_LNK_INFO, IMAGE_SCN_MEM_DISCARDABLE,
+    };
+    if characteristics & (IMAGE_SCN_CNT_CODE | IMAGE_SCN_MEM_EXECUTE) != 0 {
+        SectionKind::Text
+    } else if characteristics & IMAGE_SCN_CNT_INITIALIZED_DATA != 0 {
+        if characteristics & IMAGE_SCN_MEM_DISCARDABLE != 0 {
+            SectionKind::Other
+        } else if characteristics & IMAGE_SCN_MEM_WRITE != 0 {
+            SectionKind::Data
+        } else {
+            SectionKind::ReadOnlyData
+        }
+    } else if characteristics & IMAGE_SCN_CNT_UNINITIALIZED_DATA != 0 {
+        SectionKind::UninitializedData
+    } else if characteristics & IMAGE_SCN_LNK_INFO != 0 {
+        SectionKind::Linker
+    } else {
+        SectionKind::Unknown
+    }
+}
+
+pub(crate) fn coff_section_bits(kind: SectionKind, flags: SectionFlags) -> u32 {
     let chars = match flags {
         SectionFlags::Coff { characteristics } => characteristics,
         _ => 0,

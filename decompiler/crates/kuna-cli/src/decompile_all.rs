@@ -93,7 +93,7 @@ use kuna_analysis::listing::xrefs::{Xref, XrefIndex, XrefKind};
 use kuna_analysis::loader::macho_fat::SlicePref;
 use kuna_base::address::Address;
 use kuna_console::engine::{
-    bootstrap_from_object_with_isa, bootstrap_from_raw, ArmIsa, ConsoleProgram, EntryLookupError,
+    bootstrap_from_image_with_isa, bootstrap_from_raw, ArmIsa, ConsoleProgram, EntryLookupError,
     EntrySelector, FunctionEntry, ObjectLocation,
 };
 // The decompile loop + result shape live in the shared decompile-project core
@@ -237,8 +237,23 @@ impl Args {
 /// engine dispatch peels the fat header, and a surface that read the raw bytes
 /// did not.
 pub(crate) fn image_bytes(binary: &str, pref: SlicePref) -> Result<Vec<u8>, String> {
-    kuna_analysis::loader::elf_shdr::read_image_sliced(binary, pref)
-        .map_err(|e| format!("{binary}: {e}"))
+    let bytes = kuna_analysis::loader::elf_shdr::read_image_sliced(binary, pref)
+        .map_err(|e| format!("{binary}: {e}"))?;
+    if kuna_analysis::loadimage_te::is_te_image(&bytes) {
+        return Err(te_object_view_error(binary));
+    }
+    Ok(bytes)
+}
+
+/// The capability error every object-view consumer reports for a UEFI TE
+/// input: the loader maps it, but nothing can hand out the `object::File` the
+/// call graph, string inventory, and reference index are built from.
+fn te_object_view_error(binary: &str) -> String {
+    format!(
+        "{binary}: UEFI TE input has no object-file view, which this operation needs; \
+         TE support covers decompile, decompile-all, functions, disassemble/read, \
+         decompile-project, and the console"
+    )
 }
 
 // --- triage: narrowing a whole-binary run before it runs ---------------------
@@ -1454,8 +1469,13 @@ pub(crate) fn driver_default_options(
     options: &[(String, String)],
 ) -> Vec<(&'static str, &'static str)> {
     let named = |name: &str| options.iter().any(|(option, _)| option == name);
+    // The discovery bundle needs the object view the deferred consumers re-parse;
+    // a raw or TE input has none, so it takes no discovery default at all rather
+    // than an inert one. (`image_bytes` is deliberately not used here: a TE is
+    // an ordinary "no object view" answer, not an error, on this path.)
     let non_x86_64 = kuna_analysis::loader::elf_shdr::read_image(binary)
         .ok()
+        .filter(|bytes| !kuna_analysis::loadimage_te::is_te_image(bytes))
         .and_then(|bytes| {
             kuna_analysis::loadimage_object::parse_object(&*bytes)
                 .ok()
@@ -1528,7 +1548,7 @@ pub(crate) fn load_program(
             &spec_roots,
         )
     } else {
-        bootstrap_from_object_with_isa(&binary, target, &spec_roots, args.isa)
+        bootstrap_from_image_with_isa(&binary, target, &spec_roots, args.isa)
     }
     .map_err(|e| {
         let detail = e.explain();

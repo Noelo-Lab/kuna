@@ -14,13 +14,10 @@
 //!
 //! ## What `load file` accepts
 //!
-//! The C++ console drives a real binary through BFD; the kuna Rust engine's only
-//! load-image backend is the XML `<binaryimage>` format the datatests use (the
-//! BFD `RawBinaryArchitecture`/`LoadImageBfd` backends are their own port item).
-//! So the Rust `load file <path>` accepts a `<binaryimage>` (or
-//! `<decompilertest>`-wrapping) XML file — exactly the corpus image format the
-//! Python tools (`kuna/decompile.py`) and the datatests feed, which is what the
-//! `KUNA_ENGINE=rust` path is wired to drive.
+//! `load file <path>` accepts ELF, PE, Mach-O, COFF, UEFI TE, and the XML
+//! `<binaryimage>` format used by the datatests. Object formats use
+//! [`ObjectLoadImage`], TE uses its direct stripped-header mapping, and XML keeps
+//! the corpus bootstrap. Headerless images use the separate `load raw` command.
 //!
 //! ## Symbol resolution (the `readLoaderSymbols`/`queryFunction` hook)
 //!
@@ -53,7 +50,8 @@ use kuna_num::opcodes::OpCode;
 use kuna_num::pcoderaw::VarnodeData;
 
 use kuna_sleigh::loadimage::{section_flags, LoadImage, LoadImageFunc, LoadImageSection};
-use kuna_analysis::loadimage_object::ObjectLoadImage;
+use kuna_analysis::loadimage_object::{is_arm32_language, ObjectLoadImage, PE_MACHINES};
+use kuna_analysis::loadimage_te::{is_te_image, TeLoadImage, TE_PROBE_LEN};
 use kuna_sleigh::loadimage_xml::LoadImageXml;
 use kuna_sleigh::loadimage_xml::register_loadimage_xml_ids;
 use kuna_sleigh::translate::register_translate_ids;
@@ -168,6 +166,36 @@ impl SymbolStream {
     fn iter(&self) -> impl Iterator<Item = &ProgramSymbol> {
         self.records.iter().flatten()
     }
+}
+
+pub use kuna_analysis::loadimage_object::ObjectSectionMetadata as ProgramSectionMetadata;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProgramImageMetadata {
+    pub entry: Option<u64>,
+    pub sections: Vec<ProgramSectionMetadata>,
+}
+
+/// Which loader produced the program. Capability follows the container, not
+/// the language: only an object-format input has the `object::File` view the
+/// Listing discovery tier re-parses the file for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ProgramContainer {
+    /// The datatest `<binaryimage>` XML corpus format.
+    Xml,
+    /// ELF, PE, Mach-O, or COFF through the `object` crate.
+    Object,
+    /// A headerless byte image at a caller-supplied base.
+    Raw,
+    /// A UEFI TE image through its own bounded parser.
+    Te,
+}
+
+/// A mixed-ARM container entry with the Thumb bit set, awaiting the
+/// `entrythumbflow` walk at the analysis commit (after byte overlays).
+struct PendingEntryThumb {
+    executable_ranges: Vec<(u64, u64)>,
+    entry: u64,
 }
 
 /// (kuna) One emitted p-code op, whole: the opcode, the output varnode and
@@ -385,17 +413,23 @@ pub struct ConsoleProgram {
     registry: IdRegistry,
     /// The program's function symbols (name → entry address), installed through
     /// the `readLoaderSymbols` hook. Object/XML names are collected at load;
-    /// synthetic raw names are collected after options are applied.
+    /// synthetic input names are collected after options are applied.
     symbols: SymbolStream,
-    /// Raw-image entry addresses awaiting synthetic names. Raw inputs have no
+    /// Entry addresses awaiting synthetic names. Raw and TE inputs have no
     /// source names, so their names are generated at `read symbols`, after the
     /// CLI has applied options such as `namestyle`.
-    pending_raw_entries: Vec<Address>,
+    pending_synthetic_entries: Vec<Address>,
     /// Original-to-synthetic section map for relocatable objects.
     object_sections: Vec<ObjectSectionLocation>,
     /// A human-readable description of the loaded program (C++
     /// `conf->getDescription()`).
     description: String,
+    /// The loader family that produced this program.
+    container: ProgramContainer,
+    /// Container metadata retained for format-neutral consumers such as project
+    /// export. Loaders that do not publish a container entry and named sections
+    /// leave this absent.
+    image_metadata: Option<ProgramImageMetadata>,
     /// (kuna) Per-pass analysis facts stashed at load (real-ELF path only),
     /// keyed by `AnalysisPass::id`, awaiting the gated commit at `read symbols`.
     ///
@@ -407,6 +441,8 @@ pub struct ConsoleProgram {
     /// analysis tier runs), so the gated commit is a faithful no-op there. The
     /// stash is drained on commit so a second `read symbols` does not re-commit.
     pending_analysis: Vec<(&'static str, kuna_analysis::pass::AnalysisOutput)>,
+    /// Mixed-ARM TE entry evidence awaiting the post-overlay decode walk.
+    pending_entry_thumb: Option<PendingEntryThumb>,
     /// (kuna) The engine default code space captured at load, used to build the
     /// `Address`es when the stashed analysis facts are committed at `read symbols`.
     analysis_code_space: Option<Rc<AddrSpace>>,
@@ -538,6 +574,15 @@ impl ConsoleProgram {
     /// C++ `conf->getDescription()` — the load-success description line.
     pub fn description(&self) -> &str {
         &self.description
+    }
+
+    pub fn image_metadata(&self) -> Option<&ProgramImageMetadata> {
+        self.image_metadata.as_ref()
+    }
+
+    /// The loaded image's file name, as the loader reports it.
+    fn image_path(&self) -> String {
+        self.arch().translate().loader_rc().borrow().get_file_name().to_string()
     }
 
     /// Scale a user-facing raw address to the engine's byte offset without
@@ -1973,8 +2018,9 @@ impl ConsoleProgram {
     /// runs AFTER the CLI's `option` lines, so a disabled pass's facts are
     /// dropped here rather than committed.
     ///
-    /// Raw-image entries are named and installed here for the same ordering
-    /// reason: their synthetic names must honor the active `namestyle` option.
+    /// Raw-image and TE entries are named and installed here for the same
+    /// ordering reason: their synthetic names must honor the active `namestyle`
+    /// option.
     ///
     /// Drains the stash (so a second `read symbols` does not re-commit), merges
     /// only the **enabled** passes' outputs in pass order, and commits the merged
@@ -1990,8 +2036,8 @@ impl ConsoleProgram {
     /// defensively re-gated facts merge into the same `merged` output committed
     /// below. With Listing off, this whole block is skipped.
     pub fn commit_pending_analysis(&mut self) -> KunaResult<()> {
-        if !self.pending_raw_entries.is_empty() {
-            let entries = std::mem::take(&mut self.pending_raw_entries);
+        if !self.pending_synthetic_entries.is_empty() {
+            let entries = std::mem::take(&mut self.pending_synthetic_entries);
             let symbols = entries
                 .into_iter()
                 .map(|addr| ProgramSymbol {
@@ -2006,6 +2052,76 @@ impl ConsoleProgram {
                 self.symbols.push(symbol);
             }
             self.read_loader_symbols()?;
+        }
+        // (kuna `entrythumbflow`) The entry-reachable Thumb walk, taken out of
+        // the pending slot BEFORE it runs so a failure cannot leave it armed for
+        // the next commit. Its paints join the gated stash under their own id.
+        if let Some(pending) = self.pending_entry_thumb.take() {
+            if self.arch().analysis_entrythumbflow {
+                let code_space = self.analysis_code_space.clone().ok_or_else(|| {
+                    KunaError::lowlevel("no code space for the deferred entry context walk")
+                })?;
+                // The callees the load-time facts already know never return,
+                // so the walk does not fall through past a direct call to one.
+                let noreturn: Vec<u64> = self
+                    .pending_analysis
+                    .iter()
+                    .flat_map(|(_, out)| out.noreturn.iter().map(|fact| fact.addr))
+                    .collect();
+                let flow = kuna_analysis::listing::kuna_entrythumbflow::entry_thumb_flow(
+                    self.arch(),
+                    &code_space,
+                    &pending.executable_ranges,
+                    pending.entry,
+                    &noreturn,
+                )?;
+                if flow.truncated {
+                    let path = self.image_path();
+                    kuna_base::notes::say_once(
+                        &path,
+                        &format!(
+                            "[kuna entrythumbflow] {path}: the Thumb context walk from the entry stopped at {} instructions; code it did not reach decodes as A32 (use --isa thumb for a wholly Thumb image)",
+                            kuna_analysis::listing::kuna_entrythumbflow::MAX_INSTRUCTIONS
+                        ),
+                    );
+                }
+                if !flow.paints.is_empty() {
+                    // Written to the database NOW, not only stashed: the deferred
+                    // Listing consumers below decode the same bytes before the
+                    // stash is committed, and on a PE they would read Thumb code
+                    // as A32. The stash still carries the facts so the commit's
+                    // record and replay are complete.
+                    for paint in &flow.paints {
+                        let begin = Address::new(Rc::clone(&code_space), paint.addr);
+                        let end = paint.end.map(|end| Address::new(Rc::clone(&code_space), end));
+                        self.arch().with_context_db_mut(|db| match end {
+                            Some(end) => db.set_variable_region(
+                                paint.var.as_bytes(),
+                                &begin,
+                                &end,
+                                paint.value,
+                            ),
+                            None => db.set_variable(paint.var.as_bytes(), &begin, paint.value),
+                        })?;
+                    }
+                    let mut output = kuna_analysis::pass::AnalysisOutput::default();
+                    output.context_paints = flow.paints;
+                    self.pending_analysis.push(("entrythumbflow", output));
+                }
+            }
+        }
+        // A TE image has no `object::File`, so the discovery tier cannot run
+        // over it at all: say so once rather than report an inventory of one in
+        // silence. Stated unconditionally because it is a property of the
+        // container, not of this run's options.
+        if self.container == ProgramContainer::Te {
+            let path = self.image_path();
+            kuna_base::notes::say_once(
+                &path,
+                &format!(
+                    "[kuna te] {path}: a UEFI TE image has no object-file view, so function discovery cannot run; the inventory is the container entry plus any declared boundaries"
+                ),
+            );
         }
         if self.pending_analysis.is_empty() && self.loader_data_objects.is_empty() {
             // Drop the deferred-Listing stash too: nothing to commit against, and
@@ -2226,6 +2342,10 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // decompile-all surface). x86-64 keeps it off ⇒ byte-identical there.
         "funcdisc_recursive" => arch.analysis_funcstart_patterns,
         "arm_markers" => arch.analysis_arm_markers,
+        // (kuna) The entry-reachable Thumb context walk. Its paints are computed at
+        // the commit (after byte overlays) and stashed under this id, so the gate
+        // here is the defensive half of the check that decides whether it runs.
+        "entrythumbflow" => arch.analysis_entrythumbflow,
         "mips_gp" => arch.analysis_mips_gp,
         "mips_isa" => arch.analysis_mips_isa,
         "dwarf" => arch.analysis_dwarf,
@@ -2592,23 +2712,10 @@ pub fn bootstrap_program(
     // folds into constants when `option readonly` is on (the float-cluster's
     // IEEE-754 literals live in read-only RAM).  Collected here, while the opened
     // `LoadImageXml` is still in hand, then applied to the symboltab below.
-    let readonly_ranges: Vec<(kuna_base::address::Address, kuna_base::address::Address)> =
-        if let Some(loader) = arch.loader() {
-            use kuna_base::address::RangeList;
-            use kuna_sleigh::loadimage::LoadImage;
-            let manage_ro: *const AddrSpaceManager = arch.sleigh().base().unwrap().manage();
-            let mut rangelist = RangeList::new();
-            loader.get_readonly(&mut rangelist);
-            // SAFETY: same outlives-the-call shape as the open() borrow above; the
-            // manager lives inside `arch` and is only read here.
-            let manage_ref = unsafe { &*manage_ro };
-            rangelist
-                .iter()
-                .map(|r| (r.get_first_addr(), r.get_last_addr_open(manage_ref)))
-                .collect()
-        } else {
-            Vec::new()
-        };
+    let readonly_ranges: Vec<(Address, Address)> = match arch.loader() {
+        Some(loader) => loader_readonly_ranges(loader, arch.sleigh().base().unwrap().manage()),
+        None => Vec::new(),
+    };
 
     // Hand the opened loader to the engine (the C++ `loader` back-pointer the
     // decode reads on load_fill).
@@ -2632,26 +2739,8 @@ pub fn bootstrap_program(
     // loader/adjustvma machinery is spent; the engine owns the opened image).
     // The XML path runs no analysis tier, so no facts are stashed and the gated
     // commit at `read symbols` is a no-op (parity is structurally untouched).
-    let mut prog = ConsoleProgram {
-        arch: arch.into_sleigh(),
-        registry,
-        symbols: SymbolStream::from_loader(symbols),
-        pending_raw_entries: Vec::new(),
-        object_sections: Vec::new(),
-        description,
-        pending_analysis: Vec::new(),
-        analysis_code_space: None,
-        dwarf_locals: Vec::new(),
-        analysis_image: None,
-        loader_data_objects: Vec::new(),
-        declared_extents: BTreeMap::new(),
-        declared_entries: BTreeSet::new(),
-        assertions: Vec::new(),
-        assertion_outcomes: Vec::new(),
-        pending_prototypes: BTreeMap::new(),
-        raw_address_units: None,
-        import_slots: Vec::new(),
-    };
+    let mut prog = empty_program(arch.into_sleigh(), registry, ProgramContainer::Xml, description);
+    prog.symbols = SymbolStream::from_loader(symbols);
     // C++ `conf->readLoaderSymbols("::")` (testfunction.cc:160 / consolemain.cc:104):
     // install the binaryimage symbols as FunctionSymbols so a CALL to one resolves
     // to its callee name at flow-analysis time.
@@ -2695,15 +2784,6 @@ impl ArmIsa {
     }
 }
 
-fn input_isa_paints(
-    loader: &ObjectLoadImage,
-    arch: &Architecture,
-    arch_id: &str,
-    isa: Option<ArmIsa>,
-) -> KunaResult<Vec<kuna_analysis::pass::ContextPaint>> {
-    input_isa_paints_for_ranges(&loader.executable_ranges(), arch, arch_id, isa)
-}
-
 fn input_isa_paints_for_ranges(
     ranges: &[(u64, u64)],
     arch: &Architecture,
@@ -2713,7 +2793,7 @@ fn input_isa_paints_for_ranges(
     let Some(isa) = isa else {
         return Ok(Vec::new());
     };
-    if !arch_id.starts_with("ARM:") || arch_id.split(':').nth(2) != Some("32") {
+    if !is_arm32_language(arch_id) {
         return Err(KunaError::lowlevel(format!(
             "--isa {} requires a 32-bit ARM SLEIGH target (resolved {arch_id})",
             isa.as_str()
@@ -2743,6 +2823,146 @@ fn input_isa_paints_for_ranges(
             })
         })
         .collect())
+}
+
+/// Resolve the loader's language id against the spec database and bring the
+/// engine up on it. With no explicit target, a primary id whose compiler model
+/// is not vendored (a PE's `:windows`) is retried once as the loader's
+/// default-model fallback (§2.2): wrong calling-convention details beat no
+/// decompile.
+fn build_sleigh_for_loader(
+    path: &str,
+    target: &str,
+    spec_roots: &[String],
+    registry: &IdRegistry,
+    arch_type: &str,
+    fallback_arch_id: Option<&[u8]>,
+) -> KunaResult<SleighArchitecture> {
+    let db = scan_language_database(spec_roots, registry)?;
+    let mut sleigh = SleighArchitecture::new(path, target);
+    sleigh.resolve_architecture(&db, arch_type)?;
+    if sleigh.language_index() < 0 && target.is_empty() {
+        if let Some(fallback) = fallback_arch_id {
+            let fallback = String::from_utf8_lossy(fallback).into_owned();
+            let mut retry = SleighArchitecture::new(path, "");
+            retry.resolve_architecture(&db, &fallback)?;
+            if retry.language_index() >= 0 {
+                sleigh = retry;
+            }
+        }
+    }
+    if sleigh.language_index() < 0 {
+        return Err(KunaError::lowlevel(format!(
+            "No sleigh specification for architecture {arch_type}"
+        )));
+    }
+    build_engine_and_init(&mut sleigh, &db)?;
+    Ok(sleigh)
+}
+
+fn default_code_space(sleigh: &SleighArchitecture) -> KunaResult<Rc<AddrSpace>> {
+    sleigh
+        .base()
+        .unwrap()
+        .manage()
+        .get_default_code_space()
+        .map(Rc::clone)
+        .ok_or_else(|| KunaError::lowlevel("no default code space after init"))
+}
+
+/// The loader's read-only ranges as `(first, last_open)` pairs, gathered while
+/// the loader is still in hand (`Architecture::fillinReadOnlyFromLoader`).
+fn loader_readonly_ranges(
+    loader: &dyn LoadImage,
+    manager: &AddrSpaceManager,
+) -> Vec<(Address, Address)> {
+    let mut ranges = kuna_base::address::RangeList::new();
+    loader.get_readonly(&mut ranges);
+    ranges
+        .iter()
+        .map(|range| (range.get_first_addr(), range.get_last_addr_open(manager)))
+        .collect()
+}
+
+/// Paint the whole-image ARM decode mode `isa` over `ranges`, record whether the
+/// caller stated it explicitly, and hand back the paints for the `input_isa`
+/// stash so the commit can replay them over any later context fact.
+fn install_input_isa(
+    arch: &mut Architecture,
+    arch_id: &str,
+    code_space: &Rc<AddrSpace>,
+    ranges: &[(u64, u64)],
+    isa: Option<ArmIsa>,
+    explicit: bool,
+) -> KunaResult<Vec<kuna_analysis::pass::ContextPaint>> {
+    let paints = input_isa_paints_for_ranges(ranges, arch, arch_id, isa)?;
+    arch.input_arm_isa_override = explicit;
+    for paint in &paints {
+        let begin = Address::new(Rc::clone(code_space), paint.addr);
+        let end = paint.end.map(|end| Address::new(Rc::clone(code_space), end));
+        arch.with_context_db_mut(|db| match end {
+            Some(end) => db.set_variable_region(paint.var.as_bytes(), &begin, &end, paint.value),
+            None => db.set_variable(paint.var.as_bytes(), &begin, paint.value),
+        })?;
+    }
+    Ok(paints)
+}
+
+fn input_isa_stash(
+    paints: Vec<kuna_analysis::pass::ContextPaint>,
+) -> Vec<(&'static str, kuna_analysis::pass::AnalysisOutput)> {
+    if paints.is_empty() {
+        return Vec::new();
+    }
+    let mut explicit = kuna_analysis::pass::AnalysisOutput::default();
+    explicit.context_paints = paints;
+    vec![("input_isa", explicit)]
+}
+
+/// A program with nothing loaded beyond the engine: every stash empty, every
+/// declaration absent. Each bootstrap fills in what its loader supplies.
+fn empty_program(
+    arch: SleighArchitecture,
+    registry: IdRegistry,
+    container: ProgramContainer,
+    description: String,
+) -> ConsoleProgram {
+    ConsoleProgram {
+        arch,
+        registry,
+        symbols: SymbolStream::default(),
+        pending_synthetic_entries: Vec::new(),
+        object_sections: Vec::new(),
+        description,
+        container,
+        image_metadata: None,
+        pending_analysis: Vec::new(),
+        pending_entry_thumb: None,
+        analysis_code_space: None,
+        dwarf_locals: Vec::new(),
+        analysis_image: None,
+        loader_data_objects: Vec::new(),
+        declared_extents: BTreeMap::new(),
+        declared_entries: BTreeSet::new(),
+        assertions: Vec::new(),
+        assertion_outcomes: Vec::new(),
+        pending_prototypes: BTreeMap::new(),
+        raw_address_units: None,
+        import_slots: Vec::new(),
+    }
+}
+
+/// C++ `symboltab->setPropertyRange(Varnode::readonly, *iter)` over the ranges
+/// [`loader_readonly_ranges`] gathered. Loader markup, not a gated pass, so it
+/// is applied eagerly at load.
+fn apply_readonly_ranges(prog: &mut ConsoleProgram, ranges: &[(Address, Address)]) {
+    for (first, last_open) in ranges {
+        prog.arch_mut().symboltab.set_property_range(
+            kuna_decomp::varnode::varnode_flags::readonly,
+            first,
+            last_open,
+        );
+    }
 }
 
 /// Bootstrap a headerless byte image at a caller-supplied target and base.
@@ -2777,14 +2997,7 @@ pub fn bootstrap_from_raw(
     }
     build_engine_and_init(raw.sleigh_mut(), &db)?;
 
-    let code_space = Rc::clone(
-        raw.sleigh()
-            .base()
-            .unwrap()
-            .manage()
-            .get_default_code_space()
-            .ok_or_else(|| KunaError::lowlevel("no default code space after init"))?,
-    );
+    let code_space = default_code_space(raw.sleigh())?;
     let word_size = u64::from(code_space.get_word_size());
     let address_to_byte = |value: u64, label: &str| {
         value.checked_mul(word_size).ok_or_else(|| {
@@ -2820,7 +3033,7 @@ pub fn bootstrap_from_raw(
     }
 
     let arch_id = raw.sleigh().arch_id().to_string();
-    let arm32 = arch_id.starts_with("ARM:") && arch_id.split(':').nth(2) == Some("32");
+    let arm32 = is_arm32_language(&arch_id);
     if arm32 && isa.is_none() {
         return Err(KunaError::lowlevel(
             "raw ARM32 input requires --isa arm or --isa thumb",
@@ -2841,27 +3054,16 @@ pub fn bootstrap_from_raw(
     }
 
     let ranges = [(image_base, image_size)];
-    let input_context_paints = input_isa_paints_for_ranges(
-        &ranges,
-        raw.sleigh().base().unwrap(),
+    let input_context_paints = install_input_isa(
+        raw.sleigh_mut().base_mut().unwrap(),
         &arch_id,
+        &code_space,
+        &ranges,
         isa,
+        isa.is_some(),
     )?;
-    raw.sleigh_mut().base_mut().unwrap().input_arm_isa_override = isa.is_some();
-    for paint in &input_context_paints {
-        let begin = Address::new(Rc::clone(&code_space), paint.addr);
-        let end = paint
-            .end
-            .map(|end| Address::new(Rc::clone(&code_space), end));
-        raw.sleigh().base().unwrap().with_context_db_mut(|db| match end {
-            Some(end) => {
-                db.set_variable_region(paint.var.as_bytes(), &begin, &end, paint.value)
-            }
-            None => db.set_variable(paint.var.as_bytes(), &begin, paint.value),
-        })?;
-    }
 
-    let pending_raw_entries = normalized_entries
+    let pending_synthetic_entries = normalized_entries
         .into_iter()
         .map(|entry| Address::new(Rc::clone(&code_space), entry))
         .collect();
@@ -2879,33 +3081,165 @@ pub fn bootstrap_from_raw(
         .unwrap()
         .set_loader(Box::new(image));
 
-    let mut pending_analysis = Vec::new();
-    if !input_context_paints.is_empty() {
-        let mut explicit = kuna_analysis::pass::AnalysisOutput::default();
-        explicit.context_paints = input_context_paints;
-        pending_analysis.push(("input_isa", explicit));
-    }
-    let prog = ConsoleProgram {
-        arch: raw.into_sleigh(),
-        registry,
-        symbols: SymbolStream::default(),
-        pending_raw_entries,
-        object_sections: Vec::new(),
-        description,
-        pending_analysis,
-        analysis_code_space: Some(code_space),
-        dwarf_locals: Vec::new(),
-        analysis_image: None,
-        loader_data_objects: Vec::new(),
-        declared_extents: BTreeMap::new(),
-        assertions: Vec::new(),
-        assertion_outcomes: Vec::new(),
-        pending_prototypes: BTreeMap::new(),
-        declared_entries: BTreeSet::new(),
-        raw_address_units: Some((word_size, arm32)),
-        import_slots: Vec::new(),
-    };
+    let mut prog = empty_program(raw.into_sleigh(), registry, ProgramContainer::Raw, description);
+    prog.pending_synthetic_entries = pending_synthetic_entries;
+    prog.pending_analysis = input_isa_stash(input_context_paints);
+    prog.analysis_code_space = Some(code_space);
+    prog.raw_address_units = Some((word_size, arm32));
     Ok(prog)
+}
+
+/// Bootstrap a real image on disk — a UEFI TE or an object-format binary —
+/// choosing the loader by the file's own bytes. The one dispatcher the CLI,
+/// the browser front-end, and the console share, so a container one of them
+/// accepts is accepted by all. The XML corpus format is the console's alone
+/// ([`bootstrap_from_file`]); a headerless image needs [`bootstrap_from_raw`]'s
+/// explicit target and base.
+pub fn bootstrap_from_image_with_isa(
+    path: &str,
+    target: &str,
+    spec_roots: &[String],
+    isa: Option<ArmIsa>,
+) -> KunaResult<ConsoleProgram> {
+    if file_is_te_image(path) {
+        bootstrap_from_te(path, target, spec_roots, isa)
+    } else {
+        bootstrap_from_object_with_isa(path, target, spec_roots, isa)
+    }
+}
+
+/// [`bootstrap_from_image_with_isa`] with the ARM decode mode read from the
+/// `KUNA_ARM_ISA` environment bridge, as [`bootstrap_from_object`] reads it.
+pub fn bootstrap_from_image(
+    path: &str,
+    target: &str,
+    spec_roots: &[String],
+) -> KunaResult<ConsoleProgram> {
+    let isa = std::env::var(ARM_ISA_ENV)
+        .ok()
+        .map(|value| ArmIsa::parse(&value))
+        .transpose()
+        .map_err(KunaError::lowlevel)?
+        .flatten();
+    bootstrap_from_image_with_isa(path, target, spec_roots, isa)
+}
+
+/// Whether the file at `path` opens as a UEFI TE, reading only the bytes the
+/// format probe needs. An unreadable file is not a TE; the loader that then
+/// opens it reports why.
+fn file_is_te_image(path: &str) -> bool {
+    std::fs::File::open(path)
+        .and_then(|mut file| reader_is_te_image(&mut file))
+        .unwrap_or(false)
+}
+
+fn reader_is_te_image(reader: &mut impl std::io::Read) -> std::io::Result<bool> {
+    let mut prefix = [0u8; TE_PROBE_LEN];
+    match reader.read_exact(&mut prefix) {
+        Ok(()) => Ok(is_te_image(&prefix)),
+        Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+
+/// Bootstrap a UEFI TE image without converting it to PE or ELF.
+///
+/// The TE loader owns section/file translation, the image base, and the sole
+/// container entry point. An optional target can select the SLEIGH language,
+/// but it cannot replace or rebase the container mappings. ARMNT supplies
+/// automatic whole-image Thumb context; the mixed ARM machines arm the
+/// `entrythumbflow` walk when the entry carries the Thumb bit; an explicit
+/// `--isa` overrides both.
+pub fn bootstrap_from_te(
+    path: &str,
+    target: &str,
+    spec_roots: &[String],
+    isa: Option<ArmIsa>,
+) -> KunaResult<ConsoleProgram> {
+    let bytes = std::fs::read(path).map_err(|error| {
+        KunaError::lowlevel(format!("Unable to open TE image file: {path}: {error}"))
+    })?;
+    bootstrap_from_te_bytes(path, &bytes, target, spec_roots, isa)
+}
+
+/// [`bootstrap_from_te`] over bytes a caller has already read.
+pub fn bootstrap_from_te_bytes(
+    path: &str,
+    bytes: &[u8],
+    target: &str,
+    spec_roots: &[String],
+    isa: Option<ArmIsa>,
+) -> KunaResult<ConsoleProgram> {
+    let target = kuna_analysis::loadimage_object::explicit_language_target(target).unwrap_or("");
+    let registry = build_registry();
+    let mut loader = TeLoadImage::from_bytes_with_target(path, bytes, target)?;
+    let arch_type = String::from_utf8_lossy(&loader.get_arch_type()).into_owned();
+    let mut sleigh = build_sleigh_for_loader(
+        path,
+        target,
+        spec_roots,
+        &registry,
+        &arch_type,
+        loader.fallback_arch_id(),
+    )?;
+    let code_space = default_code_space(&sleigh)?;
+    loader.attach_to_space(Rc::clone(&code_space));
+    let segments = loader.get_segments();
+    for &(start, size, _) in &segments {
+        let end = start
+            .checked_add(size)
+            .ok_or_else(|| KunaError::lowlevel("TE section load range overflows"))?;
+        if end == 0 || end - 1 > code_space.get_highest() {
+            return Err(KunaError::lowlevel(format!(
+                "TE section range 0x{start:x}..0x{end:x} exceeds the target address space"
+            )));
+        }
+    }
+
+    let arch_id = sleigh.arch_id().to_string();
+    let arm32_target = is_arm32_language(&arch_id);
+    let machine_isa = (arm32_target && loader.whole_image_thumb()).then_some(ArmIsa::Thumb);
+    let entry_thumb_only =
+        isa.is_none() && machine_isa.is_none() && loader.entry_thumb_hint() && arm32_target;
+    let code_ranges = |mappings: &[(u64, u64, u32)]| -> Vec<(u64, u64)> {
+        mappings
+            .iter()
+            .filter_map(|&(addr, size, flags)| (flags & section_flags::CODE != 0).then_some((addr, size)))
+            .collect()
+    };
+    let executable_ranges = code_ranges(&segments);
+    // The walk decodes bytes, so it is bounded by what the file holds; the
+    // zero-filled tail beyond would read as a run of Thumb no-ops.
+    let walkable_ranges = code_ranges(&loader.file_backed_segments());
+    let litpool_const =
+        kuna_decomp::kuna_litpoolconst::code_const_ranges(&loader.file_backed_segments(), &[]);
+    let readonly_ranges = loader_readonly_ranges(&loader, sleigh.base().unwrap().manage());
+    let entry = loader.entry();
+    let image_metadata =
+        ProgramImageMetadata { entry: Some(entry), sections: loader.section_metadata() };
+    sleigh.base_mut().unwrap().set_loader(Box::new(loader));
+    let input_context_paints = install_input_isa(
+        sleigh.base_mut().unwrap(),
+        &arch_id,
+        &code_space,
+        &executable_ranges,
+        isa.or(machine_isa),
+        isa.is_some(),
+    )?;
+
+    let description = sleigh.base().unwrap().get_description().to_string();
+    let mut program = empty_program(sleigh, registry, ProgramContainer::Te, description);
+    program.pending_synthetic_entries = vec![Address::new(Rc::clone(&code_space), entry)];
+    program.image_metadata = Some(image_metadata);
+    program.pending_analysis = input_isa_stash(input_context_paints);
+    program.pending_entry_thumb = entry_thumb_only.then_some(PendingEntryThumb {
+        executable_ranges: walkable_ranges,
+        entry,
+    });
+    program.analysis_code_space = Some(code_space);
+    apply_readonly_ranges(&mut program, &readonly_ranges);
+    program.arch_mut().litpool_const = Rc::new(litpool_const);
+    Ok(program)
 }
 
 /// Bootstrap a [`ConsoleProgram`] from a **real object-format** binary on disk
@@ -2999,37 +3333,17 @@ pub fn bootstrap_from_object_with_isa(
     };
 
     // resolveArchitecture: the arch id is the loader's getArchType() (the object
-    // machine → SLEIGH language id), unless an explicit target overrides it.
+    // machine → SLEIGH language id), unless an explicit target overrides it;
+    // buildSpecFile -> buildTranslator -> the Architecture::init tail follow.
     let arch_type = String::from_utf8_lossy(&loader.get_arch_type()).into_owned();
-    let mut sleigh = SleighArchitecture::new(path, target);
-    let db = scan_language_database(spec_roots, &registry)?;
-    // SleighArchitecture::resolveArchitecture: if target is set it wins (archid
-    // stays empty here so the base resolve uses target||arch_type).
-    sleigh.resolve_architecture(&db, &arch_type)?;
-    // (kuna §2.2) Compiler-model fallback: if the format's chosen id (e.g. a PE's
-    // `...:windows`) is not vendored for this arch *and* no explicit --target was
-    // given, retry with the per-arch default-model id (`...:gcc`/`...:default`)
-    // before erroring — wrong calling-convention details beat no decompile.
-    // ELF carries no fallback (its primary already uses the default model), so
-    // the established path is unaffected.
-    if sleigh.language_index() < 0 && target.is_empty() {
-        if let Some(fb) = loader.fallback_arch_id() {
-            let fb = String::from_utf8_lossy(fb).into_owned();
-            let mut retry = SleighArchitecture::new(path, "");
-            retry.resolve_architecture(&db, &fb)?;
-            if retry.language_index() >= 0 {
-                sleigh = retry;
-            }
-        }
-    }
-    if sleigh.language_index() < 0 {
-        return Err(KunaError::lowlevel(format!(
-            "No sleigh specification for architecture {arch_type}"
-        )));
-    }
-
-    // buildSpecFile -> buildTranslator -> the Architecture::init tail (shared).
-    build_engine_and_init(&mut sleigh, &db)?;
+    let mut sleigh = build_sleigh_for_loader(
+        path,
+        target,
+        spec_roots,
+        &registry,
+        &arch_type,
+        loader.fallback_arch_id(),
+    )?;
 
     // (kuna) MIPS import-name recovery (Increment 27): the o32 ABI calls libc
     // imports indirectly through a GOT slot (`lw $t9, off($gp); jalr $t9`), with no
@@ -3049,23 +3363,20 @@ pub fn bootstrap_from_object_with_isa(
     // postSpecFile: attach the engine's default code space to the loader so its
     // loadFill/getNextSymbol build Addresses in the right space (C++
     // `RawBinaryArchitecture::postSpecFile`'s `attachToSpace(getDefaultCodeSpace())`).
-    let code_space = Rc::clone(
-        sleigh
-            .base()
-            .unwrap()
-            .manage()
-            .get_default_code_space()
-            .ok_or_else(|| KunaError::lowlevel("no default code space after init"))?,
-    );
+    let code_space = default_code_space(&sleigh)?;
     loader.attach_to_space(Rc::clone(&code_space));
 
+    // The container's ARM decode-mode evidence, read off the one policy table
+    // both PE-family loaders share: a whole-image claim paints every code
+    // section; an entry that only carries the Thumb bit arms the
+    // `entrythumbflow` walk, exactly as a TE with that shape does.
+    let arch_id = sleigh.arch_id().to_string();
+    let parsed = is_arm32_language(&arch_id)
+        .then(|| kuna_analysis::loadimage_object::parse_object(&*bytes).ok())
+        .flatten();
     let isa = isa.or_else(|| {
-        let language = sleigh.arch_id();
-        if !language.starts_with("ARM:") || language.split(':').nth(2) != Some("32") {
-            return None;
-        }
-        let file = kuna_analysis::loadimage_object::parse_object(&*bytes).ok()?;
-        kuna_analysis::loadimage_object::arm_isa_hint(&file, &bytes).map(|thumb| {
+        let file = parsed.as_ref()?;
+        kuna_analysis::loadimage_object::arm_isa_hint(file, &bytes).map(|thumb| {
             if thumb {
                 ArmIsa::Thumb
             } else {
@@ -3073,41 +3384,27 @@ pub fn bootstrap_from_object_with_isa(
             }
         })
     });
-    let input_context_paints =
-        input_isa_paints(&loader, sleigh.base().unwrap(), sleigh.arch_id(), isa)?;
-    sleigh.base_mut().unwrap().input_arm_isa_override = explicit_isa;
-    for paint in &input_context_paints {
-        let begin = Address::new(Rc::clone(&code_space), paint.addr);
-        let end = paint
-            .end
-            .map(|end| Address::new(Rc::clone(&code_space), end));
-        sleigh.base().unwrap().with_context_db_mut(|db| match end {
-            Some(end) => {
-                db.set_variable_region(paint.var.as_bytes(), &begin, &end, paint.value)
-            }
-            None => db.set_variable(paint.var.as_bytes(), &begin, paint.value),
-        })?;
-    }
+    let entry_thumb_walk = isa.is_none().then(|| {
+        let file = parsed.as_ref()?;
+        let entry = kuna_analysis::loadimage_object::arm_entry_thumb_hint(file, &bytes)?;
+        Some(PendingEntryThumb { executable_ranges: loader.executable_ranges(), entry })
+    }).flatten();
+    drop(parsed);
+    let input_context_paints = install_input_isa(
+        sleigh.base_mut().unwrap(),
+        &arch_id,
+        &code_space,
+        &loader.executable_ranges(),
+        isa,
+        explicit_isa,
+    )?;
 
     // Architecture::fillinReadOnlyFromLoader on the ELF path (the analog of the
     // XML path's collect-before-handoff above): gather the loader's read-only
     // ranges while the image is still in hand. Load-bearing for string rendering
     // (the printer's push_ptr_char_constant_ir gates a string literal on
     // is_read_only at the constant's address).
-    let readonly_ranges: Vec<(Address, Address)> = {
-        use kuna_base::address::RangeList;
-        use kuna_sleigh::loadimage::LoadImage;
-        let manage_ptr: *const AddrSpaceManager = sleigh.base().unwrap().manage();
-        let mut rangelist = RangeList::new();
-        loader.get_readonly(&mut rangelist);
-        // SAFETY: same outlives-the-call shape as the XML path's open() borrow;
-        // the manager lives inside `sleigh` and is only read here.
-        let manage_ref = unsafe { &*manage_ptr };
-        rangelist
-            .iter()
-            .map(|r| (r.get_first_addr(), r.get_last_addr_open(manage_ref)))
-            .collect()
-    };
+    let readonly_ranges = loader_readonly_ranges(&loader, sleigh.base().unwrap().manage());
 
     // Run the program-prep analysis passes (the kuna analyzer tier) over the
     // parsed object, keeping each pass's facts keyed by id. Read-only; the facts
@@ -3127,11 +3424,7 @@ pub fn bootstrap_from_object_with_isa(
         // `Listing::build` can decode through it. Default-off ⇒ unused.
         sleigh.base().unwrap().translate(),
     );
-    if !input_context_paints.is_empty() {
-        let mut explicit = kuna_analysis::pass::AnalysisOutput::default();
-        explicit.context_paints = input_context_paints;
-        pending_analysis.push(("input_isa", explicit));
-    }
+    pending_analysis.extend(input_isa_stash(input_context_paints));
 
     // (kuna `dynrelocs`) The PT_GNU_RELRO-frozen dynamic-relocation slots, read
     // off the same loader while it is still in hand. `readonly_ranges` above
@@ -3200,6 +3493,11 @@ pub fn bootstrap_from_object_with_isa(
     // the analysis commit, after DWARF and the detected strings have claimed their
     // addresses. See `ConsoleProgram::loader_data_objects`.
     let loader_data_objects = loader.data_symbols();
+    // The container entry and named section table, for the project README.
+    let image_metadata = ProgramImageMetadata {
+        entry: loader.image_entry(),
+        sections: loader.section_metadata().to_vec(),
+    };
 
     // (kuna `rustabi`) Record the loader's source-language verdict on the
     // Architecture. Unlike the analyzer facts below this is not a pass output but
@@ -3217,49 +3515,30 @@ pub fn bootstrap_from_object_with_isa(
 
     let description = sleigh.base().unwrap().get_description().to_string();
 
-    let mut prog = ConsoleProgram {
-        arch: sleigh,
-        registry,
-        symbols: SymbolStream::from_loader(symbols),
-        pending_raw_entries: Vec::new(),
-        object_sections,
-        description,
-        // Stash the per-pass analysis facts + the code space for the gated commit
-        // at `read symbols` (IfcReadSymbols -> commit_analysis_passes).
-        pending_analysis,
-        analysis_code_space: Some(Rc::clone(&code_space)),
-        dwarf_locals: Vec::new(),
-        // Stash the image bytes + path for the DEFERRED Listing build (PR6
-        // build-timing fix): the Listing is gated on `--option listing on`, set
-        // by the CLI after `load file`, so it is built at the deferred commit
-        // (`read symbols`) when the flag is known — not at load. `bytes` is moved
-        // here (it is unused below this point).
-        analysis_image: Some((path.to_string(), bytes)),
-        loader_data_objects,
-        declared_extents: BTreeMap::new(),
-        declared_entries: BTreeSet::new(),
-        assertions: Vec::new(),
-        assertion_outcomes: Vec::new(),
-        pending_prototypes: BTreeMap::new(),
-        raw_address_units: None,
-        import_slots,
-    };
+    let mut prog = empty_program(sleigh, registry, ProgramContainer::Object, description);
+    prog.symbols = SymbolStream::from_loader(symbols);
+    prog.object_sections = object_sections;
+    prog.image_metadata = Some(image_metadata);
+    // Stash the per-pass analysis facts + the code space for the gated commit
+    // at `read symbols` (IfcReadSymbols -> commit_analysis_passes).
+    prog.pending_analysis = pending_analysis;
+    prog.analysis_code_space = Some(Rc::clone(&code_space));
+    // Stash the image bytes + path for the DEFERRED Listing build (PR6
+    // build-timing fix): the Listing is gated on `--option listing on`, set
+    // by the CLI after `load file`, so it is built at the deferred commit
+    // (`read symbols`) when the flag is known — not at load. `bytes` is moved
+    // here (it is unused below this point).
+    prog.analysis_image = Some((path.to_string(), bytes));
+    prog.loader_data_objects = loader_data_objects;
+    prog.import_slots = import_slots;
+    prog.pending_entry_thumb = entry_thumb_walk;
     // conf->readLoaderSymbols("::"): install the ELF symbols as FunctionSymbols.
     // The deferred analysis commit at `read symbols` REQUIRES this to have run
     // first (no-return/callfixup address+name resolution finds the funcsyms).
     prog.read_loader_symbols()?;
 
-    // Apply the collected read-only ranges to the symbol table property map
-    // (C++ symboltab->setPropertyRange(Varnode::readonly, *iter)), now that prog
-    // owns the architecture. This is NOT a gated analysis pass (it is loader
-    // markup), so it stays eager here, before any analysis commit.
-    for (first, last_open) in &readonly_ranges {
-        prog.arch_mut().symboltab.set_property_range(
-            kuna_decomp::varnode::varnode_flags::readonly,
-            first,
-            last_open,
-        );
-    }
+    // Apply the collected read-only ranges now that prog owns the architecture.
+    apply_readonly_ranges(&mut prog, &readonly_ranges);
 
     // (kuna `dynrelocs`) ... and hand the foldable subset of them to the engine.
     // Sorted so `GlobalContainer::dynreloc_const_contains` can binary-search.
@@ -3934,7 +4213,7 @@ pub fn bootstrap_from_root(root: &Rc<Element>, spec_roots: &[String]) -> KunaRes
     bootstrap_program(binaryimage, &arch_id, spec_roots)
 }
 
-/// The ELF magic (`\x7fELF`), used to route `load file` to the real-binary path.
+/// The ELF magic (`\x7fELF`), used to route `load file` to the object path.
 const ELF_MAGIC: [u8; 4] = [0x7f, b'E', b'L', b'F'];
 // Mach-O magics (design §1.4). On-disk byte orders of `MH_MAGIC*`/`FAT_MAGIC`.
 const MACHO_LE64: [u8; 4] = [0xcf, 0xfa, 0xed, 0xfe]; // 0xfeedfacf, little-endian
@@ -3948,14 +4227,6 @@ const MACHO_FAT: [u8; 4] = [0xca, 0xfe, 0xba, 0xbe]; // FAT_MAGIC (big-endian on
 /// Limited to the machines kuna ships a `.sla` for (mirrors the design's
 /// "COFF machine-type prefix" set); an unknown machine simply isn't claimed as a
 /// COFF object and falls through to the XML branch (or `object`'s own reject).
-const COFF_MACHINES: &[u16] = &[
-    0x014c, // IMAGE_FILE_MACHINE_I386
-    0x8664, // IMAGE_FILE_MACHINE_AMD64
-    0x01c0, // IMAGE_FILE_MACHINE_ARM
-    0x01c2, // IMAGE_FILE_MACHINE_THUMB
-    0x01c4, // IMAGE_FILE_MACHINE_ARMNT (Thumb-2)
-    0xaa64, // IMAGE_FILE_MACHINE_ARM64
-];
 
 /// Does `bytes` look like an object-format binary the [`ObjectLoadImage`] loader
 /// can drive (design §1.4)? This admits **all** the supported object formats
@@ -3987,7 +4258,7 @@ fn is_object_binary(bytes: &[u8]) -> bool {
     // type (no DOS stub). Restricted to known machines so a coincidental 2-byte
     // prefix on XML/other input doesn't get mis-claimed.
     let machine = u16::from_le_bytes([bytes[0], bytes[1]]);
-    COFF_MACHINES.contains(&machine)
+    PE_MACHINES.contains(&machine)
 }
 
 /// Reduce a Mach-O fat / universal binary to one arch slice's bytes — the single,
@@ -4011,10 +4282,11 @@ const RAW_IMAGE_INPUT_HINT: &str =
     "unrecognized input format; for a headerless image use --raw-image --target <SLEIGH-language-id> --base <address> and at least one --entry/--addr <address>";
 
 /// Bootstrap from a file path (the `decomp_dbg` `load file [<target>] <path>`
-/// body).  Detects the format by its leading bytes: an object-format magic
-/// ([`is_object_binary`]) routes to the real-binary [`ObjectLoadImage`] path;
-/// a non-object is accepted as XML only when it parses and contains the corpus's
-/// `<binaryimage>` element. Other bytes receive the raw-image command guidance.
+/// body). Detects the format by its leading bytes: `VZ` routes to the direct TE
+/// loader, an object-format magic ([`is_object_binary`]) routes to
+/// [`ObjectLoadImage`], and a non-object is accepted as XML only when it parses
+/// and contains the corpus's `<binaryimage>` element. Other bytes receive the
+/// raw-image command guidance.
 ///
 /// This mirrors the C++ `ArchitectureCapability::findCapability` dispatch: the
 /// `xml` capability's `isFileMatch` claims a `<bi…` document, otherwise the BFD
@@ -4032,6 +4304,15 @@ pub fn bootstrap_from_file(
 ) -> KunaResult<ConsoleProgram> {
     let bytes = std::fs::read(path)
         .map_err(|e| KunaError::lowlevel(format!("Unable to recognize imagefile {path}: {e}")))?;
+    if is_te_image(&bytes) {
+        let isa = std::env::var(ARM_ISA_ENV)
+            .ok()
+            .map(|value| ArmIsa::parse(&value))
+            .transpose()
+            .map_err(KunaError::lowlevel)?
+            .flatten();
+        return bootstrap_from_te_bytes(path, &bytes, target, spec_roots, isa);
+    }
     if is_object_binary(&bytes) {
         // Real object-format binary (ELF / PE / Mach-O / COFF): drive the
         // object-crate loader.
@@ -4120,6 +4401,33 @@ impl LoadImage for NullLoad {
 /// function's natural extent), mirroring the C++ `IfcFuncload` / `IfcAddrrangeLoad`
 /// unbounded follow.
 pub const UNBOUNDED_SIZE: int4 = 0;
+
+#[cfg(test)]
+mod te_probe_tests {
+    use super::reader_is_te_image;
+    use kuna_analysis::loadimage_te::{synthetic::TeImage, TE_PROBE_LEN};
+    use std::io::Cursor;
+
+    #[test]
+    fn the_probe_reads_only_the_bytes_it_needs() {
+        let image = TeImage::thumb(&[0x07, 0x20, 0x70, 0x47]).build();
+        let mut te = Cursor::new(image.as_slice());
+        assert!(reader_is_te_image(&mut te).unwrap());
+        assert_eq!(te.position(), TE_PROBE_LEN as u64);
+
+        let mut object = Cursor::new(b"\x7fELFpayload".as_slice());
+        assert!(!reader_is_te_image(&mut object).unwrap());
+        assert_eq!(object.position(), TE_PROBE_LEN as u64);
+
+        // Two ASCII letters are not a container: this file keeps the
+        // unrecognized-input guidance rather than being claimed as TE.
+        let mut prose = Cursor::new(b"VZ: a note about the build".as_slice());
+        assert!(!reader_is_te_image(&mut prose).unwrap());
+
+        let mut truncated = Cursor::new(b"VZ".as_slice());
+        assert!(!reader_is_te_image(&mut truncated).unwrap());
+    }
+}
 
 #[cfg(test)]
 mod tests {

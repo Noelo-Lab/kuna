@@ -1049,7 +1049,7 @@ Four application points, and the ordering between them is forced rather than
 stylistic. **Image-scoped** directives state what memory holds before anything
 reads it. `bytes` replaces the mapped bytes at an address with the caller's own
 (`assertions::apply_image_scoped` -> `LoadImage::kuna_overlay_bytes`, implemented
-by `decompiler/crates/kuna-analysis/src/loadimage_object.rs (overlay_span)`);
+by the object and TE loaders' `overlay_span` methods);
 `readonly` and `volatile` OR one boolean
 Varnode property over a memory range, and must be stated before the image's
 symbols are mapped: `Scope::addMap` folds the range property into each

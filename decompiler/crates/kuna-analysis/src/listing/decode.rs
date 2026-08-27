@@ -106,3 +106,13 @@ pub fn decode_one(
 
     Ok(Decoded { len: len.max(0) as u32, ops: cap.ops, mnemonic: asm.mnemonic, operands: asm.operands })
 }
+
+/// The mnemonic at `vma` alone, for a consumer that has already decoded the
+/// instruction and only now needs its spelling. Empty when the disassembly
+/// emit fails.
+pub fn mnemonic_at(translate: &dyn Translate, vma: u64, code_space: &Rc<AddrSpace>) -> String {
+    let addr = Address::new(Rc::clone(code_space), vma);
+    let mut asm = AsmCapture::default();
+    let _ = translate.print_assembly(&mut asm, &addr);
+    asm.mnemonic
+}

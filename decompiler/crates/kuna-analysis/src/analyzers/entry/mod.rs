@@ -126,6 +126,18 @@ pub fn image_entry_vma(file: &object::File, bytes: &[u8]) -> Option<u64> {
     })
 }
 
+/// The container's entry as a CODE address: on 32-bit ARM the low bit is
+/// Thumb state, not part of the address, so it is folded off and reported
+/// separately. Keyed on the effective architecture, because the neutral parser
+/// leaves the ARM PE machine words `Unknown`. Every consumer that names,
+/// seeds, or paints from the entry goes through here, so there is one mask.
+pub fn image_code_entry(file: &object::File, bytes: &[u8]) -> Option<(u64, bool)> {
+    let vma = image_entry_vma(file, bytes)?;
+    let arm = crate::loadimage_object::effective_architecture(file, bytes)
+        == object::Architecture::Arm;
+    Some(if arm { (vma & !1, vma & 1 != 0) } else { (vma, false) })
+}
+
 // ===========================================================================
 // The pass
 // ===========================================================================
@@ -385,19 +397,16 @@ pub fn collect_entries(file: &object::File, bytes: &[u8]) -> Vec<u64> {
             if entry != 0 {
                 // ARM/Thumb: `e_entry` carries the Thumb mode bit in bit 0 (a Thumb
                 // `_start`/reset vector is recorded at `addr|1`); the function bytes
-                // live at the EVEN VMA — the odd address is undecodable. Mask it so
-                // the seed lands on the real instruction (the raw odd `entry` is kept
-                // for the libc-start idiom below, whose helpers mask internally). On a
-                // stripped Cortex-M image this ALSO unlocks the reset→main call tree:
-                // the even reset vector decodes (with the Thumb region paint from
-                // `cortexm_thumb_paints`) and the recursive-descent walk follows its
-                // `BL`s. Strictly-better on any ARM object; unchanged elsewhere.
-                let seed = if file.architecture() == object::Architecture::Arm {
-                    entry & !1
-                } else {
-                    entry
-                };
-                cand.push(seed);
+                // live at the EVEN VMA — the odd address is undecodable. Seed the
+                // real instruction (the raw odd `entry` is kept for the libc-start
+                // idiom below, whose helpers mask internally). On a stripped
+                // Cortex-M image this ALSO unlocks the reset→main call tree: the
+                // even reset vector decodes (with the Thumb region paint from
+                // `cortexm_thumb_paints`) and the recursive-descent walk follows
+                // its `BL`s. Strictly-better on any ARM object; unchanged elsewhere.
+                if let Some((seed, _)) = image_code_entry(file, bytes) {
+                    cand.push(seed);
+                }
             }
             // Oracle 2: DT_INIT/DT_FINI + INIT_ARRAY/FINI_ARRAY pointer tables.
             cand.extend(dynamic_entry_points(file));

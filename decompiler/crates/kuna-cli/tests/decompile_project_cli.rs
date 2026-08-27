@@ -143,6 +143,47 @@ fn macho_readme_entry_point_is_a_vma() {
     );
 }
 
+/// The README's entry point is reported through the inventory: an ARM
+/// `e_entry` carrying the Thumb mode bit (`0x100d7`) prints at the even
+/// address every other artifact uses for that function.
+#[test]
+fn arm_thumb_readme_entry_point_is_the_even_inventory_address() {
+    let Some(dir) = project("arm_thumb_linked_le32", "thumb_entry") else { return };
+    let (_c, _h, _asm, readme) = artifacts(&dir, "arm_thumb_linked_le32");
+    let readme_text = std::fs::read_to_string(&readme).unwrap();
+    assert!(
+        readme_text.contains("| Entry point | `0x100d6` |"),
+        "README entry point must be the even inventory address:\n{readme_text}"
+    );
+    assert!(
+        readme_text.contains("| `.text` | `0x"),
+        "README must list the loader's named sections:\n{readme_text}"
+    );
+}
+
+/// A relocatable object declares no entry and has no load addresses of its
+/// own: the README says so, and lists the laid-out sections at the synthetic
+/// layout the rest of the export uses, rather than every section at file
+/// offset zero.
+#[test]
+fn relocatable_readme_has_no_entry_and_lists_laid_out_sections() {
+    let Some(dir) = project("entry_selectors_x86_64.o", "reloc_readme") else { return };
+    let (_c, _h, _asm, readme) = artifacts(&dir, "entry_selectors_x86_64.o");
+    let readme_text = std::fs::read_to_string(&readme).unwrap();
+    assert!(
+        readme_text.contains("| Entry point | unavailable |"),
+        "a relocatable object declares no entry:\n{readme_text}"
+    );
+    assert!(
+        readme_text.contains("| `.text.selector_a` | `0x400000` |"),
+        "sections must be listed at their synthetic load addresses:\n{readme_text}"
+    );
+    assert!(
+        !readme_text.contains("| `.symtab` |") && !readme_text.contains("| `0x0` |"),
+        "link-time-only sections and file-offset-zero rows must not appear:\n{readme_text}"
+    );
+}
+
 #[test]
 fn asm_labels_match_c_function_names() {
     let Some(dir) = project("fauxware", "labels") else { return };

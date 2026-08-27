@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    746,
-    746
+    749,
+    749
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -115,6 +115,9 @@
     "data:EMPTYSTRCONST #2: an ordinary short literal beside it is untouched, in both passes",
     "data:EMPTYSTRCONST #3: a GENUINE empty literal, one that sits inside a run of string data, keeps its quotes in both passes",
     "data:EMPTYSTRCONST #4: emptystrconst off restores the empty-literal form for the blob (the filed bug), exactly once",
+    "data:ENTRYTHUMBFLOW #1: off, the Thumb entry decodes as A32 and returns nothing",
+    "data:ENTRYTHUMBFLOW #2: default, the entry is walked as Thumb and returns its constant",
+    "data:ENTRYTHUMBFLOW #3: the constant the Thumb body returns appears exactly once, in the default pass",
     "data:EVALCURRENTPROTO #1: off, the __stdcall default model sees only the stack argument",
     "data:EVALCURRENTPROTO #2: off, the ECX argument survives as an undefined local",
     "data:EVALCURRENTPROTO #3: default, the spec's merged model resolves to __fastcall and recovers all three arguments",
