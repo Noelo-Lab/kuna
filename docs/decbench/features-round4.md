@@ -199,7 +199,14 @@ for exactly it.
 
 ---
 
-### Rank 6 -- `tailcallentry` default-flip (free, code exists) -- *unrefuted*
+### Rank 6 -- `tailcallentry` default-flip (free, code exists) -- **SHIPPED (DIV-93)**
+
+> **Resolved.** DIV-93 put `tailcallentry` into `AGGRESSIVE_OVERRIDES` together with the other
+> three ARM entry options, which is exactly the "default-flip evaluation only" this row scoped.
+> The sweep this row asked for was run over all 110 non-x86-64 decbench twins: `tailcallentry`
+> alone adds 649 entries of which 645 are ground truth (99.4%), losing none; all four together
+> take entry recall 88.63% -> 93.31% while mid-body false entries fall. The row below is the
+> original round-4 filing, kept as the record.
 
 | | |
 |---|---|

@@ -1459,6 +1459,30 @@ default-off; ARM-only in effect and Listing-tier, so it is a strict no-op withou
 `listing`, without `aif`, on the XML datatest path, and on every architecture whose
 constants live in `.rodata` rather than in `.text` interstices.
 
+**The four ARM entry passes reach the default path through the preset** (DIV-93).
+`cortexmvectors`, `ptrentry`, `tailcallentry` and `poolentry` each ship default-off in
+the catalog, which is what keeps the XML datatest corpus and an explicit
+`--mode reliable` byte-identical; but all four are members of `AGGRESSIVE_OVERRIDES`,
+and `auto` selects `aggressive` for any binary under 500 KiB, so on the whole-binary
+surfaces (`decompile-all`, `functions`, `decompile-project`, the WASM front-end and the
+benchmark) a stripped ARM image of that size gets all four. The preset supplies
+`listing` and `aif` ahead of them in the same list, which is what the last three
+consume; a preset that enabled them without `listing` would enable nothing. They are
+evaluated jointly because they compose: measured over the 110 stripped non-x86-64
+decbench twins (50,724 symbol-table function starts), entry recall rises 44,957 ->
+47,330 (88.63% -> 93.31%) while mid-body false entries *fall* 8,333 -> 7,117. 98.8% of
+the 2,402 added entries are real function starts, no ground-truth entry is lost, and
+`poolentry`'s 1,217 removals contain no ground-truth address — so the combination
+improves recall and precision at the same time rather than trading one for the other.
+Off ARM the flip is a measured no-op, not merely an intended one: entry sets are
+identical over 90 x86-64 twins and the 12 i386 PE images inside the ARM corpus, and
+emitted C is byte-identical over 8 x86-64 binaries. Three of the four enforce that
+with an explicit architecture early-return; `poolentry` instead keys on PC-relative
+literal pools, which no non-ARM target in the corpus produces. The cost is real work for real
+output — discovery-only `kuna functions` runs about 6% longer on a Cortex-M image
+because it discovers and reports more functions — and is amortized away end to end,
+where the extra bodies dominate the extra discovery.
+
 Driver defaults (kuna): `kuna decompile-all` and `kuna decompile` inject
 `option listing on` unless the caller names `listing` (DIV-15/DIV-22) — without it
 the default-on no-return propagation is a structural no-op and a stripped binary's

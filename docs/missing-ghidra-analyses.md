@@ -221,6 +221,21 @@ need the disassembled Listing + ReferenceManager, neither of which exists at thi
 references never reach kuna's decompiler (it reads loadimage bytes + the symbol/type tables,
 not the ReferenceManager). Their products are already covered: strings → `s1-strings`
 (disabled, this section), address/switch tables → §7, function creation → §4 (`s1-entry-disc`).
+
+> **Correction — the "function creation → §4" half of that sentence was wrong, and closing it
+> was the largest single ARM recall win kuna has measured.** `OperandReferenceAnalyzer`'s
+> *Subroutine References* option (default-on upstream) calls `createFunctions()` on the code
+> targets it resolves out of instruction operands (`OperandReferenceAnalyzer.java:508,614`); on
+> ARM those targets come from `ArmAnalyzer`'s constant propagation over `LDR Rx,[pc,#k]`
+> literal-pool loads. `s1-entry-disc` did **not** subsume that: it and the AIF stages required a
+> canonical frame prologue and a >2-instruction body, which 93% of the affected entries do not
+> have. The gap is now **shipped closed** by the `ptrentry` option
+> ([`features/ptrentry/analysis.md`](features/ptrentry/analysis.md), PR #255), which admits a
+> pointer target on containment evidence instead of shape, and which DIV-93 put in the
+> `aggressive` preset. Note the precision guard Ghidra ships alongside it, and that `ptrentry`
+> reproduces: the data-side sibling `DataOperandReferenceAnalyzer` overrides `createFunctions`
+> to a no-op — *"don't ever create a function from a data pointer"*.
+
 `ScalarOperandAnalyzer` is even default-OFF for ELF upstream, and `ElfScalarOperandAnalyzer`
 only *removes* bad `.got`/`.plt` references (which `elf_plt.rs` already names correctly). The
 one relevant idea — typing a scalar that points at a `.rodata` string as `char*` — is blocked
@@ -316,7 +331,7 @@ debug-format reader or a discovery loop). Vendored fixtures live in
 | 🟡 | **Rust str-slice split** (`RustStringAnalyzer`) | S1 | n/a | detection ported (shares the source-lang detector); the **split is infeasible-at-tier** — needs post-disasm interior reference destinations + a ReferenceManager (same wall as no-return-discovered/entry-disc), and even with boundaries the printer would shadow the literal. Documented, no split code. Increment 7 |
 | 🟡 | Absolute address-table discovery (`AddressTableAnalyzer`) | S1 | n/a | implemented + tested but **disabled by default** (Ghidra parity + false-positive risk): **switchtab_x86_64** — `scan_address_tables` finds the 8-entry table @ `0x402008`, all elements in `.text`. NOT switch recovery (inherited S2) and NOT #9 below. Increment 4 |
 | ⛔ | Aggressive Instruction Finder (`AggressiveInstructionFinderAnalyzer` + ARM) | S1 | n/a | infeasible-at-tier: needs post-disasm Listing/FunctionManager/PseudoDisassembler + ≥20 found functions; off-by-default upstream; subsumed by entry-disc + eh-frame. Increment 4 |
-| ⛔ | Operand/scalar reference markup (`OperandReferenceAnalyzer` family) | S1 | n/a | out-of-scope-at-tier: no Listing/ReferenceManager; products subsumed by strings/jumptables/entry-disc; scalar→`char*` blocked by the same printer/MapGlobals shadowing as strings. Increment 4 |
+| 🟡 | Operand/scalar reference markup (`OperandReferenceAnalyzer` family) | S1 | `ptrentry` | the *function-creation* half is SHIPPED (`ptrentry`, #255; in the `aggressive` preset since DIV-93) — it was NOT subsumed by entry-disc, and was the largest measured ARM recall gap. The rest stays out-of-scope-at-tier: address/switch tables → §7; scalar→`char*` blocked by the same printer/MapGlobals shadowing as strings. Increment 4 |
 | 7 | External / thunk object model | S1 | hard | **fauxware**: PLT thunk to `puts` modeled as a thunk (tail-call inlined), not a standalone `sub_` |
 | 8 | Arch markers (ARM/Thumb `$t`, MIPS `$gp`, x86 purge) | S1 | med | needs an ARM/MIPS fixture (not yet vendored): a Thumb function decodes as Thumb from its `$t` mapping symbol |
 | 9 | Jump-table post-typing refinement | S2 (feedback) | hard | needs a switch-heavy fixture (not yet vendored): refined case count matches the typed table after a second pass |

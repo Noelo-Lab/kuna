@@ -159,6 +159,30 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     // but it misses the acceptance bar pre-registered for becoming the shipped
     // default, so preset membership is how it reaches the default path.
     ("aifstrict", "on"),
+    // (kuna, DIV-93) The four-step ARM entry-discovery sequence (#248 / #255 /
+    // #259 / #278). `cortexmvectors`, `ptrentry` and `tailcallentry` carry an
+    // explicit `object::Architecture::Arm` early return; `poolentry` has no arch
+    // gate but is ARM-only IN EFFECT, because it keys on PC-relative literal
+    // pools, which x86-64 (RIP-relative loads target .rodata, not .text
+    // interstices) and i386 (no PC-relative addressing) do not produce. Either
+    // way the no-op is proven rather than assumed: over 90 x86-64 decbench twins
+    // and the 12 i386 PE images inside the ARM corpus the entry sets are
+    // IDENTICAL, and emitted C over 8 x86-64 binaries is byte-identical. They
+    // COMPOSE, so preset
+    // membership was one joint evaluation, measured over the 110 stripped
+    // non-x86-64 decbench twins (50,724 symbol-table function starts):
+    // recall 44,957 -> 47,330 (88.63% -> 93.31%, +2,373) while mid-body false
+    // entries FALL 8,333 -> 7,117. 98.8% of the 2,402 added entries are real
+    // function starts and ZERO ground-truth entries are lost -- `poolentry`
+    // retires 1,217 phantom entries, none of them ground truth.
+    // `ptrentry`/`tailcallentry`/`poolentry` are Listing consumers and are inert
+    // without `listing` + `aif`; the preset supplies both, which is what makes
+    // the flip deliver anything at all (these are flag writes, so their position
+    // in this list carries no ordering semantics -- the dependency is at run time).
+    ("cortexmvectors", "on"),
+    ("ptrentry", "on"),
+    ("tailcallentry", "on"),
+    ("poolentry", "on"),
     ("objc", "on"),          // Mach-O-only; no-op off-Mach-O
     ("pdb", "on"),           // PE-only; no-op off-PE
     ("macho-arm64e", "on"),  // Mach-O arm64e-only; no-op elsewhere
@@ -337,17 +361,12 @@ mod tests {
         /// so the invariant can be enforced for *new* options without silently
         /// flipping the existing ones; shrinking this list is the follow-up.
         ///
-        /// `cortexmvectors`, `ptrentry`, `tailcallentry` and `poolentry` are the
-        /// four steps of the ARM entry sequence (PR #239) and COMPOSE: every one of
-        /// `poolentry`'s corpus numbers is measured on top of the other three, and
-        /// flipping any one alone re-measures nothing useful. Their preset
-        /// membership is one joint evaluation, not four.
+        /// The four ARM entry options (`cortexmvectors`, `ptrentry`, `tailcallentry`,
+        /// `poolentry`) came OFF this list in DIV-93. The joint evaluation this entry
+        /// asked for was run over the 110 stripped non-x86-64 decbench twins and all
+        /// four passed it, so they are in `AGGRESSIVE_OVERRIDES` above.
         const UNEVALUATED: &[&str] = &[
-            "cortexmvectors",
-            "ptrentry",
-            "tailcallentry",
             "paramcopyhoist",
-            "poolentry",
             // `guardarm` / `loopcondhoist` land as opt-ins with their whole-O0
             // bidirectional sweep already recorded in their catalog rows; preset
             // membership makes them the default output, which is a DIV-recorded
