@@ -385,8 +385,12 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "symbolnamechars",
     // (kuna) Symbol-name scope-path resource bound (GH-338): the same load-time
     // seam as `symbolnamerepair`, read via the `kuna_symbolnamebound` env var.
-    // Not on/off -- the value is the scope-component ceiling. Default 32.
+    // Not on/off -- the value is the scope-component ceiling. Default 256.
     "symbolnamebound",
+    // (kuna) MSVC `__real@` FP-constant COMDAT recovery (DIV-96): a load-time
+    // gate read via the `kuna_msvcfpconst` env var (the decoded bytes are
+    // materialised inside `ObjectLoadImage::from_relocatable`). Default-ON.
+    "msvcfpconst",
     "mips_isa",
     "dwarf",
     // (kuna) ELF data-symbol (`STT_OBJECT`) naming — the data half of the

@@ -207,15 +207,23 @@ pub struct ObjectLoadImage {
     /// so a `lw $t9, off($gp); jalr $t9` indirect call resolves to the import name.
     /// Empty off-MIPS.  See [`crate::loader::elf_plt::mips_got_const_ranges`].
     const_ranges: Vec<(u64, u64)>,
-    /// (kuna `dynrelocs`) `[start, stop]` (inclusive) byte ranges of the dynamic
-    /// relocation slots this loader filled in that `PT_GNU_RELRO` freezes — the
-    /// GOT entries whose relocated value the engine may fold to a constant, which
-    /// is what turns `(*dat_e0dc8)(…)` back into a named call. Reported through
-    /// `get_readonly` (so the varnodes carry `Varnode::readonly`) *and* through
-    /// [`ObjectLoadImage::dynreloc_const_ranges`] (so the fold is enabled for
-    /// exactly these ranges without turning on global read-only propagation).
-    /// Empty for a non-ELF, an `ET_REL` object, or `--option dynrelocs off`.
-    /// See [`crate::loader::kuna_dynrelocs`].
+    /// (kuna) `[start, stop]` (inclusive) byte ranges whose contents the engine
+    /// may fold to a constant **without** the program-wide `option readonly` —
+    /// values that are known by construction rather than by policy. Reported
+    /// through `get_readonly` (so the varnodes carry `Varnode::readonly`) *and*
+    /// through [`ObjectLoadImage::dynreloc_const_ranges`] (so the fold is enabled
+    /// for exactly these ranges without turning on global read-only propagation).
+    /// Two producers, each on its own path and never both:
+    ///
+    /// * `dynrelocs` (linked image): the dynamic-relocation slots this loader
+    ///   filled in that `PT_GNU_RELRO` freezes — the GOT entries whose relocated
+    ///   value turns `(*dat_e0dc8)(…)` back into a named call. See
+    ///   [`crate::loader::kuna_dynrelocs`].
+    /// * `msvcfpconst` (relocatable object): the MSVC `__real@` floating-point
+    ///   COMDATs, whose value is spelled in the symbol name. See
+    ///   [`crate::loader::kuna_msvcfpconst`].
+    ///
+    /// Empty for a non-ELF linked image, and with both gates off.
     dynreloc_const: Vec<(u64, u64)>,
     /// The address space the file bytes map to (C++ `spaceid`, null until
     /// `attachToSpace`).
@@ -542,8 +550,19 @@ impl ObjectLoadImage {
 
         let layout = reloc_object::layout_relocatable(file, fmt);
 
+        // (kuna `msvcfpconst`) MSVC spells each floating-point literal in the name
+        // of the COMDAT that holds it, and COMDAT folding leaves that symbol
+        // undefined in every object but one. Decode the name back into the datum:
+        // the undefined half gets bytes at its synthetic extern slot (which has no
+        // backing at all otherwise), and both halves get a foldable range.
+        let fpconst = crate::loader::kuna_msvcfpconst::plan(file, &layout);
+        for w in &fpconst.warnings {
+            eprintln!("[kuna msvcfpconst] {filename}: {w}");
+        }
+
         let mut segments: Vec<Segment> =
             layout.segments.into_iter().map(|(vma, data)| Segment { vma, data }).collect();
+        segments.extend(fpconst.writes.into_iter().map(|(vma, data)| Segment { vma, data }));
         segments.sort_by_key(|s| s.vma);
 
         let sections: Vec<SectionInfo> = layout
@@ -595,9 +614,12 @@ impl ObjectLoadImage {
             // therefore linked-image-only; an `ET_REL` load keeps today's behavior.
             datasyms: Vec::new(),
             const_ranges: Vec::new(),
-            // (kuna `dynrelocs`) linked-image only: a relocatable object's
-            // relocations are already applied by the layout pass.
-            dynreloc_const: Vec::new(),
+            // (kuna) The foldable-range exception list. `dynrelocs` itself is
+            // linked-image only (a relocatable object's relocations are already
+            // applied by the layout pass); on this path the entries come from
+            // `msvcfpconst`, whose ranges qualify for exactly the same reason —
+            // a datum that is known by construction, not by policy.
+            dynreloc_const: fpconst.const_ranges,
             spaceid: None,
             buffer: RefCell::new(vec![0u8; BUFSIZE]),
             bufoffset: RefCell::new(!0u64),
@@ -635,8 +657,11 @@ impl ObjectLoadImage {
         self.sections.iter().map(|s| (s.vma, s.size, s.flags)).collect()
     }
 
-    /// (kuna `dynrelocs`) The `[start, stop]` (inclusive) ranges of the dynamic
-    /// relocation slots this loader filled in that `PT_GNU_RELRO` freezes.
+    /// (kuna) The `[start, stop]` (inclusive) ranges whose contents fold to a
+    /// constant with the program-wide `option readonly` still off — the
+    /// `PT_GNU_RELRO`-frozen dynamic-relocation slots (`dynrelocs`) on a linked
+    /// image, the MSVC `__real@` FP-constant COMDATs (`msvcfpconst`) on a
+    /// relocatable object.
     ///
     /// `get_readonly` already reports them, which paints `Varnode::readonly` — but
     /// the constant FOLD of a read-only global is gated globally by `option
@@ -884,8 +909,10 @@ impl LoadImage for ObjectLoadImage {
         for &(start, stop) in &self.const_ranges {
             list.insert_range(Rc::clone(space), start, stop);
         }
-        // (kuna) The dynamic-relocation slots `PT_GNU_RELRO` freezes: read-only in
-        // the run-time image, so their relocated contents are trustworthy.
+        // (kuna) The constant-by-construction ranges: the dynamic-relocation slots
+        // `PT_GNU_RELRO` freezes (read-only in the run-time image, so their
+        // relocated contents are trustworthy) and the MSVC `__real@` FP-constant
+        // COMDATs (whose value is spelled in the symbol name).
         for &(start, stop) in &self.dynreloc_const {
             list.insert_range(Rc::clone(space), start, stop);
         }

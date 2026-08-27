@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    562,
-    562
+    568,
+    568
   ],
   "passing": [
     "data:ARRAYSUBFIELD #1: an 8-byte read at offset 0 of char[16] is a sized sub-field, not element 0",
@@ -256,6 +256,12 @@
     "data:LOOPCONDHOIST #1: OFF leaves the head test inside an infinite loop (pass 1 only)",
     "data:LOOPCONDHOIST #2: ON hoists the head test into the loop header (pass 2 only)",
     "data:LOOPCONDHOIST #3: the OFF pass needs a break to reach the match arm; the ON pass does not (pass 1 only)",
+    "data:MSVCFPCONST #1: off, both operands of _scale are opaque -- the undefined x87 COMDAT and the defined IEEE-double one alike",
+    "data:MSVCFPCONST #2: off, both operands of _fscale are opaque too",
+    "data:MSVCFPCONST #3: on, _scale reads pi/4 from the undefined 20-hex x87 name and 0.1 from the defined 16-hex IEEE double",
+    "data:MSVCFPCONST #4: on, _fscale reads 1.0 from the 20-hex x87 name at float width and 0.5 from the defined 8-hex IEEE float, the modern MSVC spelling",
+    "data:MSVCFPCONST #5: no opaque operand survives the on pass -- every dat_ line belongs to the off one",
+    "data:MSVCFPCONST #6: the recovery changes the operands only -- both passes agree on the signature",
     "data:MSVCFTOL #1: off yields two argument-less helper calls, on yields none",
     "data:MSVCFTOL #2: on, the first conversion casts the field it actually reads",
     "data:MSVCFTOL #3: on, the second conversion casts the field it actually reads",

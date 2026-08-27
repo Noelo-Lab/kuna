@@ -435,6 +435,20 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
                 if on { "on" } else { "off" },
             );
         }
+        // (kuna, DIV-96) Load-time `msvcfpconst` gate: the decoded `__real@`
+        // bytes are materialised while the loader lays the object out, so an
+        // `--option msvcfpconst off` must reach the subprocess as an env var set
+        // up front.
+        if let Some(value) = last_option_value(&args.options, "msvcfpconst") {
+            let on = !matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "off" | "0" | "false"
+            );
+            cmd.env(
+                kuna_decomp::kuna_msvcfpconst::MSVCFPCONST_ENV,
+                if on { "on" } else { "off" },
+            );
+        }
         // (kuna) Load-time `symbolnamerepair` gate: the symbol table is installed
         // inside `load file`, so an `--option symbolnamerepair off` must reach the
         // subprocess as an env var set up front.

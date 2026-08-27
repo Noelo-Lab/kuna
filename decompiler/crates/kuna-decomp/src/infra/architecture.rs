@@ -963,6 +963,19 @@ pub struct Architecture {
     /// install runs inside `load file`, upstream of `option`); this field exists
     /// only for catalog visibility and the `phase catalog` live `current` field.
     pub analysis_symbolnamebound: Option<usize>,
+    /// (kuna) Gate MSVC `__real@` FP-constant COMDAT recovery (`msvcfpconst`);
+    /// default **on** (DIV-96). MSVC spells each floating-point literal in the
+    /// name of the COMDAT that holds it, and COMDAT folding leaves that symbol
+    /// *undefined* in every object but one — so the value is gone and the
+    /// expression reads `... * dat_402020 + dat_402040`. On,
+    /// `kuna-analysis::loader::kuna_msvcfpconst` decodes the name, materialises
+    /// the bytes at the synthetic extern slot, and reports both the materialised
+    /// slots and the object's *defined* `__real@` COMDATs as foldable, so the
+    /// whole expression renders as literals. Read through the
+    /// [`crate::kuna_msvcfpconst`] **env var** (the bytes are materialised inside
+    /// `load file`, upstream of `option`); this bool exists only for catalog
+    /// visibility and the `phase catalog` live `current` field.
+    pub analysis_msvcfpconst: bool,
     /// (kuna) Gate the MIPS16 `ISA_MODE` decode-mode marker pass (`mips_isa`); default on.
     pub analysis_mips_isa: bool,
     /// (kuna) Gate the DWARF recovery pass (`dwarf`); default on.
@@ -1598,6 +1611,7 @@ impl Architecture {
             analysis_symbolnamerepair: false,
             analysis_symbolnamechars: crate::kuna_symbolnamechars::NameChars::Off,
             analysis_symbolnamebound: None,
+            analysis_msvcfpconst: false,
             analysis_mips_isa: false,
             analysis_dwarf: false,
             analysis_datasyms: false,
@@ -1784,6 +1798,7 @@ impl Architecture {
         self.analysis_symbolnamerepair = true; // (kuna) DIV: degenerate-symbol-name repair default-ON (it only fires where the load would otherwise fail outright)
         self.analysis_symbolnamechars = crate::kuna_symbolnamechars::NameChars::Safe; // (kuna) DIV-94: symbol-name sanitizing defaults to `safe` -- the structural set only, a measured no-op on every name a real toolchain emits
         self.analysis_symbolnamebound = Some(crate::kuna_symbolnamebound::DEFAULT_SCOPE_DEPTH); // (kuna) DIV-95 GH-338: symbol-name scope bound default 256 (3.2x the deepest :: nesting found in any real binary measured, 79; unbounded, one name turns 600 KB of .strtab into 292 MB)
+        self.analysis_msvcfpconst = true; // (kuna) DIV-96 MSVC `__real@` FP-constant recovery default-ON (the mangled name IS the datum)
         self.analysis_mips_isa = true;
         self.analysis_dwarf = true;
         self.analysis_datasyms = true; // (kuna) DIV-76 ELF data-symbol naming default-ON (the DIV-26 arm, now gated)
@@ -2207,6 +2222,18 @@ impl Architecture {
                 self.analysis_symbolnamebound = bound;
                 crate::kuna_symbolnamebound::set_symbolnamebound_env(bound);
                 Ok(msg)
+            }
+            // (kuna) Load-time gate: the constant bytes are materialised inside
+            // `load file`, so bridge to the env var the loader reads (the CLI
+            // sets it on the subprocess too).
+            "msvcfpconst" => {
+                let val = on_or_off(p1)?;
+                self.analysis_msvcfpconst = val;
+                crate::kuna_msvcfpconst::set_msvcfpconst_env(val);
+                Ok(format!(
+                    "MSVC __real@ FP-constant recovery turned {}",
+                    if val { "on" } else { "off" }
+                ))
             }
             "mips_isa" => on_off!(analysis_mips_isa, "MIPS16 ISA_MODE decode-mode marker pass"),
             "dwarf" => on_off!(analysis_dwarf, "DWARF recovery analysis pass"),

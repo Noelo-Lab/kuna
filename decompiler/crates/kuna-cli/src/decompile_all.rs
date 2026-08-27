@@ -440,6 +440,7 @@ fn is_loadtime_gate(name: &str) -> bool {
             | "symbolnamerepair"
             | "symbolnamechars"
             | "symbolnamebound"
+            | "msvcfpconst"
     )
 }
 
@@ -525,6 +526,18 @@ fn apply_loadtime_env(options: &[(String, String)], slice: Option<&str>) -> Load
         );
         env.set(
             kuna_decomp::kuna_dynrelocs::DYNRELOCS_ENV,
+            if on { "on" } else { "off" },
+        );
+    }
+    // (kuna, DIV-96) Same timing for the MSVC `__real@` constants: the decoded
+    // bytes are materialised while the loader lays the object out.
+    if let Some(value) = last_option_value(options, "msvcfpconst") {
+        let on = !matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "off" | "0" | "false"
+        );
+        env.set(
+            kuna_decomp::kuna_msvcfpconst::MSVCFPCONST_ENV,
             if on { "on" } else { "off" },
         );
     }
