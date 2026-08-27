@@ -118,8 +118,97 @@ fn build_script(
     lines.join("\n") + "\n"
 }
 
+/// The console prompt `decomp_dbg` writes before echoing each command; a
+/// transcript line can therefore carry it as a prefix.
+const CONSOLE_PROMPT: &str = "[decomp]>";
+
+/// The console's exception→prefix grammar
+/// (`decompiler/crates/kuna-console/src/ifacedecomp.rs (execute)`), which that
+/// module documents as byte-faithful and load-bearing: a command that raised
+/// prints exactly one of these and the session continues.
+const CONSOLE_DIAGNOSTICS: [&str; 7] = [
+    "Execution error: ",
+    "Command parsing error: ",
+    "Low-level ERROR: ",
+    "Parse ERROR: ",
+    "Function ERROR: ",
+    "Decoding ERROR: ",
+    "ERROR: ",
+];
+
+/// Strip the prompt a transcript line may carry, and the surrounding whitespace.
+fn console_text(trimmed: &str) -> &str {
+    trimmed.strip_prefix(CONSOLE_PROMPT).unwrap_or(trimmed).trim()
+}
+
+/// The real reason `load file` failed, recovered from the transcript.
+///
+/// `IfcLoadFile`'s error arm (`decompiler/crates/kuna-console/src/ifacedecomp.rs`)
+/// writes `{e.explain()}` and then `Could not create architecture`, both to
+/// stdout, so the escaped `LowlevelError` is the line before the trigger. `None`
+/// means nothing but the command echo precedes it — no reason was printed, and
+/// the caller keeps the generic wording.
+fn arch_failure_reason(out: &str) -> Option<String> {
+    let mut prev: Option<&str> = None;
+    for raw in out.lines() {
+        let trimmed = raw.trim();
+        let line = console_text(trimmed);
+        if line == "Could not create architecture" {
+            let reason = prev?;
+            if reason.starts_with(CONSOLE_PROMPT) {
+                return None;
+            }
+            return Some(reason.to_string());
+        }
+        if !line.is_empty() {
+            prev = Some(trimmed);
+        }
+    }
+    None
+}
+
+/// The reason the analysis commit failed, recovered from the transcript.
+///
+/// `IfcReadSymbols` maps a failed `commit_pending_analysis` to an
+/// `IfaceExecutionError` and the console prints it and **keeps the session
+/// alive**, so `print C` still renders C — built from a program whose debug
+/// facts were only partially applied and cannot be re-committed. The diagnostic
+/// is attributed to the command whose echo precedes it, so a later command's
+/// error is never misreported as this one.
+fn read_symbols_failure(out: &str) -> Option<String> {
+    let mut in_read_symbols = false;
+    for raw in out.lines() {
+        let trimmed = raw.trim();
+        let line = console_text(trimmed);
+        if line.is_empty() {
+            continue;
+        }
+        if trimmed.starts_with(CONSOLE_PROMPT) {
+            in_read_symbols = line.split_whitespace().eq(["read", "symbols"]);
+            continue;
+        }
+        if !in_read_symbols {
+            continue;
+        }
+        for prefix in CONSOLE_DIAGNOSTICS {
+            if let Some(reason) = line.strip_prefix(prefix) {
+                let reason = reason.trim();
+                if !reason.is_empty() {
+                    return Some(reason.to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
 /// Inspect the combined stdout+stderr for the recognized fatal-error strings —
 /// port of `_check_errors`.  Returns an error message if one is found.
+///
+/// The architecture arm must stay ahead of the analysis-commit arm: a failed
+/// `load file` leaves no image, so every later command — `read symbols`
+/// included — answers `No load image present`, which is a consequence, not the
+/// reason.
 fn check_errors(out: &str, target: &str, binary: &str, by_address: bool) -> Option<String> {
     if out.contains("Could not discover root of Ghidra installation") {
         return Some(
@@ -127,9 +216,19 @@ fn check_errors(out: &str, target: &str, binary: &str, by_address: bool) -> Opti
         );
     }
     if out.contains("Could not create architecture") {
-        return Some(format!(
-            "could not build an architecture for {binary} (unsupported/!recognized binary)"
-        ));
+        // Byte-identical to the in-process surfaces'
+        // `decompile_all.rs (load_program)` wording, so all four commands answer
+        // one binary-load failure the same way; the generic string survives only
+        // where the console printed no reason at all.
+        return Some(match arch_failure_reason(out) {
+            Some(reason) => format!("could not build an architecture for {binary}: {reason}"),
+            None => format!(
+                "could not build an architecture for {binary} (unsupported/!recognized binary)"
+            ),
+        });
+    }
+    if let Some(reason) = read_symbols_failure(out) {
+        return Some(format!("read symbols (analysis commit) failed: {reason}"));
     }
     if !by_address && (out.contains("Unknown function name:") || out.contains("Bad namespace:")) {
         return Some(format!(
@@ -516,7 +615,156 @@ pub fn run(args: &DecompileArgs) -> i32 {
 
 #[cfg(test)]
 mod tests {
-    use super::find_pipeline_failure;
+    use super::{arch_failure_reason, check_errors, find_pipeline_failure, read_symbols_failure};
+
+    /// Recorded `decomp_dbg` transcript: the empty-scope load failure DIV-88's
+    /// `symbolnamerepair` guards (`--option symbolnamerepair off`).
+    const EMPTY_SCOPE: &str = "\
+[decomp]> load file /x/hostile_scope_x86_64
+Non-global scope has empty name
+Could not create architecture
+[decomp]> option listing on
+Execution error: No load image present
+[decomp]> read symbols
+Execution error: No load image present
+[decomp]> quit
+";
+
+    /// Recorded transcript: `-s /nonexistent`, i.e. a SPECS problem the generic
+    /// wording misdiagnoses as a problem with the binary.
+    const MISSING_SLA: &str = "\
+[decomp]> load file /x/a.out
+No sleigh specification for x86:LE:64:default
+Could not create architecture
+[decomp]> quit
+";
+
+    /// Recorded transcript: 200 bytes of junk, i.e. neither an object format nor
+    /// a `<binaryimage>` document.
+    const JUNK_MAGIC: &str = "\
+[decomp]> load file /x/junk.bin
+syntax error
+Could not create architecture
+[decomp]> quit
+";
+
+    /// Recorded transcript: an ELF whose `st_size` overflows the type factory's
+    /// domain.  The commit fails, the console keeps going, and `print C` renders
+    /// C with every debug fact stripped (GH-339's silent half).
+    const COMMIT_FAILED: &str = "\
+[decomp]> load file /x/sz.elf
+/x/sz.elf successfully loaded: x86:LE:64:default:gcc
+[decomp]> option listing on
+Listing/xref disassembly tier turned on
+[decomp]> read symbols
+Execution error: g_a symbol created with zero size type
+[decomp]> load function main
+[decomp]> decompile
+Clearing old decompilation
+Decompiling main
+Decompilation complete
+[decomp]> quit
+";
+
+    #[test]
+    fn recovers_the_real_load_failure_reason() {
+        assert_eq!(
+            arch_failure_reason(EMPTY_SCOPE).as_deref(),
+            Some("Non-global scope has empty name")
+        );
+        assert_eq!(
+            arch_failure_reason(MISSING_SLA).as_deref(),
+            Some("No sleigh specification for x86:LE:64:default")
+        );
+        assert_eq!(arch_failure_reason(JUNK_MAGIC).as_deref(), Some("syntax error"));
+    }
+
+    /// The recovered reason is reported in the in-process surfaces' wording
+    /// (`decompile_all.rs (load_program)`), so all four commands agree.
+    #[test]
+    fn load_failure_matches_the_in_process_wording() {
+        assert_eq!(
+            check_errors(EMPTY_SCOPE, "main", "/x/hostile_scope_x86_64", false).as_deref(),
+            Some(
+                "could not build an architecture for /x/hostile_scope_x86_64: \
+                 Non-global scope has empty name"
+            )
+        );
+    }
+
+    /// No reason printed: the generic wording is the fallback, not the default.
+    #[test]
+    fn a_bare_trigger_keeps_the_generic_wording() {
+        let out = "Could not create architecture\n";
+        assert_eq!(arch_failure_reason(out), None);
+        assert_eq!(
+            check_errors(out, "main", "/x/a.out", false).as_deref(),
+            Some("could not build an architecture for /x/a.out (unsupported/!recognized binary)")
+        );
+    }
+
+    /// The command echo is not a reason: a prompt-prefixed previous line means
+    /// the console printed nothing between `load file` and the trigger.
+    #[test]
+    fn the_command_echo_is_not_mistaken_for_a_reason() {
+        let out = "[decomp]> load file /x/a.out\nCould not create architecture\n[decomp]> quit\n";
+        assert_eq!(arch_failure_reason(out), None);
+        assert!(
+            check_errors(out, "main", "/x/a.out", false)
+                .expect("still an error")
+                .ends_with("(unsupported/!recognized binary)")
+        );
+    }
+
+    /// GH-339's silent half: the analysis commit failed, so the C that follows
+    /// is degraded.  Reported in `decompile_all.rs (load_program)`'s wording.
+    #[test]
+    fn reports_the_analysis_commit_failure() {
+        assert_eq!(
+            read_symbols_failure(COMMIT_FAILED).as_deref(),
+            Some("g_a symbol created with zero size type")
+        );
+        assert_eq!(
+            check_errors(COMMIT_FAILED, "main", "/x/sz.elf", false).as_deref(),
+            Some("read symbols (analysis commit) failed: g_a symbol created with zero size type")
+        );
+    }
+
+    /// A diagnostic belonging to another command is not reported as the commit
+    /// failure, and a failed `load file` is diagnosed by its own arm — not by
+    /// the `No load image present` every later command then echoes.
+    #[test]
+    fn a_diagnostic_is_attributed_to_its_own_command() {
+        let other = "\
+[decomp]> read symbols
+[decomp]> load function nosuch
+Execution error: Unknown function name: nosuch
+[decomp]> quit
+";
+        assert_eq!(read_symbols_failure(other), None);
+        assert!(
+            check_errors(EMPTY_SCOPE, "main", "/x/hostile_scope_x86_64", false)
+                .expect("still an error")
+                .starts_with("could not build an architecture"),
+            "the load failure wins over the No-load-image consequence"
+        );
+    }
+
+    /// A healthy transcript is untouched by both recoveries.
+    #[test]
+    fn a_clean_transcript_reports_nothing() {
+        let out = "\
+[decomp]> load file /x/a.out
+/x/a.out successfully loaded: x86:LE:64:default:gcc
+[decomp]> read symbols
+[decomp]> decompile
+Decompilation complete
+[decomp]> quit
+";
+        assert_eq!(read_symbols_failure(out), None);
+        assert_eq!(arch_failure_reason(out), None);
+        assert_eq!(check_errors(out, "main", "/x/a.out", false), None);
+    }
 
     /// The real console transcript shape (`decomp_dbg` echoes the prompt, then
     /// the command's output lines).

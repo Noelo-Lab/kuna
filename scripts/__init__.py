@@ -13,6 +13,7 @@ __version__ = "0.1.0"
 _LAZY = {
     "decompile": "decompile",
     "DecompileError": "decompile",
+    "AnalysisCommitError": "decompile",
     "FunctionNotFound": "decompile",
     "LoadError": "decompile",
     "SpecsNotFound": "decompile",

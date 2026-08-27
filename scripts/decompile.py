@@ -33,6 +33,11 @@ class LoadError(DecompileError):
     """The binary could not be loaded / its architecture could not be built."""
 
 
+class AnalysisCommitError(DecompileError):
+    """The analysis commit (``read symbols``) failed, so the debug facts were
+    only partially applied and the C that follows is silently degraded."""
+
+
 class FunctionNotFound(DecompileError):
     """No function with the requested name (try an address with by_address)."""
 
@@ -245,15 +250,92 @@ def _build_script(binary, target, by_address, bfd_target, raw, out_path,
     return "\n".join(lines) + "\n"
 
 
+# The console prompt decomp_dbg writes before echoing each command, and its
+# exception -> prefix grammar (kuna-console/src/ifacedecomp.rs `execute`).
+_CONSOLE_PROMPT = "[decomp]>"
+_CONSOLE_DIAGNOSTICS = (
+    "Execution error: ",
+    "Command parsing error: ",
+    "Low-level ERROR: ",
+    "Parse ERROR: ",
+    "Function ERROR: ",
+    "Decoding ERROR: ",
+    "ERROR: ",
+)
+
+
+def _console_text(trimmed):
+    """Strip the prompt a transcript line may carry, and the surrounding space."""
+    if trimmed.startswith(_CONSOLE_PROMPT):
+        return trimmed[len(_CONSOLE_PROMPT):].strip()
+    return trimmed
+
+
+def _arch_failure_reason(out):
+    """The real reason ``load file`` failed, recovered from the transcript.
+
+    ``IfcLoadFile``'s error arm prints ``{e.explain()}`` and then ``Could not
+    create architecture``, so the escaped error is the line before the trigger.
+    ``None`` means only the command echo preceded it (no reason was printed).
+    """
+    prev = None
+    for raw in out.splitlines():
+        trimmed = raw.strip()
+        line = _console_text(trimmed)
+        if line == "Could not create architecture":
+            if prev is None or prev.startswith(_CONSOLE_PROMPT):
+                return None
+            return prev
+        if line:
+            prev = trimmed
+    return None
+
+
+def _read_symbols_failure(out):
+    """The reason the analysis commit (``read symbols``) failed, if it did.
+
+    The console prints the diagnostic and keeps the session alive, so ``print C``
+    still renders C built from a program whose debug facts were only partially
+    applied.  Attributing the diagnostic to the command echo above it keeps a
+    later command's error from being misreported as this one.
+    """
+    in_read_symbols = False
+    for raw in out.splitlines():
+        trimmed = raw.strip()
+        line = _console_text(trimmed)
+        if not line:
+            continue
+        if trimmed.startswith(_CONSOLE_PROMPT):
+            in_read_symbols = line.split() == ["read", "symbols"]
+            continue
+        if not in_read_symbols:
+            continue
+        for prefix in _CONSOLE_DIAGNOSTICS:
+            if line.startswith(prefix):
+                reason = line[len(prefix):].strip()
+                if reason:
+                    return reason
+    return None
+
+
 def _check_errors(out, target, binary, by_address):
+    # The architecture arm must stay ahead of the analysis-commit arm: a failed
+    # `load file` leaves no image, so every later command -- `read symbols`
+    # included -- answers `No load image present`, a consequence not the reason.
     if "Could not discover root of Ghidra installation" in out:
         raise SpecsNotFound(
             "decomp_dbg could not find SLEIGH specs; pass sleighpath or set SLEIGHHOME"
         )
     if "Could not create architecture" in out:
-        raise LoadError(
-            "could not build an architecture for %s (unsupported/!recognized binary)" % binary
-        )
+        reason = _arch_failure_reason(out)
+        if reason is None:
+            raise LoadError(
+                "could not build an architecture for %s (unsupported/!recognized binary)" % binary
+            )
+        raise LoadError("could not build an architecture for %s: %s" % (binary, reason))
+    reason = _read_symbols_failure(out)
+    if reason is not None:
+        raise AnalysisCommitError("read symbols (analysis commit) failed: %s" % reason)
     if not by_address and ("Unknown function name:" in out or "Bad namespace:" in out):
         raise FunctionNotFound(
             "no function %r in %s; for a stripped binary pass an address with by_address"

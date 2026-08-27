@@ -91,6 +91,25 @@ that analysis.
   declined) */` means the pipeline *ran* and produced no structured blocks —
   a different failure.
 
+**Load and analysis failures (DIV-90).** `kuna decompile` runs the engine in a
+subprocess, so it recovers *why* a run failed from the console transcript — and
+reports it in the same words `decompile-all` / `functions` / `decompile-project`
+use, so one failure reads identically from all four commands:
+
+- **the binary could not be loaded** — `error: could not build an architecture
+  for <binary>: <reason>` (e.g. `Non-global scope has empty name`, `No sleigh
+  specification for x86:LE:64:default`, `not in recognized object file format`),
+  exit `1`. The older `could not build an architecture for <binary>
+  (unsupported/!recognized binary)` is now only the fallback for a transcript
+  that carried no reason at all.
+- **the analysis commit failed** — `error: read symbols (analysis commit)
+  failed: <reason>`, exit `1`, **and no C**. The console keeps its session alive
+  after a failed `read symbols`, so C *can* still be rendered, but from a program
+  whose debug facts were applied only up to the failing step and cannot be
+  re-committed; that C used to be printed with exit `0`, indistinguishable from a
+  binary with no symbols at all. `--option datasyms off` (or naming whichever
+  analysis pass is implicated) is the way to get a run through.
+
 The abort itself is not fatal to the console session (`decomp_dbg` prints
 `Skipping <fn>: <reason>` and keeps going, so datatest `<stringmatch>` rules
 still evaluate); the CLI is what turns it into a non-zero exit.
