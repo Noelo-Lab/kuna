@@ -19,6 +19,7 @@
 pub mod interface;
 pub mod ifaceterm;
 pub mod ifacedecomp;
+mod entry_selector;
 pub mod engine;
 pub mod decompile_step;
 pub mod project;

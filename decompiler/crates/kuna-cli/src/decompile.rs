@@ -10,6 +10,8 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use kuna_console::engine::EntrySelector;
+
 use crate::paths;
 
 /// Options parsed for a `decompile` invocation.
@@ -89,12 +91,19 @@ fn build_script(
     }
     lines.push("read symbols".into());
     if by_address {
-        let addr = if target.starts_with("0x") || target.starts_with("0X") {
-            target.to_string()
-        } else {
-            format!("0x{target}")
-        };
-        lines.push(format!("load addr {addr}"));
+        match EntrySelector::parse(target) {
+            EntrySelector::SectionOffset { .. } | EntrySelector::SectionIndexOffset { .. } => {
+                lines.push(format!("load function {target}"));
+            }
+            _ => {
+                let addr = if target.starts_with("0x") || target.starts_with("0X") {
+                    target.to_string()
+                } else {
+                    format!("0x{target}")
+                };
+                lines.push(format!("load addr {addr}"));
+            }
+        }
     } else {
         lines.push(format!("load function {target}"));
     }
@@ -230,7 +239,11 @@ fn check_errors(out: &str, target: &str, binary: &str, by_address: bool) -> Opti
     if let Some(reason) = read_symbols_failure(out) {
         return Some(format!("read symbols (analysis commit) failed: {reason}"));
     }
-    if !by_address && (out.contains("Unknown function name:") || out.contains("Bad namespace:")) {
+    if !by_address
+        && (out.contains("Unknown function name:")
+            || out.contains("no function matches")
+            || out.contains("Bad namespace:"))
+    {
         return Some(format!(
             "no function {target:?} in {binary}; for a stripped binary pass an address with --addr"
         ));
