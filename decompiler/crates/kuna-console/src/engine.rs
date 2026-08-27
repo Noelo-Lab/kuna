@@ -1613,6 +1613,12 @@ fn commit_analysis_output(
     //     is skipped where the address already carries a function or a covering data
     //     Symbol (a string `s_<addr>` or a hand-`map addr`ed global must not be
     //     shadowed) — the same guard the string-literal placement uses.
+    //     The extent is clamped into the type factory's `int4` domain exactly as
+    //     arm 4a does. This arm cannot actually overflow — `d.size` is produced
+    //     from a `Datatype::get_size()`, itself an `int4`, and filtered to `>= 1`
+    //     (`analyzers/dwarf/mod.rs`), so it already lives in `1..=int4::MAX` —
+    //     but the two arms must not differ in shape, or the safe one reads as an
+    //     endorsement of the unsafe one.
     for d in &out.data_objects {
         let addr = Address::new(Rc::clone(code_space), d.addr);
         let occupied = {
@@ -1634,7 +1640,10 @@ fn commit_analysis_output(
         let ct = prog
             .arch()
             .types()
-            .get_base(d.size.max(1) as int4, kuna_decomp::dtype::type_metatype::TYPE_UNKNOWN)?;
+            .get_base(
+                d.size.clamp(1, int4::MAX as u32) as int4,
+                kuna_decomp::dtype::type_metatype::TYPE_UNKNOWN,
+            )?;
         let arch = prog.arch_mut();
         let (scope, base) =
             arch.symboltab.find_create_scope_from_symbol_name(&d.name, "::", None, num_spaces)?;
@@ -1892,10 +1901,22 @@ fn commit_analysis_output(
         if occupied {
             continue;
         }
+        // `size` is a raw ELF/PE/Mach-O `st_size`: a `u64` read straight out of
+        // attacker-controlled bytes that no header check validates. Clamp it into
+        // the type factory's `int4` domain BEFORE the cast. Clamping after the cast
+        // (`.max(1) as int4`) truncates first, so `0x1_0000_0000` became a size-0
+        // type that `add_symbol_internal` rejects — aborting the WHOLE analysis
+        // commit for the binary, not one symbol — and `0xffff_fff0` became a
+        // NEGATIVE size that indexed the type factory's cache out of bounds and
+        // took the process down. A declared extent is never trusted to be
+        // representable. GH-339.
         let ct = prog
             .arch()
             .types()
-            .get_base((*size).max(1) as int4, kuna_decomp::dtype::type_metatype::TYPE_UNKNOWN)?;
+            .get_base(
+                (*size).clamp(1, int4::MAX as u64) as int4,
+                kuna_decomp::dtype::type_metatype::TYPE_UNKNOWN,
+            )?;
         let arch = prog.arch_mut();
         let (scope, base) =
             arch.symboltab.find_create_scope_from_symbol_name(name, "::", None, num_spaces)?;

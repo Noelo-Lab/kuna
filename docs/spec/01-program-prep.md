@@ -136,6 +136,27 @@ at `read symbols`, after the option lines are applied, so the gate is the plain
 path. Off drops the stream at the commit and restores the raw `dat_<addr>`
 rendering exactly.
 
+A **declared extent is never trusted to be representable.** `st_size` is a 64-bit
+field of the image that no header check validates, while the type factory sizes
+types in a 32-bit `int4`, so the commit clamps the declared size into `1 ..=
+int4::MAX` **before** narrowing it — the same shape §1.4's DWARF globals use, even
+though those arrive already bounded. Clamping after the narrowing inspects the
+wrong number and lets two whole classes of size through: one whose low 32 bits are
+zero becomes a size-0 type, which the symbol table rejects, and one whose low 32
+bits have the sign bit set becomes a negative size. Neither cost only the symbol.
+`engine.rs (commit_analysis_output)` applies its arms in place and propagates the
+first error, so a rejected symbol abandoned every later arm — prototypes, context
+paints, tracked registers, call-fixups, DWARF locals and line comments — and the
+pending stash is taken by then, so a second `read symbols` cannot retry; a
+negative size was worse still, indexing the type factory's fixed-size caches out
+of bounds. `decompiler/crates/kuna-decomp/src/substrate/dtype.rs` therefore also
+refuses a negative size at both cache lookups, as an ordinary error rather than an
+invariant, because sizes reach them from image bytes. The clamp is saturating, not
+narrowing: a hostile extent stays hostile — a symbol claiming ~2 GiB still covers,
+and so shadows, every unnamed address above it, exactly as a legal `st_size` of
+`0x7fffffff` already does — but it is now a symbol with a wrong extent rather than
+a load that fails or a process that stops.
+
 Precedence is what makes this safe to add underneath the existing sources. The
 loader's data symbols commit **last** (`engine.rs (commit_analysis_output)`),
 after the DWARF globals and after the detected string literals, and each is
