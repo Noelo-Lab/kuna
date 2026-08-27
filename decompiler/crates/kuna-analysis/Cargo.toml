@@ -19,5 +19,8 @@ msvc-demangler.workspace = true
 gimli.workspace = true
 pdb.workspace = true
 
+[dev-dependencies]
+object = { workspace = true, features = ["write"] }
+
 [lints]
 workspace = true

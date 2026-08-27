@@ -1149,9 +1149,11 @@ impl ConsoleProgram {
                 // A throwaway loadimage just to satisfy the pass contracts (their
                 // `image` arg is unused — the decode reads through `translate`); a
                 // parse failure makes the deferred step a graceful no-op.
-                if let Ok(image) = kuna_analysis::loadimage_object::ObjectLoadImage::from_bytes(
-                    &path, &bytes,
-                ) {
+                if let Ok(image) =
+                    kuna_analysis::loadimage_object::ObjectLoadImage::from_bytes_silent(
+                        &path, &bytes,
+                    )
+                {
                     // Deferred Listing build + consumer/fast-inventory run, gated
                     // on the matching option. The call-fixup seed list is the names
                     // the load-time pass flagged resolved to addresses via the

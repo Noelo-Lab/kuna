@@ -236,10 +236,18 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   disappear. `decompiler/crates/kuna-analysis/src/loader/reloc_object.rs (RelocLayout)`
   reproduces angr CLE's relocatable backend for both: lay each memory-resident,
   non-empty section out above `0x400000` (`RELOC_BASE`, matching CLE so addresses
-  line up with angr's), apply the relocations (`R_X86_64_PC32/PLT32/64/32/32S`,
-  COFF `DIR32`/`REL32`; an unhandled kind warns and skips, never miscompiles
-  silently), rebase defined symbols, and bind each undefined extern to a synthetic
-  call target in an extern area above the sections so calls render by name. The
+  line up with angr's), apply the relocations, rebase defined symbols, and bind
+  each undefined extern to a synthetic call target in an extern area above the
+  sections so calls render by name. The relocation encoder handles generic
+  absolute, relative, PLT-relative, and image-offset fields at 8/16/32/64 bits in
+  the object's byte order, plus the instruction fields and ABI formulas for ARM
+  `CALL`/`JUMP24`/Thumb branches/`REL32`/`PREL31`, AArch64 branch/page/low-12
+  forms, and PowerPC64 `REL24`/TOC forms. An entry that cannot be encoded is left
+  untouched and classified by reason (unsupported, unresolved target, missing
+  TOC, section bounds, required veneer, alignment, range, or invalid encoding).
+  The loader reports exact failure totals in at most eight groups with three
+  samples per group, once per public load, so machine-readable output remains
+  valid and stderr stays bounded. The
   result feeds back into `ObjectLoadImage` as the same segments/sections/funcsyms
   triple the linked path produces. The loader also retains the original section
   index, section name, section-relative offset, symbol binding, and
@@ -259,6 +267,18 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   A REL-style relocation table (COFF, 32-bit ELF) stores its addend in the field
   being patched rather than in the entry, so the in-place value is read back and
   added; a RELA entry carries the whole addend and reads back zero.
+  ARM function symbols additionally retain the ABI state bit while branch
+  relocations are applied. `R_ARM_CALL` and `R_ARM_THM_CALL` convert `BL` to
+  `BLX` (or back) when a typed target crosses the ARM/Thumb boundary. A
+  cross-state jump cannot make that transition in place, so it is left
+  untouched and reported as requiring a linker veneer instead of being encoded
+  as a branch in the wrong instruction set. Untyped and undefined targets do
+  not infer state from their synthetic slot address. AArch64 branch, page, and
+  low-12 relocations preserve the instruction's opcode/register fields, while
+  PowerPC64 `REL24` and TOC-family relocations preserve big-endian instruction
+  layout and DS-form low bits. Because PowerPC64 uses `REL24` for both branches
+  and calls, only an instruction with its link bit set contributes a callable
+  external symbol.
 
   Laying the object out synthetically splits the address space in two, and every
   pass in this chapter reads the *other* half: each one re-parses the file through

@@ -31,6 +31,9 @@ kuna-analysis.workspace = true
 # workspace is unaffected).
 object = { workspace = true, features = ["archive"] }
 
+[dev-dependencies]
+object = { workspace = true, features = ["write"] }
+
 [lints]
 workspace = true
 

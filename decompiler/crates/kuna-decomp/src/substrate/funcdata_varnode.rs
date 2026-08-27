@@ -2225,6 +2225,21 @@ impl Funcdata {
         false
     }
 
+    fn call_ends_in_noreturn_halt(&self, call: OpId) -> bool {
+        let Some(parent) = self.obank().get(call).and_then(|op| op.get_parent()) else {
+            return false;
+        };
+        let Some(last) = self.bblocks_ref().struct_last_op(parent) else {
+            return false;
+        };
+        if self.op_next_op(call) != Some(last) {
+            return false;
+        }
+        self.obank()
+            .get(last)
+            .is_some_and(|op| (op.get_halt_type() & crate::op::pcodeop_flags::noreturn) != 0)
+    }
+
     /// Test if the given Varnode seems to only be used by `opmatch` as a
     /// parameter-passing location (C++ `Funcdata::onlyOpUse`,
     /// funcdata_varnode.cc:1851).
@@ -2287,6 +2302,18 @@ impl Funcdata {
                         }
                     }
                     OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
+                        // A candidate function return may also be passed to a
+                        // no-return call on a terminating error path. That use
+                        // cannot compete with the value at `opmatch`: control
+                        // never reaches any RETURN from this block. Rejecting it
+                        // made status helpers void whenever the compiler happened
+                        // to leave the status in the first argument/return register
+                        // for the failure call.
+                        if self.obank().get(opmatch).map(|m| m.code()) == Some(OpCode::CPUI_RETURN)
+                            && self.call_ends_in_noreturn_halt(op)
+                        {
+                            continue;
+                        }
                         if self.check_call_double_use(opmatch, op, vn, cur_flags, trial) {
                             continue;
                         }
@@ -3144,6 +3171,80 @@ mod tests {
     /// test scaffolding, which builds varnodes at distinct addresses).
     fn no_replace() -> impl FnMut(&mut VarnodeBank, VarnodeId, VarnodeId) -> KunaResult<()> {
         |_: &mut VarnodeBank, _: VarnodeId, _: VarnodeId| -> KunaResult<()> { Ok(()) }
+    }
+
+    fn append_test_op(
+        fd: &mut Funcdata,
+        block: crate::context::BlockId,
+        offset: u64,
+        opcode: OpCode,
+        flags: uint4,
+    ) -> OpId {
+        let op = fd.new_op(0, Address::new(ram(fd), offset));
+        fd.op_set_opcode(op, TypeOp::new(opcode, flags, format!("{opcode:?}")));
+        fd.op_insert_end(op, block);
+        op
+    }
+
+    #[test]
+    fn terminal_noreturn_call_shape_requires_an_adjacent_noreturn_halt() {
+        let mut fd = build_fd();
+        let root = fd.bblocks_root_pub();
+        let block = fd.bblocks_mut().new_block_basic(root);
+        let call = append_test_op(
+            &mut fd,
+            block,
+            0x1000,
+            OpCode::CPUI_CALL,
+            crate::op::pcodeop_flags::call,
+        );
+        append_test_op(
+            &mut fd,
+            block,
+            0x1004,
+            OpCode::CPUI_RETURN,
+            crate::op::pcodeop_flags::returns | crate::op::pcodeop_flags::noreturn,
+        );
+        assert!(fd.call_ends_in_noreturn_halt(call));
+
+        let mut ordinary = build_fd();
+        let root = ordinary.bblocks_root_pub();
+        let block = ordinary.bblocks_mut().new_block_basic(root);
+        let call = append_test_op(
+            &mut ordinary,
+            block,
+            0x1000,
+            OpCode::CPUI_CALL,
+            crate::op::pcodeop_flags::call,
+        );
+        append_test_op(
+            &mut ordinary,
+            block,
+            0x1004,
+            OpCode::CPUI_RETURN,
+            crate::op::pcodeop_flags::returns,
+        );
+        assert!(!ordinary.call_ends_in_noreturn_halt(call));
+
+        let mut nonadjacent = build_fd();
+        let root = nonadjacent.bblocks_root_pub();
+        let block = nonadjacent.bblocks_mut().new_block_basic(root);
+        let call = append_test_op(
+            &mut nonadjacent,
+            block,
+            0x1000,
+            OpCode::CPUI_CALL,
+            crate::op::pcodeop_flags::call,
+        );
+        append_test_op(&mut nonadjacent, block, 0x1004, OpCode::CPUI_COPY, 0);
+        append_test_op(
+            &mut nonadjacent,
+            block,
+            0x1008,
+            OpCode::CPUI_RETURN,
+            crate::op::pcodeop_flags::returns | crate::op::pcodeop_flags::noreturn,
+        );
+        assert!(!nonadjacent.call_ends_in_noreturn_halt(call));
     }
 
     // --- creation factories: bank-state outcomes -------------------------

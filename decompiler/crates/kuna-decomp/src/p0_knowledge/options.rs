@@ -597,8 +597,9 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "pdb",
     // (kuna) ET_REL relocatable-object (`.o`) loader capability: load a
     // relocatable object (no PT_LOAD segments) by synthesizing a section layout,
-    // applying `.rela.*` relocations, and rebasing symbols. Default ON (it only
-    // affects `.o` files, which the PT_LOAD-only loader cannot load at all).
+    // applying REL/RELA relocations with architecture-aware instruction
+    // encoders, and rebasing symbols. Default ON (it only affects `.o` files,
+    // which the PT_LOAD-only loader cannot load at all).
     // Unlike the per-function options, this gates the *loader* (run at `load
     // file`, before any `option` command), so it is bridged across the layer via
     // the `RELOC_OBJECTS_ENV` process env var the console handler writes; see

@@ -204,6 +204,13 @@ Behaviors specific to `decompile-all`:
   addresses are errors. Only symbols marked undefined/import by the object are reported as
   external.
 
+- **Relocation diagnostics** — supported relocations are applied before decoding. Entries
+  that cannot be applied are grouped by architecture, relocation type, and failure reason,
+  with exact totals, at most eight groups, and at most three samples per group. A public load
+  emits that report at most once; successful loads are silent. Diagnostics remain on stderr,
+  so JSON on stdout stays valid, and the fixed group/sample limits keep stderr bounded even
+  for objects containing thousands of identical failures.
+
 - **One record per function entry** — a whole-binary run reports (and decompiles) each
   entry address exactly once. A function can carry several names: a `.symtab` symbol
   plus a debug-info one (`macho_dwarf.o` has `_l0` and `first_byte` at `0x0`), a
