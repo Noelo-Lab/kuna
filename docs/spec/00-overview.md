@@ -442,6 +442,26 @@ must make the failure observable:
   command exits 0 with a plausible-looking empty function, because the rendered
   shell is not empty (DIV-45; the contract is `docs/cli.md`).
 
+(kuna) **The stdout boundary.** Every CLI command renders its output and hands it
+to `decompiler/crates/kuna-cli/src/output.rs (emit)` rather than calling
+`println!`, which panics — exit 101, with a Rust panic trace on stderr — as soon
+as a downstream reader closes the pipe, because Rust `SIG_IGN`s SIGPIPE and the
+print macros unwrap the resulting `EPIPE`. A closed pipe is a normal terminal
+condition, so the boundary is fallible and the failure is folded into the status
+the command already reached (`output.rs (status_after)`): `BrokenPipe` keeps that
+status and says nothing, any other write error is reported and forces 1.
+
+Keeping the status is the load-bearing half. The write failed because nobody was
+reading, which is orthogonal to whether the work succeeded, and stderr is still
+open — so collapsing it to 0 would convert a false red into a false green:
+`kuna test | head` would report a REGRESSED parity run as passing, and the DIV-45
+contract above would hold only while someone was listening. `kuna specs` is the
+one command whose stdout is a child's (`slacomp`): it streams that pipe through
+the same boundary and leaves stderr inherited, because slacomp's diagnostics are
+on stderr while the `Compiling <spec>:` line that attributes them is on stdout,
+and capturing both would print every warning of a run ahead of every progress
+line (DIV-89).
+
 (kuna) **One decompile step, two surfaces.** Every front-end turns a function
 into a `Funcdata` through the same driver-tier step
 (`decompiler/crates/kuna-console/src/decompile_step.rs (decompile_one)`), which

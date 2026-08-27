@@ -5,9 +5,12 @@ The user-facing commands are the single Rust binary `kuna`
 `make binaries`). This is the full reference; the one-screen version is in
 `docs/agents.md`.
 
-All command output uses a fallible stdout boundary. A downstream reader that closes the pipe
-early is a normal terminal condition: kuna exits `0` without panic text or a broken-pipe
-diagnostic. Other stdout write failures remain errors and exit `1`.
+All command output goes through a fallible stdout boundary. A downstream reader that closes
+the pipe early is a normal terminal condition, not the `println!` panic (exit `101`) it used
+to be: no panic text, no broken-pipe diagnostic. It suppresses the *diagnostic*, not the
+*verdict* — the command still exits with the code its own work earned, so `kuna test | head`
+on a regressed baseline exits `1` and the DIV-45 failure contract below holds with or without
+a reader. Other stdout write failures are real errors: reported, and exit `1`.
 
 ## `kuna test` — the parity gates
 

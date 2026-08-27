@@ -491,15 +491,20 @@ pub fn run(args: &DecompileArgs) -> i32 {
             } else {
                 format!("{}\n", out.c)
             };
-            match crate::output::emit(&text) {
-                Ok(()) => match out.failure {
-                    Some(msg) => {
-                        eprintln!("error: {msg}");
-                        1
-                    }
-                    None => 0,
-                },
-                Err(err) => crate::output::error_status(err),
+            // The pipeline verdict is reported and returned whether or not stdout
+            // survived (DIV-45): a closed reader is not evidence the decompile
+            // worked.  Emitting first keeps the stdout-then-stderr order.
+            let written = crate::output::emit(&text);
+            let status = match out.failure {
+                Some(msg) => {
+                    eprintln!("error: {msg}");
+                    1
+                }
+                None => 0,
+            };
+            match written {
+                Ok(()) => status,
+                Err(err) => crate::output::status_after(err, status),
             }
         }
         Err(e) => {

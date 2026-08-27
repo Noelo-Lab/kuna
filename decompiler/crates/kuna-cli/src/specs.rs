@@ -12,8 +12,8 @@
 //! docs/rust-port/README.md and is subsumed by `kuna test` (the Rust-built specs decode
 //! to 675/675).  So `--diff` is a documentation note, not a live comparison.
 
-use std::io::Write;
-use std::process::Command;
+use std::io::Read;
+use std::process::{Command, Stdio};
 
 use crate::paths;
 
@@ -44,18 +44,56 @@ pub fn run(args: &[String]) -> i32 {
     }
     // Pass the remaining args straight through to slacomp (it owns `-a <dir>` and
     // the bare `<slaspec>...` forms).
-    let output = Command::new(&bin).args(args).output();
-    match output {
-        Ok(output) => {
-            let _ = std::io::stderr().write_all(&output.stderr);
-            match crate::output::emit_bytes(&output.stdout) {
-                Ok(()) => output.status.code().unwrap_or(1),
-                Err(err) => crate::output::error_status(err),
-            }
-        }
+    //
+    // slacomp's progress is on stdout and its diagnostics on stderr, and for the
+    // unlocated warnings ("1 NOP constructors found") the `Compiling <spec>:` line
+    // above them is the only thing naming the spec they came from.  Capturing both
+    // streams would print all 1004 warnings of a 148-spec run ahead of all 149
+    // progress lines, after 17s of silence.  So stderr stays inherited and stdout
+    // is copied through as it arrives: the two interleave as they did when this
+    // was a bare `status()` passthrough, and the write still goes through the
+    // fallible boundary.
+    let mut child = match Command::new(&bin).args(args).stdout(Stdio::piped()).spawn() {
+        Ok(c) => c,
         Err(e) => {
             eprintln!("error: failed to run slacomp: {e}");
-            2
+            return 2;
         }
+    };
+    let mut pipe = child.stdout.take().expect("stdout was piped above");
+    let mut buf = [0u8; 8192];
+    let mut write_err = None;
+    loop {
+        match pipe.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) if write_err.is_none() => {
+                if let Err(e) = crate::output::emit_bytes(&buf[..n]) {
+                    write_err = Some(e);
+                }
+            }
+            // Past a write failure the reads continue to EOF rather than stopping:
+            // slacomp is writing .sla files, so it is left to finish instead of
+            // being killed by the EPIPE that closing this end early would hand it.
+            Ok(_) => {}
+            Err(e) => {
+                write_err = Some(e);
+                break;
+            }
+        }
+    }
+    // Closing before the wait matters only on the read-error break above, where
+    // slacomp may still be writing: without it the child could block on a full
+    // pipe that nothing is draining.
+    drop(pipe);
+    let status = match child.wait() {
+        Ok(s) => s.code().unwrap_or(1),
+        Err(e) => {
+            eprintln!("error: failed to run slacomp: {e}");
+            return 2;
+        }
+    };
+    match write_err {
+        Some(err) => crate::output::status_after(err, status),
+        None => status,
     }
 }
