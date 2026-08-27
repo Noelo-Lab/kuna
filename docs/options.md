@@ -231,6 +231,12 @@ Three tiers:
 | an unstripped C++ binary fails to load entirely while a stripped copy of it loads fine | [`symbolnamerepair`](#symbolnamerepair) |
 | kuna functions, decompile-all and decompile-project all fail on the same binary with the same scope error | [`symbolnamerepair`](#symbolnamerepair) |
 | a binary loads in ghidra or ida but kuna refuses it at load with a symbol-scope error | [`symbolnamerepair`](#symbolnamerepair) |
+| a function name in the emitted c contains a newline and splits the declaration across two lines | [`symbolnamechars`](#symbolnamechars) |
+| the // Function: header comment ends early and the address becomes code | [`symbolnamechars`](#symbolnamechars) |
+| decompile-project emits two functions with the same name and the .h has a duplicate prototype | [`symbolnamechars`](#symbolnamechars) |
+| a symbol name renders with a U+FFFD replacement character | [`symbolnamechars`](#symbolnamechars) |
+| kuna decompile <name> cannot address a function that kuna functions printed | [`symbolnamechars`](#symbolnamechars) |
+| the exported .c does not compile because a function name contains */ or // | [`symbolnamechars`](#symbolnamechars) |
 | a glibc math/mem/str wrapper tail-jumps to `(*dat_...)(...)` with the callee dropped | [`ifuncfpret`](#ifuncfpret) |
 | an x86-64 IFUNC .plt.sec stub is not a discovered function | [`ifuncfpret`](#ifuncfpret) |
 | xmm0 read uninitialized after calling a void-typed ifunc-dispatching wrapper | [`ifuncfpret`](#ifuncfpret) |
@@ -941,6 +947,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** Leave on. Flip off when you are investigating a binary's symbol table itself and want the degenerate name to fail loudly with the scope error rather than being repaired silently.
 - **Where / provenance:** P1/environment-binding · kuna · correctness-fix · kuna-symbolnamerepair
 - **Example:** `option symbolnamerepair off`
+
+### `symbolnamechars` -- off | safe | ident, default `safe`
+
+- **Symptoms:** a function name in the emitted c contains a newline and splits the declaration across two lines; the // Function: header comment ends early and the address becomes code; decompile-project emits two functions with the same name and the .h has a duplicate prototype; a symbol name renders with a U+FFFD replacement character; kuna decompile <name> cannot address a function that kuna functions printed; the exported .c does not compile because a function name contains */ or //.
+- **What it does:** Sanitize a symbol name's raw bytes where the name is MINTED (the loader's .symtab/.dynsym/PLT/ET_REL walks and the analysis passes' recovered names), so the bytes a binary claims cannot restructure the C document they are printed into. Nothing between .strtab and emitted C validates a name today: a */ closes the // Function: header comment early, a raw 0x0a splits the header, the .h prototype, the definition, the call site and the .asm label across two lines each, // comments out the rest of the line, and an invalid UTF-8 byte becomes U+FFFD so two distinct symbols (byte 0x80 vs byte 0x81 in the middle of the same name, at two addresses) collapse onto ONE String and the export carries a C redefinition. safe rewrites only that structural set - ASCII control bytes 0x00-0x1F and 0x7F, the quote and escape characters (double quote, single quote, backslash), a * or / that forms a comment delimiter, and any byte of an invalid UTF-8 sequence - each to its _x<hh> hex escape, which is injective so distinct names stay distinct. Everything else (period, dollar, at, colon, dash, plus, angle brackets, parentheses, semicolon, braces and valid multi-byte UTF-8) is left alone, so safe is a NO-OP on every name a real toolchain emits, gcc's .constprop.0/.part.1/.isra.0/.cold clone suffixes included. ident additionally folds every character outside A-Za-z0-9_ per :: component (the same reduction the Itanium RTTI class-name recovery applies), which DOES rewrite those clone suffixes and is why it is reachable rather than default. Loader-tier: read via the kuna_symbolnamechars env var, because names are minted inside load file, upstream of every option command.
+- **When to flip:** Leave on safe. Flip to off when you are auditing what a binary's symbol table literally claims and want the bytes verbatim, accepting that a hostile name corrupts the export. Raise to ident when you intend to COMPILE the decompile-project export: it makes every name a valid C identifier, at the cost of rewriting err_fatal.constprop.0 to err_fatal_constprop_0 on most -O2 binaries, so the name you pass back to kuna decompile <name> changes with it.
+- **Where / provenance:** P1/environment-binding · kuna · correctness-fix · kuna-symbolnamechars
+- **Example:** `option symbolnamechars ident`
 
 ### `ifuncfpret` -- on | off, default `off`
 

@@ -27,6 +27,8 @@ pub mod kuna_dwarfvariants;
 pub mod kuna_typedepth;
 // (kuna) Degenerate-symbol-name repair option gate (load-time, env-bridged).
 pub mod kuna_symbolnamerepair;
+// (kuna) Symbol-name character sanitizer + option gate (load-time, env-bridged).
+pub mod kuna_symbolnamechars;
 // (kuna) `<eval_current_prototype>`: the compiler spec's model for evaluating the
 // current function's own unknown prototype (register-parameter recovery).
 pub mod kuna_evalcurrentproto;

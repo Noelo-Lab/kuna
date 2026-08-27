@@ -110,11 +110,58 @@ section list. Where upstream returns a BFD target string for the Java side to
 re-map, kuna resolves the SLEIGH language id directly off the object header
 (machine + endianness + class → e.g. `x86:LE:64:default:gcc`). The loader's symbol
 stream — defined FUNC symbols plus the resolved import stubs of §1.3 — is
-`@VERSION`-stripped and demangled (§1.4) before each name is installed as a
-`FunctionSymbol`, and the loader's read-only section ranges are applied to the
+`@VERSION`-stripped, demangled (§1.4) and **character-sanitized** before each
+name is installed as a `FunctionSymbol`, and the loader's read-only section ranges are applied to the
 symbol-table property map eagerly at bootstrap (loader markup, not a gated pass):
 they are what lets the printer prove a constant points into read-only memory and
 render a string literal.
+
+**Character sanitizing** (`symbolnamechars`, `off|safe|ident`, default `safe`;
+`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_symbolnamechars.rs`) is the
+last step of that name reduction, and it is the only one that treats the name as
+*bytes*. A symbol name is unvalidated binary data, and it is printed verbatim
+into the `// Function:` header comment, the `.h` prototype, the definition, every
+call site and the `.asm` label. Three shapes therefore restructure the C document
+rather than merely look odd — a `*/` closes the header comment early and turns
+the rest of the line into code, a raw `0x0a` splits each of those five renderings
+across two lines, and a `//` comments out the remainder of the line it lands on —
+and a fourth breaks identity rather than syntax: the name is decoded with
+`String::from_utf8_lossy`, so two symbols differing only in an invalid byte
+become the same `String` and the export carries two definitions and two
+prototypes with one name.
+
+`safe` (the default) rewrites exactly that structural set and nothing else: an
+ASCII control byte (`0x00`–`0x1F`, `0x7F`), a `"`/`'`/`\`, a `*` or `/` that
+forms `*/`, `/*` or `//` with its neighbor (both characters of the pair), and
+every byte of an invalid UTF-8 sequence. Each becomes its `_x<hh>` hex escape
+rather than a single `_`, because a single `_` is not injective — `a"b`, `a'b`
+and `a\nb` would all collapse to `a_b`, reproducing the redefinition defect with
+a different trigger — and the escape costs nothing legible, since `safe` fires on
+no name a real toolchain emits. A lone `*` or `/` is left alone (it is not a
+comment delimiter), as are `.`, `$`, `@`, `-`, `+`, `<`, `>`, `(`, `)`, `;`, `{`,
+`}` and all valid multi-byte UTF-8; `::` survives intact, because §0.4's scope
+splitter reads it. `ident` additionally reduces each `::` component to
+`[A-Za-z0-9_]` through the same routine the Itanium RTTI recovery uses for a
+class name (`kuna_symbolnamechars (sanitize_ident_chain)`, called unconditionally
+by `kuna_itaniumrtti (sanitize_class_name)`), which is what a reader who intends
+to *compile* the export wants; it is not the default because the most common
+name in the wild that is not valid C is gcc's clone suffix
+(`err_fatal.constprop.0`, `main.part.1`, `add_fdes.cold`), which appears on most
+`-O2` binaries and which `safe` is a measured no-op on. `off` restores the
+verbatim bytes for someone auditing what a binary literally claims.
+
+The sanitizer runs at the **mint** — after the demangler, so it sees the reduced
+name rather than the `_ZN…` envelope, and before the scope splitter, so it never
+contends with `symbolnamerepair` over the same empty component — and it covers
+the second channel a name arrives through as well: an analysis pass's recovered
+name (a DWARF `DW_AT_name`, a Go `pclntab` entry, a PDB public symbol) is
+sanitized in `kuna-analysis`'s pass driver
+(`decompiler/crates/kuna-analysis/src/pass.rs (AnalysisOutput::sanitize_names)`)
+before the commit boundary of §1.4 sees it. Like the other gates consumed inside
+`load file` it is carried by a process environment variable. Print-time
+sanitizing would be the wrong seam: §0.4 explains that the string in the symbol
+table is the key `kuna decompile <name>` and `load function` are passed, so a
+name only the printer fixed would be one the tool could no longer be asked for.
 
 The **data** half of those same two symbol tables is read alongside the function
 half (`loadimage_object.rs (data_symbols)`): every defined, named `STT_OBJECT`

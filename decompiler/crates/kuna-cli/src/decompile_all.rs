@@ -438,6 +438,7 @@ fn is_loadtime_gate(name: &str) -> bool {
             | "dwarfstructs"
             | "ifuncfpret"
             | "symbolnamerepair"
+            | "symbolnamechars"
     )
 }
 
@@ -538,6 +539,17 @@ fn apply_loadtime_env(options: &[(String, String)], slice: Option<&str>) -> Load
         env.set(
             kuna_decomp::kuna_symbolnamerepair::SYMBOLNAMEREPAIR_ENV,
             if on { "on" } else { "off" },
+        );
+    }
+    // (kuna, GH-340) Symbol names are minted inside `load file` (the loader's
+    // symbol walks and the analysis passes both run there), so the sanitizer's
+    // mode must be exported before `bootstrap_from_object`. An unrecognized
+    // token falls back to the shipped `safe` rather than silently to `off`.
+    if let Some(value) = last_option_value(options, "symbolnamechars") {
+        let mode = kuna_decomp::kuna_symbolnamechars::NameChars::parse(value).unwrap_or_default();
+        env.set(
+            kuna_decomp::kuna_symbolnamechars::SYMBOLNAMECHARS_ENV,
+            mode.as_str(),
         );
     }
     if let Some(value) = last_option_value(options, "ifuncfpret") {

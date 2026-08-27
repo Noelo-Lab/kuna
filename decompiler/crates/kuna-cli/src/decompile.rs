@@ -448,6 +448,16 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
                 if on { "on" } else { "off" },
             );
         }
+        // (kuna, GH-340) Load-time `symbolnamechars` gate: symbol names are
+        // minted inside `load file`, so the mode must reach the subprocess as an
+        // env var set up front.
+        if let Some(value) = last_option_value(&args.options, "symbolnamechars") {
+            let mode = kuna_decomp::kuna_symbolnamechars::NameChars::parse(value).unwrap_or_default();
+            cmd.env(
+                kuna_decomp::kuna_symbolnamechars::SYMBOLNAMECHARS_ENV,
+                mode.as_str(),
+            );
+        }
         // (kuna) Load-time `typedepth` gate: the DWARF type mapper runs inside
         // `load file`, so an `--option typedepth off` must reach it via the env
         // var (`kuna_typedepth::TYPEDEPTH_ENV`) set on the subprocess up front.

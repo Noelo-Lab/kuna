@@ -65,6 +65,8 @@ use kuna_base::types::Wrap;
 
 use kuna_sleigh::loadimage::{section_flags, LoadImage, LoadImageFunc, LoadImageSection};
 
+use kuna_decomp::kuna_symbolnamechars::{sanitize_symbol_name_bytes, symbolnamechars_mode, NameChars};
+
 /// Default read-buffer size (C++ `LoadImageBfd::bufsize`, `loadimage_bfd.cc:36`).
 const BUFSIZE: usize = 512;
 
@@ -89,13 +91,24 @@ pub(crate) fn reloc_objects_enabled() -> bool {
 /// name: a non-UTF-8 name (or one that is not a recognized mangled symbol) is
 /// returned unchanged.  Reduces to the qualified name only (no signature /
 /// template args), which is a hard requirement of the scope splitter.
-fn demangle_funcsym_name(name: Vec<u8>) -> Vec<u8> {
-    match std::str::from_utf8(&name) {
+///
+/// (kuna `symbolnamechars`, GH-340) The character sanitizer runs LAST, on the
+/// reduced name: before it, `safe`'s byte pass would be looking at the mangled
+/// `_ZN…` envelope rather than at what actually reaches emitted C, and `ident`
+/// would fold the demangler's own output twice.  It still runs before
+/// `find_create_scope_from_symbol_name`, so the sanitizer and `symbolnamerepair`
+/// never contend over the same empty component.
+fn demangle_funcsym_name(name: Vec<u8>, mode: NameChars) -> Vec<u8> {
+    let name = match std::str::from_utf8(&name) {
         Ok(s) => match crate::demangle::demangle_name(s) {
             Some(d) => d.into_bytes(),
             None => name,
         },
         Err(_) => name, // not a textual symbol; leave the raw bytes
+    };
+    match sanitize_symbol_name_bytes(&name, mode) {
+        std::borrow::Cow::Borrowed(_) => name,
+        std::borrow::Cow::Owned(v) => v,
     }
 }
 
@@ -234,6 +247,7 @@ fn collect_data_sym<'a>(
     sym: &impl object::ObjectSymbol<'a>,
     out: &mut Vec<DataSym>,
     seen: &mut HashSet<u64>,
+    mode: NameChars,
 ) {
     if sym.is_undefined() {
         return;
@@ -249,6 +263,9 @@ fn collect_data_sym<'a>(
     if name.is_empty() {
         return;
     }
+    // (kuna `symbolnamechars`, GH-340) A data symbol's name reaches emitted C
+    // exactly as a function symbol's does, so it is sanitized at the same mint.
+    let name = sanitize_symbol_name_bytes(&name, mode).into_owned();
     let addr = sym.address();
     if seen.insert(addr) {
         out.push(DataSym { addr, name, size });
@@ -381,6 +398,10 @@ impl ObjectLoadImage {
         //      `ElfDefaultGotPltMarkup`; see [`crate::loader::elf_plt`]),
         //   3. `.dynsym` defined functions, for stripped-but-dynamic binaries
         //      whose `.symtab` is gone.
+        // (kuna `symbolnamechars`, GH-340) Read the gate ONCE for the whole walk:
+        // a large image carries a few hundred thousand names and the mode is a
+        // process env var.
+        let namechars = symbolnamechars_mode();
         let mut funcsyms: Vec<FuncSym> = Vec::new();
         let mut seen: HashSet<u64> = HashSet::new();
         // The data half of the same two symbol tables (`STT_OBJECT`), collected in
@@ -403,7 +424,7 @@ impl ObjectLoadImage {
         //    COFF object's defined-at-0 function (design §3.6 object-vs-image).
         for sym in file.symbols() {
             if sym.kind() == SymbolKind::Data {
-                collect_data_sym(&sym, &mut datasyms, &mut seen_data);
+                collect_data_sym(&sym, &mut datasyms, &mut seen_data, namechars);
                 continue;
             }
             if sym.kind() != SymbolKind::Text {
@@ -420,7 +441,7 @@ impl ObjectLoadImage {
             if name.is_empty() {
                 continue;
             }
-            let name = demangle_funcsym_name(name);
+            let name = demangle_funcsym_name(name, namechars);
             if seen.insert(addr) {
                 funcsyms.push(FuncSym { addr, name });
             }
@@ -432,7 +453,7 @@ impl ObjectLoadImage {
         // `elf_plt::resolve_plt_imports`.
         for p in fmt.resolve_imports(&file, bytes) {
             if seen.insert(p.addr) {
-                funcsyms.push(FuncSym { addr: p.addr, name: demangle_funcsym_name(p.name) });
+                funcsyms.push(FuncSym { addr: p.addr, name: demangle_funcsym_name(p.name, namechars) });
             }
         }
 
@@ -441,7 +462,7 @@ impl ObjectLoadImage {
         //    functions in `.dynsym`.
         for sym in file.dynamic_symbols() {
             if sym.kind() == SymbolKind::Data {
-                collect_data_sym(&sym, &mut datasyms, &mut seen_data);
+                collect_data_sym(&sym, &mut datasyms, &mut seen_data, namechars);
                 continue;
             }
             if sym.kind() != SymbolKind::Text {
@@ -458,7 +479,7 @@ impl ObjectLoadImage {
             if name.is_empty() {
                 continue;
             }
-            let name = demangle_funcsym_name(name);
+            let name = demangle_funcsym_name(name, namechars);
             if seen.insert(addr) {
                 funcsyms.push(FuncSym { addr, name });
             }
@@ -534,6 +555,7 @@ impl ObjectLoadImage {
         // Defined functions (rebased) + extern call targets, demangled + deduped
         // by address — the same `seen`/`demangle_funcsym_name` discipline the
         // linked path's `.symtab` loop uses.
+        let namechars = symbolnamechars_mode();
         let mut funcsyms: Vec<FuncSym> = Vec::new();
         let mut seen: HashSet<u64> = HashSet::new();
         for (addr, name) in layout.funcsyms {
@@ -544,7 +566,7 @@ impl ObjectLoadImage {
             if name.is_empty() {
                 continue;
             }
-            let name = demangle_funcsym_name(name);
+            let name = demangle_funcsym_name(name, namechars);
             if seen.insert(addr) {
                 funcsyms.push(FuncSym { addr, name });
             }

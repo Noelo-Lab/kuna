@@ -707,51 +707,15 @@ fn ancestors_of(addr: u64, by_addr: &HashMap<u64, &TypeInfo>) -> HashSet<u64> {
 /// (anonymous namespace)::Hidden     -> anonymous_namespace::Hidden
 /// std::vector<std::pair<int, int> > -> std::vector_std_pair_int_int
 /// ```
+///
+/// The implementation is shared with the `symbolnamechars` option's `ident` mode
+/// ([`kuna_decomp::kuna_symbolnamechars::sanitize_ident_chain`]), which is the
+/// same reduction asked of a loader symbol name. It is applied here
+/// UNCONDITIONALLY, gate or no gate: this recovery invents the class string
+/// itself out of a `_ZTS` type-descriptor, and the string it invents has to be a
+/// legal name for a type and a scope before anything downstream sees it.
 fn sanitize_class_name(class: &str) -> String {
-    let mut components: Vec<String> = Vec::new();
-    let mut current = String::new();
-    let mut depth: i32 = 0;
-    let bytes: Vec<char> = class.chars().collect();
-    let mut i = 0;
-    while i < bytes.len() {
-        let c = bytes[i];
-        match c {
-            '<' | '(' | '[' => {
-                depth += 1;
-                current.push('_');
-            }
-            '>' | ')' | ']' => {
-                depth -= 1.min(depth);
-                current.push('_');
-            }
-            ':' if depth == 0 && bytes.get(i + 1) == Some(&':') => {
-                components.push(std::mem::take(&mut current));
-                i += 2;
-                continue;
-            }
-            _ if c.is_ascii_alphanumeric() || c == '_' => current.push(c),
-            _ => current.push('_'),
-        }
-        i += 1;
-    }
-    components.push(current);
-    components
-        .into_iter()
-        .map(|c| {
-            // Collapse `_` runs and trim the edges, so `vector<std::pair<int, int> >`
-            // becomes `vector_std_pair_int_int` rather than a wall of underscores.
-            let mut out = String::with_capacity(c.len());
-            for ch in c.chars() {
-                if ch == '_' && out.ends_with('_') {
-                    continue;
-                }
-                out.push(ch);
-            }
-            out.trim_matches('_').to_string()
-        })
-        .filter(|c| !c.is_empty())
-        .collect::<Vec<_>>()
-        .join("::")
+    kuna_decomp::kuna_symbolnamechars::sanitize_ident_chain(class)
 }
 
 /// Read a pointer-width word at `vma`, or `None` if it is not in a loaded section.

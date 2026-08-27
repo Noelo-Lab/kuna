@@ -474,6 +474,37 @@ mod decompile_project_type_render {
         assert!(out.contains("struct bad_name_1 {"), "renamed body missing:\n{out}");
     }
 
+    /// (GH-340) The `/* renamed from "…" */` note quotes the RAW type name, which
+    /// is unvalidated binary data: a `*/` in it closed the comment early and a
+    /// newline split it in two, re-opening in a comment exactly the hole
+    /// `sanitize_type_name` closes in the identifier. The note escapes what it
+    /// quotes, and nothing that could not break a comment is touched.
+    #[test]
+    fn renamed_from_note_cannot_be_escaped_by_the_raw_name() {
+        let i4 = named(4, type_metatype::TYPE_INT, "int4");
+        for raw in ["ev*/il", "ev\nil", "ev/*il"] {
+            let out = render_type_definitions(
+                &[struct_of(raw, 4, &[(0, "a", Rc::clone(&i4))])],
+                RealTypeCtx::OFF,
+            );
+            for line in out.lines().filter(|l| l.contains("renamed from")) {
+                let note = &line[line.find("/* renamed").unwrap() + 2..];
+                assert_eq!(
+                    note.matches("*/").count(),
+                    1,
+                    "the note must close exactly once, on its own terms:\n{out}"
+                );
+            }
+            assert!(!out.contains("ev*/il") && !out.contains("ev/*il"), "{out}");
+        }
+        // A name with no comment delimiter and no control byte is quoted verbatim.
+        let plain = render_type_definitions(
+            &[struct_of("bad-name$1", 4, &[(0, "a", i4)])],
+            RealTypeCtx::OFF,
+        );
+        assert!(plain.contains("/* renamed from \"bad-name$1\" */"), "{plain}");
+    }
+
     /// Duplicate type names: the FIRST definition wins; a later same-named
     /// complete type emits only the `/* duplicate type name skipped */` note.
     #[test]
