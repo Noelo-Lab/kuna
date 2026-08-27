@@ -74,7 +74,7 @@ Two timing consequences shape the tier. First, anything that must influence the
 bridged across the process by environment variables the CLI exports:
 `KUNA_RELOC_OBJECTS` (`relocobjects`), `KUNA_I386_PIE_PLT` (`i386_pie_plt`),
 `KUNA_RELOCREBASE` (`relocrebase`), `KUNA_DYNRELOCS` (`dynrelocs`),
-`KUNA_MACHO_ARM64E` (`macho-arm64e`),
+`KUNA_MSVCFPCONST` (`msvcfpconst`), `KUNA_MACHO_ARM64E` (`macho-arm64e`),
 `KUNA_MACHO_SLICE` (`--slice`). For those,
 the option rows exist for discoverability while the live gate is the env var. The
 external-artifact paths `kuna_fid_db` and `kuna_pdb_path` are different: they only
@@ -288,6 +288,50 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   for a synthetically laid-out object (§1.6): it exists to find functions an image
   has no symbol for, and a pre-link object always carries the symbol table the
   linker is about to consume.
+
+  Binding an undefined symbol to a synthetic slot resolves the *reference* and
+  loses the *value*, and for one class of symbol the value was never elsewhere to
+  begin with: MSVC never encodes a floating-point literal into the instruction
+  stream — x87 and SSE both load one from memory — so the compiler emits each
+  literal as a COMDAT whose **name spells it**. `__real@8@3ffec90fdaa22168c000`
+  is π/4. COMDAT folding then keeps the definition in exactly one translation
+  unit, so in every other object that symbol is undefined: no section, no bytes,
+  a slot with nothing behind it, and an expression written entirely in opaque
+  addresses (`(… * dat_402020 + dat_402040) * dat_400ae0`). `msvcfpconst` (kuna,
+  default-on, env-bridged,
+  `decompiler/crates/kuna-analysis/src/loader/kuna_msvcfpconst.rs (plan)`) reads
+  the value back out of the name. Three spellings are accepted:
+  `__real@<size>@<20 hex>`, an x87 80-bit extended datum (a 16-bit
+  sign/exponent field then a 64-bit mantissa carrying its **explicit** integer
+  bit) plus the storage width the program loads it at — `4` for `float`, `8` for
+  `double`; and the two bare-bits forms `__real@<16 hex>` (IEEE double) and
+  `__real@<8 hex>` (IEEE float, which is what MSVC has emitted for a `float`
+  literal since VS2005 — the 20-hex form is the VC6-era one). The decode is
+  exact rather than approximate: the source constant was a `float` or a `double`
+  before the assembler widened it, so at most 53 of the mantissa's 64 bits are
+  set and the `f64` image is lossless. Every x87 encoding class with no faithful
+  `f64` image is **refused** rather than approximated — an Inf/NaN exponent, a
+  denormal or pseudo-denormal (whose true scale is one binade away from the
+  normalized formula), an unnormal, and any value outside `f64` or, at `@4@`,
+  outside `float` — as is every other mangling, `__xmm@`/`__ymm@` included: a
+  wrong 16-byte datum is worse than an honest `dat_<addr>`.
+
+  As with `dynrelocs` below, decoding is only half of it. The undefined half
+  gets the decoded bytes materialised as a segment at its extern slot, which is
+  what makes the address readable at all; but the *defined* half needs nothing
+  materialised and still renders `dat_<addr>`, because folding a read-only global
+  is gated program-wide by `option readonly` (default off). Both halves are
+  therefore reported as `ObjectLoadImage::dynreloc_const_ranges` — the same
+  narrow "constant by construction, not by policy" exception list `dynrelocs`
+  fills on the linked path, carried to `Architecture::dynreloc_const` and folded
+  by `ActionVarnodeProps` with global propagation still off (§3.4). Listing only
+  one half would be worse than listing neither: one operand of an expression
+  would come out a literal and the operand beside it stay opaque. A defined
+  COMDAT's mapped bytes are cross-checked against its own name before its range
+  is admitted, which is also what keeps the relocatable-object fidelity hazard
+  away from this path — a read-only section in a `.o` holds *pre*-relocation
+  bytes, but a `__real@` COMDAT carries no relocation, and a disagreement between
+  the bytes and the name drops the range with a warning rather than folding it.
 - **Mach-O fat/arm64e** — a universal binary is peeled to one slice's bytes at a
   single canonical point before anything else parses it
   (`decompiler/crates/kuna-analysis/src/loader/macho_fat.rs (select_fat_slice)`;

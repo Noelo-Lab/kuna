@@ -41,6 +41,10 @@ pub mod kuna_relocrebase;
 // .rel.dyn / .rela.plt) so a GOT slot holds the value the run-time loader
 // would write, and report the PT_GNU_RELRO-frozen slots as constant.
 pub mod kuna_dynrelocs;
+// (kuna) `msvcfpconst`: recover an MSVC `__real@` floating-point constant COMDAT
+// from its mangled symbol name -- materialise the undefined half's bytes at its
+// synthetic extern slot, and mark both halves foldable.
+pub mod kuna_msvcfpconst;
 pub mod format;
 // (kuna) PE import-call binding (`peimportcall`): `externref` over the IAT slots
 // + upstream's PE-only no-return API names.

@@ -1,0 +1,73 @@
+<decompilertest>
+<binaryimage arch="x86:LE:32:default:windows">
+<!--
+    MSVC `__real@` FP-constant COMDAT recovery (`option msvcfpconst on|off`,
+    default on).
+
+    MSVC never encodes a floating-point literal into the instruction stream (x87
+    and SSE both load one from memory), so it emits each literal as a COMDAT
+    whose NAME spells the value. COMDAT folding keeps the definition in exactly
+    one translation unit, so in every other object that symbol is UNDEFINED: no
+    section, no bytes, and the loader binds it to a synthetic extern slot with
+    nothing behind it. The defined half fares no better at the shipped defaults:
+    its bytes are mapped and read-only, but folding a read-only global is gated
+    by the program-wide `option readonly`, which is default-off. Either way the
+    expression comes out written in opaque addresses.
+
+    The XML wrapper only supplies the harness architecture. Both passes clear it
+    and load the real i386 COFF fixture, which carries all four spellings in both
+    states: `__real@3fb999999999999a` (16 hex, IEEE double bits) and
+    `__real@3f000000` (8 hex, IEEE float bits) DEFINED, plus
+    `__real@8@3ffec90fdaa22168c000` and `__real@4@3fff8000000000000000` (the
+    VC6-era x87 80-bit form, at both storage widths) UNDEFINED.
+
+    Pass 1 (`option msvcfpconst off`) reproduces the defect: both operands of
+    each expression are `dat_<addr>`, the defined half and the undefined half
+    alike.
+
+    Pass 2 turns it back on and is the shipped default. All four constants render
+    as literals: pi/4 and 0.1 in `_scale`, 1.0 and 0.5 in `_fscale`.
+
+    The gate is LOADER-tier, so both `option` lines have to run BEFORE their
+    `load file`; they set the process env var the loader reads, and an option
+    applied after the load would arrive long after the bytes were snapshotted.
+    That is also why pass 2 names the option explicitly instead of relying on the
+    default: pass 1 left the env var set to `off` in this same process. The
+    option's own default state is covered by the Rust gate
+    `decompiler/crates/kuna-console/tests/verify_msvcfpconst.rs`.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>option msvcfpconst off</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/msvcfpconst_i386.obj</com>
+  <com>read symbols</com>
+  <com>load function _scale</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function _fscale</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option msvcfpconst on</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/msvcfpconst_i386.obj</com>
+  <com>read symbols</com>
+  <com>load function _scale</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function _fscale</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="MSVCFPCONST #1: off, both operands of _scale are opaque -- the undefined x87 COMDAT and the defined IEEE-double one alike" min="1" max="1">\(float10\)a0 \* \(float10\)dat_402000 \+ \(float10\)dat_400038;</stringmatch>
+<stringmatch name="MSVCFPCONST #2: off, both operands of _fscale are opaque too" min="1" max="1">\(float10\)dat_402010 \* \(float10\)a0 \* \(float10\)dat_400040;</stringmatch>
+<stringmatch name="MSVCFPCONST #3: on, _scale reads pi/4 from the undefined 20-hex x87 name and 0.1 from the defined 16-hex IEEE double" min="1" max="1">\(float10\)a0 \* \(float10\)0\.7853981633974483 \+ \(float10\)0\.1;</stringmatch>
+<stringmatch name="MSVCFPCONST #4: on, _fscale reads 1.0 from the 20-hex x87 name at float width and 0.5 from the defined 8-hex IEEE float, the modern MSVC spelling" min="1" max="1">\(float10\)1\.0 \* \(float10\)a0 \* \(float10\)0\.5;</stringmatch>
+<stringmatch name="MSVCFPCONST #5: no opaque operand survives the on pass -- every dat_ line belongs to the off one" min="2" max="2">dat_4</stringmatch>
+<stringmatch name="MSVCFPCONST #6: the recovery changes the operands only -- both passes agree on the signature" min="2" max="2">float10 _scale\(float8 a0\)</stringmatch>
+</decompilertest>

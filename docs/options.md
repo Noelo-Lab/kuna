@@ -241,6 +241,10 @@ Three tiers:
 | kuna stalls for tens of seconds or is oom-killed loading a binary whose symbol table is a few hundred kilobytes | [`symbolnamebound`](#symbolnamebound) |
 | a stripped copy of a binary loads instantly while the unstripped copy hangs | [`symbolnamebound`](#symbolnamebound) |
 | memory grows roughly 1.5 kb per :: in a symbol name | [`symbolnamebound`](#symbolnamebound) |
+| a floating-point expression in an msvc .obj is written entirely in dat_<addr> operands | [`msvcfpconst`](#msvcfpconst) |
+| an msvc object's fp constant reads as dat_<addr> although its symbol name spells the value | [`msvcfpconst`](#msvcfpconst) |
+| one operand of an fp expression is a literal and the neighbouring one is still dat_<addr> | [`msvcfpconst`](#msvcfpconst) |
+| a __real@ symbol in a .obj has no bytes behind it and any read of it fails | [`msvcfpconst`](#msvcfpconst) |
 | a glibc math/mem/str wrapper tail-jumps to `(*dat_...)(...)` with the callee dropped | [`ifuncfpret`](#ifuncfpret) |
 | an x86-64 IFUNC .plt.sec stub is not a discovered function | [`ifuncfpret`](#ifuncfpret) |
 | xmm0 read uninitialized after calling a void-typed ifunc-dispatching wrapper | [`ifuncfpret`](#ifuncfpret) |
@@ -967,6 +971,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** Leave at 256. The deepest :: nesting measured over 1,683,515 demangled names (repo fixtures, 14 large C++ objects, 9 rustc binaries including a 153 MB librustc_driver, and the 60 largest ELF objects under /usr/lib/x86_64-linux-gnu and /usr/bin) is 21, and the deepest over a rustc binary DWARF names is 79 -- the DWARF path does not strip template arguments, so every :: inside <> counts -- so nothing real reaches it. Raise it for a genuinely deeper generated binary, and note that folding changes the name you must type for load function / kuna decompile <name> (the folded spelling is what the listing renders, and both the create and the resolve path apply the same fold, so either spelling resolves). Set off to reproduce a report against the historical unbounded behavior.
 - **Where / provenance:** P1/environment-binding · kuna · correctness-fix · kuna-symbolnamebound
 - **Example:** `option symbolnamebound 512`
+
+### `msvcfpconst` -- on | off, default `on`
+
+- **Symptoms:** a floating-point expression in an msvc .obj is written entirely in dat_<addr> operands; an msvc object's fp constant reads as dat_<addr> although its symbol name spells the value; one operand of an fp expression is a literal and the neighbouring one is still dat_<addr>; a __real@ symbol in a .obj has no bytes behind it and any read of it fails.
+- **What it does:** Recover an MSVC __real@ floating-point constant COMDAT from its mangled symbol name, and let the engine fold it. MSVC never encodes a floating-point literal into the instruction stream (x87 and SSE both load one from memory), so it emits each literal as a COMDAT whose NAME spells the value: __real@8@3ffec90fdaa22168c000 is pi/4. COMDAT folding keeps the definition in exactly one translation unit, so in every other object that symbol is UNDEFINED -- no section, no bytes -- and kuna binds it to a synthetic extern slot with nothing behind it, leaving v6 = (... * dat_402020 + dat_402040) * dat_400ae0 with every operand an opaque address. The defined half is no better at the shipped defaults: its bytes are mapped and read-only, but folding a read-only global is gated by the program-wide option readonly, which is default-off. On, three spellings are decoded -- __real@<size>@<20 hex> (an x87 80-bit extended datum, with 4 = float and 8 = double giving the storage width), __real@<16 hex> (IEEE double bits) and __real@<8 hex> (IEEE float bits, what MSVC has emitted for a float literal since VS2005) -- the bytes are materialised at the extern slot, and BOTH halves are added to the loader's constant-by-construction range list so the whole expression renders as literals rather than half of one. A defined COMDAT's bytes are cross-checked against its own name before its range is admitted, and every encoding with no faithful f64 image (an x87 Inf/NaN, a denormal, an unnormal) plus every other mangling (__xmm@, __ymm@) is refused: a wrong constant is worse than an honest dat_<addr>. Loader-tier: read via the kuna_msvcfpconst env var (the bytes are materialised at load file).
+- **When to flip:** On (default) turns the floating-point expressions of any MSVC .obj back into readable arithmetic; the mangled name IS the datum, so an empty extern slot is missing information rather than a judgement about it. Flip off to restore the pre-feature bytes exactly - every __real@ operand back to dat_<addr>, and the undefined slots back to having no backing at all.
+- **Where / provenance:** P1/code-data-partition · kuna · correctness-fix · kuna-msvcfpconst
+- **Example:** `option msvcfpconst off`
 
 ### `ifuncfpret` -- on | off, default `off`
 

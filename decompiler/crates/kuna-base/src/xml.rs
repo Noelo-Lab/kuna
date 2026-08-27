@@ -1778,7 +1778,9 @@ mod tests {
         // and kuna-arraysubfield / a partial access into an array symbol reports
         // the size it touches, so an 8-byte write into a char[16] is `._0_8_`
         // and a genuine one-byte element access keeps its `[3]` subscript
-        assert_eq!(count, 219, "corpus file count drifted");
+        // and kuna-msvcfpconst / MSVC `__real@` FP-constant COMDATs are decoded
+        // from their mangled names (option off = every operand a dat_<addr>)
+        assert_eq!(count, 220, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
