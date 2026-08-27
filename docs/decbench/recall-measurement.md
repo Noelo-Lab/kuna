@@ -80,6 +80,33 @@ tail-call get absorbed into the preceding function (`_usbd_standard_request_devi
 
 The remaining 35: 24 error records, 8 nearby-but-not-contained, 3 absent.
 
+> **Corrected by the follow-up investigation that shipped the fixes**
+> ([`docs/features/ptrentry/analysis.md`](../features/ptrentry/analysis.md), and the sibling
+> `cortexmvectors` / `tailcallentry` / `poolentry` directories).
+> The *count* holds — an independent address-based re-measurement reproduces the per-project
+> distribution above (libopencm3 136 and nuttx 87 exactly). The *mechanism* and the *noise*
+> claim do not:
+>
+> - It is **not absorption**. Of 2,941 missed addresses, **1,896 sit past the end of the
+>   nearest kuna function and exactly 3 are strictly inside a kuna body**. The 24-byte median
+>   measures proximity, not containment. `devnull_read`/`devnull_write` and
+>   `_usbd_standard_request_device` are not merged into a neighbour — their bytes produce **no
+>   output at all**. This was missing decompilation, not a naming/boundary problem.
+> - The `NMI_Handler` / `PendSV_Handler` / `DebugMon_Handler` example is **not noise**: in
+>   cleanflight they are three *distinct* two-byte `bx lr` stubs at `0x803b060`/`0x803b062`/
+>   `0x803b064`, each with its own vector-table slot, and Ghidra, IDA, angr and Binary Ninja
+>   all recover all three. Real ground-truth noise is **3.4%** — 105 alias/ICF names on
+>   addresses already counted once.
+> - The dominant sub-class was not fall-through/tail-call but **code-pointer-referenced
+>   entries (57%, 1,402 of them decbench-measured)**, which `aif::code_pointer_table_seeds`
+>   found and then rejected on its frame-prologue and >2-instruction guards.
+>
+> All of that is now **shipped**: `cortexmvectors` (#248), `ptrentry` (#255),
+> `tailcallentry` (#259) and `poolentry` (#278), all four carried by the `aggressive` preset
+> since DIV-93. Re-measured over the 110 stripped non-x86-64 decbench twins, entry recall is
+> **88.63% -> 93.31%** with mid-body false entries *falling* 8,333 -> 7,117. The numbers on
+> this page are the pre-fix baseline and should be read as history.
+
 ## Remaining error records
 
 240 pre-wave → **137** now, across the 191-binary sweep. The generic

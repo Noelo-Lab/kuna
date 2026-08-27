@@ -316,11 +316,19 @@ or were never right, and none of them should be repeated:
 
 The measured breakdown of what is left — 98.3% of it function-entry granularity on
 embedded ARM, median 24 bytes from the containing kuna entry — is
-`docs/decbench/recall-measurement.md`. The approved four-step sequence against it is
-**[PROPOSAL] PR #239**: step 1 `cortexmvectors` (#248) and step 2 `ptrentry` (#255) are
-merged and take Cortex-M recall to **96.3%**, step 3 `tailcallentry` is in flight, step 4
-(TBB/TBH) is not started. **The live sequence table with per-step measurements is a comment
-on #239** — read it there; it is not duplicated in this repo, so it cannot go stale here.
+`docs/decbench/recall-measurement.md`. The approved sequence against it was
+**[PROPOSAL] PR #239**, and it is now essentially delivered: step 1 `cortexmvectors`
+(#248), step 2 `ptrentry` (#255) and step 3 `tailcallentry` (#259) are merged, as is an
+unplanned step 5, `poolentry` (#278). Only **step 4 (TBB/TBH switch resolution) is not
+started**, and it needs re-scoping from scratch — its "297 addresses" estimate predates all
+four merged discovery passes.
+
+All four shipped default-OFF and were therefore **inert on every default path** until
+DIV-93 put them in the `aggressive` preset. Measured over the 110 stripped non-x86-64
+decbench twins (50,724 symbol-table function starts): entry recall **88.63% -> 93.31%**
+(+2,373 entries) while mid-body false entries *fall* 8,333 -> 7,117, with zero
+ground-truth entries lost. Per-step and per-project tables are in the DIV-93 PR; the
+per-option acceptance numbers are in `docs/features/{cortexmvectors,ptrentry,tailcallentry,poolentry}/`.
 
 ### Per-case procedure (the triage agent)
 
@@ -330,9 +338,11 @@ on #239** — read it there; it is not duplicated in this repo, so it cannot go 
    does (the aggressive default closed it).
 3. Sweep relevant default-OFF options (`kuna catalog --json`, `use_when` match;
    `triage --case <id> --option <name> on`). One closes it? → `status: covered-by-option`
-   (a default-flip candidate, not a new feature). `--mode aggressive` already carries 20
-   of the 26 default-off options; `condfold`, `cortexmvectors`, `ptrentry`,
-   `paramcopyhoist`, `dwarf_lines` and `v850indirectbranch` are not among them.
+   (a default-flip candidate, not a new feature). `--mode aggressive` already carries 26
+   of the 33 on/off default-off options; `guardarm`, `loopcondhoist`, `paramcopyhoist`,
+   `ifuncfpret`, `dwarf_lines`, `formatstring` and `v850indirectbranch` are not among
+   them, and the five multi-valued default-off options (`condfold`, `rustabi`,
+   `calloverlap`, `spillargtrial`, `outline`) have no single "on" a preset could pin.
 4. Pin ONE dominant structural difference (gotos into shared tails, missing switch,
    loop shape, boundary overrun, …).
 5. Metric-artifact check: approximated large CFGs, Joern parse failures on kuna's

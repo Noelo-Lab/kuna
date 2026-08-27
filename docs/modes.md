@@ -67,16 +67,28 @@ future-proofs the preset: if the defaults later drift more aggressive,
 
 ## `aggressive`
 
-`aggressive` flips **every** off-by-default option on, with **two** exclusions.
-The options it enables:
+`aggressive` flips **every** on/off off-by-default option on, with the exclusions
+listed below. It carries 26 of the 33 such options; the five *multi-valued*
+default-off options (`condfold`, `rustabi`, `calloverlap`, `spillargtrial`,
+`outline`) are out of reach by construction, since a preset can only pin a single
+"on". `AGGRESSIVE_OVERRIDES` in `p0_knowledge/modes.rs` is the authority — the
+invariant test `aggressive_carries_every_default_off_option` makes an omission a
+build failure. The options it enables:
 
 - **transform tier**: `switchmodbound`, `switchguardbound` (speed-costly),
   `unrolledguard` (speed-costly), `stackalias`, `sparcstructret`,
-  `regionedgeorder`, `returndup`, `iteexpr`
+  `regionedgeorder`, `returndup`, `orchain`, `iteexpr`, `ctypes`
 - **analysis tier**: `listing` (the master gate that enables the
   Listing-consuming passes — `fid`, `aif`, the discovered-no-return family),
   `fast_funcdisc`, `eh_frame_full`, `funcstart_patterns`, `addrtable`,
-  `operand_refs`, `fid`, `rtti`, `aif`, `objc`, `pdb`, `macho-arm64e`
+  `operand_refs`, `fid`, `rtti`, `itaniumrtti`, `aif`, `aifstrict`, `objc`,
+  `pdb`, `macho-arm64e`
+- **analysis tier, ARM entry discovery** (DIV-93): `cortexmvectors`, `ptrentry`,
+  `tailcallentry`, `poolentry` — the four-step sequence that takes stripped ARM
+  entry recall from 88.63% to 93.31% over the 110 non-x86-64 decbench twins while
+  *lowering* mid-body false entries. All four are ARM-gated and the last three
+  also need `listing`, which this preset supplies; off ARM they are measured
+  no-ops (identical entry sets on 90 x86-64 twins and 12 i386 PE images).
 
 `returndup` became a shipped default in DIV-54 and is deliberately kept on the
 list: the preset **owns** the option, so an earlier `--option returndup off` on
@@ -84,12 +96,13 @@ the same command line is re-enabled by `--mode aggressive`, and the preset's
 contract ("every recovery pass on") does not silently change if a default drifts
 back.
 
-### The two exclusions: `v850indirectbranch` and `dwarf_lines`
+### The deliberate exclusions
 
-Every other off-by-default option is safe to blanket-enable: the format-specific
-ones are inert off their target (`rtti`/`pdb` = PE, `objc`/`macho-arm64e` =
-Mach-O, `sparcstructret` = the SPARC `unimp`-trap idiom, which cannot occur off
-SPARC). Two are not:
+Most off-by-default options are safe to blanket-enable: the format-specific ones
+are inert off their target (`rtti`/`pdb` = PE, `objc`/`macho-arm64e` = Mach-O,
+`sparcstructret` = the SPARC `unimp`-trap idiom, which cannot occur off SPARC,
+and since DIV-93 the four ARM entry passes, which are inert off ARM). These are
+not, and the invariant test's `EXCLUDED_ON_PURPOSE` list is the authority:
 
 - **`v850indirectbranch`** — its predicate (`kuna_is_v850_indirect_jmp`,
   `p2_lift/kuna_v850indbranch.rs`) matches **any** register-indirect `CALLIND`,
@@ -116,10 +129,21 @@ SPARC). Two are not:
   both surfaces honour `--option formatstring on` identically, and neither pays
   for it unless asked (DIV-66).
 
-All three therefore stay manual per-run opt-ins (`--option v850indirectbranch on`,
-`--option dwarf_lines on`, `--option formatstring on`) even under `--mode
-aggressive`; a named `--option` still wins over the preset by last-write
-precedence.
+- **`ifuncfpret`** — Stage A of the IFUNC FP-return chain. On its own it only
+  renames x86-64 IFUNC stubs to synthetic `ifunc_<resolver>` names and recovers a
+  tail call to them; it does not yet fix the `xmm0` return the feature exists for,
+  so it stays an opt-in until the chain is complete.
+
+All four therefore stay manual per-run opt-ins (`--option v850indirectbranch on`,
+`--option dwarf_lines on`, `--option formatstring on`, `--option ifuncfpret on`)
+even under `--mode aggressive`; a named `--option` still wins over the preset by
+last-write precedence.
+
+Separately, three default-off options are **unevaluated** rather than excluded —
+`guardarm`, `loopcondhoist` and `paramcopyhoist`. They are absent from the preset
+only because nobody has run their sweep and speed measurement yet, and each is
+tracked in the `UNEVALUATED` list beside the invariant test. Being on that list is
+a to-do, not a verdict: DIV-93 emptied the four ARM entry options off it.
 
 ### Caveats
 
