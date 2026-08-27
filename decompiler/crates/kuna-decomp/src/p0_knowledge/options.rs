@@ -534,6 +534,14 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // entries the byte-slide plants, and recovers the real entries those accepts
     // consumed.  Default-OFF, carried by the `aggressive` preset; inert without `aif`.
     "aifstrict",
+    // (kuna, GH-313) The AIF accept corroboration test: upstream rejects a gap
+    // candidate on TWO fingerprint tests and kuna ported only the first, so a
+    // self-contained routine that merely reaches a `ret` is accepted on four
+    // discovered functions sharing its two-mnemonic prologue.  With this on an
+    // accept must either add information (a flow into already-discovered code) or
+    // match a prologue 50 discovered functions share.  Default-OFF, carried by the
+    // `aggressive` preset; inert without `aif`.
+    "aifcorroborate",
     // (kuna) Tail-call function-entry recovery: the recursive-descent Listing walk
     // treats every non-CALL flow target as a same-function successor, so a routine
     // reached only by a tail `B` is absorbed into its caller.  Reads the completed

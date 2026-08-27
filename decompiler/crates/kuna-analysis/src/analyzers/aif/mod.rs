@@ -108,6 +108,7 @@ use kuna_sleigh::translate::Translate;
 
 use crate::listing::{decode::decode_one, FlowKind, Listing};
 
+pub mod kuna_aifcorroborate;
 pub mod kuna_aifstrict;
 pub mod kuna_poolentry;
 pub mod kuna_ptrentry;
@@ -328,6 +329,7 @@ fn check_valid_subroutine(
     gap_hi: u64,
 ) -> Option<BTreeSet<u64>> {
     check_valid_subroutine_with_policy(decoder, listing, entry, gap_lo, gap_hi, false)
+        .map(|(body, _adds_info)| body)
 }
 
 fn check_valid_subroutine_strict(
@@ -338,8 +340,18 @@ fn check_valid_subroutine_strict(
     gap_hi: u64,
 ) -> Option<BTreeSet<u64>> {
     check_valid_subroutine_with_policy(decoder, listing, entry, gap_lo, gap_hi, true)
+        .map(|(body, _adds_info)| body)
 }
 
+/// Returns `Some((body, corroborated))`. `corroborated` is Ghidra's `addsInfo`
+/// computed the upstream way — set by a CALL, or by a jump whose target is already a
+/// decoded instruction, and by nothing else. It is deliberately NOT the local
+/// `adds_info` that feeds the `didTerminate || didCallValidSubroutine` gate below:
+/// that one also fires on a plain fall-through out of the gap into decoded code,
+/// which is the signature of a mid-body phantom rather than evidence against one
+/// (see [`kuna_aifcorroborate`]). Only the gap-walk accept ([`probe_gap_start`])
+/// reads it; the two wrappers above drop it, because their callers carry their own
+/// corroboration.
 fn check_valid_subroutine_with_policy(
     decoder: &mut GapDecoder,
     listing: &Listing,
@@ -347,11 +359,12 @@ fn check_valid_subroutine_with_policy(
     gap_lo: u64,
     gap_hi: u64,
     strict: bool,
-) -> Option<BTreeSet<u64>> {
+) -> Option<(BTreeSet<u64>, bool)> {
     let mut body: BTreeSet<u64> = BTreeSet::new();
     let mut worklist: Vec<u64> = vec![entry];
     let mut did_terminate = false;
     let mut adds_info = false;
+    let mut corroborated = false;
     let mut steps = 0usize;
 
     while let Some(vma) = worklist.pop() {
@@ -409,10 +422,16 @@ fn check_valid_subroutine_with_policy(
                 return None; // flow leaves the executable image (`!memory.contains`)
             }
             if insn.is_call {
+                // Upstream: "calls always add info".
+                corroborated = true;
                 if !strict || listing.is_instruction_start(target) {
                     adds_info = true;
                 }
             } else {
+                // Upstream: "jumps must jump to existing code".
+                if listing.is_instruction_start(target) {
+                    corroborated = true;
+                }
                 worklist.push(target); // branch target → intra-routine successor
             }
         }
@@ -427,7 +446,7 @@ fn check_valid_subroutine_with_policy(
     if !did_terminate && !adds_info {
         return None; // `didTerminate || didCallValidSubroutine`
     }
-    Some(body)
+    Some((body, corroborated))
 }
 
 /// Run the AIF gap-walk (Ghidra's `added`) and return the accepted gap-start
@@ -443,13 +462,16 @@ fn check_valid_subroutine_with_policy(
 /// `getNumInstructions()` gate), or if no fingerprint reaches the threshold.
 /// `aifstrict` (GH-299) adds the structural rejects in [`kuna_aifstrict`]: the gap
 /// cursor slides to the next 4-byte boundary instead of the next byte, probing only
-/// an aligned address or a hole's first byte.
+/// an aligned address or a hole's first byte. `aifcorroborate` (GH-313) restores
+/// upstream's second fingerprint test in [`kuna_aifcorroborate`]: an accept must
+/// either add information or match a prologue 50 discovered functions share.
 pub fn run_aif(
     listing: &Listing,
     translate: &dyn Translate,
     code_space: Rc<AddrSpace>,
     exec_ranges: &[(u64, u64)],
     aifstrict: bool,
+    aifcorroborate: bool,
 ) -> Vec<u64> {
     if listing.function_count() < MINIMUM_FUNCTION_COUNT || listing.num_instructions() == 0 {
         return Vec::new();
@@ -487,11 +509,26 @@ pub fn run_aif(
         let probe_here =
             !aifstrict || kuna_aifstrict::probe_allowed(listing, gap_start);
         if probe_here && !claimed.contains(&gap_start) {
-            if let Some(body) = probe_gap_start(&mut decoder, listing, &hist, gap_start, gap_hi) {
-                accepted.insert(gap_start);
-                let body_max = body.iter().copied().max().unwrap_or(gap_start);
-                advanced = body_max.saturating_add(1);
-                claimed.extend(body);
+            match probe_gap_start(&mut decoder, listing, &hist, gap_start, gap_hi, aifcorroborate)
+            {
+                Probe::Accept(body) => {
+                    accepted.insert(gap_start);
+                    let body_max = body.iter().copied().max().unwrap_or(gap_start);
+                    advanced = body_max.saturating_add(1);
+                    claimed.extend(body);
+                }
+                // (kuna, `aifcorroborate`) An uncorroborated candidate is refused
+                // as an ENTRY but still consumes its body. Without that, refusing
+                // an accept hands the cursor back to the interior of the same hole
+                // and it accepts a worse candidate deeper inside — measured on the
+                // 3.4 MB PE witness as mid-body entries RISING by 222 while 1,100
+                // real entries were lost. See `kuna_aifcorroborate`.
+                Probe::Uncorroborated(body) => {
+                    let body_max = body.iter().copied().max().unwrap_or(gap_start);
+                    advanced = body_max.saturating_add(1);
+                    claimed.extend(body);
+                }
+                Probe::Reject => {}
             }
         }
 
@@ -505,22 +542,46 @@ pub fn run_aif(
     accepted.into_iter().collect()
 }
 
+/// The outcome of one gap-start probe. `Uncorroborated` is `aifcorroborate`'s
+/// refusal and exists as its own variant because it is not a plain `Reject`: the
+/// candidate DID disassemble into a valid subroutine, so the cursor must still
+/// consume its body rather than fall back into it.
+enum Probe {
+    Accept(BTreeSet<u64>),
+    Uncorroborated(BTreeSet<u64>),
+    Reject,
+}
+
 /// Probe a single gap start: speculatively decode its prologue, require its
 /// fingerprint to match a ≥-threshold histogram entry, and run the valid-subroutine
-/// check. Returns the accepted routine's body VMAs, or `None`.
+/// check.
+///
+/// `aifcorroborate` (GH-313) additionally applies upstream's SECOND fingerprint
+/// test here, which is the only frame where both of its inputs exist: the
+/// `startCount` histogram hit computed just above, and the corroboration flag the
+/// validity walk returns. See [`kuna_aifcorroborate`].
 fn probe_gap_start(
     decoder: &mut GapDecoder,
     listing: &Listing,
     hist: &BTreeMap<Fingerprint, usize>,
     gap_start: u64,
     gap_hi: u64,
-) -> Option<BTreeSet<u64>> {
-    let fp = decoder.fingerprint(gap_start)?;
+    aifcorroborate: bool,
+) -> Probe {
+    let Some(fp) = decoder.fingerprint(gap_start) else { return Probe::Reject };
     let count = hist.get(&fp).copied().unwrap_or(0);
     if count < FINGERPRINT_THRESHOLD {
-        return None;
+        return Probe::Reject;
     }
-    check_valid_subroutine(decoder, listing, gap_start, gap_start, gap_hi)
+    let Some((body, corroborated)) =
+        check_valid_subroutine_with_policy(decoder, listing, gap_start, gap_start, gap_hi, false)
+    else {
+        return Probe::Reject;
+    };
+    if aifcorroborate && !kuna_aifcorroborate::accepts(corroborated, count) {
+        return Probe::Uncorroborated(body);
+    }
+    Probe::Accept(body)
 }
 
 pub(crate) fn validate_pointer_targets(

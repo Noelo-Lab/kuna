@@ -90,8 +90,9 @@ fn settable_count_is_117() {
     // +1 for `symbolnamerepair` (P1 degenerate-symbol-name repair, DIV-88).
     // +1 for `noreturn_discstrict` (P1 discovered-no-return positive-evidence-only
     // tally, DIV-92, GH-312).
-    assert_eq!(kuna_num_settables(), 120);
-    assert_eq!(SETTABLE_TABLE.len(), 120);
+    // +1 for `aifcorroborate` (P1 AIF accept corroboration test, GH-313).
+    assert_eq!(kuna_num_settables(), 121);
+    assert_eq!(SETTABLE_TABLE.len(), 121);
 }
 
 #[test]
@@ -158,10 +159,13 @@ fn tier_counts_are_26_core_50_transform_42_analysis() {
     // DIV-87).
     // analysis 42 -> 43: +1 for `symbolnamerepair` (P1 degenerate-symbol-name
     // repair, DIV-88).
+    // analysis 43 -> 44: +1 for `aifcorroborate` (P1 AIF accept corroboration test,
+    // GH-313) -- analysis, like its `aifstrict` sibling: it shapes which entries the
+    // discovery tier emits, and rewrites nothing.
     // transform 50 -> 51: +1 for `noreturn_discstrict` (P1 discovered-no-return
     // positive-evidence-only tally, DIV-92) -- transform, not analysis: it changes
     // which callees are marked no-return, so it changes emitted C at every caller.
-    assert_eq!((core, transform, analysis), (26, 51, 43));
+    assert_eq!((core, transform, analysis), (26, 51, 44));
 }
 
 #[test]
@@ -444,6 +448,10 @@ fn option_values_live_value_present_for_36_suppressed_for_77() {
         // with no codegen live reader (read console-side via kuna_live_value), like
         // `aif` above. Default-OFF, carried by the `aggressive` preset.
         "aifstrict",
+        // (kuna, GH-313) The AIF accept corroboration test — an analysis-tier gate
+        // with no codegen live reader (read console-side via kuna_live_value), like
+        // `aifstrict` above. Default-OFF, carried by the `aggressive` preset.
+        "aifcorroborate",
         // (kuna) Tail-call function-entry recovery — an analysis-pass gate with no
         // codegen live reader (read console-side via kuna_live_value), same as the
         // gates around it. Default-off, ARM-only.
@@ -680,7 +688,10 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // retinputhalf's P4, dwarfstructs' P1, dwarfvariants' P1, rustabi's P4 and
     // symbolnamerepair's P1 rows sit mid-table, so they do not move the tail).
     // noreturn_discstrict's P1 row is mid-table too, so it only bumps the count.
-    assert_eq!(json.matches("},\n").count(), 119);
+    // retinputhalf's P4, dwarfstructs' P1, dwarfvariants' P1, rustabi's P4,
+    // symbolnamerepair's P1 and aifcorroborate's P1 rows sit mid-table, so they do
+    // not move the tail).
+    assert_eq!(json.matches("},\n").count(), 120);
 }
 
 #[test]

@@ -664,6 +664,7 @@ pub fn run_listing_consumers(
                 std::rc::Rc::clone(code_space),
                 listing.exec_ranges(),
                 arch.analysis_aifstrict,
+                arch.analysis_aifcorroborate,
             );
             // (kuna, `poolentry`) Reference-driven ARM literal-pool inference over
             // the COMPLETED walk, driving two consumers: the additive recall half

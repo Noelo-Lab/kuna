@@ -971,6 +971,11 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // above already gates. Registered here so the fail-open `_ => true` never
         // silently re-enables a pass id that does not exist.
         "aifstrict" => arch.analysis_aifstrict,
+        // (kuna, GH-313) The AIF accept corroboration test — like `aifstrict` it has
+        // no fact stream of its own, shaping the `aif` accept list inside `run_aif`.
+        // Registered here so the fail-open `_ => true` never silently re-enables a
+        // pass id that does not exist.
+        "aifcorroborate" => arch.analysis_aifcorroborate,
         // (kuna) Tail-call function-entry recovery — default-OFF (discovers more
         // functions, so it changes emitted C by construction). Listing consumer;
         // the live gate is the pre-invocation check in `run_listing_consumers`.

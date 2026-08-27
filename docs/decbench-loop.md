@@ -255,6 +255,42 @@ alongside concurrent cargo builds.
 This is what standing requirement 8 looks like as a gate rather than as prose. Use it for
 every default flip and every gate on a default-ON pass.
 
+### `entrysweep` is its discovery-tier twin — GED cannot see which functions you found
+
+`optsweep` measures the C kuna emits for a function it already found, so a P1 discovery
+change (`aif`, `aifstrict`, `aifcorroborate`, `ptrentry`, `poolentry`, `tailcallentry`,
+`funcstart_patterns`) is invisible to it: an option that invents a thousand phantom
+functions, or loses a thousand real ones, moves no GED at all. `entrysweep` measures the
+entry set directly, against the unstripped `compiled/` twin every stripped decbench
+binary has — so ground truth is an exact symbol table, not a reference decompiler's
+guess.
+
+```bash
+# the GH-299 / GH-313 baseline command: 110 non-x86-64 twins, three arms, ~4 min
+python3 -m scripts.decbench.entrysweep --arch non-x86-64 \
+    --arms shipped: nostrict:aifstrict=off aifoff:aif=off \
+    --marginal aifoff --out /tmp/sweep.json
+python3 -m scripts.decbench.entrysweep --report /tmp/sweep.json   # re-print, no runs
+# one image with no twin, scored against a reference-decompiler inventory JSON
+python3 -m scripts.decbench.entrysweep --witness game.exe ida_game.json --arms shipped: g:x=on
+# one image, one arm, ~2 s -- the smoke test for any discovery change
+python3 -m scripts.decbench.entryscore <stripped> <twin> --option aif off
+```
+
+`midbody` (an entry strictly inside a ground-truth body) is the number GH-299 and GH-313
+are about, and it only means anything **marginally**: `--marginal aifoff` re-scores each
+arm's entries minus the reference arm's, which for `aif off` is exactly "the entries AIF
+added, and how many landed inside a body". Two traps the tool prints around on every run:
+
+* **Aggregate blindness.** ~80% of the corpus mid-body mass sits in 8 of the 110
+  non-x86-64 binaries, all ARM firmware, so a guard that trades PE precision for ARM
+  recall reads as a clean win in the totals. Read the per-binary table and the
+  `--tripwire` rows (u-boot and `CMSIS_DAP.axf` by default) before the totals.
+* **Baseline drift.** `--mode aggressive` (the default here) carries
+  `AGGRESSIVE_OVERRIDES`, which for this corpus IS the shipped default path, `aifstrict`
+  included. Scoring a new guard against a hand-disabled preset member books that
+  member's win as the new guard's own — the exact error GH-313's issue body makes.
+
 ### Triage buckets (in `cases.json`, computed from cross-decompiler consensus)
 
 | bucket | meaning | action |
