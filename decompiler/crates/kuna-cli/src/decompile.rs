@@ -482,20 +482,24 @@ fn trim_newlines(s: &str) -> String {
 pub fn run(args: &DecompileArgs) -> i32 {
     match decompile(args) {
         Ok(out) => {
-            if args.regions {
-                println!("{}", out.c);
-                println!();
-                println!("// ==== kuna regions (S7) ====");
-                println!("{}", out.regions.unwrap_or_default());
+            let text = if args.regions {
+                format!(
+                    "{}\n\n// ==== kuna regions (S7) ====\n{}\n",
+                    out.c,
+                    out.regions.unwrap_or_default()
+                )
             } else {
-                println!("{}", out.c);
-            }
-            match out.failure {
-                Some(msg) => {
-                    eprintln!("error: {msg}");
-                    1
-                }
-                None => 0,
+                format!("{}\n", out.c)
+            };
+            match crate::output::emit(&text) {
+                Ok(()) => match out.failure {
+                    Some(msg) => {
+                        eprintln!("error: {msg}");
+                        1
+                    }
+                    None => 0,
+                },
+                Err(err) => crate::output::error_status(err),
             }
         }
         Err(e) => {

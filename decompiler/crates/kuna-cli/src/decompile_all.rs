@@ -45,6 +45,7 @@
 //! inventory can never omit an entry the whole-binary run decompiles.
 
 use std::ffi::{OsStr, OsString};
+use std::fmt::Write as _;
 use std::rc::Rc;
 
 use kuna_base::address::Address;
@@ -107,11 +108,16 @@ pub fn run(argv: &[String]) -> i32 {
                     .find(|(n, _)| n == "setlanguage")
                     .map(|(_, v)| v.as_str())
                     .unwrap_or("c-language");
-                println!("{}", dumps_indent2(&result_json(&args.binary, &funcs, language)));
+                crate::output::emit_with_status(
+                    &format!(
+                        "{}\n",
+                        dumps_indent2(&result_json(&args.binary, &funcs, language))
+                    ),
+                    0,
+                )
             } else {
-                print!("{}", render_c(&funcs));
+                crate::output::emit_with_status(&render_c(&funcs), 0)
             }
-            0
         }
         Err(e) => {
             eprintln!("error: {e}");
@@ -147,15 +153,16 @@ pub fn run_functions(argv: &[String]) -> i32 {
                         })
                         .collect(),
                 );
-                println!(
-                    "{}",
-                    dumps_indent2(&Json::Object(vec![
+                crate::output::emit_with_status(
+                    &format!("{}\n", dumps_indent2(&Json::Object(vec![
                         ("binary".into(), Json::Str(args.binary.clone())),
                         ("count".into(), Json::Number(entries.len().to_string())),
                         ("functions".into(), arr),
-                    ]))
-                );
+                    ]))),
+                    0,
+                )
             } else {
+                let mut text = String::new();
                 for e in &entries {
                     // Alias names follow the canonical one on the same line, so
                     // the plain listing stays one line per function.
@@ -164,10 +171,10 @@ pub fn run_functions(argv: &[String]) -> i32 {
                     } else {
                         format!("\t({})", e.aliases.join(", "))
                     };
-                    println!("0x{:x}\t{}{extra}", e.addr.get_offset(), e.name);
+                    let _ = writeln!(text, "0x{:x}\t{}{extra}", e.addr.get_offset(), e.name);
                 }
+                crate::output::emit_with_status(&text, 0)
             }
-            0
         }
         Err(e) => {
             eprintln!("error: {e}");

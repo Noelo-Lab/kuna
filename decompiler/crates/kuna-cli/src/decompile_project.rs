@@ -84,7 +84,7 @@ pub fn run(argv: &[String]) -> i32 {
         }
     };
     match decompile_project(&args, output.as_deref()) {
-        Ok(()) => 0,
+        Ok(summary) => crate::output::emit_with_status(&summary, 0),
         Err(e) => {
             eprintln!("error: {e}");
             1
@@ -114,7 +114,7 @@ fn usage() {
 
 /// The whole flow: load once → decompile every target (with prototypes) →
 /// build the four artifacts → write them all at the end.
-fn decompile_project(args: &Args, output: Option<&str>) -> Result<(), String> {
+fn decompile_project(args: &Args, output: Option<&str>) -> Result<String, String> {
     let binary_path = std::fs::canonicalize(&args.binary)
         .map_err(|_| format!("binary not found: {}", args.binary))?;
     let file_name = binary_path
@@ -203,6 +203,8 @@ fn decompile_project(args: &Args, output: Option<&str>) -> Result<(), String> {
         .map(|(n, s)| format!("{n} ({s} bytes)"))
         .collect::<Vec<_>>()
         .join(", ");
-    println!("wrote {}: {files}; functions: {ok} ok, {failed} failed", out_dir.display());
-    Ok(())
+    Ok(format!(
+        "wrote {}: {files}; functions: {ok} ok, {failed} failed\n",
+        out_dir.display()
+    ))
 }

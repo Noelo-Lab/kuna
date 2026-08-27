@@ -12,6 +12,7 @@
 //! docs/rust-port/README.md and is subsumed by `kuna test` (the Rust-built specs decode
 //! to 675/675).  So `--diff` is a documentation note, not a live comparison.
 
+use std::io::Write;
 use std::process::Command;
 
 use crate::paths;
@@ -30,8 +31,7 @@ and `kuna test --datatests --baseline docs/baseline.json` as the end-to-end gate
 
 pub fn run(args: &[String]) -> i32 {
     if args.iter().any(|a| a == "--diff") {
-        println!("{DIFF_NOTE}");
-        return 0;
+        return crate::output::emit_with_status(&format!("{DIFF_NOTE}\n"), 0);
     }
     let bin = paths::slacomp();
     if !bin.exists() {
@@ -44,9 +44,15 @@ pub fn run(args: &[String]) -> i32 {
     }
     // Pass the remaining args straight through to slacomp (it owns `-a <dir>` and
     // the bare `<slaspec>...` forms).
-    let status = Command::new(&bin).args(args).status();
-    match status {
-        Ok(s) => s.code().unwrap_or(1),
+    let output = Command::new(&bin).args(args).output();
+    match output {
+        Ok(output) => {
+            let _ = std::io::stderr().write_all(&output.stderr);
+            match crate::output::emit_bytes(&output.stdout) {
+                Ok(()) => output.status.code().unwrap_or(1),
+                Err(err) => crate::output::error_status(err),
+            }
+        }
         Err(e) => {
             eprintln!("error: failed to run slacomp: {e}");
             2

@@ -5,6 +5,10 @@ The user-facing commands are the single Rust binary `kuna`
 `make binaries`). This is the full reference; the one-screen version is in
 `docs/agents.md`.
 
+All command output uses a fallible stdout boundary. A downstream reader that closes the pipe
+early is a normal terminal condition: kuna exits `0` without panic text or a broken-pipe
+diagnostic. Other stdout write failures remain errors and exit `1`.
+
 ## `kuna test` — the parity gates
 
 ```bash

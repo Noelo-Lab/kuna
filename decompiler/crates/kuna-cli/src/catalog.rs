@@ -16,6 +16,7 @@
 //!                  row, or a stale catalog row).
 
 use std::collections::BTreeSet;
+use std::fmt::Write as _;
 use std::process::Command;
 
 use kuna_decomp::kuna_phases::emit_catalog_markdown;
@@ -135,8 +136,7 @@ pub fn cmd_json(option: Option<&str>) -> i32 {
                 Json::Array(_) => v.clone(),
                 obj => Json::Array(vec![obj.clone()]),
             };
-            println!("{}", dumps_indent2(&list));
-            0
+            crate::output::emit_with_status(&format!("{}\n", dumps_indent2(&list)), 0)
         }
         Err(e) => {
             eprintln!("error: {e}");
@@ -154,8 +154,7 @@ pub fn cmd_markdown(option: Option<&str>) -> i32 {
         eprintln!("error: --markdown renders the whole catalog (got --option {o}); use --json/--option for one row");
         return 2;
     }
-    print!("{}", emit_catalog_markdown());
-    0
+    crate::output::emit_with_status(&emit_catalog_markdown(), 0)
 }
 
 /// (default) the human-readable table (port of catalog.main's text branch).
@@ -168,6 +167,7 @@ pub fn cmd_text(option: Option<&str>, tier: Option<&str>) -> i32 {
             return 1;
         }
     };
+    let mut text = String::new();
     for e in entries(&v) {
         if let Some(want) = tier {
             if field(e, "tier") != Some(want) {
@@ -180,7 +180,8 @@ pub fn cmd_text(option: Option<&str>, tier: Option<&str>) -> i32 {
             ""
         };
         let values = format!("{{{}}}", arr_field(e, "values").join("|"));
-        println!(
+        let _ = writeln!(
+            text,
             "{:<20} {:<20} default={:<10} [{}/{}] tier={}{}",
             field(e, "option").unwrap_or(""),
             values,
@@ -190,12 +191,13 @@ pub fn cmd_text(option: Option<&str>, tier: Option<&str>) -> i32 {
             field(e, "tier").unwrap_or("?"),
             flag,
         );
-        println!("    {}", field(e, "summary").unwrap_or(""));
-        println!("    when: {}", field(e, "use_when").unwrap_or(""));
+        let _ = writeln!(text, "    {}", field(e, "summary").unwrap_or(""));
+        let _ = writeln!(text, "    when: {}", field(e, "use_when").unwrap_or(""));
         let src = field(e, "source_decompiler").unwrap_or("");
         let kind = field(e, "change_kind").unwrap_or("");
         if !src.is_empty() || !kind.is_empty() {
-            println!(
+            let _ = writeln!(
+                text,
                 "    from: {} ({})",
                 if src.is_empty() { "?" } else { src },
                 if kind.is_empty() { "?" } else { kind }
@@ -203,10 +205,10 @@ pub fn cmd_text(option: Option<&str>, tier: Option<&str>) -> i32 {
         }
         let insp = field(e, "inspiration").unwrap_or("");
         if !insp.is_empty() {
-            println!("    inspiration: {insp}");
+            let _ = writeln!(text, "    inspiration: {insp}");
         }
     }
-    0
+    crate::output::emit_with_status(&text, 0)
 }
 
 /// `--check`: verify the catalog documents exactly the registered kuna options.
@@ -251,6 +253,8 @@ pub fn cmd_check() -> i32 {
         }
         return 1;
     }
-    println!("catalog OK: documents exactly the registered kuna options");
-    0
+    crate::output::emit_with_status(
+        "catalog OK: documents exactly the registered kuna options\n",
+        0,
+    )
 }
