@@ -22,6 +22,7 @@ mod decompile_all;
 mod decompile_project;
 mod fid;
 mod jsonfmt;
+mod output;
 mod paths;
 mod specs;
 mod test;
@@ -52,8 +53,13 @@ fn main() -> ExitCode {
         "-V" | "--version" | "version" => {
             // Release CI bakes the repo-derived MAJOR.MINOR (docs/release.md)
             // via KUNA_VERSION; dev builds report the workspace Cargo version.
-            println!("kuna {}", option_env!("KUNA_VERSION").unwrap_or(env!("CARGO_PKG_VERSION")));
-            0
+            output::emit_with_status(
+                &format!(
+                    "kuna {}\n",
+                    option_env!("KUNA_VERSION").unwrap_or(env!("CARGO_PKG_VERSION"))
+                ),
+                0,
+            )
         }
         "-h" | "--help" | "help" => {
             usage();
@@ -398,6 +404,8 @@ fn cmd_modes(argv: &[String]) -> i32 {
     }
 
     use jsonfmt::Json;
+    use std::fmt::Write as _;
+    let mut text = String::new();
     if json {
         let modes: Vec<Json> = kuna_decomp::modes::MODE_TABLE
             .iter()
@@ -421,23 +429,23 @@ fn cmd_modes(argv: &[String]) -> i32 {
             })
             .collect();
         let root = Json::Object(vec![("modes".into(), Json::Array(modes))]);
-        println!("{}", jsonfmt::dumps_indent2(&root));
+        let _ = writeln!(text, "{}", jsonfmt::dumps_indent2(&root));
     } else {
         for m in kuna_decomp::modes::MODE_TABLE {
-            println!("{}", m.name);
-            println!("  {}", m.summary);
+            let _ = writeln!(text, "{}", m.name);
+            let _ = writeln!(text, "  {}", m.summary);
             if m.automatic {
-                println!("  (automatic size policy; no direct overrides)");
+                let _ = writeln!(text, "  (automatic size policy; no direct overrides)");
             } else if m.overrides.is_empty() {
-                println!("  (no overrides — the shipped defaults)");
+                let _ = writeln!(text, "  (no overrides — the shipped defaults)");
             } else {
                 let joined: Vec<String> =
                     m.overrides.iter().map(|(o, v)| format!("{o}={v}")).collect();
-                println!("  overrides: {}", joined.join(", "));
+                let _ = writeln!(text, "  overrides: {}", joined.join(", "));
             }
         }
     }
-    0
+    output::emit_with_status(&text, 0)
 }
 
 // --- helpers -----------------------------------------------------------------

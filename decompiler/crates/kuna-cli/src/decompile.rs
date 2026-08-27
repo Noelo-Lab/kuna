@@ -482,20 +482,29 @@ fn trim_newlines(s: &str) -> String {
 pub fn run(args: &DecompileArgs) -> i32 {
     match decompile(args) {
         Ok(out) => {
-            if args.regions {
-                println!("{}", out.c);
-                println!();
-                println!("// ==== kuna regions (S7) ====");
-                println!("{}", out.regions.unwrap_or_default());
+            let text = if args.regions {
+                format!(
+                    "{}\n\n// ==== kuna regions (S7) ====\n{}\n",
+                    out.c,
+                    out.regions.unwrap_or_default()
+                )
             } else {
-                println!("{}", out.c);
-            }
-            match out.failure {
+                format!("{}\n", out.c)
+            };
+            // The pipeline verdict is reported and returned whether or not stdout
+            // survived (DIV-45): a closed reader is not evidence the decompile
+            // worked.  Emitting first keeps the stdout-then-stderr order.
+            let written = crate::output::emit(&text);
+            let status = match out.failure {
                 Some(msg) => {
                     eprintln!("error: {msg}");
                     1
                 }
                 None => 0,
+            };
+            match written {
+                Ok(()) => status,
+                Err(err) => crate::output::status_after(err, status),
             }
         }
         Err(e) => {

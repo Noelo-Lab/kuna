@@ -8,6 +8,7 @@
 //! signal-killed harness -> 128+signal).
 
 use std::collections::BTreeSet;
+use std::fmt::Write as _;
 use std::io::Read;
 use std::path::PathBuf;
 use std::process::Command;
@@ -471,6 +472,7 @@ pub fn run_cmd(args: &TestArgs) -> i32 {
         });
     }
 
+    let mut text = String::new();
     if args.json {
         let mut obj: Vec<(String, Json)> = match record_json(&passkeys) {
             Json::Object(p) => p,
@@ -517,47 +519,47 @@ pub fn run_cmd(args: &TestArgs) -> i32 {
                 ]),
             ));
         }
-        println!("{}", dumps_indent2_sorted(&Json::Object(obj)));
+        let _ = writeln!(text, "{}", dumps_indent2_sorted(&Json::Object(obj)));
     } else {
-        println!("{}", summary(&result));
+        let _ = writeln!(text, "{}", summary(&result));
         if let Some(p) = &parity {
-            println!("\n=== baseline parity ===");
+            let _ = writeln!(text, "\n=== baseline parity ===");
             if !p.regressed.is_empty() {
-                println!("REGRESSED ({}):", p.regressed.len());
+                let _ = writeln!(text, "REGRESSED ({}):", p.regressed.len());
                 for k in &p.regressed {
-                    println!("  {k}");
+                    let _ = writeln!(text, "  {k}");
                 }
             }
             if !p.newly_passing.is_empty() {
                 let shown: Vec<String> = p.newly_passing.iter().take(10).cloned().collect();
                 let suffix = if p.newly_passing.len() > 10 { " ..." } else { "" };
-                println!(
+                let _ = writeln!(
+                    text,
                     "newly passing ({}): {}{}",
                     p.newly_passing.len(),
                     shown.join(", "),
                     suffix
                 );
             }
-            println!("{}", p.verdict);
+            let _ = writeln!(text, "{}", p.verdict);
         }
     }
 
     // --- exit code (port of run_tests.main's tail) ---------------------------
-    if parity_fail {
-        return 1;
-    }
-    let rc = result.returncode;
-    if rc < 0 {
-        return std::cmp::min(128 - rc, 255);
-    }
-    if rc == 0
+    let rc = if parity_fail {
+        1
+    } else if result.returncode < 0 {
+        std::cmp::min(128 - result.returncode, 255)
+    } else if result.returncode == 0
         && (!result.data.errors.is_empty()
             || !result.unit.failing.is_empty()
             || !result.data.failing.is_empty())
     {
-        return 1;
-    }
-    std::cmp::min(rc, 255)
+        1
+    } else {
+        std::cmp::min(result.returncode, 255)
+    };
+    crate::output::emit_with_status(&text, rc)
 }
 
 fn footer_json(f: Option<(i64, i64)>) -> Json {
