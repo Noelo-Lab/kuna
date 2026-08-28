@@ -387,10 +387,9 @@ const CAPTURED_MAIN_MAPSYM: &str = r#"<doc id="0x0"><mapsym>
   <rangelist/>
 </mapsym></doc>"#;
 
-/// Decode the vendored REAL Java answer (XML form; the packed wire form
-/// differs only in the marshaling layer behind `dyn Decoder`).
-#[test]
-fn captured_java_function_mapsym_decodes() {
+/// The capture's parameters carry `register` storage, so its manager needs the
+/// space the plain [`manager`] omits.
+fn manager_with_registers() -> Rc<AddrSpaceManager> {
     let mut m = AddrSpaceManager::new();
     m.insert_space(Rc::new(AddrSpace::new(
         spacetype::IPTR_PROCESSOR,
@@ -416,9 +415,13 @@ fn captured_java_function_mapsym_decodes() {
         0,
     )))
     .unwrap();
-    let m = Rc::new(m);
-    let types = types_with_core();
+    Rc::new(m)
+}
 
+fn decode_captured_main(
+    m: &Rc<AddrSpaceManager>,
+    types: &TypeFactoryImpl,
+) -> Box<RemoteSymbolRecord> {
     let mut registry = IdRegistry::with_base_ids();
     register_remote_provider_ids(&mut registry);
     crate::dtype::register_type_wire_ids(&mut registry);
@@ -428,11 +431,20 @@ fn captured_java_function_mapsym_decodes() {
 
     let store = kuna_base::xml::xml_tree(CAPTURED_MAIN_MAPSYM.as_bytes()).unwrap();
     let root = store.get_root().clone();
-    let mut dec = XmlDecode::new_with_root(&m, &registry, &root, 0);
-    let rec = match decode_mapped_answer(&mut dec, &types).unwrap() {
+    let mut dec = XmlDecode::new_with_root(m, &registry, &root, 0);
+    match decode_mapped_answer(&mut dec, types).unwrap() {
         RemoteMapAnswer::Symbol(rec) => rec,
         _ => panic!("expected a symbol"),
-    };
+    }
+}
+
+/// Decode the vendored REAL Java answer (XML form; the packed wire form
+/// differs only in the marshaling layer behind `dyn Decoder`).
+#[test]
+fn captured_java_function_mapsym_decodes() {
+    let m = manager_with_registers();
+    let types = types_with_core();
+    let rec = decode_captured_main(&m, &types);
     assert_eq!(rec.symbol_id, 0x18b);
     let func = rec.func.as_ref().expect("function record");
     assert_eq!(func.name, "main");
@@ -460,6 +472,40 @@ fn captured_java_function_mapsym_decodes() {
     // The mapping entry (the outer <addr size=1> at the function entry).
     assert_eq!(rec.entries.len(), 1);
     assert_eq!(rec.entries[0].addr.get_offset(), 0x101900);
+}
+
+/// The host's typelocked parameters must reach [`RemoteFunctionFacts::param_storage`]
+/// carrying the **`ParameterPieces`** lock bits.  `varnode_flags::typelock|namelock`
+/// (0x300) shares no bit with `parameter_pieces_flags::TYPELOCK|NAMELOCK` (0x18), and
+/// `Funcdata::apply_mapped_params` re-`set_param`s every slot wholesale AFTER
+/// `apply_locked_prototype_with_model`, so unlocked pieces here CLOBBER the lock the
+/// prototype channel just set: `FuncProto::is_input_locked` reads slot 0's typelock,
+/// so the whole signature reads unlocked and the host's declared types and names are
+/// re-derived instead of applied.
+#[test]
+fn captured_java_locked_params_materialize_with_pieces_locks() {
+    let m = manager_with_registers();
+    let types = types_with_core();
+    let scope = scope_over(&m, Rc::clone(&types), MockFetch::default());
+    scope.materialize(*decode_captured_main(&m, &types));
+
+    let facts =
+        scope.function_at(&Address::new(ram(&m), 0x101900)).expect("the captured function");
+    let locks = crate::fspec::parameter_pieces_flags::TYPELOCK
+        | crate::fspec::parameter_pieces_flags::NAMELOCK;
+    let want = [(0, "argc", 0x38u64), (1, "argv", 0x30)];
+    assert_eq!(facts.param_storage.len(), want.len(), "both host params carried storage");
+    for ((slot, name, piece), (wslot, wname, woff)) in facts.param_storage.iter().zip(&want) {
+        assert_eq!(slot, wslot, "{wname}: compacted slot basis");
+        assert_eq!(name, wname);
+        assert_eq!(piece.addr.get_offset(), *woff, "{wname}: host storage verbatim");
+        assert_eq!(
+            piece.flags & locks,
+            locks,
+            "{wname}: locks must be parameter_pieces_flags bits, got {:#x}",
+            piece.flags
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------
