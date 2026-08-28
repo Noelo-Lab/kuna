@@ -467,6 +467,99 @@ per-edge, one early bad pick does not poison other accesses, and the
 themselves are deliberately latent (no option) — matching upstream, where they
 are compile-time.
 
+**(kuna) `variantguard` — the discriminant, where the compiler stated it.**
+`decompiler/crates/kuna-decomp/src/p5_types/kuna_variantguard.rs
+(ActionVariantGuard)`. Scoring is the wrong instrument for one specific union:
+the overlay a Rust tagged enum's `DW_TAG_variant_part` becomes (chapter 01,
+`dwarfvariants`). A union member selects itself by *offset* and the
+discriminant is never consulted, but in a tagged enum every payload variant
+begins immediately after the tag — so `Ok.__0` and `Err.__0` sit at the same
+offset with the same width, the trials tie, and the winner is trial order.
+That is why `dwarfvariants` installs an offset-derived `field_0x<off>` label on
+every facet of an overlaying enum and names nothing there. This pass supplies
+the evidence scoring cannot: the *control flow that fixed the tag*, read against
+the `DW_AT_discr_value` the compiler wrote down.
+
+Only a layout with such a suppressed facet is considered at all
+(`kuna_variantguard.rs (suppressed)`). An enum `dwarfvariants` already names —
+every `Option<T>`, `enum List { Cons(..), Nil }`, an enum whose payloads occupy
+disjoint byte ranges — is skipped before any analysis runs, so this pass cannot
+disturb a label the layout already forces, and it cannot change output anywhere
+`dwarfvariants` had an answer.
+
+Two seed kinds, both anchored on a Varnode whose *recovered type* is the enum or
+a pointer to it, so no codegen shape can trigger it:
+
+- a **consumer** guard: a `CBRANCH` whose condition is an equality against the
+  bytes at `tag_offset` — possibly masked (`test al,1`), truncated,
+  zero-extended, or negated. The predicate is evaluated over the enum's
+  *discriminant domain*: every `DW_AT_discr_value`, plus the DEFAULT (niche)
+  variant, which is admitted on an edge exactly when some value **outside** the
+  claimed set satisfies that edge's predicate. That count is exact
+  (`kuna_variantguard.rs (TagPred::population, facets_admitted)`), which is what
+  makes `if (p == NULL)` on an `Option<&T>` resolve to `None` on one edge and
+  `Some` on the other instead of admitting both.
+- a **producer** store: a constant written over the tag bytes, selecting the
+  facet `VariantLayout::facet_for_discr` names.
+
+A forward may-analysis propagates the edge constraints over the basic-block
+graph and a backward must-analysis propagates the stores; a path that reaches
+the end of the function without a store contributes UNKNOWN and blocks the
+conclusion. The two are intersected, and only a block whose intersection is a
+**singleton** is a region (`kuna_variantguard.rs (compute_regions)`).
+
+A block region alone is not enough, because compilers hoist. In
+`match r { Ok(v) => v, Err(e) => e + 100 }` at `-C opt-level=1` rustc computes
+`e + 100` *before* the branch and selects it with a `cmov`, so the payload read
+that means `Err` lives in a block that can still reach both variants. A backward
+walk over def-use closes that: an op whose result is consumed only in variant-`k`
+contexts is a variant-`k` op, where a `MULTIEQUAL` input slot's context is its
+own **in-edge**'s variant set rather than the phi block's
+(`kuna_variantguard.rs (use_contexts)`). Reading phi inputs as edges is also
+what makes the def-use graph acyclic, so the walk is exact rather than a
+fixpoint guess.
+
+Every access is attributed to an **object root** — the Varnode the bytes were
+extracted from, or the pointer they were loaded through
+(`kuna_variantguard.rs (locate_value, locate_ptr, attribution)`) — and is pinned
+only against seeds on that same root, so a second `Result` in the same function
+is not steered by the first one's guard. A Varnode LOADED out of the object
+holds bytes of it, but the pointer it carries addresses a *different* object; a
+recursive `enum Tree { Leaf(i64), Node(Box<Tree>, Box<Tree>) }` passes exactly
+such a value to itself, and conflating the two makes the cast plane splice a
+facet `PTRSUB` onto the callee's argument, which is a structural change and not
+a rename.
+
+The pin is written to the op-keyed cache *and* to the address-keyed one, both
+locked, which is what stops `ScoreUnionFields` from overwriting the field. The
+*proof* is a separate channel (`Funcdata::kuna_record_variant_proof`), because
+the printer must distinguish "the discriminant says `Err`" from "the scorer
+picked field 1", and `ResolvedUnion`'s lock does not survive either path that
+rebuilds a resolution onto a **new** op — `resolve_in_flow`'s address-based
+materialization and `ActionSetCasts::resolveUnion`'s spliced `PTRSUB`, both of
+which construct a fresh unlocked resolution and both of which create the very
+ops the printer descends with. The proof is keyed by op time *and* by
+instruction address; the coarse key answers only for an op created **after** the
+analysis ran (`Funcdata::kuna_seal_variant_proofs`), and an address at which two
+different members were proved is dropped rather than resolved arbitrarily. The
+P9 printer spells the `DW_TAG_variant` name at its three union seams only where
+that proof matches the member it resolved (chapter 09 §9.x, `printc.rs
+(PrintC::variant_member_name)`).
+
+Scheduling: `variantguard` is a P5 decision but runs immediately **before**
+`ActionSetCasts` in `universal_sched`, because the resolution cache is keyed by
+`PcodeOp::getTime()` — earlier, the ops it pins are still being created and
+destroyed by the main loop; later, the cast plane has already filled the cache
+from the scorer and `setUnionField` on an occupied entry cannot install a lock
+(`ResolvedUnion::update` copies the field and the data-type, never the lock).
+
+What it does not reach: a branchless producer (rustc at `-O1` computes a
+`Result`'s discriminant as `(x < 0xb)` rather than storing a literal, so a
+constructor written that way names nothing), and a switch or jump-table dispatch
+on the tag — only equality-shaped conditions are read as seeds. The *field*
+inside a named facet keeps `dwarfvariants`'s own per-field suppression
+(`Multi`'s `P.field_0x8`), which is a separate rule this pass does not touch.
+
 ## 5.5 Double precision
 
 Compilers split a 2N-byte value into two N-byte registers; the IR then shows

@@ -1,0 +1,123 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna infrastructure test: DWARF discriminant-guarded variant selection
+    (`option variantguard`).
+
+    Stage / sub-stage: P5 value+type facts, aggregate-union (which union field
+                       wins).
+    P0 assertion:      option variantguard on|off  (default on).
+
+    `dwarfvariants` (DIV-87) imports a Rust tagged enum's `DW_TAG_variant_part`
+    and installs it as a struct of a tag plus a union of one payload struct per
+    variant, then deliberately refuses to NAME a variant wherever two of them
+    overlay one byte range: a union member selects itself by OFFSET and the
+    discriminant is never consulted, so `Ok.__0` and `Err.__0` (both at offset 8,
+    both 8 bytes wide) tie in `ScoreUnionFields` and the winner is trial order.
+    Every `Result` is that case, so its payload is spelled `field_0x8` on every
+    access.
+
+    `variantguard` is the dominating-guard analysis that side table was recorded
+    for. It seeds from the DWARF discriminant (a CBRANCH testing the tag bytes
+    against a constant, or a constant store over them), propagates the answer
+    over the block graph, and reaches a value the compiler HOISTED above the
+    branch through a backward walk over def-use. The printer then spells the
+    `DW_TAG_variant` name where, and only where, that proof exists.
+
+    The XML wrapper only supplies the harness architecture. Every pass clears it
+    and loads a real x86-64 ELF fixture, because a `bytechunk` carries no DWARF
+    at all. Unlike `dwarfvariants`, this gate is a plain `Architecture` flag, so
+    the `option` line comes AFTER `load file` (a `clear architecture` would drop
+    it).
+
+    Passes 1 and 2 (`dwarfvariants_overlay_x86_64`) are the CONSUMER side:
+      * `use16` matches on the Result and returns `v` from the Ok arm and
+        `e + 100` from the Err arm. Off, BOTH arms render
+        `v2.payload.field_0x8`. On, the arm guarded by `!(v2.tag & 1)`, i.e.
+        discriminant 0, which DWARF says is `Ok`, names `Ok`; and the `+ 100`
+        arm, which rustc computed BEFORE the branch and selected with a cmov,
+        names `Err`.
+      * `put_res` is the REFUSAL: rustc computes the discriminant branchlessly
+        (`dst->tag = (x < 0xb)`), so no constant ever reaches the tag and the
+        payload store sits in a block that can still reach both variants. It
+        must keep the offset spelling in BOTH passes.
+      * `put_opt` is the second refusal: an `Option` has one payload-carrying
+        variant, so `dwarfvariants` already names `Some` and this pass never
+        considers the layout at all. Identical in both passes.
+
+    Passes 3 and 4 (`dwarfvariants_x86_64`) are the PRODUCER side:
+      * `ret_multi` is an enum with a struct variant P and a tuple variant Q
+        whose payloads overlay at offset 8. Each arm stores a literal
+        discriminant, so on, the facets are named `P` and `Q` instead of
+        `field_0x4` and `field_0x8`. The FIELD inside the facet keeps its own
+        suppression (`P.field_0x8`): that is the `dwarfvariants` per-field rule,
+        which this pass does not touch.
+      * `ret_three` is the third refusal: its two payload variants occupy
+        DISJOINT ranges, so `dwarfvariants` already forces `A` and `B` and the
+        layout is skipped. Identical in both passes.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/dwarfvariants_overlay_x86_64</com>
+  <com>read symbols</com>
+  <com>option variantguard off</com>
+  <com>load function use16</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function put_res</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function put_opt</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/dwarfvariants_overlay_x86_64</com>
+  <com>read symbols</com>
+  <com>option variantguard on</com>
+  <com>load function use16</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function put_res</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function put_opt</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/dwarfvariants_x86_64</com>
+  <com>read symbols</com>
+  <com>option variantguard off</com>
+  <com>load function ret_multi</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function ret_three</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/dwarfvariants_x86_64</com>
+  <com>read symbols</com>
+  <com>option variantguard on</com>
+  <com>load function ret_multi</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function ret_three</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="VARIANTGUARD #1: off, both arms of the match spell the Result payload by offset" min="2" max="2">v2\.payload\.field_0x8</stringmatch>
+<stringmatch name="VARIANTGUARD #2: on, the guarded arm names Ok, which is the variant DW_AT_discr_value 0 selects" min="1" max="1">v1 = v2\.payload\.Ok;</stringmatch>
+<stringmatch name="VARIANTGUARD #3: on, the arm rustc hoisted above the branch names Err, reached through the def-use walk" min="1" max="1">\(int8\)v2\.payload\.Err \+ 100</stringmatch>
+<stringmatch name="VARIANTGUARD #4: Ok and Err are never both written on one arm, so the two arms cannot be swapped" min="0" max="0">payload\.Ok \+ 100</stringmatch>
+<stringmatch name="VARIANTGUARD #5: a branchless discriminant is not a seed, so put_res keeps the offset spelling in BOTH passes" min="2" max="2">\(dst-&gt;payload\)\.field_0x8\.__0 = v1;</stringmatch>
+<stringmatch name="VARIANTGUARD #6: an Option already names its only payload variant, so the layout is skipped in BOTH passes" min="2" max="2">\(dst-&gt;payload\)\.Some\.__0 =</stringmatch>
+<stringmatch name="VARIANTGUARD #7: off, a literal-tag constructor still spells both overlaying facets by offset" min="1" max="1">\(rethidden-&gt;payload\)\.field_0x4\.a = x;</stringmatch>
+<stringmatch name="VARIANTGUARD #8: on, the constant store over the tag names the variant it builds" min="1" max="1">\(rethidden-&gt;payload\)\.P\.a = x;</stringmatch>
+<stringmatch name="VARIANTGUARD #9: on, and so does the other arm, which stores discriminant 1" min="1" max="1">\(rethidden-&gt;payload\)\.Q\.field_0x8 = \(uint8\)x;</stringmatch>
+<stringmatch name="VARIANTGUARD #10: disjoint payload ranges are already forced by the layout, so ret_three is identical in BOTH passes" min="2" max="2">\(rethidden-&gt;payload\)\.A\.__0 = x;</stringmatch>
+</decompilertest>

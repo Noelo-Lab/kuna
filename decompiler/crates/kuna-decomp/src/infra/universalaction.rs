@@ -776,6 +776,15 @@ pub fn universal_sched(
             act!(ActionMapGlobals::boxed("fixateglobals")),
             act!(ActionDynamicSymbols::boxed("dynamic")),
             act!(ActionNameVars::boxed("merge")),
+            // (kuna) variantguard (option `variantguard`, default-ON): resolve a
+            // recovered Rust enum's union facet from the DWARF discriminant and
+            // the branch/store that fixed it, instead of from ScoreUnionFields.
+            // Immediately BEFORE ActionSetCasts because the resolution cache is
+            // keyed by PcodeOp::getTime(): earlier, the ops it pins are still
+            // being created and destroyed by the main loop; later, the cast plane
+            // has already filled the cache from the scorer and `setUnionField` on
+            // an occupied entry cannot install the lock that protects the field.
+            act!(crate::p5_types::kuna_variantguard::ActionVariantGuard::boxed("typerecovery")),
             act!(ActionSetCasts::boxed("casts")),
             act!(ActionFinalStructure::boxed("blockrecovery")),
             // (kuna) angr SAILR return-tail goto-reduction (option `gotoreduce`,

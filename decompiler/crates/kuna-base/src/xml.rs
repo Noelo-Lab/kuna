@@ -1780,7 +1780,10 @@ mod tests {
         // and a genuine one-byte element access keeps its `[3]` subscript
         // and kuna-msvcfpconst / MSVC `__real@` FP-constant COMDATs are decoded
         // from their mangled names (option off = every operand a dat_<addr>)
-        assert_eq!(count, 220, "corpus file count drifted");
+        // and kuna-variantguard / the DWARF discriminant picks a Rust enum's
+        // union facet, so both arms of a `match` on a Result name the right
+        // variant (option off = `field_0x8` on both)
+        assert_eq!(count, 221, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

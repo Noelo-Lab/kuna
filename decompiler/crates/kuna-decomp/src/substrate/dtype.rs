@@ -4132,6 +4132,16 @@ pub trait TypeFactory {
     fn kuna_variant_layouts(&self) -> Vec<Rc<crate::kuna_dwarfvariants::VariantLayout>> {
         Vec::new()
     }
+
+    /// (kuna `variantguard`) The layout whose overlay union is the interned type
+    /// `name` — the direction the printer needs, which holds the union and not
+    /// the enclosing enum.
+    fn kuna_variant_layout_by_union(
+        &self,
+        _name: &str,
+    ) -> Option<Rc<crate::kuna_dwarfvariants::VariantLayout>> {
+        None
+    }
 }
 
 // =============================================================================
@@ -4764,9 +4774,16 @@ pub struct TypeFactoryImpl {
     /// where [`Self::find_by_id_or_remote`] degrades to the plain local lookup.
     remote_types: RefCell<Option<Rc<dyn RemoteTypeFetch>>>,
     /// (kuna `dwarfvariants`) Recovered `DW_TAG_variant_part` geometry, keyed by
-    /// the interned type name.  Read by nothing in the analysis -- see
-    /// [`TypeFactory::kuna_record_variant_layout`].
+    /// the interned type name.  Read by the `variantguard` dominating-guard
+    /// analysis -- see [`TypeFactory::kuna_record_variant_layout`].
     variant_layouts: RefCell<BTreeMap<String, Rc<crate::kuna_dwarfvariants::VariantLayout>>>,
+    /// (kuna `variantguard`) The same table indexed by
+    /// [`crate::kuna_dwarfvariants::VariantLayout::union_type`], the name of the
+    /// overlay union.  The printer resolves a union member and holds only that
+    /// union's name, so it needs this direction; a linear scan of the table would
+    /// be per-field-access work on a binary that can carry >150 variant parts.
+    variant_layouts_by_union:
+        RefCell<BTreeMap<String, Rc<crate::kuna_dwarfvariants::VariantLayout>>>,
 }
 
 impl Default for TypeFactoryImpl {
@@ -4802,6 +4819,7 @@ impl TypeFactoryImpl {
             manager: RefCell::new(None),
             remote_types: RefCell::new(None),
             variant_layouts: RefCell::new(BTreeMap::new()),
+            variant_layouts_by_union: RefCell::new(BTreeMap::new()),
         }
     }
 
@@ -7157,9 +7175,13 @@ impl TypeFactory for TypeFactoryImpl {
         self.destroy_type_impl(ct)
     }
     fn kuna_record_variant_layout(&self, layout: crate::kuna_dwarfvariants::VariantLayout) {
+        let shared = Rc::new(layout);
+        self.variant_layouts_by_union
+            .borrow_mut()
+            .insert(shared.union_type.clone(), Rc::clone(&shared));
         self.variant_layouts
             .borrow_mut()
-            .insert(layout.type_name.clone(), Rc::new(layout));
+            .insert(shared.type_name.clone(), shared);
     }
     fn kuna_variant_layout(
         &self,
@@ -7169,6 +7191,12 @@ impl TypeFactory for TypeFactoryImpl {
     }
     fn kuna_variant_layouts(&self) -> Vec<Rc<crate::kuna_dwarfvariants::VariantLayout>> {
         self.variant_layouts.borrow().values().map(Rc::clone).collect()
+    }
+    fn kuna_variant_layout_by_union(
+        &self,
+        name: &str,
+    ) -> Option<Rc<crate::kuna_dwarfvariants::VariantLayout>> {
+        self.variant_layouts_by_union.borrow().get(name).map(Rc::clone)
     }
 }
 

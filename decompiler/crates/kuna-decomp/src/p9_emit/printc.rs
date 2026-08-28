@@ -6096,6 +6096,11 @@ impl PrintC {
     /// whose high data-type is a union (or a single-field struct) resolves, via the
     /// per-function union cache, to a specific field; render `<def-expr>.field`.
     ///
+    /// (kuna) This is the arm a Rust enum returned in REGISTERS reaches: the
+    /// payload half is a `SUBPIECE` of the returned pair whose type is the overlay
+    /// union, so `match r16(x) { .. }` renders here rather than through
+    /// [`Self::push_partial_symbol_ir`].
+    ///
     /// Returns `true` when the field render was emitted (the C++ `proceed` arm);
     /// `false` when nothing resolved (the C++ "Just push original op" arm), so the
     /// caller falls back to expanding the defining op.
@@ -6141,7 +6146,13 @@ impl PrintC {
                         // UNION: getField(fieldNum).
                         crate::dtype::type_metatype::TYPE_UNION => {
                             if let Some(f) = parent.get_field(field_num) {
-                                field = Some((f.name.clone(), f.ident));
+                                // (kuna `variantguard`) Same rule as the other two
+                                // union seams: the DW_TAG_variant name only where
+                                // the DWARF discriminant proved this member.
+                                let nm = Self::variant_member_name(
+                                    fd, arch, &parent, op, slot, field_num, &f.name,
+                                );
+                                field = Some((nm, f.ident));
                             }
                         }
                         _ => {}
@@ -6519,6 +6530,41 @@ impl PrintC {
         }
     }
 
+    /// (kuna `variantguard`) The member name to print for union member
+    /// `field_num` of the overlay union `ct`.
+    ///
+    /// `dwarfvariants` (DIV-87) installs an offset-derived `field_0x<off>` label
+    /// on every facet of an enum whose variants overlay one byte range, because a
+    /// union member selects itself by OFFSET and the discriminant is never
+    /// consulted, so the facet `ScoreUnionFields` picks is not evidence of
+    /// anything. `variantguard` proves the member from the discriminant plus the
+    /// branch or store that fixed it and records that proof on the `Funcdata`;
+    /// where and only where a proof exists for exactly this edge and exactly this
+    /// member, the variant's own `DW_TAG_variant` name is spelled instead.
+    ///
+    /// With `variantguard off` no proof is ever recorded, so this is the
+    /// installed label byte for byte.
+    fn variant_member_name(
+        fd: &Funcdata,
+        arch: &Architecture,
+        ct: &std::rc::Rc<crate::dtype::Datatype>,
+        op: OpId,
+        slot: int4,
+        field_num: int4,
+        installed: &str,
+    ) -> String {
+        if !fd.kuna_variant_proved(ct, op, slot, field_num) {
+            return installed.to_string();
+        }
+        match arch.types().kuna_variant_layout_by_union(ct.get_name()) {
+            Some(l) => match l.facet_for_union_field(field_num) {
+                Some(f) if !f.name.is_empty() => f.name.clone(),
+                _ => installed.to_string(),
+            },
+            None => installed.to_string(),
+        }
+    }
+
     /// C++ `PrintC::pushPartialSymbol` (printc.cc:2019-2141), the STRUCT / UNION /
     /// ARRAY arms of the type walk (the symbol-mapped member-access render
     /// `glob.intfield` / `val.c` / `globvar.b.bval1` and the array-element render
@@ -6631,7 +6677,14 @@ impl PrintC {
                     fd.get_union_resolution(&cur, op, slot)
                         .map(|r| r.get_field_num())
                         .filter(|&n| n >= 0)
-                        .and_then(|n| cur.get_field(n).map(|f| (n, f.offset, f.name.clone(), f.ident, std::rc::Rc::clone(&f.field_type))))
+                        .and_then(|n| cur.get_field(n).map(|f| {
+                            // (kuna `variantguard`) The installed label is an
+                            // offset-derived `field_0x…` wherever two variants
+                            // overlay one range; spell the source variant where
+                            // the discriminant proved this member.
+                            let nm = Self::variant_member_name(fd, arch, &cur, op, slot, n, &f.name);
+                            (n, f.offset, nm, f.ident, std::rc::Rc::clone(&f.field_type))
+                        }))
                 } else {
                     None
                 };
@@ -7561,7 +7614,14 @@ impl PrintC {
                     };
                     // fld = ((TypeUnion*)ct)->getField(resUnion->getFieldNum());
                     match ct.get_field(field_num) {
-                        Some(f) => (f.name.clone(), Some(f.field_type.clone()), f.ident),
+                        // (kuna `variantguard`) Same rule as the symbol-descent
+                        // arm: the DW_TAG_variant name only where the DWARF
+                        // discriminant proved this member.
+                        Some(f) => (
+                            Self::variant_member_name(fd, arch, &ct, op, -1, field_num, &f.name),
+                            Some(f.field_type.clone()),
+                            f.ident,
+                        ),
                         None => {
                             self.op_func_ir(fd, arch, op);
                             return;

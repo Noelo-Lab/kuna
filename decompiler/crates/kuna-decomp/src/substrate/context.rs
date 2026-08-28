@@ -819,6 +819,11 @@ pub struct ArchContext {
     /// see `Architecture::param_copy_hoist`.  Read by
     /// [`crate::p6_variables::kuna_paramcopyhoist`]'s `hoist_target`.
     pub param_copy_hoist: bool,
+    /// (kuna) `variantguard` (DWARF discriminant-guarded union facet selection);
+    /// see `Architecture::variantguard`.  Read by
+    /// [`crate::p5_types::kuna_variantguard::ActionVariantGuard`] and by the P9
+    /// printer's field-path descent.
+    pub variantguard: bool,
     /// (kuna) angr SAILR gotoless `ReturnDuplicatorHigh`: duplicate a shared
     /// **bare-epilogue** RETURN block into each predecessor but one so a
     /// `if (c) { body; return X; } return Y;` guard shape structures as per-predecessor
@@ -1124,6 +1129,7 @@ impl ArchContext {
             iteboolean: false,            // iteboolean (0/1 select -> boolean assignment)
             itecondlist: false,           // itecondlist (condition-list tolerance, default-off)
             param_copy_hoist: false,      // paramcopyhoist (parameter copy-shadow -> entry block)
+            variantguard: true,           // variantguard (DWARF discriminant-guarded union facet)
             returndup_orchain: false,     // orchain (short-circuit chain protection, default-off)
             duplicate_shared_returns: false, // returndup (opt-in default-off)
             early_return: false, // earlyreturn (opt-in default-off)

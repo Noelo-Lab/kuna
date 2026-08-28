@@ -105,11 +105,15 @@
 //!   is live; a struct variant's `b` against a tuple variant's `__0` over the
 //!   same word does not, and becomes `field_0x<offset>`.
 //!
-//! What is LOST is the label, not the layout: offsets, widths, member types and
-//! the enum's own size are exactly what DWARF states either way, and every
-//! variant's source name and `DW_AT_discr_value` are on [`VariantLayout`].
-//! Picking the facet from the tag needs a dominating-guard analysis — that is
-//! what the side table is recorded for, and it is not attempted here.
+//! What is LOST is the label on the TYPE, not the layout: offsets, widths, member
+//! types and the enum's own size are exactly what DWARF states either way, and
+//! every variant's source name and `DW_AT_discr_value` are on [`VariantLayout`].
+//! Picking the facet from the tag is a per-ACCESS question the type cannot hold,
+//! and it is answered by the dominating-guard analysis this side table is
+//! recorded for (`kuna_decomp::p5_types::kuna_variantguard`, option
+//! `variantguard`): where a branch tested the discriminant or a constant was
+//! stored over it, the printer spells the `DW_TAG_variant` name at that access
+//! and the installed label above stays `field_0x…` everywhere else.
 //!
 //! ## Name collisions
 //!

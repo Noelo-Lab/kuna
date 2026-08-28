@@ -645,6 +645,16 @@ pub struct Architecture {
     /// [`crate::p6_variables::kuna_paramcopyhoist::hoist_target`] from
     /// `Merge::trimOpInput`; guarded by the `buildDominantCopy` Cover test.
     pub param_copy_hoist: bool,
+    /// (kuna) `variantguard`: pick a recovered Rust enum's union facet from the
+    /// DWARF discriminant and the branch/store that fixed it, instead of from
+    /// `ScoreUnionFields`, and let the printer spell the `DW_TAG_variant` name
+    /// wherever that proof exists.  `dwarfvariants` (DIV-87) records the geometry
+    /// and deliberately installs an offset-derived `field_0x...` label wherever two
+    /// variants overlay one byte range; this is the analysis it recorded the side
+    /// table for.  Read by
+    /// [`crate::p5_types::kuna_variantguard::ActionVariantGuard`] and by the P9
+    /// printer's field-path descent.  Inert without DWARF variant layouts.
+    pub variantguard: bool,
     /// (kuna) angr SAILR gotoless `ReturnDuplicatorHigh`: duplicate a shared
     /// **bare-epilogue** RETURN block (only MULTIEQUAL/COPY/RETURN, no side effects)
     /// into each predecessor but one, so the classic
@@ -1563,6 +1573,7 @@ impl Architecture {
             iteboolean: false,
             itecondlist: false,
             param_copy_hoist: false,
+            variantguard: true,
             duplicate_shared_returns: false,
             returndup_orchain: false,
             early_return: false,
@@ -2050,6 +2061,12 @@ impl Architecture {
                 let (val, msg) =
                     crate::p8_structure::kuna_itecondlist::OptionIteCondList.apply(p1)?;
                 self.itecondlist = val;
+                Ok(msg)
+            }
+            "variantguard" => {
+                let (val, msg) =
+                    crate::p5_types::kuna_variantguard::OptionVariantGuard.apply(p1)?;
+                self.variantguard = val;
                 Ok(msg)
             }
             "paramcopyhoist" => {
@@ -2796,6 +2813,7 @@ impl Architecture {
         ctx.iteboolean = self.iteboolean; // iteboolean (0/1 select -> boolean assignment)
         ctx.itecondlist = self.itecondlist; // itecondlist (condition-list tolerance for iteregion/iteboolean)
         ctx.param_copy_hoist = self.param_copy_hoist; // paramcopyhoist (parameter copy-shadow -> entry block)
+        ctx.variantguard = self.variantguard; // variantguard (DWARF discriminant-guarded union facet)
         ctx.duplicate_shared_returns = self.duplicate_shared_returns; // returndup
         ctx.returndup_orchain = self.returndup_orchain; // orchain (short-circuit chain protection)
         ctx.early_return = self.early_return; // earlyreturn
