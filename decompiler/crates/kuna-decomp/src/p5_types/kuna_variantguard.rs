@@ -44,13 +44,18 @@
 //!   variant included, since that is precisely the "every value the others did
 //!   not claim" case.
 //!
+//! The two are evidence about **different things**, and are deliberately not
+//! mixed.  A guard is evidence about the value an execution is *carrying*, so it
+//! colours every op its edge reaches, reads included.  A store is evidence about
+//! what the object *becomes*, so it colours **writes only** — see
+//! [`producer_writes`], which is where an earlier revision of this pass got it
+//! badly wrong and is worth reading before changing anything here.
+//!
 //! **2. Regions.**  A forward may-analysis over the basic-block graph propagates
-//! the edge constraints (a block is reachable only under the union of what its
-//! in-edges allow), and a backward one propagates the producer stores (a block
-//! all of whose forward paths end at a `tag = K` store is a block below the
-//! decision to build variant `K`; a path that reaches the end of the function
-//! without any store contributes UNKNOWN and blocks the conclusion).  The two are
-//! intersected.  Only a block whose intersection is a **singleton** is a region.
+//! the guard edge constraints: a block is reachable only under the union of what
+//! its in-edges allow.  Only a block whose set is a **singleton** is a region.
+//! The producer facts are separate, per-op, intra-block and positional; they are
+//! intersected with the guard region at the pin so a contradiction refuses.
 //!
 //! **3. Uses.**  A block region alone is not enough, because a compiler hoists.
 //! In `match r { Ok(v) => v, Err(e) => e + 100 }` at `-C opt-level=1` the `e +
@@ -77,6 +82,11 @@
 //!   spelling: there is no constant for [`facet_for_discr`] to look up.
 //! * A **switch / jump-table dispatch** on the tag is not a seed.  Only
 //!   equality-shaped conditions are read.
+//! * A **producer store names no read at all**, not even one below it.  Doing
+//!   that soundly needs a clobber analysis over aliasing — a call handed the
+//!   pointer may store through it — which is not attempted; only a guard names a
+//!   read.  A producer store also does not reach out of its own block, so a
+//!   construction split across blocks recovers nothing.
 //! * A read consumed by the discriminant test AND by one arm is refused, per the
 //!   blocking rule above.  On a NICHE encoding the two are literally the same
 //!   bytes -- `enum Tree { Leaf(i64), Node(Box<Tree>, Box<Tree>) }` stores the
@@ -88,6 +98,12 @@
 //! * The facet's own interned TYPE name is never substituted, so a cast still
 //!   prints `Result<u64, u64>::field_0x8`.  The type is global to the program;
 //!   the proof is per-access.
+//! * The DEPTH at which a member renders is not this pass's to choose.  The
+//!   implied-field seam emits one member token (`v2.payload.Err`) and the
+//!   `PTRSUB` seam emits the whole field path (`(dst->payload).Err.__0`); that
+//!   difference is `dwarfvariants`' own rendering and is present verbatim with
+//!   this option OFF (`v2.payload.field_0x8` against
+//!   `(dst->payload).field_0x8.__0`).  Only the member NAME is substituted.
 //! * The FIELD inside a named facet keeps `dwarfvariants`'s own per-field
 //!   suppression (`Multi`'s `P.field_0x8`), which is a separate rule.
 //!
@@ -139,7 +155,7 @@ use std::rc::Rc;
 
 use kuna_base::address::Address;
 use kuna_base::error::KunaResult;
-use kuna_base::types::{int4, int8, uintb};
+use kuna_base::types::{int4, int8, uint8, uintb};
 use kuna_num::opcodes::OpCode;
 
 use crate::action::{Action, ActionBase, ActionContext, ActionGroupList, ApplyResult};
@@ -207,22 +223,65 @@ impl Funcdata {
         field: int4,
     ) {
         let id = union_type.get_id();
-        let time = match self.obank().get(op) {
-            Some(o) => o.get_time(),
-            None => return,
-        };
-        let addr = match self.obank().get(op) {
-            Some(o) => o.get_addr().clone(),
-            None => return,
-        };
+        let Some(o) = self.obank().get(op) else { return };
+        let (time, addr) = (o.get_time(), o.get_addr().clone());
         self.kuna_variant_proof_op.insert((id, time, slot), field);
-        match self.kuna_variant_proof_addr.get(&(id, addr.clone())) {
-            Some(&prev) if prev != field => {
-                self.kuna_variant_proof_addr.remove(&(id, addr));
+        self.record_addr_proof(id, addr, slot, field);
+    }
+
+    /// (kuna `variantguard`) Record the slot `-1` alias of an already-recorded
+    /// POINTER pin at the same address.
+    ///
+    /// `ActionSetCasts::resolveUnion` splices a zero-`PTRSUB` into a
+    /// pointer-to-union edge and reads its resolution back at slot -1. That is
+    /// the only slot rewrite the cast plane performs, so it is recorded
+    /// explicitly rather than by making the address key slot-blind.
+    pub fn kuna_record_variant_proof_alias(
+        &mut self,
+        union_type: &Datatype,
+        op: OpId,
+        field: int4,
+    ) {
+        let id = union_type.get_id();
+        let Some(o) = self.obank().get(op) else { return };
+        let addr = o.get_addr().clone();
+        self.record_addr_proof(id, addr, -1, field);
+    }
+
+    /// (kuna `variantguard`) Poison the address-keyed proof for this edge.
+    ///
+    /// Called when the address-based resolution cache already holds a LOCKED
+    /// entry naming a different member, so the coarse key can no longer be
+    /// trusted to answer for an op created later at this address.
+    pub fn kuna_record_variant_proof_addr_conflict(
+        &mut self,
+        union_type: &Datatype,
+        op: OpId,
+        slot: int4,
+    ) {
+        let id = union_type.get_id();
+        let Some(o) = self.obank().get(op) else { return };
+        let addr = o.get_addr().clone();
+        self.kuna_variant_proof_addr.insert((id, addr, slot), None);
+    }
+
+    /// Insert one address-keyed proof, TOMBSTONING the key permanently on a
+    /// contradiction. Removing the entry instead would let a later record
+    /// resurrect a key two earlier records had already disagreed about.
+    fn record_addr_proof(
+        &mut self,
+        id: uint8,
+        addr: kuna_base::address::Address,
+        slot: int4,
+        field: int4,
+    ) {
+        match self.kuna_variant_proof_addr.get(&(id, addr.clone(), slot)) {
+            Some(Some(prev)) if *prev != field => {
+                self.kuna_variant_proof_addr.insert((id, addr, slot), None);
             }
             Some(_) => {}
             None => {
-                self.kuna_variant_proof_addr.insert((id, addr), field);
+                self.kuna_variant_proof_addr.insert((id, addr, slot), Some(field));
             }
         }
     }
@@ -253,7 +312,7 @@ impl Funcdata {
         if o.get_time() <= self.kuna_variant_proof_horizon {
             return false;
         }
-        self.kuna_variant_proof_addr.get(&(id, o.get_addr().clone())) == Some(&field)
+        self.kuna_variant_proof_addr.get(&(id, o.get_addr().clone(), slot)) == Some(&Some(field))
     }
 
     /// (kuna `variantguard`) Close the proof set: every op alive now is one the
@@ -517,13 +576,6 @@ struct GuardSeed {
     true_index: int4,
 }
 
-/// A constant store over the tag bytes of one object.
-struct StoreSeed {
-    block: BlockId,
-    /// Index into `layout.variants` the stored discriminant selects.
-    variant: usize,
-}
-
 /// Read a Varnode as `(tag & mask)` of the tag bytes of the object `root`.
 ///
 /// Returns the mask; the caller already knows the object.  Only the transparent
@@ -644,14 +696,14 @@ impl Regions {
     }
 }
 
-/// Compute the per-block and per-in-edge variant sets from the seeds.
+/// Compute the per-block and per-in-edge variant sets from the CONSUMER guards.
+///
+/// A guard is evidence about the value an execution is carrying, so it colours
+/// every op the guarded edge reaches.  Producer stores are deliberately NOT part
+/// of this: a store is evidence about what the object BECOMES, and folding it in
+/// backwards would colour an op that ran BEFORE it -- see [`producer_writes`].
 #[allow(clippy::needless_range_loop)]
-fn compute_regions(
-    data: &Funcdata,
-    all: u64,
-    guards: &[GuardSeed],
-    stores: &[StoreSeed],
-) -> Regions {
+fn compute_regions(data: &Funcdata, all: u64, guards: &[GuardSeed]) -> Regions {
     let n = data.bblocks_get_size().max(0) as usize;
     let mut blocks = Vec::with_capacity(n);
     let mut index = BTreeMap::new();
@@ -677,27 +729,6 @@ fn compute_regions(
         // Several guards on one block intersect: each is independently true.
         out_constraint[i][t] &= g.on_true;
         out_constraint[i][f] &= g.on_false;
-    }
-
-    // The producer facts.  A block whose constant tag stores all agree proves
-    // that variant for the whole block -- the payload writes precede the tag
-    // write in a constructor, and both belong to the same variant.  A block
-    // holding two that DISAGREE proves nothing: which one is last is a question
-    // about program order that this pass does not need to answer, so it refuses.
-    let mut block_store: Vec<Option<usize>> = vec![None; blocks.len()];
-    let mut store_conflict: Vec<bool> = vec![false; blocks.len()];
-    for s in stores {
-        let Some(&i) = index.get(&s.block) else { continue };
-        match block_store[i] {
-            Some(prev) if prev != s.variant => store_conflict[i] = true,
-            Some(_) => {}
-            None => block_store[i] = Some(s.variant),
-        }
-    }
-    for (i, c) in store_conflict.iter().enumerate() {
-        if *c {
-            block_store[i] = None;
-        }
     }
 
     // Forward may-analysis: what the in-edges allow.  Every block with no
@@ -750,58 +781,190 @@ fn compute_regions(
         }
     }
 
-    // Backward must-analysis: the producer store every forward path reaches.
-    // Bit `MAX_VARIANTS` is the UNKNOWN marker -- a path that ends without one.
-    const UNKNOWN: u128 = 1u128 << MAX_VARIANTS;
-    let mut bwd = vec![0u128; blocks.len()];
-    for i in 0..blocks.len() {
-        if let Some(v) = block_store[i] {
-            bwd[i] = 1u128 << v;
-        } else if data.bblocks_ref().block(blocks[i]).size_out() == 0 {
-            bwd[i] = UNKNOWN;
-        }
-    }
-    for _ in 0..=blocks.len() {
-        let mut changed = false;
-        for i in 0..blocks.len() {
-            if block_store[i].is_some() {
-                continue;
-            }
-            let b = blocks[i];
-            let nout = data.bblocks_ref().block(b).size_out();
-            if nout == 0 {
-                continue;
-            }
-            let mut acc = 0u128;
-            for k in 0..nout {
-                let out = data.bblocks_ref().block(b).get_out(k);
-                match index.get(&out) {
-                    Some(&oi) => acc |= bwd[oi],
-                    None => acc |= UNKNOWN,
-                }
-            }
-            if bwd[i] | acc != bwd[i] {
-                bwd[i] |= acc;
-                changed = true;
-            }
-        }
-        if !changed {
-            break;
-        }
-    }
+    Regions { index, region: fwd, edge }
+}
 
-    let narrow = |raw: u128| -> u64 {
-        if raw == 0 || raw & UNKNOWN != 0 {
-            all
-        } else {
-            raw as u64
+// =============================================================================
+// The producer side: what a constant tag store proves, and about which ops
+// =============================================================================
+
+/// One constant `tag = K` store, positioned within its block.
+struct TagWrite {
+    /// Position of the op in `bb_ops` order, i.e. PROGRAM order in the block.
+    pos: usize,
+    /// The variant the stored discriminant selects, or `None` for a store over
+    /// the tag bytes this pass cannot read as a constant -- a KILL.
+    variant: Option<usize>,
+}
+
+/// The variant each WRITE into the object is building, from the constant tag
+/// store nearest it in its own block.
+///
+/// ## Why this is not the block-level backward analysis it replaces
+///
+/// A producer store is evidence about what the object BECOMES. It says nothing
+/// about a value that was read BEFORE it, and an earlier revision of this pass
+/// coloured the whole block (and every block that reached it), which made
+///
+/// ```ignore
+/// let v = match *dst { Ok(a) => a, Err(b) => b };   // reads the CALLER's value
+/// *dst = Err(7);
+/// v
+/// ```
+///
+/// render the load as `(*dst).payload.Err.__0`. The control is decisive: the same
+/// function clobbering with `Ok(9)` named the SAME instruction `Ok`. Two
+/// identical reads of the same source expression got opposite variant names,
+/// decided by a store that happens after them; at most one could be right, and
+/// by construction neither was. That is a name asserted from a shape rather than
+/// proved about the read, which is precisely what DIV-87's suppression rule
+/// exists to prevent.
+///
+/// This is not a corner case. Read-then-overwrite of an enum in place is what
+/// `mem::replace`, `Option::take` and any state machine that consumes its old
+/// state and writes the new one compile to, and it is the shape drop glue and
+/// `?`-desugaring produce -- so it ships as the default rendering for very
+/// ordinary `-g` Rust. `variantguard_clobber_x86_64` is the committed fixture.
+///
+/// So the producer fact is confined to what it can actually support:
+///
+/// * it applies **only to writes** -- a store into the object, and the pointer
+///   arithmetic that feeds one and nothing else ([`writes_only`]);
+/// * it is **intra-block and positional**, read off the nearest constant tag
+///   store above or below the write in `bb_ops` (program) order;
+/// * it is **killed** by any intervening store over the tag bytes this pass
+///   cannot read as a constant, and by any call, which may store through the
+///   pointer itself;
+/// * a write with a constant tag store on BOTH sides that disagree is refused.
+///
+/// Both directions are sound for a write and both are needed: `payload = v;
+/// tag = 0;` (a constructor -- the bytes become `Ok`'s payload) and `tag = 1;
+/// payload = v;` (the object is already `Err` when the payload is written).
+fn producer_writes(
+    data: &Funcdata,
+    subject: &Subject,
+    root: VarnodeId,
+    kind: ObjKind,
+    big_endian: bool,
+) -> BTreeMap<OpId, usize> {
+    let mut out: BTreeMap<OpId, usize> = BTreeMap::new();
+    if kind != ObjKind::Mem {
+        return out;
+    }
+    let layout = subject.layout.as_ref();
+    let n = data.bblocks_get_size().max(0);
+    for bi in 0..n {
+        let bl = data.bblocks_get_block(bi);
+        let ops = data.bb_ops(bl);
+        // Every event in this block that can change what the object holds.
+        let mut writes: Vec<TagWrite> = Vec::new();
+        for (pos, &op) in ops.iter().enumerate() {
+            let Some(o) = data.obank().get(op) else { continue };
+            if o.is_call() {
+                // A callee handed the pointer may store anything through it.
+                writes.push(TagWrite { pos, variant: None });
+                continue;
+            }
+            if o.code() != OpCode::CPUI_STORE {
+                continue;
+            }
+            let (Some(p), Some(val)) = (o.get_in(1), o.get_in(2)) else { continue };
+            let (r, off) = locate_ptr(data, p);
+            if r != root {
+                continue;
+            }
+            let width = data.vbank().get(val).map(|v| v.get_size()).unwrap_or(0);
+            let t0 = layout.tag_offset as int8;
+            let t1 = t0 + layout.tag_size as int8;
+            if off + (width as int8) <= t0 || off >= t1 {
+                continue; // touches the payload only, not the discriminant
+            }
+            let variant = const_of(data, val)
+                .and_then(|k| tag_slice(layout, off, width, k, big_endian))
+                .and_then(|v| variant_index_for_discr(layout, v));
+            writes.push(TagWrite { pos, variant });
         }
-    };
-    let region: Vec<u64> = (0..blocks.len()).map(|i| fwd[i] & narrow(bwd[i])).collect();
-    let edge = (0..blocks.len())
-        .map(|i| edge[i].iter().map(|&e| e & narrow(bwd[i])).collect())
-        .collect();
-    Regions { index, region, edge }
+        if writes.is_empty() {
+            continue;
+        }
+        for (pos, &op) in ops.iter().enumerate() {
+            // The op is itself a tag event: it writes the discriminant, not a
+            // payload, so there is nothing here to name.
+            if writes.iter().any(|w| w.pos == pos) {
+                continue;
+            }
+            if !writes_only(data, root, op) {
+                continue;
+            }
+            // The nearest tag event above and below this write.  A `None`
+            // variant on either side is a kill and refuses that direction.
+            let before = writes.iter().filter(|w| w.pos < pos).next_back().and_then(|w| w.variant);
+            let after = writes.iter().find(|w| w.pos > pos).and_then(|w| w.variant);
+            let v = match (before, after) {
+                (Some(a), Some(b)) if a != b => continue, // the two sides disagree
+                (Some(a), _) => a,
+                (None, Some(b)) => b,
+                (None, None) => continue,
+            };
+            out.insert(op, v);
+        }
+    }
+    out
+}
+
+/// Whether every memory access `op` feeds into the object is a STORE.
+///
+/// A `STORE` through a pointer into the object qualifies directly; so does the
+/// pointer arithmetic that computes one, provided EVERY use of its result ends
+/// at a store's pointer input.  A `LOAD`, a call argument, or any other use
+/// disqualifies it -- that is the whole point, because a producer store must
+/// never colour a read.
+fn writes_only(data: &Funcdata, root: VarnodeId, op: OpId) -> bool {
+    let Some(o) = data.obank().get(op) else { return false };
+    if o.code() == OpCode::CPUI_STORE {
+        let Some(p) = o.get_in(1) else { return false };
+        return locate_ptr(data, p).0 == root;
+    }
+    let Some(out) = o.get_out() else { return false };
+    // The output must be a pointer that lands in the object.
+    let is_ptr = data
+        .vbank()
+        .get(out)
+        .map(|v| v.get_type().get_metatype() == type_metatype::TYPE_PTR)
+        .unwrap_or(false);
+    if !is_ptr || locate_ptr(data, out).0 != root {
+        return false;
+    }
+    let mut frontier: Vec<VarnodeId> = vec![out];
+    let mut seen: BTreeSet<VarnodeId> = BTreeSet::new();
+    let mut any = false;
+    for _ in 0..MAX_WALK {
+        let Some(vn) = frontier.pop() else { break };
+        if !seen.insert(vn) {
+            continue;
+        }
+        let Some(v) = data.vbank().get(vn) else { return false };
+        let uses: Vec<OpId> = v.descend_iter().collect();
+        if uses.is_empty() {
+            return false;
+        }
+        for u in uses {
+            let Some(uo) = data.obank().get(u) else { return false };
+            match uo.code() {
+                OpCode::CPUI_STORE if uo.get_in(1) == Some(vn) => any = true,
+                OpCode::CPUI_PTRSUB
+                | OpCode::CPUI_PTRADD
+                | OpCode::CPUI_INT_ADD
+                | OpCode::CPUI_COPY
+                | OpCode::CPUI_CAST => match uo.get_out() {
+                    Some(next) => frontier.push(next),
+                    None => return false,
+                },
+                _ => return false,
+            }
+        }
+    }
+    any && frontier.is_empty()
 }
 
 // =============================================================================
@@ -841,16 +1004,29 @@ fn use_contexts(data: &Funcdata, regions: &Regions, all: u64) -> BTreeMap<OpId, 
                     // reading it as the block would lose exactly the arm
                     // information the guard established.  This is also what makes
                     // the def-use walk acyclic.
-                    let slot = uo.get_slot(out);
+                    //
+                    // The SAME Varnode can occupy several slots of one phi (two
+                    // predecessors carrying the same value), and it is then live
+                    // on every one of those edges -- so intersect them all rather
+                    // than taking `get_slot`'s first match, which would attribute
+                    // the value to whichever edge happened to be lowest-numbered.
                     let parent = uo.get_parent();
-                    match (parent, slot) {
-                        (Some(pb), s) if s >= 0 => regions
-                            .index
-                            .get(&pb)
-                            .and_then(|&bi| regions.edge[bi].get(s as usize).copied())
-                            .unwrap_or(all),
-                        _ => all,
+                    let mut acc_phi: Option<u64> = None;
+                    for i in 0..uo.num_input() {
+                        if uo.get_in(i) != Some(out) {
+                            continue;
+                        }
+                        let e = match parent {
+                            Some(pb) => regions
+                                .index
+                                .get(&pb)
+                                .and_then(|&bi| regions.edge[bi].get(i as usize).copied())
+                                .unwrap_or(all),
+                            None => all,
+                        };
+                        acc_phi = Some(acc_phi.map_or(e, |a| a & e));
                     }
+                    acc_phi.unwrap_or(all)
                 } else {
                     ctx.get(&u).copied().unwrap_or(all)
                 };
@@ -992,7 +1168,6 @@ fn run_one(
 
     // --- seeds ------------------------------------------------------------
     let mut guards: Vec<GuardSeed> = Vec::new();
-    let mut stores: Vec<StoreSeed> = Vec::new();
     for &op in ops.iter() {
         let Some(o) = data.obank().get(op) else { continue };
         let Some(block) = o.get_parent() else { continue };
@@ -1017,31 +1192,14 @@ fn run_one(
                 let true_index = if flip { 0 } else { 1 };
                 guards.push(GuardSeed { block, on_true, on_false, true_index });
             }
-            OpCode::CPUI_STORE => {
-                let (Some(p), Some(val)) = (o.get_in(1), o.get_in(2)) else { continue };
-                if kind != ObjKind::Mem {
-                    continue;
-                }
-                let Some(k) = const_of(data, val) else { continue };
-                let width = data.vbank().get(val).map(|v| v.get_size()).unwrap_or(0);
-                let (r, off) = locate_ptr(data, p);
-                if r != root || width <= 0 {
-                    continue;
-                }
-                let Some(v) = tag_slice(&layout, off, width, k, big_endian) else { continue };
-                let Some(idx) = variant_index_for_discr(&layout, v) else { continue };
-                stores.push(StoreSeed { block, variant: idx });
-            }
             _ => {}
         }
     }
-    if guards.is_empty() && stores.is_empty() {
-        return 0;
-    }
 
-    // --- regions ----------------------------------------------------------
-    let regions = compute_regions(data, all, &guards, &stores);
-    if regions.region.iter().all(|&r| r.count_ones() != 1) {
+    // --- regions (consumer) and per-write producer facts -------------------
+    let regions = compute_regions(data, all, &guards);
+    let produced = producer_writes(data, subject, root, kind, big_endian);
+    if produced.is_empty() && regions.region.iter().all(|&r| r.count_ones() != 1) {
         return 0;
     }
     let ctx = use_contexts(data, &regions, all);
@@ -1052,17 +1210,30 @@ fn run_one(
     let mut work: Vec<(OpId, int4, int4, Option<Rc<Datatype>>, Address)> = Vec::new();
     for &op in ops {
         let Some(o) = data.obank().get(op) else { continue };
-        let here = ctx.get(&op).copied().unwrap_or(0);
-        if here.count_ones() != 1 {
-            continue;
-        }
-        let variant = here.trailing_zeros() as usize;
-        let Some(field) = layout.union_field_for_variant(variant) else { continue };
+        let is_phi = o.code() == OpCode::CPUI_MULTIEQUAL;
+        let block_ctx = ctx.get(&op).copied().unwrap_or(0);
+        // A producer fact is a fact about the WRITE, not about the block, so it
+        // is intersected with whatever the guards allow rather than replacing it.
+        let producer = produced.get(&op).copied();
         let addr = o.get_addr().clone();
         let n = o.num_input();
         for slot in -1..n {
             let vn = if slot < 0 { o.get_out() } else { o.get_in(slot) };
             let Some(vn) = vn else { continue };
+            // A MULTIEQUAL input slot's context is its own IN-EDGE, not the phi
+            // block's -- the same rule `use_contexts` applies, which one context
+            // shared across every slot would contradict.
+            let here = if is_phi && slot >= 0 {
+                edge_context(data, &regions, op, slot, all)
+            } else {
+                block_ctx
+            };
+            let variant = match (here.count_ones() == 1, producer) {
+                (true, _) => here.trailing_zeros() as usize,
+                (false, Some(v)) if here == 0 || (here >> v) & 1 == 1 => v,
+                _ => continue,
+            };
+            let Some(field) = layout.union_field_for_variant(variant) else { continue };
             let (value_hit, ptr_ty) = attribution(data, subject, root, kind, vn, big_endian);
             if !value_hit && ptr_ty.is_none() {
                 continue;
@@ -1072,31 +1243,69 @@ fn run_one(
     }
 
     for (op, slot, field, ptr_ty, addr) in work {
+        // `set_union_field` returns false when a previously LOCKED association
+        // already holds this edge -- an operator `map unionfacet`, or an earlier
+        // root's pin. That is the resolution the printer reads at this edge, so
+        // recording a proof for it when the write did not take would authorize a
+        // name read off someone else's answer.
+        //
+        // `set_address_based_union_field` is a HINT for ops that do not exist
+        // yet, and its bool cannot be read the same way: `ResolveEdge::new_addr`
+        // discards the slot (unionresolve.cc:118-129 encodes a fixed 0x2000), so
+        // this pass's own two pins on one op -- the output edge and an input edge
+        // -- collide there by construction and the second always reports false.
+        // It is therefore best-effort, and a genuine conflict (a LOCKED entry
+        // naming a DIFFERENT member) tombstones the address proof instead.
+        let ty = ptr_ty.clone().unwrap_or_else(|| Rc::clone(&subject.union_ty));
+        let is_ptr = ptr_ty.is_some();
         let mut installed = false;
-        if ptr_ty.is_none() {
-            if let Ok(mut r) =
-                ResolvedUnion::new_field(Rc::clone(&subject.union_ty), field, typegrp.as_ref())
-            {
-                r.set_lock(true);
-                data.set_union_field(&subject.union_ty, op, slot, r.clone());
-                data.set_address_based_union_field(&subject.union_ty, &addr, slot, r);
-                installed = true;
+        let mut addr_conflict = false;
+        if let Ok(mut r) = ResolvedUnion::new_field(Rc::clone(&ty), field, typegrp.as_ref()) {
+            r.set_lock(true);
+            installed = data.set_union_field(&ty, op, slot, r.clone());
+            match data.get_address_based_union_field(&ty, &addr, slot) {
+                Some(prev) if prev.is_locked() && prev.get_field_num() != field => {
+                    addr_conflict = true;
+                }
+                _ => {
+                    data.set_address_based_union_field(&ty, &addr, slot, r);
+                }
             }
         }
-        if let Some(pt) = ptr_ty {
-            if let Ok(mut r) = ResolvedUnion::new_field(Rc::clone(&pt), field, typegrp.as_ref()) {
-                r.set_lock(true);
-                data.set_union_field(&pt, op, slot, r.clone());
-                data.set_address_based_union_field(&pt, &addr, slot, r);
-                installed = true;
-            }
+        if addr_conflict {
+            // Poison the coarse key rather than let a later op read either answer.
+            data.kuna_record_variant_proof_addr_conflict(&subject.union_ty, op, slot);
         }
         if installed {
             data.kuna_record_variant_proof(&subject.union_ty, op, slot, field);
+            // `ActionSetCasts::resolveUnion` moves a POINTER-to-union resolution
+            // onto a zero-`PTRSUB` it splices into this same edge, at this same
+            // address, and reads it back at slot -1. That one alias is the only
+            // slot rewrite the cast plane performs, so it is recorded explicitly
+            // instead of leaving the address key slot-blind.
+            if is_ptr && slot != -1 {
+                data.kuna_record_variant_proof_alias(&subject.union_ty, op, field);
+            }
             count += 1;
         }
     }
     count
+}
+
+/// The variant set carried by in-edge `slot` of the block holding `op`.
+fn edge_context(
+    data: &Funcdata,
+    regions: &Regions,
+    op: OpId,
+    slot: int4,
+    all: u64,
+) -> u64 {
+    data.obank()
+        .get(op)
+        .and_then(|o| o.get_parent())
+        .and_then(|b| regions.index.get(&b))
+        .and_then(|&bi| regions.edge[bi].get(slot.max(0) as usize).copied())
+        .unwrap_or(all)
 }
 
 /// How `vn` relates to the object `(kind, root)`: `(it names bytes OF the

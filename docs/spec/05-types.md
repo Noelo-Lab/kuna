@@ -502,11 +502,41 @@ a pointer to it, so no codegen shape can trigger it:
 - a **producer** store: a constant written over the tag bytes, selecting the
   facet `VariantLayout::facet_for_discr` names.
 
-A forward may-analysis propagates the edge constraints over the basic-block
-graph and a backward must-analysis propagates the stores; a path that reaches
-the end of the function without a store contributes UNKNOWN and blocks the
-conclusion. The two are intersected, and only a block whose intersection is a
-**singleton** is a region (`kuna_variantguard.rs (compute_regions)`).
+The two are evidence about **different things**, and mixing them is the mistake
+this pass shipped a first revision with. A guard is evidence about the value an
+execution is *carrying*, so it colours every op its edge reaches, reads
+included. A store is evidence about what the object *becomes*, so it colours
+**writes only**: a store into the object, and the pointer arithmetic that feeds
+one and nothing else (`kuna_variantguard.rs (writes_only)`). The producer fact
+is read positionally off the nearest constant tag store above or below the write
+in its own block, is killed by any intervening store over the tag bytes that
+cannot be read as a constant and by any call (which may store through the
+pointer itself), and is refused when the two sides disagree
+(`kuna_variantguard.rs (producer_writes)`).
+
+Both directions are sound for a write and both are needed — `payload = v;
+tag = 0;` is a constructor whose bytes *become* `Ok`'s payload, and `tag = 1;
+payload = v;` writes the payload of an object that is already `Err`. Neither is
+sound for a read. The first revision propagated the store backwards over whole
+blocks with no ordering test and no kill, so
+
+```c
+v1 = (dst->payload).Err.__0;   // reads whatever the CALLER passed
+dst->tag = 1;
+```
+
+named a load of the caller's value after the variant the store was about to
+write. The control is what makes that decisive rather than merely doubtful: the
+same function clobbering with `Ok(9)` gave the SAME instruction the opposite
+name, so two identical reads of one source expression got opposite variant
+names, decided by a store below them. At most one could be right; by
+construction neither was, because the source reads both arms.
+`variantguard_clobber_x86_64` is the committed fixture for it.
+
+The guard side is a forward may-analysis over the edge constraints; only a block
+whose set is a **singleton** is a region (`kuna_variantguard.rs
+(compute_regions)`), and the producer fact is intersected with it at the pin so
+a contradiction refuses.
 
 A block region alone is not enough, because compilers hoist. In
 `match r { Ok(v) => v, Err(e) => e + 100 }` at `-C opt-level=1` rustc computes
@@ -555,8 +585,10 @@ from the scorer and `setUnionField` on an occupied entry cannot install a lock
 
 What it does not reach: a branchless producer (rustc at `-O1` computes a
 `Result`'s discriminant as `(x < 0xb)` rather than storing a literal, so a
-constructor written that way names nothing), and a switch or jump-table dispatch
-on the tag — only equality-shaped conditions are read as seeds. The *field*
+constructor written that way names nothing); a switch or jump-table dispatch on
+the tag, since only equality-shaped conditions are read as seeds; and a READ
+below a producer store, which would need a clobber analysis over aliasing that is
+not attempted — only a guard ever names a read. The *field*
 inside a named facet keeps `dwarfvariants`'s own per-field suppression
 (`Multi`'s `P.field_0x8`), which is a separate rule this pass does not touch.
 

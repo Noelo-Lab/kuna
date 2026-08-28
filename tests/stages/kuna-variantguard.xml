@@ -55,6 +55,25 @@
       * `ret_three` is the third refusal: its two payload variants occupy
         DISJOINT ranges, so `dwarfvariants` already forces `A` and `B` and the
         layout is skipped. Identical in both passes.
+
+    Passes 5 and 6 (`variantguard_clobber_x86_64`) are the PRODUCER-ORDERING
+    rule, and they exist because the first revision of this pass got it wrong.
+    A constant `tag = K` store is evidence about what the object BECOMES; it says
+    nothing about a value read BEFORE it. That revision propagated the store
+    backwards over whole blocks with no ordering test and no kill, so an
+    UNGUARDED read of the caller's value came out `(dst->payload).Err.__0`.
+      * `read_then_clobber` and `read_then_clobber_ok` are byte-identical up to
+        the clobber constant, so the bug gave the SAME instruction opposite
+        variant names. Both reads must now render by OFFSET, and the assertion
+        counts them together so a future regression cannot pass by breaking only
+        one of the pair.
+      * `read_then_store` is the shape whose output contradicted itself three
+        lines apart: named `Err`, then tested for `Ok` and returned unchanged.
+      * `guard_then_clobber` is the coexistence case: the read IS proved, by the
+        GUARD, so it names `Ok`, while the store below it names `Err`. Neither
+        fact is allowed to decide the other.
+      * The WRITES keep their names in every one of them, because that is what a
+        producer store actually proves.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -108,6 +127,38 @@ c3
   <com>load function ret_three</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/variantguard_clobber_x86_64</com>
+  <com>read symbols</com>
+  <com>option variantguard off</com>
+  <com>load function read_then_clobber</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function read_then_clobber_ok</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function read_then_store</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function guard_then_clobber</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/variantguard_clobber_x86_64</com>
+  <com>read symbols</com>
+  <com>option variantguard on</com>
+  <com>load function read_then_clobber</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function read_then_clobber_ok</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function read_then_store</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function guard_then_clobber</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="VARIANTGUARD #1: off, both arms of the match spell the Result payload by offset" min="2" max="2">v2\.payload\.field_0x8</stringmatch>
@@ -120,4 +171,10 @@ c3
 <stringmatch name="VARIANTGUARD #8: on, the constant store over the tag names the variant it builds" min="1" max="1">\(rethidden-&gt;payload\)\.P\.a = x;</stringmatch>
 <stringmatch name="VARIANTGUARD #9: on, and so does the other arm, which stores discriminant 1" min="1" max="1">\(rethidden-&gt;payload\)\.Q\.field_0x8 = \(uint8\)x;</stringmatch>
 <stringmatch name="VARIANTGUARD #10: disjoint payload ranges are already forced by the layout, so ret_three is identical in BOTH passes" min="2" max="2">\(rethidden-&gt;payload\)\.A\.__0 = x;</stringmatch>
+<stringmatch name="VARIANTGUARD #11: a store below a read never names the read - 4 offset-spelled reads in the off pass and 3 in the on pass, the difference being the ONE read a guard proves" min="7" max="7">v1 = \(dst-&gt;payload\)\.field_0x8\.__0;</stringmatch>
+<stringmatch name="VARIANTGUARD #12: the only read ever NAMED is the one a GUARD proves, so the read_then_clobber_ok CONTROL's downstream Ok store does not name its read" min="1" max="1">v1 = \(dst-&gt;payload\)\.Ok\.__0;</stringmatch>
+<stringmatch name="VARIANTGUARD #13: and no read anywhere is named Err by a store below it" min="0" max="0">v1 = \(dst-&gt;payload\)\.Err\.__0;</stringmatch>
+<stringmatch name="VARIANTGUARD #14: on, the WRITE a constant tag store builds still names its variant" min="1" max="1">\(dst-&gt;payload\)\.Err\.__0 = 7;</stringmatch>
+<stringmatch name="VARIANTGUARD #15: on, and so does the Ok control's write, which is what makes #11/#12 a real pair and not a silenced pass" min="1" max="1">\(dst-&gt;payload\)\.Ok\.__0 = 9;</stringmatch>
+<stringmatch name="VARIANTGUARD #16: off, that same write is spelled by offset, so the two passes really do differ on this fixture" min="1" max="1">\(dst-&gt;payload\)\.field_0x8\.__0 = 7;</stringmatch>
 </decompilertest>

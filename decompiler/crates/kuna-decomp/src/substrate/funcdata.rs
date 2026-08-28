@@ -329,14 +329,22 @@ pub struct Funcdata {
     pub(crate) kuna_variant_proof_op:
         std::collections::BTreeMap<(kuna_base::types::uint8, kuna_base::types::uintm, int4), int4>,
     /// (kuna `variantguard`) The same proofs keyed by
-    /// `(overlay union type id, instruction address)`, for the ops the cast plane
-    /// creates after the pass has run — a cast or a zero-`PTRSUB` inherits its
-    /// resolution from the edge it was spliced into and carries that edge's
-    /// address.  An address at which two different members were proved is REMOVED
-    /// rather than resolved arbitrarily.
+    /// `(overlay union type id, instruction address, slot)`, for the ops the cast
+    /// plane creates after the pass has run — a cast or a zero-`PTRSUB` inherits
+    /// its resolution from the edge it was spliced into and carries that edge's
+    /// address.
+    ///
+    /// The slot is part of the key because
+    /// [`crate::p5_types::funcdata_union`] keys the resolution this authorizes BY
+    /// slot; an address-only key would be strictly coarser than the thing it
+    /// authorizes, and `ActionSetCasts::resolveUnion` runs on every edge needing
+    /// resolution INCLUDING ones this pass refused.  A `None` value is a
+    /// permanent TOMBSTONE: once two different members have been proved at one
+    /// key the contradiction is remembered, because removing the entry would let
+    /// a third record resurrect the key.
     pub(crate) kuna_variant_proof_addr: std::collections::BTreeMap<
-        (kuna_base::types::uint8, kuna_base::address::Address),
-        int4,
+        (kuna_base::types::uint8, kuna_base::address::Address, int4),
+        Option<int4>,
     >,
     /// (kuna `variantguard`) The highest `PcodeOp::getTime()` alive when the
     /// proofs above were made.  The address-keyed map answers only for an op

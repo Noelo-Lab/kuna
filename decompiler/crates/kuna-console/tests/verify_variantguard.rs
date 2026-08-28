@@ -135,6 +135,18 @@ fn ab_shapes(func: &str) -> Option<(String, String)> {
     Some((off, on))
 }
 
+/// As [`ab_overlay`], over the PRODUCER-ORDERING fixture.
+fn ab_clobber(func: &str) -> Option<(String, String)> {
+    let off = decompile_in("variantguard_clobber_x86_64", &[func], false)?;
+    let on = decompile_in("variantguard_clobber_x86_64", &[func], true)?;
+    Some((off, on))
+}
+
+/// The rendered C of one function with the gate on, stripped of console noise.
+fn body(func: &str) -> Option<String> {
+    decompile_in("variantguard_clobber_x86_64", &[func], true)
+}
+
 /// THE headline. `use16` is `match r16(x) { Ok(v) => v, Err(e) => e + 100 }`.
 /// Off, both arms render the same offset spelling. On, each names its own
 /// variant.
@@ -252,4 +264,122 @@ fn a_payload_read_that_can_reach_both_variants_stays_unnamed() {
         "gate off spells the constructor's store by offset, got:\n{off}"
     );
     assert_eq!(off, on, "an unguarded write proves nothing:\n{on}");
+}
+
+// ===========================================================================
+// The producer-ordering rule: a store never names a read above it
+// ===========================================================================
+
+/// **The regression this file exists for.** A constant `tag = K` store is
+/// evidence about what the object BECOMES. The first revision of this pass
+/// propagated it backwards over whole blocks with no ordering test and no kill,
+/// so an UNGUARDED read of the caller's value came out
+/// `(dst->payload).Err.__0` — a variant name asserted from a store that happens
+/// after the read, which is exactly what DIV-87's suppression rule exists to
+/// prevent.
+#[test]
+fn a_store_never_names_a_read_above_it() {
+    let Some((off, on)) = ab_clobber("read_then_clobber") else { return };
+    assert!(
+        on.contains("v1 = (dst->payload).field_0x8.__0;"),
+        "the unguarded read must stay on the offset spelling, got:\n{on}"
+    );
+    assert!(
+        !on.contains("v1 = (dst->payload).Err.__0;"),
+        "the `tag = 1` store below must not name the read, got:\n{on}"
+    );
+    // The WRITE is what the store actually proves, and it must still be named —
+    // otherwise this test would pass on a pass that had simply been silenced.
+    assert!(
+        off.contains("(dst->payload).field_0x8.__0 = 7;"),
+        "gate off spells the write by offset, got:\n{off}"
+    );
+    assert!(
+        on.contains("(dst->payload).Err.__0 = 7;"),
+        "gate on names the write the store builds, got:\n{on}"
+    );
+}
+
+/// **The control that makes the claim decisive.** `read_then_clobber_ok` is
+/// byte-identical to `read_then_clobber` but for the clobber constant, so under
+/// the old rule the SAME `mov 0x8(%rdi),%rax` got opposite variant names. Two
+/// identical reads of the same source expression cannot both be right, and by
+/// construction neither was — the source reads both arms. The two reads must now
+/// render identically.
+#[test]
+fn the_clobber_control_renders_its_read_identically() {
+    let Some((_, err_on)) = ab_clobber("read_then_clobber") else { return };
+    let Some((_, ok_on)) = ab_clobber("read_then_clobber_ok") else { return };
+    let read = |t: &str| {
+        t.lines()
+            .find(|l| l.trim_start().starts_with("v1 = (dst->payload)"))
+            .unwrap_or("<none>")
+            .trim()
+            .to_string()
+    };
+    assert_eq!(
+        read(&err_on),
+        read(&ok_on),
+        "an Err clobber and an Ok clobber must not give the same read different \
+         names.\n--- Err arm ---\n{err_on}\n--- Ok arm ---\n{ok_on}"
+    );
+    assert!(read(&err_on).contains("field_0x8"), "and neither may be named at all");
+    // Both writes still named, in opposite directions.
+    assert!(err_on.contains("(dst->payload).Err.__0 = 7;"), "got:\n{err_on}");
+    assert!(ok_on.contains("(dst->payload).Ok.__0 = 9;"), "got:\n{ok_on}");
+}
+
+/// The shape whose output contradicted itself three lines apart: the read was
+/// named `Err`, then tested for `Ok` and returned unchanged.
+#[test]
+fn a_read_kept_across_a_clobber_is_not_named() {
+    let Some(on) = body("read_then_store") else { return };
+    assert!(
+        on.contains("v1 = (dst->payload).field_0x8.__0;"),
+        "the read must stay on the offset spelling, got:\n{on}"
+    );
+    assert!(!on.contains("v1 = (dst->payload).Err.__0;"), "got:\n{on}");
+    // The tag TEST is still in the body, which is what made the old render
+    // self-contradictory: a value named `Err` and then tested for `Ok`.
+    assert!(on.contains("dst->tag"), "the discriminant test survives, got:\n{on}");
+}
+
+/// A read the GUARD proves coexists with a store of the OTHER variant below it,
+/// and neither decides the other: the read is `Ok` because the tag was tested,
+/// the store is `Err` because that is what it writes.
+#[test]
+fn a_guard_proved_read_coexists_with_a_clobber_of_the_other_variant() {
+    let Some((off, on)) = ab_clobber("guard_then_clobber") else { return };
+    assert!(
+        off.contains("v1 = (dst->payload).field_0x8.__0;"),
+        "gate off names nothing, got:\n{off}"
+    );
+    assert!(
+        on.contains("v1 = (dst->payload).Ok.__0;"),
+        "the guarded read is Ok — the tag == 0 arm, got:\n{on}"
+    );
+    assert!(
+        on.contains("(dst->payload).Err.__0 = v1 + 1;"),
+        "the store below is Err, got:\n{on}"
+    );
+}
+
+/// One forward path stores and the other returns without storing. Nothing about
+/// the read above them is proved either way.
+#[test]
+fn a_conditional_store_proves_nothing_about_the_read_above_it() {
+    let Some((off, on)) = ab_clobber("maybe_store") else { return };
+    assert!(
+        on.contains("v2 = (dst->payload).field_0x8.__0;"),
+        "the read must stay on the offset spelling, got:\n{on}"
+    );
+    assert!(!on.contains("(dst->payload).Err.__0;"), "no read is named, got:\n{on}");
+    assert!(
+        off.contains("(dst->payload).field_0x8.__0 = v3;"),
+        "gate off spells the conditional write by offset, got:\n{off}"
+    );
+    assert!(
+        on.contains("(dst->payload).Err.__0 = v3;"),
+        "the write inside the guarded block is still named, got:\n{on}"
+    );
 }
