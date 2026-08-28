@@ -469,7 +469,23 @@ are compile-time.
 
 **(kuna) `variantguard` — the discriminant, where the compiler stated it.**
 `decompiler/crates/kuna-decomp/src/p5_types/kuna_variantguard.rs
-(ActionVariantGuard)`. Scoring is the wrong instrument for one specific union:
+(ActionVariantGuard)`.
+
+> **PROPOSAL, default-OFF, and excluded from every preset.** The
+> **memory-object** guard direction is **known-unsound**: it can print a
+> confidently wrong `DW_TAG_variant` name where the object was clobbered between
+> the guard and the access. A `CBRANCH` is its block's last op but its *condition
+> Varnode need not be*, so a tag read hoisted above a clobbering call, with the
+> branch left below it, has the block-level kill re-applied as a stale edge
+> constraint. Four independent adversarial rounds each found a different shape of
+> the same defect, none of them caught by the gates or by the tests written for
+> the previous round. What is verified sound — the **value-object** guard and the
+> **producer-writes** half — and the full account of every round is
+> [docs/features/variantguard/analysis.md](../features/variantguard/analysis.md).
+> The rest of this section describes the mechanism as implemented, because it is
+> the reference implementation a retry should start from.
+
+Scoring is the wrong instrument for one specific union:
 the overlay a Rust tagged enum's `DW_TAG_variant_part` becomes (chapter 01,
 `dwarfvariants`). A union member selects itself by *offset* and the
 discriminant is never consulted, but in a tagged enum every payload variant

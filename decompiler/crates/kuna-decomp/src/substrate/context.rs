@@ -1129,7 +1129,7 @@ impl ArchContext {
             iteboolean: false,            // iteboolean (0/1 select -> boolean assignment)
             itecondlist: false,           // itecondlist (condition-list tolerance, default-off)
             param_copy_hoist: false,      // paramcopyhoist (parameter copy-shadow -> entry block)
-            variantguard: true,           // variantguard (DWARF discriminant-guarded union facet)
+            variantguard: false,          // variantguard (PROPOSAL, default-off: the memory-object guard is known-unsound)
             returndup_orchain: false,     // orchain (short-circuit chain protection, default-off)
             duplicate_shared_returns: false, // returndup (opt-in default-off)
             early_return: false, // earlyreturn (opt-in default-off)

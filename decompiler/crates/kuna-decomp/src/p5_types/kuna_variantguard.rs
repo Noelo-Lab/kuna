@@ -5,6 +5,36 @@
 //! (DIV-87) records its side table for, and it is the second half of that
 //! feature rather than a new claim about codegen.
 //!
+//! # PROPOSAL — default-OFF, and the memory-object guard is KNOWN-UNSOUND
+//!
+//! Read `docs/features/variantguard/analysis.md` before changing anything here.
+//!
+//! The **memory-object** guard direction can print a confidently wrong variant
+//! name. A `CBRANCH` sits last in its block, but its **condition Varnode need
+//! not**: rustc hoists the tag read above a clobbering call and leaves the branch
+//! below it, so [`compute_regions`] correctly raises the event-holding block's
+//! fact to the whole set and then re-applies that same block's *stale* edge
+//! constraint, resurrecting the killed fact in the successor.
+//! [`Regions::guard_at`]'s positional kill never sees it, because the read is in
+//! a successor whose entry region is already the resurrected singleton. Witnesses
+//! `hoist_read` / `hoist_xblock`.
+//!
+//! Four independent adversarial rounds each found a different shape of ONE
+//! defect — a fact about an object's discriminant applied where it no longer
+//! holds — and each was found only by a purpose-built fixture, never by the gates
+//! and never by the tests written for the previous round. Closing it needs
+//! reaching definitions plus an escape discipline over the object, which is a
+//! different piece of work from anything in this file.
+//!
+//! **What IS verified sound, and is where a retry should start:** the producer
+//! half ([`producer_writes`] — writes only, intra-block, positional, killed by a
+//! tag store / a call / an unattributable store) survived every attack in rounds
+//! 2 and 3; and the **value-object** guard held under every probe, including a
+//! `MULTIEQUAL` joining two variants, a value round-tripped through memory, and
+//! an address-taken local handed to a callee (correctly reclassified as `Mem`).
+//! A value object cannot be clobbered — that is what SSA means — so the
+//! resurrection above has no analogue there.
+//!
 //! ## The gap it closes
 //!
 //! `dwarfvariants` installs a Rust tagged enum as `struct { tag; union payload; }`

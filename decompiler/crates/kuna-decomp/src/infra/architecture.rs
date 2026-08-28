@@ -1573,7 +1573,7 @@ impl Architecture {
             iteboolean: false,
             itecondlist: false,
             param_copy_hoist: false,
-            variantguard: true,
+            variantguard: false,
             duplicate_shared_returns: false,
             returndup_orchain: false,
             early_return: false,
