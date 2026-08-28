@@ -383,3 +383,128 @@ fn a_conditional_store_proves_nothing_about_the_read_above_it() {
         "the write inside the guarded block is still named, got:\n{on}"
     );
 }
+
+// ===========================================================================
+// The guard side of the same rule: a guard does not survive a clobber
+// ===========================================================================
+
+/// A WRITE that builds `Err` inside a block the guard says is `Ok`. A revision
+/// of this pass let a singleton guard region beat a correctly-computed producer
+/// fact by PRECEDENCE, so this rendered `(*dst).payload.Ok.__0 = v1 + 1;` one
+/// line below its own `dst->tag = 1;` — self-contradicting output. The two facts
+/// are now intersected, and the guard is killed by the tag store above the write.
+///
+/// The guard-proved READ above the store is the anchor: it must still be named,
+/// so this cannot be satisfied by silencing the pass.
+#[test]
+fn a_write_inside_a_guarded_block_names_what_it_builds() {
+    let Some((off, on)) = ab_clobber("guarded_write") else { return };
+    assert!(off.contains("(dst->payload).field_0x8.__0 = v1 + 1;"), "got:\n{off}");
+    assert!(
+        on.contains("(dst->payload).Err.__0 = v1 + 1;"),
+        "the write builds Err and must say so, got:\n{on}"
+    );
+    assert!(
+        !on.contains("(dst->payload).Ok.__0 = v1 + 1;"),
+        "the Ok guard must not name a write that builds Err, got:\n{on}"
+    );
+    assert!(
+        on.contains("v1 = (dst->payload).Ok.__0;"),
+        "and the guard-proved read above it must still be named, got:\n{on}"
+    );
+}
+
+/// The mirror, so neither direction can be right by accident.
+#[test]
+fn the_guarded_write_mirror_is_symmetric() {
+    let Some((_, on)) = ab_clobber("guarded_write_mirror") else { return };
+    assert!(
+        on.contains("(dst->payload).Ok.__0 = v1 + 1;"),
+        "the mirror builds Ok, got:\n{on}"
+    );
+    assert!(
+        on.contains("v1 = (dst->payload).Err.__0;"),
+        "and its guard-proved read is Err, got:\n{on}"
+    );
+}
+
+/// A READ under a STALE guard, with no call involved: the tag was overwritten
+/// between the branch that proved `Ok` and the load.
+#[test]
+fn a_guard_does_not_survive_a_tag_store() {
+    let Some((_, on)) = ab_clobber("stale_read") else { return };
+    assert!(
+        on.contains("return (dst->payload).field_0x8.__0;"),
+        "the stale read must not be named, got:\n{on}"
+    );
+    // Anchor: the write between them IS named, so a silenced pass fails here.
+    assert!(
+        on.contains("(dst->payload).Err.__0 = x;"),
+        "the store that killed the guard is itself named, got:\n{on}"
+    );
+}
+
+/// **The guard side's control pair**, the analogue of
+/// [`the_clobber_control_renders_its_read_identically`]. The two functions are
+/// identical but for which arm the guard selects and which variant the call
+/// writes, so the same `mov 0x8(%rdi),%rax` must not get opposite names, each
+/// naming the variant the preceding call had just destroyed.
+#[test]
+fn a_guard_does_not_survive_a_call_and_its_control_agrees() {
+    // Each arm is decompiled ALONGSIDE `guarded_write`, whose named write is the
+    // anchor: without it this test would pass on a pass that had simply been
+    // silenced, since both arms render by offset either way.
+    let Some(ok_on) =
+        decompile_in("variantguard_clobber_x86_64", &["read_after_call_ok_guard", "guarded_write"], true)
+    else {
+        return;
+    };
+    let Some(err_on) = decompile_in(
+        "variantguard_clobber_x86_64",
+        &["read_after_call_err_guard", "guarded_write"],
+        true,
+    ) else {
+        return;
+    };
+    for t in [&ok_on, &err_on] {
+        assert!(
+            t.contains("(dst->payload).Err.__0 = v1 + 1;"),
+            "anchor: the pass must still be naming what it can, got:\n{t}"
+        );
+    }
+    let read = |t: &str| {
+        t.lines()
+            .find(|l| l.trim_start().starts_with("return (dst->payload)"))
+            .unwrap_or("<none>")
+            .trim()
+            .to_string()
+    };
+    assert_eq!(
+        read(&ok_on),
+        read(&err_on),
+        "an Ok guard + Err call and an Err guard + Ok call must not give the same \
+         load opposite names.\n--- ok arm ---\n{ok_on}\n--- err arm ---\n{err_on}"
+    );
+    assert!(
+        read(&ok_on).contains("field_0x8"),
+        "and neither may be named at all: a callee handed the pointer may store \
+         through it, got:\n{ok_on}"
+    );
+}
+
+/// A store through a pointer that may ALIAS the object kills the fact: `q` may
+/// be `p`, so the `Ok` two lines up is not proved for the raw payload write.
+/// The two writes the pass CAN attribute to their own object are the anchor.
+#[test]
+fn a_store_that_may_alias_the_object_kills_the_fact() {
+    let Some((off, on)) = ab_clobber("alias_clobber") else { return };
+    assert!(off.contains("(p->payload).field_0x8.__0 = x;"), "got:\n{off}");
+    assert!(
+        on.contains("(p->payload).field_0x8.__0 = x;"),
+        "the write after a possibly-aliasing store must be refused, got:\n{on}"
+    );
+    assert!(
+        on.contains("(p->payload).Ok.__0 = 1;") && on.contains("(q->payload).Err.__0 = 2;"),
+        "while the two attributable writes keep their names, got:\n{on}"
+    );
+}

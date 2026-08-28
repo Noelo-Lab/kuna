@@ -533,10 +533,29 @@ names, decided by a store below them. At most one could be right; by
 construction neither was, because the source reads both arms.
 `variantguard_clobber_x86_64` is the committed fixture for it.
 
-The guard side is a forward may-analysis over the edge constraints; only a block
-whose set is a **singleton** is a region (`kuna_variantguard.rs
-(compute_regions)`), and the producer fact is intersected with it at the pin so
-a contradiction refuses.
+**One kill discipline covers both halves**, and it is the correction that closed
+the last of these defects. A guard proves what the object was AT THE GUARD; a
+store proves what it becomes. Neither survives an *event*
+(`kuna_variantguard.rs (object_events)`): a store over the tag bytes, a **call**
+— a callee handed the pointer may store anything through it — or **any store the
+pass cannot attribute to the object**, because it may alias it (`*p = Ok(1);
+*q = Err(2); (*p).payload = x;` is a committed witness where `q` may be `p`). A
+**value** object has no events at all, because an SSA value cannot be clobbered;
+that is why a `match` on a returned enum keeps its names while the same shape
+behind a pointer loses them across a call.
+
+The guard side is a forward may-analysis over the edge constraints in which the
+fact *leaving* a block holding any event is the whole set; within a block the
+kill is positional (`kuna_variantguard.rs (Regions::guard_at)`), so a read above
+a clobber keeps the guard and one below it does not, and a guard's own `CBRANCH`
+is its block's last op so a re-test after a clobber still constrains the edge.
+Only a **singleton** set is a fact.
+
+The two facts are **intersected** at the pin, and a disagreement REFUSES.
+Neither outranks the other: a revision that gave a singleton guard region
+precedence discarded a producer fact the analysis had computed correctly and
+named a write that builds `Err`, inside an `Ok`-guarded block, `Ok` — one line
+below its own `tag = 1`.
 
 A block region alone is not enough, because compilers hoist. In
 `match r { Ok(v) => v, Err(e) => e + 100 }` at `-C opt-level=1` rustc computes
@@ -587,8 +606,12 @@ What it does not reach: a branchless producer (rustc at `-O1` computes a
 `Result`'s discriminant as `(x < 0xb)` rather than storing a literal, so a
 constructor written that way names nothing); a switch or jump-table dispatch on
 the tag, since only equality-shaped conditions are read as seeds; and a READ
-below a producer store, which would need a clobber analysis over aliasing that is
-not attempted — only a guard ever names a read. The *field*
+below a producer store — only a guard ever names a read, and only until the first
+event. The coarsest cost is that ANY call kills a memory object's guard, with no
+attempt to prove the callee cannot reach it: on a std-linked `-g` witness that
+takes the recovery from 5 functions / 17 labels to 4 / 11, all of the loss being
+reads below a call in drop glue and in a recursive tree walk. Refining it needs
+an escape analysis for the object's address. The *field*
 inside a named facet keeps `dwarfvariants`'s own per-field suppression
 (`Multi`'s `P.field_0x8`), which is a separate rule this pass does not touch.
 

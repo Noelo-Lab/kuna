@@ -74,6 +74,27 @@
         fact is allowed to decide the other.
       * The WRITES keep their names in every one of them, because that is what a
         producer store actually proves.
+
+    The same rule has a GUARD side, added after a second review round. A guard
+    proves what the object was AT THE GUARD; it does not survive a store over the
+    tag bytes, a call that may store through the pointer, or any store this pass
+    cannot attribute to the object at all (which may alias it). A revision that
+    let a singleton guard region beat a correctly-computed producer fact by
+    PRECEDENCE named a write that builds `Err`, inside an `Ok`-guarded block,
+    `Ok` , one line below its own `tag = 1`. The two facts are now INTERSECTED
+    and a disagreement refuses.
+      * `guarded_write` and `guarded_write_mirror` are that shape and its mirror:
+        the guard-proved read keeps its name, and the write below names the
+        variant it actually builds.
+      * `stale_read` is the same with no call at all: the tag is overwritten
+        between the branch and the load.
+      * `read_after_call_ok_guard` and `read_after_call_err_guard` are the guard
+        side's CONTROL PAIR, the analogue of read_then_clobber/_ok: identical but
+        for which arm the guard selects and which variant the call writes, so the
+        same load must not get opposite names. Both must render by offset.
+      * `alias_clobber` writes the payload of `p` after a store through `q` that
+        may be the same object; that write is refused while the two writes this
+        pass CAN attribute keep their names.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -143,6 +164,24 @@ c3
   <com>load function guard_then_clobber</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>load function guarded_write</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function guarded_write_mirror</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function stale_read</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function read_after_call_ok_guard</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function read_after_call_err_guard</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function alias_clobber</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/variantguard_clobber_x86_64</com>
   <com>read symbols</com>
@@ -159,6 +198,24 @@ c3
   <com>load function guard_then_clobber</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>load function guarded_write</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function guarded_write_mirror</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function stale_read</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function read_after_call_ok_guard</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function read_after_call_err_guard</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function alias_clobber</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="VARIANTGUARD #1: off, both arms of the match spell the Result payload by offset" min="2" max="2">v2\.payload\.field_0x8</stringmatch>
@@ -171,10 +228,16 @@ c3
 <stringmatch name="VARIANTGUARD #8: on, the constant store over the tag names the variant it builds" min="1" max="1">\(rethidden-&gt;payload\)\.P\.a = x;</stringmatch>
 <stringmatch name="VARIANTGUARD #9: on, and so does the other arm, which stores discriminant 1" min="1" max="1">\(rethidden-&gt;payload\)\.Q\.field_0x8 = \(uint8\)x;</stringmatch>
 <stringmatch name="VARIANTGUARD #10: disjoint payload ranges are already forced by the layout, so ret_three is identical in BOTH passes" min="2" max="2">\(rethidden-&gt;payload\)\.A\.__0 = x;</stringmatch>
-<stringmatch name="VARIANTGUARD #11: a store below a read never names the read - 4 offset-spelled reads in the off pass and 3 in the on pass, the difference being the ONE read a guard proves" min="7" max="7">v1 = \(dst-&gt;payload\)\.field_0x8\.__0;</stringmatch>
-<stringmatch name="VARIANTGUARD #12: the only read ever NAMED is the one a GUARD proves, so the read_then_clobber_ok CONTROL's downstream Ok store does not name its read" min="1" max="1">v1 = \(dst-&gt;payload\)\.Ok\.__0;</stringmatch>
-<stringmatch name="VARIANTGUARD #13: and no read anywhere is named Err by a store below it" min="0" max="0">v1 = \(dst-&gt;payload\)\.Err\.__0;</stringmatch>
+<stringmatch name="VARIANTGUARD #11: a store below a read never names the read - 6 offset-spelled reads in the off pass and 3 in the on pass, the difference being the three reads a guard proves" min="9" max="9">v1 = \(dst-&gt;payload\)\.field_0x8\.__0;</stringmatch>
+<stringmatch name="VARIANTGUARD #12: the only reads ever NAMED are the ones a GUARD proves, so the read_then_clobber_ok CONTROL's downstream Ok store does not name its read" min="2" max="2">v1 = \(dst-&gt;payload\)\.Ok\.__0;</stringmatch>
+<stringmatch name="VARIANTGUARD #13: the one Err-named read is guarded_write_mirror's, proved by its own guard and not by the Ok store below it" min="1" max="1">v1 = \(dst-&gt;payload\)\.Err\.__0;</stringmatch>
 <stringmatch name="VARIANTGUARD #14: on, the WRITE a constant tag store builds still names its variant" min="1" max="1">\(dst-&gt;payload\)\.Err\.__0 = 7;</stringmatch>
 <stringmatch name="VARIANTGUARD #15: on, and so does the Ok control's write, which is what makes #11/#12 a real pair and not a silenced pass" min="1" max="1">\(dst-&gt;payload\)\.Ok\.__0 = 9;</stringmatch>
 <stringmatch name="VARIANTGUARD #16: off, that same write is spelled by offset, so the two passes really do differ on this fixture" min="1" max="1">\(dst-&gt;payload\)\.field_0x8\.__0 = 7;</stringmatch>
+<stringmatch name="VARIANTGUARD #17: a guard does not survive a clobber - no read after a tag store or a call is ever named, in EITHER pass" min="6" max="6">return \(dst-&gt;payload\)\.field_0x8\.__0;</stringmatch>
+<stringmatch name="VARIANTGUARD #18: the guard-side CONTROL PAIR - neither read_after_call arm names the variant its call destroyed" min="0" max="0">return \(dst-&gt;payload\)\.(Ok|Err)\.__0;</stringmatch>
+<stringmatch name="VARIANTGUARD #19: on, a write that builds Err inside an Ok-guarded block is named Err, not Ok - the two facts are intersected, never resolved by precedence" min="2" max="2">\(dst-&gt;payload\)\.Err\.__0 = v1 \+ 1;</stringmatch>
+<stringmatch name="VARIANTGUARD #20: on, and the mirror builds Ok inside an Err-guarded block, so neither direction is right by accident" min="1" max="1">\(dst-&gt;payload\)\.Ok\.__0 = v1 \+ 1;</stringmatch>
+<stringmatch name="VARIANTGUARD #21: a store through a pointer that may alias the object refuses the payload write below it, in BOTH passes" min="2" max="2">\(p-&gt;payload\)\.field_0x8\.__0 = x;</stringmatch>
+<stringmatch name="VARIANTGUARD #22: on, while the two writes the pass CAN attribute to their own object keep their names" min="1" max="1">\(p-&gt;payload\)\.Ok\.__0 = 1;</stringmatch>
 </decompilertest>

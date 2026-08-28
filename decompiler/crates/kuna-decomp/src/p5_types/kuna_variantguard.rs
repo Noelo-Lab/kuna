@@ -51,13 +51,32 @@
 //! [`producer_writes`], which is where an earlier revision of this pass got it
 //! badly wrong and is worth reading before changing anything here.
 //!
-//! **2. Regions.**  A forward may-analysis over the basic-block graph propagates
-//! the guard edge constraints: a block is reachable only under the union of what
-//! its in-edges allow.  Only a block whose set is a **singleton** is a region.
-//! The producer facts are separate, per-op, intra-block and positional; they are
-//! intersected with the guard region at the pin so a contradiction refuses.
+//! **2. The kill discipline, which both halves share.**  Every defect this pass
+//! shipped was one thing: *a fact about an object's discriminant applied at a
+//! program point where it no longer held*.  A guard proves what the object was
+//! AT THE GUARD; a store proves what it becomes.  Neither survives an **event**
+//! ([`object_events`]): a store over the tag bytes, a call (a callee handed the
+//! pointer may store through it), or any store this pass cannot attribute to the
+//! object at all (it may alias it).  A **value** object has no events, because an
+//! SSA value cannot be clobbered — which is why a `match` on a returned enum
+//! keeps its names while the same shape behind a pointer loses them across a
+//! call.
 //!
-//! **3. Uses.**  A block region alone is not enough, because a compiler hoists.
+//! **3. Regions.**  A forward may-analysis over the basic-block graph propagates
+//! the guard edge constraints: a block is reachable only under the union of what
+//! its in-edges allow, and the fact LEAVING a block that holds any event is the
+//! whole set.  Within a block the kill is positional ([`Regions::guard_at`]), so
+//! a read above a clobber keeps the guard and one below it does not.  A guard's
+//! own `CBRANCH` is its block's last op, so a re-test after a clobber still
+//! constrains the edge.  Only a **singleton** set is a fact.
+//!
+//! The two facts are **intersected** at the pin and a disagreement REFUSES.
+//! Neither outranks the other: a revision that gave a singleton guard region
+//! precedence discarded a correctly-computed producer fact and named a write
+//! that builds `Err`, inside an `Ok`-guarded block, `Ok` — one line below its own
+//! `tag = 1`.
+//!
+//! **4. Uses.**  A block region alone is not enough, because a compiler hoists.
 //! In `match r { Ok(v) => v, Err(e) => e + 100 }` at `-C opt-level=1` the `e +
 //! 100` is computed *before* the branch and selected by a `cmov`, so the read of
 //! the payload that means `Err` lives in a block that can still reach both
@@ -82,11 +101,19 @@
 //!   spelling: there is no constant for [`facet_for_discr`] to look up.
 //! * A **switch / jump-table dispatch** on the tag is not a seed.  Only
 //!   equality-shaped conditions are read.
-//! * A **producer store names no read at all**, not even one below it.  Doing
-//!   that soundly needs a clobber analysis over aliasing — a call handed the
-//!   pointer may store through it — which is not attempted; only a guard names a
-//!   read.  A producer store also does not reach out of its own block, so a
-//!   construction split across blocks recovers nothing.
+//! * A **producer store names no read at all**, not even one below it.  Only a
+//!   guard names a read, and only until the first event.  A producer store also
+//!   does not reach out of its own block, so a construction split across blocks
+//!   recovers nothing.
+//! * **Any call kills a memory object's guard**, with no attempt to prove the
+//!   callee cannot reach it.  That is the largest cost measured: on a std-linked
+//!   `-g` witness it takes the recovery from 5 functions / 17 labels to 4 / 11,
+//!   all of the loss being reads below a call in drop glue and in a recursive
+//!   tree walk.  Refining it needs an escape analysis for the object's address,
+//!   which is a real analysis and not a predicate.
+//! * **Any store this pass cannot attribute to the object kills too**, because it
+//!   may alias.  `*p = Ok(1); *q = Err(2); (*p).payload = x;` is a committed
+//!   witness: `q` may be `p`.
 //! * A read consumed by the discriminant test AND by one arm is refused, per the
 //!   blocking rule above.  On a NICHE encoding the two are literally the same
 //!   bytes -- `enum Tree { Leaf(i64), Node(Box<Tree>, Box<Tree>) }` stores the
@@ -684,15 +711,35 @@ fn branch_predicate(
 struct Regions {
     /// `BlockId` -> index into the per-block vectors below.
     index: BTreeMap<BlockId, usize>,
-    /// The variant set each block is provably in, or 0 when nothing is proved.
+    /// The variant set proved at each block's ENTRY, or 0 when nothing is.
     region: Vec<u64>,
     /// The variant set each in-edge of each block carries: `edge[b][i]`.
     edge: Vec<Vec<u64>>,
+    /// Position of the first event ([`object_events`]) in each block, if any.
+    /// A guard fact does not survive it.
+    first_event: Vec<Option<usize>>,
+    /// Every op's `(block index, position in `bb_ops`)`, so the kill can be
+    /// applied POSITIONALLY rather than to a whole block.
+    op_pos: BTreeMap<OpId, (usize, usize)>,
+    /// The set every guard-less point falls back to.
+    all: u64,
 }
 
 impl Regions {
-    fn of_block(&self, bl: BlockId) -> u64 {
-        self.index.get(&bl).map(|&i| self.region[i]).unwrap_or(0)
+    /// The variant set a GUARD proves at `op` — the fact at its block's entry,
+    /// unless an event has already invalidated it earlier in the same block.
+    ///
+    /// This is the whole kill discipline on the guard side: a guard proves what
+    /// the object was AT THE GUARD, and a store over the tag bytes, a call, or
+    /// any store that might alias the object ends that.
+    fn guard_at(&self, op: OpId) -> u64 {
+        let Some(&(bi, pos)) = self.op_pos.get(&op) else { return self.all };
+        if let Some(ev) = self.first_event[bi] {
+            if pos > ev {
+                return self.all;
+            }
+        }
+        self.region[bi]
     }
 }
 
@@ -703,7 +750,12 @@ impl Regions {
 /// of this: a store is evidence about what the object BECOMES, and folding it in
 /// backwards would colour an op that ran BEFORE it -- see [`producer_writes`].
 #[allow(clippy::needless_range_loop)]
-fn compute_regions(data: &Funcdata, all: u64, guards: &[GuardSeed]) -> Regions {
+fn compute_regions(
+    data: &Funcdata,
+    all: u64,
+    guards: &[GuardSeed],
+    events: &[Vec<TagEvent>],
+) -> Regions {
     let n = data.bblocks_get_size().max(0) as usize;
     let mut blocks = Vec::with_capacity(n);
     let mut index = BTreeMap::new();
@@ -761,7 +813,13 @@ fn compute_regions(data: &Funcdata, all: u64, guards: &[GuardSeed]) -> Regions {
                             .get(rev.max(0) as usize)
                             .copied()
                             .unwrap_or(all);
-                        fwd[pi] & c
+                        // The fact LEAVING a predecessor is TOP when anything in
+                        // it may have changed the discriminant.  The guard's own
+                        // CBRANCH is the block's last op, so a re-test after a
+                        // kill still constrains the edge -- which is exactly how
+                        // `if (tag == 0)` below a clobber stays usable.
+                        let out_p = if events[pi].is_empty() { fwd[pi] } else { all };
+                        out_p & c
                     }
                     None => all,
                 };
@@ -781,20 +839,104 @@ fn compute_regions(data: &Funcdata, all: u64, guards: &[GuardSeed]) -> Regions {
         }
     }
 
-    Regions { index, region: fwd, edge }
+    let first_event: Vec<Option<usize>> =
+        events.iter().map(|e| e.iter().map(|x| x.pos).min()).collect();
+    let mut op_pos: BTreeMap<OpId, (usize, usize)> = BTreeMap::new();
+    for (bi, &b) in blocks.iter().enumerate() {
+        for (pos, op) in data.bb_ops(b).into_iter().enumerate() {
+            op_pos.insert(op, (bi, pos));
+        }
+    }
+    Regions { index, region: fwd, edge, first_event, op_pos, all }
 }
 
 // =============================================================================
 // The producer side: what a constant tag store proves, and about which ops
 // =============================================================================
 
-/// One constant `tag = K` store, positioned within its block.
-struct TagWrite {
-    /// Position of the op in `bb_ops` order, i.e. PROGRAM order in the block.
+/// One event in a block that changes, or may change, what the object holds.
+///
+/// Positioned in `bb_ops` order, i.e. PROGRAM order within the block.
+struct TagEvent {
+    /// Position of the op in `bb_ops` order.
     pos: usize,
-    /// The variant the stored discriminant selects, or `None` for a store over
-    /// the tag bytes this pass cannot read as a constant -- a KILL.
+    /// The variant a readable constant discriminant store selects.  `None` is an
+    /// opaque event: a tag store this pass cannot read as a constant, a call, or
+    /// a store it cannot attribute to this object at all.
     variant: Option<usize>,
+}
+
+/// Every event in block `bl` that changes, or may change, the discriminant of
+/// the object `(kind, root)`, in program order.
+///
+/// This is the single kill discipline both halves of the pass are built on, and
+/// it exists because every defect this feature shipped was one thing: **a fact
+/// about an object's discriminant applied at a program point where it no longer
+/// held.**  A guard proves what the object was AT THE GUARD; a store proves what
+/// it becomes.  Neither survives an event.
+///
+/// Three kinds, and the third is the one aliasing forces:
+///
+/// * a **STORE over the tag bytes** of this object — the discriminant changed.
+///   A store to the object's payload bytes ALONE is not an event, because it
+///   cannot change which variant is live.  (Under a niche encoding the tag bytes
+///   *are* payload bytes, and the range test then reports the overlap, so a
+///   niche payload store correctly does kill.)
+/// * a **call** — a callee handed the pointer may store anything through it.
+/// * **any store this pass cannot attribute to this object**, because it may
+///   alias it.  `*p = Ok(1); *q = Err(2); (*p).payload = x;` is a real
+///   counterexample: `q` may be `p`, so the `Ok` is not proved.  Refusing every
+///   unattributable store is coarse, and deliberately so — a wrong variant name
+///   is worse than no name.
+///
+/// A **value** object (`ObjKind::Value`) has NO events: it is an SSA value, and
+/// nothing can clobber it.  That is not a concession, it is what SSA means, and
+/// it is why a `match` on a returned enum keeps its names while the same shape
+/// behind a pointer does not.
+fn object_events(
+    data: &Funcdata,
+    subject: &Subject,
+    root: VarnodeId,
+    kind: ObjKind,
+    big_endian: bool,
+    bl: BlockId,
+) -> Vec<TagEvent> {
+    let mut events: Vec<TagEvent> = Vec::new();
+    if kind != ObjKind::Mem {
+        return events;
+    }
+    let layout = subject.layout.as_ref();
+    let t0 = layout.tag_offset as int8;
+    let t1 = t0 + layout.tag_size as int8;
+    for (pos, &op) in data.bb_ops(bl).iter().enumerate() {
+        let Some(o) = data.obank().get(op) else { continue };
+        if o.is_call() {
+            events.push(TagEvent { pos, variant: None });
+            continue;
+        }
+        if o.code() != OpCode::CPUI_STORE {
+            continue;
+        }
+        let (Some(p), Some(val)) = (o.get_in(1), o.get_in(2)) else {
+            events.push(TagEvent { pos, variant: None });
+            continue;
+        };
+        let (r, off) = locate_ptr(data, p);
+        if r != root {
+            // Not provably this object: it may alias it.
+            events.push(TagEvent { pos, variant: None });
+            continue;
+        }
+        let width = data.vbank().get(val).map(|v| v.get_size()).unwrap_or(0);
+        if off + (width as int8) <= t0 || off >= t1 {
+            continue; // this object's payload only, so the discriminant stands
+        }
+        let variant = const_of(data, val)
+            .and_then(|k| tag_slice(layout, off, width, k, big_endian))
+            .and_then(|v| variant_index_for_discr(layout, v));
+        events.push(TagEvent { pos, variant });
+    }
+    events
 }
 
 /// The variant each WRITE into the object is building, from the constant tag
@@ -842,62 +984,33 @@ struct TagWrite {
 /// payload = v;` (the object is already `Err` when the payload is written).
 fn producer_writes(
     data: &Funcdata,
-    subject: &Subject,
     root: VarnodeId,
     kind: ObjKind,
-    big_endian: bool,
+    events: &[Vec<TagEvent>],
 ) -> BTreeMap<OpId, usize> {
     let mut out: BTreeMap<OpId, usize> = BTreeMap::new();
     if kind != ObjKind::Mem {
         return out;
     }
-    let layout = subject.layout.as_ref();
     let n = data.bblocks_get_size().max(0);
     for bi in 0..n {
-        let bl = data.bblocks_get_block(bi);
-        let ops = data.bb_ops(bl);
-        // Every event in this block that can change what the object holds.
-        let mut writes: Vec<TagWrite> = Vec::new();
-        for (pos, &op) in ops.iter().enumerate() {
-            let Some(o) = data.obank().get(op) else { continue };
-            if o.is_call() {
-                // A callee handed the pointer may store anything through it.
-                writes.push(TagWrite { pos, variant: None });
-                continue;
-            }
-            if o.code() != OpCode::CPUI_STORE {
-                continue;
-            }
-            let (Some(p), Some(val)) = (o.get_in(1), o.get_in(2)) else { continue };
-            let (r, off) = locate_ptr(data, p);
-            if r != root {
-                continue;
-            }
-            let width = data.vbank().get(val).map(|v| v.get_size()).unwrap_or(0);
-            let t0 = layout.tag_offset as int8;
-            let t1 = t0 + layout.tag_size as int8;
-            if off + (width as int8) <= t0 || off >= t1 {
-                continue; // touches the payload only, not the discriminant
-            }
-            let variant = const_of(data, val)
-                .and_then(|k| tag_slice(layout, off, width, k, big_endian))
-                .and_then(|v| variant_index_for_discr(layout, v));
-            writes.push(TagWrite { pos, variant });
-        }
+        let writes = &events[bi as usize];
         if writes.is_empty() {
             continue;
         }
-        for (pos, &op) in ops.iter().enumerate() {
-            // The op is itself a tag event: it writes the discriminant, not a
-            // payload, so there is nothing here to name.
+        let bl = data.bblocks_get_block(bi);
+        for (pos, &op) in data.bb_ops(bl).iter().enumerate() {
+            // The op is itself an event: it writes the discriminant (or is a
+            // call, or an unattributable store), so there is nothing to name.
             if writes.iter().any(|w| w.pos == pos) {
                 continue;
             }
             if !writes_only(data, root, op) {
                 continue;
             }
-            // The nearest tag event above and below this write.  A `None`
-            // variant on either side is a kill and refuses that direction.
+            // The nearest event above and below this write.  An OPAQUE event on
+            // either side -- a call, an unreadable tag store, a store that may
+            // alias -- is a kill and refuses that direction.
             let before = writes.iter().filter(|w| w.pos < pos).next_back().and_then(|w| w.variant);
             let after = writes.iter().find(|w| w.pos > pos).and_then(|w| w.variant);
             let v = match (before, after) {
@@ -981,13 +1094,9 @@ fn use_contexts(data: &Funcdata, regions: &Regions, all: u64) -> BTreeMap<OpId, 
     let mut ctx: BTreeMap<OpId, u64> = BTreeMap::new();
     let ops: Vec<OpId> = data.obank().iter_alive().collect();
     for &op in &ops {
-        let r = data
-            .obank()
-            .get(op)
-            .and_then(|o| o.get_parent())
-            .map(|b| regions.of_block(b))
-            .unwrap_or(all);
-        ctx.insert(op, r);
+        // `guard_at` applies the positional kill, so a value computed after the
+        // object was overwritten starts at TOP rather than at its block's guard.
+        ctx.insert(op, regions.guard_at(op));
     }
     for _ in 0..MAX_USE_ROUNDS {
         let mut changed = false;
@@ -1196,9 +1305,18 @@ fn run_one(
         }
     }
 
-    // --- regions (consumer) and per-write producer facts -------------------
-    let regions = compute_regions(data, all, &guards);
-    let produced = producer_writes(data, subject, root, kind, big_endian);
+    // --- the shared kill discipline, then both halves ----------------------
+    // One scan of every block for the events that end a discriminant fact; the
+    // guard side and the producer side are both built on it, so neither can
+    // outlive a clobber the other would have seen.
+    let nblocks = data.bblocks_get_size().max(0);
+    let events: Vec<Vec<TagEvent>> = (0..nblocks)
+        .map(|bi| {
+            object_events(data, subject, root, kind, big_endian, data.bblocks_get_block(bi))
+        })
+        .collect();
+    let regions = compute_regions(data, all, &guards, &events);
+    let produced = producer_writes(data, root, kind, &events);
     if produced.is_empty() && regions.region.iter().all(|&r| r.count_ones() != 1) {
         return 0;
     }
@@ -1211,7 +1329,7 @@ fn run_one(
     for &op in ops {
         let Some(o) = data.obank().get(op) else { continue };
         let is_phi = o.code() == OpCode::CPUI_MULTIEQUAL;
-        let block_ctx = ctx.get(&op).copied().unwrap_or(0);
+        let block_ctx = ctx.get(&op).copied().unwrap_or(all);
         // A producer fact is a fact about the WRITE, not about the block, so it
         // is intersected with whatever the guards allow rather than replacing it.
         let producer = produced.get(&op).copied();
@@ -1228,11 +1346,20 @@ fn run_one(
             } else {
                 block_ctx
             };
-            let variant = match (here.count_ones() == 1, producer) {
-                (true, _) => here.trailing_zeros() as usize,
-                (false, Some(v)) if here == 0 || (here >> v) & 1 == 1 => v,
-                _ => continue,
+            // INTERSECT the two facts; a disagreement REFUSES.  Precedence was
+            // the round-3 defect: a singleton guard region beat a producer fact
+            // the analysis had computed correctly, so a write that built `Err`
+            // inside an `Ok`-guarded block was named `Ok` one line below its own
+            // `tag = 1`.  Neither fact outranks the other -- they either agree or
+            // there is no answer.
+            let combined = match producer {
+                Some(v) => here & (1u64 << v),
+                None => here,
             };
+            if combined.count_ones() != 1 {
+                continue;
+            }
+            let variant = combined.trailing_zeros() as usize;
             let Some(field) = layout.union_field_for_variant(variant) else { continue };
             let (value_hit, ptr_ty) = attribution(data, subject, root, kind, vn, big_endian);
             if !value_hit && ptr_ty.is_none() {
