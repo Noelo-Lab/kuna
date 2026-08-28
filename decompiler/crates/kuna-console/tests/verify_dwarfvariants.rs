@@ -13,8 +13,11 @@
 //! fixtures (`rustc 1.90.0 -C debuginfo=2 -C opt-level=1`, sources vendored
 //! beside them): `dwarfvariants_x86_64` for the SHAPES the importer has to read,
 //! and `dwarfvariants_overlay_x86_64` for what it is allowed to NAME.
-//! `dwarfstructs` is pinned ON in both arms so what is being measured is the
-//! variant part alone and not its sibling. (This arm EXTENDS `dwarfstructs` and
+//! `dwarfstructs` is pinned ON in both arms, and `variantguard` OFF in both, so
+//! what is being measured is the variant-part IMPORT alone and not either
+//! sibling: the import decides what the recovered TYPE may be labelled, and
+//! `variantguard` decides, per ACCESS, when the DWARF discriminant proves a name
+//! the type could not carry (`verify_variantguard.rs`). (This arm EXTENDS `dwarfstructs` and
 //! is gated on it as well; `dwarfstructs_off_suppresses_the_variant_arm_too` is
 //! the test for that.)
 //!
@@ -103,7 +106,14 @@ fn decompile_in(fixture: &str, funcs: &[&str], variants: bool) -> Option<String>
     };
     prog.commit_pending_analysis().expect("analysis commit succeeds");
 
-    let mut cmds: Vec<String> = Vec::new();
+    // `variantguard` is pinned OFF for the same reason `dwarfstructs` is pinned
+    // ON: what this file measures is the variant-part IMPORT alone. The import
+    // decides what the recovered TYPE may be labelled; the sibling
+    // `variantguard` analysis decides, per ACCESS, when the DWARF discriminant
+    // proves a variant name the type could not carry, and that is measured in
+    // `verify_variantguard.rs`. Without this pin the two features' assertions
+    // would collide on the same fixture functions.
+    let mut cmds: Vec<String> = vec!["option variantguard off".into()];
     for f in funcs {
         cmds.push(format!("load function {f}"));
         cmds.push("decompile".into());
@@ -120,7 +130,16 @@ fn decompile_in(fixture: &str, funcs: &[&str], variants: bool) -> Option<String>
     for _ in 0..count {
         execute(&mut status);
     }
-    Some(status.optr.clone())
+    // Drop the `option` command's own confirmation line so the two arms differ
+    // only in the rendered C.
+    Some(
+        status
+            .optr
+            .lines()
+            .filter(|l| !l.starts_with("DWARF discriminant-guarded variant selection"))
+            .collect::<Vec<_>>()
+            .join("\n"),
+    )
 }
 
 /// Run one function both ways; `None` => specs-less skip.
@@ -215,6 +234,10 @@ fn a_multi_field_variant_keeps_every_field_and_names_only_what_it_may() {
         !on.contains(".P.") && !on.contains(".Q."),
         "neither variant may be named where they overlay each other, got:\n{on}"
     );
+    // The IMPORT names neither, because a union member is fixed when the type is
+    // built. `variantguard` (pinned off here) proves both from the literal
+    // discriminant each arm stores and renders `.P.a` / `.Q.` --
+    // `verify_variantguard.rs (a_literal_tag_store_names_the_variant_it_builds)`.
 }
 
 /// A RECURSIVE enum (`enum List { Cons(u32, *const List), Nil }`) terminates and
@@ -403,6 +426,12 @@ fn an_overlaying_result_names_neither_variant() {
 /// The consumer side of the same type: an `Err(e) => e + 100` arm used to render
 /// as `(long)v2.payload.Ok + 100`. Reading the payload must not name a variant
 /// either — the type is unchanged, only the label is gone.
+///
+/// The label a READER sees here is not the last word: `variantguard`, pinned off
+/// in this file, proves both arms of this exact `match` from the DWARF
+/// discriminant and names them (`verify_variantguard.rs
+/// (a_match_on_a_result_names_both_arms)`). What is pinned here is that the
+/// IMPORT alone names nothing, which is what keeps it sound on its own.
 #[test]
 fn reading_an_overlaying_result_names_neither_variant() {
     let Some((_off, on)) = ab_overlay("use16") else { return };

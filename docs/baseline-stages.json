@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    568,
-    568
+    590,
+    590
   ],
   "passing": [
     "data:ARRAYSUBFIELD #1: an 8-byte read at offset 0 of char[16] is a sized sub-field, not element 0",
@@ -327,6 +327,28 @@
     "data:SYMBOLNAMEREPAIR #4: the same scope path renders at a CALL site, not just on the declaration",
     "data:SYMBOLNAMEREPAIR #5: no empty scope component survives anywhere in the output",
     "data:SYMBOLNAMEREPAIR #6: the three bodies decompiled (the load did not fail)",
+    "data:VARIANTGUARD #10: disjoint payload ranges are already forced by the layout, so ret_three is identical in BOTH passes",
+    "data:VARIANTGUARD #11: a store below a read never names the read - 6 offset-spelled reads in the off pass and 3 in the on pass, the difference being the three reads a guard proves",
+    "data:VARIANTGUARD #12: the only reads ever NAMED are the ones a GUARD proves, so the read_then_clobber_ok CONTROL's downstream Ok store does not name its read",
+    "data:VARIANTGUARD #13: the one Err-named read is guarded_write_mirror's, proved by its own guard and not by the Ok store below it",
+    "data:VARIANTGUARD #14: on, the WRITE a constant tag store builds still names its variant",
+    "data:VARIANTGUARD #15: on, and so does the Ok control's write, which is what makes #11/#12 a real pair and not a silenced pass",
+    "data:VARIANTGUARD #16: off, that same write is spelled by offset, so the two passes really do differ on this fixture",
+    "data:VARIANTGUARD #17: a guard does not survive a clobber - no read after a tag store or a call is ever named, in EITHER pass",
+    "data:VARIANTGUARD #18: the guard-side CONTROL PAIR - neither read_after_call arm names the variant its call destroyed",
+    "data:VARIANTGUARD #19: on, a write that builds Err inside an Ok-guarded block is named Err, not Ok - the two facts are intersected, never resolved by precedence",
+    "data:VARIANTGUARD #1: off, both arms of the match spell the Result payload by offset",
+    "data:VARIANTGUARD #20: on, and the mirror builds Ok inside an Err-guarded block, so neither direction is right by accident",
+    "data:VARIANTGUARD #21: a store through a pointer that may alias the object refuses the payload write below it, in BOTH passes",
+    "data:VARIANTGUARD #22: on, while the two writes the pass CAN attribute to their own object keep their names",
+    "data:VARIANTGUARD #2: on, the guarded arm names Ok, which is the variant DW_AT_discr_value 0 selects",
+    "data:VARIANTGUARD #3: on, the arm rustc hoisted above the branch names Err, reached through the def-use walk",
+    "data:VARIANTGUARD #4: Ok and Err are never both written on one arm, so the two arms cannot be swapped",
+    "data:VARIANTGUARD #5: a branchless discriminant is not a seed, so put_res keeps the offset spelling in BOTH passes",
+    "data:VARIANTGUARD #6: an Option already names its only payload variant, so the layout is skipped in BOTH passes",
+    "data:VARIANTGUARD #7: off, a literal-tag constructor still spells both overlaying facets by offset",
+    "data:VARIANTGUARD #8: on, the constant store over the tag names the variant it builds",
+    "data:VARIANTGUARD #9: on, and so does the other arm, which stores discriminant 1",
     "data:angr-LoweredSwitch #1: exactly one switch (none in pass 1 off, one in pass 2 on)",
     "data:angr-LoweredSwitch #2: default present",
     "data:angr-LoweredSwitch #3: case 0x70 (p) recovered",

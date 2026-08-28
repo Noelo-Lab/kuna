@@ -297,6 +297,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "evalcurrentproto",
     "iteboolean",
     "itecondlist",
+    "variantguard",
     "paramcopyhoist",
     "returndup",
     "orchain",

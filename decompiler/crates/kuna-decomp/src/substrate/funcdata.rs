@@ -313,6 +313,45 @@ pub struct Funcdata {
         crate::unionresolve::ResolveEdge,
         crate::unionresolve::ResolvedUnion,
     >,
+    /// (kuna `variantguard`) Union-member resolutions the dominating-guard
+    /// analysis PROVED from the DWARF discriminant, keyed by
+    /// `(overlay union type id, op time, slot)`.
+    ///
+    /// A separate channel from [`Self::union_map`] because the printer needs to
+    /// know not just WHICH member resolved but whether the answer came from the
+    /// discriminant or from `ScoreUnionFields`, and the `ResolvedUnion` lock does
+    /// not survive the two paths that rebuild a resolution onto a NEW op —
+    /// `resolve_in_flow`'s address-based materialization and
+    /// `ActionSetCasts::resolveUnion`'s PTRSUB, both of which construct a fresh
+    /// unlocked `ResolvedUnion` and both of which create the very ops the printer
+    /// later descends with.  Written by
+    /// [`crate::p5_types::kuna_variantguard`] and read only by the P9 printer.
+    pub(crate) kuna_variant_proof_op:
+        std::collections::BTreeMap<(kuna_base::types::uint8, kuna_base::types::uintm, int4), int4>,
+    /// (kuna `variantguard`) The same proofs keyed by
+    /// `(overlay union type id, instruction address, slot)`, for the ops the cast
+    /// plane creates after the pass has run — a cast or a zero-`PTRSUB` inherits
+    /// its resolution from the edge it was spliced into and carries that edge's
+    /// address.
+    ///
+    /// The slot is part of the key because
+    /// [`crate::p5_types::funcdata_union`] keys the resolution this authorizes BY
+    /// slot; an address-only key would be strictly coarser than the thing it
+    /// authorizes, and `ActionSetCasts::resolveUnion` runs on every edge needing
+    /// resolution INCLUDING ones this pass refused.  A `None` value is a
+    /// permanent TOMBSTONE: once two different members have been proved at one
+    /// key the contradiction is remembered, because removing the entry would let
+    /// a third record resurrect the key.
+    pub(crate) kuna_variant_proof_addr: std::collections::BTreeMap<
+        (kuna_base::types::uint8, kuna_base::address::Address, int4),
+        Option<int4>,
+    >,
+    /// (kuna `variantguard`) The highest `PcodeOp::getTime()` alive when the
+    /// proofs above were made.  The address-keyed map answers only for an op
+    /// ABOVE this horizon, i.e. one that did not exist when the analysis ran --
+    /// which is exactly what that key is for.  An op the analysis saw and did not
+    /// pin can therefore never pick a name up from a neighbour at its address.
+    pub(crate) kuna_variant_proof_horizon: kuna_base::types::uintm,
     /// Warning/header comments produced during flow analysis (C++
     /// `Funcdata::warning`/`warningHeader` push directly into
     /// `glb->commentdb`; `funcdata.cc:119,135`).
@@ -451,6 +490,9 @@ impl Funcdata {
             covermerge: None,
             localoverride: crate::overrides::Override::new(),
             union_map: std::collections::BTreeMap::new(),
+            kuna_variant_proof_op: std::collections::BTreeMap::new(),
+            kuna_variant_proof_addr: std::collections::BTreeMap::new(),
+            kuna_variant_proof_horizon: 0,
             pending_comments: Vec::new(),
             kuna_pipeline_failure: None,
             kuna_wire_symbols: Vec::new(),
@@ -2341,6 +2383,9 @@ impl Funcdata {
         // funcp.clearUnlockedOutput();                               -- STUB(W4)
         // unionMap.clear() (funcdata.cc:90): drop the union-field resolution cache.
         self.union_map.clear();
+        self.kuna_variant_proof_op.clear();
+        self.kuna_variant_proof_addr.clear();
+        self.kuna_variant_proof_horizon = 0;
         self.clear_blocks();
         self.obank.clear();
         self.vbank.clear();

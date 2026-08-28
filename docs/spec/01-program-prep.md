@@ -812,11 +812,20 @@ The always-on core, in pass order (`passes.rs (passes_for)`):
   sometimes single out a variant that the byte range alone cannot (an 8-byte store
   at offset 8 of `Multi` can only be `Q`), but a union member name is fixed when
   the type is built, not per access, so those labels go too. What is given up is
-  the label, never the layout — offsets, widths, member types and the enum's own
-  size are exactly what DWARF states either way, and every variant's source name
-  and `DW_AT_discr_value` remain on the side table. Picking the facet from the tag
-  needs a dominating-guard analysis; that is what the side table is recorded for,
-  and it is not attempted here.
+  the label on the TYPE, never the layout — offsets, widths, member types and the
+  enum's own size are exactly what DWARF states either way, and every variant's
+  source name and `DW_AT_discr_value` remain on the side table.
+
+  Picking the facet from the tag is a per-ACCESS question the type cannot hold,
+  and it is answered by the **`variantguard`** dominating-guard analysis this side
+  table is recorded for (chapter 05 §5.4,
+  `decompiler/crates/kuna-decomp/src/p5_types/kuna_variantguard.rs`). Where a
+  branch tested the discriminant against a constant, or a constant was stored over
+  the tag bytes, the compiler stated which variant is live and the side table
+  states which value selects which variant, so the P9 printer spells the
+  `DW_TAG_variant` name at that access. The installed label stays `field_0x<off>`
+  everywhere the proof does not reach, which is what keeps `dwarfvariants` sound
+  on its own and makes `variantguard` a pure addition on top of it.
 - **Full-depth DWARF types** (`typedepth`, default-on,
   `decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_typedepth.rs`) is the
   type mapper's recursion guard, and it exists because the DIE walk can be handed a

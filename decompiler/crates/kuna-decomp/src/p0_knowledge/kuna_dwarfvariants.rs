@@ -24,29 +24,33 @@
 //! and shape does not distinguish a `Result` from a `#[repr(C)]` struct, a
 //! `(u64,u64)` tuple or a `&'static str` fat pointer.
 //!
-//! ## What is NOT recovered: which variant an access belongs to
+//! ## What the TYPE cannot say: which variant an access belongs to
 //!
 //! The recovered type overlays the variants as a **union**, and a union member
 //! selects itself by OFFSET — the discriminant is never consulted. In a tagged
 //! enum every payload variant starts immediately after the tag, so `Ok` and
 //! `Err` sit at the same offset and the field the union scorer picks is not
-//! evidence of anything. A variant name is therefore printed only where exactly
-//! one variant claims the bytes being accessed (`Option<T>`, whose only
+//! evidence of anything. A variant name is therefore INSTALLED on the type only
+//! where exactly one variant claims the bytes (`Option<T>`, whose only
 //! payload-carrying variant is `Some`); where two or more claim them, the
-//! installed member name is an offset-derived `field_0x…` and nothing in the
-//! emitted C names a variant. See [`VariantFacet::label`]. Choosing the facet
-//! from the discriminant needs a dominating-guard analysis and belongs to a
-//! `match` renderer, which is what the side table below exists for.
+//! installed member name is an offset-derived `field_0x…`. See
+//! [`VariantFacet::label`].
 //!
-//! ## The side table
+//! ## The side table, and the analysis that reads it
 //!
 //! The recovered geometry is recorded in [`VariantLayout`], keyed by the interned
 //! type name, on the `TypeFactory`
-//! ([`crate::dtype::TypeFactory::kuna_record_variant_layout`]). It is the
-//! `kuna_wire_symbols` arrangement: a table that **never enters the analysis
-//! scope** and is read by nothing in this change, so it cannot perturb emitted C.
-//! It exists so a later pass can render `match` / `if let` / `Ok(v)` from the
-//! compiler's own answer instead of re-deriving it.
+//! ([`crate::dtype::TypeFactory::kuna_record_variant_layout`]). Nothing in the
+//! *type* reads it, so filling it cannot perturb emitted C on its own.
+//!
+//! It exists for [`crate::p5_types::kuna_variantguard`] (`variantguard`), the
+//! dominating-guard analysis: the label above is suppressed because the union
+//! model cannot select a facet, not because the answer is unknown. Where a
+//! branch tested the discriminant, or a constant was stored over it, the
+//! compiler stated which variant is live and this table states which value
+//! selects which variant — so the P9 printer spells the `DW_TAG_variant` name at
+//! that access while the installed label stays `field_0x…` everywhere the proof
+//! does not reach.
 
 /// Environment variable that gates DWARF variant-part import (read by
 /// `kuna-analysis::analyzers::dwarf::kuna_dwarfvariants`). Absent or any value
@@ -109,8 +113,9 @@ pub struct VariantFacet {
 
 /// The recovered geometry of one DWARF `DW_TAG_variant_part`.
 ///
-/// Written once per interned enum type by the DWARF importer; read by nothing in
-/// the change that introduced it (see the module header).
+/// Written once per interned enum type by the DWARF importer; read by the
+/// `variantguard` dominating-guard analysis
+/// ([`crate::p5_types::kuna_variantguard`]) and by the P9 printer's union seams.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VariantLayout {
     /// The interned kuna type name the layout describes (the key).
@@ -154,6 +159,29 @@ impl VariantLayout {
     /// The facet with the given source name.
     pub fn facet_named(&self, name: &str) -> Option<&VariantFacet> {
         self.variants.iter().find(|v| v.name == name)
+    }
+
+    /// The variant that owns union member `idx` of [`Self::union_type`].
+    ///
+    /// A FIELDLESS variant overlays nothing and is given no union member, so the
+    /// members are the payload-carrying variants in `DW_TAG_variant` order and
+    /// the two indices do not coincide. `variantguard` pins a member index and
+    /// the printer spells the variant, so both need this mapping.
+    pub fn facet_for_union_field(&self, idx: i32) -> Option<&VariantFacet> {
+        if idx < 0 {
+            return None;
+        }
+        self.variants.iter().filter(|v| !v.label.is_empty()).nth(idx as usize)
+    }
+
+    /// The union-member index of `self.variants[i]`, or `None` when that variant
+    /// is fieldless and therefore has no member. The inverse of
+    /// [`Self::facet_for_union_field`].
+    pub fn union_field_for_variant(&self, i: usize) -> Option<i32> {
+        if self.variants.get(i).map(|v| v.label.is_empty()).unwrap_or(true) {
+            return None;
+        }
+        Some(self.variants[..i].iter().filter(|v| !v.label.is_empty()).count() as i32)
     }
 
     /// Whether any emitted field path can name a variant of this enum, i.e.

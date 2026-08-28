@@ -355,9 +355,15 @@ mod tests {
         /// mid-body entries 6,728 -> 4,653 but costs 850 of 44,957 recovered
         /// functions, raises recall on zero of the 110 images, and takes 84 / 141 real
         /// functions off the two u-boot A32 images DIV-20 exists for.
+        /// `variantguard` is a PROPOSAL whose memory-object guard direction is
+        /// KNOWN-UNSOUND: it can print a confidently wrong `DW_TAG_variant` name
+        /// where the object was clobbered between the guard and the access
+        /// (`docs/features/variantguard/analysis.md`). A knob that prints a lie
+        /// must not be reachable by a preset, even an opt-in one, so this is a
+        /// deliberate exclusion rather than an unevaluated flip.
         const EXCLUDED_ON_PURPOSE: &[&str] =
             &["v850indirectbranch", "dwarf_lines", "formatstring", "ifuncfpret",
-              "aifcorroborate"];
+              "aifcorroborate", "variantguard"];
 
         /// Default-off options that predate this test and are **not** in the preset,
         /// i.e. are currently unreachable on the default path. Each is a genuine open

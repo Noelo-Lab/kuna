@@ -198,15 +198,19 @@ fn w8_fw_universalaction_allgroups_full_order_count_head_tail() {
     // LAST of all (P6 parameter copy-shadow entry-block anchor -- it runs after the
     // structured tree is final so no structuring decision can be perturbed);
     // and `cleanupcode`, option-gated default-ON, at the TOP of mainloop (S2 Rust
-    // drop/deallocate call removal in the pre-SSA window, DIV-81).)
+    // drop/deallocate call removal in the pre-SSA window, DIV-81); and
+    // `variantguard`, option-gated default-ON, immediately BEFORE `setcasts` (P5
+    // DWARF discriminant-guarded union facet, DIV-97 -- the resolution cache is
+    // keyed by op time, so it must run on the final op graph but before the cast
+    // plane fills the cache from the scorer).)
     assert_eq!(
         UNPORTED_ALLOWLIST.len(),
         0,
         "all universalAction passes are ported; UNPORTED_ALLOWLIST must be empty"
     );
     assert_eq!(
-        nonblank, 274,
-        "full universal tree must render 252 C++ leaves + 15 kuna leaves (branchflip + cleanupcode + outline + gotoreduce + taildup + ifelseflatten + crossjumprevert + dedupitetail + returndup + iteregion + iteboolean + earlyreturn + switchreturn + paramcopyhoist + removesecuritycheck) + 7 container headers"
+        nonblank, 275,
+        "full universal tree must render 252 C++ leaves + 16 kuna leaves (branchflip + cleanupcode + outline + gotoreduce + taildup + ifelseflatten + crossjumprevert + dedupitetail + returndup + iteregion + iteboolean + earlyreturn + switchreturn + paramcopyhoist + removesecuritycheck + variantguard) + 7 container headers"
     );
 
     // Head: the universal restart-group prelude, in C++ order.  Note

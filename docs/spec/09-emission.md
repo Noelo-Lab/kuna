@@ -312,6 +312,25 @@ array, which is upstream-faithful and still not compilable C. Recovering that
 needs either a scalar wide-integer type or a mid-end fold of the
 `CONCAT88(0,x) << 64` idiom; neither is done here.
 
+**(kuna) The variant name a union member may carry.** Three seams render a union
+member during the descent: the symbol-mapped walk
+(`printc.rs (PrintC::push_partial_symbol_ir)`), the `PTRSUB` field render
+(`printc.rs (PrintC::op_ptrsub_ir)`), and the implied-field render
+(`printc.rs (PrintC::push_implied_field_ir)`) — the last of which is the one a
+Rust enum returned in REGISTERS reaches, because its payload half is a
+`SUBPIECE` of the returned pair whose type is the overlay union. All three read
+the member name off the installed type, and for a Rust tagged enum whose
+variants overlay one byte range that name is an offset-derived `field_0x<off>`:
+`dwarfvariants` (chapter 01) refuses to install a variant name the union model
+cannot select. `printc.rs (PrintC::variant_member_name)` substitutes the
+`DW_TAG_variant` name at all three seams where — and only where — the P5
+`variantguard` analysis (§5.4) recorded a proof for exactly this edge and
+exactly this member. With `variantguard` off no proof is ever recorded, so the
+rendered member is the installed label byte for byte. What is deliberately *not*
+substituted is the facet's own interned TYPE name (a cast still prints
+`Result<u64, u64>::field_0x8`): the type is global to the program, while the
+proof is per-access.
+
 **Leaves with no Symbol.** Not every leaf has one. When no mapped symbol covers
 the storage the leaf falls through to the upstream `pushUnnamedLocation`
 naming, `printc.rs (kuna_unnamed_location_name)`: the register name covering
