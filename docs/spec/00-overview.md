@@ -438,7 +438,14 @@ Four front-ends drive one engine assembly:
   parameter COUNT, each `categoryIndex`, and each storage — never the model
   name — so a kuna-rederived storage or a slot skew force-rewrites the user's
   signature on the next rename.  The model rides along because the storage kuna
-  would otherwise derive comes from it, not because Java inspects it.
+  would otherwise derive comes from it, not because Java inspects it.  Those
+  echoed pieces carry the `ParameterPieces` lock bits (`TYPELOCK|NAMELOCK`),
+  never the same-named `varnode_flags` ones — the two namespaces share no bit,
+  and `apply_mapped_params` re-`setParam`s each slot WHOLESALE after the
+  prototype channel has already locked it, so unlocked pieces here silently
+  unlock the whole signature (`FuncProto::isInputLocked` reads slot 0's
+  typelock) and the host's declared types and names get re-derived instead of
+  applied.
 
 (kuna) **Surfacing a failed function.** A per-function pipeline abort is
 *recoverable*: the drive catches the unwind and returns the reason as an error

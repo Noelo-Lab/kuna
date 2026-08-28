@@ -1411,8 +1411,8 @@ impl RemoteScope {
                                     crate::fspec::ParameterPieces {
                                         addr: rp.storage.clone(),
                                         type_: Some(dt),
-                                        flags: varnode_flags::typelock
-                                            | varnode_flags::namelock,
+                                        flags: crate::fspec::parameter_pieces_flags::TYPELOCK
+                                            | crate::fspec::parameter_pieces_flags::NAMELOCK,
                                     },
                                 ));
                             }
