@@ -94,7 +94,7 @@ fn settable_count_is_117() {
     // +1 for `symbolnamechars` (P1 symbol-name character sanitizing, DIV-94).
     // +1 for `symbolnamebound` (P1 symbol-name scope resource bound, DIV-95, GH-338).
     // +1 for `msvcfpconst` (P1 MSVC `__real@` FP-constant recovery, DIV-96).
-    // +1 for `cortexmpriv` (P2 Cortex-M privileged-mode guard folding, DIV-100).
+    // +1 for `cortexmpriv` (P2 Cortex-M privileged-mode guard folding, DIV-99).
     assert_eq!(kuna_num_settables(), 127);
     assert_eq!(SETTABLE_TABLE.len(), 127);
 }
@@ -180,7 +180,7 @@ fn tier_counts_are_28_core_52_transform_47_analysis() {
     // transform: it changes no p-code and no emitted C, only what the JSON
     // surface reports about the frame the analysis already recovered.
     // transform 51 -> 52: +1 for `cortexmpriv` (P2 Cortex-M privileged-mode guard
-    // folding, DIV-100).
+    // folding, DIV-99).
     assert_eq!((core, transform, analysis), (28, 52, 47));
 }
 
@@ -608,7 +608,7 @@ fn option_values_live_value_present_for_39_suppressed_for_88() {
     // 34 -> 35: +1 for `cleanupcode` (live_field = remove_cleanup_code).
     // 35 -> 36: +1 for `retinputhalf` (live_field = ret_input_half).
     // 36 -> 37: +1 for `framelayout` (live_field = framelayout, DIV-97).
-    // 38 -> 39: +1 for `cortexmpriv` (live_field = cortexmpriv, DIV-100).
+    // 38 -> 39: +1 for `cortexmpriv` (live_field = cortexmpriv, DIV-99).
     assert_eq!(with_live, 39);
 }
 

@@ -151,7 +151,7 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     // aggregate GED -5,344, and every architecture net-positive. Speed +0.17%
     // (coreutils/ls O0, interleaved min-of-5).
     ("voidtailreturn", "on"),
-    // (kuna, DIV-100) Fold the Cortex-M `isCurrentModePrivileged()` guard the
+    // (kuna, DIV-99) Fold the Cortex-M `isCurrentModePrivileged()` guard the
     // vendored ARM SLEIGH wraps around every VERSION_7M MRS/MSR. Shipped default
     // OFF because "the core is privileged" is a modelling judgement rather than a
     // proof; preset membership is the delivery route, since the guard is only ever
