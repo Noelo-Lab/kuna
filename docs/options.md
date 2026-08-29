@@ -405,6 +405,11 @@ Three tiers:
 | byte-for-byte comparison against upstream ghidra naming | [`namestyle`](#namestyle) |
 | undefined8/xunknownN placeholder types wanted for upstream comparison (flip off) | [`realtypes`](#realtypes) |
 | size-guessed unsigned long/int/char types shown for values the inference never typed | [`realtypes`](#realtypes) |
+| the JSON variables array is empty although the function plainly has a stack frame | [`framelayout`](#framelayout) |
+| fewer locals reported than the source declares | [`framelayout`](#framelayout) |
+| a stack slot the disassembly writes is missing from variables | [`framelayout`](#framelayout) |
+| a recovered slot is typed char[N] rather than N bytes of unknown type | [`framelayout`](#framelayout) |
+| a variable is named $$undef00000000 | [`framelayout`](#framelayout) |
 | int4/uint1/uint4/float8/float10 appear in the emitted C instead of C type names | [`ctypes`](#ctypes) |
 | the same function mixes `unsigned int` with `int4` | [`ctypes`](#ctypes) |
 | `code *` appears as a function-pointer type | [`ctypes`](#ctypes) |
@@ -1399,6 +1404,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On (default) emits real C types for un-inferred values; off restores the upstream xunknownN/undefined<N> rendering for byte-for-byte comparison.
 - **Where / provenance:** P9/literal-format · kuna · presentation-default · kuna-realtypes
 - **Example:** `option realtypes off`
+
+### `framelayout` -- on | off, default `on`
+
+- **Symptoms:** the JSON variables array is empty although the function plainly has a stack frame; fewer locals reported than the source declares; a stack slot the disassembly writes is missing from variables; a recovered slot is typed char[N] rather than N bytes of unknown type; a variable is named $$undef00000000.
+- **What it does:** Report the union of every stack-frame slot any `restructure_varnode` pass recovered on the `decompile-all --json` `variables` surface, not only the slots that survived to the final pass. `restructure_varnode` re-derives the frame from the LIVE stack Varnodes and clears the previous pass's unlocked symbols first, so a slot whose spill store/load pair the dataflow folded into a COPY and then away is present in an early layout and gone from the last one. Dropping it from the emitted C is right -- there is no expression left to declare -- but the frame still has the slot. Each pass's NO_CATEGORY stack symbols fold into a per-Funcdata union (first writer wins, because the earliest pass saw the most dataflow standing), and any offset no parameter or surviving local already covers is appended. A slot the type system never committed to is reported as the width-only `undefined<N>` instead of the `char[N]` its array-of-unknown carrier renders as, and Ghidra's internal `$$undefNNNNNNNN` placeholder is renamed to its stack-view name `local_<hex>`. JSON surface only: no p-code, no emitted C, so GED and byte_match cannot move.
+- **When to flip:** On by default (DIV-97). A consumer wants the recovered stack FRAME rather than the printed declarations -- the `decompile-all --json` `variables` array, which is what decbench's type_match metric reads and what IDA's stack view and Binary Ninja's variable list are the analogues of. Most visible at -O0, where every local is a spill slot and a constant-folded function ends up with an empty `variables` array although its frame has named slots. Flip OFF to restore the pre-DIV-97 surface: parameters plus only the stack symbols still live at the final restructure pass.
+- **Where / provenance:** P6/naming-policy · kuna · presentation-default · kuna-framelayout
+- **Example:** `option framelayout off`
 
 ### `ctypes` -- on | off, default `off`
 

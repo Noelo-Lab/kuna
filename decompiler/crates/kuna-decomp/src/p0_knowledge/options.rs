@@ -310,6 +310,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "namestyle",
     "realtypes",
     "ctypes",
+    "framelayout",
     "dedupvardecls",
     // (kuna) Analysis-pass gates (per-run `--option <id> on|off`): one settable
     // per `kuna_analysis::passes` pass id, default-on (except `addrtable`, off).

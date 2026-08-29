@@ -726,6 +726,19 @@ pub struct Architecture {
     /// web front-end and the benchmark.  Read by the printc declarator
     /// chokepoints (`RealTypeCtx`).
     pub ctypes: bool,
+    /// (kuna `framelayout`) Report the union of every stack-frame slot any
+    /// `restructure_varnode` pass recovered on the `decompile-all --json`
+    /// `variables` surface, not only the slots that survived to the final pass.
+    ///
+    /// `restructure_varnode` re-derives the frame from the LIVE stack Varnodes and
+    /// clears the previous pass's unlocked symbols first, so a slot whose spill
+    /// store/load pair the dataflow folded into a COPY and then away is present in
+    /// an early layout and gone from the last one.  Dropping it from the emitted C
+    /// is right -- there is no expression left to declare -- but the frame still has
+    /// the slot, and `variables` is a description of the recovered FRAME (what IDA's
+    /// stack view and Binary Ninja's variable list report), not of the printed
+    /// declarations.  Affects the JSON surface only: no p-code, no emitted C.
+    pub framelayout: bool,
     /// (kuna GH-558) Restore canonicalized comparisons to LESSEQUAL form for
     /// presentation (C++ `present_lessequal`).
     pub present_lessequal: bool,
@@ -1577,6 +1590,7 @@ impl Architecture {
             dedup_var_decls: false,
             realtypes: false,
             ctypes: false, // (kuna) option ctypes; reset_defaults sets the shipped default
+            framelayout: false, // (kuna) option framelayout; reset_defaults sets the shipped default
             present_lessequal: false,
             preserve_thumb_funcptr: false,
             kuna_fn_budget: None,   // (kuna) decompile-all watchdog: no budget by default
@@ -1757,6 +1771,7 @@ impl Architecture {
         self.dedup_var_decls = true; // (kuna) DIV-7 default-on: collapse duplicate local decls (angr)
         self.realtypes = true; // (kuna) DIV-6 default-on: real C types for unknowns
         self.ctypes = false; // (kuna) DIV-75: default-OFF in the catalog because the datatest corpus pins `int4`/`float8` spellings in 42 assertions; ON in the `aggressive` preset, which `auto` selects under 500 KiB, so valid C is the default RENDERING everywhere a real binary is decompiled
+        self.framelayout = true; // (kuna) DIV-97: JSON-surface only (no p-code, no emitted C), so the 675-assertion datatest corpus cannot observe it; measured +1,027 type_match-perfect / -1 over 82,035 decbench functions
         self.condexe_block_placement = true; // (kuna) DIV-3 default-on (GH-9203)
         self.add_carry_chain = true; // (kuna) DIV-2 default-on (GH-8913)
         self.model_stack_probe_loop = true; // (kuna) DIV-3 default-on (GH-8017)
@@ -2109,6 +2124,7 @@ impl Architecture {
             }
             "realtypes" => on_off!(realtypes, "Real-C-type rendering for unknowns"),
             "ctypes" => on_off!(ctypes, "valid-C core type spelling"),
+            "framelayout" => on_off!(framelayout, "recovered stack-frame reporting"),
             "dedupvardecls" => {
                 let (val, msg) = crate::kuna_dedupvardecls::OptionDedupVarDecls.apply(p1)?;
                 self.dedup_var_decls = val;

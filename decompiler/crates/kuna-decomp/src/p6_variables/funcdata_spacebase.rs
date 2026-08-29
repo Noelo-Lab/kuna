@@ -624,6 +624,38 @@ impl Funcdata {
         if alias.first() == Some(&0) {
             self.annotate_raw_stack_ptr(&space);
         }
+
+        // (kuna `framelayout`) Fold this pass's layout into the running union, so a
+        // slot a later pass's dataflow folds away is still reportable on the
+        // `decompile-all --json` `variables` surface.  Union only -- nothing here
+        // feeds back into the IR or the emitted C.
+        // Recorded unconditionally (one BTreeMap insert per stack symbol per pass);
+        // the `framelayout` option gates the REPORTING, in `extract_variables`,
+        // which is the only reader.  The config `Architecture` carrying that option
+        // is not reachable from the per-function `ArchContext` seam here.
+        self.record_frame_layout_pass(&space);
+    }
+
+    /// (kuna `framelayout`) Snapshot the NO_CATEGORY stack Symbols this pass
+    /// recovered into the `Funcdata`'s frame-slot union.
+    fn record_frame_layout_pass(&self, space: &Rc<kuna_base::space::AddrSpace>) {
+        let Some(sl) = self.get_scope_local() else { return };
+        let specs = sl
+            .database()
+            .scope_space_local_var_specs(sl.scope_id(), space.get_index() as usize);
+        let mut slots = Vec::new();
+        for (name, ct, addr, category) in specs {
+            if category != crate::database::symbol_category::NO_CATEGORY {
+                continue;
+            }
+            let off = kuna_base::address::sign_extend(
+                addr.get_offset() as i64,
+                space.get_addr_size() as i32 * 8 - 1,
+            );
+            let size = ct.get_size();
+            slots.push((off, crate::funcdata::FrameSlot { name, dtype: ct, size }));
+        }
+        self.record_frame_slots(slots);
     }
 
     /// C++ `ScopeLocal::checkUnaliasedReturn` (`varmap.cc:414-428`): if the return

@@ -347,6 +347,31 @@ mechanism (`decompiler/crates/kuna-decomp/src/p6_variables/varmap.rs
 (ScopeLocal::mark_not_mapped)`) later excludes an unaliased return-value
 staging slot (`funcdata_spacebase.rs (Funcdata::check_unaliased_return)`).
 
+**Reporting the frame vs. reporting the declarations (`option framelayout`).**
+Because the layout is rebuilt from scratch every pass, a slot is only in the
+FINAL layout if a stack Varnode for it was still live at the last pass. At -O0
+every local is a spill slot, so `RuleLoadVarnode`/`RuleStoreVarnode` convert the
+store/load pair into a sized stack COPY, copy-propagation folds it, and dead-code
+removal takes the Varnode with it; the slot is then in an early layout and in no
+later one. The emitted C is right to drop it — there is no expression left to
+declare — but the *frame* still has the slot, and
+`decompile_drive.rs (extract_variables)` describes the recovered frame, not the
+printed declarations, which is what IDA's stack view and Binary Ninja's variable
+list are the analogues of and what decbench's `type_match` metric reads. So
+`restructure_varnode` folds each pass's NO_CATEGORY stack symbols into a
+per-`Funcdata` union (`funcdata.rs (Funcdata::record_frame_slots)`, first writer
+wins because the earliest pass saw the most dataflow standing), and under
+`option framelayout` (default ON, DIV-97) `extract_variables` appends every
+recorded offset no parameter or surviving local already covers. Two spellings are
+normalized on the way out: a slot the type system never committed to is carried
+internally as `xunknown1[N]` and would render as `char[N]` — an element type the
+recovery never established — so it is reported as the width-only `undefined<N>`;
+and Ghidra's internal `$$undefNNNNNNNN` placeholder for an unnamed symbol is
+renamed to its stack-view form `local_<hex>`. The union is recorded
+unconditionally (one map insert per stack symbol per pass) and read only by
+`extract_variables`: no p-code, no emitted C, so neither structure nor
+recompilation can move.
+
 **RangeHint gathering.** Each `mainloop` pass,
 `decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs
 (ActionRestructureVarnode)` rebuilds the frame layout from scratch:
