@@ -2672,6 +2672,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "framelayout"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P6"
+subphase = "naming-policy"
+strength = "HARD"
+rewind = "P6"
+issue = "kuna-framelayout"
+summary = "Report the union of every stack-frame slot any `restructure_varnode` pass recovered on the `decompile-all --json` `variables` surface, not only the slots that survived to the final pass. `restructure_varnode` re-derives the frame from the LIVE stack Varnodes and clears the previous pass's unlocked symbols first, so a slot whose spill store/load pair the dataflow folded into a COPY and then away is present in an early layout and gone from the last one. Dropping it from the emitted C is right -- there is no expression left to declare -- but the frame still has the slot. Each pass's NO_CATEGORY stack symbols fold into a per-Funcdata union (first writer wins, because the earliest pass saw the most dataflow standing), and any offset no parameter or surviving local already covers is appended. A slot the type system never committed to is reported as the width-only `undefined<N>` instead of the `char[N]` its array-of-unknown carrier renders as, and Ghidra's internal `$$undefNNNNNNNN` placeholder is renamed to its stack-view name `local_<hex>`. JSON surface only: no p-code, no emitted C, so GED and byte_match cannot move."
+use_when = "On by default (DIV-97). A consumer wants the recovered stack FRAME rather than the printed declarations -- the `decompile-all --json` `variables` array, which is what decbench's type_match metric reads and what IDA's stack view and Binary Ninja's variable list are the analogues of. Most visible at -O0, where every local is a spill slot and a constant-folded function ends up with an empty `variables` array although its frame has named slots. Flip OFF to restore the pre-DIV-97 surface: parameters plus only the stack symbols still live at the final restructure pass."
+example = "option framelayout off"
+source_decompiler = "kuna"
+inspiration = "decbench type_match: over 82,049 scored functions kuna reported 154,716 of the 184,522 ground-truth stack variables (84%) against angr's 203,329 and IDA's 178,337, and that recall gap was the whole of kuna's 4th place on the one metric it ranked worst on"
+change_kind = "presentation-default"
+tier = "core"
+symptoms = "the JSON variables array is empty although the function plainly has a stack frame|fewer locals reported than the source declares|a stack slot the disassembly writes is missing from variables|a recovered slot is typed char[N] rather than N bytes of unknown type|a variable is named $$undef00000000"
+live_field = "framelayout"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "ctypes"
 values = "on|off"
 default = "off"

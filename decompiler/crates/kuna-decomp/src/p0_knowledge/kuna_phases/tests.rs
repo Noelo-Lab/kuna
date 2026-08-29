@@ -94,12 +94,12 @@ fn settable_count_is_117() {
     // +1 for `symbolnamechars` (P1 symbol-name character sanitizing, DIV-94).
     // +1 for `symbolnamebound` (P1 symbol-name scope resource bound, DIV-95, GH-338).
     // +1 for `msvcfpconst` (P1 MSVC `__real@` FP-constant recovery, DIV-96).
-    assert_eq!(kuna_num_settables(), 124);
-    assert_eq!(SETTABLE_TABLE.len(), 124);
+    assert_eq!(kuna_num_settables(), 125);
+    assert_eq!(SETTABLE_TABLE.len(), 125);
 }
 
 #[test]
-fn tier_counts_are_26_core_50_transform_42_analysis() {
+fn tier_counts_are_27_core_51_transform_47_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -174,7 +174,11 @@ fn tier_counts_are_26_core_50_transform_42_analysis() {
     // bound, DIV-95, GH-338).
     // analysis 43 -> 44: +1 for `msvcfpconst` (P1 MSVC `__real@` FP-constant
     // recovery, DIV-96).
-    assert_eq!((core, transform, analysis), (26, 51, 47));
+    // core 26 -> 27: +1 for `framelayout` (P6 recovered-stack-frame reporting on
+    // the `decompile-all --json` `variables` surface, DIV-97) -- core, not
+    // transform: it changes no p-code and no emitted C, only what the JSON
+    // surface reports about the frame the analysis already recovered.
+    assert_eq!((core, transform, analysis), (27, 51, 47));
 }
 
 #[test]
@@ -364,7 +368,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_36_suppressed_for_77() {
+fn option_values_live_value_present_for_37_suppressed_for_77() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -600,7 +604,8 @@ fn option_values_live_value_present_for_36_suppressed_for_77() {
     // 33 -> 34: +1 for `loadguardrange` (live_field = load_guard_range).
     // 34 -> 35: +1 for `cleanupcode` (live_field = remove_cleanup_code).
     // 35 -> 36: +1 for `retinputhalf` (live_field = ret_input_half).
-    assert_eq!(with_live, 36);
+    // 36 -> 37: +1 for `framelayout` (live_field = framelayout, DIV-97).
+    assert_eq!(with_live, 37);
 }
 
 #[test]
@@ -720,7 +725,9 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // do not move the tail).
     // symbolnamerepair's P1 and msvcfpconst's P1 rows sit mid-table, so they do
     // not move the tail).
-    assert_eq!(json.matches("},\n").count(), 123);
+    // 123 -> 124: +1 for `framelayout` (DIV-97; its P6 row sits mid-table ahead of
+    // `ctypes`, so it does not move the tail either).
+    assert_eq!(json.matches("},\n").count(), 124);
 }
 
 #[test]

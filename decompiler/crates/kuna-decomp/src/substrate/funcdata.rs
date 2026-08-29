@@ -181,6 +181,23 @@ impl LanedKey {
     }
 }
 
+/// (kuna `framelayout`) One recovered stack-frame slot: the name, data type and
+/// byte size a `restructure_varnode` pass gave it.
+///
+/// Recorded per pass into [`Funcdata::record_frame_slots`] so a slot that a later
+/// pass's dataflow folded away is still reportable on the `decompile-all --json`
+/// `variables` surface.  Carries no IR identity -- it is a description of the
+/// frame, not a Varnode.
+#[derive(Clone, Debug)]
+pub struct FrameSlot {
+    /// The symbol name the pass minted (`local_18`, `v3`, ...).
+    pub name: String,
+    /// The recovered data type.
+    pub dtype: std::rc::Rc<crate::dtype::Datatype>,
+    /// Byte size of the slot.
+    pub size: int4,
+}
+
 pub struct Funcdata {
     /// Boolean properties associated with \b this function (C++ `flags`)
     flags: uint4,
@@ -240,6 +257,19 @@ pub struct Funcdata {
     /// [`crate::varmap::ScopeLocal`].  The IR-mutating restructure/sync over the
     /// live varnode graph remains a documented seam (LOSS-109).
     localmap: Option<crate::varmap::ScopeLocal>,
+    /// (kuna `framelayout`) Every stack-frame slot any `restructure_varnode` pass
+    /// ever recovered, keyed by signed stack offset -> `(name, type, size)`.
+    ///
+    /// `restructure_varnode` re-derives the frame from the LIVE stack Varnodes on
+    /// every pass and clears the previous pass's unlocked symbols first, so a slot
+    /// whose store/load pair the dataflow later folded into a COPY (and then away)
+    /// is present in an early layout and absent from the final one.  The emitted C
+    /// is right to drop it -- there is no longer an expression to declare -- but the
+    /// *frame* still has it, and the `decompile-all --json` `variables` surface is
+    /// meant to report the recovered frame, the way IDA's stack view and Binary
+    /// Ninja's variable list do.  This side table accumulates the union so
+    /// `extract_variables` can report it; it never feeds back into the IR.
+    frame_slots: std::cell::RefCell<std::collections::BTreeMap<i64, FrameSlot>>,
     /// List of jump-tables for this function (C++ `jumpvec`).
     ///
     /// The real `JumpTable` (`jumptable.{hh,cc}`) now lives here: the recovery
@@ -440,6 +470,7 @@ impl Funcdata {
             funcp: FuncProto::new(),
             activeoutput: None,
             localmap,
+            frame_slots: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             jumpvec: Vec::new(),
             vbank,
             obank: PcodeOpBank::new(),
@@ -1101,6 +1132,23 @@ impl Funcdata {
     /// Get the local function scope (C++ `getScopeLocal`).
     pub fn get_scope_local(&self) -> Option<&crate::varmap::ScopeLocal> {
         self.localmap.as_ref()
+    }
+
+    /// (kuna `framelayout`) Fold this pass's recovered stack-frame layout into the
+    /// running union.  Called at the tail of every `restructure_varnode`.
+    ///
+    /// A slot already recorded is kept: the FIRST pass to see it had the most
+    /// dataflow still standing, so its type hint is the better-informed one.
+    pub fn record_frame_slots(&self, slots: impl IntoIterator<Item = (i64, FrameSlot)>) {
+        let mut map = self.frame_slots.borrow_mut();
+        for (off, slot) in slots {
+            map.entry(off).or_insert(slot);
+        }
+    }
+
+    /// (kuna `framelayout`) The union of every stack-frame slot any pass recovered.
+    pub fn frame_slots(&self) -> Vec<(i64, FrameSlot)> {
+        self.frame_slots.borrow().iter().map(|(k, v)| (*k, v.clone())).collect()
     }
     /// Mutably borrow the local function scope (C++ non-const `getScopeLocal`).
     /// The console `map` commands and `ActionRestructureVarnode` reach the

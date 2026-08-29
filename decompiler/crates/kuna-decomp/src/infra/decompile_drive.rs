@@ -1570,6 +1570,68 @@ pub fn extract_variables(arch: &Architecture, fd: &Funcdata) -> Vec<VarInfo> {
             });
         }
     }
+
+/// (kuna `framelayout`) How an exported stack slot's data type is spelled.
+///
+/// A slot the type system never committed to is carried internally as
+/// `xunknown1[N]` (Ghidra's `undefined1[N]`) or a bare `TYPE_UNKNOWN`, and
+/// `type_to_c_string` renders the array form as `char[N]` -- which asserts an
+/// element type the recovery never established.  Report those as the width-only
+/// `undefined<N>`, the same spelling Ghidra uses for the same fact, and leave every
+/// committed type exactly as the printer spells it.
+fn frame_slot_type_name(arch: &Architecture, dt: &std::rc::Rc<crate::dtype::Datatype>) -> String {
+    use crate::dtype::type_metatype;
+    let n = dt.get_size();
+    let uncommitted = match dt.get_metatype() {
+        type_metatype::TYPE_UNKNOWN => true,
+        type_metatype::TYPE_ARRAY => dt
+            .get_array_base()
+            .map(|e| e.get_metatype() == type_metatype::TYPE_UNKNOWN)
+            .unwrap_or(false),
+        _ => false,
+    };
+    if uncommitted && n > 0 {
+        return format!("undefined{n}");
+    }
+    crate::printc::type_to_c_string(arch, dt)
+}
+
+    // 3) (kuna `framelayout`) The frame slots an EARLIER restructure pass recovered
+    // and the final one no longer has, because the dataflow folded the spill away.
+    // The emitted C is right to drop them; the recovered frame still contains them,
+    // and `variables` reports the frame. Only offsets no parameter or surviving
+    // local already covers are added, so this can never contradict section 1 or 2.
+    if arch.framelayout {
+        let covered: std::collections::BTreeSet<i64> =
+            out.iter().filter_map(|v| v.stack_offset).collect();
+        for (off, slot) in fd.frame_slots() {
+            if covered.contains(&off) {
+                continue;
+            }
+            // `$$undefNNNNNNNN` is Ghidra's internal placeholder for an unnamed
+            // symbol and must not surface on a public interface; name the slot the
+            // way Ghidra's stack view does.
+            let name = if crate::kuna_undefname::is_undefined_name(&slot.name) {
+                if off < 0 {
+                    format!("local_{:x}", -off)
+                } else {
+                    format!("stack_{off:x}")
+                }
+            } else {
+                slot.name
+            };
+            out.push(VarInfo {
+                name,
+                type_name: frame_slot_type_name(arch, &slot.dtype),
+                stack_offset: Some(off),
+                size: slot.size as i64,
+                is_param: false,
+                arg_index: None,
+                line_numbers: Vec::new(),
+                addresses: Vec::new(),
+            });
+        }
+    }
     out
 }
 
