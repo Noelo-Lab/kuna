@@ -1618,6 +1618,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "cortexmpriv"
+values = "on|off"
+default = "off"
+destructive = false
+phase = "P2"
+subphase = "inline-inject"
+strength = "HARD"
+rewind = "P2"
+issue = "kuna-cortexmpriv"
+summary = "Assume the Cortex-M core is privileged, so the `isCurrentModePrivileged()` guard the vendored ARM SLEIGH wraps around every VERSION_7M special-register move folds away. Twelve `ARMTHUMBinstructions.sinc` constructors (`mrs`/`msr` against ipsr, primask, basepri, basepri_max, faultmask and control) model the move as a RUNTIME privilege test -- `b:1 = isCurrentModePrivileged(); if (!b) goto <notPriv>; <the real effect>` -- so kuna, lowering the model literally, gives every MRS/MSR one extra basic block and two extra CFG edges that exist in no source. A four-instruction `irq_disable`/`irq_restore` pair therefore lands four phantom branches in the middle of an otherwise straight-line function. On, a synthesized `<callotherfixup>` makes the user-op return the constant 1: the condition constant-folds, the guard block and its edges die, and the real effect survives unchanged. Registered at architecture bootstrap on any language that declares the user-op (i.e. ARM) and gated at the CALLOTHER consumption seam, so off the emitted C is byte-identical to a build without the fixup. IDA and Binary Ninja both model MRS/MSR as a plain intrinsic with no test at all; upstream Ghidra shares kuna's defect."
+use_when = "Cortex-M firmware whose C is broken into extra `if (isCurrentModePrivileged())` blocks around every interrupt-mask or special-register access, or whose CFG carries branches the source has no `if` for. ON in the `aggressive` preset, which `auto` selects for any binary under 500 KiB -- essentially all Cortex-M images -- so this is the default rendering of `kuna decompile`, `decompile-all` and the web front-end on firmware. The shipped catalog default is OFF because the assumption is a MODELLING JUDGEMENT, not a proof: Cortex-M Thread mode really can run unprivileged (CONTROL.nPRIV = 1) and those moves really do read as zero there. Flip off when auditing code that is meant to run unprivileged, or to see the hardware model exactly as the SLEIGH spells it. Inert on every non-ARM target and on any ARM function with no MRS/MSR."
+example = "option cortexmpriv on"
+source_decompiler = "ida"
+inspiration = "decbench sample set: RIOT `thread_sleep` and NuttX `nxsched_process_scheduler` score GED 24 and 26 against straight-line source, entirely from the guard blocks; IDA scores 6 and Binary Ninja 0 on the same functions because they lower MRS/MSR as an intrinsic"
+change_kind = "correctness-fix"
+tier = "transform"
+symptoms = "an `if (isCurrentModePrivileged())` block wraps every interrupt-mask or special-register access in Cortex-M firmware|`isCurrentModePrivileged()` appears in the emitted C at all|a Cortex-M function has more basic blocks and branches than its source|`getBasePriority()`/`isIRQinterruptsEnabled()`/`getCurrentExceptionNumber()` are each read under their own conditional"
+live_field = "cortexmpriv"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "tailcalljump"
 values = "on|off"
 default = "on"

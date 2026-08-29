@@ -191,6 +191,32 @@ recovered switch table.
   The user-visible gate is on the *install* instead (`option msvcftol`, default
   on), where the analysis-tier call-fixup installer drops this one payload's
   targets from its match map.
+- **kuna-owned callother fixups.** The same freedom applies to the user-op side.
+  `decompiler/crates/kuna-decomp/src/p2_lift/kuna_cortexmpriv.rs` supplies a
+  `<callotherfixup>` body for the ARM user op `isCurrentModePrivileged`, which
+  the vendored Cortex-M SLEIGH raises at twelve places. Every VERSION_7M MRS/MSR
+  constructor in `ARMTHUMBinstructions.sinc` models its special-register move as
+  a *runtime* privilege test — `b:1 = isCurrentModePrivileged(); if (!b) goto
+  <notPriv>; <effect>` — so lowering the model literally gives each such
+  instruction one extra basic block and two extra CFG edges that the source it
+  came from does not have; a Cortex-M `irq_disable`/`irq_restore` pair drops four
+  phantom branches into an otherwise straight-line function. The fixup body is
+  the constant `1` (its single output operand carries no declared size, so the
+  injector binds it to the real CALLOTHER output varnode), which lets the guard
+  condition constant-fold and its block and edges die while the real effect
+  survives untouched. `architecture.rs (register_cortexmpriv_fixup)` installs it
+  between the cspec `<callotherfixup>` dispatch and `parse_inject_all`, only on a
+  language whose translator presents the user op and only when no compiler spec
+  has already specialized it — so a spec-declared fixup always wins, and every
+  non-ARM target is unaffected by construction. That "the core is privileged" is
+  an assumption rather than a proof (Cortex-M Thread mode really can run
+  unprivileged, and the moves really do read as zero there) is why it is
+  `option cortexmpriv`, default off and on in the `aggressive` preset. Because
+  the architecture bootstraps before any `option` line, the flag is read at the
+  *consumption* seam instead — `decompile_drive.rs (is_injected_userop)`, the one
+  live per-CALLOTHER predicate that sees the applied options — so with the option
+  off the CALLOTHER is never queued, survives as an ordinary black box, and the
+  emitted C is identical to a build carrying no such payload.
 
 ## 2.2 CFG construction
 

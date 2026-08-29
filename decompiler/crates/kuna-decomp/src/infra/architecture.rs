@@ -750,6 +750,24 @@ pub struct Architecture {
     /// one op across several leaves, and suppressing by identity would delete
     /// genuine mid-body early returns).
     pub voidtailreturn: bool,
+    /// (kuna `cortexmpriv`) Assume the Cortex-M core is privileged, folding away
+    /// the `isCurrentModePrivileged()` guard the vendored ARM SLEIGH wraps around
+    /// every VERSION_7M MRS/MSR (`kuna_cortexmpriv`).
+    ///
+    /// Twelve `ARMTHUMBinstructions.sinc` constructors lower as
+    /// `b:1 = isCurrentModePrivileged(); if (!b) goto <notPriv>; <effect>`, so
+    /// each MRS/MSR costs one basic block and two CFG edges that exist in no
+    /// source. On the guard folds to `1` and only the effect survives.
+    ///
+    /// Read at the CALLOTHER consumption gate
+    /// (`decompile_drive::is_injected_userop`), not at registration: the payload
+    /// is installed at architecture bootstrap, before any `option` line.
+    pub cortexmpriv: bool,
+    /// (kuna `cortexmpriv`) The inject id of the `isCurrentModePrivileged`
+    /// callother-fixup this architecture registered, or `None` on a language that
+    /// does not declare the user-op. Identifies the one payload
+    /// `option cortexmpriv off` suppresses.
+    pub cortexmpriv_inject: Option<int4>,
     /// (kuna GH-558) Restore canonicalized comparisons to LESSEQUAL form for
     /// presentation (C++ `present_lessequal`).
     pub present_lessequal: bool,
@@ -1603,6 +1621,8 @@ impl Architecture {
             ctypes: false, // (kuna) option ctypes; reset_defaults sets the shipped default
             framelayout: false, // (kuna) option framelayout; reset_defaults sets the shipped default
             voidtailreturn: false, // (kuna) option voidtailreturn; reset_defaults sets the shipped default
+            cortexmpriv: false, // (kuna) option cortexmpriv; reset_defaults sets the shipped default
+            cortexmpriv_inject: None, // (kuna) set by init_userops_and_fixups when the language declares the user-op
             present_lessequal: false,
             preserve_thumb_funcptr: false,
             kuna_fn_budget: None,   // (kuna) decompile-all watchdog: no budget by default
@@ -1785,6 +1805,7 @@ impl Architecture {
         self.ctypes = false; // (kuna) DIV-75: default-OFF in the catalog because the datatest corpus pins `int4`/`float8` spellings in 42 assertions; ON in the `aggressive` preset, which `auto` selects under 500 KiB, so valid C is the default RENDERING everywhere a real binary is decompiled
         self.framelayout = true; // (kuna) DIV-97: JSON-surface only (no p-code, no emitted C), so the 675-assertion datatest corpus cannot observe it; measured +1,027 type_match-perfect / -1 over 82,035 decbench functions
         self.voidtailreturn = false; // (kuna) option voidtailreturn; default-OFF until its corpus bidirectional sweep is recorded in a DIV row
+        self.cortexmpriv = false; // (kuna) DIV-99: default-OFF -- "the core is privileged" is a modelling judgement, not a proof (Cortex-M Thread mode can run unprivileged); ON in the `aggressive` preset, which `auto` selects under 500 KiB, so it is the default rendering for real firmware
         self.condexe_block_placement = true; // (kuna) DIV-3 default-on (GH-9203)
         self.add_carry_chain = true; // (kuna) DIV-2 default-on (GH-8913)
         self.model_stack_probe_loop = true; // (kuna) DIV-3 default-on (GH-8017)
@@ -2139,6 +2160,7 @@ impl Architecture {
             "ctypes" => on_off!(ctypes, "valid-C core type spelling"),
             "framelayout" => on_off!(framelayout, "recovered stack-frame reporting"),
             "voidtailreturn" => on_off!(voidtailreturn, "void tail-return elision"),
+            "cortexmpriv" => on_off!(cortexmpriv, "Cortex-M privileged-mode guard folding"),
             "dedupvardecls" => {
                 let (val, msg) = crate::kuna_dedupvardecls::OptionDedupVarDecls.apply(p1)?;
                 self.dedup_var_decls = val;
@@ -3503,6 +3525,14 @@ impl Architecture {
         self.userops = userops;
         fixup_res?;
 
+        // 2b. (kuna `cortexmpriv`) Register the synthesized
+        //     `isCurrentModePrivileged` callother-fixup alongside the cspec's own,
+        //     so step 3 compiles it with the rest. Unconditional on any language
+        //     that declares the user-op (the option is not readable at bootstrap);
+        //     `decompile_drive::is_injected_userop` is the gate. See
+        //     `p2_lift::kuna_cortexmpriv`.
+        self.register_cortexmpriv_fixup()?;
+
         // 3. parseInject: compile every registered injection body (callfixup +
         //    callotherfixup) into a ConstructTpl against the loaded language.
         //    Move the inject library out so the &Sleigh (SnippetLanguageProvider)
@@ -3527,6 +3557,41 @@ impl Architecture {
         };
         self.pcodeinjectlib = lib;
         parse_res
+    }
+
+    /// (kuna `cortexmpriv`) Install the `isCurrentModePrivileged` callother-fixup
+    /// that reports privileged, parking its inject id on
+    /// [`cortexmpriv_inject`](Self::cortexmpriv_inject).
+    ///
+    /// A no-op in ghidra mode (no local `.sla` to compile the body against), on
+    /// any language whose translator does not present the user-op (everything but
+    /// ARM), and on one where a compiler spec already specialized it — the cspec's
+    /// own `<callotherfixup>` wins, exactly as it does for the vendored
+    /// `setISAMode` fixups.
+    fn register_cortexmpriv_fixup(&mut self) -> KunaResult<()> {
+        use crate::kuna_cortexmpriv as fixup;
+        // No local `.sla` (ghidra mode) means step 3 cannot compile the body, and
+        // an injected user-op with a null template is a hard decompile error --
+        // so leave the op unspecialized there, exactly as it is today.
+        if self.translate.as_sleigh().is_none() {
+            return Ok(());
+        }
+        match self.userops.get_op_by_name(fixup::USEROP_NAME) {
+            Some(op) if op.is_unspecialized() => {}
+            _ => return Ok(()),
+        }
+        let injectid = self.pcodeinjectlib.manual_call_other_fixup(
+            fixup::USEROP_NAME,
+            fixup::OUTPUT_NAME,
+            &[],
+            fixup::SNIPPET,
+        )?;
+        let mut userops = std::mem::take(&mut self.userops);
+        let res = userops.manual_call_other_fixup(fixup::USEROP_NAME, injectid);
+        self.userops = userops;
+        res?;
+        self.cortexmpriv_inject = Some(injectid);
+        Ok(())
     }
 
     /// (kuna) Register the fixed set of string-copy builtin user-ops into
