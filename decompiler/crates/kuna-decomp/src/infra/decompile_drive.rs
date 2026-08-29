@@ -212,11 +212,28 @@ impl FlowEnvironment for ArchFlowEnv {
 
     fn is_injected_userop(&self, userop_index: kuna_base::types::uintb) -> bool {
         // C++ `glb->userops.getOp(in0)->getType() == UserPcodeOp::injected`.
+        //
+        // (kuna `cortexmpriv`) The synthesized `isCurrentModePrivileged` fixup is
+        // registered at architecture bootstrap, before any `option` line is
+        // applied, so this — the only live per-CALLOTHER predicate that sees the
+        // applied options — is where the flag gates it. Off, the CALLOTHER is left
+        // alone and prints through the ordinary user-op path.
         let arch = self.arch();
-        match arch.userops.get_op(userop_index as kuna_base::types::uint4) {
-            Some(op) => op.get_type() == crate::userop::userop_type::injected,
-            None => false,
+        let op = match arch.userops.get_op(userop_index as kuna_base::types::uint4) {
+            Some(op) => op,
+            None => return false,
+        };
+        if op.get_type() != crate::userop::userop_type::injected {
+            return false;
         }
+        if !arch.cortexmpriv {
+            if let Some(id) = op.get_inject_id() {
+                if crate::kuna_cortexmpriv::is_our_fixup(arch.cortexmpriv_inject, id as int4) {
+                    return false;
+                }
+            }
+        }
+        true
     }
 
     fn is_incidental_copy_userop(&self, userop_index: kuna_base::types::uintb) -> bool {

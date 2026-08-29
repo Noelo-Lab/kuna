@@ -151,6 +151,15 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     // aggregate GED -5,344, and every architecture net-positive. Speed +0.17%
     // (coreutils/ls O0, interleaved min-of-5).
     ("voidtailreturn", "on"),
+    // (kuna, DIV-100) Fold the Cortex-M `isCurrentModePrivileged()` guard the
+    // vendored ARM SLEIGH wraps around every VERSION_7M MRS/MSR. Shipped default
+    // OFF because "the core is privileged" is a modelling judgement rather than a
+    // proof; preset membership is the delivery route, since the guard is only ever
+    // reached by ARM Cortex-M firmware, which is small enough that `auto` always
+    // picks `aggressive` for it. Structurally inert everywhere else -- the fixup
+    // is registered only on a language that declares the user-op, and only 12
+    // Thumb-2 constructors emit it.
+    ("cortexmpriv", "on"),
     // analysis-tier default-off discovery/markup passes. `listing` is the master
     // gate that enables the Listing-consuming passes (fid/aif/discovered-noreturn).
     ("listing", "on"),

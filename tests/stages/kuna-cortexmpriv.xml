@@ -1,0 +1,55 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:Cortex">
+<!--
+    kuna `option cortexmpriv` (default-OFF opt-in, ON in the `aggressive` preset),
+    P2 lift/inline-inject: the synthesized `isCurrentModePrivileged`
+    `<callotherfixup>` registered in `infra/architecture.rs`
+    (`register_cortexmpriv_fixup`) and consumed at
+    `infra/decompile_drive.rs is_injected_userop`.
+
+    ARMTHUMBinstructions.sinc models every VERSION_7M (Cortex-M) special-register
+    move as a RUNTIME privilege test rather than as one operation:
+
+        b:1 = isCurrentModePrivileged();
+        if (!b) goto <notPriv>;
+        <the real effect>
+      <notPriv>
+
+    Twelve constructors do it (mrs/msr against ipsr, primask, basepri,
+    basepri_max, faultmask, control), so EVERY MRS/MSR costs one extra basic
+    block and two extra CFG edges that exist in no source.  Upstream Ghidra has
+    the same defect; IDA and Binary Ninja model MRS/MSR as a plain intrinsic.
+
+    Witness (self-contained, 6 bytes at 0x1000, Thumb):
+
+        f3ef 8011   mrs r0,basepri     ; the guarded constructor
+        4770        bx  lr
+
+    Pass 1 (default, cortexmpriv off): the bug - the read is wrapped in the
+    privilege test, so a straight-line two-instruction function comes back with a
+    branch and the user-op named in the emitted C.  Assertions #1 and #2.
+    Pass 2 (option cortexmpriv on): the fix - the guard folds to the constant 1,
+    its block and edges die, and the bare `getBasePriority()` read survives.
+    Assertions #3 and #4.
+-->
+<bytechunk space="ram" offset="0x1000">
+eff311807047
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="read_basepri"/>
+</binaryimage>
+<script>
+  <com>set context TMode 1 [ram,0x1000] [ram,0x1010]</com>
+  <com>lo fu read_basepri</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option cortexmpriv on</com>
+  <com>lo fu read_basepri</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="CORTEXMPRIV #1: OFF leaves the privilege user-op in the emitted C (pass 1 only)" min="1" max="1">isCurrentModePrivileged\(\)</stringmatch>
+<stringmatch name="CORTEXMPRIV #2: OFF turns a straight-line special-register read into a branch (pass 1 only)" min="1" max="1">^  if \(</stringmatch>
+<stringmatch name="CORTEXMPRIV #3: the real effect survives in BOTH passes" min="2" max="2">getBasePriority\(\)</stringmatch>
+<stringmatch name="CORTEXMPRIV #4: ON folds the guard away, leaving one unconditional read (pass 2 only)" min="1" max="1">^  return getBasePriority\(\);</stringmatch>
+</decompilertest>

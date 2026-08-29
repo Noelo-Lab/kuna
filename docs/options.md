@@ -25,6 +25,10 @@ Three tiers:
 | __ftol() / __ftol2() called with no arguments | [`msvcftol`](#msvcftol) |
 | the float computation feeding a float-to-int conversion is missing from an MSVC x86-32 binary | [`msvcftol`](#msvcftol) |
 | a __thiscall method lost its `this` pointer and reads its fields off a stack argument instead | [`msvcftol`](#msvcftol) |
+| an `if (isCurrentModePrivileged())` block wraps every interrupt-mask or special-register access in Cortex-M firmware | [`cortexmpriv`](#cortexmpriv) |
+| `isCurrentModePrivileged()` appears in the emitted C at all | [`cortexmpriv`](#cortexmpriv) |
+| a Cortex-M function has more basic blocks and branches than its source | [`cortexmpriv`](#cortexmpriv) |
+| `getBasePriority()`/`isIRQinterruptsEnabled()`/`getCurrentExceptionNumber()` are each read under their own conditional | [`cortexmpriv`](#cortexmpriv) |
 | leaf function ends in a (*dat_...)(...) computed call with a 'Treating indirect jump as call' warning | [`tailcalljump`](#tailcalljump) |
 | jmp to a plt stub inlined into the caller instead of a named tail call | [`tailcalljump`](#tailcalljump) |
 | plt thunk body absorbed where func(...) is expected | [`tailcalljump`](#tailcalljump) |
@@ -455,6 +459,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** An x86-32 MSVC binary shows bare `__ftol()` / `__ftol2()` calls with no arguments and the floating-point computation that fed them is missing (often together with a lost `this` pointer). On by default; flip OFF to restore the un-fixed call rendering.
 - **Where / provenance:** P2/flow-classification · ida · correctness-fix · kuna-msvcftol
 - **Example:** `option msvcftol off`
+
+### `cortexmpriv` -- on | off, default `off`
+
+- **Symptoms:** an `if (isCurrentModePrivileged())` block wraps every interrupt-mask or special-register access in Cortex-M firmware; `isCurrentModePrivileged()` appears in the emitted C at all; a Cortex-M function has more basic blocks and branches than its source; `getBasePriority()`/`isIRQinterruptsEnabled()`/`getCurrentExceptionNumber()` are each read under their own conditional.
+- **What it does:** Assume the Cortex-M core is privileged, so the `isCurrentModePrivileged()` guard the vendored ARM SLEIGH wraps around every VERSION_7M special-register move folds away. Twelve `ARMTHUMBinstructions.sinc` constructors (`mrs`/`msr` against ipsr, primask, basepri, basepri_max, faultmask and control) model the move as a RUNTIME privilege test -- `b:1 = isCurrentModePrivileged(); if (!b) goto <notPriv>; <the real effect>` -- so kuna, lowering the model literally, gives every MRS/MSR one extra basic block and two extra CFG edges that exist in no source. A four-instruction `irq_disable`/`irq_restore` pair therefore lands four phantom branches in the middle of an otherwise straight-line function. On, a synthesized `<callotherfixup>` makes the user-op return the constant 1: the condition constant-folds, the guard block and its edges die, and the real effect survives unchanged. Registered at architecture bootstrap on any language that declares the user-op (i.e. ARM) and gated at the CALLOTHER consumption seam, so off the emitted C is byte-identical to a build without the fixup. IDA and Binary Ninja both model MRS/MSR as a plain intrinsic with no test at all; upstream Ghidra shares kuna's defect.
+- **When to flip:** Cortex-M firmware whose C is broken into extra `if (isCurrentModePrivileged())` blocks around every interrupt-mask or special-register access, or whose CFG carries branches the source has no `if` for. ON in the `aggressive` preset, which `auto` selects for any binary under 500 KiB -- essentially all Cortex-M images -- so this is the default rendering of `kuna decompile`, `decompile-all` and the web front-end on firmware. The shipped catalog default is OFF because the assumption is a MODELLING JUDGEMENT, not a proof: Cortex-M Thread mode really can run unprivileged (CONTROL.nPRIV = 1) and those moves really do read as zero there. Flip off when auditing code that is meant to run unprivileged, or to see the hardware model exactly as the SLEIGH spells it. Inert on every non-ARM target and on any ARM function with no MRS/MSR.
+- **Where / provenance:** P2/inline-inject · ida · correctness-fix · kuna-cortexmpriv
+- **Example:** `option cortexmpriv on`
 
 ### `tailcalljump` -- on | off, default `on`
 

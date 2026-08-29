@@ -68,7 +68,7 @@ future-proofs the preset: if the defaults later drift more aggressive,
 ## `aggressive`
 
 `aggressive` flips **every** on/off off-by-default option on, with the exclusions
-listed below. It carries 26 of the 33 such options; the five *multi-valued*
+listed below. It carries 27 of the 35 such options; the five *multi-valued*
 default-off options (`condfold`, `rustabi`, `calloverlap`, `spillargtrial`,
 `outline`) are out of reach by construction, since a preset can only pin a single
 "on". `AGGRESSIVE_OVERRIDES` in `p0_knowledge/modes.rs` is the authority — the
@@ -77,7 +77,9 @@ build failure. The options it enables:
 
 - **transform tier**: `switchmodbound`, `switchguardbound` (speed-costly),
   `unrolledguard` (speed-costly), `stackalias`, `sparcstructret`,
-  `regionedgeorder`, `returndup`, `orchain`, `iteexpr`, `ctypes`
+  `regionedgeorder`, `returndup`, `orchain`, `iteexpr`, `ctypes`,
+  `cortexmpriv` (DIV-100 - fold the Cortex-M `isCurrentModePrivileged()` guard;
+  ARM-Cortex-M-gated by construction, so it is a measured no-op everywhere else)
 - **analysis tier**: `listing` (the master gate that enables the
   Listing-consuming passes — `fid`, `aif`, the discovered-no-return family),
   `fast_funcdisc`, `eh_frame_full`, `funcstart_patterns`, `addrtable`,

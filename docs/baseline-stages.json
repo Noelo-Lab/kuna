@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    570,
-    570
+    572,
+    572
   ],
   "passing": [
     "data:ARRAYSUBFIELD #1: an 8-byte read at offset 0 of char[16] is a sized sub-field, not element 0",
@@ -54,6 +54,10 @@
     "data:CNORM-WARNSTYLE #3: banner WARNINGs appear only in the banner pass (indirect-jump + read-only)",
     "data:CNORM-WARNSTYLE #4: a condition-block warning rides to the header flush point after the brace",
     "data:CNORM-WARNSTYLE #5: the slug never fires inside the comma-separated header parens",
+    "data:CORTEXMPRIV #1: OFF leaves the privilege user-op in the emitted C (pass 1 only)",
+    "data:CORTEXMPRIV #2: OFF turns a straight-line special-register read into a branch (pass 1 only)",
+    "data:CORTEXMPRIV #3: the real effect survives in BOTH passes",
+    "data:CORTEXMPRIV #4: ON folds the guard away, leaving one unconditional read (pass 2 only)",
     "data:CTYPES #1: off, the return type is the Ghidra core-type name",
     "data:CTYPES #2: on, the same type spells as C",
     "data:CTYPES #3: off, an 8-byte unsigned cast is uint8",
@@ -327,8 +331,6 @@
     "data:SYMBOLNAMEREPAIR #4: the same scope path renders at a CALL site, not just on the declaration",
     "data:SYMBOLNAMEREPAIR #5: no empty scope component survives anywhere in the output",
     "data:SYMBOLNAMEREPAIR #6: the three bodies decompiled (the load did not fail)",
-    "data:VOIDTAILRETURN #1: the bare trailing return; is printed by EXACTLY ONE of the two passes - the shipped default keeps it, `option voidtailreturn on` elides it (2 would mean the option did nothing)",
-    "data:VOIDTAILRETURN #2: both passes really emitted the function, so #1 cannot pass vacuously on a pass that produced no C",
     "data:angr-LoweredSwitch #1: exactly one switch (none in pass 1 off, one in pass 2 on)",
     "data:angr-LoweredSwitch #2: default present",
     "data:angr-LoweredSwitch #3: case 0x70 (p) recovered",
