@@ -739,6 +739,17 @@ pub struct Architecture {
     /// stack view and Binary Ninja's variable list report), not of the printed
     /// declarations.  Affects the JSON surface only: no p-code, no emitted C.
     pub framelayout: bool,
+    /// (kuna `voidtailreturn`) Elide the trailing bare `return;` of a void
+    /// function -- the one the C source it came from does not have, because the
+    /// source just falls off the end of the body.
+    ///
+    /// Only the function's OWN last statement, only when the prototype returns
+    /// void, only when the owning structured leaf is not a goto target (a label
+    /// would be left dangling) and only when exactly one structured leaf carries
+    /// that RETURN op (`returndup`/`taildup` clone a shared epilogue by aliasing
+    /// one op across several leaves, and suppressing by identity would delete
+    /// genuine mid-body early returns).
+    pub voidtailreturn: bool,
     /// (kuna GH-558) Restore canonicalized comparisons to LESSEQUAL form for
     /// presentation (C++ `present_lessequal`).
     pub present_lessequal: bool,
@@ -1591,6 +1602,7 @@ impl Architecture {
             realtypes: false,
             ctypes: false, // (kuna) option ctypes; reset_defaults sets the shipped default
             framelayout: false, // (kuna) option framelayout; reset_defaults sets the shipped default
+            voidtailreturn: false, // (kuna) option voidtailreturn; reset_defaults sets the shipped default
             present_lessequal: false,
             preserve_thumb_funcptr: false,
             kuna_fn_budget: None,   // (kuna) decompile-all watchdog: no budget by default
@@ -1772,6 +1784,7 @@ impl Architecture {
         self.realtypes = true; // (kuna) DIV-6 default-on: real C types for unknowns
         self.ctypes = false; // (kuna) DIV-75: default-OFF in the catalog because the datatest corpus pins `int4`/`float8` spellings in 42 assertions; ON in the `aggressive` preset, which `auto` selects under 500 KiB, so valid C is the default RENDERING everywhere a real binary is decompiled
         self.framelayout = true; // (kuna) DIV-97: JSON-surface only (no p-code, no emitted C), so the 675-assertion datatest corpus cannot observe it; measured +1,027 type_match-perfect / -1 over 82,035 decbench functions
+        self.voidtailreturn = false; // (kuna) option voidtailreturn; default-OFF until its corpus bidirectional sweep is recorded in a DIV row
         self.condexe_block_placement = true; // (kuna) DIV-3 default-on (GH-9203)
         self.add_carry_chain = true; // (kuna) DIV-2 default-on (GH-8913)
         self.model_stack_probe_loop = true; // (kuna) DIV-3 default-on (GH-8017)
@@ -2125,6 +2138,7 @@ impl Architecture {
             "realtypes" => on_off!(realtypes, "Real-C-type rendering for unknowns"),
             "ctypes" => on_off!(ctypes, "valid-C core type spelling"),
             "framelayout" => on_off!(framelayout, "recovered stack-frame reporting"),
+            "voidtailreturn" => on_off!(voidtailreturn, "void tail-return elision"),
             "dedupvardecls" => {
                 let (val, msg) = crate::kuna_dedupvardecls::OptionDedupVarDecls.apply(p1)?;
                 self.dedup_var_decls = val;

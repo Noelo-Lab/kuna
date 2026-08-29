@@ -1780,7 +1780,7 @@ mod tests {
         // and a genuine one-byte element access keeps its `[3]` subscript
         // and kuna-msvcfpconst / MSVC `__real@` FP-constant COMDATs are decoded
         // from their mangled names (option off = every operand a dat_<addr>)
-        assert_eq!(count, 220, "corpus file count drifted");
+        assert_eq!(count, 221, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

@@ -141,6 +141,16 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     // parity harness applies no mode -- so preset membership is what makes valid C
     // the default RENDERING for every real binary without touching the corpus.
     ("ctypes", "on"),
+    // (kuna DIV-98) Elide a void function's trailing bare `return;`, the statement
+    // the C source it came from does not have. The shipped catalog default is OFF
+    // because the XML datatest corpus pins the upstream rendering and applies no
+    // mode; preset membership is what makes the elision the default output for
+    // every real binary. Measured bidirectionally over the whole O0 decbench slice
+    // (32,329 functions, 265 slices): GED-perfect 15,308 -> 15,933 (+625), 687
+    // moved TO perfect against 62 moved OFF (11.08 : 1, McNemar z = +22.84),
+    // aggregate GED -5,344, and every architecture net-positive. Speed +0.17%
+    // (coreutils/ls O0, interleaved min-of-5).
+    ("voidtailreturn", "on"),
     // analysis-tier default-off discovery/markup passes. `listing` is the master
     // gate that enables the Listing-consuming passes (fid/aif/discovered-noreturn).
     ("listing", "on"),
