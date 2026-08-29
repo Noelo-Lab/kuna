@@ -1,0 +1,48 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna C-surface normalization: a void function's trailing bare `return;` is
+    elided, because the C source it was compiled from does not have one - it
+    simply falls off the end of the body.
+
+    Upstream Ghidra always prints the function's final CPUI_RETURN.  kuna adds
+    the settable option `voidtailreturn` (P9/brace-form), default-OFF pending
+    its corpus bidirectional sweep: emit_function_body computes at most one
+    elidable op per function via elidable_void_tail_return, and
+    emit_basic_block_ops skips exactly that op.  Four conditions must hold -
+    void prototype, tail of the LAST structured leaf (descending only Graph/Ls),
+    that leaf is not a goto target, and exactly one structured leaf carries the
+    op (returndup/taildup alias one RETURN across several leaves).
+
+    Stage model: S9 emission / brace-form policy.  P0 assertion:
+    `option voidtailreturn on|off`.
+
+    vt_fn (0x100000): void vt_fn(int4 x) { if (x) g(); }
+      test edi,edi / jz +5 / call g / ret
+    The `if` makes the function's tail a two-successor block, which is exactly
+    the shape whose FUNCTION_END pyjoern drops from the SOURCE cfg - so the
+    printed `return;` is a node the source graph does not have.
+
+    Pass 1 (default, off): the upstream trailing `return;` is printed
+    (assert #1, exactly once).
+    Pass 2 (option voidtailreturn on): the body ends at the `if` and no bare
+    `return;` remains anywhere in the function (assert #2, exactly zero).
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+85ff7405e800000000c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="vt_fn"/>
+</binaryimage>
+<script>
+  <com>parse line extern void vt_fn(int4 x);</com>
+  <com>lo fu vt_fn</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option voidtailreturn on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="VOIDTAILRETURN #1: the bare trailing return; is printed by EXACTLY ONE of the two passes - the shipped default keeps it, `option voidtailreturn on` elides it (2 would mean the option did nothing)" min="1" max="1">^ {2}return;$</stringmatch>
+<stringmatch name="VOIDTAILRETURN #2: both passes really emitted the function, so #1 cannot pass vacuously on a pass that produced no C" min="2" max="2">vt_fn\(</stringmatch>
+</decompilertest>

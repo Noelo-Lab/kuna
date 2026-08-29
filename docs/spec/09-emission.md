@@ -62,6 +62,37 @@ braces; the pre-existing `if (cond) goto L;` one-liner and the `else if`
 collapse are unaffected. `option braceelide off` restores upstream Ghidra's
 braced form, exercised by `tests/stages/kuna-cnorm-braceelide.xml`.
 
+**Void tail-return elision (P9/`brace-form`, `option voidtailreturn`, default
+OFF).** kuna prints the function's final `CPUI_RETURN` unconditionally, so a void
+function ends `... }` / `return;` / `}` — a statement the C source it was compiled
+from does not have, because the source simply falls off the end of the body.
+`printc.rs (PrintC::emit_function_body)` computes at most one elidable op per
+function via `printc.rs (elidable_void_tail_return)` and
+`printc.rs (PrintC::emit_basic_block_ops)` skips exactly that op. Four conditions
+must all hold, and each has a named counterexample:
+
+- the prototype returns void — a `return <value>;` is never redundant;
+- the op is the tail of the LAST structured leaf, reached by descending only the
+  containers that print no construct of their own (`Graph`, `Ls`), so a return
+  nested inside an `if`/loop/switch arm is never touched;
+- that leaf is not an unstructured goto target — bash `rl_echo_signal_char`
+  prints `label_115e79:` directly above its trailing `return;`, and eliding the
+  statement would leave a label with nothing after it, which is invalid C;
+- exactly one structured leaf carries that RETURN op. `returndup` and `taildup`
+  clone a shared epilogue by ALIASING one op across several leaves, so
+  suppressing by identity would also delete genuine mid-body early returns; a
+  unique owner makes the elision positional rather than identity-based.
+
+A `BlockCopy` mirror is resolved through to the bblocks block it stands for
+(`printc.rs (structured_leaf_tail)`) — the normal shape of a structured
+function's trailing block, and the reason the direct `sblocks_basic_tail` lookup
+is not sufficient. The motivation is measured and structural as well as
+stylistic: pyjoern merges `FUNCTION_END` into its predecessor only when that
+predecessor's sole successor is `FUNCTION_END`, so a source function whose tail
+is an `if` or a loop has NO node there at all, while kuna's printed `return;`
+re-materialises one — one extra node, one or two extra edges, and an
+`is_exitpoint` role flip that on its own defeats the GED isomorphism test.
+
 **Warning style (P9/`warning-style`, `option warnstyle`).** Analysis warnings
 render as terse `// slug` end-of-line comments on the line they describe
 (kuna default `inline`, DIV-39): `printc.rs (PrintC::emit_comment_group)`

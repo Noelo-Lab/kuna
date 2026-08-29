@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    568,
-    568
+    570,
+    570
   ],
   "passing": [
     "data:ARRAYSUBFIELD #1: an 8-byte read at offset 0 of char[16] is a sized sub-field, not element 0",
@@ -327,6 +327,8 @@
     "data:SYMBOLNAMEREPAIR #4: the same scope path renders at a CALL site, not just on the declaration",
     "data:SYMBOLNAMEREPAIR #5: no empty scope component survives anywhere in the output",
     "data:SYMBOLNAMEREPAIR #6: the three bodies decompiled (the load did not fail)",
+    "data:VOIDTAILRETURN #1: the bare trailing return; is printed by EXACTLY ONE of the two passes - the shipped default keeps it, `option voidtailreturn on` elides it (2 would mean the option did nothing)",
+    "data:VOIDTAILRETURN #2: both passes really emitted the function, so #1 cannot pass vacuously on a pass that produced no C",
     "data:angr-LoweredSwitch #1: exactly one switch (none in pass 1 off, one in pass 2 on)",
     "data:angr-LoweredSwitch #2: default present",
     "data:angr-LoweredSwitch #3: case 0x70 (p) recovered",

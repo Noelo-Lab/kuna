@@ -1376,6 +1376,12 @@ pub struct PrintC {
     /// `PrintLanguage::commsorter`).  Seeded by [`setup_comments`] at the start of
     /// the body and consulted by `emit_comment_block_tree`/`emit_comment_group`.
     commsorter: crate::comment::CommentSorter,
+    /// (kuna `voidtailreturn`) The one `CPUI_RETURN` op `emit_basic_block_ops`
+    /// must skip: the function's own trailing bare `return;` in a void function.
+    /// Computed once per function by [`elidable_void_tail_return`] at the top of
+    /// [`emit_function_body`](PrintC::emit_function_body) and cleared after, so it
+    /// is live only for that function's emission.
+    void_tail_return: Option<OpId>,
     /// (kuna) Resolved `realtypes` rendering context for the function currently
     /// being printed — the `Architecture::realtypes` gate plus the data-model fact
     /// (`long` is 8 bytes) needed to relabel residual `TYPE_UNKNOWN` (`xunknownN`)
@@ -1417,6 +1423,7 @@ impl PrintC {
             nodepend: Vec::new(),
             pending: 0,
             commsorter: crate::comment::CommentSorter::new(),
+            void_tail_return: None,
             rt_ctx: RealTypeCtx::OFF,
             out_lang: crate::kuna_lang::OutLang::C,
             eol_warns: Vec::new(),
@@ -3202,7 +3209,13 @@ impl PrintC {
         // load-once/decompile-many run (generations are globally unique, so this
         // is purely to bound memory, not for correctness).
         self.emit.reset_pending_fired();
+        self.void_tail_return = if arch.voidtailreturn {
+            elidable_void_tail_return(fd)
+        } else {
+            None
+        };
         self.emit_block_graph(fd, arch, sroot);
+        self.void_tail_return = None;
     }
 
     /// C++ `PrintC::emitBlockGraph` (printc.cc:2895): emit each component block.
@@ -4588,6 +4601,15 @@ impl PrintC {
                 None => continue,
             };
             if o.not_printed() {
+                continue;
+            }
+            // (kuna `voidtailreturn`) The function's own trailing bare `return;`.
+            // The source it came from just falls off the end of the body, and
+            // pyjoern's CFG has no node there, so printing it is both redundant C
+            // and a structural divergence.  Elided only when
+            // `elidable_void_tail_return` proved it is the LAST statement of a void
+            // function reached on exactly one structured path.
+            if Some(inst) == self.void_tail_return {
                 continue;
             }
             if o.is_branch() {
@@ -8291,6 +8313,102 @@ fn sblocks_basic_head(fd: &Funcdata, bb: BlockId) -> Option<OpId> {
 }
 
 /// Tail op of an sblocks-arena basic block.
+/// (kuna `voidtailreturn`) The function's own trailing bare `return;`, when it is
+/// safe to elide.
+///
+/// kuna (faithfully to Ghidra) always prints the final RETURN, so a void function
+/// ends `... }\n  return;\n}`.  The C source it was compiled from has no `return`
+/// there at all -- it falls off the end -- and pyjoern's CFG for the source
+/// therefore has no node for it, while kuna's printed statement re-materialises
+/// one: +1 node, +1..2 edges, and an `is_exitpoint` role flip that alone breaks
+/// GED's isomorphism test.  It is also simply redundant C.
+///
+/// Returns the `OpId` to skip, or `None` when ANY of the four conditions fails:
+///
+/// 1. **The function returns void.**  A `return <value>;` is never redundant, and
+///    a non-void function that falls off the end is a different (invalid) program.
+/// 2. **The op is the tail of the LAST structured leaf**, reached by descending
+///    only the containers that do not themselves print a construct (`Graph`, `Ls`).
+///    Descending an `If`/`WhileDo`/`Switch` arm would elide a return that is
+///    nested inside a printed construct, which is not the trailing statement.
+/// 3. **That leaf is not an unstructured (goto) target.**  bash `rl_echo_signal_char`
+///    prints `label_115e79:` immediately above its trailing `return;`; eliding the
+///    statement would leave a label with no statement after it -- invalid C.
+/// 4. **Exactly one structured leaf has that op as its tail.**  `returndup` and
+///    `taildup` clone a shared epilogue by giving several structured leaves the
+///    SAME RETURN `OpId`; suppressing by id would then also delete genuine
+///    mid-body early returns.  Requiring a unique owner makes the elision
+///    positional, not identity-based.
+fn elidable_void_tail_return(fd: &Funcdata) -> Option<OpId> {
+    use crate::block::BlockType;
+    use crate::dtype::type_metatype;
+
+    // (1) void return type.
+    let out = fd.get_func_proto().get_output_type()?;
+    if out.get_metatype() != type_metatype::TYPE_VOID {
+        return None;
+    }
+
+    // (2) the last structured leaf, descending only non-printing containers.
+    let mut cur = fd.sblocks_ref().root?;
+    loop {
+        match fd.sblocks_ref().block(cur).get_type() {
+            BlockType::Graph | BlockType::Ls => {
+                let list = fd.sblocks_ref().block(cur).get_list();
+                cur = *list.last()?;
+            }
+            _ => break,
+        }
+    }
+    if !matches!(fd.sblocks_ref().block(cur).get_type(), BlockType::Basic | BlockType::Copy) {
+        return None;
+    }
+    // (3) not a goto target: a label would be left dangling.
+    if fd.sblocks_ref().block(cur).is_unstructured_target() {
+        return None;
+    }
+    let tail = structured_leaf_tail(fd, cur)?;
+    let op = fd.obank().get(tail)?;
+    if op.code() != OpCode::CPUI_RETURN || op.num_input() > 1 || op.not_printed() {
+        return None;
+    }
+
+    // (4) exactly one structured leaf owns that op (returndup/taildup aliasing).
+    let mut owners = 0usize;
+    let mut stack = vec![fd.sblocks_ref().root?];
+    while let Some(b) = stack.pop() {
+        let blk = fd.sblocks_ref().block(b);
+        if matches!(blk.get_type(), BlockType::Basic | BlockType::Copy) {
+            if structured_leaf_tail(fd, b) == Some(tail) {
+                owners += 1;
+                if owners > 1 {
+                    return None;
+                }
+            }
+        }
+        stack.extend(blk.get_list().iter().copied());
+    }
+    if owners != 1 {
+        return None;
+    }
+    Some(tail)
+}
+
+/// (kuna `voidtailreturn`) The last printed op of a structured LEAF, resolving a
+/// `BlockCopy` mirror through to the bblocks basic block it stands for.
+///
+/// `emit_block_copy` emits its ops via `emit_basic_block_ops(.., under, true)`,
+/// so a leaf's printed tail lives on the underlying bblocks block whenever the
+/// sblocks node is a mirror -- which is the normal shape for the trailing block
+/// of a structured function.  `sblocks_basic_tail` only knows the direct
+/// `BlockKind::Basic` case and returns `None` for the mirror.
+fn structured_leaf_tail(fd: &Funcdata, bb: BlockId) -> Option<OpId> {
+    if let Some(under) = fd.sblocks_ref().block(bb).get_copy() {
+        return fd.bb_op_tail(under);
+    }
+    sblocks_basic_tail(fd, bb)
+}
+
 fn sblocks_basic_tail(fd: &Funcdata, bb: BlockId) -> Option<OpId> {
     use crate::block::BlockKind;
     match fd.sblocks_ref().block(bb).kind() {
