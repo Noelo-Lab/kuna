@@ -9,6 +9,9 @@ Kuna is written in Rust and was originally ported from [Ghidra](https://github.c
 This project is an _experiment_ to establish how far the autonomous refinement of decompilers can push research in the field.
 Learn more about this approach in this [post](https://noelo.org/blog/kuna-release/).
 
+**Questions? Join our Discord**:
+[![Discord](https://img.shields.io/discord/1542982153912975470?label=Discord&style=plastic)](https://discord.gg/vAQ8BKUPXv)
+
 ## Install & Usage
 Kuna is distributed as a single Rust binary and can be run on most systems.
 It can be used either on the [CLI](#cli-usage), the [web browser](#web-browser-usage), or in the [Ghidra GUI](#ghidra-gui-usage) (as the decompiler backend).
