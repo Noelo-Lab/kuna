@@ -10,6 +10,7 @@ This project is an _experiment_ to establish how far the autonomous refinement o
 Learn more about this approach in this [post](https://noelo.org/blog/kuna-release/).
 
 **Questions? Join our Discord**:
+
 [![Discord](https://img.shields.io/discord/1542982153912975470?label=Discord&style=plastic)](https://discord.gg/vAQ8BKUPXv)
 
 ## Install & Usage
