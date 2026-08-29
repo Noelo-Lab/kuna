@@ -17,8 +17,12 @@
     Stage model: S9 emission / brace-form policy.  P0 assertion:
     `option voidtailreturn on|off`.
 
-    vt_fn (0x100000): void vt_fn(int4 x) { if (x) g(); }
-      test edi,edi / jz +5 / call g / ret
+    vt_fn (0x100000): void vt_fn(int4 x) { if (x) glob = 1; }
+      test edi,edi / jz +0xa / mov dword [rip+0xffff2],1 / ret
+    The store keeps a printed statement in the body, which the fifth condition
+    requires: a function whose ONLY statement is the return is left alone (an
+    empty body is not the source shape, and it strands the ghidra markup with no
+    op to cross-link to the <ast>).
     The `if` makes the function's tail a two-successor block, which is exactly
     the shape whose FUNCTION_END pyjoern drops from the SOURCE cfg - so the
     printed `return;` is a node the source graph does not have.
@@ -29,7 +33,7 @@
     `return;` remains anywhere in the function (assert #2, exactly zero).
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
-85ff7405e800000000c3
+85ff740ac705f2ff0f0001000000c3
 </bytechunk>
 <symbol space="ram" offset="0x100000" name="vt_fn"/>
 </binaryimage>

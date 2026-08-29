@@ -8373,8 +8373,14 @@ fn elidable_void_tail_return(fd: &Funcdata) -> Option<OpId> {
         return None;
     }
 
-    // (4) exactly one structured leaf owns that op (returndup/taildup aliasing).
+    // (4) exactly one structured leaf owns that op (returndup/taildup aliasing),
+    // and (5) the function prints at least one OTHER statement.  A body whose only
+    // statement is the return would come back completely empty -- not the source
+    // shape this is chasing, and it leaves the ghidra markup document with no op to
+    // cross-link to the `<ast>` (`kuna-ghidra` decompile_at_e2e pins exactly that:
+    // "a bare `return;` still tags its statement/op").
     let mut owners = 0usize;
+    let mut other_printed = false;
     let mut stack = vec![fd.sblocks_ref().root?];
     while let Some(b) = stack.pop() {
         let blk = fd.sblocks_ref().block(b);
@@ -8385,10 +8391,30 @@ fn elidable_void_tail_return(fd: &Funcdata) -> Option<OpId> {
                     return None;
                 }
             }
+            let mut cur = match blk.get_copy() {
+                Some(u) => fd.bb_op_head(u),
+                None => sblocks_basic_head(fd, b),
+            };
+            while let Some(inst) = cur {
+                cur = fd.bb_op_next(inst);
+                if inst == tail {
+                    continue;
+                }
+                let Some(o) = fd.obank().get(inst) else { continue };
+                if o.not_printed() || o.code() == OpCode::CPUI_BRANCH {
+                    continue;
+                }
+                if let Some(out) = o.get_out() {
+                    if fd.vbank().get(out).map(|v| v.is_implied()).unwrap_or(false) {
+                        continue;
+                    }
+                }
+                other_printed = true;
+            }
         }
         stack.extend(blk.get_list().iter().copied());
     }
-    if owners != 1 {
+    if owners != 1 || !other_printed {
         return None;
     }
     Some(tail)
