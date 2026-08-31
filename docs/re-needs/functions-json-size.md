@@ -17,9 +17,9 @@ covered_by_option: null
 touches: [decompiler/crates/kuna-cli/src, tests/cli, docs/cli.md]
 scope: small
 regression_of: null
-pr: PENDING
+pr: https://github.com/Noelo-Lab/kuna/pull/360
 closed_in_round: 1
-closing_pr: null
+closing_pr: https://github.com/Noelo-Lab/kuna/pull/360
 reject_reason: null
 ---
 
