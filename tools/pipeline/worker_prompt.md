@@ -163,7 +163,7 @@ where `<PHASE>` ∈ analyze, design, code, build, test, docs, commit, pr. If you
 
 ### 8. commit + PR
 - `git add -A && git commit` with a descriptive subject `{{SLUG}}: <one line>` and the trailer
-  `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`.
+  `Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>`.
 - Write the PR body to `docs/features/{{SLUG}}/pr_body.md`: a short summary, a link to
   `docs/features/{{SLUG}}/analysis.md`, the mechanism, the option name + how to flip it, and the
   ablation/parity result, ending with `🤖 Generated with [Claude Code](https://claude.com/claude-code)`.

@@ -3,6 +3,7 @@
 #
 #   tools/pipeline/open_pr.sh [--draft] <branch> <title> <body-file> [<record.json>]
 #   tools/pipeline/open_pr.sh --undraft <branch>
+#   tools/pipeline/open_pr.sh --merge <branch>          # the autonomous lane
 #
 # Pushes <branch> over SSH (always works here), then tries `gh pr create`. If gh cannot
 # create the PR (e.g. the gh token lacks access to the org repo, while the SSH key can
@@ -13,6 +14,12 @@
 #           no before/after demo is embedded (nothing is implemented yet).
 # --undraft marks the existing PR for <branch> ready-for-review (best-effort; non-fatal if
 #           it can't, the reviewer can click "Ready for review").
+# --merge   labels the PR `full-ci`, waits for every check to complete, and squash-merges
+#           it. This is the RE-friction loop's autonomous lane (docs/re-pipeline.md); the
+#           angr lane never passes it. The `full-ci` label matters: on a PR from a branch
+#           in this repo CI SKIPS the workspace suite, and the label is itself a trigger,
+#           so without it "checks green" would mean "the cheap gates passed". Exits
+#           non-zero if any check concludes anything but success/neutral/skipped.
 #
 # If <record.json> is given (non-draft), a REAL captured before/after demonstration (kuna
 # with the feature off vs on, on the function the feature was built for, plus the reference
@@ -21,10 +28,12 @@ set -uo pipefail
 
 DRAFT=0
 UNDRAFT=0
+MERGE=0
 while [ "${1:-}" != "${1#--}" ] && [ -n "${1:-}" ]; do
   case "$1" in
     --draft) DRAFT=1; shift;;
     --undraft) UNDRAFT=1; shift;;
+    --merge) MERGE=1; shift;;
     *) echo "unknown flag: $1" 1>&2; exit 2;;
   esac
 done
@@ -34,6 +43,117 @@ BASE="${BASE_BRANCH:-main}"
 KUNA_PY="${KUNA_PY:-$HOME/.virtualenvs/kuna/bin/python}"
 # scripts.pipeline.* must be importable without an install: repo root on the path.
 export PYTHONPATH="$(git rev-parse --show-toplevel 2>/dev/null || echo .)${PYTHONPATH:+:$PYTHONPATH}"
+
+# --merge: label, wait for CI, squash-merge. Everything is REST for the same reason the
+# create path is (gh's GraphQL PR commands fail on this repo since the classic-Projects
+# sunset), and every step is re-runnable: a --merge that dies after the merge landed will
+# see `.merged == true` on its next run and exit 0 rather than trying again.
+if [ "$MERGE" = 1 ]; then
+  BRANCH="${1:?need branch}"
+  OWNER="${REPO_SLUG%%/*}"
+  CI_TIMEOUT="${MERGE_CI_TIMEOUT:-5400}"
+  POLL="${MERGE_CI_POLL:-60}"
+
+  NUM="$(gh api "repos/$REPO_SLUG/pulls?head=$OWNER:$BRANCH&state=open" -q '.[0].number' 2>/dev/null)"
+  if [ -z "$NUM" ] || [ "$NUM" = "null" ]; then
+    MERGED="$(gh api "repos/$REPO_SLUG/pulls?head=$OWNER:$BRANCH&state=closed" -q '.[0].merged_at' 2>/dev/null)"
+    if [ -n "$MERGED" ] && [ "$MERGED" != "null" ]; then
+      echo "PR for $BRANCH already merged at $MERGED" 1>&2; exit 0
+    fi
+    echo "ERROR: no open PR for $BRANCH to merge" 1>&2; exit 1
+  fi
+
+  if [ "$(gh api "repos/$REPO_SLUG/pulls/$NUM" -q .merged 2>/dev/null)" = "true" ]; then
+    echo "PR #$NUM already merged" 1>&2; exit 0
+  fi
+  # Fail CLOSED: anything but a definite "false" -- including an API error returning
+  # empty -- is treated as a draft. A [PROPOSAL] must never be auto-merged because a
+  # query failed.
+  DRAFT_STATE="$(gh api "repos/$REPO_SLUG/pulls/$NUM" -q .draft 2>/dev/null)"
+  if [ "$DRAFT_STATE" != "false" ]; then
+    echo "ERROR: PR #$NUM is a draft or its draft state is unknown ('$DRAFT_STATE'); not merging" 1>&2; exit 1
+  fi
+
+  # The label is a CI TRIGGER, not a hint: without it an internal-branch PR skips the
+  # workspace suite entirely, so "all checks green" would mean "the cheap gates passed".
+  # Failing to apply it is therefore fatal, not ignored.
+  if ! gh api -X POST "repos/$REPO_SLUG/issues/$NUM/labels" -f 'labels[]=full-ci' >/dev/null 2>&1; then
+    if ! gh api "repos/$REPO_SLUG/issues/$NUM/labels" -q '.[].name' 2>/dev/null | grep -qx 'full-ci'; then
+      echo "ERROR: could not apply the full-ci label; refusing to merge on the cheap gates alone" 1>&2
+      exit 1
+    fi
+  fi
+  echo "full-ci label present (forces the workspace suite on an internal-branch PR)" 1>&2
+
+  SHA="$(gh api "repos/$REPO_SLUG/pulls/$NUM" -q .head.sha)"
+
+  # The suite the label triggers takes time to REGISTER. Polling immediately would find
+  # only the already-finished cheap gates, conclude "all green", and squash-merge code
+  # the workspace suite never ran on. Wait for it to appear by name first.
+  WS_NAME="${MERGE_REQUIRED_CHECK:-cargo workspace suite}"; export WS_NAME
+  echo "waiting for '$WS_NAME' to register" 1>&2
+  REG_DEADLINE=$(( $(date +%s) + ${MERGE_REGISTER_TIMEOUT:-900} ))
+  until gh api "repos/$REPO_SLUG/commits/$SHA/check-runs?per_page=100" \
+          --jq "[.check_runs[] | select(.name == \"$WS_NAME\" and .status != \"completed\")] | length" \
+        2>/dev/null | grep -qv '^0$'; do
+    if [ "$(date +%s)" -ge "$REG_DEADLINE" ]; then
+      echo "ERROR: '$WS_NAME' never registered; refusing to merge without it" 1>&2
+      exit 1
+    fi
+    sleep 20
+  done
+  echo "'$WS_NAME' registered" 1>&2
+
+  echo "waiting for checks on $SHA (up to ${CI_TIMEOUT}s)" 1>&2
+  DEADLINE=$(( $(date +%s) + CI_TIMEOUT ))
+  while :; do
+    # Only the LATEST run per check NAME counts. Adding the full-ci label re-triggers the
+    # workflow, which cancels the in-flight one, so the commit carries both a `cancelled`
+    # parity-gates and a fresh `in_progress` one under the same name -- and the pre-label
+    # `cargo workspace suite` sits there as `skipped`. Evaluating every row would read a
+    # supersede as a failure (or a skip as a pass); grouping by name and keeping the newest
+    # start time reads only what is actually running now.
+    RUNS="$(gh api "repos/$REPO_SLUG/commits/$SHA/check-runs?per_page=100" \
+              --jq '{check_runs: ([.check_runs[]] | group_by(.name) | map(max_by(.started_at)))}' \
+            2>/dev/null)"
+    TOTAL="$(printf '%s' "$RUNS" | "$KUNA_PY" -c 'import json,sys; d=json.load(sys.stdin); print(len(d.get("check_runs",[])))' 2>/dev/null)"
+    PENDING="$(printf '%s' "$RUNS" | "$KUNA_PY" -c 'import json,sys; d=json.load(sys.stdin); print(sum(1 for r in d.get("check_runs",[]) if r.get("status")!="completed"))' 2>/dev/null)"
+    BAD="$(printf '%s' "$RUNS" | "$KUNA_PY" -c 'import json,sys; d=json.load(sys.stdin); print(",".join(r["name"]+":"+str(r.get("conclusion")) for r in d.get("check_runs",[]) if r.get("status")=="completed" and r.get("conclusion") not in ("success","neutral","skipped")))' 2>/dev/null)"
+    if [ -n "$BAD" ]; then
+      echo "ERROR: checks failed: $BAD" 1>&2; exit 1
+    fi
+    if [ -n "$TOTAL" ] && [ "$TOTAL" != "0" ] && [ "$PENDING" = "0" ]; then
+      # The required suite must have actually RUN. `skipped` is a legal conclusion that
+      # would otherwise read as green -- and it is exactly what an unlabelled internal-branch
+      # PR produces, i.e. the case the label exists to prevent.
+      WS_CONC="$(printf '%s' "$RUNS" | "$KUNA_PY" -c 'import json,sys,os; d=json.load(sys.stdin); n=os.environ["WS_NAME"]; print(next((r.get("conclusion") for r in d.get("check_runs",[]) if r.get("name")==n), "missing"))' 2>/dev/null)"
+      if [ "$WS_CONC" = "skipped" ] || [ "$WS_CONC" = "missing" ]; then
+        echo "ERROR: '$WS_NAME' concluded '$WS_CONC' -- it did not actually run; not merging" 1>&2
+        exit 1
+      fi
+      echo "all $TOTAL checks green ('$WS_NAME': $WS_CONC)" 1>&2; break
+    fi
+    if [ "$(date +%s)" -ge "$DEADLINE" ]; then
+      echo "ERROR: CI still pending after ${CI_TIMEOUT}s ($PENDING of $TOTAL outstanding)" 1>&2; exit 1
+    fi
+    sleep "$POLL"
+  done
+
+  # match-head-commit equivalent: refuse if the head moved while we were waiting
+  NOW_SHA="$(gh api "repos/$REPO_SLUG/pulls/$NUM" -q .head.sha)"
+  if [ "$NOW_SHA" != "$SHA" ]; then
+    echo "ERROR: head moved $SHA -> $NOW_SHA while CI ran; re-run --merge" 1>&2; exit 1
+  fi
+
+  if gh api -X PUT "repos/$REPO_SLUG/pulls/$NUM/merge" -f merge_method=squash >/dev/null 2>/tmp/_ghmerge.err; then
+    URL="https://github.com/$REPO_SLUG/pull/$NUM"
+    echo "merged PR #$NUM" 1>&2
+    echo "$URL"
+    exit 0
+  fi
+  echo "ERROR: squash-merge failed: $(head -3 /tmp/_ghmerge.err 2>/dev/null)" 1>&2
+  exit 1
+fi
 
 # --undraft: flip the existing draft PR for <branch> to ready-for-review and stop.
 if [ "$UNDRAFT" = 1 ]; then

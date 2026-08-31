@@ -1,0 +1,42 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "p-c354ee2a485d",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "functions",
+    "{{BIN}}",
+    "--json"
+  ],
+  "cwd": "{{TMP}}",
+  "timeout_s": 120,
+  "repeat": 3,
+  "target": {
+    "binary_rel": "bin/snake",
+    "binary_sha256": "907b4dc30be0c0e53fda3ad1905ef3d804735a472f1c9484d3cfb5d3180e26c1",
+    "binary_size": 11364,
+    "binary_source": "dataset",
+    "in_repo_path": null,
+    "selector": null,
+    "selector_kind": "none"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "json": [
+      {
+        "path": "count",
+        "op": "eq",
+        "value": 0
+      },
+      {
+        "path": "functions",
+        "op": "len_eq",
+        "value": 0
+      }
+    ]
+  },
+  "notes": "CURRENT BAD BEHAVIOUR. On a section-header-stripped PIE ELF kuna finds nothing and says so with exit 0, so an agent cannot tell 'no functions' from 'I could not parse this'. Work dir is the challenge dir."
+}

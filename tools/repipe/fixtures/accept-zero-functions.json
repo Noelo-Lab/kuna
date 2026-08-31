@@ -1,0 +1,29 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "a-300e3a5af18b",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "functions",
+    "{{BIN}}",
+    "--json"
+  ],
+  "cwd": "{{TMP}}",
+  "timeout_s": 120,
+  "repeat": 3,
+  "target": {
+    "binary_rel": "bin/snake",
+    "binary_sha256": "907b4dc30be0c0e53fda3ad1905ef3d804735a472f1c9484d3cfb5d3180e26c1",
+    "binary_size": 11364,
+    "binary_source": "dataset",
+    "in_repo_path": null,
+    "selector": null,
+    "selector_kind": "none"
+  },
+  "expect": {
+    "exit_code": {
+      "ne": 0
+    }
+  },
+  "notes": "DESIRED BEHAVIOUR, arm A: the same argv must stop reporting success it cannot back up. expect is a conjunction, so 'exit != 0 OR a json error key' cannot be one probe; the error-key arm is accept-zero-functions-errorkey.json. Either flipping to PASS closes the need."
+}

@@ -18,15 +18,27 @@ POLL="${PIPELINE_POLL:-15}"            # seconds between scheduler ticks
 ONCE=0
 [ "${1:-}" = "--once" ] && ONCE=1
 
+# Seams so a second pipeline reuses this driver without a fork (docs/re-pipeline.md).
+# Every one defaults to the angr fleet's behaviour, so an unset environment is unchanged.
+STATE_DIRNAME="${PIPELINE_STATE_DIRNAME:-.kuna-pipeline}"
+SELECT_MOD="${PIPELINE_SELECT_MOD:-scripts.pipeline.select}"
+WORKER_SCRIPT="${PIPELINE_WORKER_SCRIPT:-tools/pipeline/worker.sh}"
+WID_PREFIX="${PIPELINE_WID_PREFIX:-w}"
+WORKTREE_MATCH="${PIPELINE_WORKTREE_MATCH:-/$STATE_DIRNAME/worktrees/}"
+BRANCH_MATCH="${PIPELINE_BRANCH_MATCH:-feat/angr-}"
+MIN_FREE_GB="${PIPELINE_MIN_FREE_GB:-0}"
+
 export KUNA_REPO="$REPO" KUNA_PY="$KUNA_PY"
 # Run scripts.pipeline.* without an install: repo root on the import path.
 export PYTHONPATH="$REPO${PYTHONPATH:+:$PYTHONPATH}"
-STATE_DIR="$REPO/.kuna-pipeline"
+STATE_DIR="$REPO/$STATE_DIRNAME"
 STOP_FILE="$STATE_DIR/STOP"
 # logs/ must exist BEFORE spawn_worker, whose `>>"$STATE_DIR/logs/..."` redirect is set up by
 # THIS shell -- worker.sh's own mkdir runs in the child, too late. Without this the very first
 # spawn into a fresh state dir fails.
 mkdir -p "$STATE_DIR/logs" "$STATE_DIR/worktrees"
+export KUNA_PIPELINE_STATE_DIR="$STATE_DIR"
+export KUNA_PIPELINE_WORKTREE_MATCH="$WORKTREE_MATCH" KUNA_PIPELINE_BRANCH_MATCH="$BRANCH_MATCH"
 rm -f "$STOP_FILE"
 
 START=$(date +%s)
@@ -62,16 +74,30 @@ gc_merged_worktrees() {
       git -C "$REPO" worktree remove --force "$wt" 2>/dev/null
       git -C "$REPO" branch -D "$branch" 2>/dev/null
     fi
-  done < <(git -C "$REPO" worktree list --porcelain | awk '/^worktree /{print $2}' | grep "/.kuna-pipeline/worktrees/")
+  done < <(git -C "$REPO" worktree list --porcelain | awk '/^worktree /{print $2}' | grep -- "$WORKTREE_MATCH")
   git -C "$REPO" worktree prune 2>/dev/null
+}
+
+# A cargo worktree costs 20-30 GB on the default debug profile and has filled this machine
+# mid-run. Refuse to open another one when the filesystem is already tight.
+disk_ok() {
+  [ "$MIN_FREE_GB" = "0" ] && return 0
+  local free_gb
+  free_gb=$(df -BG --output=avail "$REPO" | tail -1 | tr -dc '0-9')
+  if [ -n "$free_gb" ] && [ "$free_gb" -lt "$MIN_FREE_GB" ]; then
+    log "disk brake: ${free_gb}G free < ${MIN_FREE_GB}G required; not spawning"
+    return 1
+  fi
+  return 0
 }
 
 spawn_worker() {
   local opp
-  opp="$("$KUNA_PY" -m scripts.pipeline.select --shell 2>/dev/null)" || return 1
+  disk_ok || return 1
+  opp="$("$KUNA_PY" -m "$SELECT_MOD" --shell 2>/dev/null)" || return 1
   eval "$opp"   # sets OPP_ID TEST_NAME BINARY SELECTOR ARCH SLUG SCORE KINDS
   SEQ=$((SEQ+1))
-  local wid; wid="w$(date +%s)-$SEQ"
+  local wid; wid="${WID_PREFIX}$(date +%s)-$SEQ"
   # claim atomically; if already taken (race), skip this tick
   if ! "$KUNA_PY" -m scripts.pipeline.state claim --worker "$wid" --opportunity "$OPP_ID" >/dev/null 2>&1; then
     log "opportunity $OPP_ID already claimed; skipping"
@@ -80,7 +106,7 @@ spawn_worker() {
   log "spawning $wid for [$SCORE] $OPP_ID (slug $SLUG, kinds $KINDS)"
   WORKER_ID="$wid" OPP_ID="$OPP_ID" TEST_NAME="$TEST_NAME" SELECTOR="$SELECTOR" \
     BINARY="$BINARY" SLUG="$SLUG" ARCH="$ARCH" \
-    bash "$REPO/tools/pipeline/worker.sh" >>"$STATE_DIR/logs/driver-$wid.log" 2>&1 &
+    bash "$REPO/$WORKER_SCRIPT" >>"$STATE_DIR/logs/driver-$wid.log" 2>&1 &
   WPID["$wid"]=$!
   return 0
 }

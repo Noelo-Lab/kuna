@@ -1,0 +1,41 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "a-0ba8ca568548",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "functions",
+    "{{BIN}}",
+    "--json"
+  ],
+  "cwd": "{{TMP}}",
+  "timeout_s": 300,
+  "repeat": 3,
+  "target": {
+    "binary_rel": "tests/bug-repro/sort",
+    "binary_sha256": "8e01fe2367a880f4154b4373e56cbd008704d9278abe897837554c6b82c322a4",
+    "binary_size": 121456,
+    "binary_source": "in-repo",
+    "in_repo_path": "tests/bug-repro/sort",
+    "selector": null,
+    "selector_kind": "none"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "json": [
+      {
+        "path": "count",
+        "op": "gt",
+        "value": 0
+      },
+      {
+        "path": "functions[0].size",
+        "op": "exists"
+      }
+    ]
+  },
+  "notes": "DESIRED BEHAVIOUR. functions --json records carry only name/address/address_hex/aliases; decompile-all --json already carries size, so an agent must decompile every function to learn how big one is. In-repo target, so this is vendorable into tests/cli/."
+}

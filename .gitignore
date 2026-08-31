@@ -18,6 +18,11 @@ __pycache__/
 # The durable backlog (docs/improvement-pipeline/*.json, matrix.md) IS committed; live state is not.
 .kuna-pipeline/
 
+# RE-friction loop runtime state: inventory, rounds, tester arenas, per-run CODEX_HOMEs,
+# worktrees, logs. The durable backlog (docs/re-needs/) and the promoted regression probes
+# (tests/cli/) ARE committed; nothing under here is.
+.kuna-repipe/
+
 # Rewritten patch left by tools/sync_upstream.py (dry runs / failed applies)
 .kuna_sync.patch
 

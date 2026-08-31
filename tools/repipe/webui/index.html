@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>kuna re-friction loop</title>
+<link rel="icon" href="/img/favicon.png">
+<link rel="stylesheet" href="/assets/site.css">
+<link rel="stylesheet" href="/assets/dash.css">
+</head>
+<body>
+
+<header class="hdr">
+  <div class="wrapx">
+    <a class="brand" href="/"><span class="wordmark">kuna</span><span class="at">re-friction</span></a>
+    <div class="stat"><b>Round</b><span id="h-round">—</span></div>
+    <div class="stat"><b>Supervisor</b><span id="h-sup">—</span></div>
+    <div class="stat"><b>Agents</b><span id="h-agents">—</span></div>
+    <div class="stat" id="h-disk-w"><b>Disk free</b><span id="h-disk">—</span></div>
+    <div class="stat"><b>Spend this run</b><span id="h-spend">—</span></div>
+    <div class="spacer"></div>
+    <div class="live off" id="h-live"><i></i><span id="h-seq">seq —</span></div>
+    <button class="stopbtn" id="h-stop" type="button">Stop</button>
+  </div>
+</header>
+
+<nav class="tabs">
+  <div class="wrapx" role="tablist">
+    <button class="tab" role="tab" id="tab-board"      aria-selected="true"  data-pane="board">Round board</button>
+    <button class="tab" role="tab" id="tab-agents"     aria-selected="false" data-pane="agents">Agents<span class="n" id="n-agents"></span></button>
+    <button class="tab" role="tab" id="tab-evidence"   aria-selected="false" data-pane="evidence">Evidence<span class="n" id="n-evidence"></span></button>
+    <button class="tab" role="tab" id="tab-acceptance" aria-selected="false" data-pane="acceptance">Acceptance matrix<span class="n" id="n-acceptance"></span></button>
+  </div>
+</nav>
+
+<main>
+
+<!-- ── 1. Round board ─────────────────────────────────────────────────── -->
+<section class="panel" id="pane-board" role="tabpanel" aria-labelledby="tab-board">
+  <div class="wrapx">
+    <div class="card">
+      <div class="roundtop">
+        <div class="bignum"><small>Round</small><span id="b-round">—</span></div>
+        <div class="timer"><small>Elapsed</small><span id="b-timer">—</span></div>
+        <div class="timer"><small>Run</small><span id="b-runtimer">—</span></div>
+        <div class="timer"><small>Slate</small><span id="b-slate">—</span></div>
+        <div class="timer"><small>Needs filed / closed</small><span id="b-needs">—</span></div>
+      </div>
+      <div id="b-lanes"></div>
+    </div>
+
+    <div class="grid2" style="margin-top:18px">
+      <div class="card">
+        <div class="chead"><span>Transition log</span><span class="grow"></span>
+          <span class="note" id="b-tcount"></span></div>
+        <div class="tlog" id="b-tlog"></div>
+      </div>
+      <div class="card">
+        <div class="chead"><span>Corpus coverage</span><span class="grow"></span>
+          <span class="note" id="b-cov"></span></div>
+        <div class="strata" id="b-strata"></div>
+        <div class="chead" style="border-top:1px solid var(--rule);border-bottom:0">
+          <span>Worktrees &amp; leases</span></div>
+        <div class="cbody" id="b-infra"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── 2. Agents ──────────────────────────────────────────────────────── -->
+<section class="panel" id="pane-agents" role="tabpanel" aria-labelledby="tab-agents" hidden>
+  <div class="wrapx">
+    <div class="card">
+      <div class="chead"><span>Agents</span><span class="grow"></span>
+        <span class="note">stale turns red past 120 s · counters are live from the inventory</span></div>
+      <div class="tw"><table class="t" id="a-table"></table></div>
+    </div>
+    <div class="card">
+      <div class="chead"><span>Open pull requests</span><span class="grow"></span>
+        <span class="note" id="a-ghnote"></span></div>
+      <div class="tw"><table class="t" id="a-prs"></table></div>
+    </div>
+  </div>
+</section>
+
+<!-- ── 3. Evidence ────────────────────────────────────────────────────── -->
+<section class="panel" id="pane-evidence" role="tabpanel" aria-labelledby="tab-evidence" hidden>
+  <div class="wrapx">
+    <div class="card">
+      <div class="denom" id="e-denom"></div>
+      <div class="filters">
+        <div class="subtabs">
+          <button class="subtab" id="sub-backlog"  aria-selected="true"  type="button">Backlog</button>
+          <button class="subtab" id="sub-rejected" aria-selected="false" type="button">Rejected pile</button>
+        </div>
+        <select id="f-status"><option value="">status: any</option></select>
+        <select id="f-track"><option value="">track: any</option></select>
+        <input id="f-q" type="search" placeholder="filter need id, title or probe id…" autocomplete="off">
+        <span class="dim" id="f-count"></span>
+      </div>
+      <div id="e-body"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ── 4. Acceptance matrix ───────────────────────────────────────────── -->
+<section class="panel" id="pane-acceptance" role="tabpanel" aria-labelledby="tab-acceptance" hidden>
+  <div class="wrapx">
+    <div class="shead">
+      <h2>Acceptance matrix</h2>
+      <span class="sub">Every acceptance probe ever filed &times; every round. A builder is done
+        when its row flips to <b>PASS</b>; a green cell that later turns red is a regression.
+        This is the screen that answers whether the loop is improving kuna.</span>
+    </div>
+    <div class="card">
+      <div class="denom" id="m-denom"></div>
+      <div class="tw" id="m-body"></div>
+      <div class="legend">
+        <span><s class="pass"></s>acceptance passes — the desired behaviour ships</span>
+        <span><s class="fail"></s>acceptance fails — still the current bad behaviour</span>
+        <span><s class="regress"></s>regression — this passed in an earlier round</span>
+        <span class="dim">blank = probe not filed / not run that round</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="wrapx foot">
+  <span id="f-foot"></span>
+</div>
+</main>
+
+<div class="scrim" id="scrim" hidden></div>
+<aside class="drawer" id="drawer" hidden>
+  <div class="dhead">
+    <b id="d-title">—</b>
+    <span class="path" id="d-path"></span>
+    <span class="grow"></span>
+    <button class="xbtn" id="d-close" type="button">Close</button>
+  </div>
+  <div class="dbody" id="d-body"></div>
+</aside>
+
+<script src="/assets/app.js"></script>
+</body>
+</html>

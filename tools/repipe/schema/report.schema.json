@@ -1,0 +1,234 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "report.schema.json",
+  "title": "RE-friction tester report",
+  "description": "The structured final response a codex tester returns, enforced with `codex exec --output-schema`. Its purpose is NOT to report a solve; it is to report where kuna failed the tester. Giving up because kuna was unusable is a first-class outcome.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "hexid",
+    "outcome",
+    "gave_up_reason",
+    "answer",
+    "minutes_lost",
+    "fallbacks",
+    "observations"
+  ],
+  "properties": {
+    "hexid": {
+      "type": "string"
+    },
+    "outcome": {
+      "enum": [
+        "solved",
+        "partial",
+        "gave_up",
+        "failed"
+      ],
+      "description": "gave_up is a SUCCESS for this pipeline when the reason is kuna-blocked",
+      "type": "string"
+    },
+    "gave_up_reason": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "kuna-blocked",
+        "too-hard",
+        "out-of-time",
+        null
+      ]
+    },
+    "answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "flag",
+            "serial",
+            "none"
+          ],
+          "type": "string"
+        },
+        "value": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "the username, for name+serial crackmes"
+        }
+      },
+      "required": [
+        "kind",
+        "value",
+        "name"
+      ]
+    },
+    "minutes_lost": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "self-estimated minutes spent fighting kuna rather than the binary. A quantitative channel for friction that has no clean probe."
+    },
+    "fallbacks": {
+      "type": "array",
+      "description": "Every time you left kuna for another tool. This is evidence, not failure.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "tool",
+          "wanted",
+          "why_kuna_could_not",
+          "command"
+        ],
+        "properties": {
+          "tool": {
+            "enum": [
+              "ida",
+              "objdump",
+              "readelf",
+              "strings",
+              "xxd",
+              "gdb",
+              "other"
+            ],
+            "type": "string"
+          },
+          "wanted": {
+            "type": "string"
+          },
+          "why_kuna_could_not": {
+            "type": "string"
+          },
+          "command": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "observations": {
+      "type": "array",
+      "description": "Every place kuna was missing, wrong, slow or costly. An observation with no runnable probe is dropped by the gate, so give a real argv you actually ran.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "title",
+          "what_i_wanted",
+          "what_kuna_did",
+          "probe",
+          "acceptance",
+          "hypothesis",
+          "workaround",
+          "reference_better",
+          "cost_minutes",
+          "severity",
+          "regression_of"
+        ],
+        "properties": {
+          "kind": {
+            "enum": [
+              "missing-capability",
+              "wrong-output",
+              "too-slow",
+              "crash",
+              "silent-failure",
+              "bad-ux",
+              "cost"
+            ],
+            "type": "string"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 120
+          },
+          "what_i_wanted": {
+            "type": "string"
+          },
+          "what_kuna_did": {
+            "type": "string"
+          },
+          "probe": {
+            "type": "string",
+            "description": "MUST PASS today \u2014 it asserts the bad behaviour you actually observed The probe as a JSON object, SERIALISED to a string (e.g. \"{\\\"schema\\\":\\\"re-probe/1\\\",\\\"kind\\\":\\\"cli\\\",...}\"). It is parsed and validated on arrival; a malformed one makes the observation unrunnable rather than failing your whole report."
+          },
+          "acceptance": {
+            "type": "string",
+            "description": "MUST FAIL today \u2014 it asserts the behaviour you wanted instead The probe as a JSON object, SERIALISED to a string (e.g. \"{\\\"schema\\\":\\\"re-probe/1\\\",\\\"kind\\\":\\\"cli\\\",...}\"). It is parsed and validated on arrival; a malformed one makes the observation unrunnable rather than failing your whole report."
+          },
+          "hypothesis": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "ADVISORY. Your guess at the cause. The builder is not bound by it and it is refuted before dispatch: in the decbench campaign 3 of 8 filed diagnoses were overturned while the symptom stood in all 8."
+          },
+          "workaround": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reference_better": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "tool": {
+                "type": "string"
+              },
+              "command": {
+                "type": "string"
+              },
+              "evidence": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "tool",
+              "command",
+              "evidence"
+            ]
+          },
+          "cost_minutes": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "severity": {
+            "enum": [
+              "blocker",
+              "major",
+              "minor"
+            ],
+            "type": "string"
+          },
+          "regression_of": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "the need_id of a previously-closed need this breaks. Highest priority class we accept."
+          }
+        }
+      }
+    }
+  }
+}

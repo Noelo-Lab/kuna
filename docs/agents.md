@@ -23,6 +23,7 @@ is not needed for day-to-day work.
 | `tests/golden/` | Differential golden vectors for the workspace suite (`make rust-test`). |
 | `specs/Ghidra/Processors/` | Vendored SLEIGH specs. `.sla` files are built artifacts (gitignored), produced by `slacomp`. |
 | `scripts/` + `tools/pipeline/` | Python helpers (`decompile.py` library shim, `paths.py`, `pipeline/`, `decbench/`) + driver for the improvement pipeline (`docs/improvement-pipeline.md`) and the decbench campaign (`docs/decbench-loop.md`). |
+| `scripts/repipe/` + `tools/repipe/` | The RE-friction loop (`docs/re-pipeline.md`): codex testers reverse-engineer crackmes with kuna and record where it fails them; claude builders close those gaps and self-merge. Durable backlog in `docs/re-needs/`; promoted regression probes in `tests/cli/`. |
 | `integrations/` | Front-ends embedding the engine: `ghidra/` (kuna as stock Ghidra's decompiler core), `web/` (the project site + in-browser decompiler at `kuna.noelo.org`). |
 
 ## Build & test
@@ -158,6 +159,7 @@ phases are **settable assertions/options** (`--option NAME VALUE`, discovered vi
 | `docs/options.md` | The generated option catalog (tiers, symptoms, flip guidance). |
 | `docs/cli.md` | The full `kuna` CLI reference. |
 | `docs/improvement-pipeline.md` | The autonomous improvement pipeline + standing requirements for feature PRs. |
+| `docs/re-pipeline.md` | The RE-friction loop: agents solve crackmes with kuna, record where it fails them, and close those gaps. The second, self-merging lane. |
 | `docs/decbench-loop.md` | The decbench benchmark / improvement campaign. |
 | `docs/modes.md` | `--mode auto\|reliable\|aggressive\|fast` option presets and size thresholds. |
 | `docs/missing-ghidra-analyses.md` | The `kuna-analysis` tier: the analyzer gap vs Ghidra, pass contract, commit gating. |
