@@ -135,7 +135,7 @@ The whole-binary surface (the benchmark + LLM path). Runs **in-process**
 `{binary,count,functions:[{name,address,address_hex,aliases,size,code,error,
 line_mappings:[{line_number,addresses}],variables:[{name,type,kind,arg_index,
 stack_offset,size,line_numbers,addresses}]}]}` (`kuna functions --json` emits
-`name`/`address`/`address_hex`/`aliases` per function). `line_mappings` maps 1-based
+`name`/`address`/`address_hex`/`aliases`/`size` per function). `line_mappings` maps 1-based
 lines in `code` to sorted, unique machine-instruction VMAs. Variable `line_numbers`
 come from the printer's `varref` tokens; variable `addresses` are the union of the
 mapped instruction addresses on those lines. Both are empty when no backed use is
@@ -145,6 +145,18 @@ plain-text renderer still produces `code`, so its bytes are unchanged.
 Reported variables are joined to native varrefs by ABI or stack storage and recovered
 high-variable identity. Multiple high-variable fragments are combined only when they
 name the same exact stack location and size; ambiguous name-only matches stay empty.
+
+Per-function `size` is the entry's byte extent, and both surfaces report the same
+number with the same meaning — it is an **inventory** fact, measured without
+decompiling, so `kuna functions --json` alone is enough to rank a binary's functions
+by weight (the "decompile the three biggest functions" first move costs one call, not
+a whole-binary run). It is an **upper bound**: the address-contiguous clip from the
+entry to the next entry, or to the end of the containing CODE section, whichever comes
+first — so inter-function alignment padding is counted in. Against ELF `st_size` over
+the 1428 symbolized-fixture functions with ground truth it is never short, exact for
+231, and overshoots by a median of 8 bytes (worst 52). An entry in no CODE section — an
+import pointer slot, an undefined external — reports `0`, as does a function whose
+extent could not be measured. A caller needing the exact body must still decompile.
 
 Per-function `code` matches `kuna decompile ... --option listing on` byte-for-byte on
 x86-64 (elsewhere, see the injected defaults below), `error` isolates a single failed

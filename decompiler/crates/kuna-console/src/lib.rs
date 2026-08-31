@@ -22,6 +22,7 @@ pub mod ifacedecomp;
 pub mod engine;
 pub mod decompile_step;
 pub mod project;
+pub mod funcextent;
 pub mod codedata;
 pub mod kuna_console;
 pub mod grammar;

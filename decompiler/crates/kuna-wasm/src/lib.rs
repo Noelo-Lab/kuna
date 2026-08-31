@@ -408,7 +408,8 @@ fn resolve_targets(
                 let name = prog
                     .function_named_at(*vma)
                     .unwrap_or_else(|| prog.arch().name_function(&addr));
-                Ok(vec![FunctionEntry { name, addr, aliases: Vec::new() }])
+                let size = prog.function_extent_at(*vma);
+                Ok(vec![FunctionEntry { name, addr, aliases: Vec::new(), size }])
             }
         },
         Cmd::List | Cmd::Project(_) => unreachable!("List/Project handled by caller"),
@@ -424,7 +425,10 @@ fn parse_addr(s: &str) -> Option<u64> {
 // --- JSON (self-contained; the `decompile-all --json` fields + `kind`) ------
 
 /// The `list` document:
-/// `{binary, count, functions:[{name, address, address_hex, aliases, kind}]}`.
+/// `{binary, count, functions:[{name, address, address_hex, aliases, size, kind}]}`.
+/// `size` is the entry's byte extent (`kuna_console::funcextent` — an upper
+/// bound), so the browser inventory can rank its rows by weight without
+/// decompiling every function.
 /// `kinds` is parallel to `entries` (the classifier's verdict per entry).
 fn list_json(binary: &str, entries: &[FunctionEntry], kinds: &[&'static str]) -> String {
     let mut s = String::from("{\n");
@@ -439,6 +443,7 @@ fn list_json(binary: &str, entries: &[FunctionEntry], kinds: &[&'static str]) ->
         s.push_str(&format!("\"address\": {}, ", addr));
         s.push_str(&format!("\"address_hex\": {}, ", json_str(&format!("0x{addr:x}"))));
         s.push_str(&format!("\"aliases\": {}, ", json_str_array(&e.aliases)));
+        s.push_str(&format!("\"size\": {}, ", e.size));
         s.push_str(&format!("\"kind\": {}", json_str(kinds[i])));
         s.push('}');
     }

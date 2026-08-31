@@ -221,7 +221,7 @@ export async function loadKuna({ wasmUrl, specRoot, smallBundleUrl }) {
   return {
     /** Format label for the status line (ELF / PE / Mach-O / binary). */
     formatName,
-    /** Enumerate functions: `{binary, count, functions:[{name, address, address_hex}]}`. */
+    /** Enumerate functions: `{binary, count, functions:[{name, address, address_hex, size}]}`. */
     async list(binaryBytes, { mode = 'auto', language = 'auto' } = {}) {
       return parseOrThrow(
         await invoke(binaryBytes, wasmCommandArgs('list', undefined, mode, language)),

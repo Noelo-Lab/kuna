@@ -48,6 +48,14 @@ pub fn default_fn_budget_seconds(mode: &str, whole_binary: bool) -> u64 {
 pub struct FuncResult {
     pub name: String,
     pub address: u64,
+    /// The entry's byte extent, carried through from
+    /// [`FunctionEntry::size`](crate::engine::FunctionEntry::size) so this
+    /// surface and the `functions` inventory report ONE number with one meaning.
+    ///
+    /// An inventory fact, not a decompile result: it is reported even when the
+    /// function errored, and it does NOT come from the recovered
+    /// `Funcdata::get_size()`, which is the caller's requested flow bound and so
+    /// is `0` on every whole-binary run (the bound is always "unbounded").
     pub size: i64,
     pub code: Option<String>,
     pub error: Option<String>,
@@ -82,7 +90,7 @@ pub fn decompile_targets(
     want_provenance: bool,
 ) -> Vec<FuncResult> {
     let mut out = Vec::with_capacity(targets.len());
-    for FunctionEntry { name, addr: entry, aliases } in targets {
+    for FunctionEntry { name, addr: entry, aliases, size } in targets {
         let address = entry.get_offset();
         // (kuna) An entry with no mapped bytes is an EXTERNAL, not a decompile
         // failure: a relocatable object's undefined symbols (and a PE import
@@ -101,7 +109,7 @@ pub fn decompile_targets(
                 )),
                 name,
                 address,
-                size: 0,
+                size: size as i64,
                 error: None,
                 proto: None,
                 variables: Vec::new(),
@@ -156,7 +164,6 @@ pub fn decompile_targets(
         .result
         {
             Ok(fd) => {
-                let size = fd.get_size() as i64;
                 // Render + extract under `catch_unwind`: the decompile drive only
                 // guards the pipeline (decompile_drive.rs), so a fail-fast invariant
                 // in the printer / type declarator on an exotic recovered function
@@ -190,7 +197,7 @@ pub fn decompile_targets(
                     Ok((code, variables, proto, line_mappings)) => out.push(FuncResult {
                         name,
                         address,
-                        size,
+                        size: size as i64,
                         code: Some(code),
                         error: None,
                         proto,
@@ -201,7 +208,7 @@ pub fn decompile_targets(
                     Err(_) => out.push(FuncResult {
                         name,
                         address,
-                        size: 0,
+                        size: size as i64,
                         code: None,
                         error: Some("panic while rendering C / extracting variables".into()),
                         proto: None,
@@ -214,7 +221,7 @@ pub fn decompile_targets(
             Err(e) => out.push(FuncResult {
                 name,
                 address,
-                size: 0,
+                size: size as i64,
                 code: None,
                 error: Some(e.explain().to_string()),
                 proto: None,

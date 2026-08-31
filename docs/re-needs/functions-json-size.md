@@ -2,23 +2,23 @@
 need_id: functions-json-size
 title: kuna functions --json omits size, so the cheap inventory call cannot rank functions
 track: tooling
-status: open
+status: closed
 severity: minor
 probe_id: p-d8f69800917d
 acceptance_id: a-ddc5496835ba
-hypothesis_status: inconclusive
+hypothesis_status: overturned
 credibility: 1.0
 instances: 4
 challenges: [6609e458cddae72ae250bf40, 67bd52114e1a16f76a1ad5bc, 61ffb07c33c5d46c8bcbfc1d]
 rounds: [0]
 first_seen_round: 0
-attempts: 0
+attempts: 1
 covered_by_option: null
 touches: [decompiler/crates/kuna-cli/src, tests/cli, docs/cli.md]
 scope: small
 regression_of: null
-pr: null
-closed_in_round: null
+pr: PENDING
+closed_in_round: 1
 closing_pr: null
 reject_reason: null
 ---
@@ -242,3 +242,29 @@ acceptance is vendorable; the dataset rows are the breadth evidence.
 - r0 `covered_by_option: null` -- `kuna catalog` options gate emitted C only;
   none of the 127 settables can add a field to `functions --json`.
 - REGRESSED: acceptance a-ddc5496835ba fails again at deadbeef
+- r1 builder: acceptance a-ddc5496835ba flips to PASS. `functions[0].size` = 27.
+- r1 **hypothesis OVERTURNED.** The filed diagnosis -- "`size` was simply not
+  copied across ... a struct in kuna-cli with four fields where the decompile-all
+  one has five" -- is wrong, and the symptom's premise with it. `decompile-all
+  --json` does emit `size`, but its VALUE is `0` on every record of every binary
+  (34/34 on this fixture; 0 nonzero across every fixture in the tree), because
+  `FuncResult.size` read `Funcdata::get_size()`, the caller's *requested* flow
+  bound, which `decompile_targets` always passes as `0` ("UNBOUNDED"). Copying
+  the field would have satisfied the acceptance's `exists` clause with a column
+  of zeroes and closed nothing. The symptom stands; the diagnosis did not.
+- r1 the real gap was therefore broader than filed: kuna had no function-extent
+  value on ANY surface. Closed by reconstructing it at inventory time as the
+  address-contiguous clip `[entry, min(next_entry, end_of_CODE_section))`
+  (`kuna-console/src/funcextent.rs`) -- the model `analyzers/fid/extent.rs` and
+  `noreturn_disc` already use -- and reporting the one number on `functions`,
+  `decompile-all`, `decompile-project` and the wasm inventory alike.
+- r1 the Refutation section's cheap check, answered: `decompile-all`'s `size` is
+  NOT computed at inventory time, and it is not a by-product of decompiling
+  either -- it is a constructor argument that no CLI surface ever sets. The cost
+  question it anticipated was real but resolved the other way: the clip needs no
+  decode at all, and measures at -0.58%..+0.21% (interleaved, 9 reps) on the
+  inventory path.
+- r1 an upper bound, deliberately: 0 undershoots / 1428 functions with ELF
+  `st_size` ground truth, median overshoot +8B (alignment padding). `st_size`
+  itself was rejected as the source -- this fixture is stripped, so it would
+  have produced an all-zero column on the very binary the acceptance targets.

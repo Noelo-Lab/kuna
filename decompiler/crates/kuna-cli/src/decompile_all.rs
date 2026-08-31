@@ -149,6 +149,7 @@ pub fn run_functions(argv: &[String]) -> i32 {
                                 ("address".into(), Json::Number(a.to_string())),
                                 ("address_hex".into(), Json::Str(format!("0x{a:x}"))),
                                 ("aliases".into(), aliases_json(&e.aliases)),
+                                ("size".into(), Json::Number(e.size.to_string())),
                             ])
                         })
                         .collect(),
@@ -387,7 +388,8 @@ pub(crate) fn resolve_targets(
                 let name = prog
                     .function_named_at(vma)
                     .unwrap_or_else(|| prog.arch().name_function(&addr));
-                targets.push(FunctionEntry { name, addr, aliases: Vec::new() });
+                let size = prog.function_extent_at(vma);
+                targets.push(FunctionEntry { name, addr, aliases: Vec::new(), size });
             }
         }
     }

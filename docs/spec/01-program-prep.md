@@ -455,6 +455,32 @@ remains unrestricted; name selection keeps its normal first-match behavior when
 a stub and slot share a name. Loaders without section metadata keep the complete
 inventory.
 
+Each canonical entry also carries a byte **extent**, so the inventory answers
+"how big" as well as "what is here" and a caller can order a binary's functions
+by weight without decompiling any of them. kuna's model of a function is its
+entry — the Listing is keyed by entry VMA and nothing in it records a body — so
+the extent is reconstructed as the address-contiguous clip from the entry to
+whichever comes first: the next canonical entry, or the end of the CODE section
+containing the entry (`decompiler/crates/kuna-console/src/funcextent.rs`). This
+is the same reconstruction the FID extent generator
+(`decompiler/crates/kuna-analysis/src/analyzers/fid/extent.rs`) and the
+discovered-no-return pass already apply where they need a body from an
+entry-keyed model, and it reuses the entry list and the loader section table
+rather than decoding anything, so the metadata-only `functions` surface stays
+metadata-only.
+
+The number is an upper bound, not the exact body: the clip runs to the neighbour,
+so inter-function alignment padding is counted in, and against ELF `st_size` over
+the symbolized fixture corpus it is never short. An entry in no CODE section — a
+pointer slot, an undefined external — has no body to measure and reports zero,
+the same value a synthesized entry carries when there is no program to measure
+against. The loss is that the clip is address-contiguous rather than
+flow-reachable: an outlined cold half living past the next entry is attributed to
+its neighbour. Every whole-binary surface reports this one number under the one
+name, including the decompiling ones; their alternative, the recovered
+`Funcdata::get_size()`, is the *requested* flow bound rather than a measurement,
+and a whole-binary run always requests an unbounded extent.
+
 Naming a pointer slot is not by itself enough to bind a call *through* it. An ELF
 PLT stub and a Mach-O `__stubs` entry are code, so the call is direct and the name
 resolves at flow time; a PE Import Address Table slot is data, so `call dword ptr

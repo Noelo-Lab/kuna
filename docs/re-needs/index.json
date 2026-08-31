@@ -4,7 +4,8 @@
   "count": 5,
   "rejected_count": 0,
   "by_status": {
-    "open": 5
+    "closed": 1,
+    "open": 4
   },
   "by_track": {
     "tooling": 5
@@ -90,42 +91,6 @@
       "path": "docs/re-needs/decompile-no-json.md"
     },
     {
-      "need_id": "functions-json-size",
-      "title": "kuna functions --json omits size, so the cheap inventory call cannot rank functions",
-      "track": "tooling",
-      "status": "open",
-      "severity": "minor",
-      "probe_id": "p-d8f69800917d",
-      "acceptance_id": "a-ddc5496835ba",
-      "hypothesis_status": "inconclusive",
-      "credibility": 1.0,
-      "instances": 4,
-      "challenges": [
-        "6609e458cddae72ae250bf40",
-        "67bd52114e1a16f76a1ad5bc",
-        "61ffb07c33c5d46c8bcbfc1d"
-      ],
-      "rounds": [
-        0
-      ],
-      "first_seen_round": 0,
-      "attempts": 0,
-      "covered_by_option": null,
-      "touches": [
-        "decompiler/crates/kuna-cli/src",
-        "tests/cli",
-        "docs/cli.md"
-      ],
-      "scope": "small",
-      "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
-      "reject_reason": null,
-      "score": 48.283137,
-      "path": "docs/re-needs/functions-json-size.md"
-    },
-    {
       "need_id": "zero-functions-exit-0",
       "title": "kuna reports total function-discovery failure as success: count 0, exit 0, silent stderr",
       "track": "tooling",
@@ -159,6 +124,42 @@
       "reject_reason": null,
       "score": 43.944492,
       "path": "docs/re-needs/zero-functions-exit-0.md"
+    },
+    {
+      "need_id": "functions-json-size",
+      "title": "kuna functions --json omits size, so the cheap inventory call cannot rank functions",
+      "track": "tooling",
+      "status": "closed",
+      "severity": "minor",
+      "probe_id": "p-d8f69800917d",
+      "acceptance_id": "a-ddc5496835ba",
+      "hypothesis_status": "overturned",
+      "credibility": 1.0,
+      "instances": 4,
+      "challenges": [
+        "6609e458cddae72ae250bf40",
+        "67bd52114e1a16f76a1ad5bc",
+        "61ffb07c33c5d46c8bcbfc1d"
+      ],
+      "rounds": [
+        0
+      ],
+      "first_seen_round": 0,
+      "attempts": 1,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-cli/src",
+        "tests/cli",
+        "docs/cli.md"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": "PENDING",
+      "closed_in_round": 1,
+      "closing_pr": null,
+      "reject_reason": null,
+      "score": 32.188758,
+      "path": "docs/re-needs/functions-json-size.md"
     },
     {
       "need_id": "unpack-upx-packed-executable",
