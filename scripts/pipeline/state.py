@@ -13,6 +13,7 @@ CLI (called by the driver shell and by workers to heartbeat):
     python -m scripts.pipeline.state done      --worker ID --opportunity O --pr URL
     python -m scripts.pipeline.state remove    --worker ID
     python -m scripts.pipeline.state list [--json] [--proposals]
+    python -m scripts.pipeline.state reap [--stale-seconds 1800]   # free a dead worker's claim
 
 Large-feature proposal flow (requirement #5: confirm big features before implementing):
     python -m scripts.pipeline.state proposal       --worker ID --opportunity O --pr URL --branch B
@@ -96,13 +97,22 @@ def _save(data):
 # --- worker inventory -------------------------------------------------------
 
 def register(worker, slug, branch, opportunity, pid=None):
+    """Record a worker. ``pid`` MUST be the long-lived driver's pid, not this process's.
+
+    Recording ``os.getpid()`` here is a trap: this runs as an ephemeral
+    ``python -m scripts.pipeline.state register`` invocation that exits immediately, so the
+    stored pid is dead a moment later and :func:`reap` would then fail every LIVE worker and
+    release its claim. ``worker.sh`` passes ``--pid $$``; with no usable pid the worker is
+    marked ``pid_source: none`` and reap() falls back to a long staleness timeout instead of
+    a liveness check.
+    """
     now = time.time()
     with _locked():
         data = _load()
         data["workers"][worker] = {
             "worker": worker, "slug": slug, "branch": branch,
             "opportunity": opportunity, "phase": "setup", "status": "running",
-            "pr_url": None, "pid": pid or os.getpid(),
+            "pr_url": None, "pid": pid, "pid_source": "caller" if pid else "none",
             "started_at": now, "updated_at": now,
         }
         _save(data)
@@ -234,6 +244,64 @@ def claim_approved(worker, opportunity):
         return appr.get("branch")
 
 
+# --- reap (a dead worker must not hold its claim forever) -------------------
+#
+# Nothing ever cleared `claims` when a worker died, so a killed or timed-out worker blocked
+# its opportunity permanently: `select` skips anything in `claims`, so the backlog quietly
+# shrank by one every time a worker was lost.
+
+# How stale a worker with no trustworthy pid must be before reap() will fail it. Longer than
+# any single feature run, because with no liveness signal staleness is all we have and a
+# heartbeat gap is not proof of death.
+UNTRUSTED_STALE_SECONDS = int(os.environ.get("KUNA_PIPELINE_UNTRUSTED_STALE", "14400"))
+
+
+def _pid_alive(pid):
+    if not pid:
+        return False
+    try:
+        os.kill(int(pid), 0)
+    except (ProcessLookupError, ValueError):
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def reap(stale_seconds=1800):
+    """Fail every running worker whose pid is provably gone, and release what it held.
+
+    Liveness is only consulted when the caller vouched for the pid (``pid_source ==
+    "caller"``). A worker whose pid came from an ephemeral CLI process -- or from an
+    inventory written before that field existed -- is judged by staleness alone, because
+    reaping on a bogus "pid is gone" would fail LIVE workers and hand their claims away.
+    """
+    now = time.time()
+    reaped = {"workers": []}
+    with _locked():
+        data = _load()
+        for wid, w in list(data["workers"].items()):
+            if w.get("status") != "running":
+                continue
+            if now - w.get("updated_at", now) <= stale_seconds:
+                continue
+            if w.get("pid_source") == "caller" and w.get("pid"):
+                if _pid_alive(w.get("pid")):
+                    continue
+            elif now - w.get("updated_at", now) <= max(stale_seconds, UNTRUSTED_STALE_SECONDS):
+                continue
+            w["status"] = "failed"
+            w["note"] = "reaped (pid %s gone, stale %ds)" % (
+                w.get("pid"), int(now - w.get("updated_at", now)))
+            w["updated_at"] = now
+            for oid, held in list(data["claims"].items()):
+                if held.get("worker") == wid:
+                    data["claims"].pop(oid, None)
+            reaped["workers"].append(wid)
+        _save(data)
+    return reaped
+
+
 def snapshot():
     with _locked():
         return _load()
@@ -264,6 +332,8 @@ def main(argv=None):
     sp.add_argument("--slug", required=True)
     sp.add_argument("--branch", required=True)
     sp.add_argument("--opportunity", required=True)
+    sp.add_argument("--pid", type=int, default=None,
+                    help="the DRIVER's pid ($$), not this process's -- see register()")
 
     sp = sub.add_parser("update")
     sp.add_argument("--worker", required=True)
@@ -299,6 +369,10 @@ def main(argv=None):
     sp.add_argument("--worker", required=True)
     sp.add_argument("--opportunity", required=True)
 
+    sp = sub.add_parser("reap")
+    sp.add_argument("--stale-seconds", type=int, default=1800)
+    sp.add_argument("--json", action="store_true")
+
     sp = sub.add_parser("list")
     sp.add_argument("--json", action="store_true")
     sp.add_argument("--proposals", action="store_true",
@@ -307,7 +381,7 @@ def main(argv=None):
     args = p.parse_args(argv)
 
     if args.cmd == "register":
-        register(args.worker, args.slug, args.branch, args.opportunity)
+        register(args.worker, args.slug, args.branch, args.opportunity, pid=args.pid)
     elif args.cmd == "update":
         update(args.worker, phase=args.phase, status=args.status,
                pr_url=args.pr, note=args.note)
@@ -331,6 +405,13 @@ def main(argv=None):
             return 1
         print(branch)
         return 0
+    elif args.cmd == "reap":
+        out = reap(args.stale_seconds)
+        if args.json:
+            print(json.dumps(out))
+        else:
+            for wid in out["workers"]:
+                print("reaped worker %s" % wid)
     elif args.cmd == "list":
         data = snapshot()
         if args.json:

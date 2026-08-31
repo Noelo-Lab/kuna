@@ -72,15 +72,46 @@ else
   }
 fi
 
+# --pid $$ is THIS driver's pid, which lives as long as the worker does. Without it the
+# inventory records the ephemeral `state register` process and reap() cannot tell a live
+# worker from a dead one.
 "$KUNA_PY" -m scripts.pipeline.state register --worker "$WORKER_ID" --slug "$SLUG" \
-  --branch "$BRANCH" --opportunity "$OPP_ID" >>"$LOG" 2>&1
+  --branch "$BRANCH" --opportunity "$OPP_ID" --pid $$ >>"$LOG" 2>&1
 
 # --- 2. env: kuna tooling targets THIS worktree; specs reuse the main .sla --
 export KUNA_ROOT="$WT"
 export KUNA_DECOMP_DBG="$WT/decompiler/target/release/decomp_dbg"
 export KUNA_DECOMP_TEST="$WT/decompiler/target/release/decomp_test_dbg"
 export KUNA_SPECS="$REPO/specs"          # reuse the main tree's already-compiled .sla
+export SLEIGHHOME="$REPO/specs"
 export KUNA_PIPELINE_ANGR_PYTHON="${KUNA_PIPELINE_ANGR_PYTHON:-$HOME/.virtualenvs/decbench/bin/python}"
+
+# docs/agents.md's worktree hygiene, enforced here rather than left to the prompt -- the
+# prompt did not carry it, and both failures below have actually happened on this machine.
+#
+# 1. The default debug profile costs 20-30 GB per worktree and has filled the disk mid-run,
+#    so debug info is off and target/debug is removed on EVERY exit path (success, timeout,
+#    crash) via the trap -- not only on the happy path.
+export CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0
+cleanup_target() { rm -rf "$WT/decompiler/target/debug" 2>/dev/null; }
+trap cleanup_target EXIT
+# 2. KUNA_SPECS/SLEIGHHOME do NOT reach the cargo workspace suite: ~22 targets resolve
+#    <repo>/specs relative to their own crate and fail with "Could not find .sla file". The
+#    .sla are gitignored artifacts inside the TRACKED specs/Ghidra tree, so they are linked
+#    file by file -- symlinking the directory just nests a dead link inside it, and
+#    `make specs` must never run in a worktree.
+link_specs() {
+  local n=0 rel
+  while IFS= read -r sla; do
+    rel="${sla#$REPO/specs/}"
+    mkdir -p "$WT/specs/$(dirname "$rel")"
+    ln -sf "$sla" "$WT/specs/$rel" && n=$((n+1))
+  done < <(find "$REPO/specs" -name '*.sla' -type f 2>/dev/null)
+  echo "$n"
+}
+SLA_N="$(link_specs)"
+log "linked $SLA_N compiled .sla into the worktree"
+[ "$SLA_N" = "0" ] && log "WARNING: no .sla in $REPO/specs -- run \`make specs\` in the MAIN tree first"
 
 # --- 3. initial build so the worker's analyze phase has working binaries ----
 log "building binaries in worktree (initial)"
