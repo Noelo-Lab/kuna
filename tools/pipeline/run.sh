@@ -23,7 +23,10 @@ export KUNA_REPO="$REPO" KUNA_PY="$KUNA_PY"
 export PYTHONPATH="$REPO${PYTHONPATH:+:$PYTHONPATH}"
 STATE_DIR="$REPO/.kuna-pipeline"
 STOP_FILE="$STATE_DIR/STOP"
-mkdir -p "$STATE_DIR"
+# logs/ must exist BEFORE spawn_worker, whose `>>"$STATE_DIR/logs/..."` redirect is set up by
+# THIS shell -- worker.sh's own mkdir runs in the child, too late. Without this the very first
+# spawn into a fresh state dir fails.
+mkdir -p "$STATE_DIR/logs" "$STATE_DIR/worktrees"
 rm -f "$STOP_FILE"
 
 START=$(date +%s)
@@ -89,6 +92,9 @@ while :; do
   [ "$DEADLINE" != "0" ] && [ "$(date +%s)" -ge "$DEADLINE" ] && { log "time budget reached"; break; }
 
   gc_merged_worktrees
+  # Free the claims of workers that died without saying so; otherwise their opportunities are
+  # blocked forever and the backlog silently shrinks.
+  "$KUNA_PY" -m scripts.pipeline.state reap >/dev/null 2>&1
   n="$(active_count)"
   if [ "$n" -lt "$WORKERS" ]; then
     if spawn_worker; then

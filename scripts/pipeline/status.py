@@ -8,16 +8,58 @@ Aggregates three sources into one live view:
     python -m scripts.pipeline.status            # one-shot table + "N workers active"
     python -m scripts.pipeline.status --watch    # refresh every 2s
     python -m scripts.pipeline.status --json      # machine-readable
+
+The two subprocess sources (`git worktree list`, `gh api`) sit behind a TTL cache. Without it
+`--watch` spawned a GitHub request per redraw at its 2 s interval -- a cold `collect()` was
+measured at 10.65 s on this repo, so the watch loop could not even keep its own cadence.
 """
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import time
 
 from . import config, state
+
+
+# --- TTL cache in front of the subprocess sources ---------------------------
+#
+# collect() shells out to `git worktree list` AND `gh api`. At --watch's 2 s interval that is
+# a request per redraw; a failed fetch is cached as None with a stale marker rather than
+# retried in a hot loop.
+
+WORKTREE_TTL = float(os.environ.get("KUNA_PIPELINE_WORKTREE_TTL", "20"))
+PR_TTL = float(os.environ.get("KUNA_PIPELINE_PR_TTL", "60"))
+
+_CACHE = {}
+
+
+def _cached(key, ttl, fetch):
+    now = time.time()
+    ent = _CACHE.get(key)
+    if ent is not None and now - ent["ts"] < ttl:
+        return ent["value"]
+    try:
+        value = fetch()
+    except Exception:
+        value = None
+    # A failed fetch keeps the last good value visible, but marks it stale.
+    if value is None and ent is not None and ent.get("value") is not None:
+        ent["stale_since"] = ent.get("stale_since") or now
+        ent["ts"] = now
+        return ent["value"]
+    _CACHE[key] = {"value": value, "ts": now, "stale_since": None}
+    return value
+
+
+def cache_ages():
+    """{key: seconds since the last successful fetch} -- for a caller's stale markers."""
+    now = time.time()
+    return {k: {"age_s": round(now - v["ts"], 1), "stale_since": v.get("stale_since")}
+            for k, v in _CACHE.items()}
 
 
 def _git_worktrees():
@@ -76,8 +118,9 @@ def collect():
         "done": data["done"],
         "proposals": data.get("proposals", {}),
         "approved": data.get("approved", {}),
-        "worktrees": _git_worktrees(),
-        "prs": _open_prs(),
+        "worktrees": _cached("worktrees", WORKTREE_TTL, _git_worktrees) or [],
+        "prs": _cached("prs", PR_TTL, _open_prs),
+        "cache": cache_ages(),
         "ts": now,
     }
 
