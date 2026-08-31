@@ -1115,3 +1115,130 @@ fn dwarf_source_line_comments_stay_opt_in_under_every_mode() {
         "`--option dwarf_lines on` must still annotate source lines:\n{opted_in}"
     );
 }
+
+/// Every `"size": N` in a `--json` document, in document order.
+fn json_sizes(stdout: &str) -> Vec<u64> {
+    stdout
+        .match_indices("\"size\":")
+        .filter_map(|(i, key)| {
+            stdout[i + key.len()..]
+                .trim_start()
+                .split(|c: char| !c.is_ascii_digit())
+                .next()?
+                .parse()
+                .ok()
+        })
+        .collect()
+}
+
+/// (kuna, `functions-json-size`) The cheap inventory call must carry an extent,
+/// so a caller can rank a binary's functions by weight without decompiling it.
+///
+/// The regression this pins is the *absence*: `functions --json` records used to
+/// be `name`/`address`/`address_hex`/`aliases` only, so "decompile the three
+/// biggest functions" cost a whole `decompile-all`. Vendored acceptance probe:
+/// `tests/cli/functions-json-size.json`.
+///
+/// `aif_gap_x86_64` is the fixture the need was filed against — stripped, so its
+/// extents come from the clip alone and not from any ELF `st_size`.
+#[test]
+fn functions_json_carries_a_ranking_extent() {
+    let bin = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/aif_gap_x86_64")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let (stdout, stderr, ok) =
+        run_kuna(&["functions", &bin, "--json", "--sleighpath", &specs()]);
+    if !ok {
+        if is_specs_skip(&stderr) {
+            eprintln!("functions_json_carries_a_ranking_extent: skipping (no `.sla`): {stderr}");
+            return;
+        }
+        panic!("kuna functions failed: {stderr}");
+    }
+    let sizes = json_sizes(&stdout);
+    let count = json_count(&stdout).expect("the inventory must report a count");
+    assert_eq!(
+        sizes.len(),
+        count,
+        "every one of the {count} inventory records must carry `size`:\n{stdout}"
+    );
+    // The point of the field: it must DISCRIMINATE. An all-zero (or all-equal)
+    // column would satisfy "the key exists" while leaving the caller exactly as
+    // unable to rank as before — which is how this shipped broken on
+    // `decompile-all`, where `size` came from the requested flow bound and so was
+    // 0 on every record.
+    assert!(
+        sizes.iter().any(|&s| s > 0),
+        "the inventory extents are all zero, so nothing can be ranked:\n{stdout}"
+    );
+    assert!(
+        sizes.iter().collect::<std::collections::BTreeSet<_>>().len() > 1,
+        "the inventory extents are all equal, so nothing can be ranked:\n{stdout}"
+    );
+    // The `.plt.got` thunk at 0x1030 is 8 bytes and the big `.text` tail at
+    // 0x13c9 is 682: a thunk must not read as heavy as a real function.
+    assert!(
+        stdout.contains("\"address_hex\": \"0x1030\"") && sizes.contains(&8),
+        "the 8-byte `.plt.got` thunk must report its real extent:\n{stdout}"
+    );
+    assert!(
+        sizes.iter().any(|&s| s > 512),
+        "the large `.text` function must outrank the thunks:\n{stdout}"
+    );
+}
+
+/// (kuna, `functions-json-size`) `functions` and `decompile-all` must report the
+/// SAME extent for the same entry — one field name, one meaning.
+///
+/// `decompile-all`'s `size` used to come from `Funcdata::get_size()`, which is
+/// the *requested* flow bound (always "unbounded", i.e. 0, on a whole-binary
+/// run), so the field was structurally dead on every record. Copying that into
+/// the inventory would have satisfied the letter of the need and none of it.
+#[test]
+fn functions_and_decompile_all_agree_on_size() {
+    let bin = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/aif_gap_x86_64")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let sp = specs();
+    let (inventory, stderr, ok) =
+        run_kuna(&["functions", &bin, "--json", "--sleighpath", &sp]);
+    if !ok {
+        if is_specs_skip(&stderr) {
+            eprintln!("functions_and_decompile_all_agree_on_size: skipping: {stderr}");
+            return;
+        }
+        panic!("kuna functions failed: {stderr}");
+    }
+    let (decompiled, stderr, ok) =
+        run_kuna(&["decompile-all", &bin, "--json", "--sleighpath", &sp]);
+    if !ok {
+        if is_specs_skip(&stderr) {
+            eprintln!("functions_and_decompile_all_agree_on_size: skipping: {stderr}");
+            return;
+        }
+        panic!("kuna decompile-all failed: {stderr}");
+    }
+    // Both documents are address-ordered over the same entry set, so the size
+    // columns line up positionally.
+    let want = json_sizes(&inventory);
+    // `decompile-all` also emits a `size` per recovered VARIABLE; keep only the
+    // per-function ones by pairing each with the entry address that precedes it.
+    let got: Vec<u64> = json_addresses(&decompiled)
+        .iter()
+        .map(|addr| {
+            let rec = decompiled
+                .split(&format!("\"address\": {addr},"))
+                .nth(1)
+                .expect("each entry address must open a record");
+            json_sizes(rec).first().copied().expect("each record must carry `size`")
+        })
+        .collect();
+    assert_eq!(
+        want, got,
+        "the inventory and the whole-binary run disagree on function extents"
+    );
+}

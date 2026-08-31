@@ -82,6 +82,13 @@ pub struct FunctionEntry {
     pub addr: Address,
     /// Every other name this same entry carries, in the same preference order.
     pub aliases: Vec<String>,
+    /// (kuna) The entry's byte extent — an UPPER bound, the address-contiguous
+    /// clip to the next entry or the end of the containing CODE section.  `0`
+    /// when the entry lies in no CODE section (an import slot, an undefined
+    /// external) or when the caller synthesized the record without a program to
+    /// measure against.  See [`crate::funcextent`] for what the number means and
+    /// what it loses.
+    pub size: u64,
 }
 
 /// (kuna) A one-shot [`PcodeEmit`](kuna_sleigh::translate::PcodeEmit) sink:
@@ -300,7 +307,7 @@ impl ConsoleProgram {
             }
         }
 
-        groups
+        let mut entries: Vec<FunctionEntry> = groups
             .into_iter()
             .map(|(_, (addr, mut names))| {
                 // Most informative first — see `entry_name_rank`.
@@ -308,9 +315,38 @@ impl ConsoleProgram {
                     entry_name_rank(a).cmp(&entry_name_rank(b)).then_with(|| a.cmp(b))
                 });
                 let name = names.remove(0);
-                FunctionEntry { name, addr, aliases: names }
+                FunctionEntry { name, addr, aliases: names, size: 0 }
             })
-            .collect()
+            .collect();
+        // (kuna, `functions-json-size`) Measure each entry's extent in one pass.
+        // The `BTreeMap` above already put the list in ascending address order,
+        // which is what the clip needs; the section table is the loader's, so
+        // this adds no decode to the cheap inventory call.
+        crate::funcextent::assign_extents(
+            &mut entries,
+            &crate::funcextent::code_spans(&self.sections()),
+        );
+        entries
+    }
+
+    /// (kuna, `functions-json-size`) The byte extent of an arbitrary address,
+    /// for the single-target paths that synthesize a [`FunctionEntry`] the
+    /// enumeration does not know (`--addr` on an undiscovered function).
+    ///
+    /// Same clip, same upper-bound meaning as the bulk pass — see
+    /// [`crate::funcextent`].
+    pub fn function_extent_at(&self, vma: u64) -> u64 {
+        let entry = self.thumb_normalized(vma);
+        let entries: Vec<u64> = self
+            .function_entries_canonical()
+            .iter()
+            .map(|e| e.addr.get_offset())
+            .collect();
+        crate::funcextent::extent_at(
+            entry,
+            &entries,
+            &crate::funcextent::code_spans(&self.sections()),
+        )
     }
 
     /// The canonical entries eligible for automatic whole-binary decompilation.

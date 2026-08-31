@@ -1,0 +1,98 @@
+{
+  "slug": "functions-json-size",
+  "need_id": "functions-json-size",
+  "track": "tooling",
+  "opportunity": "re-need:functions-json-size",
+  "probe_id": "p-d8f69800917d",
+  "acceptance_id": "a-ddc5496835ba",
+  "instances": 4,
+  "scope": "small",
+  "proposal": false,
+  "option": null,
+  "flag": null,
+  "element_id": null,
+  "phase": null,
+  "tier": "driver",
+  "change_kind": "capability-add",
+  "default_on": true,
+  "owning_file": "decompiler/crates/kuna-console/src/funcextent.rs",
+  "owning_function": "clip / assign_extents / extent_at",
+  "spec_chapter": "docs/spec/01-program-prep.md",
+  "upstream_anchor": null,
+  "parity": "OK",
+  "root_cause_class": "absent-capability",
+
+  "hypothesis_status": "OVERTURNED",
+  "filed_hypothesis": "The `functions` command builds its JSON records by hand rather than reusing the `decompile-all` record type, and `size` was simply not copied across. Expect a struct in kuna-cli with four fields where the decompile-all one has five.",
+  "decisions": [
+    "THE FILED HYPOTHESIS IS WRONG, and the way it is wrong changes the whole shape of the fix. The need says `decompile-all --json` 'emits size on every record, from the same FuncResult. Only the cheap call drops it.' The field is emitted, but its VALUE is structurally 0 on every record of every binary. Measured: 34/34 functions size=0 on the probe fixture, and 0 nonzero across every fixture in kuna-analysis/tests/fixtures. So this was never a one-field copy -- copying the field across would have satisfied the acceptance probe's `exists` clause with a column of zeroes and closed nothing.",
+    "ROOT CAUSE of the dead field: `project.rs` set `FuncResult.size` from `fd.get_size()`, i.e. `Funcdata::size`, which is written once in the Funcdata constructor from the caller's REQUESTED flow bound and never updated by flow recovery. `decompile_targets` passes `0` for that bound ('UNBOUNDED: the function's natural flow extent'), so the recovered size is always 0 on every whole-binary surface. The only writer of a nonzero Funcdata::size is the XML decode path (`funcdata_encode.rs`), which no CLI surface reaches.",
+    "This means the real gap was broader than filed: kuna had NO function-extent value on ANY surface, not a missing copy on one. The need's own instruction -- 'match decompile-all exactly rather than inventing a second meaning for the same field name' -- therefore required fixing both surfaces, which is what shipped: one number, one meaning, on `functions`, `decompile-all`, `decompile-project` and the wasm inventory.",
+    "MECHANISM CHOSEN: the address-contiguous clip [entry, min(next_entry, end_of_containing_CODE_section)). Not invented for this change -- it is the reconstruction kuna already uses wherever it needs a body from an entry-keyed model (`kuna-analysis/src/analyzers/fid/extent.rs::calculate_extent`, whose module doc states the same LOSS, and the `noreturn_disc` call-site reasoning). Reusing the established approximation rather than adding a second one was the point.",
+    "REJECTED ALTERNATIVE -- ELF st_size. Exact ground truth and free (already parsed for data symbols), but it is 0 for stripped binaries, and the probe's own fixture (aif_gap_x86_64) is stripped: only 6 .dynsym entries, all UND. st_size alone would have produced an all-zero column on the very binary the acceptance targets. A hybrid (st_size when present, clip otherwise) would raise exactness on symbolized binaries but makes `size` mean two different things depending on whether the binary is stripped -- exactly the second meaning the need warns against. Recorded as a possible refinement, not shipped.",
+    "REJECTED ALTERNATIVE -- a flow-reachable extent from the Listing. kuna deliberately does NOT build the Listing for `kuna functions` on x86-64 (`load_program`: 'the Listing is measured entry-neutral there ... building it would only make kuna functions slower'), so a Listing-derived extent would have put a full linear decode behind the one call whose entire purpose is being cheap. That is precisely the cost question the need's Refutation section asked the builder to settle before treating this as a one-field copy.",
+    "The `size` is reported on the error/panic/external arms of `decompile_targets` too, not just the success arm: an extent is an inventory fact and does not depend on the decompile succeeding, so a function that failed to decompile still tells the caller how big it is.",
+    "SCOPE HELD: `kuna functions` TEXT output is unchanged. The need is about --json, and the reference (DecLib's `list_functions`) printing three text columns is not a reason to change a `0x%x\\t%s` line format other tooling may parse.",
+    "PIPELINE GAP FOUND, not closed here: nothing runs `tests/cli/*.json`. `scripts/repipe/verify.py::promote` writes the directory and `webui.py` displays it, but no Makefile target, CI workflow or cargo test executes a promoted probe -- so promotion alone leaves no CI guard. This need is the first promotion, so the directory did not exist before. The regression guard that actually runs in CI here is the pair of cargo integration tests in the owning crate, per the track-`tooling` contract. A generic tests/cli runner is pipeline infrastructure and is left for the captain."
+  ],
+
+  "mechanism": "New module `kuna-console/src/funcextent.rs`: `clip(entry, next, code_spans)` returns the address-contiguous extent, `code_spans` filters the loader section table to sized CODE spans, `assign_extents` fills a whole ascending entry list in one pass and `extent_at` serves the single-address paths. `FunctionEntry` gains `size: u64`, filled by `ConsoleProgram::function_entries_canonical` (already ascending, from its BTreeMap) and by the new `ConsoleProgram::function_extent_at` for synthesized `--addr` entries. `FuncResult.size` now carries that number through instead of the dead `fd.get_size()`. `kuna functions --json` emits `size` after `aliases`; `decompile-all`/`decompile-project`/wasm-list report the same number.",
+
+  "accuracy": {
+    "method": "clip vs ELF st_size over every symbolized fixture in decompiler/crates/kuna-analysis/tests/fixtures (STT_FUNC, defined, nonzero st_size, entry present in kuna's inventory)",
+    "fixtures": 41,
+    "functions_with_ground_truth": 1428,
+    "exact": 231,
+    "undershoots": 0,
+    "median_overshoot_bytes": 8,
+    "max_overshoot_bytes": 52,
+    "verdict": "a sound UPPER bound -- never short on any of 1428 functions; the overshoot is inter-function alignment padding. Documented as an upper bound in docs/cli.md and docs/spec/01-program-prep.md rather than trimmed with a padding heuristic."
+  },
+
+  "collateral_sweep": {
+    "method": "every FunctionEntry construction/consumption site in the workspace, plus non-ELF and non-x86-64 formats run through `kuna functions --json`",
+    "sites": "4 construction sites (function_entries_canonical, kuna-cli resolve_targets --addr, kuna-wasm resolve_targets --addr, and the destructure in decompile_targets); 2 JSON emitters for FuncResult.size (kuna-cli result_json, kuna-wasm result_json)",
+    "formats_checked": {
+      "x86-64 stripped ELF (aif_gap_x86_64)": "34/34 entries with extent; .init=27 (exactly the section), .plt stub=16, .plt.got thunk=8, .text tail=682",
+      "ARM Thumb ELF (arm_thumb_linked_le32)": "2/2, Thumb bit normalized, 30 and 20",
+      "ARM Cortex-M (cortexm_aifcorroborate_le32)": "74/74, vector-table entries 8 bytes, first function 288",
+      "COFF .obj (coff_obj.obj, coff_comdat_i386.obj)": "2/2 and 3/3, sensible extents on relocatable objects"
+    },
+    "negatives_found": 0
+  },
+
+  "speed": {
+    "method": "interleaved old/new, 1 warmup each + 9 interleaved repetitions, `kuna functions <bin> --json`; the pre-change baseline is the main tree's release binary at 63a124ae (verified to emit no `size`)",
+    "budget_pct": 5,
+    "bash O2 (2538 fns, 1.3M)": "-0.18% median, -0.09% min",
+    "betaflight ARM Cortex-M (5798 fns)": "-0.58% median, -0.18% min",
+    "ssh-sk-helper (802 fns)": "+0.21% median, -0.10% min",
+    "verdict": "no measurable cost -- within noise on all three. By construction: the pass reuses the already-built entry list and the loader section table, adds no decode, and is O(entries x sections) with sections in the tens."
+  },
+
+  "gates": {
+    "make test": "PARITY OK, 675/675 assertions",
+    "make test-stages": "PARITY OK, 574/574 assertions",
+    "make rust-test": "green (workspace suite; kuna-console 8 new funcextent unit tests, kuna-cli 22/22 in decompile_all_cli including the 2 new ones)",
+    "make check-spec": "check-spec OK",
+    "kuna catalog --check": "catalog OK -- no option added (a JSON metadata field cannot change emitted C, so no phases.toml row, no options.rs registration, no catalog counters)"
+  },
+
+  "acceptance": {
+    "probe_before": "PASS (functions[0].size absent) -- the bad behaviour reproduced",
+    "acceptance_after": "PASS (functions[0].size == 27), transition `closed`",
+    "promoted_to": "tests/cli/functions-json-size.json"
+  },
+
+  "tests_added": [
+    "decompiler/crates/kuna-console/src/funcextent.rs (8 unit tests: the clip rule, section selection, out-of-section entries, duplicate/backward neighbours, code_spans filtering, extent_at)",
+    "decompiler/crates/kuna-cli/tests/decompile_all_cli.rs::functions_json_carries_a_ranking_extent (the field must exist on every record AND discriminate -- an all-zero or all-equal column fails, which is what would have shipped had the filed hypothesis been followed)",
+    "decompiler/crates/kuna-cli/tests/decompile_all_cli.rs::functions_and_decompile_all_agree_on_size (one field name, one meaning across the two surfaces)"
+  ],
+
+  "follow_ups": [
+    "No runner executes tests/cli/*.json -- promotion writes a regression test nothing runs. Wiring a generic re-probe/1 runner into make rust-test (or a new make target in CI) would make every future promotion an automatic CI guard, which is what docs/re-pipeline.md claims already happens.",
+    "ELF st_size could tighten `size` from an upper bound to exact on symbolized binaries, at the cost of the field meaning something different on stripped ones. Needs a decision on that trade before it is worth the cross-crate thread through FuncSym -> LoadImageFunc -> ProgramSymbol.",
+    "`kuna functions` text mode still prints only address + name; adding a size column would match the DecLib reference but changes a line format callers may parse."
+  ]
+}
