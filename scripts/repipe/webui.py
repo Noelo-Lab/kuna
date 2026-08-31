@@ -451,19 +451,33 @@ def _agent_role(worker, slots):
 
 
 def _agent_log_path(state_dir, agent_id, recorded=None):
-    """Resolve an agent's log strictly inside the state dir. Traversal dies here."""
+    """Resolve an agent's log strictly inside the state dir.
+
+    The returned path is built from a DIRECTORY LISTING, never from ``agent_id``: the id is
+    only ever compared, by equality, against names the filesystem produced. That is what
+    makes traversal structurally impossible rather than merely guarded -- and it is what a
+    taint analysis can actually see, which a regex guard on the id is not.
+    """
     if recorded:
         cand = Path(recorded)
         if not cand.is_absolute():
             cand = state_dir / cand
         if _safe_under(state_dir, cand) and cand.is_file():
             return cand
+    if safe_id(agent_id) is None:
+        return None
     logs = state_dir / "logs"
-    for name in ("%s.jsonl" % agent_id, "%s.log" % agent_id,
-                 "driver-%s.log" % agent_id, "%s.out" % agent_id):
-        cand = logs / name
-        if _safe_under(state_dir, cand) and cand.is_file():
-            return cand
+    wanted = {"%s.jsonl" % agent_id, "%s.log" % agent_id,
+              "driver-%s.log" % agent_id, "%s.out" % agent_id}
+    try:
+        entries = sorted(os.listdir(str(logs)))
+    except OSError:
+        return None
+    for entry in entries:
+        if entry in wanted:
+            cand = logs / entry          # `entry` came from the filesystem, not the request
+            if cand.is_file() and _safe_under(state_dir, cand):
+                return cand
     return None
 
 
