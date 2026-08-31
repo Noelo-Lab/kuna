@@ -69,7 +69,12 @@ def _locked():
 def _empty():
     # proposals: opp_id -> {worker, slug, branch, pr_url, ts} (large feature awaiting go/no-go)
     # approved:  opp_id -> {branch, pr_url, approved_by, ts}   (user said go; ready to implement)
-    return {"workers": {}, "claims": {}, "done": {}, "proposals": {}, "approved": {}}
+    # slots:  pool -> {"cap": N, "held": {slot_id: {"pid", "pid_source", "since", "kind"}}}
+    # leases: resource -> {"holder", "ts", "ttl", "pid", "pid_source"}
+    # Both are used by the RE-friction loop (docs/re-pipeline.md); the angr fleet ignores
+    # them and its inventory is unaffected.
+    return {"workers": {}, "claims": {}, "done": {}, "proposals": {}, "approved": {},
+            "slots": {}, "leases": {}}
 
 
 def _load():
@@ -277,7 +282,7 @@ def reap(stale_seconds=1800):
     reaping on a bogus "pid is gone" would fail LIVE workers and hand their claims away.
     """
     now = time.time()
-    reaped = {"workers": []}
+    reaped = {"workers": [], "slots": [], "leases": []}
     with _locked():
         data = _load()
         for wid, w in list(data["workers"].items()):
@@ -298,8 +303,101 @@ def reap(stale_seconds=1800):
                 if held.get("worker") == wid:
                     data["claims"].pop(oid, None)
             reaped["workers"].append(wid)
+        for pool, p in data.get("slots", {}).items():
+            for sid, held in list(p.get("held", {}).items()):
+                if held.get("pid_source") != "caller" or not held.get("pid"):
+                    continue
+                if not _pid_alive(held.get("pid")):
+                    p["held"].pop(sid, None)
+                    reaped.setdefault("slots", []).append("%s/%s" % (pool, sid))
+        for res, lease in list(data.get("leases", {}).items()):
+            if _lease_dead(lease, now):
+                data["leases"].pop(res, None)
+                reaped.setdefault("leases", []).append(res)
         _save(data)
     return reaped
+
+
+# --- agent slots (an honest cap on concurrent LLM processes) ----------------
+#
+# A bash `active_count()` over child pids cannot see agents spawned by a different process
+# (the captain tick exits; its agents outlive it), so the cap lives in the inventory instead.
+
+def slot_cap(pool, cap):
+    with _locked():
+        data = _load()
+        data["slots"].setdefault(pool, {"cap": 0, "held": {}})["cap"] = int(cap)
+        _save(data)
+
+
+def slot_acquire(pool, slot_id, pid=None, kind=None):
+    """Take a slot in ``pool``. True if held, False if the pool is full."""
+    with _locked():
+        data = _load()
+        p = data["slots"].setdefault(pool, {"cap": 0, "held": {}})
+        if slot_id in p["held"]:
+            return True
+        if len(p["held"]) >= p.get("cap", 0):
+            return False
+        p["held"][slot_id] = {"pid": pid, "pid_source": "caller" if pid else "none",
+                              "since": time.time(), "kind": kind or pool}
+        _save(data)
+        return True
+
+
+def slot_release(pool, slot_id):
+    with _locked():
+        data = _load()
+        p = data["slots"].get(pool)
+        if p:
+            p["held"].pop(slot_id, None)
+            _save(data)
+
+
+# --- resource leases (collision avoidance between concurrent builders) ------
+#
+# Resource names are declared, not discovered: "merge", "counter:catalog", "file:phases.toml",
+# "crate:kuna-cli", "cluster:<id>". Because every option-adding feature needs the whole
+# counter set, "at most one option-adding builder at a time" falls out of the algebra.
+
+DEFAULT_LEASE_TTL = 10800  # seconds; > the default builder timeout
+
+
+def lease_acquire(resource, worker, ttl=DEFAULT_LEASE_TTL, pid=None):
+    """Take ``resource``. True if held by us, False if someone else has it.
+
+    An expired lease, or one whose vouched-for holder pid is dead, is stolen -- a crashed
+    holder must not wedge the queue forever. A lease with no trustworthy pid expires on its
+    TTL alone: treating "no pid" as "dead" would free every lease the instant it was taken
+    and silently void the whole guarantee.
+    """
+    now = time.time()
+    with _locked():
+        data = _load()
+        cur = data["leases"].get(resource)
+        if cur and cur.get("holder") != worker and not _lease_dead(cur, now):
+            return False
+        data["leases"][resource] = {"holder": worker, "ts": now, "ttl": int(ttl),
+                                    "pid": pid, "pid_source": "caller" if pid else "none"}
+        _save(data)
+        return True
+
+
+def lease_release(resource, worker=None):
+    with _locked():
+        data = _load()
+        cur = data["leases"].get(resource)
+        if cur is not None and (worker is None or cur.get("holder") == worker):
+            data["leases"].pop(resource, None)
+            _save(data)
+
+
+def _lease_dead(lease, now):
+    if now - lease.get("ts", 0) > lease.get("ttl", DEFAULT_LEASE_TTL):
+        return True
+    if lease.get("pid_source") != "caller" or not lease.get("pid"):
+        return False
+    return not _pid_alive(lease.get("pid"))
 
 
 def snapshot():
@@ -369,6 +467,30 @@ def main(argv=None):
     sp.add_argument("--worker", required=True)
     sp.add_argument("--opportunity", required=True)
 
+    sp = sub.add_parser("slot-acquire")
+    sp.add_argument("--pool", required=True)
+    sp.add_argument("--id", required=True)
+    sp.add_argument("--pid", type=int, default=None)
+    sp.add_argument("--kind", default=None)
+
+    sp = sub.add_parser("slot-release")
+    sp.add_argument("--pool", required=True)
+    sp.add_argument("--id", required=True)
+
+    sp = sub.add_parser("slot-cap")
+    sp.add_argument("--pool", required=True)
+    sp.add_argument("--cap", type=int, required=True)
+
+    sp = sub.add_parser("lease-acquire")
+    sp.add_argument("--resource", required=True)
+    sp.add_argument("--worker", required=True)
+    sp.add_argument("--ttl", type=int, default=DEFAULT_LEASE_TTL)
+    sp.add_argument("--pid", type=int, default=None)
+
+    sp = sub.add_parser("lease-release")
+    sp.add_argument("--resource", required=True)
+    sp.add_argument("--worker", default=None)
+
     sp = sub.add_parser("reap")
     sp.add_argument("--stale-seconds", type=int, default=1800)
     sp.add_argument("--json", action="store_true")
@@ -405,6 +527,16 @@ def main(argv=None):
             return 1
         print(branch)
         return 0
+    elif args.cmd == "slot-acquire":
+        return 0 if slot_acquire(args.pool, args.id, args.pid, args.kind) else 1
+    elif args.cmd == "slot-release":
+        slot_release(args.pool, args.id)
+    elif args.cmd == "slot-cap":
+        slot_cap(args.pool, args.cap)
+    elif args.cmd == "lease-acquire":
+        return 0 if lease_acquire(args.resource, args.worker, args.ttl, args.pid) else 1
+    elif args.cmd == "lease-release":
+        lease_release(args.resource, args.worker)
     elif args.cmd == "reap":
         out = reap(args.stale_seconds)
         if args.json:

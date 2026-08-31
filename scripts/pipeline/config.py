@@ -56,6 +56,15 @@ def repo_root() -> Path:
 
 
 def pipeline_docs_dir() -> Path:
+    """Where the generated backlog artifacts live.
+
+    Overridable so a second pipeline can hand this selector its own ranked backlog without
+    a fork: the RE-friction loop emits `opportunities.json` in exactly this shape (see
+    scripts/repipe/needs.py to_opportunities) and points KUNA_PIPELINE_DOCS_DIR at it.
+    """
+    env = os.environ.get("KUNA_PIPELINE_DOCS_DIR")
+    if env:
+        return Path(env)
     return repo_root() / "docs" / "improvement-pipeline"
 
 

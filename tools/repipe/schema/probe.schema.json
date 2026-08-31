@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "probe.schema.json",
+  "title": "RE-friction probe",
+  "description": "An executable assertion about kuna's behaviour. Two of these define a need: the PROBE asserts the current bad behaviour and must PASS at filing time; the ACCEPTANCE asserts the desired behaviour and must FAIL at filing time. A builder is done when the acceptance flips to PASS. An acceptance probe is promoted verbatim into tests/cli/ as a permanent regression test.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "kind", "cmd", "timeout_s", "expect"],
+  "properties": {
+    "schema": {"const": "re-probe/1"},
+    "probe_id": {
+      "type": "string",
+      "pattern": "^[pa]-[0-9a-f]{12}$",
+      "description": "derived, not authored: 'p-' (probe) or 'a-' (acceptance) + sha1(canonical(cmd)+canonical(expect))[:12]"
+    },
+    "kind": {
+      "enum": ["cli", "cli-pair", "timing", "memory", "absence"],
+      "description": "absence = 'this capability does not exist at all'; its diagnosis is definitionally trivial, so REPIPE_REFUTE_MODE=absence-skip does not spend refuters on it"
+    },
+    "cmd": {
+      "type": "array", "items": {"type": "string"}, "minItems": 1,
+      "description": "argv. Substitution tokens: {{KUNA}} {{BIN}} {{SPECS}} {{WORK}} {{TMP}}"
+    },
+    "cwd": {"type": "string", "default": "{{WORK}}"},
+    "env": {"type": "object", "additionalProperties": {"type": "string"}},
+    "stdin": {"type": ["string", "null"]},
+    "timeout_s": {"type": "integer", "minimum": 1, "maximum": 1800},
+    "repeat": {"type": "integer", "minimum": 1, "maximum": 11, "default": 1},
+    "target": {
+      "type": "object", "additionalProperties": false,
+      "required": ["binary_rel", "binary_sha256", "binary_size"],
+      "properties": {
+        "binary_rel": {"type": "string"},
+        "binary_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "binary_size": {"type": "integer"},
+        "binary_source": {"enum": ["dataset", "in-repo", "synthesized"]},
+        "in_repo_path": {
+          "type": ["string", "null"],
+          "description": "set only when binary_source == in-repo. This is what makes an acceptance probe VENDORABLE, i.e. promotable into tests/cli/ where CI has no dataset."
+        },
+        "selector": {"type": ["string", "null"]},
+        "selector_kind": {"enum": ["name", "addr", "none"]}
+      }
+    },
+    "expect": {"$ref": "#/$defs/expect"},
+    "notes": {"type": "string", "maxLength": 400}
+  },
+  "$defs": {
+    "expect": {
+      "type": "object", "additionalProperties": false,
+      "description": "Every present clause must hold. An empty expect is rejected by probe.py: a probe that asserts nothing always passes and is not evidence.",
+      "properties": {
+        "exit_code": {"$ref": "#/$defs/numpred"},
+        "stdout_matches": {"type": "array", "items": {"type": "string"}},
+        "stdout_absent": {"type": "array", "items": {"type": "string"}},
+        "stderr_matches": {"type": "array", "items": {"type": "string"}},
+        "stderr_absent": {"type": "array", "items": {"type": "string"}},
+        "stdout_is_json": {"type": "boolean"},
+        "json": {"type": "array", "items": {"$ref": "#/$defs/jsonpred"}},
+        "wall_ms": {"$ref": "#/$defs/statpred"},
+        "max_rss_kb": {"$ref": "#/$defs/statpred"},
+        "stdout_bytes": {"$ref": "#/$defs/numpred"}
+      }
+    },
+    "numpred": {
+      "type": "object", "additionalProperties": false, "minProperties": 1,
+      "properties": {
+        "eq": {}, "ne": {}, "lt": {}, "gt": {}, "le": {}, "ge": {},
+        "in": {"type": "array"}
+      }
+    },
+    "statpred": {
+      "type": "object", "additionalProperties": false,
+      "required": ["stat"],
+      "description": "Timing/memory over `repeat` runs. rel_to compares medians against another probe as a ratio, which cancels the fixed cold-load cost the way scripts/pipeline/timeit.py does.",
+      "properties": {
+        "stat": {"enum": ["median", "min", "max", "mean"]},
+        "lt": {"type": "number"}, "gt": {"type": "number"},
+        "rel_to": {"type": ["string", "null"]},
+        "ratio_lt": {"type": "number"}, "ratio_gt": {"type": "number"}
+      }
+    },
+    "jsonpred": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "op"],
+      "properties": {
+        "path": {"type": "string", "description": "dotted path; [i] indexes, [*] means any element"},
+        "op": {"enum": ["eq", "ne", "lt", "gt", "le", "ge", "len_eq", "len_lt", "len_gt",
+                        "contains", "not_contains", "exists", "absent", "matches"]},
+        "value": {}
+      }
+    }
+  }
+}

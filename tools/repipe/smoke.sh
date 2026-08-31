@@ -1,0 +1,292 @@
+#!/usr/bin/env bash
+# Prove the RE-friction loop works, without spending a single agent token.
+#
+#   tools/repipe/smoke.sh            # levels 0 and 1 (~4 min, zero tokens, zero network)
+#   tools/repipe/smoke.sh --level 0  # unit + conformance only (~40 s)
+#
+# Levels 2-4 (one live tester, one live builder, a real round) are in docs/re-pipeline.md
+# and cost real money; they are deliberately NOT run from here.
+#
+# FOUR FALSE-GREEN CANARIES, in the spirit of `make test-ghidra`'s two. Each of these would
+# otherwise let a silently broken run report success:
+#   - the two-arm gate must find at least one REPRODUCING probe (a broken runner would
+#     "pass" everything by failing everything);
+#   - the sandbox assertions must actually have run (skipping them because bwrap is missing
+#     is not a pass);
+#   - the redactor must NOT have dropped every extras file (over-redaction is as bad as
+#     under-redaction, and it would hide the fact that the allowlist is broken);
+#   - at least one need must have been produced by clustering (zero needs is not "clean").
+set -uo pipefail
+
+REPO="${KUNA_REPO:-$(git -C "$(dirname "$0")" rev-parse --show-toplevel)}"
+PY="${KUNA_PY:-python3}"
+LEVEL="${1:-}"
+[ "$LEVEL" = "--level" ] && LEVEL="${2:-1}" || LEVEL=1
+
+export PYTHONPATH="$REPO${PYTHONPATH:+:$PYTHONPATH}"
+SMOKE_STATE="$(mktemp -d "${TMPDIR:-/tmp}/repipe-smoke-XXXXXX")"
+export KUNA_PIPELINE_STATE_DIR="$SMOKE_STATE"
+trap 'rm -rf "$SMOKE_STATE"' EXIT
+
+DATASET="${REPIPE_DATASET:-$HOME/github/kuna-re-dataset}"
+FIX="$REPO/tools/repipe/fixtures"
+PASS=0; FAIL=0
+# canaries
+SAW_REPRODUCING=0; SAW_SANDBOX=0; SAW_EXTRAS_KEPT=0; SAW_NEED=0
+
+ok()   { PASS=$((PASS+1)); printf '  \033[32mok\033[0m   %s\n' "$1"; }
+bad()  { FAIL=$((FAIL+1)); printf '  \033[31mFAIL\033[0m %s\n' "$1"; [ -n "${2:-}" ] && printf '       %s\n' "$2"; }
+head_() { printf '\n\033[1m%s\033[0m\n' "$1"; }
+
+# ---------------------------------------------------------------- level 0 ---
+head_ "L0  modules import and self-describe"
+for m in config probe verify workspace redact sample grade needs cluster select counters mergecheck captain webui render_tester_prompt; do
+  if "$PY" -c "import scripts.repipe.$m" 2>/dev/null; then ok "import $m"; else bad "import $m"; fi
+done
+
+head_ "L0  agent split matches the documented table"
+SPLIT="$("$PY" -c 'from scripts.repipe import config; import json; print(json.dumps({n: config.agent_split(n) for n in (2,4,5,7,9)}))')"
+echo "$SPLIT" | grep -q '"7": {"captain": 1, "testers": 3, "builders": 3' \
+  && ok "max-agents 7 -> 1 captain + 3 testers + 3 builders" \
+  || bad "7 does not split 1/3/3" "$SPLIT"
+
+head_ "L0  state machine refuses an illegal transition"
+"$PY" -m scripts.repipe.captain --transition test T_PLAN --note smoke >/dev/null 2>&1
+if "$PY" -m scripts.repipe.captain --transition test T_READY >/dev/null 2>&1; then
+  bad "T_PLAN -> T_READY was ALLOWED (a builder could skip the gates)"
+else
+  ok "T_PLAN -> T_READY refused (exit 2)"
+fi
+if "$PY" -m scripts.repipe.captain --transition build B_MERGE >/dev/null 2>&1; then
+  bad "B_IDLE -> B_MERGE was ALLOWED (merging without building)"
+else
+  ok "B_IDLE -> B_MERGE refused"
+fi
+
+head_ "L0  counters re-derive from the live tree"
+CNT="$("$PY" -m scripts.repipe.counters --rederive --json 2>/dev/null)"
+echo "$CNT" | grep -q '"settables": 127' && ok "settables = 127" || bad "settable count drifted" "$(echo "$CNT" | head -3)"
+echo "$CNT" | grep -q '"corpus_files": 222' && ok "stage corpus = 222" || bad "stage corpus count drifted"
+echo "$CNT" | grep -q '"next_element_id"' && ok "next free ElementId derived" || bad "no ElementId derivation"
+
+head_ "L0  mergecheck catches all three silent-merge shapes"
+MC="$("$PY" -m scripts.repipe.mergecheck --self-test 2>&1)"
+for shape in shape-B-averted shape-C-averted shape-C2-averted; do
+  echo "$MC" | grep -q "$shape" && ok "$shape" || bad "$shape not caught"
+done
+
+[ "$LEVEL" = "0" ] && { printf '\nL0 only: %d passed, %d failed\n' "$PASS" "$FAIL"; exit $((FAIL>0)); }
+
+# ---------------------------------------------------------------- level 1 ---
+head_ "L1  arena is contamination-free"
+FLAGCH=6609e458cddae72ae250bf40      # ground_truth.flag = N@n0m4ch1n3sS0n!
+TRAPCH=5ab77f5533c5d40ad448c1ea      # extras/.../hints.txt = 19 valid serials, ships_source_code FALSE
+for ch in "$FLAGCH" "$TRAPCH"; do
+  OUT="$("$PY" -m scripts.repipe.workspace build "$ch" --round 0 2>&1)" || { bad "arena build $ch" "$OUT"; continue; }
+  A="$SMOKE_STATE/arena/0/$ch"
+  [ -d "$A" ] && ok "arena built $ch" || { bad "no arena at $A"; continue; }
+  [ -z "$(find "$A" -name meta.json -o -name verifier.py)" ] && ok "  no meta.json / verifier.py" || bad "  metadata leaked into the arena"
+  NONEXEC="$(find "$A/target" -type f ! -perm -u+x 2>/dev/null | wc -l)"
+  [ "$NONEXEC" = "0" ] && ok "  every target binary is executable" || bad "  $NONEXEC target file(s) lack +x"
+done
+
+# The two challenges above ship no keepable extras (one has none, the other has only
+# spoilers), so the over-redaction canary needs a challenge that really does carry an author
+# README -- otherwise "kept 0" is correct and the canary would fire on a healthy redactor.
+READMECH="$("$PY" - <<'PY'
+import json, os
+from scripts.repipe import config
+man = json.load(open(config.manifest_path()))
+for rec in man:
+    extras = (rec.get("files") or {}).get("extras") or []
+    if any(os.path.basename(e).lower().startswith("readme") for e in extras):
+        print(rec["hexid"]); break
+PY
+)"
+if [ -n "$READMECH" ]; then
+  ROUT="$("$PY" -m scripts.repipe.workspace build "$READMECH" --round 0 2>&1)"
+  KEPT="$(echo "$ROUT" | sed -n 's/.*extras kept: \([0-9]*\).*/\1/p')"
+  [ "${KEPT:-0}" != "0" ] && { ok "author README kept for $READMECH (allowlist works)"; SAW_EXTRAS_KEPT=1; }                           || bad "over-redaction: README dropped for $READMECH" "$ROUT"
+else
+  bad "no challenge with a README in extras -- cannot exercise the allowlist"
+fi
+grep -rq 'N@n0m4ch1n3sS0n' "$SMOKE_STATE/arena/0/$FLAGCH" 2>/dev/null \
+  && bad "THE FLAG IS IN THE ARENA" || ok "flag absent from the arena"
+if echo "$OUT" | grep -q 'serial-shape .*hints.txt'; then
+  ok "hints.txt dropped by the serial-shape rule (not the flag rule)"
+else
+  "$PY" -m scripts.repipe.workspace build "$TRAPCH" --round 0 2>&1 | grep -q 'serial-shape' \
+    && ok "serial-shape rule fired on the trap challenge" \
+    || bad "hints.txt was NOT dropped by serial-shape"
+fi
+
+head_ "L1  sandbox actually hides the dataset"
+if command -v bwrap >/dev/null 2>&1; then
+  N="$(bwrap --dev-bind / / --tmpfs "$DATASET" -- ls "$DATASET" 2>/dev/null | wc -l)"
+  [ "$N" = "0" ] && { ok "dataset is empty inside the namespace"; SAW_SANDBOX=1; } || bad "dataset still visible ($N entries)"
+  bwrap --dev-bind / / --tmpfs "$DATASET" -- "$REPO/decompiler/target/release/kuna" --version >/dev/null 2>&1 \
+    && ok "kuna still runs inside the namespace" || bad "kuna broken inside the namespace"
+else
+  bad "bwrap missing -- containment is prompt-only and this canary must not be skipped silently"
+fi
+
+head_ "L1  the two-arm gate, against a real live defect"
+CH="$DATASET/challenges/64f1f7afd931496abf909525"
+for f in probe-zero-functions accept-zero-functions accept-functions-size; do
+  [ -f "$FIX/$f.json" ] || bad "missing fixture $f.json"
+done
+PV="$("$PY" -m scripts.repipe.probe check "$FIX/probe-zero-functions.json" --work "$CH" --json 2>/dev/null | "$PY" -c 'import json,sys;print(json.load(sys.stdin).get("passed"))')"
+[ "$PV" = "True" ] && { ok "probe PASSES (the bug reproduces today)"; SAW_REPRODUCING=1; } || bad "probe does not reproduce" "got $PV"
+AV="$("$PY" -m scripts.repipe.probe check "$FIX/accept-zero-functions.json" --work "$CH" --json 2>/dev/null | "$PY" -c 'import json,sys;print(json.load(sys.stdin).get("passed"))')"
+[ "$AV" = "False" ] && ok "acceptance FAILS (kuna cannot do it yet)" || bad "acceptance already passes" "got $AV"
+
+head_ "L1  a probe pointed at the wrong binary REFUSES rather than lying"
+WRONG="$("$PY" -m scripts.repipe.probe check "$FIX/probe-zero-functions.json" --json 2>&1)"
+echo "$WRONG" | grep -qi 'not found\|mismatch' \
+  && ok "target verification refuses a misresolved {{BIN}}" \
+  || bad "a misresolved target produced a verdict instead of an error"
+
+head_ "L1  a probe cannot execute arbitrary code"
+# A probe's argv is authored by an LLM and replayed by verify.py in the MAIN tree, outside
+# the tester's sandbox. Without the allowlist this is remote code execution.
+EVIL="$SMOKE_STATE/evil.json"
+rm -f /tmp/repipe-smoke-pwned
+# The last two are the bypasses a basename-only allowlist would miss: a tester has
+# workspace-write, so it can drop a file called `kuna` and name it by path.
+mkdir -p "$SMOKE_STATE/evil"
+printf '#!/bin/sh\ntouch /tmp/repipe-smoke-pwned\n' > "$SMOKE_STATE/evil/kuna"; chmod +x "$SMOKE_STATE/evil/kuna"
+ln -sf /bin/bash "$SMOKE_STATE/evil/objdump"
+for CMD in '["bash","-c","touch /tmp/repipe-smoke-pwned"]' '["rm","-rf","/tmp/nothing"]' '["curl","http://example.invalid"]' "[\"$SMOKE_STATE/evil/kuna\"]" "[\"$SMOKE_STATE/evil/objdump\",\"-c\",\"touch /tmp/repipe-smoke-pwned\"]"; do
+  "$PY" - "$FIX" "$CMD" > "$EVIL" <<'PY'
+import json, sys
+p = json.load(open(sys.argv[1] + "/probe-zero-functions.json"))
+p["cmd"] = json.loads(sys.argv[2]); p.pop("probe_id", None); p.pop("target", None)
+json.dump(p, open("/dev/stdout", "w"))
+PY
+  R="$("$PY" -m scripts.repipe.probe check "$EVIL" --work "$CH" --json 2>&1)"
+  echo "$R" | grep -q 'may not execute'     && ok "refused $(echo "$CMD" | cut -c1-32)"     || bad "EXECUTED $(echo "$CMD" | cut -c1-32)" "$R"
+done
+[ -e /tmp/repipe-smoke-pwned ] && bad "a probe actually executed arbitrary code" || ok "nothing was executed"
+
+head_ "L1  clustering collapses duplicates"
+OBS="$SMOKE_STATE/obs.json"
+"$PY" - "$FIX" > "$OBS" <<'PY'
+import json, sys
+F = sys.argv[1] + "/"
+p = json.load(open(F + "probe-zero-functions.json"))
+a = json.load(open(F + "accept-zero-functions.json"))
+def o(title, hexid, tester, kind="silent-failure", wanted="function inventory"):
+    return {"kind": kind, "title": title, "what_i_wanted": wanted,
+            "what_kuna_did": "count 0 exit 0", "severity": "blocker",
+            "probe": p, "acceptance": a, "_hexid": hexid, "_tester": tester, "_round": 1}
+json.dump([
+    o("kuna functions returns 0 functions on a stripped PIE", "64f1f7af", "t1"),
+    o("functions --json is empty for a section-stripped binary", "60be2a60", "t2"),
+    o("no functions found and no error reported", "6609e458", "t3"),
+    o("kuna has no way to list strings", "64f1f7af", "t1", "missing-capability", "the string inventory"),
+    o("cannot enumerate strings from kuna at all", "6883765e", "t2", "missing-capability", "string table"),
+], open("/dev/stdout", "w"), indent=2)
+PY
+CL="$("$PY" -m scripts.repipe.cluster --round 1 --from-file "$OBS" --dry-run --json 2>/dev/null)"
+NCL="$(echo "$CL" | "$PY" -c 'import json,sys;print(len(json.load(sys.stdin)))' 2>/dev/null)"
+[ "$NCL" = "2" ] && { ok "5 observations -> 2 needs"; SAW_NEED=1; } || bad "expected 2 clusters, got $NCL" "$CL"
+echo "$CL" | grep -q '"instances": 3' && ok "the 3-way duplicate merged into one need" || bad "duplicates not merged"
+
+head_ "L1  collision avoidance"
+"$PY" - <<'PY'
+import sys; sys.path.insert(0, ".")
+from scripts.repipe import needs, select
+mk = lambda i, t: needs.Need(fields={"need_id": i, "title": i, "track": t, "status": "open",
+                                     "severity": "major", "instances": 3, "challenges": ["a"],
+                                     "rounds": [1], "touches": []})
+picks = select.pick(k=3, needs_list=[mk("q1", "quality"), mk("q2", "quality"), mk("t1", "tooling")])
+tracks = [p["need"].track for p in picks]
+assert tracks.count("quality") == 1, "two option-adding builders dispatched: %s" % tracks
+assert tracks.count("tooling") == 1, "tooling builder was blocked: %s" % tracks
+print("OK")
+PY
+[ $? = 0 ] && ok "at most one quality builder; tooling runs alongside" || bad "lease algebra wrong"
+
+head_ "L1  regressions the review found (each of these shipped broken once)"
+# newline in a tester-authored title used to destroy every front-matter field after it
+"$PY" - <<'PY' >/dev/null 2>&1 && ok "a newline in a title cannot corrupt front matter" || bad "front-matter escaping regressed"
+import sys, tempfile, os
+sys.path.insert(0, "/home/mahaloz/github/kuna")
+from scripts.repipe import needs
+evil = "one\nstatus: HIJACKED\ntrack: quality"
+n = needs.Need(fields={"need_id": "x", "title": evil, "track": "tooling", "severity": "major"})
+p = tempfile.mktemp(suffix=".md"); open(p, "w").write(needs.render(n))
+m = needs.parse(p); os.unlink(p)
+assert m.title == evil and m.track == "tooling", (m.title, m.track)
+PY
+# a probe and its own negation both passing made the gate report already-supported
+"$PY" - <<'PY' >/dev/null 2>&1 && ok "exists/absent cannot both pass on a mixed array" || bad "json quantifier regressed"
+import sys
+sys.path.insert(0, "/home/mahaloz/github/kuna")
+from scripts.repipe import probe
+obs = {"runs": [{"exit_code": 0, "stdout": '{"f":[{"s":1},{}]}', "stderr": "",
+                 "wall_ms": 1, "timed_out": False, "error": None, "stdout_bytes": 10}],
+       "baselines": {}}
+mk = lambda op: {"schema": "re-probe/1", "kind": "cli", "cmd": ["x"], "timeout_s": 5,
+                 "expect": {"json": [{"path": "f[*].s", "op": op}]}}
+e = probe.evaluate(probe.normalize(mk("exists")), obs)["passed"]
+a = probe.evaluate(probe.normalize(mk("absent")), obs)["passed"]
+assert not (e and a), (e, a)
+PY
+# a catastrophic-backtracking regex used to hang the gate forever
+timeout 60 "$PY" - <<'PY' >/dev/null 2>&1 && ok "a pathological regex is time-bounded" || bad "regex budget regressed (hung or errored)"
+import sys
+sys.path.insert(0, "/home/mahaloz/github/kuna")
+from scripts.repipe import probe
+obs = {"runs": [{"exit_code": 0, "stdout": "a"*40+"!", "stderr": "", "wall_ms": 1,
+                 "timed_out": False, "error": None, "stdout_bytes": 41}], "baselines": {}}
+probe.evaluate(probe.normalize({"schema": "re-probe/1", "kind": "cli", "cmd": ["x"],
+                                "timeout_s": 5, "expect": {"stdout_matches": [r"(a+)+$"]}}), obs)
+PY
+# concurrent captain ticks used to race round.json
+( for i in 1 2 3 4 5 6; do "$PY" -m scripts.repipe.captain --transition build B_PLAN >/dev/null 2>&1 & done; wait ) 2>/dev/null
+NWIN="$(grep -c '"to": "B_PLAN"' "$SMOKE_STATE"/rounds/*/transitions.jsonl 2>/dev/null | head -1)"
+[ "${NWIN:-0}" = "1" ] && ok "6 racing transitions -> exactly 1 accepted" || bad "round.json race: $NWIN accepted, expected 1"
+
+head_ "L1  the four seed needs are real and round-trip"
+NL="$("$PY" -m scripts.repipe.needs list --json 2>/dev/null | "$PY" -c 'import json,sys;print(json.load(sys.stdin)["count"])' 2>/dev/null)"
+[ "${NL:-0}" -ge 4 ] && ok "$NL seed needs present" || bad "expected >=4 seed needs, got ${NL:-0}"
+for f in "$REPO"/docs/re-needs/*.md; do
+  "$PY" -c "
+import sys; sys.path.insert(0,'$REPO')
+from scripts.repipe import needs
+n = needs.parse('$f')
+assert needs.render(n) == open('$f').read(), 'round-trip differs'
+" 2>/dev/null && ok "round-trip $(basename "$f")" || bad "round-trip $(basename "$f")"
+done
+
+head_ "L1  dashboard serves every route with no gh call per request"
+PORT=$(( 18700 + RANDOM % 900 ))
+"$PY" -m scripts.repipe.webui --port "$PORT" --bind 127.0.0.1 --no-checks >"$SMOKE_STATE/webui.log" 2>&1 &
+WEB_PID=$!
+for _ in $(seq 1 30); do
+  curl -s -o /dev/null --max-time 2 "http://127.0.0.1:$PORT/healthz" 2>/dev/null && break
+  sleep 1
+done
+if ! curl -s -o /dev/null --max-time 5 "http://127.0.0.1:$PORT/healthz" 2>/dev/null; then
+  bad "dashboard never came up on :$PORT" "$(tail -3 "$SMOKE_STATE/webui.log" 2>/dev/null)"
+fi
+for r in / /healthz /api/state /api/needs /api/rounds /api/agents /api/corpus /api/acceptance; do
+  CODE="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "http://127.0.0.1:$PORT$r" 2>/dev/null)"
+  [ "$CODE" = "200" ] && ok "GET $r" || bad "GET $r -> $CODE"
+done
+CODE="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "http://127.0.0.1:$PORT/api/agent/..%2f..%2fetc%2fpasswd/log" 2>/dev/null)"
+[ "$CODE" = "400" ] || [ "$CODE" = "404" ] && ok "path traversal rejected ($CODE)" || bad "traversal returned $CODE"
+curl -s --max-time 10 "http://127.0.0.1:$PORT/api/corpus" 2>/dev/null | grep -q 'N@n0m4ch1n3sS0n' \
+  && bad "THE DASHBOARD LEAKS A FLAG" || ok "corpus endpoint leaks no ground truth"
+kill "$WEB_PID" 2>/dev/null; wait "$WEB_PID" 2>/dev/null
+
+# --------------------------------------------------------------- canaries ---
+head_ "canaries (a silently broken run must not report success)"
+[ "$SAW_REPRODUCING" = 1 ] && ok "the gate found a reproducing probe" || bad "NO probe reproduced -- the runner is broken, not the corpus"
+[ "$SAW_SANDBOX" = 1 ]     && ok "sandbox assertions ran"             || bad "sandbox assertions were SKIPPED"
+[ "$SAW_EXTRAS_KEPT" = 1 ] && ok "the redactor kept at least one extras file" || bad "the redactor dropped EVERYTHING (over-redaction hides a broken allowlist)"
+[ "$SAW_NEED" = 1 ]        && ok "clustering produced needs"          || bad "clustering produced nothing"
+
+printf '\n\033[1msmoke: %d passed, %d failed\033[0m\n' "$PASS" "$FAIL"
+exit $(( FAIL > 0 ))

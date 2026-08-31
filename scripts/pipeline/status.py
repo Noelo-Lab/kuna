@@ -81,9 +81,11 @@ def _git_worktrees():
             cur["branch"] = line.split(" ", 1)[1].replace("refs/heads/", "")
     if cur:
         trees.append(cur)
-    # only the pipeline's worktrees
-    return [t for t in trees if ".kuna-pipeline" in t["path"] or "/kuna-wt-" in t["path"]
-            or (t.get("branch", "").startswith("feat/angr-"))]
+    # only THIS pipeline's worktrees (seams so a second pipeline reuses this module)
+    wt_match = os.environ.get("KUNA_PIPELINE_WORKTREE_MATCH", ".kuna-pipeline")
+    br_match = os.environ.get("KUNA_PIPELINE_BRANCH_MATCH", "feat/angr-")
+    return [t for t in trees if wt_match in t["path"] or "/kuna-wt-" in t["path"]
+            or (t.get("branch", "").startswith(br_match))]
 
 
 def _open_prs():
@@ -118,6 +120,8 @@ def collect():
         "done": data["done"],
         "proposals": data.get("proposals", {}),
         "approved": data.get("approved", {}),
+        "slots": data.get("slots", {}),
+        "leases": data.get("leases", {}),
         "worktrees": _cached("worktrees", WORKTREE_TTL, _git_worktrees) or [],
         "prs": _cached("prs", PR_TTL, _open_prs),
         "cache": cache_ages(),

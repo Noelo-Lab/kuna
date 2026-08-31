@@ -4,8 +4,18 @@
 decbench corpus, or a report), root-cause it to one phase decision, and ship ONE
 option-gated feature that closes it — verified, measured, and reviewable. This file is the
 runbook: an agent (interactive session or headless worker) should be able to execute the
-whole loop from what's written here. Nothing ever lands on `main` without a
-human-reviewed PR.
+whole loop from what's written here. **In this lane, nothing ever lands on `main` without a
+human-reviewed PR.**
+
+There is a second, fully autonomous lane. `docs/re-pipeline.md` — the RE-friction loop —
+asks the other question about the same engine: not "is the emitted C worse than angr's" but
+"can an agent USE kuna to reverse-engineer a binary". Its builders **self-merge**, gated on
+the four gates plus `kuna catalog --check`, a re-derivation of every shared counter on the
+rebased tree, green CI with the `full-ci` label forced on, and an executable acceptance
+predicate that must flip from FAIL to PASS. Its large features still stop at a draft
+`[PROPOSAL]` PR; the captain, not a human, approves them. The two lanes share this
+repository's standing requirements below, and share the scheduler, claim registry and PR
+opener in `tools/pipeline/` and `scripts/pipeline/`.
 
 One iteration:
 

@@ -17,6 +17,15 @@ MODEL="${WORKER_MODEL:-opus}"
 WORKER_TIMEOUT="${WORKER_TIMEOUT:-7200}"   # seconds; hard cap per feature
 BASE_BRANCH="${BASE_BRANCH:-main}"
 
+# Seams so a second pipeline reuses this driver without a fork (docs/re-pipeline.md).
+# Unset == the angr fleet's behaviour, byte for byte.
+PROMPT_TMPL="${WORKER_PROMPT:-$REPO/tools/pipeline/worker_prompt.md}"
+BRANCH_PREFIX="${WORKER_BRANCH_PREFIX:-feat/angr-}"
+STATE_DIRNAME="${PIPELINE_STATE_DIRNAME:-.kuna-pipeline}"
+WORKER_BUDGET_USD="${WORKER_BUDGET_USD:-}"      # empty = no --max-budget-usd flag
+WORKER_SESSION_ID="${WORKER_SESSION_ID:-}"      # empty = let claude allocate one
+WORKER_EXTRA_PROMPT="${WORKER_EXTRA_PROMPT:-}"  # file spliced in at {{SIBLINGS}}
+
 : "${WORKER_ID:?need WORKER_ID}"
 : "${OPP_ID:?need OPP_ID}"
 : "${TEST_NAME:?need TEST_NAME}"
@@ -32,7 +41,7 @@ export PYTHONPATH="$REPO${PYTHONPATH:+:$PYTHONPATH}"
 # Keep ALL pipeline state in the MAIN tree so `scripts.pipeline.status` (run from the main
 # tree) sees this worker's heartbeats. Without this, the worktree's KUNA_ROOT would route
 # state into the worktree's own .kuna-pipeline and the main-tree status would go stale.
-export KUNA_PIPELINE_STATE_DIR="$REPO/.kuna-pipeline"
+export KUNA_PIPELINE_STATE_DIR="${KUNA_PIPELINE_STATE_DIR:-$REPO/$STATE_DIRNAME}"
 
 # Normal mode opens a fresh branch off main. Implementation mode (IMPL_PROPOSAL=1) resumes
 # an APPROVED proposal's existing branch (RESUME_BRANCH) instead of branching fresh.
@@ -41,12 +50,11 @@ RESUME_BRANCH="${RESUME_BRANCH:-}"
 if [ "$IMPL_PROPOSAL" = 1 ] && [ -n "$RESUME_BRANCH" ]; then
   BRANCH="$RESUME_BRANCH"
 else
-  BRANCH="feat/angr-${SLUG}"
+  BRANCH="${BRANCH_PREFIX}${SLUG}"
 fi
-WT_ROOT="$REPO/.kuna-pipeline/worktrees"
+WT_ROOT="$REPO/$STATE_DIRNAME/worktrees"
 WT="$WT_ROOT/$WORKER_ID"
-LOG_DIR="$REPO/.kuna-pipeline/logs"
-PROMPT_TMPL="$REPO/tools/pipeline/worker_prompt.md"
+LOG_DIR="$REPO/$STATE_DIRNAME/logs"
 DATE="$(date +%Y-%m-%d)"
 
 mkdir -p "$WT_ROOT" "$LOG_DIR"
@@ -146,11 +154,24 @@ sed \
   -e "s|{{RESUME_PROPOSAL}}|$RESUME_PROPOSAL_LINE|g" \
   "$PROMPT_TMPL" > "$PROMPT_FILE"
 
+# {{SIBLINGS}} is a whole FILE, not a line, so it is spliced after the sed pass: the captain
+# writes what the other in-flight builders are doing so they stay off each other's files.
+if [ -n "$WORKER_EXTRA_PROMPT" ] && [ -f "$WORKER_EXTRA_PROMPT" ]; then
+  "$KUNA_PY" -c 'import sys; t,e=sys.argv[1],sys.argv[2]; b=open(t).read(); open(t,"w").write(b.replace("{{SIBLINGS}}", open(e).read()))' "$PROMPT_FILE" "$WORKER_EXTRA_PROMPT"
+else
+  sed -i 's|{{SIBLINGS}}||g' "$PROMPT_FILE"
+fi
+
 # --- 5. headless Claude session (highest-effort model), in the worktree -----
 log "launching claude -p (model $MODEL, timeout ${WORKER_TIMEOUT}s)"
 "$KUNA_PY" -m scripts.pipeline.state update --worker "$WORKER_ID" --phase analyze >>"$LOG" 2>&1
 
 RESULT_JSON="$LOG_DIR/$WORKER_ID.result.json"
+CLAUDE_EXTRA=()
+# A caller-supplied session id makes the transcript path deterministic BEFORE the run, which
+# is what lets a harness tail a live builder. codex has no equivalent.
+[ -n "$WORKER_SESSION_ID" ] && CLAUDE_EXTRA+=(--session-id "$WORKER_SESSION_ID")
+[ -n "$WORKER_BUDGET_USD" ] && CLAUDE_EXTRA+=(--max-budget-usd "$WORKER_BUDGET_USD")
 # env -u ANTHROPIC_API_KEY: a stale/invalid ANTHROPIC_API_KEY in the environment makes
 # headless `claude -p` fail with "Invalid API key"; unsetting it falls back to the working
 # session auth. </dev/null so claude does not wait on stdin.
@@ -158,6 +179,7 @@ RESULT_JSON="$LOG_DIR/$WORKER_ID.result.json"
     --model "$MODEL" \
     --output-format json \
     --dangerously-skip-permissions \
+    "${CLAUDE_EXTRA[@]+"${CLAUDE_EXTRA[@]}"}" \
     < /dev/null > "$RESULT_JSON" 2>>"$LOG" )
 RC=$?
 

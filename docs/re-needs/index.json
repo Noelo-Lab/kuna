@@ -1,0 +1,198 @@
+{
+  "schema": "re-needs-index/1",
+  "generated_by": "scripts.repipe.needs",
+  "count": 5,
+  "rejected_count": 0,
+  "by_status": {
+    "open": 5
+  },
+  "by_track": {
+    "loader": 1,
+    "tooling": 4
+  },
+  "by_severity": {
+    "blocker": 2,
+    "major": 2,
+    "minor": 1
+  },
+  "by_reject_reason": {},
+  "needs": [
+    {
+      "need_id": "no-xrefs",
+      "title": "kuna cannot answer what references this address, function or string",
+      "track": "tooling",
+      "status": "open",
+      "severity": "blocker",
+      "probe_id": "p-7e35d5065714",
+      "acceptance_id": "a-c9b199f423c1",
+      "hypothesis_status": "upheld",
+      "credibility": 1.0,
+      "instances": 4,
+      "challenges": [
+        "6609e458cddae72ae250bf40",
+        "67bd52114e1a16f76a1ad5bc",
+        "61ffb07c33c5d46c8bcbfc1d"
+      ],
+      "rounds": [
+        0
+      ],
+      "first_seen_round": 0,
+      "attempts": 0,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-cli/src",
+        "decompiler/crates/kuna-analysis/src",
+        "tests/cli",
+        "docs/cli.md"
+      ],
+      "scope": "large",
+      "regression_of": null,
+      "pr": null,
+      "closed_in_round": null,
+      "closing_pr": null,
+      "reject_reason": null,
+      "score": 144.849412,
+      "path": "docs/re-needs/no-xrefs.md"
+    },
+    {
+      "need_id": "decompile-no-json",
+      "title": "kuna decompile has no --json: the one-function call is text-only and exits 2 on the flag",
+      "track": "tooling",
+      "status": "open",
+      "severity": "major",
+      "probe_id": "p-e9cc6a296ca5",
+      "acceptance_id": "a-f618026c4005",
+      "hypothesis_status": "inconclusive",
+      "credibility": 1.0,
+      "instances": 4,
+      "challenges": [
+        "6609e458cddae72ae250bf40",
+        "67bd52114e1a16f76a1ad5bc",
+        "61ffb07c33c5d46c8bcbfc1d"
+      ],
+      "rounds": [
+        0
+      ],
+      "first_seen_round": 0,
+      "attempts": 0,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-cli/src",
+        "tests/cli",
+        "docs/cli.md"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": null,
+      "closed_in_round": null,
+      "closing_pr": null,
+      "reject_reason": null,
+      "score": 96.566275,
+      "path": "docs/re-needs/decompile-no-json.md"
+    },
+    {
+      "need_id": "functions-json-size",
+      "title": "kuna functions --json omits size, so the cheap inventory call cannot rank functions",
+      "track": "tooling",
+      "status": "open",
+      "severity": "minor",
+      "probe_id": "p-d8f69800917d",
+      "acceptance_id": "a-ddc5496835ba",
+      "hypothesis_status": "inconclusive",
+      "credibility": 1.0,
+      "instances": 4,
+      "challenges": [
+        "6609e458cddae72ae250bf40",
+        "67bd52114e1a16f76a1ad5bc",
+        "61ffb07c33c5d46c8bcbfc1d"
+      ],
+      "rounds": [
+        0
+      ],
+      "first_seen_round": 0,
+      "attempts": 0,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-cli/src",
+        "tests/cli",
+        "docs/cli.md"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": null,
+      "closed_in_round": null,
+      "closing_pr": null,
+      "reject_reason": null,
+      "score": 48.283137,
+      "path": "docs/re-needs/functions-json-size.md"
+    },
+    {
+      "need_id": "zero-functions-exit-0",
+      "title": "kuna reports total function-discovery failure as success: count 0, exit 0, silent stderr",
+      "track": "tooling",
+      "status": "open",
+      "severity": "major",
+      "probe_id": "p-8598042c5bf7",
+      "acceptance_id": "a-99418905784a",
+      "hypothesis_status": "inconclusive",
+      "credibility": 1.0,
+      "instances": 2,
+      "challenges": [
+        "64f1f7afd931496abf909525",
+        "60be2a6033c5d410b8842c91"
+      ],
+      "rounds": [
+        0
+      ],
+      "first_seen_round": 0,
+      "attempts": 0,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-cli/src",
+        "tests/cli",
+        "docs/cli.md"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": null,
+      "closed_in_round": null,
+      "closing_pr": null,
+      "reject_reason": null,
+      "score": 43.944492,
+      "path": "docs/re-needs/zero-functions-exit-0.md"
+    },
+    {
+      "need_id": "functions-finds-nothing-exits",
+      "title": "functions finds nothing and exits 0",
+      "track": "loader",
+      "status": "open",
+      "severity": "blocker",
+      "probe_id": "p-c354ee2a485d",
+      "acceptance_id": "a-300e3a5af18b",
+      "hypothesis_status": "inconclusive",
+      "credibility": 0.7,
+      "instances": 1,
+      "challenges": [
+        "64f1f7afd931496abf909525"
+      ],
+      "rounds": [
+        11
+      ],
+      "first_seen_round": 11,
+      "attempts": 0,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-analysis"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": null,
+      "closed_in_round": null,
+      "closing_pr": null,
+      "reject_reason": null,
+      "score": 20.794415,
+      "path": "docs/re-needs/functions-finds-nothing-exits.md"
+    }
+  ],
+  "rejected": []
+}
