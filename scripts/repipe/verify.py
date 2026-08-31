@@ -313,6 +313,26 @@ def run_probe(p, is_acceptance=False, ctx=None, work=None, challenges=(), reps=N
 
 # --- the gate ---------------------------------------------------------------
 
+def coerce_probes(observation):
+    """Parse an observation's probe/acceptance if they arrived as JSON strings.
+
+    They do: OpenAI's strict structured-output mode cannot express the probe schema (its
+    numpred/jsonpred values are deliberately any-typed, and strict mode demands an explicit
+    type everywhere), so the tester report carries them serialised and they are validated
+    here by probe.validate() instead. A string that will not parse is left as-is, which makes
+    the observation `unrunnable` -- the honest verdict for "this is not a probe".
+    """
+    out = dict(observation or {})
+    for key in ("probe", "acceptance"):
+        v = out.get(key)
+        if isinstance(v, str):
+            try:
+                out[key] = json.loads(v)
+            except (ValueError, TypeError):
+                pass
+    return out
+
+
 def gate(observation, ctx=None, work=None, challenges=(), sha=None, reps=None):
     """Run an observation's two arms and say what the pair means.
 
@@ -320,7 +340,7 @@ def gate(observation, ctx=None, work=None, challenges=(), sha=None, reps=None):
     substitution environment for the pair. Left None (the usual case) each arm resolves
     its own {{BIN}} from its own target.
     """
-    obs = observation or {}
+    obs = coerce_probes(observation)
     if not challenges and obs.get("hexid"):
         challenges = [obs["hexid"]]
     p, a = obs.get("probe"), obs.get("acceptance")
@@ -422,6 +442,30 @@ def _tester_id_for(report_path):
         return None
 
 
+def _arena_primary(arena):
+    """The arena's primary binary, from the build record workspace.py leaves behind.
+
+    Falls back to the single file under target/ when there is exactly one, so a
+    hand-assembled arena still resolves.
+    """
+    rec = Path(arena) / ".repipe" / "build.json"
+    try:
+        doc = json.loads(rec.read_text())
+        rel = (doc.get("binaries") or [{}])[0].get("arena_rel")
+        if rel:
+            p = Path(arena) / rel
+            if p.exists():
+                return str(p)
+    except Exception:
+        pass
+    tgt = Path(arena) / "target"
+    if tgt.is_dir():
+        files = [f for f in sorted(tgt.rglob("*")) if f.is_file()]
+        if len(files) == 1:
+            return str(files[0])
+    return None
+
+
 def gate_round(round_n, ctx=None, reps=None):
     """Gate every observation in every report of a round; persist rounds/<n>/gate.json."""
     sha = head_sha()
@@ -449,14 +493,26 @@ def gate_round(round_n, ctx=None, reps=None):
                 continue
             o = dict(o or {})
             o.setdefault("hexid", hexid)
-            r = gate(o, ctx=ctx, work=str(rp.parent),
+            # Supply {{BIN}} from the ARENA. The harness already knows which binary the
+            # tester was working on, so requiring the tester to restate it in every probe's
+            # `target` block just discards correct observations as unrunnable -- which is
+            # exactly what happened to the first real report. An explicit `target` still
+            # wins, because that is what makes a probe portable off the arena.
+            rctx = dict(ctx or {})
+            if not rctx.get("bin"):
+                arena_bin = _arena_primary(rp.parent)
+                if arena_bin:
+                    rctx["bin"] = arena_bin
+            r = gate(o, ctx=rctx, work=str(rp.parent),
                      challenges=[hexid] if hexid else (), sha=sha, reps=reps)
             r["report"] = str(rp)
             r["observation_index"] = i
             # cluster.py builds the need record from these, so the gate result must carry the
             # observation it gated and who filed it -- a verdict with no observation attached
             # would collapse every need into one empty record.
-            r["observation"] = o
+            # Record what was actually GATED, not what arrived: the probes cross the API
+            # boundary as JSON strings, and downstream (cluster.py) needs them parsed.
+            r["observation"] = coerce_probes(o)
             r["tester_id"] = report.get("tester_id") or _tester_id_for(rp)
             results.append(r)
 

@@ -39,9 +39,23 @@ def _tokens(text):
     return {w for w in _WORD.findall((text or "").lower()) if w not in _STOP and len(w) > 2}
 
 
+def _as_probe(probe):
+    """Tolerate a probe that is still a JSON string.
+
+    verify.py parses these at the gate, but gate.json is a file on disk that can be
+    hand-edited or replayed from an older run, and a crash here would lose the whole round.
+    """
+    if isinstance(probe, str):
+        try:
+            return json.loads(probe)
+        except (ValueError, TypeError):
+            return {}
+    return probe or {}
+
+
 def _subcommand(probe):
     """The kuna subcommand a probe drives, which is most of a friction report's identity."""
-    cmd = (probe or {}).get("cmd") or []
+    cmd = _as_probe(probe).get("cmd") or []
     known = {"decompile", "decompile-all", "decompile-project", "functions",
              "test", "catalog", "modes", "specs", "fid"}
     for tok in cmd[1:]:
@@ -57,7 +71,7 @@ def _clause_shape(probe):
 
     'exit_code + json' is a different complaint from 'wall_ms', even about the same command.
     """
-    return tuple(sorted((probe or {}).get("expect", {}).keys()))
+    return tuple(sorted(_as_probe(probe).get("expect", {}).keys()))
 
 
 def signature(obs):
@@ -133,7 +147,7 @@ def _pick_witness(obs_group):
     0.15 s."""
     order = {"blocker": 0, "major": 1, "minor": 2}
     def key(o):
-        tgt = (o.get("probe") or {}).get("target") or {}
+        tgt = _as_probe(o.get("probe")).get("target") or {}
         return (order.get(o.get("severity"), 3), tgt.get("binary_size", 1 << 62))
     return sorted(obs_group, key=key)[0]
 
@@ -204,8 +218,8 @@ def build_needs(observations, round_n):
             "track": track,
             "status": "open",
             "severity": witness.get("severity", "major"),
-            "probe_id": _pid(witness.get("probe"), False),
-            "acceptance_id": _pid(witness.get("acceptance"), True),
+            "probe_id": _pid(_as_probe(witness.get("probe")), False),
+            "acceptance_id": _pid(_as_probe(witness.get("acceptance")), True),
             "hypothesis_status": "inconclusive",
             "credibility": credibility(grp),
             "instances": len(grp),
@@ -285,8 +299,8 @@ def _sections(grp, witness):
                      for o in grp if o.get("hypothesis")) or "_none offered_"
     return {
         "Symptom": "%s\n\n%s" % (_quote(witness.get("what_i_wanted", ""), 800), quotes),
-        "Reproduction": "```json\n%s\n```" % json.dumps(witness.get("probe"), indent=2),
-        "Acceptance": "```json\n%s\n```" % json.dumps(witness.get("acceptance"), indent=2),
+        "Reproduction": "```json\n%s\n```" % json.dumps(_as_probe(witness.get("probe")), indent=2),
+        "Acceptance": "```json\n%s\n```" % json.dumps(_as_probe(witness.get("acceptance")), indent=2),
         "Hypothesis": ("**Advisory — the builder is not bound by this.** In the sibling "
                        "campaign 3 of 8 filed diagnoses were overturned while the symptom "
                        "stood in all 8.\n\n%s" % hyps),

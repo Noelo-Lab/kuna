@@ -80,6 +80,10 @@ A worked example of the shape:
 Use `{{KUNA}}` and `{{BIN}}` as tokens in `cmd` — they are substituted at replay time so
 your probe still runs after the arena is gone.
 
+**`probe` and `acceptance` are SERIALISED JSON STRINGS**, not nested objects — the shape
+above, `json.dumps`'d into a single string field. They are parsed and validated on arrival, so
+a malformed one costs you that observation, not the whole report.
+
 **Your `hypothesis` is advisory and you are not being graded on it.** In the sibling
 campaign that this loop is modelled on, three of eight filed diagnoses were overturned while
 the *symptom* stood in all eight. Report what you saw precisely; guess at the cause loosely

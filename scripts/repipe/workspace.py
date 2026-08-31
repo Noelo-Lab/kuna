@@ -220,15 +220,32 @@ exit $RC
 # `--project-dir` is a `load`-only flag in the declib CLI (verified: no other subcommand
 # accepts it), so it is injected only there, and only when the caller did not pass one.
 _IDA_SETUP = '''
+# EVERYTHING declib writes must land inside the arena. The tester runs under codex's
+# `workspace-write` sandbox, which blocks writes outside its workspace -- and declib puts its
+# unix socket under TMPDIR (observed: /tmp/declib_server_<id>/decompiler.sock), so with the
+# default TMPDIR the server cannot start at all and every reference call fails with rc=1.
 DECLIB_SERVER_REGISTRY="$ARENA/.declib/servers"
-export DECLIB_SERVER_REGISTRY
-mkdir -p "$ARENA/.declib/servers" "$ARENA/.declib/projects"
+TMPDIR="$ARENA/.declib/tmp"
+XDG_STATE_HOME="$ARENA/.declib/state"
+XDG_CACHE_HOME="$ARENA/.declib/cache"
+export DECLIB_SERVER_REGISTRY TMPDIR XDG_STATE_HOME XDG_CACHE_HOME
+mkdir -p "$ARENA/.declib/servers" "$ARENA/.declib/projects" "$TMPDIR" \
+         "$XDG_STATE_HOME" "$XDG_CACHE_HOME"
 PROJDIR="$ARENA/.declib/projects"
+
+# `load` without an explicit --backend silently falls back to angr, which would make the
+# whole "compare against IDA" leg a comparison against something else entirely. IDA is the
+# reference the design asks for, so it is the default here and the caller can still override.
 INJECT=""
+BACKEND=""
 if [ "${1:-}" = "load" ]; then
     case " $* " in
         *" --project-dir "*|*" --project-dir="*) ;;
         *) INJECT=1 ;;
+    esac
+    case " $* " in
+        *" --backend "*|*" --backend="*) ;;
+        *) BACKEND="${REPIPE_IDA_BACKEND:-ida}" ;;
     esac
 fi
 '''
@@ -248,12 +265,18 @@ def _shim_ida(real: str) -> str:
               "# parallel track: every call here auto-drafts an observation, because \"kuna made\n"
               "# testers leave N times this round\" is a headline metric.\n#\n"
               "# The server registry and the project DBs (IDA's .i64 among them) are forced inside\n"
-              "# the arena so they die with the round. HOME is deliberately NOT re-pointed: IDA's\n"
-              "# registration lives in ~/.idapro/ida.reg and moving HOME would break the backend.",
+              "# the arena so they die with the round, as does declib's unix socket -- codex's\n"
+              "# workspace-write sandbox blocks writes outside the workspace, and the default\n"
+              "# TMPDIR put the socket in /tmp, so every reference call failed with rc=1.\n"
+              "# HOME is deliberately NOT re-pointed: IDA's registration lives in\n"
+              "# ~/.idapro/ida.reg and moving HOME would break the backend.",
         real_var="REPIPE_REAL_DECOMPILER", real_default=real)
     invoke = ('if [ -n "$INJECT" ]; then\n'
               '    shift\n'
               '    set -- load --project-dir "$PROJDIR" "$@"\n'
+              'fi\n'
+              'if [ -n "$BACKEND" ]; then\n'
+              '    set -- "$@" --backend "$BACKEND"\n'
               'fi\n'
               '"$REAL" "$@"')
     tail = _SHIM_TAIL.format(tool="ida", invoke=invoke)

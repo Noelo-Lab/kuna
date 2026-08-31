@@ -146,6 +146,28 @@ echo "$WRONG" | grep -qi 'not found\|mismatch' \
   && ok "target verification refuses a misresolved {{BIN}}" \
   || bad "a misresolved target produced a verdict instead of an error"
 
+head_ "L1  the tester report schema is accepted by strict structured-output mode"
+# codex sends --output-schema straight to the API's response_format, which enforces rules
+# ordinary JSON Schema does not. Nothing local rejects a bad schema, so the first live tester
+# 400s. Every rule below was learned from exactly that.
+if "$PY" -m scripts.repipe.strictschema "$REPO/tools/repipe/schema/report.schema.json" >/dev/null 2>&1; then
+  ok "report.schema.json is strict-mode clean"
+else
+  bad "report.schema.json would 400 on a live codex run" "$("$PY" -m scripts.repipe.strictschema "$REPO/tools/repipe/schema/report.schema.json" 2>&1 | head -3)"
+fi
+"$PY" - <<'PY' >/dev/null 2>&1 && ok "the checker actually catches a violation" || bad "strictschema check is inert"
+import sys
+sys.path.insert(0, "/home/mahaloz/github/kuna")
+from scripts.repipe import strictschema
+# an object missing a key from `required`, and a bare enum with no type
+bad_schema = {"type": "object", "additionalProperties": False,
+              "required": ["a"], "properties": {"a": {"type": "string"},
+                                                "b": {"enum": ["x", "y"]}}}
+probs = strictschema.check(bad_schema)
+assert len(probs) >= 2, probs
+assert not strictschema.check(strictschema.strictify(bad_schema))
+PY
+
 head_ "L1  a probe cannot execute arbitrary code"
 # A probe's argv is authored by an LLM and replayed by verify.py in the MAIN tree, outside
 # the tester's sandbox. Without the allowlist this is remote code execution.

@@ -7,8 +7,7 @@
     "open": 5
   },
   "by_track": {
-    "loader": 1,
-    "tooling": 4
+    "tooling": 5
   },
   "by_severity": {
     "blocker": 2,
@@ -162,13 +161,13 @@
       "path": "docs/re-needs/zero-functions-exit-0.md"
     },
     {
-      "need_id": "functions-finds-nothing-exits",
-      "title": "functions finds nothing and exits 0",
-      "track": "loader",
+      "need_id": "unpack-upx-packed-executable",
+      "title": "kuna cannot unpack a UPX-packed executable before analysis",
+      "track": "tooling",
       "status": "open",
       "severity": "blocker",
-      "probe_id": "p-c354ee2a485d",
-      "acceptance_id": "a-300e3a5af18b",
+      "probe_id": "p-160471d44d7e",
+      "acceptance_id": "a-3d357962b3f7",
       "hypothesis_status": "inconclusive",
       "credibility": 0.7,
       "instances": 1,
@@ -176,13 +175,13 @@
         "64f1f7afd931496abf909525"
       ],
       "rounds": [
-        11
+        20
       ],
-      "first_seen_round": 11,
+      "first_seen_round": 20,
       "attempts": 0,
       "covered_by_option": null,
       "touches": [
-        "decompiler/crates/kuna-analysis"
+        "decompiler/crates/kuna-cli"
       ],
       "scope": "small",
       "regression_of": null,
@@ -191,7 +190,7 @@
       "closing_pr": null,
       "reject_reason": null,
       "score": 20.794415,
-      "path": "docs/re-needs/functions-finds-nothing-exits.md"
+      "path": "docs/re-needs/unpack-upx-packed-executable.md"
     }
   ],
   "rejected": []
