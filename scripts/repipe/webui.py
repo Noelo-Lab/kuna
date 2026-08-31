@@ -268,6 +268,19 @@ def _lexically_under(root, candidate):
     return c == r or c.startswith(r + os.sep)
 
 
+# An id may only ever be these characters. No separator, no dot-dot, no NUL, nothing that can
+# leave a directory -- so a tainted URL component cannot reach a filesystem path at all. This
+# is deliberately stricter than _safe_under, which stays as defence in depth.
+_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+
+
+def safe_id(value):
+    """The id if it is well-formed, else None. Applied at every route that names a file."""
+    if not isinstance(value, str) or ".." in value:
+        return None
+    return value if _ID_RE.match(value) else None
+
+
 def _safe_under(root, candidate):
     """True iff ``candidate`` really lives under ``root`` after symlinks are resolved."""
     try:
@@ -1327,7 +1340,10 @@ class Handler(BaseHTTPRequestHandler):
         # to /assets/css/ — which is /fonts/<name> here. Serving it keeps the stylesheet
         # byte-identical to the live site instead of rewriting its URLs.
         if segs[0] in ("fonts", "img") and len(segs) == 2:
-            return self.serve_site_file(segs[0], segs[1])
+            name = safe_id(segs[1])
+            if name is None:
+                return self._err(400, "bad asset name")
+            return self.serve_site_file(segs[0], name)
 
         if segs[0] == "favicon.ico":
             return self.serve_site_file("img", "favicon.png")
@@ -1338,9 +1354,13 @@ class Handler(BaseHTTPRequestHandler):
         return self.api(segs[1:], query, payload, seq, state_dir)
 
     def serve_site_file(self, kind, name):
+        # Charset-gate first: a tainted component must never reach a path at all, whatever
+        # _safe_under would have said about the result.
+        name = safe_id(name)
+        if name is None or kind not in ("fonts", "img", "css", "js"):
+            return self._err(400, "bad asset name")
         cand = SITE_ASSETS / kind / name
-        if "/" in name or ".." in name or not _safe_under(SITE_ASSETS, cand) \
-                or not cand.is_file():
+        if not _safe_under(SITE_ASSETS, cand) or not cand.is_file():
             return self._err(404, "not found")
         return self._file(cand)
 
@@ -1352,11 +1372,17 @@ class Handler(BaseHTTPRequestHandler):
         if rest == ["site.css"]:
             return self._file(SITE_CSS, _CTYPES[".css"])
         if rest[0] == "fonts" and len(rest) == 2:
-            cand = SITE_FONTS / rest[1]
+            name = safe_id(rest[1])
+            if name is None:
+                return self._err(400, "bad asset name")
+            cand = SITE_FONTS / name
             if not _safe_under(SITE_FONTS, cand) or not cand.is_file():
                 return self._err(404, "not found")
             return self._file(cand)
-        cand = WEBUI_DIR / "assets" / Path(*rest)
+        parts = [safe_id(x) for x in rest]
+        if any(x is None for x in parts):
+            return self._err(400, "bad asset path")
+        cand = WEBUI_DIR / "assets" / Path(*parts)
         if not _safe_under(WEBUI_DIR / "assets", cand) or not cand.is_file():
             return self._err(404, "not found")
         return self._file(cand)
@@ -1414,7 +1440,9 @@ class Handler(BaseHTTPRequestHandler):
                                "now": time.time()})
 
         if head == "agent" and len(rest) == 3 and rest[2] in ("log", "report"):
-            agent_id = rest[1]
+            agent_id = safe_id(rest[1])
+            if agent_id is None:
+                return self._err(400, "bad agent id")
             if not AGENT_ID_RE.match(agent_id):
                 return self._err(400, "invalid agent id")
             if rest[2] == "report":
