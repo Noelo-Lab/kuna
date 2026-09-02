@@ -108,13 +108,17 @@ fn main() -> ExitCode {
 /// the inner drain is the whole loop.
 fn run_console(status: &mut IfaceStatus) -> u8 {
     let mut stdout = std::io::stdout();
+    // The redirect is re-synced after EVERY command, so a target that cannot be
+    // written would otherwise repeat its diagnostic once per command until
+    // `closefile`. Remember which target has already been reported.
+    let mut redirect_error: Option<String> = None;
     loop {
         while !status.is_stream_finished() {
             status.write_prompt();
             // The prompt + any prior output drain now.
             execute(status);
             drain_stdout(status, &mut stdout);
-            sync_redirect_file(status);
+            sync_redirect_file(status, &mut redirect_error);
         }
         if status.done {
             break;
@@ -150,30 +154,39 @@ fn drain_stdout(status: &mut IfaceStatus, stdout: &mut std::io::Stdout) {
 /// The C++ `fileoptr` is a live `ofstream`; rewriting the whole buffer each time
 /// is the equivalent against the buffer-backed redirect (the corpus writes are
 /// small — one `print C` per file).
-fn sync_redirect_file(status: &IfaceStatus) {
-    if let Some(file) = &status.fileoptr {
-        // `openfile append` opens with ios_base::app; honor it by appending only
-        // the delta is unnecessary here because the buffer holds the full intended
-        // file contents — a truncating rewrite reproduces both modes faithfully
-        // for the single-writer console (append vs truncate differ only across
-        // separate opens, which the corpus never does).
-        // A discarded error here is how a mis-parsed path becomes silent data
-        // loss: the redirect target is whatever `openfile` resolved, and the
-        // open both creates and TRUNCATES it. Say so on stderr — the CLI
-        // forwards it into the failure report, so the write that did not happen
-        // is never mistaken for a decompiler that produced nothing.
-        match std::fs::OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .open(&file.filename)
-        {
-            Ok(mut fh) => {
-                if let Err(e) = fh.write_all(file.contents.as_bytes()).and_then(|_| fh.flush()) {
-                    eprintln!("Unable to write {}: {e}", file.filename);
-                }
+fn sync_redirect_file(status: &IfaceStatus, reported: &mut Option<String>) {
+    let Some(file) = &status.fileoptr else {
+        // No redirect open: a later failure is about a different target.
+        *reported = None;
+        return;
+    };
+    // `openfile append` opens with ios_base::app; honor it by appending only
+    // the delta is unnecessary here because the buffer holds the full intended
+    // file contents — a truncating rewrite reproduces both modes faithfully
+    // for the single-writer console (append vs truncate differ only across
+    // separate opens, which the corpus never does).
+    //
+    // A discarded error here is how a mis-parsed path becomes silent data loss:
+    // the redirect target is whatever `openfile` resolved, and the open both
+    // creates and TRUNCATES it. Say so on stderr — the CLI forwards it into the
+    // failure report, so the write that did not happen is never mistaken for a
+    // decompiler that produced nothing.
+    let outcome = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(&file.filename)
+        .and_then(|mut fh| fh.write_all(file.contents.as_bytes()).and_then(|_| fh.flush()));
+    match outcome {
+        Ok(()) => *reported = None,
+        // Reported once per target: this runs after EVERY command, so a bad
+        // target would otherwise repeat until `closefile` — noise that also eats
+        // the CLI's bounded transcript excerpt.
+        Err(e) => {
+            if reported.as_deref() != Some(file.filename.as_str()) {
+                eprintln!("Unable to write {}: {e}", file.filename);
+                *reported = Some(file.filename.clone());
             }
-            Err(e) => eprintln!("Unable to open {} for writing: {e}", file.filename),
         }
     }
 }

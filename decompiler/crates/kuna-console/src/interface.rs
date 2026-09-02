@@ -270,7 +270,8 @@ impl CommandStream {
             return self.read_token();
         }
         self.pos += 1;
-        let mut out: Vec<u8> = Vec::new();
+        // The unescaped result is never longer than what remains.
+        let mut out: Vec<u8> = Vec::with_capacity(self.buf.len() - self.pos);
         while self.pos < self.buf.len() {
             let c = self.buf[self.pos];
             self.pos += 1;
