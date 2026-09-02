@@ -10,10 +10,11 @@
 //! no `.sla`, no binary analysis, no dependence on which functions currently
 //! abort.
 //!
-//! The one exception is `every_surface_reports_the_same_load_failure`, which
-//! drives the real engine over a checked-in fixture: a stub cannot notice that
-//! the console reordered its own prints, and that reorder is exactly what would
-//! silently return `kuna decompile` to the generic wording.
+//! The exceptions drive the real engine over a checked-in fixture. A stub cannot
+//! notice that the console reordered its own prints — the reorder that would
+//! silently return `kuna decompile` to the generic wording — and it cannot
+//! notice that the console's own grammar split a path on a space, because the
+//! stub is not the parser under test.
 
 #![cfg(unix)]
 
@@ -306,4 +307,113 @@ fn every_surface_reports_the_same_load_failure() {
             "{name} must report the real reason, byte-identically to the others"
         );
     }
+}
+
+/// A unique scratch directory whose name contains a space.
+///
+/// Everything before the first space is unique to this run, so the path a
+/// whitespace split would truncate to cannot collide with an unrelated file —
+/// the truncation assertion below is then about this test and nothing else.
+///
+/// The parent is cargo's own per-target scratch rather than
+/// `std::env::temp_dir()`: the child's temp dir is whatever `TMPDIR` this test
+/// passes it, so the parent's identity is free, and a developer whose *system*
+/// temp dir already contains a space — the very environment this pair is about
+/// — would otherwise move the split into that name, where it names someone
+/// else's file.
+fn spaced_dir(tag: &str) -> PathBuf {
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!(
+        "kuna_pathtest_{tag}_{}_{} with space",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    ));
+    std::fs::create_dir_all(&dir).expect("create the spaced scratch dir");
+    dir
+}
+
+/// The console reads a filename with `s >> filename`, so an unquoted path
+/// containing a space arrives as two arguments: `load file` took the head as a
+/// BFD target and the tail as the filename, and the load failed with
+/// `Unable to recognize imagefile <tail>`.
+///
+/// `kuna decompile` is the only surface that can regress here — it is the one
+/// that drives `decomp_dbg` through a text script; the in-process surfaces pass
+/// the path as a string.
+#[test]
+fn a_binary_under_a_spaced_directory_decompiles() {
+    let dir = spaced_dir("bin");
+    let bin = dir.join("a.out");
+    std::fs::copy(fauxware(), &bin).expect("copy the fixture into the spaced dir");
+
+    let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .args(["decompile", bin.to_str().unwrap(), "main", "--sleighpath", specs().as_str()])
+        .output()
+        .expect("failed to spawn the kuna binary");
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    let _ = std::fs::remove_dir_all(&dir);
+
+    if is_specs_skip(&stderr) {
+        eprintln!("skipping: specs-less environment: {stderr}");
+        return;
+    }
+    assert!(
+        !stderr.contains("Unable to recognize imagefile"),
+        "the path was split on its space, got: {stderr}"
+    );
+    assert_eq!(out.status.code(), Some(0), "the load must succeed: {stderr}");
+    assert!(stdout.contains("main"), "C for main must reach stdout, got: {stdout}");
+}
+
+/// The same defect on the output side, and the one that does not need a spaced
+/// *binary* path to bite: the temp file lives in `std::env::temp_dir()`, which
+/// on Windows is `C:\Users\First Last\AppData\Local\Temp` by default. An
+/// unquoted `openfile write` truncated there, so the C was written to a file
+/// named after the first path component — silently, because the console
+/// discarded the write error — and the CLI reported "no C output".
+#[test]
+fn a_spaced_temp_dir_still_yields_c() {
+    let dir = spaced_dir("tmp");
+    let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .args(["decompile", fauxware().as_str(), "main", "--sleighpath", specs().as_str()])
+        .env("TMPDIR", &dir)
+        .output()
+        .expect("failed to spawn the kuna binary");
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+
+    // The truncation target: the spaced dir's name up to its first space. The
+    // prefix is unique to this run, so anything there was written by this run —
+    // which is also why the cleanup only removes a target that is actually
+    // there. Should the split ever land outside this test's own name (a spaced
+    // path above `dir`), that file belongs to someone else and deleting it
+    // would be the same data loss the test exists to catch.
+    let clobbered = dir.to_str().unwrap().split(' ').next().unwrap().to_string();
+    let ours = !dir.parent().is_some_and(|p| p.to_string_lossy().contains(' '));
+    let clobber_existed = ours && Path::new(&clobbered).exists();
+    let _ = std::fs::remove_dir_all(&dir);
+    if clobber_existed {
+        let _ = std::fs::remove_file(&clobbered);
+    }
+
+    if is_specs_skip(&stderr) {
+        eprintln!("skipping: specs-less environment: {stderr}");
+        return;
+    }
+    assert!(!stderr.contains("no C output"), "the redirect was truncated, got: {stderr}");
+    assert_eq!(out.status.code(), Some(0), "the run must succeed: {stderr}");
+    assert!(stdout.contains("main"), "C for main must reach stdout, got: {stdout}");
+    assert!(
+        ours,
+        "the scratch parent {:?} contains a space, so the split lands in ITS name and the \
+         clobber check below would be about someone else's file",
+        dir.parent().unwrap_or(&dir)
+    );
+    assert!(
+        !clobber_existed,
+        "the C was written to the truncated path {clobbered}, clobbering whatever was there"
+    );
 }

@@ -168,6 +168,11 @@ pub type IfaceResult<T> = Result<T, IfaceError>;
 /// - [`eof`](CommandStream::eof) reports the latched eof flag, exactly like the
 ///   stream's `eofbit`.
 ///
+/// [`read_filename`](CommandStream::read_filename) is the one kuna addition: C++
+/// reads every path with `s >> filename`, which silently splits a path on its
+/// spaces. It layers an optional double-quoted form over `read_token` and is
+/// byte-identical to it for unquoted input.
+///
 /// Whitespace is the C++ default `std::isspace` set restricted to ASCII
 /// (` \t\n\r\x0b\x0c`), matching [`char::is_ascii_whitespace`].
 #[derive(Debug, Clone)]
@@ -235,6 +240,57 @@ impl CommandStream {
         }
         // The slice is non-whitespace ASCII-or-UTF8 bytes copied verbatim.
         String::from_utf8_lossy(&self.buf[start..self.pos]).into_owned()
+    }
+
+    /// Read a **filename** argument: one whitespace-delimited token, or a
+    /// double-quoted string when the argument opens with `"`.
+    ///
+    /// C++ reads every path with `s >> filename`, so a path containing a space
+    /// splits into two arguments and the command loads the wrong file (or, for
+    /// `openfile`, writes to a truncated path). The console's own grammar is the
+    /// only place that can fix it: quoting at the caller cannot help a reader
+    /// that has no quote rule.
+    ///
+    /// Unquoted input is byte-identical to [`read_token`](CommandStream::read_token)
+    /// — the vendored corpus, every generated script and every hand-typed line
+    /// without a quote parse exactly as before. Inside quotes, `\"` and `\\`
+    /// are escapes; every other backslash is literal, so a Windows path survives
+    /// whether or not its separators were doubled. An unterminated quote
+    /// consumes the rest of the line (its own diagnostic would have to invent a
+    /// grammar error the C++ console has no wording for).
+    pub fn read_filename(&mut self) -> String {
+        while self.pos < self.buf.len() && Self::is_ws(self.buf[self.pos]) {
+            self.pos += 1;
+        }
+        if self.pos >= self.buf.len() {
+            self.eof = true;
+            return String::new();
+        }
+        if self.buf[self.pos] != b'"' {
+            return self.read_token();
+        }
+        self.pos += 1;
+        // The unescaped result is never longer than what remains.
+        let mut out: Vec<u8> = Vec::with_capacity(self.buf.len() - self.pos);
+        while self.pos < self.buf.len() {
+            let c = self.buf[self.pos];
+            self.pos += 1;
+            match c {
+                b'"' => {
+                    if self.pos >= self.buf.len() {
+                        self.eof = true;
+                    }
+                    return String::from_utf8_lossy(&out).into_owned();
+                }
+                b'\\' if matches!(self.buf.get(self.pos), Some(b'"') | Some(b'\\')) => {
+                    out.push(self.buf[self.pos]);
+                    self.pos += 1;
+                }
+                _ => out.push(c),
+            }
+        }
+        self.eof = true;
+        String::from_utf8_lossy(&out).into_owned()
     }
 
     /// `s.get(c)` — read one raw character (no whitespace skipping).
@@ -623,7 +679,7 @@ impl IfaceCommandAction for IfcOpenfile {
         if status.is_file_open() {
             return Err(IfaceError::execution("Output file already opened"));
         }
-        let filename = s.read_token();
+        let filename = s.read_filename();
         if filename.is_empty() {
             return Err(IfaceError::parse("No filename specified"));
         }
@@ -644,7 +700,7 @@ impl IfaceCommandAction for IfcOpenfileAppend {
         if status.is_file_open() {
             return Err(IfaceError::execution("Output file already opened"));
         }
-        let filename = s.read_token();
+        let filename = s.read_filename();
         if filename.is_empty() {
             return Err(IfaceError::parse("No filename specified"));
         }
@@ -1338,6 +1394,71 @@ mod tests {
         assert!(!s.eof());
         assert_eq!(s.read_token(), "foo");
         assert!(s.eof()); // token to end-of-string latches eof
+    }
+
+    /// A quoted filename keeps its spaces, and the eof contract matches
+    /// `read_token`'s: latched when the argument runs to the end of the line,
+    /// not while trailing whitespace remains.
+    #[test]
+    fn cmdstream_filename_quoted_keeps_spaces() {
+        let mut s = CommandStream::new("load file \"/home/u/test dir/a.out\"");
+        assert_eq!(s.read_token(), "load");
+        assert_eq!(s.read_token(), "file");
+        assert_eq!(s.read_filename(), "/home/u/test dir/a.out");
+        assert!(s.eof());
+
+        let mut s = CommandStream::new("\"/a b/c\"   ");
+        assert_eq!(s.read_filename(), "/a b/c");
+        assert!(!s.eof());
+        s.skip_ws();
+        assert!(s.eof());
+    }
+
+    /// Unquoted input is byte-identical to `read_token` — the vendored corpus
+    /// and every script written before quoting existed must not shift.
+    #[test]
+    fn cmdstream_filename_unquoted_is_read_token() {
+        for line in ["/home/u/a.out", "  /home/u/a.out  ", "a.out b.out", ""] {
+            let mut q = CommandStream::new(line);
+            let mut t = CommandStream::new(line);
+            assert_eq!(q.read_filename(), t.read_token(), "line: {line:?}");
+            assert_eq!(q.eof(), t.eof(), "eof differs for {line:?}");
+        }
+    }
+
+    /// `\"` and `\\` are escapes inside quotes; any other backslash is literal,
+    /// so a Windows path survives whether or not its separators were doubled.
+    #[test]
+    fn cmdstream_filename_escapes() {
+        let mut s = CommandStream::new(r#""C:\Users\John Doe\a.out""#);
+        assert_eq!(s.read_filename(), r"C:\Users\John Doe\a.out");
+
+        let mut s = CommandStream::new(r#""C:\\Users\\John Doe\\a.out""#);
+        assert_eq!(s.read_filename(), r"C:\Users\John Doe\a.out");
+
+        let mut s = CommandStream::new(r#""odd \"name\".c""#);
+        assert_eq!(s.read_filename(), "odd \"name\".c");
+    }
+
+    /// Two quoted arguments still separate — `load file <target> <path>` must
+    /// keep reading a second filename after the first.
+    #[test]
+    fn cmdstream_filename_two_quoted_args() {
+        let mut s = CommandStream::new("\"a target\" \"/a b/c.out\"");
+        assert_eq!(s.read_filename(), "a target");
+        s.skip_ws();
+        assert!(!s.eof());
+        assert_eq!(s.read_filename(), "/a b/c.out");
+        assert!(s.eof());
+    }
+
+    /// An unterminated quote consumes the rest of the line and latches eof
+    /// rather than looping or panicking.
+    #[test]
+    fn cmdstream_filename_unterminated_quote() {
+        let mut s = CommandStream::new("\"/a b/c.out");
+        assert_eq!(s.read_filename(), "/a b/c.out");
+        assert!(s.eof());
     }
 
     #[test]

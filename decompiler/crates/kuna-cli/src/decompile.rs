@@ -6,6 +6,7 @@
 //! decompiled C through the bulk-output redirect so interactive prompts never
 //! pollute it, and prints the captured C — byte-identical to the Python tool.
 
+use std::borrow::Cow;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -52,6 +53,46 @@ pub(crate) fn looks_like_addr(target: &str) -> bool {
     target.starts_with("0x") || target.starts_with("0X")
 }
 
+/// Quote a path for the console script when — and only when — it needs it.
+///
+/// The console reads a filename with `CommandStream::read_filename`, which
+/// tokenizes on whitespace unless the argument opens with `"`. An unquoted path
+/// containing a space therefore splits into two arguments: `load file` loads the
+/// wrong file, and `openfile write` truncates a file at the split point.
+///
+/// Quoting is conditional so that every path that works today keeps producing a
+/// byte-identical script — the corpus transcripts, and any older `decomp_dbg`
+/// reached through `--decomp-dbg`, which would not understand a quote. The
+/// [`Cow`] says so in the type: borrowed (and unallocated) for every path that
+/// needs no quoting, which is nearly all of them.
+///
+/// The scan is byte-wise because the console's own splitter is
+/// (`CommandStream::is_ws` is the ASCII set): the producer tests exactly the
+/// bytes the consumer would split on.
+fn console_path(path: &str) -> Cow<'_, str> {
+    if !path.as_bytes().iter().any(|b| b.is_ascii_whitespace() || *b == b'"') {
+        return Cow::Borrowed(path);
+    }
+    Cow::Owned(format!("\"{}\"", path.replace('\\', "\\\\").replace('"', "\\\"")))
+}
+
+/// A newline is the one whitespace character quoting cannot rescue: the script
+/// is fed to `decomp_dbg` as lines, so an embedded `\n` ends the command no
+/// matter how it is quoted, and the console answers with a load failure that
+/// reads like a defect in the binary.
+///
+/// Legal on unix and vanishingly rare. Diagnose it here rather than emit a
+/// script that cannot mean what it says.
+fn reject_unquotable(what: &str, path: &str) -> Result<(), String> {
+    match path.find(['\n', '\r']) {
+        None => Ok(()),
+        Some(_) => Err(format!(
+            "{what} contains a newline, which the decomp_dbg console script \
+             (one command per line) cannot carry: {path:?}"
+        )),
+    }
+}
+
 /// Build the stdin script fed to `decomp_dbg` — port of `_build_script`.
 fn build_script(
     binary: &str,
@@ -65,9 +106,10 @@ fn build_script(
     regions_path: Option<&Path>,
 ) -> String {
     let mut lines: Vec<String> = Vec::new();
+    let image = console_path(binary);
     match bfd_target {
-        Some(t) if !t.is_empty() => lines.push(format!("load file {t} {binary}")),
-        _ => lines.push(format!("load file {binary}")),
+        Some(t) if !t.is_empty() => lines.push(format!("load file {t} {image}")),
+        _ => lines.push(format!("load file {image}")),
     }
     // `option` lines MUST precede `read symbols`: the kuna_analysis passes are
     // committed (gated by the per-pass `--option <id> on|off` flags) inside
@@ -102,14 +144,16 @@ fn build_script(
         lines.push(format!("kassert {ka}"));
     }
     lines.push("decompile".into());
-    lines.push(format!("openfile write {}", out_path.display()));
+    let out_display = out_path.display().to_string();
+    lines.push(format!("openfile write {}", console_path(&out_display)));
     lines.push("print C".into());
     if raw {
         lines.push("print raw".into());
     }
     lines.push("closefile".into());
     if let Some(rp) = regions_path {
-        lines.push(format!("openfile write {}", rp.display()));
+        let rp_display = rp.display().to_string();
+        lines.push(format!("openfile write {}", console_path(&rp_display)));
         lines.push("region blocks".into());
         lines.push("region tree".into());
         lines.push("closefile".into());
@@ -304,6 +348,7 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
     let binary = std::fs::canonicalize(&args.binary)
         .map_err(|_| format!("binary not found: {}", args.binary))?;
     let binary = binary.to_string_lossy().to_string();
+    reject_unquotable("binary path", &binary)?;
 
     let bin_path = if let Some(d) = &args.decomp_dbg {
         PathBuf::from(d)
@@ -334,6 +379,11 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
     } else {
         None
     };
+    // These are ours, but their directory is the caller's `TMPDIR`.
+    reject_unquotable("temp directory", &out_path.display().to_string())?;
+    if let Some(rp) = &regions_path {
+        reject_unquotable("temp directory", &rp.display().to_string())?;
+    }
 
     let result = (|| {
         let script = build_script(
@@ -647,7 +697,12 @@ pub fn run(args: &DecompileArgs) -> i32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{arch_failure_reason, check_errors, find_pipeline_failure, read_symbols_failure};
+    use super::{
+        arch_failure_reason, build_script, check_errors, console_path, find_pipeline_failure,
+        read_symbols_failure, reject_unquotable,
+    };
+    use std::borrow::Cow;
+    use std::path::Path;
 
     /// Recorded `decomp_dbg` transcript: the empty-scope load failure DIV-88's
     /// `symbolnamerepair` guards (`--option symbolnamerepair off`).
@@ -834,5 +889,181 @@ Decompilation complete
     fn body_text_is_not_a_failure() {
         let out = "[decomp]> print C\n  /* Skipping is fine here */\n";
         assert_eq!(find_pipeline_failure(out), None);
+    }
+
+    /// A path without whitespace is emitted exactly as before — the corpus
+    /// transcripts and any older `decomp_dbg` behind `--decomp-dbg` depend on
+    /// the script staying byte-identical for every path that works today.
+    #[test]
+    fn console_path_leaves_ordinary_paths_alone() {
+        assert_eq!(console_path("/home/u/a.out"), "/home/u/a.out");
+        assert_eq!(console_path("./a.out"), "./a.out");
+        assert_eq!(console_path(r"C:\Users\u\a.out"), r"C:\Users\u\a.out");
+
+        // Not merely equal — untouched. The borrow is the contract: a path that
+        // needs no quoting is passed through, never rebuilt.
+        assert!(matches!(console_path("/home/u/a.out"), Cow::Borrowed(_)));
+        assert!(matches!(console_path("/home/u/test dir/a.out"), Cow::Owned(_)));
+    }
+
+    /// A path with a space is quoted, with `\` and `"` escaped so the console's
+    /// `read_filename` recovers the original bytes.
+    #[test]
+    fn console_path_quotes_whitespace() {
+        assert_eq!(console_path("/home/u/test dir/a.out"), "\"/home/u/test dir/a.out\"");
+        assert_eq!(console_path("/a\tb/c.out"), "\"/a\tb/c.out\"");
+        assert_eq!(
+            console_path(r"C:\Users\John Doe\a.out"),
+            r#""C:\\Users\\John Doe\\a.out""#
+        );
+        assert_eq!(console_path("/odd \"name\"/a.out"), r#""/odd \"name\"/a.out""#);
+    }
+
+    /// The whole script: a spaced binary path and a spaced output path must both
+    /// reach the console as ONE argument each.  Unquoted, `load file` reads the
+    /// tail as the filename and `openfile write` truncates a file at the split.
+    #[test]
+    fn build_script_quotes_spaced_paths() {
+        let script = build_script(
+            "/home/u/test dir/a.out",
+            "main",
+            false,
+            None,
+            false,
+            Path::new("/tmp/out dir/kuna.c"),
+            &[],
+            &[],
+            Some(Path::new("/tmp/out dir/kuna.txt")),
+        );
+        assert!(
+            script.contains("load file \"/home/u/test dir/a.out\"\n"),
+            "the image path must be one quoted argument, got:\n{script}"
+        );
+        assert!(
+            script.contains("openfile write \"/tmp/out dir/kuna.c\"\n"),
+            "the C output path must be one quoted argument, got:\n{script}"
+        );
+        assert!(
+            script.contains("openfile write \"/tmp/out dir/kuna.txt\"\n"),
+            "the regions path must be one quoted argument, got:\n{script}"
+        );
+    }
+
+    /// An explicit `--target` still yields `load file <target> <path>` with the
+    /// path quoted — the 3-token shape that silently dropped the path tail.
+    #[test]
+    fn build_script_quotes_the_path_after_a_bfd_target() {
+        let script = build_script(
+            "/home/u/test dir/a.out",
+            "main",
+            false,
+            Some("x86:LE:64:default"),
+            false,
+            Path::new("/tmp/kuna.c"),
+            &[],
+            &[],
+            None,
+        );
+        assert!(
+            script.contains("load file x86:LE:64:default \"/home/u/test dir/a.out\"\n"),
+            "got:\n{script}"
+        );
+    }
+
+    /// A script over ordinary paths is unchanged, quotes and all absent.
+    #[test]
+    fn build_script_is_unchanged_for_ordinary_paths() {
+        let script = build_script(
+            "/home/u/a.out",
+            "main",
+            false,
+            None,
+            false,
+            Path::new("/tmp/kuna.c"),
+            &[],
+            &[],
+            None,
+        );
+        assert!(script.contains("load file /home/u/a.out\n"), "got:\n{script}");
+        assert!(script.contains("openfile write /tmp/kuna.c\n"), "got:\n{script}");
+        assert!(!script.contains('"'), "no quoting where none is needed:\n{script}");
+    }
+
+    /// Quoting cannot rescue a newline — the transport is one command per line —
+    /// so it is diagnosed instead of silently producing a broken script.
+    #[test]
+    fn a_newline_in_the_path_is_diagnosed_not_quoted() {
+        assert!(reject_unquotable("binary path", "/home/u/a.out").is_ok());
+        assert!(reject_unquotable("binary path", "/home/u/test dir/a.out").is_ok());
+
+        let err =
+            reject_unquotable("binary path", "/home/u/nl\ndir/a.out").expect_err("must be rejected");
+        assert!(err.contains("binary path contains a newline"), "got: {err}");
+        assert!(err.contains("one command per line"), "got: {err}");
+        assert!(reject_unquotable("temp directory", "/tmp/cr\rdir/x.c").is_err());
+    }
+
+    /// The contract that matters is the round trip: whatever `console_path`
+    /// emits, the console's own `read_filename` must read back as the original
+    /// path — one argument, byte for byte.
+    ///
+    /// The producer (`kuna-cli`) and the consumer (`kuna-console`) are different
+    /// crates, so nothing but this test holds their escaping rules together; an
+    /// edit to either side that breaks the pairing fails here rather than in a
+    /// user's spaced directory.
+    #[test]
+    fn console_path_round_trips_through_the_console_reader() {
+        use kuna_console::interface::CommandStream;
+
+        for original in [
+            "/home/u/a.out",
+            "/home/u/test dir/a.out",
+            "/home/u/two  spaces/a.out",
+            " /leading/space",
+            "/trailing/space ",
+            r"C:\Users\John Doe\a.out",
+            r"C:\Users\u\a.out",
+            "/odd \"name\"/a.out",
+            r"/back\slash and space/a.out",
+            "/tab\there/a.out",
+        ] {
+            let emitted = console_path(original);
+            let mut s = CommandStream::new(&emitted);
+            assert_eq!(
+                s.read_filename(),
+                original,
+                "round trip failed for {original:?} (emitted {emitted:?})"
+            );
+        }
+    }
+
+    /// The same round trip inside a whole `load file` line, which is how the
+    /// console actually sees it: the command words are consumed first and the
+    /// path must survive as the single remaining argument.
+    #[test]
+    fn a_spaced_path_is_one_argument_in_the_load_file_line() {
+        use kuna_console::interface::CommandStream;
+
+        let original = "/home/u/test dir/a.out";
+        let script = build_script(
+            original,
+            "main",
+            false,
+            None,
+            false,
+            Path::new("/tmp/kuna.c"),
+            &[],
+            &[],
+            None,
+        );
+        let line = script.lines().next().expect("the script opens with load file");
+
+        let mut s = CommandStream::new(line);
+        assert_eq!(s.read_token(), "load");
+        assert_eq!(s.read_token(), "file");
+        let filename = s.read_filename();
+        s.skip_ws();
+        assert!(s.eof(), "the path must exhaust the line, not leave a second argument");
+        assert_eq!(filename, original);
     }
 }

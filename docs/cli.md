@@ -43,6 +43,23 @@ interactive prompts never pollute the output. `--option NAME VALUE` (repeatable)
 `--kassert "<args>"` flip phase-model sub-phase assertions per run; `--mode
 auto|reliable|aggressive|fast` applies an option preset (`docs/modes.md`).
 
+**Paths containing spaces work (DIV-100).** This is the one surface that reaches the engine
+through a console *script* rather than an in-process call, and the console reads a
+filename with `s >> filename` — whitespace-delimited. An unquoted path with a space
+therefore split into two arguments: `load file` took the head as a BFD target and
+loaded the tail, and `openfile write` truncated the redirect at the split, writing
+the C to a file named after the first component. The CLI now quotes a path that
+needs it, and the console's `read_filename` accepts a double-quoted argument
+(`\"` and `\\` are escapes inside quotes; any other backslash is literal, so a
+Windows path survives either spelling). Unquoted paths parse exactly as before.
+Hand-written console scripts and interactive `decomp_dbg` sessions get the same
+grammar — quote the path when it contains a space:
+
+```
+load file "/home/u/test dir/a.out"
+openfile write "/tmp/out dir/main.c"
+```
+
 **`--language auto|c|rust`** selects the output language. **`auto` is the
 default and follows the binary**: a Rust binary renders as Rust, because kuna
 already detects one (`kuna-analysis`'s `sourcelang` pass, the port of Ghidra's
