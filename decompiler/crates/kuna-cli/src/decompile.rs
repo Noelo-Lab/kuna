@@ -1,15 +1,27 @@
-//! `kuna decompile` — the Rust port of `kuna/decompile.py`.
+//! `kuna decompile` — the Rust port of `kuna/decompile.py`, plus its
+//! machine-readable mode.
 //!
-//! Drives `decomp_dbg` with the same console command language the datatests use
-//! (`load file` / `read symbols` / `option` / `load function` | `load addr` /
-//! `decompile` / `openfile write <tmp>` / `print C` / `closefile`), capturing the
-//! decompiled C through the bulk-output redirect so interactive prompts never
-//! pollute it, and prints the captured C — byte-identical to the Python tool.
+//! The TEXT surface drives `decomp_dbg` with the same console command language
+//! the datatests use (`load file` / `read symbols` / `option` /
+//! `load function` | `load addr` / `decompile` / `openfile write <tmp>` /
+//! `print C` / `closefile`), capturing the decompiled C through the bulk-output
+//! redirect so interactive prompts never pollute it, and prints the captured C —
+//! byte-identical to the Python tool.
+//!
+//! `--json` answers the same question in `decompile-all`'s record shape: a
+//! `functions` array holding the one function that was asked for, with its
+//! address, size, variables, line mappings and per-record `error`. It is not a
+//! second dialect and not a second implementation — [`run_json`] routes the
+//! selection through `decompile_all`'s own parser, decompile loop and
+//! serializer, so an agent parses ONE shape whichever command it reached for.
+//! That path loads the binary in-process rather than spawning `decomp_dbg`,
+//! which is why the `decomp_dbg`-only flags are refused rather than ignored.
 
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use crate::decompile_all::{self, Args as AllArgs, DriverDefaults};
 use crate::paths;
 
 /// Options parsed for a `decompile` invocation.
@@ -604,7 +616,7 @@ fn trim_newlines(s: &str) -> String {
     s.trim_matches('\n').to_string()
 }
 
-/// Entry point for `kuna decompile`.
+/// The text surface of `kuna decompile`.
 ///
 /// Exit codes: `0` on success, `1` on a run-level error (no such function, no
 /// architecture, no C at all) **and on a per-function pipeline abort** — the
@@ -643,6 +655,326 @@ pub fn run(args: &DecompileArgs) -> i32 {
             1
         }
     }
+}
+
+
+// --- command entry point -----------------------------------------------------
+
+/// Entry point for `kuna decompile`: parse the command line, then render either
+/// the text surface ([`run`], a `decomp_dbg` subprocess) or, with `--json`, the
+/// `decompile-all` record shape for the one selected function ([`run_json`]).
+pub fn main(argv: &[String]) -> i32 {
+    let mut binary: Option<String> = None;
+    let mut target: Option<String> = None;
+    let mut addr = false;
+    let mut json = false;
+    let mut bfd_target: Option<String> = None;
+    let mut raw = false;
+    let mut regions = false;
+    let mut options: Vec<(String, String)> = Vec::new();
+    // The `--option` / `--language` tokens in argv order, replayed verbatim into
+    // the `--json` argument list: option precedence and the `--language auto`
+    // policy are position-sensitive, so both surfaces resolve them in one parser
+    // rather than in two that can disagree.
+    let mut forwarded: Vec<String> = Vec::new();
+    let mut saw_language = false;
+    let mut mode: Option<String> = None;
+    let mut kasserts: Vec<String> = Vec::new();
+    let mut decomp_dbg: Option<String> = None;
+    let mut engine: Option<String> = None;
+    let mut sleighpath: Option<String> = None;
+    let mut slice: Option<String> = None;
+
+    let mut i = 0;
+    while i < argv.len() {
+        let a = argv[i].as_str();
+        match a {
+            "--addr" => addr = true,
+            "--json" => json = true,
+            "--raw" => raw = true,
+            "--regions" => regions = true,
+            "--slice" => slice = take_value(argv, &mut i, "--slice"),
+            "--target" => {
+                bfd_target = take_value(argv, &mut i, "--target");
+            }
+            "--option" => {
+                // nargs=2
+                if i + 2 >= argv.len() {
+                    eprintln!("error: --option requires NAME VALUE");
+                    return 2;
+                }
+                options.push((argv[i + 1].clone(), argv[i + 2].clone()));
+                forwarded.extend(argv[i..i + 3].iter().cloned());
+                i += 2;
+            }
+            // (kuna outlang) `--language` is the first-class surface for the
+            // output language; it lowers to the upstream `setlanguage` option, so
+            // it reaches every downstream consumer (the console script here, the
+            // in-process option applier in decompile-all) with no new plumbing.
+            // Pushed in argv order, so a later `--option setlanguage` still wins.
+            "--language" => match take_value(argv, &mut i, "--language") {
+                Some(value) => {
+                    match decompile_all::parse_language_flag(&value) {
+                        Ok(Some(lang)) => options.push(("setlanguage".into(), lang.into())),
+                        Ok(None) => {}
+                        Err(msg) => {
+                            eprintln!("error: {msg}");
+                            return 2;
+                        }
+                    }
+                    forwarded.push("--language".into());
+                    forwarded.push(value);
+                    saw_language = true;
+                }
+                None => return 2,
+            },
+            "--mode" => match take_value(argv, &mut i, "--mode") {
+                Some(value) => mode = Some(value),
+                None => return 2,
+            },
+            "--kassert" => {
+                if let Some(v) = take_value(argv, &mut i, "--kassert") {
+                    kasserts.push(v);
+                }
+            }
+            "--decomp-dbg" => decomp_dbg = take_value(argv, &mut i, "--decomp-dbg"),
+            "--engine" => engine = take_value(argv, &mut i, "--engine"),
+            "--sleighpath" => sleighpath = take_value(argv, &mut i, "--sleighpath"),
+            "--timeout" => {
+                // Accepted for compatibility; the in-process child has no timeout
+                // wall (the Python timeout guarded a hung subprocess — out of scope
+                // here, but we must consume the value so it isn't read as a positional).
+                let _ = take_value(argv, &mut i, "--timeout");
+            }
+            s if s.starts_with("--") => {
+                eprintln!("error: unknown option {s}");
+                return 2;
+            }
+            _ => {
+                if binary.is_none() {
+                    binary = Some(a.to_string());
+                } else if target.is_none() {
+                    target = Some(a.to_string());
+                } else {
+                    eprintln!("error: unexpected argument {a:?}");
+                    return 2;
+                }
+            }
+        }
+        i += 1;
+    }
+
+    let (binary, target) = match (binary, target) {
+        (Some(b), Some(t)) => (b, t),
+        _ => {
+            eprintln!("error: decompile requires <binary> and <func>");
+            return 2;
+        }
+    };
+    // Honor `--engine cpp|rust` like the Python tools: set `KUNA_ENGINE`.  In the
+    // Rust-only world `rust` is already the default and `cpp` would fail to
+    // resolve, but the flag is accepted (and exported) for compatibility with
+    // existing invocations / the pipeline.
+    if let Some(e) = &engine {
+        std::env::set_var("KUNA_ENGINE", e);
+    }
+    addr |= looks_like_addr(&target);
+
+    if json {
+        // Refused, not ignored: each of these is a `decomp_dbg` transcript the
+        // in-process JSON path never produces, and silently dropping half a
+        // request is the failure mode `--json` exists to end.
+        for (flag, requested) in [
+            ("--raw", raw),
+            ("--regions", regions),
+            ("--kassert", !kasserts.is_empty()),
+            ("--decomp-dbg", decomp_dbg.is_some()),
+        ] {
+            if requested {
+                eprintln!("error: {flag} is not supported with --json");
+                return 2;
+            }
+        }
+        return run_json(&JsonRequest {
+            binary: &binary,
+            target: &target,
+            by_address: addr,
+            forwarded: &forwarded,
+            mode: mode.as_deref(),
+            bfd_target: bfd_target.as_deref(),
+            slice: slice.as_deref(),
+            sleighpath: sleighpath.as_deref(),
+        });
+    }
+
+    // (kuna outlang, DIV-80) The auto policy -- follow the binary when the caller
+    // named no language. See `decompile_all::detected_output_language`.
+    if !saw_language && !options.iter().any(|(n, _)| n == "setlanguage") {
+        if let Some(lang) = decompile_all::detected_output_language(&binary) {
+            options.push(("setlanguage".into(), lang.into()));
+        }
+    }
+
+    let explicit_fast_funcdisc = options.iter().any(|(name, _)| name == "fast_funcdisc");
+    // Omitted mode is the size-driven `auto` policy. Preset overrides are
+    // prepended so explicit `--option` pairs remain last-write-wins in the
+    // generated console script.
+    match decompile_all::mode_options_for_binary(mode.as_deref(), &binary, options) {
+        Ok(merged) => options = merged,
+        Err(e) => {
+            eprintln!("error: {e}");
+            return 2;
+        }
+    }
+    if addr && !explicit_fast_funcdisc {
+        options.push(("fast_funcdisc".into(), "off".into()));
+    }
+
+    run(&DecompileArgs {
+        binary,
+        target,
+        by_address: addr,
+        bfd_target,
+        raw,
+        regions,
+        options,
+        kasserts,
+        decomp_dbg,
+        sleighpath,
+        slice,
+    })
+}
+
+/// Consume the value following a flag at `argv[i]`, advancing `i` past it.
+fn take_value(argv: &[String], i: &mut usize, flag: &str) -> Option<String> {
+    if *i + 1 < argv.len() {
+        *i += 1;
+        Some(argv[*i].clone())
+    } else {
+        eprintln!("error: {flag} requires a value");
+        None
+    }
+}
+
+// --- the --json surface ------------------------------------------------------
+
+/// What `--json` needs from the parsed command line: the selection, plus every
+/// flag `decompile-all` also understands.
+struct JsonRequest<'a> {
+    binary: &'a str,
+    target: &'a str,
+    by_address: bool,
+    /// The `--option` / `--language` tokens, in argv order.
+    forwarded: &'a [String],
+    mode: Option<&'a str>,
+    bfd_target: Option<&'a str>,
+    slice: Option<&'a str>,
+    sleighpath: Option<&'a str>,
+}
+
+/// `kuna decompile --json`: `decompile-all`'s in-process load narrowed to the one
+/// selected function, emitted through `decompile-all`'s own serializer.
+///
+/// The selection is expressed as a `decompile-all` argument list and re-parsed by
+/// [`decompile_all::parse_args`] on purpose: the mode presets, the `--language`
+/// auto policy, option precedence, the address-selection `fast_funcdisc` default
+/// and the per-function watchdog budget then all resolve exactly once, in the
+/// parser that owns them, instead of being re-derived here where they would
+/// drift.
+fn run_json(req: &JsonRequest) -> i32 {
+    let mut argv: Vec<String> = vec![req.binary.to_string(), "--json".into()];
+    if req.by_address {
+        argv.push("--addr".into());
+        argv.push(if looks_like_addr(req.target) {
+            req.target.to_string()
+        } else {
+            format!("0x{}", req.target)
+        });
+    } else {
+        argv.push("--functions".into());
+        argv.push(req.target.to_string());
+    }
+    argv.extend(req.forwarded.iter().cloned());
+    for (flag, value) in [
+        ("--mode", req.mode),
+        ("--target", req.bfd_target),
+        ("--slice", req.slice),
+        ("--sleighpath", req.sleighpath),
+    ] {
+        if let Some(value) = value {
+            argv.push(flag.into());
+            argv.push(value.to_string());
+        }
+    }
+
+    let args = match decompile_all::parse_args(&argv, "decompile-all") {
+        Ok(args) => args,
+        Err(e) => {
+            eprintln!("error: {e}");
+            return 2;
+        }
+    };
+    // stdout carries a document either way: a caller that asked for JSON gets
+    // JSON, with the reason in the run-level `error`, rather than an empty stream
+    // it has to reconcile against a prose stderr line — the missing error channel
+    // is half of why this flag exists. The verdict follows the document, matching
+    // `run`'s stdout-then-stderr ordering.
+    let (text, failure) = match decompile_json(&args, req.target) {
+        Ok(answered) => answered,
+        Err(message) => (
+            decompile_all::render_result_json(&args.binary, &[], &args.options, Some(&message)),
+            Some(message),
+        ),
+    };
+    let status = crate::output::emit_with_status(&text, i32::from(failure.is_some()));
+    if let Some(message) = failure {
+        eprintln!("error: {message}");
+    }
+    status
+}
+
+/// Load once, resolve the one selected function, decompile it, and render the
+/// document.
+///
+/// Returns the JSON text plus the failure the caller reports on stderr and exits
+/// `1` on. A function whose pipeline aborted is a failed run here — `decompile`
+/// was asked about exactly that function — so `--json` cannot turn the text
+/// surface's non-zero verdict into a success; the reason is in the document too,
+/// as the record's `error` and as the run-level one.
+fn decompile_json(args: &AllArgs, target: &str) -> Result<(String, Option<String>), String> {
+    let mut prog = decompile_all::load_program(args, DriverDefaults::Decompile)?;
+    let targets = decompile_all::resolve_targets(&prog, args)?;
+    if targets.is_empty() {
+        // Two different answers, and the caller acts on the difference: a binary
+        // that yielded NOTHING is the whole-binary discovery failure (which names
+        // a packer when it can see one), while a binary that yielded functions
+        // but not this one is the text surface's "no function <name>".
+        return Err(if prog.function_entries_executable().is_empty() {
+            decompile_all::zero_discovery_error(&args.binary)
+                .unwrap_or_else(|| format!("no function {target:?} in {}", args.binary))
+        } else {
+            format!(
+                "no function {target:?} in {}; for a stripped binary pass an address with --addr",
+                args.binary
+            )
+        });
+    }
+
+    let funcs = decompile_all::decompile_entries(&mut prog, args, targets);
+    let failure = funcs.iter().find_map(|f| {
+        f.error.as_ref().map(|reason| {
+            format!("decompilation failed for {} in {}: {reason}", f.name, args.binary)
+        })
+    });
+    Ok((
+        decompile_all::render_result_json(
+            &args.binary,
+            &funcs,
+            &args.options,
+            failure.as_deref(),
+        ),
+        failure,
+    ))
 }
 
 #[cfg(test)]

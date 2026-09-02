@@ -18,6 +18,7 @@
 
 mod catalog;
 mod decompile;
+mod docs;
 mod decompile_all;
 mod decompile_project;
 mod fid;
@@ -26,10 +27,11 @@ mod output;
 mod paths;
 mod specs;
 mod test;
+mod unpack;
+mod xrefs;
 
 use std::process::ExitCode;
 
-use decompile::DecompileArgs;
 use test::{Mode, TestArgs};
 
 fn main() -> ExitCode {
@@ -41,15 +43,18 @@ fn main() -> ExitCode {
     let sub = args[1].as_str();
     let rest = &args[2..];
     let code = match sub {
-        "decompile" => cmd_decompile(rest),
+        "decompile" => decompile::main(rest),
         "decompile-all" => decompile_all::run(rest),
         "decompile-project" => decompile_project::run(rest),
         "functions" => decompile_all::run_functions(rest),
         "test" => cmd_test(rest),
         "catalog" => cmd_catalog(rest),
+        "docs" => docs::run(rest),
         "modes" => cmd_modes(rest),
         "specs" => specs::run(rest),
         "fid" => fid::run(rest),
+        "unpack" => unpack::run(rest),
+        "xrefs" => xrefs::run(rest),
         "-V" | "--version" | "version" => {
             // Release CI bakes the repo-derived MAJOR.MINOR (docs/release.md)
             // via KUNA_VERSION; dev builds report the workspace Cargo version.
@@ -76,12 +81,15 @@ fn main() -> ExitCode {
 
 fn usage() {
     eprintln!(
-        "usage: kuna <decompile|decompile-all|decompile-project|functions|test|catalog|modes|specs|fid> ...\n\
+        "usage: kuna <decompile|decompile-all|decompile-project|functions|xrefs|unpack|docs|test|catalog|modes|specs|fid> ...\n\
          \n\
-         kuna decompile <binary> <func> [--addr] [--slice ARCH] [--language auto|c|rust] [--mode auto|reliable|aggressive|fast] [--option NAME VALUE]... [--kassert ARGS]...\n\
+         kuna decompile <binary> <func> [--addr] [--json] [--slice ARCH] [--language auto|c|rust] [--mode auto|reliable|aggressive|fast] [--option NAME VALUE]... [--kassert ARGS]...\n\
          kuna decompile-all <binary> [--json] [--functions a,b,..] [--addr 0xVMA]... [--no-vars] [--language auto|c|rust] [--max-fn-seconds N] [--mode auto|reliable|aggressive|fast] [--option N V]...\n\
          kuna decompile-project <binary> [-o DIR] [--functions a,b,..] [--addr 0xVMA]... [--max-fn-seconds N] [--mode auto|reliable|aggressive|fast] [--option N V]...\n\
          kuna functions <binary> [--json] [--mode auto|reliable|aggressive|fast]\n\
+         kuna xrefs <binary> (--to <name|0xaddr> | --from <name|0xaddr>) [--json] [--kind call,jump,data,read,write] [--mode auto|reliable|aggressive|fast]\n\
+         kuna unpack <binary> [-o OUT] [--json]\n\
+         kuna docs [<topic>] [--json] [--all]\n\
          kuna test [--all|--unittests|--datatests] [--name N]... [--baseline F] [--save-baseline F] [--json]\n\
          kuna catalog [--json|--markdown|--check] [--option NAME] [--tier transform|analysis|core]\n\
          kuna modes [--json]\n\
@@ -99,148 +107,6 @@ fn apply_engine(engine: Option<&str>) {
     if let Some(e) = engine {
         std::env::set_var("KUNA_ENGINE", e);
     }
-}
-
-// --- decompile ---------------------------------------------------------------
-
-fn cmd_decompile(argv: &[String]) -> i32 {
-    let mut binary: Option<String> = None;
-    let mut target: Option<String> = None;
-    let mut addr = false;
-    let mut bfd_target: Option<String> = None;
-    let mut raw = false;
-    let mut regions = false;
-    let mut options: Vec<(String, String)> = Vec::new();
-    let mut saw_language = false;
-    let mut mode: Option<String> = None;
-    let mut kasserts: Vec<String> = Vec::new();
-    let mut decomp_dbg: Option<String> = None;
-    let mut engine: Option<String> = None;
-    let mut sleighpath: Option<String> = None;
-    let mut slice: Option<String> = None;
-
-    let mut i = 0;
-    while i < argv.len() {
-        let a = argv[i].as_str();
-        match a {
-            "--addr" => addr = true,
-            "--raw" => raw = true,
-            "--regions" => regions = true,
-            "--slice" => slice = take_value(argv, &mut i, "--slice"),
-            "--target" => {
-                bfd_target = take_value(argv, &mut i, "--target");
-            }
-            "--option" => {
-                // nargs=2
-                if i + 2 >= argv.len() {
-                    eprintln!("error: --option requires NAME VALUE");
-                    return 2;
-                }
-                options.push((argv[i + 1].clone(), argv[i + 2].clone()));
-                i += 2;
-            }
-            // (kuna outlang) `--language` is the first-class surface for the
-            // output language; it lowers to the upstream `setlanguage` option, so
-            // it reaches every downstream consumer (the console script here, the
-            // in-process option applier in decompile-all) with no new plumbing.
-            // Pushed in argv order, so a later `--option setlanguage` still wins.
-            "--language" => match take_value(argv, &mut i, "--language") {
-                Some(value) => match decompile_all::parse_language_flag(&value) {
-                    Ok(Some(lang)) => {
-                        options.push(("setlanguage".into(), lang.into()));
-                        saw_language = true;
-                    }
-                    Ok(None) => saw_language = true,
-                    Err(msg) => {
-                        eprintln!("error: {msg}");
-                        return 2;
-                    }
-                },
-                None => return 2,
-            },
-            "--mode" => match take_value(argv, &mut i, "--mode") {
-                Some(value) => mode = Some(value),
-                None => return 2,
-            },
-            "--kassert" => {
-                if let Some(v) = take_value(argv, &mut i, "--kassert") {
-                    kasserts.push(v);
-                }
-            }
-            "--decomp-dbg" => decomp_dbg = take_value(argv, &mut i, "--decomp-dbg"),
-            "--engine" => engine = take_value(argv, &mut i, "--engine"),
-            "--sleighpath" => sleighpath = take_value(argv, &mut i, "--sleighpath"),
-            "--timeout" => {
-                // Accepted for compatibility; the in-process child has no timeout
-                // wall (the Python timeout guarded a hung subprocess — out of scope
-                // here, but we must consume the value so it isn't read as a positional).
-                let _ = take_value(argv, &mut i, "--timeout");
-            }
-            s if s.starts_with("--") => {
-                eprintln!("error: unknown option {s}");
-                return 2;
-            }
-            _ => {
-                if binary.is_none() {
-                    binary = Some(a.to_string());
-                } else if target.is_none() {
-                    target = Some(a.to_string());
-                } else {
-                    eprintln!("error: unexpected argument {a:?}");
-                    return 2;
-                }
-            }
-        }
-        i += 1;
-    }
-
-    let (binary, target) = match (binary, target) {
-        (Some(b), Some(t)) => (b, t),
-        _ => {
-            eprintln!("error: decompile requires <binary> and <func>");
-            return 2;
-        }
-    };
-    apply_engine(engine.as_deref());
-    addr |= decompile::looks_like_addr(&target);
-
-    // (kuna outlang, DIV-80) The auto policy -- follow the binary when the caller
-    // named no language. See `decompile_all::detected_output_language`.
-    if !saw_language && !options.iter().any(|(n, _)| n == "setlanguage") {
-        if let Some(lang) = decompile_all::detected_output_language(&binary) {
-            options.push(("setlanguage".into(), lang.into()));
-        }
-    }
-
-    let explicit_fast_funcdisc = options.iter().any(|(name, _)| name == "fast_funcdisc");
-    // Omitted mode is the size-driven `auto` policy. Preset overrides are
-    // prepended so explicit `--option` pairs remain last-write-wins in the
-    // generated console script.
-    match decompile_all::mode_options_for_binary(mode.as_deref(), &binary, options) {
-        Ok(merged) => options = merged,
-        Err(e) => {
-            eprintln!("error: {e}");
-            return 2;
-        }
-    }
-    if addr && !explicit_fast_funcdisc {
-        options.push(("fast_funcdisc".into(), "off".into()));
-    }
-
-    let dargs = DecompileArgs {
-        binary,
-        target,
-        by_address: addr,
-        bfd_target,
-        raw,
-        regions,
-        options,
-        kasserts,
-        decomp_dbg,
-        sleighpath,
-        slice,
-    };
-    decompile::run(&dargs)
 }
 
 // --- test --------------------------------------------------------------------

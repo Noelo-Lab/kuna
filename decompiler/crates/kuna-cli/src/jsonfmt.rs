@@ -99,9 +99,7 @@ impl Parser<'_> {
         if self.pos == start {
             return None;
         }
-        Some(Json::Number(
-            std::str::from_utf8(&self.bytes[start..self.pos]).ok()?.to_string(),
-        ))
+        Some(Json::Number(std::str::from_utf8(&self.bytes[start..self.pos]).ok()?.to_string()))
     }
 
     fn string(&mut self) -> Option<String> {
@@ -131,7 +129,8 @@ impl Parser<'_> {
                         b'u' => {
                             let hex = self.bytes.get(self.pos..self.pos + 4)?;
                             self.pos += 4;
-                            let cp = u32::from_str_radix(std::str::from_utf8(hex).ok()?, 16).ok()?;
+                            let cp =
+                                u32::from_str_radix(std::str::from_utf8(hex).ok()?, 16).ok()?;
                             out.push(char::from_u32(cp)?);
                         }
                         _ => return None,
@@ -427,10 +426,13 @@ mod tests {
         let v = Json::Str("\u{26a0}\u{fe0f} opt-in".to_string());
         // warning sign + variation selector -> ⚠️
         let mut s = String::new();
-        write_string(&mut s, match &v {
-            Json::Str(x) => x,
-            _ => unreachable!(),
-        });
+        write_string(
+            &mut s,
+            match &v {
+                Json::Str(x) => x,
+                _ => unreachable!(),
+            },
+        );
         assert_eq!(s, "\"\\u26a0\\ufe0f opt-in\"");
     }
 }
