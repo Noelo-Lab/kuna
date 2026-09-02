@@ -707,7 +707,7 @@ def to_opportunities(needs=None, statuses=DISPATCHABLE):
     `test_name::selector` and derives the branch slug from `test_name` -- so a need's id is its
     test_name and its acceptance id is its selector, making OPP_ID `<need_id>::<acceptance_id>`:
     re-filing the same need against a NEW acceptance is a new unit of work, which is the
-    behaviour we want. `kinds` carries the track, so `select.py --kind tooling` (whose filter is
+    behaviour we want. `kinds` carries the track, so `needs list --track <t>` (scripts/pipeline/select.py's --kind filter keys off the `kinds` column this module emits into opportunities.json) (whose filter is
     already generic) partitions the backlog by builder track with no change to that module.
     """
     rows = [_opportunity_row(n, i)

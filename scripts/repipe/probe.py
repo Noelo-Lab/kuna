@@ -635,10 +635,15 @@ def _exec_once(index, argv, cwd, env, stdin_data, timeout_s, use_time):
             out, err = b"", b""
     rec["wall_ms"] = (time.monotonic() - t0) * 1000.0
 
+    # The true byte counts are recorded BEFORE truncation, so a `stdout_bytes` clause still
+    # sees reality even when the text is capped; only content past the cap is unavailable,
+    # and the observation says so.
     rec["stdout_bytes"] = len(out or b"")
     rec["stderr_bytes"] = len(err or b"")
-    rec["stdout"] = (out or b"").decode("utf-8", "replace")
-    rec["stderr"] = (err or b"").decode("utf-8", "replace")
+    rec["stdout"] = (out or b"")[:CAPTURE_MAX_BYTES].decode("utf-8", "replace")
+    rec["stderr"] = (err or b"")[:CAPTURE_MAX_BYTES].decode("utf-8", "replace")
+    rec["stdout_truncated"] = rec["stdout_bytes"] > CAPTURE_MAX_BYTES
+    rec["stderr_truncated"] = rec["stderr_bytes"] > CAPTURE_MAX_BYTES
 
     report = _parse_time_report(report_path) if report_path else None
     if report_path:
@@ -923,6 +928,13 @@ REGEX_BUDGET_S = float(os.environ.get("REPIPE_REGEX_BUDGET_S", "5"))
 # re is applied to whole streams; a huge stdout multiplies any pattern's cost.
 REGEX_MAX_BYTES = int(os.environ.get("REPIPE_REGEX_MAX_BYTES", str(4 << 20)))
 
+# How much of a probe's output is kept in memory. `kuna decompile-all --json` on a large
+# binary is already tens of MB, and an allowlisted tool pointed at the wrong thing can emit
+# far more; with repeat up to 11 and no cap, one bad probe could exhaust the box. The real
+# byte count is still measured and asserted on (`stdout_bytes`), so a truncated capture
+# never silently changes a verdict about SIZE -- only about content past the cap.
+CAPTURE_MAX_BYTES = int(os.environ.get("REPIPE_CAPTURE_MAX_BYTES", str(64 << 20)))
+
 
 def _search(pattern, text, budget=None):
     """re.search with a wall-clock bound. Returns None on error, timeout or no match.
@@ -1145,8 +1157,13 @@ def evaluate(probe, observation):
         "wall_ms_min": _stat_of(wall, "min"),
         "wall_ms_max": _stat_of(wall, "max"),
         "wall_ms_mean": _stat_of(wall, "mean"),
+        # The statpred enum allows median|min|max|mean, so all four must exist for BOTH
+        # metrics. Emitting only median and max meant a `max_rss_kb` clause with
+        # stat "min" or "mean" could never find its value and failed as unresolvable.
         "max_rss_kb_median": _stat_of(rss, "median"),
+        "max_rss_kb_min": _stat_of(rss, "min"),
         "max_rss_kb_max": _stat_of(rss, "max"),
+        "max_rss_kb_mean": _stat_of(rss, "mean"),
         "rusage_source": observation.get("rusage_source"),
         "cmd": observation.get("cmd"),
         "cwd": observation.get("cwd"),

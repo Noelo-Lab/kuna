@@ -17,7 +17,7 @@ PYTHON  ?= python3
 # (inside target/, which is gitignored, so a failed run leaves no repo litter).
 GHIDRA_SIM_LOG := $(ENGINE)/target/ghidra-sim.log
 
-.PHONY: all binaries specs test test-stages test-ghidra rust rust-test clean check-spec version
+.PHONY: all binaries specs test test-stages test-cli test-ghidra rust rust-test clean check-spec version
 
 all: binaries specs
 
@@ -95,6 +95,13 @@ test-ghidra:
 # exactly one chapter, and (strict) every settable option is mentioned.
 check-spec:
 	python3 tools/check_spec.py
+
+# The RE-friction loop's regression corpus: every gap it closes leaves the acceptance probe
+# that proved the fix in tests/cli/ (docs/re-pipeline.md sec.3). Without a runner they are
+# inert -- a regression would be found a round later by a tester instead of a minute later
+# here. Every case is `in-repo` targeted, so this needs no dataset. An empty corpus passes.
+test-cli:
+	PYTHONPATH=$(ROOT) python3 -m scripts.repipe.clitests
 
 # Print the repo version as MAJOR.MINOR (VERSION file + commit count -- the
 # scheme release CI tags with; see docs/release.md).
