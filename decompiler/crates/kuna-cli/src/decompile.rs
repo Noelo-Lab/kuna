@@ -52,6 +52,23 @@ pub(crate) fn looks_like_addr(target: &str) -> bool {
     target.starts_with("0x") || target.starts_with("0X")
 }
 
+/// Quote a path for the console script when — and only when — it needs it.
+///
+/// The console reads a filename with `CommandStream::read_filename`, which
+/// tokenizes on whitespace unless the argument opens with `"`. An unquoted path
+/// containing a space therefore splits into two arguments: `load file` loads the
+/// wrong file, and `openfile write` truncates a file at the split point.
+///
+/// Quoting is conditional so that every path that works today keeps producing a
+/// byte-identical script — the corpus transcripts, and any older `decomp_dbg`
+/// reached through `--decomp-dbg`, which would not understand a quote.
+fn console_path(path: &str) -> String {
+    if !path.contains(|c: char| c.is_ascii_whitespace() || c == '"') {
+        return path.to_string();
+    }
+    format!("\"{}\"", path.replace('\\', "\\\\").replace('"', "\\\""))
+}
+
 /// Build the stdin script fed to `decomp_dbg` — port of `_build_script`.
 fn build_script(
     binary: &str,
@@ -65,9 +82,10 @@ fn build_script(
     regions_path: Option<&Path>,
 ) -> String {
     let mut lines: Vec<String> = Vec::new();
+    let image = console_path(binary);
     match bfd_target {
-        Some(t) if !t.is_empty() => lines.push(format!("load file {t} {binary}")),
-        _ => lines.push(format!("load file {binary}")),
+        Some(t) if !t.is_empty() => lines.push(format!("load file {t} {image}")),
+        _ => lines.push(format!("load file {image}")),
     }
     // `option` lines MUST precede `read symbols`: the kuna_analysis passes are
     // committed (gated by the per-pass `--option <id> on|off` flags) inside
@@ -102,14 +120,14 @@ fn build_script(
         lines.push(format!("kassert {ka}"));
     }
     lines.push("decompile".into());
-    lines.push(format!("openfile write {}", out_path.display()));
+    lines.push(format!("openfile write {}", console_path(&out_path.display().to_string())));
     lines.push("print C".into());
     if raw {
         lines.push("print raw".into());
     }
     lines.push("closefile".into());
     if let Some(rp) = regions_path {
-        lines.push(format!("openfile write {}", rp.display()));
+        lines.push(format!("openfile write {}", console_path(&rp.display().to_string())));
         lines.push("region blocks".into());
         lines.push("region tree".into());
         lines.push("closefile".into());
@@ -647,7 +665,11 @@ pub fn run(args: &DecompileArgs) -> i32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{arch_failure_reason, check_errors, find_pipeline_failure, read_symbols_failure};
+    use super::{
+        arch_failure_reason, build_script, check_errors, console_path, find_pipeline_failure,
+        read_symbols_failure,
+    };
+    use std::path::Path;
 
     /// Recorded `decomp_dbg` transcript: the empty-scope load failure DIV-88's
     /// `symbolnamerepair` guards (`--option symbolnamerepair off`).
@@ -834,5 +856,98 @@ Decompilation complete
     fn body_text_is_not_a_failure() {
         let out = "[decomp]> print C\n  /* Skipping is fine here */\n";
         assert_eq!(find_pipeline_failure(out), None);
+    }
+
+    /// A path without whitespace is emitted exactly as before — the corpus
+    /// transcripts and any older `decomp_dbg` behind `--decomp-dbg` depend on
+    /// the script staying byte-identical for every path that works today.
+    #[test]
+    fn console_path_leaves_ordinary_paths_alone() {
+        assert_eq!(console_path("/home/u/a.out"), "/home/u/a.out");
+        assert_eq!(console_path("./a.out"), "./a.out");
+        assert_eq!(console_path(r"C:\Users\u\a.out"), r"C:\Users\u\a.out");
+    }
+
+    /// A path with a space is quoted, with `\` and `"` escaped so the console's
+    /// `read_filename` recovers the original bytes.
+    #[test]
+    fn console_path_quotes_whitespace() {
+        assert_eq!(console_path("/home/u/test dir/a.out"), "\"/home/u/test dir/a.out\"");
+        assert_eq!(console_path("/a\tb/c.out"), "\"/a\tb/c.out\"");
+        assert_eq!(
+            console_path(r"C:\Users\John Doe\a.out"),
+            r#""C:\\Users\\John Doe\\a.out""#
+        );
+        assert_eq!(console_path("/odd \"name\"/a.out"), r#""/odd \"name\"/a.out""#);
+    }
+
+    /// The whole script: a spaced binary path and a spaced output path must both
+    /// reach the console as ONE argument each.  Unquoted, `load file` reads the
+    /// tail as the filename and `openfile write` truncates a file at the split.
+    #[test]
+    fn build_script_quotes_spaced_paths() {
+        let script = build_script(
+            "/home/u/test dir/a.out",
+            "main",
+            false,
+            None,
+            false,
+            Path::new("/tmp/out dir/kuna.c"),
+            &[],
+            &[],
+            Some(Path::new("/tmp/out dir/kuna.txt")),
+        );
+        assert!(
+            script.contains("load file \"/home/u/test dir/a.out\"\n"),
+            "the image path must be one quoted argument, got:\n{script}"
+        );
+        assert!(
+            script.contains("openfile write \"/tmp/out dir/kuna.c\"\n"),
+            "the C output path must be one quoted argument, got:\n{script}"
+        );
+        assert!(
+            script.contains("openfile write \"/tmp/out dir/kuna.txt\"\n"),
+            "the regions path must be one quoted argument, got:\n{script}"
+        );
+    }
+
+    /// An explicit `--target` still yields `load file <target> <path>` with the
+    /// path quoted — the 3-token shape that silently dropped the path tail.
+    #[test]
+    fn build_script_quotes_the_path_after_a_bfd_target() {
+        let script = build_script(
+            "/home/u/test dir/a.out",
+            "main",
+            false,
+            Some("x86:LE:64:default"),
+            false,
+            Path::new("/tmp/kuna.c"),
+            &[],
+            &[],
+            None,
+        );
+        assert!(
+            script.contains("load file x86:LE:64:default \"/home/u/test dir/a.out\"\n"),
+            "got:\n{script}"
+        );
+    }
+
+    /// A script over ordinary paths is unchanged, quotes and all absent.
+    #[test]
+    fn build_script_is_unchanged_for_ordinary_paths() {
+        let script = build_script(
+            "/home/u/a.out",
+            "main",
+            false,
+            None,
+            false,
+            Path::new("/tmp/kuna.c"),
+            &[],
+            &[],
+            None,
+        );
+        assert!(script.contains("load file /home/u/a.out\n"), "got:\n{script}");
+        assert!(script.contains("openfile write /tmp/kuna.c\n"), "got:\n{script}");
+        assert!(!script.contains('"'), "no quoting where none is needed:\n{script}");
     }
 }

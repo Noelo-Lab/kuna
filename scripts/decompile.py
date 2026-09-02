@@ -206,13 +206,30 @@ def _apply_loadtime_gates(env, options):
         env[var] = "off" if off else "on"
 
 
+def _console_path(path):
+    """Quote a path for the console script when -- and only when -- it needs it.
+
+    The console reads a filename with `CommandStream::read_filename`, which
+    tokenizes on whitespace unless the argument opens with `"`. An unquoted path
+    containing a space splits into two arguments: `load file` loads the wrong
+    file and `openfile write` truncates a file at the split point.  Conditional
+    so every path that works today produces a byte-identical script (mirrors
+    kuna-cli/src/decompile.rs `console_path`).
+    """
+    path = str(path)
+    if not any(c.isspace() or c == '"' for c in path):
+        return path
+    return '"%s"' % path.replace("\\", "\\\\").replace('"', '\\"')
+
+
 def _build_script(binary, target, by_address, bfd_target, raw, out_path,
                   options=None, kasserts=None, regions_path=None):
     lines = []
+    image = _console_path(binary)
     if bfd_target:
-        lines.append("load file %s %s" % (bfd_target, binary))
+        lines.append("load file %s %s" % (bfd_target, image))
     else:
-        lines.append("load file %s" % binary)
+        lines.append("load file %s" % image)
 
     # `option` lines MUST precede `read symbols` (match the Rust `kuna decompile`
     # CLI, kuna-cli/src/decompile.rs): the kuna_analysis passes are committed —
@@ -236,13 +253,13 @@ def _build_script(binary, target, by_address, bfd_target, raw, out_path,
         lines.append("kassert %s" % ka)
 
     lines.append("decompile")
-    lines.append("openfile write %s" % out_path)
+    lines.append("openfile write %s" % _console_path(out_path))
     lines.append("print C")
     if raw:
         lines.append("print raw")
     lines.append("closefile")
     if regions_path is not None:
-        lines.append("openfile write %s" % regions_path)
+        lines.append("openfile write %s" % _console_path(regions_path))
         lines.append("region blocks")
         lines.append("region tree")
         lines.append("closefile")

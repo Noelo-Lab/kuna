@@ -157,14 +157,23 @@ fn sync_redirect_file(status: &IfaceStatus) {
         // file contents — a truncating rewrite reproduces both modes faithfully
         // for the single-writer console (append vs truncate differ only across
         // separate opens, which the corpus never does).
-        if let Ok(mut fh) = std::fs::OpenOptions::new()
+        // A discarded error here is how a mis-parsed path becomes silent data
+        // loss: the redirect target is whatever `openfile` resolved, and the
+        // open both creates and TRUNCATES it. Say so on stderr — the CLI
+        // forwards it into the failure report, so the write that did not happen
+        // is never mistaken for a decompiler that produced nothing.
+        match std::fs::OpenOptions::new()
             .create(true)
             .write(true)
             .truncate(true)
             .open(&file.filename)
         {
-            let _ = fh.write_all(file.contents.as_bytes());
-            let _ = fh.flush();
+            Ok(mut fh) => {
+                if let Err(e) = fh.write_all(file.contents.as_bytes()).and_then(|_| fh.flush()) {
+                    eprintln!("Unable to write {}: {e}", file.filename);
+                }
+            }
+            Err(e) => eprintln!("Unable to open {} for writing: {e}", file.filename),
         }
     }
 }
