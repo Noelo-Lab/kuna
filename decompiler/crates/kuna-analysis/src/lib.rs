@@ -32,6 +32,8 @@
 //!   xref walk) and its consumer queries.
 //! - [`pass`] / [`passes`] -- the [`pass::AnalysisPass`] interface (a focused,
 //!   additive, never-failing producer of facts) and the default pass roster.
+//! - [`upx`] -- static unpacking of UPX-packed executables. Not a pass: it runs
+//!   *before* loading, because a packed image has no program in it to analyze.
 //!
 //! # The hand-off contract
 //!
@@ -51,6 +53,7 @@ pub mod loadimage_object;
 pub mod loader;
 pub mod analyzers;
 pub mod listing;
+pub mod upx;
 
 // Flat re-export: analyzer paths stay `kuna_analysis::<analyzer>` (the
 // `analyzers/` folder is a layout grouping, not an API namespace).

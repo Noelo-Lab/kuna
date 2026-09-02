@@ -69,7 +69,10 @@ The user-facing binary (`decompiler/crates/kuna-cli` → `decompiler/target/rele
 The commands agents use most:
 
 ```bash
-kuna decompile ./a.out main                        # one function (or an address with --addr)
+kuna docs                                          # the embedded manual — cli, options, phases, modes
+kuna decompile ./a.out main [--json]               # one function (or an address with --addr)
+kuna xrefs ./a.out --to 0x401030 --json            # what references this; --from for the reverse
+kuna unpack ./packed.bin                           # statically unpack a UPX image
 kuna decompile-all ./a.out --json                  # whole binary in one in-process load
 kuna functions ./a.out --json                      # enumerate functions
 kuna decompile-project ./a.out                     # export .c/.h/.asm/README project folder

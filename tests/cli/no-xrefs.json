@@ -1,0 +1,47 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "a-c9b199f423c1",
+  "kind": "absence",
+  "cmd": [
+    "{{KUNA}}",
+    "xrefs",
+    "{{BIN}}",
+    "--to",
+    "0x1030",
+    "--json"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/aif_gap_x86_64",
+    "binary_sha256": "1a592a85f424cc2db8953d5a38c86676bcee5e37b242b6fb6244a2c9fccfeeef",
+    "binary_size": 14408,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/aif_gap_x86_64",
+    "selector": "0x1030",
+    "selector_kind": "addr"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "json": [
+      {
+        "path": "count",
+        "op": "gt",
+        "value": 0
+      },
+      {
+        "path": "xrefs[0].address_hex",
+        "op": "exists"
+      }
+    ]
+  },
+  "notes": "Desired: a cross-reference query answering 'what references this address', in the address/address_hex record idiom kuna functions --json already uses."
+}

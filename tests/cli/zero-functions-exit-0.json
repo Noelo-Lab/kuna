@@ -1,0 +1,31 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cwd": "{{TMP}}",
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/upx_packed_x86_64",
+    "binary_sha256": "907b4dc30be0c0e53fda3ad1905ef3d804735a472f1c9484d3cfb5d3180e26c1",
+    "binary_size": 11364,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/upx_packed_x86_64",
+    "selector": null,
+    "selector_kind": "none"
+  },
+  "cmd": [
+    "{{KUNA}}",
+    "functions",
+    "{{BIN}}",
+    "--json"
+  ],
+  "expect": {
+    "exit_code": {
+      "ne": 0
+    },
+    "stderr_matches": [
+      "(?i)no functions"
+    ]
+  },
+  "notes": "Desired: a run that discovers nothing says so and exits non-zero. It deliberately does NOT assert the packer hint -- that is a better message, not the contract."
+}

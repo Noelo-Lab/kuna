@@ -27,6 +27,9 @@ pub mod decode;
 pub mod kuna_tailcallentry;
 pub mod model;
 pub mod walk;
+// (kuna) The read-only cross-reference query behind `kuna xrefs` -- a consumer of
+// the same decode this tier performs, not a pass; nothing commits its output.
+pub mod xrefs;
 
 use std::collections::BTreeMap;
 use std::ops::Bound;
