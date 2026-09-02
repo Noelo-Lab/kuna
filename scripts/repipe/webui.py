@@ -569,6 +569,9 @@ def _ci_verdict(runs):
 # the docs/re-needs/index.json cache, then a front-matter scan of the records themselves.
 # The scan is the floor, so an empty or half-written docs/re-needs/ still renders.
 
+# needs.load_all() returns Need OBJECTS; the fallback readers return dicts. Accepting only
+# lists-of-dicts made the highest-fidelity source silently unusable, so every row is
+# normalised through _need_row below.
 _NEEDS_API = ("load_all", "all_records", "load_index")
 
 
@@ -585,8 +588,28 @@ def _needs_from_module():
             continue
         if isinstance(recs, dict):
             recs = recs.get("needs") or recs.get("ranked") or list(recs.values())
-        if isinstance(recs, list) and all(isinstance(r, dict) for r in recs):
-            return recs
+        if isinstance(recs, list):
+            rows = [_need_row(r) for r in recs]
+            if all(r is not None for r in rows):
+                return rows
+    return None
+
+
+def _need_row(rec):
+    """Normalise one backlog record to a plain dict, whatever the reader handed back.
+
+    needs.load_all() returns Need OBJECTS (front-matter behind __getattr__), while the
+    index/JSON fallbacks return dicts. Accepting only dicts made the richest source -- the one
+    that reads the actual records rather than a cache -- silently unusable, so the dashboard
+    always fell back to the index and went stale the moment a record changed.
+    """
+    if isinstance(rec, dict):
+        return rec
+    fields = getattr(rec, "fields", None)
+    if isinstance(fields, dict):
+        out = dict(fields)
+        out.setdefault("path", str(getattr(rec, "path", "") or ""))
+        return out
     return None
 
 

@@ -6,6 +6,7 @@ name: Tests
 #   make test              datatest corpus vs docs/baseline.json          (PARITY OK)
 #   make test-stages       stage corpus vs docs/baseline-stages.json      (PARITY OK)
 #   make check-spec        docs/spec/ anchors + phase-folder ownership
+#   make test-cli          the RE-friction loop's promoted regression probes
 #   kuna catalog --check   docs/options.md documents exactly the registered options
 #   make rust-test         the full cargo workspace suite
 #
@@ -107,6 +108,13 @@ jobs:
 
       - name: make check-spec
         run: make check-spec
+
+      # The RE-friction loop's regression corpus (docs/re-pipeline.md). Every gap the loop
+      # closes leaves the acceptance probe that proved the fix in tests/cli/; running them
+      # here is what stops a closed need from silently re-opening. Needs no dataset -- every
+      # case targets an in-repo fixture -- and an empty corpus passes.
+      - name: make test-cli
+        run: make test-cli
 
       - name: kuna catalog --check
         run: ./decompiler/target/release/kuna catalog --check
