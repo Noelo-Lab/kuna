@@ -43,7 +43,7 @@ interactive prompts never pollute the output. `--option NAME VALUE` (repeatable)
 `--kassert "<args>"` flip phase-model sub-phase assertions per run; `--mode
 auto|reliable|aggressive|fast` applies an option preset (`docs/modes.md`).
 
-**Paths containing spaces work.** This is the one surface that reaches the engine
+**Paths containing spaces work (DIV-100).** This is the one surface that reaches the engine
 through a console *script* rather than an in-process call, and the console reads a
 filename with `s >> filename` — whitespace-delimited. An unquoted path with a space
 therefore split into two arguments: `load file` took the head as a BFD target and

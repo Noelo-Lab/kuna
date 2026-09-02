@@ -495,6 +495,36 @@ on stderr while the `Compiling <spec>:` line that attributes them is on stdout,
 and capturing both would print every warning of a run ahead of every progress
 line (DIV-89).
 
+(kuna) **The console's filename grammar.** `kuna decompile` is the one front-end
+that reaches the engine through a console *script* rather than an in-process
+call: it writes `load file <path>` / `openfile write <path>` into `decomp_dbg`'s
+stdin (`decompiler/crates/kuna-cli/src/decompile.rs (build_script)`), where the
+other three read the image with `bootstrap_from_object` and never tokenize the
+path at all. Upstream reads every path with `s >> filename`, a pure whitespace
+scan, so a path containing a space arrived as two arguments: `load file` took the
+head as a BFD target and loaded the tail, and `openfile write` truncated the
+redirect at the split, writing the C to a file named after the first component.
+The four commands that take a path — `load file`, `openfile write`, `openfile
+append`, `parse file` — now read it with
+`decompiler/crates/kuna-console/src/interface.rs (CommandStream::read_filename)`,
+which accepts an optional double-quoted argument (`\"` and `\\` are escapes
+inside quotes; any other backslash is literal, so a Windows path survives either
+spelling) and is byte-identical to `read_token` for unquoted input, so the
+vendored corpus and every script written before quoting existed parse exactly as
+before. The two producers — `decompile.rs (console_path)` and its mirror in
+`scripts/decompile.py` — quote only a path that needs it, which keeps the emitted
+script byte-identical for every path that works today, including for an older
+`decomp_dbg` reached through `--decomp-dbg` (DIV-100).
+
+The redirect's own write is fallible for the same reason. `decomp_dbg` re-syncs
+the open redirect after every command
+(`decompiler/crates/kuna-console/src/bin/decomp_dbg.rs (sync_redirect_file)`),
+and the open both creates and TRUNCATES its target, so discarding the error is
+how a mis-parsed path became silent data loss. A target that cannot be opened or
+written is now reported on stderr, once per target — the CLI forwards that into
+its failure report, so a write that did not happen is never mistaken for a
+decompiler that produced nothing.
+
 (kuna) **One decompile step, two surfaces.** Every front-end turns a function
 into a `Funcdata` through the same driver-tier step
 (`decompiler/crates/kuna-console/src/decompile_step.rs (decompile_one)`), which
