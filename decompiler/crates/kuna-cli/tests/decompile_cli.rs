@@ -314,8 +314,15 @@ fn every_surface_reports_the_same_load_failure() {
 /// Everything before the first space is unique to this run, so the path a
 /// whitespace split would truncate to cannot collide with an unrelated file —
 /// the truncation assertion below is then about this test and nothing else.
+///
+/// The parent is cargo's own per-target scratch rather than
+/// `std::env::temp_dir()`: the child's temp dir is whatever `TMPDIR` this test
+/// passes it, so the parent's identity is free, and a developer whose *system*
+/// temp dir already contains a space — the very environment this pair is about
+/// — would otherwise move the split into that name, where it names someone
+/// else's file.
 fn spaced_dir(tag: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!(
         "kuna_pathtest_{tag}_{}_{} with space",
         std::process::id(),
         std::time::SystemTime::now()
@@ -379,11 +386,18 @@ fn a_spaced_temp_dir_still_yields_c() {
     let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
 
     // The truncation target: the spaced dir's name up to its first space. The
-    // prefix is unique to this run, so anything there was written by this run.
+    // prefix is unique to this run, so anything there was written by this run —
+    // which is also why the cleanup only removes a target that is actually
+    // there. Should the split ever land outside this test's own name (a spaced
+    // path above `dir`), that file belongs to someone else and deleting it
+    // would be the same data loss the test exists to catch.
     let clobbered = dir.to_str().unwrap().split(' ').next().unwrap().to_string();
-    let clobber_existed = Path::new(&clobbered).exists();
+    let ours = !dir.parent().is_some_and(|p| p.to_string_lossy().contains(' '));
+    let clobber_existed = ours && Path::new(&clobbered).exists();
     let _ = std::fs::remove_dir_all(&dir);
-    let _ = std::fs::remove_file(&clobbered);
+    if clobber_existed {
+        let _ = std::fs::remove_file(&clobbered);
+    }
 
     if is_specs_skip(&stderr) {
         eprintln!("skipping: specs-less environment: {stderr}");
@@ -392,6 +406,12 @@ fn a_spaced_temp_dir_still_yields_c() {
     assert!(!stderr.contains("no C output"), "the redirect was truncated, got: {stderr}");
     assert_eq!(out.status.code(), Some(0), "the run must succeed: {stderr}");
     assert!(stdout.contains("main"), "C for main must reach stdout, got: {stdout}");
+    assert!(
+        ours,
+        "the scratch parent {:?} contains a space, so the split lands in ITS name and the \
+         clobber check below would be about someone else's file",
+        dir.parent().unwrap_or(&dir)
+    );
     assert!(
         !clobber_existed,
         "the C was written to the truncated path {clobbered}, clobbering whatever was there"
