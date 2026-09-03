@@ -119,6 +119,17 @@ jobs:
       - name: kuna catalog --check
         run: ./decompiler/target/release/kuna catalog --check
 
+      # Shared-counter drift and ElementId collisions. Both are shapes that every
+      # other gate passes cleanly: a stale hard-coded settable count only fails
+      # whichever cargo test happens to assert it, and a duplicate ElementId fails
+      # nothing at all -- three separate ones (4110, 4122, 4132) reached main before
+      # this step existed, the last created by two concurrent builders in one round
+      # each grepping for "the next free id" and getting the same answer. Two options
+      # sharing an id compare EQUAL (ElementId's PartialEq is an id comparison), so
+      # the first code that dispatches on one takes the wrong branch silently.
+      - name: shared counters and ElementId uniqueness
+        run: PYTHONPATH=$PWD python3 -m scripts.repipe.counters --check
+
       # `catalog --check` above proves options.md documents the same option SET;
       # this proves it is the generator's exact bytes. That is the assertion in
       # kuna-decomp/tests/options_md_fresh.rs, which lives in the workspace suite

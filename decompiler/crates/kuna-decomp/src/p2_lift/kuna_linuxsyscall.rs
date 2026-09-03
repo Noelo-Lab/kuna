@@ -112,7 +112,7 @@ use crate::funcdata::Funcdata;
 
 /// Marshaling element `<linuxsyscall>` (kuna). ElementIds live in the 4000+
 /// range; 4131 was the previous max.
-pub const ELEM_LINUXSYSCALL: ElementId = ElementId::new("linuxsyscall", 4132);
+pub const ELEM_LINUXSYSCALL: ElementId = ElementId::new("linuxsyscall", 4134);
 
 /// The interrupt vector 32-bit Linux reserves for the syscall entry point.
 pub const LINUX_SYSCALL_VECTOR: u64 = 0x80;
