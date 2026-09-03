@@ -14,6 +14,7 @@ real ELF parser.
 
 | File | What | Exercises |
 |---|---|---|
+| `entry_selectors_x86_64.o` | synthetic x86-64 **ET_REL** object produced from `entry_selectors_{a,b}_x86_64.s` | relocatable-object entry selection: two local `STT_FUNC` definitions share the name `duplicate_local` and raw offset zero but live in distinct `.text.selector_a` / `.text.selector_b` sections, so name and bare-offset selection must report both candidates while a section-qualified selector is exact |
 | `fauxware` | classic non-PIE x86-64, not stripped (the angr `fauxware` sample) | `.plt` classic stubs (`FF 25` rip-rel), `.symtab` defined functions; `.eh_frame` FDE starts (`s1_entry`: 7 FDE starts incl. `_start`/`main`/`register_tm_clones`) |
 | `cet_pie_x86_64` | PIE x86-64 with CET (`.plt.sec`) | `endbr64; FF 25` CET stubs, naming at the `.plt.sec` call target |
 | `stripped_dynamic_x86_64` | PIE x86-64, `.symtab` stripped (only `.dynsym`) | PLT resolution with no `.symtab` (dynsym/rela.plt only); entry discovery (`s1_entry`): `e_entry`=0x1160, `DT_INIT`=0x1000, `DT_FINI`=0x1464, INIT/FINI_ARRAY ptrs, `_start`→`main` idiom → 0x1405, `.eh_frame` FDE starts — `sub_1405` (main) decompiles without `--addr` |
@@ -66,6 +67,12 @@ verbatim from `bs-artifacts/binaries/` (`fauxware`, `debug_symbol`,
 `debug_symbol_mod_stripped` respectively). `cpp_mangled_x86_64` was built locally
 with `g++ -O0 -no-pie -fno-pic` from a tiny `namespace foo { struct Bar { void
 baz(int); }; } void foo::Bar::baz(int){...} int main(){...}` source.
+`entry_selectors_x86_64.o` is project-authored synthetic assembly under the
+repository's Apache-2.0 license. It is reproducible with
+`as --64 -o entry_selectors_a_x86_64.o entry_selectors_a_x86_64.s`, the matching
+command for `entry_selectors_b_x86_64.s`, then
+`ld -r -o entry_selectors_x86_64.o entry_selectors_a_x86_64.o
+entry_selectors_b_x86_64.o`; the two intermediate objects are not retained.
 `cpp_noreturn_x86_64`: `g++ -O0 -no-pie -fno-pic -o cpp_noreturn_x86_64
 cpp_noreturn_x86_64.cpp` (source vendored alongside) — a `fail()` that tail-calls
 `std::terminate()` plus a `throw` (→ `__cxa_throw`); both are mangled no-return

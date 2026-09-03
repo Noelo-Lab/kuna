@@ -57,38 +57,19 @@ use kuna_sleigh::loadimage_xml::LoadImageXml;
 use kuna_sleigh::loadimage_xml::register_loadimage_xml_ids;
 use kuna_sleigh::translate::register_translate_ids;
 
+use crate::entry_selector::ObjectSectionLocation;
+pub use crate::entry_selector::{
+    EntryLookupError, EntryProvenance, EntrySelector, FunctionEntry, ObjectLocation,
+};
+
 /// One function symbol discovered in the `<binaryimage>` (name → entry address).
 #[derive(Debug, Clone)]
 struct ProgramSymbol {
     name: String,
     addr: Address,
-}
-
-/// (kuna, issue #197) One **canonical** function entry — the unit of a
-/// whole-binary run, produced by [`ConsoleProgram::function_entries_canonical`].
-///
-/// Exactly one of these exists per function entry address.  `name` is the most
-/// informative symbol the entry carries ([`entry_name_rank`]); `aliases` holds
-/// every other name for it — a generic `sub_<addr>` placeholder, a debug-info
-/// name alongside the linker one, a decorated/undecorated pair — in the same
-/// preference order, so nothing the raw symbol stream knew is lost and a
-/// name-keyed lookup still resolves.
-#[derive(Debug, Clone)]
-pub struct FunctionEntry {
-    /// The most informative name at this entry (never a placeholder when the
-    /// entry also carries a real symbol).
-    pub name: String,
-    /// The entry address, Thumb-bit normalized on an ARM-family spec.
-    pub addr: Address,
-    /// Every other name this same entry carries, in the same preference order.
-    pub aliases: Vec<String>,
-    /// (kuna) The entry's byte extent — an UPPER bound, the address-contiguous
-    /// clip to the next entry or the end of the containing CODE section.  `0`
-    /// when the entry lies in no CODE section (an import slot, an undefined
-    /// external) or when the caller synthesized the record without a program to
-    /// measure against.  See [`crate::funcextent`] for what the number means and
-    /// what it loses.
-    pub size: u64,
+    object_location: Option<ObjectLocation>,
+    binding: Option<String>,
+    provenance: EntryProvenance,
 }
 
 /// (kuna) A one-shot [`PcodeEmit`](kuna_sleigh::translate::PcodeEmit) sink:
@@ -136,6 +117,8 @@ pub struct ConsoleProgram {
     /// The binaryimage's function symbols (name → entry address), read once at
     /// load (the `readLoaderSymbols` hook).
     symbols: Vec<ProgramSymbol>,
+    /// Original-to-synthetic section map for relocatable objects.
+    object_sections: Vec<ObjectSectionLocation>,
     /// A human-readable description of the loaded program (C++
     /// `conf->getDescription()`).
     description: String,
@@ -293,7 +276,7 @@ impl ConsoleProgram {
         // Group every name by normalized entry offset, keeping one Address per
         // group (rebuilt at the normalized offset, so an ARM twin reports the
         // real, even entry).
-        let mut groups: BTreeMap<u64, (Address, Vec<String>)> = BTreeMap::new();
+        let mut groups: BTreeMap<u64, (Address, Vec<&ProgramSymbol>)> = BTreeMap::new();
         for s in &self.symbols {
             // A sentinel (spaceless) address cannot be normalized or rebuilt;
             // such a record is not a real entry, so skip it rather than guess.
@@ -302,20 +285,49 @@ impl ConsoleProgram {
             let entry = groups
                 .entry(vma)
                 .or_insert_with(|| (Address::new(Rc::clone(space), vma), Vec::new()));
-            if !entry.1.iter().any(|n| n == &s.name) {
-                entry.1.push(s.name.clone());
+            if !entry.1.iter().any(|record| record.name == s.name) {
+                entry.1.push(s);
             }
         }
 
         let mut entries: Vec<FunctionEntry> = groups
             .into_iter()
-            .map(|(_, (addr, mut names))| {
+            .map(|(_, (addr, mut records))| {
                 // Most informative first — see `entry_name_rank`.
-                names.sort_by(|a, b| {
-                    entry_name_rank(a).cmp(&entry_name_rank(b)).then_with(|| a.cmp(b))
+                records.sort_by(|a, b| {
+                    entry_name_rank(&a.name)
+                        .cmp(&entry_name_rank(&b.name))
+                        .then_with(|| a.name.cmp(&b.name))
                 });
-                let name = names.remove(0);
-                FunctionEntry { name, addr, aliases: names, size: 0 }
+                let canonical = records.remove(0);
+                let object_record = std::iter::once(canonical)
+                    .chain(records.iter().copied())
+                    .find(|record| record.object_location.is_some());
+                let provenance = object_record
+                    .map(|_| EntryProvenance::DefinedObject)
+                    .unwrap_or_else(|| {
+                        if canonical.provenance == EntryProvenance::UndefinedExternal
+                            || records.iter().any(|record| {
+                                record.provenance == EntryProvenance::UndefinedExternal
+                            })
+                        {
+                            EntryProvenance::UndefinedExternal
+                        } else {
+                            EntryProvenance::Mapped
+                        }
+                    });
+                FunctionEntry {
+                    name: canonical.name.clone(),
+                    addr,
+                    aliases: records.iter().map(|record| record.name.clone()).collect(),
+                    object_location: object_record
+                        .and_then(|record| record.object_location.clone()),
+                    binding: object_record
+                        .and_then(|record| record.binding.clone())
+                        .or_else(|| canonical.binding.clone()),
+                    provenance,
+                    size: 0,
+                }
             })
             .collect();
         // (kuna, `functions-json-size`) Measure each entry's extent in one pass.
@@ -379,17 +391,24 @@ impl ConsoleProgram {
     /// make a name that used to select a function stop working, so the filter
     /// searches the alias set too — this is what preserves the decbench
     /// name-narrowing the old `(name, offset)` dedup was keeping duplicate records
-    /// for.  Shared by both front-ends so the two `resolve_targets` copies cannot
-    /// drift apart on it.
+    /// for.
+    ///
+    /// `None` also when the name identifies SEVERAL entries: a caller that can
+    /// only answer yes-or-no must not silently pick one of them. A caller that
+    /// can report the ambiguity asks [`Self::resolve_entry`] instead, which
+    /// names every candidate.
     pub fn find_entry_by_name(&self, want: &str) -> Option<FunctionEntry> {
         // (kuna `symbolnamebound`) The enumeration reports the bounded spelling,
         // so bound the query too -- a caller holding the binary's ORIGINAL name
         // must still resolve. Idempotent, so the bounded spelling resolves as
         // well, and a no-op for every real name.
         let want = &*kuna_decomp::kuna_symbolnamebound::bound_scope_path(want, "::");
-        self.function_entries_canonical()
+        let mut matches = self
+            .function_entries_canonical()
             .into_iter()
-            .find(|e| e.name == want || e.aliases.iter().any(|a| a == want))
+            .filter(|e| e.name == want || e.aliases.iter().any(|a| a == want));
+        let entry = matches.next()?;
+        matches.next().is_none().then_some(entry)
     }
 
     /// (kuna, issue #197) Resolve the canonical entry AT `vma`, tolerating an
@@ -409,6 +428,261 @@ impl ConsoleProgram {
         self.function_entries_canonical()
             .into_iter()
             .find(|e| e.addr.get_offset() == want)
+    }
+
+    /// Resolve a selector without guessing between object-file coordinates.
+    ///
+    /// Numeric resolution checks the mapped synthetic address space first. On
+    /// a relocatable object only, an otherwise-unmapped value may then match a
+    /// defined function's raw section offset; that compatibility form succeeds
+    /// only when the match is unique.
+    pub fn resolve_entry(
+        &self,
+        selector: &EntrySelector,
+    ) -> Result<FunctionEntry, EntryLookupError> {
+        match selector {
+            EntrySelector::Name(want) => {
+                // (kuna `symbolnamebound`) The enumeration reports the bounded
+                // spelling, so bound the query too -- a caller holding the
+                // binary's ORIGINAL name must still resolve. Idempotent, so the
+                // bounded spelling resolves as well.
+                let want = &*kuna_decomp::kuna_symbolnamebound::bound_scope_path(want, "::");
+                let candidates: Vec<FunctionEntry> = self
+                    .function_entries_canonical()
+                    .into_iter()
+                    .filter(|entry| {
+                        entry.name == *want || entry.aliases.iter().any(|alias| alias == want)
+                    })
+                    .collect();
+                self.one_candidate(selector, candidates)
+            }
+            EntrySelector::SectionOffset { section, offset } => {
+                let sections: Vec<&ObjectSectionLocation> = self
+                    .object_sections
+                    .iter()
+                    .filter(|candidate| candidate.name == *section && *offset < candidate.size)
+                    .collect();
+                self.resolve_sections(selector, sections, *offset)
+            }
+            EntrySelector::SectionIndexOffset {
+                section_index,
+                offset,
+            } => {
+                let sections: Vec<&ObjectSectionLocation> = self
+                    .object_sections
+                    .iter()
+                    .filter(|candidate| {
+                        candidate.index == *section_index && *offset < candidate.size
+                    })
+                    .collect();
+                self.resolve_sections(selector, sections, *offset)
+            }
+            EntrySelector::Numeric(vma) => {
+                let vma = self.thumb_normalized(*vma);
+                if self.vma_is_mapped(vma) {
+                    return Ok(self.entry_at_or_named(vma));
+                }
+
+                let raw_matches: Vec<FunctionEntry> = self
+                    .function_entries_canonical()
+                    .into_iter()
+                    .filter(|entry| {
+                        entry.provenance == EntryProvenance::DefinedObject
+                            && entry
+                                .object_location
+                                .as_ref()
+                                .is_some_and(|location| location.offset == vma)
+                    })
+                    .collect();
+                if !raw_matches.is_empty() {
+                    return self.one_candidate(selector, raw_matches);
+                }
+
+                // A genuine undefined symbol is intentionally unmapped but may
+                // still be selected explicitly for its external declaration.
+                if let Some(entry) = self.find_entry_at(vma) {
+                    if entry.provenance == EntryProvenance::UndefinedExternal {
+                        return Ok(entry);
+                    }
+                }
+                Err(EntryLookupError::Unmapped {
+                    selector: selector.display(),
+                    relocatable: !self.object_sections.is_empty(),
+                })
+            }
+        }
+    }
+
+    /// Resolve an already-parsed machine address without discarding its address
+    /// space. Numeric front-end selectors intentionally use the default code
+    /// space and retain relocatable raw-offset compatibility; console address
+    /// grammar can instead name processor and overlay spaces explicitly.
+    pub fn resolve_address(&self, address: &Address) -> Result<FunctionEntry, EntryLookupError> {
+        let mut selector = String::new();
+        address
+            .print_raw(&mut selector)
+            .map_err(|_| EntryLookupError::NotFound {
+                selector: format!("0x{:x}", address.get_offset()),
+            })?;
+        let known = self.entry_at_exact_address(address);
+        if self.entry_bytes_mapped(address) {
+            return Ok(known.unwrap_or_else(|| {
+                let name = self
+                    .arch()
+                    .symboltab
+                    .function_display_name_across_scopes(address)
+                    .unwrap_or_else(|| self.arch().name_function(address));
+                FunctionEntry {
+                    name,
+                    addr: address.clone(),
+                    aliases: Vec::new(),
+                    object_location: None,
+                    provenance: EntryProvenance::Mapped,
+                    binding: None,
+                    size: self.function_extent_at(address.get_offset()),
+                }
+            }));
+        }
+        if let Some(entry) = known {
+            if entry.provenance == EntryProvenance::UndefinedExternal {
+                return Ok(entry);
+            }
+        }
+        Err(EntryLookupError::Unmapped {
+            selector,
+            relocatable: !self.object_sections.is_empty(),
+        })
+    }
+
+    fn entry_at_exact_address(&self, address: &Address) -> Option<FunctionEntry> {
+        let mut records: Vec<&ProgramSymbol> = self
+            .symbols
+            .iter()
+            .filter(|record| record.addr == *address)
+            .collect();
+        if records.is_empty() {
+            return None;
+        }
+        records.sort_by(|a, b| {
+            entry_name_rank(&a.name)
+                .cmp(&entry_name_rank(&b.name))
+                .then_with(|| a.name.cmp(&b.name))
+        });
+        let canonical = records.remove(0);
+        let object_record = std::iter::once(canonical)
+            .chain(records.iter().copied())
+            .find(|record| record.object_location.is_some());
+        let provenance = object_record
+            .map(|_| EntryProvenance::DefinedObject)
+            .unwrap_or_else(|| {
+                if canonical.provenance == EntryProvenance::UndefinedExternal
+                    || records.iter().any(|record| {
+                        record.provenance == EntryProvenance::UndefinedExternal
+                    })
+                {
+                    EntryProvenance::UndefinedExternal
+                } else {
+                    EntryProvenance::Mapped
+                }
+            });
+        Some(FunctionEntry {
+            name: canonical.name.clone(),
+            addr: address.clone(),
+            aliases: records.iter().map(|record| record.name.clone()).collect(),
+            object_location: object_record.and_then(|record| record.object_location.clone()),
+            binding: object_record
+                .and_then(|record| record.binding.clone())
+                .or_else(|| canonical.binding.clone()),
+            provenance,
+            size: self.function_extent_at(address.get_offset()),
+        })
+    }
+
+    fn resolve_sections(
+        &self,
+        selector: &EntrySelector,
+        sections: Vec<&ObjectSectionLocation>,
+        offset: u64,
+    ) -> Result<FunctionEntry, EntryLookupError> {
+        if sections.is_empty() {
+            return Err(EntryLookupError::NotFound {
+                selector: selector.display(),
+            });
+        }
+        let candidates = sections
+            .into_iter()
+            .map(|section| self.entry_at_or_named(section.vma.wrapping_add(offset)))
+            .collect();
+        self.one_candidate(selector, candidates)
+    }
+
+    fn one_candidate(
+        &self,
+        selector: &EntrySelector,
+        mut candidates: Vec<FunctionEntry>,
+    ) -> Result<FunctionEntry, EntryLookupError> {
+        candidates.sort_by_key(|entry| entry.addr.get_offset());
+        candidates.dedup_by_key(|entry| entry.addr.get_offset());
+        match candidates.len() {
+            0 => Err(EntryLookupError::NotFound {
+                selector: selector.display(),
+            }),
+            1 => Ok(candidates.remove(0)),
+            _ => Err(EntryLookupError::Ambiguous {
+                selector: selector.display(),
+                candidates,
+            }),
+        }
+    }
+
+    fn entry_at_or_named(&self, vma: u64) -> FunctionEntry {
+        if let Some(entry) = self.find_entry_at(vma) {
+            return entry;
+        }
+        let code_space = self
+            .arch()
+            .manage()
+            .get_default_code_space()
+            .expect("default code space after bootstrap");
+        let addr = Address::new(Rc::clone(code_space), vma);
+        let object_location = self.object_location_at(vma);
+        let name = self
+            .function_named_at(vma)
+            .unwrap_or_else(|| self.arch().name_function(&addr));
+        let size = self.function_extent_at(vma);
+        FunctionEntry {
+            name,
+            addr,
+            aliases: Vec::new(),
+            provenance: if object_location.is_some() {
+                EntryProvenance::DefinedObject
+            } else {
+                EntryProvenance::Mapped
+            },
+            object_location,
+            binding: None,
+            size,
+        }
+    }
+
+    fn object_location_at(&self, vma: u64) -> Option<ObjectLocation> {
+        self.object_sections.iter().find_map(|section| {
+            (vma >= section.vma && vma - section.vma < section.size).then(|| ObjectLocation {
+                section_index: section.index,
+                section: section.name.clone(),
+                offset: vma - section.vma,
+            })
+        })
+    }
+
+    fn vma_is_mapped(&self, vma: u64) -> bool {
+        let sections = self.sections();
+        if sections.is_empty() {
+            return self.vma_bytes_mapped(vma);
+        }
+        sections
+            .iter()
+            .any(|&(start, size, _)| vma >= start && vma - start < size)
     }
 
     /// (kuna, issue #197) Fold the ARM/Thumb mode bit out of `vma`.
@@ -754,7 +1028,18 @@ impl ConsoleProgram {
         // symbol table nests it under.
         let name = &*kuna_decomp::kuna_symbolnamebound::bound_scope_path(name, "::");
         self.symbols.retain(|s| s.name != name);
-        self.symbols.push(ProgramSymbol { name: name.to_string(), addr });
+        let object_location = self.object_location_at(addr.get_offset());
+        self.symbols.push(ProgramSymbol {
+            name: name.to_string(),
+            addr,
+            provenance: if object_location.is_some() {
+                EntryProvenance::DefinedObject
+            } else {
+                EntryProvenance::Mapped
+            },
+            object_location,
+            binding: None,
+        });
     }
 
     /// (kuna) Build the `map addr`-shaped stack-symbol specs for the DWARF stack
@@ -1337,6 +1622,7 @@ pub fn bootstrap_program(
         arch: arch.into_sleigh(),
         registry,
         symbols,
+        object_sections: Vec::new(),
         description,
         pending_analysis: Vec::new(),
         analysis_code_space: None,
@@ -1502,7 +1788,43 @@ pub fn bootstrap_from_object(
     let dynreloc_const: Vec<(u64, u64)> = loader.dynreloc_const_ranges().to_vec();
 
     // readLoaderSymbols (the ELF FUNC symbols) BEFORE handing the loader off.
-    let symbols = read_loader_symbols_generic(&loader);
+    let mut symbols = read_loader_symbols_generic(&loader);
+    let object_sections: Vec<ObjectSectionLocation> = loader
+        .reloc_sections()
+        .iter()
+        .map(|section| ObjectSectionLocation {
+            index: section.index,
+            name: section.name.clone(),
+            vma: section.vma,
+            size: section.size,
+        })
+        .collect();
+    for symbol in &mut symbols {
+        if let Some(info) = loader
+            .reloc_symbols()
+            .iter()
+            .find(|info| info.vma == symbol.addr.get_offset())
+        {
+            symbol.object_location = match (
+                info.section_index,
+                info.section_name.as_ref(),
+                info.section_offset,
+            ) {
+                (Some(section_index), Some(section), Some(offset)) => Some(ObjectLocation {
+                    section_index,
+                    section: section.clone(),
+                    offset,
+                }),
+                _ => None,
+            };
+            symbol.binding = Some(info.binding.clone());
+            symbol.provenance = if info.undefined {
+                EntryProvenance::UndefinedExternal
+            } else {
+                EntryProvenance::DefinedObject
+            };
+        }
+    }
     // The data half of the same symbol tables (`STT_OBJECT`), read here for the
     // same reason — the loader is about to be moved into the engine. Installed at
     // the analysis commit, after DWARF and the detected strings have claimed their
@@ -1529,6 +1851,7 @@ pub fn bootstrap_from_object(
         arch: sleigh,
         registry,
         symbols,
+        object_sections,
         description,
         // Stash the per-pass analysis facts + the code space for the gated commit
         // at `read symbols` (IfcReadSymbols -> commit_analysis_passes).
@@ -2331,7 +2654,13 @@ fn read_loader_symbols_generic(loader: &dyn LoadImage) -> Vec<ProgramSymbol> {
         // for every real name.
         let name =
             kuna_decomp::kuna_symbolnamebound::bound_scope_path(&name, "::").into_owned();
-        out.push(ProgramSymbol { name, addr: record.address });
+        out.push(ProgramSymbol {
+            name,
+            addr: record.address,
+            object_location: None,
+            binding: None,
+            provenance: EntryProvenance::Mapped,
+        });
     }
     out
 }

@@ -922,9 +922,15 @@ decomp_command!(
         // the per-pass `--option` gates apply; this only covers a hand session.
         prog.commit_pending_analysis()
             .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
-        let entry = match prog.lookup_symbol(&funcname) {
-            Some(addr) => addr,
-            None => return Err(IfaceError::execution(format!("Unknown function name: {funcname}"))),
+        let selector = crate::engine::EntrySelector::parse(&funcname);
+        let selected = prog
+            .resolve_entry(&selector)
+            .map_err(|error| IfaceError::execution(error.to_string()))?;
+        let entry = selected.addr;
+        let resolved_name = if matches!(selector, crate::engine::EntrySelector::Name(_)) {
+            funcname
+        } else {
+            selected.name
         };
         // (kuna, Ghidra-gap) Apply the analysis's `call error(nonzero,…)` no-return facts
         // as CALL_RETURN flow overrides — the SAME prune `decompile-all` does — so the
@@ -945,7 +951,7 @@ decomp_command!(
         // `override flow` facts stashed for this function before flow follows.
         let fd = build_and_follow_flow_with_override(
             prog.arch_mut(),
-            &funcname,
+            &resolved_name,
             entry,
             UNBOUNDED_SIZE,
             &flow_overrides,
@@ -972,7 +978,18 @@ decomp_command!(
             .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
         // C++ Address offset = parse_machaddr(s,size,*dcp->conf->types) — the full
         // console address grammar over the engine spaces.
-        let (offset, _size) = parse_machaddr(prog, s, false).map_err(IfaceError::parse)?;
+        let (requested, _size) = parse_machaddr(prog, s, false).map_err(IfaceError::parse)?;
+        let in_default_space = requested
+            .get_space()
+            .zip(prog.arch().manage().get_default_code_space())
+            .is_some_and(|(requested, default)| std::rc::Rc::ptr_eq(requested, default));
+        let selected = if in_default_space {
+            prog.resolve_entry(&crate::engine::EntrySelector::Numeric(requested.get_offset()))
+        } else {
+            prog.resolve_address(&requested)
+        }
+        .map_err(|error| IfaceError::execution(error.to_string()))?;
+        let offset = selected.addr;
         s.skip_ws();
         let name = s.read_token(); // optional
         // No explicit name: prefer the FunctionSymbol already installed here,

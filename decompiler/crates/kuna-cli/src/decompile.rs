@@ -22,6 +22,8 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use kuna_console::engine::EntrySelector;
+
 use crate::decompile_all::{self, Args as AllArgs, DriverDefaults};
 use crate::paths;
 
@@ -143,12 +145,19 @@ fn build_script(
     }
     lines.push("read symbols".into());
     if by_address {
-        let addr = if target.starts_with("0x") || target.starts_with("0X") {
-            target.to_string()
-        } else {
-            format!("0x{target}")
-        };
-        lines.push(format!("load addr {addr}"));
+        match EntrySelector::parse(target) {
+            EntrySelector::SectionOffset { .. } | EntrySelector::SectionIndexOffset { .. } => {
+                lines.push(format!("load function {target}"));
+            }
+            _ => {
+                let addr = if target.starts_with("0x") || target.starts_with("0X") {
+                    target.to_string()
+                } else {
+                    format!("0x{target}")
+                };
+                lines.push(format!("load addr {addr}"));
+            }
+        }
     } else {
         lines.push(format!("load function {target}"));
     }
@@ -258,6 +267,51 @@ fn read_symbols_failure(out: &str) -> Option<String> {
     None
 }
 
+/// The reason the selection command failed, recovered from the transcript.
+///
+/// `load function` / `load addr` resolve through the shared selector model
+/// (`kuna_console::engine::ConsoleProgram::resolve_entry`), whose ambiguity
+/// report spans several lines — the diagnostic line plus one line per candidate
+/// — so everything the console printed for that command is the reason.
+fn selection_failure(out: &str) -> Option<String> {
+    let mut in_load = false;
+    let mut reason: Option<String> = None;
+    for raw in out.lines() {
+        let trimmed = raw.trim();
+        let line = console_text(trimmed);
+        if trimmed.starts_with(CONSOLE_PROMPT) {
+            if reason.is_some() {
+                break;
+            }
+            let mut words = line.split_whitespace();
+            in_load = words.next() == Some("load")
+                && matches!(words.next(), Some("function") | Some("addr"));
+            continue;
+        }
+        if !in_load || line.is_empty() {
+            continue;
+        }
+        match &mut reason {
+            Some(collected) => {
+                collected.push('\n');
+                collected.push_str(raw.trim_end());
+            }
+            None => {
+                for prefix in CONSOLE_DIAGNOSTICS {
+                    if let Some(text) = line.strip_prefix(prefix) {
+                        let text = text.trim();
+                        if !text.is_empty() {
+                            reason = Some(text.to_string());
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    reason
+}
+
 /// Inspect the combined stdout+stderr for the recognized fatal-error strings —
 /// port of `_check_errors`.  Returns an error message if one is found.
 ///
@@ -286,10 +340,24 @@ fn check_errors(out: &str, target: &str, binary: &str, by_address: bool) -> Opti
     if let Some(reason) = read_symbols_failure(out) {
         return Some(format!("read symbols (analysis commit) failed: {reason}"));
     }
-    if !by_address && (out.contains("Unknown function name:") || out.contains("Bad namespace:")) {
+    if !by_address
+        && (out.contains("Unknown function name:")
+            || out.contains("no function matches")
+            || out.contains("Bad namespace:"))
+    {
         return Some(format!(
             "no function {target:?} in {binary}; for a stripped binary pass an address with --addr"
         ));
+    }
+    // An ambiguous or unmapped selector is answered by the selector model, whose
+    // report names every candidate. Return it verbatim: the transcript dump the
+    // caller falls back to is capped at its FIRST 2000 characters, which in the
+    // default mode is all option chatter, so the answer would be cut off. The
+    // unmapped-entry probe stays ahead of it — an external is not a bad selector.
+    if !is_unmapped_entry(out) {
+        if let Some(reason) = selection_failure(out) {
+            return Some(reason);
+        }
     }
     None
 }

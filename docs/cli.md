@@ -140,6 +140,7 @@ payload`).
 ```bash
 kuna decompile-all ./a.out --json                      # every CODE-backed function
 kuna decompile-all ./a.out --functions main,parse --json
+kuna decompile-all ./module.o --addr .text+0x660 --json
 kuna functions ./a.out --json                          # full callable-symbol inventory
 ```
 
@@ -149,10 +150,12 @@ The whole-binary surface (the benchmark + LLM path). Runs **in-process**
 `kuna decompile`'s subprocess-per-function (≈10×+ faster on a many-function binary).
 
 `--json` emits
-`{binary,count,functions:[{name,address,address_hex,aliases,size,code,error,
+`{binary,count,functions:[{name,address,address_hex,aliases,object_location,size,code,error,
 line_mappings:[{line_number,addresses}],variables:[{name,type,kind,arg_index,
 stack_offset,size,line_numbers,addresses}]}]}` (`kuna functions --json` emits
-`name`/`address`/`address_hex`/`aliases`/`size` per function). `line_mappings` maps 1-based
+`name`/`address`/`address_hex`/`aliases`/`object_location`/`size` per function).
+`object_location` is `null` for linked images and undefined imports; for a relocatable
+definition it is `{section_index,section,offset,offset_hex}`. `line_mappings` maps 1-based
 lines in `code` to sorted, unique machine-instruction VMAs. Variable `line_numbers`
 come from the printer's `varref` tokens; variable `addresses` are the union of the
 mapped instruction addresses on those lines. Both are empty when no backed use is
@@ -188,9 +191,18 @@ Behaviors specific to `decompile-all`:
   functions`, remain installed for named calls and prototypes, and remain
   reachable through explicit `--addr`; they are not automatically decoded as
   function bodies. Analysis-discovered entries inside executable sections join
-  this default set. `--functions` retains its normal first-match behavior when a
-  stub and slot share a name. Loaders without section metadata retain the
+  this default set. A name that identifies entries at several addresses is rejected as
+  ambiguous instead of selecting the first. Loaders without section metadata retain the
   complete inventory.
+
+- **Relocatable-object selectors** — an `ET_REL`/`.obj` is loaded into a synthetic VMA
+  space, but its original coordinates remain available. `--addr` accepts a synthetic
+  `0xVMA`, `.section+0xOFFSET`, or `SECTION_INDEX:0xOFFSET`. A bare numeric address keeps
+  backward compatibility: a mapped synthetic VMA wins; otherwise it resolves a defined
+  function at that raw section offset only when unique. Ambiguities list every candidate
+  with its section, raw offset, synthetic VMA, and symbol binding. Arbitrary unmapped
+  addresses are errors. Only symbols marked undefined/import by the object are reported as
+  external.
 
 - **One record per function entry** — a whole-binary run reports (and decompiles) each
   entry address exactly once. A function can carry several names: a `.symtab` symbol
@@ -273,7 +285,10 @@ The target is a **symbol name or an address** (`0x`-prefixed, or bare hex). A na
 is always resolved as a symbol first, so a function really called `abc` is not
 silently read as `0xabc`. Function names, the `s_<addr>` string symbols the
 `strings` pass installs, and named data globals all resolve — which is what makes
-the string-to-its-users hop work: `kuna xrefs ./a.out --to s_400915`.
+the string-to-its-users hop work: `kuna xrefs ./a.out --to s_400915`. A function
+name that identifies several entries — two same-named locals in a relocatable
+object — is reported as ambiguous with every candidate, never answered for
+whichever one the symbol table holds first.
 
 | `kind` | What it is |
 |---|---|

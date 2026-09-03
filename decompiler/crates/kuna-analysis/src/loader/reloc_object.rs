@@ -63,6 +63,32 @@ use super::format::ObjectFormat;
 /// a relocatable object, so a `.o` lifted by kuna and by angr share addresses).
 pub const RELOC_BASE: u64 = 0x40_0000;
 
+/// One section in the synthetic relocatable-object address space.
+///
+/// The object-file coordinates are retained alongside the synthetic VMA so
+/// front-ends can present stable selectors such as `.text+0x24` without
+/// exposing the loader's implementation address as though it came from the
+/// input file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RelocSectionInfo {
+    pub index: usize,
+    pub name: String,
+    pub vma: u64,
+    pub size: u64,
+}
+
+/// Provenance for a function symbol in a relocatable object.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RelocSymbolInfo {
+    pub name: String,
+    pub vma: u64,
+    pub section_index: Option<usize>,
+    pub section_name: Option<String>,
+    pub section_offset: Option<u64>,
+    pub binding: String,
+    pub undefined: bool,
+}
+
 /// The laid-out image of a relocatable object: the same three streams the linked
 /// `PT_LOAD` path produces, ready to drop into `ObjectLoadImage`.
 pub struct RelocLayout {
@@ -94,6 +120,10 @@ pub struct RelocLayout {
     /// The half-open `[lo, hi)` extent of the synthetic extern area, `None` when
     /// the object referenced no undefined symbol.
     pub extern_range: Option<(u64, u64)>,
+    /// Public object-coordinate map for selectors and machine-readable output.
+    pub section_info: Vec<RelocSectionInfo>,
+    /// Defined and undefined callable symbols with their original provenance.
+    pub symbol_info: Vec<RelocSymbolInfo>,
 }
 
 /// One laid-out `SHF_ALLOC` section: its load VMA and a *mutable* byte buffer the
@@ -124,6 +154,7 @@ pub fn layout_relocatable(
     // --- Pass 1: assign a load VMA to every SHF_ALLOC section, snapshot bytes.
     let mut laid: Vec<LaidSection> = Vec::new();
     let mut vma_of: HashMap<SectionIndex, u64> = HashMap::new();
+    let mut section_info: Vec<RelocSectionInfo> = Vec::new();
     let mut cursor = RELOC_BASE;
     for sec in file.sections() {
         if !fmt.is_alloc_section(sec.kind(), sec.flags()) {
@@ -155,6 +186,12 @@ pub fn layout_relocatable(
             }
         };
         vma_of.insert(sec.index(), vma);
+        section_info.push(RelocSectionInfo {
+            index: sec.index().0,
+            name: sec.name().unwrap_or("").to_string(),
+            vma,
+            size,
+        });
         laid.push(LaidSection {
             index: sec.index(),
             vma,
@@ -258,6 +295,7 @@ pub fn layout_relocatable(
 
     // --- Function symbols: defined (rebased) + extern call targets.
     let mut funcsyms: Vec<(u64, Vec<u8>)> = Vec::new();
+    let mut symbol_info: Vec<RelocSymbolInfo> = Vec::new();
     for sym in file.symbols() {
         if sym.kind() != SymbolKind::Text {
             continue;
@@ -268,7 +306,23 @@ pub fn layout_relocatable(
             Ok(n) if !n.is_empty() => n.to_vec(),
             _ => continue,
         };
-        funcsyms.push((base.wrapping_add(sym.address()), name));
+        let vma = base.wrapping_add(sym.address());
+        let section_name = file
+            .section_by_index(sec_idx)
+            .ok()
+            .and_then(|section| section.name().ok())
+            .unwrap_or("")
+            .to_string();
+        symbol_info.push(RelocSymbolInfo {
+            name: String::from_utf8_lossy(&name).into_owned(),
+            vma,
+            section_index: Some(sec_idx.0),
+            section_name: Some(section_name),
+            section_offset: Some(sym.address()),
+            binding: symbol_binding(&sym),
+            undefined: false,
+        });
+        funcsyms.push((vma, name));
     }
     // Extern functions: name each external *call target* at its synthetic slot
     // so `call ext` renders by name instead of a bare address. A call target is
@@ -284,6 +338,15 @@ pub fn layout_relocatable(
         }
         if let Ok(n) = sym.name_bytes() {
             if !n.is_empty() {
+                symbol_info.push(RelocSymbolInfo {
+                    name: String::from_utf8_lossy(n).into_owned(),
+                    vma: *addr,
+                    section_index: None,
+                    section_name: None,
+                    section_offset: None,
+                    binding: symbol_binding(&sym),
+                    undefined: true,
+                });
                 funcsyms.push((*addr, n.to_vec()));
             }
         }
@@ -304,7 +367,22 @@ pub fn layout_relocatable(
         section_vma: vma_of,
         extern_addr: extern_of,
         extern_range,
+        section_info,
+        symbol_info,
     }
+}
+
+fn symbol_binding<'data, S: ObjectSymbol<'data>>(sym: &S) -> String {
+    if sym.is_weak() {
+        "weak"
+    } else if sym.is_local() {
+        "local"
+    } else if sym.is_global() {
+        "global"
+    } else {
+        "unknown"
+    }
+    .to_string()
 }
 
 /// Resolve a relocation's target symbol to a load address.  A defined symbol maps
