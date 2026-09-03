@@ -92,6 +92,20 @@ def _known_needs(limit=12):
     return "\n".join(lines)
 
 
+def _obfuscation_line(meta):
+    """What this challenge is actually doing to you, from the corpus labels.
+
+    Named rather than left abstract because "this binary is virtualised and string-encrypted"
+    changes which interface a tester should ask for: a VM wants control-flow structuring
+    control, encrypted strings want a way to define decoded data.
+    """
+    classes = (meta.get("obfuscation") or {}).get("classes") or []
+    if not classes:
+        return ("this one is not labelled as obfuscated, so a wrong answer here is a plain "
+                "bug rather than a defence")
+    return "this one is labelled " + ", ".join(c.lower() for c in classes)
+
+
 def _ida_line():
     if not config.ENABLE_IDA:
         return "- IDA is **not** available this round. kuna and the binutils are all you have."
@@ -115,6 +129,7 @@ def render(hexid, round_n, arena, out=None):
             .replace("{{TARGET}}", target)
             .replace("{{REPO}}", str(config.repo_root()))
             .replace("{{TIME_BUDGET}}", str(_time_budget_minutes(meta)))
+            .replace("{{OBFUSCATION}}", _obfuscation_line(meta))
             .replace("{{IDA_LINE}}", _ida_line())
             .replace("{{RECENTLY_SHIPPED}}", _recently_shipped())
             .replace("{{KNOWN_NEEDS}}", _known_needs()))

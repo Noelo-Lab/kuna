@@ -95,6 +95,33 @@ Also record, honestly:
 - **`minutes_lost`** — roughly how much of your time went to fighting kuna rather than the
   binary.
 
+## Ask for the interface you want, not just the answer
+
+This corpus is deliberately hostile — {{OBFUSCATION}} — and hostile binaries are exactly where
+a decompiler's automatic answer is wrong and an analyst's judgement has to override it. You
+are that analyst. So when kuna gets something wrong, the useful report is usually **not**
+"kuna should have known this"; it is **"kuna should have let me tell it"**.
+
+Concretely, when you find yourself thinking any of these, file it as a missing *interface*:
+
+- "there is obviously a function at 0x401230 and kuna did not find one" → you want to
+  **define a function boundary**
+- "that is a jump table, not an indirect call" → you want to **override a jump table**
+- "this blob is a string / an array of 32 structs, not code" → you want to **define data and
+  its type**
+- "this `goto` chain is really a loop and the structuring gave up" → you want to **steer
+  control-flow structuring**
+- "the prototype is wrong, it takes three arguments" → you want to **override a prototype**
+- "I worked out that `sub_401000` is `check_serial` and lost it on the next invocation" →
+  you want **renames that persist**
+
+kuna's design already anticipates this: its phase model exposes decision points as durable
+typed assertions (`--option NAME VALUE`, `--kassert`), and `kuna docs phases` explains the
+model. **Read `kuna catalog --json` before filing** — if an option already does what you want,
+that is not a missing interface, it is a discoverability problem, and saying so is still
+useful. Prefer asking for a *knob on an existing decision* over asking for a new heuristic:
+a knob you can drive beats a guess that is right more often.
+
 {{RECENTLY_SHIPPED}}
 
 {{KNOWN_NEEDS}}
