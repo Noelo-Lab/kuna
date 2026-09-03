@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    590,
-    590
+    594,
+    594
   ],
   "passing": [
     "data:ARRAYSUBFIELD #1: an 8-byte read at offset 0 of char[16] is a sized sub-field, not element 0",
@@ -386,6 +386,8 @@
     "data:angr-taildup #1 (bug, off): one residual goto to the shared free();return; tail",
     "data:angr-taildup #2 (bug, off): goto label reference + label definition present, none on",
     "data:angr-taildup #3 (fix, on): free();return; tail duplicated (1 free off + 2 free on)",
+    "data:calleearity #1: option off drops the argument at the call site whose guard branches on it (bug reproduced)",
+    "data:calleearity #2: option on gives both call sites of one callee the same arity",
     "data:callsitestackargs #1: option off truncates the call at the six register arguments (bug reproduced)",
     "data:callsitestackargs #2: option on recovers both stack-passed arguments",
     "data:condfold #1: OFF, the fold is declined and the sibling's test becomes a crossing goto (pass 1 only)",
@@ -589,6 +591,8 @@
     "data:undefname #8: the body writes that slot through the same name",
     "data:unrolledguard #1: option off, the interleaved dispatches degrade to computed calls (bug reproduced); option on adds ZERO new ones (7 pass1 + 0 pass2)",
     "data:unrolledguard #2: option on recovers every interleaved table as a switch (1 off + 16 on = 17)",
+    "data:varargstackargs #1: option off drops the stack-passed variadic argument (bug reproduced)",
+    "data:varargstackargs #2: option on recovers the variadic argument the ABI passes on the stack",
     "data:whiledo-complex #1: compound while condition forces overflow syntax (valid C)",
     "data:whiledo-complex #2: no statement is inlined inside a while-parens condition (plain form absent)",
     "data:whiledo-complex #3: the bound check is a proper if statement in the loop body",

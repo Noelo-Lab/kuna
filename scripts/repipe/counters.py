@@ -207,6 +207,8 @@ SITES = (
      r"fn fixture_has_all_(\d+)_settables\(\)", "settables"),
     ("bytecompat.fixture-matches", REL_BYTECOMPAT_RS,
      r'FIXTURE\.matches\("\\"(?:option|tier|symptoms)\\": "\)\.count\(\), (\d+)\)', "settables"),
+    ("phases-tests.catalog-json-records", REL_TESTS_RS,
+     r'assert_eq!\(json\.matches\("\},\\n"\)\.count\(\), (\d+)\)', "settables_minus_one"),
     ("base-xml.corpus-count", REL_BASE_XML_RS,
      r'assert_eq!\(count, (\d+), "corpus file count drifted"\)', "corpus_files"),
 )
@@ -379,6 +381,10 @@ def derive(repo=None, kuna=None) -> dict:
     return {
         "repo": str(_root(repo)),
         "settables": len(rows),
+        # The static catalog JSON separates records with "},\n", so the last record
+        # has none: one fewer than the settable count. Its own site, because a
+        # regex that fixed it to `settables` would write the wrong number.
+        "settables_minus_one": len(rows) - 1,
         "settables_phases_toml": toml_n,
         "settables_catalog": len(rows),
         "settables_fixture": fixture_n,

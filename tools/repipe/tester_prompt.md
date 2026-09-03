@@ -52,6 +52,17 @@ your observation is discarded as noise. If the acceptance already passes, your o
 is discarded as *"kuna could already do this"* — which is a fine outcome, it just means you
 missed a flag; that ledger is kept and it is how we know the gate works.
 
+**The same rule binds the probe, and there it is more dangerous.** An over-specified
+acceptance leaves finished work looking open — annoying. An over-specified *probe* is worse:
+when it stops matching, the machine reports the defect **fixed** and closes it. Round 1 filed
+a probe asserting `_secret_function(v2);` for a void function called with an argument. The
+build later emitted `_secret_function(v3);` — same defect, one renumbered variable — and the
+probe reported the bug gone.
+
+So never pin a `vN` local, a `sub_<addr>` name, or a whole signature line in a probe when the
+defect is a *property*. Assert the property: `stdout_matches: ["_secret_function\\(v[0-9]"]`
+says "called with an argument" and survives renumbering.
+
 **Write the acceptance against the symptom, not against the fix you imagine.** This is the
 single most common way a good observation gets wasted. Round 1 filed an acceptance demanding
 `mprotect(` where the syscall was actually `write`, and one demanding the literal token

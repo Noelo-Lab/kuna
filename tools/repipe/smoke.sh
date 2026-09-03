@@ -65,8 +65,22 @@ fi
 
 head_ "L0  counters re-derive from the live tree"
 CNT="$("$PY" -m scripts.repipe.counters --rederive --json 2>/dev/null)"
-echo "$CNT" | grep -q '"settables": 127' && ok "settables = 127" || bad "settable count drifted" "$(echo "$CNT" | head -3)"
-echo "$CNT" | grep -q '"corpus_files": 222' && ok "stage corpus = 222" || bad "stage corpus count drifted"
+# Assert the MECHANISM, not a snapshot. Pinning "settables = 127" here made every
+# option that lands break the smoke, which is a false alarm that teaches people to
+# ignore it -- and it never once caught a real drift, because counters --check is
+# what does that. So: the derivation must produce a plausible number, and every
+# hard-coded site in the tree must agree with it.
+SETTABLES="$(echo "$CNT" | "$PY" -c 'import json,sys; d=json.load(sys.stdin); print(d.get("derived", d).get("settables", 0))' 2>/dev/null || echo 0)"
+CORPUS="$(echo "$CNT" | "$PY" -c 'import json,sys; d=json.load(sys.stdin); print(d.get("derived", d).get("corpus_files", 0))' 2>/dev/null || echo 0)"
+[ "${SETTABLES:-0}" -ge 100 ] && ok "settables derived ($SETTABLES)" \
+  || bad "settable derivation implausible" "$(echo "$CNT" | head -3)"
+[ "${CORPUS:-0}" -ge 200 ] && ok "stage corpus derived ($CORPUS)" \
+  || bad "corpus derivation implausible"
+if "$PY" -m scripts.repipe.counters --check >/dev/null 2>&1; then
+  ok "every hard-coded counter site agrees with the derived truth"
+else
+  bad "counter drift" "$("$PY" -m scripts.repipe.counters --check 2>&1 | grep DRIFT | head -4)"
+fi
 echo "$CNT" | grep -q '"next_element_id"' && ok "next free ElementId derived" || bad "no ElementId derivation"
 
 head_ "L0  mergecheck catches all three silent-merge shapes"

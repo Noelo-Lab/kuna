@@ -418,6 +418,25 @@ symptom was real every time and the diagnosis was wrong:
   `BRANCHIND` on **re-lifted raw p-code**; the two halves never see the same graph, neither
   recovery arm is checked, and the surgery commits regardless.
 
+**Closure, measured by re-running both arms on the merged build.** The acceptance arm says
+9 flipped; the probe arm says 13 bad behaviours stopped reproducing. Neither number is the
+answer, and the gap between them is the finding:
+
+| | count | |
+|---|---|---|
+| genuinely fixed at defaults | **12** | probe gone *and* the change is real |
+| fixed, but behind a default-OFF option | 2 | `switchselector`, `linuxsyscall` — correctly still reproducing at defaults |
+| still open | 9 | |
+| **falsely reported fixed** | **1** | see below |
+
+The false one is the most useful result of the round. A probe asserted
+`_secret_function(v2);` for a void function called with an argument. The merged build emits
+`_secret_function(v3);` — the identical defect with one renumbered local — and the probe
+stopped matching, so the machine reported the bug **gone**. An over-specified *acceptance*
+leaves finished work looking open; an over-specified *probe* closes work that was never done,
+and nothing downstream would ever have caught it. Both prompts now say: assert the property,
+never a `vN`, a `sub_<addr>`, or a whole signature line.
+
 **What the acceptance re-run then showed, which the gate could not.** Of the 14 acceptances
 that did not flip, several assert a *rendering the tester imagined* rather than the symptom
 they observed: one demanded `mprotect(` where the syscall is actually `write`; one demanded

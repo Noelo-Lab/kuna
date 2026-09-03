@@ -48,7 +48,7 @@ fn surface_count_is_105() {
 }
 
 #[test]
-fn settable_count_is_131() {
+fn settable_count_is_133() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -98,12 +98,12 @@ fn settable_count_is_131() {
     // +1 for `linuxsyscall` (P2 32-bit Linux int 0x80 syscall naming).
     // +1 for `unmappedentry` (P1 unmapped-CALL-target entry suppression).
     // +1 for `entrymainproto` (P1 PE CRT entry-function prototype recovery).
-    assert_eq!(kuna_num_settables(), 131);
-    assert_eq!(SETTABLE_TABLE.len(), 131);
+    assert_eq!(kuna_num_settables(), 133);
+    assert_eq!(SETTABLE_TABLE.len(), 133);
 }
 
 #[test]
-fn tier_counts_are_28_core_54_transform_49_analysis() {
+fn tier_counts_are_30_core_54_transform_49_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -191,7 +191,7 @@ fn tier_counts_are_28_core_54_transform_49_analysis() {
     // suppression).
     // analysis 48 -> 49: +1 for `entrymainproto` (P1 PE CRT entry-function
     // prototype recovery).
-    assert_eq!((core, transform, analysis), (28, 54, 49));
+    assert_eq!((core, transform, analysis), (30, 54, 49));
 }
 
 #[test]
@@ -758,7 +758,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // count is one less than the settable total, since the last row has no comma.
     // +1 for `varargstackargs` and +1 for `calleearity`; both P4 rows sit
     // mid-table beside `callsitestackargs`, so the tail does not move either.
-    assert_eq!(json.matches("},\n").count(), 130);
+    assert_eq!(json.matches("},\n").count(), 132);
 }
 
 #[test]
