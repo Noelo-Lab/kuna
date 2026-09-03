@@ -28,7 +28,7 @@ use std::rc::Rc;
 
 use kuna_analysis::listing::xrefs::{Xref, XrefIndex, XrefKind};
 use kuna_base::address::Address;
-use kuna_console::engine::ConsoleProgram;
+use kuna_console::engine::{ConsoleProgram, EntryLookupError, EntrySelector};
 
 use crate::decompile_all::{load_program, mode_options_for_binary, Args, DriverDefaults};
 use crate::jsonfmt::{dumps_indent2, Json};
@@ -156,6 +156,10 @@ fn query(args: &XrefArgs) -> Result<String, String> {
 /// symbol FIRST — a function really can be called `abc`, and silently reading
 /// that as `0xabc` would answer a question nobody asked — and only falls back to
 /// a bare-hex reading when no symbol carries the name.
+///
+/// A name that identifies several entries is an ERROR naming all of them, not a
+/// miss: falling through to the symbol table would answer for whichever one it
+/// happens to hold first, which is the guess the selector model exists to refuse.
 fn resolve_target(prog: &ConsoleProgram, spec: &str) -> Result<Target, String> {
     let spec = spec.trim();
     if let Some(body) = spec.strip_prefix("0x").or_else(|| spec.strip_prefix("0X")) {
@@ -163,8 +167,10 @@ fn resolve_target(prog: &ConsoleProgram, spec: &str) -> Result<Target, String> {
             .map_err(|_| format!("invalid address {spec:?}"))?;
         return Ok(Target { addr, name: name_at(prog, addr) });
     }
-    if let Some(entry) = prog.find_entry_by_name(spec) {
-        return Ok(Target { addr: entry.addr.get_offset(), name: Some(entry.name) });
+    match prog.resolve_entry(&EntrySelector::Name(spec.to_string())) {
+        Ok(entry) => return Ok(Target { addr: entry.addr.get_offset(), name: Some(entry.name) }),
+        Err(error @ EntryLookupError::Ambiguous { .. }) => return Err(error.to_string()),
+        Err(_) => {}
     }
     if let Some(addr) = prog.lookup_symbol(spec) {
         let addr = addr.get_offset();

@@ -241,8 +241,17 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   silently), rebase defined symbols, and bind each undefined extern to a synthetic
   call target in an extern area above the sections so calls render by name. The
   result feeds back into `ObjectLoadImage` as the same segments/sections/funcsyms
-  triple the linked path produces. Which sections are memory-resident is the one
-  question that stays per-format — ELF's `SHF_ALLOC` bit and COFF's
+  triple the linked path produces. The loader also retains the original section
+  index, section name, section-relative offset, symbol binding, and
+  defined/undefined provenance beside each synthetic VMA. Front-ends expose that
+  coordinate as `.section+0xOFFSET` or `SECTION_INDEX:0xOFFSET`; a bare numeric
+  selector first means a mapped synthetic VMA, then falls back to a raw function
+  offset only when exactly one definition matches. Name and raw-offset collisions
+  report every candidate instead of taking symbol-table order, and only a symbol
+  marked undefined is classified as external. Loaders that publish no section
+  records, including the XML corpus loader, prove a numeric VMA by probing one
+  byte from the load image instead. Which sections are memory-resident
+  is the one question that stays per-format — ELF's `SHF_ALLOC` bit and COFF's
   `Characteristics` content bits minus the link-time-only sections (`.drectve`,
   `LNK_REMOVE`, the discardable `.debug$S`/`.debug$T`) — and it is asked through
   `ObjectFormat::is_alloc_section`, alongside `ObjectFormat::relocatable_layout`,

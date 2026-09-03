@@ -21,10 +21,9 @@
 //! filesystem, so this front-end runs in the browser with **zero** engine
 //! changes. See `docs/web-integration.md`.
 
-use std::rc::Rc;
-
-use kuna_base::address::Address;
-use kuna_console::engine::{bootstrap_from_object, ConsoleProgram, FunctionEntry};
+use kuna_console::engine::{
+    bootstrap_from_object, ConsoleProgram, EntrySelector, FunctionEntry, ObjectLocation,
+};
 use kuna_console::project::{
     build_asm, build_c, build_header, build_readme, collect_dat_addrs, decompile_targets,
     FuncResult, FAST_WHOLE_BINARY_FN_BUDGET_SECONDS,
@@ -386,32 +385,19 @@ fn resolve_targets(
     prog: &ConsoleProgram,
     command: &Cmd,
 ) -> Result<Vec<FunctionEntry>, String> {
-    let code_space = prog
-        .arch()
-        .manage()
-        .get_default_code_space()
-        .ok_or("no default code space")?;
-
     match command {
         // Automatic whole-binary runs target code, not import pointer slots.
         Cmd::DecompileAll => Ok(prog.function_entries_executable()),
         // An ALIAS resolves too — collapsing the enumeration must not make a
         // name that used to select a function stop working.
-        Cmd::DecompileName(want) => match prog.find_entry_by_name(want) {
-            Some(e) => Ok(vec![e]),
-            None => Err(format!("no function named {want:?} in the binary")),
-        },
-        Cmd::DecompileAddr(vma) => match prog.find_entry_at(*vma) {
-            Some(e) => Ok(vec![e]),
-            None => {
-                let addr = Address::new(Rc::clone(&code_space), *vma);
-                let name = prog
-                    .function_named_at(*vma)
-                    .unwrap_or_else(|| prog.arch().name_function(&addr));
-                let size = prog.function_extent_at(*vma);
-                Ok(vec![FunctionEntry { name, addr, aliases: Vec::new(), size }])
-            }
-        },
+        Cmd::DecompileName(want) => prog
+            .resolve_entry(&EntrySelector::parse(want))
+            .map(|entry| vec![entry])
+            .map_err(|error| error.to_string()),
+        Cmd::DecompileAddr(vma) => prog
+            .resolve_entry(&EntrySelector::Numeric(*vma))
+            .map(|entry| vec![entry])
+            .map_err(|error| error.to_string()),
         Cmd::List | Cmd::Project(_) => unreachable!("List/Project handled by caller"),
     }
 }
@@ -443,6 +429,10 @@ fn list_json(binary: &str, entries: &[FunctionEntry], kinds: &[&'static str]) ->
         s.push_str(&format!("\"address\": {}, ", addr));
         s.push_str(&format!("\"address_hex\": {}, ", json_str(&format!("0x{addr:x}"))));
         s.push_str(&format!("\"aliases\": {}, ", json_str_array(&e.aliases)));
+        s.push_str(&format!(
+            "\"object_location\": {}, ",
+            json_object_location(e.object_location.as_ref())
+        ));
         s.push_str(&format!("\"size\": {}, ", e.size));
         s.push_str(&format!("\"kind\": {}", json_str(kinds[i])));
         s.push('}');
@@ -465,6 +455,10 @@ fn result_json(binary: &str, funcs: &[FuncResult], kinds: &[&'static str]) -> St
         s.push_str(&format!("      \"address\": {},\n", f.address));
         s.push_str(&format!("      \"address_hex\": {},\n", json_str(&format!("0x{:x}", f.address))));
         s.push_str(&format!("      \"aliases\": {},\n", json_str_array(&f.aliases)));
+        s.push_str(&format!(
+            "      \"object_location\": {},\n",
+            json_object_location(f.object_location.as_ref())
+        ));
         s.push_str(&format!("      \"kind\": {},\n", json_str(kinds[i])));
         s.push_str(&format!("      \"size\": {},\n", f.size));
         s.push_str(&format!("      \"code\": {},\n", json_opt_str(f.code.as_deref())));
@@ -541,6 +535,19 @@ fn json_str_array(items: &[String]) -> String {
     }
     out.push(']');
     out
+}
+
+fn json_object_location(location: Option<&ObjectLocation>) -> String {
+    match location {
+        Some(location) => format!(
+            "{{\"section_index\": {}, \"section\": {}, \"offset\": {}, \"offset_hex\": {}}}",
+            location.section_index,
+            json_str(&location.section),
+            location.offset,
+            json_str(&format!("0x{:x}", location.offset))
+        ),
+        None => "null".to_string(),
+    }
 }
 
 /// Encode a Rust string as a JSON string literal (RFC 8259 escaping).
@@ -723,5 +730,70 @@ mod tests {
                 exported.len()
             );
         }
+    }
+
+    #[test]
+    fn relocatable_selectors_and_object_locations_reach_wasm() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../..")
+            .canonicalize()
+            .unwrap();
+        let binary = root.join(
+            "decompiler/crates/kuna-analysis/tests/fixtures/entry_selectors_x86_64.o",
+        );
+        let specs = root.join("specs");
+        let run = |cmd: &str, arg: Option<&str>| {
+            super::run_with_mode(
+                binary.to_str().unwrap(),
+                specs.to_str().unwrap(),
+                cmd,
+                arg,
+                Some("reliable"),
+            )
+        };
+        let skip = |error: &str| {
+            error.contains("could not build an architecture")
+                || error.contains("SLEIGH")
+                || error.contains("Could not discover")
+        };
+
+        let list = match run("list", None) {
+            Ok(list) => list,
+            Err(error) if skip(&error) => {
+                eprintln!("relocatable_selectors_and_object_locations_reach_wasm: skipping: {error}");
+                return;
+            }
+            Err(error) => panic!("WASM relocatable list failed: {error}"),
+        };
+        assert_eq!(list.matches("\"name\": \"duplicate_local\"").count(), 2);
+        assert!(
+            list.contains(
+                "\"object_location\": {\"section_index\": 4, \"section\": \".text.selector_a\", \"offset\": 0, \"offset_hex\": \"0x0\"}"
+            ),
+            "{list}"
+        );
+        assert!(
+            list.contains(
+                "\"object_location\": {\"section_index\": 6, \"section\": \".text.selector_b\", \"offset\": 0, \"offset_hex\": \"0x0\"}"
+            ),
+            "{list}"
+        );
+
+        let error = run("decompile", Some("duplicate_local"))
+            .expect_err("duplicate WASM name must be ambiguous");
+        assert!(error.contains("ambiguous"), "{error}");
+        assert!(error.contains(".text.selector_a+0x0"), "{error}");
+        assert!(error.contains(".text.selector_b+0x0"), "{error}");
+
+        let selected = run("decompile", Some("6:0x0"))
+            .expect("WASM section-index selector must decompile");
+        assert!(selected.contains("\"count\": 1"), "{selected}");
+        assert!(
+            selected.contains(
+                "\"object_location\": {\"section_index\": 6, \"section\": \".text.selector_b\", \"offset\": 0, \"offset_hex\": \"0x0\"}"
+            ),
+            "{selected}"
+        );
+        assert!(selected.contains("return 2;"), "{selected}");
     }
 }

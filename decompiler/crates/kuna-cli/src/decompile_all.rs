@@ -87,7 +87,10 @@ use std::rc::Rc;
 // The call-graph edges `--reachable-from` walks are `kuna xrefs`' own edges.
 use kuna_analysis::listing::xrefs::{Xref, XrefIndex, XrefKind};
 use kuna_base::address::Address;
-use kuna_console::engine::{bootstrap_from_object, ConsoleProgram, FunctionEntry};
+use kuna_console::engine::{
+    bootstrap_from_object, ConsoleProgram, EntryLookupError, EntrySelector, FunctionEntry,
+    ObjectLocation,
+};
 // The decompile loop + result shape live in the shared decompile-project core
 // (`kuna_console::project` — also reused by the `kuna_wasm` front-end).
 use kuna_console::project::{
@@ -111,9 +114,9 @@ pub(crate) struct Args {
     pub(crate) json: bool,
     /// `--functions a,b,c`: restrict to these names (None ⇒ CODE-backed entries).
     pub(crate) names: Option<Vec<String>>,
-    /// `--addr 0xVMA` (repeatable): decompile specific entry addresses, even if
-    /// unnamed (stripped / LLM use).  Combined with `--functions` if both given.
-    pub(crate) addrs: Vec<u64>,
+    /// `--addr 0xVMA|.section+0xOFFSET|SECTION_INDEX:0xOFFSET` (repeatable).
+    /// Combined with `--functions` if both are given.
+    pub(crate) addrs: Vec<EntrySelector>,
     /// `--no-vars`: skip the per-function variable extraction (faster; drops the
     /// `variables` array used by decbench's `type_match`).
     pub(crate) no_vars: bool,
@@ -974,31 +977,11 @@ pub(crate) fn resolve_targets(
     prog: &ConsoleProgram,
     args: &Args,
 ) -> Result<Vec<FunctionEntry>, String> {
-    let code_space = prog
-        .arch()
-        .manage()
-        .get_default_code_space()
-        .ok_or("no default code space")?;
-
     let mut targets: Vec<FunctionEntry> = Vec::new();
 
-    // `--addr 0xVMA`: build the Address directly; name it from the symbol table
-    // (or the default `FUN_<addr>` name) so the print/proto path has a name.
-    // Prefer the canonical record when the enumeration knows this entry, so an
-    // explicitly-addressed function reports the same name + aliases it would in
-    // a whole-binary run.
-    for &vma in &args.addrs {
-        match prog.find_entry_at(vma) {
-            Some(e) => targets.push(e),
-            None => {
-                let addr = Address::new(Rc::clone(code_space), vma);
-                let name = prog
-                    .function_named_at(vma)
-                    .unwrap_or_else(|| prog.arch().name_function(&addr));
-                let size = prog.function_extent_at(vma);
-                targets.push(FunctionEntry { name, addr, aliases: Vec::new(), size });
-            }
-        }
+    // Resolve every address form through the program's shared selector model.
+    for selector in &args.addrs {
+        targets.push(prog.resolve_entry(selector).map_err(|error| error.to_string())?);
     }
 
     // `--functions a,b,c`: intersect names with the enumerated set.  An ALIAS
@@ -1007,9 +990,12 @@ pub(crate) fn resolve_targets(
     // generated `sub_<addr>` names).
     if let Some(names) = &args.names {
         for want in names {
-            match prog.find_entry_by_name(want) {
-                Some(e) => targets.push(e),
-                None => eprintln!("warning: no function named {want:?} in {}", args.binary),
+            match prog.resolve_entry(&EntrySelector::Name(want.clone())) {
+                Ok(entry) => targets.push(entry),
+                Err(EntryLookupError::NotFound { .. }) => {
+                    eprintln!("warning: no function named {want:?} in {}", args.binary)
+                }
+                Err(error) => return Err(error.to_string()),
             }
         }
     }
@@ -1467,6 +1453,10 @@ fn entries_json(entries: &[FunctionEntry]) -> Json {
                     ("address".into(), Json::Number(a.to_string())),
                     ("address_hex".into(), Json::Str(format!("0x{a:x}"))),
                     ("aliases".into(), aliases_json(&e.aliases)),
+                    (
+                        "object_location".into(),
+                        object_location_json(e.object_location.as_ref()),
+                    ),
                     ("size".into(), Json::Number(e.size.to_string())),
                 ])
             })
@@ -1500,6 +1490,10 @@ fn result_json(
                     ("address".into(), Json::Number(f.address.to_string())),
                     ("address_hex".into(), Json::Str(format!("0x{:x}", f.address))),
                     ("aliases".into(), aliases_json(&f.aliases)),
+                    (
+                        "object_location".into(),
+                        object_location_json(f.object_location.as_ref()),
+                    ),
                     ("size".into(), Json::Number(f.size.to_string())),
                     (
                         "code".into(),
@@ -1560,6 +1554,24 @@ fn line_mapping_json(mapping: &LineMapping) -> Json {
 /// are all still here, one level down.
 fn aliases_json(aliases: &[String]) -> Json {
     Json::Array(aliases.iter().map(|a| Json::Str(a.clone())).collect())
+}
+
+fn object_location_json(location: Option<&ObjectLocation>) -> Json {
+    match location {
+        Some(location) => Json::Object(vec![
+            (
+                "section_index".into(),
+                Json::Number(location.section_index.to_string()),
+            ),
+            ("section".into(), Json::Str(location.section.clone())),
+            ("offset".into(), Json::Number(location.offset.to_string())),
+            (
+                "offset_hex".into(),
+                Json::Str(format!("0x{:x}", location.offset)),
+            ),
+        ]),
+        None => Json::Null,
+    }
 }
 
 /// One `VariableInfo`-shaped JSON object (the fields decbench's `type_match`
@@ -1630,6 +1642,7 @@ mod provenance_json_tests {
                 addresses: vec![0x401004, 0x401008],
             }],
             aliases: Vec::new(),
+            object_location: None,
         };
 
         let rendered = dumps_indent2(&result_json("fixture", &[function], "c-language", None, None));
@@ -1741,7 +1754,7 @@ pub(crate) fn parse_args_with_filters(
     let mut binary: Option<String> = None;
     let mut json = false;
     let mut names: Option<Vec<String>> = None;
-    let mut addrs: Vec<u64> = Vec::new();
+    let mut addrs: Vec<EntrySelector> = Vec::new();
     let mut no_vars = false;
     let mut max_fn_seconds: Option<u64> = None;
     let mut options: Vec<(String, String)> = Vec::new();
@@ -1763,7 +1776,7 @@ pub(crate) fn parse_args_with_filters(
             }
             "--addr" => {
                 let v = take(argv, &mut i, "--addr")?;
-                addrs.push(parse_hex(&v)?);
+                addrs.push(parse_entry_selector(&v)?);
             }
             "--max-fn-seconds" if cmd == "decompile-all" || cmd == "decompile-project" => {
                 let v = take(argv, &mut i, "--max-fn-seconds")?;
@@ -1908,6 +1921,15 @@ fn parse_hex(s: &str) -> Result<u64, String> {
     let t = s.trim();
     let body = t.strip_prefix("0x").or_else(|| t.strip_prefix("0X")).unwrap_or(t);
     u64::from_str_radix(body, 16).map_err(|_| format!("invalid address {s:?}"))
+}
+
+fn parse_entry_selector(s: &str) -> Result<EntrySelector, String> {
+    match EntrySelector::parse(s) {
+        selector @ (EntrySelector::Numeric(_)
+        | EntrySelector::SectionOffset { .. }
+        | EntrySelector::SectionIndexOffset { .. }) => Ok(selector),
+        EntrySelector::Name(_) => parse_hex(s).map(EntrySelector::Numeric),
+    }
 }
 
 fn usage_decompile_all() {

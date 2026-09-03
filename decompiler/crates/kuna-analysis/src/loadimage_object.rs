@@ -198,6 +198,10 @@ pub struct ObjectLoadImage {
     sections: Vec<SectionInfo>,
     /// Function symbols, in symbol-table order.
     funcsyms: Vec<FuncSym>,
+    /// Relocatable-object section coordinates. Empty for linked images.
+    reloc_sections: Vec<crate::loader::reloc_object::RelocSectionInfo>,
+    /// Relocatable-object function provenance. Empty for linked images.
+    reloc_symbols: Vec<crate::loader::reloc_object::RelocSymbolInfo>,
     /// Defined data symbols (`STT_OBJECT`), in symbol-table order. See
     /// [`DataSym`]; surfaced through [`ObjectLoadImage::data_symbols`].
     datasyms: Vec<DataSym>,
@@ -523,6 +527,8 @@ impl ObjectLoadImage {
             segments,
             sections,
             funcsyms,
+            reloc_sections: Vec::new(),
+            reloc_symbols: Vec::new(),
             datasyms,
             const_ranges,
             dynreloc_const,
@@ -549,6 +555,8 @@ impl ObjectLoadImage {
         use crate::loader::reloc_object;
 
         let layout = reloc_object::layout_relocatable(file, fmt);
+        let reloc_sections = layout.section_info.clone();
+        let reloc_symbols = layout.symbol_info.clone();
 
         // (kuna `msvcfpconst`) MSVC spells each floating-point literal in the name
         // of the COMDAT that holds it, and COMDAT folding leaves that symbol
@@ -608,6 +616,8 @@ impl ObjectLoadImage {
             segments,
             sections,
             funcsyms,
+            reloc_sections,
+            reloc_symbols,
             // A relocatable object's symbol addresses are section-relative and are
             // rebased by [`reloc_object::layout_relocatable`], which resolves the
             // function half only (`RelocLayout::funcsyms`).  Data-symbol naming is
@@ -690,6 +700,19 @@ impl ObjectLoadImage {
             .iter()
             .map(|s| (s.addr, String::from_utf8_lossy(&s.name).into_owned()))
             .collect()
+    }
+
+    /// The original section coordinates retained for a relocatable object.
+    /// Empty for a linked image.
+    pub fn reloc_sections(&self) -> &[crate::loader::reloc_object::RelocSectionInfo] {
+        &self.reloc_sections
+    }
+
+    /// Function-symbol provenance retained for a relocatable object. Defined
+    /// records carry section coordinates; undefined records carry their
+    /// synthetic extern VMA and no object location.
+    pub fn reloc_symbols(&self) -> &[crate::loader::reloc_object::RelocSymbolInfo] {
+        &self.reloc_symbols
     }
 
     /// The loader's **data** symbols as `(vma, name, size)` triples — the

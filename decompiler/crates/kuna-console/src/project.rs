@@ -26,7 +26,7 @@ use kuna_decomp::decompile_drive::{
 use kuna_sleigh::loadimage::section_flags;
 use object::{Object, ObjectSection};
 
-use crate::engine::{ConsoleProgram, FunctionEntry};
+use crate::engine::{ConsoleProgram, EntryProvenance, FunctionEntry, ObjectLocation};
 
 /// `dat_` blocks larger than this are truncated in the `.asm` data tail (the
 /// printer's `dat_<hex>` names carry no size; the label only marks the start).
@@ -73,6 +73,8 @@ pub struct FuncResult {
     /// record per entry loses no name; empty for a target the caller named
     /// itself (`--addr` on an address the enumeration does not know).
     pub aliases: Vec<String>,
+    /// Original object-file coordinate for a relocatable definition.
+    pub object_location: Option<ObjectLocation>,
 }
 
 /// Decompile each `(name, entry)` target in turn against the already-loaded
@@ -90,7 +92,16 @@ pub fn decompile_targets(
     want_provenance: bool,
 ) -> Vec<FuncResult> {
     let mut out = Vec::with_capacity(targets.len());
-    for FunctionEntry { name, addr: entry, aliases, size } in targets {
+    for FunctionEntry {
+        name,
+        addr: entry,
+        aliases,
+        size,
+        object_location,
+        provenance,
+        ..
+    } in targets
+    {
         let address = entry.get_offset();
         // (kuna) An entry with no mapped bytes is an EXTERNAL, not a decompile
         // failure: a relocatable object's undefined symbols (and a PE import
@@ -102,7 +113,7 @@ pub fn decompile_targets(
         // "Unable to load 512 bytes at ..." as if the function had failed to
         // decompile. Say what it actually is instead. See
         // `ConsoleProgram::entry_bytes_mapped`.
-        if !prog.entry_bytes_mapped(&entry) {
+        if !prog.entry_bytes_mapped(&entry) && provenance == EntryProvenance::UndefinedExternal {
             out.push(FuncResult {
                 code: Some(format!(
                     "// {name}: external symbol -- no code at this address in this module\n"
@@ -115,6 +126,22 @@ pub fn decompile_targets(
                 variables: Vec::new(),
                 line_mappings: Vec::new(),
                 aliases,
+                object_location,
+            });
+            continue;
+        }
+        if !prog.entry_bytes_mapped(&entry) {
+            out.push(FuncResult {
+                name,
+                address,
+                size: size as i64,
+                code: None,
+                error: Some("entry address is not mapped in this input".into()),
+                proto: None,
+                variables: Vec::new(),
+                line_mappings: Vec::new(),
+                aliases,
+                object_location,
             });
             continue;
         }
@@ -204,6 +231,7 @@ pub fn decompile_targets(
                         variables,
                         line_mappings,
                         aliases,
+                        object_location,
                     }),
                     Err(_) => out.push(FuncResult {
                         name,
@@ -215,6 +243,7 @@ pub fn decompile_targets(
                         variables: Vec::new(),
                         line_mappings: Vec::new(),
                         aliases,
+                        object_location,
                     }),
                 }
             }
@@ -228,6 +257,7 @@ pub fn decompile_targets(
                 variables: Vec::new(),
                 line_mappings: Vec::new(),
                 aliases,
+                object_location,
             }),
         }
     }
