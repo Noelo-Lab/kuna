@@ -198,27 +198,31 @@ fn w8_fw_universalaction_allgroups_full_order_count_head_tail() {
     // LAST of all (P6 parameter copy-shadow entry-block anchor -- it runs after the
     // structured tree is final so no structuring decision can be perturbed);
     // and `cleanupcode`, option-gated default-ON, at the TOP of mainloop (S2 Rust
-    // drop/deallocate call removal in the pre-SSA window, DIV-81).)
+    // drop/deallocate call removal in the pre-SSA window, DIV-81); and
+    // `linuxsyscall`, option-gated default-off, directly after `constbase` (S2
+    // 32-bit Linux `int 0x80` naming: it reads the RAW p-code and its call spec
+    // is input-locked, so it has to precede `funclink`).)
     assert_eq!(
         UNPORTED_ALLOWLIST.len(),
         0,
         "all universalAction passes are ported; UNPORTED_ALLOWLIST must be empty"
     );
     assert_eq!(
-        nonblank, 274,
-        "full universal tree must render 252 C++ leaves + 15 kuna leaves (branchflip + cleanupcode + outline + gotoreduce + taildup + ifelseflatten + crossjumprevert + dedupitetail + returndup + iteregion + iteboolean + earlyreturn + switchreturn + paramcopyhoist + removesecuritycheck) + 7 container headers"
+        nonblank, 275,
+        "full universal tree must render 252 C++ leaves + 16 kuna leaves (branchflip + cleanupcode + linuxsyscall + outline + gotoreduce + taildup + ifelseflatten + crossjumprevert + dedupitetail + returndup + iteregion + iteboolean + earlyreturn + switchreturn + paramcopyhoist + removesecuritycheck) + 7 container headers"
     );
 
     // Head: the universal restart-group prelude, in C++ order.  Note
     // `normalizesetup` (normalanalysis) and `funclink_outonly` (noproto) are
     // PRESENT here but absent in the decompile oracle — the part of the order
     // the gate never sees.
-    let head: Vec<&str> = lines.iter().take(10).map(|l| name_of(l)).collect();
+    let head: Vec<&str> = lines.iter().take(11).map(|l| name_of(l)).collect();
     assert_eq!(
         head,
         vec![
-            "universal", "start", "constbase", "normalizesetup", "defaultparams",
-            "extrapopsetup", "prototypetypes", "funclink", "funclink_outonly", "fullloop",
+            "universal", "start", "constbase", "linuxsyscall", "normalizesetup",
+            "defaultparams", "extrapopsetup", "prototypetypes", "funclink",
+            "funclink_outonly", "fullloop",
         ]
     );
 

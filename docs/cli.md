@@ -138,10 +138,15 @@ payload`).
 ## `kuna decompile-all` / `kuna functions` — whole binary, machine-readable
 
 ```bash
+kuna functions ./a.out --summary --json                # where do I start?  (~1 KB)
 kuna decompile-all ./a.out --json                      # every CODE-backed function
 kuna decompile-all ./a.out --functions main,parse --json
 kuna decompile-all ./module.o --addr .text+0x660 --json
 kuna functions ./a.out --json                          # full callable-symbol inventory
+kuna functions ./a.out --sort size --limit 10          # the ten biggest functions
+kuna decompile-all ./a.out --reachable-from main --json    # only what main touches
+kuna decompile-all ./a.out --functions main,parse --json
+kuna decompile-all ./a.out --json                      # every CODE-backed function
 ```
 
 The whole-binary surface (the benchmark + LLM path). Runs **in-process**
@@ -149,13 +154,100 @@ The whole-binary surface (the benchmark + LLM path). Runs **in-process**
 `decompile_func` + `print_c`), loading + analyzing the binary **once** instead of
 `kuna decompile`'s subprocess-per-function (≈10×+ faster on a many-function binary).
 
+### Triage — narrowing the run
+
+An unfiltered whole-binary answer is only usable if the caller can narrow it
+*before* it is produced: a 211 KB PE crackme is 1,150 functions and **5.9 MB** of
+`decompile-all --json`, which is more context than the question is worth. Both
+surfaces therefore take the same selection flags, and they choose which entries
+the run *has* — `decompile-all` decompiles only what survives them, so narrowing
+is what makes the run cheap as well as small.
+
+| Flag | Selects |
+|---|---|
+| `--filter REGEX` | functions whose name — or any alias — matches (unanchored [Rust `regex`](https://docs.rs/regex) syntax; `(?i)` for case-insensitive) |
+| `--min-size N` / `--max-size N` | functions whose inventory `size` is within the inclusive bound |
+| `--reachable-from <name\|0xaddr>` | the named function plus everything it reaches through the call graph |
+| `--sort addr\|size\|name` | ordering — `addr` (default) ascending, `size` **largest first**, `name` ascending; every key breaks ties on the address, so a narrowed run is reproducible |
+| `--limit N` | keep the first N after sorting |
+
+Filters compose (they intersect), and a selection that matches nothing is an
+answer, not a failure: it exits 0 with `count: 0`. The zero-discovery verdict
+below stays attached to *discovery*, so it can never fire because a filter was
+too narrow. `--filter` / `--min-size` / `--max-size` / `--limit` are pure
+inventory arithmetic and cost nothing extra; `--reachable-from` additionally
+walks the program once.
+
+`--reachable-from` is the "what does the entry point actually touch" question,
+answered with **`kuna xrefs`' own reference edges** (`kuna-analysis`'s
+`listing::xrefs`) rather than a second call-graph model that could disagree with
+them. A call, a tail jump, and an *address-taken function pointer* all count as
+edges — the third one matters: on a glibc ELF `_start` reaches `main` only
+through the pointer it hands `__libc_start_main`, and a callback registered with
+`CreateThread` or `atexit` is likewise code the caller reaches. A materialized
+address that does not land on a known function entry is a string or a global, not
+a callee, and is not an edge. The operand resolves as a name first and only then
+as bare hex, so a function genuinely called `abc` is never read as `0xabc`. A
+name that resolves to nothing exits 1.
+
+On the 211 KB PE above, pointing `--reachable-from` at the one function that
+references the challenge prompt (found with `kuna xrefs --to` on the string) cuts
+the run from 1,036 decompiled functions to 307 — **5,943,701 bytes / 11.5 s down
+to 876,577 bytes / 2.5 s**, with the answer still inside it. Adding `--min-size
+256 --sort size --limit 10` brings it to 115,667 bytes / 1.8 s.
+
+### `kuna functions --summary` — orientation in one call
+
+```bash
+kuna functions ./crakersme.exe --summary --json    # 2,820 bytes
+```
+
+The first call to make on an unknown binary: it answers *where do I start*
+without emitting a function list at all, let alone pseudocode.
+
+```json
+{"binary":"…","count":1150,"total":1150,"error":null,
+ "summary":{"entry":{"name","address","address_hex"},
+            "reachable_from_entry":334,"no_callers":714,"code_bytes":171971,
+            "size_buckets":[{"bucket":"0","min_size":0,"max_size":0,"count":114}, …],
+            "largest":[{name,address,address_hex,aliases,size}, …]}}
+```
+
+- `entry` is the **image's declared entry point** (a PE `AddressOfEntryPoint` is
+  the CRT startup, not `main`), named with kuna's best name for it, or `null`
+  when the format declares none.
+- `reachable_from_entry` counts *discovered* functions the entry point reaches,
+  and is `null` when there is no entry point or nothing was decoded at it (a
+  packed image); `no_callers` counts *selected* functions that no CALL site
+  references — the roots and the dead code. Both come from the same xref edges
+  `--reachable-from` walks.
+- `size_buckets` partitions the whole extent domain (`0`, `1-15`, `16-63`,
+  `64-255`, `256-1023`, `1024-4095`, `4096+`), so nothing falls between buckets;
+  `max_size` is `null` on the open-ended one.
+- `largest` holds the `--limit` biggest functions, 10 by default.
+- The triage flags apply: `--summary --reachable-from main` summarizes just that
+  subgraph. `count` is what was selected, `total` what discovery found.
+
+Without `--json` the same measurements print as tab-separated lines. `--summary`
+is accepted on `decompile-all` too, where it short-circuits the decompile loop
+entirely — asking where to start must never cost a whole-binary decompile. Both
+surfaces load through the `functions` (inventory) driver bundle for it, so the
+numbers a caller orients by are the ones `kuna functions` reports.
+
+### The JSON documents
+
 `--json` emits
 `{binary,count,functions:[{name,address,address_hex,aliases,object_location,size,code,error,
 line_mappings:[{line_number,addresses}],variables:[{name,type,kind,arg_index,
 stack_offset,size,line_numbers,addresses}]}]}` (`kuna functions --json` emits
 `name`/`address`/`address_hex`/`aliases`/`object_location`/`size` per function).
 `object_location` is `null` for linked images and undefined imports; for a relocatable
-definition it is `{section_index,section,offset,offset_hex}`. `line_mappings` maps 1-based
+definition it is `{section_index,section,offset,offset_hex}`. `count` is what the
+`functions` array holds. `kuna functions --json` also carries `total`, the count
+before any triage narrowing; `decompile-all --json` carries `total` only when a
+triage flag actually narrowed it, so an unfiltered whole-binary document — the one
+the decbench backend and `kuna decompile --json` read — is byte-identical to
+before. `line_mappings` maps 1-based
 lines in `code` to sorted, unique machine-instruction VMAs. Variable `line_numbers`
 come from the printer's `varref` tokens; variable `addresses` are the union of the
 mapped instruction addresses on those lines. Both are empty when no backed use is
@@ -337,6 +429,206 @@ inventory missed is still covered.
 A target nothing references is exit `0` with `count: 0` — an answer, not a
 failure. A name that resolves to nothing is exit `1` with the reason on stderr; a
 malformed command line is exit `2` with the usage block.
+
+## `kuna disassemble` — instructions, when the pseudocode is not enough
+
+```bash
+kuna disassemble ./a.out main                    # a function, whole extent
+kuna disassemble ./a.out main --json             # machine-readable
+kuna disassemble ./stripped.bin 0x8049850 --addr # a raw address
+kuna disassemble ./a.out 0x1140-0x11a0           # an explicit range
+kuna disassemble ./a.out 0x2010 --addr --bytes 64  # bytes no function owns
+```
+
+The floor to fall back to when the ceiling gives way. Every RE agent that asked
+for this had already tried decompiling: a function with no recovered body, a
+dispatcher emitted as `switch(0)`, an indirect call through a stack buffer the
+program decrypts at runtime. When the pseudocode cannot answer, the instructions
+still can — and until now the only way to see one was to leave kuna for
+`objdump`.
+
+The target is a **name**, an **address**, or a **range**:
+
+| Target | What is listed |
+|---|---|
+| `main` | The function's extent — the same clip `kuna functions` reports as `size`. A name is resolved as a symbol first, so a function really called `abc` is never read as `0xabc`. |
+| `0x8049850` (`--addr` for bare hex) | That function's extent if the address is a discovered entry; otherwise 64 bytes from exactly there. |
+| `0x1140-0x11a0`, `0x1140..0x11a0` | Exactly that half-open span — the direct replacement for `objdump -d --start-address=.. --stop-address=..`. |
+
+`--count N` stops after N instructions and `--bytes N` after N bytes; either
+overrides the derived extent, and a listing stops at whichever limit it reaches
+first. Also accepted: `--json` plus the shared `--mode`, `--option N V`,
+`--slice`, `--target`, `--sleighpath`.
+
+```
+$ kuna disassemble ./fauxware main --count 9
+# 9 instructions at main @ 0x40071d (0x40071d..0x40073e, 33 bytes)
+0x40071d      55                    PUSH RBP
+0x40071e      4889e5                MOV RBP,RSP
+0x400721      4883ec40              SUB RSP,0x40
+0x400725      897dcc                MOV dword ptr [RBP + -0x34],EDI
+0x400728      488975c0              MOV qword ptr [RBP + -0x40],RSI
+0x40072c      c645f800              MOV byte ptr [RBP + -0x8],0x0
+0x400730      c645e800              MOV byte ptr [RBP + -0x18],0x0
+0x400734      bf15094000            MOV EDI,0x400915
+0x400739      e8d2fdffff            CALL 0x400510
+```
+
+Address, raw bytes, instruction. The instruction text carries exactly **one**
+space between mnemonic and operands — the same spelling `kuna xrefs` puts in its
+`instruction` field, so one `grep 'CALL 0x400510'` matches both surfaces and the
+JSON. `--json` emits
+
+```json
+{"binary": "...", "target": {"name","address","address_hex"},
+ "start": N, "start_hex": "0x..", "end": N, "end_hex": "0x..",
+ "count": N, "bytes": N, "truncated": false,
+ "instructions": [{"address","address_hex","size","bytes","mnemonic","operands","text"}]}
+```
+
+`bytes` on a row is that instruction's own bytes as contiguous lowercase hex
+(`"4889e5"`); `end` is one past the last instruction actually listed, so a
+truncated listing hands back the address to resume from.
+
+Bytes the translator will not decode are listed in place as `.byte 0x<nn>` rows,
+one byte each, and the walk continues — a listing that ran into inline data says
+so where it happened instead of stopping silently. That is what makes the command
+usable on a **data** address: point it at a blob, a jump table, or a decrypted
+payload dumped to a file, and it prints what is there.
+
+A listing whose length nobody asked for is capped at 1024 instructions, flagged
+`truncated` and marked in the header. The extent is only an upper bound — clipped
+at the next discovered entry or the end of the CODE section — so where discovery
+is thin one "function" can run to the end of `.text` (`main` in one unpacked
+crackme clips to 19,106 instructions). An explicit `--count`, `--bytes` or range
+is honored however long.
+
+This is a query, not an engine change, and it reinvents nothing: the binary is
+loaded once through the same in-process seam `decompile-all` uses
+(`bootstrap_from_object` → `commit_pending_analysis`), and every row comes from
+`Translate::print_assembly` — the seam the console's own `disassemble` command
+(`IfcPrintdisasm`) and the `decompile-project` `.asm` export already print
+through. Nothing is committed into the engine, nothing is decompiled, and no
+emitted C changes. Verified against `objdump -d`: 19,368 instructions across four
+binaries — a 32-bit x86 ELF, an x86-64 ELF, a stripped x86-64 PIE and an x86-64
+PE — byte-identical at every address, with the same instruction boundaries.
+
+Exit codes follow the house contract: a listing is `0`; an unresolvable name or
+an address with nothing mapped behind it is `1` with the reason on stderr (on a
+packed image, run `kuna unpack` first — the original addresses do not exist until
+you do); a malformed command line is `2` with the usage block.
+
+## `kuna strings` — the string inventory
+
+```bash
+kuna strings ./a.out                                  # every literal, with the functions that use it
+kuna strings ./crackme.exe --json                     # machine-readable
+kuna strings ./a.out --filter '(?i)password|flag'     # regex over the text
+kuna strings ./crackme.exe --encoding utf16           # wide Windows literals
+kuna strings ./a.out --section .rodata --min-length 8
+```
+
+The triage query: what text is in this binary, where does it live, and — the part
+`strings(1)` cannot answer — **which function uses it**. Finding the prompt is
+never the goal; opening the routine that prints it is, and that hop is one
+command here because kuna already has both halves.
+
+The rows are the analyzer tier's **existing** string detection, not a second
+scanner: the ASCII inventory is the same `StringLiteralPass` scan
+(`kuna-analysis/src/analyzers/strings/`, the port of Ghidra's `StringsAnalyzer`)
+that runs at load and plants the `char[N]` literals `kuna decompile` prints, so a
+row here is a string the decompiler also knows about, at the same address. The
+reference columns come from the same index behind `kuna xrefs`
+(`kuna-analysis/src/listing/xrefs.rs`). Nothing is committed into the engine and
+no emitted C changes.
+
+| Column | What |
+|---|---|
+| `address` / `address_hex` | The **virtual** address of the first character byte — not a file offset, so it pastes straight into `kuna decompile --addr` or `kuna xrefs --to`. |
+| `text` | The literal, terminator excluded. TAB/CR/LF are escaped in the text surface so a row stays one line; `--json` carries them verbatim. |
+| `length` | Visible characters (code units for a UTF-16 row). `byte_length` is what it occupies, terminator included. |
+| `encoding` | `ascii` or `utf16` — which width found it. |
+| `section` | The section it lives in, `null` on an image scanned by segment. |
+| `xrefs_count` | How many references land anywhere in the literal's extent, so `lea rax,[fmt+4]` still counts as a use. |
+| `functions` | The functions those references come from, `{name, address, address_hex}` each. |
+
+### Flags
+
+`--encoding ascii\|utf16\|all` (default `ascii`). `ascii` is the analyzer's own
+1-byte width. **`utf16` is not a convenience** — a UTF-16LE literal read at 1-byte
+width ends at the NUL after its first character, which is exactly why a wide
+Windows API argument renders as `LoadLibraryW("n")` instead of `L"ntdll.dll"`. The
+2-byte matcher mirrors the 1-byte one exactly (same character recognizer, same
+require-NUL-end rule, same minimum), over units on even addresses. Scope is
+UTF-16**LE** whose units are in the 1-byte charset — the Windows-API case; a
+big-endian or non-Latin wide literal is not recovered.
+
+`--min-length N` (default `5`, the analyzer's own `minStringLength`). An unflagged
+run reports exactly the inventory the engine marked up.
+
+`--filter REGEX` matches anywhere in the text. The flavor is
+`. * + ? | () [] {n,m} ^ $`, the `\d \w \s` shorthands and their negations,
+backslash escapes, and a leading `(?i)` for case-insensitive matching; groups are
+always non-capturing. Anything outside that — a lookaround, `\b`, `\xNN` — is a
+command-line error (exit `2`), never silently reinterpreted into a different
+pattern. Backtracking is budgeted: a pathological
+pattern reports those rows as non-matching with a warning on stderr rather than
+hanging.
+
+`--section NAME` restricts the scan to one section; the leading `.` is optional
+(`--section rdata` finds `.rdata`). A section the image does not have is exit `1`
+naming the ones it does.
+
+`--no-xrefs` skips the reference walk — the expensive half, since it loads and
+lifts the program. Rows still carry text, address, and section; `xrefs_count` is
+`0` and `functions` empty.
+
+Plus the shared `--json`, `--mode`, `--option N V`, `--slice`, `--target`,
+`--sleighpath`.
+
+### Output
+
+```
+# 8 strings in ./SCORPiON.exe (ascii, min length 5, scanned by sections)
+0x416030	ascii	15	.data	1	sub_401160	Correct serial!
+0x41605c	ascii	16	.data	1	sub_401160	E24546F5F6B39F59
+0x41613c	ascii	14	.data	1	sub_401350	%[^-]-%[^-]-%s
+```
+
+A `#` header naming the query, then one tab-separated row per string: address,
+encoding, length, section, reference count, referencing functions, text. Text is
+last because it is the only unbounded column.
+
+```json
+{"binary": "...", "encoding": "ascii", "min_length": 5,
+ "filter": null, "section": null, "scanned": "sections", "xrefs": true, "count": N,
+ "strings": [{"address","address_hex","text","length","byte_length","encoding",
+              "section","xrefs_count",
+              "functions": [{"name","address","address_hex"}]}]}
+```
+
+### What it deliberately does not report
+
+The scan covers the **loaded and initialized** address set — the allocated,
+file-backed sections, which is Ghidra's `getLoadedAndInitializedAddressSet` — and
+takes only NUL-terminated runs. So `.strtab`/`.symtab` symbol names and
+unterminated printable runs, which `strings(1)` prints by the thousand, are
+absent: those are not program strings, and the ones that name something are
+already in `kuna functions`. That narrowing is why the output is a few hundred
+rows instead of a hundred thousand.
+
+An image with no usable section table — a UPX-packed ELF keeps its program
+headers and nothing else — falls back to its `PT_LOAD` segments, and the
+`scanned` field says which set was walked (`sections` or `segments`). On a packed
+image the answer is the packer's own data; unpack first and ask again:
+
+```bash
+kuna unpack ./packed -o ./unpacked && kuna strings ./unpacked --filter '(?i)flag'
+```
+
+A binary with no strings is exit `0` with `count: 0` — an answer, not a failure.
+An unreadable or unparseable binary, or an unknown `--section`, is exit `1` with
+the reason on stderr; a malformed command line is exit `2` with the usage block.
 
 ## `kuna unpack` — statically unpack a UPX-packed executable
 

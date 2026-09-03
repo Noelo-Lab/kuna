@@ -207,6 +207,8 @@ SITES = (
      r"fn fixture_has_all_(\d+)_settables\(\)", "settables"),
     ("bytecompat.fixture-matches", REL_BYTECOMPAT_RS,
      r'FIXTURE\.matches\("\\"(?:option|tier|symptoms)\\": "\)\.count\(\), (\d+)\)', "settables"),
+    ("phases-tests.catalog-json-records", REL_TESTS_RS,
+     r'assert_eq!\(json\.matches\("\},\\n"\)\.count\(\), (\d+)\)', "settables_minus_one"),
     ("base-xml.corpus-count", REL_BASE_XML_RS,
      r'assert_eq!\(count, (\d+), "corpus file count drifted"\)', "corpus_files"),
 )
@@ -379,6 +381,10 @@ def derive(repo=None, kuna=None) -> dict:
     return {
         "repo": str(_root(repo)),
         "settables": len(rows),
+        # The static catalog JSON separates records with "},\n", so the last record
+        # has none: one fewer than the settable count. Its own site, because a
+        # regex that fixed it to `settables` would write the wrong number.
+        "settables_minus_one": len(rows) - 1,
         "settables_phases_toml": toml_n,
         "settables_catalog": len(rows),
         "settables_fixture": fixture_n,
@@ -578,7 +584,16 @@ def main(argv=None) -> int:
         return 0 if not remaining else 1
 
     drifts = check(derived=d, repo=args.repo)
-    payload = {"ok": not drifts, "derived": d, "drift": [x.as_dict() for x in drifts]}
+    # A duplicate ElementId is a FAILURE, not a note. Two options sharing an id compare
+    # equal (ElementId's PartialEq is an id comparison, ported from C++), so the first
+    # code that dispatches on one silently takes the wrong branch. Nothing consumes the
+    # colliding ids today, which is exactly why this went unnoticed through three
+    # separate races -- 4110, 4122, and 4132, the last of which two concurrent builders
+    # in one round created by each grepping for "the next free id" and getting the same
+    # answer. Reporting it while exiting 0 is what let all three land.
+    dupes = (d.get("element_ids") or {}).get("duplicates") or {}
+    payload = {"ok": not drifts and not dupes, "derived": d,
+               "drift": [x.as_dict() for x in drifts]}
     if args.json:
         print(json.dumps(payload, indent=2, sort_keys=True))
     else:
@@ -589,9 +604,12 @@ def main(argv=None) -> int:
                 print("DRIFT  {}".format(x.oneline()))
         else:
             print("no drift: every hard-coded site agrees with the derived truth")
+        if dupes:
+            for num, who in dupes.items():
+                print("FAIL   ElementId {} allocated twice: {}".format(num, ", ".join(who)))
     if args.rederive:
         return 0
-    return 1 if drifts else 0
+    return 1 if (drifts or dupes) else 0
 
 
 if __name__ == "__main__":

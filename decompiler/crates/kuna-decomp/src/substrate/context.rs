@@ -685,6 +685,17 @@ pub struct ArchContext {
     /// Read by [`check_input_trial_use`](crate::funcdata_callsite::check_input_trial_use)
     /// through [`crate::p4_calls::kuna_callsitestackargs::outside_caller_local_range`].
     pub callsite_stack_args: bool,
+    /// (kuna) score a variadic call's stack arguments as their own `fillinMap`
+    /// resource section (`varargstackargs`).  Read by
+    /// [`ParamListStandard::fillin_map`](crate::fspec::ParamListStandard) through
+    /// [`crate::p4_calls::kuna_varargstackargs::stack_section_split`], via the
+    /// flag `ActionActiveParam` writes onto the call's `ParamActive`.
+    pub vararg_stack_args: bool,
+    /// (kuna) reconcile a call's recovered argument list with a sibling call to
+    /// the same callee (`calleearity`).  Read by
+    /// [`build_input_from_trials`](crate::funcdata_callsite::build_input_from_trials)
+    /// through [`crate::p4_calls::kuna_calleearity::unify_with_sibling_call`].
+    pub callee_arity: bool,
     /// (kuna) completion level for the two upstream partial-range call-overlap
     /// guards (`calloverlap`): `0` = both stay inert (what kuna shipped before the
     /// option), `1` = `Heritage::guardCallOverlappingInput` only, `2` = that plus
@@ -765,6 +776,16 @@ pub struct ArchContext {
     /// pre-SSA op graph.  Read by
     /// [`ActionRemoveCleanupCode`](crate::p2_lift::kuna_cleanupcode::ActionRemoveCleanupCode).
     pub remove_cleanup_code: bool,
+    /// (kuna) `option linuxsyscall`: rewrite a 32-bit Linux `int 0x80` from an
+    /// indirect call through the `swi` userop into a named call on the syscall
+    /// the number in `EAX` selects.  Read by
+    /// [`ActionLinuxSyscall`](crate::p2_lift::kuna_linuxsyscall::ActionLinuxSyscall).
+    pub linux_syscall: bool,
+    /// (kuna) `option switchselector`: refuse a recovered lowered-switch record
+    /// whose synthesized BRANCHIND would not get the switch value as its
+    /// selector.  Read by
+    /// [`install_selector_is_sound`](crate::p2_lift::kuna_loweredswitch::install_selector_is_sound).
+    pub switch_selector_guard: bool,
     pub cond_fold: int4,
     /// (kuna) angr SAILR goto-reduction: duplicate a small return tail into a
     /// `goto` source (`reduce_return_gotos`, opt-in default-off).  Read by
@@ -1103,6 +1124,8 @@ impl ArchContext {
             // callsitestackargs is a correctness fix, not an opt-in transform, so the
             // hand-built-fixture seam carries the same default the real path does.
             callsite_stack_args: true,
+            vararg_stack_args: true,     // varargstackargs (DIV-101 default-on)
+            callee_arity: true,          // calleearity (DIV-102 default-on)
             call_overlap: 0,             // calloverlap (0 = both overlap guards inert)
             spill_arg_trial: 0,          // spillargtrial (0 = upstream: every STORE rejects)
             load_guard_range: true,      // loadguardrange (upstream behavior, default-on)
@@ -1113,6 +1136,8 @@ impl ArchContext {
             region_edge_order: false,    // regionedgeorder (opt-in default-off)
             outline_spec: String::new(), // outline (opt-in default-off; empty = off)
             remove_cleanup_code: true,   // cleanupcode (DIV-81 default-on; inert on a non-Rust binary)
+            linux_syscall: false,        // linuxsyscall (opt-in default-off)
+            switch_selector_guard: false, // switchselector (opt-in default-off)
             cond_fold: 0,                // condfold (opt-in default-off; 0 = off)
             reduce_return_gotos: false,  // gotoreduce (opt-in default-off)
             flatten_ifelse: false,  // ifelseflatten (opt-in default-off)

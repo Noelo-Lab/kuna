@@ -336,6 +336,20 @@ pub struct Architecture {
     /// resolves a call to one of those names.  See
     /// [`crate::p2_lift::kuna_cleanupcode`].
     pub remove_cleanup_code: bool,
+    /// (kuna `linuxsyscall`) Rewrite a 32-bit Linux `int 0x80` from the indirect
+    /// call through the `swi` userop that x86 SLEIGH lowers it to into a named
+    /// call on the syscall the constant in `EAX` selects, with the ABI argument
+    /// registers as its arguments (`option linuxsyscall`).  x86-32 only, and
+    /// declined whenever the number is not a locally-resolvable constant with a
+    /// vetted table entry.  See [`crate::p2_lift::kuna_linuxsyscall`].
+    pub linux_syscall: bool,
+    /// (kuna `switchselector`) Refuse to install a recovered lowered-switch
+    /// cascade whose synthesized BRANCHIND cannot be given the switch value as
+    /// its selector, so the compiler's `if`/`else if` chain over the real
+    /// variable survives instead of a `switch` over something else
+    /// (`option switchselector`).  See
+    /// [`crate::p2_lift::kuna_loweredswitch::install_selector_is_sound`].
+    pub switch_selector_guard: bool,
     /// (kuna `funcboundflow`) Bound fall-through at a known function entry: when a
     /// fall-through reaches the entry of another known function (the callee just
     /// executed being an unnamed static no-return the analysis could not prove
@@ -450,6 +464,15 @@ pub struct Architecture {
     /// (kuna) Recover stack-passed call arguments at call sites with an unlocked
     /// callee prototype (default-on; restores upstream `fspec.cc:5618`).
     pub callsite_stack_args: bool,
+    /// (kuna) Score a variadic call's stack arguments as their own `fillinMap`
+    /// resource section, so the empty register slots the ABI leaves between the
+    /// fixed parameters and the varargs stop deactivating them (option
+    /// `varargstackargs`).  See [`crate::p4_calls::kuna_varargstackargs`].
+    pub vararg_stack_args: bool,
+    /// (kuna) Reconcile a call's recovered argument list with a sibling call to
+    /// the same callee in the same function (option `calleearity`).  See
+    /// [`crate::p4_calls::kuna_calleearity`].
+    pub callee_arity: bool,
     /// (kuna) Completion level for the two upstream partial-range call-overlap
     /// guards `Heritage::guardCallOverlappingInput` and
     /// `Heritage::tryOutputOverlapGuard`, which kuna shipped as comment-only stubs
@@ -854,6 +877,29 @@ pub struct Architecture {
     /// `.gcc_except_table` markup); default **off** (output-changing: adds the
     /// discovered exception-handler landing pads as function entries).
     pub analysis_eh_frame_full: bool,
+    /// (kuna) Refuse a function entry at a direct CALL target the Listing walk's
+    /// own out-of-bounds gate forbids it to decode (`unmappedentry`); default
+    /// **on**. The recursive-descent walk gates every instruction address on the
+    /// executable-range universe but took the CALL target unconditionally, so a
+    /// call into unmapped memory — what anti-disassembly junk behind an
+    /// always-taken branch decodes to — still became a `sub_<addr>` with no
+    /// bytes, no extent and no body. The call REFERENCE is filed either way; only
+    /// the claim that the target is a function is withheld. Off restores the
+    /// previous (phantom-producing) discovery set exactly.
+    pub analysis_unmappedentry: bool,
+    /// (kuna) Give the function the PE C-runtime startup calls with argc/argv/envp
+    /// the prototype that call site establishes (`entrymainproto`); default
+    /// **on**. kuna recovers a callee's parameters from the callee's own body, so
+    /// a `main` that ignores its arguments is declared `void(void)` even though
+    /// the CRT a few lines up passes three. On a PE that startup is IN the image
+    /// and fetches each argument through a named CRT accessor
+    /// (`__p___argc`/`__p___argv`/`_get_initial_*_environment`), which makes the
+    /// call site an unambiguous fingerprint. Parameters are typed at the width
+    /// the call site establishes and named after the accessor, never asserted to
+    /// be the C library's `int main(int, char **, char **)`. PE-only, and skipped
+    /// whenever the callee already carries a function symbol. Off restores the
+    /// `void(void)` form exactly.
+    pub analysis_entrymainproto: bool,
     /// (kuna) Reject a discovered function entry that falls strictly inside a
     /// single-function `.eh_frame` FDE body (`fdeinterior`); default **on**.
     /// kuna's function symbols carry no extent, so every discovery oracle can
@@ -1563,6 +1609,8 @@ impl Architecture {
             tail_call_jumps: false,
             funcbound_flow: false, // (kuna) option funcboundflow; reset_defaults sets the shipped default
             remove_cleanup_code: false, // (kuna) option cleanupcode; reset_defaults sets the shipped default
+            linux_syscall: false, // (kuna) option linuxsyscall; reset_defaults sets the shipped default
+            switch_selector_guard: false, // (kuna) option switchselector; reset_defaults sets the shipped default
             noreturn_extern_calls: false, // (kuna) option noreturn_extern, default off
             sparc_struct_return: false,
             ov_less_simplify: false,
@@ -1585,6 +1633,8 @@ impl Architecture {
             recover_array_stride: false,
             recover_lowered_switch: false,
             callsite_stack_args: true,
+            vararg_stack_args: true,
+            callee_arity: true,
             call_overlap: 0,
             spill_arg_trial: 0,
             load_guard_range: false, // (kuna) option loadguardrange; reset_defaults sets the shipped default
@@ -1640,6 +1690,8 @@ impl Architecture {
             analysis_peimportcall: false,
             analysis_libproto: false,
             analysis_libcsigs: false,
+            analysis_unmappedentry: false,
+            analysis_entrymainproto: false,
             analysis_strings: false,
             analysis_entry_disc: false,
             analysis_eh_frame_full: false,
@@ -1754,6 +1806,8 @@ impl Architecture {
         self.tail_call_jumps = true; // (kuna) DIV-13 default-on (angr tail-call recovery; per-test opt-out on Long double #1/#2)
         self.funcbound_flow = true; // (kuna) DIV-67 default-on: REMOVES CODE. Truncates a fall-through that reaches another known function's entry (a function ending in an unnamed static no-return `exit`/`abort`/`die()` wrapper) instead of decoding the next function's body into it. Byte-identical (0/675) on the datatest corpus; restore upstream flow-into-callee with `option funcboundflow off`
         self.remove_cleanup_code = true; // (kuna) DIV-81 default-on: REMOVES CODE. Deletes the Rust drop/deallocate call sites (`core::ptr::drop_in_place`, `Drop::drop`, `alloc::raw_vec::RawVecInner::deallocate`, `__rust_dealloc`) and the argument setup that only feeds them. Structurally inert outside a Rust binary (no C ELF resolves a call to one of those names), so byte-identical (0/675) on the datatest corpus; keep the drop glue with `option cleanupcode off`
+        self.switch_selector_guard = false; // (kuna) option switchselector, default-off this round: the ablation says ON is safe (0/675 datatest assertions, one function changed across the swept corpus and strictly for the better), but shipping a default ON is a DIV-registry change and that registry is not this change's to write
+        self.linux_syscall = false; // (kuna) option linuxsyscall, default-off this round: it renames a call and locks a prototype, which is a judgement about the target OS that the vector alone does not prove
         self.noreturn_extern_calls = true; // (kuna) DIV-14 default-on: REMOVES CODE (drops the post-call fall-through after a matched extern no-return). Byte-identical (0/675) — no datatest call resolves to a known no-return name; overlaps `noreturn_known`'s name match for defined/imported symbols, restore upstream with `option noreturn_extern off`
         self.sparc_struct_return = false; // (kuna) default: upstream byte-identical (GH-6882)
         self.ov_less_simplify = true; // (kuna) DIV-2 default-on (GH-7190)
@@ -1773,6 +1827,8 @@ impl Architecture {
         self.recover_array_stride = true; // (kuna) DIV-3 default-on (GH-8724)
         self.recover_lowered_switch = true; // (kuna) default-on (angr port)
         self.callsite_stack_args = true; // (kuna) default-on: restores upstream fspec.cc:5618 (0/675 ablation)
+        self.vararg_stack_args = true; // (kuna) DIV-101 default-on: a variadic call's stack tail is its own fillinMap section (0/675 ablation)
+        self.callee_arity = true; // (kuna) DIV-102 default-on: one callee, one argument list across its call sites (0/675 ablation)
         self.call_overlap = 0; // (kuna) calloverlap: PLACEHOLDER default (set from measurement)
         self.spill_arg_trial = 0; // (kuna) spillargtrial default-OFF opt-in (diverges from upstream onlyOpUse; the failure mode is a spurious trailing argument, which no gate can see)
         self.load_guard_range = true; // (kuna) DIV-77 default-on: restores upstream Heritage::analyzeNewLoadGuards ValueSet range refinement of indexed-stack LOAD/STORE guards (0/675 ablation); `option loadguardrange off` reverts to whole-space guards with no index bound
@@ -1830,6 +1886,11 @@ impl Architecture {
         self.analysis_libcsigs = true;
         self.analysis_strings = true;
         self.analysis_entry_disc = true;
+        // (kuna) Unmapped-CALL-target entry suppression -- default-ON (it only ever
+        // withholds an entry the walk already refused to decode).
+        self.analysis_unmappedentry = true;
+        // (kuna) PE CRT entry-function prototype recovery -- default-ON.
+        self.analysis_entrymainproto = true;
         // (kuna) `.eh_frame` LSDA landing-pad discovery — default-OFF (opt-in,
         // output-changing: adds the discovered exception landing pads as entries).
         self.analysis_eh_frame_full = false;
@@ -1962,6 +2023,8 @@ impl Architecture {
             "tailcalljump" => on_off!(tail_call_jumps, "Tail-call jump recovery"),
             "funcboundflow" => on_off!(funcbound_flow, "Fall-through bound at function entries"),
             "cleanupcode" => on_off!(remove_cleanup_code, "Rust drop/deallocate call removal"),
+            "linuxsyscall" => on_off!(linux_syscall, "Linux int 0x80 syscall naming"),
+            "switchselector" => on_off!(switch_selector_guard, "Lowered-switch selector soundness guard"),
             "noreturn_extern" => on_off!(noreturn_extern_calls, "Name-based extern no-return"),
             "inputvarnodeadjust" => on_off!(input_varnode_adjust, "Overlapping input-varnode adjustment"),
             "retinputhalf" => on_off!(ret_input_half, "Returned input-parameter half retention"),
@@ -2000,6 +2063,18 @@ impl Architecture {
                 let (val, msg) =
                     crate::p4_calls::kuna_callsitestackargs::OptionCallsiteStackArgs.apply(p1)?;
                 self.callsite_stack_args = val;
+                Ok(msg)
+            }
+            "varargstackargs" => {
+                let (val, msg) =
+                    crate::p4_calls::kuna_varargstackargs::OptionVarargStackArgs.apply(p1)?;
+                self.vararg_stack_args = val;
+                Ok(msg)
+            }
+            "calleearity" => {
+                let (val, msg) =
+                    crate::p4_calls::kuna_calleearity::OptionCalleeArity.apply(p1)?;
+                self.callee_arity = val;
                 Ok(msg)
             }
             "calloverlap" => {
@@ -2177,6 +2252,12 @@ impl Architecture {
             "libcsigs" => on_off!(analysis_libcsigs, "Measured libc signature extension"),
             "strings" => on_off!(analysis_strings, "String-literal analysis pass"),
             "entry_disc" => on_off!(analysis_entry_disc, "Entry-discovery analysis pass"),
+            "unmappedentry" => {
+                on_off!(analysis_unmappedentry, "Unmapped-CALL-target entry suppression")
+            }
+            "entrymainproto" => {
+                on_off!(analysis_entrymainproto, "PE CRT entry-function prototype recovery")
+            }
             "eh_frame_full" => {
                 on_off!(analysis_eh_frame_full, ".eh_frame LSDA landing-pad discovery")
             }
@@ -2827,6 +2908,8 @@ impl Architecture {
         ctx.model_stack_probe_loop = self.model_stack_probe_loop; // GH-8017 stackprobeloop
         ctx.recover_lowered_switch = self.recover_lowered_switch; // loweredswitch
         ctx.callsite_stack_args = self.callsite_stack_args; // callsitestackargs
+        ctx.vararg_stack_args = self.vararg_stack_args; // varargstackargs
+        ctx.callee_arity = self.callee_arity; // calleearity
         ctx.call_overlap = self.call_overlap; // calloverlap
         ctx.spill_arg_trial = self.spill_arg_trial; // spillargtrial
         ctx.load_guard_range = self.load_guard_range; // loadguardrange
@@ -2837,6 +2920,8 @@ impl Architecture {
         ctx.region_edge_order = self.region_edge_order; // regionedgeorder
         ctx.outline_spec = self.outline_spec.clone(); // outline
         ctx.remove_cleanup_code = self.remove_cleanup_code; // cleanupcode
+        ctx.linux_syscall = self.linux_syscall; // linuxsyscall
+        ctx.switch_selector_guard = self.switch_selector_guard; // switchselector
         ctx.cond_fold = self.cond_fold; // condfold
         ctx.reduce_return_gotos = self.reduce_return_gotos; // gotoreduce
         ctx.flatten_ifelse = self.flatten_ifelse; // ifelseflatten

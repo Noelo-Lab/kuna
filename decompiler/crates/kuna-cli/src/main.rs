@@ -21,11 +21,13 @@ mod decompile;
 mod docs;
 mod decompile_all;
 mod decompile_project;
+mod disassemble;
 mod fid;
 mod jsonfmt;
 mod output;
 mod paths;
 mod specs;
+mod strings;
 mod test;
 mod unpack;
 mod xrefs;
@@ -54,6 +56,8 @@ fn main() -> ExitCode {
         "specs" => specs::run(rest),
         "fid" => fid::run(rest),
         "unpack" => unpack::run(rest),
+        "strings" => strings::run(rest),
+        "disassemble" => disassemble::run(rest),
         "xrefs" => xrefs::run(rest),
         "-V" | "--version" | "version" => {
             // Release CI bakes the repo-derived MAJOR.MINOR (docs/release.md)
@@ -81,7 +85,7 @@ fn main() -> ExitCode {
 
 fn usage() {
     eprintln!(
-        "usage: kuna <decompile|decompile-all|decompile-project|functions|xrefs|unpack|docs|test|catalog|modes|specs|fid> ...\n\
+        "usage: kuna <decompile|decompile-all|decompile-project|functions|disassemble|xrefs|strings|unpack|docs|test|catalog|modes|specs|fid> ...\n\
          \n\
          kuna decompile <binary> <func> [--addr] [--json] [--slice ARCH] [--language auto|c|rust] [--mode auto|reliable|aggressive|fast] [--option NAME VALUE]... [--kassert ARGS]...\n\
          kuna decompile-all <binary> [--json] [--functions a,b,..] [--addr 0xVMA]... [--no-vars] [--language auto|c|rust] [--max-fn-seconds N] [--mode auto|reliable|aggressive|fast] [--option N V]...\n\
@@ -89,6 +93,8 @@ fn usage() {
          kuna functions <binary> [--json] [--mode auto|reliable|aggressive|fast]\n\
          kuna xrefs <binary> (--to <name|0xaddr> | --from <name|0xaddr>) [--json] [--kind call,jump,data,read,write] [--mode auto|reliable|aggressive|fast]\n\
          kuna unpack <binary> [-o OUT] [--json]\n\
+         kuna strings <binary> [--json] [--min-length N] [--filter REGEX] [--encoding ascii|utf16|all] [--section NAME] [--no-xrefs]\n\
+         kuna disassemble <binary> <name|0xaddr|0xstart-0xend> [--addr] [--count N] [--bytes N] [--json] [--mode auto|reliable|aggressive|fast] [--option N V]... [--slice ARCH] [--target T] [--sleighpath D]\n\
          kuna docs [<topic>] [--json] [--all]\n\
          kuna test [--all|--unittests|--datatests] [--name N]... [--baseline F] [--save-baseline F] [--json]\n\
          kuna catalog [--json|--markdown|--check] [--option NAME] [--tier transform|analysis|core]\n\

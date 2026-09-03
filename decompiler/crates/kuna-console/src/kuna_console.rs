@@ -244,6 +244,8 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "callfixup" => on_off(conf.analysis_callfixup),
         "addrtable" => on_off(conf.analysis_addrtable),
         "listing" => on_off(conf.analysis_listing),
+        "unmappedentry" => on_off(conf.analysis_unmappedentry),
+        "entrymainproto" => on_off(conf.analysis_entrymainproto),
         "fast_funcdisc" => on_off(conf.analysis_fast_funcdisc),
         "gopclntab" => on_off(conf.analysis_gopclntab),
         // (PR-8) Mach-O arm64e spec selection: reflects the recorded requested

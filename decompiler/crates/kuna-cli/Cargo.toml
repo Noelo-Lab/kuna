@@ -30,6 +30,11 @@ kuna-analysis.workspace = true
 # `archive` feature is enabled here (additive — features unify, the rest of the
 # workspace is unaffected).
 object = { workspace = true, features = ["archive"] }
+# `kuna functions --filter` / `kuna decompile-all --filter` take a REGEX over the
+# function name, so a triaging agent can narrow a 1,150-function inventory
+# without knowing an address first. Already a workspace dependency (kuna-decomp,
+# kuna-console); this adds an edge, not a crate.
+regex.workspace = true
 
 [lints]
 workspace = true

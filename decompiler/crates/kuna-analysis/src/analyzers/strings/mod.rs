@@ -37,6 +37,8 @@
 //! and ≥5 chars is accepted) — harmless for real string literals, which all pass.
 //! Recorded in `docs/missing-analyses.md` / `docs/history/analysis-port-log.md`.
 
+pub mod kuna_stringinv;
+
 use object::read::{Object, ObjectSection};
 use object::SectionKind;
 

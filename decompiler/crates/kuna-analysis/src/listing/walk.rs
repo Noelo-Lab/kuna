@@ -63,7 +63,7 @@ impl WalkState {
 }
 
 /// True if `vma` lands inside any executable range `[lo, hi)`.
-fn in_exec(exec_ranges: &[(u64, u64)], vma: u64) -> bool {
+pub(super) fn in_exec(exec_ranges: &[(u64, u64)], vma: u64) -> bool {
     exec_ranges.iter().any(|&(lo, hi)| vma >= lo && vma < hi)
 }
 
@@ -154,9 +154,14 @@ pub(super) fn walk(
             // Successor edges.
             for &t in &c.flows {
                 if c.flow.is_call {
-                    // CALL/CALLIND direct target → a NEW function entry.
-                    st.funcs.entry(t).or_insert_with(|| discovered(t));
-                    func_worklist.push(t);
+                    // CALL/CALLIND direct target → a NEW function entry, but only
+                    // where the instruction worklist would agree to decode
+                    // (`unmappedentry`): the reference is always filed, the
+                    // function is claimed only for a mapped target.
+                    if super::kuna_unmappedentry::admits_call_entry(arch, exec_ranges, t) {
+                        st.funcs.entry(t).or_insert_with(|| discovered(t));
+                        func_worklist.push(t);
+                    }
                     st.file_ref(vma, t, RefKind::Call);
                 } else {
                     // Branch target → same-function successor.

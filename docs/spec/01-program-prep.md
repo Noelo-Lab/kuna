@@ -1301,6 +1301,63 @@ without `.eh_frame` FDEs, which covers essentially the whole bare-metal ARM
 population (they unwind through `.ARM.exidx`), so the ARM entry-recall options
 compose with it unchanged.
 
+(kuna) **The PE CRT entry-function prototype** (`entrymainproto`, default-on;
+`decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_entrymainproto.rs
+(EntryMainProtoPass)`) is discovery's answer to a question the rest of the pipeline
+cannot reach. kuna recovers a callee's parameters from the callee's OWN body — an
+ABI argument register read before it is written is a parameter — which is why a
+stripped PE's helpers come out correctly typed. It is also why `main` comes out
+`void(void)`: a `main` that ignores `argc` and `argv` never reads `rcx`/`rdx`/`r8`,
+so body-driven recovery finds nothing, and the agent reading that output sees a
+callee declared to take nothing being called with three arguments a few lines up in
+its own caller. The entry point is the one place where the arguments are visible
+*without* the body, because on a PE the C runtime startup is inside the image and
+kuna already decompiles it correctly: MSVC's `__scrt_common_main_seh` fetches each
+argument through a named UCRT accessor (`__p___argc`, `__p___argv`/`__p___wargv`,
+`_get_initial_narrow_environment`/`_get_initial_wide_environment`) in the
+instructions immediately before the call. Those names are imported by the startup
+and by nothing else, so the window between the accessor cluster and the next direct
+call to a non-accessor names the entry function; the pass scans the executable
+bytes for `E8 rel32` rather than disassembling, because the CRT startup is ordinary
+compiler output with no overlapping encodings. The parameters are typed at the
+WIDTH the call site establishes — the 4-byte `argc` slot and the two pointer-width
+slots — and named after the accessor that produced each; they are deliberately not
+typed `int` / `char **`, which would assert the C library's declaration of `main`,
+and the pass has no evidence for that (the same shape carries `wmain`'s
+`wchar_t **`, and a hand-rolled entry point need not be `main` at all). The address
+rides out with the prototype as a discovered entry, because the prototype is parked
+by NAME and on an obfuscated image whose prologue no oracle recognises the callee is
+not a registered function, so the park would be a silent no-op.
+
+One consequence is worth naming, because it is the price of the recovery rather
+than a defect in it. Declaring `argc` makes the first ABI argument register live at
+the entry function's own entry, so a call there to an import kuna has no prototype
+for now finds a value in it and renders `IsDebuggerPresent(CONCAT44(dat_c,argc))`
+where it used to render `IsDebuggerPresent()`. That is the standing behaviour at any
+unprototyped callee reached with a live argument register — the same shape as a
+call-site argument recovered for an unnamed helper — and the real answer is a Win32
+prototype table beside the libc ones (§1.4), not withholding the entry prototype.
+Measured over 139 PE crackmes: the byte scan locates a candidate on 37, the guards
+reject 7, and of the 30 that fire, 4 gain one such argument — against 30 that gain
+the entry prototype.
+
+Three guards keep it from firing where it would be wrong. It is PE-only, and the reason is the
+evidence rather than the symptom: a stripped ELF whose `main` ignores its arguments
+comes out `sub_<addr>(void)` too, but on ELF the CRT lives in libc — `_start` hands
+`main` to `__libc_start_main` and the argument passing happens in another image — so
+there is no call site in the object to read. The ELF `main` oracle above finds the
+address; asserting three slots there would be quoting the C convention rather than
+observing a caller, a weaker claim than this pass makes (and body-driven recovery
+already types the arguments wherever `main` uses them). The callee must carry **no** function symbol — a named `main`, from
+`.symtab`, an export, a PDB or DWARF, already has a better signature coming from
+that source. And a call to msvcrt's `__getmainargs`
+shim family inside the window abandons the cluster: MinGW reaches the same three
+values through OUT pointers and its shim calls `__p___argc`/`__p___argv` too, so the
+accessor test alone matches inside it and the following call is `_set_new_mode`, not
+`main`. Seven crackmes images have that shape. The unnamed-callee guard happens to
+reject all seven — every candidate the shim produces is a named import — but that is
+luck rather than reasoning, so the shim's own accessors are named and bailed on.
+
 **Address tables** (`addrtable`,
 `decompiler/crates/kuna-analysis/src/analyzers/addrtable/mod.rs (AddrTablePass)`)
 scan `.rodata`/`.data` for runs of pointer-width values all landing in executable
@@ -1335,7 +1392,33 @@ function worklist (every direct CALL target becomes a new function entry — the
 program-wide recursion `FlowInfo` deliberately never does) and an inner
 per-function instruction worklist over branch and fall-through successors, bounded
 by the executable ranges and monotonic visit sets. Indirect targets are recorded
-with their computed/indirect predicates but contribute no static successor. A
+with their computed/indirect predicates but contribute no static successor.
+
+(kuna) The two worklists must agree about what counts as code, and
+`unmappedentry` (default-on;
+`decompiler/crates/kuna-analysis/src/listing/kuna_unmappedentry.rs
+(admits_call_entry)`) is what makes them. The instruction worklist gates every
+address on the executable ranges above and drops anything outside them; the
+function worklist did not, so a direct CALL into unmapped memory still became a
+`DiscoveredFunction` that `fast_funcdisc` and `funcdisc_recursive` committed — an
+entry with no bytes behind it, reported at size 0 and decompiling to nothing.
+Those targets are not decode failures; the CALL decoded correctly and the operand
+is junk. An always-taken branch followed by anti-disassembly filler produces one
+directly: `xor eax,eax; je +1; e8 ...` puts the `e8` one byte before the real
+instruction, and following the (never-executed) fall-through reads a call to an
+address four gigabytes above a 25 KB image. The gate applies the *same* predicate
+the instruction worklist uses, so the walk claims a function only where it is
+willing to disassemble. It withholds the function claim only: the Call
+cross-reference is filed in both directions either way, because the instruction
+really does encode a call to that address and `kuna xrefs` should still say so. A
+target inside an executable section is admitted exactly as before even when the
+decode there fails — that is a genuine gap in the walk, not a fabricated entry —
+so the gate can never remove an entry that had a body. Measured over 234 crackmes
+images it removes 150 entries on 19 of them and adds none; every one is `size: 0`
+and outside every executable section, and emitted C over 6,085 functions of those
+images changes in exactly one function, where two parameters wrongly typed `code *`
+(a phantom sat at the address they pointed to) come back as the data pointers they
+are. Off restores the previous, phantom-producing discovery set exactly. A
 context painter applies the ARM/MIPS decode-mode paints per address before each
 decode, so a Thumb or MIPS16 body disassembles in the right ISA. Each instruction
 is decoded by driving `Translate::one_instruction` with a capturing p-code sink

@@ -531,6 +531,50 @@ the switch variable constant on a guarded edge, and classifying that constant
 as broken made repair and cond-const toggle the same input forever — the fixed
 infinite-loop hang on stripped openssh/bash binaries (`tests/hang-repro/`).
 
+### The selector the install cannot re-read — `option switchselector`, default off
+
+Detection and installation do not see the same graph, and nothing checks that
+the install's half of the bargain succeeded. `ActionLowerSwitchDetect` runs on
+the fully simplified, SSA'd CFG and records the cascade's switch-variable
+*storage*; `Funcdata::kuna_install_lowered_switch` runs pre-SSA on the
+**re-lifted** raw p-code of the restart and has to re-find that variable. It has
+two arms — recover the live Varnode from the head comparison
+(`kuna_head_switch_var`), else fall back to a free read of the recorded storage
+— and it commits the CFG surgery whatever it ends up holding. When both arms
+fail, the emitted `switch` dispatches on something that is not the switch value.
+
+On x86 the head arm is essentially never the productive one: `cmp`/`jcc` reaches
+the install as flag arithmetic (`ja` is `!(CF|ZF)`, a `BOOL_NEGATE` over a
+`BOOL_OR`), not as a comparison, so the recovery returns nothing and everything
+rests on the fallback read. That read is re-linkable only when heritage can find
+it a reaching definition at pass 0. A **register** always can. A **stack slot the
+function writes** can, once stack-pointer normalization has run. A stack slot
+that is a function **input** cannot: there is no definition to find — the
+incoming value is still a `LOAD` through the frame pointer at that point, and the
+input Varnode set is rebuilt by parameter recovery only *after* heritage. The
+BRANCHIND's input collapses to a constant, and the surgery has already committed.
+
+That is the Win32 callback shape. A `DialogProc` dispatching on its `uMsg`
+parameter renders as `switch(0)`: every `WM_INITDIALOG`/`WM_COMMAND` case
+present and unreachable, and the parameter the function dispatches on absent from
+the recovered prototype, because after the collapse nothing reads it.
+
+`kuna_loweredswitch.rs (install_can_reread)` is the guard: at detection time,
+where the switch variable is a real SSA Varnode, refuse to record a cascade whose
+variable is a function input outside the register space. Declining leaves the
+comparison cascade exactly as the compiler lowered it — an `if`/`else if` chain
+over the real variable, which is correct C that names the parameter. The test is
+deliberately narrow: a stack local the function itself writes is still recorded,
+because the fallback read does resolve for it (measured — the guard applied to
+*every* stack-located switch variable also cost a genuine `switch` in the same
+binary, and that is what narrowed it to the input case).
+
+Measured: byte-identical on the 675-assertion datatest corpus, and across
+seventeen crackmes-corpus binaries exactly one function changes — the witness,
+where five unreachable cases become a five-branch `if`/`else if` chain over the
+recovered parameter. It ships off only because turning it on is a DIV-registry
+default change.
+
 ### Bound extensions: rescuing an unboundable table
 
 Four gated extensions run, in this order, only when JumpBasic's range exceeds
@@ -738,3 +782,95 @@ This *removes code with real side effects* — the drop really did release the
 resource — which is why the option is marked destructive. Turn it off to audit
 when a value is actually dropped or freed; with it off the rendering is
 byte-identical to a build without the pass.
+
+## 2.7 Linux `int 0x80` syscall naming
+
+**(kuna) `option linuxsyscall`, default off,
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_linuxsyscall.rs
+(ActionLinuxSyscall)`.** x86 SLEIGH lowers `INT imm8` to a black-box userop
+feeding an indirect call —
+`tmp:1 = imm8; intloc:4 = swi(tmp); call [intloc];` — which is the honest
+lifting of a *general* software interrupt: the spec cannot know which operating
+system is behind the vector. Left alone it renders as
+`(*(void *)swi(0x80))();`, a call through a pointer nothing assigns. The damage
+is not only the missing name. The call has no recovered parameters, so the
+register writes that set the syscall up have no reader, and the ordinary
+dead-code fixpoint collects them: on a hand-written `int 0x80` program the
+number *and* every argument leave the output together. On 32-bit Linux both the
+vector and the ABI are fixed — the number is in `EAX`, the arguments are `EBX`,
+`ECX`, `EDX`, `ESI`, `EDI`, `EBP` in that order, the result comes back in `EAX`
+— so the information is recoverable, and this pass recovers it.
+
+**Recognition is structural, not dataflow.** The Action runs in the pre-SSA
+window (registered in `infra/universalaction.rs (universal_sched)` immediately
+after `ActionConstbase`), where the `swi` output is a *free* Varnode with no
+def-use edge to follow. So the lowering is identified by adjacency inside one
+instruction: walking the op bank's CALLOTHER list, a two-input CALLOTHER whose
+second input is the one-byte constant `0x80`, whose next op in the same block
+and at the same instruction address is a CALLIND, and whose output storage is
+that CALLIND's target. Nothing else in the x86 lifting has that shape.
+
+**The number comes from a bounded backward walk.**
+`kuna_linuxsyscall.rs (syscall_number_before)` walks the CALLOTHER's basic block
+backwards and accepts exactly one thing: a full-width `EAX = <constant>` COPY.
+It stops — declining — at the first op that writes any part of `EAX` by any
+other means, at any call or branch (whose effect on `EAX` it cannot see), and at
+the top of the block. `xor %eax,%eax; inc %eax; int $0x80` is therefore
+*declined*, not folded: the fold would need the constant propagation that only
+exists after SSA, and by then the argument setup this pass exists to save has
+already been collected.
+
+**The table is a subset by construction.**
+`kuna_linuxsyscall.rs (SYSCALL_TABLE)` maps a number to a name *and an argument
+count*; a number with no entry is declined. Names and numbers come from the
+kernel's `asm/unistd_32.h`; the argument count is the arity of the syscall's
+documented prototype read from its section-2 manual page, kept only where that
+reading is unambiguous — 332 of the 438 `__NR_` names. Four numbers whose i386
+entry point takes a different register set than the documented wrapper are
+removed by hand (`select` and `mmap`, whose i386 entry points take one pointer
+to an argument struct; `sigsuspend`, which carries two unused history words;
+`ipc`, a multiplexer), and nineteen are set by hand from the kernel entry point
+where the manual page documents the wrapper instead (`exit`, `open`, `ioctl`,
+`clone`, `rt_sigaction`, the `*64` stat family, `openat`, …). The arity is not
+optional detail: printing a known name with a *guessed* argument count states
+something false about the call, where declining states nothing.
+
+**The rewrite retargets the CALLIND in place.** It already owns a
+`FuncCallSpecs` slot and a block position, so the pass sets its opcode to CALL,
+replaces input 0 with a fresh fspec annotation, names the spec `sys_<name>`
+(`FuncCallSpecs::set_funcdata`) and destroys the now-unread `swi` CALLOTHER. The
+name carries the `sys_` prefix deliberately: the raw syscall returns `-errno`
+where the libc wrapper returns `-1` and sets `errno`, so rendering it as
+`write(...)` would assert a call that is not being made — and on a dynamically
+linked image the real `write` PLT stub is in the same output.
+
+Two properties of the synthesized prototype are load-bearing:
+
+- **The inputs are locked** to the first N argument registers
+  (`FuncProto::set_param` + `set_input_lock`). A locked prototype is what makes
+  `ActionFuncLink` materialize the argument Varnodes itself, exactly as it does
+  for a declared callee — which is why the `mov $1,%ebx` feeding the call keeps
+  a reader and survives to the output. This is also why the Action is scheduled
+  *before* `ActionFuncLink` rather than in `mainloop`.
+- **`extrapop` is zero** (`FuncProto::set_extra_pop`). `int 0x80` pushes no
+  return address, where a normal x86 `CALL rel32` lifts as `push &next; call
+  target` and the default `__cdecl` `extrapop` of 4 is what
+  `ActionExtraPopSetup` uses to hand `ESP` those four bytes back. Applying it
+  here — which is what the plain indirect call gets today — moves `ESP` across
+  every syscall and shifts every later `ESP`-relative reference in the function.
+  With `extrapop == 0` `ActionExtraPopSetup` emits no adjustment at all.
+
+**The language gate** is `kuna_linuxsyscall.rs (resolve_abi)`: every ABI
+register must resolve at its full 32-bit width and the default code space must
+be 4 bytes wide. x86-64 resolves `EAX`..`EBP` as sub-registers, so the
+address-size test is what excludes it — there `int 0x80` is a compatibility
+path, not the syscall ABI this models — and every non-x86 language is excluded
+because the register names do not resolve.
+
+**Why it ships off.** Naming the call asserts that the operating system behind
+vector `0x80` is Linux. That is true of essentially every 32-bit x86 ELF, but
+the vector alone does not prove it (on the original IBM PC the `0x80`–`0xF0`
+range was reserved for BASIC) and the engine has no OS/ABI channel it could
+consult at this seam. So the assertion is left to the operator, and
+`linuxsyscall` is a documented exclusion from the `aggressive` preset
+(`p0_knowledge/modes.rs`) rather than an unevaluated one.

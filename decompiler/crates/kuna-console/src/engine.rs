@@ -1235,6 +1235,10 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // (output-changing: adds entries), so a default run never commits them and
         // the discovery set is byte-identical to FDE-pcBegin-only.
         "eh_frame_full" => arch.analysis_eh_frame_full,
+        // (kuna) PE CRT entry-function prototype recovery — a standalone stashed pass
+        // whose one prototype is computed at LOAD but COMMITTED only when this gate
+        // is on. Default-ON; off renders the `void(void)` form exactly.
+        "entrymainproto" => arch.analysis_entrymainproto,
         // (kuna) `.eh_frame` FDE-interior entry suppression — the pass reports the
         // single-function FDE bodies and the commit rejects any discovered entry
         // strictly inside one. Default-ON; with the gate off the fact stream is

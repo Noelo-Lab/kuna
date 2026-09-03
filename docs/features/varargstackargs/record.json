@@ -1,0 +1,56 @@
+{
+  "opportunity": "repipe:68149b8a8f555589f353117c::call-argument-recovery-drops-scanf-destination-and-printf-varargs",
+  "test_name": "repipe round 1, challenge 68149b8a8f555589f353117c",
+  "binary": "kuna-re-dataset/challenges/68149b8a8f555589f353117c/bin/practice_2_rengr",
+  "selector": "_main",
+  "func_addr": "0x100003d94",
+  "angr_version": null,
+  "option": "varargstackargs",
+  "flag": "vararg_stack_args",
+  "element_id": 4132,
+  "change_kind": "correctness-fix",
+  "source_decompiler": "kuna",
+  "inspiration": "repipe:68149b8a8f555589f353117c _main (Mach-O arm64 practice_2_rengr); upstream ParamListStandard::fillinMap/forceNoUse/forceInactiveChain (fspec.cc:1560/1495/1519)",
+  "default_on": true,
+  "div": "DIV-101",
+  "ablation_changed": 0,
+  "parity": "OK",
+  "speed_method": "interleaved child CPU time, min-of-N, with a null control (on/on) run through the same harness; the box carried load average 11-14 from sibling agents throughout, which is why wall-clock is not used",
+  "speed_off_ms": 119.2,
+  "speed_on_ms": 119.3,
+  "speed_delta_pct": 0.06,
+  "speed_null_control_pct": -0.76,
+  "speed_samples": 11,
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": true,
+  "speed_forced_off": false,
+  "speed_secondary": {
+    "target": "decompile-all iOSCrackme (153 functions, arm64 Mach-O)",
+    "off_s": 2.4312,
+    "on_s": 2.4108,
+    "delta_pct": -0.84,
+    "null_control_pct": 0.12,
+    "samples": 7
+  },
+  "sweep": {
+    "binaries_decompiled": 46,
+    "binaries_load_failed_identically": 11,
+    "functions": 3857,
+    "functions_changed": 1,
+    "changed_pct": 0.0259,
+    "regressions_found": 0,
+    "note": "the single changed function is the witness; an earlier revision without the offset-0 condition changed 2, the second being a MIPS o32 $gp save slot mistaken for a printf argument"
+  },
+  "probe_flip": {
+    "probe_still_passes": false,
+    "acceptance_passes": false,
+    "why": "the behavioural acceptance is met -- scanf recovers its destination and all three printf calls their %s argument -- but the filed acceptance string is the literal 'scanf(\"%d\",&v3)' and the fix renumbers the locals (two stores it un-deletes are declared before the w0 temporary), so the destination prints as &v2. The probe no longer passes, the acceptance string does not match."
+  },
+  "decisions": [
+    "The filed hypothesis (AArch64 variadic-call argument recovery or stack-address propagation is losing live arguments) is WRONG about the location. check_input_trial_use scores the [sp+0] trial ACTIVE; ParamListStandard::fillinMap deactivates it again. Recorded per docs/re-pipeline.md's instruction that the tester's diagnosis is not binding.",
+    "The four observations the brief grouped as one cluster are three distinct root causes, and one of them is not a call-site bug at all. See analysis.md's scope table.",
+    "Reactivating the stack trial in place was rejected: forceInactiveChain's trailing promotion loop would fabricate x1-x7 as six invented register arguments. The section has to be cut instead.",
+    "The offset-0 condition on the cut is not a fit to the counter-example but a statement about what the field means: MIPS o32's stack pentry offset 16 is, in mips32be.cspec's own comment, 'backup storage space for register params'; x86-64's 8 and i386's 4 are the pushed return address; Win64's 32 are the home area. An ABI that reserves nothing in front of its first stack argument is one that can pass the whole variadic tail there.",
+    "ARM32 AAPCS (stack pentry at offset 0, variadic arguments DO fill r0-r3 first) is the residual over-recovery shape the guard does not exclude. Four ARM binaries in the sweep changed nothing; the risk is named in use_when as the flip-back condition rather than hidden."
+  ]
+}

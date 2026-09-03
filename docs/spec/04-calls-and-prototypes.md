@@ -213,6 +213,59 @@ parameter list. For the standard input list the decision sequence is:
    the list must be contiguous.
 5. Whatever is still active is marked **used**.
 
+Steps 3 and 4 both read a hole in a section as evidence that the argument list
+ended, which is what makes a section the unit of scoring. That inference is
+sound only while the arguments really do fill the resource in order, and at a
+**variadic** call site on an ABI that passes the variable arguments on the stack
+it does not. Apple's arm64 ABI is the case in point: a fixed parameter takes
+`x0`, the varargs start at `[sp+0]`, and `x1`–`x7` are structurally empty —
+seven slots, longer than either rule tolerates. Since AArch64 puts the general
+registers and the outgoing stack area in **one** section, a stack trial
+`check_input_trial_use` had already scored active is deactivated again here, and
+the argument is dropped; whatever computed it then dies to dead-code
+elimination, so the destination of a `scanf` is not merely unprinted but
+unwritten. (kuna) `varargstackargs` (default-off,
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_varargstackargs.rs`) cuts such a
+section in two at its first stack trial, so the register prefix and the stack
+tail are scored independently and the ABI's hole stops being evidence about the
+stack argument. The cut also keeps step 4's hole-filling promotion inside the
+half that produced it — promoting across the boundary would fabricate `x1`–`x7`
+as six invented register arguments. `ActionActiveParam` sets the flag on the
+call's `ParamActive` and only for a callee whose prototype is variadic
+(`FuncProto::is_dotdotdot`): with a fully known prototype a register hole *is*
+evidence, and only `...` makes the hole a property of the ABI rather than of the
+recovery. Nothing about trial scoring changes — a stack trial still has to reach
+`fillin_map` active on its own evidence — so the option can keep an argument the
+recovery already believed in but never invent one.
+
+### `build_input_from_trials` — writing the argument list
+
+Whatever is still `used` becomes the CALL op's input list, in prototype order
+(`funcdata_callsite.rs (build_input_from_trials)`), a spacebase parameter's stack
+range is marked unmapped, and the trials are dropped. What is written are the
+argument *values*: after constant propagation a size argument is a constant
+Varnode, not the register the ABI passes it in — so the storage each argument
+occupied survives only if something records it. (kuna) `calleearity`
+(default-off, `decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleearity.rs`)
+records exactly that, on the call spec, and uses it for one thing: when the same
+callee is called more than once in the function, a call whose list is not yet
+written is reconciled against a sibling whose list already is.
+
+That reconciliation exists because nothing else in P4 does it. With an unlocked
+callee prototype every call site recovers its arguments alone, so one allocator
+wrapper renders as `sub_140008160(0x28)` at one site and `sub_140008160()` thirty
+bytes later — the second site being the one where the argument is *also* the
+operand of an overflow check, which `only_op_use` rejects on its `CPUI_CBRANCH`
+descendant. Relaxing that rejection is not an option: `test rcx,rcx; jz; call` is
+structurally identical and would gain an invented argument everywhere. The
+sibling call is the only local evidence that settles it. The reconciliation is
+register-storage only (a finalized call's stack arguments sit at caller-relative
+addresses that differ per site), never promotes a synthetic unreferenced trial,
+is all-or-nothing (parameters are positional), and never removes an argument.
+`ActionActiveParam` finalizes each spec as soon as that spec is fully checked, so
+a call is reconciled against the sites *before* it and a callee whose first call
+site is the broken one stays broken.
+
 The `Register` (unordered) variant skips all ordering logic: every active
 trial that lands justified in an entry is a parameter
 (`fillin_map_register`). The output variant first lets the model rules claim
