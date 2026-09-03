@@ -61,9 +61,29 @@ def _recently_shipped(rounds_back=1):
              "`regression_of: <need_id>`, the highest-priority class we accept.",
              ""]
     for n in closed[:8]:
-        lines.append("- `%s` — %s (closed need `%s`)" % (
-            getattr(n, "title", n.need_id), getattr(n, "summary", "") or "", n.need_id))
+        # Render the CAPABILITY, not the defect title. A closed need's title states the
+        # problem ("kuna cannot list strings"); printing that under a heading that says
+        # "newly available" tells the tester the opposite of the truth. The builder
+        # records what shipped as a "Shipped:" line in the Acceptance section.
+        lines.append("- %s" % (_shipped_line(n) or ("`%s` (closed need `%s`)"
+                                                    % (n.fields.get("title", n.need_id), n.need_id))))
     return "\n".join(lines)
+
+
+def _shipped_line(need):
+    """The `Shipped: ...` line a builder left in the record's Acceptance section, if any."""
+    body = ""
+    try:
+        body = (need.sections or {}).get("Acceptance", "") or ""
+    except Exception:
+        return ""
+    for line in body.split("\n"):
+        marker = "Shipped:"
+        if marker in line:
+            text = line.split(marker, 1)[1].strip()
+            if text:
+                return "%s  _(closed need `%s`)_" % (text, need.fields.get("need_id", "?"))
+    return ""
 
 
 def _known_needs(limit=12):
