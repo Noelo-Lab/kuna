@@ -492,6 +492,32 @@ knowing about because they shape how you should extend this code:
   own negation both pass on a mixed array, which the gate reads as `already-supported` — i.e.
   it silently discards a real need.
 
+## A conflicting PR runs no gates at all, and looks green
+
+Round 1's PR sat for half an hour showing six green `Analyze (...)` checks and nothing else.
+The `Tests` workflow had never run — not queued, not skipped, **no run object at all** — and
+the reason was that `main` had moved ahead and the PR was `CONFLICTING`. GitHub does not
+dispatch `pull_request` workflows when it cannot compute the merge commit, and CodeQL's
+default setup is a different mechanism that runs anyway.
+
+So the observable state of a conflicting PR is: CodeQL green, every gate absent, and
+`gh pr checks` showing an all-green list. That is precisely the "all-green PR that had
+executed no code" that `tests.yml`'s own header describes.
+
+What catches it is the `missing` arm in `open_pr.sh --merge`:
+
+```sh
+WS_CONC=$(... next((r.conclusion for r in check_runs if r.name == WS_NAME), "missing") ...)
+if [ "$WS_CONC" = "skipped" ] || [ "$WS_CONC" = "missing" ]; then
+  echo "ERROR: '$WS_NAME' concluded '$WS_CONC' -- it did not actually run; not merging"
+```
+
+`missing` was written for a different case (a required check renamed out from under the
+guard) and it caught this one. **Do not soften it to "absent means not required".** The
+diagnostic to reach for first is `gh pr view <n> --json mergeable,mergeStateStatus`:
+`CONFLICTING`/`DIRTY` explains an absent suite far more often than anything about the
+workflow file does.
+
 ## Machinery reference
 
 | Piece | What |
