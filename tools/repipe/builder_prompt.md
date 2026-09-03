@@ -81,6 +81,54 @@ Two standing requirements bite hardest here and are not optional:
   mechanism, "it does reach the output" is half the brief. It must also answer **would this
   produce WRONG output?** — by building the change and reading the diff, not by arguing.
 
+### When the need asks for an INTERFACE, expose — do not reinvent
+
+A large fraction of this backlog will be an agent asking to *tell kuna something* rather than
+asking kuna to guess better: define a function boundary, override a jump table, declare a
+blob as data, steer structuring, fix a prototype. Before you design anything, check whether
+the capability already exists one layer down and is simply unreachable.
+
+**It usually does.** `kuna-console`'s `register_decomp_commands` registers ~37
+intervention-shaped commands — `map function`, `map address`, `map param`, `map return`,
+`map label`, `override prototype`, `override flow`, `override jumptable`, `force goto`,
+`force datatype`, `force varnode`, `name varnode`, `rename`, `retype`, `type varnode`,
+`parse line`, `parse file`, `comment instruction`, `structure blocks`, `analyze range`,
+`global add`, `graph controlflow`, `callgraph build`, `dump` — and **none of them are
+reachable from the `kuna` binary**. `kuna decompile`'s generated script
+(`decompile.rs`) only ever emits `option` and `kassert` lines.
+
+So there are three very different jobs hiding behind "add an interface", and they cost
+wildly different amounts. Work out which one you are in **before** writing code:
+
+1. **It works in the console, it is just unexposed.** Wire it to the CLI. Cheap, high value,
+   and the common case. Verify by driving `decomp_dbg` directly first:
+   ```
+   printf 'load file BIN
+read symbols
+load function main
+<your command>
+quit
+'      | SLEIGHHOME=$PWD/specs decompiler/target/release/decomp_dbg
+   ```
+   If that works, your job is plumbing, not engine work.
+2. **It answers `engine integration not yet ported`.** The command is a registered stub —
+   `global add`, `dump` and `callgraph build` are confirmed examples. Porting it is real
+   engine work: scope it honestly and take the `[PROPOSAL]` route rather than half-porting it.
+3. **There is no decision point at all.** Then the right shape is usually a new
+   `phases.toml` option (Track `quality`) rather than a new subcommand, because you are
+   adding a *judgement call* to the pipeline, and those ship behind a named flag.
+
+Two design rules for anything in this family:
+
+- **A durable assertion beats a one-shot flag.** kuna's model is `assert(phase, anchor, type,
+  value, strength)` consulted on every (re-)run — not imperative mid-pipeline edits. An
+  interface that survives only inside one process is barely an interface: an agent that
+  renames forty functions and loses them on the next invocation has gained nothing. If you
+  cannot make it durable in one PR, say so in the record and ship the volatile version behind
+  an honest name.
+- **Machine-readable in, machine-readable out.** These are for agents. Accept the assertions
+  as a file or repeatable flags, and emit the result as JSON alongside the human form.
+
 ### Track `perf`
 
 Timing only. Measure with `scripts.pipeline.timeit`'s method (warmup + median over repeats),
