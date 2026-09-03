@@ -1,22 +1,54 @@
 {
   "schema": "re-needs-index/1",
   "generated_by": "scripts.repipe.needs",
-  "count": 14,
+  "count": 18,
   "rejected_count": 0,
   "by_status": {
     "closed": 8,
-    "open": 6
+    "open": 10
   },
   "by_track": {
     "quality": 11,
-    "tooling": 3
+    "tooling": 7
   },
   "by_severity": {
-    "major": 12,
+    "blocker": 1,
+    "major": 15,
     "minor": 2
   },
   "by_reject_reason": {},
   "needs": [
+    {
+      "need_id": "no-cli-function-boundary-override",
+      "title": "an agent cannot tell kuna where a function starts or ends",
+      "track": "tooling",
+      "status": "open",
+      "severity": "blocker",
+      "probe_id": null,
+      "acceptance_id": null,
+      "hypothesis_status": "upheld",
+      "credibility": 1.0,
+      "instances": 1,
+      "challenges": [],
+      "rounds": [
+        2
+      ],
+      "first_seen_round": 2,
+      "attempts": 0,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-cli/src",
+        "decompiler/crates/kuna-console/src/ifacedecomp.rs"
+      ],
+      "scope": "large",
+      "regression_of": null,
+      "pr": null,
+      "closed_in_round": null,
+      "closing_pr": null,
+      "reject_reason": null,
+      "score": 20.794415,
+      "path": "docs/re-needs/no-cli-function-boundary-override.md"
+    },
     {
       "need_id": "getprocaddress-result-discarded",
       "title": "a GetProcAddress result is discarded and the pointer left uninitialised",
@@ -76,6 +108,99 @@
       "reject_reason": null,
       "score": 13.862944,
       "path": "docs/re-needs/large-function-malformed-output.md"
+    },
+    {
+      "need_id": "no-cli-data-code-override",
+      "title": "an agent cannot mark a range as code or data, or set a type at an address",
+      "track": "tooling",
+      "status": "open",
+      "severity": "major",
+      "probe_id": null,
+      "acceptance_id": null,
+      "hypothesis_status": "upheld",
+      "credibility": 1.0,
+      "instances": 1,
+      "challenges": [],
+      "rounds": [
+        2
+      ],
+      "first_seen_round": 2,
+      "attempts": 0,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-cli/src",
+        "decompiler/crates/kuna-console/src/ifacedecomp.rs"
+      ],
+      "scope": "large",
+      "regression_of": null,
+      "pr": null,
+      "closed_in_round": null,
+      "closing_pr": null,
+      "reject_reason": null,
+      "score": 13.862944,
+      "path": "docs/re-needs/no-cli-data-code-override.md"
+    },
+    {
+      "need_id": "no-cli-rename-or-prototype-override",
+      "title": "an agent cannot rename or retype anything, or force a prototype",
+      "track": "tooling",
+      "status": "open",
+      "severity": "major",
+      "probe_id": null,
+      "acceptance_id": null,
+      "hypothesis_status": "upheld",
+      "credibility": 1.0,
+      "instances": 1,
+      "challenges": [],
+      "rounds": [
+        2
+      ],
+      "first_seen_round": 2,
+      "attempts": 0,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-cli/src",
+        "decompiler/crates/kuna-console/src/kuna_console.rs"
+      ],
+      "scope": "large",
+      "regression_of": null,
+      "pr": null,
+      "closed_in_round": null,
+      "closing_pr": null,
+      "reject_reason": null,
+      "score": 13.862944,
+      "path": "docs/re-needs/no-cli-rename-or-prototype-override.md"
+    },
+    {
+      "need_id": "no-cli-structuring-override",
+      "title": "an agent cannot force a goto, a jump table, or a flow reclassification",
+      "track": "tooling",
+      "status": "open",
+      "severity": "major",
+      "probe_id": null,
+      "acceptance_id": null,
+      "hypothesis_status": "upheld",
+      "credibility": 1.0,
+      "instances": 1,
+      "challenges": [],
+      "rounds": [
+        2
+      ],
+      "first_seen_round": 2,
+      "attempts": 0,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-console/src/ifacedecomp.rs",
+        "decompiler/crates/kuna-decomp/phases.toml"
+      ],
+      "scope": "large",
+      "regression_of": null,
+      "pr": null,
+      "closed_in_round": null,
+      "closing_pr": null,
+      "reject_reason": null,
+      "score": 13.862944,
+      "path": "docs/re-needs/no-cli-structuring-override.md"
     },
     {
       "need_id": "void-callee-spurious-arg",
