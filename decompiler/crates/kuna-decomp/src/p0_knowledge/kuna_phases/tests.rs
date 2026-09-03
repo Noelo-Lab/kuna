@@ -48,7 +48,7 @@ fn surface_count_is_105() {
 }
 
 #[test]
-fn settable_count_is_127() {
+fn settable_count_is_129() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -95,12 +95,12 @@ fn settable_count_is_127() {
     // +1 for `symbolnamebound` (P1 symbol-name scope resource bound, DIV-95, GH-338).
     // +1 for `msvcfpconst` (P1 MSVC `__real@` FP-constant recovery, DIV-96).
     // +1 for `cortexmpriv` (P2 Cortex-M privileged-mode guard folding, DIV-99).
-    assert_eq!(kuna_num_settables(), 127);
-    assert_eq!(SETTABLE_TABLE.len(), 127);
+    assert_eq!(kuna_num_settables(), 129);
+    assert_eq!(SETTABLE_TABLE.len(), 129);
 }
 
 #[test]
-fn tier_counts_are_28_core_52_transform_47_analysis() {
+fn tier_counts_are_30_core_52_transform_47_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -181,7 +181,7 @@ fn tier_counts_are_28_core_52_transform_47_analysis() {
     // surface reports about the frame the analysis already recovered.
     // transform 51 -> 52: +1 for `cortexmpriv` (P2 Cortex-M privileged-mode guard
     // folding, DIV-99).
-    assert_eq!((core, transform, analysis), (28, 52, 47));
+    assert_eq!((core, transform, analysis), (30, 52, 47));
 }
 
 #[test]
@@ -371,7 +371,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_39_suppressed_for_88() {
+fn option_values_live_value_present_for_39_suppressed_for_90() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -585,6 +585,8 @@ fn option_values_live_value_present_for_39_suppressed_for_88() {
                             | "braceelide"
                             | "warnstyle"
                             | "callsitestackargs"
+                            | "varargstackargs"
+                            | "calleearity"
                             | "calloverlap"
                             | "spillargtrial"
                             | "paramcopyhoist"
@@ -731,7 +733,10 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // not move the tail).
     // 123 -> 124: +1 for `framelayout` (DIV-97; its P6 row sits mid-table ahead of
     // `ctypes`, so it does not move the tail either).
-    assert_eq!(json.matches("},\n").count(), 126);
+    // 126 -> 128: +1 for `varargstackargs` (DIV-101) and +1 for `calleearity`
+    // (DIV-102); both P4 rows sit mid-table beside `callsitestackargs`, so the
+    // tail does not move either.
+    assert_eq!(json.matches("},\n").count(), 128);
 }
 
 #[test]

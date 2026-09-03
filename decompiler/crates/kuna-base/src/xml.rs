@@ -1782,7 +1782,7 @@ mod tests {
         // from their mangled names (option off = every operand a dat_<addr>)
         // and kuna-cortexmpriv / the Cortex-M `isCurrentModePrivileged()` guard
         // around every MRS/MSR folds away (option off = the guard block survives)
-        assert_eq!(count, 222, "corpus file count drifted");
+        assert_eq!(count, 224, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

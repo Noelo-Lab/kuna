@@ -1,0 +1,66 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    RE-friction round 1, challenge 68149b8a8f555589f353117c (Mach-O arm64
+    `practice_2_rengr`): `kuna decompile ... _main` rendered
+    `v2 = scanf("%d");` with the destination pointer dropped, then compared a
+    local that nothing ever wrote, plus three `printf("... %s\n")` calls with no
+    argument for the %s.
+
+    Root cause (P4, active-input trial scoring), which is NOT the trial scoring
+    itself.  Apple's arm64 ABI passes variadic arguments on the STACK, so clang
+    emits
+
+        add  x8, sp, #0x1c        ; &local
+        mov  x9, sp
+        str  x8, [x9]             ; the variadic argument, at [sp+0]
+        adr  x0, "%d"             ; the one fixed parameter
+        bl   scanf
+
+    checkInputTrialUse scores the [sp+0] trial ACTIVE (ancestor realism and the
+    local alias test both pass).  ParamListStandard::fillinMap then deactivates
+    it again: on AArch64 x0..x7 and the outgoing stack area are ONE resource
+    section, and its two positional rules, forceNoUse (a whole
+    definitely-not-used exclusion group ends the section) and forceInactiveChain
+    (a run of more than 2 unused slots ends the section), both read the seven
+    structurally empty registers x1..x7 between the fixed parameter and the
+    first vararg as evidence that the recovery has run past the argument list.
+    So the argument is dropped and, with its only consumer gone, the store that
+    computed it is dead code eliminated.
+
+    Stage / sub-stage: P4 "active-input-trial-scoring".  The P0 assertion
+    `option varargstackargs on|off` decides whether a VARIADIC call's stack tail
+    is scored as its own fillinMap section, so the ABI's register hole stops
+    being evidence about the stack argument.  Non-variadic calls are untouched:
+    for a fully known prototype a hole in the register file IS evidence.
+
+    The fixture is the same construct, hand assembled: `ask` passes the address
+    of a local as the one variadic argument of `myscanf`, whose `...` prototype
+    `parse line` supplies, then reads the local back.
+
+    Pass 1 (`option varargstackargs off`) reproduces the BUG: the call keeps
+    only the format string and `ask` returns a local nothing wrote.
+    Pass 2 (`option varargstackargs on`) is the FIX: the stack argument is
+    recovered and the local is the scanf destination.
+-->
+<bytechunk space="ram" offset="0x100000">
+ff8300d1e9030091e8730091280100f9c000001004000094e01f40b9ff830091
+c0035fd6c0035fd625640000
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="ask"/>
+<symbol space="ram" offset="0x100024" name="myscanf"/>
+</binaryimage>
+<script>
+  <com>parse line extern int4 myscanf(char *fmt, ...);</com>
+  <com>option varargstackargs off</com>
+  <com>lo fu ask</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option varargstackargs on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="varargstackargs #1: option off drops the stack-passed variadic argument (bug reproduced)" min="1" max="1">myscanf\(\(char \*\)0x100028\);</stringmatch>
+<stringmatch name="varargstackargs #2: option on recovers the variadic argument the ABI passes on the stack" min="1" max="1">myscanf\(\(char \*\)0x100028,&amp;v1\);</stringmatch>
+</decompilertest>

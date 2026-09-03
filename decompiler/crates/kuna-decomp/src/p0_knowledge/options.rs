@@ -277,6 +277,8 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "noreturn_externmatch",
     "loweredswitch",
     "callsitestackargs",
+    "varargstackargs",
+    "calleearity",
     "calloverlap",
     "spillargtrial",
     "loadguardrange",

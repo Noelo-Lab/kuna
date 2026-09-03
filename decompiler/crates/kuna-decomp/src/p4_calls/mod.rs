@@ -13,5 +13,7 @@ pub mod kuna_returnpair;
 pub mod kuna_retinputhalf;
 pub mod kuna_returnuncomputed;
 pub mod kuna_spillargtrial;
+pub mod kuna_varargstackargs; // (kuna) the variadic call's stack tail is its own fillinMap section
+pub mod kuna_calleearity; // (kuna) one callee, one argument list across its call sites
 pub mod kuna_rustabi; // (kuna) the rustc two-register return: keep the pair, connect it at the call
 pub mod kuna_langabi; // (kuna) the ABI seam: per-language `extern` rendering

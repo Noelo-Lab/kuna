@@ -133,6 +133,8 @@ readability defaults measured on the angr `fmt` corpus binary, DIV-34+ in
 | `kuna-cnorm-warnstyle.xml` | warnings render as terse `// slug` end-of-line comments (DIV-39) | `option warnstyle inline\|banner` (new kuna settable, P9 `warning-style`) |
 | `kuna-outlang-rust.xml` | the same recovered function rendered as Rust: `unsafe fn` shell, `let mut n: T` declarations, Rust primitive spelling, postfix `as` casts, `match` with a synthesised `_` arm | `option setlanguage c-language\|rust-language` (upstream option, newly live) |
 | `oxidizer-securitycheck.xml` | SEFCOM Oxidizer `SecurityCheckRemover`: rustc emits a diverging `panic_bounds_check` branch in front of every checked slice index, string slice and non-constant `/`/`%` (DIV-82) | `option securitycheck on\|off` (new kuna settable, P7 `edge-virtualization`) |
+| `kuna-varargstackargs.xml` | a variadic call on an ABI that passes varargs on the stack (Apple arm64) loses them: `fillinMap`'s positional section rules read the structurally empty `x1`-`x7` as the end of the argument list (DIV-101) | `option varargstackargs on\|off` (new kuna settable, P4 `active-input-trial-scoring`) |
+| `kuna-calleearity.xml` | one callee, two arities: the call site whose argument is also the operand of an overflow check loses it to `onlyOpUse`'s branch rejection, while its sibling keeps it (DIV-102) | `option calleearity on\|off` (new kuna settable, P4 `trial-finalization`) |
 
 Infrastructure testcases (no GH issue; they regression-test the kuna stage machinery
 itself): `kuna-console.xml` (registry + `stage list/map/status`), `kuna-assert.xml`
