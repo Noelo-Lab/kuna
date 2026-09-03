@@ -1,0 +1,57 @@
+{
+  "opportunity": "repipe:69a54bd70f5b9757a6a5f72f::pe-decompilation-loses-allocator-arguments-inside-the-model-loader",
+  "test_name": "repipe round 1, challenge 69a54bd70f5b9757a6a5f72f",
+  "binary": "kuna-re-dataset/challenges/69a54bd70f5b9757a6a5f72f/bin/Release.zip.__x/PolyMLP.exe",
+  "selector": "0x1400024a0",
+  "func_addr": "0x1400024a0",
+  "angr_version": null,
+  "option": "calleearity",
+  "flag": "callee_arity",
+  "element_id": 4133,
+  "change_kind": "correctness-fix",
+  "source_decompiler": "kuna",
+  "inspiration": "repipe:69a54bd70f5b9757a6a5f72f 0x1400024a0 (PE x86-64 PolyMLP.exe, sub_140008160); upstream Funcdata::onlyOpUse (funcdata_varnode.cc:1851) and FuncCallSpecs::buildInputFromTrials (fspec.cc:5692)",
+  "default_on": true,
+  "div": "DIV-102",
+  "ablation_changed": 0,
+  "parity": "OK",
+  "speed_method": "interleaved child CPU time, min-of-N, with a null control (on/on) run through the same harness; the box carried load average 11-14 from sibling agents throughout, which is why wall-clock is not used",
+  "speed_off_ms": 697.4,
+  "speed_on_ms": 700.9,
+  "speed_delta_pct": 0.5,
+  "speed_null_control_pct": 0.45,
+  "speed_samples": 11,
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": true,
+  "speed_forced_off": false,
+  "speed_secondary": {
+    "target": "decompile-all PolyMLP.exe (244 functions)",
+    "off_s": 2.9815,
+    "on_s": 3.0009,
+    "delta_pct": 0.65,
+    "null_control_pct": 8.05,
+    "samples": 7,
+    "note": "the null control is larger than the signal on this target, so the honest reading is flat"
+  },
+  "sweep": {
+    "binaries_decompiled": 46,
+    "binaries_load_failed_identically": 11,
+    "functions": 3857,
+    "functions_changed": 25,
+    "changed_pct": 0.6482,
+    "regressions_found": 0,
+    "first_cut_functions_changed": 43,
+    "first_cut_regressions": "Sleep(200) -> Sleep(200,0) (ObfuscationFiesta) and sub_1b11c(5,0,\"Zip: empty archive?\") -> +2 arguments (linker64, an internal variadic logger). Both are why the shipped rule rescues only an EMPTY argument list."
+  },
+  "probe_flip": {
+    "probe_still_passes": false,
+    "acceptance_passes": true
+  },
+  "decisions": [
+    "The filed hypothesis ('prototype recovery is inconsistent across call sites of the same internal allocator wrapper') is CORRECT and names the fix. Confirmed by instrumenting only_op_use: 'ONLYUSE reject match=0x1400026b0 slot=2 at op 0x1400026aa CPUI_CBRANCH' -- MSVC's aligned operator new[] overflow guard branches on the size the call also takes.",
+    "Relaxing only_op_use's CBRANCH rejection (tolerating a branch reached only through comparison/boolean ops) was designed and REJECTED on the refutation question: 'mov rcx,[rbx]; test rcx,rcx; je skip; call foo' is structurally identical to the witness and ubiquitous, so the relaxation would fabricate a trailing argument at each one. No local dataflow property separates the two; the callee does.",
+    "The witness cannot be read off a sibling CALL op's inputs: those carry argument VALUES, and at 0x14000252c the recovered argument is the constant 0x28 in the constant space. The storage lives only in the ParamTrial, which is deleted one statement later -- hence the new FuncCallSpecs::final_input_storage record.",
+    "The first cut ('same callee, same arity') was measured and narrowed on the sweep, not on argument: it produced Sleep(200,0) and gave an internal variadic logger two arguments its format string has no conversions for. The shipped rule rescues only a call whose argument list came out EMPTY -- a self-consistent shorter list may be a genuinely shorter call; an empty one at a callee other sites pass arguments to is a recovery failure.",
+    "The direction is asymmetric by construction: ActionActiveParam finalizes each spec as soon as it is fully checked, so a call is reconciled against sites BEFORE it. Making it symmetric means deferring every finalization until every spec is checked, which changes what check_call_double_use sees while scoring -- a change to trial scoring, not to finalization. Recorded in analysis.md as out of scope rather than smuggled in."
+  ]
+}

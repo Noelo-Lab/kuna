@@ -1,0 +1,43 @@
+### kuna decompile PolyMLP.exe 0x1400024a0 --addr  --option calleearity off   (lines mentioning the allocator)
+
+79:  v13 = sub_140008160(0x28);
+127:      v13 = sub_140008160();
+145:      v39 = (char *)sub_140008160(v33);
+435:          v16 = (long long *)sub_140008160(0x28);
+
+### ... --option calleearity on
+
+79:  v13 = sub_140008160(0x28);
+127:      v13 = sub_140008160(v33 + 0x27);
+145:      v39 = (char *)sub_140008160(v33);
+435:          v16 = (long long *)sub_140008160(0x28);
+
+### the changed region, off then on
+
+      sub_140006de0();
+      (*(void *)swi(3))();
+      return;
+    }
+    if (0x1000 <= v33) { // branch-flip
+      if (v33 + 0x27 <= v33)
+        sub_140001140(); // no-return
+      v13 = sub_140008160();
+      v11 = v42;
+      v20 = v44;
+      v16 = v31;
+      v19 = v45;
+      v4 = v46;
+---
+      sub_140006de0();
+      (*(void *)swi(3))();
+      return;
+    }
+    if (0x1000 <= v33) { // branch-flip
+      if (v33 + 0x27 <= v33)
+        sub_140001140(); // no-return
+      v13 = sub_140008160(v33 + 0x27);
+      v11 = v42;
+      v20 = v44;
+      v16 = v31;
+      v19 = v45;
+      v4 = v46;

@@ -270,6 +270,12 @@ pub fn build_input_from_trials(fc: &mut FuncCallSpecs, data: &mut Funcdata) {
         .get_default_code_space()
         .map(|s| s.is_big_endian())
         .unwrap_or(false);
+    // (kuna) `calleearity`: before the argument list is written, reconcile it
+    // with a sibling call to the same callee whose list is already final, so one
+    // callee does not render with two arities in one function.  Inert with the
+    // option off.  See [`crate::p4_calls::kuna_calleearity`].
+    crate::p4_calls::kuna_calleearity::unify_with_sibling_call(fc, data);
+
     let stackoffset = fc.get_stackoffset();
     let num_trials = fc.get_active_input().get_num_trials();
     for i in 0..num_trials {
@@ -334,6 +340,15 @@ pub fn build_input_from_trials(fc: &mut FuncCallSpecs, data: &mut Funcdata) {
         }
     }
     let _ = data.op_set_all_input(op, &newparam);
+    // (kuna) `calleearity`: remember WHERE each recovered argument lived before
+    // the trials are dropped -- `newparam` holds values, not locations.
+    let storage: Vec<(Address, int4)> = (0..fc.get_active_input().get_num_trials())
+        .filter_map(|i| {
+            let t = fc.get_active_input().get_trial(i);
+            t.is_used().then(|| (t.get_address().clone(), t.get_size()))
+        })
+        .collect();
+    fc.set_final_input_storage(storage);
     fc.get_active_input().delete_unused_trials();
 }
 

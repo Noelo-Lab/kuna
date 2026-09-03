@@ -476,7 +476,13 @@ const PIN_FAILLOG_DIFF_CEILING: [f64; 3] = [0.09, 0.12, 0.15];
 // pin is what catches it.  (sub_3320 shrank because the noreturn facts now
 // truncate the flow overrun that used to decode neighbouring functions into
 // it — defect g; the +1 everywhere is the `Kuna v…` banner line.)
-const PIN_FAILLOG_C_LINES: [usize; 3] = [283, 39, 92];
+// sub_2620 283 -> 285 with `calleearity` (DIV-102): the `getpwent()` loop's
+// `sub_34a0()` regains the uid argument its two sibling call sites already pass
+// — kuna's own recovered prototype for that callee is `unsigned long sub_34a0(unsigned long a0)`
+// — and the uid expression `*(unsigned int *)(v7 + 0x10)` hoists into a named
+// local instead of being re-spelled twice inside the guard. Two lines, both
+// earned.
+const PIN_FAILLOG_C_LINES: [usize; 3] = [285, 39, 92];
 // Tokens Java's `getC()` cleaner REWRITES (`IllegalCharCppTransformer`).
 // Phase 3 measured 57/10/24 (whole rendered declarators like
 // `"unsigned long *"` as single `<type>` tokens, received by scripts/exports

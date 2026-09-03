@@ -685,6 +685,17 @@ pub struct ArchContext {
     /// Read by [`check_input_trial_use`](crate::funcdata_callsite::check_input_trial_use)
     /// through [`crate::p4_calls::kuna_callsitestackargs::outside_caller_local_range`].
     pub callsite_stack_args: bool,
+    /// (kuna) score a variadic call's stack arguments as their own `fillinMap`
+    /// resource section (`varargstackargs`).  Read by
+    /// [`ParamListStandard::fillin_map`](crate::fspec::ParamListStandard) through
+    /// [`crate::p4_calls::kuna_varargstackargs::stack_section_split`], via the
+    /// flag `ActionActiveParam` writes onto the call's `ParamActive`.
+    pub vararg_stack_args: bool,
+    /// (kuna) reconcile a call's recovered argument list with a sibling call to
+    /// the same callee (`calleearity`).  Read by
+    /// [`build_input_from_trials`](crate::funcdata_callsite::build_input_from_trials)
+    /// through [`crate::p4_calls::kuna_calleearity::unify_with_sibling_call`].
+    pub callee_arity: bool,
     /// (kuna) completion level for the two upstream partial-range call-overlap
     /// guards (`calloverlap`): `0` = both stay inert (what kuna shipped before the
     /// option), `1` = `Heritage::guardCallOverlappingInput` only, `2` = that plus
@@ -1113,6 +1124,8 @@ impl ArchContext {
             // callsitestackargs is a correctness fix, not an opt-in transform, so the
             // hand-built-fixture seam carries the same default the real path does.
             callsite_stack_args: true,
+            vararg_stack_args: true,     // varargstackargs (DIV-101 default-on)
+            callee_arity: true,          // calleearity (DIV-102 default-on)
             call_overlap: 0,             // calloverlap (0 = both overlap guards inert)
             spill_arg_trial: 0,          // spillargtrial (0 = upstream: every STORE rejects)
             load_guard_range: true,      // loadguardrange (upstream behavior, default-on)

@@ -464,6 +464,15 @@ pub struct Architecture {
     /// (kuna) Recover stack-passed call arguments at call sites with an unlocked
     /// callee prototype (default-on; restores upstream `fspec.cc:5618`).
     pub callsite_stack_args: bool,
+    /// (kuna) Score a variadic call's stack arguments as their own `fillinMap`
+    /// resource section, so the empty register slots the ABI leaves between the
+    /// fixed parameters and the varargs stop deactivating them (option
+    /// `varargstackargs`).  See [`crate::p4_calls::kuna_varargstackargs`].
+    pub vararg_stack_args: bool,
+    /// (kuna) Reconcile a call's recovered argument list with a sibling call to
+    /// the same callee in the same function (option `calleearity`).  See
+    /// [`crate::p4_calls::kuna_calleearity`].
+    pub callee_arity: bool,
     /// (kuna) Completion level for the two upstream partial-range call-overlap
     /// guards `Heritage::guardCallOverlappingInput` and
     /// `Heritage::tryOutputOverlapGuard`, which kuna shipped as comment-only stubs
@@ -1624,6 +1633,8 @@ impl Architecture {
             recover_array_stride: false,
             recover_lowered_switch: false,
             callsite_stack_args: true,
+            vararg_stack_args: true,
+            callee_arity: true,
             call_overlap: 0,
             spill_arg_trial: 0,
             load_guard_range: false, // (kuna) option loadguardrange; reset_defaults sets the shipped default
@@ -1816,6 +1827,8 @@ impl Architecture {
         self.recover_array_stride = true; // (kuna) DIV-3 default-on (GH-8724)
         self.recover_lowered_switch = true; // (kuna) default-on (angr port)
         self.callsite_stack_args = true; // (kuna) default-on: restores upstream fspec.cc:5618 (0/675 ablation)
+        self.vararg_stack_args = true; // (kuna) DIV-101 default-on: a variadic call's stack tail is its own fillinMap section (0/675 ablation)
+        self.callee_arity = true; // (kuna) DIV-102 default-on: one callee, one argument list across its call sites (0/675 ablation)
         self.call_overlap = 0; // (kuna) calloverlap: PLACEHOLDER default (set from measurement)
         self.spill_arg_trial = 0; // (kuna) spillargtrial default-OFF opt-in (diverges from upstream onlyOpUse; the failure mode is a spurious trailing argument, which no gate can see)
         self.load_guard_range = true; // (kuna) DIV-77 default-on: restores upstream Heritage::analyzeNewLoadGuards ValueSet range refinement of indexed-stack LOAD/STORE guards (0/675 ablation); `option loadguardrange off` reverts to whole-space guards with no index bound
@@ -2050,6 +2063,18 @@ impl Architecture {
                 let (val, msg) =
                     crate::p4_calls::kuna_callsitestackargs::OptionCallsiteStackArgs.apply(p1)?;
                 self.callsite_stack_args = val;
+                Ok(msg)
+            }
+            "varargstackargs" => {
+                let (val, msg) =
+                    crate::p4_calls::kuna_varargstackargs::OptionVarargStackArgs.apply(p1)?;
+                self.vararg_stack_args = val;
+                Ok(msg)
+            }
+            "calleearity" => {
+                let (val, msg) =
+                    crate::p4_calls::kuna_calleearity::OptionCalleeArity.apply(p1)?;
+                self.callee_arity = val;
                 Ok(msg)
             }
             "calloverlap" => {
@@ -2883,6 +2908,8 @@ impl Architecture {
         ctx.model_stack_probe_loop = self.model_stack_probe_loop; // GH-8017 stackprobeloop
         ctx.recover_lowered_switch = self.recover_lowered_switch; // loweredswitch
         ctx.callsite_stack_args = self.callsite_stack_args; // callsitestackargs
+        ctx.vararg_stack_args = self.vararg_stack_args; // varargstackargs
+        ctx.callee_arity = self.callee_arity; // calleearity
         ctx.call_overlap = self.call_overlap; // calloverlap
         ctx.spill_arg_trial = self.spill_arg_trial; // spillargtrial
         ctx.load_guard_range = self.load_guard_range; // loadguardrange

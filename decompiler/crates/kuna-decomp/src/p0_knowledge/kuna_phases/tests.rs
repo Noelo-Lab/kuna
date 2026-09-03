@@ -603,6 +603,8 @@ fn option_values_live_value_present_for_41_suppressed_for_90() {
                             | "braceelide"
                             | "warnstyle"
                             | "callsitestackargs"
+                            | "varargstackargs"
+                            | "calleearity"
                             | "calloverlap"
                             | "spillargtrial"
                             | "paramcopyhoist"
@@ -754,6 +756,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // 127 -> 129: +1 for `unmappedentry` and +1 for `entrymainproto` (both P1 rows
     // mid-table, beside `fdeinterior`, so neither moves the tail either); the
     // count is one less than the settable total, since the last row has no comma.
+    // +1 for `varargstackargs` and +1 for `calleearity`; both P4 rows sit
+    // mid-table beside `callsitestackargs`, so the tail does not move either.
     assert_eq!(json.matches("},\n").count(), 130);
 }
 

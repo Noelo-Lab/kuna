@@ -1088,6 +1088,8 @@ impl Action for ActionActiveParam {
         // checker for the spacebase-parameter branch.
         let mut aliascheck = data.build_alias_checker_deferred();
         let manager_rc = data.get_arch().manage.clone();
+        // (kuna) varargstackargs
+        let vararg_stack_args = data.get_arch().vararg_stack_args;
 
         // INDEX-BASED (CORRECTION-7 #3): keep the call specs ON `data.qlst` so
         // each sub-function's input-trial ancestor walk can look up the *other*
@@ -1147,6 +1149,12 @@ impl Action for ActionActiveParam {
                 if fc.get_active_input().needs_final_check() {
                     final_input_check(&mut fc, data);
                 }
+                // (kuna) `varargstackargs`: tell `fillinMap` that this call's
+                // variable arguments live on the stack, so the empty register
+                // slots before them are the ABI's doing and not evidence that
+                // the recovery has run past the argument list.
+                let vararg_split = vararg_stack_args && fc.is_dotdotdot();
+                fc.get_active_input().set_vararg_stack_split(vararg_split);
                 // resolveModel(activeinput) + deriveInputMap(activeinput): resolve
                 // the model and fill in the trial → parameter map.
                 let _ = fc.resolve_and_derive_input_map(&manager_rc);
