@@ -21,9 +21,13 @@ fn specs() -> String {
     repo_root().join("specs").to_string_lossy().into_owned()
 }
 
+/// The `decomp_dbg` built into the SAME cargo profile as this test's `kuna`,
+/// so the case runs under `cargo test` and `cargo test --release` alike.
 fn decomp_dbg() -> String {
-    repo_root()
-        .join("decompiler/target/debug/decomp_dbg")
+    PathBuf::from(env!("CARGO_BIN_EXE_kuna"))
+        .parent()
+        .expect("kuna binary lives in a profile directory")
+        .join("decomp_dbg")
         .to_string_lossy()
         .into_owned()
 }
@@ -192,6 +196,69 @@ fn single_decompile_uses_the_same_strict_selector_rules() {
     assert!(ok, "section-qualified single decompile failed: {stderr}");
     assert!(stdout.contains("duplicate_local"), "{stdout}");
     assert!(stdout.contains("return 2;"), "{stdout}");
+}
+
+/// The candidate list must survive the DEFAULT mode, which is how the command is
+/// actually typed. The text surface falls back to dumping the console transcript
+/// capped at its first 2000 characters; under the default option preset that cap
+/// lands inside the `option ...` preamble, so a selector answer that is not
+/// recognized by name never reaches the user at all.
+#[test]
+fn an_ambiguous_name_is_answered_in_the_default_mode_too() {
+    let binary = fixture();
+    let sleigh = specs();
+    let console = decomp_dbg();
+    assert!(
+        PathBuf::from(&console).is_file(),
+        "workspace gate did not build decomp_dbg"
+    );
+
+    let (stdout, stderr, ok) = run(&[
+        "decompile",
+        &binary,
+        "duplicate_local",
+        "--sleighpath",
+        &sleigh,
+        "--decomp-dbg",
+        &console,
+    ]);
+    if !ok && specs_missing(&stderr) {
+        eprintln!("entry_selectors: skipping (no built x86-64.sla): {stderr}");
+        return;
+    }
+    assert!(!ok, "ambiguous name succeeded: {stdout}");
+    assert!(stderr.contains("ambiguous"), "{stderr}");
+    assert!(stderr.contains(".text.selector_a+0x0"), "{stderr}");
+    assert!(stderr.contains(".text.selector_b+0x0"), "{stderr}");
+    assert!(!stderr.contains("[decomp]>"), "transcript dumped instead: {stderr}");
+}
+
+/// `xrefs` resolves names through the same model: an ambiguous one must be
+/// reported, never silently answered for whichever entry the symbol table holds
+/// first.
+#[test]
+fn xrefs_reports_an_ambiguous_name_rather_than_guessing() {
+    let binary = fixture();
+    let sleigh = specs();
+
+    let (stdout, stderr, ok) = run(&[
+        "xrefs",
+        &binary,
+        "--to",
+        "duplicate_local",
+        "--sleighpath",
+        &sleigh,
+        "--mode",
+        "reliable",
+    ]);
+    if !ok && specs_missing(&stderr) {
+        eprintln!("entry_selectors: skipping (no built x86-64.sla): {stderr}");
+        return;
+    }
+    assert!(!ok, "ambiguous xrefs target succeeded: {stdout}");
+    assert!(stderr.contains("ambiguous"), "{stderr}");
+    assert!(stderr.contains(".text.selector_a+0x0"), "{stderr}");
+    assert!(stderr.contains(".text.selector_b+0x0"), "{stderr}");
 }
 
 #[test]

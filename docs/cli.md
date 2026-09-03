@@ -43,6 +43,23 @@ interactive prompts never pollute the output. `--option NAME VALUE` (repeatable)
 `--kassert "<args>"` flip phase-model sub-phase assertions per run; `--mode
 auto|reliable|aggressive|fast` applies an option preset (`docs/modes.md`).
 
+**Paths containing spaces work (DIV-100).** This is the one surface that reaches the engine
+through a console *script* rather than an in-process call, and the console reads a
+filename with `s >> filename` — whitespace-delimited. An unquoted path with a space
+therefore split into two arguments: `load file` took the head as a BFD target and
+loaded the tail, and `openfile write` truncated the redirect at the split, writing
+the C to a file named after the first component. The CLI now quotes a path that
+needs it, and the console's `read_filename` accepts a double-quoted argument
+(`\"` and `\\` are escapes inside quotes; any other backslash is literal, so a
+Windows path survives either spelling). Unquoted paths parse exactly as before.
+Hand-written console scripts and interactive `decomp_dbg` sessions get the same
+grammar — quote the path when it contains a space:
+
+```
+load file "/home/u/test dir/a.out"
+openfile write "/tmp/out dir/main.c"
+```
+
 **`--language auto|c|rust`** selects the output language. **`auto` is the
 default and follows the binary**: a Rust binary renders as Rust, because kuna
 already detects one (`kuna-analysis`'s `sourcelang` pass, the port of Ghidra's
@@ -249,6 +266,128 @@ Behaviors specific to `decompile-all`:
 The decbench backend (`decbench/decompilers/raw/kuna_raw.py`) shells out to
 `kuna decompile-all --json`.
 
+## `kuna xrefs` — cross-references
+
+```bash
+kuna xrefs ./a.out --to authenticate            # who references this?
+kuna xrefs ./a.out --to 0x1030 --json           # by address, machine-readable
+kuna xrefs ./a.out --from main                  # what does this reference?
+kuna xrefs ./a.out --from main --kind call      # call sites only
+```
+
+The navigation query: `--to` returns everything that references the target — call
+sites, branches, and data references — and `--from` returns what the target
+references: its callees, the functions it tail-jumps to, and the data it touches.
+The two directions and the per-row `kind` mirror the DecLib CLI's
+`xref_to`/`xref_from`, so an agent that knows one knows this.
+
+The target is a **symbol name or an address** (`0x`-prefixed, or bare hex). A name
+is always resolved as a symbol first, so a function really called `abc` is not
+silently read as `0xabc`. Function names, the `s_<addr>` string symbols the
+`strings` pass installs, and named data globals all resolve — which is what makes
+the string-to-its-users hop work: `kuna xrefs ./a.out --to s_400915`. A function
+name that identifies several entries — two same-named locals in a relocatable
+object — is reported as ambiguous with every candidate, never answered for
+whichever one the symbol table holds first.
+
+| `kind` | What it is |
+|---|---|
+| `call` | A direct CALL to the target (a call site). |
+| `jump` | A direct branch to it: a tail call, a PLT thunk. Intra-function branches are control flow, not references, and are omitted from `--from`. |
+| `data` | The target's address is materialized as a value — address-taken: a function pointer, a string pointer, a global's address. |
+| `read` | The target is loaded from. |
+| `write` | The target is stored to. |
+
+Flags: `--json`, `--kind call,jump,data,read,write` (repeatable-by-comma filter),
+plus the shared `--mode`, `--option N V`, `--slice`, `--target`, `--sleighpath`.
+
+`--json` emits
+
+```json
+{"binary": "...", "direction": "to", "count": N,
+ "target": {"name","address","address_hex"},
+ "xrefs": [{"address","address_hex","kind",
+            "from_address","from_address_hex","to_address","to_address_hex",
+            "from_function": {"name","address","address_hex"},
+            "to_function":   {"name","address","address_hex"},
+            "instruction": "CALL 0x1030"}]}
+```
+
+Both ends of every edge are always spelled out, so a consumer never has to infer
+which one `address` meant; `address` itself is the end the query did not already
+name (the referencing site for `--to`, the referenced location for `--from`).
+`from_function` / `to_function` are `null` when nothing owns that address — a
+`.rodata` string has no containing function. Without `--json` the output is a `#`
+header line naming the query followed by one tab-separated row per reference.
+
+```
+# 1 reference to __cxa_finalize @ 0x1030
+0x1102	call	_FINI_0+0x22	CALL 0x1030
+```
+
+This is a query, not an engine change: it loads the binary once through the same
+in-process seam `decompile-all` uses (`bootstrap_from_object` →
+`commit_pending_analysis`), then reads the references out of the p-code the SLEIGH
+lifter already emits for every discovered function
+(`kuna-analysis/src/listing/xrefs.rs`). It commits nothing into the engine and
+changes no emitted C. Function discovery is the `kuna functions` inventory, which
+the walk then extends by following the call graph out of it, so a callee the
+inventory missed is still covered.
+
+A target nothing references is exit `0` with `count: 0` — an answer, not a
+failure. A name that resolves to nothing is exit `1` with the reason on stderr; a
+malformed command line is exit `2` with the usage block.
+
+## `kuna unpack` — statically unpack a UPX-packed executable
+
+```bash
+kuna unpack ./packed                                   # writes ./packed.unpacked
+kuna unpack ./packed -o snake.bin --json
+```
+
+The first move on a packed binary, and the only one that helps: every other kuna
+surface is honestly useless on one. A UPX-packed file contains a loader stub and a
+compressed blob, so `kuna functions` finds nothing, and decompiling the entry point
+gives you the decompressor. `kuna unpack` reconstructs the original image so the rest
+of the CLI has a program to work on — on the witness that filed this gap, `kuna
+functions` goes from `count: 0` to 70, `main` included.
+
+It runs **in-process**, with no external tooling: `upx -d` cannot be assumed present
+wherever a release `kuna` runs, and handing a hostile binary to a packer to look at it
+is not a thing an analyzer should do. The UCL NRV2B / NRV2D / NRV2E decompressors and
+the branch-target filters are reimplemented in `kuna-analysis/src/upx/`.
+
+Default output is `<binary>.unpacked`, overwritten if it exists (the name is
+unambiguously this command's own artifact, and a command that fails its second
+invocation is worse than one that rewrites its own output). `--json` emits
+`{binary,output,packer,loader_version,format,format_name,method,method_name,level,
+filter,filter_hex,pack_header_offset,pack_header_offset_hex,packed_size,
+compressed_size,unpacked_size,count,blocks:[{offset,offset_hex,u_len,c_len,method,
+method_name,filter,filter_hex,stored}]}`, where `count` is the number of compressed
+blocks consumed.
+
+**Coverage, and the failure contract.** Implemented: the ELF formats, methods 2–10
+(NRV2B/NRV2D/NRV2E in their `_LE32`, `_LE16` and `_8` bit layouts) and the x86
+`cto`/`ctoj`/`ctok` and ARM/AArch64 branch filters. Everything else — LZMA (method
+14), the non-ELF targets, a packed shared library, the pre-12 loader block layout, the
+`ctojr`/PowerPC/RISC-V/delta filters — exits `1` with the thing it cannot do **named**,
+and writes no file:
+
+```text
+error: ./x: unsupported UPX image: compression method 14 (LZMA)
+error: ./x: unsupported UPX image: unimplemented UPX filter 0x80 (ctojr32: …)
+error: ./x: no UPX PackHeader found
+```
+
+That asymmetry is deliberate. A wrong unpacked binary is far more expensive than no
+output at all: an unreversed filter leaves every call target in the file pointing
+somewhere wrong while every size still adds up, the ELF still parses, and a reader has
+no way to tell. So a run either produces the original file or refuses. Success is not
+assumed from "it decoded" either — the walk requires the block stream to end on the
+`UPX!` marker adjacent to the PackHeader, to total exactly the original file size, and
+to reproduce **both** of the packer's own Adler-32 checksums (a flipped literal byte
+decodes to a wrong image of exactly the right length; only the checksum catches it).
+
 ## `kuna decompile-project` — recompile-oriented project export
 
 ```bash
@@ -298,6 +437,35 @@ binary and attempt recompilation:
 The artifact format is purely additive and has no exporter-specific transform
 (spec §9.7); the set of emitted definitions follows the selected P1 discovery
 options, including `fast_funcdisc`.
+
+## `kuna docs` — the manual, inside the binary
+
+```bash
+kuna docs                 # the topics, one per line, with a one-line summary
+kuna docs cli             # print one of them
+kuna docs --json          # [{topic, title, summary, bytes}]
+kuna docs --all           # everything, concatenated, for piping into a context window
+```
+
+Every document is embedded at compile time with `include_str!`, so a release binary carries
+its own manual and needs no checkout, no network and no `--sleighpath`. That is the point:
+an agent handed only the binary can still discover the option catalog and the JSON schemas
+it needs to drive it.
+
+| Topic | Source | Why an agent wants it |
+|---|---|---|
+| `cli` | `docs/cli.md` | every subcommand, flag, exit code and JSON schema |
+| `options` | `docs/options.md` | the generated option catalog with the symptom index — bad output → the flip that fixes it |
+| `agents` | `docs/agents.md` | the repo rulebook and the doc map |
+| `phases` | `docs/phases.md` | the P0–P9 model, for reasoning about *which* decision to flip |
+| `modes` | `docs/modes.md` | the `--mode` presets and the size thresholds `auto` selects on |
+
+`docs/options.md` is generated (`kuna catalog --markdown > docs/options.md`) and dominates
+the embedded bytes at ~281 KB. A test asserts the embedded copy is byte-identical to the file
+on disk, so a rebuild cannot ship a stale catalog — the same hazard
+`kuna-decomp/tests/options_md_fresh.rs` guards for the file itself.
+
+Exit codes: `0` ok, `2` unknown topic (the message lists the valid ones).
 
 ## `kuna catalog` — option discovery (the LLM control API)
 

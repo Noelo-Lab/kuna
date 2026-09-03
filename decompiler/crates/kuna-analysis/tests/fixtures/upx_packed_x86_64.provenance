@@ -1,0 +1,27 @@
+upx_packed_x86_64 -- the UPX-packed fixture for `kuna unpack` / `kuna_analysis::upx`.
+
+What it is
+  An x86-64 PIE ncurses "snake" game packed with UPX 3.96 (the banner string is
+  in the file). 11,364 bytes packed; 31,640 bytes unpacked. Its trailing UPX!
+  PackHeader is at 0x2c40 and reads version=13, format=22 (linux/amd64 ELF64),
+  method=2 (NRV2B_LE32), level=8, filter=0x49 (ctok32_e8e9_bswap_le).
+
+  Nine compressed blocks: four PT_LOAD extents (one of them filtered) and four
+  "gap" extents, with the loader stub at 0x1958..0x22a8 between them. It is the
+  smallest input that exercises every part of the unpacker at once -- multi-block
+  extents, a filtered code segment, the loader skip, and the gap walk.
+
+Why it is vendored rather than built
+  `upx` is not a build dependency of this repo and is not installed on CI, so a
+  packed fixture cannot be produced at build time. Vendoring the witness binary
+  is what keeps the cargo test and the promoted regression probe runnable with no
+  dataset and no external tool.
+
+Where it came from
+  The RE-friction loop's round-20 witness: challenge 64f1f7afd931496abf909525 in
+  the kuna-re-dataset crackme corpus, `bin/snake`, byte-identical. That is the
+  binary on which a tester found `kuna functions` returning zero functions and
+  filed docs/re-needs/unpack-upx-packed-executable.md.
+
+  sha256(packed)   see `sha256sum upx_packed_x86_64`
+  It is a third-party CTF-style crackme, included unmodified as test data only.

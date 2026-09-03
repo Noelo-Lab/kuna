@@ -391,8 +391,12 @@ impl ConsoleProgram {
     /// make a name that used to select a function stop working, so the filter
     /// searches the alias set too — this is what preserves the decbench
     /// name-narrowing the old `(name, offset)` dedup was keeping duplicate records
-    /// for.  Shared by both front-ends so the two `resolve_targets` copies cannot
-    /// drift apart on it.
+    /// for.
+    ///
+    /// `None` also when the name identifies SEVERAL entries: a caller that can
+    /// only answer yes-or-no must not silently pick one of them. A caller that
+    /// can report the ambiguity asks [`Self::resolve_entry`] instead, which
+    /// names every candidate.
     pub fn find_entry_by_name(&self, want: &str) -> Option<FunctionEntry> {
         // (kuna `symbolnamebound`) The enumeration reports the bounded spelling,
         // so bound the query too -- a caller holding the binary's ORIGINAL name
@@ -438,6 +442,11 @@ impl ConsoleProgram {
     ) -> Result<FunctionEntry, EntryLookupError> {
         match selector {
             EntrySelector::Name(want) => {
+                // (kuna `symbolnamebound`) The enumeration reports the bounded
+                // spelling, so bound the query too -- a caller holding the
+                // binary's ORIGINAL name must still resolve. Idempotent, so the
+                // bounded spelling resolves as well.
+                let want = &*kuna_decomp::kuna_symbolnamebound::bound_scope_path(want, "::");
                 let candidates: Vec<FunctionEntry> = self
                     .function_entries_canonical()
                     .into_iter()

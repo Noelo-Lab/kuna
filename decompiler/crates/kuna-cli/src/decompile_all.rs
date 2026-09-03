@@ -43,6 +43,17 @@
 //! non-x86-64 `funcstart_patterns` + `aif` defaults (DIV-20) and the Listing that
 //! gates them are injected for `functions` exactly as for `decompile-all`, so the
 //! inventory can never omit an entry the whole-binary run decompiles.
+//!
+//! An unfiltered run that discovers ZERO functions **fails** — non-zero exit, the
+//! reason on stderr and in the document's run-level `error` field — because a
+//! silent `count: 0` is indistinguishable from a file that genuinely has no
+//! functions, and the caller acts on the difference. [`zero_discovery_error`]
+//! draws the line at executable content, so a data-only object still answers
+//! with an honest empty inventory and exit 0.
+//!
+//! [`render_result_json`] and [`decompile_entries`] are also `kuna decompile
+//! --json`'s (`decompile.rs`) — one schema and one decompile policy across the
+//! single-function and whole-binary surfaces.
 
 use kuna_console::engine::{
     bootstrap_from_object, ConsoleProgram, EntryLookupError, EntrySelector, FunctionEntry,
@@ -55,7 +66,9 @@ use std::fmt::Write as _;
 use kuna_console::project::{
     decompile_targets, default_fn_budget_seconds, render_c, FuncResult,
 };
-use object::Object; // `File::architecture()` (ARM-discovery default, decbench)
+// `File::architecture()` (the ARM-discovery default, decbench) plus the
+// section/segment walks the zero-discovery diagnosis reads.
+use object::{Object, ObjectSection, ObjectSegment};
 use kuna_decomp::decompile_drive::{LineMapping, VarInfo};
 use kuna_decomp::options::{OptionDatabase, KUNA_OPTION_NAMES, RELOC_OBJECTS_ENV};
 
@@ -100,30 +113,36 @@ pub fn run(argv: &[String]) -> i32 {
     };
     match decompile_all(&args) {
         Ok(funcs) => {
-            if args.json {
-                let language = args
-                    .options
-                    .iter()
-                    .rev()
-                    .find(|(n, _)| n == "setlanguage")
-                    .map(|(_, v)| v.as_str())
-                    .unwrap_or("c-language");
-                crate::output::emit_with_status(
-                    &format!(
-                        "{}\n",
-                        dumps_indent2(&result_json(&args.binary, &funcs, language))
-                    ),
-                    0,
-                )
+            // An UNFILTERED run that produced nothing discovered nothing, which
+            // is a failed run wearing a successful one's clothes. A run narrowed
+            // by `--functions`/`--addr` that matched nothing is a different
+            // condition (already warned about, per target) and keeps its status.
+            let unfiltered = args.names.is_none() && args.addrs.is_empty();
+            let discovery_error = (funcs.is_empty() && unfiltered)
+                .then(|| zero_discovery_error(&args.binary))
+                .flatten();
+            let text = if args.json {
+                render_result_json(&args.binary, &funcs, &args.options, discovery_error.as_deref())
             } else {
-                crate::output::emit_with_status(&render_c(&funcs), 0)
-            }
+                render_c(&funcs)
+            };
+            emit_with_discovery_error(&text, discovery_error.as_deref())
         }
         Err(e) => {
             eprintln!("error: {e}");
             1
         }
     }
+}
+
+/// Emit `text`, then report a discovery failure (stdout before stderr, as
+/// `kuna decompile` orders them) and answer with the run's verdict.
+fn emit_with_discovery_error(text: &str, discovery_error: Option<&str>) -> i32 {
+    let status = crate::output::emit_with_status(text, i32::from(discovery_error.is_some()));
+    if let Some(message) = discovery_error {
+        eprintln!("error: {message}");
+    }
+    status
 }
 
 /// `kuna functions` entry point (enumeration only — no decompile).
@@ -138,34 +157,14 @@ pub fn run_functions(argv: &[String]) -> i32 {
     };
     match list_functions(&args) {
         Ok(entries) => {
-            if args.json {
-                let arr = Json::Array(
-                    entries
-                        .iter()
-                        .map(|e| {
-                            let a = e.addr.get_offset();
-                            Json::Object(vec![
-                                ("name".into(), Json::Str(e.name.clone())),
-                                ("address".into(), Json::Number(a.to_string())),
-                                ("address_hex".into(), Json::Str(format!("0x{a:x}"))),
-                                ("aliases".into(), aliases_json(&e.aliases)),
-                                (
-                                    "object_location".into(),
-                                    object_location_json(e.object_location.as_ref()),
-                                ),
-                                ("size".into(), Json::Number(e.size.to_string())),
-                            ])
-                        })
-                        .collect(),
-                );
-                crate::output::emit_with_status(
-                    &format!("{}\n", dumps_indent2(&Json::Object(vec![
-                        ("binary".into(), Json::Str(args.binary.clone())),
-                        ("count".into(), Json::Number(entries.len().to_string())),
-                        ("functions".into(), arr),
-                    ]))),
-                    0,
-                )
+            // `functions` takes no selection filter, so an empty inventory IS a
+            // total discovery failure.
+            let discovery_error = entries
+                .is_empty()
+                .then(|| zero_discovery_error(&args.binary))
+                .flatten();
+            let text = if args.json {
+                functions_json(&args.binary, &entries, discovery_error.as_deref())
             } else {
                 let mut text = String::new();
                 for e in &entries {
@@ -178,8 +177,9 @@ pub fn run_functions(argv: &[String]) -> i32 {
                     };
                     let _ = writeln!(text, "0x{:x}\t{}{extra}", e.addr.get_offset(), e.name);
                 }
-                crate::output::emit_with_status(&text, 0)
-            }
+                text
+            };
+            emit_with_discovery_error(&text, discovery_error.as_deref())
         }
         Err(e) => {
             eprintln!("error: {e}");
@@ -192,24 +192,35 @@ pub fn run_functions(argv: &[String]) -> i32 {
 fn decompile_all(args: &Args) -> Result<Vec<FuncResult>, String> {
     let mut prog = load_program(args, DriverDefaults::Decompile)?;
     let targets = resolve_targets(&prog, args)?;
+    Ok(decompile_entries(&mut prog, args, targets))
+}
 
-    // Per-function watchdog (`--max-fn-seconds`, default 10 for an unfiltered
-    // fast batch and 120 otherwise, 0 disables): driver policy, not a
-    // stage-model option — the decompile drive arms a cooperative deadline
-    // from this budget for EACH function, so one pathological function becomes
-    // a per-function `error` record instead of hanging the whole batch.
+/// Arm the per-function watchdog and run the decompile loop over `targets` — the
+/// body `decompile-all` and `kuna decompile --json` share, so the two answer with
+/// one policy as well as one schema.
+///
+/// The watchdog (`--max-fn-seconds`, default 10 for an unfiltered fast batch and
+/// 120 otherwise, 0 disables) is driver policy, not a stage-model option: the
+/// decompile drive arms a cooperative deadline from this budget for EACH
+/// function, so one pathological function becomes a per-function `error` record
+/// instead of hanging the whole batch.
+pub(crate) fn decompile_entries(
+    prog: &mut ConsoleProgram,
+    args: &Args,
+    targets: Vec<FunctionEntry>,
+) -> Vec<FuncResult> {
     if args.max_fn_seconds > 0 {
         prog.arch_mut().kuna_fn_budget =
             Some(std::time::Duration::from_secs(args.max_fn_seconds));
     }
 
-    Ok(decompile_targets(
-        &mut prog,
+    decompile_targets(
+        prog,
         targets,
         args.no_vars,
         /* want_proto= */ false,
         /* want_provenance= */ args.json,
-    ))
+    )
 }
 
 /// Enumerate the program's full callable-symbol inventory, one
@@ -697,10 +708,147 @@ fn spec_roots(sleighpath: Option<&str>) -> Vec<String> {
     roots
 }
 
+// --- discovery-failure diagnosis --------------------------------------------
+
+/// Why a run that discovered ZERO functions failed, or `None` when an empty
+/// inventory is the honest answer for this image.
+///
+/// A total discovery failure used to be reported in a successful run's voice —
+/// `count: 0`, exit 0, silent stderr — which an agent cannot tell apart from
+/// "this file genuinely has no functions". The distinction this makes is
+/// EXECUTABLE CONTENT: a data-only relocatable object or a resource-only PE has
+/// no functions to find, and failing those would turn a correct answer into an
+/// error. An image that does carry code and yielded nothing is a failed run, and
+/// the message names the cause it can prove, because a packed image is the one
+/// an agent can act on.
+pub(crate) fn zero_discovery_error(binary: &str) -> Option<String> {
+    let bytes = std::fs::read(binary).unwrap_or_default();
+    if !bytes.is_empty() && !image_has_executable_content(&bytes) {
+        return None;
+    }
+    Some(match detect_packer(&bytes) {
+        Some(packer) => format!(
+            "no functions discovered in {binary}: image appears {packer}-packed; \
+             try `kuna unpack`"
+        ),
+        None => format!("no functions discovered in {binary}"),
+    })
+}
+
+/// The packer whose signature `bytes` carries.
+///
+/// UPX is the one that matters: it is what `kuna unpack` targets, and every UPX
+/// build stamps the `UPX!` magic into its stub and into each packed block
+/// header, so a whole-image search is both cheap (this runs only once a run has
+/// already failed) and precise enough to name in a diagnostic.
+fn detect_packer(bytes: &[u8]) -> Option<&'static str> {
+    bytes.windows(4).any(|w| w == b"UPX!").then_some("UPX")
+}
+
+/// Does this image carry executable content at all?
+///
+/// Section flags first (the per-format executable test `kuna-analysis`'s entry
+/// analyzers use), then the ELF program headers — a section-header-stripped PIE
+/// has no section table at all, and the program header is what the loader obeys.
+/// An image `object` cannot parse (a raw blob, a `<binaryimage>` document)
+/// answers `true`: nothing there clears the run, so it stays a failure.
+fn image_has_executable_content(bytes: &[u8]) -> bool {
+    // ELF section header flag SHF_EXECINSTR; the Mach-O instruction attributes.
+    const SHF_EXECINSTR: u64 = 0x4;
+    const S_ATTR_PURE_INSTRUCTIONS: u32 = 0x8000_0000;
+    const S_ATTR_SOME_INSTRUCTIONS: u32 = 0x0000_0400;
+    // ELF program header flag PF_X.
+    const PF_X: u32 = 0x1;
+
+    let Ok(file) = object::File::parse(bytes) else {
+        return true;
+    };
+    let executable_section = file.sections().any(|sec| {
+        sec.size() != 0
+            && match sec.flags() {
+                object::SectionFlags::Elf { sh_flags } => sh_flags & SHF_EXECINSTR != 0,
+                object::SectionFlags::Coff { characteristics } => {
+                    characteristics & object::pe::IMAGE_SCN_MEM_EXECUTE != 0
+                }
+                object::SectionFlags::MachO { flags } => {
+                    flags & (S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS) != 0
+                        || sec.kind() == object::SectionKind::Text
+                }
+                _ => sec.kind() == object::SectionKind::Text,
+            }
+    });
+    executable_section
+        || file.segments().any(|seg| {
+            seg.size() != 0
+                && matches!(
+                    seg.flags(),
+                    object::SegmentFlags::Elf { p_flags } if p_flags & PF_X != 0
+                )
+        })
+}
+
 // --- output rendering --------------------------------------------------------
 
+/// Render the `--json` document for a decompile run.
+///
+/// `kuna decompile --json` renders through here too (its `functions` array holds
+/// the one function it was asked for), so the single-function and whole-binary
+/// surfaces cannot drift into two shapes for one record.
+pub(crate) fn render_result_json(
+    binary: &str,
+    funcs: &[FuncResult],
+    options: &[(String, String)],
+    error: Option<&str>,
+) -> String {
+    let language = last_option_value(options, "setlanguage").unwrap_or("c-language");
+    format!("{}\n", dumps_indent2(&result_json(binary, funcs, language, error)))
+}
+
+/// The `functions --json` document.
+fn functions_json(binary: &str, entries: &[FunctionEntry], error: Option<&str>) -> String {
+    let arr = Json::Array(
+        entries
+            .iter()
+            .map(|e| {
+                let a = e.addr.get_offset();
+                Json::Object(vec![
+                    ("name".into(), Json::Str(e.name.clone())),
+                    ("address".into(), Json::Number(a.to_string())),
+                    ("address_hex".into(), Json::Str(format!("0x{a:x}"))),
+                    ("aliases".into(), aliases_json(&e.aliases)),
+                    (
+                        "object_location".into(),
+                        object_location_json(e.object_location.as_ref()),
+                    ),
+                    ("size".into(), Json::Number(e.size.to_string())),
+                ])
+            })
+            .collect(),
+    );
+    format!(
+        "{}\n",
+        dumps_indent2(&Json::Object(vec![
+            ("binary".into(), Json::Str(binary.to_string())),
+            ("count".into(), Json::Number(entries.len().to_string())),
+            ("error".into(), error_json(error)),
+            ("functions".into(), arr),
+        ]))
+    )
+}
+
+/// The run-level `error` field. Always present (`null` on a healthy run) so a
+/// consumer can read it unconditionally, exactly as [`aliases_json`] is.
+fn error_json(error: Option<&str>) -> Json {
+    error.map(|e| Json::Str(e.to_string())).unwrap_or(Json::Null)
+}
+
 /// Build the `decompile-all --json` document.
-fn result_json(binary: &str, funcs: &[FuncResult], language: &str) -> Json {
+fn result_json(
+    binary: &str,
+    funcs: &[FuncResult],
+    language: &str,
+    error: Option<&str>,
+) -> Json {
     let functions = Json::Array(
         funcs
             .iter()
@@ -739,6 +887,11 @@ fn result_json(binary: &str, funcs: &[FuncResult], language: &str) -> Json {
         // consumer cannot tell a Rust body from a C one without guessing.
         ("language".into(), Json::Str(language.to_string())),
         ("count".into(), Json::Number(funcs.len().to_string())),
+        // The RUN-level error channel, set exactly when the command exits
+        // non-zero (a total discovery failure here; the aborted function on
+        // `kuna decompile --json`). A single function that failed inside a
+        // whole-binary run is that record's own `error`, not this one.
+        ("error".into(), error_json(error)),
         ("functions".into(), functions),
     ])
 }
@@ -857,7 +1010,7 @@ mod provenance_json_tests {
             object_location: None,
         };
 
-        let rendered = dumps_indent2(&result_json("fixture", &[function], "c-language"));
+        let rendered = dumps_indent2(&result_json("fixture", &[function], "c-language", None));
         assert!(rendered.contains("\"address\": 4198400"));
         assert!(rendered.contains("\"code\": \"int f(int x)\\n{\\n  return x;\\n}\""));
         assert!(rendered.contains("\"line_mappings\": ["));
@@ -1099,7 +1252,9 @@ fn usage_decompile_all() {
          for unfiltered fast runs, 120 otherwise; 0 disables); a function over\n\
          budget becomes its own `error` record and the batch continues.\n\
          Omitted --mode uses auto: aggressive below 500 KiB, reliable below\n\
-         2 MiB, and fast at 2 MiB or larger. Explicit --option values win."
+         2 MiB, and fast at 2 MiB or larger. Explicit --option values win.\n\
+         An unfiltered run that discovers no function at all exits 1 with the\n\
+         reason on stderr and in the document's run-level `error` field."
     );
 }
 
@@ -1111,8 +1266,186 @@ fn usage_functions() {
          --json: {{binary,count,functions:[{{name,address}}]}}).\n\
          Shares decompile-all's discovery policy, so the inventory always contains\n\
          every function a whole-binary run would decompile; on a non-x86-64 binary\n\
-         that means a full prologue-pattern + gap-walk discovery pass."
+         that means a full prologue-pattern + gap-walk discovery pass.\n\
+         Discovering no function at all exits 1 with the reason on stderr and in\n\
+         the document's `error` field (a packed image is named as such)."
     );
+}
+
+#[cfg(test)]
+mod discovery_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static TEMP_ID: AtomicU64 = AtomicU64::new(0);
+
+    /// A minimal ELF64 executable: one `PF_X` `PT_LOAD` and NO section table —
+    /// the section-header-stripped PIE shape of the witness binary, where the
+    /// program header is the only evidence the image holds code.
+    fn stripped_executable(payload: &[u8]) -> Vec<u8> {
+        const EHDR: usize = 64;
+        const PHDR: usize = 56;
+        let mut out = vec![0u8; EHDR + PHDR + payload.len()];
+        out[..4].copy_from_slice(b"\x7fELF");
+        out[4] = 2; // ELFCLASS64
+        out[5] = 1; // ELFDATA2LSB
+        out[6] = 1; // EV_CURRENT
+        out[16..18].copy_from_slice(&2u16.to_le_bytes()); // e_type = ET_EXEC
+        out[18..20].copy_from_slice(&62u16.to_le_bytes()); // e_machine = EM_X86_64
+        out[20..24].copy_from_slice(&1u32.to_le_bytes()); // e_version
+        out[32..40].copy_from_slice(&(EHDR as u64).to_le_bytes()); // e_phoff
+        out[52..54].copy_from_slice(&(EHDR as u16).to_le_bytes()); // e_ehsize
+        out[54..56].copy_from_slice(&(PHDR as u16).to_le_bytes()); // e_phentsize
+        out[56..58].copy_from_slice(&1u16.to_le_bytes()); // e_phnum
+        let total = (EHDR + PHDR + payload.len()) as u64;
+        let p = EHDR;
+        out[p..p + 4].copy_from_slice(&1u32.to_le_bytes()); // p_type = PT_LOAD
+        out[p + 4..p + 8].copy_from_slice(&5u32.to_le_bytes()); // p_flags = PF_R|PF_X
+        out[p + 16..p + 24].copy_from_slice(&0x40_0000u64.to_le_bytes()); // p_vaddr
+        out[p + 32..p + 40].copy_from_slice(&total.to_le_bytes()); // p_filesz
+        out[p + 40..p + 48].copy_from_slice(&total.to_le_bytes()); // p_memsz
+        out[p + 48..p + 56].copy_from_slice(&0x1000u64.to_le_bytes()); // p_align
+        out[EHDR + PHDR..].copy_from_slice(payload);
+        out
+    }
+
+    /// A minimal ET_REL ELF64 whose only allocated section is `.data` — an
+    /// object file that legitimately holds no functions at all.
+    fn data_only_object() -> Vec<u8> {
+        const EHDR: usize = 64;
+        const SHDR: usize = 64;
+        let names: &[u8] = b"\0.data\0.shstrtab\0";
+        let shoff = EHDR;
+        let names_off = shoff + 3 * SHDR;
+        let data_off = names_off + names.len();
+        let mut out = vec![0u8; data_off + 4];
+        out[..4].copy_from_slice(b"\x7fELF");
+        out[4] = 2;
+        out[5] = 1;
+        out[6] = 1;
+        out[16..18].copy_from_slice(&1u16.to_le_bytes()); // e_type = ET_REL
+        out[18..20].copy_from_slice(&62u16.to_le_bytes());
+        out[20..24].copy_from_slice(&1u32.to_le_bytes());
+        out[40..48].copy_from_slice(&(shoff as u64).to_le_bytes()); // e_shoff
+        out[52..54].copy_from_slice(&(EHDR as u16).to_le_bytes());
+        out[58..60].copy_from_slice(&(SHDR as u16).to_le_bytes()); // e_shentsize
+        out[60..62].copy_from_slice(&3u16.to_le_bytes()); // e_shnum
+        out[62..64].copy_from_slice(&2u16.to_le_bytes()); // e_shstrndx
+        out[names_off..data_off].copy_from_slice(names);
+
+        fn shdr(out: &mut [u8], at: usize, name: u32, kind: u32, flags: u64, off: u64, size: u64) {
+            out[at..at + 4].copy_from_slice(&name.to_le_bytes());
+            out[at + 4..at + 8].copy_from_slice(&kind.to_le_bytes());
+            out[at + 8..at + 16].copy_from_slice(&flags.to_le_bytes());
+            out[at + 24..at + 32].copy_from_slice(&off.to_le_bytes());
+            out[at + 32..at + 40].copy_from_slice(&size.to_le_bytes());
+        }
+        // `.data`: SHT_PROGBITS, SHF_ALLOC|SHF_WRITE — allocated, never executed.
+        shdr(&mut out, shoff + SHDR, 1, 1, 0x3, data_off as u64, 4);
+        shdr(&mut out, shoff + 2 * SHDR, 7, 3, 0, names_off as u64, names.len() as u64);
+        out
+    }
+
+    fn temp_image(tag: &str, bytes: &[u8]) -> std::path::PathBuf {
+        let id = TEMP_ID.fetch_add(1, Ordering::Relaxed);
+        let path = std::env::temp_dir().join(format!(
+            "kuna-discovery-{tag}-{}-{id}.bin",
+            std::process::id()
+        ));
+        std::fs::write(&path, bytes).expect("write the discovery fixture");
+        path
+    }
+
+    #[test]
+    fn the_upx_magic_is_recognized_and_nothing_else_is() {
+        assert_eq!(detect_packer(b"....UPX!....."), Some("UPX"));
+        assert_eq!(detect_packer(b"UPX!"), Some("UPX"));
+        assert_eq!(detect_packer(b"a plain unpacked image, UPX-free"), None);
+        assert_eq!(detect_packer(b"UPX"), None, "the magic is four bytes");
+        assert_eq!(detect_packer(b""), None);
+    }
+
+    /// A section-header-stripped executable still shows its code through the
+    /// program headers, so zero functions there is a failure — and a packed one
+    /// is named, because that is the cause the caller can act on.
+    #[test]
+    fn a_packed_image_names_the_packer_in_the_failure() {
+        let packed = temp_image("packed", &stripped_executable(b"UPX!\x00\x00\x00\x00"));
+        let message = zero_discovery_error(packed.to_str().unwrap())
+            .expect("an executable image that yielded nothing is a failure");
+        assert!(message.contains("no functions"), "{message}");
+        assert!(message.contains("UPX-packed"), "{message}");
+        assert!(message.contains("kuna unpack"), "{message}");
+        std::fs::remove_file(packed).expect("remove the discovery fixture");
+
+        let plain = temp_image("plain", &stripped_executable(b"\x55\x48\x89\xe5\x5d\xc3"));
+        let message = zero_discovery_error(plain.to_str().unwrap())
+            .expect("an executable image that yielded nothing is a failure");
+        assert!(message.contains("no functions"), "{message}");
+        assert!(!message.contains("packed"), "no packer, no packer claim: {message}");
+        std::fs::remove_file(plain).expect("remove the discovery fixture");
+    }
+
+    /// The legitimate empty case: an image with no executable content has no
+    /// functions to find, so the empty inventory stays a success.
+    #[test]
+    fn an_image_with_no_code_keeps_its_honest_empty_answer() {
+        let bytes = data_only_object();
+        assert!(!image_has_executable_content(&bytes));
+        let path = temp_image("dataonly", &bytes);
+        assert_eq!(zero_discovery_error(path.to_str().unwrap()), None);
+        std::fs::remove_file(path).expect("remove the discovery fixture");
+    }
+
+    /// Anything `object` cannot parse is not evidence of innocence: a run that
+    /// found nothing in it still failed.
+    #[test]
+    fn an_unparseable_image_is_still_a_failure() {
+        assert!(image_has_executable_content(b"not an object file at all"));
+        assert!(image_has_executable_content(&[]));
+    }
+
+    /// The checked-in x86-64 fixture the acceptance probes use: real code, real
+    /// sections — the shape that must fail loudly if discovery ever returns
+    /// nothing for it.
+    #[test]
+    fn a_real_fixture_carries_executable_content() {
+        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../kuna-analysis/tests/fixtures/aif_gap_x86_64");
+        let bytes = std::fs::read(fixture).expect("the fixture is checked in");
+        assert!(image_has_executable_content(&bytes));
+        assert_eq!(detect_packer(&bytes), None);
+    }
+
+    /// The run-level `error` field is present on every document, so a consumer
+    /// reads it unconditionally rather than inferring failure from `count`.
+    #[test]
+    fn the_run_level_error_field_is_always_present() {
+        let healthy = functions_json("fixture", &[], None);
+        assert!(healthy.contains("\"error\": null"), "{healthy}");
+        let failed = functions_json("fixture", &[], Some("no functions discovered in fixture"));
+        assert!(
+            failed.contains("\"error\": \"no functions discovered in fixture\""),
+            "{failed}"
+        );
+        let decompiled = render_result_json("fixture", &[], &[], Some("boom"));
+        assert!(decompiled.contains("\"error\": \"boom\""), "{decompiled}");
+        assert!(
+            render_result_json("fixture", &[], &[], None).contains("\"error\": null")
+        );
+    }
+
+    /// `--language` reaches the document through the same last-write-wins lookup
+    /// every other option uses.
+    #[test]
+    fn the_document_reports_the_selected_language() {
+        let options = vec![
+            ("setlanguage".into(), "rust-language".into()),
+            ("setlanguage".into(), "c-language".into()),
+        ];
+        assert!(render_result_json("f", &[], &options, None).contains("\"c-language\""));
+        assert!(render_result_json("f", &[], &[], None).contains("\"c-language\""));
+    }
 }
 
 #[cfg(test)]

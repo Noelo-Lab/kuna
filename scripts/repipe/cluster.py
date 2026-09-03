@@ -196,14 +196,22 @@ def build_needs(observations, round_n):
     from . import needs as needs_mod
     out = []
     for grp in group(observations):
-        nid = need_id_for(grp)
+        # The id must come from the SAME observation as the title, severity and probe.
+        # Taking it from grp[0] while everything else comes from the witness produced a
+        # branch name and a test filename describing a different observation than the record.
         witness = _pick_witness(grp)
+        nid = need_id_for([witness])
         challenges = sorted({o.get("_hexid") for o in grp if o.get("_hexid")})
         existing = needs_mod.load(nid)
         if existing is not None:
             existing.fields["instances"] = int(existing.instances or 0) + len(grp)
             existing.fields["challenges"] = sorted(set(list(existing.challenges or []) + challenges))
             existing.fields["rounds"] = sorted(set(list(existing.rounds or []) + [round_n]))
+            # Corroboration is the whole point of a second sighting, so credibility is
+            # recomputed rather than frozen at first filing: a need first seen by one tester
+            # and later confirmed by two more is not still a single opinion.
+            existing.fields["credibility"] = max(
+                float(existing.credibility or 0.0), credibility(grp))
             if existing.status == "closed":
                 # A closed need whose symptom came back is a regression, and rank_score puts
                 # a regression at the front of the queue.

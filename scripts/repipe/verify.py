@@ -594,6 +594,28 @@ def need_records(need_ids=None):
     return out
 
 
+def probe_of(rec):
+    """The need's PROBE arm, as (dict, verbatim_text, source) -- the mirror of acceptance_of.
+
+    Needed because a `rel_to` acceptance is expressed relative to this arm's median, so the
+    suite has to be able to find and replay it.
+    """
+    obj, raw = _fenced_probe(_section(rec["text"], "Reproduction"))
+    if obj is not None:
+        return obj, raw, "record"
+    pid = rec["front_matter"].get("probe_id")
+    if pid:
+        for base in (config.needs_dir() / "probes", config.state_dir() / "probes"):
+            f = base / ("%s.json" % pid)
+            if f.is_file():
+                try:
+                    raw = f.read_text()
+                    return json.loads(raw), raw, str(f)
+                except (OSError, json.JSONDecodeError):
+                    continue
+    return None, None, None
+
+
 def acceptance_of(rec):
     """The need's acceptance probe, as (dict, verbatim_text, source).
 
@@ -615,6 +637,42 @@ def acceptance_of(rec):
                 except (OSError, json.JSONDecodeError):
                     continue
     return None, None, None
+
+
+def _acceptance_baselines(rec, challenges, reps):
+    """Measure the need's PROBE arm when its acceptance needs it as a `rel_to` baseline.
+
+    Only paid for when a clause actually references one: replaying the probe of every need in
+    the backlog on every suite run would triple the cost of the loop's most frequent
+    operation for a feature almost no need uses.
+    """
+    p, _raw, _src = acceptance_of(rec)
+    if not _wants_baseline(p):
+        return None
+    probe_p, _praw, _psrc = probe_of(rec)
+    if probe_p is None:
+        return None
+    try:
+        pv = run_probe(probe_p, False, None, None, challenges, reps)
+    except Exception:
+        return None
+    # Key by BOTH the derived id and whatever the record calls it. A `rel_to` is written by
+    # hand against the front-matter's probe_id, which need not equal the id derived from
+    # cmd+expect -- and a baseline nobody can look up is the same as no baseline at all.
+    out = {}
+    for pid in (pv.get("probe_id"), (probe_p or {}).get("probe_id"),
+                rec["front_matter"].get("probe_id")):
+        if pid:
+            out[pid] = pv
+    return out or None
+
+
+def _wants_baseline(probe_doc):
+    for key in ("wall_ms", "max_rss_kb"):
+        clause = ((probe_doc or {}).get("expect") or {}).get(key) or {}
+        if isinstance(clause, dict) and clause.get("rel_to"):
+            return True
+    return False
 
 
 def acceptance_suite(need_ids=None, reps=None):
@@ -642,7 +700,12 @@ def acceptance_suite(need_ids=None, reps=None):
         chal = fm.get("challenges") or []
         if isinstance(chal, str):
             chal = [chal]
-        v = run_probe(p, True, None, None, chal, reps)
+        # A `rel_to` acceptance compares its median against another probe's, so that
+        # baseline has to be measured here or the clause can never resolve and the need is
+        # unclosable forever. gate() already does this; the suite did not, which made the
+        # whole perf idiom dead on arrival.
+        baselines = _acceptance_baselines(rec, chal, reps)
+        v = run_probe(p, True, None, None, chal, reps, baselines=baselines)
         if v.get("unrunnable") or v.get("flaky"):
             trans = "indeterminate"
         elif v.get("passed") and status in OPEN_STATUSES:

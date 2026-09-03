@@ -352,6 +352,44 @@ REPIPE_MAX_AGENTS=7 REPIPE_ROUND_USD=150 tools/repipe/run.sh --rounds 1
   evidence the refuter is rubber-stamping).
 - ≥1 PR merged, and ≥1 acceptance probe flipped to PASS and promoted into `tests/cli/`.
 
+## What an adversarial review found, and where it stands
+
+The implementation was reviewed by four independent agents, every finding re-run by a
+refuter: **32 confirmed, 17 refuted**. All 32 are fixed. The list is kept here rather than in
+a PR description because the next person to touch this code needs to know which mistakes were
+already made in it.
+
+The eight that were critical, and would each have made the loop unusable or unsafe:
+
+| | |
+|---|---|
+| the loop was **inert** | `run.sh` ran only the housekeeping tick and never `captain.sh`, so 72 h of ticks would advance nothing past `T_IDLE`/`B_IDLE` |
+| every lease and slot was **dead on arrival** | the recorded pid was the ephemeral `state …` CLI process, so `merge` granted to everyone — and `reap` failed **live** workers and released their claims |
+| the probe allowlist was bypassable | basename-only matching: any file named `kuna` ran, and a tester has workspace-write |
+| the sandbox hid one directory | a second full copy of all 250 flags sits in the sibling label repo, and `$HOME` held SSH keys, a GitHub token and 600 past prompts |
+| the gate→cluster seam passed no observation | every clustered need would have been one empty record |
+| `--merge` raced the `full-ci` registration | it could squash-merge before the workspace suite even registered, and failed *open* on a draft-query error |
+| tester prose could hijack a record | an `## Acceptance` heading in a tester's own text replaced the real probe — which is then auto-closed and promoted |
+| the arena shims were never on `PATH` | no tool-call log at all, and IDA's `.i64` files uncontained |
+
+Four more came from the **first live run**, and none of them could have been found offline:
+the report schema 400s in strict structured-output mode; `gate_round` did not supply `{{BIN}}`
+so a correct observation was discarded as unrunnable; the IDA shim never passed
+`--backend ida`, so "compare against IDA" silently compared against angr; and declib's socket
+lives under `TMPDIR`, outside the tester's sandbox, so every reference call failed.
+
+Each fix carries a regression test in `tools/repipe/smoke.sh` or `tests/cli/`. Two are worth
+knowing about because they shape how you should extend this code:
+
+- **A regex guard is not a sanitizer.** CodeQL rejected a charset gate on a URL id and was
+  right to: the tainted string still flowed into a path. The accepted fix builds the path from
+  `os.listdir()` and compares the id against filesystem-produced names by equality, which
+  makes traversal structurally impossible rather than guarded.
+- **Negative operators are universally quantified.** `absent` under `[*]` means *no* element
+  has it, not *some* element lacks it. Existentially-quantified negation let a probe and its
+  own negation both pass on a mixed array, which the gate reads as `already-supported` — i.e.
+  it silently discards a real need.
+
 ## Machinery reference
 
 | Piece | What |

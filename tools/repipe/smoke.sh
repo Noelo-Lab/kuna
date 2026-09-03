@@ -130,15 +130,47 @@ else
   bad "bwrap missing -- containment is prompt-only and this canary must not be skipped silently"
 fi
 
-head_ "L1  the two-arm gate, against a real live defect"
-CH="$DATASET/challenges/64f1f7afd931496abf909525"
+head_ "L1  the two-arm gate returns each of its three verdicts"
+CH="$DATASET/challenges/64f1f7afd931496abf909525"   # a real work dir for the probes below
+# This used to gate against a live kuna defect, and the canary caught the day that defect was
+# FIXED: the probe stopped reproducing and the smoke failed for the best possible reason. A
+# self-test must not decay every time the product improves, so the arms below are constructed
+# to hold forever, and the "against truth" job moved to tests/cli/ -- five probes that each
+# assert a gap really is closed, checked above and in CI.
+GATE_OBS="$SMOKE_STATE/gate-obs.json"
+mk_obs() {  # $1 probe-expect, $2 acceptance-expect
+  "$PY" - "$1" "$2" > "$GATE_OBS" <<'PY'
+import json, sys
+arm = lambda e: {"schema": "re-probe/1", "kind": "cli", "cmd": ["{{KUNA}}", "--version"],
+                 "cwd": "{{TMP}}", "timeout_s": 30, "repeat": 1, "expect": json.loads(e)}
+json.dump({"kind": "bad-ux", "title": "gate self-test", "what_i_wanted": "x",
+           "what_kuna_did": "y", "severity": "minor",
+           "probe": arm(sys.argv[1]), "acceptance": arm(sys.argv[2])},
+          open("/dev/stdout", "w"))
+PY
+}
+gate_verdict() { "$PY" -m scripts.repipe.verify --observation "$GATE_OBS" --json 2>/dev/null \
+                   | "$PY" -c 'import json,sys;print(json.load(sys.stdin).get("verdict"))'; }
+
+# probe PASSES (kuna --version exits 0) + acceptance FAILS (it does not exit 99)
+mk_obs '{"exit_code":{"eq":0}}' '{"exit_code":{"eq":99}}'
+V="$(gate_verdict)"
+[ "$V" = "admitted" ] && { ok "probe PASS + acceptance FAIL -> admitted"; SAW_REPRODUCING=1; } \
+                      || bad "expected admitted, got $V"
+# acceptance ALREADY passes -> the tester was wrong, and that ledger must not be silent
+mk_obs '{"exit_code":{"eq":0}}' '{"exit_code":{"eq":0}}'
+V="$(gate_verdict)"
+[ "$V" = "already-supported" ] && ok "acceptance already passes -> already-supported" \
+                              || bad "expected already-supported, got $V"
+# the probe does not reproduce -> noise, never dispatched
+mk_obs '{"exit_code":{"eq":99}}' '{"exit_code":{"eq":0}}'
+V="$(gate_verdict)"
+[ "$V" = "not-reproducible" ] && ok "probe does not reproduce -> not-reproducible" \
+                             || bad "expected not-reproducible, got $V"
+
 for f in probe-zero-functions accept-zero-functions accept-functions-size; do
   [ -f "$FIX/$f.json" ] || bad "missing fixture $f.json"
 done
-PV="$("$PY" -m scripts.repipe.probe check "$FIX/probe-zero-functions.json" --work "$CH" --json 2>/dev/null | "$PY" -c 'import json,sys;print(json.load(sys.stdin).get("passed"))')"
-[ "$PV" = "True" ] && { ok "probe PASSES (the bug reproduces today)"; SAW_REPRODUCING=1; } || bad "probe does not reproduce" "got $PV"
-AV="$("$PY" -m scripts.repipe.probe check "$FIX/accept-zero-functions.json" --work "$CH" --json 2>/dev/null | "$PY" -c 'import json,sys;print(json.load(sys.stdin).get("passed"))')"
-[ "$AV" = "False" ] && ok "acceptance FAILS (kuna cannot do it yet)" || bad "acceptance already passes" "got $AV"
 
 head_ "L1  a probe pointed at the wrong binary REFUSES rather than lying"
 WRONG="$("$PY" -m scripts.repipe.probe check "$FIX/probe-zero-functions.json" --json 2>&1)"
@@ -270,10 +302,21 @@ PY
 NWIN="$(grep -c '"to": "B_PLAN"' "$SMOKE_STATE"/rounds/*/transitions.jsonl 2>/dev/null | head -1)"
 [ "${NWIN:-0}" = "1" ] && ok "6 racing transitions -> exactly 1 accepted" || bad "round.json race: $NWIN accepted, expected 1"
 
-head_ "L1  the four seed needs are real and round-trip"
+head_ "L1  the backlog round-trips, at whatever size it is"
+# An EMPTY backlog is the healthy steady state, not a failure: every filed need has been
+# built and its acceptance probe promoted into tests/cli/, which is where the durable
+# guarantee lives. The records are working notes; the probes are the contract.
 NL="$("$PY" -m scripts.repipe.needs list --json 2>/dev/null | "$PY" -c 'import json,sys;print(json.load(sys.stdin)["count"])' 2>/dev/null)"
-[ "${NL:-0}" -ge 4 ] && ok "$NL seed needs present" || bad "expected >=4 seed needs, got ${NL:-0}"
+ok "backlog holds ${NL:-0} need(s)"
+CLI_N="$(ls "$REPO"/tests/cli/*.json 2>/dev/null | wc -l)"
+[ "${CLI_N:-0}" -ge 1 ] \
+  && ok "$CLI_N promoted regression probe(s) in tests/cli/" \
+  || bad "tests/cli/ is empty -- nothing guards the gaps the loop has already closed"
+"$PY" -m scripts.repipe.clitests >/dev/null 2>&1 \
+  && ok "every promoted probe still passes" \
+  || bad "a promoted probe regressed" "$("$PY" -m scripts.repipe.clitests 2>&1 | tail -4)"
 for f in "$REPO"/docs/re-needs/*.md; do
+  [ -e "$f" ] || break
   "$PY" -c "
 import sys; sys.path.insert(0,'$REPO')
 from scripts.repipe import needs
@@ -305,7 +348,7 @@ kill "$WEB_PID" 2>/dev/null; wait "$WEB_PID" 2>/dev/null
 
 # --------------------------------------------------------------- canaries ---
 head_ "canaries (a silently broken run must not report success)"
-[ "$SAW_REPRODUCING" = 1 ] && ok "the gate found a reproducing probe" || bad "NO probe reproduced -- the runner is broken, not the corpus"
+[ "$SAW_REPRODUCING" = 1 ] && ok "the gate returned a decisive verdict" || bad "the gate never returned `admitted` -- the runner is broken, not the corpus"
 [ "$SAW_SANDBOX" = 1 ]     && ok "sandbox assertions ran"             || bad "sandbox assertions were SKIPPED"
 [ "$SAW_EXTRAS_KEPT" = 1 ] && ok "the redactor kept at least one extras file" || bad "the redactor dropped EVERYTHING (over-redaction hides a broken allowlist)"
 [ "$SAW_NEED" = 1 ]        && ok "clustering produced needs"          || bad "clustering produced nothing"

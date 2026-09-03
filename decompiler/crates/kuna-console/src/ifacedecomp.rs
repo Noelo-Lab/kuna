@@ -787,7 +787,7 @@ decomp_command!(
             }
         }
         s.skip_ws();
-        let filename = s.read_token();
+        let filename = s.read_filename();
         if filename.is_empty() {
             return Err(IfaceError::parse("Missing filename"));
         }
@@ -850,13 +850,15 @@ decomp_command!(
     IfcLoadFile,
     fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
         // C++: s >> filename; if !eof { target=filename; s>>filename; }
-        let mut filename = s.read_token();
+        // `read_filename` so a quoted path survives its own spaces; unquoted
+        // input still tokenizes on whitespace exactly as C++ does.
+        let mut filename = s.read_filename();
         let mut target = String::new();
         s.skip_ws();
         if !s.eof() {
             // Two parameters: the first was the target, the second is the file.
             target = std::mem::take(&mut filename);
-            filename = s.read_token();
+            filename = s.read_filename();
         }
         if filename.is_empty() {
             return Err(IfaceError::parse("Missing filename"));

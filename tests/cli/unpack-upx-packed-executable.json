@@ -1,0 +1,33 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "unpack",
+    "{{BIN}}",
+    "-o",
+    "{{TMP}}/out.bin"
+  ],
+  "cwd": "{{TMP}}",
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/upx_packed_x86_64",
+    "binary_sha256": "907b4dc30be0c0e53fda3ad1905ef3d804735a472f1c9484d3cfb5d3180e26c1",
+    "binary_size": 11364,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/upx_packed_x86_64",
+    "selector": null,
+    "selector_kind": "none"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "(?i)NRV2B",
+      "(?i)unpacked"
+    ]
+  },
+  "notes": "Desired: the image is statically unpacked. Asserting the reported method too, because an exit-0 that produced a corrupt file would otherwise read as success."
+}
