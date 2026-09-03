@@ -174,6 +174,39 @@ Before any need is dispatched it is checked against `kuna catalog --json`: if an
 option closes it, it becomes `rejected` with `covered_by_option` — a default-flip candidate for
 the *other* pipeline, not new work here.
 
+## 4b. The standing brief: be an interface, not an oracle
+
+The corpus is deliberately hostile — 171 of its 250 challenges carry at least one obfuscation
+class, and 57 are code-virtualised. Hostile binaries are precisely where a decompiler's
+automatic answer is wrong, so the interesting question this loop asks is not "why did kuna
+guess wrong" but **"why could the agent not tell it the right answer"**.
+
+That is a standing instruction to both halves of the loop, and it is in both prompts:
+
+- **Testers** are told to file a missing *interface* whenever they think "kuna should have
+  known this" — because the useful form of that complaint is almost always "kuna should have
+  let me say so". Define a function boundary, override a jump table, declare a blob as data
+  with a type, steer structuring, fix a prototype, make a rename persist. They are told to
+  check `kuna catalog --json` first: an option that already exists is a discoverability
+  problem, not a missing interface, and that is worth knowing too.
+- **Builders** are told to *expose* before they invent. `kuna-console` registers ~37
+  intervention-shaped commands — `map function`, `override jumptable`, `force goto`,
+  `force datatype`, `parse line`, `retype`, `structure blocks` and the rest — and **none is
+  reachable from the `kuna` binary**. Three very different jobs hide behind "add an
+  interface": wiring something that already works (cheap, the common case), porting a
+  registered stub that answers `engine integration not yet ported` (real engine work, take
+  the `[PROPOSAL]` route), or adding a genuine new judgement call (that is a `phases.toml`
+  option, not a subcommand).
+
+Two rules keep the result usable by the thing it is for:
+
+**A durable assertion beats a one-shot flag.** The phase model is
+`assert(phase, anchor, type, value, strength)`, consulted on every re-run. An agent that
+renames forty functions and loses them on the next invocation has gained nothing.
+
+**Machine-readable in, machine-readable out.** Accept assertions as a file or repeatable
+flags; emit JSON beside the human form.
+
 ## 5. The builder — three tracks
 
 Getting the track wrong is the most likely way to waste a builder session.
