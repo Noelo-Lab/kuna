@@ -258,6 +258,8 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "tailcalljump",
     "funcboundflow",
     "cleanupcode",
+    "linuxsyscall",
+    "switchselector",
     "noreturn_extern",
     "inputvarnodeadjust",
     "retinputhalf",
@@ -332,6 +334,21 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "libcsigs",
     "strings",
     "entry_disc",
+    // (kuna) Unmapped-CALL-target entry suppression: the Listing's recursive-descent
+    // walk gates every INSTRUCTION address on the executable-range universe but took
+    // the direct CALL target unconditionally, so a call into unmapped memory (what
+    // anti-disassembly junk behind an always-taken branch decodes to) became a
+    // `sub_<addr>` with no bytes and no body.  The call reference is still filed;
+    // only the function claim is withheld.  Default-ON; off restores the previous
+    // discovery set exactly.
+    "unmappedentry",
+    // (kuna) PE CRT entry-function prototype recovery: a `main` that ignores its
+    // arguments reads none of the ABI argument registers, so body-driven parameter
+    // recovery finds nothing and declares it `void(void)` while the CRT startup a few
+    // lines up calls it with three arguments.  On a PE that startup is in the image and
+    // fetches each argument through a named CRT accessor, so the call site names the
+    // slots.  Default-ON; off restores the `void(void)` form exactly.
+    "entrymainproto",
     // (kuna) `.eh_frame` LSDA landing-pad discovery — a sub-feature of the
     // always-on `entry_disc` pass (GccExceptionAnalyzer). Default-off
     // (output-changing: adds the discovered exception landing pads as entries).

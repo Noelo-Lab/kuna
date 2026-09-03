@@ -76,11 +76,21 @@ fi
 "$KUNA_PY" -m scripts.pipeline.state update --worker "$TESTER_ID" --phase setup --status running >/dev/null 2>&1
 
 # --- 1. arena ---------------------------------------------------------------
-log "building arena $ARENA"
-if ! "$KUNA_PY" -m scripts.repipe.workspace build "$HEXID" --round "$ROUND" >>"$LOG" 2>&1; then
-  log "arena build failed"
-  "$KUNA_PY" -m scripts.pipeline.state update --worker "$TESTER_ID" --status failed --note "arena build failed"
-  exit 1
+# REUSE an arena the captain already built. T_WORKSPACE stages every arena for the round and
+# verifies it -- that is the whole point of the state -- so rebuilding here is wasted work,
+# and worse: the captain's own shim smoke-test writes a toolcalls.jsonl line, which the
+# "never clobber tester evidence" guard correctly reads as a run in progress and refuses.
+# Careful verification upstream must not look like a failure downstream.
+if [ -d "$ARENA/target" ] \
+   && "$KUNA_PY" -m scripts.repipe.workspace check "$ARENA" --hexid "$HEXID" >/dev/null 2>&1; then
+  log "reusing the arena staged for this round"
+else
+  log "building arena $ARENA"
+  if ! "$KUNA_PY" -m scripts.repipe.workspace build "$HEXID" --round "$ROUND" --force >>"$LOG" 2>&1; then
+    log "arena build failed"
+    "$KUNA_PY" -m scripts.pipeline.state update --worker "$TESTER_ID" --status failed --note "arena build failed"
+    exit 1
+  fi
 fi
 
 # The contamination guard must run on the real path, not only in smoke.sh: a bad arena is

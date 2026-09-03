@@ -25,6 +25,7 @@ pub mod classify;
 pub mod context;
 pub mod decode;
 pub mod kuna_tailcallentry;
+mod kuna_unmappedentry;
 pub mod model;
 pub mod walk;
 // (kuna) The read-only cross-reference query behind `kuna xrefs` -- a consumer of

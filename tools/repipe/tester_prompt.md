@@ -52,6 +52,25 @@ your observation is discarded as noise. If the acceptance already passes, your o
 is discarded as *"kuna could already do this"* — which is a fine outcome, it just means you
 missed a flag; that ledger is kept and it is how we know the gate works.
 
+**Write the acceptance against the symptom, not against the fix you imagine.** This is the
+single most common way a good observation gets wasted. Round 1 filed an acceptance demanding
+`mprotect(` where the syscall was actually `write`, and one demanding the literal token
+`switch(a1)` where the correct fix emits the compiler's own if/else-if chain. Both underlying
+defects were real and both were fixed — and both acceptances still read as failing, because
+they asserted a *spelling* nobody promised.
+
+So: assert that the broken thing is **gone**, and assert only the part of the replacement you
+actually observed evidence for.
+
+| Instead of | Write |
+|---|---|
+| `stdout_matches: ["mprotect\\("]` — you guessed the syscall | `stdout_absent: ["swi\\(0x80\\)"]` — you *saw* the opaque `swi` |
+| `stdout_matches: ["switch\\(a1\\)"]` — you guessed the structure | `stdout_absent: ["switch\\(0\\)"]` — you *saw* the constant selector |
+| `stdout_matches: ["scanf\\(\"%d\", &v3\\)"]` — exact spelling of args | `stdout_absent: ["scanf\\(\\)"]` — you *saw* the arguments dropped |
+
+If you genuinely need a positive assertion, keep it to the weakest one that would still be
+false today — `stdout_matches: ["write|mprotect|syscall"]` beats naming one of them.
+
 A worked example of the shape:
 
 ```json
@@ -79,6 +98,22 @@ A worked example of the shape:
 
 Use `{{KUNA}}` and `{{BIN}}` as tokens in `cmd` — they are substituted at replay time so
 your probe still runs after the arena is gone.
+
+**The `expect` vocabulary is fixed** — these are the only clause names, and a probe using
+any other is discarded:
+
+| clause | means |
+|---|---|
+| `exit_code` | `{"eq"\|"ne"\|"lt"\|"gt"\|"le"\|"ge": N}` or `{"in": [..]}` |
+| `stdout_matches` / `stderr_matches` | a LIST of regexes, all of which must match |
+| `stdout_absent` / `stderr_absent` | a list of regexes, none of which may match |
+| `stdout_is_json` | `true` — stdout parses as JSON |
+| `json` | `[{"path": "functions[0].size", "op": "exists"}]` — dotted path, `[i]` indexes, `[*]` is any element; ops `eq ne lt gt le ge len_eq len_lt len_gt contains not_contains exists absent matches` |
+| `stdout_bytes` | a numeric predicate on the output size |
+| `wall_ms` / `max_rss_kb` | `{"stat": "median", "lt": N}` — for perf and memory claims |
+
+There is no plain `stdout` clause. Use `stdout_matches` for "the output should contain this"
+and `json` for anything structural — `json` is far better evidence than a regex over text.
 
 **`probe` and `acceptance` are SERIALISED JSON STRINGS**, not nested objects — the shape
 above, `json.dumps`'d into a single string field. They are parsed and validated on arrival, so

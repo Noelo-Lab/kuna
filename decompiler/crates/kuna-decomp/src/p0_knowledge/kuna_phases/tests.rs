@@ -48,7 +48,7 @@ fn surface_count_is_105() {
 }
 
 #[test]
-fn settable_count_is_127() {
+fn settable_count_is_131() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -95,12 +95,15 @@ fn settable_count_is_127() {
     // +1 for `symbolnamebound` (P1 symbol-name scope resource bound, DIV-95, GH-338).
     // +1 for `msvcfpconst` (P1 MSVC `__real@` FP-constant recovery, DIV-96).
     // +1 for `cortexmpriv` (P2 Cortex-M privileged-mode guard folding, DIV-99).
-    assert_eq!(kuna_num_settables(), 127);
-    assert_eq!(SETTABLE_TABLE.len(), 127);
+    // +1 for `linuxsyscall` (P2 32-bit Linux int 0x80 syscall naming).
+    // +1 for `unmappedentry` (P1 unmapped-CALL-target entry suppression).
+    // +1 for `entrymainproto` (P1 PE CRT entry-function prototype recovery).
+    assert_eq!(kuna_num_settables(), 131);
+    assert_eq!(SETTABLE_TABLE.len(), 131);
 }
 
 #[test]
-fn tier_counts_are_28_core_52_transform_47_analysis() {
+fn tier_counts_are_28_core_54_transform_49_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -181,7 +184,14 @@ fn tier_counts_are_28_core_52_transform_47_analysis() {
     // surface reports about the frame the analysis already recovered.
     // transform 51 -> 52: +1 for `cortexmpriv` (P2 Cortex-M privileged-mode guard
     // folding, DIV-99).
-    assert_eq!((core, transform, analysis), (28, 52, 47));
+    // transform 52 -> 53: +1 for `linuxsyscall` (P2 32-bit Linux int 0x80 syscall
+    // naming) -- transform, not core: it renames a call and locks a prototype,
+    // which is the judgement an operator flips.
+    // analysis 47 -> 48: +1 for `unmappedentry` (P1 unmapped-CALL-target entry
+    // suppression).
+    // analysis 48 -> 49: +1 for `entrymainproto` (P1 PE CRT entry-function
+    // prototype recovery).
+    assert_eq!((core, transform, analysis), (28, 54, 49));
 }
 
 #[test]
@@ -371,7 +381,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_39_suppressed_for_88() {
+fn option_values_live_value_present_for_41_suppressed_for_90() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -459,6 +469,14 @@ fn option_values_live_value_present_for_39_suppressed_for_88() {
         // gate (no `live_field`); its live state is read console-side via
         // kuna_live_value, like the analysis-pass gates around it. Default-off.
         "rtti",
+        // (kuna) PE CRT entry-function prototype recovery -- an analysis-tier gate
+        // with no codegen live reader (read console-side via kuna_live_value), like
+        // the discovery gates around it. Default-ON.
+        "entrymainproto",
+        // (kuna) Unmapped-CALL-target entry suppression -- an analysis-tier gate with
+        // no codegen live reader (read console-side via kuna_live_value), like the
+        // discovery gates around it. Default-ON.
+        "unmappedentry",
         "aif",
         // (kuna, GH-299) The AIF gap-cursor aligned slide — an analysis-tier gate
         // with no codegen live reader (read console-side via kuna_live_value), like
@@ -609,7 +627,9 @@ fn option_values_live_value_present_for_39_suppressed_for_88() {
     // 35 -> 36: +1 for `retinputhalf` (live_field = ret_input_half).
     // 36 -> 37: +1 for `framelayout` (live_field = framelayout, DIV-97).
     // 38 -> 39: +1 for `cortexmpriv` (live_field = cortexmpriv, DIV-99).
-    assert_eq!(with_live, 39);
+    // 39 -> 40: +1 for `linuxsyscall` (live_field = linux_syscall).
+    // 40 -> 41: +1 for `switchselector` (its own live_field).
+    assert_eq!(with_live, 41);
 }
 
 #[test]
@@ -731,7 +751,10 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // not move the tail).
     // 123 -> 124: +1 for `framelayout` (DIV-97; its P6 row sits mid-table ahead of
     // `ctypes`, so it does not move the tail either).
-    assert_eq!(json.matches("},\n").count(), 126);
+    // 127 -> 129: +1 for `unmappedentry` and +1 for `entrymainproto` (both P1 rows
+    // mid-table, beside `fdeinterior`, so neither moves the tail either); the
+    // count is one less than the settable total, since the last row has no comma.
+    assert_eq!(json.matches("},\n").count(), 130);
 }
 
 #[test]

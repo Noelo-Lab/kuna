@@ -765,6 +765,16 @@ pub struct ArchContext {
     /// pre-SSA op graph.  Read by
     /// [`ActionRemoveCleanupCode`](crate::p2_lift::kuna_cleanupcode::ActionRemoveCleanupCode).
     pub remove_cleanup_code: bool,
+    /// (kuna) `option linuxsyscall`: rewrite a 32-bit Linux `int 0x80` from an
+    /// indirect call through the `swi` userop into a named call on the syscall
+    /// the number in `EAX` selects.  Read by
+    /// [`ActionLinuxSyscall`](crate::p2_lift::kuna_linuxsyscall::ActionLinuxSyscall).
+    pub linux_syscall: bool,
+    /// (kuna) `option switchselector`: refuse a recovered lowered-switch record
+    /// whose synthesized BRANCHIND would not get the switch value as its
+    /// selector.  Read by
+    /// [`install_selector_is_sound`](crate::p2_lift::kuna_loweredswitch::install_selector_is_sound).
+    pub switch_selector_guard: bool,
     pub cond_fold: int4,
     /// (kuna) angr SAILR goto-reduction: duplicate a small return tail into a
     /// `goto` source (`reduce_return_gotos`, opt-in default-off).  Read by
@@ -1113,6 +1123,8 @@ impl ArchContext {
             region_edge_order: false,    // regionedgeorder (opt-in default-off)
             outline_spec: String::new(), // outline (opt-in default-off; empty = off)
             remove_cleanup_code: true,   // cleanupcode (DIV-81 default-on; inert on a non-Rust binary)
+            linux_syscall: false,        // linuxsyscall (opt-in default-off)
+            switch_selector_guard: false, // switchselector (opt-in default-off)
             cond_fold: 0,                // condfold (opt-in default-off; 0 = off)
             reduce_return_gotos: false,  // gotoreduce (opt-in default-off)
             flatten_ifelse: false,  // ifelseflatten (opt-in default-off)
