@@ -1852,6 +1852,16 @@ impl PcodeOpBank {
     /// The first optree entry strictly greater than `sq` (C++ `++op_state`).
     /// O(log n) `BTreeMap::range` — the ActionPool op-cursor advance, which the
     /// C++ does in O(1) by incrementing a `PcodeOpTree::const_iterator`.
+    /// The [`OpId`] of the first optree entry strictly after `sq` (C++
+    /// `++op_state` then deref), or `None` when `sq` is the last.
+    ///
+    /// The id-only form exists so the pool cursor can memoize the successor from
+    /// the same search that decides whether one exists, instead of searching once
+    /// to test and again to dereference.
+    pub fn first_after_seq_id(&self, sq: &SeqNum) -> Option<OpId> {
+        self.first_after_seq(sq).map(|(_, id)| id)
+    }
+
     pub fn first_after_seq(&self, sq: &SeqNum) -> Option<(&SeqNum, OpId)> {
         // Borrow `sq` into the range bound (the `(Bound<&T>, Bound<&T>)`
         // RangeBounds impl) so the per-op cursor advance does not clone the key.
@@ -1918,6 +1928,53 @@ impl PcodeOpBank {
     /// Iterate the dead list in order (C++ `beginDead`..`endDead`).
     pub fn iter_dead(&self) -> impl Iterator<Item = OpId> + '_ {
         self.deadlist.iter(&self.arena, ListKind::Insert)
+    }
+
+    /// `true` if `op` is currently linked into the dead list.
+    ///
+    /// The `dead` flag alone is not sufficient: [`destroy`](Self::destroy) retires
+    /// an op to `deadandgone` with the flag still set (the C++ keeps the heap
+    /// object marked dead), so membership is the flag plus a live link — or being
+    /// the head, for a single-element list.
+    pub fn on_dead_list(&self, op: OpId) -> bool {
+        match self.arena.get(op) {
+            None => false,
+            Some(o) => {
+                if !o.is_dead() {
+                    return false;
+                }
+                let (prev, next) = o.links.get(ListKind::Insert);
+                prev.is_some() || next.is_some() || self.deadlist.head == Some(op)
+            }
+        }
+    }
+
+    /// First op of the dead list (C++ `beginDead()`), or `None` when empty.
+    pub fn dead_front(&self) -> Option<OpId> {
+        self.deadlist.head
+    }
+
+    /// Last op of the dead list (C++ `--endDead()`), or `None` when empty.
+    pub fn dead_back(&self) -> Option<OpId> {
+        self.deadlist.tail
+    }
+
+    /// The dead-list successor of `op` (C++ `++insertiter`), or `None` when `op`
+    /// is last or is not on the dead list at all.
+    pub fn dead_next(&self, op: OpId) -> Option<OpId> {
+        if !self.on_dead_list(op) {
+            return None;
+        }
+        self.arena[op].links.get(ListKind::Insert).1
+    }
+
+    /// The dead-list predecessor of `op` (C++ `--insertiter`), or `None` when
+    /// `op` is first or is not on the dead list at all.
+    pub fn dead_prev(&self, op: OpId) -> Option<OpId> {
+        if !self.on_dead_list(op) {
+            return None;
+        }
+        self.arena[op].links.get(ListKind::Insert).0
     }
 
     /// Number of ops in the alive list.
@@ -2083,6 +2140,66 @@ mod tests {
         bank.mark_dead(b);
         assert_eq!(bank.iter_dead().collect::<Vec<_>>(), vec![c, b]);
         assert_eq!(bank.iter_alive().collect::<Vec<_>>(), vec![a]);
+    }
+
+    /// The O(1) dead-list cursor must agree with a full `iter_dead()` scan for
+    /// every position, and must report non-membership (alive, or destroyed) as
+    /// `None` exactly as the scan did.
+    #[test]
+    fn dead_cursor_matches_a_full_scan() {
+        let m = build_manager();
+        let mut bank = PcodeOpBank::new();
+        assert_eq!(bank.dead_front(), None);
+        assert_eq!(bank.dead_back(), None);
+        let ops: Vec<OpId> = (0..5).map(|i| bank.create_at(0, ram(&m, 0x10 * i))).collect();
+
+        let scan: Vec<OpId> = bank.iter_dead().collect();
+        assert_eq!(scan, ops);
+        assert_eq!(bank.dead_front(), Some(ops[0]));
+        assert_eq!(bank.dead_back(), Some(ops[4]));
+        // Forward: dead_next(scan[i]) == scan[i+1], None at the tail.
+        for (i, &op) in scan.iter().enumerate() {
+            assert_eq!(bank.dead_next(op), scan.get(i + 1).copied(), "next of #{i}");
+            assert_eq!(
+                bank.dead_prev(op),
+                if i == 0 { None } else { Some(scan[i - 1]) },
+                "prev of #{i}"
+            );
+        }
+        // An op on the ALIVE list shares the `insertiter` links, so membership --
+        // not just "has a link" -- is what the cursor must test.
+        bank.mark_alive(ops[2]);
+        assert_eq!(bank.dead_next(ops[2]), None);
+        assert_eq!(bank.dead_prev(ops[2]), None);
+        assert_eq!(bank.dead_next(ops[1]), Some(ops[3]));
+        assert_eq!(bank.dead_prev(ops[3]), Some(ops[1]));
+        // A destroyed op keeps the `dead` flag but leaves the list.
+        bank.destroy(ops[0]);
+        assert_eq!(bank.dead_next(ops[0]), None);
+        assert_eq!(bank.dead_prev(ops[0]), None);
+        assert_eq!(bank.dead_front(), Some(ops[1]));
+        // Single element: front == back, no neighbours.
+        bank.destroy(ops[3]);
+        bank.destroy(ops[4]);
+        assert_eq!(bank.dead_front(), Some(ops[1]));
+        assert_eq!(bank.dead_back(), Some(ops[1]));
+        assert_eq!(bank.dead_next(ops[1]), None);
+        assert_eq!(bank.dead_prev(ops[1]), None);
+    }
+
+    /// `first_after_seq_id` is the id-only form the pool cursor memoizes; it must
+    /// name the same op `first_after_seq` does at every position.
+    #[test]
+    fn first_after_seq_id_agrees_with_first_after_seq() {
+        let m = build_manager();
+        let mut bank = PcodeOpBank::new();
+        let ops: Vec<OpId> = (0..4).map(|i| bank.create_at(0, ram(&m, 0x10 * i))).collect();
+        for &op in &ops {
+            let sq = bank.get(op).unwrap().get_seq_num().clone();
+            assert_eq!(bank.first_after_seq_id(&sq), bank.first_after_seq(&sq).map(|(_, id)| id));
+        }
+        let last = bank.get(*ops.last().unwrap()).unwrap().get_seq_num().clone();
+        assert_eq!(bank.first_after_seq_id(&last), None);
     }
 
     #[test]

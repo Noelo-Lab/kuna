@@ -1098,6 +1098,20 @@ pub struct ActionPool {
     /// last; otherwise the [`SeqNum`] of the *next* op to visit (see module
     /// docs for why this is a key, not a live iterator).
     op_state: OpCursor,
+    /// The [`OpId`] the cursor resolves to, memoized by
+    /// [`advance_op_state`](ActionPool::advance_op_state).
+    ///
+    /// The C++ `op_state` is a `std::map::iterator`, so `++op_state` and the
+    /// following deref are both O(1); re-deriving the position from a [`SeqNum`]
+    /// costs an optree range search *per op per rule pass*, and the pool is the
+    /// decompiler's innermost loop.  The advance already performs that search to
+    /// decide `After`/`Done`, so it keeps the answer and
+    /// [`current_op`](ActionPool::current_op) reads it instead of searching
+    /// again.  Only valid within one [`apply`](ActionPool::apply) call: the sole
+    /// mutation between the advance and the next read is the `destroy(op)` of the
+    /// op just consumed, which cannot move its own successor.  Every `apply`
+    /// return path clears it, so a resumed or interleaved pass re-searches.
+    next_op: Option<OpId>,
     /// Iterator over rules for one OpCode (C++ `rule_index`).
     rule_index: usize,
     /// Messages emitted mid-[`process_op`] (rule warnings).  `process_op` is a
@@ -1135,6 +1149,7 @@ impl ActionPool {
             allrules: Vec::new(),
             perop: vec![PerOp::new(); OpCode::CPUI_MAX as usize],
             op_state: OpCursor::Unstarted,
+            next_op: None,
             rule_index: 0,
             warnings: WarningSink::new(),
             pending_error: None,
@@ -1258,19 +1273,19 @@ impl ActionPool {
             .get(op)
             .map(|o| o.get_seq_num().clone())
             .expect("advance_op_state: op already gone");
-        // Is there any optree entry strictly greater than sq?  Only existence
-        // matters here, so probe with first_after_seq (O(log n)) rather than
-        // cloning the successor key just to throw it away.
-        self.op_state = if data.obank().first_after_seq(&sq).is_some() {
-            OpCursor::After(sq)
-        } else {
-            OpCursor::Done
-        };
+        // One optree probe answers both questions the cursor has: whether a
+        // successor exists, and which op it is.  Keep the id so `current_op` does
+        // not repeat the search.
+        self.next_op = data.obank().first_after_seq_id(&sq);
+        self.op_state = if self.next_op.is_some() { OpCursor::After(sq) } else { OpCursor::Done };
     }
 
     /// The op the cursor currently points at (C++ `(*op_state).second`), or
     /// `None` at end.  `Unstarted` points at the first optree entry.
     fn current_op(&self, data: &Funcdata) -> Option<OpId> {
+        if let Some(op) = self.next_op {
+            return Some(op);
+        }
         match &self.op_state {
             OpCursor::Unstarted => data.obank().iter_all().next().map(|(_, id)| id),
             OpCursor::After(sq) => first_op_after(data, sq),
@@ -1341,6 +1356,7 @@ impl Action for ActionPool {
             self.op_state = OpCursor::Unstarted;
             self.rule_index = 0;
         }
+        self.next_op = None;
         let mut ops_since_deadline_probe: u32 = 0;
         while let Some(op) = self.current_op(data) {
             // (kuna decompile-all watchdog) Cooperative deadline in the tight
@@ -1351,16 +1367,19 @@ impl Action for ActionPool {
             if ops_since_deadline_probe >= POOL_DEADLINE_STRIDE {
                 ops_since_deadline_probe = 0;
                 if ctx.deadline_expired() {
+                    self.next_op = None;
                     self.drain_into(ctx);
                     return 0;
                 }
             }
             let r = self.process_op(op, data);
             if r != 0 {
+                self.next_op = None;
                 self.drain_into(ctx);
                 return -1;
             }
         }
+        self.next_op = None;
         self.drain_into(ctx);
         0 // Indicate successful completion
     }

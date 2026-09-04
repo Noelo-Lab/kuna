@@ -871,16 +871,9 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
     }
 
     /// The successor of `op` in the global \e dead list (C++ `++op->getInsertIter()`
-    /// while the op is dead), or `None` at the end.  Reconstructed from the bank's
-    /// forward dead-list iteration (op.rs owns the intrusive links privately).
+    /// while the op is dead), or `None` at the end.
     fn dead_next(&self, op: OpId) -> Option<OpId> {
-        let mut it = self.data.obank().iter_dead();
-        for cur in it.by_ref() {
-            if cur == op {
-                return it.next();
-            }
-        }
-        None
+        self.data.obank().dead_next(op)
     }
 
     // -----------------------------------------------------------------------
@@ -1005,17 +998,15 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             Some(s) => s,
             None => return Ok(()), // oiter == endDead(): nothing to delete
         };
-        // Collect [start .. endDead()) in dead-list order.
-        let dead: Vec<OpId> = self.data.obank().iter_dead().collect();
-        let mut hit = false;
+        // Collect [start .. endDead()) by walking the dead list forward from
+        // `start`.  A `start` that is no longer on the list deletes nothing (the
+        // bank's dead-list navigation reports non-membership as `None`).
         let mut victims: Vec<OpId> = Vec::new();
-        for op in dead {
-            if op == start {
-                hit = true;
-            }
-            if hit {
-                victims.push(op);
-            }
+        let mut cur =
+            if self.data.obank().on_dead_list(start) { Some(start) } else { None };
+        while let Some(op) = cur {
+            victims.push(op);
+            cur = self.data.obank().dead_next(op);
         }
         for op in victims {
             //   -- STUB(W3-funcdata): op_destroy_raw needs destroyVarnode; the
@@ -1447,10 +1438,10 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
 
     /// First / last op of the global dead list (helpers for the marker idiom).
     fn dead_head(&self) -> Option<OpId> {
-        self.data.obank().iter_dead().next()
+        self.data.obank().dead_front()
     }
     fn dead_tail(&self) -> Option<OpId> {
-        self.data.obank().iter_dead().last()
+        self.data.obank().dead_back()
     }
 
     // -----------------------------------------------------------------------

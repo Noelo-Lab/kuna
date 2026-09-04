@@ -53,6 +53,21 @@ ops beyond the deepest internal branch time are dead and deleted
 (`delete_remaining_ops`). The op-creation and classification order here is
 observable — it fixes the SeqNum allocation every later phase keys on.
 
+**The dead list is a list, and the walk must treat it as one.** The C++ holds
+`std::list<PcodeOp *>::iterator`s directly (`insertiter` on each op), so
+"the op after this one", "the op before this one" and "the last op" are all
+constant-time. kuna's dead list is the same doubly-linked list, realized as
+prev/next `OpId` links on each op (`op.rs (IntrusiveList)`), and
+`op.rs (PcodeOpBank::dead_next / dead_prev / dead_front / dead_back)` read those
+links. Position must never be re-derived by scanning `iter_dead()`: the marker
+idiom in `process_instruction` (remember the tail, decode, then take the first
+op after the marker) and the per-op walk in `xref_control_flow` run once per
+instruction over a list that grows to the whole function, so a scan there is
+quadratic in the function's op count. Membership is the `dead` flag *plus* a live
+link — `destroy` retires an op to `deadandgone` with the flag still set, and the
+alive list shares the same link pair — so the cursor reports a non-member as
+`None`, which is what a scan for an absent op returned.
+
 **Declared flow bounds.** A function normally follows flow wherever the code
 goes: `FlowInfo`'s allowed range is initialized to the whole entry-point space, so
 the extent is discovered, not asserted. A `Funcdata` that carries a non-zero byte
@@ -357,7 +372,16 @@ built against the parent flow's `visited` snapshot, and the reduced
 `"jumptable"` action set — heritage plus the simplification core, no
 structuring — is run over it (`decompile_drive.rs (run_jumptable_pipeline)`).
 The model is then recovered against the *partial*'s BRANCHIND and the finished
-table is written back keyed to the real op. Two pre-checks bound the attempt:
+table is written back keyed to the real op. **This clone is per table, and that
+is a deliberate divergence**: the C++ builds one `partial` per
+`recoverJumpTables` call and guards the clone plus the reduced pipeline behind
+`if (!partial.isJumptableRecoveryOn())`, so upstream pays for the
+sub-decompilation once per function however many BRANCHINDs it has. kuna cannot
+share it, because `unrolledguard` (below) recovers interleaved tables precisely
+*because* each table's clone re-clones the siblings recovered before it. Sharing
+the clone is worth about 20% of the wall time of a two-table function and would
+be upstream-faithful, but it changes which tables recover, so it would have to
+ship behind its own option. Two pre-checks bound the attempt:
 `funcdata_block.rs (Funcdata::early_jump_table_fail)` backtracks up to 8 ops
 through value-preserving arithmetic looking for a computation the recovery can
 never emulate -- but its only failing arm (the uninjected-CALLOTHER
