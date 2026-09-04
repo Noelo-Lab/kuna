@@ -20,19 +20,27 @@ the whole lift, the block build, and the per-jump-table sub-decompilation, twice
 Upstream never pays that: C++ `IfcFuncload` follows the flow once and
 `IfcDecompile` re-runs the action pipeline on *that* `Funcdata` after
 `Architecture::clearAnalysis` (`ifacedecomp.cc:889`). kuna rebuilds instead
-because the facts a decompile is seeded with are consumed **at flow time** and
-`load function` applies none of them: `map address` symbols and DWARF stack
-locals, `type varnode` usepoint symbols, `map hash` dynamic symbols, a `parse
-line extern` prototype, `map param` storage locks, `override prototype` call-site
-overrides. So the rebuild is *required* exactly when one of those exists — and
-pure waste when none does, which is every plain `kuna decompile`.
+because a decompile is seeded with facts `load function` never applied, and two of
+them are consumed **at flow time**: `override prototype` call-site overrides
+(`FlowInfo::build_call_specs`) and the parsed callee prototypes re-parked on their
+global `FunctionSymbol` before the drive. The other five — `map address` symbols
+and DWARF stack locals, `type varnode` usepoint symbols, `map hash` dynamic
+symbols, a `parse line extern` prototype, `map param` storage locks — the drive
+re-seeds *after* the follow, so they would survive an adoption; they are held to
+the same bar anyway (below). So the rebuild is *required* when a flow-time fact
+exists, and pure waste when no fact exists at all — which is every plain `kuna
+decompile`.
 
 `decompile` now **adopts** the loaded IR when it can prove the rebuild would
 repeat the same follow. Three independent guards must all hold
 (`kuna-console/src/ifacedecomp.rs`, `PristineFlow`):
 
-1. **Every flow-time seed is empty** — any one present means the loaded IR was
-   followed without it.
+1. **Every seed is empty** — flow-time or re-seeded alike. Holding the re-seeded
+   ones to the same bar makes the guard one question ("did the console learn
+   anything about this function?") instead of a per-seed judgement a later seed
+   could be forgotten from. It costs coverage only where kuna already has symbols:
+   in the sweep below 203 of 218 functions adopt, and the 15 that do not are the
+   DWARF-local and parsed-prototype cases.
 2. **The architecture is configured as it was at the load** — a `Funcdata`
    snapshots the per-function flags into its ArchSeam handle when it is *built*,
    so a flag flipped afterwards is invisible to it. `formatstring`, the watchdog
@@ -72,8 +80,8 @@ Where it goes, from `Instant`-instrumented builds of the same tree:
 | stage | before | after |
 |---|---|---|
 | `load file` + `read symbols` | 0.75 s | 0.75 s |
-| flow follow #1 (`load function`) | 4.95 s | **0 s** |
-| flow follow #2 (`decompile`) | 4.33 s | 4.33 s |
+| flow follow #1 (`load function`) | 4.95 s | 4.95 s |
+| flow follow #2 (`decompile`) | 4.33 s | **0 s** (adopted) |
 | action pipeline + emit | ~8.8 s | ~8.8 s |
 
 Both follows were dominated by the jump-table sub-decompilation: the function has

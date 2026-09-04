@@ -1136,19 +1136,25 @@ The console has two commands that build IR for a function, and a `kuna decompile
 Upstream follows the flow once — C++ `IfcFuncload` follows it, and `IfcDecompile`
 re-runs the action pipeline on *that* `Funcdata` after
 `Architecture::clearAnalysis`. kuna's `decompile` instead builds a fresh
-`Funcdata` and follows the flow again, because the facts a decompile is seeded
-with are consumed AT FLOW TIME and `load function` applies none of them:
+`Funcdata` and follows the flow again, because a decompile is seeded with facts
+that `load function` never applied — and some of them are consumed AT FLOW TIME,
+so re-seeding them onto an already-followed IR would be too late:
 
-- `map address` symbols and the function's DWARF stack locals, seeded into the
-  rebuilt `ScopeLocal`;
-- `type varnode %REG(pc)` usepoint-scoped symbols, and `map hash` dynamic symbols;
-- a `parse line extern` prototype, and every other parsed prototype re-parked on
-  its global `FunctionSymbol` so a call site can copy it;
-- `map param` storage locks, and `override prototype` call-site overrides, which
-  `FlowInfo::build_call_specs` consumes as it builds the call specs.
+- `override prototype` call-site overrides, which `FlowInfo::build_call_specs`
+  consumes as it builds the call specs, and every `parse line` prototype re-parked
+  on its global `FunctionSymbol` before the drive (a callee prototype the follow
+  resolves against). These two are the genuinely flow-time seeds.
+- `override flow` facts, likewise consumed at flow time — but `load function`
+  seeds these too, from the same store, so the two follows agree on them.
+- `map address` symbols and DWARF stack locals, `type varnode %REG(pc)` usepoint
+  symbols, `map hash` dynamic symbols, a `parse line extern` prototype for the
+  function itself, and `map param` storage locks. The drive re-seeds all of these
+  onto the `Funcdata` *after* the follow, so they do not require a re-follow —
+  they are nonetheless required absent below, because "no facts at all" is the
+  condition that is cheap to prove and impossible to get subtly wrong.
 
-So the rebuild is *required* exactly when one of those facts exists, and pure
-waste when none does — which is every plain `kuna decompile`. The waste is not
+So the rebuild is *required* when a flow-time fact exists, and pure waste when no
+fact exists at all — which is every plain `kuna decompile`. The waste is not
 small: the second follow repeats the whole lift, the block build, and the
 jump-table sub-decompilation (§0.7), which on a large switch-heavy function is the
 single most expensive thing the run does.
@@ -1160,8 +1166,11 @@ through `decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs
 (decompile_func_full_with_override_dyn_prefollowed)`). Two independent guards must
 both hold:
 
-- **Every flow-time seed above is empty.** Any one of them present means the
-  loaded IR was followed without it, so adopting would silently drop it.
+- **Every seed above is empty**, flow-time or re-seeded alike. A flow-time seed
+  present means the loaded IR was followed without it, so adopting would silently
+  drop it; the re-seeded ones are held to the same bar deliberately, so the guard
+  is one question ("did the console learn anything about this function?") rather
+  than a per-seed judgement that a later seed could be forgotten from.
 - **The architecture is configured as it was at the load.** A `Funcdata`
   snapshots the per-function flags into its ArchSeam handle when it is *built*
   (§0.5), so a flag flipped afterwards is invisible to it. Three things move
