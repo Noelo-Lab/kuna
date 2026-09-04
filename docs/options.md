@@ -36,6 +36,10 @@ Three tiers:
 | dead/garbage code after a call to a die()/fatal()/throw wrapper that never returns | [`funcboundflow`](#funcboundflow) |
 | two adjacent functions merged into one, the second also decompiled on its own | [`funcboundflow`](#funcboundflow) |
 | uninitialized reads in the tail after an unrecognized no-return call | [`funcboundflow`](#funcboundflow) |
+| a call to a sub_<hex> address that is not in the binary | [`overlapbranch`](#overlapbranch) |
+| writes through pointers that are never assigned right after a short conditional jump | [`overlapbranch`](#overlapbranch) |
+| a bogus dat_<hex> global incremented once and never read | [`overlapbranch`](#overlapbranch) |
+| a comparison whose operands are unreadable CONCAT/subpiece salad in hand-written or obfuscated code | [`overlapbranch`](#overlapbranch) |
 | core::ptr::drop_in_place(...) calls all over a decompiled rust function | [`cleanupcode`](#cleanupcode) |
 | drop glue and deallocation calls that are nowhere in the rust source | [`cleanupcode`](#cleanupcode) |
 | Drop::drop / __rust_dealloc / RawVecInner::deallocate noise at every scope exit | [`cleanupcode`](#cleanupcode) |
@@ -526,6 +530,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** A function shows a garbage tail that is really the body of the FOLLOWING function (dead code after a call to a die()/throw/exit wrapper, uninitialized reads, a second unrelated function inlined after an error call). On by default; flip OFF to restore the upstream flow-into-the-next-function behavior.
 - **Where / provenance:** P2/flow-classification · ida · correctness-fix · interp-bee-func-merge
 - **Example:** `option funcboundflow off`
+
+### `overlapbranch` -- on | off, default `on`
+
+- **Symptoms:** a call to a sub_<hex> address that is not in the binary; writes through pointers that are never assigned right after a short conditional jump; a bogus dat_<hex> global incremented once and never read; a comparison whose operands are unreadable CONCAT/subpiece salad in hand-written or obfuscated code.
+- **What it does:** REMOVES CODE: when a conditional branch's own target lies STRICTLY INSIDE the encoding of the instruction at its fall-through, the fall-through decode has swallowed the branch target -- the classic anti-disassembly junk-lead-byte overlap (`75 01 e8` : a `JNZ +1` over an `e8` byte that turns the real stream into a bogus 5-byte CALL). kuna's flow follower pops the fall-through before the branch target, so the bogus decode wins by arrival order and desynchronises everything downstream; `set_fallthru_bound` only notices afterwards, when the losing stream is already built. This option makes the explicitly encoded branch target win: the ops of the overlapping fall-through decode are dropped, an artificial halt is planted at its own address (the conditional and its fall-through EDGE both survive), and the target is decoded on its own boundary. Two real instruction starts cannot sit at `next` and strictly inside `next`, so whenever it fires at least one of the two decodes was already wrong. ONE legitimate overlap is excluded first, and it is compiler-generated: glibc's conditional-`LOCK` idiom (`74 01` hopping over an `f0` prefix byte, as in a statically linked `_int_free`/`_int_malloc`) is the SAME instruction with its prefix taken or skipped, so the two decodes END AT THE SAME ADDRESS and both streams are real. The branch target's own instruction length is therefore decoded and the rule declines whenever `target + target_len == curaddr + step`, and likewise whenever the target does not decode at all. Ablating that one exclusion deletes the atomic store on a live path, so it is not decoration.
+- **When to flip:** A hand-written / obfuscated / anti-disassembly binary decompiles with a call to an address outside the image, stores through never-assigned pointers, or bogus `dat_<hex>` globals right after a short conditional jump. Off restores the upstream fall-through-wins decode. Inert on ordinary compiler output: the trigger needs a branch target strictly inside its own fall-through instruction, and the one compiler idiom that produces that (a conditional jump over a `LOCK` prefix) is excluded because both decodes end at the same address.
+- **Where / provenance:** P2/flow-classification · ida · correctness-fix · overlapping-anti-disassembly-sequence
+- **Example:** `option overlapbranch off`
 
 ### `cleanupcode` -- on | off, default `on` (destructive opt-in)
 

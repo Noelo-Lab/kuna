@@ -178,6 +178,12 @@ impl FlowEnvironment for ArchFlowEnv {
         // entry (via `query_call`) so the next function is not decoded into this one.
         self.arch().funcbound_flow
     }
+    fn overlap_branch_enabled(&self) -> bool {
+        // (kuna overlapbranch) the Architecture-owned gate (`option overlapbranch`).
+        // When on, `flow.rs` truncates a conditional branch's fall-through whose
+        // encoding swallows the branch's own target.
+        self.arch().overlap_branch
+    }
     fn query_call_inline(&self, entry: &Address) -> bool {
         // C++ `queryCall` copies the callee proto's `isInline()` flow effect; the
         // flag is set by `option inline <name>` (OptionInline) on the resolved
