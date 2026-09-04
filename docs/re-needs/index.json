@@ -4,8 +4,8 @@
   "count": 34,
   "rejected_count": 0,
   "by_status": {
-    "closed": 8,
-    "open": 26
+    "closed": 9,
+    "open": 25
   },
   "by_track": {
     "perf": 2,
@@ -120,7 +120,7 @@
       "need_id": "no-cli-function-boundary-override",
       "title": "an agent cannot tell kuna where a function starts or ends",
       "track": "tooling",
-      "status": "open",
+      "status": "closed",
       "severity": "blocker",
       "probe_id": "p-83ce32ba278c",
       "acceptance_id": "a-88c4db106ade",
@@ -141,8 +141,8 @@
       "scope": "large",
       "regression_of": null,
       "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "closed_in_round": 2,
+      "closing_pr": "374",
       "reject_reason": null,
       "score": 20.794415,
       "path": "docs/re-needs/no-cli-function-boundary-override.md"

@@ -2,7 +2,7 @@
 need_id: no-cli-function-boundary-override
 title: an agent cannot tell kuna where a function starts or ends
 track: tooling
-status: open
+status: closed
 severity: blocker
 probe_id: p-83ce32ba278c
 acceptance_id: a-88c4db106ade
@@ -14,6 +14,8 @@ first_seen_round: 2
 attempts: 0
 touches: [decompiler/crates/kuna-cli/src, decompiler/crates/kuna-console/src/ifacedecomp.rs]
 scope: large
+closed_in_round: 2
+closing_pr: "374"
 ---
 
 ## Symptom
@@ -23,58 +25,6 @@ The console has `map function <addr> [name] [nocode]` and `load addr <addr> [nam
 ## Reproduction
 
 Every named CLI flag is rejected with `error: unknown option`, verified on the round-1 merge build; the stubs are verified by driving `decomp_dbg` directly and reading back `engine integration not yet ported`.
-
-## Hypothesis
-
-ADVISORY. The cheap half is exposure, not implementation: most of these commands already work and only lack a path from the `kuna` binary. The expensive half is the stubs. A builder should measure which is which before choosing a design, and should NOT assume a `kuna console` passthrough is the right shape -- a scriptable console is a different product from a set of flags an agent can compose.
-
-## Probe
-
-Asserts the CURRENT bad behaviour: every named boundary flag is rejected, so the
-`kuna` binary has no lever at all. PASSes on the round-1 merge build (e5ac9c77).
-
-```json
-{
-  "schema": "re-probe/1",
-  "probe_id": "p-83ce32ba278c",
-  "kind": "cli",
-  "cmd": [
-    "{{KUNA}}",
-    "decompile-all",
-    "{{BIN}}",
-    "--json",
-    "--functions",
-    "stage1",
-    "--define-function",
-    "0x13c9-0x1420=stage1"
-  ],
-  "cwd": "{{WORK}}",
-  "env": {
-    "SLEIGHHOME": "{{SPECS}}"
-  },
-  "stdin": null,
-  "timeout_s": 120,
-  "repeat": 1,
-  "target": {
-    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/aif_gap_x86_64",
-    "binary_sha256": "1a592a85f424cc2db8953d5a38c86676bcee5e37b242b6fb6244a2c9fccfeeef",
-    "binary_size": 14408,
-    "binary_source": "in-repo",
-    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/aif_gap_x86_64",
-    "selector": "0x13c9",
-    "selector_kind": "addr"
-  },
-  "expect": {
-    "exit_code": {
-      "ne": 0
-    },
-    "stderr_matches": [
-      "unknown option --define-function"
-    ]
-  },
-  "notes": "Current: no kuna surface can declare where a function starts or ends -- every named flag is rejected. The console has map function / load addr; the kuna binary can emit neither, and 'function F spans [start,end)' is not expressible anywhere in the engine."
-}
-```
 
 ## Acceptance
 
@@ -151,6 +101,10 @@ the declared end instead of swallowing its neighbours.
 }
 ```
 
+## Hypothesis
+
+ADVISORY. The cheap half is exposure, not implementation: most of these commands already work and only lack a path from the `kuna` binary. The expensive half is the stubs. A builder should measure which is which before choosing a design, and should NOT assume a `kuna console` passthrough is the right shape -- a scriptable console is a different product from a set of flags an agent can compose.
+
 ## Decision log
 
 - seeded for round 2 from a source survey of the override surface, after round 1 showed testers hitting obfuscated images with no lever to correct kuna with. Not tester-filed: round 2 should confirm the demand.
@@ -159,3 +113,52 @@ the declared end instead of swallowing its neighbours.
 - shipped `--define-function <start[-end][=name] | @file>` on `decompile`, `decompile-all`, `functions`, `decompile-project` and `disassemble`, over one new kuna-only console command (`function bounds <start> [<end>] [as <name>]`) and one `ConsoleProgram::declared_extents` store consulted by every later load of that entry. NOT closed: `xrefs` and `strings` load through the same `Args` but do not accept the flag (they pass an empty declaration list), and durability is caller-carried (the `@file` is the artifact; kuna does not write boundaries back into the image).
 - a wrong declared end used to produce a silently EMPTY body: `FlowInfo::handle_out_of_bounds` computed the C++ "Function flow out of bounds" message and dropped it on the floor (a W4 stub), so the one failure mode the new flag introduces was invisible. Un-stubbed to the two `Funcdata::warning`/`warning_header` calls the C++ makes; the flow range is the whole entry-point space unless an extent is declared, so this fires only under a declared boundary and is inert everywhere else (measured: 69/69 real-ELF fixtures byte-identical to main).
 - deliberately out of scope, and left to `no-cli-rename-or-prototype-override`: renaming an entry is only supported here as the `=NAME` half of a boundary declaration.
+- closed: acceptance a-88c4db106ade now PASSES at 751a960de2fd
+
+## Probe
+
+Asserts the CURRENT bad behaviour: every named boundary flag is rejected, so the
+`kuna` binary has no lever at all. PASSes on the round-1 merge build (e5ac9c77).
+
+```json
+{
+  "schema": "re-probe/1",
+  "probe_id": "p-83ce32ba278c",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--json",
+    "--functions",
+    "stage1",
+    "--define-function",
+    "0x13c9-0x1420=stage1"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/aif_gap_x86_64",
+    "binary_sha256": "1a592a85f424cc2db8953d5a38c86676bcee5e37b242b6fb6244a2c9fccfeeef",
+    "binary_size": 14408,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/aif_gap_x86_64",
+    "selector": "0x13c9",
+    "selector_kind": "addr"
+  },
+  "expect": {
+    "exit_code": {
+      "ne": 0
+    },
+    "stderr_matches": [
+      "unknown option --define-function"
+    ]
+  },
+  "notes": "Current: no kuna surface can declare where a function starts or ends -- every named flag is rejected. The console has map function / load addr; the kuna binary can emit neither, and 'function F spans [start,end)' is not expressible anywhere in the engine."
+}
+```
