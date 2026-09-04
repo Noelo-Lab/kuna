@@ -4,8 +4,8 @@
   "count": 35,
   "rejected_count": 0,
   "by_status": {
-    "closed": 17,
-    "open": 18
+    "closed": 18,
+    "open": 17
   },
   "by_track": {
     "perf": 2,
@@ -152,7 +152,7 @@
       "need_id": "overlapping-anti-disassembly-sequence",
       "title": "Overlapping anti-disassembly sequence produces bogus out-of-image code and corrupted checker dataflow",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "blocker",
       "probe_id": "p-410dd063e811",
       "acceptance_id": "a-52c2ad89b522",
@@ -174,8 +174,8 @@
       "scope": "large",
       "regression_of": null,
       "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "closed_in_round": 2,
+      "closing_pr": "383",
       "reject_reason": null,
       "score": 20.794415,
       "path": "docs/re-needs/overlapping-anti-disassembly-sequence.md"

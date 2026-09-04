@@ -2,7 +2,7 @@
 need_id: overlapping-anti-disassembly-sequence
 title: Overlapping anti-disassembly sequence produces bogus out-of-image code and corrupted checker dataflow
 track: quality
-status: open
+status: closed
 severity: blocker
 probe_id: p-410dd063e811
 acceptance_id: a-52c2ad89b522
@@ -18,8 +18,8 @@ touches: [decompiler/crates/kuna-decomp]
 scope: large
 regression_of: null
 pr: null
-closed_in_round: null
-closing_pr: null
+closed_in_round: 2
+closing_pr: "383"
 reject_reason: null
 ---
 
@@ -121,3 +121,4 @@ A decompilation of the recursive password checker at 0x804881c that follows the 
 - filed by cluster.py from 1 observation(s)
 - round 2 T_REFUTE (captain): hypothesis **UPHELD** by direct disassembly (JNZ 0x8048838 followed by a linear CALL at 0x8048837 whose target is outside the image). Detection is low-risk; the wrong-output risk is the ownership policy for the overlapped bytes and the already-built flow, which the builder must answer explicitly and gate.
 - round 2 T_TRIAGE (captain): scope small -> LARGE. T_REFUTE upheld the symptom by direct disassembly (JNZ 0x8048838 at 0x8048835 followed by a linear CALL 0xb10cdc7 at 0x8048837 whose target is out of image) and identified the real risk as the OWNERSHIP POLICY for the overlapped bytes -- which decode wins, and what becomes of the instructions attributed to the loser. That is a code-vs-code partitioning decision in P1/P2 with corpus-wide blast radius, and the refutation says the builder must answer and gate it. A design-only [PROPOSAL] is the right gate for a blocker whose fix moves instruction boundaries; detection itself is cheap and low-risk (a branch cannot target mid-instruction in well-formed code), it is the resolution that needs a decision.
+- closed: acceptance a-52c2ad89b522 now PASSES at b08c30ac6668
