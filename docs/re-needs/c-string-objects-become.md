@@ -2,24 +2,24 @@
 need_id: c-string-objects-become
 title: C++ string objects become five-level pointer types in the checker
 track: quality
-status: open
+status: closed
 severity: major
 probe_id: p-a597c89a3648
-acceptance_id: a-4ac515df8701
-hypothesis_status: inconclusive
+acceptance_id: a-c52c9a0120b6
+hypothesis_status: overturned
 credibility: 0.7
 instances: 1
 challenges: [6547b4d50f4238b24302b588]
 rounds: [2]
 first_seen_round: 2
-attempts: 0
-covered_by_option: null
+attempts: 1
+covered_by_option: ptrdepthcap
 touches: [decompiler/crates/kuna-decomp]
 scope: large
 regression_of: null
-pr: null
-closed_in_round: null
-closing_pr: null
+pr: "392"
+closed_in_round: 2
+closing_pr: "392"
 reject_reason: null
 ---
 
@@ -135,3 +135,4 @@ _none recorded_
 - round 2 B_DONE (builder): `verify --promote` refuses this acceptance because its target is `binary_source: dataset` and CI has no dataset (the same refusal PR #377 got). No in-repo fixture was fabricated with a different sha to get around it; the in-repo regression cover is the two-pass `tests/stages/kuna-ptrdepthcap.xml`, which reproduces the defect on a hand-built bytechunk.
 - round 2 B_DONE (builder): the captain's `scope: large` triage followed from the refuted hypothesis. The fix is one module + one gated call site + one settable row, so the proposal fork was NOT taken.
 - round 2 T_TRIAGE (captain): scope small -> LARGE. Recovering std::string/ostringstream through five-level pointer types is C++ type recovery, a known multi-part area of this codebase (TypePointerRel / FuncProto-this / struct-descent are ported but unfed), not a one-session patch.
+- closed: acceptance a-c52c9a0120b6 now PASSES at c2e442188496 (the record's `## Acceptance` block is truth and hashes to a-c52c9a0120b6 after the builder strengthened it; the stale frontmatter label a-4ac515df8701 was corrected to match)

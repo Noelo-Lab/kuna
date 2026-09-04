@@ -4,8 +4,8 @@
   "count": 35,
   "rejected_count": 0,
   "by_status": {
-    "closed": 21,
-    "open": 14
+    "closed": 22,
+    "open": 13
   },
   "by_track": {
     "perf": 2,
@@ -179,38 +179,6 @@
       "reject_reason": null,
       "score": 20.794415,
       "path": "docs/re-needs/overlapping-anti-disassembly-sequence.md"
-    },
-    {
-      "need_id": "c-string-objects-become",
-      "title": "C++ string objects become five-level pointer types in the checker",
-      "track": "quality",
-      "status": "open",
-      "severity": "major",
-      "probe_id": "p-a597c89a3648",
-      "acceptance_id": "a-4ac515df8701",
-      "hypothesis_status": "inconclusive",
-      "credibility": 0.7,
-      "instances": 1,
-      "challenges": [
-        "6547b4d50f4238b24302b588"
-      ],
-      "rounds": [
-        2
-      ],
-      "first_seen_round": 2,
-      "attempts": 0,
-      "covered_by_option": null,
-      "touches": [
-        "decompiler/crates/kuna-decomp"
-      ],
-      "scope": "large",
-      "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
-      "reject_reason": null,
-      "score": 13.862944,
-      "path": "docs/re-needs/c-string-objects-become.md"
     },
     {
       "need_id": "direct-address-keyboard-handler",
@@ -557,6 +525,38 @@
       "reject_reason": null,
       "score": 13.862944,
       "path": "docs/re-needs/xrefs-unify-pe-import.md"
+    },
+    {
+      "need_id": "c-string-objects-become",
+      "title": "C++ string objects become five-level pointer types in the checker",
+      "track": "quality",
+      "status": "closed",
+      "severity": "major",
+      "probe_id": "p-a597c89a3648",
+      "acceptance_id": "a-c52c9a0120b6",
+      "hypothesis_status": "overturned",
+      "credibility": 0.7,
+      "instances": 1,
+      "challenges": [
+        "6547b4d50f4238b24302b588"
+      ],
+      "rounds": [
+        2
+      ],
+      "first_seen_round": 2,
+      "attempts": 1,
+      "covered_by_option": "ptrdepthcap",
+      "touches": [
+        "decompiler/crates/kuna-decomp"
+      ],
+      "scope": "large",
+      "regression_of": null,
+      "pr": "392",
+      "closed_in_round": 2,
+      "closing_pr": "392",
+      "reject_reason": null,
+      "score": 9.241962,
+      "path": "docs/re-needs/c-string-objects-become.md"
     },
     {
       "need_id": "cli-mode-read-raw",
