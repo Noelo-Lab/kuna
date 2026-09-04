@@ -85,6 +85,30 @@ impl Listing {
         Self::build_with_meta(file, _image, arch, translate, seeds, &[], &[])
     }
 
+    /// A Listing assembled from a partition someone else already decoded.
+    ///
+    /// The reference walk ([`xrefs::build`]) is a recursive descent over the same
+    /// loadimage and leaves behind the same two facts the AIF gap-walk consumes —
+    /// which bytes are instructions, and which addresses are functions — so it can
+    /// hand them here instead of paying for a second decode of the program. Only
+    /// the partition is populated: `mnemonic` is filled for the prologues the
+    /// fingerprint histogram reads and empty everywhere else, and the reference
+    /// model is empty (the gap-walk reads neither).
+    pub fn from_partition(
+        insns: BTreeMap<u64, Insn>,
+        funcs: BTreeMap<u64, DiscoveredFunction>,
+        exec_ranges: Vec<(u64, u64)>,
+    ) -> Listing {
+        Listing {
+            insns,
+            refs_to: BTreeMap::new(),
+            refs_from: BTreeMap::new(),
+            funcs,
+            covered: RangeList::default(),
+            exec_ranges,
+        }
+    }
+
     /// Like [`Listing::build`], but with seed metadata: `funcsym_seeds` is the
     /// subset of `seeds` that came from a real funcsym (sets `from_symbol`), and
     /// `seed_names` is an `(addr, name)` overlay for naming seed functions.

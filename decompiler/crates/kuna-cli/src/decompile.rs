@@ -625,7 +625,7 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
     // selection that missed. That is exactly the reported gap — `kuna functions` prints
     // a discovery-generated name that `kuna decompile` then refuses — and nothing that
     // already resolved changes at all.
-    let full = decompile_all::driver_default_options(&binary, true, &args.options);
+    let full = decompile_all::driver_default_options(&binary, true, true, &args.options);
     let (base, discovery): (Vec<_>, Vec<_>) =
         full.into_iter().partition(|(name, _)| *name == "listing");
 
@@ -1809,7 +1809,7 @@ Execution error: No symbol named: v9
     #[test]
     fn the_retry_widens_to_the_in_process_drivers_bundle() {
         let arm = fixture("entrymain_arm");
-        let full = decompile_all::driver_default_options(&arm, true, &[]);
+        let full = decompile_all::driver_default_options(&arm, true, true, &[]);
         assert_eq!(full, WIDENED, "the non-x86-64 bundle");
         let (base, discovery): (Vec<_>, Vec<_>) =
             full.into_iter().partition(|(name, _)| *name == "listing");
@@ -1822,7 +1822,7 @@ Execution error: No symbol named: v9
     /// over-produce, which is why the bundle is non-x86-64 only.
     #[test]
     fn there_is_no_retry_to_make_on_x86_64() {
-        let full = decompile_all::driver_default_options(&fixture("fauxware"), true, &[]);
+        let full = decompile_all::driver_default_options(&fixture("fauxware"), true, true, &[]);
         assert_eq!(full, LISTING);
     }
 
@@ -1832,7 +1832,7 @@ Execution error: No symbol named: v9
     #[test]
     fn the_bundle_yields_to_a_named_option() {
         let options = vec![("aif".to_string(), "off".to_string())];
-        let full = decompile_all::driver_default_options(&fixture("entrymain_arm"), true, &options);
+        let full = decompile_all::driver_default_options(&fixture("entrymain_arm"), true, true, &options);
         assert_eq!(full, &[("listing", "on"), ("funcstart_patterns", "on")]);
     }
 

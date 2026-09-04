@@ -61,7 +61,7 @@
 //! excluded from the answer: it is the other half of the callable, not a caller
 //! of it, which is what makes the two addresses answer identically.
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque, HashSet};
 use std::rc::Rc;
 
 use kuna_base::address::Address;
@@ -145,8 +145,8 @@ pub struct XrefIndex {
     /// Outgoing edges, keyed by the entry of the function the source lies in;
     /// sorted by target then source.
     by_source_function: BTreeMap<u64, Vec<Xref>>,
-    /// Every instruction VMA the walk decoded.
-    decoded: BTreeSet<u64>,
+    /// Every instruction VMA the walk decoded (membership only).
+    decoded: HashSet<u64>,
     /// Every function entry the walk seeded or discovered, in address order.
     funcs: BTreeSet<u64>,
     /// Forwarding veneers, keyed by function entry ([`veneer_at`]).
@@ -285,6 +285,7 @@ impl XrefIndex {
 /// classifier needs); the parts it drops are what the data-reference scan is
 /// made of — the output says a memory location was written, the later inputs
 /// carry the addresses.
+#[derive(Clone)]
 pub(super) struct FullOp {
     pub(super) opcode: OpCode,
     pub(super) out: Option<VarnodeData>,
@@ -292,9 +293,28 @@ pub(super) struct FullOp {
 }
 
 /// A capturing [`PcodeEmit`] that keeps every emitted op whole.
+///
+/// One capture is reused for the whole walk: [`FullCapture::begin`] rewinds the
+/// cursor instead of dropping the ops, so each slot's input vector is refilled in
+/// place. Allocating per op cost one heap allocation for every p-code op in the
+/// program (1.44 M on a 466 KB obfuscated i386 image).
 #[derive(Default)]
 struct FullCapture {
     ops: Vec<FullOp>,
+    /// How many of `ops` the current instruction has filled.
+    filled: usize,
+}
+
+impl FullCapture {
+    /// Start capturing a new instruction over the retained storage.
+    fn begin(&mut self) {
+        self.filled = 0;
+    }
+
+    /// The ops the current instruction emitted.
+    fn ops(&self) -> &[FullOp] {
+        &self.ops[..self.filled]
+    }
 }
 
 impl PcodeEmit for FullCapture {
@@ -305,7 +325,16 @@ impl PcodeEmit for FullCapture {
         outvar: Option<&VarnodeData>,
         vars: &[VarnodeData],
     ) {
-        self.ops.push(FullOp { opcode: opc, out: outvar.cloned(), ins: vars.to_vec() });
+        if self.filled == self.ops.len() {
+            self.ops.push(FullOp { opcode: opc, out: outvar.cloned(), ins: vars.to_vec() });
+        } else {
+            let slot = &mut self.ops[self.filled];
+            slot.opcode = opc;
+            slot.out = outvar.cloned();
+            slot.ins.clear();
+            slot.ins.extend_from_slice(vars);
+        }
+        self.filled += 1;
     }
 }
 
@@ -326,6 +355,33 @@ impl AssemblyEmit for AsmCapture {
     }
 }
 
+/// The seed set a STANDALONE reference walk needs: the caller's committed
+/// function inventory, plus the `<patternpairs>` prologue starts on the
+/// architectures the drivers route through the Listing tier (DIV-20/DIV-68).
+///
+/// `kuna xrefs` does its own recursive descent ([`build`] follows every direct
+/// CALL out of its seeds), so the only thing the analysis-tier Listing walk
+/// contributed to a reference query was a richer seed set — and building that
+/// Listing means decoding the whole program a second time. Handing the same
+/// prologue starts straight to the reference walk keeps the seeds and drops the
+/// duplicate decode. x86-64 is untouched (its entry oracles already carry the
+/// prologue scan, and the drivers inject nothing there), so the seed set on that
+/// architecture is exactly the caller's inventory.
+pub fn discovery_seeds(file: &object::File, entries: &[u64], patterns: bool) -> Vec<u64> {
+    let mut seeds: Vec<u64> = entries.to_vec();
+    if patterns && file.architecture() != object::Architecture::X86_64 {
+        let execs = crate::entry::executable_sections(file);
+        seeds.extend(
+            crate::entry::full_pattern_starts(file)
+                .into_iter()
+                .filter(|&vma| crate::entry::in_executable_section(&execs, vma)),
+        );
+    }
+    seeds.sort_unstable();
+    seeds.dedup();
+    seeds
+}
+
 /// Walk every function reachable from `seeds` and index every reference edge.
 ///
 /// `file` supplies the section partition (which VMAs are code, which are mapped
@@ -342,6 +398,28 @@ pub fn build(
     arch: &Architecture,
     translate: &dyn Translate,
     seeds: &[u64],
+) -> XrefIndex {
+    build_with_focus(file, arch, translate, seeds, &[])
+}
+
+/// [`build`], plus the addresses the CALLER named.
+///
+/// A recursive descent answers for the code it can reach, and the one address a
+/// reference query is certainly interested in is the one it was asked about — an
+/// entry reached only through a function-pointer table has no direct CALL edge
+/// pointing at it, so no seed set built from prologues and symbols reaches it and
+/// `--from <that entry>` answers zero references about a function that plainly
+/// has some. Each `focus` address is walked as a function of its own, but only
+/// AFTER the seeded walk has drained: anything the natural descent claims is
+/// already in `decoded` and skipped, so a focus address can only ADD coverage,
+/// never re-attribute an instruction some other entry already owns. An address
+/// that does not decode is dropped rather than recorded as a function.
+pub fn build_with_focus(
+    file: &object::File,
+    arch: &Architecture,
+    translate: &dyn Translate,
+    seeds: &[u64],
+    focus: &[u64],
 ) -> XrefIndex {
     let Some(code_space) = arch.manage().get_default_code_space().map(Rc::clone) else {
         return empty();
@@ -401,17 +479,66 @@ pub fn build(
     let mut st = State {
         by_target: BTreeMap::new(),
         by_source: BTreeMap::new(),
-        decoded: BTreeSet::new(),
+        decoded: HashSet::new(),
         funcs: seed_set.clone(),
     };
 
-    let mut func_queue: VecDeque<u64> = seed_set.iter().copied().collect();
-    let mut walked: BTreeSet<u64> = BTreeSet::new();
-    // The assembly render of each buffered instruction, so the deferred
-    // base-relative pass files the same `instruction` text the inline pass does.
-    let mut texts: BTreeMap<u64, (u32, String)> = BTreeMap::new();
+    // Reused across every decode in the walk (see [`FullCapture`]).
+    let mut cap = FullCapture::default();
+    let mut raw: Vec<RawOp> = Vec::new();
 
-    while let Some(entry) = func_queue.pop_front() {
+    // (kuna, `aif`) The instruction partition the gap-walk consumes, recorded
+    // only when it will run. A `push` per decode is the whole cost of keeping
+    // AIF reachable without a second decode of the program.
+    let gapwalk = arch.analysis_aif;
+    let mut gapwalk_done = false;
+    let mut partition: Vec<(u64, u32)> = Vec::new();
+
+    let mut func_queue: VecDeque<u64> = seed_set.iter().copied().collect();
+    let mut walked: HashSet<u64> = HashSet::new();
+
+    // The caller-named addresses the seeded walk did not already cover, tried one
+    // at a time once the queue drains (see [`build_with_focus`]).
+    let mut pending_focus: Vec<u64> =
+        focus.iter().copied().filter(|f| !seed_set.contains(f)).collect();
+    pending_focus.sort_unstable();
+    pending_focus.dedup();
+    pending_focus.reverse();
+    let mut focused: Vec<u64> = Vec::new();
+
+    loop {
+        // The seeded walk drains first; only then is the next caller-named
+        // address it never reached taken up as a function of its own.
+        let entry = match func_queue.pop_front() {
+            Some(entry) => entry,
+            None => match pending_focus.pop() {
+                Some(f) => {
+                    if st.decoded.contains(&f) || (sections_are_runtime && !in_range(&exec, f)) {
+                        continue;
+                    }
+                    st.funcs.insert(f);
+                    focused.push(f);
+                    f
+                }
+                // (kuna, `aif`) Nothing reachable is left: run the speculative
+                // gap-walk over the partition THIS walk left behind, and take up
+                // whatever it finds as more entries to walk. See `gap_entries`.
+                None if gapwalk && !gapwalk_done => {
+                    gapwalk_done = true;
+                    let found = gap_entries(
+                        arch,
+                        translate,
+                        &code_space,
+                        &partition,
+                        &st.funcs,
+                        &exec,
+                    );
+                    pending_focus.extend(found.into_iter().rev());
+                    continue;
+                }
+                None => break,
+            },
+        };
         if !walked.insert(entry) {
             continue;
         }
@@ -419,7 +546,7 @@ pub fn build(
         // Only collected when a base exists: the admission rule needs the whole
         // body before any of it can be attributed (`kuna_picbase::scope`), and
         // buffering it costs nothing on the overwhelmingly common `None` path.
-        let mut body: Vec<(u64, Vec<FullOp>)> = Vec::new();
+        let mut body: Vec<kuna_picbase::BaseCandidate> = Vec::new();
         while let Some(vma) = insn_queue.pop_front() {
             if st.decoded.contains(&vma) {
                 continue; // already decoded (the VisitStat dedup)
@@ -434,24 +561,38 @@ pub fn build(
             if sections_are_runtime && !in_range(&exec, vma) {
                 continue; // out of bounds (the `flow.rs` gate)
             }
-            let Some(decoded) = decode(translate, vma, &code_space) else {
-                continue; // undecodable: stop this path
+            let Some(len) = decode(translate, vma, &code_space, &mut cap) else {
+                continue; // undecodable (or zero-length): stop this path
             };
-            if decoded.len == 0 {
-                continue; // a zero-length decode would not advance
-            }
             st.decoded.insert(vma);
+            if gapwalk {
+                partition.push((vma, len));
+            }
 
-            let raw: Vec<RawOp> = decoded
-                .ops
-                .iter()
-                .map(|op| RawOp { opcode: op.opcode, in0: op.ins.first().cloned() })
-                .collect();
-            let c = classify(&raw, vma, decoded.len);
+            raw.clear();
+            raw.extend(
+                cap.ops()
+                    .iter()
+                    .map(|op| RawOp { opcode: op.opcode, in0: op.ins.first().cloned() }),
+            );
+            let c = classify(&raw, vma, len);
+            let drefs = if mapped.is_empty() {
+                Vec::new()
+            } else {
+                let fall_through = vma.wrapping_add(len as u64);
+                data_refs(cap.ops(), data_space.as_ref(), &mapped, fall_through)
+            };
+            // Every row this instruction produces carries the same render, and an
+            // instruction that produces none needs no render at all.
+            let text = if c.flows.is_empty() && drefs.is_empty() {
+                String::new()
+            } else {
+                assembly(translate, vma, &code_space)
+            };
 
             for &target in &c.flows {
                 let kind = if c.flow.is_call { XrefKind::Call } else { XrefKind::Jump };
-                st.file(vma, target, kind, &decoded.text);
+                st.file(vma, target, kind, &text);
                 if c.flow.is_call {
                     st.funcs.insert(target);
                     func_queue.push_back(target);
@@ -464,41 +605,59 @@ pub fn build(
                 insn_queue.push_back(fall);
             }
 
-            if !mapped.is_empty() {
-                let fall_through = vma.wrapping_add(decoded.len as u64);
-                for (to, kind) in
-                    data_refs(&decoded.ops, data_space.as_ref(), &mapped, fall_through)
-                {
-                    st.file(vma, to, kind, &decoded.text);
-                }
+            for (to, kind) in drefs {
+                st.file(vma, to, kind, &text);
             }
-            if picbase.is_some() {
-                body.push((vma, decoded.ops));
-                texts.insert(vma, (decoded.len, decoded.text));
+            // Both halves the deferred base-relative pass needs are pure
+            // functions of this instruction's ops, so they are computed here
+            // rather than by buffering (and cloning) the whole p-code.
+            if let Some((ctx, base)) = &picbase {
+                let fall_through = vma.wrapping_add(u64::from(len));
+                body.push(kuna_picbase::BaseCandidate {
+                    vma,
+                    writes_base: kuna_picbase::writes_base(cap.ops(), base),
+                    refs: kuna_picbase::refs_through_base(
+                        cap.ops(),
+                        base,
+                        ctx,
+                        &mapped,
+                        fall_through,
+                    ),
+                });
             }
         }
 
         // (kuna) `picbase`: the references this body forms THROUGH the base
         // register, filed only where the body cannot have changed it.
         if let Some((ctx, base)) = &picbase {
-            body.sort_by_key(|(vma, _)| *vma);
+            body.sort_by_key(|c| c.vma);
             if let Some(scope) =
                 kuna_picbase::scope(translate, &code_space, ctx, &mut pc_thunks, base, &body)
             {
-                for (vma, ops) in &body {
-                    if !scope.admits(*vma) {
+                for cand in &body {
+                    if cand.refs.is_empty() || !scope.admits(cand.vma) {
                         continue;
                     }
-                    let Some((len, text)) = texts.get(vma) else { continue };
-                    let fall_through = vma.wrapping_add(u64::from(*len));
-                    for (to, kind) in
-                        kuna_picbase::refs_through_base(ops, base, ctx, &mapped, fall_through)
-                    {
-                        st.file(*vma, to, kind, text);
+                    // Rendered here, not in the walk: an admitted instruction
+                    // that forms a reference is rare, and rendering every
+                    // buffered instruction up front was a second full SLEIGH
+                    // parse of the whole program on any image with a PIC base
+                    // (an i386 `__x86.get_pc_thunk` binary: 154,608 renders to
+                    // file 151 references).
+                    let text = assembly(translate, cand.vma, &code_space);
+                    for &(to, kind) in &cand.refs {
+                        st.file(cand.vma, to, kind, &text);
                     }
                 }
             }
-            texts.clear();
+            let _ = ctx;
+        }
+    }
+    // A focus address that did not decode is not a function: recording it as one
+    // would answer `sub_<addr>` for a byte in the middle of a string.
+    for f in focused {
+        if !st.decoded.contains(&f) {
+            st.funcs.remove(&f);
         }
     }
 
@@ -522,6 +681,97 @@ pub fn build(
     }
 
     st.finish(veneers)
+}
+
+/// Ghidra's `MINIMUM_FUNCTION_COUNT`, mirrored here so the partition is not even
+/// assembled for a program the gap-walk would decline to fingerprint.
+const AIF_MIN_FUNCTIONS: usize = 20;
+
+/// The functions the speculative gap-walk (`aif`) finds in what THIS walk left
+/// undecoded.
+///
+/// A function reached only through a function-pointer table has no direct CALL
+/// edge, so a recursive descent structurally cannot reach it and every reference
+/// it makes is missing from the answer — on a stripped i386 PE, 61 of the 174
+/// callers of one function. That recall is what the analysis-tier Listing was
+/// buying a reference query, and it is the only thing it was buying one: the
+/// Listing's own walk duplicates this one over the same bytes. Assembling the
+/// partition from the decode already done keeps the recall and drops the
+/// duplicate decode.
+///
+/// The gap-walk fingerprints each candidate against the prologues of the already
+/// -discovered functions, so the two leading instructions of each are rendered
+/// here — `2 * functions` renders, against the whole program's worth the Listing
+/// path rendered.
+fn gap_entries(
+    arch: &Architecture,
+    translate: &dyn Translate,
+    code_space: &Rc<AddrSpace>,
+    partition: &[(u64, u32)],
+    funcs: &BTreeSet<u64>,
+    exec: &[(u64, u64)],
+) -> Vec<u64> {
+    if funcs.len() < AIF_MIN_FUNCTIONS || partition.is_empty() {
+        return Vec::new();
+    }
+    let mut insns: BTreeMap<u64, super::Insn> = BTreeMap::new();
+    for &(addr, len) in partition {
+        insns.insert(
+            addr,
+            super::Insn {
+                addr,
+                len,
+                fall_through: None,
+                flow: super::FlowType::default(),
+                flows: Vec::new(),
+                mnemonic: String::new(),
+                operands: String::new(),
+                pcode: None,
+            },
+        );
+    }
+    // The fingerprint reads the first two instructions of every discovered
+    // function; nothing else in the gap-walk reads a mnemonic.
+    for &entry in funcs {
+        let mut vma = entry;
+        for _ in 0..2 {
+            let Some(insn) = insns.get(&vma) else { break };
+            let next = vma.wrapping_add(u64::from(insn.len));
+            let text = assembly(translate, vma, code_space);
+            if let Some(slot) = insns.get_mut(&vma) {
+                slot.mnemonic =
+                    text.split_whitespace().next().unwrap_or_default().to_string();
+            }
+            vma = next;
+        }
+    }
+    let listing = super::Listing::from_partition(
+        insns,
+        funcs
+            .iter()
+            .map(|&entry| {
+                (
+                    entry,
+                    super::DiscoveredFunction {
+                        entry,
+                        name: None,
+                        from_symbol: false,
+                        has_no_return: false,
+                        call_fixup: None,
+                    },
+                )
+            })
+            .collect(),
+        exec.to_vec(),
+    );
+    crate::aif::run_aif(
+        &listing,
+        translate,
+        Rc::clone(code_space),
+        listing.exec_ranges(),
+        arch.analysis_aifstrict,
+        arch.analysis_aifcorroborate,
+    )
 }
 
 /// A forwarding veneer: the fixed pointer slot it jumps through, and the VMA one
@@ -564,24 +814,22 @@ fn veneer_at(
     mapped: &[(u64, u64)],
 ) -> Option<Veneer> {
     let mut vma = entry;
+    let mut cap = FullCapture::default();
     for _ in 0..MAX_VENEER_INSNS {
-        let decoded = decode(translate, vma, code_space)?;
-        if decoded.len == 0 {
-            return None;
-        }
-        let raw: Vec<RawOp> = decoded
-            .ops
+        let len = decode(translate, vma, code_space, &mut cap)?;
+        let raw: Vec<RawOp> = cap
+            .ops()
             .iter()
             .map(|op| RawOp { opcode: op.opcode, in0: op.ins.first().cloned() })
             .collect();
-        let c = classify(&raw, vma, decoded.len);
+        let c = classify(&raw, vma, len);
         if !c.flows.is_empty() || c.flow.is_call || c.flow.kind == FlowKind::Return {
             return None;
         }
-        if let Some(op) = decoded.ops.iter().find(|o| o.opcode == OpCode::CPUI_BRANCHIND) {
+        if let Some(op) = cap.ops().iter().find(|o| o.opcode == OpCode::CPUI_BRANCHIND) {
             let vn = op.ins.first()?;
             let in_data = matches!((&vn.space, data_space), (Some(s), Some(d)) if Rc::ptr_eq(s, d));
-            let end = vma.wrapping_add(u64::from(decoded.len));
+            let end = vma.wrapping_add(u64::from(len));
             return (in_data && in_range(mapped, vn.offset))
                 .then_some(Veneer { slot: vn.offset, end });
         }
@@ -594,7 +842,9 @@ fn veneer_at(
 struct State {
     by_target: BTreeMap<u64, Vec<Xref>>,
     by_source: BTreeMap<u64, Vec<Xref>>,
-    decoded: BTreeSet<u64>,
+    /// Membership only (the `VisitStat` dedup), so it is hashed rather than
+    /// ordered: it is probed once per successor edge over the whole program.
+    decoded: HashSet<u64>,
     funcs: BTreeSet<u64>,
 }
 
@@ -661,7 +911,7 @@ fn empty() -> XrefIndex {
         by_target: BTreeMap::new(),
         by_source: BTreeMap::new(),
         by_source_function: BTreeMap::new(),
-        decoded: BTreeSet::new(),
+        decoded: HashSet::new(),
         funcs: BTreeSet::new(),
         veneers: BTreeMap::new(),
         veneers_of_slot: BTreeMap::new(),
@@ -669,33 +919,43 @@ fn empty() -> XrefIndex {
     }
 }
 
-/// One decoded instruction: its byte length, its full p-code, and its rendering.
-struct Decoded {
-    len: u32,
-    ops: Vec<FullOp>,
-    text: String,
+/// Decode the instruction at `vma` into `cap`, keeping every input varnode, and
+/// return its byte length.
+///
+/// A translator panic on exotic bytes is contained to `None` — a query surface
+/// must never take the process down over one bad address.
+fn decode(
+    translate: &dyn Translate,
+    vma: u64,
+    code_space: &Rc<AddrSpace>,
+    cap: &mut FullCapture,
+) -> Option<u32> {
+    let addr = Address::new(Rc::clone(code_space), vma);
+    cap.begin();
+    let decoded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        translate.one_instruction(cap, &addr)
+    }));
+    match decoded {
+        Ok(Ok(len)) if len > 0 => Some(len as u32),
+        _ => None,
+    }
 }
 
-/// Decode the instruction at `vma`, keeping every input varnode.
+/// Render the instruction at `vma`, best-effort (empty when the render errs).
 ///
-/// The assembly render is best-effort (the p-code is the load-bearing half), and
-/// a translator panic on exotic bytes is contained to `None` — a query surface
-/// must never take the process down over one bad address.
-fn decode(translate: &dyn Translate, vma: u64, code_space: &Rc<AddrSpace>) -> Option<Decoded> {
+/// This is a SECOND full SLEIGH parse of the address — `print_assembly` shares no
+/// resolved state with `one_instruction` — so the walk pays it only where a row
+/// will actually carry the text. On a 466 KB obfuscated i386 image (154,638
+/// instructions) rendering every decode cost 0.22 s of a 1.3 s walk, and the
+/// large majority of instructions file no reference at all.
+fn assembly(translate: &dyn Translate, vma: u64, code_space: &Rc<AddrSpace>) -> String {
+
     let addr = Address::new(Rc::clone(code_space), vma);
-    let mut cap = FullCapture::default();
-    let decoded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        translate.one_instruction(&mut cap, &addr)
-    }));
-    let len = match decoded {
-        Ok(Ok(len)) if len > 0 => len as u32,
-        _ => return None,
-    };
     let mut asm = AsmCapture::default();
     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let _ = translate.print_assembly(&mut asm, &addr);
     }));
-    Some(Decoded { len, ops: cap.ops, text: asm.text })
+    asm.text
 }
 
 /// The data references one instruction's p-code carries.
@@ -1000,7 +1260,7 @@ mod tests {
         let mut st = State {
             by_target: BTreeMap::new(),
             by_source: BTreeMap::new(),
-            decoded: BTreeSet::from([0x1030, 0x1102, 0x1200]),
+            decoded: HashSet::from([0x1030, 0x1102, 0x1200]),
             funcs: BTreeSet::from([0x1000, 0x1030, 0x1180]),
         };
         for e in edges {

@@ -883,6 +883,13 @@ pub(crate) enum DriverDefaults {
     Inventory,
     /// `kuna decompile-all` / `kuna decompile-project` — enumeration plus bodies.
     Decompile,
+    /// `kuna xrefs` — a reference query that runs its OWN recursive descent, so
+    /// the Listing tier would only decode the program a second time over the
+    /// same bytes. It takes the discovery bundle (`funcstart_patterns`, `aif`)
+    /// but not the Listing: the seeds go straight into the reference walk
+    /// (`listing::xrefs::discovery_seeds`) and the gap-walk runs over the
+    /// partition that walk leaves behind.
+    Query,
 }
 
 impl DriverDefaults {
@@ -890,6 +897,15 @@ impl DriverDefaults {
     /// no-return facts change its output, not just its inventory)?
     fn decompiles(&self) -> bool {
         matches!(self, DriverDefaults::Decompile)
+    }
+
+    /// Does this surface want the program-wide Listing built for it (DIV-15)?
+    ///
+    /// `Query` does not: it walks the program itself, so the Listing would be a
+    /// second decode of the same bytes. The DIV-20/DIV-68 discovery flags it
+    /// still takes — the reference walk consumes both of them directly.
+    fn wants_listing(&self) -> bool {
+        !matches!(self, DriverDefaults::Query)
     }
 }
 
@@ -973,6 +989,7 @@ impl DriverDefaults {
 pub(crate) fn driver_default_options(
     binary: &str,
     decompiles: bool,
+    wants_listing: bool,
     options: &[(String, String)],
 ) -> Vec<(&'static str, &'static str)> {
     let named = |name: &str| options.iter().any(|(option, _)| option == name);
@@ -986,7 +1003,7 @@ pub(crate) fn driver_default_options(
         .unwrap_or(false);
 
     let mut injected = Vec::new();
-    if (decompiles || non_x86_64) && !named("listing") {
+    if wants_listing && (decompiles || non_x86_64) && !named("listing") {
         injected.push(("listing", "on"));
     }
     if non_x86_64 && !named("funcstart_patterns") {
@@ -1024,7 +1041,12 @@ pub(crate) fn load_program(
     let mut prog = bootstrap_from_object(&binary, target, &spec_roots)
         .map_err(|e| format!("could not build an architecture for {binary}: {}", e.explain()))?;
 
-    for (name, value) in driver_default_options(&binary, defaults.decompiles(), &args.options) {
+    for (name, value) in driver_default_options(
+        &binary,
+        defaults.decompiles(),
+        defaults.wants_listing(),
+        &args.options,
+    ) {
         prog.arch_mut()
             .set_kuna_option(name, value)
             .map_err(|e| format!("option {name}: {}", e.explain()))?;

@@ -73,6 +73,18 @@ struct Target {
     name: Option<String>,
 }
 
+/// The operand resolved to an address, before the walk that names it.
+///
+/// The address is what the walk needs (it is pointed at it, `build_with_focus`);
+/// the naming half runs afterwards because it reads the walk's own discovered
+/// functions. `name` is a name the lookup itself established, `fallback` one to
+/// use only if nothing else names the address.
+struct TargetSpec {
+    addr: u64,
+    name: Option<String>,
+    fallback: Option<String>,
+}
+
 /// `kuna xrefs` entry point.
 pub fn run(argv: &[String]) -> i32 {
     let args = match parse_args(argv) {
@@ -94,10 +106,20 @@ pub fn run(argv: &[String]) -> i32 {
 
 /// Load, index, resolve, and render — the whole command in one pass.
 fn query(args: &XrefArgs) -> Result<String, String> {
-    let options = mode_options_for_binary(args.mode.as_deref(), &args.binary, args.options.clone())?;
-    // The inventory driver bundle: `xrefs` enumerates entries and walks them
-    // itself, so it wants the discovery defaults (DIV-20/DIV-68 on non-x86-64)
-    // without paying for the whole-binary Listing a decompiling surface needs.
+    // A reference query is not a decompile, so `--mode` is NOT resolved through
+    // `auto` here: `auto` picks `aggressive` under 500 KiB, and `aggressive` is a
+    // preset for the QUALITY of emitted C. Two of the passes it turns on cost a
+    // whole extra decode of the program apiece and answer nothing this command
+    // reads — the analysis-tier Listing walk (which `xrefs` re-walks itself) and
+    // `operand_refs` (whose scalar markup `xrefs` recomputes from the p-code it
+    // already has). On a 466 KB obfuscated i386 image they were 1.08 s and 0.58 s
+    // of a 3.2 s answer that is byte-identical without them. `--mode aggressive`
+    // still asks for the full bundle explicitly.
+    let mode = Some(args.mode.as_deref().unwrap_or("reliable"));
+    let options = mode_options_for_binary(mode, &args.binary, args.options.clone())?;
+    // The query driver bundle: `xrefs` enumerates entries and walks them itself,
+    // so it takes no Listing-tier injection at all — the discovery seeds the
+    // injection existed to produce go straight into the reference walk below.
     let load = Args {
         binary: args.binary.clone(),
         json: args.json,
@@ -113,22 +135,33 @@ fn query(args: &XrefArgs) -> Result<String, String> {
         target: args.target.clone(),
         sleighpath: args.sleighpath.clone(),
     };
-    let prog = load_program(&load, DriverDefaults::Inventory)?;
+    let prog = load_program(&load, DriverDefaults::Query)?;
 
     let bytes = std::fs::read(&args.binary).map_err(|e| format!("{}: {e}", args.binary))?;
     let file = object::File::parse(&*bytes)
         .map_err(|e| format!("could not parse {}: {e}", args.binary))?;
 
     let entries = prog.function_entries_canonical();
-    let seeds: Vec<u64> = entries.iter().map(|e| e.addr.get_offset()).collect();
-    let index = kuna_analysis::listing::xrefs::build(
+    let inventory: Vec<u64> = entries.iter().map(|e| e.addr.get_offset()).collect();
+    let seeds = kuna_analysis::listing::xrefs::discovery_seeds(
+        &file,
+        &inventory,
+        prog.arch().analysis_funcstart_patterns,
+    );
+    // The operand resolves to an address BEFORE the walk so the walk can be
+    // pointed at it: a function whose only inbound edge is an indirect call
+    // through a table is in no seed set, and a query about it must not answer
+    // "no references" about the very address the caller named.
+    let spec = target_address(&prog, &args.spec)?;
+    let index = kuna_analysis::listing::xrefs::build_with_focus(
         &file,
         prog.arch(),
         prog.arch().translate(),
         &seeds,
+        &[spec.addr],
     );
 
-    let target = resolve_target(&prog, &args.spec)?;
+    let target = resolve_target(&prog, &index, spec);
     let rows = match args.direction {
         // `--to` answers for the callable, not the literal address: an import
         // reached through a veneer and an IAT/GOT slot is one thing under two
@@ -167,41 +200,71 @@ fn query(args: &XrefArgs) -> Result<String, String> {
 /// A name that identifies several entries is an ERROR naming all of them, not a
 /// miss: falling through to the symbol table would answer for whichever one it
 /// happens to hold first, which is the guess the selector model exists to refuse.
-fn resolve_target(prog: &ConsoleProgram, spec: &str) -> Result<Target, String> {
+fn target_address(prog: &ConsoleProgram, spec: &str) -> Result<TargetSpec, String> {
     let spec = spec.trim();
     if let Some(body) = spec.strip_prefix("0x").or_else(|| spec.strip_prefix("0X")) {
         let addr = u64::from_str_radix(body, 16)
             .map_err(|_| format!("invalid address {spec:?}"))?;
-        return Ok(Target { addr, name: name_at(prog, addr) });
+        return Ok(TargetSpec { addr, name: None, fallback: None });
     }
     match prog.resolve_entry(&EntrySelector::Name(spec.to_string())) {
-        Ok(entry) => return Ok(Target { addr: entry.addr.get_offset(), name: Some(entry.name) }),
+        Ok(entry) => {
+            return Ok(TargetSpec {
+                addr: entry.addr.get_offset(),
+                name: Some(entry.name),
+                fallback: None,
+            })
+        }
         Err(error @ EntryLookupError::Ambiguous { .. }) => return Err(error.to_string()),
         Err(_) => {}
     }
     if let Some(addr) = prog.lookup_symbol(spec) {
-        let addr = addr.get_offset();
-        return Ok(Target { addr, name: name_at(prog, addr).or_else(|| Some(spec.to_string())) });
+        return Ok(TargetSpec {
+            addr: addr.get_offset(),
+            name: None,
+            fallback: Some(spec.to_string()),
+        });
     }
     if let Some((name, addr, _)) = prog
         .global_data_symbols()
         .into_iter()
         .find(|(name, _, _)| name == spec)
     {
-        return Ok(Target { addr, name: Some(name) });
+        return Ok(TargetSpec { addr, name: Some(name), fallback: None });
     }
     if let Ok(addr) = u64::from_str_radix(spec, 16) {
-        return Ok(Target { addr, name: name_at(prog, addr) });
+        return Ok(TargetSpec { addr, name: None, fallback: None });
     }
     Err(format!("no symbol named {spec:?} (and it is not an address)"))
 }
 
+/// Attach the display name to an address the spec already resolved: whatever the
+/// lookup itself knew, else the program's best name for the address, else the
+/// spec's own fallback (a symbol names its address even when nothing else does).
+fn resolve_target(prog: &ConsoleProgram, index: &XrefIndex, spec: TargetSpec) -> Target {
+    let TargetSpec { addr, name, fallback } = spec;
+    Target { addr, name: name.or_else(|| name_at(prog, index, addr)).or(fallback) }
+}
+
 /// The program's best name for `vma`: the canonical function entry there, then a
 /// function symbol, then a named global data object. `None` when nothing names it.
-fn name_at(prog: &ConsoleProgram, vma: u64) -> Option<String> {
+fn name_at(prog: &ConsoleProgram, index: &XrefIndex, vma: u64) -> Option<String> {
     prog.find_entry_at(vma)
         .map(|e| e.name)
         .or_else(|| prog.function_named_at(vma))
+        // The walk discovers functions the engine's inventory does not carry (it
+        // follows the call graph out of its seeds), and a row that names one must
+        // still name it rather than answer `null`.
+        .or_else(|| {
+            index.is_function_entry(vma).then(|| {
+                match prog.arch().manage().get_default_code_space() {
+                    Some(space) => {
+                        prog.arch().name_function(&Address::new(Rc::clone(space), vma))
+                    }
+                    None => format!("sub_{vma:x}"),
+                }
+            })
+        })
         .or_else(|| {
             prog.global_data_symbols()
                 .into_iter()
@@ -217,13 +280,13 @@ fn owning_function(prog: &ConsoleProgram, index: &XrefIndex, vma: u64) -> Option
     let entry = index
         .function_containing(vma)
         .or_else(|| prog.find_entry_at(vma).map(|e| e.addr.get_offset()))?;
-    Some((entry, function_name(prog, entry)))
+    Some((entry, function_name(prog, index, entry)))
 }
 
 /// The display name for a function entry, falling back to the engine's own
 /// placeholder (`sub_<addr>`) so a row is never nameless.
-fn function_name(prog: &ConsoleProgram, entry: u64) -> String {
-    name_at(prog, entry).unwrap_or_else(|| {
+fn function_name(prog: &ConsoleProgram, index: &XrefIndex, entry: u64) -> String {
+    name_at(prog, index, entry).unwrap_or_else(|| {
         match prog.arch().manage().get_default_code_space() {
             Some(space) => prog.arch().name_function(&Address::new(Rc::clone(space), entry)),
             None => format!("sub_{entry:x}"),
@@ -310,7 +373,7 @@ fn result_json(
                             .into_iter()
                             .map(|a| {
                                 function_json(
-                                    &name_at(prog, a).unwrap_or_else(|| format!("0x{a:x}")),
+                                    &name_at(prog, index, a).unwrap_or_else(|| format!("0x{a:x}")),
                                     a,
                                 )
                             })
@@ -355,7 +418,7 @@ fn render_text(
         let _ = writeln!(
             out,
             "# same import at 0x{a:x} ({}) - a forwarding veneer and the pointer slot it jumps through",
-            name_at(prog, a).unwrap_or_else(|| "-".into())
+            name_at(prog, index, a).unwrap_or_else(|| "-".into())
         );
     }
     for r in rows {
@@ -376,7 +439,7 @@ fn render_text(
                     "0x{:x}\t{}\t{}\t@0x{:x}\t{}",
                     r.to,
                     r.kind.as_str(),
-                    name_at(prog, r.to).unwrap_or_else(|| "-".into()),
+                    name_at(prog, index, r.to).unwrap_or_else(|| "-".into()),
                     r.from,
                     r.instruction
                 );
