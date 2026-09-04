@@ -964,6 +964,12 @@ subphase = "flow-classification"
 note = "(kuna tee-O2 tail-jumps) recover a direct jmp to another function's entry (e.g. jmp setlocale@plt) as a tail call (CALL + RETURN) instead of inlining the callee"
 
 [[surface]]
+surface = "option tailcallframe"
+phase = "P2"
+subphase = "flow-classification"
+note = "(kuna) recover a direct jmp whose target no discovery oracle found as a tail call, from the frame teardown that precedes it, instead of decoding the callee into the caller"
+
+[[surface]]
 surface = "option funcboundflow"
 phase = "P2"
 subphase = "flow-classification"
@@ -1664,6 +1670,28 @@ change_kind = "structure-recovery"
 tier = "transform"
 symptoms = "leaf function ends in a (*dat_...)(...) computed call with a 'Treating indirect jump as call' warning|jmp to a plt stub inlined into the caller instead of a named tail call|plt thunk body absorbed where func(...) is expected"
 live_field = "tail_call_jumps"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
+option = "tailcallframe"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P2"
+subphase = "flow-classification"
+strength = "HARD"
+rewind = "P2"
+issue = "direct-address-keyboard-handler"
+summary = "REMOVES CODE: recover a direct `jmp` as a tail call when the instructions ending at it tear down EXACTLY the frame the entry block built, even though the target is not a known function. `tailcalljump` asks `query_call(dest).is_some()`, so it only fires on a callee some discovery oracle already found; a callee reached only through a code pointer in initialized data satisfies none of them (the recursive-descent walk never enters the callback, so it never sees the callback's `call`), and the tail `jmp` is then followed as ordinary intraprocedural flow and the whole callee is decoded into the caller. This measures two constant stack-pointer deltas over the raw p-code -- forward from the function entry over the run that establishes the frame, backward from the branch over the run that ends at it -- and fires when the second is a strictly positive teardown of exactly the first. Both scans stop at the first control-flow op, at a stack-pointer write that is not `SP = SP +/- <const>` (a `leave`-style `SP = FP` restore declines), at a non-adjacent instruction address, and after 24 instructions. A frameless leaf can never match (no frame torn down = no evidence, and an intraprocedural jump would be indistinguishable), nor can a target this function has already decoded, nor the function's own entry. Logs a `tailcallframe: recovered tail call` WARNING at the branch site."
+use_when = "A function decompiled by address runs on into an unrelated function's body -- the output starts with the code you asked for and continues through a second routine's logic, strings and callees -- and the disassembly shows an unconditional `jmp` to that routine right after a stack-frame teardown (`add rsp,N; pop reg; jmp X`). Typical of an indirect-only callback (an event/listener/vtable entry) in a stripped binary, where the callee is not in `kuna functions` and so `tailcalljump` cannot see it. On by default; flip OFF to restore the flow-into-the-callee decode."
+example = "option tailcallframe off"
+source_decompiler = "ida"
+inspiration = "round-2 RE-friction crackme lugosiii: the keyboard callback at 0x6500 tail-jumps to the renderer at 0x4610 (0x66e2), which no oracle discovers because 0x6500 is itself only a wl_keyboard_listener pointer; 1555 lines instead of ~440. IDA and Ghidra both end the function at the tail jump."
+change_kind = "correctness-fix"
+tier = "transform"
+symptoms = "a function decompiled by address continues into an unrelated function's body|an event/listener callback emits a second routine's UI strings and callees|the same callee is emitted twice in one function, once as a named call and once inlined|an unconditional jmp after add rsp,N; pop reg is followed instead of ending the function|kuna emits thousands of lines for a function the disassembly shows is a few hundred bytes"
+live_field = "tail_call_frame"
 live_true = "on"
 live_false = "off"
 

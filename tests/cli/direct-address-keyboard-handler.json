@@ -1,0 +1,41 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "0x11b0",
+    "--addr"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/tailcallframe_x86_64",
+    "binary_sha256": "dd89e801ad4db6a0c559658ada9cb626dcaed2a856e354a3d182a828da3d8080",
+    "binary_size": 14488,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/tailcallframe_x86_64",
+    "selector": "0x11b0",
+    "selector_kind": "addr"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "sub_11b0\\(",
+      "sub_1170\\("
+    ],
+    "stdout_absent": [
+      "\\* 7 \\+ 3",
+      "s_2010"
+    ]
+  },
+  "notes": "In-repo twin of the dataset acceptance a-f13adb91d5d4 (crackme lugosiii 0x6500, binary_source 'dataset', so `verify --promote` refuses it and CI has no dataset). Same shape, built from the .c beside the fixture: on_key at 0x11b0 is reachable only through the listener[] code pointer in .data.rel.ro, so render at 0x1170 is in no discovery oracle's output and `tailcalljump` cannot see it; the -O2 tail `jmp` at 0x11cd is recovered from the frame teardown in front of it instead. stdout_absent pins render's own arithmetic and its string blit, which is what the caller absorbed before the fix (`--option tailcallframe off` restores it)."
+}

@@ -1,0 +1,42 @@
+{
+  "need_id": "direct-address-keyboard-handler",
+  "track": "quality",
+  "option": "tailcallframe",
+  "div": "DIV-109",
+  "scope": "small",
+  "status": "implemented",
+  "decisions": [
+    "HYPOTHESIS PARTLY OVERTURNED. The need blamed 0x6500's own absence from the discovered function map. 0x6500 being undiscovered is why the agent had to ask by address at all, but it is NOT what causes the annexation: the tail-jump TARGET 0x4610 is the address that is missing. Proof: `map function 0x4610 renderer` in decomp_dbg, with 0x6500 mapped exactly as before, alone takes the output 1555 -> 440 lines.",
+    "NOT COVERED BY AN EXISTING OPTION. Swept the catalog and re-ran the probe under --mode fast/aggressive, --option fast_funcdisc on, ptrentry on, listing on + aif on, eh_frame_full on: all six give byte-identical 1555-line output. tailcalljump is default-on (DIV-13) and cannot fire, because query_call(0x4610) is None.",
+    "WHY DISCOVERY WAS NOT THE FIX. 0x6500 is reachable only through a wl_keyboard_listener code pointer in .data.rel.ro, so the recursive-descent walk never enters it and never sees its own `call 0x4610`. Closing this in the discovery tier means a code-pointer-in-data oracle in kuna-analysis/src/listing, which another builder holds this round, and it changes emitted C by construction across every binary. The need's own `touches` is kuna-decomp and its scope is small; the P2 flow seam is where a bounded, gateable decision fits.",
+    "THE SCAN MUST BE PER-INSTRUCTION, NOT PER-OP. An x86 `call` lowers to `SP = SP - 8` and a return-address store BEFORE its CPUI_CALL, so an op-at-a-time scan that stops AT the flow op has already charged the run a phantom push. That silently declined every function whose entry block contains a call: 2 of the 4 witnesses in the witness binary (0x63d0, 0x6d40) did not fire until the scans were rewritten to summarize a whole instruction address group and consult its `flow` flag before its `delta`.",
+    "PROMOTION REFUSED AS PREDICTED. `verify --promote` refuses the acceptance because target.binary_source is 'dataset'. A minimal in-repo twin was built instead (fixtures/tailcallframe_x86_64 + its .c) and tests/cli/direct-address-keyboard-handler.json points at that, so CI has a runnable regression test."
+  ],
+  "tests": {
+    "stages": "tests/stages/tailcallframe.xml (two-pass, 4 assertions; 605 -> 609)",
+    "unit": "decompiler/crates/kuna-decomp/src/p2_lift/kuna_tailcallframe/tests.rs (10 tests)",
+    "e2e": "decompiler/crates/kuna-console/tests/verify_tailcallframe.rs (3 tests, real ELF)",
+    "cli_probe": "tests/cli/direct-address-keyboard-handler.json (in-repo twin of the dataset acceptance)"
+  },
+  "gates": {
+    "make_test": "PARITY OK 675/675",
+    "make_test_stages": "PARITY OK 609/609",
+    "make_check_spec": "OK",
+    "catalog_check": "catalog OK",
+    "acceptance": "PASS (a-f13adb91d5d4)"
+  },
+  "witness": {
+    "binary": "lugosiii (challenge 6989ca5da15272fa37a80c43)",
+    "selector": "0x6500 --addr",
+    "lines_before": 1555,
+    "lines_after": 427
+  },
+  "sweep": {
+    "whole_binary_ab": {"binaries": 62, "firings": 0, "differing": 0},
+    "address_level_ab_crackmes": {"binaries": 8, "addresses": 377, "firings": 0, "differing": 0},
+    "address_level_ab_witness": {"addresses": 32, "firings": 4, "differing": 4, "all_read": true}
+  },
+  "speed_delta_pct": -92.95,
+  "speed_samples": 7,
+  "speed_note": "-92.95% on the witness function (it stops decompiling 1,100 lines it never should have had). On a byte-identical binary (coreutils dd, decompile-all, 5 interleaved pairs): -0.9% min / +3.5% mean, i.e. noise."
+}

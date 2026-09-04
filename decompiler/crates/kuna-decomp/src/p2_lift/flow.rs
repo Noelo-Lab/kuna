@@ -333,6 +333,17 @@ pub trait FlowEnvironment {
         false
     }
 
+    /// (kuna `tailcallframe`) Same question as
+    /// [`is_tail_call_branch`](FlowEnvironment::is_tail_call_branch) for a `dest`
+    /// the symbol table does NOT know: does the run of instructions ending at
+    /// `op` tear down exactly the frame the entry block built, so the jump is a
+    /// tail call into a callee no discovery oracle reached?  See
+    /// [`kuna_tailcallframe`](crate::kuna_tailcallframe).  The default shell
+    /// reports `false`.
+    fn is_frame_teardown_tail_call(&self, _fd: &Funcdata, _op: OpId, _dest: &Address) -> bool {
+        false
+    }
+
     /// Resolve a direct-call entry address to its callee symbol (C++
     /// `FlowInfo::queryCall` → `Scope::queryFunction(entryaddr)`,
     /// `flow.cc:674`): return the callee's display name (so the call renders
@@ -1125,7 +1136,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                             cursor = None;
                         }
                         *startbasic = true;
-                    } else if self.env.is_tail_call_branch(&self.data, curop, &destaddr) {
+                    } else if let Some(tailkind) = self.tail_call_kind(curop, &destaddr) {
                         // (kuna) tee-O2 tail-jump: a direct `jmp` to another known
                         // function's entry is a tail call.  Rewrite BRANCH -> CALL
                         // (so the callee resolves by name and its return value
@@ -1153,7 +1164,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                         let _ = destaddr.print_raw(&mut destbuf);
                         self.data.warning(
                             &format!(
-                                "tailcalljump: recovered tail call -> introduced call to {destbuf}"
+                                "{tailkind}: recovered tail call -> introduced call to {destbuf}"
                             ),
                             &site,
                         );
@@ -1270,6 +1281,24 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             .get_in(0)
             .expect("branch in0 is null (C++ UB)");
         self.data.vbank().get(in0).expect("branch_in0_addr: stale vn").get_addr().clone()
+    }
+
+    /// (kuna) Which tail-jump rule, if either, claims this direct `CPUI_BRANCH`?
+    ///
+    /// [`kuna_tailcalljump`](crate::kuna_tailcalljump) is asked first, so a
+    /// branch to a known function entry keeps the existing decision and the
+    /// existing `tailcalljump:` warning text; [`kuna_tailcallframe`](
+    /// crate::kuna_tailcallframe) then gets the targets the symbol table does not
+    /// know.  The returned name is the option that fired, so the introduced call
+    /// is attributable to the rule that introduced it.
+    fn tail_call_kind(&self, op: OpId, dest: &Address) -> Option<&'static str> {
+        if self.env.is_tail_call_branch(&self.data, op, dest) {
+            return Some("tailcalljump");
+        }
+        if self.env.is_frame_teardown_tail_call(&self.data, op, dest) {
+            return Some("tailcallframe");
+        }
+        None
     }
 
     /// Generate p-code for a single machine instruction and process discovered

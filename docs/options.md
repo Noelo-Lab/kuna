@@ -32,6 +32,11 @@ Three tiers:
 | leaf function ends in a (*dat_...)(...) computed call with a 'Treating indirect jump as call' warning | [`tailcalljump`](#tailcalljump) |
 | jmp to a plt stub inlined into the caller instead of a named tail call | [`tailcalljump`](#tailcalljump) |
 | plt thunk body absorbed where func(...) is expected | [`tailcalljump`](#tailcalljump) |
+| a function decompiled by address continues into an unrelated function's body | [`tailcallframe`](#tailcallframe) |
+| an event/listener callback emits a second routine's UI strings and callees | [`tailcallframe`](#tailcallframe) |
+| the same callee is emitted twice in one function, once as a named call and once inlined | [`tailcallframe`](#tailcallframe) |
+| an unconditional jmp after add rsp,N; pop reg is followed instead of ending the function | [`tailcallframe`](#tailcallframe) |
+| kuna emits thousands of lines for a function the disassembly shows is a few hundred bytes | [`tailcallframe`](#tailcallframe) |
 | a function's tail is really the body of the NEXT function | [`funcboundflow`](#funcboundflow) |
 | dead/garbage code after a call to a die()/fatal()/throw wrapper that never returns | [`funcboundflow`](#funcboundflow) |
 | two adjacent functions merged into one, the second also decompiled on its own | [`funcboundflow`](#funcboundflow) |
@@ -531,6 +536,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** A leaf function ends in `jmp <func>@plt` and kuna would emit `(*dat_...)(...)` + a 'Treating indirect jump as call' marker instead of `func(...)`. On by default (DIV-14) = the named call plus a `tailcalljump: recovered tail call` WARNING; flip OFF to restore the upstream flow-into-callee rendering (the two affected datatests, Long double #1/#2, opt out per-test).
 - **Where / provenance:** P2/flow-classification · angr · structure-recovery · angr-tee-O2-tail-jumps
 - **Example:** `option tailcalljump on`
+
+### `tailcallframe` -- on | off, default `on`
+
+- **Symptoms:** a function decompiled by address continues into an unrelated function's body; an event/listener callback emits a second routine's UI strings and callees; the same callee is emitted twice in one function, once as a named call and once inlined; an unconditional jmp after add rsp,N; pop reg is followed instead of ending the function; kuna emits thousands of lines for a function the disassembly shows is a few hundred bytes.
+- **What it does:** REMOVES CODE: recover a direct `jmp` as a tail call when the instructions ending at it tear down EXACTLY the frame the entry block built, even though the target is not a known function. `tailcalljump` asks `query_call(dest).is_some()`, so it only fires on a callee some discovery oracle already found; a callee reached only through a code pointer in initialized data satisfies none of them (the recursive-descent walk never enters the callback, so it never sees the callback's `call`), and the tail `jmp` is then followed as ordinary intraprocedural flow and the whole callee is decoded into the caller. This measures two constant stack-pointer deltas over the raw p-code -- forward from the function entry over the run that establishes the frame, backward from the branch over the run that ends at it -- and fires when the second is a strictly positive teardown of exactly the first. Both scans stop at the first control-flow op, at a stack-pointer write that is not `SP = SP +/- <const>` (a `leave`-style `SP = FP` restore declines), at a non-adjacent instruction address, and after 24 instructions. A frameless leaf can never match (no frame torn down = no evidence, and an intraprocedural jump would be indistinguishable), nor can a target this function has already decoded, nor the function's own entry. Logs a `tailcallframe: recovered tail call` WARNING at the branch site.
+- **When to flip:** A function decompiled by address runs on into an unrelated function's body -- the output starts with the code you asked for and continues through a second routine's logic, strings and callees -- and the disassembly shows an unconditional `jmp` to that routine right after a stack-frame teardown (`add rsp,N; pop reg; jmp X`). Typical of an indirect-only callback (an event/listener/vtable entry) in a stripped binary, where the callee is not in `kuna functions` and so `tailcalljump` cannot see it. On by default; flip OFF to restore the flow-into-the-callee decode.
+- **Where / provenance:** P2/flow-classification · ida · correctness-fix · direct-address-keyboard-handler
+- **Example:** `option tailcallframe off`
 
 ### `funcboundflow` -- on | off, default `on`
 
