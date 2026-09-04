@@ -168,9 +168,8 @@ wrong stack offset (or dropped entirely) under this binary's control-flow obfusc
 ## Decision log
 
 - round 1: gated `admitted`, NOT built (round 1 closed 12 of 23). Carried into round 2.
-- round 2 wave 1: dispatched, killed by the account-429 wipeout before any commit. Branch
-  `feat/re-getprocaddress-result-discarded` exists locally with no PR and no `docs/features/` record;
-  treat it as empty, not as salvage.
+- round 2 wave 1: dispatched, killed by the account-429 wipeout. A previous tick recorded the branch
+  as empty; **that was wrong** -- it carried one preserved commit. See *Prior art* below.
 - round 2, captain tick 2026-09-04: the need had lost BOTH probe fences (frontmatter carried no
   `probe_id`/`acceptance_id`), so it was unclosable by construction -- `apply-acceptance` had nothing
   to evaluate. Both restored above; the reproduction probe keeps its round-1 identity
@@ -180,3 +179,44 @@ wrong stack offset (or dropped entirely) under this binary's control-flow obfusc
   arena. The probe is NOT vendorable into `tests/cli/` -- `binary_source: dataset`, and CI has no
   dataset -- so closing this need will not add a CLI regression test; say so in the PR rather than
   faking one.
+
+## Prior art -- an unverified partial implementation exists (read before you design)
+
+Round 2 wave 1 was killed by the account-429 wipeout, but not before it committed. The work is
+preserved at **`2ad58462`** (branch `wip/re-getprocaddress-2ad58462`, renamed out of the way so your
+own `feat/re-` branch can be created; the wave-1 branch name is free). Inspect it with
+`git show 2ad58462` / `git log -p 2ad58462 -1`.
+
+WHAT IT CONTAINS -- a coherent mechanism, plumbed end to end (98 insertions, 6 files):
+
+- a new default-off option `tiedstorekeep`, wired the whole way: `infra/architecture.rs` (field +
+  `reset_defaults` + the `apply` arm), `substrate/context.rs` (the `ArchContext` field **and** the
+  ArchSeam copy -- the seam that silently drops per-function flags if you forget it),
+  `p0_knowledge/options.rs` (`KUNA_OPTION_NAMES`);
+- `p3_dataflow/kuna_tiedstorekeep.rs`, a `declines()` predicate plus a written-out diagnosis:
+  `RulePropagateCopy` rewrites the readers of an address-tied `COPY` output to read the register
+  directly; when the LAST remaining reader is a *marker* (`INDIRECT`/`MULTIEQUAL`, which never
+  print), the `COPY` loses every descendant and dies to dead-code elimination, so the
+  `local = GetProcAddress(...)` frame store disappears from the emitted C. Normally `Merge` hides
+  this by merging the two HighVariables; when that merge is DECLINED (intersecting covers) nothing
+  repairs it;
+- the call site in `RulePropagateCopy`'s marker arm (`p3_dataflow/ruleaction_3.rs`), placed after
+  upstream's own constant / `addrforce` / differing-addrtied guards.
+
+WHAT IT LACKS, and why it is NOT approved work:
+
+- **no evidence it fixes anything.** Nobody has shown this flips `a-f2df446f39d5`, or run any gate on
+  it. It is a hypothesis with code attached, not a verified fix.
+- no `phases.toml` `settableTable` row -- so the option name is in `options.rs` with no catalog row
+  and **`kuna catalog --check` is red as it stands**; none of the hard-coded catalog counts are bumped
+  either.
+- no `tests/stages/` two-pass testcase, no `docs/spec/` prose, no `docs/features/` record.
+- it is based on `e5ac9c77` (wave 1). Main has moved 22 commits since; `architecture.rs`,
+  `options.rs` and `context.rs` each took further append-shaped edits, so a cherry-pick may conflict
+  trivially in all three. Nothing counter-sensitive is on the branch itself.
+
+HOW TO USE IT: treat it as the strongest available hypothesis, not as a decision. If your own
+analysis agrees, `git cherry-pick 2ad58462` onto your fresh branch and finish it (row, counts, stage
+test, spec, evidence). If your analysis disagrees -- in particular if the second call site's `v133`
+really is a mis-attributed stack offset rather than a dead store, which is a *different* bug from the
+one this branch models -- say so in your PR and build the right fix instead. Do not adopt it silently.
