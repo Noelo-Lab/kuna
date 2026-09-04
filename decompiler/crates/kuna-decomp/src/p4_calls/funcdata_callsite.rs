@@ -247,7 +247,15 @@ pub fn final_input_check(fc: &mut FuncCallSpecs, data: &mut Funcdata) {
 /// prototype order.  `op->getIn(0)` (the fspec annotation) is preserved.  A
 /// trial whose Varnode is bigger than its recovered type is truncated with a
 /// `SUBPIECE`.  Spacebase parameters mark their stack range as unmapped.
-pub fn build_input_from_trials(fc: &mut FuncCallSpecs, data: &mut Funcdata) {
+///
+/// (kuna) Returns the `calleearityfwd` rescue candidate when this call comes out
+/// with an empty argument list: the sibling that could still speak for it may not
+/// be final yet, and the Varnodes its trials point at are reachable only here,
+/// before `opSetAllInput` drops them.
+pub fn build_input_from_trials(
+    fc: &mut FuncCallSpecs,
+    data: &mut Funcdata,
+) -> Option<crate::p4_calls::kuna_calleearityfwd::PendingRescue> {
     let op = fc.get_op();
     let mut newparam: Vec<VarnodeId> = Vec::new();
     // Preserve the fspec parameter (in0).
@@ -339,6 +347,13 @@ pub fn build_input_from_trials(fc: &mut FuncCallSpecs, data: &mut Funcdata) {
             data.scope_local_mark_not_mapped(&spc, off, sz, true);
         }
     }
+    // (kuna) `calleearityfwd`: capture the retry candidate while the trials and
+    // the CALL's pre-rewrite inputs are both still there.
+    let pending = if newparam.len() < 2 {
+        crate::p4_calls::kuna_calleearityfwd::capture_empty_call(fc, data)
+    } else {
+        None
+    };
     let _ = data.op_set_all_input(op, &newparam);
     // (kuna) `calleearity`: remember WHERE each recovered argument lived before
     // the trials are dropped -- `newparam` holds values, not locations.
@@ -350,6 +365,7 @@ pub fn build_input_from_trials(fc: &mut FuncCallSpecs, data: &mut Funcdata) {
         .collect();
     fc.set_final_input_storage(storage);
     fc.get_active_input().delete_unused_trials();
+    pending
 }
 
 /// C++ `FuncCallSpecs::collectOutputTrialVarnodes` (`fspec.cc:5543`).

@@ -1090,6 +1090,10 @@ impl Action for ActionActiveParam {
         let manager_rc = data.get_arch().manage.clone();
         // (kuna) varargstackargs
         let vararg_stack_args = data.get_arch().vararg_stack_args;
+        // (kuna) `calleearityfwd`: call sites that finalize with an empty argument
+        // list, retried at the end of the pass against the siblings that finalize
+        // after them.  See [`crate::p4_calls::kuna_calleearityfwd`].
+        let mut pending_rescue = Vec::new();
 
         // INDEX-BASED (CORRECTION-7 #3): keep the call specs ON `data.qlst` so
         // each sub-function's input-trial ancestor walk can look up the *other*
@@ -1158,12 +1162,17 @@ impl Action for ActionActiveParam {
                 // resolveModel(activeinput) + deriveInputMap(activeinput): resolve
                 // the model and fill in the trial → parameter map.
                 let _ = fc.resolve_and_derive_input_map(&manager_rc);
-                build_input_from_trials(&mut fc, data);
+                if let Some(p) = build_input_from_trials(&mut fc, data) {
+                    pending_rescue.push(p);
+                }
                 fc.clear_active_input();
                 data.restore_call_specs_at(idx, fc);
                 self.base.count += 1;
             }
         }
+        // (kuna) `calleearityfwd`: every spec in this pass is final now, so the
+        // sites that recovered nothing get their one retry.
+        crate::p4_calls::kuna_calleearityfwd::rescue_pending(data, &pending_rescue);
         0
     }
 }

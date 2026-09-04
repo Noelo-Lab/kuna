@@ -75,12 +75,14 @@
 //! # What it cannot do
 //!
 //! The witness has to be final already, and `ActionActiveParam` finalizes each
-//! call spec as soon as that spec is fully checked, in `qlst` order.  So a call
-//! site is reconciled against the sites *before* it, not after: when the very
-//! first call to a callee is the one that lost an argument, nothing rescues it.
-//! Making the direction symmetric means deferring every finalization until every
-//! spec is checked, which changes what `checkCallDoubleUse` sees while scoring
-//! and is a larger change than this option is.
+//! call spec as soon as that spec is fully checked, in `qlst` order.  So this
+//! rule reconciles a call site against the sites *before* it, not after: when the
+//! very first call to a callee is the one that lost an argument, nothing here
+//! rescues it.  Deferring every finalization until every spec is checked would
+//! make the direction symmetric and is the wrong way to get it — it changes what
+//! `checkCallDoubleUse` sees while scoring, on every binary.  The other direction
+//! is [`kuna_calleearityfwd`](crate::p4_calls::kuna_calleearityfwd), which retries
+//! this same plan at the end of the pass instead of moving anything.
 
 use kuna_base::address::Address;
 use kuna_base::error::KunaResult;
@@ -90,6 +92,7 @@ use kuna_base::types::int4;
 
 use kuna_num::opcodes::OpCode;
 
+use crate::context::OpId;
 use crate::fspec::FuncCallSpecs;
 use crate::funcdata::Funcdata;
 use crate::p0_knowledge::options::on_or_off;
@@ -145,8 +148,14 @@ fn witness_storage(data: &Funcdata, fc: &FuncCallSpecs) -> Option<Vec<(Address, 
 /// The richest usable witness for `fc`: another call spec to the same entry
 /// address whose input recovery is already finished.
 fn best_witness(fc: &FuncCallSpecs, data: &Funcdata) -> Vec<(Address, int4)> {
-    let entry = fc.get_entry_address();
-    let op = fc.get_op();
+    best_witness_for(fc.get_entry_address(), fc.get_op(), data)
+}
+
+/// [`best_witness`] addressed by callee entry and calling op rather than by the
+/// spec itself, so the deferred retry in
+/// [`kuna_calleearityfwd`](crate::p4_calls::kuna_calleearityfwd) — which has no
+/// `FuncCallSpecs` left to ask — runs the same search.
+pub fn best_witness_for(entry: &Address, op: OpId, data: &Funcdata) -> Vec<(Address, int4)> {
     let mut best: Vec<(Address, int4)> = Vec::new();
     for j in 0..data.num_calls() {
         let sib = data.get_call_specs(j);

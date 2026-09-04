@@ -281,6 +281,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "callsitestackargs",
     "varargstackargs",
     "calleearity",
+    "calleearityfwd",
     "calloverlap",
     "spillargtrial",
     "loadguardrange",

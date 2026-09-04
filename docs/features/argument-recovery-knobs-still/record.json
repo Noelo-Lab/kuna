@@ -1,0 +1,45 @@
+{
+  "need_id": "argument-recovery-knobs-still",
+  "track": "quality",
+  "option": "calleearityfwd",
+  "default": "on",
+  "div": "DIV-103",
+  "scope": "small",
+  "worker": "b-r2-argument-recover",
+  "branch": "feat/re-argument-recovery-knobs-still",
+  "hypothesis_status": "overturned-upheld",
+  "decisions": [
+    {
+      "id": "root-cause",
+      "claim": "The filed hypothesis (\"the recovery options are inert\") and both tester diagnoses are wrong; the captain's refutation is right and the mechanism is finalization ORDER inside ActionActiveParam.",
+      "evidence": "Instrumented build_input_from_trials on the witness (trappy attack.exe @0x1400011c0). The losing site 0x1400016f7 reaches the finalizer FIRST, with witness=[] and its RCX trial (register:0x8, size 8) inactive-but-not-definitely-not-used, slot 1, value present -- i.e. exactly the state calleearity's plan_promotions accepts. Its sibling 0x1400016d1 is still input_active=true at that moment, with exactly one active register trial: register:0x8/8. calleearity therefore declines for the reason its own 'What it cannot do' section states, not because it is unwired."
+    },
+    {
+      "id": "second-witness-off-mechanism",
+      "claim": "The NtWriteFile instance (69a3822f, nikos_crack_me.exe) is structurally out of reach of sibling reconciliation and was neither fixed nor regressed.",
+      "evidence": "decompile-all over the whole binary finds exactly ONE NtWriteFile call site (line 17616, `NtWriteFile(v10,0,0)`), so there is no sibling to reconcile against; the line is byte-identical before and after. This confirms the captain's refutation that the imported-prototype bullet is off-mechanism. The same binary DOES carry the real mechanism twice: sub_14002f800 is the same aligned-allocator shape (`if (a0 < 0x1000) return sub_14002fd38(a0);` recovered) and sub_14002ff34 is the callee-save variant (`mov bl,cl; call f; mov cl,bl; call f`, first site rescued to `sub_1400309c4(a0)`), both verified against the disassembly."
+    },
+    {
+      "id": "reordering-rejected",
+      "claim": "The obvious fix -- defer finalization so every spec is final before any argument list is written -- was designed and rejected, not overlooked.",
+      "evidence": "Funcdata::check_call_double_use (substrate/funcdata_varnode.rs:2121) branches on whether ANOTHER call spec is still input_active while scoring a trial, and ParamActive::maxpass is 0 for the standard model (fspec/tests.rs:1657), so a spec's trials are checked in the same apply() where its neighbours finalize. Deferring changes what every later spec sees on every binary. The retry-at-end-of-pass shape leaves check order, clear_active_input order and the double-use scoring untouched."
+    },
+    {
+      "id": "default-on-vs-triage-constraint",
+      "claim": "Shipped as a NEW option (never an edit to calleearity's rule) but DEFAULT-ON, which departs from T_TRIAGE's 'new default-off option' wording because the replaced acceptance probe runs `kuna decompile ... --addr` with NO options and can only pass on default output.",
+      "evidence": "The agents.md default-ON bar is met on its own terms: 0/675 datatest assertions change (docs/baseline.json unmoved), 0 stage assertions regress, and the corpus sweep classifies every hunk. The ablation is preserved: `--option calleearityfwd off` restores the previous output exactly, and `--option calleearity off` still disables both directions."
+    },
+    {
+      "id": "residual",
+      "claim": "The option can propagate an existing over-recovery within one function; it cannot create one.",
+      "evidence": "bobxREAL.exe: a CRT _errno site gains (v10,v11) from a sibling site in the same function that already read `sub_1400110fc(a0,a1)` with the option OFF. This is DIV-102's stated residual inherited unchanged -- the witness search and all five refusals are calleearity's."
+    }
+  ],
+  "gates": {
+    "make test": "675/675 PARITY OK",
+    "make test-stages": "597/597 PARITY OK",
+    "make check-spec": "OK",
+    "kuna catalog --check": "catalog OK",
+    "acceptance": "PASS (a-a94fa26848a4)"
+  }
+}

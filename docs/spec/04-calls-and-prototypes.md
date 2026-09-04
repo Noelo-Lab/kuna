@@ -246,7 +246,7 @@ range is marked unmapped, and the trials are dropped. What is written are the
 argument *values*: after constant propagation a size argument is a constant
 Varnode, not the register the ABI passes it in — so the storage each argument
 occupied survives only if something records it. (kuna) `calleearity`
-(default-off, `decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleearity.rs`)
+(default-on, `decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleearity.rs`)
 records exactly that, on the call spec, and uses it for one thing: when the same
 callee is called more than once in the function, a call whose list is not yet
 written is reconciled against a sibling whose list already is.
@@ -263,8 +263,36 @@ register-storage only (a finalized call's stack arguments sit at caller-relative
 addresses that differ per site), never promotes a synthetic unreferenced trial,
 is all-or-nothing (parameters are positional), and never removes an argument.
 `ActionActiveParam` finalizes each spec as soon as that spec is fully checked, so
-a call is reconciled against the sites *before* it and a callee whose first call
-site is the broken one stays broken.
+that rule alone reconciles a call against the sites *before* it, and a callee
+whose first call site is the broken one stays broken.
+
+That direction is not a detail, because the shape the reconciliation exists for
+routinely puts the loser first. MSVC's aligned `operator new` calls one allocator
+from two arms of the same test: the large arm writes a fresh argument register
+(`lea rax,[rcx+0x27]; cmp rax,rcx; jbe abort; mov rcx,rax; call`) and keeps its
+argument, while the small arm passes the register live-in
+(`test rcx,rcx; jz; call`) and loses it to the very `only_op_use` rejection
+above. Flow order reaches the small arm's call spec first, so at the moment it
+finalizes its witness is still `input_active` and has recovered nothing yet.
+(kuna) `calleearityfwd` (default-on,
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleearityfwd.rs`) closes that
+direction. Reordering the finalization would be the obvious way and is the wrong
+one: `check_call_double_use` asks whether *another* call spec is still
+`input_active` while scoring a trial, so deferring a spec past its neighbours'
+`check_input_trial_use` changes argument recovery on every binary and not just
+where two sites disagree. Instead a call that finalizes with an **empty**
+argument list is set aside — together with the Varnodes its still-promotable
+trials point at, read before `op_set_all_input` drops them, which is the only
+moment they are reachable — and retried once at the end of the same
+`ActionActiveParam::apply`, when every spec in the pass is final. The witness
+search and every refusal are `calleearity`'s, unchanged, so the retry adds no new
+way to promote a trial: it only lets the existing one see the sites that come
+after. Two limits are its own. A captured Varnode wider than its trial is
+declined rather than truncated, because the `SUBPIECE` the normal path would
+insert needs the trials the retry no longer has; and nothing crosses an `apply`,
+because the slot numbering the captured Varnodes came from does not survive
+`delete_unused_trials`. It is inert unless `calleearity` is also on, so one
+option still turns all sibling reconciliation off.
 
 The `Register` (unordered) variant skips all ordering logic: every active
 trial that lands justified in an entry is a parameter

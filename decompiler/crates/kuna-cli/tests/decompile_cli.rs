@@ -417,3 +417,69 @@ fn a_spaced_temp_dir_still_yields_c() {
         "the C was written to the truncated path {clobbered}, clobbering whatever was there"
     );
 }
+
+/// DIV-103 / RE-need `argument-recovery-knobs-still`: the promoted acceptance
+/// probe (`tests/cli/argument-recovery-knobs-still.json`), which nothing else in
+/// CI runs.
+///
+/// `alignednew_x86_64` is MSVC's aligned `operator new` shape on SysV: one
+/// callee reached from both arms of a size test, where the small arm passes its
+/// argument register live-in and the guard branches on it, so `only_op_use`
+/// drops the trial.  The small arm is laid out second and reached by a forward
+/// branch, which is what makes its call spec finalize FIRST -- `calleearity`
+/// alone has no already-final witness to reconcile against and declines.
+///
+/// The three clauses are the probe's, and the second is the one that matters:
+/// asserting only that the zero-argument call is gone is satisfied by
+/// `--option spillargtrial reload`, which FABRICATES a trailing argument at both
+/// sites including the one that was already correct.
+#[test]
+fn a_call_that_finalizes_before_its_witness_recovers_its_argument() {
+    let bin = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/alignednew_x86_64");
+    let run = |extra: &[&str]| -> Option<String> {
+        let mut argv: Vec<String> = vec![
+            "decompile".into(),
+            bin.to_str().unwrap().into(),
+            "caller".into(),
+            "--sleighpath".into(),
+            specs(),
+        ];
+        argv.extend(extra.iter().map(|s| s.to_string()));
+        let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
+            .args(&argv)
+            .output()
+            .expect("failed to spawn the kuna binary");
+        let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+        if is_specs_skip(&stderr) {
+            eprintln!("skipping: specs-less environment: {stderr}");
+            return None;
+        }
+        assert_eq!(out.status.code(), Some(0), "kuna decompile failed: {stderr}");
+        Some(String::from_utf8_lossy(&out.stdout).into_owned())
+    };
+
+    let Some(on) = run(&[]) else { return };
+    assert!(!on.contains("callee()"), "the argument is still dropped:\n{on}");
+    assert!(
+        !on.contains("callee(a0,") && !on.contains("callee(a0 + 0x27,"),
+        "an argument was fabricated rather than recovered:\n{on}"
+    );
+    assert!(on.contains("callee(a0);"), "the recovered value is not a0:\n{on}");
+    assert!(
+        on.contains("callee(a0 + 0x27)"),
+        "the site that was already correct changed:\n{on}"
+    );
+
+    // The ablation: both the new option and the rule it completes turn it off.
+    for off in [
+        ["--option", "calleearityfwd", "off"],
+        ["--option", "calleearity", "off"],
+    ] {
+        let Some(text) = run(&off) else { return };
+        assert!(
+            text.contains("callee();"),
+            "{off:?} did not restore the pre-DIV-103 output:\n{text}"
+        );
+    }
+}

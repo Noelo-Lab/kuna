@@ -1797,7 +1797,7 @@ mod tests {
         // install cannot re-read is declined, so the compiler's if/else-if chain
         // over the real parameter survives (option off = `switch(0)`, every case
         // unreachable and the parameter absent from the prototype)
-        assert_eq!(count, 228, "corpus file count drifted");
+        assert_eq!(count, 229, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
