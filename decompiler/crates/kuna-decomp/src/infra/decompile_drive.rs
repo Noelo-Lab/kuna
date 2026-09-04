@@ -864,6 +864,54 @@ pub fn decompile_func_full_with_override_dyn(
     proto_overrides: &[(Address, crate::fspec::PrototypePieces)],
     mapped_params: &[(int4, String, crate::fspec::ParameterPieces)],
 ) -> KunaResult<Funcdata> {
+    decompile_func_full_with_override_dyn_prefollowed(
+        arch,
+        name,
+        funcaddr,
+        size,
+        mapped_symbols,
+        usepoint_symbols,
+        dynamic_symbols,
+        pending_proto,
+        flow_overrides,
+        proto_overrides,
+        mapped_params,
+        None,
+    )
+}
+
+/// [`decompile_func_full_with_override_dyn`], but able to adopt a `Funcdata`
+/// whose flow has **already been followed** instead of following it again.
+///
+/// The console runs `load function <name>` and then `decompile`, and each of
+/// those followed the flow of the same function from scratch -- so a `kuna
+/// decompile` paid the whole lift, including the per-jump-table
+/// sub-decompilation, twice.  C++ has no such duplication: `IfcFuncload`
+/// follows flow once and `IfcDecompile` re-runs the actions on *that*
+/// `Funcdata` after `Architecture::clearAnalysis` (ifacedecomp.cc:889).
+///
+/// `prefollowed` is the caller's already-followed IR.  It is adopted verbatim,
+/// so the caller is responsible for having followed flow with the SAME name,
+/// entry, size, flow overrides and prototype overrides this call would have used
+/// -- see `kuna_console::ifacedecomp` (`PristineFlow`), which only offers one
+/// when every seed below is empty and nothing has run in between.  `None`
+/// restores the build-and-follow behaviour every other caller has.
+#[allow(clippy::too_many_arguments)]
+#[allow(clippy::mutable_key_type)]
+pub fn decompile_func_full_with_override_dyn_prefollowed(
+    arch: &mut Architecture,
+    name: &str,
+    funcaddr: Address,
+    size: int4,
+    mapped_symbols: &[(String, std::rc::Rc<crate::dtype::Datatype>, Address, kuna_base::types::uint4)],
+    usepoint_symbols: &[(String, std::rc::Rc<crate::dtype::Datatype>, Address, kuna_base::types::uint4, Address, bool)],
+    dynamic_symbols: &[crate::database::DynamicSymbolSpec],
+    pending_proto: Option<&crate::fspec::PrototypePieces>,
+    flow_overrides: &[(Address, kuna_base::types::uint4)],
+    proto_overrides: &[(Address, crate::fspec::PrototypePieces)],
+    mapped_params: &[(int4, String, crate::fspec::ParameterPieces)],
+    prefollowed: Option<Funcdata>,
+) -> KunaResult<Funcdata> {
     // (kuna decompile-all watchdog) Arm the per-function deadline from the
     // driver-set budget (`kuna decompile-all --max-fn-seconds N` sets
     // `kuna_fn_budget`; every other path leaves it `None`, so this is a `None`
@@ -881,14 +929,17 @@ pub fn decompile_func_full_with_override_dyn(
         // Kept for the parked-prototype lookup below (the flow build consumes the
         // address).
         let entry_addr = funcaddr.clone();
-        let mut fd = build_and_follow_flow_with_override_and_protos(
-            arch,
-            name,
-            funcaddr,
-            size,
-            flow_overrides,
-            proto_overrides,
-        )?;
+        let mut fd = match prefollowed {
+            Some(fd) => fd,
+            None => build_and_follow_flow_with_override_and_protos(
+                arch,
+                name,
+                funcaddr,
+                size,
+                flow_overrides,
+                proto_overrides,
+            )?,
+        };
         // The prototype the function is decompiled *against*. Two sources, in
         // precedence order:
         //

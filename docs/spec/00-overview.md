@@ -1008,7 +1008,9 @@ built. Two consequences:
   reuses the same `Funcdata`, `decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs
   (refollow_flow)`). Options must therefore be in effect before the function is
   built — which the console guarantees by rebuilding a fresh `Funcdata` on every
-  `decompile` command.
+  `decompile` command, *except* when `decompile` adopts the IR `load function`
+  already followed (§0.8), and that adoption is refused the moment any command at
+  all — an `option` among them — has run since the load.
 
 ## 0.6 The schedule
 
@@ -1106,7 +1108,7 @@ study summarized in `docs/history.md`; every row below is re-verified against th
 | (angr) P2 → P2, lowered switch | detect-then-restart, two halves | a comparison cascade recognized as a compiler-lowered switch after simplification | the recovered cascade record, in a store shared by both halves | detect in fullloop writes + requests restart, install in mainloop (before heritage) reads on the restarted run — `decompiler/crates/kuna-decomp/src/p2_lift/kuna_loweredswitch.rs (ActionLowerSwitchDetect, ActionLowerSwitchInstall)` |
 | P5 → P2, determined branch | in-loop re-entry | constant folding decides a conditional branch, removing a CFG edge | the simplified ops themselves | `decompiler/crates/kuna-decomp/src/p3_dataflow/coreaction_early.rs (ActionDeterminedBranch)`, inside mainloop |
 | (kuna/angr) P7/P8 structuring fallback | degraded re-run | the region structurer cannot collapse the graph to a single root | nothing; `sblocks` is re-seeded clean | `decompiler/crates/kuna-decomp/src/p8_structure/blockaction.rs (ActionBlockStructure)` falls back to `CollapseStructure` after `decompiler/crates/kuna-decomp/src/p8_structure/region_structurer.rs (run_region_structurer)` declines |
-| P0 → everything, the outer loop | knowledge-store re-run | an operator/agent writes an assertion (`option`, `kassert`, override) and re-decompiles | the entire P0 store | `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_assert.rs (Dispatch)`; the console rebuilds the IR per `decompile`, re-seeding stashed facts — `decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (decompile_func_full_with_override_dyn)` |
+| P0 → everything, the outer loop | knowledge-store re-run | an operator/agent writes an assertion (`option`, `kassert`, override) and re-decompiles | the entire P0 store | `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_assert.rs (Dispatch)`; the console rebuilds the IR per `decompile`, re-seeding stashed facts — `decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (decompile_func_full_with_override_dyn)` (§0.8 is when the rebuild is skipped) |
 
 **Not implemented in kuna** (theory-only, kept for the record): the upstream
 jump-table *size-mismatch* restart — `matchModel` finding the recovered model's
@@ -1127,7 +1129,76 @@ engine-owned restart log
 (`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_restartlog.rs (RestartLog)`),
 because a function that silently decompiles twice is otherwise invisible.
 
-## 0.8 Reading order
+## 0.8 One flow follow per decompile
+
+The console has two commands that build IR for a function, and a `kuna decompile
+<bin> <fn>` runs both: `load function <fn>` (or `load addr`), then `decompile`.
+Upstream follows the flow once — C++ `IfcFuncload` follows it, and `IfcDecompile`
+re-runs the action pipeline on *that* `Funcdata` after
+`Architecture::clearAnalysis`. kuna's `decompile` instead builds a fresh
+`Funcdata` and follows the flow again, because a decompile is seeded with facts
+that `load function` never applied — and some of them are consumed AT FLOW TIME,
+so re-seeding them onto an already-followed IR would be too late:
+
+- `override prototype` call-site overrides, which `FlowInfo::build_call_specs`
+  consumes as it builds the call specs, and every `parse line` prototype re-parked
+  on its global `FunctionSymbol` before the drive (a callee prototype the follow
+  resolves against). These two are the genuinely flow-time seeds.
+- `override flow` facts, likewise consumed at flow time — but `load function`
+  seeds these too, from the same store, so the two follows agree on them.
+- `map address` symbols and DWARF stack locals, `type varnode %REG(pc)` usepoint
+  symbols, `map hash` dynamic symbols, a `parse line extern` prototype for the
+  function itself, and `map param` storage locks. The drive re-seeds all of these
+  onto the `Funcdata` *after* the follow, so they do not require a re-follow —
+  they are nonetheless required absent below, because "no facts at all" is the
+  condition that is cheap to prove and impossible to get subtly wrong.
+
+So the rebuild is *required* when a flow-time fact exists, and pure waste when no
+fact exists at all — which is every plain `kuna decompile`. The waste is not
+small: the second follow repeats the whole lift, the block build, and the
+jump-table sub-decompilation (§0.7), which on a large switch-heavy function is the
+single most expensive thing the run does.
+
+`decompile` therefore **adopts** the loaded IR when it can prove the rebuild would
+repeat the same follow
+(`decompiler/crates/kuna-console/src/ifacedecomp.rs (PristineFlow)`, consumed
+through `decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs
+(decompile_func_full_with_override_dyn_prefollowed)`). Two independent guards must
+both hold:
+
+- **Every seed above is empty**, flow-time or re-seeded alike. A flow-time seed
+  present means the loaded IR was followed without it, so adopting would silently
+  drop it; the re-seeded ones are held to the same bar deliberately, so the guard
+  is one question ("did the console learn anything about this function?") rather
+  than a per-seed judgement that a later seed could be forgotten from.
+- **The architecture is configured as it was at the load.** A `Funcdata`
+  snapshots the per-function flags into its ArchSeam handle when it is *built*
+  (§0.5), so a flag flipped afterwards is invisible to it. Three things move
+  between the load and the drive and therefore refuse adoption: `formatstring`,
+  which turns read-only propagation on around the drive so the printf format
+  constant can be read (adopting there leaves `printf((char *)(dat_… + …), …)`,
+  the format string unresolved); the watchdog's per-function budget, armed inside
+  the drive; and ghidra mode's staged name/dynamic/prototype-model
+  recommendations.
+- **The `decompile` is the immediately next command.** `load function` records the
+  console's command counter
+  (`decompiler/crates/kuna-console/src/interface.rs (IfaceStatus::command_seq)`)
+  and `decompile` requires it to have advanced by exactly one, along with the same
+  name, entry, declared extent and flow overrides. The counter is the whole
+  invalidation story on purpose: an `option` that changes a flow-time decision, a
+  `kassert`, a `map`, a second `load` — anything at all — advances it, so no
+  command needs its own invalidation hook and none can be forgotten.
+
+Adoption is a pure-performance seam: the adopted `Funcdata` is the one the rebuild
+would have produced, so the emitted C is byte-identical either way, and
+`decompiler/crates/kuna-console/tests/verify_flowreuse.rs` asserts exactly that
+(plus that the fast path is really taken, via `IfaceDecompData::adopted_flows`).
+The one place the two paths differ is the failure arm: a drive that aborts
+consumes the adopted IR, where the rebuild path left the loaded `Funcdata`
+untouched for a following `print C`, so the error arm re-follows the recorded
+name/entry/size/overrides to put it back.
+
+## 0.9 Reading order
 
 The folder taxonomy is the *artifact* order, not the execution order. Source
 under `decompiler/crates/kuna-decomp/src` is arranged as `substrate` (the IR
