@@ -1,0 +1,38 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "functions",
+    "{{BIN}}",
+    "--json",
+    "--mode",
+    "aggressive"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/msvc_rtti_x64.exe",
+    "binary_sha256": "8fc43a64b980043382bfc68754298b4533a0a97489ce2b35bf66174ad207325b",
+    "binary_size": 3584,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/msvc_rtti_x64.exe"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "\"name\": \"Box::vfunc_0\""
+    ],
+    "stdout_absent": [
+      "\"name\": \"[^\"]*::vftable_[0-9]+\""
+    ]
+  },
+  "notes": "Promoted acceptance of pe-function-inventory-labels, re-pointed off the dataset PE onto the in-repo MSVC RTTI fixture, which reproduces it (CI has no dataset). rtti names each vftable slot's TARGET -- a function -- and used to call it `<Class>::vftable_<i>`, so `kuna functions` called executable ranges vtables. Now `vfunc_<i>`. --mode aggressive pins the rtti gate on."
+}

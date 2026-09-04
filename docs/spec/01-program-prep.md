@@ -1030,7 +1030,17 @@ every other binary's pass list is byte-identical to before the pass existed):
   CompleteObjectLocator, validate the COL→RTTI3→RTTI2→RTTI1→RTTI0 reachability
   chain (x86 raw-VA vs x64 image-base-relative refs behind a refkind dispatch), and
   label `<Class>::vftable` / `RTTI_*` with the class names demangled by the
-  existing MSVC arm.
+  existing MSVC arm. From each recovered `<Class>::vftable` base the pass then walks
+  the slot array (`vftable.rs`), bounded at the first NULL or non-`.text` slot, and
+  emits one **function** symbol per surviving slot at the address it points at. That
+  symbol is named `<Class>::vfunc_<i>` — the class name comes from the RTTI0
+  `TypeDescriptor` and the slot index is the only disambiguator MSVC metadata offers,
+  since it records no per-method names. The stem is `vfunc_`, not `vftable_`, because
+  the name lands on *code*: a class compiled under multiple inheritance genuinely owns
+  more than one vftable, so an indexed `<Class>::vftable_<i>` reads as that class's
+  i-th table and made `kuna functions` report hundreds of bytes of executable
+  `std::basic_stringbuf` code as vtable objects. Only the table itself wears a
+  `vftable` name, and it is unindexed.
 - **(kuna) Itanium RTTI** (`itaniumrtti`, ELF-only, default-off;
   `decompiler/crates/kuna-analysis/src/analyzers/rtti/kuna_itaniumrtti.rs`): the
   GCC/Clang counterpart of the pass above, and a capability with **no Ghidra

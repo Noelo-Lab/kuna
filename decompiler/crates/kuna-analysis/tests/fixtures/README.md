@@ -601,13 +601,15 @@ as `.?AU…`; both `V`/`U` recover the bare name).
 walked from its `Box::vftable` base (`VfTableModel.getVfTableCount`), bounding the slot
 array at the first NULL / non-`.text` slot. The Box vftable holds exactly one slot —
 `Box::area` (`return side*side;`, the pinned slot-0 target above: `0x140001040` x64 /
-`0x401030` x86) — which R3 names `Box::vftable_0` (a `SymKind::Function`) and marks the
+`0x401030` x86) — which R3 names `Box::vfunc_0` (a `SymKind::Function`) and marks the
 slot array read-only. The slots are **absolute VAs on both arches** (NOT the `IBO32`
 displacements the COL/RTTI inter-struct refs use): the x64 vftable cell at `0x140002010`
 holds the full 8-byte `0x140001040`, the x86 cell at `0x40200c` the 4-byte `0x401030`.
-`kuna-console/tests/verify_rtti.rs` asserts `Box::vftable_0` exists AND a function symbol
+`kuna-console/tests/verify_rtti.rs` asserts `Box::vfunc_0` exists AND a function symbol
 resolves at the slot-0 target VA (the virtual dispatch now points at a named method),
-absent with `rtti off`.
+absent with `rtti off`. The slot function's stem is `vfunc_`, never `vftable_`: only the
+table data object wears a `vftable` name, so a function inventory never reports an
+executable range as a vtable.
 
 ## Mach-O (Apple) fixtures — the multi-format loader (PR-6+7, the Mach-O headline)
 

@@ -6,7 +6,7 @@ status: open
 severity: major
 probe_id: p-8e912566d7ea
 acceptance_id: a-d6666365cbb6
-hypothesis_status: inconclusive
+hypothesis_status: overturned
 credibility: 0.7
 instances: 1
 challenges: [6547b4d50f4238b24302b588]
@@ -96,7 +96,27 @@ A trustworthy function inventory for triaging the PE.
 
 ## Refutation
 
-_not yet refuted_
+**Hypothesis OVERTURNED (round 2 builder `b-r2-pe-function-inve`); the symptom stands.**
+
+The name is not a data-symbol alias winning canonical-name selection. `<Class>::vftable_<i>`
+is a name kuna SYNTHESISES, and it is attached to a genuine function. The `rtti` pass (R3,
+`decompiler/crates/kuna-analysis/src/analyzers/rtti/mod.rs`) walks each recovered vftable and
+emits, per slot, a `SymFact{Function}` **at the address the slot points at** — the virtual
+method itself, not the table. All 10 flagged entries on `trappy attack.exe` are real
+`.text` routines (0x140001040/32B … 0x140001de0/496B), and the classification as functions is
+correct. What was wrong was only the name: it spells the data object that points at the code,
+and since an MSVC class under multiple inheritance really does own several vftables, the
+indexed form reads as "this class's i-th vftable" rather than "the function in slot i".
+
+Two consequences for the fix: nothing about function DISCOVERY changes (the captain's STOP
+clause does not fire — this is pure labelling), and no option is needed.
+
+Adjacent, NOT fixed here and worth a separate need: the MSVC pass has no defining-class
+attribution, so a slot shared by a base and its derivatives gets one name per class
+(`std::bad_alloc::vfunc_0` with `std::exception::vfunc_0` / `std::bad_array_new_length::vfunc_0`
+as aliases; the canonical pick is arbitrary). The Itanium sibling already solves this; the MSVC
+one does not. Its function symbols also still use the `vtable_<i>` stem and carry the same
+naming defect, left alone here because correcting it edits `phases.toml`, leased this round.
 
 ## Reference
 
