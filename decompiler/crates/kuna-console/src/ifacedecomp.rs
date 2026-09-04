@@ -76,7 +76,7 @@ use crate::engine::{bootstrap_from_file, ConsoleProgram, UNBOUNDED_SIZE};
 use crate::interface::{
     CommandStream, IfaceCommandAction, IfaceData, IfaceError, IfaceResult, IfaceStatus,
 };
-use kuna_base::types::{int4, uintm};
+use kuna_base::types::{int4, uintb, uintm};
 use kuna_decomp::decompile_drive::{
     build_and_follow_flow_with_override, print_c, print_c_types,
 };
@@ -571,7 +571,21 @@ fn mark_property_range(
     let dcp = dcp_mut(status)?;
     let prog = dcp.conf.as_mut().expect("conf checked non-None above");
     // C++ Address addr = parse_machaddr(s,size,*dcp->conf->types).
-    let (addr, size) = parse_machaddr(prog, s, false).map_err(IfaceError::parse)?;
+    let (addr, mut size) = parse_machaddr(prog, s, false).map_err(IfaceError::parse)?;
+    // (kuna) An explicit size may follow the address.  The C++ takes the size
+    // only from the bracketed `[space,offset,size]` form, which forces a caller
+    // that wants a sized range to also name the address space; `--assert
+    // 'readonly 0x404028+8'` lowers to the default-code-space form and states
+    // the size here instead.  Additive: the bracketed form has no trailing
+    // token, so every existing spelling keeps the size it had.
+    s.skip_ws();
+    if !s.eof() {
+        let tok = s.read_token();
+        match parse_userbase_u64(&tok) {
+            Some(v) if v >= 1 && v <= int4::MAX as u64 => size = v as int4,
+            _ => return Err(IfaceError::parse(format!("Bad size: {tok}"))),
+        }
+    }
     if size == 0 {
         return Err(IfaceError::execution("Must specify a size"));
     }
@@ -2946,27 +2960,72 @@ decomp_command!(
 
 // --- global add / remove / spaces / registers (ifacedecomp.cc:1993-2046) ---
 
-decomp_command!(
-    /// C++ `IfcGlobalAdd`: `global add <addr+size>`.
-    IfcGlobalAdd,
-    fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
+/// The `[first, last]` (inclusive) global-scope range a `global add`/`global
+/// remove` names, parsed the way C++ `IfcGlobalAdd` does: `parse_machaddr`, then
+/// `Range(space, first, first+size-1)`.
+fn parse_global_range(
+    status: &mut IfaceStatus,
+    s: &mut CommandStream,
+) -> IfaceResult<(std::rc::Rc<kuna_base::space::AddrSpace>, uintb, uintb)> {
+    {
         let dcp = dcp_mut(status)?;
         if dcp.conf.is_none() {
             return Err(IfaceError::execution("No image loaded"));
         }
-        Err(engine_unavailable("parse_machaddr + ScopeGlobal range add"))
+    }
+    let dcp = dcp_mut(status)?;
+    let prog = dcp.conf.as_mut().expect("conf checked non-None above");
+    let (addr, size) = parse_machaddr(prog, s, false).map_err(IfaceError::parse)?;
+    if size <= 0 {
+        return Err(IfaceError::execution("Must specify a size"));
+    }
+    let space = addr
+        .get_space()
+        .cloned()
+        .ok_or_else(|| IfaceError::execution("Invalid address space"))?;
+    let first = addr.get_offset();
+    Ok((space, first, first.wrapping_add(size as uintb).wrapping_sub(1)))
+}
+
+decomp_command!(
+    /// C++ `IfcGlobalAdd`: `global add <addr+size>` —
+    /// `symboltab->addRange(getGlobalScope(), space, first, last)`.
+    ///
+    /// Note for a caller reaching for this: on every stock cspec the `<global>`
+    /// tag already claims the whole default data space (`<range space="ram"/>`),
+    /// so on a normal ELF the range is global before this runs and adding it
+    /// changes nothing.  It is the undo of `global remove`, and the lever for a
+    /// space the cspec does NOT claim.
+    IfcGlobalAdd,
+    fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
+        let (space, first, last) = parse_global_range(status, s)?;
+        let dcp = dcp_mut(status)?;
+        let prog = dcp.conf.as_mut().expect("conf checked non-None above");
+        let scope = prog
+            .arch()
+            .symboltab
+            .get_global_scope()
+            .ok_or_else(|| IfaceError::execution("No global scope"))?;
+        prog.arch_mut().symboltab.add_range(scope, space, first, last);
+        Ok(())
     }
 );
 
 decomp_command!(
-    /// C++ `IfcGlobalRemove`: `global remove <addr+size>`.
+    /// C++ `IfcGlobalRemove`: `global remove <addr+size>` —
+    /// `symboltab->removeRange(getGlobalScope(), space, first, last)`.
     IfcGlobalRemove,
-    fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
+    fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
+        let (space, first, last) = parse_global_range(status, s)?;
         let dcp = dcp_mut(status)?;
-        if dcp.conf.is_none() {
-            return Err(IfaceError::execution("No image loaded"));
-        }
-        Err(engine_unavailable("parse_machaddr + ScopeGlobal range remove"))
+        let prog = dcp.conf.as_mut().expect("conf checked non-None above");
+        let scope = prog
+            .arch()
+            .symboltab
+            .get_global_scope()
+            .ok_or_else(|| IfaceError::execution("No global scope"))?;
+        prog.arch_mut().symboltab.remove_range(scope, space, first, last);
+        Ok(())
     }
 );
 

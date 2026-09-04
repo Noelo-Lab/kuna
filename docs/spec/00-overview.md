@@ -727,9 +727,20 @@ to know that renaming is P9 to rename something — parsed by
 | `comment [<func>::]<addr> <text>` | `comment instruction` | P9 external-refinement |
 | `name [<func>::]<symbol> <newname>` | `rename` | P9 naming-policy |
 | `type [<func>::]<symbol> <C type>` | `retype` | P5 type-propagation |
+| `readonly <addr>+<size>` | `readonly` | P1 code-data-partition |
+| `volatile <addr>+<size>` | `volatile` | P1 code-data-partition |
 
-Three application points, and the ordering between them is forced rather than
-stylistic. **Program-scoped** directives (`function`, `typedef`, `prototype`,
+Four application points, and the ordering between them is forced rather than
+stylistic. **Image-scoped** directives (`readonly`, `volatile`) OR one boolean
+Varnode property over a memory range, and must be stated before the image's
+symbols are mapped: `Scope::addMap` folds the range property into each
+`SymbolEntry` as it maps it (`database.cc:1156-1158`) and never consults the range
+again, so a property painted afterwards is silently inert over every address the
+loader named. The generated console script therefore emits them ahead of `read
+symbols`; the in-process surface, where `bootstrap_from_object` has already read
+the loader's symbols before a caller can say anything, re-applies the property to
+the symbols the range covers (`assertions::paint_property`). Both surfaces then
+render the same C. **Program-scoped** directives (`function`, `typedef`, `prototype`,
 `data`) are applied right after the analysis commit
 (`ConsoleProgram::set_assertions` + `assertions::apply_program_scoped`, called
 from `decompiler/crates/kuna-cli/src/decompile_all.rs (load_program)`), for the
@@ -761,6 +772,25 @@ rejection is reported and the run continues, so a batch of forty renames against
 re-decompiled binary does not lose the other thirty-nine to one stale name.
 Durability is caller-carried, as it is for boundaries: `--assert @FILE` is the
 artifact.
+
+A `readonly` range is the one directive whose effect depends on a second switch:
+folding a read-only load into the value behind it is
+`ActionVarnodeProps`/`Funcdata::fillin_read_only`, gated on the program-wide
+`readonly` option, which is default-off. Asserting a range therefore turns that
+option on for the run — a directive that paints a property and then declines to
+act on it would be the accepted-and-inert failure this plane exists to end — and
+it is applied ahead of the caller's own `--option`s, so an explicit `--option
+readonly off` still wins. The reverse composition is not equivalent: the option
+alone folds only what the loader already marked (section flags), which is why
+`.data` that nothing writes needs the range and not the switch.
+
+There is deliberately no `global` directive. `global add`/`global remove` are the
+console commands `phases.toml` names as the `code-data-partition` exposure and
+they are wired here onto `Database::add_range`/`remove_range`, but every stock
+cspec's `<global>` already claims the whole default data space (`<range
+space="ram"/>`), so on any ordinary image an added range was global before the
+caller spoke; only the removal direction moves the C. Exposing an assertion that
+is measurably a no-op would be the same failure the plane is built to avoid.
 
 (kuna) **Load-time env bridges.** Seven loader gates are consumed *inside* the
 bootstrap — before any console `option` line can possibly run — so the option

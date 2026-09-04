@@ -17,6 +17,8 @@
 //!   --assert 'prototype authenticate int authenticate(char *user,char *pass)'
 //!   --assert 'type v2 char[16]'
 //!   --assert 'name v2 credbuf'
+//!   --assert 'readonly 0x404028+8'
+//!   --assert 'volatile 0x50000000+4'
 //!   --assert @notes/overrides.kuna
 //! ```
 //!
@@ -42,13 +44,20 @@ use kuna_console::assertions::{Body, Directive};
 
 /// Where a directive's console line goes in the generated script.
 ///
-/// The slots are forced, not stylistic: an `option` must precede `read symbols`
-/// (the analysis commit), a `map param` needs a loaded function, and a `rename`
-/// of a local needs a function that has already been decompiled — before that
-/// the console answers `No symbol named: v2`, which is exactly the bug that makes
-/// today's `--kassert p9 naming-policy` a silent no-op.
+/// The slots are forced, not stylistic: a `readonly` range must precede `read
+/// symbols` (the symbols absorb the property as they are mapped), an `option`
+/// must precede it too (the analysis commit), a `map param` needs a loaded
+/// function, and a `rename` of a local needs a function that has already been
+/// decompiled — before that the console answers `No symbol named: v2`, which is
+/// exactly the bug that makes today's `--kassert p9 naming-policy` a silent
+/// no-op.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum Slot {
+    /// After `load file` and the `option` lines, before `read symbols`.  A range
+    /// property has to be painted before the symbols over it are mapped: the
+    /// mapping folds the property into each `SymbolEntry` and never consults the
+    /// range again.
+    Image,
     /// After `read symbols`, before `load function`.
     Program,
     /// After `load function`, before the first `decompile`.
@@ -130,6 +139,31 @@ fn parse_vma(tok: &str) -> Option<u64> {
         return None;
     }
     u64::from_str_radix(body, 16).ok()
+}
+
+/// A memory range: `<addr>+<size>` (canonical) or `<addr> <size>`.  The address
+/// is hex with or without `0x`; the size is decimal unless it carries a `0x`.
+fn parse_range(rest: &str) -> Option<(u64, i32)> {
+    let (addr_tok, size_tok) = match rest.split_once('+') {
+        Some((a, b)) => (a, b),
+        None => {
+            let (a, b) = take_token(rest);
+            (a, b)
+        }
+    };
+    let addr = parse_vma(addr_tok)?;
+    let size_tok = size_tok.trim();
+    if size_tok.is_empty() || size_tok.split_whitespace().count() != 1 {
+        return None;
+    }
+    let size = match size_tok.strip_prefix("0x").or_else(|| size_tok.strip_prefix("0X")) {
+        Some(hex) => u64::from_str_radix(hex, 16).ok()?,
+        None => size_tok.parse::<u64>().ok()?,
+    };
+    if size == 0 || size > i32::MAX as u64 {
+        return None;
+    }
+    Some((addr, size as i32))
 }
 
 /// Split off the leading whitespace-delimited token, returning `(token, rest)`.
@@ -226,11 +260,21 @@ pub(crate) fn parse_one(spec: &str) -> Result<Directive, String> {
             }
             Body::Type { func, symbol, decl: decl.to_string() }
         }
+        "readonly" | "volatile" => {
+            let (addr, size) = parse_range(rest)
+                .ok_or_else(|| bad("needs <addr>+<size> (e.g. 0x404028+8)"))?;
+            if keyword == "readonly" {
+                Body::Readonly { addr, size }
+            } else {
+                Body::Volatile { addr, size }
+            }
+        }
         "" => return Err("--assert: empty directive".into()),
         other => {
             return Err(format!(
                 "--assert {raw:?}: unknown directive {other:?} (want one of \
-                 function, typedef, prototype, data, param, return, comment, name, type)"
+                 function, typedef, prototype, data, param, return, comment, name, type, \
+                 readonly, volatile)"
             ))
         }
     };
@@ -265,6 +309,8 @@ pub(crate) fn console_form(d: &Directive) -> Option<ConsoleForm> {
         Body::Comment { addr, text, .. } => {
             (Slot::Function, format!("comment instruction {addr:#x} {text}"))
         }
+        Body::Readonly { addr, size } => (Slot::Image, format!("readonly {addr:#x} {size}")),
+        Body::Volatile { addr, size } => (Slot::Image, format!("volatile {addr:#x} {size}")),
         Body::Name { symbol, newname, .. } => (Slot::Symbol, format!("rename {symbol} {newname}")),
         Body::Type { symbol, decl, .. } => (Slot::Symbol, format!("retype {symbol} {decl}")),
     };
@@ -434,6 +480,59 @@ mod tests {
             lowered("function 0x1400-0x1480=decrypt"),
             (Slot::Program, "function bounds 0x1400 0x1480 as decrypt".into())
         );
+        assert_eq!(
+            lowered("readonly 0x404028+8"),
+            (Slot::Image, "readonly 0x404028 8".into())
+        );
+        assert_eq!(
+            lowered("volatile 0x50000000+4"),
+            (Slot::Image, "volatile 0x50000000 4".into())
+        );
+    }
+
+    /// `readonly`/`volatile` take `<addr>+<size>`; a whitespace-separated size is
+    /// accepted too, and the size may be decimal or hex.
+    #[test]
+    fn a_range_directive_takes_an_address_and_a_size() {
+        assert_eq!(
+            one("readonly 0x404028+8").body,
+            Body::Readonly { addr: 0x404028, size: 8 }
+        );
+        assert_eq!(
+            one("volatile 50000000 4").body,
+            Body::Volatile { addr: 0x5000_0000, size: 4 }
+        );
+        assert_eq!(
+            one("readonly 0x404028+0x10").body,
+            Body::Readonly { addr: 0x404028, size: 16 }
+        );
+    }
+
+    /// A range with no size, a zero size or a junk size is rejected: a property
+    /// painted over nothing is the accepted-and-inert failure mode again.
+    #[test]
+    fn a_range_directive_without_a_usable_size_is_rejected() {
+        for spec in [
+            "readonly 0x404028",
+            "readonly 0x404028+0",
+            "readonly 0x404028+banana",
+            "readonly +8",
+            "volatile 0x50000000 4 8",
+            "volatile",
+        ] {
+            let err = parse_one(spec).expect_err("refuses");
+            assert!(err.starts_with("--assert"), "got {err:?} for {spec:?}");
+        }
+    }
+
+    /// A `readonly` range implies read-only propagation for the run; nothing
+    /// else does.
+    #[test]
+    fn only_a_readonly_range_implies_read_only_propagation() {
+        use kuna_console::assertions::implies_readonly_propagation;
+        assert!(implies_readonly_propagation(&[one("readonly 0x404028+8")]));
+        assert!(!implies_readonly_propagation(&[one("volatile 0x50000000+4")]));
+        assert!(!implies_readonly_propagation(&[one("name v2 credbuf")]));
     }
 
     /// The second `decompile` is emitted ONLY for a symbol-scoped directive, so

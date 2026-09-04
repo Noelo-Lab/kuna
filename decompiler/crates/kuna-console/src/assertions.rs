@@ -25,6 +25,8 @@
 //!   data <addr> <C typedeclaration>        map address          P5 const-pointer
 //!   comment [<func>::]<addr> <text>        comment instruction  P9
 //!   function <start>[-<end>][=<name>]      function bounds      P1  (= --define-function)
+//!   readonly <addr>+<size>                 readonly             P1 code-data-partition
+//!   volatile <addr>+<size>                 volatile             P1 code-data-partition
 //! ```
 //!
 //! [`Directive`] is the parsed form; the CLI's `assertdecl` module owns the text
@@ -37,6 +39,14 @@
 //!
 //! The ordering is not cosmetic; it is what makes the plane work at all.
 //!
+//! * **Image-scoped** (`readonly`, `volatile`) paints a boolean property over a
+//!   memory range.  A range property has to be stated BEFORE the symbols over it
+//!   are mapped, because `Scope::addMap` folds the property into each
+//!   `SymbolEntry` as it maps it (`database.cc:1156-1158`) and never looks at
+//!   the range again; the generated console script therefore emits these before
+//!   `read symbols`, and the in-process surface — where the loader's symbols are
+//!   already mapped by the time a caller can say anything — re-applies the
+//!   property to the symbols the range covers.
 //! * **Program-scoped** (`function`, `typedef`, `prototype`, `data`) is applied
 //!   by [`apply_program_scoped`] right after the analysis commit, so a declared
 //!   fact outranks whatever discovery decided.
@@ -98,6 +108,12 @@ pub enum Body {
     Name { func: Option<String>, symbol: String, newname: String },
     /// `type [<func>::]<symbol> <C type>` — retype a local.
     Type { func: Option<String>, symbol: String, decl: String },
+    /// `readonly <addr>+<size>` — the bytes in this range never change at run
+    /// time, so a load from it is its initialiser.
+    Readonly { addr: u64, size: int4 },
+    /// `volatile <addr>+<size>` — device memory: every access is a real access
+    /// and two reads of one address are two reads.
+    Volatile { addr: u64, size: int4 },
 }
 
 /// What became of one directive.  `status` is `applied` or `rejected`; a
@@ -127,6 +143,8 @@ impl Body {
             Body::Comment { .. } => ("comment", "P9", "external-refinement"),
             Body::Name { .. } => ("name", "P9", "naming-policy"),
             Body::Type { .. } => ("type", "P5", "type-propagation"),
+            Body::Readonly { .. } => ("readonly", "P1", "code-data-partition"),
+            Body::Volatile { .. } => ("volatile", "P1", "code-data-partition"),
         }
     }
 
@@ -266,8 +284,82 @@ fn apply_one_program_scoped(prog: &mut ConsoleProgram, body: &Body) -> Result<()
         }
         Body::Prototype { func, decl } => apply_prototype(prog, func, decl),
         Body::Data { addr, decl } => apply_data(prog, *addr, decl),
+        Body::Readonly { addr, size } => {
+            paint_property(prog, *addr, *size, kuna_decomp::varnode::varnode_flags::readonly)
+        }
+        Body::Volatile { addr, size } => {
+            paint_property(prog, *addr, *size, kuna_decomp::varnode::varnode_flags::volatil)
+        }
         // Handled by the decompile loop.
         _ => Err("internal: not a program-scoped directive".into()),
+    }
+}
+
+/// `readonly` / `volatile` — the in-process twin of the console's `readonly` and
+/// `volatile` commands (`IfcReadonly`/`IfcVolatile`): OR one boolean Varnode
+/// property over `[addr, addr+size)`.
+///
+/// The paint alone is not enough here.  `Scope::addMap` copies the range
+/// property into a `SymbolEntry` as it maps it (`database.cc:1156-1158`) and the
+/// per-function global snapshot then reads the SYMBOL's flags, so a property
+/// stated after the loader's symbols are mapped — which is every in-process run,
+/// since `bootstrap_from_object` reads them — is invisible at exactly the
+/// addresses a caller is most likely to name.  Re-applying it to the symbols the
+/// range covers is what makes `--assert 'readonly 0x404028+8'` and the console's
+/// pre-`read symbols` ordering mean the same thing.
+fn paint_property(
+    prog: &mut ConsoleProgram,
+    vma: u64,
+    size: int4,
+    flag: uint4,
+) -> Result<(), String> {
+    if size <= 0 {
+        return Err("a range needs a size of at least one byte".into());
+    }
+    let first = code_addr(prog, vma)
+        .ok_or_else(|| "the loaded program has no default code space".to_string())?;
+    let space = first
+        .get_space()
+        .cloned()
+        .ok_or_else(|| "the loaded program has no default code space".to_string())?;
+    let end = vma
+        .checked_add(size as u64)
+        .ok_or_else(|| "the range wraps past the end of the address space".to_string())?;
+    let last_open = Address::new(Rc::clone(&space), end);
+    prog.arch_mut().symboltab.set_property_range(flag, &first, &last_open);
+    repaint_covered_symbols(prog, &space, vma, end, flag);
+    Ok(())
+}
+
+/// OR `flag` onto every global symbol whose storage overlaps `[first, end)`.
+///
+/// Walks the global scope's map by repeatedly asking for the next overlapping
+/// entry and stepping past it, so the cost is one lookup per covered symbol
+/// rather than one per byte.
+fn repaint_covered_symbols(
+    prog: &mut ConsoleProgram,
+    space: &Rc<kuna_base::space::AddrSpace>,
+    first: u64,
+    end: u64,
+    flag: uint4,
+) {
+    let Some(scope) = prog.arch().symboltab.get_global_scope() else {
+        return;
+    };
+    let mut at = first;
+    while at < end {
+        let addr = Address::new(Rc::clone(space), at);
+        let remaining = (end - at).min(int4::MAX as u64) as int4;
+        let Some(eref) = prog.arch().symboltab.find_overlap(scope, &addr, remaining) else {
+            break;
+        };
+        let (sym, past) = {
+            let entry = prog.arch().symboltab.entry(scope, eref);
+            (entry.symbol, entry.get_last().wrapping_add(1))
+        };
+        prog.arch_mut().symboltab.set_attribute(sym, flag);
+        // A zero-width or backwards entry would spin; always make progress.
+        at = past.max(at.wrapping_add(1));
     }
 }
 
@@ -564,6 +656,20 @@ fn apply_one_symbol_scoped(
         _ => unreachable!("symbol-scoped directive kinds are exhausted above"),
     }
     Ok(())
+}
+
+/// Does any directive assert a read-only range?
+///
+/// Painting a range read-only does nothing on its own: folding a read-only load
+/// into its value is gated by the program-wide `readonly` option, which is
+/// default-off.  So a `readonly` directive turns that option on for the run --
+/// otherwise this plane's own failure mode (a directive that is accepted and
+/// changes nothing) is exactly what it would ship.  Every surface applies it
+/// BEFORE the caller's own options, so an explicit `--option readonly off` still
+/// wins; asserting the range is a statement about the range, not an override of
+/// a switch the caller set by hand.
+pub fn implies_readonly_propagation(directives: &[Directive]) -> bool {
+    directives.iter().any(|d| matches!(d.body, Body::Readonly { .. }))
 }
 
 /// The outcome of a directive nothing claimed -- the load never reached the

@@ -1,0 +1,91 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "sample",
+    "--json",
+    "--assert",
+    "readonly 0x404028+8",
+    "--assert",
+    "volatile 0x50000000+4"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/assertranges_x86_64",
+    "binary_sha256": "1c9ad3b67437c7e85ac53d0755609c5b5e015225796a98c0287de5f2cb3d382e",
+    "binary_size": 15800,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/assertranges_x86_64",
+    "selector": "sample",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "json": [
+      {
+        "path": "assertions",
+        "op": "len_eq",
+        "value": 2
+      },
+      {
+        "path": "assertions[0].status",
+        "op": "eq",
+        "value": "applied"
+      },
+      {
+        "path": "assertions[0].subphase",
+        "op": "eq",
+        "value": "code-data-partition"
+      },
+      {
+        "path": "assertions[1].status",
+        "op": "eq",
+        "value": "applied"
+      },
+      {
+        "path": "assertions[1].subphase",
+        "op": "eq",
+        "value": "code-data-partition"
+      },
+      {
+        "path": "functions[0].code",
+        "op": "contains",
+        "value": "* 7"
+      },
+      {
+        "path": "functions[0].code",
+        "op": "contains",
+        "value": "+ 100"
+      },
+      {
+        "path": "functions[0].code",
+        "op": "not_contains",
+        "value": "scale"
+      },
+      {
+        "path": "functions[0].code",
+        "op": "not_contains",
+        "value": "bias"
+      },
+      {
+        "path": "functions[0].code",
+        "op": "not_contains",
+        "value": "dat_50000000 * 2"
+      }
+    ]
+  },
+  "notes": "Desired: two range facts an agent knows and kuna cannot derive, on one `kuna decompile --json`. scale/bias are .data (writable, so never loader-readonly) and nothing writes them: asserted readonly they fold to `* 7` / `+ 100`. 0x50000000 is device memory, so kuna CSEs its two reads into one; asserted volatile keeps both. FAILS at ed353fb2: exit 2, unknown directive. In-repo fixture.",
+  "probe_id": "a-567d3207ce62"
+}

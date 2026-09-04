@@ -1030,6 +1030,13 @@ pub(crate) fn load_program(
             .map_err(|e| format!("option {name}: {}", e.explain()))?;
     }
 
+    // (kuna `--assert`) A `readonly` range is inert unless read-only propagation
+    // is on, and that option is default-off; asserting the range turns it on.
+    // Set BEFORE the caller's own `--option`s so an explicit `--option readonly
+    // off` still wins -- the same order the script surface emits it in.
+    if kuna_console::assertions::implies_readonly_propagation(&args.assertions) {
+        prog.arch_mut().readonlypropagate = true;
+    }
     // Analysis-/printer-tier `--option`s must be applied to the architecture
     // BEFORE the gated analysis commit (the `option` < `read symbols` ordering
     // the script path enforces), so a per-pass gate takes effect.
