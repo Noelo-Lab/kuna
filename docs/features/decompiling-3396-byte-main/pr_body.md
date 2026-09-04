@@ -1,126 +1,144 @@
 ## What was broken
 
-RE-need `decompiling-3396-byte-main` (round 2, track `perf`, 1 instance,
-challenge `69a3822f7b3cc38c80464da4`):
+RE-need `decompiling-3396-byte-main` (round 2, `perf`, 1 instance, challenge
+`69a3822f7b3cc38c80464da4`). A tester reverse-engineering a PE crackme reported:
 
-> **Decompiling the 3396-byte main function takes about 68 seconds** (major)
-> The command produced no output for roughly 68 seconds, then emitted about 30 KB of
-> highly noisy pseudocode. […] this observation is specifically about latency.
+> **Decompiling the 3396-byte main function takes about 68 seconds.** The command
+> produced no output for roughly 68 seconds, then emitted about 30 KB of highly
+> noisy pseudocode. […] this observation is specifically about latency.
 
-Reproduced at **71.5 s median** for `kuna decompile <bin> sub_140023350`.
+Attempt 1 (#380, merged) removed an O(N²) dead-list position scan in the lifter
+and took the witness from 71.46 s to 19.42 s. The acceptance bar is a **median
+under 10 s**, so the need stayed open.
 
-## The cause is not what was filed
+## What this PR changes
 
-The filed hypothesis was "opaque arithmetic and indirect calls make an analysis pass
-scale poorly". The symptom stands, the diagnosis does not: gdb-sampled profiling put
-**53% of wall time in one leaf frame, `FlowInfo::xref_control_flow`** — the *lifter*,
-before any analysis runs. This function is unusual only in op count (48,169 raw ops,
-37,710 of them INDIRECTs across 365 call sites), and op count is exactly what the real
-defect squares.
+`kuna decompile <bin> <fn>` drives the console with `load function <fn>` and then
+`decompile`, and **each of those followed the same function's flow from scratch** —
+the whole lift, the block build, and the per-jump-table sub-decompilation, twice.
 
-**The dead list is a doubly-linked list whose links three call sites refused to use.**
-The C++ caches a `std::list<PcodeOp*>::iterator` on every op (`insertiter`), so "the op
-after this one" and "the last op" are O(1). kuna's dead list *is* that list —
-`op.rs (IntrusiveList)` keeps prev/next `OpId` links on each op — but position was being
-re-derived by scanning:
+Upstream never pays that: C++ `IfcFuncload` follows the flow once and
+`IfcDecompile` re-runs the action pipeline on *that* `Funcdata` after
+`Architecture::clearAnalysis` (`ifacedecomp.cc:889`). kuna rebuilds instead
+because the facts a decompile is seeded with are consumed **at flow time** and
+`load function` applies none of them: `map address` symbols and DWARF stack
+locals, `type varnode` usepoint symbols, `map hash` dynamic symbols, a `parse
+line extern` prototype, `map param` storage locks, `override prototype` call-site
+overrides. So the rebuild is *required* exactly when one of those exists — and
+pure waste when none does, which is every plain `kuna decompile`.
 
-| site | what it did | how often |
+`decompile` now **adopts** the loaded IR when it can prove the rebuild would
+repeat the same follow. Three independent guards must all hold
+(`kuna-console/src/ifacedecomp.rs`, `PristineFlow`):
+
+1. **Every flow-time seed is empty** — any one present means the loaded IR was
+   followed without it.
+2. **The architecture is configured as it was at the load** — a `Funcdata`
+   snapshots the per-function flags into its ArchSeam handle when it is *built*,
+   so a flag flipped afterwards is invisible to it. `formatstring`, the watchdog
+   budget and ghidra-mode's staged recommendations all move between the load and
+   the drive, and each refuses adoption.
+3. **`decompile` is the immediately next command** — `load function` records
+   `IfaceStatus::command_seq` and `decompile` requires it to have advanced by
+   exactly one, with the same name, entry, declared extent and flow overrides.
+   The counter is the whole invalidation story on purpose: an `option`, a
+   `kassert`, a `map`, a second `load` — anything at all — advances it, so no
+   command needs its own invalidation hook and none can be forgotten.
+
+It is a pure-performance seam: the adopted `Funcdata` is the one the rebuild would
+have produced, so the emitted C is byte-identical either way. No option, no
+`phases.toml` row, no catalog counter, no DIV — nothing here can change emitted C.
+
+Guard 2 is not hypothetical. The first cut had it missing and
+`verify_decompile_all_parity` caught it: with `--option formatstring on` the ARM
+fixture rendered `printf((char *)(dat_52c + 0x51c), a0, *a1)` instead of
+`printf("%d %s\n", a0, (char *)*a1)`, because `formatstring` turns read-only
+propagation on *around* the drive so the PC-relative literal-pool format constant
+can be read, and the adopted IR had snapshotted the flag off.
+
+## Measurement
+
+`kuna decompile <crackme> sub_140023350`, interleaved A/B, same worktree, base
+binary and new binary alternating in one loop:
+
+| | median | min |
 |---|---|---|
-| `FlowInfo::dead_next` | scanned all of `iter_dead()` to locate one op | once per emitted p-code op |
-| `FlowInfo::dead_tail` | `iter_dead().last()` | once per decoded instruction (the marker idiom) |
-| `FlowInfo::delete_remaining_ops` | collected the whole list to find a suffix | once per terminating instruction |
-| `Funcdata::op_target` | rebuilt an entire `BTreeMap` predecessor index | once per call |
+| base (`origin/main`) | BASE_MEDIAN | BASE_MIN |
+| this PR | NEW_MEDIAN | NEW_MIN |
+| | **DELTA_PCT** | |
 
-The list grows to the whole function, so this is O(N²) in op count. It is invisible on
-small functions and quadratic on the ones an RE actually cares about.
+Where it goes, from `Instant`-instrumented builds of the same tree:
 
-## The mechanism
+| stage | before | after |
+|---|---|---|
+| `load file` + `read symbols` | 0.75 s | 0.75 s |
+| flow follow #1 (`load function`) | 4.95 s | **0 s** |
+| flow follow #2 (`decompile`) | 4.33 s | 4.33 s |
+| action pipeline + emit | ~8.8 s | ~8.8 s |
 
-1. **`op.rs`** — expose what the list already carries: `PcodeOpBank::dead_front` /
-   `dead_back` / `dead_next` / `dead_prev`. Membership is the `dead` flag **plus a live
-   link**, because `destroy()` retires an op to `deadandgone` with the flag still set and
-   the alive list shares the same link pair; a non-member reports `None`, exactly what a
-   scan for an absent op returned.
-2. **`flow.rs` / `funcdata_op.rs`** — the four sites above use those accessors.
-3. **`action.rs`** — `ActionPool::advance_op_state` already ran the optree search that
-   decides `After`/`Done`, so it now keeps the successor's `OpId` and `current_op` reads
-   it instead of searching a second time for the op the advance already found. The memo is
-   dropped on every `apply()` exit, so a resumed or interleaved sweep re-searches.
+Both follows were dominated by the jump-table sub-decompilation: the function has
+2 tables, each staging a 68,370-op partial clone (~0.25 s) plus a reduced
+"jumptable" pipeline over it (~1.7 s), and that ran **4 times** (2 tables × 2
+follows) for 8.5 s of the 18.8 s run. It now runs twice.
 
-No option: none of this can change emitted C, so `docs/agents.md`'s flag rule does not
-apply. `phases.toml`, `options.rs`, the catalog counters, `docs/options.md` and
-`docs/history.md` are untouched.
+## The acceptance probe still does NOT pass, and the reason is now measured
 
-## Measured
+Acceptance `a-53d616afcb6a` asks for a median under 10,000 ms. This PR does not
+reach it, and no further redundancy removal can:
 
-Interleaved A/B (base and new binaries alternating in one loop; machine load 5–7 from
-sibling builders, so both median and min are reported):
+- The **action pipeline plus emit alone is ~8.8 s**, and `load file` + `read
+  symbols` is another 0.75 s. That is a ~9.6 s floor before a single jump table is
+  touched. Even deleting *all* remaining jump-table work lands at ~10.6 s.
+- The residue is not a bug, it is **scaling**. The witness is not a 3396-byte
+  function: `kuna functions` derives sizes from the gap to the next entry, and the
+  PE's own `.pdata` `RUNTIME_FUNCTION` says `0x140023350..0x14002dbe0` — **43,152
+  bytes**, with `sub_140024094` and `sub_14002bb5c` being mid-function labels. The
+  flow follow is correct; there is no overrun.
+- Measured on `/bin/bash` (`--mode aggressive`, `decompile-all --addr`, load cost
+  subtracted), pipeline time against function size:
 
-| run | base | new | delta |
-|---|---|---|---|
-| `kuna decompile <bin> sub_140023350` (the probe), median of 5 | **71.46 s** | **19.42 s** | **−72.8%** |
-| same, min of 5 | 69.14 s | 18.44 s | −73.3% |
-| `kuna decompile-all --addr 0x140023350`, median of 3 | 40.05 s | 14.24 s | −64.4% |
-| `kuna decompile-all /bin/gzip` (145 functions), median of 3 | 14.55 s | 13.60 s | −6.5% |
+  | size | alive ops | INDIRECT | MULTIEQUAL | varnodes | pipeline |
+  |---|---|---|---|---|---|
+  | 5,248 B | 3,233 | 1,004 | 1,047 | 4,715 | 1.6 s |
+  | 9,184 B | 8,937 | 4,098 | 2,558 | 13,934 | 9.6 s |
+  | 13,488 B | 30,697 | 17,142 | 9,714 | 49,382 | 30.7 s |
 
-The base and new distributions do not overlap: max(new) = 23.35 s < min(base) = 69.14 s.
-The gzip row is the honest control — small functions barely feel a quadratic in op count.
+  The **IR itself** is superlinear in function size (ops ∝ size^~2.4, driven by
+  INDIRECT: calls × heritaged locations, both O(size)), and pipeline time is
+  ∝ ops^~1.5-2 on top of that. Closing the last 4 s is a constant-factor campaign
+  across the rule pool, p6 merge, p5 infertypes, p3 heritage and p9 emit — a flat
+  ~24/18/14/12/10 % split with no single hot spot — not another focused fix.
 
-**Output is byte-identical.** Whole-binary `decompile-all --json` captures from an
-interleaved before/after build pair compare byte-for-byte on three binaries / 509
-functions: the probe crackme (322 fns, 5,653,602 B), `/bin/gzip` (145 fns, 1,196,332 B),
-`/usr/bin/xxd` (42 fns, 135,319 B). The 120,052-byte witness function is identical too.
+The full residue map, the profile that produced it, and the two remaining
+structural leads (the per-table partial rebuild, blocked because kuna's
+`unrolledguard` extension depends on it; and the O(log n) rule-pool cursor) are in
+`docs/features/decompiling-3396-byte-main/record.json`.
 
-## The acceptance probe does NOT pass — read this part
+## Tests
 
-The need's acceptance asks for a **median under 10 s**. This lands at 19.4 s. The probe
-arm (`> 30 s`, i.e. the filed bad behaviour) no longer holds, so the symptom is gone, but
-the threshold is not met and **the need should stay open**.
+`decompiler/crates/kuna-console/tests/verify_flowreuse.rs` — 5 cases:
 
-After this fix the profile is flat — p6 merge/ScopeLocal 27.6%, p3 heritage 26.3%, the
-rule pool 19.8%, jump-table sub-decompilation 17.4%, p9 dead-code/emit 13.7% of a 12.2 s
-in-process run. Nothing left is worth the further 48%; closing that gap is a campaign
-across kuna's core indexes, not one focused change. Two concrete leads are recorded in
-`docs/features/decompiling-3396-byte-main/record.json`:
-
-- **`kuna decompile` follows flow twice** (~18% of the probe). `follow_flow_on_fd` is hit
-  2× and `stage_jump_table` 4× on the console path versus 1×/2× in-process, because
-  kuna's `IfcDecompile` rebuilds the `Funcdata` from scratch where the C++ calls
-  `clearAnalysis` on the one `IfcFuncload` already followed. Not local: the rebuild exists
-  so the seeds (mapped symbols, DWARF locals, prototypes, param maps, overrides) apply at
-  flow time.
-- **The jump-table partial clone is rebuilt per table.** Upstream builds it once
-  (`flow.cc:1437`, guarded at `funcdata_block.cc:513`). Implemented, measured at
-  18.0 s → 14.3 s — and **reverted**: it takes `tests/stages/ghangr-optimized-memcpy-6301a9.xml`
-  from 2/2 to 0/2, losing 16 of 17 interleaved MSVC switches, because `option unrolledguard`
-  recovers them precisely *because* each table's clone re-clones its already-recovered
-  siblings. It changes which tables recover, so it needs its own option — and this round's
-  `phases.toml`/catalog leases are held by a sibling builder. Left documented in the code
-  and in `docs/spec/02-lift-and-flow.md` §2.3.
-
-No `tests/cli/` probe was promoted: the acceptance does not pass, and its target is a
-dataset binary (`scripts.repipe.verify.vendorable` refuses anything not in-repo). The
-regression guard is a cargo unit test on the cursor semantics instead of a wall-clock
-assertion on a CI runner.
+- the plain `load function` → `decompile` pair adopts (`adopted_flows == 1`) and
+  renders **byte-identical** C to the same pair with an inert `echo` in between
+  (which does not adopt);
+- `load addr` stamps its follow the same way;
+- a second `decompile` does not adopt (the stamp is single-use);
+- DWARF stack locals — a flow-time seed present with *nothing* running in
+  between — force the rebuild, isolating the seed guard from the counter guard;
+- `formatstring` forces the rebuild, and the format string still resolves.
 
 ## Gates
 
 | gate | result |
 |---|---|
-| `make test` | **675/675 PARITY OK** (`docs/baseline.json` not re-pinned) |
-| `make test-stages` | **597/597 PARITY OK** (`docs/baseline-stages.json` not re-recorded) |
-| `make rust-test` | **green**, 342 `test result: ok` — run with `env -u KUNA_DECOMP_TEST`, see below |
-| `make check-spec` | check-spec OK (lenient mode) |
-| `kuna catalog --check` | catalog OK |
+| `make test` | **PARITY OK** (675/675, `docs/baseline.json` untouched) |
+| `make test-stages` | **PARITY OK** (`docs/baseline-stages.json` untouched) |
+| `make rust-test` | RUSTTEST |
+| `make check-spec` | check-spec OK |
+| `kuna catalog --check` | catalog OK (no option added) |
 
-New tests: `substrate::op::tests::dead_cursor_matches_a_full_scan` (the O(1) cursor agrees
-with a full `iter_dead()` scan at every position, and reports an alive op, a destroyed op
-and a single-element list exactly as the scan did) and
-`first_after_seq_id_agrees_with_first_after_seq`.
-
-> **Harness note:** the RE-pipeline worker environment exports `KUNA_DECOMP_TEST` pointing
-> at kuna's *own* `decomp_test_dbg`, which makes `verify_w10_proto_unlock`'s
-> `cpp_oracle_bin()` compare kuna against kuna and fail on the C++ oracle's `xunknown4`
-> versus kuna's DIV-6 `unsigned int`. That failure is the env var, not the change.
+Whole-surface regression sweep — `kuna decompile <bin> <addr> --addr` run under
+the base binary and this one and byte-compared, stdout **and** stderr **and** exit
+code, over every function of three binaries: SWEEPLINE.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)

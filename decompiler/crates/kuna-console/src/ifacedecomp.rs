@@ -163,6 +163,52 @@ pub struct IfaceDecompData {
         String,
         Vec<(kuna_base::types::int4, String, kuna_decomp::fspec::ParameterPieces)>,
     >,
+    /// (kuna) What the last `load function` / `load addr` followed, so the very
+    /// next `decompile` can adopt that IR instead of following the same flow a
+    /// second time.  See [`PristineFlow`].
+    pub pristine_flow: Option<PristineFlow>,
+    /// (kuna) How many times a `decompile` adopted the loaded IR instead of
+    /// re-following the flow.  Observability only -- nothing reads it to make a
+    /// decision; it is what lets a test assert the fast path was actually taken
+    /// rather than only that the output did not change.
+    pub adopted_flows: u64,
+}
+
+/// (kuna) The provenance stamp of the `Funcdata` currently in `dcp.fd`, recorded
+/// by `load function` / `load addr` right after their flow follow.
+///
+/// C++ `IfcDecompile` re-runs the actions on the `Funcdata` `IfcFuncload` built
+/// (`clearAnalysis` + `perform`), so upstream follows the flow ONCE.  The kuna
+/// console rebuilds the IR instead, because the seeds a decompile is given --
+/// `map addr` symbols and DWARF locals, `type varnode` usepoint symbols, `map
+/// hash` dynamic symbols, a `parse line` prototype, `map param` storage locks,
+/// `override prototype` facts -- are consumed AT FLOW TIME and `load function`
+/// applies none of them.  So the rebuild is not gratuitous; it is what makes
+/// those console facts take effect.
+///
+/// It is also pure waste whenever there are no such facts, which is every
+/// `kuna decompile <bin> <fn>`: the lift, the block build and the per-jump-table
+/// sub-decompilation all run twice.  This stamp is what lets `decompile` prove
+/// the waste case: it records the identity the flow was followed under, and the
+/// console command counter at that moment, so a `decompile` that runs as the
+/// very next command with every seed still empty can adopt the IR verbatim.
+///
+/// The `command_seq` check is deliberately the whole invalidation story.  Any
+/// command in between -- an `option` that changes a flow-time decision, a
+/// `kassert`, a `map`/`override`/`parse`, another `load` -- advances the counter
+/// and the stamp stops matching, so no command needs its own invalidation hook
+/// and none can be forgotten.
+pub struct PristineFlow {
+    /// `IfaceStatus::command_seq` as of the `load` that followed this flow.
+    pub command_seq: u64,
+    /// The name the flow was followed under.
+    pub name: String,
+    /// The entry the flow was followed from.
+    pub entry: kuna_base::address::Address,
+    /// The declared byte extent the follow was bounded by (0 = unbounded).
+    pub size: kuna_base::types::int4,
+    /// The flow overrides seeded before the follow.
+    pub flow_overrides: Vec<(kuna_base::address::Address, kuna_base::types::uint4)>,
 }
 
 impl IfaceData for IfaceDecompData {
@@ -906,6 +952,7 @@ decomp_command!(
         // Idempotent, and a no-op for every real name.
         let funcname =
             kuna_decomp::kuna_symbolnamebound::bound_scope_path(&s.read_token(), "::").into_owned();
+        let command_seq = status.command_seq;
         let dcp = dcp_mut(status)?;
         if dcp.conf.is_none() {
             return Err(IfaceError::execution("No image loaded"));
@@ -952,6 +999,7 @@ decomp_command!(
         // A `function bounds` declaration for this entry bounds the follow;
         // without one the extent is the natural (unbounded) one.
         let declared = prog.declared_extent(entry.get_offset());
+        let entry_stamp = entry.clone();
         let fd = build_and_follow_flow_with_override(
             prog.arch_mut(),
             &resolved_name,
@@ -960,6 +1008,15 @@ decomp_command!(
             &flow_overrides,
         )
         .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+        // (kuna) Stamp the follow so an immediately-following `decompile` can adopt
+        // this IR rather than following the same flow again (see `PristineFlow`).
+        dcp.pristine_flow = Some(PristineFlow {
+            command_seq,
+            name: resolved_name,
+            entry: entry_stamp,
+            size: declared,
+            flow_overrides,
+        });
         dcp.fd = Some(fd);
         Ok(())
     }
@@ -970,6 +1027,7 @@ decomp_command!(
     /// <addr> [name]`).
     IfcAddrrangeLoad,
     fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
+        let command_seq = status.command_seq;
         let dcp = dcp_mut(status)?;
         if dcp.conf.is_none() {
             return Err(IfaceError::execution("No binary loaded"));
@@ -1036,9 +1094,19 @@ decomp_command!(
         if inline_size > 0 {
             prog.declare_extent(offset.get_offset(), inline_size);
         }
+        let entry_stamp = offset.clone();
+        let name_stamp = name.clone();
         let fd =
             build_and_follow_flow_with_override(prog.arch_mut(), &name, offset, declared, &flow_overrides)
                 .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+        // (kuna) Same follow stamp as `load function` (see `PristineFlow`).
+        dcp.pristine_flow = Some(PristineFlow {
+            command_seq,
+            name: name_stamp,
+            entry: entry_stamp,
+            size: declared,
+            flow_overrides,
+        });
         dcp.fd = Some(fd);
         Ok(())
     }
@@ -1659,6 +1727,7 @@ decomp_command!(
     /// drive once it lands.
     IfcDecompile,
     fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
+        let command_seq = status.command_seq;
         // Read the per-function values + take the program out so the engine work
         // borrows neither `status` nor `dcp` while the console output is written.
         let (name, has_no_code, proc_started, entry, size, mut mapped_symbols, usepoint_symbols, dynamic_symbols, pending_proto, all_pending_protos, mut prog) = {
@@ -1715,6 +1784,7 @@ decomp_command!(
         // call site (C++ `coreaction.cc:2385` `fc->copy(otherfunc->getFuncProto())`).
         // Functions without a declared prototype (or whose symbol is absent) are
         // unaffected — the default-model recovery still applies there.
+        let all_pending_protos_empty = all_pending_protos.is_empty();
         for pieces in all_pending_protos {
             prog.arch_mut().set_function_prototype_pieces(&pieces.name.clone(), pieces);
         }
@@ -1775,11 +1845,75 @@ decomp_command!(
         // drive (decompile_drive::decompile_func) installs the `decompile` root,
         // resets it, and runs the 252-pass perform loop to completion.
         //
+        // (kuna) Adopt the IR `load function` / `load addr` already followed, when
+        // this `decompile` is provably the same flow follow repeated.  Upstream
+        // never repeats it (`IfcDecompile` re-runs the actions on `IfcFuncload`'s
+        // Funcdata); kuna rebuilds because the seeds below are consumed at flow
+        // time and the load applies none of them — so the rebuild is required
+        // exactly when some seed is non-empty, and pure waste when none is.  Every
+        // seed the drive would apply before/at flow time is checked, plus the
+        // command counter (see `PristineFlow`), so anything at all between the two
+        // commands falls back to the rebuild.
+        let prefollowed = {
+            let dcp = dcp_mut(status)?;
+            let seeds_empty = mapped_symbols.is_empty()
+                && usepoint_symbols.is_empty()
+                && dynamic_symbols.is_empty()
+                && pending_proto.is_none()
+                && all_pending_protos_empty
+                && mapped_params.is_empty()
+                && proto_overrides.is_empty();
+            let stamp_matches = matches!(&dcp.pristine_flow, Some(p)
+                if p.command_seq + 1 == command_seq
+                    && p.name == name
+                    && p.entry == entry
+                    && p.size == size
+                    && p.flow_overrides == flow_overrides);
+            // The IR must also have been followed under the SAME architecture
+            // configuration the drive will run with, because a `Funcdata` snapshots
+            // the per-function flags into its ArchSeam handle when it is BUILT (see
+            // `docs/spec/00-overview.md` §0.5) -- a flag flipped afterwards is
+            // invisible to it.  Three things move between the load and the drive:
+            //
+            //  * `formatstring` turns read-only propagation on around the drive so
+            //    the printf format constant can be READ (on ARM it is a PC-relative
+            //    literal-pool load that only folds with `fillin_read_only`).  The
+            //    loaded IR snapshotted the flag OFF, so adopting it renders
+            //    `printf((char *)(dat_52c + 0x51c), ...)` -- the format string never
+            //    resolves and the varargs never get typed.
+            //  * the watchdog arms its per-function deadline inside the drive
+            //    (`kuna_fn_budget` is `None` on every console path).
+            //  * ghidra mode stages name/dynamic/prototype-model recommendations that
+            //    the drive takes; a follow that ran while they were still parked is
+            //    not the same follow.
+            let same_config = !prog.arch().analysis_formatstring
+                && prog.arch().kuna_fn_budget.is_none()
+                && prog.arch().kuna_pending_name_recs.is_empty()
+                && prog.arch().kuna_pending_dyn_recs.is_empty()
+                && prog.arch().kuna_pending_proto_model.is_none();
+            if seeds_empty && stamp_matches && same_config {
+                dcp.adopted_flows += 1;
+                dcp.fd.take()
+            } else {
+                None
+            }
+        };
+        // The recipe that rebuilds what was just handed over, for the failure arm
+        // below.  A drive that aborts (the GH-6904 LOSS-131 stub path) leaves the
+        // console expected to still hold an un-decompiled `dcp.fd` for a following
+        // `print C`; adopting the IR moves it into the drive, which consumes it, so
+        // the error arm re-follows the SAME name/entry/size/overrides `load
+        // function` used.  Only reached when a decompile fails, i.e. never on a
+        // healthy run and never on the parity corpora.
+        let adopted_recipe = prefollowed.as_ref().and_then(|_| {
+            dcp_mut(status).ok().and_then(|dcp| dcp.pristine_flow.take())
+        });
+        dcp_mut(status)?.pristine_flow = None;
         // (DIV-66) Routed through the SHARED step so this console command and the
         // whole-binary loop (`project::decompile_targets`) run the identical
         // pipeline — including the FormatStringAnalyzer half-B override /
         // re-decompile loop, which used to live only here.
-        let step = crate::decompile_step::decompile_one(
+        let step = crate::decompile_step::decompile_one_prefollowed(
             prog.arch_mut(),
             &name,
             entry,
@@ -1793,6 +1927,7 @@ decomp_command!(
                 mapped_params: &mapped_params,
             },
             &proto_overrides,
+            prefollowed,
         );
         let result = step.result;
         if !step.discovered.is_empty() {
@@ -1808,6 +1943,22 @@ decomp_command!(
                 .push((callpoint, pieces));
         }
         // Restore the program (and the fresh Funcdata on success) regardless.
+        if result.is_err() {
+            // Re-follow the adopted IR so the console is left holding the same
+            // un-decompiled `dcp.fd` the rebuild path would have left (see
+            // `adopted_recipe`).  `None` whenever nothing was adopted.
+            if let Some(recipe) = &adopted_recipe {
+                if let Ok(fd) = build_and_follow_flow_with_override(
+                    prog.arch_mut(),
+                    &recipe.name,
+                    recipe.entry.clone(),
+                    recipe.size,
+                    &recipe.flow_overrides,
+                ) {
+                    dcp_mut(status)?.fd = Some(fd);
+                }
+            }
+        }
         let dcp = dcp_mut(status)?;
         dcp.conf = Some(prog);
         match result {
