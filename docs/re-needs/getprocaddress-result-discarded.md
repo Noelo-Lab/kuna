@@ -2,7 +2,7 @@
 need_id: getprocaddress-result-discarded
 title: a GetProcAddress result is discarded and the pointer left uninitialised
 track: quality
-status: open
+status: closed
 severity: major
 probe_id: p-ac20c1602ca0
 acceptance_id: a-f2df446f39d5
@@ -12,14 +12,14 @@ instances: 1
 challenges: [65acadf3eef082e477ff5ede]
 rounds: [1, 2]
 first_seen_round: 1
-attempts: 0
+attempts: 2
 covered_by_option: null
 touches: [decompiler/crates/kuna-decomp]
 scope: small
 regression_of: null
-pr: null
-closed_in_round: null
-closing_pr: null
+pr: "381"
+closed_in_round: 2
+closing_pr: "381"
 reject_reason: null
 ---
 
@@ -179,6 +179,23 @@ wrong stack offset (or dropped entirely) under this binary's control-flow obfusc
   arena. The probe is NOT vendorable into `tests/cli/` -- `binary_source: dataset`, and CI has no
   dataset -- so closing this need will not add a CLI regression test; say so in the PR rather than
   faking one.
+- closed: acceptance a-f2df446f39d5 now PASSES at d0444536ead9
+- round 2 B_DONE (captain, 2026-09-04): closed against PR #381 (`tiedstorekeep`, DIV-105,
+  default-ON), merged as d0444536. Acceptance `a-f2df446f39d5` PASSES on a freshly built main --
+  both clauses, i.e. the indirect call is still emitted AND the NULL-then-call-the-same-local shape
+  is gone. `attempts: 2` records the wave-1 dispatch the account-429 killed as well as the wave-6
+  one that landed. Both filed diagnoses were refuted by the builder: the second site's `v133` is a
+  real slot ([rsp+0x260], written at 0x140002bab) dropped by the same mechanism one link further
+  down the copy chain, not a mis-attributed offset -- one predicate fixes both sites.
+- **PROMOTION REFUSED, and this is the correct outcome, not a skipped step.**
+  `verify --promote getprocaddress-result-discarded` exits 1 with *"target.binary_source is
+  'dataset', not 'in-repo' -- CI has no dataset"*. So this need closes with NO `tests/cli/` probe.
+  It also closed with no `tests/stages/` testcase: the defect is import-table-gated and the XML
+  binaryimage format carries no PE import table (the builder built and measured three fixtures,
+  none reproduce). The regression fence for `tiedstorekeep` is therefore the option's catalog row
+  plus the 675-assertion parity corpus showing 0 diffs -- not a targeted test. Anyone who later
+  vendors a small PE with an import-called-through-a-stack-slot into the repo should re-run
+  `--promote` against it.
 
 ## Prior art -- an unverified partial implementation exists (read before you design)
 

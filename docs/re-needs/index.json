@@ -4,8 +4,8 @@
   "count": 35,
   "rejected_count": 0,
   "by_status": {
-    "closed": 15,
-    "open": 20
+    "closed": 16,
+    "open": 19
   },
   "by_track": {
     "perf": 2,
@@ -243,39 +243,6 @@
       "reject_reason": null,
       "score": 13.862944,
       "path": "docs/re-needs/direct-address-keyboard-handler.md"
-    },
-    {
-      "need_id": "getprocaddress-result-discarded",
-      "title": "a GetProcAddress result is discarded and the pointer left uninitialised",
-      "track": "quality",
-      "status": "open",
-      "severity": "major",
-      "probe_id": "p-ac20c1602ca0",
-      "acceptance_id": "a-f2df446f39d5",
-      "hypothesis_status": "inconclusive",
-      "credibility": 0.8,
-      "instances": 1,
-      "challenges": [
-        "65acadf3eef082e477ff5ede"
-      ],
-      "rounds": [
-        1,
-        2
-      ],
-      "first_seen_round": 1,
-      "attempts": 0,
-      "covered_by_option": null,
-      "touches": [
-        "decompiler/crates/kuna-decomp"
-      ],
-      "scope": "small",
-      "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
-      "reject_reason": null,
-      "score": 13.862944,
-      "path": "docs/re-needs/getprocaddress-result-discarded.md"
     },
     {
       "need_id": "keyboard-callback-uses-undefined",
@@ -842,6 +809,39 @@
       "reject_reason": null,
       "score": 6.931472,
       "path": "docs/re-needs/disassembling-non-executable-rdata.md"
+    },
+    {
+      "need_id": "getprocaddress-result-discarded",
+      "title": "a GetProcAddress result is discarded and the pointer left uninitialised",
+      "track": "quality",
+      "status": "closed",
+      "severity": "major",
+      "probe_id": "p-ac20c1602ca0",
+      "acceptance_id": "a-f2df446f39d5",
+      "hypothesis_status": "inconclusive",
+      "credibility": 0.8,
+      "instances": 1,
+      "challenges": [
+        "65acadf3eef082e477ff5ede"
+      ],
+      "rounds": [
+        1,
+        2
+      ],
+      "first_seen_round": 1,
+      "attempts": 2,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-decomp"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": "381",
+      "closed_in_round": 2,
+      "closing_pr": "381",
+      "reject_reason": null,
+      "score": 6.931472,
+      "path": "docs/re-needs/getprocaddress-result-discarded.md"
     },
     {
       "need_id": "runtime-decrypted-code-opaque",
