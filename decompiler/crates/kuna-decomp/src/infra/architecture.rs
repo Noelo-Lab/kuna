@@ -903,6 +903,17 @@ pub struct Architecture {
     /// the claim that the target is a function is withheld. Off restores the
     /// previous (phantom-producing) discovery set exactly.
     pub analysis_unmappedentry: bool,
+    /// (kuna) Refuse a function entry at a PPC64 ELFv2 **local entry point**
+    /// (`ppclocalentry`); default **on**. The OpenPOWER ELFv2 ABI gives a
+    /// function two entries — the symbol's `st_value` (which materialises the
+    /// TOC pointer `r2`) and a local entry `st_other` bytes later, which is
+    /// where an intra-module `bl` lands. Nothing read `st_other`, so the Listing
+    /// walk minted a function at every such call target and split every locally
+    /// called function into an 8-byte named husk plus an anonymous body. On, an
+    /// address a defined `STT_FUNC` symbol declares to be its own local entry is
+    /// never claimed as a function; the call REFERENCE is filed either way. Off
+    /// restores the previous (husk-producing) discovery set exactly.
+    pub analysis_ppclocalentry: bool,
     /// (kuna) Fold a 32-bit PIC binary's base register into the cross-reference
     /// index (`picbase`); default **on**. In position-independent i386 code the
     /// address of a string, a global or a function pointer is never a constant in
@@ -1724,6 +1735,7 @@ impl Architecture {
             analysis_libproto: false,
             analysis_libcsigs: false,
             analysis_unmappedentry: false,
+            analysis_ppclocalentry: false,
             analysis_picbase: false,
             analysis_entrymainproto: false,
             analysis_strings: false,
@@ -1926,6 +1938,10 @@ impl Architecture {
         // (kuna) Unmapped-CALL-target entry suppression -- default-ON (it only ever
         // withholds an entry the walk already refused to decode).
         self.analysis_unmappedentry = true;
+        // (kuna) PPC64 ELFv2 local-entry entry suppression -- default-ON (it only
+        // ever withholds the duplicate second entry over a function whose global
+        // entry is already a seed, so no body can be lost).
+        self.analysis_ppclocalentry = true;
         // (kuna) PIC base-register folding in the xref index -- default-ON. It is
         // a query surface only (no p-code, no emitted C), so no parity gate can
         // observe it; it only ever ADDS an edge, and only one it can prove.
@@ -2305,6 +2321,9 @@ impl Architecture {
             "entry_disc" => on_off!(analysis_entry_disc, "Entry-discovery analysis pass"),
             "unmappedentry" => {
                 on_off!(analysis_unmappedentry, "Unmapped-CALL-target entry suppression")
+            }
+            "ppclocalentry" => {
+                on_off!(analysis_ppclocalentry, "PPC64 ELFv2 local-entry entry suppression")
             }
             "picbase" => {
                 on_off!(analysis_picbase, "PIC base-register folding in the xref index")

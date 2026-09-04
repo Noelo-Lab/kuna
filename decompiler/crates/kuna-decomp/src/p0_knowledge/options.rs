@@ -347,6 +347,13 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // only the function claim is withheld.  Default-ON; off restores the previous
     // discovery set exactly.
     "unmappedentry",
+    // (kuna) PPC64 ELFv2 local-entry entry suppression: the OpenPOWER ELFv2 ABI gives
+    // a function a global entry (`st_value`, which materialises the TOC pointer) and a
+    // local entry `st_other` bytes later, where an intra-module `bl` lands.  Nothing
+    // read `st_other`, so the walk minted a function at every such call target and
+    // split every locally called function into an 8-byte named husk plus an anonymous
+    // body.  Default-ON; off restores the previous discovery set exactly.
+    "ppclocalentry",
     // (kuna) PIC base-register folding in the cross-reference index: in 32-bit
     // position-independent code the address of a string or a global is the sum of a
     // GOT pointer the program materialises at run time (`call <next>; pop ebx; add

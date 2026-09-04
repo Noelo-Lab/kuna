@@ -219,6 +219,11 @@ Three tiers:
 | decompiling a discovered function returns no body at all | [`unmappedentry`](#unmappedentry) |
 | the function inventory of an anti-disassembly binary contains an address that is not mapped | [`unmappedentry`](#unmappedentry) |
 | a call target from junk bytes behind an always-taken branch becomes a function | [`unmappedentry`](#unmappedentry) |
+| every function in a ppc64 binary is listed twice, as an 8-byte named husk plus an anonymous body | [`ppclocalentry`](#ppclocalentry) |
+| kuna decompile of a named ppc64 function returns an empty body with a funcboundflow truncation warning | [`ppclocalentry`](#ppclocalentry) |
+| kuna functions reports size 8 for a ppc64 function that is plainly longer | [`ppclocalentry`](#ppclocalentry) |
+| a ppc64le function body is only reachable under a generated sub_<hex> name | [`ppclocalentry`](#ppclocalentry) |
+| a function entry sits 8 bytes into another function on PowerPC | [`ppclocalentry`](#ppclocalentry) |
 | kuna strings reports xrefs_count 0 and an empty functions list for every string in a 32-bit binary | [`picbase`](#picbase) |
 | a string the disassembly plainly forms the address of has no cross-references | [`picbase`](#picbase) |
 | kuna xrefs --to a .rodata address finds nothing in a position-independent i386 executable | [`picbase`](#picbase) |
@@ -974,6 +979,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On (default) keeps the function inventory free of entries at addresses the image does not contain: the tell-tale is a sub_<addr> in kuna functions whose address is outside every section and whose size is 0, typically on an obfuscated or anti-disassembly binary. Flip off to restore the previous discovery set exactly - e.g. to see every address the walk followed as a call target, including the unmapped ones.
 - **Where / provenance:** P1/code-data-partition · kuna · correctness-fix · kuna-analysis-unmappedentry
 - **Example:** `--option unmappedentry off`
+
+### `ppclocalentry` -- on | off, default `on`
+
+- **Symptoms:** every function in a ppc64 binary is listed twice, as an 8-byte named husk plus an anonymous body; kuna decompile of a named ppc64 function returns an empty body with a funcboundflow truncation warning; kuna functions reports size 8 for a ppc64 function that is plainly longer; a ppc64le function body is only reachable under a generated sub_<hex> name; a function entry sits 8 bytes into another function on PowerPC.
+- **What it does:** Refuse to create a function entry at a PPC64 ELFv2 LOCAL entry point, which is a point inside the function that declares it rather than a function of its own. The OpenPOWER ELFv2 ABI gives a function two entries: the global entry is the symbol's st_value and materialises the TOC pointer r2 from r12 (addis r2,r12,hi; addi r2,r2,lo), and the local entry is where a caller that already holds the right r2 - anything in the same module - branches instead. The distance between them is recorded in the symbol's st_other field, which readelf -sW prints as [<localentry>: 8]. Nothing read that field, so the Listing walk saw an intra-module bl land eight bytes past a function symbol and minted a function there like any other CALL target, which fast_funcdisc and funcdisc_recursive then commit. On ordinary gcc ppc64le output that splits EVERY locally called function in two: the named symbol truncated to its 8-byte TOC prologue plus the whole real body filed under an anonymous sub_<hex> - and because p2's funcboundflow truncates a fall-through that reaches a known function entry, decompiling the named symbol emits an empty husk with a funcboundflow warning while the body is only reachable under the generated name. On, an address a defined STT_FUNC symbol declares to be its own local entry is never claimed as a function. Four guards keep the fold honest: the st_other field must decode to a real offset (bits 5-7 as (1 << n) >> 2 << 2, so only n in 2..6 folds; 0 and 1 mean the entries coincide and 7 is reserved), a sized symbol must contain its own local entry, the local entry must not be the address of some other defined text symbol, and the global entry must itself be a walk seed with no other seed in between. That last guard is what makes the walk's instruction closure invariant - the bytes at the local entry are reached as the global entry's fall-through either way - so this can only ever remove the duplicate second entry, never a body. The Call cross-reference is filed in both directions either way, as with unmappedentry. PPC64-only and inert on an image whose symbols carry no local-entry annotation.
+- **When to flip:** On (default) on any PPC64 ELFv2 image. The tell-tale is kuna functions reporting a size-8 named function immediately followed by a size-N anonymous sub_<hex> 8 bytes later, for every function in the image, and kuna decompile <that name> returning an empty body with the funcboundflow fall-through-reached-the-next-function-entry warning. Flip off to restore the previous discovery set exactly - e.g. to see every address the walk followed as a call target, local entry points included.
+- **Where / provenance:** P1/code-data-partition · kuna · correctness-fix · kuna-analysis-ppclocalentry
+- **Example:** `--option ppclocalentry off`
 
 ### `picbase` -- on | off, default `on`
 

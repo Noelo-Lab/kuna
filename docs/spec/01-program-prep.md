@@ -1428,8 +1428,41 @@ images it removes 150 entries on 19 of them and adds none; every one is `size: 0
 and outside every executable section, and emitted C over 6,085 functions of those
 images changes in exactly one function, where two parameters wrongly typed `code *`
 (a phantom sat at the address they pointed to) come back as the data pointers they
-are. Off restores the previous, phantom-producing discovery set exactly. A
-context painter applies the ARM/MIPS decode-mode paints per address before each
+are. Off restores the previous, phantom-producing discovery set exactly.
+
+(kuna) The same seam carries `ppclocalentry` (default-on;
+`decompiler/crates/kuna-analysis/src/listing/kuna_ppclocalentry.rs (fold_map)`),
+which answers a different question about a CALL target: not whether it is code,
+but whether it is a *function*. The OpenPOWER ELFv2 ABI gives a PPC64 function
+two entry points — the symbol's `st_value`, whose first instructions materialise
+the TOC pointer `r2` from `r12`, and a **local entry** a few bytes later, which
+is where a caller that already holds the right `r2` (anything in the same module)
+branches instead. The distance is recorded per symbol in the ELF `st_other`
+field, packed in bits 5-7 as `(1 << n) >> 2 << 2`, and `readelf -sW` prints it as
+`[<localentry>: 8]`. Nothing read that field, so the walk saw an intra-module
+`bl` land eight bytes past a function symbol and minted a function there like any
+other CALL target. On ordinary `gcc` ppc64le output that splits **every locally
+called function in two**: the named symbol truncated to its 8-byte TOC prologue,
+plus the whole real body under an anonymous `sub_<hex>` — and because S2's
+`funcboundflow` truncates a fall-through that reaches a known function entry, the
+named symbol then decompiles to an empty husk carrying a `funcboundflow`
+truncation warning while its body is reachable only under the generated name. On,
+an address that a defined `STT_FUNC` symbol declares to be its own local entry is
+never claimed as a function, because by the ABI's own construction the two
+entries are the same routine. Four guards keep the fold honest: the `st_other`
+field must decode to a real offset (only `n` in 2..6 — 0 and 1 mean the entries
+coincide, 7 is reserved), a sized symbol must contain its own local entry, the
+local entry must not be the address of some other defined text symbol, and the
+global entry must itself be a walk seed with no other seed between the two. That
+last guard is what makes the walk's instruction closure invariant under the fold
+— the bytes at the local entry are reached as the global entry's fall-through
+either way — so the fold can only ever remove the duplicate second entry, never a
+body. As with `unmappedentry` only the function claim is withheld; the Call
+cross-reference is filed in both directions either way. PPC64-only, and inert on
+an image whose symbols carry no local-entry annotation. Off restores the previous,
+husk-producing discovery set exactly.
+
+A context painter applies the ARM/MIPS decode-mode paints per address before each
 decode, so a Thumb or MIPS16 body disassembles in the right ISA. Each instruction
 is decoded by driving `Translate::one_instruction` with a capturing p-code sink
 (`decompiler/crates/kuna-analysis/src/listing/decode.rs (decode_one)`) and
