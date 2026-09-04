@@ -1,0 +1,69 @@
+{
+  "slug": "no-cli-rename-or-prototype-override",
+  "need_id": "no-cli-rename-or-prototype-override",
+  "track": "tooling",
+  "opportunity": "re-need:no-cli-rename-or-prototype-override",
+  "probe_id": null,
+  "acceptance_id": "a-a58fc408288b",
+  "instances": 1,
+  "scope": "large",
+  "proposal": true,
+  "covers_needs": [
+    "no-cli-rename-or-prototype-override",
+    "no-cli-data-code-override",
+    "no-cli-structuring-override"
+  ],
+  "option": null,
+  "flag": null,
+  "element_id": null,
+  "phase": null,
+  "tier": "driver",
+  "change_kind": "capability-add",
+  "default_on": null,
+  "owning_file": "docs/features/no-cli-rename-or-prototype-override/proposal.md",
+  "spec_chapter": "docs/spec/00-overview.md",
+  "parity": "untouched (no code change on this branch)",
+  "root_cause_class": "absent-capability",
+  "hypothesis_status": "OVERTURNED",
+  "filed_hypothesis": "ADVISORY. The cheap half is exposure, not implementation: most of these commands already work and only lack a path from the `kuna` binary. The expensive half is the stubs.",
+  "decisions": [
+    "THE FIRST HALF OF THE HYPOTHESIS IS UPHELD AND LARGER THAN FILED. 11 console commands were measured reaching emitted C at e3db5512 on in-repo fixtures: rename, retype, map param, parse line extern, parse line typedef/struct, map address, map label, type varnode, readonly, volatile, override flow. Two of them are worth quoting as evidence -- `parse line extern int4 authenticate(char *user,char *pass);` renames both parameters through the whole body, and `override flow 0x4006aa branch` turns a CALL into a tail-call and restructures the function. This is exposure work.",
+    "THE SECOND HALF IS OVERTURNED -- the same way it was overturned on no-cli-function-boundary-override, and for the same reason. 'The expensive half is the stubs' assumes the stubs need engine ports. Every engine entry point they name is already ported in kuna-decomp: Override::insert_force_goto (p0_knowledge/overrides.rs:256), Funcdata::install_jump_table (substrate/funcdata_block.rs:1724), Override::insert_deadcode_delay (overrides.rs:265), Symbol::set_isolated (database.rs:834), FuncProto::set_input_lock/set_output_lock (p4_calls/fspec.rs:5204/5242). The stub message blames 'parse_machaddr/parse_C grammars are a later W-item', but parse_machaddr is implemented at ifacedecomp.rs:322 and parse_c at grammar.rs:2292, and both are used by commands that work. These are inert plumbing, not ports.",
+    "THE ACTUAL EXPENSIVE HALF IS TWO SHIPPED COMMANDS THAT LIE, which no reading of the source would have found. (1) `map return <addr> <typedecl>` PANICS the whole console process -- `outtype null`, p4_calls/fspec.rs:2624 in assign_map_standard_out -- reproduced standalone as the first command after `load function`. (2) `override prototype <addr> <decl>` prints 'Successfully added override' and changes nothing, measured on a direct known callee (strcmp at 0x400689, 2 params -> 3) AND on an indirect call (CALL RDX at 0x1405 in aif_gap stage1). Its own doc comment says the FlowInfo::queryCall consume is stubbed while flow.rs:2152 says applyPrototype is wired; one is stale.",
+    "A THIRD DEFECT, CLI-SIDE AND NOT IN ANY NEED: the one kassert arm that is fully implemented is dead on the one surface that can reach it. `kuna decompile <bin> authenticate --kassert 'p9 naming-policy v2 buf'` exits 0 and changes nothing, because build_script emits kassert between `load function` and the FIRST `decompile`, and a local like v2 does not exist until a decompile has run. The arm throws 'No symbol named: v2' into a transcript the CLI discards. This forces the two-pass script shape in the design and is the single most important ordering fact measured here.",
+    "AND A FOURTH: `--kassert` is rejected outright when combined with `--json` ('error: --kassert is not supported with --json'). For an agent consuming machine-readable output the existing override surface therefore does not exist at all.",
+    "DESIGN -- ONE PLANE, `--assert <directive> | @FILE` (repeatable), intent-keyed rather than phase-keyed. An agent should not have to know renaming is P9 to rename something; --kassert stays as the raw phase-keyed writer. The @FILE contract is copied verbatim from --define-function (#374) because that is what makes an override durable across invocations: kuna does not write assertions back into the image, the file is the artifact.",
+    "DESIGN -- MACHINE-READABLE OUT. Every --json surface grows an `assertions[]` array, one row per directive, status applied|rejected with a reason. A rejection is non-fatal by default (an agent batching forty renames must not lose all forty to one stale name) with --assert-strict to opt in. The --kassert/--json prohibition is lifted so the two report into the same array.",
+    "DESIGN -- THE IN-PROCESS HALF IS ALREADY BUILT, which is what makes this affordable. kuna_console::decompile_step::DecompileSeed is the shared 'console-only facts' carrier and the whole-binary loop passes empty slices for exactly the fields this plane needs: mapped_symbols (data), usepoint_symbols (type varnode), dynamic_symbols, pending_proto (prototype), flow_overrides (flow), mapped_params (param). And decompile_one ALREADY contains a decompile -> adjust -> re-decompile loop (the formatstring half-B override loop), so the symbol-scoped second pass has precedent in the exact function that needs it.",
+    "REJECTED -- a `kuna console` passthrough or a --script flag. The captain's caution is upheld by the measurements: a passthrough would ship map return's panic and override prototype's silent no-op straight to agents, expose 37 commands of which ~14 are stubs, and leave nowhere to put the assertions[] report. A typed vocabulary is what lets a directive be REJECTED with a reason instead of throwing an unstructured diagnostic into a discarded transcript.",
+    "OUT OF SCOPE AND RECORDED AS RESIDUE: `structure blocks` (BlockGraph structuring) and `analyze range` (ValueSetSolver) are genuine engine ports. no-cli-structuring-override should carry them as residue rather than have this design half-port them.",
+    "ACCEPTANCE FILED AND GROUNDED. a-a58fc408288b was written only after its target C was produced end-to-end by decomp_dbg at e3db5512, on the same in-repo fixture, driven by the exact console script Stage A would generate. verify --acceptance-suite reported this need `unrunnable` before this branch and now reports passed:false with a real clause list (exit_code 2, 'unknown option --assert'). Sibling probes were deliberately NOT filed: no-cli-data-code-override's would have to assert a readonly/volatile effect, and no fixture tried here shows one -- filing a probe whose target was never measured is the exact mistake this proposal argues against."
+  ],
+  "mechanism": "`--assert <directive> | @FILE`, repeatable, on decompile / decompile-all / decompile-project. A new kuna-cli/src/assertdecl.rs parses a line-oriented intent-keyed vocabulary (prototype/param/return/name/type/typedef/data/label/comment, then readonly/volatile/global, then flow/goto/jumptable/isolate/deadcode-delay) modelled line-for-line on funcdecl.rs. The script surface emits each directive at its measured slot -- program-scope after `read symbols`, function-scope after `load function`, symbol-scope after a first `decompile` with a conditional second `decompile` -- and scrapes the byte-faithful console diagnostics back into an `assertions[]` array. The in-process surface fills DecompileSeed's already-present but always-empty slices and adds the symbol-scoped second pass to decompile_one.",
+  "measurements": {
+    "method": "drove decompiler/target/release/decomp_dbg directly at e3db5512 with SLEIGHHOME=$PWD/specs, one command per line on stdin, on the in-repo fixtures fauxware (c2d90645, 8776 bytes) and aif_gap_x86_64 (1a592a85, 14408 bytes); every 'reaches C' verdict is a diff of the printed C, never a return code",
+    "commands_probed": 22,
+    "reach_emitted_c": 11,
+    "engine_unavailable_stubs": 9,
+    "stubs_whose_engine_entry_is_already_ported": 5,
+    "shipped_commands_found_broken": 2,
+    "cli_level_defects_found": 2
+  },
+  "stages": [
+    "A (this need): the symbol and prototype plane -- parser, map return panic fix, override prototype diagnosis, two-pass script, DecompileSeed fill, assertions[] JSON, --kassert/--json prohibition lifted, docs/cli.md + spec + phases.toml exposure prose, acceptance a-a58fc408288b + tests/cli promotion",
+    "B (no-cli-data-code-override): readonly/volatile/global/data directives; wire the global add/remove stubs onto ScopeGlobal; find a fixture where a readonly range demonstrably folds and file that need's acceptance against it",
+    "C (no-cli-structuring-override): flow (works today) then wire force goto / override jumptable / isolate / deadcode delay onto their ported engine entries, fill the matching kassert Dispatch arms, update the affected subphase exposure fields, record structure blocks and analyze range as residue"
+  ],
+  "speed": "zero on every existing invocation -- no directives means no extra console lines, no second decompile and an empty assertions[]. With a symbol-scoped directive the target function is decompiled twice: a bounded ~2x on one function, opt-in, and the same cost shape the formatstring half-B loop already pays. No pipeline pass is added.",
+  "risks": [
+    "override prototype may be a genuine engine gap rather than a bug; the prototype directive then lowers to `parse line extern` only (measured working) and per-call-site override becomes Stage-A residue. The acceptance probe is written against parse line extern for exactly this reason and is unaffected.",
+    "transcript-scraping the forked script surface for assertions[] is brittle; mitigated by the console prefixes being documented byte-faithful and already parsed by decompile.rs (CONSOLE_DIAGNOSTICS, arch_failure_reason).",
+    "a directive that is accepted and does nothing is the failure mode of this whole family -- override prototype is already an instance. Every directive must ship with a test that asserts the emitted C CHANGED, not that the command returned Ok.",
+    "generated symbol names are unstable across runs, so `name v2 credbuf` can silently bind to the wrong local on a later kuna; mitigated by also accepting a stable storage form.",
+    "blast radius is nil: nothing runs unless a directive is passed, and the parity corpora are symbol-less bytechunks driven by XML with no CLI in the loop."
+  ],
+  "gates": {
+    "note": "no source file was changed on this branch; the diff is the proposal, the record and the need's new Acceptance section",
+    "acceptance": "a-a58fc408288b runnable and FAILING at e3db5512 (exit_code 2, 'error: unknown option --assert') -- correct for an unimplemented acceptance"
+  }
+}

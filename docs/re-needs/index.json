@@ -376,7 +376,7 @@
       "status": "open",
       "severity": "major",
       "probe_id": null,
-      "acceptance_id": null,
+      "acceptance_id": "a-a58fc408288b",
       "hypothesis_status": "upheld",
       "credibility": 1.0,
       "instances": 1,
