@@ -146,7 +146,7 @@ asked for. No `sub_b10cdc7`, no `dat_d98ddd00`.
 |---|---|
 | `make test` | **PARITY OK — 675/675**, `docs/baseline.json` unmoved |
 | `make test-stages` | **PARITY OK — 603/603** (600 + 3 new; baseline re-recorded) |
-| `make rust-test` | **green — 5,330 passed, 0 failed** (344 suites) |
+| `make rust-test` | **green — 5,330 passed, 0 failed** (345 suites) |
 | `make check-spec` | OK (also `--strict` OK) |
 | `kuna catalog --check` | catalog OK (136 → 137 settables) |
 | acceptance `a-52c2ad89b522` | **PASS** |
