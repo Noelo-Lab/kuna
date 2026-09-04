@@ -1944,6 +1944,14 @@ impl Rule for RulePropagateCopy {
                         continue; // We must not allow merging of different addrtieds
                     }
                 }
+                // (kuna) `option tiedstorekeep on` widens the addrforce refusal
+                // just above: decline when this marker is the LAST reader of an
+                // address-tied COPY output, which would otherwise strand the frame
+                // store for dead-code elimination.  See
+                // [`crate::p3_dataflow::kuna_tiedstorekeep`].
+                if crate::p3_dataflow::kuna_tiedstorekeep::declines(data, op, vn, invn) {
+                    continue;
+                }
                 if op_code(data, op) == OpCode::CPUI_MULTIEQUAL {
                     let op_parent =
                         data.obank().get(op).expect("RulePropagateCopy: stale op").get_parent();

@@ -285,6 +285,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "calloverlap",
     "spillargtrial",
     "loadguardrange",
+    "tiedstorekeep",
     "regionstructure",
     "guardarm",
     "loopcondhoist",
