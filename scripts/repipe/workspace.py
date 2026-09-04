@@ -260,13 +260,21 @@ mkdir -p "$ARENA/.declib/servers" "$ARENA/.declib/projects" "$TMPDIR" \
 # rewritten so declib does not write back to the read-only original. Copy once; a rerun in a
 # live arena must not clobber whatever the round has already written.
 if [ ! -f "$XDG_CONFIG_HOME/declib/DecLibConfig.toml" ]; then
+  # No backslash escapes here on purpose. This text is a Python string inside a Python
+  # string, so a `\\"` written in the generator collapses to a bare `"` by the time the
+  # shim is on disk -- which closed the sed expression and emitted
+  #   save_location = /path/to/file
+  # with the quotes gone, i.e. invalid TOML. Holding the quote in $_Q survives both passes.
+  _Q='"'
+  _SL="$XDG_CONFIG_HOME/declib/DecLibConfig.toml"
   if [ -f "$HOME/.config/declib/DecLibConfig.toml" ]; then
-    sed "s|^save_location = .*|save_location = \"$XDG_CONFIG_HOME/declib/DecLibConfig.toml\"|" \
-        "$HOME/.config/declib/DecLibConfig.toml" > "$XDG_CONFIG_HOME/declib/DecLibConfig.toml"
+    sed "s|^save_location = .*|save_location = $_Q$_SL$_Q|" \
+        "$HOME/.config/declib/DecLibConfig.toml" > "$_SL"
   else
-    : > "$XDG_CONFIG_HOME/declib/DecLibConfig.toml"
+    : > "$_SL"
   fi
 fi
+
 PROJDIR="$ARENA/.declib/projects"
 
 # `load` without an explicit --backend silently falls back to angr, which would make the
