@@ -121,6 +121,31 @@ remaining 48% is a campaign, not a fix. The two ranked leads —
 (~20%, implemented then reverted because `option unrolledguard` depends on it) — are
 recorded with evidence in `docs/features/decompiling-3396-byte-main/record.json`.
 
+**Attempt 2 (round 2 wave 8, branch `feat/re-decompiling-3396-w8`).** The symptom
+still stands and the acceptance is still unmet: **14,437 ms** against the
+`< 10,000 ms` bar. What attempt 2 removed is the *second* flow follow — `kuna
+decompile` drives the console with `load function` then `decompile`, and each of
+those followed the same function's flow from scratch, jump-table
+sub-decompilation included. Interleaved 7-pair A/B: **19,703 ms -> 15,317 ms
+median, -22.3%** (min -24.7%, paired mean -20.6% +/- 7.8, ~7 sigma), output
+byte-identical over 218 whole-surface decompiles across 20 binaries (203 of which
+took the new fast path).
+
+Two things attempt 3 should inherit rather than rediscover:
+
+- **The residue is confirmed flat, on a fresh profile.** `stage_jump_table` 29.2%
+  (the only block over 20%, and semantically load-bearing — `unrolledguard`
+  depends on each table's clone re-cloning its siblings), p6 merge 18.2%, rule
+  pool 10.4%, heritage 10.1%, symbol-container lookups ~11%, infertypes 6.0%,
+  dead code 5.8%. One attempt-1 lead does NOT survive re-measurement: `bb_ops` is
+  ~2.2% self spread over five callers, not ~10%.
+- **Measuring this need is harder than fixing it.** `kuna decompile` (without
+  `--json`) forks `decomp_dbg` and pipes both its streams, so a stderr marker is
+  invisible and gdb does not follow the child — profile the in-process `--json`
+  path and instrument to a file. And this box runs sibling builders at load
+  average 8-24, where the same binary measures 14.6 s and 18.9 s hours apart; only
+  an interleaved paired A/B means anything.
+
 ## Reference
 
 _none recorded_

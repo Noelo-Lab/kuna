@@ -110,8 +110,12 @@ follows) for 8.5 s of the 18.8 s run. It now runs twice.
 
 ## The acceptance probe still does NOT pass, and the reason is now measured
 
-Acceptance `a-53d616afcb6a` asks for a median under 10,000 ms. This PR does not
-reach it, and no further redundancy removal can:
+Acceptance `a-53d616afcb6a` asks for a median under 10,000 ms. On the final build
+`scripts.repipe.verify` measures **14,437 ms** (the interleaved A/B median is
+15,317 ms), so the `wall_ms` clause fails while `exit_code` passes. **The need
+stays open and the probe is deliberately not promoted** — promoting it would
+commit a red test. This PR does not reach the bar, and no further redundancy
+removal can:
 
 - The **action pipeline plus emit alone is ~8.8 s**, and `load file` + `read
   symbols` is another 0.75 s. That is a ~9.6 s floor before a single jump table is
@@ -160,10 +164,21 @@ structural leads (the per-table partial rebuild, blocked because kuna's
 |---|---|
 | `make test` | **PARITY OK** — 675/675, `docs/baseline.json` untouched |
 | `make test-stages` | **PARITY OK** — 600/600, `docs/baseline-stages.json` untouched |
-| `make rust-test` | RUSTTEST |
+| `make rust-test` | **green** — 344 test binaries, 5,322 tests, 0 failed \* |
 | `make test-cli` | tests/cli: **17/17 passed** |
 | `make check-spec` | check-spec OK |
 | `kuna catalog --check` | catalog OK (no option added) |
+| `repipe.mergecheck` | merge guards clean — 0 rejects vs `origin/main` |
+
+\* The first `make rust-test` reported one failure —
+`verify_w10_proto_unlock::…_no_tied_roundtrip`, *"oracle promote_compare
+signature drifted"*. It is not this change. That assertion is guarded by
+`cpp_oracle_bin()`, which falls back to the removed `decompiler/cpp/decomp_test_dbg`
+and is normally skipped — but the repipe worker environment exports
+`KUNA_DECOMP_TEST` pointing at the worktree's own *modern* `decomp_test_dbg`, so
+the "C++ oracle" arm activates and asserts the pre-DIV-6 `xunknown4` rendering
+against a realtypes build. `env -u KUNA_DECOMP_TEST` → 4/4 pass; the row above is
+a full re-run with it unset.
 
 ## Whole-surface regression sweep
 
