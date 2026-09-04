@@ -4,8 +4,8 @@
   "count": 34,
   "rejected_count": 0,
   "by_status": {
-    "closed": 9,
-    "open": 25
+    "closed": 11,
+    "open": 23
   },
   "by_track": {
     "perf": 2,
@@ -23,7 +23,7 @@
       "need_id": "argument-recovery-knobs-still",
       "title": "call-argument recovery options are inert: enabling calleearity/varargstackargs changes nothing",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
       "probe_id": "p-ea5af8c3b2f7",
       "acceptance_id": "a-a94fa26848a4",
@@ -46,8 +46,8 @@
       "scope": "small",
       "regression_of": "call-args-discarded",
       "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "closed_in_round": 2,
+      "closing_pr": "376",
       "reject_reason": null,
       "score": 1351.555932,
       "path": "docs/re-needs/argument-recovery-knobs-still.md"
@@ -685,11 +685,11 @@
       "need_id": "xrefs-unify-pe-import",
       "title": "xrefs does not unify a PE import thunk with its IAT symbol",
       "track": "tooling",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
       "probe_id": "p-dc85ba90889e",
       "acceptance_id": "a-27cf701da662",
-      "hypothesis_status": "inconclusive",
+      "hypothesis_status": "upheld",
       "credibility": 0.7,
       "instances": 1,
       "challenges": [
@@ -707,8 +707,8 @@
       "scope": "small",
       "regression_of": null,
       "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "closed_in_round": 2,
+      "closing_pr": "375",
       "reject_reason": null,
       "score": 13.862944,
       "path": "docs/re-needs/xrefs-unify-pe-import.md"

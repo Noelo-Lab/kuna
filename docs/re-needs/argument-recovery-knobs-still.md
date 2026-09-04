@@ -2,7 +2,7 @@
 need_id: argument-recovery-knobs-still
 title: call-argument recovery options are inert: enabling calleearity/varargstackargs changes nothing
 track: quality
-status: open
+status: closed
 severity: major
 probe_id: p-ea5af8c3b2f7
 acceptance_id: a-a94fa26848a4
@@ -18,8 +18,8 @@ touches: [decompiler/crates/kuna-decomp]
 scope: small
 regression_of: call-args-discarded
 pr: null
-closed_in_round: null
-closing_pr: null
+closed_in_round: 2
+closing_pr: "376"
 reject_reason: null
 ---
 
@@ -144,3 +144,4 @@ _none recorded_
 - round 2 T_REFUTE (captain): hypothesis **OVERTURNED**, symptom stands. Both options are default-ON, so the tester's "enabling them changed nothing" is expected; A/B with them OFF is also byte-identical while `compareform`/`spillargtrial` move this same output, so `--option` reaches the path and `calleearity` simply declines here. `spillargtrial reload` already makes the ACCEPTANCE pass by fabricating a second argument at both sites -- the acceptance probe must be strengthened to assert argument VALUES before this need is dispatched.
 - round 2 T_TRIAGE (captain): acceptance REPLACED a-90b7aa54ca53 -> a-a94fa26848a4. The old probe asserted only `stdout_absent: sub_140002c90\(\);`, which the shipped default-off `--option spillargtrial reload` ALREADY satisfies -- by fabricating a second argument at BOTH sites (`sub_140002c90(v11 + 0x27,v15)` / `sub_140002c90(v11,v15)`), i.e. by rewriting a site that was already correct. A builder could have closed this need with wrong C. Re-measured this tick on `trappy attack.exe` @0x1400011c0: default gives `sub_140002c90(v11 + 0x27)` at line 232 and `sub_140002c90();` at 241; the surrounding code is the MSVC aligned-new idiom (the `else if (v11)` small-allocation arm), so the correct argument at 241 is `v11`. The new acceptance asserts three clauses -- no zero-argument call, no call carrying a second argument, and the already-correct site still passing exactly one `... + 0x27` argument. Verified by replay: it FAILS on default output (the bug) and FAILS on `spillargtrial reload` output (the fabrication), so it discriminates a recovery from a forcing. Argument SHAPE is asserted rather than the literal `v11` so a fix that renumbers locals still passes; the accepted residual is that a wrong single value would pass.
 - round 2 T_TRIAGE (captain): track/touches/scope CONFIRMED as filed (quality / kuna-decomp / small) with one binding constraint: `calleearity` and `varargstackargs` are BOTH DEFAULT-ON (DIV-102/DIV-101), so any change to their promotion rule changes output for every binary in the corpus. That must ship behind a NEW default-off option, never as a silent edit to a default-on rule. If the investigation concludes the fix cannot be expressed that way, STOP and escalate to a [PROPOSAL] rather than flipping default behaviour under a small-scope contract.
+- closed: acceptance a-a94fa26848a4 now PASSES at 93fa2e7e0482

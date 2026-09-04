@@ -2,7 +2,7 @@
 need_id: xrefs-unify-pe-import
 title: xrefs does not unify a PE import thunk with its IAT symbol
 track: tooling
-status: open
+status: closed
 severity: major
 probe_id: p-dc85ba90889e
 acceptance_id: a-27cf701da662
@@ -18,8 +18,8 @@ touches: [decompiler/crates/kuna-analysis/src/listing/xrefs.rs]
 scope: small
 regression_of: null
 pr: null
-closed_in_round: null
-closing_pr: null
+closed_in_round: 2
+closing_pr: "375"
 reject_reason: null
 ---
 
@@ -149,3 +149,4 @@ _none recorded_
 - filed by cluster.py from 1 observation(s)
 - round 2 T_DEDUP (captain): SPLIT from `strings-json-fails-report` -- different subcommand, different gap; they collided only because cluster.py's `_subcommand()` does not know the round-1 subcommands and hashes them all to '?'.
 - round 2 T_TRIAGE (captain): track quality -> TOOLING, touches kuna-decomp -> kuna-analysis/src/listing/xrefs.rs. `kuna functions` surfaces a PE import thunk and its IAT symbol under ONE name and `kuna xrefs` then answers 0 for the thunk address -- a wrong answer to a question the tool invited, i.e. a strict bug fix, which by the repo's own rule needs no flag and therefore no counter leases. scope stays small. This is now one of the few needs co-schedulable alongside an option-adding builder.
+- closed: acceptance a-27cf701da662 now PASSES at 93fa2e7e0482
