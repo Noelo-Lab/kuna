@@ -5623,6 +5623,20 @@ impl FuncProto {
             self.set_output_lock(false);
             return Ok(());
         }
+        // (kuna) A `map return <addr> <type>` parks OUTPUT-ONLY pieces: explicit
+        // storage, and no `outtype` because the directive declares no separate
+        // return type. But `assignParameterStorage` dereferences `outtype`
+        // unconditionally, so those pieces aborted the process the moment the
+        // function was decompiled. The declared type IS the return type — adopt it
+        // and the model has something to assign against, after which `set_pieces`
+        // replaces the derived storage with the explicit one as before.
+        if pieces.outtype.is_none() {
+            if let Some(declared) = pieces.output_storage.as_ref().and_then(|p| p.type_.clone()) {
+                let mut typed = pieces.clone();
+                typed.outtype = Some(declared);
+                return self.set_pieces(&typed, Some(defaultfp), typefactory, manager);
+            }
+        }
         self.set_pieces(pieces, Some(defaultfp), typefactory, manager)
     }
 

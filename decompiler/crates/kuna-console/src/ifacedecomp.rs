@@ -319,7 +319,7 @@ fn engine_unavailable(entry: &str) -> IfaceError {
 /// `{...}` form errs (the join-space console syntax is unported).  `ignorecolon`
 /// controls whether `:` is a separator in the offset token (false: included,
 /// matching the C++ default).
-fn parse_machaddr(
+pub(crate) fn parse_machaddr(
     prog: &ConsoleProgram,
     s: &mut CommandStream,
     ignorecolon: bool,

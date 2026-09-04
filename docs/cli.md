@@ -88,6 +88,92 @@ accepted by `decompile`, `decompile-all`, `functions`, `decompile-project` and
 overrides discovery rather than competing with it. The console spelling, for a
 hand-driven `decomp_dbg` session, is `function bounds <start> [<end>] [as <name>]`.
 
+**`--assert <directive> | @file`** (repeatable) is the other half: where
+`--define-function` tells kuna where a function *is*, `--assert` tells it what
+anything *is*. Everything kuna knows it derived, and until this flag the only
+levers the `kuna` binary offered were `--option` and `--kassert` — the console has
+carried `rename`, `retype`, `map param`, `map return`, `map address`,
+`comment instruction` and `parse line extern` all along, unreachable.
+
+```bash
+kuna decompile ./a.out authenticate --json \
+  --assert 'prototype authenticate int authenticate(char *user,char *pass)' \
+  --assert 'type v2 char[16]' \
+  --assert 'name v2 credbuf'
+```
+
+```text
+- unsigned long authenticate(char *a0,char *a1)     - char v2 [8];
++ int authenticate(char *user,char *pass)           + char credbuf [16];
+```
+
+One directive per `--assert`, keyed by intent rather than by phase:
+
+| directive | what it states |
+|---|---|
+| `prototype <func> <C declaration>` | the function's signature (parameter names included) |
+| `param [<func>::]<i> <storage> <C typedecl>` | the storage and type of one input |
+| `return [<func>::]<storage> <C typedecl>` | the storage and type of the return value |
+| `name [<func>::]<symbol> <newname>` | rename a local |
+| `type [<func>::]<symbol> <C type>` | retype a local |
+| `typedef <C declaration>` | intern a `struct`/`union`/`enum`/`typedef` so `type` can name it |
+| `data <addr> <C typedeclaration>` | a named, typed global at an address |
+| `comment [<func>::]<addr> <text>` | a comment rendered into the C at that instruction |
+| `function <start>[-<end>][=<name>]` | the `--define-function` spelling, on this plane |
+
+Storage is a register name (`RDI`), the console's `%RDI`, or its address grammar
+(`[stack,-0x18,8]`). Addresses are hexadecimal with or without `0x`. A C type may
+be anything the console's `parse line` accepts, including a `typedef` you asserted
+earlier in the same run.
+
+**Every directive's fate is reported.** `--json` grows an `assertions` array — one
+row per directive, in the order you gave them, carrying the directive text, its
+phase and sub-phase, `applied` or `rejected`, and a reason:
+
+```json
+{"directive": "name v9 credbuf", "kind": "name", "phase": "P9",
+ "subphase": "naming-policy", "status": "rejected",
+ "detail": "No symbol named: v9"}
+```
+
+A rejection is also printed on stderr, on both surfaces. It is **not** fatal by
+default — a batch of forty renames against a re-decompiled binary must not lose the
+other thirty-nine to one stale name — and `--assert-strict` makes any rejection
+exit non-zero.
+
+**Order matters, and so does scoping.** Directives are applied in the order given:
+`type v2 char[16]` then `name v2 credbuf` retypes and then renames, where the
+reverse leaves the second naming a symbol the first renamed away. `name` and
+`type` name a *local*, which does not exist until the function has been decompiled
+once, so kuna decompiles it twice — but only when such a directive is present, so
+nothing else pays for it. A directive that names no function binds to the function
+being decompiled; on a run that decompiles more than one (`decompile-all`,
+`decompile-project`) it is rejected rather than applied to every function that
+happens to have a `v2`, so qualify it:
+
+```bash
+kuna decompile-all ./a.out --json --assert 'name authenticate::v2 credbuf'
+```
+
+The `@file` form is the durable one, exactly as for `--define-function`: one
+directive per line, `#` comments and blank lines skipped, and the file is the
+artifact — kuna does not write assertions back into the image.
+
+```bash
+cat > overrides.kuna <<'EOF'
+# worked out from the strings and the xrefs
+prototype sub_401200 int check_license(char *key,int len)
+name sub_401200::v3 keylen
+type sub_401200::v2 char[32]
+data 0x601048 char *expected_key
+EOF
+kuna decompile ./a.out sub_401200 --json --assert @overrides.kuna
+```
+
+Accepted by `decompile`, `decompile-all`, `decompile-project` and `functions`.
+The console spellings, for a hand-driven `decomp_dbg` session, are the commands in
+the table's second column.
+
 **Paths containing spaces work (DIV-100).** This is the one surface that reaches the engine
 through a console *script* rather than an in-process call, and the console reads a
 filename with `s >> filename` — whitespace-delimited. An unquoted path with a space

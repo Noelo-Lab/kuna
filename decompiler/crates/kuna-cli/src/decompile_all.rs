@@ -134,6 +134,14 @@ pub(crate) struct Args {
     /// loads through this struct honors them; only the surfaces that parse the
     /// flag can be non-empty.
     pub(crate) func_decls: Vec<crate::funcdecl::FuncDecl>,
+    /// `--assert <directive> | @FILE` (repeatable): the caller-supplied
+    /// assertions, installed by [`load_program`] right after the analysis commit
+    /// and dispatched by the decompile loop (`kuna_console::assertions`). Empty
+    /// for every invocation that passed none.
+    pub(crate) assertions: Vec<kuna_console::assertions::Directive>,
+    /// `--assert-strict`: a rejected directive makes the run exit non-zero
+    /// instead of being reported and continuing.
+    pub(crate) assert_strict: bool,
     pub(crate) slice: Option<String>,
     pub(crate) target: Option<String>,
     pub(crate) sleighpath: Option<String>,
@@ -650,11 +658,20 @@ pub fn run(argv: &[String]) -> i32 {
                     &args.options,
                     discovery_error.as_deref(),
                     filters.narrows().then_some(run.discovered),
+                    &run.assertions,
                 )
             } else {
                 render_c(&run.funcs)
             };
-            emit_with_discovery_error(&text, discovery_error.as_deref())
+            // A rejected assertion is reported and the run continues (an agent
+            // batching forty renames against a re-decompiled binary must not lose
+            // all forty to one stale name); `--assert-strict` makes it fatal.
+            let rejected = report_rejected_assertions(&run.assertions);
+            let status = emit_with_discovery_error(&text, discovery_error.as_deref());
+            if status == 0 && args.assert_strict && rejected {
+                return 1;
+            }
+            status
         }
         Err(e) => {
             eprintln!("error: {e}");
@@ -665,6 +682,26 @@ pub fn run(argv: &[String]) -> i32 {
 
 /// Emit `text`, then report a discovery failure (stdout before stderr, as
 /// `kuna decompile` orders them) and answer with the run's verdict.
+/// Report every rejected assertion on stderr, and say whether there was one.
+///
+/// The human surface has no `assertions[]` to read, and a directive that was
+/// silently dropped is the failure mode this plane exists to end -- so a
+/// rejection is always spoken, on both surfaces.
+pub(crate) fn report_rejected_assertions(
+    outcomes: &[kuna_console::assertions::Outcome],
+) -> bool {
+    let mut any = false;
+    for outcome in outcomes.iter().filter(|o| o.status == "rejected") {
+        any = true;
+        eprintln!(
+            "warning: --assert {:?} rejected: {}",
+            outcome.directive,
+            outcome.detail.as_deref().unwrap_or("no reason given")
+        );
+    }
+    any
+}
+
 fn emit_with_discovery_error(text: &str, discovery_error: Option<&str>) -> i32 {
     let status = crate::output::emit_with_status(text, i32::from(discovery_error.is_some()));
     if let Some(message) = discovery_error {
@@ -773,6 +810,8 @@ fn run_summary(args: &Args, filters: &Filters) -> i32 {
 struct AllRun {
     funcs: Vec<FuncResult>,
     discovered: usize,
+    /// One row per `--assert` directive: what became of it.
+    assertions: Vec<kuna_console::assertions::Outcome>,
 }
 
 /// Load + analyze the binary once, narrow the target list, then decompile what
@@ -789,7 +828,8 @@ fn decompile_all(args: &Args, filters: &Filters) -> Result<AllRun, String> {
     } else {
         targets
     };
-    Ok(AllRun { funcs: decompile_entries(&mut prog, args, targets), discovered })
+    let funcs = decompile_entries(&mut prog, args, targets);
+    Ok(AllRun { funcs, discovered, assertions: prog.assertion_outcomes() })
 }
 
 /// Arm the per-function watchdog and run the decompile loop over `targets` — the
@@ -999,6 +1039,14 @@ pub(crate) fn load_program(
     // AFTER the commit: a caller-declared boundary is an assertion that outranks
     // whatever discovery decided about the same address.
     crate::funcdecl::apply(&mut prog, &args.func_decls)?;
+    // The `--assert` plane, same slot and for the same reason: a caller-declared
+    // fact outranks whatever discovery decided about it. The program-scoped
+    // directives take effect here; the function- and symbol-scoped ones are
+    // dispatched by the decompile loop (`kuna_console::assertions`).
+    if !args.assertions.is_empty() {
+        prog.set_assertions(args.assertions.clone());
+        kuna_console::assertions::apply_program_scoped(&mut prog);
+    }
     Ok(prog)
 }
 
@@ -1427,8 +1475,9 @@ pub(crate) fn render_result_json(
     funcs: &[FuncResult],
     options: &[(String, String)],
     error: Option<&str>,
+    assertions: &[kuna_console::assertions::Outcome],
 ) -> String {
-    render_selected_json(binary, funcs, options, error, None)
+    render_selected_json(binary, funcs, options, error, None, assertions)
 }
 
 /// [`render_result_json`] plus the inventory `total` a NARROWED whole-binary run
@@ -1445,9 +1494,13 @@ pub(crate) fn render_selected_json(
     options: &[(String, String)],
     error: Option<&str>,
     total: Option<usize>,
+    assertions: &[kuna_console::assertions::Outcome],
 ) -> String {
     let language = last_option_value(options, "setlanguage").unwrap_or("c-language");
-    format!("{}\n", dumps_indent2(&result_json(binary, funcs, language, error, total)))
+    format!(
+        "{}\n",
+        dumps_indent2(&result_json(binary, funcs, language, error, total, assertions))
+    )
 }
 
 /// The `functions --json` document.
@@ -1510,6 +1563,7 @@ fn result_json(
     language: &str,
     error: Option<&str>,
     total: Option<usize>,
+    assertions: &[kuna_console::assertions::Outcome],
 ) -> Json {
     let functions = Json::Array(
         funcs
@@ -1561,7 +1615,35 @@ fn result_json(
         "error".to_string(),
         error_json(error),
     ), ("functions".to_string(), functions)]);
+    // (kuna `--assert`) One row per caller-supplied assertion, in the order the
+    // caller gave them: what it was, where in the phase model it wrote, and
+    // whether it landed. Always present (`[]` when none were passed) so an agent
+    // can read it unconditionally — an assertion whose fate is unreported is an
+    // assertion an agent has to verify by eye, which is the whole problem.
+    fields.push(("assertions".to_string(), assertions_json(assertions)));
     Json::Object(fields)
+}
+
+/// The per-directive report (`kuna_console::assertions::Outcome`).
+fn assertions_json(outcomes: &[kuna_console::assertions::Outcome]) -> Json {
+    Json::Array(
+        outcomes
+            .iter()
+            .map(|o| {
+                Json::Object(vec![
+                    ("directive".into(), Json::Str(o.directive.clone())),
+                    ("kind".into(), Json::Str(o.kind.to_string())),
+                    ("phase".into(), Json::Str(o.phase.to_string())),
+                    ("subphase".into(), Json::Str(o.subphase.to_string())),
+                    ("status".into(), Json::Str(o.status.to_string())),
+                    (
+                        "detail".into(),
+                        o.detail.clone().map(Json::Str).unwrap_or(Json::Null),
+                    ),
+                ])
+            })
+            .collect(),
+    )
 }
 
 fn line_mapping_json(mapping: &LineMapping) -> Json {
@@ -1678,7 +1760,7 @@ mod provenance_json_tests {
             object_location: None,
         };
 
-        let rendered = dumps_indent2(&result_json("fixture", &[function], "c-language", None, None));
+        let rendered = dumps_indent2(&result_json("fixture", &[function], "c-language", None, None, &[]));
         assert!(rendered.contains("\"address\": 4198400"));
         assert!(rendered.contains("\"code\": \"int f(int x)\\n{\\n  return x;\\n}\""));
         assert!(rendered.contains("\"line_mappings\": ["));
@@ -1792,6 +1874,8 @@ pub(crate) fn parse_args_with_filters(
     let mut max_fn_seconds: Option<u64> = None;
     let mut options: Vec<(String, String)> = Vec::new();
     let mut func_decls: Vec<crate::funcdecl::FuncDecl> = Vec::new();
+    let mut assertions: Vec<kuna_console::assertions::Directive> = Vec::new();
+    let mut assert_strict = false;
     let mut mode: Option<String> = None;
     let mut slice: Option<String> = None;
     let mut target: Option<String> = None;
@@ -1816,6 +1900,11 @@ pub(crate) fn parse_args_with_filters(
                 let v = take(argv, &mut i, "--define-function")?;
                 func_decls.extend(crate::funcdecl::parse_flag(&v)?);
             }
+            "--assert" => {
+                let v = take(argv, &mut i, "--assert")?;
+                assertions.extend(crate::assertdecl::parse_flag(&v)?);
+            }
+            "--assert-strict" => assert_strict = true,
             "--max-fn-seconds" if cmd == "decompile-all" || cmd == "decompile-project" => {
                 let v = take(argv, &mut i, "--max-fn-seconds")?;
                 max_fn_seconds = Some(
@@ -1944,6 +2033,8 @@ pub(crate) fn parse_args_with_filters(
             max_fn_seconds,
             options,
             func_decls,
+            assertions,
+            assert_strict,
             slice,
             target,
             sleighpath,
@@ -2202,10 +2293,10 @@ mod discovery_tests {
             failed.contains("\"error\": \"no functions discovered in fixture\""),
             "{failed}"
         );
-        let decompiled = render_result_json("fixture", &[], &[], Some("boom"));
+        let decompiled = render_result_json("fixture", &[], &[], Some("boom"), &[]);
         assert!(decompiled.contains("\"error\": \"boom\""), "{decompiled}");
         assert!(
-            render_result_json("fixture", &[], &[], None).contains("\"error\": null")
+            render_result_json("fixture", &[], &[], None, &[]).contains("\"error\": null")
         );
     }
 
@@ -2217,8 +2308,8 @@ mod discovery_tests {
             ("setlanguage".into(), "rust-language".into()),
             ("setlanguage".into(), "c-language".into()),
         ];
-        assert!(render_result_json("f", &[], &options, None).contains("\"c-language\""));
-        assert!(render_result_json("f", &[], &[], None).contains("\"c-language\""));
+        assert!(render_result_json("f", &[], &options, None, &[]).contains("\"c-language\""));
+        assert!(render_result_json("f", &[], &[], None, &[]).contains("\"c-language\""));
     }
 }
 
