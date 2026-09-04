@@ -12,12 +12,12 @@ instances: 1
 challenges: [69a3822f7b3cc38c80464da4]
 rounds: [2]
 first_seen_round: 2
-attempts: 0
+attempts: 1
 covered_by_option: null
 touches: [decompiler/crates/kuna-decomp]
 scope: small
 regression_of: null
-pr: null
+pr: 380
 closed_in_round: null
 closing_pr: null
 reject_reason: null
@@ -133,3 +133,6 @@ _none recorded_
 
 - filed by cluster.py from 1 observation(s)
 - round 2 T_TRIAGE (captain): touches [] -> kuna-decomp; track perf and scope small CONFIRMED. An empty touches list declares no edit surface at all, which leaves the sibling-contract rule nothing to enforce. 68s on a 3396-byte function is a profiling task with a targeted fix, and perf-track needs hold no counter leases.
+- round 2 BUILDER (b-r2-decompiling-3396) + captain B_DONE: **PR #380 merged and the need STAYS OPEN.** The fix is real and large -- `stop re-deriving dead-list position by scanning`, 71.46 s -> 19.42 s (-72.8%) on this witness with output byte-identical over 509 functions, verified green on merged main 6ce857c4 (four gates + catalog + 15/15 clitests). But acceptance `a-53d616afcb6a` asks for a median under 10,000 ms and the probe measured **18,762 ms** at 6ce857c4, so the `wall_ms` clause FAILS while `exit_code` passes. attempts -> 1, `pr: 380`, `closing_pr` stays null: only the acceptance probe may close a need.
+- round 2 captain: **the probe is NOT relaxed, and that is the decision, not an oversight.** Re-cutting the bar to match what shipped would redefine `closed` as "a builder tried" instead of "the agent's task now works"; 10 s is the tester's interactive threshold, which is the thing the need is about. This is also not contention -- the builder's own interleaved A/B measured 18.44/23.35/21.79/19.42/18.84 s and its PR body says the bar is unmet in as many words. Do not re-run the probe hoping for a better number.
+- round 2 captain, **brief for the next attempt (attempt 2)**: #380 names where the residue sits -- rule pool 19.8%, jump-table sub-decompilation 17.4%, p9 dead-code/emit 13.7%. There is no single quadratic left; closing this needs roughly another -50% spread across three phases, which is a materially harder job than attempt 1. So this need is dispatchable but should rank BEHIND needs no builder has attempted yet, and whoever takes it must be told up front that one attempt may not reach the bar. Hand them #380's profile as the starting point rather than letting them re-profile from scratch.

@@ -17,9 +17,9 @@ covered_by_option: picbase
 touches: [decompiler/crates/kuna-analysis/src/listing/kuna_picbase.rs, decompiler/crates/kuna-analysis/src/listing/xrefs.rs]
 scope: large
 regression_of: no-strings-inventory
-pr: null
+pr: 378
 closed_in_round: 2
-closing_pr: null
+closing_pr: 378
 reject_reason: null
 ---
 

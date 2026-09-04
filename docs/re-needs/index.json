@@ -4,8 +4,8 @@
   "count": 35,
   "rejected_count": 0,
   "by_status": {
-    "closed": 12,
-    "open": 23
+    "closed": 13,
+    "open": 22
   },
   "by_track": {
     "perf": 2,
@@ -56,7 +56,7 @@
       "need_id": "strings-json-fails-report",
       "title": "strings JSON fails to report the owning function for a directly referenced prompt",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
       "probe_id": "p-3820d5b66146",
       "acceptance_id": "a-f0c7bd5b4a7e",
@@ -70,18 +70,19 @@
         2
       ],
       "first_seen_round": 2,
-      "attempts": 0,
-      "covered_by_option": null,
+      "attempts": 1,
+      "covered_by_option": "picbase",
       "touches": [
+        "decompiler/crates/kuna-analysis/src/listing/kuna_picbase.rs",
         "decompiler/crates/kuna-analysis/src/listing/xrefs.rs"
       ],
       "scope": "large",
       "regression_of": "no-strings-inventory",
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": 378,
+      "closed_in_round": 2,
+      "closing_pr": 378,
       "reject_reason": null,
-      "score": 1110.903549,
+      "score": 1073.935699,
       "path": "docs/re-needs/strings-json-fails-report.md"
     },
     {
@@ -242,38 +243,6 @@
       "reject_reason": null,
       "score": 13.862944,
       "path": "docs/re-needs/cli-mode-read-raw.md"
-    },
-    {
-      "need_id": "decompiling-3396-byte-main",
-      "title": "Decompiling the 3396-byte main function takes about 68 seconds",
-      "track": "perf",
-      "status": "open",
-      "severity": "major",
-      "probe_id": "p-a9ebf39dace0",
-      "acceptance_id": "a-53d616afcb6a",
-      "hypothesis_status": "inconclusive",
-      "credibility": 0.7,
-      "instances": 1,
-      "challenges": [
-        "69a3822f7b3cc38c80464da4"
-      ],
-      "rounds": [
-        2
-      ],
-      "first_seen_round": 2,
-      "attempts": 0,
-      "covered_by_option": null,
-      "touches": [
-        "decompiler/crates/kuna-decomp"
-      ],
-      "scope": "small",
-      "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
-      "reject_reason": null,
-      "score": 13.862944,
-      "path": "docs/re-needs/decompiling-3396-byte-main.md"
     },
     {
       "need_id": "direct-address-keyboard-handler",
@@ -743,6 +712,38 @@
       "reject_reason": null,
       "score": 13.862944,
       "path": "docs/re-needs/xrefs-unify-pe-import.md"
+    },
+    {
+      "need_id": "decompiling-3396-byte-main",
+      "title": "Decompiling the 3396-byte main function takes about 68 seconds",
+      "track": "perf",
+      "status": "open",
+      "severity": "major",
+      "probe_id": "p-a9ebf39dace0",
+      "acceptance_id": "a-53d616afcb6a",
+      "hypothesis_status": "inconclusive",
+      "credibility": 0.7,
+      "instances": 1,
+      "challenges": [
+        "69a3822f7b3cc38c80464da4"
+      ],
+      "rounds": [
+        2
+      ],
+      "first_seen_round": 2,
+      "attempts": 1,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-decomp"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": 380,
+      "closed_in_round": null,
+      "closing_pr": null,
+      "reject_reason": null,
+      "score": 9.241962,
+      "path": "docs/re-needs/decompiling-3396-byte-main.md"
     },
     {
       "need_id": "whole-binary-json-untriageable",
