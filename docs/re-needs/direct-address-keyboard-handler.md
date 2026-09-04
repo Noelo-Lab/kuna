@@ -5,7 +5,7 @@ track: quality
 status: open
 severity: major
 probe_id: p-36f0974fc119
-acceptance_id: a-a9a71e29cc50
+acceptance_id: a-f13adb91d5d4
 hypothesis_status: inconclusive
 credibility: 0.7
 instances: 1
@@ -77,6 +77,12 @@ A bounded decompilation of the keyboard callback at 0x6500.
     "--addr"
   ],
   "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "sub_6500\\("
+    ],
     "stdout_absent": [
       "LUGOSI.*S II",
       "sub_5e30\\("
@@ -114,3 +120,5 @@ _none recorded_
 - filed by cluster.py from 1 observation(s)
 - round 2 T_DEDUP (captain): SPLIT out of the 4-observation `wrong-output|decompile|stdout_absent` group. Its sibling is [keyboard-callback-uses-undefined]; both testers trace their symptom to the same root (0x6500 is absent from the discovered function map), but the remedies differ -- a tail-jump-as-interprocedural-edge boundary fix here, live-in register promotion there -- so they carry separate acceptance probes. This is also the first INDEPENDENT tester demand for the captain-seeded `no-cli-function-boundary-override`; note the tester asks kuna to get the boundary right by itself, not for a CLI override.
 - round 2 T_TRIAGE (captain): track/touches/scope CONFIRMED (quality / kuna-decomp / small). Measured this tick so the builder does not have to: `funcboundflow` does NOT cover this. Decompiling 0x6500 of lugosiii with and without `--option funcboundflow on` gives byte-identical 1555-line output still containing the renderer's LUGOSI title twice, i.e. the tail jump at 0x66e2 still annexes 0x4610. (funcboundflow is default-ON per DIV-67, so `on` is a no-op; the point is that the shipped fix for function-merge does not reach a tail jump into a known entry.) Kept small: treating a jump to a discovered function entry as a tail call is a bounded, gateable decision.
+- round 2 B_PLAN wave 13 (captain): DISPATCHED, attempt 1, and the acceptance was STRENGTHENED before dispatch. As filed, the probe asserted only two `stdout_absent` patterns and nothing else, so a "fix" that made `kuna decompile 0x6500 --addr` emit nothing, or error out, would have PASSED it and closed the need with worse output than we started with. Added `exit_code {eq: 0}` and one positive `stdout_matches` on `sub_6500\(` -- the emitted signature of the function actually asked for. Both new clauses were measured GREEN on today's build before the edit was kept, and the replayed probe still FAILS on exactly the two original absent clauses (a-a9a71e29cc50 -> a-f13adb91d5d4; verify resolves the block, the frontmatter id is a label and was updated with it). If a legitimate fix renames the entry away from `sub_6500`, say so in the PR rather than fighting the clause -- that is a probe bug, not a wrong fix.
+- round 2 B_PLAN wave 13 (captain): briefing carried forward. (a) The T_TRIAGE measurement stands: `funcboundflow` (default-ON, DIV-67) does NOT cover this -- `--option funcboundflow on` gives byte-identical 1555-line output. (b) `no-cli-function-boundary-override` shipped in #374 as an `--assert` CLI override; the acceptance cmd deliberately carries NO `--assert` and NO `--option`, so telling the user to override the boundary by hand does not close this need. The default path has to get the tail jump at 0x66e2 right. (c) The sibling `keyboard-callback-uses-undefined` (large, live-in register promotion) is traced to the same root by its tester; do NOT annex it -- it has its own lease and its own probe. (d) `binary_source: dataset` means `verify --promote` will REFUSE to vendor this into `tests/cli/` (the #377/#392 refusal), so the in-repo regression cover has to be a `tests/stages/` two-pass XML on a hand-built bytechunk. (e) Branch `feat/re-direct-address-keyboard-handler` does not exist and no worktree of that worker id exists, so the silent-detached-worktree fallback is NOT armed for this dispatch.
