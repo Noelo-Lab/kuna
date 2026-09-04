@@ -1569,6 +1569,7 @@ Decompilation complete
             &[],
             &[],
             &decls,
+            &[],
             None,
         );
         let line = |needle: &str| {
@@ -1585,6 +1586,116 @@ Decompilation complete
         );
     }
 
+    /// The assertion slots, which are forced rather than stylistic: a parsed
+    /// prototype must precede the load, a `map param` needs the loaded function,
+    /// and a `rename` of a LOCAL needs a function that has already been
+    /// decompiled — before that the console answers `No symbol named: v2`, which
+    /// is exactly the bug that makes `--kassert p9 naming-policy` inert today.
+    #[test]
+    fn build_script_puts_each_assertion_in_its_own_slot() {
+        let directives: Vec<_> = [
+            "prototype authenticate int4 authenticate(char *u)",
+            "param 0 RDI char *u",
+            "name v2 credbuf",
+        ]
+        .iter()
+        .map(|spec| crate::assertdecl::parse_one(spec).expect("parses"))
+        .collect();
+        let script = build_script(
+            "/tmp/a.out",
+            "authenticate",
+            false,
+            None,
+            false,
+            Path::new("/tmp/kuna.c"),
+            LISTING,
+            &[],
+            &[],
+            &[],
+            &directives,
+            None,
+        );
+        let line = |needle: &str| {
+            script
+                .lines()
+                .position(|l| l == needle)
+                .unwrap_or_else(|| panic!("{needle:?} missing from:\n{script}"))
+        };
+        assert!(line("read symbols") < line("parse line extern int4 authenticate(char *u);"));
+        assert!(
+            line("parse line extern int4 authenticate(char *u);")
+                < line("load function authenticate")
+        );
+        assert!(line("load function authenticate") < line("map param 0 %RDI char *u"));
+        assert!(line("map param 0 %RDI char *u") < line("decompile"));
+        assert!(line("decompile") < line("rename v2 credbuf"));
+        // The symbol-scoped directive forces a SECOND decompile after it.
+        assert_eq!(
+            script.lines().filter(|l| *l == "decompile").count(),
+            2,
+            "a symbol-scoped directive needs a second pass:\n{script}"
+        );
+        assert!(line("rename v2 credbuf") < script.lines().count());
+    }
+
+    /// Without a symbol-scoped directive there is no second `decompile`, so an
+    /// assertion an agent passes never doubles the cost of a run that does not
+    /// need it.
+    #[test]
+    fn build_script_emits_one_decompile_without_a_symbol_scoped_assertion() {
+        let directives = vec![crate::assertdecl::parse_one("data 0x601048 char *pw")
+            .expect("parses")];
+        let script = build_script(
+            "/tmp/a.out",
+            "main",
+            false,
+            None,
+            false,
+            Path::new("/tmp/kuna.c"),
+            LISTING,
+            &[],
+            &[],
+            &[],
+            &directives,
+            None,
+        );
+        assert_eq!(script.lines().filter(|l| *l == "decompile").count(), 1, "{script}");
+        assert!(script.contains("map address 0x601048 char *pw"), "{script}");
+    }
+
+    /// The transcript reader is what gives the human surface a report at all: a
+    /// console diagnostic under a directive's echo is that directive's rejection,
+    /// and a clean echo is an application.
+    #[test]
+    fn assertion_outcomes_read_the_console_diagnostic_under_each_echo() {
+        let directives: Vec<_> = ["name v2 credbuf", "type v9 char[4]"]
+            .iter()
+            .map(|spec| crate::assertdecl::parse_one(spec).expect("parses"))
+            .collect();
+        let transcript = "\
+[decomp]> decompile
+Decompiling authenticate
+[decomp]> rename v2 credbuf
+[decomp]> retype v9 char[4]
+Execution error: No symbol named: v9
+[decomp]> decompile
+";
+        let report = super::assertion_outcomes(transcript, &directives);
+        assert_eq!(report[0].status, "applied");
+        assert_eq!(report[1].status, "rejected");
+        assert_eq!(report[1].detail.as_deref(), Some("No symbol named: v9"));
+    }
+
+    /// A script that never reached a directive did not apply it, and saying so is
+    /// the difference between a report and a guess.
+    #[test]
+    fn an_unreached_directive_is_rejected_not_assumed_applied() {
+        let directives = vec![crate::assertdecl::parse_one("name v2 buf").expect("parses")];
+        let report = super::assertion_outcomes("[decomp]> load file /tmp/a.out\n", &directives);
+        assert_eq!(report[0].status, "rejected");
+        assert!(report[0].detail.as_deref().unwrap_or_default().contains("did not reach"));
+    }
+
     /// No declarations ⇒ the script is byte-identical to what it always was.
     #[test]
     fn build_script_without_declarations_emits_no_boundary_lines() {
@@ -1596,6 +1707,7 @@ Decompilation complete
             false,
             Path::new("/tmp/kuna.c"),
             LISTING,
+            &[],
             &[],
             &[],
             &[],
@@ -1617,6 +1729,7 @@ Decompilation complete
             false,
             Path::new("/tmp/out dir/kuna.c"),
             LISTING,
+            &[],
             &[],
             &[],
             &[],
@@ -1648,6 +1761,7 @@ Decompilation complete
             false,
             Path::new("/tmp/kuna.c"),
             LISTING,
+            &[],
             &[],
             &[],
             &[],
@@ -1723,6 +1837,7 @@ Decompilation complete
             &[],
             &[],
             &[],
+            &[],
             None,
         );
         let (before, after) = script.split_once("read symbols").expect("read symbols");
@@ -1756,6 +1871,7 @@ Decompilation complete
             false,
             Path::new("/tmp/kuna.c"),
             LISTING,
+            &[],
             &[],
             &[],
             &[],
@@ -1830,6 +1946,7 @@ Decompilation complete
             false,
             Path::new("/tmp/kuna.c"),
             LISTING,
+            &[],
             &[],
             &[],
             &[],

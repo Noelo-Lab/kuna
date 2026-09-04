@@ -5,13 +5,13 @@ track: tooling
 status: open
 severity: major
 acceptance_id: a-a58fc408288b
-hypothesis_status: upheld
+hypothesis_status: overturned
 credibility: 1.0
 instances: 1
 rounds: [2]
 first_seen_round: 2
-attempts: 0
-touches: [decompiler/crates/kuna-cli/src, decompiler/crates/kuna-console/src/kuna_console.rs]
+attempts: 1
+touches: [decompiler/crates/kuna-cli/src, decompiler/crates/kuna-console/src/assertions.rs]
 scope: large
 ---
 
@@ -122,3 +122,38 @@ ADVISORY. The cheap half is exposure, not implementation: most of these commands
 - round 2 T_TRIAGE (captain): track tooling / touches [kuna-cli/src, kuna-console/src/kuna_console.rs] / scope large CONFIRMED. New this tick: keyboard-callback-uses-undefined is a tester-filed demand witness for it -- an agent that could state a callback's prototype would not need kuna to infer R9D/R8D at all. Still waits behind the function-boundary proposal for the delivery vehicle.
 - round 2 wave 9 B_PLAN (captain): DISPATCHED as the override family's one design, because the delivery vehicle this need was waiting behind now EXISTS -- no-cli-function-boundary-override closed via #374 (`kuna decompile --define-function`), an agent-supplied fact injected from the `kuna` binary. Three standing instructions for the builder. (1) Design ONE override plane that covers this need AND its two siblings (no-cli-data-code-override, no-cli-structuring-override); the captain will not approve three separate large designs, and a unified proposal lets the siblings collapse into it rather than each burning a builder. (2) Answer the Hypothesis's cheap/expensive question as a table: for every command named in the Symptom, whether it already works in the console and only lacks a `kuna` path, or is an `engine_unavailable` stub. (3) The proposal MUST define a concrete `acceptance` probe for this need. It has none today (`verify --acceptance-suite` reports it unrunnable), so nothing built on it could ever be closed by B_DONE, and a design that leaves it unrunnable is not approvable.
 - round 2 B_PLAN (builder): filed the acceptance probe this need lacked, `a-a58fc408288b`. Its target C was measured end-to-end through `decomp_dbg` before the probe was written (`parse line extern` + `retype` + `rename` on the in-repo `fauxware` fixture), so the probe asserts an output the engine demonstrably already produces -- what is missing is only the path from the `kuna` binary.
+- round 2 B_DONE (builder): SHIPPED as `kuna --assert <directive> | @FILE`, Stage A of the
+  approved proposal. Nine directives -- function, typedef, prototype, data, param, return,
+  comment, name, type -- each lowering to the console command that already implements it,
+  each with a test that asserts the emitted C CHANGED rather than that the command returned
+  Ok. Acceptance `a-a58fc408288b` PASS; promoted verbatim to
+  `tests/cli/no-cli-rename-or-prototype-override.json`.
+- round 2 B_DONE: `hypothesis_status` reconciled to `overturned`, matching this need's
+  `record.json` and the proposal's own verdict (the frontmatter still said `upheld`). The
+  cheap half is much LARGER than filed -- 11 console commands were measured reaching emitted
+  C -- and the expensive half is not "the stubs": it is two shipped commands that lied.
+  `map return` is fixed here (it parked output-only `PrototypePieces`, and
+  `ParamListStandardOut::assignMap` dereferences `outtype` unconditionally, so the command
+  aborted the process the moment its function was decompiled).
+- round 2 B_DONE: **Stage-A residue, three items, none of them blocking.**
+  (1) `override prototype <addr> <decl>` is still accepted-and-inert, re-measured on this
+  branch (`strcmp` at `0x400689`, 2 params -> 3: no change). The store and the consume are
+  BOTH present and look correct -- `IfcProtooverride` stashes into `pending_proto_overrides`,
+  `IfcDecompile` re-seeds it, `build_and_follow_flow_with_override_and_protos` installs it on
+  the fresh `Funcdata`, and `ArchFlowEnv::build_override_proto` (decompile_drive.rs:325)
+  builds a real `FuncProto` from the pieces -- so the proposal's "one of the two is stale" is
+  itself wrong and the defect is somewhere else in that chain. Time-boxed per the captain's
+  dispatch: the `prototype` directive lowers to `parse line extern` (measured working, and
+  what the acceptance asserts), so per-CALL-SITE prototype override is the residue, not the
+  function's own prototype. Worth its own need.
+  (2) `label` is not shipped: `map label` has no observable effect on emitted C on any
+  fixture tried, so it cannot satisfy the standing "the test asserts the C changed" rule.
+  (3) The two CLI-level `--kassert` defects this need's proposal recorded (the `naming-policy`
+  arm emitted before the first `decompile` and therefore inert; `--kassert` rejected outright
+  with `--json`) are NOT fixed. `--assert` supersedes both -- it is the intent-keyed writer,
+  it reports into `assertions[]`, and it works with `--json` -- so fixing the raw phase-keyed
+  writer is optional cleanup rather than a gap an agent can feel.
+- round 2 B_DONE: the P4/P5/P9 `exposure` prose in `phases.toml` is DEFERRED, not skipped by
+  choice: `file:phases.toml` was held by `b-r2-ppc64-localentry` for this whole wave. It is
+  prose, no gate reads it, and this PR adds no settable row (so no catalog counters and no
+  DIV row either).

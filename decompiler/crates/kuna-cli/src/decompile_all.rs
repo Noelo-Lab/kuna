@@ -1760,7 +1760,7 @@ mod provenance_json_tests {
             object_location: None,
         };
 
-        let rendered = dumps_indent2(&result_json("fixture", &[function], "c-language", None, None));
+        let rendered = dumps_indent2(&result_json("fixture", &[function], "c-language", None, None, &[]));
         assert!(rendered.contains("\"address\": 4198400"));
         assert!(rendered.contains("\"code\": \"int f(int x)\\n{\\n  return x;\\n}\""));
         assert!(rendered.contains("\"line_mappings\": ["));

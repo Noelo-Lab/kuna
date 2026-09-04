@@ -7,11 +7,9 @@
   "acceptance_id": "a-a58fc408288b",
   "instances": 1,
   "scope": "large",
-  "proposal": true,
+  "proposal": false,
   "covers_needs": [
-    "no-cli-rename-or-prototype-override",
-    "no-cli-data-code-override",
-    "no-cli-structuring-override"
+    "no-cli-rename-or-prototype-override"
   ],
   "option": null,
   "flag": null,
@@ -20,9 +18,9 @@
   "tier": "driver",
   "change_kind": "capability-add",
   "default_on": null,
-  "owning_file": "docs/features/no-cli-rename-or-prototype-override/proposal.md",
+  "owning_file": "decompiler/crates/kuna-cli/src/assertdecl.rs",
   "spec_chapter": "docs/spec/00-overview.md",
-  "parity": "untouched (no code change on this branch)",
+  "parity": "make test PARITY OK 675/675; make test-stages PARITY OK 603/603. Structurally unaffected: both corpora are symbol-less bytechunks driven by XML with no CLI in the loop, and nothing on this branch runs unless a --assert directive is passed.",
   "root_cause_class": "absent-capability",
   "hypothesis_status": "OVERTURNED",
   "filed_hypothesis": "ADVISORY. The cheap half is exposure, not implementation: most of these commands already work and only lack a path from the `kuna` binary. The expensive half is the stubs.",
@@ -37,9 +35,16 @@
     "DESIGN -- THE IN-PROCESS HALF IS ALREADY BUILT, which is what makes this affordable. kuna_console::decompile_step::DecompileSeed is the shared 'console-only facts' carrier and the whole-binary loop passes empty slices for exactly the fields this plane needs: mapped_symbols (data), usepoint_symbols (type varnode), dynamic_symbols, pending_proto (prototype), flow_overrides (flow), mapped_params (param). And decompile_one ALREADY contains a decompile -> adjust -> re-decompile loop (the formatstring half-B override loop), so the symbol-scoped second pass has precedent in the exact function that needs it.",
     "REJECTED -- a `kuna console` passthrough or a --script flag. The captain's caution is upheld by the measurements: a passthrough would ship map return's panic and override prototype's silent no-op straight to agents, expose 37 commands of which ~14 are stubs, and leave nowhere to put the assertions[] report. A typed vocabulary is what lets a directive be REJECTED with a reason instead of throwing an unstructured diagnostic into a discarded transcript.",
     "OUT OF SCOPE AND RECORDED AS RESIDUE: `structure blocks` (BlockGraph structuring) and `analyze range` (ValueSetSolver) are genuine engine ports. no-cli-structuring-override should carry them as residue rather than have this design half-port them.",
-    "ACCEPTANCE FILED AND GROUNDED. a-a58fc408288b was written only after its target C was produced end-to-end by decomp_dbg at e3db5512, on the same in-repo fixture, driven by the exact console script Stage A would generate. verify --acceptance-suite reported this need `unrunnable` before this branch and now reports passed:false with a real clause list (exit_code 2, 'unknown option --assert'). Sibling probes were deliberately NOT filed: no-cli-data-code-override's would have to assert a readonly/volatile effect, and no fixture tried here shows one -- filing a probe whose target was never measured is the exact mistake this proposal argues against."
+    "ACCEPTANCE FILED AND GROUNDED. a-a58fc408288b was written only after its target C was produced end-to-end by decomp_dbg at e3db5512, on the same in-repo fixture, driven by the exact console script Stage A would generate. verify --acceptance-suite reported this need `unrunnable` before this branch and now reports passed:false with a real clause list (exit_code 2, 'unknown option --assert'). Sibling probes were deliberately NOT filed: no-cli-data-code-override's would have to assert a readonly/volatile effect, and no fixture tried here shows one -- filing a probe whose target was never measured is the exact mistake this proposal argues against.",
+    "IMPLEMENTED AS STAGE A. `--assert <directive> | @FILE`, repeatable, on decompile / decompile-all / decompile-project / functions. Nine directives shipped: function, typedef, prototype, data, param, return, comment, name, type. The syntax lives in kuna-cli/src/assertdecl.rs (modelled line-for-line on funcdecl.rs, per the dispatch); the vocabulary and the engine-side application live in kuna-console/src/assertions.rs, because the symbol-scoped half has to run inside the decompile loop and the CLI cannot reach there.",
+    "SCOPE NARROWED FROM THE PROPOSAL TABLE ON PURPOSE, one directive: `label` (map label). It is accepted by the console and changes no emitted C on any fixture tried, so it cannot satisfy the standing rule that every directive ship with a test asserting the C CHANGED. Shipping it would have made this PR an instance of the exact failure mode it exists to close. Recorded as residue instead.",
+    "STORAGE OPERANDS ARE NORMALISED, which the proposal did not anticipate. A bare register name is the spelling an agent reaches for and the one the console rejects outright: `map param 0 RDI ...` answers 'Bad address: R', because parse_machaddr reads the first character as an address-space shortcut. assertdecl rewrites a bare identifier to the console's `%RDI` (a token that starts with a letter and carries no 0x cannot be any of the other forms), so both spellings work and the console's own `[stack,-0x18,8]` grammar is untouched.",
+    "map return's PANIC IS FIXED AT THE ENGINE SEAM, not in the console command, so every caller gets it. FuncProto::seed_locked_from_pieces already special-cased `outtype: None && output_storage: None` (the C++-mangled-name case) but fell through to set_pieces for `outtype: None && output_storage: Some`, which is exactly what map return parks -- and ParamListStandardOut::assignMap dereferences proto.outtype unconditionally. The declared type IS the return type: adopt it. Verified by the standalone console script that used to abort, and by a regression test that drives the drive with output-only pieces directly.",
+    "OVERRIDE PROTOTYPE IS RESIDUE, and the proposal's diagnosis of it is itself wrong. It predicted 'the FlowInfo::queryCall consume is stubbed OR flow.rs:2152's applyPrototype is wired -- one of the two is stale'. Reading the whole chain on this branch: IfcProtooverride stashes into pending_proto_overrides, IfcDecompile re-seeds it, build_and_follow_flow_with_override_and_protos installs it on the fresh Funcdata's localoverride before flow, FlowInfo::build_call_specs finds it and calls ArchFlowEnv::build_override_proto, and that (decompile_drive.rs:325) builds a real locked FuncProto and copies it onto the call spec. Every link is present and looks correct, and the emitted C still does not change (re-measured on this branch: strcmp at 0x400689, 2 params -> 3, no change). So the defect is somewhere neither the proposal nor a source read located, and it is a need of its own. Time-boxed per the captain's dispatch item 4; the `prototype` directive lowers to `parse line extern`, which is measured working and is what the acceptance asserts, so nothing shipped here depends on it.",
+    "THE TWO --kassert DEFECTS ARE NOT FIXED, deliberately. --assert supersedes both: it is the intent-keyed writer an agent should reach for, it reports into assertions[], and it works with --json. Fixing the raw phase-keyed writer's ordering bug and lifting its --json prohibition became optional cleanup rather than a gap an agent can feel, so they are residue on the need rather than scope here.",
+    "PHASES.TOML EXPOSURE PROSE DEFERRED: file:phases.toml was leased by b-r2-ppc64-localentry for the whole wave (captain dispatch item 2). It is prose, no gate reads it, and this PR adds no settable row -- so no catalog counters, no docs/options.md regeneration and no DIV row either."
   ],
-  "mechanism": "`--assert <directive> | @FILE`, repeatable, on decompile / decompile-all / decompile-project. A new kuna-cli/src/assertdecl.rs parses a line-oriented intent-keyed vocabulary (prototype/param/return/name/type/typedef/data/label/comment, then readonly/volatile/global, then flow/goto/jumptable/isolate/deadcode-delay) modelled line-for-line on funcdecl.rs. The script surface emits each directive at its measured slot -- program-scope after `read symbols`, function-scope after `load function`, symbol-scope after a first `decompile` with a conditional second `decompile` -- and scrapes the byte-faithful console diagnostics back into an `assertions[]` array. The in-process surface fills DecompileSeed's already-present but always-empty slices and adds the symbol-scoped second pass to decompile_one.",
+  "mechanism": "`--assert <directive> | @FILE` (repeatable) on decompile / decompile-all / decompile-project / functions, plus `--assert-strict`. kuna-cli/src/assertdecl.rs owns the syntax (nine directives, the @FILE contract copied from funcdecl.rs, storage normalisation) and the console lowering with its three script slots. kuna-console/src/assertions.rs owns the vocabulary and the engine-side application, over two new ConsoleProgram stores (assertions + one outcome slot per directive, and a pending-prototype map). Program-scoped directives are applied after the analysis commit in decompile_all::load_program, for the same reason a declared boundary is. Function-scoped ones become DecompileSeed fields (pending_proto, mapped_params) because a prototype fact is consumed at flow time. Symbol-scoped ones (name/type) run between two decompiles inside project::decompile_targets -- the local they name does not exist until a decompile has produced it -- with the first pass's mutated local scope carried across as mapped_symbols; the second pass is emitted only when such a directive bound, so no other run pays for it. The script surface emits the same facts at the same three slots and recovers each directive's fate from the console's byte-faithful diagnostic grammar.",
   "measurements": {
     "method": "drove decompiler/target/release/decomp_dbg directly at e3db5512 with SLEIGHHOME=$PWD/specs, one command per line on stdin, on the in-repo fixtures fauxware (c2d90645, 8776 bytes) and aif_gap_x86_64 (1a592a85, 14408 bytes); every 'reaches C' verdict is a diff of the printed C, never a return code",
     "commands_probed": 22,
@@ -47,12 +52,13 @@
     "engine_unavailable_stubs": 9,
     "stubs_whose_engine_entry_is_already_ported": 5,
     "shipped_commands_found_broken": 2,
-    "cli_level_defects_found": 2
+    "cli_level_defects_found": 2,
+    "implementation_note": "every shipped directive was re-measured end-to-end on this branch, on BOTH surfaces, as a diff of the emitted C: prototype (signature + parameter names), param (locked input), return (locked output), name+type (char v2 [8] -> char credbuf [16]), typedef+type (creds v2 / v2.raw), data (sneaky -> shadowpw at the call), comment (/* ... */ in the body), function (authstub, 28 bytes)"
   },
   "stages": [
-    "A (this need): the symbol and prototype plane -- parser, map return panic fix, override prototype diagnosis, two-pass script, DecompileSeed fill, assertions[] JSON, --kassert/--json prohibition lifted, docs/cli.md + spec + phases.toml exposure prose, acceptance a-a58fc408288b + tests/cli promotion",
-    "B (no-cli-data-code-override): readonly/volatile/global/data directives; wire the global add/remove stubs onto ScopeGlobal; find a fixture where a readonly range demonstrably folds and file that need's acceptance against it",
-    "C (no-cli-structuring-override): flow (works today) then wire force goto / override jumptable / isolate / deadcode delay onto their ported engine entries, fill the matching kassert Dispatch arms, update the affected subphase exposure fields, record structure blocks and analyze range as residue"
+    "A (this need, SHIPPED): --assert with function/typedef/prototype/data/param/return/comment/name/type, the three-slot ordering, the conditional symbol-scoped second pass, assertions[] on every --json, --assert-strict, the map return outtype-null fix, docs/cli.md + docs/spec/00-overview.md, acceptance a-a58fc408288b promoted to tests/cli/",
+    "B (no-cli-data-code-override, PARKED): readonly/volatile/global directives; wire the global add/remove stubs onto ScopeGlobal; find a fixture where a readonly range demonstrably folds and file that need's acceptance against it. `data` shipped in A because it was measured changing emitted C.",
+    "C (no-cli-structuring-override, PARKED): flow (works today) then wire force goto / override jumptable / isolate / deadcode delay onto their ported engine entries, fill the matching kassert Dispatch arms, record structure blocks and analyze range as residue"
   ],
   "speed": "zero on every existing invocation -- no directives means no extra console lines, no second decompile and an empty assertions[]. With a symbol-scoped directive the target function is decompiled twice: a bounded ~2x on one function, opt-in, and the same cost shape the formatstring half-B loop already pays. No pipeline pass is added.",
   "risks": [
@@ -65,5 +71,12 @@
   "gates": {
     "note": "no source file was changed on this branch; the diff is the proposal, the record and the need's new Acceptance section",
     "acceptance": "a-a58fc408288b runnable and FAILING at e3db5512 (exit_code 2, 'error: unknown option --assert') -- correct for an unimplemented acceptance"
-  }
+  },
+  "stage": "A (implemented)",
+  "residue": [
+    "override prototype <addr> <decl> is accepted and inert; the whole store->consume chain is present and looks correct, so this needs its own diagnosis (per-call-site prototype override only -- a function's OWN prototype is covered by `assert prototype`)",
+    "label (map label): no observable effect on emitted C, so no directive shipped for it",
+    "--kassert p9 naming-policy is inert from the CLI (emitted before the first decompile) and --kassert is still refused with --json; superseded by --assert",
+    "phases.toml P4/P5/P9 exposure prose (lease held by another builder this wave)"
+  ]
 }

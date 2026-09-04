@@ -702,6 +702,66 @@ declaration is applied after discovery has had its say, because it is an asserti
 that outranks it. Durability is caller-carried — the `@file` form is the artifact,
 and kuna does not write boundaries back into the image.
 
+(kuna) **Caller assertions (`--assert`).** Declared boundaries are one fact an
+agent can state; the assertion plane is the rest of them. Everything the engine
+knows about a program it derived, and the console has long carried the commands
+that correct each derivation — `rename`, `retype`, `map param`, `map return`,
+`map address`, `comment instruction`, `parse line` — while none of them was
+reachable from the `kuna` binary, whose generated script emitted a fixed
+vocabulary (`option`, `read symbols`, `load`, `kassert`, `function bounds`,
+`decompile`).
+
+A **directive** is one line of an intent-keyed vocabulary — an agent does not have
+to know that renaming is P9 to rename something — parsed by
+`decompiler/crates/kuna-cli/src/assertdecl.rs` and applied by
+`decompiler/crates/kuna-console/src/assertions.rs`:
+
+| directive | lowers to | writes at |
+|---|---|---|
+| `function <start>[-<end>][=<name>]` | `function bounds` | P1, the `--define-function` spelling |
+| `typedef <C declaration>` | `parse line` | P5 type-propagation |
+| `prototype <func> <C declaration>` | `parse line extern` | P4 prototype-source |
+| `data <addr> <C typedeclaration>` | `map address` | P5 const-pointer |
+| `param [<func>::]<i> <storage> <C typedeclaration>` | `map param` | P4 prototype-source |
+| `return [<func>::]<storage> <C typedeclaration>` | `map return` | P4 prototype-source |
+| `comment [<func>::]<addr> <text>` | `comment instruction` | P9 external-refinement |
+| `name [<func>::]<symbol> <newname>` | `rename` | P9 naming-policy |
+| `type [<func>::]<symbol> <C type>` | `retype` | P5 type-propagation |
+
+Three application points, and the ordering between them is forced rather than
+stylistic. **Program-scoped** directives (`function`, `typedef`, `prototype`,
+`data`) are applied right after the analysis commit
+(`ConsoleProgram::set_assertions` + `assertions::apply_program_scoped`, called
+from `decompiler/crates/kuna-cli/src/decompile_all.rs (load_program)`), for the
+same reason a declared boundary is: an assertion outranks discovery.
+**Function-scoped** directives (`param`, `return`, `comment`) become decompile
+SEEDS (`assertions::function_seed`), because a prototype fact is consumed at flow
+time and cannot be applied afterwards. **Symbol-scoped** directives (`name`,
+`type`) can only be applied to an already-decompiled function — the local they
+name does not exist until a decompile has produced it — so
+`decompiler/crates/kuna-console/src/project.rs (decompile_targets)` decompiles,
+applies them to the first pass's `Funcdata` (`assertions::apply_symbol_scoped`),
+and decompiles again with the mutated local scope carried across as
+`mapped_symbols`. That second pass is emitted only when such a directive bound to
+the function, so every run without one costs exactly what it did before. The
+script surface (`decompiler/crates/kuna-cli/src/decompile.rs (build_script)`)
+emits the same facts at the same three slots, with the same conditional second
+`decompile`.
+
+A directive that names no function binds to the function being decompiled, which
+is unambiguous only when the run selected exactly one; on a whole-binary run it
+would silently mean *every* function that happens to have a `v2`, so it is
+rejected there with a detail naming the `<func>::<operand>` form. Rejecting is the
+design: every directive produces exactly one row in the run's report
+(`ConsoleProgram::assertion_outcomes`, serialized as the `assertions` array of
+every `--json` document and spoken on stderr on the human surface), because a
+directive that is accepted and does nothing is worse for an agent than one that
+errors. `--assert-strict` turns any rejection into a non-zero exit; without it a
+rejection is reported and the run continues, so a batch of forty renames against a
+re-decompiled binary does not lose the other thirty-nine to one stale name.
+Durability is caller-carried, as it is for boundaries: `--assert @FILE` is the
+artifact.
+
 (kuna) **Load-time env bridges.** Seven loader gates are consumed *inside* the
 bootstrap — before any console `option` line can possibly run — so the option
 surface alone cannot deliver them; each is bridged through a process environment

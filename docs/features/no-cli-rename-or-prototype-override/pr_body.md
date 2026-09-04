@@ -1,111 +1,148 @@
-## What is broken
+## What was broken
 
-Three backlog records, all severity **major**, all filed in round 2, say the same thing about
-three different subjects — an agent can read a kuna decompilation but cannot correct one.
+> `rename`, `retype`, `map param`, `map return`, `override prototype` and
+> `parse line extern ...` are all functional in the console and none is reachable from
+> `kuna`. [...] For an agent, a rename that does not persist is the difference between
+> reading a decompilation once and actually working through one.
+>
+> — `docs/re-needs/no-cli-rename-or-prototype-override.md` (severity major, instances 1, rounds [2])
 
-> `rename`, `retype`, `map param`, `map return`, `override prototype` and `parse line extern ...`
-> are all functional in the console and none is reachable from `kuna`. [...] For an agent, a
-> rename that does not persist is the difference between reading a decompilation once and
-> actually working through one.
-> — `no-cli-rename-or-prototype-override`, instances 1, rounds [2]
+Everything kuna knows about a program it *derived*. The console has carried the commands
+that correct each derivation all along; the `kuna` binary's generated script emitted a fixed
+vocabulary — `option`, `read symbols`, `load`, `kassert`, `function bounds`, `decompile` —
+and nothing else. `--kassert` exists but only its `Option` and `Rename` arms do real work,
+and the `Rename` one is a **silent no-op from the CLI**: it is emitted before the first
+`decompile`, so the local it names does not exist yet and `No symbol named: v2` goes into a
+transcript the CLI discards. `--kassert` is also refused outright with `--json`, so for an
+agent consuming machine-readable output the override surface did not exist at all.
 
-`no-cli-data-code-override` (instances 1) and `no-cli-structuring-override` (instances 1) are
-the same wall for data/code ranges and for the CFG. The captain dispatched this need as the
-family's **one design**, with three standing instructions: cover all three siblings, answer the
-cheap/expensive question as a table, and file the acceptance probe this need has never had.
-
-This PR is that design. **It changes no source file** — the diff is the proposal, its record,
-and the need's new `## Acceptance` section.
-
-## What was measured
-
-Everything in the proposal's tables was measured by driving `decomp_dbg` directly at
-`e3db5512` on in-repo fixtures. "Reaches C" means the *printed C changed*, not that the command
-returned Ok — which turned out to be the distinction that matters.
-
-- **11 console commands reach emitted C today** and only lack a path from the `kuna` binary.
-  `parse line extern int4 authenticate(char *user,char *pass);` renames both parameters through
-  the whole body; `override flow 0x4006aa branch` turns a CALL into a tail-call and restructures
-  the function; `map param 0 [register,0x38,8] char *username` rewrites the signature.
-- **The shared Hypothesis is overturned on its second half.** "The expensive half is the stubs"
-  assumes engine ports are missing. They are not: `Override::insert_force_goto`,
-  `Funcdata::install_jump_table`, `Override::insert_deadcode_delay`, `Symbol::set_isolated` and
-  `FuncProto::set_input_lock/set_output_lock` are all already in `kuna-decomp`, and the stub
-  message blaming `parse_machaddr`/`parse_C` is stale — both are implemented and in use. Same
-  finding, same shape, as `no-cli-function-boundary-override`.
-- **The real expensive half is two shipped commands that lie**, which no source reading finds:
-  `map return` **panics the process** (`outtype null`, `p4_calls/fspec.rs:2624`), and
-  `override prototype` prints `Successfully added override` and changes nothing — measured on
-  both a direct known callee and an indirect call.
-- **Two further CLI-level defects, in no need:** `kuna decompile --kassert "p9 naming-policy v2
-  buf"` exits 0 and does nothing (the assertion is emitted before the first `decompile`, so the
-  local does not exist yet and the error goes into a discarded transcript), and `--kassert` is
-  rejected outright alongside `--json`.
+This is Stage A of the approved proposal (`docs/features/no-cli-rename-or-prototype-override/proposal.md`).
 
 ## The mechanism
 
-`--assert <directive> | @FILE`, repeatable, on `decompile` / `decompile-all` /
-`decompile-project` — one intent-keyed vocabulary (`prototype`, `param`, `return`, `name`,
-`type`, `data`, `label`, `readonly`, `volatile`, `flow`, `goto`, `jumptable`, …) lowering onto
-the console commands that already work, with an `assertions[]` array in every `--json` reporting
-each directive as `applied` or `rejected` with a reason. The `@FILE` contract is `--define-
-function`'s (#374) verbatim, because that is what makes an override durable across runs.
+`--assert <directive> | @FILE`, repeatable, on `decompile`, `decompile-all`,
+`decompile-project` and `functions`.
 
-The in-process half is largely already built: `decompile_step::DecompileSeed` is the shared
-"console-only facts" carrier whose slices the whole-binary loop leaves empty, and
-`decompile_one` already contains a decompile → adjust → re-decompile loop. Staged as A (this
-need) / B (`no-cli-data-code-override`) / C (`no-cli-structuring-override`), so the siblings
-collapse into a directive-table row and a stub to wire rather than each burning a builder.
-
-## The acceptance probe
-
-`verify --acceptance-suite` reported this need **`unrunnable`** before this branch — "no
-acceptance probe on the record or in the probe store" — so nothing built on it could ever have
-been closed by `B_DONE`. It now carries `a-a58fc408288b`:
-
-```
-kuna decompile decompiler/crates/kuna-analysis/tests/fixtures/fauxware authenticate --json \
-  --assert 'prototype authenticate int4 authenticate(char *user,char *pass)' \
+```bash
+kuna decompile ./a.out authenticate --json \
+  --assert 'prototype authenticate int authenticate(char *user,char *pass)' \
   --assert 'type v2 char[16]' \
   --assert 'name v2 credbuf'
 ```
 
-asserting `assertions` has 3 rows all `applied`, and that the C contains
-`authenticate(char *user,char *pass)` and `char credbuf [16];` and no longer contains
-`char v2 [8]`.
-
-It is **runnable and failing**, which is exactly right for an unimplemented acceptance:
-
-```
-passed: false  unrunnable: false
-  exit_code   expected {"eq": 0}   actual 2       (error: unknown option --assert)
-  stdout_is_json   expected true   actual false
-  json[0..6]  <stdout is not JSON>
+```text
+- unsigned long authenticate(char *a0,char *a1)     - char v2 [8];
++ int authenticate(char *user,char *pass)           + char credbuf [16];
 ```
 
-Its target C is not aspirational — it was produced end-to-end by `decomp_dbg` at `e3db5512`,
-on that same in-repo fixture, by the exact console script Stage A would generate:
+Nine directives, keyed by **intent** rather than by phase — an agent should not have to know
+that renaming is P9 to rename something — each lowering to the console command that already
+implements it:
 
-```
-int4 authenticate(char *user,char *pass) // return-dupe x2
-{
-  char credbuf [16]; // stack - 0x18
-  int4 v1; // eax
-  ...
-```
+| directive | lowers to | writes at |
+|---|---|---|
+| `function <start>[-<end>][=<name>]` | `function bounds` | P1 (the `--define-function` spelling) |
+| `typedef <C declaration>` | `parse line` | P5 type-propagation |
+| `prototype <func> <C declaration>` | `parse line extern` | P4 prototype-source |
+| `data <addr> <C typedeclaration>` | `map address` | P5 const-pointer |
+| `param [<func>::]<i> <storage> <C typedecl>` | `map param` | P4 prototype-source |
+| `return [<func>::]<storage> <C typedecl>` | `map return` | P4 prototype-source |
+| `comment [<func>::]<addr> <text>` | `comment instruction` | P9 external-refinement |
+| `name [<func>::]<symbol> <newname>` | `rename` | P9 naming-policy |
+| `type [<func>::]<symbol> <C type>` | `retype` | P5 type-propagation |
 
-The engine already produces the acceptance output. Stage A is the path to it.
+**Machine-readable in, machine-readable out.** Every `--json` document grows an `assertions`
+array — one row per directive, in the caller's order, carrying the directive text, its phase
+and sub-phase, `applied` or `rejected`, and a reason. A rejection is also spoken on stderr on
+both surfaces, is non-fatal by default (a batch of forty renames against a re-decompiled
+binary must not lose the other thirty-nine to one stale name), and `--assert-strict` makes it
+the run's verdict.
+
+**Three slots, and the ordering is forced rather than stylistic.** Program-scoped directives
+are applied right after the analysis commit, for the same reason a declared boundary is: an
+assertion outranks discovery. Function-scoped ones become decompile seeds, because a
+prototype fact is consumed at flow time. Symbol-scoped ones (`name`, `type`) can only run
+*between two decompiles* — the local they name does not exist until one has produced it,
+which is exactly the bug that makes `--kassert p9 naming-policy` inert today. The second pass
+is emitted only when such a directive bound to the function, so **every run without one costs
+what it did before**. An unqualified directive on a multi-function run is rejected with a
+detail naming the `<func>::<operand>` form rather than applied to every function that happens
+to have a `v2`.
+
+`@FILE` is the durable form, the `--define-function` contract verbatim: kuna does not write
+assertions back into the image, so the file is the artifact.
+
+## Also fixed: `map return` aborted the process
+
+`map return <addr> <type>` killed the whole console the moment its function was decompiled —
+`outtype null`, `ParamListStandardOut::assignMap`. It parks OUTPUT-ONLY `PrototypePieces`
+(explicit storage, no declared return type) and `assignParameterStorage` dereferences
+`outtype` unconditionally. `FuncProto::seed_locked_from_pieces` already special-cased
+`outtype: None && output_storage: None`; the `Some` case fell through to the abort. The
+declared type *is* the return type. Fixed at the engine seam so every caller gets it, with a
+regression test that drives the drive with output-only pieces directly.
+
+## The filed hypothesis is overturned
+
+> ADVISORY. The cheap half is exposure [...] The expensive half is the stubs.
+
+The cheap half is **much larger** than filed — 11 console commands were measured reaching
+emitted C. The expensive half is **not** the stubs, whose engine entry points are all already
+ported: it was two *shipped* commands that lie. One (`map return`) is fixed here. The other
+(`override prototype`) is residue, and the proposal's own diagnosis of it (*"the `queryCall`
+consume is stubbed OR `applyPrototype` is wired — one is stale"*) is itself wrong: reading
+the whole chain, every link is present and looks correct — store, re-seed, install on the
+fresh `Funcdata`, `build_override_proto` builds a real locked `FuncProto` — and the C still
+does not change (re-measured on this branch: `strcmp` at `0x400689`, 2 params → 3, no
+change). Time-boxed per the dispatch; the `prototype` directive lowers to `parse line
+extern`, which is measured working and is what the acceptance asserts, so nothing shipped
+here depends on it. Per-call-site prototype override is worth its own need.
+
+`hypothesis_status` on the need record is reconciled from `upheld` to `overturned`, matching
+its `record.json` and the proposal's verdict.
+
+## Acceptance
+
+`a-a58fc408288b` — FAILED at `e3db5512` (`exit_code 2`, `error: unknown option --assert`),
+**PASS** here, all seven clauses. Promoted verbatim to
+`tests/cli/no-cli-rename-or-prototype-override.json` (in-repo fixture, so CI needs no
+dataset).
+
+## Every directive's test asserts the emitted C CHANGED
+
+Not that the command returned Ok — reviewing on the return value is how `override prototype`
+got shipped broken. `crates/kuna-console/tests/verify_assertplane.rs`, 11 tests, each a diff
+against the un-asserted baseline: prototype (signature + parameter names), param (locked
+input), return (locked output), name+type (`char v2 [8]` → `char credbuf [16]`), typedef+type
+(`creds v2;` / `v2.raw`), data (`sneaky` → `shadowpw` at the call), comment (`/* ... */` in
+the body), function (`authstub`, 28 bytes), plus directive ordering, the multi-function
+qualification rule, and the `map return` abort. `assertdecl` adds 9 syntax tests and
+`decompile.rs` 4 more for the script slots and the transcript reader.
+
+`label` (`map label`) is deliberately **not** shipped: it has no observable effect on emitted
+C on any fixture tried, so no test could satisfy that rule, and shipping it would have made
+this PR an instance of the failure mode it exists to close. Recorded as residue.
 
 ## Gates
 
-No source file changed, so no gate can move: the diff is `docs/features/no-cli-rename-or-
-prototype-override/{proposal.md,record.json,pr_body.md}`, `docs/re-needs/no-cli-rename-or-
-prototype-override.md` and the regenerated `docs/re-needs/index.json`.
+| gate | result |
+|---|---|
+| `make test` | **PARITY OK**, 675/675 |
+| `make test-stages` | **PARITY OK**, 603/603 |
+| `make rust-test` | green |
+| `make check-spec` | OK |
+| `kuna catalog --check` | OK |
+| `verify --need no-cli-rename-or-prototype-override` | acceptance **PASS** |
 
-- `python -m scripts.repipe.needs reindex` — 35 needs indexed, clean round-trip
-- `python -m scripts.repipe.verify --acceptance-suite --need no-cli-rename-or-prototype-override`
-  — `unrunnable: false`, `passed: false` (was `unrunnable: true` at `e3db5512`)
-- `kuna catalog --json` swept for a covering option: 137 rows, none matching
-  rename/retype/prototype-override — not a default-flip candidate
+No `phases.toml` row, no `options.rs` registration, no catalog counter, no `docs/options.md`
+regeneration, no DIV row and no `tests/stages/` case: a flag that only carries caller
+assertions cannot change emitted C for a run that does not pass one, and the tooling track
+scopes the stages corpus away from it. The parity corpora are structurally unaffected —
+symbol-less bytechunks driven by XML, with no CLI in the loop.
+
+**Deferred, not skipped:** the P4/P5/P9 `exposure` prose in `phases.toml`. That file was
+leased by `b-r2-ppc64-localentry` for this whole wave (captain dispatch item 2). It is prose,
+no gate reads it. Stage B (`no-cli-data-code-override`) and Stage C
+(`no-cli-structuring-override`) stay parked as their own needs and their own PRs.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)

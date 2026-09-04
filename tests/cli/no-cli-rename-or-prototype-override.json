@@ -1,0 +1,78 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "a-a58fc408288b",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "authenticate",
+    "--json",
+    "--assert",
+    "prototype authenticate int4 authenticate(char *user,char *pass)",
+    "--assert",
+    "type v2 char[16]",
+    "--assert",
+    "name v2 credbuf"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/fauxware",
+    "binary_sha256": "c2d90645a45e99221593547e55c601a901b80f807ae96f94c60a7661df0b3e0b",
+    "binary_size": 8776,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/fauxware",
+    "selector": "authenticate",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "json": [
+      {
+        "path": "assertions",
+        "op": "len_eq",
+        "value": 3
+      },
+      {
+        "path": "assertions[0].status",
+        "op": "eq",
+        "value": "applied"
+      },
+      {
+        "path": "assertions[1].status",
+        "op": "eq",
+        "value": "applied"
+      },
+      {
+        "path": "assertions[2].status",
+        "op": "eq",
+        "value": "applied"
+      },
+      {
+        "path": "functions[0].code",
+        "op": "contains",
+        "value": "authenticate(char *user,char *pass)"
+      },
+      {
+        "path": "functions[0].code",
+        "op": "contains",
+        "value": "char credbuf [16];"
+      },
+      {
+        "path": "functions[0].code",
+        "op": "not_contains",
+        "value": "char v2 [8]"
+      }
+    ]
+  },
+  "notes": "Desired: `--assert <directive>|@FILE` (repeatable), the one override plane. Three directives -- `prototype` (a C signature, lowering to `parse line extern`), `type` (`retype`) and `name` (`rename`) -- land in the emitted C, and each one's fate is reported in a machine-readable `assertions[]`. The asserted C was measured end-to-end through decomp_dbg at e3db5512. In-repo fixture: promotes verbatim."
+}
