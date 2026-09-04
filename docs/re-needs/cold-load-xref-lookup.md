@@ -14,7 +14,7 @@ rounds: [2]
 first_seen_round: 2
 attempts: 1
 covered_by_option: null
-touches: [decompiler/crates/kuna-cli]
+touches: [decompiler/crates/kuna-cli, decompiler/crates/kuna-analysis, decompiler/crates/kuna-sleigh]
 scope: small
 regression_of: null
 pr: null
@@ -141,3 +141,28 @@ _not yet refuted_
   AIF's gap-walk entries stop being seeds, so `kuna xrefs --from <addr>` on an AIF-only function
   answers 0 references (betaflight Cortex-M `0x806b798` 4->0, `0x801500e` 2->0; KeyVal2.exe 1->0 twice).
   `--mode aggressive` restores it. Attempt 2 needs that trade gated, not accepted.
+- round 2 B_PLAN (captain), **dispatch prep for attempt 2 — the branch MOVED, read this before
+  you go looking for it.** Attempt 1's two commits are intact at **`wip/re-cold-load-xref-lookup-a1`**
+  (`873d9e8c`), not at `feat/re-cold-load-xref-lookup`. The rename is mechanical, not a judgement
+  on the work: `spawn_builder` derives the branch as `feat/re-` + slug and `worker.sh` falls back
+  to a *silent detached* worktree when that name is already taken, so leaving attempt 1 parked on
+  it would have cost attempt 2 its branch. Its worktree was removed (clean, nothing uncommitted);
+  the commits are only on that local branch, still unpushed. **Attempt 2 starts by taking that work
+  over** — `git merge wip/re-cold-load-xref-lookup-a1` or `git reset --hard` onto it, then rebase on
+  main (it is based on `e3db5512`, several merges behind) — it does NOT reimplement 487 lines that
+  already measure -69.6% with byte-identical output and four green gates.
+- round 2 B_PLAN (captain), **what attempt 2 actually owes**, both blockers named by attempt 1
+  itself: (1) the recall regression is the real blocker and it must be *gated*, not accepted —
+  dropping the Listing tier loses AIF gap-walk seeds, so `kuna xrefs --from` on an AIF-only
+  function answers 0 (betaflight `0x806b798` 4->0, `0x801500e` 2->0; KeyVal2.exe 1->0 twice).
+  Correct output at 3.4 s beats wrong output at 1.0 s; a fix that ships the regression will be
+  rolled back at B_VERIFY. (2) the acceptance bar `wall_ms median < 1000` is ~90-130 ms below what
+  attempt 1 reached and this box's run-to-run spread is 727-1150 ms, so the remaining work is a
+  further real cut, not a re-measurement. **The probe is not relaxed** — same standing rule as
+  `decompiling-3396-byte-main`. If attempt 2 lands a correct, gated -70% that still misses 1000 ms,
+  that is a merged PR and an open need, exactly like #380.
+- round 2 B_PLAN (captain): `touches` widened from `[kuna-cli]` to `[kuna-cli, kuna-analysis,
+  kuna-sleigh]` to match what attempt 1's diff actually edits (`listing/xrefs.rs`,
+  `listing/kuna_picbase.rs`, `sleigh.rs`). No new resource lease results — `perf` is not in
+  `TRACK_RESOURCES` and none of those paths map to a counter — so this only makes the siblings'
+  contracts file honest.

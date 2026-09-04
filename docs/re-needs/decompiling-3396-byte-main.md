@@ -12,12 +12,12 @@ instances: 1
 challenges: [69a3822f7b3cc38c80464da4]
 rounds: [2]
 first_seen_round: 2
-attempts: 1
+attempts: 2
 covered_by_option: null
-touches: [decompiler/crates/kuna-decomp]
+touches: [decompiler/crates/kuna-decomp, decompiler/crates/kuna-console]
 scope: small
 regression_of: null
-pr: 380
+pr: 385
 closed_in_round: null
 closing_pr: null
 reject_reason: null
@@ -161,3 +161,32 @@ _none recorded_
 - round 2 BUILDER (b-r2-decompiling-3396) + captain B_DONE: **PR #380 merged and the need STAYS OPEN.** The fix is real and large -- `stop re-deriving dead-list position by scanning`, 71.46 s -> 19.42 s (-72.8%) on this witness with output byte-identical over 509 functions, verified green on merged main 6ce857c4 (four gates + catalog + 15/15 clitests). But acceptance `a-53d616afcb6a` asks for a median under 10,000 ms and the probe measured **18,762 ms** at 6ce857c4, so the `wall_ms` clause FAILS while `exit_code` passes. attempts -> 1, `pr: 380`, `closing_pr` stays null: only the acceptance probe may close a need.
 - round 2 captain: **the probe is NOT relaxed, and that is the decision, not an oversight.** Re-cutting the bar to match what shipped would redefine `closed` as "a builder tried" instead of "the agent's task now works"; 10 s is the tester's interactive threshold, which is the thing the need is about. This is also not contention -- the builder's own interleaved A/B measured 18.44/23.35/21.79/19.42/18.84 s and its PR body says the bar is unmet in as many words. Do not re-run the probe hoping for a better number.
 - round 2 captain, **brief for the next attempt (attempt 2)**: #380 names where the residue sits -- rule pool 19.8%, jump-table sub-decompilation 17.4%, p9 dead-code/emit 13.7%. There is no single quadratic left; closing this needs roughly another -50% spread across three phases, which is a materially harder job than attempt 1. So this need is dispatchable but should rank BEHIND needs no builder has attempted yet, and whoever takes it must be told up front that one attempt may not reach the bar. Hand them #380's profile as the starting point rather than letting them re-profile from scratch.
+- round 2 B_PLAN (captain), **frontmatter correction: this need has had TWO attempts, not one.**
+  `attempts: 1` / `pr: 380` were stale — attempt 2 shipped as **#385** (`e94a1a68`, follow the
+  function's flow once, not twice) and its result is already written up in the prose above
+  (14,437 ms against the `< 10,000 ms` bar), but the merge never wrote the fields because a
+  `worker.sh` re-entry clobbered that builder's phase and no `apply-acceptance` ran for it
+  (nothing closed). Set to `attempts: 2`, `pr: 385`; `closing_pr` stays null. **A dispatch from
+  here is attempt 3.**
+- round 2 B_PLAN (captain), **dispatch prep.** The stale local branch `feat/re-decompiling-3396-byte-main`
+  (`679f4a70`, the captain-preserved salvage tree that became #385) was renamed to
+  `wip/re-decompiling-3396-salvage-a2` and its worktree removed, so the name `spawn_builder` derives
+  is free and attempt 3 gets a real attached branch off main rather than `worker.sh`'s silent
+  detached fallback. Nothing was deleted; #385's content is in main via the squash.
+- round 2 B_PLAN (captain), **brief for attempt 3 — inherit, do not re-profile.** Two attempts have
+  already taken 71.46 s -> 19.42 s (#380) -> 14.44 s (#385), so the cheap quadratics are gone and the
+  remaining ~31% is spread across the residue #380/#385 measured: rule pool, jump-table
+  sub-decompilation, p9 dead-code/emit; `bb_ops` did NOT survive re-measurement and is not a lead.
+  Read `docs/features/decompiling-3396-byte-main/record.json` first — it carries both attempts'
+  profiles. Two harness facts that cost attempt 2 the most to learn and that attempt 3 must not
+  rediscover: `kuna decompile` FORKS `decomp_dbg` and eats its stderr (profile `--json` and
+  instrument to a file), and only an **interleaved paired A/B** survives this box's load — a
+  sequential timeit here has reported +42% on byte-identical output. **This need may legitimately
+  not close on this attempt**; a merged, measured, output-identical cut that still misses 10 s is a
+  success by every rule this loop has, and the bar is not moved to meet it.
+- round 2 B_PLAN (captain): `touches` widened to include `decompiler/crates/kuna-console` — #385
+  landed mostly there (`ifacedecomp.rs`, `decompile_step.rs`) and the declared surface said only
+  `kuna-decomp`. Adds no lease (perf holds none); it makes the sibling contract honest. Live sibling
+  `b-r2-c-string-objects` is editing `kuna-decomp/src/p5_types/`, `p0_knowledge/`,
+  `infra/architecture.rs` and `substrate/context.rs` — none of attempt 3's leads, but expect to
+  rebase after it merges.

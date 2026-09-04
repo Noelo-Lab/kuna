@@ -591,38 +591,6 @@
       "path": "docs/re-needs/cli-mode-read-raw.md"
     },
     {
-      "need_id": "decompiling-3396-byte-main",
-      "title": "Decompiling the 3396-byte main function takes about 68 seconds",
-      "track": "perf",
-      "status": "open",
-      "severity": "major",
-      "probe_id": "p-a9ebf39dace0",
-      "acceptance_id": "a-53d616afcb6a",
-      "hypothesis_status": "inconclusive",
-      "credibility": 0.7,
-      "instances": 1,
-      "challenges": [
-        "69a3822f7b3cc38c80464da4"
-      ],
-      "rounds": [
-        2
-      ],
-      "first_seen_round": 2,
-      "attempts": 1,
-      "covered_by_option": null,
-      "touches": [
-        "decompiler/crates/kuna-decomp"
-      ],
-      "scope": "small",
-      "regression_of": null,
-      "pr": 380,
-      "closed_in_round": null,
-      "closing_pr": null,
-      "reject_reason": null,
-      "score": 9.241962,
-      "path": "docs/re-needs/decompiling-3396-byte-main.md"
-    },
-    {
       "need_id": "no-cli-data-code-override",
       "title": "an agent cannot mark a range as code or data, or set a type at an address",
       "track": "tooling",
@@ -745,6 +713,39 @@
       "reject_reason": null,
       "score": 9.241962,
       "path": "docs/re-needs/whole-binary-json-untriageable.md"
+    },
+    {
+      "need_id": "decompiling-3396-byte-main",
+      "title": "Decompiling the 3396-byte main function takes about 68 seconds",
+      "track": "perf",
+      "status": "open",
+      "severity": "major",
+      "probe_id": "p-a9ebf39dace0",
+      "acceptance_id": "a-53d616afcb6a",
+      "hypothesis_status": "inconclusive",
+      "credibility": 0.7,
+      "instances": 1,
+      "challenges": [
+        "69a3822f7b3cc38c80464da4"
+      ],
+      "rounds": [
+        2
+      ],
+      "first_seen_round": 2,
+      "attempts": 2,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-decomp",
+        "decompiler/crates/kuna-console"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": 385,
+      "closed_in_round": null,
+      "closing_pr": null,
+      "reject_reason": null,
+      "score": 6.931472,
+      "path": "docs/re-needs/decompiling-3396-byte-main.md"
     },
     {
       "need_id": "disassembling-non-executable-rdata",
@@ -892,7 +893,9 @@
       "attempts": 1,
       "covered_by_option": null,
       "touches": [
-        "decompiler/crates/kuna-cli"
+        "decompiler/crates/kuna-cli",
+        "decompiler/crates/kuna-analysis",
+        "decompiler/crates/kuna-sleigh"
       ],
       "scope": "small",
       "regression_of": null,
