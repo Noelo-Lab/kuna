@@ -57,23 +57,42 @@ It is a pure-performance seam: the adopted `Funcdata` is the one the rebuild wou
 have produced, so the emitted C is byte-identical either way. No option, no
 `phases.toml` row, no catalog counter, no DIV — nothing here can change emitted C.
 
-Guard 2 is not hypothetical. The first cut had it missing and
-`verify_decompile_all_parity` caught it: with `--option formatstring on` the ARM
-fixture rendered `printf((char *)(dat_52c + 0x51c), a0, *a1)` instead of
-`printf("%d %s\n", a0, (char *)*a1)`, because `formatstring` turns read-only
-propagation on *around* the drive so the PC-relative literal-pool format constant
-can be read, and the adopted IR had snapshotted the flag off.
+Guard 2 is not hypothetical, and it was re-verified rather than assumed. A build
+with `same_config` forced true renders, for `fmt_arm::main` under `--option
+formatstring on`:
+
+```c
+printf((char *)(dat_52c + 0x51c),a0,*a1);   // guard 2 removed
+printf("%d %s\n",a0,(char *)*a1);           // shipping
+```
+
+`formatstring` turns read-only propagation on *around* the drive so the
+PC-relative literal-pool format constant can be read, and the adopted IR had
+snapshotted the flag off. It is ARM-specific — the same A/B on `fmt_x86_64` and
+`fmt_aarch64` is byte-identical — so a sweep without an ARM literal-pool case
+would have missed it.
 
 ## Measurement
 
-`kuna decompile <crackme> sub_140023350`, interleaved A/B, same worktree, base
-binary and new binary alternating in one loop:
+`kuna decompile <crackme> sub_140023350`, **interleaved** A/B — one loop
+alternating the two arms per iteration, so both see the same machine load (three
+sibling builders were running; load average 8–24 across the measurement). The two
+arms are builds of this same worktree differing only in the adoption guard, chosen
+per run via `KUNA_DECOMP_DBG`, so the driver, the generated script and the loaded
+image are identical between them.
 
-| | median | min |
-|---|---|---|
-| base (`origin/main`) | BASE_MEDIAN | BASE_MIN |
-| this PR | NEW_MEDIAN | NEW_MIN |
-| | **DELTA_PCT** | |
+| 7 pairs | median | min | max |
+|---|---|---|---|
+| base (adoption off ≡ `origin/main`) | 19,703 ms | 18,537 ms | 21,103 ms |
+| this PR | **15,317 ms** | 13,967 ms | 18,929 ms |
+| delta | **−22.26 %** | −24.66 % | |
+
+Paired mean −20.58 % ± 7.80 (sd) over 7 pairs → **7 σ**, and ≥20 % on the median,
+the min and the paired mean — past both bars the perf track sets. A single-arm
+before/after would not have been trustworthy here: the *same* binary measured
+14.6 s and 18.9 s hours apart on this box.
+
+The C emitted by the two arms on the witness is byte-identical (`cmp`).
 
 Where it goes, from `Instant`-instrumented builds of the same tree:
 
@@ -139,14 +158,28 @@ structural leads (the per-table partial rebuild, blocked because kuna's
 
 | gate | result |
 |---|---|
-| `make test` | **PARITY OK** (675/675, `docs/baseline.json` untouched) |
-| `make test-stages` | **PARITY OK** (`docs/baseline-stages.json` untouched) |
+| `make test` | **PARITY OK** — 675/675, `docs/baseline.json` untouched |
+| `make test-stages` | **PARITY OK** — 600/600, `docs/baseline-stages.json` untouched |
 | `make rust-test` | RUSTTEST |
+| `make test-cli` | tests/cli: **17/17 passed** |
 | `make check-spec` | check-spec OK |
 | `kuna catalog --check` | catalog OK (no option added) |
 
-Whole-surface regression sweep — `kuna decompile <bin> <addr> --addr` run under
-the base binary and this one and byte-compared, stdout **and** stderr **and** exit
-code, over every function of three binaries: SWEEPLINE.
+## Whole-surface regression sweep
+
+`kuna decompile <bin> <fn>` run under both arms and byte-compared (stdout and exit
+code) over **218 functions in 20 binaries** — x86-64, i386, aarch64, ARM, ARM
+Thumb, Cortex-M, RISC-V 64; ELF exe/PIE/`.so` and PE32+ — with DWARF, stripped and
+C++-mangled cases among them.
+
+**218 compared, 0 diffs.** And, measured separately with a third instrumented
+build, **203 of the 218 actually took the adopt path**; the other 15 are the seed
+guard firing as designed (DWARF stack locals, parsed prototypes, the PE CRT) and
+are byte-identical through the fallback arm.
+
+That second number is the one worth stating, because the obvious way to get it is
+wrong: `kuna` pipes the child `decomp_dbg`'s stdout *and* stderr and only surfaces
+them on failure, so an `eprintln!` marker is swallowed and a naive count reads
+**0 adoptions on a run that adopted 203 times**.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
