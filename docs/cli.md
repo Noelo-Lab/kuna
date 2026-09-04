@@ -519,7 +519,7 @@ A target nothing references is exit `0` with `count: 0` — an answer, not a
 failure. A name that resolves to nothing is exit `1` with the reason on stderr; a
 malformed command line is exit `2` with the usage block.
 
-## `kuna disassemble` — instructions, when the pseudocode is not enough
+## `kuna disassemble` / `kuna read` — instructions or bytes, when the pseudocode is not enough
 
 ```bash
 kuna disassemble ./a.out main                    # a function, whole extent
@@ -527,6 +527,8 @@ kuna disassemble ./a.out main --json             # machine-readable
 kuna disassemble ./stripped.bin 0x8049850 --addr # a raw address
 kuna disassemble ./a.out 0x1140-0x11a0           # an explicit range
 kuna disassemble ./a.out 0x2010 --addr --bytes 64  # bytes no function owns
+kuna read ./a.out 0x100003f30 --addr --bytes 96  # a hexdump of a data address
+kuna disassemble ./packed.bin 0x2010 --addr --as code   # decode data as code anyway
 ```
 
 The floor to fall back to when the ceiling gives way. Every RE agent that asked
@@ -544,9 +546,9 @@ The target is a **name**, an **address**, or a **range**:
 | `0x8049850` (`--addr` for bare hex) | That function's extent if the address is a discovered entry; otherwise 64 bytes from exactly there. |
 | `0x1140-0x11a0`, `0x1140..0x11a0` | Exactly that half-open span — the direct replacement for `objdump -d --start-address=.. --stop-address=..`. |
 
-`--count N` stops after N instructions and `--bytes N` after N bytes; either
+`--count N` stops after N listed entries and `--bytes N` after N bytes; either
 overrides the derived extent, and a listing stops at whichever limit it reaches
-first. Also accepted: `--json` plus the shared `--mode`, `--option N V`,
+first. Also accepted: `--as`, `--json`, plus the shared `--mode`, `--option N V`,
 `--slice`, `--target`, `--sleighpath`.
 
 ```
@@ -569,21 +571,66 @@ space between mnemonic and operands — the same spelling `kuna xrefs` puts in i
 JSON. `--json` emits
 
 ```json
-{"binary": "...", "target": {"name","address","address_hex"},
+{"binary": "...", "kind": "code", "target": {"name","address","address_hex"},
  "start": N, "start_hex": "0x..", "end": N, "end_hex": "0x..",
- "count": N, "bytes": N, "truncated": false,
+ "count": N, "bytes": N, "truncated": false, "notes": [],
  "instructions": [{"address","address_hex","size","bytes","mnemonic","operands","text"}]}
 ```
 
 `bytes` on a row is that instruction's own bytes as contiguous lowercase hex
 (`"4889e5"`); `end` is one past the last instruction actually listed, so a
-truncated listing hands back the address to resume from.
+truncated listing hands back the address to resume from. `kind` is `"code"` here
+and `"data"` in the byte view below.
 
 Bytes the translator will not decode are listed in place as `.byte 0x<nn>` rows,
 one byte each, and the walk continues — a listing that ran into inline data says
-so where it happened instead of stopping silently. That is what makes the command
-usable on a **data** address: point it at a blob, a jump table, or a decrypted
-payload dumped to a file, and it prints what is there.
+so where it happened instead of stopping silently.
+
+### The byte view
+
+An instruction listing is the wrong answer for a data address, and for a while it
+was the only one on offer. An agent that asked kuna for the encoded globals at
+`0x100003f30` got `ADD byte ptr [RCX],AL` / `OR CL,byte ptr [RBX]` — a correct
+decode of `00 01 02 03 ..` and a lie about the program — and left for `xxd`.
+
+So the target picks its own rendering, and `--as` overrides it:
+
+| `--as` | What is listed |
+|---|---|
+| `auto` (default for `disassemble`) | Instructions, unless the start address is in a section the loader marks as data and not as code (`.rdata`, `.rodata`, `__TEXT,__const`) — then bytes, with the reason on **stderr**. A discovered function entry is always code, wherever it was linked. |
+| `code` | Instructions, whatever the section says. A packer puts real code in `.data`. |
+| `data` (default for `kuna read`) | Bytes, whatever the section says. |
+
+`kuna read` is the same command with `--as data` as its default — the spelling to
+reach for when what you want is the bytes, not a view of them as instructions.
+
+```
+$ kuna read ./crackme 0x100003f30 --addr --bytes 96
+# 96 bytes at 0x100003f30 (0x100003f30..0x100003f90)
+0x100003f30   00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f  |................|
+0x100003f40   10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10  |................|
+0x100003f50   20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20  |                |
+0x100003f60   25 73 00 43 72 61 63 6b 6d 65 20 4c 65 76 65 6c  |%s.Crackme Level|
+```
+
+Sixteen bytes a row, space-separated, with the printable-ASCII gutter — `xxd -g1`
+with kuna's own address column, so the two are diffable. `--json` replaces
+`instructions` with the contiguous span and its rows:
+
+```json
+{"binary": "...", "kind": "data", "target": {...},
+ "start": N, "start_hex": "0x..", "end": N, "end_hex": "0x..",
+ "count": N, "bytes": N, "truncated": false, "notes": ["..."],
+ "hex": "000102030405060708090a0b0c0d0e0f",
+ "rows": [{"address","address_hex","size","bytes","ascii"}]}
+```
+
+`hex` is the whole span in one piece and `rows[].bytes` is that same string cut
+into sixteens — use either, never both. `count` is the number of listed entries
+in both views (instructions, or hexdump rows); `bytes` is the span. A byte view
+honors the requested end exactly, where an instruction listing overshoots to the
+end of the instruction that straddles it. `notes` carries anything the command
+would have said on stderr, so a `--json` caller never has to read two streams.
 
 A listing whose length nobody asked for is capped at 1024 instructions, flagged
 `truncated` and marked in the header. The extent is only an upper bound — clipped

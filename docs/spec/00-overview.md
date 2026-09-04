@@ -222,6 +222,29 @@ Four front-ends drive one engine assembly:
   (`decompiler/crates/kuna-wasm/src/classify.rs`), which a name test cannot do:
   loader names are demangled (`CellClass::Cell_Coord`) and symbol-table names are
   not.
+
+  (kuna) **The listing surfaces read the same section flags to choose a view.**
+  `kuna disassemble` and its `kuna read` spelling
+  (`decompiler/crates/kuna-cli/src/disassemble.rs (render)`) are one command with
+  two renderings of one walk: decoded instructions, or the bytes as a hexdump
+  with an ASCII gutter and, under `--json`, the span as one contiguous hex
+  string. `--as code|data|auto` selects, and `auto` — the default for
+  `disassemble`, where `read` defaults to `data` — decides from the loader's own
+  classification of the section holding the start address
+  (`decompiler/crates/kuna-cli/src/disassemble.rs (decide_view)`): a section
+  carrying `DATA` without `CODE`
+  (`decompiler/crates/kuna-sleigh/src/loadimage.rs (section_flags)`) holds bytes,
+  so it is shown as bytes. Two exceptions keep the inference honest. A target that
+  resolved to a discovered function entry is code wherever it was linked, so it is
+  never reclassified; and an address in no section the loader published — the XML
+  `<binaryimage>` corpus, a raw blob — is silence rather than evidence and keeps
+  the instruction listing. Only an inferred flip is explained, on stderr and in
+  the JSON `notes`, so `--json` stdout stays one document; an explicit `--as` is
+  the caller's decision and is not narrated back at them. This exists because the
+  instruction view alone is a wrong answer that reads like a right one: `.rdata`
+  and `__TEXT,__const` decode perfectly well into `ADD`/`OR` rows that describe
+  nothing in the program, which is what sent two RE-loop testers to `xxd` and
+  `objdump -s` (`docs/re-needs/cli-mode-read-raw.md`).
 - **`kuna_ghidra`** (`decompiler/crates/kuna-ghidra/src/bin/kuna_ghidra.rs`) —
   the ghidra-mode process front-end: the stock Ghidra GUI spawns it as its
   decompiler core and talks the burst-framed stdin/stdout protocol
