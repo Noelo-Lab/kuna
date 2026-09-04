@@ -99,6 +99,64 @@ direct-address-keyboard-handler` reports `pass 1 / fail 0 / closed 1`.
   `binary_source: dataset` and CI has no dataset, so the probe points at an in-repo twin
   built from the same shape.
 
+## Adversarial verification
+
+Every number below was measured on this branch, on a freshly built tree. The mechanism was
+committed by an earlier attempt that ran out of budget before it could open a PR; none of its
+claims were taken on trust.
+
+**The wrongness question was asked, and it has an answer.** The rule's evidence is the *frame*,
+not the function bound — and a kuna `FunctionSymbol` has no extent, so nothing at this seam can
+ask whether `dest` is still inside the caller. A function that tears its frame down
+**completely** and then jumps to a shared `ret` in its own body is therefore recovered as a tail
+call. Built as a 27-byte x86-64 ELF, the default arm fabricates `return sub_401021();` — a call
+to a bare `ret` in the same function. That is a real defect and it is named in the module
+header, the spec chapter and the DIV row rather than hidden.
+
+**It is not reachable from compiler output, and that is measured, not argued.** The predicate was
+re-implemented statically over disassembly and run across **60 unstripped x86-64 ELFs /
+26,110 sized `FUNC` symbols**, which carry **65,361** sites of the raw shape (an intraprocedural
+`jmp` immediately preceded by a stack teardown) and **0** that satisfy the exact cancellation.
+The structural reason is that a shared return sequence has to be shared *including* its
+teardown, so the jump is emitted part-way through the epilogue and the epilogue delta is a
+**partial** teardown — gcc and clang at `-O1/-O2/-O3/-Os` all emit `add rsp,0x68; jmp <shared
+tail>` against a `-0x70` prologue, which the existing `partial_teardown_declines` unit test
+pins. The one full six-register teardown found in real LLVM `-O2` output declines because its
+prologue is shrink-wrapped out of the entry block. The sound fix — defer the decision until the
+flow work-stack drains, then ask whether the function decoded `dest` by another path — is a
+change to the flow walk's *ordering* rather than to this predicate, and is left as follow-up.
+
+**One earlier claim is corrected.** The DIV row explained the clean compiler-built sweep with
+"where discovery works, `tailcalljump` already owns the jump and this rule is never asked."
+That is false: this rule is asked for every direct `BRANCH` whose target is not a known function
+*entry*, which includes every ordinary intraprocedural label. What actually rejects compiler
+output is the exact-cancellation clause. The row now says so.
+
+### Blast radius
+
+| Surface | Result |
+|---|---|
+| Static predicate over disassembly, 60 unstripped ELFs / 26,110 functions | 65,361 raw-shape sites, **0 would-fire** |
+| `decompile-all` A/B, 70 symbolized compiler-built ELFs (`/usr/bin`, `/usr/sbin`) | **0 firings, 0 differing** |
+| `decompile-all` A/B, 32 stripped static crackmes | **19 firings, 6 binaries differ** |
+| Address-level A/B, 581 addresses across 43 crackmes | 1 firing, 1 differing |
+
+**All 19 firings were read line by line. All 19 are improvements; there are no degradations,
+and the emitted function count is identical on both arms.**
+
+- `luv4u` `0x2100` goes from a **hard failure** — `(error: Unable to load 512 bytes at
+  r0x0002a000)` — to a fully decompiled body ending in `sub_2a000()`.
+- `63a85e1f…/crackme` `sub_424ac0` is a `strdup`. Off, it is `undefined16 sub_424ac0(...)` with
+  **two uninitialized reads** (`v3 = v2;` and `v1._0_8_ = v6;`, neither ever assigned) and a
+  garbage `return v1 << 0x40`. On, it is the correct
+  `v1 = strlen(); v2 = malloc(v1+1); if (v2) return memcpy(v2,a0,v1+1); return 0;`.
+- `WeeperVM--Level_2` `sub_13480` stops emitting `syscall(); return 0xe7;` — `0xe7` is the
+  `exit_group` syscall *number*, rendered as a return value — and emits `sub_132ab(0xffffffff)`,
+  keeping the argument.
+- The remaining 17 turn a bogus `(*dat_4d1038)(...)` indirect call through an IFUNC GOT slot
+  into a named direct call to the stub, `sub_401038(...)` — the same boundary `tailcalljump`
+  draws when the stub *is* discovered.
+
 ## Gates
 
 | Gate | Result |

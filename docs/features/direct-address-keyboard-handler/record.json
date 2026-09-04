@@ -4,13 +4,18 @@
   "option": "tailcallframe",
   "div": "DIV-109",
   "scope": "small",
-  "status": "implemented",
+  "status": "verified",
   "decisions": [
     "HYPOTHESIS PARTLY OVERTURNED. The need blamed 0x6500's own absence from the discovered function map. 0x6500 being undiscovered is why the agent had to ask by address at all, but it is NOT what causes the annexation: the tail-jump TARGET 0x4610 is the address that is missing. Proof: `map function 0x4610 renderer` in decomp_dbg, with 0x6500 mapped exactly as before, alone takes the output 1555 -> 440 lines.",
     "NOT COVERED BY AN EXISTING OPTION. Swept the catalog and re-ran the probe under --mode fast/aggressive, --option fast_funcdisc on, ptrentry on, listing on + aif on, eh_frame_full on: all six give byte-identical 1555-line output. tailcalljump is default-on (DIV-13) and cannot fire, because query_call(0x4610) is None.",
     "WHY DISCOVERY WAS NOT THE FIX. 0x6500 is reachable only through a wl_keyboard_listener code pointer in .data.rel.ro, so the recursive-descent walk never enters it and never sees its own `call 0x4610`. Closing this in the discovery tier means a code-pointer-in-data oracle in kuna-analysis/src/listing, which another builder holds this round, and it changes emitted C by construction across every binary. The need's own `touches` is kuna-decomp and its scope is small; the P2 flow seam is where a bounded, gateable decision fits.",
     "THE SCAN MUST BE PER-INSTRUCTION, NOT PER-OP. An x86 `call` lowers to `SP = SP - 8` and a return-address store BEFORE its CPUI_CALL, so an op-at-a-time scan that stops AT the flow op has already charged the run a phantom push. That silently declined every function whose entry block contains a call: 2 of the 4 witnesses in the witness binary (0x63d0, 0x6d40) did not fire until the scans were rewritten to summarize a whole instruction address group and consult its `flow` flag before its `delta`.",
-    "PROMOTION REFUSED AS PREDICTED. `verify --promote` refuses the acceptance because target.binary_source is 'dataset'. A minimal in-repo twin was built instead (fixtures/tailcallframe_x86_64 + its .c) and tests/cli/direct-address-keyboard-handler.json points at that, so CI has a runnable regression test."
+    "PROMOTION REFUSED AS PREDICTED. `verify --promote` refuses the acceptance because target.binary_source is 'dataset'. A minimal in-repo twin was built instead (fixtures/tailcallframe_x86_64 + its .c) and tests/cli/direct-address-keyboard-handler.json points at that, so CI has a runnable regression test.",
+    "ATTEMPT 2 RE-VERIFIED EVERY ATTEMPT-1 CLAIM ON A FRESH BUILD; none were taken on trust. All four gates plus the acceptance are green (see `gates`). The rc=2 that stopped attempt 1 was the worktree environment, not the code: `KUNA_DECOMP_TEST` was exported into its shell, and with it unset `make rust-test` is rc=0. The 148 `.sla` are correctly symlinked into the worktree's `specs/`, so the spec-resolution trap was never armed.",
+    "THE FILED WRONGNESS RISK IS REAL AND IS NOW NAMED. Adversarial refutation (standing requirement: refute against WRONGNESS, not just against no-op) found a shape the predicate mis-classifies: a function that tears its frame down COMPLETELY and then jumps to a shared `ret` inside its own body is recovered as a tail call, because a kuna `FunctionSymbol` has no extent and the rule cannot ask whether `dest` is still inside the caller. Built as a 27-byte x86-64 ELF (`shared_epi`): the default arm fabricates `return sub_401021();` -- a call to a bare `ret` in the same function -- and changes the return type. This is a genuine defect of the mechanism, documented in the module header, the spec chapter and the DIV row rather than hidden.",
+    "IT IS NOT REACHABLE FROM COMPILER OUTPUT, AND THAT IS MEASURED, NOT ARGUED. The predicate was re-implemented statically over disassembly and run across 60 unstripped x86-64 ELFs / 26,110 sized FUNC symbols: 65,361 sites carry the raw shape (an intraprocedural `jmp` immediately preceded by a stack teardown) and ZERO satisfy the exact cancellation. The structural reason is that a shared return sequence must be shared INCLUDING its teardown, so the jump is emitted part-way through the epilogue and the epilogue delta is a partial teardown -- gcc and clang at -O1/-O2/-O3/-Os all emit `add rsp,0x68; jmp <shared tail>` against a `-0x70` prologue, which `partial_teardown_declines` already pins. The one full six-register teardown found in real LLVM -O2 output (`kuna` 0x71cc90) declines because its prologue is shrink-wrapped out of the entry block. The sound fix -- defer the decision until the flow work-stack drains, then ask whether the function decoded `dest` by another path -- is a change to the flow walk's ORDERING rather than to this predicate, and is left as follow-up.",
+    "ATTEMPT 1'S HEADLINE SWEEP NUMBER WAS MISLEADING BY OMISSION, AND ITS EXPLANATION WAS WRONG. Its '62 binaries, 0 firings' was measured only on compiler-built binaries, where the option is inert; and the DIV row explained that with 'where discovery works, tailcalljump already owns the jump and this rule is never asked', which is FALSE -- the rule is asked for every direct BRANCH whose target is not a known function ENTRY, including every ordinary intraprocedural label. Corrected in `docs/history.md`. On stripped, statically-linked crackmes the option DOES fire: 32 binaries whole-binary A/B, 19 firings, 6 binaries differing, 113/8/4/6/13/5 changed lines.",
+    "ALL 19 FIRINGS WERE READ LINE BY LINE AND ALL 19 ARE IMPROVEMENTS; ZERO DEGRADATIONS. (a) `luv4u` 0x2100 goes from a HARD FAILURE, `(error: Unable to load 512 bytes at r0x0002a000)`, to a fully decompiled body ending in `sub_2a000()`. (b) In `63a85e1f.../crackme`, `sub_424ac0` (a `strdup`) goes from `undefined16 sub_424ac0(...)` with TWO uninitialized reads (`v3 = v2;` and `v1._0_8_ = v6;`, neither ever assigned) and a garbage `return v1 << 0x40` to the correct `unsigned long ... { v1 = strlen(); v2 = malloc(v1+1); if (v2) return memcpy(v2,a0,v1+1); return 0; }`. (c) The remaining 17 turn a bogus `(*dat_4d1038)(...)` indirect call through an IFUNC GOT slot into a named direct call to the stub, `sub_401038(...)` -- the same boundary `tailcalljump` draws when the stub IS discovered. (d) In `WeeperVM--Level_2`, `sub_13480` stops emitting `syscall(); return 0xe7;` (0xe7 is the exit_group syscall NUMBER, rendered as a return value) and emits `sub_132ab(0xffffffff)`, keeping the argument. Emitted function count is identical on both arms (1,168 in the largest binary), so nothing leaves the inventory."
   ],
   "tests": {
     "stages": "tests/stages/tailcallframe.xml (two-pass, 4 assertions; 605 -> 609)",
@@ -19,11 +24,12 @@
     "cli_probe": "tests/cli/direct-address-keyboard-handler.json (in-repo twin of the dataset acceptance)"
   },
   "gates": {
-    "make_test": "PARITY OK 675/675",
+    "make_test": "PARITY OK 675/675 (docs/baseline.json unmoved)",
     "make_test_stages": "PARITY OK 609/609",
+    "make_rust_test": "rc=0 green (with KUNA_DECOMP_TEST unset)",
     "make_check_spec": "OK",
     "catalog_check": "catalog OK",
-    "acceptance": "PASS (a-f13adb91d5d4)"
+    "acceptance": "PASS (a-f13adb91d5d4), re-run on a freshly built tree"
   },
   "witness": {
     "binary": "lugosiii (challenge 6989ca5da15272fa37a80c43)",
@@ -32,11 +38,43 @@
     "lines_after": 427
   },
   "sweep": {
-    "whole_binary_ab": {"binaries": 62, "firings": 0, "differing": 0},
-    "address_level_ab_crackmes": {"binaries": 8, "addresses": 377, "firings": 0, "differing": 0},
-    "address_level_ab_witness": {"addresses": 32, "firings": 4, "differing": 4, "all_read": true}
+    "static_predicate_over_disassembly": {
+      "binaries": 60,
+      "sized_func_symbols": 26110,
+      "raw_shape_sites": 65361,
+      "would_fire": 0
+    },
+    "whole_binary_ab_compiler_built": {
+      "binaries": 70,
+      "firings": 0,
+      "differing": 0,
+      "note": "/usr/bin + /usr/sbin symbolized ELFs, decompile-all A/B"
+    },
+    "whole_binary_ab_stripped_crackmes": {
+      "binaries": 32,
+      "firings": 19,
+      "differing": 6,
+      "all_hunks_read": true,
+      "improvements": 19,
+      "degradations": 0
+    },
+    "address_level_ab_crackmes": {
+      "addresses": 581,
+      "firings": 1,
+      "differing": 1
+    },
+    "attempt1_reported": {
+      "whole_binary": {
+        "binaries": 62,
+        "firings": 0,
+        "differing": 0
+      },
+      "note": "compiler-built only; re-measured and reproduced, but it does not exercise the option"
+    }
   },
   "speed_delta_pct": -92.95,
   "speed_samples": 7,
-  "speed_note": "-92.95% on the witness function (it stops decompiling 1,100 lines it never should have had). On a byte-identical binary (coreutils dd, decompile-all, 5 interleaved pairs): -0.9% min / +3.5% mean, i.e. noise."
+  "speed_note": "-92.95% on the witness function (it stops decompiling 1,100 lines it never should have had). On a byte-identical binary (coreutils dd, decompile-all, 5 interleaved pairs): -0.9% min / +3.5% mean, i.e. noise.",
+  "attempts": 2,
+  "known_limit": "A fully-torn-down intraprocedural jump to a shared `ret` in the caller's own body is recovered as a tail call (no function extent is available at the P2 flow seam). Demonstrated on a hand-built 27-byte ELF; zero occurrences in 26,110 compiler-built functions. Follow-up: defer the decision until the flow work-stack drains."
 }

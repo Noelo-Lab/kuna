@@ -51,6 +51,28 @@
 //! evidence, and an unconditional intraprocedural jump would be
 //! indistinguishable from a tail call.
 //!
+//! ## What this rule cannot distinguish
+//!
+//! The evidence is the frame, not the function bound, and kuna's
+//! `FunctionSymbol` is an entry address with **no extent** (see
+//! [`kuna_funcboundflow`](crate::kuna_funcboundflow)), so nothing here can ask
+//! whether `dest` is still inside the caller.  A jump that tears the frame down
+//! *completely* and then branches to a shared return sequence **inside the same
+//! function** is therefore indistinguishable from a tail call, and is recovered
+//! as one.  Measured, not assumed: the shape does not occur in optimizer output,
+//! because a shared return sequence has to be shared *including* its teardown --
+//! the jump is emitted part-way through the epilogue, so the epilogue delta is a
+//! partial teardown and the exact-cancellation test rejects it (this is what
+//! `partial_teardown_declines` pins).  gcc and clang at `-O1/-O2/-O3/-Os` all
+//! emit `add rsp,0x68; jmp <shared tail>` against a `-0x70` prologue, and a
+//! 26,458-function LLVM `-O2` corpus has 103 sites of the raw shape and **zero**
+//! that fire.  Once the frame is fully gone the only thing left to jump to is
+//! `ret` itself, which a compiler emits inline rather than branching to.  The
+//! sound fix is to defer the decision until the flow work-stack drains and ask
+//! whether the function decoded `dest` by another path; that is a change to the
+//! flow walk's ordering, not to this predicate, and is deliberately not made
+//! here.
+//!
 //! ## What this module owns
 //!
 //! The *decision* only.  The rewrite (`BRANCH` → `CPUI_CALL` + an artificial

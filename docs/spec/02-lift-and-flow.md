@@ -329,7 +329,18 @@ The rewrite is the one `tailcalljump` already drives in the BRANCH arm of
 asks `tailcalljump` first, so a known target keeps that path and that warning
 text, and a `tailcallframe: recovered tail call` warning attributes the calls
 this rule introduces. Byte-identical on both parity corpora, whose bytechunks
-carry no such shape.
+carry no such shape. **Known limit:** the evidence is the frame, not the function
+bound — a kuna `FunctionSymbol` has no extent, so the rule cannot ask whether
+`dest` is still inside the caller, and a jump that tears the frame down
+*completely* before branching to a shared return sequence in the same function is
+recovered as a tail call. That shape is not optimizer output: a shared return
+sequence must be shared including its teardown, so the jump is emitted part-way
+through the epilogue and the exact-cancellation test rejects it (gcc and clang at
+`-O1/-O2/-O3/-Os` emit `add rsp,0x68; jmp <shared tail>` against a `-0x70`
+prologue; a 26,458-function LLVM `-O2` corpus carries 103 sites of the raw shape
+and none of them fire). Deferring the decision until the flow work-stack drains,
+and then asking whether the function decoded `dest` by another path, is the sound
+fix; it is a change to the walk's ordering rather than to this predicate.
 
 **(kuna) Fall-through function bound — `option funcboundflow`, default on
 (DIV-67), `decompiler/crates/kuna-decomp/src/p2_lift/kuna_funcboundflow.rs
