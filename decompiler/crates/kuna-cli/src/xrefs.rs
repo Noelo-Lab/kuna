@@ -94,10 +94,20 @@ pub fn run(argv: &[String]) -> i32 {
 
 /// Load, index, resolve, and render — the whole command in one pass.
 fn query(args: &XrefArgs) -> Result<String, String> {
-    let options = mode_options_for_binary(args.mode.as_deref(), &args.binary, args.options.clone())?;
-    // The inventory driver bundle: `xrefs` enumerates entries and walks them
-    // itself, so it wants the discovery defaults (DIV-20/DIV-68 on non-x86-64)
-    // without paying for the whole-binary Listing a decompiling surface needs.
+    // A reference query is not a decompile, so `--mode` is NOT resolved through
+    // `auto` here: `auto` picks `aggressive` under 500 KiB, and `aggressive` is a
+    // preset for the QUALITY of emitted C. Two of the passes it turns on cost a
+    // whole extra decode of the program apiece and answer nothing this command
+    // reads — the analysis-tier Listing walk (which `xrefs` re-walks itself) and
+    // `operand_refs` (whose scalar markup `xrefs` recomputes from the p-code it
+    // already has). On a 466 KB obfuscated i386 image they were 1.08 s and 0.58 s
+    // of a 3.2 s answer that is byte-identical without them. `--mode aggressive`
+    // still asks for the full bundle explicitly.
+    let mode = Some(args.mode.as_deref().unwrap_or("reliable"));
+    let options = mode_options_for_binary(mode, &args.binary, args.options.clone())?;
+    // The query driver bundle: `xrefs` enumerates entries and walks them itself,
+    // so it takes no Listing-tier injection at all — the discovery seeds the
+    // injection existed to produce go straight into the reference walk below.
     let load = Args {
         binary: args.binary.clone(),
         json: args.json,
@@ -113,14 +123,15 @@ fn query(args: &XrefArgs) -> Result<String, String> {
         target: args.target.clone(),
         sleighpath: args.sleighpath.clone(),
     };
-    let prog = load_program(&load, DriverDefaults::Inventory)?;
+    let prog = load_program(&load, DriverDefaults::Query)?;
 
     let bytes = std::fs::read(&args.binary).map_err(|e| format!("{}: {e}", args.binary))?;
     let file = object::File::parse(&*bytes)
         .map_err(|e| format!("could not parse {}: {e}", args.binary))?;
 
     let entries = prog.function_entries_canonical();
-    let seeds: Vec<u64> = entries.iter().map(|e| e.addr.get_offset()).collect();
+    let inventory: Vec<u64> = entries.iter().map(|e| e.addr.get_offset()).collect();
+    let seeds = kuna_analysis::listing::xrefs::discovery_seeds(&file, &inventory);
     let index = kuna_analysis::listing::xrefs::build(
         &file,
         prog.arch(),

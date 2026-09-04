@@ -222,9 +222,42 @@ fn mask(size: u32) -> u64 {
     }
 }
 
+/// The live-varnode map. A `HashMap` here made every written op pay a
+/// bucket-wide `retain`, which over a whole program was this pass's dominant
+/// cost; the map never holds more than one instruction's worth of varnodes, so a
+/// linear vector is both smaller and faster. Insertion order is not observed —
+/// the one iterating reader ([`holder_of`]) takes a minimum.
+#[derive(Default)]
+struct KeyMap(Vec<(Key, Val)>);
+
+impl KeyMap {
+    fn insert(&mut self, k: Key, v: Val) {
+        match self.0.iter_mut().find(|(known, _)| *known == k) {
+            Some(slot) => slot.1 = v,
+            None => self.0.push((k, v)),
+        }
+    }
+
+    fn get(&self, k: &Key) -> Option<&Val> {
+        self.0.iter().find(|(known, _)| known == k).map(|(_, v)| v)
+    }
+
+    fn retain(&mut self, mut keep: impl FnMut(&Key) -> bool) {
+        self.0.retain(|(k, _)| keep(k));
+    }
+
+    fn clear(&mut self) {
+        self.0.clear();
+    }
+
+    fn iter(&self) -> impl Iterator<Item = (&Key, &Val)> {
+        self.0.iter().map(|(k, v)| (k, v))
+    }
+}
+
 #[derive(Default)]
 struct Machine {
-    vals: HashMap<Key, Val>,
+    vals: KeyMap,
     /// Constants stored at offsets from the seeded stack pointer.
     stack: HashMap<i64, (u64, bool)>,
 }
@@ -242,7 +275,7 @@ impl Machine {
     fn invalidate(&mut self, vn: &VarnodeData) {
         let Some((idx, off, size)) = key_of(vn) else { return };
         let (lo, hi) = (off, off.saturating_add(u64::from(size)));
-        self.vals.retain(|&(i, o, s), _| {
+        self.vals.retain(|&(i, o, s)| {
             i != idx || o.saturating_add(u64::from(s)) <= lo || o >= hi
         });
     }
@@ -494,7 +527,7 @@ fn holder_of(m: &Machine, ctx: &Ctx, want: u64) -> Option<VarnodeData> {
     let space = ctx.sp.space.as_ref()?;
     let reg_index = space.get_index();
     let mut best: Option<Key> = None;
-    for (&k, v) in &m.vals {
+    for (&k, v) in m.vals.iter() {
         if k.0 != reg_index {
             continue;
         }
@@ -638,23 +671,17 @@ pub(super) fn scope(
     ctx: &Ctx,
     thunks: &mut HashMap<u64, Option<VarnodeData>>,
     base: &PicBase,
-    body: &[(u64, Vec<FullOp>)],
+    body: &[BaseCandidate],
 ) -> Option<Scope> {
-    let Some((idx, lo, size)) = key_of(&base.reg) else { return None };
-    let hi = lo.saturating_add(u64::from(size));
-    let writes = |ops: &[FullOp]| {
-        ops.iter().any(|op| {
-            op.out.as_ref().and_then(key_of).is_some_and(|(i, o, s)| {
-                i == idx && o < hi && o.saturating_add(u64::from(s)) > lo
-            })
-        })
-    };
-    if !body.iter().any(|(_, ops)| writes(ops)) {
+    if key_of(&base.reg).is_none() {
+        return None;
+    }
+    if !body.iter().any(|c| c.writes_base) {
         return Some(Scope::Whole);
     }
 
-    let entry = body.first()?.0;
-    let last = body.last()?.0;
+    let entry = body.first()?.vma;
+    let last = body.last()?.vma;
     let outside = |vma: u64| vma > last;
     let (from, reg) = establish(
         translate,
@@ -671,9 +698,35 @@ pub(super) fn scope(
     }
     let until = body
         .iter()
-        .find(|(vma, ops)| *vma > from && writes(ops))
-        .map_or(u64::MAX, |(vma, _)| *vma);
+        .find(|c| c.vma > from && c.writes_base)
+        .map_or(u64::MAX, |c| c.vma);
     Some(Scope::Between { from, until })
+}
+
+/// One walked instruction's contribution to the deferred base-relative pass.
+///
+/// The pass used to buffer every instruction's whole p-code and re-derive both
+/// halves afterwards, which meant cloning every emitted op of every function on
+/// any image with a PIC base. Both halves are pure functions of the ops, so they
+/// are computed once, in the walk, and only their answers are carried.
+pub(super) struct BaseCandidate {
+    pub(super) vma: u64,
+    /// Does this instruction write the base register (the live window's cut)?
+    pub(super) writes_base: bool,
+    /// The references it forms through the base — filed only if the scope
+    /// admits it. Empty for the overwhelming majority of instructions.
+    pub(super) refs: Vec<(u64, XrefKind)>,
+}
+
+/// Does `ops` write the base register (the `scope` live-window cut)?
+pub(super) fn writes_base(ops: &[FullOp], base: &PicBase) -> bool {
+    let Some((idx, lo, size)) = key_of(&base.reg) else { return false };
+    let hi = lo.saturating_add(u64::from(size));
+    ops.iter().any(|op| {
+        op.out.as_ref().and_then(key_of).is_some_and(|(i, o, s)| {
+            i == idx && o < hi && o.saturating_add(u64::from(s)) > lo
+        })
+    })
 }
 
 // --- the harvest -------------------------------------------------------------

@@ -640,6 +640,18 @@ changes no emitted C. Function discovery is the `kuna functions` inventory, whic
 the walk then extends by following the call graph out of it, so a callee the
 inventory missed is still covered.
 
+`--mode` is **not** resolved through `auto` here, unlike the decompiling surfaces:
+`auto` selects `aggressive` under 500 KiB, and `aggressive` is a preset for the
+quality of emitted *C*. Two of the passes it turns on cost a whole extra decode of
+the program apiece and answer nothing a reference query reads — the analysis-tier
+Listing walk (whose recursive descent `xrefs` repeats itself, so it contributed
+only seeds, which are now handed to the walk directly) and `operand_refs` (whose
+scalar markup `xrefs` recomputes from the p-code it already has). So the query
+surface defaults to the shipped defaults, and `kuna xrefs --mode aggressive` still
+asks for the full analysis bundle explicitly. On a 466 KB obfuscated i386 image
+the two skipped decodes were 1.08 s and 0.58 s of a 3.4 s answer that is
+byte-identical without them.
+
 A target nothing references is exit `0` with `count: 0` — an answer, not a
 failure. A name that resolves to nothing is exit `1` with the reason on stderr; a
 malformed command line is exit `2` with the usage block.

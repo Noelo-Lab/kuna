@@ -883,6 +883,10 @@ pub(crate) enum DriverDefaults {
     Inventory,
     /// `kuna decompile-all` / `kuna decompile-project` — enumeration plus bodies.
     Decompile,
+    /// `kuna xrefs` — a reference query that runs its OWN recursive descent, so
+    /// the Listing tier would only decode the program a second time to hand it
+    /// seeds it can be given directly (`listing::xrefs::discovery_seeds`).
+    Query,
 }
 
 impl DriverDefaults {
@@ -890,6 +894,11 @@ impl DriverDefaults {
     /// no-return facts change its output, not just its inventory)?
     fn decompiles(&self) -> bool {
         matches!(self, DriverDefaults::Decompile)
+    }
+
+    /// Does this surface take the DIV-15/DIV-20/DIV-68 driver-default bundle?
+    fn takes_driver_defaults(&self) -> bool {
+        !matches!(self, DriverDefaults::Query)
     }
 }
 
@@ -1024,10 +1033,12 @@ pub(crate) fn load_program(
     let mut prog = bootstrap_from_object(&binary, target, &spec_roots)
         .map_err(|e| format!("could not build an architecture for {binary}: {}", e.explain()))?;
 
-    for (name, value) in driver_default_options(&binary, defaults.decompiles(), &args.options) {
-        prog.arch_mut()
-            .set_kuna_option(name, value)
-            .map_err(|e| format!("option {name}: {}", e.explain()))?;
+    if defaults.takes_driver_defaults() {
+        for (name, value) in driver_default_options(&binary, defaults.decompiles(), &args.options) {
+            prog.arch_mut()
+                .set_kuna_option(name, value)
+                .map_err(|e| format!("option {name}: {}", e.explain()))?;
+        }
     }
 
     // (kuna `--assert`) A `readonly` range is inert unless read-only propagation

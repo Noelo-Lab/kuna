@@ -1,0 +1,33 @@
+{
+  "slug": "cold-load-xref-lookup",
+  "need_id": "cold-load-xref-lookup",
+  "track": "perf",
+  "scope": "small",
+  "worker": "b-r2-cold-load-xref-l",
+  "round": 2,
+  "date": "2026-09-04",
+  "symptom": "kuna xrefs ./target/Obfuscation1 --to 0x80ba3d2 --json took 4.13 s on a 466 KB ELF; every independent query pays it again (1 instance, challenge 5bd1d1bb33c5d4110a29b31e).",
+  "hypothesis_filed": "Each CLI invocation performs a full cold load and analysis rather than reusing a project or resident analysis session.",
+  "hypothesis_verdict": "partly refuted",
+  "decisions": [
+    "The filed diagnosis (no persistent session) names the workflow cost but not the per-query cost. Measured, ONE cold query decoded the program THREE times: the analysis-tier Listing walk (1.08 s), the operand_refs linear decode (0.58 s), and the xrefs index's own recursive descent (1.26 s), over 154,608 instructions each. A resident session would have amortised that; removing two of the three decodes eliminates it outright, and leaves the cold answer fast enough that a session is not the lever.",
+    "The Listing walk contributed exactly one thing to a reference answer: seeds. `xrefs::build` already runs its own two-worklist descent and follows every direct CALL out of its seeds, so handing it the same <patternpairs> prologue starts (listing::xrefs::discovery_seeds, gated to the non-x86-64 architectures DIV-20/DIV-68 injects for) keeps the seed set and drops the duplicate decode.",
+    "operand_refs' scalar markup is recomputed by the query from the p-code it already holds, so it answers nothing xrefs reads. Both passes arrived through --mode auto -> aggressive (the binary is under 500 KiB); the query surface now resolves no automatic mode, and `kuna xrefs --mode aggressive` still asks for the full bundle.",
+    "REFUTED en route: the ConstructTpl deep clone per constructor node (fixed anyway, ~2%); the WalkCursor breadcrumb copy (MAX_DEPTH 32 -> 12 is byte-identical output and no speedup); SLEIGH context-DB commits (9 ms of 3.4 s).",
+    "The largest single find was not in the redundancy at all: on any image with a PIC base -- every 32-bit PIC ELF -- the deferred base-relative pass buffered a CLONE of every instruction's whole p-code and rendered every instruction's assembly, i.e. a second full SLEIGH parse of the program, to file 151 references. Both halves it needs are pure functions of the ops, so they are computed in the walk and only the answers carried."
+  ],
+  "mechanism": "Five changes, no new option and no emitted-C change: (1) kuna xrefs takes its own driver bundle (DriverDefaults::Query, no automatic mode) and seeds its walk with the prologue starts directly; (2) the xref walk renders assembly only for instructions that file a reference; (3) the picbase pass carries precomputed (writes_base, refs) instead of a clone of every instruction's p-code, and renders lazily; (4) PcodeCacher::emit borrows the input run out of its pool instead of rebuilding it (one heap allocation per emitted p-code op, program-wide); (5) the p-code build arena and the walk's capture are pooled/reused instead of freshly allocated per instruction.",
+  "measurement": {
+    "target": "kuna xrefs <Obfuscation1> --to 0x80ba3d2 --json",
+    "method": "interleaved base/new, warmup + 7 reps, same shell",
+    "base_median_ms": 3418,
+    "new_median_ms": 1039,
+    "base_min_ms": 3367,
+    "new_min_ms": 727,
+    "delta_median_pct": -69.6,
+    "output": "byte-identical JSON"
+  },
+  "acceptance": "scripts.repipe.verify --need cold-load-xref-lookup (wall_ms median < 1000)",
+  "tests": ["tests/cli/cold-load-xref-lookup.json"],
+  "gates": {}
+}

@@ -964,6 +964,7 @@ struct PcodeData {
 /// one instruction.  The C++ raw-pointer pool becomes a `Vec<VarnodeData>`
 /// (pool) indexed by op input/output (ADR 0001); growth never invalidates
 /// indices.
+#[derive(Default)]
 struct PcodeCacher {
     /// The pool of VarnodeData objects (C++ `poolstart..endpool`).
     pool: Vec<VarnodeData>,
@@ -980,6 +981,7 @@ impl PcodeCacher {
     fn new() -> PcodeCacher {
         PcodeCacher { pool: Vec::new(), issued: Vec::new(), label_refs: Vec::new(), labels: Vec::new() }
     }
+
 
     /// C++ `allocateVarnodes(uint4 size)`: returns the pool index of the first
     /// of `size` freshly allocated VarnodeData (indices are stable).
@@ -1016,11 +1018,9 @@ impl PcodeCacher {
         self.labels[id as usize] = self.issued.len() as u64;
     }
 
-    /// C++ `clear`: reset the cache so all objects are unallocated.  The
-    /// engine allocates a fresh [`PcodeCacher`] per instruction (the C++
-    /// single instance is `clear`ed between instructions instead); kept for
-    /// API parity.
-    #[allow(dead_code)] // C++ PcodeCacher::clear (the port allocates fresh per insn)
+    /// C++ `clear`: reset the cache so all objects are unallocated, keeping the
+    /// allocations. The engine parks one cacher on the [`Sleigh`] and clears it
+    /// between instructions, exactly as the C++ single instance does.
     fn clear(&mut self) {
         self.pool.clear();
         self.issued.clear();
@@ -1049,17 +1049,20 @@ impl PcodeCacher {
     fn emit(&self, addr: &Address, emt: &mut dyn PcodeEmit, manager: &AddrSpaceManager) {
         for op in &self.issued {
             let outvar = op.outvar.map(|i| &self.pool[i]);
-            let invars: Vec<VarnodeData> = (0..op.isize)
-                .map(|k| {
-                    let base = op.invar.expect("issued op with inputs has invar");
-                    self.pool[base + k as usize].clone()
-                })
-                .collect();
+            // An op's inputs are a consecutive run in the pool
+            // (`allocate_varnodes` hands back the run's start), so the emit
+            // borrows the run the way the C++ passes a pointer into the same
+            // array. Rebuilding it cost one heap allocation per emitted p-code
+            // op on every decode in the program.
+            let invars: &[VarnodeData] = match op.invar {
+                Some(base) => &self.pool[base..base + op.isize as usize],
+                None => &[],
+            };
             // The spaceid pointer constant (input 0 of LOAD/STORE) is stored
             // as the space's manager index (LOSS-015); the emitter renders the
             // space name, so the value passed through is the raw stored index.
             let _ = manager;
-            emt.dump(addr, op.opc, outvar, &invars);
+            emt.dump(addr, op.opc, outvar, invars);
         }
     }
 }
@@ -1148,7 +1151,7 @@ impl<'a> SleighBuilder<'a> {
     }
 
     /// The constructor template referenced by a handle (C++ `getTempl`).
-    fn templ(&self, handle: usize) -> &ConstructTpl {
+    fn templ(&self, handle: usize) -> &'a ConstructTpl {
         &self.templates[handle]
     }
 
@@ -1258,7 +1261,10 @@ impl<'a> SleighBuilder<'a> {
             let construct = self.table.get_constructor(cur_ct)?.get_named_templ(secnum);
             match construct {
                 None => self.build_empty(cur_ct, secnum)?,
-                Some(handle) => self.build(Some(self.templ(handle).clone()).as_ref(), secnum)?,
+                Some(handle) => {
+                    let tpl = self.templ(handle);
+                    self.build(Some(tpl), secnum)?
+                }
             }
             self.pop_operand();
         }
@@ -1405,12 +1411,15 @@ impl PcodeBuilder for SleighBuilder<'_> {
             let construct = self.table.get_constructor(cur_ct)?.get_named_templ(secnum);
             match construct {
                 None => self.build_empty(cur_ct, secnum)?,
-                Some(handle) => self.build(Some(self.templ(handle).clone()).as_ref(), secnum)?,
+                Some(handle) => {
+                    let tpl = self.templ(handle);
+                    self.build(Some(tpl), secnum)?
+                }
             }
         } else {
             let handle = self.table.get_constructor(cur_ct)?.get_templ();
-            let tpl = handle.map(|h| self.templ(h).clone());
-            self.build(tpl.as_ref(), -1)?;
+            let tpl = handle.map(|h| self.templ(h));
+            self.build(tpl, -1)?;
         }
         self.pop_operand();
         Ok(())
@@ -1448,8 +1457,8 @@ impl PcodeBuilder for SleighBuilder<'_> {
             self.cur.point = Some(self.contexts[idx].ctx.base_state);
             let ct = self.walker().get_constructor_inner()?;
             let handle = self.table.get_constructor(ct)?.get_templ();
-            let tpl = handle.map(|h| self.templ(h).clone());
-            self.build(tpl.as_ref(), -1)?;
+            let tpl = handle.map(|h| self.templ(h));
+            self.build(tpl, -1)?;
             fall_offset += len;
             bytecount += len;
             if bytecount >= delay_byte_cnt {
@@ -1504,7 +1513,10 @@ impl PcodeBuilder for SleighBuilder<'_> {
         let construct = self.table.get_constructor(ct)?.get_named_templ(secnum);
         match construct {
             None => self.build_empty(ct, secnum)?,
-            Some(handle) => self.build(Some(self.templ(handle).clone()).as_ref(), secnum)?,
+            Some(handle) => {
+                let tpl = self.templ(handle);
+                self.build(Some(tpl), secnum)?
+            }
         }
         self.cur = saved_cur;
         self.cur_ctx = saved_ctx;
@@ -1561,6 +1573,12 @@ pub struct Sleigh {
     /// Reusable parser arenas. Checked-out contexts are removed from the pool,
     /// so nested `inst_next2` and delay-slot decodes receive distinct storage.
     parser_contexts: Rc<RefCell<Vec<ParserContext>>>,
+    /// The reusable p-code build arena. `one_instruction` filled four fresh
+    /// `Vec`s per decode and grew each of them as the instruction's ops issued;
+    /// parking the cacher here reuses that capacity across the whole program.
+    /// Taken (not borrowed) for the duration of a decode, so a nested decode
+    /// simply builds its own.
+    pcode_cacher: RefCell<PcodeCacher>,
 }
 
 // ---------------------------------------------------------------------------
@@ -1623,6 +1641,7 @@ impl Sleigh {
             context_db: RefCell::new(context_db),
             cache: RefCell::new(ContextCache::new()),
             parser_contexts: Rc::new(RefCell::new(Vec::new())),
+            pcode_cacher: RefCell::new(PcodeCacher::new()),
         }
     }
 
@@ -2452,7 +2471,8 @@ impl Sleigh {
         let const_space = self.const_space();
         let uniq_space = self.unique_space();
         let umask = self.base.unique_allocatemask;
-        let mut cache = PcodeCacher::new();
+        let mut cache = std::mem::take(&mut *self.pcode_cacher.borrow_mut());
+        cache.clear();
         // walker over the main context, baseState
         let mut builder = SleighBuilder {
             labelbase: 0,
@@ -2473,9 +2493,9 @@ impl Sleigh {
         builder.cur.point = Some(contexts[0].ctx.base_state);
         let main_ct = builder.walker().get_constructor_inner()?;
         let handle = table.get_constructor(main_ct)?.get_templ();
-        let tpl = handle.map(|h| self.base.templates[h].clone());
+        let tpl = handle.map(|h| &self.base.templates[h]);
         let build_res = (|| -> KunaResult<()> {
-            builder.build(tpl.as_ref(), -1)?;
+            builder.build(tpl, -1)?;
             Ok(())
         })();
         match build_res {
@@ -2507,6 +2527,7 @@ impl Sleigh {
         }
         cache.resolve_relatives()?;
         cache.emit(baseaddr, emit, &self.base.manager);
+        *self.pcode_cacher.borrow_mut() = cache;
         Ok(fall_offset)
     }
 }

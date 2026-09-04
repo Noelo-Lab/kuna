@@ -1805,6 +1805,20 @@ computed, and which therefore lifts to a `LOAD` through a temporary); the class 
 never derived from a shared symbol name, which would fold genuinely distinct
 same-named functions together.
 
+(kuna) Because the query runs that descent **itself**, it takes its own analysis
+bundle rather than a decompiling surface's. `kuna functions` and `kuna decompile-all`
+inject the DIV-15/DIV-20/DIV-68 defaults (the Listing, the prologue-pattern scan,
+AIF); the query surface injects none of them, and instead seeds its walk with the
+same `<patternpairs>` prologue starts the injection existed to produce
+(`decompiler/crates/kuna-analysis/src/listing/xrefs.rs (discovery_seeds)`, gated to
+the non-x86-64 architectures the injection covered, so x86-64's seed set is exactly
+the caller's inventory). The Listing's only contribution to a *reference* answer was
+a richer seed set, and building it meant decoding the whole program a second time;
+on a 466 KB obfuscated i386 image that walk, plus `operand_refs`' third linear
+decode, was 1.66 s of a 3.4 s answer that is byte-identical without either. A caller
+who wants the full analysis tier over the query — the AIF gap entries, the FID
+renames — asks for it by name (`kuna xrefs --mode aggressive`).
+
 (kuna) Both of those rules read a reference out of *one instruction's* p-code,
 which is the whole answer on x86-64 and no answer at all in 32-bit
 position-independent code. There the address of a string, a global or a function
