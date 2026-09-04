@@ -518,6 +518,41 @@ diagnostic to reach for first is `gh pr view <n> --json mergeable,mergeStateStat
 `CONFLICTING`/`DIRTY` explains an absent suite far more often than anything about the
 workflow file does.
 
+## A builder killed by the account session limit loses its work silently
+
+Round 2's two builders both ended `claude rc=1` after ~30 minutes, well inside
+`REPIPE_BUILDER_TIMEOUT`. The reason is only in the result JSON:
+
+```
+$ python3 -c 'import json; print(json.load(open(".kuna-repipe/logs/<wid>.result.json"))["result"])'
+You've hit your session limit · resets 4:50am (UTC)
+```
+
+`is_error: true`, `subtype: "success"` — so neither the exit code nor the subtype
+distinguishes "the model refused" from "the account ran out". Check the `result`
+string. One builder was in its `docs` phase with 618 insertions across 19 files, a
+promoted `tests/cli/` probe and a console verify test, all of it **uncommitted**.
+
+That is the part worth fixing rather than remembering. `worker.sh` runs
+`git worktree add -b <branch> <wt> <base>`, which FAILS when `<wt>` already exists,
+so the next dispatch does not resume the work — it dies on the collision. And the
+resume path (`RESUME_BRANCH`) expects commits; a dirty worktree is invisible to it.
+So a quota kill leaves real work in a directory that nothing will pick up and the
+next worktree GC may remove.
+
+Until the worker commits its own WIP on exit, the recovery is manual and must be
+done before the next dispatch:
+
+```sh
+for w in .kuna-repipe/worktrees/b-*; do
+  git -C "$w" add -A && git -C "$w" commit -m "[AUTOMATED] wip: preserved after a killed session"
+done
+```
+
+Say plainly in the message what was and was not verified. A builder killed in
+`docs` has not run the gates, and a WIP commit that reads as finished work is worse
+than no commit at all.
+
 ## Machinery reference
 
 | Piece | What |
