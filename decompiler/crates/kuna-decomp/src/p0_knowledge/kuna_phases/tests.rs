@@ -25,7 +25,7 @@ fn subphase_count_is_43() {
 }
 
 #[test]
-fn surface_count_is_105() {
+fn surface_count_is_106() {
     // +1 for the `option switchguardbound` surface row (angr missing-function-call),
     // +1 for the `option switchsharedcase` surface row (angr shared-case-node b2sum),
     // +1 for the `option switchmultipred` surface row (angr abnormal-switch-case-case3),
@@ -43,12 +43,14 @@ fn surface_count_is_105() {
     // keep a returned register half that is a placed input parameter).
     // +1 for the `option rustabi` surface row (kuna P4 output-prototype: keep the
     // two-register rustc ScalarPair return and connect it at the call).
-    assert_eq!(kuna_num_surfaces(), 105);
-    assert_eq!(SURFACE_TABLE.len(), 105);
+    // +1 for the `option overlapbranch` surface row (kuna P2 flow-classification:
+    // a conditional branch target strictly inside its own fall-through instruction).
+    assert_eq!(kuna_num_surfaces(), 106);
+    assert_eq!(SURFACE_TABLE.len(), 106);
 }
 
 #[test]
-fn settable_count_is_136() {
+fn settable_count_is_137() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -98,12 +100,12 @@ fn settable_count_is_136() {
     // +1 for `linuxsyscall` (P2 32-bit Linux int 0x80 syscall naming).
     // +1 for `unmappedentry` (P1 unmapped-CALL-target entry suppression).
     // +1 for `entrymainproto` (P1 PE CRT entry-function prototype recovery).
-    assert_eq!(kuna_num_settables(), 136);
-    assert_eq!(SETTABLE_TABLE.len(), 136);
+    assert_eq!(kuna_num_settables(), 137);
+    assert_eq!(SETTABLE_TABLE.len(), 137);
 }
 
 #[test]
-fn tier_counts_are_32_core_54_transform_50_analysis() {
+fn tier_counts_are_32_core_55_transform_50_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -191,7 +193,7 @@ fn tier_counts_are_32_core_54_transform_50_analysis() {
     // suppression).
     // analysis 48 -> 49: +1 for `entrymainproto` (P1 PE CRT entry-function
     // prototype recovery).
-    assert_eq!((core, transform, analysis), (32, 54, 50));
+    assert_eq!((core, transform, analysis), (32, 55, 50));
 }
 
 #[test]
@@ -381,7 +383,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_42_suppressed_for_91() {
+fn option_values_live_value_present_for_43_suppressed_for_91() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -638,7 +640,8 @@ fn option_values_live_value_present_for_42_suppressed_for_91() {
     // 39 -> 40: +1 for `linuxsyscall` (live_field = linux_syscall).
     // 40 -> 41: +1 for `switchselector` (its own live_field).
     // 41 -> 42: +1 for `tiedstorekeep` (live_field = tied_store_keep, DIV-105).
-    assert_eq!(with_live, 42);
+    // 42 -> 43: +1 for `overlapbranch` (live_field = overlap_branch, DIV-106).
+    assert_eq!(with_live, 43);
 }
 
 #[test]
@@ -765,7 +768,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // count is one less than the settable total, since the last row has no comma.
     // +1 for `varargstackargs` and +1 for `calleearity`; both P4 rows sit
     // mid-table beside `callsitestackargs`, so the tail does not move either.
-    assert_eq!(json.matches("},\n").count(), 135);
+    assert_eq!(json.matches("},\n").count(), 136);
 }
 
 #[test]

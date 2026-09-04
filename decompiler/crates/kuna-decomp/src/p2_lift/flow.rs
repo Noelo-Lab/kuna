@@ -373,6 +373,18 @@ pub trait FlowEnvironment {
         false
     }
 
+    /// (kuna `overlapbranch`) Is the overlapping-branch truncation enabled
+    /// (`option overlapbranch`, `Architecture::overlap_branch`)?  When on,
+    /// `process_instruction` truncates a conditional branch's fall-through
+    /// instruction when the branch's own target lies strictly inside that
+    /// instruction's encoding (the anti-disassembly junk-byte idiom), instead of
+    /// letting the fall-through decode swallow the target and desynchronise the
+    /// stream.  The default shell reports `false` (upstream behavior).  See
+    /// [`kuna_overlapbranch`](crate::kuna_overlapbranch).
+    fn overlap_branch_enabled(&self) -> bool {
+        false
+    }
+
     /// Is the function at the direct-call `entry` address marked \e inline? (C++
     /// `FlowInfo::queryCall` → `fspecs.copyFlowEffects(otherfunc->getFuncProto())`
     /// → `FuncProto::isInline()`).
@@ -495,6 +507,16 @@ pub struct FlowInfo<'a, E: FlowEnvironment> {
     /// cannot be inlined again (the cycle break that prints "Could not inline
     /// here").
     inline_recursion: std::collections::BTreeSet<Address>,
+    /// (kuna `overlapbranch`) The `(fall-through address, branch target)` pair
+    /// recorded when the instruction just processed was a conditional branch with
+    /// a forward target.  Consumed by the very next
+    /// [`process_instruction`](FlowInfo::process_instruction), which truncates the
+    /// fall-through when the branch target turns out to lie strictly inside it.
+    /// See [`kuna_overlapbranch`](crate::kuna_overlapbranch).
+    overlap_watch: Option<(Address, Address)>,
+    /// (kuna `overlapbranch`) Direct target of the CBRANCH seen while
+    /// xref-classifying the current instruction, staged for `overlap_watch`.
+    overlap_cbranch_target: Option<Address>,
     /// Entry address of the call-fixup whose body is currently being woven in
     /// (C++ `setupCallSpecs(op, fc)`'s non-NULL `fc` argument — the call site
     /// being injected).  While a [`do_injection`](Self::do_injection) for a
@@ -541,6 +563,8 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             qlst_count: 0,
             inline_head: None,
             inline_recursion: std::collections::BTreeSet::new(),
+            overlap_watch: None,
+            overlap_cbranch_target: None,
             injecting_entry: None,
         }
     }
@@ -1075,6 +1099,9 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                             *isfallthru = true; // relative branch is to end of instruction
                         }
                     } else {
+                        // (kuna overlapbranch) stage the machine-level conditional
+                        // target for the fall-through overlap check.
+                        self.overlap_cbranch_target = Some(destaddr.clone());
                         self.new_address(curop, &destaddr)?; // generate branch address
                     }
                     *startbasic = true;
@@ -1263,7 +1290,10 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         startbasic: &mut bool,
     ) -> KunaResult<bool> {
         let mut isfallthru = true;
-        let step: int4;
+        let mut step: int4;
+        // (kuna overlapbranch) the pair staged by the previous instruction; valid
+        // for exactly this call and cleared whether or not it fires.
+        let overlap_watch = self.overlap_watch.take();
 
         if self.insn_count >= self.insn_max {
             if (self.flags & flow_flags::error_toomanyinstructions) != 0 {
@@ -1313,6 +1343,51 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             }
         }
 
+        // (kuna overlapbranch) The previous instruction was a conditional branch
+        // whose own target lands strictly inside the instruction just decoded --
+        // the fall-through decode has swallowed the branch target (the x86
+        // anti-disassembly junk-lead-byte idiom).  The explicitly encoded target
+        // wins: drop the ops this decode emitted and end the fall-through edge
+        // with a halt at its own address, so the target is decoded on its own
+        // boundary by the pending addrlist entry.  Nothing already committed to
+        // is moved -- the loser is the instruction currently being decoded.
+        let overlap_offsets = overlap_watch.as_ref().and_then(|(fallthru, target)| {
+            let same_space = target.get_space().map(|sp| sp.get_index())
+                == curaddr.get_space().map(|sp| sp.get_index());
+            if fallthru == curaddr && same_space {
+                Some((fallthru.get_offset(), target.get_offset()))
+            } else {
+                None
+            }
+        });
+        if crate::kuna_overlapbranch::kuna_overlaps_pending_branch(
+            self.env.overlap_branch_enabled(),
+            curaddr.get_offset(),
+            step,
+            overlap_offsets,
+        ) && !self.kuna_overlap_reconverges(curaddr, step, &overlap_watch)
+        {
+            let bogus = if emptyflag {
+                self.dead_head()
+            } else {
+                marker.and_then(|m| self.dead_next(m))
+            };
+            self.delete_remaining_ops(bogus)?;
+            self.artificial_halt(curaddr, pcodeop_flags::badinstruction)?;
+            let mut target = String::new();
+            if let Some((_, t)) = overlap_watch.as_ref() {
+                let _ = t.print_raw(&mut target);
+            }
+            self.data.warning(
+                &format!(
+                    "overlapbranch: this instruction overlaps the branch target at {target}; \
+truncating the fall-through here"
+                ),
+                curaddr,
+            );
+            step = 1;
+        }
+
         // (Insert with an INVALID seqnum; the first-op seqnum is filled in below.)
         self.visited.insert(
             curaddr.clone(),
@@ -1335,6 +1410,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             marker.and_then(|m| self.dead_next(m))
         };
 
+        self.overlap_cbranch_target = None; // (kuna overlapbranch) per-instruction
         if let Some(firstop) = first_new {
             let seq = self.data.obank().get(firstop).expect("process: stale firstop").get_seq_num().clone();
             if let Some(stat) = self.visited.get_mut(curaddr) {
@@ -1349,6 +1425,13 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
 
         if isfallthru {
             let next = curaddr + step as i64;
+            // (kuna overlapbranch) arm the overlap check for the fall-through this
+            // instruction is about to push: only a forward conditional target can
+            // be swallowed by the fall-through's own encoding.
+            self.overlap_watch = match self.overlap_cbranch_target.take() {
+                Some(t) if t > next => Some((next.clone(), t)),
+                _ => None,
+            };
             if self.is_funcbound_fallthru(&next) {
                 // (kuna funcboundflow) Fall-through has reached the entry of the
                 // next function -- the callee just executed (an unnamed static
@@ -1369,6 +1452,33 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             }
         }
         Ok(isfallthru)
+    }
+
+    /// (kuna `overlapbranch`) Do the fall-through decode at `curaddr` and the
+    /// branch target's own decode end at the same address?  True means they are
+    /// the same instruction with leading bytes skipped — glibc's conditional-`LOCK`
+    /// idiom, where both streams are real — and the truncation must not fire.
+    /// See [`kuna_overlapbranch::kuna_streams_reconverge`](crate::kuna_overlapbranch).
+    ///
+    /// Runs only once the cheap strict-interior test has already matched, which it
+    /// never does in ordinary code, so the extra decode costs nothing in practice.
+    fn kuna_overlap_reconverges(
+        &self,
+        curaddr: &Address,
+        step: int4,
+        watch: &Option<(Address, Address)>,
+    ) -> bool {
+        let target = match watch {
+            Some((_, t)) => t,
+            None => return true,
+        };
+        let len = self.env.translate().instruction_length(target).ok();
+        crate::kuna_overlapbranch::kuna_streams_reconverge(
+            curaddr.get_offset(),
+            step,
+            target.get_offset(),
+            len,
+        )
     }
 
     /// (kuna `funcboundflow`) Should a fall-through to `next` be truncated because

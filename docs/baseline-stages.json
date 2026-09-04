@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    600,
-    600
+    603,
+    603
   ],
   "passing": [
     "data:ARRAYSUBFIELD #1: an 8-byte read at offset 0 of char[16] is a sized sub-field, not element 0",
@@ -285,6 +285,9 @@
     "data:MSVCFTOL #3: on, the second conversion casts the field it actually reads",
     "data:MSVCFTOL #4: on, both conversions truncate at the helper's real 64-bit width",
     "data:MSVCFTOL #5: on, the call is replaced by an injection",
+    "data:OVERLAPBRANCH #1: the branch target wins, so the real add-chain stream is recovered in the default pass only",
+    "data:OVERLAPBRANCH #2: the out-of-image call the swallowed decode invents survives only in the overlapbranch-off pass",
+    "data:OVERLAPBRANCH #3: the bogus global the swallowed decode invents survives only in the overlapbranch-off pass",
     "data:P1: TOTAL shared() epilogue count across both passes is 3 (off clones to 2, on dedups to 1)",
     "data:P1: default (crossjumprevert off) emits the condensed cross-jump goto",
     "data:P1: on recovers three constant early returns from the shared epilogue (off merges to none)",

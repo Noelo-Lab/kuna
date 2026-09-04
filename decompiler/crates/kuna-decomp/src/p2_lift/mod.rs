@@ -21,6 +21,7 @@ pub mod kuna_noreturn_externmatch; // (kuna) angr incorrect-duplication-chcon: n
 pub mod kuna_noreturnextern; // (kuna) angr tail-tail-bytes-ret-dup: undefined-extern name-based no-return
 pub mod kuna_tailcalljump;
 pub mod kuna_funcboundflow; // (kuna) bound fall-through at a known function entry (no cross-function merge)
+pub mod kuna_overlapbranch; // (kuna) a conditional branch target inside its own fall-through instruction (anti-disassembly overlap)
 pub mod kuna_msvcftol; // (kuna) MSVC __ftol family call-fixup: recover the x87 (ST0) argument
 pub mod kuna_cortexmpriv; // (kuna) fold the Cortex-M isCurrentModePrivileged() guard around MRS/MSR
 pub mod kuna_cleanupcode; // (kuna) oxidizer CleanupCodeRemover: delete rust drop/dealloc call sites

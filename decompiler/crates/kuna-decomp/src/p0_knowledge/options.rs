@@ -257,6 +257,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "msvcftol",
     "tailcalljump",
     "funcboundflow",
+    "overlapbranch",
     "cleanupcode",
     "linuxsyscall",
     "switchselector",

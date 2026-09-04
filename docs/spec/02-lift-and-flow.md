@@ -322,6 +322,40 @@ Ghidra both bound decompilation to the function body. The `longdouble` datatest
 functions) and the `ghangr-noreturn_extern` test (which isolates the
 `noreturn_extern` toggle) opt out per-test.
 
+**(kuna) Overlapping branch target — `option overlapbranch`, default on
+(DIV-106), `decompiler/crates/kuna-decomp/src/p2_lift/kuna_overlapbranch.rs
+(kuna_overlaps_pending_branch)`.** A conditional branch pushes both successors and
+the follower pops the fall-through first, so the fall-through instruction is
+decoded before the branch target is ever looked at. The x86 anti-disassembly
+overlap exploits exactly that ordering: a `75 01` short JNZ hops over a junk `e8`
+lead byte, so the fall-through decodes as one long bogus `CALL` that *swallows*
+the branch target and desynchronises everything downstream — an out-of-image
+callee, stores through never-assigned pointers, and invented `dat_` globals, all
+of them artefacts of operand bytes read as opcodes. `FlowInfo::set_fallthru_bound`
+notices the clash only afterwards, in `reinterpreted`, by which time the losing
+stream and its successors are already built. Decision rule: the instruction just
+decoded is the fall-through of the previous instruction's conditional branch, and
+that branch's own target lies **strictly inside** its encoding (`curaddr < target
+< curaddr + step`). Both ends are strict — `target == curaddr` is a branch to its
+own fall-through and `target == curaddr + step` is a branch over one instruction,
+both ordinary compiler output. Ownership policy: **the branch target wins**,
+because a branch target is an address the program *encodes* while a fall-through
+is only ever inferred from the previous instruction's length, and because two real
+instruction starts cannot sit at `next` and strictly inside `next` — whenever the
+rule fires at least one of the two decodes is already wrong. The loser is
+truncated in place, in `flow.rs (FlowInfo::process_instruction)` right after the
+decode: the ops that decode just emitted are dropped (`delete_remaining_ops`), an
+artificial RETURN marked `badinstruction` is planted at the loser's own address,
+its recorded size is set to 1, and an `overlapbranch` warning makes the truncation
+attributable. The conditional stays a conditional and its fall-through edge stays
+in the graph — the edge simply ends in a halt — and the pending target is then
+decoded on its own boundary by the ordinary `addrlist` walk. The halt is marked
+`badinstruction` rather than `noreturn` because a `noreturn` halt is folded into an
+empty `if (cond) { }` by `kuna_ifnoexit`, which reads as though the fall-through
+continues. Nothing already committed to is deleted or re-anchored: the loser is
+the instruction *currently* being decoded and the winner is still pending, which
+is what keeps this out of the "repair the flow graph afterwards" class of change.
+
 **(kuna) Stack-probe loops — `option stackprobeloop`, default on (DIV-3),
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_stackprobeloop.rs
 (RuleStackProbeLoop)` (from Ghidra issues GH-8017/6858).** gcc's

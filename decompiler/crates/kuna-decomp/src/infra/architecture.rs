@@ -356,6 +356,12 @@ pub struct Architecture {
     /// no-return), truncate flow with a no-return halt instead of decoding the
     /// next function's body into the current one (`option funcboundflow`).
     pub funcbound_flow: bool,
+    /// (kuna `overlapbranch`) Truncate a conditional branch's fall-through when the
+    /// branch's own target lies strictly inside that fall-through instruction's
+    /// encoding — the anti-disassembly junk-lead-byte idiom, where the fall-through
+    /// decode swallows the real instruction boundary and desynchronises the stream
+    /// (`option overlapbranch`).
+    pub overlap_branch: bool,
     /// (kuna) Treat a direct CALL whose resolved callee display name matches a
     /// known ELF no-return name (`__stack_chk_fail`, `abort`, `exit`, …) as
     /// no-return at flow time, even when the address-keyed no-return flag is unset
@@ -1632,6 +1638,7 @@ impl Architecture {
             msvc_ftol: false, // (kuna) option msvcftol; reset_defaults sets the shipped default
             tail_call_jumps: false,
             funcbound_flow: false, // (kuna) option funcboundflow; reset_defaults sets the shipped default
+            overlap_branch: false, // (kuna) option overlapbranch; reset_defaults sets the shipped default
             remove_cleanup_code: false, // (kuna) option cleanupcode; reset_defaults sets the shipped default
             linux_syscall: false, // (kuna) option linuxsyscall; reset_defaults sets the shipped default
             switch_selector_guard: false, // (kuna) option switchselector; reset_defaults sets the shipped default
@@ -1832,6 +1839,7 @@ impl Architecture {
         self.msvc_ftol = true; // (kuna) DIV-74 default-on: x86-32-only, and inert unless the binary imports an `__ftol`/`__ftol2`/`__ftol2_sse` symbol. Byte-identical (0/675) — no corpus function carries one of those names. Restore the un-fixed `__ftol()` rendering with `option msvcftol off`
         self.tail_call_jumps = true; // (kuna) DIV-13 default-on (angr tail-call recovery; per-test opt-out on Long double #1/#2)
         self.funcbound_flow = true; // (kuna) DIV-67 default-on: REMOVES CODE. Truncates a fall-through that reaches another known function's entry (a function ending in an unnamed static no-return `exit`/`abort`/`die()` wrapper) instead of decoding the next function's body into it. Byte-identical (0/675) on the datatest corpus; restore upstream flow-into-callee with `option funcboundflow off`
+        self.overlap_branch = true; // (kuna) DIV-106 default-on: REMOVES CODE. Ends a conditional branch's fall-through in a halt when the branch's own target lies strictly inside that fall-through instruction's encoding (the anti-disassembly junk-lead-byte overlap), instead of letting the bogus decode swallow the target and desynchronise the stream. Two real instruction starts cannot sit at `next` and strictly inside `next`, so the trigger never matches well-formed code and is byte-identical (0/675) on the datatest corpus; restore the fall-through-wins decode with `option overlapbranch off`
         self.remove_cleanup_code = true; // (kuna) DIV-81 default-on: REMOVES CODE. Deletes the Rust drop/deallocate call sites (`core::ptr::drop_in_place`, `Drop::drop`, `alloc::raw_vec::RawVecInner::deallocate`, `__rust_dealloc`) and the argument setup that only feeds them. Structurally inert outside a Rust binary (no C ELF resolves a call to one of those names), so byte-identical (0/675) on the datatest corpus; keep the drop glue with `option cleanupcode off`
         self.switch_selector_guard = false; // (kuna) option switchselector, default-off this round: the ablation says ON is safe (0/675 datatest assertions, one function changed across the swept corpus and strictly for the better), but shipping a default ON is a DIV-registry change and that registry is not this change's to write
         self.linux_syscall = false; // (kuna) option linuxsyscall, default-off this round: it renames a call and locks a prototype, which is a judgement about the target OS that the vector alone does not prove
@@ -2055,6 +2063,7 @@ impl Architecture {
             "msvcftol" => on_off!(msvc_ftol, "MSVC __ftol-family call-fixup"),
             "tailcalljump" => on_off!(tail_call_jumps, "Tail-call jump recovery"),
             "funcboundflow" => on_off!(funcbound_flow, "Fall-through bound at function entries"),
+            "overlapbranch" => on_off!(overlap_branch, "Overlapping-branch fall-through truncation"),
             "cleanupcode" => on_off!(remove_cleanup_code, "Rust drop/deallocate call removal"),
             "linuxsyscall" => on_off!(linux_syscall, "Linux int 0x80 syscall naming"),
             "switchselector" => on_off!(switch_selector_guard, "Lowered-switch selector soundness guard"),
