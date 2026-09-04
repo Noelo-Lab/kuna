@@ -2298,6 +2298,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "tiedstorekeep"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P3"
+subphase = "copy-propagation"
+strength = "HARD"
+rewind = "P3"
+issue = "re-getprocaddress-result-discarded"
+summary = "Refuse the one RulePropagateCopy marker propagation that deletes a `local = f();` frame store. A `MOV [frame+off],REG` storing a call's return value lowers to an address-tied `stackvn = COPY(REG)`; RulePropagateCopy (ruleaction.cc:3943) rewrites every reader of `stackvn` to read `REG` directly. Ordinary readers are harmless -- the value is the same and the store stays alive for whoever still reads the location. A MARKER reader is not: an INDIRECT across a later call or a MULTIEQUAL at a join never prints, so once the marker has swallowed the last remaining reader the COPY has no descendants at all and dies to dead-code elimination, taking the store with it. Merge normally hides this by merging the register's HighVariable into the tied location's, but when that merge is DECLINED (intersecting covers) nothing repairs it and the local's last PRINTED assignment is whatever came before the store -- typically its NULL initialiser. Upstream already declines this propagation for an `addrforce` output (\"Don't propagate if we are keeping the COPY anyway\"), but `addrforce` is set only on heritage's own guard outputs, never on an ordinary frame store. ON widens that refusal by exactly one case: the marker is about to consume the LAST reader of a non-persistent address-tied COPY whose input is not itself address-tied and whose value comes from a call (CALL/CALLIND/CALLOTHER, or the INDIRECT that carries the return register across the call site before ActionActiveReturn promotes it). Propagating there buys nothing -- the marker is invisible either way -- and costs the store. OFF is upstream Ghidra's behavior exactly."
+use_when = "On by default (DIV-105). The OFF symptom is C that says the program uses a value it never computed: a local initialised to NULL, a call whose result is assigned to a register temporary, and then an indirect call or a dereference through the still-NULL local -- `v108 = NULL; v12 = (void *)GetProcAddress(...); ... v7 = (*v108)(...);`. The dataflow underneath is correct (the CALLIND's target really is the GetProcAddress result); only the printed store is missing, which is worse than a wrong-looking expression because an analyst reads it as a null-pointer call and concludes the import is never used. Flip OFF to reproduce upstream Ghidra's propagation exactly, or to bisect whether a stack-frame variable's appearance came from this brake. Each clause of the predicate was bought by measurement, not by argument: dropping the from-a-call clause turns three upstream datatests' if/else diamonds into `?:` ternaries and degrades union field resolution (7/675 assertions move, 0/675 with it); letting it fire on `persist` globals -- which already have heritage's own RETURN-COPY keeping their last store printed -- made the `copytrim` datatest run for minutes instead of 0.16 s."
+example = "option tiedstorekeep off"
+source_decompiler = "kuna"
+inspiration = "RE-friction round 2, need getprocaddress-result-discarded (ObfuscationFiesta.exe sub_140002530, PE x86-64, anti-debugging + control-flow obfuscation); upstream RulePropagateCopy (ruleaction.cc:3943) and its own addrforce refusal"
+change_kind = "correctness-fix"
+tier = "core"
+symptoms = "a local is set to NULL and then used as an indirect-call target with nothing assigned in between|GetProcAddress/dlsym result assigned to a temporary and the function pointer local it is stored into stays NULL|call result stored to the frame but the store is missing from the emitted C so the later read looks uninitialized|indirect call through a stack slot that no statement ever writes|a stack local read after a call shows only its initialiser"
+live_field = "tied_store_keep"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "regionstructure"
 values = "on|off"
 default = "on"

@@ -347,6 +347,35 @@ group):
 | `decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_7.rs` | signed div/mod idioms, segments, pointer flow, predication, float compares | `RuleSignDiv2`, `RuleSignMod2nOpt`, `RuleModOpt`, `RuleSegment`, `RulePtrFlow`, `RuleConditionalMove` (group `conditionalexe`), `RuleFloatCast`, `RuleIgnoreNan` |
 | `decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_8.rs` | int↔float conversion recovery, bit-counting booleans, float sign ops, compare splitting | `RuleUnsigned2Float`, `RuleThreeWayCompare`, `RulePopcountBoolXor`, `RuleLzcountShiftBool`, `RuleFloatSign`, `RuleOrCompare`, `RuleFuncPtrEncoding`, cleanup-pool `RuleExpandLoad` |
 
+**Keeping a frame store that only a marker still reads** (`option tiedstorekeep`,
+default on). `RulePropagateCopy` rewrites a reader of a `COPY` output to read the
+`COPY`'s input instead. When the reader is an ordinary op that is pure gain: the
+value is the same, and the `COPY` stays alive for whoever else reads its
+location. When the reader is a **marker** — an `INDIRECT` guarding an
+address-tied range across a call (§3.1), or a `MULTIEQUAL` at a join — it is
+not, because markers never print. Once the marker has swallowed the last
+remaining reader, an address-tied `COPY` has no descendants at all and is reaped
+as dead, and with it goes the only statement that said where the location's
+value came from. `Merge` normally conceals that (chapter 06): it merges the
+source's HighVariable into the tied location's, so both print under one name and
+the store reads as an assignment to that name. When the merge is DECLINED —
+covers intersect — nothing repairs it, and the local's last printed assignment
+is whatever preceded the store, typically its initialiser. Upstream already
+refuses the propagation when the `COPY` output is `addrforce` ("don't propagate
+if we are keeping the `COPY` anyway"), but `addrforce` is set only on heritage's
+own guard outputs (§3.1), never on an ordinary frame store. kuna widens that
+refusal by one case: the marker is about to take the **last** reader of a
+non-`persist` address-tied `COPY` whose input is not itself address-tied and
+whose value comes from a call — a `CALL`/`CALLIND`/`CALLOTHER` output, or the
+`INDIRECT` that carries the return register across the call site before chapter
+04's output promotion rewrites it. Propagating there buys nothing, since the
+marker is invisible either way, and costs the store. Every other propagation is
+untouched, including into a marker that is not the last reader, out of a
+constant, out of a same-location copy, and into any marker over a `persist`
+global — a global already has heritage's persist `RETURN-COPY` (§3.1) keeping
+its last store printed, so the brake has nothing to add there. `option
+tiedstorekeep off` restores upstream's behavior exactly.
+
 **Retyping an op mid-rule.** A rule that rewrites an op in place usually changes
 its op-code, and the op-code is not just a tag: `set_opcode` caches the
 op-code's *property word* (`unary`/`binary`/`booloutput`/`commutative`/`marker`/

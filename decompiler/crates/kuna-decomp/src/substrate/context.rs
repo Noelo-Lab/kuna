@@ -725,6 +725,13 @@ pub struct ArchContext {
     /// (the pre-port behavior).  Read by
     /// [`Heritage::heritage`](crate::p3_dataflow::heritage::Heritage::heritage).
     pub load_guard_range: bool,
+    /// (kuna) `option tiedstorekeep` (default-on, DIV-105): refuse the
+    /// `RulePropagateCopy` marker propagation that would leave an address-tied
+    /// `COPY` output holding a call's return value with no readers, so a
+    /// `local = f();` frame store survives dead-code elimination instead of
+    /// vanishing from the emitted C.  Read by
+    /// [`crate::p3_dataflow::kuna_tiedstorekeep::declines`].
+    pub tied_store_keep: bool,
     /// (kuna) region-based (Phoenix/SAILR) structurer: structure the CFG by
     /// walking the [`KunaRegionIdentifier`](crate::p7_regions::kuna_regionid)
     /// region tree and matching Phoenix acyclic schemas instead of running
@@ -1135,6 +1142,7 @@ impl ArchContext {
             call_overlap: 0,             // calloverlap (0 = both overlap guards inert)
             spill_arg_trial: 0,          // spillargtrial (0 = upstream: every STORE rejects)
             load_guard_range: true,      // loadguardrange (upstream behavior, default-on)
+            tied_store_keep: false,      // tiedstorekeep (Architecture::reset_defaults sets the shipped default: on)
             region_structure: false,     // regionstructure (opt-in default-off)
             guard_arm: false,            // guardarm (opt-in default-off)
             loop_cond_hoist: false,      // loopcondhoist (opt-in default-off)
