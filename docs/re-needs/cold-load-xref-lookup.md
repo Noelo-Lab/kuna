@@ -2,7 +2,7 @@
 need_id: cold-load-xref-lookup
 title: Cold-load xref lookup takes about four seconds on a 466 KB ELF
 track: perf
-status: open
+status: closed
 severity: minor
 probe_id: p-6d1e0b3b78b9
 acceptance_id: a-6763a70e69bc
@@ -18,8 +18,8 @@ touches: [decompiler/crates/kuna-cli, decompiler/crates/kuna-analysis, decompile
 scope: small
 regression_of: null
 pr: null
-closed_in_round: null
-closing_pr: null
+closed_in_round: 2
+closing_pr: "394"
 reject_reason: null
 ---
 
@@ -166,3 +166,16 @@ _not yet refuted_
   `listing/kuna_picbase.rs`, `sleigh.rs`). No new resource lease results — `perf` is not in
   `TRACK_RESOURCES` and none of those paths map to a counter — so this only makes the siblings'
   contracts file honest.
+- closed: acceptance a-6763a70e69bc now PASSES at 8ff1b4ecb1c7
+- round 2 B_DONE (captain): **closed on TWO independent quiet replays, and the margin is 3.3%.**
+  #394 merged as `8ff1b4ec`. B_VERIFY measured `wall_ms` median **967 ms** (reps=7) against the
+  `< 1000` bar; this tick re-measured it cold at loadavg 1.15 and got **942 ms**
+  (samples 923/654/970/942/971/894/972, flaky=False, exit_code 0 on all 7). The `--all` suite run
+  earlier the same hour reported 1110 ms and would NOT have closed it -- that reading was taken
+  while a builder held an 82%-CPU sweep. **Carry this forward: a future `regressed` flip on this
+  need is a stopwatch reading until it has been re-measured with the box quiet at reps>=7.**
+  Freshness was proved behaviourally rather than by a catalog row (this PR adds no option): the
+  same witness command fell 3855 ms -> 969 ms across `make binaries`, a 4.0x drop.
+  The promoted `tests/cli/cold-load-xref-lookup.json` is deliberately NOT this probe -- the
+  acceptance targets dataset `bin/Obfuscation1` and CI has no dataset, so the vendored assertion
+  is min-of-5 < 1100 ms on the in-repo `mcount_x86_64`. CI is therefore not exposed to this margin.

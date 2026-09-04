@@ -17,7 +17,7 @@ covered_by_option: null
 touches: [decompiler/crates/kuna-decomp, decompiler/crates/kuna-console]
 scope: small
 regression_of: null
-pr: 385
+pr: 393
 closed_in_round: null
 closing_pr: null
 reject_reason: null
@@ -221,3 +221,17 @@ _none recorded_
   `b-r2-c-string-objects` is editing `kuna-decomp/src/p5_types/`, `p0_knowledge/`,
   `infra/architecture.rs` and `substrate/context.rs` — none of attempt 3's leads, but expect to
   rebase after it merges.
+- round 2 B_DONE (captain): **attempt 3 (#393, `67182c7e`) MERGED and the need STAYS OPEN.**
+  `pr` 385 -> 393; `attempts` stays 3 (the builder set it); `closing_pr` stays null. The captain's
+  own quiet replay at reps=7 on merged main 8ff1b4ec: median **11,769 ms** (11,477-11,888) against
+  the `< 10,000 ms` bar -- better than the 12,437 ms the PR reported, still short. Three merged,
+  measured, output-identical attempts have now taken this witness 71.5 -> 19.4 -> 14.4 -> 11.8 s.
+  **The bar is still not moved.** A dispatch from here is attempt 4, and per the builder prompt's
+  two-failed-attempts rule the next tick should weigh a proposal-shaped dispatch rather than a
+  fourth open-ended profiling run.
+  Attempt 4 inherits, and must NOT re-buy: `stage_jump_table` 31% (2 tables; the per-table re-clone
+  is load-bearing for `option unrolledguard`), heritage ~23%, oppool1 ~14%, ActionDeadCode ~14%,
+  merge ~6% (was 1,331 ms before #393, now 3 ms). **One lead is REFUTED in-PR:**
+  `Heritage::guard_calls` is not a prototype-query hot spot -- the three model queries measure
+  30 / 19.7 / 9.8 ms inside a 971 ms loop, so the cost is INDIRECT op and Varnode construction
+  (IR growth), not a memoizable lookup.

@@ -4,8 +4,8 @@
   "count": 35,
   "rejected_count": 0,
   "by_status": {
-    "closed": 22,
-    "open": 13
+    "closed": 23,
+    "open": 12
   },
   "by_track": {
     "perf": 2,
@@ -179,38 +179,6 @@
       "reject_reason": null,
       "score": 20.794415,
       "path": "docs/re-needs/overlapping-anti-disassembly-sequence.md"
-    },
-    {
-      "need_id": "direct-address-keyboard-handler",
-      "title": "Direct-address keyboard handler decompilation annexes the unrelated renderer",
-      "track": "quality",
-      "status": "open",
-      "severity": "major",
-      "probe_id": "p-36f0974fc119",
-      "acceptance_id": "a-f13adb91d5d4",
-      "hypothesis_status": "inconclusive",
-      "credibility": 0.7,
-      "instances": 1,
-      "challenges": [
-        "6989ca5da15272fa37a80c43"
-      ],
-      "rounds": [
-        2
-      ],
-      "first_seen_round": 2,
-      "attempts": 0,
-      "covered_by_option": null,
-      "touches": [
-        "decompiler/crates/kuna-decomp"
-      ],
-      "scope": "small",
-      "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
-      "reject_reason": null,
-      "score": 13.862944,
-      "path": "docs/re-needs/direct-address-keyboard-handler.md"
     },
     {
       "need_id": "keyboard-callback-uses-undefined",
@@ -591,6 +559,38 @@
       "path": "docs/re-needs/cli-mode-read-raw.md"
     },
     {
+      "need_id": "direct-address-keyboard-handler",
+      "title": "Direct-address keyboard handler decompilation annexes the unrelated renderer",
+      "track": "quality",
+      "status": "open",
+      "severity": "major",
+      "probe_id": "p-36f0974fc119",
+      "acceptance_id": "a-f13adb91d5d4",
+      "hypothesis_status": "inconclusive",
+      "credibility": 0.7,
+      "instances": 1,
+      "challenges": [
+        "6989ca5da15272fa37a80c43"
+      ],
+      "rounds": [
+        2
+      ],
+      "first_seen_round": 2,
+      "attempts": 1,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-decomp"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": null,
+      "closed_in_round": null,
+      "closing_pr": null,
+      "reject_reason": null,
+      "score": 9.241962,
+      "path": "docs/re-needs/direct-address-keyboard-handler.md"
+    },
+    {
       "need_id": "no-cli-data-code-override",
       "title": "an agent cannot mark a range as code or data, or set a type at an address",
       "track": "tooling",
@@ -713,39 +713,6 @@
       "reject_reason": null,
       "score": 9.241962,
       "path": "docs/re-needs/whole-binary-json-untriageable.md"
-    },
-    {
-      "need_id": "decompiling-3396-byte-main",
-      "title": "Decompiling the 3396-byte main function takes about 68 seconds",
-      "track": "perf",
-      "status": "open",
-      "severity": "major",
-      "probe_id": "p-a9ebf39dace0",
-      "acceptance_id": "a-53d616afcb6a",
-      "hypothesis_status": "inconclusive",
-      "credibility": 0.7,
-      "instances": 1,
-      "challenges": [
-        "69a3822f7b3cc38c80464da4"
-      ],
-      "rounds": [
-        2
-      ],
-      "first_seen_round": 2,
-      "attempts": 2,
-      "covered_by_option": null,
-      "touches": [
-        "decompiler/crates/kuna-decomp",
-        "decompiler/crates/kuna-console"
-      ],
-      "scope": "small",
-      "regression_of": null,
-      "pr": 385,
-      "closed_in_round": null,
-      "closing_pr": null,
-      "reject_reason": null,
-      "score": 6.931472,
-      "path": "docs/re-needs/decompiling-3396-byte-main.md"
     },
     {
       "need_id": "disassembling-non-executable-rdata",
@@ -873,10 +840,43 @@
       "path": "docs/re-needs/stack-string-invalid-cast.md"
     },
     {
+      "need_id": "decompiling-3396-byte-main",
+      "title": "Decompiling the 3396-byte main function takes about 68 seconds",
+      "track": "perf",
+      "status": "open",
+      "severity": "major",
+      "probe_id": "p-a9ebf39dace0",
+      "acceptance_id": "a-53d616afcb6a",
+      "hypothesis_status": "inconclusive",
+      "credibility": 0.7,
+      "instances": 1,
+      "challenges": [
+        "69a3822f7b3cc38c80464da4"
+      ],
+      "rounds": [
+        2
+      ],
+      "first_seen_round": 2,
+      "attempts": 3,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-decomp",
+        "decompiler/crates/kuna-console"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": 393,
+      "closed_in_round": null,
+      "closing_pr": null,
+      "reject_reason": null,
+      "score": 5.545177,
+      "path": "docs/re-needs/decompiling-3396-byte-main.md"
+    },
+    {
       "need_id": "cold-load-xref-lookup",
       "title": "Cold-load xref lookup takes about four seconds on a 466 KB ELF",
       "track": "perf",
-      "status": "open",
+      "status": "closed",
       "severity": "minor",
       "probe_id": "p-6d1e0b3b78b9",
       "acceptance_id": "a-6763a70e69bc",
@@ -900,8 +900,8 @@
       "scope": "small",
       "regression_of": null,
       "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "closed_in_round": 2,
+      "closing_pr": "394",
       "reject_reason": null,
       "score": 4.620981,
       "path": "docs/re-needs/cold-load-xref-lookup.md"
