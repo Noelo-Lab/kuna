@@ -69,6 +69,18 @@ if [ "$IMPL_PROPOSAL" = 1 ]; then
     "$KUNA_PY" -m scripts.pipeline.state update --worker "$WORKER_ID" --status failed --note "resume worktree add failed"
     exit 1
   }
+elif [ -d "$WT" ] && git -C "$REPO" worktree list --porcelain 2>/dev/null \
+       | grep -qxF "branch refs/heads/$BRANCH" ; then
+  # A killed builder leaves its worktree behind on purpose ("for inspection"), and
+  # `worktree add` FAILS on an existing path -- so before this arm, the second attempt at a
+  # need could not even start, let alone resume the first attempt's work. Reuse it.
+  #
+  # Only this one case is handled here. A stale or wrong-branch directory is deliberately NOT
+  # cleaned up: `git worktree remove --force` is precisely the flag that deletes a worktree
+  # holding modified and untracked files, so "tidying" would destroy the work this arm exists
+  # to preserve -- strictly more destructive than main's behaviour of failing. Those cases
+  # still fall through to the add-and-fail path below, where a human or the GC decides.
+  log "reusing the existing worktree $WT, already on $BRANCH"
 else
   log "creating worktree $WT on $BRANCH (base $BASE_BRANCH)"
   git -C "$REPO" worktree add -b "$BRANCH" "$WT" "$BASE_BRANCH" >>"$LOG" 2>&1 || {
@@ -196,8 +208,67 @@ PY
 [ -n "$SID" ] && "$KUNA_PY" -m scripts.pipeline.state update --worker "$WORKER_ID" --note "session=$SID" >>"$LOG" 2>&1
 
 if [ $RC -ne 0 ]; then
+  # An account quota kill is indistinguishable from a crash by exit code alone: claude exits a
+  # bare 1 and the result JSON reads `"subtype": "success"` with `"is_error": true`. The only
+  # discriminator is the `result` string, and both of round 2's builders died this way
+  # ("You've hit your session limit"). Read it ONLY on the failure path: a finished session can
+  # mention a limit in its own prose, and treating that as a quota kill would mislabel good work.
+  QUOTA="$("$KUNA_PY" - "$RESULT_JSON" <<'QEOF' 2>/dev/null
+import json, re, sys
+try:
+    r = str(json.load(open(sys.argv[1])).get("result") or "")
+except Exception:
+    r = ""
+pat = r"(session|usage|rate)\s+limit|limit\s+(reached|exceeded)"
+print(r.strip() if re.search(pat, r, re.I) else "")
+QEOF
+)"
+  if [ -n "$QUOTA" ]; then
+    log "ACCOUNT LIMIT, not a build failure: $QUOTA"
+    NOTE="quota: $QUOTA (claude rc=$RC)"
+  else
+    NOTE="claude rc=$RC"
+  fi
+
+  # Preserve what the session had written. Round 2 lost 618 insertions across 19 files -- a new
+  # subcommand, a promoted tests/cli probe, a console verify test -- because a killed builder's
+  # work is uncommitted and RESUME_BRANCH only ever sees commits.
+  #
+  # Guarded, because committing blind is worse than not committing: `git commit` lands on
+  # whatever HEAD is, so a session that died mid-rebase or on a detached HEAD would put the
+  # commit somewhere the branch cannot reach while the log claimed otherwise. Deliberately not
+  # a trap -- an EXIT trap fires on SIGTERM without waiting for the claude subshell, and would
+  # stage a tree still being written.
+  WT_HEAD="$(git -C "$WT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '')"
+  WT_GITDIR="$(git -C "$WT" rev-parse --git-dir 2>/dev/null || echo '')"
+  if [ "$(git -C "$WT" rev-parse --show-toplevel 2>/dev/null)" != "$WT" ]; then
+    log "not preserving work: $WT is no longer its own git worktree"
+  elif [ "$WT_HEAD" != "$BRANCH" ]; then
+    log "not preserving work: $WT is on '$WT_HEAD', not $BRANCH (detached or switched)"
+  elif [ -n "$WT_GITDIR" ] && { [ -d "$WT_GITDIR/rebase-merge" ] || [ -d "$WT_GITDIR/rebase-apply" ]; }; then
+    log "not preserving work: a rebase is in progress in $WT"
+  elif [ -z "$(git -C "$WT" status --porcelain 2>/dev/null)" ]; then
+    log "nothing uncommitted to preserve in $WT"
+  else
+    WT_PHASE="$("$KUNA_PY" -m scripts.pipeline.state list --json 2>/dev/null \
+      | "$KUNA_PY" -c 'import json,sys,os
+d = json.load(sys.stdin)
+w = (d.get("workers") or {}).get(os.environ.get("WORKER_ID","")) or {}
+print(w.get("phase") or "unknown")' 2>/dev/null || echo unknown)"
+    git -C "$WT" add -A >>"$LOG" 2>&1
+    if git -C "$WT" commit -q \
+         -m "[AUTOMATED] WIP UNFINISHED, DO NOT MERGE: $SLUG stopped in phase $WT_PHASE" \
+         -m "Crash-preservation snapshot written by tools/pipeline/worker.sh, not by the builder. The session ended before finishing: $NOTE" \
+         -m "NOTHING HERE IS VERIFIED. No build, no make test / test-stages / rust-test / check-spec, no counters --fix, no mergecheck, no acceptance probe. Raw material for a resuming builder, never a reviewable change." \
+         >>"$LOG" 2>&1; then
+      log "preserved uncommitted work as WIP commit $(git -C "$WT" rev-parse --short HEAD) on $BRANCH"
+    else
+      log "WARNING: could not commit the uncommitted work in $WT; it is left in place"
+    fi
+  fi
+
   log "claude session exited rc=$RC (timeout=124); leaving worktree for inspection"
-  "$KUNA_PY" -m scripts.pipeline.state update --worker "$WORKER_ID" --status failed --note "claude rc=$RC" >>"$LOG" 2>&1
+  "$KUNA_PY" -m scripts.pipeline.state update --worker "$WORKER_ID" --status failed --note "$NOTE" >>"$LOG" 2>&1
   exit $RC
 fi
 
