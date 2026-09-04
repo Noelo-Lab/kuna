@@ -17,6 +17,15 @@ import sys
 import time
 
 from . import config
+
+# `scripts.pipeline.state` resolves its inventory from KUNA_PIPELINE_STATE_DIR at call time,
+# and this module is normally run as a bare `python3 -m scripts.repipe.status` with no env
+# set -- in which case every slot, lease and worker read here came from the OTHER loop's
+# `.kuna-pipeline/`, which is empty. The symptom is a status line reading `testers 0/3` while
+# three testers are live and holding all three slots. Pin it before importing the collector,
+# exactly as webui.py does; an explicit override still wins.
+os.environ.setdefault("KUNA_PIPELINE_STATE_DIR", str(config.state_dir()))
+
 from ..pipeline import status as pstatus
 from ..pipeline import state as pstate
 
