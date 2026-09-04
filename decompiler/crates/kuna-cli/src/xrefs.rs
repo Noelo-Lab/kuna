@@ -73,6 +73,18 @@ struct Target {
     name: Option<String>,
 }
 
+/// The operand resolved to an address, before the walk that names it.
+///
+/// The address is what the walk needs (it is pointed at it, `build_with_focus`);
+/// the naming half runs afterwards because it reads the walk's own discovered
+/// functions. `name` is a name the lookup itself established, `fallback` one to
+/// use only if nothing else names the address.
+struct TargetSpec {
+    addr: u64,
+    name: Option<String>,
+    fallback: Option<String>,
+}
+
 /// `kuna xrefs` entry point.
 pub fn run(argv: &[String]) -> i32 {
     let args = match parse_args(argv) {
@@ -131,15 +143,25 @@ fn query(args: &XrefArgs) -> Result<String, String> {
 
     let entries = prog.function_entries_canonical();
     let inventory: Vec<u64> = entries.iter().map(|e| e.addr.get_offset()).collect();
-    let seeds = kuna_analysis::listing::xrefs::discovery_seeds(&file, &inventory);
-    let index = kuna_analysis::listing::xrefs::build(
+    let seeds = kuna_analysis::listing::xrefs::discovery_seeds(
+        &file,
+        &inventory,
+        prog.arch().analysis_funcstart_patterns,
+    );
+    // The operand resolves to an address BEFORE the walk so the walk can be
+    // pointed at it: a function whose only inbound edge is an indirect call
+    // through a table is in no seed set, and a query about it must not answer
+    // "no references" about the very address the caller named.
+    let spec = target_address(&prog, &args.spec)?;
+    let index = kuna_analysis::listing::xrefs::build_with_focus(
         &file,
         prog.arch(),
         prog.arch().translate(),
         &seeds,
+        &[spec.addr],
     );
 
-    let target = resolve_target(&prog, &index, &args.spec)?;
+    let target = resolve_target(&prog, &index, spec);
     let rows = match args.direction {
         // `--to` answers for the callable, not the literal address: an import
         // reached through a veneer and an IAT/GOT slot is one thing under two
@@ -178,33 +200,50 @@ fn query(args: &XrefArgs) -> Result<String, String> {
 /// A name that identifies several entries is an ERROR naming all of them, not a
 /// miss: falling through to the symbol table would answer for whichever one it
 /// happens to hold first, which is the guess the selector model exists to refuse.
-fn resolve_target(prog: &ConsoleProgram, index: &XrefIndex, spec: &str) -> Result<Target, String> {
+fn target_address(prog: &ConsoleProgram, spec: &str) -> Result<TargetSpec, String> {
     let spec = spec.trim();
     if let Some(body) = spec.strip_prefix("0x").or_else(|| spec.strip_prefix("0X")) {
         let addr = u64::from_str_radix(body, 16)
             .map_err(|_| format!("invalid address {spec:?}"))?;
-        return Ok(Target { addr, name: name_at(prog, index, addr) });
+        return Ok(TargetSpec { addr, name: None, fallback: None });
     }
     match prog.resolve_entry(&EntrySelector::Name(spec.to_string())) {
-        Ok(entry) => return Ok(Target { addr: entry.addr.get_offset(), name: Some(entry.name) }),
+        Ok(entry) => {
+            return Ok(TargetSpec {
+                addr: entry.addr.get_offset(),
+                name: Some(entry.name),
+                fallback: None,
+            })
+        }
         Err(error @ EntryLookupError::Ambiguous { .. }) => return Err(error.to_string()),
         Err(_) => {}
     }
     if let Some(addr) = prog.lookup_symbol(spec) {
-        let addr = addr.get_offset();
-        return Ok(Target { addr, name: name_at(prog, index, addr).or_else(|| Some(spec.to_string())) });
+        return Ok(TargetSpec {
+            addr: addr.get_offset(),
+            name: None,
+            fallback: Some(spec.to_string()),
+        });
     }
     if let Some((name, addr, _)) = prog
         .global_data_symbols()
         .into_iter()
         .find(|(name, _, _)| name == spec)
     {
-        return Ok(Target { addr, name: Some(name) });
+        return Ok(TargetSpec { addr, name: Some(name), fallback: None });
     }
     if let Ok(addr) = u64::from_str_radix(spec, 16) {
-        return Ok(Target { addr, name: name_at(prog, index, addr) });
+        return Ok(TargetSpec { addr, name: None, fallback: None });
     }
     Err(format!("no symbol named {spec:?} (and it is not an address)"))
+}
+
+/// Attach the display name to an address the spec already resolved: whatever the
+/// lookup itself knew, else the program's best name for the address, else the
+/// spec's own fallback (a symbol names its address even when nothing else does).
+fn resolve_target(prog: &ConsoleProgram, index: &XrefIndex, spec: TargetSpec) -> Target {
+    let TargetSpec { addr, name, fallback } = spec;
+    Target { addr, name: name.or_else(|| name_at(prog, index, addr)).or(fallback) }
 }
 
 /// The program's best name for `vma`: the canonical function entry there, then a

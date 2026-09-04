@@ -32,6 +32,16 @@ fn fixture(name: &str) -> String {
         .to_string()
 }
 
+/// The stripped Cortex-M firmware whose `0x800039c` is reachable ONLY through a
+/// data path: no symbol, no `<patternpairs>` prologue pair, and no direct `bl`
+/// points at it, so no recursive descent seeded from the inventory reaches it.
+/// It is the witness for both halves of the query's discovery
+/// ([`a_function_no_descent_reaches_still_answers_for_itself`] and
+/// [`the_gap_walk_finds_call_sites_a_descent_cannot_reach`]).
+fn cortexm_gap() -> String {
+    fixture("cortexm_aifcorroborate_le32")
+}
+
 /// The stripped x86-64 PIE the acceptance probe names. `0x1030` is its
 /// `.plt.got` `__cxa_finalize` thunk; `0x4010`/`0x4014` are its two globals.
 fn aif_gap() -> String {
@@ -353,4 +363,55 @@ fn usage_errors_exit_two() {
         assert_eq!(code, 2, "{args:?} should be a usage error, got {code}: {stderr}");
         assert!(stderr.contains("usage: kuna xrefs"), "{args:?}: {stderr}");
     }
+}
+
+/// A reference query seeds its walk with the address it was ASKED about.
+///
+/// `0x800039c` has no inbound `bl`, no funcsym and no paired prologue, so the
+/// recursive descent structurally cannot reach it and the answer used to be
+/// `count: 0` about a function that plainly calls something. It is walked after
+/// the seeded descent drains, so it can only add coverage — and it is answered
+/// even with the speculative gap-walk off, because the caller naming an address
+/// is a stronger fact than a fingerprint match.
+#[test]
+fn a_function_no_descent_reaches_still_answers_for_itself() {
+    let Some(doc) = xrefs(&[&cortexm_gap(), "--from", "0x800039c", "--json"]) else {
+        return;
+    };
+    assert_eq!(json_int(&doc, "count"), Some(1), "the focus seed did not walk:\n{doc}");
+    assert_eq!(json_str(&doc, "name").as_deref(), Some("sub_800039c"), "{doc}");
+    assert!(doc.contains("\"to_address_hex\": \"0x8000160\""), "wrong callee:\n{doc}");
+    assert!(doc.contains("\"from_address_hex\": \"0x80003a0\""), "wrong call site:\n{doc}");
+
+    let off = xrefs(&[&cortexm_gap(), "--from", "0x800039c", "--json", "--option", "aif", "off"])
+        .expect("the gap-walk-off query");
+    assert_eq!(json_int(&off, "count"), Some(1), "the focus seed needs the gap-walk:\n{off}");
+}
+
+/// The speculative gap-walk runs over the partition the reference walk itself
+/// leaves behind, so the call sites inside a function only it discovers are in
+/// the answer — without the analysis-tier Listing decoding the program a second
+/// time to produce them.
+///
+/// `0x8000160` is called twice: once from `0x8000042`, which every descent
+/// reaches, and once from `0x80003a0`, which lives inside the data-reachable
+/// `0x800039c`. Turning the gap-walk off drops the second one, which is exactly
+/// the recall this query would lose by dropping the Listing without replacing it.
+#[test]
+fn the_gap_walk_finds_call_sites_a_descent_cannot_reach() {
+    let Some(doc) = xrefs(&[&cortexm_gap(), "--to", "0x8000160", "--json"]) else {
+        return;
+    };
+    assert_eq!(json_int(&doc, "count"), Some(2), "a caller is missing:\n{doc}");
+    for site in ["0x8000042", "0x80003a0"] {
+        assert!(doc.contains(&format!("\"from_address_hex\": \"{site}\"")), "no {site}:\n{doc}");
+    }
+
+    let off = xrefs(&[&cortexm_gap(), "--to", "0x8000160", "--json", "--option", "aif", "off"])
+        .expect("the gap-walk-off query");
+    assert_eq!(json_int(&off, "count"), Some(1), "the gap-walk was not the reason:\n{off}");
+    assert!(
+        !off.contains("\"from_address_hex\": \"0x80003a0\""),
+        "the gap-walk-off answer still has the gap call site:\n{off}"
+    );
 }

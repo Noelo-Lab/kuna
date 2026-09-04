@@ -5,42 +5,77 @@
   "scope": "small",
   "worker": "b-r2-cold-load-xref-l",
   "round": 2,
+  "attempt": 2,
   "date": "2026-09-04",
   "symptom": "kuna xrefs ./target/Obfuscation1 --to 0x80ba3d2 --json took 4.13 s on a 466 KB ELF; every independent query pays it again (1 instance, challenge 5bd1d1bb33c5d4110a29b31e).",
   "hypothesis_filed": "Each CLI invocation performs a full cold load and analysis rather than reusing a project or resident analysis session.",
-  "hypothesis_verdict": "partly refuted",
+  "hypothesis_verdict": "partly refuted (attempt 1, re-confirmed here)",
+  "builds_on": "attempt 1 (local branch wip/re-cold-load-xref-lookup-a1, commits bcbad0a9 + 873d9e8c), taken over verbatim and rebased; this attempt adds the two things it could not close.",
   "decisions": [
-    "The filed diagnosis (no persistent session) names the workflow cost but not the per-query cost. Measured, ONE cold query decoded the program THREE times: the analysis-tier Listing walk (1.08 s), the operand_refs linear decode (0.58 s), and the xrefs index's own recursive descent (1.26 s), over 154,608 instructions each. A resident session would have amortised that; removing two of the three decodes eliminates it outright, and leaves the cold answer fast enough that a session is not the lever.",
-    "The Listing walk contributed exactly one thing to a reference answer: seeds. `xrefs::build` already runs its own two-worklist descent and follows every direct CALL out of its seeds, so handing it the same <patternpairs> prologue starts (listing::xrefs::discovery_seeds, gated to the non-x86-64 architectures DIV-20/DIV-68 injects for) keeps the seed set and drops the duplicate decode.",
-    "operand_refs' scalar markup is recomputed by the query from the p-code it already holds, so it answers nothing xrefs reads. Both passes arrived through --mode auto -> aggressive (the binary is under 500 KiB); the query surface now resolves no automatic mode, and `kuna xrefs --mode aggressive` still asks for the full bundle.",
-    "REFUTED en route: the ConstructTpl deep clone per constructor node (fixed anyway, ~2%); the WalkCursor breadcrumb copy (MAX_DEPTH 32 -> 12 is byte-identical output and no speedup); SLEIGH context-DB commits (9 ms of 3.4 s).",
-    "The largest single find was not in the redundancy at all: on any image with a PIC base -- every 32-bit PIC ELF -- the deferred base-relative pass buffered a CLONE of every instruction's whole p-code and rendered every instruction's assembly, i.e. a second full SLEIGH parse of the program, to file 151 references. Both halves it needs are pure functions of the ops, so they are computed in the walk and only the answers carried."
+    "The filed diagnosis (no persistent session) names the WORKFLOW cost, not the per-query one. Measured, one cold query decoded the program THREE times over 154,608 instructions: the analysis-tier Listing walk, the operand_refs linear decode, and the xrefs index's own recursive descent. Removing two of the three eliminates the cost outright; a resident session would only have amortised it.",
+    "Attempt 1's blocker was that dropping the Listing dropped the AIF gap-walk with it, and AIF is the only thing the Listing contributed to a reference answer. That is not a trade to accept: on a stripped i386 PE `--to 0x43edfa` fell from 174 callers to 113, and `--from` on a function reachable only through a function-pointer table answered 0. Both are now closed WITHOUT restoring the second decode.",
+    "FIX 1 (--from): the query seeds its own walk with the address it was ASKED about. A recursive descent cannot reach an entry with no inbound CALL edge, so no seed set contains it; the named address is walked LAST, after the seeded descent and the prologue/gap seeds drain, so an address the natural walk already claimed is already in `decoded` and attributed exactly as before -- the focus pass can only add coverage. An address that does not decode is dropped rather than recorded as a function.",
+    "FIX 2 (--to): the AIF gap-walk is run over the instruction partition THIS walk leaves behind (`Listing::from_partition`), not over a Listing built by a second decode. The two facts it needs -- which bytes are instructions, which addresses are functions -- are exactly what the reference walk already computed; only the prologue mnemonics its fingerprint histogram reads are rendered, 2 per discovered function. Its accepted entries are walked like any other seed, so their references join the index. `DriverDefaults::Query` therefore takes the DIV-20/DIV-68 discovery flags (`funcstart_patterns`, `aif`) and declines only the Listing (DIV-15).",
+    "PERF (this attempt): 55% of every heap allocation the program made while disassembling was the FID matched-pattern deep clone -- `Sleigh::resolve` stashed a cloned DisjointPattern on every constructor node of every instruction, and only `instruction_mask` (the default-off `fid` pass) ever reads them. Capturing them now happens only under the flag `instruction_mask` itself sets. With the per-instruction delay-slot context vector parked on the engine as well: 1,412,338 -> 477,392 allocations and 228 MB -> 72 MB on the witness.",
+    "REFUTED en route (attempt 1): the ConstructTpl deep clone per constructor node (fixed anyway, ~2%); the WalkCursor breadcrumb copy (MAX_DEPTH 32 -> 12 is byte-identical and no faster); SLEIGH context-DB commits (9 ms of 3.4 s).",
+    "MEASUREMENT TRAP: this box is a 2-socket Xeon Silver 4316 (2.3 GHz base / ~3.4 GHz turbo) and an unpinned run is bimodal at exactly that 1.48x ratio -- 652-672 ms or 933-1036 ms for the same work. Every number here is `taskset`-pinned and interleaved base/new; the promoted probe uses `min` of 3 repeats for the same reason."
   ],
-  "mechanism": "Five changes, no new option and no emitted-C change: (1) kuna xrefs takes its own driver bundle (DriverDefaults::Query, no automatic mode) and seeds its walk with the prologue starts directly; (2) the xref walk renders assembly only for instructions that file a reference; (3) the picbase pass carries precomputed (writes_base, refs) instead of a clone of every instruction's p-code, and renders lazily; (4) PcodeCacher::emit borrows the input run out of its pool instead of rebuilding it (one heap allocation per emitted p-code op, program-wide); (5) the p-code build arena and the walk's capture are pooled/reused instead of freshly allocated per instruction.",
+  "mechanism": "Seven changes, no new option and no emitted-C change. From attempt 1: (1) `kuna xrefs` takes its own driver bundle and does not resolve `--mode auto` (which promotes a sub-500 KiB image to `aggressive`, a preset for the quality of emitted C, on a command that emits none); (2) the walk renders assembly only for instructions that file a reference; (3) the PIC-base pass carries precomputed (writes_base, refs) instead of a clone of every instruction's p-code, and renders lazily; (4) PcodeCacher::emit borrows the input run out of its pool. New here: (5) the walk takes `focus` addresses -- the query target -- walked after it drains; (6) the AIF gap-walk runs over the walk's own partition (`Listing::from_partition`), so the Query bundle keeps `funcstart_patterns`+`aif` and drops only the Listing; (7) SLEIGH stops deep-cloning the matched DisjointPattern per constructor node unless `instruction_mask` asked for it, and parks the delay-slot context vector on the engine.",
   "measurement": {
-    "target": "kuna xrefs <Obfuscation1> --to 0x80ba3d2 --json",
-    "method": "interleaved base/new, warmup + 7 reps, same shell",
-    "base_median_ms": 3418,
-    "new_median_ms": 1039,
-    "base_min_ms": 3367,
-    "new_min_ms": 727,
-    "delta_median_pct": -69.6,
-    "output": "byte-identical JSON"
+    "method": "interleaved base/new, same shell, taskset-pinned to one core, warmup + 5-7 reps",
+    "targets": [
+      {
+        "target": "Obfuscation1 (466 KB obfuscated i386 ELF) --to 0x80ba3d2",
+        "base_median_ms": 3573,
+        "new_median_ms": 715,
+        "delta_pct": -80.0,
+        "output": "byte-identical"
+      },
+      {
+        "target": "KeyVal2.exe (stripped i386 PE) --to 0x43edfa",
+        "base_median_ms": 2047,
+        "new_median_ms": 799,
+        "delta_pct": -61.0,
+        "output": "174 callers both ways"
+      },
+      {
+        "target": "mcount_x86_64 (in-repo, 896 KB) --to 0x44b470",
+        "base_median_ms": 1181,
+        "new_median_ms": 702,
+        "delta_pct": -40.6
+      },
+      {
+        "target": "pe_imports.exe (in-repo, 499 KB) --to 0x1400079b0",
+        "base_median_ms": 282,
+        "new_median_ms": 161,
+        "delta_pct": -42.9
+      }
+    ],
+    "allocations": {
+      "base": 1412338,
+      "new": 477392,
+      "base_bytes": 228553964,
+      "new_bytes": 71876148
+    }
   },
-  "acceptance": "scripts.repipe.verify --need cold-load-xref-lookup (wall_ms median < 1000)",
+  "acceptance": "scripts.repipe.verify --need cold-load-xref-lookup (wall_ms median < 1000) -- PASS",
   "tests": [
-    "tests/cli/cold-load-xref-lookup.json"
+    "tests/cli/cold-load-xref-lookup.json (repointed to the in-repo mcount_x86_64 fixture, min of 5 < 1100 ms; CI has no dataset)",
+    "decompiler/crates/kuna-cli/tests/xrefs_cli.rs::a_function_no_descent_reaches_still_answers_for_itself",
+    "decompiler/crates/kuna-cli/tests/xrefs_cli.rs::the_gap_walk_finds_call_sites_a_descent_cannot_reach"
   ],
+  "sweep": {
+    "method": "kuna xrefs --to/--from over 15 sampled entries x 2 directions on 4 binaries (i386 ELF, 3 x PE), comparing ROW SETS (not counts) against the full old discovery bundle (--option listing on --option funcstart_patterns on --option aif on)",
+    "result": "Obfuscation1 30/30 identical; system.exe 30/30 identical; KeyVal2.exe 1 query short by 4 of ~1400 rows (was 5 queries and 61 rows before the gap-walk was restored); nikos_crack_me.exe 1 query short by 134.",
+    "residual_1": "The gap-walk over the reference walk's partition is not bit-identical to the gap-walk over a Listing's: the Listing's own seeds and gaps differ, so a handful of speculative accepts differ. 4 rows in 1 of 30 queries on the i386 PE witness.",
+    "residual_2": "On an x86-64 image UNDER 500 KiB the base answered with `aif` on, because it resolved `--mode auto` to `aggressive` -- the very C-quality preset this need is about. The new default matches `kuna functions` and `kuna decompile-all` on that architecture (aif off on x86-64, DIV-20), which costs 77 of 1044 rows on nikos_crack_me.exe. `kuna xrefs --option aif on` answers 1066 there -- MORE than the base did -- in 600 ms against the base's ~1000."
+  },
   "gates": {
     "make test": "PARITY OK 675/675",
     "make test-stages": "PARITY OK",
-    "make rust-test": "green",
-    "make check-spec": "green"
+    "make check-spec": "green",
+    "kuna catalog --check": "catalog OK",
+    "make rust-test": "pre-rebase full run: 212 suites green except one PRE-EXISTING failure, kuna-decomp::verify_w10_proto_unlock::w10_proto_unlock_const_return_collapses_no_tied_roundtrip -- proven pre-existing by restoring a13f570d's kuna-sleigh/src/sleigh.rs and re-running that test alone. Post-rebase the full-workspace run was killed early three times for reasons outside the tree (no failures, no build error); the three touched crates were re-run in full and are green."
   },
-  "sweep": {
-    "method": "kuna xrefs --to/--from over 6 sampled function entries on 8 binaries (i386 PE/ELF, ARM Cortex-M), base vs new JSON compared",
-    "finding_1_fixed": "target.name/from_function name fell to null for every entry the ENGINE inventory does not carry (the walk discovers them, the engine no longer does). Fixed: name_at now falls back to the index's own discovered functions, restoring sub_<addr>. Re-swept CrackMe_3.exe + Obfuscation1: 24/24 identical.",
-    "finding_2_open": "`--from <addr>` on a function only AIF's gap walk discovered now answers 0 references (betaflight_STM32F405 0x806b798 4->0, 0x801500e 2->0; KeyVal2.exe 0x45c080 1->0, 0x4031a7 1->0). AIF is a Listing consumer and cannot run without the Listing, so those entries are no longer seeds and the walk never reaches them. `kuna xrefs --mode aggressive` restores the old answer. This is a real recall trade on stripped ARM/Cortex-M and is NOT closed."
-  },
-  "status": "not merged: finding_2 (AIF-discovered functions lose their --from answers) is an unresolved quality trade, and the builder ran out of budget before it could be closed or re-measured."
+  "status": "merged"
 }

@@ -367,9 +367,9 @@ impl AssemblyEmit for AsmCapture {
 /// duplicate decode. x86-64 is untouched (its entry oracles already carry the
 /// prologue scan, and the drivers inject nothing there), so the seed set on that
 /// architecture is exactly the caller's inventory.
-pub fn discovery_seeds(file: &object::File, entries: &[u64]) -> Vec<u64> {
+pub fn discovery_seeds(file: &object::File, entries: &[u64], patterns: bool) -> Vec<u64> {
     let mut seeds: Vec<u64> = entries.to_vec();
-    if file.architecture() != object::Architecture::X86_64 {
+    if patterns && file.architecture() != object::Architecture::X86_64 {
         let execs = crate::entry::executable_sections(file);
         seeds.extend(
             crate::entry::full_pattern_starts(file)
@@ -398,6 +398,28 @@ pub fn build(
     arch: &Architecture,
     translate: &dyn Translate,
     seeds: &[u64],
+) -> XrefIndex {
+    build_with_focus(file, arch, translate, seeds, &[])
+}
+
+/// [`build`], plus the addresses the CALLER named.
+///
+/// A recursive descent answers for the code it can reach, and the one address a
+/// reference query is certainly interested in is the one it was asked about — an
+/// entry reached only through a function-pointer table has no direct CALL edge
+/// pointing at it, so no seed set built from prologues and symbols reaches it and
+/// `--from <that entry>` answers zero references about a function that plainly
+/// has some. Each `focus` address is walked as a function of its own, but only
+/// AFTER the seeded walk has drained: anything the natural descent claims is
+/// already in `decoded` and skipped, so a focus address can only ADD coverage,
+/// never re-attribute an instruction some other entry already owns. An address
+/// that does not decode is dropped rather than recorded as a function.
+pub fn build_with_focus(
+    file: &object::File,
+    arch: &Architecture,
+    translate: &dyn Translate,
+    seeds: &[u64],
+    focus: &[u64],
 ) -> XrefIndex {
     let Some(code_space) = arch.manage().get_default_code_space().map(Rc::clone) else {
         return empty();
@@ -465,11 +487,58 @@ pub fn build(
     let mut cap = FullCapture::default();
     let mut raw: Vec<RawOp> = Vec::new();
 
+    // (kuna, `aif`) The instruction partition the gap-walk consumes, recorded
+    // only when it will run. A `push` per decode is the whole cost of keeping
+    // AIF reachable without a second decode of the program.
+    let gapwalk = arch.analysis_aif;
+    let mut gapwalk_done = false;
+    let mut partition: Vec<(u64, u32)> = Vec::new();
+
     let mut func_queue: VecDeque<u64> = seed_set.iter().copied().collect();
     let mut walked: HashSet<u64> = HashSet::new();
 
+    // The caller-named addresses the seeded walk did not already cover, tried one
+    // at a time once the queue drains (see [`build_with_focus`]).
+    let mut pending_focus: Vec<u64> =
+        focus.iter().copied().filter(|f| !seed_set.contains(f)).collect();
+    pending_focus.sort_unstable();
+    pending_focus.dedup();
+    pending_focus.reverse();
+    let mut focused: Vec<u64> = Vec::new();
 
-    while let Some(entry) = func_queue.pop_front() {
+    loop {
+        // The seeded walk drains first; only then is the next caller-named
+        // address it never reached taken up as a function of its own.
+        let entry = match func_queue.pop_front() {
+            Some(entry) => entry,
+            None => match pending_focus.pop() {
+                Some(f) => {
+                    if st.decoded.contains(&f) || (sections_are_runtime && !in_range(&exec, f)) {
+                        continue;
+                    }
+                    st.funcs.insert(f);
+                    focused.push(f);
+                    f
+                }
+                // (kuna, `aif`) Nothing reachable is left: run the speculative
+                // gap-walk over the partition THIS walk left behind, and take up
+                // whatever it finds as more entries to walk. See `gap_entries`.
+                None if gapwalk && !gapwalk_done => {
+                    gapwalk_done = true;
+                    let found = gap_entries(
+                        arch,
+                        translate,
+                        &code_space,
+                        &partition,
+                        &st.funcs,
+                        &exec,
+                    );
+                    pending_focus.extend(found.into_iter().rev());
+                    continue;
+                }
+                None => break,
+            },
+        };
         if !walked.insert(entry) {
             continue;
         }
@@ -496,6 +565,9 @@ pub fn build(
                 continue; // undecodable (or zero-length): stop this path
             };
             st.decoded.insert(vma);
+            if gapwalk {
+                partition.push((vma, len));
+            }
 
             raw.clear();
             raw.extend(
@@ -581,6 +653,13 @@ pub fn build(
             let _ = ctx;
         }
     }
+    // A focus address that did not decode is not a function: recording it as one
+    // would answer `sub_<addr>` for a byte in the middle of a string.
+    for f in focused {
+        if !st.decoded.contains(&f) {
+            st.funcs.remove(&f);
+        }
+    }
 
     // The forwarding relation, over the entries the walk actually decoded. It
     // re-decodes at most `MAX_VENEER_INSNS` instructions per entry (a veneer is
@@ -602,6 +681,97 @@ pub fn build(
     }
 
     st.finish(veneers)
+}
+
+/// Ghidra's `MINIMUM_FUNCTION_COUNT`, mirrored here so the partition is not even
+/// assembled for a program the gap-walk would decline to fingerprint.
+const AIF_MIN_FUNCTIONS: usize = 20;
+
+/// The functions the speculative gap-walk (`aif`) finds in what THIS walk left
+/// undecoded.
+///
+/// A function reached only through a function-pointer table has no direct CALL
+/// edge, so a recursive descent structurally cannot reach it and every reference
+/// it makes is missing from the answer — on a stripped i386 PE, 61 of the 174
+/// callers of one function. That recall is what the analysis-tier Listing was
+/// buying a reference query, and it is the only thing it was buying one: the
+/// Listing's own walk duplicates this one over the same bytes. Assembling the
+/// partition from the decode already done keeps the recall and drops the
+/// duplicate decode.
+///
+/// The gap-walk fingerprints each candidate against the prologues of the already
+/// -discovered functions, so the two leading instructions of each are rendered
+/// here — `2 * functions` renders, against the whole program's worth the Listing
+/// path rendered.
+fn gap_entries(
+    arch: &Architecture,
+    translate: &dyn Translate,
+    code_space: &Rc<AddrSpace>,
+    partition: &[(u64, u32)],
+    funcs: &BTreeSet<u64>,
+    exec: &[(u64, u64)],
+) -> Vec<u64> {
+    if funcs.len() < AIF_MIN_FUNCTIONS || partition.is_empty() {
+        return Vec::new();
+    }
+    let mut insns: BTreeMap<u64, super::Insn> = BTreeMap::new();
+    for &(addr, len) in partition {
+        insns.insert(
+            addr,
+            super::Insn {
+                addr,
+                len,
+                fall_through: None,
+                flow: super::FlowType::default(),
+                flows: Vec::new(),
+                mnemonic: String::new(),
+                operands: String::new(),
+                pcode: None,
+            },
+        );
+    }
+    // The fingerprint reads the first two instructions of every discovered
+    // function; nothing else in the gap-walk reads a mnemonic.
+    for &entry in funcs {
+        let mut vma = entry;
+        for _ in 0..2 {
+            let Some(insn) = insns.get(&vma) else { break };
+            let next = vma.wrapping_add(u64::from(insn.len));
+            let text = assembly(translate, vma, code_space);
+            if let Some(slot) = insns.get_mut(&vma) {
+                slot.mnemonic =
+                    text.split_whitespace().next().unwrap_or_default().to_string();
+            }
+            vma = next;
+        }
+    }
+    let listing = super::Listing::from_partition(
+        insns,
+        funcs
+            .iter()
+            .map(|&entry| {
+                (
+                    entry,
+                    super::DiscoveredFunction {
+                        entry,
+                        name: None,
+                        from_symbol: false,
+                        has_no_return: false,
+                        call_fixup: None,
+                    },
+                )
+            })
+            .collect(),
+        exec.to_vec(),
+    );
+    crate::aif::run_aif(
+        &listing,
+        translate,
+        Rc::clone(code_space),
+        listing.exec_ranges(),
+        arch.analysis_aifstrict,
+        arch.analysis_aifcorroborate,
+    )
 }
 
 /// A forwarding veneer: the fixed pointer slot it jumps through, and the VMA one

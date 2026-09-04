@@ -1808,16 +1808,34 @@ same-named functions together.
 (kuna) Because the query runs that descent **itself**, it takes its own analysis
 bundle rather than a decompiling surface's. `kuna functions` and `kuna decompile-all`
 inject the DIV-15/DIV-20/DIV-68 defaults (the Listing, the prologue-pattern scan,
-AIF); the query surface injects none of them, and instead seeds its walk with the
-same `<patternpairs>` prologue starts the injection existed to produce
-(`decompiler/crates/kuna-analysis/src/listing/xrefs.rs (discovery_seeds)`, gated to
-the non-x86-64 architectures the injection covered, so x86-64's seed set is exactly
-the caller's inventory). The Listing's only contribution to a *reference* answer was
-a richer seed set, and building it meant decoding the whole program a second time;
-on a 466 KB obfuscated i386 image that walk, plus `operand_refs`' third linear
-decode, was 1.66 s of a 3.4 s answer that is byte-identical without either. A caller
-who wants the full analysis tier over the query — the AIF gap entries, the FID
-renames — asks for it by name (`kuna xrefs --mode aggressive`).
+AIF); the query surface takes the two *discovery* flags and declines the Listing,
+because the Listing's walk is this walk — a second recursive descent over the same
+bytes, decoded a second time. On a 466 KB obfuscated i386 image that walk, plus
+`operand_refs`' third linear decode, was 1.66 s of a 3.4 s answer that is
+byte-identical without either.
+
+The two discovery facts the Listing fed are produced from the query's own decode
+instead. The `<patternpairs>` prologue starts are handed straight to the walk as
+seeds (`decompiler/crates/kuna-analysis/src/listing/xrefs.rs (discovery_seeds)`,
+gated by `funcstart_patterns` and to the non-x86-64 architectures the injection
+covered, so x86-64's seed set is exactly the caller's inventory). The speculative
+gap-walk (`aif`) is run over the instruction partition the query's own walk leaves
+behind (`gap_entries` → `Listing::from_partition`), and every function it accepts is
+walked like any other seed, so the references inside it join the index. That recall
+is not optional decoration: a function whose only inbound edge is an indirect call
+through a data table has no CALL edge for any descent to follow, and without the
+gap-walk a `--to` query loses every call site that lives inside one — measured on a
+stripped i386 PE as 61 of one function's 174 callers.
+
+(kuna) A reference query also seeds the walk with **the address it was asked
+about**. The same structural gap applies to the query target itself: `--from <entry>`
+about a function no descent reaches answered `count: 0` about a function that plainly
+has references. The named address is walked after the seeded descent and the
+prologue/gap seeds have drained, so an address the natural walk already claimed is
+already in `decoded` and attributed exactly as before — the focus pass can only add
+coverage, never re-attribute an instruction another entry owns. An address that does
+not decode is dropped rather than recorded as a function, so a byte in the middle of
+a string does not become `sub_<addr>`.
 
 (kuna) Both of those rules read a reference out of *one instruction's* p-code,
 which is the whole answer on x86-64 and no answer at all in 32-bit

@@ -644,13 +644,31 @@ inventory missed is still covered.
 `auto` selects `aggressive` under 500 KiB, and `aggressive` is a preset for the
 quality of emitted *C*. Two of the passes it turns on cost a whole extra decode of
 the program apiece and answer nothing a reference query reads — the analysis-tier
-Listing walk (whose recursive descent `xrefs` repeats itself, so it contributed
-only seeds, which are now handed to the walk directly) and `operand_refs` (whose
-scalar markup `xrefs` recomputes from the p-code it already has). So the query
-surface defaults to the shipped defaults, and `kuna xrefs --mode aggressive` still
-asks for the full analysis bundle explicitly. On a 466 KB obfuscated i386 image
-the two skipped decodes were 1.08 s and 0.58 s of a 3.4 s answer that is
-byte-identical without them.
+Listing walk (whose recursive descent `xrefs` repeats itself over the same bytes)
+and `operand_refs` (whose scalar markup `xrefs` recomputes from the p-code it
+already has). So the query surface defaults to the shipped defaults, and
+`kuna xrefs --mode aggressive` still asks for the full analysis bundle explicitly.
+On a 466 KB obfuscated i386 image the two skipped decodes were 1.08 s and 0.58 s of
+a 3.4 s answer that is byte-identical without them.
+
+Dropping the Listing does **not** drop the discovery it fed. The query surface takes
+the same DIV-20/DIV-68 discovery flags every other surface does (`funcstart_patterns`,
+`aif`); it just consumes them itself, from its own decode:
+
+* the `<patternpairs>` prologue starts go straight into the walk's seed set;
+* the speculative gap-walk (`aif`) runs over the partition the walk leaves behind,
+  and the functions it accepts are walked like any other, so their references join
+  the answer. Without it, a function reached only through a function-pointer table
+  is in no seed set and `--to` loses every call site inside it — measured on a
+  stripped i386 PE as 61 of one function's 174 callers.
+
+The address you ask about is itself a seed. A recursive descent answers for the code
+it can reach, and an entry with no inbound CALL edge is not reachable from any seed
+set, so `kuna xrefs --from <that entry>` used to answer `count: 0` about a function
+that plainly has references. It is now walked last, after the seeded descent has
+drained, so it can only add coverage — an address the walk already decoded is
+attributed exactly as before, and an address that does not decode is not recorded as
+a function at all.
 
 A target nothing references is exit `0` with `count: 0` — an answer, not a
 failure. A name that resolves to nothing is exit `1` with the reason on stderr; a

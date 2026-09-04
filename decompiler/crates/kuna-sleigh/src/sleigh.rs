@@ -1579,6 +1579,16 @@ pub struct Sleigh {
     /// Taken (not borrowed) for the duration of a decode, so a nested decode
     /// simply builds its own.
     pcode_cacher: RefCell<PcodeCacher>,
+    /// Whether a decode should stash each node's matched [`DisjointPattern`].
+    ///
+    /// Only [`Sleigh::instruction_mask`] ever reads them, and it re-decodes
+    /// under this flag, so an ordinary decode does not pay for them: the clone
+    /// is a deep copy of the leaf's pattern blocks at every constructor node and
+    /// was 55% of every heap allocation the program made while disassembling.
+    capture_patterns: std::cell::Cell<bool>,
+    /// The reusable delay-slot context vector (`one_instruction` needs one
+    /// entry per decode, and all but a delay-slot architecture need exactly one).
+    ctx_vec: RefCell<Vec<ResolvedCtx>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -1642,6 +1652,8 @@ impl Sleigh {
             cache: RefCell::new(ContextCache::new()),
             parser_contexts: Rc::new(RefCell::new(Vec::new())),
             pcode_cacher: RefCell::new(PcodeCacher::new()),
+            capture_patterns: std::cell::Cell::new(false),
+            ctx_vec: RefCell::new(Vec::new()),
         }
     }
 
@@ -1853,14 +1865,21 @@ impl Sleigh {
         // selected the constructor — and stash it on this node for the FID
         // instruction-mask accessor.  The chosen constructor is unchanged.
         let subtable = subtable_ref(table, root)?;
+        let capture = self.capture_patterns.get();
         let (root_ct_id, root_pat) = {
             let reader = walker.as_reader();
-            let (pat, ct) = subtable.resolve_matched(&reader)?;
-            (*ct, pat.clone())
+            if capture {
+                let (pat, ct) = subtable.resolve_matched(&reader)?;
+                (*ct, Some(pat.clone()))
+            } else {
+                (subtable.resolve(&reader)?, None)
+            }
         };
         let root_ref = ConstructorRef { table_id: root, ct_id: root_ct_id };
         walker.set_constructor(root_ref);
-        walker.set_matched_pattern(root_pat);
+        if let Some(pat) = root_pat {
+            walker.set_matched_pattern(pat);
+        }
         apply_context(table, root_ref, &mut walker)?;
 
         while walker.is_state() {
@@ -1890,7 +1909,11 @@ impl Sleigh {
                     // the FID instruction-mask accessor.  Same constructor.
                     let (subct, subpat) = {
                         let reader = walker.as_reader();
-                        resolve_triple_matched(table, tsym, &reader)?
+                        if capture {
+                            resolve_triple_matched(table, tsym, &reader)?
+                        } else {
+                            (resolve_triple(table, tsym, &reader)?, None)
+                        }
                     };
                     if let Some(subct_id) = subct {
                         let subct_ref = ConstructorRef { table_id: tsym, ct_id: subct_id };
@@ -2141,6 +2164,19 @@ fn resolve_triple_matched(
     sym.resolve_matched(walker)
 }
 
+/// [`resolve_triple_matched`] without the pattern capture — the same decision
+/// walk and the same constructor, minus the deep clone of the matched leaf.
+fn resolve_triple(
+    table: &SymbolTable,
+    id: u32,
+    walker: &ParserWalker<'_>,
+) -> KunaResult<Option<u32>> {
+    let sym = table
+        .find_symbol_by_id(id)
+        .ok_or_else(|| KunaError::sleigh("triple symbol undefined"))?;
+    sym.resolve(walker)
+}
+
 /// C++ `Constructor::applyContext` via the symbol table + mutating walker.
 fn apply_context(
     table: &SymbolTable,
@@ -2262,7 +2298,12 @@ impl Sleigh {
     pub fn instruction_mask(&self, baseaddr: &Address) -> KunaResult<InsnMask> {
         // Pcode state so operand handles are resolved (classification reads
         // them); the fixed-mask tree walk works at either parse state.
-        let pos = self.obtain_context(baseaddr, ParseState::Pcode)?;
+        // The stashed patterns exist only for this accessor, so the decode that
+        // produces them is the one that asks for them.
+        self.capture_patterns.set(true);
+        let pos = self.obtain_context(baseaddr, ParseState::Pcode);
+        self.capture_patterns.set(false);
+        let pos = pos?;
         let len = pos.get_length();
         if len <= 0 || len > MAX_INSTRUCTION_LEN {
             return Err(KunaError::bad_data(format!(
@@ -2443,8 +2484,12 @@ impl Sleigh {
         self.apply_commits(&pos)?;
         let mut fall_offset = pos.get_length();
 
-        // Resolve all delay-slot contexts up front (the C++ caches them).
-        let mut contexts: Vec<ResolvedCtx> = Vec::new();
+        // Resolve all delay-slot contexts up front (the C++ caches them). The
+        // vector is parked on the engine between decodes: it holds one entry on
+        // every architecture without delay slots, i.e. one heap allocation per
+        // instruction of the program.
+        let mut contexts: Vec<ResolvedCtx> = std::mem::take(&mut *self.ctx_vec.borrow_mut());
+        contexts.clear();
         if pos.get_delay_slot() > 0 {
             let mut bytecount = 0i32;
             loop {
@@ -2528,6 +2573,8 @@ impl Sleigh {
         cache.resolve_relatives()?;
         cache.emit(baseaddr, emit, &self.base.manager);
         *self.pcode_cacher.borrow_mut() = cache;
+        contexts.clear();
+        *self.ctx_vec.borrow_mut() = contexts;
         Ok(fall_offset)
     }
 }
