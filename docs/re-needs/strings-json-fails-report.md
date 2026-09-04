@@ -67,6 +67,12 @@ The owning function and reference count for the `Password: ` string, as promised
         "value": 0
       }
     ]
+  },
+  "target": {
+    "binary_rel": "bin/pcme0.tar.gz.__x/pcme0.tar.__x/pcme0/pcme0",
+    "binary_sha256": "1cfa9dc11e637657c2ae9b5d1f549ac59d0f8aef10053191bc083e4b6b16bd52",
+    "binary_size": 6372,
+    "binary_source": "dataset"
   }
 }
 ```
@@ -103,6 +109,12 @@ The owning function and reference count for the `Password: ` string, as promised
         "value": 0
       }
     ]
+  },
+  "target": {
+    "binary_rel": "bin/pcme0.tar.gz.__x/pcme0.tar.__x/pcme0/pcme0",
+    "binary_sha256": "1cfa9dc11e637657c2ae9b5d1f549ac59d0f8aef10053191bc083e4b6b16bd52",
+    "binary_size": 6372,
+    "binary_source": "dataset"
   }
 }
 ```

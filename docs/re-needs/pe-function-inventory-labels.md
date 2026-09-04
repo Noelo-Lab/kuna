@@ -51,6 +51,12 @@ A trustworthy function inventory for triaging the PE.
       "std::bad_alloc::vftable_1",
       "std::basic_stringbuf::vftable_[0-9]+"
     ]
+  },
+  "target": {
+    "binary_rel": "bin/trappy attack.exe",
+    "binary_sha256": "4872962a99da4def9048556345bdd1699a41b77dc0a148c8c28412b8adb3a06e",
+    "binary_size": 26112,
+    "binary_source": "dataset"
   }
 }
 ```
@@ -72,6 +78,12 @@ A trustworthy function inventory for triaging the PE.
     "stdout_absent": [
       "\"name\": \"[^\"]*::vftable_[0-9]+\""
     ]
+  },
+  "target": {
+    "binary_rel": "bin/trappy attack.exe",
+    "binary_sha256": "4872962a99da4def9048556345bdd1699a41b77dc0a148c8c28412b8adb3a06e",
+    "binary_size": 26112,
+    "binary_source": "dataset"
   }
 }
 ```

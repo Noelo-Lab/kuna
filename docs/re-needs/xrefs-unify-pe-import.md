@@ -62,6 +62,12 @@ Find callers/references of the VirtualProtect function surfaced by `kuna functio
         "value": 0
       }
     ]
+  },
+  "target": {
+    "binary_rel": "bin/crackme.rar.__x/system.exe",
+    "binary_sha256": "a06370d535da9a8aaee5a66c0a35c9b39487cb538b64248736d741e030c468ed",
+    "binary_size": 986624,
+    "binary_source": "dataset"
   }
 }
 ```
@@ -93,6 +99,12 @@ Find callers/references of the VirtualProtect function surfaced by `kuna functio
         "value": 0
       }
     ]
+  },
+  "target": {
+    "binary_rel": "bin/crackme.rar.__x/system.exe",
+    "binary_sha256": "a06370d535da9a8aaee5a66c0a35c9b39487cb538b64248736d741e030c468ed",
+    "binary_size": 986624,
+    "binary_source": "dataset"
   }
 }
 ```

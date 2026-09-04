@@ -54,6 +54,12 @@ Readable pseudocode for the initializer so I could recover the generated prompt,
     "stdout_bytes": {
       "gt": 12000
     }
+  },
+  "target": {
+    "binary_rel": "bin/crackme0x04",
+    "binary_sha256": "9f17db47a3486acfa57590c2a0e551f25b1e25e8dfdf4a584f1f5c673b4fe26e",
+    "binary_size": 50176,
+    "binary_source": "dataset"
   }
 }
 ```
@@ -81,6 +87,12 @@ Readable pseudocode for the initializer so I could recover the generated prompt,
     "stdout_bytes": {
       "lt": 12000
     }
+  },
+  "target": {
+    "binary_rel": "bin/crackme0x04",
+    "binary_sha256": "9f17db47a3486acfa57590c2a0e551f25b1e25e8dfdf4a584f1f5c673b4fe26e",
+    "binary_size": 50176,
+    "binary_source": "dataset"
   }
 }
 ```

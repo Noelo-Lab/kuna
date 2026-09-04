@@ -57,6 +57,12 @@ An inventory that recovers strings deterministically built by the initializer, i
       "Correct Passphrase",
       "Enter the passphrase"
     ]
+  },
+  "target": {
+    "binary_rel": "bin/crackme0x04",
+    "binary_sha256": "9f17db47a3486acfa57590c2a0e551f25b1e25e8dfdf4a584f1f5c673b4fe26e",
+    "binary_size": 50176,
+    "binary_source": "dataset"
   }
 }
 ```
@@ -86,6 +92,12 @@ An inventory that recovers strings deterministically built by the initializer, i
     "stdout_matches": [
       "horsey"
     ]
+  },
+  "target": {
+    "binary_rel": "bin/crackme0x04",
+    "binary_sha256": "9f17db47a3486acfa57590c2a0e551f25b1e25e8dfdf4a584f1f5c673b4fe26e",
+    "binary_size": 50176,
+    "binary_source": "dataset"
   }
 }
 ```

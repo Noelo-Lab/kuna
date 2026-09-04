@@ -57,6 +57,12 @@ Inspect bytes at referenced data VMAs such as 0x100003f30 without leaving kuna.
     "stdout_absent": [
       "000102030405060708090a0b0c0d0e0f"
     ]
+  },
+  "target": {
+    "binary_rel": "bin/crackme0x04",
+    "binary_sha256": "9f17db47a3486acfa57590c2a0e551f25b1e25e8dfdf4a584f1f5c673b4fe26e",
+    "binary_size": 50176,
+    "binary_source": "dataset"
   }
 }
 ```
@@ -84,6 +90,12 @@ Inspect bytes at referenced data VMAs such as 0x100003f30 without leaving kuna.
     "stdout_matches": [
       "000102030405060708090a0b0c0d0e0f"
     ]
+  },
+  "target": {
+    "binary_rel": "bin/crackme0x04",
+    "binary_sha256": "9f17db47a3486acfa57590c2a0e551f25b1e25e8dfdf4a584f1f5c673b4fe26e",
+    "binary_size": 50176,
+    "binary_source": "dataset"
   }
 }
 ```

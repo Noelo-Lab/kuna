@@ -61,6 +61,12 @@ A raw byte or typed-data view of the encoded globals at 0x140032950 through 0x14
         "value": "POP"
       }
     ]
+  },
+  "target": {
+    "binary_rel": "bin/nikos_crack_me.exe",
+    "binary_sha256": "bcfacd743bc607beff4a5b9616d3f9d0335551c07233e07a0a01bf14f0c6e869",
+    "binary_size": 235725,
+    "binary_source": "dataset"
   }
 }
 ```
@@ -83,6 +89,12 @@ A raw byte or typed-data view of the encoded globals at 0x140032950 through 0x14
     "stderr_matches": [
       "non-executable|data section|not code"
     ]
+  },
+  "target": {
+    "binary_rel": "bin/nikos_crack_me.exe",
+    "binary_sha256": "bcfacd743bc607beff4a5b9616d3f9d0335551c07233e07a0a01bf14f0c6e869",
+    "binary_size": 235725,
+    "binary_source": "dataset"
   }
 }
 ```

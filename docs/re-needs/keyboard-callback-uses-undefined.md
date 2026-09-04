@@ -52,6 +52,12 @@ A decompilation whose signature includes the Wayland callback event arguments us
       "void sub_6500\\(unsigned long \\*a0\\)",
       "if \\(v[0-9]+ != 1 \\|\\| !a0\\[0xd\\]\\)"
     ]
+  },
+  "target": {
+    "binary_rel": "bin/lugosiii",
+    "binary_sha256": "8ea3c454dfcea5d5f970d695608568ed81b688dd367faa2f3fcbeb4bc700aa6e",
+    "binary_size": 29336,
+    "binary_source": "dataset"
   }
 }
 ```
@@ -74,6 +80,12 @@ A decompilation whose signature includes the Wayland callback event arguments us
     "stdout_absent": [
       "if \\(v[0-9]+ != 1 \\|\\| !a0\\[0xd\\]\\)"
     ]
+  },
+  "target": {
+    "binary_rel": "bin/lugosiii",
+    "binary_sha256": "8ea3c454dfcea5d5f970d695608568ed81b688dd367faa2f3fcbeb4bc700aa6e",
+    "binary_size": 29336,
+    "binary_source": "dataset"
   }
 }
 ```

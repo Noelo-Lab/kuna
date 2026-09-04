@@ -51,6 +51,12 @@ The LC_MAIN entry routine identified as main, with its conventional argc/argv pr
     "stdout_absent": [
       "name.*main"
     ]
+  },
+  "target": {
+    "binary_rel": "bin/crackme0x04",
+    "binary_sha256": "9f17db47a3486acfa57590c2a0e551f25b1e25e8dfdf4a584f1f5c673b4fe26e",
+    "binary_size": 50176,
+    "binary_source": "dataset"
   }
 }
 ```
@@ -76,6 +82,12 @@ The LC_MAIN entry routine identified as main, with its conventional argc/argv pr
     "stdout_matches": [
       "name.*main"
     ]
+  },
+  "target": {
+    "binary_rel": "bin/crackme0x04",
+    "binary_sha256": "9f17db47a3486acfa57590c2a0e551f25b1e25e8dfdf4a584f1f5c673b4fe26e",
+    "binary_size": 50176,
+    "binary_source": "dataset"
   }
 }
 ```

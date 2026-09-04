@@ -52,6 +52,12 @@ A bounded decompilation of the keyboard callback at 0x6500.
       "LUGOSI.*S II",
       "sub_5e30\\("
     ]
+  },
+  "target": {
+    "binary_rel": "bin/lugosiii",
+    "binary_sha256": "8ea3c454dfcea5d5f970d695608568ed81b688dd367faa2f3fcbeb4bc700aa6e",
+    "binary_size": 29336,
+    "binary_source": "dataset"
   }
 }
 ```
@@ -75,6 +81,12 @@ A bounded decompilation of the keyboard callback at 0x6500.
       "LUGOSI.*S II",
       "sub_5e30\\("
     ]
+  },
+  "target": {
+    "binary_rel": "bin/lugosiii",
+    "binary_sha256": "8ea3c454dfcea5d5f970d695608568ed81b688dd367faa2f3fcbeb4bc700aa6e",
+    "binary_size": 29336,
+    "binary_source": "dataset"
   }
 }
 ```

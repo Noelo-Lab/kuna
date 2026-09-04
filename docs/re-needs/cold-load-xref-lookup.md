@@ -54,6 +54,12 @@ Iteratively query references while triaging the checker.
       "stat": "median",
       "gt": 2000
     }
+  },
+  "target": {
+    "binary_rel": "bin/Obfuscation1",
+    "binary_sha256": "5a6b66da130bc3465d8d55062500940e974d28c0d17710b2eb51d2c983e7f082",
+    "binary_size": 472476,
+    "binary_source": "dataset"
   }
 }
 ```
@@ -81,6 +87,12 @@ Iteratively query references while triaging the checker.
       "stat": "median",
       "lt": 1000
     }
+  },
+  "target": {
+    "binary_rel": "bin/Obfuscation1",
+    "binary_sha256": "5a6b66da130bc3465d8d55062500940e974d28c0d17710b2eb51d2c983e7f082",
+    "binary_size": 472476,
+    "binary_source": "dataset"
   }
 }
 ```

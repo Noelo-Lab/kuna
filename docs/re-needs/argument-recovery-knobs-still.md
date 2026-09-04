@@ -61,6 +61,12 @@ Recover the allocation size passed to sub_140002c90 in the checker.
       "sub_140002c90\\(\\);",
       "sub_140002c90\\(v[0-9]+ \\+ 0x27\\)"
     ]
+  },
+  "target": {
+    "binary_rel": "bin/trappy attack.exe",
+    "binary_sha256": "4872962a99da4def9048556345bdd1699a41b77dc0a148c8c28412b8adb3a06e",
+    "binary_size": 26112,
+    "binary_source": "dataset"
   }
 }
 ```
@@ -93,7 +99,13 @@ Recover the allocation size passed to sub_140002c90 in the checker.
   },
   "cwd": "{{WORK}}",
   "repeat": 1,
-  "probe_id": "p-a94fa26848a4"
+  "probe_id": "a-a94fa26848a4",
+  "target": {
+    "binary_rel": "bin/trappy attack.exe",
+    "binary_sha256": "4872962a99da4def9048556345bdd1699a41b77dc0a148c8c28412b8adb3a06e",
+    "binary_size": 26112,
+    "binary_source": "dataset"
+  }
 }
 ```
 

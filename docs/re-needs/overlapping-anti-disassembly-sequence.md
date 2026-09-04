@@ -52,6 +52,12 @@ A decompilation of the recursive password checker at 0x804881c that follows the 
       "sub_[0-9a-f]{7}\\(\\)",
       "dat_[0-9a-f]{8} \\+="
     ]
+  },
+  "target": {
+    "binary_rel": "bin/pcme0.tar.gz.__x/pcme0.tar.__x/pcme0/pcme0",
+    "binary_sha256": "1cfa9dc11e637657c2ae9b5d1f549ac59d0f8aef10053191bc083e4b6b16bd52",
+    "binary_size": 6372,
+    "binary_source": "dataset"
   }
 }
 ```
@@ -78,6 +84,12 @@ A decompilation of the recursive password checker at 0x804881c that follows the 
       "sub_[0-9a-f]{7}\\(\\)",
       "dat_[0-9a-f]{8} \\+="
     ]
+  },
+  "target": {
+    "binary_rel": "bin/pcme0.tar.gz.__x/pcme0.tar.__x/pcme0/pcme0",
+    "binary_sha256": "1cfa9dc11e637657c2ae9b5d1f549ac59d0f8aef10053191bc083e4b6b16bd52",
+    "binary_size": 6372,
+    "binary_source": "dataset"
   }
 }
 ```

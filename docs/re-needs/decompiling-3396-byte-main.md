@@ -51,6 +51,12 @@ Interactive decompilation of the program's main function, sub_140023350, fast en
       "stat": "median",
       "gt": 30000
     }
+  },
+  "target": {
+    "binary_rel": "bin/nikos_crack_me.exe",
+    "binary_sha256": "bcfacd743bc607beff4a5b9616d3f9d0335551c07233e07a0a01bf14f0c6e869",
+    "binary_size": 235725,
+    "binary_source": "dataset"
   }
 }
 ```
@@ -76,6 +82,12 @@ Interactive decompilation of the program's main function, sub_140023350, fast en
       "stat": "median",
       "lt": 10000
     }
+  },
+  "target": {
+    "binary_rel": "bin/nikos_crack_me.exe",
+    "binary_sha256": "bcfacd743bc607beff4a5b9616d3f9d0335551c07233e07a0a01bf14f0c6e869",
+    "binary_size": 235725,
+    "binary_source": "dataset"
   }
 }
 ```

@@ -50,6 +50,12 @@ Decompile the checker by the exact owning-function name returned by kuna strings
     "stderr_matches": [
       "no function.*sub_4045b0"
     ]
+  },
+  "target": {
+    "binary_rel": "bin/GiveMeMoney.zip.__x/KeyVal2.exe",
+    "binary_sha256": "dae523033740dd11e0a4a3cdbe9abdc209e660169e89771e2bdbd2cd5d9b8f42",
+    "binary_size": 558592,
+    "binary_source": "dataset"
   }
 }
 ```
@@ -74,6 +80,12 @@ Decompile the checker by the exact owning-function name returned by kuna strings
     "stdout_matches": [
       "sub_4045b0"
     ]
+  },
+  "target": {
+    "binary_rel": "bin/GiveMeMoney.zip.__x/KeyVal2.exe",
+    "binary_sha256": "dae523033740dd11e0a4a3cdbe9abdc209e660169e89771e2bdbd2cd5d9b8f42",
+    "binary_size": 558592,
+    "binary_source": "dataset"
   }
 }
 ```
