@@ -1,0 +1,41 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "a-a817abb578f2",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "caller"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/alignednew_x86_64",
+    "binary_sha256": "7131be38a30e72c96907954ca4a7cd2dea34031a0d46756f2498cadca97c8538",
+    "binary_size": 4848,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/alignednew_x86_64",
+    "selector": "caller",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_absent": [
+      "callee\\(\\)",
+      "callee\\([^)]*,"
+    ],
+    "stdout_matches": [
+      "callee\\(a[0-9]+\\);",
+      "callee\\([^),]*\\+ 0x27\\)"
+    ]
+  },
+  "notes": "Promoted acceptance of RE-need argument-recovery-knobs-still (a-a94fa26848a4), re-pointed from the dataset witness at the vendored alignednew_x86_64 fixture: CI has no dataset. The absent-comma clause is load-bearing -- asserting only that the zero-arg call is gone is satisfied by --option spillargtrial reload, which fabricates an argument at both sites. Fails with --option calleearityfwd off."
+}

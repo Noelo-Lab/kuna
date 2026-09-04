@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    594,
-    594
+    597,
+    597
   ],
   "passing": [
     "data:ARRAYSUBFIELD #1: an 8-byte read at offset 0 of char[16] is a sized sub-field, not element 0",
@@ -388,6 +388,9 @@
     "data:angr-taildup #3 (fix, on): free();return; tail duplicated (1 free off + 2 free on)",
     "data:calleearity #1: option off drops the argument at the call site whose guard branches on it (bug reproduced)",
     "data:calleearity #2: option on gives both call sites of one callee the same arity",
+    "data:calleearityfwd #1: option off drops the argument at the call site that finalizes BEFORE its witness (bug reproduced)",
+    "data:calleearityfwd #2: option on recovers the size the small arm leaves in the argument register",
+    "data:calleearityfwd #3: the site that was already right keeps exactly one argument in both passes",
     "data:callsitestackargs #1: option off truncates the call at the six register arguments (bug reproduced)",
     "data:callsitestackargs #2: option on recovers both stack-passed arguments",
     "data:condfold #1: OFF, the fold is declined and the sibling's test becomes a crossing goto (pass 1 only)",
