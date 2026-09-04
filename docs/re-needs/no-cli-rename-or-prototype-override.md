@@ -2,7 +2,7 @@
 need_id: no-cli-rename-or-prototype-override
 title: an agent cannot rename or retype anything, or force a prototype
 track: tooling
-status: open
+status: closed
 severity: major
 acceptance_id: a-a58fc408288b
 hypothesis_status: overturned
@@ -13,6 +13,9 @@ first_seen_round: 2
 attempts: 1
 touches: [decompiler/crates/kuna-cli/src, decompiler/crates/kuna-console/src/assertions.rs]
 scope: large
+pr: "389"
+closed_in_round: 2
+closing_pr: "389"
 ---
 
 ## Symptom
@@ -157,3 +160,16 @@ ADVISORY. The cheap half is exposure, not implementation: most of these commands
   choice: `file:phases.toml` was held by `b-r2-ppc64-localentry` for this whole wave. It is
   prose, no gate reads it, and this PR adds no settable row (so no catalog counters and no
   DIV row either).
+- closed: acceptance a-a58fc408288b now PASSES at c40e02fa7931
+- round 2 B_DONE (captain): CLOSED, mechanically. `needs apply-acceptance` on
+  /tmp/b_verify_c40e02fa.acceptance.json (sha c40e02fa, all four gates + catalog + clitests
+  green) flipped it; acceptance a-a58fc408288b PASSES (7 clauses, 391 ms, one run, not flaky)
+  where it FAILED at e3db5512. pr/closing_pr 389 (merged 19:07:28Z, mergeCommit ed353fb2) set
+  by hand because that suite covered TWO merges and apply-acceptance takes one --pr.
+  covered_by_option stays null -- correct, this is tooling track and ships no settable row.
+  Promotion re-run and byte-identical: tests/cli/no-cli-rename-or-prototype-override.json was
+  already vendored by the builder and was 1 of the 21/21 clitests in the gate run.
+  `hypothesis_status: overturned` is EARNED, not carried from prose: the merged diff itself
+  shows the expensive half was not "the stubs" but a shipped command that aborted the process
+  -- p4_calls/fspec.rs grows an `outtype.is_none()` guard for the output-only pieces `map
+  return` parks, with a regression test, in the same PR.

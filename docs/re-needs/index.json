@@ -4,8 +4,8 @@
   "count": 35,
   "rejected_count": 0,
   "by_status": {
-    "closed": 19,
-    "open": 16
+    "closed": 21,
+    "open": 14
   },
   "by_track": {
     "perf": 2,
@@ -339,37 +339,6 @@
       "path": "docs/re-needs/mach-o-entry-function.md"
     },
     {
-      "need_id": "no-cli-data-code-override",
-      "title": "an agent cannot mark a range as code or data, or set a type at an address",
-      "track": "tooling",
-      "status": "open",
-      "severity": "major",
-      "probe_id": null,
-      "acceptance_id": "a-567d3207ce62",
-      "hypothesis_status": "overturned",
-      "credibility": 1.0,
-      "instances": 1,
-      "challenges": [],
-      "rounds": [
-        2
-      ],
-      "first_seen_round": 2,
-      "attempts": 0,
-      "covered_by_option": null,
-      "touches": [
-        "decompiler/crates/kuna-cli/src",
-        "decompiler/crates/kuna-console/src/ifacedecomp.rs"
-      ],
-      "scope": "large",
-      "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
-      "reject_reason": null,
-      "score": 13.862944,
-      "path": "docs/re-needs/no-cli-data-code-override.md"
-    },
-    {
       "need_id": "no-cli-structuring-override",
       "title": "an agent cannot force a goto, a jump table, or a flow reclassification",
       "track": "tooling",
@@ -654,10 +623,41 @@
       "path": "docs/re-needs/decompiling-3396-byte-main.md"
     },
     {
+      "need_id": "no-cli-data-code-override",
+      "title": "an agent cannot mark a range as code or data, or set a type at an address",
+      "track": "tooling",
+      "status": "closed",
+      "severity": "major",
+      "probe_id": null,
+      "acceptance_id": "a-567d3207ce62",
+      "hypothesis_status": "overturned",
+      "credibility": 1.0,
+      "instances": 1,
+      "challenges": [],
+      "rounds": [
+        2
+      ],
+      "first_seen_round": 2,
+      "attempts": 1,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-cli/src",
+        "decompiler/crates/kuna-console/src/ifacedecomp.rs"
+      ],
+      "scope": "large",
+      "regression_of": null,
+      "pr": "391",
+      "closed_in_round": 2,
+      "closing_pr": "391",
+      "reject_reason": null,
+      "score": 9.241962,
+      "path": "docs/re-needs/no-cli-data-code-override.md"
+    },
+    {
       "need_id": "no-cli-rename-or-prototype-override",
       "title": "an agent cannot rename or retype anything, or force a prototype",
       "track": "tooling",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
       "probe_id": null,
       "acceptance_id": "a-a58fc408288b",
@@ -677,9 +677,9 @@
       ],
       "scope": "large",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": "389",
+      "closed_in_round": 2,
+      "closing_pr": "389",
       "reject_reason": null,
       "score": 9.241962,
       "path": "docs/re-needs/no-cli-rename-or-prototype-override.md"
