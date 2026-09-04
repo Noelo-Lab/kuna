@@ -289,8 +289,15 @@ rewrite and returns 1. Rules are owned by an
 `decompiler/crates/kuna-decomp/src/infra/action.rs (ActionPool)`, which indexes
 them at registration into a flat per-opcode table (`perop`, insertion order
 preserved). One pool sweep visits every op in the function in sequence-number
-order through a resumable cursor that survives op deletion (§0.3), and for each
-op walks its opcode's rule list in registration order
+order through a resumable cursor that survives op deletion (§0.3) — it is
+recorded as the last *consumed* `SeqNum`, so the next op is the first optree key
+strictly greater than it, which stays valid when the op it named is destroyed.
+Resolving that key is an optree search, and the sweep is the decompiler's
+innermost loop, so the advance resolves the successor's id and the cursor read
+returns it rather than searching a second time for the op the advance already
+found; the memo is dropped on every `apply` exit, so a resumed or interleaved
+sweep re-searches. For each op the sweep walks its opcode's rule list in
+registration order
 (`action.rs (ActionPool::process_op)`): disabled rules are skipped (the
 upstream `option togglerule` surface writes that per-rule flag), a rule that
 fires bumps the pool's change count, a rule that kills the op ends the walk,

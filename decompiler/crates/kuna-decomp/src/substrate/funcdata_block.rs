@@ -2483,6 +2483,17 @@ impl Funcdata {
         self.jumpvec_mut()[jt_idx].increment_recovery_count();
 
         // Build the partial function (clone ops + jump-tables).
+        //
+        // (kuna DIVERGENCE, deliberate) The C++ builds ONE `partial` per call to
+        // `FlowInfo::recoverJumpTables` and guards the clone + reduced pipeline
+        // behind `if (!partial.isJumptableRecoveryOn())`, so the sub-decompilation
+        // runs once per function instead of once per table.  kuna cannot share it:
+        // `option unrolledguard` recovers MSVC interleaved (Duff's-device) tables
+        // precisely BECAUSE each table's partial re-clones the siblings recovered
+        // before it (see `flow.rs (FlowInfo::collect_edges)`), and sharing the
+        // partial loses 16 of the 17 switches that testcase asserts.  Sharing is a
+        // real speedup (~20% on a two-table function) but it changes which tables
+        // recover, so it belongs behind its own option, not here.
         let mut partial = match self.build_jumptable_partial() {
             Ok(p) => p,
             Err(_) => return RecoveryMode::FailNormal,

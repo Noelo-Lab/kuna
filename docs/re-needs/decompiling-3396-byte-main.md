@@ -100,7 +100,26 @@ Interactive decompilation of the program's main function, sub_140023350, fast en
 
 ## Refutation
 
-_not yet refuted_
+**Hypothesis partly refuted (round 2 builder, PR for `feat/re-decompiling-3396-byte-main`).**
+The symptom stands — 71.5 s median reproduced for `kuna decompile <bin> sub_140023350`.
+The diagnosis does not: it is not an analysis pass and not "opaque arithmetic and
+indirect calls". gdb-sampled profiling put 53% of wall time in a single leaf frame,
+`FlowInfo::xref_control_flow`, i.e. the **lifter**, before any analysis runs. The dead
+p-code list is a doubly-linked list, but `dead_next`, `dead_tail`,
+`delete_remaining_ops` and `Funcdata::op_target` re-derived position by scanning it,
+making op generation O(N²) in op count. This function is unusual only in op count
+(48,169 raw ops, 37,710 INDIRECTs across 365 call sites), which is exactly what the
+quadratic squares — so the same defect is present in every function and merely invisible
+on small ones.
+
+Fixed to O(1) (output byte-identical): **71.46 s → 19.42 s median, −72.8%**. The probe
+arm (`> 30 s`) no longer holds. **The acceptance (`< 10 s`) is still not met** and the
+need should stay open: after the fix the profile is flat (p6 merge 27.6%, p3 heritage
+26.3%, rule pool 19.8%, jump-table sub-decompilation 17.4%, p9 emit 13.7%), so the
+remaining 48% is a campaign, not a fix. The two ranked leads —
+`kuna decompile` following flow twice (~18%), and the per-table jump-table partial clone
+(~20%, implemented then reverted because `option unrolledguard` depends on it) — are
+recorded with evidence in `docs/features/decompiling-3396-byte-main/record.json`.
 
 ## Reference
 

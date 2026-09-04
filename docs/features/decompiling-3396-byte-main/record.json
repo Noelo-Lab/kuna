@@ -1,0 +1,105 @@
+{
+ "opportunity": "decompiling-3396-byte-main",
+ "need_id": "decompiling-3396-byte-main",
+ "route": "RE-friction loop (docs/re-pipeline.md), round 2, track perf",
+ "challenge": "69a3822f7b3cc38c80464da4",
+ "binary": ".kuna-repipe/probebin/bcfacd743bc607be/nikos_crack_me.exe (PE x86-64, 235725 bytes, sha256 bcfacd74...)",
+ "selector": "sub_140023350 (the program's main, 3396 bytes)",
+ "phase": "P2 (lift/flow) + the action scheduler (infra)",
+ "modules": [
+  "decompiler/crates/kuna-decomp/src/substrate/op.rs (PcodeOpBank::dead_next / dead_prev / dead_front / dead_back / on_dead_list / first_after_seq_id)",
+  "decompiler/crates/kuna-decomp/src/p2_lift/flow.rs (FlowInfo::dead_next / dead_head / dead_tail / delete_remaining_ops)",
+  "decompiler/crates/kuna-decomp/src/substrate/funcdata_op.rs (Funcdata::op_target)",
+  "decompiler/crates/kuna-decomp/src/infra/action.rs (ActionPool cursor memo)"
+ ],
+ "change_kind": "performance-fix (output byte-identical)",
+ "option": null,
+ "gated": false,
+ "gating_rationale": "Not a judgement call and not output-changing: every edit replaces a search for a position with the O(1) link the same data structure already carries, and the whole-binary output is byte-identical before/after on three binaries (509 functions) plus the 675 datatest and 597 stage assertions. AGENTS.md gates features that CAN change emitted C; these cannot. No phases.toml row, no options.rs registration, no catalog counters, no docs/options.md, no DIV row.",
+ "hypothesis_filed": "The function's extensive opaque arithmetic and indirect calls cause one or more analysis passes to scale poorly.",
+ "hypothesis_verdict": "PARTLY REFUTED. The symptom stands (68 s reproduced as 71.5 s median). The cause is not 'opaque arithmetic and indirect calls' and not an analysis pass: it is a quadratic in the LIFTER, present for every function and only visible on a large one. gdb-sampled profiling put 53% of wall time in the single leaf frame FlowInfo::xref_control_flow, which is not analysis at all. The function is unusual only in op count (48,169 raw ops, 37,710 of them INDIRECTs at 365 call sites over ~78 guarded locations) -- and op count is exactly what the quadratic squares.",
+ "root_cause": "The C++ caches std::list<PcodeOp*>::iterators on each op (insertiter), so 'the op after this one' / 'the last op' are O(1). kuna's dead list is the same doubly-linked list (op.rs IntrusiveList, prev/next OpId links per op) but three call sites re-derived position by SCANNING iter_dead(): FlowInfo::dead_next scanned the whole list to locate one op, FlowInfo::dead_tail scanned it to reach the end, and Funcdata::op_target rebuilt a whole BTreeMap predecessor index per call. process_instruction does one dead_tail() + one dead_next() PER INSTRUCTION, and xref_control_flow does one dead_next() per emitted op, over a list that grows to the whole function -- O(N^2) in op count. delete_remaining_ops likewise collected the entire list to find a suffix.",
+ "fix": "Expose the links the list already has (PcodeBank::dead_next/dead_prev/dead_front/dead_back, membership = the `dead` flag PLUS a live link, because destroy() retires an op to deadandgone with the flag still set and the alive list shares the same link pair) and use them. Separately, ActionPool::advance_op_state already performed the optree search that decides After/Done, so it now keeps the successor's OpId and current_op reads it instead of searching a second time; the memo is dropped on every apply() exit so a resumed or interleaved sweep re-searches.",
+ "measurement": {
+  "method": "interleaved A/B, base binary vs new binary alternating in the same loop (docs/agents.md worktree rule: files copied aside, never stashed); machine load average 5-7 from sibling builders, so min and median are both reported",
+  "probe_command": "kuna decompile <bin> sub_140023350",
+  "base_s": [
+   76.36,
+   69.14,
+   70.03,
+   71.46,
+   72.36
+  ],
+  "new_s": [
+   18.44,
+   23.35,
+   21.79,
+   19.42,
+   18.84
+  ],
+  "base_median_s": 71.46,
+  "new_median_s": 19.42,
+  "delta_pct": -72.8,
+  "separation": "max(new)=23.35 s is below min(base)=69.14 s -- the distributions do not overlap",
+  "in_process_single_function": "kuna decompile-all --addr 0x140023350: 40.05 s -> 14.24 s median of 3 (-64.4%)",
+  "whole_binary_control": "kuna decompile-all /bin/gzip (145 functions): 14.55 s -> 13.60 s median of 3 (-6.5%) -- small functions barely feel a quadratic in op count, which is the expected shape and the honest limit of this fix"
+ },
+ "acceptance": {
+  "target": "wall_ms median < 10000 on `kuna decompile <bin> sub_140023350`",
+  "result": "NOT MET (19.4 s median). The probe arm still passes (>30 s) is FALSE, i.e. the filed bad behaviour is gone, but the acceptance threshold is not reached.",
+  "why_not": "After this fix the profile is flat: no remaining item is worth the further 48% the threshold needs. The measured 12.2 s in-process breakdown was p6 merge/ScopeLocal 27.6%, p3 dataflow/heritage 26.3%, the rule pool 19.8%, jump-table sub-decompilation 17.4%, p9 dead-code/emit 13.7%. Closing the gap is a campaign across kuna's core indexes, not one focused change.",
+  "promoted": false,
+  "promote_refused_because": "the acceptance does not pass, and its target is binary_source=dataset (scripts.repipe.verify.vendorable refuses anything that is not in-repo). Promoting it would install a red CI test; promoting a weakened variant would need the 235 KB third-party crackme vendored into the repo and would assert a wall clock on CI runners that this project already knows are noisy (docs: a red kuna check is usually runner starvation). The regression guard shipped instead is a cargo unit test on the cursor semantics."
+ },
+ "left_on_the_table": [
+  {
+   "item": "kuna decompile follows flow TWICE",
+   "evidence": "gdb breakpoint counts: follow_flow_on_fd is hit 2x and stage_jump_table 4x in the decomp_dbg console path, versus 1x / 2x for the in-process decompile-all path. `load function` costs 2.85 s of the console run on this function (0.88 s load+read symbols, 3.73 s with load function).",
+   "cause": "C++ IfcFuncload follows flow and IfcDecompile then calls clearAnalysis(fd) and runs the actions on that Funcdata. kuna's IfcDecompile rebuilds the Funcdata from scratch instead (there is no per-Funcdata clearAnalysis surface yet), so the flow follow and the whole jump-table sub-decompilation are paid twice.",
+   "why_not_done": "Worth ~18% of the probe. It is not a local fix: the rebuild exists because the seeds (mapped symbols, DWARF locals, parsed prototypes, param maps, proto overrides, flow overrides) must be applied AT FLOW TIME, and IfcFuncload applies only some of them. Reusing the loaded Funcdata is only sound when every seed is empty, which is a behavioural fork in the shared decompile step both the console and decompile-all use. That is console-tier infrastructure, i.e. the proposal fork."
+  },
+  {
+   "item": "the jump-table partial clone is rebuilt per table",
+   "evidence": "Upstream (verified against the pinned tree: flow.cc:1437 constructs `Funcdata partial` once before the tablelist loop, funcdata_block.cc:513 guards the clone + reduced pipeline behind `if (!partial.isJumptableRecoveryOn())`). Sharing it measured 18.0 s -> 14.3 s on the probe.",
+   "why_not_done": "IMPLEMENTED AND REVERTED. It breaks `option unrolledguard`: tests/stages/ghangr-optimized-memcpy-6301a9.xml went 2/2 -> 0/2, losing 16 of the 17 interleaved MSVC switches, because that kuna extension recovers them precisely BECAUSE each table's clone re-clones the siblings recovered before it (the mechanism is spelled out in flow.rs collect_edges). unrolledguard is on in aggressive mode, which is what `kuna decompile` selects for this binary, so the speedup and the feature are mutually exclusive here. It changes which tables recover, so it needs its own option -- and this round's phases.toml / catalog / docs-options.md leases are held by a sibling builder. Left as a documented divergence in the code and in docs/spec/02-lift-and-flow.md."
+  },
+  {
+   "item": "the rule pool's optree cursor is still O(log n) per op",
+   "evidence": "advance_op_state 5.5% self + SeqNum::cmp 5.8% self after the memo (which removed the second of the two searches).",
+   "why_not_done": "Making it O(1) needs a seqnum-ordered intrusive list alongside the optree, i.e. new infrastructure in the op bank. BTreeMap::lower_bound (one descent instead of range()'s leaf-range construction) is still unstable on the pinned 1.90 toolchain."
+  }
+ ],
+ "regression_sweep": {
+  "method": "whole-binary `kuna decompile-all --json --max-fn-seconds 0` with an interleaved before/after release build pair of this worktree (files copied aside per docs/agents.md, never stashed), byte-compared",
+  "binaries": [
+   "the probe crackme (PE x86-64, 322 functions emitted)",
+   "/bin/gzip (ELF x86-64, 145 functions)",
+   "/usr/bin/xxd (ELF x86-64, 42 functions)"
+  ],
+  "result": "all three captures BYTE-IDENTICAL (5,653,602 + 1,196,332 + 135,319 bytes). The 120,052-byte witness function output is byte-identical too."
+ },
+ "tests": {
+  "cargo": [
+   "substrate::op::tests::dead_cursor_matches_a_full_scan -- the O(1) cursor agrees with a full iter_dead() scan at every position, and reports an alive op, a destroyed op, and a single-element list exactly as the scan did",
+   "substrate::op::tests::first_after_seq_id_agrees_with_first_after_seq"
+  ],
+  "stage_test": null,
+  "stage_test_rationale": "tests/stages/README.md scopes that corpus to stage-model issues; a pure timing fix with byte-identical output has no assertion to make there, and adding one would re-record the stages baseline and bump the hard-coded corpus count for nothing.",
+  "cli_probe": null
+ },
+ "gates": {
+  "make test": "675/675 PARITY OK (docs/baseline.json NOT re-pinned)",
+  "make test-stages": "597/597 PARITY OK (docs/baseline-stages.json NOT re-recorded)",
+  "make rust-test": "green (342 `test result: ok`). NOTE: the harness exports KUNA_DECOMP_TEST pointing at kuna's OWN decomp_test_dbg, which makes verify_w10_proto_unlock's `cpp_oracle_bin()` compare kuna against kuna and fail on the C++ oracle's `xunknown4` vs kuna's DIV-6 `unsigned int`. Run with `env -u KUNA_DECOMP_TEST`.",
+  "make check-spec": "check-spec OK (lenient mode)",
+  "kuna catalog --check": "catalog OK (no option added; phases.toml, options.rs, the catalog counters and docs/options.md are untouched)"
+ },
+ "profiling_method": "gdb-as-parent sampling (perf_event_paranoid=4 and yama ptrace_scope=1 block perf and gdb attach on this box): run the target under `gdb -batch` with a chained `run`/`bt`/`continue` command list and `handle SIGUSR1 stop print nopass`, then SIGUSR1 the inferior on a fixed interval from a driver script. 456 samples before the fix, 293 after. Invocation counts came from `rbreak` + a large `ignore` count and `info breakpoints`.",
+ "scope": "small",
+ "decisions": [
+  "REFUTED the filed diagnosis. Symptom stands (68 s filed, 71.5 s median reproduced); cause is not 'an analysis pass scaling poorly on opaque arithmetic and indirect calls' but an O(N^2) position re-derivation in the LIFTER's dead-op list, present in every function and only visible once the op count is large. 53% of wall time sampled in one leaf frame, FlowInfo::xref_control_flow.",
+  "NO OPTION. Output is byte-identical (509 functions across three binaries, plus 1272 corpus assertions), so AGENTS.md's 'anything that CAN change emitted C ships behind a named option' does not bite. No catalog/DIV/phases.toml touch -- which also keeps this clear of the counter leases a sibling builder holds this round.",
+  "REVERTED the jump-table shared-partial fix after implementing and measuring it (-20%): it is upstream-faithful but kuna's `unrolledguard` extension is built on the per-table rebuild, and it took the interleaved-memcpy stage test from 2/2 to 0/2. Recorded as a deliberate divergence in the code and the spec rather than shipped ungated.",
+  "ACCEPTANCE NOT MET (<10 s asked, 19.4 s delivered). Shipping the verified -73% anyway rather than sitting on it: the probe arm no longer holds, the remaining gap is a flat profile needing a multi-front campaign, and the two biggest remaining leads are recorded with evidence so the next worker does not re-derive them."
+ ]
+}
