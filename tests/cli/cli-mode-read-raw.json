@@ -1,0 +1,55 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "disassemble",
+    "{{BIN}}",
+    "0x1000005ee-0x1000005fe",
+    "--addr",
+    "--json"
+  ],
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/macho_imports",
+    "binary_sha256": "0394e1be81c4ccdfb28a50cf5dba55a6d95a692cd5504f2305a8f139e8f86675",
+    "binary_size": 16688,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/macho_imports",
+    "selector": "0x1000005ee-0x1000005fe",
+    "selector_kind": "addr"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "stdout_matches": [
+      "25640a000000010000001c0000000100"
+    ],
+    "json": [
+      {
+        "path": "kind",
+        "op": "eq",
+        "value": "data"
+      },
+      {
+        "path": "hex",
+        "op": "eq",
+        "value": "25640a000000010000001c0000000100"
+      },
+      {
+        "path": "bytes",
+        "op": "eq",
+        "value": 16
+      },
+      {
+        "path": "rows[0].ascii",
+        "op": "eq",
+        "value": "%d.............."
+      }
+    ]
+  },
+  "notes": "The acceptance asserted the same span hex on the dataset crackme0x04; CI has no dataset, so it is re-pointed at the in-repo Mach-O fixture, whose __TEXT,__cstring is the same shape: data inside an executable segment, which is what made the original read back as ADD/OR. `kind` is asserted too -- the regression to guard is not wrong bytes but no bytes, the range decoded as code again."
+}

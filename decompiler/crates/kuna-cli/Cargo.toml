@@ -25,6 +25,10 @@ kuna-base.workspace = true
 # `.fid` writer, and `object` re-opens the parsed image / `ObjectLoadImage`.
 kuna-console.workspace = true
 kuna-analysis.workspace = true
+# `kuna disassemble`/`kuna read` ask the loader which section an address is in
+# before choosing between the instruction listing and the hexdump; the flag bits
+# (`section_flags::CODE`/`DATA`) are the LoadImage vocabulary, not a local guess.
+kuna-sleigh.workspace = true
 # The workspace `object` is read_core+formats; `kuna fid build` additionally needs
 # the `ar` archive reader to unpack `.a` static libraries member-by-member, so the
 # `archive` feature is enabled here (additive — features unify, the rest of the

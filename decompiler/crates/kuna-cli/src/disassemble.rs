@@ -1,9 +1,10 @@
 //! `kuna disassemble` — the instruction listing.
 //!
 //! ```text
-//!   kuna disassemble <binary> <name|0xaddr|0xstart-0xend> [--addr] [--count N]
-//!                    [--bytes N] [--json] [--mode MODE] [--option N V]..
-//!                    [--slice ARCH] [--target T] [--sleighpath D]
+//!   kuna disassemble <binary> <name|0xaddr|0xstart-0xend> [--addr] [--as VIEW]
+//!                    [--count N] [--bytes N] [--json] [--mode MODE]
+//!                    [--option N V].. [--slice ARCH] [--target T] [--sleighpath D]
+//!   kuna read <binary> <name|0xaddr|0xstart-0xend> ...   # the same, --as data
 //! ```
 //!
 //! The floor an RE agent falls back to when the ceiling gives way. Three
@@ -47,8 +48,26 @@
 //! Bytes that do not decode are not skipped and not guessed at: they are listed
 //! as `.byte 0x<nn>` rows, one byte at a time, so a listing that walked into
 //! data says so in place rather than silently stopping.
+//!
+//! ## Two views, because a data address is not an instruction stream
+//!
+//! Listing a data blob as instructions is worse than useless: an RE agent that
+//! asked kuna for the encoded globals at `0x100003f30` got `ADD byte ptr
+//! [RCX],AL` / `OR CL,byte ptr [RBX]` back — a decode of `00 01 02 03 ..` that is
+//! correct in the translator and a lie about the program. It went to `xxd`, which
+//! is the friction this view removes (`docs/re-needs/cli-mode-read-raw.md`).
+//!
+//! So the target picks its own rendering. `--as auto` (the default) asks the
+//! loader which section the start address is in: a section carrying `DATA`
+//! without `CODE` renders as a hexdump — address, bytes, ASCII gutter, and a
+//! contiguous `hex` string in `--json` — and says on stderr why it did.
+//! `--as code` and `--as data` override it in either direction, because a packer
+//! puts real code in `.data` and a compiler puts real data in `__TEXT`. Nothing
+//! about the decode changes: the same walk, the same bytes, a different view of
+//! them.
 
 use kuna_console::engine::ConsoleProgram;
+use kuna_sleigh::loadimage::section_flags;
 
 use crate::decompile::looks_like_addr;
 use crate::decompile_all::{load_program, mode_options_for_binary, Args, DriverDefaults};
@@ -73,8 +92,33 @@ const DEFAULT_WINDOW_BYTES: u64 = 64;
 /// address range is honored verbatim, however long.
 const DERIVED_INSTRUCTION_CAP: usize = 1024;
 
+/// The same safety stop for a byte listing nobody sized, in hexdump rows.
+const DERIVED_ROW_CAP: usize = DERIVED_INSTRUCTION_CAP;
+
+/// How many bytes one hexdump row covers — the `xxd` width an RE agent's eye is
+/// already calibrated to.
+const HEXDUMP_ROW_BYTES: usize = 16;
+
 /// The mnemonic given to a byte the translator would not decode.
 const BAD_BYTE_MNEMONIC: &str = ".byte";
+
+/// What to render at the target.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum View {
+    /// Decoded instructions.
+    Code,
+    /// The bytes themselves, as a hexdump.
+    Data,
+}
+
+/// `--as`: what the caller asked for, before the program gets a say.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum ViewRequest {
+    /// Let the loader's section flags choose ([`choose_view`]).
+    Auto,
+    Code,
+    Data,
+}
 
 /// The parsed command line.
 pub(crate) struct DisArgs {
@@ -83,6 +127,9 @@ pub(crate) struct DisArgs {
     pub(crate) spec: String,
     /// `--addr`: read `spec` as an address even when it is bare hex.
     pub(crate) by_address: bool,
+    /// `--as code|data|auto`. `None` is the command's own default — `Auto` for
+    /// `kuna disassemble`, `Data` for `kuna read`.
+    pub(crate) view: Option<ViewRequest>,
     /// `--count N`: stop after N instructions.
     pub(crate) count: Option<usize>,
     /// `--bytes N`: stop after N bytes.
@@ -107,6 +154,9 @@ struct Region {
     name: Option<String>,
     /// Was the stop derived from the inventory rather than asked for?
     derived: bool,
+    /// Did the target resolve to a discovered function entry? Such a target is
+    /// code by definition, whatever section it was linked into.
+    from_entry: bool,
 }
 
 /// One listed instruction.
@@ -133,17 +183,69 @@ impl Row {
     }
 
     fn hex(&self) -> String {
-        let mut s = String::with_capacity(self.bytes.len() * 2);
-        for b in &self.bytes {
-            s.push_str(&format!("{b:02x}"));
-        }
-        s
+        hex(&self.bytes)
     }
+}
+
+/// One hexdump row: up to [`HEXDUMP_ROW_BYTES`] bytes of the image.
+struct DataRow {
+    addr: u64,
+    bytes: Vec<u8>,
+}
+
+impl DataRow {
+    /// Contiguous lowercase hex — the spelling that pastes into another tool,
+    /// and the one `--json` reports (per row and, concatenated, for the span).
+    fn hex(&self) -> String {
+        hex(&self.bytes)
+    }
+
+    /// The same bytes space-separated (`xxd -g1`), for the human column, where a
+    /// 32-character run of hex is unreadable.
+    fn grouped(&self) -> String {
+        self.bytes.iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(" ")
+    }
+
+    /// The printable-ASCII gutter; every other byte is a `.`, `xxd`-style.
+    fn ascii(&self) -> String {
+        self.bytes
+            .iter()
+            .map(|&b| if (0x20..0x7f).contains(&b) { b as char } else { '.' })
+            .collect()
+    }
+}
+
+fn hex(bytes: &[u8]) -> String {
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        s.push_str(&format!("{b:02x}"));
+    }
+    s
+}
+
+/// What the command produced: the document for stdout, plus the notes that
+/// belong on stderr. A note never enters the document, so `--json` stays
+/// machine-readable — it is repeated in the JSON's own `notes` array instead.
+pub(crate) struct Listing {
+    pub(crate) text: String,
+    pub(crate) notes: Vec<String>,
 }
 
 /// `kuna disassemble` entry point.
 pub fn run(argv: &[String]) -> i32 {
-    let args = match parse_args(argv) {
+    run_as(argv, ViewRequest::Auto)
+}
+
+/// `kuna read` entry point — the same query with the byte view as its default,
+/// so an agent that wants the bytes of a data address does not have to know that
+/// the command for it is spelled `disassemble`. An explicit `--as code` still
+/// wins, because the two spellings are one command.
+pub fn run_read(argv: &[String]) -> i32 {
+    run_as(argv, ViewRequest::Data)
+}
+
+fn run_as(argv: &[String], default_view: ViewRequest) -> i32 {
+    let mut args = match parse_args(argv) {
         Ok(a) => a,
         Err(e) => {
             eprintln!("error: {e}");
@@ -151,8 +253,14 @@ pub fn run(argv: &[String]) -> i32 {
             return 2;
         }
     };
+    args.view.get_or_insert(default_view);
     match render(&args) {
-        Ok(text) => crate::output::emit_with_status(&text, 0),
+        Ok(listing) => {
+            for note in &listing.notes {
+                eprintln!("note: {note}");
+            }
+            crate::output::emit_with_status(&listing.text, 0)
+        }
         Err(e) => {
             eprintln!("error: {e}");
             1
@@ -162,7 +270,7 @@ pub fn run(argv: &[String]) -> i32 {
 
 /// Load, resolve, walk, and render — the whole command, minus the stdout
 /// boundary, so the listing is testable without a subprocess.
-pub(crate) fn render(args: &DisArgs) -> Result<String, String> {
+pub(crate) fn render(args: &DisArgs) -> Result<Listing, String> {
     let options = mode_options_for_binary(args.mode.as_deref(), &args.binary, args.options.clone())?;
     // The inventory bundle: this surface enumerates entries to resolve a name
     // and to bound a function, and decompiles nothing.
@@ -192,12 +300,88 @@ pub(crate) fn render(args: &DisArgs) -> Result<String, String> {
             region.start, args.binary
         ));
     }
-    let (rows, truncated) = walk(&prog, &region, args.count);
-    Ok(if args.json {
-        format!("{}\n", dumps_indent2(&result_json(args, &region, &rows, truncated)))
+    let (view, notes) = choose_view(&prog, &region, args.view.unwrap_or(ViewRequest::Auto));
+    let text = match view {
+        View::Code => {
+            let (rows, truncated) = walk(&prog, &region, args.count);
+            if args.json {
+                format!("{}\n", dumps_indent2(&result_json(args, &region, &rows, truncated, &notes)))
+            } else {
+                render_text(&region, &rows, truncated)
+            }
+        }
+        View::Data => {
+            let (rows, truncated) = walk_data(&prog, &region, args.count);
+            if args.json {
+                format!(
+                    "{}\n",
+                    dumps_indent2(&data_result_json(args, &region, &rows, truncated, &notes))
+                )
+            } else {
+                render_data_text(&region, &rows, truncated)
+            }
+        }
+    };
+    Ok(Listing { text, notes })
+}
+
+// --- which view ---------------------------------------------------------------
+
+/// (kuna) The loader `section_flags` bits of the section containing `vma`.
+///
+/// `None` when no section covers it — which includes every loader that publishes
+/// no section table at all (the XML `<binaryimage>` corpus, a raw byte blob).
+/// There the byte view can only be asked for, never inferred, which is the right
+/// way round: an inference from missing evidence is a guess.
+fn section_flags_at(prog: &ConsoleProgram, vma: u64) -> Option<u32> {
+    prog.sections()
+        .into_iter()
+        .find(|(start, size, _)| vma >= *start && vma - start < *size)
+        .map(|(_, _, flags)| flags)
+}
+
+/// Decide between the instruction listing and the hexdump, and say why when the
+/// program — not the caller — made the choice.
+///
+/// `auto` believes the loader's own section classification and nothing else: a
+/// section the format marks as data and not as code (`.rdata`, `__TEXT,__const`,
+/// `.rodata`) holds bytes, so it is shown as bytes. A discovered function entry
+/// is code whatever section it was linked into, and an address in a section that
+/// carries `CODE` — or in no section the loader knows about — keeps the
+/// instruction listing it has always had.
+fn choose_view(prog: &ConsoleProgram, region: &Region, want: ViewRequest) -> (View, Vec<String>) {
+    let section = section_flags_at(prog, region.start);
+    let view = decide_view(want, region.from_entry, section);
+    let inferred = want == ViewRequest::Auto && view == View::Data;
+    let notes = if inferred {
+        vec![format!(
+            "0x{:x} is in a non-executable data section, so these are bytes, not \
+             instructions -- pass `--as code` to disassemble them anyway",
+            region.start
+        )]
     } else {
-        render_text(&region, &rows, truncated)
-    })
+        Vec::new()
+    };
+    (view, notes)
+}
+
+/// The decision itself, with the program's evidence already gathered: the
+/// caller's demand wins outright, a discovered entry is code wherever it was
+/// linked, and only a section the loader marks `DATA` without `CODE` flips the
+/// view. A loader that published no section covering the address (`None`) is
+/// silence, not evidence, and keeps the instruction listing.
+fn decide_view(want: ViewRequest, from_entry: bool, section: Option<u32>) -> View {
+    match want {
+        ViewRequest::Code => View::Code,
+        ViewRequest::Data => View::Data,
+        ViewRequest::Auto if from_entry => View::Code,
+        ViewRequest::Auto => match section {
+            Some(flags) if flags & section_flags::DATA != 0 && flags & section_flags::CODE == 0 => {
+                View::Data
+            }
+            _ => View::Code,
+        },
+    }
 }
 
 // --- the walk ----------------------------------------------------------------
@@ -258,6 +442,68 @@ fn walk(prog: &ConsoleProgram, region: &Region, count: Option<usize>) -> (Vec<Ro
     (rows, truncated)
 }
 
+/// Read the region's bytes forward from `region.start` into hexdump rows, until
+/// the region's end, the row budget, the derived-length cap, or memory that will
+/// not read.
+///
+/// A short read ends the listing rather than zero-filling it: the point of this
+/// view is that every byte it shows is a byte the image really holds.
+fn walk_data(prog: &ConsoleProgram, region: &Region, count: Option<usize>) -> (Vec<DataRow>, bool) {
+    let cap = if region.derived { Some(DERIVED_ROW_CAP) } else { None };
+    let mut rows: Vec<DataRow> = Vec::new();
+    let mut truncated = false;
+    let mut addr = region.start;
+    let mut raw: Vec<u8> = Vec::new();
+    loop {
+        if count.is_some_and(|n| rows.len() >= n) {
+            break;
+        }
+        if region.end.is_some_and(|end| addr >= end) {
+            break;
+        }
+        if cap.is_some_and(|c| rows.len() >= c) {
+            truncated = true;
+            break;
+        }
+        let want = match region.end {
+            Some(end) => (end - addr).min(HEXDUMP_ROW_BYTES as u64) as usize,
+            None => HEXDUMP_ROW_BYTES,
+        };
+        let got = read_upto(prog, addr, want, &mut raw);
+        if got == 0 {
+            break;
+        }
+        rows.push(DataRow { addr, bytes: raw[..got].to_vec() });
+        addr = addr.saturating_add(got as u64);
+        if got < want {
+            break;
+        }
+    }
+    (rows, truncated)
+}
+
+/// Read at most `want` bytes at `vma`, shortening at the first byte the image
+/// will not hand over — a mapped segment ends where it ends, which is far more
+/// often mid-row than on a 16-byte boundary. Returns how many were read.
+fn read_upto(prog: &ConsoleProgram, vma: u64, want: usize, out: &mut Vec<u8>) -> usize {
+    if want == 0 {
+        return 0;
+    }
+    if prog.read_bytes_into(vma, want, out) {
+        return want;
+    }
+    let mut one: Vec<u8> = Vec::new();
+    let mut got: Vec<u8> = Vec::with_capacity(want);
+    for i in 0..want {
+        if !prog.read_bytes_into(vma.saturating_add(i as u64), 1, &mut one) {
+            break;
+        }
+        got.push(one[0]);
+    }
+    *out = got;
+    out.len()
+}
+
 // --- target resolution -------------------------------------------------------
 
 /// Resolve the target operand into a start, a stop, and a display name.
@@ -285,29 +531,35 @@ fn resolve_region(prog: &ConsoleProgram, args: &DisArgs) -> Result<Region, Strin
         // Both bound the walk, so the tighter one wins — the same "first limit
         // reached" rule `--count` follows.
         let end = args.bytes.map_or(end, |n| end.min(start.saturating_add(n)));
-        return Ok(Region { start, end: Some(end), name: name_at(prog, start), derived: false });
+        return Ok(Region {
+            start,
+            end: Some(end),
+            name: name_at(prog, start),
+            derived: false,
+            from_entry: false,
+        });
     }
 
-    let (start, name) = if addressy {
+    let (start, name, from_entry) = if addressy {
         let addr = parse_addr(spec)?;
         // An ARM caller legitimately holds an odd `entry|1` Thumb address; the
         // inventory folds the mode bit, so resolve through it when it knows the
         // entry and list where the instructions actually are.
         match prog.find_entry_at(addr) {
-            Some(e) => (e.addr.get_offset(), Some(e.name)),
-            None => (addr, name_at(prog, addr)),
+            Some(e) => (e.addr.get_offset(), Some(e.name), true),
+            None => (addr, name_at(prog, addr), false),
         }
     } else if let Some(e) = prog.find_entry_by_name(spec) {
-        (e.addr.get_offset(), Some(e.name))
+        (e.addr.get_offset(), Some(e.name), true)
     } else if let Some(a) = prog.lookup_symbol(spec) {
         let addr = a.get_offset();
-        (addr, name_at(prog, addr).or_else(|| Some(spec.to_string())))
+        (addr, name_at(prog, addr).or_else(|| Some(spec.to_string())), false)
     } else if let Some((n, addr, _)) =
         prog.global_data_symbols().into_iter().find(|(n, _, _)| n == spec)
     {
-        (addr, Some(n))
+        (addr, Some(n), false)
     } else if let Ok(addr) = u64::from_str_radix(spec, 16) {
-        (addr, name_at(prog, addr))
+        (addr, name_at(prog, addr), false)
     } else {
         return Err(format!(
             "no symbol named {spec:?} in {} (and it is not an address; pass --addr \
@@ -317,14 +569,24 @@ fn resolve_region(prog: &ConsoleProgram, args: &DisArgs) -> Result<Region, Strin
     };
 
     Ok(match (args.bytes, args.count) {
-        (Some(n), _) => {
-            Region { start, end: Some(start.saturating_add(n)), name, derived: false }
-        }
-        (None, Some(_)) => Region { start, end: None, name, derived: false },
+        (Some(n), _) => Region {
+            start,
+            end: Some(start.saturating_add(n)),
+            name,
+            derived: false,
+            from_entry,
+        },
+        (None, Some(_)) => Region { start, end: None, name, derived: false, from_entry },
         (None, None) => {
             let extent = prog.function_extent_at(start);
             let span = if extent > 0 { extent } else { DEFAULT_WINDOW_BYTES };
-            Region { start, end: Some(start.saturating_add(span)), name, derived: true }
+            Region {
+                start,
+                end: Some(start.saturating_add(span)),
+                name,
+                derived: true,
+                from_entry,
+            }
         }
     })
 }
@@ -370,7 +632,13 @@ fn name_at(prog: &ConsoleProgram, vma: u64) -> Option<String> {
 ///
 /// `end` is one past the last instruction actually listed, not the requested
 /// stop, so a caller resuming a truncated listing has its next start in hand.
-fn result_json(args: &DisArgs, region: &Region, rows: &[Row], truncated: bool) -> Json {
+fn result_json(
+    args: &DisArgs,
+    region: &Region,
+    rows: &[Row],
+    truncated: bool,
+    notes: &[String],
+) -> Json {
     let end = rows.last().map_or(region.start, |r| r.addr + r.size);
     let instructions = Json::Array(
         rows.iter()
@@ -387,8 +655,63 @@ fn result_json(args: &DisArgs, region: &Region, rows: &[Row], truncated: bool) -
             })
             .collect(),
     );
-    Json::Object(vec![
+    let mut doc = envelope(args, region, end, rows.len(), truncated, notes, "code");
+    doc.push(("instructions".into(), instructions));
+    Json::Object(doc)
+}
+
+/// Build the `--as data` (`kuna read`) document: the same envelope, then the
+/// span's bytes as one contiguous hex string plus the hexdump rows.
+///
+/// `hex` is the whole span in one piece on purpose — an agent comparing kuna's
+/// answer with `xxd` or pasting a table into a decoder wants one token, not a
+/// re-join of N rows.
+fn data_result_json(
+    args: &DisArgs,
+    region: &Region,
+    rows: &[DataRow],
+    truncated: bool,
+    notes: &[String],
+) -> Json {
+    let end = rows.last().map_or(region.start, |r| r.addr + r.bytes.len() as u64);
+    let mut hex = String::new();
+    for r in rows {
+        hex.push_str(&r.hex());
+    }
+    let listed = Json::Array(
+        rows.iter()
+            .map(|r| {
+                Json::Object(vec![
+                    ("address".into(), Json::Number(r.addr.to_string())),
+                    ("address_hex".into(), Json::Str(format!("0x{:x}", r.addr))),
+                    ("size".into(), Json::Number(r.bytes.len().to_string())),
+                    ("bytes".into(), Json::Str(r.hex())),
+                    ("ascii".into(), Json::Str(r.ascii())),
+                ])
+            })
+            .collect(),
+    );
+    let mut doc = envelope(args, region, end, rows.len(), truncated, notes, "data");
+    doc.push(("hex".into(), Json::Str(hex)));
+    doc.push(("rows".into(), listed));
+    Json::Object(doc)
+}
+
+/// The keys both views share, in one order, so a consumer reads `start`/`end`/
+/// `count`/`bytes` the same way whichever view answered. `kind` says which one
+/// did; `count` is the number of listed entries (instructions, or hexdump rows).
+fn envelope(
+    args: &DisArgs,
+    region: &Region,
+    end: u64,
+    count: usize,
+    truncated: bool,
+    notes: &[String],
+    kind: &str,
+) -> Vec<(String, Json)> {
+    vec![
         ("binary".into(), Json::Str(args.binary.clone())),
+        ("kind".into(), Json::Str(kind.to_string())),
         (
             "target".into(),
             Json::Object(vec![
@@ -401,11 +724,11 @@ fn result_json(args: &DisArgs, region: &Region, rows: &[Row], truncated: bool) -
         ("start_hex".into(), Json::Str(format!("0x{:x}", region.start))),
         ("end".into(), Json::Number(end.to_string())),
         ("end_hex".into(), Json::Str(format!("0x{end:x}"))),
-        ("count".into(), Json::Number(rows.len().to_string())),
+        ("count".into(), Json::Number(count.to_string())),
         ("bytes".into(), Json::Number((end - region.start).to_string())),
         ("truncated".into(), Json::Bool(truncated)),
-        ("instructions".into(), instructions),
-    ])
+        ("notes".into(), Json::Array(notes.iter().cloned().map(Json::Str).collect())),
+    ]
 }
 
 /// The human surface: a `#` header naming what was listed, then one column-aligned
@@ -417,10 +740,7 @@ fn render_text(region: &Region, rows: &[Row], truncated: bool) -> String {
     use std::fmt::Write as _;
     let end = rows.last().map_or(region.start, |r| r.addr + r.size);
     let mut out = String::new();
-    let label = match &region.name {
-        Some(name) => format!("{name} @ 0x{:x}", region.start),
-        None => format!("0x{:x}", region.start),
-    };
+    let label = label(region);
     let plural = if rows.len() == 1 { "instruction" } else { "instructions" };
     let _ = writeln!(
         out,
@@ -441,11 +761,50 @@ fn render_text(region: &Region, rows: &[Row], truncated: bool) -> String {
     out
 }
 
+/// The human byte surface: `xxd -g1` with kuna's own address column — a `#`
+/// header naming the span, then address, sixteen space-separated bytes, and the
+/// printable-ASCII gutter. Space-separated because a 32-character run of hex is
+/// not readable; `--json` carries the contiguous spelling for the machine.
+fn render_data_text(region: &Region, rows: &[DataRow], truncated: bool) -> String {
+    use std::fmt::Write as _;
+    let end = rows.last().map_or(region.start, |r| r.addr + r.bytes.len() as u64);
+    let mut out = String::new();
+    let plural = if end - region.start == 1 { "byte" } else { "bytes" };
+    let _ = writeln!(
+        out,
+        "# {} {plural} at {} (0x{:x}..0x{end:x}){}",
+        end - region.start,
+        label(region),
+        region.start,
+        if truncated { " [truncated: --bytes N or a 0xstart-0xend range reads more]" } else { "" }
+    );
+    for r in rows {
+        let _ = writeln!(
+            out,
+            "{:<14}{:<49}|{}|",
+            format!("0x{:x}", r.addr),
+            r.grouped(),
+            r.ascii()
+        );
+    }
+    out
+}
+
+/// What to call the start address in a header: its name and address when the
+/// program has a name for it, the bare address otherwise.
+fn label(region: &Region) -> String {
+    match &region.name {
+        Some(name) => format!("{name} @ 0x{:x}", region.start),
+        None => format!("0x{:x}", region.start),
+    }
+}
+
 // --- argument parsing --------------------------------------------------------
 
 pub(crate) fn parse_args(argv: &[String]) -> Result<DisArgs, String> {
     let mut positional: Vec<String> = Vec::new();
     let mut by_address = false;
+    let mut view: Option<ViewRequest> = None;
     let mut count: Option<usize> = None;
     let mut bytes: Option<u64> = None;
     let mut json = false;
@@ -461,6 +820,7 @@ pub(crate) fn parse_args(argv: &[String]) -> Result<DisArgs, String> {
         let a = argv[i].as_str();
         match a {
             "--addr" => by_address = true,
+            "--as" => view = Some(parse_view(&take(argv, &mut i, "--as")?)?),
             "--json" => json = true,
             "--count" => count = Some(parse_positive(&take(argv, &mut i, a)?, a)? as usize),
             "--bytes" => bytes = Some(parse_positive(&take(argv, &mut i, a)?, a)?),
@@ -499,6 +859,7 @@ pub(crate) fn parse_args(argv: &[String]) -> Result<DisArgs, String> {
         binary,
         spec,
         by_address,
+        view,
         count,
         bytes,
         json,
@@ -509,6 +870,15 @@ pub(crate) fn parse_args(argv: &[String]) -> Result<DisArgs, String> {
         target,
         sleighpath,
     })
+}
+
+fn parse_view(value: &str) -> Result<ViewRequest, String> {
+    match value {
+        "auto" => Ok(ViewRequest::Auto),
+        "code" => Ok(ViewRequest::Code),
+        "data" => Ok(ViewRequest::Data),
+        other => Err(format!("--as takes code|data|auto, got {other:?}")),
+    }
 }
 
 fn parse_positive(value: &str, flag: &str) -> Result<u64, String> {
@@ -529,8 +899,9 @@ fn take(argv: &[String], i: &mut usize, flag: &str) -> Result<String, String> {
 
 fn usage() {
     eprintln!(
-        "usage: kuna disassemble <binary> <name|0xaddr|0xstart-0xend> [--addr] [--count N] \\\n\
-         \x20                    [--bytes N] [--json] [--mode auto|reliable|aggressive|fast] \\\n\
+        "usage: kuna disassemble|read <binary> <name|0xaddr|0xstart-0xend> [--addr] \\\n\
+         \x20                    [--as code|data|auto] [--count N] [--bytes N] [--json] \\\n\
+         \x20                    [--mode auto|reliable|aggressive|fast] \\\n\
          \x20                    [--define-function S[-E][=N]|@FILE].. \\\n\
          \x20                    [--option N V].. [--slice ARCH] [--target T] [--sleighpath D]\n\
          \n\
@@ -539,12 +910,18 @@ fn usage() {
          A named function lists its whole extent; a raw address lists 64 bytes unless\n\
          --count / --bytes / a range says otherwise.\n\
          \n\
+         --as picks the view. `code` decodes instructions, `data` prints a hexdump,\n\
+         and `auto` (the default for `disassemble`) reads bytes when the address is\n\
+         in a non-executable data section. `kuna read` is the same command with\n\
+         `--as data` as its default.\n\
+         \n\
          --define-function <start[-end][=name] | @file> (repeatable) declares a\n\
          boundary first, so a name the image never carried becomes a valid target.\n\
          \n\
-         --json emits {{binary,target,start,end,count,bytes,truncated,instructions:\n\
-         [{{address,address_hex,size,bytes,mnemonic,operands,text}}]}}; without it, a\n\
-         header line and one address / bytes / text row per instruction."
+         --json emits {{binary,kind,target,start,end,count,bytes,truncated,notes}} plus\n\
+         instructions:[{{address,address_hex,size,bytes,mnemonic,operands,text}}] in the\n\
+         code view, or hex + rows:[{{address,address_hex,size,bytes,ascii}}] in the data\n\
+         view; without it, a header line and one row per instruction or 16 bytes."
     );
 }
 
@@ -571,6 +948,33 @@ mod tests {
     #[test]
     fn bytes_render_as_contiguous_lowercase_hex() {
         assert_eq!(row(0, &[0x48, 0x89, 0xe5], "MOV", "RBP,RSP").hex(), "4889e5");
+    }
+
+    #[test]
+    fn a_data_row_spells_its_bytes_three_ways() {
+        let r = DataRow { addr: 0x1000, bytes: (0u8..16).collect() };
+        assert_eq!(r.hex(), "000102030405060708090a0b0c0d0e0f");
+        assert_eq!(r.grouped(), "00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f");
+        assert_eq!(r.ascii(), "................");
+        let text = DataRow { addr: 0, bytes: b"kuna \x7f\"\\".to_vec() };
+        assert_eq!(text.ascii(), "kuna .\"\\", "0x7f is not printable; 0x20 and quotes are");
+    }
+
+    #[test]
+    fn the_view_flag_takes_three_spellings_and_nothing_else() {
+        assert_eq!(parse_view("auto"), Ok(ViewRequest::Auto));
+        assert_eq!(parse_view("code"), Ok(ViewRequest::Code));
+        assert_eq!(parse_view("data"), Ok(ViewRequest::Data));
+        assert!(parse_view("hex").is_err());
+        let argv: Vec<String> =
+            ["a.out", "0x1000", "--addr", "--as", "data"].iter().map(|s| s.to_string()).collect();
+        assert_eq!(parse_args(&argv).unwrap().view, Some(ViewRequest::Data));
+        // Unspecified stays unspecified, so each entry point can default it.
+        assert_eq!(parse_args(&["a.out".into(), "main".into()]).unwrap().view, None);
+        assert!(
+            parse_args(&["a.out".into(), "main".into(), "--as".into(), "asm".into()]).is_err(),
+            "an unknown view is a usage error"
+        );
     }
 
     #[test]
@@ -616,7 +1020,13 @@ mod tests {
 
     #[test]
     fn the_header_names_the_target_and_the_extent() {
-        let region = Region { start: 0x1000, end: Some(0x1004), name: Some("main".into()), derived: true };
+        let region = Region {
+            start: 0x1000,
+            end: Some(0x1004),
+            name: Some("main".into()),
+            derived: true,
+            from_entry: true,
+        };
         let rows = vec![row(0x1000, &[0x55], "PUSH", "RBP"), row(0x1001, &[0x48, 0x89, 0xe5], "MOV", "RBP,RSP")];
         let text = render_text(&region, &rows, false);
         let mut lines = text.lines();
@@ -626,5 +1036,58 @@ mod tests {
         );
         assert_eq!(lines.next().unwrap(), "0x1000        55                    PUSH RBP");
         assert!(render_text(&region, &rows, true).contains("[truncated:"));
+    }
+
+    #[test]
+    fn the_byte_header_counts_bytes_and_the_rows_are_xxd_shaped() {
+        let region = Region {
+            start: 0x400915,
+            end: Some(0x400925),
+            name: Some("s_400915".into()),
+            derived: false,
+            from_entry: false,
+        };
+        let rows = vec![DataRow { addr: 0x400915, bytes: b"Username: \0\x01\x02\x03\x04\x05".to_vec() }];
+        let text = render_data_text(&region, &rows, false);
+        let mut lines = text.lines();
+        assert_eq!(
+            lines.next().unwrap(),
+            "# 16 bytes at s_400915 @ 0x400915 (0x400915..0x400925)"
+        );
+        assert_eq!(
+            lines.next().unwrap(),
+            "0x400915      55 73 65 72 6e 61 6d 65 3a 20 00 01 02 03 04 05  |Username: ......|"
+        );
+        assert!(render_data_text(&region, &rows, true).contains("[truncated:"));
+    }
+
+    /// An explicit `--as` is the caller's, and `auto` only ever flips on the
+    /// loader's own classification — never on an entry, never on silence.
+    #[test]
+    fn the_view_choice_believes_the_caller_then_the_section_flags() {
+        let data = section_flags::DATA | section_flags::READONLY;
+        let code = section_flags::CODE | section_flags::READONLY;
+        use ViewRequest::{Auto, Code as WantCode, Data as WantData};
+        for (want, from_entry, flags, expect) in [
+            (Auto, false, Some(data), View::Data),
+            (Auto, false, Some(code), View::Code),
+            // A section marked BOTH (a Mach-O `__text` carrying data attributes)
+            // is code: the executable bit is the stronger claim.
+            (Auto, false, Some(data | code), View::Code),
+            // A discovered function is code wherever it was linked.
+            (Auto, true, Some(data), View::Code),
+            // No section covering the address: silence, not evidence.
+            (Auto, false, None, View::Code),
+            // The caller outranks all of it, in either direction.
+            (WantCode, false, Some(data), View::Code),
+            (WantData, true, Some(code), View::Data),
+            (WantData, false, None, View::Data),
+        ] {
+            assert_eq!(
+                decide_view(want, from_entry, flags),
+                expect,
+                "{want:?} / from_entry {from_entry} / flags {flags:?}"
+            );
+        }
     }
 }

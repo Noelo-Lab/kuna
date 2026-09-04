@@ -87,13 +87,18 @@ fn is_specs_skip(message: &str) -> bool {
         || message.contains("Could not discover")
 }
 
-/// Drive the command in-process, exactly as `main.rs` will: parse the argv, then
+/// Drive the command in-process, exactly as `main.rs` does: parse the argv, then
 /// render. `None` is the missing-`.sla` skip.
 fn listing(argv: &[&str]) -> Option<String> {
+    rendered(argv).map(|(text, _)| text)
+}
+
+/// The same, keeping the notes the command would have put on stderr.
+fn rendered(argv: &[&str]) -> Option<(String, Vec<String>)> {
     let argv: Vec<String> = argv.iter().map(|s| (*s).to_string()).collect();
     let args = disassemble::parse_args(&argv).unwrap_or_else(|e| panic!("{argv:?}: {e}"));
     match disassemble::render(&args) {
-        Ok(text) => Some(text),
+        Ok(l) => Some((l.text, l.notes)),
         Err(e) if is_specs_skip(&e) => {
             eprintln!("skipping: {e}");
             None
@@ -142,6 +147,19 @@ fn as_u64(v: &Json) -> u64 {
     }
 }
 
+/// The `rows` array of a `--as data` document (the byte view's `instructions`).
+fn listed_rows(doc: &str) -> Vec<Vec<(String, Json)>> {
+    let pairs = parse_doc(doc);
+    let Json::Array(items) = field(&pairs, "rows") else { panic!("rows must be an array") };
+    items
+        .iter()
+        .map(|i| match i {
+            Json::Object(o) => o.clone(),
+            other => panic!("a row must be an object, got {other:?}"),
+        })
+        .collect()
+}
+
 fn instructions(doc: &str) -> Vec<Vec<(String, Json)>> {
     match field(&parse_doc(doc), "instructions") {
         Json::Array(items) => items
@@ -185,11 +203,14 @@ fn the_json_document_is_valid_and_carries_every_documented_field() {
         return;
     };
     let pairs = parse_doc(&doc);
-    for key in
-        ["binary", "target", "start", "start_hex", "end", "end_hex", "count", "bytes", "truncated", "instructions"]
-    {
+    for key in [
+        "binary", "kind", "target", "start", "start_hex", "end", "end_hex", "count", "bytes",
+        "truncated", "notes", "instructions",
+    ] {
         let _ = field(&pairs, key);
     }
+    assert_eq!(as_str(field(&pairs, "kind")), "code");
+    assert_eq!(field(&pairs, "notes"), &Json::Array(Vec::new()), "a code listing has nothing to say");
     assert_eq!(as_u64(field(&pairs, "start")), 0x40071d);
     assert_eq!(as_str(field(&pairs, "start_hex")), "0x40071d");
     let Json::Object(target) = field(&pairs, "target") else { panic!("target must be an object") };
@@ -254,7 +275,8 @@ fn an_explicit_range_lists_exactly_that_span() {
 }
 
 /// `--bytes N` is the other way to bound a region — the one an agent reaches for
-/// with a size in hand (a 197-byte decrypted payload, a 0x28-byte blob).
+/// with a size in hand (a 197-byte decrypted payload, a 0x28-byte blob). On a
+/// data address it bounds the byte view, which is the one `auto` picks there.
 #[test]
 fn bytes_bounds_the_listing_and_works_on_data() {
     let Some(doc) = listing(&[&fauxware(), "0x400915", "--addr", "--bytes", "16", "--json"]) else {
@@ -262,9 +284,18 @@ fn bytes_bounds_the_listing_and_works_on_data() {
     };
     let pairs = parse_doc(&doc);
     assert_eq!(as_u64(field(&pairs, "start")), 0x400915);
-    let end = as_u64(field(&pairs, "end"));
-    assert!(end >= 0x400925, "fewer than 16 bytes listed (end 0x{end:x}):\n{doc}");
-    assert!(!instructions(&doc).is_empty(), "a data address produced no rows:\n{doc}");
+    assert_eq!(as_u64(field(&pairs, "end")), 0x400925, "--bytes 16 is exactly 16 bytes:\n{doc}");
+    assert_eq!(as_str(field(&pairs, "kind")), "data", ".rodata is not an instruction stream");
+    assert!(!listed_rows(&doc).is_empty(), "a data address produced no rows:\n{doc}");
+
+    // Forced back to code, the same request is the instruction walk it always was.
+    let Some(code) =
+        listing(&[&fauxware(), "0x400915", "--addr", "--bytes", "16", "--as", "code", "--json"])
+    else {
+        return;
+    };
+    assert_eq!(as_str(field(&parse_doc(&code), "kind")), "code");
+    assert!(!instructions(&code).is_empty(), "--as code produced no instructions:\n{code}");
 }
 
 /// A named function lists its whole extent by default — the same clip
@@ -331,7 +362,8 @@ fn each_row_carries_its_own_bytes_contiguously() {
 /// byte that will not decode.
 #[test]
 fn undecodable_bytes_are_listed_in_place_and_a_string_symbol_resolves() {
-    let Some(doc) = listing(&[&fauxware(), "s_400915", "--bytes", "24", "--json"]) else {
+    let Some(doc) = listing(&[&fauxware(), "s_400915", "--bytes", "24", "--as", "code", "--json"])
+    else {
         return;
     };
     let pairs = parse_doc(&doc);
@@ -362,6 +394,94 @@ fn the_derived_cap_never_bounds_an_explicit_request() {
         return;
     };
     assert_eq!(instructions(&doc).len(), 1200, "--count above the cap was clipped");
+}
+
+// --- the byte view -----------------------------------------------------------
+
+/// The need this view closes: an agent inspecting the encoded globals at a data
+/// address got instructions back and left kuna for `xxd`
+/// (`docs/re-needs/cli-mode-read-raw.md`). Now the span comes back as one
+/// contiguous hex string, per-row bytes, and an ASCII gutter — and `auto` picks
+/// it without being asked, because `.rodata` is not an instruction stream.
+#[test]
+fn a_data_range_answers_with_its_bytes() {
+    let Some((doc, notes)) = rendered(&[&fauxware(), "0x400915-0x400925", "--json"]) else {
+        return;
+    };
+    let pairs = parse_doc(&doc);
+    assert_eq!(as_str(field(&pairs, "kind")), "data");
+    assert_eq!(as_u64(field(&pairs, "start")), 0x400915);
+    assert_eq!(as_u64(field(&pairs, "end")), 0x400925, "a byte view honors the end exactly");
+    assert_eq!(as_u64(field(&pairs, "bytes")), 16);
+    // objdump -s -j .rodata: "Username: " then a NUL then "Passw".
+    assert_eq!(as_str(field(&pairs, "hex")), "557365726e616d653a20005061737377");
+    // ...and the note that explains the view is on the record, not just on stderr.
+    assert_eq!(notes.len(), 1, "the inferred view must say so: {notes:?}");
+    assert!(notes[0].contains("non-executable"), "{notes:?}");
+    let Json::Array(carried) = field(&pairs, "notes") else { panic!("notes must be an array") };
+    assert_eq!(carried.len(), 1, "the JSON carries the same note the stderr does");
+
+    let rows = listed_rows(&doc);
+    assert_eq!(rows.len(), 1, "16 bytes is one row");
+    assert_eq!(as_str(field(&rows[0], "address_hex")), "0x400915");
+    assert_eq!(as_u64(field(&rows[0], "size")), 16);
+    assert_eq!(as_str(field(&rows[0], "ascii")), "Username: .Passw", "the gutter is printable-only");
+}
+
+/// `hex` is the whole span in one piece, and the rows are exactly that string
+/// cut into sixteens — a caller may use either and never both.
+#[test]
+fn the_span_hex_is_the_rows_joined() {
+    let Some(doc) = listing(&[&fauxware(), "0x4008c8", "--addr", "--bytes", "40", "--json"]) else {
+        return;
+    };
+    let pairs = parse_doc(&doc);
+    let rows = listed_rows(&doc);
+    assert_eq!(rows.len(), 3, "40 bytes is two full rows and a short one");
+    let joined: String = rows.iter().map(|r| as_str(field(r, "bytes")).to_string()).collect();
+    assert_eq!(as_str(field(&pairs, "hex")), joined);
+    assert_eq!(joined.len(), 80, "40 bytes is 80 hex characters");
+    for r in &rows {
+        assert_eq!(as_str(field(r, "bytes")).len() as u64, as_u64(field(r, "size")) * 2);
+    }
+    assert_eq!(as_u64(field(&rows[2], "size")), 8, "the last row is the remainder");
+}
+
+/// A code address stays code under `auto`, and `--as data` reads its bytes on
+/// demand — a packer puts real code in `.data` and the caller outranks the flags.
+#[test]
+fn the_view_is_the_callers_to_override() {
+    let Some((auto, notes)) = rendered(&[&fauxware(), "main", "--count", "1", "--json"]) else {
+        return;
+    };
+    assert_eq!(as_str(field(&parse_doc(&auto), "kind")), "code");
+    assert!(notes.is_empty(), "nothing was inferred, so nothing is said: {notes:?}");
+
+    let Some((forced, notes)) = rendered(&[&fauxware(), "main", "--bytes", "4", "--as", "data", "--json"])
+    else {
+        return;
+    };
+    let pairs = parse_doc(&forced);
+    assert_eq!(as_str(field(&pairs, "kind")), "data");
+    // objdump -d: main opens 55 48 89 e5.
+    assert_eq!(as_str(field(&pairs, "hex")), "554889e5");
+    assert!(notes.is_empty(), "an explicit --as is not explained back at the caller: {notes:?}");
+}
+
+/// The human byte surface is `xxd -g1` with kuna's address column.
+#[test]
+fn the_human_byte_surface_is_a_hexdump() {
+    let Some(text) = listing(&[&fauxware(), "0x400915", "--addr", "--bytes", "16"]) else {
+        return;
+    };
+    let mut lines = text.lines();
+    assert_eq!(lines.next().unwrap(), "# 16 bytes at s_400915 @ 0x400915 (0x400915..0x400925)");
+    assert_eq!(
+        lines.next().unwrap(),
+        "0x400915      55 73 65 72 6e 61 6d 65 3a 20 00 50 61 73 73 77  |Username: .Passw|"
+    );
+    assert!(lines.next().is_none(), "16 bytes is one row:\n{text}");
+    assert!(!text.contains('{'), "the human surface emitted JSON:\n{text}");
 }
 
 // --- the human surface -------------------------------------------------------
@@ -398,7 +518,7 @@ fn an_unmapped_address_fails_with_a_reason() {
         [fauxware(), "0xdeadbeef000".into(), "--addr".into()].into_iter().collect();
     let args = disassemble::parse_args(&argv).expect("a well-formed command line");
     match disassemble::render(&args) {
-        Ok(text) => panic!("an unmapped address must not produce a listing:\n{text}"),
+        Ok(l) => panic!("an unmapped address must not produce a listing:\n{}", l.text),
         Err(e) if is_specs_skip(&e) => eprintln!("skipping: {e}"),
         Err(e) => {
             assert!(e.contains("no bytes mapped"), "{e}");
@@ -413,7 +533,7 @@ fn an_unresolvable_name_fails_with_a_reason() {
     let argv: Vec<String> = [fauxware(), "no_such_symbol_here".into()].into_iter().collect();
     let args = disassemble::parse_args(&argv).expect("a well-formed command line");
     match disassemble::render(&args) {
-        Ok(text) => panic!("an unresolvable name must not produce a listing:\n{text}"),
+        Ok(l) => panic!("an unresolvable name must not produce a listing:\n{}", l.text),
         Err(e) if is_specs_skip(&e) => eprintln!("skipping: {e}"),
         Err(e) => {
             assert!(e.contains("no symbol named"), "{e}");
@@ -446,7 +566,7 @@ fn an_inverted_range_is_rejected() {
     let argv: Vec<String> = [fauxware(), "0x400680-0x400664".into()].into_iter().collect();
     let args = disassemble::parse_args(&argv).expect("a well-formed command line");
     match disassemble::render(&args) {
-        Ok(text) => panic!("an inverted range must not produce a listing:\n{text}"),
+        Ok(l) => panic!("an inverted range must not produce a listing:\n{}", l.text),
         Err(e) if is_specs_skip(&e) => eprintln!("skipping: {e}"),
         Err(e) => assert!(e.contains("empty range"), "{e}"),
     }
@@ -493,6 +613,50 @@ fn the_cli_exits_zero_and_prints_instructions() {
     assert_eq!(code, 0, "{stderr}");
     assert!(stdout.contains("PUSH RBP"), "{stdout}");
     assert!(stdout.contains("CALL 0x400510"), "{stdout}");
+}
+
+/// `kuna read` is the same command with the byte view as its default, so an
+/// agent that wants the bytes at an address does not have to know they are
+/// spelled `disassemble`. Through the binary, because the alias IS the dispatch.
+#[test]
+fn the_read_alias_prints_bytes_and_explains_nothing() {
+    if !dispatch_wired() {
+        return;
+    }
+    let (stdout, stderr, code) = run_kuna(&["read", &fauxware(), "main", "--bytes", "4"]);
+    if is_specs_skip(&stderr) {
+        eprintln!("skipping: {stderr}");
+        return;
+    }
+    assert_eq!(code, 0, "{stderr}");
+    assert!(stdout.contains("55 48 89 e5"), "{stdout}");
+    assert!(!stdout.contains("PUSH RBP"), "`read` must not disassemble:\n{stdout}");
+    // The view was asked for, not inferred, so there is nothing to explain.
+    assert!(!stderr.contains("note:"), "{stderr}");
+
+    // ...and the caller can still ask for instructions through it.
+    let (stdout, _, code) = run_kuna(&["read", &fauxware(), "main", "--count", "1", "--as", "code"]);
+    assert_eq!(code, 0);
+    assert!(stdout.contains("PUSH RBP"), "--as code must win over the alias default:\n{stdout}");
+}
+
+/// The inferred view puts its reason on **stderr**, so `--json` stdout stays a
+/// document a caller can pipe straight into a parser.
+#[test]
+fn an_inferred_byte_view_explains_itself_on_stderr() {
+    if !dispatch_wired() {
+        return;
+    }
+    let (stdout, stderr, code) =
+        run_kuna(&["disassemble", &fauxware(), "0x400915-0x400925", "--json"]);
+    if is_specs_skip(&stderr) {
+        eprintln!("skipping: {stderr}");
+        return;
+    }
+    assert_eq!(code, 0, "{stderr}");
+    assert!(stderr.contains("non-executable data section"), "{stderr}");
+    assert!(stdout.trim_start().starts_with('{'), "stdout must be the document alone:\n{stdout}");
+    assert!(stdout.contains("557365726e616d653a20005061737377"), "{stdout}");
 }
 
 /// Usage errors are exit 2 with the usage block, never a silent empty listing.
