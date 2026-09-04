@@ -998,7 +998,7 @@ impl ConsoleProgram {
     /// (kuna) The basename of the FunctionSymbol installed at code-space VMA `vma`, or
     /// `None` if no function is mapped there. Resolves across scopes
     /// (`find_function_across_scopes`, the no-return/FID arm's resolver), so it sees a
-    /// namespaced virtual-method function (e.g. `Box::vftable_0` in scope `Box`).
+    /// namespaced virtual-method function (e.g. `Box::vfunc_0` in scope `Box`).
     ///
     /// The verification hook for the MSVC-RTTI **vftable** e2e (R3): a vtable slot's
     /// target VA should now resolve to a named virtual method — the virtual dispatch
@@ -1461,6 +1461,9 @@ fn is_generic_placeholder_name(name: &str) -> bool {
 /// table SLOT is, not what the function is called, so a real symbol at the same
 /// address must outrank them — `fmt_arm`'s `0x4c0` reports
 /// `__do_global_dtors_aux` with `_FINI_0` as an alias, not the reverse.
+///
+/// A recovered virtual method named by its VTABLE SLOT INDEX is the same kind of
+/// name and is treated the same way ([`is_vtable_slot_name`]).
 fn is_structural_entry_name(name: &str) -> bool {
     name == "_DT_INIT"
         || name == "_DT_FINI"
@@ -1468,6 +1471,34 @@ fn is_structural_entry_name(name: &str) -> bool {
             .strip_prefix("_INIT_")
             .or_else(|| name.strip_prefix("_FINI_"))
             .is_some_and(|i| !i.is_empty() && i.bytes().all(|b| b.is_ascii_digit()))
+        || is_vtable_slot_name(name)
+}
+
+/// (kuna, `pe-function-inventory-labels`) Is `name` a virtual method the RTTI passes
+/// could only name by its vtable SLOT INDEX — `<Class>::vfunc_<i>` (MSVC `rtti`) or
+/// `<Class>::vtable_<i>` (Itanium `itaniumrtti`)?
+///
+/// Neither metadata graph records per-method names, only the class name, so the slot
+/// index is all those passes have. That makes the name structural in exactly the sense
+/// `_FINI_<i>` is: it says which SLOT the function occupies, not what the function is
+/// called. A real method name recovered at the same address must therefore outrank it —
+/// on a Windows PE the `std::basic_streambuf` thunks carry both, and the length
+/// tie-break alone decided it, so `showmanyc` reported as `std::basic_stringbuf::vfunc_5`
+/// while its one-byte-shorter neighbour `uflow` kept its real name.
+///
+/// The unindexed `<Class>::vftable` / `<Class>::vtable` labels are DATA symbols and never
+/// reach this ranking; the digit test excludes descriptive suffixes such as
+/// `Widget::vtable_for_Drawable` as well.
+fn is_vtable_slot_name(name: &str) -> bool {
+    let Some((class, slot)) = name.rsplit_once("::") else {
+        return false;
+    };
+    if class.is_empty() {
+        return false;
+    }
+    slot.strip_prefix("vfunc_")
+        .or_else(|| slot.strip_prefix("vtable_"))
+        .is_some_and(|i| !i.is_empty() && i.bytes().all(|b| b.is_ascii_digit()))
 }
 
 /// (kuna, issue #197) How informative is `name`?  Smaller sorts first when
@@ -1484,7 +1515,9 @@ fn is_structural_entry_name(name: &str) -> bool {
 ///    at `0x40`, and the reported mingw-PE pair is `_pre_c_init`+`pre_c_init`.
 ///    The unprefixed name is the one a reader wants.
 /// 4. **Shorter**, then **lexicographic** — so the choice is total and stable
-///    run to run rather than dependent on symbol-stream order.
+///    run to run rather than dependent on symbol-stream order.  This is a tie-break
+///    between names of equal standing ONLY; a difference in kind must be caught by a
+///    tier above it, or a one-character length accident decides the report.
 fn entry_name_rank(name: &str) -> (bool, bool, bool, usize) {
     (
         is_generic_placeholder_name(name),
@@ -2795,3 +2828,64 @@ impl LoadImage for NullLoad {
 /// function's natural extent), mirroring the C++ `IfcFuncload` / `IfcAddrrangeLoad`
 /// unbounded follow.
 pub const UNBOUNDED_SIZE: int4 = 0;
+
+#[cfg(test)]
+mod tests {
+    use super::{entry_name_rank, is_vtable_slot_name};
+
+    /// Which of an entry's names `function_entries_canonical` reports.
+    fn wins<'a>(a: &'a str, b: &'a str) -> &'a str {
+        if entry_name_rank(a).cmp(&entry_name_rank(b)).then_with(|| a.cmp(b)).is_le() {
+            a
+        } else {
+            b
+        }
+    }
+
+    /// (kuna, `pe-function-inventory-labels`) A vtable-slot-index name is structural:
+    /// a real method name at the same address outranks it however long that name is.
+    /// Before, only the length tie-break separated them, so which name a PE inventory
+    /// reported turned on a one-character accident — `std::basic_streambuf::showmanyc`
+    /// lost to `std::basic_stringbuf::vfunc_5` while the shorter `uflow` next door kept
+    /// its own name.
+    #[test]
+    fn a_real_method_name_outranks_its_vtable_slot_index() {
+        for (real, slot) in [
+            ("std::basic_streambuf::showmanyc", "std::basic_stringbuf::vfunc_5"),
+            ("std::basic_streambuf::uflow", "std::basic_stringbuf::vfunc_7"),
+            ("Shape::perimeter", "Circle::vtable_2"),
+            // The real name being much the longer of the two is the whole point.
+            ("Widget::an_extremely_long_method_name", "Widget::vfunc_0"),
+        ] {
+            assert_eq!(wins(real, slot), real, "{real} must outrank {slot}");
+        }
+    }
+
+    /// The slot name still beats an engine placeholder — it is structural, not useless.
+    #[test]
+    fn a_vtable_slot_index_still_outranks_a_placeholder() {
+        for placeholder in ["sub_140002c2c", "FUN_140002c2c", "func_140002c2c"] {
+            assert_eq!(wins("std::bad_alloc::vfunc_0", placeholder), "std::bad_alloc::vfunc_0");
+        }
+    }
+
+    /// Only `<Class>::v{func,table}_<digits>` is a slot name. The unindexed labels are
+    /// DATA symbols, and a descriptive suffix names a base subobject, not a slot.
+    #[test]
+    fn only_an_indexed_slot_name_is_structural() {
+        assert!(is_vtable_slot_name("Box::vfunc_0"));
+        assert!(is_vtable_slot_name("std::basic_stringbuf::vtable_11"));
+        for not_a_slot in [
+            "Box::vftable",
+            "Box::vtable",
+            "Widget::vtable_for_Drawable",
+            "Box::vfunc_",
+            "Box::vfunc_1a",
+            "vfunc_0",
+            "::vfunc_0",
+            "vtable_3",
+        ] {
+            assert!(!is_vtable_slot_name(not_a_slot), "{not_a_slot} is not a slot name");
+        }
+    }
+}

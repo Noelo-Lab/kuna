@@ -1,0 +1,72 @@
+{
+  "opportunity": "repipe:6547b4d50f4238b24302b588::pe-function-inventory-labels",
+  "need_id": "pe-function-inventory-labels",
+  "track": "tooling",
+  "round": 2,
+  "test_name": "repipe round 2, challenge 6547b4d50f4238b24302b588",
+  "binary": "kuna-re-dataset/challenges/6547b4d50f4238b24302b588/bin/trappy attack.exe",
+  "selector": null,
+  "func_addr": null,
+  "option": null,
+  "flag": null,
+  "element_id": null,
+  "change_kind": "correctness-fix",
+  "source_decompiler": "kuna",
+  "inspiration": "repipe round 2 need pe-function-inventory-labels; the rank tier it reuses is kuna's own issue-#197 canonical-entry model",
+  "default_on": true,
+  "div": null,
+  "scope": "small",
+  "files": [
+    "decompiler/crates/kuna-analysis/src/analyzers/rtti/mod.rs",
+    "decompiler/crates/kuna-analysis/src/analyzers/rtti/vftable.rs",
+    "decompiler/crates/kuna-console/src/engine.rs",
+    "decompiler/crates/kuna-console/tests/verify_rtti.rs",
+    "decompiler/crates/kuna-analysis/tests/fixtures/README.md",
+    "tests/cli/pe-function-inventory-labels.json",
+    "docs/spec/01-program-prep.md",
+    "docs/re-needs/pe-function-inventory-labels.md"
+  ],
+  "parity": "OK",
+  "gates": {
+    "make test": "PARITY OK 675/675",
+    "make test-stages": "PARITY OK 600/600",
+    "make check-spec": "OK",
+    "kuna catalog --check": "catalog OK",
+    "tests/cli": "17/17",
+    "make rust-test": "green (5,317 tests, 343 suites; run with KUNA_DECOMP_TEST unset -- the repipe worker exports it at kuna's own decomp_test_dbg, which makes the C++-oracle cross-checks in verify_w10_* compare kuna against itself and fail spuriously. kuna-decomp depends on neither crate this PR touches)"
+  },
+  "probe_flip": {
+    "probe_still_passes": false,
+    "acceptance_passes": true,
+    "vftable_named_functions_before": 10,
+    "vftable_named_functions_after": 0
+  },
+  "promoted_probe": {
+    "path": "tests/cli/pe-function-inventory-labels.json",
+    "retargeted_from": "dataset bin/trappy attack.exe (10 vftable_<i>-named routines, 0x140001040/32B .. 0x140001de0/496B)",
+    "retargeted_to": "decompiler/crates/kuna-analysis/tests/fixtures/msvc_rtti_x64.exe (Box::vftable_0 at 0x140001040)",
+    "why": "CI has no dataset; the vendored MSVC RTTI PE reproduces the identical defect, verified before the fix",
+    "strengthened": "the acceptance is a single stdout_absent clause, which a dead rtti pass would also satisfy, so the promoted probe adds a positive `\"name\": \"Box::vfunc_0\"` clause and pins --mode aggressive rather than relying on auto's 500 KiB threshold to turn the rtti gate on"
+  },
+  "speed_method": "not measured: no pass, decode or analysis step was added or removed. The rtti change is one format string; the ranking change adds one rsplit_once + prefix test per (name, entry) pair inside an inventory sort that already compares strings",
+  "sweep": {
+    "targets": 19,
+    "surface": "kuna functions --json --mode aggressive over every in-repo PE fixture (9) + every C++/ELF fixture incl. the stripped Itanium-RTTI .so (8) + fauxware/aif_gap controls, plus the recorded dataset PE; kuna decompile-all --json over the 9 PE fixtures on the first arm",
+    "changed_files": 3,
+    "changed_lines": 50,
+    "residual_after_normalising_vftable_i_to_vfunc_i": 0,
+    "note": "every changed line in the final arm is exactly one name: `::vftable_<i>` -> `::vfunc_<i>`. Nothing else moved anywhere, on any target, in either surface",
+    "elf_arm_inert": "itaniumrtti_x86_64.so is stripped, so its 26 `<Class>::vtable_<i>` entries only ever compete with `sub_<addr>` placeholders, which already lose at rank tier 1. The `vtable_` half of the rank predicate is therefore measured-inert on every in-repo ELF today and is covered by unit tests only",
+    "regression_caught": "the FIRST arm (rename only) had a 4-line residual, and it was a real regression the rename introduced: at 0x140002c2c the canonical name flipped from the recovered `std::basic_streambuf::showmanyc` to `std::basic_stringbuf::vfunc_5`, because entry_name_rank's last tier is name LENGTH and vfunc_5 is one character shorter than vftable_5. That is what added the ranking change; the residual is 0 with it in"
+  },
+  "decisions": [
+    "The filed hypothesis -- 'public data aliases near code addresses are winning the canonical-name selection for discovered function entries' -- is OVERTURNED, and the need's hypothesis_status is updated to match. No data symbol is involved. `<Class>::vftable_<i>` is a name kuna SYNTHESISES in the rtti pass (R3, analyzers/rtti/mod.rs::emit_vftable_methods) and attaches to the address a vftable slot POINTS AT -- the virtual method, not the table. All 10 flagged entries are genuine .text routines and their classification as functions is correct.",
+    "What is wrong is only the name, and it is wrong in a way that is not cosmetic: an MSVC class compiled under multiple inheritance really does own several vftables, so `<Class>::vftable_<i>` collides with the natural reading 'this class's i-th vftable'. On the recorded PE that made 496 bytes of std::basic_stringbuf code read as a vtable object. Renamed to `<Class>::vfunc_<i>`; only the table itself keeps the unindexed `<Class>::vftable` Data label.",
+    "The captain's STOP clause (stop if correcting this changes function DISCOVERY rather than labelling) does not fire. The rtti pass does create functions -- SymFact{Function} runs add_function when find_function misses -- but which addresses it creates is untouched. Discovery is byte-identical: the sweep's only diff is the name string.",
+    "Tooling track, so per docs/agents.md no option, no phases.toml row, no catalog counter and no tests/stages case. None were touched and no counter lease was taken -- which also means no collision with the phases.toml/docs/options.md leases held this round.",
+    "The rename ALONE was a net regression on one function, and only the sweep found it. entry_name_rank's tiers are (placeholder, structural, leading-underscore, LENGTH), so between a real method name and a synthetic slot name the report was decided by a one-character length accident: `std::basic_streambuf::showmanyc` (30) beat `std::basic_stringbuf::vftable_5` (31) and lost to `vfunc_5` (29), while its neighbour `uflow` (27) kept its name either way. The fix is not to pick a longer word: a slot-index name is STRUCTURAL in exactly the sense the existing `_FINI_<i>` tier documents -- it says which slot the function occupies, not what the function is called -- so it now sorts into that tier and a real method name outranks it at any length.",
+    "The rank predicate covers the Itanium sibling's `<Class>::vtable_<i>` as well as `<Class>::vfunc_<i>`: same defect, same one predicate. It is measured-inert on every in-repo ELF (the itaniumrtti fixture is stripped, so those names only face `sub_` placeholders, which already lose a tier earlier) and is carried by unit tests. The Itanium pass's own `vtable_<i>` STEM was left alone deliberately -- renaming it edits the itaniumrtti row in phases.toml, which quotes `Shape::vtable_2`, and phases.toml is leased to another builder this round. Worth a follow-up need.",
+    "A slot-index name still outranks `sub_`/`FUN_` placeholders: it is structural, not uninformative. `std::bad_alloc::vfunc_0` stays canonical over `sub_140001060`, which is checked by a unit test.",
+    "Second defect found, NOT fixed here, recorded in the need's Refutation for a follow-up: the MSVC pass has no defining-class attribution, so a slot shared by a base and its derivatives is named once per class and the canonical pick among them is arbitrary (`std::bad_alloc::vfunc_0` canonical over `std::exception::vfunc_0` purely on lexicographic order). The Itanium sibling already attributes an inherited slot to the class that DEFINES it; the MSVC one does not."
+  ]
+}

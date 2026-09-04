@@ -28,9 +28,11 @@
 //! (`None`): a real polymorphic class has at least one virtual method.
 //!
 //! Each surviving slot VA is a virtual-method **function** the pass names
-//! `<Class>::vftable_<i>` (the MSVC metadata graph carries the class name in the
+//! `<Class>::vfunc_<i>` (the MSVC metadata graph carries the class name in the
 //! RTTI0 `TypeDescriptor` but NOT per-method names, so the slot index is the faithful
 //! disambiguator — the documented scope vs Ghidra's script-tier method demangling).
+//! The `vfunc_` stem, not `vftable_`: the slot's target is code, and the vftable data
+//! object at `base` is what carries the unindexed `<Class>::vftable` label.
 
 use object::read::{Object, ObjectSection};
 use object::SectionKind;
