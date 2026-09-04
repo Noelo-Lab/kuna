@@ -388,12 +388,20 @@ def _round_dirs(state_dir):
 
 
 def _lane_state(transitions, track, lane):
-    """Current state of one track: the destination of its last recorded transition."""
+    """Current state of one track: the destination of its last recorded transition.
+
+    captain.py names the field `machine`, not `track` -- `track` is accepted too so an
+    older transitions.jsonl still reads. Getting this wrong is silent: every lane renders
+    as "--" on a loop that is running perfectly, which is worse than an error because the
+    dashboard is what the operator trusts when the CLI is not in front of them.
+    """
+    def _is(t):
+        return (t.get("machine") or t.get("track")) == track
     for t in reversed(transitions):
-        if t.get("track") == track and t.get("to") in lane:
+        if _is(t) and t.get("to") in lane:
             return t["to"]
     for t in reversed(transitions):
-        if t.get("track") == track and t.get("to"):
+        if _is(t) and t.get("to"):
             return t["to"]
     return None
 
@@ -403,9 +411,14 @@ def _collect_rounds(state_dir):
     for num, path in _round_dirs(state_dir):
         meta = _read_json(path / "round.json", {}) or {}
         trans = _jsonl(path / "transitions.jsonl")
+        # captain.py's round.json is FLAT -- {"round","supervisor","test","build",...}.
+        # The nested {"tracks":{"test":{"state":...}}} shape is read first only so an
+        # older document still renders.
         tracks = meta.get("tracks") or {}
-        test_state = (tracks.get("test") or {}).get("state") or _lane_state(trans, "test", TEST_LANE)
-        build_state = (tracks.get("build") or {}).get("state") or _lane_state(trans, "build", BUILD_LANE)
+        test_state = ((tracks.get("test") or {}).get("state") or meta.get("test")
+                      or _lane_state(trans, "test", TEST_LANE))
+        build_state = ((tracks.get("build") or {}).get("state") or meta.get("build")
+                       or _lane_state(trans, "build", BUILD_LANE))
         acceptance = _read_json(path / "acceptance.json")
         slate = _read_json(path / "slate.json", []) or []
         if isinstance(slate, dict):
