@@ -28,6 +28,19 @@
     "output": "byte-identical JSON"
   },
   "acceptance": "scripts.repipe.verify --need cold-load-xref-lookup (wall_ms median < 1000)",
-  "tests": ["tests/cli/cold-load-xref-lookup.json"],
-  "gates": {}
+  "tests": [
+    "tests/cli/cold-load-xref-lookup.json"
+  ],
+  "gates": {
+    "make test": "PARITY OK 675/675",
+    "make test-stages": "PARITY OK",
+    "make rust-test": "green",
+    "make check-spec": "green"
+  },
+  "sweep": {
+    "method": "kuna xrefs --to/--from over 6 sampled function entries on 8 binaries (i386 PE/ELF, ARM Cortex-M), base vs new JSON compared",
+    "finding_1_fixed": "target.name/from_function name fell to null for every entry the ENGINE inventory does not carry (the walk discovers them, the engine no longer does). Fixed: name_at now falls back to the index's own discovered functions, restoring sub_<addr>. Re-swept CrackMe_3.exe + Obfuscation1: 24/24 identical.",
+    "finding_2_open": "`--from <addr>` on a function only AIF's gap walk discovered now answers 0 references (betaflight_STM32F405 0x806b798 4->0, 0x801500e 2->0; KeyVal2.exe 0x45c080 1->0, 0x4031a7 1->0). AIF is a Listing consumer and cannot run without the Listing, so those entries are no longer seeds and the walk never reaches them. `kuna xrefs --mode aggressive` restores the old answer. This is a real recall trade on stripped ARM/Cortex-M and is NOT closed."
+  },
+  "status": "not merged: finding_2 (AIF-discovered functions lose their --from answers) is an unresolved quality trade, and the builder ran out of budget before it could be closed or re-measured."
 }

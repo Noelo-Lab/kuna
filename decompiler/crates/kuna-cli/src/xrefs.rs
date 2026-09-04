@@ -139,7 +139,7 @@ fn query(args: &XrefArgs) -> Result<String, String> {
         &seeds,
     );
 
-    let target = resolve_target(&prog, &args.spec)?;
+    let target = resolve_target(&prog, &index, &args.spec)?;
     let rows = match args.direction {
         // `--to` answers for the callable, not the literal address: an import
         // reached through a veneer and an IAT/GOT slot is one thing under two
@@ -178,12 +178,12 @@ fn query(args: &XrefArgs) -> Result<String, String> {
 /// A name that identifies several entries is an ERROR naming all of them, not a
 /// miss: falling through to the symbol table would answer for whichever one it
 /// happens to hold first, which is the guess the selector model exists to refuse.
-fn resolve_target(prog: &ConsoleProgram, spec: &str) -> Result<Target, String> {
+fn resolve_target(prog: &ConsoleProgram, index: &XrefIndex, spec: &str) -> Result<Target, String> {
     let spec = spec.trim();
     if let Some(body) = spec.strip_prefix("0x").or_else(|| spec.strip_prefix("0X")) {
         let addr = u64::from_str_radix(body, 16)
             .map_err(|_| format!("invalid address {spec:?}"))?;
-        return Ok(Target { addr, name: name_at(prog, addr) });
+        return Ok(Target { addr, name: name_at(prog, index, addr) });
     }
     match prog.resolve_entry(&EntrySelector::Name(spec.to_string())) {
         Ok(entry) => return Ok(Target { addr: entry.addr.get_offset(), name: Some(entry.name) }),
@@ -192,7 +192,7 @@ fn resolve_target(prog: &ConsoleProgram, spec: &str) -> Result<Target, String> {
     }
     if let Some(addr) = prog.lookup_symbol(spec) {
         let addr = addr.get_offset();
-        return Ok(Target { addr, name: name_at(prog, addr).or_else(|| Some(spec.to_string())) });
+        return Ok(Target { addr, name: name_at(prog, index, addr).or_else(|| Some(spec.to_string())) });
     }
     if let Some((name, addr, _)) = prog
         .global_data_symbols()
@@ -202,17 +202,30 @@ fn resolve_target(prog: &ConsoleProgram, spec: &str) -> Result<Target, String> {
         return Ok(Target { addr, name: Some(name) });
     }
     if let Ok(addr) = u64::from_str_radix(spec, 16) {
-        return Ok(Target { addr, name: name_at(prog, addr) });
+        return Ok(Target { addr, name: name_at(prog, index, addr) });
     }
     Err(format!("no symbol named {spec:?} (and it is not an address)"))
 }
 
 /// The program's best name for `vma`: the canonical function entry there, then a
 /// function symbol, then a named global data object. `None` when nothing names it.
-fn name_at(prog: &ConsoleProgram, vma: u64) -> Option<String> {
+fn name_at(prog: &ConsoleProgram, index: &XrefIndex, vma: u64) -> Option<String> {
     prog.find_entry_at(vma)
         .map(|e| e.name)
         .or_else(|| prog.function_named_at(vma))
+        // The walk discovers functions the engine's inventory does not carry (it
+        // follows the call graph out of its seeds), and a row that names one must
+        // still name it rather than answer `null`.
+        .or_else(|| {
+            index.is_function_entry(vma).then(|| {
+                match prog.arch().manage().get_default_code_space() {
+                    Some(space) => {
+                        prog.arch().name_function(&Address::new(Rc::clone(space), vma))
+                    }
+                    None => format!("sub_{vma:x}"),
+                }
+            })
+        })
         .or_else(|| {
             prog.global_data_symbols()
                 .into_iter()
@@ -228,13 +241,13 @@ fn owning_function(prog: &ConsoleProgram, index: &XrefIndex, vma: u64) -> Option
     let entry = index
         .function_containing(vma)
         .or_else(|| prog.find_entry_at(vma).map(|e| e.addr.get_offset()))?;
-    Some((entry, function_name(prog, entry)))
+    Some((entry, function_name(prog, index, entry)))
 }
 
 /// The display name for a function entry, falling back to the engine's own
 /// placeholder (`sub_<addr>`) so a row is never nameless.
-fn function_name(prog: &ConsoleProgram, entry: u64) -> String {
-    name_at(prog, entry).unwrap_or_else(|| {
+fn function_name(prog: &ConsoleProgram, index: &XrefIndex, entry: u64) -> String {
+    name_at(prog, index, entry).unwrap_or_else(|| {
         match prog.arch().manage().get_default_code_space() {
             Some(space) => prog.arch().name_function(&Address::new(Rc::clone(space), entry)),
             None => format!("sub_{entry:x}"),
@@ -321,7 +334,7 @@ fn result_json(
                             .into_iter()
                             .map(|a| {
                                 function_json(
-                                    &name_at(prog, a).unwrap_or_else(|| format!("0x{a:x}")),
+                                    &name_at(prog, index, a).unwrap_or_else(|| format!("0x{a:x}")),
                                     a,
                                 )
                             })
@@ -366,7 +379,7 @@ fn render_text(
         let _ = writeln!(
             out,
             "# same import at 0x{a:x} ({}) - a forwarding veneer and the pointer slot it jumps through",
-            name_at(prog, a).unwrap_or_else(|| "-".into())
+            name_at(prog, index, a).unwrap_or_else(|| "-".into())
         );
     }
     for r in rows {
@@ -387,7 +400,7 @@ fn render_text(
                     "0x{:x}\t{}\t{}\t@0x{:x}\t{}",
                     r.to,
                     r.kind.as_str(),
-                    name_at(prog, r.to).unwrap_or_else(|| "-".into()),
+                    name_at(prog, index, r.to).unwrap_or_else(|| "-".into()),
                     r.from,
                     r.instruction
                 );
