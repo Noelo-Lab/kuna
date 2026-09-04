@@ -836,6 +836,25 @@ the CFG, and `sblocks`, the structuring tree — physically distinct, seeded as 
 `BlockCopy` mirror of the CFG when structuring begins
 (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs (seed_sblocks_copy)`).
 
+The varnode bank's two sorted trees are the container the decompiler touches most
+— a large function creates and destroys well over a million Varnodes, each one
+inserted into and removed from both — so their keys
+(`decompiler/crates/kuna-decomp/src/substrate/varnode.rs (LocKey, DefKey)`) do not
+store an `Address` or a `SeqNum` directly. They store the ordering triple those
+compare by, flattened into plain integers: the sentinel rank, the space index and
+the offset (`decompiler/crates/kuna-base/src/address.rs (Address::sort_key)`).
+Lexicographic comparison of the triple reproduces `Address::cmp` exactly — two
+Addresses sharing a space pointer share a rank and an index and fall through to
+the offset, which is what the pointer-equality fast path does — so the tree order
+is the C++ comparator's order, while the key itself becomes `Copy`: no reference
+counting on clone or drop, no pointer chase into an `AddrSpace` to compare, and a
+smaller node. Insertion also takes a single descent
+(`decompiler/crates/kuna-decomp/src/substrate/varnode.rs (VarnodeBank::xref)`):
+the "is an equivalent varnode already present" lookup and the insertion that
+follows it are the same search, because the `insert` flag set afterwards is
+outside the `(input|written)` mask the key is built from and so cannot move the
+entry.
+
 Every cross-arena mutation routes through `Funcdata` — Rust cannot hold two
 `&mut` arenas through a method on one of them, so the op-in-block primitives the
 C++ splits between `Funcdata` and `BlockBasic` are all `Funcdata` methods here

@@ -121,7 +121,7 @@ fn location_map_add_skips_nonoverlapping_leading_then_unions_later() {
     //   successor end... in C++: lower_bound finds 0x200 is < 0x202 so the
     //   first key >= 0x202 is end; --iter -> 0x200, which DOES overlap 0x202,
     //   so NO ++iter, first-block branch taken, contained -> intersect 2.
-    let (key, intersect) = lm.add(raddr(&fd, 0x202), 4, 7);
+    let (key, intersect, _sz) = lm.add(raddr(&fd, 0x202), 4, 7);
     assert_eq!(key, raddr(&fd, 0x200), "contained sub-range returns containing element");
     assert_eq!(intersect, 2, "fully contained in older range -> intersect 2");
     assert_eq!(lm.get(&key).unwrap().pass, 3, "older pass preserved");
@@ -144,7 +144,7 @@ fn location_map_add_between_elements_is_fresh_disjoint() {
     // 0x100; 0x100 does NOT overlap 0x200 -> ++iter -> 0x300; 0x300 does not
     // overlap 0x200 either (where == -1) -> while loop body never runs;
     // inserted fresh.  intersect must stay 0.
-    let (key, intersect) = lm.add(raddr(&fd, 0x200), 4, 9);
+    let (key, intersect, _sz) = lm.add(raddr(&fd, 0x200), 4, 9);
     assert_eq!(key, raddr(&fd, 0x200));
     assert_eq!(intersect, 0, "disjoint insert -> intersect 0");
     assert_eq!(lm.get(&key).unwrap().pass, 9, "fresh element keeps its own pass");
@@ -166,7 +166,7 @@ fn location_map_add_swallow_carries_global_min_pass() {
     // (first-block branch): addr<-0x100, size grows, pass 6<9 -> intersect 1,
     // pass<-6, erase.  Then the while loop swallows 0x108 (pass 2 -> pass<-2)
     // and 0x110 (pass 4, not < 2, no change).  Final element pass == 2.
-    let (key, intersect) = lm.add(raddr(&fd, 0x100), 0x18, 9);
+    let (key, intersect, _sz) = lm.add(raddr(&fd, 0x100), 0x18, 9);
     assert_eq!(key, raddr(&fd, 0x100));
     assert_eq!(intersect, 1, "partial overlap with old -> intersect 1");
     assert_eq!(lm.get(&key).unwrap().pass, 2, "global minimum pass carried");

@@ -12,7 +12,7 @@ instances: 1
 challenges: [69a3822f7b3cc38c80464da4]
 rounds: [2]
 first_seen_round: 2
-attempts: 3
+attempts: 4
 covered_by_option: null
 touches: [decompiler/crates/kuna-decomp, decompiler/crates/kuna-console]
 scope: small
@@ -176,6 +176,49 @@ Three things attempt 4 should inherit rather than rediscover:
   per-table re-clone is load-bearing for `option unrolledguard` and sharing it needs its
   own option — the `phases.toml` lease this round did not have), heritage 22.9%,
   `ActionDeadCode` 14.9%, `oppool1` 14.3%, merge now 7.6%. Nothing else is over 7%.
+
+**Attempt 4 (round 2 wave 14, branch `feat/re-decompiling-3396-byte-main`).** The symptom
+still stands and the acceptance is still unmet: **11,225 ms** median against the
+`< 10,000 ms` bar. Attempt 4's contribution is a *diagnosis*, and the fix is the smaller
+half of it. A per-Action exclusive timer, 32 indexed guard slots and — decisively — a
+per-Action **counter** of varnode/op creations say that one decompile of this function
+performs **1,677,343 varnode creations, 1,523,008 destructions, 1,110,157 xref/make_free
+re-keyings and 1,106,775 op creations/destructions**: about **9.5 M ordered-container
+mutations, 3.6 s of an 11.8 s run**. The residue is not a pass that scales badly. The
+function is IR-volume-bound and every unit of that volume pays two `BTreeMap` insertions
+and later two removals. Four byte-identical cuts follow from that (tree keys stop
+carrying `Rc`s and become `Copy`; `xref` takes one descent instead of two;
+`LocationMap::add` reaches its candidate in one descent and returns the size its caller
+was re-looking up — 469.6 ms over 1,427,964 calls; `rename_recurse` stops snapshotting
+whole successor blocks). Interleaved 8-pair A/B: **12,055 ms -> 11,225 ms median, -6.9%**
+(paired mean -7.3% +/- 5.0, every pair a win, 4.2 sigma), output byte-identical over
+whole-surface `decompile-all` across the fixture corpus and the round's probe binaries,
+0 diffs.
+
+Attempt 5 should inherit three things and re-derive none of them:
+
+- **The bar is reachable, once, by one identified change: share the jump-table
+  partial.** kuna runs the partial sub-decompilation once *per table*; C++ runs it once
+  per *function* (`stageJumpTable` guards the clone and the reduced pipeline behind
+  `if (!partial.isJumptableRecoveryOn())`). Here that is two partials — **3,077 ms of
+  action time plus 464 ms of cloning** — so sharing removes ~1.7 s, **~15%**, which with
+  attempt 4's -7% lands the witness near **9.5 s, under the bar**. It changes which
+  tables recover (`unrolledguard` fires on this very function) and therefore needs a
+  `phases.toml` option row. **Dispatch attempt 5 WITH the phases.toml / catalog / DIV /
+  stages-corpus leases** — those were held by a live sibling all of wave 14, which is the
+  only reason this is still open. This is a scoped feature PR, not another profiling run.
+- **Three leads are refuted by direct measurement.** `new_varnode`'s fresh
+  `Rc<Datatype>` per varnode: 111 ms over 1,304,246 calls (and memoizing it aliases
+  pointers that `Rc::ptr_eq` type comparisons can see). `setVarnodeProperties`' two scope
+  containment queries: 86.5 ms over 539,462 calls. `guard_calls` outside INDIRECT
+  construction: 97 ms over 546,144 iterations — all 913 ms of it is the 192,528 INDIRECT
+  constructions, i.e. tree mutations again.
+- **The measurement harness.** `perf` is blocked on this box
+  (`perf_event_paranoid = 4`) and there is no valgrind, so instrumentation is the only
+  option; the per-Action timer separates the three decompiles the command runs (main +
+  two jump-table partials) for free, and the creation counter is what makes "flat"
+  legible. Guard overhead is real and must be subtracted — 5.4 M guard pairs moved an
+  11.8 s run to 13.3 s.
 
 ## Reference
 
