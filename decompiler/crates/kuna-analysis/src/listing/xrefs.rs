@@ -40,6 +40,26 @@
 //!    address is not reported. A materialized address that is not dereferenced is
 //!    [`XrefKind::Data`]: the address-taken case — a function pointer, a string
 //!    pointer, a global's address.
+//!
+//! # One import, two addresses
+//!
+//! An imported function is reached through an indirection, and both ends of that
+//! indirection carry the import's name. A PE has the **IAT slot** the loader
+//! fills in and a MinGW **`FF 25` veneer** (`jmp qword ptr [slot]`) that a direct
+//! `call` can target; `pe_iat` registers the import name on both, so
+//! `kuna functions --filter VirtualProtect` answers with two entries. An ELF PLT
+//! is the same shape with the GOT slot playing the IAT's role.
+//!
+//! Which of the two a given call site references is a compiler decision the agent
+//! asking "who calls VirtualProtect?" has no reason to care about, and answering
+//! per-address makes the tool lie by omission in both directions: a program that
+//! calls only through the slot reports the veneer as referenced by nothing, and a
+//! program that calls only the veneer reports the slot as referenced by nothing.
+//! So [`XrefIndex::refs_to_unified`] answers over the whole **alias class** —
+//! the veneer and the slot it jumps through, joined by the decoded forwarding
+//! edge itself ([`veneer_at`]), never by a shared name. The forwarding jump is
+//! excluded from the answer: it is the other half of the callable, not a caller
+//! of it, which is what makes the two addresses answer identically.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::rc::Rc;
@@ -55,7 +75,7 @@ use object::SectionKind;
 
 use super::classify::classify;
 use super::context::ContextPainter;
-use super::model::RawOp;
+use super::model::{FlowKind, RawOp};
 
 /// ELF section-header flag `SHF_ALLOC` (the section occupies memory at runtime).
 const SHF_ALLOC: u64 = 0x2;
@@ -128,6 +148,11 @@ pub struct XrefIndex {
     decoded: BTreeSet<u64>,
     /// Every function entry the walk seeded or discovered, in address order.
     funcs: BTreeSet<u64>,
+    /// Forwarding veneers, keyed by function entry ([`veneer_at`]).
+    veneers: BTreeMap<u64, Veneer>,
+    /// The reverse of [`XrefIndex::veneers`]: a slot mapped to every veneer that
+    /// forwards through it (normally one, but a program may emit several).
+    veneers_of_slot: BTreeMap<u64, Vec<u64>>,
     /// How many distinct instructions the walk decoded (a coverage signal for a
     /// caller that wants to say "nothing decoded" rather than "no references").
     insns: usize,
@@ -138,6 +163,73 @@ impl XrefIndex {
     /// references — sorted by source VMA.
     pub fn refs_to(&self, vma: u64) -> &[Xref] {
         self.by_target.get(&vma).map_or(&[], Vec::as_slice)
+    }
+
+    /// Everything that references the *callable* `vma` names, rather than the
+    /// literal address: [`refs_to`](Self::refs_to) taken over `vma`'s whole
+    /// [`alias_class`](Self::alias_class), with the forwarding jumps that join
+    /// the class to itself removed.
+    ///
+    /// This is the answer to "who calls VirtualProtect?" on an import that a
+    /// program reaches through a veneer, a slot, or both — see the module
+    /// header. Off an alias class it is exactly `refs_to`.
+    pub fn refs_to_unified(&self, vma: u64) -> Vec<&Xref> {
+        let class = self.alias_class(vma);
+        if class.len() == 1 {
+            return self.refs_to(vma).iter().collect();
+        }
+        // A veneer's own `jmp [slot]` is not a reference TO the import, it IS the
+        // import's other half; counting it would make the two addresses answer
+        // differently for no reason a caller can see. The exclusion is the
+        // veneer's exact instruction range and nothing wider: ordered containment
+        // would swallow whatever code happens to follow the veneer in memory
+        // before the next known entry, which is a real caller.
+        let bodies: Vec<(u64, u64)> = class
+            .iter()
+            .filter_map(|m| self.veneers.get(m).map(|v| (*m, v.end)))
+            .collect();
+        let mut rows: Vec<&Xref> = Vec::new();
+        for &member in &class {
+            for r in self.refs_to(member) {
+                if bodies.iter().any(|&(lo, hi)| r.from >= lo && r.from < hi) {
+                    continue;
+                }
+                rows.push(r);
+            }
+        }
+        rows.sort_by(|a, b| {
+            a.from.cmp(&b.from).then_with(|| a.to.cmp(&b.to)).then_with(|| a.kind.cmp(&b.kind))
+        });
+        rows
+    }
+
+    /// Every address that names the same callable as `vma`, `vma` included: a
+    /// forwarding veneer and the pointer slot it jumps through are one import
+    /// under two addresses.
+    ///
+    /// The class is the connected component of the forwarding relation, so two
+    /// veneers through one slot are in it together. It is derived from decoded
+    /// `jmp [slot]` instructions only — never from two symbols sharing a name,
+    /// which would fold genuinely distinct functions together.
+    pub fn alias_class(&self, vma: u64) -> BTreeSet<u64> {
+        let mut class = BTreeSet::from([vma]);
+        let mut queue = vec![vma];
+        while let Some(at) = queue.pop() {
+            let slot = self.veneers.get(&at).map(|v| v.slot).into_iter();
+            let veneers = self.veneers_of_slot.get(&at).into_iter().flatten().copied();
+            for next in slot.chain(veneers) {
+                if class.insert(next) {
+                    queue.push(next);
+                }
+            }
+        }
+        class
+    }
+
+    /// The fixed pointer slot the forwarding veneer at `entry` jumps through, or
+    /// `None` when `entry` is not a veneer.
+    pub fn veneer_slot(&self, entry: u64) -> Option<u64> {
+        self.veneers.get(&entry).map(|v| v.slot)
     }
 
     /// Everything the single instruction at `vma` references.
@@ -361,7 +453,92 @@ pub fn build(
         }
     }
 
-    st.finish()
+    // The forwarding relation, over the entries the walk actually decoded. It
+    // re-decodes at most `MAX_VENEER_INSNS` instructions per entry (a veneer is
+    // one or two), which is a rounding error beside the walk itself, and keeps
+    // the detection readable instead of threading a per-entry prefix through the
+    // BFS above.
+    let mut veneers: BTreeMap<u64, Veneer> = BTreeMap::new();
+    if !mapped.is_empty() {
+        for &entry in &st.funcs {
+            if !st.decoded.contains(&entry) {
+                continue;
+            }
+            if let Some(v) =
+                veneer_at(translate, &code_space, entry, data_space.as_ref(), &mapped)
+            {
+                veneers.insert(entry, v);
+            }
+        }
+    }
+
+    st.finish(veneers)
+}
+
+/// A forwarding veneer: the fixed pointer slot it jumps through, and the VMA one
+/// past its own last instruction. The extent is what lets the unified answer
+/// exclude the veneer's own forwarding jump without excluding the unrelated code
+/// that happens to sit after it in memory.
+#[derive(Debug, Clone, Copy)]
+struct Veneer {
+    slot: u64,
+    end: u64,
+}
+
+/// How many instructions a forwarding veneer may take to reach its indirect
+/// jump. One covers the MinGW `FF 25` import thunk and the legacy ELF `.plt`
+/// entry, which lead with the jump; two covers a CET `.plt.sec` entry
+/// (`endbr64; jmp *GOT(%rip)`) and a PLT0 resolver stub. Deliberately no more
+/// than that: measured over every veneer in the fixture corpus, nothing needs a
+/// third instruction, and each one of slack widens the relation from "this
+/// function IS the jump" to "this function ends in one", which would fold a
+/// tail-calling wrapper into the callable it forwards to.
+const MAX_VENEER_INSNS: usize = 2;
+
+/// The forwarding veneer entered at `entry`, or `None` when `entry` is not one.
+///
+/// A veneer is a function whose control leaves through a single indirect jump to
+/// whatever a **decode-time constant** address holds: `jmp qword ptr
+/// [__imp_VirtualProtect]` in a PE, `jmp *malloc@GOT(%rip)` in an ELF PLT. The
+/// constant-address requirement is what separates a veneer from a jump table —
+/// `jmp [rax*8 + table]` computes its address and lifts to a `LOAD` through a
+/// temporary, never to a `BRANCHIND` on a `ram` varnode — and it is why the
+/// relation can be read straight out of the p-code with no format knowledge.
+///
+/// The scan follows fall-through from `entry` and refuses at the first static
+/// branch, call or return, so only a straight run into the indirect jump counts.
+fn veneer_at(
+    translate: &dyn Translate,
+    code_space: &Rc<AddrSpace>,
+    entry: u64,
+    data_space: Option<&Rc<AddrSpace>>,
+    mapped: &[(u64, u64)],
+) -> Option<Veneer> {
+    let mut vma = entry;
+    for _ in 0..MAX_VENEER_INSNS {
+        let decoded = decode(translate, vma, code_space)?;
+        if decoded.len == 0 {
+            return None;
+        }
+        let raw: Vec<RawOp> = decoded
+            .ops
+            .iter()
+            .map(|op| RawOp { opcode: op.opcode, in0: op.ins.first().cloned() })
+            .collect();
+        let c = classify(&raw, vma, decoded.len);
+        if !c.flows.is_empty() || c.flow.is_call || c.flow.kind == FlowKind::Return {
+            return None;
+        }
+        if let Some(op) = decoded.ops.iter().find(|o| o.opcode == OpCode::CPUI_BRANCHIND) {
+            let vn = op.ins.first()?;
+            let in_data = matches!((&vn.space, data_space), (Some(s), Some(d)) if Rc::ptr_eq(s, d));
+            let end = vma.wrapping_add(u64::from(decoded.len));
+            return (in_data && in_range(mapped, vn.offset))
+                .then_some(Veneer { slot: vn.offset, end });
+        }
+        vma = c.fall_through?;
+    }
+    None
 }
 
 /// The accumulating state of [`build`].
@@ -383,7 +560,7 @@ impl State {
     /// containment (not by which entry's descent happened to reach the
     /// instruction first), so a row's `from_function` and the `--from` bucket it
     /// lands in can never disagree.
-    fn finish(mut self) -> XrefIndex {
+    fn finish(mut self, veneers: BTreeMap<u64, Veneer>) -> XrefIndex {
         let mut by_source_function: BTreeMap<u64, Vec<Xref>> = BTreeMap::new();
         for (&from, refs) in &self.by_source {
             let Some(&entry) = self.funcs.range(..=from).next_back() else {
@@ -401,12 +578,18 @@ impl State {
             sort_dedup(refs, /* by_source = */ false);
         }
         let insns = self.decoded.len();
+        let mut veneers_of_slot: BTreeMap<u64, Vec<u64>> = BTreeMap::new();
+        for (&entry, v) in &veneers {
+            veneers_of_slot.entry(v.slot).or_default().push(entry);
+        }
         XrefIndex {
             by_target: self.by_target,
             by_source: self.by_source,
             by_source_function,
             decoded: self.decoded,
             funcs: self.funcs,
+            veneers,
+            veneers_of_slot,
             insns,
         }
     }
@@ -431,6 +614,8 @@ fn empty() -> XrefIndex {
         by_source_function: BTreeMap::new(),
         decoded: BTreeSet::new(),
         funcs: BTreeSet::new(),
+        veneers: BTreeMap::new(),
+        veneers_of_slot: BTreeMap::new(),
         insns: 0,
     }
 }
@@ -473,8 +658,17 @@ fn decode(translate: &dyn Translate, vma: u64, code_space: &Rc<AddrSpace>) -> Op
 ///
 /// Some operand positions are skipped because their constant is not an address
 /// at all: a `LOAD`/`STORE` `in0` is the address-space id, a `CALLOTHER` `in0`
-/// the userop index, a flow op's `in0` the branch target (already filed as a
-/// Call/Jump edge).
+/// the userop index, a *direct* flow op's `in0` the branch target (already filed
+/// as a Call/Jump edge).
+///
+/// An **indirect** flow op is deliberately not in that set. `BRANCHIND`/`CALLIND`
+/// `in0` is the varnode the destination is read *out of*, not a static target,
+/// and [`classify`] files no edge for it — so skipping it loses the reference
+/// outright. It is a `ram` varnode exactly in the shape this query exists to
+/// answer: SLEIGH lifts `JMP qword ptr [__imp_VirtualProtect]` (a PE import
+/// veneer) and `jmp *malloc@GOT(%rip)` (an ELF PLT entry) to `goto [rm64]`,
+/// i.e. one `BRANCHIND` whose `in0` is the import slot, and dropping it left
+/// every import veneer in the program referencing nothing at all.
 ///
 /// `fall_through` (`vma + len`) is skipped as a value for the same reason: a
 /// call materializes its own return address, and every architecture spells that
@@ -510,9 +704,7 @@ fn data_refs(
                         | OpCode::CPUI_CALLOTHER
                         | OpCode::CPUI_BRANCH
                         | OpCode::CPUI_CBRANCH
-                        | OpCode::CPUI_BRANCHIND
                         | OpCode::CPUI_CALL
-                        | OpCode::CPUI_CALLIND
                 );
             if is_target_slot {
                 continue;
@@ -650,6 +842,27 @@ mod tests {
         }
     }
 
+    /// An *indirect* flow op's `in0` is the opposite case: it is the varnode the
+    /// destination is read out of, not a static target, and no Call/Jump edge is
+    /// filed for it. This is the whole import-veneer shape — `JMP qword ptr
+    /// [__imp_X]` is one `BRANCHIND` on the slot — so skipping it loses the only
+    /// reference the instruction makes.
+    #[test]
+    fn an_indirect_flow_ops_operand_is_the_slot_it_reads() {
+        let (ram, _cst) = spaces();
+        for opcode in [OpCode::CPUI_BRANCHIND, OpCode::CPUI_CALLIND] {
+            assert_eq!(
+                refs(&ram, &[op(opcode, None, vec![vn(&ram, 0x1030)])]),
+                vec![(0x1030, XrefKind::Read)],
+                "{opcode:?} lost the slot it jumps through"
+            );
+        }
+        // A register destination is neither a slot nor an address.
+        let regs = Rc::new(AddrSpace::new_for_decode(spacetype::IPTR_INTERNAL));
+        let ops = [op(OpCode::CPUI_BRANCHIND, None, vec![vn(&regs, 0x10)])];
+        assert!(refs(&ram, &ops).is_empty());
+    }
+
     /// A `LOAD` through a constant pointer is a read of that address; the
     /// space-id `in0` (a huge constant) must never be mistaken for one.
     #[test]
@@ -722,6 +935,76 @@ mod tests {
         let regs = Rc::new(AddrSpace::new_for_decode(spacetype::IPTR_INTERNAL));
         let ops = [op(OpCode::CPUI_INT_ADD, Some(vn(&regs, 0x10)), vec![vn(&regs, 0x1040)])];
         assert!(refs(&ram, &ops).is_empty());
+    }
+
+    /// The PE/ELF import shape, hand-built: a veneer at `0x1030` jumping through
+    /// the slot at `0x4008`, one call site on the veneer and one slot read
+    /// somewhere else. Both addresses must answer with both references, and
+    /// neither may report the veneer's own forwarding jump as a caller.
+    fn import_index() -> XrefIndex {
+        let mk = |from, to, kind| Xref { from, to, kind, instruction: String::new() };
+        let edges = [
+            mk(0x1102, 0x1030, XrefKind::Call), // a direct call to the veneer
+            mk(0x1030, 0x4008, XrefKind::Read), // the veneer's own jmp [slot]
+            mk(0x1200, 0x4008, XrefKind::Read), // a call straight through the slot
+        ];
+        let mut st = State {
+            by_target: BTreeMap::new(),
+            by_source: BTreeMap::new(),
+            decoded: BTreeSet::from([0x1030, 0x1102, 0x1200]),
+            funcs: BTreeSet::from([0x1000, 0x1030, 0x1180]),
+        };
+        for e in edges {
+            st.file(e.from, e.to, e.kind, "");
+        }
+        // The veneer is the single 6-byte `jmp [0x4008]` at 0x1030.
+        st.finish(BTreeMap::from([(0x1030, Veneer { slot: 0x4008, end: 0x1036 })]))
+    }
+
+    /// The alias class is the veneer plus its slot, and it is symmetric: asking
+    /// either address is asking the same question.
+    #[test]
+    fn a_veneer_and_its_slot_are_one_alias_class() {
+        let index = import_index();
+        let class = BTreeSet::from([0x1030, 0x4008]);
+        assert_eq!(index.alias_class(0x1030), class);
+        assert_eq!(index.alias_class(0x4008), class);
+        assert_eq!(index.veneer_slot(0x1030), Some(0x4008));
+        // Everything that is not an import is a class of one.
+        assert_eq!(index.alias_class(0x1000), BTreeSet::from([0x1000]));
+        assert!(index.veneer_slot(0x1000).is_none());
+    }
+
+    /// Both members answer with both real references, and the forwarding jump —
+    /// the edge that defines the class — is never one of them.
+    #[test]
+    fn both_ends_of_an_import_answer_with_every_real_reference() {
+        let index = import_index();
+        for at in [0x1030u64, 0x4008] {
+            let rows = index.refs_to_unified(at);
+            let got: Vec<(u64, u64)> = rows.iter().map(|r| (r.from, r.to)).collect();
+            assert_eq!(
+                got,
+                vec![(0x1102, 0x1030), (0x1200, 0x4008)],
+                "asking 0x{at:x} gave the wrong references"
+            );
+        }
+        // The per-address buckets are untouched: `refs_to` still answers for the
+        // literal address, which is what `strings` and the call graph read.
+        assert_eq!(index.refs_to(0x1030).len(), 1);
+        assert_eq!(index.refs_to(0x4008).len(), 2);
+    }
+
+    /// Off an alias class, unifying is exactly `refs_to`.
+    #[test]
+    fn a_plain_target_is_unaffected_by_unification() {
+        let index = import_index();
+        assert_eq!(index.refs_to_unified(0x1102).len(), 0);
+        let direct: Vec<_> = index.refs_to(0x1030).iter().collect();
+        let mut plain = import_index();
+        plain.veneers.clear();
+        plain.veneers_of_slot.clear();
+        assert_eq!(plain.refs_to_unified(0x1030).len(), direct.len());
     }
 
     /// `sort_dedup` collapses the `(from, to, kind)` triple: one row per site.
