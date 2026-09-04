@@ -853,6 +853,111 @@ impl DriverDefaults {
     }
 }
 
+/// The driver-default analysis options a surface injects before the option pass
+/// — the shared source of the DIV-15 Listing default and the DIV-20/DIV-68
+/// non-x86-64 discovery bundle, returned as `(name, value)` pairs in the order
+/// they must be applied.
+///
+/// One function because the two surfaces that need them apply them differently:
+/// the in-process drivers ([`load_program`]) call `set_kuna_option`, while
+/// single-function `kuna decompile` emits `option` lines into the `decomp_dbg`
+/// script. When only the in-process driver had them, a non-x86-64 entry that
+/// exists solely because `funcstart_patterns` found it was listed by `kuna
+/// functions` and decompiled by `kuna decompile-all`, yet `kuna decompile
+/// <that name>` answered `no function matches` — kuna printed a name it would
+/// not then accept (RE-need `analysis-generated-function-name`).
+///
+/// `decompiles` says whether the surface renders bodies, which is the one axis
+/// the bundles differ on (the Listing is entry-neutral on x86-64, so
+/// enumeration there does not pay for it). `binary` is read to classify the
+/// architecture; anything `object` cannot parse — the corpus `<binaryimage>`
+/// XML included — is treated as x86-64 and takes no discovery injection, so
+/// those scripts stay byte-identical.
+///
+/// Every injection yields to the caller: naming the option at all (directly or
+/// through a resolved `--mode` preset) skips it.
+///
+/// (kuna, decbench F1) The program-wide Listing is ON unless the caller set it
+/// explicitly (`--option listing on|off` still wins — the injection is skipped
+/// whenever the caller names `listing` at all).  Two independent reasons, one
+/// per surface:
+///
+///   * A DECOMPILING surface needs it on every architecture.  The Listing
+///     feeds the default-on `noreturn_propagate` consumer (the angr-style
+///     call-graph no-return fixpoint, DIV-14): without it the pass is a
+///     structural no-op, so a call to an unnamed internal exit/fatal wrapper
+///     in a STRIPPED binary is treated as returning and the decompiler runs
+///     past it, swallowing every following function into the caller (the
+///     decbench `noreturn-propagation-stripped` family, e.g. coreutils
+///     `xalloc_die`: 118 LOC / 2 gotos swallowed vs the true 4-instruction
+///     body).  See DIV-15.
+///   * On a NON-x86-64 image every surface needs it, `kuna functions`
+///     included, because the Listing is the master gate of the DIV-20
+///     discovery bundle below — `funcstart_patterns` and `aif` both walk the
+///     Listing's code units and are inert without it, and those two passes
+///     ARE the discovery on a stripped ARM/AArch64/MIPS/PPC/RISC-V binary.
+///     See DIV-68.
+///
+/// x86-64 enumeration keeps the cheap path: the Listing is measured
+/// entry-neutral there (identical entry sets on 40 sampled stripped x86-64
+/// ELFs), so building it would only make `kuna functions` slower.  Only these
+/// drivers change: the engine default (`analysis_listing = false`) and the
+/// interactive console / datatest harness are untouched, and a selected mode
+/// can still name Listing.
+///
+/// (kuna, decbench ARM) Oracle 5 — the always-on prologue-pattern scan folded into
+/// function discovery — is x86-64-only, so on a STRIPPED **non-x86-64** binary the ELF
+/// entry point is the ONLY discovered function (ARM Cortex-M `betaflight`: 1 of ~469;
+/// it has no recursive-descent Listing sweep at the analyzer tier).  The
+/// `funcstart_patterns` pass IS the primary discovery source there — it applies the
+/// full ARM/AArch64/MIPS/PPC/RISC-V `<patternpairs>` (pre/post) prologue matcher over
+/// the code — so it is ON for non-x86-64 on every driver surface, the `functions`
+/// inventory included (DIV-68), unless the caller named it explicitly.  x86-64 keeps
+/// it OFF (oracle 5 + the entry oracles suffice, and the aggressive scan can
+/// over-produce there).  See DIV-20 (`docs/divergences.md`).
+///
+/// (kuna, decbench ARM) `funcstart_patterns` only seeds a candidate when a matching
+/// EPILOGUE prepattern (Ghidra `<patternpairs>`) sits immediately before it, so ~70% of a
+/// stripped Cortex-M firmware's functions — those preceded by literal pools / data /
+/// padding and living in call-graph components reachable only through indirect calls /
+/// function-pointer tables — are never seeded, and the recursive-descent walk (direct
+/// CALL/BL only) structurally cannot reach them (crazyflie: 87% of the missed functions
+/// have NO direct-call edge from what kuna found).  The ported Aggressive Instruction
+/// Finder (`aif`, Ghidra `ArmAggressiveInstructionFinderAnalyzer`) gap-walks the UNDEFINED
+/// regions the walk left uncovered, gating each candidate on a prologue-fingerprint
+/// histogram learned from the already-discovered functions + `check_valid_subroutine`, so
+/// it bridges those disconnected components.  It rides alongside `funcstart_patterns`
+/// (crazyflie cf2.elf 1430 -> 2700 functions, 45% -> 82% of angr's discovered set),
+/// unless the caller named it.  Extra non-ground-truth functions are harmless to the GED
+/// benchmark (it scores per ground-truth function, matched by name).  See DIV-20.
+pub(crate) fn driver_default_options(
+    binary: &str,
+    decompiles: bool,
+    options: &[(String, String)],
+) -> Vec<(&'static str, &'static str)> {
+    let named = |name: &str| options.iter().any(|(option, _)| option == name);
+    let non_x86_64 = std::fs::read(binary)
+        .ok()
+        .and_then(|bytes| {
+            object::File::parse(&*bytes)
+                .ok()
+                .map(|file| file.architecture() != object::Architecture::X86_64)
+        })
+        .unwrap_or(false);
+
+    let mut injected = Vec::new();
+    if (decompiles || non_x86_64) && !named("listing") {
+        injected.push(("listing", "on"));
+    }
+    if non_x86_64 && !named("funcstart_patterns") {
+        injected.push(("funcstart_patterns", "on"));
+    }
+    if non_x86_64 && !named("aif") {
+        injected.push(("aif", "on"));
+    }
+    injected
+}
+
 /// Bootstrap the architecture from the binary and run the analysis commit (the
 /// in-process `load file` + `read symbols`), applying load-time env gates and
 /// `--option`s in the correct order.  `defaults` selects the driver-default
@@ -879,91 +984,10 @@ pub(crate) fn load_program(
     let mut prog = bootstrap_from_object(&binary, target, &spec_roots)
         .map_err(|e| format!("could not build an architecture for {binary}: {}", e.explain()))?;
 
-    let named = |name: &str| args.options.iter().any(|(option, _)| option == name);
-    // A non-x86-64 image takes the DIV-20 discovery bundle below; read the file
-    // once for both of its gates (and for the Listing gate above them).
-    let non_x86_64 = std::fs::read(&binary)
-        .ok()
-        .and_then(|bytes| {
-            object::File::parse(&*bytes)
-                .ok()
-                .map(|file| file.architecture() != object::Architecture::X86_64)
-        })
-        .unwrap_or(false);
-
-    // (kuna, decbench F1) Default the program-wide Listing ON, unless the caller
-    // set it explicitly (`--option listing on|off` still wins — the injection is
-    // skipped whenever the caller names `listing` at all).  Two independent
-    // reasons, one per surface:
-    //
-    //   * A DECOMPILING surface needs it on every architecture.  The Listing
-    //     feeds the default-on `noreturn_propagate` consumer (the angr-style
-    //     call-graph no-return fixpoint, DIV-14): without it the pass is a
-    //     structural no-op, so a call to an unnamed internal exit/fatal wrapper
-    //     in a STRIPPED binary is treated as returning and the decompiler runs
-    //     past it, swallowing every following function into the caller (the
-    //     decbench `noreturn-propagation-stripped` family, e.g. coreutils
-    //     `xalloc_die`: 118 LOC / 2 gotos swallowed vs the true 4-instruction
-    //     body).  See DIV-15.
-    //   * On a NON-x86-64 image every surface needs it, `kuna functions`
-    //     included, because the Listing is the master gate of the DIV-20
-    //     discovery bundle below — `funcstart_patterns` and `aif` both walk the
-    //     Listing's code units and are inert without it, and those two passes
-    //     ARE the discovery on a stripped ARM/AArch64/MIPS/PPC/RISC-V binary.
-    //     See DIV-68.
-    //
-    // x86-64 enumeration keeps the cheap path: the Listing is measured
-    // entry-neutral there (identical entry sets on 40 sampled stripped x86-64
-    // ELFs), so building it would only make `kuna functions` slower.  Only this
-    // driver changes: the engine default (`analysis_listing = false`) and the
-    // subprocess surfaces (`kuna decompile` → `decomp_dbg`, the datatest
-    // harness) are untouched, and a selected mode can still name Listing.
-    if (defaults.decompiles() || non_x86_64) && !named("listing") {
+    for (name, value) in driver_default_options(&binary, defaults.decompiles(), &args.options) {
         prog.arch_mut()
-            .set_kuna_option("listing", "on")
-            .map_err(|e| format!("option listing: {}", e.explain()))?;
-    }
-
-    // (kuna, decbench ARM) Oracle 5 — the always-on prologue-pattern scan folded into
-    // function discovery — is x86-64-only, so on a STRIPPED **non-x86-64** binary the ELF
-    // entry point is the ONLY discovered function (ARM Cortex-M `betaflight`: 1 of ~469;
-    // it has no recursive-descent Listing sweep at the analyzer tier).  The
-    // `funcstart_patterns` pass IS the primary discovery source there — it applies the
-    // full ARM/AArch64/MIPS/PPC/RISC-V `<patternpairs>` (pre/post) prologue matcher over
-    // the code — so default it ON for non-x86-64 on every whole-binary surface, the
-    // `functions` inventory included (DIV-68), unless the caller named it explicitly.
-    // x86-64 keeps it OFF (oracle 5 + the entry oracles suffice, and the aggressive scan
-    // can over-produce there); only this driver changes, the engine default
-    // (`analysis_funcstart_patterns = false`) and the console/datatest surfaces are
-    // untouched.  See DIV-20 (`docs/divergences.md`).
-    if non_x86_64 && !named("funcstart_patterns") {
-        prog.arch_mut()
-            .set_kuna_option("funcstart_patterns", "on")
-            .map_err(|e| format!("option funcstart_patterns: {}", e.explain()))?;
-    }
-
-    // (kuna, decbench ARM) `funcstart_patterns` above only seeds a candidate when a matching
-    // EPILOGUE prepattern (Ghidra `<patternpairs>`) sits immediately before it, so ~70% of a
-    // stripped Cortex-M firmware's functions — those preceded by literal pools / data /
-    // padding and living in call-graph components reachable only through indirect calls /
-    // function-pointer tables — are never seeded, and the recursive-descent walk (direct
-    // CALL/BL only) structurally cannot reach them (crazyflie: 87% of the missed functions
-    // have NO direct-call edge from what kuna found).  The ported Aggressive Instruction
-    // Finder (`aif`, Ghidra `ArmAggressiveInstructionFinderAnalyzer`) gap-walks the UNDEFINED
-    // regions the walk left uncovered, gating each candidate on a prologue-fingerprint
-    // histogram learned from the already-discovered functions + `check_valid_subroutine`, so
-    // it bridges those disconnected components.  Default it ON for non-x86-64 on every
-    // whole-binary surface alongside `funcstart_patterns` (crazyflie cf2.elf 1430 -> 2700
-    // functions, 45% -> 82% of angr's discovered set), unless the caller named it.  x86-64
-    // keeps it OFF (the entry+prologue oracles suffice and the aggressive gap-walk can
-    // over-produce there); only this driver changes — the engine default (`analysis_aif =
-    // false`) and the console/datatest surfaces are untouched.  Extra non-ground-truth
-    // functions are harmless to the GED benchmark (it scores per ground-truth function, matched
-    // by name).  See DIV-20 (`docs/divergences.md`).
-    if non_x86_64 && !named("aif") {
-        prog.arch_mut()
-            .set_kuna_option("aif", "on")
-            .map_err(|e| format!("option aif: {}", e.explain()))?;
+            .set_kuna_option(name, value)
+            .map_err(|e| format!("option {name}: {}", e.explain()))?;
     }
 
     // Analysis-/printer-tier `--option`s must be applied to the architecture
