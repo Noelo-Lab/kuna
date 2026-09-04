@@ -1576,6 +1576,10 @@ pub struct PcodeOpBank {
     arena: OpArena,
     /// The main sequence-number sort (C++ `PcodeOpTree optree`)
     optree: BTreeMap<SeqNum, OpId>,
+    /// (kuna) Bumped by every [`Self::optree`] insertion and removal, so a
+    /// holder of a cached run of successors can tell in O(1) whether the tree
+    /// still orders the way it did — see [`Self::optree_epoch`].
+    optree_epoch: u64,
     /// List of \e dead PcodeOps (C++ `deadlist`)
     deadlist: IntrusiveList,
     /// List of \e alive PcodeOps (C++ `alivelist`)
@@ -1606,6 +1610,7 @@ impl PcodeOpBank {
         PcodeOpBank {
             arena: OpArena::with_key(),
             optree: BTreeMap::new(),
+            optree_epoch: 0,
             deadlist: IntrusiveList::default(),
             alivelist: IntrusiveList::default(),
             storelist: IntrusiveList::default(),
@@ -1693,6 +1698,7 @@ impl PcodeOpBank {
         let op = PcodeOp::new(inputs, sq.clone());
         let id = self.arena.insert(op);
         self.optree.insert(sq, id);
+        self.optree_epoch = self.optree_epoch.wrapping_add(1);
         self.arena[id].set_flag(pcodeop_flags::dead); // Start out life as dead
         self.deadlist.push_back(&mut self.arena, ListKind::Insert, id);
         id
@@ -1708,6 +1714,7 @@ impl PcodeOpBank {
         }
         let id = self.arena.insert(op);
         self.optree.insert(sq, id);
+        self.optree_epoch = self.optree_epoch.wrapping_add(1);
         self.arena[id].set_flag(pcodeop_flags::dead);
         self.deadlist.push_back(&mut self.arena, ListKind::Insert, id);
         id
@@ -1738,6 +1745,7 @@ impl PcodeOpBank {
         }
         let key = self.arena[op].get_seq_num().clone();
         self.optree.remove(&key);
+        self.optree_epoch = self.optree_epoch.wrapping_add(1);
         self.deadlist.erase(&mut self.arena, ListKind::Insert, op);
         self.remove_from_code_list(op);
         self.deadandgone.push(op);
@@ -1860,6 +1868,27 @@ impl PcodeOpBank {
     /// to test and again to dereference.
     pub fn first_after_seq_id(&self, sq: &SeqNum) -> Option<OpId> {
         self.first_after_seq(sq).map(|(_, id)| id)
+    }
+
+    /// (kuna) A counter that changes whenever the optree gains or loses an
+    /// entry.  Equal values across two observations mean the tree holds exactly
+    /// the same keys in the same order, so a run of successors read at the first
+    /// observation is still the run [`Self::first_after_seq_id`] would return
+    /// one at a time.
+    pub fn optree_epoch(&self) -> u64 {
+        self.optree_epoch
+    }
+
+    /// (kuna) Up to `n` optree entries strictly after `sq`, in order — one tree
+    /// descent instead of `n` of them.  The ActionPool cursor reads its
+    /// successors this way: the C++ advances a `PcodeOpTree::const_iterator` in
+    /// O(1), where re-deriving each position from a [`SeqNum`] costs a range
+    /// search per op per rule pass in the decompiler's innermost loop.
+    pub fn ops_after_seq(&self, sq: &SeqNum, n: usize, out: &mut Vec<OpId>) {
+        out.clear();
+        for (_, &id) in self.optree.range((Bound::Excluded(sq), Bound::Unbounded)).take(n) {
+            out.push(id);
+        }
     }
 
     pub fn first_after_seq(&self, sq: &SeqNum) -> Option<(&SeqNum, OpId)> {
@@ -2096,6 +2125,49 @@ mod tests {
         let times: Vec<u32> = bank.iter_all().map(|(k, _)| k.get_time()).collect();
         // addr 0x100 first: lo(uniq1) then mid(uniq2); then addr 0x200: hi(uniq0)
         assert_eq!(times, vec![1, 2, 0]);
+    }
+
+    /// The buffered run the ActionPool cursor reads must be exactly the
+    /// sequence its one-at-a-time predecessor produced.
+    #[test]
+    fn ops_after_seq_matches_repeated_first_after() {
+        let m = build_manager();
+        let mut bank = PcodeOpBank::new();
+        for off in [0x100u64, 0x108, 0x110, 0x118, 0x120] {
+            bank.create_at(0, ram(&m, off));
+            bank.create_at(0, ram(&m, off)); // two ops per address
+        }
+        let first = bank.iter_all().next().map(|(k, _)| k.clone()).unwrap();
+        let mut one_at_a_time = Vec::new();
+        let mut cur = first.clone();
+        while let Some((k, id)) = bank.first_after_seq(&cur) {
+            let k = k.clone();
+            one_at_a_time.push(id);
+            cur = k;
+        }
+        let mut run = Vec::new();
+        bank.ops_after_seq(&first, 64, &mut run);
+        assert_eq!(run, one_at_a_time);
+        // A short run truncates rather than skipping.
+        bank.ops_after_seq(&first, 3, &mut run);
+        assert_eq!(run, one_at_a_time[..3].to_vec());
+    }
+
+    /// The epoch is what tells a buffered run it is still valid, so it must
+    /// move on both halves of the optree's mutation surface.
+    #[test]
+    fn optree_epoch_moves_on_insert_and_destroy() {
+        let m = build_manager();
+        let mut bank = PcodeOpBank::new();
+        let e0 = bank.optree_epoch();
+        let a = bank.create_at(0, ram(&m, 0x100));
+        let e1 = bank.optree_epoch();
+        assert_ne!(e0, e1, "creating an op must move the epoch");
+        bank.create_seq(0, SeqNum::new(ram(&m, 0x200), 99));
+        let e2 = bank.optree_epoch();
+        assert_ne!(e1, e2, "create_seq must move the epoch");
+        bank.destroy(a);
+        assert_ne!(e2, bank.optree_epoch(), "destroying an op must move the epoch");
     }
 
     #[test]

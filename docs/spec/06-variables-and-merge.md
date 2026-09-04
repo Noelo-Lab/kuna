@@ -114,6 +114,22 @@ determines how aggressive the merge may be:
   merging across separate overlap groups, and neither Symbol *isolated* — the
   console `isolate` command sets exactly this bit, the operator's HARD "do not
   fuse this variable" assertion.
+
+  Upstream reads both the Symbol and the isolated bit off a *cached*
+  `HighVariable::getSymbol()`; kuna's merged tree does not paint SymbolEntries
+  onto Varnodes before the merge group runs, so it re-derives the binding with
+  the same `findContainer` containment query `linkSymbol` uses
+  (`funcdata_merge.rs (bank_symbol, bank_symbol_isolated)`). Re-deriving it is a
+  scan of the high's members, and this ladder is the merge's inner loop, so both
+  re-derivations answer from a cheaper fact first when one settles them: the
+  Symbol lookup only ever accepts an address-tied member and a high's cached flag
+  word is the OR of its members', so a clean `addrtied == false`
+  (`variable.rs (kuna_addr_tied_if_clean)`) means no member can carry one; and
+  the isolated test can only say yes about a scope that has had a Symbol
+  isolated, which `ScopeLocal` records as it happens
+  (`varmap.rs (ScopeLocal::has_isolated_symbols)`) because
+  `set_symbol_isolated` is the only route the `ISOLATE` dispflag has into a
+  function-local scope. Neither shortcut changes an answer.
 - `merge.rs (Merge::merge_test_speculative)` — additionally: nothing
   persistent, no inputs, nothing address-tied. Purely cosmetic merges never
   touch storage that has an ABI or memory identity.

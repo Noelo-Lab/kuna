@@ -12,7 +12,7 @@ instances: 1
 challenges: [69a3822f7b3cc38c80464da4]
 rounds: [2]
 first_seen_round: 2
-attempts: 2
+attempts: 3
 covered_by_option: null
 touches: [decompiler/crates/kuna-decomp, decompiler/crates/kuna-console]
 scope: small
@@ -145,6 +145,37 @@ Two things attempt 3 should inherit rather than rediscover:
   path and instrument to a file. And this box runs sibling builders at load
   average 8-24, where the same binary measures 14.6 s and 18.9 s hours apart; only
   an interleaved paired A/B means anything.
+
+**Attempt 3 (round 2 wave 12, branch `feat/re-decompiling-3396-byte-main`).** The symptom still
+stands and the acceptance is still unmet: **12,437 ms** against the `< 10,000 ms` bar. What
+attempt 3 removed is not one mechanism but four, three of which are the same shape: kuna
+**re-derives, per query, a fact upstream reads off a cached pointer**. `Merge::mergeTestAdjacent`
+reads `high->getSymbol()` and its isolated bit; kuna's merged tree does not paint SymbolEntries
+onto Varnodes before the merge group, so both reads re-ran a `findContainer` containment query
+**per member Varnode, per candidate pair** — **26,243,952 queries** in one decompile of this
+function. Interleaved 4-pair A/B: **14,565 ms -> 12,184 ms median, -16.3%** (and -16.2% re-measured on the rebased tree) (every pair a win,
+paired mean -15.8% +/- 1.5), output byte-identical over 440 whole-surface decompiles across 55
+binary-arms and 8 arch/format combinations.
+
+Three things attempt 4 should inherit rather than rediscover:
+
+- **Switch instruments when the sampling profile goes flat.** Attempt 2's 1,053-sample
+  profile could not tell that its "symbol-container lookups ~11%" and its "p6 merge
+  18.2%" were the *same* cost, and no sampler can report "26 M calls". A name-keyed
+  `Instant` timer wrapped around `self.apply()` in `Action::perform` gives an exact
+  per-Action profile of the whole pipeline in one run, and 16 indexed guard slots
+  resolve any leaf from there. Also: gdb-as-parent sampling **no longer works** —
+  `continue` from a stop-event handler needs `gdb.post_event`, and gdb then segfaults
+  ("This is a bug, please report it"); `-nx` is required regardless or every sample is
+  the box's GEF banner.
+- **`Heritage::guard_calls` is NOT a prototype-query hot spot** — that was attempt 3's
+  planned next fix and the measurement killed it. Of its 971 ms loop body, `has_effect`
+  is ~30 ms, `characterize_as_output` 19.7 ms and `characterize_as_input_param` 9.8 ms.
+  The cost is INDIRECT op and Varnode **construction**. Do not build a FuncProto memo.
+- **The residue after attempt 3, measured on this branch:** `stage_jump_table` 31% (the
+  per-table re-clone is load-bearing for `option unrolledguard` and sharing it needs its
+  own option — the `phases.toml` lease this round did not have), heritage 22.9%,
+  `ActionDeadCode` 14.9%, `oppool1` 14.3%, merge now 7.6%. Nothing else is over 7%.
 
 ## Reference
 

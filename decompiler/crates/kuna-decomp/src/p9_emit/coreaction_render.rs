@@ -2224,16 +2224,15 @@ fn deadcode_apply(data: &mut Funcdata) -> ApplyResult {
     // 1. Clear consume flags on every Varnode; drop addrforce on non-directwrite.
     let all_locs: Vec<VarnodeId> = data.vbank().iter_loc().collect();
     for vn in all_locs {
+        // One arena lookup, not three: none of the clears touch `addrforce` or
+        // `directwrite`, so the two reads see what a re-fetch would.  This loop
+        // runs over every Varnode in the function on every ActionDeadCode pass.
         let vm = data.vbank_mut().get_mut(vn).expect("deadcode: stale vn");
         vm.clear_consume_list();
         vm.clear_consume_vacuous();
         vm.set_consume(0);
-        let (af, dw) = {
-            let v = data.vbank().get(vn).expect("deadcode: stale vn");
-            (v.is_addr_force(), v.is_direct_write())
-        };
-        if af && !dw {
-            data.vbank_mut().get_mut(vn).expect("deadcode: stale vn").clear_addr_force();
+        if vm.is_addr_force() && !vm.is_direct_write() {
+            vm.clear_addr_force();
         }
     }
 

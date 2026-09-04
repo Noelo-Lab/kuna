@@ -1181,3 +1181,33 @@ fn adv_l4_mark_not_mapped_offset_wraps_without_panic() {
     // (We only assert no panic + the call is idempotent.)
     sl.mark_not_mapped(&spc, 0xffff_ffff_ffff_fff4, 8, true);
 }
+
+/// `has_isolated_symbols` is the O(1) answer `Merge::mergeTestAdjacent` skips a
+/// whole-member containment scan on, so it must be `false` on a scope that has
+/// never isolated anything and `true` the moment one is, including for a Symbol
+/// that is NOT the one later queried.
+#[test]
+fn has_isolated_symbols_tracks_set_symbol_isolated() {
+    let mut sl = scope_local();
+    let spc = Rc::clone(sl.get_space_id());
+    let inv = Address::new_invalid();
+    let addr = Address::new(Rc::clone(&spc), 0xffff_ffff_ffff_ffe4);
+    let sym = sl
+        .add_symbol("i", base(4, type_metatype::TYPE_INT), &addr, &inv)
+        .expect("addSymbol");
+    assert!(
+        !sl.has_isolated_symbols(),
+        "adding an ordinary local must not claim the scope holds an isolated Symbol"
+    );
+    assert!(!sl.database().symbol(sym).is_isolated());
+
+    sl.set_symbol_isolated(sym, true);
+    assert!(sl.has_isolated_symbols());
+    assert!(sl.database().symbol(sym).is_isolated());
+
+    // Monotone on purpose: clearing ONE Symbol's flag says nothing about the
+    // others, and a stale `true` only costs the query it would have run anyway.
+    sl.set_symbol_isolated(sym, false);
+    assert!(!sl.database().symbol(sym).is_isolated());
+    assert!(sl.has_isolated_symbols());
+}

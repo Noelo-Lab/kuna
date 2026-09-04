@@ -175,6 +175,15 @@ impl Funcdata {
     /// C++ `updateSymbol` first-hit; members of one high share the same Symbol).
     fn kuna_mapped_symbol_entry(&self, high: HighVariableId) -> Option<(Address, int4)> {
         let h = self.high_bank().get(high)?;
+        // (kuna perf) The scan below only ever accepts an address-tied member,
+        // and a high's cached flag word is the OR of its members', so a clean
+        // `addrtied == false` settles it without walking them.  `mergeTestRequired`
+        // — this is its inner loop — reads `high_is_addr_tied` on both highs before
+        // it gets here, so the flags are clean by construction; a dirty word just
+        // falls through to the scan.
+        if h.kuna_addr_tied_if_clean() == Some(false) {
+            return None;
+        }
         let invalid = Address::new_invalid();
         let n = h.num_instances();
         for i in 0..n {
@@ -195,8 +204,16 @@ impl Funcdata {
             // covering Symbol's storage address (its identity), `sym_off` the in-symbol
             // byte offset of the access.
             if let Some(lm) = self.get_scope_local() {
-                if let Some(info) = lm.query_container_for_link(&addr, &invalid) {
-                    return Some((info.entry_addr, info.sym_off));
+                // `container_symbol_link` is the same `findContainer` query as
+                // `query_container_for_link` without the display-name String and
+                // data-type clones that result carries; this is a hot merge-test
+                // path that reads only the entry geometry.
+                if let Some((_sym, entry_addr, _sz, entry_off)) =
+                    lm.container_symbol_link(&addr, &invalid)
+                {
+                    let delta =
+                        addr.get_offset().wrapping_sub(entry_addr.get_offset()) as int4;
+                    return Some((entry_addr, delta.wrapping_add(entry_off)));
                 }
             }
             // Then the frozen global scope (`map addr r...`): the covering global Symbol.
@@ -550,6 +567,17 @@ impl MergeContext for Funcdata {
         // isolated on the first covering entry — mirroring `HighVariable::
         // getSymbol`'s first-hit member scan against a properly painted
         // SymbolEntry.
+        //
+        // (kuna perf) The scan is `merge_test_adjacent`'s inner loop and is
+        // quadratic in a big function: it runs once per candidate pair and
+        // walks every member of both highs, so on a 43 KB function it issued
+        // 26 M containment queries.  A scope that has never had a Symbol
+        // isolated cannot answer `true` from any of them, and the global arm
+        // below is unconditionally `false`, so the whole scan is skippable —
+        // see `ScopeLocal::has_isolated_symbols`.
+        if !self.get_scope_local().map(|lm| lm.has_isolated_symbols()).unwrap_or(false) {
+            return false;
+        }
         let members: Vec<VarnodeId> = (0..h.num_instances()).map(|i| h.get_instance(i)).collect();
         for vn in members {
             let (addr, is_free) = match self.vbank().get(vn) {
