@@ -187,6 +187,21 @@ pub struct ConsoleProgram {
     /// Non-zero sizes only: a bare declaration with no extent leaves the entry
     /// unbounded, which is the engine-wide `UNBOUNDED_SIZE` default.
     declared_extents: BTreeMap<u64, int4>,
+    /// (kuna `--assert`) The caller-supplied assertions this program was loaded
+    /// with, in the order they were given -- the one override plane an agent
+    /// states facts through (`crate::assertions`).  Empty for every invocation
+    /// that passed none, which is what keeps the plane free.
+    assertions: Vec<crate::assertions::Directive>,
+    /// One slot per [`Self::assertions`] entry: what became of that directive.
+    /// `None` until something claims it, so a directive no surface reached is
+    /// still distinguishable from one that was applied.
+    assertion_outcomes: Vec<Option<crate::assertions::Outcome>>,
+    /// Prototypes parked by an `assert prototype <func> <decl>` directive, keyed
+    /// by function name -- the in-process twin of the console's
+    /// `IfaceDecompData::pending_prototypes` (`parse line extern`).  Consulted by
+    /// the decompile loop, because the drive rebuilds the `Funcdata` and the
+    /// symbol-table prototype link does not survive that rebuild.
+    pending_prototypes: BTreeMap<String, kuna_decomp::fspec::PrototypePieces>,
 }
 
 impl ConsoleProgram {
@@ -1092,6 +1107,53 @@ impl ConsoleProgram {
         !self.declared_extents.is_empty()
     }
 
+    // --- the `--assert` override plane (see `crate::assertions`) -------------
+
+    /// Install the caller's assertions.  One outcome slot is reserved per
+    /// directive so the report keeps the caller's own order however the
+    /// directives are later dispatched.
+    pub fn set_assertions(&mut self, directives: Vec<crate::assertions::Directive>) {
+        self.assertion_outcomes = vec![None; directives.len()];
+        self.assertions = directives;
+    }
+
+    /// The installed assertions, in the order they were given.
+    pub fn assertions(&self) -> &[crate::assertions::Directive] {
+        &self.assertions
+    }
+
+    /// Record what became of the `i`-th directive.
+    pub fn set_assertion_outcome(&mut self, i: usize, outcome: crate::assertions::Outcome) {
+        if let Some(slot) = self.assertion_outcomes.get_mut(i) {
+            *slot = Some(outcome);
+        }
+    }
+
+    /// The per-directive report, one row per installed assertion.
+    pub fn assertion_outcomes(&self) -> Vec<crate::assertions::Outcome> {
+        self.assertions
+            .iter()
+            .zip(self.assertion_outcomes.iter())
+            .map(|(directive, outcome)| {
+                outcome.clone().unwrap_or_else(|| crate::assertions::unclaimed(directive))
+            })
+            .collect()
+    }
+
+    /// Park a prototype for `func` (an `assert prototype` directive).
+    pub fn set_pending_prototype(
+        &mut self,
+        func: &str,
+        pieces: kuna_decomp::fspec::PrototypePieces,
+    ) {
+        self.pending_prototypes.insert(func.to_string(), pieces);
+    }
+
+    /// The prototype parked for `func`, if any.
+    pub fn pending_prototype(&self, func: &str) -> Option<&kuna_decomp::fspec::PrototypePieces> {
+        self.pending_prototypes.get(func)
+    }
+
     /// Declare a function at `addr` — the in-process twin of the console
     /// `map function <addr> [name]` command (`IfcMapfunction`), plus the extent
     /// the console form cannot express on its own.
@@ -1769,6 +1831,9 @@ pub fn bootstrap_program(
         analysis_image: None,
         loader_data_objects: Vec::new(),
         declared_extents: BTreeMap::new(),
+        assertions: Vec::new(),
+        assertion_outcomes: Vec::new(),
+        pending_prototypes: BTreeMap::new(),
     };
     // C++ `conf->readLoaderSymbols("::")` (testfunction.cc:160 / consolemain.cc:104):
     // install the binaryimage symbols as FunctionSymbols so a CALL to one resolves
@@ -2006,6 +2071,9 @@ pub fn bootstrap_from_object(
         analysis_image: Some((path.to_string(), bytes)),
         loader_data_objects,
         declared_extents: BTreeMap::new(),
+        assertions: Vec::new(),
+        assertion_outcomes: Vec::new(),
+        pending_prototypes: BTreeMap::new(),
     };
     // conf->readLoaderSymbols("::"): install the ELF symbols as FunctionSymbols.
     // The deferred analysis commit at `read symbols` REQUIRES this to have run

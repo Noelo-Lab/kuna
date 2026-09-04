@@ -92,6 +92,9 @@ pub fn decompile_targets(
     want_provenance: bool,
 ) -> Vec<FuncResult> {
     let mut out = Vec::with_capacity(targets.len());
+    // (kuna `--assert`) An unqualified directive binds to "the function under
+    // decompile", which is only unambiguous when the run selected exactly one.
+    let single_target = targets.len() == 1;
     for FunctionEntry {
         name,
         addr: entry,
@@ -184,16 +187,63 @@ pub fn decompile_targets(
         // bounds this function's flow follow; 0 — the usual case — is the natural,
         // unbounded extent.
         let declared = prog.declared_extent(address);
-        match crate::decompile_step::decompile_one(
+        // (kuna `--assert`) The caller-declared facts this function is decompiled
+        // AGAINST: a `prototype`/`param`/`return` directive is consumed at flow
+        // time, so it has to be seeded here rather than applied afterwards. Every
+        // field is empty for a run that passed no directive, which is what makes
+        // the plane free (`crate::assertions`).
+        let seed = crate::assertions::function_seed(prog, &name, &entry, single_target);
+        let step = crate::decompile_step::decompile_one(
             prog.arch_mut(),
             &name,
-            entry,
+            entry.clone(),
             declared,
-            &crate::decompile_step::DecompileSeed::plain(&mapped, &flow_ovr),
+            &crate::decompile_step::DecompileSeed {
+                mapped_symbols: &mapped,
+                usepoint_symbols: &[],
+                dynamic_symbols: &[],
+                pending_proto: seed.pending_proto.as_ref(),
+                flow_overrides: &flow_ovr,
+                mapped_params: &seed.mapped_params,
+            },
             &[],
-        )
-        .result
-        {
+        );
+        // (kuna `--assert`) The symbol-scoped second pass. `name`/`type` name a
+        // LOCAL, and a local does not exist until a decompile has produced it --
+        // so the only order in which they can work is decompile, mutate the local
+        // scope, decompile again with the mutation carried across (exactly the
+        // console's `decompile` / `rename` / `decompile` sequence). Emitted only
+        // when such a directive actually bound to this function, so every other
+        // invocation keeps its current cost.
+        let result = match step.result {
+            Ok(mut fd)
+                if crate::assertions::has_symbol_scoped(prog, &name, single_target) =>
+            {
+                if crate::assertions::apply_symbol_scoped(prog, &mut fd, &name, single_target) {
+                    let carried = crate::assertions::carried_symbols(&fd);
+                    crate::decompile_step::decompile_one(
+                        prog.arch_mut(),
+                        &name,
+                        entry,
+                        declared,
+                        &crate::decompile_step::DecompileSeed {
+                            mapped_symbols: &carried,
+                            usepoint_symbols: &[],
+                            dynamic_symbols: &[],
+                            pending_proto: seed.pending_proto.as_ref(),
+                            flow_overrides: &flow_ovr,
+                            mapped_params: &seed.mapped_params,
+                        },
+                        &[],
+                    )
+                    .result
+                } else {
+                    Ok(fd)
+                }
+            }
+            other => other,
+        };
+        match result {
             Ok(fd) => {
                 // Render + extract under `catch_unwind`: the decompile drive only
                 // guards the pipeline (decompile_drive.rs), so a fail-fast invariant

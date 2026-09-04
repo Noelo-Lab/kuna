@@ -40,6 +40,12 @@ pub struct DecompileArgs {
     /// `--define-function <start[-end][=name] | @file>` (repeatable): the
     /// caller-declared function boundaries, lowered to `function bounds` lines.
     pub func_decls: Vec<crate::funcdecl::FuncDecl>,
+    /// `--assert <directive> | @FILE` (repeatable): the caller-supplied
+    /// assertions, lowered to console lines at the slots `build_script`
+    /// documents (`crate::assertdecl`).
+    pub assertions: Vec<kuna_console::assertions::Directive>,
+    /// `--assert-strict`: a rejected directive makes the run exit non-zero.
+    pub assert_strict: bool,
     pub decomp_dbg: Option<String>,
     pub sleighpath: Option<String>,
     /// Mach-O fat / universal slice override (`--slice <arch>`, e.g. `x86_64` /
@@ -122,6 +128,7 @@ fn build_script(
     options: &[(String, String)],
     kasserts: &[String],
     func_decls: &[crate::funcdecl::FuncDecl],
+    assertions: &[kuna_console::assertions::Directive],
     regions_path: Option<&Path>,
 ) -> String {
     let mut lines: Vec<String> = Vec::new();
@@ -155,6 +162,14 @@ fn build_script(
     for decl in func_decls {
         lines.push(decl.console_line());
     }
+    // (kuna `--assert`) The PROGRAM-scoped directives -- a parsed type, a
+    // declared prototype, a named global -- go here, after the analysis commit
+    // and before the selection, so the function is loaded against them.
+    for form in assertions.iter().filter_map(crate::assertdecl::console_form) {
+        if form.slot == crate::assertdecl::Slot::Program {
+            lines.push(form.line);
+        }
+    }
     if by_address {
         match EntrySelector::parse(target) {
             EntrySelector::SectionOffset { .. } | EntrySelector::SectionIndexOffset { .. } => {
@@ -172,10 +187,30 @@ fn build_script(
     } else {
         lines.push(format!("load function {target}"));
     }
+    // FUNCTION-scoped directives need a loaded function and are consumed at flow
+    // time, so they precede the first `decompile`.
+    for form in assertions.iter().filter_map(crate::assertdecl::console_form) {
+        if form.slot == crate::assertdecl::Slot::Function {
+            lines.push(form.line);
+        }
+    }
     for ka in kasserts {
         lines.push(format!("kassert {ka}"));
     }
     lines.push("decompile".into());
+    // SYMBOL-scoped directives name a LOCAL, which does not exist until a
+    // decompile has produced it (`rename v2 buf` before the first one answers
+    // `No symbol named: v2`), so they run between two decompiles. The second
+    // `decompile` is emitted ONLY when there is such a directive, so every other
+    // invocation keeps its current cost.
+    if crate::assertdecl::needs_second_pass(assertions) {
+        for form in assertions.iter().filter_map(crate::assertdecl::console_form) {
+            if form.slot == crate::assertdecl::Slot::Symbol {
+                lines.push(form.line);
+            }
+        }
+        lines.push("decompile".into());
+    }
     let out_display = out_path.display().to_string();
     lines.push(format!("openfile write {}", console_path(&out_display)));
     lines.push("print C".into());
@@ -419,6 +454,76 @@ fn find_pipeline_failure(out: &str) -> Option<(String, String)> {
     None
 }
 
+/// Recover one [`Outcome`](kuna_console::assertions::Outcome) per `--assert`
+/// directive from the `decomp_dbg` transcript.
+///
+/// The console's exception grammar is byte-faithful and load-bearing
+/// (`ifacedecomp::execute`, and [`CONSOLE_DIAGNOSTICS`] already parses it): a
+/// command that raised prints exactly one diagnostic prefix and the session
+/// continues.  So a directive is `applied` unless a diagnostic follows the echo
+/// of the console line it lowered to — which is the only signal this surface
+/// has, since the C comes back through a file redirect and not the transcript.
+///
+/// A directive whose echo is absent entirely (the script never got that far —
+/// the load failed) is reported as rejected rather than silently applied.
+fn assertion_outcomes(
+    out: &str,
+    directives: &[kuna_console::assertions::Directive],
+) -> Vec<kuna_console::assertions::Outcome> {
+    use kuna_console::assertions::Outcome;
+    directives
+        .iter()
+        .map(|directive| {
+            let (kind, phase, subphase) = directive.body.coords();
+            let detail = match crate::assertdecl::console_form(directive) {
+                Some(form) => command_failure(out, &form.line),
+                None => Some("no console spelling for this directive".to_string()),
+            };
+            Outcome {
+                directive: directive.raw.clone(),
+                kind,
+                phase,
+                subphase,
+                status: if detail.is_none() { "applied" } else { "rejected" },
+                detail,
+            }
+        })
+        .collect()
+}
+
+/// The diagnostic the console printed for the command `line`, or `None` when it
+/// ran clean.  `Some` for a command whose echo never appears at all — a script
+/// that stopped early did not apply it.
+fn command_failure(out: &str, line: &str) -> Option<String> {
+    let mut in_command = false;
+    let mut seen = false;
+    for raw in out.lines() {
+        let trimmed = raw.trim();
+        let text = console_text(trimmed);
+        if trimmed.starts_with(CONSOLE_PROMPT) {
+            in_command = text == line;
+            seen |= in_command;
+            continue;
+        }
+        if !in_command || text.is_empty() {
+            continue;
+        }
+        for prefix in CONSOLE_DIAGNOSTICS {
+            if let Some(reason) = text.strip_prefix(prefix) {
+                let reason = reason.trim();
+                if !reason.is_empty() {
+                    return Some(reason.to_string());
+                }
+            }
+        }
+    }
+    if seen {
+        None
+    } else {
+        Some("the console script did not reach this directive".into())
+    }
+}
+
 /// A unique temp path under the system temp dir (no external dep; mirrors
 /// `tempfile.NamedTemporaryFile(delete=False)`'s role — a private scratch file we
 /// delete in the `finally`).
@@ -440,6 +545,8 @@ struct DecompileOutcome {
     c: String,
     regions: Option<String>,
     failure: Option<String>,
+    /// One row per `--assert` directive, recovered from the transcript.
+    assertions: Vec<kuna_console::assertions::Outcome>,
 }
 
 /// Run the decompile and return its [`DecompileOutcome`].
@@ -519,6 +626,7 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
             &args.options,
             &args.kasserts,
             &args.func_decls,
+            &args.assertions,
             regions_path.as_deref(),
         );
 
@@ -732,6 +840,7 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
                     ),
                     regions: None,
                     failure: None,
+                    assertions: assertion_outcomes(&stdout_text, &args.assertions),
                 });
             }
             return Err((
@@ -766,7 +875,12 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
             }
             regions_text = Some(trim_newlines(&buf));
         }
-        Ok(DecompileOutcome { c: c_text, regions: regions_text, failure })
+        Ok(DecompileOutcome {
+            c: c_text,
+            regions: regions_text,
+            failure,
+            assertions: assertion_outcomes(&stdout_text, &args.assertions),
+        })
     };
 
     let mut result = attempt(&base);
@@ -811,11 +925,15 @@ pub fn run(args: &DecompileArgs) -> i32 {
             // survived (DIV-45): a closed reader is not evidence the decompile
             // worked.  Emitting first keeps the stdout-then-stderr order.
             let written = crate::output::emit(&text);
+            // A rejected assertion is reported and the run continues;
+            // `--assert-strict` makes it the verdict.
+            let rejected = decompile_all::report_rejected_assertions(&out.assertions);
             let status = match out.failure {
                 Some(msg) => {
                     eprintln!("error: {msg}");
                     1
                 }
+                None if args.assert_strict && rejected => 1,
                 None => 0,
             };
             match written {
@@ -854,6 +972,8 @@ pub fn main(argv: &[String]) -> i32 {
     let mut mode: Option<String> = None;
     let mut kasserts: Vec<String> = Vec::new();
     let mut func_decls: Vec<crate::funcdecl::FuncDecl> = Vec::new();
+    let mut assertions: Vec<kuna_console::assertions::Directive> = Vec::new();
+    let mut assert_strict = false;
     let mut decomp_dbg: Option<String> = None;
     let mut engine: Option<String> = None;
     let mut sleighpath: Option<String> = None;
@@ -925,6 +1045,24 @@ pub fn main(argv: &[String]) -> i32 {
                 },
                 None => return 2,
             },
+            "--assert" => match take_value(argv, &mut i, "--assert") {
+                Some(value) => match crate::assertdecl::parse_flag(&value) {
+                    Ok(parsed) => {
+                        assertions.extend(parsed);
+                        forwarded.push("--assert".into());
+                        forwarded.push(value);
+                    }
+                    Err(msg) => {
+                        eprintln!("error: {msg}");
+                        return 2;
+                    }
+                },
+                None => return 2,
+            },
+            "--assert-strict" => {
+                assert_strict = true;
+                forwarded.push("--assert-strict".into());
+            }
             "--decomp-dbg" => decomp_dbg = take_value(argv, &mut i, "--decomp-dbg"),
             "--engine" => engine = take_value(argv, &mut i, "--engine"),
             "--sleighpath" => sleighpath = take_value(argv, &mut i, "--sleighpath"),
@@ -1028,6 +1166,8 @@ pub fn main(argv: &[String]) -> i32 {
         options,
         kasserts,
         func_decls,
+        assertions,
+        assert_strict,
         decomp_dbg,
         sleighpath,
         slice,
@@ -1111,7 +1251,13 @@ fn run_json(req: &JsonRequest) -> i32 {
     let (text, failure) = match decompile_json(&args, req.target) {
         Ok(answered) => answered,
         Err(message) => (
-            decompile_all::render_result_json(&args.binary, &[], &args.options, Some(&message)),
+            decompile_all::render_result_json(
+                &args.binary,
+                &[],
+                &args.options,
+                Some(&message),
+                &[],
+            ),
             Some(message),
         ),
     };
@@ -1150,20 +1296,26 @@ fn decompile_json(args: &AllArgs, target: &str) -> Result<(String, Option<String
     }
 
     let funcs = decompile_all::decompile_entries(&mut prog, args, targets);
-    let failure = funcs.iter().find_map(|f| {
+    let assertions = prog.assertion_outcomes();
+    let mut failure = funcs.iter().find_map(|f| {
         f.error.as_ref().map(|reason| {
             format!("decompilation failed for {} in {}: {reason}", f.name, args.binary)
         })
     });
-    Ok((
-        decompile_all::render_result_json(
-            &args.binary,
-            &funcs,
-            &args.options,
-            failure.as_deref(),
-        ),
-        failure,
-    ))
+    // A rejected assertion is reported and the run continues; `--assert-strict`
+    // makes it the run's verdict (see `report_rejected_assertions`).
+    let rejected = decompile_all::report_rejected_assertions(&assertions);
+    let text = decompile_all::render_result_json(
+        &args.binary,
+        &funcs,
+        &args.options,
+        failure.as_deref(),
+        &assertions,
+    );
+    if failure.is_none() && args.assert_strict && rejected {
+        failure = Some(format!("--assert directive rejected in {}", args.binary));
+    }
+    Ok((text, failure))
 }
 
 #[cfg(test)]

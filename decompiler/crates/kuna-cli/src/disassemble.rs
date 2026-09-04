@@ -283,6 +283,8 @@ pub(crate) fn render(args: &DisArgs) -> Result<Listing, String> {
         max_fn_seconds: 0,
         options,
         func_decls: args.func_decls.clone(),
+        assertions: Vec::new(),
+        assert_strict: false,
         slice: args.slice.clone(),
         target: args.target.clone(),
         sleighpath: args.sleighpath.clone(),
