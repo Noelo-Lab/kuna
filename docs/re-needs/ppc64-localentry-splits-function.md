@@ -2,24 +2,24 @@
 need_id: ppc64-localentry-splits-function
 title: PPC64 ELFv2 local entry points split every function into an 8-byte named husk plus an anonymous body
 track: quality
-status: open
+status: closed
 severity: major
 probe_id: p-a15704a28a56
 acceptance_id: a-fb2b9c0f7f5b
-hypothesis_status: inconclusive
+hypothesis_status: upheld
 credibility: 0.9
 instances: 1
 challenges: []
 rounds: [2]
 first_seen_round: 2
-attempts: 0
-covered_by_option: null
+attempts: 1
+covered_by_option: ppclocalentry
 touches: [decompiler/crates/kuna-analysis/src, decompiler/crates/kuna-decomp/src/p2_lift/kuna_funcboundflow.rs]
 scope: small
 regression_of: null
-pr: null
-closed_in_round: null
-closing_pr: null
+pr: "390"
+closed_in_round: 2
+closing_pr: "390"
 reject_reason: null
 ---
 
@@ -200,3 +200,13 @@ _none recorded_
 - credibility 0.9: two independent observations (the builder's 33-fixture sweep and the captain's replay),
   a vendored in-repo witness, and a mechanism confirmed at least half-way by `--option funcboundflow off`
   restoring the correct body.
+- closed: acceptance a-fb2b9c0f7f5b now PASSES at da48cdc7e518
+- hypothesis **upheld**, and the one part the captain flagged as unverified is now answered: the +8
+  entries come from CALL targets in the Listing walk's worklist (`listing off`, `funcstart_patterns off`
+  and `aif off` each leave them; `listing off` + `fast_funcdisc off` removes them), and
+  `register_tm_clones` carries the same `st_other` yet is NOT split because its local entry is reached by
+  a tail `b`, not a `bl`. The shipped fix is the hypothesis's "narrow fix": fold the local entry back into
+  its global entry at discovery time.
+- closing PR #390, merge commit `da48cdc7`, option `ppclocalentry` (default **on**), DIV-107. All four
+  gates + `catalog --check` + `tests/cli` green on merged main at `da48cdc7` (675/675, 603/603, 5,341
+  rust tests, 19/19 clitests).

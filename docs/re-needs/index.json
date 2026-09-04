@@ -4,8 +4,8 @@
   "count": 35,
   "rejected_count": 0,
   "by_status": {
-    "closed": 18,
-    "open": 17
+    "closed": 19,
+    "open": 16
   },
   "by_track": {
     "perf": 2,
@@ -465,37 +465,6 @@
       "path": "docs/re-needs/pe-function-inventory-labels.md"
     },
     {
-      "need_id": "ppc64-localentry-splits-function",
-      "title": "PPC64 ELFv2 local entry points split every function into an 8-byte named husk plus an anonymous body",
-      "track": "quality",
-      "status": "open",
-      "severity": "major",
-      "probe_id": "p-a15704a28a56",
-      "acceptance_id": "a-fb2b9c0f7f5b",
-      "hypothesis_status": "inconclusive",
-      "credibility": 0.9,
-      "instances": 1,
-      "challenges": [],
-      "rounds": [
-        2
-      ],
-      "first_seen_round": 2,
-      "attempts": 0,
-      "covered_by_option": null,
-      "touches": [
-        "decompiler/crates/kuna-analysis/src",
-        "decompiler/crates/kuna-decomp/src/p2_lift/kuna_funcboundflow.rs"
-      ],
-      "scope": "small",
-      "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
-      "reject_reason": null,
-      "score": 13.862944,
-      "path": "docs/re-needs/ppc64-localentry-splits-function.md"
-    },
-    {
       "need_id": "simd-constant-string-initializer",
       "title": "SIMD constant-string initializer explodes into hundreds of scalar pseudo-operations",
       "track": "quality",
@@ -714,6 +683,37 @@
       "reject_reason": null,
       "score": 9.241962,
       "path": "docs/re-needs/decompiling-3396-byte-main.md"
+    },
+    {
+      "need_id": "ppc64-localentry-splits-function",
+      "title": "PPC64 ELFv2 local entry points split every function into an 8-byte named husk plus an anonymous body",
+      "track": "quality",
+      "status": "closed",
+      "severity": "major",
+      "probe_id": "p-a15704a28a56",
+      "acceptance_id": "a-fb2b9c0f7f5b",
+      "hypothesis_status": "upheld",
+      "credibility": 0.9,
+      "instances": 1,
+      "challenges": [],
+      "rounds": [
+        2
+      ],
+      "first_seen_round": 2,
+      "attempts": 1,
+      "covered_by_option": "ppclocalentry",
+      "touches": [
+        "decompiler/crates/kuna-analysis/src",
+        "decompiler/crates/kuna-decomp/src/p2_lift/kuna_funcboundflow.rs"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": "390",
+      "closed_in_round": 2,
+      "closing_pr": "390",
+      "reject_reason": null,
+      "score": 9.241962,
+      "path": "docs/re-needs/ppc64-localentry-splits-function.md"
     },
     {
       "need_id": "whole-binary-json-untriageable",
