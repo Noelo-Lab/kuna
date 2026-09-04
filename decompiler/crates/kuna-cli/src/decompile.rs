@@ -37,6 +37,9 @@ pub struct DecompileArgs {
     pub regions: bool,
     pub options: Vec<(String, String)>,
     pub kasserts: Vec<String>,
+    /// `--define-function <start[-end][=name] | @file>` (repeatable): the
+    /// caller-declared function boundaries, lowered to `function bounds` lines.
+    pub func_decls: Vec<crate::funcdecl::FuncDecl>,
     pub decomp_dbg: Option<String>,
     pub sleighpath: Option<String>,
     /// Mach-O fat / universal slice override (`--slice <arch>`, e.g. `x86_64` /
@@ -117,6 +120,7 @@ fn build_script(
     out_path: &Path,
     options: &[(String, String)],
     kasserts: &[String],
+    func_decls: &[crate::funcdecl::FuncDecl],
     regions_path: Option<&Path>,
 ) -> String {
     let mut lines: Vec<String> = Vec::new();
@@ -144,6 +148,13 @@ fn build_script(
         lines.push(format!("option {name} {value}"));
     }
     lines.push("read symbols".into());
+    // `--define-function` AFTER the analysis commit and BEFORE the load: a
+    // caller-declared boundary is an assertion that outranks whatever discovery
+    // decided about the same address, and the load below is what consults the
+    // declared extent (`ConsoleProgram::declared_extent`).
+    for decl in func_decls {
+        lines.push(decl.console_line());
+    }
     if by_address {
         match EntrySelector::parse(target) {
             EntrySelector::SectionOffset { .. } | EntrySelector::SectionIndexOffset { .. } => {
@@ -475,6 +486,7 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
             &out_path,
             &args.options,
             &args.kasserts,
+            &args.func_decls,
             regions_path.as_deref(),
         );
 
@@ -798,6 +810,7 @@ pub fn main(argv: &[String]) -> i32 {
     let mut saw_language = false;
     let mut mode: Option<String> = None;
     let mut kasserts: Vec<String> = Vec::new();
+    let mut func_decls: Vec<crate::funcdecl::FuncDecl> = Vec::new();
     let mut decomp_dbg: Option<String> = None;
     let mut engine: Option<String> = None;
     let mut sleighpath: Option<String> = None;
@@ -855,6 +868,20 @@ pub fn main(argv: &[String]) -> i32 {
                     kasserts.push(v);
                 }
             }
+            "--define-function" => match take_value(argv, &mut i, "--define-function") {
+                Some(value) => match crate::funcdecl::parse_flag(&value) {
+                    Ok(decls) => {
+                        func_decls.extend(decls);
+                        forwarded.push("--define-function".into());
+                        forwarded.push(value);
+                    }
+                    Err(msg) => {
+                        eprintln!("error: {msg}");
+                        return 2;
+                    }
+                },
+                None => return 2,
+            },
             "--decomp-dbg" => decomp_dbg = take_value(argv, &mut i, "--decomp-dbg"),
             "--engine" => engine = take_value(argv, &mut i, "--engine"),
             "--sleighpath" => sleighpath = take_value(argv, &mut i, "--sleighpath"),
@@ -957,6 +984,7 @@ pub fn main(argv: &[String]) -> i32 {
         regions,
         options,
         kasserts,
+        func_decls,
         decomp_dbg,
         sleighpath,
         slice,
@@ -1319,6 +1347,55 @@ Decompilation complete
         assert_eq!(console_path("/odd \"name\"/a.out"), r#""/odd \"name\"/a.out""#);
     }
 
+    /// The declarations land AFTER `read symbols` and BEFORE the load: the commit
+    /// is what discovery writes, and the load is what reads the declared extent.
+    #[test]
+    fn build_script_declares_boundaries_between_read_symbols_and_the_load() {
+        let decls = crate::funcdecl::parse_flag("0x1400-0x1480=decrypt").expect("parses");
+        let script = build_script(
+            "/tmp/a.out",
+            "0x1400",
+            true,
+            None,
+            false,
+            Path::new("/tmp/kuna.c"),
+            &[],
+            &[],
+            &decls,
+            None,
+        );
+        let line = |needle: &str| {
+            script
+                .lines()
+                .position(|l| l == needle)
+                .unwrap_or_else(|| panic!("{needle:?} missing from:\n{script}"))
+        };
+        assert!(
+            line("read symbols")
+                < line("function bounds 0x1400 0x1480 as decrypt")
+                    && line("function bounds 0x1400 0x1480 as decrypt") < line("load addr 0x1400"),
+            "wrong order in:\n{script}"
+        );
+    }
+
+    /// No declarations ⇒ the script is byte-identical to what it always was.
+    #[test]
+    fn build_script_without_declarations_emits_no_boundary_lines() {
+        let script = build_script(
+            "/tmp/a.out",
+            "main",
+            false,
+            None,
+            false,
+            Path::new("/tmp/kuna.c"),
+            &[],
+            &[],
+            &[],
+            None,
+        );
+        assert!(!script.contains("function bounds"), "got:\n{script}");
+    }
+
     /// The whole script: a spaced binary path and a spaced output path must both
     /// reach the console as ONE argument each.  Unquoted, `load file` reads the
     /// tail as the filename and `openfile write` truncates a file at the split.
@@ -1331,6 +1408,7 @@ Decompilation complete
             None,
             false,
             Path::new("/tmp/out dir/kuna.c"),
+            &[],
             &[],
             &[],
             Some(Path::new("/tmp/out dir/kuna.txt")),
@@ -1362,6 +1440,7 @@ Decompilation complete
             Path::new("/tmp/kuna.c"),
             &[],
             &[],
+            &[],
             None,
         );
         assert!(
@@ -1380,6 +1459,7 @@ Decompilation complete
             None,
             false,
             Path::new("/tmp/kuna.c"),
+            &[],
             &[],
             &[],
             None,
@@ -1452,6 +1532,7 @@ Decompilation complete
             None,
             false,
             Path::new("/tmp/kuna.c"),
+            &[],
             &[],
             &[],
             None,

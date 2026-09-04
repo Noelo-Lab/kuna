@@ -128,6 +128,12 @@ pub(crate) struct Args {
     /// for an unfiltered fast whole-binary run and 120 otherwise.
     pub(crate) max_fn_seconds: u64,
     pub(crate) options: Vec<(String, String)>,
+    /// `--define-function <start[-end][=name] | @file>` (repeatable): the
+    /// caller-declared function boundaries, applied by [`load_program`] right
+    /// after the analysis commit so they outrank discovery. Every surface that
+    /// loads through this struct honors them; only the surfaces that parse the
+    /// flag can be non-empty.
+    pub(crate) func_decls: Vec<crate::funcdecl::FuncDecl>,
     pub(crate) slice: Option<String>,
     pub(crate) target: Option<String>,
     pub(crate) sleighpath: Option<String>,
@@ -966,6 +972,9 @@ pub(crate) fn load_program(
     apply_runtime_options(&mut prog, &args.options)?;
     prog.commit_pending_analysis()
         .map_err(|e| format!("read symbols (analysis commit) failed: {}", e.explain()))?;
+    // AFTER the commit: a caller-declared boundary is an assertion that outranks
+    // whatever discovery decided about the same address.
+    crate::funcdecl::apply(&mut prog, &args.func_decls)?;
     Ok(prog)
 }
 
@@ -1758,6 +1767,7 @@ pub(crate) fn parse_args_with_filters(
     let mut no_vars = false;
     let mut max_fn_seconds: Option<u64> = None;
     let mut options: Vec<(String, String)> = Vec::new();
+    let mut func_decls: Vec<crate::funcdecl::FuncDecl> = Vec::new();
     let mut mode: Option<String> = None;
     let mut slice: Option<String> = None;
     let mut target: Option<String> = None;
@@ -1777,6 +1787,10 @@ pub(crate) fn parse_args_with_filters(
             "--addr" => {
                 let v = take(argv, &mut i, "--addr")?;
                 addrs.push(parse_entry_selector(&v)?);
+            }
+            "--define-function" => {
+                let v = take(argv, &mut i, "--define-function")?;
+                func_decls.extend(crate::funcdecl::parse_flag(&v)?);
             }
             "--max-fn-seconds" if cmd == "decompile-all" || cmd == "decompile-project" => {
                 let v = take(argv, &mut i, "--max-fn-seconds")?;
@@ -1897,7 +1911,19 @@ pub(crate) fn parse_args_with_filters(
     }
 
     Ok((
-        Args { binary, json, names, addrs, no_vars, max_fn_seconds, options, slice, target, sleighpath },
+        Args {
+            binary,
+            json,
+            names,
+            addrs,
+            no_vars,
+            max_fn_seconds,
+            options,
+            func_decls,
+            slice,
+            target,
+            sleighpath,
+        },
         filters,
     ))
 }
@@ -1938,7 +1964,7 @@ fn usage_decompile_all() {
          \x20                   [--no-vars] [--max-fn-seconds N] [--mode auto|reliable|aggressive|fast] \\\n\
          \x20                   [--filter REGEX] [--min-size N] [--max-size N] \\\n\
          \x20                   [--reachable-from <name|0xaddr>] [--sort addr|size|name] [--limit N] \\\n\
-         \x20                   [--summary] \\\n\
+         \x20                   [--summary] [--define-function S[-E][=N]|@FILE].. \\\n\
          \x20                   [--option N V].. [--slice ARCH] [--target T] [--sleighpath D]\n\
          \n\
          Decompile every CODE-backed function in one in-process load (load-once,\n\
@@ -1951,6 +1977,10 @@ fn usage_decompile_all() {
          2 MiB, and fast at 2 MiB or larger. Explicit --option values win.\n\
          An unfiltered run that discovers no function at all exits 1 with the\n\
          reason on stderr and in the document's run-level `error` field.\n\
+         \n\
+         --define-function <start[-end][=name] | @file> (repeatable) declares where a\n\
+         function starts and ends: start names an entry discovery missed, the\n\
+         exclusive end bounds its flow so it stops swallowing its neighbours.\n\
          \n\
          Triage (narrows the run BEFORE decompiling, so it is also what makes it\n\
          cheap): --filter REGEX matches the name or any alias; --min-size/--max-size\n\
@@ -1967,6 +1997,7 @@ fn usage_functions() {
         "usage: kuna functions <binary> [--json] [--summary] \\\n\
          \x20               [--filter REGEX] [--min-size N] [--max-size N] \\\n\
          \x20               [--reachable-from <name|0xaddr>] [--sort addr|size|name] [--limit N] \\\n\
+         \x20               [--define-function S[-E][=N]|@FILE].. \\\n\
          \x20               [--mode auto|reliable|aggressive|fast] [--slice ARCH] [--target T] [--sleighpath D]\n\
          \n\
          List every function kuna discovers in a binary as `<addr>\\t<name>` (or\n\
@@ -1984,6 +2015,8 @@ fn usage_functions() {
          Shares decompile-all's discovery policy, so the inventory always contains\n\
          every function a whole-binary run would decompile; on a non-x86-64 binary\n\
          that means a full prologue-pattern + gap-walk discovery pass.\n\
+         --define-function <start[-end][=name] | @file> (repeatable) declares an entry\n\
+         discovery missed and its exclusive extent; it enumerates like any other.\n\
          Discovering no function at all exits 1 with the reason on stderr and in\n\
          the document's `error` field (a packed image is named as such)."
     );

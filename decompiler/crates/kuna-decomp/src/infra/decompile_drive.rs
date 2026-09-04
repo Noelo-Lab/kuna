@@ -517,8 +517,22 @@ pub fn build_and_follow_flow_with_override_and_protos(
 /// clear, so the re-flow rebuilds the CALLIND straight as a direct CALL).
 #[allow(clippy::mutable_key_type)]
 fn follow_flow_on_fd(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcdata> {
+    // C++ Funcdata::followFlow(baddr, eaddr): a function carrying a declared byte
+    // extent restricts flow to it; size 0 keeps the unbounded default the whole
+    // engine has used until now (`kuna_console::engine::UNBOUNDED_SIZE`), so this
+    // is inert for every caller that does not declare one. `eaddr` is INCLUSIVE
+    // (`FlowInfo::new_address` rejects `eaddr < to`), so the last in-body byte is
+    // `entry + size - 1`.
+    let range = (fd.get_size() > 0).then(|| fd.get_address().clone()).and_then(|start| {
+        let last = start.get_offset().checked_add(fd.get_size() as u64 - 1)?;
+        let space = Rc::clone(start.get_space()?);
+        Some((start.clone(), Address::new(space, last)))
+    });
     let env = ArchFlowEnv { arch: arch as *const Architecture };
     let mut flow = FlowInfo::new(fd, &env);
+    if let Some((baddr, eaddr)) = range {
+        flow.set_range(baddr, eaddr);
+    }
     // C++ Funcdata::followFlow (decompiler/cpp/funcdata_op.cc:765): after the
     // FlowInfo is constructed (and its range set), followFlow applies the global
     // flow options and the instruction bound.
