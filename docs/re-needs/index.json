@@ -345,8 +345,8 @@
       "status": "open",
       "severity": "major",
       "probe_id": null,
-      "acceptance_id": null,
-      "hypothesis_status": "upheld",
+      "acceptance_id": "a-567d3207ce62",
+      "hypothesis_status": "overturned",
       "credibility": 1.0,
       "instances": 1,
       "challenges": [],
@@ -368,37 +368,6 @@
       "reject_reason": null,
       "score": 13.862944,
       "path": "docs/re-needs/no-cli-data-code-override.md"
-    },
-    {
-      "need_id": "no-cli-rename-or-prototype-override",
-      "title": "an agent cannot rename or retype anything, or force a prototype",
-      "track": "tooling",
-      "status": "open",
-      "severity": "major",
-      "probe_id": null,
-      "acceptance_id": "a-a58fc408288b",
-      "hypothesis_status": "upheld",
-      "credibility": 1.0,
-      "instances": 1,
-      "challenges": [],
-      "rounds": [
-        2
-      ],
-      "first_seen_round": 2,
-      "attempts": 0,
-      "covered_by_option": null,
-      "touches": [
-        "decompiler/crates/kuna-cli/src",
-        "decompiler/crates/kuna-console/src/kuna_console.rs"
-      ],
-      "scope": "large",
-      "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
-      "reject_reason": null,
-      "score": 13.862944,
-      "path": "docs/re-needs/no-cli-rename-or-prototype-override.md"
     },
     {
       "need_id": "no-cli-structuring-override",
@@ -683,6 +652,37 @@
       "reject_reason": null,
       "score": 9.241962,
       "path": "docs/re-needs/decompiling-3396-byte-main.md"
+    },
+    {
+      "need_id": "no-cli-rename-or-prototype-override",
+      "title": "an agent cannot rename or retype anything, or force a prototype",
+      "track": "tooling",
+      "status": "open",
+      "severity": "major",
+      "probe_id": null,
+      "acceptance_id": "a-a58fc408288b",
+      "hypothesis_status": "overturned",
+      "credibility": 1.0,
+      "instances": 1,
+      "challenges": [],
+      "rounds": [
+        2
+      ],
+      "first_seen_round": 2,
+      "attempts": 1,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-cli/src",
+        "decompiler/crates/kuna-console/src/assertions.rs"
+      ],
+      "scope": "large",
+      "regression_of": null,
+      "pr": null,
+      "closed_in_round": null,
+      "closing_pr": null,
+      "reject_reason": null,
+      "score": 9.241962,
+      "path": "docs/re-needs/no-cli-rename-or-prototype-override.md"
     },
     {
       "need_id": "ppc64-localentry-splits-function",

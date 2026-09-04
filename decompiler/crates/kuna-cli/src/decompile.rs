@@ -151,8 +151,23 @@ fn build_script(
     for (name, value) in injected {
         lines.push(format!("option {name} {value}"));
     }
+    // (kuna `--assert`) A `readonly` range is inert unless read-only propagation
+    // is on, and that option is default-off; asserting the range turns it on.
+    // Emitted BEFORE the caller's own `--option` lines so an explicit
+    // `--option readonly off` still wins.
+    if kuna_console::assertions::implies_readonly_propagation(assertions) {
+        lines.push("option readonly on".into());
+    }
     for (name, value) in options {
         lines.push(format!("option {name} {value}"));
+    }
+    // (kuna `--assert`) IMAGE-scoped directives -- a read-only or volatile
+    // memory range -- must precede `read symbols`: mapping a symbol folds the
+    // range property into its SymbolEntry and never looks at the range again.
+    for form in assertions.iter().filter_map(crate::assertdecl::console_form) {
+        if form.slot == crate::assertdecl::Slot::Image {
+            lines.push(form.line);
+        }
     }
     lines.push("read symbols".into());
     // `--define-function` AFTER the analysis commit and BEFORE the load: a
@@ -1928,6 +1943,67 @@ Execution error: No symbol named: v9
                 "round trip failed for {original:?} (emitted {emitted:?})"
             );
         }
+    }
+
+    /// An IMAGE-scoped directive is emitted before `read symbols`, and a
+    /// `readonly` one turns read-only propagation on ahead of the caller's own
+    /// `--option`s so an explicit `--option readonly off` still wins.
+    ///
+    /// The order is load-bearing, not cosmetic: mapping a symbol folds the range
+    /// property into its `SymbolEntry` and never consults the range again, so a
+    /// `readonly` emitted after `read symbols` is silently inert over every
+    /// address the loader named.
+    #[test]
+    fn a_range_directive_precedes_read_symbols_and_turns_readonly_on() {
+        let script = build_script(
+            "/tmp/a.out",
+            "sample",
+            false,
+            None,
+            false,
+            Path::new("/tmp/kuna.c"),
+            LISTING,
+            &[("readonly".into(), "off".into())],
+            &[],
+            &[],
+            &[
+                crate::assertdecl::parse_one("readonly 0x404028+8").unwrap(),
+                crate::assertdecl::parse_one("volatile 0x50000000+4").unwrap(),
+            ],
+            None,
+        );
+        let at = |needle: &str| {
+            script
+                .lines()
+                .position(|l| l == needle)
+                .unwrap_or_else(|| panic!("{needle:?} missing from:\n{script}"))
+        };
+        assert!(at("option readonly on") < at("option readonly off"), "{script}");
+        assert!(at("readonly 0x404028 8") < at("read symbols"), "{script}");
+        assert!(at("volatile 0x50000000 4") < at("read symbols"), "{script}");
+        // No symbol-scoped directive ⇒ still exactly one `decompile`.
+        assert_eq!(script.lines().filter(|l| *l == "decompile").count(), 1, "{script}");
+    }
+
+    /// With no range directive the script is untouched — no `option readonly`
+    /// line appears from nowhere.
+    #[test]
+    fn no_range_directive_leaves_the_readonly_option_alone() {
+        let script = build_script(
+            "/tmp/a.out",
+            "sample",
+            false,
+            None,
+            false,
+            Path::new("/tmp/kuna.c"),
+            LISTING,
+            &[],
+            &[],
+            &[],
+            &[crate::assertdecl::parse_one("name v2 buf").unwrap()],
+            None,
+        );
+        assert!(!script.contains("option readonly"), "{script}");
     }
 
     /// The same round trip inside a whole `load file` line, which is how the

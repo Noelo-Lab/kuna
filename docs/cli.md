@@ -120,11 +120,38 @@ One directive per `--assert`, keyed by intent rather than by phase:
 | `data <addr> <C typedeclaration>` | a named, typed global at an address |
 | `comment [<func>::]<addr> <text>` | a comment rendered into the C at that instruction |
 | `function <start>[-<end>][=<name>]` | the `--define-function` spelling, on this plane |
+| `readonly <addr>+<size>` | the bytes in this range never change at run time |
+| `volatile <addr>+<size>` | device memory: every access is a real access |
 
 Storage is a register name (`RDI`), the console's `%RDI`, or its address grammar
-(`[stack,-0x18,8]`). Addresses are hexadecimal with or without `0x`. A C type may
-be anything the console's `parse line` accepts, including a `typedef` you asserted
-earlier in the same run.
+(`[stack,-0x18,8]`). Addresses are hexadecimal with or without `0x`. A size is
+decimal unless it carries a `0x`, and `<addr> <size>` is accepted wherever
+`<addr>+<size>` is. A C type may be anything the console's `parse line` accepts,
+including a `typedef` you asserted earlier in the same run.
+
+**The two range directives are for memory kuna cannot classify by itself**, which
+on a hostile or embedded image is most of it. `--option readonly on|off` is a
+program-wide switch, not a range, and the loader's own read-only markup stops at
+what the section flags say:
+
+```bash
+# `.data` is writable, so the loader never calls it read-only -- but nothing in
+# this program writes these eight bytes, and the agent has checked.
+kuna decompile ./fw.elf sample --assert 'readonly 0x404028+8'
+#   - return scale * a0 + bias;
+#   + return a0 * 7 + 100;
+
+# 0x50000000 is a device register. Two reads of it are two reads; without this
+# they are two loads of one unwritten address and CSE merges them.
+kuna decompile ./fw.elf sample --assert 'volatile 0x50000000+4'
+#   - return dat_50000000 * 2;
+#   + v1 = dat_50000000; return v1 + dat_50000000;
+```
+
+Asserting a `readonly` range turns read-only propagation on for the run, because
+painting a range read-only and then not folding it would be a directive that is
+accepted and does nothing. It is applied *before* your own `--option`s, so an
+explicit `--option readonly off` still wins.
 
 **Every directive's fate is reported.** `--json` grows an `assertions` array — one
 row per directive, in the order you gave them, carrying the directive text, its
@@ -155,6 +182,16 @@ happens to have a `v2`, so qualify it:
 kuna decompile-all ./a.out --json --assert 'name authenticate::v2 credbuf'
 ```
 
+A range property is painted before the image's symbols are mapped, because
+mapping a symbol folds the property into it and never consults the range again —
+so a range you state is honoured even where the loader already gave the address a
+name. There is deliberately **no** `global` directive: `global add` is the console
+command that would carry it, and every stock cspec's `<global>` already claims the
+whole default data space (`<range space="ram"/>`), so on any ordinary image the
+range is global before you say anything. `global add`/`global remove` are wired
+and usable from `decomp_dbg` (the removal direction is the one that moves the C),
+but a directive that is accepted and inert has no place on this plane.
+
 The `@file` form is the durable one, exactly as for `--define-function`: one
 directive per line, `#` comments and blank lines skipped, and the file is the
 artifact — kuna does not write assertions back into the image.
@@ -166,6 +203,8 @@ prototype sub_401200 int check_license(char *key,int len)
 name sub_401200::v3 keylen
 type sub_401200::v2 char[32]
 data 0x601048 char *expected_key
+readonly 0x601050+16   # the key table, written only by the installer
+volatile 0x40021000+4  # RCC->CR
 EOF
 kuna decompile ./a.out sub_401200 --json --assert @overrides.kuna
 ```
