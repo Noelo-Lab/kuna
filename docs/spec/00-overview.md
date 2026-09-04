@@ -827,7 +827,10 @@ varnode bank (`decompiler/crates/kuna-decomp/src/substrate/varnode.rs
 (VarnodeBank)` — storage-sorted def/free/input trees), the op bank
 (`decompiler/crates/kuna-decomp/src/substrate/op.rs (PcodeOpBank)` — a
 `SeqNum`-keyed optree, whose stable key order is what lets a rule-pool cursor
-survive op deletion, §0.6), and **two** block graphs
+survive op deletion, §0.6, and which counts its own insertions and removals in an
+*epoch* so a holder of cached successor ids can tell in O(1) whether the tree
+still orders the way it did — `decompiler/crates/kuna-decomp/src/substrate/op.rs
+(optree_epoch, ops_after_seq)`), and **two** block graphs
 (`decompiler/crates/kuna-decomp/src/substrate/block.rs (BlockGraph)`): `bblocks`,
 the CFG, and `sblocks`, the structuring tree — physically distinct, seeded as a
 `BlockCopy` mirror of the CFG when structuring begins
@@ -1168,7 +1171,13 @@ resumable status machine (an action with `rule_repeatapply` loops until its
 change count stops rising; `rule_onceperfunc` latches done), and
 `ActionPool::process_op` walks each op's per-opcode rule list *resetting the walk
 to index 0 whenever a rule changes the op's opcode* — rules observe each other's
-effects mid-op, and the reset order is part of the observable output. The
+effects mid-op, and the reset order is part of the observable output. The C++
+cursor is a map iterator whose `++` is O(1); kuna models it as the last consumed
+`SeqNum` (so it survives the op's own deletion) and reads a short *run* of
+successors per tree descent rather than one search per op, discarding the run
+whenever the optree epoch above moves — any op created or destroyed by anything
+other than the pool's own consumption of the op it just left. The visit order is
+the search's, one buffered value at a time. The
 materialized `decompile` tree's listing is byte-equal to the C++ oracle dump
 (`decompiler/crates/kuna-decomp/src/infra/universalaction.rs
 (UNPORTED_ALLOWLIST)` — empty).
