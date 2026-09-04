@@ -312,6 +312,17 @@ pub struct Architecture {
     /// (kuna GH-9230) Recover constant-fill store/copy runs as `builtin_memset`
     /// (C++ `memset_recover`).
     pub memset_recover: bool,
+    /// (kuna `ptrdepthcap`) Cap the pointer nesting `ActionInferTypes` will adopt.
+    ///
+    /// A small-string-optimized C++ object writes the unsatisfiable equation
+    /// `T == ptr(T)` into the type lattice (`p = &obj` on one MULTIEQUAL edge,
+    /// `p = obj.ptr` -- a LOAD from the same address -- on the other), so the
+    /// propagation adds one pointer level per pass until the seven-pass ceiling
+    /// and declares the object `unsigned long long *****`.  When set, every
+    /// candidate type is put through `kuna_ptrdepth::cap_pointer_depth`, which is
+    /// upstream `TypeFactory::getTypePointerNoDepth`'s rule (`type.cc:1509`)
+    /// applied at the propagation funnel rather than only at LOAD/STORE.
+    pub ptrdepthcap: bool,
     /// (kuna GH-8913) Fuse 8-bit carry-chain 16-bit adds into one wide add
     /// (C++ `add_carry_chain`).
     pub add_carry_chain: bool,
@@ -1644,6 +1655,7 @@ impl Architecture {
             infer_funcentry: false,
             return_single: false,
             memset_recover: false,
+            ptrdepthcap: false, // (kuna) option ptrdepthcap; reset_defaults sets the shipped default
             add_carry_chain: false,
             v850_indirect_branch: false,
             msvc_ftol: false, // (kuna) option msvcftol; reset_defaults sets the shipped default
@@ -1911,6 +1923,7 @@ impl Architecture {
         self.framelayout = true; // (kuna) DIV-97: JSON-surface only (no p-code, no emitted C), so the 675-assertion datatest corpus cannot observe it; measured +1,027 type_match-perfect / -1 over 82,035 decbench functions
         self.voidtailreturn = false; // (kuna) option voidtailreturn; default-OFF until its corpus bidirectional sweep is recorded in a DIV row
         self.cortexmpriv = false; // (kuna) DIV-99: default-OFF -- "the core is privileged" is a modelling judgement, not a proof (Cortex-M Thread mode can run unprivileged); ON in the `aggressive` preset, which `auto` selects under 500 KiB, so it is the default rendering for real firmware
+        self.ptrdepthcap = false; // (kuna) DIV-108: default-OFF in the catalog because it changes INFERRED types and the datatest corpus pins the upstream spellings; ON in the `aggressive` preset, which `auto` selects under 500 KiB, so the cap is the default rendering for every real binary
         self.condexe_block_placement = true; // (kuna) DIV-3 default-on (GH-9203)
         self.add_carry_chain = true; // (kuna) DIV-2 default-on (GH-8913)
         self.model_stack_probe_loop = true; // (kuna) DIV-3 default-on (GH-8017)
@@ -2302,6 +2315,7 @@ impl Architecture {
             "ctypes" => on_off!(ctypes, "valid-C core type spelling"),
             "framelayout" => on_off!(framelayout, "recovered stack-frame reporting"),
             "voidtailreturn" => on_off!(voidtailreturn, "void tail-return elision"),
+            "ptrdepthcap" => on_off!(ptrdepthcap, "inferred pointer-nesting cap"),
             "cortexmpriv" => on_off!(cortexmpriv, "Cortex-M privileged-mode guard folding"),
             "dedupvardecls" => {
                 let (val, msg) = crate::kuna_dedupvardecls::OptionDedupVarDecls.apply(p1)?;
@@ -2978,6 +2992,7 @@ impl Architecture {
         ctx.ov_less_simplify = self.ov_less_simplify; // GH-7190 ovlesssimplify
         ctx.recover_array_stride = self.recover_array_stride; // GH-8724 arraystride
         ctx.memset_recover = self.memset_recover; // GH-9230/1537 memsetrecover
+        ctx.ptrdepthcap = self.ptrdepthcap; // (kuna) ptrdepthcap
         ctx.model_stack_probe_loop = self.model_stack_probe_loop; // GH-8017 stackprobeloop
         ctx.recover_lowered_switch = self.recover_lowered_switch; // loweredswitch
         ctx.callsite_stack_args = self.callsite_stack_args; // callsitestackargs
