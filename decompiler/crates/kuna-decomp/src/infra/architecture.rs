@@ -891,6 +891,20 @@ pub struct Architecture {
     /// the claim that the target is a function is withheld. Off restores the
     /// previous (phantom-producing) discovery set exactly.
     pub analysis_unmappedentry: bool,
+    /// (kuna) Fold a 32-bit PIC binary's base register into the cross-reference
+    /// index (`picbase`); default **on**. In position-independent i386 code the
+    /// address of a string, a global or a function pointer is never a constant in
+    /// the instruction that uses it: it is the sum of a GOT pointer the program
+    /// materialised at run time (`call <next>; pop ebx; add ebx,imm`) and a
+    /// displacement, so a scan over decode-time constants — however wide — finds
+    /// nothing and every literal in the image reports being referenced by
+    /// nothing. On, the idiom is interpreted, cross-checked against the image's
+    /// own `_GLOBAL_OFFSET_TABLE_`, and offered to a function only where that
+    /// function's own body cannot have changed the register. Off restores the
+    /// previous answer exactly. Query-surface only: `kuna xrefs`, `kuna strings`
+    /// and the `decompile-all` xref section read this index; no p-code, no
+    /// prototype and no emitted C depends on it.
+    pub analysis_picbase: bool,
     /// (kuna) Give the function the PE C-runtime startup calls with argc/argv/envp
     /// the prototype that call site establishes (`entrymainproto`); default
     /// **on**. kuna recovers a callee's parameters from the callee's own body, so
@@ -1696,6 +1710,7 @@ impl Architecture {
             analysis_libproto: false,
             analysis_libcsigs: false,
             analysis_unmappedentry: false,
+            analysis_picbase: false,
             analysis_entrymainproto: false,
             analysis_strings: false,
             analysis_entry_disc: false,
@@ -1895,6 +1910,10 @@ impl Architecture {
         // (kuna) Unmapped-CALL-target entry suppression -- default-ON (it only ever
         // withholds an entry the walk already refused to decode).
         self.analysis_unmappedentry = true;
+        // (kuna) PIC base-register folding in the xref index -- default-ON. It is
+        // a query surface only (no p-code, no emitted C), so no parity gate can
+        // observe it; it only ever ADDS an edge, and only one it can prove.
+        self.analysis_picbase = true;
         // (kuna) PE CRT entry-function prototype recovery -- default-ON.
         self.analysis_entrymainproto = true;
         // (kuna) `.eh_frame` LSDA landing-pad discovery — default-OFF (opt-in,
@@ -2266,6 +2285,9 @@ impl Architecture {
             "entry_disc" => on_off!(analysis_entry_disc, "Entry-discovery analysis pass"),
             "unmappedentry" => {
                 on_off!(analysis_unmappedentry, "Unmapped-CALL-target entry suppression")
+            }
+            "picbase" => {
+                on_off!(analysis_picbase, "PIC base-register folding in the xref index")
             }
             "entrymainproto" => {
                 on_off!(analysis_entrymainproto, "PE CRT entry-function prototype recovery")

@@ -75,6 +75,7 @@ use object::SectionKind;
 
 use super::classify::classify;
 use super::context::ContextPainter;
+use super::kuna_picbase::{self, Ctx as PicCtx, PicBase};
 use super::model::{FlowKind, RawOp};
 
 /// ELF section-header flag `SHF_ALLOC` (the section occupies memory at runtime).
@@ -284,10 +285,10 @@ impl XrefIndex {
 /// classifier needs); the parts it drops are what the data-reference scan is
 /// made of — the output says a memory location was written, the later inputs
 /// carry the addresses.
-struct FullOp {
-    opcode: OpCode,
-    out: Option<VarnodeData>,
-    ins: Vec<VarnodeData>,
+pub(super) struct FullOp {
+    pub(super) opcode: OpCode,
+    pub(super) out: Option<VarnodeData>,
+    pub(super) ins: Vec<VarnodeData>,
 }
 
 /// A capturing [`PcodeEmit`] that keeps every emitted op whole.
@@ -383,6 +384,20 @@ pub fn build(
     // match it, so the direct-access projection simply contributes nothing.
     let data_space = arch.manage().get_default_data_space().cloned();
 
+    // (kuna) `picbase`: the module's PIC base register, when the program has one
+    // this can prove. Detected before the walk because the base a function
+    // *inherits* is established in a different function's prologue -- see
+    // `kuna_picbase`. `None` (every non-PIC target, every image with no GOT)
+    // leaves the walk below byte-identical to the pre-feature one.
+    let picbase: Option<(PicCtx, PicBase)> = if arch.analysis_picbase && !mapped.is_empty() {
+        PicCtx::new(arch, data_space.as_ref()).and_then(|ctx| {
+            kuna_picbase::detect(file, translate, &code_space, &ctx, &seed_set).map(|b| (ctx, b))
+        })
+    } else {
+        None
+    };
+    let mut pc_thunks = std::collections::HashMap::new();
+
     let mut st = State {
         by_target: BTreeMap::new(),
         by_source: BTreeMap::new(),
@@ -392,12 +407,19 @@ pub fn build(
 
     let mut func_queue: VecDeque<u64> = seed_set.iter().copied().collect();
     let mut walked: BTreeSet<u64> = BTreeSet::new();
+    // The assembly render of each buffered instruction, so the deferred
+    // base-relative pass files the same `instruction` text the inline pass does.
+    let mut texts: BTreeMap<u64, (u32, String)> = BTreeMap::new();
 
     while let Some(entry) = func_queue.pop_front() {
         if !walked.insert(entry) {
             continue;
         }
         let mut insn_queue: VecDeque<u64> = VecDeque::from([entry]);
+        // Only collected when a base exists: the admission rule needs the whole
+        // body before any of it can be attributed (`kuna_picbase::scope`), and
+        // buffering it costs nothing on the overwhelmingly common `None` path.
+        let mut body: Vec<(u64, Vec<FullOp>)> = Vec::new();
         while let Some(vma) = insn_queue.pop_front() {
             if st.decoded.contains(&vma) {
                 continue; // already decoded (the VisitStat dedup)
@@ -450,6 +472,33 @@ pub fn build(
                     st.file(vma, to, kind, &decoded.text);
                 }
             }
+            if picbase.is_some() {
+                body.push((vma, decoded.ops));
+                texts.insert(vma, (decoded.len, decoded.text));
+            }
+        }
+
+        // (kuna) `picbase`: the references this body forms THROUGH the base
+        // register, filed only where the body cannot have changed it.
+        if let Some((ctx, base)) = &picbase {
+            body.sort_by_key(|(vma, _)| *vma);
+            if let Some(scope) =
+                kuna_picbase::scope(translate, &code_space, ctx, &mut pc_thunks, base, &body)
+            {
+                for (vma, ops) in &body {
+                    if !scope.admits(*vma) {
+                        continue;
+                    }
+                    let Some((len, text)) = texts.get(vma) else { continue };
+                    let fall_through = vma.wrapping_add(u64::from(*len));
+                    for (to, kind) in
+                        kuna_picbase::refs_through_base(ops, base, ctx, &mapped, fall_through)
+                    {
+                        st.file(*vma, to, kind, text);
+                    }
+                }
+            }
+            texts.clear();
         }
     }
 
@@ -775,7 +824,7 @@ fn mapped_ranges(file: &object::File) -> Vec<(u64, u64)> {
 }
 
 /// Does `vma` land in any `[lo, hi)` of a sorted, possibly overlapping range list?
-fn in_range(ranges: &[(u64, u64)], vma: u64) -> bool {
+pub(super) fn in_range(ranges: &[(u64, u64)], vma: u64) -> bool {
     ranges.iter().any(|&(lo, hi)| vma >= lo && vma < hi)
 }
 

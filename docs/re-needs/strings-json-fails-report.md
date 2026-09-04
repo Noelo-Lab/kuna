@@ -2,7 +2,7 @@
 need_id: strings-json-fails-report
 title: strings JSON fails to report the owning function for a directly referenced prompt
 track: quality
-status: open
+status: closed
 severity: major
 probe_id: p-3820d5b66146
 acceptance_id: a-f0c7bd5b4a7e
@@ -12,13 +12,13 @@ instances: 1
 challenges: [5ab77f6333c5d40ad448ca52]
 rounds: [2]
 first_seen_round: 2
-attempts: 0
-covered_by_option: null
-touches: [decompiler/crates/kuna-analysis/src/listing/xrefs.rs]
+attempts: 1
+covered_by_option: picbase
+touches: [decompiler/crates/kuna-analysis/src/listing/kuna_picbase.rs, decompiler/crates/kuna-analysis/src/listing/xrefs.rs]
 scope: large
 regression_of: no-strings-inventory
 pr: null
-closed_in_round: null
+closed_in_round: 2
 closing_pr: null
 reject_reason: null
 ---
@@ -148,3 +148,4 @@ The owning function and reference count for the `Password: ` string, as promised
 - round 2 T_DEDUP (captain): SPLIT from `xrefs-unify-pe-import`, which cluster.py merged with it because `_subcommand()` in cluster.py only knows the pre-round-1 subcommand set, so `strings`, `xrefs`, `disassemble` and `unpack` all hash to '?' and any two wrong-output complaints about the new CLI surface collide. Worth a builder-tier fix alongside the probe JSON-escape defect.
 - round 2 T_REFUTE (captain): hypothesis **UPHELD** (EBX-thunk address formation confirmed in the disassembly), but `scope: small` is refuted -- the string's address never appears as a literal in the image, so no address-matching fix can work and any nearby-function heuristic would attribute ownership WRONGLY. Re-scope at T_TRIAGE.
 - round 2 T_TRIAGE (captain): scope small -> LARGE and touches kuna-decomp -> kuna-analysis/src/listing/xrefs.rs. T_REFUTE proved no address-matching fix can work (the literal 0x8049127 is nowhere in the image; the address is computed at run time by the CALL/POP EBX/ADD EBX,0x1a18 thunk in a NON-PIE i386 ELF), so the honest fix is constant propagation of the thunk base into the xref index -- a real analysis-tier feature whose failure mode is attributing a string to the WRONG function, with no gate that would see it. `kuna strings` computes xrefs_count in kuna-cli/src/strings.rs:191 but the index it queries is built by kuna_analysis::listing::xrefs::build, which is where the propagation belongs. track stays `quality`: the fix ships behind an option, so it must hold the counter leases.
+- round 2 BUILDER (b-r2-strings-json-fai): CLOSED by `option picbase` (analysis tier, default-on, DIV-104), a new `kuna_picbase.rs` in the owning phase folder plus a gated seam in `listing/xrefs.rs (build)`. The captain's diagnosis held in full and the fix is the one T_TRIAGE named: constant propagation of the thunk base into the xref index, via a small abstract machine (constants + stack offsets) that follows the `call`'s push into the `pop`. Two findings the record did not anticipate. (1) **A function-local propagation cannot close this need**: kuna's inventory splits the witness's prompt routine into four entries at its `int3` traps, so the idiom that sets `ebx` up is in `sub_80489e6` while the `lea` that forms the prompt is in `sub_8048ace`. The module-wide claim is therefore load-bearing, and it is licensed by cross-checking the recovered value against the image's own `_GLOBAL_OFFSET_TABLE_` and requiring every idiom in the program to agree on one register. (2) The wrong-output risk T_REFUTE named is refused structurally: the base is offered only to a function whose body never writes the register, or from its own establishment up to the next write of it, and the fixture carries a standing negative (`clobbers`, whose `lea secret@GOTOFF(%ebx)` off `0x11111111` must stay unattributed). Witness: 3 of the 4 `.rodata` strings now name their owning function; the 4th is a self-modifying banner no instruction statically forms, and 0 is the right answer for it.

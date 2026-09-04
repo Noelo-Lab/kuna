@@ -1762,6 +1762,49 @@ computed, and which therefore lifts to a `LOAD` through a temporary); the class 
 never derived from a shared symbol name, which would fold genuinely distinct
 same-named functions together.
 
+(kuna) Both of those rules read a reference out of *one instruction's* p-code,
+which is the whole answer on x86-64 and no answer at all in 32-bit
+position-independent code. There the address of a string, a global or a function
+pointer is never a constant in the instruction that uses it: the program
+materialises the GOT pointer at run time — `call <next instruction>; pop ebx; add
+ebx,imm`, an idiom that exists for no other purpose — and every literal is reached
+as base-plus-displacement, so the address occurs nowhere in the image and the
+constant scan reports that every string in the program is referenced by nothing.
+**PIC base folding** (`picbase`, default-on,
+`decompiler/crates/kuna-analysis/src/listing/kuna_picbase.rs`) closes that with a
+deliberately tiny abstract machine over the same whole p-code the query already
+keeps: a value is a constant or an offset from the stack pointer, memory is
+modelled only at stack offsets (enough to follow the `call`'s push into the
+`pop`), a constant is tainted as PC-derived when it equals its own instruction's
+fall-through, and only a tainted value may establish a base — so a plain
+`mov ebx,imm` cannot. GCC's out-of-line form is covered by the same machine: a
+direct call whose callee delivers the return address in a register (probed like a
+veneer, at most two instructions) hands that register the call's own
+fall-through. Three shapes are then read off each instruction *independently*, with
+the base seeded and nothing else assumed, so no state crosses a control-flow
+edge: the address a `LOAD` reads, the address a `STORE` writes, and a constant
+that lands in a register, which is the address-taken case. A value computed only
+into a temporary is deliberately not reported — in an indexed access the array
+base lands in one, and filing it would claim a reference the instruction does not
+form.
+
+Two claims hide in that and they are licensed differently. A function that runs
+the idiom *itself* computes the value and assumes nothing. A function that only
+uses an inherited base — which is the case that matters, because kuna's own
+inventory splits the filing crackme's prompt routine at its `int3` traps and the
+`lea` that forms the prompt lands in a different entry from the idiom that set the
+register up — is relying on the i386 System V ABI reserving that register as the
+module's GOT pointer, so the recovered value is cross-checked against the image's
+own `_GLOBAL_OFFSET_TABLE_` (the `.got.plt`/`.got` address) and every idiom in the
+program must agree on one register and one value; absent that, nothing is claimed
+module-wide. The rule that keeps ownership honest is refusal rather than
+guesswork, because attributing a string to a function that merely sits near it is
+worse than reporting nothing and no parity gate could see it: the base is offered
+to a function whose body never writes the register at all, or from its own
+establishment up to the next write of it (in GCC output, the epilogue's restore),
+and to no other function. A body that reuses the register for its own purposes
+contributes no references rather than wrong ones.
+
 ## 1.7 The no-return family
 
 Whether a call falls through decides the CFG of every caller, so no-return facts
