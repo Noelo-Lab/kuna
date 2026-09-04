@@ -949,11 +949,14 @@ decomp_command!(
         }
         // Build the Funcdata + follow flow (C++ Funcdata + followFlow), seeding any
         // `override flow` facts stashed for this function before flow follows.
+        // A `function bounds` declaration for this entry bounds the follow;
+        // without one the extent is the natural (unbounded) one.
+        let declared = prog.declared_extent(entry.get_offset());
         let fd = build_and_follow_flow_with_override(
             prog.arch_mut(),
             &resolved_name,
             entry,
-            UNBOUNDED_SIZE,
+            declared,
             &flow_overrides,
         )
         .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
@@ -978,7 +981,7 @@ decomp_command!(
             .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
         // C++ Address offset = parse_machaddr(s,size,*dcp->conf->types) — the full
         // console address grammar over the engine spaces.
-        let (requested, _size) = parse_machaddr(prog, s, false).map_err(IfaceError::parse)?;
+        let (requested, parsed_size) = parse_machaddr(prog, s, false).map_err(IfaceError::parse)?;
         let in_default_space = requested
             .get_space()
             .zip(prog.arch().manage().get_default_code_space())
@@ -1021,8 +1024,20 @@ decomp_command!(
         }
         // The symbol-table addFunction is a later boundary; build the Funcdata
         // + follow flow directly (C++ addFunction + followFlow).
+        // `load addr [ram,<start>,<size>]` states the extent inline (C++
+        // `followFlow(offset, offset+size)`); an extent already declared for this
+        // entry by `map function` applies when the command carries none.  The
+        // parsed size is the address's own byte width when no `,<size>` was
+        // given, so only a size that exceeds it is a real bound.
+        let inline_size =
+            if parsed_size > requested.get_addr_size() { parsed_size } else { UNBOUNDED_SIZE };
+        let declared =
+            if inline_size > 0 { inline_size } else { prog.declared_extent(offset.get_offset()) };
+        if inline_size > 0 {
+            prog.declare_extent(offset.get_offset(), inline_size);
+        }
         let fd =
-            build_and_follow_flow_with_override(prog.arch_mut(), &name, offset, UNBOUNDED_SIZE, &flow_overrides)
+            build_and_follow_flow_with_override(prog.arch_mut(), &name, offset, declared, &flow_overrides)
                 .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
         dcp.fd = Some(fd);
         Ok(())

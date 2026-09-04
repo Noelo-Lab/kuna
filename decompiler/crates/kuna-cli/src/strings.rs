@@ -168,6 +168,7 @@ fn attribute(
         no_vars: true,
         max_fn_seconds: 0,
         options,
+        func_decls: Vec::new(),
         slice: args.slice.clone(),
         target: args.target.clone(),
         sleighpath: args.sleighpath.clone(),

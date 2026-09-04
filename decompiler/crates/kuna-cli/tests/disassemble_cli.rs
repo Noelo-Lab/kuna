@@ -38,6 +38,9 @@ mod output;
 #[path = "../src/paths.rs"]
 mod paths;
 #[allow(dead_code)]
+#[path = "../src/funcdecl.rs"]
+mod funcdecl;
+#[allow(dead_code)]
 #[path = "../src/decompile.rs"]
 mod decompile;
 #[allow(dead_code)]

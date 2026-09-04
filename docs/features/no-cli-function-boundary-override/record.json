@@ -1,0 +1,52 @@
+{
+  "slug": "no-cli-function-boundary-override",
+  "need_id": "no-cli-function-boundary-override",
+  "track": "tooling",
+  "scope": "large",
+  "round": 2,
+  "branch": "feat/re-no-cli-function-boundary-override",
+  "summary": "--define-function <start[-end][=name] | @file>: the caller-declared function boundary, on decompile / decompile-all / functions / decompile-project / disassemble, over a new console `function bounds` command and a per-program declared-extent store.",
+  "decisions": [
+    {
+      "what": "hypothesis UPHELD on the start half, OVERTURNED on the end half",
+      "detail": "The need's hypothesis was 'the cheap half is exposure, the expensive half is the stubs'. Declaring a START really was pure exposure. But no stub was involved in the END half: it was inert PLUMBING. Funcdata::size is threaded from map function / load addr / decompile_one all the way to Architecture::new_funcdata, and FlowInfo carries a fully ported set_range / new_address / fallthru / handle_out_of_bounds range machinery. The two ends were simply never joined -- every call site passed UNBOUNDED_SIZE and follow_flow_on_fd never called set_range. Joining them is ~10 lines in decompile_drive.rs, not an engine port."
+    },
+    {
+      "what": "a durable store, not a one-shot flag",
+      "detail": "ConsoleProgram::declared_extents (entry VMA -> byte size) is consulted by every later load of that entry -- load function, load addr, and the whole-binary loop -- and by funcextent when the inventory reports an extent. A declaration therefore outlives the one command that made it. Durability across PROCESSES is caller-carried by design: the @file form is the artifact, and kuna does not write boundaries back into the image."
+    },
+    {
+      "what": "the silent-truncation failure mode, found by refuting the mechanism rather than the no-op",
+      "detail": "A declared end that cuts real control flow produced an EMPTY body with error:null and no diagnostic -- the one failure mode the flag introduces was invisible. FlowInfo::handle_out_of_bounds computed the C++ 'Function flow out of bounds' message and dropped it (a W4 stub). Un-stubbed to the two Funcdata::warning / warning_header calls the C++ makes. The flow range is the whole entry-point space unless an extent is declared, so this fires only under a declared boundary."
+    },
+    {
+      "what": "read-only surfaces only; no engine default changes",
+      "detail": "No phases.toml row, no options.rs registration, no catalog counter, no stages XML: a CLI flag that only supplies caller assertions cannot change emitted C for a run that does not pass it. Proven, not asserted -- see inertness below."
+    }
+  ],
+  "inertness": {
+    "method": "decompile-all --json over every real-ELF fixture in kuna-analysis/tests/fixtures, main's release kuna vs this branch's, binary path normalized",
+    "fixtures": 73,
+    "differing": 0,
+    "note": "The two parity corpora are symbol-less bytechunks, so they never reach the real-ELF loader path; this sweep is what covers it."
+  },
+  "gates": {
+    "make test": "PARITY OK, 675/675 assertions",
+    "make test-stages": "PARITY OK, 594/594 assertions",
+    "make rust-test": "green (KUNA_DECOMP_TEST must be unset: the repipe harness points that C++-oracle variable at a Rust decomp_test_dbg, which makes verify_w10_proto_unlock compare Rust against Rust and fail spuriously)",
+    "make check-spec": "OK",
+    "kuna catalog --check": "OK"
+  },
+  "acceptance": {
+    "acceptance_id": "a-88c4db106ade",
+    "result": "PASS",
+    "promoted_to": "tests/cli/no-cli-function-boundary-override.json",
+    "reproduction_confirmed_on_main": "p-83ce32ba278c passes on main (5fec5ff9): exit 2, 'error: unknown option --define-function'; the acceptance fails there for the same reason"
+  },
+  "not_closed": [
+    "xrefs and strings load through the same Args but do not accept the flag (they pass an empty declaration list).",
+    "Cross-process durability is the @file, not state kuna owns; kuna never writes boundaries back into the image.",
+    "Renaming is only the =NAME half of a boundary declaration -- general rename/prototype override is no-cli-rename-or-prototype-override.",
+    "Data-vs-code and structuring overrides are the separate open needs no-cli-data-code-override and no-cli-structuring-override."
+  ]
+}

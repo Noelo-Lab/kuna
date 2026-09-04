@@ -53,6 +53,31 @@ ops beyond the deepest internal branch time are dead and deleted
 (`delete_remaining_ops`). The op-creation and classification order here is
 observable — it fixes the SeqNum allocation every later phase keys on.
 
+**Declared flow bounds.** A function normally follows flow wherever the code
+goes: `FlowInfo`'s allowed range is initialized to the whole entry-point space, so
+the extent is discovered, not asserted. A `Funcdata` that carries a non-zero byte
+size instead restricts flow to `[entry, entry + size - 1]`
+(`decompile_drive.rs (follow_flow_on_fd)` calls `flow.rs (FlowInfo::set_range)`
+before op generation, the C++ `Funcdata::followFlow(baddr, eaddr)` shape). `eaddr`
+is inclusive, so the last in-body byte is `entry + size - 1`. A branch target
+outside the range is not followed (`flow.rs (FlowInfo::new_address)`), and
+fall-through stops when it would leave it (`flow.rs (FlowInfo::fallthru)`); both
+route through `flow.rs (FlowInfo::handle_out_of_bounds)`, which under the default
+flow options continues rather than failing the decompile — `errorreinterpreted`-style
+hard failure needs `error_outofbounds`.
+
+Continuing quietly would be the wrong contract for a *declared* bound, because the
+caller cannot otherwise tell a correct boundary from one that truncated the body:
+both just produce a shorter function. So the out-of-bounds handler emits the C++
+diagnostics — a `Funcdata::warning` at each cut edge and, once per function, the
+`Function flows out of bounds` `Funcdata::warning_header` — which the emitter
+renders as comments on the prototype and the offending statement. A correctly
+declared function ends in a return and never leaves its range, so a warning here
+means the declared end is wrong. Size 0 is the unbounded default every caller took
+until the boundary-declaration surface existed (chapter
+[00 §0.4](00-overview.md)) and leaves the range at the whole entry-point space, so
+both the bound and its diagnostics are inert for a run that declares nothing.
+
 **Decode scratch storage.** Every SLEIGH translation checks out a parser
 context from the engine-local pool
 (`decompiler/crates/kuna-sleigh/src/sleigh.rs (Sleigh::checkout_context)`).

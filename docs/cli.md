@@ -43,6 +43,51 @@ interactive prompts never pollute the output. `--option NAME VALUE` (repeatable)
 `--kassert "<args>"` flip phase-model sub-phase assertions per run; `--mode
 auto|reliable|aggressive|fast` applies an option preset (`docs/modes.md`).
 
+**`--define-function <start[-end][=name] | @file>`** (repeatable) tells kuna where a
+function starts and ends. Every boundary kuna knows is otherwise *derived* —
+discovery finds the entries, and the extent is the address-contiguous clip to the
+next one over an unbounded flow follow — which is the wrong answer on exactly the
+images where reverse engineering is hard. A missed entry merges two functions into
+one; a phantom one invents a function that is not there.
+
+```bash
+# an entry discovery missed: name it and decompile it
+kuna decompile ./packed.bin 0x4014a0 --addr --define-function 0x4014a0=stage2
+
+# two functions merged into one: say where the first really ends
+kuna decompile ./packed.bin --addr 0x4013c9 --define-function 0x4013c9-0x401420=stage1
+
+# keep the boundaries you worked out, and pass them to every later command
+cat > bounds.txt <<'EOF'
+# recovered by hand from the unpacked image
+0x4013c9-0x401420 = stage1
+0x401420-0x401500 = stage2
+EOF
+kuna functions ./packed.bin --json --define-function @bounds.txt
+```
+
+`start` declares the entry: it gets a function symbol (so call sites name it), it
+enumerates in `kuna functions`, and it resolves by name. `end` is **exclusive** and
+declares the extent: flow following stops there, so the body no longer swallows its
+neighbours, and the extent reported by `kuna functions --json` is the declared one
+rather than the clip. `=name` is optional and names the entry (an entry the image
+already named keeps its name unless you supply one); `end` is optional too — a bare
+`--define-function 0x4014a0` asserts an entry and leaves the extent natural.
+Addresses are hexadecimal with or without `0x`.
+
+A declared `end` that cuts real control flow is reported rather than silently
+truncating the body: the function carries a `WARNING: Function flows out of bounds`
+comment on its prototype and one at each cut edge. A correct boundary ends in a
+return and produces no warning, so that comment is the signal to widen the range.
+
+The `@file` form is the durable one: one declaration per line, `#` comments and
+blank lines skipped. kuna does not write boundaries back into the image, so the file
+is the artifact — generate it, diff it, and pass it to every invocation. The flag is
+accepted by `decompile`, `decompile-all`, `functions`, `decompile-project` and
+`disassemble`; a declaration is applied after analysis has had its say, so it
+overrides discovery rather than competing with it. The console spelling, for a
+hand-driven `decomp_dbg` session, is `function bounds <start> [<end>] [as <name>]`.
+
 **Paths containing spaces work (DIV-100).** This is the one surface that reaches the engine
 through a console *script* rather than an in-process call, and the console reads a
 filename with `s >> filename` — whitespace-delimited. An unquoted path with a space

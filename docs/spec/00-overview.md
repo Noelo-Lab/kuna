@@ -604,6 +604,48 @@ console/parity paths never set one. It is not a hard wall around discovery,
 unprobed SLEIGH work, C rendering and variable extraction, assembly/JSON
 construction, total project time, or memory.
 
+(kuna) **Declared function boundaries.** Every function boundary the engine knows
+is derived: discovery supplies the entries, and the extent is the
+address-contiguous clip `[entry, next_entry)` over an unbounded flow follow
+(`decompiler/crates/kuna-console/src/funcextent.rs`). That is the wrong answer on
+exactly the images where reverse engineering is hard — obfuscated, packed or
+hand-written code, where a missed entry merges two functions and an invented one
+splits a body — so a caller can override both halves.
+
+The primitive is a **declared extent**, entry VMA → byte size, held per program in
+`decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::declared_extents)`
+and written by
+`decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::declare_function)`.
+Declaring also installs the `FunctionSymbol` and the name→address registration
+`map function` installs, so the entry enumerates, resolves by name and names its
+call sites; an address that already carries a function symbol is renamed rather
+than given a second one, and only when the caller supplied a name. The store is
+consulted by every later load of that entry — `load function`, `load addr`
+(`decompiler/crates/kuna-console/src/ifacedecomp.rs`) and the whole-binary loop
+(`decompiler/crates/kuna-console/src/project.rs (decompile_targets)`) — which pass
+it as the `Funcdata` size that bounds flow following (chapter
+[02 §2.1](02-lift-and-flow.md)), and by `funcextent` when the inventory reports an
+extent. A declaration therefore outlives the one command that made it, which is
+what separates an interface from a one-shot flag.
+
+Two surfaces reach it. The console command is `function bounds <start> [<end>]
+[as <name>]`
+(`decompiler/crates/kuna-console/src/kuna_console.rs (IfcKunaFunctionBounds)`),
+which takes plain integers rather than the `parse_machaddr` address grammar
+precisely because that grammar's `[space,offset,size]` size is indistinguishable
+from the address width for a small size, and keys the name with `as` so a
+declaration that gives a name but no extent cannot have its name read as the end
+address. The CLI flag is `--define-function <start[-end][=name] | @file>`
+(`decompiler/crates/kuna-cli/src/funcdecl.rs`), repeatable, honored by
+`decompile`, `decompile-all`, `functions`, `decompile-project` and `disassemble`.
+`end` is exclusive. The script surface emits the console command AFTER `read
+symbols` and BEFORE the load, and the in-process surfaces apply the declarations
+after `commit_pending_analysis`
+(`decompiler/crates/kuna-cli/src/decompile_all.rs (load_program)`): in both, a
+declaration is applied after discovery has had its say, because it is an assertion
+that outranks it. Durability is caller-carried — the `@file` form is the artifact,
+and kuna does not write boundaries back into the image.
+
 (kuna) **Load-time env bridges.** Seven loader gates are consumed *inside* the
 bootstrap — before any console `option` line can possibly run — so the option
 surface alone cannot deliver them; each is bridged through a process environment

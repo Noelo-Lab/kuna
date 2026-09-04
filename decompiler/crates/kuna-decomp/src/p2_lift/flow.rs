@@ -897,10 +897,15 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         if (self.flags & flow_flags::ignore_outofbounds) == 0 {
             let msg = Self::out_of_bounds_message(fromaddr, toaddr);
             if (self.flags & flow_flags::error_outofbounds) == 0 {
-                // data.warning(msg, toaddr);  -- STUB(W4): warning store.
+                // (kuna) The C++ `data.warning`/`data.warningHeader` calls, no
+                // longer stubbed: the range is the whole entry-point space unless
+                // a caller declares a function extent, so this fires only under a
+                // declared boundary — and a declared end that cuts real flow must
+                // say so rather than silently truncating the body.
+                self.data.warning(&msg, toaddr);
                 if !self.has_out_of_bounds() {
                     self.flags |= flow_flags::outofbounds_present;
-                    // data.warningHeader("Function flows out of bounds");  -- STUB(W4)
+                    self.data.warning_header("Function flows out of bounds");
                 }
             } else {
                 return Err(KunaError::lowlevel(msg));

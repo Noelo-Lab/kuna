@@ -89,6 +89,10 @@ pub(crate) struct DisArgs {
     pub(crate) bytes: Option<u64>,
     pub(crate) json: bool,
     pub(crate) options: Vec<(String, String)>,
+    /// `--define-function <start[-end][=name] | @file>` (repeatable): declared
+    /// function boundaries, applied at load so `disassemble <name>` resolves a
+    /// name the image never carried and the walk stops at the declared end.
+    pub(crate) func_decls: Vec<crate::funcdecl::FuncDecl>,
     pub(crate) mode: Option<String>,
     pub(crate) slice: Option<String>,
     pub(crate) target: Option<String>,
@@ -170,6 +174,7 @@ pub(crate) fn render(args: &DisArgs) -> Result<String, String> {
         no_vars: true,
         max_fn_seconds: 0,
         options,
+        func_decls: args.func_decls.clone(),
         slice: args.slice.clone(),
         target: args.target.clone(),
         sleighpath: args.sleighpath.clone(),
@@ -445,6 +450,7 @@ pub(crate) fn parse_args(argv: &[String]) -> Result<DisArgs, String> {
     let mut bytes: Option<u64> = None;
     let mut json = false;
     let mut options: Vec<(String, String)> = Vec::new();
+    let mut func_decls: Vec<crate::funcdecl::FuncDecl> = Vec::new();
     let mut mode: Option<String> = None;
     let mut slice: Option<String> = None;
     let mut target: Option<String> = None;
@@ -466,6 +472,10 @@ pub(crate) fn parse_args(argv: &[String]) -> Result<DisArgs, String> {
                 i += 2;
             }
             "--mode" => mode = Some(take(argv, &mut i, "--mode")?),
+            "--define-function" => {
+                let v = take(argv, &mut i, "--define-function")?;
+                func_decls.extend(crate::funcdecl::parse_flag(&v)?);
+            }
             "--slice" => slice = Some(take(argv, &mut i, "--slice")?),
             "--target" => target = Some(take(argv, &mut i, "--target")?),
             "--sleighpath" => sleighpath = Some(take(argv, &mut i, "--sleighpath")?),
@@ -493,6 +503,7 @@ pub(crate) fn parse_args(argv: &[String]) -> Result<DisArgs, String> {
         bytes,
         json,
         options,
+        func_decls,
         mode,
         slice,
         target,
@@ -520,12 +531,16 @@ fn usage() {
     eprintln!(
         "usage: kuna disassemble <binary> <name|0xaddr|0xstart-0xend> [--addr] [--count N] \\\n\
          \x20                    [--bytes N] [--json] [--mode auto|reliable|aggressive|fast] \\\n\
+         \x20                    [--define-function S[-E][=N]|@FILE].. \\\n\
          \x20                    [--option N V].. [--slice ARCH] [--target T] [--sleighpath D]\n\
          \n\
          The target is a function name, an address (--addr for a bare hex one), or an\n\
          explicit range (0x1000-0x1040 / 0x1000..0x1040) for bytes no function owns.\n\
          A named function lists its whole extent; a raw address lists 64 bytes unless\n\
          --count / --bytes / a range says otherwise.\n\
+         \n\
+         --define-function <start[-end][=name] | @file> (repeatable) declares a\n\
+         boundary first, so a name the image never carried becomes a valid target.\n\
          \n\
          --json emits {{binary,target,start,end,count,bytes,truncated,instructions:\n\
          [{{address,address_hex,size,bytes,mnemonic,operands,text}}]}}; without it, a\n\

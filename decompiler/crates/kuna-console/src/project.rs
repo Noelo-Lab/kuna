@@ -180,11 +180,15 @@ pub fn decompile_targets(
         // was a silent no-op on every whole-binary surface. `discovered` is
         // dropped: each function is decompiled exactly once here, so there is no
         // later re-decompile to persist it for.
+        // A caller-declared extent (`function bounds` / `kuna --define-function`)
+        // bounds this function's flow follow; 0 — the usual case — is the natural,
+        // unbounded extent.
+        let declared = prog.declared_extent(address);
         match crate::decompile_step::decompile_one(
             prog.arch_mut(),
             &name,
             entry,
-            0, // UNBOUNDED: the function's natural flow extent
+            declared,
             &crate::decompile_step::DecompileSeed::plain(&mapped, &flow_ovr),
             &[],
         )

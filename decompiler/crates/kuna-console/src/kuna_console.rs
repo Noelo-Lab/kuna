@@ -1213,6 +1213,97 @@ impl IfaceCommandAction for IfcKunaFunctions {
     }
 }
 
+/// (kuna) `function bounds <start> [<end>] [as <name>]`: declare where a
+/// function starts and ends.
+///
+/// The one console primitive for "function F spans `[start,end)`", which kuna
+/// otherwise has nowhere to say: every extent is DERIVED (the address-contiguous
+/// clip in `funcextent`, and an unbounded flow follow), so on an obfuscated or
+/// packed image — where discovery is exactly what fails — the caller had no way
+/// to correct it (`docs/re-needs/no-cli-function-boundary-override.md`).
+///
+/// `start` registers the entry the way `map function` does, so it enumerates,
+/// resolves by name and names its call sites.  `end` is EXCLUSIVE and records
+/// the entry's declared extent, which bounds every later flow follow of it
+/// (`ConsoleProgram::declared_extent` -> `Funcdata::size` -> `FlowInfo::setRange`)
+/// and replaces the clip the inventory reports.  Both are plain integers in the
+/// default code space — no `parse_machaddr` size grammar, whose `[ram,a,n]` size
+/// is indistinguishable from the address width for a small `n` — and the name is
+/// keyed by `as` so a declaration that gives a name but no extent cannot have
+/// its name read as the end address.
+pub struct IfcKunaFunctionBounds;
+
+impl IfaceCommandAction for IfcKunaFunctionBounds {
+    fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
+        let start = read_vma(&s.read_token())
+            .ok_or_else(|| IfaceError::parse("Missing function start address"))?;
+        s.skip_ws();
+        let mut tok = s.read_token();
+        let mut end = None;
+        if !tok.is_empty() && tok != "as" {
+            end = Some(
+                read_vma(&tok)
+                    .ok_or_else(|| IfaceError::parse(format!("Bad end address {tok:?}")))?,
+            );
+            s.skip_ws();
+            tok = s.read_token();
+        }
+        let name = if tok == "as" {
+            s.skip_ws();
+            let name = s.read_token();
+            if name.is_empty() {
+                return Err(IfaceError::parse("Missing name after 'as'"));
+            }
+            Some(name)
+        } else if tok.is_empty() {
+            None
+        } else {
+            return Err(IfaceError::parse(format!("Unexpected token {tok:?} (expected 'as')")));
+        };
+        let size = match end {
+            None => 0,
+            Some(end) if end > start => (end - start) as kuna_base::types::int4,
+            Some(end) => {
+                return Err(IfaceError::parse(format!(
+                    "function bounds: end {end:#x} must be above start {start:#x}"
+                )))
+            }
+        };
+        let dcp = dcp_mut(status)?;
+        let prog = dcp
+            .conf
+            .as_mut()
+            .ok_or_else(|| IfaceError::execution("No load image present"))?;
+        let space = prog
+            .arch()
+            .manage()
+            .get_default_code_space()
+            .cloned()
+            .ok_or_else(|| IfaceError::execution("No default code space"))?;
+        let addr = kuna_base::address::Address::new(space, start);
+        let name = prog
+            .declare_function(addr, name.as_deref(), size)
+            .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+        status.out(&format!("Declared {name} at {start:#x} spanning {size} bytes\n"));
+        Ok(())
+    }
+
+    fn module(&self) -> String {
+        DECOMPILE_MODULE.to_string()
+    }
+}
+
+/// Read a `0x`-prefixed-or-bare hexadecimal VMA token.  `function bounds` takes
+/// plain numbers rather than the console address grammar precisely so its size
+/// argument cannot be confused with an address width.
+fn read_vma(tok: &str) -> Option<u64> {
+    let body = tok.strip_prefix("0x").or_else(|| tok.strip_prefix("0X")).unwrap_or(tok);
+    if body.is_empty() || !body.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+    u64::from_str_radix(body, 16).ok()
+}
+
 // ---------------------------------------------------------------------------
 // Registration — IfaceKunaCapability::registerCommands
 // ---------------------------------------------------------------------------
@@ -1245,6 +1336,9 @@ pub fn register_kuna_commands(status: &mut IfaceStatus) {
     status.register_com(Box::new(IfcKunaRegionTree), &["region", "tree"]);
     status.register_com(Box::new(IfcKunaRegionBlocks), &["region", "blocks"]);
     status.register_com(Box::new(IfcKunaRegionWalk), &["region", "walk"]);
+    // (kuna) Not a C++ command: the function-boundary override the `kuna` binary
+    // exposes as `--define-function`.
+    status.register_com(Box::new(IfcKunaFunctionBounds), &["function", "bounds"]);
 }
 
 /// Join tokens with single spaces — C++ `joinTokens(tokens,0,tokens.size())`.

@@ -174,6 +174,19 @@ pub struct ConsoleProgram {
     /// objects — `optind`, `stdin`, `stdout`, `optarg` — live). Empty on the XML
     /// datatest path and for a relocatable object.
     loader_data_objects: Vec<(u64, String, u64)>,
+    /// (kuna) **Caller-declared function extents**, entry VMA → byte size — what
+    /// the console `function bounds <start> <end>` and the CLI
+    /// `kuna --define-function <start>-<end>` assert, and the only place kuna
+    /// carries "function F spans [start,end)" at all. (`map function` still
+    /// ignores its size argument; only these two surfaces write here.)
+    ///
+    /// Consulted by every later load of that entry (`load function`, `load addr`,
+    /// the whole-binary loop) so the declaration outlives the one command that
+    /// made it, and by [`crate::funcextent`] so the inventory reports what the
+    /// caller asserted rather than the address-contiguous clip it guesses.
+    /// Non-zero sizes only: a bare declaration with no extent leaves the entry
+    /// unbounded, which is the engine-wide `UNBOUNDED_SIZE` default.
+    declared_extents: BTreeMap<u64, int4>,
 }
 
 impl ConsoleProgram {
@@ -338,6 +351,16 @@ impl ConsoleProgram {
             &mut entries,
             &crate::funcextent::code_spans(&self.sections()),
         );
+        // A caller-declared extent is an assertion, not a guess: it outranks the
+        // clip everywhere the clip is reported (`declared_extents`).
+        if self.has_declared_extents() {
+            for entry in &mut entries {
+                let declared = self.declared_extent(entry.addr.get_offset());
+                if declared > 0 {
+                    entry.size = declared as u64;
+                }
+            }
+        }
         entries
     }
 
@@ -349,6 +372,10 @@ impl ConsoleProgram {
     /// [`crate::funcextent`].
     pub fn function_extent_at(&self, vma: u64) -> u64 {
         let entry = self.thumb_normalized(vma);
+        let declared = self.declared_extent(entry);
+        if declared > 0 {
+            return declared as u64;
+        }
         let entries: Vec<u64> = self
             .function_entries_canonical()
             .iter()
@@ -1042,6 +1069,81 @@ impl ConsoleProgram {
         });
     }
 
+    /// Record a caller-declared byte extent for the function entered at `vma`
+    /// (`declared_extents`); `size <= 0` clears it back to unbounded.
+    pub fn declare_extent(&mut self, vma: u64, size: int4) {
+        if size > 0 {
+            self.declared_extents.insert(vma, size);
+        } else {
+            self.declared_extents.remove(&vma);
+        }
+    }
+
+    /// The caller-declared byte extent of the function entered at `vma`, or
+    /// [`UNBOUNDED_SIZE`] when none was declared — the value every load of that
+    /// entry passes as the analysis-size bound.
+    pub fn declared_extent(&self, vma: u64) -> int4 {
+        self.declared_extents.get(&vma).copied().unwrap_or(UNBOUNDED_SIZE)
+    }
+
+    /// Is any function extent declared for this program?  Cheap enough to gate a
+    /// per-entry lookup in the inventory bulk pass.
+    pub fn has_declared_extents(&self) -> bool {
+        !self.declared_extents.is_empty()
+    }
+
+    /// Declare a function at `addr` — the in-process twin of the console
+    /// `map function <addr> [name]` command (`IfcMapfunction`), plus the extent
+    /// the console form cannot express on its own.
+    ///
+    /// Installs the `FunctionSymbol` (so a CALL here resolves to `name`),
+    /// registers the name→address entry (so `load function <name>` and the
+    /// whole-binary enumeration both see it), and records `size` as the entry's
+    /// declared extent (`0` = unbounded).
+    ///
+    /// An address that already carries a function symbol is RENAMED rather than
+    /// given a second one, but only when the caller named it: the symbol table
+    /// keys a function by address, so adding a second symbol there would leave
+    /// two names competing for one entry.  With no explicit name, an already-named
+    /// address keeps its name and only the extent is recorded.
+    pub fn declare_function(
+        &mut self,
+        addr: Address,
+        name: Option<&str>,
+        size: int4,
+    ) -> KunaResult<String> {
+        let explicit = name.map(str::to_string).filter(|n| !n.is_empty());
+        let name = match &explicit {
+            Some(n) => n.clone(),
+            None => self.arch().name_function(&addr),
+        };
+        let type_code = self.arch().types().get_type_code()?;
+        let min_size = self.arch().min_funcsymbol_size;
+        let num_spaces = self.arch().manage().num_spaces() as int4;
+        let arch = self.arch_mut();
+        let (scope, basename) =
+            arch.symboltab.find_create_scope_from_symbol_name(&name, "::", None, num_spaces)?;
+        let name = match arch.symboltab.find_function_across_scopes(&addr) {
+            Some((sym, _)) => match &explicit {
+                Some(_) => {
+                    arch.symboltab.rename_symbol(sym, &basename)?;
+                    name
+                }
+                // Nothing asked for: keep the name the image or the analysis gave
+                // this entry rather than overwriting it with `sub_<addr>`.
+                None => arch.symboltab.symbol(sym).get_display_name().to_string(),
+            },
+            None => {
+                arch.symboltab.add_function(scope, &addr, &basename, min_size, type_code)?;
+                name
+            }
+        };
+        let vma = addr.get_offset();
+        self.register_symbol(&name, addr);
+        self.declare_extent(vma, size);
+        Ok(name)
+    }
+
     /// (kuna) Build the `map addr`-shaped stack-symbol specs for the DWARF stack
     /// LOCALS parked on the function whose entry VMA is `func_addr` (DWARF subtask 3).
     ///
@@ -1633,6 +1735,7 @@ pub fn bootstrap_program(
         dwarf_locals: Vec::new(),
         analysis_image: None,
         loader_data_objects: Vec::new(),
+        declared_extents: BTreeMap::new(),
     };
     // C++ `conf->readLoaderSymbols("::")` (testfunction.cc:160 / consolemain.cc:104):
     // install the binaryimage symbols as FunctionSymbols so a CALL to one resolves
@@ -1869,6 +1972,7 @@ pub fn bootstrap_from_object(
         // here (it is unused below this point).
         analysis_image: Some((path.to_string(), bytes)),
         loader_data_objects,
+        declared_extents: BTreeMap::new(),
     };
     // conf->readLoaderSymbols("::"): install the ELF symbols as FunctionSymbols.
     // The deferred analysis commit at `read symbols` REQUIRES this to have run
