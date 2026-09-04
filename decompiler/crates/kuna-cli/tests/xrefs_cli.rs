@@ -2,11 +2,12 @@
 //! real vendored fixtures and asserts the cross-reference surface an RE agent
 //! consumes: both directions, every `kind`, and the JSON shape.
 //!
-//! The load-bearing case is the promoted acceptance probe
-//! ([`the_acceptance_probe`]): `--to 0x1030` on the stripped PIE
-//! `aif_gap_x86_64`, whose `.plt.got` thunk is called from exactly one site
-//! (`0x1102`). Before `kuna xrefs` existed there was no way to ask that question
-//! at all.
+//! Two promoted acceptance probes are load-bearing here. [`the_acceptance_probe`]
+//! is `--to 0x1030` on the stripped PIE `aif_gap_x86_64`, whose `.plt.got` thunk
+//! `_FINI_0` both guards on and calls — before `kuna xrefs` existed there was no
+//! way to ask that question at all. [`a_pe_import_answers_the_same_at_its_veneer_and_at_its_slot`]
+//! is the `xrefs-unify-pe-import` need: an import has two addresses under one
+//! name, and asking either must answer the same.
 //!
 //! ## `.sla` precondition
 //!
@@ -42,6 +43,13 @@ fn aif_gap() -> String {
 /// string-to-its-users workflow needs.
 fn fauxware() -> String {
     fixture("fauxware")
+}
+
+/// The vendored MinGW x86-64 PE. Every import in it has two addresses under one
+/// name — an `FF 25` veneer in `.text` and an IAT slot in `.idata` — which is the
+/// shape [`a_pe_import_answers_the_same_at_its_veneer_and_at_its_slot`] is about.
+fn pe_imports() -> String {
+    fixture("pe_imports.exe")
 }
 
 /// Run the built `kuna` binary, returning `(stdout, stderr, exit code)`.
@@ -117,9 +125,13 @@ fn the_acceptance_probe() {
     assert!(json_int(&doc, "count").unwrap() > 0, "no references found:\n{doc}");
     assert!(doc.contains("\"address_hex\":"), "no address_hex in a row:\n{doc}");
     assert_eq!(json_str(&doc, "direction").as_deref(), Some("to"));
-    // The one call site: `_FINI_0` @ 0x10e0 calls the `.plt.got` thunk at 0x1102.
-    assert_eq!(kinds(&doc), vec!["call"]);
+    // `_FINI_0` @ 0x10e0 uses `__cxa_finalize` twice, once through each of its
+    // two addresses: it null-checks the GOT slot at 0x3ff8 (the weak-symbol
+    // guard) and then calls the `.plt.got` veneer at 0x1030. Both are references
+    // to the same import, and both are reported whichever address is asked for.
+    assert_eq!(kinds(&doc), vec!["read", "call"]);
     assert!(doc.contains("\"address_hex\": \"0x1102\""), "wrong call site:\n{doc}");
+    assert!(doc.contains("\"address_hex\": \"0x10ee\""), "missing the guard read:\n{doc}");
     assert!(doc.contains("\"name\": \"_FINI_0\""), "call site unattributed:\n{doc}");
 }
 
@@ -133,7 +145,11 @@ fn every_row_names_both_ends_of_the_edge() {
     for key in ["from_address_hex", "to_address_hex", "from_function", "to_function"] {
         assert!(doc.contains(&format!("\"{key}\":")), "missing {key}:\n{doc}");
     }
-    assert_eq!(json_str(&doc, "to_address_hex").as_deref(), Some("0x1030"));
+    // Both of the import's addresses show up as a row's `to_address_hex`: the
+    // guard reads the GOT slot, the call goes through the veneer.
+    for to in ["0x1030", "0x3ff8"] {
+        assert!(doc.contains(&format!("\"to_address_hex\": \"{to}\"")), "no row to {to}:\n{doc}");
+    }
 }
 
 /// `--to` on a named function finds its call sites and attributes each to the
@@ -216,15 +232,88 @@ fn the_human_surface_is_a_header_plus_tab_separated_rows() {
     };
     let mut lines = text.lines();
     let header = lines.next().expect("a header line");
-    assert!(header.starts_with("# 1 reference to __cxa_finalize @ 0x1030"), "{text}");
+    assert!(header.starts_with("# 2 references to __cxa_finalize @ 0x1030"), "{text}");
     assert!(!text.contains('{'), "the human surface emitted JSON:\n{text}");
     let rows = rows(&text);
-    assert_eq!(rows.len(), 1, "{text}");
-    let cols: Vec<&str> = rows[0].split('\t').collect();
+    assert_eq!(rows.len(), 2, "{text}");
+    let cols: Vec<&str> = rows[1].split('\t').collect();
     assert_eq!(cols[0], "0x1102");
     assert_eq!(cols[1], "call");
     assert_eq!(cols[2], "_FINI_0+0x22");
     assert!(cols[3].contains("0x1030"), "the instruction column is missing: {:?}", cols);
+    // The other address the answer was taken over is named, so a count that does
+    // not match a raw grep of the target explains itself on the spot.
+    assert!(text.contains("# same import at 0x3ff8"), "the alias is unexplained:\n{text}");
+}
+
+/// **The `xrefs-unify-pe-import` acceptance probe** (`docs/re-needs/`), on the
+/// vendored twin of the crackme it was recorded against.
+///
+/// A MinGW PE reaches an import through two addresses that both carry its name —
+/// the `FF 25` veneer at `0x1400079b0` and the IAT slot at `0x14000d234` — and
+/// `kuna functions --filter VirtualProtect` shows an agent both. Asking the
+/// veneer used to answer `count: 0` although the program plainly calls
+/// `VirtualProtect`, because every call site references the slot instead. Both
+/// addresses must now answer with the same two real call sites.
+#[test]
+fn a_pe_import_answers_the_same_at_its_veneer_and_at_its_slot() {
+    const VENEER: &str = "0x1400079b0";
+    const SLOT: &str = "0x14000d234";
+    let Some(at_veneer) = xrefs(&[&pe_imports(), "--to", VENEER, "--json"]) else {
+        return;
+    };
+    let at_slot = xrefs(&[&pe_imports(), "--to", SLOT, "--json"]).expect("the slot query");
+
+    assert_eq!(json_str(&at_veneer, "name").as_deref(), Some("VirtualProtect"), "{at_veneer}");
+    assert_eq!(json_int(&at_veneer, "count"), Some(2), "{at_veneer}");
+    assert_eq!(json_int(&at_slot, "count"), Some(2), "{at_slot}");
+
+    // The two rows are the real uses of the import, in the two functions whose
+    // decompilation calls it: `__write_memory.part.0` calls straight through the
+    // slot, `_pei386_runtime_relocator` loads it into a register first.
+    for doc in [&at_veneer, &at_slot] {
+        for site in ["0x140001a9e", "0x140001cce"] {
+            assert!(doc.contains(&format!("\"from_address_hex\": \"{site}\"")), "no {site}:\n{doc}");
+        }
+        // The veneer's own `jmp [slot]` is the other half of the import, not a
+        // caller of it, and must never pad the count.
+        assert!(
+            !doc.contains(&format!("\"from_address_hex\": \"{VENEER}\"")),
+            "the forwarding jump was counted as a reference:\n{doc}"
+        );
+        assert!(doc.contains("\"aliases\":"), "the alias is not disclosed:\n{doc}");
+    }
+    // Not merely the same count: the same rows, byte for byte. The `xrefs` array
+    // is everything after the query's own `target` block, so slicing there
+    // compares the answer without comparing which address was asked for.
+    let answer = |doc: &str| doc[doc.find("\"xrefs\"").expect("an xrefs array")..].to_string();
+    assert_eq!(answer(&at_veneer), answer(&at_slot), "the two addresses of one import disagree");
+}
+
+/// The mirror case, and the reason the unification has to run both ways: `puts`
+/// is called through its veneer, so it is the *slot* that would otherwise report
+/// no users at all.
+#[test]
+fn a_slot_reached_only_through_its_veneer_still_finds_its_callers() {
+    let Some(doc) = xrefs(&[&pe_imports(), "--to", "0x14000d33c", "--json"]) else {
+        return;
+    };
+    assert_eq!(json_str(&doc, "name").as_deref(), Some("puts"), "{doc}");
+    assert_eq!(json_int(&doc, "count"), Some(1), "{doc}");
+    assert_eq!(kinds(&doc), vec!["call"], "{doc}");
+    assert!(doc.contains("\"from_address_hex\": \"0x1400015a5\""), "not main's call:\n{doc}");
+    assert!(doc.contains("\"name\": \"main\""), "call site unattributed:\n{doc}");
+}
+
+/// The alias class is built from the decoded forwarding jump, never from a shared
+/// name: an ordinary function keeps an empty `aliases` list and its own answer.
+#[test]
+fn an_ordinary_function_is_never_aliased_to_anything() {
+    let Some(doc) = xrefs(&[&fauxware(), "--to", "authenticate", "--json"]) else {
+        return;
+    };
+    assert!(doc.contains("\"aliases\": []"), "authenticate acquired an alias:\n{doc}");
+    assert_eq!(json_int(&doc, "count"), Some(1), "{doc}");
 }
 
 /// An empty answer is an answer: a target nothing references is exit 0 with

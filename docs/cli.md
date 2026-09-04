@@ -435,6 +435,33 @@ whichever one the symbol table holds first.
 | `read` | The target is loaded from. |
 | `write` | The target is stored to. |
 
+### One import, two addresses
+
+An imported function has two addresses and the import's name is on both: the
+**IAT/GOT slot** the loader fills in, and the **forwarding veneer**
+(`jmp qword ptr [slot]`) a direct `call` can target. `kuna functions --filter
+VirtualProtect` on a MinGW PE therefore answers with two entries — a veneer at
+`0x1400079b0` and a slot at `0x14000d234` — and which of the two a given call
+site references is a compiler decision, not something the question was about.
+
+`--to` is answered over both: the veneer, the slot it jumps through, and any
+other veneer through that same slot are one **alias class**, and the answer is
+the same whichever member is asked for. The class comes from the decoded
+forwarding jump, never from a shared name, so two unrelated functions that happen
+to be called `init` are never folded together. The veneer's own `jmp [slot]` is
+excluded from the answer — it is the other half of the callable, not a caller of
+it. `target.aliases` lists the other members (empty for everything that is not an
+import, which is nearly everything), and every row still carries the real
+`to_address` it landed on, so an agent can see whether a call site went through
+the veneer or straight through the slot.
+
+```
+# 2 references to VirtualProtect @ 0x1400079b0
+# same import at 0x14000d234 (VirtualProtect) - a forwarding veneer and the pointer slot it jumps through
+0x140001a9e	read	__write_memory.part.0+0x18e	CALL qword ptr [0x14000d234]
+0x140001cce	read	_pei386_runtime_relocator+0x19e	MOV R12,qword ptr [0x14000d234]
+```
+
 Flags: `--json`, `--kind call,jump,data,read,write` (repeatable-by-comma filter),
 plus the shared `--mode`, `--option N V`, `--slice`, `--target`, `--sleighpath`.
 
@@ -442,7 +469,8 @@ plus the shared `--mode`, `--option N V`, `--slice`, `--target`, `--sleighpath`.
 
 ```json
 {"binary": "...", "direction": "to", "count": N,
- "target": {"name","address","address_hex"},
+ "target": {"name","address","address_hex",
+            "aliases": [{"name","address","address_hex"}]},
  "xrefs": [{"address","address_hex","kind",
             "from_address","from_address_hex","to_address","to_address_hex",
             "from_function": {"name","address","address_hex"},

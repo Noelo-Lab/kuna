@@ -1738,6 +1738,30 @@ name enumeration gains nothing from the 0.21 s → 5.7 s full decode measured fo
 stripped tar (DIV-15). The console and XML datatest paths never build either model
 by default, which keeps every parity gate byte-identical.
 
+(kuna) **The on-demand cross-reference query**
+(`decompiler/crates/kuna-analysis/src/listing/xrefs.rs (build)`) is a second reader
+of the same bytes, and is not an `AnalysisPass` at all: it is the read-only index
+behind `kuna xrefs` and `kuna strings`, built after the caller has already
+committed a program, and it commits nothing back. It repeats the Listing's
+two-worklist descent but keeps every input varnode of every p-code op rather than
+just `in0`, because the data references an RE agent navigates by — who reads this
+global, who takes this string's address — are exactly the part the Listing model
+drops. Two rules carry the weight. First, a **direct** flow op's `in0` is the
+branch target and is filed as control flow, but an **indirect** one's is not a
+target at all: `JMP qword ptr [__imp_VirtualProtect]` lifts to a single
+`BRANCHIND` whose `in0` is the import slot, and treating that like a direct
+branch's operand made every import veneer in a program reference nothing. Second,
+an import has **two addresses under one name** — the IAT/GOT slot and the
+forwarding veneer that jumps through it, both of which `pe_iat` (§1.3) names —
+so the query joins them into an alias class along the decoded forwarding jump
+(`decompiler/crates/kuna-analysis/src/listing/xrefs.rs (veneer_at)`) and answers
+`--to` over the whole class, with the forwarding jump itself excluded. A veneer
+is recognised only when its indirect jump reads a **decode-time constant**
+address, which is what distinguishes it from a jump table (whose address is
+computed, and which therefore lifts to a `LOAD` through a temporary); the class is
+never derived from a shared symbol name, which would fold genuinely distinct
+same-named functions together.
+
 ## 1.7 The no-return family
 
 Whether a call falls through decides the CFG of every caller, so no-return facts

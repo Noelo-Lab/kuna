@@ -6,7 +6,7 @@ status: open
 severity: major
 probe_id: p-dc85ba90889e
 acceptance_id: a-27cf701da662
-hypothesis_status: inconclusive
+hypothesis_status: upheld
 credibility: 0.7
 instances: 1
 challenges: [694fd2f60c16072f40f5a4b3]
@@ -117,7 +117,24 @@ Find callers/references of the VirtualProtect function surfaced by `kuna functio
 
 ## Refutation
 
-_not yet refuted_
+**Upheld, and incomplete.** Reproduced and measured by the builder: `kuna functions
+--filter VirtualProtect` does expose a veneer at `0x140019980` and an IAT slot at
+`0x1400f4690` under one name, `pe_iat` does register the import name on both, and the
+references really were attached only to the slot. The record's `inconclusive` hedge was
+right about one thing though -- the hypothesis describes the *second* of two defects and
+misses the first, which is not PE-specific at all:
+
+1. `data_refs` skipped `in0` for every flow opcode, `BRANCHIND`/`CALLIND` included. An
+   indirect flow op's `in0` is not a static target -- `classify` files no edge for it --
+   so the skip lost the reference outright. SLEIGH lifts `JMP rm64` as `goto [rm64]`,
+   one `BRANCHIND` whose `in0` is the slot, so *every import veneer in every program*
+   referenced nothing. Independent witness on the same binary: `xrefs --to 0x1400f46c0`
+   (the `wcrtomb` IAT slot) answered 0 although the veneer at `0x140019960` jumps
+   through it.
+2. The failure is symmetric, not veneer-only as filed. On this crackme every call site
+   reads the slot so the *veneer* reports 0; on the vendored `pe_imports.exe` `puts` is
+   called through its veneer so the *slot* reports 0. The fix unifies both directions
+   rather than folding the veneer into the slot.
 
 ## Reference
 

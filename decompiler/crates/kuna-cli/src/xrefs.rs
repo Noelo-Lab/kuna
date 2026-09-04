@@ -128,7 +128,11 @@ fn query(args: &XrefArgs) -> Result<String, String> {
 
     let target = resolve_target(&prog, &args.spec)?;
     let rows = match args.direction {
-        Direction::To => index.refs_to(target.addr).iter().collect::<Vec<_>>(),
+        // `--to` answers for the callable, not the literal address: an import
+        // reached through a veneer and an IAT/GOT slot is one thing under two
+        // names, and which of the two a call site happens to reference is not a
+        // distinction the caller asked about (`XrefIndex::refs_to_unified`).
+        Direction::To => index.refs_to_unified(target.addr),
         Direction::From => {
             if index.is_function_entry(target.addr) || prog.find_entry_at(target.addr).is_some() {
                 index.refs_from_function(target.addr)
@@ -297,6 +301,20 @@ fn result_json(
                 ),
                 ("address".into(), Json::Number(target.addr.to_string())),
                 ("address_hex".into(), Json::Str(format!("0x{:x}", target.addr))),
+                (
+                    "aliases".into(),
+                    Json::Array(
+                        aliases(index, target)
+                            .into_iter()
+                            .map(|a| {
+                                function_json(
+                                    &name_at(prog, a).unwrap_or_else(|| format!("0x{a:x}")),
+                                    a,
+                                )
+                            })
+                            .collect(),
+                    ),
+                ),
             ]),
         ),
         ("direction".into(), Json::Str(args.direction.as_str().to_string())),
@@ -329,6 +347,15 @@ fn render_text(
         rows.len(),
         args.direction.as_str()
     );
+    // Say which other address the answer was taken over, so a count that does not
+    // match a raw disassembly grep of the target explains itself on the spot.
+    for a in aliases(index, target) {
+        let _ = writeln!(
+            out,
+            "# same import at 0x{a:x} ({}) - a forwarding veneer and the pointer slot it jumps through",
+            name_at(prog, a).unwrap_or_else(|| "-".into())
+        );
+    }
     for r in rows {
         match args.direction {
             Direction::To => {
@@ -355,6 +382,13 @@ fn render_text(
         }
     }
     out
+}
+
+/// The addresses other than the target's own that name the same callable: the
+/// pointer slot a forwarding veneer jumps through, or the veneers that jump
+/// through a slot. Empty for everything else, which is almost everything.
+fn aliases(index: &XrefIndex, target: &Target) -> Vec<u64> {
+    index.alias_class(target.addr).into_iter().filter(|&a| a != target.addr).collect()
 }
 
 /// `name+0xoff` for an address inside a known function; the bare address when
@@ -469,10 +503,14 @@ fn usage() {
          \x20                  [--kind call,jump,data,read,write] [--mode auto|reliable|aggressive|fast] \\\n\
          \x20                  [--option N V].. [--slice ARCH] [--target T] [--sleighpath D]\n\
          \n\
-         --to    everything that references the target (call sites, branches, data references)\n\
+         --to    everything that references the target (call sites, branches, data references).\n\
+         \x20       An import is one callable under two addresses -- a forwarding veneer and the\n\
+         \x20       IAT/GOT slot it jumps through -- and both answer the same; target.aliases\n\
+         \x20       names the other one.\n\
          --from  everything the target references (its callees and the data it touches)\n\
          \n\
-         --json emits {{binary,target,direction,count,xrefs:[{{address,address_hex,kind,\n\
-         from_function,to_function,instruction,..}}]}}; without it, one tab-separated row each."
+         --json emits {{binary,target:{{name,address,address_hex,aliases}},direction,count,\n\
+         xrefs:[{{address,address_hex,kind,from_function,to_function,instruction,..}}]}};\n\
+         without it, one tab-separated row each."
     );
 }
