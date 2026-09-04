@@ -1,0 +1,64 @@
+{
+ "need_id": "c-string-objects-become",
+ "track": "quality",
+ "option": "ptrdepthcap",
+ "default": "off (catalog) / on (aggressive preset)",
+ "div": "DIV-108",
+ "scope": "small",
+ "worker": "b-r2-c-string-objects",
+ "branch": "feat/re-c-string-objects-become",
+ "hypothesis_status": "refuted",
+ "decisions": [
+  {
+   "id": "root-cause",
+   "claim": "The filed hypothesis is REFUTED. This is not MSVC STL layout or constructor-prototype propagation. It is a generic type-lattice escalation: a small-string-optimized object writes the unsatisfiable equation T = ptr(T) into ActionInferTypes (one MULTIEQUAL input is PTRSUB(spacebase,-0xN), typed pointer-to-the-mapped-local; the other is a LOAD from that same address, typed as the local), so the propagation adopts a type exactly one pointer level deeper per pass until the seven-pass settle ceiling.",
+   "evidence": "The ActionInferTypes ceiling was made settable and swept 1..12 on the witness: max pointer depth in the emitted C is 2,2,3,4,5,5,5,5 -- one level per pass. Tracing every candidate of depth>=3 that propagate_type_edge adopted: 1368 INDIRECT, 958 MULTIEQUAL, 84 PTRSUB, 44 COPY, 42 PTRADD, 4 STORE, 4 INT_EQUAL; every PTRSUB is in0->out-1 off register:0x20 (RSP). Reproduced with no C++ at all on a 0x131-byte hand-built x86-64 ELF bytechunk (tests/stages/kuna-ptrdepthcap.xml)."
+  },
+  {
+   "id": "scope-not-large",
+   "claim": "The captain's `scope: large` triage followed from the (wrong) hypothesis. The fix is one focused change, not a C++ type-recovery project, so the proposal fork was NOT taken.",
+   "evidence": "Upstream already has the rule (TypeFactory::getTypePointerNoDepth, type.cc:1509); Ghidra just never calls it on the spacebase-PTRSUB arm. Shipped as one new module (p5_types/kuna_ptrdepth.rs), one gated call site in propagate_type_edge, one settable row. No new pass, no new pass type, no ported-core anchor files touched."
+  },
+  {
+   "id": "acceptance-strengthened",
+   "claim": "The acceptance probe as filed was gameable and was tightened before being relied on -- never relaxed.",
+   "evidence": "a-4ac515df8701 asserted only stdout_absent of the two ***** spellings with NO exit_code clause, so a crash, a timeout or an empty decompile would have passed it. Added: exit_code eq 0; stdout_absent \"\\\\*\\\\*\\\\*\" (no three-deep pointer anywhere); stdout_matches on all four string literals the tester had to hand-track. 8/8 clauses PASS."
+  },
+  {
+   "id": "promote-refused",
+   "claim": "verify --promote correctly refuses this acceptance and no in-repo fixture was fabricated to get around it.",
+   "evidence": "The target is binary_source: dataset (bin/trappy attack.exe) and CI has no dataset -- the same refusal PR #377 got. The in-repo regression cover is the two-pass tests/stages/kuna-ptrdepthcap.xml plus 8 unit tests."
+  },
+  {
+   "id": "wrongness-refutation",
+   "claim": "The mechanism does not delete, move or re-anchor a statement, and does not lose a call.",
+   "evidence": "90 binaries / 22,307 functions A/B'd whole-binary. 103 change; the call-name multiset per function is IDENTICAL on both arms for all 103 (0 lost, 0 gained). 98 are type-only by statement skeleton; the 5 with statement-level differences were read line by line and every residual is an addressing spelling. One named degradation: an 8-byte zero store re-rendering as eight one-byte stores where the object really is an array of 8-byte pointers -- 12 lines, 2 functions."
+  },
+  {
+   "id": "residual-deep-pointers",
+   "claim": "The cap does not remove every deep pointer, and that is stated rather than hidden.",
+   "evidence": "Across the sweep, three-or-more-star occurrences fall 1,617 -> 28 and the functions carrying one 80 -> 17. The residual 17 are not reached by propagate_type_edge (declared/locked types and pointer-relative types), so this option cannot and does not touch them."
+  }
+ ],
+ "sweep": {
+  "binaries": 90,
+  "functions": 22307,
+  "changed": 103,
+  "type_only": 98,
+  "statement_level": 5,
+  "call_sites_lost": 0,
+  "call_sites_gained": 0,
+  "deep_occurrences_before": 1617,
+  "deep_occurrences_after": 28,
+  "functions_with_deep_before": 80,
+  "functions_with_deep_after": 17
+ },
+ "speed_off_ms": 9390.13,
+ "speed_on_ms": 9379.19,
+ "speed_delta_pct": -0.12,
+ "speed_samples": 7,
+ "speed_budget_pct": 5.0,
+ "speed_within_budget": true,
+ "speed_note": "Primary figure is the INERT target: crakersme.exe, 1,027 functions, output byte-identical on both arms -- decompile-all -0.12% min / +0.05% median against an on-vs-on control of -0.10% / -0.04%, so the per-edge hook is free. Where the option fires it is not free: the witness binary (144 functions, 1 changes) is +5.3% whole-binary and the witness function alone +8.5% on the minimum, i.e. ~40 ms confined to the one function whose lattice now settles instead of freezing at the ceiling. All randomized-interleaved with an on-vs-on control arm; a FIXED A/B/A order on this box reported -29% between two identical arms, so the ordering had to be randomized before any number meant anything.",
+ "gates": {}
+}
