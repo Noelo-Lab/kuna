@@ -135,7 +135,7 @@ python3 -m scripts.repipe.verify --gate --round 1 --json
 |---|---|
 | `admitted` | real, reproducible, not already possible |
 | `not-reproducible` | the probe does not fire — noise, or environment |
-| `already-supported` | the acceptance already passes: **the tester was wrong.** Kept as a ledger — if this bucket is ever empty, the gate is broken |
+| `already-supported` | the acceptance already passes: **the tester was wrong.** Kept as a ledger — but see the caveat below before reading an empty bucket as a broken gate |
 | `flaky` | the repeats disagreed. A flaky probe is not evidence |
 | `unrunnable` | malformed, or the target's sha256 does not match — a probe pointed at the wrong file **refuses** rather than returning a confident false verdict |
 
@@ -517,6 +517,39 @@ guard) and it caught this one. **Do not soften it to "absent means not required"
 diagnostic to reach for first is `gh pr view <n> --json mergeable,mergeStateStatus`:
 `CONFLICTING`/`DIRTY` explains an absent suite far more often than anything about the
 workflow file does.
+
+## An empty `already-supported` bucket does not mean the gate is broken
+
+Round 1's success criteria say "≥2 rejected as `already-supported`/`user-error` — if this
+is zero, the gate is not working". Round 2 reported **zero** and the gate was fine. The
+criterion has been quietly obsoleted, by a change made here after round 1.
+
+A gate result carrying `reasons: ['probe-fail', 'acceptance-pass']` looks like
+already-supported — the bad behaviour is gone *and* the desired behaviour works. It usually
+is not. Round 2's one such record:
+
+```
+probe.expect      {"stdout_matches": ["sub_418fb0\\(\\)"]}
+acceptance.expect {"stdout_absent":  ["sub_418fb0\\(\\)"]}
+```
+
+Those are **exact polarity inverses on the same regex**. `probe-fail` and `acceptance-pass`
+are one fact — `sub_418fb0()` is absent — reported twice. Relabelling it `already-supported`
+would assert kuna does the desired thing, when all that was observed is the symptom's
+absence. `not-reproducible` is the correct, weaker claim, and the gate's existing precedence
+(probe first) already produces it.
+
+The obsolescence is self-inflicted and worth naming: the tester brief now says *assert the
+symptom's absence, not the fix's spelling*, which was the right fix for round 1's
+over-specified acceptances — and it **manufactures negation-shaped arm pairs**. 11 of round
+2's 22 observations have that shape. The better the acceptances get by that rule, the closer
+the `already-supported` bucket goes to zero, because a negation pair can never populate it.
+
+So: judge the gate by whether it refutes anything at all — `not-reproducible` plus
+`already-supported` together — and read a zero in either bucket alone as uninformative. A
+proposal to flip the precedence for these pairs was written and **rejected** in review for
+exactly this reason; do not re-litigate it without first checking whether the two arms are
+independent or complementary.
 
 ## Machinery reference
 
