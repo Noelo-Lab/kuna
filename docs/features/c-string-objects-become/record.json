@@ -60,5 +60,13 @@
  "speed_budget_pct": 5.0,
  "speed_within_budget": true,
  "speed_note": "Primary figure is the INERT target: crakersme.exe, 1,027 functions, output byte-identical on both arms -- decompile-all -0.12% min / +0.05% median against an on-vs-on control of -0.10% / -0.04%, so the per-edge hook is free. Where the option fires it is not free: the witness binary (144 functions, 1 changes) is +5.3% whole-binary and the witness function alone +8.5% on the minimum, i.e. ~40 ms confined to the one function whose lattice now settles instead of freezing at the ceiling. All randomized-interleaved with an on-vs-on control arm; a FIXED A/B/A order on this box reported -29% between two identical arms, so the ordering had to be randomized before any number meant anything.",
- "gates": {}
+ "gates": {
+  "make test": "PARITY OK 675/675 (docs/baseline.json byte-identical to origin/main)",
+  "make test-stages": "PARITY OK 605/605 (602 -> 605, the new two-pass kuna-ptrdepthcap.xml)",
+  "make rust-test": "green, 5,427 passed / 0 failed (run with KUNA_DECOMP_TEST unset -- when it is set, cpp_oracle_bin() resolves to the RUST binary and verify_w10_proto_unlock fails spuriously on a pre-existing xunknown4-vs-unsigned-int spelling)",
+  "make check-spec": "OK",
+  "kuna catalog --check": "catalog OK (139 settables)",
+  "scripts.repipe.mergecheck": "shape-B all shared counters re-derived and agree (139 settables, tiers 32/56/51, 232 corpus files, next ElementId 4139); baseline untouched; DIV-108 is the next free number. The 12 shape-C rejects are the known false positive for adding a [[settable]] row -- each boilerplate key line of the new row appears one more time in phases.toml.",
+  "acceptance a-4ac515df8701": "PASS, 8/8 clauses (re-verified on the rebased tree)"
+ }
 }
