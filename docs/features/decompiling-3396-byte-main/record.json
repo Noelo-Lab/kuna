@@ -46,7 +46,21 @@
     "significance": "paired t = 20.58 / (7.80/sqrt(7)) = 7.0 sigma, and the effect is >=20% on the median, min and paired mean -- past both bars the perf track sets. The one weak pair (-3.9%) is the first after warmup; the other six span -18.8% to -27.4%.",
     "acceptance_ms_bar": 10000,
     "acceptance_result": "FAIL on `wall_ms` alone; `exit_code` passes. `scripts.repipe.verify` on the final merged-tree build: median 14,437 ms against a <10,000 ms bar. The interleaved 7-pair A/B median is 15,317 ms. Either way the need stays open, ~45% over the bar.",
-    "output_identity": "the C emitted by the two arms on the witness is byte-identical (`cmp`)"
+    "output_identity": "the C emitted by the two arms on the witness is byte-identical (`cmp`)",
+    "confirmation_on_the_rebased_tree": {
+      "note": "re-measured after rebasing onto origin/main b08c30ac (a sibling's `overlapbranch` option landed in between), on a quieter box; both arms rebuilt from the rebased tree",
+      "pairs": 5,
+      "base_median_ms": 18601,
+      "base_min_ms": 18224,
+      "new_median_ms": 14348,
+      "new_min_ms": 13984,
+      "median_delta_pct": -22.86,
+      "min_delta_pct": -23.26,
+      "paired_mean_delta_pct": -22.89,
+      "paired_sd_pct": 1.92,
+      "significance": "paired t = 22.89 / (1.92/sqrt(5)) = 26.6 sigma; per-pair range -21.0% to -25.0%",
+      "identity_recheck": "119 further functions over 10 binaries swept adopt-vs-rebuild on the rebased tree: 0 diffs"
+    }
   },
   "residue_map": {
     "method": "Instant-instrumented release build of this same worktree, `kuna decompile <crackme> sub_140023350` under the aggressive preset the CLI selects for a 235 KB binary",
@@ -171,14 +185,15 @@
     "whole_surface": "218-function adopt-vs-rebuild byte-identity sweep, 0 diffs -- see `regression_sweep`. Not a committed test (it needs two builds of the same tree); `verify_flowreuse.rs` is the committed form of the same property on one fixture."
   },
   "gates": {
-    "make test": "PARITY OK -- 675/675 assertions, docs/baseline.json untouched",
-    "make test-stages": "PARITY OK -- 600/600 assertions, docs/baseline-stages.json untouched",
+    "make test": "PARITY OK -- 675/675 assertions, docs/baseline.json untouched (re-run after the rebase)",
+    "make test-stages": "PARITY OK -- 603/603 assertions, docs/baseline-stages.json untouched (re-run after the rebase)",
+    "make rust-test": "green -- 345 test binaries, 5,335 tests, 0 failed (re-run after the rebase, with `env -u KUNA_DECOMP_TEST`; see note)",
     "make check-spec": "check-spec OK",
+    "make test-cli": "tests/cli: 18/18 passed",
     "kuna catalog --check": "catalog OK: documents exactly the registered kuna options (no option added)",
-    "make test-cli": "tests/cli: 17/17 passed",
-    "make rust-test": "green -- 344 test binaries, 5,322 tests, 0 failed (run with `env -u KUNA_DECOMP_TEST`; see note)",
+    "repipe.mergecheck": "merge guards clean -- 0 rejects against origin/main; counters re-derived and agree (137 settables, tiers 32/55/50, 231 corpus files, next ElementId 4139)",
     "make rust-test note": "The first run reported 1 failure in 344 test binaries / 5,318 tests: `verify_w10_proto_unlock::w10_proto_unlock_const_return_collapses_no_tied_roundtrip`, 'oracle promote_compare signature drifted'. NOT this change. That assertion is guarded by `cpp_oracle_bin()`, which falls back to the removed `decompiler/cpp/decomp_test_dbg` and is normally skipped -- but the repipe worker environment exports `KUNA_DECOMP_TEST` pointing at the worktree's OWN modern `decomp_test_dbg`, so the 'C++ oracle' arm activates and asserts the pre-DIV-6 `xunknown4` rendering against a realtypes build. `env -u KUNA_DECOMP_TEST` -> 4/4 pass; the line above is a full re-run with it unset.",
-    "mergecheck": "merge guards clean -- 0 rejects against origin/main; shared counters re-derived and agree (136 settables, 230 corpus files, next ElementId 4138); docs/baseline.json byte-identical to origin/main"
+    "the counter trap this merge hit": "`repipe.counters --fix` run BEFORE rebuilding after the rebase tried to rewrite the settable counts 137 -> 136, i.e. to DELETE the sibling option that had just merged: it derives the truth from the BUILT BINARY, which was still the pre-rebase one. Reverted, rebuilt, re-ran -- `no drift; nothing to fix`. `--fix` after a rebase is only safe on a rebuilt tree, and it can silently move a counter DOWN."
   },
   "decisions": [
     "ATTEMPT 2 RESUME. Wave 7 was SIGKILLed mid-`make rust-test` with the implementation written but no gate run and nothing pushed; the captain committed the worktree verbatim (`salvage/r2w7-decompiling-3396`). Wave 8's job was to verify it, not to re-derive it -- and 'verify' meant treating every claim in it as unproven, including its own test.",

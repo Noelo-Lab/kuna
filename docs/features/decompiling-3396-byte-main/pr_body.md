@@ -81,16 +81,19 @@ arms are builds of this same worktree differing only in the adoption guard, chos
 per run via `KUNA_DECOMP_DBG`, so the driver, the generated script and the loaded
 image are identical between them.
 
-| 7 pairs | median | min | max |
-|---|---|---|---|
-| base (adoption off ≡ `origin/main`) | 19,703 ms | 18,537 ms | 21,103 ms |
-| this PR | **15,317 ms** | 13,967 ms | 18,929 ms |
-| delta | **−22.26 %** | −24.66 % | |
+Measured twice — once before the rebase on a loaded box, once after it on a
+quieter one, with both arms rebuilt from the rebased tree each time:
 
-Paired mean −20.58 % ± 7.80 (sd) over 7 pairs → **7 σ**, and ≥20 % on the median,
-the min and the paired mean — past both bars the perf track sets. A single-arm
-before/after would not have been trustworthy here: the *same* binary measured
-14.6 s and 18.9 s hours apart on this box.
+| | pairs | base median | this PR median | delta | paired mean ± sd |
+|---|---|---|---|---|---|
+| pre-rebase | 7 | 19,703 ms | 15,317 ms | **−22.26 %** | −20.58 % ± 7.80 |
+| **on the rebased tree** | 5 | 18,601 ms | **14,348 ms** | **−22.86 %** | −22.89 % ± 1.92 |
+
+The second is 26 σ, per-pair range −21.0 % to −25.0 %, and ≥20 % on median, min
+and paired mean alike — past both bars the perf track sets. The interleaving is
+not ceremony: the *same* binary measured 14.6 s and 18.9 s hours apart on this
+box, so a single-arm before/after here would have been indistinguishable from the
+machine.
 
 The C emitted by the two arms on the witness is byte-identical (`cmp`).
 
@@ -111,8 +114,8 @@ follows) for 8.5 s of the 18.8 s run. It now runs twice.
 ## The acceptance probe still does NOT pass, and the reason is now measured
 
 Acceptance `a-53d616afcb6a` asks for a median under 10,000 ms. On the final build
-`scripts.repipe.verify` measures **14,437 ms** (the interleaved A/B median is
-15,317 ms), so the `wall_ms` clause fails while `exit_code` passes. **The need
+`scripts.repipe.verify` measures **14,437 ms** (the interleaved A/B median on the
+rebased tree is 14,348 ms), so the `wall_ms` clause fails while `exit_code` passes. **The need
 stays open and the probe is deliberately not promoted** — promoting it would
 commit a red test. This PR does not reach the bar, and no further redundancy
 removal can:
@@ -163,9 +166,9 @@ structural leads (the per-table partial rebuild, blocked because kuna's
 | gate | result |
 |---|---|
 | `make test` | **PARITY OK** — 675/675, `docs/baseline.json` untouched |
-| `make test-stages` | **PARITY OK** — 600/600, `docs/baseline-stages.json` untouched |
-| `make rust-test` | **green** — 344 test binaries, 5,322 tests, 0 failed \* |
-| `make test-cli` | tests/cli: **17/17 passed** |
+| `make test-stages` | **PARITY OK** — 603/603, `docs/baseline-stages.json` untouched |
+| `make rust-test` | **green** — 345 test binaries, 5,335 tests, 0 failed \* |
+| `make test-cli` | tests/cli: **18/18 passed** |
 | `make check-spec` | check-spec OK |
 | `kuna catalog --check` | catalog OK (no option added) |
 | `repipe.mergecheck` | merge guards clean — 0 rejects vs `origin/main` |
@@ -187,7 +190,7 @@ code) over **218 functions in 20 binaries** — x86-64, i386, aarch64, ARM, ARM
 Thumb, Cortex-M, RISC-V 64; ELF exe/PIE/`.so` and PE32+ — with DWARF, stripped and
 C++-mangled cases among them.
 
-**218 compared, 0 diffs.** And, measured separately with a third instrumented
+**218 compared, 0 diffs**, plus 119 more re-swept on the rebased tree — also 0. And, measured separately with a third instrumented
 build, **203 of the 218 actually took the adopt path**; the other 15 are the seed
 guard firing as designed (DWARF stack locals, parsed prototypes, the PE CRT) and
 are byte-identical through the fallback arm.
