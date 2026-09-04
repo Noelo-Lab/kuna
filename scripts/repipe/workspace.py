@@ -225,12 +225,48 @@ _IDA_SETUP = '''
 # unix socket under TMPDIR (observed: /tmp/declib_server_<id>/decompiler.sock), so with the
 # default TMPDIR the server cannot start at all and every reference call fails with rc=1.
 DECLIB_SERVER_REGISTRY="$ARENA/.declib/servers"
-TMPDIR="$ARENA/.declib/tmp"
+
+# TMPDIR cannot live in the arena, and this is a hard limit rather than a preference.
+# declib binds an AF_UNIX socket at $TMPDIR/declib_server_<10 hex>/decompiler.sock -- 41
+# bytes of suffix -- and sun_path is 108 bytes. The arena root is already ~71
+# (.kuna-repipe/arena/<round>/<24-char hexid> under the repo), so even `$ARENA/t` computes
+# to 114 and bind(2) fails. The server then exits before registering, having logged nothing
+# past "Using headless interface", which is why this read for two rounds as "IDA is broken".
+# So: a short directory under the system temp, one per arena, cleaned with the round.
+# If codex's workspace-write sandbox refuses it, the reference call fails exactly as it does
+# today -- this cannot regress anything -- and the guard below says so in one line instead
+# of leaving an empty server log.
+TMPDIR="${TMPDIR:-/tmp}/kr-$(printf '%s' "$ARENA" | cksum | cut -d' ' -f1)"
+_SOCK_LEN=$(( ${#TMPDIR} + 41 ))
+if [ "$_SOCK_LEN" -gt 108 ]; then
+  echo "ida-decompile: TMPDIR=$TMPDIR makes the declib socket path ${_SOCK_LEN} bytes," \
+       "over the 108-byte AF_UNIX limit; set TMPDIR to something shorter" 1>&2
+fi
 XDG_STATE_HOME="$ARENA/.declib/state"
 XDG_CACHE_HOME="$ARENA/.declib/cache"
-export DECLIB_SERVER_REGISTRY TMPDIR XDG_STATE_HOME XDG_CACHE_HOME
+# XDG_CONFIG_HOME too, and this one is not optional: declib takes a lock on
+# $XDG_CONFIG_HOME/declib/DecLibConfig.lock at startup, and bwrap mounts $HOME read-only to
+# keep the tester away from credentials -- so without this every reference call died with
+#   Failed to start server: [Errno 30] Read-only file system:
+#   '/home/mahaloz/.config/declib/DecLibConfig.lock'
+# and the IDA comparison leg was silently unavailable for two whole rounds.
+XDG_CONFIG_HOME="$ARENA/.declib/config"
+export DECLIB_SERVER_REGISTRY TMPDIR XDG_STATE_HOME XDG_CACHE_HOME XDG_CONFIG_HOME
 mkdir -p "$ARENA/.declib/servers" "$ARENA/.declib/projects" "$TMPDIR" \
-         "$XDG_STATE_HOME" "$XDG_CACHE_HOME"
+         "$XDG_STATE_HOME" "$XDG_CACHE_HOME" "$XDG_CONFIG_HOME/declib"
+# Seed the config from the operator's real one rather than letting declib regenerate a
+# default: it carries [headless_binary_paths] and [plugins_paths], and an empty config makes
+# the backend unresolvable -- a different failure with the same result. `save_location` is
+# rewritten so declib does not write back to the read-only original. Copy once; a rerun in a
+# live arena must not clobber whatever the round has already written.
+if [ ! -f "$XDG_CONFIG_HOME/declib/DecLibConfig.toml" ]; then
+  if [ -f "$HOME/.config/declib/DecLibConfig.toml" ]; then
+    sed "s|^save_location = .*|save_location = \"$XDG_CONFIG_HOME/declib/DecLibConfig.toml\"|" \
+        "$HOME/.config/declib/DecLibConfig.toml" > "$XDG_CONFIG_HOME/declib/DecLibConfig.toml"
+  else
+    : > "$XDG_CONFIG_HOME/declib/DecLibConfig.toml"
+  fi
+fi
 PROJDIR="$ARENA/.declib/projects"
 
 # `load` without an explicit --backend silently falls back to angr, which would make the
