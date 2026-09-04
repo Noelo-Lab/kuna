@@ -673,6 +673,12 @@ pub struct ArchContext {
     /// `builtin_memset` (C++ `memset_recover`, DIV-2 default-on).  Read by
     /// [`RuleMemsetCopy`](crate::kuna_memsetsequence::RuleMemsetCopy).
     pub memset_recover: bool,
+    /// (kuna `ptrdepthcap`) Refuse to deepen an already unsatisfiable pointer
+    /// equation while propagating types: a candidate `ptr(ptr(ptr(..)))` collapses
+    /// to `ptr(undefined<N>)`, which is a fixed point.  Read by
+    /// `ActionInferTypes::propagateTypeEdge` (`coreaction_infertypes`); the
+    /// mechanism lives in `kuna_ptrdepth`.
+    pub ptrdepthcap: bool,
     /// (kuna) GH-8017: resolve the gcc stack-probe loop SP MULTIEQUAL to a
     /// constant (C++ `model_stack_probe_loop`, DIV-3 default-on).  Read by
     /// [`RuleStackProbeLoop`](crate::kuna_stackprobeloop::RuleStackProbeLoop).
@@ -1131,6 +1137,7 @@ impl ArchContext {
             ov_less_simplify: false,     // GH-7190 ovlesssimplify
             recover_array_stride: false, // GH-8724 arraystride
             memset_recover: false,       // GH-9230/1537 memsetrecover
+            ptrdepthcap: false,          // (kuna) option ptrdepthcap
             model_stack_probe_loop: false, // GH-8017 stackprobeloop
             recover_lowered_switch: false, // loweredswitch
             // callsitestackargs is a correctness fix, not an opt-in transform, so the

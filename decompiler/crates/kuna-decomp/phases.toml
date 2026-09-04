@@ -2867,6 +2867,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "ptrdepthcap"
+values = "on|off"
+default = "off"
+destructive = false
+phase = "P5"
+subphase = "type-propagation"
+strength = "HARD"
+rewind = "P5"
+issue = "kuna-ptrdepthcap"
+summary = "Refuse to deepen an already unsatisfiable pointer equation while `ActionInferTypes` propagates types. A small-string-optimized C++ object (MSVC `std::basic_string`, an `ostringstream` buffer) writes `T == ptr(T)` into the type lattice: one MULTIEQUAL edge carries `p = &obj` (a `PTRSUB(spacebase,-0xN)`, typed pointer-to-the-mapped-local) and the other carries `p = obj.ptr` (a LOAD from that same address, typed as the local itself), because the SSO union stores either the characters or a pointer to them in the same 8 bytes. No finite type satisfies that, so `propagateOneType` adds exactly ONE pointer level per pass and only stops at the empirical seven-pass settle ceiling -- the object, and every temporary that touches it, is then declared `unsigned long long *****` / `char *****`. Upstream Ghidra already refuses to build such a chain at the one seam it noticed, `TypeFactory::getTypePointerNoDepth` (`type.cc:1509`, used by `TypeOpLoad`/`TypeOpStore::propagateType`), but the spacebase-PTRSUB arm that actually drives this escalation never routes through it. When on, `kuna_ptrdepth::cap_pointer_depth` applies that same rule at the single propagation funnel: a candidate whose target is itself a pointer-to-pointer collapses to `ptr(undefined<N>)`, and `ptr(ptr(undefined<N>))` collapses one more level when `N` is the pointer width. `ptr(undefined<N>)` is a fixed point, so the lattice settles instead of running to the ceiling. Depth 1 and depth 2 over a concrete base are untouched, so `char **argv`, `char **envp` and a real pointer-to-pointer parameter keep their spelling."
+use_when = "The emitted C declares locals with three or more levels of indirection that the binary plainly does not have -- most visibly `unsigned long long *****` / `char *****` around C++ std::string / ostringstream objects in MSVC binaries, where the false types dominate the listing and hide which buffer holds which string. Default OFF in the catalog (it changes inferred types, and the datatest corpus pins the upstream spellings) but ON in the `aggressive` preset, which `auto` selects for anything under 500 KiB -- so it is the default rendering of `kuna decompile`, `decompile-all`, `decompile-project` and the web front-end. Flip OFF to restore upstream Ghidra's unbounded escalation."
+example = "option ptrdepthcap on"
+source_decompiler = "kuna"
+inspiration = "RE-friction round 2 (`c-string-objects-become`): a tester reversing a Windows crackme reported the checker was usable only after hand-tracking fields through `unsigned long long *****` and `char *****` declarations that dominated the 9.9 KB output"
+change_kind = "type-inference"
+tier = "transform"
+symptoms = "a local is declared with three or more levels of pointer indirection|unsigned long long ***** or char ***** appears in the output|C++ std::string / ostringstream locals get absurd pointer types|the type of a stack object grows one pointer level per decompilation pass"
+live_field = "ptrdepthcap"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "framelayout"
 values = "on|off"
 default = "on"

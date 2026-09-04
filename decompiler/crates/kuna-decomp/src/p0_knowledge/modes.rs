@@ -160,6 +160,17 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     // is registered only on a language that declares the user-op, and only 12
     // Thumb-2 constructors emit it.
     ("cortexmpriv", "on"),
+    // (kuna, DIV-108) Cap the pointer nesting `ActionInferTypes` will adopt. A
+    // small-string-optimized C++ object writes the unsatisfiable equation
+    // `T == ptr(T)` into the type lattice, so the propagation adds one pointer
+    // level per pass up to its seven-pass settle ceiling and declares the object
+    // `unsigned long long *****`. Shipped default OFF because it changes INFERRED
+    // types and the XML datatest corpus pins the upstream spellings while applying
+    // no mode; preset membership is what makes the cap the default rendering for
+    // every real binary. Inert on anything whose types already settle -- the rule
+    // is upstream's own `getTypePointerNoDepth`, and depth 1/2 over a concrete base
+    // (`char **argv`) is untouched.
+    ("ptrdepthcap", "on"),
     // analysis-tier default-off discovery/markup passes. `listing` is the master
     // gate that enables the Listing-consuming passes (fid/aif/discovered-noreturn).
     ("listing", "on"),

@@ -163,6 +163,10 @@ Three tiers:
 | loop exit rendered as goto label_N; plus a synthesized label instead of break; | [`loopbreak_recovery`](#loopbreak_recovery) |
 | switch-case exit gotos where break; is expected | [`loopbreak_recovery`](#loopbreak_recovery) |
 | error paths leave a loop by goto to its successor label | [`loopbreak_recovery`](#loopbreak_recovery) |
+| a local is declared with three or more levels of pointer indirection | [`ptrdepthcap`](#ptrdepthcap) |
+| unsigned long long ***** or char ***** appears in the output | [`ptrdepthcap`](#ptrdepthcap) |
+| C++ std::string / ostringstream locals get absurd pointer types | [`ptrdepthcap`](#ptrdepthcap) |
+| the type of a stack object grows one pointer level per decompilation pass | [`ptrdepthcap`](#ptrdepthcap) |
 | dead code kept after calls to exit/abort/panic when off | [`noreturn_known`](#noreturn_known) |
 | call to a known no-return libc function still shows a fall-through path | [`noreturn_known`](#noreturn_known) |
 | unreachable epilogue after std::terminate or a rust panic call | [`noreturn_known`](#noreturn_known) |
@@ -847,6 +851,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** A loop's error/exit paths render as `goto <successor-label>;` plus a synthesized `label_NNNN:` (angr emits `break;`). On by default (DIV-10, clean ablation + converges to upstream Ghidra, which always runs scopeBreak); set OFF to restore kuna's prior byte-identical raw-goto rendering.
 - **Where / provenance:** P8/goto-quality-acceptance · angr · structure-recovery · angr-1after909-doit
 - **Example:** `option loopbreak_recovery off`
+
+### `ptrdepthcap` -- on | off, default `off`
+
+- **Symptoms:** a local is declared with three or more levels of pointer indirection; unsigned long long ***** or char ***** appears in the output; C++ std::string / ostringstream locals get absurd pointer types; the type of a stack object grows one pointer level per decompilation pass.
+- **What it does:** Refuse to deepen an already unsatisfiable pointer equation while `ActionInferTypes` propagates types. A small-string-optimized C++ object (MSVC `std::basic_string`, an `ostringstream` buffer) writes `T == ptr(T)` into the type lattice: one MULTIEQUAL edge carries `p = &obj` (a `PTRSUB(spacebase,-0xN)`, typed pointer-to-the-mapped-local) and the other carries `p = obj.ptr` (a LOAD from that same address, typed as the local itself), because the SSO union stores either the characters or a pointer to them in the same 8 bytes. No finite type satisfies that, so `propagateOneType` adds exactly ONE pointer level per pass and only stops at the empirical seven-pass settle ceiling -- the object, and every temporary that touches it, is then declared `unsigned long long *****` / `char *****`. Upstream Ghidra already refuses to build such a chain at the one seam it noticed, `TypeFactory::getTypePointerNoDepth` (`type.cc:1509`, used by `TypeOpLoad`/`TypeOpStore::propagateType`), but the spacebase-PTRSUB arm that actually drives this escalation never routes through it. When on, `kuna_ptrdepth::cap_pointer_depth` applies that same rule at the single propagation funnel: a candidate whose target is itself a pointer-to-pointer collapses to `ptr(undefined<N>)`, and `ptr(ptr(undefined<N>))` collapses one more level when `N` is the pointer width. `ptr(undefined<N>)` is a fixed point, so the lattice settles instead of running to the ceiling. Depth 1 and depth 2 over a concrete base are untouched, so `char **argv`, `char **envp` and a real pointer-to-pointer parameter keep their spelling.
+- **When to flip:** The emitted C declares locals with three or more levels of indirection that the binary plainly does not have -- most visibly `unsigned long long *****` / `char *****` around C++ std::string / ostringstream objects in MSVC binaries, where the false types dominate the listing and hide which buffer holds which string. Default OFF in the catalog (it changes inferred types, and the datatest corpus pins the upstream spellings) but ON in the `aggressive` preset, which `auto` selects for anything under 500 KiB -- so it is the default rendering of `kuna decompile`, `decompile-all`, `decompile-project` and the web front-end. Flip OFF to restore upstream Ghidra's unbounded escalation.
+- **Where / provenance:** P5/type-propagation · kuna · type-inference · kuna-ptrdepthcap
+- **Example:** `option ptrdepthcap on`
 
 ### `noreturn_known` -- on | off, default `on`
 

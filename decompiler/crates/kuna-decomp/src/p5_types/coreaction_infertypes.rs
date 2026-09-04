@@ -488,6 +488,20 @@ fn propagate_type_edge(data: &mut Funcdata, op: OpId, inslot: int4, outslot: int
         Some(t) => t,
         None => return false,
     };
+    // (kuna `ptrdepthcap`) Refuse a candidate that keeps deepening an already
+    // unsatisfiable pointer equation -- see `kuna_ptrdepth`.
+    let newtype = if data.get_arch().ptrdepthcap {
+        match data
+            .get_arch()
+            .types()
+            .and_then(|tlst| crate::kuna_ptrdepth::cap_pointer_depth(tlst, &newtype))
+        {
+            Some(capped) => capped,
+            None => newtype,
+        }
+    } else {
+        newtype
+    };
 
     let cur = match data.vbank().get(outvn).and_then(|v| v.get_temp_type().cloned()) {
         Some(t) => t,

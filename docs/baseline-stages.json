@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    603,
-    603
+    605,
+    605
   ],
   "passing": [
     "data:ARRAYSUBFIELD #1: an 8-byte read at offset 0 of char[16] is a sized sub-field, not element 0",
@@ -508,6 +508,8 @@
     "data:paramcopyhoist #1: option off sinks the second parameter's copy-shadow below the first guard (gap reproduced)",
     "data:paramcopyhoist #2: option on anchors both copy-shadows in the entry block, ahead of every guard",
     "data:paramcopyhoist #3: both passes keep the guard writing NULL through each parameter",
+    "data:ptrdepthcap #1: option off leaves the unbounded escalation (bug reproduces: 6 four-star decls + 1 cast)",
+    "data:ptrdepthcap #2: option on settles the lattice (7 in the off pass + 0 in the on pass = 7; any leak back raises the count)",
     "data:realtypes-pointee #1: the callback-struct parameter declares its 8-byte pointee, not void",
     "data:realtypes-pointee #2: no unknown pointee collapses to void in either pass",
     "data:realtypes-pointee #3: the 4-byte errno store keeps its access width",

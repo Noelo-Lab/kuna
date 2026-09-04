@@ -77,9 +77,19 @@ Readable recovery of the std::string/ostringstream values used to construct and 
     "--addr"
   ],
   "expect": {
+    "exit_code": {
+      "eq": 0
+    },
     "stdout_absent": [
       "unsigned long long \\*\\*\\*\\*\\*",
-      "char \\*\\*\\*\\*\\*"
+      "char \\*\\*\\*\\*\\*",
+      "\\*\\*\\*"
+    ],
+    "stdout_matches": [
+      "\"\\+184V38cC\\.TRAPPY-ATTACK0\"",
+      "\"Correct code, ur guess was: 33791\"",
+      "\"M28j2\"",
+      "\"24452\""
     ]
   },
   "target": {
