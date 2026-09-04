@@ -29,3 +29,4 @@ ADVISORY. The cheap half is exposure, not implementation: most of these commands
 ## Decision log
 
 - seeded for round 2 from a source survey of the override surface, after round 1 showed testers hitting obfuscated images with no lever to correct kuna with. Not tester-filed: round 2 should confirm the demand.
+- round 2 T_TRIAGE (captain): track tooling / touches [kuna-console/src/ifacedecomp.rs, kuna-decomp/phases.toml] / scope large CONFIRMED, with one lease consequence worth stating: it is the only no-cli-* need that declares phases.toml, so it takes file:phases.toml and cannot run beside the round's option-adding quality builder even though its track is tooling. That is correct, not a mislabel -- it edits the exposure fields of subphases whose overrides are engine_unavailable stubs. Still waits behind the function-boundary proposal.

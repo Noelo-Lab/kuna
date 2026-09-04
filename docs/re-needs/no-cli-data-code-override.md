@@ -29,3 +29,4 @@ ADVISORY. The cheap half is exposure, not implementation: most of these commands
 ## Decision log
 
 - seeded for round 2 from a source survey of the override surface, after round 1 showed testers hitting obfuscated images with no lever to correct kuna with. Not tester-filed: round 2 should confirm the demand.
+- round 2 T_TRIAGE (captain): track tooling / touches [kuna-cli/src, kuna-console/src/ifacedecomp.rs] / scope large CONFIRMED. Its touches are IDENTICAL to no-cli-function-boundary-override's, so the two are not co-schedulable no matter what select's lease algebra says (both are bare cluster: keys); it waits on that need's proposal to define the delivery vehicle. Round 2 did produce the independent tester demand it was missing: a three-sighting 'kuna will not tell me about data' family (653d8860 x2 + 69a3822f), recorded at T_DEDUP.
