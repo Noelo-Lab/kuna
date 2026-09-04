@@ -2,7 +2,7 @@
 need_id: pe-function-inventory-labels
 title: PE function inventory labels executable routines as vftables
 track: tooling
-status: open
+status: closed
 severity: major
 probe_id: p-8e912566d7ea
 acceptance_id: a-d6666365cbb6
@@ -18,8 +18,8 @@ touches: [decompiler/crates/kuna-cli/src/functions.rs, decompiler/crates/kuna-an
 scope: small
 regression_of: null
 pr: null
-closed_in_round: null
-closing_pr: null
+closed_in_round: 2
+closing_pr: "382"
 reject_reason: null
 ---
 
@@ -130,3 +130,4 @@ _none recorded_
 
 - filed by cluster.py from 1 observation(s)
 - round 2 T_TRIAGE (captain): track quality -> TOOLING, touches kuna-decomp -> the inventory surface. Naming an executable range after a data symbol (std::bad_alloc::vftable_1) is wrong output with no judgment call in it, so it is a bug fix and needs no option. scope small. If the builder finds the alias comes from symbol application in the analysis tier and correcting it changes function DISCOVERY rather than labelling, STOP -- that is a different, gated change.
+- closed: acceptance a-d6666365cbb6 now PASSES at fed78ec3c044

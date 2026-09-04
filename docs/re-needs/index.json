@@ -4,8 +4,8 @@
   "count": 35,
   "rejected_count": 0,
   "by_status": {
-    "closed": 16,
-    "open": 19
+    "closed": 17,
+    "open": 18
   },
   "by_track": {
     "perf": 2,
@@ -435,11 +435,11 @@
       "need_id": "pe-function-inventory-labels",
       "title": "PE function inventory labels executable routines as vftables",
       "track": "tooling",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
       "probe_id": "p-8e912566d7ea",
       "acceptance_id": "a-d6666365cbb6",
-      "hypothesis_status": "inconclusive",
+      "hypothesis_status": "overturned",
       "credibility": 0.7,
       "instances": 1,
       "challenges": [
@@ -458,8 +458,8 @@
       "scope": "small",
       "regression_of": null,
       "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "closed_in_round": 2,
+      "closing_pr": "382",
       "reject_reason": null,
       "score": 13.862944,
       "path": "docs/re-needs/pe-function-inventory-labels.md"
