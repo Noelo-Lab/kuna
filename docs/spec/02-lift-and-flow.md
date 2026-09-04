@@ -338,7 +338,18 @@ decoded is the fall-through of the previous instruction's conditional branch, an
 that branch's own target lies **strictly inside** its encoding (`curaddr < target
 < curaddr + step`). Both ends are strict — `target == curaddr` is a branch to its
 own fall-through and `target == curaddr + step` is a branch over one instruction,
-both ordinary compiler output. Ownership policy: **the branch target wins**,
+both ordinary compiler output. **One legitimate overlap is excluded first**
+(`kuna_streams_reconverge`): glibc's compiler-generated conditional-`LOCK`
+idiom (`JE` over a `LOCK` prefix byte, e.g. `malloc_consolidate` in a static
+binary) is the same instruction with its prefix taken or skipped, so the two
+decodes END AT THE SAME ADDRESS and both streams are real — truncating the
+fall-through there would delete an atomic store on a live path. The branch
+target's own instruction length is therefore decoded and the rule declines
+whenever `target + target_len == curaddr + step`, and likewise whenever the
+target does not decode at all (following it would gain nothing over the decode
+that did work). The test is architecture-neutral — no prefix-byte table — and
+runs only after the strict-interior test has already matched, which it never
+does in ordinary code. Ownership policy: **the branch target wins**,
 because a branch target is an address the program *encodes* while a fall-through
 is only ever inferred from the previous instruction's length, and because two real
 instruction starts cannot sit at `next` and strictly inside `next` — whenever the
