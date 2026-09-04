@@ -26,6 +26,7 @@ pub mod context;
 pub mod decode;
 pub mod kuna_tailcallentry;
 mod kuna_picbase;
+mod kuna_ppclocalentry;
 mod kuna_unmappedentry;
 pub mod model;
 pub mod walk;
@@ -144,7 +145,22 @@ impl Listing {
         // decode correctly instead of as A32/MIPS32 garbage.
         let painter = context::ContextPainter::new(file);
 
-        let st = walk::walk(translate, arch, &code_space, &exec_ranges, seeds, &seed_funcs, &painter);
+        // The PPC64 ELFv2 local-entry fold (`ppclocalentry`): an intra-module `bl`
+        // targets `st_value + <localentry>`, which is a point inside the callee,
+        // not a function of its own. Empty on every other architecture and
+        // whenever the option is off (see `kuna_ppclocalentry`).
+        let local_entries = kuna_ppclocalentry::fold_map(arch, file, seeds);
+
+        let st = walk::walk(
+            translate,
+            arch,
+            &code_space,
+            &exec_ranges,
+            seeds,
+            &seed_funcs,
+            &painter,
+            &local_entries,
+        );
 
         let mut refs_to = st.refs_to;
         let mut refs_from = st.refs_from;

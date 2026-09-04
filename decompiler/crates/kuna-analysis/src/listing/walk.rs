@@ -79,6 +79,11 @@ pub(super) fn in_exec(exec_ranges: &[(u64, u64)], vma: u64) -> bool {
 /// `ISA_MODE`) **before** any [`decode_one`] runs (design §4.2 / PR5) — without
 /// it a Thumb/MIPS16 function misdecodes as A32/MIPS32. On x86-64 (no decode-mode
 /// context) the painter is empty and this is a no-op.
+///
+/// `local_entries` is the PPC64 ELFv2 local-entry fold (`ppclocalentry`), keyed
+/// by the local entry VMA: a CALL landing on one of those is a call into the
+/// INTERIOR of the function at its value, so no function is claimed there. Empty
+/// on every other architecture and whenever the option is off.
 pub(super) fn walk(
     translate: &dyn Translate,
     arch: &Architecture,
@@ -87,6 +92,7 @@ pub(super) fn walk(
     seeds: &[u64],
     seed_funcs: &BTreeMap<u64, DiscoveredFunction>,
     painter: &ContextPainter,
+    local_entries: &BTreeMap<u64, u64>,
 ) -> WalkState {
     // Paint the decode-mode context (ARM TMode / MIPS ISA_MODE) into the engine's
     // ContextDatabase BEFORE we decode a single instruction — the timing the
@@ -156,9 +162,14 @@ pub(super) fn walk(
                 if c.flow.is_call {
                     // CALL/CALLIND direct target → a NEW function entry, but only
                     // where the instruction worklist would agree to decode
-                    // (`unmappedentry`): the reference is always filed, the
-                    // function is claimed only for a mapped target.
-                    if super::kuna_unmappedentry::admits_call_entry(arch, exec_ranges, t) {
+                    // (`unmappedentry`) and where the target is not the callee's own
+                    // PPC64 ELFv2 local entry (`ppclocalentry` — a point inside a
+                    // function whose global entry is already a seed, so the bytes
+                    // here are walked either way). The reference is always filed;
+                    // only the function claim is withheld.
+                    if !local_entries.contains_key(&t)
+                        && super::kuna_unmappedentry::admits_call_entry(arch, exec_ranges, t)
+                    {
                         st.funcs.entry(t).or_insert_with(|| discovered(t));
                         func_worklist.push(t);
                     }
