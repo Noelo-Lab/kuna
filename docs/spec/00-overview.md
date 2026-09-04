@@ -557,10 +557,10 @@ printf-heavy whole binary. `formatstring` is therefore no longer in the
 prescribed outcome — so the shipped default runs no second decompile and both
 surfaces deliver the same C when the option is given (DIV-66).
 
-(kuna) **Surface defaults.** The whole-binary drivers inject their defaults
-before the option pass (`decompiler/crates/kuna-cli/src/decompile_all.rs
-(load_program)`), and which bundle a surface takes is named at its one call site
-rather than inferred: `option listing on` (DIV-15 — without the Listing the
+(kuna) **Surface defaults.** The drivers inject their defaults before the option
+pass, from one shared table
+(`decompiler/crates/kuna-cli/src/decompile_all.rs (driver_default_options)`), and
+which bundle a surface takes is named at its one call site rather than inferred: `option listing on` (DIV-15 — without the Listing the
 default-on no-return propagation is a structural no-op, and a stripped binary's
 unnamed exit wrapper swallows every following function into its caller), and
 `option funcstart_patterns on` plus `option aif on` for non-x86-64 objects only
@@ -578,6 +578,39 @@ so building it for enumeration would buy nothing and cost a whole-program decode
 Every injection yields to an explicit caller option — the driver skips it whenever
 the caller (or the resolved preset) names that option at all — and none of them
 touches the engine default or the console/datatest surfaces.
+
+Single-function `kuna decompile` reads the same table, and that is why the table
+is shared rather than duplicated: it builds a `decomp_dbg` script instead of
+loading in-process, so it applies the pairs as `option` lines ahead of
+`read symbols` (`decompiler/crates/kuna-cli/src/decompile.rs (build_script)`).
+What it does differently is *when*. It injects the Listing up front and holds the
+discovery half back for a **second attempt**, made only when the console answers
+a by-name selection with `no function matches`.
+
+The gap that forced this: on a non-x86-64 image `kuna functions` listed, and
+`kuna decompile-all` decompiled, entries that exist only because
+`funcstart_patterns` found them, while `kuna decompile <that generated name>`
+answered that no such function exists. kuna printed a name it would not then
+accept, which is worse than not finding the function at all — an agent cannot
+tell a name it mistyped from a name the tool minted. It hid behind the mode
+policy, since `auto` resolves to `aggressive` under 500 KiB and that preset names
+all three options itself, so it surfaced only above the size threshold or under
+an explicit `--mode reliable`.
+
+The retry rather than plain alignment, because the bundle is not free. It changes
+the ENTRY SET, and not every entry it adds is real: on i386 and PPC64 the
+prologue matcher seeds a start a few bytes inside a function it already knew
+(PPC64 ELFv2's local entry point sits 8 bytes past the global one), and
+`funcboundflow` truncates the outer function's flow at that seed, so a
+`__do_global_ctors_aux` that decompiles to a loop becomes an empty husk. A
+whole-binary surface takes that trade knowingly — its inventory has to contain
+everything it will decompile, and the husk is a discovery defect to fix at the
+analyzer tier, not a reason to under-enumerate. A caller who has already named
+one function gains nothing from the wider inventory unless the name is not there,
+which is exactly the condition the retry tests. So the first attempt is the
+script this surface has always emitted, and only a MISS — not an ambiguity, not a
+load failure, not a pipeline abort, and never an `--addr` selector — buys the
+second one.
 
 (kuna) **The watchdog.** `decompile-all --max-fn-seconds N` (`0` disables) is
 driver policy, not a phase-model option. An unfiltered whole-binary run in the

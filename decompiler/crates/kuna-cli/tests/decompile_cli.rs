@@ -483,3 +483,125 @@ fn a_call_that_finalizes_before_its_witness_recovers_its_argument() {
         );
     }
 }
+
+/// A stripped ARM PIE whose `sub_410` exists only because the non-x86-64
+/// discovery bundle (`listing` + `funcstart_patterns`) found it — no symbol
+/// carries that address, so the name is minted from the entry.
+fn entrymain_arm() -> String {
+    repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/entrymain_arm")
+        .to_str()
+        .unwrap()
+        .to_string()
+}
+
+/// RE-need `analysis-generated-function-name`: every name kuna PRINTS must be a
+/// name kuna ACCEPTS.
+///
+/// `kuna functions` applies the DIV-20/DIV-68 discovery bundle on a non-x86-64
+/// binary and single-function `kuna decompile` did not, so the inventory listed
+/// entries the by-name selector then rejected with `no function matches` —
+/// exactly the wall two testers hit, on two formats and in two modes. The two
+/// surfaces are asserted together because either one alone is self-consistent:
+/// only the pair catches them drifting apart again.
+///
+/// `--mode reliable` is load-bearing on a fixture this small: the default `auto`
+/// policy resolves to `aggressive` under 500 KiB, and that preset NAMES all three
+/// bundle options itself, so an auto run would pass without the fix. Both testers
+/// hit this on a binary whose resolved preset supplied nothing.
+#[test]
+fn a_generated_name_the_inventory_prints_is_selectable_by_decompile() {
+    let bin = entrymain_arm();
+    let sp = specs();
+
+    let listed = Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .args([
+            "functions",
+            bin.as_str(),
+            "--json",
+            "--mode",
+            "reliable",
+            "--sleighpath",
+            sp.as_str(),
+        ])
+        .output()
+        .expect("failed to spawn the kuna binary");
+    let inventory = String::from_utf8_lossy(&listed.stdout).into_owned();
+    let inventory_err = String::from_utf8_lossy(&listed.stderr).into_owned();
+    if is_specs_skip(&inventory_err) {
+        eprintln!("skipping: specs-less environment: {inventory_err}");
+        return;
+    }
+    assert_eq!(listed.status.code(), Some(0), "functions must succeed: {inventory_err}");
+    assert!(
+        inventory.contains("\"sub_410\""),
+        "the inventory must still report the generated name, got:\n{inventory}"
+    );
+
+    let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .args([
+            "decompile",
+            bin.as_str(),
+            "sub_410",
+            "--mode",
+            "reliable",
+            "--sleighpath",
+            sp.as_str(),
+        ])
+        .output()
+        .expect("failed to spawn the kuna binary");
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    if is_specs_skip(&stderr) {
+        eprintln!("skipping: specs-less environment: {stderr}");
+        return;
+    }
+    assert!(
+        !stderr.contains("no function"),
+        "a listed name must not be rejected by the selector, got: {stderr}"
+    );
+    assert_eq!(out.status.code(), Some(0), "decompile by generated name must succeed: {stderr}");
+    assert!(stdout.contains("sub_410"), "the C must be for the selected entry, got:\n{stdout}");
+}
+
+/// The other half of the contract: the wider inventory is paid for only where it
+/// is the answer, so a name that ALREADY resolved is decompiled exactly as before.
+///
+/// This is not hypothetical caution. The discovery bundle seeds a function start
+/// at PPC64 ELFv2's local entry point, 8 bytes past the global one, and
+/// `funcboundflow` then truncates the outer function's flow there — so injecting
+/// it up front would answer `kuna decompile __do_global_ctors_aux` with an empty
+/// husk instead of the loop it really is. Asserting the body, not just exit 0:
+/// the husk exits 0 too.
+#[test]
+fn a_name_that_already_resolved_is_not_re_decompiled_wider() {
+    let bin = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/plt_ppc64le")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .args([
+            "decompile",
+            bin.as_str(),
+            "__do_global_ctors_aux",
+            "--mode",
+            "reliable",
+            "--sleighpath",
+            specs().as_str(),
+        ])
+        .output()
+        .expect("failed to spawn the kuna binary");
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    if is_specs_skip(&stderr) {
+        eprintln!("skipping: specs-less environment: {stderr}");
+        return;
+    }
+    assert_eq!(out.status.code(), Some(0), "must succeed: {stderr}");
+    assert!(
+        !stdout.contains("funcboundflow"),
+        "the retry must not fire for a name that already resolved, got:\n{stdout}"
+    );
+    assert!(stdout.contains("while ("), "the real body is a loop, got:\n{stdout}");
+}

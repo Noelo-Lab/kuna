@@ -363,7 +363,23 @@ Behaviors specific to `decompile-all`:
   a stripped binary's unnamed exit/fatal wrappers no longer swallow the functions after
   them; on non-x86-64 binaries it likewise injects `funcstart_patterns on` and `aif on`
   unless the caller names them (see `docs/history.md`). `--option listing off` opts
-  out; single-function `kuna decompile` also injects Listing.
+  out. Single-function `kuna decompile` injects the Listing the same way, and
+  reaches for the **discovery half on a second attempt**: a by-name selection that
+  the console answers with `no function matches` is retried once with
+  `funcstart_patterns on` + `aif on` on a non-x86-64 image, so a name that exists
+  only because discovery generated it -- the `sub_<addr>` `kuna functions` and
+  `kuna strings` print -- selects the same entry those surfaces report. Nothing
+  that already resolved changes: the first attempt is the script it has always
+  been, and the retry is skipped for `--addr`, for an ambiguous selector, and for
+  a load or pipeline failure. The bundle is not injected up front because it
+  changes the entry set and not every entry it adds is real -- on i386 and PPC64
+  the prologue matcher seeds a start a few bytes inside a function it already
+  knew (PPC64 ELFv2's local entry point), and `funcboundflow` then truncates the
+  outer function at that seed. That trade is the whole-binary surfaces' to make,
+  where the wider inventory is the point; a single-function request that already
+  named its function gains nothing from it. (The gap was invisible under the
+  default `auto` policy below 500 KiB, which resolves to `aggressive` and names
+  all three options itself.)
   `kuna functions` shares the **discovery** half of that policy (DIV-68): on a
   non-x86-64 binary it injects `funcstart_patterns on`, `aif on`, and the
   `listing on` those two are gated behind, so the inventory always contains every

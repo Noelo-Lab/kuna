@@ -118,6 +118,7 @@ fn build_script(
     bfd_target: Option<&str>,
     raw: bool,
     out_path: &Path,
+    injected: &[(&'static str, &'static str)],
     options: &[(String, String)],
     kasserts: &[String],
     func_decls: &[crate::funcdecl::FuncDecl],
@@ -136,13 +137,12 @@ fn build_script(
     // commit would be a no-op (the analysis-port conflict #4 ordering fix). The
     // upstream/printer options here are order-independent w.r.t. `read symbols`.
     //
-    // (kuna, Ghidra-gap / DIV-15) Build the Listing when neither the selected
-    // mode nor the caller names `listing`, matching `decompile-all`. The
-    // Listing drives the no-return analysis that prevents a function ending in
-    // a no-returning call from absorbing its neighbour. The default `auto`
-    // policy names Listing off through `fast` for binaries at least 2 MiB.
-    if !options.iter().any(|(name, _)| name == "listing") {
-        lines.push("option listing on".into());
+    // The driver defaults this attempt takes, from the shared table
+    // (`decompile_all::driver_default_options`) — the DIV-15 Listing always, and
+    // the DIV-20/DIV-68 non-x86-64 discovery bundle only on the retry (see
+    // `decompile`).
+    for (name, value) in injected {
+        lines.push(format!("option {name} {value}"));
     }
     for (name, value) in options {
         lines.push(format!("option {name} {value}"));
@@ -351,11 +351,7 @@ fn check_errors(out: &str, target: &str, binary: &str, by_address: bool) -> Opti
     if let Some(reason) = read_symbols_failure(out) {
         return Some(format!("read symbols (analysis commit) failed: {reason}"));
     }
-    if !by_address
-        && (out.contains("Unknown function name:")
-            || out.contains("no function matches")
-            || out.contains("Bad namespace:"))
-    {
+    if !by_address && is_unknown_function(out) {
         return Some(format!(
             "no function {target:?} in {binary}; for a stripped binary pass an address with --addr"
         ));
@@ -371,6 +367,18 @@ fn check_errors(out: &str, target: &str, binary: &str, by_address: bool) -> Opti
         }
     }
     None
+}
+
+/// Whether the console answered "there is no function by that name here".
+///
+/// The three spellings are the selector model's own
+/// (`ConsoleProgram::resolve_entry` → `EntryLookupError`) plus the engine's
+/// `Unknown function name:`. It is a MISS, not an ambiguity and not a load
+/// failure, which is what makes it safe to answer with a second, wider attempt.
+fn is_unknown_function(out: &str) -> bool {
+    out.contains("Unknown function name:")
+        || out.contains("no function matches")
+        || out.contains("Bad namespace:")
 }
 
 /// Whether the console transcript says the selected entry has no mapped bytes
@@ -476,7 +484,30 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
         reject_unquotable("temp directory", &rp.display().to_string())?;
     }
 
-    let result = (|| {
+    // (kuna, RE-need `analysis-generated-function-name`) The driver defaults, split
+    // in two. `base` is what this surface has always injected — the DIV-15 Listing.
+    // `discovery` is the DIV-20/DIV-68 non-x86-64 bundle the IN-PROCESS drivers also
+    // inject (`decompile_all::load_program`), and it is held back for a second attempt
+    // rather than injected up front.
+    //
+    // Held back because the bundle is not free: it changes the ENTRY SET, and the
+    // entries it adds are not all real. On i386 and PPC64 the prologue matcher seeds a
+    // start a few bytes inside a function it already knew (PPC64 ELFv2's local entry
+    // point, 8 bytes past the global one), and `funcboundflow` then truncates the outer
+    // function's flow at that seed — so injecting it unconditionally would turn a
+    // correct `kuna decompile __do_global_ctors_aux` body into an empty husk on every
+    // non-x86-64 image. Measured, not assumed: a before/after sweep over every function
+    // of all 33 non-x86-64 fixtures found 8 such truncations and no other difference.
+    //
+    // So the wider inventory is paid for only where it is the ANSWER: a by-name
+    // selection that missed. That is exactly the reported gap — `kuna functions` prints
+    // a discovery-generated name that `kuna decompile` then refuses — and nothing that
+    // already resolved changes at all.
+    let full = decompile_all::driver_default_options(&binary, true, &args.options);
+    let (base, discovery): (Vec<_>, Vec<_>) =
+        full.into_iter().partition(|(name, _)| *name == "listing");
+
+    let attempt = |injected: &[(&'static str, &'static str)]| {
         let script = build_script(
             &binary,
             &args.target,
@@ -484,6 +515,7 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
             args.bfd_target.as_deref(),
             args.raw,
             &out_path,
+            injected,
             &args.options,
             &args.kasserts,
             &args.func_decls,
@@ -668,13 +700,13 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
                 }
                 child.wait_with_output()
             })
-            .map_err(|e| format!("failed to run decomp_dbg: {e}"))?;
+            .map_err(|e| (format!("failed to run decomp_dbg: {e}"), false))?;
 
         let stdout_text = String::from_utf8_lossy(&output.stdout).into_owned();
         let stderr_text = String::from_utf8_lossy(&output.stderr).into_owned();
         let combined = format!("{stdout_text}\n{stderr_text}");
         if let Some(msg) = check_errors(&combined, &args.target, &binary, by_address) {
-            return Err(msg);
+            return Err((msg, !by_address && is_unknown_function(&combined)));
         }
 
         let mut c_text = String::new();
@@ -702,11 +734,14 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
                     failure: None,
                 });
             }
-            return Err(format!(
-                "no C output for {:?} in {}; decompiler said:\n{}",
-                args.target,
-                binary,
-                combined.trim().chars().take(2000).collect::<String>()
+            return Err((
+                format!(
+                    "no C output for {:?} in {}; decompiler said:\n{}",
+                    args.target,
+                    binary,
+                    combined.trim().chars().take(2000).collect::<String>()
+                ),
+                false,
             ));
         }
         // The pipeline aborted for this function: the console kept the session
@@ -732,7 +767,15 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
             regions_text = Some(trim_newlines(&buf));
         }
         Ok(DecompileOutcome { c: c_text, regions: regions_text, failure })
-    })();
+    };
+
+    let mut result = attempt(&base);
+    if !discovery.is_empty() && matches!(&result, Err((_, true))) {
+        let widened: Vec<(&'static str, &'static str)> =
+            base.iter().chain(discovery.iter()).copied().collect();
+        result = attempt(&widened);
+    }
+    let result = result.map_err(|(message, _)| message);
 
     let _ = std::fs::remove_file(&out_path);
     if let Some(rp) = &regions_path {
@@ -1126,10 +1169,21 @@ fn decompile_json(args: &AllArgs, target: &str) -> Result<(String, Option<String
 #[cfg(test)]
 mod tests {
     use super::{
-        arch_failure_reason, build_script, check_errors, console_path, find_pipeline_failure,
-        read_symbols_failure, reject_unquotable,
+        arch_failure_reason, build_script, check_errors, console_path, decompile_all,
+        find_pipeline_failure, is_unknown_function, read_symbols_failure, reject_unquotable,
     };
     use std::borrow::Cow;
+
+    /// What `decompile_all::driver_default_options` yields for the FIRST attempt
+    /// on every architecture: the DIV-15 Listing and nothing else.
+    const LISTING: &[(&str, &str)] = &[("listing", "on")];
+
+    /// The DIV-20/DIV-68 non-x86-64 bundle, held back for the retry.
+    const WIDENED: &[(&str, &str)] = &[
+        ("listing", "on"),
+        ("funcstart_patterns", "on"),
+        ("aif", "on"),
+    ];
     use std::path::Path;
 
     /// Recorded `decomp_dbg` transcript: the empty-scope load failure DIV-88's
@@ -1359,6 +1413,7 @@ Decompilation complete
             None,
             false,
             Path::new("/tmp/kuna.c"),
+            LISTING,
             &[],
             &[],
             &decls,
@@ -1388,6 +1443,7 @@ Decompilation complete
             None,
             false,
             Path::new("/tmp/kuna.c"),
+            LISTING,
             &[],
             &[],
             &[],
@@ -1408,6 +1464,7 @@ Decompilation complete
             None,
             false,
             Path::new("/tmp/out dir/kuna.c"),
+            LISTING,
             &[],
             &[],
             &[],
@@ -1438,6 +1495,7 @@ Decompilation complete
             Some("x86:LE:64:default"),
             false,
             Path::new("/tmp/kuna.c"),
+            LISTING,
             &[],
             &[],
             &[],
@@ -1447,6 +1505,92 @@ Decompilation complete
             script.contains("load file x86:LE:64:default \"/home/u/test dir/a.out\"\n"),
             "got:\n{script}"
         );
+    }
+
+    /// A checked-in fixture path, so the architecture classification behind the
+    /// discovery bundle reads a real object rather than a guess.
+    fn fixture(name: &str) -> String {
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../..")
+            .join("decompiler/crates/kuna-analysis/tests/fixtures")
+            .join(name)
+            .canonicalize()
+            .expect("fixture")
+            .to_str()
+            .expect("utf-8 fixture path")
+            .to_string()
+    }
+
+    /// The two attempts are one table split in two: what a non-x86-64 image
+    /// holds back is exactly what the in-process drivers inject up front, so the
+    /// widened retry reaches the inventory `kuna functions` reports and not some
+    /// third configuration.
+    #[test]
+    fn the_retry_widens_to_the_in_process_drivers_bundle() {
+        let arm = fixture("entrymain_arm");
+        let full = decompile_all::driver_default_options(&arm, true, &[]);
+        assert_eq!(full, WIDENED, "the non-x86-64 bundle");
+        let (base, discovery): (Vec<_>, Vec<_>) =
+            full.into_iter().partition(|(name, _)| *name == "listing");
+        assert_eq!(base, LISTING, "the first attempt");
+        assert_eq!(discovery, &WIDENED[1..], "held back for the retry");
+    }
+
+    /// x86-64 has nothing to hold back, so there is no second attempt to make:
+    /// the Listing is measured entry-neutral there and the gap-walk can
+    /// over-produce, which is why the bundle is non-x86-64 only.
+    #[test]
+    fn there_is_no_retry_to_make_on_x86_64() {
+        let full = decompile_all::driver_default_options(&fixture("fauxware"), true, &[]);
+        assert_eq!(full, LISTING);
+    }
+
+    /// Naming an option skips its injection on this surface exactly as it does
+    /// on the in-process ones, so `--option aif off` is not silently re-enabled
+    /// by the retry.
+    #[test]
+    fn the_bundle_yields_to_a_named_option() {
+        let options = vec![("aif".to_string(), "off".to_string())];
+        let full = decompile_all::driver_default_options(&fixture("entrymain_arm"), true, &options);
+        assert_eq!(full, &[("listing", "on"), ("funcstart_patterns", "on")]);
+    }
+
+    /// The widened attempt emits its extra options where the console can still
+    /// act on them: ahead of `read symbols`, which is where the analysis passes
+    /// are committed.
+    #[test]
+    fn the_widened_script_puts_the_bundle_before_the_commit() {
+        let script = build_script(
+            &fixture("entrymain_arm"),
+            "sub_410",
+            false,
+            None,
+            false,
+            Path::new("/tmp/kuna.c"),
+            WIDENED,
+            &[],
+            &[],
+            &[],
+            None,
+        );
+        let (before, after) = script.split_once("read symbols").expect("read symbols");
+        for line in ["option listing on", "option funcstart_patterns on", "option aif on"] {
+            assert!(before.contains(&format!("{line}\n")), "missing {line}:\n{script}");
+        }
+        assert!(after.contains("load function sub_410"), "got:\n{script}");
+    }
+
+    /// The retry fires on a MISS and on nothing else: an ambiguous selector, a
+    /// load failure or a pipeline abort all mean the name was understood, and
+    /// widening the inventory would only change the answer for the worse.
+    #[test]
+    fn only_a_name_miss_is_retryable() {
+        assert!(is_unknown_function("Execution error: no function matches \"sub_410\""));
+        assert!(is_unknown_function("Unknown function name: nope"));
+        assert!(is_unknown_function("Bad namespace: a::b"));
+        assert!(!is_unknown_function("Execution error: selector \"main\" is ambiguous"));
+        assert!(!is_unknown_function(EMPTY_SCOPE));
+        assert!(!is_unknown_function(COMMIT_FAILED));
     }
 
     /// A script over ordinary paths is unchanged, quotes and all absent.
@@ -1459,6 +1603,7 @@ Decompilation complete
             None,
             false,
             Path::new("/tmp/kuna.c"),
+            LISTING,
             &[],
             &[],
             &[],
@@ -1532,6 +1677,7 @@ Decompilation complete
             None,
             false,
             Path::new("/tmp/kuna.c"),
+            LISTING,
             &[],
             &[],
             &[],

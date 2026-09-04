@@ -1,0 +1,40 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "sub_410",
+    "--mode",
+    "reliable"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/entrymain_arm",
+    "binary_sha256": "be4dc366af6654e549df97a4033409ba80e883e0a424429ecd87c2700f7ed2ed",
+    "binary_size": 5528,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/entrymain_arm",
+    "selector": "sub_410",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "sub_410"
+    ],
+    "stderr_absent": [
+      "no function"
+    ]
+  },
+  "notes": "Desired: a name kuna PRINTS is a name kuna ACCEPTS. `functions` reports sub_410 on this stripped ARM PIE via the DIV-20/DIV-68 discovery bundle for non-x86-64 images; single-function `decompile` injected only `listing on`, so the entry was absent and the by-name selector answered `no function matches`. --mode reliable because auto picks aggressive under 500 KiB, which names the bundle itself."
+}
