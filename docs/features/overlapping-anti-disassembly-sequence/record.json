@@ -1,0 +1,69 @@
+{
+  "need_id": "overlapping-anti-disassembly-sequence",
+  "track": "quality",
+  "option": "overlapbranch",
+  "default": "on",
+  "div": "DIV-106",
+  "scope": "large",
+  "worker": "b-r2-overlapping-anti",
+  "branch": "feat/re-overlapping-anti-disassembly-sequence",
+  "hypothesis_status": "upheld",
+  "decisions": [
+    {
+      "id": "root-cause",
+      "claim": "The filed hypothesis stands exactly as written: the recursive traversal commits to the CALL at 0x8048837 and never reconsiders the conditional-branch target at 0x8048838 that lies inside its encoding. The mechanism is arrival order, not a missing detection.",
+      "evidence": "`FlowInfo::process_instruction` pushes the CBRANCH target onto `addrlist` inside `xref_control_flow` and then pushes the fall-through, and `addrlist` is a stack, so the fall-through is always popped and decoded FIRST. `set_fallthru_bound` does see the clash afterwards -- it calls `reinterpreted` -- but only on the next visit, when the losing stream and its successors are already built, which is why the upstream detection could never do anything but record the fact. objdump: `0x8048835 75 01 jne 0x8048838` followed at 0x8048837 by `e8 8b 45 0c 03 call 0xb10cdc7`, an address outside the image; decoding from 0x8048838 gives `mov eax,[ebp+0xc]; add eax,[ebp+0x8]; movsx edx,[eax]`."
+    },
+    {
+      "id": "ownership-policy",
+      "claim": "The branch target wins and the loser is truncated in place, never re-anchored. This is the question the round-2 refutation demanded an explicit answer to.",
+      "evidence": "A branch target is an address the program ENCODES; a fall-through is only ever inferred from the previous instruction's length. Excluding the reconvergent case, two instruction starts that both belong to one intended stream cannot sit at `next` and strictly inside `next`, so whenever the rule fires at least one of the two decodes is already wrong. The loser is the instruction CURRENTLY being decoded and the winner is still pending, so nothing other flow depends on is deleted and no committed instruction boundary is moved: `delete_remaining_ops` drops the ops this decode just emitted, an artificial RETURN marked `badinstruction` is planted at the loser's own address with recorded size 1, and the pending target is decoded on its own boundary by the ordinary walk. The conditional stays a conditional and its fall-through EDGE stays in the graph."
+    },
+    {
+      "id": "badinstruction-not-noreturn",
+      "claim": "The halt is marked `badinstruction`, not `noreturn`.",
+      "evidence": "A `noreturn` halt is folded away by `kuna_ifnoexit` into an empty `if (cond) { }`, which reads as though the fall-through does nothing and carries on -- the one rendering that is actually wrong about where control goes. Both were built and compared."
+    },
+    {
+      "id": "reconvergence-exclusion-ablated",
+      "claim": "The reconvergence exclusion (`kuna_streams_reconverge`) is REACHED on ordinary compiler output and is the single clause standing between this option and deleting an atomic store on a live path. Verified by ablation, not by argument.",
+      "evidence": "glibc's conditional-`LOCK` idiom is compiler-generated and produces exactly this overlap: a statically linked binary built here carries 11 sites of `74 01` JE over an `f0` LOCK prefix (`_int_free`, `_int_malloc`, `arena_get2.part.0`). Instrumented, the strict-interior test MATCHES there (`curaddr=0x401004 step=5 target=0x401005 -> true`) and reconvergence declines it (`tlen=4 -> true`, both decodes end at 0x401009). With `kuna_streams_reconverge` forced to `false` and nothing else changed, the minimal `je +1`/`LOCK OR` fixture renders as `if (a1) return;` -- the atomic store deleted on a live path -- and `_int_free` moves 487 lines. As shipped, `_int_free`, `_int_malloc`, `arena_get2.part.0` and `malloc_consolidate` are byte-identical with the option on and off."
+    },
+    {
+      "id": "silent-fire-is-correct",
+      "claim": "The `overlapbranch` warning does NOT appear at every truncation, and that is the right behaviour rather than a gap.",
+      "evidence": "In the always-taken `jz +3 / jnz +1 / e8` pair (the `dance` and `nano` crackmes) the truncated fall-through is unreachable, so the halt block is collected before emit and its warning comment goes with it. What remains is the recovered stream alone. The warning survives exactly where the truncated edge is reachable and therefore attributable -- the pcme0 witness, `poof.exe`, `illusion.exe`. 81 warnings are emitted across the sweep's 14 differing binaries; 4 of those 14 differ with no warning at all."
+    },
+    {
+      "id": "corpus-sweep",
+      "claim": "428 binaries A/B'd whole-binary; 14 differ, all 14 hand-written or obfuscated crackmes; 0 of 142 compiler-built binaries change a byte; no function leaves the inventory.",
+      "evidence": "142 decbench ELFs (x86-64 O0+O2, ARM, Cortex-M) + 286 crackmes-corpus executables (ELF32/64, PE32/PE32+, Mach-O, MS-DOS), each run twice with `decompile-all` and diffed. 78 functions change: 4 go from a hard `(error: ...)` to real code, 2 lose only never-read declarations, 1 is rendering-only, 71 are mixed add+remove inside regions that are data-decoded-as-code on both arms (33 in `crypto4.exe`'s PE IAT thunks, 29 in `CrackMe.obf.exe`). Emitted function count 7799 on both arms; aggregate `(error:` count 387 -> 383. Independent gains: `nano`'s ptrace calls recover their request codes (`func_00101189(0,...)`, `(7,...)`, `sub_...(0xd,...)`) where the off arm printed no arguments at all; `poof.exe` loses a bogus `*v4 = *v4 ^ (unsigned int)v4;` store through a junk pointer."
+    },
+    {
+      "id": "default-on",
+      "claim": "Shipped default-ON. The acceptance probe runs `kuna decompile BIN 0x804881c --addr` with no options, so only default output can close the need.",
+      "evidence": "0/675 datatest assertions change (docs/baseline.json byte-identical to origin/main), `make test-stages` 603/603 PARITY OK with the new two-pass testcase, `make rust-test` green (5,330 passed / 0 failed), speed -0.22% on a provably inert target and -1.71% on the witness against a 5% budget, and an interleaved min-of-9 A/B/A whose on-vs-on control shows the same shift. `--option overlapbranch off` restores the upstream fall-through-wins decode exactly."
+    },
+    {
+      "id": "promotion",
+      "claim": "The acceptance probe IS promotable, with its clauses verbatim and only its target re-pointed.",
+      "evidence": "The need's target is `binary_source: dataset` and CI has no dataset, so a 2 KiB ELF32 fixture carrying the same idiom at the same address was vendored (`decompiler/crates/kuna-analysis/tests/fixtures/overlapbranch_i386`, generator beside it). With `option overlapbranch off` it emits BOTH forbidden patterns (`dat_d98ddd00 += sub_b0c48ac();`), so the clauses are discriminating rather than vacuous. `tests/cli/` is executed by `scripts.repipe.clitests` (18/18) but by no CI job, so the same two passes are also a cargo test -- `kuna-cli/tests/overlapbranch_cli.rs` -- which `make rust-test` does run."
+    }
+  ],
+  "speed_off_ms": 333.36,
+  "speed_on_ms": 332.61,
+  "speed_delta_pct": -0.22,
+  "speed_samples": 11,
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": true,
+  "speed_note": "neutral target (mv -O2 main, output byte-identical on both arms); witness 0x804881c measures -1.71% over 11 repeats; interleaved min-of-9 A/B/A on the neutral target is +0.00% on the minimum against an on-vs-on control with the identical median shift",
+  "gates": {
+    "make test": "PARITY OK 675/675",
+    "make test-stages": "PARITY OK 603/603",
+    "make rust-test": "green, 5330 passed / 0 failed",
+    "make check-spec": "OK",
+    "kuna catalog --check": "catalog OK (137 settables)",
+    "scripts.repipe.clitests": "18/18",
+    "acceptance a-52c2ad89b522": "PASS"
+  }
+}

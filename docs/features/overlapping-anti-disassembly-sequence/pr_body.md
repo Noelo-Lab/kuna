@@ -57,6 +57,16 @@ branch and that branch's own target lies strictly inside its encoding
 to its own fall-through and `target == curaddr + step` is a branch over one instruction, and
 both are ordinary compiler output.
 
+**The one legitimate overlap is excluded first.** An overlap alone does not mean one decode
+is junk. glibc's conditional-`LOCK` idiom is *compiler-generated* and does exactly this — a
+`74 01` `JE` hopping over an `f0` prefix byte, so the fall-through is `LOCK OR [rdi+4],1` and
+the branch target is the same `OR` without the prefix. Both streams are real and they
+**reconverge**: the two decodes end at the same address. `kuna_streams_reconverge` decodes the
+branch target's own length and declines whenever `target + target_len == curaddr + step` (and
+whenever the target does not decode at all). It is architecture-neutral — no prefix-byte
+table — and it runs only after the strict-interior test has already matched, which it never
+does in ordinary code. **This clause was ablated, not argued** — see *Refutation* below.
+
 **The ownership policy, stated:**
 
 * **The branch target wins.** A branch target is an address the program *encodes* — it says,
@@ -90,9 +100,9 @@ python -m scripts.repipe.verify --need overlapping-anti-disassembly-sequence --j
 ```
 
 ```c
-int sub_804881c(char *a0,int a1)
+unsigned int sub_804881c(char *a0,int a1)
 {
-  if ((char)a0 == '\xff')
+  if (*a0 == '\xff')
     return; // warn: overlapbranch: this instruction overlaps the branch target at 0x08048838;
             //       truncating the fall-through here
   if (((int)a0[a1] ^ dat_804a2e8 + 0x3aU) != (int)*(char *)(*(char *)(a1 + 0x804a2c6) + 0x804a2bc)) {
@@ -121,8 +131,14 @@ asked for. No `sub_b10cdc7`, no `dat_d98ddd00`.
   `decompiler/crates/kuna-analysis/tests/fixtures/overlapbranch_i386` (generator
   `overlapbranch_i386.py` beside it), which carries the same idiom at the same address and
   reproduces both forbidden patterns with the option off.
-* 8 unit tests on the decision predicate (`kuna_overlapbranch/tests.rs`), covering the
-  witness, the gate, and every ordinary forward/backward branch shape that must not fire.
+* 11 unit tests on the two decision predicates (`kuna_overlapbranch/tests.rs`): the witness,
+  the gate, every ordinary forward/backward branch shape that must not fire, and the four
+  reconvergence cases (glibc's `LOCK` prefix, the witness's non-reconvergent overlap, an
+  undecodable target, and a target that outruns the fall-through).
+* `decompiler/crates/kuna-cli/tests/overlapbranch_cli.rs` — an end-to-end two-pass gate that
+  runs the promoted probe's clauses verbatim under `make rust-test` over the vendored
+  fixture, plus an `option overlapbranch off` pass proving the clauses are discriminating
+  (`tests/cli/` is executed by `scripts.repipe.clitests`, which is not a CI job).
 
 ## Gates
 
@@ -130,16 +146,79 @@ asked for. No `sub_b10cdc7`, no `dat_d98ddd00`.
 |---|---|
 | `make test` | **PARITY OK — 675/675**, `docs/baseline.json` unmoved |
 | `make test-stages` | **PARITY OK — 603/603** (600 + 3 new; baseline re-recorded) |
-| `make rust-test` | RUSTTEST |
+| `make rust-test` | **green — 5,330 passed, 0 failed** (344 suites) |
 | `make check-spec` | OK (also `--strict` OK) |
 | `kuna catalog --check` | catalog OK (136 → 137 settables) |
 | acceptance `a-52c2ad89b522` | **PASS** |
-| `python -m scripts.repipe.clitests` | 17/17 |
+| `python -m scripts.repipe.clitests` | **18/18** (includes the newly promoted probe) |
 
-**Speed −0.39%** (`scripts.pipeline.timeit`, witness function, median of 7, 5% budget). The
-hook is an `Option::take` and two integer comparisons per instruction and does no extra
-decoding.
+**Speed.** −0.22% on a target where the option is provably inert (`mv` -O2 `main`, output
+byte-identical on both arms) and −1.71% on the witness (`scripts.pipeline.timeit`, median of
+11, 5% budget). Because a single-target `timeit` on this box is contention-sensitive, the
+neutral target was also measured interleaved A/B/A, min-of-9: **ON vs OFF +0.00%** on the
+minimum, and the on-vs-on control arm shows the *identical* median shift — the difference is
+noise. The hook is an `Option::take` and two integer comparisons per instruction; the extra
+decode of the branch target happens only once the strict-interior test has matched.
 
-**Corpus sweep** (standing requirement 7): SWEEP_SENTENCE
+## Corpus sweep (standing requirement 7)
+
+**428 binaries A/B'd whole-binary (`decompile-all`, every function)** — 142 compiler-built
+decbench ELFs (x86-64 O0+O2, ARM, Cortex-M firmware) and 286 crackmes-corpus executables
+(ELF32/64, PE32/PE32+, Mach-O, MS-DOS).
+
+**14 differ, and all 14 are hand-written or obfuscated crackmes. 0 of the 142 compiler-built
+binaries change a byte.** 78 functions move; the emitted function **count is identical on both
+arms (7,799)**, so nothing leaves the inventory. Every changed function classified:
+
+| Class | Count |
+|---|---|
+| hard `(error: …)` → real code | 4 |
+| mixed add+remove inside decodes that are garbage on both arms | 71 |
+| only two never-read variable declarations dropped | 2 |
+| rendering-only (identical statement multiset) | 1 |
+
+Aggregate `(error:` count over the differing binaries falls **387 → 383**. 33 of the 71 are
+`crypto4.exe`'s PE IAT thunk region and 29 are `CrackMe.obf.exe` — regions that are data
+decoded as code either way, where ON is simply shorter and terminates.
+
+Two gains are concrete and independent of the witness:
+
+* **`nano`** (an anti-debugging ptrace crackme, x86-64): the always-taken `jz +3 / jnz +1 / e8`
+  pair stops swallowing the argument setup, and `main`'s ptrace calls recover their request
+  codes — `func_00101189(0, …)`, `func_00101189(7, …)`, `sub_…(0xd, …)` — where the off arm
+  printed every one of them with **no arguments at all**. No `overlapbranch` warning appears,
+  because the truncated edge is unreachable (the `jz`/`jnz` pair is always taken), so the halt
+  block is collected and only the recovered stream remains.
+* **`poof.exe`** (PE x86-32): a bogus `*v4 = *v4 ^ (unsigned int)v4;` store through a junk
+  pointer disappears and the following test reads the real global `dat_40311f`.
+
+## Refutation — the wrong-output risk was ablated, not argued
+
+The triage said the danger is the ownership policy, not the detection. The single clause that
+carries it is the reconvergence exclusion, so it was measured directly.
+
+**It is reached on ordinary compiler output.** Instrumented, a statically linked glibc binary's
+`je +1` over an `f0` `LOCK` prefix hits the strict-interior test and is declined:
+
+```
+[OB] interior   curaddr=0x401004 step=5 target=0x401005            -> true
+[OB] reconverge curaddr=0x401004 step=5 target=0x401005 tlen=4     -> true   (declined)
+```
+
+**Ablated — `kuna_streams_reconverge` forced to `false`, nothing else changed:**
+
+```c
+/* shipped */                             /* exclusion ablated */
+if (!a1)                                  if (a1)
+  *(uint *)(a0 + 4) |= 1;                   return;  // overlapbranch truncation
+LOCK();                                   *(uint *)(a0 + 4) |= 1;
+*(uint *)(a0 + 4) |= 1;                   return *(uint *)(a0 + 4);
+UNLOCK();
+return *(uint *)(a0 + 4);
+```
+
+The atomic store is **deleted on a live path**, and glibc's `_int_free` moves 487 lines.
+As shipped, `_int_free`, `_int_malloc`, `arena_get2.part.0` and `malloc_consolidate` are all
+byte-identical with the option on and off, and 11 such sites exist in that one binary.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
