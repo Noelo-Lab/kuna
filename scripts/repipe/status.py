@@ -98,18 +98,39 @@ def render(s):
     if on:
         L.append("  FLAGS: %s" % ", ".join(on))
     L.append("-" * 92)
-    if not s["agents"]:
-        L.append("  (no agents registered)")
+    # Show THIS round plus anything still running, not the whole history. The inventory is
+    # cumulative across rounds and worker ids carry the round (`t-r2-<hexid>`), so by round 3
+    # the live agents are buried under two rounds of `done` rows with five-figure stale times
+    # -- which is how a real round-2 run rendered: six round-1 rows above the working fleet.
+    agents = s["agents"] or []
+    rnd = s.get("round")
+    tag = "-r%s-" % rnd if rnd is not None else None
+
+    def _current(w):
+        if str(w.get("status")) == "running":
+            return True
+        return bool(tag) and tag in str(w.get("worker") or "")
+
+    shown = [w for w in agents if _current(w)]
+    hidden = len(agents) - len(shown)
+    # running first, then most recently active -- the ones an operator is waiting on
+    shown.sort(key=lambda w: (str(w.get("status")) != "running", w.get("stale_s") or 0))
+
+    if not shown:
+        L.append("  (no agents registered)" if not agents
+                 else "  (no agents this round; %d from earlier rounds)" % hidden)
     else:
         L.append("  %-18s %-9s %-8s %-8s %-7s %s" % ("AGENT", "PHASE", "STATUS", "ELAPSED",
                                                      "STALE", "SLUG / PR"))
-        for w in s["agents"]:
+        for w in shown:
             stale = int(w.get("stale_s") or 0)
             L.append("  %-18s %-9s %-8s %-8s %-7s %s"
                      % (str(w.get("worker"))[:18], str(w.get("phase"))[:9],
                         str(w.get("status"))[:8], pstatus._fmt_elapsed(w.get("elapsed_s") or 0),
                         ("%ds" % stale) if stale < 120 else ("%ds!" % stale),
                         w.get("pr_url") or w.get("slug") or "-"))
+        if hidden:
+            L.append("  (+%d agent(s) from earlier rounds, not shown)" % hidden)
     leases = s.get("leases") or {}
     if leases:
         L.append("  leases: %s" % ", ".join("%s=%s" % (r, l.get("holder"))
