@@ -2,7 +2,7 @@
 need_id: cli-mode-read-raw
 title: No CLI mode to read raw bytes from data addresses
 track: tooling
-status: open
+status: closed
 severity: major
 probe_id: p-74901277a96c
 acceptance_id: a-ecb7f35d39aa
@@ -12,14 +12,14 @@ instances: 1
 challenges: [653d88600f4238b24302b0ec]
 rounds: [2]
 first_seen_round: 2
-attempts: 0
+attempts: 1
 covered_by_option: null
 touches: [decompiler/crates/kuna-cli]
 scope: small
 regression_of: null
-pr: null
-closed_in_round: null
-closing_pr: null
+pr: 379
+closed_in_round: 2
+closing_pr: "379"
 reject_reason: null
 ---
 
@@ -123,3 +123,4 @@ _not yet refuted_
 - filed by cluster.py from 1 observation(s)
 - round 2 T_DEDUP (captain): kept SEPARATE from [disassembling-non-executable-rdata] (69a3822f, bad-ux: `disassemble` silently presents .rdata as instructions) although they are one user-facing gap -- 'I asked kuna about data and it either had nothing or lied'. cluster.py cannot merge across `kind`, and the remedies differ (a byte-read surface vs a guard on an existing one). Together with [strings-inventory-omits-statically] these are the three-instance TESTER demand that the captain-seeded `no-cli-data-code-override` was missing.
 - round 2 T_TRIAGE (captain): track tooling / touches kuna-cli / scope small CONFIRMED as filed, and kind is `absence` (there is no data-read mode), which is why T_REFUTE correctly skipped it. Companion of disassembling-non-executable-rdata: a hexdump/typed-data view is the same missing surface seen once as 'I cannot read bytes' and once as 'disassemble happily decoded .rdata as instructions'. Kept separate -- each is independently probeable and closing one does not close the other -- but whichever is dispatched first should read the other, because one subcommand plausibly answers both and the second would then close as already-supported.
+- closed: acceptance a-ecb7f35d39aa now PASSES at 3ae69cbcec70

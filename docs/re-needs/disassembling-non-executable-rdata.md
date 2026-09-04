@@ -2,7 +2,7 @@
 need_id: disassembling-non-executable-rdata
 title: Disassembling a non-executable .rdata range silently presents data as code
 track: tooling
-status: open
+status: closed
 severity: minor
 probe_id: p-8c0894d9c37e
 acceptance_id: a-c42440103c7d
@@ -18,8 +18,8 @@ touches: [decompiler/crates/kuna-cli]
 scope: small
 regression_of: null
 pr: null
-closed_in_round: null
-closing_pr: null
+closed_in_round: 2
+closing_pr: "379"
 reject_reason: null
 ---
 
@@ -122,3 +122,4 @@ _not yet refuted_
 - filed by cluster.py from 1 observation(s)
 - round 2 T_DEDUP (captain): second instance of the 'kuna will not tell me about data' family; see [cli-mode-read-raw] for why the two were not merged into one record.
 - round 2 T_TRIAGE (captain): track tooling / touches kuna-cli / scope small / severity minor CONFIRMED. The defect is silence, not the decode: kuna exited 0 and presented .rdata bytes as SBB/POP/PUSH/JNC with nothing saying the range is non-executable. A warning (or a refusal behind a flag) is a bounded CLI change. See cli-mode-read-raw -- a data view would answer both.
+- closed: acceptance a-c42440103c7d now PASSES at 3ae69cbcec70

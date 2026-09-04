@@ -4,8 +4,8 @@
   "count": 35,
   "rejected_count": 0,
   "by_status": {
-    "closed": 13,
-    "open": 22
+    "closed": 15,
+    "open": 20
   },
   "by_track": {
     "perf": 2,
@@ -213,38 +213,6 @@
       "path": "docs/re-needs/c-string-objects-become.md"
     },
     {
-      "need_id": "cli-mode-read-raw",
-      "title": "No CLI mode to read raw bytes from data addresses",
-      "track": "tooling",
-      "status": "open",
-      "severity": "major",
-      "probe_id": "p-74901277a96c",
-      "acceptance_id": "a-ecb7f35d39aa",
-      "hypothesis_status": "inconclusive",
-      "credibility": 0.85,
-      "instances": 1,
-      "challenges": [
-        "653d88600f4238b24302b0ec"
-      ],
-      "rounds": [
-        2
-      ],
-      "first_seen_round": 2,
-      "attempts": 0,
-      "covered_by_option": null,
-      "touches": [
-        "decompiler/crates/kuna-cli"
-      ],
-      "scope": "small",
-      "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
-      "reject_reason": null,
-      "score": 13.862944,
-      "path": "docs/re-needs/cli-mode-read-raw.md"
-    },
-    {
       "need_id": "direct-address-keyboard-handler",
       "title": "Direct-address keyboard handler decompilation annexes the unrelated renderer",
       "track": "quality",
@@ -282,14 +250,17 @@
       "track": "quality",
       "status": "open",
       "severity": "major",
-      "probe_id": null,
-      "acceptance_id": null,
+      "probe_id": "p-ac20c1602ca0",
+      "acceptance_id": "a-f2df446f39d5",
       "hypothesis_status": "inconclusive",
       "credibility": 0.8,
       "instances": 1,
-      "challenges": [],
+      "challenges": [
+        "65acadf3eef082e477ff5ede"
+      ],
       "rounds": [
-        1
+        1,
+        2
       ],
       "first_seen_round": 1,
       "attempts": 0,
@@ -714,6 +685,38 @@
       "path": "docs/re-needs/xrefs-unify-pe-import.md"
     },
     {
+      "need_id": "cli-mode-read-raw",
+      "title": "No CLI mode to read raw bytes from data addresses",
+      "track": "tooling",
+      "status": "closed",
+      "severity": "major",
+      "probe_id": "p-74901277a96c",
+      "acceptance_id": "a-ecb7f35d39aa",
+      "hypothesis_status": "inconclusive",
+      "credibility": 0.85,
+      "instances": 1,
+      "challenges": [
+        "653d88600f4238b24302b0ec"
+      ],
+      "rounds": [
+        2
+      ],
+      "first_seen_round": 2,
+      "attempts": 1,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-cli"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": 379,
+      "closed_in_round": 2,
+      "closing_pr": "379",
+      "reject_reason": null,
+      "score": 9.241962,
+      "path": "docs/re-needs/cli-mode-read-raw.md"
+    },
+    {
       "need_id": "decompiling-3396-byte-main",
       "title": "Decompiling the 3396-byte main function takes about 68 seconds",
       "track": "perf",
@@ -812,7 +815,7 @@
       "need_id": "disassembling-non-executable-rdata",
       "title": "Disassembling a non-executable .rdata range silently presents data as code",
       "track": "tooling",
-      "status": "open",
+      "status": "closed",
       "severity": "minor",
       "probe_id": "p-8c0894d9c37e",
       "acceptance_id": "a-c42440103c7d",
@@ -834,8 +837,8 @@
       "scope": "small",
       "regression_of": null,
       "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "closed_in_round": 2,
+      "closing_pr": "379",
       "reject_reason": null,
       "score": 6.931472,
       "path": "docs/re-needs/disassembling-non-executable-rdata.md"
