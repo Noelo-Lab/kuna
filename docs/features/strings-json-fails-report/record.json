@@ -1,0 +1,66 @@
+{
+  "schema": "kuna-feature/1",
+  "slug": "strings-json-fails-report",
+  "need_id": "strings-json-fails-report",
+  "track": "quality",
+  "scope": "large",
+  "option": "picbase",
+  "tier": "analysis",
+  "default": "on",
+  "div": "DIV-104",
+  "phase": "P1",
+  "subphase": "code-data-partition",
+  "module": "decompiler/crates/kuna-analysis/src/listing/kuna_picbase.rs",
+  "symptom": "kuna strings --json --filter Password found the string at 0x8049127 but returned xrefs_count: 0 and functions: [], despite code directly forming its address for output. All 23 strings in the image reported xrefs_count 0.",
+  "witness": {
+    "challenge": "5ab77f6333c5d40ad448ca52",
+    "binary": "pcme0 (pancrackme v1.0)",
+    "sha256": "1cfa9dc11e637657c2ae9b5d1f549ac59d0f8aef10053191bc083e4b6b16bd52",
+    "format": "ELF 32-bit i386, EXEC (non-PIE), PIC code, stripped",
+    "string": "0x8049127 \"Password: \"",
+    "formation": "call 0x80489f4; pop ebx; add ebx,0x184c  (ebx = 0x804a240 = _GLOBAL_OFFSET_TABLE_) then lea eax,[ebx-0x1119] at 0x8048ad3"
+  },
+  "decisions": [
+    {
+      "what": "hypothesis",
+      "verdict": "upheld",
+      "detail": "The tester's EBX-thunk diagnosis and the captain's T_REFUTE both hold: the literal 0x8049127 appears in no 4-byte little-endian position in the image, so no address-matching scheme can produce this xref. The address is computed at run time."
+    },
+    {
+      "what": "scope",
+      "verdict": "large-but-implementable-as-one-module",
+      "detail": "The captain re-scoped this to `large` and named constant propagation of the thunk base into the xref index as the honest fix. That is what shipped, and it fits one new module in the owning phase folder plus a gated seam in the existing read-only query -- no new pass type, no structuring work, no ported-core anchor files. Implemented rather than parked as a proposal on that basis."
+    },
+    {
+      "what": "not-a-tooling-fix",
+      "detail": "kuna strings computes xrefs_count in kuna-cli/src/strings.rs, but the index it queries is built by kuna_analysis::listing::xrefs::build. The CLI surface is correct and unchanged; only the index was incomplete. No --option, no flag and no subcommand was added to the CLI."
+    },
+    {
+      "what": "module-wide-inheritance-is-required-not-optional",
+      "detail": "A purely function-local propagation does NOT close this need. kuna's function inventory splits the witness's prompt routine into four entries at its int3 traps (sub_80489e6 / sub_8048a0f / sub_8048ace / sub_8048c4a), so the idiom that sets ebx up is in a different entry from the lea that forms the prompt. The module-wide claim is licensed by cross-checking the recovered value against the image's own _GLOBAL_OFFSET_TABLE_ and requiring every idiom in the program to agree on one register."
+    },
+    {
+      "what": "wrong-output-refutation",
+      "detail": "The failure mode the captain named -- attributing a string to a nearby or enclosing function -- is refused structurally, not argued away. The base is offered only to a function whose body never writes the register, or from its own establishment up to the next write of it. The `clobbers` arm of the picbase_i386 fixture is the standing negative: it forms secret@GOTOFF off a register it loaded with 0x11111111, and `secret` must stay referenced by nothing. A whole-range cargo assertion additionally pins that the option only ever ADDS edges."
+    },
+    {
+      "what": "live-window-refinement",
+      "detail": "The first cut admitted a function only when EVERY base-register write was at or before the establishment. That vetoed every GCC function with the ordinary `mov ebx,[ebp-0x4]` epilogue restore, and cost the /proc/%d/cmdline attribution on the witness. Narrowed to a half-open window (establishment, first later write), which is the epilogue-restore shape exactly."
+    },
+    {
+      "what": "two-bugs-found-by-the-fixture",
+      "detail": "The out-of-line __x86.get_pc_thunk.bx arm failed twice before it worked: a CALL was clearing the stack pointer (a callee's ret puts it back), and holder_of was scanning every space, so the unique temporary that SLEIGH loads through outranked the register. Neither was visible on the witness, which uses the inline idiom only."
+    }
+  ],
+  "gates": {},
+  "artifacts": {
+    "module": "decompiler/crates/kuna-analysis/src/listing/kuna_picbase.rs",
+    "seam": "decompiler/crates/kuna-analysis/src/listing/xrefs.rs (build)",
+    "fixture": "decompiler/crates/kuna-analysis/tests/fixtures/picbase_i386 (+ .s)",
+    "cargo_gate": "decompiler/crates/kuna-console/tests/verify_picbase.rs",
+    "stage_test": "tests/stages/kuna-picbase.xml",
+    "promoted_probe": "tests/cli/strings-json-fails-report.json",
+    "spec": "docs/spec/01-program-prep.md section 1.6",
+    "div": "docs/history.md DIV-104"
+  }
+}

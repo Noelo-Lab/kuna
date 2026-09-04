@@ -345,6 +345,15 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // only the function claim is withheld.  Default-ON; off restores the previous
     // discovery set exactly.
     "unmappedentry",
+    // (kuna) PIC base-register folding in the cross-reference index: in 32-bit
+    // position-independent code the address of a string or a global is the sum of a
+    // GOT pointer the program materialises at run time (`call <next>; pop ebx; add
+    // ebx,imm`) and a displacement, so it is nowhere in the image as a constant and
+    // every literal reports being referenced by nothing.  The idiom is interpreted
+    // and cross-checked against `_GLOBAL_OFFSET_TABLE_`, and only offered to a
+    // function whose own body cannot have changed the register.  Query surface only
+    // (`kuna xrefs` / `kuna strings`); default-ON, off restores the previous answer.
+    "picbase",
     // (kuna) PE CRT entry-function prototype recovery: a `main` that ignores its
     // arguments reads none of the ABI argument registers, so body-driven parameter
     // recovery finds nothing and declares it `void(void)` while the CRT startup a few

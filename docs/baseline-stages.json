@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    597,
-    597
+    600,
+    600
   ],
   "passing": [
     "data:ARRAYSUBFIELD #1: an 8-byte read at offset 0 of char[16] is a sized sub-field, not element 0",
@@ -239,6 +239,9 @@
     "data:KUNA-ENTRYMAINPROTO #3: the catalog row names the CRT accessors an agent would grep for",
     "data:KUNA-LISTING #1: option listing on parses and round-trips, and is inert: the source form x <= 8 renders identically in both passes (default-off + flag-on parity)",
     "data:KUNA-NORETURN-DISCSTRICT #1: option noreturn_discstrict off/on parses and round-trips, and is inert on the XML path (no Listing built): the source form x <= 8 renders identically in all three passes (default-on + flag-off + flag-on parity)",
+    "data:KUNA-PICBASE #1: the option parses and round-trips in both directions, and is inert on the XML path -- the source form x <= 8 renders identically in all three passes",
+    "data:KUNA-PICBASE #2: the catalog documents it as a default-on P1 code/data-partition option, live-toggled back on",
+    "data:KUNA-PICBASE #3: the catalog row carries the analysis-enablement change_kind an agent reads to judge the flip",
     "data:KUNA-PIPELINE #1: pipeline list names the variants with decompile current",
     "data:KUNA-PIPELINE #2: reduced normalize variant produces no structuring",
     "data:KUNA-QUALITY #1: full pipeline reports the single if-goto edge (before and after the sub-query)",
