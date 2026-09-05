@@ -218,14 +218,17 @@
       "track": "quality",
       "status": "open",
       "severity": "major",
-      "probe_id": null,
-      "acceptance_id": null,
+      "probe_id": "p-8355fed97a86",
+      "acceptance_id": "a-f6e8100daa0b",
       "hypothesis_status": "inconclusive",
       "credibility": 0.8,
       "instances": 1,
-      "challenges": [],
+      "challenges": [
+        "6a3822888a86e4c2c55254fe"
+      ],
       "rounds": [
-        1
+        1,
+        2
       ],
       "first_seen_round": 1,
       "attempts": 0,
@@ -233,7 +236,7 @@
       "touches": [
         "decompiler/crates/kuna-decomp"
       ],
-      "scope": "small",
+      "scope": "large",
       "regression_of": null,
       "pr": null,
       "closed_in_round": null,
@@ -408,14 +411,17 @@
       "track": "quality",
       "status": "open",
       "severity": "major",
-      "probe_id": null,
-      "acceptance_id": null,
+      "probe_id": "p-cb96bbe2ca7e",
+      "acceptance_id": "a-293516d9c2f1",
       "hypothesis_status": "inconclusive",
       "credibility": 0.8,
       "instances": 1,
-      "challenges": [],
+      "challenges": [
+        "68149b8a8f555589f353117c"
+      ],
       "rounds": [
-        1
+        1,
+        2
       ],
       "first_seen_round": 1,
       "attempts": 0,
@@ -438,14 +444,17 @@
       "track": "quality",
       "status": "open",
       "severity": "major",
-      "probe_id": null,
-      "acceptance_id": null,
+      "probe_id": "p-3c2902ec2d39",
+      "acceptance_id": "a-038711a56c33",
       "hypothesis_status": "inconclusive",
       "credibility": 0.8,
       "instances": 1,
-      "challenges": [],
+      "challenges": [
+        "65acadf3eef082e477ff5ede"
+      ],
       "rounds": [
-        1
+        1,
+        2
       ],
       "first_seen_round": 1,
       "attempts": 0,
@@ -785,14 +794,17 @@
       "track": "quality",
       "status": "open",
       "severity": "minor",
-      "probe_id": null,
-      "acceptance_id": null,
+      "probe_id": "p-f83385153d24",
+      "acceptance_id": "a-da7ddcf87198",
       "hypothesis_status": "inconclusive",
       "credibility": 0.8,
       "instances": 1,
-      "challenges": [],
+      "challenges": [
+        "61ffb07c33c5d46c8bcbfc1d"
+      ],
       "rounds": [
-        1
+        1,
+        2
       ],
       "first_seen_round": 1,
       "attempts": 0,
@@ -800,7 +812,7 @@
       "touches": [
         "decompiler/crates/kuna-decomp"
       ],
-      "scope": "small",
+      "scope": "large",
       "regression_of": null,
       "pr": null,
       "closed_in_round": null,
@@ -815,14 +827,17 @@
       "track": "quality",
       "status": "open",
       "severity": "minor",
-      "probe_id": null,
-      "acceptance_id": null,
+      "probe_id": "p-1d6eb3f72061",
+      "acceptance_id": "a-d7fec4000cb6",
       "hypothesis_status": "inconclusive",
       "credibility": 0.8,
       "instances": 1,
-      "challenges": [],
+      "challenges": [
+        "68149b8a8f555589f353117c"
+      ],
       "rounds": [
-        1
+        1,
+        2
       ],
       "first_seen_round": 1,
       "attempts": 0,
