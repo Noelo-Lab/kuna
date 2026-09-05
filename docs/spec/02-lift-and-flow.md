@@ -88,7 +88,18 @@ diagnostics — a `Funcdata::warning` at each cut edge and, once per function, t
 `Function flows out of bounds` `Funcdata::warning_header` — which the emitter
 renders as comments on the prototype and the offending statement. A correctly
 declared function ends in a return and never leaves its range, so a warning here
-means the declared end is wrong. Size 0 is the unbounded default every caller took
+means the declared end is wrong.
+
+Warning is only half of continuing, though, because the cut edge still needs a
+head: the target was never decoded, so it has no op, and until DIV-121 the block
+build asked for one anyway and the whole function died with `Could not find op
+at target address` — in every mode, so a declared end that cut any real edge
+produced no C at all rather than a clipped body. §2.2 closes that: the halt
+`fillin_branch_stubs` already planted at each out-of-extent address is now
+registered as the instruction there, so the branch lands on it and the body ends
+at the boundary carrying the warnings above. The registration is restricted to
+the addresses `handle_out_of_bounds` recorded, so the diagnostic still means
+what it says everywhere else. Size 0 is the unbounded default every caller took
 until the boundary-declaration surface existed (chapter
 [00 §0.4](00-overview.md)) and leaves the range at the whole entry-point space, so
 both the bound and its diagnostics are inert for a run that declares nothing.
@@ -284,8 +295,14 @@ recovered switch table.
 
 Blocks are built only after *all* ops exist — the deferred second phase
 (`flow.rs (FlowInfo::generate_blocks)`). First every referenced-but-undecoded
-address (out-of-bounds targets) gets an artificial halt so branches always have
-a landing op (`fillin_branch_stubs`). Then `collect_edges` walks the dead list
+address gets a `missing` artificial halt so branches have a landing op
+(`fillin_branch_stubs`), and the halts planted for addresses flow reached by
+*leaving the declared extent* are registered in `visited` as the instruction
+there, so `collect_edges` can resolve the cut edge to them. The rest are not:
+an undecoded address inside the extent means an op that should exist does not,
+and resolving that to a halt would silently shorten a function instead of
+reporting the defect, so it keeps upstream's "Could not find op at target
+address". Then `collect_edges` walks the dead list
 pairing branch ops with their target ops — a BRANCHIND contributes one edge per
 recovered jump-table entry, deduplicated, and contributes *no* edges when no
 table was recovered (the partial-flow "assume no branches out" rule);

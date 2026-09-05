@@ -39,6 +39,17 @@ const DECLARED_END: u64 = 0x1420;
 /// the bound really cut the flow rather than just relabelling the record.
 const PAST_THE_END: &str = "sub_1393";
 
+/// The second function in the fixture, whose `JZ 0x1098` at `0x1081` lets a
+/// declared end land exactly on a conditional branch's target
+/// (`docs/re-needs/explicit-function-boundary-aborts.md`).
+const BRANCH_ENTRY: u64 = 0x1070;
+/// An end the `JZ` targets — the cut edge.
+const BRANCH_END: u64 = 0x1098;
+/// A leaf whose derived extent `[0x1129,0x1141)` ends in `POP RBP; RET` — the
+/// witness that declaring a CORRECT extent must not drop the closing instruction.
+const LEAF_ENTRY: u64 = 0x1129;
+const LEAF_END: u64 = 0x1141;
+
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
@@ -128,6 +139,78 @@ fn a_declared_boundary_bounds_the_flow_and_the_reported_extent() {
     assert!(
         !body.contains(PAST_THE_END),
         "flow past the declared end must be cut, got:\n{body}"
+    );
+}
+
+/// A declared end that cuts a *branch* rather than a fall-through still yields C.
+///
+/// `sub_1070` opens `CMP RAX,RDI; JZ 0x1098` at `0x1081`, so declaring the extent
+/// `[0x1070,0x1098)` puts the conditional's target one byte past the last in-body
+/// byte. The walk deliberately never decodes it, and until this was fixed
+/// `collect_edges` then asked `target` for the edge head and the whole function
+/// died with `Could not find op at target address: (ram,0x00001098)` -- in every
+/// mode, so declaring a boundary that cut any real edge produced nothing at all.
+#[test]
+fn a_declared_end_a_branch_targets_clips_instead_of_aborting() {
+    let Some(mut prog) = load() else { return };
+    let addr = code_addr(&prog, BRANCH_ENTRY);
+    prog.declare_function(addr.clone(), Some("deregister"), (BRANCH_END - BRANCH_ENTRY) as i32)
+        .expect("the declaration is accepted");
+    let step = decompile_one(
+        prog.arch_mut(),
+        "deregister",
+        addr,
+        (BRANCH_END - BRANCH_ENTRY) as i32,
+        &DecompileSeed::plain(&[], &[]),
+        &[],
+    );
+    let fd = step.result.expect("the clipped function decompiles");
+    let body = kuna_decomp::decompile_drive::print_c(prog.arch_mut(), &fd);
+    assert!(body.contains("deregister"), "the declared name renders, got:\n{body}");
+    assert!(
+        body.contains("Function flows out of bounds"),
+        "the cut is reported, not hidden, got:\n{body}"
+    );
+    assert!(
+        body.contains("flows to r0x00001098"),
+        "the warning names the cut edge's target, got:\n{body}"
+    );
+}
+
+/// Declaring the extent kuna itself derived must change nothing — the whole point
+/// of an assertion is that asserting the truth is free.
+///
+/// It was not: the fall-through bound treated the LAST in-body byte as already
+/// out of range, so a declared `[entry,end)` never decoded the instruction that
+/// starts at `end - 1`. For `sub_1129`, whose 24 bytes end in `POP RBP; RET`,
+/// that was the return and everything the structurer needed it for: the body came
+/// out as an empty `void sub_1129(void)` carrying a bogus `Function flows out of
+/// bounds` warning.
+#[test]
+fn declaring_the_derived_extent_reproduces_the_undeclared_body() {
+    let Some(mut prog) = load() else { return };
+    let addr = code_addr(&prog, LEAF_ENTRY);
+    let seed = DecompileSeed::plain(&[], &[]);
+    let natural = decompile_one(prog.arch_mut(), "sub_1129", addr.clone(), 0, &seed, &[])
+        .result
+        .expect("the undeclared function decompiles");
+    let undeclared = kuna_decomp::decompile_drive::print_c(prog.arch_mut(), &natural);
+    assert!(
+        undeclared.contains("return"),
+        "the fixture's leaf really does return a value, got:\n{undeclared}"
+    );
+
+    let size = (LEAF_END - LEAF_ENTRY) as i32;
+    prog.declare_function(addr.clone(), None, size).expect("the declaration is accepted");
+    let bounded = decompile_one(prog.arch_mut(), "sub_1129", addr, size, &seed, &[])
+        .result
+        .expect("the declared function decompiles");
+    let declared = kuna_decomp::decompile_drive::print_c(prog.arch_mut(), &bounded);
+
+    assert_eq!(undeclared, declared, "asserting the derived extent is inert");
+    assert!(
+        !declared.contains("out of bounds"),
+        "nothing left the extent, so nothing is warned about, got:\n{declared}"
     );
 }
 

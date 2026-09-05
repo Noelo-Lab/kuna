@@ -1,0 +1,40 @@
+{
+  "slug": "explicit-function-boundary-aborts",
+  "need_id": "explicit-function-boundary-aborts",
+  "track": "quality",
+  "scope": "small",
+  "round": 3,
+  "branch": "feat/re-explicit-function-boundary-aborts",
+  "option": null,
+  "default": null,
+  "div": "DIV-121",
+  "touches": [
+    "decompiler/crates/kuna-decomp/src/p2_lift/flow.rs"
+  ],
+  "summary": "Under a caller-declared function extent, a branch target outside the extent now resolves to the artificial halt `fillin_branch_stubs` already planted for it, so the body is clipped at the boundary under the `Function flows out of bounds` warnings instead of the whole function dying with `Could not find op at target address`. The collateral sweep turned up a second defect in the same mechanism: `eaddr` is the last IN-BODY byte, but the fall-through bound treated an instruction STARTING there as already out of range, so a CORRECT declared extent dropped the function's closing instruction.",
+  "decisions": [
+    {
+      "what": "the filed hypothesis is upheld, and the captain's narrowing is what made the fix safe",
+      "detail": "Filed and upheld: 'a clipped conditional target is still resolved as an internal operation.' The second filed hypothesis ('a later pass may reference an operation removed by the explicit boundary') was already overturned at T_REFUTE and stays overturned -- the op is never created. The captain's WHAT A BUILDER MUST NOT DO is the load-bearing part: clipping at the `target` lookup site would also swallow `default-decompilation-fails-despite`, whose missing target (0x8048541) is a real in-extent NOP a phantom entry removed, and would turn a reported defect into a silently shortened function. The clip is therefore conditioned on provenance -- a set of the addresses `handle_out_of_bounds` actually recorded -- rather than on 'the lookup failed'. Verified: that need's acceptance still FAILS after this change, and the whole 51-need acceptance suite reports 0 regressed."
+    },
+    {
+      "what": "no option, following DIV-118/DIV-120 rather than the quality-track ritual",
+      "detail": "The need is filed `track: quality`, but the change cannot alter emitted C for any caller that does not pass `--define-function START-END`: `FlowInfo::set_range` is the ONLY narrowing of the flow range, and its only non-full-space caller is `follow_flow_on_fd` when `fd.get_size() > 0`, which comes from a declared extent alone (every other `new_funcdata`/`decompile_func` call site in the workspace passes 0). Inside that surface it is a strict bug fix -- `docs/cli.md` already documented the behaviour being restored, and there is no judgement call between 'abort the function' and 'clip it with the warning kuna already emits'. Same shape and same call as the sibling `checker-exceeds-instruction-ceiling` (#422/DIV-120), which shipped the identical error-to-truncated-body change ungated with a DIV row. Measured rather than argued: 112/112 fixtures byte-identical with nothing declared."
+    },
+    {
+      "what": "the sweep found a bigger defect than the need did",
+      "detail": "The standing requirement to sweep every changed function is what caught it. With the fix alone, declaring every discovered function at its DERIVED extent changed 28 of 34 functions in one fixture -- functions that had never errored. Reading them: `FlowInfo::fallthru` reports out of bounds when `bound <= addrlist.back()` and `bound == eaddr`, and `eaddr` is `entry + size - 1`, the last byte INSIDE the body. Upstream can only compare equal there at the top of memory (its `eaddr` is the space's highest address); under a declared extent it is every function's last instruction. So a correct extent never decoded the closing `ret` -- `sub_1129` (24 bytes, `POP RBP; RET`) came out as an EMPTY `void sub_1129(void)` under a bogus out-of-bounds warning instead of `int sub_1129(int a0) { return (a0 + 10) * 2; }`. Fixed in the same PR because shipping only the first half would have made that population worse, not better (spurious early returns and `return-dupe` headers where there had been clean C)."
+    },
+    {
+      "what": "the oracle for the declared-extent population is kuna's own undeclared output",
+      "detail": "An assertion that states the truth must be free, so declaring the extent kuna derived should reproduce the undeclared body exactly. That is a checkable oracle over the whole fixture corpus and it is what the cargo test `declaring_the_derived_extent_reproduces_the_undeclared_body` pins."
+    },
+    {
+      "what": "the promoted probe is a vendored restatement, not the acceptance verbatim",
+      "detail": "`verify --promote` refuses a `binary_source: dataset` target and the witness is a 7 MB PE. `aif_gap_x86_64` (14 KB, already in the repo) holds the identical shape -- `JZ 0x1098` at `0x1081` with the extent declared `[0x1070,0x1098)`, so the conditional targets the exclusive end exactly as the dataset witness does. Same clauses as the acceptance (exit 0, `functions[0].code` non-empty, `functions[0].error` null) plus the two warning strings, because an empty body would satisfy the first three."
+    }
+  ],
+  "collateral_sweep": "Two sweeps. (1) NOTHING DECLARED, where the change must be inert: `decompile-all --json` over all 112 binary fixtures under `kuna-analysis/tests/fixtures`, both arms -- 112/112 byte-identical documents. (2) THE CHANGED POPULATION: every discovered function of those 112 binaries declared at its derived extent (2,765 functions), compared against the same binary's UNDECLARED decompile. Bodies differing 403 -> 138, functions hard-erroring under the declaration 142 -> 0. Every one of the 138 residual differences carries the `Function flows out of bounds` warning, i.e. the derived clip genuinely cuts flow there -- ARM Cortex-M tail calls, `_INIT_0` chaining into `_FINI_0`, a `_start` that falls into its neighbour -- and 135 of them are shorter or the same length. None is a silent change.",
+  "cost": "No measurable cost: the mechanism adds one `BTreeSet<Address>` that stays empty unless a declared extent cuts flow, one set insert per cut edge, and one `visited` insert per out-of-extent stub, none of them on the per-instruction path. Interleaved min-of-5 `decompile-all --json` over the 224 KB `regglobal_fmt_x86_64` with all of its discovered functions declared at their derived extents -- the declared-extent path, i.e. the only one that can differ -- 0.756 s before vs 0.753 s after, -0.42% on the min and inside the run-to-run spread. That arm now decodes strictly MORE than before (each function's closing instruction is no longer dropped), which is where a cost would show if there were one.",
+  "not_closed": "`default-decompilation-fails-despite` is deliberately untouched: its missing target is inside its declared extent, so it keeps upstream's throw and its acceptance still fails. `--define-function` remains caller-carried -- kuna does not write declared boundaries back into the image, so an agent must pass the same `@bounds.txt` to every invocation."
+}

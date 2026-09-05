@@ -101,9 +101,12 @@ already named keeps its name unless you supply one); `end` is optional too — a
 Addresses are hexadecimal with or without `0x`.
 
 A declared `end` that cuts real control flow is reported rather than silently
-truncating the body: the function carries a `WARNING: Function flows out of bounds`
-comment on its prototype and one at each cut edge. A correct boundary ends in a
-return and produces no warning, so that comment is the signal to widen the range.
+truncating the body: the function carries a `// warn: Function flows out of bounds`
+comment on its prototype and one at each cut edge, naming the address the edge left
+for. That holds for a conditional branch over the end as much as for fall-through
+past it — including a branch to the exclusive end itself, which is what a
+tail-clipped `if (err) goto fail;` looks like. A correct boundary ends in a return
+and produces no warning, so that comment is the signal to widen the range.
 
 The `@file` form is the durable one: one declaration per line, `#` comments and
 blank lines skipped. kuna does not write boundaries back into the image, so the file

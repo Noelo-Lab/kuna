@@ -386,6 +386,49 @@ fn block_build_two_blocks_one_branch_edge() {
     assert!(flow.data.bblocks_ref().block(entry).size_in() >= 1);
 }
 
+/// A branch that leaves the declared flow range is never decoded, so its stub is
+/// the only op at that address: `fillin_branch_stubs` registers it in `visited`
+/// and the edge resolves.  An unprocessed address INSIDE the range is left alone
+/// -- there a missing op is a real defect, and resolving it to a halt would
+/// truncate a body instead of reporting it.
+#[test]
+fn only_an_out_of_range_stub_becomes_a_resolvable_target() {
+    let mut fd = build_fd();
+    let ram = ram_space(&fd);
+    // BRANCH @0x1000 to 0x2000, with flow declared to span [0x1000,0x1010].
+    let br = make_op(&mut fd, OpCode::CPUI_BRANCH, 0x1000, 1);
+    set_coderef_in(&mut fd, br, 0x2000);
+    fd.obank_mut().get_mut(br).unwrap().set_flag(pcodeop_flags::startmark);
+
+    let env = TableEnv;
+    let mut flow = FlowInfo::new(fd, &env);
+    flow.set_range(
+        Address::new(Rc::clone(&ram), 0x1000),
+        Address::new(Rc::clone(&ram), 0x1010),
+    );
+    let mut startbasic = true;
+    let mut isfallthru = true;
+    flow.xref_for_test(br, &mut startbasic, &mut isfallthru).unwrap();
+    // Out of range: the walk records it and refuses to follow it.
+    assert!(!flow.addrlist_contains(0x2000), "an out-of-range target is not queued");
+    assert!(flow.has_out_of_bounds(), "the boundary crossing is reported");
+    // An in-range address that went unprocessed for some other reason.
+    flow.push_unprocessed(Address::new(Rc::clone(&ram), 0x1008));
+
+    flow.fillin_branch_stubs_for_test().unwrap();
+
+    let outside = Address::new(Rc::clone(&ram), 0x2000);
+    let inside = Address::new(Rc::clone(&ram), 0x1008);
+    assert!(
+        flow.visited_contains(&outside),
+        "the out-of-range stub resolves, so collect_edges can hang the cut edge on it"
+    );
+    assert!(
+        !flow.visited_contains(&inside),
+        "an in-range missing op keeps upstream's throw"
+    );
+}
+
 /// `dedup_unprocessed` sorts and removes duplicate addresses (C++ `flow.cc:868`).
 #[test]
 fn dedup_unprocessed_sorts_and_dedups() {

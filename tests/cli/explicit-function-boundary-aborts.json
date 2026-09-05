@@ -1,0 +1,65 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "a-4b72ec46991b",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "0x1070",
+    "--addr",
+    "--define-function",
+    "0x1070-0x1098=deregister",
+    "--json"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/aif_gap_x86_64",
+    "binary_sha256": "1a592a85f424cc2db8953d5a38c86676bcee5e37b242b6fb6244a2c9fccfeeef",
+    "binary_size": 14408,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/aif_gap_x86_64",
+    "selector": "0x1070",
+    "selector_kind": "addr"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "json": [
+      {
+        "path": "functions[0].code",
+        "op": "matches",
+        "value": "\\S"
+      },
+      {
+        "path": "functions[0].error",
+        "op": "eq",
+        "value": null
+      },
+      {
+        "path": "functions[0].code",
+        "op": "contains",
+        "value": "Function flows out of bounds"
+      },
+      {
+        "path": "functions[0].code",
+        "op": "contains",
+        "value": "r0x00001081 flows to r0x00001098"
+      },
+      {
+        "path": "functions[0].size",
+        "op": "eq",
+        "value": 40
+      }
+    ]
+  },
+  "notes": "The dataset acceptance is a 7 MB PE whose entry prefix branches to its declared exclusive end; CI has no copy. This in-repo fixture is the same shape: `JZ 0x1098` at 0x1081, extent declared [0x1070,0x1098). Before the fix any branch leaving a --define-function extent aborted the function with `Could not find op at target address`, in every mode. The warning clauses are the positive half."
+}

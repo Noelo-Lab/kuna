@@ -475,6 +475,14 @@ pub struct FlowInfo<'a, E: FlowEnvironment> {
     env: &'a E,
     /// Addresses which are permanently unprocessed (C++ `unprocessed`).
     unprocessed: Vec<Address>,
+    /// (kuna) The subset of [`Self::unprocessed`] that flow reached by leaving the
+    /// declared extent, i.e. every address [`Self::handle_out_of_bounds`] warned
+    /// about.  [`Self::fillin_branch_stubs`] registers only these in
+    /// [`Self::visited`], so a branch to one resolves to its stub instead of
+    /// aborting the function; an unprocessed address that is IN the extent keeps
+    /// upstream's throw, because there the missing op is a real defect and
+    /// clipping it would silently truncate a body.
+    outofbounds: std::collections::BTreeSet<Address>,
     /// Addresses to which there is flow — the work stack (C++ `addrlist`).
     addrlist: Vec<Address>,
     /// List of BRANCHIND ops (preparing for jump table recovery) (C++ `tablelist`).
@@ -566,6 +574,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             data,
             env,
             unprocessed: Vec::new(),
+            outofbounds: std::collections::BTreeSet::new(),
             addrlist: Vec::new(),
             tablelist: Vec::new(),
             injectlist: Vec::new(),
@@ -868,6 +877,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                 self.data.obank().get(from).expect("new_address: stale from").get_addr().clone();
             self.handle_out_of_bounds(&fromaddr, to)?;
             self.unprocessed.push(to.clone());
+            self.outofbounds.insert(to.clone());
             return Ok(());
         }
         if self.seen_instruction(to) {
@@ -1675,7 +1685,21 @@ truncating the fall-through here"
             let backaddr = self.addrlist.last().expect("fallthru: addrlist back").clone();
             if bound <= backaddr {
                 if bound == self.eaddr {
+                    if backaddr <= self.eaddr {
+                        // (kuna) `eaddr` is the last IN-BODY byte, so an
+                        // instruction that STARTS on it is inside the range --
+                        // `new_address` admits a branch to the very same address
+                        // (`eaddr < to`).  Upstream can compare equal here only at
+                        // the top of memory, because its `eaddr` is the space's
+                        // highest address; under a declared extent it is every
+                        // function's last instruction, and calling that one out of
+                        // bounds dropped the closing `ret` of a CORRECTLY declared
+                        // body.  Decode it — the fall-through past it is caught on
+                        // the next lap, where `backaddr` really is above `eaddr`.
+                        continue;
+                    }
                     self.handle_out_of_bounds(&self.eaddr.clone(), &backaddr)?;
+                    self.outofbounds.insert(backaddr.clone());
                     self.unprocessed.push(backaddr);
                     self.addrlist.pop();
                     return Ok(());
@@ -1736,6 +1760,28 @@ truncating the fall-through here"
             let op = self.artificial_halt(&addr, pcodeop_flags::missing)?;
             self.op_mark_start_basic(op);
             self.op_mark_start_instruction(op);
+            // (kuna) A caller-declared extent (`--define-function START-END`) is the
+            // only thing that narrows the flow range, and a branch that leaves it
+            // leaves an address the walk deliberately never decoded.  `collect_edges`
+            // then asks `target` for the edge head and upstream throws "Could not
+            // find op at target address", so declaring an extent that cuts any real
+            // edge produced no C at all.  Register the stub as the instruction at
+            // that address and the edge lands on it -- the clipped body plus the
+            // `Function flows out of bounds` header the warning path already emits.
+            // Restricted to the out-of-extent set on purpose: an unprocessed address
+            // INSIDE the extent means an op that should exist does not, and
+            // resolving that to a halt would truncate a function instead of
+            // reporting the defect.
+            if self.outofbounds.contains(&addr) {
+                let seq = self
+                    .data
+                    .obank()
+                    .get(op)
+                    .expect("fillin_branch_stubs: stale stub")
+                    .get_seq_num()
+                    .clone();
+                self.visited.insert(addr.clone(), VisitStat { seqnum: seq, size: 1 });
+            }
         }
         Ok(())
     }
@@ -2630,6 +2676,7 @@ truncating the fall-through here"
         }
         // Copy in the cross-referencing.
         self.unprocessed.extend(inlineflow.unprocessed.iter().cloned());
+        self.outofbounds.extend(inlineflow.outofbounds.iter().cloned());
         self.addrlist.extend(inlineflow.addrlist.iter().cloned());
         for (addr, stat) in inlineflow.visited.iter() {
             // std::map::insert does NOT overwrite an existing key — match it.
@@ -3072,6 +3119,14 @@ truncating the fall-through here"
     /// Sort + dedup the unprocessed list (C++ `dedupUnprocessed`).
     pub fn dedup_unprocessed_for_test(&mut self) {
         self.dedup_unprocessed()
+    }
+
+    /// Plant the artificial halts for every unprocessed address (C++
+    /// `fillinBranchStubs`).  Verification support: the out-of-extent subset is
+    /// also registered in `visited`, which is what a caller-declared boundary
+    /// depends on and what an in-extent gap must NOT get.
+    pub fn fillin_branch_stubs_for_test(&mut self) -> KunaResult<()> {
+        self.fillin_branch_stubs()
     }
 
     /// Does the work-stack (`addrlist`) hold an address at the given offset?
