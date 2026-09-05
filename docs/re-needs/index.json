@@ -4,8 +4,8 @@
   "count": 35,
   "rejected_count": 0,
   "by_status": {
-    "closed": 26,
-    "open": 9
+    "closed": 27,
+    "open": 8
   },
   "by_track": {
     "perf": 2,
@@ -443,7 +443,7 @@
       "need_id": "wide-api-string-args",
       "title": "wide (UTF-16) Windows API string arguments collapse to one character",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
       "probe_id": "p-3c2902ec2d39",
       "acceptance_id": "a-038711a56c33",
@@ -465,9 +465,9 @@
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": "399",
+      "closed_in_round": 2,
+      "closing_pr": "399",
       "reject_reason": null,
       "score": 13.862944,
       "path": "docs/re-needs/wide-api-string-args.md"

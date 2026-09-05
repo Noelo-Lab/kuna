@@ -2,7 +2,7 @@
 need_id: wide-api-string-args
 title: wide (UTF-16) Windows API string arguments collapse to one character
 track: quality
-status: open
+status: closed
 severity: major
 probe_id: p-3c2902ec2d39
 acceptance_id: a-038711a56c33
@@ -17,9 +17,9 @@ covered_by_option: null
 touches: [decompiler/crates/kuna-decomp]
 scope: small
 regression_of: null
-pr: null
-closed_in_round: null
-closing_pr: null
+pr: "399"
+closed_in_round: 2
+closing_pr: "399"
 reject_reason: null
 ---
 
@@ -128,3 +128,17 @@ _none recorded_
 - round 2 wave 20 (captain): `touches` LEFT as filed (`[decompiler/crates/kuna-decomp]`). I have measured evidence of the
   symptom but none of the owning module, and a confidently-wrong `touches` would misdirect a
   builder and mis-scope its leases. The builder should set it from its own root-cause work.
+- closed: acceptance a-038711a56c33 now PASSES at 94286c8eca0c
+- round 2 B_DONE (captain): `pr: null -> 399` (`apply-acceptance` sets `closing_pr` but never
+  `pr`). `attempts` stays 0 -- dispatched once, closed on that attempt. `touches` is left as
+  filed but was WRONG: the fix landed in `kuna-analysis` (`analyzers/strings/kuna_widestrings.rs`),
+  not `kuna-decomp`, which is the module the record reserved. The tester's hypothesis (UTF-16LE
+  data read as an 8-bit NUL-terminated string in string markup) is what the shipped fix
+  corrects; `hypothesis_status` stays `inconclusive` because no refuter ever examined it.
+- round 2 B_DONE (captain): `verify --promote` REFUSED this acceptance -- `target.binary_source`
+  is `dataset` and CI has no dataset. The promotion is instead the in-repo probe the builder
+  shipped inside #399, `tests/cli/wide-api-string-args.json` (probe `a-59094337ab21`, the
+  1536-byte synthesized PE32+ fixture `widestrings_x86_64.exe` at `--addr 0x140001000`), which
+  is strictly stronger than the dataset acceptance -- two `stdout_matches` plus a
+  `stdout_absent` control for the old `LoadLibraryW("n")` -- and is counted by `make test-cli`
+  (25/25 -> 26/26 at 94286c8e). No second, dataset-pinned file was hand-added.
