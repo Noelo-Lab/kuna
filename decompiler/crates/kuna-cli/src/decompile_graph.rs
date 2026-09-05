@@ -21,13 +21,16 @@
 //!   `kuna xrefs` answers with);
 //! * how a body disassembles ([`crate::disassemble::function_listing`]).
 //!
+//! `address` is the only key: a name can repeat inside one document, because a
+//! PLT thunk, an import slot and the callable they name are three addresses
+//! under one name.
+//!
 //! The document is observational: it adds no analysis facts, mutates no IR and
 //! changes no existing C rendering, so it has neither an option row nor a DIV
 //! entry. Field-by-field schema: `docs/cli.md`.
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use kuna_analysis::listing::xrefs::XrefKind;
 use kuna_console::classify::Classifier;
 use kuna_console::engine::{ConsoleProgram, EntryProvenance, FunctionEntry};
 use kuna_console::project::{decompile_targets, FuncResult};
@@ -40,7 +43,7 @@ use crate::jsonfmt::{dumps_indent2, Json};
 
 /// The document shape. Bumped whenever a field is added, removed or changes
 /// meaning, so a consumer can refuse a document it does not understand.
-const SCHEMA_VERSION: u64 = 3;
+const SCHEMA_VERSION: u64 = 4;
 
 /// `kuna decompile-graph` entry point.
 ///
@@ -109,25 +112,50 @@ pub fn run(argv: &[String]) -> i32 {
 
 /// Load once, decompile the selected bodies, walk the program once for edges,
 /// and render.
+///
+/// Nodes are the whole inventory and bodies are only what the whole-binary
+/// target policy admits, so a `--functions` / `--addr` narrowing buys a cheap
+/// whole-program graph with just the named bodies in it, and never a body for an
+/// address that is not executable content — the row's `kind` says so, and an
+/// explicit selection does not buy an exception.
+///
+/// (kuna outlang) C-only, for the reason `decompile-project` is: honouring
+/// `--language rust` would put Rust in a field called `codeC`. The auto policy
+/// is off for this command too (`parse_args_with_filters`), so a rustc-built
+/// binary does not trip the refusal on its own.
 fn export(args: &Args, label: &str) -> Result<String, String> {
     let binary_path = std::fs::canonicalize(&args.binary)
         .map_err(|_| format!("binary not found: {}", args.binary))?;
     let mut prog = load_program(args, DriverDefaults::Decompile)?;
+    if prog.arch().print().get_name() != "c-language" {
+        return Err(format!(
+            "the graph document is C-only (got {}); use `kuna decompile` or \
+             `kuna decompile-all --json` for other output languages",
+            prog.arch().print().get_name()
+        ));
+    }
     if args.max_fn_seconds > 0 {
         prog.arch_mut().kuna_fn_budget =
             Some(std::time::Duration::from_secs(args.max_fn_seconds));
     }
 
-    // Nodes are the whole inventory; bodies are what `decompile-all` would
-    // decompile. A `--functions` / `--addr` narrowing therefore buys a cheap
-    // whole-program graph with only the named bodies rendered in it.
     let entries = prog.function_entries_canonical();
     // What a row IS never depends on what this run was asked to decompile, so
-    // the executable set is taken from the policy directly rather than read back
-    // off the results.
+    // the executable set comes from the policy, not from the results.
     let executable: BTreeSet<u64> =
         prog.function_entries_executable().iter().map(|e| e.addr.get_offset()).collect();
-    let targets = resolve_targets(&prog, args)?;
+    let mut targets = resolve_targets(&prog, args)?;
+    targets.retain(|entry| {
+        let selected = executable.contains(&entry.addr.get_offset());
+        if !selected {
+            eprintln!(
+                "warning: {} @ 0x{:x} is not executable content; exported without a body",
+                entry.name,
+                entry.addr.get_offset()
+            );
+        }
+        selected
+    });
     let results = decompile_targets(
         &mut prog,
         targets,
@@ -146,18 +174,17 @@ fn export(args: &Args, label: &str) -> Result<String, String> {
     let by_address: BTreeMap<u64, &FuncResult> =
         results.iter().map(|result| (result.address, result)).collect();
 
-    let graph = CallGraph::build(&prog, &args.binary)?;
-    let classifier =
-        Classifier::new(&prog, &args.binary, entries.iter().map(|e| e.addr.get_offset()));
-    let known: BTreeSet<u64> = entries.iter().map(|e| e.addr.get_offset()).collect();
-
     let bytes = std::fs::read(&args.binary).map_err(|error| format!("{}: {error}", args.binary))?;
     let file = object::File::parse(&*bytes)
         .map_err(|error| format!("could not parse {}: {error}", args.binary))?;
-    // The image's declared entry, resolved THROUGH the inventory: an ARM ELF
-    // stores the Thumb mode bit in `e_entry` (`0x100d7` for a `_start` the
-    // engine reports at `0x100d6`), and a format that declares no entry at all
-    // reports `0`, which is a real address in a relocatable object.
+    let graph = CallGraph::build_from(&prog, &file);
+    let classifier =
+        Classifier::from_object(&prog, Some(&file), entries.iter().map(|e| e.addr.get_offset()));
+    let known: BTreeSet<u64> = entries.iter().map(|e| e.addr.get_offset()).collect();
+
+    // Through the inventory, because an ARM ELF stores the Thumb mode bit in
+    // `e_entry` (`0x100d7` for a `_start` reported at `0x100d6`), and a format
+    // that declares no entry reports `0` -- a real address in a relocatable.
     let image_entry: Option<u64> = match file.entry() {
         0 => None,
         vma => Some(prog.find_entry_at(vma).map_or(vma, |e| e.addr.get_offset())),
@@ -209,13 +236,16 @@ fn export(args: &Args, label: &str) -> Result<String, String> {
     Ok(format!("{}\n", dumps_indent2(&document)))
 }
 
-/// One function row.
+/// One function row, keyed by `address`: `name` is not unique in the document,
+/// since a thunk, the pointer slot it forwards through and the callable they
+/// stand for are three rows under one name.
 ///
 /// `codeC` is `null` with a non-null `error` when the decompile failed, and
 /// `null` with a `null` error when no body was attempted — a bodyless `kind`, or
 /// a target list that did not select this entry. `assembly` follows the
 /// *attempt*, not the outcome: a function whose C failed still has bytes, and
-/// the listing is what is left to look at.
+/// the listing is what is left to look at — an entry whose extent could not be
+/// measured lists its first instruction rather than nothing.
 fn function_json(
     prog: &ConsoleProgram,
     classifier: &Classifier,
@@ -243,8 +273,6 @@ fn function_json(
         (
             "assembly".into(),
             match result {
-                // An entry whose extent could not be measured still lists its
-                // first instruction rather than nothing.
                 Some(_) => crate::disassemble::function_listing(
                     prog,
                     address,
@@ -267,10 +295,10 @@ fn function_json(
     ])
 }
 
-/// What the row is, in this document's five-value vocabulary. The first two are
-/// the rows with no body: the whole-binary target policy never decompiles an
-/// address that is not executable content, and each of those is named rather
-/// than lifted out of whatever bytes happen to be there.
+/// What the row is, in this document's five-value vocabulary. The first three
+/// are the rows with no body: this surface never decompiles an address that is
+/// not executable content, not even a named one, and each of those is named
+/// rather than lifted out of whatever bytes happen to be there.
 ///
 /// * `external` — a loader-defined undefined symbol: the definition is in
 ///   another module and there are no bytes here at all.
@@ -305,6 +333,12 @@ fn function_kind(
 
 /// Where a forwarding entry sends control: the destination of a direct lone
 /// jump, or the fixed pointer slot an indirect one (`jmp [slot]`) reads.
+///
+/// The slot half needs the jump to name it as a decode-time constant, which is
+/// what an x86 `jmp [rip+disp]` / `FF 25` stub does. An AArch64 stub computes it
+/// (`adrp x16, page; ldr x16, [x16]; br x16`), so a Mach-O `__stubs` entry is
+/// `kind = thunk` with no `forwardsTo` — the import slot is still its own row,
+/// reached by name.
 fn forwards_to(prog: &ConsoleProgram, graph: &CallGraph, address: u64) -> Option<u64> {
     match prog.lone_jump_target(address) {
         Some(Some(target)) => Some(target),
@@ -337,7 +371,12 @@ fn parameters(result: Option<&FuncResult>) -> Json {
 }
 
 /// The edge list: every caller in address order, each one's callees in
-/// call-site order with a contiguous zero-based `calleeOrder`.
+/// reference order with a contiguous zero-based `calleeOrder`.
+///
+/// `kind` is the `kuna xrefs` vocabulary, so the document's edges and that
+/// command's rows cannot disagree: `call` a call site, `jump` a tail call or a
+/// branch into a neighbouring entry, `data` an address handed to someone else to
+/// call (the edge that gives `main` a caller).
 ///
 /// Both endpoints are always rows in `functions` — [`CallGraph::callees_of`]
 /// resolves a target onto the inventory and drops what lands nowhere — so a
@@ -357,16 +396,7 @@ fn edges_json(graph: &CallGraph, known: &BTreeSet<u64>) -> Json {
             edges.push(Json::Object(vec![
                 ("callerAddress".into(), number(caller)),
                 ("calleeAddress".into(), number(callee)),
-                (
-                    "kind".into(),
-                    Json::Str(
-                        match kind {
-                            XrefKind::Jump => "jump",
-                            _ => "call",
-                        }
-                        .into(),
-                    ),
-                ),
+                ("kind".into(), Json::Str(kind.as_str().into())),
                 ("calleeOrder".into(), number(order as u64)),
             ]));
         }
@@ -398,9 +428,11 @@ fn usage() {
          \x20                   [--define-function S[-E][=N]|@FILE].. \\\n\
          \x20                   [--option N V].. [--slice ARCH] [--target T] [--sleighpath D]\n\
          \n\
-         The whole program as one JSON document (schema 3): every discovered\n\
+         The whole program as one JSON document (schema 4): every discovered\n\
          function with its recovered signature, parameters, C and assembly, plus\n\
          the call edges between them.  Written to stdout, or to -o FILE.\n\
+         C only: the document has no other output language.  `address` is the\n\
+         key, not `name` -- a thunk and the import it forwards to share a name.\n\
          --label TEXT is copied verbatim into `binary.label`, for a consumer that\n\
          wants to stamp the document with its own version.\n\
          Every function is a node; --functions/--addr narrow which of them are\n\

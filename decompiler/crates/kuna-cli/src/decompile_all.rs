@@ -79,7 +79,7 @@
 //! --json`'s (`decompile.rs`) — one schema and one decompile policy across the
 //! single-function and whole-binary surfaces.
 
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::ffi::{OsStr, OsString};
 use std::fmt::Write as _;
 use std::rc::Rc;
@@ -319,6 +319,11 @@ impl CallGraph {
         let bytes = std::fs::read(binary).map_err(|e| format!("{binary}: {e}"))?;
         let file = object::File::parse(&*bytes)
             .map_err(|e| format!("could not parse {binary}: {e}"))?;
+        Ok(CallGraph::build_from(prog, &file))
+    }
+
+    /// [`Self::build`] off an already-parsed image, for a caller that holds one.
+    pub(crate) fn build_from(prog: &ConsoleProgram, file: &object::File) -> CallGraph {
         let mut entries: Vec<(u64, u64)> = prog
             .function_entries_canonical()
             .iter()
@@ -328,12 +333,12 @@ impl CallGraph {
         entries.dedup_by_key(|(addr, _)| *addr);
         let seeds: Vec<u64> = entries.iter().map(|(addr, _)| *addr).collect();
         let index = kuna_analysis::listing::xrefs::build(
-            &file,
+            file,
             prog.arch(),
             prog.arch().translate(),
             &seeds,
         );
-        Ok(CallGraph { index, entries })
+        CallGraph { index, entries }
     }
 
     /// Every inventory entry reachable from `spec` through call, tail-jump, and
@@ -382,39 +387,45 @@ impl CallGraph {
     }
 
     /// Every callee of the function entered at `entry`, as
-    /// `(callee entry, edge kind)` in call-site order — the same edge rule
-    /// [`Self::reachable_from`] walks, answered one function at a time.
+    /// `(callee entry, edge kind)` in reference order — the same edge rule
+    /// [`Self::reachable_from`] walks ([`Self::callee_of`]), answered one
+    /// function at a time rather than as a transitive closure. Address-taken
+    /// callees are therefore edges too: without them `main` has no caller in a
+    /// glibc program, because `_start` hands it to `__libc_start_main` as a
+    /// pointer.
     ///
-    /// A callee is always a node the graph knows: a reference into the middle of
-    /// a body resolves to the body ([`Self::node_at`]), and one that lands in no
-    /// discovered function at all — a `CALL 0x0` off a nulled relocation, a
-    /// branch into a gap — is not an edge and is dropped. Duplicates collapse on
-    /// the callee, keeping the first call site's position.
+    /// A callee is always a node the graph knows, named in the inventory's terms
+    /// rather than the walk's ([`Self::owner_of`], the fold `reachable_from`
+    /// does once at the end of its search): a reference into the middle of a
+    /// body resolves to the body, and one that lands in no discovered function
+    /// at all — a `CALL 0x0` off a nulled relocation, a branch into a gap, a
+    /// materialized address that is a string — is not an edge and is dropped.
+    ///
+    /// Duplicates collapse on the callee at the first reference's position,
+    /// carrying the strongest kind the caller uses: calling a function is a
+    /// stronger claim than jumping to it, and both are stronger than mentioning
+    /// its address.
     pub(crate) fn callees_of(&self, entry: u64) -> Vec<(u64, XrefKind)> {
         let mut out: Vec<(u64, XrefKind)> = Vec::new();
-        let mut seen: BTreeSet<u64> = BTreeSet::new();
-        let mut refs: Vec<&Xref> = self
-            .index
-            .refs_from_function(entry)
-            .into_iter()
-            .filter(|r| matches!(r.kind, XrefKind::Call | XrefKind::Jump))
-            .collect();
+        let mut seen: BTreeMap<u64, usize> = BTreeMap::new();
+        let mut refs: Vec<&Xref> = self.index.refs_from_function(entry);
         refs.sort_by_key(|r| (r.from, r.to));
         for r in refs {
-            // The walk's function set and the inventory are two views of one
-            // program; answer in the inventory's terms so every callee names a
-            // row a caller can look up (`reachable_from` folds the same way,
-            // once, at the end of its search).
             let Some(callee) = self.callee_of(r).and_then(|c| self.owner_of(c)) else {
                 continue;
             };
-            // A jump that resolves back onto the caller is a loop edge inside one
-            // body reached through a second entry symbol, not a call.
+            // A jump back onto the caller is a loop edge inside one body reached
+            // through a second entry symbol, not a call.
             if callee == entry && r.kind == XrefKind::Jump {
                 continue;
             }
-            if seen.insert(callee) {
-                out.push((callee, r.kind));
+            match seen.get(&callee) {
+                Some(&at) if edge_rank(r.kind) < edge_rank(out[at].1) => out[at].1 = r.kind,
+                Some(_) => {}
+                None => {
+                    seen.insert(callee, out.len());
+                    out.push((callee, r.kind));
+                }
             }
         }
         out
@@ -470,6 +481,16 @@ impl CallGraph {
             .refs_to(vma)
             .iter()
             .any(|r| r.kind == XrefKind::Call)
+    }
+}
+
+/// How strong a claim one reference kind makes about a call-graph edge, lowest
+/// first: a call, then a tail jump, then a materialized address.
+fn edge_rank(kind: XrefKind) -> u8 {
+    match kind {
+        XrefKind::Call => 0,
+        XrefKind::Jump => 1,
+        _ => 2,
     }
 }
 
@@ -2071,12 +2092,13 @@ pub(crate) fn parse_args_with_filters(
     let binary = binary.ok_or_else(|| format!("{cmd} requires <binary>"))?;
 
     // (kuna outlang, DIV-80) The auto policy: with no `--language` and no
-    // explicit `--option setlanguage`, follow the binary. `decompile-project` is
-    // excluded -- its `.c`/`.h`/`.asm` export is C-shaped end to end and refuses
-    // any other language, so auto-selecting one there would turn a working
-    // export into an error.
+    // explicit `--option setlanguage`, follow the binary. `decompile-project` and
+    // `decompile-graph` are excluded -- a `.c`/`.h`/`.asm` export and a `codeC`
+    // field are C-shaped by construction and refuse any other language, so
+    // auto-selecting one there would turn a working export into an error.
     if !saw_language
         && cmd != "decompile-project"
+        && cmd != "decompile-graph"
         && !options.iter().any(|(n, _)| n == "setlanguage")
     {
         if let Some(lang) = detected_output_language(&binary) {

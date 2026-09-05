@@ -1,8 +1,10 @@
 //! CLI contract checks for `kuna decompile-graph`.
 //!
-//! The three that carry weight are the last three: an address in a PE's import
-//! table must not be handed a decompiled body, every edge endpoint must be a row
-//! in `functions`, and two runs of the same command must produce the same bytes.
+//! The ones that carry weight: an address in a PE's import table must not be
+//! handed a decompiled body even when it is named explicitly, an address-taken
+//! callee must still be an edge (or `main` is an orphan on every glibc ELF),
+//! every edge endpoint must be a row in `functions`, `codeC` must be C, and two
+//! runs of the same command must produce the same bytes.
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
@@ -32,6 +34,11 @@ fn missing_specs(stderr: &str) -> bool {
 
 /// Run the command, or `None` as a visible skip when the `.sla` files are absent.
 fn graph(args: &[&str]) -> Option<String> {
+    run(args).map(|(stdout, _)| stdout)
+}
+
+/// [`graph`], keeping stderr, for the warnings the document itself cannot carry.
+fn run(args: &[&str]) -> Option<(String, String)> {
     let specs = specs();
     let mut argv = vec!["decompile-graph"];
     argv.extend_from_slice(args);
@@ -46,7 +53,7 @@ fn graph(args: &[&str]) -> Option<String> {
         return None;
     }
     assert!(output.status.success(), "decompile-graph failed: {stderr}");
-    Some(String::from_utf8_lossy(&output.stdout).into_owned())
+    Some((String::from_utf8_lossy(&output.stdout).into_owned(), stderr.into_owned()))
 }
 
 /// One `"key": value` of a rendered object, unquoted — enough to walk this
@@ -91,7 +98,7 @@ fn the_document_carries_the_schema_and_both_arrays() {
     let Some(stdout) = graph(&[&fixture("fauxware"), "--label", "fixture-label"]) else { return };
     assert!(stdout.starts_with("{\n"), "not JSON: {stdout}");
     for key in [
-        "\"schemaVersion\": 3",
+        "\"schemaVersion\": 4",
         "\"label\": \"fixture-label\"",
         "\"analysisImageBase\": ",
         "\"functions\": [",
@@ -131,12 +138,14 @@ fn a_file_export_writes_nothing_to_stdout() {
     assert!(output.stdout.is_empty(), "file output must not mix JSON into stdout");
     let document = std::fs::read_to_string(&path).expect("exported JSON file");
     let _ = std::fs::remove_file(path);
-    assert!(document.contains("\"schemaVersion\": 3"));
+    assert!(document.contains("\"schemaVersion\": 4"));
 }
 
 /// A PE's import pointer slots are named, callable addresses in `.idata`. They
 /// are not code, and lifting them produces a plausible-looking body out of a
-/// pointer table — so the row says `import` and carries no C at all.
+/// pointer table — so the row says `import` and carries no C at all, and naming
+/// one with `--addr` does not buy an exception
+/// ([`an_explicitly_named_import_slot_still_gets_no_body`]).
 #[test]
 fn a_pe_import_slot_gets_a_label_not_a_body() {
     let Some(stdout) = graph(&[&fixture("pe_imports.exe")]) else { return };
@@ -179,7 +188,7 @@ fn every_edge_endpoint_is_a_function_row() {
                 assert!(known.contains(&address), "{name}: {end} {address} is not a function");
             }
             assert!(
-                matches!(field(&edge, "kind").as_deref(), Some("call") | Some("jump")),
+                matches!(field(&edge, "kind").as_deref(), Some("call" | "jump" | "data")),
                 "{name}: unknown edge kind in {edge}"
             );
         }
@@ -194,4 +203,90 @@ fn two_runs_produce_the_same_bytes() {
     let Some(first) = graph(&[&fixture("pe_imports.exe")]) else { return };
     let Some(second) = graph(&[&fixture("pe_imports.exe")]) else { return };
     assert_eq!(first, second, "two runs disagreed");
+}
+
+/// The address-taken edge. `_start` never calls `main`; it loads its address and
+/// hands it to `__libc_start_main`, which is the shape of every glibc program.
+/// Dropping that reference leaves the one function an analyst opens the document
+/// for with no caller at all.
+#[test]
+fn an_address_taken_callee_is_still_an_edge() {
+    let Some(stdout) = graph(&[&fixture("fauxware")]) else { return };
+    let functions = rows(&stdout, "functions");
+    let address = |name: &str| {
+        functions
+            .iter()
+            .find(|r| field(r, "name").as_deref() == Some(name))
+            .and_then(|r| field(r, "address"))
+            .unwrap_or_else(|| panic!("{name} is not a row"))
+    };
+    let (start, main) = (address("_start"), address("main"));
+    let edge = rows(&stdout, "edges")
+        .into_iter()
+        .find(|e| {
+            field(e, "callerAddress").as_deref() == Some(&start)
+                && field(e, "calleeAddress").as_deref() == Some(&main)
+        })
+        .expect("_start -> main is not in the edge list");
+    assert_eq!(field(&edge, "kind").as_deref(), Some("data"), "wrong kind: {edge}");
+}
+
+/// `--addr` selects which bodies are rendered, never whether the target policy
+/// applies: a PE import slot named outright is still a labelled row, and the run
+/// says on stderr that it exported no body for it.
+#[test]
+fn an_explicitly_named_import_slot_still_gets_no_body() {
+    let Some((stdout, stderr)) = run(&[&fixture("pe_imports.exe"), "--addr", "0x14000d1dc"]) else {
+        return;
+    };
+    for row in rows(&stdout, "functions") {
+        assert_eq!(field(&row, "codeC").as_deref(), Some("null"), "invented a body:\n{row}");
+        assert_eq!(field(&row, "assembly").as_deref(), Some("null"), "invented a listing:\n{row}");
+    }
+    assert!(
+        stderr.contains("is not executable content"),
+        "the dropped selection was silent: {stderr}"
+    );
+}
+
+/// `codeC` names its language. `--language rust` reaches this command through
+/// the shared parser, so it has to be refused here rather than answered with
+/// Rust in a field called `codeC`.
+#[test]
+fn a_non_c_output_language_is_refused() {
+    let (specs, binary) = (specs(), fixture("fauxware"));
+    let spelling: [&[&str]; 2] =
+        [&["--language", "rust"], &["--option", "setlanguage", "rust-language"]];
+    for flag in spelling {
+        let mut argv = vec!["decompile-graph", binary.as_str(), "--functions", "main"];
+        argv.extend_from_slice(flag);
+        argv.extend_from_slice(&["--sleighpath", specs.as_str()]);
+        let output = Command::new(env!("CARGO_BIN_EXE_kuna"))
+            .args(&argv)
+            .output()
+            .expect("spawn kuna decompile-graph");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if missing_specs(&stderr) {
+            return;
+        }
+        assert!(!output.status.success(), "{flag:?} was accepted: {stderr}");
+        assert!(stderr.contains("C-only"), "{flag:?} failed for another reason: {stderr}");
+    }
+}
+
+/// A rustc-built binary trips the auto-language policy on every other
+/// whole-binary surface. It must not trip it here, or a Rust program's document
+/// would carry Rust in `codeC` with no flag given at all.
+#[test]
+fn a_rust_binary_is_still_exported_as_c() {
+    let Some(stdout) = graph(&[&fixture("rust_hello_x86_64")]) else { return };
+    let bodies: Vec<String> = rows(&stdout, "functions")
+        .into_iter()
+        .filter_map(|r| field(&r, "codeC"))
+        .filter(|c| c != "null")
+        .collect();
+    assert!(!bodies.is_empty(), "the fixture rendered no bodies at all");
+    for body in bodies {
+        assert!(!body.starts_with("#[allow("), "Rust in codeC: {body}");
+    }
 }
