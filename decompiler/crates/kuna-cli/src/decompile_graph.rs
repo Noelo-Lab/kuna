@@ -1,4 +1,5 @@
-//! `kuna graph-export` — GraphRev-shaped whole-program JSON export.
+//! `kuna decompile-graph` — whole-program JSON: every function with its C, its
+//! assembly, and the call edges between them.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
@@ -62,6 +63,9 @@ fn export(args: &ExportArgs) -> Result<String, String> {
         no_vars: false,
         max_fn_seconds: args.max_fn_seconds.unwrap_or(120),
         options,
+        func_decls: Vec::new(),
+        assertions: Vec::new(),
+        assert_strict: false,
         slice: args.slice.clone(),
         target: args.target.clone(),
         sleighpath: args.sleighpath.clone(),
@@ -374,7 +378,7 @@ fn parse_args(argv: &[String]) -> Result<ExportArgs, String> {
         i += 1;
     }
     Ok(ExportArgs {
-        binary: binary.ok_or("graph-export requires <binary>")?,
+        binary: binary.ok_or("decompile-graph requires <binary>")?,
         version,
         output,
         max_fn_seconds,
@@ -387,5 +391,5 @@ fn parse_args(argv: &[String]) -> Result<ExportArgs, String> {
 }
 
 fn usage() {
-    eprintln!("usage: kuna graph-export <binary> [version] [-o|--output FILE] [--max-fn-seconds N] [--mode auto|reliable|aggressive|fast] [--option N V]... [--slice ARCH] [--target T] [--sleighpath D]");
+    eprintln!("usage: kuna decompile-graph <binary> [version] [-o|--output FILE] [--max-fn-seconds N] [--mode auto|reliable|aggressive|fast] [--option N V]... [--slice ARCH] [--target T] [--sleighpath D]");
 }

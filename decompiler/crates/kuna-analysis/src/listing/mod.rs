@@ -25,6 +25,9 @@ pub mod classify;
 pub mod context;
 pub mod decode;
 pub mod kuna_tailcallentry;
+mod kuna_picbase;
+mod kuna_ppclocalentry;
+mod kuna_unmappedentry;
 pub mod model;
 pub mod walk;
 // (kuna) The read-only cross-reference query behind `kuna xrefs` -- a consumer of
@@ -80,6 +83,30 @@ impl Listing {
         seeds: &[u64],
     ) -> Listing {
         Self::build_with_meta(file, _image, arch, translate, seeds, &[], &[])
+    }
+
+    /// A Listing assembled from a partition someone else already decoded.
+    ///
+    /// The reference walk ([`xrefs::build`]) is a recursive descent over the same
+    /// loadimage and leaves behind the same two facts the AIF gap-walk consumes —
+    /// which bytes are instructions, and which addresses are functions — so it can
+    /// hand them here instead of paying for a second decode of the program. Only
+    /// the partition is populated: `mnemonic` is filled for the prologues the
+    /// fingerprint histogram reads and empty everywhere else, and the reference
+    /// model is empty (the gap-walk reads neither).
+    pub fn from_partition(
+        insns: BTreeMap<u64, Insn>,
+        funcs: BTreeMap<u64, DiscoveredFunction>,
+        exec_ranges: Vec<(u64, u64)>,
+    ) -> Listing {
+        Listing {
+            insns,
+            refs_to: BTreeMap::new(),
+            refs_from: BTreeMap::new(),
+            funcs,
+            covered: RangeList::default(),
+            exec_ranges,
+        }
     }
 
     /// Like [`Listing::build`], but with seed metadata: `funcsym_seeds` is the
@@ -142,7 +169,22 @@ impl Listing {
         // decode correctly instead of as A32/MIPS32 garbage.
         let painter = context::ContextPainter::new(file);
 
-        let st = walk::walk(translate, arch, &code_space, &exec_ranges, seeds, &seed_funcs, &painter);
+        // The PPC64 ELFv2 local-entry fold (`ppclocalentry`): an intra-module `bl`
+        // targets `st_value + <localentry>`, which is a point inside the callee,
+        // not a function of its own. Empty on every other architecture and
+        // whenever the option is off (see `kuna_ppclocalentry`).
+        let local_entries = kuna_ppclocalentry::fold_map(arch, file, seeds);
+
+        let st = walk::walk(
+            translate,
+            arch,
+            &code_space,
+            &exec_ranges,
+            seeds,
+            &seed_funcs,
+            &painter,
+            &local_entries,
+        );
 
         let mut refs_to = st.refs_to;
         let mut refs_from = st.refs_from;

@@ -476,7 +476,13 @@ const PIN_FAILLOG_DIFF_CEILING: [f64; 3] = [0.09, 0.12, 0.15];
 // pin is what catches it.  (sub_3320 shrank because the noreturn facts now
 // truncate the flow overrun that used to decode neighbouring functions into
 // it — defect g; the +1 everywhere is the `Kuna v…` banner line.)
-const PIN_FAILLOG_C_LINES: [usize; 3] = [283, 39, 92];
+// sub_2620 283 -> 285 with `calleearity` (DIV-102): the `getpwent()` loop's
+// `sub_34a0()` regains the uid argument its two sibling call sites already pass
+// — kuna's own recovered prototype for that callee is `unsigned long sub_34a0(unsigned long a0)`
+// — and the uid expression `*(unsigned int *)(v7 + 0x10)` hoists into a named
+// local instead of being re-spelled twice inside the guard. Two lines, both
+// earned.
+const PIN_FAILLOG_C_LINES: [usize; 3] = [285, 39, 92];
 // Tokens Java's `getC()` cleaner REWRITES (`IllegalCharCppTransformer`).
 // Phase 3 measured 57/10/24 (whole rendered declarators like
 // `"unsigned long *"` as single `<type>` tokens, received by scripts/exports
@@ -500,8 +506,16 @@ const PIN_FAILLOG_VARDECL_UNRESOLVED: [usize; 3] = [0, 0, 0];
 // distinct instruction addresses actually decoded.  Phase 3 REDUCED both
 // (1477 → 1314, 1003 → 801): the mapsym noreturn facts stop the flow from
 // decoding past `exit()`-style calls into neighbouring functions (defect g).
-const PIN_FAILLOG_GETPCODE_TOTAL: u64 = 1314;
-const PIN_FAILLOG_DECODED_INSTS: usize = 801;
+// (kuna `calleedeadarg`) RAISED 1314 -> 1613 and 801 -> 1044.  The P4 veto reads
+// the CALLEE's body to decide whether an argument register is dead at its entry,
+// and in ghidra mode every such decode is a getPcode round trip to the host.  The
+// walk is bounded (192 instructions, and each path stops at the callee's first
+// call or return), cached per callee entry for the whole run, and skipped
+// entirely for a function with fewer than two calls — so +243 DISTINCT decoded
+// instructions is the union of the probed prologues in this session, not
+// per-decompile growth.  Flipping `option calleedeadarg off` restores 1314/801.
+const PIN_FAILLOG_GETPCODE_TOTAL: u64 = 1613;
+const PIN_FAILLOG_DECODED_INSTS: usize = 1044;
 // Whole-session getMappedSymbols traffic: Phase 2 pinned this at 0 (the
 // providers did not exist); Phase 3 pins the real query-through traffic —
 // every distinct global address the pipeline probes, answered once (holes and

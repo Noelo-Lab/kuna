@@ -178,6 +178,12 @@ impl FlowEnvironment for ArchFlowEnv {
         // entry (via `query_call`) so the next function is not decoded into this one.
         self.arch().funcbound_flow
     }
+    fn overlap_branch_enabled(&self) -> bool {
+        // (kuna overlapbranch) the Architecture-owned gate (`option overlapbranch`).
+        // When on, `flow.rs` truncates a conditional branch's fall-through whose
+        // encoding swallows the branch's own target.
+        self.arch().overlap_branch
+    }
     fn query_call_inline(&self, entry: &Address) -> bool {
         // C++ `queryCall` copies the callee proto's `isInline()` flow effect; the
         // flag is set by `option inline <name>` (OptionInline) on the resolved
@@ -431,6 +437,36 @@ impl FlowEnvironment for ArchFlowEnv {
             dest_is_self,
         )
     }
+
+    fn is_frame_teardown_tail_call(
+        &self,
+        fd: &Funcdata,
+        op: crate::context::OpId,
+        dest: &Address,
+    ) -> bool {
+        // (kuna `tailcallframe`) The gate is the architecture-owned
+        // `tail_call_frame` flag; the predicate needs the stack-pointer register
+        // location, which is the stack space's own base register
+        // (`getStackSpace()->getSpacebaseFull(0)`).  A compiler spec with no
+        // `<stackpointer>` has no stack space, and the rule declines.
+        let arch = self.arch();
+        if !arch.tail_call_frame {
+            // Fast-path the gate without touching the IR.
+            return false;
+        }
+        let sp = arch
+            .manage()
+            .get_stack_space()
+            .and_then(|spc| spc.get_spacebase_full(0).ok());
+        crate::kuna_tailcallframe::kuna_is_frame_teardown_tail_call(
+            fd,
+            op,
+            arch.tail_call_frame,
+            fd.get_address(),
+            dest,
+            sp.as_ref(),
+        )
+    }
 }
 
 /// Build a [`Funcdata`] for the function `name` at `entry` and follow its flow,
@@ -517,8 +553,22 @@ pub fn build_and_follow_flow_with_override_and_protos(
 /// clear, so the re-flow rebuilds the CALLIND straight as a direct CALL).
 #[allow(clippy::mutable_key_type)]
 fn follow_flow_on_fd(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcdata> {
+    // C++ Funcdata::followFlow(baddr, eaddr): a function carrying a declared byte
+    // extent restricts flow to it; size 0 keeps the unbounded default the whole
+    // engine has used until now (`kuna_console::engine::UNBOUNDED_SIZE`), so this
+    // is inert for every caller that does not declare one. `eaddr` is INCLUSIVE
+    // (`FlowInfo::new_address` rejects `eaddr < to`), so the last in-body byte is
+    // `entry + size - 1`.
+    let range = (fd.get_size() > 0).then(|| fd.get_address().clone()).and_then(|start| {
+        let last = start.get_offset().checked_add(fd.get_size() as u64 - 1)?;
+        let space = Rc::clone(start.get_space()?);
+        Some((start.clone(), Address::new(space, last)))
+    });
     let env = ArchFlowEnv { arch: arch as *const Architecture };
     let mut flow = FlowInfo::new(fd, &env);
+    if let Some((baddr, eaddr)) = range {
+        flow.set_range(baddr, eaddr);
+    }
     // C++ Funcdata::followFlow (decompiler/cpp/funcdata_op.cc:765): after the
     // FlowInfo is constructed (and its range set), followFlow applies the global
     // flow options and the instruction bound.
@@ -707,6 +757,9 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
         // silently loses its veto on every restarted function.  Cached, so this
         // is a map lookup per call.
         crate::kuna_rustabi::seed_callee_return_writes(arch, fd);
+        // (kuna `calleedeadarg`) Same story for the entry-liveness probe the
+        // input-trial scoring seam consults.
+        crate::p4_calls::kuna_calleedeadarg::seed_callee_entry_dead(arch, fd);
     }
     // Exceeded the cross-flow restart budget; keep the last analyzed IR.
     fd.set_restart_pending(false);
@@ -844,6 +897,54 @@ pub fn decompile_func_full_with_override_dyn(
     proto_overrides: &[(Address, crate::fspec::PrototypePieces)],
     mapped_params: &[(int4, String, crate::fspec::ParameterPieces)],
 ) -> KunaResult<Funcdata> {
+    decompile_func_full_with_override_dyn_prefollowed(
+        arch,
+        name,
+        funcaddr,
+        size,
+        mapped_symbols,
+        usepoint_symbols,
+        dynamic_symbols,
+        pending_proto,
+        flow_overrides,
+        proto_overrides,
+        mapped_params,
+        None,
+    )
+}
+
+/// [`decompile_func_full_with_override_dyn`], but able to adopt a `Funcdata`
+/// whose flow has **already been followed** instead of following it again.
+///
+/// The console runs `load function <name>` and then `decompile`, and each of
+/// those followed the flow of the same function from scratch -- so a `kuna
+/// decompile` paid the whole lift, including the per-jump-table
+/// sub-decompilation, twice.  C++ has no such duplication: `IfcFuncload`
+/// follows flow once and `IfcDecompile` re-runs the actions on *that*
+/// `Funcdata` after `Architecture::clearAnalysis` (ifacedecomp.cc:889).
+///
+/// `prefollowed` is the caller's already-followed IR.  It is adopted verbatim,
+/// so the caller is responsible for having followed flow with the SAME name,
+/// entry, size, flow overrides and prototype overrides this call would have used
+/// -- see `kuna_console::ifacedecomp` (`PristineFlow`), which only offers one
+/// when every seed below is empty and nothing has run in between.  `None`
+/// restores the build-and-follow behaviour every other caller has.
+#[allow(clippy::too_many_arguments)]
+#[allow(clippy::mutable_key_type)]
+pub fn decompile_func_full_with_override_dyn_prefollowed(
+    arch: &mut Architecture,
+    name: &str,
+    funcaddr: Address,
+    size: int4,
+    mapped_symbols: &[(String, std::rc::Rc<crate::dtype::Datatype>, Address, kuna_base::types::uint4)],
+    usepoint_symbols: &[(String, std::rc::Rc<crate::dtype::Datatype>, Address, kuna_base::types::uint4, Address, bool)],
+    dynamic_symbols: &[crate::database::DynamicSymbolSpec],
+    pending_proto: Option<&crate::fspec::PrototypePieces>,
+    flow_overrides: &[(Address, kuna_base::types::uint4)],
+    proto_overrides: &[(Address, crate::fspec::PrototypePieces)],
+    mapped_params: &[(int4, String, crate::fspec::ParameterPieces)],
+    prefollowed: Option<Funcdata>,
+) -> KunaResult<Funcdata> {
     // (kuna decompile-all watchdog) Arm the per-function deadline from the
     // driver-set budget (`kuna decompile-all --max-fn-seconds N` sets
     // `kuna_fn_budget`; every other path leaves it `None`, so this is a `None`
@@ -861,14 +962,17 @@ pub fn decompile_func_full_with_override_dyn(
         // Kept for the parked-prototype lookup below (the flow build consumes the
         // address).
         let entry_addr = funcaddr.clone();
-        let mut fd = build_and_follow_flow_with_override_and_protos(
-            arch,
-            name,
-            funcaddr,
-            size,
-            flow_overrides,
-            proto_overrides,
-        )?;
+        let mut fd = match prefollowed {
+            Some(fd) => fd,
+            None => build_and_follow_flow_with_override_and_protos(
+                arch,
+                name,
+                funcaddr,
+                size,
+                flow_overrides,
+                proto_overrides,
+            )?,
+        };
         // The prototype the function is decompiled *against*. Two sources, in
         // precedence order:
         //
@@ -945,6 +1049,10 @@ pub fn decompile_func_full_with_override_dyn(
         // translator, so this is the last point the callee's instructions can be
         // read at all; inert unless `option rustabi` is live for this image.
         crate::kuna_rustabi::seed_callee_return_writes(arch, &mut fd);
+        // (kuna `calleedeadarg`) Take the callee entry-liveness probe the
+        // input-trial scoring seam consults, for the same reason and at the same
+        // point; inert unless `option calleedeadarg` is live.
+        crate::p4_calls::kuna_calleedeadarg::seed_callee_entry_dead(arch, &mut fd);
         // With the single-manager unification (LOSS-132) the universalAction passes
         // now reach the *real* lifted varnodes, so the pipeline genuinely executes
         // heritage / simplification / merge / … on live IR.  Some pass BODIES are

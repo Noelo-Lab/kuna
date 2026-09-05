@@ -256,8 +256,12 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "v850indirectbranch",
     "msvcftol",
     "tailcalljump",
+    "tailcallframe",
     "funcboundflow",
+    "overlapbranch",
     "cleanupcode",
+    "linuxsyscall",
+    "switchselector",
     "noreturn_extern",
     "inputvarnodeadjust",
     "retinputhalf",
@@ -269,17 +273,25 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "dynamichashmax",
     "stackprobeloop",
     "memsetrecover",
+    "rodatastring",
     "switchmodbound",
     "switchguardbound",
     "switchsharedcase",
     "switchmultipred",
     "unrolledguard",
+    "jtsharepartial",
     "noreturn_externmatch",
     "loweredswitch",
     "callsitestackargs",
+    "calleedeadarg",
+    "inputparamgap",
+    "varargstackargs",
+    "calleearity",
+    "calleearityfwd",
     "calloverlap",
     "spillargtrial",
     "loadguardrange",
+    "tiedstorekeep",
     "regionstructure",
     "guardarm",
     "loopcondhoist",
@@ -312,6 +324,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "ctypes",
     "framelayout",
     "voidtailreturn",
+    "ptrdepthcap",
     "cortexmpriv",
     "dedupvardecls",
     // (kuna) Analysis-pass gates (per-run `--option <id> on|off`): one settable
@@ -331,7 +344,44 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // corpus and reduced from the platform headers. Imported names only.
     "libcsigs",
     "strings",
+    // (kuna) The 2-byte (UTF-16LE) width of the string-literal pass -- Ghidra's
+    // `StringsAnalyzer.allCharWidths`, which kuna's 1-byte port left as a documented
+    // seam. Without it a wide literal is read as its own first character
+    // (`LoadLibraryW("n")`). Default-ON; off leaves the markup exactly 1-byte.
+    "widestrings",
     "entry_disc",
+    // (kuna) Unmapped-CALL-target entry suppression: the Listing's recursive-descent
+    // walk gates every INSTRUCTION address on the executable-range universe but took
+    // the direct CALL target unconditionally, so a call into unmapped memory (what
+    // anti-disassembly junk behind an always-taken branch decodes to) became a
+    // `sub_<addr>` with no bytes and no body.  The call reference is still filed;
+    // only the function claim is withheld.  Default-ON; off restores the previous
+    // discovery set exactly.
+    "unmappedentry",
+    // (kuna) PPC64 ELFv2 local-entry entry suppression: the OpenPOWER ELFv2 ABI gives
+    // a function a global entry (`st_value`, which materialises the TOC pointer) and a
+    // local entry `st_other` bytes later, where an intra-module `bl` lands.  Nothing
+    // read `st_other`, so the walk minted a function at every such call target and
+    // split every locally called function into an 8-byte named husk plus an anonymous
+    // body.  Default-ON; off restores the previous discovery set exactly.
+    "ppclocalentry",
+    // (kuna) PIC base-register folding in the cross-reference index: in 32-bit
+    // position-independent code the address of a string or a global is the sum of a
+    // GOT pointer the program materialises at run time (`call <next>; pop ebx; add
+    // ebx,imm`) and a displacement, so it is nowhere in the image as a constant and
+    // every literal reports being referenced by nothing.  The idiom is interpreted
+    // and cross-checked against `_GLOBAL_OFFSET_TABLE_`, and only offered to a
+    // function whose own body cannot have changed the register.  Query surface only
+    // (`kuna xrefs` / `kuna strings`); default-ON, off restores the previous answer.
+    "picbase",
+    // (kuna) PE CRT entry-function prototype recovery: a `main` that ignores its
+    // arguments reads none of the ABI argument registers, so body-driven parameter
+    // recovery finds nothing and declares it `void(void)` while the CRT startup a few
+    // lines up calls it with three arguments.  On a PE that startup is in the image and
+    // fetches each argument through a named CRT accessor, so the call site names the
+    // slots.  Default-ON; off restores the `void(void)` form exactly.
+    "entrymainproto",
+    "machomain",
     // (kuna) `.eh_frame` LSDA landing-pad discovery — a sub-feature of the
     // always-on `entry_disc` pass (GccExceptionAnalyzer). Default-off
     // (output-changing: adds the discovered exception landing pads as entries).

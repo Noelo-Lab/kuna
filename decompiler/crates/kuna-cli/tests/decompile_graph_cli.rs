@@ -1,4 +1,4 @@
-//! CLI contract checks for `kuna graph-export`.
+//! CLI contract checks for `kuna decompile-graph`.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -28,24 +28,24 @@ fn missing_specs(stderr: &str) -> bool {
 }
 
 #[test]
-fn graph_export_emits_v2_json_with_ordered_call_edges() {
+fn decompile_graph_emits_v2_json_with_ordered_call_edges() {
     let output = Command::new(env!("CARGO_BIN_EXE_kuna"))
         .args([
-            "graph-export",
+            "decompile-graph",
             &fauxware(),
             "fixture-version",
             "--sleighpath",
             &specs(),
         ])
         .output()
-        .expect("spawn kuna graph-export");
+        .expect("spawn kuna decompile-graph");
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     if !output.status.success() && missing_specs(&stderr) {
-        eprintln!("graph_export_cli: skipping (no `.sla`; run `make specs`): {stderr}");
+        eprintln!("decompile_graph_cli: skipping (no `.sla`; run `make specs`): {stderr}");
         return;
     }
-    assert!(output.status.success(), "graph-export failed: {stderr}");
+    assert!(output.status.success(), "decompile-graph failed: {stderr}");
     assert!(stdout.starts_with("{\n"), "not JSON: {stdout}");
     for key in [
         "\"schemaVersion\": 2",
@@ -68,11 +68,11 @@ fn graph_export_emits_v2_json_with_ordered_call_edges() {
 }
 
 #[test]
-fn graph_export_writes_only_to_requested_file() {
-    let path = std::env::temp_dir().join(format!("kuna-graph-export-{}.json", std::process::id()));
+fn decompile_graph_writes_only_to_requested_file() {
+    let path = std::env::temp_dir().join(format!("kuna-decompile-graph-{}.json", std::process::id()));
     let output = Command::new(env!("CARGO_BIN_EXE_kuna"))
         .args([
-            "graph-export",
+            "decompile-graph",
             &fauxware(),
             "-o",
             path.to_str().unwrap(),
@@ -80,12 +80,12 @@ fn graph_export_writes_only_to_requested_file() {
             &specs(),
         ])
         .output()
-        .expect("spawn kuna graph-export");
+        .expect("spawn kuna decompile-graph");
     let stderr = String::from_utf8_lossy(&output.stderr);
     if !output.status.success() && missing_specs(&stderr) {
         return;
     }
-    assert!(output.status.success(), "graph-export failed: {stderr}");
+    assert!(output.status.success(), "decompile-graph failed: {stderr}");
     assert!(
         output.stdout.is_empty(),
         "file output must not mix JSON into stdout"

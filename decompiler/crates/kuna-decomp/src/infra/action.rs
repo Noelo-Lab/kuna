@@ -593,6 +593,12 @@ pub struct ActionContext {
 /// loop only pays an `Instant::now()` every this-many ops).
 const POOL_DEADLINE_STRIDE: u32 = 1024;
 
+/// (kuna perf) How many optree successors [`ActionPool::advance_op_state`] reads
+/// per tree descent.  Long enough that a pass over a large function pays a
+/// handful of descents per hundred ops instead of one each; short enough that a
+/// rule that creates an op (which invalidates the run) has thrown away little.
+const LOOKAHEAD_RUN: usize = 64;
+
 impl ActionContext {
     /// A fresh context.
     pub fn new() -> ActionContext {
@@ -1098,6 +1104,37 @@ pub struct ActionPool {
     /// last; otherwise the [`SeqNum`] of the *next* op to visit (see module
     /// docs for why this is a key, not a live iterator).
     op_state: OpCursor,
+    /// The [`OpId`] the cursor resolves to, memoized by
+    /// [`advance_op_state`](ActionPool::advance_op_state).
+    ///
+    /// The C++ `op_state` is a `std::map::iterator`, so `++op_state` and the
+    /// following deref are both O(1); re-deriving the position from a [`SeqNum`]
+    /// costs an optree range search *per op per rule pass*, and the pool is the
+    /// decompiler's innermost loop.  The advance already performs that search to
+    /// decide `After`/`Done`, so it keeps the answer and
+    /// [`current_op`](ActionPool::current_op) reads it instead of searching
+    /// again.  Only valid within one [`apply`](ActionPool::apply) call: the sole
+    /// mutation between the advance and the next read is the `destroy(op)` of the
+    /// op just consumed, which cannot move its own successor.  Every `apply`
+    /// return path clears it, so a resumed or interleaved pass re-searches.
+    next_op: Option<OpId>,
+    /// (kuna perf) A short run of successors read from the optree in one
+    /// descent, consumed one per [`advance_op_state`](ActionPool::advance_op_state).
+    ///
+    /// The C++ `op_state` is a map iterator, so its `++` is O(1); re-deriving
+    /// the position from a [`SeqNum`] is a tree search *per op per rule pass*.
+    /// [`lookahead_epoch`](ActionPool::lookahead_epoch) is the optree's epoch at
+    /// the moment the run was read: while it still matches, the tree holds the
+    /// same keys in the same order and the buffered ids are exactly what the
+    /// per-op search would return.  Any insertion or removal anywhere — a rule
+    /// creating an op, or a destroy this pool did not perform — changes the
+    /// epoch and forces the search again.
+    lookahead: Vec<OpId>,
+    /// Index of the next unconsumed entry in [`lookahead`](ActionPool::lookahead).
+    lookahead_idx: usize,
+    /// The optree epoch [`lookahead`](ActionPool::lookahead) was read at;
+    /// `None` means "no buffered run".
+    lookahead_epoch: Option<u64>,
     /// Iterator over rules for one OpCode (C++ `rule_index`).
     rule_index: usize,
     /// Messages emitted mid-[`process_op`] (rule warnings).  `process_op` is a
@@ -1135,6 +1172,10 @@ impl ActionPool {
             allrules: Vec::new(),
             perop: vec![PerOp::new(); OpCode::CPUI_MAX as usize],
             op_state: OpCursor::Unstarted,
+            next_op: None,
+            lookahead: Vec::new(),
+            lookahead_idx: 0,
+            lookahead_epoch: None,
             rule_index: 0,
             warnings: WarningSink::new(),
             pending_error: None,
@@ -1183,6 +1224,12 @@ impl ActionPool {
         if data.obank().get(op).map(|o| o.is_dead()).unwrap_or(true) {
             self.advance_op_state(data, op);
             data.obank_mut().destroy(op);
+            // The destroy removed the key the cursor just left, which sorts
+            // before every buffered successor, so the run is still ordered; take
+            // the new epoch as the run's own rather than throwing it away.
+            if self.lookahead_epoch.is_some() {
+                self.lookahead_epoch = Some(data.obank().optree_epoch());
+            }
             self.rule_index = 0;
             return 0;
         }
@@ -1258,19 +1305,28 @@ impl ActionPool {
             .get(op)
             .map(|o| o.get_seq_num().clone())
             .expect("advance_op_state: op already gone");
-        // Is there any optree entry strictly greater than sq?  Only existence
-        // matters here, so probe with first_after_seq (O(log n)) rather than
-        // cloning the successor key just to throw it away.
-        self.op_state = if data.obank().first_after_seq(&sq).is_some() {
-            OpCursor::After(sq)
-        } else {
-            OpCursor::Done
-        };
+        // One optree probe answers both questions the cursor has: whether a
+        // successor exists, and which op it is.  Keep the id so `current_op` does
+        // not repeat the search.  The probe reads a RUN of successors, so the
+        // following LOOKAHEAD_RUN advances are served without touching the tree
+        // (see `lookahead`); an insertion or a foreign removal invalidates it.
+        let epoch = data.obank().optree_epoch();
+        if self.lookahead_epoch != Some(epoch) || self.lookahead_idx >= self.lookahead.len() {
+            data.obank().ops_after_seq(&sq, LOOKAHEAD_RUN, &mut self.lookahead);
+            self.lookahead_idx = 0;
+            self.lookahead_epoch = Some(epoch);
+        }
+        self.next_op = self.lookahead.get(self.lookahead_idx).copied();
+        self.lookahead_idx += 1;
+        self.op_state = if self.next_op.is_some() { OpCursor::After(sq) } else { OpCursor::Done };
     }
 
     /// The op the cursor currently points at (C++ `(*op_state).second`), or
     /// `None` at end.  `Unstarted` points at the first optree entry.
     fn current_op(&self, data: &Funcdata) -> Option<OpId> {
+        if let Some(op) = self.next_op {
+            return Some(op);
+        }
         match &self.op_state {
             OpCursor::Unstarted => data.obank().iter_all().next().map(|(_, id)| id),
             OpCursor::After(sq) => first_op_after(data, sq),
@@ -1341,6 +1397,8 @@ impl Action for ActionPool {
             self.op_state = OpCursor::Unstarted;
             self.rule_index = 0;
         }
+        self.next_op = None;
+        self.lookahead_epoch = None;
         let mut ops_since_deadline_probe: u32 = 0;
         while let Some(op) = self.current_op(data) {
             // (kuna decompile-all watchdog) Cooperative deadline in the tight
@@ -1351,16 +1409,22 @@ impl Action for ActionPool {
             if ops_since_deadline_probe >= POOL_DEADLINE_STRIDE {
                 ops_since_deadline_probe = 0;
                 if ctx.deadline_expired() {
+                    self.next_op = None;
+                    self.lookahead_epoch = None;
                     self.drain_into(ctx);
                     return 0;
                 }
             }
             let r = self.process_op(op, data);
             if r != 0 {
+                self.next_op = None;
+                self.lookahead_epoch = None;
                 self.drain_into(ctx);
                 return -1;
             }
         }
+        self.next_op = None;
+        self.lookahead_epoch = None;
         self.drain_into(ctx);
         0 // Indicate successful completion
     }

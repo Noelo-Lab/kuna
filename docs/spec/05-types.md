@@ -268,6 +268,30 @@ since no further inference pass will visit them. The budget is compile-time and
 deliberately latent (the `solver-budget` row in
 `decompiler/crates/kuna-decomp/phases.toml`, strength HINT).
 
+**The pointer-nesting cap (`ptrdepthcap`).** One shape reaches the ceiling by
+construction rather than by pathology: a small-string-optimized C++ object.
+Such an object keeps *either* the characters *or* a pointer to them in the same
+first 8 bytes, chosen on a capacity field, so the compiler emits a MULTIEQUAL
+whose two inputs are `PTRSUB(spacebase, -0xN)` — typed pointer-to-the-mapped-local
+by the spacebase arm of `propagate_add_in2_out` — and a LOAD from that very
+address, typed as the local itself. That is the equation `T = ptr(T)`, which no
+finite type satisfies, so each pass adopts a type exactly one pointer level
+deeper than the last and the object ends up declared `unsigned long long *****`.
+Upstream refuses to build such a chain at the one seam it noticed —
+`TypeFactory::getTypePointerNoDepth`, used by the LOAD/STORE transfer functions —
+but the spacebase-PTRSUB arm that actually drives the escalation never routes
+through it. When `ptrdepthcap` is on (shipped OFF in the catalog, ON in the
+`aggressive` preset), every candidate the propagation is about to adopt is put
+through `decompiler/crates/kuna-decomp/src/p5_types/kuna_ptrdepth.rs
+(cap_pointer_depth)`, which applies that same upstream rule at the single
+`propagate_type_edge` funnel: a candidate whose target is itself a
+pointer-to-pointer collapses to `ptr(undefined<N>)`, and `ptr(ptr(undefined<N>))`
+collapses one more level when `N` is the pointer width. `ptr(undefined<N>)` is a
+fixed point of the rule, and it is *less* specific than the concrete pointer
+already held, so the `0 > type_order` test rejects it and the lattice settles
+instead of running to the ceiling. Depth 1 and depth 2 over a concrete base are
+untouched, so a genuine `char **argv` keeps its spelling.
+
 **The casting boundary.** Inference annotates; it never converts. Where the
 final Varnode type disagrees with what an op requires, nothing in phase 5
 reconciles it — the disagreement survives to
@@ -560,6 +584,41 @@ and a 16-byte minimum footprint** — the guard that keeps a lone string NUL
 terminator from being claimed as a memset (the Stack-string ablation in
 DIV-2). Rewrite: one `builtin_memset(dest, value, count)` CALLOTHER; teardown
 shares the string path's COPY removal. Off restores the per-element stores.
+
+**(kuna) Read-only string block copy —**
+[`rodatastring`](../options.md)**, default on** (DIV-113).
+`decompiler/crates/kuna-decomp/src/p5_types/kuna_rodatastring.rs
+(RuleRodataStringCopy)` covers the third shape of the same idiom: the whole
+literal already exists in read-only memory, so the compiler emits a BLOCK copy
+— one or more wide loads out of `.rodata`/`__cstring` re-stored into the frame
+— instead of per-character constants. Those loads survive heritage as free
+read-only memory varnodes rather than p-code constants, so `RuleStringCopy`
+declines at its constant-input guard and the run reaches the printer as
+partial-symbol slice assignments: `v1[0] = (char[8])s_100003f1d._0_8_;` and
+`v8._0_9_ = s_100003f1d._16_9_;` — neither of which is legal C (there is no
+array cast, and `._0_9_` is member syntax applied to an array object), and
+which hide a string the engine has already recovered at that address.
+
+The rule claims a run only when every step is a fact rather than an inference:
+each COPY's source is `Varnode::isReadOnly` free memory (so the image bytes
+*are* the run-time bytes); all the sources lie inside one covering data symbol
+whose type is a char-printable array — the symbol the string-literal analysis
+planted; source and destination advance in lockstep, so the run is a straight
+block copy and not a shuffle; the COPYs tile the destination **exactly**, no
+gap and no overlap, across the symbol's whole length, so nothing is invented
+and nothing is dropped; the image bytes really are one NUL-terminated string of
+exactly that length; and the members share a basic block with no interfering
+LOAD/STORE/CALL between them (the same `ArraySequence::interfereBetween` window
+the string driver demands). A run of a single COPY is deliberately left alone —
+the defect being repaired is the *split* copy, and a whole-string single COPY
+already renders as one assignment. Rewrite: one
+`builtin_strncpy(dest, "…", n)` CALLOTHER built by `constseq.rs
+(StringSequence)` `from_rodata_run`/`transform_rodata`, reusing the string
+path's `constructTypedPointer` and COPY teardown unchanged. Off restores the
+slice assignments. Failure mode: any guard miss declines silently and the
+output is byte-identical to `off` — the destination stack slices the run wrote
+survive as unread declarations, because the local variable map still sees the
+frame carved by the original wide stores.
 
 **Bitfields** (`decompiler/crates/kuna-decomp/src/p5_types/bitfield.rs`).
 Pattern: a struct with sub-byte fields is accessed through shift/mask soup on

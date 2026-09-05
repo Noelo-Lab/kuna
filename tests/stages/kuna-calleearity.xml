@@ -1,0 +1,78 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    RE-friction round 1, challenge 69a54bd70f5b9757a6a5f72f (PE x86-64
+    PolyMLP.exe): `kuna decompile ... 0x1400024a0` by address renders the same
+    allocator wrapper with two different arities thirty bytes apart,
+
+        v13 = sub_140008160(0x28);          0x14000252c
+        v13 = sub_140008160();              0x1400026b0
+        v39 = (char *)sub_140008160(v33);   0x1400026cf
+
+    destroying the buffer size dataflow at the site that lost it.
+
+    Root cause (P4, trial finalization).  The odd site is MSVC's aligned
+    operator new[], where the requested size is also the operand of an
+    overflow check:
+
+        lea  rcx, [rbx+0x27]
+        cmp  rcx, rbx
+        jbe  abort
+        call sub_140008160
+
+    Funcdata::onlyOpUse (funcdata_varnode.cc:1851) asks whether the Varnode
+    reaching the CALL in rcx is used ONLY as this call's argument, and rejects
+    on the CPUI_CBRANCH among its descendants; checkInputTrialUse then marks the
+    trial inactive, which also sets CHECKED, so the argument is gone for good.
+    That rule is upstream's and it is not wrong on its own terms: a register that
+    is compared and branched on may be live caller state.  Relaxing it would
+    fabricate an argument at every `test rcx,rcx; jz; call` in the corpus.  What
+    settles the question is the OTHER call site, which passes rcx as an argument
+    to the same callee.
+
+    Stage / sub-stage: P4 "trial-finalization".  The P0 assertion
+    `option calleearity on|off` decides whether buildInputFromTrials reconciles
+    a call's argument list with an already-final sibling call to the same entry
+    address.
+
+    The fixture is the same construct on SysV x86-64 (rdi rather than rcx),
+    assembled from:
+
+        callee: mov %rdi,%rax ; add $1,%rax ; ret
+        caller: push %rbx ; mov $0x28,%edi
+                call callee            # site A: constant argument, no other use
+                mov %rax,%rbx ; lea 0x27(%rbx),%rdi
+                cmp %rbx,%rdi ; jbe bail
+                call callee            # site B: the guard branches on %rdi
+                pop %rbx ; ret
+        bail:   xor %eax,%eax ; pop %rbx ; ret
+
+    Site A has to pass a CONSTANT rather than a forwarded parameter: onlyOpUse
+    walks a Varnode's whole descendant tree, so a register the caller also
+    copies into the guarded expression is rejected at BOTH sites and there is no
+    witness left to reconcile against.
+
+    Pass 1 (`option calleearity off`) reproduces the BUG: site B renders as
+    `callee()` while site A keeps its argument.
+    Pass 2 (`option calleearity on`) is the FIX: both sites pass an argument.
+-->
+<bytechunk space="ram" offset="0x100000">
+4889f84883c001c30f1f84000000000053bf28000000e8e5ffffff4889c3488d
+7b274839df7607e8d4ffffff5bc331c05bc3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="callee"/>
+<symbol space="ram" offset="0x100010" name="caller"/>
+</binaryimage>
+<script>
+  <com>option calleearity off</com>
+  <com>lo fu caller</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option calleearity on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="calleearity #1: option off drops the argument at the call site whose guard branches on it (bug reproduced)" min="1" max="1">callee\(\);</stringmatch>
+<stringmatch name="calleearity #2: option on gives both call sites of one callee the same arity" min="1" max="1">callee\(v[0-9]+ \+ 0x27\)</stringmatch>
+</decompilertest>

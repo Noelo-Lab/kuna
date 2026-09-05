@@ -160,6 +160,21 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     // is registered only on a language that declares the user-op, and only 12
     // Thumb-2 constructors emit it.
     ("cortexmpriv", "on"),
+    // (kuna, DIV-108) Cap the pointer nesting `ActionInferTypes` will adopt. A
+    // small-string-optimized C++ object writes the unsatisfiable equation
+    // `T == ptr(T)` into the type lattice, so the propagation adds one pointer
+    // level per pass up to its seven-pass settle ceiling and declares the object
+    // `unsigned long long *****`. Shipped default OFF because it changes INFERRED
+    // types and the XML datatest corpus pins the upstream spellings while applying
+    // no mode; preset membership is what makes the cap the default rendering for
+    // every real binary. Inert on anything whose types already settle -- the rule
+    // is upstream's own `getTypePointerNoDepth`, and depth 1/2 over a concrete base
+    // (`char **argv`) is untouched. Corpus sweep: 90 binaries / 22,307 functions,
+    // 103 change (0.46%), `***` occurrences 1,617 -> 28 and functions carrying one
+    // 80 -> 17, ZERO call sites lost or gained. Speed is paid only where it fires:
+    // -0.12% on a 1,027-function binary whose output is byte-identical on both
+    // arms, +5.3% on the witness binary where 1 of 144 functions changes.
+    ("ptrdepthcap", "on"),
     // analysis-tier default-off discovery/markup passes. `listing` is the master
     // gate that enables the Listing-consuming passes (fid/aif/discovered-noreturn).
     ("listing", "on"),
@@ -374,9 +389,20 @@ mod tests {
         /// mid-body entries 6,728 -> 4,653 but costs 850 of 44,957 recovered
         /// functions, raises recall on zero of the 110 images, and takes 84 / 141 real
         /// functions off the two u-boot A32 images DIV-20 exists for.
+        /// `linuxsyscall` names an x86-32 `int 0x80` after the Linux syscall the
+        /// constant in `EAX` selects. The vector alone does not prove the target OS
+        /// -- on the original IBM PC the 0x80..0xF0 range was reserved for BASIC --
+        /// and the engine has no OS/ABI channel it could consult, so naming the call
+        /// is a statement about the platform that the operator makes, not one the
+        /// preset should make for every x86-32 image it meets. Measured (the sweep
+        /// in the option's catalog row): on the eleven x86-32 ELF images of the
+        /// crackmes corpus it changes two lines in two binaries, both a `swi(0x80)`
+        /// indirect call becoming the named syscall, and is byte-identical on the
+        /// other nine and on the 675-assertion datatest corpus. It is excluded for
+        /// the platform-assertion reason, not a measured one.
         const EXCLUDED_ON_PURPOSE: &[&str] =
             &["v850indirectbranch", "dwarf_lines", "formatstring", "ifuncfpret",
-              "aifcorroborate"];
+              "aifcorroborate", "linuxsyscall"];
 
         /// Default-off options that predate this test and are **not** in the preset,
         /// i.e. are currently unreachable on the default path. Each is a genuine open
@@ -400,6 +426,15 @@ mod tests {
             // number are the two things that PR has to add).
             "guardarm",
             "loopcondhoist",
+            // `switchselector` is the one entry here whose evaluation is already
+            // done and recorded (its catalog row carries the 0/675 datatest
+            // ablation and the whole-corpus sweep: one function changes across
+            // seventeen binaries, a `switch(0)` with five unreachable cases
+            // becoming a five-branch if/else-if chain over the recovered
+            // parameter). What it is waiting on is the thing this list exists to
+            // hold back -- preset membership is a DIV-recorded default change,
+            // and the DIV registry is not this change's to write.
+            "switchselector",
         ];
 
         let agg = mode_overrides("aggressive").unwrap();

@@ -385,6 +385,75 @@ REPIPE_MAX_AGENTS=7 REPIPE_ROUND_USD=150 tools/repipe/run.sh --rounds 1
   evidence the refuter is rubber-stamping).
 - ≥1 PR merged, and ≥1 acceptance probe flipped to PASS and promoted into `tests/cli/`.
 
+### Round 1 — what actually happened, measured against those criteria
+
+Nine challenges, three codex testers, 26 observations filed, gated on a pinned `main`.
+
+| Criterion | Result |
+|---|---|
+| ≥6 needs pass the two-arm gate | **23 admitted** of 26 |
+| ≥2 rejected as `already-supported`/`user-error` | **1** `already-supported`, 1 `not-reproducible`, 1 `unrunnable`. Strictly, the bar was **missed**: only one filing was refuted as *kuna was already fine*. |
+| ≥1 hypothesis overturned outside the `absence` class | **yes, 3** — see below |
+| ≥1 PR merged, ≥1 acceptance promoted to `tests/cli/` | **9 acceptances flipped; 4 promoted** |
+
+The gate's sharpest moment was three near-identical filings about whole-binary JSON size
+landing on three *different* verdicts — one `admitted`, one `already-supported` (its
+acceptance already passed), one `not-reproducible` (its probe failed). Text dedup would have
+merged all three; predicates separated them.
+
+**Three overturned hypotheses**, all in the same shape the decbench campaign found — the
+symptom was real every time and the diagnosis was wrong:
+
+- *bogus function at `0xfe6dca9f`* — filed as a discovery heuristic misfiring. Actually
+  `listing/walk.rs` runs two worklists that disagree about what counts as code: the
+  instruction worklist gates every address on the executable-range universe, the function
+  worklist took a direct `CALL` target unconditionally. The witness is an `e8` read one byte
+  early behind an always-taken `je`.
+- *`main` typed `void(void)`* — filed as "interprocedural recovery failed to propagate".
+  Half right: nothing propagates *because* kuna recovers parameters from the callee's own
+  body, and `main` never reads its argument registers. The fix reads the caller instead, and
+  is PE-only because on ELF the CRT lives in libc and there is no in-image call site to read.
+- *dialog dispatch renders `switch(0)`* — filed as a switch-recovery bug. Actually
+  `loweredswitch` detects the cascade on the **simplified** graph and installs the
+  `BRANCHIND` on **re-lifted raw p-code**; the two halves never see the same graph, neither
+  recovery arm is checked, and the surgery commits regardless.
+
+**Closure, measured by re-running both arms on the merged build.** The acceptance arm says
+9 flipped; the probe arm says 13 bad behaviours stopped reproducing. Neither number is the
+answer, and the gap between them is the finding:
+
+| | count | |
+|---|---|---|
+| genuinely fixed at defaults | **12** | probe gone *and* the change is real |
+| fixed, but behind a default-OFF option | 2 | `switchselector`, `linuxsyscall` — correctly still reproducing at defaults |
+| still open | 9 | |
+| **falsely reported fixed** | **1** | see below |
+
+The false one is the most useful result of the round. A probe asserted
+`_secret_function(v2);` for a void function called with an argument. The merged build emits
+`_secret_function(v3);` — the identical defect with one renumbered local — and the probe
+stopped matching, so the machine reported the bug **gone**. An over-specified *acceptance*
+leaves finished work looking open; an over-specified *probe* closes work that was never done,
+and nothing downstream would ever have caught it. Both prompts now say: assert the property,
+never a `vN`, a `sub_<addr>`, or a whole signature line.
+
+**What the acceptance re-run then showed, which the gate could not.** Of the 14 acceptances
+that did not flip, several assert a *rendering the tester imagined* rather than the symptom
+they observed: one demanded `mprotect(` where the syscall is actually `write`; one demanded
+the literal token `switch(a1)` where the shipped fix correctly emits the compiler's own
+if/else-if chain over the real parameter. Both underlying defects **are** fixed. This is the
+`unprobeable` trade from the other direction: a probe precise enough to run is also precise
+enough to over-specify, and an acceptance that over-specifies reads as an open defect
+forever. Round 2's tester brief should say: assert the symptom's *absence*, not the fix's
+spelling.
+
+**A structural finding worth more than any single fix.** A quality fix ships behind a
+default-OFF option, but a tester-authored acceptance always invokes kuna with defaults — so
+a correct fix behind a default-OFF flag can *never* flip its own acceptance. Two of round 1's
+four quality options shipped OFF and their acceptances still read as failing. The acceptance
+suite must record the option set a need was closed under, or it will keep re-filing work that
+is already done.
+
 ## What an adversarial review found, and where it stands
 
 The implementation was reviewed by four independent agents, every finding re-run by a
@@ -422,6 +491,32 @@ knowing about because they shape how you should extend this code:
   has it, not *some* element lacks it. Existentially-quantified negation let a probe and its
   own negation both pass on a mixed array, which the gate reads as `already-supported` — i.e.
   it silently discards a real need.
+
+## A conflicting PR runs no gates at all, and looks green
+
+Round 1's PR sat for half an hour showing six green `Analyze (...)` checks and nothing else.
+The `Tests` workflow had never run — not queued, not skipped, **no run object at all** — and
+the reason was that `main` had moved ahead and the PR was `CONFLICTING`. GitHub does not
+dispatch `pull_request` workflows when it cannot compute the merge commit, and CodeQL's
+default setup is a different mechanism that runs anyway.
+
+So the observable state of a conflicting PR is: CodeQL green, every gate absent, and
+`gh pr checks` showing an all-green list. That is precisely the "all-green PR that had
+executed no code" that `tests.yml`'s own header describes.
+
+What catches it is the `missing` arm in `open_pr.sh --merge`:
+
+```sh
+WS_CONC=$(... next((r.conclusion for r in check_runs if r.name == WS_NAME), "missing") ...)
+if [ "$WS_CONC" = "skipped" ] || [ "$WS_CONC" = "missing" ]; then
+  echo "ERROR: '$WS_NAME' concluded '$WS_CONC' -- it did not actually run; not merging"
+```
+
+`missing` was written for a different case (a required check renamed out from under the
+guard) and it caught this one. **Do not soften it to "absent means not required".** The
+diagnostic to reach for first is `gh pr view <n> --json mergeable,mergeStateStatus`:
+`CONFLICTING`/`DIRTY` explains an absent suite far more often than anything about the
+workflow file does.
 
 ## Machinery reference
 

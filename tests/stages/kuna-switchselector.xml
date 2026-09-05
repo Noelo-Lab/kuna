@@ -1,0 +1,76 @@
+<decompilertest>
+<!--
+    switchselector: refuse to install a recovered lowered-switch cascade whose
+    synthesized BRANCHIND cannot be given the switch value as its selector.
+
+    `loweredswitch` (DIV-4, default on) DETECTS a compiler-lowered comparison
+    cascade on the simplified, SSA'd CFG and then INSTALLS the BRANCHIND +
+    JumpTable pre-SSA, on the re-lifted raw p-code of a restart.  The two halves
+    do not see the same graph, so the install has to re-find the switch variable:
+    from the head comparison, else from a free read of the storage the detection
+    recorded.  Neither arm is checked and the CFG surgery commits regardless, so
+    when both fail the emitted `switch` dispatches on something that is not the
+    switch value.
+
+    Stage model: S2 "switch-model" sub-stage (the same sub-stage `loweredswitch`
+    itself owns).  P0 assertion: `option switchselector on|off`.
+
+    Layout (x86:LE:32, flat at 0x100000) - the Win32 callback shape, reduced to
+    the dispatch:
+
+      dlgproc @ 0x100000 :  push ebp; mov ebp,esp
+                            mov  eax,[ebp+0xc]     ; the message: a STACK parameter
+                            cmp  eax,0x111 / ja default / je 0x111
+                            cmp  eax,0x10  / je ...
+                            cmp  eax,0x2b  / je ...
+                            cmp  eax,0x110 / jne default
+                            (five one-line case bodies)
+
+    On x86 the head arm never fires - `cmp`/`jcc` reaches the install as flag
+    arithmetic, not as a comparison - so everything rests on the fallback read,
+    and a free read of a stack slot that is a function INPUT has no reaching
+    definition at heritage pass 0: the incoming value is still a LOAD through the
+    frame pointer, and the input Varnode set is rebuilt by parameter recovery
+    only after heritage.  The BRANCHIND input collapses to a constant.
+
+    Pass 1 (option switchselector on): the record is declined, the compiler's own
+    if/else-if chain over the real variable survives, and the message parameter
+    is in the recovered prototype because something reads it.
+    Pass 2 (option switchselector off - the pre-feature rendering, and today's
+    shipped default): `switch(0)`.  Every case label is present and every one of
+    them is unreachable, and the parameter the function dispatches on is not even
+    in the recovered prototype.
+
+    The ON pass runs FIRST on purpose.  The lowered-switch hint store is sticky
+    across `clear()` by design (the detect half records on one pass, the install
+    half consumes it on the restart), so a record left by an earlier pass would be
+    installed by a later one whatever the option then says.  Declining leaves no
+    record, so `on` then `off` is the ordering in which each pass really re-runs
+    the detection.
+
+    Asserts #1/#2 pin the broken rendering to pass 1 alone; #3/#4 pin the
+    recovered dispatch to pass 2 alone; #5 pins a case body to BOTH passes, so
+    the guard is shown to change the structure and not the content.
+-->
+<binaryimage arch="x86:LE:32:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">
+5589e58b450c3d11010000772f742683f810741383f82b74153d10010000751cb8101100005dc3b8101000005dc3b82b2b00005dc3b8111100005dc331c05dc3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="dlgproc"/>
+</binaryimage>
+<script>
+  <com>lo fu dlgproc</com>
+  <com>option switchselector on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option switchselector off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="SWITCHSELECTOR #1: the installed switch dispatches on a constant, so it is only in the switchselector-off pass" min="1" max="1">switch\(0\)</stringmatch>
+<stringmatch name="SWITCHSELECTOR #2: every case of that switch is unreachable - the labels exist only in the broken pass" min="1" max="1">case 0x110:</stringmatch>
+<stringmatch name="SWITCHSELECTOR #3: with the guard on, the cascade survives as the compiler lowered it, over the real message parameter" min="1" max="1">if \(a1 == 0x10\)</stringmatch>
+<stringmatch name="SWITCHSELECTOR #4: the broken switch leaves the dispatched-on parameter unread, so only the off pass recovers a (void) prototype" min="1" max="1">dlgproc\(void\)</stringmatch>
+<stringmatch name="SWITCHSELECTOR #5: a case body is present in BOTH passes - the guard changes the structure, not the content" min="2" max="2">return 0x2b2b;</stringmatch>
+</decompilertest>

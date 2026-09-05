@@ -65,8 +65,22 @@ fi
 
 head_ "L0  counters re-derive from the live tree"
 CNT="$("$PY" -m scripts.repipe.counters --rederive --json 2>/dev/null)"
-echo "$CNT" | grep -q '"settables": 127' && ok "settables = 127" || bad "settable count drifted" "$(echo "$CNT" | head -3)"
-echo "$CNT" | grep -q '"corpus_files": 222' && ok "stage corpus = 222" || bad "stage corpus count drifted"
+# Assert the MECHANISM, not a snapshot. Pinning "settables = 127" here made every
+# option that lands break the smoke, which is a false alarm that teaches people to
+# ignore it -- and it never once caught a real drift, because counters --check is
+# what does that. So: the derivation must produce a plausible number, and every
+# hard-coded site in the tree must agree with it.
+SETTABLES="$(echo "$CNT" | "$PY" -c 'import json,sys; d=json.load(sys.stdin); print(d.get("derived", d).get("settables", 0))' 2>/dev/null || echo 0)"
+CORPUS="$(echo "$CNT" | "$PY" -c 'import json,sys; d=json.load(sys.stdin); print(d.get("derived", d).get("corpus_files", 0))' 2>/dev/null || echo 0)"
+[ "${SETTABLES:-0}" -ge 100 ] && ok "settables derived ($SETTABLES)" \
+  || bad "settable derivation implausible" "$(echo "$CNT" | head -3)"
+[ "${CORPUS:-0}" -ge 200 ] && ok "stage corpus derived ($CORPUS)" \
+  || bad "corpus derivation implausible"
+if "$PY" -m scripts.repipe.counters --check >/dev/null 2>&1; then
+  ok "every hard-coded counter site agrees with the derived truth"
+else
+  bad "counter drift" "$("$PY" -m scripts.repipe.counters --check 2>&1 | grep DRIFT | head -4)"
+fi
 echo "$CNT" | grep -q '"next_element_id"' && ok "next free ElementId derived" || bad "no ElementId derivation"
 
 head_ "L0  mergecheck catches all three silent-merge shapes"
@@ -324,6 +338,84 @@ n = needs.parse('$f')
 assert needs.render(n) == open('$f').read(), 'round-trip differs'
 " 2>/dev/null && ok "round-trip $(basename "$f")" || bad "round-trip $(basename "$f")"
 done
+
+head_ "L1  every status surface agrees with the inventory about a LIVE agent"
+
+# Round 2 shipped with BOTH status surfaces silently wrong on a loop that was running
+# perfectly: the CLI read the other pipeline's inventory (KUNA_PIPELINE_STATE_DIR unset,
+# so `.kuna-pipeline/` -- empty), and the dashboard read meta["tracks"]["test"]["state"]
+# and transition["track"] where captain.py writes flat meta["test"] and ["machine"]. Both
+# rendered "0 agents" and "--" while three testers held three slots. Checking routes and
+# JSON shape did not catch either, because both answered 200 with a well-formed document
+# that was simply about nothing. So: plant a slot, and require every surface to SEE it.
+SMOKE_SLOT="smoke-live-$$"; export SMOKE_SLOT
+# The smoke's state dir is a fresh mktemp with no pool caps set, so the cap defaults to 0
+# and every acquire is refused. The live loop gets its caps from captain.set_caps().
+"$PY" -m scripts.pipeline.state slot-cap --pool tester --cap 3 >/dev/null 2>&1
+if "$PY" -m scripts.pipeline.state slot-acquire --pool tester --id "$SMOKE_SLOT" --pid $$ \
+     >/dev/null 2>&1; then
+  ok "planted a live tester slot ($SMOKE_SLOT)"
+
+  if "$PY" -m scripts.repipe.status --json 2>/dev/null \
+      | "$PY" -c 'import json,sys,os
+d = json.load(sys.stdin)
+held = (d.get("slots", {}).get("tester") or {}).get("held") or {}
+sys.exit(0 if os.environ["SMOKE_SLOT"] in held else 1)'; then
+    ok "scripts.repipe.status sees it"
+  else
+    bad "scripts.repipe.status does not see a live tester slot" \
+        "$("$PY" -m scripts.repipe.status 2>&1 | head -2)"
+  fi
+
+  # The bare-invocation case is the one that broke: no KUNA_PIPELINE_STATE_DIR in the
+  # environment, which is how docs/re-pipeline.md tells an operator to run it. It cannot be
+  # tested by planting a slot -- with the variable unset the module correctly resolves the
+  # REPO's state dir, not this smoke's temp one -- so assert the resolution itself: the
+  # inventory it would read must sit under the repipe state dir, never `.kuna-pipeline`.
+  if ( unset KUNA_PIPELINE_STATE_DIR
+       "$PY" -c '
+import importlib, sys
+from scripts.repipe import config, status          # importing status is what pins the var
+from scripts.pipeline import state as pstate
+want = str(config.state_dir())
+got = str(pstate.inventory_path() if hasattr(pstate, "inventory_path") else pstate._inventory_path())
+sys.exit(0 if got.startswith(want) else 1)
+' ) 2>/dev/null; then
+    ok "... and resolves the repipe inventory with the env unset"
+  else
+    bad "status resolves the wrong inventory when KUNA_PIPELINE_STATE_DIR is unset" \
+        "$( unset KUNA_PIPELINE_STATE_DIR; "$PY" -c '
+from scripts.repipe import config, status
+from scripts.pipeline import state as pstate
+print("want prefix:", config.state_dir())
+print("got        :", pstate._inventory_path())' 2>&1 | head -3)"
+  fi
+
+  "$PY" -m scripts.pipeline.state slot-release --pool tester --id "$SMOKE_SLOT" >/dev/null 2>&1
+else
+  bad "could not plant a tester slot to test the status surfaces against"
+fi
+
+# A lane state the captain actually wrote must render, not fall back to null. This is the
+# dashboard half of the same bug; _collect_rounds is pure, so it needs no server.
+"$PY" - <<'PYEOF' 2>/dev/null && ok "webui renders a lane state captain.py wrote" \
+  || bad "webui cannot read captain.py's round document"
+import json, sys, tempfile, os
+from pathlib import Path
+sys.path.insert(0, os.environ.get("REPO") or os.environ.get("PYTHONPATH", "").split(":")[0] or ".")
+from scripts.repipe import webui
+d = Path(tempfile.mkdtemp())
+r = d / "rounds" / "7"
+r.mkdir(parents=True)
+# exactly the shape scripts/repipe/captain.py::save_round writes
+(r / "round.json").write_text(json.dumps(
+    {"round": 7, "supervisor": "RUNNING", "test": "T_FANOUT", "build": "B_PLAN"}))
+(r / "transitions.jsonl").write_text(json.dumps(
+    {"ts": 0, "machine": "test", "from": "T_PLAN", "to": "T_FANOUT"}) + "\n")
+rounds = webui._collect_rounds(d)
+got = (rounds[0].get("test_state"), rounds[0].get("build_state"))
+assert got == ("T_FANOUT", "B_PLAN"), got
+PYEOF
 
 head_ "L1  dashboard serves every route with no gh call per request"
 PORT=$(( 18700 + RANDOM % 900 ))

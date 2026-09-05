@@ -1,0 +1,296 @@
+{
+  "schema": "re-opportunities/1",
+  "generated_by": "scripts.repipe.needs",
+  "note": "RE-friction backlog. Every row is a need whose probe PASSES and whose acceptance FAILS on the pinned main. Consumed by scripts.pipeline.select.",
+  "count": 6,
+  "ranked": [
+    {
+      "rank": 1,
+      "score": 13.862944,
+      "kinds": [
+        "quality",
+        "re-need"
+      ],
+      "reasons": [
+        "a GetProcAddress result is discarded and the pointer left uninitialised",
+        "major severity; 1 instance(s) over 0 challenge(s)",
+        "probe None PASSES / acceptance None FAILS"
+      ],
+      "covered_hint": "",
+      "comparable": true,
+      "test_name": "getprocaddress-result-discarded",
+      "selector": null,
+      "binary": "",
+      "arch": null,
+      "func_name": null,
+      "func_addr": null,
+      "custom_options": null,
+      "confidence": 0.8,
+      "kuna_mode": null,
+      "slug": "getprocaddress-result-discarded",
+      "need_id": "getprocaddress-result-discarded",
+      "need_path": "/home/mahaloz/github/kuna/docs/re-needs/getprocaddress-result-discarded.md",
+      "title": "a GetProcAddress result is discarded and the pointer left uninitialised",
+      "track": "quality",
+      "status": "open",
+      "severity": "major",
+      "probe_id": null,
+      "acceptance_id": null,
+      "probe_kind": null,
+      "hypothesis_status": "inconclusive",
+      "credibility": 0.8,
+      "instances": 1,
+      "challenges": [],
+      "rounds": [
+        1
+      ],
+      "first_seen_round": 1,
+      "attempts": 0,
+      "touches": [
+        "decompiler/crates/kuna-decomp"
+      ],
+      "scope": "small",
+      "regression_of": null
+    },
+    {
+      "rank": 2,
+      "score": 13.862944,
+      "kinds": [
+        "quality",
+        "re-need"
+      ],
+      "reasons": [
+        "a large checker decompiles into malformed and prohibitively noisy C",
+        "major severity; 1 instance(s) over 0 challenge(s)",
+        "probe None PASSES / acceptance None FAILS"
+      ],
+      "covered_hint": "",
+      "comparable": true,
+      "test_name": "large-function-malformed-output",
+      "selector": null,
+      "binary": "",
+      "arch": null,
+      "func_name": null,
+      "func_addr": null,
+      "custom_options": null,
+      "confidence": 0.8,
+      "kuna_mode": null,
+      "slug": "large-function-malformed-output",
+      "need_id": "large-function-malformed-output",
+      "need_path": "/home/mahaloz/github/kuna/docs/re-needs/large-function-malformed-output.md",
+      "title": "a large checker decompiles into malformed and prohibitively noisy C",
+      "track": "quality",
+      "status": "open",
+      "severity": "major",
+      "probe_id": null,
+      "acceptance_id": null,
+      "probe_kind": null,
+      "hypothesis_status": "inconclusive",
+      "credibility": 0.8,
+      "instances": 1,
+      "challenges": [],
+      "rounds": [
+        1
+      ],
+      "first_seen_round": 1,
+      "attempts": 0,
+      "touches": [
+        "decompiler/crates/kuna-decomp"
+      ],
+      "scope": "small",
+      "regression_of": null
+    },
+    {
+      "rank": 3,
+      "score": 13.862944,
+      "kinds": [
+        "quality",
+        "re-need"
+      ],
+      "reasons": [
+        "a void callee is called with an argument",
+        "major severity; 1 instance(s) over 0 challenge(s)",
+        "probe None PASSES / acceptance None FAILS"
+      ],
+      "covered_hint": "",
+      "comparable": true,
+      "test_name": "void-callee-spurious-arg",
+      "selector": null,
+      "binary": "",
+      "arch": null,
+      "func_name": null,
+      "func_addr": null,
+      "custom_options": null,
+      "confidence": 0.8,
+      "kuna_mode": null,
+      "slug": "void-callee-spurious-arg",
+      "need_id": "void-callee-spurious-arg",
+      "need_path": "/home/mahaloz/github/kuna/docs/re-needs/void-callee-spurious-arg.md",
+      "title": "a void callee is called with an argument",
+      "track": "quality",
+      "status": "open",
+      "severity": "major",
+      "probe_id": null,
+      "acceptance_id": null,
+      "probe_kind": null,
+      "hypothesis_status": "inconclusive",
+      "credibility": 0.8,
+      "instances": 1,
+      "challenges": [],
+      "rounds": [
+        1
+      ],
+      "first_seen_round": 1,
+      "attempts": 0,
+      "touches": [
+        "decompiler/crates/kuna-decomp"
+      ],
+      "scope": "small",
+      "regression_of": null
+    },
+    {
+      "rank": 4,
+      "score": 13.862944,
+      "kinds": [
+        "quality",
+        "re-need"
+      ],
+      "reasons": [
+        "wide (UTF-16) Windows API string arguments collapse to one character",
+        "major severity; 1 instance(s) over 0 challenge(s)",
+        "probe None PASSES / acceptance None FAILS"
+      ],
+      "covered_hint": "",
+      "comparable": true,
+      "test_name": "wide-api-string-args",
+      "selector": null,
+      "binary": "",
+      "arch": null,
+      "func_name": null,
+      "func_addr": null,
+      "custom_options": null,
+      "confidence": 0.8,
+      "kuna_mode": null,
+      "slug": "wide-api-string-args",
+      "need_id": "wide-api-string-args",
+      "need_path": "/home/mahaloz/github/kuna/docs/re-needs/wide-api-string-args.md",
+      "title": "wide (UTF-16) Windows API string arguments collapse to one character",
+      "track": "quality",
+      "status": "open",
+      "severity": "major",
+      "probe_id": null,
+      "acceptance_id": null,
+      "probe_kind": null,
+      "hypothesis_status": "inconclusive",
+      "credibility": 0.8,
+      "instances": 1,
+      "challenges": [],
+      "rounds": [
+        1
+      ],
+      "first_seen_round": 1,
+      "attempts": 0,
+      "touches": [
+        "decompiler/crates/kuna-decomp"
+      ],
+      "scope": "small",
+      "regression_of": null
+    },
+    {
+      "rank": 5,
+      "score": 6.931472,
+      "kinds": [
+        "quality",
+        "re-need"
+      ],
+      "reasons": [
+        "code decrypted at runtime stays an opaque indirect call",
+        "minor severity; 1 instance(s) over 0 challenge(s)",
+        "probe None PASSES / acceptance None FAILS"
+      ],
+      "covered_hint": "",
+      "comparable": true,
+      "test_name": "runtime-decrypted-code-opaque",
+      "selector": null,
+      "binary": "",
+      "arch": null,
+      "func_name": null,
+      "func_addr": null,
+      "custom_options": null,
+      "confidence": 0.8,
+      "kuna_mode": null,
+      "slug": "runtime-decrypted-code-opaque",
+      "need_id": "runtime-decrypted-code-opaque",
+      "need_path": "/home/mahaloz/github/kuna/docs/re-needs/runtime-decrypted-code-opaque.md",
+      "title": "code decrypted at runtime stays an opaque indirect call",
+      "track": "quality",
+      "status": "open",
+      "severity": "minor",
+      "probe_id": null,
+      "acceptance_id": null,
+      "probe_kind": null,
+      "hypothesis_status": "inconclusive",
+      "credibility": 0.8,
+      "instances": 1,
+      "challenges": [],
+      "rounds": [
+        1
+      ],
+      "first_seen_round": 1,
+      "attempts": 0,
+      "touches": [
+        "decompiler/crates/kuna-decomp"
+      ],
+      "scope": "small",
+      "regression_of": null
+    },
+    {
+      "rank": 6,
+      "score": 6.931472,
+      "kinds": [
+        "quality",
+        "re-need"
+      ],
+      "reasons": [
+        "stack-string initialisation is emitted as an invalid array cast",
+        "minor severity; 1 instance(s) over 0 challenge(s)",
+        "probe None PASSES / acceptance None FAILS"
+      ],
+      "covered_hint": "",
+      "comparable": true,
+      "test_name": "stack-string-invalid-cast",
+      "selector": null,
+      "binary": "",
+      "arch": null,
+      "func_name": null,
+      "func_addr": null,
+      "custom_options": null,
+      "confidence": 0.8,
+      "kuna_mode": null,
+      "slug": "stack-string-invalid-cast",
+      "need_id": "stack-string-invalid-cast",
+      "need_path": "/home/mahaloz/github/kuna/docs/re-needs/stack-string-invalid-cast.md",
+      "title": "stack-string initialisation is emitted as an invalid array cast",
+      "track": "quality",
+      "status": "open",
+      "severity": "minor",
+      "probe_id": null,
+      "acceptance_id": null,
+      "probe_kind": null,
+      "hypothesis_status": "inconclusive",
+      "credibility": 0.8,
+      "instances": 1,
+      "challenges": [],
+      "rounds": [
+        1
+      ],
+      "first_seen_round": 1,
+      "attempts": 0,
+      "touches": [
+        "decompiler/crates/kuna-decomp"
+      ],
+      "scope": "small",
+      "regression_of": null
+    }
+  ]
+}

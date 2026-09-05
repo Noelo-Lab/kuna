@@ -37,6 +37,15 @@ pub struct DecompileArgs {
     pub regions: bool,
     pub options: Vec<(String, String)>,
     pub kasserts: Vec<String>,
+    /// `--define-function <start[-end][=name] | @file>` (repeatable): the
+    /// caller-declared function boundaries, lowered to `function bounds` lines.
+    pub func_decls: Vec<crate::funcdecl::FuncDecl>,
+    /// `--assert <directive> | @FILE` (repeatable): the caller-supplied
+    /// assertions, lowered to console lines at the slots `build_script`
+    /// documents (`crate::assertdecl`).
+    pub assertions: Vec<kuna_console::assertions::Directive>,
+    /// `--assert-strict`: a rejected directive makes the run exit non-zero.
+    pub assert_strict: bool,
     pub decomp_dbg: Option<String>,
     pub sleighpath: Option<String>,
     /// Mach-O fat / universal slice override (`--slice <arch>`, e.g. `x86_64` /
@@ -115,8 +124,11 @@ fn build_script(
     bfd_target: Option<&str>,
     raw: bool,
     out_path: &Path,
+    injected: &[(&'static str, &'static str)],
     options: &[(String, String)],
     kasserts: &[String],
+    func_decls: &[crate::funcdecl::FuncDecl],
+    assertions: &[kuna_console::assertions::Directive],
     regions_path: Option<&Path>,
 ) -> String {
     let mut lines: Vec<String> = Vec::new();
@@ -132,18 +144,47 @@ fn build_script(
     // commit would be a no-op (the analysis-port conflict #4 ordering fix). The
     // upstream/printer options here are order-independent w.r.t. `read symbols`.
     //
-    // (kuna, Ghidra-gap / DIV-15) Build the Listing when neither the selected
-    // mode nor the caller names `listing`, matching `decompile-all`. The
-    // Listing drives the no-return analysis that prevents a function ending in
-    // a no-returning call from absorbing its neighbour. The default `auto`
-    // policy names Listing off through `fast` for binaries at least 2 MiB.
-    if !options.iter().any(|(name, _)| name == "listing") {
-        lines.push("option listing on".into());
+    // The driver defaults this attempt takes, from the shared table
+    // (`decompile_all::driver_default_options`) — the DIV-15 Listing always, and
+    // the DIV-20/DIV-68 non-x86-64 discovery bundle only on the retry (see
+    // `decompile`).
+    for (name, value) in injected {
+        lines.push(format!("option {name} {value}"));
+    }
+    // (kuna `--assert`) A `readonly` range is inert unless read-only propagation
+    // is on, and that option is default-off; asserting the range turns it on.
+    // Emitted BEFORE the caller's own `--option` lines so an explicit
+    // `--option readonly off` still wins.
+    if kuna_console::assertions::implies_readonly_propagation(assertions) {
+        lines.push("option readonly on".into());
     }
     for (name, value) in options {
         lines.push(format!("option {name} {value}"));
     }
+    // (kuna `--assert`) IMAGE-scoped directives -- a read-only or volatile
+    // memory range -- must precede `read symbols`: mapping a symbol folds the
+    // range property into its SymbolEntry and never looks at the range again.
+    for form in assertions.iter().filter_map(crate::assertdecl::console_form) {
+        if form.slot == crate::assertdecl::Slot::Image {
+            lines.push(form.line);
+        }
+    }
     lines.push("read symbols".into());
+    // `--define-function` AFTER the analysis commit and BEFORE the load: a
+    // caller-declared boundary is an assertion that outranks whatever discovery
+    // decided about the same address, and the load below is what consults the
+    // declared extent (`ConsoleProgram::declared_extent`).
+    for decl in func_decls {
+        lines.push(decl.console_line());
+    }
+    // (kuna `--assert`) The PROGRAM-scoped directives -- a parsed type, a
+    // declared prototype, a named global -- go here, after the analysis commit
+    // and before the selection, so the function is loaded against them.
+    for form in assertions.iter().filter_map(crate::assertdecl::console_form) {
+        if form.slot == crate::assertdecl::Slot::Program {
+            lines.push(form.line);
+        }
+    }
     if by_address {
         match EntrySelector::parse(target) {
             EntrySelector::SectionOffset { .. } | EntrySelector::SectionIndexOffset { .. } => {
@@ -161,10 +202,30 @@ fn build_script(
     } else {
         lines.push(format!("load function {target}"));
     }
+    // FUNCTION-scoped directives need a loaded function and are consumed at flow
+    // time, so they precede the first `decompile`.
+    for form in assertions.iter().filter_map(crate::assertdecl::console_form) {
+        if form.slot == crate::assertdecl::Slot::Function {
+            lines.push(form.line);
+        }
+    }
     for ka in kasserts {
         lines.push(format!("kassert {ka}"));
     }
     lines.push("decompile".into());
+    // SYMBOL-scoped directives name a LOCAL, which does not exist until a
+    // decompile has produced it (`rename v2 buf` before the first one answers
+    // `No symbol named: v2`), so they run between two decompiles. The second
+    // `decompile` is emitted ONLY when there is such a directive, so every other
+    // invocation keeps its current cost.
+    if crate::assertdecl::needs_second_pass(assertions) {
+        for form in assertions.iter().filter_map(crate::assertdecl::console_form) {
+            if form.slot == crate::assertdecl::Slot::Symbol {
+                lines.push(form.line);
+            }
+        }
+        lines.push("decompile".into());
+    }
     let out_display = out_path.display().to_string();
     lines.push(format!("openfile write {}", console_path(&out_display)));
     lines.push("print C".into());
@@ -340,11 +401,7 @@ fn check_errors(out: &str, target: &str, binary: &str, by_address: bool) -> Opti
     if let Some(reason) = read_symbols_failure(out) {
         return Some(format!("read symbols (analysis commit) failed: {reason}"));
     }
-    if !by_address
-        && (out.contains("Unknown function name:")
-            || out.contains("no function matches")
-            || out.contains("Bad namespace:"))
-    {
+    if !by_address && is_unknown_function(out) {
         return Some(format!(
             "no function {target:?} in {binary}; for a stripped binary pass an address with --addr"
         ));
@@ -360,6 +417,18 @@ fn check_errors(out: &str, target: &str, binary: &str, by_address: bool) -> Opti
         }
     }
     None
+}
+
+/// Whether the console answered "there is no function by that name here".
+///
+/// The three spellings are the selector model's own
+/// (`ConsoleProgram::resolve_entry` → `EntryLookupError`) plus the engine's
+/// `Unknown function name:`. It is a MISS, not an ambiguity and not a load
+/// failure, which is what makes it safe to answer with a second, wider attempt.
+fn is_unknown_function(out: &str) -> bool {
+    out.contains("Unknown function name:")
+        || out.contains("no function matches")
+        || out.contains("Bad namespace:")
 }
 
 /// Whether the console transcript says the selected entry has no mapped bytes
@@ -400,6 +469,76 @@ fn find_pipeline_failure(out: &str) -> Option<(String, String)> {
     None
 }
 
+/// Recover one [`Outcome`](kuna_console::assertions::Outcome) per `--assert`
+/// directive from the `decomp_dbg` transcript.
+///
+/// The console's exception grammar is byte-faithful and load-bearing
+/// (`ifacedecomp::execute`, and [`CONSOLE_DIAGNOSTICS`] already parses it): a
+/// command that raised prints exactly one diagnostic prefix and the session
+/// continues.  So a directive is `applied` unless a diagnostic follows the echo
+/// of the console line it lowered to — which is the only signal this surface
+/// has, since the C comes back through a file redirect and not the transcript.
+///
+/// A directive whose echo is absent entirely (the script never got that far —
+/// the load failed) is reported as rejected rather than silently applied.
+fn assertion_outcomes(
+    out: &str,
+    directives: &[kuna_console::assertions::Directive],
+) -> Vec<kuna_console::assertions::Outcome> {
+    use kuna_console::assertions::Outcome;
+    directives
+        .iter()
+        .map(|directive| {
+            let (kind, phase, subphase) = directive.body.coords();
+            let detail = match crate::assertdecl::console_form(directive) {
+                Some(form) => command_failure(out, &form.line),
+                None => Some("no console spelling for this directive".to_string()),
+            };
+            Outcome {
+                directive: directive.raw.clone(),
+                kind,
+                phase,
+                subphase,
+                status: if detail.is_none() { "applied" } else { "rejected" },
+                detail,
+            }
+        })
+        .collect()
+}
+
+/// The diagnostic the console printed for the command `line`, or `None` when it
+/// ran clean.  `Some` for a command whose echo never appears at all — a script
+/// that stopped early did not apply it.
+fn command_failure(out: &str, line: &str) -> Option<String> {
+    let mut in_command = false;
+    let mut seen = false;
+    for raw in out.lines() {
+        let trimmed = raw.trim();
+        let text = console_text(trimmed);
+        if trimmed.starts_with(CONSOLE_PROMPT) {
+            in_command = text == line;
+            seen |= in_command;
+            continue;
+        }
+        if !in_command || text.is_empty() {
+            continue;
+        }
+        for prefix in CONSOLE_DIAGNOSTICS {
+            if let Some(reason) = text.strip_prefix(prefix) {
+                let reason = reason.trim();
+                if !reason.is_empty() {
+                    return Some(reason.to_string());
+                }
+            }
+        }
+    }
+    if seen {
+        None
+    } else {
+        Some("the console script did not reach this directive".into())
+    }
+}
+
 /// A unique temp path under the system temp dir (no external dep; mirrors
 /// `tempfile.NamedTemporaryFile(delete=False)`'s role — a private scratch file we
 /// delete in the `finally`).
@@ -421,6 +560,8 @@ struct DecompileOutcome {
     c: String,
     regions: Option<String>,
     failure: Option<String>,
+    /// One row per `--assert` directive, recovered from the transcript.
+    assertions: Vec<kuna_console::assertions::Outcome>,
 }
 
 /// Run the decompile and return its [`DecompileOutcome`].
@@ -465,7 +606,30 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
         reject_unquotable("temp directory", &rp.display().to_string())?;
     }
 
-    let result = (|| {
+    // (kuna, RE-need `analysis-generated-function-name`) The driver defaults, split
+    // in two. `base` is what this surface has always injected — the DIV-15 Listing.
+    // `discovery` is the DIV-20/DIV-68 non-x86-64 bundle the IN-PROCESS drivers also
+    // inject (`decompile_all::load_program`), and it is held back for a second attempt
+    // rather than injected up front.
+    //
+    // Held back because the bundle is not free: it changes the ENTRY SET, and the
+    // entries it adds are not all real. On i386 and PPC64 the prologue matcher seeds a
+    // start a few bytes inside a function it already knew (PPC64 ELFv2's local entry
+    // point, 8 bytes past the global one), and `funcboundflow` then truncates the outer
+    // function's flow at that seed — so injecting it unconditionally would turn a
+    // correct `kuna decompile __do_global_ctors_aux` body into an empty husk on every
+    // non-x86-64 image. Measured, not assumed: a before/after sweep over every function
+    // of all 33 non-x86-64 fixtures found 8 such truncations and no other difference.
+    //
+    // So the wider inventory is paid for only where it is the ANSWER: a by-name
+    // selection that missed. That is exactly the reported gap — `kuna functions` prints
+    // a discovery-generated name that `kuna decompile` then refuses — and nothing that
+    // already resolved changes at all.
+    let full = decompile_all::driver_default_options(&binary, true, true, &args.options);
+    let (base, discovery): (Vec<_>, Vec<_>) =
+        full.into_iter().partition(|(name, _)| *name == "listing");
+
+    let attempt = |injected: &[(&'static str, &'static str)]| {
         let script = build_script(
             &binary,
             &args.target,
@@ -473,8 +637,11 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
             args.bfd_target.as_deref(),
             args.raw,
             &out_path,
+            injected,
             &args.options,
             &args.kasserts,
+            &args.func_decls,
+            &args.assertions,
             regions_path.as_deref(),
         );
 
@@ -656,13 +823,13 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
                 }
                 child.wait_with_output()
             })
-            .map_err(|e| format!("failed to run decomp_dbg: {e}"))?;
+            .map_err(|e| (format!("failed to run decomp_dbg: {e}"), false))?;
 
         let stdout_text = String::from_utf8_lossy(&output.stdout).into_owned();
         let stderr_text = String::from_utf8_lossy(&output.stderr).into_owned();
         let combined = format!("{stdout_text}\n{stderr_text}");
         if let Some(msg) = check_errors(&combined, &args.target, &binary, by_address) {
-            return Err(msg);
+            return Err((msg, !by_address && is_unknown_function(&combined)));
         }
 
         let mut c_text = String::new();
@@ -688,13 +855,17 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
                     ),
                     regions: None,
                     failure: None,
+                    assertions: assertion_outcomes(&stdout_text, &args.assertions),
                 });
             }
-            return Err(format!(
-                "no C output for {:?} in {}; decompiler said:\n{}",
-                args.target,
-                binary,
-                combined.trim().chars().take(2000).collect::<String>()
+            return Err((
+                format!(
+                    "no C output for {:?} in {}; decompiler said:\n{}",
+                    args.target,
+                    binary,
+                    combined.trim().chars().take(2000).collect::<String>()
+                ),
+                false,
             ));
         }
         // The pipeline aborted for this function: the console kept the session
@@ -719,8 +890,21 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
             }
             regions_text = Some(trim_newlines(&buf));
         }
-        Ok(DecompileOutcome { c: c_text, regions: regions_text, failure })
-    })();
+        Ok(DecompileOutcome {
+            c: c_text,
+            regions: regions_text,
+            failure,
+            assertions: assertion_outcomes(&stdout_text, &args.assertions),
+        })
+    };
+
+    let mut result = attempt(&base);
+    if !discovery.is_empty() && matches!(&result, Err((_, true))) {
+        let widened: Vec<(&'static str, &'static str)> =
+            base.iter().chain(discovery.iter()).copied().collect();
+        result = attempt(&widened);
+    }
+    let result = result.map_err(|(message, _)| message);
 
     let _ = std::fs::remove_file(&out_path);
     if let Some(rp) = &regions_path {
@@ -756,11 +940,15 @@ pub fn run(args: &DecompileArgs) -> i32 {
             // survived (DIV-45): a closed reader is not evidence the decompile
             // worked.  Emitting first keeps the stdout-then-stderr order.
             let written = crate::output::emit(&text);
+            // A rejected assertion is reported and the run continues;
+            // `--assert-strict` makes it the verdict.
+            let rejected = decompile_all::report_rejected_assertions(&out.assertions);
             let status = match out.failure {
                 Some(msg) => {
                     eprintln!("error: {msg}");
                     1
                 }
+                None if args.assert_strict && rejected => 1,
                 None => 0,
             };
             match written {
@@ -798,6 +986,9 @@ pub fn main(argv: &[String]) -> i32 {
     let mut saw_language = false;
     let mut mode: Option<String> = None;
     let mut kasserts: Vec<String> = Vec::new();
+    let mut func_decls: Vec<crate::funcdecl::FuncDecl> = Vec::new();
+    let mut assertions: Vec<kuna_console::assertions::Directive> = Vec::new();
+    let mut assert_strict = false;
     let mut decomp_dbg: Option<String> = None;
     let mut engine: Option<String> = None;
     let mut sleighpath: Option<String> = None;
@@ -854,6 +1045,38 @@ pub fn main(argv: &[String]) -> i32 {
                 if let Some(v) = take_value(argv, &mut i, "--kassert") {
                     kasserts.push(v);
                 }
+            }
+            "--define-function" => match take_value(argv, &mut i, "--define-function") {
+                Some(value) => match crate::funcdecl::parse_flag(&value) {
+                    Ok(decls) => {
+                        func_decls.extend(decls);
+                        forwarded.push("--define-function".into());
+                        forwarded.push(value);
+                    }
+                    Err(msg) => {
+                        eprintln!("error: {msg}");
+                        return 2;
+                    }
+                },
+                None => return 2,
+            },
+            "--assert" => match take_value(argv, &mut i, "--assert") {
+                Some(value) => match crate::assertdecl::parse_flag(&value) {
+                    Ok(parsed) => {
+                        assertions.extend(parsed);
+                        forwarded.push("--assert".into());
+                        forwarded.push(value);
+                    }
+                    Err(msg) => {
+                        eprintln!("error: {msg}");
+                        return 2;
+                    }
+                },
+                None => return 2,
+            },
+            "--assert-strict" => {
+                assert_strict = true;
+                forwarded.push("--assert-strict".into());
             }
             "--decomp-dbg" => decomp_dbg = take_value(argv, &mut i, "--decomp-dbg"),
             "--engine" => engine = take_value(argv, &mut i, "--engine"),
@@ -957,6 +1180,9 @@ pub fn main(argv: &[String]) -> i32 {
         regions,
         options,
         kasserts,
+        func_decls,
+        assertions,
+        assert_strict,
         decomp_dbg,
         sleighpath,
         slice,
@@ -1040,7 +1266,13 @@ fn run_json(req: &JsonRequest) -> i32 {
     let (text, failure) = match decompile_json(&args, req.target) {
         Ok(answered) => answered,
         Err(message) => (
-            decompile_all::render_result_json(&args.binary, &[], &args.options, Some(&message)),
+            decompile_all::render_result_json(
+                &args.binary,
+                &[],
+                &args.options,
+                Some(&message),
+                &[],
+            ),
             Some(message),
         ),
     };
@@ -1079,29 +1311,46 @@ fn decompile_json(args: &AllArgs, target: &str) -> Result<(String, Option<String
     }
 
     let funcs = decompile_all::decompile_entries(&mut prog, args, targets);
-    let failure = funcs.iter().find_map(|f| {
+    let assertions = prog.assertion_outcomes();
+    let mut failure = funcs.iter().find_map(|f| {
         f.error.as_ref().map(|reason| {
             format!("decompilation failed for {} in {}: {reason}", f.name, args.binary)
         })
     });
-    Ok((
-        decompile_all::render_result_json(
-            &args.binary,
-            &funcs,
-            &args.options,
-            failure.as_deref(),
-        ),
-        failure,
-    ))
+    // A rejected assertion is reported and the run continues; `--assert-strict`
+    // makes it the run's verdict (see `report_rejected_assertions`).
+    let rejected = decompile_all::report_rejected_assertions(&assertions);
+    let text = decompile_all::render_result_json(
+        &args.binary,
+        &funcs,
+        &args.options,
+        failure.as_deref(),
+        &assertions,
+    );
+    if failure.is_none() && args.assert_strict && rejected {
+        failure = Some(format!("--assert directive rejected in {}", args.binary));
+    }
+    Ok((text, failure))
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        arch_failure_reason, build_script, check_errors, console_path, find_pipeline_failure,
-        read_symbols_failure, reject_unquotable,
+        arch_failure_reason, build_script, check_errors, console_path, decompile_all,
+        find_pipeline_failure, is_unknown_function, read_symbols_failure, reject_unquotable,
     };
     use std::borrow::Cow;
+
+    /// What `decompile_all::driver_default_options` yields for the FIRST attempt
+    /// on every architecture: the DIV-15 Listing and nothing else.
+    const LISTING: &[(&str, &str)] = &[("listing", "on")];
+
+    /// The DIV-20/DIV-68 non-x86-64 bundle, held back for the retry.
+    const WIDENED: &[(&str, &str)] = &[
+        ("listing", "on"),
+        ("funcstart_patterns", "on"),
+        ("aif", "on"),
+    ];
     use std::path::Path;
 
     /// Recorded `decomp_dbg` transcript: the empty-scope load failure DIV-88's
@@ -1319,6 +1568,169 @@ Decompilation complete
         assert_eq!(console_path("/odd \"name\"/a.out"), r#""/odd \"name\"/a.out""#);
     }
 
+    /// The declarations land AFTER `read symbols` and BEFORE the load: the commit
+    /// is what discovery writes, and the load is what reads the declared extent.
+    #[test]
+    fn build_script_declares_boundaries_between_read_symbols_and_the_load() {
+        let decls = crate::funcdecl::parse_flag("0x1400-0x1480=decrypt").expect("parses");
+        let script = build_script(
+            "/tmp/a.out",
+            "0x1400",
+            true,
+            None,
+            false,
+            Path::new("/tmp/kuna.c"),
+            LISTING,
+            &[],
+            &[],
+            &decls,
+            &[],
+            None,
+        );
+        let line = |needle: &str| {
+            script
+                .lines()
+                .position(|l| l == needle)
+                .unwrap_or_else(|| panic!("{needle:?} missing from:\n{script}"))
+        };
+        assert!(
+            line("read symbols")
+                < line("function bounds 0x1400 0x1480 as decrypt")
+                    && line("function bounds 0x1400 0x1480 as decrypt") < line("load addr 0x1400"),
+            "wrong order in:\n{script}"
+        );
+    }
+
+    /// The assertion slots, which are forced rather than stylistic: a parsed
+    /// prototype must precede the load, a `map param` needs the loaded function,
+    /// and a `rename` of a LOCAL needs a function that has already been
+    /// decompiled — before that the console answers `No symbol named: v2`, which
+    /// is exactly the bug that makes `--kassert p9 naming-policy` inert today.
+    #[test]
+    fn build_script_puts_each_assertion_in_its_own_slot() {
+        let directives: Vec<_> = [
+            "prototype authenticate int4 authenticate(char *u)",
+            "param 0 RDI char *u",
+            "name v2 credbuf",
+        ]
+        .iter()
+        .map(|spec| crate::assertdecl::parse_one(spec).expect("parses"))
+        .collect();
+        let script = build_script(
+            "/tmp/a.out",
+            "authenticate",
+            false,
+            None,
+            false,
+            Path::new("/tmp/kuna.c"),
+            LISTING,
+            &[],
+            &[],
+            &[],
+            &directives,
+            None,
+        );
+        let line = |needle: &str| {
+            script
+                .lines()
+                .position(|l| l == needle)
+                .unwrap_or_else(|| panic!("{needle:?} missing from:\n{script}"))
+        };
+        assert!(line("read symbols") < line("parse line extern int4 authenticate(char *u);"));
+        assert!(
+            line("parse line extern int4 authenticate(char *u);")
+                < line("load function authenticate")
+        );
+        assert!(line("load function authenticate") < line("map param 0 %RDI char *u"));
+        assert!(line("map param 0 %RDI char *u") < line("decompile"));
+        assert!(line("decompile") < line("rename v2 credbuf"));
+        // The symbol-scoped directive forces a SECOND decompile after it.
+        assert_eq!(
+            script.lines().filter(|l| *l == "decompile").count(),
+            2,
+            "a symbol-scoped directive needs a second pass:\n{script}"
+        );
+        assert!(line("rename v2 credbuf") < script.lines().count());
+    }
+
+    /// Without a symbol-scoped directive there is no second `decompile`, so an
+    /// assertion an agent passes never doubles the cost of a run that does not
+    /// need it.
+    #[test]
+    fn build_script_emits_one_decompile_without_a_symbol_scoped_assertion() {
+        let directives = vec![crate::assertdecl::parse_one("data 0x601048 char *pw")
+            .expect("parses")];
+        let script = build_script(
+            "/tmp/a.out",
+            "main",
+            false,
+            None,
+            false,
+            Path::new("/tmp/kuna.c"),
+            LISTING,
+            &[],
+            &[],
+            &[],
+            &directives,
+            None,
+        );
+        assert_eq!(script.lines().filter(|l| *l == "decompile").count(), 1, "{script}");
+        assert!(script.contains("map address 0x601048 char *pw"), "{script}");
+    }
+
+    /// The transcript reader is what gives the human surface a report at all: a
+    /// console diagnostic under a directive's echo is that directive's rejection,
+    /// and a clean echo is an application.
+    #[test]
+    fn assertion_outcomes_read_the_console_diagnostic_under_each_echo() {
+        let directives: Vec<_> = ["name v2 credbuf", "type v9 char[4]"]
+            .iter()
+            .map(|spec| crate::assertdecl::parse_one(spec).expect("parses"))
+            .collect();
+        let transcript = "\
+[decomp]> decompile
+Decompiling authenticate
+[decomp]> rename v2 credbuf
+[decomp]> retype v9 char[4]
+Execution error: No symbol named: v9
+[decomp]> decompile
+";
+        let report = super::assertion_outcomes(transcript, &directives);
+        assert_eq!(report[0].status, "applied");
+        assert_eq!(report[1].status, "rejected");
+        assert_eq!(report[1].detail.as_deref(), Some("No symbol named: v9"));
+    }
+
+    /// A script that never reached a directive did not apply it, and saying so is
+    /// the difference between a report and a guess.
+    #[test]
+    fn an_unreached_directive_is_rejected_not_assumed_applied() {
+        let directives = vec![crate::assertdecl::parse_one("name v2 buf").expect("parses")];
+        let report = super::assertion_outcomes("[decomp]> load file /tmp/a.out\n", &directives);
+        assert_eq!(report[0].status, "rejected");
+        assert!(report[0].detail.as_deref().unwrap_or_default().contains("did not reach"));
+    }
+
+    /// No declarations ⇒ the script is byte-identical to what it always was.
+    #[test]
+    fn build_script_without_declarations_emits_no_boundary_lines() {
+        let script = build_script(
+            "/tmp/a.out",
+            "main",
+            false,
+            None,
+            false,
+            Path::new("/tmp/kuna.c"),
+            LISTING,
+            &[],
+            &[],
+            &[],
+            &[],
+            None,
+        );
+        assert!(!script.contains("function bounds"), "got:\n{script}");
+    }
+
     /// The whole script: a spaced binary path and a spaced output path must both
     /// reach the console as ONE argument each.  Unquoted, `load file` reads the
     /// tail as the filename and `openfile write` truncates a file at the split.
@@ -1331,6 +1743,9 @@ Decompilation complete
             None,
             false,
             Path::new("/tmp/out dir/kuna.c"),
+            LISTING,
+            &[],
+            &[],
             &[],
             &[],
             Some(Path::new("/tmp/out dir/kuna.txt")),
@@ -1360,6 +1775,9 @@ Decompilation complete
             Some("x86:LE:64:default"),
             false,
             Path::new("/tmp/kuna.c"),
+            LISTING,
+            &[],
+            &[],
             &[],
             &[],
             None,
@@ -1368,6 +1786,93 @@ Decompilation complete
             script.contains("load file x86:LE:64:default \"/home/u/test dir/a.out\"\n"),
             "got:\n{script}"
         );
+    }
+
+    /// A checked-in fixture path, so the architecture classification behind the
+    /// discovery bundle reads a real object rather than a guess.
+    fn fixture(name: &str) -> String {
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../..")
+            .join("decompiler/crates/kuna-analysis/tests/fixtures")
+            .join(name)
+            .canonicalize()
+            .expect("fixture")
+            .to_str()
+            .expect("utf-8 fixture path")
+            .to_string()
+    }
+
+    /// The two attempts are one table split in two: what a non-x86-64 image
+    /// holds back is exactly what the in-process drivers inject up front, so the
+    /// widened retry reaches the inventory `kuna functions` reports and not some
+    /// third configuration.
+    #[test]
+    fn the_retry_widens_to_the_in_process_drivers_bundle() {
+        let arm = fixture("entrymain_arm");
+        let full = decompile_all::driver_default_options(&arm, true, true, &[]);
+        assert_eq!(full, WIDENED, "the non-x86-64 bundle");
+        let (base, discovery): (Vec<_>, Vec<_>) =
+            full.into_iter().partition(|(name, _)| *name == "listing");
+        assert_eq!(base, LISTING, "the first attempt");
+        assert_eq!(discovery, &WIDENED[1..], "held back for the retry");
+    }
+
+    /// x86-64 has nothing to hold back, so there is no second attempt to make:
+    /// the Listing is measured entry-neutral there and the gap-walk can
+    /// over-produce, which is why the bundle is non-x86-64 only.
+    #[test]
+    fn there_is_no_retry_to_make_on_x86_64() {
+        let full = decompile_all::driver_default_options(&fixture("fauxware"), true, true, &[]);
+        assert_eq!(full, LISTING);
+    }
+
+    /// Naming an option skips its injection on this surface exactly as it does
+    /// on the in-process ones, so `--option aif off` is not silently re-enabled
+    /// by the retry.
+    #[test]
+    fn the_bundle_yields_to_a_named_option() {
+        let options = vec![("aif".to_string(), "off".to_string())];
+        let full = decompile_all::driver_default_options(&fixture("entrymain_arm"), true, true, &options);
+        assert_eq!(full, &[("listing", "on"), ("funcstart_patterns", "on")]);
+    }
+
+    /// The widened attempt emits its extra options where the console can still
+    /// act on them: ahead of `read symbols`, which is where the analysis passes
+    /// are committed.
+    #[test]
+    fn the_widened_script_puts_the_bundle_before_the_commit() {
+        let script = build_script(
+            &fixture("entrymain_arm"),
+            "sub_410",
+            false,
+            None,
+            false,
+            Path::new("/tmp/kuna.c"),
+            WIDENED,
+            &[],
+            &[],
+            &[],
+            &[],
+            None,
+        );
+        let (before, after) = script.split_once("read symbols").expect("read symbols");
+        for line in ["option listing on", "option funcstart_patterns on", "option aif on"] {
+            assert!(before.contains(&format!("{line}\n")), "missing {line}:\n{script}");
+        }
+        assert!(after.contains("load function sub_410"), "got:\n{script}");
+    }
+
+    /// The retry fires on a MISS and on nothing else: an ambiguous selector, a
+    /// load failure or a pipeline abort all mean the name was understood, and
+    /// widening the inventory would only change the answer for the worse.
+    #[test]
+    fn only_a_name_miss_is_retryable() {
+        assert!(is_unknown_function("Execution error: no function matches \"sub_410\""));
+        assert!(is_unknown_function("Unknown function name: nope"));
+        assert!(is_unknown_function("Bad namespace: a::b"));
+        assert!(!is_unknown_function("Execution error: selector \"main\" is ambiguous"));
+        assert!(!is_unknown_function(EMPTY_SCOPE));
+        assert!(!is_unknown_function(COMMIT_FAILED));
     }
 
     /// A script over ordinary paths is unchanged, quotes and all absent.
@@ -1380,6 +1885,9 @@ Decompilation complete
             None,
             false,
             Path::new("/tmp/kuna.c"),
+            LISTING,
+            &[],
+            &[],
             &[],
             &[],
             None,
@@ -1437,6 +1945,67 @@ Decompilation complete
         }
     }
 
+    /// An IMAGE-scoped directive is emitted before `read symbols`, and a
+    /// `readonly` one turns read-only propagation on ahead of the caller's own
+    /// `--option`s so an explicit `--option readonly off` still wins.
+    ///
+    /// The order is load-bearing, not cosmetic: mapping a symbol folds the range
+    /// property into its `SymbolEntry` and never consults the range again, so a
+    /// `readonly` emitted after `read symbols` is silently inert over every
+    /// address the loader named.
+    #[test]
+    fn a_range_directive_precedes_read_symbols_and_turns_readonly_on() {
+        let script = build_script(
+            "/tmp/a.out",
+            "sample",
+            false,
+            None,
+            false,
+            Path::new("/tmp/kuna.c"),
+            LISTING,
+            &[("readonly".into(), "off".into())],
+            &[],
+            &[],
+            &[
+                crate::assertdecl::parse_one("readonly 0x404028+8").unwrap(),
+                crate::assertdecl::parse_one("volatile 0x50000000+4").unwrap(),
+            ],
+            None,
+        );
+        let at = |needle: &str| {
+            script
+                .lines()
+                .position(|l| l == needle)
+                .unwrap_or_else(|| panic!("{needle:?} missing from:\n{script}"))
+        };
+        assert!(at("option readonly on") < at("option readonly off"), "{script}");
+        assert!(at("readonly 0x404028 8") < at("read symbols"), "{script}");
+        assert!(at("volatile 0x50000000 4") < at("read symbols"), "{script}");
+        // No symbol-scoped directive ⇒ still exactly one `decompile`.
+        assert_eq!(script.lines().filter(|l| *l == "decompile").count(), 1, "{script}");
+    }
+
+    /// With no range directive the script is untouched — no `option readonly`
+    /// line appears from nowhere.
+    #[test]
+    fn no_range_directive_leaves_the_readonly_option_alone() {
+        let script = build_script(
+            "/tmp/a.out",
+            "sample",
+            false,
+            None,
+            false,
+            Path::new("/tmp/kuna.c"),
+            LISTING,
+            &[],
+            &[],
+            &[],
+            &[crate::assertdecl::parse_one("name v2 buf").unwrap()],
+            None,
+        );
+        assert!(!script.contains("option readonly"), "{script}");
+    }
+
     /// The same round trip inside a whole `load file` line, which is how the
     /// console actually sees it: the command words are consumed first and the
     /// path must survive as the single remaining argument.
@@ -1452,6 +2021,9 @@ Decompilation complete
             None,
             false,
             Path::new("/tmp/kuna.c"),
+            LISTING,
+            &[],
+            &[],
             &[],
             &[],
             None,

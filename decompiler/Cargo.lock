@@ -151,7 +151,9 @@ dependencies = [
  "kuna-base",
  "kuna-console",
  "kuna-decomp",
+ "kuna-sleigh",
  "object",
+ "regex",
 ]
 
 [[package]]

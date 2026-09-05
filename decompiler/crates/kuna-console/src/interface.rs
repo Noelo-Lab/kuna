@@ -844,6 +844,15 @@ pub struct IfaceStatus {
 
     /// The input behavior (C++ virtual `readLine`/`pushScript`/...).
     source: Box<dyn LineSource>,
+
+    /// (kuna) How many commands this session has dispatched, incremented just
+    /// before each `execute`.  A command that wants to know whether it runs
+    /// *immediately* after another one compares stamps: `load function` records
+    /// this counter and `decompile` adopts its already-followed IR only when the
+    /// counter advanced by exactly one, so any command in between (an `option`,
+    /// a `map`, a `kassert`) silently invalidates the reuse rather than needing
+    /// its own invalidation hook.
+    pub command_seq: u64,
 }
 
 /// An open bulk-output redirect (`openfile`/`openfile append`).
@@ -881,6 +890,7 @@ impl IfaceStatus {
             comlist: Vec::new(),
             datamap: BTreeMap::new(),
             source,
+            command_seq: 0,
         }
     }
 
@@ -1180,6 +1190,7 @@ impl IfaceStatus {
             &mut self.comlist[first].action,
             Box::new(DummyAction),
         );
+        self.command_seq = self.command_seq.wrapping_add(1);
         let res = action.execute(self, &mut is);
         self.comlist[first].action = action;
         res?;

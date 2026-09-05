@@ -53,6 +53,13 @@ driver (`heritage.rs (Heritage::heritage)`) files the range under
 `new_addresses`/`old_addresses` flags accordingly. That classification is
 load-bearing twice over: only ranges with new addresses get call/return guards
 (below), and an *old* overlap is the trigger for the dead-code-delay machinery.
+`add` also hands back the size of the element the range ended up inside, which is
+the other half of the C++ iterator its callers read, so classifying a range costs
+one lookup rather than an add followed by a second search for the same entry; and
+the walk that finds the candidate element asks for the *predecessor* of the range
+first, which answers both the "step back from `lower_bound`" and the "already at
+`begin()`" cases in one descent. Every varnode of every heritaged space is
+re-offered to this map on every pass, so it is the most-called map in the phase.
 
 **The simple case.** For each disjoint range, `heritage.rs (Heritage::collect)`
 partitions the range's varnodes into reads (free), writes (defined), and
@@ -76,7 +83,12 @@ formal **input varnode** of the function; this is how registers read before
 being written become parameters-in-waiting for phase 04. One carve-out: an
 INDIRECT and the op it wraps happen "at the same time", so an op whose renamed
 read would resolve to its *own* INDIRECT output takes the next value down the
-stack (or a fresh input) instead (`heritage.rs (op_from_const)`).
+stack (or a fresh input) instead (`heritage.rs (op_from_const)`). After a block's
+own ops are renamed the walk fills the in-edge slots of each successor's leading
+MULTIEQUALs; it reads only that leading run (phi ops are always at the head of a
+block and the walk stops at the first op that is not one), so it collects the run
+off the block's intrusive op list rather than materializing every op of every
+successor once per CFG edge per pass.
 
 **Materializing an input over existing pieces (kuna, DIV-50).** The input a
 stack-empty read materializes may land on storage that already holds input
@@ -289,8 +301,15 @@ rewrite and returns 1. Rules are owned by an
 `decompiler/crates/kuna-decomp/src/infra/action.rs (ActionPool)`, which indexes
 them at registration into a flat per-opcode table (`perop`, insertion order
 preserved). One pool sweep visits every op in the function in sequence-number
-order through a resumable cursor that survives op deletion (§0.3), and for each
-op walks its opcode's rule list in registration order
+order through a resumable cursor that survives op deletion (§0.3) — it is
+recorded as the last *consumed* `SeqNum`, so the next op is the first optree key
+strictly greater than it, which stays valid when the op it named is destroyed.
+Resolving that key is an optree search, and the sweep is the decompiler's
+innermost loop, so the advance resolves the successor's id and the cursor read
+returns it rather than searching a second time for the op the advance already
+found; the memo is dropped on every `apply` exit, so a resumed or interleaved
+sweep re-searches. For each op the sweep walks its opcode's rule list in
+registration order
 (`action.rs (ActionPool::process_op)`): disabled rules are skipped (the
 upstream `option togglerule` surface writes that per-rule flag), a rule that
 fires bumps the pool's change count, a rule that kills the op ends the walk,
@@ -339,6 +358,35 @@ group):
 | `decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_6.rs` | pointer-op undo, division strength-reduction inversion, cleanup arithmetic | `RulePtraddUndo`/`RulePtrsubUndo`, `RuleDivOpt`/`RuleDivTermAdd`/`RuleSubNormal` (recover `/`, `%` from magic-number multiplies), cleanup-pool `RuleMultNegOne`/`RuleAddUnsigned`/`RuleSubRight`/`RulePieceStructure` |
 | `decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_7.rs` | signed div/mod idioms, segments, pointer flow, predication, float compares | `RuleSignDiv2`, `RuleSignMod2nOpt`, `RuleModOpt`, `RuleSegment`, `RulePtrFlow`, `RuleConditionalMove` (group `conditionalexe`), `RuleFloatCast`, `RuleIgnoreNan` |
 | `decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_8.rs` | int↔float conversion recovery, bit-counting booleans, float sign ops, compare splitting | `RuleUnsigned2Float`, `RuleThreeWayCompare`, `RulePopcountBoolXor`, `RuleLzcountShiftBool`, `RuleFloatSign`, `RuleOrCompare`, `RuleFuncPtrEncoding`, cleanup-pool `RuleExpandLoad` |
+
+**Keeping a frame store that only a marker still reads** (`option tiedstorekeep`,
+default on). `RulePropagateCopy` rewrites a reader of a `COPY` output to read the
+`COPY`'s input instead. When the reader is an ordinary op that is pure gain: the
+value is the same, and the `COPY` stays alive for whoever else reads its
+location. When the reader is a **marker** — an `INDIRECT` guarding an
+address-tied range across a call (§3.1), or a `MULTIEQUAL` at a join — it is
+not, because markers never print. Once the marker has swallowed the last
+remaining reader, an address-tied `COPY` has no descendants at all and is reaped
+as dead, and with it goes the only statement that said where the location's
+value came from. `Merge` normally conceals that (chapter 06): it merges the
+source's HighVariable into the tied location's, so both print under one name and
+the store reads as an assignment to that name. When the merge is DECLINED —
+covers intersect — nothing repairs it, and the local's last printed assignment
+is whatever preceded the store, typically its initialiser. Upstream already
+refuses the propagation when the `COPY` output is `addrforce` ("don't propagate
+if we are keeping the `COPY` anyway"), but `addrforce` is set only on heritage's
+own guard outputs (§3.1), never on an ordinary frame store. kuna widens that
+refusal by one case: the marker is about to take the **last** reader of a
+non-`persist` address-tied `COPY` whose input is not itself address-tied and
+whose value comes from a call — a `CALL`/`CALLIND`/`CALLOTHER` output, or the
+`INDIRECT` that carries the return register across the call site before chapter
+04's output promotion rewrites it. Propagating there buys nothing, since the
+marker is invisible either way, and costs the store. Every other propagation is
+untouched, including into a marker that is not the last reader, out of a
+constant, out of a same-location copy, and into any marker over a `persist`
+global — a global already has heritage's persist `RETURN-COPY` (§3.1) keeping
+its last store printed, so the brake has nothing to add there. `option
+tiedstorekeep off` restores upstream's behavior exactly.
 
 **Retyping an op mid-rule.** A rule that rewrites an op in place usually changes
 its op-code, and the op-code is not just a tag: `set_opcode` caches the

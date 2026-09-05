@@ -1,0 +1,38 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "__do_global_ctors_aux"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/plt_ppc64le",
+    "binary_sha256": "b096b4098c64e6a8be6386d85fd2c1386fa646295247bcedabad2efea40e9a28",
+    "binary_size": 70144,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/plt_ppc64le",
+    "selector": "__do_global_ctors_aux",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "while"
+    ],
+    "stdout_absent": [
+      "funcboundflow: fall-through reached the next function entry"
+    ]
+  },
+  "notes": "Fixed: the real loop body is emitted for __do_global_ctors_aux -- no entry inside the function truncates it."
+}

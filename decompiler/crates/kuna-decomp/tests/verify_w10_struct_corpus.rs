@@ -1106,9 +1106,21 @@ fn w10_ptr_flow_load_explicit_deref_keeps_base_inside_star() {
 /// (Was loopcomment; the W10 RSP L4/L5 stack-frame render removes loopcomment's
 /// spurious `//rsp` input local and coalesces its frame into named STACK locals
 /// (`// stack - 0x..`), so loopcomment no longer carries a register-backed `vN`.
-/// `floatconv` keeps stable `// rax`/`// rcx` register-backed locals and exercises
-/// the same persist-proxy `vN`-not-`dat_` property; it also has `<symbol>` entries
+/// `floatconv` keeps stable register-backed locals and exercises the same
+/// persist-proxy `vN`-not-`dat_` property; it also has `<symbol>` entries
 /// `render_corpus` decompiles, which `elseif` lacks.)
+///
+/// (kuna `inputparamgap`, DIV-114: the witness inside floatconv moved from
+/// `ulconv_win`'s `// rcx` local to `rand_calc`'s `// xmm0` one. `render_corpus`
+/// decompiles with the prototype UNLOCKED, and under this datatest's gcc/SysV
+/// cspec `ulconv_win`'s live-in RCX is argument FOUR behind a dead rdi/rsi/rdx
+/// hole -- exactly the three-slot gap `forceInactiveChain` used to read as the end
+/// of the argument list. It now recovers as `ulconv_win(...,int8 a3)`, so that
+/// local is a parameter rather than a `vN`. The property under test is untouched:
+/// `rand_calc`'s XMM0-backed coalesced local takes the same persist-proxy branch
+/// (`IPTR_PROCESSOR && !is_register`) and must still surface as `vN`, never
+/// `dat_<addr>`. The datatest's own script locks the prototype, so its 675-assertion
+/// parity is unaffected.)
 #[test]
 fn verify_w10_hvnaming_register_local_gets_vn_not_dat() {
     let path = repo_root().join("tests/datatests/floatconv.xml");
@@ -1116,8 +1128,11 @@ fn verify_w10_hvnaming_register_local_gets_vn_not_dat() {
     let rendered = render_corpus(&dt).expect("floatconv must decompile");
     // A register-backed coalesced local renders `<type> vN; // r<reg>`.  At least
     // one such named register local must exist (the persist-proxy did not deny it).
-    let reg_named_local =
-        count_matches(r"(?m)\bv[0-9]+;\s*// r(ax|sp|bp|di|si|bx|cx|dx)\b", &rendered).unwrap_or(0);
+    let reg_named_local = count_matches(
+        r"(?m)\bv[0-9]+ ?(\[[0-9]+\])?;\s*// (r(ax|sp|bp|di|si|bx|cx|dx)|xmm[0-9]+)\b",
+        &rendered,
+    )
+    .unwrap_or(0);
     assert!(
         reg_named_local >= 1,
         "a register-backed coalesced local must take the angr `vN` arm and carry a \
@@ -1127,7 +1142,10 @@ fn verify_w10_hvnaming_register_local_gets_vn_not_dat() {
     // No register storage comment may sit on a `dat_<addr>` token — registers are
     // never global data.  (`dat_` lines never carry a `// r..` register comment.)
     assert_eq!(
-        count_matches(r"(?m)\bdat_[0-9a-fx]+\b[^\n]*// r(ax|sp|bp|di|si|bx|cx|dx)\b", &rendered)
+        count_matches(
+            r"(?m)\bdat_[0-9a-fx]+\b[^\n]*// (r(ax|sp|bp|di|si|bx|cx|dx)|xmm[0-9]+)\b",
+            &rendered,
+        )
             .unwrap_or(0),
         0,
         "a register must never be rendered as a `dat_<addr>` global (the angr \

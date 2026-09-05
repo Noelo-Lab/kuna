@@ -112,6 +112,28 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // instructions are NOT recovered — kuna's S5/S7 frame analysis already
         // recovers the stack frame from the code, so CFI is inherited, not rebuilt.
         Box::new(crate::entry::EhFrameLsdaPass),
+        // (kuna `entrymainproto`) S1 PE CRT entry-function prototype recovery: the
+        // function `__scrt_common_main_seh` calls immediately after the named
+        // argc/argv/envp CRT accessors gets the prototype that call site
+        // establishes, because a `main` that ignores its arguments reads none of the
+        // ABI argument registers and body-driven recovery therefore declares it
+        // `void(void)`. Registered always (the pass self-gates on a PE image and on
+        // the callee being unnamed, so it emits nothing anywhere else), COMMIT gated
+        // by `--option entrymainproto on|off` via `engine.rs::analysis_pass_enabled`.
+        // After EntryDiscoveryPass, whose commit installs the `sub_<addr>` name this
+        // prototype is parked on.
+        Box::new(crate::entry::kuna_entrymainproto::EntryMainProtoPass),
+        // (kuna `machomain`) S1 Mach-O `LC_MAIN` entry naming + prototype: the load
+        // command whose `entryoff` field is documented as the offset of `main()`
+        // names that routine `main` and declares it `int main(int, char **)`, so a
+        // stripped Mach-O stops reporting its program entry as one more `sub_<addr>`
+        // in an inventory of them. Registered always (the pass self-gates on a
+        // Mach-O `MH_EXECUTE` carrying `LC_MAIN` whose entry is unnamed, so it emits
+        // nothing anywhere else), COMMIT gated by `--option machomain on|off` via
+        // `engine.rs::analysis_pass_enabled`. After EntryDiscoveryPass, whose commit
+        // consults the `entry_names` overlay this pass writes and installs the
+        // function the prototype is parked on.
+        Box::new(crate::entry::kuna_machomain::MachoMainPass),
         // S1 widened ARM Cortex-M vector-table discovery (`cortexmvectors`): the
         // reset/exception handler seeds and the whole-image Thumb region paint of a
         // hardware vector table the always-on oracle 6 signature rejects (an A-only

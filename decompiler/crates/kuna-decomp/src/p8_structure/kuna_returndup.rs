@@ -80,7 +80,7 @@ use crate::options::on_or_off;
 /// (4100 gotoreduce, 4101 tailcalljump, 4102 regionstructure, 4103 noreturn_extern,
 /// 4104 noreturn_externmatch, 4105 crossjumprevert, 4106 switchsharedcase,
 /// 4107 ifelseflatten, 4108 taildup, 4109 dedupitetail are taken; this is 4110).
-pub const ELEM_RETURNDUP: ElementId = ElementId::new("returndup", 4110);
+pub const ELEM_RETURNDUP: ElementId = ElementId::new("returndup", 4135);
 
 /// Maximum total return-block splits (`node_split`s) performed per function — the
 /// per-function duplication cap that guards runaway on a function with many shared

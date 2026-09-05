@@ -934,6 +934,10 @@ pub struct ScopeLocal {
     /// `DynamicHash::find_varnode` (`recoverNameRecommendationsForSymbols`,
     /// varmap.cc:1557-1573).
     dyn_recommend: Vec<DynamicRecommend>,
+    /// (kuna) Whether any Symbol in this scope has ever been marked isolated
+    /// (C++ `Symbol::setIsolated`).  Read by
+    /// [`Self::has_isolated_symbols`]; see that method for why it is monotone.
+    isolated_present: bool,
 }
 
 impl ScopeLocal {
@@ -962,6 +966,7 @@ impl ScopeLocal {
             type_recommend: Vec::new(),
             name_recommend: Vec::new(),
             dyn_recommend: Vec::new(),
+            isolated_present: false,
         })
     }
 
@@ -1401,7 +1406,25 @@ impl ScopeLocal {
     /// C++ `Symbol::setIsolated(val)` reached through this scope's symbol table
     /// (`IfcTypeVarnode`: `sym->setIsolated(true)`).
     pub fn set_symbol_isolated(&mut self, sym: crate::database::SymbolId, val: bool) {
+        self.isolated_present |= val;
         self.db.symbol_mut(sym).set_isolated(val);
+    }
+
+    /// (kuna) Can any Symbol in this scope answer `true` to
+    /// [`Symbol::is_isolated`](crate::database::Symbol::is_isolated)?
+    ///
+    /// `false` lets a caller skip a containment query it already knows the
+    /// answer to.  [`Self::set_symbol_isolated`] is the only route by which the
+    /// `ISOLATE` dispflag can ever reach a Symbol in a function-local scope —
+    /// `set_attribute` writes the varnode-flag word behind a mask that excludes
+    /// it, `set_display_format` masks the low format bits, the symbol
+    /// constructors never set it, and the attribute is encoded (`ATTRIB_MERGE`)
+    /// but never decoded.  The flag is deliberately monotone: clearing it on a
+    /// `set_symbol_isolated(sym, false)` would require knowing no *other*
+    /// Symbol is still isolated, and a stale `true` only costs the query it
+    /// would have run anyway.
+    pub fn has_isolated_symbols(&self) -> bool {
+        self.isolated_present
     }
 
     /// C++ `ScopeInternal::setDisplayFormat(sym, attr)` (`database.cc:2246-2250`),

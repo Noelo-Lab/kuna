@@ -1,0 +1,73 @@
+{
+  "slug": "no-cli-data-code-override",
+  "need_id": "no-cli-data-code-override",
+  "track": "tooling",
+  "opportunity": "re-need:no-cli-data-code-override",
+  "probe_id": null,
+  "acceptance_id": "a-567d3207ce62",
+  "instances": 1,
+  "scope": "large",
+  "proposal": false,
+  "covers_needs": [
+    "no-cli-data-code-override"
+  ],
+  "option": null,
+  "flag": null,
+  "element_id": null,
+  "phase": null,
+  "tier": "driver",
+  "change_kind": "capability-add",
+  "default_on": null,
+  "owning_file": "decompiler/crates/kuna-console/src/assertions.rs",
+  "spec_chapter": "docs/spec/00-overview.md",
+  "parity": "make test PARITY OK 675/675; make test-stages PARITY OK 603/603; make check-spec OK; kuna catalog --check OK. Structurally unaffected: both parity corpora are symbol-less bytechunks driven by XML with no CLI in the loop, and nothing here runs unless a --assert directive is passed. The one console-command change (an optional explicit size after the address on `readonly`/`volatile`) is additive: the corpus's only two uses are the bracketed `volatile [ram,0x1000,16]` / `volatile [ram,0x210000,64]`, which carry no trailing token.",
+  "root_cause_class": "absent-capability",
+  "hypothesis_status": "OVERTURNED",
+  "filed_hypothesis": "ADVISORY. The cheap half is exposure, not implementation: most of these commands already work and only lack a path from the `kuna` binary. The expensive half is the stubs.",
+  "decisions": [
+    "THE ACCEPTANCE PROBE THIS NEED HAS NEVER HAD IS FILED: a-567d3207ce62, and it is the deliverable the captain called load-bearing. acceptance_id was null, so no B_DONE could have closed the need whatever shipped. It asserts two range facts on one `kuna decompile --json` and both are diffs of the emitted C, not return codes. FAILS at ed353fb2 (exit 2, `unknown directive \"readonly\"`), PASSES here, promoted verbatim to tests/cli/no-cli-data-code-override.json.",
+    "SECTION 6 OF THE --assert PROPOSAL WAS WRONG ABOUT WHY, AND THE REASON IS THE MOST IMPORTANT FINDING HERE. It reported readonly/volatile as 'accepted; no fold on the fixture tried' and concluded no in-repo fixture shows an observable effect. The effect is real; the ORDER was wrong. `Scope::addMap` folds the range property into each SymbolEntry as it maps it (kuna database.rs:1979, C++ database.cc:1156-1158) and never consults the range again, and the per-function global snapshot then reads the SYMBOL's flags. So a `readonly` painted AFTER `read symbols` is silently inert over every address the loader named -- which is every address a caller is likely to name. Painted BEFORE, the same command on the same fixture folds. Measured both ways on a purpose-built fixture and on a stripped copy of it (stripped: works either way, because there is no symbol to shadow the range).",
+    "THAT FORCED A FOURTH SCRIPT SLOT. Stage A's slots are Program (after `read symbols`), Function (after `load function`) and Symbol (after the first `decompile`). A range property fits none of them; `Slot::Image` emits it after `load file`+`option` and before `read symbols`. The in-process surface cannot use that ordering at all -- `bootstrap_from_object` reads the loader's symbols before a caller can say anything -- so `assertions::paint_property` re-applies the property to the symbols the range covers (find_overlap + set_attribute, whose mask already admits readonly/volatil). Both surfaces were then measured emitting byte-identical C.",
+    "A `readonly` DIRECTIVE TURNS READ-ONLY PROPAGATION ON FOR THE RUN. Painting the property is only half of it: `Funcdata::fillin_read_only` is gated on the program-wide `readonly` option, which is default-off, so `--assert 'readonly ...'` alone would have been accepted-and-inert -- the exact failure this plane exists to end. It is applied ahead of the caller's own `--option`s (an `option readonly on` line before them on the script surface; `arch.readonlypropagate = true` before apply_runtime_options in-process), so an explicit `--option readonly off` still wins. Both directions are tested. The reverse composition is NOT equivalent and that is the point of the control test: `--option readonly on` with no range folds nothing here, because the loader marks read-only from section flags and .data is writable.",
+    "THE `global` DIRECTIVE IS DELIBERATELY NOT SHIPPED, and this is a measurement, not a scope cut. `global add`/`global remove` ARE wired here (the stubs named ScopeGlobal range add/remove; Database::add_range/remove_range have been ported and public in p0_knowledge/database.rs all along -- ~15 lines each, the second half of the Hypothesis overturned again). But wiring them shows `global add` is measurably a NO-OP on any ordinary image: every stock cspec's <global> claims the whole default data space (x86-64-gcc.cspec `<range space=\"ram\"/>`, ARM.cspec the same), so the range is global before the caller speaks. Only `global remove` moves the C -- it kills a store that survives a call. A directive that is accepted and does nothing is the thing this family is being fixed for, so `global` stays off the plane and the two commands stay console-only, with an end-to-end test asserting the C changed in both directions.",
+    "THE SYMPTOM'S OWN FRAMING OF `global add` IS WRONG and is recorded as such on the need: it adds a range to the global DATA scope, not to code. 'Marking a gap as code' is `--define-function` / `function bounds`, shipped by #374. The round-1 need this one cites as its motivation (runtime-decrypted-code-opaque) wants the boundary lever, not this one.",
+    "THE CONSOLE COMMANDS TAKE AN EXPLICIT SIZE AFTER THE ADDRESS, a small additive divergence from C++ IfcReadonly/IfcVolatile, because the alternative was worse. C++ takes the size only from the bracketed `[space,offset,size]` form, which forces the caller to name the address space -- and `build_script` runs before the image is loaded, so the CLI does not know it. `readonly 0x404028 8` (leading 0 selects the default code space) is what a directive lowers to. Strictly additive: a trailing token was previously ignored, and the two corpus uses are both bracketed.",
+    "THE `data` DIRECTIVE THE PROPOSAL PARKED IN STAGE B ALREADY SHIPPED IN STAGE A, so Stage B is readonly + volatile, not four directives. `type varnode` (the need's fifth named command) is reachable as Stage A's `type` for a local; its usepoint/[space,offset,size] form is recorded as residue rather than given a second spelling nobody asked for.",
+    "NO OPTION, NO STAGES TESTCASE, NO CATALOG COUNTERS, NO DIV ROW. A CLI surface cannot change emitted C on its own, which is the tooling track's rule and what Stage A shipped under; phases.toml / docs/options.md / the DIV registry / the catalog counts were all leased by the sibling quality builder this wave in any case. phases.toml's P1 code-data-partition exposure prose now names two commands that work rather than two stubs, but the prose itself is left to whoever holds the lease.",
+    "REJECTED -- range-scoped folding via `Architecture::dynreloc_const`. That field is documented as 'offsets whose read-only contents fold even with readonlypropagate off' (the PT_GNU_RELRO exception), is set from kuna-console (engine.rs:2100), and appending the asserted ranges to it would have given exactly range-scoped folding with no program-wide change. Not taken: the field is named for dynrelocs and reusing it without renaming would leave a reader finding --assert ranges in a list that says otherwise, while renaming it means editing three kuna-decomp files the sibling quality builder has declared this wave. The option route is the shipped, documented, agent-reachable one and the broadening is sound (a range the loader marks read-only from section flags really is read-only), so it is the honest choice here; if the breadth ever bites, the precise mechanism is one rename away."
+  ],
+  "mechanism": "Two directives on the Stage-A `--assert` plane -- `readonly <addr>+<size>` and `volatile <addr>+<size>` -- plus a fourth script slot for them and the wiring of the `global add`/`global remove` stubs. kuna-console/src/assertions.rs gains Body::Readonly/Body::Volatile at P1 code-data-partition and `paint_property`, which ORs the Varnode property over [addr, addr+size) via Database::set_property_range and then re-applies it to every global symbol the range covers (find_overlap + set_attribute), because Scope::addMap absorbed the old value at map time. kuna-cli/src/assertdecl.rs parses `<addr>+<size>` (and `<addr> <size>`, decimal or hex) and lowers each to `Slot::Image`, emitted between the `option` lines and `read symbols`. A `readonly` directive also turns read-only propagation on ahead of the caller's own options (kuna_console::assertions::implies_readonly_propagation, consulted by both surfaces), since fillin_read_only is gated on it. kuna-console/src/ifacedecomp.rs: `readonly`/`volatile` accept an explicit size after the address, and IfcGlobalAdd/IfcGlobalRemove call Database::add_range/remove_range on the global scope instead of returning engine_unavailable.",
+  "measurements": {
+    "method": "drove decompiler/target/release/decomp_dbg and the built `kuna` binary directly, one command per line on stdin, on a purpose-built in-repo fixture; every verdict is a diff of the printed C, never a return code. Both CLI surfaces measured separately: `kuna decompile` forks decomp_dbg through the generated script, `kuna decompile --json` loads in-process.",
+    "fixture": "decompiler/crates/kuna-analysis/tests/fixtures/assertranges_x86_64 (15800 bytes, source vendored beside it): `sample` reads two .data globals nothing writes and reads 0x50000000 twice; `latch` stores 0x50000004, calls, reads it back",
+    "baseline_sample": "int sample(int a0) { return scale * a0 + bias + dat_50000000 * 2; }",
+    "readonly_only": "return a0 * 7 + 100 + dat_50000000 * 2;",
+    "volatile_only": "v1 = dat_50000000; return scale * a0 + bias + v1 + dat_50000000;",
+    "both": "v1 = dat_50000000; return a0 * 7 + 100 + v1 + dat_50000000;  (identical on both surfaces)",
+    "control_option_alone": "`--option readonly on` with no range: baseline, unchanged -- the range is what does the work",
+    "control_explicit_off": "`--assert 'readonly 0x404028+8' --option readonly off`: baseline, unchanged -- an explicit option wins",
+    "global_remove": "latch: `dat_50000004 = a0; ext(); return dat_50000004;` -> `ext(); return a0;`",
+    "global_add_after_remove": "restores the store; `global add` with no prior remove changes nothing on any stock cspec"
+  },
+  "stage": "B (implemented)",
+  "speed": "zero on every existing invocation: no directive means no extra console line, no property paint and an empty assertions[]. A range directive adds one console line and one symbol-table walk over the range (one lookup per covered symbol, not per byte) before any decompile; no pipeline pass is added and no extra decompile is emitted -- these are image-scoped, so unlike the symbol-scoped directives they never force the second pass.",
+  "risks": [
+    "a readonly directive turns read-only propagation on for the whole run, so the loader's own read-only ranges (.rodata, RELRO) fold too. That is what `--option readonly on` has always meant and it is only reached by passing a directive; an explicit `--option readonly off` still wins. Folding a genuinely read-only range is sound -- the option is default-off for upstream parity, not for correctness.",
+    "the property is a caller ASSERTION and kuna cannot check it: marking a range read-only that the program does write produces wrong C. The engine already warns on the written case (`Read-only address (...) is written`) rather than folding it.",
+    "the explicit-size extension to the console `readonly`/`volatile` commands diverges from C++ IfcReadonly. Additive -- a trailing token was previously ignored -- and the datatest corpus's only two uses are bracketed, which the parity gate confirms.",
+    "blast radius is nil: nothing here runs unless a directive is passed or the console command is typed, and the parity corpora are symbol-less bytechunks driven by XML with no CLI in the loop."
+  ],
+  "gates": {
+    "make test": "PARITY OK 675/675",
+    "make test-stages": "PARITY OK 603/603",
+    "make check-spec": "OK",
+    "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
+    "acceptance": "a-567d3207ce62 PASS (verify --need no-cli-data-code-override: pass 1, transition closed)"
+  },
+  "residue": [
+    "`global add` on the --assert plane: measurably a no-op on any stock cspec (the whole ram space is already global), so no directive shipped. The two console commands are wired and tested; if a target ever needs the add direction it is one directive row away.",
+    "`type varnode [space,offset,size] <decl>` -- the usepoint form the need names. Stage A's `type <symbol>` covers the local case; the storage-keyed spelling has no measured case that the symbol form does not already reach.",
+    "`global spaces` / `global registers` (IfcGlobalify / IfcGlobalRegisters) remain engine_unavailable: they need Architecture::globalify and the register-global mapping, which are real ports and out of scope here.",
+    "phases.toml's P1 code-data-partition exposure prose still calls `global add`/`global remove` the exposure; they now work, but file:phases.toml was leased by the sibling quality builder for this whole wave."
+  ]
+}

@@ -1,0 +1,82 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    RE-friction round 2, need `keyboard-callback-uses-undefined`, challenge
+    6989ca5da15272fa37a80c43 (x86-64 ELF `lugosiii`): `kuna decompile ... 0x6500` by address rendered the Wayland `wl_keyboard_listener` key handler as
+
+        void sub_6500(long a0)
+        {
+          ...
+          int v7; // r8d
+          int v8; // r9d
+
+          if (v8 != 1 || !*(long *)(a0 + 0x68))
+            return;
+          v2 = xkb_state_key_get_one_sym(*(long *)(a0 + 0x68),v7 + 8);
+
+    (two values declared and then read with nothing ever assigning them.)  The
+    disassembly says where they come from: the callback's ABI signature is
+    key(void *data, struct wl_keyboard *, uint32_t serial, uint32_t time,
+    uint32_t key, uint32_t state), so `key` arrives in r8d and `state` in r9d.
+
+    Root cause (P4, own-input prototype recovery), which is NOT a missing
+    prototype.  ActionInputPrototype registers a trial for every input Varnode
+    and marks it ACTIVE when it has descendants, i.e. when the body genuinely
+    reads the register before writing it; rdi, r8d and r9d all reach
+    ParamListStandard::fillinMap as active trials, and buildTrialMap even
+    synthesizes unreferenced filler trials for the ignored rsi/rdx/rcx.
+    forceInactiveChain (fspec.cc:1519, maxchain = 2) then counts the run of
+    unused slots and, once it passes two, marks EVERY remaining trial inactive
+    (the active ones included) so the live-in registers past the hole never
+    become parameters.  The witness's hole is exactly three registers wide, one
+    past the limit.
+
+    Stage / sub-stage: P4 "own-input-prototype-recovery".  The P0 assertion
+    `option inputparamgap on|off` decides whether a run of unused ARGUMENT
+    REGISTERS inside the FUNCTION'S OWN input recovery may veto a later register
+    the body reads before writing.  Call sites are untouched: there a trial is
+    scored from the caller's data flow, where a live argument register really is
+    ambiguous and a long empty run really is evidence the recovery ran past the
+    argument list.
+
+    The fixture is that shape, hand assembled.  `on_key` reads r9d and r8d with
+    rsi/rdx/rcx ignored (a THREE-register hole); `on_two` is the control, the
+    same construct with a TWO-register hole (rsi/rdx ignored, rcx read), which
+    the upstream rule already tolerates.
+
+    Pass 1 (`option inputparamgap off`) reproduces the BUG: on_key takes one
+    parameter and reads r8d/r9d as undefined locals.
+    Pass 2 (`option inputparamgap on`) is the FIX: the full six-parameter ABI
+    signature is recovered, filler parameters and all.
+    `on_two` renders identically in BOTH passes, which is what shows the option
+    moves the gap limit and nothing else.
+-->
+<bytechunk space="ram" offset="0x100000">
+4183f9017510488b47684885c07407418d4808894f70c3488b47684885c074068d5103895770c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="on_key"/>
+<symbol space="ram" offset="0x100017" name="on_two"/>
+</binaryimage>
+<script>
+  <com>option inputparamgap off</com>
+  <com>lo fu on_key</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu on_two</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option inputparamgap on</com>
+  <com>lo fu on_key</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu on_two</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="inputparamgap #1: option off drops the live-in registers sitting behind a 3-register gap (bug reproduced)" min="1" max="1">void on_key\(int8 a0\)</stringmatch>
+<stringmatch name="inputparamgap #2: option off leaves r9d read with nothing assigning it (bug reproduced)" min="1" max="1">int4 v2; // r9d</stringmatch>
+<stringmatch name="inputparamgap #3: option on recovers the callback's full ABI signature, filler parameters and all" min="1" max="1">void on_key\(int8 a0,unsigned long a1,unsigned long a2,unsigned long a3,int4 a4,int4 a5\)</stringmatch>
+<stringmatch name="inputparamgap #4: option on renders the incoming key/state registers as the parameters they are" min="1" max="1">\*\(int4 \*\)\(a0 \+ 0x70\) = a4 \+ 8;</stringmatch>
+<stringmatch name="inputparamgap #5: a 2-register gap already recovered and both passes agree (the option moves only the limit)" min="2" max="2">void on_two\(int8 a0,unsigned long a1,unsigned long a2,int4 a3\)</stringmatch>
+</decompilertest>

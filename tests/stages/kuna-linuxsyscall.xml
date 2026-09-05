@@ -1,0 +1,64 @@
+<decompilertest>
+<!--
+    linuxsyscall: render a 32-bit Linux `int 0x80` as the syscall it is, instead of
+    an indirect call through the `swi` userop.  x86 SLEIGH lowers `INT imm8` to
+    `intloc = swi(imm8); call [intloc]` (ia.sinc:3671) - correct for a general
+    software interrupt, but on 32-bit Linux the vector and the ABI are both fixed,
+    and the generic lowering costs the reader the syscall number AND every
+    argument: the register writes that set them up lose their last reader and the
+    dead-code fixpoint collects them.
+
+    Stage model: S2, a classification of a lifted call by what the target platform
+    does with the vector - the family `funcboundflow` / `cleanupcode` /
+    `noreturn_extern` sit in.  P0 assertion: `option linuxsyscall on|off`.
+
+    Layout (x86:LE:32, flat at 0x100000):
+      start @ 0x100000 :  mov  $4,%eax          ; SYS_write
+                          mov  $1,%ebx          ; fd
+                          mov  $0x1234,%ecx     ; buf
+                          mov  $0xd,%edx        ; count
+                          int  $0x80
+                          mov  $1,%eax          ; SYS_exit
+                          mov  $7,%ebx          ; status
+                          int  $0x80
+                          ret
+
+    The four `mov` argument setups are the load-bearing part of the test.  The pass
+    runs in the PRE-SSA window, before ActionFuncLink, and gives the call spec a
+    LOCKED input prototype over the ABI registers - so ActionFuncLink materializes
+    the argument Varnodes and those writes keep a reader.  Recognizing the site any
+    later would name the call and still print it with no arguments, because by then
+    the setup is already gone.
+
+    Pass 1 (default, linuxsyscall off - the pre-feature rendering): two
+    `(*(code *)swi(0x80))()` indirect calls, and not one of the four constants
+    survives.
+    Pass 2 (option linuxsyscall on): `sys_write(1,0x1234,0xd)` and `sys_exit(7)`.
+
+    Asserts #1/#2 pin the two renderings against each other; #3/#4 prove the
+    argument setup survives ONLY in the on pass (each constant appears exactly
+    once across the two passes); #5 pins the per-syscall arity - `exit` takes one
+    argument, so `ecx`/`edx`, which still hold 0x1234 and 0xd at the second site,
+    must NOT be printed as arguments to it.
+-->
+<binaryimage arch="x86:LE:32:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">
+b804000000bb01000000b934120000ba0d000000cd80b801000000bb07000000cd80c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="start"/>
+</binaryimage>
+<script>
+  <com>lo fu start</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option linuxsyscall on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="LINUXSYSCALL #1: both int 0x80 sites render as an indirect call through swi() only in the linuxsyscall-off pass" min="2" max="2">\*\)swi\(0x80\)\)\(\)</stringmatch>
+<stringmatch name="LINUXSYSCALL #2: with the option on, the number in EAX names the call and the ABI registers become its arguments" min="1" max="1">sys_write\(1,0x1234,0xd\)</stringmatch>
+<stringmatch name="LINUXSYSCALL #3: the second site resolves independently of the first (EAX reloaded between them)" min="1" max="1">sys_exit\(7\)</stringmatch>
+<stringmatch name="LINUXSYSCALL #4: the pre-SSA seam is what keeps the argument setup alive - 0x1234 exists only in the on pass" min="1" max="1">0x1234</stringmatch>
+<stringmatch name="LINUXSYSCALL #5: arity comes from the syscall table, so exit's one argument does not absorb the stale ecx/edx" min="0" max="0">sys_exit\(7,</stringmatch>
+</decompilertest>

@@ -1,0 +1,73 @@
+{
+  "opportunity": "decompiling-3396-byte-main",
+  "need_id": "decompiling-3396-byte-main",
+  "route": "RE-friction loop (docs/re-pipeline.md), round 2, track perf -- ATTEMPT 5 (IMPLEMENTATION, captain-briefed)",
+  "challenge": "69a3822f7b3cc38c80464da4",
+  "binary": ".kuna-repipe/probebin/bcfacd743bc607be/nikos_crack_me.exe (PE x86-64, 235725 bytes)",
+  "selector": "sub_140023350",
+  "scope": "small",
+  "attempt": 5,
+  "prior_attempts": [
+    {
+      "pr": 380,
+      "summary": "dead-list position re-derived by scanning; 71.46 s -> 19.42 s (-72.8%), acceptance not met"
+    },
+    {
+      "pr": 385,
+      "summary": "`kuna decompile` followed the same flow twice; 19.70 s -> 15.32 s (-22.3%), acceptance not met"
+    },
+    {
+      "pr": 393,
+      "summary": "three per-query re-derivations of cached facts + one fused arena lookup; 14.57 s -> 12.18 s (-16.3%), acceptance not met"
+    },
+    {
+      "pr": 396,
+      "summary": "Rc traffic on 9.5 M ordered-container mutations; 12.06 s -> 11.23 s (-6.9%), acceptance not met"
+    }
+  ],
+  "phase": "P2 lift/flow -- jump-table recovery (FlowInfo::recoverJumpTables / Funcdata::stageJumpTable)",
+  "modules": [
+    "decompiler/crates/kuna-decomp/src/substrate/funcdata_block.rs (Funcdata::stage_jump_table, Funcdata::recover_jump_table_flow)",
+    "decompiler/crates/kuna-decomp/src/p2_lift/flow.rs (FlowInfo::recover_jump_tables)",
+    "decompiler/crates/kuna-decomp/src/infra/architecture.rs (jumptable_share_partial + set_kuna_option + build_arch_handle)",
+    "decompiler/crates/kuna-decomp/src/substrate/context.rs (ArchSeam::jumptable_share_partial)",
+    "decompiler/crates/kuna-decomp/phases.toml + src/p0_knowledge/options.rs (settable row + registration)"
+  ],
+  "change_kind": "performance-fix that is also a recovery gain (upstream-shape convergence)",
+  "option": "jtsharepartial (on|off, default on)",
+  "gated": true,
+  "gating_rationale": "Sharing the partial changes WHICH jump tables recover -- it is the shape `option unrolledguard` was written against, and turning it off is the only way to get unrolledguard's per-table re-clone back. So it ships as a settable row even though every measured difference is a gain. Default ON has the required evidence: 0/675 datatest assertions moved, docs/baseline.json unmoved.",
+  "hypothesis_filed": "The function's extensive opaque arithmetic and indirect calls cause one or more analysis passes to scale poorly.",
+  "hypothesis_verdict": "Refuted for the fifth time, and this attempt did not re-derive it. The captain's brief named the mechanism: kuna ran the jump-table partial sub-decompilation once per TABLE where C++ runs it once per FUNCTION. Confirmed here at 2 tables on the witness.",
+  "root_cause": "`Funcdata::stage_jump_table` built a fresh `@@jumprecovery` partial (clone the raw p-code + jump-tables, build blocks, run the reduced \"jumptable\" action set) for EVERY table. C++ `FlowInfo::recoverJumpTables` (flow.cc:1429) constructs one `partial` per call and `Funcdata::stageJumpTable` (funcdata_block.cc:512) guards the clone plus the pipeline behind `if (!partial.isJumptableRecoveryOn())`. The correctness half is larger than the speed half: because kuna's later clone re-cloned the jumpvec AFTER an earlier sibling recovered, that clone's collect_edges called target() on a case body decoded only into the parent flow, threw \"Could not find op at target address\", and truncated a recoverable dispatch to a computed (code *)() call. `option unrolledguard` exists solely to tolerate that self-inflicted condition.",
+  "fix": "Hoist the partial into `FlowInfo::recover_jump_tables` as an `Option<Funcdata>` threaded through `recover_jump_table_flow` into `stage_jump_table`; build + run the reduced pipeline only when the slot is empty. Recovery itself still runs per table against the shared partial and mutates it, exactly as upstream does. `option jtsharepartial off` restores the per-table clone byte for byte.",
+  "profiling_method": "None needed and none run -- the profile was inherited from attempts 1-4 (this file and the need record). Measurement is an interleaved paired A/B using the OPTION as the lever, so both arms are the same binary and the `kuna decompile` -> `decomp_dbg` fork cannot silently time a different engine (the trap that voided wave 14's pre/post delta).",
+  "measurement": "Witness `kuna decompile nikos_crack_me.exe sub_140023350` (the acceptance command, no --json), 8 interleaved pairs after a warmup of each arm: OFF median 10,869 ms (min 10,490), ON median 9,138 ms (min 8,843). Median delta -15.92%; paired mean -15.96% +/- 2.03; 8/8 pairs a win (~7.8 sigma). Both arms byte-identical stdout on this witness.",
+  "residue_map": "Not re-measured; the post-#393/#396 profile stands (heritage ~23%, oppool1 ~14%, ActionDeadCode ~15%, merge ~8%) minus roughly one of the two `stage_jump_table` blocks. There is no single remaining lever of this size; the function is IR-volume-bound (#396).",
+  "refuted_leads": [
+    "The prior in-code claim that sharing 'loses 16 of the 17 switches' the unrolledguard testcase asserts is WRONG as stated. Measured: with sharing on and unrolledguard OFF the memcpy witness recovers 16 switches and 0 computed calls -- sharing FIXES that testcase's bug rather than regressing it. What sharing removes is unrolledguard's MECHANISM (the per-table re-clone), which is why the option is still reachable.",
+    "The captain's suggested gate 'share by default, keep per-table cloning for the unrolledguard-on path' was checked and rejected: `unrolledguard` is in AGGRESSIVE_OVERRIDES and `auto` picks aggressive under 500 KiB, so that gate would be inert on this very witness. The two options are documented as paired instead (turn unrolledguard on together with jtsharepartial off)."
+  ],
+  "left_on_the_table": "`unrolledguard` is now redundant on every shape measured here and is a candidate for removal or for dropping out of AGGRESSIVE_OVERRIDES; that is a separate default change with its own evidence burden and was not taken in this PR.",
+  "tests": [
+    "tests/stages/ghangr-optimized-memcpy-6301a9.xml grows a THIRD pass (609 -> 610 assertions): pass 1 both gates off = the bug (7 `code **`, 1 switch), pass 2 unrolledguard on = its fix (+16), pass 3 unrolledguard OFF + jtsharepartial ON = the shipped default's fix (+16). Asserts `code **` == 7 across the whole stream (so pass 3 adds none) and `switch(` == 33, plus a 3-pass sentinel (`memcpy_opt(` == 3) so the counts cannot be one dropped pass.",
+    "tests/cli/decompiling-3396-byte-main.json: the promoted regression probe. The dataset acceptance is unvendorable AND wall-clock, so the in-repo twin pins the mechanism on the existing `mcount_x86_64` fixture -- `__gettextparse` holds two tables in one batch and goes 1 switch + 1 truncated computed call -> 2 switches + 0, with 28 more case arms."
+  ],
+  "regression_sweep": "Whole-surface `decompile-all --json` A/B (option off vs default) over 100 binaries / 21,458 functions: the 6 round-2 probe binaries, 9 system ELFs (ls, grep, tar, bash, gzip, sed, awk, objdump, python3.12), the 83 kuna-analysis fixtures (ELF/PE/Mach-O/COFF; x86-64/i386/ARM/Cortex-M/PPC) and betaflight_STM32F405.elf. 62 functions differ. Every one was classified by truncated-dispatch / switch / case counts: 61 GAINS, 0 losses, 1 unclassifiable by name (two `printf_positional` bodies share a name). Aggregate: 68 truncated `(code *)()` dispatches removed, +237 switches, +14,770 case arms. `mcount_x86_64` was re-run keyed by ADDRESS to defeat the name collision: 19 differing, all gains. The two arms' warning streams also differ in the expected direction -- the witness's `[kuna unrolledguard] ... skipped 6 undecoded sibling-table case-target edge(s)` line disappears under the default, because the condition no longer arises.",
+  "gates": {
+    "make test": "PARITY OK 675/675, docs/baseline.json unmoved",
+    "make test-stages": "PARITY OK 610/610 (609 -> 610), docs/baseline-stages.json re-recorded",
+    "make rust-test": "green (rc=0). NOTE: the first run reported 2 failures, both artifacts: one hard-coded live-value count 45 -> 46 (fixed), and `w10_proto_unlock_const_return_collapses_no_tied_roundtrip`, which is a KUNA_DECOMP_TEST env artifact -- that var is exported in the builder environment and makes the test use the Rust binary as its 'C++ oracle', so the oracle renders `unsigned int` where the test pins `xunknown4`. Green with the var unset.",
+    "make check-spec": "OK",
+    "kuna catalog --check": "catalog OK (140 -> 141 settables; all hard-coded counters re-derived from a fresh capture, phase_catalog.json recaptured)",
+    "make test-cli": "24/24",
+    "acceptance a-53d616afcb6a": "PASS -- 9,112 ms median against the < 10,000 ms bar, exit 0"
+  },
+  "decisions": [
+    "THE NEED CLOSES. The acceptance probe passes for the first time in five attempts: 9,112 ms against < 10,000 ms (71.5 -> 19.4 -> 14.4 -> 11.8 -> 10.8 -> 9.1 s). The bar was never moved.",
+    "Recorded as a CONVERGENCE in docs/history.md, not a DIV row. docs/history.md's own rule is explicit: 'a port defect whose fix moves kuna back onto upstream's default earns no DIV row, but a corpus-wide output shift still needs a record'. After this change kuna's DEFAULT matches C++ stageJumpTable, so there is no divergence left to register. The captain's brief said 'DIV row'; this is the one place this PR departs from it, and it departs toward the document's stated rule.",
+    "The measured -15.92% is under the perf track's nominal 20% single-target bar and is carried anyway: 8/8 interleaved pairs are wins at +/- 2.03, the arms are the same binary with the option as the lever, and the acceptance probe -- the actual definition of done -- passes. The number is reported as measured.",
+    "The change ships DEFAULT-ON. Evidence per the standing requirement: 0/675 datatest assertions move. The output that does move (62 of 21,458 functions) was individually classified and is 61 gains / 0 losses.",
+    "The in-code comment claiming kuna 'cannot share' the partial because unrolledguard 'loses 16 of the 17 switches' was tested rather than believed, and is refuted: sharing recovers all 16 with unrolledguard off. The comment and the spec prose are corrected in this PR."
+  ]
+}

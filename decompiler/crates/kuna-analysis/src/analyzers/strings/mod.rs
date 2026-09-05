@@ -37,18 +37,21 @@
 //! and ≥5 chars is accepted) — harmless for real string literals, which all pass.
 //! Recorded in `docs/missing-analyses.md` / `docs/history/analysis-port-log.md`.
 
+pub mod kuna_stringinv;
+pub mod kuna_widestrings;
+
 use object::read::{Object, ObjectSection};
 use object::SectionKind;
 
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase, StringFact};
 
 /// The default minimum visible string length (`MinStringLen.LEN_5`).
-const DEFAULT_MIN_LEN: usize = 5;
+pub(crate) const DEFAULT_MIN_LEN: usize = 5;
 
 /// `AsciiCharSetRecognizer.contains`: a byte is "string content" iff it is a
 /// printable ASCII char (`0x20..=0x7e`) or one of CR/LF/TAB. Faithful to the
 /// 1-byte (ASCII) recognizer — UTF-16/32 widths are not handled here.
-fn is_string_char(b: u8) -> bool {
+pub(crate) fn is_string_char(b: u8) -> bool {
     (0x20..=0x7e).contains(&b) || b == 0x0d || b == 0x0a || b == 0x09
 }
 
@@ -61,7 +64,7 @@ fn is_string_char(b: u8) -> bool {
 /// any other out-of-charset byte the run is rejected (because `requireNullEnd` is
 /// the default). The NUL is not counted toward `min_len`, but it *is* counted in
 /// the emitted `len` (the `char[N]` array length = visible_len + 1).
-fn scan_run(data: &[u8], vma: u64, min_len: usize) -> Vec<StringFact> {
+pub(crate) fn scan_run(data: &[u8], vma: u64, min_len: usize) -> Vec<StringFact> {
     let mut out = Vec::new();
     let mut run_start: Option<usize> = None;
     for (i, &b) in data.iter().enumerate() {
@@ -96,7 +99,7 @@ fn scan_run(data: &[u8], vma: u64, min_len: usize) -> Vec<StringFact> {
 /// unchanged. The PE/COFF and Mach-O arms generalize the same notion through the
 /// neutral [`SectionKind`] + each format's flag bits, so a PE `.rdata` / Mach-O
 /// `__cstring` is scanned and a PE `puts("hello")` recovers its literal.
-fn is_loaded_initialized<'a>(sec: &impl ObjectSection<'a>) -> bool {
+pub(crate) fn is_loaded_initialized<'a>(sec: &impl ObjectSection<'a>) -> bool {
     // `.bss`-style uninitialized memory has no file content to scan, on every
     // format (the neutral signal `object` derives from the section type/flags).
     if matches!(sec.kind(), SectionKind::UninitializedData) {
@@ -142,7 +145,7 @@ fn is_loaded_initialized<'a>(sec: &impl ObjectSection<'a>) -> bool {
 /// ([`SectionKind::UninitializedData`]) and any non-loaded metadata section is
 /// skipped. The string addresses are `section_vma + run_start`. Format-agnostic
 /// (ELF/PE/COFF/Mach-O), with the ELF path byte-identical to before.
-fn scan_strings(file: &object::File, min_len: usize) -> Vec<StringFact> {
+pub(crate) fn scan_strings(file: &object::File, min_len: usize) -> Vec<StringFact> {
     let mut out = Vec::new();
     for sec in file.sections() {
         if !is_loaded_initialized(&sec) {
@@ -160,6 +163,10 @@ fn scan_strings(file: &object::File, min_len: usize) -> Vec<StringFact> {
 /// Port of `StringsAnalyzer` ("ASCII Strings"): detect NUL-terminated ASCII
 /// string literals in the loaded+initialized image and emit a [`StringFact`]
 /// (a `char[N]` data object) per find.
+///
+/// (kuna `widestrings`) Also emits the 2-byte width — `StringsAnalyzer`'s
+/// `allCharWidths` arm — into [`AnalysisOutput::wide_strings`], where each fact
+/// becomes a `wchar2[N]` instead. See [`kuna_widestrings`].
 pub struct StringLiteralPass {
     /// Minimum visible string length (`StringsAnalyzer.minStringLength`,
     /// default [`DEFAULT_MIN_LEN`]).
@@ -182,7 +189,11 @@ impl AnalysisPass for StringLiteralPass {
     }
 
     fn run(&self, ctx: &AnalysisCtx) -> AnalysisOutput {
-        AnalysisOutput { strings: scan_strings(ctx.file, self.min_len), ..Default::default() }
+        AnalysisOutput {
+            strings: scan_strings(ctx.file, self.min_len),
+            wide_strings: kuna_widestrings::scan_wide_strings(ctx.file, self.min_len),
+            ..Default::default()
+        }
     }
 }
 

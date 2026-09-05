@@ -1,0 +1,43 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "0x401180",
+    "--addr"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/inputparamgap_x86_64",
+    "binary_sha256": "9fb193df2cf9964358d27c024ee346e48f36e359437329d1fed59a266da70848",
+    "binary_size": 15872,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/inputparamgap_x86_64",
+    "selector": "0x401180",
+    "selector_kind": "addr"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "void on_key\\(",
+      "on_key\\([^)]*,[^)]*,[^)]*,[^)]*,[^)]*\\)",
+      "\\(a5 == 1\\)",
+      "a4 \\+ 8"
+    ],
+    "stdout_absent": [
+      "^\\s+\\S[^;]*; // r8d$",
+      "^\\s+\\S[^;]*; // r9d$"
+    ]
+  },
+  "notes": "In-repo twin of dataset acceptance a-d6b2084f35d5 (lugosiii 0x6500), which promote refuses because CI has no dataset. on_key is the Wayland key-callback shape: rdi=data, rsi/rdx/rcx ignored, key/state in r8d/r9d behind a THREE-register hole, one past forceInactiveChain's maxchain of 2. `--option inputparamgap off` restores the bug. tests/stages/kuna-inputparamgap.xml pins both arms."
+}

@@ -1,0 +1,32 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "timeout_s": 60,
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "0x804881c",
+    "--addr"
+  ],
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_absent": [
+      "sub_[0-9a-f]{7}\\(\\)",
+      "dat_[0-9a-f]{8} \\+="
+    ]
+  },
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/overlapbranch_i386",
+    "binary_sha256": "629475b4de0ca7ec6efdaba25e5978629b741eb90889a74fd40d601b83a8d74d",
+    "binary_size": 2096,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/overlapbranch_i386",
+    "selector": "0x804881c",
+    "selector_kind": "addr"
+  },
+  "probe_id": "a-52c2ad89b522",
+  "notes": "Promoted from RE-need overlapping-anti-disassembly-sequence (round 2). Clauses verbatim; only the target is re-pointed -- the need's target is a dataset crackme, CI has no dataset. overlapbranch_i386 (generator beside it) carries the same idiom at the same address: a `75 01` JNZ over a junk `e8` lead byte. With `option overlapbranch off` it emits both forbidden artefacts."
+}

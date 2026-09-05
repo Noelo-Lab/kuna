@@ -120,12 +120,31 @@ pub fn decompile_one(
     seed: &DecompileSeed<'_>,
     proto_overrides: &[(Address, PrototypePieces)],
 ) -> DecompileStep {
+    decompile_one_prefollowed(arch, name, entry, size, seed, proto_overrides, None)
+}
+
+/// [`decompile_one`], but able to adopt an already-followed `Funcdata` for the
+/// FIRST drive instead of following the same flow a second time (see
+/// `kuna_decomp::decompile_drive::decompile_func_full_with_override_dyn_prefollowed`).
+///
+/// Only the first drive can adopt it: the format-string re-decompile installs
+/// new per-call-site prototype overrides, which are consumed AT FLOW TIME, so
+/// that second pass always re-follows.
+pub fn decompile_one_prefollowed(
+    arch: &mut Architecture,
+    name: &str,
+    entry: Address,
+    size: int4,
+    seed: &DecompileSeed<'_>,
+    proto_overrides: &[(Address, PrototypePieces)],
+    prefollowed: Option<Funcdata>,
+) -> DecompileStep {
     let formatstring_enabled = arch.analysis_formatstring;
     let saved_readonlypropagate = arch.readonlypropagate;
     if formatstring_enabled {
         arch.readonlypropagate = true;
     }
-    let mut result = kuna_decomp::decompile_drive::decompile_func_full_with_override_dyn(
+    let mut result = kuna_decomp::decompile_drive::decompile_func_full_with_override_dyn_prefollowed(
         arch,
         name,
         // Cloned so `entry` survives for the conditional re-decompile below
@@ -140,6 +159,7 @@ pub fn decompile_one(
         seed.flow_overrides,
         proto_overrides,
         seed.mapped_params,
+        prefollowed,
     );
     let mut discovered: Vec<(Address, PrototypePieces)> = Vec::new();
     if formatstring_enabled {

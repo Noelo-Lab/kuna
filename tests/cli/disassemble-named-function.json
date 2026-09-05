@@ -1,0 +1,55 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "disassemble",
+    "{{BIN}}",
+    "main",
+    "--count",
+    "4",
+    "--json"
+  ],
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/midstring_x86_64",
+    "binary_sha256": "1a4cc3ca2bc124f6228923046c0859465234c2269dae6d4bfe5c1554feb2c682",
+    "binary_size": 16072,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/midstring_x86_64",
+    "selector": "main",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "json": [
+      {
+        "path": "count",
+        "op": "eq",
+        "value": 4
+      },
+      {
+        "path": "target.name",
+        "op": "eq",
+        "value": "main"
+      },
+      {
+        "path": "instructions[0].address_hex",
+        "op": "exists"
+      },
+      {
+        "path": "instructions[0].mnemonic",
+        "op": "exists"
+      },
+      {
+        "path": "instructions[0].bytes",
+        "op": "exists"
+      }
+    ]
+  },
+  "notes": "Three testers wanted instruction-level ground truth when decompilation looked wrong. Asserting bytes as well as mnemonic: a disassembly an agent cannot cross-check against the raw bytes does not settle the question it is asked for."
+}

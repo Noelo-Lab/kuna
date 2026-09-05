@@ -561,6 +561,7 @@ pub fn universal_sched(
         rrow!("stringcopy", "constsequence", crate::constseq::RuleStringCopy::new("constsequence")),
         rrow!("stringstore", "constsequence", crate::constseq::RuleStringStore::new("constsequence")),
         rrow!("memsetcopy", "constsequence", crate::kuna_memsetsequence::RuleMemsetCopy::with_group(false, "constsequence")),
+        rrow!("rodatastringcopy", "constsequence", crate::kuna_rodatastring::RuleRodataStringCopy::with_group(false, "constsequence")),
         rrow!("bitfield_store", "bitfields", crate::bitfield::RuleBitFieldStore),
         rrow!("bitfield_out", "bitfields", crate::bitfield::RuleBitFieldOut),
         rrow!("bitfield_load", "bitfields", crate::bitfield::RuleBitFieldLoad),
@@ -733,6 +734,14 @@ pub fn universal_sched(
         children: vec![
             act!(ActionStart::boxed("base")),
             act!(ActionConstbase::boxed("base")),
+            // (kuna) linuxsyscall (option `linuxsyscall`, default-OFF): name the
+            // 32-bit Linux `int 0x80` sites.  Placed here, not in mainloop, for
+            // two reasons: the pattern is read off the RAW p-code (pre-SSA there
+            // is no def-use edge to the `swi` output to follow), and the call spec
+            // it builds is input-LOCKED, so it has to exist before ActionFuncLink
+            // materializes the argument Varnodes and before ActionExtraPopSetup
+            // reads its extrapop.  Inert on every language but x86-32.
+            act!(crate::p2_lift::kuna_linuxsyscall::ActionLinuxSyscall::boxed("protorecovery")),
             act!(ActionNormalizeSetup::boxed("normalanalysis")),
             act!(ActionDefaultParams::boxed("base")),
             SchedNode::Action(Box::new(move || {

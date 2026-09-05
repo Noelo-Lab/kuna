@@ -333,6 +333,17 @@ pub trait FlowEnvironment {
         false
     }
 
+    /// (kuna `tailcallframe`) Same question as
+    /// [`is_tail_call_branch`](FlowEnvironment::is_tail_call_branch) for a `dest`
+    /// the symbol table does NOT know: does the run of instructions ending at
+    /// `op` tear down exactly the frame the entry block built, so the jump is a
+    /// tail call into a callee no discovery oracle reached?  See
+    /// [`kuna_tailcallframe`](crate::kuna_tailcallframe).  The default shell
+    /// reports `false`.
+    fn is_frame_teardown_tail_call(&self, _fd: &Funcdata, _op: OpId, _dest: &Address) -> bool {
+        false
+    }
+
     /// Resolve a direct-call entry address to its callee symbol (C++
     /// `FlowInfo::queryCall` → `Scope::queryFunction(entryaddr)`,
     /// `flow.cc:674`): return the callee's display name (so the call renders
@@ -370,6 +381,18 @@ pub trait FlowEnvironment {
     /// shell reports `false` (no bounding, upstream behavior).  See
     /// [`kuna_funcboundflow`](crate::kuna_funcboundflow).
     fn funcbound_flow_enabled(&self) -> bool {
+        false
+    }
+
+    /// (kuna `overlapbranch`) Is the overlapping-branch truncation enabled
+    /// (`option overlapbranch`, `Architecture::overlap_branch`)?  When on,
+    /// `process_instruction` truncates a conditional branch's fall-through
+    /// instruction when the branch's own target lies strictly inside that
+    /// instruction's encoding (the anti-disassembly junk-byte idiom), instead of
+    /// letting the fall-through decode swallow the target and desynchronise the
+    /// stream.  The default shell reports `false` (upstream behavior).  See
+    /// [`kuna_overlapbranch`](crate::kuna_overlapbranch).
+    fn overlap_branch_enabled(&self) -> bool {
         false
     }
 
@@ -495,6 +518,16 @@ pub struct FlowInfo<'a, E: FlowEnvironment> {
     /// cannot be inlined again (the cycle break that prints "Could not inline
     /// here").
     inline_recursion: std::collections::BTreeSet<Address>,
+    /// (kuna `overlapbranch`) The `(fall-through address, branch target)` pair
+    /// recorded when the instruction just processed was a conditional branch with
+    /// a forward target.  Consumed by the very next
+    /// [`process_instruction`](FlowInfo::process_instruction), which truncates the
+    /// fall-through when the branch target turns out to lie strictly inside it.
+    /// See [`kuna_overlapbranch`](crate::kuna_overlapbranch).
+    overlap_watch: Option<(Address, Address)>,
+    /// (kuna `overlapbranch`) Direct target of the CBRANCH seen while
+    /// xref-classifying the current instruction, staged for `overlap_watch`.
+    overlap_cbranch_target: Option<Address>,
     /// Entry address of the call-fixup whose body is currently being woven in
     /// (C++ `setupCallSpecs(op, fc)`'s non-NULL `fc` argument — the call site
     /// being injected).  While a [`do_injection`](Self::do_injection) for a
@@ -541,6 +574,8 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             qlst_count: 0,
             inline_head: None,
             inline_recursion: std::collections::BTreeSet::new(),
+            overlap_watch: None,
+            overlap_cbranch_target: None,
             injecting_entry: None,
         }
     }
@@ -871,16 +906,9 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
     }
 
     /// The successor of `op` in the global \e dead list (C++ `++op->getInsertIter()`
-    /// while the op is dead), or `None` at the end.  Reconstructed from the bank's
-    /// forward dead-list iteration (op.rs owns the intrusive links privately).
+    /// while the op is dead), or `None` at the end.
     fn dead_next(&self, op: OpId) -> Option<OpId> {
-        let mut it = self.data.obank().iter_dead();
-        for cur in it.by_ref() {
-            if cur == op {
-                return it.next();
-            }
-        }
-        None
+        self.data.obank().dead_next(op)
     }
 
     // -----------------------------------------------------------------------
@@ -897,10 +925,15 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         if (self.flags & flow_flags::ignore_outofbounds) == 0 {
             let msg = Self::out_of_bounds_message(fromaddr, toaddr);
             if (self.flags & flow_flags::error_outofbounds) == 0 {
-                // data.warning(msg, toaddr);  -- STUB(W4): warning store.
+                // (kuna) The C++ `data.warning`/`data.warningHeader` calls, no
+                // longer stubbed: the range is the whole entry-point space unless
+                // a caller declares a function extent, so this fires only under a
+                // declared boundary — and a declared end that cuts real flow must
+                // say so rather than silently truncating the body.
+                self.data.warning(&msg, toaddr);
                 if !self.has_out_of_bounds() {
                     self.flags |= flow_flags::outofbounds_present;
-                    // data.warningHeader("Function flows out of bounds");  -- STUB(W4)
+                    self.data.warning_header("Function flows out of bounds");
                 }
             } else {
                 return Err(KunaError::lowlevel(msg));
@@ -1000,17 +1033,15 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             Some(s) => s,
             None => return Ok(()), // oiter == endDead(): nothing to delete
         };
-        // Collect [start .. endDead()) in dead-list order.
-        let dead: Vec<OpId> = self.data.obank().iter_dead().collect();
-        let mut hit = false;
+        // Collect [start .. endDead()) by walking the dead list forward from
+        // `start`.  A `start` that is no longer on the list deletes nothing (the
+        // bank's dead-list navigation reports non-membership as `None`).
         let mut victims: Vec<OpId> = Vec::new();
-        for op in dead {
-            if op == start {
-                hit = true;
-            }
-            if hit {
-                victims.push(op);
-            }
+        let mut cur =
+            if self.data.obank().on_dead_list(start) { Some(start) } else { None };
+        while let Some(op) = cur {
+            victims.push(op);
+            cur = self.data.obank().dead_next(op);
         }
         for op in victims {
             //   -- STUB(W3-funcdata): op_destroy_raw needs destroyVarnode; the
@@ -1079,6 +1110,9 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                             *isfallthru = true; // relative branch is to end of instruction
                         }
                     } else {
+                        // (kuna overlapbranch) stage the machine-level conditional
+                        // target for the fall-through overlap check.
+                        self.overlap_cbranch_target = Some(destaddr.clone());
                         self.new_address(curop, &destaddr)?; // generate branch address
                     }
                     *startbasic = true;
@@ -1102,7 +1136,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                             cursor = None;
                         }
                         *startbasic = true;
-                    } else if self.env.is_tail_call_branch(&self.data, curop, &destaddr) {
+                    } else if let Some(tailkind) = self.tail_call_kind(curop, &destaddr) {
                         // (kuna) tee-O2 tail-jump: a direct `jmp` to another known
                         // function's entry is a tail call.  Rewrite BRANCH -> CALL
                         // (so the callee resolves by name and its return value
@@ -1130,7 +1164,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                         let _ = destaddr.print_raw(&mut destbuf);
                         self.data.warning(
                             &format!(
-                                "tailcalljump: recovered tail call -> introduced call to {destbuf}"
+                                "{tailkind}: recovered tail call -> introduced call to {destbuf}"
                             ),
                             &site,
                         );
@@ -1249,6 +1283,24 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         self.data.vbank().get(in0).expect("branch_in0_addr: stale vn").get_addr().clone()
     }
 
+    /// (kuna) Which tail-jump rule, if either, claims this direct `CPUI_BRANCH`?
+    ///
+    /// [`kuna_tailcalljump`](crate::kuna_tailcalljump) is asked first, so a
+    /// branch to a known function entry keeps the existing decision and the
+    /// existing `tailcalljump:` warning text; [`kuna_tailcallframe`](
+    /// crate::kuna_tailcallframe) then gets the targets the symbol table does not
+    /// know.  The returned name is the option that fired, so the introduced call
+    /// is attributable to the rule that introduced it.
+    fn tail_call_kind(&self, op: OpId, dest: &Address) -> Option<&'static str> {
+        if self.env.is_tail_call_branch(&self.data, op, dest) {
+            return Some("tailcalljump");
+        }
+        if self.env.is_frame_teardown_tail_call(&self.data, op, dest) {
+            return Some("tailcallframe");
+        }
+        None
+    }
+
     /// Generate p-code for a single machine instruction and process discovered
     /// flow information (C++ `processInstruction`, `flow.cc:401`).
     ///
@@ -1267,7 +1319,10 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         startbasic: &mut bool,
     ) -> KunaResult<bool> {
         let mut isfallthru = true;
-        let step: int4;
+        let mut step: int4;
+        // (kuna overlapbranch) the pair staged by the previous instruction; valid
+        // for exactly this call and cleared whether or not it fires.
+        let overlap_watch = self.overlap_watch.take();
 
         if self.insn_count >= self.insn_max {
             if (self.flags & flow_flags::error_toomanyinstructions) != 0 {
@@ -1317,6 +1372,51 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             }
         }
 
+        // (kuna overlapbranch) The previous instruction was a conditional branch
+        // whose own target lands strictly inside the instruction just decoded --
+        // the fall-through decode has swallowed the branch target (the x86
+        // anti-disassembly junk-lead-byte idiom).  The explicitly encoded target
+        // wins: drop the ops this decode emitted and end the fall-through edge
+        // with a halt at its own address, so the target is decoded on its own
+        // boundary by the pending addrlist entry.  Nothing already committed to
+        // is moved -- the loser is the instruction currently being decoded.
+        let overlap_offsets = overlap_watch.as_ref().and_then(|(fallthru, target)| {
+            let same_space = target.get_space().map(|sp| sp.get_index())
+                == curaddr.get_space().map(|sp| sp.get_index());
+            if fallthru == curaddr && same_space {
+                Some((fallthru.get_offset(), target.get_offset()))
+            } else {
+                None
+            }
+        });
+        if crate::kuna_overlapbranch::kuna_overlaps_pending_branch(
+            self.env.overlap_branch_enabled(),
+            curaddr.get_offset(),
+            step,
+            overlap_offsets,
+        ) && !self.kuna_overlap_reconverges(curaddr, step, &overlap_watch)
+        {
+            let bogus = if emptyflag {
+                self.dead_head()
+            } else {
+                marker.and_then(|m| self.dead_next(m))
+            };
+            self.delete_remaining_ops(bogus)?;
+            self.artificial_halt(curaddr, pcodeop_flags::badinstruction)?;
+            let mut target = String::new();
+            if let Some((_, t)) = overlap_watch.as_ref() {
+                let _ = t.print_raw(&mut target);
+            }
+            self.data.warning(
+                &format!(
+                    "overlapbranch: this instruction overlaps the branch target at {target}; \
+truncating the fall-through here"
+                ),
+                curaddr,
+            );
+            step = 1;
+        }
+
         // (Insert with an INVALID seqnum; the first-op seqnum is filled in below.)
         self.visited.insert(
             curaddr.clone(),
@@ -1339,6 +1439,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             marker.and_then(|m| self.dead_next(m))
         };
 
+        self.overlap_cbranch_target = None; // (kuna overlapbranch) per-instruction
         if let Some(firstop) = first_new {
             let seq = self.data.obank().get(firstop).expect("process: stale firstop").get_seq_num().clone();
             if let Some(stat) = self.visited.get_mut(curaddr) {
@@ -1353,6 +1454,13 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
 
         if isfallthru {
             let next = curaddr + step as i64;
+            // (kuna overlapbranch) arm the overlap check for the fall-through this
+            // instruction is about to push: only a forward conditional target can
+            // be swallowed by the fall-through's own encoding.
+            self.overlap_watch = match self.overlap_cbranch_target.take() {
+                Some(t) if t > next => Some((next.clone(), t)),
+                _ => None,
+            };
             if self.is_funcbound_fallthru(&next) {
                 // (kuna funcboundflow) Fall-through has reached the entry of the
                 // next function -- the callee just executed (an unnamed static
@@ -1373,6 +1481,33 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             }
         }
         Ok(isfallthru)
+    }
+
+    /// (kuna `overlapbranch`) Do the fall-through decode at `curaddr` and the
+    /// branch target's own decode end at the same address?  True means they are
+    /// the same instruction with leading bytes skipped — glibc's conditional-`LOCK`
+    /// idiom, where both streams are real — and the truncation must not fire.
+    /// See [`kuna_overlapbranch::kuna_streams_reconverge`](crate::kuna_overlapbranch).
+    ///
+    /// Runs only once the cheap strict-interior test has already matched, which it
+    /// never does in ordinary code, so the extra decode costs nothing in practice.
+    fn kuna_overlap_reconverges(
+        &self,
+        curaddr: &Address,
+        step: int4,
+        watch: &Option<(Address, Address)>,
+    ) -> bool {
+        let target = match watch {
+            Some((_, t)) => t,
+            None => return true,
+        };
+        let len = self.env.translate().instruction_length(target).ok();
+        crate::kuna_overlapbranch::kuna_streams_reconverge(
+            curaddr.get_offset(),
+            step,
+            target.get_offset(),
+            len,
+        )
     }
 
     /// (kuna `funcboundflow`) Should a fall-through to `next` be truncated because
@@ -1442,10 +1577,10 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
 
     /// First / last op of the global dead list (helpers for the marker idiom).
     fn dead_head(&self) -> Option<OpId> {
-        self.data.obank().iter_dead().next()
+        self.data.obank().dead_front()
     }
     fn dead_tail(&self) -> Option<OpId> {
-        self.data.obank().iter_dead().last()
+        self.data.obank().dead_back()
     }
 
     // -----------------------------------------------------------------------
@@ -2732,12 +2867,18 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         let for_inline = self.is_flow_for_inline();
         // Snapshot the original flow's `visited` for the partial clone.
         let visited_snapshot = self.visited.clone();
+        // The partial sub-decompilation shared by every table in this batch (C++
+        // builds one `partial` per `recoverJumpTables` call and `stageJumpTable`
+        // guards the clone behind `if (!partial.isJumptableRecoveryOn())`).  Left
+        // `None` and rebuilt per table when `option jtsharepartial` is off.
+        let mut shared_partial: Option<Funcdata> = None;
         for op in table_ops {
             let mode = self.data.recover_jump_table_flow(
                 op,
                 record,
                 &visited_snapshot,
                 run_pipeline,
+                &mut shared_partial,
             );
             match mode {
                 Ok(Some(jt_idx)) => {

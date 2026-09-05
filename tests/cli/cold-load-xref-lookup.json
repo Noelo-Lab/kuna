@@ -1,0 +1,39 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "xrefs",
+    "{{BIN}}",
+    "--to",
+    "0x44b470",
+    "--json"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 5,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/mcount_x86_64",
+    "binary_sha256": "913d35f45475cc129d2fd6a94e35e62bd1b6be720a7207b74852705850611ee7",
+    "binary_size": 896032,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/mcount_x86_64",
+    "selector": "0x44b470",
+    "selector_kind": "addr"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "wall_ms": {
+      "stat": "min",
+      "lt": 1100
+    }
+  },
+  "notes": "Acceptance of RE-need cold-load-xref-lookup, repointed from its dataset image (466 KB obfuscated i386 ELF, 3573 -> 715 ms median) to the largest in-repo fixture: CI has no dataset. Bound recalibrated on it, min of 5: 1169 ms before, 687-989 after. `min`, not `median`: a turbo/base clock split makes one sample bimodal by ~1.5x. Guards ONE decode, not three."
+}

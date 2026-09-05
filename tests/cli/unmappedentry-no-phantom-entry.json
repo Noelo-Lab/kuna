@@ -1,0 +1,38 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "functions",
+    "{{BIN}}",
+    "--json"
+  ],
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/unmapped_call_x86_64",
+    "binary_sha256": "8ad763601b772097457c4c0fe15c76db96250481eae4fcc2016560bc2d99a90c",
+    "binary_size": 351,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/unmapped_call_x86_64",
+    "selector": null,
+    "selector_kind": "none"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "json": [
+      {
+        "path": "count",
+        "op": "eq",
+        "value": 2
+      }
+    ],
+    "stdout_absent": [
+      "0x349688c1"
+    ]
+  },
+  "notes": "Reported: a function at an address outside every executable range. Cause: two worklists in listing/walk.rs disagreed about what counts as code -- the function worklist took a direct CALL target unconditionally. Asserting the phantom's absence as well as the count, so a count that is right for another reason still fails. `--option unmappedentry off` restores 3 entries."
+}

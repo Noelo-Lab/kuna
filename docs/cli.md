@@ -43,6 +43,200 @@ interactive prompts never pollute the output. `--option NAME VALUE` (repeatable)
 `--kassert "<args>"` flip phase-model sub-phase assertions per run; `--mode
 auto|reliable|aggressive|fast` applies an option preset (`docs/modes.md`).
 
+**`--define-function <start[-end][=name] | @file>`** (repeatable) tells kuna where a
+function starts and ends. Every boundary kuna knows is otherwise *derived* —
+discovery finds the entries, and the extent is the address-contiguous clip to the
+next one over an unbounded flow follow — which is the wrong answer on exactly the
+images where reverse engineering is hard. A missed entry merges two functions into
+one; a phantom one invents a function that is not there.
+
+```bash
+# an entry discovery missed: name it and decompile it
+kuna decompile ./packed.bin 0x4014a0 --addr --define-function 0x4014a0=stage2
+
+# two functions merged into one: say where the first really ends
+kuna decompile ./packed.bin --addr 0x4013c9 --define-function 0x4013c9-0x401420=stage1
+
+# keep the boundaries you worked out, and pass them to every later command
+cat > bounds.txt <<'EOF'
+# recovered by hand from the unpacked image
+0x4013c9-0x401420 = stage1
+0x401420-0x401500 = stage2
+EOF
+kuna functions ./packed.bin --json --define-function @bounds.txt
+```
+
+`start` declares the entry: it gets a function symbol (so call sites name it), it
+enumerates in `kuna functions`, and it resolves by name. `end` is **exclusive** and
+declares the extent: flow following stops there, so the body no longer swallows its
+neighbours, and the extent reported by `kuna functions --json` is the declared one
+rather than the clip. `=name` is optional and names the entry (an entry the image
+already named keeps its name unless you supply one); `end` is optional too — a bare
+`--define-function 0x4014a0` asserts an entry and leaves the extent natural.
+Addresses are hexadecimal with or without `0x`.
+
+A declared `end` that cuts real control flow is reported rather than silently
+truncating the body: the function carries a `WARNING: Function flows out of bounds`
+comment on its prototype and one at each cut edge. A correct boundary ends in a
+return and produces no warning, so that comment is the signal to widen the range.
+
+The `@file` form is the durable one: one declaration per line, `#` comments and
+blank lines skipped. kuna does not write boundaries back into the image, so the file
+is the artifact — generate it, diff it, and pass it to every invocation. The flag is
+accepted by `decompile`, `decompile-all`, `functions`, `decompile-project` and
+`disassemble`; a declaration is applied after analysis has had its say, so it
+overrides discovery rather than competing with it. The console spelling, for a
+hand-driven `decomp_dbg` session, is `function bounds <start> [<end>] [as <name>]`.
+
+**`--assert <directive> | @file`** (repeatable) is the other half: where
+`--define-function` tells kuna where a function *is*, `--assert` tells it what
+anything *is*. Everything kuna knows it derived, and until this flag the only
+levers the `kuna` binary offered were `--option` and `--kassert` — the console has
+carried `rename`, `retype`, `map param`, `map return`, `map address`,
+`comment instruction` and `parse line extern` all along, unreachable.
+
+```bash
+kuna decompile ./a.out authenticate --json \
+  --assert 'prototype authenticate int authenticate(char *user,char *pass)' \
+  --assert 'type v2 char[16]' \
+  --assert 'name v2 credbuf'
+```
+
+```text
+- unsigned long authenticate(char *a0,char *a1)     - char v2 [8];
++ int authenticate(char *user,char *pass)           + char credbuf [16];
+```
+
+One directive per `--assert`, keyed by intent rather than by phase:
+
+| directive | what it states |
+|---|---|
+| `prototype <func> <C declaration>` | the function's signature (parameter names included) |
+| `param [<func>::]<i> <storage> <C typedecl>` | the storage and type of one input |
+| `return [<func>::]<storage> <C typedecl>` | the storage and type of the return value |
+| `name [<func>::]<symbol> <newname>` | rename a local |
+| `type [<func>::]<symbol> <C type>` | retype a local |
+| `typedef <C declaration>` | intern a `struct`/`union`/`enum`/`typedef` so `type` can name it |
+| `data <addr> <C typedeclaration>` | a named, typed global at an address |
+| `comment [<func>::]<addr> <text>` | a comment rendered into the C at that instruction |
+| `flow [<func>::]<addr> branch\|call\|callreturn\|return` | the flow out of this instruction is not what kuna decided |
+| `function <start>[-<end>][=<name>]` | the `--define-function` spelling, on this plane |
+| `readonly <addr>+<size>` | the bytes in this range never change at run time |
+| `volatile <addr>+<size>` | device memory: every access is a real access |
+
+Storage is a register name (`RDI`), the console's `%RDI`, or its address grammar
+(`[stack,-0x18,8]`). Addresses are hexadecimal with or without `0x`. A size is
+decimal unless it carries a `0x`, and `<addr> <size>` is accepted wherever
+`<addr>+<size>` is. A C type may be anything the console's `parse line` accepts,
+including a `typedef` you asserted earlier in the same run.
+
+**The two range directives are for memory kuna cannot classify by itself**, which
+on a hostile or embedded image is most of it. `--option readonly on|off` is a
+program-wide switch, not a range, and the loader's own read-only markup stops at
+what the section flags say:
+
+```bash
+# `.data` is writable, so the loader never calls it read-only -- but nothing in
+# this program writes these eight bytes, and the agent has checked.
+kuna decompile ./fw.elf sample --assert 'readonly 0x404028+8'
+#   - return scale * a0 + bias;
+#   + return a0 * 7 + 100;
+
+# 0x50000000 is a device register. Two reads of it are two reads; without this
+# they are two loads of one unwritten address and CSE merges them.
+kuna decompile ./fw.elf sample --assert 'volatile 0x50000000+4'
+#   - return dat_50000000 * 2;
+#   + v1 = dat_50000000; return v1 + dat_50000000;
+```
+
+Asserting a `readonly` range turns read-only propagation on for the run, because
+painting a range read-only and then not folding it would be a directive that is
+accepted and does nothing. It is applied *before* your own `--option`s, so an
+explicit `--option readonly off` still wins.
+
+**`flow` is the structuring lever**, and the one directive that changes which
+bytes are even *in* the function. kuna decides at P2 whether an instruction
+branches, calls, calls-and-does-not-return, or returns; on an obfuscated or
+hand-written image it gets that wrong, and everything downstream inherits the
+mistake. Stating the right answer costs one line:
+
+```bash
+# `sub_13c9` reaches an indirect `call *%rdx` that never comes back, so flow
+# walks on into its twenty-four neighbours and the body is 25 dead temporaries.
+kuna decompile ./a.out --addr 0x13c9 --json --assert 'flow 0x1405 return'
+#   - v2 = (**(void **)(...))(dat_4014); v3 = sub_1129(v1); ... return v2 + v3 + ...;
+#   + return dat_4014;
+```
+
+The four words are the console's own (`Override::stringToType`): `branch` reads
+the instruction as a jump — which is what puts an indirect call back through
+switch-table recovery — `call` as a call, `callreturn` as a call whose
+fall-through is dead (the "does not return" case), and `return` as the end of the
+function. A type the engine cannot apply at that instruction (`call` on an
+indirect call has no destination to make direct) is not silently dropped: the
+run reports the engine's own refusal as a per-function error.
+
+**Every directive's fate is reported.** `--json` grows an `assertions` array — one
+row per directive, in the order you gave them, carrying the directive text, its
+phase and sub-phase, `applied` or `rejected`, and a reason:
+
+```json
+{"directive": "name v9 credbuf", "kind": "name", "phase": "P9",
+ "subphase": "naming-policy", "status": "rejected",
+ "detail": "No symbol named: v9"}
+```
+
+A rejection is also printed on stderr, on both surfaces. It is **not** fatal by
+default — a batch of forty renames against a re-decompiled binary must not lose the
+other thirty-nine to one stale name — and `--assert-strict` makes any rejection
+exit non-zero.
+
+**Order matters, and so does scoping.** Directives are applied in the order given:
+`type v2 char[16]` then `name v2 credbuf` retypes and then renames, where the
+reverse leaves the second naming a symbol the first renamed away. `name` and
+`type` name a *local*, which does not exist until the function has been decompiled
+once, so kuna decompiles it twice — but only when such a directive is present, so
+nothing else pays for it. A directive that names no function binds to the function
+being decompiled; on a run that decompiles more than one (`decompile-all`,
+`decompile-project`) it is rejected rather than applied to every function that
+happens to have a `v2`, so qualify it:
+
+```bash
+kuna decompile-all ./a.out --json --assert 'name authenticate::v2 credbuf'
+```
+
+A range property is painted before the image's symbols are mapped, because
+mapping a symbol folds the property into it and never consults the range again —
+so a range you state is honoured even where the loader already gave the address a
+name. There is deliberately **no** `global` directive: `global add` is the console
+command that would carry it, and every stock cspec's `<global>` already claims the
+whole default data space (`<range space="ram"/>`), so on any ordinary image the
+range is global before you say anything. `global add`/`global remove` are wired
+and usable from `decomp_dbg` (the removal direction is the one that moves the C),
+but a directive that is accepted and inert has no place on this plane.
+
+The `@file` form is the durable one, exactly as for `--define-function`: one
+directive per line, `#` comments and blank lines skipped, and the file is the
+artifact — kuna does not write assertions back into the image.
+
+```bash
+cat > overrides.kuna <<'EOF'
+# worked out from the strings and the xrefs
+prototype sub_401200 int check_license(char *key,int len)
+name sub_401200::v3 keylen
+type sub_401200::v2 char[32]
+data 0x601048 char *expected_key
+flow sub_401200::0x40123f return   # the dispatch tail never comes back
+readonly 0x601050+16   # the key table, written only by the installer
+volatile 0x40021000+4  # RCC->CR
+EOF
+kuna decompile ./a.out sub_401200 --json --assert @overrides.kuna
+```
+
+Accepted by `decompile`, `decompile-all`, `decompile-project` and `functions`.
+The console spellings, for a hand-driven `decomp_dbg` session, are the commands in
+the table's second column.
+
 **Paths containing spaces work (DIV-100).** This is the one surface that reaches the engine
 through a console *script* rather than an in-process call, and the console reads a
 filename with `s >> filename` — whitespace-delimited. An unquoted path with a space
@@ -138,10 +332,15 @@ payload`).
 ## `kuna decompile-all` / `kuna functions` — whole binary, machine-readable
 
 ```bash
+kuna functions ./a.out --summary --json                # where do I start?  (~1 KB)
 kuna decompile-all ./a.out --json                      # every CODE-backed function
 kuna decompile-all ./a.out --functions main,parse --json
 kuna decompile-all ./module.o --addr .text+0x660 --json
 kuna functions ./a.out --json                          # full callable-symbol inventory
+kuna functions ./a.out --sort size --limit 10          # the ten biggest functions
+kuna decompile-all ./a.out --reachable-from main --json    # only what main touches
+kuna decompile-all ./a.out --functions main,parse --json
+kuna decompile-all ./a.out --json                      # every CODE-backed function
 ```
 
 The whole-binary surface (the benchmark + LLM path). Runs **in-process**
@@ -149,13 +348,100 @@ The whole-binary surface (the benchmark + LLM path). Runs **in-process**
 `decompile_func` + `print_c`), loading + analyzing the binary **once** instead of
 `kuna decompile`'s subprocess-per-function (≈10×+ faster on a many-function binary).
 
+### Triage — narrowing the run
+
+An unfiltered whole-binary answer is only usable if the caller can narrow it
+*before* it is produced: a 211 KB PE crackme is 1,150 functions and **5.9 MB** of
+`decompile-all --json`, which is more context than the question is worth. Both
+surfaces therefore take the same selection flags, and they choose which entries
+the run *has* — `decompile-all` decompiles only what survives them, so narrowing
+is what makes the run cheap as well as small.
+
+| Flag | Selects |
+|---|---|
+| `--filter REGEX` | functions whose name — or any alias — matches (unanchored [Rust `regex`](https://docs.rs/regex) syntax; `(?i)` for case-insensitive) |
+| `--min-size N` / `--max-size N` | functions whose inventory `size` is within the inclusive bound |
+| `--reachable-from <name\|0xaddr>` | the named function plus everything it reaches through the call graph |
+| `--sort addr\|size\|name` | ordering — `addr` (default) ascending, `size` **largest first**, `name` ascending; every key breaks ties on the address, so a narrowed run is reproducible |
+| `--limit N` | keep the first N after sorting |
+
+Filters compose (they intersect), and a selection that matches nothing is an
+answer, not a failure: it exits 0 with `count: 0`. The zero-discovery verdict
+below stays attached to *discovery*, so it can never fire because a filter was
+too narrow. `--filter` / `--min-size` / `--max-size` / `--limit` are pure
+inventory arithmetic and cost nothing extra; `--reachable-from` additionally
+walks the program once.
+
+`--reachable-from` is the "what does the entry point actually touch" question,
+answered with **`kuna xrefs`' own reference edges** (`kuna-analysis`'s
+`listing::xrefs`) rather than a second call-graph model that could disagree with
+them. A call, a tail jump, and an *address-taken function pointer* all count as
+edges — the third one matters: on a glibc ELF `_start` reaches `main` only
+through the pointer it hands `__libc_start_main`, and a callback registered with
+`CreateThread` or `atexit` is likewise code the caller reaches. A materialized
+address that does not land on a known function entry is a string or a global, not
+a callee, and is not an edge. The operand resolves as a name first and only then
+as bare hex, so a function genuinely called `abc` is never read as `0xabc`. A
+name that resolves to nothing exits 1.
+
+On the 211 KB PE above, pointing `--reachable-from` at the one function that
+references the challenge prompt (found with `kuna xrefs --to` on the string) cuts
+the run from 1,036 decompiled functions to 307 — **5,943,701 bytes / 11.5 s down
+to 876,577 bytes / 2.5 s**, with the answer still inside it. Adding `--min-size
+256 --sort size --limit 10` brings it to 115,667 bytes / 1.8 s.
+
+### `kuna functions --summary` — orientation in one call
+
+```bash
+kuna functions ./crakersme.exe --summary --json    # 2,820 bytes
+```
+
+The first call to make on an unknown binary: it answers *where do I start*
+without emitting a function list at all, let alone pseudocode.
+
+```json
+{"binary":"…","count":1150,"total":1150,"error":null,
+ "summary":{"entry":{"name","address","address_hex"},
+            "reachable_from_entry":334,"no_callers":714,"code_bytes":171971,
+            "size_buckets":[{"bucket":"0","min_size":0,"max_size":0,"count":114}, …],
+            "largest":[{name,address,address_hex,aliases,size}, …]}}
+```
+
+- `entry` is the **image's declared entry point** (a PE `AddressOfEntryPoint` is
+  the CRT startup, not `main`), named with kuna's best name for it, or `null`
+  when the format declares none.
+- `reachable_from_entry` counts *discovered* functions the entry point reaches,
+  and is `null` when there is no entry point or nothing was decoded at it (a
+  packed image); `no_callers` counts *selected* functions that no CALL site
+  references — the roots and the dead code. Both come from the same xref edges
+  `--reachable-from` walks.
+- `size_buckets` partitions the whole extent domain (`0`, `1-15`, `16-63`,
+  `64-255`, `256-1023`, `1024-4095`, `4096+`), so nothing falls between buckets;
+  `max_size` is `null` on the open-ended one.
+- `largest` holds the `--limit` biggest functions, 10 by default.
+- The triage flags apply: `--summary --reachable-from main` summarizes just that
+  subgraph. `count` is what was selected, `total` what discovery found.
+
+Without `--json` the same measurements print as tab-separated lines. `--summary`
+is accepted on `decompile-all` too, where it short-circuits the decompile loop
+entirely — asking where to start must never cost a whole-binary decompile. Both
+surfaces load through the `functions` (inventory) driver bundle for it, so the
+numbers a caller orients by are the ones `kuna functions` reports.
+
+### The JSON documents
+
 `--json` emits
 `{binary,count,functions:[{name,address,address_hex,aliases,object_location,size,code,error,
 line_mappings:[{line_number,addresses}],variables:[{name,type,kind,arg_index,
 stack_offset,size,line_numbers,addresses}]}]}` (`kuna functions --json` emits
 `name`/`address`/`address_hex`/`aliases`/`object_location`/`size` per function).
 `object_location` is `null` for linked images and undefined imports; for a relocatable
-definition it is `{section_index,section,offset,offset_hex}`. `line_mappings` maps 1-based
+definition it is `{section_index,section,offset,offset_hex}`. `count` is what the
+`functions` array holds. `kuna functions --json` also carries `total`, the count
+before any triage narrowing; `decompile-all --json` carries `total` only when a
+triage flag actually narrowed it, so an unfiltered whole-binary document — the one
+the decbench backend and `kuna decompile --json` read — is byte-identical to
+before. `line_mappings` maps 1-based
 lines in `code` to sorted, unique machine-instruction VMAs. Variable `line_numbers`
 come from the printer's `varref` tokens; variable `addresses` are the union of the
 mapped instruction addresses on those lines. Both are empty when no backed use is
@@ -226,7 +512,23 @@ Behaviors specific to `decompile-all`:
   a stripped binary's unnamed exit/fatal wrappers no longer swallow the functions after
   them; on non-x86-64 binaries it likewise injects `funcstart_patterns on` and `aif on`
   unless the caller names them (see `docs/history.md`). `--option listing off` opts
-  out; single-function `kuna decompile` also injects Listing.
+  out. Single-function `kuna decompile` injects the Listing the same way, and
+  reaches for the **discovery half on a second attempt**: a by-name selection that
+  the console answers with `no function matches` is retried once with
+  `funcstart_patterns on` + `aif on` on a non-x86-64 image, so a name that exists
+  only because discovery generated it -- the `sub_<addr>` `kuna functions` and
+  `kuna strings` print -- selects the same entry those surfaces report. Nothing
+  that already resolved changes: the first attempt is the script it has always
+  been, and the retry is skipped for `--addr`, for an ambiguous selector, and for
+  a load or pipeline failure. The bundle is not injected up front because it
+  changes the entry set and not every entry it adds is real -- on i386 and PPC64
+  the prologue matcher seeds a start a few bytes inside a function it already
+  knew (PPC64 ELFv2's local entry point), and `funcboundflow` then truncates the
+  outer function at that seed. That trade is the whole-binary surfaces' to make,
+  where the wider inventory is the point; a single-function request that already
+  named its function gains nothing from it. (The gap was invisible under the
+  default `auto` policy below 500 KiB, which resolves to `aggressive` and names
+  all three options itself.)
   `kuna functions` shares the **discovery** half of that policy (DIV-68): on a
   non-x86-64 binary it injects `funcstart_patterns on`, `aif on`, and the
   `listing on` those two are gated behind, so the inventory always contains every
@@ -298,6 +600,33 @@ whichever one the symbol table holds first.
 | `read` | The target is loaded from. |
 | `write` | The target is stored to. |
 
+### One import, two addresses
+
+An imported function has two addresses and the import's name is on both: the
+**IAT/GOT slot** the loader fills in, and the **forwarding veneer**
+(`jmp qword ptr [slot]`) a direct `call` can target. `kuna functions --filter
+VirtualProtect` on a MinGW PE therefore answers with two entries — a veneer at
+`0x1400079b0` and a slot at `0x14000d234` — and which of the two a given call
+site references is a compiler decision, not something the question was about.
+
+`--to` is answered over both: the veneer, the slot it jumps through, and any
+other veneer through that same slot are one **alias class**, and the answer is
+the same whichever member is asked for. The class comes from the decoded
+forwarding jump, never from a shared name, so two unrelated functions that happen
+to be called `init` are never folded together. The veneer's own `jmp [slot]` is
+excluded from the answer — it is the other half of the callable, not a caller of
+it. `target.aliases` lists the other members (empty for everything that is not an
+import, which is nearly everything), and every row still carries the real
+`to_address` it landed on, so an agent can see whether a call site went through
+the veneer or straight through the slot.
+
+```
+# 2 references to VirtualProtect @ 0x1400079b0
+# same import at 0x14000d234 (VirtualProtect) - a forwarding veneer and the pointer slot it jumps through
+0x140001a9e	read	__write_memory.part.0+0x18e	CALL qword ptr [0x14000d234]
+0x140001cce	read	_pei386_runtime_relocator+0x19e	MOV R12,qword ptr [0x14000d234]
+```
+
 Flags: `--json`, `--kind call,jump,data,read,write` (repeatable-by-comma filter),
 plus the shared `--mode`, `--option N V`, `--slice`, `--target`, `--sleighpath`.
 
@@ -305,7 +634,8 @@ plus the shared `--mode`, `--option N V`, `--slice`, `--target`, `--sleighpath`.
 
 ```json
 {"binary": "...", "direction": "to", "count": N,
- "target": {"name","address","address_hex"},
+ "target": {"name","address","address_hex",
+            "aliases": [{"name","address","address_hex"}]},
  "xrefs": [{"address","address_hex","kind",
             "from_address","from_address_hex","to_address","to_address_hex",
             "from_function": {"name","address","address_hex"},
@@ -334,9 +664,286 @@ changes no emitted C. Function discovery is the `kuna functions` inventory, whic
 the walk then extends by following the call graph out of it, so a callee the
 inventory missed is still covered.
 
+`--mode` is **not** resolved through `auto` here, unlike the decompiling surfaces:
+`auto` selects `aggressive` under 500 KiB, and `aggressive` is a preset for the
+quality of emitted *C*. Two of the passes it turns on cost a whole extra decode of
+the program apiece and answer nothing a reference query reads — the analysis-tier
+Listing walk (whose recursive descent `xrefs` repeats itself over the same bytes)
+and `operand_refs` (whose scalar markup `xrefs` recomputes from the p-code it
+already has). So the query surface defaults to the shipped defaults, and
+`kuna xrefs --mode aggressive` still asks for the full analysis bundle explicitly.
+On a 466 KB obfuscated i386 image the two skipped decodes were 1.08 s and 0.58 s of
+a 3.4 s answer that is byte-identical without them.
+
+Dropping the Listing does **not** drop the discovery it fed. The query surface takes
+the same DIV-20/DIV-68 discovery flags every other surface does (`funcstart_patterns`,
+`aif`); it just consumes them itself, from its own decode:
+
+* the `<patternpairs>` prologue starts go straight into the walk's seed set;
+* the speculative gap-walk (`aif`) runs over the partition the walk leaves behind,
+  and the functions it accepts are walked like any other, so their references join
+  the answer. Without it, a function reached only through a function-pointer table
+  is in no seed set and `--to` loses every call site inside it — measured on a
+  stripped i386 PE as 61 of one function's 174 callers.
+
+The address you ask about is itself a seed. A recursive descent answers for the code
+it can reach, and an entry with no inbound CALL edge is not reachable from any seed
+set, so `kuna xrefs --from <that entry>` used to answer `count: 0` about a function
+that plainly has references. It is now walked last, after the seeded descent has
+drained, so it can only add coverage — an address the walk already decoded is
+attributed exactly as before, and an address that does not decode is not recorded as
+a function at all.
+
 A target nothing references is exit `0` with `count: 0` — an answer, not a
 failure. A name that resolves to nothing is exit `1` with the reason on stderr; a
 malformed command line is exit `2` with the usage block.
+
+## `kuna disassemble` / `kuna read` — instructions or bytes, when the pseudocode is not enough
+
+```bash
+kuna disassemble ./a.out main                    # a function, whole extent
+kuna disassemble ./a.out main --json             # machine-readable
+kuna disassemble ./stripped.bin 0x8049850 --addr # a raw address
+kuna disassemble ./a.out 0x1140-0x11a0           # an explicit range
+kuna disassemble ./a.out 0x2010 --addr --bytes 64  # bytes no function owns
+kuna read ./a.out 0x100003f30 --addr --bytes 96  # a hexdump of a data address
+kuna disassemble ./packed.bin 0x2010 --addr --as code   # decode data as code anyway
+```
+
+The floor to fall back to when the ceiling gives way. Every RE agent that asked
+for this had already tried decompiling: a function with no recovered body, a
+dispatcher emitted as `switch(0)`, an indirect call through a stack buffer the
+program decrypts at runtime. When the pseudocode cannot answer, the instructions
+still can — and until now the only way to see one was to leave kuna for
+`objdump`.
+
+The target is a **name**, an **address**, or a **range**:
+
+| Target | What is listed |
+|---|---|
+| `main` | The function's extent — the same clip `kuna functions` reports as `size`. A name is resolved as a symbol first, so a function really called `abc` is never read as `0xabc`. |
+| `0x8049850` (`--addr` for bare hex) | That function's extent if the address is a discovered entry; otherwise 64 bytes from exactly there. |
+| `0x1140-0x11a0`, `0x1140..0x11a0` | Exactly that half-open span — the direct replacement for `objdump -d --start-address=.. --stop-address=..`. |
+
+`--count N` stops after N listed entries and `--bytes N` after N bytes; either
+overrides the derived extent, and a listing stops at whichever limit it reaches
+first. Also accepted: `--as`, `--json`, plus the shared `--mode`, `--option N V`,
+`--slice`, `--target`, `--sleighpath`.
+
+```
+$ kuna disassemble ./fauxware main --count 9
+# 9 instructions at main @ 0x40071d (0x40071d..0x40073e, 33 bytes)
+0x40071d      55                    PUSH RBP
+0x40071e      4889e5                MOV RBP,RSP
+0x400721      4883ec40              SUB RSP,0x40
+0x400725      897dcc                MOV dword ptr [RBP + -0x34],EDI
+0x400728      488975c0              MOV qword ptr [RBP + -0x40],RSI
+0x40072c      c645f800              MOV byte ptr [RBP + -0x8],0x0
+0x400730      c645e800              MOV byte ptr [RBP + -0x18],0x0
+0x400734      bf15094000            MOV EDI,0x400915
+0x400739      e8d2fdffff            CALL 0x400510
+```
+
+Address, raw bytes, instruction. The instruction text carries exactly **one**
+space between mnemonic and operands — the same spelling `kuna xrefs` puts in its
+`instruction` field, so one `grep 'CALL 0x400510'` matches both surfaces and the
+JSON. `--json` emits
+
+```json
+{"binary": "...", "kind": "code", "target": {"name","address","address_hex"},
+ "start": N, "start_hex": "0x..", "end": N, "end_hex": "0x..",
+ "count": N, "bytes": N, "truncated": false, "notes": [],
+ "instructions": [{"address","address_hex","size","bytes","mnemonic","operands","text"}]}
+```
+
+`bytes` on a row is that instruction's own bytes as contiguous lowercase hex
+(`"4889e5"`); `end` is one past the last instruction actually listed, so a
+truncated listing hands back the address to resume from. `kind` is `"code"` here
+and `"data"` in the byte view below.
+
+Bytes the translator will not decode are listed in place as `.byte 0x<nn>` rows,
+one byte each, and the walk continues — a listing that ran into inline data says
+so where it happened instead of stopping silently.
+
+### The byte view
+
+An instruction listing is the wrong answer for a data address, and for a while it
+was the only one on offer. An agent that asked kuna for the encoded globals at
+`0x100003f30` got `ADD byte ptr [RCX],AL` / `OR CL,byte ptr [RBX]` — a correct
+decode of `00 01 02 03 ..` and a lie about the program — and left for `xxd`.
+
+So the target picks its own rendering, and `--as` overrides it:
+
+| `--as` | What is listed |
+|---|---|
+| `auto` (default for `disassemble`) | Instructions, unless the start address is in a section the loader marks as data and not as code (`.rdata`, `.rodata`, `__TEXT,__const`) — then bytes, with the reason on **stderr**. A discovered function entry is always code, wherever it was linked. |
+| `code` | Instructions, whatever the section says. A packer puts real code in `.data`. |
+| `data` (default for `kuna read`) | Bytes, whatever the section says. |
+
+`kuna read` is the same command with `--as data` as its default — the spelling to
+reach for when what you want is the bytes, not a view of them as instructions.
+
+```
+$ kuna read ./crackme 0x100003f30 --addr --bytes 96
+# 96 bytes at 0x100003f30 (0x100003f30..0x100003f90)
+0x100003f30   00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f  |................|
+0x100003f40   10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10  |................|
+0x100003f50   20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20  |                |
+0x100003f60   25 73 00 43 72 61 63 6b 6d 65 20 4c 65 76 65 6c  |%s.Crackme Level|
+```
+
+Sixteen bytes a row, space-separated, with the printable-ASCII gutter — `xxd -g1`
+with kuna's own address column, so the two are diffable. `--json` replaces
+`instructions` with the contiguous span and its rows:
+
+```json
+{"binary": "...", "kind": "data", "target": {...},
+ "start": N, "start_hex": "0x..", "end": N, "end_hex": "0x..",
+ "count": N, "bytes": N, "truncated": false, "notes": ["..."],
+ "hex": "000102030405060708090a0b0c0d0e0f",
+ "rows": [{"address","address_hex","size","bytes","ascii"}]}
+```
+
+`hex` is the whole span in one piece and `rows[].bytes` is that same string cut
+into sixteens — use either, never both. `count` is the number of listed entries
+in both views (instructions, or hexdump rows); `bytes` is the span. A byte view
+honors the requested end exactly, where an instruction listing overshoots to the
+end of the instruction that straddles it. `notes` carries anything the command
+would have said on stderr, so a `--json` caller never has to read two streams.
+
+A listing whose length nobody asked for is capped at 1024 instructions, flagged
+`truncated` and marked in the header. The extent is only an upper bound — clipped
+at the next discovered entry or the end of the CODE section — so where discovery
+is thin one "function" can run to the end of `.text` (`main` in one unpacked
+crackme clips to 19,106 instructions). An explicit `--count`, `--bytes` or range
+is honored however long.
+
+This is a query, not an engine change, and it reinvents nothing: the binary is
+loaded once through the same in-process seam `decompile-all` uses
+(`bootstrap_from_object` → `commit_pending_analysis`), and every row comes from
+`Translate::print_assembly` — the seam the console's own `disassemble` command
+(`IfcPrintdisasm`) and the `decompile-project` `.asm` export already print
+through. Nothing is committed into the engine, nothing is decompiled, and no
+emitted C changes. Verified against `objdump -d`: 19,368 instructions across four
+binaries — a 32-bit x86 ELF, an x86-64 ELF, a stripped x86-64 PIE and an x86-64
+PE — byte-identical at every address, with the same instruction boundaries.
+
+Exit codes follow the house contract: a listing is `0`; an unresolvable name or
+an address with nothing mapped behind it is `1` with the reason on stderr (on a
+packed image, run `kuna unpack` first — the original addresses do not exist until
+you do); a malformed command line is `2` with the usage block.
+
+## `kuna strings` — the string inventory
+
+```bash
+kuna strings ./a.out                                  # every literal, with the functions that use it
+kuna strings ./crackme.exe --json                     # machine-readable
+kuna strings ./a.out --filter '(?i)password|flag'     # regex over the text
+kuna strings ./crackme.exe --encoding utf16           # wide Windows literals
+kuna strings ./a.out --section .rodata --min-length 8
+```
+
+The triage query: what text is in this binary, where does it live, and — the part
+`strings(1)` cannot answer — **which function uses it**. Finding the prompt is
+never the goal; opening the routine that prints it is, and that hop is one
+command here because kuna already has both halves.
+
+The rows are the analyzer tier's **existing** string detection, not a second
+scanner: the ASCII inventory is the same `StringLiteralPass` scan
+(`kuna-analysis/src/analyzers/strings/`, the port of Ghidra's `StringsAnalyzer`)
+that runs at load and plants the `char[N]` literals `kuna decompile` prints, so a
+row here is a string the decompiler also knows about, at the same address. The
+reference columns come from the same index behind `kuna xrefs`
+(`kuna-analysis/src/listing/xrefs.rs`). Nothing is committed into the engine and
+no emitted C changes.
+
+| Column | What |
+|---|---|
+| `address` / `address_hex` | The **virtual** address of the first character byte — not a file offset, so it pastes straight into `kuna decompile --addr` or `kuna xrefs --to`. |
+| `text` | The literal, terminator excluded. TAB/CR/LF are escaped in the text surface so a row stays one line; `--json` carries them verbatim. |
+| `length` | Visible characters (code units for a UTF-16 row). `byte_length` is what it occupies, terminator included. |
+| `encoding` | `ascii` or `utf16` — which width found it. |
+| `section` | The section it lives in, `null` on an image scanned by segment. |
+| `xrefs_count` | How many references land anywhere in the literal's extent, so `lea rax,[fmt+4]` still counts as a use. |
+| `functions` | The functions those references come from, `{name, address, address_hex}` each. |
+
+### Flags
+
+`--encoding ascii\|utf16\|all` (default `ascii`). `ascii` is the analyzer's own
+1-byte width. **`utf16` is not a convenience** — a UTF-16LE literal read at 1-byte
+width ends at the NUL after its first character, which is exactly why a wide
+Windows API argument renders as `LoadLibraryW("n")` instead of `L"ntdll.dll"`. The
+2-byte matcher mirrors the 1-byte one exactly (same character recognizer, same
+require-NUL-end rule, same minimum), over units on even addresses. Scope is
+UTF-16**LE** whose units are in the 1-byte charset — the Windows-API case; a
+big-endian or non-Latin wide literal is not recovered.
+
+`--min-length N` (default `5`, the analyzer's own `minStringLength`). An unflagged
+run reports exactly the inventory the engine marked up.
+
+`--filter REGEX` matches anywhere in the text. The flavor is
+`. * + ? | () [] {n,m} ^ $`, the `\d \w \s` shorthands and their negations,
+backslash escapes, and a leading `(?i)` for case-insensitive matching; groups are
+always non-capturing. Anything outside that — a lookaround, `\b`, `\xNN` — is a
+command-line error (exit `2`), never silently reinterpreted into a different
+pattern. Backtracking is budgeted: a pathological
+pattern reports those rows as non-matching with a warning on stderr rather than
+hanging.
+
+`--section NAME` restricts the scan to one section; the leading `.` is optional
+(`--section rdata` finds `.rdata`). A section the image does not have is exit `1`
+naming the ones it does.
+
+`--no-xrefs` skips the reference walk — the expensive half, since it loads and
+lifts the program. Rows still carry text, address, and section; `xrefs_count` is
+`0` and `functions` empty.
+
+Plus the shared `--json`, `--mode`, `--option N V`, `--slice`, `--target`,
+`--sleighpath`.
+
+### Output
+
+```
+# 8 strings in ./SCORPiON.exe (ascii, min length 5, scanned by sections)
+0x416030	ascii	15	.data	1	sub_401160	Correct serial!
+0x41605c	ascii	16	.data	1	sub_401160	E24546F5F6B39F59
+0x41613c	ascii	14	.data	1	sub_401350	%[^-]-%[^-]-%s
+```
+
+A `#` header naming the query, then one tab-separated row per string: address,
+encoding, length, section, reference count, referencing functions, text. Text is
+last because it is the only unbounded column.
+
+```json
+{"binary": "...", "encoding": "ascii", "min_length": 5,
+ "filter": null, "section": null, "scanned": "sections", "xrefs": true, "count": N,
+ "strings": [{"address","address_hex","text","length","byte_length","encoding",
+              "section","xrefs_count",
+              "functions": [{"name","address","address_hex"}]}]}
+```
+
+### What it deliberately does not report
+
+The scan covers the **loaded and initialized** address set — the allocated,
+file-backed sections, which is Ghidra's `getLoadedAndInitializedAddressSet` — and
+takes only NUL-terminated runs. So `.strtab`/`.symtab` symbol names and
+unterminated printable runs, which `strings(1)` prints by the thousand, are
+absent: those are not program strings, and the ones that name something are
+already in `kuna functions`. That narrowing is why the output is a few hundred
+rows instead of a hundred thousand.
+
+An image with no usable section table — a UPX-packed ELF keeps its program
+headers and nothing else — falls back to its `PT_LOAD` segments, and the
+`scanned` field says which set was walked (`sections` or `segments`). On a packed
+image the answer is the packer's own data; unpack first and ask again:
+
+```bash
+kuna unpack ./packed -o ./unpacked && kuna strings ./unpacked --filter '(?i)flag'
+```
+
+A binary with no strings is exit `0` with `count: 0` — an answer, not a failure.
+An unreadable or unparseable binary, or an unknown `--section`, is exit `1` with
+the reason on stderr; a malformed command line is exit `2` with the usage block.
 
 ## `kuna unpack` — statically unpack a UPX-packed executable
 

@@ -1,0 +1,69 @@
+<decompilertest>
+<!--
+    ptrdepthcap: a small-string-optimized object makes ActionInferTypes escalate
+    a pointer type without bound (kuna RE-need c-string-objects-become).
+
+    An SSO string object keeps EITHER the characters themselves OR a pointer to
+    them in its first 8 bytes, chosen on the capacity field.  The compiler emits
+    the two arms as a MULTIEQUAL over `p = &obj` (a PTRSUB off the spacebase,
+    typed pointer-to-the-mapped-local) and `p = obj.ptr` (a LOAD from that same
+    address, typed as the local itself).  That is the equation `T == ptr(T)`,
+    which no finite type satisfies, so propagateOneType adds exactly ONE pointer
+    level per pass and only stops at the empirical seven-pass settle ceiling.
+    The object and every temporary that touches it are then declared with three,
+    four or five levels of indirection.
+
+    Stage model: S5 type propagation (`propagateTypeEdge`).  P0 assertion:
+    `option ptrdepthcap on|off`.  The rule applied when on is upstream's own
+    `TypeFactory::getTypePointerNoDepth` (type.cc:1509), which Ghidra already
+    uses at LOAD/STORE but not at the spacebase-PTRSUB arm that drives this,
+    hoisted to the single propagation funnel: a candidate whose target is itself
+    a pointer-to-pointer collapses to `ptr(undefined<N>)`, a fixed point.  Depth
+    1 and depth 2 over a concrete base are untouched.
+
+    Layout (gcc -O0 -fno-stack-protector, five copies of the SSO pointer so the
+    lattice has enough edges to run the escalation to its ceiling):
+      0x100000  check: obj[3] = 0xf; fill(obj,in,5);
+                       a=b=c=d=e=(char*)obj;
+                       if (obj[3] >= 0x10) a=b=c=d=e=(char*)obj[0];
+                       sink(a[0]); sink(b[1]); sink(c[2]); sink(d[3]); return e[4];
+      0x100120  fill: ret        (stub)
+      0x100130  sink: ret        (stub)
+
+    Pass 1 (`option ptrdepthcap off`, upstream behaviour) reproduces the bug:
+    the five copies are declared `char ****` (assert #1).
+    Pass 2 (`option ptrdepthcap on`) settles the lattice: `char *`.  Assert #2
+    pins EVERY three-or-more-star spelling across BOTH passes to exactly the 7 of
+    the buggy pass (6 declarations + 1 cast), so any leak back into the capped
+    pass raises the count and fails the test.
+-->
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">
+554889e54883ec6048897da848c745b00000000048c745c00000000048c745c8
+0f000000488b4da8488d45b0ba050000004889ce4889c7e8e4000000488d45b0
+488945f8488b45f8488945f0488b45f8488945e8488b45f8488945e0488b45f8
+488945d8488b45c84883f80f7628488b45b0488945f8488b45f8488945f0488b
+45f8488945e8488b45f8488945e0488b45f8488945d8488b45f80fb600480fbe
+c04889c7e887000000488b45f04883c0010fb600480fbec04889c7e870000000
+488b45e84883c0020fb600480fbec04889c7e859000000488b45e04883c0030f
+b600480fbec04889c7e842000000488b45d84883c0040fb600480fbec0c9c390
+9090909090909090909090909090909090909090909090909090909090909090
+c3909090909090909090909090909090c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="check"/>
+<symbol space="ram" offset="0x100120" name="fill"/>
+<symbol space="ram" offset="0x100130" name="sink"/>
+</binaryimage>
+<script>
+  <com>option ptrdepthcap off</com>
+  <com>lo fu check</com>
+  <com>dec</com>
+  <com>print C</com>
+  <com>option ptrdepthcap on</com>
+  <com>dec</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="ptrdepthcap #1: option off leaves the unbounded escalation (bug reproduces: 6 four-star decls + 1 cast)" min="7" max="7">char \*\*\*\*</stringmatch>
+<stringmatch name="ptrdepthcap #2: option on settles the lattice (7 in the off pass + 0 in the on pass = 7; any leak back raises the count)" min="7" max="7">\*\*\*</stringmatch>
+</decompilertest>

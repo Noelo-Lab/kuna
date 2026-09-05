@@ -1,0 +1,1144 @@
+{
+  "schema": "re-needs-index/1",
+  "generated_by": "scripts.repipe.needs",
+  "count": 35,
+  "rejected_count": 0,
+  "by_status": {
+    "closed": 31,
+    "open": 4
+  },
+  "by_track": {
+    "perf": 2,
+    "quality": 21,
+    "tooling": 12
+  },
+  "by_severity": {
+    "blocker": 2,
+    "major": 29,
+    "minor": 4
+  },
+  "by_reject_reason": {},
+  "needs": [
+    {
+      "need_id": "argument-recovery-knobs-still",
+      "title": "call-argument recovery options are inert: enabling calleearity/varargstackargs changes nothing",
+      "track": "quality",
+      "status": "closed",
+      "severity": "major",
+      "probe_id": "p-ea5af8c3b2f7",
+      "acceptance_id": "a-a94fa26848a4",
+      "hypothesis_status": "overturned",
+      "credibility": 1.0,
+      "instances": 2,
+      "challenges": [
+        "6547b4d50f4238b24302b588",
+        "69a3822f7b3cc38c80464da4"
+      ],
+      "rounds": [
+        2
+      ],
+      "first_seen_round": 2,
+      "attempts": 0,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-decomp"
+      ],
+      "scope": "small",
+      "regression_of": "call-args-discarded",
+      "pr": null,
+      "closed_in_round": 2,
+      "closing_pr": "376",
+      "reject_reason": null,
+      "score": 1351.555932,
+      "path": "docs/re-needs/argument-recovery-knobs-still.md"
+    },
+    {
+      "need_id": "strings-json-fails-report",
+      "title": "strings JSON fails to report the owning function for a directly referenced prompt",
+      "track": "quality",
+      "status": "closed",
+      "severity": "major",
+      "probe_id": "p-3820d5b66146",
+      "acceptance_id": "a-f0c7bd5b4a7e",
+      "hypothesis_status": "upheld",
+      "credibility": 0.85,
+      "instances": 1,
+      "challenges": [
+        "5ab77f6333c5d40ad448ca52"
+      ],
+      "rounds": [
+        2
+      ],
+      "first_seen_round": 2,
+      "attempts": 1,
+      "covered_by_option": "picbase",
+      "touches": [
+        "decompiler/crates/kuna-analysis/src/listing/kuna_picbase.rs",
+        "decompiler/crates/kuna-analysis/src/listing/xrefs.rs"
+      ],
+      "scope": "large",
+      "regression_of": "no-strings-inventory",
+      "pr": 378,
+      "closed_in_round": 2,
+      "closing_pr": 378,
+      "reject_reason": null,
+      "score": 1073.935699,
+      "path": "docs/re-needs/strings-json-fails-report.md"
+    },
+    {
+      "need_id": "analysis-generated-function-name",
+      "title": "Analysis-generated function name cannot be used by decompile",
+      "track": "tooling",
+      "status": "closed",
+      "severity": "major",
+      "probe_id": "p-4c57e2d76dcd",
+      "acceptance_id": "a-022969ccc61d",
+      "hypothesis_status": "upheld",
+      "credibility": 0.85,
+      "instances": 2,
+      "challenges": [
+        "5ab77f5533c5d40ad448c1ea"
+      ],
+      "rounds": [
+        2
+      ],
+      "first_seen_round": 2,
+      "attempts": 0,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-cli/src/decompile.rs"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": null,
+      "closed_in_round": 2,
+      "closing_pr": "377",
+      "reject_reason": null,
+      "score": 21.972246,
+      "path": "docs/re-needs/analysis-generated-function-name.md"
+    },
+    {
+      "need_id": "no-cli-function-boundary-override",
+      "title": "an agent cannot tell kuna where a function starts or ends",
+      "track": "tooling",
+      "status": "closed",
+      "severity": "blocker",
+      "probe_id": "p-83ce32ba278c",
+      "acceptance_id": "a-88c4db106ade",
+      "hypothesis_status": "upheld",
+      "credibility": 1.0,
+      "instances": 1,
+      "challenges": [],
+      "rounds": [
+        2
+      ],
+      "first_seen_round": 2,
+      "attempts": 0,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-cli/src",
+        "decompiler/crates/kuna-console/src/ifacedecomp.rs"
+      ],
+      "scope": "large",
+      "regression_of": null,
+      "pr": null,
+      "closed_in_round": 2,
+      "closing_pr": "374",
+      "reject_reason": null,
+      "score": 20.794415,
+      "path": "docs/re-needs/no-cli-function-boundary-override.md"
+    },
+    {
+      "need_id": "overlapping-anti-disassembly-sequence",
+      "title": "Overlapping anti-disassembly sequence produces bogus out-of-image code and corrupted checker dataflow",
+      "track": "quality",
+      "status": "closed",
+      "severity": "blocker",
+      "probe_id": "p-410dd063e811",
+      "acceptance_id": "a-52c2ad89b522",
+      "hypothesis_status": "upheld",
+      "credibility": 0.85,
+      "instances": 1,
+      "challenges": [
+        "5ab77f6333c5d40ad448ca52"
+      ],
+      "rounds": [
+        2
+      ],
+      "first_seen_round": 2,
+      "attempts": 0,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-decomp"
+      ],
+      "scope": "large",
+      "regression_of": null,
+      "pr": null,
+      "closed_in_round": 2,
+      "closing_pr": "383",
+      "reject_reason": null,
+      "score": 20.794415,
+      "path": "docs/re-needs/overlapping-anti-disassembly-sequence.md"
+    },
+    {
+      "need_id": "large-function-malformed-output",
+      "title": "a large checker decompiles into malformed and prohibitively noisy C",
+      "track": "quality",
+      "status": "open",
+      "severity": "major",
+      "probe_id": "p-8355fed97a86",
+      "acceptance_id": "a-f6e8100daa0b",
+      "hypothesis_status": "inconclusive",
+      "credibility": 0.8,
+      "instances": 1,
+      "challenges": [
+        "6a3822888a86e4c2c55254fe"
+      ],
+      "rounds": [
+        1,
+        2
+      ],
+      "first_seen_round": 1,
+      "attempts": 0,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-decomp"
+      ],
+      "scope": "large",
+      "regression_of": null,
+      "pr": null,
+      "closed_in_round": null,
+      "closing_pr": null,
+      "reject_reason": null,
+      "score": 13.862944,
+      "path": "docs/re-needs/large-function-malformed-output.md"
+    },
+    {
+      "need_id": "no-cli-structuring-override",
+      "title": "an agent cannot reclassify a flow from the CLI -- `--assert` has no `flow` directive",
+      "track": "tooling",
+      "status": "closed",
+      "severity": "major",
+      "probe_id": "p-a862d011f87f",
+      "acceptance_id": "a-158ef4220dee",
+      "hypothesis_status": "upheld",
+      "credibility": 1.0,
+      "instances": 1,
+      "challenges": [],
+      "rounds": [
+        2
+      ],
+      "first_seen_round": 2,
+      "attempts": 0,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-cli/src/assertdecl.rs",
+        "decompiler/crates/kuna-console/src/ifacedecomp.rs",
+        "decompiler/crates/kuna-decomp/phases.toml"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": "398",
+      "closed_in_round": 2,
+      "closing_pr": "398",
+      "reject_reason": null,
+      "score": 13.862944,
+      "path": "docs/re-needs/no-cli-structuring-override.md"
+    },
+    {
+      "need_id": "pe-function-inventory-labels",
+      "title": "PE function inventory labels executable routines as vftables",
+      "track": "tooling",
+      "status": "closed",
+      "severity": "major",
+      "probe_id": "p-8e912566d7ea",
+      "acceptance_id": "a-d6666365cbb6",
+      "hypothesis_status": "overturned",
+      "credibility": 0.7,
+      "instances": 1,
+      "challenges": [
+        "6547b4d50f4238b24302b588"
+      ],
+      "rounds": [
+        2
+      ],
+      "first_seen_round": 2,
+      "attempts": 0,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-cli/src/functions.rs",
+        "decompiler/crates/kuna-analysis/src/listing"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": null,
+      "closed_in_round": 2,
+      "closing_pr": "382",
+      "reject_reason": null,
+      "score": 13.862944,
+      "path": "docs/re-needs/pe-function-inventory-labels.md"
+    },
+    {
+      "need_id": "strings-inventory-omits-statically",
+      "title": "Strings inventory omits statically constructed strings needed by the checker",
+      "track": "quality",
+      "status": "open",
+      "severity": "major",
+      "probe_id": "p-7c997ef1f023",
+      "acceptance_id": "a-926bce988084",
+      "hypothesis_status": "inconclusive",
+      "credibility": 0.7,
+      "instances": 1,
+      "challenges": [
+        "653d88600f4238b24302b0ec"
+      ],
+      "rounds": [
+        2
+      ],
+      "first_seen_round": 2,
+      "attempts": 0,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-analysis/src/analyzers/strings"
+      ],
+      "scope": "large",
+      "regression_of": null,
+      "pr": null,
+      "closed_in_round": null,
+      "closing_pr": null,
+      "reject_reason": null,
+      "score": 13.862944,
+      "path": "docs/re-needs/strings-inventory-omits-statically.md"
+    },
+    {
+      "need_id": "wide-api-string-args",
+      "title": "wide (UTF-16) Windows API string arguments collapse to one character",
+      "track": "quality",
+      "status": "closed",
+      "severity": "major",
+      "probe_id": "p-3c2902ec2d39",
+      "acceptance_id": "a-038711a56c33",
+      "hypothesis_status": "inconclusive",
+      "credibility": 0.8,
+      "instances": 1,
+      "challenges": [
+        "65acadf3eef082e477ff5ede"
+      ],
+      "rounds": [
+        1,
+        2
+      ],
+      "first_seen_round": 1,
+      "attempts": 0,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-decomp"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": "399",
+      "closed_in_round": 2,
+      "closing_pr": "399",
+      "reject_reason": null,
+      "score": 13.862944,
+      "path": "docs/re-needs/wide-api-string-args.md"
+    },
+    {
+      "need_id": "xrefs-unify-pe-import",
+      "title": "xrefs does not unify a PE import thunk with its IAT symbol",
+      "track": "tooling",
+      "status": "closed",
+      "severity": "major",
+      "probe_id": "p-dc85ba90889e",
+      "acceptance_id": "a-27cf701da662",
+      "hypothesis_status": "upheld",
+      "credibility": 0.7,
+      "instances": 1,
+      "challenges": [
+        "694fd2f60c16072f40f5a4b3"
+      ],
+      "rounds": [
+        2
+      ],
+      "first_seen_round": 2,
+      "attempts": 0,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-analysis/src/listing/xrefs.rs"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": null,
+      "closed_in_round": 2,
+      "closing_pr": "375",
+      "reject_reason": null,
+      "score": 13.862944,
+      "path": "docs/re-needs/xrefs-unify-pe-import.md"
+    },
+    {
+      "need_id": "c-string-objects-become",
+      "title": "C++ string objects become five-level pointer types in the checker",
+      "track": "quality",
+      "status": "closed",
+      "severity": "major",
+      "probe_id": "p-a597c89a3648",
+      "acceptance_id": "a-c52c9a0120b6",
+      "hypothesis_status": "overturned",
+      "credibility": 0.7,
+      "instances": 1,
+      "challenges": [
+        "6547b4d50f4238b24302b588"
+      ],
+      "rounds": [
+        2
+      ],
+      "first_seen_round": 2,
+      "attempts": 1,
+      "covered_by_option": "ptrdepthcap",
+      "touches": [
+        "decompiler/crates/kuna-decomp"
+      ],
+      "scope": "large",
+      "regression_of": null,
+      "pr": "392",
+      "closed_in_round": 2,
+      "closing_pr": "392",
+      "reject_reason": null,
+      "score": 9.241962,
+      "path": "docs/re-needs/c-string-objects-become.md"
+    },
+    {
+      "need_id": "cli-mode-read-raw",
+      "title": "No CLI mode to read raw bytes from data addresses",
+      "track": "tooling",
+      "status": "closed",
+      "severity": "major",
+      "probe_id": "p-74901277a96c",
+      "acceptance_id": "a-ecb7f35d39aa",
+      "hypothesis_status": "inconclusive",
+      "credibility": 0.85,
+      "instances": 1,
+      "challenges": [
+        "653d88600f4238b24302b0ec"
+      ],
+      "rounds": [
+        2
+      ],
+      "first_seen_round": 2,
+      "attempts": 1,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-cli"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": 379,
+      "closed_in_round": 2,
+      "closing_pr": "379",
+      "reject_reason": null,
+      "score": 9.241962,
+      "path": "docs/re-needs/cli-mode-read-raw.md"
+    },
+    {
+      "need_id": "direct-address-keyboard-handler",
+      "title": "Direct-address keyboard handler decompilation annexes the unrelated renderer",
+      "track": "quality",
+      "status": "closed",
+      "severity": "major",
+      "probe_id": "p-36f0974fc119",
+      "acceptance_id": "a-f13adb91d5d4",
+      "hypothesis_status": "inconclusive",
+      "credibility": 0.7,
+      "instances": 1,
+      "challenges": [
+        "6989ca5da15272fa37a80c43"
+      ],
+      "rounds": [
+        2
+      ],
+      "first_seen_round": 2,
+      "attempts": 1,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-decomp"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": "395",
+      "closed_in_round": 2,
+      "closing_pr": "395",
+      "reject_reason": null,
+      "score": 9.241962,
+      "path": "docs/re-needs/direct-address-keyboard-handler.md"
+    },
+    {
+      "need_id": "keyboard-callback-uses-undefined",
+      "title": "Keyboard callback uses undefined locals as incoming event arguments",
+      "track": "quality",
+      "status": "closed",
+      "severity": "major",
+      "probe_id": "p-2fa68bfb8456",
+      "acceptance_id": "a-d6b2084f35d5",
+      "hypothesis_status": "overturned",
+      "credibility": 0.7,
+      "instances": 1,
+      "challenges": [
+        "6989ca5da15272fa37a80c43"
+      ],
+      "rounds": [
+        2
+      ],
+      "first_seen_round": 2,
+      "attempts": 1,
+      "covered_by_option": "inputparamgap",
+      "touches": [
+        "decompiler/crates/kuna-decomp"
+      ],
+      "scope": "large",
+      "regression_of": null,
+      "pr": "405",
+      "closed_in_round": 2,
+      "closing_pr": "405",
+      "reject_reason": null,
+      "score": 9.241962,
+      "path": "docs/re-needs/keyboard-callback-uses-undefined.md"
+    },
+    {
+      "need_id": "mach-o-entry-function",
+      "title": "Mach-O entry function is not identified as main",
+      "track": "quality",
+      "status": "closed",
+      "severity": "major",
+      "probe_id": "p-d21d1d48685f",
+      "acceptance_id": "a-9e76eaa91fcb",
+      "hypothesis_status": "inconclusive",
+      "credibility": 0.7,
+      "instances": 1,
+      "challenges": [
+        "653d88600f4238b24302b0ec"
+      ],
+      "rounds": [
+        2
+      ],
+      "first_seen_round": 2,
+      "attempts": 1,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-analysis/src/loader"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": "400",
+      "closed_in_round": 2,
+      "closing_pr": "400",
+      "reject_reason": null,
+      "score": 9.241962,
+      "path": "docs/re-needs/mach-o-entry-function.md"
+    },
+    {
+      "need_id": "no-cli-data-code-override",
+      "title": "an agent cannot mark a range as code or data, or set a type at an address",
+      "track": "tooling",
+      "status": "closed",
+      "severity": "major",
+      "probe_id": null,
+      "acceptance_id": "a-567d3207ce62",
+      "hypothesis_status": "overturned",
+      "credibility": 1.0,
+      "instances": 1,
+      "challenges": [],
+      "rounds": [
+        2
+      ],
+      "first_seen_round": 2,
+      "attempts": 1,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-cli/src",
+        "decompiler/crates/kuna-console/src/ifacedecomp.rs"
+      ],
+      "scope": "large",
+      "regression_of": null,
+      "pr": "391",
+      "closed_in_round": 2,
+      "closing_pr": "391",
+      "reject_reason": null,
+      "score": 9.241962,
+      "path": "docs/re-needs/no-cli-data-code-override.md"
+    },
+    {
+      "need_id": "no-cli-rename-or-prototype-override",
+      "title": "an agent cannot rename or retype anything, or force a prototype",
+      "track": "tooling",
+      "status": "closed",
+      "severity": "major",
+      "probe_id": null,
+      "acceptance_id": "a-a58fc408288b",
+      "hypothesis_status": "overturned",
+      "credibility": 1.0,
+      "instances": 1,
+      "challenges": [],
+      "rounds": [
+        2
+      ],
+      "first_seen_round": 2,
+      "attempts": 1,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-cli/src",
+        "decompiler/crates/kuna-console/src/assertions.rs"
+      ],
+      "scope": "large",
+      "regression_of": null,
+      "pr": "389",
+      "closed_in_round": 2,
+      "closing_pr": "389",
+      "reject_reason": null,
+      "score": 9.241962,
+      "path": "docs/re-needs/no-cli-rename-or-prototype-override.md"
+    },
+    {
+      "need_id": "ppc64-localentry-splits-function",
+      "title": "PPC64 ELFv2 local entry points split every function into an 8-byte named husk plus an anonymous body",
+      "track": "quality",
+      "status": "closed",
+      "severity": "major",
+      "probe_id": "p-a15704a28a56",
+      "acceptance_id": "a-fb2b9c0f7f5b",
+      "hypothesis_status": "upheld",
+      "credibility": 0.9,
+      "instances": 1,
+      "challenges": [],
+      "rounds": [
+        2
+      ],
+      "first_seen_round": 2,
+      "attempts": 1,
+      "covered_by_option": "ppclocalentry",
+      "touches": [
+        "decompiler/crates/kuna-analysis/src",
+        "decompiler/crates/kuna-decomp/src/p2_lift/kuna_funcboundflow.rs"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": "390",
+      "closed_in_round": 2,
+      "closing_pr": "390",
+      "reject_reason": null,
+      "score": 9.241962,
+      "path": "docs/re-needs/ppc64-localentry-splits-function.md"
+    },
+    {
+      "need_id": "simd-constant-string-initializer",
+      "title": "SIMD constant-string initializer explodes into hundreds of scalar pseudo-operations",
+      "track": "quality",
+      "status": "open",
+      "severity": "major",
+      "probe_id": "p-7127e6d559a3",
+      "acceptance_id": "a-9667a93853f5",
+      "hypothesis_status": "upheld",
+      "credibility": 0.7,
+      "instances": 1,
+      "challenges": [
+        "653d88600f4238b24302b0ec"
+      ],
+      "rounds": [
+        2
+      ],
+      "first_seen_round": 2,
+      "attempts": 1,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-decomp"
+      ],
+      "scope": "large",
+      "regression_of": null,
+      "pr": "406",
+      "closed_in_round": null,
+      "closing_pr": null,
+      "reject_reason": null,
+      "score": 9.241962,
+      "path": "docs/re-needs/simd-constant-string-initializer.md"
+    },
+    {
+      "need_id": "void-callee-spurious-arg",
+      "title": "a void callee is called with an argument",
+      "track": "quality",
+      "status": "closed",
+      "severity": "major",
+      "probe_id": "p-cb96bbe2ca7e",
+      "acceptance_id": "a-293516d9c2f1",
+      "hypothesis_status": "inconclusive",
+      "credibility": 0.8,
+      "instances": 1,
+      "challenges": [
+        "68149b8a8f555589f353117c"
+      ],
+      "rounds": [
+        1,
+        2
+      ],
+      "first_seen_round": 1,
+      "attempts": 1,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-decomp"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": "402",
+      "closed_in_round": 2,
+      "closing_pr": "402",
+      "reject_reason": null,
+      "score": 9.241962,
+      "path": "docs/re-needs/void-callee-spurious-arg.md"
+    },
+    {
+      "need_id": "whole-binary-json-untriageable",
+      "title": "whole-binary JSON is too large to triage from",
+      "track": "tooling",
+      "status": "closed",
+      "severity": "major",
+      "probe_id": null,
+      "acceptance_id": null,
+      "hypothesis_status": "upheld",
+      "credibility": 1.0,
+      "instances": 1,
+      "challenges": [],
+      "rounds": [
+        1
+      ],
+      "first_seen_round": 1,
+      "attempts": 1,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-cli/src/decompile_all.rs",
+        "docs/cli.md"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": null,
+      "closed_in_round": 1,
+      "closing_pr": 367,
+      "reject_reason": null,
+      "score": 9.241962,
+      "path": "docs/re-needs/whole-binary-json-untriageable.md"
+    },
+    {
+      "need_id": "disassembling-non-executable-rdata",
+      "title": "Disassembling a non-executable .rdata range silently presents data as code",
+      "track": "tooling",
+      "status": "closed",
+      "severity": "minor",
+      "probe_id": "p-8c0894d9c37e",
+      "acceptance_id": "a-c42440103c7d",
+      "hypothesis_status": "inconclusive",
+      "credibility": 0.85,
+      "instances": 1,
+      "challenges": [
+        "69a3822f7b3cc38c80464da4"
+      ],
+      "rounds": [
+        2
+      ],
+      "first_seen_round": 2,
+      "attempts": 0,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-cli"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": null,
+      "closed_in_round": 2,
+      "closing_pr": "379",
+      "reject_reason": null,
+      "score": 6.931472,
+      "path": "docs/re-needs/disassembling-non-executable-rdata.md"
+    },
+    {
+      "need_id": "getprocaddress-result-discarded",
+      "title": "a GetProcAddress result is discarded and the pointer left uninitialised",
+      "track": "quality",
+      "status": "closed",
+      "severity": "major",
+      "probe_id": "p-ac20c1602ca0",
+      "acceptance_id": "a-f2df446f39d5",
+      "hypothesis_status": "inconclusive",
+      "credibility": 0.8,
+      "instances": 1,
+      "challenges": [
+        "65acadf3eef082e477ff5ede"
+      ],
+      "rounds": [
+        1,
+        2
+      ],
+      "first_seen_round": 1,
+      "attempts": 2,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-decomp"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": "381",
+      "closed_in_round": 2,
+      "closing_pr": "381",
+      "reject_reason": null,
+      "score": 6.931472,
+      "path": "docs/re-needs/getprocaddress-result-discarded.md"
+    },
+    {
+      "need_id": "runtime-decrypted-code-opaque",
+      "title": "code decrypted at runtime stays an opaque indirect call",
+      "track": "quality",
+      "status": "open",
+      "severity": "minor",
+      "probe_id": "p-f83385153d24",
+      "acceptance_id": "a-da7ddcf87198",
+      "hypothesis_status": "inconclusive",
+      "credibility": 0.8,
+      "instances": 1,
+      "challenges": [
+        "61ffb07c33c5d46c8bcbfc1d"
+      ],
+      "rounds": [
+        1,
+        2
+      ],
+      "first_seen_round": 1,
+      "attempts": 0,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-decomp"
+      ],
+      "scope": "large",
+      "regression_of": null,
+      "pr": null,
+      "closed_in_round": null,
+      "closing_pr": null,
+      "reject_reason": null,
+      "score": 6.931472,
+      "path": "docs/re-needs/runtime-decrypted-code-opaque.md"
+    },
+    {
+      "need_id": "cold-load-xref-lookup",
+      "title": "Cold-load xref lookup takes about four seconds on a 466 KB ELF",
+      "track": "perf",
+      "status": "closed",
+      "severity": "minor",
+      "probe_id": "p-6d1e0b3b78b9",
+      "acceptance_id": "a-6763a70e69bc",
+      "hypothesis_status": "overturned",
+      "credibility": 0.85,
+      "instances": 1,
+      "challenges": [
+        "5bd1d1bb33c5d4110a29b31e"
+      ],
+      "rounds": [
+        2
+      ],
+      "first_seen_round": 2,
+      "attempts": 1,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-cli",
+        "decompiler/crates/kuna-analysis",
+        "decompiler/crates/kuna-sleigh"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": null,
+      "closed_in_round": 2,
+      "closing_pr": "394",
+      "reject_reason": null,
+      "score": 4.620981,
+      "path": "docs/re-needs/cold-load-xref-lookup.md"
+    },
+    {
+      "need_id": "stack-string-invalid-cast",
+      "title": "stack-string initialisation is emitted as an invalid array cast",
+      "track": "quality",
+      "status": "closed",
+      "severity": "minor",
+      "probe_id": "p-1d6eb3f72061",
+      "acceptance_id": "a-d7fec4000cb6",
+      "hypothesis_status": "inconclusive",
+      "credibility": 0.8,
+      "instances": 1,
+      "challenges": [
+        "68149b8a8f555589f353117c"
+      ],
+      "rounds": [
+        1,
+        2
+      ],
+      "first_seen_round": 1,
+      "attempts": 1,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-decomp"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": "404",
+      "closed_in_round": 2,
+      "closing_pr": "404",
+      "reject_reason": null,
+      "score": 4.620981,
+      "path": "docs/re-needs/stack-string-invalid-cast.md"
+    },
+    {
+      "need_id": "decompiling-3396-byte-main",
+      "title": "Decompiling the 3396-byte main function takes about 68 seconds",
+      "track": "perf",
+      "status": "closed",
+      "severity": "major",
+      "probe_id": "p-a9ebf39dace0",
+      "acceptance_id": "a-53d616afcb6a",
+      "hypothesis_status": "inconclusive",
+      "credibility": 0.7,
+      "instances": 1,
+      "challenges": [
+        "69a3822f7b3cc38c80464da4"
+      ],
+      "rounds": [
+        2
+      ],
+      "first_seen_round": 2,
+      "attempts": 5,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-decomp",
+        "decompiler/crates/kuna-console",
+        "decompiler/crates/kuna-decomp/phases.toml",
+        "decompiler/crates/kuna-decomp/src/p0_knowledge/options.rs",
+        "docs/options.md",
+        "docs/history.md",
+        "tests/stages"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": "396",
+      "closed_in_round": 2,
+      "closing_pr": "397",
+      "reject_reason": null,
+      "score": 3.960841,
+      "path": "docs/re-needs/decompiling-3396-byte-main.md"
+    },
+    {
+      "need_id": "call-args-discarded",
+      "title": "recovered call arguments are discarded at the call site",
+      "track": "quality",
+      "status": "closed",
+      "severity": "major",
+      "probe_id": null,
+      "acceptance_id": null,
+      "hypothesis_status": "upheld",
+      "credibility": 1.0,
+      "instances": 0,
+      "challenges": [],
+      "rounds": [
+        1
+      ],
+      "first_seen_round": 1,
+      "attempts": 1,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-decomp/src/p4_params"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": null,
+      "closed_in_round": 1,
+      "closing_pr": 367,
+      "reject_reason": null,
+      "score": 0.0,
+      "path": "docs/re-needs/call-args-discarded.md"
+    },
+    {
+      "need_id": "int80-opaque-syscall",
+      "title": "32-bit Linux int 0x80 renders as swi(0x80)",
+      "track": "quality",
+      "status": "closed",
+      "severity": "major",
+      "probe_id": null,
+      "acceptance_id": null,
+      "hypothesis_status": "upheld",
+      "credibility": 1.0,
+      "instances": 0,
+      "challenges": [],
+      "rounds": [
+        1
+      ],
+      "first_seen_round": 1,
+      "attempts": 1,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-decomp/src/p2_lift/kuna_linuxsyscall.rs"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": null,
+      "closed_in_round": 1,
+      "closing_pr": 367,
+      "reject_reason": null,
+      "score": 0.0,
+      "path": "docs/re-needs/int80-opaque-syscall.md"
+    },
+    {
+      "need_id": "main-void-prototype",
+      "title": "the entry function is typed void(void) on PE",
+      "track": "quality",
+      "status": "closed",
+      "severity": "major",
+      "probe_id": null,
+      "acceptance_id": null,
+      "hypothesis_status": "upheld",
+      "credibility": 1.0,
+      "instances": 0,
+      "challenges": [],
+      "rounds": [
+        1
+      ],
+      "first_seen_round": 1,
+      "attempts": 1,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_entrymainproto.rs"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": null,
+      "closed_in_round": 1,
+      "closing_pr": 367,
+      "reject_reason": null,
+      "score": 0.0,
+      "path": "docs/re-needs/main-void-prototype.md"
+    },
+    {
+      "need_id": "no-disassembly-command",
+      "title": "kuna cannot show instructions for a function or address",
+      "track": "tooling",
+      "status": "closed",
+      "severity": "major",
+      "probe_id": null,
+      "acceptance_id": null,
+      "hypothesis_status": "upheld",
+      "credibility": 1.0,
+      "instances": 0,
+      "challenges": [],
+      "rounds": [
+        1
+      ],
+      "first_seen_round": 1,
+      "attempts": 1,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-cli/src/disassemble.rs",
+        "docs/cli.md"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": null,
+      "closed_in_round": 1,
+      "closing_pr": 367,
+      "reject_reason": null,
+      "score": 0.0,
+      "path": "docs/re-needs/no-disassembly-command.md"
+    },
+    {
+      "need_id": "no-strings-inventory",
+      "title": "kuna cannot list or search the strings in a binary",
+      "track": "tooling",
+      "status": "closed",
+      "severity": "major",
+      "probe_id": null,
+      "acceptance_id": null,
+      "hypothesis_status": "upheld",
+      "credibility": 1.0,
+      "instances": 0,
+      "challenges": [],
+      "rounds": [
+        1
+      ],
+      "first_seen_round": 1,
+      "attempts": 1,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-cli/src/strings.rs",
+        "docs/cli.md"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": null,
+      "closed_in_round": 1,
+      "closing_pr": 367,
+      "reject_reason": null,
+      "score": 0.0,
+      "path": "docs/re-needs/no-strings-inventory.md"
+    },
+    {
+      "need_id": "phantom-unmapped-entry",
+      "title": "function discovery invents entries outside every executable range",
+      "track": "quality",
+      "status": "closed",
+      "severity": "major",
+      "probe_id": null,
+      "acceptance_id": null,
+      "hypothesis_status": "upheld",
+      "credibility": 1.0,
+      "instances": 0,
+      "challenges": [],
+      "rounds": [
+        1
+      ],
+      "first_seen_round": 1,
+      "attempts": 1,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-analysis/src/listing/kuna_unmappedentry.rs"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": null,
+      "closed_in_round": 1,
+      "closing_pr": 367,
+      "reject_reason": null,
+      "score": 0.0,
+      "path": "docs/re-needs/phantom-unmapped-entry.md"
+    },
+    {
+      "need_id": "switch-on-constant-selector",
+      "title": "a recovered switch dispatches on a constant, every case dead",
+      "track": "quality",
+      "status": "closed",
+      "severity": "major",
+      "probe_id": null,
+      "acceptance_id": null,
+      "hypothesis_status": "upheld",
+      "credibility": 1.0,
+      "instances": 0,
+      "challenges": [],
+      "rounds": [
+        1
+      ],
+      "first_seen_round": 1,
+      "attempts": 1,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-decomp/src/p2_lift/kuna_loweredswitch.rs"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": null,
+      "closed_in_round": 1,
+      "closing_pr": 367,
+      "reject_reason": null,
+      "score": 0.0,
+      "path": "docs/re-needs/switch-on-constant-selector.md"
+    }
+  ],
+  "rejected": []
+}

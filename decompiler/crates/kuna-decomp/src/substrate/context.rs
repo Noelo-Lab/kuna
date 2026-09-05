@@ -673,6 +673,16 @@ pub struct ArchContext {
     /// `builtin_memset` (C++ `memset_recover`, DIV-2 default-on).  Read by
     /// [`RuleMemsetCopy`](crate::kuna_memsetsequence::RuleMemsetCopy).
     pub memset_recover: bool,
+    /// (kuna `rodatastring`) Collapse a read-only string block copy into
+    /// `builtin_strncpy`.  Read by
+    /// [`RuleRodataStringCopy`](crate::kuna_rodatastring::RuleRodataStringCopy).
+    pub rodata_string: bool,
+    /// (kuna `ptrdepthcap`) Refuse to deepen an already unsatisfiable pointer
+    /// equation while propagating types: a candidate `ptr(ptr(ptr(..)))` collapses
+    /// to `ptr(undefined<N>)`, which is a fixed point.  Read by
+    /// `ActionInferTypes::propagateTypeEdge` (`coreaction_infertypes`); the
+    /// mechanism lives in `kuna_ptrdepth`.
+    pub ptrdepthcap: bool,
     /// (kuna) GH-8017: resolve the gcc stack-probe loop SP MULTIEQUAL to a
     /// constant (C++ `model_stack_probe_loop`, DIV-3 default-on).  Read by
     /// [`RuleStackProbeLoop`](crate::kuna_stackprobeloop::RuleStackProbeLoop).
@@ -685,6 +695,35 @@ pub struct ArchContext {
     /// Read by [`check_input_trial_use`](crate::funcdata_callsite::check_input_trial_use)
     /// through [`crate::p4_calls::kuna_callsitestackargs::outside_caller_local_range`].
     pub callsite_stack_args: bool,
+    /// (kuna) let a bounded decode of the callee's own body veto a register
+    /// argument the callee provably never reads (`calleedeadarg`).  Read by
+    /// [`check_input_trial_use`](crate::funcdata_callsite::check_input_trial_use)
+    /// through [`crate::p4_calls::kuna_calleedeadarg::trial_is_dead_in_callee`].
+    pub callee_dead_arg: bool,
+    /// (kuna) in the function's OWN input recovery, tolerate a run of unused
+    /// argument REGISTERS before a live-in register (`inputparamgap`).  Read by
+    /// `ActionInputPrototype`, which stamps it onto the
+    /// [`ParamActive`](crate::fspec::ParamActive) that
+    /// [`ParamListStandard::fillin_map`](crate::fspec::ParamListStandard) then
+    /// consults through
+    /// [`crate::p4_calls::kuna_inputparamgap::gap_slot_is_exempt`].
+    pub input_param_gap: bool,
+    /// (kuna) score a variadic call's stack arguments as their own `fillinMap`
+    /// resource section (`varargstackargs`).  Read by
+    /// [`ParamListStandard::fillin_map`](crate::fspec::ParamListStandard) through
+    /// [`crate::p4_calls::kuna_varargstackargs::stack_section_split`], via the
+    /// flag `ActionActiveParam` writes onto the call's `ParamActive`.
+    pub vararg_stack_args: bool,
+    /// (kuna) reconcile a call's recovered argument list with a sibling call to
+    /// the same callee (`calleearity`).  Read by
+    /// [`build_input_from_trials`](crate::funcdata_callsite::build_input_from_trials)
+    /// through [`crate::p4_calls::kuna_calleearity::unify_with_sibling_call`].
+    pub callee_arity: bool,
+    /// (kuna) retry that reconciliation against sibling calls that finalize
+    /// LATER in the same `ActionActiveParam` pass (`calleearityfwd`).  Read by
+    /// [`crate::p4_calls::kuna_calleearityfwd::capture_empty_call`]; inert
+    /// unless `callee_arity` is also set.
+    pub callee_arity_fwd: bool,
     /// (kuna) completion level for the two upstream partial-range call-overlap
     /// guards (`calloverlap`): `0` = both stay inert (what kuna shipped before the
     /// option), `1` = `Heritage::guardCallOverlappingInput` only, `2` = that plus
@@ -709,6 +748,13 @@ pub struct ArchContext {
     /// (the pre-port behavior).  Read by
     /// [`Heritage::heritage`](crate::p3_dataflow::heritage::Heritage::heritage).
     pub load_guard_range: bool,
+    /// (kuna) `option tiedstorekeep` (default-on, DIV-105): refuse the
+    /// `RulePropagateCopy` marker propagation that would leave an address-tied
+    /// `COPY` output holding a call's return value with no readers, so a
+    /// `local = f();` frame store survives dead-code elimination instead of
+    /// vanishing from the emitted C.  Read by
+    /// [`crate::p3_dataflow::kuna_tiedstorekeep::declines`].
+    pub tied_store_keep: bool,
     /// (kuna) region-based (Phoenix/SAILR) structurer: structure the CFG by
     /// walking the [`KunaRegionIdentifier`](crate::p7_regions::kuna_regionid)
     /// region tree and matching Phoenix acyclic schemas instead of running
@@ -765,6 +811,16 @@ pub struct ArchContext {
     /// pre-SSA op graph.  Read by
     /// [`ActionRemoveCleanupCode`](crate::p2_lift::kuna_cleanupcode::ActionRemoveCleanupCode).
     pub remove_cleanup_code: bool,
+    /// (kuna) `option linuxsyscall`: rewrite a 32-bit Linux `int 0x80` from an
+    /// indirect call through the `swi` userop into a named call on the syscall
+    /// the number in `EAX` selects.  Read by
+    /// [`ActionLinuxSyscall`](crate::p2_lift::kuna_linuxsyscall::ActionLinuxSyscall).
+    pub linux_syscall: bool,
+    /// (kuna) `option switchselector`: refuse a recovered lowered-switch record
+    /// whose synthesized BRANCHIND would not get the switch value as its
+    /// selector.  Read by
+    /// [`install_selector_is_sound`](crate::p2_lift::kuna_loweredswitch::install_selector_is_sound).
+    pub switch_selector_guard: bool,
     pub cond_fold: int4,
     /// (kuna) angr SAILR goto-reduction: duplicate a small return tail into a
     /// `goto` source (`reduce_return_gotos`, opt-in default-off).  Read by
@@ -951,6 +1007,13 @@ pub struct ArchContext {
     /// Read by `FlowInfo::collectEdges`.  `false` (default off / upstream
     /// byte-identical).
     pub unrolled_guard: bool,
+    /// (kuna) Share ONE jump-table partial sub-decompilation across every table
+    /// recovered in a single `FlowInfo::recoverJumpTables` batch instead of
+    /// re-cloning and re-analysing the function per table (C++
+    /// `Funcdata::stageJumpTable`'s `if (!partial.isJumptableRecoveryOn())`
+    /// guard), flipped by `option jtsharepartial`, shared from the real
+    /// architecture.  Read by `Funcdata::stage_jump_table`.
+    pub jumptable_share_partial: bool,
     /// The program load image (C++ `Architecture::loader`), shared from the
     /// engine through `build_arch_handle`.  Read by jump-table emulation
     /// (`EmulateFunction::executeLoad` -> `get_load_image_value`) to fetch the
@@ -1098,14 +1161,24 @@ impl ArchContext {
             ov_less_simplify: false,     // GH-7190 ovlesssimplify
             recover_array_stride: false, // GH-8724 arraystride
             memset_recover: false,       // GH-9230/1537 memsetrecover
+            rodata_string: false,        // (kuna) rodatastring
+            ptrdepthcap: false,          // (kuna) option ptrdepthcap
             model_stack_probe_loop: false, // GH-8017 stackprobeloop
             recover_lowered_switch: false, // loweredswitch
             // callsitestackargs is a correctness fix, not an opt-in transform, so the
             // hand-built-fixture seam carries the same default the real path does.
             callsite_stack_args: true,
+            // calleedeadarg only ever REMOVES an argument, and only against a
+            // decoded callee body; the fixture seam carries the real default.
+            callee_dead_arg: true,
+            input_param_gap: true,
+            vararg_stack_args: true,     // varargstackargs (DIV-101 default-on)
+            callee_arity: true,          // calleearity (DIV-102 default-on)
+            callee_arity_fwd: true,      // calleearityfwd (default-on)
             call_overlap: 0,             // calloverlap (0 = both overlap guards inert)
             spill_arg_trial: 0,          // spillargtrial (0 = upstream: every STORE rejects)
             load_guard_range: true,      // loadguardrange (upstream behavior, default-on)
+            tied_store_keep: false,      // tiedstorekeep (Architecture::reset_defaults sets the shipped default: on)
             region_structure: false,     // regionstructure (opt-in default-off)
             guard_arm: false,            // guardarm (opt-in default-off)
             loop_cond_hoist: false,      // loopcondhoist (opt-in default-off)
@@ -1113,6 +1186,8 @@ impl ArchContext {
             region_edge_order: false,    // regionedgeorder (opt-in default-off)
             outline_spec: String::new(), // outline (opt-in default-off; empty = off)
             remove_cleanup_code: true,   // cleanupcode (DIV-81 default-on; inert on a non-Rust binary)
+            linux_syscall: false,        // linuxsyscall (opt-in default-off)
+            switch_selector_guard: false, // switchselector (opt-in default-off)
             cond_fold: 0,                // condfold (opt-in default-off; 0 = off)
             reduce_return_gotos: false,  // gotoreduce (opt-in default-off)
             flatten_ifelse: false,  // ifelseflatten (opt-in default-off)
@@ -1156,6 +1231,7 @@ impl ArchContext {
             switch_shared_case: false, // (kuna) angr opt-in default off (upstream byte-identical)
             switch_multi_pred: false, // (kuna) angr opt-in default off (upstream byte-identical)
             unrolled_guard: false, // (kuna) angr opt-in default off (upstream byte-identical)
+            jumptable_share_partial: true, // (kuna) DIV: upstream stageJumpTable shape
             loader: None,
             // C++ Architecture default: readonlypropagate = false (resetDefaults);
             // `option readonly` flips it before the per-function build_arch_handle.

@@ -312,6 +312,20 @@ pub struct Architecture {
     /// (kuna GH-9230) Recover constant-fill store/copy runs as `builtin_memset`
     /// (C++ `memset_recover`).
     pub memset_recover: bool,
+    /// (kuna `rodatastring`) Recover a read-only string block copy as
+    /// `builtin_strncpy`.
+    pub rodata_string: bool,
+    /// (kuna `ptrdepthcap`) Cap the pointer nesting `ActionInferTypes` will adopt.
+    ///
+    /// A small-string-optimized C++ object writes the unsatisfiable equation
+    /// `T == ptr(T)` into the type lattice (`p = &obj` on one MULTIEQUAL edge,
+    /// `p = obj.ptr` -- a LOAD from the same address -- on the other), so the
+    /// propagation adds one pointer level per pass until the seven-pass ceiling
+    /// and declares the object `unsigned long long *****`.  When set, every
+    /// candidate type is put through `kuna_ptrdepth::cap_pointer_depth`, which is
+    /// upstream `TypeFactory::getTypePointerNoDepth`'s rule (`type.cc:1509`)
+    /// applied at the propagation funnel rather than only at LOAD/STORE.
+    pub ptrdepthcap: bool,
     /// (kuna GH-8913) Fuse 8-bit carry-chain 16-bit adds into one wide add
     /// (C++ `add_carry_chain`).
     pub add_carry_chain: bool,
@@ -328,6 +342,12 @@ pub struct Architecture {
     /// entry (e.g. `jmp setlocale@plt`) as a tail call (CALL + RETURN) instead of
     /// flowing into the callee (`option tailcalljump`, default off).
     pub tail_call_jumps: bool,
+    /// (kuna `tailcallframe`) Recover a direct `jmp` whose target is NOT a known
+    /// function as a tail call when the instructions immediately before it tear
+    /// down exactly the frame the entry block built — the callback-only callee no
+    /// discovery oracle reaches (`option tailcallframe`).  See
+    /// [`crate::p2_lift::kuna_tailcallframe`].
+    pub tail_call_frame: bool,
     /// (kuna `cleanupcode`) Delete the Rust drop/deallocate call sites (the
     /// `core::ptr::drop_in_place` / `Drop::drop` / `RawVecInner::deallocate` /
     /// `__rust_dealloc` family) from the pre-SSA op graph, so the drop glue and
@@ -336,12 +356,32 @@ pub struct Architecture {
     /// resolves a call to one of those names.  See
     /// [`crate::p2_lift::kuna_cleanupcode`].
     pub remove_cleanup_code: bool,
+    /// (kuna `linuxsyscall`) Rewrite a 32-bit Linux `int 0x80` from the indirect
+    /// call through the `swi` userop that x86 SLEIGH lowers it to into a named
+    /// call on the syscall the constant in `EAX` selects, with the ABI argument
+    /// registers as its arguments (`option linuxsyscall`).  x86-32 only, and
+    /// declined whenever the number is not a locally-resolvable constant with a
+    /// vetted table entry.  See [`crate::p2_lift::kuna_linuxsyscall`].
+    pub linux_syscall: bool,
+    /// (kuna `switchselector`) Refuse to install a recovered lowered-switch
+    /// cascade whose synthesized BRANCHIND cannot be given the switch value as
+    /// its selector, so the compiler's `if`/`else if` chain over the real
+    /// variable survives instead of a `switch` over something else
+    /// (`option switchselector`).  See
+    /// [`crate::p2_lift::kuna_loweredswitch::install_selector_is_sound`].
+    pub switch_selector_guard: bool,
     /// (kuna `funcboundflow`) Bound fall-through at a known function entry: when a
     /// fall-through reaches the entry of another known function (the callee just
     /// executed being an unnamed static no-return the analysis could not prove
     /// no-return), truncate flow with a no-return halt instead of decoding the
     /// next function's body into the current one (`option funcboundflow`).
     pub funcbound_flow: bool,
+    /// (kuna `overlapbranch`) Truncate a conditional branch's fall-through when the
+    /// branch's own target lies strictly inside that fall-through instruction's
+    /// encoding — the anti-disassembly junk-lead-byte idiom, where the fall-through
+    /// decode swallows the real instruction boundary and desynchronises the stream
+    /// (`option overlapbranch`).
+    pub overlap_branch: bool,
     /// (kuna) Treat a direct CALL whose resolved callee display name matches a
     /// known ELF no-return name (`__stack_chk_fail`, `abort`, `exit`, …) as
     /// no-return at flow time, even when the address-keyed no-return flag is unset
@@ -430,6 +470,14 @@ pub struct Architecture {
     /// the `findJumpTable==0` partial path already uses) instead of throwing
     /// (C++ `unrolled_guard`).
     pub unrolled_guard: bool,
+    /// (kuna) Run the jump-table partial sub-decompilation ONCE per
+    /// `FlowInfo::recoverJumpTables` batch and share it across every table in
+    /// that batch, as the C++ does (`Funcdata::stageJumpTable` guards the clone
+    /// and the reduced pipeline behind `if (!partial.isJumptableRecoveryOn())`);
+    /// off re-clones and re-analyses the function once per table, which is what
+    /// `option unrolledguard` needs to see an already-recovered sibling table
+    /// (C++ has no equivalent flag — this is the upstream shape vs kuna's).
+    pub jumptable_share_partial: bool,
     /// (kuna, angr `test_decompiling_incorrect_duplication_chcon_main`) Treat a
     /// direct CALL to a function whose *name* matches the vendored ELF
     /// known-no-return list as no-return at the `query_call_no_return` flow hook,
@@ -450,6 +498,26 @@ pub struct Architecture {
     /// (kuna) Recover stack-passed call arguments at call sites with an unlocked
     /// callee prototype (default-on; restores upstream `fspec.cc:5618`).
     pub callsite_stack_args: bool,
+    /// (kuna) Let a bounded decode of the callee's own body veto a register
+    /// argument the callee provably never reads (option `calleedeadarg`).
+    pub callee_dead_arg: bool,
+    /// (kuna) In the function's OWN input recovery, do not let a run of unused
+    /// argument REGISTERS veto a later register the body reads before writing
+    /// (option `inputparamgap`).  See [`crate::p4_calls::kuna_inputparamgap`].
+    pub input_param_gap: bool,
+    /// (kuna) Score a variadic call's stack arguments as their own `fillinMap`
+    /// resource section, so the empty register slots the ABI leaves between the
+    /// fixed parameters and the varargs stop deactivating them (option
+    /// `varargstackargs`).  See [`crate::p4_calls::kuna_varargstackargs`].
+    pub vararg_stack_args: bool,
+    /// (kuna) Reconcile a call's recovered argument list with a sibling call to
+    /// the same callee in the same function (option `calleearity`).  See
+    /// [`crate::p4_calls::kuna_calleearity`].
+    pub callee_arity: bool,
+    /// (kuna) retry that reconciliation against sibling calls that finalize LATER
+    /// in the same `ActionActiveParam` pass (option `calleearityfwd`).  See
+    /// [`crate::p4_calls::kuna_calleearityfwd`].
+    pub callee_arity_fwd: bool,
     /// (kuna) Completion level for the two upstream partial-range call-overlap
     /// guards `Heritage::guardCallOverlappingInput` and
     /// `Heritage::tryOutputOverlapGuard`, which kuna shipped as comment-only stubs
@@ -469,6 +537,12 @@ pub struct Architecture {
     /// `MapState::addGuard` can supply real array index bounds in P6
     /// (option `loadguardrange`, default-on: upstream Ghidra's behavior).
     pub load_guard_range: bool,
+    /// (kuna) Refuse the `RulePropagateCopy` marker propagation that would
+    /// orphan an address-tied `COPY` output holding a call's return value,
+    /// keeping a `local = f();` frame store in the emitted C (option
+    /// `tiedstorekeep`, default-on, DIV-105).  See
+    /// [`crate::p3_dataflow::kuna_tiedstorekeep`].
+    pub tied_store_keep: bool,
     /// (kuna) Region-based (Phoenix/SAILR) structurer: structure the CFG by
     /// walking the [`KunaRegionIdentifier`](crate::p7_regions::kuna_regionid)
     /// region tree and matching Phoenix acyclic schemas instead of running
@@ -798,6 +872,16 @@ pub struct Architecture {
         (int4, uintb),
         std::rc::Rc<crate::kuna_rustabi::CalleeReturnWrites>,
     >,
+    /// (kuna `calleedeadarg`) Per-image cache of the callee entry-liveness probe
+    /// ([`crate::kuna_calleedeadarg::probe_callee_entry_dead`]), keyed by the
+    /// callee's `(space index, entry offset)`.  Each distinct function body is
+    /// decoded at most once for the whole run, which is what keeps the probe off
+    /// the critical path of a whole-binary `decompile-all`.  Stays empty unless
+    /// `option calleedeadarg` is live.
+    pub kuna_callee_dead_cache: std::collections::HashMap<
+        (int4, uintb),
+        std::rc::Rc<crate::kuna_calleedeadarg::CalleeEntryDead>,
+    >,
     /// (ghidra-mode, Phase 4) Name recommendations staged for the NEXT
     /// decompile drive — `(name, storage addr, usepoint, size)`, taken (and
     /// cleared) by `decompile_func_full_with_override_dyn` and seeded into the
@@ -847,6 +931,10 @@ pub struct Architecture {
     pub analysis_libcsigs: bool,
     /// (kuna) Gate the string-literal pass (`strings`); default on.
     pub analysis_strings: bool,
+    /// (kuna) Gate the 2-byte (UTF-16LE) width of the string-literal pass
+    /// (`widestrings`); default on. Off drops the wide facts at the commit, so the
+    /// markup is exactly the 1-byte pass's.
+    pub analysis_widestrings: bool,
     /// (kuna) Gate the entry-discovery pass (`entry_disc`); default on.
     pub analysis_entry_disc: bool,
     /// (kuna) Gate the `.eh_frame` LSDA landing-pad discovery sub-feature of the
@@ -854,6 +942,66 @@ pub struct Architecture {
     /// `.gcc_except_table` markup); default **off** (output-changing: adds the
     /// discovered exception-handler landing pads as function entries).
     pub analysis_eh_frame_full: bool,
+    /// (kuna) Refuse a function entry at a direct CALL target the Listing walk's
+    /// own out-of-bounds gate forbids it to decode (`unmappedentry`); default
+    /// **on**. The recursive-descent walk gates every instruction address on the
+    /// executable-range universe but took the CALL target unconditionally, so a
+    /// call into unmapped memory — what anti-disassembly junk behind an
+    /// always-taken branch decodes to — still became a `sub_<addr>` with no
+    /// bytes, no extent and no body. The call REFERENCE is filed either way; only
+    /// the claim that the target is a function is withheld. Off restores the
+    /// previous (phantom-producing) discovery set exactly.
+    pub analysis_unmappedentry: bool,
+    /// (kuna) Refuse a function entry at a PPC64 ELFv2 **local entry point**
+    /// (`ppclocalentry`); default **on**. The OpenPOWER ELFv2 ABI gives a
+    /// function two entries — the symbol's `st_value` (which materialises the
+    /// TOC pointer `r2`) and a local entry `st_other` bytes later, which is
+    /// where an intra-module `bl` lands. Nothing read `st_other`, so the Listing
+    /// walk minted a function at every such call target and split every locally
+    /// called function into an 8-byte named husk plus an anonymous body. On, an
+    /// address a defined `STT_FUNC` symbol declares to be its own local entry is
+    /// never claimed as a function; the call REFERENCE is filed either way. Off
+    /// restores the previous (husk-producing) discovery set exactly.
+    pub analysis_ppclocalentry: bool,
+    /// (kuna) Fold a 32-bit PIC binary's base register into the cross-reference
+    /// index (`picbase`); default **on**. In position-independent i386 code the
+    /// address of a string, a global or a function pointer is never a constant in
+    /// the instruction that uses it: it is the sum of a GOT pointer the program
+    /// materialised at run time (`call <next>; pop ebx; add ebx,imm`) and a
+    /// displacement, so a scan over decode-time constants — however wide — finds
+    /// nothing and every literal in the image reports being referenced by
+    /// nothing. On, the idiom is interpreted, cross-checked against the image's
+    /// own `_GLOBAL_OFFSET_TABLE_`, and offered to a function only where that
+    /// function's own body cannot have changed the register. Off restores the
+    /// previous answer exactly. Query-surface only: `kuna xrefs`, `kuna strings`
+    /// and the `decompile-all` xref section read this index; no p-code, no
+    /// prototype and no emitted C depends on it.
+    pub analysis_picbase: bool,
+    /// (kuna) Give the function the PE C-runtime startup calls with argc/argv/envp
+    /// the prototype that call site establishes (`entrymainproto`); default
+    /// **on**. kuna recovers a callee's parameters from the callee's own body, so
+    /// a `main` that ignores its arguments is declared `void(void)` even though
+    /// the CRT a few lines up passes three. On a PE that startup is IN the image
+    /// and fetches each argument through a named CRT accessor
+    /// (`__p___argc`/`__p___argv`/`_get_initial_*_environment`), which makes the
+    /// call site an unambiguous fingerprint. Parameters are typed at the width
+    /// the call site establishes and named after the accessor, never asserted to
+    /// be the C library's `int main(int, char **, char **)`. PE-only, and skipped
+    /// whenever the callee already carries a function symbol. Off restores the
+    /// `void(void)` form exactly.
+    pub analysis_entrymainproto: bool,
+    /// (kuna) Name the Mach-O `LC_MAIN` entry routine `main` and declare it
+    /// `int main(int argc, char **argv)` (`machomain`); default **on**.
+    /// `LC_MAIN`'s `entryoff` field is documented as the offset of `main()` and
+    /// survives `strip`, so on a stripped Mach-O the container still states which
+    /// of its `sub_<addr>` functions the program starts in — kuna simply never
+    /// read it, and the prototype was `void(void)` because a `main` that ignores
+    /// its arguments reads no ABI argument register for body-driven recovery to
+    /// find. Mach-O executables only, skipped on an `LC_UNIXTHREAD`-only image
+    /// (that entry is the crt `start`, not `main`), and skipped whenever the
+    /// entry already carries a function symbol. Off restores the `sub_<addr>` /
+    /// `void(void)` form exactly.
+    pub analysis_machomain: bool,
     /// (kuna) Reject a discovered function entry that falls strictly inside a
     /// single-function `.eh_frame` FDE body (`fdeinterior`); default **on**.
     /// kuna's function symbols carry no extent, so every discovery oracle can
@@ -1557,12 +1705,18 @@ impl Architecture {
             infer_funcentry: false,
             return_single: false,
             memset_recover: false,
+            rodata_string: false, // (kuna) option rodatastring; reset_defaults sets the shipped default
+            ptrdepthcap: false, // (kuna) option ptrdepthcap; reset_defaults sets the shipped default
             add_carry_chain: false,
             v850_indirect_branch: false,
             msvc_ftol: false, // (kuna) option msvcftol; reset_defaults sets the shipped default
             tail_call_jumps: false,
+            tail_call_frame: false, // (kuna) option tailcallframe; reset_defaults sets the shipped default
             funcbound_flow: false, // (kuna) option funcboundflow; reset_defaults sets the shipped default
+            overlap_branch: false, // (kuna) option overlapbranch; reset_defaults sets the shipped default
             remove_cleanup_code: false, // (kuna) option cleanupcode; reset_defaults sets the shipped default
+            linux_syscall: false, // (kuna) option linuxsyscall; reset_defaults sets the shipped default
+            switch_selector_guard: false, // (kuna) option switchselector; reset_defaults sets the shipped default
             noreturn_extern_calls: false, // (kuna) option noreturn_extern, default off
             sparc_struct_return: false,
             ov_less_simplify: false,
@@ -1580,14 +1734,21 @@ impl Architecture {
             switch_shared_case: false,
             switch_multi_pred: false,
             unrolled_guard: false,
+            jumptable_share_partial: true,
             noreturn_extern_match: true, // (kuna) DIV-13 default-on (angr incorrect-duplication-chcon)
             stack_alias_deadstore: false,
             recover_array_stride: false,
             recover_lowered_switch: false,
             callsite_stack_args: true,
+            callee_dead_arg: true,
+            input_param_gap: true,
+            vararg_stack_args: true,
+            callee_arity: true,
+            callee_arity_fwd: true,
             call_overlap: 0,
             spill_arg_trial: 0,
             load_guard_range: false, // (kuna) option loadguardrange; reset_defaults sets the shipped default
+            tied_store_keep: false, // (kuna) option tiedstorekeep; reset_defaults sets the shipped default (on)
             region_structure: true,
             guard_arm: false,
             loop_cond_hoist: false,
@@ -1628,6 +1789,7 @@ impl Architecture {
             kuna_fn_budget: None,   // (kuna) decompile-all watchdog: no budget by default
             kuna_fn_deadline: None, // (kuna) set per drive from kuna_fn_budget
             kuna_callee_write_cache: std::collections::HashMap::new(),
+            kuna_callee_dead_cache: std::collections::HashMap::new(),
             kuna_pending_name_recs: Vec::new(), // (ghidra Phase 4) staged per drive
             kuna_pending_dyn_recs: Vec::new(),  // (ghidra Phase 4) staged per drive
             kuna_pending_proto_model: None,     // (ghidra Phase 4) staged per drive
@@ -1640,7 +1802,13 @@ impl Architecture {
             analysis_peimportcall: false,
             analysis_libproto: false,
             analysis_libcsigs: false,
+            analysis_unmappedentry: false,
+            analysis_ppclocalentry: false,
+            analysis_picbase: false,
+            analysis_entrymainproto: false,
+            analysis_machomain: false,
             analysis_strings: false,
+            analysis_widestrings: false,
             analysis_entry_disc: false,
             analysis_eh_frame_full: false,
             analysis_fdeinterior: false,
@@ -1749,11 +1917,16 @@ impl Architecture {
         self.infer_funcentry = true; // (kuna) DIV-2 default-on (GH-6930)
         self.return_single = false; // (kuna) default: upstream (join register pairs)
         self.memset_recover = true; // (kuna) DIV-2 default-on (GH-9230/1537)
+        self.rodata_string = true; // (kuna) DIV-113 default-on: a read-only string block copy collapses to builtin_strncpy instead of the invalid-C partial-symbol slice assignments. Byte-identical (0/675) — the corpus carries no data symbols, so the covering-string-symbol guard never fires. Restore the slice assignments with `option rodatastring off`
         self.v850_indirect_branch = false; // (kuna) default: upstream (GH-8817)
         self.msvc_ftol = true; // (kuna) DIV-74 default-on: x86-32-only, and inert unless the binary imports an `__ftol`/`__ftol2`/`__ftol2_sse` symbol. Byte-identical (0/675) — no corpus function carries one of those names. Restore the un-fixed `__ftol()` rendering with `option msvcftol off`
         self.tail_call_jumps = true; // (kuna) DIV-13 default-on (angr tail-call recovery; per-test opt-out on Long double #1/#2)
+        self.tail_call_frame = true; // (kuna) DIV-109 default-on: REMOVES CODE. A direct jmp preceded by a teardown of exactly the entry block's frame is a tail call even when the callee was never discovered. Byte-identical (0/675) on the datatest corpus; restore the flow-into-the-callee decode with `option tailcallframe off`
         self.funcbound_flow = true; // (kuna) DIV-67 default-on: REMOVES CODE. Truncates a fall-through that reaches another known function's entry (a function ending in an unnamed static no-return `exit`/`abort`/`die()` wrapper) instead of decoding the next function's body into it. Byte-identical (0/675) on the datatest corpus; restore upstream flow-into-callee with `option funcboundflow off`
+        self.overlap_branch = true; // (kuna) DIV-106 default-on: REMOVES CODE. Ends a conditional branch's fall-through in a halt when the branch's own target lies strictly inside that fall-through instruction's encoding (the anti-disassembly junk-lead-byte overlap), instead of letting the bogus decode swallow the target and desynchronise the stream. Two real instruction starts cannot sit at `next` and strictly inside `next`, so the trigger never matches well-formed code and is byte-identical (0/675) on the datatest corpus; restore the fall-through-wins decode with `option overlapbranch off`
         self.remove_cleanup_code = true; // (kuna) DIV-81 default-on: REMOVES CODE. Deletes the Rust drop/deallocate call sites (`core::ptr::drop_in_place`, `Drop::drop`, `alloc::raw_vec::RawVecInner::deallocate`, `__rust_dealloc`) and the argument setup that only feeds them. Structurally inert outside a Rust binary (no C ELF resolves a call to one of those names), so byte-identical (0/675) on the datatest corpus; keep the drop glue with `option cleanupcode off`
+        self.switch_selector_guard = false; // (kuna) option switchselector, default-off this round: the ablation says ON is safe (0/675 datatest assertions, one function changed across the swept corpus and strictly for the better), but shipping a default ON is a DIV-registry change and that registry is not this change's to write
+        self.linux_syscall = false; // (kuna) option linuxsyscall, default-off this round: it renames a call and locks a prototype, which is a judgement about the target OS that the vector alone does not prove
         self.noreturn_extern_calls = true; // (kuna) DIV-14 default-on: REMOVES CODE (drops the post-call fall-through after a matched extern no-return). Byte-identical (0/675) — no datatest call resolves to a known no-return name; overlaps `noreturn_known`'s name match for defined/imported symbols, restore upstream with `option noreturn_extern off`
         self.sparc_struct_return = false; // (kuna) default: upstream byte-identical (GH-6882)
         self.ov_less_simplify = true; // (kuna) DIV-2 default-on (GH-7190)
@@ -1768,14 +1941,21 @@ impl Architecture {
         self.switch_shared_case = true; // (kuna) DIV-14 default-on (angr loop-carried-guard PIC switch recovery; slower on the functions it recovers, kept on for quality; 0/675 byte-identical)
         self.switch_multi_pred = true; // (kuna) DIV-13 default-on (angr multi-predecessor unrolled-guard jump-table; 0/675 ablation)
         self.unrolled_guard = false; // (kuna) default: upstream byte-identical (angr opt-in)
+        self.jumptable_share_partial = true; // (kuna) DIV: the upstream stageJumpTable shape
         self.noreturn_extern_match = true; // (kuna) DIV-13 default-on (angr incorrect-duplication-chcon; clean 0/675 ablation)
         self.stack_alias_deadstore = false; // (kuna) default: upstream byte-identical (GH-8500)
         self.recover_array_stride = true; // (kuna) DIV-3 default-on (GH-8724)
         self.recover_lowered_switch = true; // (kuna) default-on (angr port)
         self.callsite_stack_args = true; // (kuna) default-on: restores upstream fspec.cc:5618 (0/675 ablation)
+        self.callee_dead_arg = true; // (kuna) default-on (DIV-KUNA_DEADARG_DIV): 0/675 datatests, subtractive only
+        self.input_param_gap = true; // (kuna) DIV-114 default-on: an unused argument-register run in the function's OWN input recovery no longer vetoes a later live-in register, so a pointer-table-only callback recovers its full signature instead of reading undefined locals. Byte-identical (0/675) on the datatest corpus; restore upstream's forceInactiveChain veto with `option inputparamgap off`
+        self.vararg_stack_args = true; // (kuna) DIV-101 default-on: a variadic call's stack tail is its own fillinMap section (0/675 ablation)
+        self.callee_arity = true; // (kuna) DIV-102 default-on: one callee, one argument list across its call sites (0/675 ablation)
+        self.callee_arity_fwd = true; // (kuna) DIV-PENDING default-on: retry that reconciliation against the siblings that finalize later (0/675 ablation)
         self.call_overlap = 0; // (kuna) calloverlap: PLACEHOLDER default (set from measurement)
         self.spill_arg_trial = 0; // (kuna) spillargtrial default-OFF opt-in (diverges from upstream onlyOpUse; the failure mode is a spurious trailing argument, which no gate can see)
         self.load_guard_range = true; // (kuna) DIV-77 default-on: restores upstream Heritage::analyzeNewLoadGuards ValueSet range refinement of indexed-stack LOAD/STORE guards (0/675 ablation); `option loadguardrange off` reverts to whole-space guards with no index bound
+        self.tied_store_keep = true; // (kuna) DIV-105 default-on: RulePropagateCopy refuses the marker propagation that would orphan an address-tied COPY holding a call return, so a `local = f();` frame store survives dead-code elimination (0/675 ablation, speed -0.13%); `option tiedstorekeep off` restores upstream's propagation
         self.region_structure = true; // (kuna) DIV-12 default-on (region-based Phoenix/SAILR structurer; primary structuring path, falls back to CollapseStructure on irreducible code)
         self.region_loop_refine = true; // (kuna) DIV-13 default-on (region structurer multi-exit/irreducible loop-successor refinement; 0/675 ablation)
         self.region_edge_order = false; // (kuna) SAILR P2 default-OFF opt-in (H2 post-dominator + dominance-tiered edge-virtualization ordering; only reorders which goto is chosen when virtualizing, so OFF is byte-identical)
@@ -1806,6 +1986,7 @@ impl Architecture {
         self.framelayout = true; // (kuna) DIV-97: JSON-surface only (no p-code, no emitted C), so the 675-assertion datatest corpus cannot observe it; measured +1,027 type_match-perfect / -1 over 82,035 decbench functions
         self.voidtailreturn = false; // (kuna) option voidtailreturn; default-OFF until its corpus bidirectional sweep is recorded in a DIV row
         self.cortexmpriv = false; // (kuna) DIV-99: default-OFF -- "the core is privileged" is a modelling judgement, not a proof (Cortex-M Thread mode can run unprivileged); ON in the `aggressive` preset, which `auto` selects under 500 KiB, so it is the default rendering for real firmware
+        self.ptrdepthcap = false; // (kuna) DIV-108: default-OFF in the catalog because it changes INFERRED types and the datatest corpus pins the upstream spellings; ON in the `aggressive` preset, which `auto` selects under 500 KiB, so the cap is the default rendering for every real binary
         self.condexe_block_placement = true; // (kuna) DIV-3 default-on (GH-9203)
         self.add_carry_chain = true; // (kuna) DIV-2 default-on (GH-8913)
         self.model_stack_probe_loop = true; // (kuna) DIV-3 default-on (GH-8017)
@@ -1829,7 +2010,23 @@ impl Architecture {
         // (kuna) DIV-65 measured libc signature extension — default-ON.
         self.analysis_libcsigs = true;
         self.analysis_strings = true;
+        self.analysis_widestrings = true; // (kuna) DIV-110: the StringsAnalyzer `allCharWidths` 2-byte width default-ON (a wide literal was read as its own first character)
         self.analysis_entry_disc = true;
+        // (kuna) Unmapped-CALL-target entry suppression -- default-ON (it only ever
+        // withholds an entry the walk already refused to decode).
+        self.analysis_unmappedentry = true;
+        // (kuna) PPC64 ELFv2 local-entry entry suppression -- default-ON (it only
+        // ever withholds the duplicate second entry over a function whose global
+        // entry is already a seed, so no body can be lost).
+        self.analysis_ppclocalentry = true;
+        // (kuna) PIC base-register folding in the xref index -- default-ON. It is
+        // a query surface only (no p-code, no emitted C), so no parity gate can
+        // observe it; it only ever ADDS an edge, and only one it can prove.
+        self.analysis_picbase = true;
+        // (kuna) PE CRT entry-function prototype recovery -- default-ON.
+        self.analysis_entrymainproto = true;
+        // (kuna) Mach-O `LC_MAIN` entry naming + prototype -- default-ON (DIV-111).
+        self.analysis_machomain = true;
         // (kuna) `.eh_frame` LSDA landing-pad discovery — default-OFF (opt-in,
         // output-changing: adds the discovered exception landing pads as entries).
         self.analysis_eh_frame_full = false;
@@ -1960,8 +2157,12 @@ impl Architecture {
             "v850indirectbranch" => on_off!(v850_indirect_branch, "V850 indirect-branch reclassification"),
             "msvcftol" => on_off!(msvc_ftol, "MSVC __ftol-family call-fixup"),
             "tailcalljump" => on_off!(tail_call_jumps, "Tail-call jump recovery"),
+            "tailcallframe" => on_off!(tail_call_frame, "Frame-teardown tail-call recovery"),
             "funcboundflow" => on_off!(funcbound_flow, "Fall-through bound at function entries"),
+            "overlapbranch" => on_off!(overlap_branch, "Overlapping-branch fall-through truncation"),
             "cleanupcode" => on_off!(remove_cleanup_code, "Rust drop/deallocate call removal"),
+            "linuxsyscall" => on_off!(linux_syscall, "Linux int 0x80 syscall naming"),
+            "switchselector" => on_off!(switch_selector_guard, "Lowered-switch selector soundness guard"),
             "noreturn_extern" => on_off!(noreturn_extern_calls, "Name-based extern no-return"),
             "inputvarnodeadjust" => on_off!(input_varnode_adjust, "Overlapping input-varnode adjustment"),
             "retinputhalf" => on_off!(ret_input_half, "Returned input-parameter half retention"),
@@ -1985,11 +2186,17 @@ impl Architecture {
                 self.memset_recover = form.memset_recover();
                 Ok(msg)
             }
+            "rodatastring" => {
+                let (form, msg) = crate::kuna_rodatastring::parse_rodata_string_form(p1)?;
+                self.rodata_string = form.rodata_string();
+                Ok(msg)
+            }
             "switchmodbound" => on_off!(switch_modulo_bound, "Switch modulo/and-mask index bound"),
             "switchguardbound" => on_off!(switch_guard_bound, "Switch CBRANCH-guard index bound"),
             "switchsharedcase" => on_off!(switch_shared_case, "Switch loop-carried-guard table"),
             "switchmultipred" => on_off!(switch_multi_pred, "Switch multi-predecessor unrolled-guard table"),
             "unrolledguard" => on_off!(unrolled_guard, "Interleaved unrolled-guard jump-table partial-flow recovery"),
+            "jtsharepartial" => on_off!(jumptable_share_partial, "Shared jump-table partial sub-decompilation"),
             "noreturn_externmatch" => on_off!(noreturn_extern_match, "Name-matched extern no-return"),
             "loweredswitch" => {
                 let (val, msg) = crate::kuna_loweredswitch::OptionLowerSwitch.apply(p1)?;
@@ -2000,6 +2207,36 @@ impl Architecture {
                 let (val, msg) =
                     crate::p4_calls::kuna_callsitestackargs::OptionCallsiteStackArgs.apply(p1)?;
                 self.callsite_stack_args = val;
+                Ok(msg)
+            }
+            "inputparamgap" => {
+                let (val, msg) =
+                    crate::p4_calls::kuna_inputparamgap::OptionInputParamGap.apply(p1)?;
+                self.input_param_gap = val;
+                Ok(msg)
+            }
+            "calleedeadarg" => {
+                let (val, msg) =
+                    crate::p4_calls::kuna_calleedeadarg::OptionCalleeDeadArg.apply(p1)?;
+                self.callee_dead_arg = val;
+                Ok(msg)
+            }
+            "varargstackargs" => {
+                let (val, msg) =
+                    crate::p4_calls::kuna_varargstackargs::OptionVarargStackArgs.apply(p1)?;
+                self.vararg_stack_args = val;
+                Ok(msg)
+            }
+            "calleearity" => {
+                let (val, msg) =
+                    crate::p4_calls::kuna_calleearity::OptionCalleeArity.apply(p1)?;
+                self.callee_arity = val;
+                Ok(msg)
+            }
+            "calleearityfwd" => {
+                let (val, msg) =
+                    crate::p4_calls::kuna_calleearityfwd::OptionCalleeArityFwd.apply(p1)?;
+                self.callee_arity_fwd = val;
                 Ok(msg)
             }
             "calloverlap" => {
@@ -2015,6 +2252,9 @@ impl Architecture {
                 Ok(msg)
             }
             "loadguardrange" => on_off!(load_guard_range, "Indexed-stack guard ValueSet range refinement"),
+            "tiedstorekeep" => {
+                on_off!(tied_store_keep, "Address-tied store copy-propagation brake")
+            }
             "regionstructure" => {
                 let (val, msg) =
                     crate::p8_structure::region_structurer::OptionRegionStructure.apply(p1)?;
@@ -2160,6 +2400,7 @@ impl Architecture {
             "ctypes" => on_off!(ctypes, "valid-C core type spelling"),
             "framelayout" => on_off!(framelayout, "recovered stack-frame reporting"),
             "voidtailreturn" => on_off!(voidtailreturn, "void tail-return elision"),
+            "ptrdepthcap" => on_off!(ptrdepthcap, "inferred pointer-nesting cap"),
             "cortexmpriv" => on_off!(cortexmpriv, "Cortex-M privileged-mode guard folding"),
             "dedupvardecls" => {
                 let (val, msg) = crate::kuna_dedupvardecls::OptionDedupVarDecls.apply(p1)?;
@@ -2176,7 +2417,25 @@ impl Architecture {
             "libproto" => on_off!(analysis_libproto, "Library-prototype analysis pass"),
             "libcsigs" => on_off!(analysis_libcsigs, "Measured libc signature extension"),
             "strings" => on_off!(analysis_strings, "String-literal analysis pass"),
+            "widestrings" => {
+                on_off!(analysis_widestrings, "UTF-16LE width of the string-literal pass")
+            }
             "entry_disc" => on_off!(analysis_entry_disc, "Entry-discovery analysis pass"),
+            "unmappedentry" => {
+                on_off!(analysis_unmappedentry, "Unmapped-CALL-target entry suppression")
+            }
+            "ppclocalentry" => {
+                on_off!(analysis_ppclocalentry, "PPC64 ELFv2 local-entry entry suppression")
+            }
+            "picbase" => {
+                on_off!(analysis_picbase, "PIC base-register folding in the xref index")
+            }
+            "entrymainproto" => {
+                on_off!(analysis_entrymainproto, "PE CRT entry-function prototype recovery")
+            }
+            "machomain" => {
+                on_off!(analysis_machomain, "Mach-O LC_MAIN entry naming + prototype")
+            }
             "eh_frame_full" => {
                 on_off!(analysis_eh_frame_full, ".eh_frame LSDA landing-pad discovery")
             }
@@ -2824,12 +3083,20 @@ impl Architecture {
         ctx.ov_less_simplify = self.ov_less_simplify; // GH-7190 ovlesssimplify
         ctx.recover_array_stride = self.recover_array_stride; // GH-8724 arraystride
         ctx.memset_recover = self.memset_recover; // GH-9230/1537 memsetrecover
+        ctx.rodata_string = self.rodata_string; // (kuna) rodatastring
+        ctx.ptrdepthcap = self.ptrdepthcap; // (kuna) ptrdepthcap
         ctx.model_stack_probe_loop = self.model_stack_probe_loop; // GH-8017 stackprobeloop
         ctx.recover_lowered_switch = self.recover_lowered_switch; // loweredswitch
         ctx.callsite_stack_args = self.callsite_stack_args; // callsitestackargs
+        ctx.callee_dead_arg = self.callee_dead_arg; // calleedeadarg
+        ctx.input_param_gap = self.input_param_gap; // inputparamgap
+        ctx.vararg_stack_args = self.vararg_stack_args; // varargstackargs
+        ctx.callee_arity = self.callee_arity; // calleearity
+        ctx.callee_arity_fwd = self.callee_arity_fwd; // calleearityfwd
         ctx.call_overlap = self.call_overlap; // calloverlap
         ctx.spill_arg_trial = self.spill_arg_trial; // spillargtrial
         ctx.load_guard_range = self.load_guard_range; // loadguardrange
+        ctx.tied_store_keep = self.tied_store_keep; // tiedstorekeep
         ctx.region_structure = self.region_structure; // regionstructure
         ctx.guard_arm = self.guard_arm; // guardarm
         ctx.loop_cond_hoist = self.loop_cond_hoist; // loopcondhoist
@@ -2837,6 +3104,8 @@ impl Architecture {
         ctx.region_edge_order = self.region_edge_order; // regionedgeorder
         ctx.outline_spec = self.outline_spec.clone(); // outline
         ctx.remove_cleanup_code = self.remove_cleanup_code; // cleanupcode
+        ctx.linux_syscall = self.linux_syscall; // linuxsyscall
+        ctx.switch_selector_guard = self.switch_selector_guard; // switchselector
         ctx.cond_fold = self.cond_fold; // condfold
         ctx.reduce_return_gotos = self.reduce_return_gotos; // gotoreduce
         ctx.flatten_ifelse = self.flatten_ifelse; // ifelseflatten
@@ -2911,6 +3180,9 @@ impl Architecture {
         // (kuna, angr) carry the interleaved unrolled-guard partial-flow gate
         // (`option unrolledguard`) so `FlowInfo::collectEdges` reaches it.
         ctx.unrolled_guard = self.unrolled_guard;
+        // (kuna) carry the shared-partial gate (`option jtsharepartial`) so
+        // `Funcdata::stage_jump_table` reaches it.
+        ctx.jumptable_share_partial = self.jumptable_share_partial;
         ctx.loader = Some(self.translate.loader_rc());
         // Carry the read-only-propagation switch (C++ `glb->readonlypropagate`,
         // flipped by `option readonly`) so `ActionVarnodeProps` reaches it to gate

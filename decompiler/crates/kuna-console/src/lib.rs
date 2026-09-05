@@ -26,6 +26,7 @@ pub mod project;
 pub mod funcextent;
 pub mod codedata;
 pub mod kuna_console;
+pub mod assertions;
 pub mod grammar;
 pub mod rulecompile;
 pub mod unify;

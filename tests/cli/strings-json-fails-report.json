@@ -1,0 +1,53 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "a-fb6560326110",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "strings",
+    "{{BIN}}",
+    "--json",
+    "--filter",
+    "Password"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/picbase_i386",
+    "binary_sha256": "54b6f374f72fd924e8134188c3307300c091f30165b7f674c9254190b00e1e0e",
+    "binary_size": 9132,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/picbase_i386",
+    "selector": null,
+    "selector_kind": "none"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "json": [
+      {
+        "path": "strings[0].xrefs_count",
+        "op": "gt",
+        "value": 0
+      },
+      {
+        "path": "strings[0].functions",
+        "op": "len_gt",
+        "value": 0
+      },
+      {
+        "path": "strings[0].functions[0].name",
+        "op": "eq",
+        "value": "_start"
+      }
+    ]
+  },
+  "notes": "Promoted acceptance of RE-need strings-json-fails-report, re-pointed from the dataset witness (crackmes.one 5ab77f6333c5d40ad448ca52, all 23 strings at xrefs_count 0) at the vendored picbase_i386 fixture: CI has no dataset. The owning-function clause is load-bearing: SOME reference is satisfied by a nearby-address heuristic, the wrong-output mode this refuses. Fails with --option picbase off."
+}
