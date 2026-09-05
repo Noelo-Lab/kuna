@@ -17,7 +17,7 @@ covered_by_option: null
 touches: [decompiler/crates/kuna-decomp, decompiler/crates/kuna-console]
 scope: small
 regression_of: null
-pr: 393
+pr: "396"
 closed_in_round: null
 closing_pr: null
 reject_reason: null
@@ -278,3 +278,19 @@ _none recorded_
   `Heritage::guard_calls` is not a prototype-query hot spot -- the three model queries measure
   30 / 19.7 / 9.8 ms inside a 971 ms loop, so the cost is INDIRECT op and Varnode construction
   (IR growth), not a memoizable lookup.
+- round 2 B_DONE (captain): **attempt 4 (#396, `105beeec`) MERGED and the need STAYS OPEN.**
+  `pr` 393 -> 396; `closing_pr` stays null; `attempts` stays 4. Post-merge witness on the fully
+  rebuilt main 8634dbc9, from the acceptance suite itself (a-53d616afcb6a, 1 rep):
+  **10,816 ms** against the `< 10,000 ms` bar. Four merged, measured, output-identical attempts
+  have taken this witness 71.5 -> 19.4 -> 14.4 -> 11.8 -> 10.8 s. The bar is still not moved.
+  **The pre/post delta this wave's harness printed (-0.04 s) is VOID -- do not cite it.** It copied
+  the pre-merge `kuna` to /tmp and timed it against the rebuilt one, but `kuna decompile` forks
+  `decomp_dbg`, and `kuna-cli/src/paths.rs` resolves that sibling by `exe_dir()` then falls back to
+  `repo_root()/decompiler/target/release`; off /tmp the parent walk fails, `repo_root()` falls back
+  to the CWD, and the "pre" binary executed the FRESHLY REBUILT engine (proven: the /tmp copy's
+  `catalog --json` gained the new option across `make binaries`). Any future A/B of a decompile must
+  pin the engine too -- copy `decomp_dbg` aside and point at it with `KUNA_DECOMP_DBG`.
+  Attempt 5, if it is ever dispatched, is a **campaign, not a profiling run**: the post-#393 profile
+  is flat (`stage_jump_table` ~31%, heritage ~23%, oppool1 ~14%, ActionDeadCode ~14%) and #396 took
+  its 0.9 s out of Rc traffic on 9.5 M tree mutations, i.e. the volume, not a pass. Dispatch it
+  `[PROPOSAL]`-shaped or park it; do not spend a fifth open-ended builder here.

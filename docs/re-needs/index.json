@@ -4,8 +4,8 @@
   "count": 35,
   "rejected_count": 0,
   "by_status": {
-    "closed": 23,
-    "open": 12
+    "closed": 24,
+    "open": 11
   },
   "by_track": {
     "perf": 2,
@@ -187,7 +187,7 @@
       "status": "open",
       "severity": "major",
       "probe_id": "p-2fa68bfb8456",
-      "acceptance_id": "a-2883814fbd58",
+      "acceptance_id": "a-d6b2084f35d5",
       "hypothesis_status": "inconclusive",
       "credibility": 0.7,
       "instances": 1,
@@ -562,7 +562,7 @@
       "need_id": "direct-address-keyboard-handler",
       "title": "Direct-address keyboard handler decompilation annexes the unrelated renderer",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
       "probe_id": "p-36f0974fc119",
       "acceptance_id": "a-f13adb91d5d4",
@@ -583,9 +583,9 @@
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": "395",
+      "closed_in_round": 2,
+      "closing_pr": "395",
       "reject_reason": null,
       "score": 9.241962,
       "path": "docs/re-needs/direct-address-keyboard-handler.md"
@@ -840,39 +840,6 @@
       "path": "docs/re-needs/stack-string-invalid-cast.md"
     },
     {
-      "need_id": "decompiling-3396-byte-main",
-      "title": "Decompiling the 3396-byte main function takes about 68 seconds",
-      "track": "perf",
-      "status": "open",
-      "severity": "major",
-      "probe_id": "p-a9ebf39dace0",
-      "acceptance_id": "a-53d616afcb6a",
-      "hypothesis_status": "inconclusive",
-      "credibility": 0.7,
-      "instances": 1,
-      "challenges": [
-        "69a3822f7b3cc38c80464da4"
-      ],
-      "rounds": [
-        2
-      ],
-      "first_seen_round": 2,
-      "attempts": 3,
-      "covered_by_option": null,
-      "touches": [
-        "decompiler/crates/kuna-decomp",
-        "decompiler/crates/kuna-console"
-      ],
-      "scope": "small",
-      "regression_of": null,
-      "pr": 393,
-      "closed_in_round": null,
-      "closing_pr": null,
-      "reject_reason": null,
-      "score": 5.545177,
-      "path": "docs/re-needs/decompiling-3396-byte-main.md"
-    },
-    {
       "need_id": "cold-load-xref-lookup",
       "title": "Cold-load xref lookup takes about four seconds on a 466 KB ELF",
       "track": "perf",
@@ -905,6 +872,39 @@
       "reject_reason": null,
       "score": 4.620981,
       "path": "docs/re-needs/cold-load-xref-lookup.md"
+    },
+    {
+      "need_id": "decompiling-3396-byte-main",
+      "title": "Decompiling the 3396-byte main function takes about 68 seconds",
+      "track": "perf",
+      "status": "open",
+      "severity": "major",
+      "probe_id": "p-a9ebf39dace0",
+      "acceptance_id": "a-53d616afcb6a",
+      "hypothesis_status": "inconclusive",
+      "credibility": 0.7,
+      "instances": 1,
+      "challenges": [
+        "69a3822f7b3cc38c80464da4"
+      ],
+      "rounds": [
+        2
+      ],
+      "first_seen_round": 2,
+      "attempts": 4,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-decomp",
+        "decompiler/crates/kuna-console"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": "396",
+      "closed_in_round": null,
+      "closing_pr": null,
+      "reject_reason": null,
+      "score": 4.620981,
+      "path": "docs/re-needs/decompiling-3396-byte-main.md"
     },
     {
       "need_id": "call-args-discarded",

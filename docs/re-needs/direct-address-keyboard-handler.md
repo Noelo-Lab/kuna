@@ -2,7 +2,7 @@
 need_id: direct-address-keyboard-handler
 title: Direct-address keyboard handler decompilation annexes the unrelated renderer
 track: quality
-status: open
+status: closed
 severity: major
 probe_id: p-36f0974fc119
 acceptance_id: a-f13adb91d5d4
@@ -17,9 +17,9 @@ covered_by_option: null
 touches: [decompiler/crates/kuna-decomp]
 scope: small
 regression_of: null
-pr: null
-closed_in_round: null
-closing_pr: null
+pr: "395"
+closed_in_round: 2
+closing_pr: "395"
 reject_reason: null
 ---
 
@@ -146,3 +146,9 @@ _none recorded_
   caused by the jump TARGET `0x4610` being absent from the function map, not by `0x6500` being
   absent. `hypothesis_status` is left `inconclusive` on purpose -- that field is the refuter's, and
   no refuter has checked this; fold it in when the PR lands.
+- closed: acceptance a-f13adb91d5d4 now PASSES at 8634dbc9d45d
+- round 2 B_DONE (captain): `pr: null -> 395` (apply-acceptance sets `closing_pr` but never `pr`).
+  No `tests/cli/` promotion this wave -- #395 vendored `tests/cli/direct-address-keyboard-handler.json`
+  itself (CLITEST_JSON 22 -> 23) and `make test-cli` ran it green at 23/23 on merged main; a second
+  promotion would duplicate it. The acceptance is un-gameable by emitting nothing: exit_code 0 AND
+  `sub_6500\(` present, plus the two absence clauses.
