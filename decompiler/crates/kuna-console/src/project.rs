@@ -193,6 +193,12 @@ pub fn decompile_targets(
         // field is empty for a run that passed no directive, which is what makes
         // the plane free (`crate::assertions`).
         let seed = crate::assertions::function_seed(prog, &name, &entry, single_target);
+        // (kuna `--assert`) A caller-stated `flow` reclassification is appended
+        // AFTER the derived no-return prunes, so it wins the map insert at an
+        // address both name (`Override::insertFlowOverride` is a map store):
+        // what the caller declared outranks what analysis inferred.
+        let mut flow_ovr = flow_ovr;
+        flow_ovr.extend(seed.flow_overrides.iter().cloned());
         let step = crate::decompile_step::decompile_one(
             prog.arch_mut(),
             &name,

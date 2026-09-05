@@ -1,0 +1,61 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "--addr",
+    "0x13c9",
+    "--json",
+    "--assert",
+    "flow 0x1405 return",
+    "--assert-strict"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/aif_gap_x86_64",
+    "binary_sha256": "1a592a85f424cc2db8953d5a38c86676bcee5e37b242b6fb6244a2c9fccfeeef",
+    "binary_size": 14408,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/aif_gap_x86_64",
+    "selector": "0x13c9",
+    "selector_kind": "addr"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "json": [
+      {
+        "path": "assertions[0].kind",
+        "op": "eq",
+        "value": "flow"
+      },
+      {
+        "path": "assertions[0].status",
+        "op": "eq",
+        "value": "applied"
+      },
+      {
+        "path": "functions[0].code",
+        "op": "contains",
+        "value": "return dat_4014;"
+      },
+      {
+        "path": "functions[0].code",
+        "op": "not_contains",
+        "value": "v25"
+      }
+    ]
+  },
+  "notes": "Desired: `--assert 'flow <addr> branch|call|callreturn|return'` reaches the ported IfcFlowOverride path and is reported in the assertions fate array. The output clause is MEASURED: `override flow 0x1405 return` in decomp_dbg today collapses the 65-line sub_13c9 body (v1..v25, 682-byte extent) to `return dat_4014;`. In-repo fixture, promotes verbatim.",
+  "probe_id": "a-158ef4220dee"
+}

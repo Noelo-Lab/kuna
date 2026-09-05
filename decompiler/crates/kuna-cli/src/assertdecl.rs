@@ -18,6 +18,7 @@
 //!   --assert 'type v2 char[16]'
 //!   --assert 'name v2 credbuf'
 //!   --assert 'readonly 0x404028+8'
+//!   --assert 'flow 0x1405 return'
 //!   --assert 'volatile 0x50000000+4'
 //!   --assert @notes/overrides.kuna
 //! ```
@@ -269,12 +270,29 @@ pub(crate) fn parse_one(spec: &str) -> Result<Directive, String> {
                 Body::Volatile { addr, size }
             }
         }
+        "flow" => {
+            let (addr, kind) = take_token(rest);
+            let (func, addr) = split_qualifier(addr);
+            let addr = parse_vma(&addr).ok_or_else(|| bad("flow needs a hex <addr>"))?;
+            let (kind, tail) = take_token(kind);
+            if !tail.is_empty() {
+                return Err(bad("flow takes exactly <addr> <flowkind>"));
+            }
+            // The vocabulary is closed and four words wide, so a misspelling is a
+            // usage error here rather than a rejected outcome three phases later.
+            if !matches!(kind, "branch" | "call" | "callreturn" | "return") {
+                return Err(bad(
+                    "flow needs <addr> then one of branch, call, callreturn, return",
+                ));
+            }
+            Body::Flow { func, addr, kind: kind.to_string() }
+        }
         "" => return Err("--assert: empty directive".into()),
         other => {
             return Err(format!(
                 "--assert {raw:?}: unknown directive {other:?} (want one of \
-                 function, typedef, prototype, data, param, return, comment, name, type, \
-                 readonly, volatile)"
+                 function, typedef, prototype, data, param, return, comment, flow, name, \
+                 type, readonly, volatile)"
             ))
         }
     };
@@ -308,6 +326,9 @@ pub(crate) fn console_form(d: &Directive) -> Option<ConsoleForm> {
         }
         Body::Comment { addr, text, .. } => {
             (Slot::Function, format!("comment instruction {addr:#x} {text}"))
+        }
+        Body::Flow { addr, kind, .. } => {
+            (Slot::Function, format!("override flow {addr:#x} {kind}"))
         }
         Body::Readonly { addr, size } => (Slot::Image, format!("readonly {addr:#x} {size}")),
         Body::Volatile { addr, size } => (Slot::Image, format!("volatile {addr:#x} {size}")),
@@ -423,6 +444,31 @@ mod tests {
         );
     }
 
+    /// `flow` takes an address and one of the console's four flow words, and
+    /// qualifies like every other function-scoped directive.
+    #[test]
+    fn flow_takes_an_address_and_one_of_four_words() {
+        for kind in ["branch", "call", "callreturn", "return"] {
+            assert_eq!(
+                one(&format!("flow 0x1405 {kind}")).body,
+                Body::Flow { func: None, addr: 0x1405, kind: kind.into() }
+            );
+        }
+        // Bare hex is the `--define-function` convention, here too.
+        assert_eq!(
+            one("flow 1405 return").body,
+            Body::Flow { func: None, addr: 0x1405, kind: "return".into() }
+        );
+        assert_eq!(
+            one("flow sub_13c9::0x1405 callreturn").body,
+            Body::Flow {
+                func: Some("sub_13c9".into()),
+                addr: 0x1405,
+                kind: "callreturn".into()
+            }
+        );
+    }
+
     /// A directive kuna cannot honor must say so rather than be dropped: an
     /// accepted-and-inert assertion is the failure mode this plane exists to end.
     #[test]
@@ -437,6 +483,10 @@ mod tests {
             "param x RDI int4",
             "prototype authenticate",
             "comment 0x400699",
+            "flow 0x1405",
+            "flow 0x1405 goto",
+            "flow notahex return",
+            "flow 0x1405 return extra",
         ] {
             let err = parse_one(spec).expect_err("refuses");
             assert!(err.starts_with("--assert"), "got {err:?} for {spec:?}");
@@ -473,6 +523,10 @@ mod tests {
         assert_eq!(
             lowered("comment 0x400699 open the file"),
             (Slot::Function, "comment instruction 0x400699 open the file".into())
+        );
+        assert_eq!(
+            lowered("flow 0x1405 return"),
+            (Slot::Function, "override flow 0x1405 return".into())
         );
         assert_eq!(lowered("type v2 char[16]"), (Slot::Symbol, "retype v2 char[16]".into()));
         assert_eq!(lowered("name v2 credbuf"), (Slot::Symbol, "rename v2 credbuf".into()));

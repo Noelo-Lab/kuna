@@ -725,6 +725,7 @@ to know that renaming is P9 to rename something — parsed by
 | `param [<func>::]<i> <storage> <C typedeclaration>` | `map param` | P4 prototype-source |
 | `return [<func>::]<storage> <C typedeclaration>` | `map return` | P4 prototype-source |
 | `comment [<func>::]<addr> <text>` | `comment instruction` | P9 external-refinement |
+| `flow [<func>::]<addr> branch\|call\|callreturn\|return` | `override flow` | P2 flow-classification |
 | `name [<func>::]<symbol> <newname>` | `rename` | P9 naming-policy |
 | `type [<func>::]<symbol> <C type>` | `retype` | P5 type-propagation |
 | `readonly <addr>+<size>` | `readonly` | P1 code-data-partition |
@@ -745,9 +746,9 @@ render the same C. **Program-scoped** directives (`function`, `typedef`, `protot
 (`ConsoleProgram::set_assertions` + `assertions::apply_program_scoped`, called
 from `decompiler/crates/kuna-cli/src/decompile_all.rs (load_program)`), for the
 same reason a declared boundary is: an assertion outranks discovery.
-**Function-scoped** directives (`param`, `return`, `comment`) become decompile
-SEEDS (`assertions::function_seed`), because a prototype fact is consumed at flow
-time and cannot be applied afterwards. **Symbol-scoped** directives (`name`,
+**Function-scoped** directives (`param`, `return`, `comment`, `flow`) become
+decompile SEEDS (`assertions::function_seed`), because a prototype fact is
+consumed at flow time and cannot be applied afterwards. **Symbol-scoped** directives (`name`,
 `type`) can only be applied to an already-decompiled function — the local they
 name does not exist until a decompile has produced it — so
 `decompiler/crates/kuna-console/src/project.rs (decompile_targets)` decompiles,
@@ -772,6 +773,27 @@ rejection is reported and the run continues, so a batch of forty renames against
 re-decompiled binary does not lose the other thirty-nine to one stale name.
 Durability is caller-carried, as it is for boundaries: `--assert @FILE` is the
 artifact.
+
+A `flow` directive is the sharpest of the four function-scoped ones, and the only
+one that changes which bytes are in the function at all. P2 classifies the flow
+out of each instruction — branch, call, call-that-does-not-return, return — and
+`FlowInfo::process` consults the per-function `Override` store
+(`has_flow_override`/`get_flow_override`, then `Funcdata::overrideFlow`) before it
+decides. The directive seeds that store: `assertions::seed_one` resolves the
+address in the default code space, maps the caller's word through
+`Override::string_to_type` (rejecting anything outside `branch`, `call`,
+`callreturn`, `return` with a reason rather than dropping it), and parks the pair
+in `FunctionSeed::flow_overrides`, which
+`decompiler/crates/kuna-console/src/project.rs (decompile_targets)` appends to the
+derived overrides it already carries — the analysis's `call error(nonzero,…)`
+no-return prunes — so a caller-stated fact wins the map insert at an address both
+name. The script surface reaches the same store through the ported console
+command (`kuna-console/src/ifacedecomp.rs (IfcFlowOverride)`), whose facts the
+console re-seeds on every IR rebuild; the two surfaces render the same C. Because
+the override is read at flow time, a type the engine cannot honour at that
+instruction — `call` at an indirect call, which has no destination to make direct —
+raises `Could not apply flowoverride` and the run reports that as the function's
+error, rather than decompiling as though nothing had been asserted.
 
 A `readonly` range is the one directive whose effect depends on a second switch:
 folding a read-only load into the value behind it is
