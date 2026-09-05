@@ -256,6 +256,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "retsplitglobal",
     "flagcompare",
     "v850indirectbranch",
+    "fastfailnoreturn",
     "msvcftol",
     "tailcalljump",
     "tailcallframe",

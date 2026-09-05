@@ -322,6 +322,15 @@ pub trait FlowEnvironment {
         false
     }
 
+    /// (kuna `fastfailnoreturn`) Is `op` the CALLIND half of a Windows `int 0x29`
+    /// (`__fastfail`), which never returns?  See
+    /// [`kuna_fastfailnoreturn`](crate::kuna_fastfailnoreturn).  The default shell
+    /// reports `false` (upstream behavior: the interrupt is an ordinary modelled
+    /// call, so the cspec's `extrapop` raises the stack pointer by 8 at every site).
+    fn is_fastfail_callind(&self, _fd: &Funcdata, _op: OpId) -> bool {
+        false
+    }
+
     /// (kuna) tee-O2 tail-jump: is the direct `CPUI_BRANCH` `op`, whose target is
     /// `dest`, an `-O2` tail call to another known function's entry (and so should
     /// be recovered as a `CALL` + `RETURN` rather than flow-followed into the
@@ -2172,6 +2181,28 @@ truncating the fall-through here"
 
         self.build_call_specs(op, Address::default(), true)?;
         self.qlst_count += 1;
+        // (kuna `fastfailnoreturn`) A Windows `int 0x29` lifts to `intloc =
+        // swi(0x29); call [intloc]` — a call with no matching push, which the
+        // cspec's `extrapop` then hands 8 bytes back for.  `__fastfail` never
+        // returns, so mark the spec and plant the halt here; downstream that is
+        // indistinguishable from a named no-return callee.  The warning the
+        // no-return path buffers is deliberately not emitted: the divergence is
+        // definitional, not a surprise, and a function can hold a dozen sites.
+        if self.env.is_fastfail_callind(&self.data, op) {
+            if let Some(idx) = self.data.get_call_specs_index(op) {
+                self.data.get_call_specs_mut(idx).proto_mut().set_no_return(true);
+            }
+            let addr = self
+                .data
+                .obank()
+                .get(op)
+                .expect("fastfailnoreturn: stale call op")
+                .get_addr()
+                .clone();
+            let haltop = self.artificial_halt(&addr, pcodeop_flags::noreturn)?;
+            self.data.op_dead_insert_after(haltop, op);
+            return Ok(true);
+        }
         // C++ `return checkForFlowModification(*res)` (flow.cc:740).  An indirect
         // call has an invalid entry, so the inline/noreturn flow effects are only
         // present if an override turned it direct (handled above).

@@ -1,0 +1,40 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "0x140001000",
+    "--addr"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/fastfail_x86_64.exe",
+    "binary_sha256": "ad51d8d03d2a61800966eb51517fabb6c343f35ee3ff79377c12f277731fa0a4",
+    "binary_size": 1536,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/fastfail_x86_64.exe",
+    "selector": "0x140001000",
+    "selector_kind": "addr"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_absent": [
+      "\\*\\(unsigned long long \\*\\)&v\\d+\\[-8\\] = 0x1"
+    ],
+    "stdout_matches": [
+      "BCryptGenerateSymmetricKey\\(v\\d+,"
+    ]
+  },
+  "notes": "Desired: a Windows `int 0x29` (`__fastfail`) does not raise the stack pointer by eight and wreck the frame around it. The acceptance of need large-function-malformed-output is crackmes.one 6a3822888a86e4c2c55254fe selam.exe 0x140002d50, dataset-only; this vendors the same shape as a synthesized PE32+ (fastfail_x86_64.py regenerates it), both clauses verbatim. `fastfailnoreturn off` restores it.",
+  "probe_id": "a-5caa9c3e4740"
+}

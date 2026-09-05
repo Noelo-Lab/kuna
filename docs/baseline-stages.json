@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    632,
-    632
+    635,
+    635
   ],
   "passing": [
     "data:ARRAYSUBFIELD #1: an 8-byte read at offset 0 of char[16] is a sized sub-field, not element 0",
@@ -86,6 +86,9 @@
     "data:FAST-FUNCDISC #1: loader-known entry is present in both inventories",
     "data:FAST-FUNCDISC #2: direct callee is absent off and present on",
     "data:FAST-FUNCDISC #3: the newly inventoried callee has a real decompiled body",
+    "data:FASTFAILNORETURN #1: the parameter is returned directly once the interrupt ends the flow (default pass only)",
+    "data:FASTFAILNORETURN #2: the unbalanced stack pointer becomes a tracked variable only in the fastfailnoreturn-off pass",
+    "data:FASTFAILNORETURN #3: the parameter's own stack slot degenerates into an offset off that variable only in the fastfailnoreturn-off pass",
     "data:FUNCBOUNDFLOW #1: default does NOT merge neighbor; only the funcboundflow-off pass shows its body (exactly one occurrence across both passes)",
     "data:FUNCBOUNDFLOW #2: both passes resolve the unnamed no-return call to fatal(), so the sole difference is the boundary truncation",
     "data:FUNCPTRALIGN #1: the SLEIGH ISA-mode bit-clear never reaches the emitted C",

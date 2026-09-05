@@ -181,39 +181,6 @@
       "path": "docs/re-needs/overlapping-anti-disassembly-sequence.md"
     },
     {
-      "need_id": "large-function-malformed-output",
-      "title": "a large checker decompiles into malformed and prohibitively noisy C",
-      "track": "quality",
-      "status": "open",
-      "severity": "major",
-      "probe_id": "p-8355fed97a86",
-      "acceptance_id": "a-f6e8100daa0b",
-      "hypothesis_status": "inconclusive",
-      "credibility": 0.8,
-      "instances": 1,
-      "challenges": [
-        "6a3822888a86e4c2c55254fe"
-      ],
-      "rounds": [
-        1,
-        2
-      ],
-      "first_seen_round": 1,
-      "attempts": 0,
-      "covered_by_option": null,
-      "touches": [
-        "decompiler/crates/kuna-decomp"
-      ],
-      "scope": "large",
-      "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
-      "reject_reason": null,
-      "score": 13.862944,
-      "path": "docs/re-needs/large-function-malformed-output.md"
-    },
-    {
       "need_id": "no-cli-structuring-override",
       "title": "an agent cannot reclassify a flow from the CLI -- `--assert` has no `flow` directive",
       "track": "tooling",
@@ -502,6 +469,39 @@
       "reject_reason": null,
       "score": 9.241962,
       "path": "docs/re-needs/keyboard-callback-uses-undefined.md"
+    },
+    {
+      "need_id": "large-function-malformed-output",
+      "title": "a large checker decompiles into malformed and prohibitively noisy C",
+      "track": "quality",
+      "status": "open",
+      "severity": "major",
+      "probe_id": "p-8355fed97a86",
+      "acceptance_id": "a-2a1f5bccb422",
+      "hypothesis_status": "overturned",
+      "credibility": 0.8,
+      "instances": 1,
+      "challenges": [
+        "6a3822888a86e4c2c55254fe"
+      ],
+      "rounds": [
+        1,
+        2
+      ],
+      "first_seen_round": 1,
+      "attempts": 1,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-decomp/src/p2_lift"
+      ],
+      "scope": "large",
+      "regression_of": null,
+      "pr": 417,
+      "closed_in_round": null,
+      "closing_pr": null,
+      "reject_reason": null,
+      "score": 9.241962,
+      "path": "docs/re-needs/large-function-malformed-output.md"
     },
     {
       "need_id": "mach-o-entry-function",

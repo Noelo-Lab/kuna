@@ -1,0 +1,55 @@
+<decompilertest>
+<!--
+    fastfailnoreturn: a Windows `int 0x29` (`__fastfail`) raises the stack pointer
+    by eight bytes, which destroys the frame of every function that contains one.
+
+    x86 SLEIGH lifts `INT imm8` to `intloc = swi(imm8); call [intloc]` (ia.sinc:3671)
+    - a `call` with NO matching push, unlike every other x86 CALL, which lifts as
+    `RSP = RSP - 8; push &next; call target`.  Nothing downstream knows that, so the
+    interrupt is an ordinary modelled call and `x86-64-win.cspec`'s default
+    `__fastcall` (extrapop="8" stackshift="8") hands eight bytes back after it.
+    Stage model: S2 flow classification (`setup_callind_specs`).
+
+    Layout (x86-64 Windows), the MSVC /GS + STL _STL_VERIFY shape reduced to one site:
+      0x140001000  48 83 ec 28     sub  rsp,0x28
+      0x140001004  48 89 4c 24 20  mov  [rsp+0x20],rcx   ; a local
+      0x140001009  48 85 c9        test rcx,rcx
+      0x14000100c  75 07           jne  0x140001015
+      0x14000100e  b9 05 00 00 00  mov  ecx,5            ; FAST_FAIL_INCORRECT_STACK
+      0x140001013  cd 29           int  0x29             ; __fastfail(5)
+      0x140001015  48 8b 44 24 20  mov  rax,[rsp+0x20]
+      0x14000101a  48 83 c4 28     add  rsp,0x28
+      0x14000101e  c3              ret
+
+    Pass 1 (fastfailnoreturn off, the bug): the interrupt falls through, so the join
+    at 0x140001015 is reached with two stack-pointer values eight bytes apart.  The
+    frame stops being a constant offset from the spacebase: RSP itself becomes a
+    `char *` local, and the load of the parameter's own slot degenerates into an
+    offset off it.
+    Pass 2 (default, fastfailnoreturn on): `__fastfail` never returns, so the block
+    ends at the interrupt, the unbalanced stack pointer reaches no join, and the
+    function is the one line it always was.
+
+    Assert #1 pins the recovered body to the default pass only.  Asserts #2 and #3
+    pin the two artefacts of the unbalanced frame - RSP tracked as a variable, and
+    the degenerate load off it - each to exactly one occurrence, so they exist only
+    in the fastfailnoreturn-off pass.  Neither pins an SSA index.
+-->
+<binaryimage arch="x86:LE:64:default:windows">
+<bytechunk space="ram" offset="0x140001000" readonly="true">4883ec2848894c24204885c97507b905000000cd29488b4424204883c428c3</bytechunk>
+<symbol space="ram" offset="0x140001000" name="fastfail_guard"/>
+</binaryimage>
+<script>
+  <com>option fastfailnoreturn off</com>
+  <com>lo fu fastfail_guard</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option fastfailnoreturn on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="FASTFAILNORETURN #1: the parameter is returned directly once the interrupt ends the flow (default pass only)" min="1" max="1">return a0;</stringmatch>
+<stringmatch name="FASTFAILNORETURN #2: the unbalanced stack pointer becomes a tracked variable only in the fastfailnoreturn-off pass" min="1" max="1">; // rsp</stringmatch>
+<stringmatch name="FASTFAILNORETURN #3: the parameter's own stack slot degenerates into an offset off that variable only in the fastfailnoreturn-off pass" min="1" max="1">\*\(unsigned long long \*\)&amp;v[0-9]+\[0x20\]</stringmatch>
+</decompilertest>
