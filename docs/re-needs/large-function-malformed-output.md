@@ -2,7 +2,7 @@
 need_id: large-function-malformed-output
 title: a large checker decompiles into malformed and prohibitively noisy C
 track: quality
-status: open
+status: closed
 severity: major
 probe_id: p-8355fed97a86
 acceptance_id: a-2a1f5bccb422
@@ -18,8 +18,8 @@ touches: [decompiler/crates/kuna-decomp/src/p2_lift]
 scope: large
 regression_of: null
 pr: 417
-closed_in_round: null
-closing_pr: null
+closed_in_round: 3
+closing_pr: 417
 reject_reason: null
 ---
 
@@ -225,3 +225,5 @@ _none recorded_
   carries BOTH clauses verbatim against a vendored 1,536-byte synthesized PE32+
   (`decompiler/crates/kuna-analysis/tests/fixtures/fastfail_x86_64.exe`) that reproduces the same
   shape in both directions. Increments B1/B2/C remain open in `proposal.md`.
+- closed: acceptance a-2a1f5bccb422 now PASSES at 80e965ca649d
+captain B_DONE r3 (re-applied): closed by #417 (bae88a02); the first application of this bookkeeping was lost when the main tree was checked out to branch docs/restore-round3-records and back, so it was redone from rounds/3/acceptance-suite.json (sha 80e965ca, the current HEAD).
