@@ -77,7 +77,7 @@ Whole-binary A/B on the witness: **42 changed lines, every one a recovery** —
 
 ## Collateral sweep
 
-`SWEEP_BLOCK`
+88 RE-dataset binaries under 800 KiB, `decompile-all` both arms, split by whether the image carries a UTF-16LE literal at all. **Control arm — 40 binaries with none: 0 changed, byte-identical.** **Affected arm — 48 binaries: 28 changed.** With variable NUMBERING normalised away (one added declaration renumbers every later local), the whole delta is 434 added / 429 removed lines: **259 wide literals recovered** (`L"KERNEL32.DLL"`, `L"mscoree.dll"`, `L"USER32.DLL"`, `L"CONOUT$"`, `L"UTF-8"`, `L"UTF-16LE"`, `L"UNICODE"`, `L"Runtime Error!\\n\\nProgram: "`, `L"Lucida Console"`, …), **121 `char *` -> `wchar_t *` declarations** that follow them, **16 bare constants that became named data symbols** (`0x405010` -> `s_405010`, a wide buffer in a WRITABLE section, so the printer names it rather than quoting it), and 38 consequential lines. Every one of the 38 was read: they are the declaration and pointer-arithmetic consequences of the new type — in `LOL` the MSVC charset walk goes from `vN = *(unsigned short *)&vN[2]; vN = &vN[4];` to `vN = vN[1]; vN = &vN[2];` over a `wchar_t *`, which is the same program spelled correctly, and its scan bound goes from `vN = "0"` to `vN = L"09AZ__az"`. **No call site is lost or gained anywhere in the sweep, and no arm exits differently from its partner (0 rc mismatches / 88).**
 
 ## Tests
 
@@ -104,7 +104,7 @@ Whole-binary A/B on the witness: **42 changed lines, every one a recovery** —
 |---|---|
 | `make test` | **PARITY OK** (675/675) |
 | `make test-stages` | **PARITY OK** |
-| `make rust-test` | RUSTTEST |
+| `make rust-test` | **green** (351 suites, 0 failures) |
 | `make check-spec` | OK (strict mode too) |
 | `kuna catalog --check` | catalog OK |
 | `make test-cli` | 26/26 |

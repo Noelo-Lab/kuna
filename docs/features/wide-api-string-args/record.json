@@ -44,12 +44,37 @@
       "detail": "`kuna decompile --assert 'data <addr> <type>'` (the P5 const-pointer directive, i.e. `map address`) is INERT at an address that carries no symbol yet, on both PE and ELF: it reports status `applied` and changes nothing. The same `map address` typed into decomp_dbg before OR after `read symbols` works and produces L\"ntdll.dll\" on the witness. Measured while looking for a way to test the mechanism without building it. Out of scope for this need and left for its own record."
     }
   ],
-  "collateral_sweep": {},
-  "cost": {},
+  "collateral_sweep": {
+    "method": "kuna decompile-all, widestrings on (default) vs off, over 88 RE-dataset binaries under 800 KiB, partitioned by `kuna strings --encoding utf16` into a control arm (no wide literal) and an affected arm. Every changed line of every changed binary was read, after normalising the variable RENUMBERING that one added declaration causes.",
+    "control_binaries": 40,
+    "control_changed": 0,
+    "affected_binaries": 48,
+    "affected_changed": 28,
+    "rc_mismatches": 0,
+    "normalised_added": 434,
+    "normalised_removed": 429,
+    "classes": {
+      "wide literal recovered": 259,
+      "char * -> wchar_t * declaration": 121,
+      "bare constant -> named data symbol": 16,
+      "consequential (declarations + pointer arithmetic)": 38
+    },
+    "largest_consequential": "LOL (Mach-O x86-64): the MSVC charset walk goes from `v = *(unsigned short *)&v[2]; v = &v[4];` to `v = v[1]; v = &v[2];` over a wchar_t *, and its scan bound from `v = \"0\"` to `v = L\"09AZ__az\"` -- the same program spelled correctly.",
+    "witness": "ObfuscationFiesta.exe whole-binary: 42 changed lines, all recoveries; 5 distinct wide literals plus the char*->wchar_t* declarations that follow them."
+  },
+  "cost": {
+    "method": "scripts.pipeline.timeit, witness sub_140002530, 7 repeats, budget 5%",
+    "speed_off_ms": 1701.69,
+    "speed_on_ms": 1703.48,
+    "speed_delta_pct": 0.11,
+    "within_budget": true,
+    "note": "the width is one extra linear pass over the same section bytes the 1-byte scan already walks"
+  },
   "not_closed": [
     "Scope is UTF-16LE whose code units are all in the 1-byte printable-ASCII charset -- the Windows-API case. A big-endian or non-Latin wide literal is still not recovered, exactly as `kuna strings --encoding utf16` does not recover it.",
     "UTF-32 (`StringsAnalyzer` also offers a 4-byte width) is untouched.",
     "A wide literal in a WRITABLE section gets its symbol but not its literal: the printer requires readonly before it will read the bytes, so it renders the name `s_<addr>` instead. Seen once in the sweep (crypto3/4/5.exe `s_405010`, a decode output buffer) and it is the same rule the 1-byte width has always followed.",
-    "`kuna strings --encoding utf16` reports a wide literal at ANY even address in a scanned region; the markup only reaches the ones a constant actually points at. The two surfaces still disagree on an unreferenced literal, which is correct but is not obvious from either."
+    "`kuna strings --encoding utf16` reports a wide literal at ANY even address in a scanned region; the markup only reaches the ones a constant actually points at. The two surfaces still disagree on an unreferenced literal, which is correct but is not obvious from either.",
+    "An INTERIOR pointer into a wide array (a loop bound like `while (p < (unsigned short *)0x10003fd18)`) now renders `while (p < L\"\")` -- the printer reads from the interior, hits a NUL and quotes an empty literal, losing the distinction between two such bounds. Seen twice in LOL. It is the same rendering the 1-byte width already produces for an interior pointer into a char array (`while (p < \"\")` is on the OFF arm of that very function), so this extends an existing behaviour rather than introducing one, but it is a real readability cost of typing the array."
   ]
 }
