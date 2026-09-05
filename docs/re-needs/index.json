@@ -4,8 +4,8 @@
   "count": 35,
   "rejected_count": 0,
   "by_status": {
-    "closed": 24,
-    "open": 11
+    "closed": 25,
+    "open": 10
   },
   "by_track": {
     "perf": 2,
@@ -893,7 +893,7 @@
       "need_id": "decompiling-3396-byte-main",
       "title": "Decompiling the 3396-byte main function takes about 68 seconds",
       "track": "perf",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
       "probe_id": "p-a9ebf39dace0",
       "acceptance_id": "a-53d616afcb6a",
@@ -907,7 +907,7 @@
         2
       ],
       "first_seen_round": 2,
-      "attempts": 4,
+      "attempts": 5,
       "covered_by_option": null,
       "touches": [
         "decompiler/crates/kuna-decomp",
@@ -921,10 +921,10 @@
       "scope": "small",
       "regression_of": null,
       "pr": "396",
-      "closed_in_round": null,
-      "closing_pr": null,
+      "closed_in_round": 2,
+      "closing_pr": "397",
       "reject_reason": null,
-      "score": 4.620981,
+      "score": 3.960841,
       "path": "docs/re-needs/decompiling-3396-byte-main.md"
     },
     {

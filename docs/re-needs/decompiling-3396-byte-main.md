@@ -2,7 +2,7 @@
 need_id: decompiling-3396-byte-main
 title: Decompiling the 3396-byte main function takes about 68 seconds
 track: perf
-status: open
+status: closed
 severity: major
 probe_id: p-a9ebf39dace0
 acceptance_id: a-53d616afcb6a
@@ -18,8 +18,8 @@ touches: [decompiler/crates/kuna-decomp, decompiler/crates/kuna-console, decompi
 scope: small
 regression_of: null
 pr: "396"
-closed_in_round: null
-closing_pr: null
+closed_in_round: 2
+closing_pr: "397"
 reject_reason: null
 ---
 
@@ -68,6 +68,7 @@ Interactive decompilation of the program's main function, sub_140023350, fast en
   "schema": "re-probe/1",
   "kind": "cli",
   "timeout_s": 120,
+  "repeat": 7,
   "cmd": [
     "{{KUNA}}",
     "decompile",
@@ -364,4 +365,30 @@ _none recorded_
      `KUNA_DECOMP_DBG`. Interleaved paired A/B only; a sequential timeit on this box has
      reported +42% on byte-identical output. `perf` is blocked (`perf_event_paranoid = 4`);
      instrument, do not sample.
-
+- closed: acceptance a-53d616afcb6a now PASSES at 46c373aced0c
+- round 2 B_DONE (captain): closed on PR **#397** (`46c373ac`, option `jtsharepartial`, default on),
+  attempt **5** — not #396, which was attempt 4 and is what the stale index row said. All six gates
+  green on main at 46c373ac (`make test` 675/675, `test-stages`, `rust-test`, `check-spec`,
+  `kuna catalog --check`, `make test-cli` 24/24) and CI run 33939142906 success on both jobs.
+  Acceptance a-53d616afcb6a passed on 7 independent samples: suite 8774 ms, plus a quiet
+  re-measure of 9221/9204/9158/9167/9766 (median 9204 ms) against the `< 10,000 ms` bar. The bar
+  was never moved across five attempts: 71.5 -> 19.4 -> 14.4 -> 11.8 -> 10.8 -> 9.2 s.
+  `tests/cli/decompiling-3396-byte-main.json` was **already promoted by the builder** (an in-repo
+  twin against `kuna-analysis/tests/fixtures/mcount_x86_64 __gettextparse`, because the real
+  acceptance targets a dataset binary and CI has no dataset); it passed as gate 6 above, so B_DONE
+  did not re-promote. `verify --promote` refusing the dataset acceptance is correct, not an error.
+- round 2 B_DONE (captain): **the acceptance probe now carries `repeat: 7`** (was absent, i.e. 1).
+  Strengthening only — `expect` untouched, `acceptance_id` unchanged at `a-53d616afcb6a`
+  (`probe_id()` hashes only `cmd` + `expect`). The margin here is ~8% on a wall clock and
+  `acceptance_suite()` was timing it once, so a single noisy sample could flip this need to
+  `regressed` the same way it did to [[cold-load-xref-lookup]] in wave 38. See that record for the
+  `verify.py` `gate_reps`-vs-`acceptance_suite` asymmetry behind it.
+- **one claim in #397's body is deliberately unmeasured and is NOT part of this closure.** The PR
+  asserts that with `jtsharepartial` ON and `unrolledguard` OFF the MSVC optimized-memcpy witness
+  recovers all 16 dispatches with 0 computed calls, i.e. that shipped option `unrolledguard`
+  (DIV-13) is now redundant and could leave `AGGRESSIVE_OVERRIDES`. That is a default-change
+  question for a future need or DIV row; no gate here speaks to it.
+- round 2 B_DONE (captain), replay after the `repeat: 7` edit at 46c373ac, box quiet
+  (loadavg 1.14): a-53d616afcb6a **median 8926 ms** (8655/8926/8946/8927/8668/9002/8916), spread
+  347 ms, flaky False, PASS. This is the tightest reading the need has had — 10.7% under the bar
+  on a real 7-sample median rather than a single stopwatch click.

@@ -71,6 +71,7 @@ Iteratively query references while triaging the checker.
   "schema": "re-probe/1",
   "kind": "cli",
   "timeout_s": 60,
+  "repeat": 7,
   "cmd": [
     "{{KUNA}}",
     "xrefs",
@@ -179,3 +180,28 @@ _not yet refuted_
   The promoted `tests/cli/cold-load-xref-lookup.json` is deliberately NOT this probe -- the
   acceptance targets dataset `bin/Obfuscation1` and CI has no dataset, so the vendored assertion
   is min-of-5 < 1100 ms on the in-repo `mcount_x86_64`. CI is therefore not exposed to this margin.
+- round 2 wave 38 B_VERIFY flagged this need `regressed` and wave 39 B_DONE **refuted it — do not
+  re-file it, do not roll anything back.** The `--all` acceptance suite ran a-6763a70e69bc at
+  **repeat 1** and got 1224 ms against the `< 1000` bar; wave 38 immediately re-measured it 9 times
+  on a quiet box (loadavg 2.1-3.4 of 80 cores) and got 657/660/663/663/667/911/964/971/1036 ms,
+  **median 667 ms**, 1 of 9 over the bar. That is faster than the two readings that closed it
+  (#394 B_VERIFY 967 ms reps=7, B_DONE 942 ms reps=7), and the merge under test (46c373ac, a P2
+  jump-table option) cannot plausibly slow a cold `kuna xrefs` load. The need's own standing rule
+  applied exactly as written and is worth restating: *a `regressed` flip here is a stopwatch
+  reading until it has been re-measured with the box quiet at reps>=7.*
+- round 2 B_DONE (captain): **the acceptance probe now carries `repeat: 7`** (was absent, i.e. 1).
+  This is a STRENGTHENING of the measurement, not a relaxation of the bar — `expect` is untouched
+  (`wall_ms median < 1000`) and `acceptance_id` is unchanged at `a-6763a70e69bc`, because
+  `probe_id()` hashes only `cmd` + `expect`. Why it was needed: `verify.py` applies its
+  timing/memory floor of 7 reps via `gate_reps()` on the **gate** path only; `acceptance_suite()`
+  honours the probe's own `repeat` verbatim, so every B_VERIFY was timing this need ONCE against a
+  bar its true median clears by ~33% on a box with a 657-1036 ms spread. That is how wave 38's
+  phantom `regressed` happened, and left alone it would have burned a builder on a non-bug.
+  **The same one-sample defect affects every timing acceptance in the backlog** (a captain-side
+  fix in `verify.py` — defaulting `acceptance_suite` to `gate_reps` — is the general repair and
+  belongs to a harness need, not to this record).
+- round 2 B_DONE (captain), **the `repeat: 7` edit was replayed and both closures still hold.**
+  `verify --acceptance-suite` on the two edited needs at 46c373ac, box quiet (loadavg 1.14):
+  a-6763a70e69bc **median 662 ms** (965/662/866/654/660/673/648), flaky False, PASS; the phantom
+  1224 ms of wave 38 does not reproduce anywhere in 7 runs. Suite verdict: 2 pass, 0 fail,
+  0 regressed.
