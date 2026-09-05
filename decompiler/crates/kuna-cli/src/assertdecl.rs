@@ -180,7 +180,33 @@ fn take_token(s: &str) -> (&str, &str) {
 pub(crate) fn parse_one(spec: &str) -> Result<Directive, String> {
     let raw = spec.trim().to_string();
     let (keyword, rest) = take_token(&raw);
-    let bad = |what: &str| format!("--assert {raw:?}: {what}");
+    // The WHOLE directive is one argument. Five of eight round-3 testers wrote
+    //   --assert prototype main int main(void)
+    // instead of
+    //   --assert "prototype main int main(void)"
+    // so the shell handed us just "prototype", `rest` came back empty, and the message
+    // ("prototype needs <func> then a C declaration") named the CONTENT we wanted while
+    // saying nothing about the shape. All five read it as a type rejection and filed
+    // "kuna rejects the standard C type int" -- a defect that does not exist; the quoted
+    // form accepts `int`, `unsigned int` and `char **` fine. A diagnostic that produces
+    // the same false diagnosis in five independent agents is worse than the bug they
+    // thought they had found, so when the spec is a bare keyword, say what is actually
+    // wrong and show the fix.
+    let bad = |what: &str| {
+        if rest.is_empty() && !raw.is_empty() {
+            format!(
+                "--assert {raw:?}: {what}\n\
+                 hint: the whole assertion is ONE argument -- quote it. You probably wrote\n\
+                 \x20      --assert {kw} <rest of the declaration>\n\
+                 \x20  and the shell split it. Write:\n\
+                 \x20      --assert \"{kw} <rest of the declaration>\"\n\
+                 \x20  e.g. --assert \"prototype main int main(int argc, char **argv)\"",
+                kw = keyword
+            )
+        } else {
+            format!("--assert {raw:?}: {what}")
+        }
+    };
     let body = match keyword {
         "function" => {
             let decls = crate::funcdecl::parse_flag(rest)

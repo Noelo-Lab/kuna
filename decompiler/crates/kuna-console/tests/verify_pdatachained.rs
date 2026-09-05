@@ -162,7 +162,35 @@ fn loop_shape_decompiles_at_the_default() {
         !out.contains("decompilation failed") && !out.contains("LOSS-131"),
         "the loop shape must decompile at the default, got:\n{out}"
     );
-    assert!(out.contains("while"), "expected the recovered loop, got:\n{out}");
+    // `while ;` is the malformed rendering the pre-#410 self-edge produced, and a
+    // bare `contains("while")` would accept it.
+    assert!(!out.contains("while ;"), "expected valid C, got:\n{out}");
+    assert!(
+        out.contains("while (v2 < 100)"),
+        "expected the recovered latch condition, got:\n{out}"
+    );
+    // 0x16 is the chained chunk's arithmetic; the truncated shape never reaches it.
+    assert!(out.contains("0x16"), "expected the chunk's arithmetic in the body, got:\n{out}");
+}
+
+/// The same fixture with the gate off, which is the only in-tree case that reaches
+/// `funcboundflow`'s truncation through a real `.pdata` table rather than a
+/// bytechunk. The truncation must still leave a well-formed CFG: the halt starts
+/// its own block, so the latch keeps its condition instead of collapsing onto the
+/// branch's own block.
+#[test]
+fn gate_off_truncation_still_renders_valid_c() {
+    let Some(prog) = boot("pe_chainedunwind_loop_x86_64.exe", Some(false)) else { return };
+    let out = decompile_func(prog, "sub_140001000");
+    assert!(
+        !out.contains("decompilation failed") && !out.contains("LOSS-131"),
+        "a truncated loop must not kill the decompile, got:\n{out}"
+    );
+    assert!(!out.contains("while ;"), "expected valid C, got:\n{out}");
+    assert!(
+        out.contains("while (v1 < 100)"),
+        "the latch must keep its condition, got:\n{out}"
+    );
 }
 
 /// A chunk reached by an ordinary fall-through rather than a branch: the
