@@ -512,6 +512,45 @@ classified:
   `-O2` inlined 64-byte `memcpy`, the four `movaps` stores that fill the local
   buffer are never read back, so `reload` declines them while `spill` turns them
   into four invented leading arguments.
+- **Callee-body evidence** (kuna, `decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleedeadarg.rs`):
+  every test above reasons on the *caller's* side of the call, and on that side
+  a live argument register at an unprototyped callee is exactly what a real
+  argument looks like. Where the return register and the first argument register
+  coincide — `x0` on AArch64, `r0` on ARM — the previous call's result is
+  therefore recovered as the next call's argument, and the same output that
+  declares `int f(void);` calls `f(v3);`. That does not recompile, and it leaves
+  the reader unable to tell whether the callee consumes the value.
+
+  `calleedeadarg` (default-on) supplies the one piece of evidence the caller
+  does not have: the callee's own body. Before the ancestor analysis runs, a
+  bounded decode starting at the callee's entry answers, per register range,
+  whether the callee **overwrites** those bytes on every path before ever
+  reading them. Each path carries the register bytes already written on it; a
+  read of a byte not in that set vetoes the range for the whole callee. Every
+  path *ends* somewhere — at a `RETURN`, at a nested call, at an unresolved
+  `BRANCHIND`, at a `LOAD`/`STORE` naming the register space, or at an
+  undecodable instruction — and the range must already be written when it does,
+  because past that point the walk is not reading the code that runs. That is
+  what lets a body which overwrites `x0` and *then* calls `printf` still prove
+  `x0` dead, while a body whose first act is a call proves nothing. An
+  instruction whose p-code branches inside itself is scored against the set it
+  was entered with and credits none of its writes, so a conditionally-executed
+  write cannot hide a later read. A proven-dead register trial is scored
+  `no-use` like any other definitely-unused trial.
+
+  Requiring the *write* rather than merely the absence of a read is the whole
+  safety margin. A callee whose entire body is `ret` reads nothing at all, so a
+  "never read" rule would call every register dead there and delete the
+  arguments of every stub and thunk in the image — which is precisely what the
+  `stackreturn` datatest (three callees that are one `c3` byte each) catches.
+  The claim the pass makes is the positive one: the callee demonstrably
+  clobbers the register, so the value the caller left there cannot be reaching
+  it. Only the `register` space is answered; a `ram`-space global trial would
+  need the walk to model memory. Like `rustabi`'s call-*output* probe, the walk
+  is taken from the driver right after the flow build — the per-function
+  architecture handle the pipeline runs against carries the load image but no
+  translator — and cached per callee entry, so each distinct body is decoded
+  once per run. `off` restores the pre-option rendering.
 - A definitely-unused trial has its dataflow **freed immediately** — the CALL
   input is replaced with constant 0 so dead-code elimination can reap the
   producer. This is why P4 must iterate with DCE inside mainloop.

@@ -495,6 +495,9 @@ pub struct Architecture {
     /// (kuna) Recover stack-passed call arguments at call sites with an unlocked
     /// callee prototype (default-on; restores upstream `fspec.cc:5618`).
     pub callsite_stack_args: bool,
+    /// (kuna) Let a bounded decode of the callee's own body veto a register
+    /// argument the callee provably never reads (option `calleedeadarg`).
+    pub callee_dead_arg: bool,
     /// (kuna) Score a variadic call's stack arguments as their own `fillinMap`
     /// resource section, so the empty register slots the ABI leaves between the
     /// fixed parameters and the varargs stop deactivating them (option
@@ -861,6 +864,16 @@ pub struct Architecture {
     pub kuna_callee_write_cache: std::collections::HashMap<
         (int4, uintb),
         std::rc::Rc<crate::kuna_rustabi::CalleeReturnWrites>,
+    >,
+    /// (kuna `calleedeadarg`) Per-image cache of the callee entry-liveness probe
+    /// ([`crate::kuna_calleedeadarg::probe_callee_entry_dead`]), keyed by the
+    /// callee's `(space index, entry offset)`.  Each distinct function body is
+    /// decoded at most once for the whole run, which is what keeps the probe off
+    /// the critical path of a whole-binary `decompile-all`.  Stays empty unless
+    /// `option calleedeadarg` is live.
+    pub kuna_callee_dead_cache: std::collections::HashMap<
+        (int4, uintb),
+        std::rc::Rc<crate::kuna_calleedeadarg::CalleeEntryDead>,
     >,
     /// (ghidra-mode, Phase 4) Name recommendations staged for the NEXT
     /// decompile drive — `(name, storage addr, usepoint, size)`, taken (and
@@ -1719,6 +1732,7 @@ impl Architecture {
             recover_array_stride: false,
             recover_lowered_switch: false,
             callsite_stack_args: true,
+            callee_dead_arg: true,
             vararg_stack_args: true,
             callee_arity: true,
             callee_arity_fwd: true,
@@ -1766,6 +1780,7 @@ impl Architecture {
             kuna_fn_budget: None,   // (kuna) decompile-all watchdog: no budget by default
             kuna_fn_deadline: None, // (kuna) set per drive from kuna_fn_budget
             kuna_callee_write_cache: std::collections::HashMap::new(),
+            kuna_callee_dead_cache: std::collections::HashMap::new(),
             kuna_pending_name_recs: Vec::new(), // (ghidra Phase 4) staged per drive
             kuna_pending_dyn_recs: Vec::new(),  // (ghidra Phase 4) staged per drive
             kuna_pending_proto_model: None,     // (ghidra Phase 4) staged per drive
@@ -1922,6 +1937,7 @@ impl Architecture {
         self.recover_array_stride = true; // (kuna) DIV-3 default-on (GH-8724)
         self.recover_lowered_switch = true; // (kuna) default-on (angr port)
         self.callsite_stack_args = true; // (kuna) default-on: restores upstream fspec.cc:5618 (0/675 ablation)
+        self.callee_dead_arg = true; // (kuna) default-on (DIV-KUNA_DEADARG_DIV): 0/675 datatests, subtractive only
         self.vararg_stack_args = true; // (kuna) DIV-101 default-on: a variadic call's stack tail is its own fillinMap section (0/675 ablation)
         self.callee_arity = true; // (kuna) DIV-102 default-on: one callee, one argument list across its call sites (0/675 ablation)
         self.callee_arity_fwd = true; // (kuna) DIV-PENDING default-on: retry that reconciliation against the siblings that finalize later (0/675 ablation)
@@ -2175,6 +2191,12 @@ impl Architecture {
                 let (val, msg) =
                     crate::p4_calls::kuna_callsitestackargs::OptionCallsiteStackArgs.apply(p1)?;
                 self.callsite_stack_args = val;
+                Ok(msg)
+            }
+            "calleedeadarg" => {
+                let (val, msg) =
+                    crate::p4_calls::kuna_calleedeadarg::OptionCalleeDeadArg.apply(p1)?;
+                self.callee_dead_arg = val;
                 Ok(msg)
             }
             "varargstackargs" => {
@@ -3043,6 +3065,7 @@ impl Architecture {
         ctx.model_stack_probe_loop = self.model_stack_probe_loop; // GH-8017 stackprobeloop
         ctx.recover_lowered_switch = self.recover_lowered_switch; // loweredswitch
         ctx.callsite_stack_args = self.callsite_stack_args; // callsitestackargs
+        ctx.callee_dead_arg = self.callee_dead_arg; // calleedeadarg
         ctx.vararg_stack_args = self.vararg_stack_args; // varargstackargs
         ctx.callee_arity = self.callee_arity; // calleearity
         ctx.callee_arity_fwd = self.callee_arity_fwd; // calleearityfwd

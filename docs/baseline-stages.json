@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    610,
-    610
+    613,
+    613
   ],
   "passing": [
     "data:ARRAYSUBFIELD #1: an 8-byte read at offset 0 of char[16] is a sized sub-field, not element 0",
@@ -401,6 +401,9 @@
     "data:calleearityfwd #1: option off drops the argument at the call site that finalizes BEFORE its witness (bug reproduced)",
     "data:calleearityfwd #2: option on recovers the size the small arm leaves in the argument register",
     "data:calleearityfwd #3: the site that was already right keeps exactly one argument in both passes",
+    "data:calleedeadarg #1: option off passes the previous call's return value to a callee that never reads it (bug reproduced)",
+    "data:calleedeadarg #2: option on drops the argument the callee's own body proves it never reads",
+    "data:calleedeadarg #3: with the argument gone the producer call stands on its own (only the fixed pass)",
     "data:callsitestackargs #1: option off truncates the call at the six register arguments (bug reproduced)",
     "data:callsitestackargs #2: option on recovers both stack-passed arguments",
     "data:condfold #1: OFF, the fold is declined and the sibling's test becomes a crossing goto (pass 1 only)",

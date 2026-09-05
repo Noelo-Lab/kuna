@@ -757,6 +757,9 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
         // silently loses its veto on every restarted function.  Cached, so this
         // is a map lookup per call.
         crate::kuna_rustabi::seed_callee_return_writes(arch, fd);
+        // (kuna `calleedeadarg`) Same story for the entry-liveness probe the
+        // input-trial scoring seam consults.
+        crate::p4_calls::kuna_calleedeadarg::seed_callee_entry_dead(arch, fd);
     }
     // Exceeded the cross-flow restart budget; keep the last analyzed IR.
     fd.set_restart_pending(false);
@@ -1046,6 +1049,10 @@ pub fn decompile_func_full_with_override_dyn_prefollowed(
         // translator, so this is the last point the callee's instructions can be
         // read at all; inert unless `option rustabi` is live for this image.
         crate::kuna_rustabi::seed_callee_return_writes(arch, &mut fd);
+        // (kuna `calleedeadarg`) Take the callee entry-liveness probe the
+        // input-trial scoring seam consults, for the same reason and at the same
+        // point; inert unless `option calleedeadarg` is live.
+        crate::p4_calls::kuna_calleedeadarg::seed_callee_entry_dead(arch, &mut fd);
         // With the single-manager unification (LOSS-132) the universalAction passes
         // now reach the *real* lifted varnodes, so the pipeline genuinely executes
         // heritage / simplification / merge / … on live IR.  Some pass BODIES are

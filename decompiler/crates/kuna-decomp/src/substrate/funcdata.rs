@@ -385,6 +385,17 @@ pub struct Funcdata {
         (int4, kuna_base::types::uintb),
         std::rc::Rc<crate::kuna_rustabi::CalleeReturnWrites>,
     >,
+    /// (kuna `calleedeadarg`) Per direct-call-target evidence about the registers
+    /// the callee is *proven* never to read before writing, keyed by
+    /// `(space index, entry offset)`.  Seeded by the driver after the flow build
+    /// — the only place the disassembly engine is still reachable — and read at
+    /// the input-trial scoring seam
+    /// ([`crate::kuna_calleedeadarg::trial_is_dead_in_callee`]).  Empty unless
+    /// `option calleedeadarg` is live for this function.
+    kuna_callee_entry_dead: std::collections::HashMap<
+        (int4, kuna_base::types::uintb),
+        std::rc::Rc<crate::kuna_calleedeadarg::CalleeEntryDead>,
+    >,
 }
 
 /// Opaque handle for a jump-table (C++ `JumpTable *` slot in `jumpvec`).
@@ -487,6 +498,7 @@ impl Funcdata {
             kuna_wire_symbols: Vec::new(),
             kuna_wire_symbol_for_high: std::collections::BTreeMap::new(),
             kuna_callee_ret_writes: std::collections::HashMap::new(),
+            kuna_callee_entry_dead: std::collections::HashMap::new(),
         })
     }
 
@@ -640,6 +652,28 @@ impl Funcdata {
     ) -> Option<&crate::kuna_rustabi::CalleeReturnWrites> {
         let sp = entry.get_space()?;
         self.kuna_callee_ret_writes.get(&(sp.get_index(), entry.get_offset())).map(|r| r.as_ref())
+    }
+
+    /// (kuna `calleedeadarg`) Record what a probe of `entry`'s body proved about
+    /// the registers it never reads before writing.
+    pub fn kuna_set_callee_entry_dead(
+        &mut self,
+        entry: &Address,
+        dead: std::rc::Rc<crate::kuna_calleedeadarg::CalleeEntryDead>,
+    ) {
+        if let Some(sp) = entry.get_space() {
+            self.kuna_callee_entry_dead.insert((sp.get_index(), entry.get_offset()), dead);
+        }
+    }
+
+    /// (kuna `calleedeadarg`) The recorded entry-liveness probe of `entry`'s
+    /// body, if one was taken.
+    pub fn kuna_callee_entry_dead(
+        &self,
+        entry: &Address,
+    ) -> Option<&crate::kuna_calleedeadarg::CalleeEntryDead> {
+        let sp = entry.get_space()?;
+        self.kuna_callee_entry_dead.get(&(sp.get_index(), entry.get_offset())).map(|r| r.as_ref())
     }
 
     /// Get the entry point address (C++ `getAddress`).

@@ -2316,6 +2316,25 @@ tier = "core"
 symptoms = "the same sub_ address is called with an argument at one site and with an empty argument list at another and `calleearity` does not fix it|the FIRST call to a callee in a function is the one that lost its argument|an MSVC aligned allocation wrapper renders alloc(a0 + 0x27) on one branch and alloc() on the other|a call loses the argument its callee-save prologue copied into another register"
 
 [[settable]]
+option = "calleedeadarg"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P4"
+subphase = "active-input-trial-scoring"
+strength = "HARD"
+rewind = "P4"
+issue = "repipe-void-callee-spurious-arg"
+summary = "Let a bounded decode of the CALLEE's own body veto a register argument the callee provably never reads. ActionActiveParam recovers an unlocked callee's argument list from the caller's data flow alone (FuncCallSpecs::checkInputTrialUse, fspec.cc:5592): a trial is active when the ABI argument register holds a value the caller wrote and does not otherwise use, and AncestorRealistic answers pop_solid for a Varnode defined by a CALL -- so the return value of the preceding call becomes the next call's argument. The result contradicts kuna's own output inside one file: `int _secret_function(void);` in the header and `_secret_function(v3);` in the body, which does not recompile and leaves an agent unable to tell whether the callee consumes the value. The evidence the caller does not have is in the callee: this pass decodes the callee from its entry and asks, per register range, whether ANY path reads those bytes before writing them. Each path carries the register bytes already written on it; a RETURN ends a path with nothing to say; a nested call, an unresolved BRANCHIND, a LOAD/STORE naming the register space, or an undecodable instruction ends it at a CUT past which only already-written bytes stay provable (which is why a body that overwrites x0 and THEN calls printf still proves x0 dead, while a body whose first act is a call proves nothing); and an instruction with internal p-code branching is scored against the set it was entered with and credits none of its writes. A register with no read-before-write on any path and fully written before every cut is dead on entry, cannot be carrying an argument, and its trial is scored no-use like any other definitely-unused trial. The claim is one-sided -- the absence of a counter-example on a walk that covered every path -- so the instruction budget, a runaway written set and any register space kuna cannot name all decline. Only the `register` space is answered; a ram-space (global) trial would need the walk to model memory."
+use_when = "On by default. Keep it on when a call renders with an argument its own recovered declaration does not take -- `int f(void);` declared and `f(v3)` called -- which is the standard shape when the preceding call's return value is still sitting in the first argument register at an unprototyped local callee (`v3 = scanf(...); ... f(v3);`). It is strictly subtractive and only ever fires against a decoded callee body, so it cannot invent an argument; `calleearity`/`calleearityfwd` are the additive direction and are unaffected. Flip OFF if a call LOSES an argument the callee really consumes -- the way that could happen is a callee decoded in the wrong instruction mode (an ARM/Thumb boundary), where the bytes read are not the instructions that run -- or to bisect whether this pass, rather than trial scoring, moved an argument list."
+example = "option calleedeadarg off"
+source_decompiler = "kuna"
+inspiration = "repipe:void-callee-spurious-arg, 68149b8a8f555589f353117c (Mach-O arm64 practice_2_rengr) _main 0x100003e70 -> _secret_function 0x100003d78; upstream FuncCallSpecs::checkInputTrialUse (fspec.cc:5592) and AncestorRealistic::enterNode (funcdata_varnode.cc:2043)"
+change_kind = "correctness-fix"
+tier = "core"
+symptoms = "a call passes an argument to a callee the same output declares as taking void|_secret_function(v3) called where int _secret_function(void) is declared|the decompiled project does not recompile because a call and its prototype disagree on arity|the return value of the previous call reappears as the next call's argument|a scanf/getchar result is passed to an unrelated no-argument function"
+
+[[settable]]
 option = "calloverlap"
 values = "off|in|full"
 default = "off"
