@@ -12,7 +12,7 @@ instances: 1
 challenges: [69a3822f7b3cc38c80464da4]
 rounds: [2]
 first_seen_round: 2
-attempts: 4
+attempts: 5
 covered_by_option: null
 touches: [decompiler/crates/kuna-decomp, decompiler/crates/kuna-console, decompiler/crates/kuna-decomp/phases.toml, decompiler/crates/kuna-decomp/src/p0_knowledge/options.rs, docs/options.md, docs/history.md, tests/stages]
 scope: small
@@ -219,6 +219,41 @@ Attempt 5 should inherit three things and re-derive none of them:
   two jump-table partials) for free, and the creation counter is what makes "flat"
   legible. Guard overhead is real and must be subtracted — 5.4 M guard pairs moved an
   11.8 s run to 13.3 s.
+
+**Attempt 5 (round 2 wave 18, branch `feat/re-decompiling-3396-byte-main`). THE ACCEPTANCE
+PASSES.** `kuna decompile nikos_crack_me.exe sub_140023350` measures **9,112 ms** against the
+`< 10,000 ms` bar (exit 0), for the first time in five attempts and without the bar ever being
+moved: 71.5 -> 19.4 -> 14.4 -> 11.8 -> 10.8 -> **9.1 s**. Attempt 5 implemented exactly the one
+mechanism the wave-17 brief named -- **share the jump-table partial sub-decompilation across the
+tables of one `recoverJumpTables` batch** (C++ `stageJumpTable` guards the clone and the reduced
+pipeline behind `if (!partial.isJumptableRecoveryOn())`; kuna ran it once per table). Shipped as
+`option jtsharepartial` (`on|off`, **default on**), recorded as a **convergence** in
+`docs/history.md` rather than a DIV row, because after it kuna's default matches upstream and that
+document's rule says a fix moving kuna back onto upstream's default earns no DIV.
+
+Interleaved paired A/B with the option as the lever (same binary in both arms, so the
+`kuna decompile` -> `decomp_dbg` fork cannot time a different engine), 8 pairs:
+**10,869 ms -> 9,138 ms median, -15.92%** (paired mean -15.96% +/- 2.03, 8/8 pairs a win,
+~7.8 sigma), stdout byte-identical on the witness.
+
+Two findings worth keeping beyond this need:
+
+- **The correctness half was larger than the speed half, and one recorded claim was wrong.** The
+  in-code comment asserting kuna "cannot share" the partial because sharing "loses 16 of the 17
+  switches" the `unrolledguard` testcase asserts is **refuted by measurement**: with sharing on and
+  `unrolledguard` OFF the MSVC optimized-memcpy witness recovers all 16 dispatches and emits 0
+  computed calls. Sharing removes the *cause* of the bug `unrolledguard` tolerates (a later table's
+  fresh clone re-cloning an already-recovered sibling), so the tolerance is no longer needed. Whole-
+  surface `decompile-all` A/B over **100 binaries / 21,458 functions**: 62 functions differ, **61
+  gains, 0 losses**, aggregate **68 truncated `(code *)()` dispatches removed, +237 switches,
+  +14,770 case arms**. `unrolledguard` is now redundant on every shape measured and is a candidate
+  for removal or for dropping out of `AGGRESSIVE_OVERRIDES` -- a separate default change, not taken
+  here.
+- **The captain's suggested gate does not work and was replaced.** "Keep per-table cloning for the
+  `unrolledguard` on path" is inert on this witness, because `unrolledguard` is in
+  `AGGRESSIVE_OVERRIDES` and `auto` picks `aggressive` under 500 KiB -- so the witness runs with it
+  ON. The two options are documented as *paired* instead: turn `unrolledguard` on together with
+  `jtsharepartial off`.
 
 ## Reference
 

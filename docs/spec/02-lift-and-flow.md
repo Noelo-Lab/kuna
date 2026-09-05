@@ -464,16 +464,21 @@ built against the parent flow's `visited` snapshot, and the reduced
 `"jumptable"` action set — heritage plus the simplification core, no
 structuring — is run over it (`decompile_drive.rs (run_jumptable_pipeline)`).
 The model is then recovered against the *partial*'s BRANCHIND and the finished
-table is written back keyed to the real op. **This clone is per table, and that
-is a deliberate divergence**: the C++ builds one `partial` per
-`recoverJumpTables` call and guards the clone plus the reduced pipeline behind
-`if (!partial.isJumptableRecoveryOn())`, so upstream pays for the
-sub-decompilation once per function however many BRANCHINDs it has. kuna cannot
-share it, because `unrolledguard` (below) recovers interleaved tables precisely
-*because* each table's clone re-clones the siblings recovered before it. Sharing
-the clone is worth about 20% of the wall time of a two-table function and would
-be upstream-faithful, but it changes which tables recover, so it would have to
-ship behind its own option. Two pre-checks bound the attempt:
+table is written back keyed to the real op. **One partial is built per
+`recoverJumpTables` batch and shared by every table in it**
+(`jtsharepartial`, default on): the C++ guards the clone plus the reduced
+pipeline behind `if (!partial.isJumptableRecoveryOn())`, so upstream pays for the
+sub-decompilation once per function however many BRANCHINDs it has, and kuna now
+does the same. Recovery itself still runs per table against that shared partial,
+and it mutates it (the emulation walks its ops), exactly as upstream's does.
+Turning the option off restores kuna's older per-table clone, in which a later
+table's fresh partial re-clones the siblings recovered before it; that is what
+`unrolledguard` (below) needs to see, and it is the only reason the per-table
+shape is still reachable. Sharing is worth about 16% of the wall time of a
+two-table function, and on the interleaved shape `unrolledguard` was written for
+it recovers the same tables without any tolerance rule, because the shared
+partial's edge collection runs once while every sibling table is still empty.
+Two pre-checks bound the attempt:
 `funcdata_block.rs (Funcdata::early_jump_table_fail)` backtracks up to 8 ops
 through value-preserving arithmetic looking for a computation the recovery can
 never emulate -- but its only failing arm (the uninjected-CALLOTHER
@@ -780,15 +785,19 @@ is never changed, only what counts as a bound.
 **(angr) `unrolledguard`, default off** — despite the name, not a guard
 analysis: a partial-flow tolerance in `flow.rs (FlowInfo::collect_edges)` for
 the MSVC optimized-memcpy shape where several *interleaved* tables' case bodies
-are only reachable as one another's case targets. kuna recovers tables one at
-a time, each in a fresh partial clone that re-clones already-recovered
-siblings; the clone's edge collection then hits a sibling case body that was
-never decoded into *this* partial's `visited` and throws `"Could not find op at
-target address"`, demoting a recoverable dispatch. With the gate on, an
-unresolvable recovered-table case-target edge inside a recovery clone is
-skipped instead (the same "assume no branches out" shape as the no-table
+are only reachable as one another's case targets. With `jtsharepartial` **off**,
+kuna recovers tables one at a time, each in a fresh partial clone that re-clones
+already-recovered siblings; the clone's edge collection then hits a sibling case
+body that was never decoded into *this* partial's `visited` and throws
+`"Could not find op at target address"`, demoting a recoverable dispatch. With
+the gate on, an unresolvable recovered-table case-target edge inside a recovery
+clone is skipped instead (the same "assume no branches out" shape as the no-table
 path). Opt-in because on a truly malformed table it would mask a real missing
-target instead of declining.
+target instead of declining. Under the shipped `jtsharepartial on` default the
+condition it tolerates does not arise at all — there is one partial, built before
+any sibling recovered — and the memcpy witness recovers all sixteen dispatches
+with this gate off, so the two settings are paired: turn `unrolledguard` on only
+together with `jtsharepartial off`.
 
 ## 2.4 No-return at lift time
 

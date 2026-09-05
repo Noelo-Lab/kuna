@@ -990,6 +990,13 @@ pub struct ArchContext {
     /// Read by `FlowInfo::collectEdges`.  `false` (default off / upstream
     /// byte-identical).
     pub unrolled_guard: bool,
+    /// (kuna) Share ONE jump-table partial sub-decompilation across every table
+    /// recovered in a single `FlowInfo::recoverJumpTables` batch instead of
+    /// re-cloning and re-analysing the function per table (C++
+    /// `Funcdata::stageJumpTable`'s `if (!partial.isJumptableRecoveryOn())`
+    /// guard), flipped by `option jtsharepartial`, shared from the real
+    /// architecture.  Read by `Funcdata::stage_jump_table`.
+    pub jumptable_share_partial: bool,
     /// The program load image (C++ `Architecture::loader`), shared from the
     /// engine through `build_arch_handle`.  Read by jump-table emulation
     /// (`EmulateFunction::executeLoad` -> `get_load_image_value`) to fetch the
@@ -1202,6 +1209,7 @@ impl ArchContext {
             switch_shared_case: false, // (kuna) angr opt-in default off (upstream byte-identical)
             switch_multi_pred: false, // (kuna) angr opt-in default off (upstream byte-identical)
             unrolled_guard: false, // (kuna) angr opt-in default off (upstream byte-identical)
+            jumptable_share_partial: true, // (kuna) DIV: upstream stageJumpTable shape
             loader: None,
             // C++ Architecture default: readonlypropagate = false (resetDefaults);
             // `option readonly` flips it before the per-function build_arch_handle.

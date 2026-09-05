@@ -63,25 +63,41 @@ c3
   <com>option tailcalljump off</com>
   <com>option foldcallret off</com>
   <com>option branchflip off</com>
+  <!-- kuna DIV: `jtsharepartial` is default ON and by itself removes the shape
+       this testcase is about (one shared partial per recoverJumpTables batch is
+       built while every sibling table is still empty, so collect_edges never
+       calls target() on an undecoded case body).  Pass 1 turns it OFF to
+       reproduce the original per-table-clone bug; pass 3 turns it back on to
+       assert the shipped default fixes it without unrolledguard. -->
+  <com>option jtsharepartial off</com>
   <com>lo fu memcpy_opt</com>
   <com>decompile</com>
   <com>print C</com>
   <com>option unrolledguard on</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>option unrolledguard off</com>
+  <com>option jtsharepartial on</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
-<!-- The two passes' `print C` outputs are concatenated into one stream the
-     stringmatches scan.  Pass 1 (option off): the seven jump tables yield exactly
-     ONE recovered switch and SEVEN computed `**(code **)()` calls (the six
-     interleaved tables that fail the partial-flow rebuild, plus one more).
-     Pass 2 (option unrolledguard on): every table recovers, so the computed
-     calls drop to ZERO and the switch count rises to 16.  We assert on the
-     `code **` computed-call rendering (the load-bearing CFG effect) and the
-     `switch(` count; the stale "Treating indirect jump as call" WARNING comment
-     is left behind by the re-decompile's warning store and is NOT a reliable
-     post-fix signal (the same reason the switchmultipred test asserts on the
-     call rendering, not the warning text). -->
-<stringmatch name="unrolledguard #1: option off, the interleaved dispatches degrade to computed calls (bug reproduced); option on adds ZERO new ones (7 pass1 + 0 pass2)" min="7" max="7">code \*\*</stringmatch>
-<stringmatch name="unrolledguard #2: option on recovers every interleaved table as a switch (1 off + 16 on = 17)" min="17" max="17">switch\(</stringmatch>
+<!-- The three passes' `print C` outputs are concatenated into one stream the
+     stringmatches scan.  Pass 1 (both gates off, the pre-fix behaviour): the
+     seven jump tables yield exactly ONE recovered switch and SEVEN computed
+     `**(code **)()` calls (the six interleaved tables that fail the per-table
+     partial-flow rebuild, plus one more).  Pass 2 (option unrolledguard on,
+     still one clone per table): every table recovers, so the computed calls
+     drop to ZERO and the switch count rises to 16.  Pass 3 (unrolledguard back
+     off, jtsharepartial on, the SHIPPED DEFAULT): the one shared partial is
+     built while the sibling tables are still empty, so the same 16 switches
+     recover with no tolerance rule at all.  We assert on the `code **`
+     computed-call rendering (the load-bearing CFG effect) and the `switch(`
+     count; the stale "Treating indirect jump as call" WARNING comment is left
+     behind by the re-decompile's warning store and is NOT a reliable post-fix
+     signal (the same reason the switchmultipred test asserts on the call
+     rendering, not the warning text). -->
+<stringmatch name="unrolledguard #1: both gates off, the interleaved dispatches degrade to computed calls (bug reproduced); neither fix adds any (7 pass1 + 0 pass2 + 0 pass3)" min="7" max="7">code \*\*</stringmatch>
+<stringmatch name="unrolledguard #2 / jtsharepartial #1: both fixes recover every interleaved table as a switch, independently (1 pass1 + 16 pass2 unrolledguard + 16 pass3 shipped default = 33)" min="33" max="33">switch\(</stringmatch>
+<stringmatch name="jtsharepartial #2: all three passes are in the scanned stream (one memcpy_opt definition each), so the counts above are not one dropped pass" min="3" max="3">memcpy_opt\(</stringmatch>
 </decompilertest>

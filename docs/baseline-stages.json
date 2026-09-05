@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    609,
-    609
+    610,
+    610
   ],
   "passing": [
     "data:ARRAYSUBFIELD #1: an 8-byte read at offset 0 of char[16] is a sized sub-field, not element 0",
@@ -463,6 +463,7 @@
     "data:iteregion #3: fix (on) -- the diamond collapses to a single ?: ternary (on pass only)",
     "data:iteregion #4: fix (on) -- the rewrite is logged",
     "data:iteregion #5: p-code untouched -- the merged variable still feeds the call in BOTH passes",
+    "data:jtsharepartial #2: all three passes are in the scanned stream (one memcpy_opt definition each), so the counts above are not one dropped pass",
     "data:mode aggressive enables returndup (warning appears once); mode reliable does not",
     "data:namestyle #1 default: argument renders as aN",
     "data:namestyle #2 default: local renders as vN with a register source-location comment",
@@ -604,8 +605,8 @@
     "data:undefname #6: the ifreq union slot no high covers wholly is named by the wired assignDefaultNames",
     "data:undefname #7: and it takes the highest index in the function, after every other local",
     "data:undefname #8: the body writes that slot through the same name",
-    "data:unrolledguard #1: option off, the interleaved dispatches degrade to computed calls (bug reproduced); option on adds ZERO new ones (7 pass1 + 0 pass2)",
-    "data:unrolledguard #2: option on recovers every interleaved table as a switch (1 off + 16 on = 17)",
+    "data:unrolledguard #1: both gates off, the interleaved dispatches degrade to computed calls (bug reproduced); neither fix adds any (7 pass1 + 0 pass2 + 0 pass3)",
+    "data:unrolledguard #2 / jtsharepartial #1: both fixes recover every interleaved table as a switch, independently (1 pass1 + 16 pass2 unrolledguard + 16 pass3 shipped default = 33)",
     "data:varargstackargs #1: option off drops the stack-passed variadic argument (bug reproduced)",
     "data:varargstackargs #2: option on recovers the variadic argument the ABI passes on the stack",
     "data:whiledo-complex #1: compound while condition forces overflow syntax (valid C)",

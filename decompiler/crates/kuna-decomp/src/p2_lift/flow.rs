@@ -2867,12 +2867,18 @@ truncating the fall-through here"
         let for_inline = self.is_flow_for_inline();
         // Snapshot the original flow's `visited` for the partial clone.
         let visited_snapshot = self.visited.clone();
+        // The partial sub-decompilation shared by every table in this batch (C++
+        // builds one `partial` per `recoverJumpTables` call and `stageJumpTable`
+        // guards the clone behind `if (!partial.isJumptableRecoveryOn())`).  Left
+        // `None` and rebuilt per table when `option jtsharepartial` is off.
+        let mut shared_partial: Option<Funcdata> = None;
         for op in table_ops {
             let mode = self.data.recover_jump_table_flow(
                 op,
                 record,
                 &visited_snapshot,
                 run_pipeline,
+                &mut shared_partial,
             );
             match mode {
                 Ok(Some(jt_idx)) => {

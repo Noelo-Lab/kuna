@@ -1,165 +1,73 @@
 {
- "opportunity": "decompiling-3396-byte-main",
- "need_id": "decompiling-3396-byte-main",
- "route": "RE-friction loop (docs/re-pipeline.md), round 2, track perf -- ATTEMPT 4",
- "challenge": "69a3822f7b3cc38c80464da4",
- "binary": ".kuna-repipe/probebin/bcfacd743bc607be/nikos_crack_me.exe (PE x86-64, 235725 bytes)",
- "selector": "sub_140023350",
- "scope": "small",
- "attempt": 4,
- "prior_attempts": [
-  {
-   "pr": 380,
-   "summary": "dead-list position re-derived by scanning; 71.46 s -> 19.42 s (-72.8%), acceptance not met"
-  },
-  {
-   "pr": 385,
-   "summary": "`kuna decompile` followed the same flow twice; 19.70 s -> 15.32 s (-22.3%), acceptance not met"
-  },
-  {
-   "pr": 393,
-   "summary": "three per-query re-derivations of cached facts + one fused arena lookup; 14.57 s -> 12.18 s (-16.3%), acceptance not met"
-  }
- ],
- "phase": "substrate varnode bank (the two sorted trees), p3 heritage (LocationMap, rename)",
- "modules": [
-  "decompiler/crates/kuna-base/src/address.rs (Address::sort_key)",
-  "decompiler/crates/kuna-decomp/src/substrate/varnode.rs (AddrKey, SeqKey, LocKey, DefKey, VarnodeBank::xref)",
-  "decompiler/crates/kuna-decomp/src/p3_dataflow/heritage.rs (LocationMap::add, Heritage::heritage, Heritage::rename_recurse)"
- ],
- "change_kind": "performance-fix (output byte-identical)",
- "option": null,
- "gated": false,
- "gating_rationale": "None of the four changes can alter emitted C. The tree keys keep the C++ comparator's order exactly (proved by an exhaustive-product unit test on Address::sort_key vs Address::cmp, plus the pre-existing >100k-pair LocKey/DefKey comparator product test); the xref insertion is the same entry the two-descent form placed, because the `insert` flag is outside the (input|written) mask the key is built from; `LocationMap::add` returns a value it already had in hand and reaches the same candidate element in one descent instead of three; and rename_recurse collects the same leading MULTIEQUAL run it already walked. No phases.toml row, no options.rs registration, no catalog counters, no docs/options.md, no DIV row -- which also keeps this clear of the phases.toml / catalog / DIV / stages-corpus leases the live `direct-address-keyboard-handler` builder held this round.",
- "hypothesis_filed": "The function's extensive opaque arithmetic and indirect calls cause one or more analysis passes to scale poorly.",
- "hypothesis_verdict": "REFUTED for the fourth time, on a fourth axis. Attempt 1 refuted 'analysis pass' (it was the lifter's dead-list quadratic), attempt 2 'one hot spot' (the flow was followed twice), attempt 3 'flat means empty' (three costs were per-query re-derivations). Attempt 4 finds the residue is not a pass at all: with a per-Action timer plus 10 indexed guard slots, 3.6 s of an 11.8 s run -- ~30% -- is inside `VarnodeBank::create/destroy/xref/make_free` and `PcodeOpBank::create/destroy`, i.e. BTreeMap insert/remove on the two storage-sorted varnode trees. One decompile of this function performs 1,677,343 varnode creations, 1,523,008 destructions, 1,110,157 xref/make_free re-keyings and 1,106,775 op creations/destructions -- about 9.5 M tree operations. The function is not slow because a pass scales badly; it is slow because it is IR-volume-bound and every unit of that volume pays two ordered-container mutations.",
- "root_cause": [
-  {
-   "item": "the loc/def tree keys carried an `Address` and a `SeqNum`, each holding an `Rc<AddrSpace>`",
-   "evidence": "G20/G21/G22 = 1378 + 887 + 972 ms over 4.3 M calls; the inner split put 695 ms of `create` in its two `BTreeMap::insert`s and 579 ms of `destroy` in its two removes, against 56 ms for building the keys -- the cost is the tree, and the key's size and comparator are what the tree pays per node"
-  },
-  {
-   "item": "`VarnodeBank::xref` did a `loc_tree.get` and then a `loc_tree.insert` of the same key",
-   "evidence": "G28 (key + get) 134 ms and G29 (the two inserts) 349 ms over 596,280 calls, and the `get` misses on essentially every call -- one whole descent per xref discarded"
-  },
-  {
-   "item": "`LocationMap::add` re-derived its candidate element in three descents and the caller then re-looked the element's size",
-   "evidence": "469.6 ms over 1,427,964 calls inside heritage's per-space varnode scan (G19), which is 71% of that 663 ms scan"
-  },
-  {
-   "item": "`rename_recurse` materialized every op of every successor block to read its leading MULTIEQUALs",
-   "evidence": "`Heritage::rename` 819-835 ms; the successor walk runs once per CFG edge per heritage pass and breaks at the first non-MULTIEQUAL"
-  }
- ],
- "fix": [
-  "`Address::sort_key` returns the ordering triple (sentinel rank, space index, offset) that `Address::cmp` compares by; `LocKey`/`DefKey` store that triple and a flattened SeqNum instead of the objects, which makes both keys `Copy` -- no Rc traffic on clone or drop, integer comparisons, smaller nodes.",
-  "`VarnodeBank::xref` uses the `BTreeMap` entry API: one descent for the lookup and the insertion.",
-  "`LocationMap::add` probes the predecessor first (answering both the `--lower_bound` and the `== begin()` cases in one descent) and returns the containing element's size, so `Heritage::heritage` no longer re-searches for it.",
-  "`Heritage::rename_recurse` collects the successor's leading MULTIEQUAL run off the intrusive block op list instead of snapshotting the whole block."
- ],
- "profiling_method": "Instant-instrumented release builds writing to a file, NOT sampling (perf is blocked on this box: /proc/sys/kernel/perf_event_paranoid = 4, and there is no valgrind). Two tools: (a) a name-keyed exclusive timer around `self.apply(data, ctx)` in `Action::perform`, which also separates the three decompiles this command runs (the main function and the two jump-table partials each end a root `perform`); (b) 32 indexed Guard slots for named inner functions, plus a per-Action counter of varnode/op creations and destructions -- that counter is what turned 'the residue is flat' into 'the residue is 9.5 M tree operations', because no timer alone can report a call count. Guard overhead is visible and must be subtracted: 5.4 M guard pairs moved an 11.8 s run to 13.3 s.",
- "measurement": {
-  "method": "Interleaved paired A/B, one loop alternating the base and the new binary per iteration so both see the same machine load (sibling builders live, load average 3-6 across the run). Base is a release build of the recorded base commit 3d45b044 built before any edit.",
-  "command": "kuna decompile <crackme> sub_140023350 --json",
-  "pairs": 8,
-  "base_ms": [
-   13580,
-   12100,
-   12440,
-   12040,
-   11970,
-   11870,
-   11790,
-   12070
+  "opportunity": "decompiling-3396-byte-main",
+  "need_id": "decompiling-3396-byte-main",
+  "route": "RE-friction loop (docs/re-pipeline.md), round 2, track perf -- ATTEMPT 5 (IMPLEMENTATION, captain-briefed)",
+  "challenge": "69a3822f7b3cc38c80464da4",
+  "binary": ".kuna-repipe/probebin/bcfacd743bc607be/nikos_crack_me.exe (PE x86-64, 235725 bytes)",
+  "selector": "sub_140023350",
+  "scope": "small",
+  "attempt": 5,
+  "prior_attempts": [
+    {
+      "pr": 380,
+      "summary": "dead-list position re-derived by scanning; 71.46 s -> 19.42 s (-72.8%), acceptance not met"
+    },
+    {
+      "pr": 385,
+      "summary": "`kuna decompile` followed the same flow twice; 19.70 s -> 15.32 s (-22.3%), acceptance not met"
+    },
+    {
+      "pr": 393,
+      "summary": "three per-query re-derivations of cached facts + one fused arena lookup; 14.57 s -> 12.18 s (-16.3%), acceptance not met"
+    },
+    {
+      "pr": 396,
+      "summary": "Rc traffic on 9.5 M ordered-container mutations; 12.06 s -> 11.23 s (-6.9%), acceptance not met"
+    }
   ],
-  "new_ms": [
-   11140,
-   10930,
-   11520,
-   11180,
-   11830,
-   11270,
-   10770,
-   11890
+  "phase": "P2 lift/flow -- jump-table recovery (FlowInfo::recoverJumpTables / Funcdata::stageJumpTable)",
+  "modules": [
+    "decompiler/crates/kuna-decomp/src/substrate/funcdata_block.rs (Funcdata::stage_jump_table, Funcdata::recover_jump_table_flow)",
+    "decompiler/crates/kuna-decomp/src/p2_lift/flow.rs (FlowInfo::recover_jump_tables)",
+    "decompiler/crates/kuna-decomp/src/infra/architecture.rs (jumptable_share_partial + set_kuna_option + build_arch_handle)",
+    "decompiler/crates/kuna-decomp/src/substrate/context.rs (ArchSeam::jumptable_share_partial)",
+    "decompiler/crates/kuna-decomp/phases.toml + src/p0_knowledge/options.rs (settable row + registration)"
   ],
-  "base_median_ms": 12055,
-  "new_median_ms": 11225,
-  "median_delta_pct": -6.9,
-  "paired_mean_delta_pct": -7.3,
-  "paired_sd_pct": 5.0,
-  "significance": "every one of the 8 pairs is a win; paired t = 7.3 / (5.0/sqrt(8)) = 4.2 sigma. This is BELOW the perf track's 20% single-target noise bar and is carried on the pairing plus the zero-diff identity sweep instead: the noise-floor argument is about a single-arm before/after, and no pair here regresses.",
-  "acceptance_ms_bar": 10000,
-  "acceptance_result": "FAIL on `wall_ms`; `exit_code` passes. The need stays open.",
-  "output_identity": "byte-identical stdout AND exit code, base vs new, on whole-surface `decompile-all --json` over the fixture corpus and the round's probe binaries"
- },
- "residue_map": {
-  "method": "per-Action exclusive timing plus indexed guards, from instrumented release builds of this branch; one `kuna decompile <crackme> sub_140023350 --json` run each",
-  "before_this_pr_11_8s": {
-   "total action time (3 decompiles)": "9624 ms",
-   "heritage (30)": "2714 ms -- per-space varnode scan + globaldisjoint 556 (of which LocationMap::add+get 470), place_multiequals 1367 (guard 1223, of which guard_calls 842, of which INDIRECT construction 798), rename 819",
-   "deadcode (41)": "1773 ms -- sweep 686, clear_dead_varnodes 382, propagate 225, alive-op seed 198, clear_dead_ops 164, consume clear 132",
-   "oppool1 (194)": "1688 ms",
-   "infertypes (20)": "813 ms",
-   "mergerequired (1)": "601 ms",
-   "the 2 jump-table partial sub-decompiles": "3077 ms of that action time + 464 ms building the partials",
-   "outside any Action": "~2.2 s -- 0.7 s binary load and setup, flow follow, jump-table address recovery, C emit and JSON"
+  "change_kind": "performance-fix that is also a recovery gain (upstream-shape convergence)",
+  "option": "jtsharepartial (on|off, default on)",
+  "gated": true,
+  "gating_rationale": "Sharing the partial changes WHICH jump tables recover -- it is the shape `option unrolledguard` was written against, and turning it off is the only way to get unrolledguard's per-table re-clone back. So it ships as a settable row even though every measured difference is a gain. Default ON has the required evidence: 0/675 datatest assertions moved, docs/baseline.json unmoved.",
+  "hypothesis_filed": "The function's extensive opaque arithmetic and indirect calls cause one or more analysis passes to scale poorly.",
+  "hypothesis_verdict": "Refuted for the fifth time, and this attempt did not re-derive it. The captain's brief named the mechanism: kuna ran the jump-table partial sub-decompilation once per TABLE where C++ runs it once per FUNCTION. Confirmed here at 2 tables on the witness.",
+  "root_cause": "`Funcdata::stage_jump_table` built a fresh `@@jumprecovery` partial (clone the raw p-code + jump-tables, build blocks, run the reduced \"jumptable\" action set) for EVERY table. C++ `FlowInfo::recoverJumpTables` (flow.cc:1429) constructs one `partial` per call and `Funcdata::stageJumpTable` (funcdata_block.cc:512) guards the clone plus the pipeline behind `if (!partial.isJumptableRecoveryOn())`. The correctness half is larger than the speed half: because kuna's later clone re-cloned the jumpvec AFTER an earlier sibling recovered, that clone's collect_edges called target() on a case body decoded only into the parent flow, threw \"Could not find op at target address\", and truncated a recoverable dispatch to a computed (code *)() call. `option unrolledguard` exists solely to tolerate that self-inflicted condition.",
+  "fix": "Hoist the partial into `FlowInfo::recover_jump_tables` as an `Option<Funcdata>` threaded through `recover_jump_table_flow` into `stage_jump_table`; build + run the reduced pipeline only when the slot is empty. Recovery itself still runs per table against the shared partial and mutates it, exactly as upstream does. `option jtsharepartial off` restores the per-table clone byte for byte.",
+  "profiling_method": "None needed and none run -- the profile was inherited from attempts 1-4 (this file and the need record). Measurement is an interleaved paired A/B using the OPTION as the lever, so both arms are the same binary and the `kuna decompile` -> `decomp_dbg` fork cannot silently time a different engine (the trap that voided wave 14's pre/post delta).",
+  "measurement": "Witness `kuna decompile nikos_crack_me.exe sub_140023350` (the acceptance command, no --json), 8 interleaved pairs after a warmup of each arm: OFF median 10,869 ms (min 10,490), ON median 9,138 ms (min 8,843). Median delta -15.92%; paired mean -15.96% +/- 2.03; 8/8 pairs a win (~7.8 sigma). Both arms byte-identical stdout on this witness.",
+  "residue_map": "Not re-measured; the post-#393/#396 profile stands (heritage ~23%, oppool1 ~14%, ActionDeadCode ~15%, merge ~8%) minus roughly one of the two `stage_jump_table` blocks. There is no single remaining lever of this size; the function is IR-volume-bound (#396).",
+  "refuted_leads": [
+    "The prior in-code claim that sharing 'loses 16 of the 17 switches' the unrolledguard testcase asserts is WRONG as stated. Measured: with sharing on and unrolledguard OFF the memcpy witness recovers 16 switches and 0 computed calls -- sharing FIXES that testcase's bug rather than regressing it. What sharing removes is unrolledguard's MECHANISM (the per-table re-clone), which is why the option is still reachable.",
+    "The captain's suggested gate 'share by default, keep per-table cloning for the unrolledguard-on path' was checked and rejected: `unrolledguard` is in AGGRESSIVE_OVERRIDES and `auto` picks aggressive under 500 KiB, so that gate would be inert on this very witness. The two options are documented as paired instead (turn unrolledguard on together with jtsharepartial off)."
+  ],
+  "left_on_the_table": "`unrolledguard` is now redundant on every shape measured here and is a candidate for removal or for dropping out of AGGRESSIVE_OVERRIDES; that is a separate default change with its own evidence burden and was not taken in this PR.",
+  "tests": [
+    "tests/stages/ghangr-optimized-memcpy-6301a9.xml grows a THIRD pass (609 -> 610 assertions): pass 1 both gates off = the bug (7 `code **`, 1 switch), pass 2 unrolledguard on = its fix (+16), pass 3 unrolledguard OFF + jtsharepartial ON = the shipped default's fix (+16). Asserts `code **` == 7 across the whole stream (so pass 3 adds none) and `switch(` == 33, plus a 3-pass sentinel (`memcpy_opt(` == 3) so the counts cannot be one dropped pass.",
+    "tests/cli/decompiling-3396-byte-main.json: the promoted regression probe. The dataset acceptance is unvendorable AND wall-clock, so the in-repo twin pins the mechanism on the existing `mcount_x86_64` fixture -- `__gettextparse` holds two tables in one batch and goes 1 switch + 1 truncated computed call -> 2 switches + 0, with 28 more case arms."
+  ],
+  "regression_sweep": "Whole-surface `decompile-all --json` A/B (option off vs default) over 100 binaries / 21,458 functions: the 6 round-2 probe binaries, 9 system ELFs (ls, grep, tar, bash, gzip, sed, awk, objdump, python3.12), the 83 kuna-analysis fixtures (ELF/PE/Mach-O/COFF; x86-64/i386/ARM/Cortex-M/PPC) and betaflight_STM32F405.elf. 62 functions differ. Every one was classified by truncated-dispatch / switch / case counts: 61 GAINS, 0 losses, 1 unclassifiable by name (two `printf_positional` bodies share a name). Aggregate: 68 truncated `(code *)()` dispatches removed, +237 switches, +14,770 case arms. `mcount_x86_64` was re-run keyed by ADDRESS to defeat the name collision: 19 differing, all gains. The two arms' warning streams also differ in the expected direction -- the witness's `[kuna unrolledguard] ... skipped 6 undecoded sibling-table case-target edge(s)` line disappears under the default, because the condition no longer arises.",
+  "gates": {
+    "make test": "PARITY OK 675/675, docs/baseline.json unmoved",
+    "make test-stages": "PARITY OK 610/610 (609 -> 610), docs/baseline-stages.json re-recorded",
+    "make rust-test": "green (rc=0). NOTE: the first run reported 2 failures, both artifacts: one hard-coded live-value count 45 -> 46 (fixed), and `w10_proto_unlock_const_return_collapses_no_tied_roundtrip`, which is a KUNA_DECOMP_TEST env artifact -- that var is exported in the builder environment and makes the test use the Rust binary as its 'C++ oracle', so the oracle renders `unsigned int` where the test pins `xunknown4`. Green with the var unset.",
+    "make check-spec": "OK",
+    "kuna catalog --check": "catalog OK (140 -> 141 settables; all hard-coded counters re-derived from a fresh capture, phase_catalog.json recaptured)",
+    "make test-cli": "24/24",
+    "acceptance a-53d616afcb6a": "PASS -- 9,112 ms median against the < 10,000 ms bar, exit 0"
   },
-  "cross_cutting": {
-   "VarnodeBank::create + create_def": "1378 ms / 1,677,343 calls",
-   "VarnodeBank::destroy": "887 ms / 1,523,008 calls",
-   "VarnodeBank::xref + make_free": "972 ms / 1,110,157 calls",
-   "PcodeOpBank create + destroy": "398 ms / 1,106,775 calls",
-   "note": "these overlap the per-Action rows above; heritage alone accounts for 676,043 varnode creations, 532,174 destructions and 340,921 op creations, and `deadcode` for 857,187 destructions"
-  },
-  "verdict": "IR-volume-bound. There is no pass left to fix; the two levers that remain are (a) creating less IR, which changes emitted C, and (b) making each tree mutation cheaper, which this PR does by ~7% and which has diminishing returns from here."
- },
- "refuted_leads": [
-  {
-   "lead": "`Funcdata::new_varnode` allocates a fresh `Rc<Datatype>` per varnode where C++ shares a cached one from the TypeFactory -- 1.3 M allocations",
-   "verdict": "REFUTED as a lever: `type_base_unknown` measures 111 ms over 1,304,246 calls (~85 ns each). Memoizing it would buy under 1% and would make previously-distinct `Rc<Datatype>` pointers alias, which several `Rc::ptr_eq` type comparisons can see. Not worth it."
-  },
-  {
-   "lead": "`setVarnodeProperties` issues two scope containment queries per varnode creation -- the same shape as attempt 3's 26 M `findContainer` queries",
-   "verdict": "REFUTED by measurement: 86.5 ms over 539,462 calls, and `assign_high` 10.8 ms. Both are cheap; do not memoize them."
-  },
-  {
-   "lead": "`Heritage::guard_calls` per-iteration overhead (prototype queries, trial lookups, address construction)",
-   "verdict": "REFUTED again and now quantified: the loop body outside INDIRECT construction is 97 ms over 546,144 iterations (0.18 us). All 913 ms of guard_calls is the 192,528 INDIRECT constructions, i.e. tree mutations. Attempt 3 reached the same conclusion by elimination; this is the direct measurement."
-  }
- ],
- "left_on_the_table": [
-  {
-   "item": "the jump-table partial is rebuilt per table",
-   "worth": "the two partial sub-decompiles are 3,077 ms of action time plus 464 ms of cloning in an 11.8 s run; C++ builds ONE partial per function (`Funcdata::stageJumpTable` guards the clone and the reduced pipeline behind `if (!partial.isJumptableRecoveryOn())`), so sharing removes one of the two -- about 1.7 s, ~15%",
-   "status": "BLOCKED behind its own option, and this is now the ONLY identified change that can reach the acceptance bar. `option unrolledguard` recovers MSVC interleaved tables BECAUSE each table's partial re-clones the siblings recovered before it, and it fires on this very witness (kuna prints `[kuna unrolledguard] interleaved jump table at 0x140023d90: skipped 6 undecoded sibling-table case-target edge(s)`), so sharing changes this function's own output and needs a `phases.toml` row. That row is a lease attempt 4 did not hold (the live `direct-address-keyboard-handler` builder held phases.toml, the catalog counter, the DIV counter and docs/options.md all round). Combined with this PR's -7%, a shared partial lands the witness at roughly 9.5 s -- under the 10 s bar."
-  },
-  {
-   "item": "the optree (`BTreeMap<SeqNum, OpId>`) key is not compacted the way the varnode keys now are",
-   "worth": "~100-150 ms; 1.1 M op creations and destructions plus the rule pool's cursor searches",
-   "status": "NOT DONE. Same transformation, more call sites (`find_op`, the cursor's range probes, `ops_after_seq`); left out to keep this PR's blast radius to two files of engine code."
-  },
-  {
-   "item": "`ActionDeadCode`'s three full-varnode scans per pass (`iter_loc().collect()` twice, `loc_space_ids` once)",
-   "worth": "~100 ms",
-   "status": "NOT DONE. The scans are upstream's algorithm and the destroys inside them, not the walk, are the cost (686 ms sweep vs 78 ms collecting the space's ids)."
-  },
-  {
-   "item": "`Funcdata::early_jump_table_fail` collects the whole dead list and linear-scans for a position",
-   "worth": "small",
-   "status": "NOT DONE, inherited from attempt 3 unchanged."
-  }
- ],
- "tests": [
-  "decompiler/crates/kuna-base/src/address.rs -- `sort_key_orders_identically_to_cmp`: an exhaustive product over sentinels, four spaces (including two distinct Rc handles for the same space index) and five offsets, asserting `a.cmp(b) == a.sort_key().cmp(&b.sort_key())` for all 529 pairs. This is the correctness keystone of the key compaction.",
-  "the pre-existing LocKey/DefKey comparator product test (>100,000 pairs) and the LocationMap add/intersect tests in `heritage.rs` and `tests/verify_w5_s3_heritage.rs` cover the retyped keys and the rewritten `add` unchanged.",
-  "no tests/cli promotion: the acceptance probe still FAILS, so promoting it would vendor a red regression test."
- ],
- "regression_sweep": "whole-surface `decompile-all --json` diffed base vs new (stdout and exit code) across the kuna-analysis fixture corpus and the round's probe binaries -- ELF x86-64/i386/aarch64/arm/riscv64/mips/ppc64le/sparc64, PE x86-64/i386, Mach-O x86-64/arm64/fat, COFF and ELF relocatables, UPX-packed, DWARF and PDB-bearing images.",
- "gates": {},
- "decisions": [
-  "The need's hypothesis is refuted for the fourth time; the symptom stands. Recorded under `hypothesis_verdict`.",
-  "The measurement is -6.9% median / -7.3% paired mean, which is under the perf track's nominal 20% single-target bar. It is carried anyway because all 8 interleaved pairs are wins and the output is byte-identical -- the 20% bar exists to reject a single-arm before/after that could be noise, and this is neither single-arm nor a coin flip. The number is reported honestly rather than dressed up.",
-  "The acceptance probe is NOT relaxed and NOT promoted. Attempt 4 lands the witness at ~11.2 s against a <10,000 ms bar.",
-  "The path to the bar is now identified and priced: sharing the jump-table partial (C++ parity) is ~15% and is the only remaining change of that size. It needs a phases.toml option because it changes which tables recover on this very witness, and that lease was held all round. A fifth dispatch should be given the phases.toml/catalog/DIV/stages leases and told to implement exactly that -- it is a scoped feature PR, not another profiling run."
- ]
+  "decisions": [
+    "THE NEED CLOSES. The acceptance probe passes for the first time in five attempts: 9,112 ms against < 10,000 ms (71.5 -> 19.4 -> 14.4 -> 11.8 -> 10.8 -> 9.1 s). The bar was never moved.",
+    "Recorded as a CONVERGENCE in docs/history.md, not a DIV row. docs/history.md's own rule is explicit: 'a port defect whose fix moves kuna back onto upstream's default earns no DIV row, but a corpus-wide output shift still needs a record'. After this change kuna's DEFAULT matches C++ stageJumpTable, so there is no divergence left to register. The captain's brief said 'DIV row'; this is the one place this PR departs from it, and it departs toward the document's stated rule.",
+    "The measured -15.92% is under the perf track's nominal 20% single-target bar and is carried anyway: 8/8 interleaved pairs are wins at +/- 2.03, the arms are the same binary with the option as the lever, and the acceptance probe -- the actual definition of done -- passes. The number is reported as measured.",
+    "The change ships DEFAULT-ON. Evidence per the standing requirement: 0/675 datatest assertions move. The output that does move (62 of 21,458 functions) was individually classified and is 61 gains / 0 losses.",
+    "The in-code comment claiming kuna 'cannot share' the partial because unrolledguard 'loses 16 of the 17 switches' was tested rather than believed, and is refuted: sharing recovers all 16 with unrolledguard off. The comment and the spec prose are corrected in this PR."
+  ]
 }
