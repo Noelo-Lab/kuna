@@ -607,7 +607,9 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
     }
 
     // (kuna, RE-need `analysis-generated-function-name`) The driver defaults, split
-    // in two. `base` is what this surface has always injected — the DIV-15 Listing.
+    // in two. `base` is what this surface injects on the FIRST attempt — the DIV-15
+    // Listing and the DIV-120 instruction-budget policy, neither of which touches the
+    // entry set.
     // `discovery` is the DIV-20/DIV-68 non-x86-64 bundle the IN-PROCESS drivers also
     // inject (`decompile_all::load_program`), and it is held back for a second attempt
     // rather than injected up front.
@@ -626,8 +628,9 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
     // a discovery-generated name that `kuna decompile` then refuses — and nothing that
     // already resolved changes at all.
     let full = decompile_all::driver_default_options(&binary, true, true, &args.options);
-    let (base, discovery): (Vec<_>, Vec<_>) =
-        full.into_iter().partition(|(name, _)| *name == "listing");
+    let (base, discovery): (Vec<_>, Vec<_>) = full
+        .into_iter()
+        .partition(|(name, _)| matches!(*name, "listing" | "errortoomanyinstructions"));
 
     let attempt = |injected: &[(&'static str, &'static str)]| {
         let script = build_script(
@@ -1355,11 +1358,14 @@ mod tests {
     use std::borrow::Cow;
 
     /// What `decompile_all::driver_default_options` yields for the FIRST attempt
-    /// on every architecture: the DIV-15 Listing and nothing else.
-    const LISTING: &[(&str, &str)] = &[("listing", "on")];
+    /// on every architecture: the DIV-120 instruction-budget policy and the
+    /// DIV-15 Listing, neither of which touches the entry set.
+    const LISTING: &[(&str, &str)] =
+        &[("errortoomanyinstructions", "off"), ("listing", "on")];
 
     /// The DIV-20/DIV-68 non-x86-64 bundle, held back for the retry.
     const WIDENED: &[(&str, &str)] = &[
+        ("errortoomanyinstructions", "off"),
         ("listing", "on"),
         ("funcstart_patterns", "on"),
         ("aif", "on"),
@@ -1824,10 +1830,11 @@ Execution error: No symbol named: v9
         let arm = fixture("entrymain_arm");
         let full = decompile_all::driver_default_options(&arm, true, true, &[]);
         assert_eq!(full, WIDENED, "the non-x86-64 bundle");
-        let (base, discovery): (Vec<_>, Vec<_>) =
-            full.into_iter().partition(|(name, _)| *name == "listing");
+        let (base, discovery): (Vec<_>, Vec<_>) = full
+            .into_iter()
+            .partition(|(name, _)| matches!(*name, "listing" | "errortoomanyinstructions"));
         assert_eq!(base, LISTING, "the first attempt");
-        assert_eq!(discovery, &WIDENED[1..], "held back for the retry");
+        assert_eq!(discovery, &WIDENED[2..], "held back for the retry");
     }
 
     /// x86-64 has nothing to hold back, so there is no second attempt to make:
@@ -1846,7 +1853,10 @@ Execution error: No symbol named: v9
     fn the_bundle_yields_to_a_named_option() {
         let options = vec![("aif".to_string(), "off".to_string())];
         let full = decompile_all::driver_default_options(&fixture("entrymain_arm"), true, true, &options);
-        assert_eq!(full, &[("listing", "on"), ("funcstart_patterns", "on")]);
+        assert_eq!(
+            full,
+            &[("errortoomanyinstructions", "off"), ("listing", "on"), ("funcstart_patterns", "on")]
+        );
     }
 
     /// The widened attempt emits its extra options where the console can still

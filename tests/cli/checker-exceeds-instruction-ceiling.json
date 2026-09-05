@@ -1,0 +1,54 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--functions",
+    "main",
+    "--option",
+    "maxinstruction",
+    "5",
+    "--json"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/midstring_x86_64",
+    "binary_sha256": "1a4cc3ca2bc124f6228923046c0859465234c2269dae6d4bfe5c1554feb2c682",
+    "binary_size": 16072,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/midstring_x86_64",
+    "selector": "main",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "json": [
+      {
+        "path": "functions[0].code",
+        "op": "matches",
+        "value": "\\S"
+      },
+      {
+        "path": "functions[0].error",
+        "op": "eq",
+        "value": null
+      }
+    ],
+    "stdout_matches": [
+      "Exceeded the 5 instruction budget: some flow is truncated",
+      "--option maxinstruction N",
+      "--option errortoomanyinstructions on"
+    ]
+  },
+  "notes": "The dataset acceptance is a 1,804,480-instruction MBA checker CI has no copy of; --option maxinstruction 5 puts this 16 KB fixture in the identical state. Before the fix a budget overrun was fatal on every CLI decompiling surface -- code null, error 'Flow exceeded maximum allowable instructions', no remedy named. --option errortoomanyinstructions on restores that failure."
+}

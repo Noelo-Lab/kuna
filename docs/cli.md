@@ -43,6 +43,31 @@ interactive prompts never pollute the output. `--option NAME VALUE` (repeatable)
 `--kassert "<args>"` flip phase-model sub-phase assertions per run; `--mode
 auto|reliable|aggressive|fast` applies an option preset (`docs/modes.md`).
 
+**The instruction budget.** Flow following decodes at most `maxinstruction`
+instructions per function — 100000 by default, which no ordinary function comes
+near and an obfuscated one blows through. Past the budget the decompiling
+surfaces **truncate** the flow and emit the body they did decode, under a
+warning header that says so:
+
+```bash
+# a 1.8M-instruction MBA-obfuscated checker: a truncated body, not a failure
+kuna decompile-all ./crackme.exe --functions sub_140001000 --json
+#   "code": "unsigned int sub_140001000(...)  // warn: Exceeded the 100000
+#            instruction budget: some flow is truncated ..."
+
+# ask for more of it (the cost is roughly linear, in time and in memory)
+kuna decompile-all ./crackme.exe --functions sub_140001000 --option maxinstruction 400000 --json
+
+# or make the overrun fatal again, which is upstream's policy and the engine default
+kuna decompile ./crackme.exe main --option errortoomanyinstructions on
+#   error: Flow exceeded maximum allowable instructions
+```
+
+Both options are upstream `OptionDatabase` names rather than phase-model ones, so
+they are reachable through `--option` on every surface but do not appear in `kuna
+catalog`. `--max-fn-seconds` (see `decompile-all` below) is the wall-clock half of
+the same budget.
+
 **`--define-function <start[-end][=name] | @file>`** (repeatable) tells kuna where a
 function starts and ends. Every boundary kuna knows is otherwise *derived* —
 discovery finds the entries, and the extent is the address-contiguous clip to the

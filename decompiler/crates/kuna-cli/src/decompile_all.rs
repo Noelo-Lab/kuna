@@ -1077,6 +1077,17 @@ pub(crate) fn driver_default_options(
         .unwrap_or(false);
 
     let mut injected = Vec::new();
+    // (kuna DIV-120) A function past the instruction budget reports the body kuna
+    // DID decode, not nothing.  Upstream's default makes the overrun fatal, so a
+    // function larger than `maxinstruction` decompiled to `code: null` and an
+    // error naming no remedy; clearing the flag truncates the flow at the budget
+    // instead and P3-P9 run on what was decoded, under a warning header that
+    // names the knob.  Only the decompiling surfaces take it -- an inventory or
+    // query load never follows flow -- and naming the option explicitly (or
+    // `--option maxinstruction N` plus it) still restores the hard failure.
+    if decompiles && !named("errortoomanyinstructions") {
+        injected.push(("errortoomanyinstructions", "off"));
+    }
     if wants_listing && (decompiles || non_x86_64) && !named("listing") {
         injected.push(("listing", "on"));
     }
@@ -1121,9 +1132,10 @@ pub(crate) fn load_program(
         defaults.wants_listing(),
         &args.options,
     ) {
-        prog.arch_mut()
-            .set_kuna_option(name, value)
-            .map_err(|e| format!("option {name}: {}", e.explain()))?;
+        // Through the same dispatch the caller's `--option`s take: a driver
+        // default may name an upstream option (`errortoomanyinstructions`) as
+        // well as a kuna one, and `set_kuna_option` only knows the kuna table.
+        apply_one_option(&mut prog, name, value)?;
     }
 
     // (kuna `--assert`) A `readonly` range is inert unless read-only propagation
@@ -1458,26 +1470,35 @@ pub fn parse_language_flag(v: &str) -> Result<Option<&'static str>, String> {
 /// are still applied here (so they are recorded) after their env export above.
 fn apply_runtime_options(prog: &mut ConsoleProgram, options: &[(String, String)]) -> Result<(), String> {
     for (name, value) in options {
-        if KUNA_OPTION_NAMES.contains(&name.as_str()) {
-            prog.arch_mut()
-                .set_kuna_option(name, value)
-                .map_err(|e| format!("option {name}: {}", e.explain()))?;
-            continue;
-        }
-        let id = prog.registry().find_element(name, 0);
-        if id == 0 {
-            // A load-time gate may not be a registered upstream option but is a
-            // valid kuna gate already handled via env; don't fail on it.
-            if is_loadtime_gate(name) {
-                continue;
-            }
-            return Err(format!("unknown option: {name}"));
-        }
-        let db = OptionDatabase::new();
-        db.set(prog.arch_mut(), id, value, "", "")
-            .map_err(|e| format!("option {name}: {}", e.explain()))?;
+        apply_one_option(prog, name, value)?;
     }
     Ok(())
+}
+
+/// Apply one `NAME VALUE` pair to the live architecture: the kuna stage-model
+/// table first, then the upstream `OptionDatabase`, then the load-time gates the
+/// env bridge already handled.
+fn apply_one_option(prog: &mut ConsoleProgram, name: &str, value: &str) -> Result<(), String> {
+    if KUNA_OPTION_NAMES.contains(&name) {
+        return prog
+            .arch_mut()
+            .set_kuna_option(name, value)
+            .map(|_| ())
+            .map_err(|e| format!("option {name}: {}", e.explain()));
+    }
+    let id = prog.registry().find_element(name, 0);
+    if id == 0 {
+        // A load-time gate may not be a registered upstream option but is a
+        // valid kuna gate already handled via env; don't fail on it.
+        if is_loadtime_gate(name) {
+            return Ok(());
+        }
+        return Err(format!("unknown option: {name}"));
+    }
+    let db = OptionDatabase::new();
+    db.set(prog.arch_mut(), id, value, "", "")
+        .map(|_| ())
+        .map_err(|e| format!("option {name}: {}", e.explain()))
 }
 
 /// The SLEIGH spec roots (an explicit `--sleighpath` wins, else `SLEIGHHOME` +

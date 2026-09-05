@@ -1336,18 +1336,40 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         if self.insn_count >= self.insn_max {
             if (self.flags & flow_flags::error_toomanyinstructions) != 0 {
                 return Err(KunaError::lowlevel("Flow exceeded maximum allowable instructions"));
-            } else {
-                // The C++ assigns `step = 1` here, but it is unconditionally
-                // overwritten by the `oneInstruction` decode below (the decode
-                // still runs after the too-many halt is planted), so the value has
-                // no observable effect; the load-bearing action is the halt.
-                self.artificial_halt(curaddr, pcodeop_flags::badinstruction)?;
-                // data.warning("Too many instructions -- Truncating flow here", curaddr);  -- STUB(W4)
-                if !self.has_too_many_instructions() {
-                    self.flags |= flow_flags::toomanyinstructions_present;
-                    // data.warningHeader("Exceeded maximum allowable instructions ...");  -- STUB(W4)
-                }
             }
+            // (kuna) Truncate and STOP.  The C++ plants the halt and then decodes
+            // `curaddr` anyway, so the next address is queued and the next call
+            // truncates again: the "truncation" still walks every reachable
+            // instruction, which on an obfuscated function of millions of them is
+            // an out-of-memory abort rather than a truncated body.  Halting here
+            // caps the decode at `insn_max` instructions plus one halt per address
+            // still queued.  The halt is registered in `visited` as the
+            // instruction at `curaddr` so a branch arriving here later resolves to
+            // it (`target`) instead of raising "Could not find op at target
+            // address", and starts a basic block so an incoming edge has one to
+            // land on (the `funcboundflow` truncation learned the same lesson).
+            let halt = self.artificial_halt(curaddr, pcodeop_flags::badinstruction)?;
+            self.op_mark_start_basic(halt);
+            self.op_mark_start_instruction(halt);
+            let seq =
+                self.data.obank().get(halt).expect("truncate: stale halt").get_seq_num().clone();
+            self.visited.insert(curaddr.clone(), VisitStat { seqnum: seq, size: 1 });
+            // Once per function, not once per cut: every address still queued
+            // truncates here too, and on a function this size that is thousands of
+            // them.  The header names the knob, because an agent reading a
+            // truncated body has to be able to ask for more of it without going
+            // looking for the option.
+            if !self.has_too_many_instructions() {
+                self.flags |= flow_flags::toomanyinstructions_present;
+                self.data.warning_header(&format!(
+                    "Exceeded the {} instruction budget: some flow is truncated \
+(raise it with `--option maxinstruction N`, or make the overrun fatal again with \
+`--option errortoomanyinstructions on`)",
+                    self.insn_max
+                ));
+                self.data.warning("Too many instructions -- truncating flow here", curaddr);
+            }
+            return Ok(false);
         }
         self.insn_count += 1;
 
