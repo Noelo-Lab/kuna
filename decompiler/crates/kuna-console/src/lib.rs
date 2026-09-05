@@ -23,6 +23,7 @@ mod entry_selector;
 pub mod engine;
 pub mod decompile_step;
 pub mod project;
+pub mod classify;
 pub mod funcextent;
 pub mod codedata;
 pub mod kuna_console;

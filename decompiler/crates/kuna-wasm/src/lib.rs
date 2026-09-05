@@ -11,8 +11,9 @@
 //! wasm-safe wrapper (`kuna-cli`'s subprocess/CLI machinery cannot compile for
 //! `wasm32-wasip1`). The Node-WASI parity test in `integrations/web/test/`
 //! pins native-vs-wasm output equality; the `--json` shape is the
-//! `kuna decompile-all --json` fields plus a kuna-wasm-only `"kind"`
-//! (`"func"` | `"plt"` | `"thunk"` — see `classify.rs`) on every function entry.
+//! `kuna decompile-all --json` fields plus a `"kind"`
+//! (`"func"` | `"plt"` | `"thunk"` — [`kuna_console::classify`], shared with
+//! `kuna decompile-graph`) on every function entry.
 //!
 //! # Why WASI
 //! The decompiler touches the outside world only through plain `std::fs` path
@@ -29,9 +30,8 @@ use kuna_console::project::{
     FuncResult, FAST_WHOLE_BINARY_FN_BUDGET_SECONDS,
 };
 use kuna_decomp::decompile_drive::{print_c_recompile_prelude, print_c_types};
-
-mod classify;
-use classify::Classifier;
+// The per-function `kind` annotation, shared with `kuna decompile-graph`.
+use kuna_console::classify::Classifier;
 
 /// Parsed command.
 enum Cmd {
@@ -441,8 +441,8 @@ fn list_json(binary: &str, entries: &[FunctionEntry], kinds: &[&'static str]) ->
     s
 }
 
-/// The `decompile` document (`decompile_all.rs::result_json`'s fields with the
-/// kuna-wasm-only `kind` after `address_hex`). `kinds` is parallel to `funcs`.
+/// The `decompile` document (`decompile_all.rs::result_json`'s fields with
+/// `kind` after `address_hex`). `kinds` is parallel to `funcs`.
 fn result_json(binary: &str, funcs: &[FuncResult], kinds: &[&'static str]) -> String {
     let mut s = String::from("{\n");
     s.push_str(&format!("  \"binary\": {},\n", json_str(binary)));

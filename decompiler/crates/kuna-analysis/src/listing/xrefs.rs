@@ -149,6 +149,9 @@ pub struct XrefIndex {
     decoded: HashSet<u64>,
     /// Every function entry the walk seeded or discovered, in address order.
     funcs: BTreeSet<u64>,
+    /// Function entries whose decoded body contains a `CALLIND`
+    /// ([`XrefIndex::has_indirect_calls`]).
+    indirect_callers: BTreeSet<u64>,
     /// Forwarding veneers, keyed by function entry ([`veneer_at`]).
     veneers: BTreeMap<u64, Veneer>,
     /// The reverse of [`XrefIndex::veneers`]: a slot mapped to every veneer that
@@ -277,6 +280,25 @@ impl XrefIndex {
     /// How many distinct instructions the walk decoded.
     pub fn instruction_count(&self) -> usize {
         self.insns
+    }
+
+    /// Does the walk of the function entered at `entry` decode a **computed
+    /// call** — a `CALLIND`, whose destination is a value rather than an
+    /// address?
+    ///
+    /// Such a call files no Call edge (there is no static target to file one
+    /// against), so a caller reading [`Self::refs_from_function`] cannot
+    /// otherwise tell "this function calls nothing" from "this function's
+    /// callee is decided at run time".
+    ///
+    /// `CALLIND` only. An indirect *branch* is not one: a jump table and a
+    /// forwarding veneer's `jmp [slot]` both lift to `BRANCHIND`, and the
+    /// veneer's target is recoverable anyway ([`Self::veneer_slot`]). The call
+    /// site is attributed by the same ordered containment
+    /// [`Self::refs_from_function`] buckets that instruction's references by, so
+    /// the two can never name different functions.
+    pub fn has_indirect_calls(&self, entry: u64) -> bool {
+        self.indirect_callers.contains(&entry)
     }
 }
 
@@ -481,6 +503,7 @@ pub fn build_with_focus(
         by_source: BTreeMap::new(),
         decoded: HashSet::new(),
         funcs: seed_set.clone(),
+        indirect_call_sites: BTreeSet::new(),
     };
 
     // Reused across every decode in the walk (see [`FullCapture`]).
@@ -589,6 +612,10 @@ pub fn build_with_focus(
             } else {
                 assembly(translate, vma, &code_space)
             };
+
+            if cap.ops().iter().any(|op| op.opcode == OpCode::CPUI_CALLIND) {
+                st.indirect_call_sites.insert(vma);
+            }
 
             for &target in &c.flows {
                 let kind = if c.flow.is_call { XrefKind::Call } else { XrefKind::Jump };
@@ -846,6 +873,9 @@ struct State {
     /// ordered: it is probed once per successor edge over the whole program.
     decoded: HashSet<u64>,
     funcs: BTreeSet<u64>,
+    /// VMAs of the decoded `CALLIND` instructions; folded onto their containing
+    /// function in [`State::finish`].
+    indirect_call_sites: BTreeSet<u64>,
 }
 
 impl State {
@@ -858,7 +888,8 @@ impl State {
     /// Close the index: the per-function bucket is grouped by ordered
     /// containment (not by which entry's descent happened to reach the
     /// instruction first), so a row's `from_function` and the `--from` bucket it
-    /// lands in can never disagree.
+    /// lands in can never disagree. The computed-call set is folded the same
+    /// way, for the same reason.
     fn finish(mut self, veneers: BTreeMap<u64, Veneer>) -> XrefIndex {
         let mut by_source_function: BTreeMap<u64, Vec<Xref>> = BTreeMap::new();
         for (&from, refs) in &self.by_source {
@@ -867,6 +898,11 @@ impl State {
             };
             by_source_function.entry(entry).or_default().extend(refs.iter().cloned());
         }
+        let indirect_callers: BTreeSet<u64> = self
+            .indirect_call_sites
+            .iter()
+            .filter_map(|from| self.funcs.range(..=*from).next_back().copied())
+            .collect();
         for refs in self.by_target.values_mut() {
             sort_dedup(refs, /* by_source = */ true);
         }
@@ -887,6 +923,7 @@ impl State {
             by_source_function,
             decoded: self.decoded,
             funcs: self.funcs,
+            indirect_callers,
             veneers,
             veneers_of_slot,
             insns,
@@ -913,6 +950,7 @@ fn empty() -> XrefIndex {
         by_source_function: BTreeMap::new(),
         decoded: HashSet::new(),
         funcs: BTreeSet::new(),
+        indirect_callers: BTreeSet::new(),
         veneers: BTreeMap::new(),
         veneers_of_slot: BTreeMap::new(),
         insns: 0,
@@ -1262,6 +1300,7 @@ mod tests {
             by_source: BTreeMap::new(),
             decoded: HashSet::from([0x1030, 0x1102, 0x1200]),
             funcs: BTreeSet::from([0x1000, 0x1030, 0x1180]),
+            indirect_call_sites: BTreeSet::new(),
         };
         for e in edges {
             st.file(e.from, e.to, e.kind, "");
@@ -1302,6 +1341,28 @@ mod tests {
         // literal address, which is what `strings` and the call graph read.
         assert_eq!(index.refs_to(0x1030).len(), 1);
         assert_eq!(index.refs_to(0x4008).len(), 2);
+    }
+
+    /// A computed call belongs to the function that CONTAINS it, which is the
+    /// rule `refs_from_function` buckets by. The walk can reach an instruction
+    /// while descending from a different entry — a fall-through into a body some
+    /// later CALL names as its own function — and attributing the call site to
+    /// that descent would make the two answers name different functions.
+    #[test]
+    fn a_computed_call_is_attributed_to_the_function_containing_it() {
+        let mut st = State {
+            by_target: BTreeMap::new(),
+            by_source: BTreeMap::new(),
+            decoded: HashSet::from([0x1188]),
+            funcs: BTreeSet::from([0x1000, 0x1030, 0x1180]),
+            indirect_call_sites: BTreeSet::from([0x1188]),
+        };
+        st.file(0x1188, 0x4008, XrefKind::Read, "");
+        let index = st.finish(BTreeMap::new());
+        assert!(index.has_indirect_calls(0x1180), "the call site lost its own function");
+        assert!(!index.has_indirect_calls(0x1030), "attributed to the preceding entry");
+        // And it lands in the same bucket the instruction's references do.
+        assert_eq!(index.refs_from_function(0x1180).len(), 1);
     }
 
     /// Off an alias class, unifying is exactly `refs_to`.

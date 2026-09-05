@@ -792,6 +792,31 @@ fn render_data_text(region: &Region, rows: &[DataRow], truncated: bool) -> Strin
     out
 }
 
+/// The instruction listing for one function body, `<vma>  <MNEMONIC operands>`
+/// per line — the compact spelling `kuna decompile-graph` carries per function,
+/// with no header and no byte column.
+///
+/// Walked by [`walk`], so it is the same decode this command lists and an
+/// undecodable byte inside the body is a `.byte 0x..` row rather than the end of
+/// the listing. `None` only when the extent is empty or nothing decoded.
+pub(crate) fn function_listing(prog: &ConsoleProgram, start: u64, end: u64) -> Option<String> {
+    use std::fmt::Write as _;
+    if end <= start {
+        return None;
+    }
+    let region =
+        Region { start, end: Some(end), name: None, derived: false, from_entry: true };
+    let (rows, _) = walk(prog, &region, None);
+    if rows.is_empty() {
+        return None;
+    }
+    let mut out = String::new();
+    for r in &rows {
+        let _ = writeln!(out, "{:08x}  {}", r.addr, r.text());
+    }
+    Some(out.trim_end().to_string())
+}
+
 /// What to call the start address in a header: its name and address when the
 /// program has a name for it, the bare address otherwise.
 fn label(region: &Region) -> String {

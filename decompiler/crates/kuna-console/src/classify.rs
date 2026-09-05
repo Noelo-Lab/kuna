@@ -1,6 +1,10 @@
-//! Per-function `kind` classification — the kuna-wasm-only annotation
-//! (`"func"` | `"plt"` | `"thunk"`) the browser UI uses to fold import stubs
-//! and trampolines out of the function list.
+//! Per-function `kind` classification (`"func"` | `"plt"` | `"thunk"`) — the
+//! annotation the browser inventory folds import stubs and trampolines out of,
+//! and the one `kuna decompile-graph` labels its function rows with.
+//!
+//! Shared here (rather than in either front-end) for the same reason
+//! [`crate::project`] is: two surfaces answer "what kind of function is this"
+//! and they must not answer it differently.
 //!
 //! A [`Classifier`] is built once per run from (a) an `object`-crate re-parse
 //! of the binary bytes — the import-stub section ranges (`.plt` family /
@@ -22,7 +26,7 @@
 
 use std::collections::BTreeSet;
 
-use kuna_console::engine::ConsoleProgram;
+use crate::engine::ConsoleProgram;
 use object::{Object, ObjectSection, ObjectSymbol};
 
 /// ELF sections that hold import/linkage stubs (procedure-linkage tables).
@@ -60,16 +64,28 @@ impl Classifier {
     /// degrades to empty ranges/imports (every entry then probes as
     /// `"thunk"`/`"func"`).
     pub fn new(prog: &ConsoleProgram, binary: &str, entries: impl Iterator<Item = u64>) -> Self {
+        let bytes = std::fs::read(binary).unwrap_or_default();
+        match object::File::parse(&*bytes) {
+            Ok(file) => Classifier::from_object(prog, Some(&file), entries),
+            Err(_) => Classifier::from_object(prog, None, entries),
+        }
+    }
+
+    /// [`Self::new`] off an already-parsed image, for a caller that holds one.
+    pub fn from_object(
+        prog: &ConsoleProgram,
+        file: Option<&object::File>,
+        entries: impl Iterator<Item = u64>,
+    ) -> Self {
         let arm = prog.description().starts_with("ARM");
         let normalize = |vma: u64| if arm { vma & !1 } else { vma };
         let entries: BTreeSet<u64> = entries.map(normalize).collect();
 
         let mut stub_ranges = Vec::new();
         let mut imports = BTreeSet::new();
-        let bytes = std::fs::read(binary).unwrap_or_default();
-        if let Ok(f) = object::File::parse(&*bytes) {
-            collect_stub_ranges(&f, &mut stub_ranges);
-            collect_imports(&f, &mut imports);
+        if let Some(f) = file {
+            collect_stub_ranges(f, &mut stub_ranges);
+            collect_imports(f, &mut imports);
         }
         Classifier { arm, stub_ranges, imports, entries }
     }

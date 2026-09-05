@@ -219,9 +219,12 @@ Four front-ends drive one engine assembly:
   `CODE` section (packed code in `.data`, a hand-picked `--addr`) decompiles
   exactly as before. The browser inventory sorts the same entries into its
   imports-and-thunks group off that predicate
-  (`decompiler/crates/kuna-wasm/src/classify.rs`), which a name test cannot do:
-  loader names are demangled (`CellClass::Cell_Coord`) and symbol-table names are
-  not.
+  (`decompiler/crates/kuna-console/src/classify.rs`), which a name test cannot
+  do: loader names are demangled (`CellClass::Cell_Coord`) and symbol-table names
+  are not. That classifier sits beside the shared decompile-project core rather
+  than in either front-end because two surfaces answer "what kind of function is
+  this" — the browser inventory and the `kuna decompile-graph` document (§9.7) —
+  and they must not answer it differently.
 
   (kuna) **The listing surfaces read the same section flags to choose a view.**
   `kuna disassemble` and its `kuna read` spelling

@@ -79,7 +79,7 @@
 //! --json`'s (`decompile.rs`) — one schema and one decompile policy across the
 //! single-function and whole-binary surfaces.
 
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::ffi::{OsStr, OsString};
 use std::fmt::Write as _;
 use std::rc::Rc;
@@ -315,10 +315,15 @@ pub(crate) struct CallGraph {
 }
 
 impl CallGraph {
-    fn build(prog: &ConsoleProgram, binary: &str) -> Result<CallGraph, String> {
+    pub(crate) fn build(prog: &ConsoleProgram, binary: &str) -> Result<CallGraph, String> {
         let bytes = std::fs::read(binary).map_err(|e| format!("{binary}: {e}"))?;
         let file = object::File::parse(&*bytes)
             .map_err(|e| format!("could not parse {binary}: {e}"))?;
+        Ok(CallGraph::build_from(prog, &file))
+    }
+
+    /// [`Self::build`] off an already-parsed image, for a caller that holds one.
+    pub(crate) fn build_from(prog: &ConsoleProgram, file: &object::File) -> CallGraph {
         let mut entries: Vec<(u64, u64)> = prog
             .function_entries_canonical()
             .iter()
@@ -328,12 +333,12 @@ impl CallGraph {
         entries.dedup_by_key(|(addr, _)| *addr);
         let seeds: Vec<u64> = entries.iter().map(|(addr, _)| *addr).collect();
         let index = kuna_analysis::listing::xrefs::build(
-            &file,
+            file,
             prog.arch(),
             prog.arch().translate(),
             &seeds,
         );
-        Ok(CallGraph { index, entries })
+        CallGraph { index, entries }
     }
 
     /// Every inventory entry reachable from `spec` through call, tail-jump, and
@@ -381,6 +386,51 @@ impl CallGraph {
         Ok(owners)
     }
 
+    /// Every callee of the function entered at `entry`, as
+    /// `(callee entry, edge kind)` in reference order — the same edge rule
+    /// [`Self::reachable_from`] walks ([`Self::callee_of`]), answered one
+    /// function at a time rather than as a transitive closure. Address-taken
+    /// callees are therefore edges too: without them `main` has no caller in a
+    /// glibc program, because `_start` hands it to `__libc_start_main` as a
+    /// pointer.
+    ///
+    /// A callee is always a node the graph knows, named in the inventory's terms
+    /// rather than the walk's ([`Self::owner_of`], the fold `reachable_from`
+    /// does once at the end of its search): a reference into the middle of a
+    /// body resolves to the body, and one that lands in no discovered function
+    /// at all — a `CALL 0x0` off a nulled relocation, a branch into a gap, a
+    /// materialized address that is a string — is not an edge and is dropped.
+    ///
+    /// Duplicates collapse on the callee at the first reference's position,
+    /// carrying the strongest kind the caller uses: calling a function is a
+    /// stronger claim than jumping to it, and both are stronger than mentioning
+    /// its address.
+    pub(crate) fn callees_of(&self, entry: u64) -> Vec<(u64, XrefKind)> {
+        let mut out: Vec<(u64, XrefKind)> = Vec::new();
+        let mut seen: BTreeMap<u64, usize> = BTreeMap::new();
+        let mut refs: Vec<&Xref> = self.index.refs_from_function(entry);
+        refs.sort_by_key(|r| (r.from, r.to));
+        for r in refs {
+            let Some(callee) = self.callee_of(r).and_then(|c| self.owner_of(c)) else {
+                continue;
+            };
+            // A jump back onto the caller is a loop edge inside one body reached
+            // through a second entry symbol, not a call.
+            if callee == entry && r.kind == XrefKind::Jump {
+                continue;
+            }
+            match seen.get(&callee) {
+                Some(&at) if edge_rank(r.kind) < edge_rank(out[at].1) => out[at].1 = r.kind,
+                Some(_) => {}
+                None => {
+                    seen.insert(callee, out.len());
+                    out.push((callee, r.kind));
+                }
+            }
+        }
+        out
+    }
+
     /// The call-graph node a reference edge lands on, or `None` when the edge is
     /// not a call-graph edge at all.
     fn callee_of(&self, r: &Xref) -> Option<u64> {
@@ -410,6 +460,20 @@ impl CallGraph {
         (vma == addr || vma - addr < size).then_some(addr)
     }
 
+    /// Does the function entered at `entry` make a computed call?
+    ///
+    /// A caller reading [`Self::callees_of`] needs this to tell "no callees"
+    /// from "the callee is computed at run time and has no static target".
+    pub(crate) fn has_indirect_calls(&self, entry: u64) -> bool {
+        self.index.has_indirect_calls(entry)
+    }
+
+    /// The fixed pointer slot a forwarding veneer at `entry` jumps through
+    /// (`jmp [slot]`), or `None` when `entry` is not one.
+    pub(crate) fn veneer_slot(&self, entry: u64) -> Option<u64> {
+        self.index.veneer_slot(entry)
+    }
+
     /// Does anything CALL `vma`?  Data and branch references do not count: the
     /// question a triaging agent asks is which functions no call site reaches.
     fn has_caller(&self, vma: u64) -> bool {
@@ -417,6 +481,16 @@ impl CallGraph {
             .refs_to(vma)
             .iter()
             .any(|r| r.kind == XrefKind::Call)
+    }
+}
+
+/// How strong a claim one reference kind makes about a call-graph edge, lowest
+/// first: a call, then a tail jump, then a materialized address.
+fn edge_rank(kind: XrefKind) -> u8 {
+    match kind {
+        XrefKind::Call => 0,
+        XrefKind::Jump => 1,
+        _ => 2,
     }
 }
 
@@ -1947,7 +2021,11 @@ pub(crate) fn parse_args_with_filters(
                 assertions.extend(crate::assertdecl::parse_flag(&v)?);
             }
             "--assert-strict" => assert_strict = true,
-            "--max-fn-seconds" if cmd == "decompile-all" || cmd == "decompile-project" => {
+            "--max-fn-seconds"
+                if cmd == "decompile-all"
+                    || cmd == "decompile-project"
+                    || cmd == "decompile-graph" =>
+            {
                 let v = take(argv, &mut i, "--max-fn-seconds")?;
                 max_fn_seconds = Some(
                     v.trim()
@@ -2027,12 +2105,13 @@ pub(crate) fn parse_args_with_filters(
     let binary = binary.ok_or_else(|| format!("{cmd} requires <binary>"))?;
 
     // (kuna outlang, DIV-80) The auto policy: with no `--language` and no
-    // explicit `--option setlanguage`, follow the binary. `decompile-project` is
-    // excluded -- its `.c`/`.h`/`.asm` export is C-shaped end to end and refuses
-    // any other language, so auto-selecting one there would turn a working
-    // export into an error.
+    // explicit `--option setlanguage`, follow the binary. `decompile-project` and
+    // `decompile-graph` are excluded -- a `.c`/`.h`/`.asm` export and a `codeC`
+    // field are C-shaped by construction and refuse any other language, so
+    // auto-selecting one there would turn a working export into an error.
     if !saw_language
         && cmd != "decompile-project"
+        && cmd != "decompile-graph"
         && !options.iter().any(|(n, _)| n == "setlanguage")
     {
         if let Some(lang) = detected_output_language(&binary) {
@@ -2053,7 +2132,9 @@ pub(crate) fn parse_args_with_filters(
     if names.is_none() && !addrs.is_empty() && !explicit_fast_funcdisc {
         options.push(("fast_funcdisc".into(), "off".into()));
     }
-    let whole_binary = (cmd == "decompile-all" || cmd == "decompile-project")
+    let whole_binary = (cmd == "decompile-all"
+        || cmd == "decompile-project"
+        || cmd == "decompile-graph")
         && names.is_none()
         && addrs.is_empty();
     let max_fn_seconds = max_fn_seconds
