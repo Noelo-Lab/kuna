@@ -392,3 +392,11 @@ _none recorded_
   (loadavg 1.14): a-53d616afcb6a **median 8926 ms** (8655/8926/8946/8927/8668/9002/8916), spread
   347 ms, flaky False, PASS. This is the tightest reading the need has had — 10.7% under the bar
   on a real 7-sample median rather than a single stopwatch click.
+- round 2 wave 25 B_DONE (captain), **standing caution — this is now the narrowest timing margin in
+  the backlog and it is the next phantom `regressed` waiting to happen.** The `--all` suite at
+  `766ead49` measured a-53d616afcb6a **median 9164 ms** against the `< 10000` bar (7 reps:
+  9393/9164/9463/8815/9230/9090/9125, max 9463), an **8.4% margin** — tighter than the 8926 ms /
+  10.7% recorded at 46c373ac, and taken in `make rust-test`'s wake rather than on a quiet box.
+  Verdict stayed PASS / `unchanged`; nothing is wrong. But when this need does flip, apply the
+  [[cold-load-xref-lookup]] rule first: **re-measure quiet at reps>=7 before believing it, and do
+  NOT relax the bar.** A genuine regression here would have to move the median ~840 ms.

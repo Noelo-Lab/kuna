@@ -2,7 +2,7 @@
 need_id: mach-o-entry-function
 title: Mach-O entry function is not identified as main
 track: quality
-status: open
+status: closed
 severity: major
 probe_id: p-d21d1d48685f
 acceptance_id: a-9e76eaa91fcb
@@ -12,14 +12,14 @@ instances: 1
 challenges: [653d88600f4238b24302b0ec]
 rounds: [2]
 first_seen_round: 2
-attempts: 0
+attempts: 1
 covered_by_option: null
 touches: [decompiler/crates/kuna-analysis/src/loader]
 scope: small
 regression_of: null
-pr: null
-closed_in_round: null
-closing_pr: null
+pr: "400"
+closed_in_round: 2
+closing_pr: "400"
 reject_reason: null
 ---
 
@@ -139,3 +139,4 @@ _none recorded_
   `binary_source: dataset` target, so an in-repo Mach-O twin fixture is what promotion needs.
   Target re-verified this wave: `bin/crackme0x04` is a **Mach-O 64-bit x86_64 PIE**, sha256
   9f17db47… as pinned — the need is a genuine Mach-O gap, not a mis-pinned ELF.
+- closed: acceptance a-9e76eaa91fcb now PASSES at 766ead494295

@@ -4,8 +4,8 @@
   "count": 35,
   "rejected_count": 0,
   "by_status": {
-    "closed": 27,
-    "open": 8
+    "closed": 28,
+    "open": 7
   },
   "by_track": {
     "perf": 2,
@@ -244,38 +244,6 @@
       "reject_reason": null,
       "score": 13.862944,
       "path": "docs/re-needs/large-function-malformed-output.md"
-    },
-    {
-      "need_id": "mach-o-entry-function",
-      "title": "Mach-O entry function is not identified as main",
-      "track": "quality",
-      "status": "open",
-      "severity": "major",
-      "probe_id": "p-d21d1d48685f",
-      "acceptance_id": "a-9e76eaa91fcb",
-      "hypothesis_status": "inconclusive",
-      "credibility": 0.7,
-      "instances": 1,
-      "challenges": [
-        "653d88600f4238b24302b0ec"
-      ],
-      "rounds": [
-        2
-      ],
-      "first_seen_round": 2,
-      "attempts": 0,
-      "covered_by_option": null,
-      "touches": [
-        "decompiler/crates/kuna-analysis/src/loader"
-      ],
-      "scope": "small",
-      "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
-      "reject_reason": null,
-      "score": 13.862944,
-      "path": "docs/re-needs/mach-o-entry-function.md"
     },
     {
       "need_id": "no-cli-structuring-override",
@@ -599,6 +567,38 @@
       "reject_reason": null,
       "score": 9.241962,
       "path": "docs/re-needs/direct-address-keyboard-handler.md"
+    },
+    {
+      "need_id": "mach-o-entry-function",
+      "title": "Mach-O entry function is not identified as main",
+      "track": "quality",
+      "status": "closed",
+      "severity": "major",
+      "probe_id": "p-d21d1d48685f",
+      "acceptance_id": "a-9e76eaa91fcb",
+      "hypothesis_status": "inconclusive",
+      "credibility": 0.7,
+      "instances": 1,
+      "challenges": [
+        "653d88600f4238b24302b0ec"
+      ],
+      "rounds": [
+        2
+      ],
+      "first_seen_round": 2,
+      "attempts": 1,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-analysis/src/loader"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": "400",
+      "closed_in_round": 2,
+      "closing_pr": "400",
+      "reject_reason": null,
+      "score": 9.241962,
+      "path": "docs/re-needs/mach-o-entry-function.md"
     },
     {
       "need_id": "no-cli-data-code-override",

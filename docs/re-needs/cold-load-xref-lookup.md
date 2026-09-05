@@ -205,3 +205,16 @@ _not yet refuted_
   a-6763a70e69bc **median 662 ms** (965/662/866/654/660/673/648), flaky False, PASS; the phantom
   1224 ms of wave 38 does not reproduce anywhere in 7 runs. Suite verdict: 2 pass, 0 fail,
   0 regressed.
+- round 2 wave 24 B_VERIFY flagged this need `regressed` for the **third** time and wave 25 B_DONE
+  refuted it again — **do not roll back, do not re-file.** The `--all` suite at `766ead49` measured
+  a-6763a70e69bc median **1088 ms** (7 reps: 1212/1001/956/1242/1315/1088/1055) against the `< 1000`
+  bar, every run exit 0 with correct JSON — only the stopwatch clause failed, and the suite ran in
+  `make rust-test`'s wake with loadavg still 1.69/4.30/4.19. Re-measured on the settled box at 9
+  reps: 956/938/972/738/652/881/660/650/670 → **median 738 ms, max 972 ms, flaky False, PASS,
+  transition `unchanged`** (JSON `/tmp/w24-cold-remeasure.json`). All nine samples clear the bar and
+  the sample order is the load-decay signature. Secondary causal check: `766ead49` adds `machomain`,
+  a P1 pass gated on MH_EXECUTE Mach-O images, and the probe target is an i386 ELF — the pass cannot
+  execute on it. The bar was NOT relaxed and the probe was NOT touched. Note the failure mode is now
+  **load contention, not sample count**: `repeat: 7` is already in force and did not prevent it, so
+  the standing rule stands as written — *a `regressed` flip here is a stopwatch reading until it has
+  been re-measured with the box quiet at reps>=7.*
