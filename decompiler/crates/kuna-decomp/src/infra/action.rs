@@ -495,7 +495,14 @@ pub trait Action {
                 || st == statusflags::status_repeat
                 || st == statusflags::status_mid
             {
-                let res = self.apply(data, ctx); // Start or continue action
+                let res = if crate::actionprof::enabled() {
+                    crate::actionprof::enter(self.get_name());
+                    let res = self.apply(data, ctx); // Start or continue action
+                    crate::actionprof::leave();
+                    res
+                } else {
+                    self.apply(data, ctx) // Start or continue action
+                };
                 if res < 0 {
                     // negative indicates partial completion
                     self.base_mut().status = statusflags::status_mid;
@@ -1643,6 +1650,7 @@ impl ActionDatabase {
     /// (see [`get_current`](ActionDatabase::get_current)).
     pub fn set_current(&mut self, actname: &str) -> KunaResult<()> {
         self.currentactname = actname.to_string();
+        crate::actionprof::set_root(actname);
         self.derive_action(UNIVERSAL_NAME, actname)?;
         Ok(())
     }

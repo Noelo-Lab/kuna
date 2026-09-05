@@ -1230,6 +1230,21 @@ Flow-follow itself runs *before* the tree (the upstream `followFlow` →
 (reset_defaults_internal)`), applied at
 `decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (follow_flow_on_fd)`.
 
+**Where a run's time went** (kuna). The schedule can be asked to account for
+itself: with `KUNA_ACTION_PROF` set to a path, every `apply` call is timed and
+the engine writes an exclusive-time table there
+(`decompiler/crates/kuna-decomp/src/infra/actionprof.rs`), rewritten each time
+the schedule unwinds so the file holds the running total for the whole process.
+Time is exclusive — a group is charged only what it spends outside its children,
+so the rows sum to the schedule's wall time and a container cannot hide a leaf —
+and each row is keyed by the root variant it ran under, which is what separates a
+function's own `decompile` pass from the reduced `jumptable` pipeline running on
+a partial clone beside it. The root label is set where the variant is selected
+(`decompiler/crates/kuna-decomp/src/infra/action.rs
+(ActionDatabase::set_current)`). This is a measuring instrument, not a decision
+point: it changes nothing the engine emits, and with the variable unset it costs
+one cached read per `apply`.
+
 ## 0.7 Feedback edges
 
 The pipeline is a fixpoint machine wearing a pipeline's clothes. Beyond the

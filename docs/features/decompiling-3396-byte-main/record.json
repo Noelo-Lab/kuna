@@ -1,73 +1,76 @@
 {
-  "opportunity": "decompiling-3396-byte-main",
-  "need_id": "decompiling-3396-byte-main",
-  "route": "RE-friction loop (docs/re-pipeline.md), round 2, track perf -- ATTEMPT 5 (IMPLEMENTATION, captain-briefed)",
-  "challenge": "69a3822f7b3cc38c80464da4",
-  "binary": ".kuna-repipe/probebin/bcfacd743bc607be/nikos_crack_me.exe (PE x86-64, 235725 bytes)",
-  "selector": "sub_140023350",
-  "scope": "small",
-  "attempt": 5,
-  "prior_attempts": [
-    {
-      "pr": 380,
-      "summary": "dead-list position re-derived by scanning; 71.46 s -> 19.42 s (-72.8%), acceptance not met"
-    },
-    {
-      "pr": 385,
-      "summary": "`kuna decompile` followed the same flow twice; 19.70 s -> 15.32 s (-22.3%), acceptance not met"
-    },
-    {
-      "pr": 393,
-      "summary": "three per-query re-derivations of cached facts + one fused arena lookup; 14.57 s -> 12.18 s (-16.3%), acceptance not met"
-    },
-    {
-      "pr": 396,
-      "summary": "Rc traffic on 9.5 M ordered-container mutations; 12.06 s -> 11.23 s (-6.9%), acceptance not met"
-    }
-  ],
-  "phase": "P2 lift/flow -- jump-table recovery (FlowInfo::recoverJumpTables / Funcdata::stageJumpTable)",
-  "modules": [
-    "decompiler/crates/kuna-decomp/src/substrate/funcdata_block.rs (Funcdata::stage_jump_table, Funcdata::recover_jump_table_flow)",
-    "decompiler/crates/kuna-decomp/src/p2_lift/flow.rs (FlowInfo::recover_jump_tables)",
-    "decompiler/crates/kuna-decomp/src/infra/architecture.rs (jumptable_share_partial + set_kuna_option + build_arch_handle)",
-    "decompiler/crates/kuna-decomp/src/substrate/context.rs (ArchSeam::jumptable_share_partial)",
-    "decompiler/crates/kuna-decomp/phases.toml + src/p0_knowledge/options.rs (settable row + registration)"
-  ],
-  "change_kind": "performance-fix that is also a recovery gain (upstream-shape convergence)",
-  "option": "jtsharepartial (on|off, default on)",
-  "gated": true,
-  "gating_rationale": "Sharing the partial changes WHICH jump tables recover -- it is the shape `option unrolledguard` was written against, and turning it off is the only way to get unrolledguard's per-table re-clone back. So it ships as a settable row even though every measured difference is a gain. Default ON has the required evidence: 0/675 datatest assertions moved, docs/baseline.json unmoved.",
-  "hypothesis_filed": "The function's extensive opaque arithmetic and indirect calls cause one or more analysis passes to scale poorly.",
-  "hypothesis_verdict": "Refuted for the fifth time, and this attempt did not re-derive it. The captain's brief named the mechanism: kuna ran the jump-table partial sub-decompilation once per TABLE where C++ runs it once per FUNCTION. Confirmed here at 2 tables on the witness.",
-  "root_cause": "`Funcdata::stage_jump_table` built a fresh `@@jumprecovery` partial (clone the raw p-code + jump-tables, build blocks, run the reduced \"jumptable\" action set) for EVERY table. C++ `FlowInfo::recoverJumpTables` (flow.cc:1429) constructs one `partial` per call and `Funcdata::stageJumpTable` (funcdata_block.cc:512) guards the clone plus the pipeline behind `if (!partial.isJumptableRecoveryOn())`. The correctness half is larger than the speed half: because kuna's later clone re-cloned the jumpvec AFTER an earlier sibling recovered, that clone's collect_edges called target() on a case body decoded only into the parent flow, threw \"Could not find op at target address\", and truncated a recoverable dispatch to a computed (code *)() call. `option unrolledguard` exists solely to tolerate that self-inflicted condition.",
-  "fix": "Hoist the partial into `FlowInfo::recover_jump_tables` as an `Option<Funcdata>` threaded through `recover_jump_table_flow` into `stage_jump_table`; build + run the reduced pipeline only when the slot is empty. Recovery itself still runs per table against the shared partial and mutates it, exactly as upstream does. `option jtsharepartial off` restores the per-table clone byte for byte.",
-  "profiling_method": "None needed and none run -- the profile was inherited from attempts 1-4 (this file and the need record). Measurement is an interleaved paired A/B using the OPTION as the lever, so both arms are the same binary and the `kuna decompile` -> `decomp_dbg` fork cannot silently time a different engine (the trap that voided wave 14's pre/post delta).",
-  "measurement": "Witness `kuna decompile nikos_crack_me.exe sub_140023350` (the acceptance command, no --json), 8 interleaved pairs after a warmup of each arm: OFF median 10,869 ms (min 10,490), ON median 9,138 ms (min 8,843). Median delta -15.92%; paired mean -15.96% +/- 2.03; 8/8 pairs a win (~7.8 sigma). Both arms byte-identical stdout on this witness.",
-  "residue_map": "Not re-measured; the post-#393/#396 profile stands (heritage ~23%, oppool1 ~14%, ActionDeadCode ~15%, merge ~8%) minus roughly one of the two `stage_jump_table` blocks. There is no single remaining lever of this size; the function is IR-volume-bound (#396).",
-  "refuted_leads": [
-    "The prior in-code claim that sharing 'loses 16 of the 17 switches' the unrolledguard testcase asserts is WRONG as stated. Measured: with sharing on and unrolledguard OFF the memcpy witness recovers 16 switches and 0 computed calls -- sharing FIXES that testcase's bug rather than regressing it. What sharing removes is unrolledguard's MECHANISM (the per-table re-clone), which is why the option is still reachable.",
-    "The captain's suggested gate 'share by default, keep per-table cloning for the unrolledguard-on path' was checked and rejected: `unrolledguard` is in AGGRESSIVE_OVERRIDES and `auto` picks aggressive under 500 KiB, so that gate would be inert on this very witness. The two options are documented as paired instead (turn unrolledguard on together with jtsharepartial off)."
-  ],
-  "left_on_the_table": "`unrolledguard` is now redundant on every shape measured here and is a candidate for removal or for dropping out of AGGRESSIVE_OVERRIDES; that is a separate default change with its own evidence burden and was not taken in this PR.",
-  "tests": [
-    "tests/stages/ghangr-optimized-memcpy-6301a9.xml grows a THIRD pass (609 -> 610 assertions): pass 1 both gates off = the bug (7 `code **`, 1 switch), pass 2 unrolledguard on = its fix (+16), pass 3 unrolledguard OFF + jtsharepartial ON = the shipped default's fix (+16). Asserts `code **` == 7 across the whole stream (so pass 3 adds none) and `switch(` == 33, plus a 3-pass sentinel (`memcpy_opt(` == 3) so the counts cannot be one dropped pass.",
-    "tests/cli/decompiling-3396-byte-main.json: the promoted regression probe. The dataset acceptance is unvendorable AND wall-clock, so the in-repo twin pins the mechanism on the existing `mcount_x86_64` fixture -- `__gettextparse` holds two tables in one batch and goes 1 switch + 1 truncated computed call -> 2 switches + 0, with 28 more case arms."
-  ],
-  "regression_sweep": "Whole-surface `decompile-all --json` A/B (option off vs default) over 100 binaries / 21,458 functions: the 6 round-2 probe binaries, 9 system ELFs (ls, grep, tar, bash, gzip, sed, awk, objdump, python3.12), the 83 kuna-analysis fixtures (ELF/PE/Mach-O/COFF; x86-64/i386/ARM/Cortex-M/PPC) and betaflight_STM32F405.elf. 62 functions differ. Every one was classified by truncated-dispatch / switch / case counts: 61 GAINS, 0 losses, 1 unclassifiable by name (two `printf_positional` bodies share a name). Aggregate: 68 truncated `(code *)()` dispatches removed, +237 switches, +14,770 case arms. `mcount_x86_64` was re-run keyed by ADDRESS to defeat the name collision: 19 differing, all gains. The two arms' warning streams also differ in the expected direction -- the witness's `[kuna unrolledguard] ... skipped 6 undecoded sibling-table case-target edge(s)` line disappears under the default, because the condition no longer arises.",
-  "gates": {
-    "make test": "PARITY OK 675/675, docs/baseline.json unmoved",
-    "make test-stages": "PARITY OK 610/610 (609 -> 610), docs/baseline-stages.json re-recorded",
-    "make rust-test": "green (rc=0). NOTE: the first run reported 2 failures, both artifacts: one hard-coded live-value count 45 -> 46 (fixed), and `w10_proto_unlock_const_return_collapses_no_tied_roundtrip`, which is a KUNA_DECOMP_TEST env artifact -- that var is exported in the builder environment and makes the test use the Rust binary as its 'C++ oracle', so the oracle renders `unsigned int` where the test pins `xunknown4`. Green with the var unset.",
-    "make check-spec": "OK",
-    "kuna catalog --check": "catalog OK (140 -> 141 settables; all hard-coded counters re-derived from a fresh capture, phase_catalog.json recaptured)",
-    "make test-cli": "24/24",
-    "acceptance a-53d616afcb6a": "PASS -- 9,112 ms median against the < 10,000 ms bar, exit 0"
+ "opportunity": "decompiling-3396-byte-main",
+ "need_id": "decompiling-3396-byte-main",
+ "route": "RE-friction loop (docs/re-pipeline.md), round 2, track perf -- ATTEMPT 6 (captain-briefed: run the code A/B first, do not fix)",
+ "challenge": "69a3822f7b3cc38c80464da4",
+ "binary": ".kuna-repipe/probebin/bcfacd743bc607be/nikos_crack_me.exe (PE x86-64, 235725 bytes)",
+ "selector": "sub_140023350",
+ "scope": "small",
+ "attempt": 6,
+ "prior_attempts": [
+  {
+   "pr": 380,
+   "summary": "dead-list position re-derived by scanning; 71.46 s -> 19.42 s (-72.8%), acceptance not met"
   },
-  "decisions": [
-    "THE NEED CLOSES. The acceptance probe passes for the first time in five attempts: 9,112 ms against < 10,000 ms (71.5 -> 19.4 -> 14.4 -> 11.8 -> 10.8 -> 9.1 s). The bar was never moved.",
-    "Recorded as a CONVERGENCE in docs/history.md, not a DIV row. docs/history.md's own rule is explicit: 'a port defect whose fix moves kuna back onto upstream's default earns no DIV row, but a corpus-wide output shift still needs a record'. After this change kuna's DEFAULT matches C++ stageJumpTable, so there is no divergence left to register. The captain's brief said 'DIV row'; this is the one place this PR departs from it, and it departs toward the document's stated rule.",
-    "The measured -15.92% is under the perf track's nominal 20% single-target bar and is carried anyway: 8/8 interleaved pairs are wins at +/- 2.03, the arms are the same binary with the option as the lever, and the acceptance probe -- the actual definition of done -- passes. The number is reported as measured.",
-    "The change ships DEFAULT-ON. Evidence per the standing requirement: 0/675 datatest assertions move. The output that does move (62 of 21,458 functions) was individually classified and is 61 gains / 0 losses.",
-    "The in-code comment claiming kuna 'cannot share' the partial because unrolledguard 'loses 16 of the 17 switches' was tested rather than believed, and is refuted: sharing recovers all 16 with unrolledguard off. The comment and the spec prose are corrected in this PR."
-  ]
+  {
+   "pr": 385,
+   "summary": "`kuna decompile` followed the same flow twice; 19.70 s -> 15.32 s (-22.3%), acceptance not met"
+  },
+  {
+   "pr": 393,
+   "summary": "three per-query re-derivations of cached facts + one fused arena lookup; 14.57 s -> 12.18 s (-16.3%), acceptance not met"
+  },
+  {
+   "pr": 396,
+   "summary": "Rc traffic on 9.5 M ordered-container mutations; 12.06 s -> 11.23 s (-6.9%), acceptance not met"
+  },
+  {
+   "pr": 397,
+   "summary": "share the jump-table partial across a batch's tables (option jtsharepartial, default on); 10.87 s -> 9.14 s (-15.9%), ACCEPTANCE MET at 9.2 s"
+  }
+ ],
+ "phase": "infra (Action scheduler instrumentation); no phase behaviour changed",
+ "modules": [
+  "decompiler/crates/kuna-decomp/src/infra/actionprof.rs (new -- the exclusive-time table)",
+  "decompiler/crates/kuna-decomp/src/infra/action.rs (Action::perform wraps apply; ActionDatabase::set_current names the root)",
+  "decompiler/crates/kuna-decomp/src/infra/mod.rs"
+ ],
+ "change_kind": "measurement + a refutation; no engine behaviour change and no option",
+ "option": null,
+ "gated": false,
+ "gating_rationale": "Nothing here can change emitted C: the profiler only times `apply` and writes a file, and it is inert unless KUNA_ACTION_PROF is set. No phases.toml row, no catalog count, no DIV.",
+ "hypothesis_filed": "wave 39 captain: #406 (simdlane + retsplitglobal) regressed this witness by ~680 ms on top of a 341 ms drift; the shape to look at first is cumulative default-ON schedule cost.",
+ "hypothesis_verdict": "REFUTED by the code A/B the brief asked for. fba4ebd8 vs 96224463, 8 interleaved pairs, engines pinned with KUNA_DECOMP_DBG: +3.00% +/- 6.77 (0.4 sigma), median-of-medians +1.28%, and stdout byte-identical between the two builds (sha256 8ee55baf..., 120,063 bytes) -- #406 does not fire on this function. The schedule-cost half was ablated separately by deleting the `simdshufflelane` rrow! line and rebuilding: +0.23% +/- 5.33, median-of-medians -0.72%.",
+ "root_cause": "There is no regression to have a cause. The acceptance margin is ~7% (9.0-9.5 s against a 10,000 ms bar) and this box's run-to-run spread on the same binary is +/-10%: six 7-8 sample medians taken in one session on ONE build ranged 9,002-9,742 ms, and the acceptance suite itself passed at 9,199 ms and 9,444 ms and failed once between them. The need is measurement-limited, which is exactly the flat branch the wave-39 brief wrote down.",
+ "fix": "None attempted, per the brief. What shipped instead is the instrument: `KUNA_ACTION_PROF=<path>` writes an exclusive-time, call-counted table of the Action tree, keyed by root variant (`decompile` vs the reduced `jumptable` pipeline) so a sub-decompilation is separated for free. Attempts 1-5 each built this timer as a throwaway patch; keeping it is the difference between a future attempt starting with a profile and starting with a build.",
+ "profiling_method": "Instrumentation, not sampling (`perf_event_paranoid = 4` on this box, no valgrind, and gdb-as-parent stopped working at attempt 4). Timing is an interleaved paired A/B with the two arms' `kuna` AND `decomp_dbg` both pinned per arm -- `kuna decompile` forks the engine, so copying only `kuna` aside silently times the other arm (the trap that voided wave 14's delta).",
+ "measurement": "Witness `kuna decompile nikos_crack_me.exe sub_140023350`. (1) pre/post #406: 9,619 vs 9,742 ms median, +3.00% +/- 6.77 paired, 8 pairs. (2) simdshufflelane ablated vs HEAD: 9,358 vs 9,290 ms median, +0.23% +/- 5.33, 8 pairs. (3) profiler-off cost, HEAD vs HEAD+profiler: 9,115 vs 9,002 ms median, +0.89% +/- 3.84, 8 pairs. Every arm of all three A/Bs produced the same 120,063-byte stdout.",
+ "residue_map": "Measured fresh with the new profiler (10.2 s run, 8,854 ms inside the Action tree): decompile/oppool1 1,206 ms 13.6% (68 calls), decompile/heritage 1,180 ms 13.3% (20), decompile/deadcode 1,084 ms 12.2% (27), decompile/infertypes 1,065 ms 12.0% (20), decompile/mergerequired 618 ms 7.0% (1), decompile/directwrite 401 ms, decompile/restructure_varnode 355 ms, decompile/blockstructure 320 ms, decompile/nonzeromask 289 ms, decompile/mergetype 269 ms; the shared jump-table partial totals 1,387 ms 15.7% (heritage 601, deadcode 388, oppool1 337). ~1.7 s of the run is outside the tree, of which 0.95 s is load + function discovery (timed with `kuna functions --json`). Four ~12% blocks and no lever: the function is IR-volume-bound, as #396 concluded.",
+ "refuted_leads": [
+  "#406 as the cause of the wave-39 flip: byte-identical output and 0.4 sigma across a code A/B.",
+  "Cumulative default-ON schedule cost, i.e. one more rule row on a hot opcode: +0.23% +/- 5.33 for `simdshufflelane`, which is registered for CPUI_SUBPIECE and so sits on one of the hottest dispatch lists there is. If a rule row there is unmeasurable, the schedule-growth theory needs a different mechanism than 'one more row'.",
+  "A load-tier win: `kuna functions` (load + markup + discovery, no decompile) is 0.95 s of a 9.2 s run."
+ ],
+ "left_on_the_table": "A seventh attempt needs a mechanism in hand before it is dispatched. The perf bar is 3 sigma and >=20% (~1.9 s here) and the residue is four ~12% blocks, so the only remaining shape is IR volume itself: 48,169 raw ops and ~37,710 INDIRECTs across 365 call sites, i.e. heritage's call guarding, which #393 and #396 both probed and both concluded was construction cost rather than a memoizable query.",
+ "tests": [
+  "decompiler/crates/kuna-decomp/src/infra/actionprof/tests.rs -- 4 unit tests: exclusive accounting (a parent is not charged its child's time), root keying (`decompile/` vs `jumptable/`), render ordering + total, and an unbalanced `leave` being inert.",
+  "tests/cli/decompiling-3396-byte-main.json -- the already-promoted in-repo timing twin, unchanged."
+ ],
+ "regression_sweep": "Not applicable in the usual sense (no behaviour change), and checked rather than assumed: all three A/Bs above compare stdout hashes across arms, 48 decompiles of the witness in total, one hash.",
+ "gates": {
+  "make test": "PARITY OK, 675/675 assertions",
+  "make test-stages": "PARITY OK, 628/628 assertions",
+  "make rust-test": "green (352 test targets ok), run with `env -u KUNA_DECOMP_TEST` -- see decisions",
+  "make check-spec": "OK",
+  "kuna catalog --check": "OK: documents exactly the registered kuna options",
+  "make test-cli": "29/29",
+  "acceptance a-53d616afcb6a": "PASS, 7-rep median 9,199 ms against the < 10,000 ms bar"
+ },
+ "decisions": [
+  "The brief's flat branch was taken literally: the A/B came back flat, so no fix was attempted and the bar was NOT relaxed. Re-cutting `< 10000` would redefine `closed` as 'a builder tried'; five captains have declined to move it and the sixth attempt did not need it moved.",
+  "The profiler ships without an option row. `docs/agents.md` gates anything that CAN change emitted C; this times `apply` and writes a file, and its off-path is one cached read. It follows the existing env-gated debug-hook convention (`KUNA_DEFAULT_ON`, `KUNA_SYMBOLNAMEBOUND`) rather than the settable-option convention.",
+  "Rows are keyed by root variant, not by the root Action's own name: `clone_filtered` keeps the universal tree's name, so every row came back as `universal/...` until the label was taken from `ActionDatabase::set_current` instead.",
+  "The stale `/tmp/<worker>.rust.rc` from a previous attempt on this same worker id read 0 minutes into this session's suite. Any rc-file wait on a reused worker id must delete the file first or check its mtime.",
+  "`make rust-test` is RED in a repipe worktree for a reason that is not the tree: the harness exports KUNA_DECOMP_TEST, and `cpp_oracle_bin()` in the verify_w10_* tests uses it as the C++ oracle. With the C++ tree gone that fallback path does not exist, so those oracle assertions are normally skipped; pointed at kuna's own decomp_test_dbg they assert upstream spellings kuna deliberately changed (`xunknown4` vs DIV-6 `unsigned int`) and fail. Confirmed by bisection: the same test fails on unmodified HEAD and passes under `env -u KUNA_DECOMP_TEST`. Run the suite with that env var unset."
+ ]
 }
