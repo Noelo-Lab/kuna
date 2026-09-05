@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    628,
-    628
+    632,
+    632
   ],
   "passing": [
     "data:ARRAYSUBFIELD #1: an 8-byte read at offset 0 of char[16] is a sized sub-field, not element 0",
@@ -121,6 +121,10 @@
     "data:GH275 #3: spillargtrial reload binds the second call's argument to the register, not a spurious stack local",
     "data:GH2786 #1: nested float negation parenthesized (default-flip fix)",
     "data:GH2786 #2: the mis-parsing predecrement token is gone",
+    "data:GH403 #1: the truncated conditional branch never renders the condition-less `} while ;`",
+    "data:GH403 #2: the self-looping truncation still decompiles (both passes carry the loop)",
+    "data:GH403 #3: the default pass truncates, so neighbor's body appears only in the funcboundflow-off pass",
+    "data:GH403 #4: the conditional's surviving arm is unchanged by the truncation (both passes)",
     "data:GH4788 #1: disp17 Bcond decodes as bnc to 0x1963d8 (not ld.hu)",
     "data:GH4788 #2: the bytes are no longer mis-decoded as ld.hu",
     "data:GH558 #1: compareform canonical restores upstream x < 9 (old behavior, opt-in)",
