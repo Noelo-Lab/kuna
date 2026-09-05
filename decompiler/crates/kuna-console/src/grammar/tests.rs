@@ -779,3 +779,152 @@ fn w9_con_grammar_v7_pointer_array_modifier_order() {
     assert_eq!(elem.get_ptr_to().unwrap().get_name(), "int4");
     assert_eq!(ty.get_size(), 2 * org().addr_size, "two pointer-sized elements");
 }
+
+// ===========================================================================
+// (kuna) Standard C scalar type specifiers
+// ===========================================================================
+
+/// The [`factory`] core types plus a declared data organization, so the scalar
+/// keywords have widths to resolve against.  `lp64` is the x86-64 SysV model
+/// (`long` 8); `llp64` is the Windows one (`long` 4), which is what makes the
+/// keyword resolution ABI-driven rather than a fixed table.
+fn factory_sized(long_size: i32) -> TypeFactoryImpl {
+    let f = factory();
+    f.set_core_type("wchar2", 2, meta::TYPE_INT, true).unwrap();
+    f.set_core_type("wchar4", 4, meta::TYPE_INT, true).unwrap();
+    f.set_core_type("float10", 10, meta::TYPE_FLOAT, false).unwrap();
+    f.cache_core_types().unwrap();
+    f.set_size_of_char(1);
+    f.set_size_of_short(2);
+    f.set_size_of_int(4);
+    f.set_size_of_long(long_size);
+    f.set_size_of_long_long(8);
+    f.set_size_of_wchar(2);
+    f.set_size_of_float(4);
+    f.set_size_of_double(8);
+    f.set_size_of_long_double(10);
+    f
+}
+
+#[test]
+fn scalar_keywords_resolve_to_core_types() {
+    let f = factory_sized(8);
+    for (decl, want) in [
+        ("int x", "int4"),
+        ("signed x", "int4"),
+        ("signed int x", "int4"),
+        ("unsigned x", "uint4"),
+        ("unsigned int x", "uint4"),
+        ("short x", "int2"),
+        ("short int x", "int2"),
+        ("unsigned short x", "uint2"),
+        ("short unsigned int x", "uint2"),
+        ("long x", "int8"),
+        ("unsigned long x", "uint8"),
+        ("long long x", "int8"),
+        ("unsigned long long x", "uint8"),
+        ("signed char x", "int1"),
+        ("unsigned char x", "uint1"),
+        ("float x", "float4"),
+        ("double x", "float8"),
+        ("long double x", "float10"),
+        ("wchar_t x", "wchar2"),
+        ("_Bool x", "bool"),
+    ] {
+        let (ty, name) = parse_type(decl, &f, org()).unwrap_or_else(|e| {
+            panic!("{decl:?} must parse: {}", e.explain());
+        });
+        assert_eq!(ty.get_name(), want, "{decl:?}");
+        assert_eq!(name, "x");
+    }
+}
+
+#[test]
+fn scalar_long_follows_the_targets_declared_width() {
+    // The whole point of reading `<data_organization>`: `long` is 8 bytes on
+    // LP64 and 4 on LLP64, and `long long` is 8 on both.
+    let lp64 = factory_sized(8);
+    assert_eq!(parse_type("long x", &lp64, org()).unwrap().0.get_name(), "int8");
+    let llp64 = factory_sized(4);
+    assert_eq!(parse_type("long x", &llp64, org()).unwrap().0.get_name(), "int4");
+    assert_eq!(parse_type("long long x", &llp64, org()).unwrap().0.get_name(), "int8");
+}
+
+#[test]
+fn plain_char_stays_the_text_type_and_signed_char_does_not() {
+    // `char` is kuna's ASCII core type; `signed char` is an ordinary 1-byte
+    // integer, which is what `getBaseNoChar` distinguishes.
+    let f = factory_sized(8);
+    let (plain, _) = parse_type("char c", &f, org()).unwrap();
+    assert_eq!(plain.get_name(), "char");
+    let (signed, _) = parse_type("signed char c", &f, org()).unwrap();
+    assert_eq!(signed.get_name(), "int1");
+    assert_ne!(plain.get_name(), signed.get_name());
+}
+
+#[test]
+fn scalar_keywords_work_in_a_prototype() {
+    // The `--assert prototype` shape: standard C in both return and parameter
+    // position, which is the form every emitted declaration is written in.
+    let f = factory_sized(8);
+    let p = parse_protopieces(
+        "extern void *VirtualAlloc(void *p,unsigned int n,unsigned long long a,long double b);",
+        &f,
+        org(),
+    )
+    .expect("standard C prototype parses");
+    assert_eq!(p.name, "VirtualAlloc");
+    assert_eq!(p.outtype.as_ref().unwrap().get_metatype(), meta::TYPE_PTR);
+    let names: Vec<&str> = p.intypes.iter().map(|t| t.get_name()).collect();
+    assert_eq!(names, vec!["", "uint4", "uint8", "float10"], "pointer, then the scalars");
+}
+
+#[test]
+fn ghidra_type_names_still_win_for_a_single_keyword() {
+    // The 261 `parse line` corpus payloads feed `int4`/`char`/`void` through
+    // `findByName`; a one-keyword run must still resolve to exactly that type.
+    let f = factory_sized(8);
+    assert_eq!(parse_type("int4 x", &f, org()).unwrap().0.get_name(), "int4");
+    assert_eq!(parse_type("void", &f, org()).unwrap().0.get_metatype(), meta::TYPE_VOID);
+    assert_eq!(parse_type("char *p", &f, org()).unwrap().0.get_ptr_to().unwrap().get_name(), "char");
+}
+
+#[test]
+fn reject_impossible_scalar_combinations() {
+    let f = factory_sized(8);
+    for decl in [
+        "short long x",
+        "long long long x",
+        "float int x",
+        "unsigned void x",
+        "unsigned float x",
+        "signed unsigned x",
+        "long char x",
+        "int int x",
+        "unsigned wchar_t x",
+    ] {
+        let err = parse_type(decl, &f, org())
+            .map(|(t, _)| t.get_name().to_string())
+            .expect_err(&format!("{decl:?} is not a C type"));
+        assert!(
+            err.explain().contains("Invalid combination of C type specifiers"),
+            "{decl:?} got: {}",
+            err.explain()
+        );
+    }
+}
+
+#[test]
+fn a_scalar_keyword_with_no_declared_width_is_a_parse_error() {
+    // A compiler spec that declares no `<long_double_size>` names no wider
+    // floating type; resolving to a zero-sized type instead would be silent.
+    let f = factory();
+    f.set_size_of_int(4);
+    let err = parse_type("unsigned short x", &f, org()).expect_err("no short width declared");
+    assert!(
+        err.explain().contains("Invalid combination of C type specifiers"),
+        "got: {}",
+        err.explain()
+    );
+    assert_eq!(parse_type("unsigned int x", &f, org()).unwrap().0.get_name(), "uint4");
+}

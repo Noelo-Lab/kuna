@@ -781,6 +781,39 @@ script surface (`decompiler/crates/kuna-cli/src/decompile.rs (build_script)`)
 emits the same facts at the same three slots, with the same conditional second
 `decompile`.
 
+(kuna) **The C the assertion plane accepts is the C it prints.** Six directives
+carry a C declaration, and every one of them goes through the console's
+C-declaration grammar (`decompiler/crates/kuna-console/src/grammar.rs (CParse)`),
+a port of upstream's `grammar.y`. Upstream has no scalar keywords at all: a base
+type is whatever `TypeFactory::findByName` answers, so only Ghidra's own `int4` /
+`uint8` / `float8` core-type names parse. kuna's printer, though, spells those
+types the way the target's own compiler would (§9,
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_ctypes.rs`), which left the two
+halves speaking different languages: a declaration kuna had just emitted could
+not be pasted back at it, and the manual's own example
+(`prototype authenticate int authenticate(char *user,char *pass)`) was rejected
+as a syntax error.
+
+The grammar therefore also accepts the standard C scalar specifiers
+(`decompiler/crates/kuna-console/src/grammar.rs (CParse::scalar_specifier)`):
+`void`, `char`, `short`, `int`, `long`, `float`, `double`, `signed`, `unsigned`,
+`_Bool` and `wchar_t`, in any legal combination and in every position a type may
+appear — a return type, a parameter, a `type` / `param` / `return` / `data`
+operand, a struct field. A run of these keywords names ONE base type, and its
+width is read from the compiler spec's `<data_organization>` rather than from a
+fixed table, so `long` is eight bytes on LP64 and four on LLP64 — the same
+source, read the same way, that §9's speller prints them back out from. A
+combination that is not a C type (`short long`, `float int`, three `long`s) is
+rejected by name rather than as a bare syntax error, and a keyword whose width
+the compiler spec never declared names nothing on that target and is rejected
+too, rather than resolving to a zero-sized type.
+
+The Ghidra vocabulary is untouched and still wins: a run of exactly one keyword
+is resolved by `findByName` first, so `void`, `char` and any host-supplied type
+that happens to be spelled with a keyword resolve to exactly the interned type
+they always did. Only combinations, and the keywords the type factory does not
+name, take the width-driven path.
+
 A directive that names no function binds to the function being decompiled, which
 is unambiguous only when the run selected exactly one; on a whole-binary run it
 would silently mean *every* function that happens to have a `v2`, so it is

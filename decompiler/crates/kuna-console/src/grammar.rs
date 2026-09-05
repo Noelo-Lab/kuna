@@ -1119,6 +1119,70 @@ pub enum DocType {
 // actions)
 // =============================================================================
 
+// =============================================================================
+// (kuna) Standard C scalar type specifiers
+// =============================================================================
+
+/// (kuna) One standard C scalar type-specifier keyword.
+///
+/// Upstream's grammar has no scalar keywords at all: a base type is whatever
+/// `TypeFactory::findByName` answers, so only Ghidra's own `int4` / `uint8` /
+/// `float8` vocabulary parses.  kuna's printer, however, spells core types the
+/// way the target's compiler would (`p9_emit/kuna_ctypes.rs`), so the C it
+/// emits could not be fed back to it.  These keywords are the inverse of that
+/// speller and read the same `<data_organization>` widths.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ScalarKw {
+    Void,
+    Char,
+    Short,
+    Int,
+    Long,
+    Float,
+    Double,
+    Signed,
+    Unsigned,
+    Bool,
+    WcharT,
+}
+
+impl ScalarKw {
+    /// The keyword's own spelling, for the single-keyword `findByName` probe.
+    fn name(self) -> &'static str {
+        match self {
+            ScalarKw::Void => "void",
+            ScalarKw::Char => "char",
+            ScalarKw::Short => "short",
+            ScalarKw::Int => "int",
+            ScalarKw::Long => "long",
+            ScalarKw::Float => "float",
+            ScalarKw::Double => "double",
+            ScalarKw::Signed => "signed",
+            ScalarKw::Unsigned => "unsigned",
+            ScalarKw::Bool => "_Bool",
+            ScalarKw::WcharT => "wchar_t",
+        }
+    }
+}
+
+/// Classify an identifier as a scalar type-specifier keyword.
+fn scalar_keyword(nm: &str) -> Option<ScalarKw> {
+    Some(match nm {
+        "void" => ScalarKw::Void,
+        "char" => ScalarKw::Char,
+        "short" => ScalarKw::Short,
+        "int" => ScalarKw::Int,
+        "long" => ScalarKw::Long,
+        "float" => ScalarKw::Float,
+        "double" => ScalarKw::Double,
+        "signed" => ScalarKw::Signed,
+        "unsigned" => ScalarKw::Unsigned,
+        "_Bool" => ScalarKw::Bool,
+        "wchar_t" => ScalarKw::WcharT,
+        _ => return None,
+    })
+}
+
 /// Token-class returned by [`CParse::lookup_identifier`], standing in for the
 /// bison terminal an identifier reduces to (`grammar.cc:1236-1272`).
 #[derive(Debug, Clone)]
@@ -1130,6 +1194,8 @@ enum IdentClass {
     Union,
     Enum,
     TypeName(Rc<Datatype>),
+    /// (kuna) A standard C scalar keyword; a run of them names one base type.
+    ScalarSpecifier(ScalarKw),
     Identifier,
 }
 
@@ -1148,6 +1214,8 @@ enum PToken {
     TypeQualifier(String),
     FunctionSpecifier(String),
     TypeName(Rc<Datatype>),
+    /// (kuna) A standard C scalar keyword ([`ScalarKw`]).
+    ScalarSpecifier(ScalarKw),
     Struct,
     Union,
     Enum,
@@ -1281,6 +1349,14 @@ impl<'a> CParse<'a> {
                 _ => {}
             }
         }
+        // (kuna) A standard C scalar keyword outranks `findByName` so that a run
+        // of them (`unsigned int`, `long long`) can be gathered as one base
+        // type.  A run of length one still falls back to `findByName` first
+        // ([`CParse::scalar_specifier`]), so `void` / `char` resolve to exactly
+        // the interned core type they resolve to today.
+        if let Some(kw) = scalar_keyword(nm) {
+            return IdentClass::ScalarSpecifier(kw);
+        }
         if let Ok(Some(tp)) = self.factory.find_by_name(nm) {
             return IdentClass::TypeName(tp);
         }
@@ -1315,6 +1391,7 @@ impl<'a> CParse<'a> {
                     IdentClass::Union => Ok(PToken::Union),
                     IdentClass::Enum => Ok(PToken::Enum),
                     IdentClass::TypeName(tp) => Ok(PToken::TypeName(tp)),
+                    IdentClass::ScalarSpecifier(kw) => Ok(PToken::ScalarSpecifier(kw)),
                     IdentClass::Identifier => Ok(PToken::Identifier(s)),
                 }
             }
@@ -1523,6 +1600,7 @@ impl<'a> CParse<'a> {
                 | PToken::TypeQualifier(_)
                 | PToken::FunctionSpecifier(_)
                 | PToken::TypeName(_)
+                | PToken::ScalarSpecifier(_)
                 | PToken::Struct
                 | PToken::Union
                 | PToken::Enum
@@ -1552,7 +1630,11 @@ impl<'a> CParse<'a> {
                 }
                 Ok(true)
             }
-            PToken::TypeName(_) | PToken::Struct | PToken::Union | PToken::Enum => {
+            PToken::TypeName(_)
+            | PToken::ScalarSpecifier(_)
+            | PToken::Struct
+            | PToken::Union
+            | PToken::Enum => {
                 let tp = self.type_specifier()?;
                 self.add_type_specifier(spec, tp);
                 Ok(true)
@@ -1583,9 +1665,158 @@ impl<'a> CParse<'a> {
                     unreachable!()
                 }
             }
+            PToken::ScalarSpecifier(_) => self.scalar_specifier(),
             PToken::Struct | PToken::Union => self.struct_or_union_specifier(),
             PToken::Enum => self.enum_specifier(),
             _ => self.syntax_error(),
+        }
+    }
+
+    /// (kuna) `type_specifier: scalar_keyword+` — the standard C scalar
+    /// specifiers, which name a base type as a *run* of keywords rather than as
+    /// one identifier (`unsigned int`, `long long`, `signed char`).
+    ///
+    /// A run of exactly one keyword is looked up by name first, so `void`,
+    /// `char` and any host-supplied type spelled with a keyword resolve to the
+    /// same interned type they always have; only combinations, and the keywords
+    /// the type factory does not name, take the width-driven path.
+    fn scalar_specifier(&mut self) -> KunaResult<Rc<Datatype>> {
+        let mut kws: Vec<ScalarKw> = Vec::new();
+        while let PToken::ScalarSpecifier(kw) = self.peek()? {
+            kws.push(*kw);
+            self.next()?;
+        }
+        if kws.len() == 1 {
+            if let Ok(Some(tp)) = self.factory.find_by_name(kws[0].name()) {
+                return Ok(tp);
+            }
+        }
+        match self.resolve_scalar(&kws)? {
+            Some(tp) => Ok(tp),
+            None => {
+                let spelling: Vec<&str> = kws.iter().map(|k| k.name()).collect();
+                self.set_error(&format!(
+                    "Invalid combination of C type specifiers: {}",
+                    spelling.join(" ")
+                ));
+                Err(KunaError::parse(self.lasterror.clone()))
+            }
+        }
+    }
+
+    /// (kuna) Turn a validated run of scalar keywords into a core data-type,
+    /// or `None` if the combination is not a C type.
+    ///
+    /// The widths come from the compiler spec's `<data_organization>` (the same
+    /// source `p9_emit/kuna_ctypes.rs` spells them back out from), never from a
+    /// hard-coded table, so `long` is 8 bytes on LP64 and 4 on LLP64.
+    fn resolve_scalar(&self, kws: &[ScalarKw]) -> KunaResult<Option<Rc<Datatype>>> {
+        use type_metatype::{TYPE_BOOL, TYPE_FLOAT, TYPE_INT, TYPE_UINT};
+        let n = |k: ScalarKw| kws.iter().filter(|x| **x == k).count();
+        let (void, ch, sh, int_, lng) = (
+            n(ScalarKw::Void),
+            n(ScalarKw::Char),
+            n(ScalarKw::Short),
+            n(ScalarKw::Int),
+            n(ScalarKw::Long),
+        );
+        let (flt, dbl, sgn, uns, bl, wc) = (
+            n(ScalarKw::Float),
+            n(ScalarKw::Double),
+            n(ScalarKw::Signed),
+            n(ScalarKw::Unsigned),
+            n(ScalarKw::Bool),
+            n(ScalarKw::WcharT),
+        );
+        // No keyword may repeat except `long`, which may appear twice.
+        if void > 1 || ch > 1 || sh > 1 || int_ > 1 || flt > 1 || dbl > 1 || bl > 1 || wc > 1 {
+            return Ok(None);
+        }
+        if lng > 2 || sgn + uns > 1 || (sh > 0 && lng > 0) {
+            return Ok(None);
+        }
+        let sign_only = sgn + uns;
+        // The specifiers that must stand alone.
+        for solo in [void, bl, wc] {
+            if solo > 0 && kws.len() != 1 {
+                return Ok(None);
+            }
+        }
+        if void > 0 {
+            return self.factory.get_type_void().map(Some);
+        }
+        if bl > 0 {
+            return self.factory.get_base(1, TYPE_BOOL).map(Some);
+        }
+        if wc > 0 {
+            return self.sized_scalar(self.factory.get_size_of_wchar(), None);
+        }
+        if flt > 0 {
+            // `float` takes no other specifier; `long float` is not C.
+            if kws.len() != 1 {
+                return Ok(None);
+            }
+            return self.sized_scalar(self.factory.get_size_of_float(), Some(TYPE_FLOAT));
+        }
+        if dbl > 0 {
+            // `double` or `long double`, nothing else.
+            if kws.len() != 1 + lng || lng > 1 {
+                return Ok(None);
+            }
+            let size = if lng == 1 {
+                self.factory.get_size_of_long_double()
+            } else {
+                self.factory.get_size_of_double()
+            };
+            return self.sized_scalar(size, Some(TYPE_FLOAT));
+        }
+        if ch > 0 {
+            // `char`, `signed char`, `unsigned char` — no length modifier.
+            if kws.len() != 1 + sign_only {
+                return Ok(None);
+            }
+            let size = self.factory.get_size_of_char();
+            if sign_only == 0 {
+                // Plain `char` is kuna's text type, not an integer of that width.
+                return self.sized_scalar(size, None);
+            }
+            return self.sized_scalar(size, Some(if uns > 0 { TYPE_UINT } else { TYPE_INT }));
+        }
+        // What is left is an integer: [signed|unsigned] [short|long|long long] [int].
+        if kws.len() != sign_only + sh + lng + int_ {
+            return Ok(None);
+        }
+        let size = if sh > 0 {
+            self.factory.get_size_of_short()
+        } else if lng == 2 {
+            self.factory.get_size_of_long_long()
+        } else if lng == 1 {
+            self.factory.get_size_of_long()
+        } else {
+            self.factory.get_size_of_int()
+        };
+        self.sized_scalar(size, Some(if uns > 0 { TYPE_UINT } else { TYPE_INT }))
+    }
+
+    /// (kuna) The core type of `size` bytes with the given meta-type, or the
+    /// character type of that width when `meta` is `None`.
+    ///
+    /// A zero or negative width means the compiler spec never declared one, so
+    /// the keyword names nothing on this target; that is a parse error rather
+    /// than a silently zero-sized type.
+    fn sized_scalar(
+        &self,
+        size: int4,
+        meta: Option<type_metatype>,
+    ) -> KunaResult<Option<Rc<Datatype>>> {
+        if size <= 0 {
+            return Ok(None);
+        }
+        match meta {
+            // `get_base_no_char` keeps a 1-byte integer off the `char` type, so
+            // `signed char` is `int1` and not the text type.
+            Some(m) => self.factory.get_base_no_char(size, m).map(Some),
+            None => self.factory.get_type_char(size).map(Some),
         }
     }
 
@@ -1632,7 +1863,12 @@ impl<'a> CParse<'a> {
         // Continue while the lookahead begins a specifier_qualifier_list.
         while matches!(
             self.peek()?,
-            PToken::TypeQualifier(_) | PToken::TypeName(_) | PToken::Struct | PToken::Union | PToken::Enum
+            PToken::TypeQualifier(_)
+                | PToken::TypeName(_)
+                | PToken::ScalarSpecifier(_)
+                | PToken::Struct
+                | PToken::Union
+                | PToken::Enum
         ) {
             let mut more = self.struct_declaration()?;
             v.append(&mut more);
@@ -1655,7 +1891,11 @@ impl<'a> CParse<'a> {
         let mut any = false;
         loop {
             match self.peek()? {
-                PToken::TypeName(_) | PToken::Struct | PToken::Union | PToken::Enum => {
+                PToken::TypeName(_)
+                | PToken::ScalarSpecifier(_)
+                | PToken::Struct
+                | PToken::Union
+                | PToken::Enum => {
                     let tp = self.type_specifier()?;
                     self.add_type_specifier(&mut spec, tp);
                     any = true;

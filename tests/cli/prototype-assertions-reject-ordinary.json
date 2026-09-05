@@ -1,0 +1,77 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "a-e9643c3e9aaa",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "authenticate",
+    "--json",
+    "--assert",
+    "prototype authenticate unsigned int authenticate(char *user,char *pass)",
+    "--assert",
+    "prototype read long long read(int fd,void *buf,unsigned long n)",
+    "--assert",
+    "type v2 unsigned char[8]"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/fauxware",
+    "binary_sha256": "c2d90645a45e99221593547e55c601a901b80f807ae96f94c60a7661df0b3e0b",
+    "binary_size": 8776,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/fauxware",
+    "selector": "authenticate",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "json": [
+      {
+        "path": "assertions",
+        "op": "len_eq",
+        "value": 3
+      },
+      {
+        "path": "assertions[0].status",
+        "op": "eq",
+        "value": "applied"
+      },
+      {
+        "path": "assertions[1].status",
+        "op": "eq",
+        "value": "applied"
+      },
+      {
+        "path": "assertions[2].status",
+        "op": "eq",
+        "value": "applied"
+      },
+      {
+        "path": "functions[0].code",
+        "op": "contains",
+        "value": "unsigned int authenticate(char *user,char *pass)"
+      },
+      {
+        "path": "functions[0].code",
+        "op": "contains",
+        "value": "unsigned char v2 [8];"
+      }
+    ],
+    "stderr_absent": [
+      "Syntax error",
+      "Bad C syntax"
+    ]
+  },
+  "notes": "Desired: the standard C scalar keywords the printer EMITS are the ones --assert accepts -- in return position (`unsigned int`, `long long`), in parameter position (`int`, `unsigned long`), and as an --assert type base (`unsigned char[8]`). Retargeted onto the in-repo fauxware fixture so it runs with no dataset; all three measured rejected on cf5234ac."
+}
