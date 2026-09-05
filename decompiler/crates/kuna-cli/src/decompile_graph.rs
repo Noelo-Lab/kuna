@@ -154,7 +154,14 @@ fn export(args: &Args, label: &str) -> Result<String, String> {
     let bytes = std::fs::read(&args.binary).map_err(|error| format!("{}: {error}", args.binary))?;
     let file = object::File::parse(&*bytes)
         .map_err(|error| format!("could not parse {}: {error}", args.binary))?;
-    let image_entry = file.entry();
+    // The image's declared entry, resolved THROUGH the inventory: an ARM ELF
+    // stores the Thumb mode bit in `e_entry` (`0x100d7` for a `_start` the
+    // engine reports at `0x100d6`), and a format that declares no entry at all
+    // reports `0`, which is a real address in a relocatable object.
+    let image_entry: Option<u64> = match file.entry() {
+        0 => None,
+        vma => Some(prog.find_entry_at(vma).map_or(vma, |e| e.addr.get_offset())),
+    };
 
     let functions = Json::Array(
         entries
@@ -216,7 +223,7 @@ fn function_json(
     entry: &FunctionEntry,
     result: Option<&FuncResult>,
     executable: bool,
-    image_entry: u64,
+    image_entry: Option<u64>,
 ) -> Json {
     let address = entry.addr.get_offset();
     let kind = function_kind(prog, classifier, entry, executable);
@@ -256,7 +263,7 @@ fn function_json(
         ),
         ("hasIndirectCalls".into(), Json::Bool(graph.has_indirect_calls(address))),
         ("forwardsTo".into(), forwards_to(prog, graph, address).map_or(Json::Null, number)),
-        ("isEntryPoint".into(), Json::Bool(address == image_entry)),
+        ("isEntryPoint".into(), Json::Bool(image_entry == Some(address))),
     ])
 }
 

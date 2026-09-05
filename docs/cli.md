@@ -1101,7 +1101,7 @@ Two runs of one command are byte-identical.
 | `error` | Why this function has no `codeC`, when the decompile was attempted and failed. `null` with a `null` `codeC` means no body was attempted: a bodyless `kind`, or a `--functions`/`--addr` narrowing that did not select it. |
 | `hasIndirectCalls` | The body contains a computed call (`CALLIND`), which files no edge because it has no static target. An indirect *branch* is not one — see `forwardsTo`. |
 | `forwardsTo` | Where a forwarding entry sends control: the destination of a direct lone jump, or the fixed pointer slot an indirect one (`jmp [slot]`) reads. `null` otherwise. |
-| `isEntryPoint` | This address is the image's declared entry point. Exactly one row carries it, on a format that declares one. |
+| `isEntryPoint` | This row is the image's declared entry point, resolved through the inventory so an ARM `e_entry` carrying the Thumb mode bit still lands on it. A format that declares no entry point marks no row. |
 | `edges[].kind` | `call` a direct call; `jump` a tail call or a branch into a neighbouring entry — real control flow, labelled because it is not a call. |
 | `edges[].calleeOrder` | Contiguous and zero-based per caller, in first-call-site order, deduplicated on the callee. |
 
