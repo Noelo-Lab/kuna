@@ -252,6 +252,8 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "addcarrychain",
     "ovlesssimplify",
     "booleanmask",
+    "simdlane",
+    "retsplitglobal",
     "flagcompare",
     "v850indirectbranch",
     "msvcftol",

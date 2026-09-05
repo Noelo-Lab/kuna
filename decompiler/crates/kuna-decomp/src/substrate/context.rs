@@ -652,6 +652,21 @@ pub struct ArchContext {
     /// (C++ `fold_boolean_mask`, DIV-2 default-on).  Read by
     /// [`RuleBoolSignShift`](crate::kuna_booleanmask::RuleBoolSignShift).
     pub fold_boolean_mask: bool,
+    /// (kuna) refuse to split a shared RETURN block that stores to GLOBALS
+    /// (`retsplitglobal`).  Read by
+    /// [`Funcdata::return_split_is_splittable`](crate::funcdata::Funcdata),
+    /// the predicate both `ActionReturnSplit` and `ActionReturnDup` consult.
+    pub ret_split_global: bool,
+    /// (kuna) resolve a one-byte lane read of a CONSTANT-mask `pshufb` shuffle
+    /// to the source lane it selects (`simdlane`).  Read by
+    /// [`RuleSimdShuffleLane`](crate::kuna_simdlane::RuleSimdShuffleLane).
+    pub simd_lane_fold: bool,
+    /// (kuna) CALLOTHER user-op ids the architecture registered under a byte
+    /// shuffle name ([`SHUFFLE_USEROP_NAMES`](crate::kuna_simdlane::SHUFFLE_USEROP_NAMES)),
+    /// resolved once per program in `Architecture::build_arch_handle` so
+    /// [`RuleSimdShuffleLane`](crate::kuna_simdlane::RuleSimdShuffleLane) can
+    /// name a CALLOTHER without reaching the full `Architecture`.
+    pub simd_shuffle_userops: Vec<kuna_base::types::uint4>,
     /// (kuna) GH-1276/8777: fold flag-modelled comparison idioms (C++
     /// `fold_flag_compare`, DIV-3 default-on).  Read by
     /// [`RuleBoolSignLess`](crate::kuna_flagcompare::RuleBoolSignLess) /
@@ -1156,6 +1171,9 @@ impl ArchContext {
             // registered `enabled=false` is inert there — matching the gate-off
             // unit tests (and the `infer_funcentry` stub-default convention).
             fold_boolean_mask: false,    // GH-1282 booleanmask
+            ret_split_global: false,     // retsplitglobal (the ArchSeam carries the real default)
+            simd_lane_fold: false,       // simdlane (the ArchSeam carries the real default)
+            simd_shuffle_userops: Vec::new(),
             fold_flag_compare: false,    // GH-1276/8777 flagcompare
             add_carry_chain: false,      // GH-8913 addcarrychain
             ov_less_simplify: false,     // GH-7190 ovlesssimplify

@@ -1504,6 +1504,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "simdlane"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P3"
+subphase = "simplification-quiescence"
+strength = "HARD"
+rewind = "P3"
+issue = "repipe-simd-constant-string-initializer"
+summary = "Resolve a one-byte lane read of a CONSTANT-mask `pshufb` byte shuffle to the source lane the mask actually selects. `pshufb` has no p-code semantics: the x86 SLEIGH spec models it as an opaque CALLOTHER user op over a 16-byte value. `ActionLaneDivide` then splits the vector consumers into byte lanes, so every lane of the result becomes its own SUBPIECE of something nothing downstream can see through, and neither RuleSubExtComm/RuleSubZext nor copy propagation can collapse them -- even though the shuffle mask is a compile-time constant sitting in the operand. The instruction is a pure permutation with an exact per-lane definition once the mask is known, `dst[i] = (mask[i] & 0x80) ? 0 : src[mask[i] & (N-1)]`, so a one-byte `SUBPIECE(pshufb(src,mask), i)` over a constant mask IS `SUBPIECE(src, mask[i] & (N-1))` or the constant 0. The rewrite is that identity, not a heuristic; with a non-constant mask the rule declines. Once every lane read is re-anchored on the source the CALLOTHER loses its last reader, and for the standard byte-broadcast idiom `pxor xmm2,xmm2; pshufb xmm0,xmm2` all sixteen lanes resolve to `SUBPIECE(src, 0)` and collapse into one value. Bounded: only a user op the architecture registered under a shuffle name (`pshufb`, `vpshufb` -- resolved once per program into the ArchSeam), only the three-input form whose two operands and output all have the vector width, only widths 8 (MMX) and 16 (SSE), and only a ONE-BYTE lane read -- a wider SUBPIECE of a shuffle is a concatenation of lanes, not another SUBPIECE, so it is declined rather than approximated. A mask wider than eight bytes cannot be decoded out of a `uintb` offset and is accepted only at value 0, where the offset IS the whole value and every lane byte is provably zero; that is the broadcast mask, and it is the only wide constant mask the engine constructs."
+use_when = "On by default. Keep it on when a function that touches SSE renders a wall of `SUBnn(v,k)` lane temporaries off one `pshufb(...)` result -- typically a compiler-vectorised byte loop, where a single scalar value was broadcast across a register and every one of the sixteen lanes then reads back the SAME byte. The tell is a declaration block of `char vN;` entries each assigned once from `SUBxx(vM,k)` for consecutive k. Flip OFF to see the individual lane extractions and the shuffle result they come from -- e.g. when checking by hand which source byte a hand-written or obfuscated non-broadcast shuffle mask selects. Inert on any binary with no constant-mask pshufb, so output is byte-identical either way."
+example = "option simdlane off"
+live_field = "simd_lane_fold"
+live_true = "on"
+live_false = "off"
+source_decompiler = "kuna"
+inspiration = "repipe:simd-constant-string-initializer, 653d88600f4238b24302b0ec (macOS x86-64 Crackme0x04) sub_100003790; Intel SDM PSHUFB; upstream ActionLaneDivide (coreaction.cc) leaves a CALLOTHER lane source opaque"
+change_kind = "correctness-fix"
+tier = "core"
+symptoms = "a wall of SUB161( lane temporaries read off one pshufb( result|dozens of char vN; declarations each assigned once from a consecutive SIMD byte lane|a vectorised byte loop needs SSE lanes simulated by hand to see that every lane holds the same broadcast byte|a constant-mask pshufb result is never folded even though the mask is an immediate zero"
+
+[[settable]]
 option = "ovlesssimplify"
 values = "on|off"
 default = "on"
@@ -2636,6 +2658,28 @@ inspiration = "test_who_condensing_opt_reversion; SAILR CrossJumpReverter/Return
 change_kind = "structure-recovery"
 tier = "transform"
 symptoms = "goto into the middle of a sibling branch's arm (compiler cross-jumping)|shared non-return tail reached by goto from an else-if chain|label planted inside an else block targeted from another branch"
+
+[[settable]]
+option = "retsplitglobal"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P8"
+subphase = "goto-quality"
+strength = "HARD"
+rewind = "P8"
+issue = "repipe-simd-constant-string-initializer"
+summary = "Stop a shared RETURN block that stores to MORE THAN EIGHT globals from being cloned into every predecessor. `ActionReturnSplit::isSplittable` (blockaction.cc:2242) decides whether a multi-predecessor RETURN block is a bare epilogue -- cheap enough that giving every predecessor its own private copy is free. It admits only MULTIEQUAL, COPY and RETURN and, for COPY, checks only that no INPUT is free. It never looks at the COPY's OUTPUT. Upstream that is harmless because the epilogue COPYs it was written for move registers, which die at the return; a COPY into a PERSISTENT Varnode is a store to a global the program can observe, and it is exactly what the C prints as `dat_<addr> = ...`. Both splitters share this one predicate -- upstream ActionReturnSplit and kuna's ActionReturnDup (`returndup`) -- which is why `option returndup off` does not stop the cloning: the goto-driven upstream action picks the block up instead. A macOS crackme initializer ends in one 72-store block reached three ways and kuna emits it three times, 216 statements, 46% of the function. Nothing about that is incorrect (node_split gives each clone its own in-edge, so every copy runs on exactly one path); it is a readability defect, and the fix is a BOUND rather than a veto, which is the house style of this phase -- `crossjumprevert` and `dedupitetail` cap a duplicated leaf run at 8 printed ops, `taildup` at 12. A two-store epilogue is cheap to clone and reads BETTER cloned, because the merged form needs a phi per global and can print a global's own value back into it on a path where the binary stores nothing; seventy-two is not. Only COPY is counted: a MULTIEQUAL writing a persistent Varnode is a phi, not an observable write, and RETURN writes nothing. `Heritage::guardReturns`' synthetic `glob = glob` self-copies are excluded two ways, either sufficient -- the `return_copy` flag and input and output naming the same storage -- because those are liveness markers, one per persistent global, present before every RETURN in every function that has a global, and counting them would price a bare epilogue by how many globals the whole PROGRAM has. Declining is one-directional: it can only ever make a split NOT happen, so it cannot create a duplication or change what the surviving merged block does."
+use_when = "On by default. Keep it on when the same long run of `dat_<addr> = ...` statements is emitted two or three times in one function, once per path that reaches the exit -- a compiler-shared epilogue that fills message or table globals, where the reader has to notice the blocks are identical before any of them can be read. Flip OFF to restore upstream's predicate and get the per-predecessor private epilogues back (byte-identical to upstream), which is the right call when you are following one path at a time and want each exit's stores inline rather than merged behind a phi. Inert unless a shared RETURN block stores to more than eight distinct globals, so a small epilogue still splits exactly as upstream, and inert on any function whose epilogue only moves registers however long it is."
+example = "option retsplitglobal off"
+live_field = "ret_split_global"
+live_true = "on"
+live_false = "off"
+source_decompiler = "kuna"
+inspiration = "repipe:simd-constant-string-initializer, 653d88600f4238b24302b0ec (macOS x86-64 Crackme0x04) sub_100003790; upstream ActionReturnSplit::isSplittable (blockaction.cc:2242) shared with kuna ActionReturnDup"
+change_kind = "presentation-default"
+tier = "transform"
+symptoms = "the same run of dat_<addr> = ... statements is emitted two or three times in one function|a long global-filling epilogue is duplicated once per path that reaches the return|option returndup off does not stop a shared epilogue from being cloned|46% of a function's text is three copies of one exit block"
 
 [[settable]]
 option = "taildup"

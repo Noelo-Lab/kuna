@@ -191,6 +191,8 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
                 "pair"
             }
         }
+        "simdlane" => on_off(conf.simd_lane_fold),
+        "retsplitglobal" => on_off(conf.ret_split_global),
         "inputvarnodeadjust" => on_off(conf.input_varnode_adjust),
         "retinputhalf" => on_off(conf.ret_input_half),
         "inputparamgap" => on_off(conf.input_param_gap),
