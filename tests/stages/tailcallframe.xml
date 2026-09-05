@@ -1,0 +1,53 @@
+<decompilertest>
+<!--
+    tailcallframe: recover a direct `jmp` as a tail call from the stack-frame
+    teardown in front of it, when the target is NOT a known function.
+    `tailcalljump` asks query_call(dest).is_some(), so it only fires on a callee
+    some discovery oracle already found; a callee reached ONLY through a code
+    pointer in initialized data satisfies none of them (the recursive-descent
+    walk never enters the callback, so it never sees the callback's own `call`).
+    The tail `jmp` is then followed as ordinary intraprocedural flow and the whole
+    callee is decoded into the caller.  Stage model: S2 flow classification
+    (`xref_control_flow`, the CPUI_BRANCH arm).
+
+    Layout (linked flat):
+      caller @ 0x100040 : push rbx; sub rsp,0x10        (frame = -0x18)
+                          if (!a0) { add rsp,0x10; pop rbx; return 42; }
+                          mov rdi,rbx; add rsp,0x10; pop rbx   (teardown = +0x18)
+                          jmp 0x100080                  // the tail call
+      callee @ 0x100080 : *(int *)(a0 + 8) = 0x5a5a5a; return;
+    There is deliberately NO symbol at 0x100080, so query_call is None there and
+    `tailcalljump` (default on) cannot see it: the teardown is the only evidence.
+
+    Pass 1 (default, tailcallframe on): the jmp becomes a CALL + RETURN, so the
+    callee's store is NOT decoded into caller and the call renders sub_...(a0).
+    Pass 2 (tailcallframe off, the bug): caller absorbs the callee's body, so the
+    0x5a5a5a store appears inside caller and there is no call.
+
+    Assert #1 pins the callee's store to EXACTLY ONE occurrence across both print C
+    passes: absent in the default pass (the fix), present in the tailcallframe-off
+    pass (the bug).  Were the default still following the jump, it would appear twice.
+    Assert #2 pins the recovered call to exactly one occurrence, the mirror image.
+    Assert #3 pins the caller's own return-42 path to BOTH passes, so the only
+    difference between them is the tail-call boundary.
+    Assert #4 pins the attributing warning to the pass that introduced the call.
+-->
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100040" readonly="true">534883ec104889fb85ff740d4889df4883c4105be9270000004883c4105bb82a000000c3</bytechunk>
+<bytechunk space="ram" offset="0x100080" readonly="true">c747085a5a5a00c3</bytechunk>
+<symbol space="ram" offset="0x100040" name="caller"/>
+</binaryimage>
+<script>
+  <com>lo fu caller</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option tailcallframe off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="TAILCALLFRAME #1: default does NOT decode the callee into the caller; only the tailcallframe-off pass shows its store (exactly one occurrence across both passes)" min="1" max="1">0x5a5a5a</stringmatch>
+<stringmatch name="TAILCALLFRAME #2: only the default pass recovers the tail jump as a call to the undiscovered callee" min="1" max="1">sub_[0-9a-fA-F]+\(a0\)</stringmatch>
+<stringmatch name="TAILCALLFRAME #3: both passes keep the caller's own return-42 path, so the sole difference is the tail-call boundary" min="2" max="2">0x2a</stringmatch>
+<stringmatch name="TAILCALLFRAME #4: the introduced call is attributed to the option that introduced it" min="1" max="1">tailcallframe: recovered tail call</stringmatch>
+</decompilertest>

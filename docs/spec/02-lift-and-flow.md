@@ -295,6 +295,53 @@ an indirect GOT jump; jump-table recovery fails on it and the function renders
 a `(*dat_...)(...)` computed call with a `"Treating indirect jump as call"`
 warning. Two datatests (Long double #1/#2) opt out per-test.
 
+**(kuna) Frame-teardown tail jumps — `option tailcallframe`, default on
+(DIV-109), `decompiler/crates/kuna-decomp/src/p2_lift/kuna_tailcallframe.rs
+(kuna_is_frame_teardown_tail_call)`.** `tailcalljump` above resolves the callee
+through `query_call`, so it only fires on a target some discovery oracle already
+found. Every kuna oracle reaches a function from a symbol, from an unwind record,
+or from a direct `call` the recursive-descent Listing walk arrived at; a callee
+reached *only* through a code pointer in initialized data satisfies none of them,
+because the walk never enters the callback that calls it. Decompiling such a
+callback by address then follows its tail `jmp` as ordinary intraprocedural flow
+and decodes the entire callee into it — on the round-2 RE-friction witness (a
+stripped Wayland/xkb PIE) the keyboard callback at `0x6500` emitted 1,555 lines
+instead of 427, with the renderer at `0x4610` inlined inside it *and* called by
+name a few blocks later. Decision rule: the tail jump is the caller's last
+instruction, so the compiler tears the frame down before it and the `jmp`
+executes with the stack pointer exactly where `ret` would find it. Two constant
+stack-pointer deltas are measured over the already-decoded raw p-code — the
+*prologue*, accumulated forward from the function's entry address, and the
+*epilogue*, accumulated backward from the branch — and the branch is a tail call
+when the epilogue is a strictly positive teardown of exactly the prologue's
+frame. Both scans stop at the first control-flow op (so neither leaves the block
+it starts in), at a stack-pointer write that is not `SP = SP ± <const>` (a
+`leave`-style `SP = FP` restore is not modelled and declines), at an instruction
+address more than 16 bytes from its neighbour (so a hole in the decoded stream
+cannot make two unrelated instructions look adjacent), and after 24 instructions.
+A frameless leaf can never match: with no frame torn down there is no evidence,
+and an ordinary unconditional intraprocedural jump would be indistinguishable
+from a tail call. Neither can the function's own entry (self tail recursion stays
+a back-edge, as in `tailcalljump`) nor an address this function has already
+decoded (already-decoded blocks are live flow, whatever the stack looks like).
+The rewrite is the one `tailcalljump` already drives in the BRANCH arm of
+`flow.rs (FlowInfo::xref_control_flow)`; `flow.rs (FlowInfo::tail_call_kind)`
+asks `tailcalljump` first, so a known target keeps that path and that warning
+text, and a `tailcallframe: recovered tail call` warning attributes the calls
+this rule introduces. Byte-identical on both parity corpora, whose bytechunks
+carry no such shape. **Known limit:** the evidence is the frame, not the function
+bound — a kuna `FunctionSymbol` has no extent, so the rule cannot ask whether
+`dest` is still inside the caller, and a jump that tears the frame down
+*completely* before branching to a shared return sequence in the same function is
+recovered as a tail call. That shape is not optimizer output: a shared return
+sequence must be shared including its teardown, so the jump is emitted part-way
+through the epilogue and the exact-cancellation test rejects it (gcc and clang at
+`-O1/-O2/-O3/-Os` emit `add rsp,0x68; jmp <shared tail>` against a `-0x70`
+prologue; a 26,458-function LLVM `-O2` corpus carries 103 sites of the raw shape
+and none of them fire). Deferring the decision until the flow work-stack drains,
+and then asking whether the function decoded `dest` by another path, is the sound
+fix; it is a change to the walk's ordering rather than to this predicate.
+
 **(kuna) Fall-through function bound — `option funcboundflow`, default on
 (DIV-67), `decompiler/crates/kuna-decomp/src/p2_lift/kuna_funcboundflow.rs
 (kuna_should_bound_at_entry)`.** A kuna `FunctionSymbol` is an entry address with

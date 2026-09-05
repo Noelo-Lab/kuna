@@ -339,6 +339,12 @@ pub struct Architecture {
     /// entry (e.g. `jmp setlocale@plt`) as a tail call (CALL + RETURN) instead of
     /// flowing into the callee (`option tailcalljump`, default off).
     pub tail_call_jumps: bool,
+    /// (kuna `tailcallframe`) Recover a direct `jmp` whose target is NOT a known
+    /// function as a tail call when the instructions immediately before it tear
+    /// down exactly the frame the entry block built — the callback-only callee no
+    /// discovery oracle reaches (`option tailcallframe`).  See
+    /// [`crate::p2_lift::kuna_tailcallframe`].
+    pub tail_call_frame: bool,
     /// (kuna `cleanupcode`) Delete the Rust drop/deallocate call sites (the
     /// `core::ptr::drop_in_place` / `Drop::drop` / `RawVecInner::deallocate` /
     /// `__rust_dealloc` family) from the pre-SSA op graph, so the drop glue and
@@ -1660,6 +1666,7 @@ impl Architecture {
             v850_indirect_branch: false,
             msvc_ftol: false, // (kuna) option msvcftol; reset_defaults sets the shipped default
             tail_call_jumps: false,
+            tail_call_frame: false, // (kuna) option tailcallframe; reset_defaults sets the shipped default
             funcbound_flow: false, // (kuna) option funcboundflow; reset_defaults sets the shipped default
             overlap_branch: false, // (kuna) option overlapbranch; reset_defaults sets the shipped default
             remove_cleanup_code: false, // (kuna) option cleanupcode; reset_defaults sets the shipped default
@@ -1862,6 +1869,7 @@ impl Architecture {
         self.v850_indirect_branch = false; // (kuna) default: upstream (GH-8817)
         self.msvc_ftol = true; // (kuna) DIV-74 default-on: x86-32-only, and inert unless the binary imports an `__ftol`/`__ftol2`/`__ftol2_sse` symbol. Byte-identical (0/675) — no corpus function carries one of those names. Restore the un-fixed `__ftol()` rendering with `option msvcftol off`
         self.tail_call_jumps = true; // (kuna) DIV-13 default-on (angr tail-call recovery; per-test opt-out on Long double #1/#2)
+        self.tail_call_frame = true; // (kuna) DIV-109 default-on: REMOVES CODE. A direct jmp preceded by a teardown of exactly the entry block's frame is a tail call even when the callee was never discovered. Byte-identical (0/675) on the datatest corpus; restore the flow-into-the-callee decode with `option tailcallframe off`
         self.funcbound_flow = true; // (kuna) DIV-67 default-on: REMOVES CODE. Truncates a fall-through that reaches another known function's entry (a function ending in an unnamed static no-return `exit`/`abort`/`die()` wrapper) instead of decoding the next function's body into it. Byte-identical (0/675) on the datatest corpus; restore upstream flow-into-callee with `option funcboundflow off`
         self.overlap_branch = true; // (kuna) DIV-106 default-on: REMOVES CODE. Ends a conditional branch's fall-through in a halt when the branch's own target lies strictly inside that fall-through instruction's encoding (the anti-disassembly junk-lead-byte overlap), instead of letting the bogus decode swallow the target and desynchronise the stream. Two real instruction starts cannot sit at `next` and strictly inside `next`, so the trigger never matches well-formed code and is byte-identical (0/675) on the datatest corpus; restore the fall-through-wins decode with `option overlapbranch off`
         self.remove_cleanup_code = true; // (kuna) DIV-81 default-on: REMOVES CODE. Deletes the Rust drop/deallocate call sites (`core::ptr::drop_in_place`, `Drop::drop`, `alloc::raw_vec::RawVecInner::deallocate`, `__rust_dealloc`) and the argument setup that only feeds them. Structurally inert outside a Rust binary (no C ELF resolves a call to one of those names), so byte-identical (0/675) on the datatest corpus; keep the drop glue with `option cleanupcode off`
@@ -2091,6 +2099,7 @@ impl Architecture {
             "v850indirectbranch" => on_off!(v850_indirect_branch, "V850 indirect-branch reclassification"),
             "msvcftol" => on_off!(msvc_ftol, "MSVC __ftol-family call-fixup"),
             "tailcalljump" => on_off!(tail_call_jumps, "Tail-call jump recovery"),
+            "tailcallframe" => on_off!(tail_call_frame, "Frame-teardown tail-call recovery"),
             "funcboundflow" => on_off!(funcbound_flow, "Fall-through bound at function entries"),
             "overlapbranch" => on_off!(overlap_branch, "Overlapping-branch fall-through truncation"),
             "cleanupcode" => on_off!(remove_cleanup_code, "Rust drop/deallocate call removal"),

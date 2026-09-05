@@ -256,6 +256,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "v850indirectbranch",
     "msvcftol",
     "tailcalljump",
+    "tailcallframe",
     "funcboundflow",
     "overlapbranch",
     "cleanupcode",

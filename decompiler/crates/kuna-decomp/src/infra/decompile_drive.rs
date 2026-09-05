@@ -437,6 +437,36 @@ impl FlowEnvironment for ArchFlowEnv {
             dest_is_self,
         )
     }
+
+    fn is_frame_teardown_tail_call(
+        &self,
+        fd: &Funcdata,
+        op: crate::context::OpId,
+        dest: &Address,
+    ) -> bool {
+        // (kuna `tailcallframe`) The gate is the architecture-owned
+        // `tail_call_frame` flag; the predicate needs the stack-pointer register
+        // location, which is the stack space's own base register
+        // (`getStackSpace()->getSpacebaseFull(0)`).  A compiler spec with no
+        // `<stackpointer>` has no stack space, and the rule declines.
+        let arch = self.arch();
+        if !arch.tail_call_frame {
+            // Fast-path the gate without touching the IR.
+            return false;
+        }
+        let sp = arch
+            .manage()
+            .get_stack_space()
+            .and_then(|spc| spc.get_spacebase_full(0).ok());
+        crate::kuna_tailcallframe::kuna_is_frame_teardown_tail_call(
+            fd,
+            op,
+            arch.tail_call_frame,
+            fd.get_address(),
+            dest,
+            sp.as_ref(),
+        )
+    }
 }
 
 /// Build a [`Funcdata`] for the function `name` at `entry` and follow its flow,
