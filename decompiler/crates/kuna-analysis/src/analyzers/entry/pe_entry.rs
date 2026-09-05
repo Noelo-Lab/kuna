@@ -181,7 +181,7 @@ fn pdata_begins<Pe: ImageNtHeaders>(
 /// Ghidra dispatches the same way (`ExceptionDataDirectory.java:59-64`); an
 /// unrecognized machine keeps the 12-byte reading, which is what every PE this
 /// oracle has ever seen used.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy)]
 enum PdataForm {
     X86,
     Arm,
