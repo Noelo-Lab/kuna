@@ -2,24 +2,24 @@
 need_id: keyboard-callback-uses-undefined
 title: Keyboard callback uses undefined locals as incoming event arguments
 track: quality
-status: open
+status: closed
 severity: major
 probe_id: p-2fa68bfb8456
 acceptance_id: a-d6b2084f35d5
-hypothesis_status: inconclusive
+hypothesis_status: overturned
 credibility: 0.7
 instances: 1
 challenges: [6989ca5da15272fa37a80c43]
 rounds: [2]
 first_seen_round: 2
 attempts: 1
-covered_by_option: null
+covered_by_option: inputparamgap
 touches: [decompiler/crates/kuna-decomp]
 scope: large
 regression_of: null
-pr: null
-closed_in_round: null
-closing_pr: null
+pr: "405"
+closed_in_round: 2
+closing_pr: "405"
 reject_reason: null
 ---
 
@@ -106,7 +106,20 @@ A decompilation whose signature includes the Wayland callback event arguments us
 
 ## Refutation
 
-_not yet refuted_
+**Overturned by the BUILDER, not by a refuter** — no refuter agent ever ran on this need
+(T_REFUTE round 2 skipped it), so this verdict comes from #405's own measurement and is
+recorded here because it is the durable part.
+
+The filed hypothesis was "no prototype evidence, so live-in R8D/R9D are not promoted". That
+is not the mechanism. `ActionInputPrototype` registers a trial for every input Varnode and
+marks it ACTIVE when the body reads it, and `buildTrialMap` synthesizes filler trials for the
+ignored argument registers — so the missing prototype is not what drops them. The
+discriminating variable is the WIDTH OF THE HOLE: `ParamListStandard::forceInactiveChain`
+(`fspec.cc:1519`) runs with `maxchain = 2`, and once a run of unused slots passes two it marks
+every remaining trial inactive, already-active ones included. The witness's rsi/rdx/rcx hole
+is exactly three registers, one past the limit; a two-register hole recovers on main today.
+Shipped as option `inputparamgap` (DIV-114, default on), which exempts an ACTIVE REGISTER
+trial from that veto during the function's own input recovery only.
 
 ## Reference
 
@@ -174,3 +187,20 @@ _none recorded_
   implementation worker on the same branch. Branch `feat/re-keyboard-callback-uses-undefined` does
   not exist and no worktree `b-r2-keyboard-callbac` exists, so worker.sh's silent detached-worktree
   fallback is NOT armed for this dispatch.
+- closed: acceptance a-d6b2084f35d5 now PASSES at fba4ebd8d4b3
+
+- round 2 wave 61 B_DONE (captain): **CLOSED on #405**, `closed_in_round` 2, `pr`/`closing_pr`
+  405, `attempts` stays 1, `covered_by_option` inputparamgap. The close is mechanical, not a
+  judgment: acceptance `a-d6b2084f35d5` FAILED at filing and PASSES at `fba4ebd8` on exactly the
+  three clauses that failed — `stdout_matches[1]` (`sub_6500\([^)]*,[^)]*\)` now matches
+  `sub_6500(long a0,unsigned long a1,unsigned long a2,unsigned long a3,i...`) and both
+  `stdout_absent` clauses (`// r8d`, `// r9d` declarations gone). `exit_code eq 0` and a positive
+  match are both in the probe, so this is NOT the emit-nothing loophole. Applied from
+  `rounds/2/acceptance-w60.json` (35 needs, closed ['keyboard-callback-uses-undefined'],
+  regressed []) after wave 60 ran all five gates green on a rebuilt main.
+- round 2 wave 61 B_DONE (captain): `hypothesis_status` inconclusive -> **overturned**, see the
+  Refutation section. That makes it 4-of-9 filed diagnoses overturned across the campaigns while
+  the symptom stood in all 9 — the reason a need's hypothesis is advisory.
+- round 2 wave 61 B_DONE (captain): NO `verify --promote` call. `tests/cli/keyboard-callback-uses-undefined.json`
+  is already on main at `fba4ebd8` (the builder promoted it inside the squash) and `make test-cli`
+  counted 28/28 in wave 60, up from 27. Re-promoting would have been a no-op at best.

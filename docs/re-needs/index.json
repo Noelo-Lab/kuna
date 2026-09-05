@@ -4,8 +4,8 @@
   "count": 35,
   "rejected_count": 0,
   "by_status": {
-    "closed": 30,
-    "open": 5
+    "closed": 31,
+    "open": 4
   },
   "by_track": {
     "perf": 2,
@@ -507,11 +507,11 @@
       "need_id": "keyboard-callback-uses-undefined",
       "title": "Keyboard callback uses undefined locals as incoming event arguments",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
       "probe_id": "p-2fa68bfb8456",
       "acceptance_id": "a-d6b2084f35d5",
-      "hypothesis_status": "inconclusive",
+      "hypothesis_status": "overturned",
       "credibility": 0.7,
       "instances": 1,
       "challenges": [
@@ -522,15 +522,15 @@
       ],
       "first_seen_round": 2,
       "attempts": 1,
-      "covered_by_option": null,
+      "covered_by_option": "inputparamgap",
       "touches": [
         "decompiler/crates/kuna-decomp"
       ],
       "scope": "large",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": "405",
+      "closed_in_round": 2,
+      "closing_pr": "405",
       "reject_reason": null,
       "score": 9.241962,
       "path": "docs/re-needs/keyboard-callback-uses-undefined.md"
