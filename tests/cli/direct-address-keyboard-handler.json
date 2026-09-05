@@ -37,5 +37,5 @@
       "s_2010"
     ]
   },
-  "notes": "In-repo twin of the dataset acceptance a-f13adb91d5d4 (crackme lugosiii 0x6500, binary_source 'dataset', so `verify --promote` refuses it and CI has no dataset). Same shape, built from the .c beside the fixture: on_key at 0x11b0 is reachable only through the listener[] code pointer in .data.rel.ro, so render at 0x1170 is in no discovery oracle's output and `tailcalljump` cannot see it; the -O2 tail `jmp` at 0x11cd is recovered from the frame teardown in front of it instead. stdout_absent pins render's own arithmetic and its string blit, which is what the caller absorbed before the fix (`--option tailcallframe off` restores it)."
+  "notes": "In-repo twin of dataset acceptance a-f13adb91d5d4 (lugosiii 0x6500), which verify --promote refuses because CI has no dataset. on_key at 0x11b0 is reached only via the listener[] pointer in .data.rel.ro, so render at 0x1170 is in no oracle's output and tailcalljump cannot see it; the tail jmp at 0x11cd is recovered from the frame teardown. `--option tailcallframe off` restores the bug."
 }
