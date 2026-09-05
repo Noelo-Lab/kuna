@@ -5,19 +5,19 @@ track: quality
 status: open
 severity: major
 probe_id: p-8355fed97a86
-acceptance_id: a-f6e8100daa0b
+acceptance_id: a-2a1f5bccb422
 hypothesis_status: overturned
 credibility: 0.8
 instances: 1
 challenges: [6a3822888a86e4c2c55254fe]
 rounds: [1, 2]
 first_seen_round: 1
-attempts: 0
+attempts: 1
 covered_by_option: null
-touches: [decompiler/crates/kuna-decomp]
+touches: [decompiler/crates/kuna-decomp/src/p2_lift]
 scope: large
 regression_of: null
-pr: null
+pr: 417
 closed_in_round: null
 closing_pr: null
 reject_reason: null
@@ -82,8 +82,11 @@ Readable pseudocode for the core checker at 0x140002d50, with coherent C++ strin
     "exit_code": {
       "eq": 0
     },
+    "stdout_absent": [
+      "\\*\\(unsigned long long \\*\\)&v\\d+\\[-8\\] = 0x1"
+    ],
     "stdout_matches": [
-      "std::string"
+      "BCryptGenerateSymmetricKey\\(v\\d+,"
     ]
   },
   "target": {
@@ -94,7 +97,7 @@ Readable pseudocode for the core checker at 0x140002d50, with coherent C++ strin
   },
   "cwd": "{{WORK}}",
   "repeat": 1,
-  "probe_id": "a-f6e8100daa0b"
+  "probe_id": "a-2a1f5bccb422"
 }
 ```
 
@@ -192,3 +195,33 @@ _none recorded_
 - round 3 (builder `b-r3-large-function-m`): hypothesis OVERTURNED, scope confirmed LARGE, proposal
   filed. `touches` narrowed to `decompiler/crates/kuna-decomp/src/p2_lift` for increment A. The
   acceptance arm is recommended for REPLACEMENT rather than augmentation -- see `## Refutation`.
+- round 3 (captain): **ACCEPTANCE RE-CUT**, on the builder's refutation and re-verified
+  independently at 2026-09-05 20:40 UTC. `stdout_matches: ["std::string"]` is unsatisfiable on
+  this witness for the four reasons in the refutation, and satisfying it would mean guessing a
+  type name. Same command, two clauses instead, both measured in both directions on the
+  unmodified binary (stock 1267 lines / 63 stores / 0 BCrypt-by-value; 11 x
+  `--assert 'flow <a> callreturn'` 1171 / 0 / 1): `stdout_absent`
+  `\*\(unsigned long long \*\)&v\d+\[-8\] = 0x1` and `stdout_matches`
+  `BCryptGenerateSymmetricKey\(v\d+,`. Both are name-agnostic, so no SSA renumbering can fake a
+  flip, and the pair is absent-AND-positive, so it cannot be satisfied by emitting nothing.
+  The `(\w+) != \(unsigned int \*\)\(\(long long\)\1 \+ 6\)` clause the round-2 B_PLAN
+  note drafted stays OFF this acceptance: it is defect B (`REP STOSB`), a different mechanism,
+  and attaching it here would make increment A unclosable.
+- round 3 (captain): proposal APPROVED for **increment A only**. B1 (fold `V != V + #c`),
+  B2 (`REP STOSB` -> `builtin_memset`) and C (Win32 signature table) stay documented in
+  `docs/features/large-function-malformed-output/proposal.md` and are out of scope for the
+  closing PR.
+- round 3 (builder `b-r3-large-function-m`): increment A IMPLEMENTED and the acceptance PASSES.
+  `option fastfailnoreturn` (default on, DIV-119, ElementId 4144, `p2_lift/kuna_fastfailnoreturn.rs`
+  + one call site in `flow.rs::setup_callind_specs`): on a Windows image a CALLIND that reads what a
+  `swi` CALLOTHER with the 1-byte constant `0x29` wrote in the same instruction is `__fastfail`, so
+  its call spec is marked no-return and the halt `check_for_flow_modification` already plants for a
+  named no-return callee is planted there. Witness 1267 -> 1147 lines, 63 -> 0 return-address
+  stores, 160 -> 149 declarations, `BCryptGenerateSymmetricKey(v52,&v55,v62,v54)`. Whole-image
+  sweep: 22 of 858 functions change, all shrinking, gotos 456 -> 390, no named call lost; four more
+  Windows PEs swept, the only non-improvement being byte-identical output on the one with no
+  `int 0x29`. 0/675 datatest assertions moved and 20.5% faster on the witness. The acceptance
+  target is dataset-only, so `verify --promote` refused: `tests/cli/large-function-malformed-output.json`
+  carries BOTH clauses verbatim against a vendored 1,536-byte synthesized PE32+
+  (`decompiler/crates/kuna-analysis/tests/fixtures/fastfail_x86_64.exe`) that reproduces the same
+  shape in both directions. Increments B1/B2/C remain open in `proposal.md`.

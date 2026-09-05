@@ -332,6 +332,13 @@ pub struct Architecture {
     /// (kuna GH-8817) Reclassify V850 `jmp [reg]` CALLIND to BRANCHIND
     /// (C++ `v850_indirect_branch`).
     pub v850_indirect_branch: bool,
+    /// (kuna `fastfailnoreturn`) End the flow at a Windows `int 0x29`
+    /// (`__fastfail`).  x86 SLEIGH lifts `INT imm8` to a `call` with no matching
+    /// push, so the cspec's `extrapop` raises the stack pointer by 8 at every
+    /// site; `__fastfail` never returns, so the block ends there instead.
+    /// Default on (`option fastfailnoreturn`).  See
+    /// [`kuna_fastfailnoreturn`](crate::kuna_fastfailnoreturn).
+    pub fastfail_noreturn: bool,
     /// (kuna `msvcftol`) Install the synthesized MSVC `__ftol`-family call-fixup
     /// (`p2_lift/kuna_msvcftol.rs`) so an x86-32 float-to-integer CRT helper call
     /// lowers to a p-code truncation and its x87 (`ST0`) argument survives.
@@ -1731,6 +1738,7 @@ impl Architecture {
             ptrdepthcap: false, // (kuna) option ptrdepthcap; reset_defaults sets the shipped default
             add_carry_chain: false,
             v850_indirect_branch: false,
+            fastfail_noreturn: false, // (kuna) option fastfailnoreturn; reset_defaults sets the shipped default
             msvc_ftol: false, // (kuna) option msvcftol; reset_defaults sets the shipped default
             tail_call_jumps: false,
             tail_call_frame: false, // (kuna) option tailcallframe; reset_defaults sets the shipped default
@@ -1945,6 +1953,7 @@ impl Architecture {
         self.memset_recover = true; // (kuna) DIV-2 default-on (GH-9230/1537)
         self.rodata_string = true; // (kuna) DIV-113 default-on: a read-only string block copy collapses to builtin_strncpy instead of the invalid-C partial-symbol slice assignments. Byte-identical (0/675) — the corpus carries no data symbols, so the covering-string-symbol guard never fires. Restore the slice assignments with `option rodatastring off`
         self.v850_indirect_branch = false; // (kuna) default: upstream (GH-8817)
+        self.fastfail_noreturn = true; // (kuna) DIV-119 default-on: REMOVES CODE. Ends the flow at a Windows `int 0x29` (`__fastfail`), whose SLEIGH lifting is a call with no matching push and so gains 8 bytes of stack pointer from the cspec's `extrapop` at every site. Windows-cspec-gated and shape-gated on `swi(0x29:1)`, so it is structurally inert on the datatest corpus and byte-identical there (0/675); restore the unbalanced fall-through with `option fastfailnoreturn off`
         self.msvc_ftol = true; // (kuna) DIV-74 default-on: x86-32-only, and inert unless the binary imports an `__ftol`/`__ftol2`/`__ftol2_sse` symbol. Byte-identical (0/675) — no corpus function carries one of those names. Restore the un-fixed `__ftol()` rendering with `option msvcftol off`
         self.tail_call_jumps = true; // (kuna) DIV-13 default-on (angr tail-call recovery; per-test opt-out on Long double #1/#2)
         self.tail_call_frame = true; // (kuna) DIV-109 default-on: REMOVES CODE. A direct jmp preceded by a teardown of exactly the entry block's frame is a tail call even when the callee was never discovered. Byte-identical (0/675) on the datatest corpus; restore the flow-into-the-callee decode with `option tailcallframe off`
@@ -2196,6 +2205,7 @@ impl Architecture {
             }
             "flagcompare" => on_off!(fold_flag_compare, "Flag-modelled comparison folding"),
             "v850indirectbranch" => on_off!(v850_indirect_branch, "V850 indirect-branch reclassification"),
+            "fastfailnoreturn" => on_off!(fastfail_noreturn, "Windows int 0x29 (__fastfail) no-return"),
             "msvcftol" => on_off!(msvc_ftol, "MSVC __ftol-family call-fixup"),
             "tailcalljump" => on_off!(tail_call_jumps, "Tail-call jump recovery"),
             "tailcallframe" => on_off!(tail_call_frame, "Frame-teardown tail-call recovery"),

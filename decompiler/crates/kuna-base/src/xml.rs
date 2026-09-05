@@ -1801,7 +1801,9 @@ mod tests {
         // CONDITIONAL branch's fall-through starts its own basic block, so the
         // branch no longer self-edges (invalid `} while ;`, or a collapsed single
         // out-edge the two-way block readers index off the end of)
-        assert_eq!(count, 239, "corpus file count drifted");
+        // and kuna-fastfailnoreturn / a Windows `int 0x29` (`__fastfail`) ends the
+        // flow instead of raising the stack pointer by 8 and degenerating the frame
+        assert_eq!(count, 240, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

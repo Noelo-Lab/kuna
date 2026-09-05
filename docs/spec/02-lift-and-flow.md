@@ -385,6 +385,36 @@ Ghidra both bound decompilation to the function body. The `longdouble` datatest
 functions) and the `ghangr-noreturn_extern` test (which isolates the
 `noreturn_extern` toggle) opt out per-test.
 
+**(kuna) `__fastfail` is a no-return — `option fastfailnoreturn`, default on
+(DIV-119), `decompiler/crates/kuna-decomp/src/p2_lift/kuna_fastfailnoreturn.rs
+(is_fastfail_callind)`.** x86 SLEIGH lifts `INT imm8` to `intloc = swi(imm8);
+call [intloc]` — a `call` with no matching push, unlike every other x86 `CALL`,
+which lifts as `RSP = RSP - 8; push &next; call target`. Nothing downstream
+distinguishes the two, so the interrupt is an ordinary modelled call and the
+compiler spec's `extrapop` hands its bytes back after it: on `x86-64-win.cspec`'s
+default `__fastcall` (`extrapop="8" stackshift="8"`) every interrupt raises the
+stack pointer by eight, and the printer says so — `(*(void *)swi(0x29))(5);`
+followed by `v62 = &v61[8];`. The damage is not local. Once two paths join
+carrying stack-pointer values eight apart, the frame stops being a constant
+offset from the spacebase: stack locals degenerate into offsets off a `char *`,
+each `CALL`'s return-address push (normally a dead store into a slot nothing
+maps) survives as an explicit store, and outgoing stack arguments go the same
+way, so a Win32 call renders with stack blobs where it takes values. Decision
+rule: on a Windows image, a CALLIND that reads the storage a `swi` CALLOTHER
+wrote in the same instruction, from the one-byte constant vector `0x29`, is
+`__fastfail` — the MSVC `/GS` and STL `_STL_VERIFY` failure path, which
+terminates the process and by contract never returns. Its call spec is marked
+no-return in `flow.rs (FlowInfo::setup_callind_specs)` and the artificial halt
+`check_for_flow_modification` plants for a named no-return callee is planted
+here too, so the block ends at the interrupt and the unbalanced stack pointer
+reaches no join. Unlike that path no `"Subroutine does not return"` warning is
+buffered: the divergence is definitional rather than a surprise, and one
+function can hold a dozen sites. The vector is checked exactly — `int 0x80` is
+a Linux syscall (`option linuxsyscall`) and `int1`/`int3`/`into` carry a
+`return` in their own SLEIGH semantics and do return — and the gate is the
+compiler-spec component of the resolved language id, since `int 0x29` is
+`__fastfail` by Windows convention alone.
+
 **(kuna) Overlapping branch target — `option overlapbranch`, default on
 (DIV-106), `decompiler/crates/kuna-decomp/src/p2_lift/kuna_overlapbranch.rs
 (kuna_overlaps_pending_branch)`.** A conditional branch pushes both successors and

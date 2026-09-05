@@ -414,6 +414,24 @@ impl FlowEnvironment for ArchFlowEnv {
         )
     }
 
+    fn is_fastfail_callind(&self, fd: &Funcdata, op: crate::context::OpId) -> bool {
+        // (kuna `fastfailnoreturn`) wire the `int 0x29` predicate.  The gate is the
+        // architecture-owned `fastfail_noreturn` flag (`option fastfailnoreturn
+        // on|off`, DIV default-on) plus the compiler-spec component of the resolved
+        // language id — `int 0x29` is `__fastfail` by Windows convention alone.  The
+        // user-op name resolution is `glb->userops.getOp(id)->getName()`.
+        let arch = self.arch();
+        if !arch.fastfail_noreturn
+            || !crate::kuna_fastfailnoreturn::archid_is_windows(arch.get_description())
+        {
+            // Fast-path both gates without touching the IR.
+            return false;
+        }
+        crate::kuna_fastfailnoreturn::is_fastfail_callind(fd, op, |id| {
+            arch.userops.get_op(id).map(|uo| String::from_utf8_lossy(uo.get_name()).into_owned())
+        })
+    }
+
     fn is_tail_call_branch(&self, fd: &Funcdata, op: crate::context::OpId, dest: &Address) -> bool {
         // (kuna) tee-O2 tail-jump: wire the ported `kuna_is_tail_call_branch`
         // predicate.  The gate is the architecture-owned `tail_call_jumps` flag
