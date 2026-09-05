@@ -2,7 +2,7 @@
 need_id: decompiling-3396-byte-main
 title: Decompiling the 3396-byte main function takes about 68 seconds
 track: perf
-status: closed
+status: regressed
 severity: major
 probe_id: p-a9ebf39dace0
 acceptance_id: a-53d616afcb6a
@@ -400,3 +400,32 @@ _none recorded_
   Verdict stayed PASS / `unchanged`; nothing is wrong. But when this need does flip, apply the
   [[cold-load-xref-lookup]] rule first: **re-measure quiet at reps>=7 before believing it, and do
   NOT relax the bar.** A genuine regression here would have to move the median ~840 ms.
+- REGRESSED: acceptance a-53d616afcb6a fails again at 96224463c9dc
+- round 2 wave 39 B_DONE (captain), **the flip is upheld against wave 38's refutation, and the
+  refutation's ablation is the reason.** Wave 38 concluded "load artifact, do not re-file" from an
+  A/B that turned `simdlane`/`retsplitglobal` **off by option** and saw byte-identical stdout and no
+  speedup. That arm does not ablate the merge: an option-off rule/action can still sit in the pass
+  schedule and be offered every candidate op, so "no output change with the option off" is evidence
+  the passes never *fire* here, not evidence they cost nothing. The only ablation that settles it is
+  code: build `fba4ebd8` and `96224463` in two worktrees and interleave A,B,A,B at reps>=7 on the
+  same box.
+- the 7-rep medians against the unmoved `< 10000 ms` bar, in sha order, one merge per step:
+    19c0aaf0 10:28  9153  PASS
+    882038cd 11:49  9180  PASS   (#404 rodatastring)
+    fba4ebd8 13:55  9494  PASS   (#405 inputparamgap)
+    96224463 16:21 10425  FAIL   (#406 simdlane + retsplitglobal)
+    96224463 16:26 11378  FAIL
+    96224463 16:42 10176  FAIL   <- captain's own quiet-ish re-measure, loadavg 8 on 80 cores
+  Three independent 7-sample medians at this sha are over the bar and four before it are under; the
+  step at the merge boundary is +680 ms on top of a +341 ms drift across the two merges before it.
+  That is at or past the "a genuine regression would have to move the median ~840 ms" threshold this
+  record itself wrote down at wave 25.
+- **the builder's first job is the code A/B above, not a fix.** If it comes back flat, the finding is
+  that this bar is now inside the box's noise floor and the need is measurement-limited -- say so and
+  re-close; do NOT relax `< 10000`, which has survived five attempts and 71.5 -> 9.2 s.
+- if it comes back real, the shape to look at first is **cumulative default-ON schedule cost**: every
+  round of this loop merges another default-ON pass into `universal_sched`, and this need is the
+  canary for it. `simdshufflelane` is registered unconditionally in the `analysis` rule group
+  (`infra/universalaction.rs:425`); the question is what it costs on a 3396-byte function where it
+  never fires. See [[kuna-lifter-quadratic]] for the profiling lever (`kuna decompile` forks
+  `decomp_dbg` and eats its stderr -- profile `--json`).

@@ -5,7 +5,8 @@
   "rejected_count": 0,
   "by_status": {
     "closed": 31,
-    "open": 4
+    "open": 3,
+    "regressed": 1
   },
   "by_track": {
     "perf": 2,
@@ -84,6 +85,44 @@
       "reject_reason": null,
       "score": 1073.935699,
       "path": "docs/re-needs/strings-json-fails-report.md"
+    },
+    {
+      "need_id": "decompiling-3396-byte-main",
+      "title": "Decompiling the 3396-byte main function takes about 68 seconds",
+      "track": "perf",
+      "status": "regressed",
+      "severity": "major",
+      "probe_id": "p-a9ebf39dace0",
+      "acceptance_id": "a-53d616afcb6a",
+      "hypothesis_status": "inconclusive",
+      "credibility": 0.7,
+      "instances": 1,
+      "challenges": [
+        "69a3822f7b3cc38c80464da4"
+      ],
+      "rounds": [
+        2
+      ],
+      "first_seen_round": 2,
+      "attempts": 5,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-decomp",
+        "decompiler/crates/kuna-console",
+        "decompiler/crates/kuna-decomp/phases.toml",
+        "decompiler/crates/kuna-decomp/src/p0_knowledge/options.rs",
+        "docs/options.md",
+        "docs/history.md",
+        "tests/stages"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": "396",
+      "closed_in_round": 2,
+      "closing_pr": "397",
+      "reject_reason": null,
+      "score": 1031.686728,
+      "path": "docs/re-needs/decompiling-3396-byte-main.md"
     },
     {
       "need_id": "analysis-generated-function-name",
@@ -632,7 +671,7 @@
       "need_id": "simd-constant-string-initializer",
       "title": "SIMD constant-string initializer explodes into hundreds of scalar pseudo-operations",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
       "probe_id": "p-7127e6d559a3",
       "acceptance_id": "a-9667a93853f5",
@@ -654,8 +693,8 @@
       "scope": "large",
       "regression_of": null,
       "pr": "406",
-      "closed_in_round": null,
-      "closing_pr": null,
+      "closed_in_round": 2,
+      "closing_pr": "406",
       "reject_reason": null,
       "score": 9.241962,
       "path": "docs/re-needs/simd-constant-string-initializer.md"
@@ -888,44 +927,6 @@
       "reject_reason": null,
       "score": 4.620981,
       "path": "docs/re-needs/stack-string-invalid-cast.md"
-    },
-    {
-      "need_id": "decompiling-3396-byte-main",
-      "title": "Decompiling the 3396-byte main function takes about 68 seconds",
-      "track": "perf",
-      "status": "closed",
-      "severity": "major",
-      "probe_id": "p-a9ebf39dace0",
-      "acceptance_id": "a-53d616afcb6a",
-      "hypothesis_status": "inconclusive",
-      "credibility": 0.7,
-      "instances": 1,
-      "challenges": [
-        "69a3822f7b3cc38c80464da4"
-      ],
-      "rounds": [
-        2
-      ],
-      "first_seen_round": 2,
-      "attempts": 5,
-      "covered_by_option": null,
-      "touches": [
-        "decompiler/crates/kuna-decomp",
-        "decompiler/crates/kuna-console",
-        "decompiler/crates/kuna-decomp/phases.toml",
-        "decompiler/crates/kuna-decomp/src/p0_knowledge/options.rs",
-        "docs/options.md",
-        "docs/history.md",
-        "tests/stages"
-      ],
-      "scope": "small",
-      "regression_of": null,
-      "pr": "396",
-      "closed_in_round": 2,
-      "closing_pr": "397",
-      "reject_reason": null,
-      "score": 3.960841,
-      "path": "docs/re-needs/decompiling-3396-byte-main.md"
     },
     {
       "need_id": "call-args-discarded",

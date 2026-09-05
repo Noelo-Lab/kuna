@@ -2,7 +2,7 @@
 need_id: simd-constant-string-initializer
 title: SIMD constant-string initializer explodes into hundreds of scalar pseudo-operations
 track: quality
-status: open
+status: closed
 severity: major
 probe_id: p-7127e6d559a3
 acceptance_id: a-9667a93853f5
@@ -18,8 +18,8 @@ touches: [decompiler/crates/kuna-decomp]
 scope: large
 regression_of: null
 pr: "406"
-closed_in_round: null
-closing_pr: null
+closed_in_round: 2
+closing_pr: "406"
 reject_reason: null
 ---
 
@@ -172,3 +172,8 @@ _none recorded_
   before spawning (the wid is derived from the need id and `git worktree add` fails on an occupied
   path, falling back to a SILENT detached worktree, [[kuna-repipe-detached-branch-trap]]), and
   never `git branch -D` this branch.
+- closed: acceptance a-9667a93853f5 now PASSES at 96224463c9dc
+- round 2 wave 39 B_DONE (captain): closed on #406 (squash 96224463) with `closing_pr` written by
+  hand -- acceptance a-9667a93853f5 PASSES on the freshly built merged main, all four gates plus
+  `make test-cli` green at that sha, and `tests/cli/simd-constant-string-initializer.json` was
+  already promoted by the builder (29/29), so B_DONE re-promoted nothing.
