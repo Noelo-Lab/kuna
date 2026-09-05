@@ -718,6 +718,11 @@ pub(crate) fn condconst_apply(data: &mut Funcdata) -> int4 {
         if data.obank().get(c_branch).expect("condconst: stale cbranch").code() != OpCode::CPUI_CBRANCH {
             continue;
         }
+        // A CBRANCH block with fewer than two out-edges is a malformed CFG; skip
+        // it rather than index off the end of the edge list (upstream assumes two).
+        if data.bblocks_ref().block(bl).size_out() < 2 {
+            continue;
+        }
         let bool_vn = data.obank().get(c_branch).expect("condconst: stale cbranch").get_in(1).unwrap();
         // Make sure the boolean constant holds down each branch.
         let out0 = data.bblocks_ref().block(bl).get_out(0);

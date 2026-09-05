@@ -626,6 +626,13 @@ but only when excising that edge leaves no alternate data-flow path rejoining
 the original value (`condconst.rs (handle_phi_nodes)`; multiple disconnected
 edges that flow together downstream get one shared placement).
 
+A block whose last op is a CBRANCH is read as a two-way branch, so
+`condconst.rs (condconst_apply)` skips one carrying fewer than two out-edges rather
+than indexing off the end of its edge list. The `funcboundflow` truncation used to
+produce one; the guard keeps a malformed graph from killing the process before the
+pass that malformed it can be identified, but it does not by itself make the emitted
+C right.
+
 (kuna) **condexeplace** — GH-9203: that materialized COPY could land inside a
 *loop* predecessor block, re-executing a supposedly loop-invariant `= 0` every
 iteration and malforming the do/while. Under the gate,
