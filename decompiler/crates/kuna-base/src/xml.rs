@@ -1797,7 +1797,11 @@ mod tests {
         // install cannot re-read is declined, so the compiler's if/else-if chain
         // over the real parameter survives (option off = `switch(0)`, every case
         // unreachable and the parameter absent from the prototype)
-        assert_eq!(count, 238, "corpus file count drifted");
+        // and gh403-funcboundflow-cfg / the funcboundflow truncation of a
+        // CONDITIONAL branch's fall-through starts its own basic block, so the
+        // branch no longer self-edges (invalid `} while ;`, or a collapsed single
+        // out-edge the two-way block readers index off the end of)
+        assert_eq!(count, 239, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

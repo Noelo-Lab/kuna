@@ -1470,7 +1470,13 @@ truncating the fall-through here"
                 // one (the cross-function merge bug).  Mirrors the noreturn-call
                 // halt in `check_for_flow_modification`; the halt is appended
                 // after the current instruction's ops by `artificial_halt`.
-                let _halt = self.artificial_halt(curaddr, pcodeop_flags::noreturn)?;
+                // It starts a basic block because `collect_edges` emits a
+                // fall-through edge for a CBRANCH regardless, and without a
+                // boundary that edge is a self-loop on the branch's own block.  It
+                // is NOT marked an instruction start: `fallthru_op` can only reach
+                // it as a same-instruction op, the next address being undecoded.
+                let halt = self.artificial_halt(curaddr, pcodeop_flags::noreturn)?;
+                self.op_mark_start_basic(halt);
                 self.data.warning(
                     "funcboundflow: fall-through reached the next function entry; truncating flow here",
                     curaddr,

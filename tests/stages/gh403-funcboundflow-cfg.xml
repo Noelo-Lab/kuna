@@ -1,0 +1,60 @@
+<decompilertest>
+<!--
+    funcboundflow's truncation must start a new basic block.  When the fall-through
+    that reaches the next function's entry belongs to a CONDITIONAL branch, the
+    artificial no-return RETURN planted in its place used to land inside the branch's
+    own basic block, so `collectEdges` resolved the CBRANCH's fall-through to that
+    same block: a spurious self-edge.  The structurer rendered it as the invalid C
+    `} while ;`, and where the branch's taken edge also pointed at that block the two
+    edges collapsed into one and `FlowBlock::getOut(1)` indexed off the end of the
+    edge list.  Stage model: S2 flow classification (`process_instruction`
+    fall-through).  Correctness fix, no option, because the old output was not valid
+    C.  kuna GH-403.
+
+    Layout (linked flat, one .text run):
+      branchcut @ 0x100040 : mov/add/test then `je cold`; fall-through is 0x100049
+      neighbor  @ 0x100049 : return a0 - 5;   (the entry that fall-through reaches)
+      cold      @ 0x10004d : return 99;       (branchcut's own conditional target)
+      loopcut   @ 0x100053 : `jl` back to 0x100055, its own block's first instruction;
+                             fall-through is 0x10005d
+      neighbor2 @ 0x10005d : return a0 - 7;   (the entry that fall-through reaches)
+
+    Pass 1 (default) decompiles both; pass 2 (funcboundflow off) is the reference
+    rendering where the walk runs on into the neighbour.
+
+    Assert #1 is the invalid-C shape: it must never be emitted.
+    Assert #2 pins loopcut's loop to BOTH passes; before the fix the default pass
+    emitted no body at all, `condconst_apply` having read `getOut(1)` on the
+    collapsed single out-edge.
+    Assert #3 pins the truncation itself: neighbor's body appears exactly once across
+    the two passes, i.e. only with funcboundflow off.
+    Assert #4 pins the branch's other arm, which the truncation must leave alone.
+-->
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100040" readonly="true">89f883c00f85c074048d47fbc3b863000000c331c083c00f83f8647cf88d47f9c3</bytechunk>
+<symbol space="ram" offset="0x100040" name="branchcut"/>
+<symbol space="ram" offset="0x100049" name="neighbor"/>
+<symbol space="ram" offset="0x100053" name="loopcut"/>
+<symbol space="ram" offset="0x10005d" name="neighbor2"/>
+</binaryimage>
+<script>
+  <com>lo fu branchcut</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu loopcut</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option funcboundflow off</com>
+  <com>lo fu branchcut</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu loopcut</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GH403 #1: the truncated conditional branch never renders the condition-less `} while ;`" min="0" max="0">while ;</stringmatch>
+<stringmatch name="GH403 #2: the self-looping truncation still decompiles (both passes carry the loop)" min="2" max="2">while \(v1 &lt; 100\)</stringmatch>
+<stringmatch name="GH403 #3: the default pass truncates, so neighbor's body appears only in the funcboundflow-off pass" min="1" max="1">return a0 \+ -5;</stringmatch>
+<stringmatch name="GH403 #4: the conditional's surviving arm is unchanged by the truncation (both passes)" min="2" max="2">return 99;</stringmatch>
+</decompilertest>

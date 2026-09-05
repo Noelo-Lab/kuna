@@ -360,7 +360,17 @@ run off the end of the current function. The truncation lives at the fall-throug
 push of `flow.rs (FlowInfo::process_instruction)`: instead of pushing the target,
 a no-return artificial RETURN is planted (mirroring the `check_for_flow_modification`
 no-return-call halt) and a `funcboundflow` warning makes the truncation
-attributable. This overlaps `noreturn_extern`/`noreturn_externmatch` (which stop
+attributable. The halt also *starts a basic block*: `flow.rs (FlowInfo::collect_edges)`
+emits a fall-through edge for every CBRANCH whatever else the walk decided, so when
+the truncated instruction is a conditional branch the edge otherwise resolves back
+to the branch's own block. That self-edge is what the structurer renders as the
+condition-less, syntactically invalid `} while ;`, and where the branch's taken edge
+lands on that same block the two collapse into a single out-edge that the two-way
+block readers index off the end of. Giving the halt its own block puts a real
+no-return RETURN on the far end of the fall-through instead. The halt is deliberately
+*not* marked as an instruction start: `flow.rs (FlowInfo::fallthru_op)` can only
+resolve the fall-through to it as a same-instruction op, the truncated address never
+having been decoded. This overlaps `noreturn_extern`/`noreturn_externmatch` (which stop
 the same leak by callee *name*) but is name-independent — it bounds at the function
 *boundary* whatever the callee. On real binaries ~36% of application functions in a
 measured static-pie build end in such a call and were corrupted this way; IDA and
