@@ -22,6 +22,7 @@ mod docs;
 mod decompile_all;
 mod decompile_project;
 mod fid;
+mod graph_export;
 mod jsonfmt;
 mod output;
 mod paths;
@@ -46,6 +47,7 @@ fn main() -> ExitCode {
         "decompile" => decompile::main(rest),
         "decompile-all" => decompile_all::run(rest),
         "decompile-project" => decompile_project::run(rest),
+        "graph-export" => graph_export::run(rest),
         "functions" => decompile_all::run_functions(rest),
         "test" => cmd_test(rest),
         "catalog" => cmd_catalog(rest),
@@ -81,11 +83,12 @@ fn main() -> ExitCode {
 
 fn usage() {
     eprintln!(
-        "usage: kuna <decompile|decompile-all|decompile-project|functions|xrefs|unpack|docs|test|catalog|modes|specs|fid> ...\n\
+        "usage: kuna <decompile|decompile-all|decompile-project|graph-export|functions|xrefs|unpack|docs|test|catalog|modes|specs|fid> ...\n\
          \n\
          kuna decompile <binary> <func> [--addr] [--json] [--slice ARCH] [--language auto|c|rust] [--mode auto|reliable|aggressive|fast] [--option NAME VALUE]... [--kassert ARGS]...\n\
          kuna decompile-all <binary> [--json] [--functions a,b,..] [--addr 0xVMA]... [--no-vars] [--language auto|c|rust] [--max-fn-seconds N] [--mode auto|reliable|aggressive|fast] [--option N V]...\n\
          kuna decompile-project <binary> [-o DIR] [--functions a,b,..] [--addr 0xVMA]... [--max-fn-seconds N] [--mode auto|reliable|aggressive|fast] [--option N V]...\n\
+         kuna graph-export <binary> [version] [-o FILE] [--max-fn-seconds N] [--mode auto|reliable|aggressive|fast] [--option N V]...\n\
          kuna functions <binary> [--json] [--mode auto|reliable|aggressive|fast]\n\
          kuna xrefs <binary> (--to <name|0xaddr> | --from <name|0xaddr>) [--json] [--kind call,jump,data,read,write] [--mode auto|reliable|aggressive|fast]\n\
          kuna unpack <binary> [-o OUT] [--json]\n\

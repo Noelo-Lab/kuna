@@ -884,7 +884,7 @@ object references change which extensions and pointer conversions are
 representable as casts — kept current alongside `CastStrategyC` so a future
 `PrintJava` port is emitter wiring only.
 
-## 9.7 Whole-program document renders (`kuna decompile-project`)
+## 9.7 Whole-program document renders (`kuna decompile-project`, `kuna graph-export`)
 
 **(kuna) Three additive render surfaces** back the `kuna decompile-project`
 project export (the CLI driver is
@@ -958,3 +958,35 @@ bytes, named data symbols for the `.asm`/`README.md` artifacts) lives on the
 console engine, `decompiler/crates/kuna-console/src/engine.rs
 (ConsoleProgram::sections, disassemble_at, read_bytes, global_data_symbols)`,
 not in this folder.
+
+**GraphRev graph document.** `kuna graph-export` is another additive reader of
+completed program state. It emits schema-v2 JSON: canonical callable entries
+become function rows; failure-isolated C rendering supplies `codeC` and
+recovered parameters; bounded instruction rendering supplies per-function
+assembly; and the post-analysis xref walk supplies deduplicated direct-call and
+cross-function-jump relations. Function rows are entry-VMA ordered; each
+caller's unique edges are ordered by first static instruction VMA and receive
+contiguous zero-based `calleeOrder`. A computed call has no static target edge
+and is represented by `hasIndirectCalls` on its caller.
+
+The document is observational: it adds no analysis facts, mutates no IR, and
+changes no existing C rendering, so it has neither an option row nor a DIV
+entry. Unavailable binary or import provenance is JSON `null`, never a
+fabricated address, module name, or placeholder function.
+
+`analysisImageBase` is the PE optional-header ImageBase when present; for other
+linked images it is the lowest non-empty loadable segment VMA. This keeps the
+value in the same static VMA space as function and edge addresses. Relocatable
+objects have no comparable static image base and export `null` rather than their
+synthetic loader layout.
+
+Function classification deliberately follows the exporter convention: a mapped
+lone forwarding jump is `thunk`; a loader-defined undefined external is
+`external`; a remaining bodyless entry is `import`; any other mapped entry is
+`normal`. Thus the thunk decision precedes external provenance, and every
+non-body kind has null C and assembly. The present loader does not retain a
+complete library-module/external-location mapping, so it cannot yet rewrite an
+import stub edge to a separate module-qualified `external` function or emit its
+`calleeModule`; these fields remain null rather than guessed. Indirect-call
+presence is observed only from `CALLIND` p-code, not from indirect branches;
+unknown or undecodable call forms consequently cannot produce a synthetic edge.

@@ -128,6 +128,10 @@ pub struct XrefIndex {
     decoded: BTreeSet<u64>,
     /// Every function entry the walk seeded or discovered, in address order.
     funcs: BTreeSet<u64>,
+    /// Function entries whose decoded body contains a computed call. These
+    /// calls deliberately have no target xref, but consumers still need to
+    /// distinguish "no callees" from "callee is computed at runtime".
+    indirect_callers: BTreeSet<u64>,
     /// How many distinct instructions the walk decoded (a coverage signal for a
     /// caller that wants to say "nothing decoded" rather than "no references").
     insns: usize,
@@ -184,6 +188,11 @@ impl XrefIndex {
     /// How many distinct instructions the walk decoded.
     pub fn instruction_count(&self) -> usize {
         self.insns
+    }
+
+    /// Whether the function entered at `entry` contains a computed call.
+    pub fn has_indirect_calls(&self, entry: u64) -> bool {
+        self.indirect_callers.contains(&entry)
     }
 }
 
@@ -296,6 +305,7 @@ pub fn build(
         by_source: BTreeMap::new(),
         decoded: BTreeSet::new(),
         funcs: seed_set.clone(),
+        indirect_callers: BTreeSet::new(),
     };
 
     let mut func_queue: VecDeque<u64> = seed_set.iter().copied().collect();
@@ -335,6 +345,10 @@ pub fn build(
                 .collect();
             let c = classify(&raw, vma, decoded.len);
 
+            if decoded.ops.iter().any(|op| op.opcode == OpCode::CPUI_CALLIND) {
+                st.indirect_callers.insert(entry);
+            }
+
             for &target in &c.flows {
                 let kind = if c.flow.is_call { XrefKind::Call } else { XrefKind::Jump };
                 st.file(vma, target, kind, &decoded.text);
@@ -370,6 +384,7 @@ struct State {
     by_source: BTreeMap<u64, Vec<Xref>>,
     decoded: BTreeSet<u64>,
     funcs: BTreeSet<u64>,
+    indirect_callers: BTreeSet<u64>,
 }
 
 impl State {
@@ -407,6 +422,7 @@ impl State {
             by_source_function,
             decoded: self.decoded,
             funcs: self.funcs,
+            indirect_callers: self.indirect_callers,
             insns,
         }
     }
@@ -431,6 +447,7 @@ fn empty() -> XrefIndex {
         by_source_function: BTreeMap::new(),
         decoded: BTreeSet::new(),
         funcs: BTreeSet::new(),
+        indirect_callers: BTreeSet::new(),
         insns: 0,
     }
 }
