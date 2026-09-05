@@ -89,6 +89,7 @@ use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, ContextPaint, Phase
 use crate::loader::format::FormatKind;
 
 pub mod kuna_entrymainproto;
+pub mod kuna_machomain;
 pub mod kuna_cortexmvectors;
 pub mod kuna_fdeinterior;
 mod macho_entry;

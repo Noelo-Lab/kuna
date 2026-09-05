@@ -378,6 +378,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // fetches each argument through a named CRT accessor, so the call site names the
     // slots.  Default-ON; off restores the `void(void)` form exactly.
     "entrymainproto",
+    "machomain",
     // (kuna) `.eh_frame` LSDA landing-pad discovery — a sub-feature of the
     // always-on `entry_disc` pass (GccExceptionAnalyzer). Default-off
     // (output-changing: adds the discovered exception landing pads as entries).

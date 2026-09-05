@@ -970,6 +970,18 @@ pub struct Architecture {
     /// whenever the callee already carries a function symbol. Off restores the
     /// `void(void)` form exactly.
     pub analysis_entrymainproto: bool,
+    /// (kuna) Name the Mach-O `LC_MAIN` entry routine `main` and declare it
+    /// `int main(int argc, char **argv)` (`machomain`); default **on**.
+    /// `LC_MAIN`'s `entryoff` field is documented as the offset of `main()` and
+    /// survives `strip`, so on a stripped Mach-O the container still states which
+    /// of its `sub_<addr>` functions the program starts in — kuna simply never
+    /// read it, and the prototype was `void(void)` because a `main` that ignores
+    /// its arguments reads no ABI argument register for body-driven recovery to
+    /// find. Mach-O executables only, skipped on an `LC_UNIXTHREAD`-only image
+    /// (that entry is the crt `start`, not `main`), and skipped whenever the
+    /// entry already carries a function symbol. Off restores the `sub_<addr>` /
+    /// `void(void)` form exactly.
+    pub analysis_machomain: bool,
     /// (kuna) Reject a discovered function entry that falls strictly inside a
     /// single-function `.eh_frame` FDE body (`fdeinterior`); default **on**.
     /// kuna's function symbols carry no extent, so every discovery oracle can
@@ -1770,6 +1782,7 @@ impl Architecture {
             analysis_ppclocalentry: false,
             analysis_picbase: false,
             analysis_entrymainproto: false,
+            analysis_machomain: false,
             analysis_strings: false,
             analysis_widestrings: false,
             analysis_entry_disc: false,
@@ -1985,6 +1998,8 @@ impl Architecture {
         self.analysis_picbase = true;
         // (kuna) PE CRT entry-function prototype recovery -- default-ON.
         self.analysis_entrymainproto = true;
+        // (kuna) Mach-O `LC_MAIN` entry naming + prototype -- default-ON (DIV-111).
+        self.analysis_machomain = true;
         // (kuna) `.eh_frame` LSDA landing-pad discovery — default-OFF (opt-in,
         // output-changing: adds the discovered exception landing pads as entries).
         self.analysis_eh_frame_full = false;
@@ -2373,6 +2388,9 @@ impl Architecture {
             }
             "entrymainproto" => {
                 on_off!(analysis_entrymainproto, "PE CRT entry-function prototype recovery")
+            }
+            "machomain" => {
+                on_off!(analysis_machomain, "Mach-O LC_MAIN entry naming + prototype")
             }
             "eh_frame_full" => {
                 on_off!(analysis_eh_frame_full, ".eh_frame LSDA landing-pad discovery")

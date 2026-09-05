@@ -1,0 +1,49 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "functions",
+    "{{BIN}}",
+    "--json"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/macho_stripped_main",
+    "binary_sha256": "9102bb6a99b0f2c833a354e22d8936a28f56e02a454c483b3870ac6234170a34",
+    "binary_size": 16688,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/macho_stripped_main"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "stdout_matches": [
+      "\"name\": \"main\""
+    ],
+    "stdout_absent": [
+      "\"name\": \"sub_1000005b0\""
+    ],
+    "json": [
+      {
+        "path": "functions[*].name",
+        "op": "eq",
+        "value": "main"
+      },
+      {
+        "path": "count",
+        "op": "ge",
+        "value": 5
+      }
+    ]
+  },
+  "notes": "Promoted acceptance of mach-o-entry-function, re-pointed onto the in-repo macho_stripped_main fixture (CI has no dataset). It is macho_imports with its defined-symbol names stripped, so LC_MAIN is the only thing left saying 0x1000005b0 is main. The filed clause was the bare regex name.*main, which _main also satisfies; tightened to the exact name line plus the absence of sub_1000005b0."
+}
