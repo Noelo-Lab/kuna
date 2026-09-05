@@ -2,7 +2,7 @@
 need_id: prototype-assertions-reject-ordinary
 title: Prototype assertions reject ordinary unsigned int declarations
 track: tooling
-status: open
+status: closed
 severity: major
 probe_id: p-b95fa6549eeb
 acceptance_id: a-e9643c3e9aaa
@@ -17,9 +17,9 @@ covered_by_option: null
 touches: [decompiler/crates/kuna-console/src/grammar, decompiler/crates/kuna-console/src/ifacedecomp.rs]
 scope: small
 regression_of: null
-pr: null
-closed_in_round: null
-closing_pr: null
+pr: 421
+closed_in_round: 3
+closing_pr: 421
 reject_reason: null
 ---
 
@@ -225,3 +225,5 @@ captain T_REFUTE r3: hypothesis upheld -- see ## Refutation (measured on cf5234a
 captain T_TRIAGE r3: track tooling CONFIRMED; touches CORRECTED kuna-cli -> kuna-console/src/grammar, which is where parse_C runs and where run_parse_c raises the 'Bad C syntax' the probe matches (ifacedecomp.rs:705). Upheld at T_REFUTE: int / unsigned int / double are rejected in BOTH return and parameter position while int4 / void / char * are accepted -- the grammar lacks the standard scalar keywords. Highest corroboration in the round: 5 instances across 5 challenges, credibility 1.0. NOTE FOR THE BUILDER: PR #415 asserts this is already handled and is wrong on that claim; re-measure before believing it.
 captain T_TRIAGE r3: repaired the missing probe/acceptance `target` block (binary_rel + sha256 + size, source dataset) -- without it {{BIN}} could not resolve and the need was unclosable by B_DONE and invisible to regression detection. Verified: acceptance now RUNS and FAILS on cf5234ac, which is the state a filed need must be in.
 builder b-r3-prototype-assert r3: acceptance RETARGETED (a-35ab0d1e49fc -> a-e9643c3e9aaa) from the dataset PE onto the in-repo fixture `decompiler/crates/kuna-analysis/tests/fixtures/fauxware`, because `verify --promote` refuses a dataset target (CI has no dataset) and the need's regression guard is worth more than the original binary. Strengthened while moving: three directives instead of one (`unsigned int` in return position, `long long`/`int`/`unsigned long` in a callee prototype, `unsigned char[8]` as a `type` base), all three asserted `applied`, plus two positive clauses on the emitted C and `stderr_absent` on both "Syntax error" and "Bad C syntax". Measured rejected 3/3 on the unpatched cf5234ac binary; the ORIGINAL dataset acceptance was also measured PASS on the fixed tree before the retarget.
+- closed: acceptance a-e9643c3e9aaa now PASSES at 80e965ca649d
+captain B_DONE r3 (re-applied): closed by #421 (dff8be44); the first application of this bookkeeping was lost when the main tree was checked out to branch docs/restore-round3-records and back, so it was redone from rounds/3/acceptance-suite.json (sha 80e965ca, the current HEAD).
