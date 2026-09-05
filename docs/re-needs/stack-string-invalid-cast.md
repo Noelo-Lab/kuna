@@ -2,7 +2,7 @@
 need_id: stack-string-invalid-cast
 title: stack-string initialisation is emitted as an invalid array cast
 track: quality
-status: open
+status: closed
 severity: minor
 probe_id: p-1d6eb3f72061
 acceptance_id: a-d7fec4000cb6
@@ -12,14 +12,14 @@ instances: 1
 challenges: [68149b8a8f555589f353117c]
 rounds: [1, 2]
 first_seen_round: 1
-attempts: 0
+attempts: 1
 covered_by_option: null
 touches: [decompiler/crates/kuna-decomp]
 scope: small
 regression_of: null
-pr: null
-closed_in_round: null
-closing_pr: null
+pr: "404"
+closed_in_round: 2
+closing_pr: "404"
 reject_reason: null
 ---
 
@@ -128,3 +128,16 @@ _not yet refuted_
 - round 2 wave 20 (captain): `touches` LEFT as filed (`[decompiler/crates/kuna-decomp]`). I have measured evidence of the
   symptom but none of the owning module, and a confidently-wrong `touches` would misdirect a
   builder and mis-scope its leases. The builder should set it from its own root-cause work.
+- closed: acceptance a-d7fec4000cb6 now PASSES at 882038cd47f6
+- round 2 wave 56 B_DONE (captain): closed on #404, and **no `tests/cli/` promotion — that is the
+  correct outcome, not a skipped step.** `verify --promote stack-string-invalid-cast` was actually
+  run this tick and refused, writing nothing: *"target.binary_source is 'dataset', not 'in-repo' --
+  CI has no dataset, so vendor the binary into the repo first"*. The witness is an arm64 Mach-O
+  (`_main`, `s_100003f1d`) with no in-repo twin, the same wall that stopped
+  void-callee-spurious-arg's promotion in wave 32. The permanent CI pin is therefore
+  `tests/stages/kuna-rodatastring.xml`, which shipped inside #404 and is green in `make test-stages`
+  at 615/615 (wave 55's battery); `make test-cli` stays at 27/27 by design.
+- round 2 wave 56 B_DONE (captain): `attempts` 0 -> 1. Wave 40 deliberately held it at 0 while the
+  salvage branch was in flight, to mark the resume as the SAME attempt rather than a second one.
+  That attempt has now ended `done` and merged, so the honest closed record is one attempt spent,
+  one succeeded.
