@@ -133,9 +133,11 @@ fn chained_chunk_is_not_an_entry_and_the_primary_decompiles_whole() {
     assert!(out.contains("0x16"), "expected the chunk's arithmetic in the body, got:\n{out}");
 }
 
-/// Gate off restores the pre-fix inventory and the pre-fix output exactly.
+/// Gate off restores the pre-fix inventory and the pre-fix truncation. What the
+/// truncated function then RENDERS as is `funcboundflow`'s business, not this
+/// option's, so only the entry and the cut are pinned here.
 #[test]
-fn gate_off_restores_the_bogus_entry_and_the_invalid_c() {
+fn gate_off_restores_the_bogus_entry_and_the_truncation() {
     let Some(prog) = boot("pe_chainedunwind_x86_64.exe", Some(false)) else { return };
     assert!(
         prog.lookup_symbol("sub_140001020").is_some(),
@@ -143,7 +145,7 @@ fn gate_off_restores_the_bogus_entry_and_the_invalid_c() {
     );
     let out = decompile_func(prog, "sub_140001000");
     assert!(out.contains("funcboundflow"), "gate off must still truncate, got:\n{out}");
-    assert!(out.contains("while ;"), "gate off must still emit the invalid C, got:\n{out}");
+    assert!(!out.contains("0x16"), "gate off must still lose the chunk, got:\n{out}");
 }
 
 /// The same defect where the truncated branch is a loop latch: the decompile of
