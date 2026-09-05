@@ -341,6 +341,11 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // corpus and reduced from the platform headers. Imported names only.
     "libcsigs",
     "strings",
+    // (kuna) The 2-byte (UTF-16LE) width of the string-literal pass -- Ghidra's
+    // `StringsAnalyzer.allCharWidths`, which kuna's 1-byte port left as a documented
+    // seam. Without it a wide literal is read as its own first character
+    // (`LoadLibraryW("n")`). Default-ON; off leaves the markup exactly 1-byte.
+    "widestrings",
     "entry_disc",
     // (kuna) Unmapped-CALL-target entry suppression: the Listing's recursive-descent
     // walk gates every INSTRUCTION address on the executable-range universe but took

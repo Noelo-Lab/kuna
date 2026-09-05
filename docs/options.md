@@ -216,6 +216,11 @@ Three tiers:
 | an exit or __stack_chk_fail call shows phantom arguments | [`libcsigs`](#libcsigs) |
 | string constants render as raw addresses or unnamed data instead of quoted char[N] literals | [`strings`](#strings) |
 | no data symbols at ascii runs in rodata | [`strings`](#strings) |
+| a wide Windows API argument renders as a one-character string literal | [`widestrings`](#widestrings) |
+| LoadLibraryW("n") or FindWindowW("O",0) in the emitted C | [`widestrings`](#widestrings) |
+| kuna strings --encoding utf16 reports a literal the decompiled C truncates to its first character | [`widestrings`](#widestrings) |
+| a UTF-16 string address carries no data symbol while the ascii ones do | [`widestrings`](#widestrings) |
+| an anti-debugging check names no DLL or window class | [`widestrings`](#widestrings) |
 | a stripped binary yields almost no functions (symbol stream only) | [`entry_disc`](#entry_disc) |
 | functions discovered via e_entry/init_array/.eh_frame/prologues missing from the list | [`entry_disc`](#entry_disc) |
 | c++ catch/cleanup landing pads missing from a stripped binary's function list | [`eh_frame_full`](#eh_frame_full) |
@@ -983,6 +988,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On (default) lays char[N] data at detected strings; off leaves those addresses undefined.
 - **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-strings
 - **Example:** `option strings off`
+
+### `widestrings` -- on | off, default `on`
+
+- **Symptoms:** a wide Windows API argument renders as a one-character string literal; LoadLibraryW("n") or FindWindowW("O",0) in the emitted C; kuna strings --encoding utf16 reports a literal the decompiled C truncates to its first character; a UTF-16 string address carries no data symbol while the ascii ones do; an anti-debugging check names no DLL or window class.
+- **What it does:** Scan the loaded image at 2-byte (UTF-16LE) width as well as 1-byte, and plant a typelocked wchar2[N] data symbol at each wide literal -- the allCharWidths arm of Ghidra's StringsAnalyzer that kuna's 1-byte port left as a documented seam. Read at 1-byte width a UTF-16LE literal is a ONE-CHARACTER string (`L"ntdll.dll"` is 6e 00 74 00 ..., whose first NUL closes the run after `n`), so nothing is marked up there, the constant keeps whatever char * the type lattice gave it, and the printer reads to the same NUL: every wide Windows-API argument rendered as its own first character -- LoadLibraryW("n"), FindWindowW("O",0). The widened matcher is the 1-byte MinLengthCharSequenceMatcher over 2-byte little-endian code units and nothing else: the same printable-ASCII recognizer over each unit's low byte, the same require-NUL-end rule, the same minimum length of 5, over exactly the address set the 1-byte pass scans, on even addresses only. The two widths cannot both claim a run -- a wide unit demands a zero high byte, so five consecutive 1-byte-charset bytes never occur inside a wide run -- and the 1-byte facts are committed first regardless, so the established width owns any address both could reach. With the symbol planted the existing printer path does the rest: the char type's size 2 is what emits the L prefix and reads the bytes two at a time.
+- **When to flip:** On by default. A wide (UTF-16) string argument renders as a one-character literal -- LoadLibraryW("n") where the binary says L"ntdll.dll", FindWindowW("O",0) where it says L"OllyDbg - [CPU]" -- which is most of what a Windows anti-debugging or anti-VM check contains. `kuna strings --encoding utf16` already reported those literals in full while the decompiled C did not, and the difference between the two surfaces is the tell. Flip OFF to restore markup that is exactly the 1-byte pass's -- e.g. on an image whose 16-bit data tables read as plausible wide text, or to ablate this width's contribution.
+- **Where / provenance:** P1/code-data-partition · ghidra-upstream · analysis-enablement · re-wide-api-string-args
+- **Example:** `option widestrings off`
 
 ### `entry_disc` -- on | off, default `on`
 
