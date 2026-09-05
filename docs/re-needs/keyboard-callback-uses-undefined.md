@@ -12,7 +12,7 @@ instances: 1
 challenges: [6989ca5da15272fa37a80c43]
 rounds: [2]
 first_seen_round: 2
-attempts: 0
+attempts: 1
 covered_by_option: null
 touches: [decompiler/crates/kuna-decomp]
 scope: large
@@ -121,3 +121,56 @@ _none recorded_
 - filed by cluster.py from 1 observation(s)
 - round 2 T_DEDUP (captain): SPLIT out of the 4-observation `wrong-output|decompile|stdout_absent` group; sibling of [direct-address-keyboard-handler] (shared root claim: 0x6500 undiscovered). Deliberately NOT merged into [argument-recovery-knobs-still]: this is callee-side INPUT recovery (live-in R8D/R9D never promoted to parameters), not caller-side argument recovery.
 - round 2 T_TRIAGE (captain): scope small -> LARGE. The values arrive in R9D/R8D of a callback only ever reached through a registration site, so recovering them means inferring a prototype from that registration -- a real feature. Note the cheaper path this need is evidence FOR: if the CLI could carry a prototype override (need no-cli-rename-or-prototype-override) an agent could state the signature itself and would not need the inference at all. That makes this a demand witness for the no-cli-* family, which is exactly the independent tester evidence those captain-seeded needs were missing.
+
+- round 2 B_PLAN wave 58 (captain): **DISPATCHED, attempt 1, with the briefing below.** Everything
+  in it was MEASURED this tick at `57ebfd2b` on `.kuna-repipe/probebin/8ea3c454dfcea5d5/lugosiii`,
+  not inherited from an earlier wave.
+- round 2 B_PLAN wave 58 (captain): briefing.
+  (a) THE DEFECT REPRODUCES EXACTLY AND IS SMALL NOW. `kuna decompile <bin> 0x6500 --addr` -> rc 0,
+  427 lines, opening `void sub_6500(long a0)` with `int v7; // r8d` and `int v8; // r9d` declared
+  and then READ before any definition (`if (v8 != 1 || !*(long *)(a0 + 0x68))`,
+  `xkb_state_key_get_one_sym(..., v7 + 8)`). The acceptance fails on exactly three clauses:
+  `stdout_matches[1]` (`sub_6500\([^)]*,[^)]*\)` = <no match>) and both `stdout_absent` clauses,
+  which match those two declarations. `exit_code eq 0` and `stdout_matches[0]` ALREADY pass, so
+  the probe cannot be closed by emitting nothing or by erroring out.
+  (b) #395 IS DONE WITH THIS FUNCTION; DO NOT RE-LITIGATE THE BOUNDARY. `tailcallframe` (DIV-109,
+  default on) shrank 0x6500 from 1,555 lines to the 427 above and closed the sibling need
+  `direct-address-keyboard-handler`. The BODY is now right; only the INTERFACE is wrong. Nothing
+  in this need asks for a boundary change.
+  (c) NO SHIPPED OPTION COVERS THIS -- measured, not assumed. Signature and declaration block are
+  unchanged under every flippable parameter-recovery option: `calloverlap full`,
+  `spillargtrial spill`, `spillargtrial reload`, `evalcurrentproto off`, `calleedeadarg off`.
+  The other param-adjacent options (`inputvarnodeadjust`, `callsitestackargs`, `varargstackargs`,
+  `calleearity`, `calleearityfwd`) are call-site-scoped and this function HAS no call site in the
+  binary: it is a Wayland `wl_keyboard_listener` entry reached only through a function-pointer
+  table, so its prototype can come only from its own body.
+  (d) GROUND TRUTH FOR "RIGHT", so you are not scored by the regex alone. The witness is the
+  Wayland keyboard `key` callback:
+  `void (*key)(void *data, struct wl_keyboard *, uint32_t serial, uint32_t time, uint32_t key, uint32_t state)`
+  -- SysV rdi=data, rsi=wl_keyboard, rdx=serial, rcx=time, r8d=key, r9d=state. The body corroborates
+  it: `v8 != 1` is the `state == WL_KEYBOARD_KEY_STATE_PRESSED` test and `v7 + 8` is the evdev->X
+  keycode bias handed to `xkb_state_key_get_one_sym`. So `v7` is arg 5 and `v8` is arg 6, and
+  rsi/rdx/rcx are dead. Recovery therefore has to survive a GAP; a fix that only extends a
+  contiguous prefix never reaches r8/r9.
+  (e) EVIDENCE THAT BEARS ON THE FILED HYPOTHESIS (which is advisory and unrefuted --
+  `hypothesis_status` stays `inconclusive`, that field is a refuter's). #395 left an in-repo
+  Wayland-shaped fixture, `decompiler/crates/kuna-analysis/tests/fixtures/tailcallframe_x86_64`,
+  whose `on_key` at 0x11b0 is ALSO reachable only through a listener[] pointer table. kuna emits
+  `void sub_11b0(int *a0,int a1)` there -- i.e. live-in registers from a pointer-table-only
+  callback with no prototype evidence ARE promoted when they are CONTIGUOUS (rdi, rsi). The filed
+  hypothesis ("no prototype evidence, so live-in R8D/R9D are not promoted") does not explain that
+  contrast; the discriminating variable in the witness is the rsi/rdx/rcx gap. Confirm or overturn
+  this yourself -- if you overturn it, say so explicitly in the PR, exactly as #395's builder did.
+  (f) IN-REPO COVER. `binary_source: dataset` means `verify --promote` will REFUSE this acceptance
+  (the #377/#392/#404 wall: CI has no dataset). #395 solved the identical problem by SYNTHESIZING
+  the fixture in (e) and vendoring `tests/cli/direct-address-keyboard-handler.json` against it --
+  that is the precedent to copy. The fixture above does NOT reproduce this symptom (its params are
+  contiguous), so you need a new one with the gap shape, plus/or a `tests/stages/` two-pass XML.
+  (g) BLAST RADIUS. Promoting live-in registers into prototypes changes signatures and call-site
+  argument counts corpus-wide. `make test` (675/675) and `make test-stages` are the guard; a
+  default-ON flip needs 0/675 changed assertions and a DIV row, otherwise ship it default-OFF.
+  (h) `scope: large`. If the honest mechanism is a multi-step engine change, take the `[PROPOSAL]`
+  fork rather than half-porting it -- the captain reviews parked proposals and re-dispatches an
+  implementation worker on the same branch. Branch `feat/re-keyboard-callback-uses-undefined` does
+  not exist and no worktree `b-r2-keyboard-callbac` exists, so worker.sh's silent detached-worktree
+  fallback is NOT armed for this dispatch.

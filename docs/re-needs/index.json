@@ -181,38 +181,6 @@
       "path": "docs/re-needs/overlapping-anti-disassembly-sequence.md"
     },
     {
-      "need_id": "keyboard-callback-uses-undefined",
-      "title": "Keyboard callback uses undefined locals as incoming event arguments",
-      "track": "quality",
-      "status": "open",
-      "severity": "major",
-      "probe_id": "p-2fa68bfb8456",
-      "acceptance_id": "a-d6b2084f35d5",
-      "hypothesis_status": "inconclusive",
-      "credibility": 0.7,
-      "instances": 1,
-      "challenges": [
-        "6989ca5da15272fa37a80c43"
-      ],
-      "rounds": [
-        2
-      ],
-      "first_seen_round": 2,
-      "attempts": 0,
-      "covered_by_option": null,
-      "touches": [
-        "decompiler/crates/kuna-decomp"
-      ],
-      "scope": "large",
-      "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
-      "reject_reason": null,
-      "score": 13.862944,
-      "path": "docs/re-needs/keyboard-callback-uses-undefined.md"
-    },
-    {
       "need_id": "large-function-malformed-output",
       "title": "a large checker decompiles into malformed and prohibitively noisy C",
       "track": "quality",
@@ -534,6 +502,38 @@
       "reject_reason": null,
       "score": 9.241962,
       "path": "docs/re-needs/direct-address-keyboard-handler.md"
+    },
+    {
+      "need_id": "keyboard-callback-uses-undefined",
+      "title": "Keyboard callback uses undefined locals as incoming event arguments",
+      "track": "quality",
+      "status": "open",
+      "severity": "major",
+      "probe_id": "p-2fa68bfb8456",
+      "acceptance_id": "a-d6b2084f35d5",
+      "hypothesis_status": "inconclusive",
+      "credibility": 0.7,
+      "instances": 1,
+      "challenges": [
+        "6989ca5da15272fa37a80c43"
+      ],
+      "rounds": [
+        2
+      ],
+      "first_seen_round": 2,
+      "attempts": 1,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-decomp"
+      ],
+      "scope": "large",
+      "regression_of": null,
+      "pr": null,
+      "closed_in_round": null,
+      "closing_pr": null,
+      "reject_reason": null,
+      "score": 9.241962,
+      "path": "docs/re-needs/keyboard-callback-uses-undefined.md"
     },
     {
       "need_id": "mach-o-entry-function",
