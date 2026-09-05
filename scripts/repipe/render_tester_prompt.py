@@ -44,6 +44,16 @@ def _time_budget_minutes(meta):
 
 
 def _recently_shipped(rounds_back=1):
+    """Two lists, because a closed need is one of two very different things to a tester.
+
+    A need whose builder recorded a `Shipped:` line closed by ADDING something -- a flag, a
+    subcommand, an option -- and the tester should go exercise it. A need without one closed by
+    fixing a defect, and all we hold is its TITLE, which states the problem. Rendering
+    "Analysis-generated function name cannot be used by decompile" under a heading that says
+    "newly available capabilities" tells the tester the exact opposite of the truth, and only 9
+    of 32 closed needs carry the line -- so the fallback is the common case, not the rare one.
+    Splitting them makes the defect titles read correctly instead of pretending to be features.
+    """
     try:
         from . import needs as needs_mod
     except Exception:
@@ -54,19 +64,32 @@ def _recently_shipped(rounds_back=1):
         return ""
     if not closed:
         return ""
-    lines = ["## Newly available capabilities — exercise them",
-             "",
-             "These gaps were closed since the last round. Try them, and if one does not",
-             "behave as described that is a **regression**: file it with",
-             "`regression_of: <need_id>`, the highest-priority class we accept.",
-             ""]
-    for n in closed[:8]:
-        # Render the CAPABILITY, not the defect title. A closed need's title states the
-        # problem ("kuna cannot list strings"); printing that under a heading that says
-        # "newly available" tells the tester the opposite of the truth. The builder
-        # records what shipped as a "Shipped:" line in the Acceptance section.
-        lines.append("- %s" % (_shipped_line(n) or ("`%s` (closed need `%s`)"
-                                                    % (n.fields.get("title", n.need_id), n.need_id))))
+
+    shipped, fixed = [], []
+    for n in closed:
+        line = _shipped_line(n)
+        (shipped if line else fixed).append((n, line))
+
+    lines = []
+    if shipped:
+        lines += ["## Newly available capabilities — exercise them",
+                  "",
+                  "These are things kuna could not do last round. Try them. If one does not behave",
+                  "as described that is a **regression**: file it with `regression_of: <need_id>`,",
+                  "the highest-priority class we accept.",
+                  ""]
+        lines += ["- %s" % line for _, line in shipped[:8]]
+        lines.append("")
+    if fixed:
+        lines += ["## Recently fixed — these should no longer happen",
+                  "",
+                  "Each line is a defect that was CLOSED since the last round, stated as the problem",
+                  "it used to be. You are not being asked to use a new feature here; you are being",
+                  "asked to notice if one of these comes back. If you see one, that is a",
+                  "**regression**: file it with `regression_of: <need_id>`.",
+                  ""]
+        lines += ["- %s _(was `%s`)_" % (n.fields.get("title", n.need_id), n.need_id)
+                  for n, _ in fixed[:10]]
     return "\n".join(lines)
 
 
