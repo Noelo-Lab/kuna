@@ -24,7 +24,7 @@ use kuna_console::engine::bootstrap_from_object;
 
 /// `__do_global_ctors_aux` — its loop body is one `CALL RAX` (`ff d0`).
 const COMPUTED_CALL: u64 = 0x400880;
-/// `main` — five call sites, every one of them a direct `CALL <vma>`.
+/// `main` — nine call sites onto five callees, every one a direct `CALL <vma>`.
 const DIRECT_CALLS_ONLY: u64 = 0x40071d;
 /// The `puts` PLT stub — `JMP qword ptr [0x601000]`, a `BRANCHIND`.
 const FORWARDING_VENEER: u64 = 0x400510;
@@ -80,7 +80,7 @@ fn direct_calls_alone_are_not_reported() {
     let Some(idx) = index() else { return };
     assert!(
         !idx.has_indirect_calls(DIRECT_CALLS_ONLY),
-        "main has five direct call sites and no computed one"
+        "main's nine call sites are all direct"
     );
     assert!(
         idx.refs_from_function(DIRECT_CALLS_ONLY)
