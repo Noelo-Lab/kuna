@@ -143,6 +143,10 @@ fn a_pe_import_slot_gets_a_label_not_a_body() {
     let rows = rows(&stdout, "functions");
     let imports: Vec<&String> =
         rows.iter().filter(|r| field(r, "kind").as_deref() == Some("import")).collect();
+    assert!(
+        !rows.iter().any(|r| field(r, "kind").as_deref() == Some("data")),
+        "every bodyless row in this fixture is a named import, not a data symbol"
+    );
     assert!(!imports.is_empty(), "the fixture's import slots vanished from the inventory");
     for row in &imports {
         assert_eq!(field(row, "codeC").as_deref(), Some("null"), "invented a body:\n{row}");

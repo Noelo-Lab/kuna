@@ -260,14 +260,19 @@ fn function_json(
     ])
 }
 
-/// What the row is, in this document's four-value vocabulary:
+/// What the row is, in this document's five-value vocabulary. The first two are
+/// the rows with no body: the whole-binary target policy never decompiles an
+/// address that is not executable content, and each of those is named rather
+/// than lifted out of whatever bytes happen to be there.
 ///
 /// * `external` — a loader-defined undefined symbol: the definition is in
 ///   another module and there are no bytes here at all.
-/// * `import` — an entry the whole-binary target policy never decompiles,
-///   because its address is not executable content (a PE import pointer slot,
-///   a data-section symbol). It carries a callable name so a call to it renders,
-///   but it has no body.
+/// * `import` — a pointer slot the program calls through: a PE `.idata` entry,
+///   a Mach-O `__got` / stub slot. It carries the imported name so a call to it
+///   renders.
+/// * `data` — any other named address that is not code: a Mach header symbol,
+///   an Objective-C class object. It reached the callable inventory as a symbol,
+///   not as a function.
 /// * `thunk` — a body that only forwards: a PLT/stub-section entry, an imported
 ///   name, or a lone jump ([`Classifier`]).
 /// * `normal` — a body of its own.
@@ -282,12 +287,12 @@ fn function_kind(
     {
         return "external";
     }
-    if !executable {
-        return "import";
-    }
-    match classifier.kind(prog, &entry.name, entry.addr.get_offset()) {
-        "plt" | "thunk" => "thunk",
-        _ => "normal",
+    let shape = classifier.kind(prog, &entry.name, entry.addr.get_offset());
+    match (executable, shape) {
+        (false, "plt") => "import",
+        (false, _) => "data",
+        (true, "plt" | "thunk") => "thunk",
+        (true, _) => "normal",
     }
 }
 

@@ -974,7 +974,8 @@ Which entries exist and which of them have bodies is the whole-binary target
 policy of §0.2 (`function_entries_canonical` for the rows,
 `decompiler/crates/kuna-cli/src/decompile_all.rs (resolve_targets)` — i.e.
 `function_entries_executable` — for the bodies), so an address that is callable
-but not executable content, a PE import pointer slot above all, is a labelled row
+but not executable content is a labelled row — `import` for a pointer slot the
+program calls through, `data` for a named address that is simply not code —
 rather than a body lifted out of a pointer table. What a function *is* comes from
 the shared per-function classifier
 (`decompiler/crates/kuna-console/src/classify.rs`), the same one the browser
