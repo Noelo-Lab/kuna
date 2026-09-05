@@ -25,13 +25,18 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use kuna_base::address::Address;
-use kuna_base::error::KunaResult;
+use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::space::AddrSpaceManager;
+use kuna_base::types::int4;
 use kuna_num::pcoderaw::VarnodeData;
 use kuna_sleigh::globalcontext::ContextDatabase;
 use kuna_sleigh::loadimage::LoadImage;
 use kuna_sleigh::sleigh::Sleigh;
-use kuna_sleigh::translate::Translate;
+use kuna_sleigh::translate::{PcodeEmit, Translate};
+
+use crate::pcodeinject::{
+    InjectContext, CALLFIXUP_TYPE, CALLMECHANISM_TYPE, CALLOTHERFIXUP_TYPE,
+};
 
 /// The seam between [`Architecture`](crate::architecture::Architecture) and
 /// its disassembly engine (see the module docs).
@@ -89,6 +94,37 @@ pub trait EngineTranslate: Translate {
     /// [`Architecture::with_context_db_mut`](crate::architecture::Architecture::with_context_db_mut)
     /// keeps the generic, value-returning wrapper over it.
     fn with_context_db_dyn(&self, f: &mut dyn FnMut(&mut dyn ContextDatabase));
+
+    /// Emit the p-code of a named injection payload fetched from the engine's
+    /// back end (C++ `InjectPayloadGhidra::inject` ->
+    /// `ArchitectureGhidra::getPcodeInject`).
+    ///
+    /// Reached only when the injection library holds no locally compiled
+    /// template for the payload, which on a translator with no local `.sla`
+    /// is always.  What comes back is p-code already lifted against
+    /// `context` and bound to that one call site — never a reusable template,
+    /// so it must be emitted straight through and not cached.
+    ///
+    /// The default errs: the standalone `Sleigh` compiles every registered
+    /// payload at bootstrap, so a missing template there is a real failure.
+    fn fetch_inject_pcode(
+        &self,
+        name: &[u8],
+        ptype: int4,
+        _context: &InjectContext,
+        _emit: &mut dyn PcodeEmit,
+    ) -> KunaResult<()> {
+        let kind = match ptype {
+            CALLFIXUP_TYPE => "call-fixup",
+            CALLOTHERFIXUP_TYPE => "callother-fixup",
+            CALLMECHANISM_TYPE => "call-mechanism",
+            _ => "executable-pcode",
+        };
+        Err(KunaError::lowlevel(format!(
+            "{kind} template not compiled and no back-end fetch: {}",
+            String::from_utf8_lossy(name)
+        )))
+    }
 
     /// Downcast to the concrete standalone [`Sleigh`] engine when this
     /// translator is one (default `None`; the `Sleigh` impl returns `Some`).

@@ -39,12 +39,14 @@ use std::rc::Rc;
 use kuna_base::address::Address;
 use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::marshal::{
-    Decoder, IdRegistry, PackedDecode, XmlDecode, ATTRIB_BIGENDIAN, ATTRIB_OFFSET,
+    Decoder, Encoder, IdRegistry, PackedDecode, XmlDecode, ATTRIB_BIGENDIAN, ATTRIB_OFFSET,
+    ELEM_INPUT, ELEM_OUTPUT,
 };
 use kuna_base::space::{
     spacetype, AddrSpace, AddrSpaceManager, ConstantSpace, RegisterLookup, VarnodeStorage,
     ATTRIB_DEFAULTSPACE,
 };
+use kuna_base::types::int4;
 use kuna_base::xml::{xml_tree, DocumentStorage};
 use kuna_num::pcoderaw::VarnodeData;
 use kuna_sleigh::globalcontext::{ContextDatabase, ContextInternal};
@@ -55,7 +57,11 @@ use kuna_sleigh::translate::{
 };
 
 use kuna_decomp::engine_translate::EngineTranslate;
+use kuna_decomp::pcodeinject::{
+    InjectContext, CALLFIXUP_TYPE, CALLMECHANISM_TYPE, CALLOTHERFIXUP_TYPE, ELEM_CONTEXT,
+};
 
+use crate::client::InjectType;
 use crate::ids::{register_ghidra_ids, ELEM_UNIMPL};
 use crate::protocol::WireError;
 use crate::provider::{wire_to_kuna, GhidraLoadImage, SharedClient};
@@ -620,6 +626,72 @@ impl<R: Read, W: Write> EngineTranslate for GhidraTranslate<R, W> {
         let mut db = self.context.borrow_mut();
         f(&mut *db);
     }
+    /// C++ `InjectPayloadGhidra::inject` (inject_ghidra.cc:49-69): with no
+    /// local `.sla` there is no compiled snippet, so the host is asked to
+    /// lift the payload against this call site and the answer is streamed
+    /// straight into `emit`.  The response is bound to `context` — the ops
+    /// carry this site's address and this site's storage — so it is never
+    /// reusable and never cached.
+    fn fetch_inject_pcode(
+        &self,
+        name: &[u8],
+        ptype: int4,
+        context: &InjectContext,
+        emit: &mut dyn PcodeEmit,
+    ) -> KunaResult<()> {
+        let itype = match ptype {
+            CALLFIXUP_TYPE => InjectType::CallFixup,
+            CALLOTHERFIXUP_TYPE => InjectType::CallOtherFixup,
+            CALLMECHANISM_TYPE => InjectType::CallMechanism,
+            _ => InjectType::ExecutablePcode,
+        };
+        let nm = String::from_utf8_lossy(name).into_owned();
+        // The decoder's space indices come from the tspec manager, as in
+        // `one_instruction`; the borrow is a statement temporary so the client
+        // is free again before `emit` is touched (the query re-entry rule).
+        let mut decoder = PackedDecode::new(&self.manager);
+        let answered = match self.client.borrow_mut().get_pcode_inject(
+            &nm,
+            itype,
+            |e| encode_inject_context(context, e),
+            &mut decoder,
+        ) {
+            Ok(a) => a,
+            // C++ catch(JavaError&): the host's message becomes a LOW-LEVEL
+            // error, so the command still answers with an incomplete function
+            // instead of passing a Java exception back and aborting it.
+            Err(WireError::Kuna(KunaError::Java { explain, .. })) => {
+                return Err(KunaError::lowlevel(format!("Injection error: {explain}")))
+            }
+            // C++ catch(DecoderError&).
+            Err(WireError::Kuna(KunaError::Decoder { explain })) => {
+                return Err(KunaError::lowlevel(format!(
+                    "Error decoding injection: {explain}"
+                )))
+            }
+            Err(other) => return Err(wire_to_kuna(other)),
+        };
+        if !answered {
+            return Err(KunaError::lowlevel(format!(
+                "Could not retrieve injection: {nm}"
+            )));
+        }
+        let elem = decoder.open_element()?;
+        // Ghidra answers a lone UNIMPLEMENTED op with `<unimpl>` instead of
+        // `<inst>` (DecompileCallback.encodeInstruction); upstream walks into
+        // `Address::decode` there and faults.
+        if elem == ELEM_UNIMPL.get_id() {
+            return Err(KunaError::lowlevel(format!(
+                "Unimplemented p-code injection: {nm}"
+            )));
+        }
+        let addr = Address::decode(&mut decoder)?;
+        while decoder.peek_element()? != 0 {
+            emit.decode_op(&addr, &mut decoder)?;
+        }
+        decoder.close_element(elem)?;
+        Ok(())
+    }
     // as_sleigh / as_sleigh_mut: take the trait defaults (None) — this is not
     // the standalone Sleigh engine.
 }
@@ -957,4 +1029,34 @@ mod tests {
         tr.get_user_op_names(&mut names);
         assert_eq!(names, vec!["COUNTLEADINGZEROS", "COUNTLEADINGONES"]);
     }
+}
+
+/// C++ `InjectContextGhidra::encode` (inject_ghidra.cc:20-47): the `<context>`
+/// the host decodes before lifting the snippet — baseaddr, calladdr, then the
+/// sized operand lists, each omitted when empty.  `nextaddr` is never sent;
+/// the host recomputes it from the instruction's fall-through.
+fn encode_inject_context(context: &InjectContext, encoder: &mut dyn Encoder) -> KunaResult<()> {
+    let null = Address::default();
+    encoder.open_element(&ELEM_CONTEXT);
+    context.baseaddr.as_ref().unwrap_or(&null).encode(encoder)?;
+    context.calladdr.as_ref().unwrap_or(&null).encode(encoder)?;
+    for (elem, list) in [
+        (&ELEM_INPUT, &context.inputlist),
+        (&ELEM_OUTPUT, &context.output),
+    ] {
+        if list.is_empty() {
+            continue;
+        }
+        encoder.open_element(elem);
+        for vn in list.iter() {
+            let addr = match &vn.space {
+                Some(spc) => Address::new(Rc::clone(spc), vn.offset),
+                None => Address::default(),
+            };
+            addr.encode_sized(encoder, vn.size as i32)?;
+        }
+        encoder.close_element(elem);
+    }
+    encoder.close_element(&ELEM_CONTEXT);
+    Ok(())
 }

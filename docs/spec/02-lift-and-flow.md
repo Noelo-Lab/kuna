@@ -203,7 +203,11 @@ recovered switch table.
   compiler/processor specs; their SLEIGH source bodies are compiled to p-code
   templates by `decompiler/crates/kuna-decomp/src/p2_lift/inject_sleigh.rs
   (parse_inject)` and emitted at a concrete address through
-  `inject_sleigh.rs (SleighInjectEngine)`.
+  `inject_sleigh.rs (SleighInjectEngine)`. Local compilation needs a loaded
+  language, so in ghidra mode — no `.sla` — the payloads are registered but
+  never compiled, and each injection instead asks the host to lift the snippet
+  for that one call site (chapter 00). The metadata half is unchanged either
+  way; only the ops change source.
 - **User ops.** `decompiler/crates/kuna-decomp/src/p2_lift/userop.rs
   (UserOpManage)` manages the CALLOTHER black-box ops (unspecialized, datatype,
   volatile, segment, jump-assist, injected). A CALLOTHER whose user op is
