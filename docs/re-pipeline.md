@@ -647,6 +647,45 @@ message names. If the refusal rate rises far enough to starve a round, the optio
 raise it with the provider or to run the tester on a model licensed for this work; neither is
 something the loop should route around on its own.
 
+## Working in `docs/re-needs/` while the loop is running
+
+The loop writes need records as UNTRACKED files and only commits them at `INTEGRATE`, so
+there is a long window where a round's entire evidence base exists solely in the working
+tree. Two things follow, and I hit both in one session — the second within minutes of writing
+down the first.
+
+**1. Never `git add docs/re-needs/` (or any directory the loop writes).** It stages whatever
+the loop has in flight. Name the files you actually changed:
+
+```sh
+for f in a b c; do git add "docs/re-needs/$f.md"; done   # not: git add docs/re-needs/
+```
+
+Staging 17 of the loop's untracked round-3 records onto a side branch made them tracked
+*there* and not on `main`.
+
+**2. That is only half of it. Once a file exists only on a branch, every `git checkout main`
+DELETES it from the working tree** — correct git behaviour, silent, and it happens on a later
+unrelated command rather than at the moment of the mistake. The loop reads the working tree,
+so a running round loses those needs immediately. Fixing the commit does not fix the tree.
+
+After any branch switch in this repo while the loop is live:
+
+```sh
+git checkout <branch> -- docs/re-needs/          # put them back, then verify
+ls docs/re-needs/*.md | wc -l
+python3 -m scripts.repipe.needs reindex
+```
+
+The damage is recoverable — an orphaned commit still holds the files, findable with
+`git log --oneline --all --reflog` — but it is invisible until a count comes back wrong. In
+this case 14 records vanished and the symptom was a round-3 need count reading 2 instead of
+16, noticed only because the number was checked for an unrelated reason.
+
+`docs/re-pipeline.md` has the same hazard in a milder form: the loop and an operator both
+append sections, so a PR left open across a round comes back conflicting. Two PRs were closed
+unmerged that way and their content had to be re-applied by hand.
+
 ## Machinery reference
 
 | Piece | What |
