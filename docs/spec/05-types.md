@@ -585,6 +585,41 @@ terminator from being claimed as a memset (the Stack-string ablation in
 DIV-2). Rewrite: one `builtin_memset(dest, value, count)` CALLOTHER; teardown
 shares the string path's COPY removal. Off restores the per-element stores.
 
+**(kuna) Read-only string block copy —**
+[`rodatastring`](../options.md)**, default on** (DIV-113).
+`decompiler/crates/kuna-decomp/src/p5_types/kuna_rodatastring.rs
+(RuleRodataStringCopy)` covers the third shape of the same idiom: the whole
+literal already exists in read-only memory, so the compiler emits a BLOCK copy
+— one or more wide loads out of `.rodata`/`__cstring` re-stored into the frame
+— instead of per-character constants. Those loads survive heritage as free
+read-only memory varnodes rather than p-code constants, so `RuleStringCopy`
+declines at its constant-input guard and the run reaches the printer as
+partial-symbol slice assignments: `v1[0] = (char[8])s_100003f1d._0_8_;` and
+`v8._0_9_ = s_100003f1d._16_9_;` — neither of which is legal C (there is no
+array cast, and `._0_9_` is member syntax applied to an array object), and
+which hide a string the engine has already recovered at that address.
+
+The rule claims a run only when every step is a fact rather than an inference:
+each COPY's source is `Varnode::isReadOnly` free memory (so the image bytes
+*are* the run-time bytes); all the sources lie inside one covering data symbol
+whose type is a char-printable array — the symbol the string-literal analysis
+planted; source and destination advance in lockstep, so the run is a straight
+block copy and not a shuffle; the COPYs tile the destination **exactly**, no
+gap and no overlap, across the symbol's whole length, so nothing is invented
+and nothing is dropped; the image bytes really are one NUL-terminated string of
+exactly that length; and the members share a basic block with no interfering
+LOAD/STORE/CALL between them (the same `ArraySequence::interfereBetween` window
+the string driver demands). A run of a single COPY is deliberately left alone —
+the defect being repaired is the *split* copy, and a whole-string single COPY
+already renders as one assignment. Rewrite: one
+`builtin_strncpy(dest, "…", n)` CALLOTHER built by `constseq.rs
+(StringSequence)` `from_rodata_run`/`transform_rodata`, reusing the string
+path's `constructTypedPointer` and COPY teardown unchanged. Off restores the
+slice assignments. Failure mode: any guard miss declines silently and the
+output is byte-identical to `off` — the destination stack slices the run wrote
+survive as unread declarations, because the local variable map still sees the
+frame carved by the original wide stores.
+
 **Bitfields** (`decompiler/crates/kuna-decomp/src/p5_types/bitfield.rs`).
 Pattern: a struct with sub-byte fields is accessed through shift/mask soup on
 a byte container. The six `cleanup` rules fire only when the container's type

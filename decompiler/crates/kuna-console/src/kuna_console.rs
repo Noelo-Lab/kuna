@@ -183,6 +183,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "flagcompare" => on_off(conf.fold_flag_compare),
         "addcarrychain" => on_off(conf.add_carry_chain),
         "memsetrecover" => on_off(conf.memset_recover),
+        "rodatastring" => on_off(conf.rodata_string),
         "returnpair" => {
             if conf.return_single {
                 "single"

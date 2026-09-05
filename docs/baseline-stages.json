@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    613,
-    613
+    615,
+    615
   ],
   "passing": [
     "data:ARRAYSUBFIELD #1: an 8-byte read at offset 0 of char[16] is a sized sub-field, not element 0",
@@ -558,6 +558,8 @@
     "data:returncopysplit #4: the real copy site still reads the literal's high half per byte",
     "data:returncopysplit #5: the rule-off pass pins the unsplit whole-half rendering",
     "data:returncopysplit #6: every reference to the literal in the transcript is a read (16 in pass 1, 2 in pass 2)",
+    "data:rodatastring #1: default pipeline recovers the read-only block copy as one builtin_strncpy",
+    "data:rodatastring #2: rodatastring off restores the invalid array-typed cast (the filed bug)",
     "data:snipreads-indirect #1: the out-parameter copy directly follows the call statement in both passes",
     "data:snipreads-indirect #2: no slot copy immediately precedes the call text (the hoisted shape is gone)",
     "data:snipreads-indirect #3: freecon consumes the copied post-call value in both passes",

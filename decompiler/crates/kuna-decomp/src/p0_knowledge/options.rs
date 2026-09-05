@@ -273,6 +273,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "dynamichashmax",
     "stackprobeloop",
     "memsetrecover",
+    "rodatastring",
     "switchmodbound",
     "switchguardbound",
     "switchsharedcase",

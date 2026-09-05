@@ -1,0 +1,76 @@
+{
+  "slug": "stack-string-invalid-cast",
+  "need_id": "stack-string-invalid-cast",
+  "track": "quality",
+  "scope": "small",
+  "option": "rodatastring",
+  "div": "DIV-113",
+  "phase": "P5",
+  "subphase": "constsequence",
+  "module": "decompiler/crates/kuna-decomp/src/p5_types/kuna_rodatastring.rs",
+  "default": "on",
+  "probe_id": "p-1d6eb3f72061",
+  "acceptance_id": "a-d7fec4000cb6",
+  "acceptance_passes": true,
+  "touches": [
+    "decompiler/crates/kuna-decomp"
+  ],
+  "hypothesis_status": "symptom_stands_mechanism_overturned",
+  "decisions": [
+    "The filed hypothesis -- 'piecewise constant-to-stack stores were typed as array-valued casts' -- is right about the SYMPTOM and wrong about the MECHANISM. The stores are not piecewise constants. RuleStringCopy gathers a stack string only from COPYs whose inputs are p-code CONSTANTS (the -O0 character-at-a-time form). Here the compiler already had the literal in __cstring and emitted a BLOCK copy: wide loads out of read-only memory re-stored into the frame. Those survive heritage as free read-only memory varnodes, never constants, so the constant-input guard declines and the run reaches the printer as partial-symbol slices.",
+    "Checked for existing coverage first: `memsetrecover` is the nearest catalog neighbour (same S5 constsequence sub-phase) but recovers constant-FILL runs into builtin_memset, and no catalog option's use_when/symptoms matches a rodata-sourced block copy. Re-running the probe under the existing options does not close it, so this is a new feature, not a default flip.",
+    "A single-COPY run is deliberately NOT claimed: the filed defect is the SPLIT copy, and a whole-string single COPY already renders as one assignment. Claiming it would be churn with no reader benefit and more exposure.",
+    "The destination DECLARATIONS are left alone on purpose. Where the frame carving split the buffer, the slices the run used to write survive as unread declarations (`char v5;`, `char v6[7]`, `char v8[24]` beside `v1` in the witness). That is the local variable map still seeing the frame the original wide stores carved -- a P6 concern, identical with the option off, and out of scope for a one-module change.",
+    "rust-test's verify_w10_proto_unlock::w10_proto_unlock_const_return_collapses_no_tied_roundtrip failure in this worktree is an ENVIRONMENT artifact, not a regression: cpp_oracle_bin() reads KUNA_DECOMP_TEST, which the repipe worker sets to kuna's own release decomp_test_dbg, so the 'C++ oracle' arm compares kuna against itself and kuna's DIV-6 realtypes rendering (`unsigned int`) trips the fixture's `xunknown4` assert. Green with the var unset."
+  ],
+  "counters_bumped": [
+    "kuna-base/src/xml.rs corpus file count 234 -> 235",
+    "kuna_phases/tests.rs settable_count 144 -> 145",
+    "kuna_phases/tests.rs tier_counts transform 58 -> 59",
+    "kuna_phases/tests.rs emit_catalog_json brace count 143 -> 144",
+    "kuna_phases/tests.rs surface_count 107 -> 108",
+    "kuna_phases/tests.rs option_values live_value present 46 -> 47",
+    "tests/catalog_bytecompat.rs fixture settables 144 -> 145",
+    "tests/fixtures/phase_catalog.json (+1 row)",
+    "tests/fixtures/list_action_decompile_oracle.txt (+rodatastringcopy leaf, renumbered)",
+    "tests/verify_w8_fw_universalaction.rs nonblank leaves 275 -> 276",
+    "docs/baseline-stages.json footer 613 -> 615"
+  ],
+  "sweep": {
+    "method": "kuna decompile-all --json, both arms, over every binary in the RE dataset; per-function C text compared verbatim",
+    "binaries": 135,
+    "binaries_skipped": 12,
+    "skip_reason": "pre-existing whole-binary load failure, identical in both arms",
+    "functions": 62131,
+    "changed_binaries": 4,
+    "changed_functions": 4,
+    "changed_pct": 0.0064,
+    "classification": "4 of 4 are the intended recovery; byte count equals the tiled width and the quoted text is the image content in every one. No statement moved or lost beyond the slices the CALLOTHER replaces, no call site changed. The only declaration lines anywhere in the diff are a variable renumbering in crackme1.exe.",
+    "cases": [
+      "crackme0x00::_main -- 8+4+1 slices -> builtin_strncpy(v2,\"NoxIsTheBest\",0xd)",
+      "cursed::sub_4311c0 -- 7+7+1 slices -> builtin_strncpy(v11,\"/usr/lib/gconv\",0xf)",
+      "practice_2_rengr::_main (the witness) -- 8+1+7+9 slices -> builtin_strncpy(v1,\"Hello, Reverse Engineer!\",0x19)",
+      "crackme1.exe::sub_1400012f0 -- 8+8+4 slices -> builtin_strncpy(v2,\"rCC_ZPRGZ] UZ]Z@[VW\",0x14)"
+    ]
+  },
+  "speed_option": "rodatastring",
+  "speed_binary": "practice_2_rengr",
+  "speed_selector": "_main",
+  "speed_off_ms": 140.49,
+  "speed_on_ms": 110.47,
+  "speed_delta_pct": -21.37,
+  "speed_samples": 9,
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": true,
+  "speed_note": "No measurable cost. The sign is favourable and the magnitude is inside this machine's known single-target noise floor -- docs/features/returncopysplit/record.json measured -20.23% and -12.18% on byte-identical output -- so this is read as 'no cost', not as a speedup.",
+  "gates": {
+    "make test": "PARITY OK 675/675",
+    "make test-stages": "PARITY OK 615/615",
+    "make rust-test": "green (KUNA_DECOMP_TEST unset; see decisions)",
+    "make check-spec": "OK",
+    "make test-cli": "27/27",
+    "kuna catalog --check": "catalog OK"
+  },
+  "promotion": "Not promoted to tests/cli, by design. `verify --promote` refuses it twice over: the need's status is still 'open' (the captain flips it at B_DONE), and the acceptance target is binary_source=dataset while CI has no dataset. `make test-cli` correctly stays at 27/27. The permanent CI pin is the two-pass tests/stages/kuna-rodatastring.xml, already on this branch.",
+  "reproduction_arm_still_pins_bug": "option rodatastring off reproduces `v1[0] = (char[8])s_100003f1d._0_8_;` verbatim and emits no builtin_strncpy; neither probe was weakened."
+}
