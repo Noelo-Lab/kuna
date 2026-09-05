@@ -18,11 +18,17 @@ use kuna_base::marshal::{
 };
 use kuna_base::space::VarnodeStorage;
 
+use kuna_num::opcodes::OpCode;
+use kuna_num::pcoderaw::VarnodeData;
+use kuna_sleigh::translate::PcodeEmit;
+
+use kuna_decomp::engine_translate::EngineTranslate;
+use kuna_decomp::pcodeinject::{InjectContext, CALLOTHERFIXUP_TYPE};
 use kuna_ghidra::client::GhidraClient;
 use kuna_ghidra::ids::{ELEM_COMMAND_GETREGISTER, ELEM_COMMAND_GETUSEROPNAME};
 use kuna_ghidra::process::GhidraProcess;
 use kuna_ghidra::protocol::{nibble_expand, string_data_size_header, WireError};
-use kuna_ghidra::translate::{build_registry, TspecModel};
+use kuna_ghidra::translate::{build_registry, GhidraTranslate, TspecModel};
 
 // ---------------------------------------------------------------------------
 // MockJava wire builder
@@ -526,4 +532,139 @@ fn test_get_register_name_query_shape() {
     let response = Wire::new().burst(8).string(b"RBP").burst(9);
     let mut client = GhidraClient::new(Cursor::new(response.0), Vec::new());
     assert_eq!(client.get_register_name(&vn).unwrap(), b"RBP");
+}
+
+// ---------------------------------------------------------------------------
+// (d) getPcodeInject against bytes captured from a live Ghidra 12.1.2
+//
+// Every other ghidra-mode test has kuna answering kuna: the sim oracle compiles
+// the cspec snippet with kuna's own SLEIGH, so a bug in that compiler would be
+// invisible because both ends agree.  These two bytes-on-the-wire are the one
+// input that came from Java — the first `getCallOtherFixup` exchange of
+// `fmt_arm/main` under the stock C++ core, tapped at the pipe.
+// ---------------------------------------------------------------------------
+
+/// The `<sleigh>` document Ghidra sent for `fmt_arm` (ARM:LE:32:v8) — its space
+/// INDICES are what make the packed `<addr>`s below decode: ram=3, register=4.
+const ARM_CAPTURED_TSPEC: &[u8] = b"<sleigh bigendian=\"false\" uniqbase=\"0x1d8600\">\
+<spaces defaultspace=\"ram\">\
+<space_unique name=\"unique\" index=\"2\" size=\"4\" bigendian=\"false\" delay=\"0\" physical=\"true\"/>\
+<space name=\"ram\" index=\"3\" size=\"4\" bigendian=\"false\" delay=\"1\" physical=\"true\"/>\
+<space name=\"register\" index=\"4\" size=\"4\" bigendian=\"false\" delay=\"0\" physical=\"true\"/>\
+<space_other name=\"OTHER\" index=\"1\" size=\"8\" bigendian=\"false\" delay=\"0\" physical=\"true\"/>\
+</spaces></sleigh>";
+
+/// `<command_getcallotherfixup name="setISAMode"><context><addr space=3
+/// offset=66844/><addr/><input><addr space=4 offset=105 size=1/></input>
+/// </context></command_getcallotherfixup>`
+const ARM_CAPTURED_REQUEST: &str =
+    "61f3ce718a7365744953414d6f646560de4bd45183d043848a9c8b4b8b424bd45184d041e9d321818b82a0dea1f3";
+
+/// `<inst offset=4><addr space=3 offset=66844/><op code=1 size=1><addr space=4
+/// offset=32 size=4/><addr space=4 offset=32 size=4/></op></inst>` — ARM.cspec's
+/// `r0 = r0;` fixup body, already lifted for this one site.
+const ARM_CAPTURED_RESPONSE: &str =
+    "60e2d021844bd45183d043848a9c8b5be0ab2181d321814bd45184d041a0d321848b4bd45184d041a0d321848b9ba0e2";
+
+fn unhex(s: &str) -> Vec<u8> {
+    (0..s.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).expect("hex"))
+        .collect()
+}
+
+/// A `Write` sink readable after the writer is buried inside a shared client.
+#[derive(Clone, Default)]
+struct SharedSink(Rc<std::cell::RefCell<Vec<u8>>>);
+impl std::io::Write for SharedSink {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.borrow_mut().extend_from_slice(buf);
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+#[derive(Default)]
+struct RecordEmit {
+    ops: Vec<(
+        Address,
+        OpCode,
+        Option<VarnodeData>,
+        Vec<VarnodeData>,
+    )>,
+}
+impl PcodeEmit for RecordEmit {
+    fn dump(
+        &mut self,
+        addr: &Address,
+        opc: OpCode,
+        outvar: Option<&VarnodeData>,
+        vars: &[VarnodeData],
+    ) {
+        self.ops
+            .push((addr.clone(), opc, outvar.cloned(), vars.to_vec()));
+    }
+}
+
+#[test]
+fn test_inject_query_matches_captured_ghidra_bytes() {
+    let registry = build_registry();
+    let sink = SharedSink::default();
+    let response = Wire::new()
+        .burst(8)
+        .string(&unhex(ARM_CAPTURED_RESPONSE))
+        .burst(9);
+    let client = Rc::new(std::cell::RefCell::new(GhidraClient::new(
+        Cursor::new(response.0),
+        sink.clone(),
+    )));
+    let tr = GhidraTranslate::new(ARM_CAPTURED_TSPEC, &registry, Rc::clone(&client))
+        .expect("captured tspec parses");
+
+    let ram = Rc::clone(tr.manager().get_space_by_name("ram").unwrap());
+    let reg = Rc::clone(tr.manager().get_space_by_name("register").unwrap());
+    // The context the engine builds for the CALLOTHER at fmt_arm 0x1051c:
+    // slot 0 (the inject-id annotation) skipped, the declared operand kept, no
+    // call address, no output.
+    let context = InjectContext {
+        baseaddr: Some(Address::new(Rc::clone(&ram), 0x1051c)),
+        nextaddr: Some(Address::new(Rc::clone(&ram), 0x1051c)),
+        calladdr: None,
+        inputlist: vec![VarnodeData {
+            space: Some(Rc::clone(&reg)),
+            offset: 105,
+            size: 1,
+        }],
+        output: Vec::new(),
+    };
+
+    let mut emit = RecordEmit::default();
+    tr.fetch_inject_pcode(b"setISAMode", CALLOTHERFIXUP_TYPE, &context, &mut emit)
+        .expect("the captured response decodes");
+
+    // (i) the query kuna sends is the one Ghidra actually received.
+    let expected = Wire::new()
+        .burst(4)
+        .string(&unhex(ARM_CAPTURED_REQUEST))
+        .burst(5);
+    assert_eq!(
+        sink.0.borrow().as_slice(),
+        expected.0.as_slice(),
+        "the getCallOtherFixup request no longer matches the live-Ghidra capture"
+    );
+
+    // (ii) the answer decodes into the fixup body, stamped at the call site.
+    assert_eq!(emit.ops.len(), 1, "expected one op, got {:?}", emit.ops);
+    let (addr, opc, out, ins) = &emit.ops[0];
+    assert_eq!(addr.get_offset(), 0x1051c);
+    assert_eq!(addr.get_space().unwrap().get_name(), "ram");
+    assert_eq!(*opc, OpCode::CPUI_COPY);
+    for vn in std::iter::once(out.as_ref().expect("COPY has an output")).chain(ins) {
+        assert_eq!(vn.space.as_ref().unwrap().get_name(), "register");
+        assert_eq!(vn.offset, 0x20);
+        assert_eq!(vn.size, 4);
+    }
+    assert_eq!(ins.len(), 1);
 }

@@ -395,7 +395,7 @@ The engine-seam inventory, with honest difficulty:
 | `CommentDatabase` | **DONE (Phase 3)** — `RemoteScope::fill_comments` (getComments, printer-filtered, fill-once-per-flush) into the `Architecture.commentdb` sink | the printer renders PRE/warning + header comments; EOL/POST placement is a printer gap, not a wire gap | 3 ✔ |
 | `ParamIDAnalysis` | **DONE (Phase 4)** — `<parammeasures>` encode + the paramid-action doc shape (`infra/paramid.rs`; the justproto constructor reads the real recovered `FuncProto`) | — | 4 ✔ |
 | `StringManager` | concrete, no trait (`stringmanage.rs:83`); cleared by flushNative | one-method extraction for Java-side charset-faithful decode | deferred |
-| Inject library | traits exist; owner concrete; SLEIGH inject engine compiles the **wire-fed cspec** snippets (shipped in Phase 2) | dynamic getPcodeInject query fallback | deferred |
+| Inject library | **DONE** — payloads register from the wire-fed cspec, but nothing compiles them without a local `.sla`, so each injection fetches already-lifted p-code for that call site via getPcodeInject (`EngineTranslate::fetch_inject_pcode`, `kuna-ghidra/src/translate.rs`); never cached, since the answer is bound to the site | `CALLMECHANISM`/`EXECUTABLEPCODE` payloads are unreachable from the live engine and stay unwired | ✔ |
 | `ConstantPool` | trait ready (`infra/cpool.rs:470`) but **unwired** into `Architecture` | wiring + `CPOOLREF` path; JVM/Dalvik only | deferred |
 | ArchSeam snapshot | **DONE (Phase 3)** — the three frozen tables read through live seams when a `RemoteScope` is installed (`ArchContext::effective_global_query`/`callee_proto_pieces`; tracked sets decode from the wire pspec `<tracked_set>`) | — | 3 ✔ |
 
