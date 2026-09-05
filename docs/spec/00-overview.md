@@ -327,6 +327,31 @@ Four front-ends drive one engine assembly:
   (chapter 04) is the case this shapes: its `DF` probe still resolves in ghidra
   mode because the pspec `<tracked_set>` sweep above runs first and caches `DF`,
   and every stock x86 pspec carries that set.
+  The same absence of a local `.sla` leaves every p-code INJECTION payload
+  without a compiled template. Registration still happens — the cspec
+  `<callfixup>`/`<callotherfixup>` names, their `incidentalcopy`/`paramshift`
+  flags and their parameter lists all decode as usual, and the passes that read
+  that metadata are unaffected — but the snippet bodies are never compiled, so
+  the two template consumers
+  (`decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (emit_inject)`)
+  fall through to a second translator seam
+  (`decompiler/crates/kuna-decomp/src/infra/engine_translate.rs
+  (EngineTranslate)`'s `fetch_inject_pcode`). The ghidra translator answers it
+  with a getPcodeInject query carrying the live injection context — base
+  address, call address, and the sized input/output operand lists, with the
+  follow-on address deliberately omitted because the host re-derives it — and
+  streams the response straight into the emitter. What comes back is p-code the
+  host has ALREADY LIFTED against that context: the ops are stamped with that
+  call site's address and bound to that site's storage, so it is not a reusable
+  template and must never be cached — two queries for the same payload name
+  legitimately differ. A host exception on the query becomes a low-level error
+  naming the payload rather than a passed Java exception, so a payload the host
+  cannot supply costs that one function and not the whole command. On the
+  standalone path the template always exists and the seam is unreachable. The
+  reach is wide: `ARM.cspec` and all nine vendored MIPS cspecs declare a
+  `setISAMode` `<callotherfixup>` that every interworking branch raises, so
+  without the fetch most functions of both architectures fail outright in
+  ghidra mode.
   External references resolve through the upstream two-step
   (`ScopeGhidra::resolveExternalRefFunction`): the `<externrefsymbol>` answer
   keeps its resolve address, getExternalRef fires at the POINTER address, the

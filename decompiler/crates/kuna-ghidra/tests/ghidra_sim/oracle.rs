@@ -54,7 +54,11 @@ use kuna_decomp::decompile_drive::print_c;
 use kuna_decomp::dtype::{type_metatype, Datatype, DatatypeKind, ELEM_TYPEREF};
 use kuna_decomp::fspec::PrototypePieces;
 use kuna_decomp::funcdata_encode::ELEM_FUNCTION;
+use kuna_decomp::inject_sleigh::SleighInjectEngine;
 use kuna_decomp::options::{OptionDatabase, KUNA_OPTION_NAMES};
+use kuna_decomp::pcodeinject::{
+    InjectContext, CALLFIXUP_TYPE, CALLOTHERFIXUP_TYPE, ELEM_CONTEXT,
+};
 use kuna_decomp::prettyprint::ids::{ELEM_FIELD, ELEM_TYPE};
 use kuna_decomp::remote_provider::{
     ATTRIB_CAT, ATTRIB_DOTDOTDOT, ATTRIB_EXTRAPOP, ATTRIB_LOCK, ATTRIB_MAIN, ATTRIB_NORETURN,
@@ -62,7 +66,8 @@ use kuna_decomp::remote_provider::{
     ELEM_PROTOTYPE, ELEM_RETURNSYM, ELEM_SCOPE, ELEM_SYMBOLLIST,
 };
 use kuna_ghidra::ids::{
-    ATTRIB_MAXSIZE, ELEM_COMMAND_GETBYTES, ELEM_COMMAND_GETCODELABEL, ELEM_COMMAND_GETCOMMENTS,
+    ATTRIB_MAXSIZE, ELEM_COMMAND_GETBYTES, ELEM_COMMAND_GETCALLFIXUP,
+    ELEM_COMMAND_GETCALLOTHERFIXUP, ELEM_COMMAND_GETCODELABEL, ELEM_COMMAND_GETCOMMENTS,
     ELEM_COMMAND_GETCPOOLREF, ELEM_COMMAND_GETDATATYPE, ELEM_COMMAND_GETEXTERNALREF,
     ELEM_COMMAND_GETMAPPEDSYMBOLS, ELEM_COMMAND_GETNAMESPACEPATH, ELEM_COMMAND_GETPCODE,
     ELEM_COMMAND_GETREGISTER, ELEM_COMMAND_GETREGISTERNAME, ELEM_COMMAND_GETSTRINGDATA,
@@ -159,6 +164,22 @@ pub struct SimOracle {
     /// the database.  Lets a test prove the GUI rename SURVIVES the
     /// event-driven re-decompile.
     pub local_var_overrides: BTreeMap<u64, Vec<HostLocalVar>>,
+    /// Force the getPcodeInject answer down one of the host's two failure
+    /// paths instead of lifting the payload (`None` = answer for real).
+    pub inject_fault: Option<InjectFault>,
+}
+
+/// The two ways `DecompileCallback.getPcodeInject` declines to answer, which
+/// reach the engine as different wire shapes and must not be conflated.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum InjectFault {
+    /// The name is not in the host's `PcodeInjectLibrary`: a thrown
+    /// `NotFoundException` (DecompileCallback.java:296-299).
+    NotFound,
+    /// No instruction at `baseAddr`, or the payload lifted to nothing: the
+    /// callback returns without encoding, so Java writes an EMPTY response
+    /// (DecompileCallback.java:311-316 and :331-333).
+    NoPcode,
 }
 
 /// One host-committed local for [`SimOracle::local_var_overrides`].
@@ -262,6 +283,7 @@ impl SimOracle {
             readonly_ranges,
             tracked_overrides: Vec::new(),
             local_var_overrides: BTreeMap::new(),
+            inject_fault: None,
         })
     }
 
@@ -320,6 +342,75 @@ impl SimOracle {
             e.close_element(&ELEM_INST);
         }
         doc
+    }
+
+    /// getCallOtherFixup / getCallFixup: the `DecompileCallback.getPcodeInject`
+    /// role — decode the `<context>` the engine sent, lift the named payload
+    /// against it with the oracle's OWN (locally compiled) inject library, and
+    /// answer the `<inst>`.
+    ///
+    /// The host's three answers are distinct and the sim keeps them so: an
+    /// unregistered name THROWS a `NotFoundException` frame, a missing
+    /// instruction or an empty lift answers EMPTY, and only a real lift answers
+    /// a document.  Under the upstream contract an empty response IS a failure,
+    /// so answering everything empty would make a working engine look broken.
+    fn answer_inject(&self, el: u32, dec: &mut PackedDecode) -> Vec<u8> {
+        let name = dec.read_string_id(&ATTRIB_NAME).expect("inject name");
+        let ptype = if el == ELEM_COMMAND_GETCALLFIXUP.get_id() {
+            CALLFIXUP_TYPE
+        } else {
+            CALLOTHERFIXUP_TYPE
+        };
+        let mut ctx = decode_inject_context(dec);
+        let baseaddr = ctx.baseaddr.clone().expect("<context> carries a baseaddr");
+        let not_found = || {
+            resp_exception(
+                "ghidra.util.exception.NotFoundException",
+                &format!(
+                    "No p-code injection with name: {}",
+                    String::from_utf8_lossy(&name)
+                ),
+            )
+        };
+        match self.inject_fault {
+            Some(InjectFault::NotFound) => return not_found(),
+            Some(InjectFault::NoPcode) => return resp_empty(),
+            None => {}
+        }
+
+        let arch = self.prog.arch();
+        let id = arch.pcodeinjectlib.base.get_payload_id(ptype, &name);
+        if id < 0 {
+            return not_found();
+        }
+        let sleigh = arch
+            .translate()
+            .as_sleigh()
+            .expect("oracle engine is a Sleigh");
+        // Java re-derives nextAddr from the real instruction's default
+        // fall-through, and answers empty when there is no instruction there
+        // (DecompileCallback.java:311-320).
+        let mut probe = RecordEmit::default();
+        let len = match sleigh.one_instruction(&mut probe, &baseaddr) {
+            Ok(len) => len,
+            Err(_) => return resp_empty(),
+        };
+        ctx.nextaddr = Some(&baseaddr + len as i64);
+
+        let payload = arch.pcodeinjectlib.get_payload(id);
+        let Some(tpl) = arch.pcodeinjectlib.get_tpl(id) else {
+            return resp_empty();
+        };
+        let engine = SleighInjectEngine::new(
+            Rc::clone(arch.manage().get_constant_space().expect("const space")),
+            Rc::clone(arch.manage().get_unique_space().expect("unique space")),
+            Rc::clone(arch.manage().get_default_code_space().expect("code space")),
+        );
+        let mut emit = RecordEmit::default();
+        if engine.emit_payload(payload, tpl, &mut ctx, &mut emit).is_err() {
+            return resp_empty();
+        }
+        resp_string(&self.inst_doc(&baseaddr, len, &emit))
     }
 
     /// getPcode: really translate the instruction at `addr` with the oracle
@@ -967,12 +1058,57 @@ impl AnswerSource for SimOracle {
             // oracle commits everything into the global scope) — empty is the
             // lenient "not found" answer.
             resp_empty()
+        } else if el == ELEM_COMMAND_GETCALLOTHERFIXUP.get_id()
+            || el == ELEM_COMMAND_GETCALLFIXUP.get_id()
+        {
+            self.answer_inject(el, &mut dec)
         } else {
-            // The four inject variants (241/242/243/252): the wire cspec's
-            // fixups are compiled engine-side, so these never fire today.
+            // getCallMechanism (242) / getPcodeExecutable (252): neither is
+            // reachable from the live engine, so empty stays the answer.
             resp_empty()
         }
     }
+}
+
+/// Decode the `<context>` element of a getPcodeInject query — the mirror of
+/// `InjectContextGhidra::encode` and of Java's `InjectContext.decode`:
+/// baseaddr, calladdr, then the optional sized operand lists.  `nextaddr` is
+/// not on the wire; the caller re-derives it.
+fn decode_inject_context(dec: &mut PackedDecode) -> InjectContext {
+    let cel = dec.open_element_id(&ELEM_CONTEXT).expect("<context>");
+    let baseaddr = Address::decode(dec).expect("context baseaddr");
+    let calladdr = Address::decode(dec).expect("context calladdr");
+    let mut ctx = InjectContext {
+        baseaddr: Some(baseaddr),
+        nextaddr: None,
+        calladdr: calladdr.get_space().map(|_| calladdr.clone()),
+        inputlist: Vec::new(),
+        output: Vec::new(),
+    };
+    loop {
+        let sub = dec.peek_element().expect("context child peek");
+        let is_out = sub == kuna_base::marshal::ELEM_OUTPUT.get_id();
+        if !is_out && sub != kuna_base::marshal::ELEM_INPUT.get_id() {
+            break;
+        }
+        let opened = dec.open_element().expect("context operand list");
+        while dec.peek_element().expect("operand peek") != 0 {
+            let (a, sz) = Address::decode_sized(dec).expect("context <addr>");
+            let vn = VarnodeData {
+                space: a.get_space().cloned(),
+                offset: a.get_offset(),
+                size: sz as u32,
+            };
+            if is_out {
+                ctx.output.push(vn);
+            } else {
+                ctx.inputlist.push(vn);
+            }
+        }
+        dec.close_element(opened).expect("close operand list");
+    }
+    dec.close_element(cel).expect("close <context>");
+    ctx
 }
 
 /// Encode one recorded varnode as a sized `<addr>` (the wire varnode form).

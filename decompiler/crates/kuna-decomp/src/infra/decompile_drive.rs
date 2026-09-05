@@ -270,19 +270,7 @@ impl FlowEnvironment for ArchFlowEnv {
             .and_then(|op| op.get_inject_id())
             .ok_or_else(|| KunaError::lowlevel("inject_userop: user-op is not injected"))?
             as int4;
-        let payload = arch.pcodeinjectlib.get_payload(injectid);
-        let tpl = arch.pcodeinjectlib.get_tpl(injectid).ok_or_else(|| {
-            // The callother-fixup body never compiled (parse_inject_all was not
-            // driven, or the SLEIGH compile failed): cannot inject.
-            KunaError::lowlevel("inject_userop: callother-fixup template not compiled")
-        })?;
-        // SleighInjectEngine over the arch's const/unique/default-code spaces.
-        let engine = crate::inject_sleigh::SleighInjectEngine::new(
-            Rc::clone(arch.manage().get_constant_space().expect("no constant space")),
-            Rc::clone(arch.manage().get_unique_space().expect("no unique space")),
-            Rc::clone(arch.manage().get_default_code_space().expect("no default code space")),
-        );
-        engine.emit_payload(payload, tpl, context, emit)
+        emit_inject(arch, injectid, context, emit)
     }
 
     fn inject_call_fixup_payload(
@@ -293,18 +281,7 @@ impl FlowEnvironment for ArchFlowEnv {
     ) -> KunaResult<()> {
         // C++ `FlowInfo::injectSubFunction`'s emit step.
         let arch = self.arch();
-        let payload = arch.pcodeinjectlib.get_payload(inject_id);
-        let tpl = arch.pcodeinjectlib.get_tpl(inject_id).ok_or_else(|| {
-            // The call-fixup body never compiled (parse_inject_all was not driven,
-            // or the SLEIGH compile failed): cannot inject.
-            KunaError::lowlevel("inject_call_fixup_payload: call-fixup template not compiled")
-        })?;
-        let engine = crate::inject_sleigh::SleighInjectEngine::new(
-            Rc::clone(arch.manage().get_constant_space().expect("no constant space")),
-            Rc::clone(arch.manage().get_unique_space().expect("no unique space")),
-            Rc::clone(arch.manage().get_default_code_space().expect("no default code space")),
-        );
-        engine.emit_payload(payload, tpl, context, emit)
+        emit_inject(arch, inject_id, context, emit)
     }
 
     fn is_incidental_copy_payload(&self, inject_id: int4) -> bool {
@@ -1776,6 +1753,37 @@ fn frame_slot_type_name(arch: &Architecture, dt: &std::rc::Rc<crate::dtype::Data
         }
     }
     out
+}
+
+/// Emit an injection payload's p-code (C++ `InjectPayloadSleigh::inject` vs
+/// `InjectPayloadGhidra::inject`): the locally compiled SLEIGH template when
+/// the library has one, otherwise a back-end fetch through the translator
+/// seam, which is where a ghidra-mode session — no local `.sla`, so no
+/// compiled template ever — gets its answer.
+fn emit_inject(
+    arch: &Architecture,
+    injectid: int4,
+    context: &mut crate::pcodeinject::InjectContext,
+    emit: &mut dyn kuna_sleigh::translate::PcodeEmit,
+) -> KunaResult<()> {
+    let payload = arch.pcodeinjectlib.get_payload(injectid);
+    match arch.pcodeinjectlib.get_tpl(injectid) {
+        Some(tpl) => {
+            // SleighInjectEngine over the arch's const/unique/default-code spaces.
+            let engine = crate::inject_sleigh::SleighInjectEngine::new(
+                Rc::clone(arch.manage().get_constant_space().expect("no constant space")),
+                Rc::clone(arch.manage().get_unique_space().expect("no unique space")),
+                Rc::clone(arch.manage().get_default_code_space().expect("no default code space")),
+            );
+            engine.emit_payload(payload, tpl, context, emit)
+        }
+        None => arch.translate().fetch_inject_pcode(
+            payload.core().get_name(),
+            payload.core().get_type(),
+            context,
+            emit,
+        ),
+    }
 }
 
 #[cfg(test)]

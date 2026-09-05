@@ -3897,12 +3897,12 @@ impl Architecture {
         //
         // In ghidra mode there is no local `.sla` to compile snippets against —
         // the host supplies inject p-code on demand via a `getPcodeInject` query
-        // (C++ `PcodeInjectLibraryGhidra`).  That query-backed library is Phase 3
-        // (`docs/rust-port/ghidra-phase2-plan.md` §6); for now the non-Sleigh
-        // engine skips local compilation, leaving each registered payload's `tpl`
-        // null (exactly the state a not-yet-fetched ghidra inject is in).  The
-        // guard is a no-op on the standalone path, where `as_sleigh()` is always
-        // `Some` (the 675-datatest behavior is unchanged).
+        // (C++ `PcodeInjectLibraryGhidra`), reached through
+        // `EngineTranslate::fetch_inject_pcode` at the two `get_tpl` consumers in
+        // `infra::decompile_drive`.  Registration must still happen here: it is
+        // what populates the name->id maps and the incidentalcopy/paramshift
+        // metadata both paths read.  The guard is a no-op on the standalone path,
+        // where `as_sleigh()` is always `Some`.
         let parse_res = match self.translate.as_sleigh() {
             Some(sleigh) => lib.parse_inject_all(sleigh.base()),
             None => Ok(()),
