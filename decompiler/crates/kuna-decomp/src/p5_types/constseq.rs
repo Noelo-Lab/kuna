@@ -1335,9 +1335,19 @@ impl StringSequence {
 
     /// C++ `StringSequence::buildStringCopy`.
     fn build_string_copy(&self, data: &mut Funcdata) -> Option<OpId> {
+        let num_bytes = self.base.move_ops.len() as int4 * self.base.char_type.get_size();
+        self.build_string_copy_sized(data, num_bytes)
+    }
+
+    /// `buildStringCopy` with the source byte count supplied by the caller.
+    ///
+    /// The C++ derives it as `moveOps.size() * charType->getSize()` because every
+    /// gathered COPY moves exactly one character; the `rodatastring` driver
+    /// gathers multi-byte block COPYs instead, so it passes the assembled
+    /// array's own length.
+    fn build_string_copy_sized(&self, data: &mut Funcdata, num_bytes: int4) -> Option<OpId> {
         use crate::dtype::TypeFactory;
         let insert_point = self.base.move_ops[0].op;
-        let num_bytes = self.base.move_ops.len() as int4 * self.base.char_type.get_size();
         let types = data.get_arch().types_rc()?;
         let word_size = self.root_addr.get_space()?.get_word_size();
         let char_ptr_type = types
@@ -1682,6 +1692,58 @@ impl StringSequence {
             None => return false,
         };
         self.remove_copy_ops(data, memset_op);
+        true
+    }
+
+    // ---------------------------------------------------------------------
+    // Read-only block-copy string recovery — kuna `rodatastring`.
+    //
+    // `RuleStringCopy` gathers its byte array out of constant COPY inputs, one
+    // character per op.  The `kuna_rodatastring` driver instead gathers block
+    // COPYs whose SOURCE is a read-only image varnode, and assembles the byte
+    // array from the load image itself, so it needs only the build and teardown
+    // halves here (`constructTypedPointer` + `removeCopyOps`).
+    // ---------------------------------------------------------------------
+
+    /// (kuna `rodatastring`) Build a sequence over an already-gathered COPY run
+    /// whose byte array was read out of read-only image memory.
+    ///
+    /// `move_ops` must be in block order (the first entry is the CALLOTHER's
+    /// insertion point) and `entry`/`root_addr` describe the destination the
+    /// inherited `constructTypedPointer` walks.
+    pub(crate) fn from_rodata_run(
+        char_type: Rc<Datatype>,
+        entry: crate::varmap::StringContainerEntry,
+        root: OpId,
+        block: crate::context::BlockId,
+        root_addr: Address,
+        move_ops: Vec<WriteNode>,
+        byte_array: Vec<u8>,
+    ) -> StringSequence {
+        let mut base = ArraySequence::new(char_type);
+        base.num_elements = byte_array.len() as int4;
+        base.move_ops = move_ops;
+        base.byte_array = byte_array;
+        StringSequence {
+            base,
+            root_op: root,
+            block,
+            start_addr: root_addr.clone(),
+            root_addr,
+            entry,
+        }
+    }
+
+    /// (kuna `rodatastring`) `StringSequence::transform` for a block-copy run:
+    /// build the `builtin_strncpy` over the assembled byte array, then reuse the
+    /// shared [`remove_copy_ops`](Self::remove_copy_ops) teardown.
+    pub(crate) fn transform_rodata(&self, data: &mut Funcdata) -> bool {
+        let num_bytes = self.base.byte_array.len() as int4;
+        let copy_op = match self.build_string_copy_sized(data, num_bytes) {
+            Some(o) => o,
+            None => return false,
+        };
+        self.remove_copy_ops(data, copy_op);
         true
     }
 }

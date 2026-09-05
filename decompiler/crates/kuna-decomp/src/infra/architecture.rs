@@ -312,6 +312,9 @@ pub struct Architecture {
     /// (kuna GH-9230) Recover constant-fill store/copy runs as `builtin_memset`
     /// (C++ `memset_recover`).
     pub memset_recover: bool,
+    /// (kuna `rodatastring`) Recover a read-only string block copy as
+    /// `builtin_strncpy`.
+    pub rodata_string: bool,
     /// (kuna `ptrdepthcap`) Cap the pointer nesting `ActionInferTypes` will adopt.
     ///
     /// A small-string-optimized C++ object writes the unsatisfiable equation
@@ -1698,6 +1701,7 @@ impl Architecture {
             infer_funcentry: false,
             return_single: false,
             memset_recover: false,
+            rodata_string: false, // (kuna) option rodatastring; reset_defaults sets the shipped default
             ptrdepthcap: false, // (kuna) option ptrdepthcap; reset_defaults sets the shipped default
             add_carry_chain: false,
             v850_indirect_branch: false,
@@ -1908,6 +1912,7 @@ impl Architecture {
         self.infer_funcentry = true; // (kuna) DIV-2 default-on (GH-6930)
         self.return_single = false; // (kuna) default: upstream (join register pairs)
         self.memset_recover = true; // (kuna) DIV-2 default-on (GH-9230/1537)
+        self.rodata_string = true; // (kuna) DIV-113 default-on: a read-only string block copy collapses to builtin_strncpy instead of the invalid-C partial-symbol slice assignments. Byte-identical (0/675) — the corpus carries no data symbols, so the covering-string-symbol guard never fires. Restore the slice assignments with `option rodatastring off`
         self.v850_indirect_branch = false; // (kuna) default: upstream (GH-8817)
         self.msvc_ftol = true; // (kuna) DIV-74 default-on: x86-32-only, and inert unless the binary imports an `__ftol`/`__ftol2`/`__ftol2_sse` symbol. Byte-identical (0/675) — no corpus function carries one of those names. Restore the un-fixed `__ftol()` rendering with `option msvcftol off`
         self.tail_call_jumps = true; // (kuna) DIV-13 default-on (angr tail-call recovery; per-test opt-out on Long double #1/#2)
@@ -2173,6 +2178,11 @@ impl Architecture {
             "memsetrecover" => {
                 let (form, msg) = crate::kuna_memsetsequence::parse_memset_recover_form(p1)?;
                 self.memset_recover = form.memset_recover();
+                Ok(msg)
+            }
+            "rodatastring" => {
+                let (form, msg) = crate::kuna_rodatastring::parse_rodata_string_form(p1)?;
+                self.rodata_string = form.rodata_string();
                 Ok(msg)
             }
             "switchmodbound" => on_off!(switch_modulo_bound, "Switch modulo/and-mask index bound"),
@@ -3061,6 +3071,7 @@ impl Architecture {
         ctx.ov_less_simplify = self.ov_less_simplify; // GH-7190 ovlesssimplify
         ctx.recover_array_stride = self.recover_array_stride; // GH-8724 arraystride
         ctx.memset_recover = self.memset_recover; // GH-9230/1537 memsetrecover
+        ctx.rodata_string = self.rodata_string; // (kuna) rodatastring
         ctx.ptrdepthcap = self.ptrdepthcap; // (kuna) ptrdepthcap
         ctx.model_stack_probe_loop = self.model_stack_probe_loop; // GH-8017 stackprobeloop
         ctx.recover_lowered_switch = self.recover_lowered_switch; // loweredswitch

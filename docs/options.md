@@ -14,6 +14,10 @@ Three tiers:
 
 | If the output shows... | Try |
 |---|---|
+| stack string initialisation renders as an array-typed cast such as (char[8])s_addr._0_8_ | [`rodatastring`](#rodatastring) |
+| partial-symbol slice assignments like buf._0_9_ = s_addr._16_9_ instead of the string | [`rodatastring`](#rodatastring) |
+| a recognized rodata literal never appears in the function that copies it onto the stack | [`rodatastring`](#rodatastring) |
+| builtin_strncpy call where the individual slice assignments are wanted (flip off) | [`rodatastring`](#rodatastring) |
 | long run of per-element constant stores instead of a single memset | [`memsetrecover`](#memsetrecover) |
 | unrolled or SIMD zeroing rendered as dozens of assignments | [`memsetrecover`](#memsetrecover) |
 | builtin_memset call where the individual element stores are wanted (flip off) | [`memsetrecover`](#memsetrecover) |
@@ -506,6 +510,14 @@ Three tiers:
 ## Toggleable transforms
 
 The control surface: each of these can make output worse on the wrong source shape, so each stays flippable.
+
+### `rodatastring` -- on | off, default `on`
+
+- **Symptoms:** stack string initialisation renders as an array-typed cast such as (char[8])s_addr._0_8_; partial-symbol slice assignments like buf._0_9_ = s_addr._16_9_ instead of the string; a recognized rodata literal never appears in the function that copies it onto the stack; builtin_strncpy call where the individual slice assignments are wanted (flip off).
+- **What it does:** Collapse a read-only string block copy (wide rodata loads re-stored into the frame) into a single builtin_strncpy.
+- **When to flip:** Flip off to keep the raw partial-symbol slice assignments; on (default) recovers the literal the copy spells.
+- **Where / provenance:** P5/constsequence · kuna · correctness-fix · repipe-68149b8a-stack-string-invalid-cast
+- **Example:** `option rodatastring off`
 
 ### `memsetrecover` -- on | off, default `on`
 

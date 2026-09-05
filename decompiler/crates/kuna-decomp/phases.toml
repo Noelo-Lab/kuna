@@ -952,6 +952,12 @@ subphase = "constsequence"
 note = "(kuna GH-9230) collapse constant-fill runs into builtin_memset"
 
 [[surface]]
+surface = "option rodatastring"
+phase = "P5"
+subphase = "constsequence"
+note = "(kuna) collapse a read-only string block copy into builtin_strncpy"
+
+[[surface]]
 surface = "option v850indirectbranch"
 phase = "P2"
 subphase = "flow-classification"
@@ -1538,6 +1544,28 @@ change_kind = "correctness-fix"
 tier = "core"
 symptoms = "want the raw CONCAT11(CARRY1(...)) intrinsics visible instead of one wide add|8-bit adc carry-chain pair (6502 style) folded into a single 16-bit addition"
 live_field = "add_carry_chain"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
+option = "rodatastring"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P5"
+subphase = "constsequence"
+strength = "HARD"
+rewind = "P5"
+issue = "repipe-68149b8a-stack-string-invalid-cast"
+summary = "Collapse a read-only string block copy (wide rodata loads re-stored into the frame) into a single builtin_strncpy."
+use_when = "Flip off to keep the raw partial-symbol slice assignments; on (default) recovers the literal the copy spells."
+example = "option rodatastring off"
+source_decompiler = "kuna"
+inspiration = "Ghidra RuleStringCopy (constant stack strings) extended to read-only block copies"
+change_kind = "correctness-fix"
+tier = "transform"
+symptoms = "stack string initialisation renders as an array-typed cast such as (char[8])s_addr._0_8_|partial-symbol slice assignments like buf._0_9_ = s_addr._16_9_ instead of the string|a recognized rodata literal never appears in the function that copies it onto the stack|builtin_strncpy call where the individual slice assignments are wanted (flip off)"
+live_field = "rodata_string"
 live_true = "on"
 live_false = "off"
 
