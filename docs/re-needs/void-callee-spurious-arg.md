@@ -132,3 +132,10 @@ _none recorded_
 - round 2 wave 20 (captain): `touches` LEFT as filed (`[decompiler/crates/kuna-decomp]`). I have measured evidence of the
   symptom but none of the owning module, and a confidently-wrong `touches` would misdirect a
   builder and mis-scope its leases. The builder should set it from its own root-cause work.
+- round 2 wave 26 (captain, measured at cf1140f2 — pre-dispatch briefing): the gap is LIVE and
+  is a self-contradiction inside ONE binary — `_main` renders `_secret_function(v3);` where
+  `v3 = scanf(...)`, while `_secret_function` decompiled on its own renders
+  `int _secret_function(void)`. It is NOT covered by an existing option: `calleearity` and
+  `calleearityfwd` are both already default-ON and forcing them `on` changes nothing, because
+  they reconcile a call against a SIBLING call to the same callee and there is exactly one call
+  site here. Do not spend the attempt re-deriving that.
