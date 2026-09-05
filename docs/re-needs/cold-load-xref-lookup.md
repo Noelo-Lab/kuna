@@ -218,3 +218,12 @@ _not yet refuted_
   **load contention, not sample count**: `repeat: 7` is already in force and did not prevent it, so
   the standing rule stands as written — *a `regressed` flip here is a stopwatch reading until it has
   been re-measured with the box quiet at reps>=7.*
+- round 2 wave 32 B_DONE (captain): **fourth phantom `regressed` refuted at 255a96d6 — and the
+  quiet-box margin is now the thing to watch.** Wave 31 re-measured on a settled box at 9 reps
+  (940/656/956/961/928/654/654/961/951 → median **940.4 ms**, max 961.0, flaky False, PASS,
+  transition `unchanged`; JSON `.kuna-repipe/rounds/2/coldload-remeasure-w31.json`). The bar was
+  NOT relaxed. The new signal: the QUIET median has drifted 738 ms (wave 24) → 940 ms (wave 31),
+  i.e. ~6% headroom under `< 1000`, so this probe will keep flagging and will eventually flag with
+  the box quiet. That is either a probe-calibration question for **T_TRIAGE** or a real slow creep
+  worth its own perf need — it is decided at triage with a measured `xrefs` cold-load trend, never
+  by a B_VERIFY/B_DONE tick moving the bar.

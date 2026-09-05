@@ -4,8 +4,8 @@
   "count": 35,
   "rejected_count": 0,
   "by_status": {
-    "closed": 28,
-    "open": 7
+    "closed": 29,
+    "open": 6
   },
   "by_track": {
     "perf": 2,
@@ -375,39 +375,6 @@
       "path": "docs/re-needs/strings-inventory-omits-statically.md"
     },
     {
-      "need_id": "void-callee-spurious-arg",
-      "title": "a void callee is called with an argument",
-      "track": "quality",
-      "status": "open",
-      "severity": "major",
-      "probe_id": "p-cb96bbe2ca7e",
-      "acceptance_id": "a-293516d9c2f1",
-      "hypothesis_status": "inconclusive",
-      "credibility": 0.8,
-      "instances": 1,
-      "challenges": [
-        "68149b8a8f555589f353117c"
-      ],
-      "rounds": [
-        1,
-        2
-      ],
-      "first_seen_round": 1,
-      "attempts": 0,
-      "covered_by_option": null,
-      "touches": [
-        "decompiler/crates/kuna-decomp"
-      ],
-      "scope": "small",
-      "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
-      "reject_reason": null,
-      "score": 13.862944,
-      "path": "docs/re-needs/void-callee-spurious-arg.md"
-    },
-    {
       "need_id": "wide-api-string-args",
       "title": "wide (UTF-16) Windows API string arguments collapse to one character",
       "track": "quality",
@@ -692,6 +659,39 @@
       "reject_reason": null,
       "score": 9.241962,
       "path": "docs/re-needs/ppc64-localentry-splits-function.md"
+    },
+    {
+      "need_id": "void-callee-spurious-arg",
+      "title": "a void callee is called with an argument",
+      "track": "quality",
+      "status": "closed",
+      "severity": "major",
+      "probe_id": "p-cb96bbe2ca7e",
+      "acceptance_id": "a-293516d9c2f1",
+      "hypothesis_status": "inconclusive",
+      "credibility": 0.8,
+      "instances": 1,
+      "challenges": [
+        "68149b8a8f555589f353117c"
+      ],
+      "rounds": [
+        1,
+        2
+      ],
+      "first_seen_round": 1,
+      "attempts": 1,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-decomp"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": "402",
+      "closed_in_round": 2,
+      "closing_pr": "402",
+      "reject_reason": null,
+      "score": 9.241962,
+      "path": "docs/re-needs/void-callee-spurious-arg.md"
     },
     {
       "need_id": "whole-binary-json-untriageable",

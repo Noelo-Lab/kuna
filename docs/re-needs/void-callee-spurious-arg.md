@@ -2,7 +2,7 @@
 need_id: void-callee-spurious-arg
 title: a void callee is called with an argument
 track: quality
-status: open
+status: closed
 severity: major
 probe_id: p-cb96bbe2ca7e
 acceptance_id: a-293516d9c2f1
@@ -12,14 +12,14 @@ instances: 1
 challenges: [68149b8a8f555589f353117c]
 rounds: [1, 2]
 first_seen_round: 1
-attempts: 0
+attempts: 1
 covered_by_option: null
 touches: [decompiler/crates/kuna-decomp]
 scope: small
 regression_of: null
-pr: null
-closed_in_round: null
-closing_pr: null
+pr: "402"
+closed_in_round: 2
+closing_pr: "402"
 reject_reason: null
 ---
 
@@ -139,3 +139,12 @@ _none recorded_
   `calleearityfwd` are both already default-ON and forcing them `on` changes nothing, because
   they reconcile a call against a SIBLING call to the same callee and there is exactly one call
   site here. Do not spend the attempt re-deriving that.
+- closed: acceptance a-293516d9c2f1 now PASSES at 255a96d683f1
+- round 2 wave 32 B_DONE (captain): **no `tests/cli/` promotion, and that is the correct outcome,
+  not a skipped step.** `verify --promote void-callee-spurious-arg` was actually run this tick and
+  refused: *"target.binary_source is 'dataset', not 'in-repo' -- CI has no dataset, so vendor the
+  binary into the repo first"*, writing nothing. The builder had already swept all 132 in-repo
+  fixture binaries under both arms for a substitute witness and found none — the shape needs an
+  AArch64/ARM callee plus a producer with a recovered return, and this box has no AArch64 linker.
+  The permanent CI pin is therefore `tests/stages/kuna-calleedeadarg.xml`, which shipped inside #402
+  and is green in `make test-stages` at 613/613. `make test-cli` stays at 27/27 by design.
