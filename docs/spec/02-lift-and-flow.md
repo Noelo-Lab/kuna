@@ -123,14 +123,30 @@ it preceded from the emitted function.
 unimplemented instruction is, per the flags, treated as a NOP
 (`ignore_unimplemented`), re-thrown (`error_unimplemented`), or replaced by an
 *artificial halt* that truncates flow at that point. Undecodable bytes (bad
-data) halt-truncate or throw; flow past the instruction budget throws by
-default (`error_toomanyinstructions`); a branch outside the flow bounds is
+data) halt-truncate or throw; a branch outside the flow bounds is
 recorded on the `unprocessed` list (`flow.rs (FlowInfo::new_address)`, via `handle_out_of_bounds` for the warn/throw policy); flow into the
 middle of an already-decoded instruction is a *reinterpretation* (warn, or
 throw under `error_reinterpreted`). An artificial halt
 (`flow.rs (FlowInfo::artificial_halt)`) is a synthesized RETURN annotated with
 its cause (`unimplemented`/`badinstruction`/`noreturn`/`missing`), so the CFG
 always terminates cleanly and the printer can attribute the truncation.
+
+**The instruction budget.** `max_instructions` (100000 by default, `option
+maxinstruction N`) caps how many instructions one function's flow may decode.
+Reaching it either throws — `option errortoomanyinstructions on`, upstream's
+default and what the datatest harness and the interactive console take — or
+truncates: a `badinstruction` artificial halt is planted at the address that
+would have been decoded, registered in `visited` as the instruction there so a
+branch arriving later resolves to it, marked as starting a basic block and an
+instruction, and reported with no fall-through, which ends the walk down that
+path. Each address still queued is halted the same way when it is popped, so
+the decode stops at the budget rather than running to the end of the reachable
+body; a function of 1.8 million instructions truncates in seconds instead of
+exhausting memory. The truncated function carries a warning header naming the
+budget and the option that raises it. The CLI's decompiling surfaces (`kuna
+decompile`, `decompile-all`, `decompile-project`, `decompile-graph`) choose the
+truncating policy (DIV-120) so an oversized function yields the body kuna did
+decode; the engine default is still upstream's throw.
 
 **Call sites.** Each CALL gets a `FuncCallSpecs` bound to the op
 (`flow.rs (FlowInfo::setup_call_specs)`, shared body `build_call_specs`): the
@@ -386,7 +402,7 @@ functions) and the `ghangr-noreturn_extern` test (which isolates the
 `noreturn_extern` toggle) opt out per-test.
 
 **(kuna) `__fastfail` is a no-return — `option fastfailnoreturn`, default on
-(DIV-119), `decompiler/crates/kuna-decomp/src/p2_lift/kuna_fastfailnoreturn.rs
+(DIV-120), `decompiler/crates/kuna-decomp/src/p2_lift/kuna_fastfailnoreturn.rs
 (is_fastfail_callind)`.** x86 SLEIGH lifts `INT imm8` to `intloc = swi(imm8);
 call [intloc]` — a `call` with no matching push, unlike every other x86 `CALL`,
 which lifts as `RSP = RSP - 8; push &next; call target`. Nothing downstream

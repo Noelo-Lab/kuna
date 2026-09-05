@@ -511,8 +511,15 @@ fn maxinstruction_option_bounds_flow_following() {
         .expect("option errortoomanyinstructions off");
     let fd = decompile_func(arch, &sym.name, entry.clone(), 0)
         .expect("truncated flow should still decompile");
-    let c = print_c(arch, &fd);
-    assert!(is_structurally_sane(&c, &sym.name), "truncated-flow C is not sane:\n{c}");
+    let truncated = print_c(arch, &fd);
+    assert!(
+        is_structurally_sane(&truncated, &sym.name),
+        "truncated-flow C is not sane:\n{truncated}"
+    );
+    assert!(
+        truncated.contains("instruction budget"),
+        "the truncated body must carry the budget warning header, naming the knob:\n{truncated}"
+    );
 
     // (3) Restore the error flag and the default bound: the full function
     //     decompiles again, proving the failure in (1) was the bound itself.
@@ -521,6 +528,27 @@ fn maxinstruction_option_bounds_flow_following() {
     set(arch, "maxinstruction", "100000").expect("option maxinstruction 100000");
     let fd = decompile_func(arch, &sym.name, entry, 0)
         .expect("decompile under the default bound");
-    let c = print_c(arch, &fd);
-    assert!(is_structurally_sane(&c, &sym.name), "default-bound C is not sane:\n{c}");
+    let full = print_c(arch, &fd);
+    assert!(is_structurally_sane(&full, &sym.name), "default-bound C is not sane:\n{full}");
+    // The truncation must TRUNCATE.  The halt planted at the bound used to be
+    // followed by a decode of the same instruction, so the next address was
+    // queued and the walk carried on to the end of the reachable body -- the
+    // "truncated" function was the whole function plus one halt per instruction,
+    // which on a large obfuscated function is an out-of-memory abort.  Counted in
+    // statements rather than bytes because (2)'s warnings are stored comments and
+    // are still attached to these addresses when (3) prints them again.
+    let statements = |c: &str| {
+        c.lines()
+            .filter(|l| {
+                l.split("//").next().map(|code| code.trim_end().ends_with(';')).unwrap_or(false)
+            })
+            .count()
+    };
+    assert!(
+        statements(&truncated) < statements(&full),
+        "flow bounded at 2 instructions produced no less C than the unbounded run:\n\
+         truncated ({} statements):\n{truncated}\nfull ({} statements):\n{full}",
+        statements(&truncated),
+        statements(&full)
+    );
 }

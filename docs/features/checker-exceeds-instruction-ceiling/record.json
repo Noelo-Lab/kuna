@@ -1,0 +1,46 @@
+{
+  "slug": "checker-exceeds-instruction-ceiling",
+  "need_id": "checker-exceeds-instruction-ceiling",
+  "track": "tooling",
+  "scope": "small",
+  "round": 3,
+  "branch": "feat/re-checker-exceeds-instruction-ceiling",
+  "option": null,
+  "default": null,
+  "div": "DIV-120",
+  "touches": [
+    "decompiler/crates/kuna-decomp/src/p2_lift/flow.rs",
+    "decompiler/crates/kuna-cli/src/decompile_all.rs",
+    "decompiler/crates/kuna-cli/src/decompile.rs"
+  ],
+  "summary": "A function past the 100000-instruction flow budget now yields the body kuna did decode, under a warning header that names the two options controlling the budget, instead of `code: null` and an error naming no remedy. Two halves: the truncating policy that already existed did not truncate (the halt was planted and the instruction decoded anyway, so the walk ran to the end of the reachable body and OOM'd), and the CLI's decompiling surfaces now select it.",
+  "decisions": [
+    {
+      "what": "the filed hypothesis is HALF right, and the half it gets wrong is the important one",
+      "detail": "Filed: 'a fixed flow instruction budget prevents analysis of this unusually large checker.' The budget is real and it is the proximate cause, but it is not fixed and it is not wrong. `--option maxinstruction N` already reached it on every CLI surface before this change (measured: the same command at 1000/200000/400000 fails after 16.3/21.2/28.4 s, so the value is live), and the function genuinely needs a budget -- an independent capstone recursive-descent walk from 0x140001000, following branches and not calls, reaches 1,804,480 instructions over 0x140001000..0x1406a983f with 4 direct call targets. The MBA obfuscator really did emit one 6,981,712-byte function. So raising the budget is not the fix: the fix is that overrunning it must not throw the decoded body away."
+    },
+    {
+      "what": "the captain's triage -- 'CLI plumbing of an existing knob, the knob is unreachable' -- is overturned on the reachability half",
+      "detail": "T_TRIAGE says `--option` genuinely cannot reach the ceiling because no catalog row matches. True of `kuna catalog`, false of `--option`: `apply_runtime_options` falls through to the upstream OptionDatabase for any name the kuna table does not claim, and `maxinstruction` / `errortoomanyinstructions` are registered elements there (ELEM_MAXINSTRUCTION id 195, ELEM_ERRORTOOMANYINSTRUCTIONS id 185). The need is therefore DISCOVERABILITY, not reachability -- which is why the warning header now names both options and docs/cli.md documents them, and why no new flag was added."
+    },
+    {
+      "what": "the truncating policy was unusable, and the budget value is the proof",
+      "detail": "`FlowInfo::process_instruction` planted a `badinstruction` artificial halt at the overrun address and then fell through to decode that instruction anyway (faithfully -- upstream flow.cc:396 does the same), so the next address was queued and the next call truncated again: the walk still ran to the end of the reachable body, one halt per instruction. The tell is that the budget did not change the outcome -- `--option errortoomanyinstructions off` died at a failed 11,542,724,608-byte allocation after 38 s under a 16 GB address-space cap at `maxinstruction` 2000 and at 5,000,000 alike. Now the branch returns no-fall-through after planting the halt, so each queued address is halted when popped and the decode stops at the budget."
+    },
+    {
+      "what": "the halt is registered in `visited` and marked a block start, which upstream does not do",
+      "detail": "`target()` resolves an address through `visited` only, so a halt planted at an address with no `visited` entry is invisible to it -- a later branch to the truncation point raises 'Could not find op at target address', which is exactly how bounded flow fails today under `--define-function START-END` (the sibling need `explicit-function-boundary-aborts`, not fixed here). Seeding the halt's seqnum at the address closes that for the budget path. Marking it a basic-block start is the lesson #410 learned for the `funcboundflow` truncation: without it an incoming fall-through edge resolves onto the branch's own block."
+    },
+    {
+      "what": "a driver default rather than an engine default",
+      "detail": "Only the CLI surfaces that decompile clear the flag (`driver_default_options`, gated on `decompiles`); an inventory or query load never follows flow, and the engine, the interactive console and the datatest harness keep upstream's throw -- which is why both parity corpora are untouched by construction rather than by luck. `kuna decompile` splits its driver defaults into a first attempt and a discovery retry; the budget policy goes in the first, because unlike the DIV-20/DIV-68 bundle it cannot change the entry set."
+    },
+    {
+      "what": "the promoted probe is a vendored restatement, not the acceptance verbatim",
+      "detail": "`verify --promote` refuses a `binary_source: dataset` target and the acceptance's binary is 7 MB, so `tests/cli/checker-exceeds-instruction-ceiling.json` puts the 16 KB in-repo `midstring_x86_64` in the identical state with `--option maxinstruction 5`: same assertion (`functions[0].code` non-empty, `functions[0].error` null) plus the warning text, in a fraction of a second. The kuna-cli integration test is the two-pass half -- `--option errortoomanyinstructions on` restores `code: null` and the old error."
+    }
+  ],
+  "collateral_sweep": "Structurally bounded: the injected option clears exactly one flag, read at exactly one site (the budget check in `process_instruction`), so a function that never reaches the budget cannot differ. Measured anyway -- `decompile-all --json` over all 156 binary fixtures under decompiler/crates/kuna-analysis/tests/fixtures, both arms: 156/156 byte-identical documents, 0 differences. The changed set is exactly the functions that used to report `Flow exceeded maximum allowable instructions`, and for those the change is `code: null` -> a truncated body.",
+  "cost": "Witness (crackme_shroud.exe sub_140001000, 1.8M instructions): before, 18.5 s to fail with no output; after, 37.3 s / 3.76 GB RSS for 10,164 lines of C -- the price of decoding the 100000 instructions the budget allows and running P3-P9 over them, paid only by a function that used to produce nothing. Inert everywhere else (156/156 fixtures byte-identical). `--max-fn-seconds` is the wall-clock bound on the new cost and the acceptance exercises it at 30 s.",
+  "not_closed": "Bounded flow under `--define-function START-END` still raises 'Could not find op at target address' when a branch leaves the declared range: the out-of-bounds branch stubs `fillin_branch_stubs` plants are not registered in `visited` either, and `collect_edges` resolves a BRANCH target through it. Same shape as the budget bug and the same one-line kind of fix, but it belongs to the sibling need `explicit-function-boundary-aborts` and is left to it."
+}

@@ -1242,3 +1242,51 @@ fn functions_and_decompile_all_agree_on_size() {
         "the inventory and the whole-binary run disagree on function extents"
     );
 }
+
+/// (DIV-120) A function past the instruction budget reports the body kuna DID
+/// decode, not nothing.  `--option maxinstruction 5` puts `fauxware`'s `main` in
+/// the state the 1.8M-instruction obfuscated checker of
+/// `docs/re-needs/checker-exceeds-instruction-ceiling.md` is in by default: the
+/// decompiling surfaces clear `error_toomanyinstructions`, so the overrun
+/// truncates the flow under a warning header that names the knob instead of
+/// failing the function with `code: null`.  Naming the option explicitly still
+/// restores the upstream hard failure — that is the second pass.
+#[test]
+fn instruction_budget_overrun_truncates_instead_of_failing() {
+    let bin = fauxware();
+    let sp = specs();
+    let budget = ["decompile-all", &bin, "--functions", "main", "--json", "--sleighpath", &sp,
+                  "--option", "maxinstruction", "5"];
+    let (truncated, stderr, ok) = run_kuna(&budget);
+    if !ok {
+        if is_specs_skip(&stderr) {
+            eprintln!("instruction_budget_overrun_truncates_instead_of_failing: skipping: {stderr}");
+            return;
+        }
+        panic!("kuna decompile-all failed: {stderr}");
+    }
+    assert!(
+        truncated.contains("Exceeded the 5 instruction budget"),
+        "the truncated body must carry the budget warning header:\n{truncated}"
+    );
+    assert!(
+        truncated.contains("--option maxinstruction N"),
+        "the warning must name the knob that raises the budget:\n{truncated}"
+    );
+    assert!(
+        !truncated.contains("Flow exceeded maximum allowable instructions"),
+        "the overrun must not be reported as a failure:\n{truncated}"
+    );
+
+    // Same run, upstream's policy named back on: the function fails outright and
+    // carries no code, which is what every CLI decompile used to do.
+    let mut fatal = budget.to_vec();
+    fatal.extend_from_slice(&["--option", "errortoomanyinstructions", "on"]);
+    let (failed, stderr, ok) = run_kuna(&fatal);
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    assert!(
+        failed.contains("Flow exceeded maximum allowable instructions")
+            && failed.contains("\"code\": null"),
+        "`--option errortoomanyinstructions on` must restore the hard failure:\n{failed}"
+    );
+}
