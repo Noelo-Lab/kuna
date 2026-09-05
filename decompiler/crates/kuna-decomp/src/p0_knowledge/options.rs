@@ -430,6 +430,10 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // gate read via the `kuna_dynrelocs` env var (the relocations are applied
     // inside `ObjectLoadImage::from_bytes`). Default-ON.
     "dynrelocs",
+    // (kuna) PE chained-`UNWIND_INFO` `.pdata` entry suppression (GH-403): a
+    // load-time gate read via the `kuna_pdatachained` env var (the entry oracles
+    // run inside `load file`). Default-ON.
+    "pdatachained",
     // (kuna) Degenerate-symbol-name repair: a load-time gate read via the
     // `kuna_symbolnamerepair` env var (the symbol table is installed inside
     // `load file`). Default-ON.

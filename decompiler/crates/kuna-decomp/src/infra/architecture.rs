@@ -1131,6 +1131,16 @@ pub struct Architecture {
     /// exists only for catalog visibility and the `phase catalog` live `current`
     /// field.
     pub analysis_dynrelocs: bool,
+    /// (kuna) Gate the PE chained-`UNWIND_INFO` `.pdata` entry skip
+    /// (`pdatachained`); default **on** (DIV-117, GH-403). MSVC splits a
+    /// shrink-wrapped or separated function across several `RUNTIME_FUNCTION`
+    /// records; every record after the first points at an `UNWIND_INFO` carrying
+    /// `UNW_FLAG_CHAININFO`, which makes its `BeginAddress` a point INSIDE the
+    /// primary rather than a function start. Read through the
+    /// [`crate::kuna_pdatachained`] **env var** (the entry oracles run inside
+    /// `load file`, upstream of `option`); this bool exists only for catalog
+    /// visibility and the `phase catalog` live `current` field.
+    pub analysis_pdatachained: bool,
     /// (kuna) Gate degenerate-symbol-name repair (`symbolnamerepair`); default
     /// **on**. An empty `::` component in a loader symbol name is rejected by
     /// `Database::attach_scope`, and because the symbol table is installed inside
@@ -1832,6 +1842,7 @@ impl Architecture {
             analysis_ifuncfpret: false, // (kuna) option ifuncfpret, default off (opt-in)
             analysis_relocrebase: false,
             analysis_dynrelocs: false,
+            analysis_pdatachained: false,
             analysis_symbolnamerepair: false,
             analysis_symbolnamechars: crate::kuna_symbolnamechars::NameChars::Off,
             analysis_symbolnamebound: None,
@@ -2053,6 +2064,7 @@ impl Architecture {
         self.analysis_i386_pie_plt = true; // (kuna) i386-PIE PLT decode default-on (angr)
         self.analysis_relocrebase = true; // (kuna) DIV-79 relocatable-object analysis rebase default-ON (GH-289)
         self.analysis_dynrelocs = true; // (kuna) DIV-84 linked-image dynamic relocations default-ON
+        self.analysis_pdatachained = true; // (kuna) DIV-117 GH-403: a chained-UNWIND_INFO .pdata record is an interior chunk, not a function
         self.analysis_symbolnamerepair = true; // (kuna) DIV: degenerate-symbol-name repair default-ON (it only fires where the load would otherwise fail outright)
         self.analysis_symbolnamechars = crate::kuna_symbolnamechars::NameChars::Safe; // (kuna) DIV-94: symbol-name sanitizing defaults to `safe` -- the structural set only, a measured no-op on every name a real toolchain emits
         self.analysis_symbolnamebound = Some(crate::kuna_symbolnamebound::DEFAULT_SCOPE_DEPTH); // (kuna) DIV-95 GH-338: symbol-name scope bound default 256 (3.2x the deepest :: nesting found in any real binary measured, 79; unbounded, one name turns 600 KB of .strtab into 292 MB)
@@ -2521,6 +2533,15 @@ impl Architecture {
                 crate::kuna_dynrelocs::set_dynrelocs_env(val);
                 Ok(format!(
                     "linked-image dynamic-relocation application turned {}",
+                    if val { "on" } else { "off" }
+                ))
+            }
+            "pdatachained" => {
+                let val = on_or_off(p1)?;
+                self.analysis_pdatachained = val;
+                crate::kuna_pdatachained::set_pdatachained_env(val);
+                Ok(format!(
+                    "PE chained-UNWIND_INFO .pdata entry suppression turned {}",
                     if val { "on" } else { "off" }
                 ))
             }

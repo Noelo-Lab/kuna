@@ -74,7 +74,8 @@ Two timing consequences shape the tier. First, anything that must influence the
 bridged across the process by environment variables the CLI exports:
 `KUNA_RELOC_OBJECTS` (`relocobjects`), `KUNA_I386_PIE_PLT` (`i386_pie_plt`),
 `KUNA_RELOCREBASE` (`relocrebase`), `KUNA_DYNRELOCS` (`dynrelocs`),
-`KUNA_MSVCFPCONST` (`msvcfpconst`), `KUNA_MACHO_ARM64E` (`macho-arm64e`),
+`KUNA_MSVCFPCONST` (`msvcfpconst`), `KUNA_PDATACHAINED` (`pdatachained`),
+`KUNA_MACHO_ARM64E` (`macho-arm64e`),
 `KUNA_MACHO_SLICE` (`--slice`). For those,
 the option rows exist for discoverability while the live gate is the env var. The
 external-artifact paths `kuna_fid_db` and `kuna_pdb_path` are different: they only
@@ -1248,6 +1249,54 @@ signature. PE and Mach-O dispatch to their own oracles (`.pdata`/TLS/entry;
 `LC_FUNCTION_STARTS`/`LC_MAIN`/`__mod_init_func`). Failure mode: discovery-only —
 a wrong entry is a garbage `sub_<addr>`; a missed one is invisible until a caller
 overruns into it (§1.7).
+
+(kuna) **Not every `.pdata` record is a function** — the PE exception directory
+answers "where does unwinding start from here", which is a coarser question than
+"where does a function start"
+(`decompiler/crates/kuna-analysis/src/analyzers/entry/pe_entry.rs (pdata_begins)`).
+Two record properties separate the two, and both are read from the image rather
+than inferred.
+
+The first is `pdatachained` (default-on; kuna). MSVC splits one function across
+several `RUNTIME_FUNCTION` records whenever it shrink-wraps a prologue or moves a
+cold block out of line: the first record is the function, and every later one
+points at an `UNWIND_INFO` whose flags carry `UNW_FLAG_CHAININFO` (bit `0x4` of
+the high five bits of the first byte) plus a trailing chained `RUNTIME_FUNCTION`
+naming the primary. Its `BeginAddress` is therefore a point *inside* the primary
+— typically a register-save or spill run, never a prologue — and claiming a
+function there puts a known entry in the middle of a body, which is exactly the
+condition S2's `funcboundflow` truncates a fall-through at. The reported symptom
+is the whole function: `sub_140002650` in `dobin/redtest` stops four statements
+in, carrying the `funcboundflow` truncation warning, because the shrink-wrapped
+chunk at `0x140002712` had become `sub_140002712`. Depending on what the
+truncated instruction is, the residue is an empty `if` body, a `} while ;` that is
+not C at all, or a decompile that fails outright. On, the third dword is resolved
+against the loaded sections and a record whose flags set that bit contributes no
+entry — Ghidra gates `markAsFunction` on the same predicate. The read is total: a
+null `UnwindInfoAddress`, an RVA no section covers, or an empty slice all read as
+*not chained*, so the rule can only ever subtract a record it has positively
+identified. Nothing is lost by subtracting it, because the chunk's bytes are
+reached as the primary's own fall-through or branch target; measured on an MSVC
+crackme with 193 records, 32 of them chained, the inventory drops 45 entries (the
+32 chunks plus 13 zero-xref phantoms the chunks had seeded) while the union of
+every function's extent is byte-for-byte identical at 196,943 bytes. The residual
+is a chunk that the primary's flow never reaches at all — an `__except` funclet
+entered only through the exception dispatcher — which loses its standalone entry
+with the option on; Ghidra has the same residual, and `option pdatachained off`
+restores the previous discovery set exactly.
+
+The second is the record *stride*, which is not a judgement call and is therefore
+not gated. `RUNTIME_FUNCTION` is the 12-byte `{BeginAddress, EndAddress,
+UnwindInfoAddress}` only for x86 and x64; ARM, ARM64, ARM64EC and ARM64X use an
+8-byte `{BeginAddress, UnwindData}` record whose `BeginAddress` carries the Thumb
+bit in its low bit and whose second dword is an `.xdata` RVA only when its low two
+bits are clear (packed unwind data otherwise, and never an address to dereference).
+Walking an ARM64 table at the x64 stride reads the wrong dwords at the wrong
+offsets: on a four-function probe it recovers two entries, one of them only
+because record 0 happens to sit at offset 0. The stride follows
+`FileHeader.Machine`, as Ghidra's `ExceptionDataDirectory` dispatches it, and an
+unrecognized machine keeps the 12-byte reading. Chained fragments are not decoded
+on the ARM form — Ghidra does not decode them either.
 
 **The widened vector-table signature** (`cortexmvectors`, default-off; kuna;
 `decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_cortexmvectors.rs`)
