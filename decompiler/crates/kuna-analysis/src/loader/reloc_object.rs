@@ -165,7 +165,7 @@ impl RelocDiagnostics {
         let mut groups: Vec<&RelocDiagnosticGroup> = self.groups.values().collect();
         groups.sort_by_key(|group| {
             (
-                format!("{:?}", group.key.architecture),
+                group.key.architecture as u32,
                 group.key.r_type,
                 group.key.reason,
             )
@@ -336,11 +336,15 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
     let mut extern_cursor = align_up(cursor.wrapping_add(0x1000), 0x1000);
     let mut extern_of: HashMap<SymbolIndex, u64> = HashMap::new();
     let mut extern_order: Vec<(SymbolIndex, u64)> = Vec::new();
-    // Externs reached through a PLT-relative relocation (`R_X86_64_PLT32`) are
-    // definitely *call targets* — even when the undefined symbol is `STT_NOTYPE`
-    // (object `SymbolKind::Unknown`), which gcc emits for plain `extern` calls.
-    // Used to register them as function symbols so the call renders by name.
-    let mut call_externs: std::collections::HashSet<SymbolIndex> = std::collections::HashSet::new();
+    // Externs reached through a PLT-relative relocation (`R_X86_64_PLT32`) or a
+    // branch/call instruction field are *code targets* — even when the undefined
+    // symbol is `STT_NOTYPE` (object `SymbolKind::Unknown`), which gcc emits for
+    // plain `extern` calls. Used to register them as function symbols so the
+    // site renders by name. A tail call is a plain jump relocation, so this must
+    // not be narrowed to call-spelled relocations: the branch is patched to the
+    // synthetic slot either way, and an unnamed slot leaves the *calling*
+    // function undecompilable.
+    let mut code_externs: std::collections::HashSet<SymbolIndex> = std::collections::HashSet::new();
 
     // ELFv2 defines `.TOC.` as `.toc + 0x8000`. Split TOC relocations use that
     // base rather than the target section's own VMA.
@@ -403,10 +407,10 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
             } else {
                 match reloc.target() {
                     RelocationTarget::Symbol(sym_idx) => {
-                        // Instruction calls mark even STT_NOTYPE undefined symbols
+                        // Instruction branches mark even STT_NOTYPE undefined symbols
                         // as callable externs, including r_types object leaves Unknown.
-                        if spec.is_call() {
-                            call_externs.insert(sym_idx);
+                        if spec.targets_code() {
+                            code_externs.insert(sym_idx);
                         }
                         resolve_symbol(
                             file,
@@ -488,17 +492,18 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
         });
         funcsyms.push((vma, name));
     }
-    // Extern functions: name each external *call target* at its synthetic slot
-    // so `call ext` renders by name instead of a bare address. A call target is
+    // Extern functions: name each external *code target* at its synthetic slot
+    // so `call ext` renders by name instead of a bare address. A code target is
     // an undefined symbol reached through a PLT-relative reloc (reliable even for
-    // the `STT_NOTYPE` symbols gcc emits for `extern` calls) or one typed
-    // `STT_FUNC`. Pure data externs (e.g. `stdout`, referenced by PC32 to an
-    // `STT_OBJECT`) are addressed but deliberately left unnamed here.
+    // the `STT_NOTYPE` symbols gcc emits for `extern` calls), through a branch or
+    // call instruction field, or one typed `STT_FUNC`. Pure data externs (e.g.
+    // `stdout`, referenced by PC32 to an `STT_OBJECT`) are addressed but
+    // deliberately left unnamed here.
     for (sym_idx, addr) in &extern_order {
         let Ok(sym) = file.symbol_by_index(*sym_idx) else {
             continue;
         };
-        let is_func = call_externs.contains(sym_idx) || sym.kind() == SymbolKind::Text;
+        let is_func = code_externs.contains(sym_idx) || sym.kind() == SymbolKind::Text;
         if !is_func {
             continue;
         }
@@ -1257,8 +1262,154 @@ mod tests {
             .any(|(_, name)| name == b".external_status"));
     }
 
+    /// A scaled low-12 relocation encodes bits 11:scale of the *page offset*.
+    /// Padding `.text` past a page boundary puts a bit above 11 in the symbol
+    /// address, which must not reach the immediate.
     #[test]
-    fn ppc64_rel24_link_bit_controls_external_call_identity() {
+    fn aarch64_low12_resolves_a_symbol_on_a_later_page() {
+        let mut object =
+            write::Object::new(BinaryFormat::Elf, Architecture::Aarch64, Endianness::Little);
+        let text = object.section_id(write::StandardSection::Text);
+        let data = object.section_id(write::StandardSection::Data);
+        let mut code: Vec<u8> = Vec::new();
+        for _ in 0..0x400 {
+            code.extend_from_slice(&0xd503_201fu32.to_le_bytes()); // nop
+        }
+        code.extend_from_slice(&0x9000_0003u32.to_le_bytes()); // adrp x3, datum
+        code.extend_from_slice(&0xb940_0060u32.to_le_bytes()); // ldr w0, [x3, :lo12:datum]
+        code.extend_from_slice(&0xd65f_03c0u32.to_le_bytes()); // ret
+        object.append_section_data(text, &code, 4);
+        object.append_section_data(data, &[0; 0x20], 8);
+        let datum = add_symbol(
+            &mut object,
+            b"datum",
+            write::SymbolSection::Section(data),
+            0x18,
+            SymbolKind::Data,
+        );
+        add_elf_relocation(
+            &mut object,
+            text,
+            0x1000,
+            datum,
+            object::elf::R_AARCH64_ADR_PREL_PG_HI21,
+        );
+        add_elf_relocation(
+            &mut object,
+            text,
+            0x1004,
+            datum,
+            object::elf::R_AARCH64_LDST32_ABS_LO12_NC,
+        );
+
+        let bytes = object.write().expect("write paged AArch64 ET_REL");
+        let file = object::File::parse(&*bytes).expect("parse paged AArch64 ET_REL");
+        let layout = layout_relocatable(&file, &ElfFormat);
+        assert!(layout.diagnostics.is_empty(), "{:?}", layout.diagnostics);
+
+        let data_index = file
+            .sections()
+            .find(|section| section.name().ok() == Some(".data"))
+            .expect("synthetic .data")
+            .index();
+        let datum_vma = layout.section_vma[&data_index] + 0x18;
+        assert!(datum_vma & 0xf000 != 0, "datum must sit past a page boundary");
+
+        let text_vma = layout.segments[0].0;
+        let code = &layout.segments[0].1;
+        let adrp = le32(&code[0x1000..0x1004]);
+        let ldr = le32(&code[0x1004..0x1008]);
+        let pages = (((adrp >> 5) & 0x7ffff) << 2) | ((adrp >> 29) & 3);
+        let page_base =
+            ((text_vma + 0x1000) & !0xfff).wrapping_add(u64::from(pages).wrapping_shl(12));
+        let offset = u64::from((ldr >> 10) & 0xfff) << 2;
+        assert_eq!(page_base + offset, datum_vma);
+    }
+
+    /// A tail call is spelled as a jump relocation, not a call one. Its
+    /// undefined target still needs a named extern slot: the branch is patched
+    /// to that slot either way, and an unnamed one leaves the *calling*
+    /// function undecompilable.
+    #[test]
+    fn aarch64_tail_call_to_an_undefined_symbol_binds_an_extern_function() {
+        let mut object =
+            write::Object::new(BinaryFormat::Elf, Architecture::Aarch64, Endianness::Little);
+        let text = object.section_id(write::StandardSection::Text);
+        object.append_section_data(
+            text,
+            &[
+                0x00, 0x00, 0x00, 0x14, // b tail_only
+                0xc0, 0x03, 0x5f, 0xd6, // ret
+            ],
+            4,
+        );
+        let external = add_symbol(
+            &mut object,
+            b"tail_only",
+            write::SymbolSection::Undefined,
+            0,
+            SymbolKind::Unknown,
+        );
+        add_elf_relocation(&mut object, text, 0, external, object::elf::R_AARCH64_JUMP26);
+
+        let bytes = object.write().expect("write synthetic AArch64 ET_REL");
+        let file = object::File::parse(&*bytes).expect("parse synthetic AArch64 ET_REL");
+        let layout = layout_relocatable(&file, &ElfFormat);
+        assert!(layout.diagnostics.is_empty(), "{:?}", layout.diagnostics);
+        let slot = layout
+            .funcsyms
+            .iter()
+            .find(|(_, name)| name == b"tail_only")
+            .expect("jump-only extern is named")
+            .0;
+        let code = &layout.segments[0].1;
+        let displacement = ((le32(&code[..4]) & 0x03ff_ffff) as i32) << 6 >> 4;
+        assert_eq!(
+            layout.segments[0].0.wrapping_add_signed(displacement.into()),
+            slot,
+            "the patched branch must reach the named slot"
+        );
+    }
+
+    #[test]
+    fn arm_tail_call_to_an_undefined_symbol_binds_an_extern_function() {
+        let mut object =
+            write::Object::new(BinaryFormat::Elf, Architecture::Arm, Endianness::Little);
+        let text = object.section_id(write::StandardSection::Text);
+        object.append_section_data(
+            text,
+            &[
+                0xfe, 0xff, 0xff, 0xea, // b tail_only, implicit addend -8
+                0x1e, 0xff, 0x2f, 0xe1, // bx lr
+            ],
+            4,
+        );
+        let external = add_symbol(
+            &mut object,
+            b"tail_only",
+            write::SymbolSection::Undefined,
+            0,
+            SymbolKind::Unknown,
+        );
+        add_elf_relocation(&mut object, text, 0, external, object::elf::R_ARM_JUMP24);
+
+        let bytes = object.write().expect("write synthetic ARM ET_REL");
+        let file = object::File::parse(&*bytes).expect("parse synthetic ARM ET_REL");
+        let layout = layout_relocatable(&file, &ElfFormat);
+        assert!(layout.diagnostics.is_empty(), "{:?}", layout.diagnostics);
+        assert!(
+            layout.funcsyms.iter().any(|(_, name)| name == b"tail_only"),
+            "jump-only extern is named"
+        );
+        assert_eq!(
+            le32(&layout.segments[0].1[..4]) & 0xff00_0000,
+            0xea00_0000,
+            "the unconditional branch opcode must be retained"
+        );
+    }
+
+    #[test]
+    fn ppc64_rel24_binds_external_targets_for_branches_and_calls_alike() {
         let mut object =
             write::Object::new(BinaryFormat::Elf, Architecture::PowerPc64, Endianness::Big);
         let text = object.section_id(write::StandardSection::Text);
@@ -1304,7 +1455,7 @@ mod tests {
         let file = object::File::parse(&*bytes).expect("parse synthetic PPC64 ET_REL");
         let layout = layout_relocatable(&file, &ElfFormat);
         assert!(layout.diagnostics.is_empty(), "{:?}", layout.diagnostics);
-        assert!(!layout
+        assert!(layout
             .funcsyms
             .iter()
             .any(|(_, name)| name == b"branch_target"));

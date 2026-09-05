@@ -276,9 +276,17 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   not infer state from their synthetic slot address. AArch64 branch, page, and
   low-12 relocations preserve the instruction's opcode/register fields, while
   PowerPC64 `REL24` and TOC-family relocations preserve big-endian instruction
-  layout and DS-form low bits. Because PowerPC64 uses `REL24` for both branches
-  and calls, only an instruction with its link bit set contributes a callable
-  external symbol.
+  layout and DS-form low bits.
+
+  An undefined symbol reached through any branch or call instruction field —
+  not only a call-spelled one — is bound to a named extern slot. A tail call is
+  spelled as a plain jump relocation (`R_ARM_JUMP24`, `R_AARCH64_JUMP26`, a
+  PowerPC64 `REL24` with its link bit clear), and the branch is patched to point
+  at the synthetic slot either way; leaving that slot unnamed makes the *calling*
+  function undecompilable, because the flow walk follows the branch into memory
+  the layout never backed. The call/jump distinction itself is kept where it is
+  load-bearing — the ARM `BL`/`BLX` interworking rewrite — and is not what
+  decides whether an extern is named.
 
   Laying the object out synthetically splits the address space in two, and every
   pass in this chapter reads the *other* half: each one re-parses the file through

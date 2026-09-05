@@ -49,7 +49,7 @@ enum Specific {
     ArmBranch24,
     ArmThumbBranch24,
     ArmPrel31,
-    PcRelativeData { bits: u8 },
+    PcRelativeData,
     Aarch64Branch26,
     Aarch64AdrPage { checked: bool },
     Aarch64AddLo12,
@@ -132,6 +132,20 @@ impl RelocationSpec {
     pub fn requires_symbol(self) -> bool {
         !matches!(self.specific, Specific::Ppc64Toc64)
     }
+
+    /// Whether the patched field is a branch or call instruction, so its target
+    /// is code. A tail call to an undefined symbol is spelled as a plain jump
+    /// relocation, which is not a call but still needs an extern function slot.
+    pub fn targets_code(self) -> bool {
+        self.is_call()
+            || matches!(
+                self.specific,
+                Specific::ArmBranch24
+                    | Specific::ArmThumbBranch24
+                    | Specific::Aarch64Branch26
+                    | Specific::Ppc64Rel24
+            )
+    }
 }
 
 /// `Ok(None)` means a no-op relocation (`R_*_NONE`).
@@ -162,9 +176,7 @@ fn classify_info(
         (Architecture::Arm, Some(elf::R_ARM_THM_JUMP24)) => {
             Some((Specific::ArmThumbBranch24, false))
         }
-        (Architecture::Arm, Some(elf::R_ARM_REL32)) => {
-            Some((Specific::PcRelativeData { bits: 32 }, false))
-        }
+        (Architecture::Arm, Some(elf::R_ARM_REL32)) => Some((Specific::PcRelativeData, false)),
         (Architecture::Arm, Some(elf::R_ARM_PREL31)) => Some((Specific::ArmPrel31, false)),
 
         (Architecture::Aarch64, Some(elf::R_AARCH64_CALL26)) => {
@@ -317,16 +329,14 @@ fn apply_info(
             target_thumb,
         ),
         Specific::ArmPrel31 => arm_prel31(field, little_endian, reloc, symbol, place),
-        Specific::PcRelativeData { bits } => {
-            pc_relative_data(field, little_endian, reloc, symbol, place, bits)
-        }
+        Specific::PcRelativeData => pc_relative_data(field, little_endian, reloc, symbol, place),
         Specific::Aarch64Branch26 => aarch64_branch26(field, little_endian, reloc, symbol, place),
         Specific::Aarch64AdrPage { checked } => {
             aarch64_adr_page(field, little_endian, reloc, symbol, place, checked)
         }
-        Specific::Aarch64AddLo12 => aarch64_lo12(field, little_endian, reloc, symbol, 0),
+        Specific::Aarch64AddLo12 => aarch64_lo12(field, little_endian, reloc, symbol, 0, false),
         Specific::Aarch64LdstLo12 { scale } => {
-            aarch64_lo12(field, little_endian, reloc, symbol, scale)
+            aarch64_lo12(field, little_endian, reloc, symbol, scale, true)
         }
         Specific::Ppc64Rel24 => ppc64_rel24(field, little_endian, reloc, symbol, place),
         Specific::Ppc64Toc16 { form } => {
@@ -355,14 +365,20 @@ fn arm_branch24(
         return Err(RelocationFailure::InvalidEncoding);
     }
     let is_blx = insn & 0xfe00_0000 == 0xfa00_0000;
-    let is_bl = insn & 0x0f00_0000 == 0x0b00_0000;
+    let is_bl = insn >> 28 != 0xf && insn & 0x0f00_0000 == 0x0b00_0000;
     if call && !is_blx && !is_bl {
         return Err(RelocationFailure::InvalidEncoding);
     }
     if !call && target_thumb == Some(true) {
         return Err(RelocationFailure::RequiresVeneer);
     }
-    let implicit = sign_extend(((insn & 0x00ff_ffff) as i128) << 2, 26);
+    // BLX <imm> carries the halfword bit of its displacement in bit 24.
+    let blx_halfword = if is_blx {
+        (((insn >> 24) & 1) as i128) << 1
+    } else {
+        0
+    };
+    let implicit = sign_extend((((insn & 0x00ff_ffff) as i128) << 2) | blx_halfword, 26);
     let addend = explicit_plus_implicit(reloc, implicit);
     let target = symbol & !1;
     let value = target as i128 + addend - place as i128;
@@ -399,7 +415,15 @@ fn arm_thumb_branch24(
 ) -> Result<(), RelocationFailure> {
     let mut hi = read_u16(&field[..2], le);
     let mut lo = read_u16(&field[2..], le);
-    if hi & 0xf800 != 0xf000 || lo & 0x8000 == 0 {
+    // BL/BLX set both of the low halfword's top bits; the T4 `B.W` this
+    // relocation pair otherwise targets sets bit 15 and bit 12 only. A T3
+    // conditional `B.W` matches neither and uses a different immediate layout.
+    let form_matches = if call {
+        lo & 0xc000 == 0xc000
+    } else {
+        lo & 0xd000 == 0x9000
+    };
+    if hi & 0xf800 != 0xf000 || !form_matches {
         return Err(RelocationFailure::InvalidEncoding);
     }
     let is_blx = lo & 0x1000 == 0;
@@ -419,17 +443,17 @@ fn arm_thumb_branch24(
     let implicit = sign_extend(encoded, 25);
     let addend = explicit_plus_implicit(reloc, implicit);
     let mut value = (symbol & !1) as i128 + addend - place as i128;
+    require_aligned(value, 2)?;
     let write_blx = call && !target_thumb.unwrap_or(!is_blx);
     if write_blx {
         // Thumb BLX branches from Align(PC, 4), even when its own address is
-        // only halfword-aligned. Adjust the relocation-place displacement to
-        // that architectural base before encoding it.
+        // only halfword-aligned. Adjust the halfword-aligned displacement to
+        // that architectural base (a correction of 0 or 2) before encoding it.
         value += (-value).rem_euclid(4);
         lo &= !0x1000;
     } else if call {
         lo |= 0x1000;
     }
-    require_aligned(value, 2)?;
     require_signed(value, 25)?;
     let raw = value as u32;
     let new_s = (raw >> 24) & 1;
@@ -466,17 +490,17 @@ fn arm_prel31(
     Ok(())
 }
 
+/// `R_ARM_REL32`. AAELF32 classifies it as a no-overflow-check relocation, so
+/// the result is truncated to the field width rather than range-checked.
 fn pc_relative_data(
     field: &mut [u8],
     le: bool,
     reloc: RelocationInfo,
     symbol: u64,
     place: u64,
-    bits: u8,
 ) -> Result<(), RelocationFailure> {
     let value =
         symbol as i128 + explicit_plus_implicit(reloc, read_signed(field, le)) - place as i128;
-    require_signed(value, bits)?;
     write_integer(field, le, value as u64);
     Ok(())
 }
@@ -527,14 +551,20 @@ fn aarch64_adr_page(
     Ok(())
 }
 
+/// `*_ABS_LO12_NC`: the ABI writes bits 11:`scale` of `S + A`, so the low 12
+/// bits are taken first and the scaled field is what remains.
 fn aarch64_lo12(
     field: &mut [u8],
     le: bool,
     reloc: RelocationInfo,
     symbol: u64,
     scale: u8,
+    ldst: bool,
 ) -> Result<(), RelocationFailure> {
     let mut insn = read_u32(field, le);
+    if !lo12_encoding_matches(insn, scale, ldst) {
+        return Err(RelocationFailure::InvalidEncoding);
+    }
     let old_imm = ((insn >> 10) & 0xfff) as i128;
     let implicit = old_imm << scale;
     let value = symbol as i128 + explicit_plus_implicit(reloc, implicit);
@@ -542,10 +572,29 @@ fn aarch64_lo12(
     if value & mask != 0 {
         return Err(RelocationFailure::Misaligned);
     }
-    let imm = ((value >> scale) & 0xfff) as u32;
+    let imm = ((value & 0xfff) >> scale) as u32;
     insn = (insn & !(0xfff << 10)) | (imm << 10);
     write_u32(field, le, insn);
     Ok(())
+}
+
+/// ADD (immediate) for the ADD form; load/store register (unsigned immediate)
+/// with a size field matching `scale` for the LDST forms. A SIMD 128-bit access
+/// spells its scale as `opc<1>:size`.
+fn lo12_encoding_matches(insn: u32, scale: u8, ldst: bool) -> bool {
+    if !ldst {
+        return insn & 0x7f80_0000 == 0x1100_0000;
+    }
+    if insn & 0x3b00_0000 != 0x3900_0000 {
+        return false;
+    }
+    let size = insn >> 30;
+    let encoded = if insn & 0x0400_0000 != 0 {
+        (((insn >> 23) & 1) << 2) | size
+    } else {
+        size
+    };
+    encoded == u32::from(scale)
 }
 
 fn ppc64_rel24(
@@ -1114,11 +1163,22 @@ mod tests {
         ] {
             let info = reloc(r_type, false);
             let spec = classify_info(Architecture::Aarch64, info).unwrap().unwrap();
-            let mut field = opcode.to_le_bytes();
-            apply_info(spec, info, &mut field, true, 0x7f0, 0, None, None).unwrap();
-            let relocated = u32::from_le_bytes(field);
-            assert_eq!(relocated & !(0xfff << 10), opcode & !(0xfff << 10));
-            assert_eq!((relocated >> 10) & 0xfff, 0x7f0 >> scale);
+            // Symbols whose page offset is identical but whose page differs:
+            // the encoded immediate must depend only on the low 12 bits.
+            for symbol in [0x7f0u64, 0x1040, 0x2ff8, 0x3010, 0x40_4040, 0x40_8040] {
+                if symbol & ((1u64 << scale) - 1) != 0 {
+                    continue;
+                }
+                let mut field = opcode.to_le_bytes();
+                apply_info(spec, info, &mut field, true, symbol, 0, None, None).unwrap();
+                let relocated = u32::from_le_bytes(field);
+                assert_eq!(relocated & !(0xfff << 10), opcode & !(0xfff << 10));
+                assert_eq!(
+                    (relocated >> 10) & 0xfff,
+                    ((symbol & 0xfff) >> scale) as u32,
+                    "r_type={r_type} symbol={symbol:#x}"
+                );
+            }
 
             if scale != 0 {
                 let mut misaligned = opcode.to_le_bytes();
@@ -1140,6 +1200,118 @@ mod tests {
                 assert_eq!(misaligned, before);
             }
         }
+    }
+
+    #[test]
+    fn aarch64_low12_rejects_instructions_outside_its_encoding() {
+        for (r_type, opcode) in [
+            (elf::R_AARCH64_ADD_ABS_LO12_NC, 0xb940_0083u32), // LDR, not ADD
+            (elf::R_AARCH64_LDST32_ABS_LO12_NC, 0x9100_0083), // ADD, not LDR
+            (elf::R_AARCH64_LDST32_ABS_LO12_NC, 0xf940_0083), // 64-bit LDR at scale 2
+            (elf::R_AARCH64_LDST64_ABS_LO12_NC, 0x3dc0_0083), // 128-bit LDR at scale 3
+        ] {
+            let info = reloc(r_type, false);
+            let spec = classify_info(Architecture::Aarch64, info).unwrap().unwrap();
+            let mut field = opcode.to_le_bytes();
+            let before = field;
+            assert_eq!(
+                apply_info(spec, info, &mut field, true, 0x40, 0, None, None),
+                Err(RelocationFailure::InvalidEncoding),
+                "r_type={r_type} opcode={opcode:#x}"
+            );
+            assert_eq!(field, before);
+        }
+    }
+
+    #[test]
+    fn arm_blx_with_the_halfword_bit_set_is_not_a_conditional_bl() {
+        let r = reloc(elf::R_ARM_CALL, true);
+        let spec = classify_info(Architecture::Arm, r).unwrap().unwrap();
+        let mut bytes = 0xfbff_fffeu32.to_le_bytes(); // BLX with H=1, addend -6
+        apply_info(
+            spec,
+            r,
+            &mut bytes,
+            true,
+            0x400101,
+            0x400000,
+            Some(true),
+            None,
+        )
+        .unwrap();
+        assert_eq!(u32::from_le_bytes(bytes), 0xfb00_003e);
+    }
+
+    #[test]
+    fn thumb_branch_forms_are_validated_before_the_immediate_is_rewritten() {
+        let call = reloc(elf::R_ARM_THM_PC22, false);
+        let call_spec = classify_info(Architecture::Arm, call).unwrap().unwrap();
+        let mut conditional = [0x00, 0xf0, 0x00, 0x80]; // B<c>.W (T3)
+        let before = conditional;
+        assert_eq!(
+            apply_info(
+                call_spec,
+                call,
+                &mut conditional,
+                true,
+                0x400100,
+                0x400000,
+                None,
+                None,
+            ),
+            Err(RelocationFailure::InvalidEncoding)
+        );
+        assert_eq!(conditional, before);
+
+        let jump = reloc(elf::R_ARM_THM_JUMP24, false);
+        let jump_spec = classify_info(Architecture::Arm, jump).unwrap().unwrap();
+        let mut as_call = [0x00, 0xf0, 0x00, 0xf8]; // BL (T1)
+        let before = as_call;
+        assert_eq!(
+            apply_info(
+                jump_spec,
+                jump,
+                &mut as_call,
+                true,
+                0x400100,
+                0x400000,
+                None,
+                None,
+            ),
+            Err(RelocationFailure::InvalidEncoding)
+        );
+        assert_eq!(as_call, before);
+    }
+
+    #[test]
+    fn thumb_blx_reports_a_misaligned_displacement_instead_of_rounding_it() {
+        let r = reloc(elf::R_ARM_THM_PC22, false);
+        let spec = classify_info(Architecture::Arm, r).unwrap().unwrap();
+        let mut bytes = [0x00, 0xf0, 0x00, 0xf8];
+        let before = bytes;
+        assert_eq!(
+            apply_info(
+                spec,
+                r,
+                &mut bytes,
+                true,
+                0x400100,
+                0x400001,
+                Some(false),
+                None,
+            ),
+            Err(RelocationFailure::Misaligned)
+        );
+        assert_eq!(bytes, before);
+    }
+
+    #[test]
+    fn arm_rel32_truncates_instead_of_reporting_an_overflow() {
+        let r = reloc(elf::R_ARM_REL32, true);
+        let spec = classify_info(Architecture::Arm, r).unwrap().unwrap();
+        let mut field = 0u32.to_le_bytes();
+        apply_info(spec, r, &mut field, true, 0x9000_0000, 0x100, None, None).unwrap();
+        assert_eq!(u32::from_le_bytes(field), 0x8fff_ff00);
     }
 
     #[test]
