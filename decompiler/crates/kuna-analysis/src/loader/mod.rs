@@ -32,6 +32,9 @@
 
 pub mod arm_markers;
 pub mod elf_plt;
+// (kuna) ELF section-table tolerance: an image whose section headers are
+// unreadable still has program headers describing every loadable byte.
+pub mod elf_shdr;
 // (kuna) ET_REL relocatable-object (`.o`) load-layout + relocation engine.
 pub mod reloc_object;
 // Architecture-aware ELF instruction/data relocation encoders used by the

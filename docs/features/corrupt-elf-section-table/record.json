@@ -1,0 +1,70 @@
+{
+  "need_id": "corrupt-elf-section-table",
+  "track": "tooling",
+  "worker": "b-r3-corrupt-elf-sect",
+  "round": 3,
+  "scope": "small",
+  "date": "2026-09-05",
+  "outcome": "closed",
+  "acceptance_id": "a-e4f84764b32f",
+  "hypothesis": "overturned-then-refined",
+  "decisions": [
+    "The refuter's restatement held on measurement: TWO independent gaps, not the filed one. (a) object::File::parse validates the section table eagerly, so an image whose PT_LOAD map was intact was rejected whole. (b) analyzers/entry::executable_sections reads file.sections() alone, so with no section table the plausible-code filter rejected the image's own e_entry and discovery returned nothing even after the header was cleared by hand.",
+    "Normalized the image bytes at the single canonical read point in bootstrap_from_object, beside the existing Mach-O fat-slice peel, rather than inside ObjectLoadImage::from_bytes -- the analysis tier re-parses the same bytes from its own callers, so repairing only inside the loader would have left every pass looking at the corrupt file.",
+    "The unusable test is pure header arithmetic run BEFORE any parse, so a well-formed image costs one bounds check and is returned byte for byte (zero extra parses on the hot path). The rewrite is discarded unless the rewritten copy parses, so unrelated corruption still surfaces object's own error.",
+    "Widened beyond the filed shape to e_shstrndx == 0, which object rejects outright once a section table exists ('Missing ELF e_shstrndx'). No existing green case can regress: such a file does not parse today at all.",
+    "The discovery fallback is gated on the section table being ABSENT, not on the executable set being empty. The first cut used the empty set and broke tests/cli/zero-functions-exit-0 -- a UPX image reported 5 stub functions instead of the 'image appears UPX-packed; try kuna unpack' hint.",
+    "That narrowing was not sufficient: the UPX fixture has e_shoff == 0, i.e. it is section-less exactly like the target shape. Added an explicit packer-stub decline (the UPX! magic in a load segment, the same signal zero_discovery_error's own packer test uses). A false positive only WITHHOLDS the fallback, which is the behaviour every section-less image had before it existed -- so the guard cannot regress anything by construction.",
+    "The acceptance target was re-pointed from the dataset binary to a vendored 107-byte twin carrying the same three corrupt header values (57005/57007/47806) over two functions, so the probe promotes into tests/cli/ and runs in CI, which has no dataset. The dataset original remains the witness in the need's Reproduction and still passes.",
+    "The full acceptance suite flagged decompiling-3396-byte-main as regressed (wall_ms median 10312 vs a 10000 bar). It is machine load, not this change: the target is a PE, for which the added code is a single 4-byte magic compare, and an interleaved A/B against the pre-change main-tree binary on the same target gave base 9.17/9.26/9.63/9.67/11.01 s vs mine 9.26/9.75/9.77/9.78/10.93 s -- both arms straddle the bar with load average 16.7 from the sibling builders."
+  ],
+  "measurements": {
+    "dataset_original": {
+      "binary": "bin/0x1d01ebcc.tar.gz.__x/0x1d01ebcc.tar.__x/0x1d01ebcc",
+      "functions_before": "exit 1, Invalid ELF section header offset/size/alignment",
+      "functions_after": "exit 0, count 24",
+      "decompile_all_after": "count 24",
+      "strings_before": "could not parse: Invalid ELF section header offset/size/alignment",
+      "strings_after": "83 strings, scanned: segments",
+      "disassemble_after": "29 instructions at 0x80492d0"
+    },
+    "vendored_fixture": {
+      "binary": "decompiler/crates/kuna-analysis/tests/fixtures/corruptshdr_i386",
+      "size": 107,
+      "before": "exit 1, not in recognized object file format",
+      "after": "exit 0, count 2"
+    },
+    "collateral": {
+      "section_less_elfs_in_repo": 2,
+      "overlapbranch_i386": "count 0 -> count 1 (an sstripped ELF the fallback now reaches; no test pinned the old value)",
+      "upx_packed_x86_64": "unchanged: still zero-discovery, still exits non-zero with the packer hint",
+      "acceptance_suite": "51 needs: 27 pass, 4 closed (incl. this one), 1 'regressed' which is a load artefact on a PE timing clause (see decisions)"
+    }
+  },
+  "gates": {
+    "make test": "675/675 PARITY OK",
+    "make test-stages": "635/635 PARITY OK",
+    "make test-cli": "35/35",
+    "make check-spec": "OK",
+    "kuna catalog --check": "catalog OK",
+    "make rust-test": "green"
+  },
+  "files": [
+    "decompiler/crates/kuna-analysis/src/loader/elf_shdr.rs",
+    "decompiler/crates/kuna-analysis/src/loader/elf_shdr/tests.rs",
+    "decompiler/crates/kuna-analysis/src/loader/mod.rs",
+    "decompiler/crates/kuna-analysis/src/analyzers/entry/mod.rs",
+    "decompiler/crates/kuna-analysis/tests/fixtures/corruptshdr_i386",
+    "decompiler/crates/kuna-analysis/tests/fixtures/corruptshdr_i386.py",
+    "decompiler/crates/kuna-console/src/engine.rs",
+    "decompiler/crates/kuna-cli/src/strings.rs",
+    "decompiler/crates/kuna-cli/src/xrefs.rs",
+    "decompiler/crates/kuna-cli/src/decompile_graph.rs",
+    "decompiler/crates/kuna-cli/src/decompile_all.rs",
+    "tests/cli/corrupt-elf-section-table.json",
+    "docs/cli.md",
+    "docs/spec/01-program-prep.md",
+    "docs/re-needs/corrupt-elf-section-table.md"
+  ],
+  "no_option": "Tooling track: a loader tolerance and a discovery fallback that only fire where kuna produced no output at all. No phases.toml row, no catalog counter, no stages testcase."
+}

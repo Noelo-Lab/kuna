@@ -12,6 +12,27 @@ to be: no panic text, no broken-pipe diagnostic. It suppresses the *diagnostic*,
 on a regressed baseline exits `1` and the DIV-45 failure contract below holds with or without
 a reader. Other stdout write failures are real errors: reported, and exit `1`.
 
+An ELF whose **section table is unusable** is loaded anyway, from its program headers.
+A corrupt `e_shoff`/`e_shnum`/`e_shstrndx` used to reject the whole file — every
+command exited `1` with `not in recognized object file format: Invalid ELF section
+header offset/size/alignment` on an image `readelf -l` reads happily. The section
+table is link-time metadata; the entry point and the `PT_LOAD` map are not, so it is
+dropped and the run continues, printing one line on stderr naming what was dropped
+and what survived:
+
+```
+$ kuna functions ./sstripped --json
+[kuna] ELF section table unusable (57007 section headers at e_shoff 0xdead run
+2176129 bytes past the end of a 161156-byte file); continuing from the program
+headers (entry 0x80492d0, 2 load segment(s))
+```
+
+Discovery then works from the executable `PT_LOAD` segments, so `functions`,
+`decompile-all`, `disassemble` and `strings` all answer (`strings` reports
+`"scanned": "segments"`). A UPX-packed image is left alone: it is section-less too,
+but its load segments are a decompressor stub, and the zero-discovery diagnostic
+pointing at `kuna unpack` is the more useful answer.
+
 ## `kuna test` — the parity gates
 
 ```bash

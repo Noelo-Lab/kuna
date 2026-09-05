@@ -174,7 +174,8 @@ fn export(args: &Args, label: &str) -> Result<String, String> {
     let by_address: BTreeMap<u64, &FuncResult> =
         results.iter().map(|result| (result.address, result)).collect();
 
-    let bytes = std::fs::read(&args.binary).map_err(|error| format!("{}: {error}", args.binary))?;
+    let bytes = kuna_analysis::loader::elf_shdr::read_image(&args.binary)
+        .map_err(|error| format!("{}: {error}", args.binary))?;
     let file = object::File::parse(&*bytes)
         .map_err(|error| format!("could not parse {}: {error}", args.binary))?;
     let graph = CallGraph::build_from(&prog, &file);

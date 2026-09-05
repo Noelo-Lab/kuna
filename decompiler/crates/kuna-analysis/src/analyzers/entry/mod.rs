@@ -496,6 +496,65 @@ pub(crate) fn executable_sections(file: &object::File) -> Vec<(u64, u64, Vec<u8>
         let data = sec.data().map(|d| d.to_vec()).unwrap_or_default();
         out.push((addr, addr.saturating_add(size), data));
     }
+    // (kuna) An image with NO section table at all presents no sections, so every
+    // oracle below would reject its own entry point as "not plausible code" and
+    // discovery would return nothing on a file the loader mapped perfectly well
+    // (`sstrip`, and the corrupt-`e_shoff` case the loader now tolerates -- see
+    // `crate::loader::elf_shdr`). The program header is the other, independent
+    // description of the same image, so fall back to it.
+    if out.is_empty() && file.sections().next().is_none() {
+        let segs = executable_segments(file);
+        if !is_packer_stub(&segs) {
+            out = segs;
+        }
+    }
+    out
+}
+
+/// Do these load segments hold a packer stub rather than the program?
+///
+/// A UPX image is section-less exactly like a stripped one, but its `PF_X`
+/// `PT_LOAD` is a decompressor wrapped around a compressed blob: discovering the
+/// stub's handful of routines would bury the far more actionable answer kuna
+/// already gives such an image -- "image appears UPX-packed; try `kuna unpack`",
+/// which a run that discovers nothing is what produces. So decline the fallback
+/// and leave that image exactly as it is today.
+///
+/// The `UPX!` magic is what `zero_discovery_error`'s own packer test looks for,
+/// here restricted to the loaded stub. A false positive costs nothing: it only
+/// withholds the fallback, which is precisely the behavior every section-less
+/// image had before it existed.
+fn is_packer_stub(segs: &[(u64, u64, Vec<u8>)]) -> bool {
+    segs.iter().any(|(_, _, data)| data.windows(4).any(|w| w == b"UPX!"))
+}
+
+/// `(address, address+size, data)` for every `PF_X` `PT_LOAD` segment -- the
+/// program header's account of what the loader maps as code. The fallback
+/// [`executable_sections`] uses when the section table is gone.
+///
+/// ELF-only by construction (a PE/Mach-O segment never carries `SegmentFlags::Elf`),
+/// and empty for a relocatable object, which has no program headers -- both leave
+/// the caller's behavior unchanged. Coarser than the section view: a `PT_LOAD`
+/// that is `R E` also contains `.rodata` and the ELF header, so this widens the
+/// "plausible code address" oracle to the whole read-execute mapping, which is
+/// exactly the guarantee the loader itself works from.
+pub(crate) fn executable_segments(file: &object::File) -> Vec<(u64, u64, Vec<u8>)> {
+    // ELF program header flag: PF_X (the segment is executable).
+    const PF_X: u32 = 0x1;
+
+    let mut out = Vec::new();
+    // `object`'s ELF segment iterator already yields only `PT_LOAD`.
+    for seg in file.segments() {
+        let object::SegmentFlags::Elf { p_flags } = seg.flags() else {
+            continue;
+        };
+        if p_flags & PF_X == 0 || seg.size() == 0 {
+            continue;
+        }
+        let addr = seg.address();
+        let data = seg.data().map(|d| d.to_vec()).unwrap_or_default();
+        out.push((addr, addr.saturating_add(seg.size()), data));
+    }
     out
 }
 
@@ -2221,6 +2280,91 @@ mod tests {
     fn fixture(name: &str) -> Vec<u8> {
         let path = format!("{}/tests/fixtures/{}", env!("CARGO_MANIFEST_DIR"), name);
         std::fs::read(&path).unwrap_or_else(|_| panic!("read fixture {path}"))
+    }
+
+    /// `bytes` with the ELF section table pointed at garbage -- the shape the
+    /// loader now tolerates (`crate::loader::elf_shdr`), recovered back into a
+    /// parseable, section-less image.
+    fn without_sections(bytes: Vec<u8>) -> Vec<u8> {
+        let mut broken = bytes;
+        broken[40..48].copy_from_slice(&0xdeadu64.to_le_bytes()); // ELF64 e_shoff
+        let (recovered, note) = crate::loader::elf_shdr::tolerate_unusable_section_table(broken);
+        assert!(note.is_some(), "the fixture must look corrupt to the repair");
+        recovered
+    }
+
+    // -- The section-less fallback (a corrupt or stripped section table) --------
+
+    /// With no section table there are no executable sections, so the "is this
+    /// plausible code?" oracle used to reject every candidate -- including the
+    /// image's own entry point -- and discovery returned nothing on a file the
+    /// loader had mapped perfectly well.
+    #[test]
+    fn section_less_image_falls_back_to_its_load_segments() {
+        let bytes = without_sections(fixture("fauxware"));
+        let file = object::File::parse(bytes.as_slice()).expect("recovered image parses");
+        assert_eq!(file.sections().count(), 0, "the fixture must present no sections");
+
+        let execs = executable_sections(&file);
+        assert!(!execs.is_empty(), "the PF_X PT_LOAD must stand in for the missing sections");
+        assert!(
+            in_executable_section(&execs, file.entry()),
+            "e_entry {:#x} must be plausible code in {:#x?}",
+            file.entry(),
+            execs.iter().map(|&(lo, hi, _)| (lo, hi)).collect::<Vec<_>>()
+        );
+
+        let entries = collect_entries(&file, &bytes);
+        assert!(
+            entries.contains(&file.entry()),
+            "discovery must seed the entry point, got {entries:#x?}"
+        );
+    }
+
+    /// The fallback is reached only when the section table is absent, so an image
+    /// that has one keeps exactly the ranges it had.
+    #[test]
+    fn sectioned_image_keeps_its_section_ranges() {
+        let bytes = fixture("fauxware");
+        let file = object::File::parse(bytes.as_slice()).expect("parse fauxware");
+        let execs = executable_sections(&file);
+        let segs = executable_segments(&file);
+        assert!(!execs.is_empty());
+        assert_ne!(
+            execs.iter().map(|&(lo, hi, _)| (lo, hi)).collect::<Vec<_>>(),
+            segs.iter().map(|&(lo, hi, _)| (lo, hi)).collect::<Vec<_>>(),
+            "the two views differ, so the healthy path is demonstrably not the fallback"
+        );
+    }
+
+    /// A UPX image is section-less exactly like a stripped one, so the fallback
+    /// has to tell them apart: taking it would make the stub's own decompressor
+    /// five discovered functions and displace the "image appears UPX-packed" hint
+    /// that a zero-discovery run exists to give.
+    #[test]
+    fn packed_image_does_not_take_the_segment_fallback() {
+        let bytes = fixture("upx_packed_x86_64");
+        let file = object::File::parse(bytes.as_slice()).expect("parse upx fixture");
+        assert!(file.sections().next().is_none(), "the fixture is section-less, like a stripped one");
+        let segs = executable_segments(&file);
+        assert!(!segs.is_empty(), "with a PF_X PT_LOAD to be tempted by");
+        assert!(is_packer_stub(&segs), "but that segment is a UPX stub");
+        assert!(executable_sections(&file).is_empty(), "so it reports no executable ranges");
+        assert!(collect_entries(&file, &bytes).is_empty(), "and discovery still finds nothing");
+    }
+
+    /// A relocatable object has no program headers and a COFF object's segments
+    /// are not ELF ones, so neither can reach the fallback.
+    #[test]
+    fn segment_fallback_is_empty_without_elf_program_headers() {
+        for name in ["arm_thumb_le32.o", "coff_obj.obj"] {
+            let bytes = fixture(name);
+            let file = object::File::parse(bytes.as_slice()).expect("parse object");
+            assert!(
+                executable_segments(&file).is_empty(),
+                "{name} must not reach the PT_LOAD fallback"
+            );
+        }
     }
 
     // -- Oracle 3: .eh_frame FDE starts (fauxware, the s1-eh-frame headline) ---

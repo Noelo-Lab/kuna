@@ -137,7 +137,8 @@ fn query(args: &XrefArgs) -> Result<String, String> {
     };
     let prog = load_program(&load, DriverDefaults::Query)?;
 
-    let bytes = std::fs::read(&args.binary).map_err(|e| format!("{}: {e}", args.binary))?;
+    let bytes = kuna_analysis::loader::elf_shdr::read_image(&args.binary)
+        .map_err(|e| format!("{}: {e}", args.binary))?;
     let file = object::File::parse(&*bytes)
         .map_err(|e| format!("could not parse {}: {e}", args.binary))?;
 
