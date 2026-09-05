@@ -180,18 +180,17 @@ fn take_token(s: &str) -> (&str, &str) {
 pub(crate) fn parse_one(spec: &str) -> Result<Directive, String> {
     let raw = spec.trim().to_string();
     let (keyword, rest) = take_token(&raw);
-    // The WHOLE directive is one argument. Five of eight round-3 testers wrote
+    // The WHOLE directive is one argument. Unquoted,
     //   --assert prototype main int main(void)
-    // instead of
-    //   --assert "prototype main int main(void)"
-    // so the shell handed us just "prototype", `rest` came back empty, and the message
+    // hands us just "prototype", `rest` comes back empty, and the old message
     // ("prototype needs <func> then a C declaration") named the CONTENT we wanted while
-    // saying nothing about the shape. All five read it as a type rejection and filed
-    // "kuna rejects the standard C type int" -- a defect that does not exist; the quoted
-    // form accepts `int`, `unsigned int` and `char **` fine. A diagnostic that produces
-    // the same false diagnosis in five independent agents is worse than the bug they
-    // thought they had found, so when the spec is a bare keyword, say what is actually
-    // wrong and show the fix.
+    // saying nothing about the shape -- so when the spec is a bare keyword, say what is
+    // actually wrong and show the fix.
+    // This comment used to blame five round-3 testers for writing it unquoted and to
+    // claim the type rejection they filed did not exist. Both halves were wrong (#418):
+    // their directives were correctly quoted, and `int` really was rejected, because the
+    // C-declaration grammar knew only Ghidra's `int4` vocabulary. That is the defect
+    // `grammar.rs (CParse::scalar_specifier)` closes; this hint is the unrelated half.
     let bad = |what: &str| {
         if rest.is_empty() && !raw.is_empty() {
             format!(

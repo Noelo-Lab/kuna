@@ -360,3 +360,74 @@ fn output_only_prototype_pieces_do_not_abort_the_drive() {
     );
     assert!(step.result.is_ok(), "an output-only prototype aborted the drive");
 }
+
+/// The declarations kuna PRINTS are declarations kuna ACCEPTS
+/// (`docs/re-needs/prototype-assertions-reject-ordinary.md`).  Until the
+/// C-declaration grammar learned the standard scalar keywords, a base type was
+/// whatever `findByName` answered, so `int` / `unsigned int` / `long long` --
+/// exactly what the printer emits -- were rejected as syntax errors while
+/// `int4` / `uint4` / `int8` worked.  Five testers filed it in one round, and
+/// `docs/cli.md`'s own worked example was among the rejected forms.
+#[test]
+fn standard_c_scalar_types_reach_the_emitted_c() {
+    let Some((code, report)) = decompile_with(vec![
+        directive(
+            "prototype authenticate unsigned int authenticate(char *user,char *pass)",
+            Body::Prototype {
+                func: TARGET.into(),
+                decl: "unsigned int authenticate(char *user,char *pass)".into(),
+            },
+        ),
+        directive(
+            "prototype read long long read(int fd,void *buf,unsigned long n)",
+            Body::Prototype {
+                func: "read".into(),
+                decl: "long long read(int fd,void *buf,unsigned long n)".into(),
+            },
+        ),
+        directive(
+            "type v2 unsigned char[8]",
+            Body::Type { func: None, symbol: "v2".into(), decl: "unsigned char[8]".into() },
+        ),
+    ]) else {
+        return;
+    };
+    all_applied(&report);
+    // This surface renders core types with their interned names (the C speller
+    // is a `--mode` preset the CLI applies, not this bare drive), so the
+    // declared `unsigned int` reads back as `uint4` and `unsigned char` as
+    // `uint1` -- either spelling names the type that was asserted.  The
+    // baseline return type is an 8-byte integer, so a 4-byte unsigned one is
+    // the discriminator.
+    assert!(
+        code.contains("uint4 authenticate(char *user,char *pass)")
+            || code.contains("unsigned int authenticate(char *user,char *pass)"),
+        "the C return type did not reach the C:\n{code}"
+    );
+    assert!(
+        code.contains("uint1 v2 [8];") || code.contains("unsigned char v2 [8];"),
+        "a multi-word scalar did not survive as a `type` base:\n{code}"
+    );
+}
+
+/// A combination that is not a C type is named, not answered with a bare
+/// "Syntax error" pointing at the second keyword.
+#[test]
+fn an_impossible_scalar_combination_is_rejected_by_name() {
+    let Some((_code, report)) = decompile_with(vec![directive(
+        "prototype authenticate short long authenticate(void)",
+        Body::Prototype {
+            func: TARGET.into(),
+            decl: "short long authenticate(void)".into(),
+        },
+    )]) else {
+        return;
+    };
+    assert_eq!(report.len(), 1);
+    assert_eq!(report[0].status, "rejected", "{report:?}");
+    let detail = report[0].detail.clone().unwrap_or_default();
+    assert!(
+        detail.contains("Invalid combination of C type specifiers: short long"),
+        "the rejection did not name the combination: {detail}"
+    );
+}

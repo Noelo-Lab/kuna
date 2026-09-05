@@ -130,6 +130,23 @@ decimal unless it carries a `0x`, and `<addr> <size>` is accepted wherever
 `<addr>+<size>` is. A C type may be anything the console's `parse line` accepts,
 including a `typedef` you asserted earlier in the same run.
 
+**Write the type in C.** The standard scalar keywords — `void`, `char`, `short`,
+`int`, `long`, `float`, `double`, `signed`, `unsigned`, `_Bool`, `wchar_t` — are
+accepted in any legal combination, in return position, in parameter position and
+as a `type`/`param`/`return`/`data` operand, so a declaration kuna emitted can be
+pasted straight back at it:
+
+```bash
+kuna decompile ./a.out sub_140004dcc --json \
+  --assert 'prototype VirtualAlloc void *VirtualAlloc(void *p,unsigned int n,unsigned int a,unsigned int b)'
+```
+
+Widths come from the target's own compiler spec, so `long` is eight bytes on LP64
+and four on LLP64. Ghidra's sized spellings (`int4`, `uint8`, `float8`,
+`undefined`) still work and take precedence for a name the type factory already
+knows. A combination that is not a C type (`short long`, `float int`) is rejected
+by name.
+
 **The two range directives are for memory kuna cannot classify by itself**, which
 on a hostile or embedded image is most of it. `--option readonly on|off` is a
 program-wide switch, not a range, and the loader's own read-only markup stops at

@@ -1,0 +1,52 @@
+{
+  "slug": "prototype-assertions-reject-ordinary",
+  "need_id": "prototype-assertions-reject-ordinary",
+  "track": "tooling",
+  "opportunity": "re-need:prototype-assertions-reject-ordinary",
+  "probe_id": "p-b95fa6549eeb",
+  "acceptance_id": "a-e9643c3e9aaa",
+  "instances": 5,
+  "challenges": 5,
+  "scope": "increment",
+  "proposal": false,
+  "covers_needs": [
+    "prototype-assertions-reject-ordinary"
+  ],
+  "option": null,
+  "flag": null,
+  "element_id": null,
+  "phase": null,
+  "tier": "driver",
+  "change_kind": "capability-add",
+  "default_on": null,
+  "owning_file": "decompiler/crates/kuna-console/src/grammar.rs",
+  "owning_function": "CParse::scalar_specifier / CParse::resolve_scalar",
+  "upstream_anchor": "grammar.y:93-97 (type_specifier), grammar.cc:1236-1272 (CParse::lookupIdentifier)",
+  "spec_chapter": "docs/spec/00-overview.md",
+  "hypothesis_status": "UPHELD",
+  "filed_hypothesis": "The assertion parser may lack the C aliases used by the emitter / target-native scalar type aliases / unsigned type specifiers.",
+  "parity": "make test PARITY OK 675/675; make test-stages PARITY OK; make rust-test green; make check-spec OK; kuna catalog --check OK; make test-cli 32/32",
+  "decisions": [
+    "HYPOTHESIS UPHELD AND LOCATED. The C-declaration grammar (kuna-console/src/grammar.rs, the port of upstream grammar.y) has no scalar keywords at all: CParse::lookupIdentifier classifies an identifier as a base type solely by TypeFactory::findByName, so the only spellings that parse are Ghidra's own core-type names -- int4, uint8, float8, char, void, bool. `int`, `unsigned`, `signed`, `short`, `long`, `float`, `double`, `wchar_t` and `_Bool` are not core-type names on any target, so all of them lexed as plain identifiers and hit the bison default 'Syntax error'. This is upstream behaviour, not a kuna regression.",
+    "WHAT MAKES IT A DEFECT IN KUNA SPECIFICALLY IS THE OTHER HALF. kuna's printer does NOT print Ghidra's vocabulary: p9_emit/kuna_ctypes.rs spells every core type the way the target's own compiler would (`unsigned int`, `long long`, `signed char`, `wchar_t`), reading the widths out of the compiler spec's <data_organization>. So the decompiler emitted one language and accepted another, and the round-trip an agent naturally reaches for -- paste back the declaration kuna just printed -- could not work. kuna_ctypes.rs's own header names the grammar as the reason it did not rename the core types; this is the missing inverse it implies.",
+    "MEASURED ON THE UNPATCHED TREE (cf5234ac, release binary): `unsigned int authenticate(char *user,char *pass)`, `long long read(int fd,void *buf,unsigned long n)` and `type v2 unsigned char[8]` are all three rejected with 'Syntax error', in return position, parameter position and as a `type` operand alike. docs/cli.md's own worked example for --assert (line 100, `prototype authenticate int authenticate(char *user,char *pass)`) was among the rejected forms -- the manual documented a command that did not run.",
+    "PR #415's claim that the quoted form already accepts `int` / `unsigned int` is wrong, exactly as the captain's refutation says. #415 fixed a real and different defect (the error message named the wrong problem when the shell split the directive); its inline comment in assertdecl.rs asserted the type vocabulary was fine. That comment is corrected in this PR.",
+    "DESIGN -- STRICTLY ADDITIVE, AND PROVABLY SO. A run of exactly one scalar keyword is still resolved by findByName FIRST, so `void`, `char`, and any host- or DWARF-supplied type that happens to be spelled with a keyword resolve to exactly the interned Rc<Datatype> they resolved to before. Only multi-keyword combinations -- which were 100% syntax errors before -- and the keywords the type factory does not name take the new width-driven path. Independently: zero of the 261 `parse line` payloads across tests/datatests and tests/stages contains any of the eleven keywords, so neither parity corpus can be moved by this change.",
+    "DESIGN -- WIDTHS FROM THE COMPILER SPEC, NEVER A 2/4/8 TABLE. resolve_scalar reads get_size_of_{char,short,int,long,long_long,wchar,float,double,long_double} off the type factory, the same <data_organization> fields kuna_ctypes.rs's speller reads, so `long` is int8 on LP64 and int4 on LLP64 and the two halves cannot disagree. `signed char` goes through get_base_no_char so it is int1 and not kuna's ASCII `char` type; plain `char` stays the text type.",
+    "DESIGN -- REJECT LOUDLY. An impossible combination (`short long`, `float int`, three `long`s, `unsigned void`) is rejected with 'Invalid combination of C type specifiers: <the words>' rather than a bare 'Syntax error' pointing at the second keyword, because the whole reason five testers filed this need is that the old diagnostic did not say what was wrong. A keyword whose width the compiler spec never declared (a cspec with no <short_size>) names nothing on that target and is rejected too, rather than resolving to a zero-sized type.",
+    "ACCEPTANCE RETARGETED, NOT RELAXED. The filed acceptance pointed at a dataset PE (bin/crackme.exe, binary_source: dataset), which `verify --promote` refuses because CI has no dataset. It is retargeted onto the in-repo fixture kuna-analysis/tests/fixtures/fauxware -- the same fixture the sibling no-cli-rename-or-prototype-override probe uses -- and STRENGTHENED while moving: three directives instead of one, all three asserted `applied`, plus two positive clauses on the emitted C (`unsigned int authenticate(char *user,char *pass)` and `unsigned char v2 [8];`) and stderr_absent on both 'Syntax error' and 'Bad C syntax'. Measured rejected 3/3 on the unpatched cf5234ac binary and applied 3/3 after, so it is a genuine discriminator. The original dataset acceptance was also measured PASS on the fixed tree before the retarget.",
+    "NO OPTION, NO STAGE TESTCASE. Track tooling: this is the console's declaration parser accepting more input, and it cannot change emitted C for any run that does not pass a --assert/parse-line directive using the new spellings. phases.toml, options.rs, docs/options.md, docs/history.md and every catalog counter are untouched, and kuna catalog --check stays green.",
+    "A SECOND LOOKAHEAD SITE, found only by the workspace suite. struct_declaration_list's continuation predicate tested TypeQualifier|TypeName|Struct|Union|Enum, so once `void` became a scalar keyword the SECOND member of `struct methods { void (*peek)(int4 a); void (*get)(int4 b); };` ended the member loop and the struct failed to parse. Neither parity gate caught it: tests/datatests/indproto.xml carries that payload but is NOT in docs/baseline.json's 83-file corpus, so only kuna-harness/tests/verify_w10_indproto_e2e runs it. Fixed, and then swept: all 229 distinct `parse line`/`parse file` payloads in tests/datatests + tests/stages (multi-line ones included) were run through the old and the new decomp_dbg and compared -- 0 differences, 71 pre-existing context errors identical on both sides.",
+    "verify_w10_proto_unlock's `xunknown4` failure in the first suite run is the known KUNA_DECOMP_TEST artifact, not this change: the repipe harness points that var at the worktree's own Rust decomp_test_dbg while the test treats it as the removed C++ oracle and asserts C++-era spellings. Run the suite as `env -u KUNA_DECOMP_TEST make rust-test`; CI never sets it."
+  ],
+  "residue": [
+    "`long double` resolves to the target's <long_double_size> VALUE width, which on x86 is 10 -- so `long double` round-trips float10 exactly but a genuine float16 also prints as `long double` and parses back as float10. That asymmetry is inherited from the printer's own approximation (kuna_ctypes.rs float_spelling), not introduced here.",
+    "The printer's `undefined<N>` spellings (residual TYPE_UNKNOWN) are still not parseable: the core types are named xunknown<N>, so findByName misses. Out of scope for this need, which is about the standard C scalars; worth a follow-up if a tester hits it.",
+    "SIDE FINDING carried over from the captain's refutation and NOT addressed here: an ACCEPTED `float8`/`double` prototype on i386 can exit 1 on an un-ported seam (LOSS-131, heritage typeop_skeleton CPUI_FLOAT_FLOAT2FLOAT), and with --json panics at p3_dataflow/heritage.rs:4610 instead of reporting it. That is a P3 defect, unrelated to the grammar."
+  ],
+  "tests": [
+    "decompiler/crates/kuna-console/src/grammar/tests.rs: 7 new unit tests -- the 20-spelling resolution table, the LP64-vs-LLP64 `long` width, plain-char-vs-signed-char, a standard-C prototype through parse_protopieces, the findByName-still-wins guarantee, 9 impossible combinations, and the undeclared-width rejection.",
+    "decompiler/crates/kuna-console/tests/verify_assertplane.rs: 2 new end-to-end tests through the real --assert application path on fauxware -- standard C reaching the emitted C, and an impossible combination rejected BY NAME.",
+    "tests/cli/prototype-assertions-reject-ordinary.json: the promoted acceptance probe (make test-cli, 32/32)."
+  ]
+}
