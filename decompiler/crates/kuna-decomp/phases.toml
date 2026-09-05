@@ -1960,6 +1960,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "jtsharepartial"
+values = "on|off"
+default = "on"
+destructive = true
+phase = "P2"
+subphase = "switch-model"
+strength = "HARD"
+rewind = "P2"
+issue = "decompiling-3396-byte-main"
+summary = "Run the jump-table partial sub-decompilation ONCE per `recoverJumpTables` batch and share it across every table in that batch, the shape the C++ has (`Funcdata::stageJumpTable` guards the clone and the reduced pipeline behind `if (!partial.isJumptableRecoveryOn())`). Recovering a BRANCHIND means cloning the function's raw p-code into a partial Funcdata, building its blocks and running the reduced `jumptable` action set over it, so that the switch's index calculation simplifies to something the emulator can walk; kuna did that once PER TABLE, paying a whole sub-decompilation for every switch in the function. Sharing pays it once. Off restores the per-table re-clone, which is what `option unrolledguard` needs: its recovery of MSVC interleaved (Duff's-device) tables works precisely because a later table's fresh clone re-clones the siblings recovered before it, and a shared partial is built before any sibling has recovered."
+use_when = "Leave on. Flip OFF together with `option unrolledguard` on a function holding several INTERLEAVED jump tables whose case bodies are reachable only as one another's case targets (an MSVC optimized memcpy/memmove tail dispatch), where the per-table re-clone is what recovers the siblings; DESTRUCTIVE as a default in exactly that shape, since a shared partial cannot see an already-recovered sibling table. On a function with one jump table the two settings are structurally identical, and on an ordinary multi-table function sharing removes one full sub-decompilation per extra table."
+example = "option jtsharepartial off"
+source_decompiler = "ghidra"
+inspiration = "round-2 RE-friction crackme nikos_crack_me.exe: `sub_140023350` holds two jump tables and paid two partial sub-decompilations, 3.1 s of action time plus 0.5 s of cloning out of an 11 s decompile; C++ `Funcdata::stageJumpTable` (funcdata_block.cc:512) pays it once."
+change_kind = "speed"
+tier = "transform"
+symptoms = "decompiling one function with several switch statements takes far longer than its size suggests|per-function latency scales with the NUMBER of jump tables rather than their size|profile shows the reduced jumptable action set running once per switch"
+live_field = "jumptable_share_partial"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "noreturn_externmatch"
 values = "on|off"
 default = "on"

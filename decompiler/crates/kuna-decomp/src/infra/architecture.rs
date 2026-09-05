@@ -467,6 +467,14 @@ pub struct Architecture {
     /// the `findJumpTable==0` partial path already uses) instead of throwing
     /// (C++ `unrolled_guard`).
     pub unrolled_guard: bool,
+    /// (kuna) Run the jump-table partial sub-decompilation ONCE per
+    /// `FlowInfo::recoverJumpTables` batch and share it across every table in
+    /// that batch, as the C++ does (`Funcdata::stageJumpTable` guards the clone
+    /// and the reduced pipeline behind `if (!partial.isJumptableRecoveryOn())`);
+    /// off re-clones and re-analyses the function once per table, which is what
+    /// `option unrolledguard` needs to see an already-recovered sibling table
+    /// (C++ has no equivalent flag — this is the upstream shape vs kuna's).
+    pub jumptable_share_partial: bool,
     /// (kuna, angr `test_decompiling_incorrect_duplication_chcon_main`) Treat a
     /// direct CALL to a function whose *name* matches the vendored ELF
     /// known-no-return list as no-return at the `query_call_no_return` flow hook,
@@ -1689,6 +1697,7 @@ impl Architecture {
             switch_shared_case: false,
             switch_multi_pred: false,
             unrolled_guard: false,
+            jumptable_share_partial: true,
             noreturn_extern_match: true, // (kuna) DIV-13 default-on (angr incorrect-duplication-chcon)
             stack_alias_deadstore: false,
             recover_array_stride: false,
@@ -1889,6 +1898,7 @@ impl Architecture {
         self.switch_shared_case = true; // (kuna) DIV-14 default-on (angr loop-carried-guard PIC switch recovery; slower on the functions it recovers, kept on for quality; 0/675 byte-identical)
         self.switch_multi_pred = true; // (kuna) DIV-13 default-on (angr multi-predecessor unrolled-guard jump-table; 0/675 ablation)
         self.unrolled_guard = false; // (kuna) default: upstream byte-identical (angr opt-in)
+        self.jumptable_share_partial = true; // (kuna) DIV: the upstream stageJumpTable shape
         self.noreturn_extern_match = true; // (kuna) DIV-13 default-on (angr incorrect-duplication-chcon; clean 0/675 ablation)
         self.stack_alias_deadstore = false; // (kuna) default: upstream byte-identical (GH-8500)
         self.recover_array_stride = true; // (kuna) DIV-3 default-on (GH-8724)
@@ -2133,6 +2143,7 @@ impl Architecture {
             "switchsharedcase" => on_off!(switch_shared_case, "Switch loop-carried-guard table"),
             "switchmultipred" => on_off!(switch_multi_pred, "Switch multi-predecessor unrolled-guard table"),
             "unrolledguard" => on_off!(unrolled_guard, "Interleaved unrolled-guard jump-table partial-flow recovery"),
+            "jtsharepartial" => on_off!(jumptable_share_partial, "Shared jump-table partial sub-decompilation"),
             "noreturn_externmatch" => on_off!(noreturn_extern_match, "Name-matched extern no-return"),
             "loweredswitch" => {
                 let (val, msg) = crate::kuna_loweredswitch::OptionLowerSwitch.apply(p1)?;
@@ -3095,6 +3106,9 @@ impl Architecture {
         // (kuna, angr) carry the interleaved unrolled-guard partial-flow gate
         // (`option unrolledguard`) so `FlowInfo::collectEdges` reaches it.
         ctx.unrolled_guard = self.unrolled_guard;
+        // (kuna) carry the shared-partial gate (`option jtsharepartial`) so
+        // `Funcdata::stage_jump_table` reaches it.
+        ctx.jumptable_share_partial = self.jumptable_share_partial;
         ctx.loader = Some(self.translate.loader_rc());
         // Carry the read-only-propagation switch (C++ `glb->readonlypropagate`,
         // flipped by `option readonly`) so `ActionVarnodeProps` reaches it to gate

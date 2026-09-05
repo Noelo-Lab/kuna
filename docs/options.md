@@ -76,6 +76,9 @@ Three tiers:
 | one switch recovered but sibling interleaved jump tables degrade to computed calls | [`unrolledguard`](#unrolledguard) |
 | 'Could not find op at target address' during recovery of an msvc optimized memcpy dispatch | [`unrolledguard`](#unrolledguard) |
 | duff's-device tail dispatch rendered as 'Treating indirect jump as call' | [`unrolledguard`](#unrolledguard) |
+| decompiling one function with several switch statements takes far longer than its size suggests | [`jtsharepartial`](#jtsharepartial) |
+| per-function latency scales with the NUMBER of jump tables rather than their size | [`jtsharepartial`](#jtsharepartial) |
+| profile shows the reduced jumptable action set running once per switch | [`jtsharepartial`](#jtsharepartial) |
 | dozens of garbage *v = *v + c; lines after a __stack_chk_fail call in a .o | [`noreturn_externmatch`](#noreturn_externmatch) |
 | inter-function alignment padding decoded as add [rax],al style instructions | [`noreturn_externmatch`](#noreturn_externmatch) |
 | flow runs past an undefined-extern abort or exit call in a relocatable object | [`noreturn_externmatch`](#noreturn_externmatch) |
@@ -632,6 +635,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** Set on PER PROGRAM when a function holding several interleaved jump tables (e.g. an MSVC optimized memcpy/memmove Duff's-device tail dispatch) recovers ONE switch but degrades the OTHERS to 'Treating indirect jump as call' computed (code *)() calls, and the failures are flow-stage 'Could not find op at target address' on a sibling table's case body (NOT a guard-bound failure switchguardbound/switchmultipred would handle); DESTRUCTIVE as a global default (it suppresses an unresolved-case-target edge during partial-flow recovery, so on an unrelated truly-malformed table it could mask a real missing target instead of declining the table).
 - **Where / provenance:** P2/switch-model · angr · opt-in-tool · angr-optimized-memcpy-6301a9
 - **Example:** `option unrolledguard on`
+
+### `jtsharepartial` -- on | off, default `on` (destructive opt-in)
+
+- **Symptoms:** decompiling one function with several switch statements takes far longer than its size suggests; per-function latency scales with the NUMBER of jump tables rather than their size; profile shows the reduced jumptable action set running once per switch.
+- **What it does:** Run the jump-table partial sub-decompilation ONCE per `recoverJumpTables` batch and share it across every table in that batch, the shape the C++ has (`Funcdata::stageJumpTable` guards the clone and the reduced pipeline behind `if (!partial.isJumptableRecoveryOn())`). Recovering a BRANCHIND means cloning the function's raw p-code into a partial Funcdata, building its blocks and running the reduced `jumptable` action set over it, so that the switch's index calculation simplifies to something the emulator can walk; kuna did that once PER TABLE, paying a whole sub-decompilation for every switch in the function. Sharing pays it once. Off restores the per-table re-clone, which is what `option unrolledguard` needs: its recovery of MSVC interleaved (Duff's-device) tables works precisely because a later table's fresh clone re-clones the siblings recovered before it, and a shared partial is built before any sibling has recovered.
+- **When to flip:** Leave on. Flip OFF together with `option unrolledguard` on a function holding several INTERLEAVED jump tables whose case bodies are reachable only as one another's case targets (an MSVC optimized memcpy/memmove tail dispatch), where the per-table re-clone is what recovers the siblings; DESTRUCTIVE as a default in exactly that shape, since a shared partial cannot see an already-recovered sibling table. On a function with one jump table the two settings are structurally identical, and on an ordinary multi-table function sharing removes one full sub-decompilation per extra table.
+- **Where / provenance:** P2/switch-model · ghidra · speed · decompiling-3396-byte-main
+- **Example:** `option jtsharepartial off`
 
 ### `noreturn_externmatch` -- on | off, default `on`
 

@@ -278,6 +278,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "switchsharedcase",
     "switchmultipred",
     "unrolledguard",
+    "jtsharepartial",
     "noreturn_externmatch",
     "loweredswitch",
     "callsitestackargs",

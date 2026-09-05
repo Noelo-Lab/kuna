@@ -2426,6 +2426,7 @@ impl Funcdata {
         record_loads: bool,
         visited: &crate::flow::VisitedMap,
         run_pipeline: &mut crate::flow::JtPipelineFn<'_>,
+        shared: &mut Option<Funcdata>,
     ) -> Result<Option<usize>, crate::jumptable::RecoveryMode> {
         use crate::jumptable::RecoveryMode;
         // linkJumpTable: search for a pre-existing table.
@@ -2435,7 +2436,8 @@ impl Funcdata {
                 return Ok(Some(idx)); // Previously calculated, complete, non-override
             }
             // Recover empty/override table.
-            let mode = self.stage_jump_table(idx, op, record_loads, visited, run_pipeline);
+            let mode =
+                self.stage_jump_table(idx, op, record_loads, visited, run_pipeline, shared);
             if mode != RecoveryMode::Success {
                 return Err(mode);
             }
@@ -2457,7 +2459,7 @@ impl Funcdata {
         let trial = crate::jumptable::JumpTable::new(addr);
         self.jumpvec_mut().push(trial);
         let idx = self.num_jump_tables() as usize - 1;
-        let mode = self.stage_jump_table(idx, op, record_loads, visited, run_pipeline);
+        let mode = self.stage_jump_table(idx, op, record_loads, visited, run_pipeline, shared);
         if mode != RecoveryMode::Success {
             // Discard the trial table on failure.
             self.jumpvec_mut().remove(idx);
@@ -2478,34 +2480,40 @@ impl Funcdata {
         record_loads: bool,
         visited: &crate::flow::VisitedMap,
         run_pipeline: &mut crate::flow::JtPipelineFn<'_>,
+        shared: &mut Option<Funcdata>,
     ) -> crate::jumptable::RecoveryMode {
         use crate::jumptable::RecoveryMode;
         self.jumpvec_mut()[jt_idx].increment_recovery_count();
 
-        // Build the partial function (clone ops + jump-tables).
-        //
-        // (kuna DIVERGENCE, deliberate) The C++ builds ONE `partial` per call to
-        // `FlowInfo::recoverJumpTables` and guards the clone + reduced pipeline
-        // behind `if (!partial.isJumptableRecoveryOn())`, so the sub-decompilation
-        // runs once per function instead of once per table.  kuna cannot share it:
-        // `option unrolledguard` recovers MSVC interleaved (Duff's-device) tables
-        // precisely BECAUSE each table's partial re-clones the siblings recovered
-        // before it (see `flow.rs (FlowInfo::collect_edges)`), and sharing the
-        // partial loses 16 of the 17 switches that testcase asserts.  Sharing is a
-        // real speedup (~20% on a two-table function) but it changes which tables
-        // recover, so it belongs behind its own option, not here.
-        let mut partial = match self.build_jumptable_partial() {
-            Ok(p) => p,
-            Err(_) => return RecoveryMode::FailNormal,
-        };
-        // Mark the partial as a jump-table-recovery clone, then build its blocks
-        // and run the reduced "jumptable" universalAction over it (C++
-        // partial.truncatedFlow + allacts.setCurrent("jumptable") + perform).
-        partial.set_flag_raw(crate::funcdata::funcdata_flags::jumptablerecovery_on);
-        if run_pipeline(&mut partial, visited).is_err() {
-            // C++ catches LowlevelError, warns, and returns fail_normal.
-            return RecoveryMode::FailNormal;
+        // Build the partial function (clone ops + jump-tables) and run the reduced
+        // pipeline over it, or reuse the one an earlier table in this batch already
+        // built (C++ `if (!partial.isJumptableRecoveryOn())`, `option jtsharepartial`).
+        let share = self.get_arch().jumptable_share_partial;
+        let mut owned: Option<Funcdata> = None;
+        if !share || shared.is_none() {
+            let mut fresh = match self.build_jumptable_partial() {
+                Ok(p) => p,
+                Err(_) => return RecoveryMode::FailNormal,
+            };
+            // Mark the partial as a jump-table-recovery clone, then build its blocks
+            // and run the reduced "jumptable" universalAction over it (C++
+            // partial.truncatedFlow + allacts.setCurrent("jumptable") + perform).
+            fresh.set_flag_raw(crate::funcdata::funcdata_flags::jumptablerecovery_on);
+            if run_pipeline(&mut fresh, visited).is_err() {
+                // C++ catches LowlevelError, warns, and returns fail_normal.
+                return RecoveryMode::FailNormal;
+            }
+            if share {
+                *shared = Some(fresh);
+            } else {
+                owned = Some(fresh);
+            }
         }
+        let partial: &mut Funcdata = if share {
+            shared.as_mut().expect("stage_jump_table: shared partial just built")
+        } else {
+            owned.as_mut().expect("stage_jump_table: owned partial just built")
+        };
 
         // findOp(op->getSeqNum()) on the partial.
         let seq = self.obank().get(op).unwrap().get_seq_num().clone();
@@ -2539,9 +2547,9 @@ impl Funcdata {
         let addr2 = partial.obank().get(partop).unwrap().get_addr().clone();
         jt.set_indirect_op_addr(partop, addr2);
         let res = if jt.is_partial() {
-            jt.recover_multistage(&mut partial)
+            jt.recover_multistage(partial)
         } else {
-            jt.recover_addresses(&mut partial)
+            jt.recover_addresses(partial)
         };
         // Relink the table to the original op before storing it back.
         jt.set_indirect_op_addr(op, addr);
