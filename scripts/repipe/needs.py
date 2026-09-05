@@ -836,6 +836,16 @@ def main(argv=None):
     p_acc.add_argument("--pr", default=None)
     p_acc.add_argument("--json", action="store_true")
 
+    p_ref = sub.add_parser("refute",
+                           help="record a refutation verdict on a need's hypothesis")
+    p_ref.add_argument("need_id")
+    p_ref.add_argument("--verdict", required=True,
+                       choices=["upheld", "overturned", "inconclusive"])
+    p_ref.add_argument("--note", required=True,
+                       help="what the refuter did and what it found; recorded verbatim")
+    p_ref.add_argument("--round", type=int, default=None)
+    p_ref.add_argument("--json", action="store_true")
+
     p_rej = sub.add_parser("reject", help="move a need to docs/re-needs/rejected/")
     p_rej.add_argument("need_id")
     p_rej.add_argument("--reason", required=True)
@@ -871,6 +881,39 @@ def main(argv=None):
             print(json.dumps(doc, indent=2))
         else:
             sys.stdout.write(render(need))
+        return 0
+
+    if args.cmd == "refute":
+        # T_REFUTE told the captain to "record upheld/overturned either way" and gave it no
+        # way to do so: every writer of hypothesis_status was a DEFAULT (cluster.py at filing,
+        # needs.py in the schema), so the only route was hand-editing YAML front matter. Round
+        # 3 recorded a verdict on 5 of 16 needs and left 11 at `inconclusive`, which reads as
+        # "the refuter could not decide" when it means "the verdict had nowhere to go". The
+        # whole two-arm design rests on refutation -- decbench overturned 3 of 8 filed
+        # diagnoses -- so an instruction without a mechanism is the expensive kind of gap.
+        need = load(args.need_id)
+        if need is None:
+            print("no such need: %s" % args.need_id, file=sys.stderr)
+            return 1
+        before = need.fields.get("hypothesis_status") or "inconclusive"
+        need.fields["hypothesis_status"] = args.verdict
+        rnd = args.round if args.round is not None else (need.fields.get("rounds") or [None])[-1]
+        line = "- round %s REFUTER: hypothesis **%s**%s. %s" % (
+            rnd if rnd is not None else "?", args.verdict,
+            "" if before == args.verdict else " (was %s)" % before, args.note.strip())
+        log = (need.sections or {}).get("Decision log", "")
+        need.sections["Decision log"] = (log.rstrip() + "\n" + line + "\n") if log.strip() else (line + "\n")
+        problems = validate(need)
+        if problems:
+            print("refusing to write an invalid record: %s" % "; ".join(problems), file=sys.stderr)
+            return 1
+        write(need)
+        out = {"need_id": need.need_id, "hypothesis_status": args.verdict, "was": before}
+        if args.json:
+            print(json.dumps(out, indent=2))
+        else:
+            print("%s: hypothesis %s%s" % (need.need_id, args.verdict,
+                                           "" if before == args.verdict else " (was %s)" % before))
         return 0
 
     if args.cmd == "reindex":

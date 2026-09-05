@@ -33,7 +33,7 @@ You may only move a machine along a legal edge; `captain.py` refuses anything el
 | `T_DRAIN` | while testers are live, do nothing but observe. As each finishes, grade it and run the tripwire | `T_GATE` |
 | `T_GATE` | `python3 -m scripts.repipe.verify --gate --round N`. **This is the load-bearing step.** | `T_DEDUP` |
 | `T_DEDUP` | `python3 -m scripts.repipe.cluster --round N` | `T_REFUTE` |
-| `T_REFUTE` | for each NEW cluster whose probe kind is not `absence`, spend one refuter on the *hypothesis*; record `upheld`/`overturned` either way | `T_TRIAGE` |
+| `T_REFUTE` | for each NEW cluster whose probe kind is not `absence`, spend one refuter on the *hypothesis*, then **record the verdict with `python3 -m scripts.repipe.needs refute <need_id> --verdict upheld\|overturned\|inconclusive --note '<what the refuter did and found>'`** — every non-absence need, either way. Leaving it at the filed default is not a verdict | `T_TRIAGE` |
 | `T_TRIAGE` | confirm each need's `track` and `touches` (they were inferred); set `scope` | `T_READY` |
 | `T_READY` | the backlog is published | `T_IDLE` |
 
@@ -64,8 +64,19 @@ cheap.
 **2. Refuting a hypothesis (`T_REFUTE`).** A need's `## Hypothesis` is the tester's guess.
 Spend one agent asking: *is this cause actually right, and would a fix built on it produce
 WRONG output?* In the sibling campaign, refuters overturned the filed diagnosis on **3 of 8**
-cases while the *symptom* stood in all 8. Record the verdict either way — an upheld
-hypothesis that was actually checked is worth more than one nobody looked at. Skip this
+cases while the *symptom* stood in all 8. Record the verdict either way, with
+
+```
+python3 -m scripts.repipe.needs refute <need_id> --verdict upheld|overturned|inconclusive \
+    --note "what the refuter did and what it found"
+```
+
+An upheld hypothesis that was actually checked is worth more than one nobody looked at, and
+`inconclusive` is a legitimate verdict — but only when a refuter ran and could not decide.
+**Leaving a need at the filed default is not a verdict**, and it is indistinguishable in the
+record from one. Round 3 recorded a verdict on 5 of 16 needs and left 11 at the default,
+which read as "the refuter could not decide" when it meant the verdict had nowhere to go:
+this command did not exist, so the only route was hand-editing YAML. Skip this
 entirely for `kind: absence` needs ("there is no `xrefs` subcommand" has no interesting root
 cause) — `REPIPE_REFUTE_MODE=absence-skip` is on by default for exactly that reason.
 
