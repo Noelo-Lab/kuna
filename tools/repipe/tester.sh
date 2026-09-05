@@ -225,8 +225,29 @@ if [ "$RC" -eq 124 ]; then
   log "timed out after ${TIMEOUT}s (partial report still harvested if present)"
   "$KUNA_PY" -m scripts.pipeline.state update --worker "$TESTER_ID" --status done --phase timeout --note "timeout ${TIMEOUT}s"
 elif [ "$RC" -ne 0 ]; then
-  log "codex exited rc=$RC"
-  "$KUNA_PY" -m scripts.pipeline.state update --worker "$TESTER_ID" --status failed --note "codex rc=$RC"
+  # A provider-side content refusal is NOT a kuna failure and not a harness bug, and counting
+  # it as one corrupts the two numbers this loop exists to produce: the solve rate and
+  # `gave_up: kuna-blocked`. It is only visible in the event stream -- the exit code is a bare
+  # 1, identical to a crash. Round 3 hit it on 6 of 36 tester runs, and on ALL THREE attempts
+  # at challenge 63d5a26a, which makes that challenge systematically unmeasurable with this
+  # tester model rather than hard.
+  #
+  # Recorded, not worked around. The refusal is the provider's call to make; the sanctioned
+  # route is the authorization programme named in the message itself. Do NOT reword prompts to
+  # get past the classifier.
+  REFUSAL=""
+  if [ -f "$EVENTS" ] && grep -q 'flagged for possible cybersecurity risk' "$EVENTS" 2>/dev/null; then
+    REFUSAL=1
+  fi
+  if [ -n "$REFUSAL" ]; then
+    log "PROVIDER REFUSAL (not a kuna failure): the tester model declined this challenge on"
+    log "  content policy. Evidence from this run is partial by construction. See $EVENTS."
+    "$KUNA_PY" -m scripts.pipeline.state update --worker "$TESTER_ID" --status failed \
+      --phase refused --note "provider-refusal: tester model declined on content policy (codex rc=$RC)"
+  else
+    log "codex exited rc=$RC"
+    "$KUNA_PY" -m scripts.pipeline.state update --worker "$TESTER_ID" --status failed --note "codex rc=$RC"
+  fi
 else
   log "done in ${ELAPSED}s (thread $THREAD_ID)"
   "$KUNA_PY" -m scripts.pipeline.state update --worker "$TESTER_ID" --status done --phase done

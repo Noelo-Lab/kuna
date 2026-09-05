@@ -616,6 +616,37 @@ human or an LLM reviewing five reports by eye reached the wrong verdict on all f
 replaying the probes reached the right one on all twenty-three. When the machine and the
 reviewer disagree, re-run the probe before believing the reviewer.
 
+## The tester model can refuse the task, and that is not a kuna result
+
+Round 3 lost a tester 78 seconds in, `codex exited rc=1`, no report, nine tool calls of
+evidence gone. The cause is only in the event stream:
+
+```json
+{"type":"turn.failed","error":{"message":"This content was flagged for possible
+ cybersecurity risk. ... To get authorized for security work, join the Trusted Access
+ for Cyber program"}}
+```
+
+The provider declined the work. It happened on **6 of 36 tester runs**, and on **all three
+attempts** at challenge `63d5a26a` — which makes that challenge systematically unmeasurable
+with this tester model rather than hard. Three other runs hit it mid-session and still filed
+reports, so it is not always fatal.
+
+This matters because it silently corrupts the two numbers the loop exists to produce. A
+refusal exits `1`, exactly like a crash, so it lands as a generic `failed` — and a challenge
+nobody was allowed to attempt is indistinguishable from one kuna could not support. Both the
+solve rate and `gave_up: kuna-blocked` drift by however often it happens.
+
+`tester.sh` now reads the event stream and records `--phase refused` with a
+`provider-refusal:` note, so `scripts.repipe.status` and the round's grading can tell it apart
+from a kuna failure and from a harness fault.
+
+**Recorded, not worked around.** Do not reword prompts to get past the classifier — the
+refusal is the provider's call, and the sanctioned route is the authorization programme the
+message names. If the refusal rate rises far enough to starve a round, the options are to
+raise it with the provider or to run the tester on a model licensed for this work; neither is
+something the loop should route around on its own.
+
 ## Machinery reference
 
 | Piece | What |
