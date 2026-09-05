@@ -23,7 +23,8 @@
 //! Ghidra's `StringsAnalyzer` and says so: "UTF-16/32 is a documented seam,
 //! skipped". Read as ASCII, a UTF-16LE literal is a one-character string — the
 //! `L"ntdll.dll"` argument of `LoadLibraryW` stops at the NUL after `n`. So
-//! [`scan_utf16_run`] is the missing width, mirroring the 1-byte matcher exactly:
+//! [`scan_utf16_run`](super::kuna_widestrings::scan_utf16_run) is the missing
+//! width, mirroring the 1-byte matcher exactly:
 //! the same [`super::is_string_char`] recognizer, the same require-NUL-end rule,
 //! the same minimum length — over 2-byte units instead of bytes. It is a widened
 //! matcher, not a different one, and it is reported as its own `encoding` so a
@@ -37,14 +38,15 @@ use object::read::{Object, ObjectSection, ObjectSegment};
 
 use crate::pass::StringFact;
 
-use super::{is_loaded_initialized, is_string_char, scan_run, scan_strings};
+use super::kuna_widestrings::scan_utf16_run;
+use super::{is_loaded_initialized, scan_run, scan_strings};
 
 /// The character width a row was found at.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Encoding {
     /// 1-byte characters — [`super::StringLiteralPass`]'s own width.
     Ascii,
-    /// 2-byte little-endian code units ([`scan_utf16_run`]).
+    /// 2-byte little-endian code units (`kuna_widestrings::scan_utf16_run`).
     Utf16,
 }
 
@@ -147,38 +149,6 @@ fn segment_regions<'d>(file: &'d object::File<'d>) -> Vec<Region<'d>> {
             _ => continue,
         };
         out.push(Region { name: None, vma: seg.address(), data });
-    }
-    out
-}
-
-/// Mirror of the 1-byte `MinLengthCharSequenceMatcher` over 2-byte little-endian
-/// code units: a run of units whose high byte is zero and whose low byte is in
-/// [`super::is_string_char`], closed by a `0x0000` unit (require-NUL-end) and
-/// emitted when it holds at least `min_len` units.
-///
-/// Units are read on the image's even addresses, the alignment every compiler
-/// emits a wide literal at, so a byte pair straddling two adjacent literals is
-/// never read as one character.
-fn scan_utf16_run(data: &[u8], vma: u64, min_len: usize) -> Vec<StringFact> {
-    let mut out = Vec::new();
-    let mut i = (vma % 2) as usize;
-    let mut run_start: Option<usize> = None;
-    while i + 1 < data.len() {
-        let (lo, hi) = (data[i], data[i + 1]);
-        if hi == 0 && is_string_char(lo) {
-            if run_start.is_none() {
-                run_start = Some(i);
-            }
-            i += 2;
-            continue;
-        }
-        if let Some(start) = run_start.take() {
-            let units = (i - start) / 2;
-            if lo == 0 && hi == 0 && units >= min_len {
-                out.push(StringFact { addr: vma + start as u64, len: (units as u32 + 1) * 2 });
-            }
-        }
-        i += 2;
     }
     out
 }

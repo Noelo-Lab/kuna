@@ -545,6 +545,28 @@ The always-on core, in pass order (`passes.rs (passes_for)`):
   additionally scores candidates with a trigram model (`StringModel.sng`, not
   vendored), so kuna over-accepts random printable NUL-terminated runs; real
   literals are unaffected.
+- **Wide strings** (`widestrings`, the `StringsAnalyzer` `allCharWidths` arm,
+  `decompiler/crates/kuna-analysis/src/analyzers/strings/kuna_widestrings.rs
+  (scan_wide_strings)`): the same matcher over 2-byte little-endian code units —
+  the same printable-ASCII recognizer applied to each unit's low byte, the same
+  require-NUL-end rule, the same minimum length of 5, over the same section set,
+  reading units on even addresses only. Each hit commits a typelocked
+  `wchar2[len/2]` instead of a `char[N]`, and the character type's size 2 is what
+  makes the printer emit the `L` prefix and read the bytes two at a time. Without
+  it a UTF-16LE literal is read at 1-byte width as a ONE-CHARACTER string — the
+  NUL behind the first unit closes the run — so a wide Windows-API argument
+  rendered as its own first character (`LoadLibraryW("n")` where the image says
+  `L"ntdll.dll"`). The two widths cannot claim the same run: a wide unit demands a
+  zero high byte, so five consecutive 1-byte-charset bytes never occur inside a
+  wide run. They are ordered anyway, and the order is the fix rather than a
+  detail — the wide facts commit FIRST, because `operand_refs` puts facts into the
+  same stream whose run test accepts a *single* visible character, and at a wide
+  literal that test reads the first unit plus its high-byte NUL as a complete
+  `char[2]`. Whichever fact is planted first wins the commit's occupied guard, so
+  the width that read the whole literal has to go first. Scope: UTF-16**LE** whose
+  units are all in the 1-byte charset (the Windows-API case); a big-endian or
+  non-Latin wide literal is not recovered. Default **on**; `off` leaves the markup
+  exactly the 1-byte pass's.
 - **Library prototypes** (`libproto`, the `ApplyDataArchiveAnalyzer` analog,
   `decompiler/crates/kuna-analysis/src/analyzers/protos/mod.rs (LibProtoPass)`):
   Ghidra ships parsed C headers as `.gdt` archives; kuna substitutes a built-in

@@ -911,6 +911,10 @@ pub struct Architecture {
     pub analysis_libcsigs: bool,
     /// (kuna) Gate the string-literal pass (`strings`); default on.
     pub analysis_strings: bool,
+    /// (kuna) Gate the 2-byte (UTF-16LE) width of the string-literal pass
+    /// (`widestrings`); default on. Off drops the wide facts at the commit, so the
+    /// markup is exactly the 1-byte pass's.
+    pub analysis_widestrings: bool,
     /// (kuna) Gate the entry-discovery pass (`entry_disc`); default on.
     pub analysis_entry_disc: bool,
     /// (kuna) Gate the `.eh_frame` LSDA landing-pad discovery sub-feature of the
@@ -1767,6 +1771,7 @@ impl Architecture {
             analysis_picbase: false,
             analysis_entrymainproto: false,
             analysis_strings: false,
+            analysis_widestrings: false,
             analysis_entry_disc: false,
             analysis_eh_frame_full: false,
             analysis_fdeinterior: false,
@@ -1965,6 +1970,7 @@ impl Architecture {
         // (kuna) DIV-65 measured libc signature extension — default-ON.
         self.analysis_libcsigs = true;
         self.analysis_strings = true;
+        self.analysis_widestrings = true; // (kuna) DIV-110: the StringsAnalyzer `allCharWidths` 2-byte width default-ON (a wide literal was read as its own first character)
         self.analysis_entry_disc = true;
         // (kuna) Unmapped-CALL-target entry suppression -- default-ON (it only ever
         // withholds an entry the walk already refused to decode).
@@ -2352,6 +2358,9 @@ impl Architecture {
             "libproto" => on_off!(analysis_libproto, "Library-prototype analysis pass"),
             "libcsigs" => on_off!(analysis_libcsigs, "Measured libc signature extension"),
             "strings" => on_off!(analysis_strings, "String-literal analysis pass"),
+            "widestrings" => {
+                on_off!(analysis_widestrings, "UTF-16LE width of the string-literal pass")
+            }
             "entry_disc" => on_off!(analysis_entry_disc, "Entry-discovery analysis pass"),
             "unmappedentry" => {
                 on_off!(analysis_unmappedentry, "Unmapped-CALL-target entry suppression")

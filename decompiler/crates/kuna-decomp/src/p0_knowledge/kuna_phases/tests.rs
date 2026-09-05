@@ -52,7 +52,7 @@ fn surface_count_is_107() {
 }
 
 #[test]
-fn settable_count_is_141() {
+fn settable_count_is_142() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -103,12 +103,12 @@ fn settable_count_is_141() {
     // +1 for `unmappedentry` (P1 unmapped-CALL-target entry suppression).
     // +1 for `entrymainproto` (P1 PE CRT entry-function prototype recovery).
     // +1 for `ppclocalentry` (P1 PPC64 ELFv2 local-entry entry suppression).
-    assert_eq!(kuna_num_settables(), 141);
-    assert_eq!(SETTABLE_TABLE.len(), 141);
+    assert_eq!(kuna_num_settables(), 142);
+    assert_eq!(SETTABLE_TABLE.len(), 142);
 }
 
 #[test]
-fn tier_counts_are_32_core_58_transform_51_analysis() {
+fn tier_counts_are_32_core_58_transform_52_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -198,7 +198,7 @@ fn tier_counts_are_32_core_58_transform_51_analysis() {
     // prototype recovery).
     // analysis 50 -> 51: +1 for `ppclocalentry` (P1 PPC64 ELFv2 local-entry entry
     // suppression).
-    assert_eq!((core, transform, analysis), (32, 58, 51));
+    assert_eq!((core, transform, analysis), (32, 58, 52));
 }
 
 #[test]
@@ -781,7 +781,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `ppclocalentry` (another P1 row beside `unmappedentry`, mid-table).
     // +1 for `varargstackargs` and +1 for `calleearity`; both P4 rows sit
     // mid-table beside `callsitestackargs`, so the tail does not move either.
-    assert_eq!(json.matches("},\n").count(), 140);
+    assert_eq!(json.matches("},\n").count(), 141);
 }
 
 #[test]

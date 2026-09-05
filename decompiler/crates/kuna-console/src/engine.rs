@@ -2413,7 +2413,27 @@ fn commit_analysis_output(
     //    so the engine+printer render the literal instead of the bare constant.
     //    Ghidra's StringsAnalyzer marks the data and locks its type; the typelock
     //    is what keeps the array char[N] type through type propagation.
-    for fact in &out.strings {
+    //    (kuna `widestrings`) The 2-byte width rides the same arm: a UTF-16LE
+    //    literal gets a `wchar2[N]` (element count `len / 2`) instead of a
+    //    `char[N]`, which is what makes the printer emit the `L` prefix and read the
+    //    bytes two at a time (`L"ntdll.dll"` rather than `"n"`).
+    //
+    //    The wide facts are committed FIRST, and the order is the fix rather than a
+    //    detail. Against `StringLiteralPass`'s own 1-byte facts the order is
+    //    immaterial — a wide unit demands a zero high byte, so five consecutive
+    //    1-byte-charset bytes never occur inside a wide run and neither width can
+    //    reach the other's address. It matters against `operand_refs`, whose facts
+    //    arrive in this same stream and whose run test accepts a SINGLE visible
+    //    character: at a wide literal it reads the first unit's low byte and the
+    //    high-byte NUL behind it as a complete `char[2]`, which is exactly the
+    //    `LoadLibraryW("n")` defect. Whichever fact is planted first wins the
+    //    `occupied` guard below, so the width that read the whole literal has to go
+    //    first. The stream is dropped entirely when the gate is off — `off` is
+    //    byte-identical to the 1-byte markup alone.
+    let wide = if prog.arch().analysis_widestrings { out.wide_strings.as_slice() } else { &[] };
+    for (fact, char_size) in
+        wide.iter().map(|f| (f, 2u32)).chain(out.strings.iter().map(|f| (f, 1u32)))
+    {
         let addr = Address::new(Rc::clone(code_space), fact.addr);
         // Conservative guard: skip an address that already carries a symbol (an
         // existing data/function symbol must not be shadowed). Ghidra likewise
@@ -2437,9 +2457,23 @@ fn commit_analysis_output(
 
         // char[len]: getTypeChar(getSizeOfChar()) -> getTypeArray(len, char). Both
         // are fallible TypeFactory queries (the type group must be built by now).
-        let char_size = prog.arch().types().get_size_of_char();
-        let ch = prog.arch().types().get_type_char(char_size)?;
-        let arr = prog.arch().types().get_type_array(fact.len as i32, ch)?;
+        // `fact.len` is the BYTE span including the terminator, so the array's
+        // element count is `len / char_size` — identical for the 1-byte width.
+        let ch = if char_size == 1 {
+            prog.arch().types().get_type_char(prog.arch().types().get_size_of_char())?
+        } else {
+            // A language whose <coretypes> declares no 2-byte character type has no
+            // `wchar2` to plant. Skip the wide fact rather than fail the whole
+            // commit — the 1-byte arm keeps its original hard failure.
+            match prog.arch().types().get_type_char(2) {
+                Ok(ch) => ch,
+                Err(_) => continue,
+            }
+        };
+        let arr = prog
+            .arch()
+            .types()
+            .get_type_array((fact.len / char_size) as i32, ch)?;
 
         // A cosmetic synthetic name `s_<addr>` (the symbol exists to carry the
         // char[N] type at the address; the printer renders the literal, not the

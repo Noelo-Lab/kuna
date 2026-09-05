@@ -334,6 +334,12 @@ pub struct AnalysisOutput {
     pub externref: Vec<(u64, u64)>,
     /// Detected NUL-terminated string literals (a typed `char[N]` per address).
     pub strings: Vec<StringFact>,
+    /// (kuna `widestrings`) Detected NUL-terminated UTF-16LE string literals — the
+    /// `StringsAnalyzer` `allCharWidths` width kuna did not carry. Kept apart from
+    /// [`Self::strings`] because the commit boundary types them differently (a
+    /// `wchar2[N]`, whose element count is `len / 2`) and gates them separately.
+    /// Produced by [`crate::strings::kuna_widestrings`].
+    pub wide_strings: Vec<StringFact>,
     /// Library-function prototypes to seed onto matching FunctionSymbols (the kuna
     /// analog of Ghidra's `ApplyDataArchiveAnalyzer` / `.gdt` archives). Each is
     /// parked on its named callee via `set_function_prototype_pieces`, so a caller
@@ -499,6 +505,7 @@ impl AnalysisOutput {
         self.readonly.extend(other.readonly);
         self.externref.extend(other.externref);
         self.strings.extend(other.strings);
+        self.wide_strings.extend(other.wide_strings);
         self.prototypes.extend(other.prototypes);
         self.context_paints.extend(other.context_paints);
         self.tracked_regs.extend(other.tracked_regs);
