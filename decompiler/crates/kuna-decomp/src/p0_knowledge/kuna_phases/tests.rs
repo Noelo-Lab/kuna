@@ -54,7 +54,7 @@ fn surface_count_is_108() {
 }
 
 #[test]
-fn settable_count_is_148() {
+fn settable_count_is_149() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -105,12 +105,14 @@ fn settable_count_is_148() {
     // +1 for `unmappedentry` (P1 unmapped-CALL-target entry suppression).
     // +1 for `entrymainproto` (P1 PE CRT entry-function prototype recovery).
     // +1 for `ppclocalentry` (P1 PPC64 ELFv2 local-entry entry suppression).
-    assert_eq!(kuna_num_settables(), 148);
-    assert_eq!(SETTABLE_TABLE.len(), 148);
+    // +1 for `pdatachained` (P1 PE chained-`UNWIND_INFO` `.pdata` entry
+    // suppression, DIV-117, GH-403).
+    assert_eq!(kuna_num_settables(), 149);
+    assert_eq!(SETTABLE_TABLE.len(), 149);
 }
 
 #[test]
-fn tier_counts_are_35_core_60_transform_53_analysis() {
+fn tier_counts_are_35_core_60_transform_54_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -200,7 +202,9 @@ fn tier_counts_are_35_core_60_transform_53_analysis() {
     // prototype recovery).
     // analysis 50 -> 51: +1 for `ppclocalentry` (P1 PPC64 ELFv2 local-entry entry
     // suppression).
-    assert_eq!((core, transform, analysis), (35, 60, 53));
+    // analysis 53 -> 54: +1 for `pdatachained` (P1 PE chained-`UNWIND_INFO`
+    // `.pdata` entry suppression, DIV-117).
+    assert_eq!((core, transform, analysis), (35, 60, 54));
 }
 
 #[test]
@@ -498,6 +502,10 @@ fn option_values_live_value_present_for_50_suppressed_for_94() {
         // with no codegen live reader (read console-side via kuna_live_value), like
         // `unmappedentry` above. Default-ON.
         "ppclocalentry",
+        // (kuna, GH-403) PE chained-`UNWIND_INFO` `.pdata` entry suppression -- an
+        // analysis-tier gate with no codegen live reader (read console-side via
+        // kuna_live_value), like `ppclocalentry` above. Default-ON.
+        "pdatachained",
         "aif",
         // (kuna, GH-299) The AIF gap-cursor aligned slide — an analysis-tier gate
         // with no codegen live reader (read console-side via kuna_live_value), like
@@ -794,9 +802,11 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // mid-table, beside `fdeinterior`, so neither moves the tail either); the
     // count is one less than the settable total, since the last row has no comma.
     // +1 for `ppclocalentry` (another P1 row beside `unmappedentry`, mid-table).
+    // +1 for `pdatachained`, appended at the TAIL, so the previous last row gains
+    // its comma and the count moves with the total.
     // +1 for `varargstackargs` and +1 for `calleearity`; both P4 rows sit
     // mid-table beside `callsitestackargs`, so the tail does not move either.
-    assert_eq!(json.matches("},\n").count(), 147);
+    assert_eq!(json.matches("},\n").count(), 148);
 }
 
 #[test]
