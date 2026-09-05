@@ -417,6 +417,10 @@ fn option_values_live_value_present_for_46_suppressed_for_92() {
         // `libproto` above. Default-ON (DIV-65).
         "libcsigs",
         "strings",
+        // (kuna) The 2-byte (UTF-16LE) width of the string-literal pass — an
+        // analysis-pass gate read at the commit boundary (console-side via
+        // kuna_live_value), same as `strings` above. Default-ON (DIV-110).
+        "widestrings",
         "entry_disc",
         // (kuna) `.eh_frame` LSDA landing-pad discovery sub-feature of entry_disc
         // (GccExceptionAnalyzer), default-off; analysis-tier, no codegen live reader.

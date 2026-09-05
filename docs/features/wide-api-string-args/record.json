@@ -1,0 +1,55 @@
+{
+  "slug": "wide-api-string-args",
+  "need_id": "wide-api-string-args",
+  "track": "quality",
+  "scope": "small",
+  "round": 2,
+  "branch": "feat/re-wide-api-string-args",
+  "option": "widestrings",
+  "default": "on",
+  "div": "DIV-110",
+  "touches": [
+    "decompiler/crates/kuna-analysis",
+    "decompiler/crates/kuna-console",
+    "decompiler/crates/kuna-decomp"
+  ],
+  "summary": "The string-literal analysis pass gains its 2-byte (UTF-16LE) width -- Ghidra StringsAnalyzer's allCharWidths arm, which kuna's 1-byte port left as a documented seam -- and plants a typelocked wchar2[N] at each wide literal, so a wide Windows-API argument renders whole (L\"ntdll.dll\") instead of as its own first character (\"n\").",
+  "decisions": [
+    {
+      "what": "the filed hypothesis is half right and names the wrong producer -- OVERTURNED in part",
+      "detail": "Filed: 'string markup or emission treats UTF-16LE data as an 8-bit NUL-terminated string'. The emission half is right; the markup half is not. StringLiteralPass marks up NOTHING at a wide literal -- read at 1-byte width it is a ONE-character run, which is below the pass's minimum length of 5, so no fact is emitted and no symbol is planted. Measured: with `--mode reliable` (no operand_refs) the same call renders the bare `LoadLibraryW(0x1400074b8)`, not `\"n\"`. What produces the `\"n\"` is `operand_refs`, whose `readonly_string_at` accepts a run of a SINGLE visible character (it exists for the residual short strings the main pass misses) and so reads the first unit's low byte plus the high-byte NUL behind it as a complete char[2]. operand_refs is an AGGRESSIVE_OVERRIDES member and `auto` picks aggressive under 500 KiB, so it is what the `kuna` binary runs by default. The captain's scouting was closer -- 'the missing link is the data/type markup, NOT the scanner and NOT the printer' -- but named StringLiteralPass as the markup; it is operand_refs."
+    },
+    {
+      "what": "the ordering is half the fix, and it is why a scanner alone would not have closed the need",
+      "detail": "Both a wide fact and an operand_refs fact can name the same address, they arrive in the same `AnalysisOutput::strings` stream, and the commit's `occupied` guard means whichever is planted first wins. Emitting the wide facts and appending them (the obvious shape) left the witness rendering `LoadLibraryW(\"n\")` unchanged under the default mode -- verified before the order was flipped. The wide facts therefore commit FIRST. Against StringLiteralPass's own facts the order is immaterial and provably so: a wide unit demands a zero high byte, so five consecutive 1-byte-charset bytes never occur inside a wide run and neither width can reach the other's address (asserted as a unit test)."
+    },
+    {
+      "what": "the matcher is MOVED, not duplicated",
+      "detail": "kuna_stringinv.rs already carried `scan_utf16_run` for `kuna strings --encoding utf16`, and its module docs already named this exact defect ('the L\"ntdll.dll\" argument of LoadLibraryW stops at the NUL after n'). It moved into the new kuna_widestrings.rs and both callers now use it, so the inventory a user reads and the markup the engine commits stay one scan rather than two that can drift."
+    },
+    {
+      "what": "the 1-byte arm's failure mode is preserved exactly",
+      "detail": "The commit's char-type lookup was `get_type_char(get_size_of_char())?` -- a hard failure of the whole commit. The wide arm cannot use that: a language whose <coretypes> declares no 2-byte character type has no wchar2 to plant, and that is not a reason to fail the commit. So the wide arm skips the fact and the 1-byte arm keeps its `?`. Likewise the array element count is now `len / char_size`, which is `len` verbatim for char_size 1."
+    },
+    {
+      "what": "no tests/stages XML",
+      "detail": "The stages corpus is symbol-less bytechunks, which no analysis pass reaches -- the `strings` option it extends has no stage case either, for the same reason. Coverage is a cross-crate end-to-end test in kuna-console plus the promoted CLI probe, the shape docs/re-needs and the sibling analysis-tier options (noreturn_propagate, relocobjects) already use."
+    },
+    {
+      "what": "the acceptance target is dataset-only, so the probe was re-pointed at a vendored fixture",
+      "detail": "`verify --promote` refuses a `binary_source: dataset` target because CI has no dataset. widestrings_x86_64.exe is a 1536-byte synthesized PE32+ assembled byte by byte in Python -- the technique the existing crtmain_x86_64.exe fixture (built for THIS SAME challenge) established, since no toolchain on this host links a Windows image. It carries the wide literal on LoadLibraryW and an ASCII one on GetProcAddress, so the promoted probe asserts both the fix and the control that the 1-byte width is untouched."
+    },
+    {
+      "what": "a separate defect found and NOT fixed here",
+      "detail": "`kuna decompile --assert 'data <addr> <type>'` (the P5 const-pointer directive, i.e. `map address`) is INERT at an address that carries no symbol yet, on both PE and ELF: it reports status `applied` and changes nothing. The same `map address` typed into decomp_dbg before OR after `read symbols` works and produces L\"ntdll.dll\" on the witness. Measured while looking for a way to test the mechanism without building it. Out of scope for this need and left for its own record."
+    }
+  ],
+  "collateral_sweep": {},
+  "cost": {},
+  "not_closed": [
+    "Scope is UTF-16LE whose code units are all in the 1-byte printable-ASCII charset -- the Windows-API case. A big-endian or non-Latin wide literal is still not recovered, exactly as `kuna strings --encoding utf16` does not recover it.",
+    "UTF-32 (`StringsAnalyzer` also offers a 4-byte width) is untouched.",
+    "A wide literal in a WRITABLE section gets its symbol but not its literal: the printer requires readonly before it will read the bytes, so it renders the name `s_<addr>` instead. Seen once in the sweep (crypto3/4/5.exe `s_405010`, a decode output buffer) and it is the same rule the 1-byte width has always followed.",
+    "`kuna strings --encoding utf16` reports a wide literal at ANY even address in a scanned region; the markup only reaches the ones a constant actually points at. The two surfaces still disagree on an unreferenced literal, which is correct but is not obvious from either."
+  ]
+}
