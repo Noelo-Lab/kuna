@@ -14,7 +14,7 @@ rounds: [2]
 first_seen_round: 2
 attempts: 4
 covered_by_option: null
-touches: [decompiler/crates/kuna-decomp, decompiler/crates/kuna-console]
+touches: [decompiler/crates/kuna-decomp, decompiler/crates/kuna-console, decompiler/crates/kuna-decomp/phases.toml, decompiler/crates/kuna-decomp/src/p0_knowledge/options.rs, docs/options.md, docs/history.md, tests/stages]
 scope: small
 regression_of: null
 pr: "396"
@@ -294,3 +294,39 @@ _none recorded_
   is flat (`stage_jump_table` ~31%, heritage ~23%, oppool1 ~14%, ActionDeadCode ~14%) and #396 took
   its 0.9 s out of Rc traffic on 9.5 M tree mutations, i.e. the volume, not a pass. Dispatch it
   `[PROPOSAL]`-shaped or park it; do not spend a fifth open-ended builder here.
+- round 2 B_PLAN wave 17 (captain): **attempt 5 IS dispatched, and it is dispatched ALONE with the
+  option leases — the one thing every previous attempt was denied.** `touches` widened from
+  [kuna-decomp, kuna-console] to also declare `phases.toml`, `p0_knowledge/options.rs`,
+  `docs/options.md`, `docs/history.md` and `tests/stages`, so `resources_for` now hands this need
+  file:phases.toml + counter:catalog + counter:div + counter:stages-corpus + file:docs/options.md.
+  That is deliberate and it costs a wave: those five leases are also the whole `quality`
+  TRACK_RESOURCES set, so this dispatch excludes every quality need while it lives, and the
+  higher-ranked `mach-o-entry-function` (13.86, small, attempts 0, acceptance genuinely failing on
+  `name.*main`) is next in line rather than concurrent. The override of select's ranking (this need
+  scores 4.62, last) is on one fact: it is the ONLY need in the backlog with a specified, measured,
+  single-change path to its own acceptance, and it has been starved of the lease that path needs
+  twice.
+- round 2 B_PLAN wave 17 (captain), **the brief — this is a SCOPED FEATURE PR, not a fifth
+  profiling run. Do not re-profile; the profile is in this file and in
+  `docs/features/decompiling-3396-byte-main/record.json`.**
+  1. Implement exactly one mechanism: **share the jump-table partial sub-decompilation across
+     tables** (C++ `stageJumpTable` runs the clone + reduced pipeline once per function behind
+     `if (!partial.isJumptableRecoveryOn())`; kuna runs it once per table). Measured here:
+     2 tables, 3,077 ms of action time + 464 ms of cloning, so ~1.7 s / ~15% off an 11.2 s witness.
+  2. It changes which tables recover, so it needs a `phases.toml` row + `options.rs` registration
+     + the catalog counts + a DIV row + a `tests/stages` case. **You hold all of those leases.**
+  3. A fact worth having before you design the gate: `unrolledguard` — the option whose
+     per-table re-clone this would remove — is `default = off, destructive = true` in
+     `phases.toml`. If the re-clone is load-bearing only when `unrolledguard` is on, the shared
+     partial can be the DEFAULT and per-table cloning kept for the `unrolledguard on` path; verify
+     that, do not assume it.
+  4. Default-ON needs the usual evidence: 0/675 datatest assertions moved. If any move, ship the
+     option default-OFF and say so — a measured, output-identical, merged cut that misses the
+     10 s bar is still a success by this loop's rules, and **the bar is not moved to meet it**
+     (four captains have now declined to re-cut it).
+  5. Measurement, inherited: `kuna decompile` FORKS `decomp_dbg`, so an A/B that copies only
+     `kuna` aside silently times the freshly built engine — pin the engine with
+     `KUNA_DECOMP_DBG`. Interleaved paired A/B only; a sequential timeit on this box has
+     reported +42% on byte-identical output. `perf` is blocked (`perf_event_paranoid = 4`);
+     instrument, do not sample.
+

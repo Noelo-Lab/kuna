@@ -114,3 +114,10 @@ _none recorded_
 
 - filed by cluster.py from 1 observation(s)
 - round 2 T_TRIAGE (captain): track tooling -> QUALITY, touches kuna-cli -> kuna-analysis/src/loader. LC_MAIN is a load-command fact, so this is loader/analysis-tier and not a CLI change; and naming an entry `main` with an argc/argv prototype is a naming POLICY that changes emitted output, so it ships behind an option and must hold the counter leases. scope stays small -- the entry offset is directly available in the load command.
+- round 2 B_PLAN wave 17 (captain): **NEXT IN LINE, not dispatched this wave.** Top of the
+  13.86 tie among needs with a real acceptance probe (its `name.*main` clause measured
+  `<no match>` on merged main 8634dbc9, so it is closable by probe), small scope, attempts 0.
+  It is held back only because wave 17 gave the quality/counter lease set to the perf need
+  `decompiling-3396-byte-main` for its one specified fix; dispatch this the moment that
+  builder drains.
+
