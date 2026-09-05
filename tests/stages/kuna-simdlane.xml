@@ -1,0 +1,83 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    RE-friction round 2, need `simd-constant-string-initializer`, challenge
+    653d88600f4238b24302b0ec (macOS x86-64 Crackme0x04), sub_100003790 at
+    0x100003790  -  the 752-byte initializer that builds two consecutive
+    character ranges and then spells the crackme's prompt and result messages
+    out of them.  Verbatim bytes; the second chunk is the SSE constant table
+    at 0x100003f30 the vectorised body indexes ({0,1,...,15}, {16 x 16},
+    {32 x 16}).
+
+    Option `simdlane` (P3 simplification-quiescence).  The compiler broadcasts
+    one byte across an XMM register with the standard idiom
+
+        66 0f ef d2        pxor   xmm2,xmm2
+        66 0f 38 00 c2     pshufb xmm0,xmm2
+
+    and `pshufb` has no p-code semantics: the x86 SLEIGH spec models it as an
+    opaque CALLOTHER user op over a 16-byte value.  ActionLaneDivide then splits
+    the vector consumers into byte lanes, so every lane of the result becomes
+    its own SUBPIECE of something nothing downstream can see through, and the
+    body comes back as thirty-two `SUB161(v7,k)` temporaries  -  thirty of them
+    declared only to be read once  -  that all name the SAME byte.
+
+    The instruction is a pure permutation with an exact per-lane definition once
+    the mask is known, so a one-byte lane read of a constant-mask shuffle IS a
+    lane read of its source.  With the option on all thirty-two resolve to
+    `dat_100008040` / `dat_100008041` and the lane temporaries and their
+    declarations are gone.
+
+    Two passes over one function: pass 1 pins the upstream rendering with
+    `option simdlane off`, pass 2 the shipped default.  Counts are over the
+    whole transcript, so a shape present in only one pass pins that pass.
+-->
+<bytechunk space="ram" offset="0x100003790">
+5541574156538b05a848000085c00f8832010000440fb60d944800000fb6158e
+48000089c14883c00183f90f730731f6e9e000000089c683e6f066410f6ec166
+0fefd2660f3800c2660f6eca660f3800ca488d4ef04989c849c1e8044983c001
+4885c90f84640200004c89c14883e1fe48f7d9660f6f152507000031ff4c8d15
+5c480000488d1d35480000660f6f1d1d070000660f6f25250700000f1f440000
+660f6fe8660ffcea66410f7f2c3a660f6fe9660ffcea660f7f2c3b660f6fea66
+0ffceb660f6ff0660ffcf566410f7f743a10660ffce9660f7f6c3b104883c720
+660ffcd44883c10275b641f6c0017420660ffcc2488d0de5470000660f7f0439
+660ffcca488d0db5470000660f7f0c394839c67431488d0dc4470000488d3d9d
+470000662e0f1f8400000000000f1f00418d1c31881c318d1c32881c374883c6
+014839f075ea488d053348000066c700203a488d052948000066c7002128488d
+357b470000408a7e04448a5e07488d05c4470000448818448a7e0e448878018a
+56118850028a4e12884803408878048a5e18885805c6400600488d05d0470000
+c700070000004c8d0d13470000418a4102488d1d48470000880344887b018853
+0288530340887b04448a760244887305448a561344885306c64307208a460f88
+4308448a0644884309884b0a884b0b88430c44885b0d88530e4488430f884b10
+40887b11c7431221210a00418a5908488d2d2a470000885d00408a760d408875
+014488750244887d0388550488550540887d064488750744885508c645092088
+450a4488450b884d0c884d0d88450e44885d0f88551044884511884d1240887d
+13c74514203a280ac6451800418a5904488d2da9460000885d00408875014488
+550240887d03885504c64505204488550644885d0740887d08c645092088450a
+4488450b884d0c884d0d88450e44885d0f88551044884511884d1240887d13c7
+4514203a20005b415e415f5dc3660f6f15cb04000031ff41f6c0010f850ffeff
+ffe92afeffff662e0f1f840000000000
+</bytechunk>
+<bytechunk space="ram" offset="0x100003f30">
+000102030405060708090a0b0c0d0e0f10101010101010101010101010101010
+20202020202020202020202020202020
+</bytechunk>
+<symbol space="ram" offset="0x100003790" name="alphabet_init"/>
+</binaryimage>
+<script>
+  <com>option simdlane off</com>
+  <com>lo fu alphabet_init</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option simdlane on</com>
+  <com>lo fu alphabet_init</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="simdlane #1: the option-off pass keeps all 32 opaque lane extractions (and the option-on pass has none)" min="32" max="32">SUB161\(</stringmatch>
+<stringmatch name="simdlane #2: the option-off pass declares the 16-byte shuffle result as an array temporary" min="1" max="1">char v7 \[16\]; // xmm0</stringmatch>
+<stringmatch name="simdlane #3: the option-off pass declares the last byte-lane temporary of the second register" min="1" max="1">char v55; // xmm5_bp</stringmatch>
+<stringmatch name="simdlane #4: the option-on pass re-anchors every lane on the broadcast source byte (49 of the 50 occurrences)" min="50" max="50">dat_100008040 \+ </stringmatch>
+<stringmatch name="simdlane #5: neither pass invents a lane the shuffle does not select" min="0" max="0">SUB161\(v7,0x1[0-9a-f]\)</stringmatch>
+</decompilertest>

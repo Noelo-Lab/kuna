@@ -397,6 +397,14 @@ pub struct Architecture {
     /// (kuna GH-1282) Fold `(b<<k) s>> k` boolean sign-extension-mask idioms
     /// (C++ `fold_boolean_mask`).
     pub fold_boolean_mask: bool,
+    /// (kuna) Refuse to split a shared RETURN block that stores to GLOBALS, so
+    /// a 72-store epilogue is not cloned into each predecessor (option
+    /// `retsplitglobal`).  See [`crate::p8_structure::kuna_retsplitglobal`].
+    pub ret_split_global: bool,
+    /// (kuna) Resolve a one-byte lane read of a CONSTANT-mask `pshufb` shuffle
+    /// to the source lane it selects (option `simdlane`).  See
+    /// [`crate::p3_dataflow::kuna_simdlane`].
+    pub simd_lane_fold: bool,
     /// (kuna GH-9218) Absorb overlapping input Varnodes above a justified
     /// container (C++ `input_varnode_adjust`).
     pub input_varnode_adjust: bool,
@@ -1721,6 +1729,8 @@ impl Architecture {
             sparc_struct_return: false,
             ov_less_simplify: false,
             fold_boolean_mask: false,
+            simd_lane_fold: false,
+            ret_split_global: false,
             input_varnode_adjust: false,
             ret_input_half: false, // (kuna) option retinputhalf; reset_defaults sets the shipped default
             rust_abi: 0,        // (kuna) option rustabi; reset_defaults sets the shipped default
@@ -1931,6 +1941,8 @@ impl Architecture {
         self.sparc_struct_return = false; // (kuna) default: upstream byte-identical (GH-6882)
         self.ov_less_simplify = true; // (kuna) DIV-2 default-on (GH-7190)
         self.fold_boolean_mask = true; // (kuna) DIV-2 default-on (GH-1282)
+        self.ret_split_global = true; // (kuna) DIV-PENDING default-on: a shared RETURN block that stores to GLOBALS is not the bare epilogue `ActionReturnSplit::isSplittable` assumes, so it is no longer cloned into every predecessor. One-directional (it can only decline a split) and byte-identical (0/675) on the datatest corpus; restore the upstream predicate with `option retsplitglobal off`
+        self.simd_lane_fold = true; // (kuna) DIV-PENDING default-on: an exact identity (pshufb with a constant mask IS a byte permutation), so a lane read resolves to the source lane instead of an opaque CALLOTHER temporary. Byte-identical (0/675) on the datatest corpus; restore the opaque rendering with `option simdlane off`
         self.input_varnode_adjust = true; // (kuna) DIV-3 default-on (GH-9218)
         self.ret_input_half = true; // (kuna) DIV-85 default-on: a returned register half whose value is an input parameter the function MOVED into the return register is a real return, not leftover; keeping it also keeps the parameter it came from in the recovered signature. 0/675 byte-identical; an untouched return register is still dropped (the GH-6990 SPARC pass-through), restore the strict rule with `option retinputhalf off`
         self.rust_abi = 0; // (kuna) option rustabi default off: the pair-keeping rules are opt-in this round
@@ -2153,6 +2165,17 @@ impl Architecture {
             "addcarrychain" => on_off!(add_carry_chain, "Carry-chain wide-add recovery"),
             "ovlesssimplify" => on_off!(ov_less_simplify, "OV-flag signed-compare simplification"),
             "booleanmask" => on_off!(fold_boolean_mask, "Boolean sign-mask folding"),
+            "retsplitglobal" => {
+                let (val, msg) =
+                    crate::p8_structure::kuna_retsplitglobal::OptionRetSplitGlobal.apply(p1)?;
+                self.ret_split_global = val;
+                Ok(msg)
+            }
+            "simdlane" => {
+                let (val, msg) = crate::p3_dataflow::kuna_simdlane::OptionSimdLane.apply(p1)?;
+                self.simd_lane_fold = val;
+                Ok(msg)
+            }
             "flagcompare" => on_off!(fold_flag_compare, "Flag-modelled comparison folding"),
             "v850indirectbranch" => on_off!(v850_indirect_branch, "V850 indirect-branch reclassification"),
             "msvcftol" => on_off!(msvc_ftol, "MSVC __ftol-family call-fixup"),
@@ -3078,6 +3101,15 @@ impl Architecture {
         // reads `data.get_arch().<flag>`; the rule is registered `enabled=false`
         // so the live flag drives both the DIV default and the toggle).
         ctx.fold_boolean_mask = self.fold_boolean_mask; // GH-1282 booleanmask
+        ctx.simd_lane_fold = self.simd_lane_fold; // simdlane
+        ctx.ret_split_global = self.ret_split_global; // retsplitglobal
+        // (kuna) resolve the byte-shuffle user-op ids ONCE per program, so the
+        // rule can name a CALLOTHER through the ArchSeam (the boundary
+        // ArchContext carries no userop table).
+        ctx.simd_shuffle_userops = crate::p3_dataflow::kuna_simdlane::SHUFFLE_USEROP_NAMES
+            .iter()
+            .filter_map(|nm| self.userops.get_op_by_name(nm).map(|u| u.get_index() as kuna_base::types::uint4))
+            .collect();
         ctx.fold_flag_compare = self.fold_flag_compare; // GH-1276/8777 flagcompare
         ctx.add_carry_chain = self.add_carry_chain; // GH-8913 addcarrychain
         ctx.ov_less_simplify = self.ov_less_simplify; // GH-7190 ovlesssimplify

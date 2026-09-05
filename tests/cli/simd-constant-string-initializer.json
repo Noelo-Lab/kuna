@@ -1,0 +1,44 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "alphabet_init"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/simdlane_x86_64",
+    "binary_sha256": "8c802273524df8edacbda50e39fdb72a1e098b1353d70f15db9b63a80810867d",
+    "binary_size": 13640,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/simdlane_x86_64",
+    "selector": "alphabet_init",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "void alphabet_init\\(int a0\\)",
+      "alpha\\[",
+      "digit\\["
+    ],
+    "stdout_absent": [
+      "SUB161\\("
+    ],
+    "stdout_bytes": {
+      "lt": 9600,
+      "gt": 600
+    }
+  },
+  "notes": "In-repo twin of dataset acceptance a-9667a93853f5 (crackme0x04 sub_100003790); promote refuses it, CI has no dataset. gcc -O3 -mssse3 vectorises the range loops and broadcasts the base byte with pxor+pshufb, so all 32 lanes read back as opaque SUB161 temporaries. `--option simdlane off` restores the bug (10,329 bytes, 32 SUB161). tests/stages/kuna-simdlane.xml pins both arms."
+}

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    620,
-    620
+    628,
+    628
   ],
   "passing": [
     "data:ARRAYSUBFIELD #1: an 8-byte read at offset 0 of char[16] is a sized sub-field, not element 0",
@@ -557,6 +557,9 @@
     "data:regionstructure-switch #4: case 6 (last case), both passes",
     "data:regionstructure-switch #5: the default case is recovered, both passes",
     "data:regionstructure-switch #6: ZERO gotos  -  region structurer recovers the switch natively (parity with Ghidra)",
+    "data:retsplitglobal #1: the shared epilogue is cloned into all three predecessors with the option off and emitted once with it on",
+    "data:retsplitglobal #2: every store of the epilogue is cloned, not just its head (the last one counts the same)",
+    "data:retsplitglobal #3: the vectorised store loop the epilogue reads back is untouched by the split decision (three unrolled sites x two passes)",
     "data:returncopysplit #1: fix -- no per-element store into the read-only literal in either pass",
     "data:returncopysplit #2: fix -- no raw SUB81 truncation of the literal survives",
     "data:returncopysplit #3: the real copy site still reads the literal's low half per byte",
@@ -565,6 +568,11 @@
     "data:returncopysplit #6: every reference to the literal in the transcript is a read (16 in pass 1, 2 in pass 2)",
     "data:rodatastring #1: default pipeline recovers the read-only block copy as one builtin_strncpy",
     "data:rodatastring #2: rodatastring off restores the invalid array-typed cast (the filed bug)",
+    "data:simdlane #1: the option-off pass keeps all 32 opaque lane extractions (and the option-on pass has none)",
+    "data:simdlane #2: the option-off pass declares the 16-byte shuffle result as an array temporary",
+    "data:simdlane #3: the option-off pass declares the last byte-lane temporary of the second register",
+    "data:simdlane #4: the option-on pass re-anchors every lane on the broadcast source byte (49 of the 50 occurrences)",
+    "data:simdlane #5: neither pass invents a lane the shuffle does not select",
     "data:snipreads-indirect #1: the out-parameter copy directly follows the call statement in both passes",
     "data:snipreads-indirect #2: no slot copy immediately precedes the call text (the hoisted shape is gone)",
     "data:snipreads-indirect #3: freecon consumes the copied post-call value in both passes",

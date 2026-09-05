@@ -661,6 +661,40 @@ blocks, ≤ 12 printed ops, at most `kuna_taildup.rs (MAX_TAIL_CALLS)` = 2
 calls (angr `ReturnDuplicatorBase.max_calls_in_regions = 2` — the budget
 that defines this pass), `STORE` always declines. Flipped on by DIV-14.
 
+### retsplitglobal — a bound on cloning a global-writing epilogue
+
+`decompiler/crates/kuna-decomp/src/p8_structure/kuna_retsplitglobal.rs`, read by
+`decompiler/crates/kuna-decomp/src/substrate/funcdata_block.rs
+(Funcdata::return_split_is_splittable)` — the predicate BOTH return splitters
+consult, upstream `ActionReturnSplit` and kuna's `ActionReturnDup`
+(`returndup`), which is why `option returndup off` does not change the shapes
+this option governs. *Pattern:* upstream's `isSplittable` (`blockaction.cc:2242`)
+asks whether a multi-predecessor RETURN block is a *bare* epilogue, cheap enough
+to give every predecessor its own private copy. It admits only MULTIEQUAL, COPY
+and RETURN and, for COPY, checks only that no INPUT is free; it never looks at
+the COPY's OUTPUT. Upstream that is harmless, because the epilogue COPYs it was
+written for move registers, which die at the return. A COPY into a *persistent*
+Varnode is a store to a global the program can observe, and it is what P9 prints
+as `dat_<addr> = ...`. *Transform:* count the block's observable global stores
+and decline the split past `kuna_retsplitglobal.rs
+(MAX_CLONED_GLOBAL_STORES)` = 8, so the epilogue stays shared. *A bound, not a
+veto, is the design*, and it matches this phase's other duplication passes
+(`crossjumprevert` and `dedupitetail` cap a duplicated leaf run at 8 printed
+ops, `taildup` at 12): a two-store epilogue is cheap to clone and reads better
+cloned, because the merged form needs a phi per global and can print a global's
+own value back into it on a path where the binary stores nothing; a 72-store
+epilogue across three predecessors is 216 statements. *Bounds/failure:* only
+COPY is counted (a MULTIEQUAL writing a persistent Varnode is a phi, not a
+write — `node_split` rewires phis rather than duplicating an effect — and RETURN
+writes nothing); `Heritage::guardReturns`' synthetic `glob = glob` self-copies
+are excluded two ways, either sufficient, by the `return_copy` flag and by input
+and output naming the same storage, because those are liveness markers present
+before every RETURN in every function that has a global and counting them would
+price a bare epilogue by how many globals the whole *program* has. Declining is
+one-directional: it can only make a split not happen, so it cannot create a
+duplication or change what the surviving merged block does. Settable
+`retsplitglobal`, shipped default **on**.
+
 ### crossjumprevert — un-doing compiler cross-jumping (angr `CrossJumpReverter`)
 
 `decompiler/crates/kuna-decomp/src/p8_structure/kuna_crossjumpreverter.rs
