@@ -4,8 +4,8 @@
   "count": 35,
   "rejected_count": 0,
   "by_status": {
-    "closed": 25,
-    "open": 10
+    "closed": 26,
+    "open": 9
   },
   "by_track": {
     "perf": 2,
@@ -281,7 +281,7 @@
       "need_id": "no-cli-structuring-override",
       "title": "an agent cannot reclassify a flow from the CLI -- `--assert` has no `flow` directive",
       "track": "tooling",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
       "probe_id": "p-a862d011f87f",
       "acceptance_id": "a-158ef4220dee",
@@ -302,9 +302,9 @@
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": "398",
+      "closed_in_round": 2,
+      "closing_pr": "398",
       "reject_reason": null,
       "score": 13.862944,
       "path": "docs/re-needs/no-cli-structuring-override.md"

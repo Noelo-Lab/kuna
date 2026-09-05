@@ -2,7 +2,7 @@
 need_id: no-cli-structuring-override
 title: an agent cannot reclassify a flow from the CLI -- `--assert` has no `flow` directive
 track: tooling
-status: open
+status: closed
 severity: major
 probe_id: p-a862d011f87f
 acceptance_id: a-158ef4220dee
@@ -14,6 +14,9 @@ first_seen_round: 2
 attempts: 0
 touches: [decompiler/crates/kuna-cli/src/assertdecl.rs, decompiler/crates/kuna-console/src/ifacedecomp.rs, decompiler/crates/kuna-decomp/phases.toml]
 scope: small
+pr: "398"
+closed_in_round: 2
+closing_pr: "398"
 ---
 
 ## Symptom
@@ -249,3 +252,9 @@ exist). `kind` is effectively `absence`, which is the case `REPIPE_REFUTE_MODE=a
   directive arm in `assertdecl.rs` routed to an already-ported engine command. `touches` KEEPS
   `phases.toml` -- the exposure field of the owning subphase plausibly changes, and an
   under-reserved lease lets two builders collide, which is worse than queueing.
+- closed: acceptance a-158ef4220dee now PASSES at 44fd0603356f (PR #398, merged 2026-09-05T03:53:54Z).
+- round 2 B_DONE (captain): `pr: null -> 398` (`apply-acceptance` sets `closing_pr` but never
+  `pr`). `attempts` stays 0: the need was dispatched once and closed on that attempt, matching
+  the other first-try closures. No `verify --promote` was run -- the probe's test
+  `tests/cli/no-cli-structuring-override.json` landed inside merge 44fd0603 and `make test-cli`
+  already counts it (24/24 -> 25/25).
