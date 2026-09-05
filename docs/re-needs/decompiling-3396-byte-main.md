@@ -12,12 +12,12 @@ instances: 1
 challenges: [69a3822f7b3cc38c80464da4]
 rounds: [2]
 first_seen_round: 2
-attempts: 5
+attempts: 6
 covered_by_option: null
 touches: [decompiler/crates/kuna-decomp, decompiler/crates/kuna-console, decompiler/crates/kuna-decomp/phases.toml, decompiler/crates/kuna-decomp/src/p0_knowledge/options.rs, docs/options.md, docs/history.md, tests/stages]
 scope: small
 regression_of: null
-pr: "396"
+pr: "411"
 closed_in_round: 2
 closing_pr: "397"
 reject_reason: null
@@ -256,6 +256,51 @@ Two findings worth keeping beyond this need:
   ON. The two options are documented as *paired* instead: turn `unrolledguard` on together with
   `jtsharepartial off`.
 
+**Attempt 6 (round 2 wave 40, branch `feat/re-decompiling-3396-byte-main`). The wave-39
+regression is REFUTED by the code A/B it asked for, and the acceptance passes again.** The
+brief's first job was: build `fba4ebd8` and `96224463` in two worktrees and interleave at
+reps >= 7 on the same box. Done, 8 interleaved pairs, each arm pinned with `KUNA_DECOMP_DBG`
+so the `kuna decompile` -> `decomp_dbg` fork cannot time the other arm's engine:
+
+    pre  #406 (fba4ebd8)  median 9,619 ms   min 9,146   max 10,903
+    post #406 (96224463)  median 9,742 ms   min 9,111   max 11,740
+    paired mean +3.00% +/- 6.77 (0.4 sigma), median-of-medians +1.28%
+
+That is half a sigma on a bar this loop holds to 3. **stdout is byte-identical across the two
+builds** (sha256 `8ee55baf...`, 120,063 bytes), so #406 does not fire on this function at all;
+what was measured at wave 39 was the box, not the merge. The second half of the brief --
+"cumulative default-ON schedule cost", `simdshufflelane` registered unconditionally in the
+`analysis` rule group -- was ablated the same way, by deleting the `rrow!` line and rebuilding:
+**+0.23% +/- 5.33** (median-of-medians -0.72%). One more rule on the hottest opcode's dispatch
+list is not measurable here.
+
+The finding is the one wave 39 named as the flat branch: **this bar is inside the box's noise
+floor and the need is measurement-limited.** Six separate 7-8 sample medians taken this session
+on the same build ranged 9,002-9,742 ms against a 10,000 ms bar; the acceptance suite itself
+passed at 9,199 ms, 9,444 ms and 9,227 ms and failed once between them. The margin is ~7% and the
+run-to-run spread is +/-10%. **The bar was not moved** -- five attempts took this witness 71.5 -> 19.4 ->
+14.4 -> 11.8 -> 10.8 -> 9.2 s and the sixth did not need to.
+
+What attempt 6 leaves behind instead of a fix is the instrument every prior attempt built and
+threw away: `KUNA_ACTION_PROF=<path>` writes an exclusive-time, call-counted table of the Action
+tree, keyed by root variant so the reduced `jumptable` pipeline is separated from the function's
+own `decompile` pass for free. Off by default, +0.89% +/- 3.84 (i.e. nothing) with the variable
+unset. The current profile of this witness, for whoever is dispatched next:
+
+    decompile/oppool1     1,206 ms  13.6%   68 calls
+    decompile/heritage    1,180 ms  13.3%   20 calls
+    decompile/deadcode    1,084 ms  12.2%   27 calls
+    decompile/infertypes  1,065 ms  12.0%   20 calls
+    decompile/mergerequired 618 ms   7.0%    1 call
+    jumptable/*           1,387 ms  15.7%          (the shared partial, post-#397)
+    (8,854 ms of action time in a 10.2 s profiled run; ~1.7 s of the run is outside
+     the tree -- 0.95 s of it is load + function discovery, measured with `kuna functions`)
+
+**A seventh attempt should be dispatched only with a mechanism in hand.** The residue is flat in
+four ~12% blocks, this loop's perf bar is 3 sigma and >=20%, and the box's noise floor on this
+witness is larger than the margin -- so any future win here has to be structural (IR volume), and
+any future `regressed` flip on this need has to be settled by a code A/B before it is believed.
+
 ## Reference
 
 _none recorded_
@@ -429,3 +474,11 @@ _none recorded_
   (`infra/universalaction.rs:425`); the question is what it costs on a 3396-byte function where it
   never fires. See [[kuna-lifter-quadratic]] for the profiling lever (`kuna decompile` forks
   `decomp_dbg` and eats its stderr -- profile `--json`).
+- round 2 wave 40 BUILDER (b-r2-decompiling-3396), **attempt 6: the wave-39 `regressed` flip is a
+  measurement artifact and the code A/B says so.** Interleaved 8-pair A/B of `fba4ebd8` vs
+  `96224463`, engines pinned with `KUNA_DECOMP_DBG`, gave +3.00% +/- 6.77 (0.4 sigma) with
+  byte-identical stdout across the two builds -- #406 does not fire on this function. The named
+  follow-up (`simdshufflelane` in the `analysis` rule group) was ablated by deleting its `rrow!`
+  line: +0.23% +/- 5.33. Per the brief's flat branch, no fix was attempted and the bar was not
+  relaxed. Shipped instead: `KUNA_ACTION_PROF`, the per-Action exclusive-time profiler attempts
+  1-5 each rebuilt and discarded, plus this witness's current profile in the prose above.
