@@ -48,7 +48,7 @@ fn surface_count_is_105() {
 }
 
 #[test]
-fn settable_count_is_127() {
+fn settable_count_is_128() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -95,12 +95,13 @@ fn settable_count_is_127() {
     // +1 for `symbolnamebound` (P1 symbol-name scope resource bound, DIV-95, GH-338).
     // +1 for `msvcfpconst` (P1 MSVC `__real@` FP-constant recovery, DIV-96).
     // +1 for `cortexmpriv` (P2 Cortex-M privileged-mode guard folding, DIV-99).
-    assert_eq!(kuna_num_settables(), 127);
-    assert_eq!(SETTABLE_TABLE.len(), 127);
+    // +1 for `noreturnretuse` (P4 terminal no-return call use in return trials, DIV-117).
+    assert_eq!(kuna_num_settables(), 128);
+    assert_eq!(SETTABLE_TABLE.len(), 128);
 }
 
 #[test]
-fn tier_counts_are_28_core_52_transform_47_analysis() {
+fn tier_counts_are_29_core_52_transform_47_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -181,7 +182,10 @@ fn tier_counts_are_28_core_52_transform_47_analysis() {
     // surface reports about the frame the analysis already recovered.
     // transform 51 -> 52: +1 for `cortexmpriv` (P2 Cortex-M privileged-mode guard
     // folding, DIV-99).
-    assert_eq!((core, transform, analysis), (28, 52, 47));
+    // core 28 -> 29: +1 for `noreturnretuse` (P4 terminal no-return call use in
+    // return trials, DIV-117) -- core, not transform: it narrows which competing
+    // uses veto an output trial, changing no p-code of its own.
+    assert_eq!((core, transform, analysis), (29, 52, 47));
 }
 
 #[test]
@@ -371,7 +375,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_39_suppressed_for_88() {
+fn option_values_live_value_present_for_40_suppressed_for_88() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -609,7 +613,8 @@ fn option_values_live_value_present_for_39_suppressed_for_88() {
     // 35 -> 36: +1 for `retinputhalf` (live_field = ret_input_half).
     // 36 -> 37: +1 for `framelayout` (live_field = framelayout, DIV-97).
     // 38 -> 39: +1 for `cortexmpriv` (live_field = cortexmpriv, DIV-99).
-    assert_eq!(with_live, 39);
+    // 39 -> 40: +1 for `noreturnretuse` (live_field = noreturn_ret_use, DIV-117).
+    assert_eq!(with_live, 40);
 }
 
 #[test]
@@ -731,7 +736,9 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // not move the tail).
     // 123 -> 124: +1 for `framelayout` (DIV-97; its P6 row sits mid-table ahead of
     // `ctypes`, so it does not move the tail either).
-    assert_eq!(json.matches("},\n").count(), 126);
+    // 126 -> 127: +1 for `noreturnretuse` (DIV-117); its P4 row is appended after
+    // the last one, so the previous tail row gains a comma and it becomes the tail.
+    assert_eq!(json.matches("},\n").count(), 127);
 }
 
 #[test]

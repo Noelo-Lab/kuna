@@ -9,6 +9,7 @@ pub mod modelrules;
 pub mod coreaction_protos;
 pub mod kuna_callsitestackargs;
 pub mod kuna_dfunaffected;
+pub mod kuna_noreturnretuse;
 pub mod kuna_returnpair;
 pub mod kuna_retinputhalf;
 pub mod kuna_returnuncomputed;

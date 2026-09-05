@@ -261,6 +261,9 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "noreturn_extern",
     "inputvarnodeadjust",
     "retinputhalf",
+    // (kuna) DIV-117: a CALL on a block that ends in a no-return halt does not
+    // veto the RETURN's output trial in `only_op_use`. Default ON.
+    "noreturnretuse",
     "rustabi",
     "condexeplace",
     "sparcstructret",

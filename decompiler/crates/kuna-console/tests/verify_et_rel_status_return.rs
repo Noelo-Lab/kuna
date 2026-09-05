@@ -5,6 +5,10 @@
 //! ABI return/first-argument register. The normal path returns it; a separate
 //! guard-failure path passes the same value to an undefined no-return function.
 //! `status_caller` consumes the result through a relocated direct call.
+//!
+//! The status-return half is the two-pass gate for `option noreturnretuse`: OFF
+//! is the upstream behaviour, where the failure call's use of the same register
+//! vetoes the return trial and the helper recovers as `void`.
 
 use std::path::PathBuf;
 
@@ -23,7 +27,7 @@ fn fixture(name: &str) -> PathBuf {
         .join(name)
 }
 
-fn decompile_pair(name: &str) -> (String, String) {
+fn decompile_pair(name: &str, noreturn_ret_use: bool) -> (String, String) {
     let path = fixture(name);
     assert!(path.is_file(), "missing fixture {path:?}");
     let specs = repo_root().join("specs");
@@ -31,6 +35,7 @@ fn decompile_pair(name: &str) -> (String, String) {
     let mut program = bootstrap_from_object(path.to_str().unwrap(), "", &roots)
         .unwrap_or_else(|error| panic!("{name}: bootstrap failed: {}", error.explain()));
     program.commit_pending_analysis().expect("analysis commit");
+    program.arch_mut().noreturn_ret_use = noreturn_ret_use;
     let entries = program
         .function_entries_canonical()
         .into_iter()
@@ -65,7 +70,7 @@ fn arm_and_aarch64_status_helpers_keep_their_return_values() {
     }
 
     for name in ["et_rel_status_arm.o", "et_rel_status_aarch64.o"] {
-        let (helper, caller) = decompile_pair(name);
+        let (helper, caller) = decompile_pair(name, true);
         assert!(
             !helper.starts_with("void guarded_status"),
             "{name}: helper was forced to void:\n{helper}"
@@ -85,6 +90,12 @@ fn arm_and_aarch64_status_helpers_keep_their_return_values() {
         assert!(
             !caller.contains("sub_"),
             "{name}: relocated call lost callee identity:\n{caller}"
+        );
+
+        let (upstream, _) = decompile_pair(name, false);
+        assert!(
+            upstream.starts_with("void guarded_status"),
+            "{name}: `noreturnretuse off` must restore the upstream void recovery:\n{upstream}"
         );
     }
 }

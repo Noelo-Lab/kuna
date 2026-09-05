@@ -423,6 +423,10 @@ Three tiers:
 | the emitted C does not compile because its type names are not C | [`ctypes`](#ctypes) |
 | the same local declared once although many HighVariables share the stack slot | [`dedupvardecls`](#dedupvardecls) |
 | flip off to see one declaration line per high (e.g. int4 option_index repeated hundreds of times) | [`dedupvardecls`](#dedupvardecls) |
+| a helper that plainly computes a status recovers as void with a bare return; | [`noreturnretuse`](#noreturnretuse) |
+| the callee's return value is missing at the call site on ARM/AArch64 | [`noreturnretuse`](#noreturnretuse) |
+| a function whose error path calls a no-return handler loses its return type | [`noreturnretuse`](#noreturnretuse) |
+| the return type differs between two builds of the same function that differ only in stack-protector hardening | [`noreturnretuse`](#noreturnretuse) |
 
 ## Toggleable transforms
 
@@ -1451,6 +1455,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default (DIV-7): a stack slot is declared once even when many same-named scalar HighVariables share it (e.g. x86_64/cvs main, where the per-high rendering repeats `int4 option_index; // stack - 0x3c` ~200x), including when two live ranges of the slot recovered different types and so rendered two differently-typed declarations of one name -- invalid C (DIV-52). Set OFF to restore the one-declaration-per-high rendering.
 - **Where / provenance:** P9/naming-policy · angr · presentation-default · angr-duplicate-decls
 - **Example:** `option dedupvardecls off`
+
+### `noreturnretuse` -- on | off, default `on`
+
+- **Symptoms:** a helper that plainly computes a status recovers as void with a bare return;; the callee's return value is missing at the call site on ARM/AArch64; a function whose error path calls a no-return handler loses its return type; the return type differs between two builds of the same function that differ only in stack-protector hardening.
+- **What it does:** Let a CALL on a terminating no-return path coexist with the function's own RETURN when the output trial is scored. `Funcdata::only_op_use` (C++ `Funcdata::onlyOpUse`, funcdata_varnode.cc:1851) answers whether a Varnode reaching `opmatch` is used ONLY there; any other CALL consuming the same Varnode rejects it, and `ActionOutputPrototype` then types the function `void`. On an ABI whose return register is also the first argument register (ARM/AArch64 `r0`/`w0`) a status helper trips that for free: the status is returned on the normal path and handed to a failure handler on the error path, so `int guarded_status(int)` recovers as `void guarded_status(int)` with a bare `return;`. With this on, a CALL/CALLIND use is skipped when the matched op is a RETURN, the call is the second-to-last op of its block, and the block's last op is an artificial halt flagged no-return -- a block from which no RETURN is reachable, so the two uses never compete. A call that may return, a halt further down the block, and every non-RETURN match keep the upstream rejection.
+- **When to flip:** On by default: the skipped use is on a path that provably cannot reach the RETURN it would otherwise veto, so the veto costs the whole signature and buys nothing. Byte-identical (0/675) on the datatest corpus and 0 changed lines across 15 linked x86-64/ARM binaries decompiled whole -- the shape needs the return register and the first argument register to be the same storage, which x86-64 does not have. It fires on ARM/AArch64 objects built with `-fstack-protector-strong`, where 4 of 6 measured functions change and every change is `void` -> the typed return the source declares. Set off to restore the upstream blanket rejection (`Funcdata::onlyOpUse` returning false on any competing call use).
+- **Where / provenance:** P4/output-prototype · kuna · correctness-fix · kuna-noreturn-return-trial
+- **Example:** `option noreturnretuse off`
 
 ## Programmatic use
 

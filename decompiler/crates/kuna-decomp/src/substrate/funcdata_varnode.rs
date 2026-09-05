@@ -2225,21 +2225,6 @@ impl Funcdata {
         false
     }
 
-    fn call_ends_in_noreturn_halt(&self, call: OpId) -> bool {
-        let Some(parent) = self.obank().get(call).and_then(|op| op.get_parent()) else {
-            return false;
-        };
-        let Some(last) = self.bblocks_ref().struct_last_op(parent) else {
-            return false;
-        };
-        if self.op_next_op(call) != Some(last) {
-            return false;
-        }
-        self.obank()
-            .get(last)
-            .is_some_and(|op| (op.get_halt_type() & crate::op::pcodeop_flags::noreturn) != 0)
-    }
-
     /// Test if the given Varnode seems to only be used by `opmatch` as a
     /// parameter-passing location (C++ `Funcdata::onlyOpUse`,
     /// funcdata_varnode.cc:1851).
@@ -2302,16 +2287,14 @@ impl Funcdata {
                         }
                     }
                     OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
-                        // A candidate function return may also be passed to a
-                        // no-return call on a terminating error path. That use
-                        // cannot compete with the value at `opmatch`: control
-                        // never reaches any RETURN from this block. Rejecting it
-                        // made status helpers void whenever the compiler happened
-                        // to leave the status in the first argument/return register
-                        // for the failure call.
-                        if self.obank().get(opmatch).map(|m| m.code()) == Some(OpCode::CPUI_RETURN)
-                            && self.call_ends_in_noreturn_halt(op)
-                        {
+                        // (kuna divergence, DIV-117) `noreturnretuse` — upstream
+                        // rejects on every competing CALL use; a call on a block
+                        // that ends in a no-return halt can never reach the RETURN
+                        // being matched, so it does not compete.  See
+                        // [`crate::p4_calls::kuna_noreturnretuse`].
+                        if crate::p4_calls::kuna_noreturnretuse::call_cannot_reach_return(
+                            self, opmatch, op,
+                        ) {
                             continue;
                         }
                         if self.check_call_double_use(opmatch, op, vn, cur_flags, trial) {
@@ -3127,6 +3110,7 @@ mod tests {
 
     use crate::dtype::{type_metatype, Datatype};
     use crate::context::{ArchContext, TypeOp};
+    use crate::p4_calls::kuna_noreturnretuse;
     use crate::varnode::{DefOpInfo, VarnodeBank};
 
     /// Build an AddrSpaceManager with constant/unique/iop/fspec/ram spaces.
@@ -3205,7 +3189,7 @@ mod tests {
             OpCode::CPUI_RETURN,
             crate::op::pcodeop_flags::returns | crate::op::pcodeop_flags::noreturn,
         );
-        assert!(fd.call_ends_in_noreturn_halt(call));
+        assert!(kuna_noreturnretuse::call_ends_in_noreturn_halt(&fd, call));
 
         let mut ordinary = build_fd();
         let root = ordinary.bblocks_root_pub();
@@ -3224,7 +3208,7 @@ mod tests {
             OpCode::CPUI_RETURN,
             crate::op::pcodeop_flags::returns,
         );
-        assert!(!ordinary.call_ends_in_noreturn_halt(call));
+        assert!(!kuna_noreturnretuse::call_ends_in_noreturn_halt(&ordinary, call));
 
         let mut nonadjacent = build_fd();
         let root = nonadjacent.bblocks_root_pub();
@@ -3244,7 +3228,7 @@ mod tests {
             OpCode::CPUI_RETURN,
             crate::op::pcodeop_flags::returns | crate::op::pcodeop_flags::noreturn,
         );
-        assert!(!nonadjacent.call_ends_in_noreturn_halt(call));
+        assert!(!kuna_noreturnretuse::call_ends_in_noreturn_halt(&nonadjacent, call));
     }
 
     // --- creation factories: bank-state outcomes -------------------------
