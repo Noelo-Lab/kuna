@@ -30,5 +30,5 @@
       "--assert \"prototype main int main"
     ]
   },
-  "notes": "Five of eight round-3 testers wrote --assert unquoted, so the shell split it and the old message named the CONTENT it wanted while saying nothing about the shape. All five concluded kuna rejects the C type `int` -- it does not. Asserting the hint text, because the diagnostic IS the fix here."
+  "notes": "An unquoted --assert lets the shell split the directive, and the old error named the CONTENT it wanted while saying nothing about the shape. The hint is asserted because the diagnostic IS the behaviour here. Filed originally with the claim that five round-3 testers hit this: they did NOT. Their probes were correctly quoted and they had found a real, separate defect. See docs/re-pipeline.md."
 }
