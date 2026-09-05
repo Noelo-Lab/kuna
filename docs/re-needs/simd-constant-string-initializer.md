@@ -132,3 +132,15 @@ _none recorded_
 - round 2 T_TRIAGE (captain): scope small -> LARGE. Folding pshufb/SUB161 lane temporaries back into a recognisable constant-string initializer is a new SIMD constant-folding capability, not a patch. Companion of strings-inventory-omits-statically: same challenge (653d8860), same 752-byte initializer, one seen from the decompiler surface and one from the strings surface. Kept separate because they are separately probeable and a fix to either does not imply the other, but a builder on one should read the other.
 
 - round 2 B_DRAIN (captain): acceptance a-f6dbde227633 -> a-9667a93853f5. The old form was closable by emitting NOTHING (exit 0 + absent `SUB161(` + a 12,000-byte CEILING), so a build that emitted a stub body for sub_100003790 would have closed this need. Added two measured positive clauses (`void sub_100003790(void)` present, buffer `100008050` present) and a 600-byte floor. Re-run at 2e56daca: still FAILS, on the two clauses it always failed on (32x `SUB161(`, 15,532 bytes). The bar was raised, never relaxed.
+
+- round 2 B_PLAN (captain): **SELECTED FOR DISPATCH over the two needs `select` ranked ahead of
+  it.** All three open major needs score 13.862944 exactly, so the ranked order is Python's
+  stable sort over the load order (alphabetical), not evidence — the pick among them is a
+  captain call. This one wins on three measured grounds: (a) its acceptance is the only one of
+  the three whose clauses were measured on a real build and cannot be satisfied cosmetically —
+  replayed at 8799f22e it still fails on exactly `stdout_absent[0] SUB161(` (present) and
+  `stdout_bytes lt 12000` (15,532), while both positive anchors match; (b) the mechanism is
+  nameable and option-shaped (fold a constant SIMD lane construction back into an initializer)
+  rather than open-ended; (c) it is the upstream half of [[strings-inventory-omits-statically]]
+  — same binary, same 752-byte initializer — so a fold here makes that need cheap, while the
+  reverse is not true. Dispatch order between the pair is therefore simd first, strings second.

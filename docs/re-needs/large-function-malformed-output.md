@@ -132,3 +132,17 @@ _none recorded_
 - round 2 wave 20 (captain): `touches` LEFT as filed (`[decompiler/crates/kuna-decomp]`). I have measured evidence of the
   symptom but none of the owning module, and a confidently-wrong `touches` would misdirect a
   builder and mis-scope its leases. The builder should set it from its own root-cause work.
+- round 2 B_PLAN (captain): **PASSED OVER for this wave in favour of
+  [[simd-constant-string-initializer]]** — not deprioritised, not blocked. Reason is the
+  acceptance, not the evidence: `stdout_matches: ["std::string"]` is a narrow proxy for a broad
+  symptom (1,200 lines, 165 anonymous variables, impossible conditions, mangled BCrypt calls),
+  and it is satisfiable by a build that spells one type `std::string` without removing any of
+  the malformed C the tester actually complained about. Measured at 8799f22e: acceptance still
+  FAILS (no `std::string` anywhere in the 1,267-line emission), and the headline impossible
+  condition is still emitted verbatim at line 1249 — `if (v13 != (unsigned int *)((long
+  long)v13 + 6))`. The clause to add is name-agnostic, since an SSA-pinned one fakes a flip the
+  moment numbering shifts: `(\w+) != \(unsigned int \*\)\(\(long long\)\1 \+ 6\)` as
+  `stdout_absent`, VERIFIED present today. It is deliberately NOT added yet: until the root
+  cause is known it is unproven that the same mechanism removes both, and over-constraining a
+  large need on a hunch is how one becomes unclosable. Add it at proposal-approval time, once
+  the proposal says whether the comparison falls out of the same fix.
