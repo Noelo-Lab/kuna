@@ -2,7 +2,7 @@
 need_id: decompiling-3396-byte-main
 title: Decompiling the 3396-byte main function takes about 68 seconds
 track: perf
-status: regressed
+status: closed
 severity: major
 probe_id: p-a9ebf39dace0
 acceptance_id: a-53d616afcb6a
@@ -19,7 +19,7 @@ scope: small
 regression_of: null
 pr: "411"
 closed_in_round: 2
-closing_pr: "397"
+closing_pr: "411"
 reject_reason: null
 ---
 
@@ -482,3 +482,13 @@ _none recorded_
   line: +0.23% +/- 5.33. Per the brief's flat branch, no fix was attempted and the bar was not
   relaxed. Shipped instead: `KUNA_ACTION_PROF`, the per-Action exclusive-time profiler attempts
   1-5 each rebuilt and discarded, plus this witness's current profile in the prose above.
+- closed: acceptance a-53d616afcb6a now PASSES at 7cf26246655f
+- round 2 B_DONE (captain), **the close is applied to the record and nothing is promoted.**
+  `apply-acceptance` on the wave-51 suite (`acceptance-7cf26246.json`, 35 needs, 0 regressed) moved
+  this need `regressed` -> `closed` and fixed the stale `closing_pr` 397 -> 411; the passing clause
+  is `wall_ms` median **9081 ms** over 7 samples (8986-9781, all under 10000, exit 0, not flaky).
+  `attempts` stays **6**, against the previous tick's suggestion to bump it: #411 IS attempt 6 --
+  the wave-40 builder was budget-capped after committing and the wave-48 dispatch resumed the same
+  branch, so no seventh attempt was ever spent. No `tests/cli/` probe was promoted, and this is not
+  an omission: `verify.vendorable()` refuses this acceptance because `target.binary_source` is
+  `dataset` (CI has no crackme corpus), and a wall-clock median is not a CI assertion in any case.
