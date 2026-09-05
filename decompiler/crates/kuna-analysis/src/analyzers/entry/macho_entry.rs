@@ -81,6 +81,56 @@ pub(super) fn macho_entry_candidates(file: &object::File, bytes: &[u8]) -> Vec<u
     out
 }
 
+/// The `LC_MAIN` entry VMA (`__TEXT.vmaddr + entryoff`) of a Mach-O **executable**,
+/// or `None` for anything else.
+///
+/// This is the load-command fact `LC_MAIN` states and nothing more: the routine
+/// `dyld` calls as the program's `main`. It is deliberately narrower than
+/// oracle 1 of [`macho_entry_candidates`], which unions every function-start
+/// source — a dylib/bundle has no `LC_MAIN`, and `LC_UNIXTHREAD` (the pre-10.8
+/// entry) points at the crt's `start`, not at `main`, so neither is reported
+/// here. Fat input is peeled to one slice on the same preference as the rest of
+/// the loader (x86-64 → arm64 → first).
+///
+/// Pure & total: an unparsable header or a missing load command yields `None`.
+pub fn macho_main_entry_vma(bytes: &[u8]) -> Option<u64> {
+    match FileKind::parse(bytes) {
+        Ok(FileKind::MachO64) => lc_main_vma::<MachHeader64<Endianness>>(bytes),
+        Ok(FileKind::MachO32) => lc_main_vma::<MachHeader32<Endianness>>(bytes),
+        Ok(FileKind::MachOFat32) => macho_main_entry_vma(select_fat_slice_32(bytes)?),
+        Ok(FileKind::MachOFat64) => macho_main_entry_vma(select_fat_slice_64(bytes)?),
+        _ => None,
+    }
+}
+
+/// [`macho_main_entry_vma`] over one thin image, generic over the header width.
+fn lc_main_vma<Mach>(bytes: &[u8]) -> Option<u64>
+where
+    Mach: MachHeader<Endian = Endianness>,
+{
+    let header = Mach::parse(bytes, 0).ok()?;
+    let endian = header.endian().ok()?;
+    if header.filetype(endian) != object::macho::MH_EXECUTE {
+        return None;
+    }
+    let mut commands = header.load_commands(endian, bytes, 0).ok()?;
+    let mut text_base: Option<u64> = None;
+    let mut entryoff: Option<u64> = None;
+    while let Ok(Some(command)) = commands.next() {
+        if let Ok(Some((segment, _))) = Mach::Segment::from_command(command) {
+            if trim(segment.name()) == b"__TEXT" {
+                text_base = Some(segment.vmaddr(endian).into());
+            }
+            continue;
+        }
+        if let Ok(LoadCommandVariant::EntryPoint(e)) = command.variant() {
+            entryoff = Some(e.entryoff.get(endian));
+        }
+    }
+    let vma = text_base?.wrapping_add(entryoff?);
+    (vma != 0).then_some(vma)
+}
+
 /// Dispatch on the concrete Mach-O file kind, peeling one fat slice if the input
 /// is a universal binary, then walk the chosen thin image's load commands.
 fn collect_thin(bytes: &[u8], out: &mut Vec<u64>) {
@@ -335,6 +385,7 @@ fn select_fat_arch<Fat: FatArch>(arches: &[Fat]) -> Option<&Fat> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use object::read::ObjectSymbol;
 
     fn fixture(name: &str) -> Vec<u8> {
         let path = format!("{}/tests/fixtures/{}", env!("CARGO_MANIFEST_DIR"), name);
@@ -367,6 +418,38 @@ mod tests {
         let cands = macho_entry_candidates(&file, bytes.as_slice());
         assert!(cands.contains(&0x100000560), "_compute 0x100000560 missing (FUNCTION_STARTS)");
         assert!(cands.contains(&0x10000056c), "_main/entry 0x10000056c missing");
+    }
+
+    /// `LC_MAIN` alone: `__TEXT.vmaddr + entryoff` is the routine `dyld` calls as
+    /// `main` (0x1000005b0 on the x86-64 fixture, the same address the symbol
+    /// table spells `_main`).
+    #[test]
+    fn lc_main_entry_vma_x64() {
+        let bytes = fixture("macho_imports");
+        assert_eq!(macho_main_entry_vma(&bytes), Some(0x1000005b0));
+    }
+
+    /// The stripped twin carries the same `LC_MAIN` — the load command survives
+    /// `strip`, which is the whole reason `machomain` can name a function no
+    /// symbol names any more.
+    #[test]
+    fn lc_main_entry_vma_survives_stripping() {
+        let bytes = fixture("macho_stripped_main");
+        let file = object::File::parse(bytes.as_slice()).expect("parse macho_stripped_main");
+        assert!(
+            !file.symbols().any(|s| s.name() == Ok("_main")),
+            "the stripped fixture must not name _main, or it proves nothing"
+        );
+        assert_eq!(macho_main_entry_vma(&bytes), Some(0x1000005b0));
+    }
+
+    /// `LC_MAIN` is a Mach-O executable fact and nothing else answers here: an ELF,
+    /// a `.o` and a short/garbage buffer all yield `None` rather than an error.
+    #[test]
+    fn lc_main_entry_vma_refuses_non_macho() {
+        assert_eq!(macho_main_entry_vma(&fixture("cet_pie_x86_64")), None);
+        assert_eq!(macho_main_entry_vma(&[]), None);
+        assert_eq!(macho_main_entry_vma(&[0xcf, 0xfa, 0xed, 0xfe, 0, 0, 0]), None);
     }
 
     /// ULEB128 delta decoding: the x86-64 fixture's table is two deltas

@@ -1390,6 +1390,54 @@ accessor test alone matches inside it and the following call is `_set_new_mode`,
 reject all seven — every candidate the shim produces is a named import — but that is
 luck rather than reasoning, so the shim's own accessors are named and bailed on.
 
+(kuna) **The Mach-O `LC_MAIN` entry** (`machomain`, default-on, DIV-111;
+`decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_machomain.rs
+(MachoMainPass)`) is the same question on the other container, and there the
+answer needs no recovery at all. A stripped Mach-O executable answers
+`kuna functions` with an inventory of `sub_<addr>` and nothing else, so the one
+function an agent needs first — where the program starts — is indistinguishable
+from the other twenty-three, and finding it means reading bodies until one looks
+like a prompt loop. The image already says which it is, and says it somewhere
+`strip` does not reach: `LC_MAIN` is a load command whose `entryoff` field is
+documented as the file offset of `main()`, `ld64` emits it for every
+normally-linked executable, and `dyld` calls `__TEXT.vmaddr + entryoff` as
+`main(argc, argv, envp, apple)`. The name is therefore a restatement of the
+container rather than an inference, and it is applied through the same
+`entry_names` overlay the dynamic `_INIT_<i>`/`_DT_INIT` names ride (§1.6), so
+the commit's idempotent cross-scope probe still lets a real symbol win. It is
+spelled `main`, not `_main`: the underscore is the Mach-O assembler's C-symbol
+decoration, and the C name is what was asked for.
+
+The prototype rides the same fact, for the reason `entrymainproto` exists — body-driven
+recovery has nothing to find in a `main` that ignores its arguments — but it is
+typed differently on purpose. `entrymainproto` reports the widths a recovered PE
+call site establishes and refuses to assert the C library's declaration, because
+the evidence it has is a call site and the same shape carries `wmain`'s
+`wchar_t **`. Mach-O has no in-image call site to read (the C runtime that calls
+`main` lives in `libdyld.dylib`) and needs none, because `LC_MAIN` *is* the POSIX
+`main` by definition: the honest spelling is `int main(int argc, char **argv)`,
+which also lets a string literal render through `argv[i]`. `envp` is deliberately
+not declared — `dyld` does pass it and a fourth `apple` pointer, but the extra
+unused slots cost more noise than they buy, and a `main` that really reads `envp`
+still shows the third argument register in its body.
+
+The refusals are what keep the claim honest, and on the 23 Mach-O images of the
+RE corpus they account for every one of the 15 the pass declines: 12 already
+carry a `_main` symbol at that address (a named entry has a better name coming
+from whatever named it, and the pass never overwrites one), and 3 are
+`LC_UNIXTHREAD`-only pre-10.8 images whose entry is the crt's `start`, not
+`main`, so nothing is claimed. It also refuses anything that is not an
+`MH_EXECUTE` Mach-O, an entry outside every executable section, and an image that
+already defines a symbol spelled `main`, which would make the by-name prototype
+park ambiguous. Of the 8 that fire, 6 change only the declaration line; 2 also
+gain one spurious argument at an unprototyped callee
+(`___chkstk_darwin(CONCAT44(v7,argc))`) — the same standing behaviour the PE pass
+above measures at 4 of its 30, and the same answer applies: a live argument
+register at a callee with no prototype is a prototype-coverage problem, not a
+reason to withhold the entry declaration. Structurally inert on every ELF, PE and
+COFF target, which is also why neither parity corpus can observe it in either
+direction: both are symbol-less ELF bytechunks.
+
 **Address tables** (`addrtable`,
 `decompiler/crates/kuna-analysis/src/analyzers/addrtable/mod.rs (AddrTablePass)`)
 scan `.rodata`/`.data` for runs of pointer-width values all landing in executable
