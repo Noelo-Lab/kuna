@@ -1096,7 +1096,7 @@ Two runs of one command are byte-identical.
 | `kind` | `normal` a body of its own; `thunk` a body that only forwards (a PLT/stub-section entry, an imported name, or a lone jump); `import` a callable address that is not executable content, so it is never decompiled (a PE import pointer slot, a data-section symbol); `external` a loader-defined undefined symbol with no bytes here at all. |
 | `parameters` | The recovered parameters in ABI order. Empty for a row with no body. |
 | `signature` | The `.h`-style prototype line, without the trailing `;`. `null` for a row with no body. |
-| `assembly` | The function's instruction listing, one `<vma>  <MNEMONIC operands>` per line — the `kuna disassemble` walk, so an undecodable byte inside the body is a `.byte 0x..` row rather than the end of the listing. |
+| `assembly` | The function's instruction listing, one `<vma>  <MNEMONIC operands>` per line — the `kuna disassemble` walk, so an undecodable byte inside the body is a `.byte 0x..` row rather than the end of the listing. Present whenever a body was attempted, including when the decompile failed: the listing is what is left to look at. |
 | `codeC` | The decompiled body, byte-identical to this function's `decompile-all --json` `code`. |
 | `error` | Why this function has no `codeC`, when the decompile was attempted and failed. `null` with a `null` `codeC` means no body was attempted: a bodyless `kind`, or a `--functions`/`--addr` narrowing that did not select it. |
 | `hasIndirectCalls` | The body contains a computed call (`CALLIND`), which files no edge because it has no static target. An indirect *branch* is not one — see `forwardsTo`. |

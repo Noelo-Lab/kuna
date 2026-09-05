@@ -19,7 +19,7 @@
 
 use std::path::PathBuf;
 
-use kuna_analysis::listing::xrefs::{self, XrefIndex};
+use kuna_analysis::listing::xrefs::{self, XrefIndex, XrefKind};
 use kuna_console::engine::bootstrap_from_object;
 
 /// `__do_global_ctors_aux` — its loop body is one `CALL RAX` (`ff d0`).
@@ -64,9 +64,13 @@ fn a_computed_call_is_reported() {
         idx.has_indirect_calls(COMPUTED_CALL),
         "__do_global_ctors_aux's `CALL RAX` was not reported"
     );
-    // And it really has no static callee to have been reported as one instead.
+    // And it really has no static callee to have been reported as one instead:
+    // its only references are the two touches of the `__CTOR_END__` pointer it
+    // reads the destination out of.
     assert!(
-        idx.refs_from_function(COMPUTED_CALL).is_empty(),
+        idx.refs_from_function(COMPUTED_CALL)
+            .iter()
+            .all(|r| !matches!(r.kind, XrefKind::Call | XrefKind::Jump)),
         "the computed call filed a target edge after all"
     );
 }
@@ -78,7 +82,12 @@ fn direct_calls_alone_are_not_reported() {
         !idx.has_indirect_calls(DIRECT_CALLS_ONLY),
         "main has five direct call sites and no computed one"
     );
-    assert!(!idx.refs_from_function(DIRECT_CALLS_ONLY).is_empty(), "main's callees vanished");
+    assert!(
+        idx.refs_from_function(DIRECT_CALLS_ONLY)
+            .iter()
+            .any(|r| r.kind == XrefKind::Call),
+        "main's callees vanished"
+    );
 }
 
 #[test]

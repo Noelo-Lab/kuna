@@ -204,9 +204,11 @@ fn export(args: &Args, label: &str) -> Result<String, String> {
 
 /// One function row.
 ///
-/// `codeC` / `assembly` are `null` together with a non-null `error` when the
-/// decompile failed, and `null` with a `null` error when no body was attempted
-/// — a bodyless `kind`, or a target list that did not select this entry.
+/// `codeC` is `null` with a non-null `error` when the decompile failed, and
+/// `null` with a `null` error when no body was attempted — a bodyless `kind`, or
+/// a target list that did not select this entry. `assembly` follows the
+/// *attempt*, not the outcome: a function whose C failed still has bytes, and
+/// the listing is what is left to look at.
 fn function_json(
     prog: &ConsoleProgram,
     classifier: &Classifier,
@@ -233,11 +235,13 @@ fn function_json(
         ),
         (
             "assembly".into(),
-            match code {
+            match result {
+                // An entry whose extent could not be measured still lists its
+                // first instruction rather than nothing.
                 Some(_) => crate::disassemble::function_listing(
                     prog,
                     address,
-                    address.saturating_add(entry.size),
+                    address.saturating_add(entry.size.max(1)),
                 )
                 .map_or(Json::Null, Json::Str),
                 None => Json::Null,
@@ -325,7 +329,10 @@ fn parameters(result: Option<&FuncResult>) -> Json {
 ///
 /// Both endpoints are always rows in `functions` — [`CallGraph::callees_of`]
 /// resolves a target onto the inventory and drops what lands nowhere — so a
-/// consumer can build the graph without a containment test of its own.
+/// consumer can build the graph without a containment test of its own. `known`
+/// is the row set this document actually rendered, which is the snapshot taken
+/// before the decompile loop ran; filtering against it is what keeps the
+/// guarantee if a pass names a function while decompiling.
 fn edges_json(graph: &CallGraph, known: &BTreeSet<u64>) -> Json {
     let mut edges = Vec::new();
     for &caller in known {

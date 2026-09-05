@@ -1291,6 +1291,7 @@ mod tests {
             by_source: BTreeMap::new(),
             decoded: HashSet::from([0x1030, 0x1102, 0x1200]),
             funcs: BTreeSet::from([0x1000, 0x1030, 0x1180]),
+            indirect_callers: BTreeSet::new(),
         };
         for e in edges {
             st.file(e.from, e.to, e.kind, "");
