@@ -1021,7 +1021,11 @@ register must resolve at its full 32-bit width and the default code space must
 be 4 bytes wide. x86-64 resolves `EAX`..`EBP` as sub-registers, so the
 address-size test is what excludes it — there `int 0x80` is a compatibility
 path, not the syscall ABI this models — and every non-x86 language is excluded
-because the register names do not resolve.
+because the register names do not resolve. That resolution is the speculative
+probe of §0, not the exact lookup, so in ghidra mode the gate sees only names
+the register cache already holds; the seven it needs are there because the
+compiler spec's `<prototype>` elements — which name all of them — are decoded
+during `registerProgram`, before the first function is lifted.
 
 **Why it ships off.** Naming the call asserts that the operating system behind
 vector `0x80` is Linux. That is true of essentially every 32-bit x86 ELF, but

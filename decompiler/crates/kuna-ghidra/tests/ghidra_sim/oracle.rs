@@ -72,9 +72,7 @@ use kuna_ghidra::ids::{
 use kuna_ghidra::protocol::{nibble_expand, string_data_size_header};
 use kuna_sleigh::globalcontext::ELEM_TRACKED_POINTSET;
 
-use super::{
-    resp_bytes, resp_empty, resp_exception, resp_string, AnswerSource, QUERY_COMMAND_IDS,
-};
+use super::{resp_bytes, resp_empty, resp_exception, resp_string, AnswerSource, QUERY_COMMAND_IDS};
 
 /// `<inst>` — the getPcode response root (ELEM_INST, kuna-decomp
 /// pcodeinject.rs; the numeric id is the wire contract).

@@ -1666,7 +1666,11 @@ impl AddrSpace {
     /// behavior for an *unknown* register — and only the catch branch
     /// (absolute offset parsing) is live.  The C++ try/catch is a
     /// *speculative* question ("is this token a register name?"), so it goes
-    /// through [`RegisterLookup::probe_register`].
+    /// through [`RegisterLookup::probe_register`].  That probe collapses every
+    /// failure to `None`, where the exact lookup used to re-raise a
+    /// non-`LowlevelError`: no lookup in the tree returns one, and the only
+    /// caller is the console's address parser, where a swallowed one resurfaces
+    /// as a hex-parse rejection of the same token.
     pub fn read(&self, s: &str, size: &mut i32, manage: &AddrSpaceManager) -> KunaResult<u64> {
         // JoinSpace::read: parse a comma-separated sequence of register
         // names / shortcut-prefixed offsets into a join record.

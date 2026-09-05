@@ -4986,7 +4986,7 @@ impl Architecture {
         // structural no-op on any language with no `DF` register.
         crate::kuna_dfunaffected::assert_direction_flag_unaffected(&mut model, |nm| {
             self.translate.probe_register_varnode(nm)
-        })?;
+        });
         Ok(model)
     }
 
