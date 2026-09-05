@@ -691,6 +691,11 @@ pub struct ArchContext {
     /// Read by [`check_input_trial_use`](crate::funcdata_callsite::check_input_trial_use)
     /// through [`crate::p4_calls::kuna_callsitestackargs::outside_caller_local_range`].
     pub callsite_stack_args: bool,
+    /// (kuna) let a bounded decode of the callee's own body veto a register
+    /// argument the callee provably never reads (`calleedeadarg`).  Read by
+    /// [`check_input_trial_use`](crate::funcdata_callsite::check_input_trial_use)
+    /// through [`crate::p4_calls::kuna_calleedeadarg::trial_is_dead_in_callee`].
+    pub callee_dead_arg: bool,
     /// (kuna) score a variadic call's stack arguments as their own `fillinMap`
     /// resource section (`varargstackargs`).  Read by
     /// [`ParamListStandard::fillin_map`](crate::fspec::ParamListStandard) through
@@ -1150,6 +1155,9 @@ impl ArchContext {
             // callsitestackargs is a correctness fix, not an opt-in transform, so the
             // hand-built-fixture seam carries the same default the real path does.
             callsite_stack_args: true,
+            // calleedeadarg only ever REMOVES an argument, and only against a
+            // decoded callee body; the fixture seam carries the real default.
+            callee_dead_arg: true,
             vararg_stack_args: true,     // varargstackargs (DIV-101 default-on)
             callee_arity: true,          // calleearity (DIV-102 default-on)
             callee_arity_fwd: true,      // calleearityfwd (default-on)

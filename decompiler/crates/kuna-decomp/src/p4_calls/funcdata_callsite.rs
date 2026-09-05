@@ -165,6 +165,21 @@ pub fn check_input_trial_use(idx: int4, data: &mut Funcdata, aliascheck: &mut Al
                     data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_no_use();
                 }
             }
+        } else if {
+            // (kuna) `calleedeadarg`: the callee's OWN body can settle a register
+            // trial the caller's data flow cannot.  A register the callee
+            // overwrites (or returns without touching) on every path from its
+            // entry is dead there and cannot be carrying an argument, however
+            // live it looks on this side of the call.
+            let (trial_addr, trial_size) = {
+                let t = data.get_call_specs(idx).active_input().get_trial(i);
+                (t.get_address().clone(), t.get_size())
+            };
+            crate::p4_calls::kuna_calleedeadarg::trial_is_dead_in_callee(
+                data, idx, slot, &trial_addr, trial_size,
+            )
+        } {
+            data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_no_use();
         } else {
             let (trial_size, trial_cond, trial_killed) = {
                 let t = data.get_call_specs_mut(idx).get_active_input().get_trial(i);
