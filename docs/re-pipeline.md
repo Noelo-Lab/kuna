@@ -583,6 +583,39 @@ So judge the gate on whether it refutes anything at all — `not-reproducible` a
 to flip the precedence for these pairs was written and **rejected** in review for this reason;
 before re-litigating it, check whether the two arms are independent or complementary.
 
+## "It did not error" is not "it worked", and kuna will not tell you
+
+Round 3 filed five independent observations saying prototype assertions reject standard C
+types. Reviewing them, I ran the assertion by hand, saw no error, and concluded the testers had
+made a quoting mistake. That was wrong, and the way it was wrong is the lesson.
+
+```
+kuna decompile <bin> main --assert "prototype main int main(void)"
+unsigned long main(void) { ... }          # exit 0, no error, no warning
+
+kuna decompile <bin> main --assert "prototype main int main(void)" --json
+  assertions[0].status = "rejected"       # the override was silently discarded
+```
+
+`int` is rejected; `int4` is applied. The testers were right on all five, the gate admitted all
+five, and the refutation was mine. The trap: **the text surface exits 0 and prints a function
+whether or not the assertion took**, so "no error" reads as success to anyone who does not think
+to ask a second question. A sixth tester filed exactly this as its own observation — *text output
+silently ignores a prototype override that JSON output applies*.
+
+Two standing rules follow.
+
+**For a reviewer refuting an observation.** Never refute on the absence of an error. Check the
+state the observation is *about*: for an assertion that is `assertions[].status` in `--json`, not
+the exit code and not the presence of output. If the surface has no way to report whether the
+thing took, that absence is itself the defect — file it rather than concluding the tester was
+confused.
+
+**For the gate.** This is why the two-arm gate runs the probe rather than reading the report. A
+human or an LLM reviewing five reports by eye reached the wrong verdict on all five; the gate
+replaying the probes reached the right one on all twenty-three. When the machine and the
+reviewer disagree, re-run the probe before believing the reviewer.
+
 ## Machinery reference
 
 | Piece | What |
