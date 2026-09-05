@@ -3742,15 +3742,22 @@ impl Architecture {
     /// Guarded to x86-32 because the body names `ST0..ST7`/`EAX`/`EDX`/`ESP`: on
     /// a language without them the SLEIGH snippet compile would fail at
     /// bootstrap, and `_ftol` exists on no other target.
+    ///
+    /// Skipped entirely in ghidra mode, exactly as `register_cortexmpriv_fixup`
+    /// is: with no local `.sla`, step 3 never compiles the payload, so the
+    /// registration could not pay off there anyway.
     fn decode_kuna_call_fixups(&mut self) -> KunaResult<()> {
         use kuna_base::marshal::{IdRegistry, XmlDecode};
 
+        if self.translate.as_sleigh().is_none() {
+            return Ok(());
+        }
         let code_addr_size = self
             .manage()
             .get_default_code_space()
             .map(|s| s.get_addr_size() as int4)
             .unwrap_or(0);
-        let resolve = |nm: &[u8]| self.translate.get_register_varnode(nm).is_ok();
+        let resolve = |nm: &[u8]| self.translate.probe_register_varnode(nm).is_some();
         if !crate::kuna_msvcftol::language_is_x86_32(resolve, code_addr_size) {
             return Ok(());
         }
@@ -4978,8 +4985,8 @@ impl Architecture {
         // `(uint8)v18 * -2 + 1`. Applied only where the spec is silent, and a
         // structural no-op on any language with no `DF` register.
         crate::kuna_dfunaffected::assert_direction_flag_unaffected(&mut model, |nm| {
-            self.translate.get_register_varnode(nm)
-        })?;
+            self.translate.probe_register_varnode(nm)
+        });
         Ok(model)
     }
 

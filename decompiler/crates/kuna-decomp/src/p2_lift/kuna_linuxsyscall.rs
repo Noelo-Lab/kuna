@@ -496,6 +496,12 @@ pub struct SyscallAbi {
 /// space must be 4 bytes wide.  x86-64 resolves `EAX`..`EBP` as sub-registers,
 /// so the address-size test is what excludes it — there `int 0x80` is a
 /// compatibility path, not the syscall ABI this models.
+///
+/// The lookup is the speculative probe, so in ghidra mode it sees only names
+/// the register cache already holds; these seven are there because every
+/// `<prototype>` in `x86gcc.cspec`/`x86win.cspec` is decoded during
+/// registerProgram, before the first function is lifted (pinned by
+/// `kuna-ghidra/tests/register_probe_e2e.rs`).
 pub fn resolve_abi(data: &Funcdata) -> Option<SyscallAbi> {
     let manage = data.get_arch().manage();
     if manage.get_default_code_space()?.get_addr_size() != 4 {
@@ -503,7 +509,7 @@ pub fn resolve_abi(data: &Funcdata) -> Option<SyscallAbi> {
     }
     let lookup = manage.register_lookup()?;
     let reg = |nm: &str| -> Option<Address> {
-        let st = lookup.get_register(nm).ok()?;
+        let st = lookup.probe_register(nm)?;
         if st.size != 4 {
             return None;
         }

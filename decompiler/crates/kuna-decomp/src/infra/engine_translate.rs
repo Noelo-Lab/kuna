@@ -69,6 +69,19 @@ pub trait EngineTranslate: Translate {
     /// `Translate::getRegister(name)`).
     fn get_register_varnode(&self, nm: &[u8]) -> KunaResult<VarnodeData>;
 
+    /// Speculative form of [`EngineTranslate::get_register_varnode`]: ask
+    /// whether `nm` resolves *here*, cheaply and without side effects.
+    ///
+    /// `None` means "not resolvable on this translator", never "this language
+    /// has no such register".  In ghidra mode the exact lookup is a
+    /// `getRegister` query and the host answers an undefined name by throwing,
+    /// so a pass merely testing "does this language happen to have X?" must
+    /// use this instead — the ghidra translator answers it from its cache and
+    /// issues no query.
+    fn probe_register_varnode(&self, nm: &[u8]) -> Option<VarnodeData> {
+        self.get_register_varnode(nm).ok()
+    }
+
     /// Run a closure with mutable access to the engine's [`ContextDatabase`]
     /// (C++ `glb->context`).  The object-safe form of
     /// [`Sleigh::with_context_db_mut`]: it takes `&mut dyn FnMut` (rather than

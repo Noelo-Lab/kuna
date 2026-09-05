@@ -44,8 +44,6 @@
 //! alone, and a language with no `DF` register at all (every non-x86 target) is a
 //! structural no-op.
 
-use kuna_base::error::KunaResult;
-
 use crate::fspec::{effect_type, EffectRecord, ProtoModel};
 
 /// The SLEIGH register name for the x86 direction flag.
@@ -54,22 +52,22 @@ const DIRECTION_FLAG: &[u8] = b"DF";
 /// Add the direction flag to `model`'s unaffected list when the language defines
 /// one and the compiler spec did not mention it.
 ///
-/// `lookup` resolves a SLEIGH register name to its storage; it fails on a
-/// language that has no such register, which is how every non-x86 target falls
-/// out.
-pub fn assert_direction_flag_unaffected<F>(model: &mut ProtoModel, lookup: F) -> KunaResult<()>
+/// `lookup` is a *speculative* register probe, not the exact lookup: it yields
+/// `None` on a language that has no such register, which is how every non-x86
+/// target falls out. The exact lookup must not be used here — in ghidra mode it
+/// is a host query that throws on an undefined name (GH-388).
+pub fn assert_direction_flag_unaffected<F>(model: &mut ProtoModel, lookup: F)
 where
-    F: FnOnce(&[u8]) -> KunaResult<kuna_num::pcoderaw::VarnodeData>,
+    F: FnOnce(&[u8]) -> Option<kuna_num::pcoderaw::VarnodeData>,
 {
-    let Ok(df) = lookup(DIRECTION_FLAG) else {
-        return Ok(()); // not an x86 language
+    let Some(df) = lookup(DIRECTION_FLAG) else {
+        return; // not an x86 language
     };
-    let Some(space) = df.space.clone() else { return Ok(()) };
+    let Some(space) = df.space.clone() else { return };
     let addr = kuna_base::address::Address::new(space, df.offset);
     // The spec already said something about this register: respect it.
     if model.has_effect(&addr, df.size as kuna_base::types::int4) != effect_type::UNKNOWN_EFFECT {
-        return Ok(());
+        return;
     }
     model.push_effect(EffectRecord::from_varnode(df, effect_type::UNAFFECTED));
-    Ok(())
 }

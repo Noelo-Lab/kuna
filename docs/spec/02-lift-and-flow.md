@@ -228,6 +228,12 @@ recovered switch table.
   code space) because the body would not compile elsewhere and the helper exists
   nowhere else; it is unconditional rather than option-gated because the
   architecture bootstraps at `load file`, before the console's `option` lines.
+  Registration is skipped outright in ghidra mode, exactly as the Cortex-M
+  callother fixup below is and for the same reason: with no local `.sla` there
+  is nothing to compile the body against, so the payload could never install.
+  Skipping it also keeps the x86-32 language test — which asks whether this
+  language has `ST0` — off the wire, since every 32-bit language reaches it (the
+  test's cheap half is the code-space width, which ARM32/MIPS32/PPC32 all pass).
   The user-visible gate is on the *install* instead (`option msvcftol`, default
   on), where the analysis-tier call-fixup installer drops this one payload's
   targets from its match map.
@@ -1015,7 +1021,11 @@ register must resolve at its full 32-bit width and the default code space must
 be 4 bytes wide. x86-64 resolves `EAX`..`EBP` as sub-registers, so the
 address-size test is what excludes it — there `int 0x80` is a compatibility
 path, not the syscall ABI this models — and every non-x86 language is excluded
-because the register names do not resolve.
+because the register names do not resolve. That resolution is the speculative
+probe of §0, not the exact lookup, so in ghidra mode the gate sees only names
+the register cache already holds; the seven it needs are there because the
+compiler spec's `<prototype>` elements — which name all of them — are decoded
+during `registerProgram`, before the first function is lifted.
 
 **Why it ships off.** Naming the call asserts that the operating system behind
 vector `0x80` is Linux. That is true of essentially every 32-bit x86 ELF, but

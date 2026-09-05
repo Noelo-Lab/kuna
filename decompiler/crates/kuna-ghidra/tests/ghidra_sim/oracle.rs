@@ -72,7 +72,7 @@ use kuna_ghidra::ids::{
 use kuna_ghidra::protocol::{nibble_expand, string_data_size_header};
 use kuna_sleigh::globalcontext::ELEM_TRACKED_POINTSET;
 
-use super::{resp_bytes, resp_empty, resp_string, AnswerSource, QUERY_COMMAND_IDS};
+use super::{resp_bytes, resp_empty, resp_exception, resp_string, AnswerSource, QUERY_COMMAND_IDS};
 
 /// `<inst>` — the getPcode response root (ELEM_INST, kuna-decomp
 /// pcodeinject.rs; the numeric id is the wire contract).
@@ -112,6 +112,12 @@ pub struct QueryLog {
     pub pcode_addrs: Vec<u64>,
     /// Distinct addresses the sim decoded successfully.
     pub decoded_insts: BTreeSet<u64>,
+    /// Every getRegister name asked for, in wire order (repeats included).
+    pub register_probes: Vec<String>,
+    /// The subset of [`QueryLog::register_probes`] the language does not
+    /// define — each one is a thrown `No Register Defined` in real Ghidra and
+    /// an `Unexpected Exception` ERROR record in its log.
+    pub register_probe_failures: Vec<String>,
 }
 
 /// The real-ELF mock-Java answer source (see the module docs).
@@ -847,6 +853,7 @@ impl AnswerSource for SimOracle {
                     .expect("oracle engine is a Sleigh");
                 RegisterLookup::get_register(sleigh, &name)
             };
+            self.log.register_probes.push(name.clone());
             match lookup {
                 Ok(v) => {
                     let spc = v.space.expect("register storage has a space");
@@ -859,7 +866,16 @@ impl AnswerSource for SimOracle {
                     }
                     resp_string(&doc)
                 }
-                Err(_) => resp_empty(),
+                // Java THROWS on an undefined name rather than answering an
+                // empty response (DecompileCallback.java:756-762), and the
+                // sim answering leniently is what hid GH-388.
+                Err(_) => {
+                    self.log.register_probe_failures.push(name.clone());
+                    resp_exception(
+                        "java.lang.RuntimeException",
+                        &format!("No Register Defined: {name}"),
+                    )
+                }
             }
         } else if el == ELEM_COMMAND_GETREGISTERNAME.get_id() {
             let (addr, size) =
