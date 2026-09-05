@@ -2287,7 +2287,7 @@ impl Funcdata {
                         }
                     }
                     OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
-                        // (kuna divergence, DIV-117) `noreturnretuse` — upstream
+                        // (kuna divergence, DIV-118) `noreturnretuse` — upstream
                         // rejects on every competing CALL use; a call on a block
                         // that ends in a no-return halt can never reach the RETURN
                         // being matched, so it does not compete.  See

@@ -2424,27 +2424,13 @@ impl Funcdata {
     /// before blocks are calculated (all ops still on the dead list).
     pub fn op_target(&self, op: OpId) -> OpId {
         let dead = self.obank().get(op).expect("op_target: stale op").is_dead();
-        // For the dead case the C++ walks the global dead list backward via
-        // `insertiter`.  op.rs owns the dead-list intrusive links privately and
-        // exposes only forward iteration ([`iter_dead`]); reconstruct the
-        // predecessor map once (semantically identical — the dead list is a plain
-        // doubly-linked list, so `--insertiter` is the previous element).
-        let dead_prev: std::collections::BTreeMap<OpId, OpId> = if dead {
-            let order: Vec<OpId> = self.obank().iter_dead().collect();
-            order
-                .windows(2)
-                .map(|w| (w[1], w[0])) // prev-of(w[1]) == w[0]
-                .collect()
-        } else {
-            std::collections::BTreeMap::new()
-        };
         let mut retop = op;
         while (self.obank().get(retop).expect("op_target").get_flags() & pcodeop_flags::startmark)
             == 0
         {
             retop = if dead {
-                *dead_prev
-                    .get(&retop)
+                self.obank()
+                    .dead_prev(retop)
                     .expect("op_target: walked past dead-list begin (C++ UB)")
             } else {
                 self.obank()

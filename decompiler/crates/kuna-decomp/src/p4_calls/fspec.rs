@@ -1274,6 +1274,15 @@ pub struct ParamActive {
     recoversubcall: bool,
     /// True if varnodes should be joined in reverse order (C++ `joinReverse`).
     join_reverse: bool,
+    /// (kuna) `varargstackargs`: score the stack tail of a `fillinMap` resource
+    /// section separately from its register prefix, because these trials belong
+    /// to a VARIADIC call whose variable arguments the ABI passes on the stack.
+    /// Set by `ActionActiveParam`; see [`crate::p4_calls::kuna_varargstackargs`].
+    vararg_stack_split: bool,
+    /// (kuna) `inputparamgap`: are these the trials of the FUNCTION'S OWN input
+    /// recovery, with the register-gap tolerance enabled?  Set by
+    /// `ActionInputPrototype`; see [`crate::p4_calls::kuna_inputparamgap`].
+    own_input_gap: bool,
 }
 
 impl ParamActive {
@@ -1289,6 +1298,8 @@ impl ParamActive {
             needsfinalcheck: false,
             recoversubcall: recoversub,
             join_reverse: false,
+            vararg_stack_split: false, // (kuna) varargstackargs
+            own_input_gap: false,      // (kuna) inputparamgap
         }
     }
 
@@ -1377,6 +1388,32 @@ impl ParamActive {
     /// Mark that varnodes need to be joined in reverse order (C++ `setJoinReverse`).
     pub fn set_join_reverse(&mut self) {
         self.join_reverse = true;
+    }
+    /// (kuna) `varargstackargs`: are these the trials of a variadic call whose
+    /// stack tail must be scored as its own `fillinMap` section?
+    pub fn is_vararg_stack_split(&self) -> bool {
+        self.vararg_stack_split
+    }
+    /// (kuna) `varargstackargs`: record that these trials belong to a variadic
+    /// call site.  `clear()` deliberately leaves it alone -- like
+    /// `recoversubcall` it is a property of the call, not of one pass.
+    pub fn set_vararg_stack_split(&mut self, val: bool) {
+        self.vararg_stack_split = val;
+    }
+
+    /// (kuna) `inputparamgap`: are these the function's OWN input trials, with
+    /// the unused-register-run tolerance enabled?  Read by
+    /// [`Self::force_inactive_chain`](ParamListStandard) through
+    /// [`crate::p4_calls::kuna_inputparamgap::gap_slot_is_exempt`].
+    pub fn is_own_input_gap(&self) -> bool {
+        self.own_input_gap
+    }
+
+    /// (kuna) `inputparamgap`: record that these are the function's own input
+    /// trials and the option is on.  Only `ActionInputPrototype` sets it; a call
+    /// site's trials keep the upstream chain rule.
+    pub fn set_own_input_gap(&mut self, val: bool) {
+        self.own_input_gap = val;
     }
     /// Are these trials for a call to a sub-function (C++ `isRecoverSubcall`).
     pub fn is_recover_subcall(&self) -> bool {
@@ -2972,7 +3009,7 @@ impl ParamListStandard {
         let mut chainlength = 0;
         let mut max = -1;
         for i in start..stop {
-            let (defnouse, is_act, is_unref, addr_is_spacebase, slotgrp) = {
+            let (defnouse, is_act, is_unref, addr_is_spacebase, slotgrp, protected) = {
                 let trial = active.get_trial(i);
                 let addr_sb = trial
                     .get_address()
@@ -2989,6 +3026,15 @@ impl ParamListStandard {
                     } else {
                         0
                     },
+                    // (kuna) `inputparamgap`: in the function's OWN input
+                    // recovery an unused ARGUMENT REGISTER is an ignored
+                    // parameter, not evidence that a later REGISTER the body
+                    // reads before writing is not a parameter.
+                    crate::p4_calls::kuna_inputparamgap::trial_is_protected(
+                        active,
+                        trial,
+                        &self.entry,
+                    ),
                 )
             };
             if defnouse {
@@ -3016,11 +3062,16 @@ impl ParamListStandard {
                 }
             } else {
                 chainlength = 0;
-                if !seenchain {
+                // (kuna) `inputparamgap`: a protected trial is a REGISTER the
+                // function's own body reads before writing, and the chain does
+                // not get to veto it.  Trials sort into parameter order, so
+                // everything before it is also a register and the tail loop's
+                // hole-filling stays inside the argument-register file.
+                if !seenchain || protected {
                     max = i;
                 }
             }
-            if seenchain {
+            if seenchain && !protected {
                 active.get_trial_mut(i).mark_inactive();
             }
         }
@@ -3071,12 +3122,34 @@ impl ParamListStandard {
         self.force_exclusion_group(active);
         let mut trial_start: Vec<int4> = Vec::new();
         self.separate_sections(active, &mut trial_start)?;
+        // (kuna) `varargstackargs`: at a variadic call site the register file
+        // between the last fixed parameter and the first stack argument is
+        // structurally empty, so the stack tail of a section is scored as its
+        // own section.  Off (and for every non-variadic call) this leaves
+        // `trial_start`/`resource_start` exactly as `separate_sections` built
+        // them.  See [`crate::p4_calls::kuna_varargstackargs`].
+        let mut group_start: Vec<int4> =
+            (0..trial_start.len() - 1).map(|i| self.resource_start[i]).collect();
+        let mut sec = 0usize;
+        while sec + 1 < trial_start.len() {
+            if let Some(cut) = crate::p4_calls::kuna_varargstackargs::stack_section_split(
+                active,
+                trial_start[sec],
+                trial_start[sec + 1],
+            ) {
+                let cut_group = active.get_trial(cut).slot_group(&self.entry);
+                trial_start.insert(sec + 1, cut);
+                group_start.insert(sec + 1, cut_group);
+                sec += 1; // the tail is all-stack; it never splits again
+            }
+            sec += 1;
+        }
         let num_section = trial_start.len() - 1;
         for i in 0..num_section {
             self.force_no_use(active, trial_start[i], trial_start[i + 1]);
         }
         for i in 0..num_section {
-            self.force_inactive_chain(active, 2, trial_start[i], trial_start[i + 1], self.resource_start[i]);
+            self.force_inactive_chain(active, 2, trial_start[i], trial_start[i + 1], group_start[i]);
         }
         for i in 0..active.get_num_trials() {
             if active.get_trial(i).is_active() {
@@ -5584,6 +5657,20 @@ impl FuncProto {
             self.set_output_lock(false);
             return Ok(());
         }
+        // (kuna) A `map return <addr> <type>` parks OUTPUT-ONLY pieces: explicit
+        // storage, and no `outtype` because the directive declares no separate
+        // return type. But `assignParameterStorage` dereferences `outtype`
+        // unconditionally, so those pieces aborted the process the moment the
+        // function was decompiled. The declared type IS the return type — adopt it
+        // and the model has something to assign against, after which `set_pieces`
+        // replaces the derived storage with the explicit one as before.
+        if pieces.outtype.is_none() {
+            if let Some(declared) = pieces.output_storage.as_ref().and_then(|p| p.type_.clone()) {
+                let mut typed = pieces.clone();
+                typed.outtype = Some(declared);
+                return self.set_pieces(&typed, Some(defaultfp), typefactory, manager);
+            }
+        }
         self.set_pieces(pieces, Some(defaultfp), typefactory, manager)
     }
 
@@ -6372,6 +6459,14 @@ pub struct FuncCallSpecs {
     isbadjumptable: bool,
     /// Do we have a locked output on the stack (C++ `isstackoutputlock`).
     isstackoutputlock: bool,
+    /// (kuna) `calleearity`: the storage each recovered argument occupies, in
+    /// prototype order, recorded when `build_input_from_trials` finalizes the
+    /// list.  The CALL op's inputs carry the argument *values* (a constant, a
+    /// temporary), never the location, and the trials that knew the location are
+    /// cleared right after — so a later call to the same callee has no other way
+    /// to ask what its sibling recovered.  See
+    /// [`crate::p4_calls::kuna_calleearity`].
+    final_input_storage: Vec<(Address, int4)>,
 }
 
 impl FuncCallSpecs {
@@ -6403,6 +6498,7 @@ impl FuncCallSpecs {
             isoutputactive: false,
             isbadjumptable: false,
             isstackoutputlock: false,
+            final_input_storage: Vec::new(), // (kuna) calleearity
         }
     }
 
@@ -6578,6 +6674,15 @@ impl FuncCallSpecs {
     /// Turn off analysis recovering input parameters (C++ `clearActiveInput`).
     pub fn clear_active_input(&mut self) {
         self.isinputactive = false;
+    }
+    /// (kuna) `calleearity`: the storage of each argument this call finally
+    /// recovered, in prototype order (empty until it is finalized).
+    pub fn final_input_storage(&self) -> &[(Address, int4)] {
+        &self.final_input_storage
+    }
+    /// (kuna) `calleearity`: record the finalized argument storage.
+    pub fn set_final_input_storage(&mut self, storage: Vec<(Address, int4)>) {
+        self.final_input_storage = storage;
     }
     /// Turn on analysis recovering the return value (C++ `initActiveOutput`).
     pub fn init_active_output(&mut self) {

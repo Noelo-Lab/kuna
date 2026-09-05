@@ -1782,7 +1782,22 @@ mod tests {
         // from their mangled names (option off = every operand a dat_<addr>)
         // and kuna-cortexmpriv / the Cortex-M `isCurrentModePrivileged()` guard
         // around every MRS/MSR folds away (option off = the guard block survives)
-        assert_eq!(count, 222, "corpus file count drifted");
+        // and kuna-unmappedentry / the Listing walk's function worklist refuses a
+        // CALL target its own instruction worklist would not decode (wiring-only
+        // on the XML path -- the Listing is real-object only, like
+        // kuna-listing-flag)
+        // and kuna-linuxsyscall / a 32-bit Linux `int 0x80` names the syscall the
+        // constant in EAX selects and takes the ABI registers as its arguments
+        // (option off = two `(*(code *)swi(0x80))()` indirect calls with every
+        // argument dead-coded away)
+        // and kuna-entrymainproto / the PE CRT startup's argc/argv/envp call site
+        // types the entry function it calls (wiring-only on the XML path -- the
+        // analyzer tier is real-object only)
+        // and kuna-switchselector / a lowered-switch cascade whose selector the
+        // install cannot re-read is declined, so the compiler's if/else-if chain
+        // over the real parameter survives (option off = `switch(0)`, every case
+        // unreachable and the parameter absent from the prototype)
+        assert_eq!(count, 238, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

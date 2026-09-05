@@ -1,0 +1,50 @@
+<decompilertest>
+<!--
+    overlapbranch: a conditional branch whose own target lies STRICTLY INSIDE the
+    encoding of the instruction at its fall-through.  The classic x86
+    anti-disassembly overlap: a `75 01` short JNZ hops over a junk `e8` lead byte,
+    so a follower that decodes the fall-through first turns the real stream into
+    one bogus 5-byte CALL that swallows the branch target and desynchronises
+    everything downstream.  Stage model: S2 flow classification
+    (`process_instruction`, the fall-through push).
+
+    Layout (linked flat, x86-32), reproducing the round-2 crackme's idiom:
+      0x804881c  8b 44 24 04  mov eax,[esp+4]  ; a0
+      0x8048820  3c ff        cmp al,0xff
+      0x8048822  75 01        jne 0x8048825    ; target is INSIDE the next instruction
+      0x8048824  e8           (junk lead byte, decodes as CALL 0x8048824..0x8048829)
+      0x8048825  83 c0 07     add eax,7        ; the real stream the JNZ points at
+      0x8048828  03 00        add eax,[eax]
+      0x804882a  05 00 dd 8d d9  add eax,0xd98ddd00
+      0x804882f  c3           ret
+
+    Pass 1 (default, overlapbranch on): the branch target wins.  The overlapping
+    fall-through decode is dropped, a halt is planted at 0x8048824, and the real
+    stream at 0x8048825 is decoded on its own boundary.
+    Pass 2 (overlapbranch off, the bug): the junk CALL wins by arrival order.  The
+    function calls sub_b0c48ac, an address outside the image, and the operand bytes
+    of `add eax,0xd98ddd00` re-decode as `add [0xd98ddd00],al`, inventing the bogus
+    global the tester reported.
+
+    Assert #1 pins the recovered real stream to EXACTLY ONE occurrence across both
+    print C passes (default only).  Asserts #2 and #3 pin the two artefacts of the
+    swallowed decode to exactly one occurrence each, the mirror image: they exist
+    only in the overlapbranch-off pass.
+-->
+<binaryimage arch="x86:LE:32:default:gcc">
+<bytechunk space="ram" offset="0x804881c" readonly="true">8b4424043cff7501e883c00703000500dd8dd9c3</bytechunk>
+<symbol space="ram" offset="0x804881c" name="overlap"/>
+</binaryimage>
+<script>
+  <com>lo fu overlap</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option overlapbranch off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="OVERLAPBRANCH #1: the branch target wins, so the real add-chain stream is recovered in the default pass only" min="1" max="1">a0 \+ 7</stringmatch>
+<stringmatch name="OVERLAPBRANCH #2: the out-of-image call the swallowed decode invents survives only in the overlapbranch-off pass" min="1" max="1">sub_b0c48ac\(\)</stringmatch>
+<stringmatch name="OVERLAPBRANCH #3: the bogus global the swallowed decode invents survives only in the overlapbranch-off pass" min="1" max="1">dat_d98ddd00</stringmatch>
+</decompilertest>

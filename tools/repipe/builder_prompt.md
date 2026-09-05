@@ -161,6 +161,11 @@ On abort: `... --status failed --note "<one line why>"`.
 
 ## Worktree hygiene — these have each cost real work here
 
+- **Record your base commit before you touch anything**:
+  `git rev-parse HEAD > /tmp/{{WORKER_ID}}.base`. The captain's local `main` can run *ahead*
+  of `origin/main`, so at merge time a plain `git rebase origin/main` is a silent no-op and
+  your squash swallows the captain's commits — that orphaned a PR this round. The merge
+  recipe below rebases `--onto` this recorded base instead.
 - **Never `git stash`.** `refs/stash` is one stack shared by every worktree and work has
   already been lost that way. To A/B something, `cp` the file aside.
 - **Never `make specs`** in a worktree. The main tree's compiled `.sla` are already
@@ -200,6 +205,22 @@ decompiler/target/release/kuna catalog --check    # catalog OK
 {{KUNA_PY}} -m scripts.repipe.verify --need {{SLUG}} --json   # acceptance must be PASS
 ```
 
+### Backgrounding a long gate — never wait on it with `pgrep`
+
+The workspace suite takes ~10 minutes, so background it if you want, but **do not poll for it
+with `pgrep -f '<gate name>'`**. Your own parent process is `claude -p <this entire prompt>`,
+and this prompt contains the literal gate strings, so such a pgrep matches *you* and never
+goes quiet. Builders have deadlocked on exactly that twice in one round, once sitting on a
+green log they could not read. Put the completion marker on the gate's own command line, and
+bound every wait:
+
+```
+( make rust-test > /tmp/{{WORKER_ID}}.rust.log 2>&1; echo $? > /tmp/{{WORKER_ID}}.rust.rc ) &
+for i in $(seq 1 60); do [ -s /tmp/{{WORKER_ID}}.rust.rc ] && break; sleep 30; done
+```
+
+Any wait you write must be able to terminate on its own — no unbounded `until`/`while` loop.
+
 Then land it. Merges are **serialized** — take the lease, rebase, **re-derive every shared
 counter from a fresh capture on the rebased tree** (never arithmetic: an identical `85 → 86`
 edit on both sides merges cleanly to `86` when the answer is `87`), re-run the gates *after*
@@ -207,8 +228,9 @@ the rebase, and only then merge:
 
 ```
 {{KUNA_PY}} -m scripts.pipeline.state lease-acquire --resource merge --worker {{WORKER_ID}} --pid $$
-git fetch origin && git rebase origin/main
+git fetch origin && git rebase --onto origin/main "$(cat /tmp/{{WORKER_ID}}.base)"
 {{KUNA_PY}} -m scripts.repipe.counters --fix
+git log --oneline origin/main..HEAD    # ONLY your own commits may appear here
 {{KUNA_PY}} -m scripts.repipe.mergecheck --against origin/main     # must be clean
 # ...re-run all the gates above...
 tools/pipeline/open_pr.sh --merge {{BRANCH}}

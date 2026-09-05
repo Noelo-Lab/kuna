@@ -1,0 +1,63 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna issue testcase: the PE CRT entry-function prototype
+    (`option entrymainproto on|off`, default-ON).
+
+    Issue:      kuna-analysis-entrymainproto - `kuna decompile` on
+                crackmes.one/65acadf3eef082e477ff5ede (ObfuscationFiesta.exe,
+                PE32+ x86-64, stripped) renders `void sub_140002530(void)`
+                while kuna's own decompilation of sub_14000518c renders
+                `sub_140002530(v7,v1,v6)` three lines after the
+                __p___argc / __p___argv / _get_initial_narrow_environment
+                accessor calls.
+    Stage:      P1 program prep - prototype source (the analyzer tier's
+                `AnalysisOutput::prototypes` seam, the same one the libc
+                signature table uses).
+    P0 assert:  `option entrymainproto on|off`.
+
+    The analyzer tier runs ONLY on the real-object bootstrap path, never on this
+    XML binaryimage path (docs/spec/01-program-prep.md section 1.1), which is
+    exactly why the parity oracle is structurally untouched by this change.  On
+    this path the option is therefore INERT, and that is what this case pins -
+    the same contract `kuna-listing-flag.xml` pins for `option listing`:
+
+      * `option entrymainproto off` PARSES and round-trips (an unknown option
+        would make the console error and the second decompile would not run),
+      * flipping it changes NOTHING about the rendered C, in both directions.
+
+    The end-to-end two-pass proof (option off = `main(void)`, default = the
+    argc/argv/envp slots) needs a real PE and lives in the cargo gate
+    `decompiler/crates/kuna-console/tests/verify_entrymainproto.rs`, over the
+    `crtmain_x86_64.exe` fixture: a minimal PE32+ whose startup fetches the
+    three arguments through the named UCRT accessors and whose main ignores
+    them.
+
+    Reuses the GH-558 bytes as a small, deterministic loadable function.
+
+    Source:           int gh558(int x) { if (x LE 8) return 1; return 0; }
+    Compiled (as):    cmp $8,%edi ; jg +6 ; mov $1,%eax ; ret ; xor %eax,%eax ; ret
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+83ff087f06b801000000c331c0c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="gh558"/>
+</binaryimage>
+<script>
+  <com>parse line extern int4 gh558(int4 x);</com>
+  <com>lo fu gh558</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option entrymainproto off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option entrymainproto on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>phase catalog entrymainproto</com>
+  <com>quit</com>
+</script>
+<stringmatch name="KUNA-ENTRYMAINPROTO #1: the option parses and round-trips in both directions, and is inert on the XML path -- the source form x &lt;= 8 renders identically in all three passes" min="3" max="3">if \(x &lt;= 8\)</stringmatch>
+<stringmatch name="KUNA-ENTRYMAINPROTO #2: the catalog documents it as a default-on P1 prototype-source correctness fix, live-toggled back on" min="1" max="1">"option": "entrymainproto", "values": \["on", "off"\], "default": "on", "current": "on", "destructive_as_default": false, "phase": "P1"</stringmatch>
+<stringmatch name="KUNA-ENTRYMAINPROTO #3: the catalog row names the CRT accessors an agent would grep for" min="1" max="1">__scrt_common_main_seh</stringmatch>
+</decompilertest>

@@ -42,7 +42,9 @@
 use kuna_base::marshal::ElementId;
 
 /// Marshaling element `<funcboundflow>` (kuna).  ElementIds live in the 4000+
-/// range (next free above `itecondlist`'s 4121: 4122).
+/// range (4122; `orchain` raced this id from the same reasoning and has been renumbered.
+/// Do not read the previous high-water mark by hand -- `scripts.repipe.counters --check`
+/// derives the next free id and fails on a duplicate).
 pub const ELEM_FUNCBOUNDFLOW: ElementId = ElementId::new("funcboundflow", 4122);
 
 /// (kuna) Has fall-through reached a foreign function entry, so the current

@@ -664,6 +664,23 @@ impl HighVariable {
         self.update_flags(ctx);
         (self.flags & varnode_flags::persist) != 0
     }
+    /// (kuna) `addrtied` read *without* the [`Self::update_flags`] recompute:
+    /// `None` when the cached flag word is dirty, so the caller must fall back
+    /// to whatever it would have done anyway.
+    ///
+    /// [`update_flags`](Self::update_flags) ORs every member's flag word, so a
+    /// clean `false` here proves no member Varnode is address-tied — which is
+    /// what lets `Funcdata::kuna_mapped_symbol_entry` skip a scan of every
+    /// member looking for one.  Exists because that scan sits under
+    /// `Merge::mergeTestRequired`, whose `&self` context cannot run the
+    /// recompute.
+    pub fn kuna_addr_tied_if_clean(&self) -> Option<bool> {
+        if (self.highflags & high_flags::flagsdirty) != 0 {
+            return None;
+        }
+        Some((self.flags & varnode_flags::addrtied) != 0)
+    }
+
     /// C++ `isAddrTied`.
     pub fn is_addr_tied(&mut self, ctx: &dyn HighContext) -> bool {
         self.update_flags(ctx);

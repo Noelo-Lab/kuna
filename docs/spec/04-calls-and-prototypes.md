@@ -210,8 +210,138 @@ parameter list. For the standard input list the decision sequence is:
    the chain immediately (the callee never touched the stack area, so nothing
    beyond it is a parameter); finally every inactive slot *before* the last
    surviving active trial is promoted — interior holes are filled, because
-   the list must be contiguous.
+   the list must be contiguous. (kuna) `inputparamgap` exempts an *active
+   register* trial from that demotion when the trials are the function's
+   **own** inputs rather than a call's — see below.
 5. Whatever is still active is marked **used**.
+
+Steps 3 and 4 both read a hole in a section as evidence that the argument list
+ended, which is what makes a section the unit of scoring. That inference is
+sound only while the arguments really do fill the resource in order, and at a
+**variadic** call site on an ABI that passes the variable arguments on the stack
+it does not. Apple's arm64 ABI is the case in point: a fixed parameter takes
+`x0`, the varargs start at `[sp+0]`, and `x1`–`x7` are structurally empty —
+seven slots, longer than either rule tolerates. Since AArch64 puts the general
+registers and the outgoing stack area in **one** section, a stack trial
+`check_input_trial_use` had already scored active is deactivated again here, and
+the argument is dropped; whatever computed it then dies to dead-code
+elimination, so the destination of a `scanf` is not merely unprinted but
+unwritten. (kuna) `varargstackargs` (default-off,
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_varargstackargs.rs`) cuts such a
+section in two at its first stack trial, so the register prefix and the stack
+tail are scored independently and the ABI's hole stops being evidence about the
+stack argument. The cut also keeps step 4's hole-filling promotion inside the
+half that produced it — promoting across the boundary would fabricate `x1`–`x7`
+as six invented register arguments. `ActionActiveParam` sets the flag on the
+call's `ParamActive` and only for a callee whose prototype is variadic
+(`FuncProto::is_dotdotdot`): with a fully known prototype a register hole *is*
+evidence, and only `...` makes the hole a property of the ABI rather than of the
+recovery. Nothing about trial scoring changes — a stack trial still has to reach
+`fillin_map` active on its own evidence — so the option can keep an argument the
+recovery already believed in but never invent one.
+
+The same two rules are also what `ActionInputPrototype` runs the function's
+**own** input Varnodes through, and there the premise behind step 4 does not
+hold. At a call site an active trial is a caller-side inference — an argument
+register holding a value the caller wrote and does not otherwise use — which is
+genuinely ambiguous, so a long run of empty slots is fair evidence that the
+recovery has walked past the end of the argument list. For the function's own
+inputs an active trial is a fact about the body: this function reads that
+caller-saved register before any definition of it, which on an argument register
+has one explanation. The gap slots meanwhile carry no counter-evidence at all,
+since an untouched argument register is exactly what an ignored parameter looks
+like — and a callback whose signature is fixed by the API it is registered with
+ignores parameters as a matter of course. So step 4 trades a fact for a
+heuristic, and it fires hardest on the functions that need recovery most: a
+handler reached only through a function-pointer table has no call site anywhere
+in the image, so its body is the only evidence there is. The Wayland
+`wl_keyboard_listener` key callback is the witness — `data` in `rdi`,
+`wl_keyboard`/`serial`/`time` ignored, `key` and `state` arriving in `r8d`/`r9d`
+behind a three-register hole, one past `maxchain` — and kuna rendered it as
+`void sub_6500(long a0)` whose first statement branches on a local nothing ever
+assigned. (kuna) `inputparamgap` (default-on,
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_inputparamgap.rs`) stops a gap
+slot from ending the chain when the `ParamActive` is the one
+`ActionInputPrototype` built, so the active trials past the hole survive and step
+4's own promotion fills the interior with the unreferenced trials
+`build_trial_map` had already synthesized — the full ABI signature, positions and
+all. A two-slot hole was always tolerated, so the option moves only where the
+limit sits.
+
+Three clauses bound it, and the second was settled by measurement rather than
+argument. The flag is carried on that `ParamActive` and nothing sets it at a call
+site, so argument recovery everywhere else is untouched. Only an **active
+exclusion (register)** trial is protected — a stack trial's fate is left exactly
+to `seenchain`, because the evidence the option rests on is a register's: a
+caller-saved argument register read live-in can only be carrying what the caller
+placed there, while a positive-offset stack slot read live-in is much weaker,
+since a Win64 home slot used as scratch and an over-wide or aliased read look the
+same. A first design exempted any register *gap slot* instead; it fixed the
+witness and left the datatest corpus byte-identical, and it also let one Win64
+`sub_140010a57` span its four-register hole into the stack resource and promote
+eleven scratch slots of the caller's argument area into a fifteen-parameter
+signature. Because trials sort into formal parameter order, protecting only
+register trials additionally keeps step 4's hole-filling inside the register file,
+which is what bounds the recovered list to the ABI — six parameters on x86-64
+SysV, four on Win64. And it never makes a trial active that was not already
+active, so a register the body does not read before writing is still not a
+parameter.
+
+### `build_input_from_trials` — writing the argument list
+
+Whatever is still `used` becomes the CALL op's input list, in prototype order
+(`funcdata_callsite.rs (build_input_from_trials)`), a spacebase parameter's stack
+range is marked unmapped, and the trials are dropped. What is written are the
+argument *values*: after constant propagation a size argument is a constant
+Varnode, not the register the ABI passes it in — so the storage each argument
+occupied survives only if something records it. (kuna) `calleearity`
+(default-on, `decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleearity.rs`)
+records exactly that, on the call spec, and uses it for one thing: when the same
+callee is called more than once in the function, a call whose list is not yet
+written is reconciled against a sibling whose list already is.
+
+That reconciliation exists because nothing else in P4 does it. With an unlocked
+callee prototype every call site recovers its arguments alone, so one allocator
+wrapper renders as `sub_140008160(0x28)` at one site and `sub_140008160()` thirty
+bytes later — the second site being the one where the argument is *also* the
+operand of an overflow check, which `only_op_use` rejects on its `CPUI_CBRANCH`
+descendant. Relaxing that rejection is not an option: `test rcx,rcx; jz; call` is
+structurally identical and would gain an invented argument everywhere. The
+sibling call is the only local evidence that settles it. The reconciliation is
+register-storage only (a finalized call's stack arguments sit at caller-relative
+addresses that differ per site), never promotes a synthetic unreferenced trial,
+is all-or-nothing (parameters are positional), and never removes an argument.
+`ActionActiveParam` finalizes each spec as soon as that spec is fully checked, so
+that rule alone reconciles a call against the sites *before* it, and a callee
+whose first call site is the broken one stays broken.
+
+That direction is not a detail, because the shape the reconciliation exists for
+routinely puts the loser first. MSVC's aligned `operator new` calls one allocator
+from two arms of the same test: the large arm writes a fresh argument register
+(`lea rax,[rcx+0x27]; cmp rax,rcx; jbe abort; mov rcx,rax; call`) and keeps its
+argument, while the small arm passes the register live-in
+(`test rcx,rcx; jz; call`) and loses it to the very `only_op_use` rejection
+above. Flow order reaches the small arm's call spec first, so at the moment it
+finalizes its witness is still `input_active` and has recovered nothing yet.
+(kuna) `calleearityfwd` (default-on,
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleearityfwd.rs`) closes that
+direction. Reordering the finalization would be the obvious way and is the wrong
+one: `check_call_double_use` asks whether *another* call spec is still
+`input_active` while scoring a trial, so deferring a spec past its neighbours'
+`check_input_trial_use` changes argument recovery on every binary and not just
+where two sites disagree. Instead a call that finalizes with an **empty**
+argument list is set aside — together with the Varnodes its still-promotable
+trials point at, read before `op_set_all_input` drops them, which is the only
+moment they are reachable — and retried once at the end of the same
+`ActionActiveParam::apply`, when every spec in the pass is final. The witness
+search and every refusal are `calleearity`'s, unchanged, so the retry adds no new
+way to promote a trial: it only lets the existing one see the sites that come
+after. Two limits are its own. A captured Varnode wider than its trial is
+declined rather than truncated, because the `SUBPIECE` the normal path would
+insert needs the trials the retry no longer has; and nothing crosses an `apply`,
+because the slot numbering the captured Varnodes came from does not survive
+`delete_unused_trials`. It is inert unless `calleearity` is also on, so one
+option still turns all sibling reconciliation off.
 
 The `Register` (unordered) variant skips all ordering logic: every active
 trial that lands justified in an entry is a parameter
@@ -431,6 +561,45 @@ classified:
   `-O2` inlined 64-byte `memcpy`, the four `movaps` stores that fill the local
   buffer are never read back, so `reload` declines them while `spill` turns them
   into four invented leading arguments.
+- **Callee-body evidence** (kuna, `decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleedeadarg.rs`):
+  every test above reasons on the *caller's* side of the call, and on that side
+  a live argument register at an unprototyped callee is exactly what a real
+  argument looks like. Where the return register and the first argument register
+  coincide — `x0` on AArch64, `r0` on ARM — the previous call's result is
+  therefore recovered as the next call's argument, and the same output that
+  declares `int f(void);` calls `f(v3);`. That does not recompile, and it leaves
+  the reader unable to tell whether the callee consumes the value.
+
+  `calleedeadarg` (default-on) supplies the one piece of evidence the caller
+  does not have: the callee's own body. Before the ancestor analysis runs, a
+  bounded decode starting at the callee's entry answers, per register range,
+  whether the callee **overwrites** those bytes on every path before ever
+  reading them. Each path carries the register bytes already written on it; a
+  read of a byte not in that set vetoes the range for the whole callee. Every
+  path *ends* somewhere — at a `RETURN`, at a nested call, at an unresolved
+  `BRANCHIND`, at a `LOAD`/`STORE` naming the register space, or at an
+  undecodable instruction — and the range must already be written when it does,
+  because past that point the walk is not reading the code that runs. That is
+  what lets a body which overwrites `x0` and *then* calls `printf` still prove
+  `x0` dead, while a body whose first act is a call proves nothing. An
+  instruction whose p-code branches inside itself is scored against the set it
+  was entered with and credits none of its writes, so a conditionally-executed
+  write cannot hide a later read. A proven-dead register trial is scored
+  `no-use` like any other definitely-unused trial.
+
+  Requiring the *write* rather than merely the absence of a read is the whole
+  safety margin. A callee whose entire body is `ret` reads nothing at all, so a
+  "never read" rule would call every register dead there and delete the
+  arguments of every stub and thunk in the image — which is precisely what the
+  `stackreturn` datatest (three callees that are one `c3` byte each) catches.
+  The claim the pass makes is the positive one: the callee demonstrably
+  clobbers the register, so the value the caller left there cannot be reaching
+  it. Only the `register` space is answered; a `ram`-space global trial would
+  need the walk to model memory. Like `rustabi`'s call-*output* probe, the walk
+  is taken from the driver right after the flow build — the per-function
+  architecture handle the pipeline runs against carries the load image but no
+  translator — and cached per callee entry, so each distinct body is decoded
+  once per run. `off` restores the pre-option rendering.
 - A definitely-unused trial has its dataflow **freed immediately** — the CALL
   input is replaced with constant 0 so dead-code elimination can reap the
   producer. This is why P4 must iterate with DCE inside mainloop.
@@ -490,7 +659,8 @@ In the one-shot tail, after merge has built HighVariables:
 **`ActionInputPrototype`** (`coreaction_protos.rs (ActionInputPrototype)`)
 re-derives the function's own parameter list from its input Varnodes — each
 input that the model admits as a possible parameter becomes a trial, active
-iff it has readers; `fillin_map` orders them; recovered-but-unreferenced
+iff it has readers; `fillin_map` orders them (with the (kuna) `inputparamgap`
+gap-tolerance above, which applies only to this call of it); recovered-but-unreferenced
 parameters get fresh input Varnodes unless something already overlaps the
 slot; and the store is rewritten with each parameter typed from its
 HighVariable (`update_input_types`). **`ActionOutputPrototype`**
@@ -580,7 +750,12 @@ the same spec already records it, so kuna states the same guarantee for the mode
 that are silent, at model-decode time. A spec that mentions `DF` either way has
 made a deliberate statement and is left alone, and a language with no such
 register is a structural no-op — the assertion is keyed on the SLEIGH register
-name and a lookup miss is the exit.
+name and a lookup miss is the exit. That miss is a *speculative* question, so
+the assertion takes a probe (`Option<VarnodeData>`) rather than the exact
+by-name lookup: on a front-end that resolves register names by asking a host,
+asking for a name the language does not define is an error the host reports
+(§0's probe seam), and every non-x86 language would take that path on every
+decoded prototype.
 
 ### The spacebase placeholder
 

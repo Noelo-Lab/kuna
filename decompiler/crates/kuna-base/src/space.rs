@@ -297,6 +297,20 @@ pub trait RegisterLookup {
     /// if the register does not exist.
     fn get_register(&self, nm: &str) -> KunaResult<VarnodeStorage>;
 
+    /// Speculative form of [`RegisterLookup::get_register`]: ask whether `nm`
+    /// resolves *here*, cheaply and without side effects.
+    ///
+    /// `None` means "not resolvable on this lookup", never "this language has
+    /// no such register".  A back end that answers register questions by
+    /// asking a host — the Ghidra front end, whose exact lookup is a
+    /// `getRegister` query the host answers by throwing on an undefined name —
+    /// overrides this to consult only what it already knows.  Code that is
+    /// merely testing "does this language happen to have X?" must use this
+    /// rather than the exact lookup.
+    fn probe_register(&self, nm: &str) -> Option<VarnodeStorage> {
+        self.get_register(nm).ok()
+    }
+
     /// C++ `Translate::getRegisterName`: get the name of the smallest
     /// containing register given a location and size, or an empty string.
     fn get_register_name(&self, base: &Rc<AddrSpace>, off: u64, size: i32) -> String;
@@ -1650,7 +1664,13 @@ impl AddrSpace {
     /// manager's installed [`RegisterLookup`].  With none installed,
     /// `getRegister` behaves as always-throwing — identical to the C++
     /// behavior for an *unknown* register — and only the catch branch
-    /// (absolute offset parsing) is live.
+    /// (absolute offset parsing) is live.  The C++ try/catch is a
+    /// *speculative* question ("is this token a register name?"), so it goes
+    /// through [`RegisterLookup::probe_register`].  That probe collapses every
+    /// failure to `None`, where the exact lookup used to re-raise a
+    /// non-`LowlevelError`: no lookup in the tree returns one, and the only
+    /// caller is the console's address parser, where a swallowed one resurfaces
+    /// as a hex-parse rejection of the same token.
     pub fn read(&self, s: &str, size: &mut i32, manage: &AddrSpaceManager) -> KunaResult<u64> {
         // JoinSpace::read: parse a comma-separated sequence of register
         // names / shortcut-prefixed offsets into a join record.
@@ -1668,18 +1688,9 @@ impl AddrSpace {
                 i += 1; // Skip the comma
                 // try { getRegister(token) } catch(LowlevelError): name
                 // doesn't exist (no installed lookup == always throwing)
-                let mut piece: Option<VarnodeStorage> = None;
-                if let Some(lookup) = manage.register_lookup() {
-                    let lookup = Rc::clone(lookup);
-                    match lookup.get_register(&String::from_utf8_lossy(&token)) {
-                        Ok(point) => piece = Some(point),
-                        Err(err) => {
-                            if !err.is_lowlevel() {
-                                return Err(err); // C++ only catches LowlevelError
-                            }
-                        }
-                    }
-                }
+                let piece: Option<VarnodeStorage> = manage
+                    .register_lookup()
+                    .and_then(|lookup| lookup.probe_register(&String::from_utf8_lossy(&token)));
                 let piece = match piece {
                     Some(piece) => piece,
                     None => {
@@ -1715,22 +1726,13 @@ impl AddrSpace {
         let bytes = s.as_bytes();
         let append = bytes.iter().position(|&c| c == b':' || c == b'+');
         // try { getRegister } catch(LowlevelError) { absolute offset }
-        let mut point: Option<VarnodeStorage> = None;
-        if let Some(lookup) = manage.register_lookup() {
-            let lookup = Rc::clone(lookup);
+        let point: Option<VarnodeStorage> = manage.register_lookup().and_then(|lookup| {
             let name = match append {
                 None => s,
                 Some(append) => &s[..append],
             };
-            match lookup.get_register(name) {
-                Ok(p) => point = Some(p),
-                Err(err) => {
-                    if !err.is_lowlevel() {
-                        return Err(err); // C++ only catches LowlevelError
-                    }
-                }
-            }
-        }
+            lookup.probe_register(name)
+        });
         let mut offset: u64;
         match point {
             Some(point) => {

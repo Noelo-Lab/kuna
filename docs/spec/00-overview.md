@@ -222,6 +222,29 @@ Four front-ends drive one engine assembly:
   (`decompiler/crates/kuna-wasm/src/classify.rs`), which a name test cannot do:
   loader names are demangled (`CellClass::Cell_Coord`) and symbol-table names are
   not.
+
+  (kuna) **The listing surfaces read the same section flags to choose a view.**
+  `kuna disassemble` and its `kuna read` spelling
+  (`decompiler/crates/kuna-cli/src/disassemble.rs (render)`) are one command with
+  two renderings of one walk: decoded instructions, or the bytes as a hexdump
+  with an ASCII gutter and, under `--json`, the span as one contiguous hex
+  string. `--as code|data|auto` selects, and `auto` — the default for
+  `disassemble`, where `read` defaults to `data` — decides from the loader's own
+  classification of the section holding the start address
+  (`decompiler/crates/kuna-cli/src/disassemble.rs (decide_view)`): a section
+  carrying `DATA` without `CODE`
+  (`decompiler/crates/kuna-sleigh/src/loadimage.rs (section_flags)`) holds bytes,
+  so it is shown as bytes. Two exceptions keep the inference honest. A target that
+  resolved to a discovered function entry is code wherever it was linked, so it is
+  never reclassified; and an address in no section the loader published — the XML
+  `<binaryimage>` corpus, a raw blob — is silence rather than evidence and keeps
+  the instruction listing. Only an inferred flip is explained, on stderr and in
+  the JSON `notes`, so `--json` stdout stays one document; an explicit `--as` is
+  the caller's decision and is not narrated back at them. This exists because the
+  instruction view alone is a wrong answer that reads like a right one: `.rdata`
+  and `__TEXT,__const` decode perfectly well into `ADD`/`OR` rows that describe
+  nothing in the program, which is what sent two RE-loop testers to `xxd` and
+  `objdump -s` (`docs/re-needs/cli-mode-read-raw.md`).
 - **`kuna_ghidra`** (`decompiler/crates/kuna-ghidra/src/bin/kuna_ghidra.rs`) —
   the ghidra-mode process front-end: the stock Ghidra GUI spawns it as its
   decompiler core and talks the burst-framed stdin/stdout protocol
@@ -283,6 +306,24 @@ Four front-ends drive one engine assembly:
   ghidra mode too (`decompiler/crates/kuna-decomp/src/infra/architecture.rs
   (decode_ghidra_tracked_sets)`), resolving register names through the
   query-backed translator, so `ActionConstbase` plants the direction seed.
+  Because that lookup is a host query, an undefined name is not a local miss:
+  Ghidra's callback throws `No Register Defined`, which the host logs as an
+  `Unexpected Exception` with a stack trace before the exception frame ever
+  reaches kuna — recoverable on the wire, but visible to the user and
+  unsuppressible from this side. So a *speculative* by-name lookup — a pass
+  asking "does this language happen to have register X?" rather than resolving
+  a name the host itself supplied — must go through the probe seam
+  (`decompiler/crates/kuna-base/src/space.rs (RegisterLookup)`'s
+  `probe_register` and `decompiler/crates/kuna-decomp/src/infra/engine_translate.rs
+  (EngineTranslate)`'s `probe_register_varnode`) instead of the exact lookup.
+  Both default to the exact lookup's `Ok`-to-`Some`, so the standalone Sleigh
+  path is unchanged; the ghidra translator overrides them to answer from the
+  `nm2addr` cache alone and issue no query. A `None` therefore means "not
+  resolvable here", never "this language has no such register" — which is why
+  only speculative tests may consult it. The x86 direction-flag assertion
+  (chapter 04) is the case this shapes: its `DF` probe still resolves in ghidra
+  mode because the pspec `<tracked_set>` sweep above runs first and caches `DF`,
+  and every stock x86 pspec carries that set.
   External references resolve through the upstream two-step
   (`ScopeGhidra::resolveExternalRefFunction`): the `<externrefsymbol>` answer
   keeps its resolve address, getExternalRef fires at the POINTER address, the
@@ -557,10 +598,10 @@ printf-heavy whole binary. `formatstring` is therefore no longer in the
 prescribed outcome — so the shipped default runs no second decompile and both
 surfaces deliver the same C when the option is given (DIV-66).
 
-(kuna) **Surface defaults.** The whole-binary drivers inject their defaults
-before the option pass (`decompiler/crates/kuna-cli/src/decompile_all.rs
-(load_program)`), and which bundle a surface takes is named at its one call site
-rather than inferred: `option listing on` (DIV-15 — without the Listing the
+(kuna) **Surface defaults.** The drivers inject their defaults before the option
+pass, from one shared table
+(`decompiler/crates/kuna-cli/src/decompile_all.rs (driver_default_options)`), and
+which bundle a surface takes is named at its one call site rather than inferred: `option listing on` (DIV-15 — without the Listing the
 default-on no-return propagation is a structural no-op, and a stripped binary's
 unnamed exit wrapper swallows every following function into its caller), and
 `option funcstart_patterns on` plus `option aif on` for non-x86-64 objects only
@@ -578,6 +619,39 @@ so building it for enumeration would buy nothing and cost a whole-program decode
 Every injection yields to an explicit caller option — the driver skips it whenever
 the caller (or the resolved preset) names that option at all — and none of them
 touches the engine default or the console/datatest surfaces.
+
+Single-function `kuna decompile` reads the same table, and that is why the table
+is shared rather than duplicated: it builds a `decomp_dbg` script instead of
+loading in-process, so it applies the pairs as `option` lines ahead of
+`read symbols` (`decompiler/crates/kuna-cli/src/decompile.rs (build_script)`).
+What it does differently is *when*. It injects the Listing up front and holds the
+discovery half back for a **second attempt**, made only when the console answers
+a by-name selection with `no function matches`.
+
+The gap that forced this: on a non-x86-64 image `kuna functions` listed, and
+`kuna decompile-all` decompiled, entries that exist only because
+`funcstart_patterns` found them, while `kuna decompile <that generated name>`
+answered that no such function exists. kuna printed a name it would not then
+accept, which is worse than not finding the function at all — an agent cannot
+tell a name it mistyped from a name the tool minted. It hid behind the mode
+policy, since `auto` resolves to `aggressive` under 500 KiB and that preset names
+all three options itself, so it surfaced only above the size threshold or under
+an explicit `--mode reliable`.
+
+The retry rather than plain alignment, because the bundle is not free. It changes
+the ENTRY SET, and not every entry it adds is real: on i386 and PPC64 the
+prologue matcher seeds a start a few bytes inside a function it already knew
+(PPC64 ELFv2's local entry point sits 8 bytes past the global one), and
+`funcboundflow` truncates the outer function's flow at that seed, so a
+`__do_global_ctors_aux` that decompiles to a loop becomes an empty husk. A
+whole-binary surface takes that trade knowingly — its inventory has to contain
+everything it will decompile, and the husk is a discovery defect to fix at the
+analyzer tier, not a reason to under-enumerate. A caller who has already named
+one function gains nothing from the wider inventory unless the name is not there,
+which is exactly the condition the retry tests. So the first attempt is the
+script this surface has always emitted, and only a MISS — not an ambiguity, not a
+load failure, not a pipeline abort, and never an `--addr` selector — buys the
+second one.
 
 (kuna) **The watchdog.** `decompile-all --max-fn-seconds N` (`0` disables) is
 driver policy, not a phase-model option. An unfiltered whole-binary run in the
@@ -604,6 +678,160 @@ console/parity paths never set one. It is not a hard wall around discovery,
 unprobed SLEIGH work, C rendering and variable extraction, assembly/JSON
 construction, total project time, or memory.
 
+(kuna) **Declared function boundaries.** Every function boundary the engine knows
+is derived: discovery supplies the entries, and the extent is the
+address-contiguous clip `[entry, next_entry)` over an unbounded flow follow
+(`decompiler/crates/kuna-console/src/funcextent.rs`). That is the wrong answer on
+exactly the images where reverse engineering is hard — obfuscated, packed or
+hand-written code, where a missed entry merges two functions and an invented one
+splits a body — so a caller can override both halves.
+
+The primitive is a **declared extent**, entry VMA → byte size, held per program in
+`decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::declared_extents)`
+and written by
+`decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::declare_function)`.
+Declaring also installs the `FunctionSymbol` and the name→address registration
+`map function` installs, so the entry enumerates, resolves by name and names its
+call sites; an address that already carries a function symbol is renamed rather
+than given a second one, and only when the caller supplied a name. The store is
+consulted by every later load of that entry — `load function`, `load addr`
+(`decompiler/crates/kuna-console/src/ifacedecomp.rs`) and the whole-binary loop
+(`decompiler/crates/kuna-console/src/project.rs (decompile_targets)`) — which pass
+it as the `Funcdata` size that bounds flow following (chapter
+[02 §2.1](02-lift-and-flow.md)), and by `funcextent` when the inventory reports an
+extent. A declaration therefore outlives the one command that made it, which is
+what separates an interface from a one-shot flag.
+
+Two surfaces reach it. The console command is `function bounds <start> [<end>]
+[as <name>]`
+(`decompiler/crates/kuna-console/src/kuna_console.rs (IfcKunaFunctionBounds)`),
+which takes plain integers rather than the `parse_machaddr` address grammar
+precisely because that grammar's `[space,offset,size]` size is indistinguishable
+from the address width for a small size, and keys the name with `as` so a
+declaration that gives a name but no extent cannot have its name read as the end
+address. The CLI flag is `--define-function <start[-end][=name] | @file>`
+(`decompiler/crates/kuna-cli/src/funcdecl.rs`), repeatable, honored by
+`decompile`, `decompile-all`, `functions`, `decompile-project` and `disassemble`.
+`end` is exclusive. The script surface emits the console command AFTER `read
+symbols` and BEFORE the load, and the in-process surfaces apply the declarations
+after `commit_pending_analysis`
+(`decompiler/crates/kuna-cli/src/decompile_all.rs (load_program)`): in both, a
+declaration is applied after discovery has had its say, because it is an assertion
+that outranks it. Durability is caller-carried — the `@file` form is the artifact,
+and kuna does not write boundaries back into the image.
+
+(kuna) **Caller assertions (`--assert`).** Declared boundaries are one fact an
+agent can state; the assertion plane is the rest of them. Everything the engine
+knows about a program it derived, and the console has long carried the commands
+that correct each derivation — `rename`, `retype`, `map param`, `map return`,
+`map address`, `comment instruction`, `parse line` — while none of them was
+reachable from the `kuna` binary, whose generated script emitted a fixed
+vocabulary (`option`, `read symbols`, `load`, `kassert`, `function bounds`,
+`decompile`).
+
+A **directive** is one line of an intent-keyed vocabulary — an agent does not have
+to know that renaming is P9 to rename something — parsed by
+`decompiler/crates/kuna-cli/src/assertdecl.rs` and applied by
+`decompiler/crates/kuna-console/src/assertions.rs`:
+
+| directive | lowers to | writes at |
+|---|---|---|
+| `function <start>[-<end>][=<name>]` | `function bounds` | P1, the `--define-function` spelling |
+| `typedef <C declaration>` | `parse line` | P5 type-propagation |
+| `prototype <func> <C declaration>` | `parse line extern` | P4 prototype-source |
+| `data <addr> <C typedeclaration>` | `map address` | P5 const-pointer |
+| `param [<func>::]<i> <storage> <C typedeclaration>` | `map param` | P4 prototype-source |
+| `return [<func>::]<storage> <C typedeclaration>` | `map return` | P4 prototype-source |
+| `comment [<func>::]<addr> <text>` | `comment instruction` | P9 external-refinement |
+| `flow [<func>::]<addr> branch\|call\|callreturn\|return` | `override flow` | P2 flow-classification |
+| `name [<func>::]<symbol> <newname>` | `rename` | P9 naming-policy |
+| `type [<func>::]<symbol> <C type>` | `retype` | P5 type-propagation |
+| `readonly <addr>+<size>` | `readonly` | P1 code-data-partition |
+| `volatile <addr>+<size>` | `volatile` | P1 code-data-partition |
+
+Four application points, and the ordering between them is forced rather than
+stylistic. **Image-scoped** directives (`readonly`, `volatile`) OR one boolean
+Varnode property over a memory range, and must be stated before the image's
+symbols are mapped: `Scope::addMap` folds the range property into each
+`SymbolEntry` as it maps it (`database.cc:1156-1158`) and never consults the range
+again, so a property painted afterwards is silently inert over every address the
+loader named. The generated console script therefore emits them ahead of `read
+symbols`; the in-process surface, where `bootstrap_from_object` has already read
+the loader's symbols before a caller can say anything, re-applies the property to
+the symbols the range covers (`assertions::paint_property`). Both surfaces then
+render the same C. **Program-scoped** directives (`function`, `typedef`, `prototype`,
+`data`) are applied right after the analysis commit
+(`ConsoleProgram::set_assertions` + `assertions::apply_program_scoped`, called
+from `decompiler/crates/kuna-cli/src/decompile_all.rs (load_program)`), for the
+same reason a declared boundary is: an assertion outranks discovery.
+**Function-scoped** directives (`param`, `return`, `comment`, `flow`) become
+decompile SEEDS (`assertions::function_seed`), because a prototype fact is
+consumed at flow time and cannot be applied afterwards. **Symbol-scoped** directives (`name`,
+`type`) can only be applied to an already-decompiled function — the local they
+name does not exist until a decompile has produced it — so
+`decompiler/crates/kuna-console/src/project.rs (decompile_targets)` decompiles,
+applies them to the first pass's `Funcdata` (`assertions::apply_symbol_scoped`),
+and decompiles again with the mutated local scope carried across as
+`mapped_symbols`. That second pass is emitted only when such a directive bound to
+the function, so every run without one costs exactly what it did before. The
+script surface (`decompiler/crates/kuna-cli/src/decompile.rs (build_script)`)
+emits the same facts at the same three slots, with the same conditional second
+`decompile`.
+
+A directive that names no function binds to the function being decompiled, which
+is unambiguous only when the run selected exactly one; on a whole-binary run it
+would silently mean *every* function that happens to have a `v2`, so it is
+rejected there with a detail naming the `<func>::<operand>` form. Rejecting is the
+design: every directive produces exactly one row in the run's report
+(`ConsoleProgram::assertion_outcomes`, serialized as the `assertions` array of
+every `--json` document and spoken on stderr on the human surface), because a
+directive that is accepted and does nothing is worse for an agent than one that
+errors. `--assert-strict` turns any rejection into a non-zero exit; without it a
+rejection is reported and the run continues, so a batch of forty renames against a
+re-decompiled binary does not lose the other thirty-nine to one stale name.
+Durability is caller-carried, as it is for boundaries: `--assert @FILE` is the
+artifact.
+
+A `flow` directive is the sharpest of the four function-scoped ones, and the only
+one that changes which bytes are in the function at all. P2 classifies the flow
+out of each instruction — branch, call, call-that-does-not-return, return — and
+`FlowInfo::process` consults the per-function `Override` store
+(`has_flow_override`/`get_flow_override`, then `Funcdata::overrideFlow`) before it
+decides. The directive seeds that store: `assertions::seed_one` resolves the
+address in the default code space, maps the caller's word through
+`Override::string_to_type` (rejecting anything outside `branch`, `call`,
+`callreturn`, `return` with a reason rather than dropping it), and parks the pair
+in `FunctionSeed::flow_overrides`, which
+`decompiler/crates/kuna-console/src/project.rs (decompile_targets)` appends to the
+derived overrides it already carries — the analysis's `call error(nonzero,…)`
+no-return prunes — so a caller-stated fact wins the map insert at an address both
+name. The script surface reaches the same store through the ported console
+command (`kuna-console/src/ifacedecomp.rs (IfcFlowOverride)`), whose facts the
+console re-seeds on every IR rebuild; the two surfaces render the same C. Because
+the override is read at flow time, a type the engine cannot honour at that
+instruction — `call` at an indirect call, which has no destination to make direct —
+raises `Could not apply flowoverride` and the run reports that as the function's
+error, rather than decompiling as though nothing had been asserted.
+
+A `readonly` range is the one directive whose effect depends on a second switch:
+folding a read-only load into the value behind it is
+`ActionVarnodeProps`/`Funcdata::fillin_read_only`, gated on the program-wide
+`readonly` option, which is default-off. Asserting a range therefore turns that
+option on for the run — a directive that paints a property and then declines to
+act on it would be the accepted-and-inert failure this plane exists to end — and
+it is applied ahead of the caller's own `--option`s, so an explicit `--option
+readonly off` still wins. The reverse composition is not equivalent: the option
+alone folds only what the loader already marked (section flags), which is why
+`.data` that nothing writes needs the range and not the switch.
+
+There is deliberately no `global` directive. `global add`/`global remove` are the
+console commands `phases.toml` names as the `code-data-partition` exposure and
+they are wired here onto `Database::add_range`/`remove_range`, but every stock
+cspec's `<global>` already claims the whole default data space (`<range
+space="ram"/>`), so on any ordinary image an added range was global before the
+caller spoke; only the removal direction moves the C. Exposing an assertion that
+is measurably a no-op would be the same failure the plane is built to avoid.
+
 (kuna) **Load-time env bridges.** Seven loader gates are consumed *inside* the
 bootstrap — before any console `option` line can possibly run — so the option
 surface alone cannot deliver them; each is bridged through a process environment
@@ -621,6 +849,7 @@ variable exported first (`decompiler/crates/kuna-cli/src/decompile_all.rs
 | `KUNA_TYPEDEPTH` | `typedepth` | DWARF full-depth type resolution, `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_typedepth.rs (TYPEDEPTH_ENV)` |
 | `KUNA_DWARFSTRUCTS` | `dwarfstructs` | DWARF aggregate-layout import (`DW_AT_byte_size` + `DW_TAG_member` walk), `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_dwarfstructs.rs (DWARFSTRUCTS_ENV)` |
 | `KUNA_DWARFVARIANTS` | `dwarfvariants` | DWARF variant-part (discriminated-union) import (`DW_AT_discr` + `DW_TAG_variant` walk), `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_dwarfvariants.rs (DWARFVARIANTS_ENV)` |
+| `KUNA_PDATACHAINED` | `pdatachained` | PE `.pdata` chained-`UNWIND_INFO` entry suppression, `decompiler/crates/kuna-analysis/src/analyzers/entry/pe_entry.rs (pdata_begins)` |
 | `KUNA_MACHO_SLICE` | `--slice` | Mach-O fat-binary slice peel, `decompiler/crates/kuna-console/src/engine.rs (select_macho_slice)` |
 | `KUNA_MACHO_ARM64E` | `macho-arm64e` | arm64e spec selection, `decompiler/crates/kuna-analysis/src/loader/format/macho.rs (MACHO_ARM64E_ENV)` |
 
@@ -639,11 +868,33 @@ varnode bank (`decompiler/crates/kuna-decomp/src/substrate/varnode.rs
 (VarnodeBank)` — storage-sorted def/free/input trees), the op bank
 (`decompiler/crates/kuna-decomp/src/substrate/op.rs (PcodeOpBank)` — a
 `SeqNum`-keyed optree, whose stable key order is what lets a rule-pool cursor
-survive op deletion, §0.6), and **two** block graphs
+survive op deletion, §0.6, and which counts its own insertions and removals in an
+*epoch* so a holder of cached successor ids can tell in O(1) whether the tree
+still orders the way it did — `decompiler/crates/kuna-decomp/src/substrate/op.rs
+(optree_epoch, ops_after_seq)`), and **two** block graphs
 (`decompiler/crates/kuna-decomp/src/substrate/block.rs (BlockGraph)`): `bblocks`,
 the CFG, and `sblocks`, the structuring tree — physically distinct, seeded as a
 `BlockCopy` mirror of the CFG when structuring begins
 (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs (seed_sblocks_copy)`).
+
+The varnode bank's two sorted trees are the container the decompiler touches most
+— a large function creates and destroys well over a million Varnodes, each one
+inserted into and removed from both — so their keys
+(`decompiler/crates/kuna-decomp/src/substrate/varnode.rs (LocKey, DefKey)`) do not
+store an `Address` or a `SeqNum` directly. They store the ordering triple those
+compare by, flattened into plain integers: the sentinel rank, the space index and
+the offset (`decompiler/crates/kuna-base/src/address.rs (Address::sort_key)`).
+Lexicographic comparison of the triple reproduces `Address::cmp` exactly — two
+Addresses sharing a space pointer share a rank and an index and fall through to
+the offset, which is what the pointer-equality fast path does — so the tree order
+is the C++ comparator's order, while the key itself becomes `Copy`: no reference
+counting on clone or drop, no pointer chase into an `AddrSpace` to compare, and a
+smaller node. Insertion also takes a single descent
+(`decompiler/crates/kuna-decomp/src/substrate/varnode.rs (VarnodeBank::xref)`):
+the "is an equivalent varnode already present" lookup and the insertion that
+follows it are the same search, because the `insert` flag set afterwards is
+outside the `(input|written)` mask the key is built from and so cannot move the
+entry.
 
 Every cross-arena mutation routes through `Funcdata` — Rust cannot hold two
 `&mut` arenas through a method on one of them, so the op-in-block primitives the
@@ -910,7 +1161,9 @@ built. Two consequences:
   reuses the same `Funcdata`, `decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs
   (refollow_flow)`). Options must therefore be in effect before the function is
   built — which the console guarantees by rebuilding a fresh `Funcdata` on every
-  `decompile` command.
+  `decompile` command, *except* when `decompile` adopts the IR `load function`
+  already followed (§0.8), and that adoption is refused the moment any command at
+  all — an `option` among them — has run since the load.
 
 ## 0.6 The schedule
 
@@ -978,7 +1231,13 @@ resumable status machine (an action with `rule_repeatapply` loops until its
 change count stops rising; `rule_onceperfunc` latches done), and
 `ActionPool::process_op` walks each op's per-opcode rule list *resetting the walk
 to index 0 whenever a rule changes the op's opcode* — rules observe each other's
-effects mid-op, and the reset order is part of the observable output. The
+effects mid-op, and the reset order is part of the observable output. The C++
+cursor is a map iterator whose `++` is O(1); kuna models it as the last consumed
+`SeqNum` (so it survives the op's own deletion) and reads a short *run* of
+successors per tree descent rather than one search per op, discarding the run
+whenever the optree epoch above moves — any op created or destroyed by anything
+other than the pool's own consumption of the op it just left. The visit order is
+the search's, one buffered value at a time. The
 materialized `decompile` tree's listing is byte-equal to the C++ oracle dump
 (`decompiler/crates/kuna-decomp/src/infra/universalaction.rs
 (UNPORTED_ALLOWLIST)` — empty).
@@ -989,6 +1248,21 @@ Flow-follow itself runs *before* the tree (the upstream `followFlow` →
 (`decompiler/crates/kuna-decomp/src/infra/architecture.rs
 (reset_defaults_internal)`), applied at
 `decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (follow_flow_on_fd)`.
+
+**Where a run's time went** (kuna). The schedule can be asked to account for
+itself: with `KUNA_ACTION_PROF` set to a path, every `apply` call is timed and
+the engine writes an exclusive-time table there
+(`decompiler/crates/kuna-decomp/src/infra/actionprof.rs`), rewritten each time
+the schedule unwinds so the file holds the running total for the whole process.
+Time is exclusive — a group is charged only what it spends outside its children,
+so the rows sum to the schedule's wall time and a container cannot hide a leaf —
+and each row is keyed by the root variant it ran under, which is what separates a
+function's own `decompile` pass from the reduced `jumptable` pipeline running on
+a partial clone beside it. The root label is set where the variant is selected
+(`decompiler/crates/kuna-decomp/src/infra/action.rs
+(ActionDatabase::set_current)`). This is a measuring instrument, not a decision
+point: it changes nothing the engine emits, and with the variable unset it costs
+one cached read per `apply`.
 
 ## 0.7 Feedback edges
 
@@ -1008,7 +1282,7 @@ study summarized in `docs/history.md`; every row below is re-verified against th
 | (angr) P2 → P2, lowered switch | detect-then-restart, two halves | a comparison cascade recognized as a compiler-lowered switch after simplification | the recovered cascade record, in a store shared by both halves | detect in fullloop writes + requests restart, install in mainloop (before heritage) reads on the restarted run — `decompiler/crates/kuna-decomp/src/p2_lift/kuna_loweredswitch.rs (ActionLowerSwitchDetect, ActionLowerSwitchInstall)` |
 | P5 → P2, determined branch | in-loop re-entry | constant folding decides a conditional branch, removing a CFG edge | the simplified ops themselves | `decompiler/crates/kuna-decomp/src/p3_dataflow/coreaction_early.rs (ActionDeterminedBranch)`, inside mainloop |
 | (kuna/angr) P7/P8 structuring fallback | degraded re-run | the region structurer cannot collapse the graph to a single root | nothing; `sblocks` is re-seeded clean | `decompiler/crates/kuna-decomp/src/p8_structure/blockaction.rs (ActionBlockStructure)` falls back to `CollapseStructure` after `decompiler/crates/kuna-decomp/src/p8_structure/region_structurer.rs (run_region_structurer)` declines |
-| P0 → everything, the outer loop | knowledge-store re-run | an operator/agent writes an assertion (`option`, `kassert`, override) and re-decompiles | the entire P0 store | `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_assert.rs (Dispatch)`; the console rebuilds the IR per `decompile`, re-seeding stashed facts — `decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (decompile_func_full_with_override_dyn)` |
+| P0 → everything, the outer loop | knowledge-store re-run | an operator/agent writes an assertion (`option`, `kassert`, override) and re-decompiles | the entire P0 store | `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_assert.rs (Dispatch)`; the console rebuilds the IR per `decompile`, re-seeding stashed facts — `decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (decompile_func_full_with_override_dyn)` (§0.8 is when the rebuild is skipped) |
 
 **Not implemented in kuna** (theory-only, kept for the record): the upstream
 jump-table *size-mismatch* restart — `matchModel` finding the recovered model's
@@ -1029,7 +1303,76 @@ engine-owned restart log
 (`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_restartlog.rs (RestartLog)`),
 because a function that silently decompiles twice is otherwise invisible.
 
-## 0.8 Reading order
+## 0.8 One flow follow per decompile
+
+The console has two commands that build IR for a function, and a `kuna decompile
+<bin> <fn>` runs both: `load function <fn>` (or `load addr`), then `decompile`.
+Upstream follows the flow once — C++ `IfcFuncload` follows it, and `IfcDecompile`
+re-runs the action pipeline on *that* `Funcdata` after
+`Architecture::clearAnalysis`. kuna's `decompile` instead builds a fresh
+`Funcdata` and follows the flow again, because a decompile is seeded with facts
+that `load function` never applied — and some of them are consumed AT FLOW TIME,
+so re-seeding them onto an already-followed IR would be too late:
+
+- `override prototype` call-site overrides, which `FlowInfo::build_call_specs`
+  consumes as it builds the call specs, and every `parse line` prototype re-parked
+  on its global `FunctionSymbol` before the drive (a callee prototype the follow
+  resolves against). These two are the genuinely flow-time seeds.
+- `override flow` facts, likewise consumed at flow time — but `load function`
+  seeds these too, from the same store, so the two follows agree on them.
+- `map address` symbols and DWARF stack locals, `type varnode %REG(pc)` usepoint
+  symbols, `map hash` dynamic symbols, a `parse line extern` prototype for the
+  function itself, and `map param` storage locks. The drive re-seeds all of these
+  onto the `Funcdata` *after* the follow, so they do not require a re-follow —
+  they are nonetheless required absent below, because "no facts at all" is the
+  condition that is cheap to prove and impossible to get subtly wrong.
+
+So the rebuild is *required* when a flow-time fact exists, and pure waste when no
+fact exists at all — which is every plain `kuna decompile`. The waste is not
+small: the second follow repeats the whole lift, the block build, and the
+jump-table sub-decompilation (§0.7), which on a large switch-heavy function is the
+single most expensive thing the run does.
+
+`decompile` therefore **adopts** the loaded IR when it can prove the rebuild would
+repeat the same follow
+(`decompiler/crates/kuna-console/src/ifacedecomp.rs (PristineFlow)`, consumed
+through `decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs
+(decompile_func_full_with_override_dyn_prefollowed)`). Two independent guards must
+both hold:
+
+- **Every seed above is empty**, flow-time or re-seeded alike. A flow-time seed
+  present means the loaded IR was followed without it, so adopting would silently
+  drop it; the re-seeded ones are held to the same bar deliberately, so the guard
+  is one question ("did the console learn anything about this function?") rather
+  than a per-seed judgement that a later seed could be forgotten from.
+- **The architecture is configured as it was at the load.** A `Funcdata`
+  snapshots the per-function flags into its ArchSeam handle when it is *built*
+  (§0.5), so a flag flipped afterwards is invisible to it. Three things move
+  between the load and the drive and therefore refuse adoption: `formatstring`,
+  which turns read-only propagation on around the drive so the printf format
+  constant can be read (adopting there leaves `printf((char *)(dat_… + …), …)`,
+  the format string unresolved); the watchdog's per-function budget, armed inside
+  the drive; and ghidra mode's staged name/dynamic/prototype-model
+  recommendations.
+- **The `decompile` is the immediately next command.** `load function` records the
+  console's command counter
+  (`decompiler/crates/kuna-console/src/interface.rs (IfaceStatus::command_seq)`)
+  and `decompile` requires it to have advanced by exactly one, along with the same
+  name, entry, declared extent and flow overrides. The counter is the whole
+  invalidation story on purpose: an `option` that changes a flow-time decision, a
+  `kassert`, a `map`, a second `load` — anything at all — advances it, so no
+  command needs its own invalidation hook and none can be forgotten.
+
+Adoption is a pure-performance seam: the adopted `Funcdata` is the one the rebuild
+would have produced, so the emitted C is byte-identical either way, and
+`decompiler/crates/kuna-console/tests/verify_flowreuse.rs` asserts exactly that
+(plus that the fast path is really taken, via `IfaceDecompData::adopted_flows`).
+The one place the two paths differ is the failure arm: a drive that aborts
+consumes the adopted IR, where the rebuild path left the loaded `Funcdata`
+untouched for a following `print C`, so the error arm re-follows the recorded
+name/entry/size/overrides to put it back.
+
+## 0.9 Reading order
 
 The folder taxonomy is the *artifact* order, not the execution order. Source
 under `decompiler/crates/kuna-decomp/src` is arranged as `substrate` (the IR

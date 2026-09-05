@@ -1,0 +1,57 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    repipe-68149b8a-stack-string-invalid-cast: "stack-string initialisation is
+    emitted as an invalid array cast"
+    docs/re-needs/stack-string-invalid-cast.md
+
+    Source:   void f(void) { char buf[32] = "the quick brown fox jumped once";
+                             customPrint(buf); }
+    GCC -O2 copies the whole literal out of .rodata with two 128-bit
+    movdqa/movaps pairs.  The wide loads survive as free read-only memory
+    varnodes, so the copy reaches the printer as partial-symbol slice
+    assignments - `v1[0] = (char[8])msg._0_8_;` - which are not valid C (C
+    has no array cast) and which hide the string the decompiler has already
+    recovered at that address.
+
+    Bytes compiled from that source on this machine (gcc -O2 -fno-pie), then
+    linked with .text at 0x100000, .rodata at 0x101000 and customPrint at
+    0x102000, so every RIP displacement is already resolved.
+
+    Stage model: S5 const-sequence - the same sub-stage that owns
+    RuleStringCopy (constant stack strings) and GH-9230 (constant-fill runs),
+    here for a run whose SOURCE is read-only image memory rather than pcode
+    constants.  The P0 assertion is `option rodatastring on|off`.
+
+    Pass 1 (default): assertion #1 proves the recovered builtin_strncpy.
+    Pass 2 (rodatastring off): assertion #2 reproduces the filed bug, the
+    invalid array-typed cast.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+4883ec28660f6f05f40f00004889e70f
+290424660f6f05f50f00000f29442410
+e8db1f00004883c428c3
+</bytechunk>
+<bytechunk space="ram" offset="0x101000" readonly="true">
+74686520717569636b2062726f776e20
+666f78206a756d706564206f6e636500
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="f"/>
+<symbol space="ram" offset="0x102000" name="customPrint"/>
+</binaryimage>
+<script>
+  <com>parse line extern void f(void);</com>
+  <com>parse line extern void customPrint(char *);</com>
+  <com>map address r0x101000 char msg[32]</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option rodatastring off</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="rodatastring #1: default pipeline recovers the read-only block copy as one builtin_strncpy" min="1" max="1">builtin_strncpy\(v1,"the quick brown fox jumped once",0x20\);</stringmatch>
+<stringmatch name="rodatastring #2: rodatastring off restores the invalid array-typed cast (the filed bug)" min="1" max="1">v1\[0\] = \(char\[8\]\)msg\._0_8_;</stringmatch>
+</decompilertest>

@@ -294,6 +294,13 @@ impl<R: Read, W: Write> RegisterLookup for GhidraRegisterLookup<R, W> {
         Ok(vndata)
     }
 
+    /// Cache-only [`RegisterLookup::probe_register`]: a speculative name test
+    /// must not become a `getRegister` query, because the Java host answers an
+    /// undefined name by throwing `No Register Defined` (GH-388).
+    fn probe_register(&self, nm: &str) -> Option<VarnodeStorage> {
+        self.nm2addr.borrow().get(nm).cloned()
+    }
+
     /// C++ `GhidraTranslate::getRegisterName` (ghidra_translate.cc:72-87).
     #[allow(clippy::mutable_key_type)] // see cache_register
     fn get_register_name(&self, base: &Rc<AddrSpace>, off: u64, size: i32) -> String {
@@ -427,6 +434,11 @@ impl<R: Read, W: Write> RegisterLookup for GhidraTranslate<R, W> {
     fn get_register(&self, nm: &str) -> KunaResult<VarnodeStorage> {
         self.ensure_lookup_wired();
         self.reglookup.get_register(nm)
+    }
+
+    /// Cache-only [`RegisterLookup::probe_register`] — delegated.
+    fn probe_register(&self, nm: &str) -> Option<VarnodeStorage> {
+        self.reglookup.probe_register(nm)
     }
 
     /// C++ `GhidraTranslate::getRegisterName` — delegated.
@@ -594,6 +606,12 @@ impl<R: Read, W: Write> EngineTranslate for GhidraTranslate<R, W> {
         let name = String::from_utf8_lossy(nm);
         let vndata = RegisterLookup::get_register(self, &name)?;
         Ok(varnode_data_from_storage(&vndata))
+    }
+    /// Speculative [`EngineTranslate::probe_register_varnode`], answered from
+    /// the register cache alone — see [`RegisterLookup::probe_register`].
+    fn probe_register_varnode(&self, nm: &[u8]) -> Option<VarnodeData> {
+        let name = String::from_utf8_lossy(nm);
+        RegisterLookup::probe_register(self, &name).map(|v| varnode_data_from_storage(&v))
     }
     /// Run a closure with mutable access to the context database (C++
     /// `glb->context`).  STEP-2 STUB: the [`ContextInternal`] field (see the

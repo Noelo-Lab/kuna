@@ -25,7 +25,7 @@ fn subphase_count_is_43() {
 }
 
 #[test]
-fn surface_count_is_105() {
+fn surface_count_is_108() {
     // +1 for the `option switchguardbound` surface row (angr missing-function-call),
     // +1 for the `option switchsharedcase` surface row (angr shared-case-node b2sum),
     // +1 for the `option switchmultipred` surface row (angr abnormal-switch-case-case3),
@@ -43,12 +43,18 @@ fn surface_count_is_105() {
     // keep a returned register half that is a placed input parameter).
     // +1 for the `option rustabi` surface row (kuna P4 output-prototype: keep the
     // two-register rustc ScalarPair return and connect it at the call).
-    assert_eq!(kuna_num_surfaces(), 105);
-    assert_eq!(SURFACE_TABLE.len(), 105);
+    // +1 for the `option overlapbranch` surface row (kuna P2 flow-classification:
+    // a conditional branch target strictly inside its own fall-through instruction).
+    // +1 for the `option tailcallframe` surface row (kuna P2 flow-classification:
+    // a direct jmp preceded by a teardown of exactly the entry block's frame).
+    // +1 for the `option rodatastring` surface row (kuna P5 constsequence: collapse
+    // a read-only string block copy into builtin_strncpy).
+    assert_eq!(kuna_num_surfaces(), 108);
+    assert_eq!(SURFACE_TABLE.len(), 108);
 }
 
 #[test]
-fn settable_count_is_128() {
+fn settable_count_is_150() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -95,13 +101,20 @@ fn settable_count_is_128() {
     // +1 for `symbolnamebound` (P1 symbol-name scope resource bound, DIV-95, GH-338).
     // +1 for `msvcfpconst` (P1 MSVC `__real@` FP-constant recovery, DIV-96).
     // +1 for `cortexmpriv` (P2 Cortex-M privileged-mode guard folding, DIV-99).
-    // +1 for `noreturnretuse` (P4 terminal no-return call use in return trials, DIV-117).
-    assert_eq!(kuna_num_settables(), 128);
-    assert_eq!(SETTABLE_TABLE.len(), 128);
+    // +1 for `linuxsyscall` (P2 32-bit Linux int 0x80 syscall naming).
+    // +1 for `unmappedentry` (P1 unmapped-CALL-target entry suppression).
+    // +1 for `entrymainproto` (P1 PE CRT entry-function prototype recovery).
+    // +1 for `ppclocalentry` (P1 PPC64 ELFv2 local-entry entry suppression).
+    // +1 for `pdatachained` (P1 PE chained-`UNWIND_INFO` `.pdata` entry
+    // suppression, DIV-117, GH-403).
+    // +1 for `noreturnretuse` (P4 terminal no-return call use in return trials,
+    // DIV-118).
+    assert_eq!(kuna_num_settables(), 150);
+    assert_eq!(SETTABLE_TABLE.len(), 150);
 }
 
 #[test]
-fn tier_counts_are_29_core_52_transform_47_analysis() {
+fn tier_counts_are_36_core_60_transform_54_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -182,10 +195,21 @@ fn tier_counts_are_29_core_52_transform_47_analysis() {
     // surface reports about the frame the analysis already recovered.
     // transform 51 -> 52: +1 for `cortexmpriv` (P2 Cortex-M privileged-mode guard
     // folding, DIV-99).
-    // core 28 -> 29: +1 for `noreturnretuse` (P4 terminal no-return call use in
-    // return trials, DIV-117) -- core, not transform: it narrows which competing
+    // transform 52 -> 53: +1 for `linuxsyscall` (P2 32-bit Linux int 0x80 syscall
+    // naming) -- transform, not core: it renames a call and locks a prototype,
+    // which is the judgement an operator flips.
+    // analysis 47 -> 48: +1 for `unmappedentry` (P1 unmapped-CALL-target entry
+    // suppression).
+    // analysis 48 -> 49: +1 for `entrymainproto` (P1 PE CRT entry-function
+    // prototype recovery).
+    // analysis 50 -> 51: +1 for `ppclocalentry` (P1 PPC64 ELFv2 local-entry entry
+    // suppression).
+    // analysis 53 -> 54: +1 for `pdatachained` (P1 PE chained-`UNWIND_INFO`
+    // `.pdata` entry suppression, DIV-117).
+    // core 35 -> 36: +1 for `noreturnretuse` (P4 terminal no-return call use in
+    // return trials, DIV-118) -- core, not transform: it narrows which competing
     // uses veto an output trial, changing no p-code of its own.
-    assert_eq!((core, transform, analysis), (29, 52, 47));
+    assert_eq!((core, transform, analysis), (36, 60, 54));
 }
 
 #[test]
@@ -375,7 +399,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_40_suppressed_for_88() {
+fn option_values_live_value_present_for_51_suppressed_for_94() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -404,6 +428,10 @@ fn option_values_live_value_present_for_40_suppressed_for_88() {
         // `libproto` above. Default-ON (DIV-65).
         "libcsigs",
         "strings",
+        // (kuna) The 2-byte (UTF-16LE) width of the string-literal pass — an
+        // analysis-pass gate read at the commit boundary (console-side via
+        // kuna_live_value), same as `strings` above. Default-ON (DIV-110).
+        "widestrings",
         "entry_disc",
         // (kuna) `.eh_frame` LSDA landing-pad discovery sub-feature of entry_disc
         // (GccExceptionAnalyzer), default-off; analysis-tier, no codegen live reader.
@@ -463,6 +491,26 @@ fn option_values_live_value_present_for_40_suppressed_for_88() {
         // gate (no `live_field`); its live state is read console-side via
         // kuna_live_value, like the analysis-pass gates around it. Default-off.
         "rtti",
+        // (kuna) PE CRT entry-function prototype recovery -- an analysis-tier gate
+        // with no codegen live reader (read console-side via kuna_live_value), like
+        // the discovery gates around it. Default-ON.
+        "entrymainproto",
+        // (kuna) Mach-O `LC_MAIN` entry naming + prototype -- the Mach-O counterpart
+        // of `entrymainproto` above and the same seam: an analysis-tier gate with no
+        // codegen live reader, read console-side via kuna_live_value. Default-ON.
+        "machomain",
+        // (kuna) Unmapped-CALL-target entry suppression -- an analysis-tier gate with
+        // no codegen live reader (read console-side via kuna_live_value), like the
+        // discovery gates around it. Default-ON.
+        "unmappedentry",
+        // (kuna) PPC64 ELFv2 local-entry entry suppression -- an analysis-tier gate
+        // with no codegen live reader (read console-side via kuna_live_value), like
+        // `unmappedentry` above. Default-ON.
+        "ppclocalentry",
+        // (kuna, GH-403) PE chained-`UNWIND_INFO` `.pdata` entry suppression -- an
+        // analysis-tier gate with no codegen live reader (read console-side via
+        // kuna_live_value), like `ppclocalentry` above. Default-ON.
+        "pdatachained",
         "aif",
         // (kuna, GH-299) The AIF gap-cursor aligned slide — an analysis-tier gate
         // with no codegen live reader (read console-side via kuna_live_value), like
@@ -546,6 +594,11 @@ fn option_values_live_value_present_for_40_suppressed_for_88() {
         // type inside `load file`), the same seam as `dwarfstructs` above.
         // Default-on.
         "dwarfvariants",
+        // (kuna) PIC base-register folding in the cross-reference index -- an
+        // analysis-tier gate read by the read-only xref query, console-side via
+        // kuna_live_value like the analysis-pass gates above, so it has no
+        // codegen live_value. Default-on.
+        "picbase",
     ];
     let mut with_live = 0;
     for i in 0..kuna_num_settables() {
@@ -589,6 +642,10 @@ fn option_values_live_value_present_for_40_suppressed_for_88() {
                             | "braceelide"
                             | "warnstyle"
                             | "callsitestackargs"
+                            | "varargstackargs"
+                            | "calleearity"
+                            | "calleearityfwd"
+                            | "calleedeadarg"
                             | "calloverlap"
                             | "spillargtrial"
                             | "paramcopyhoist"
@@ -613,8 +670,19 @@ fn option_values_live_value_present_for_40_suppressed_for_88() {
     // 35 -> 36: +1 for `retinputhalf` (live_field = ret_input_half).
     // 36 -> 37: +1 for `framelayout` (live_field = framelayout, DIV-97).
     // 38 -> 39: +1 for `cortexmpriv` (live_field = cortexmpriv, DIV-99).
-    // 39 -> 40: +1 for `noreturnretuse` (live_field = noreturn_ret_use, DIV-117).
-    assert_eq!(with_live, 40);
+    // 39 -> 40: +1 for `linuxsyscall` (live_field = linux_syscall).
+    // 40 -> 41: +1 for `switchselector` (its own live_field).
+    // 41 -> 42: +1 for `tiedstorekeep` (live_field = tied_store_keep, DIV-105).
+    // 42 -> 43: +1 for `overlapbranch` (live_field = overlap_branch, DIV-106).
+    // 43 -> 44: +1 for `ptrdepthcap` (live_field = ptrdepthcap, DIV-108).
+    // 44 -> 45: +1 for `tailcallframe` (live_field = tail_call_frame, DIV-109).
+    // 45 -> 46: +1 for `jtsharepartial` (live_field = jumptable_share_partial).
+    // 46 -> 47: +1 for `rodatastring` (live_field = rodata_string, DIV-113).
+    // 47 -> 48: +1 for `inputparamgap` (live_field = input_param_gap, DIV-114).
+    // 48 -> 49: +1 for `simdlane` (live_field = simd_lane_fold, DIV-115).
+    // 49 -> 50: +1 for `retsplitglobal` (live_field = ret_split_global, DIV-116).
+    // 50 -> 51: +1 for `noreturnretuse` (live_field = noreturn_ret_use, DIV-118).
+    assert_eq!(with_live, 51);
 }
 
 #[test]
@@ -736,9 +804,17 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // not move the tail).
     // 123 -> 124: +1 for `framelayout` (DIV-97; its P6 row sits mid-table ahead of
     // `ctypes`, so it does not move the tail either).
-    // 126 -> 127: +1 for `noreturnretuse` (DIV-117); its P4 row is appended after
+    // 127 -> 129: +1 for `unmappedentry` and +1 for `entrymainproto` (both P1 rows
+    // mid-table, beside `fdeinterior`, so neither moves the tail either); the
+    // count is one less than the settable total, since the last row has no comma.
+    // +1 for `ppclocalentry` (another P1 row beside `unmappedentry`, mid-table).
+    // +1 for `pdatachained`, appended at the TAIL, so the previous last row gains
+    // its comma and the count moves with the total.
+    // +1 for `varargstackargs` and +1 for `calleearity`; both P4 rows sit
+    // mid-table beside `callsitestackargs`, so the tail does not move either.
+    // 148 -> 149: +1 for `noreturnretuse` (DIV-118); its P4 row is appended after
     // the last one, so the previous tail row gains a comma and it becomes the tail.
-    assert_eq!(json.matches("},\n").count(), 127);
+    assert_eq!(json.matches("},\n").count(), 149);
 }
 
 #[test]

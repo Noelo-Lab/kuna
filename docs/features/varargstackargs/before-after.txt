@@ -1,0 +1,71 @@
+### kuna decompile practice_2_rengr _main  --option varargstackargs off
+
+unsigned long _main(void)
+{
+  char v1 [8]; // stack - 0x40
+  int v2; // w0
+  int v3; // stack - 0x4c
+  char v4; // stack - 0x38
+  char v5 [7]; // stack - 0x37
+  long v6; // stack - 0x18
+  char v7 [24]; // stack - 0x30
+  
+  v6 = *dat_100004008;
+  v1[0] = (char[8])s_100003f1d._0_8_;
+  v4 = s_100003f1d[8];
+  v7._0_9_ = s_100003f1d._16_9_;
+  v5[0] = (char[7])s_100003f1d._9_7_;
+  printf("Original Message: %s\n");
+  _encrypt_decrypt(v1,0x58);
+  printf("Encrypted Message: %s\n");
+  _encrypt_decrypt(v1,0x58);
+  printf("Decrypted Message: %s\n");
+  printf("\nEnter passcode: ");
+  v2 = scanf("%d");
+  if (v3 != 0x539) // branch-flip
+    printf("\n[-] Wrong passcode!\n");
+  else {
+    _secret_function(v2);
+  }
+  if (*dat_100004008 != v6)
+    __stack_chk_fail(); // no-return
+  return 0;
+}
+
+### kuna decompile practice_2_rengr _main  --option varargstackargs on
+
+unsigned long _main(void)
+{
+  char v1 [8]; // stack - 0x40
+  int v2; // stack - 0x4c
+  int v3; // w0
+  char v4; // stack - 0x45
+  unsigned int v5; // stack - 0x44
+  char v6; // stack - 0x38
+  char v7 [7]; // stack - 0x37
+  long v8; // stack - 0x18
+  char v9 [24]; // stack - 0x30
+  
+  v8 = *dat_100004008;
+  v5 = 0;
+  v4 = 'X';
+  v1[0] = (char[8])s_100003f1d._0_8_;
+  v6 = s_100003f1d[8];
+  v9._0_9_ = s_100003f1d._16_9_;
+  v7[0] = (char[7])s_100003f1d._9_7_;
+  printf("Original Message: %s\n",v1);
+  _encrypt_decrypt(v1,(long)v4);
+  printf("Encrypted Message: %s\n",v1);
+  _encrypt_decrypt(v1,(long)v4);
+  printf("Decrypted Message: %s\n",v1);
+  printf("\nEnter passcode: ");
+  v3 = scanf("%d",&v2);
+  if (v2 != 0x539) // branch-flip
+    printf("\n[-] Wrong passcode!\n");
+  else {
+    _secret_function(v3);
+  }
+  if (*dat_100004008 != v8)
+    __stack_chk_fail(); // no-return
+  return 0;
+}

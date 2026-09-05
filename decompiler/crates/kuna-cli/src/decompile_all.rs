@@ -4,11 +4,35 @@
 //! ```text
 //!   kuna decompile-all <binary> [--json] [--functions a,b,..] [--addr 0xVMA].. \
 //!                       [--no-vars] [--max-fn-seconds N] [--mode MODE] \
-//!                       [--option N V].. \
+//!                       [--option N V].. [TRIAGE] \
 //!                       [--slice ARCH] [--target T] [--sleighpath D]
-//!   kuna functions <binary> [--json] [--mode MODE] [--slice ARCH] [--target T]
-//!                  [--sleighpath D]
+//!   kuna functions <binary> [--json] [--summary] [TRIAGE] [--mode MODE] \
+//!                  [--slice ARCH] [--target T] [--sleighpath D]
+//!
+//!   TRIAGE := [--filter REGEX] [--min-size N] [--max-size N]
+//!             [--reachable-from <name|0xaddr>] [--sort addr|size|name] [--limit N]
 //! ```
+//!
+//! # Triage
+//!
+//! A whole-binary answer is only usable if the caller can narrow it BEFORE it is
+//! produced. Unfiltered, a 211 KB PE crackme is 1,150 functions and ~5.9 MB of
+//! `--json` — more than an agent's whole context for a question it has not asked
+//! yet. The [`Filters`] set is therefore applied to the TARGET LIST, not to the
+//! output: `--filter`/`--min-size`/`--max-size`/`--reachable-from` choose which
+//! entries exist for this run, `--sort` + `--limit` cap it, and
+//! `decompile-all` then decompiles only what survived. Narrowing the run is what
+//! makes it cheap; narrowing the output would not.
+//!
+//! `--reachable-from <name|0xaddr>` is the call-graph question a triaging agent
+//! asks first — *what does the entry point actually touch* — and it reuses
+//! `kuna xrefs`' own edges ([`kuna_analysis::listing::xrefs`]) rather than a
+//! second call-graph implementation.
+//!
+//! `kuna functions --summary` answers *where do I start* without emitting a
+//! function list at all: counts by size bucket, the image entry point, how many
+//! functions it reaches, how many have no call site, and the N largest
+//! functions. One call, a few hundred bytes.
 //!
 //! Unlike `kuna decompile` (which spawns a fresh `decomp_dbg` subprocess **per
 //! function** — re-parsing the SLEIGH spec and re-running the whole-binary
@@ -55,12 +79,18 @@
 //! --json`'s (`decompile.rs`) — one schema and one decompile policy across the
 //! single-function and whole-binary surfaces.
 
+use std::collections::{BTreeSet, VecDeque};
+use std::ffi::{OsStr, OsString};
+use std::fmt::Write as _;
+use std::rc::Rc;
+
+// The call-graph edges `--reachable-from` walks are `kuna xrefs`' own edges.
+use kuna_analysis::listing::xrefs::{Xref, XrefIndex, XrefKind};
+use kuna_base::address::Address;
 use kuna_console::engine::{
     bootstrap_from_object, ConsoleProgram, EntryLookupError, EntrySelector, FunctionEntry,
     ObjectLocation,
 };
-use std::ffi::{OsStr, OsString};
-use std::fmt::Write as _;
 // The decompile loop + result shape live in the shared decompile-project core
 // (`kuna_console::project` — also reused by the `kuna_wasm` front-end).
 use kuna_console::project::{
@@ -71,6 +101,8 @@ use kuna_console::project::{
 use object::{Object, ObjectSection, ObjectSegment};
 use kuna_decomp::decompile_drive::{LineMapping, VarInfo};
 use kuna_decomp::options::{OptionDatabase, KUNA_OPTION_NAMES, RELOC_OBJECTS_ENV};
+
+use regex::Regex;
 
 use crate::jsonfmt::{dumps_indent2, Json};
 use crate::paths;
@@ -96,14 +128,505 @@ pub(crate) struct Args {
     /// for an unfiltered fast whole-binary run and 120 otherwise.
     pub(crate) max_fn_seconds: u64,
     pub(crate) options: Vec<(String, String)>,
+    /// `--define-function <start[-end][=name] | @file>` (repeatable): the
+    /// caller-declared function boundaries, applied by [`load_program`] right
+    /// after the analysis commit so they outrank discovery. Every surface that
+    /// loads through this struct honors them; only the surfaces that parse the
+    /// flag can be non-empty.
+    pub(crate) func_decls: Vec<crate::funcdecl::FuncDecl>,
+    /// `--assert <directive> | @FILE` (repeatable): the caller-supplied
+    /// assertions, installed by [`load_program`] right after the analysis commit
+    /// and dispatched by the decompile loop (`kuna_console::assertions`). Empty
+    /// for every invocation that passed none.
+    pub(crate) assertions: Vec<kuna_console::assertions::Directive>,
+    /// `--assert-strict`: a rejected directive makes the run exit non-zero
+    /// instead of being reported and continuing.
+    pub(crate) assert_strict: bool,
     pub(crate) slice: Option<String>,
     pub(crate) target: Option<String>,
     pub(crate) sleighpath: Option<String>,
 }
 
+// --- triage: narrowing a whole-binary run before it runs ---------------------
+
+/// How a narrowed inventory is ordered (`--sort`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub(crate) enum SortKey {
+    /// Entry address, ascending — discovery order, and the historical default of
+    /// both surfaces.
+    #[default]
+    Addr,
+    /// Byte extent, DESCENDING. The triage question is "what is big here", so
+    /// the answer leads with the biggest rather than making the caller reverse
+    /// a list it may have already truncated with `--limit`.
+    Size,
+    /// Name, ascending.
+    Name,
+}
+
+impl SortKey {
+    fn parse(value: &str) -> Result<SortKey, String> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "addr" | "address" => Ok(SortKey::Addr),
+            "size" => Ok(SortKey::Size),
+            "name" => Ok(SortKey::Name),
+            other => Err(format!(
+                "unknown --sort key {other:?} (expected addr, size, or name)"
+            )),
+        }
+    }
+}
+
+/// The size histogram `--summary` reports, as `(label, min, max)` inclusive.
+///
+/// Log-ish rather than uniform because a real inventory is: the zero-extent
+/// import slots, a mass of thunks and tiny wrappers, and a short tail of large
+/// functions — and the tail is what a triaging agent is looking for.
+const SIZE_BUCKETS: [(&str, u64, u64); 7] = [
+    ("0", 0, 0),
+    ("1-15", 1, 15),
+    ("16-63", 16, 63),
+    ("64-255", 64, 255),
+    ("256-1023", 256, 1023),
+    ("1024-4095", 1024, 4095),
+    ("4096+", 4096, u64::MAX),
+];
+
+/// How many functions `--summary` lists under `largest` when `--limit` is absent.
+const DEFAULT_SUMMARY_LARGEST: usize = 10;
+
+/// The triage narrowing shared by `kuna functions` and `kuna decompile-all`.
+///
+/// Deliberately NOT a field of [`Args`]: `Args` is a struct literal in four other
+/// command modules, and growing it would break every one of them for a selection
+/// none of them make. [`parse_args_with_filters`] returns the pair; the plain
+/// [`parse_args`] every other surface calls drops this half.
+#[derive(Default)]
+pub(crate) struct Filters {
+    /// `--filter REGEX`, matched against the canonical name and every alias.
+    name: Option<Regex>,
+    /// `--min-size N` / `--max-size N`, inclusive, over the inventory `size`.
+    min_size: Option<u64>,
+    max_size: Option<u64>,
+    /// `--reachable-from <name|0xaddr>`, resolved against the loaded program.
+    reachable_from: Option<String>,
+    /// `--limit N`, applied AFTER `--sort`.
+    limit: Option<usize>,
+    sort: SortKey,
+    /// `--summary`: report the orientation document instead of the inventory.
+    pub(crate) summary: bool,
+}
+
+impl Filters {
+    /// Does this selection narrow the run at all?  An unnarrowed run keeps every
+    /// pre-existing behaviour, byte for byte — including the zero-discovery
+    /// verdict, which must stay attached to DISCOVERY and never fire because a
+    /// filter matched nothing.
+    pub(crate) fn narrows(&self) -> bool {
+        self.name.is_some()
+            || self.min_size.is_some()
+            || self.max_size.is_some()
+            || self.reachable_from.is_some()
+            || self.limit.is_some()
+            || self.sort != SortKey::Addr
+    }
+
+    /// Narrow, order and cap `entries`, returning the call graph if one had to be
+    /// built (the summary reuses it rather than walking the image twice).
+    ///
+    /// The graph is built only when `--reachable-from` or `--summary` needs it,
+    /// so `--filter`/`--min-size`/`--max-size`/`--limit` stay pure inventory
+    /// arithmetic with no extra decode.
+    pub(crate) fn select(
+        &self,
+        prog: &ConsoleProgram,
+        binary: &str,
+        entries: Vec<FunctionEntry>,
+    ) -> Result<(Vec<FunctionEntry>, Option<CallGraph>), String> {
+        let graph = (self.reachable_from.is_some() || self.summary)
+            .then(|| CallGraph::build(prog, binary))
+            .transpose()?;
+        let reachable = match (&self.reachable_from, &graph) {
+            (Some(spec), Some(graph)) => Some(graph.reachable_from(prog, spec)?),
+            _ => None,
+        };
+        let mut kept: Vec<FunctionEntry> = entries
+            .into_iter()
+            .filter(|e| self.keeps(e, reachable.as_ref()))
+            .collect();
+        self.order(&mut kept);
+        if let Some(limit) = self.limit {
+            kept.truncate(limit);
+        }
+        Ok((kept, graph))
+    }
+
+    fn keeps(&self, e: &FunctionEntry, reachable: Option<&BTreeSet<u64>>) -> bool {
+        if let Some(re) = &self.name {
+            if !re.is_match(&e.name) && !e.aliases.iter().any(|a| re.is_match(a)) {
+                return false;
+            }
+        }
+        if self.min_size.is_some_and(|min| e.size < min) {
+            return false;
+        }
+        if self.max_size.is_some_and(|max| e.size > max) {
+            return false;
+        }
+        if reachable.is_some_and(|set| !set.contains(&e.addr.get_offset())) {
+            return false;
+        }
+        true
+    }
+
+    /// Order in place. Every key breaks ties on the entry address, so a narrowed
+    /// run is reproducible rather than dependent on the discovery order.
+    fn order(&self, entries: &mut [FunctionEntry]) {
+        match self.sort {
+            SortKey::Addr => entries.sort_by_key(|e| e.addr.get_offset()),
+            SortKey::Size => entries.sort_by(|a, b| {
+                b.size.cmp(&a.size).then(a.addr.get_offset().cmp(&b.addr.get_offset()))
+            }),
+            SortKey::Name => entries.sort_by(|a, b| {
+                a.name.cmp(&b.name).then(a.addr.get_offset().cmp(&b.addr.get_offset()))
+            }),
+        }
+    }
+
+    /// How many functions `--summary` lists under `largest`.
+    fn largest_wanted(&self) -> usize {
+        self.limit.unwrap_or(DEFAULT_SUMMARY_LARGEST)
+    }
+}
+
+/// The program's call graph, read out of the same reference edges `kuna xrefs`
+/// answers with ([`kuna_analysis::listing::xrefs`]) — one edge model for the
+/// whole CLI, not a second one that could disagree with it.
+///
+/// The walk is seeded with kuna's own canonical inventory, so it explores the
+/// call graph out of every discovered entry rather than only out of the image
+/// entry point.
+pub(crate) struct CallGraph {
+    index: XrefIndex,
+    /// Canonical `(entry, extent)` pairs, ascending by entry — the containment
+    /// ladder that maps a reached address back onto the inventory record owning
+    /// it.
+    entries: Vec<(u64, u64)>,
+}
+
+impl CallGraph {
+    fn build(prog: &ConsoleProgram, binary: &str) -> Result<CallGraph, String> {
+        let bytes = std::fs::read(binary).map_err(|e| format!("{binary}: {e}"))?;
+        let file = object::File::parse(&*bytes)
+            .map_err(|e| format!("could not parse {binary}: {e}"))?;
+        let mut entries: Vec<(u64, u64)> = prog
+            .function_entries_canonical()
+            .iter()
+            .map(|e| (e.addr.get_offset(), e.size))
+            .collect();
+        entries.sort_unstable();
+        entries.dedup_by_key(|(addr, _)| *addr);
+        let seeds: Vec<u64> = entries.iter().map(|(addr, _)| *addr).collect();
+        let index = kuna_analysis::listing::xrefs::build(
+            &file,
+            prog.arch(),
+            prog.arch().translate(),
+            &seeds,
+        );
+        Ok(CallGraph { index, entries })
+    }
+
+    /// Every inventory entry reachable from `spec` through call, tail-jump, and
+    /// address-taken-function-pointer edges, `spec`'s own function included.
+    ///
+    /// Function pointers count: a callback registered with `CreateThread` or an
+    /// atexit handler is code the named function reaches, and dropping it would
+    /// under-report exactly the indirection an obfuscated crackme leans on. A
+    /// materialized address that does NOT land on a known function entry is not
+    /// an edge (that is a string or a global, not a callee).
+    fn reachable_from(
+        &self,
+        prog: &ConsoleProgram,
+        spec: &str,
+    ) -> Result<BTreeSet<u64>, String> {
+        let start = resolve_function_spec(prog, spec)?;
+        let seed = self.node_at(start).ok_or_else(|| {
+            format!("--reachable-from {spec:?}: 0x{start:x} is in no discovered function")
+        })?;
+
+        let mut reached: BTreeSet<u64> = BTreeSet::new();
+        let mut queue: VecDeque<u64> = VecDeque::new();
+        reached.insert(seed);
+        queue.push_back(seed);
+        while let Some(node) = queue.pop_front() {
+            for r in self.index.refs_from_function(node) {
+                if let Some(callee) = self.callee_of(r) {
+                    if reached.insert(callee) {
+                        queue.push_back(callee);
+                    }
+                }
+            }
+        }
+
+        // The walk's function set and kuna's inventory are two views of the same
+        // program and need not agree entry-for-entry, so fold every reached
+        // address onto the inventory record that contains it before answering.
+        let mut owners: BTreeSet<u64> = BTreeSet::new();
+        for vma in reached {
+            owners.insert(vma);
+            if let Some(owner) = self.owner_of(vma) {
+                owners.insert(owner);
+            }
+        }
+        Ok(owners)
+    }
+
+    /// The call-graph node a reference edge lands on, or `None` when the edge is
+    /// not a call-graph edge at all.
+    fn callee_of(&self, r: &Xref) -> Option<u64> {
+        match r.kind {
+            XrefKind::Call | XrefKind::Jump => self.node_at(r.to),
+            XrefKind::Data => self.index.is_function_entry(r.to).then_some(r.to),
+            XrefKind::Read | XrefKind::Write => None,
+        }
+    }
+
+    /// The walk's function entry for `vma`: the entry itself, else the function
+    /// containing it (a branch into the middle of a body is still that body).
+    fn node_at(&self, vma: u64) -> Option<u64> {
+        if self.index.is_function_entry(vma) {
+            return Some(vma);
+        }
+        self.index.function_containing(vma)
+    }
+
+    /// The inventory entry whose extent contains `vma`.
+    ///
+    /// Bounded by the extent rather than just "the greatest entry at or below",
+    /// so an address in a gap between functions is attributed to neither.
+    fn owner_of(&self, vma: u64) -> Option<u64> {
+        let at = self.entries.partition_point(|(addr, _)| *addr <= vma);
+        let (addr, size) = *self.entries.get(at.checked_sub(1)?)?;
+        (vma == addr || vma - addr < size).then_some(addr)
+    }
+
+    /// Does anything CALL `vma`?  Data and branch references do not count: the
+    /// question a triaging agent asks is which functions no call site reaches.
+    fn has_caller(&self, vma: u64) -> bool {
+        self.index
+            .refs_to(vma)
+            .iter()
+            .any(|r| r.kind == XrefKind::Call)
+    }
+}
+
+/// Resolve a `<name|0xaddr>` operand against the loaded program.
+///
+/// A name is looked up FIRST and a bare-hex reading is only the fallback, so a
+/// function genuinely called `abc` is not silently read as `0xabc` — the same
+/// order `kuna xrefs` resolves its `--to`/`--from` operand in. An address is
+/// resolved THROUGH the inventory when it names a known entry, which is what
+/// folds the ARM Thumb mode bit out of an odd `--reachable-from 0x3dd`.
+fn resolve_function_spec(prog: &ConsoleProgram, spec: &str) -> Result<u64, String> {
+    let spec = spec.trim();
+    let through_inventory =
+        |addr: u64| prog.find_entry_at(addr).map_or(addr, |e| e.addr.get_offset());
+    if let Some(body) = spec.strip_prefix("0x").or_else(|| spec.strip_prefix("0X")) {
+        return u64::from_str_radix(body, 16)
+            .map(through_inventory)
+            .map_err(|_| format!("invalid address {spec:?}"));
+    }
+    if let Some(entry) = prog.find_entry_by_name(spec) {
+        return Ok(entry.addr.get_offset());
+    }
+    if let Some(addr) = prog.lookup_symbol(spec) {
+        return Ok(through_inventory(addr.get_offset()));
+    }
+    u64::from_str_radix(spec, 16)
+        .map(through_inventory)
+        .map_err(|_| format!("no function named {spec:?} (and it is not an address)"))
+}
+
+// --- the `--summary` orientation document ------------------------------------
+
+/// The answer to "where do I start", measured without decompiling anything.
+struct Summary {
+    /// Functions discovered, before any triage filter.
+    total: usize,
+    /// The image entry point as `(address, name)`, `None` when the format
+    /// declares none.
+    entry: Option<(u64, String)>,
+    /// How many DISCOVERED functions the entry point reaches.
+    reachable_from_entry: Option<usize>,
+    /// How many SELECTED functions no call site reaches.
+    no_callers: usize,
+    /// Total byte extent of the selected functions.
+    code_bytes: u64,
+    /// `(label, count)` per [`SIZE_BUCKETS`] row, over the selected functions.
+    buckets: Vec<(&'static str, usize)>,
+    /// The largest selected functions, biggest first.
+    largest: Vec<FunctionEntry>,
+}
+
+/// Measure the orientation document over `all` (the discovered inventory) and
+/// `selected` (what the triage filters kept — the same list when there are none).
+fn summarize(
+    prog: &ConsoleProgram,
+    binary: &str,
+    filters: &Filters,
+    graph: &CallGraph,
+    all: &[FunctionEntry],
+    selected: &[FunctionEntry],
+) -> Summary {
+    let entry = image_entry(prog, binary);
+    let reachable_from_entry = entry.as_ref().and_then(|(vma, _)| {
+        let reached = graph.reachable_from(prog, &format!("0x{vma:x}")).ok()?;
+        Some(all.iter().filter(|e| reached.contains(&e.addr.get_offset())).count())
+    });
+
+    let mut buckets: Vec<(&'static str, usize)> =
+        SIZE_BUCKETS.iter().map(|(label, _, _)| (*label, 0)).collect();
+    for e in selected {
+        if let Some(i) = SIZE_BUCKETS.iter().position(|(_, lo, hi)| e.size >= *lo && e.size <= *hi) {
+            buckets[i].1 += 1;
+        }
+    }
+
+    let mut largest = selected.to_vec();
+    largest.sort_by(|a, b| {
+        b.size.cmp(&a.size).then(a.addr.get_offset().cmp(&b.addr.get_offset()))
+    });
+    largest.truncate(filters.largest_wanted());
+
+    Summary {
+        total: all.len(),
+        entry,
+        reachable_from_entry,
+        no_callers: selected
+            .iter()
+            .filter(|e| !graph.has_caller(e.addr.get_offset()))
+            .count(),
+        code_bytes: selected.iter().map(|e| e.size).sum(),
+        buckets,
+        largest,
+    }
+}
+
+/// The image's declared entry point, named with kuna's best name for it.
+///
+/// This is the FORMAT's entry (a PE `AddressOfEntryPoint` is the CRT startup,
+/// not `main`) — the one address every image agrees on, and the honest root for
+/// "what does this program actually reach".
+fn image_entry(prog: &ConsoleProgram, binary: &str) -> Option<(u64, String)> {
+    let bytes = std::fs::read(binary).ok()?;
+    let file = object::File::parse(&*bytes).ok()?;
+    let vma = file.entry();
+    if vma == 0 {
+        return None;
+    }
+    // Reported THROUGH the inventory, so an ARM `e_entry` carrying the Thumb mode
+    // bit is answered at the even entry the rest of the document uses.
+    match prog.find_entry_at(vma) {
+        Some(entry) => Some((entry.addr.get_offset(), entry.name)),
+        None => Some((vma, prog.function_named_at(vma).unwrap_or_else(|| format!("0x{vma:x}")))),
+    }
+}
+
+fn summary_json(
+    binary: &str,
+    summary: &Summary,
+    selected: usize,
+    error: Option<&str>,
+) -> String {
+    let entry = match &summary.entry {
+        Some((vma, name)) => Json::Object(vec![
+            ("name".into(), Json::Str(name.clone())),
+            ("address".into(), Json::Number(vma.to_string())),
+            ("address_hex".into(), Json::Str(format!("0x{vma:x}"))),
+        ]),
+        None => Json::Null,
+    };
+    let buckets = Json::Array(
+        summary
+            .buckets
+            .iter()
+            .zip(SIZE_BUCKETS.iter())
+            .map(|((label, count), (_, lo, hi))| {
+                Json::Object(vec![
+                    ("bucket".into(), Json::Str((*label).to_string())),
+                    ("min_size".into(), Json::Number(lo.to_string())),
+                    (
+                        "max_size".into(),
+                        if *hi == u64::MAX {
+                            Json::Null
+                        } else {
+                            Json::Number(hi.to_string())
+                        },
+                    ),
+                    ("count".into(), Json::Number(count.to_string())),
+                ])
+            })
+            .collect(),
+    );
+    format!(
+        "{}\n",
+        dumps_indent2(&Json::Object(vec![
+            ("binary".into(), Json::Str(binary.to_string())),
+            ("count".into(), Json::Number(selected.to_string())),
+            ("total".into(), Json::Number(summary.total.to_string())),
+            ("error".into(), error_json(error)),
+            (
+                "summary".into(),
+                Json::Object(vec![
+                    ("entry".into(), entry),
+                    (
+                        "reachable_from_entry".into(),
+                        summary
+                            .reachable_from_entry
+                            .map(|n| Json::Number(n.to_string()))
+                            .unwrap_or(Json::Null),
+                    ),
+                    ("no_callers".into(), Json::Number(summary.no_callers.to_string())),
+                    ("code_bytes".into(), Json::Number(summary.code_bytes.to_string())),
+                    ("size_buckets".into(), buckets),
+                    ("largest".into(), entries_json(&summary.largest)),
+                ])
+            ),
+        ]))
+    )
+}
+
+fn summary_text(binary: &str, summary: &Summary, selected: usize) -> String {
+    let mut out = String::new();
+    let _ = writeln!(out, "binary\t{binary}");
+    let _ = writeln!(out, "functions\t{selected} selected / {} discovered", summary.total);
+    match &summary.entry {
+        Some((vma, name)) => {
+            let _ = writeln!(out, "entry\t0x{vma:x}\t{name}");
+        }
+        None => {
+            let _ = writeln!(out, "entry\t(none declared)");
+        }
+    }
+    if let Some(n) = summary.reachable_from_entry {
+        let _ = writeln!(out, "reachable from entry\t{n}");
+    }
+    let _ = writeln!(out, "no callers\t{}", summary.no_callers);
+    let _ = writeln!(out, "code bytes\t{}", summary.code_bytes);
+    let _ = writeln!(out, "size buckets:");
+    for (label, count) in &summary.buckets {
+        let _ = writeln!(out, "  {label:<12}\t{count}");
+    }
+    let _ = writeln!(out, "largest:");
+    for e in &summary.largest {
+        let _ = writeln!(out, "  0x{:x}\t{}\t{}", e.addr.get_offset(), e.size, e.name);
+    }
+    out
+}
+
 /// `kuna decompile-all` entry point.
 pub fn run(argv: &[String]) -> i32 {
-    let args = match parse_args(argv, "decompile-all") {
+    let (args, filters) = match parse_args_with_filters(argv, "decompile-all") {
         Ok(a) => a,
         Err(e) => {
             eprintln!("error: {e}");
@@ -111,22 +634,44 @@ pub fn run(argv: &[String]) -> i32 {
             return 2;
         }
     };
-    match decompile_all(&args) {
-        Ok(funcs) => {
-            // An UNFILTERED run that produced nothing discovered nothing, which
-            // is a failed run wearing a successful one's clothes. A run narrowed
-            // by `--functions`/`--addr` that matched nothing is a different
-            // condition (already warned about, per target) and keeps its status.
+    // `--summary` is an inventory question, so it never enters the decompile
+    // loop: the whole point of asking it is to find out what is worth decompiling.
+    if filters.summary {
+        return run_summary(&args, &filters);
+    }
+    match decompile_all(&args, &filters) {
+        Ok(run) => {
+            // An UNFILTERED run that DISCOVERED nothing is a failed run wearing a
+            // successful one's clothes. A run narrowed by `--functions`/`--addr`
+            // that matched nothing is a different condition (already warned
+            // about, per target) and keeps its status — as is a triage filter
+            // that matched nothing, which is an answer, not a failure. So the
+            // verdict is read off the pre-filter target set.
             let unfiltered = args.names.is_none() && args.addrs.is_empty();
-            let discovery_error = (funcs.is_empty() && unfiltered)
+            let discovery_error = (run.discovered == 0 && unfiltered)
                 .then(|| zero_discovery_error(&args.binary))
                 .flatten();
             let text = if args.json {
-                render_result_json(&args.binary, &funcs, &args.options, discovery_error.as_deref())
+                render_selected_json(
+                    &args.binary,
+                    &run.funcs,
+                    &args.options,
+                    discovery_error.as_deref(),
+                    filters.narrows().then_some(run.discovered),
+                    &run.assertions,
+                )
             } else {
-                render_c(&funcs)
+                render_c(&run.funcs)
             };
-            emit_with_discovery_error(&text, discovery_error.as_deref())
+            // A rejected assertion is reported and the run continues (an agent
+            // batching forty renames against a re-decompiled binary must not lose
+            // all forty to one stale name); `--assert-strict` makes it fatal.
+            let rejected = report_rejected_assertions(&run.assertions);
+            let status = emit_with_discovery_error(&text, discovery_error.as_deref());
+            if status == 0 && args.assert_strict && rejected {
+                return 1;
+            }
+            status
         }
         Err(e) => {
             eprintln!("error: {e}");
@@ -137,6 +682,26 @@ pub fn run(argv: &[String]) -> i32 {
 
 /// Emit `text`, then report a discovery failure (stdout before stderr, as
 /// `kuna decompile` orders them) and answer with the run's verdict.
+/// Report every rejected assertion on stderr, and say whether there was one.
+///
+/// The human surface has no `assertions[]` to read, and a directive that was
+/// silently dropped is the failure mode this plane exists to end -- so a
+/// rejection is always spoken, on both surfaces.
+pub(crate) fn report_rejected_assertions(
+    outcomes: &[kuna_console::assertions::Outcome],
+) -> bool {
+    let mut any = false;
+    for outcome in outcomes.iter().filter(|o| o.status == "rejected") {
+        any = true;
+        eprintln!(
+            "warning: --assert {:?} rejected: {}",
+            outcome.directive,
+            outcome.detail.as_deref().unwrap_or("no reason given")
+        );
+    }
+    any
+}
+
 fn emit_with_discovery_error(text: &str, discovery_error: Option<&str>) -> i32 {
     let status = crate::output::emit_with_status(text, i32::from(discovery_error.is_some()));
     if let Some(message) = discovery_error {
@@ -147,7 +712,7 @@ fn emit_with_discovery_error(text: &str, discovery_error: Option<&str>) -> i32 {
 
 /// `kuna functions` entry point (enumeration only — no decompile).
 pub fn run_functions(argv: &[String]) -> i32 {
-    let args = match parse_args(argv, "functions") {
+    let (args, filters) = match parse_args_with_filters(argv, "functions") {
         Ok(a) => a,
         Err(e) => {
             eprintln!("error: {e}");
@@ -155,16 +720,28 @@ pub fn run_functions(argv: &[String]) -> i32 {
             return 2;
         }
     };
+    if filters.summary {
+        return run_summary(&args, &filters);
+    }
     match list_functions(&args) {
-        Ok(entries) => {
-            // `functions` takes no selection filter, so an empty inventory IS a
-            // total discovery failure.
-            let discovery_error = entries
+        Ok((prog, all)) => {
+            // DISCOVERY, not selection, decides the verdict: an empty inventory
+            // is a total discovery failure, while a triage filter that matched
+            // nothing is an answer.
+            let discovery_error = all
                 .is_empty()
                 .then(|| zero_discovery_error(&args.binary))
                 .flatten();
+            let total = all.len();
+            let entries = match filters.select(&prog, &args.binary, all) {
+                Ok((entries, _)) => entries,
+                Err(e) => {
+                    eprintln!("error: {e}");
+                    return 1;
+                }
+            };
             let text = if args.json {
-                functions_json(&args.binary, &entries, discovery_error.as_deref())
+                functions_json(&args.binary, &entries, total, discovery_error.as_deref())
             } else {
                 let mut text = String::new();
                 for e in &entries {
@@ -188,11 +765,71 @@ pub fn run_functions(argv: &[String]) -> i32 {
     }
 }
 
-/// Load + analyze the binary once, then decompile every selected function.
-fn decompile_all(args: &Args) -> Result<Vec<FuncResult>, String> {
+/// `--summary`: the orientation document, on either surface.
+///
+/// It loads through the INVENTORY driver bundle on both, so the counts a caller
+/// orients by are the same numbers `kuna functions` reports, and asking for
+/// orientation never pays for a decompile it is trying to avoid.
+fn run_summary(args: &Args, filters: &Filters) -> i32 {
+    let (prog, all) = match list_functions(args) {
+        Ok(loaded) => loaded,
+        Err(e) => {
+            eprintln!("error: {e}");
+            return 1;
+        }
+    };
+    let discovery_error = all
+        .is_empty()
+        .then(|| zero_discovery_error(&args.binary))
+        .flatten();
+    let (selected, graph) = match filters.select(&prog, &args.binary, all.clone()) {
+        Ok(pair) => pair,
+        Err(e) => {
+            eprintln!("error: {e}");
+            return 1;
+        }
+    };
+    let Some(graph) = graph else {
+        eprintln!("error: --summary could not build the program call graph");
+        return 1;
+    };
+    let summary = summarize(&prog, &args.binary, filters, &graph, &all, &selected);
+    let text = if args.json {
+        summary_json(&args.binary, &summary, selected.len(), discovery_error.as_deref())
+    } else {
+        summary_text(&args.binary, &summary, selected.len())
+    };
+    emit_with_discovery_error(&text, discovery_error.as_deref())
+}
+
+/// One `decompile-all` run: what it decompiled, and how many entries the
+/// selection started from.
+///
+/// The two are different numbers once a triage filter narrows the run, and the
+/// zero-discovery verdict has to be read off the second one.
+struct AllRun {
+    funcs: Vec<FuncResult>,
+    discovered: usize,
+    /// One row per `--assert` directive: what became of it.
+    assertions: Vec<kuna_console::assertions::Outcome>,
+}
+
+/// Load + analyze the binary once, narrow the target list, then decompile what
+/// survived.
+///
+/// The filters run BEFORE the decompile loop on purpose: narrowing the output
+/// would still pay for 1,150 decompiles.
+fn decompile_all(args: &Args, filters: &Filters) -> Result<AllRun, String> {
     let mut prog = load_program(args, DriverDefaults::Decompile)?;
     let targets = resolve_targets(&prog, args)?;
-    Ok(decompile_entries(&mut prog, args, targets))
+    let discovered = targets.len();
+    let targets = if filters.narrows() {
+        filters.select(&prog, &args.binary, targets)?.0
+    } else {
+        targets
+    };
+    let funcs = decompile_entries(&mut prog, args, targets);
+    Ok(AllRun { funcs, discovered, assertions: prog.assertion_outcomes() })
 }
 
 /// Arm the per-function watchdog and run the decompile loop over `targets` — the
@@ -225,12 +862,16 @@ pub(crate) fn decompile_entries(
 
 /// Enumerate the program's full callable-symbol inventory, one
 /// [`FunctionEntry`] per entry address (the `functions` command).
-fn list_functions(args: &Args) -> Result<Vec<FunctionEntry>, String> {
+///
+/// The loaded program is handed back with it: the triage filters and `--summary`
+/// both ask further questions of the same load rather than paying for a second.
+fn list_functions(args: &Args) -> Result<(ConsoleProgram, Vec<FunctionEntry>), String> {
     let prog = load_program(args, DriverDefaults::Inventory)?;
     // One record per entry address, address-ordered, alias names carried as data
     // (issue #197 — this used to dedup by (address, name), so a function the
     // loader and an analysis pass both named was listed twice).
-    Ok(prog.function_entries_canonical())
+    let entries = prog.function_entries_canonical();
+    Ok((prog, entries))
 }
 
 /// Which bundle of driver defaults a surface takes in [`load_program`].
@@ -242,6 +883,13 @@ pub(crate) enum DriverDefaults {
     Inventory,
     /// `kuna decompile-all` / `kuna decompile-project` — enumeration plus bodies.
     Decompile,
+    /// `kuna xrefs` — a reference query that runs its OWN recursive descent, so
+    /// the Listing tier would only decode the program a second time over the
+    /// same bytes. It takes the discovery bundle (`funcstart_patterns`, `aif`)
+    /// but not the Listing: the seeds go straight into the reference walk
+    /// (`listing::xrefs::discovery_seeds`) and the gap-walk runs over the
+    /// partition that walk leaves behind.
+    Query,
 }
 
 impl DriverDefaults {
@@ -250,6 +898,121 @@ impl DriverDefaults {
     fn decompiles(&self) -> bool {
         matches!(self, DriverDefaults::Decompile)
     }
+
+    /// Does this surface want the program-wide Listing built for it (DIV-15)?
+    ///
+    /// `Query` does not: it walks the program itself, so the Listing would be a
+    /// second decode of the same bytes. The DIV-20/DIV-68 discovery flags it
+    /// still takes — the reference walk consumes both of them directly.
+    fn wants_listing(&self) -> bool {
+        !matches!(self, DriverDefaults::Query)
+    }
+}
+
+/// The driver-default analysis options a surface injects before the option pass
+/// — the shared source of the DIV-15 Listing default and the DIV-20/DIV-68
+/// non-x86-64 discovery bundle, returned as `(name, value)` pairs in the order
+/// they must be applied.
+///
+/// One function because the two surfaces that need them apply them differently:
+/// the in-process drivers ([`load_program`]) call `set_kuna_option`, while
+/// single-function `kuna decompile` emits `option` lines into the `decomp_dbg`
+/// script. When only the in-process driver had them, a non-x86-64 entry that
+/// exists solely because `funcstart_patterns` found it was listed by `kuna
+/// functions` and decompiled by `kuna decompile-all`, yet `kuna decompile
+/// <that name>` answered `no function matches` — kuna printed a name it would
+/// not then accept (RE-need `analysis-generated-function-name`).
+///
+/// `decompiles` says whether the surface renders bodies, which is the one axis
+/// the bundles differ on (the Listing is entry-neutral on x86-64, so
+/// enumeration there does not pay for it). `binary` is read to classify the
+/// architecture; anything `object` cannot parse — the corpus `<binaryimage>`
+/// XML included — is treated as x86-64 and takes no discovery injection, so
+/// those scripts stay byte-identical.
+///
+/// Every injection yields to the caller: naming the option at all (directly or
+/// through a resolved `--mode` preset) skips it.
+///
+/// (kuna, decbench F1) The program-wide Listing is ON unless the caller set it
+/// explicitly (`--option listing on|off` still wins — the injection is skipped
+/// whenever the caller names `listing` at all).  Two independent reasons, one
+/// per surface:
+///
+///   * A DECOMPILING surface needs it on every architecture.  The Listing
+///     feeds the default-on `noreturn_propagate` consumer (the angr-style
+///     call-graph no-return fixpoint, DIV-14): without it the pass is a
+///     structural no-op, so a call to an unnamed internal exit/fatal wrapper
+///     in a STRIPPED binary is treated as returning and the decompiler runs
+///     past it, swallowing every following function into the caller (the
+///     decbench `noreturn-propagation-stripped` family, e.g. coreutils
+///     `xalloc_die`: 118 LOC / 2 gotos swallowed vs the true 4-instruction
+///     body).  See DIV-15.
+///   * On a NON-x86-64 image every surface needs it, `kuna functions`
+///     included, because the Listing is the master gate of the DIV-20
+///     discovery bundle below — `funcstart_patterns` and `aif` both walk the
+///     Listing's code units and are inert without it, and those two passes
+///     ARE the discovery on a stripped ARM/AArch64/MIPS/PPC/RISC-V binary.
+///     See DIV-68.
+///
+/// x86-64 enumeration keeps the cheap path: the Listing is measured
+/// entry-neutral there (identical entry sets on 40 sampled stripped x86-64
+/// ELFs), so building it would only make `kuna functions` slower.  Only these
+/// drivers change: the engine default (`analysis_listing = false`) and the
+/// interactive console / datatest harness are untouched, and a selected mode
+/// can still name Listing.
+///
+/// (kuna, decbench ARM) Oracle 5 — the always-on prologue-pattern scan folded into
+/// function discovery — is x86-64-only, so on a STRIPPED **non-x86-64** binary the ELF
+/// entry point is the ONLY discovered function (ARM Cortex-M `betaflight`: 1 of ~469;
+/// it has no recursive-descent Listing sweep at the analyzer tier).  The
+/// `funcstart_patterns` pass IS the primary discovery source there — it applies the
+/// full ARM/AArch64/MIPS/PPC/RISC-V `<patternpairs>` (pre/post) prologue matcher over
+/// the code — so it is ON for non-x86-64 on every driver surface, the `functions`
+/// inventory included (DIV-68), unless the caller named it explicitly.  x86-64 keeps
+/// it OFF (oracle 5 + the entry oracles suffice, and the aggressive scan can
+/// over-produce there).  See DIV-20 (`docs/divergences.md`).
+///
+/// (kuna, decbench ARM) `funcstart_patterns` only seeds a candidate when a matching
+/// EPILOGUE prepattern (Ghidra `<patternpairs>`) sits immediately before it, so ~70% of a
+/// stripped Cortex-M firmware's functions — those preceded by literal pools / data /
+/// padding and living in call-graph components reachable only through indirect calls /
+/// function-pointer tables — are never seeded, and the recursive-descent walk (direct
+/// CALL/BL only) structurally cannot reach them (crazyflie: 87% of the missed functions
+/// have NO direct-call edge from what kuna found).  The ported Aggressive Instruction
+/// Finder (`aif`, Ghidra `ArmAggressiveInstructionFinderAnalyzer`) gap-walks the UNDEFINED
+/// regions the walk left uncovered, gating each candidate on a prologue-fingerprint
+/// histogram learned from the already-discovered functions + `check_valid_subroutine`, so
+/// it bridges those disconnected components.  It rides alongside `funcstart_patterns`
+/// (crazyflie cf2.elf 1430 -> 2700 functions, 45% -> 82% of angr's discovered set),
+/// unless the caller named it.  Extra non-ground-truth functions are harmless to the GED
+/// benchmark (it scores per ground-truth function, matched by name).  See DIV-20.
+pub(crate) fn driver_default_options(
+    binary: &str,
+    decompiles: bool,
+    wants_listing: bool,
+    options: &[(String, String)],
+) -> Vec<(&'static str, &'static str)> {
+    let named = |name: &str| options.iter().any(|(option, _)| option == name);
+    let non_x86_64 = std::fs::read(binary)
+        .ok()
+        .and_then(|bytes| {
+            object::File::parse(&*bytes)
+                .ok()
+                .map(|file| file.architecture() != object::Architecture::X86_64)
+        })
+        .unwrap_or(false);
+
+    let mut injected = Vec::new();
+    if wants_listing && (decompiles || non_x86_64) && !named("listing") {
+        injected.push(("listing", "on"));
+    }
+    if non_x86_64 && !named("funcstart_patterns") {
+        injected.push(("funcstart_patterns", "on"));
+    }
+    if non_x86_64 && !named("aif") {
+        injected.push(("aif", "on"));
+    }
+    injected
 }
 
 /// Bootstrap the architecture from the binary and run the analysis commit (the
@@ -278,99 +1041,41 @@ pub(crate) fn load_program(
     let mut prog = bootstrap_from_object(&binary, target, &spec_roots)
         .map_err(|e| format!("could not build an architecture for {binary}: {}", e.explain()))?;
 
-    let named = |name: &str| args.options.iter().any(|(option, _)| option == name);
-    // A non-x86-64 image takes the DIV-20 discovery bundle below; read the file
-    // once for both of its gates (and for the Listing gate above them).
-    let non_x86_64 = std::fs::read(&binary)
-        .ok()
-        .and_then(|bytes| {
-            object::File::parse(&*bytes)
-                .ok()
-                .map(|file| file.architecture() != object::Architecture::X86_64)
-        })
-        .unwrap_or(false);
-
-    // (kuna, decbench F1) Default the program-wide Listing ON, unless the caller
-    // set it explicitly (`--option listing on|off` still wins — the injection is
-    // skipped whenever the caller names `listing` at all).  Two independent
-    // reasons, one per surface:
-    //
-    //   * A DECOMPILING surface needs it on every architecture.  The Listing
-    //     feeds the default-on `noreturn_propagate` consumer (the angr-style
-    //     call-graph no-return fixpoint, DIV-14): without it the pass is a
-    //     structural no-op, so a call to an unnamed internal exit/fatal wrapper
-    //     in a STRIPPED binary is treated as returning and the decompiler runs
-    //     past it, swallowing every following function into the caller (the
-    //     decbench `noreturn-propagation-stripped` family, e.g. coreutils
-    //     `xalloc_die`: 118 LOC / 2 gotos swallowed vs the true 4-instruction
-    //     body).  See DIV-15.
-    //   * On a NON-x86-64 image every surface needs it, `kuna functions`
-    //     included, because the Listing is the master gate of the DIV-20
-    //     discovery bundle below — `funcstart_patterns` and `aif` both walk the
-    //     Listing's code units and are inert without it, and those two passes
-    //     ARE the discovery on a stripped ARM/AArch64/MIPS/PPC/RISC-V binary.
-    //     See DIV-68.
-    //
-    // x86-64 enumeration keeps the cheap path: the Listing is measured
-    // entry-neutral there (identical entry sets on 40 sampled stripped x86-64
-    // ELFs), so building it would only make `kuna functions` slower.  Only this
-    // driver changes: the engine default (`analysis_listing = false`) and the
-    // subprocess surfaces (`kuna decompile` → `decomp_dbg`, the datatest
-    // harness) are untouched, and a selected mode can still name Listing.
-    if (defaults.decompiles() || non_x86_64) && !named("listing") {
+    for (name, value) in driver_default_options(
+        &binary,
+        defaults.decompiles(),
+        defaults.wants_listing(),
+        &args.options,
+    ) {
         prog.arch_mut()
-            .set_kuna_option("listing", "on")
-            .map_err(|e| format!("option listing: {}", e.explain()))?;
+            .set_kuna_option(name, value)
+            .map_err(|e| format!("option {name}: {}", e.explain()))?;
     }
 
-    // (kuna, decbench ARM) Oracle 5 — the always-on prologue-pattern scan folded into
-    // function discovery — is x86-64-only, so on a STRIPPED **non-x86-64** binary the ELF
-    // entry point is the ONLY discovered function (ARM Cortex-M `betaflight`: 1 of ~469;
-    // it has no recursive-descent Listing sweep at the analyzer tier).  The
-    // `funcstart_patterns` pass IS the primary discovery source there — it applies the
-    // full ARM/AArch64/MIPS/PPC/RISC-V `<patternpairs>` (pre/post) prologue matcher over
-    // the code — so default it ON for non-x86-64 on every whole-binary surface, the
-    // `functions` inventory included (DIV-68), unless the caller named it explicitly.
-    // x86-64 keeps it OFF (oracle 5 + the entry oracles suffice, and the aggressive scan
-    // can over-produce there); only this driver changes, the engine default
-    // (`analysis_funcstart_patterns = false`) and the console/datatest surfaces are
-    // untouched.  See DIV-20 (`docs/divergences.md`).
-    if non_x86_64 && !named("funcstart_patterns") {
-        prog.arch_mut()
-            .set_kuna_option("funcstart_patterns", "on")
-            .map_err(|e| format!("option funcstart_patterns: {}", e.explain()))?;
+    // (kuna `--assert`) A `readonly` range is inert unless read-only propagation
+    // is on, and that option is default-off; asserting the range turns it on.
+    // Set BEFORE the caller's own `--option`s so an explicit `--option readonly
+    // off` still wins -- the same order the script surface emits it in.
+    if kuna_console::assertions::implies_readonly_propagation(&args.assertions) {
+        prog.arch_mut().readonlypropagate = true;
     }
-
-    // (kuna, decbench ARM) `funcstart_patterns` above only seeds a candidate when a matching
-    // EPILOGUE prepattern (Ghidra `<patternpairs>`) sits immediately before it, so ~70% of a
-    // stripped Cortex-M firmware's functions — those preceded by literal pools / data /
-    // padding and living in call-graph components reachable only through indirect calls /
-    // function-pointer tables — are never seeded, and the recursive-descent walk (direct
-    // CALL/BL only) structurally cannot reach them (crazyflie: 87% of the missed functions
-    // have NO direct-call edge from what kuna found).  The ported Aggressive Instruction
-    // Finder (`aif`, Ghidra `ArmAggressiveInstructionFinderAnalyzer`) gap-walks the UNDEFINED
-    // regions the walk left uncovered, gating each candidate on a prologue-fingerprint
-    // histogram learned from the already-discovered functions + `check_valid_subroutine`, so
-    // it bridges those disconnected components.  Default it ON for non-x86-64 on every
-    // whole-binary surface alongside `funcstart_patterns` (crazyflie cf2.elf 1430 -> 2700
-    // functions, 45% -> 82% of angr's discovered set), unless the caller named it.  x86-64
-    // keeps it OFF (the entry+prologue oracles suffice and the aggressive gap-walk can
-    // over-produce there); only this driver changes — the engine default (`analysis_aif =
-    // false`) and the console/datatest surfaces are untouched.  Extra non-ground-truth
-    // functions are harmless to the GED benchmark (it scores per ground-truth function, matched
-    // by name).  See DIV-20 (`docs/divergences.md`).
-    if non_x86_64 && !named("aif") {
-        prog.arch_mut()
-            .set_kuna_option("aif", "on")
-            .map_err(|e| format!("option aif: {}", e.explain()))?;
-    }
-
     // Analysis-/printer-tier `--option`s must be applied to the architecture
     // BEFORE the gated analysis commit (the `option` < `read symbols` ordering
     // the script path enforces), so a per-pass gate takes effect.
     apply_runtime_options(&mut prog, &args.options)?;
     prog.commit_pending_analysis()
         .map_err(|e| format!("read symbols (analysis commit) failed: {}", e.explain()))?;
+    // AFTER the commit: a caller-declared boundary is an assertion that outranks
+    // whatever discovery decided about the same address.
+    crate::funcdecl::apply(&mut prog, &args.func_decls)?;
+    // The `--assert` plane, same slot and for the same reason: a caller-declared
+    // fact outranks whatever discovery decided about it. The program-scoped
+    // directives take effect here; the function- and symbol-scoped ones are
+    // dispatched by the decompile loop (`kuna_console::assertions`).
+    if !args.assertions.is_empty() {
+        prog.set_assertions(args.assertions.clone());
+        kuna_console::assertions::apply_program_scoped(&mut prog);
+    }
     Ok(prog)
 }
 
@@ -433,6 +1138,7 @@ fn is_loadtime_gate(name: &str) -> bool {
             | "i386_pie_plt"
             | "relocrebase"
             | "dynrelocs"
+            | "pdatachained"
             | "macho-arm64e"
             | "typedepth"
             | "dwarfstructs"
@@ -526,6 +1232,18 @@ fn apply_loadtime_env(options: &[(String, String)], slice: Option<&str>) -> Load
         );
         env.set(
             kuna_decomp::kuna_dynrelocs::DYNRELOCS_ENV,
+            if on { "on" } else { "off" },
+        );
+    }
+    // (kuna, DIV-117) Same timing for the PE `.pdata` chained-record skip: the
+    // entry oracles run inside `load file`.
+    if let Some(value) = last_option_value(options, "pdatachained") {
+        let on = !matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "off" | "0" | "false"
+        );
+        env.set(
+            kuna_decomp::kuna_pdatachained::PDATACHAINED_ENV,
             if on { "on" } else { "off" },
         );
     }
@@ -799,14 +1517,61 @@ pub(crate) fn render_result_json(
     funcs: &[FuncResult],
     options: &[(String, String)],
     error: Option<&str>,
+    assertions: &[kuna_console::assertions::Outcome],
+) -> String {
+    render_selected_json(binary, funcs, options, error, None, assertions)
+}
+
+/// [`render_result_json`] plus the inventory `total` a NARROWED whole-binary run
+/// answers with.
+///
+/// `total` is `Some` only when a triage filter chose these functions out of a
+/// larger set, so a caller can never mistake a `--limit`-capped answer for the
+/// whole program. An unfiltered `decompile-all --json` and every
+/// `kuna decompile --json` pass `None` and are byte-identical to before — the
+/// decbench backend consumes the first of those.
+pub(crate) fn render_selected_json(
+    binary: &str,
+    funcs: &[FuncResult],
+    options: &[(String, String)],
+    error: Option<&str>,
+    total: Option<usize>,
+    assertions: &[kuna_console::assertions::Outcome],
 ) -> String {
     let language = last_option_value(options, "setlanguage").unwrap_or("c-language");
-    format!("{}\n", dumps_indent2(&result_json(binary, funcs, language, error)))
+    format!(
+        "{}\n",
+        dumps_indent2(&result_json(binary, funcs, language, error, total, assertions))
+    )
 }
 
 /// The `functions --json` document.
-fn functions_json(binary: &str, entries: &[FunctionEntry], error: Option<&str>) -> String {
-    let arr = Json::Array(
+///
+/// `count` is what the `functions` array holds and `total` what discovery found,
+/// so a triage-narrowed listing says what it was narrowed from. They are equal on
+/// an unfiltered run.
+fn functions_json(
+    binary: &str,
+    entries: &[FunctionEntry],
+    total: usize,
+    error: Option<&str>,
+) -> String {
+    format!(
+        "{}\n",
+        dumps_indent2(&Json::Object(vec![
+            ("binary".into(), Json::Str(binary.to_string())),
+            ("count".into(), Json::Number(entries.len().to_string())),
+            ("total".into(), Json::Number(total.to_string())),
+            ("error".into(), error_json(error)),
+            ("functions".into(), entries_json(entries)),
+        ]))
+    )
+}
+
+/// The inventory-record array shared by the `functions` listing and the
+/// `--summary` document's `largest`.
+fn entries_json(entries: &[FunctionEntry]) -> Json {
+    Json::Array(
         entries
             .iter()
             .map(|e| {
@@ -824,15 +1589,6 @@ fn functions_json(binary: &str, entries: &[FunctionEntry], error: Option<&str>) 
                 ])
             })
             .collect(),
-    );
-    format!(
-        "{}\n",
-        dumps_indent2(&Json::Object(vec![
-            ("binary".into(), Json::Str(binary.to_string())),
-            ("count".into(), Json::Number(entries.len().to_string())),
-            ("error".into(), error_json(error)),
-            ("functions".into(), arr),
-        ]))
     )
 }
 
@@ -848,6 +1604,8 @@ fn result_json(
     funcs: &[FuncResult],
     language: &str,
     error: Option<&str>,
+    total: Option<usize>,
+    assertions: &[kuna_console::assertions::Outcome],
 ) -> Json {
     let functions = Json::Array(
         funcs
@@ -880,20 +1638,54 @@ fn result_json(
             })
             .collect(),
     );
-    Json::Object(vec![
-        ("binary".into(), Json::Str(binary.to_string())),
+    let mut fields = vec![
+        ("binary".to_string(), Json::Str(binary.to_string())),
         // (kuna outlang) The auto language policy resolves inside the engine, so
         // the document has to say which language `code` is in -- otherwise a
         // consumer cannot tell a Rust body from a C one without guessing.
-        ("language".into(), Json::Str(language.to_string())),
-        ("count".into(), Json::Number(funcs.len().to_string())),
+        ("language".to_string(), Json::Str(language.to_string())),
+        ("count".to_string(), Json::Number(funcs.len().to_string())),
+    ];
+    if let Some(total) = total {
+        fields.push(("total".to_string(), Json::Number(total.to_string())));
+    }
+    fields.extend([(
         // The RUN-level error channel, set exactly when the command exits
         // non-zero (a total discovery failure here; the aborted function on
         // `kuna decompile --json`). A single function that failed inside a
         // whole-binary run is that record's own `error`, not this one.
-        ("error".into(), error_json(error)),
-        ("functions".into(), functions),
-    ])
+        "error".to_string(),
+        error_json(error),
+    ), ("functions".to_string(), functions)]);
+    // (kuna `--assert`) One row per caller-supplied assertion, in the order the
+    // caller gave them: what it was, where in the phase model it wrote, and
+    // whether it landed. Always present (`[]` when none were passed) so an agent
+    // can read it unconditionally — an assertion whose fate is unreported is an
+    // assertion an agent has to verify by eye, which is the whole problem.
+    fields.push(("assertions".to_string(), assertions_json(assertions)));
+    Json::Object(fields)
+}
+
+/// The per-directive report (`kuna_console::assertions::Outcome`).
+fn assertions_json(outcomes: &[kuna_console::assertions::Outcome]) -> Json {
+    Json::Array(
+        outcomes
+            .iter()
+            .map(|o| {
+                Json::Object(vec![
+                    ("directive".into(), Json::Str(o.directive.clone())),
+                    ("kind".into(), Json::Str(o.kind.to_string())),
+                    ("phase".into(), Json::Str(o.phase.to_string())),
+                    ("subphase".into(), Json::Str(o.subphase.to_string())),
+                    ("status".into(), Json::Str(o.status.to_string())),
+                    (
+                        "detail".into(),
+                        o.detail.clone().map(Json::Str).unwrap_or(Json::Null),
+                    ),
+                ])
+            })
+            .collect(),
+    )
 }
 
 fn line_mapping_json(mapping: &LineMapping) -> Json {
@@ -1010,7 +1802,7 @@ mod provenance_json_tests {
             object_location: None,
         };
 
-        let rendered = dumps_indent2(&result_json("fixture", &[function], "c-language", None));
+        let rendered = dumps_indent2(&result_json("fixture", &[function], "c-language", None, None, &[]));
         assert!(rendered.contains("\"address\": 4198400"));
         assert!(rendered.contains("\"code\": \"int f(int x)\\n{\\n  return x;\\n}\""));
         assert!(rendered.contains("\"line_mappings\": ["));
@@ -1098,7 +1890,24 @@ fn concrete_mode_for_binary(
     }
 }
 
+/// Parse `argv` for `cmd`, discarding the triage half.
+///
+/// The surfaces that do not narrow (`decompile-project`, `kuna decompile --json`)
+/// call this so their [`Args`] shape and their parse are untouched by triage.
 pub(crate) fn parse_args(argv: &[String], cmd: &str) -> Result<Args, String> {
+    Ok(parse_args_with_filters(argv, cmd)?.0)
+}
+
+/// The full parse: the load/decompile arguments plus the triage selection.
+///
+/// The triage flags are accepted only on the two surfaces that act on them, so a
+/// `decompile-project` run cannot silently swallow a `--filter` it would ignore.
+pub(crate) fn parse_args_with_filters(
+    argv: &[String],
+    cmd: &str,
+) -> Result<(Args, Filters), String> {
+    let triageable = cmd == "decompile-all" || cmd == "functions";
+    let mut filters = Filters::default();
     let mut binary: Option<String> = None;
     let mut json = false;
     let mut names: Option<Vec<String>> = None;
@@ -1106,6 +1915,9 @@ pub(crate) fn parse_args(argv: &[String], cmd: &str) -> Result<Args, String> {
     let mut no_vars = false;
     let mut max_fn_seconds: Option<u64> = None;
     let mut options: Vec<(String, String)> = Vec::new();
+    let mut func_decls: Vec<crate::funcdecl::FuncDecl> = Vec::new();
+    let mut assertions: Vec<kuna_console::assertions::Directive> = Vec::new();
+    let mut assert_strict = false;
     let mut mode: Option<String> = None;
     let mut slice: Option<String> = None;
     let mut target: Option<String> = None;
@@ -1126,6 +1938,15 @@ pub(crate) fn parse_args(argv: &[String], cmd: &str) -> Result<Args, String> {
                 let v = take(argv, &mut i, "--addr")?;
                 addrs.push(parse_entry_selector(&v)?);
             }
+            "--define-function" => {
+                let v = take(argv, &mut i, "--define-function")?;
+                func_decls.extend(crate::funcdecl::parse_flag(&v)?);
+            }
+            "--assert" => {
+                let v = take(argv, &mut i, "--assert")?;
+                assertions.extend(crate::assertdecl::parse_flag(&v)?);
+            }
+            "--assert-strict" => assert_strict = true,
             "--max-fn-seconds" if cmd == "decompile-all" || cmd == "decompile-project" => {
                 let v = take(argv, &mut i, "--max-fn-seconds")?;
                 max_fn_seconds = Some(
@@ -1134,6 +1955,32 @@ pub(crate) fn parse_args(argv: &[String], cmd: &str) -> Result<Args, String> {
                         .map_err(|_| format!("invalid --max-fn-seconds value {v:?}"))?,
                 );
             }
+            "--filter" if triageable => {
+                let v = take(argv, &mut i, "--filter")?;
+                filters.name = Some(
+                    Regex::new(&v).map_err(|e| format!("invalid --filter regex {v:?}: {e}"))?,
+                );
+            }
+            "--min-size" if triageable => {
+                let v = take(argv, &mut i, "--min-size")?;
+                filters.min_size = Some(parse_count(&v, "--min-size")?);
+            }
+            "--max-size" if triageable => {
+                let v = take(argv, &mut i, "--max-size")?;
+                filters.max_size = Some(parse_count(&v, "--max-size")?);
+            }
+            "--reachable-from" if triageable => {
+                filters.reachable_from = Some(take(argv, &mut i, "--reachable-from")?);
+            }
+            "--limit" if triageable => {
+                let v = take(argv, &mut i, "--limit")?;
+                filters.limit = Some(parse_count(&v, "--limit")? as usize);
+            }
+            "--sort" if triageable => {
+                let v = take(argv, &mut i, "--sort")?;
+                filters.sort = SortKey::parse(&v)?;
+            }
+            "--summary" if triageable => filters.summary = true,
             "--option" => {
                 if i + 2 >= argv.len() {
                     return Err("--option requires NAME VALUE".into());
@@ -1212,7 +2059,36 @@ pub(crate) fn parse_args(argv: &[String], cmd: &str) -> Result<Args, String> {
     let max_fn_seconds = max_fn_seconds
         .unwrap_or_else(|| default_fn_budget_seconds(concrete_mode, whole_binary));
 
-    Ok(Args { binary, json, names, addrs, no_vars, max_fn_seconds, options, slice, target, sleighpath })
+    if let (Some(min), Some(max)) = (filters.min_size, filters.max_size) {
+        if min > max {
+            return Err(format!("--min-size {min} is greater than --max-size {max}"));
+        }
+    }
+
+    Ok((
+        Args {
+            binary,
+            json,
+            names,
+            addrs,
+            no_vars,
+            max_fn_seconds,
+            options,
+            func_decls,
+            assertions,
+            assert_strict,
+            slice,
+            target,
+            sleighpath,
+        },
+        filters,
+    ))
+}
+
+fn parse_count(v: &str, flag: &str) -> Result<u64, String> {
+    v.trim()
+        .parse::<u64>()
+        .map_err(|_| format!("invalid {flag} value {v:?} (expected a non-negative integer)"))
 }
 
 fn take(argv: &[String], i: &mut usize, flag: &str) -> Result<String, String> {
@@ -1243,6 +2119,9 @@ fn usage_decompile_all() {
     eprintln!(
         "usage: kuna decompile-all <binary> [--json] [--functions a,b,..] [--addr 0xVMA].. \\\n\
          \x20                   [--no-vars] [--max-fn-seconds N] [--mode auto|reliable|aggressive|fast] \\\n\
+         \x20                   [--filter REGEX] [--min-size N] [--max-size N] \\\n\
+         \x20                   [--reachable-from <name|0xaddr>] [--sort addr|size|name] [--limit N] \\\n\
+         \x20                   [--summary] [--define-function S[-E][=N]|@FILE].. \\\n\
          \x20                   [--option N V].. [--slice ARCH] [--target T] [--sleighpath D]\n\
          \n\
          Decompile every CODE-backed function in one in-process load (load-once,\n\
@@ -1254,19 +2133,47 @@ fn usage_decompile_all() {
          Omitted --mode uses auto: aggressive below 500 KiB, reliable below\n\
          2 MiB, and fast at 2 MiB or larger. Explicit --option values win.\n\
          An unfiltered run that discovers no function at all exits 1 with the\n\
-         reason on stderr and in the document's run-level `error` field."
+         reason on stderr and in the document's run-level `error` field.\n\
+         \n\
+         --define-function <start[-end][=name] | @file> (repeatable) declares where a\n\
+         function starts and ends: start names an entry discovery missed, the\n\
+         exclusive end bounds its flow so it stops swallowing its neighbours.\n\
+         \n\
+         Triage (narrows the run BEFORE decompiling, so it is also what makes it\n\
+         cheap): --filter REGEX matches the name or any alias; --min-size/--max-size\n\
+         bound the inventory extent; --reachable-from <name|0xaddr> keeps only what\n\
+         that function reaches through the call graph; --sort addr|size|name orders\n\
+         (size is largest first) and --limit N caps. A narrowed --json document also\n\
+         carries `total`, the count before narrowing. --summary skips the decompile\n\
+         entirely and reports the orientation document (see `kuna functions -h`)."
     );
 }
 
 fn usage_functions() {
     eprintln!(
-        "usage: kuna functions <binary> [--json] [--mode auto|reliable|aggressive|fast] [--slice ARCH] [--target T] [--sleighpath D]\n\
+        "usage: kuna functions <binary> [--json] [--summary] \\\n\
+         \x20               [--filter REGEX] [--min-size N] [--max-size N] \\\n\
+         \x20               [--reachable-from <name|0xaddr>] [--sort addr|size|name] [--limit N] \\\n\
+         \x20               [--define-function S[-E][=N]|@FILE].. \\\n\
+         \x20               [--mode auto|reliable|aggressive|fast] [--slice ARCH] [--target T] [--sleighpath D]\n\
          \n\
          List every function kuna discovers in a binary as `<addr>\\t<name>` (or\n\
-         --json: {{binary,count,functions:[{{name,address}}]}}).\n\
+         --json: {{binary,count,total,functions:[{{name,address,address_hex,aliases,size}}]}}).\n\
+         \n\
+         Triage: --filter REGEX matches the name or any alias; --min-size/--max-size\n\
+         bound the extent; --reachable-from <name|0xaddr> keeps only what that\n\
+         function reaches through the call graph (the `kuna xrefs` edges);\n\
+         --sort addr|size|name orders (size is largest first) and --limit N caps.\n\
+         \n\
+         --summary answers `where do I start` in a few hundred bytes instead of a\n\
+         function list: the image entry point, how many functions it reaches, how\n\
+         many have no call site, the size histogram, and the --limit largest\n\
+         functions (10 by default).\n\
          Shares decompile-all's discovery policy, so the inventory always contains\n\
          every function a whole-binary run would decompile; on a non-x86-64 binary\n\
          that means a full prologue-pattern + gap-walk discovery pass.\n\
+         --define-function <start[-end][=name] | @file> (repeatable) declares an entry\n\
+         discovery missed and its exclusive extent; it enumerates like any other.\n\
          Discovering no function at all exits 1 with the reason on stderr and in\n\
          the document's `error` field (a packed image is named as such)."
     );
@@ -1421,17 +2328,17 @@ mod discovery_tests {
     /// reads it unconditionally rather than inferring failure from `count`.
     #[test]
     fn the_run_level_error_field_is_always_present() {
-        let healthy = functions_json("fixture", &[], None);
+        let healthy = functions_json("fixture", &[], 0, None);
         assert!(healthy.contains("\"error\": null"), "{healthy}");
-        let failed = functions_json("fixture", &[], Some("no functions discovered in fixture"));
+        let failed = functions_json("fixture", &[], 0, Some("no functions discovered in fixture"));
         assert!(
             failed.contains("\"error\": \"no functions discovered in fixture\""),
             "{failed}"
         );
-        let decompiled = render_result_json("fixture", &[], &[], Some("boom"));
+        let decompiled = render_result_json("fixture", &[], &[], Some("boom"), &[]);
         assert!(decompiled.contains("\"error\": \"boom\""), "{decompiled}");
         assert!(
-            render_result_json("fixture", &[], &[], None).contains("\"error\": null")
+            render_result_json("fixture", &[], &[], None, &[]).contains("\"error\": null")
         );
     }
 
@@ -1443,8 +2350,8 @@ mod discovery_tests {
             ("setlanguage".into(), "rust-language".into()),
             ("setlanguage".into(), "c-language".into()),
         ];
-        assert!(render_result_json("f", &[], &options, None).contains("\"c-language\""));
-        assert!(render_result_json("f", &[], &[], None).contains("\"c-language\""));
+        assert!(render_result_json("f", &[], &options, None, &[]).contains("\"c-language\""));
+        assert!(render_result_json("f", &[], &[], None, &[]).contains("\"c-language\""));
     }
 }
 
@@ -1674,5 +2581,131 @@ mod mode_tests {
         assert_eq!(last_option_value(&options, "relocobjects"), Some("off"));
         assert_eq!(last_option_value(&options, "i386_pie_plt"), Some("off"));
         assert_eq!(last_option_value(&options, "macho-arm64e"), Some("off"));
+    }
+}
+
+#[cfg(test)]
+mod triage_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static TEMP_ID: AtomicU64 = AtomicU64::new(0);
+
+    /// `parse_args` reads the file's size to resolve the `auto` mode, so the
+    /// triage parse needs a real path — the bytes are never looked at.
+    fn sparse_binary() -> std::path::PathBuf {
+        let id = TEMP_ID.fetch_add(1, Ordering::Relaxed);
+        let path = std::env::temp_dir()
+            .join(format!("kuna-triage-{}-{id}.bin", std::process::id()));
+        std::fs::File::create(&path)
+            .expect("create triage fixture")
+            .set_len(1024)
+            .expect("size triage fixture");
+        path
+    }
+
+    fn parse(cmd: &str, extra: &[&str]) -> Result<(Args, Filters), String> {
+        let path = sparse_binary();
+        let mut argv = vec![path.to_string_lossy().into_owned()];
+        argv.extend(extra.iter().map(|s| (*s).to_string()));
+        let parsed = parse_args_with_filters(&argv, cmd);
+        std::fs::remove_file(path).expect("remove triage fixture");
+        parsed
+    }
+
+    /// `Args`/`Filters` are not `Debug`, so a rejected parse is unwrapped here.
+    fn err(parsed: Result<(Args, Filters), String>) -> String {
+        match parsed {
+            Ok(_) => panic!("expected the parse to be rejected"),
+            Err(e) => e,
+        }
+    }
+
+    #[test]
+    fn sort_keys_are_the_three_documented_ones() {
+        assert_eq!(SortKey::parse("addr").unwrap(), SortKey::Addr);
+        assert_eq!(SortKey::parse("ADDRESS").unwrap(), SortKey::Addr);
+        assert_eq!(SortKey::parse(" size ").unwrap(), SortKey::Size);
+        assert_eq!(SortKey::parse("name").unwrap(), SortKey::Name);
+        assert!(SortKey::parse("entropy").is_err());
+        assert_eq!(SortKey::default(), SortKey::Addr);
+    }
+
+    /// An unnarrowed run must keep every pre-existing behaviour, so `narrows()`
+    /// is what gates the whole feature and has to be false by default.
+    #[test]
+    fn a_bare_run_narrows_nothing() {
+        let (_, filters) = parse("functions", &[]).unwrap();
+        assert!(!filters.narrows());
+        assert!(!filters.summary);
+        for flag in [
+            vec!["--filter", "main"],
+            vec!["--min-size", "1"],
+            vec!["--max-size", "1"],
+            vec!["--reachable-from", "main"],
+            vec!["--limit", "1"],
+            vec!["--sort", "size"],
+        ] {
+            let (_, filters) = parse("functions", &flag).unwrap();
+            assert!(filters.narrows(), "{flag:?}");
+        }
+    }
+
+    #[test]
+    fn the_triage_flags_parse_on_both_whole_binary_surfaces() {
+        for cmd in ["functions", "decompile-all"] {
+            let (_, filters) = parse(
+                cmd,
+                &[
+                    "--filter", "^auth",
+                    "--min-size", "16",
+                    "--max-size", "256",
+                    "--reachable-from", "0x1000",
+                    "--sort", "size",
+                    "--limit", "4",
+                    "--summary",
+                ],
+            )
+            .unwrap_or_else(|e| panic!("{cmd}: {e}"));
+            assert!(filters.name.as_ref().unwrap().is_match("authenticate"), "{cmd}");
+            assert!(!filters.name.as_ref().unwrap().is_match("deauth"), "{cmd}");
+            assert_eq!(filters.min_size, Some(16), "{cmd}");
+            assert_eq!(filters.max_size, Some(256), "{cmd}");
+            assert_eq!(filters.reachable_from.as_deref(), Some("0x1000"), "{cmd}");
+            assert_eq!(filters.sort, SortKey::Size, "{cmd}");
+            assert_eq!(filters.limit, Some(4), "{cmd}");
+            assert!(filters.summary, "{cmd}");
+            assert_eq!(filters.largest_wanted(), 4, "{cmd}");
+        }
+    }
+
+    /// `decompile-project` does not act on a narrowing, so it must reject one
+    /// rather than silently discard it.
+    #[test]
+    fn decompile_project_rejects_the_triage_flags() {
+        let e = err(parse("decompile-project", &["--filter", "main"]));
+        assert!(e.contains("unknown option --filter"), "{e}");
+        assert!(parse("decompile-project", &["--summary"]).is_err());
+    }
+
+    #[test]
+    fn bad_triage_values_are_rejected_at_parse_time() {
+        assert!(parse("functions", &["--filter", "("]).is_err());
+        assert!(parse("functions", &["--limit", "-1"]).is_err());
+        assert!(parse("functions", &["--min-size", "big"]).is_err());
+        let e = err(parse("functions", &["--min-size", "10", "--max-size", "9"]));
+        assert!(e.contains("greater than --max-size"), "{e}");
+        assert!(parse("functions", &["--min-size", "9", "--max-size", "9"]).is_ok());
+    }
+
+    /// The histogram has to partition the whole size domain: a function that
+    /// falls in no bucket would silently vanish from the summary.
+    #[test]
+    fn the_size_buckets_partition_every_extent() {
+        for size in [0u64, 1, 15, 16, 63, 64, 255, 256, 1023, 1024, 4095, 4096, u64::MAX] {
+            let hits = SIZE_BUCKETS.iter().filter(|(_, lo, hi)| size >= *lo && size <= *hi).count();
+            assert_eq!(hits, 1, "size {size} lands in {hits} buckets");
+        }
+        assert_eq!(DEFAULT_SUMMARY_LARGEST, 10);
     }
 }

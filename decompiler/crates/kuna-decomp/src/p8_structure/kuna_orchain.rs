@@ -73,8 +73,10 @@ use crate::funcdata::Funcdata;
 use crate::options::on_or_off;
 
 /// Marshaling element `<orchain>` (kuna).  ElementIds live in the 4000+ range
-/// (4121 itecondlist was the previous high-water mark; this is 4122).
-pub const ELEM_ORCHAIN: ElementId = ElementId::new("orchain", 4122);
+/// (Originally 4122, which collided: funcboundflow claimed the same id a day earlier from
+/// the same "next free above itecondlist" reasoning. Renumbered to 4136; run
+/// `python3 -m scripts.repipe.counters --check`, which now fails on a duplicate.)
+pub const ELEM_ORCHAIN: ElementId = ElementId::new("orchain", 4136);
 
 /// The blocks that are the **shared out-target** of at least one short-circuit fold
 /// `CollapseStructure::rule_block_or` would perform on this CFG — i.e. the blocks a

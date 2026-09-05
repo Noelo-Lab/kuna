@@ -21,7 +21,7 @@
 //!                                          `Box::RTTI_Complete_Object_Locator`, the
 //!                                          vftable `Box::vftable`, AND each vftable
 //!                                          slot a named virtual-method function
-//!                                          `Box::vftable_0` (R3, at the slot's target
+//!                                          `Box::vfunc_0` (R3, at the slot's target
 //!                                          VA) — so the virtual dispatch resolves to
 //!                                          a named method and `Box`/`Shape` surface
 //!                                          as recovered C++ class names.
@@ -32,7 +32,9 @@
 //! On top of the class names, `rtti` R3 walks each vftable from its
 //! `<Class>::vftable` base (`VfTableModel.getVfTableCount`), bounding the slot array
 //! at the first NULL / non-`.text` slot, and names each slot's target a virtual-method
-//! function `<Class>::vftable_<i>` + marks the slot array read-only. The Box vftable
+//! function `<Class>::vfunc_<i>` + marks the slot array read-only. The `vfunc_` stem is
+//! load-bearing: only the vftable DATA object wears a `vftable` name, so a function
+//! inventory never reports an executable range as a vtable. The Box vftable
 //! here has exactly one slot — `Box::area` (`side*side`) — at the pinned target VMA
 //! (`0x140001040` x64 / `0x401030` x86). The slots are absolute VAs on BOTH arches
 //! (NOT the `IBO32` displacements the COL/RTTI graph uses).
@@ -133,19 +135,31 @@ fn assert_recovered(prog: &ConsoleProgram, box_area_vma: u64) {
     );
 
     // R3 — vftable discovery + per-slot virtual-method naming. The Box vftable has
-    // one slot (`Box::area`); R3 names it `Box::vftable_0`. The name must exist in
+    // one slot (`Box::area`); R3 names it `Box::vfunc_0`. The name must exist in
     // the symbol table AND a function symbol must be installed AT the slot's target
     // VA — the virtual dispatch `(**(code **)*p)()` now points at a NAMED function
-    // (`Box::vftable_0`), not a bare `DAT_*` slot.
+    // (`Box::vfunc_0`), not a bare `DAT_*` slot.
     assert!(
-        prog.has_symbol_named("Box::vftable_0"),
-        "rtti on: the first Box vftable slot must be named Box::vftable_0 (R3)"
+        prog.has_symbol_named("Box::vfunc_0"),
+        "rtti on: the first Box vftable slot must be named Box::vfunc_0 (R3)"
     );
     assert_eq!(
         prog.function_named_at(box_area_vma).as_deref(),
-        Some("vftable_0"),
+        Some("vfunc_0"),
         "rtti on: the vftable slot's target VA {box_area_vma:#x} must resolve to the \
          named virtual-method function (R3 — the virtual dispatch is now named)"
+    );
+    // A recovered ROUTINE is never named after the vftable data object: the only
+    // `vftable` symbol is the unindexed label on the table itself. `<Class>::vftable_<i>`
+    // told a function inventory that executable code was a vtable object.
+    assert!(
+        !prog.has_symbol_named("Box::vftable_0"),
+        "the virtual method must not be named Box::vftable_0 — that spells the data object"
+    );
+    assert_ne!(
+        prog.function_named_at(box_area_vma).as_deref(),
+        Some("vftable_0"),
+        "rtti on: the function at {box_area_vma:#x} must not carry a vftable_<i> name"
     );
 }
 
@@ -159,6 +173,7 @@ fn assert_absent(prog: &ConsoleProgram, box_area_vma: u64) {
         "Box::RTTI_Complete_Object_Locator",
         "Box::vftable",
         "Box::vftable_0",
+        "Box::vfunc_0",
     ] {
         assert!(
             !prog.has_symbol_named(name),
@@ -166,10 +181,10 @@ fn assert_absent(prog: &ConsoleProgram, box_area_vma: u64) {
         );
     }
     // The vftable slot is an unnamed `DAT_*`/undiscovered slot with the option off:
-    // no `vftable_*` virtual-method function is installed at its target VA.
+    // no `vfunc_*` virtual-method function is installed at its target VA.
     assert_ne!(
         prog.function_named_at(box_area_vma).as_deref(),
-        Some("vftable_0"),
+        Some("vfunc_0"),
         "rtti off: the vftable slot target must NOT be a named virtual method"
     );
 }

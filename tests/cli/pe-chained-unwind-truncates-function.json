@@ -1,0 +1,40 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "--addr",
+    "0x140001000"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/pe_chainedunwind_x86_64.exe",
+    "binary_sha256": "78a7ef8e6c869cd49e8c22330edac84c5c04760b710b94640e7ada8ca3cb932f",
+    "binary_size": 2048,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/pe_chainedunwind_x86_64.exe",
+    "selector": "0x140001000",
+    "selector_kind": "addr"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "return a0 \\+ 0x16;"
+    ],
+    "stdout_absent": [
+      "while ;",
+      "funcboundflow: fall-through reached the next function entry"
+    ]
+  },
+  "notes": "The chained .pdata record at 0x140001020 is a chunk of the function at 0x140001000, not an entry, so the whole body is emitted -- 0x16 is the sum only the untruncated body computes."
+}

@@ -89,12 +89,16 @@ if [ "$MERGE" = 1 ]; then
 
   # The suite the label triggers takes time to REGISTER. Polling immediately would find
   # only the already-finished cheap gates, conclude "all green", and squash-merge code
-  # the workspace suite never ran on. Wait for it to appear by name first.
+  # the workspace suite never ran on. Wait for it to appear by name first. A run counts as
+  # registered when it is in flight OR has genuinely concluded -- "not completed" alone
+  # deadlocks a re-run whose suite already finished, and this script is documented as
+  # re-runnable. A pre-label `skipped` (or superseded `cancelled`) row still does not count:
+  # that is the exact case this wait exists to catch.
   WS_NAME="${MERGE_REQUIRED_CHECK:-cargo workspace suite}"; export WS_NAME
   echo "waiting for '$WS_NAME' to register" 1>&2
   REG_DEADLINE=$(( $(date +%s) + ${MERGE_REGISTER_TIMEOUT:-900} ))
   until gh api "repos/$REPO_SLUG/commits/$SHA/check-runs?per_page=100" \
-          --jq "[.check_runs[] | select(.name == \"$WS_NAME\" and .status != \"completed\")] | length" \
+          --jq "[.check_runs[] | select(.name == \"$WS_NAME\" and (.status != \"completed\" or (.conclusion != \"skipped\" and .conclusion != \"cancelled\")))] | length" \
         2>/dev/null | grep -qv '^0$'; do
     if [ "$(date +%s)" -ge "$REG_DEADLINE" ]; then
       echo "ERROR: '$WS_NAME' never registered; refusing to merge without it" 1>&2

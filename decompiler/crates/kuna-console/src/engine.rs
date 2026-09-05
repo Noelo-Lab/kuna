@@ -174,6 +174,34 @@ pub struct ConsoleProgram {
     /// objects — `optind`, `stdin`, `stdout`, `optarg` — live). Empty on the XML
     /// datatest path and for a relocatable object.
     loader_data_objects: Vec<(u64, String, u64)>,
+    /// (kuna) **Caller-declared function extents**, entry VMA → byte size — what
+    /// the console `function bounds <start> <end>` and the CLI
+    /// `kuna --define-function <start>-<end>` assert, and the only place kuna
+    /// carries "function F spans [start,end)" at all. (`map function` still
+    /// ignores its size argument; only these two surfaces write here.)
+    ///
+    /// Consulted by every later load of that entry (`load function`, `load addr`,
+    /// the whole-binary loop) so the declaration outlives the one command that
+    /// made it, and by [`crate::funcextent`] so the inventory reports what the
+    /// caller asserted rather than the address-contiguous clip it guesses.
+    /// Non-zero sizes only: a bare declaration with no extent leaves the entry
+    /// unbounded, which is the engine-wide `UNBOUNDED_SIZE` default.
+    declared_extents: BTreeMap<u64, int4>,
+    /// (kuna `--assert`) The caller-supplied assertions this program was loaded
+    /// with, in the order they were given -- the one override plane an agent
+    /// states facts through (`crate::assertions`).  Empty for every invocation
+    /// that passed none, which is what keeps the plane free.
+    assertions: Vec<crate::assertions::Directive>,
+    /// One slot per [`Self::assertions`] entry: what became of that directive.
+    /// `None` until something claims it, so a directive no surface reached is
+    /// still distinguishable from one that was applied.
+    assertion_outcomes: Vec<Option<crate::assertions::Outcome>>,
+    /// Prototypes parked by an `assert prototype <func> <decl>` directive, keyed
+    /// by function name -- the in-process twin of the console's
+    /// `IfaceDecompData::pending_prototypes` (`parse line extern`).  Consulted by
+    /// the decompile loop, because the drive rebuilds the `Funcdata` and the
+    /// symbol-table prototype link does not survive that rebuild.
+    pending_prototypes: BTreeMap<String, kuna_decomp::fspec::PrototypePieces>,
 }
 
 impl ConsoleProgram {
@@ -338,6 +366,16 @@ impl ConsoleProgram {
             &mut entries,
             &crate::funcextent::code_spans(&self.sections()),
         );
+        // A caller-declared extent is an assertion, not a guess: it outranks the
+        // clip everywhere the clip is reported (`declared_extents`).
+        if self.has_declared_extents() {
+            for entry in &mut entries {
+                let declared = self.declared_extent(entry.addr.get_offset());
+                if declared > 0 {
+                    entry.size = declared as u64;
+                }
+            }
+        }
         entries
     }
 
@@ -349,6 +387,10 @@ impl ConsoleProgram {
     /// [`crate::funcextent`].
     pub fn function_extent_at(&self, vma: u64) -> u64 {
         let entry = self.thumb_normalized(vma);
+        let declared = self.declared_extent(entry);
+        if declared > 0 {
+            return declared as u64;
+        }
         let entries: Vec<u64> = self
             .function_entries_canonical()
             .iter()
@@ -971,7 +1013,7 @@ impl ConsoleProgram {
     /// (kuna) The basename of the FunctionSymbol installed at code-space VMA `vma`, or
     /// `None` if no function is mapped there. Resolves across scopes
     /// (`find_function_across_scopes`, the no-return/FID arm's resolver), so it sees a
-    /// namespaced virtual-method function (e.g. `Box::vftable_0` in scope `Box`).
+    /// namespaced virtual-method function (e.g. `Box::vfunc_0` in scope `Box`).
     ///
     /// The verification hook for the MSVC-RTTI **vftable** e2e (R3): a vtable slot's
     /// target VA should now resolve to a named virtual method — the virtual dispatch
@@ -1040,6 +1082,128 @@ impl ConsoleProgram {
             object_location,
             binding: None,
         });
+    }
+
+    /// Record a caller-declared byte extent for the function entered at `vma`
+    /// (`declared_extents`); `size <= 0` clears it back to unbounded.
+    pub fn declare_extent(&mut self, vma: u64, size: int4) {
+        if size > 0 {
+            self.declared_extents.insert(vma, size);
+        } else {
+            self.declared_extents.remove(&vma);
+        }
+    }
+
+    /// The caller-declared byte extent of the function entered at `vma`, or
+    /// [`UNBOUNDED_SIZE`] when none was declared — the value every load of that
+    /// entry passes as the analysis-size bound.
+    pub fn declared_extent(&self, vma: u64) -> int4 {
+        self.declared_extents.get(&vma).copied().unwrap_or(UNBOUNDED_SIZE)
+    }
+
+    /// Is any function extent declared for this program?  Cheap enough to gate a
+    /// per-entry lookup in the inventory bulk pass.
+    pub fn has_declared_extents(&self) -> bool {
+        !self.declared_extents.is_empty()
+    }
+
+    // --- the `--assert` override plane (see `crate::assertions`) -------------
+
+    /// Install the caller's assertions.  One outcome slot is reserved per
+    /// directive so the report keeps the caller's own order however the
+    /// directives are later dispatched.
+    pub fn set_assertions(&mut self, directives: Vec<crate::assertions::Directive>) {
+        self.assertion_outcomes = vec![None; directives.len()];
+        self.assertions = directives;
+    }
+
+    /// The installed assertions, in the order they were given.
+    pub fn assertions(&self) -> &[crate::assertions::Directive] {
+        &self.assertions
+    }
+
+    /// Record what became of the `i`-th directive.
+    pub fn set_assertion_outcome(&mut self, i: usize, outcome: crate::assertions::Outcome) {
+        if let Some(slot) = self.assertion_outcomes.get_mut(i) {
+            *slot = Some(outcome);
+        }
+    }
+
+    /// The per-directive report, one row per installed assertion.
+    pub fn assertion_outcomes(&self) -> Vec<crate::assertions::Outcome> {
+        self.assertions
+            .iter()
+            .zip(self.assertion_outcomes.iter())
+            .map(|(directive, outcome)| {
+                outcome.clone().unwrap_or_else(|| crate::assertions::unclaimed(directive))
+            })
+            .collect()
+    }
+
+    /// Park a prototype for `func` (an `assert prototype` directive).
+    pub fn set_pending_prototype(
+        &mut self,
+        func: &str,
+        pieces: kuna_decomp::fspec::PrototypePieces,
+    ) {
+        self.pending_prototypes.insert(func.to_string(), pieces);
+    }
+
+    /// The prototype parked for `func`, if any.
+    pub fn pending_prototype(&self, func: &str) -> Option<&kuna_decomp::fspec::PrototypePieces> {
+        self.pending_prototypes.get(func)
+    }
+
+    /// Declare a function at `addr` — the in-process twin of the console
+    /// `map function <addr> [name]` command (`IfcMapfunction`), plus the extent
+    /// the console form cannot express on its own.
+    ///
+    /// Installs the `FunctionSymbol` (so a CALL here resolves to `name`),
+    /// registers the name→address entry (so `load function <name>` and the
+    /// whole-binary enumeration both see it), and records `size` as the entry's
+    /// declared extent (`0` = unbounded).
+    ///
+    /// An address that already carries a function symbol is RENAMED rather than
+    /// given a second one, but only when the caller named it: the symbol table
+    /// keys a function by address, so adding a second symbol there would leave
+    /// two names competing for one entry.  With no explicit name, an already-named
+    /// address keeps its name and only the extent is recorded.
+    pub fn declare_function(
+        &mut self,
+        addr: Address,
+        name: Option<&str>,
+        size: int4,
+    ) -> KunaResult<String> {
+        let explicit = name.map(str::to_string).filter(|n| !n.is_empty());
+        let name = match &explicit {
+            Some(n) => n.clone(),
+            None => self.arch().name_function(&addr),
+        };
+        let type_code = self.arch().types().get_type_code()?;
+        let min_size = self.arch().min_funcsymbol_size;
+        let num_spaces = self.arch().manage().num_spaces() as int4;
+        let arch = self.arch_mut();
+        let (scope, basename) =
+            arch.symboltab.find_create_scope_from_symbol_name(&name, "::", None, num_spaces)?;
+        let name = match arch.symboltab.find_function_across_scopes(&addr) {
+            Some((sym, _)) => match &explicit {
+                Some(_) => {
+                    arch.symboltab.rename_symbol(sym, &basename)?;
+                    name
+                }
+                // Nothing asked for: keep the name the image or the analysis gave
+                // this entry rather than overwriting it with `sub_<addr>`.
+                None => arch.symboltab.symbol(sym).get_display_name().to_string(),
+            },
+            None => {
+                arch.symboltab.add_function(scope, &addr, &basename, min_size, type_code)?;
+                name
+            }
+        };
+        let vma = addr.get_offset();
+        self.register_symbol(&name, addr);
+        self.declare_extent(vma, size);
+        Ok(name)
     }
 
     /// (kuna) Build the `map addr`-shaped stack-symbol specs for the DWARF stack
@@ -1237,6 +1401,15 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // (output-changing: adds entries), so a default run never commits them and
         // the discovery set is byte-identical to FDE-pcBegin-only.
         "eh_frame_full" => arch.analysis_eh_frame_full,
+        // (kuna) PE CRT entry-function prototype recovery — a standalone stashed pass
+        // whose one prototype is computed at LOAD but COMMITTED only when this gate
+        // is on. Default-ON; off renders the `void(void)` form exactly.
+        "entrymainproto" => arch.analysis_entrymainproto,
+        // (kuna) Mach-O `LC_MAIN` entry naming + prototype — a standalone stashed
+        // pass whose one name and one prototype are computed at LOAD but COMMITTED
+        // only when this gate is on. Default-ON; off renders the `sub_<addr>` /
+        // `void(void)` form exactly.
+        "machomain" => arch.analysis_machomain,
         // (kuna) `.eh_frame` FDE-interior entry suppression — the pass reports the
         // single-function FDE bodies and the commit rejects any discovered entry
         // strictly inside one. Default-ON; with the gate off the fact stream is
@@ -1357,6 +1530,9 @@ fn is_generic_placeholder_name(name: &str) -> bool {
 /// table SLOT is, not what the function is called, so a real symbol at the same
 /// address must outrank them — `fmt_arm`'s `0x4c0` reports
 /// `__do_global_dtors_aux` with `_FINI_0` as an alias, not the reverse.
+///
+/// A recovered virtual method named by its VTABLE SLOT INDEX is the same kind of
+/// name and is treated the same way ([`is_vtable_slot_name`]).
 fn is_structural_entry_name(name: &str) -> bool {
     name == "_DT_INIT"
         || name == "_DT_FINI"
@@ -1364,6 +1540,34 @@ fn is_structural_entry_name(name: &str) -> bool {
             .strip_prefix("_INIT_")
             .or_else(|| name.strip_prefix("_FINI_"))
             .is_some_and(|i| !i.is_empty() && i.bytes().all(|b| b.is_ascii_digit()))
+        || is_vtable_slot_name(name)
+}
+
+/// (kuna, `pe-function-inventory-labels`) Is `name` a virtual method the RTTI passes
+/// could only name by its vtable SLOT INDEX — `<Class>::vfunc_<i>` (MSVC `rtti`) or
+/// `<Class>::vtable_<i>` (Itanium `itaniumrtti`)?
+///
+/// Neither metadata graph records per-method names, only the class name, so the slot
+/// index is all those passes have. That makes the name structural in exactly the sense
+/// `_FINI_<i>` is: it says which SLOT the function occupies, not what the function is
+/// called. A real method name recovered at the same address must therefore outrank it —
+/// on a Windows PE the `std::basic_streambuf` thunks carry both, and the length
+/// tie-break alone decided it, so `showmanyc` reported as `std::basic_stringbuf::vfunc_5`
+/// while its one-byte-shorter neighbour `uflow` kept its real name.
+///
+/// The unindexed `<Class>::vftable` / `<Class>::vtable` labels are DATA symbols and never
+/// reach this ranking; the digit test excludes descriptive suffixes such as
+/// `Widget::vtable_for_Drawable` as well.
+fn is_vtable_slot_name(name: &str) -> bool {
+    let Some((class, slot)) = name.rsplit_once("::") else {
+        return false;
+    };
+    if class.is_empty() {
+        return false;
+    }
+    slot.strip_prefix("vfunc_")
+        .or_else(|| slot.strip_prefix("vtable_"))
+        .is_some_and(|i| !i.is_empty() && i.bytes().all(|b| b.is_ascii_digit()))
 }
 
 /// (kuna, issue #197) How informative is `name`?  Smaller sorts first when
@@ -1380,7 +1584,9 @@ fn is_structural_entry_name(name: &str) -> bool {
 ///    at `0x40`, and the reported mingw-PE pair is `_pre_c_init`+`pre_c_init`.
 ///    The unprefixed name is the one a reader wants.
 /// 4. **Shorter**, then **lexicographic** — so the choice is total and stable
-///    run to run rather than dependent on symbol-stream order.
+///    run to run rather than dependent on symbol-stream order.  This is a tie-break
+///    between names of equal standing ONLY; a difference in kind must be caught by a
+///    tier above it, or a one-character length accident decides the report.
 fn entry_name_rank(name: &str) -> (bool, bool, bool, usize) {
     (
         is_generic_placeholder_name(name),
@@ -1631,6 +1837,10 @@ pub fn bootstrap_program(
         dwarf_locals: Vec::new(),
         analysis_image: None,
         loader_data_objects: Vec::new(),
+        declared_extents: BTreeMap::new(),
+        assertions: Vec::new(),
+        assertion_outcomes: Vec::new(),
+        pending_prototypes: BTreeMap::new(),
     };
     // C++ `conf->readLoaderSymbols("::")` (testfunction.cc:160 / consolemain.cc:104):
     // install the binaryimage symbols as FunctionSymbols so a CALL to one resolves
@@ -1867,6 +2077,10 @@ pub fn bootstrap_from_object(
         // here (it is unused below this point).
         analysis_image: Some((path.to_string(), bytes)),
         loader_data_objects,
+        declared_extents: BTreeMap::new(),
+        assertions: Vec::new(),
+        assertion_outcomes: Vec::new(),
+        pending_prototypes: BTreeMap::new(),
     };
     // conf->readLoaderSymbols("::"): install the ELF symbols as FunctionSymbols.
     // The deferred analysis commit at `read symbols` REQUIRES this to have run
@@ -2206,7 +2420,27 @@ fn commit_analysis_output(
     //    so the engine+printer render the literal instead of the bare constant.
     //    Ghidra's StringsAnalyzer marks the data and locks its type; the typelock
     //    is what keeps the array char[N] type through type propagation.
-    for fact in &out.strings {
+    //    (kuna `widestrings`) The 2-byte width rides the same arm: a UTF-16LE
+    //    literal gets a `wchar2[N]` (element count `len / 2`) instead of a
+    //    `char[N]`, which is what makes the printer emit the `L` prefix and read the
+    //    bytes two at a time (`L"ntdll.dll"` rather than `"n"`).
+    //
+    //    The wide facts are committed FIRST, and the order is the fix rather than a
+    //    detail. Against `StringLiteralPass`'s own 1-byte facts the order is
+    //    immaterial — a wide unit demands a zero high byte, so five consecutive
+    //    1-byte-charset bytes never occur inside a wide run and neither width can
+    //    reach the other's address. It matters against `operand_refs`, whose facts
+    //    arrive in this same stream and whose run test accepts a SINGLE visible
+    //    character: at a wide literal it reads the first unit's low byte and the
+    //    high-byte NUL behind it as a complete `char[2]`, which is exactly the
+    //    `LoadLibraryW("n")` defect. Whichever fact is planted first wins the
+    //    `occupied` guard below, so the width that read the whole literal has to go
+    //    first. The stream is dropped entirely when the gate is off — `off` is
+    //    byte-identical to the 1-byte markup alone.
+    let wide = if prog.arch().analysis_widestrings { out.wide_strings.as_slice() } else { &[] };
+    for (fact, char_size) in
+        wide.iter().map(|f| (f, 2u32)).chain(out.strings.iter().map(|f| (f, 1u32)))
+    {
         let addr = Address::new(Rc::clone(code_space), fact.addr);
         // Conservative guard: skip an address that already carries a symbol (an
         // existing data/function symbol must not be shadowed). Ghidra likewise
@@ -2230,9 +2464,23 @@ fn commit_analysis_output(
 
         // char[len]: getTypeChar(getSizeOfChar()) -> getTypeArray(len, char). Both
         // are fallible TypeFactory queries (the type group must be built by now).
-        let char_size = prog.arch().types().get_size_of_char();
-        let ch = prog.arch().types().get_type_char(char_size)?;
-        let arr = prog.arch().types().get_type_array(fact.len as i32, ch)?;
+        // `fact.len` is the BYTE span including the terminator, so the array's
+        // element count is `len / char_size` — identical for the 1-byte width.
+        let ch = if char_size == 1 {
+            prog.arch().types().get_type_char(prog.arch().types().get_size_of_char())?
+        } else {
+            // A language whose <coretypes> declares no 2-byte character type has no
+            // `wchar2` to plant. Skip the wide fact rather than fail the whole
+            // commit — the 1-byte arm keeps its original hard failure.
+            match prog.arch().types().get_type_char(2) {
+                Ok(ch) => ch,
+                Err(_) => continue,
+            }
+        };
+        let arr = prog
+            .arch()
+            .types()
+            .get_type_array((fact.len / char_size) as i32, ch)?;
 
         // A cosmetic synthetic name `s_<addr>` (the symbol exists to carry the
         // char[N] type at the address; the printer renders the literal, not the
@@ -2689,3 +2937,64 @@ impl LoadImage for NullLoad {
 /// function's natural extent), mirroring the C++ `IfcFuncload` / `IfcAddrrangeLoad`
 /// unbounded follow.
 pub const UNBOUNDED_SIZE: int4 = 0;
+
+#[cfg(test)]
+mod tests {
+    use super::{entry_name_rank, is_vtable_slot_name};
+
+    /// Which of an entry's names `function_entries_canonical` reports.
+    fn wins<'a>(a: &'a str, b: &'a str) -> &'a str {
+        if entry_name_rank(a).cmp(&entry_name_rank(b)).then_with(|| a.cmp(b)).is_le() {
+            a
+        } else {
+            b
+        }
+    }
+
+    /// (kuna, `pe-function-inventory-labels`) A vtable-slot-index name is structural:
+    /// a real method name at the same address outranks it however long that name is.
+    /// Before, only the length tie-break separated them, so which name a PE inventory
+    /// reported turned on a one-character accident — `std::basic_streambuf::showmanyc`
+    /// lost to `std::basic_stringbuf::vfunc_5` while the shorter `uflow` next door kept
+    /// its own name.
+    #[test]
+    fn a_real_method_name_outranks_its_vtable_slot_index() {
+        for (real, slot) in [
+            ("std::basic_streambuf::showmanyc", "std::basic_stringbuf::vfunc_5"),
+            ("std::basic_streambuf::uflow", "std::basic_stringbuf::vfunc_7"),
+            ("Shape::perimeter", "Circle::vtable_2"),
+            // The real name being much the longer of the two is the whole point.
+            ("Widget::an_extremely_long_method_name", "Widget::vfunc_0"),
+        ] {
+            assert_eq!(wins(real, slot), real, "{real} must outrank {slot}");
+        }
+    }
+
+    /// The slot name still beats an engine placeholder — it is structural, not useless.
+    #[test]
+    fn a_vtable_slot_index_still_outranks_a_placeholder() {
+        for placeholder in ["sub_140002c2c", "FUN_140002c2c", "func_140002c2c"] {
+            assert_eq!(wins("std::bad_alloc::vfunc_0", placeholder), "std::bad_alloc::vfunc_0");
+        }
+    }
+
+    /// Only `<Class>::v{func,table}_<digits>` is a slot name. The unindexed labels are
+    /// DATA symbols, and a descriptive suffix names a base subobject, not a slot.
+    #[test]
+    fn only_an_indexed_slot_name_is_structural() {
+        assert!(is_vtable_slot_name("Box::vfunc_0"));
+        assert!(is_vtable_slot_name("std::basic_stringbuf::vtable_11"));
+        for not_a_slot in [
+            "Box::vftable",
+            "Box::vtable",
+            "Widget::vtable_for_Drawable",
+            "Box::vfunc_",
+            "Box::vfunc_1a",
+            "vfunc_0",
+            "::vfunc_0",
+            "vtable_3",
+        ] {
+            assert!(!is_vtable_slot_name(not_a_slot), "{not_a_slot} is not a slot name");
+        }
+    }
+}

@@ -1,0 +1,87 @@
+{
+  "need_id": "ppc64-localentry-splits-function",
+  "track": "quality",
+  "option": "ppclocalentry",
+  "default": "on",
+  "div": "DIV-107",
+  "scope": "small",
+  "worker": "b-r2-ppc64-localentry",
+  "branch": "feat/re-ppc64-localentry-splits-function",
+  "hypothesis_status": "upheld",
+  "binary": "decompiler/crates/kuna-analysis/tests/fixtures/plt_ppc64le",
+  "selector": "__do_global_ctors_aux",
+  "decisions": [
+    {
+      "id": "root-cause-confirmed-and-its-open-half-closed",
+      "claim": "The filed hypothesis is upheld in full, and the half it left open -- 'whether the +8 entries come from call targets, from a prologue matcher, or from the ELF reader' -- resolves to CALL TARGETS in the Listing walk's function worklist, and nothing else.",
+      "evidence": "`kuna xrefs plt_ppc64le --to 0x948` reports exactly one reference, `0x5f4 call _init+0x34  bl 0x948`, and the same for 0x6f8 (from 0x87c), 0x7c8 (from 0xa14) and 0x8b8 (from 0x5ec). Ablation pins the producer: `--option funcstart_patterns off`, `--option aif off` and `--option listing off` each leave all four entries in place, while `listing off` PLUS `fast_funcdisc off` removes them -- and both of those consumers commit `listing.functions()`, which only the walk fills. The ELF reader is excluded directly: no relocation, no `.eh_frame` FDE and no `.ctors`/`.dtors`/`.data.rel.ro` pointer in the image names a +8 address (`readelf -r`, `readelf --debug-dump=frames-interp`, `objdump -s`)."
+    },
+    {
+      "id": "register_tm_clones-is-the-control",
+      "claim": "`register_tm_clones` carries the identical `[<localentry>: 8]` annotation and is NOT split, which is what rules the prologue-matcher diagnosis out rather than merely making the call-target one plausible.",
+      "evidence": "The only reference to its local entry 0x758 is `frame_dummy`'s tail branch (`0x8b8 jump  b 0x758`), not a `bl`. The walk mints a function at CALL targets and treats every other flow target as a same-function successor, so 0x758 never becomes an entry while 0x6f8/0x7c8/0x8b8/0x948 -- all four reached by `bl` -- do. A prologue or ELF-reader source would have produced 0x758 too."
+    },
+    {
+      "id": "ablation-caveat-explained",
+      "claim": "The need's warning that `--option ... off` on this path 'appears' not to take effect has a mundane cause and is not a precedence bug: `kuna functions` accepts no `--option` at all.",
+      "evidence": "`kuna functions <binary> [--json] [--mode ...] [--define-function ...]` is the whole grammar (`kuna --help`); the discovery bundle is injected by `driver_default_options` and there is no user override on that surface. Driving the same ablations through `decompile-all`, which does take `--option`, makes every one of them take effect -- that is how the producer above was isolated."
+    },
+    {
+      "id": "seam-choice",
+      "claim": "The fold is applied at the walk's CALL-target seam rather than as a post-hoc filter over committed entries, so the Listing's own function model is right too.",
+      "evidence": "A post-hoc filter over `AnalysisOutput::entries` (the shape `fdeinterior` uses for FDE bodies) would have closed the probe, but `Listing::function_containing`, the region-containment guards in `tailcallentry` and the `aif` gap walk would all still believe 0x948 is a function. Gating one line above `unmappedentry` in `walk.rs` -- the sibling gate at the identical seam -- makes every consumer see one consistent model, and it is also strictly upstream of `funcdisc_recursive` AND `fast_funcdisc`, the two consumers the ablation identified."
+    },
+    {
+      "id": "cannot-lose-a-body",
+      "claim": "The fold is provably non-destructive, by wiring rather than by heuristic: it can only ever remove a duplicate second entry over a body that is walked either way.",
+      "evidence": "Guard 4 admits a fold only when the GLOBAL entry is itself a walk seed with no other seed between the two, so the local entry's bytes are reached as that seed's fall-through whatever the fold does -- the walk's instruction closure is invariant. The third cargo test asserts the observable form of this on the fixture: exactly the four local-entry twins are removed, nothing is added, and no surviving function shrinks."
+    },
+    {
+      "id": "off-arm-is-byte-identical",
+      "claim": "`--option ppclocalentry off` restores the pre-change discovery set and emitted C byte for byte.",
+      "evidence": "Whole-binary `decompile-all` on plt_ppc64le with the option off `diff`s clean against the same command run at base commit e3db5512. The two-pass cargo test drives the same two arms through the console and asserts the husk/twin sizes on the off arm."
+    },
+    {
+      "id": "sweep",
+      "claim": "plt_ppc64le is the ONLY PowerPC binary anywhere in the tree, so the in-repo blast radius is one image, and it was swept whole-binary rather than at the witness alone.",
+      "evidence": "A `file(1)` sweep over every non-source file in the repo finds one PowerPC image. Whole-binary `decompile-all` before/after: 19 entries -> 15; the four husks and their four anonymous twins collapse into four correctly-sized functions (deregister_tm_clones 8->96, __do_global_dtors_aux 8->240, frame_dummy 8->12, __do_global_ctors_aux 8->120, each matching objdump); every funcboundflow truncation warning in the image is gone. One non-obvious hunk was classified rather than waved through: __do_global_dtors_aux's TOC displacements change base from `v1 + -0x7ef0` (an opaque r2) to `v2 + 0x1f850` (r12 followed through the now-included `addis r2,r12,2; addi r2,r2,30528` TOC setup). Same address -- r2 = r12 + 0x27740, so r2 - 0x7ef0 == r12 + 0x1f850."
+    },
+    {
+      "id": "residual-call-site-naming",
+      "claim": "A call site to a folded local entry still renders as `sub_6f8()`, a generated name for an address no longer in the inventory. Recorded, not hidden, and deliberately left out of scope.",
+      "evidence": "Naming it after its enclosing function is a call-resolution change in kuna-decomp, a second mechanism in a different crate from the discovery fold -- and kuna's function symbols carry no extent (the gap `fdeinterior` documents), so there is no cheap 'which function contains this address' answer to hang it on. It is strictly smaller than the defect fixed: before this PR the body itself was unreachable under its real name. The same follow-up would give `kuna xrefs --to <named function>` its intra-module callers back."
+    },
+    {
+      "id": "no-stages-testcase",
+      "claim": "This ships with a cross-crate cargo test instead of a `tests/stages/` two-pass XML, because the stages corpus structurally cannot carry the defect.",
+      "evidence": "Both parity corpora are symbol-less `<binaryimage>` bytechunks; the fold reads the ELF symbol table's `st_other` field, which no bytechunk has. The precedent is `noreturn_propagate`, which shipped covered by a cross-crate e2e for the same reason. `kuna-console/tests/verify_ppclocalentry.rs` runs both passes through `bootstrap_from_object` + `commit_pending_analysis` and IS run by `make rust-test`; `tests/cli/ppc64-localentry-splits-function.json` carries the promoted acceptance."
+    },
+    {
+      "id": "default-on",
+      "claim": "Shipped default-ON (DIV-107). The acceptance probe runs `kuna decompile BIN __do_global_ctors_aux` with no options, so only default output can close the need -- and the flip is evidence-backed rather than asserted.",
+      "evidence": "0/675 datatest assertions and 0/603 stage assertions move (both PARITY OK, docs/baseline.json untouched), because the fold is architecture-gated to PPC64 and both corpora are x86-family bytechunks. It is a strict correction rather than a judgement -- the ABI defines the two entries as the same routine -- and it is bounded by four guards, so the option exists as an ablation lever, not because the rule is a guess."
+    },
+    {
+      "id": "speed-noise-floor",
+      "claim": "The speed budget is met, and the honest reading needs the on-vs-on control: on this box a short decompile's noise floor is wider than the budget.",
+      "evidence": "Interleaved off/on min-of-25 on a PROVABLY inert x86-64 target (the architecture check returns an empty map before any per-seed work) measures -0.97% median against an on-vs-on control of +0.02% median; the MINIMUM statistic on the same identical-work control swings +23.43%, so minima are unusable here and medians are reported. The witness measures +8.80% median (control +0.34%), which is the cost of decompiling a recovered 120-byte body where the off arm decompiled an empty husk -- more work done, not overhead added."
+    }
+  ],
+  "speed_off_ms": 145.29,
+  "speed_on_ms": 143.88,
+  "speed_delta_pct": -0.97,
+  "speed_samples": 25,
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": true,
+  "speed_note": "interleaved off/on, 25 rounds, median, on a provably inert x86-64 target (fauxware main); on-vs-on control on the same target is +0.02% median. The witness (plt_ppc64le __do_global_ctors_aux) measures +8.80% median with a +0.34% control -- its on arm decompiles a 120-byte recovered body where the off arm decompiled an empty husk.",
+  "gates": {
+    "make test": "PARITY OK 675/675",
+    "make test-stages": "PARITY OK 603/603",
+    "make rust-test": "green, 5341 passed / 0 failed",
+    "make check-spec": "OK (lenient and --strict)",
+    "kuna catalog --check": "catalog OK (138 settables)",
+    "scripts.repipe.clitests": "19/19",
+    "scripts.repipe.counters": "no drift",
+    "acceptance a-fb2b9c0f7f5b": "PASS"
+  }
+}

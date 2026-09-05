@@ -2426,6 +2426,7 @@ impl Funcdata {
         record_loads: bool,
         visited: &crate::flow::VisitedMap,
         run_pipeline: &mut crate::flow::JtPipelineFn<'_>,
+        shared: &mut Option<Funcdata>,
     ) -> Result<Option<usize>, crate::jumptable::RecoveryMode> {
         use crate::jumptable::RecoveryMode;
         // linkJumpTable: search for a pre-existing table.
@@ -2435,7 +2436,8 @@ impl Funcdata {
                 return Ok(Some(idx)); // Previously calculated, complete, non-override
             }
             // Recover empty/override table.
-            let mode = self.stage_jump_table(idx, op, record_loads, visited, run_pipeline);
+            let mode =
+                self.stage_jump_table(idx, op, record_loads, visited, run_pipeline, shared);
             if mode != RecoveryMode::Success {
                 return Err(mode);
             }
@@ -2457,7 +2459,7 @@ impl Funcdata {
         let trial = crate::jumptable::JumpTable::new(addr);
         self.jumpvec_mut().push(trial);
         let idx = self.num_jump_tables() as usize - 1;
-        let mode = self.stage_jump_table(idx, op, record_loads, visited, run_pipeline);
+        let mode = self.stage_jump_table(idx, op, record_loads, visited, run_pipeline, shared);
         if mode != RecoveryMode::Success {
             // Discard the trial table on failure.
             self.jumpvec_mut().remove(idx);
@@ -2478,23 +2480,40 @@ impl Funcdata {
         record_loads: bool,
         visited: &crate::flow::VisitedMap,
         run_pipeline: &mut crate::flow::JtPipelineFn<'_>,
+        shared: &mut Option<Funcdata>,
     ) -> crate::jumptable::RecoveryMode {
         use crate::jumptable::RecoveryMode;
         self.jumpvec_mut()[jt_idx].increment_recovery_count();
 
-        // Build the partial function (clone ops + jump-tables).
-        let mut partial = match self.build_jumptable_partial() {
-            Ok(p) => p,
-            Err(_) => return RecoveryMode::FailNormal,
-        };
-        // Mark the partial as a jump-table-recovery clone, then build its blocks
-        // and run the reduced "jumptable" universalAction over it (C++
-        // partial.truncatedFlow + allacts.setCurrent("jumptable") + perform).
-        partial.set_flag_raw(crate::funcdata::funcdata_flags::jumptablerecovery_on);
-        if run_pipeline(&mut partial, visited).is_err() {
-            // C++ catches LowlevelError, warns, and returns fail_normal.
-            return RecoveryMode::FailNormal;
+        // Build the partial function (clone ops + jump-tables) and run the reduced
+        // pipeline over it, or reuse the one an earlier table in this batch already
+        // built (C++ `if (!partial.isJumptableRecoveryOn())`, `option jtsharepartial`).
+        let share = self.get_arch().jumptable_share_partial;
+        let mut owned: Option<Funcdata> = None;
+        if !share || shared.is_none() {
+            let mut fresh = match self.build_jumptable_partial() {
+                Ok(p) => p,
+                Err(_) => return RecoveryMode::FailNormal,
+            };
+            // Mark the partial as a jump-table-recovery clone, then build its blocks
+            // and run the reduced "jumptable" universalAction over it (C++
+            // partial.truncatedFlow + allacts.setCurrent("jumptable") + perform).
+            fresh.set_flag_raw(crate::funcdata::funcdata_flags::jumptablerecovery_on);
+            if run_pipeline(&mut fresh, visited).is_err() {
+                // C++ catches LowlevelError, warns, and returns fail_normal.
+                return RecoveryMode::FailNormal;
+            }
+            if share {
+                *shared = Some(fresh);
+            } else {
+                owned = Some(fresh);
+            }
         }
+        let partial: &mut Funcdata = if share {
+            shared.as_mut().expect("stage_jump_table: shared partial just built")
+        } else {
+            owned.as_mut().expect("stage_jump_table: owned partial just built")
+        };
 
         // findOp(op->getSeqNum()) on the partial.
         let seq = self.obank().get(op).unwrap().get_seq_num().clone();
@@ -2528,9 +2547,9 @@ impl Funcdata {
         let addr2 = partial.obank().get(partop).unwrap().get_addr().clone();
         jt.set_indirect_op_addr(partop, addr2);
         let res = if jt.is_partial() {
-            jt.recover_multistage(&mut partial)
+            jt.recover_multistage(partial)
         } else {
-            jt.recover_addresses(&mut partial)
+            jt.recover_addresses(partial)
         };
         // Relink the table to the original op before storing it back.
         jt.set_indirect_op_addr(op, addr);
@@ -2880,6 +2899,7 @@ impl Funcdata {
     /// `blockaction.cc:2242`).  Only MULTIEQUAL / COPY / RETURN ops with
     /// constant/annotation/non-free inputs are allowed.
     fn return_split_is_splittable(&self, b: BlockId) -> bool {
+        let mut global_stores: usize = 0;
         let mut cur = self.bb_op_head(b);
         while let Some(op) = cur {
             let o = self.obank().get(op).expect("isSplittable: stale op");
@@ -2888,6 +2908,28 @@ impl Funcdata {
             match opc {
                 OpCode::CPUI_MULTIEQUAL => {}
                 OpCode::CPUI_COPY | OpCode::CPUI_RETURN => {
+                    // (kuna `retsplitglobal`) upstream never looks at the COPY's
+                    // OUTPUT, so a shared epilogue that stores to globals reads
+                    // as a bare epilogue and gets cloned into every predecessor.
+                    // See `crate::p8_structure::kuna_retsplitglobal`.
+                    // (kuna `retsplitglobal`) upstream never looks at the COPY's
+                    // OUTPUT, so a shared epilogue that stores to globals reads
+                    // as a bare epilogue and gets cloned into every predecessor.
+                    // See `crate::p8_structure::kuna_retsplitglobal`.
+                    let outvn = o.get_out().and_then(|ov| self.vbank().get(ov));
+                    let same_storage = match (outvn, o.get_in(0).and_then(|iv| self.vbank().get(iv)))
+                    {
+                        (Some(ov), Some(iv)) => ov.get_addr() == iv.get_addr(),
+                        _ => false,
+                    };
+                    if crate::p8_structure::kuna_retsplitglobal::is_global_store(
+                        opc == OpCode::CPUI_COPY,
+                        outvn.map(|v| v.is_persist()).unwrap_or(false),
+                        o.is_return_copy(),
+                        same_storage,
+                    ) {
+                        global_stores += 1;
+                    }
                     let n = o.num_input();
                     for i in 0..n {
                         let inv = o.get_in(i).expect("isSplittable: input slot");
@@ -2904,7 +2946,12 @@ impl Funcdata {
             }
             cur = next;
         }
-        true
+        // (kuna `retsplitglobal`) a bare epilogue is cheap to clone; one that
+        // stores to more globals than the bound is not one.
+        !crate::p8_structure::kuna_retsplitglobal::split_is_declined(
+            self.get_arch().ret_split_global,
+            global_stores,
+        )
     }
 
     /// Split the epilog of the function (C++ `ActionReturnSplit::apply`,

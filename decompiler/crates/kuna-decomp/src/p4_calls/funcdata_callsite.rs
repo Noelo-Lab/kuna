@@ -165,6 +165,21 @@ pub fn check_input_trial_use(idx: int4, data: &mut Funcdata, aliascheck: &mut Al
                     data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_no_use();
                 }
             }
+        } else if {
+            // (kuna) `calleedeadarg`: the callee's OWN body can settle a register
+            // trial the caller's data flow cannot.  A register the callee
+            // overwrites (or returns without touching) on every path from its
+            // entry is dead there and cannot be carrying an argument, however
+            // live it looks on this side of the call.
+            let (trial_addr, trial_size) = {
+                let t = data.get_call_specs(idx).active_input().get_trial(i);
+                (t.get_address().clone(), t.get_size())
+            };
+            crate::p4_calls::kuna_calleedeadarg::trial_is_dead_in_callee(
+                data, idx, slot, &trial_addr, trial_size,
+            )
+        } {
+            data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_no_use();
         } else {
             let (trial_size, trial_cond, trial_killed) = {
                 let t = data.get_call_specs_mut(idx).get_active_input().get_trial(i);
@@ -247,7 +262,15 @@ pub fn final_input_check(fc: &mut FuncCallSpecs, data: &mut Funcdata) {
 /// prototype order.  `op->getIn(0)` (the fspec annotation) is preserved.  A
 /// trial whose Varnode is bigger than its recovered type is truncated with a
 /// `SUBPIECE`.  Spacebase parameters mark their stack range as unmapped.
-pub fn build_input_from_trials(fc: &mut FuncCallSpecs, data: &mut Funcdata) {
+///
+/// (kuna) Returns the `calleearityfwd` rescue candidate when this call comes out
+/// with an empty argument list: the sibling that could still speak for it may not
+/// be final yet, and the Varnodes its trials point at are reachable only here,
+/// before `opSetAllInput` drops them.
+pub fn build_input_from_trials(
+    fc: &mut FuncCallSpecs,
+    data: &mut Funcdata,
+) -> Option<crate::p4_calls::kuna_calleearityfwd::PendingRescue> {
     let op = fc.get_op();
     let mut newparam: Vec<VarnodeId> = Vec::new();
     // Preserve the fspec parameter (in0).
@@ -270,6 +293,12 @@ pub fn build_input_from_trials(fc: &mut FuncCallSpecs, data: &mut Funcdata) {
         .get_default_code_space()
         .map(|s| s.is_big_endian())
         .unwrap_or(false);
+    // (kuna) `calleearity`: before the argument list is written, reconcile it
+    // with a sibling call to the same callee whose list is already final, so one
+    // callee does not render with two arities in one function.  Inert with the
+    // option off.  See [`crate::p4_calls::kuna_calleearity`].
+    crate::p4_calls::kuna_calleearity::unify_with_sibling_call(fc, data);
+
     let stackoffset = fc.get_stackoffset();
     let num_trials = fc.get_active_input().get_num_trials();
     for i in 0..num_trials {
@@ -333,8 +362,25 @@ pub fn build_input_from_trials(fc: &mut FuncCallSpecs, data: &mut Funcdata) {
             data.scope_local_mark_not_mapped(&spc, off, sz, true);
         }
     }
+    // (kuna) `calleearityfwd`: capture the retry candidate while the trials and
+    // the CALL's pre-rewrite inputs are both still there.
+    let pending = if newparam.len() < 2 {
+        crate::p4_calls::kuna_calleearityfwd::capture_empty_call(fc, data)
+    } else {
+        None
+    };
     let _ = data.op_set_all_input(op, &newparam);
+    // (kuna) `calleearity`: remember WHERE each recovered argument lived before
+    // the trials are dropped -- `newparam` holds values, not locations.
+    let storage: Vec<(Address, int4)> = (0..fc.get_active_input().get_num_trials())
+        .filter_map(|i| {
+            let t = fc.get_active_input().get_trial(i);
+            t.is_used().then(|| (t.get_address().clone(), t.get_size()))
+        })
+        .collect();
+    fc.set_final_input_storage(storage);
     fc.get_active_input().delete_unused_trials();
+    pending
 }
 
 /// C++ `FuncCallSpecs::collectOutputTrialVarnodes` (`fspec.cc:5543`).

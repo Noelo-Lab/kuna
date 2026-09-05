@@ -351,6 +351,75 @@ def asserted_clause_count(expect):
     return n
 
 
+# Clause names an author reaches for that are not the schema's. A probe is written by an LLM
+# under time pressure and `"stdout": "no functions"` is the obvious way to say what it means;
+# rejecting it discards a real bug report over a synonym. In round 1 this silently made 13 of
+# 16 observations unrunnable -- 80% of a round's evidence -- so the evaluator canonicalises
+# instead of refusing. Only unambiguous synonyms are mapped; anything else still errors.
+_EXPECT_ALIASES = {
+    "stdout": "stdout_matches",
+    "stdout_contains": "stdout_matches",
+    "stdout_matches_all": "stdout_matches",
+    "stderr": "stderr_matches",
+    "stderr_contains": "stderr_matches",
+    "stdout_not_contains": "stdout_absent",
+    "stderr_not_contains": "stderr_absent",
+    "exit": "exit_code",
+    "returncode": "exit_code",
+    "is_json": "stdout_is_json",
+}
+_REGEX_CLAUSES = ("stdout_matches", "stdout_absent", "stderr_matches", "stderr_absent")
+
+
+def canonical_expect(expect):
+    """Rewrite an `expect` block's near-miss clause names to the schema's, non-destructively.
+
+    A bare string where the schema wants a list is wrapped, and a bare int where it wants a
+    numpred becomes ``{"eq": n}`` -- both are the same class of mistake. A clause that would
+    collide with one the author already wrote is left alone rather than silently merged.
+    """
+    if not isinstance(expect, dict):
+        return expect
+    out = {}
+    for key, value in expect.items():
+        target = _EXPECT_ALIASES.get(key, key)
+        if target != key and target in expect:
+            target = key                      # author wrote both; do not merge, let validate speak
+
+        # The nested form -- {"stdout": {"contains": "switch(0)"}} -- is the commonest shape a
+        # tester reaches for, and it decides between two DIFFERENT clauses. `contains` is a
+        # LITERAL and must be escaped: mapped naively, `switch(0)` becomes a regex whose
+        # parentheses are a capture group and it would match "switch0" instead, turning a
+        # correct bug report into a wrong verdict. That is worse than rejecting it.
+        if target in ("stdout_matches", "stderr_matches") and isinstance(value, dict):
+            stream = target.split("_")[0]
+            for op, operand in value.items():
+                items = operand if isinstance(operand, list) else [operand]
+                items = [x for x in items if isinstance(x, str)]
+                if not items:
+                    continue
+                if op in ("contains", "includes", "has"):
+                    out.setdefault(stream + "_matches", []).extend(re.escape(x) for x in items)
+                elif op in ("not_contains", "excludes", "absent"):
+                    out.setdefault(stream + "_absent", []).extend(re.escape(x) for x in items)
+                elif op in ("matches", "regex", "re"):
+                    out.setdefault(stream + "_matches", []).extend(items)
+                elif op in ("equals", "eq"):
+                    out.setdefault(stream + "_matches",
+                                   []).extend(r"\A%s\Z" % re.escape(x) for x in items)
+                else:
+                    out[target] = value       # unknown op: leave it for validate to reject
+            continue
+
+        if target in _REGEX_CLAUSES and isinstance(value, str):
+            value = [value]
+        elif target in ("exit_code", "stdout_bytes") and isinstance(value, (int, float)) \
+                and not isinstance(value, bool):
+            value = {"eq": value}
+        out[target] = value
+    return out
+
+
 def normalize(probe, is_acceptance=False):
     """Fill defaults, reject a structurally unusable probe, and stamp the derived probe_id.
 
@@ -372,6 +441,7 @@ def normalize(probe, is_acceptance=False):
     out.setdefault("kind", "cli")
     out.setdefault("cwd", "{{WORK}}")
     out.setdefault("repeat", 1)
+    out["expect"] = canonical_expect(out.get("expect"))
     errs = validate(out)
     if errs:
         raise ProbeError("invalid probe: " + "; ".join(errs))

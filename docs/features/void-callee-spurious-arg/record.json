@@ -1,0 +1,90 @@
+{
+ "slug": "void-callee-spurious-arg",
+ "need_id": "void-callee-spurious-arg",
+ "track": "quality",
+ "scope": "small",
+ "round": 2,
+ "branch": "feat/re-void-callee-spurious-arg",
+ "option": "calleedeadarg",
+ "default": "on",
+ "div": "DIV-112",
+ "touches": [
+  "decompiler/crates/kuna-decomp"
+ ],
+ "summary": "At an unlocked call site, a bounded decode of the callee's own body may veto a register argument the callee provably never reads, so kuna stops declaring `int f(void);` and calling `f(v3);` in the same file.",
+ "decisions": [
+  {
+   "what": "the filed hypothesis STANDS",
+   "detail": "Filed: 'the live return register from scanf was incorrectly treated as an argument to the subsequent no-argument call.' Correct as stated, and the reproduction pins the mechanism: ActionActiveParam recovers an unlocked callee's argument list from the CALLER's data flow alone (FuncCallSpecs::checkInputTrialUse, fspec.cc:5592), and AncestorRealistic::enterNode returns pop_solid for a Varnode defined by a CALL. Where the ABI's return register and first argument register are the same -- x0 on AArch64, r0 on ARM -- the previous call's result IS the next call's argument as far as the caller can see. The captain's pre-dispatch note that calleearity/calleearityfwd cannot cover it also stands: they reconcile against a SIBLING call, are only ever additive, and there is one call site."
+  },
+  {
+   "what": "REQUIRING THE WRITE, not the absence of a read -- forced by a datatest regression",
+   "detail": "The first implementation asked 'is there any path on which the register is READ before being written?' and vetoed when there was none. That broke 3/675 datatest assertions (stackreturn #1/#3/#5): its three callees `perfect`/`small`/`big` are one `c3` byte each, and a bare `ret` reads nothing, so every register was 'dead' and every stub in an image would lose its arguments. The shipped rule is the positive one -- the callee demonstrably CLOBBERS the register on every path before reading it -- so a RETURN is a path terminator like any other and a body that shows nothing proves nothing."
+  },
+  {
+   "what": "the second condition (leftover call result) -- forced by a u-boot ARM sweep, not by design",
+   "detail": "With callee evidence alone the pass emptied `do_bootm(ctx->cmdtp,0,v2,bootm_argv)` and `ubifs_scan_a_node(a0,v9,v11,a1,v1,1)` on u-boot: 34 changed functions, 8 callees losing whole argument lists. Two things were wrong. Dropping an argument the caller DELIBERATELY placed is a judgement about the source (`int dm_init(bool of_live)` built with of_live compiled out is a real case), and dropping a LEADING register argument punches a hole that ParamListStandard::fillinMap's positional rules (forceNoUse / forceInactiveChain) read as the end of the argument list, taking every later argument -- including stack arguments -- with it. The shipped veto also requires the value to be an earlier call's leftover result: 34 changed functions -> 3."
+  },
+  {
+   "what": "the leftover chain is six links long, not one",
+   "detail": "On the AArch64 witness the CALL's input Varnode is not the scanf CALL's output: it is INDIRECT -> INDIRECT -> INT_ZEXT -> SUBPIECE -> PIECE -> INDIRECT(creation), six links of register-width bookkeeping around the producing call. The test follows COPY/SUBPIECE/PIECE/INT_ZEXT/INT_SEXT/INDIRECT and requires ALL inputs of a PIECE or MULTIEQUAL to qualify, with a depth budget of 12. Anything else -- a constant, a LOAD, arithmetic, a function input -- answers false."
+  },
+  {
+   "what": "default-ON is forced by the acceptance probe",
+   "detail": "The acceptance runs plain `kuna decompile <bin> _main` with no --option, so a default-off option cannot close the need. Unlike the sibling loader-tier options, the parity corpora are NOT blind here: both are bytechunks whose callee bytes are in the chunk, the datatests caught the first design outright, and a two-pass AArch64 stage fixture pins both arms."
+  },
+  {
+   "what": "the ghidra-mode traffic pins move, and that is the honest cost",
+   "detail": "Every callee decode is a getPcode round trip to the host in ghidra mode, so ghidra_sim_e2e's whole-session pins go 1314 -> 1613 getPcode and 801 -> 1044 distinct decoded instructions. They are re-pinned with that reason in the comment. The walk is bounded (192 instructions, each path stopping at the callee's first call or return), cached per callee entry for the whole run, and skipped entirely for a function with fewer than two calls -- a leftover result needs an earlier call to have produced it."
+  },
+  {
+   "what": "verify_w10_proto_unlock fails in this environment for an unrelated reason",
+   "detail": "`w10_proto_unlock_const_return_collapses_no_tied_roundtrip` compares against a C++ oracle at KUNA_DECOMP_TEST, which the repipe worker environment sets to the worktree's OWN decomp_test_dbg -- so kuna is its own oracle and the `xunknown4 promote_compare(char *` pin cannot hold. Ablated: with `option calleedeadarg off` the same run emits the same `unsigned int promote_compare(char *a0)`, so this option is not involved. The suite is green with KUNA_DECOMP_TEST unset."
+  }
+ ],
+ "collateral_sweep": {
+  "method": "kuna decompile-all --json, `--option calleedeadarg off` vs `on`, over 61 binaries (decbench O0 + O2 ELF x86-64/ARM/Cortex-M/PE, plus 22 RE-dataset crackmes incl. Mach-O arm64 and PE). Every changed line of every changed function was read and checked against the callee's disassembly.",
+  "binaries": 61,
+  "functions": 24306,
+  "changed_functions": 5,
+  "changed_pct": 0.0206,
+  "statements_deleted": 0,
+  "arguments_lost_that_the_callee_reads": 0,
+  "classes": {
+   "genuine argument-list correction (verified against the callee body)": 3,
+   "variable renumbering only, semantics identical": 2
+  },
+  "genuine_fixes": [
+   "u-boot boot_ramdisk_high: `env_get(dat_60805f8c,(int4)(v6 >> 0x20))` -> `env_get(dat_60805f8c)`; u-boot's env_get(const char *) takes one argument and the second was the high half of a previous call's return",
+   "u-boot cli_readline_into_buffer: `while (!tstc(v4,v3))` -> `while (!tstc())`; u-boot's tstc(void)",
+   "howo-not-to-simple-keygen sub_405810: `sub_4108b0(\"cannot set %fs base address...\",v3,v5,0x405992)` -> `sub_4108b0(\"cannot set %fs base address...\")`; the callee is glibc's __libc_fatal shape (`lea rsi,[msg]; xor eax,eax; mov rdx,rdi; mov edi,1; call __libc_message`) which writes rsi and rdx before reading them and reads only rdi"
+  ],
+  "side_effects": "two calls whose result was discarded are now bound to a variable (`env_get_bootm_size();` -> `v3 = env_get_bootm_size();`, `get_tbclk();` -> `v5 = get_tbclk();`), because the register the veto freed is now available as the call's own output.",
+  "pre_narrowing_measurement": "before the leftover-call-result condition, the same u-boot run changed 34 functions and emptied 8 argument lists, incl. do_bootm and ubifs_scan_a_node. That measurement is what produced the second condition."
+ },
+ "cost": {
+  "method": "interleaved min-of-N, order flipped every pair, 3 warmup pairs; `kuna decompile <bin> _main --option calleedeadarg on|off` and `kuna decompile-all od --json --option calleedeadarg on|off`",
+  "witness_off_ms_min": 147.92,
+  "witness_on_ms_min": 148.57,
+  "witness_delta_pct_min": 0.44,
+  "decompile_all_off_ms_min": 2176.53,
+  "decompile_all_on_ms_min": 2193.49,
+  "decompile_all_delta_pct_min": 0.78,
+  "budget_pct": 5.0,
+  "within_budget": true,
+  "note": "one bounded decode per DISTINCT callee entry per run (cached on the Architecture), each path stopping at the callee's first call or return, and nothing at all for a function with fewer than two calls."
+ },
+ "gates": {
+  "make test": "PARITY OK 675/675",
+  "make test-stages": "PARITY OK 613/613 (610 + the 3 new calleedeadarg assertions)",
+  "make check-spec": "OK",
+  "kuna catalog --check": "catalog OK",
+  "acceptance": "PASS (scripts.repipe.verify --need void-callee-spurious-arg)"
+ },
+ "not_closed": [
+  "The acceptance probe is NOT promoted to tests/cli/. `verify --promote` refuses it because the target is `binary_source: dataset` and CI has no dataset, and no vendorable substitute was found: the shape needs a callee whose ABI return register IS its first argument register (AArch64/ARM) plus a PRODUCER call with a recovered return value, and this box has no AArch64 linker (only `clang -c`, whose .o leaves every call an unnamed relocation and every callee prototype unlocked). Sweeping all 132 in-repo fixture binaries under both arms found no existing witness either. The permanent regression pin is `tests/stages/kuna-calleedeadarg.xml` instead -- a two-pass hand-assembled AArch64 fixture that asserts BOTH arms and runs in `make test-stages`, a required CI gate.",
+  "A caller-PLACED argument at a callee that ignores it keeps today's rendering: `dm_init(0)`, `dbg_check_filesystem(c)` and `__efi_entry_check(device_node,display_only,allow_shortcuts)` on u-boot are all callees whose bodies provably never read the register, and all three keep their arguments because the caller put the value there on purpose. `__efi_entry_check(void)` is a real void callee, so that one is a miss; closing it needs a hole-free suffix rule over the whole register argument list rather than a per-trial veto.",
+  "A ram-space (global) trial is never answered: the walk does not model memory, so it cannot say whether the callee reads a global.",
+  "A callee decoded in the wrong instruction mode (an ARM/Thumb boundary) would be read as the wrong instructions. The walk uses the same context database as the main lifter and a wrong decode usually ends at an undecodable instruction (a cut that proves nothing), but this is the failure mode to flip the option off for."
+ ]
+}

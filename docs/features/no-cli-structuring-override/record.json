@@ -1,0 +1,71 @@
+{
+  "slug": "no-cli-structuring-override",
+  "need_id": "no-cli-structuring-override",
+  "track": "tooling",
+  "opportunity": "re-need:no-cli-structuring-override",
+  "probe_id": "p-a862d011f87f",
+  "acceptance_id": "a-158ef4220dee",
+  "instances": 1,
+  "scope": "small",
+  "proposal": false,
+  "covers_needs": [
+    "no-cli-structuring-override"
+  ],
+  "option": null,
+  "flag": null,
+  "element_id": null,
+  "phase": "P2",
+  "tier": "driver",
+  "change_kind": "capability-add",
+  "default_on": null,
+  "owning_file": "decompiler/crates/kuna-console/src/assertions.rs",
+  "spec_chapter": "docs/spec/00-overview.md",
+  "parity": "make test PARITY OK 675/675; make test-stages PARITY OK; make rust-test green; make check-spec OK; kuna catalog --check OK; make test-cli 25/25. phases.toml is byte-identical to origin/main (see the exposure decision). Structurally unaffected: both parity corpora are symbol-less bytechunks driven by XML with no CLI in the loop, and nothing here runs unless a --assert flow directive is passed -- FunctionSeed::flow_overrides is empty otherwise and the one unconditional line added to the decompile loop is a Vec::extend over that empty vec.",
+  "root_cause_class": "absent-capability",
+  "hypothesis_status": "UPHELD",
+  "filed_hypothesis": "ADVISORY. Exposure, not implementation: the engine path exists (IfcFlowOverride) and the CLI plane exists (--assert). What is missing is the arm in assertdecl.rs that spells `flow` and routes it.",
+  "decisions": [
+    "HYPOTHESIS UPHELD IN BOTH HALVES, confirmed by measurement before any code was written. Half one: `override flow 0x1405 return` in decomp_dbg on the fixture collapses sub_13c9 to `return dat_4014;` (55 emitted lines -> 4). Half two: `kuna decompile ... --assert 'flow 0x1405 return'` exits 2 with `unknown directive \"flow\"`, the parser rejecting it before the engine is reached. No engine work was needed and none was done -- kuna-decomp is untouched by this PR.",
+    "THE ROUTE THE HYPOTHESIS ASKED ABOUT IS NOT THE CONSOLE'S. It asked a builder to confirm the CLI's one-shot decompile re-seeds the override the way the console's `load function` -> `override flow` -> `decompile` sequence does. It does, but by a different path, and getting this wrong would have shipped a directive that works on one surface and is inert on the other -- which is the surface the acceptance probe uses. `kuna decompile --json` does NOT fork decomp_dbg; it is the IN-PROCESS load (decompile.rs::decompile_json -> decompile_all::load_program -> project::decompile_targets), so the console's `pending_flow_overrides` stash is never consulted there. The directive is therefore seeded twice over: as a Slot::Function console line (`override flow <addr> <kind>`) for the forked-script text surface, and into FunctionSeed::flow_overrides -> DecompileSeed::flow_overrides for the in-process one. Both surfaces measured emitting byte-identical C for all four spellings.",
+    "A CALLER-STATED FLOW FACT IS APPENDED AFTER THE DERIVED ONES, DELIBERATELY. project::decompile_targets already carries a flow_overrides vector: the analysis's `call error(nonzero,...)` no-return prunes. Override::insertFlowOverride is a map store, so at an address both name the LAST writer wins; the seeded directives are extended onto the end so what the caller declared outranks what analysis inferred. Same precedence rule the rest of the plane runs on (a declared prototype outranks discovery).",
+    "THE SUBPHASE `exposure` FIELD DOES NEED TO CHANGE -- AND IS NOT CHANGED HERE, which is the one part of the need's brief this PR does not deliver. The hypothesis left the call to the builder; the call is that P2 flow-classification's `command override flow; option noreturn` is now untrue (console-only) and should read `command override flow; kuna --assert 'flow <addr> branch|call|callreturn|return'; option noreturn`. The edit was made and measured: it regenerates cleanly through build.rs, `kuna catalog --check` stays green, and no count moves (it is an `exposure` string, not a [[surface]] or [[settable]] row). It was then REVERTED, because `scripts.repipe.mergecheck` shape-C treats phases.toml as a keep-both-guarded table and rejects any line present on origin/main that is gone -- it cannot tell an edited row from a sibling's row eaten by a merge, and that is the right default for a file whose duplicated [[settable]] row would survive every gate in the repo. Defeating a merge guard (or `--path`-excluding the file) for a prose line is not a trade worth making, and TOML has no way to modify the value while leaving the physical line. Left as residue with the exact replacement text. The alternative route, for whoever takes it, is a NEW [[surface]] row -- an addition, which shape-C permits -- at the cost of renaming the hard-coded `surface_count_is_107` test.",
+    "`call` IS THE ONE WORD OF THE FOUR THE ENGINE CAN REFUSE, and the record did not anticipate it. Forcing the indirect `call *%rdx` at 0x1405 to a direct `call` has no destination to make direct, so Funcdata::overrideFlow raises `Could not apply flowoverride`. That is NOT swallowed: the directive still reports `applied` (it did reach the engine), and the run reports the engine's own refusal as the function's error and exits non-zero. The refusal is itself the proof the type is carried through rather than defaulted -- a directive that reached nothing would have decompiled the baseline and said nothing.",
+    "THE FLOW WORD IS VALIDATED AT --assert PARSE TIME, unlike every type-bearing directive on the plane. The vocabulary is closed and four words wide, so `flow 0x1405 goto` is a usage error (exit 2, naming the four) rather than a rejected outcome three phases later. The engine-side guard is kept too -- assertions::seed_one re-checks through Override::string_to_type and rejects with a reason -- because kuna-console's assertions API has callers other than the CLI parser.",
+    "NO OPTION, NO STAGES TESTCASE, NO CATALOG COUNTERS, NO DIV ROW. The tooling track's rule: a CLI surface cannot change emitted C on its own, and this one changes it only when a caller states a fact. Same shape #389 and #391 shipped the other eleven directives under.",
+    "SHIPPED AS A DIRECTIVE, NOT A FLAG, so it is durable: `--assert @overrides.kuna` carries a flow fact across invocations exactly as it carries a rename, and the file is the artifact. An interface that survives only inside one process is barely an interface."
+  ],
+  "mechanism": "A twelfth directive on the `--assert` plane: `flow [<func>::]<addr> branch|call|callreturn|return`, at P2 flow-classification. kuna-console/src/assertions.rs gains Body::Flow, function-scoped (consumed at flow time, so it must be a decompile SEED rather than a post-hoc edit), and a FunctionSeed::flow_overrides vector that assertions::seed_one fills by resolving the address in the default code space and mapping the caller's word through Override::string_to_type. kuna-console/src/project.rs appends that vector to the derived flow overrides the decompile loop already passes to DecompileSeed, so the in-process surfaces (kuna decompile --json, decompile-all, decompile-project) reach FlowInfo::process's override consult. kuna-cli/src/assertdecl.rs parses the directive (bare or 0x hex address, optional <func>:: qualifier, the four-word vocabulary validated here) and lowers it to the Slot::Function console line `override flow <addr> <kind>` for the forked-script surface, which lands on the already-ported IfcFlowOverride. No engine change: kuna-decomp is untouched.",
+  "measurements": {
+    "method": "drove the built `kuna` binary and decompiler/target/release/decomp_dbg directly on the need's own in-repo fixture; every verdict is a diff of the printed C, never a return code. Both CLI surfaces measured separately: `kuna decompile` forks decomp_dbg through the generated script, `kuna decompile --json` loads in-process.",
+    "fixture": "decompiler/crates/kuna-analysis/tests/fixtures/aif_gap_x86_64 (14408 bytes, in-repo): sub_13c9 reaches an indirect `call *%rdx` at 0x1405 and then twenty-four more calls",
+    "baseline": "55 emitted lines: 25 `// eax` temporaries v1..v25 and a twenty-five-term sum",
+    "flow_return": "4 lines -- `unsigned int sub_13c9(void) { return dat_4014; }` (identical on both surfaces)",
+    "flow_branch": "the indirect call is re-read as a computed jump and its two-case table recovered: `switch(dat_4014 & 1) { case 0: return (dat_4014 + 10) * 2; case 1: return (dat_4014 + 0x40) * 2 + 9; }`",
+    "flow_callreturn": "the fall-through is pruned: the indirect call alone, nothing after it",
+    "flow_call": "the engine refuses -- `Could not apply flowoverride` -- reported as the function's error, exit 1",
+    "control_no_directive": "byte-identical to the pre-change binary: FunctionSeed::flow_overrides is empty and the assertions[] array is empty",
+    "control_bad_word": "`--assert 'flow 0x1405 goto'` exits 2 at parse time naming the four spellings; `--assert 'flow zzz return'` exits 2 naming the hex requirement",
+    "control_multi_target": "unqualified on `decompile-all` is REJECTED with `name it as <func>::<operand>`; `flow sub_13c9::0x1405 return` binds and moves the C"
+  },
+  "stage": "shipped",
+  "speed": "zero on every existing invocation: no directive means no extra console line, no extra seed and an empty assertions[]. A flow directive adds one map insert per address before flow follows -- no pipeline pass, no extra decompile (it is function-scoped, so unlike the symbol-scoped `name`/`type` it never forces the second pass).",
+  "risks": [
+    "the flow type is a caller ASSERTION and kuna cannot check it: declaring a live call a `return` deletes real code from the emitted C. That is the point of the lever, and it is only reached by stating it; the run reports the directive in assertions[] so the fact is never invisible.",
+    "`call` at an instruction with no resolvable destination aborts the function's pipeline rather than degrading. Pre-existing engine behaviour (the console does the same), surfaced honestly as the function's error rather than hidden.",
+    "blast radius is nil: nothing runs unless a `flow` directive is passed, and the parity corpora are symbol-less bytechunks driven by XML with no CLI in the loop."
+  ],
+  "gates": {
+    "make test": "PARITY OK 675/675",
+    "make test-stages": "PARITY OK",
+    "make rust-test": "green",
+    "make check-spec": "OK",
+    "make test-cli": "25/25",
+    "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
+    "acceptance": "a-158ef4220dee PASS (verify --need no-cli-structuring-override: pass 1, transition closed); promoted verbatim to tests/cli/no-cli-structuring-override.json"
+  },
+  "residue": [
+    "phases.toml P2 flow-classification `exposure` still reads `command override flow; option noreturn`, which is now untrue: the directive shipped here is a second exposure. The replacement text, verified to regenerate and to move no count, is `command override flow; kuna --assert 'flow <addr> branch|call|callreturn|return'; option noreturn`. Blocked here only by mergecheck shape-C, which rejects the disappearance of any phases.toml line; it belongs in a captain-side commit or a [[surface]] row.",
+    "the three structuring overrides this need was NARROWED away from are still engine_unavailable stubs and are NOT closed here: Dispatch::ForceGoto and `force goto` (P8), Dispatch::MultistageJump and `override jumptable` (P2 switch-model), and `structure blocks`. Each needs real engine work, and the need's own decision log says to re-file them with a witnessed instance rather than carry them as unprovable clauses.",
+    "`flow` binds by function name, so on a run that decompiles many functions the address must be qualified `<func>::<addr>`. An address-only binding (`whichever function's flow visits this instruction`) would be the more natural spelling for an agent that does not yet know the function name, but it is ambiguous by construction on overlapping/merged flows and no measured case needed it."
+  ]
+}

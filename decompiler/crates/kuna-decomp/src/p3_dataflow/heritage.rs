@@ -144,49 +144,49 @@ impl LocationMap {
     ///   - 1 if there is a partial intersection with something old
     ///   - 2 if the range is contained in an old range
     ///
-    /// The returned `Address` is the *key* of the containing element; the
-    /// C++ returns an iterator, but every caller only reads `(*iter).first`
-    /// (the key) and `(*iter).second.size` (the size), so we return the key
-    /// and the caller re-looks the size via [`get`](LocationMap::get).
-    pub fn add(&mut self, mut addr: Address, mut size: int4, mut pass: int4) -> (Address, int4) {
+    /// The returned tuple is the *key* of the containing element, the
+    /// `intersect` code and the element's size; the C++ returns an iterator,
+    /// but every caller only reads `(*iter).first` and `(*iter).second.size`,
+    /// both of which are already in hand here.  (The size used to be re-looked
+    /// through [`get`](LocationMap::get), a second descent per call — this map
+    /// takes over a million `add`s on a large function.)
+    pub fn add(&mut self, mut addr: Address, mut size: int4, mut pass: int4) -> (Address, int4, int4) {
         // We replicate the C++ map-iterator walk against the ordered keys.
         let mut intersect = 0;
 
-        // Find the candidate element: the last key <= addr's neighborhood.
-        // lower_bound(addr) then step back one, mirroring the C++.
-        let lower: Option<Address> =
-            self.themap.range(addr.clone()..).next().map(|(k, _)| k.clone());
-        // start from lower_bound; if not begin, step one back
-        let mut cur: Option<Address> = match &lower {
-            // lower_bound == begin: cannot step back, keep begin
-            Some(lb) if self.themap.keys().next() == Some(lb) => Some(lb.clone()),
-            // lower_bound is some interior/end: step back one
-            _ => self.themap.range(..addr.clone()).next_back().map(|(k, _)| k.clone()),
-        };
+        // Find the candidate element: `lower_bound(addr)` stepped back one
+        // when it is not `begin()`, which is the last key strictly less than
+        // `addr` whenever one exists and `begin()` otherwise.  Asking for the
+        // predecessor first answers both cases in a single descent (the
+        // predecessor exists on essentially every call once the map is warm),
+        // where probing `lower_bound` and then `begin()` cost three.
+        let mut cur: Option<(Address, SizePass)> =
+            match self.themap.range(..addr.clone()).next_back() {
+                Some((k, v)) => Some((k.clone(), *v)),
+                None => self.themap.range(addr.clone()..).next().map(|(k, v)| (k.clone(), *v)),
+            };
 
         // C++: advance past the stepped-back element when it does not overlap addr.
-        if let Some(ck) = &cur {
-            let sz = self.themap[ck].size;
-            if addr.overlap(0, ck, sz) == -1 {
+        if let Some((ck, cv)) = &cur {
+            if addr.overlap(0, ck, cv.size) == -1 {
                 // ++iter : advance to the first key strictly greater than ck
                 cur = self.themap.range((
                     std::ops::Bound::Excluded(ck.clone()),
                     std::ops::Bound::Unbounded,
                 ))
                 .next()
-                .map(|(k, _)| k.clone());
+                .map(|(k, v)| (k.clone(), *v));
             }
         }
 
         // First (possibly partial) overlap with the leading element.
-        if let Some(ck) = cur.clone() {
-            let entry = self.themap[&ck];
+        if let Some((ck, entry)) = cur.clone() {
             let where_ = addr.overlap(0, &ck, entry.size);
             if where_ != -1 {
                 if where_ + size <= entry.size {
                     // Completely contained in previous element.
                     intersect = if entry.pass < pass { 2 } else { 0 };
-                    return (ck, intersect);
+                    return (ck, intersect, entry.size);
                 }
                 addr = ck.clone();
                 size += where_; // C++: size = where + size;
@@ -207,9 +207,8 @@ impl LocationMap {
                 .themap
                 .range(addr.clone()..)
                 .next()
-                .map(|(k, _)| k.clone());
-            let Some(nk) = next_key else { break };
-            let nentry = self.themap[&nk];
+                .map(|(k, v)| (k.clone(), *v));
+            let Some((nk, nentry)) = next_key else { break };
             let where_ = nk.overlap(0, &addr, size);
             if where_ == -1 {
                 break;
@@ -225,7 +224,7 @@ impl LocationMap {
         }
 
         self.themap.insert(addr.clone(), SizePass { size, pass });
-        (addr, intersect)
+        (addr, intersect, size)
     }
 
     /// Look up the [`SizePass`] of a heritaged address (C++ `LocationMap::find`,
@@ -3109,13 +3108,28 @@ impl Heritage {
         for i in 0..size_out {
             let subbl = fd.bblocks_ref().block(bl).get_out(i);
             let slot = fd.bblocks_ref().block(bl).get_out_rev_index(i);
-            let subops: Vec<crate::context::OpId> = self.block_ops(fd, subbl);
-            for multiop in subops {
-                if fd.obank().get(multiop).expect("rename_recurse: stale multiop").code()
-                    != OpCode::CPUI_MULTIEQUAL
-                {
-                    break; // For each leading MULTIEQUAL
+            // Only the block's *leading* MULTIEQUALs are visited (the C++ walk
+            // breaks at the first op that is not one), so collect that prefix
+            // instead of materializing every op of the successor: this runs
+            // once per CFG edge per heritage pass and the successors of a large
+            // function's blocks are mostly ordinary code.  Nothing in the body
+            // can change an op's opcode or its position in the block, so the
+            // prefix taken here is the prefix the live walk would see.
+            let subops: Vec<crate::context::OpId> = {
+                let mut leading = Vec::new();
+                let mut cur = fd.bb_op_head(subbl);
+                while let Some(o) = cur {
+                    if fd.obank().get(o).expect("rename_recurse: stale multiop").code()
+                        != OpCode::CPUI_MULTIEQUAL
+                    {
+                        break;
+                    }
+                    leading.push(o);
+                    cur = fd.bb_op_next(o);
                 }
+                leading
+            };
+            for multiop in subops {
                 let vnin = match fd.obank().get(multiop).expect("rename_recurse: multiop").get_in(slot) {
                     Some(v) => v,
                     None => continue,
@@ -4464,9 +4478,7 @@ impl Heritage {
                 }
                 let vaddr = v.get_addr().clone();
                 let vsize = v.get_size();
-                let (key, prev) = self.globaldisjoint.add(vaddr, vsize, self.pass);
-                let resolved_size =
-                    self.globaldisjoint.get(&key).expect("heritage: disjoint key").size;
+                let (key, prev, resolved_size) = self.globaldisjoint.add(vaddr, vsize, self.pass);
                 if prev == 0 {
                     // All new location being heritaged.
                     self.disjoint.add(key, resolved_size, memrange_flags::new_addresses);
@@ -4710,7 +4722,7 @@ mod tests {
     fn location_map_add_new_range_pass0() {
         let fd = build_fd();
         let mut lm = LocationMap::new();
-        let (key, intersect) = lm.add(raddr(&fd, 0x100), 4, 0);
+        let (key, intersect, _sz) = lm.add(raddr(&fd, 0x100), 4, 0);
         assert_eq!(key, raddr(&fd, 0x100));
         assert_eq!(intersect, 0);
         assert_eq!(lm.get(&key).unwrap().size, 4);
@@ -4725,7 +4737,7 @@ mod tests {
         lm.add(raddr(&fd, 0x100), 8, 0);
         // pass 1: a sub-range [0x102,0x106) is completely contained in the
         // old pass-0 element -> intersect == 2.
-        let (key, intersect) = lm.add(raddr(&fd, 0x102), 4, 1);
+        let (key, intersect, _sz) = lm.add(raddr(&fd, 0x102), 4, 1);
         assert_eq!(intersect, 2);
         // The returned element is the containing pass-0 element.
         assert_eq!(key, raddr(&fd, 0x100));
@@ -4738,7 +4750,7 @@ mod tests {
         let mut lm = LocationMap::new();
         lm.add(raddr(&fd, 0x100), 4, 0); // pass 0: [0x100,0x104)
                                          // pass 2: [0x102,0x10a) partially overlaps the old element.
-        let (key, intersect) = lm.add(raddr(&fd, 0x102), 8, 2);
+        let (key, intersect, _sz) = lm.add(raddr(&fd, 0x102), 8, 2);
         assert_eq!(intersect, 1);
         // The unified element starts at the old start 0x100 and carries the
         // smaller (old) pass number 0.
@@ -4754,7 +4766,7 @@ mod tests {
         let mut lm = LocationMap::new();
         lm.add(raddr(&fd, 0x100), 4, 0);
         // same pass, contained -> intersect 0 (not 2, since old.pass == pass)
-        let (_key, intersect) = lm.add(raddr(&fd, 0x101), 2, 0);
+        let (_key, intersect, _sz) = lm.add(raddr(&fd, 0x101), 2, 0);
         assert_eq!(intersect, 0);
     }
 
@@ -4780,7 +4792,7 @@ mod tests {
         lm.add(raddr(&fd, 0x100), 4, 0); // [0x100,0x104)
         lm.add(raddr(&fd, 0x108), 4, 0); // [0x108,0x10c)
                                          // A big new range spanning both gets unified into one element.
-        let (key, _i) = lm.add(raddr(&fd, 0x100), 0x10, 1);
+        let (key, _i, _sz) = lm.add(raddr(&fd, 0x100), 0x10, 1);
         assert_eq!(key, raddr(&fd, 0x100));
         // Only one element remains.
         assert_eq!(lm.iter().count(), 1);

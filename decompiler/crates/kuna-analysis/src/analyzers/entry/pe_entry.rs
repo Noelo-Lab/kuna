@@ -16,11 +16,21 @@
 //!    rebases, unlike Mach-O `LC_MAIN`). The `_start`/`mainCRTStartup`.
 //! 2. **`.pdata` exception handlers** — the x64 SEH analog of ELF `.eh_frame`
 //!    FDEs. Each `RUNTIME_FUNCTION` record (`{BeginAddress, EndAddress,
-//!    UnwindData}`, 12 bytes, all RVAs) marks a function: `BeginAddress` is a
-//!    function start. On x64 the compiler emits one per non-leaf function, so
-//!    `.pdata` recovers nearly every function in a stripped binary — the richest
-//!    PE source (97 records in the vendored `pe_imports_stripped.exe`). Ghidra's
-//!    `PdataDirectory` / `RuntimeFunction.createFunctions`.
+//!    UnwindInfoAddress}`, 12 bytes, all RVAs) marks a function: `BeginAddress`
+//!    is a function start. On x64 the compiler emits one per non-leaf function,
+//!    so `.pdata` recovers nearly every function in a stripped binary — the
+//!    richest PE source (97 records in the vendored `pe_imports_stripped.exe`).
+//!    Ghidra's `PdataDirectory` / `RuntimeFunction.createFunctions`.
+//!
+//!    Two things make a record something other than a function start. A record
+//!    whose `UNWIND_INFO` sets `UNW_FLAG_CHAININFO` describes a separated code
+//!    chunk of another function — MSVC emits one per shrink-wrapped prologue or
+//!    out-of-line cold block — and its `BeginAddress` is a point *inside* the
+//!    primary, so `pdatachained` (default-on) skips it. And ARM, ARM64, ARM64EC
+//!    and ARM64X images use an 8-byte `{BeginAddress, UnwindData}` record whose
+//!    `BeginAddress` carries the Thumb bit, so the table is walked at the stride
+//!    the machine dictates rather than at a fixed 12, and a machine with neither
+//!    shape is not walked at all (`PdataForm`).
 //! 3. **TLS callbacks** — the TLS directory's `AddressOfCallBacks` array is a
 //!    NULL-terminated list of `PIMAGE_TLS_CALLBACK` function pointers (absolute
 //!    VAs, not RVAs) the loader runs before the entry point. Ghidra's
@@ -42,7 +52,11 @@
 //! duplicate an existing funcsym by `super::collect_entries` — this module only
 //! produces the raw candidate VMAs.
 
-use object::pe::{ImageNtHeaders32, ImageNtHeaders64};
+use object::pe::{
+    ImageNtHeaders32, ImageNtHeaders64, IMAGE_FILE_MACHINE_AMD64, IMAGE_FILE_MACHINE_ARM,
+    IMAGE_FILE_MACHINE_ARM64, IMAGE_FILE_MACHINE_ARM64EC, IMAGE_FILE_MACHINE_ARM64X,
+    IMAGE_FILE_MACHINE_ARMNT, IMAGE_FILE_MACHINE_I386,
+};
 use object::read::pe::{ImageNtHeaders, PeFile, PeFile32, PeFile64};
 use object::read::Object;
 use object::{FileKind, LittleEndian as LE};
@@ -106,19 +120,24 @@ fn collect_typed<Pe: ImageNtHeaders>(
 }
 
 /// Walk the exception directory (`.pdata`) as an array of `RUNTIME_FUNCTION`
-/// records and push each `BeginAddress` (converted RVA → VMA).
+/// records and push each `BeginAddress` (converted RVA → VMA), minus the records
+/// the image itself declares to be interior chunks.
 ///
-/// `RUNTIME_FUNCTION` (x64/ARM64) = `{ u32 BeginAddress; u32 EndAddress; u32
-/// UnwindInfoAddress }` — 12 bytes, all RVAs. (32-bit x86 has no `.pdata`, so
-/// this is naturally a no-op there.) Faithful to Ghidra's `PdataDirectory` /
-/// `RuntimeFunction`.
+/// The record shape is machine-dependent ([`PdataForm`]). On the x64 form a
+/// record whose `UNWIND_INFO` carries `UNW_FLAG_CHAININFO` describes a separated
+/// code chunk of another function rather than a function of its own, so its
+/// `BeginAddress` is skipped (`pdatachained`, default-on) exactly as Ghidra's
+/// `ImageRuntimeFunctionEntries_X86.markup` skips it.
 fn pdata_begins<Pe: ImageNtHeaders>(
     pe: &PeFile<Pe>,
     bytes: &[u8],
     image_base: u64,
     out: &mut Vec<u64>,
 ) {
-    const RUNTIME_FUNCTION_SIZE: usize = 12;
+    let form = match PdataForm::for_machine(pe.nt_headers().file_header().machine.get(LE)) {
+        Some(f) => f,
+        None => return,
+    };
     let dir = match pe.data_directories().get(object::pe::IMAGE_DIRECTORY_ENTRY_EXCEPTION) {
         Some(d) => d,
         None => return,
@@ -132,13 +151,98 @@ fn pdata_begins<Pe: ImageNtHeaders>(
         Ok(d) => d,
         Err(_) => return,
     };
-    let n = data.len() / RUNTIME_FUNCTION_SIZE;
+    let stride = form.record_size();
+    let skip_chained = matches!(form, PdataForm::X86)
+        && kuna_decomp::kuna_pdatachained::pdatachained_enabled();
+    let n = data.len() / stride;
     for i in 0..n {
-        let o = i * RUNTIME_FUNCTION_SIZE;
-        let begin_rva = u32::from_le_bytes([data[o], data[o + 1], data[o + 2], data[o + 3]]);
-        if begin_rva != 0 {
-            out.push(image_base.wrapping_add(begin_rva as u64));
+        let o = i * stride;
+        let begin_rva = read_u32(data, o);
+        if begin_rva == 0 {
+            continue;
         }
+        match form {
+            PdataForm::X86 => {
+                if skip_chained && unwind_is_chained(pe, bytes, read_u32(data, o + 8)) {
+                    continue;
+                }
+                out.push(image_base.wrapping_add(begin_rva as u64));
+            }
+            // The ARM form's low bit is a Thumb marker, not part of the address
+            // (`ImageRuntimeFunctionEntries_ARM.java:70`). The second dword is an
+            // `.xdata` RVA only when its low two bits are clear and packed unwind
+            // data otherwise, so it is never dereferenced here — Ghidra does not
+            // decode ARM chained fragments either.
+            PdataForm::Arm => {
+                out.push(image_base.wrapping_add((begin_rva & !1) as u64));
+            }
+        }
+    }
+}
+
+/// The `.pdata` record shape a PE `FileHeader.Machine` selects. x86/x64 images
+/// use the 12-byte `{BeginAddress, EndAddress, UnwindInfoAddress}` record; ARM,
+/// ARM64, ARM64EC and ARM64X use the 8-byte `{BeginAddress, UnwindData}` record.
+/// Every other machine — IA64, MIPS, SH, PowerPC — has its own layout (a MIPS
+/// record is 20 bytes), so `None` says the table cannot be read at all and the
+/// directory is left alone rather than misparsed. Ghidra dispatches the same
+/// three ways, logging "Exception Data unsupported architecture" and leaving
+/// `functionEntries` null (`ExceptionDataDirectory.java:59-68`).
+#[derive(Clone, Copy)]
+enum PdataForm {
+    X86,
+    Arm,
+}
+
+impl PdataForm {
+    fn for_machine(machine: u16) -> Option<Self> {
+        match machine {
+            IMAGE_FILE_MACHINE_I386 | IMAGE_FILE_MACHINE_AMD64 => Some(PdataForm::X86),
+            IMAGE_FILE_MACHINE_ARM
+            | IMAGE_FILE_MACHINE_ARMNT
+            | IMAGE_FILE_MACHINE_ARM64
+            | IMAGE_FILE_MACHINE_ARM64EC
+            | IMAGE_FILE_MACHINE_ARM64X => Some(PdataForm::Arm),
+            _ => None,
+        }
+    }
+
+    fn record_size(self) -> usize {
+        match self {
+            PdataForm::X86 => 12,
+            PdataForm::Arm => 8,
+        }
+    }
+}
+
+/// Whether the `UNWIND_INFO` at `unwind_rva` carries `UNW_FLAG_CHAININFO`, i.e.
+/// the record pointing at it is a separated chunk of another function rather
+/// than a function start. The flags are the high five bits of the first byte
+/// (`PEx64UnwindInfo.java:173`).
+///
+/// Total, like the rest of the module: a null RVA, an RVA no section covers, or
+/// an empty slice reads as "not chained", so the filter can only ever subtract a
+/// record it has positively identified.
+fn unwind_is_chained<Pe: ImageNtHeaders>(
+    pe: &PeFile<Pe>,
+    bytes: &[u8],
+    unwind_rva: u32,
+) -> bool {
+    const UNW_FLAG_CHAININFO: u8 = 0x4;
+    if unwind_rva == 0 {
+        return false;
+    }
+    match pe.section_table().pe_data_at(bytes, unwind_rva) {
+        Some(d) if !d.is_empty() => (d[0] >> 3) & UNW_FLAG_CHAININFO != 0,
+        _ => false,
+    }
+}
+
+/// Read the little-endian `u32` at `data[off..off + 4]`, or 0 if short.
+fn read_u32(data: &[u8], off: usize) -> u32 {
+    match data.get(off..off + 4) {
+        Some(b) => u32::from_le_bytes([b[0], b[1], b[2], b[3]]),
+        None => 0,
     }
 }
 
@@ -241,5 +345,91 @@ mod tests {
         );
         // No spurious 0.
         assert!(!cands.contains(&0), "no zero candidate");
+    }
+
+    /// A chained (`UNW_FLAG_CHAININFO`) `RUNTIME_FUNCTION` names a separated
+    /// chunk of the record before it, so its `BeginAddress` is not a function
+    /// start (GH-403). The two ordinary records still are.
+    #[test]
+    fn pdata_chained_record_is_not_a_function_start() {
+        std::env::remove_var(kuna_decomp::kuna_pdatachained::PDATACHAINED_ENV);
+        let bytes = fixture("pe_chainedunwind_x86_64.exe");
+        let file = object::File::parse(bytes.as_slice()).expect("parse chained-unwind PE");
+        let cands = pe_entry_candidates(&file, bytes.as_slice());
+        assert!(cands.contains(&0x140001000), "primary missing from {cands:#x?}");
+        assert!(cands.contains(&0x140001040), "entry point missing from {cands:#x?}");
+        assert!(
+            !cands.contains(&0x140001020),
+            "chained chunk 0x140001020 claimed as a function in {cands:#x?}"
+        );
+    }
+
+    /// ARM64 `.pdata` holds 8-byte `{BeginAddress, UnwindData}` records. Read at
+    /// the x64 stride of 12 the probe's 32-byte directory yields two reads, one
+    /// of them landing on `record[1].UnwindData`; at the right stride all four
+    /// function starts come back.
+    #[test]
+    fn pdata_arm64_uses_the_eight_byte_record() {
+        let bytes = fixture("pe_pdata_arm64.exe");
+        let file = object::File::parse(bytes.as_slice()).expect("parse arm64 PE");
+        let cands = pe_entry_candidates(&file, bytes.as_slice());
+        for vma in [0x140001000u64, 0x140001010, 0x140001020, 0x140001030] {
+            assert!(cands.contains(&vma), "{vma:#x} missing from {cands:#x?}");
+        }
+    }
+
+    /// The record shape follows `FileHeader.Machine`, as Ghidra's
+    /// `ExceptionDataDirectory` does, and a machine that is neither an x86 nor
+    /// an ARM variant has no readable shape at all.
+    #[test]
+    fn pdata_form_dispatches_on_machine() {
+        assert_eq!(
+            PdataForm::for_machine(IMAGE_FILE_MACHINE_AMD64).map(PdataForm::record_size),
+            Some(12)
+        );
+        assert_eq!(
+            PdataForm::for_machine(IMAGE_FILE_MACHINE_I386).map(PdataForm::record_size),
+            Some(12)
+        );
+        for arm in [
+            IMAGE_FILE_MACHINE_ARM,
+            IMAGE_FILE_MACHINE_ARMNT,
+            IMAGE_FILE_MACHINE_ARM64,
+            IMAGE_FILE_MACHINE_ARM64EC,
+            IMAGE_FILE_MACHINE_ARM64X,
+        ] {
+            assert_eq!(
+                PdataForm::for_machine(arm).map(PdataForm::record_size),
+                Some(8),
+                "machine {arm:#x}"
+            );
+        }
+        // IA64, MIPS R4000, SH-4, PowerPC: each has its own record layout (a
+        // MIPS one is 20 bytes), so none of them is read.
+        for other in [0x0200u16, 0x0166, 0x01a6, 0x01f0, 0] {
+            assert!(PdataForm::for_machine(other).is_none(), "machine {other:#x}");
+        }
+    }
+
+    /// An unsupported machine parses no exception directory at all rather than
+    /// reading it at the x64 stride and dereferencing dword[2] as an
+    /// `UNWIND_INFO` RVA. Same image, same `.pdata`, machine word retyped to
+    /// MIPS R4000: only the entry point (a different oracle) survives.
+    #[test]
+    fn pdata_unsupported_machine_is_not_parsed() {
+        let mut bytes = fixture("pe_pdata_arm64.exe");
+        let file = object::File::parse(bytes.as_slice()).expect("parse arm64 PE");
+        let before = pe_entry_candidates(&file, bytes.as_slice());
+        assert!(before.contains(&0x140001000), "fixture lost its .pdata: {before:#x?}");
+
+        let nt = u32::from_le_bytes([bytes[0x3c], bytes[0x3d], bytes[0x3e], bytes[0x3f]]) as usize;
+        bytes[nt + 4..nt + 6].copy_from_slice(&0x0166u16.to_le_bytes());
+        let file = object::File::parse(bytes.as_slice()).expect("parse retyped PE");
+        let after = pe_entry_candidates(&file, bytes.as_slice());
+        for vma in [0x140001000u64, 0x140001010, 0x140001020] {
+            assert!(!after.contains(&vma), "{vma:#x} still parsed in {after:#x?}");
+        }
+        // 0x140001030 is `AddressOfEntryPoint`, which oracle 1 still supplies.
+        assert_eq!(after, vec![0x140001030], "only the entry point survives: {after:#x?}");
     }
 }

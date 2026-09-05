@@ -4,6 +4,7 @@
 //!
 //! ```text
 //!   kuna decompile <binary> <func> [--addr] [--option NAME VALUE]... [--kassert ARGS]...
+//!                                 [--define-function <start[-end][=name] | @file>]...
 //!   kuna test [--all|--unittests|--datatests] [--name N]... [--baseline F]
 //!             [--save-baseline F] [--json] [--binary P] [--sleighpath D]
 //!   kuna catalog [--json|--markdown|--check] [--option NAME] [--tier T]
@@ -21,11 +22,15 @@ mod decompile;
 mod docs;
 mod decompile_all;
 mod decompile_project;
+mod disassemble;
 mod fid;
+mod assertdecl;
+mod funcdecl;
 mod jsonfmt;
 mod output;
 mod paths;
 mod specs;
+mod strings;
 mod test;
 mod unpack;
 mod xrefs;
@@ -54,6 +59,9 @@ fn main() -> ExitCode {
         "specs" => specs::run(rest),
         "fid" => fid::run(rest),
         "unpack" => unpack::run(rest),
+        "strings" => strings::run(rest),
+        "disassemble" => disassemble::run(rest),
+        "read" => disassemble::run_read(rest),
         "xrefs" => xrefs::run(rest),
         "-V" | "--version" | "version" => {
             // Release CI bakes the repo-derived MAJOR.MINOR (docs/release.md)
@@ -81,14 +89,17 @@ fn main() -> ExitCode {
 
 fn usage() {
     eprintln!(
-        "usage: kuna <decompile|decompile-all|decompile-project|functions|xrefs|unpack|docs|test|catalog|modes|specs|fid> ...\n\
+        "usage: kuna <decompile|decompile-all|decompile-project|functions|disassemble|read|xrefs|strings|unpack|docs|test|catalog|modes|specs|fid> ...\n\
          \n\
-         kuna decompile <binary> <func> [--addr] [--json] [--slice ARCH] [--language auto|c|rust] [--mode auto|reliable|aggressive|fast] [--option NAME VALUE]... [--kassert ARGS]...\n\
-         kuna decompile-all <binary> [--json] [--functions a,b,..] [--addr 0xVMA]... [--no-vars] [--language auto|c|rust] [--max-fn-seconds N] [--mode auto|reliable|aggressive|fast] [--option N V]...\n\
-         kuna decompile-project <binary> [-o DIR] [--functions a,b,..] [--addr 0xVMA]... [--max-fn-seconds N] [--mode auto|reliable|aggressive|fast] [--option N V]...\n\
-         kuna functions <binary> [--json] [--mode auto|reliable|aggressive|fast]\n\
+         kuna decompile <binary> <func> [--addr] [--json] [--slice ARCH] [--language auto|c|rust] [--mode auto|reliable|aggressive|fast] [--option NAME VALUE]... [--kassert ARGS]... [--define-function S[-E][=N]|@FILE]... [--assert DIRECTIVE|@FILE]...\n\
+         kuna decompile-all <binary> [--json] [--functions a,b,..] [--addr 0xVMA]... [--no-vars] [--language auto|c|rust] [--max-fn-seconds N] [--mode auto|reliable|aggressive|fast] [--option N V]... [--define-function S[-E][=N]|@FILE]... [--assert DIRECTIVE|@FILE]...\n\
+         kuna decompile-project <binary> [-o DIR] [--functions a,b,..] [--addr 0xVMA]... [--max-fn-seconds N] [--mode auto|reliable|aggressive|fast] [--option N V]... [--define-function S[-E][=N]|@FILE]... [--assert DIRECTIVE|@FILE]...\n\
+         kuna functions <binary> [--json] [--mode auto|reliable|aggressive|fast] [--define-function S[-E][=N]|@FILE]...\n\
          kuna xrefs <binary> (--to <name|0xaddr> | --from <name|0xaddr>) [--json] [--kind call,jump,data,read,write] [--mode auto|reliable|aggressive|fast]\n\
          kuna unpack <binary> [-o OUT] [--json]\n\
+         kuna strings <binary> [--json] [--min-length N] [--filter REGEX] [--encoding ascii|utf16|all] [--section NAME] [--no-xrefs]\n\
+         kuna disassemble <binary> <name|0xaddr|0xstart-0xend> [--addr] [--as code|data|auto] [--count N] [--bytes N] [--json] [--mode auto|reliable|aggressive|fast] [--option N V]... [--define-function S[-E][=N]|@FILE]... [--slice ARCH] [--target T] [--sleighpath D]\n\
+         kuna read <binary> <name|0xaddr|0xstart-0xend> [--addr] [--bytes N] [--count N] [--json]   # the hexdump view of the same target\n\
          kuna docs [<topic>] [--json] [--all]\n\
          kuna test [--all|--unittests|--datatests] [--name N]... [--baseline F] [--save-baseline F] [--json]\n\
          kuna catalog [--json|--markdown|--check] [--option NAME] [--tier transform|analysis|core]\n\

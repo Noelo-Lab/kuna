@@ -1,0 +1,41 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "--addr",
+    "0x140001000"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/widestrings_x86_64.exe",
+    "binary_sha256": "1b925b93ffee06dd19ff433b0e7313ac183b8e700d96e1bde1ec4a4794d0ee95",
+    "binary_size": 1536,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/widestrings_x86_64.exe",
+    "selector": "0x140001000",
+    "selector_kind": "addr"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "LoadLibraryW\\(L\"ntdll\\.dll\"\\)",
+      ",\"NtQueryInformationProcess\"\\)"
+    ],
+    "stdout_absent": [
+      "LoadLibraryW(\"n\")"
+    ]
+  },
+  "notes": "Desired: a wide (UTF-16LE) string argument renders in full. The recorded acceptance is LoadLibraryW(L\"ntdll.dll\") on crackmes.one 65acadf3eef082e477ff5ede sub_140002530, which is dataset-only; this vendors the same shape as a synthesized PE32+ (widestrings_x86_64.py regenerates it). Without `widestrings` the call renders LoadLibraryW(\"n\"). The ASCII clause is the control.",
+  "probe_id": "a-59094337ab21"
+}

@@ -30,11 +30,18 @@
 //! `<Class>::vftable` base it reads each pointer-width slot (an **absolute VA on both
 //! arches** — vftable slots are NOT the `IBO32` displacements the COL/RTTI graph uses),
 //! bounding the array at the first NULL / non-`.text` slot. For each surviving slot it
-//! emits a virtual-method **function** [`SymFact`] named `<Class>::vftable_<i>` (the
+//! emits a virtual-method **function** [`SymFact`] named `<Class>::vfunc_<i>` (the
 //! MSVC metadata carries the class name but not per-method names, so the slot index is
 //! the disambiguator), and marks the slot array read-only ([`AnalysisOutput::readonly`]).
 //! So the virtual dispatch — `(**(code **)*plVar1)()`, an unnamed `DAT_*` vtable slot
-//! before — now resolves to a named function (`Box::vftable_0` = `Box::area`).
+//! before — now resolves to a named function (`Box::vfunc_0` = `Box::area`).
+//!
+//! The slot-index name is `vfunc_<i>` and NOT `vftable_<i>`: a routine must not be named
+//! after the data object that points at it. Under multiple inheritance an MSVC class
+//! really does own several vftables, so `<Class>::vftable_<i>` reads as "this class's
+//! i-th vftable" — which made a function inventory claim that hundreds of bytes of
+//! `std::basic_stringbuf` code were vtable objects. `vfunc_<i>` names the callee, and
+//! the vftable data object keeps the unindexed `<Class>::vftable` label.
 //!
 //! # x86 vs x64 — the one place a port goes wrong (§3.1f)
 //!
@@ -290,7 +297,7 @@ fn emit_for_col(
             kind: SymKind::Data,
         });
         // R3: walk the vftable's slots, naming each virtual-method function
-        // `<Class>::vftable_<i>` and marking the slot array read-only. The virtual
+        // `<Class>::vfunc_<i>` and marking the slot array read-only. The virtual
         // dispatch (an unnamed `DAT_*` slot before) now resolves to a named function.
         if let Some(vt) = walk_vftable(img, rk, text, vftable_base) {
             emit_vftable_methods(&self_class, &vt, rk, out);
@@ -320,13 +327,21 @@ fn emit_type_descriptor_label(class: &str, td_addr: u64, out: &mut AnalysisOutpu
     });
 }
 
+/// The name a recovered virtual method takes: `<Class>::vfunc_<i>` for slot `i` of the
+/// class's vftable. Deliberately NOT `<Class>::vftable_<i>` — that spells the data
+/// object, and a class under multiple inheritance genuinely owns several vftables, so
+/// the indexed form reads as "vftable number i" rather than "the function in slot i".
+fn vfunc_name(class: &str, slot: usize) -> String {
+    format!("{class}::vfunc_{slot}")
+}
+
 /// Emit the per-slot virtual-method facts for a recovered vftable (R3):
-///   - one `Function` [`SymFact`] per slot, named `<Class>::vftable_<i>` at the slot's
+///   - one `Function` [`SymFact`] per slot, named [`vfunc_name`] at the slot's
 ///     target VA (the virtual method the dispatch jumps to);
 ///   - the slot array's VMA range as read-only ([`AnalysisOutput::readonly`]).
 /// The `SymFact{Function}` commit is an idempotent ADD (`find_function`-gated), so a
 /// slot target that already carries a real `.symtab`/import name keeps it; only a
-/// never-symboled virtual method takes the `<Class>::vftable_<i>` name.
+/// never-symboled virtual method takes the `<Class>::vfunc_<i>` name.
 fn emit_vftable_methods(
     class: &str,
     vt: &vftable::VfTable,
@@ -336,7 +351,7 @@ fn emit_vftable_methods(
     for (i, &fn_addr) in vt.slots.iter().enumerate() {
         out.symbols.push(SymFact {
             addr: fn_addr,
-            name: format!("{class}::vftable_{i}"),
+            name: vfunc_name(class, i),
             kind: SymKind::Function,
         });
     }
@@ -382,6 +397,24 @@ mod tests {
         let p = RttiPass;
         assert_eq!(p.id(), "rtti");
         assert_eq!(p.phase(), Phase::P1);
+    }
+
+    /// A recovered virtual method is named after the FUNCTION in the slot, never after
+    /// the vftable data object that points at it: an inventory that labels an executable
+    /// range `<Class>::vftable_<i>` claims a routine is a vtable, and under multiple
+    /// inheritance a class really does own several vftables, so the indexed `vftable_`
+    /// form is ambiguous rather than merely ugly.
+    #[test]
+    fn virtual_method_is_named_after_the_function_not_the_table() {
+        assert_eq!(vfunc_name("Box", 0), "Box::vfunc_0");
+        assert_eq!(vfunc_name("std::basic_stringbuf", 11), "std::basic_stringbuf::vfunc_11");
+        for slot in [0usize, 1, 11] {
+            let n = vfunc_name("std::bad_alloc", slot);
+            assert!(
+                !n.contains("vftable"),
+                "a virtual-method function name must not spell the vftable data object: {n}"
+            );
+        }
     }
 
     #[test]

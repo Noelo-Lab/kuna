@@ -1,0 +1,91 @@
+{
+  "slug": "simd-constant-string-initializer",
+  "need_id": "simd-constant-string-initializer",
+  "track": "quality",
+  "opportunity": "re-need:simd-constant-string-initializer",
+  "probe_id": "p-7127e6d559a3",
+  "acceptance_id": "a-9667a93853f5",
+  "instances": 1,
+  "scope": "increment",
+  "proposal": false,
+  "covers_needs": [
+    "simd-constant-string-initializer"
+  ],
+  "binary": "/home/mahaloz/github/kuna-re-dataset/challenges/653d88600f4238b24302b0ec/bin/crackme0x04",
+  "selector": "sub_100003790",
+  "func_addr": "0x100003790",
+  "option": [
+    "simdlane",
+    "retsplitglobal"
+  ],
+  "flag": [
+    "simd_lane_fold",
+    "ret_split_global"
+  ],
+  "element_id": [
+    4142,
+    4143
+  ],
+  "phase": [
+    "P3",
+    "P8"
+  ],
+  "subphase": [
+    "simplification-quiescence",
+    "goto-quality"
+  ],
+  "tier": [
+    "core",
+    "transform"
+  ],
+  "change_kind": [
+    "correctness-fix",
+    "presentation-default"
+  ],
+  "source_decompiler": "kuna",
+  "div": [
+    "DIV-115",
+    "DIV-116"
+  ],
+  "default_on": true,
+  "default_on_recommended": true,
+  "ablation_changed": 0,
+  "parity": "make test PARITY OK 675/675; make test-stages PARITY OK 628/628 (620 + this feature's 8, no per-test opt-out); make check-spec OK; kuna catalog --check OK; tests/cli 29/29; acceptance probe PASS (11,264 bytes, SUB161 absent)",
+  "owning_file": [
+    "decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_simdlane.rs",
+    "decompiler/crates/kuna-decomp/src/p8_structure/kuna_retsplitglobal.rs"
+  ],
+  "owning_function": [
+    "RuleSimdShuffleLane::apply_op",
+    "Funcdata::return_split_is_splittable"
+  ],
+  "upstream_anchor": "blockaction.cc:2242 (ActionReturnSplit::isSplittable); ActionLaneDivide leaves a CALLOTHER lane source opaque",
+  "spec_chapter": [
+    "docs/spec/03-ssa-and-simplification.md",
+    "docs/spec/08-structuring.md"
+  ],
+  "hypothesis_status": "STANDS (and is only half the defect)",
+  "filed_hypothesis": "ADVISORY. Vector lane extraction and constant propagation do not recognize the byte-sequence construction idiom.",
+  "speed_method": "interleaved min/median of alternating runs of the witness (kuna decompile crackme0x04 sub_100003790)",
+  "sweep_binaries": 70,
+  "sweep_functions_decompiled": 15365,
+  "sweep_functions_changed": 2,
+  "sweep_functions_with_statement_change": 0,
+  "decisions": [
+    "THE FILED HYPOTHESIS STANDS, and it is HALF the defect. Folding the SIMD lanes was measured on a real build to remove 32 SUB161 temporaries and 30 declarations -- and to make the function 278 bytes LONGER (15,532 -> 15,810), because the broadcast source is a global that the printer spells at each of its 96 uses where the lane temporary was two characters. The acceptance's `stdout_bytes < 12000` clause is therefore unreachable by the filed mechanism alone; that was measured before any code was written, by hand-applying the fold to the current output (13,898 bytes keeping the temporaries, 14,910 inlining the global).",
+    "THE DOMINANT COST WAS SOMEWHERE ELSE ENTIRELY: 45.8% of the 15,532 bytes (216 statements) is ONE 72-store epilogue block emitted THREE times. `print raw` shows three basic blocks over the identical address range 0x1000038d6-0x100003a5c. Every structuring option was swept (all 153 non-default option values, one run each): NOTHING moved it more than 33 bytes, `returndup off` included, because upstream ActionReturnSplit and kuna ActionReturnDup share one predicate and the goto-driven upstream action picks the block up when returndup declines.",
+    "ROOT CAUSE OF THE SECOND HALF: ActionReturnSplit::isSplittable (blockaction.cc:2242) admits MULTIEQUAL/COPY/RETURN and, for COPY, checks only that no INPUT is free. It never looks at the COPY's OUTPUT. Upstream that is harmless because epilogue COPYs move registers; a COPY into a PERSISTENT Varnode is a store to a global and is what P9 prints as `dat_ADDR = ...`.",
+    "A PLAIN is_persist() VETO IS WRONG AND THE STAGE CORPUS CAUGHT IT TWICE. Draft 1 counted every persistent COPY: it moved 4 stage assertions. Three were `ghdec-returncopysplit` -- Heritage::guardReturns inserts a synthetic `glob = glob` liveness self-copy per persistent global before EVERY return, so counting them prices a bare epilogue by how many globals the whole PROGRAM has and turns both splitters off wholesale. Those are now excluded two ways, either sufficient: the return_copy flag and input/output naming the same storage. The fourth was `gh180-implied-cover-scarry` (GNU grep nlscan), whose epilogue has TWO genuine global stores; declining there restructures the overflow guard and, worse, makes the merged form print `dat_2b818 = v2;` on a path where the binary stores nothing.",
+    "SO THE SHIPPED RULE IS A BOUND, NOT A VETO, which is this phase's house style (crossjumprevert and dedupitetail cap a duplicated leaf run at 8 printed ops, taildup at 12). More than 8 observable global stores declines. GH180's two still split, byte-identical to upstream; the witness's 72 do not. With the bound in place both parity corpora are byte-identical with NO per-test opt-out and no baseline re-pin.",
+    "SWEEP over 90 RE-dataset binaries, 70 loaded under both arms (20 fail to load identically in both), 15,365 functions: 2 changed (0.013%), both `retsplitglobal`, both a pure de-duplication. KeyVal2.exe sub_417ca0 1,474 -> 1,021 bytes with 17 duplicate statement copies removed and the DISTINCT statement set identical; libmodplug ModPlug_1SetPatternLoopRange 997 -> 987 bytes with 2 duplicate `return;` removed. ZERO statements added anywhere, ZERO distinct statements lost, and the function set is identical on every binary. `simdlane` changed 0 functions in the sweep -- a constant-mask pshufb is rare outside vectorised byte loops, which is also why it is inert rather than risky.",
+    "IN-REPO COVER, since binary_source is 'dataset' and verify --promote refuses it. A new fixture simdlane_x86_64 (gcc -O3 -mssse3, source beside it) reproduces the simdlane arm exactly: 32 SUB161 with the option off, none with it on. The retsplitglobal arm needs the witness's three-predecessor CFG, so both options are pinned two-pass on the REAL witness bytes by tests/stages/kuna-simdlane.xml and tests/stages/kuna-retsplitglobal.xml."
+  ],
+  "residue": [
+    "With every lane read re-anchored on the source, the pshufb CALLOTHER loses its last reader but is not removed -- a userop is not dead-code-eliminable -- so it stays as a bare `pshufb(ZEXT116(dat_100008040),0);` statement. Faithful, and it documents that the instruction is there, but it is a value-less call in the output.",
+    "AVX2's 32-byte vpshufb is two independent 16-byte permutations, not one N=32 permutation, so the width is deliberately not matched.",
+    "A non-constant shuffle mask (a table-driven permutation) is untouched by design: there is nothing to resolve."
+  ],
+  "speed_delta_pct": 0.19,
+  "speed_delta_median_pct": -6.93,
+  "speed_within_budget": true
+}

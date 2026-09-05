@@ -1,0 +1,99 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    RE-friction round 2, need `argument-recovery-knobs-still` (challenge
+    6547b4d50f4238b24302b588, PE x86-64 `trappy attack.exe`): `kuna decompile
+    ... 0x1400011c0 -addr` renders the same allocator with two arities, nine
+    lines apart, and `option calleearity on` does NOT fix it:
+
+        v10 = (char ****)sub_140002c90(v11 + 0x27);   0x1400016d1
+        v19 = (char *****)sub_140002c90();            0x1400016f7
+
+    Root cause (P4, trial finalization).  This is MSVC's aligned operator new,
+    whose two arms call the same allocator:
+
+        cmp  rcx,0x1000
+        jc   small                ; rcx = the requested size
+        lea  rax,[rcx+0x27]
+        cmp  rax,rcx
+        jbe  abort                ; the overflow guard
+        mov  rcx,rax
+        call operator_new         ; LARGE: rcx written here, recovered
+      small:
+        test rcx,rcx
+        jz   nothing
+        call operator_new         ; SMALL: rcx live-in, dropped
+
+    The small arm never rewrites rcx, so the Varnode reaching the CALL is the
+    one the `test` branches on and Funcdata::onlyOpUse (funcdata_varnode.cc:1851)
+    rejects the trial.  `calleearity` exists for exactly this and still declines,
+    because ActionActiveParam finalizes each call spec the moment it is fully
+    checked, in qlst order: measured on the witness, the SMALL site 0x1400016f7
+    finalizes with an empty witness list while its sibling 0x1400016d1, which
+    recovers exactly RCX, is still input_active.  A site is only reconciled
+    against the sites BEFORE it, and here the loser is first.
+
+    Reordering the finalization is the wrong fix: Funcdata::checkCallDoubleUse
+    (funcdata_varnode.cc:2121) reads whether ANOTHER spec is still input-active
+    while scoring a trial, so deferring a spec past its neighbours'
+    checkInputTrialUse changes argument recovery on every binary.  Instead the
+    call that finalizes with an EMPTY argument list is set aside, with the
+    Varnodes its promotable trials point at, and retried once at the end of the
+    same pass when every spec is final.
+
+    Stage / sub-stage: P4 "trial-finalization".  The P0 assertion
+    `option calleearityfwd on|off` decides whether that retry happens; it reuses
+    every one of `calleearity`'s refusals and is inert with `calleearity off`.
+
+    The fixture is the same construct on SysV x86-64 (rdi rather than rcx),
+    assembled from:
+
+        callee: mov %rdi,%rax ; add $1,%rax ; ret
+        caller: sub $0x28,%rsp
+                cmp $0x1000,%rdi
+                jb  small
+                lea 0x27(%rdi),%rax
+                cmp %rdi,%rax
+                jbe bail
+                mov %rax,%rdi
+                call callee        # LARGE: fresh rdi, keeps its argument
+                add $0x28,%rsp ; ret
+        small:  test %rdi,%rdi
+                jz  zero
+                call callee        # SMALL: rdi live-in, and the guard reads it
+                add $0x28,%rsp ; ret
+        zero:   xor %eax,%eax ; add $0x28,%rsp ; ret
+        bail:   xor %eax,%eax ; add $0x28,%rsp ; ret
+
+    The SMALL site is laid out after the LARGE one and reached by a forward
+    branch, which is what puts it FIRST in qlst order and so out of
+    `calleearity`'s reach, the whole point of this testcase.
+
+    Pass 1 (`option calleearityfwd off`) reproduces the BUG: the small arm
+    renders as `callee()` while the large arm keeps `callee(a0 + 0x27)`.
+    Pass 2 (`option calleearityfwd on`) is the FIX: the small arm passes `a0`,
+    the size the disassembly actually leaves in rdi, and the large arm is
+    untouched, no argument is fabricated at the site that was already right.
+-->
+<bytechunk space="ram" offset="0x100000">
+4889f84883c001c30f1f8400000000004883ec284881ff001000007216488d47
+274839f876234889c7e8d2ffffff4883c428c34885ff740ae8c3ffffff4883c4
+28c331c04883c428c331c04883c428c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="callee"/>
+<symbol space="ram" offset="0x100010" name="caller"/>
+</binaryimage>
+<script>
+  <com>option calleearityfwd off</com>
+  <com>lo fu caller</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option calleearityfwd on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="calleearityfwd #1: option off drops the argument at the call site that finalizes BEFORE its witness (bug reproduced)" min="1" max="1">callee\(\);</stringmatch>
+<stringmatch name="calleearityfwd #2: option on recovers the size the small arm leaves in the argument register" min="1" max="1">callee\(a[0-9]+\);</stringmatch>
+<stringmatch name="calleearityfwd #3: the site that was already right keeps exactly one argument in both passes" min="2" max="2">callee\(a[0-9]+ \+ 0x27\)</stringmatch>
+</decompilertest>

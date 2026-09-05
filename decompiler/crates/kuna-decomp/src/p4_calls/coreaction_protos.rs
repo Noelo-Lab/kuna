@@ -1088,6 +1088,12 @@ impl Action for ActionActiveParam {
         // checker for the spacebase-parameter branch.
         let mut aliascheck = data.build_alias_checker_deferred();
         let manager_rc = data.get_arch().manage.clone();
+        // (kuna) varargstackargs
+        let vararg_stack_args = data.get_arch().vararg_stack_args;
+        // (kuna) `calleearityfwd`: call sites that finalize with an empty argument
+        // list, retried at the end of the pass against the siblings that finalize
+        // after them.  See [`crate::p4_calls::kuna_calleearityfwd`].
+        let mut pending_rescue = Vec::new();
 
         // INDEX-BASED (CORRECTION-7 #3): keep the call specs ON `data.qlst` so
         // each sub-function's input-trial ancestor walk can look up the *other*
@@ -1147,15 +1153,26 @@ impl Action for ActionActiveParam {
                 if fc.get_active_input().needs_final_check() {
                     final_input_check(&mut fc, data);
                 }
+                // (kuna) `varargstackargs`: tell `fillinMap` that this call's
+                // variable arguments live on the stack, so the empty register
+                // slots before them are the ABI's doing and not evidence that
+                // the recovery has run past the argument list.
+                let vararg_split = vararg_stack_args && fc.is_dotdotdot();
+                fc.get_active_input().set_vararg_stack_split(vararg_split);
                 // resolveModel(activeinput) + deriveInputMap(activeinput): resolve
                 // the model and fill in the trial → parameter map.
                 let _ = fc.resolve_and_derive_input_map(&manager_rc);
-                build_input_from_trials(&mut fc, data);
+                if let Some(p) = build_input_from_trials(&mut fc, data) {
+                    pending_rescue.push(p);
+                }
                 fc.clear_active_input();
                 data.restore_call_specs_at(idx, fc);
                 self.base.count += 1;
             }
         }
+        // (kuna) `calleearityfwd`: every spec in this pass is final now, so the
+        // sites that recovered nothing get their one retry.
+        crate::p4_calls::kuna_calleearityfwd::rescue_pending(data, &pending_rescue);
         0
     }
 }
@@ -1614,6 +1631,12 @@ impl Action for ActionInputPrototype {
             // the heritage collected).  `triallist[i]` is the i-th registered
             // trial's Varnode (1-based slot in ParamTrial).
             let mut active = crate::fspec::ParamActive::new(false);
+            // (kuna) `inputparamgap`: these are the function's OWN input trials,
+            // where an ACTIVE trial means the body reads the register before it
+            // writes it.  Tell `forceInactiveChain` that a run of unused argument
+            // registers is not evidence against a later one.  See
+            // [`crate::p4_calls::kuna_inputparamgap`].
+            active.set_own_input_gap(data.get_arch().input_param_gap);
             let mut triallist: Vec<crate::context::VarnodeId> = Vec::new();
             let input_vns: Vec<crate::context::VarnodeId> =
                 data.vbank().iter_def_flag(crate::varnode::varnode_flags::input).collect();

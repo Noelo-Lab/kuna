@@ -25,3 +25,5 @@ pub mod kuna_condexeplace;
 pub mod kuna_compareform;
 pub mod kuna_inputtile;
 pub mod kuna_calloverlap;
+pub mod kuna_tiedstorekeep;
+pub mod kuna_simdlane;

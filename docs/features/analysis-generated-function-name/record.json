@@ -1,0 +1,68 @@
+{
+  "slug": "analysis-generated-function-name",
+  "need_id": "analysis-generated-function-name",
+  "track": "tooling",
+  "scope": "small",
+  "round": 2,
+  "branch": "feat/re-analysis-generated-function-name",
+  "summary": "kuna decompile retries a by-name miss once with the DIV-20/DIV-68 non-x86-64 discovery bundle, so a discovery-generated name that kuna functions / kuna strings print is a name kuna decompile accepts. First attempt, and every invocation that already resolved, is byte-identical.",
+  "decisions": [
+    {
+      "what": "hypothesis and T_REFUTE mechanism both OVERTURNED; symptom upheld",
+      "detail": "The filed hypothesis was 'the single-function name resolver uses a narrower symbol table'; T_REFUTE corrected that to 'sub_<hex> is a synthesized display name never registered as a symbol anywhere, so no table on the decompile path could contain it -- fold the name back to an address in kuna-cli'. Neither holds. sub_4045b0 IS a FunctionEntry name in ConsoleProgram::function_entries_canonical, and resolve_entry(Name(..)) resolves it: kuna decompile --json, kuna disassemble and kuna decompile-all all select the witness by that exact name on main today. Only the TEXT surface fails, because its decomp_dbg session never DISCOVERED the entry. kuna-cli's in-process drivers inject listing + funcstart_patterns + aif on a non-x86-64 image (load_program, DIV-20/DIV-68); build_script injected only `option listing on`. Bisected on the witness: listing alone still answers `no function matches`, listing + funcstart_patterns selects it. There is no name to fold and no table to widen -- there is an entry set to agree on."
+    },
+    {
+      "what": "why two testers filed what looked like two bugs",
+      "detail": "The mode policy hid it. auto resolves to aggressive under 500 KiB and AGGRESSIVE_OVERRIDES names listing / funcstart_patterns / aif itself, so the gap is only reachable above the size threshold (KeyVal2.exe is 558,592 bytes -> reliable) or under an explicit --mode reliable. That is exactly the twin sighting 5bd1d1bb ('listed in auto mode, not selectable in reliable mode') -- same root cause, and the reason the two reports look unrelated."
+    },
+    {
+      "what": "plain alignment was implemented, measured, and REJECTED",
+      "detail": "The obvious fix -- inject the same bundle up front, so the two surfaces share one policy -- was built and swept before shipping. It changes the ENTRY SET, and not every entry the bundle adds is real: on i386 and PPC64 the prologue matcher seeds a start a few bytes inside a function it already knew (PPC64 ELFv2's local entry point sits 8 bytes past the global one), and funcboundflow then truncates the outer function's flow at that seed. plt_ppc64le __do_global_ctors_aux went from a correct 354-byte do/while loop to an empty husk carrying only the funcboundflow warning; deregister_tm_clones, __do_global_dtors_aux and frame_dummy did the same, and i386_pie_nl register_tm_clones lost its body too. 8 such truncations over the 33 non-x86-64 fixtures, no other difference. Shipping that would have traded a selection bug for an output bug on the witness's own architecture."
+    },
+    {
+      "what": "shipped as a SECOND ATTEMPT, not as alignment",
+      "detail": "The wider inventory is paid for only where it is the answer. decompile() splits driver_default_options into the Listing (always injected, exactly as before) and the discovery bundle (held back); a by-name selection the console answers with `no function matches` is retried once with the bundle appended. The retry is gated on a MISS -- not an ambiguity, not a load failure, not a pipeline abort, and never an --addr selector -- so every invocation that already resolved runs the byte-identical script it always ran, and the husk trade stays the whole-binary surfaces' to make, where a complete inventory is the point."
+    },
+    {
+      "what": "no option, no counters, no stages XML",
+      "detail": "Tooling track. A retry that only fires where the command used to exit 1 cannot change emitted C for any run that worked, so there is no judgement call to put behind a phases.toml row: no options.rs registration, no catalog counter, no docs/options.md, no tests/stages case. No new DIV either -- this extends DIV-15/DIV-20/DIV-68, which are already recorded, and the counter:div lease is held by another builder this round."
+    }
+  ],
+  "collateral_sweep": {
+    "method": "kuna decompile --mode reliable <name> for EVERY name kuna functions reports, over all 33 non-x86-64 fixtures in kuna-analysis/tests/fixtures plus the witness KeyVal2.exe (250-name cap). The before arm is `--option funcstart_patterns off --option aif off`, which makes driver_default_options yield the Listing alone and the discovery list empty -- i.e. main's script, byte for byte, with no retry to make.",
+    "targets": 34,
+    "names": 723,
+    "resolved_before_and_unchanged": 318,
+    "resolved_before_but_changed": 0,
+    "unlocked_by_the_retry": 403,
+    "still_failing": 2,
+    "still_failing_note": "macho_arm64e / macho_imports_arm64 `printf`, which names both the stub and the import slot. The selector model reports the ambiguity and its candidates rather than guessing, identically before and after; the retry deliberately does not fire on an ambiguity.",
+    "x86_64": "unchanged by construction -- driver_default_options yields only the Listing there, so the discovery list is empty and there is no second attempt. Confirmed empirically on 40 x86-64 fixtures in the first (alignment) sweep: 0 differences."
+  },
+  "not_closed": [
+    "The non-x86-64 discovery bundle over-produces mid-function entries -- PPC64 ELFv2 local entry points and the i386 equivalent -- and funcboundflow then truncates the enclosing function to an empty husk. That is live on main TODAY in kuna functions and kuna decompile-all (plt_ppc64le __do_global_ctors_aux reports size 8 next to a sub_948 of 112) and is untouched here. It is an analyzer-tier defect and deserves a need of its own.",
+    "kuna decompile --addr and kuna decompile-all --addr still resolve the same address under different discovery configs on a non-x86-64 image, so they can render the same function differently. Pre-existing, and closing it means fixing the husk first.",
+    "A by-name miss on a non-x86-64 binary now costs two decomp_dbg runs before reporting `no function`. The error path got slower to be sure of itself; the success path did not."
+  ],
+  "cost": {
+    "method": "3 interleaved runs each, wall clock, witness KeyVal2.exe (PE32 i386, 558,592 bytes)",
+    "resolved_name_or_addr": "unchanged -- identical script",
+    "generated_name": "1.84-1.96 s, against exit 1 in 0.73-1.03 s before; the second attempt is a whole-program decode, the DIV-68 price kuna functions already pays on the same image"
+  },
+  "acceptance": {
+    "acceptance_id": "a-022969ccc61d",
+    "result": "PASS",
+    "verifier": "scripts.repipe.verify --need analysis-generated-function-name --json -> counts.pass 1, transition closed",
+    "promoted_to": "tests/cli/analysis-generated-function-name.json",
+    "promotion_note": "verify --promote refuses: the recorded acceptance targets binary_source 'dataset' (KeyVal2.exe), which CI has no copy of. Vendored instead onto the in-repo entrymain_arm fixture -- a stripped ARM PIE whose sub_410 is discovered only by the bundle -- with the same command shape and --mode reliable, which is load-bearing at that size because auto would pick aggressive and supply the bundle itself.",
+    "negative_control": "with only the decompile.rs hunk reverted, the promoted probe FAILS and both new cargo tests FAIL; restored, all three pass."
+  },
+  "gates": {
+    "make test": "PARITY OK, 675/675 assertions",
+    "make test-stages": "PARITY OK, 597/597 assertions",
+    "make rust-test": "green, 5,283 tests",
+    "make check-spec": "OK (lenient mode)",
+    "kuna catalog --check": "catalog OK",
+    "make test-cli": "14/14"
+  }
+}

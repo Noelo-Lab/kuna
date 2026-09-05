@@ -141,6 +141,25 @@ impl Address {
         Address { base: AddrSpacePtr::Spc(id), offset: off }
     }
 
+    /// The ordering triple this Address compares by: `(sentinel rank, space
+    /// index, offset)`, where rank is `0` for the null/invalid pointer, `1`
+    /// for a real space and `2` for the `m_maximal` sentinel.
+    ///
+    /// Lexicographic comparison of the triple reproduces [`Ord`] exactly: two
+    /// Addresses with the same space pointer share a rank and an index and so
+    /// fall through to the offset, which is what `cmp` does directly, and
+    /// distinct spaces sharing an index are equivalent in both.  Callers that
+    /// keep an Address inside a sort key can store the triple instead and keep
+    /// the key `Copy`.
+    #[inline]
+    pub fn sort_key(&self) -> (u8, i32, u64) {
+        match &self.base {
+            AddrSpacePtr::Null => (0, 0, self.offset),
+            AddrSpacePtr::Spc(s) => (1, s.get_index(), self.offset),
+            AddrSpacePtr::Max => (2, 0, self.offset),
+        }
+    }
+
     /// Create an invalid address (C++ `Address(void)`)
     pub fn new_invalid() -> Address {
         Address::default()
@@ -1932,6 +1951,38 @@ mod tests {
 
     fn small_space(name: &str, index: i32) -> Rc<AddrSpace> {
         Rc::new(AddrSpace::new(spacetype::IPTR_PROCESSOR, name, false, 2, 1, index, 0, 0, 0))
+    }
+
+    /// `sort_key` must order exactly as [`Address::cmp`] does: every consumer
+    /// that stores the triple in place of the Address (the Varnode location
+    /// and definition tree keys) depends on the two being interchangeable.
+    #[test]
+    fn sort_key_orders_identically_to_cmp() {
+        let mut addrs = vec![
+            Address::new_extreme(mach_extreme::m_minimal),
+            Address::new_extreme(mach_extreme::m_maximal),
+            Address::default(),
+        ];
+        for spc in [ram(), Rc::new(ConstantSpace::new()), small_space("a", 1), small_space("b", 7)] {
+            for off in [0u64, 1, 0x1000, 0xffff_ffff, u64::MAX] {
+                addrs.push(Address::new(Rc::clone(&spc), off));
+            }
+        }
+        // A second Rc for the same space index: the pointer differs but the
+        // order must not (the comparator falls through to the offset).
+        addrs.push(Address::new(ram(), 0x1000));
+        let mut pairs = 0;
+        for a in &addrs {
+            for b in &addrs {
+                assert_eq!(
+                    a.cmp(b),
+                    a.sort_key().cmp(&b.sort_key()),
+                    "sort_key disagreed with cmp on {a:?} vs {b:?}"
+                );
+                pairs += 1;
+            }
+        }
+        assert_eq!(pairs, addrs.len() * addrs.len());
     }
 
     #[test]

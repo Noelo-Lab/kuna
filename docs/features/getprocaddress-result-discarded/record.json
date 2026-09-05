@@ -1,0 +1,84 @@
+{
+  "need_id": "getprocaddress-result-discarded",
+  "track": "quality",
+  "option": "tiedstorekeep",
+  "default": "on",
+  "div": "DIV-105",
+  "scope": "small",
+  "worker": "b-r2-getprocaddress-r",
+  "branch": "feat/re-getprocaddress-result-discarded",
+  "hypothesis_status": "overturned",
+  "decisions": [
+    {
+      "id": "root-cause",
+      "claim": "The symptom stands, but BOTH filed diagnoses are wrong. The tester's (\"stack-variable recovery split one logical local into v12 and v108\") and the captain's alternative (\"the second site's v133 is a mis-attributed stack offset\") are refuted: v133 is [rsp+0x260], a real slot the disassembly writes at 0x140002bab, and one predicate fixes both sites. The cause is RulePropagateCopy deleting the address-tied COPY that IS the frame store.",
+      "evidence": "objdump of sub_140002530. Site 1: `mov [rsp+0x198],rax` at 0x14000281c stores the GetProcAddress result; `mov rax,[rsp+0x198]; mov [rsp+0x238],rax` at 0x140002842 copies it; `call [rsp+0x238]` at 0x140002877. The emitted C keeps the second copy (`v128 = v108`) and loses the first, so v108 reads back its NULL initialiser. Site 2 is the same shape one link further: `mov [rsp+0x160],rax` at 0x140002b8e, `mov [rsp+0x260],rax` at 0x140002bab, `call [rsp+0x260]` at 0x140002bc9 -- v133 is [rsp+0x260] and BOTH of its stores are dropped, which is why the call does not even go through the NULLed local. With the brake on, both sites render the full chain (`v104 = GetProcAddress(...); v124 = v104; (*v104)(...)` and `v94 = GetProcAddress(...); v129 = v94; (*v129)(...)`)."
+    },
+    {
+      "id": "prior-art-adopted-then-narrowed",
+      "claim": "The wave-1 branch (2ad58462) had the right mechanism and an unshippable predicate. Cherry-picked, then narrowed by two clauses that were each bought by measurement.",
+      "evidence": "As committed, the brake declines for ANY address-tied COPY whose last reader is a marker. Measured on that exact code: `make test` 668/675 (7 assertions move -- Conditional Constant #11 and Union #15/#16/#22/#23/#27/#28, where keeping ordinary arithmetic stores alive turns three if/else diamonds into `?:` ternaries and takes `res = ptr->b->bIntField` to `(int4)ptr->a->aFloatField`), and the `copytrim` datatest -- whose whole subject is propagation out of `persist` global stores -- ran for over 10 minutes instead of 0.16 s. Adding `!v.is_persist()` fixed copytrim (0.16 s) but left 668/675. Adding \"the stored value's def is CALL/CALLIND/CALLOTHER/INDIRECT\" gives 675/675 PARITY OK with both witness sites still fixed."
+    },
+    {
+      "id": "indirect-in-the-def-set",
+      "claim": "CPUI_INDIRECT belongs in the from-a-call set and is not a widening for its own sake: restricting it to the three CALL op-codes alone loses both sites.",
+      "evidence": "Built and measured. With `{CALL,CALLIND,CALLOTHER}` only, parity is 675/675 but sub_140002530 renders exactly as before the change (`v107 = NULL; v12 = (void *)GetProcAddress(...); ... (*v107)(...)`). RulePropagateCopy fires before ActionActiveReturn promotes the return register to the CALL's output, so at that moment the value's def is the INDIRECT that carries the register across the call site."
+    },
+    {
+      "id": "default-on",
+      "claim": "Shipped default-ON. Required: the acceptance probe runs `kuna decompile BIN sub_140002530` with no options, so only default output can close the need. The agents.md bar is met on its own terms.",
+      "evidence": "0/675 datatest assertions change (docs/baseline.json unmoved), tests/stages 600/600 PARITY OK unchanged, speed -0.13% against a 5% budget (scripts.pipeline.timeit, witness function, median of 5). `--option tiedstorekeep off` restores upstream's propagation exactly."
+    },
+    {
+      "id": "no-stage-testcase",
+      "claim": "No tests/stages/ XML testcase: the defect is import-table-gated and the XML binaryimage format cannot express a PE import table. Three fixtures were built and measured; none reproduce it.",
+      "evidence": "(1) A synthetic SysV x86-64 construct (call, store to frame, NULL-guard, second call, indirect call through the slot) assembled with gcc: byte-identical in both arms, because Merge succeeds and the store prints. (2) A 1 KB carve of the witness function at its real addresses (0x1400027ac-0x140002bd0) with a synthetic prologue and .rdata mapped: both arms identical AND already correct (`v23 = (code *)(*dat_140007048)(...)`). (3) The whole 6144-byte function likewise, with all 33 out-of-range branch targets stubbed and 2 KB of .rdata mapped: same result. Without the import table the calls carry no prototypes, so RAX never accumulates the cover that makes Merge decline. A C-source reconstruction compiled at -O0 was also tried and only ever moved the store, never dropped it."
+    },
+    {
+      "id": "not-vendorable",
+      "claim": "The acceptance probe cannot be promoted into tests/cli/. Recorded rather than faked, as the need record instructs.",
+      "evidence": "`scripts.repipe.verify --promote getprocaddress-result-discarded --force` refuses: \"target.binary_source is 'dataset', not 'in-repo' -- CI has no dataset\". The need record's round-2 decision log says the same and directs the builder to say so in the PR rather than fake a test."
+    },
+    {
+      "id": "residual",
+      "claim": "One degradation found by the corpus sweep and named rather than hidden: a type-punned slot can re-render an integer constant as the float literal with the same bit pattern.",
+      "evidence": "ALLSTAR_9base_dd sub_406290 (dtoa-shaped): `v32 = 0xfffffff;` becomes `v32 = 1.32624736441264e-315;`. The declared type is `unsigned long` in both arms; keeping the store alive changes which datatype wins on that edge. One occurrence in 7 binaries."
+    }
+  ],
+  "sweep": {
+    "method": "whole-binary `kuna decompile-all` with `--option tiedstorekeep off` vs `on`, diffed raw and with `v\\d+` normalized to a single token, then compared as sorted statement multisets per function",
+    "binaries": 7,
+    "identical": [
+      "x86_64/fauxware",
+      "i386/all",
+      "armel/aes"
+    ],
+    "reorder_only": [
+      "x86_64/libgcc_s.so.1 (statement multiset identical; 5 hunks, all copy-shadow pairs and one __multf3() call moved by one line)"
+    ],
+    "changed": {
+      "x86_64/mv_-O2": "4 of 390 functions (rpl_fts_open, quotearg_buffer_restyled, copy_internal, backupfile_internal): declaration order, 7 redundant copy-shadow `vA = vB;` statements collapsing, one dereference hoisted into a temp, one local eliminated in quotearg_buffer_restyled, and a net +6 DWARF source names (rpl_fts_open's `p` at 7 more sites, backupfile_internal's `name` moving from a register to a stack local). rpl_fts_open re-checked statement by statement against the gnulib source: the `root`/`tmp` update is re-placed at the loop latch and is equivalent.",
+      "x86_64/ALLSTAR_9base_dd": "1 function (sub_406290): an `int *` register local becomes a stack local, three casts added, and the one recorded degradation above.",
+      "ObfuscationFiesta.exe": "the witness: 22 restored store statements, +19 lines net, and one if/else diamond in sub_140001180 folding to a ternary."
+    }
+  },
+  "speed": {
+    "tool": "scripts.pipeline.timeit",
+    "binary": "ObfuscationFiesta.exe",
+    "selector": "sub_140002530",
+    "speed_off_ms": 1919.13,
+    "speed_on_ms": 1916.67,
+    "speed_delta_pct": -0.13,
+    "speed_samples": 5,
+    "speed_budget_pct": 5.0,
+    "speed_within_budget": true
+  },
+  "gates": {
+    "make test": "675/675 PARITY OK",
+    "make test-stages": "600/600 PARITY OK",
+    "make check-spec": "OK",
+    "kuna catalog --check": "catalog OK",
+    "make rust-test": "green (2078 lib tests + workspace; run with KUNA_DECOMP_TEST unset)",
+    "acceptance": "PASS (a-f2df446f39d5)"
+  }
+}
