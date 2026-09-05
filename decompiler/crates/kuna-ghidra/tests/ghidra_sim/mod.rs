@@ -414,6 +414,20 @@ pub fn resp_empty() -> Vec<u8> {
     r
 }
 
+/// An exception frame instead of a query response: {10}"type"{14..15}"msg"{11}
+/// — what `DecompileProcess.readResponse` writes when the callback THREW
+/// (DecompileProcess.java:384-392), before logging `Unexpected Exception: …`.
+/// `getRegister` on a name the language does not define is the throwing case
+/// (`DecompileCallback.getRegister` → `No Register Defined: <name>`).
+pub fn resp_exception(extype: &str, msg: &str) -> Vec<u8> {
+    let mut r = Vec::new();
+    burst(&mut r, 10);
+    wire_string(&mut r, extype.as_bytes());
+    wire_string(&mut r, msg.as_bytes());
+    burst(&mut r, 11);
+    r
+}
+
 /// A byte-burst query response: {8}{12} raw {13}{9} (getBytes / getStringData;
 /// the payload is already nibble-doubled / header-prefixed by the caller).
 pub fn resp_bytes(raw: &[u8]) -> Vec<u8> {

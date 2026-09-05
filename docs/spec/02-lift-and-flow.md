@@ -228,6 +228,12 @@ recovered switch table.
   code space) because the body would not compile elsewhere and the helper exists
   nowhere else; it is unconditional rather than option-gated because the
   architecture bootstraps at `load file`, before the console's `option` lines.
+  Registration is skipped outright in ghidra mode, exactly as the Cortex-M
+  callother fixup below is and for the same reason: with no local `.sla` there
+  is nothing to compile the body against, so the payload could never install.
+  Skipping it also keeps the x86-32 language test — which asks whether this
+  language has `ST0` — off the wire, since every 32-bit language reaches it (the
+  test's cheap half is the code-space width, which ARM32/MIPS32/PPC32 all pass).
   The user-visible gate is on the *install* instead (`option msvcftol`, default
   on), where the analysis-tier call-fixup installer drops this one payload's
   targets from its match map.

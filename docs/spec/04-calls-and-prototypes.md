@@ -738,7 +738,12 @@ the same spec already records it, so kuna states the same guarantee for the mode
 that are silent, at model-decode time. A spec that mentions `DF` either way has
 made a deliberate statement and is left alone, and a language with no such
 register is a structural no-op — the assertion is keyed on the SLEIGH register
-name and a lookup miss is the exit.
+name and a lookup miss is the exit. That miss is a *speculative* question, so
+the assertion takes a probe (`Option<VarnodeData>`) rather than the exact
+by-name lookup: on a front-end that resolves register names by asking a host,
+asking for a name the language does not define is an error the host reports
+(§0's probe seam), and every non-x86 language would take that path on every
+decoded prototype.
 
 ### The spacebase placeholder
 

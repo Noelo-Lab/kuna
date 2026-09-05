@@ -503,7 +503,7 @@ pub fn resolve_abi(data: &Funcdata) -> Option<SyscallAbi> {
     }
     let lookup = manage.register_lookup()?;
     let reg = |nm: &str| -> Option<Address> {
-        let st = lookup.get_register(nm).ok()?;
+        let st = lookup.probe_register(nm)?;
         if st.size != 4 {
             return None;
         }

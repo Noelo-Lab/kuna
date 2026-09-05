@@ -306,6 +306,24 @@ Four front-ends drive one engine assembly:
   ghidra mode too (`decompiler/crates/kuna-decomp/src/infra/architecture.rs
   (decode_ghidra_tracked_sets)`), resolving register names through the
   query-backed translator, so `ActionConstbase` plants the direction seed.
+  Because that lookup is a host query, an undefined name is not a local miss:
+  Ghidra's callback throws `No Register Defined`, which the host logs as an
+  `Unexpected Exception` with a stack trace before the exception frame ever
+  reaches kuna — recoverable on the wire, but visible to the user and
+  unsuppressible from this side. So a *speculative* by-name lookup — a pass
+  asking "does this language happen to have register X?" rather than resolving
+  a name the host itself supplied — must go through the probe seam
+  (`decompiler/crates/kuna-base/src/space.rs (RegisterLookup)`'s
+  `probe_register` and `decompiler/crates/kuna-decomp/src/infra/engine_translate.rs
+  (EngineTranslate)`'s `probe_register_varnode`) instead of the exact lookup.
+  Both default to the exact lookup's `Ok`-to-`Some`, so the standalone Sleigh
+  path is unchanged; the ghidra translator overrides them to answer from the
+  `nm2addr` cache alone and issue no query. A `None` therefore means "not
+  resolvable here", never "this language has no such register" — which is why
+  only speculative tests may consult it. The x86 direction-flag assertion
+  (chapter 04) is the case this shapes: its `DF` probe still resolves in ghidra
+  mode because the pspec `<tracked_set>` sweep above runs first and caches `DF`,
+  and every stock x86 pspec carries that set.
   External references resolve through the upstream two-step
   (`ScopeGhidra::resolveExternalRefFunction`): the `<externrefsymbol>` answer
   keeps its resolve address, getExternalRef fires at the POINTER address, the
