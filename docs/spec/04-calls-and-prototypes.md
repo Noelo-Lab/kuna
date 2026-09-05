@@ -641,6 +641,18 @@ output sits at the constructed join address (falling back to the first piece
 if no join can be built); more pieces chain PIECEs over contiguous trials.
 The (kuna) `returnpair` gate intercepts this join — §4.4.
 
+The sole-use check has one narrow terminating-path exception, the (kuna)
+`noreturnretuse` gate (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_noreturnretuse.rs
+(call_cannot_reach_return)`). When the use being matched is a RETURN, a candidate
+return register may also feed a CALL/CALLIND whose immediately following and
+block-final op is an artificial halt marked no-return. That call consumes the same
+ABI register as its first argument on a failure path but cannot reach the RETURN,
+so it does not disqualify the normal path's output trial. An ordinary call, a
+non-adjacent halt, or a halt that may return still rejects the trial. The shape
+needs the return register and the first argument register to be the same storage,
+so it is an ARM/AArch64 finding in practice; with the gate off the check is
+upstream's, rejecting on every competing call use.
+
 ### Fixating the function's own prototype
 
 In the one-shot tail, after merge has built HighVariables:

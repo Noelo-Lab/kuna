@@ -14,6 +14,8 @@ real ELF parser.
 
 | File | What | Exercises |
 |---|---|---|
+| `et_rel_status_arm.o` | project-authored ARM32 **ET_REL** object from `et_rel_status_arm.s` | architecture-specific `R_ARM_CALL`/data relocation application and return recovery when a status value is both returned on the normal path and passed to an explicit no-return call on a terminal guard-failure path; `status_caller` consumes the recovered result |
+| `et_rel_status_aarch64.o` | project-authored AArch64 **ET_REL** object from `et_rel_status_aarch64.s` | `R_AARCH64_CALL26`, page/low-12 relocation application, and the same status-return/no-return-path recovery shape on the 64-bit ABI; `status_caller` consumes the recovered result |
 | `entry_selectors_x86_64.o` | synthetic x86-64 **ET_REL** object produced from `entry_selectors_{a,b}_x86_64.s` | relocatable-object entry selection: two local `STT_FUNC` definitions share the name `duplicate_local` and raw offset zero but live in distinct `.text.selector_a` / `.text.selector_b` sections, so name and bare-offset selection must report both candidates while a section-qualified selector is exact |
 | `fauxware` | classic non-PIE x86-64, not stripped (the angr `fauxware` sample) | `.plt` classic stubs (`FF 25` rip-rel), `.symtab` defined functions; `.eh_frame` FDE starts (`s1_entry`: 7 FDE starts incl. `_start`/`main`/`register_tm_clones`) |
 | `cet_pie_x86_64` | PIE x86-64 with CET (`.plt.sec`) | `endbr64; FF 25` CET stubs, naming at the `.plt.sec` call target |
@@ -76,6 +78,16 @@ repository's Apache-2.0 license. It is reproducible with
 command for `entry_selectors_b_x86_64.s`, then
 `ld -r -o entry_selectors_x86_64.o entry_selectors_a_x86_64.o
 entry_selectors_b_x86_64.o`; the two intermediate objects are not retained.
+`et_rel_status_arm.o` and `et_rel_status_aarch64.o` are project-authored
+synthetic assembly under the repository's Apache-2.0 license. Regenerate them
+with `arm-linux-gnueabi-as -o et_rel_status_arm.o et_rel_status_arm.s` and
+`aarch64-linux-gnu-as -o et_rel_status_aarch64.o et_rel_status_aarch64.s`.
+These two committed objects provide the end-to-end ARM/AArch64 status-return
+proof. In-memory relocation and layout tests cover the complete supported
+ARM/AArch64/PowerPC64 and generic-width matrix, REL/RELA addends, both byte
+orders, local and external targets, interworking, bounds/range/alignment errors,
+missing TOCs, malformed encodings, and bounded diagnostic aggregation; no
+proprietary object is part of the regression suite.
 `cpp_noreturn_x86_64`: `g++ -O0 -no-pie -fno-pic -o cpp_noreturn_x86_64
 cpp_noreturn_x86_64.cpp` (source vendored alongside) — a `fail()` that tail-calls
 `std::terminate()` plus a `throw` (→ `__cxa_throw`); both are mangled no-return

@@ -622,6 +622,10 @@ pub struct ArchContext {
     /// parameter, instead of dropping it as uncomputed leftover
     /// (`option retinputhalf`); read by [`crate::kuna_retinputhalf`].
     pub ret_input_half: bool,
+    /// (kuna) Let a CALL on a block that ends in a no-return halt coexist with the
+    /// RETURN's output trial (`option noreturnretuse`); read by
+    /// [`crate::p4_calls::kuna_noreturnretuse`].
+    pub noreturn_ret_use: bool,
     /// (kuna) `option rustabi` (0 off / 1 auto / 2 always): keep a rustc
     /// two-register `ScalarPair` return intact; read by [`crate::kuna_rustabi`].
     pub rust_abi: u8,
@@ -1153,6 +1157,9 @@ impl ArchContext {
             // (kuna) `option retinputhalf` default-on; the real value is copied
             // from the engine Architecture in `build_arch_handle`.
             ret_input_half: true,
+            // (kuna) `option noreturnretuse` default-on; the real value is copied
+            // from the engine Architecture in `build_arch_handle`.
+            noreturn_ret_use: true,
             // (kuna) `option rustabi` default-off; the real value is copied from
             // the engine Architecture in `build_arch_handle`.
             rust_abi: 0,

@@ -40,6 +40,9 @@ object = { workspace = true, features = ["archive"] }
 # kuna-console); this adds an edge, not a crate.
 regex.workspace = true
 
+[dev-dependencies]
+object = { workspace = true, features = ["write"] }
+
 [lints]
 workspace = true
 

@@ -524,6 +524,10 @@ Three tiers:
 | the emitted C does not compile because its type names are not C | [`ctypes`](#ctypes) |
 | the same local declared once although many HighVariables share the stack slot | [`dedupvardecls`](#dedupvardecls) |
 | flip off to see one declaration line per high (e.g. int4 option_index repeated hundreds of times) | [`dedupvardecls`](#dedupvardecls) |
+| a helper that plainly computes a status recovers as void with a bare return; | [`noreturnretuse`](#noreturnretuse) |
+| the callee's return value is missing at the call site on ARM/AArch64 | [`noreturnretuse`](#noreturnretuse) |
+| a function whose error path calls a no-return handler loses its return type | [`noreturnretuse`](#noreturnretuse) |
+| the return type differs between two builds of the same function that differ only in stack-protector hardening | [`noreturnretuse`](#noreturnretuse) |
 
 ## Toggleable transforms
 
@@ -1424,7 +1428,7 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 ### `relocobjects` -- on | off, default `on`
 
 - **Symptoms:** a .o relocatable object fails with 'Unable to load N bytes at ...'; ET_REL object maps zero bytes so nothing decompiles; a COFF .obj lists only its first function (the rest collide at address 0).
-- **What it does:** Load relocatable objects — ELF `ET_REL` `.o` files (no PT_LOAD program headers, so they map zero bytes under the upstream loader) and COFF `.obj` files (every section at VMA 0, so they map one section on top of another): synthesize a section layout above 0x400000, apply the relocations (R_X86_64_PC32/PLT32/32/32S/64, COFF DIR32/REL32, with REL-style in-place addends), rebase defined symbols, and bind undefined externs to synthetic call targets — so an object decompiles fully instead of failing with 'Unable to load N bytes at ...' (ELF) or exposing only its first function (COFF).
+- **What it does:** Load relocatable objects — ELF `ET_REL` `.o` files (no PT_LOAD program headers, so they map zero bytes under the upstream loader) and COFF `.obj` files (every section at VMA 0, so they map one section on top of another): synthesize a section layout above 0x400000; apply generic 8/16/32/64-bit relocations and architecture-specific ARM, AArch64, and PowerPC64 instruction fields in the object's byte order, including REL in-place addends; leave failures unmodified and report them once in bounded architecture/type/reason groups; then rebase defined symbols and bind undefined externs to synthetic call targets — so an object decompiles fully instead of failing with 'Unable to load N bytes at ...' (ELF) or exposing only its first function (COFF).
 - **When to flip:** On by default (a pure capability: linked images of every format are byte-identical — they keep the mapped-image path — and only a pre-link object takes the new path, which is otherwise ZERO output on ELF and first-function-only on COFF). Set off to restore the upstream mapped-image-only loader (an ELF `.o` then errors; a COFF `.obj` falls back to its first section). NB: this gates the loader, which runs at `load file` BEFORE per-function options, so flip it (or set env KUNA_RELOC_OBJECTS=0) before loading the object.
 - **Where / provenance:** P1/code-data-partition · angr · structure-recovery · angr-CLE-ET_REL
 - **Example:** `option relocobjects off`
@@ -1728,6 +1732,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default (DIV-7): a stack slot is declared once even when many same-named scalar HighVariables share it (e.g. x86_64/cvs main, where the per-high rendering repeats `int4 option_index; // stack - 0x3c` ~200x), including when two live ranges of the slot recovered different types and so rendered two differently-typed declarations of one name -- invalid C (DIV-52). Set OFF to restore the one-declaration-per-high rendering.
 - **Where / provenance:** P9/naming-policy · angr · presentation-default · angr-duplicate-decls
 - **Example:** `option dedupvardecls off`
+
+### `noreturnretuse` -- on | off, default `on`
+
+- **Symptoms:** a helper that plainly computes a status recovers as void with a bare return;; the callee's return value is missing at the call site on ARM/AArch64; a function whose error path calls a no-return handler loses its return type; the return type differs between two builds of the same function that differ only in stack-protector hardening.
+- **What it does:** Let a CALL on a terminating no-return path coexist with the function's own RETURN when the output trial is scored. `Funcdata::only_op_use` (C++ `Funcdata::onlyOpUse`, funcdata_varnode.cc:1851) answers whether a Varnode reaching `opmatch` is used ONLY there; any other CALL consuming the same Varnode rejects it, and `ActionOutputPrototype` then types the function `void`. On an ABI whose return register is also the first argument register (ARM/AArch64 `r0`/`w0`) a status helper trips that for free: the status is returned on the normal path and handed to a failure handler on the error path, so `int guarded_status(int)` recovers as `void guarded_status(int)` with a bare `return;`. With this on, a CALL/CALLIND use is skipped when the matched op is a RETURN, the call is the second-to-last op of its block, and the block's last op is an artificial halt flagged no-return -- a block from which no RETURN is reachable, so the two uses never compete. A call that may return, a halt further down the block, and every non-RETURN match keep the upstream rejection.
+- **When to flip:** On by default: the skipped use is on a path that provably cannot reach the RETURN it would otherwise veto, so the veto costs the whole signature and buys nothing. Byte-identical (0/675) on the datatest corpus and 0 changed lines across 23 linked binaries decompiled whole, spanning x86-64/ARM/AArch64/RISC-V/MIPS/PPC64/SPARC/Mach-O -- the shape needs the return register and the first argument register to be the same storage, which x86-64 does not have. It fires on ARM/AArch64 objects built with `-fstack-protector-strong`, where 4 of 6 measured functions change and every change is `void` -> the typed return the source declares. Set off to restore the upstream blanket rejection (`Funcdata::onlyOpUse` returning false on any competing call use).
+- **Where / provenance:** P4/output-prototype · kuna · correctness-fix · kuna-noreturn-return-trial
+- **Example:** `option noreturnretuse off`
 
 ## Programmatic use
 

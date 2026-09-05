@@ -334,6 +334,20 @@ impl ObjectLoadImage {
 
     /// Open from an in-memory image (the testable core of [`Self::open`]).
     pub fn from_bytes(filename: &str, bytes: &[u8]) -> KunaResult<ObjectLoadImage> {
+        Self::from_bytes_with_diagnostics(filename, bytes, true)
+    }
+
+    /// Reconstruct a load image for an internal analysis consumer without
+    /// repeating diagnostics already emitted by the primary load.
+    pub fn from_bytes_silent(filename: &str, bytes: &[u8]) -> KunaResult<ObjectLoadImage> {
+        Self::from_bytes_with_diagnostics(filename, bytes, false)
+    }
+
+    fn from_bytes_with_diagnostics(
+        filename: &str,
+        bytes: &[u8],
+        emit_diagnostics: bool,
+    ) -> KunaResult<ObjectLoadImage> {
         // Parse the object file.
         let file = object::File::parse(bytes).map_err(|e| {
             KunaError::lowlevel(format!(
@@ -369,7 +383,13 @@ impl ObjectLoadImage {
         // byte-identical — it keeps the mapped path) plus the `relocobjects`
         // off-switch.  See [`crate::loader::reloc_object`].
         if reloc_objects_enabled() && fmt.relocatable_layout(&file) {
-            return Self::from_relocatable(filename, &file, fmt.as_ref(), archtype);
+            return Self::from_relocatable(
+                filename,
+                &file,
+                fmt.as_ref(),
+                archtype,
+                emit_diagnostics,
+            );
         }
 
         // Snapshot the loadable segments (PT_LOAD), copying their RAM bytes.
@@ -551,6 +571,7 @@ impl ObjectLoadImage {
         file: &object::File,
         fmt: &dyn crate::loader::format::ObjectFormat,
         archtype: Vec<u8>,
+        emit_diagnostics: bool,
     ) -> KunaResult<ObjectLoadImage> {
         use crate::loader::reloc_object;
 
@@ -566,6 +587,14 @@ impl ObjectLoadImage {
         let fpconst = crate::loader::kuna_msvcfpconst::plan(file, &layout);
         for w in &fpconst.warnings {
             eprintln!("[kuna msvcfpconst] {filename}: {w}");
+        }
+
+        // One bounded report per loader construction. Analysis-side consumers
+        // may construct another layout for address rebasing, but never print it.
+        if emit_diagnostics {
+            for line in layout.diagnostics.report_lines() {
+                eprintln!("[kuna ET_REL loader] {filename}: {line}");
+            }
         }
 
         let mut segments: Vec<Segment> =
@@ -597,12 +626,6 @@ impl ObjectLoadImage {
             if seen.insert(addr) {
                 funcsyms.push(FuncSym { addr, name });
             }
-        }
-
-        // Non-fatal loader diagnostics (an unhandled relocation kind, an
-        // unresolved symbol): logged, never fatal — the load still succeeds.
-        for w in &layout.warnings {
-            eprintln!("[kuna ET_REL loader] {filename}: {w}");
         }
 
         // (kuna §2.2) Same default-model fallback id as the linked path: the

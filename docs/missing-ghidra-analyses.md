@@ -55,6 +55,11 @@ re-presents the object with each laid-out section's relocated bytes and load VMA
 each unlaid `.debug_*` section's relocations applied, and each ELF symbol shifted
 by its own section's delta — so a pass never has to know it is reading a `.o`. A
 fact that still lands in no laid-out section is dropped, not passed through.
+The relocated snapshot uses the loader's architecture-aware encoder: generic
+8/16/32/64-bit fields plus ARM, AArch64, and PowerPC64 instruction relocations.
+Failures remain unmodified and enter the loader's bounded grouped diagnostic;
+analysis passes therefore consume one consistent image and do not duplicate ISA
+relocation logic or emit their own per-entry warning stream.
 
 The gating's commit timing: `bootstrap_from_elf` runs
 `run_default_analyses_per_pass` and **stashes** the per-pass `AnalysisOutput` on

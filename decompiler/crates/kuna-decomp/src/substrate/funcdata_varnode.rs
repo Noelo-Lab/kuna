@@ -2287,6 +2287,16 @@ impl Funcdata {
                         }
                     }
                     OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
+                        // (kuna divergence, DIV-118) `noreturnretuse` — upstream
+                        // rejects on every competing CALL use; a call on a block
+                        // that ends in a no-return halt can never reach the RETURN
+                        // being matched, so it does not compete.  See
+                        // [`crate::p4_calls::kuna_noreturnretuse`].
+                        if crate::p4_calls::kuna_noreturnretuse::call_cannot_reach_return(
+                            self, opmatch, op,
+                        ) {
+                            continue;
+                        }
                         if self.check_call_double_use(opmatch, op, vn, cur_flags, trial) {
                             continue;
                         }
@@ -3100,6 +3110,7 @@ mod tests {
 
     use crate::dtype::{type_metatype, Datatype};
     use crate::context::{ArchContext, TypeOp};
+    use crate::p4_calls::kuna_noreturnretuse;
     use crate::varnode::{DefOpInfo, VarnodeBank};
 
     /// Build an AddrSpaceManager with constant/unique/iop/fspec/ram spaces.
@@ -3144,6 +3155,80 @@ mod tests {
     /// test scaffolding, which builds varnodes at distinct addresses).
     fn no_replace() -> impl FnMut(&mut VarnodeBank, VarnodeId, VarnodeId) -> KunaResult<()> {
         |_: &mut VarnodeBank, _: VarnodeId, _: VarnodeId| -> KunaResult<()> { Ok(()) }
+    }
+
+    fn append_test_op(
+        fd: &mut Funcdata,
+        block: crate::context::BlockId,
+        offset: u64,
+        opcode: OpCode,
+        flags: uint4,
+    ) -> OpId {
+        let op = fd.new_op(0, Address::new(ram(fd), offset));
+        fd.op_set_opcode(op, TypeOp::new(opcode, flags, format!("{opcode:?}")));
+        fd.op_insert_end(op, block);
+        op
+    }
+
+    #[test]
+    fn terminal_noreturn_call_shape_requires_an_adjacent_noreturn_halt() {
+        let mut fd = build_fd();
+        let root = fd.bblocks_root_pub();
+        let block = fd.bblocks_mut().new_block_basic(root);
+        let call = append_test_op(
+            &mut fd,
+            block,
+            0x1000,
+            OpCode::CPUI_CALL,
+            crate::op::pcodeop_flags::call,
+        );
+        append_test_op(
+            &mut fd,
+            block,
+            0x1004,
+            OpCode::CPUI_RETURN,
+            crate::op::pcodeop_flags::returns | crate::op::pcodeop_flags::noreturn,
+        );
+        assert!(kuna_noreturnretuse::call_ends_in_noreturn_halt(&fd, call));
+
+        let mut ordinary = build_fd();
+        let root = ordinary.bblocks_root_pub();
+        let block = ordinary.bblocks_mut().new_block_basic(root);
+        let call = append_test_op(
+            &mut ordinary,
+            block,
+            0x1000,
+            OpCode::CPUI_CALL,
+            crate::op::pcodeop_flags::call,
+        );
+        append_test_op(
+            &mut ordinary,
+            block,
+            0x1004,
+            OpCode::CPUI_RETURN,
+            crate::op::pcodeop_flags::returns,
+        );
+        assert!(!kuna_noreturnretuse::call_ends_in_noreturn_halt(&ordinary, call));
+
+        let mut nonadjacent = build_fd();
+        let root = nonadjacent.bblocks_root_pub();
+        let block = nonadjacent.bblocks_mut().new_block_basic(root);
+        let call = append_test_op(
+            &mut nonadjacent,
+            block,
+            0x1000,
+            OpCode::CPUI_CALL,
+            crate::op::pcodeop_flags::call,
+        );
+        append_test_op(&mut nonadjacent, block, 0x1004, OpCode::CPUI_COPY, 0);
+        append_test_op(
+            &mut nonadjacent,
+            block,
+            0x1008,
+            OpCode::CPUI_RETURN,
+            crate::op::pcodeop_flags::returns | crate::op::pcodeop_flags::noreturn,
+        );
+        assert!(!kuna_noreturnretuse::call_ends_in_noreturn_halt(&nonadjacent, call));
     }
 
     // --- creation factories: bank-state outcomes -------------------------
