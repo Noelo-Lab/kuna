@@ -1631,6 +1631,12 @@ impl Action for ActionInputPrototype {
             // the heritage collected).  `triallist[i]` is the i-th registered
             // trial's Varnode (1-based slot in ParamTrial).
             let mut active = crate::fspec::ParamActive::new(false);
+            // (kuna) `inputparamgap`: these are the function's OWN input trials,
+            // where an ACTIVE trial means the body reads the register before it
+            // writes it.  Tell `forceInactiveChain` that a run of unused argument
+            // registers is not evidence against a later one.  See
+            // [`crate::p4_calls::kuna_inputparamgap`].
+            active.set_own_input_gap(data.get_arch().input_param_gap);
             let mut triallist: Vec<crate::context::VarnodeId> = Vec::new();
             let input_vns: Vec<crate::context::VarnodeId> =
                 data.vbank().iter_def_flag(crate::varnode::varnode_flags::input).collect();

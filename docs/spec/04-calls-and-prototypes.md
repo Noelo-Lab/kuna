@@ -210,7 +210,9 @@ parameter list. For the standard input list the decision sequence is:
    the chain immediately (the callee never touched the stack area, so nothing
    beyond it is a parameter); finally every inactive slot *before* the last
    surviving active trial is promoted — interior holes are filled, because
-   the list must be contiguous.
+   the list must be contiguous. (kuna) `inputparamgap` exempts an *active
+   register* trial from that demotion when the trials are the function's
+   **own** inputs rather than a call's — see below.
 5. Whatever is still active is marked **used**.
 
 Steps 3 and 4 both read a hole in a section as evidence that the argument list
@@ -237,6 +239,53 @@ evidence, and only `...` makes the hole a property of the ABI rather than of the
 recovery. Nothing about trial scoring changes — a stack trial still has to reach
 `fillin_map` active on its own evidence — so the option can keep an argument the
 recovery already believed in but never invent one.
+
+The same two rules are also what `ActionInputPrototype` runs the function's
+**own** input Varnodes through, and there the premise behind step 4 does not
+hold. At a call site an active trial is a caller-side inference — an argument
+register holding a value the caller wrote and does not otherwise use — which is
+genuinely ambiguous, so a long run of empty slots is fair evidence that the
+recovery has walked past the end of the argument list. For the function's own
+inputs an active trial is a fact about the body: this function reads that
+caller-saved register before any definition of it, which on an argument register
+has one explanation. The gap slots meanwhile carry no counter-evidence at all,
+since an untouched argument register is exactly what an ignored parameter looks
+like — and a callback whose signature is fixed by the API it is registered with
+ignores parameters as a matter of course. So step 4 trades a fact for a
+heuristic, and it fires hardest on the functions that need recovery most: a
+handler reached only through a function-pointer table has no call site anywhere
+in the image, so its body is the only evidence there is. The Wayland
+`wl_keyboard_listener` key callback is the witness — `data` in `rdi`,
+`wl_keyboard`/`serial`/`time` ignored, `key` and `state` arriving in `r8d`/`r9d`
+behind a three-register hole, one past `maxchain` — and kuna rendered it as
+`void sub_6500(long a0)` whose first statement branches on a local nothing ever
+assigned. (kuna) `inputparamgap` (default-on,
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_inputparamgap.rs`) stops a gap
+slot from ending the chain when the `ParamActive` is the one
+`ActionInputPrototype` built, so the active trials past the hole survive and step
+4's own promotion fills the interior with the unreferenced trials
+`build_trial_map` had already synthesized — the full ABI signature, positions and
+all. A two-slot hole was always tolerated, so the option moves only where the
+limit sits.
+
+Three clauses bound it, and the second was settled by measurement rather than
+argument. The flag is carried on that `ParamActive` and nothing sets it at a call
+site, so argument recovery everywhere else is untouched. Only an **active
+exclusion (register)** trial is protected — a stack trial's fate is left exactly
+to `seenchain`, because the evidence the option rests on is a register's: a
+caller-saved argument register read live-in can only be carrying what the caller
+placed there, while a positive-offset stack slot read live-in is much weaker,
+since a Win64 home slot used as scratch and an over-wide or aliased read look the
+same. A first design exempted any register *gap slot* instead; it fixed the
+witness and left the datatest corpus byte-identical, and it also let one Win64
+`sub_140010a57` span its four-register hole into the stack resource and promote
+eleven scratch slots of the caller's argument area into a fifteen-parameter
+signature. Because trials sort into formal parameter order, protecting only
+register trials additionally keeps step 4's hole-filling inside the register file,
+which is what bounds the recovered list to the ABI — six parameters on x86-64
+SysV, four on Win64. And it never makes a trial active that was not already
+active, so a register the body does not read before writing is still not a
+parameter.
 
 ### `build_input_from_trials` — writing the argument list
 
@@ -598,7 +647,8 @@ In the one-shot tail, after merge has built HighVariables:
 **`ActionInputPrototype`** (`coreaction_protos.rs (ActionInputPrototype)`)
 re-derives the function's own parameter list from its input Varnodes — each
 input that the model admits as a possible parameter becomes a trial, active
-iff it has readers; `fillin_map` orders them; recovered-but-unreferenced
+iff it has readers; `fillin_map` orders them (with the (kuna) `inputparamgap`
+gap-tolerance above, which applies only to this call of it); recovered-but-unreferenced
 parameters get fresh input Varnodes unless something already overlaps the
 slot; and the store is rewritten with each parameter typed from its
 HighVariable (`update_input_types`). **`ActionOutputPrototype`**

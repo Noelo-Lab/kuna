@@ -1279,6 +1279,10 @@ pub struct ParamActive {
     /// to a VARIADIC call whose variable arguments the ABI passes on the stack.
     /// Set by `ActionActiveParam`; see [`crate::p4_calls::kuna_varargstackargs`].
     vararg_stack_split: bool,
+    /// (kuna) `inputparamgap`: are these the trials of the FUNCTION'S OWN input
+    /// recovery, with the register-gap tolerance enabled?  Set by
+    /// `ActionInputPrototype`; see [`crate::p4_calls::kuna_inputparamgap`].
+    own_input_gap: bool,
 }
 
 impl ParamActive {
@@ -1295,6 +1299,7 @@ impl ParamActive {
             recoversubcall: recoversub,
             join_reverse: false,
             vararg_stack_split: false, // (kuna) varargstackargs
+            own_input_gap: false,      // (kuna) inputparamgap
         }
     }
 
@@ -1394,6 +1399,21 @@ impl ParamActive {
     /// `recoversubcall` it is a property of the call, not of one pass.
     pub fn set_vararg_stack_split(&mut self, val: bool) {
         self.vararg_stack_split = val;
+    }
+
+    /// (kuna) `inputparamgap`: are these the function's OWN input trials, with
+    /// the unused-register-run tolerance enabled?  Read by
+    /// [`Self::force_inactive_chain`](ParamListStandard) through
+    /// [`crate::p4_calls::kuna_inputparamgap::gap_slot_is_exempt`].
+    pub fn is_own_input_gap(&self) -> bool {
+        self.own_input_gap
+    }
+
+    /// (kuna) `inputparamgap`: record that these are the function's own input
+    /// trials and the option is on.  Only `ActionInputPrototype` sets it; a call
+    /// site's trials keep the upstream chain rule.
+    pub fn set_own_input_gap(&mut self, val: bool) {
+        self.own_input_gap = val;
     }
     /// Are these trials for a call to a sub-function (C++ `isRecoverSubcall`).
     pub fn is_recover_subcall(&self) -> bool {
@@ -2989,7 +3009,7 @@ impl ParamListStandard {
         let mut chainlength = 0;
         let mut max = -1;
         for i in start..stop {
-            let (defnouse, is_act, is_unref, addr_is_spacebase, slotgrp) = {
+            let (defnouse, is_act, is_unref, addr_is_spacebase, slotgrp, protected) = {
                 let trial = active.get_trial(i);
                 let addr_sb = trial
                     .get_address()
@@ -3006,6 +3026,15 @@ impl ParamListStandard {
                     } else {
                         0
                     },
+                    // (kuna) `inputparamgap`: in the function's OWN input
+                    // recovery an unused ARGUMENT REGISTER is an ignored
+                    // parameter, not evidence that a later REGISTER the body
+                    // reads before writing is not a parameter.
+                    crate::p4_calls::kuna_inputparamgap::trial_is_protected(
+                        active,
+                        trial,
+                        &self.entry,
+                    ),
                 )
             };
             if defnouse {
@@ -3033,11 +3062,16 @@ impl ParamListStandard {
                 }
             } else {
                 chainlength = 0;
-                if !seenchain {
+                // (kuna) `inputparamgap`: a protected trial is a REGISTER the
+                // function's own body reads before writing, and the chain does
+                // not get to veto it.  Trials sort into parameter order, so
+                // everything before it is also a register and the tail loop's
+                // hole-filling stays inside the argument-register file.
+                if !seenchain || protected {
                     max = i;
                 }
             }
-            if seenchain {
+            if seenchain && !protected {
                 active.get_trial_mut(i).mark_inactive();
             }
         }

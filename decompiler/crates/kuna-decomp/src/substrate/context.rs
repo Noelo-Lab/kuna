@@ -700,6 +700,14 @@ pub struct ArchContext {
     /// [`check_input_trial_use`](crate::funcdata_callsite::check_input_trial_use)
     /// through [`crate::p4_calls::kuna_calleedeadarg::trial_is_dead_in_callee`].
     pub callee_dead_arg: bool,
+    /// (kuna) in the function's OWN input recovery, tolerate a run of unused
+    /// argument REGISTERS before a live-in register (`inputparamgap`).  Read by
+    /// `ActionInputPrototype`, which stamps it onto the
+    /// [`ParamActive`](crate::fspec::ParamActive) that
+    /// [`ParamListStandard::fillin_map`](crate::fspec::ParamListStandard) then
+    /// consults through
+    /// [`crate::p4_calls::kuna_inputparamgap::gap_slot_is_exempt`].
+    pub input_param_gap: bool,
     /// (kuna) score a variadic call's stack arguments as their own `fillinMap`
     /// resource section (`varargstackargs`).  Read by
     /// [`ParamListStandard::fillin_map`](crate::fspec::ParamListStandard) through
@@ -1163,6 +1171,7 @@ impl ArchContext {
             // calleedeadarg only ever REMOVES an argument, and only against a
             // decoded callee body; the fixture seam carries the real default.
             callee_dead_arg: true,
+            input_param_gap: true,
             vararg_stack_args: true,     // varargstackargs (DIV-101 default-on)
             callee_arity: true,          // calleearity (DIV-102 default-on)
             callee_arity_fwd: true,      // calleearityfwd (default-on)
