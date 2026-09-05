@@ -210,9 +210,9 @@ parameter list. For the standard input list the decision sequence is:
    the chain immediately (the callee never touched the stack area, so nothing
    beyond it is a parameter); finally every inactive slot *before* the last
    surviving active trial is promoted — interior holes are filled, because
-   the list must be contiguous. (kuna) `inputparamgap` exempts a *register*
-   gap slot from that demotion when the trials are the function's **own**
-   inputs rather than a call's — see below.
+   the list must be contiguous. (kuna) `inputparamgap` exempts an *active
+   register* trial from that demotion when the trials are the function's
+   **own** inputs rather than a call's — see below.
 5. Whatever is still active is marked **used**.
 
 Steps 3 and 4 both read a hole in a section as evidence that the argument list
@@ -265,14 +265,27 @@ slot from ending the chain when the `ParamActive` is the one
 `ActionInputPrototype` built, so the active trials past the hole survive and step
 4's own promotion fills the interior with the unreferenced trials
 `build_trial_map` had already synthesized — the full ABI signature, positions and
-all. Three clauses bound it: the flag is carried on that `ParamActive` and
-nothing sets it at a call site, so argument recovery everywhere else is
-untouched; only an **exclusion** (register) gap slot is exempt, so a hole in the
-non-exclusion stack entry still ends the chain with the whole accumulated run and
-the reach stops at the ABI's argument-register file; and it never makes a trial
-active that was not already active, so a register the body does not read before
-writing is still not a parameter. A two-slot hole was always tolerated, so the
-option changes only where the limit sits.
+all. A two-slot hole was always tolerated, so the option moves only where the
+limit sits.
+
+Three clauses bound it, and the second was settled by measurement rather than
+argument. The flag is carried on that `ParamActive` and nothing sets it at a call
+site, so argument recovery everywhere else is untouched. Only an **active
+exclusion (register)** trial is protected — a stack trial's fate is left exactly
+to `seenchain`, because the evidence the option rests on is a register's: a
+caller-saved argument register read live-in can only be carrying what the caller
+placed there, while a positive-offset stack slot read live-in is much weaker,
+since a Win64 home slot used as scratch and an over-wide or aliased read look the
+same. A first design exempted any register *gap slot* instead; it fixed the
+witness and left the datatest corpus byte-identical, and it also let one Win64
+`sub_140010a57` span its four-register hole into the stack resource and promote
+eleven scratch slots of the caller's argument area into a fifteen-parameter
+signature. Because trials sort into formal parameter order, protecting only
+register trials additionally keeps step 4's hole-filling inside the register file,
+which is what bounds the recovered list to the ABI — six parameters on x86-64
+SysV, four on Win64. And it never makes a trial active that was not already
+active, so a register the body does not read before writing is still not a
+parameter.
 
 ### `build_input_from_trials` — writing the argument list
 
