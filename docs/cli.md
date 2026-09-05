@@ -1118,7 +1118,7 @@ emitted. Two runs of one command are byte-identical.
 | `forwardsTo` | Where a forwarding entry sends control: the destination of a direct lone jump, or the fixed pointer slot an indirect one reads. The slot half needs the jump to name it as a decode-time constant, which an x86 `jmp [rip+disp]` stub does and an AArch64 `adrp`/`ldr`/`br x16` stub does not — a Mach-O `__stubs` entry is therefore `kind` `thunk` with a `null` `forwardsTo`, and the import slot it reaches is a row of its own found by name. `null` for anything that does not forward. |
 | `isEntryPoint` | This row is the image's declared entry point, resolved through the inventory so an ARM `e_entry` carrying the Thumb mode bit still lands on it. A format that declares no entry point marks no row. |
 | `edges[].kind` | The `kuna xrefs` kind, so the two surfaces cannot disagree: `call` a direct call; `jump` a tail call or a branch into a neighbouring entry; `data` an address handed to something else to call — the edge that gives `main` a caller, since `_start` passes it to `__libc_start_main` as a pointer rather than calling it. A caller that both calls and mentions one callee gets one edge carrying the strongest of the two. |
-| `edges[].calleeOrder` | Contiguous and zero-based per caller, in first-call-site order, deduplicated on the callee. |
+| `edges[].calleeOrder` | Contiguous and zero-based per caller, in first-reference order, deduplicated on the callee. |
 
 Rows are entry-VMA ordered, and each caller's edges follow that caller's order.
 A field the program cannot supply is `null`, never a placeholder; a field that
