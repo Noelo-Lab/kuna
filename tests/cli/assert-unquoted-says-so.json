@@ -1,0 +1,34 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "main",
+    "--assert",
+    "prototype"
+  ],
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/midstring_x86_64",
+    "binary_sha256": "1a4cc3ca2bc124f6228923046c0859465234c2269dae6d4bfe5c1554feb2c682",
+    "binary_size": 16072,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/midstring_x86_64",
+    "selector": "main",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "ne": 0
+    },
+    "stderr_matches": [
+      "ONE argument",
+      "quote it",
+      "--assert \"prototype main int main"
+    ]
+  },
+  "notes": "Five of eight round-3 testers wrote --assert unquoted, so the shell split it and the old message named the CONTENT it wanted while saying nothing about the shape. All five concluded kuna rejects the C type `int` -- it does not. Asserting the hint text, because the diagnostic IS the fix here."
+}
