@@ -188,7 +188,7 @@
       "severity": "major",
       "probe_id": "p-8355fed97a86",
       "acceptance_id": "a-f6e8100daa0b",
-      "hypothesis_status": "inconclusive",
+      "hypothesis_status": "overturned",
       "credibility": 0.8,
       "instances": 1,
       "challenges": [

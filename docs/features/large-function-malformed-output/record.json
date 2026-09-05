@@ -1,0 +1,78 @@
+{
+  "slug": "large-function-malformed-output",
+  "need_id": "large-function-malformed-output",
+  "track": "quality",
+  "round": 3,
+  "branch": "feat/re-large-function-malformed-output",
+  "scope": "large",
+  "proposal": true,
+  "opportunity": "re-need:large-function-malformed-output",
+  "probe_id": "p-8355fed97a86",
+  "acceptance_id": "a-f6e8100daa0b",
+  "instances": 1,
+  "witness": {
+    "binary": "kuna-re-dataset/challenges/6a3822888a86e4c2c55254fe/bin/selam.exe",
+    "sha256": "01f288daf9ca08857b51c550a0e4b1d422724de883d984780fb8c493f2e2c859",
+    "format": "PE32+ x86-64, MSVC, no PDB, no symbol table",
+    "func_addr": "0x140002d50",
+    "func_size": 6144,
+    "baseline_lines": 1267,
+    "baseline_declarations": 159
+  },
+  "option": null,
+  "flag": null,
+  "element_id": null,
+  "phase": "P2",
+  "subphase": "flow-following",
+  "tier": "transform",
+  "change_kind": "correctness-fix",
+  "owning_file": "decompiler/crates/kuna-decomp/src/p2_lift/flow.rs",
+  "owning_function": "setup_callind_specs",
+  "spec_chapter": "docs/spec/02-lifting-and-flow.md",
+  "touches": ["decompiler/crates/kuna-decomp/src/p2_lift"],
+  "root_cause_class": "unmodelled-instruction-semantics",
+  "hypothesis_status": "OVERTURNED",
+  "filed_hypothesis": "Stack-variable splitting and C++ small-string-object type recovery fail together in this optimized function.",
+  "decisions": [
+    "HYPOTHESIS OVERTURNED. Nothing here is C++ small-string-object type recovery. The dominant defect is that x86 SLEIGH lowers `INT imm8` to `intloc = swi(imm8); call [intloc]` -- a `call` with NO matching push -- while x86-64-win.cspec's default __fastcall carries extrapop=8/stackshift=8. Every INT therefore grows RSP by 8 (kuna prints it: `v65 = &v64[8]` right after `(*(void *)swi(0x29))(5)`). The witness has ELEVEN `INT 0x29` (__fastfail, the MSVC /GS + STL _STL_VERIFY idiom); once two paths join with RSP offsets 8 apart the frame stops being a constant offset from the spacebase, every stack local degenerates into offsets off a `char *`, and the CALL return-address push -- normally a dead store into an unmapped slot -- survives as an explicit store. That IS the tester's 'raw synthetic stack-address writes' (63 of them) and it is why the BCrypt call arguments are stack blobs.",
+    "PROVEN TWICE WITHOUT ENGINE CODE. (1) `--assert 'flow <addr> callreturn'` on the 11 INT 0x29 sites: 1267 -> 1171 lines, 63 -> 0 synthetic stores, 159 -> 144 declarations, and `BCryptGenerateSymmetricKey(*(unsigned long long *)&v66[0x50],&v53,v60,v51)` becomes `BCryptGenerateSymmetricKey(v52,&v55,v62,v54)`. (2) Byte-patching the 30 `MOV ECX,5 ; INT 0x29` sites to NOPs: 1121 lines, 0 synthetic stores. Two different interventions at the same instruction, same result.",
+    "BREADTH MEASURED ON THE WHOLE IMAGE, not just the witness: 24 of 907 functions contain INT 0x29. Whole-set A/B with the same assertion: 2802 -> 2583 lines (-7.8%), 85 -> 0 synthetic stores, 558 -> 493 declarations (-11.6%). One function REGRESSES on declarations (0x1400017f0, 31 -> 41) because cutting the fastfail block splits variables that were merged across it; recorded, not hidden.",
+    "THE DECISION LOG'S OPEN QUESTION IS ANSWERED: NO. The impossible condition `v13 != (unsigned int *)((long long)v13 + 6)` does NOT fall out of the same fix -- it is present at line 1249 today and at line 1157 with all 11 fastfail sites cut. It is also FAITHFUL: MSVC really emitted `LEA RAX,[R12+6] ; CMP R12,RAX ; JZ` at 0x14000385a. Its real home is a second defect: 21 `REP STOSB` in this function each render as a hand-rolled 5-line fill loop (~105 lines, ~21 induction variables, `builtin_memset` count 0). `memsetrecover` is default-on but only matches the straight-line run-of-stores form, not the string-instruction loop. So the captain's candidate `stdout_absent` clause belongs on increment B, not on increment A -- putting it on A would make A unclosable.",
+    "THE ACCEPTANCE PROBE CANNOT BE SATISFIED SOUNDLY AND SHOULD BE RE-CUT. `std::string` is unreachable on this witness for four independent reasons: no PDB/symbols; no `basic_string` RTTI (std::string is not polymorphic, so it has none -- the image's 30+ MSVC RTTI descriptors do not include it, and `--option rtti on` cannot reach it); the function CONSTRUCTS no std::string (the MSVC SSO signature `_Myres=0xf` at +0x18 / `CMP [x+0x18],0xf ; CMOVA` appears nowhere in 0x140002d50..0x140004550 -- the nearest string object is in the CALLER at 0x140004a95), so even a complete MSVC STL layout-recovery feature would not fire here; and what the function actually takes is `{const char *, size_t}`, a std::string_view, which could only be NAMED std::string_view by guessing from the shape -- exactly the 'spells one type std::string without removing any of the malformed C' outcome the record already warned about.",
+    "REPLACEMENT ACCEPTANCE PROPOSED AND VERIFIED IN BOTH DIRECTIONS on the unmodified binary: stdout_absent `\\*\\(unsigned long long \\*\\)&v\\d+\\[-8\\] = 0x1` (63 today, 0 with the fix) and stdout_matches `BCryptGenerateSymmetricKey\\(v\\d+,` (0 today, 1 with the fix), both name-agnostic so no SSA renumbering can fake a flip.",
+    "RECOMMENDED FIRST INCREMENT is the no-return route, NOT the stack-model route. Marking `int 0x29` no-return on a Windows PE is one module + one gated call site at flow.rs:2167 (setup_callind_specs, just before build_call_specs(op, Address::default(), true)), reusing the artificialHalt(noreturn) that check_for_flow_modification already plants. Fixing the stack model instead -- do not apply extrapop to a `call` whose instruction never pushed -- is strictly more general (INT1/INT3/INTO/int 0x80, no Windows gate) but changes the stack solver for every architecture and every call in the corpus, and INT3 genuinely DOES return, so the two are not interchangeable. It belongs in its own proposal after A ships.",
+    "A THIRD DEFECT IS RECORDED BUT NOT PROPOSED HERE: the Win32 API has no prototypes. Names resolve from the PE import table, signatures do not exist, so even after A the arity is wrong -- `BCryptDecrypt(v55,0,(int)v105 - (int)v56,&v60)` takes 10 parameters and `BCryptDestroyKey()` takes 1. A `libcsigs`-shaped Win32 signature table is a self-contained analysis-tier increment.",
+    "NOT COVERED BY ANY EXISTING OPTION. All 148 catalog rows were swept for use_when/symptoms matching C++/string/struct/MSVC/STL/RTTI/type; the closest is `ptrdepthcap` (default off), which the sibling need c-string-objects-become shipped and whose own proposal explicitly deferred std::string struct recovery as 'a different, much larger feature'. Nothing in the tree emits the literal `std::string` at all (grep over decompiler/crates: zero hits outside docs prose).",
+    "NO ENGINE CODE WAS WRITTEN. Every number above comes from mechanisms already in the tree: `--assert flow <addr> callreturn` and a byte-patched copy of the image."
+  ],
+  "mechanism": "Not implemented. Proposed increment A: a new p2_lift/kuna_fastfailnoreturn.rs consulted from setup_callind_specs (flow.rs:2167) -- when the CALLIND's target varnode is defined by a CALLOTHER of the `swi` userop with the constant 0x29 and the image is a Windows PE, mark the call no-return so the existing check_for_flow_modification plants artificialHalt(noreturn) and truncates flow. Gated behind a transform-tier option (REMOVES CODE). Increments B1 (fold INT_NOTEQUAL(V, INT_ADD(V,#c)) with c != 0), B2 (REP STOSB/MOVSB -> builtin_memset/memcpy) and C (Win32 signature table) are separate PRs.",
+  "measured": {
+    "method": "kuna decompile <fn> --addr, stock vs the same command with `--assert 'flow <addr> callreturn'` on every INT 0x29 in the function; 24 affected functions enumerated by scanning each function's byte range for CD 29 via the PE section map",
+    "witness_lines": [1267, 1171],
+    "witness_synthetic_retaddr_stores": [63, 0],
+    "witness_declarations": [159, 144],
+    "corpus_functions_with_int29": 24,
+    "corpus_functions_total": 907,
+    "corpus_lines": [2802, 2583],
+    "corpus_synthetic_retaddr_stores": [85, 0],
+    "corpus_declarations": [558, 493],
+    "corpus_regressions": ["0x1400017f0 declarations 31 -> 41"],
+    "byte_patch_control": {"sites_nopped": 30, "lines": 1121, "synthetic_retaddr_stores": 0},
+    "rep_stosb_in_witness": 21,
+    "builtin_memset_in_witness": 0,
+    "impossible_condition_present": {"stock": 1, "with_fix_A": 1},
+    "std_string_present": {"stock": 0, "with_fix_A": 0},
+    "acceptance_candidate_clauses": {
+      "stdout_absent \\*\\(unsigned long long \\*\\)&v\\d+\\[-8\\] = 0x1": [63, 0],
+      "stdout_matches BCryptGenerateSymmetricKey\\(v\\d+,": [0, 1]
+    },
+    "speed": "not measured -- the --assert build proves the output, not the cost"
+  },
+  "gates": {
+    "note": "no engine change, so no gate was run beyond the two-arm verify"
+  },
+  "acceptance": {
+    "status": "FAILS and is proposed for replacement",
+    "reason": "std::string is not soundly reachable on this witness; see decisions[4] and proposal.md section 5"
+  }
+}
