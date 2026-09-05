@@ -86,7 +86,8 @@ pub fn run(argv: &[String]) -> i32 {
 
 /// Scan, attribute, filter, render — the whole command in one pass.
 pub(crate) fn query(args: &StringsArgs) -> Result<String, String> {
-    let bytes = std::fs::read(&args.binary).map_err(|e| format!("{}: {e}", args.binary))?;
+    let bytes = kuna_analysis::loader::elf_shdr::read_image(&args.binary)
+        .map_err(|e| format!("{}: {e}", args.binary))?;
     let file = object::File::parse(&*bytes)
         .map_err(|e| format!("could not parse {}: {e}", args.binary))?;
 

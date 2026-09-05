@@ -1888,6 +1888,17 @@ pub fn bootstrap_from_object(
     // `KUNA_MACHO_SLICE`) or the `--target` stem, else x86-64 → arm64 → first.
     // Non-fat input is untouched (the peel returns the bytes verbatim).
     let bytes = select_macho_slice(bytes, target);
+    // (kuna) ELF section-table tolerance: the second normalization at this same
+    // canonical point. An ELF's section table is link-time metadata, but `object`
+    // validates it eagerly, so one corrupt half-word rejected an image whose
+    // program headers described every loadable byte -- and every kuna surface
+    // exited 1 on a file `readelf -l` reads happily. Clearing the unusable table
+    // here (and only here) means the loader AND the analysis passes below see the
+    // same recovered view. A file with a usable section table is untouched.
+    let (bytes, shdr_note) = kuna_analysis::loader::elf_shdr::tolerate_unusable_section_table(bytes);
+    if let Some(note) = shdr_note {
+        eprintln!("[kuna] {note}");
+    }
     // LoadImageBfd(filename) + open(): parse the ELF (machine, segments, symbols).
     let mut loader = ObjectLoadImage::from_bytes(path, &bytes)?;
 

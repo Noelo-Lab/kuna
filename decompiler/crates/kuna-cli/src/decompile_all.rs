@@ -316,7 +316,8 @@ pub(crate) struct CallGraph {
 
 impl CallGraph {
     pub(crate) fn build(prog: &ConsoleProgram, binary: &str) -> Result<CallGraph, String> {
-        let bytes = std::fs::read(binary).map_err(|e| format!("{binary}: {e}"))?;
+        let bytes = kuna_analysis::loader::elf_shdr::read_image(binary)
+            .map_err(|e| format!("{binary}: {e}"))?;
         let file = object::File::parse(&*bytes)
             .map_err(|e| format!("could not parse {binary}: {e}"))?;
         Ok(CallGraph::build_from(prog, &file))
@@ -1067,7 +1068,7 @@ pub(crate) fn driver_default_options(
     options: &[(String, String)],
 ) -> Vec<(&'static str, &'static str)> {
     let named = |name: &str| options.iter().any(|(option, _)| option == name);
-    let non_x86_64 = std::fs::read(binary)
+    let non_x86_64 = kuna_analysis::loader::elf_shdr::read_image(binary)
         .ok()
         .and_then(|bytes| {
             object::File::parse(&*bytes)

@@ -117,6 +117,28 @@ symbol-table property map eagerly at bootstrap (loader markup, not a gated pass)
 they are what lets the printer prove a constant points into read-only memory and
 render a string literal.
 
+(kuna) **An unusable section table is dropped, not fatal**
+(`decompiler/crates/kuna-analysis/src/loader/elf_shdr.rs
+(tolerate_unusable_section_table)`). An ELF's section table is link-time metadata;
+what the loader obeys — the entry point and the `PT_LOAD` map — lives in the ELF
+header and the program headers, which is why `readelf -l` still prints a full
+segment map for an image whose `e_shoff` is garbage. `object` nevertheless
+validates the section table eagerly inside `File::parse`, so a single out-of-range
+`e_shoff`, a wrong `e_shentsize`, or an `e_shstrndx` naming no section rejected the
+whole image and every kuna surface exited 1 with "not in recognized object file
+format". Packers, `sstrip` and CTF authors all produce that shape deliberately. The
+image bytes are therefore normalized once, at the same canonical read point as the
+Mach-O fat-slice peel, by clearing `e_shoff`/`e_shnum`/`e_shstrndx` — the encoding
+of "this ELF has no section table" — so the loader and every analysis pass below
+see the same recovered view. The test is pure header arithmetic and runs before any
+parse, so an image whose table is usable is passed on byte for byte; the rewrite is
+kept only if the rewritten copy actually parses, so corruption elsewhere still
+reports `object`'s own error rather than a misleading one about the section table.
+What was dropped, and what survived it, is reported on stderr. The CLI surfaces
+that parse the image themselves rather than through the loader (`strings`, `xrefs`,
+`decompile-graph`, the call graph) read it through the same normalization
+(`elf_shdr (read_image)`), so a recovered image is recovered everywhere.
+
 **Character sanitizing** (`symbolnamechars`, `off|safe|ident`, default `safe`;
 `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_symbolnamechars.rs`) is the
 last step of that name reduction, and it is the only one that treats the name as
@@ -1277,6 +1299,27 @@ signature. PE and Mach-O dispatch to their own oracles (`.pdata`/TLS/entry;
 `LC_FUNCTION_STARTS`/`LC_MAIN`/`__mod_init_func`). Failure mode: discovery-only —
 a wrong entry is a garbage `sub_<addr>`; a missed one is invisible until a caller
 overruns into it (§1.7).
+
+(kuna) **With no section table, the plausible-code oracle is the program header.**
+"Restricted to executable sections" is a filter every oracle above passes through
+(`decompiler/crates/kuna-analysis/src/analyzers/entry/mod.rs
+(executable_sections)`), and it reads the section table alone. An image that has no
+section table therefore has no executable sections, so the filter rejected every
+candidate the oracles produced — including the image's own `e_entry` — and
+discovery returned nothing on a file the loader had just mapped perfectly well and
+could decompile function by function through `--addr`. Where the section table is
+*absent* the `PF_X` `PT_LOAD` segments stand in for it
+(`executable_segments`): they are the other, independent description of the same
+image, and the one the loader itself works from. The substitution is coarser — a
+read-execute `PT_LOAD` also spans `.rodata` and the ELF header — which is why it is
+reached only when there is no section table at all: an image that has one has
+already had its say about what is code, and is left with exactly the ranges it had.
+One image is section-less and yet not a candidate: a **UPX-packed** one, whose load
+segments are a decompressor around a compressed blob. Discovering the stub's
+handful of routines would bury the far more actionable answer kuna already gives
+such an image — "image appears UPX-packed; try `kuna unpack`", which is what a run
+that discovers nothing produces — so a load segment carrying the `UPX!` magic
+declines the fallback and keeps that behavior (`is_packer_stub`).
 
 (kuna) **Not every `.pdata` record is a function** — the PE exception directory
 answers "where does unwinding start from here", which is a coarser question than
