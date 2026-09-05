@@ -279,12 +279,12 @@
     },
     {
       "need_id": "no-cli-structuring-override",
-      "title": "an agent cannot force a goto, a jump table, or a flow reclassification",
+      "title": "an agent cannot reclassify a flow from the CLI -- `--assert` has no `flow` directive",
       "track": "tooling",
       "status": "open",
       "severity": "major",
-      "probe_id": null,
-      "acceptance_id": null,
+      "probe_id": "p-a862d011f87f",
+      "acceptance_id": "a-158ef4220dee",
       "hypothesis_status": "upheld",
       "credibility": 1.0,
       "instances": 1,
@@ -296,10 +296,11 @@
       "attempts": 0,
       "covered_by_option": null,
       "touches": [
+        "decompiler/crates/kuna-cli/src/assertdecl.rs",
         "decompiler/crates/kuna-console/src/ifacedecomp.rs",
         "decompiler/crates/kuna-decomp/phases.toml"
       ],
-      "scope": "large",
+      "scope": "small",
       "regression_of": null,
       "pr": null,
       "closed_in_round": null,
