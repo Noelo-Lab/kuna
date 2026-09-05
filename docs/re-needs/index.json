@@ -279,38 +279,6 @@
       "path": "docs/re-needs/pe-function-inventory-labels.md"
     },
     {
-      "need_id": "simd-constant-string-initializer",
-      "title": "SIMD constant-string initializer explodes into hundreds of scalar pseudo-operations",
-      "track": "quality",
-      "status": "open",
-      "severity": "major",
-      "probe_id": "p-7127e6d559a3",
-      "acceptance_id": "a-9667a93853f5",
-      "hypothesis_status": "inconclusive",
-      "credibility": 0.7,
-      "instances": 1,
-      "challenges": [
-        "653d88600f4238b24302b0ec"
-      ],
-      "rounds": [
-        2
-      ],
-      "first_seen_round": 2,
-      "attempts": 0,
-      "covered_by_option": null,
-      "touches": [
-        "decompiler/crates/kuna-decomp"
-      ],
-      "scope": "large",
-      "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
-      "reject_reason": null,
-      "score": 13.862944,
-      "path": "docs/re-needs/simd-constant-string-initializer.md"
-    },
-    {
       "need_id": "strings-inventory-omits-statically",
       "title": "Strings inventory omits statically constructed strings needed by the checker",
       "track": "quality",
@@ -659,6 +627,38 @@
       "reject_reason": null,
       "score": 9.241962,
       "path": "docs/re-needs/ppc64-localentry-splits-function.md"
+    },
+    {
+      "need_id": "simd-constant-string-initializer",
+      "title": "SIMD constant-string initializer explodes into hundreds of scalar pseudo-operations",
+      "track": "quality",
+      "status": "open",
+      "severity": "major",
+      "probe_id": "p-7127e6d559a3",
+      "acceptance_id": "a-9667a93853f5",
+      "hypothesis_status": "upheld",
+      "credibility": 0.7,
+      "instances": 1,
+      "challenges": [
+        "653d88600f4238b24302b0ec"
+      ],
+      "rounds": [
+        2
+      ],
+      "first_seen_round": 2,
+      "attempts": 1,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-decomp"
+      ],
+      "scope": "large",
+      "regression_of": null,
+      "pr": "406",
+      "closed_in_round": null,
+      "closing_pr": null,
+      "reject_reason": null,
+      "score": 9.241962,
+      "path": "docs/re-needs/simd-constant-string-initializer.md"
     },
     {
       "need_id": "void-callee-spurious-arg",

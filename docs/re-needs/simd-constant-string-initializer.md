@@ -6,18 +6,18 @@ status: open
 severity: major
 probe_id: p-7127e6d559a3
 acceptance_id: a-9667a93853f5
-hypothesis_status: inconclusive
+hypothesis_status: upheld
 credibility: 0.7
 instances: 1
 challenges: [653d88600f4238b24302b0ec]
 rounds: [2]
 first_seen_round: 2
-attempts: 0
+attempts: 1
 covered_by_option: null
 touches: [decompiler/crates/kuna-decomp]
 scope: large
 regression_of: null
-pr: null
+pr: "406"
 closed_in_round: null
 closing_pr: null
 reject_reason: null
@@ -144,3 +144,31 @@ _none recorded_
   rather than open-ended; (c) it is the upstream half of [[strings-inventory-omits-statically]]
   — same binary, same 752-byte initializer — so a fold here makes that need cheap, while the
   reverse is not true. Dispatch order between the pair is therefore simd first, strings second.
+
+- round 2 B_DRAIN (captain): **ATTEMPT 1 ENDED ON THE $30 BUDGET CAP, AND THE WORK IS COMPLETE AND
+  PUSHED — do not re-file, do not redesign.** Builder `b-r2-simd-constant-st` ran 63 min / 202
+  turns / $30.20 and died at the merge step: `.kuna-repipe/logs/b-r2-simd-constant-st.result.json`
+  says `subtype: error_max_budget_usd`, `terminal_reason: budget_exhausted`, so `status: failed`
+  here means "ran out of money", not "failed to build the thing" ([[kuna-repipe-budget-cap-salvage]]).
+  What exists: **PR #406**, branch `feat/re-simd-constant-string-initializer` @ `f22d7325`, one
+  commit, 31 files, local tip == pushed head, worktree
+  `.kuna-repipe/worktrees/b-r2-simd-constant-st` CLEAN, and the commit's parent is `78025620` ==
+  `origin/main` exactly, so **no rebase is owed and no count/baseline re-derivation is owed**.
+- round 2 B_DRAIN (captain): **hypothesis inconclusive -> upheld, with a correction the next tick
+  must carry.** The filed cause (constant-mask `pshufb` lanes never fold, so 32 `SUB161` temporaries
+  survive) is real and is shipped as option `simdlane` (P3, DIV-115) — but the builder measured it
+  as *less than half* the symptom: folding the lanes alone makes the function 278 bytes LONGER
+  (15,532 -> 15,810). 45.8% of the bytes were one 72-store epilogue emitted three times, fixed
+  separately as option `retsplitglobal` (P8, DIV-116), an output-side bound on
+  `ActionReturnSplit::isSplittable`, which declines to split past 8 global stores. Acceptance
+  a-9667a93853f5 passes on the branch (11,264 bytes, zero `SUB161(`, both positive anchors matched);
+  with both options off the output is byte-identical to main.
+- round 2 B_DRAIN (captain): **what is left is a merge button, priced at a merge and nothing more.**
+  PR #406 is OPEN / MERGEABLE / `full-ci` labelled; `parity gates` SUCCESS, `cargo workspace suite`
+  IN_PROGRESS as of 15:20Z (mergeStateStatus UNSTABLE is that one running check, not a conflict).
+  A salvage dispatch must be MERGE-BUTTON-ONLY: `RESUME_BRANCH=feat/re-simd-constant-string-initializer`,
+  no redesign, no force-push, wait for the workspace suite, then merge under the `merge` lease.
+  Two mechanical traps first — `git worktree remove .kuna-repipe/worktrees/b-r2-simd-constant-st`
+  before spawning (the wid is derived from the need id and `git worktree add` fails on an occupied
+  path, falling back to a SILENT detached worktree, [[kuna-repipe-detached-branch-trap]]), and
+  never `git branch -D` this branch.
