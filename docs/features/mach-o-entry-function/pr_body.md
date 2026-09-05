@@ -126,7 +126,14 @@ PE.
 | `make test-cli` | 27/27 (26 before, +the promoted probe) |
 | `kuna catalog --check` | catalog OK |
 | `scripts.repipe.counters` | no drift |
-| speed | see below |
+| speed | **+0.11%** (min) / +0.46% (median), interleaved min-of-15 pairs — budget 5% |
+
+Speed is measured **interleaved** (15 alternating pairs, order flipped every pair, address
+selector on both arms) because `scripts.pipeline.timeit` run sequentially on this box
+reported −23.57% on a pass that does one extra walk of a 16-entry load-command list: it
+times every `off` repeat and then every `on` repeat, so a warming trend lands entirely on the
+second arm. Interleaved: off 178.41 ms / on 178.61 ms (min) — noise, as the mechanism
+predicts. Recorded in `record.json`.
 
 Docs: `docs/spec/01-program-prep.md` (the owning chapter — prose beside the
 `entrymainproto` section it is the counterpart of), the DIV-111 row in `docs/history.md`,
