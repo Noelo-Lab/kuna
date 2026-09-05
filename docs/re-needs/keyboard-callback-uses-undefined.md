@@ -5,7 +5,7 @@ track: quality
 status: open
 severity: major
 probe_id: p-2fa68bfb8456
-acceptance_id: a-2883814fbd58
+acceptance_id: a-d6b2084f35d5
 hypothesis_status: inconclusive
 credibility: 0.7
 instances: 1
@@ -77,8 +77,16 @@ A decompilation whose signature includes the Wayland callback event arguments us
     "--addr"
   ],
   "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "sub_6500\\(",
+      "sub_6500\\([^)]*,[^)]*\\)"
+    ],
     "stdout_absent": [
-      "if \\(v[0-9]+ != 1 \\|\\| !a0\\[0xd\\]\\)"
+      "^\\s+\\S[^;]*; // r8d$",
+      "^\\s+\\S[^;]*; // r9d$"
     ]
   },
   "target": {
