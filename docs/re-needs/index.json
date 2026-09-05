@@ -1,21 +1,21 @@
 {
   "schema": "re-needs-index/1",
   "generated_by": "scripts.repipe.needs",
-  "count": 35,
+  "count": 51,
   "rejected_count": 0,
   "by_status": {
-    "closed": 32,
-    "open": 3
+    "closed": 35,
+    "open": 16
   },
   "by_track": {
     "perf": 2,
-    "quality": 21,
-    "tooling": 12
+    "quality": 30,
+    "tooling": 19
   },
   "by_severity": {
-    "blocker": 2,
-    "major": 29,
-    "minor": 4
+    "blocker": 5,
+    "major": 40,
+    "minor": 6
   },
   "by_reject_reason": {},
   "needs": [
@@ -86,6 +86,142 @@
       "path": "docs/re-needs/strings-json-fails-report.md"
     },
     {
+      "need_id": "prototype-assertions-reject-ordinary",
+      "title": "Prototype assertions reject ordinary unsigned int declarations",
+      "track": "tooling",
+      "status": "closed",
+      "severity": "major",
+      "probe_id": "p-b95fa6549eeb",
+      "acceptance_id": "a-e9643c3e9aaa",
+      "hypothesis_status": "upheld",
+      "credibility": 1.0,
+      "instances": 5,
+      "challenges": [
+        "5ab77f5733c5d40ad448c380",
+        "5ab77f5833c5d40ad448c399",
+        "640a526833c5d447bc761899",
+        "68d9ee36224c0ec5dcedc3fc",
+        "6a0b84982b3df128c1df5c0d"
+      ],
+      "rounds": [
+        3
+      ],
+      "first_seen_round": 3,
+      "attempts": 0,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-console/src/grammar",
+        "decompiler/crates/kuna-console/src/ifacedecomp.rs"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": 421,
+      "closed_in_round": 3,
+      "closing_pr": 421,
+      "reject_reason": null,
+      "score": 179.175947,
+      "path": "docs/re-needs/prototype-assertions-reject-ordinary.md"
+    },
+    {
+      "need_id": "explicit-function-boundary-aborts",
+      "title": "Explicit function boundary aborts on a branch to its exclusive end",
+      "track": "quality",
+      "status": "open",
+      "severity": "blocker",
+      "probe_id": "p-75d948cd4495",
+      "acceptance_id": "a-2eea743fefa7",
+      "hypothesis_status": "upheld",
+      "credibility": 1.0,
+      "instances": 2,
+      "challenges": [
+        "69d6affb110488a3205426e2",
+        "6a0b84982b3df128c1df5c0d"
+      ],
+      "rounds": [
+        3
+      ],
+      "first_seen_round": 3,
+      "attempts": 0,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-decomp/src/p2_lift"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": null,
+      "closed_in_round": null,
+      "closing_pr": null,
+      "reject_reason": null,
+      "score": 65.916737,
+      "path": "docs/re-needs/explicit-function-boundary-aborts.md"
+    },
+    {
+      "need_id": "get-pc-helper-loses",
+      "title": "Get-PC helper loses a live stat-buffer argument",
+      "track": "quality",
+      "status": "open",
+      "severity": "major",
+      "probe_id": "p-8980f5aa3c7b",
+      "acceptance_id": "a-1d7268631488",
+      "hypothesis_status": "upheld",
+      "credibility": 1.0,
+      "instances": 2,
+      "challenges": [
+        "5ab77f5833c5d40ad448c399",
+        "68d9ee36224c0ec5dcedc3fc"
+      ],
+      "rounds": [
+        3
+      ],
+      "first_seen_round": 3,
+      "attempts": 0,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-decomp/src/p4_calls"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": null,
+      "closed_in_round": null,
+      "closing_pr": null,
+      "reject_reason": null,
+      "score": 43.944492,
+      "path": "docs/re-needs/get-pc-helper-loses.md"
+    },
+    {
+      "need_id": "win32-process-enumeration-loses",
+      "title": "Win32 process enumeration loses required call arguments",
+      "track": "quality",
+      "status": "open",
+      "severity": "major",
+      "probe_id": "p-92a90707ef5a",
+      "acceptance_id": "a-e1701a898c8f",
+      "hypothesis_status": "overturned",
+      "credibility": 1.0,
+      "instances": 2,
+      "challenges": [
+        "640a526833c5d447bc761899",
+        "68d9ee36224c0ec5dcedc3fc"
+      ],
+      "rounds": [
+        3
+      ],
+      "first_seen_round": 3,
+      "attempts": 0,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-decomp/src/p4_calls"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": null,
+      "closed_in_round": null,
+      "closing_pr": null,
+      "reject_reason": null,
+      "score": 43.944492,
+      "path": "docs/re-needs/win32-process-enumeration-loses.md"
+    },
+    {
       "need_id": "analysis-generated-function-name",
       "title": "Analysis-generated function name cannot be used by decompile",
       "track": "tooling",
@@ -116,6 +252,71 @@
       "reject_reason": null,
       "score": 21.972246,
       "path": "docs/re-needs/analysis-generated-function-name.md"
+    },
+    {
+      "need_id": "checker-exceeds-instruction-ceiling",
+      "title": "Checker exceeds instruction ceiling with no discoverable override",
+      "track": "tooling",
+      "status": "closed",
+      "severity": "blocker",
+      "probe_id": "p-59baa2cff0a9",
+      "acceptance_id": "a-d0071cb49b29",
+      "hypothesis_status": "inconclusive",
+      "credibility": 0.7,
+      "instances": 1,
+      "challenges": [
+        "69d6affb110488a3205426e2"
+      ],
+      "rounds": [
+        3
+      ],
+      "first_seen_round": 3,
+      "attempts": 0,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-cli/src",
+        "decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": 422,
+      "closed_in_round": 3,
+      "closing_pr": 422,
+      "reject_reason": null,
+      "score": 20.794415,
+      "path": "docs/re-needs/checker-exceeds-instruction-ceiling.md"
+    },
+    {
+      "need_id": "corrupt-elf-section-table",
+      "title": "Corrupt ELF section table blocks analysis despite readable program headers",
+      "track": "tooling",
+      "status": "open",
+      "severity": "blocker",
+      "probe_id": "p-b0eecb741356",
+      "acceptance_id": "a-e4f84764b32f",
+      "hypothesis_status": "overturned",
+      "credibility": 0.85,
+      "instances": 1,
+      "challenges": [
+        "5ab77f6633c5d40ad448cc64"
+      ],
+      "rounds": [
+        3
+      ],
+      "first_seen_round": 3,
+      "attempts": 0,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-analysis/src/loader"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": null,
+      "closed_in_round": null,
+      "closing_pr": null,
+      "reject_reason": null,
+      "score": 20.794415,
+      "path": "docs/re-needs/corrupt-elf-section-table.md"
     },
     {
       "need_id": "no-cli-function-boundary-override",
@@ -179,6 +380,168 @@
       "reject_reason": null,
       "score": 20.794415,
       "path": "docs/re-needs/overlapping-anti-disassembly-sequence.md"
+    },
+    {
+      "need_id": "accepted-sqrt-prototype-still",
+      "title": "Accepted sqrt prototype still leaves floating arguments absent",
+      "track": "quality",
+      "status": "open",
+      "severity": "major",
+      "probe_id": "p-fd6d3fefafe2",
+      "acceptance_id": "a-bb9896e9cfbb",
+      "hypothesis_status": "overturned",
+      "credibility": 0.7,
+      "instances": 1,
+      "challenges": [
+        "640a526833c5d447bc761899"
+      ],
+      "rounds": [
+        3
+      ],
+      "first_seen_round": 3,
+      "attempts": 0,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-decomp/src/p4_calls"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": null,
+      "closed_in_round": null,
+      "closing_pr": null,
+      "reject_reason": null,
+      "score": 13.862944,
+      "path": "docs/re-needs/accepted-sqrt-prototype-still.md"
+    },
+    {
+      "need_id": "arm-literal-pool-string",
+      "title": "ARM literal-pool string use has no owning function",
+      "track": "tooling",
+      "status": "open",
+      "severity": "major",
+      "probe_id": "p-d995eb7a24ba",
+      "acceptance_id": "a-763430881ec8",
+      "hypothesis_status": "inconclusive",
+      "credibility": 0.7,
+      "instances": 1,
+      "challenges": [
+        "5ab77f5733c5d40ad448c380"
+      ],
+      "rounds": [
+        3
+      ],
+      "first_seen_round": 3,
+      "attempts": 0,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-analysis/src/listing/xrefs.rs",
+        "decompiler/crates/kuna-analysis/src/analyzers/strings"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": null,
+      "closed_in_round": null,
+      "closing_pr": null,
+      "reject_reason": null,
+      "score": 13.862944,
+      "path": "docs/re-needs/arm-literal-pool-string.md"
+    },
+    {
+      "need_id": "block-processing-panics-out",
+      "title": "Block processing panics with an out-of-bounds index",
+      "track": "quality",
+      "status": "open",
+      "severity": "major",
+      "probe_id": "p-84fba836c289",
+      "acceptance_id": "a-5d5e1d9200d1",
+      "hypothesis_status": "upheld",
+      "credibility": 0.7,
+      "instances": 1,
+      "challenges": [
+        "629a286b33c5d45b75903c7a"
+      ],
+      "rounds": [
+        3
+      ],
+      "first_seen_round": 3,
+      "attempts": 0,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-decomp/src/substrate/block.rs"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": null,
+      "closed_in_round": null,
+      "closing_pr": null,
+      "reject_reason": null,
+      "score": 13.862944,
+      "path": "docs/re-needs/block-processing-panics-out.md"
+    },
+    {
+      "need_id": "default-decompilation-fails-despite",
+      "title": "Default decompilation fails despite an explicit function extent",
+      "track": "quality",
+      "status": "open",
+      "severity": "major",
+      "probe_id": "p-dfb1e0ead0ec",
+      "acceptance_id": "a-61b6770a99df",
+      "hypothesis_status": "overturned",
+      "credibility": 0.7,
+      "instances": 1,
+      "challenges": [
+        "5ab77f5833c5d40ad448c399"
+      ],
+      "rounds": [
+        3
+      ],
+      "first_seen_round": 3,
+      "attempts": 0,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-analysis/src/analyzers/entry/patterns",
+        "decompiler/crates/kuna-decomp/src/p0_knowledge/options.rs"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": null,
+      "closed_in_round": null,
+      "closing_pr": null,
+      "reject_reason": null,
+      "score": 13.862944,
+      "path": "docs/re-needs/default-decompilation-fails-despite.md"
+    },
+    {
+      "need_id": "false-function-entry-inside",
+      "title": "False function entry inside an instruction splits the checker inventory",
+      "track": "quality",
+      "status": "open",
+      "severity": "major",
+      "probe_id": "p-a508b5cf3d7c",
+      "acceptance_id": "a-889458c51ba2",
+      "hypothesis_status": "inconclusive",
+      "credibility": 0.7,
+      "instances": 1,
+      "challenges": [
+        "6a0b84982b3df128c1df5c0d"
+      ],
+      "rounds": [
+        3
+      ],
+      "first_seen_round": 3,
+      "attempts": 0,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-analysis/src/analyzers/entry/patterns"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": null,
+      "closed_in_round": null,
+      "closing_pr": null,
+      "reject_reason": null,
+      "score": 13.862944,
+      "path": "docs/re-needs/false-function-entry-inside.md"
     },
     {
       "need_id": "no-cli-structuring-override",
@@ -246,6 +609,70 @@
       "path": "docs/re-needs/pe-function-inventory-labels.md"
     },
     {
+      "need_id": "ssa-renaming-panics-protected",
+      "title": "SSA renaming panics on a protected function",
+      "track": "quality",
+      "status": "open",
+      "severity": "major",
+      "probe_id": "p-f29a4d139e4a",
+      "acceptance_id": "a-903a7ff59249",
+      "hypothesis_status": "overturned",
+      "credibility": 0.7,
+      "instances": 1,
+      "challenges": [
+        "629a286b33c5d45b75903c7a"
+      ],
+      "rounds": [
+        3
+      ],
+      "first_seen_round": 3,
+      "attempts": 0,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-decomp/src/p3_dataflow/heritage.rs"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": null,
+      "closed_in_round": null,
+      "closing_pr": null,
+      "reject_reason": null,
+      "score": 13.862944,
+      "path": "docs/re-needs/ssa-renaming-panics-protected.md"
+    },
+    {
+      "need_id": "string-copy-destination-incorrectly",
+      "title": "String copy destination incorrectly becomes a null pointer",
+      "track": "quality",
+      "status": "open",
+      "severity": "major",
+      "probe_id": "p-18068442ae53",
+      "acceptance_id": "a-f88ffa89ede1",
+      "hypothesis_status": "inconclusive",
+      "credibility": 0.7,
+      "instances": 1,
+      "challenges": [
+        "640a526833c5d447bc761899"
+      ],
+      "rounds": [
+        3
+      ],
+      "first_seen_round": 3,
+      "attempts": 0,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-decomp"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": null,
+      "closed_in_round": null,
+      "closing_pr": null,
+      "reject_reason": null,
+      "score": 13.862944,
+      "path": "docs/re-needs/string-copy-destination-incorrectly.md"
+    },
+    {
       "need_id": "strings-inventory-omits-statically",
       "title": "Strings inventory omits statically constructed strings needed by the checker",
       "track": "quality",
@@ -276,6 +703,39 @@
       "reject_reason": null,
       "score": 13.862944,
       "path": "docs/re-needs/strings-inventory-omits-statically.md"
+    },
+    {
+      "need_id": "text-output-silently-ignores",
+      "title": "Text output silently ignores a prototype override that JSON output applies",
+      "track": "tooling",
+      "status": "open",
+      "severity": "major",
+      "probe_id": "p-8cb750f382af",
+      "acceptance_id": "a-5627f7bb77cf",
+      "hypothesis_status": "upheld",
+      "credibility": 0.7,
+      "instances": 1,
+      "challenges": [
+        "6a0b84982b3df128c1df5c0d"
+      ],
+      "rounds": [
+        3
+      ],
+      "first_seen_round": 3,
+      "attempts": 0,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-cli/src/assertdecl.rs",
+        "decompiler/crates/kuna-cli/src/decompile.rs"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": null,
+      "closed_in_round": null,
+      "closing_pr": null,
+      "reject_reason": null,
+      "score": 13.862944,
+      "path": "docs/re-needs/text-output-silently-ignores.md"
     },
     {
       "need_id": "wide-api-string-args",
@@ -474,7 +934,7 @@
       "need_id": "large-function-malformed-output",
       "title": "a large checker decompiles into malformed and prohibitively noisy C",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
       "probe_id": "p-8355fed97a86",
       "acceptance_id": "a-2a1f5bccb422",
@@ -497,8 +957,8 @@
       "scope": "large",
       "regression_of": null,
       "pr": 417,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "closed_in_round": 3,
+      "closing_pr": 417,
       "reject_reason": null,
       "score": 9.241962,
       "path": "docs/re-needs/large-function-malformed-output.md"
@@ -757,6 +1217,39 @@
       "path": "docs/re-needs/disassembling-non-executable-rdata.md"
     },
     {
+      "need_id": "function-disassembly-decodes-arm",
+      "title": "Function disassembly decodes ARM literal-pool data as an instruction",
+      "track": "tooling",
+      "status": "open",
+      "severity": "minor",
+      "probe_id": "p-e6b8fbb0a325",
+      "acceptance_id": "a-19c4b0c635a6",
+      "hypothesis_status": "inconclusive",
+      "credibility": 0.7,
+      "instances": 1,
+      "challenges": [
+        "5ab77f5733c5d40ad448c380"
+      ],
+      "rounds": [
+        3
+      ],
+      "first_seen_round": 3,
+      "attempts": 0,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-cli/src/disassemble.rs",
+        "decompiler/crates/kuna-analysis/src/listing"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": null,
+      "closed_in_round": null,
+      "closing_pr": null,
+      "reject_reason": null,
+      "score": 6.931472,
+      "path": "docs/re-needs/function-disassembly-decodes-arm.md"
+    },
+    {
       "need_id": "getprocaddress-result-discarded",
       "title": "a GetProcAddress result is discarded and the pointer left uninitialised",
       "track": "quality",
@@ -788,6 +1281,39 @@
       "reject_reason": null,
       "score": 6.931472,
       "path": "docs/re-needs/getprocaddress-result-discarded.md"
+    },
+    {
+      "need_id": "name-based-xrefs-rejects",
+      "title": "Name-based xrefs rejects memcmp although its candidates are aliases",
+      "track": "tooling",
+      "status": "open",
+      "severity": "minor",
+      "probe_id": "p-264f6f6dbdd7",
+      "acceptance_id": "a-6576d0dff8a6",
+      "hypothesis_status": "inconclusive",
+      "credibility": 0.7,
+      "instances": 1,
+      "challenges": [
+        "68d9ee36224c0ec5dcedc3fc"
+      ],
+      "rounds": [
+        3
+      ],
+      "first_seen_round": 3,
+      "attempts": 0,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-cli/src/xrefs.rs",
+        "decompiler/crates/kuna-analysis/src/listing/xrefs.rs"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": null,
+      "closed_in_round": null,
+      "closing_pr": null,
+      "reject_reason": null,
+      "score": 6.931472,
+      "path": "docs/re-needs/name-based-xrefs-rejects.md"
     },
     {
       "need_id": "runtime-decrypted-code-opaque",
