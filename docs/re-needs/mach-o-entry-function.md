@@ -121,3 +121,21 @@ _none recorded_
   `decompiling-3396-byte-main` for its one specified fix; dispatch this the moment that
   builder drains.
 
+- round 2 B_PLAN wave 20 (captain): **SELECTED FOR DISPATCH**, written into `contracts.json` as
+  the sole builder of this wave. Chosen out of a six-way tie at rank_score 13.862944
+  (`keyboard-callback-uses-undefined`, `large-function-malformed-output`, this need,
+  `simd-constant-string-initializer`, `strings-inventory-omits-statically`,
+  `void-callee-spurious-arg`), where the tie-break is alphabetical on `need_id` and therefore
+  carries no signal: the alphabetical winner is scope=large and would end in a design-only
+  [PROPOSAL], not a merge. This need is scope=small, attempts 0, and wave 17 had already
+  recorded it as "next in line, dispatch the moment that builder drains" — that builder
+  (`wide-api-string-args`, PR #399) drained at waves 15-18.
+- round 2 B_PLAN wave 20 (captain): **THE FOUR GATES ARE BLIND TO THIS FIX — bring your own
+  evidence.** Both parity corpora are symbol-less ELF/bytechunk fixtures, so a Mach-O LC_MAIN
+  loader/naming change cannot move `make test` or `make test-stages` in either direction.
+  "0/675 assertions changed" is therefore NOT evidence that a default-ON flip here is safe, and
+  it is equally not evidence the fix works. The closing evidence has to be the acceptance probe
+  (`a-9e76eaa91fcb`) plus a `tests/cli/` probe; note `verify --promote` refuses a
+  `binary_source: dataset` target, so an in-repo Mach-O twin fixture is what promotion needs.
+  Target re-verified this wave: `bin/crackme0x04` is a **Mach-O 64-bit x86_64 PIE**, sha256
+  9f17db47… as pinned — the need is a genuine Mach-O gap, not a mis-pinned ELF.
