@@ -1275,15 +1275,33 @@ against the loaded sections and a record whose flags set that bit contributes no
 entry — Ghidra gates `markAsFunction` on the same predicate. The read is total: a
 null `UnwindInfoAddress`, an RVA no section covers, or an empty slice all read as
 *not chained*, so the rule can only ever subtract a record it has positively
-identified. Nothing is lost by subtracting it, because the chunk's bytes are
-reached as the primary's own fall-through or branch target; measured on an MSVC
-crackme with 193 records, 32 of them chained, the inventory drops 45 entries (the
-32 chunks plus 13 zero-xref phantoms the chunks had seeded) while the union of
-every function's extent is byte-for-byte identical at 196,943 bytes. The residual
-is a chunk that the primary's flow never reaches at all — an `__except` funclet
-entered only through the exception dispatcher — which loses its standalone entry
-with the option on; Ghidra has the same residual, and `option pdatachained off`
-restores the previous discovery set exactly.
+identified. Almost always nothing is lost by subtracting it, because the chunk's
+bytes are reached as the primary's own fall-through or branch target; measured on
+an MSVC crackme with 193 records, 32 of them chained, the inventory drops 45
+entries (the 32 chunks plus 13 zero-xref phantoms the chunks had seeded) while the
+union of every function's extent is byte-for-byte identical at 196,943 bytes.
+
+The residual is a fragment the primary's flow never reaches: it stays inside the
+primary's extent but stops being decompiled, because nothing decodes it any more.
+The shape that names it is an `__except` funclet entered only through the
+exception dispatcher. A second, 240 KB MSVC image sizes the effect — comparing
+`decompile-all --json` `line_mappings` on both arms, not extents, since the extent
+union is blind to it. Of the 99 entries the option removes there (716 records, 93
+of them chained), 97 keep their decompiled coverage inside the primary, and two
+24-byte fragments, `0x140007498` and `0x140015dc8`, lose all of it: 48 bytes.
+Neither of those two is a `.pdata` record. Both sit in holes in the exception
+directory and are in the inventory only while the chunk entries around them are,
+nothing in the image references either (`kuna xrefs --to` reports zero on both
+arms), and both were mis-started to begin with — `0x140007498` is eight bytes into
+a virtual-call thunk that starts at `0x140007490`, and `0x140015dc8` is one byte
+into a `mov [rip+…],rax`, which is why its body read a variable nothing assigned.
+That is also why the filter is not narrowed to keep a fragment the primary cannot
+reach: the decision is taken in `pdata_begins`, inside `load file` and before a
+single instruction is decoded, so "does the primary's flow reach this address" is
+not a question the oracle can ask — and on this image no chained record loses
+coverage for a narrower predicate to recover. Ghidra has the same residual.
+`option pdatachained off` restores the previous x86/x64 discovery set exactly —
+the stride below is not part of the gate.
 
 The second is the record *stride*, which is not a judgement call and is therefore
 not gated. `RUNTIME_FUNCTION` is the 12-byte `{BeginAddress, EndAddress,
@@ -1294,12 +1312,26 @@ bits are clear (packed unwind data otherwise, and never an address to dereferenc
 Walking an ARM64 table at the x64 stride reads the wrong dwords at the wrong
 offsets: on a four-function probe it recovers two entries, one of them only
 because record 0 happens to sit at offset 0. The stride follows
-`FileHeader.Machine`, as Ghidra's `ExceptionDataDirectory` dispatches it, and an
-unrecognized machine keeps the 12-byte reading. Chained fragments are not decoded
-on the ARM form — Ghidra does not decode them either. Ghidra additionally routes
-an image whose load-config CHPE metadata pointer is set to its ARM parser
-regardless of `Machine`; kuna parses no load config, so an ARM64EC image that
-declares itself `AMD64` still reads at 12.
+`FileHeader.Machine`, as Ghidra's `ExceptionDataDirectory` dispatches it, and a
+machine that is neither an x86 nor an ARM variant — IA64, MIPS, SH, PowerPC, each
+with its own record layout, a MIPS one being 20 bytes — has no readable shape, so
+the directory is left alone rather than misparsed; Ghidra logs "Exception Data
+unsupported architecture" and leaves its `functionEntries` null at the same point.
+Chained fragments are not decoded on the ARM form — Ghidra does not decode them
+either. Ghidra additionally routes an image whose load-config CHPE metadata
+pointer is set to its ARM parser regardless of `Machine`; kuna parses no load
+config, so an ARM64EC image that declares itself `AMD64` still reads at 12.
+
+Two known follow-ups sit on the ARM form. The `BeginAddress` low bit is a Thumb
+marker and the walk currently masks it off to get the address, so on an ARMNT or
+Thumb-2 image the recovered entries carry no decode mode and are decoded as A32 —
+still strictly better than reading the table at the wrong stride, but wrong for
+Thumb. Painting `TMode=1` at a Thumb-marked `BeginAddress` belongs beside the
+Cortex-M whole-image paint, in `ContextPainter::new`
+(`decompiler/crates/kuna-analysis/src/listing/context.rs`) for the walk and in the
+`EntryDiscoveryPass` commit path for the committed facts, which is where
+`cortexm_thumb_paints` already lands. The second is the CHPE routing above. There
+is no ARMNT PE in the corpus to measure either against.
 
 **The widened vector-table signature** (`cortexmvectors`, default-off; kuna;
 `decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_cortexmvectors.rs`)

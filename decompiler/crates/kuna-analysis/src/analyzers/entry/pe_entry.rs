@@ -29,7 +29,8 @@
 //!    primary, so `pdatachained` (default-on) skips it. And ARM, ARM64, ARM64EC
 //!    and ARM64X images use an 8-byte `{BeginAddress, UnwindData}` record whose
 //!    `BeginAddress` carries the Thumb bit, so the table is walked at the stride
-//!    the machine dictates rather than at a fixed 12 (`PdataForm`).
+//!    the machine dictates rather than at a fixed 12, and a machine with neither
+//!    shape is not walked at all (`PdataForm`).
 //! 3. **TLS callbacks** — the TLS directory's `AddressOfCallBacks` array is a
 //!    NULL-terminated list of `PIMAGE_TLS_CALLBACK` function pointers (absolute
 //!    VAs, not RVAs) the loader runs before the entry point. Ghidra's
@@ -52,8 +53,9 @@
 //! produces the raw candidate VMAs.
 
 use object::pe::{
-    ImageNtHeaders32, ImageNtHeaders64, IMAGE_FILE_MACHINE_ARM, IMAGE_FILE_MACHINE_ARM64,
-    IMAGE_FILE_MACHINE_ARM64EC, IMAGE_FILE_MACHINE_ARM64X, IMAGE_FILE_MACHINE_ARMNT,
+    ImageNtHeaders32, ImageNtHeaders64, IMAGE_FILE_MACHINE_AMD64, IMAGE_FILE_MACHINE_ARM,
+    IMAGE_FILE_MACHINE_ARM64, IMAGE_FILE_MACHINE_ARM64EC, IMAGE_FILE_MACHINE_ARM64X,
+    IMAGE_FILE_MACHINE_ARMNT, IMAGE_FILE_MACHINE_I386,
 };
 use object::read::pe::{ImageNtHeaders, PeFile, PeFile32, PeFile64};
 use object::read::Object;
@@ -132,7 +134,10 @@ fn pdata_begins<Pe: ImageNtHeaders>(
     image_base: u64,
     out: &mut Vec<u64>,
 ) {
-    let form = PdataForm::for_machine(pe.nt_headers().file_header().machine.get(LE));
+    let form = match PdataForm::for_machine(pe.nt_headers().file_header().machine.get(LE)) {
+        Some(f) => f,
+        None => return,
+    };
     let dir = match pe.data_directories().get(object::pe::IMAGE_DIRECTORY_ENTRY_EXCEPTION) {
         Some(d) => d,
         None => return,
@@ -178,9 +183,11 @@ fn pdata_begins<Pe: ImageNtHeaders>(
 /// The `.pdata` record shape a PE `FileHeader.Machine` selects. x86/x64 images
 /// use the 12-byte `{BeginAddress, EndAddress, UnwindInfoAddress}` record; ARM,
 /// ARM64, ARM64EC and ARM64X use the 8-byte `{BeginAddress, UnwindData}` record.
-/// Ghidra dispatches the same way (`ExceptionDataDirectory.java:59-64`); an
-/// unrecognized machine keeps the 12-byte reading, which is what every PE this
-/// oracle has ever seen used.
+/// Every other machine — IA64, MIPS, SH, PowerPC — has its own layout (a MIPS
+/// record is 20 bytes), so `None` says the table cannot be read at all and the
+/// directory is left alone rather than misparsed. Ghidra dispatches the same
+/// three ways, logging "Exception Data unsupported architecture" and leaving
+/// `functionEntries` null (`ExceptionDataDirectory.java:59-68`).
 #[derive(Clone, Copy)]
 enum PdataForm {
     X86,
@@ -188,14 +195,15 @@ enum PdataForm {
 }
 
 impl PdataForm {
-    fn for_machine(machine: u16) -> Self {
+    fn for_machine(machine: u16) -> Option<Self> {
         match machine {
+            IMAGE_FILE_MACHINE_I386 | IMAGE_FILE_MACHINE_AMD64 => Some(PdataForm::X86),
             IMAGE_FILE_MACHINE_ARM
             | IMAGE_FILE_MACHINE_ARMNT
             | IMAGE_FILE_MACHINE_ARM64
             | IMAGE_FILE_MACHINE_ARM64EC
-            | IMAGE_FILE_MACHINE_ARM64X => PdataForm::Arm,
-            _ => PdataForm::X86,
+            | IMAGE_FILE_MACHINE_ARM64X => Some(PdataForm::Arm),
+            _ => None,
         }
     }
 
@@ -225,7 +233,7 @@ fn unwind_is_chained<Pe: ImageNtHeaders>(
         return false;
     }
     match pe.section_table().pe_data_at(bytes, unwind_rva) {
-        Some(d) if !d.is_empty() => ((d[0] >> 3) & 0x1f) & UNW_FLAG_CHAININFO != 0,
+        Some(d) if !d.is_empty() => (d[0] >> 3) & UNW_FLAG_CHAININFO != 0,
         _ => false,
     }
 }
@@ -371,14 +379,18 @@ mod tests {
     }
 
     /// The record shape follows `FileHeader.Machine`, as Ghidra's
-    /// `ExceptionDataDirectory` does; an unrecognized machine keeps the 12-byte
-    /// reading this oracle has always used.
+    /// `ExceptionDataDirectory` does, and a machine that is neither an x86 nor
+    /// an ARM variant has no readable shape at all.
     #[test]
     fn pdata_form_dispatches_on_machine() {
-        use object::pe::{IMAGE_FILE_MACHINE_AMD64, IMAGE_FILE_MACHINE_I386};
-        assert_eq!(PdataForm::for_machine(IMAGE_FILE_MACHINE_AMD64).record_size(), 12);
-        assert_eq!(PdataForm::for_machine(IMAGE_FILE_MACHINE_I386).record_size(), 12);
-        assert_eq!(PdataForm::for_machine(0).record_size(), 12);
+        assert_eq!(
+            PdataForm::for_machine(IMAGE_FILE_MACHINE_AMD64).map(PdataForm::record_size),
+            Some(12)
+        );
+        assert_eq!(
+            PdataForm::for_machine(IMAGE_FILE_MACHINE_I386).map(PdataForm::record_size),
+            Some(12)
+        );
         for arm in [
             IMAGE_FILE_MACHINE_ARM,
             IMAGE_FILE_MACHINE_ARMNT,
@@ -386,7 +398,38 @@ mod tests {
             IMAGE_FILE_MACHINE_ARM64EC,
             IMAGE_FILE_MACHINE_ARM64X,
         ] {
-            assert_eq!(PdataForm::for_machine(arm).record_size(), 8, "machine {arm:#x}");
+            assert_eq!(
+                PdataForm::for_machine(arm).map(PdataForm::record_size),
+                Some(8),
+                "machine {arm:#x}"
+            );
         }
+        // IA64, MIPS R4000, SH-4, PowerPC: each has its own record layout (a
+        // MIPS one is 20 bytes), so none of them is read.
+        for other in [0x0200u16, 0x0166, 0x01a6, 0x01f0, 0] {
+            assert!(PdataForm::for_machine(other).is_none(), "machine {other:#x}");
+        }
+    }
+
+    /// An unsupported machine parses no exception directory at all rather than
+    /// reading it at the x64 stride and dereferencing dword[2] as an
+    /// `UNWIND_INFO` RVA. Same image, same `.pdata`, machine word retyped to
+    /// MIPS R4000: only the entry point (a different oracle) survives.
+    #[test]
+    fn pdata_unsupported_machine_is_not_parsed() {
+        let mut bytes = fixture("pe_pdata_arm64.exe");
+        let file = object::File::parse(bytes.as_slice()).expect("parse arm64 PE");
+        let before = pe_entry_candidates(&file, bytes.as_slice());
+        assert!(before.contains(&0x140001000), "fixture lost its .pdata: {before:#x?}");
+
+        let nt = u32::from_le_bytes([bytes[0x3c], bytes[0x3d], bytes[0x3e], bytes[0x3f]]) as usize;
+        bytes[nt + 4..nt + 6].copy_from_slice(&0x0166u16.to_le_bytes());
+        let file = object::File::parse(bytes.as_slice()).expect("parse retyped PE");
+        let after = pe_entry_candidates(&file, bytes.as_slice());
+        for vma in [0x140001000u64, 0x140001010, 0x140001020] {
+            assert!(!after.contains(&vma), "{vma:#x} still parsed in {after:#x?}");
+        }
+        // 0x140001030 is `AddressOfEntryPoint`, which oracle 1 still supplies.
+        assert_eq!(after, vec![0x140001030], "only the entry point survives: {after:#x?}");
     }
 }

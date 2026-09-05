@@ -31,7 +31,10 @@
 //! Default **on**: the record itself declares the address to be interior, so
 //! claiming a function there contradicts the image's own metadata (Ghidra skips
 //! the same records at `ImageRuntimeFunctionEntries_X86.markup`).
-//! `--option pdatachained off` restores the byte-identical pre-fix inventory.
+//! `--option pdatachained off` restores the byte-identical pre-fix inventory on
+//! x86/x64. It does not restore the ARM one: the record stride the same change
+//! made machine-dependent is ungated, so an ARM image reads its 8-byte records
+//! either way.
 
 /// Environment variable that gates the chained-`UNWIND_INFO` entry skip (read by
 /// `kuna-analysis::analyzers::entry::pe_entry`). Absent or any value other than
