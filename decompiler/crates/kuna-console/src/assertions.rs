@@ -24,6 +24,7 @@
 //!   typedef <C declaration>                parse line           P5
 //!   data <addr> <C typedeclaration>        map address          P5 const-pointer
 //!   comment [<func>::]<addr> <text>        comment instruction  P9
+//!   flow [<func>::]<addr> <flowkind>       override flow        P2 flow-classification
 //!   function <start>[-<end>][=<name>]      function bounds      P1  (= --define-function)
 //!   readonly <addr>+<size>                 readonly             P1 code-data-partition
 //!   volatile <addr>+<size>                 volatile             P1 code-data-partition
@@ -50,8 +51,13 @@
 //! * **Program-scoped** (`function`, `typedef`, `prototype`, `data`) is applied
 //!   by [`apply_program_scoped`] right after the analysis commit, so a declared
 //!   fact outranks whatever discovery decided.
-//! * **Function-scoped** (`param`, `return`, `comment`) is turned into decompile
-//!   SEEDS by [`function_seed`] — the facts the drive consumes at flow time.
+//! * **Function-scoped** (`param`, `return`, `comment`, `flow`) is turned into
+//!   decompile SEEDS by [`function_seed`] — the facts the drive consumes at flow
+//!   time.  `flow` is the sharpest of them: it reclassifies the flow out of one
+//!   instruction (`branch`, `call`, `callreturn`, `return`), which is how a
+//!   caller corrects a function whose body the flow-follower walked out of — an
+//!   indirect `call *%rdx` that never returns, a tail call kuna read as a call,
+//!   a jump into a neighbour.
 //! * **Symbol-scoped** (`name`, `type`) can only be applied AFTER a decompile:
 //!   a local like `v2` does not exist until one has run (`rename v2 buf` before
 //!   the first decompile answers `No symbol named: v2`, which is precisely the
@@ -104,6 +110,9 @@ pub enum Body {
     Return { func: Option<String>, storage: String, decl: String },
     /// `comment [<func>::]<addr> <text>` — a comment at an instruction.
     Comment { func: Option<String>, addr: u64, text: String },
+    /// `flow [<func>::]<addr> branch|call|callreturn|return` — the flow out of
+    /// this instruction is not what kuna decided it was.
+    Flow { func: Option<String>, addr: u64, kind: String },
     /// `name [<func>::]<symbol> <newname>` — rename a local.
     Name { func: Option<String>, symbol: String, newname: String },
     /// `type [<func>::]<symbol> <C type>` — retype a local.
@@ -141,6 +150,7 @@ impl Body {
             Body::Param { .. } => ("param", "P4", "prototype-source"),
             Body::Return { .. } => ("return", "P4", "prototype-source"),
             Body::Comment { .. } => ("comment", "P9", "external-refinement"),
+            Body::Flow { .. } => ("flow", "P2", "flow-classification"),
             Body::Name { .. } => ("name", "P9", "naming-policy"),
             Body::Type { .. } => ("type", "P5", "type-propagation"),
             Body::Readonly { .. } => ("readonly", "P1", "code-data-partition"),
@@ -155,6 +165,7 @@ impl Body {
             Body::Param { func, .. }
             | Body::Return { func, .. }
             | Body::Comment { func, .. }
+            | Body::Flow { func, .. }
             | Body::Name { func, .. }
             | Body::Type { func, .. } => func.as_deref(),
             _ => None,
@@ -168,6 +179,7 @@ impl Body {
             Body::Param { .. }
                 | Body::Return { .. }
                 | Body::Comment { .. }
+                | Body::Flow { .. }
                 | Body::Name { .. }
                 | Body::Type { .. }
         )
@@ -458,8 +470,10 @@ fn apply_data(prog: &mut ConsoleProgram, vma: u64, decl: &str) -> Result<(), Str
 ///
 /// `param` and `return` are consumed at flow time (they are the prototype the
 /// function is decompiled against), so they cannot be applied afterwards;
-/// `comment` is program state and is written here too, since it is keyed by the
-/// owning function's entry.
+/// `flow` is consumed at flow time too, and even earlier — the follower reads it
+/// while it is still deciding which bytes belong to the function; `comment` is
+/// program state and is written here too, since it is keyed by the owning
+/// function's entry.
 #[derive(Default)]
 pub struct FunctionSeed {
     /// `map param` storage locks, in the drive's `mapped_params` shape.
@@ -467,6 +481,9 @@ pub struct FunctionSeed {
     /// The prototype this function is decompiled against (`prototype`, plus the
     /// output storage a `return` directive locks).
     pub pending_proto: Option<PrototypePieces>,
+    /// `override flow` facts, in the drive's `flow_overrides` shape: the flow
+    /// type forced at each named instruction.
+    pub flow_overrides: Vec<(Address, uint4)>,
 }
 
 /// Build the [`FunctionSeed`] for the function `name` entered at `entry`, and
@@ -551,6 +568,18 @@ fn seed_one(
             let arch = prog.arch_mut();
             let ctype = arch.print().instruction_comment_flags();
             arch.commentdb.add_comment(ctype, entry, &at, text);
+            Ok(())
+        }
+        Body::Flow { addr, kind, .. } => {
+            let type_ = kuna_decomp::overrides::Override::string_to_type(kind.as_bytes());
+            if type_ == kuna_decomp::overrides::flow_type::NONE {
+                return Err(format!(
+                    "Bad override type: {kind} (want branch, call, callreturn or return)"
+                ));
+            }
+            let at = code_addr(prog, *addr)
+                .ok_or_else(|| "the loaded program has no default code space".to_string())?;
+            seed.flow_overrides.push((at, type_));
             Ok(())
         }
         _ => Err("internal: not a function-scoped directive".into()),

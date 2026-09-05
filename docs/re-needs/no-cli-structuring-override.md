@@ -211,6 +211,39 @@ exist). `kind` is effectively `absence`, which is the case `REPIPE_REFUTE_MODE=a
   under `## Reference` and are NOT closed by this need; re-file them with a witnessed instance
   (round 2 produced none -- this record was seeded, never tester-filed) rather than carrying them
   as unprovable clauses here.
+- round 2 builder `b-r2-no-cli-structuri` (BUILT, acceptance PASSES): shipped as the twelfth
+  `--assert` directive, `flow [<func>::]<addr> branch|call|callreturn|return`, lowering to the
+  ported `IfcFlowOverride` on the script surface and seeded through
+  `FunctionSeed::flow_overrides` on the in-process one. Hypothesis UPHELD in both halves --
+  exposure, not implementation, and no engine work was needed. The two things the hypothesis
+  asked a builder to confirm, both confirmed by measurement rather than by reading:
+    * the CLI's one-shot decompile DOES re-seed the override the way the console's
+      `load function` -> `override flow` -> `decompile` sequence does, and by a different
+      route than the console's: `kuna decompile --json` is the IN-PROCESS load
+      (`decompile_json` -> `decompile_all::load_program`), not the forked script, so the
+      console's `pending_flow_overrides` stash is never consulted there. The directive is
+      seeded into the same `DecompileSeed::flow_overrides` slot the analysis's `call
+      error(nonzero,…)` no-return prunes already use, appended AFTER them so a caller-stated
+      fact wins the map insert at an address both name. Both surfaces then render the same C,
+      byte for byte, on this fixture.
+    * the subphase `exposure` field DOES need to stop saying console-only -- and this PR does
+      NOT change it, the one part of the brief it does not deliver. The replacement text was
+      written and measured (`command override flow; kuna --assert 'flow <addr>
+      branch|call|callreturn|return'; option noreturn`: regenerates through build.rs, catalog
+      stays green, no count moves), then reverted, because `mergecheck` shape-C guards
+      phases.toml as a keep-both table and rejects any line present on origin/main that is
+      gone -- it cannot tell an edited row from a sibling's row eaten by a merge. Defeating a
+      merge guard for a prose line is not a trade worth making, so the file ships
+      byte-identical to main and the text is recorded as residue. The lease this need reserved
+      for phases.toml was therefore not spent.
+  One thing the record did not anticipate: `call` is the one word of the four the ENGINE can
+  refuse. Forcing an indirect call to a direct `call` has no destination to make direct, so
+  `Funcdata::overrideFlow` raises `Could not apply flowoverride`; the run reports that as the
+  function's own error rather than decompiling as though nothing had been asserted, and that
+  refusal is itself the proof the directive reaches the engine. `branch` at the same address
+  is the interesting one for RE: it re-reads the indirect call as a computed jump and recovers
+  its two-case table.
+
 - round 2 wave 21 (captain): scope large -> small. Measured basis: the plane the need was waiting
   for shipped mid-round (#389 `--assert`, #391 the range directives), so the remaining work is one
   directive arm in `assertdecl.rs` routed to an already-ported engine command. `touches` KEEPS

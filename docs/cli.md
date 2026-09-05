@@ -119,6 +119,7 @@ One directive per `--assert`, keyed by intent rather than by phase:
 | `typedef <C declaration>` | intern a `struct`/`union`/`enum`/`typedef` so `type` can name it |
 | `data <addr> <C typedeclaration>` | a named, typed global at an address |
 | `comment [<func>::]<addr> <text>` | a comment rendered into the C at that instruction |
+| `flow [<func>::]<addr> branch\|call\|callreturn\|return` | the flow out of this instruction is not what kuna decided |
 | `function <start>[-<end>][=<name>]` | the `--define-function` spelling, on this plane |
 | `readonly <addr>+<size>` | the bytes in this range never change at run time |
 | `volatile <addr>+<size>` | device memory: every access is a real access |
@@ -152,6 +153,28 @@ Asserting a `readonly` range turns read-only propagation on for the run, because
 painting a range read-only and then not folding it would be a directive that is
 accepted and does nothing. It is applied *before* your own `--option`s, so an
 explicit `--option readonly off` still wins.
+
+**`flow` is the structuring lever**, and the one directive that changes which
+bytes are even *in* the function. kuna decides at P2 whether an instruction
+branches, calls, calls-and-does-not-return, or returns; on an obfuscated or
+hand-written image it gets that wrong, and everything downstream inherits the
+mistake. Stating the right answer costs one line:
+
+```bash
+# `sub_13c9` reaches an indirect `call *%rdx` that never comes back, so flow
+# walks on into its twenty-four neighbours and the body is 25 dead temporaries.
+kuna decompile ./a.out --addr 0x13c9 --json --assert 'flow 0x1405 return'
+#   - v2 = (**(void **)(...))(dat_4014); v3 = sub_1129(v1); ... return v2 + v3 + ...;
+#   + return dat_4014;
+```
+
+The four words are the console's own (`Override::stringToType`): `branch` reads
+the instruction as a jump — which is what puts an indirect call back through
+switch-table recovery — `call` as a call, `callreturn` as a call whose
+fall-through is dead (the "does not return" case), and `return` as the end of the
+function. A type the engine cannot apply at that instruction (`call` on an
+indirect call has no destination to make direct) is not silently dropped: the
+run reports the engine's own refusal as a per-function error.
 
 **Every directive's fate is reported.** `--json` grows an `assertions` array — one
 row per directive, in the order you gave them, carrying the directive text, its
@@ -203,6 +226,7 @@ prototype sub_401200 int check_license(char *key,int len)
 name sub_401200::v3 keylen
 type sub_401200::v2 char[32]
 data 0x601048 char *expected_key
+flow sub_401200::0x40123f return   # the dispatch tail never comes back
 readonly 0x601050+16   # the key table, written only by the installer
 volatile 0x40021000+4  # RCC->CR
 EOF
