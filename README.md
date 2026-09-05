@@ -18,8 +18,18 @@ Kuna is distributed as a single Rust binary and can be run on most systems.
 It can be used either on the [CLI](#cli-usage), the [web browser](#web-browser-usage), or in the [Ghidra GUI](#ghidra-gui-usage) (as the decompiler backend).
 
 ### CLI Usage
-If building from source, you can find the `kuna` binary in `decompiler/target/release/kuna`.
-Otherwise, you can find it in the latest [release](https://github.com/Noelo-Lab/kuna/releases) for your OS (Linux, Windows, MacOS supported). 
+
+#### Installation
+- **Pre-built Binaries**: Download the latest release for your OS (Linux, Windows, macOS) from [releases](https://github.com/Noelo-Lab/kuna/releases).
+- **Arch Linux (AUR)**: Install directly from the AUR using your favorite AUR helper:
+  ```bash
+  yay -S kuna
+  # or
+  paru -S kuna
+  ```
+- **Building from Source**: Build the `kuna` binary in `decompiler/target/release/kuna` (see [Building from Source](#building-from-source)).
+
+#### Examples
 
 ```bash
 kuna decompile ./a.out main
