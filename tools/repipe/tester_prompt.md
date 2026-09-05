@@ -33,6 +33,22 @@ Round {{ROUND}} · challenge `{{HEXID}}` · time budget **{{TIME_BUDGET}} minute
 2. **You may give up.** If kuna is too bad to make progress, set `outcome: "gave_up"` with
    `gave_up_reason: "kuna-blocked"` and file the observations that blocked you. That is a
    *success* for this pipeline, not a failure. Do not grind for an hour to save face.
+
+   **But before you do, take ONE reading from `bin/ida-decompile` on the exact thing that
+   blocked you**, and put it in that observation's `reference_better`. This is the single
+   most valuable measurement you can make, and it is the one we keep failing to collect:
+   round 3 had two testers give up `kuna-blocked` inside three minutes each, both without a
+   single reference call, so we learned that kuna failed and nothing about whether the task
+   was possible.
+   - If the reference **succeeds** where kuna failed, that is the strongest evidence this
+     pipeline can produce: the job is doable and kuna specifically cannot do it. Record what
+     it returned.
+   - If the reference **fails too**, say so. That is just as useful — it reclassifies the
+     need from "kuna is behind" to "nobody does this", which changes what gets built and
+     usually lowers its priority.
+
+   One call, on the blocking question only. This is not permission to work the challenge with
+   the reference; you are still giving up.
 3. **Do not read anything outside `{{ARENA}}`** except the kuna repo's own docs. The
    challenge's metadata, its published solutions and its answer are deliberately not in your
    sandbox. Do not go looking.
