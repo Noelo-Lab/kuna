@@ -53,6 +53,13 @@ driver (`heritage.rs (Heritage::heritage)`) files the range under
 `new_addresses`/`old_addresses` flags accordingly. That classification is
 load-bearing twice over: only ranges with new addresses get call/return guards
 (below), and an *old* overlap is the trigger for the dead-code-delay machinery.
+`add` also hands back the size of the element the range ended up inside, which is
+the other half of the C++ iterator its callers read, so classifying a range costs
+one lookup rather than an add followed by a second search for the same entry; and
+the walk that finds the candidate element asks for the *predecessor* of the range
+first, which answers both the "step back from `lower_bound`" and the "already at
+`begin()`" cases in one descent. Every varnode of every heritaged space is
+re-offered to this map on every pass, so it is the most-called map in the phase.
 
 **The simple case.** For each disjoint range, `heritage.rs (Heritage::collect)`
 partitions the range's varnodes into reads (free), writes (defined), and
@@ -76,7 +83,12 @@ formal **input varnode** of the function; this is how registers read before
 being written become parameters-in-waiting for phase 04. One carve-out: an
 INDIRECT and the op it wraps happen "at the same time", so an op whose renamed
 read would resolve to its *own* INDIRECT output takes the next value down the
-stack (or a fresh input) instead (`heritage.rs (op_from_const)`).
+stack (or a fresh input) instead (`heritage.rs (op_from_const)`). After a block's
+own ops are renamed the walk fills the in-edge slots of each successor's leading
+MULTIEQUALs; it reads only that leading run (phi ops are always at the head of a
+block and the walk stops at the first op that is not one), so it collects the run
+off the block's intrusive op list rather than materializing every op of every
+successor once per CFG edge per pass.
 
 **Materializing an input over existing pieces (kuna, DIV-50).** The input a
 stack-empty read materializes may land on storage that already holds input
