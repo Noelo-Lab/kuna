@@ -17,7 +17,7 @@ covered_by_option: null
 touches: [decompiler/crates/kuna-decomp, decompiler/crates/kuna-console, decompiler/crates/kuna-decomp/phases.toml, decompiler/crates/kuna-decomp/src/p0_knowledge/options.rs, docs/options.md, docs/history.md, tests/stages]
 scope: small
 regression_of: null
-pr: "396"
+pr: "411"
 closed_in_round: 2
 closing_pr: "397"
 reject_reason: null
