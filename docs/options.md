@@ -400,6 +400,11 @@ Three tiers:
 | a COFF .obj lists only its first function (the rest collide at address 0) | [`relocobjects`](#relocobjects) |
 | arm64e mach-o decoded with the generic v8A spec so pointer-auth ops are unmodeled | [`macho-arm64e`](#macho-arm64e) |
 | pac instructions in an apple-silicon binary not modeled by the loaded spec | [`macho-arm64e`](#macho-arm64e) |
+| a pe function stops early with the funcboundflow fall-through-reached-the-next-function-entry warning | [`pdatachained`](#pdatachained) |
+| kuna decompile of an msvc function emits `} while ;` or an empty if body where ghidra emits the whole function | [`pdatachained`](#pdatachained) |
+| kuna functions reports an msvc function far smaller than its .pdata extent | [`pdatachained`](#pdatachained) |
+| a sub_<addr> in a pe starts at a movaps or mov [rsp+N],reg register-save run instead of a prologue | [`pdatachained`](#pdatachained) |
+| the second half of an msvc function is only reachable under a generated sub_<hex> name | [`pdatachained`](#pdatachained) |
 | comparison constant off by one versus upstream ghidra (x <= 9 vs x < 10) | [`compareform`](#compareform) |
 | need the analysis-canonical compare form to diff against upstream ghidra output | [`compareform`](#compareform) |
 | &base[index] rendering unwanted; consumer expects raw pointer arithmetic | [`arraynotation`](#arraynotation) |
@@ -1431,6 +1436,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** Off (default; an arm64e Mach-O loads with the generic v8A spec, exactly as any arm64). Flip on to decompile an arm64e (Apple-Silicon, pointer-auth) Mach-O with the AppleSilicon spec that models its extensions.
 - **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-multiformat-macho-arm64e
 - **Example:** `--option macho-arm64e on`
+
+### `pdatachained` -- on | off, default `on`
+
+- **Symptoms:** a pe function stops early with the funcboundflow fall-through-reached-the-next-function-entry warning; kuna decompile of an msvc function emits `} while ;` or an empty if body where ghidra emits the whole function; kuna functions reports an msvc function far smaller than its .pdata extent; a sub_<addr> in a pe starts at a movaps or mov [rsp+N],reg register-save run instead of a prologue; the second half of an msvc function is only reachable under a generated sub_<hex> name.
+- **What it does:** Refuse to create a function entry at a PE .pdata RUNTIME_FUNCTION whose UNWIND_INFO carries UNW_FLAG_CHAININFO, which is a separated code chunk of another function rather than a function of its own. MSVC splits one function across several records whenever it shrink-wraps a prologue or moves a cold block out of line: the first record is the function, and every later one points at an UNWIND_INFO with the chained flag set plus a trailing RUNTIME_FUNCTION naming the primary. kuna's .pdata oracle read only BeginAddress, so each chunk became a sub_<addr> of its own - and because p2's funcboundflow truncates a fall-through that reaches a known function entry, the real function was then cut off at its own chunk and emitted as a stub, sometimes as syntactically invalid C. On, the third dword is resolved against the loaded sections and a record whose flags have bit 0x4 set contributes no entry, exactly as Ghidra's ImageRuntimeFunctionEntries_X86.markup skips it. The read is total: a null UnwindInfoAddress, an RVA no section covers, or an empty slice all read as not-chained, so the filter can only ever subtract a record it has positively identified. Almost always the chunk's bytes are still reached as the primary's own fall-through or branch target, so the duplicate entry goes without losing code; the residual is a fragment the primary's flow never reaches, which then stops being decompiled at all - measured at 48 bytes over two unreferenced 24-byte fragments on a 240 KB MSVC PE whose 716 records include 93 chained, and both of those entries began mid-thunk or mid-instruction to start with. x64-form .pdata only; ARM and ARM64 images use the 8-byte record whose second dword is packed unwind data as often as an .xdata pointer, and Ghidra does not decode their chained fragments either.
+- **When to flip:** On (default) on any MSVC-built PE. The tell-tale is kuna functions listing a sub_<addr> whose bytes are plainly a register-save or spill run rather than a prologue, together with kuna decompile of the function just above it stopping early and carrying the funcboundflow fall-through-reached-the-next-function-entry warning. Flip off to see every address the exception directory names, chunk starts included, or to get back a fragment nothing in the primary's flow reaches. Off restores the previous x86/x64 discovery set exactly, and only that one: the record stride follows FileHeader.Machine whichever way this option is set, so an ARM/ARM64/ARM64EC/ARM64X image reads its 8-byte records - and finds more functions than before - with the option off too, and a machine that is neither x86 nor ARM parses no exception directory at all.
+- **Where / provenance:** P1/code-data-partition · kuna · correctness-fix · kuna-analysis-pdatachained
+- **Example:** `--option pdatachained off`
 
 ## Core rendering defaults
 

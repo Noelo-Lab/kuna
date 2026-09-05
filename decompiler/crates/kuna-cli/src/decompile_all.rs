@@ -1138,6 +1138,7 @@ fn is_loadtime_gate(name: &str) -> bool {
             | "i386_pie_plt"
             | "relocrebase"
             | "dynrelocs"
+            | "pdatachained"
             | "macho-arm64e"
             | "typedepth"
             | "dwarfstructs"
@@ -1231,6 +1232,18 @@ fn apply_loadtime_env(options: &[(String, String)], slice: Option<&str>) -> Load
         );
         env.set(
             kuna_decomp::kuna_dynrelocs::DYNRELOCS_ENV,
+            if on { "on" } else { "off" },
+        );
+    }
+    // (kuna, DIV-117) Same timing for the PE `.pdata` chained-record skip: the
+    // entry oracles run inside `load file`.
+    if let Some(value) = last_option_value(options, "pdatachained") {
+        let on = !matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "off" | "0" | "false"
+        );
+        env.set(
+            kuna_decomp::kuna_pdatachained::PDATACHAINED_ENV,
             if on { "on" } else { "off" },
         );
     }

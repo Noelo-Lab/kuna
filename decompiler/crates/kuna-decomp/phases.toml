@@ -4270,3 +4270,22 @@ inspiration = "Procedural abstraction / outlining as the inverse of compiler inl
 change_kind = "opt-in-tool"
 tier = "transform"
 symptoms = "an inlined callee body is spliced into the caller and should read as a call|want to pull a chosen region out of a function into a named pseudofunction|acting on an almostregion inline-candidate report by hand or with an llm"
+
+[[settable]]
+option = "pdatachained"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P1"
+subphase = "code-data-partition"
+strength = "HARD"
+rewind = "P1"
+issue = "kuna-analysis-pdatachained"
+summary = "Refuse to create a function entry at a PE .pdata RUNTIME_FUNCTION whose UNWIND_INFO carries UNW_FLAG_CHAININFO, which is a separated code chunk of another function rather than a function of its own. MSVC splits one function across several records whenever it shrink-wraps a prologue or moves a cold block out of line: the first record is the function, and every later one points at an UNWIND_INFO with the chained flag set plus a trailing RUNTIME_FUNCTION naming the primary. kuna's .pdata oracle read only BeginAddress, so each chunk became a sub_<addr> of its own - and because p2's funcboundflow truncates a fall-through that reaches a known function entry, the real function was then cut off at its own chunk and emitted as a stub, sometimes as syntactically invalid C. On, the third dword is resolved against the loaded sections and a record whose flags have bit 0x4 set contributes no entry, exactly as Ghidra's ImageRuntimeFunctionEntries_X86.markup skips it. The read is total: a null UnwindInfoAddress, an RVA no section covers, or an empty slice all read as not-chained, so the filter can only ever subtract a record it has positively identified. Almost always the chunk's bytes are still reached as the primary's own fall-through or branch target, so the duplicate entry goes without losing code; the residual is a fragment the primary's flow never reaches, which then stops being decompiled at all - measured at 48 bytes over two unreferenced 24-byte fragments on a 240 KB MSVC PE whose 716 records include 93 chained, and both of those entries began mid-thunk or mid-instruction to start with. x64-form .pdata only; ARM and ARM64 images use the 8-byte record whose second dword is packed unwind data as often as an .xdata pointer, and Ghidra does not decode their chained fragments either."
+use_when = "On (default) on any MSVC-built PE. The tell-tale is kuna functions listing a sub_<addr> whose bytes are plainly a register-save or spill run rather than a prologue, together with kuna decompile of the function just above it stopping early and carrying the funcboundflow fall-through-reached-the-next-function-entry warning. Flip off to see every address the exception directory names, chunk starts included, or to get back a fragment nothing in the primary's flow reaches. Off restores the previous x86/x64 discovery set exactly, and only that one: the record stride follows FileHeader.Machine whichever way this option is set, so an ARM/ARM64/ARM64EC/ARM64X image reads its 8-byte records - and finds more functions than before - with the option off too, and a machine that is neither x86 nor ARM parses no exception directory at all."
+example = "--option pdatachained off"
+source_decompiler = "kuna"
+inspiration = "GH-403 (dobin/redtest): kuna cut sub_140002650 off at 0x14000270c and emitted `} while ;` because the shrink-wrapped register-save chunk at 0x140002712 had become sub_140002712; Ghidra decompiles the same function whole because ImageRuntimeFunctionEntries_X86.markup gates markAsFunction on !unwindInfo.hasChainedUnwindInfo()"
+change_kind = "correctness-fix"
+tier = "analysis"
+symptoms = "a pe function stops early with the funcboundflow fall-through-reached-the-next-function-entry warning|kuna decompile of an msvc function emits `} while ;` or an empty if body where ghidra emits the whole function|kuna functions reports an msvc function far smaller than its .pdata extent|a sub_<addr> in a pe starts at a movaps or mov [rsp+N],reg register-save run instead of a prologue|the second half of an msvc function is only reachable under a generated sub_<hex> name"

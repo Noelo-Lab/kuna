@@ -18,6 +18,9 @@ pub mod kuna_ifuncfpret;
 pub mod kuna_relocrebase;
 // (kuna) Linked-image dynamic-relocation application option gate (load-time, env-bridged).
 pub mod kuna_dynrelocs;
+// (kuna) PE chained-`UNWIND_INFO` `.pdata` entry suppression option gate
+// (load-time, env-bridged).
+pub mod kuna_pdatachained;
 // (kuna) DWARF aggregate-layout import option gate (load-time, env-bridged).
 pub mod kuna_dwarfstructs;
 // (kuna) DWARF variant-part (discriminated-union) import option gate
