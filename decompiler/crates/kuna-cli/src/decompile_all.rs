@@ -315,7 +315,7 @@ pub(crate) struct CallGraph {
 }
 
 impl CallGraph {
-    fn build(prog: &ConsoleProgram, binary: &str) -> Result<CallGraph, String> {
+    pub(crate) fn build(prog: &ConsoleProgram, binary: &str) -> Result<CallGraph, String> {
         let bytes = std::fs::read(binary).map_err(|e| format!("{binary}: {e}"))?;
         let file = object::File::parse(&*bytes)
             .map_err(|e| format!("could not parse {binary}: {e}"))?;
@@ -381,6 +381,45 @@ impl CallGraph {
         Ok(owners)
     }
 
+    /// Every callee of the function entered at `entry`, as
+    /// `(callee entry, edge kind)` in call-site order — the same edge rule
+    /// [`Self::reachable_from`] walks, answered one function at a time.
+    ///
+    /// A callee is always a node the graph knows: a reference into the middle of
+    /// a body resolves to the body ([`Self::node_at`]), and one that lands in no
+    /// discovered function at all — a `CALL 0x0` off a nulled relocation, a
+    /// branch into a gap — is not an edge and is dropped. Duplicates collapse on
+    /// the callee, keeping the first call site's position.
+    pub(crate) fn callees_of(&self, entry: u64) -> Vec<(u64, XrefKind)> {
+        let mut out: Vec<(u64, XrefKind)> = Vec::new();
+        let mut seen: BTreeSet<u64> = BTreeSet::new();
+        let mut refs: Vec<&Xref> = self
+            .index
+            .refs_from_function(entry)
+            .into_iter()
+            .filter(|r| matches!(r.kind, XrefKind::Call | XrefKind::Jump))
+            .collect();
+        refs.sort_by_key(|r| (r.from, r.to));
+        for r in refs {
+            // The walk's function set and the inventory are two views of one
+            // program; answer in the inventory's terms so every callee names a
+            // row a caller can look up (`reachable_from` folds the same way,
+            // once, at the end of its search).
+            let Some(callee) = self.callee_of(r).and_then(|c| self.owner_of(c)) else {
+                continue;
+            };
+            // A jump that resolves back onto the caller is a loop edge inside one
+            // body reached through a second entry symbol, not a call.
+            if callee == entry && r.kind == XrefKind::Jump {
+                continue;
+            }
+            if seen.insert(callee) {
+                out.push((callee, r.kind));
+            }
+        }
+        out
+    }
+
     /// The call-graph node a reference edge lands on, or `None` when the edge is
     /// not a call-graph edge at all.
     fn callee_of(&self, r: &Xref) -> Option<u64> {
@@ -408,6 +447,20 @@ impl CallGraph {
         let at = self.entries.partition_point(|(addr, _)| *addr <= vma);
         let (addr, size) = *self.entries.get(at.checked_sub(1)?)?;
         (vma == addr || vma - addr < size).then_some(addr)
+    }
+
+    /// Does the function entered at `entry` make a computed call?
+    ///
+    /// A caller reading [`Self::callees_of`] needs this to tell "no callees"
+    /// from "the callee is computed at run time and has no static target".
+    pub(crate) fn has_indirect_calls(&self, entry: u64) -> bool {
+        self.index.has_indirect_calls(entry)
+    }
+
+    /// The fixed pointer slot a forwarding veneer at `entry` jumps through
+    /// (`jmp [slot]`), or `None` when `entry` is not one.
+    pub(crate) fn veneer_slot(&self, entry: u64) -> Option<u64> {
+        self.index.veneer_slot(entry)
     }
 
     /// Does anything CALL `vma`?  Data and branch references do not count: the
@@ -1934,7 +1987,11 @@ pub(crate) fn parse_args_with_filters(
                 assertions.extend(crate::assertdecl::parse_flag(&v)?);
             }
             "--assert-strict" => assert_strict = true,
-            "--max-fn-seconds" if cmd == "decompile-all" || cmd == "decompile-project" => {
+            "--max-fn-seconds"
+                if cmd == "decompile-all"
+                    || cmd == "decompile-project"
+                    || cmd == "decompile-graph" =>
+            {
                 let v = take(argv, &mut i, "--max-fn-seconds")?;
                 max_fn_seconds = Some(
                     v.trim()
@@ -2040,7 +2097,9 @@ pub(crate) fn parse_args_with_filters(
     if names.is_none() && !addrs.is_empty() && !explicit_fast_funcdisc {
         options.push(("fast_funcdisc".into(), "off".into()));
     }
-    let whole_binary = (cmd == "decompile-all" || cmd == "decompile-project")
+    let whole_binary = (cmd == "decompile-all"
+        || cmd == "decompile-project"
+        || cmd == "decompile-graph")
         && names.is_none()
         && addrs.is_empty();
     let max_fn_seconds = max_fn_seconds

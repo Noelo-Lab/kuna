@@ -1,31 +1,87 @@
-//! `kuna decompile-graph` — whole-program JSON: every function with its C, its
-//! assembly, and the call edges between them.
+//! `kuna decompile-graph` — the whole program as one JSON document: every
+//! discovered function with its C, its assembly and its recovered signature,
+//! plus the call edges between them.
+//!
+//! ```text
+//!   kuna decompile-graph <binary> [-o|--output FILE] [--label TEXT]
+//!                        [--functions a,b,..] [--addr 0xVMA].. [--max-fn-seconds N]
+//!                        [--mode auto|reliable|aggressive|fast]
+//!                        [--define-function S[-E][=N]|@FILE].. [--option N V]..
+//!                        [--slice ARCH] [--target T] [--sleighpath D]
+//! ```
+//!
+//! One in-process load, like `decompile-all` and `decompile-project` — and the
+//! same policies, read from the same helpers rather than restated here:
+//!
+//! * which entries exist, and which of them have bodies worth decompiling
+//!   ([`resolve_targets`], i.e. `function_entries_executable`);
+//! * what a function *is* ([`Classifier`], the per-function `kind` the browser
+//!   inventory already labels with);
+//! * what calls what ([`CallGraph`], the edge model `--reachable-from` walks and
+//!   `kuna xrefs` answers with);
+//! * how a body disassembles ([`crate::disassemble::function_listing`]).
+//!
+//! The document is observational: it adds no analysis facts, mutates no IR and
+//! changes no existing C rendering, so it has neither an option row nor a DIV
+//! entry. Field-by-field schema: `docs/cli.md`.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt::Write as _;
 
 use kuna_analysis::listing::xrefs::XrefKind;
+use kuna_console::classify::Classifier;
 use kuna_console::engine::{ConsoleProgram, EntryProvenance, FunctionEntry};
 use kuna_console::project::{decompile_targets, FuncResult};
 use object::{Object, ObjectSegment};
 
-use crate::decompile_all::{load_program, mode_options_for_binary, Args, DriverDefaults};
+use crate::decompile_all::{
+    load_program, parse_args, resolve_targets, Args, CallGraph, DriverDefaults,
+};
 use crate::jsonfmt::{dumps_indent2, Json};
 
-struct ExportArgs {
-    binary: String,
-    version: String,
-    output: Option<String>,
-    max_fn_seconds: Option<u64>,
-    options: Vec<(String, String)>,
-    mode: Option<String>,
-    slice: Option<String>,
-    target: Option<String>,
-    sleighpath: Option<String>,
-}
+/// The document shape. Bumped whenever a field is added, removed or changes
+/// meaning, so a consumer can refuse a document it does not understand.
+const SCHEMA_VERSION: u64 = 3;
 
+/// `kuna decompile-graph` entry point.
+///
+/// A wrapper parse for the two flags only this surface has, then the shared
+/// `decompile-all` parser for everything else — the same split
+/// `decompile-project` uses, so the load/decompile flags cannot drift between
+/// the whole-binary surfaces.
 pub fn run(argv: &[String]) -> i32 {
-    let args = match parse_args(argv) {
+    let mut output: Option<String> = None;
+    let mut label = String::new();
+    let mut rest: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < argv.len() {
+        match argv[i].as_str() {
+            flag @ ("-o" | "--output" | "--label") => {
+                if i + 1 >= argv.len() {
+                    eprintln!("error: {flag} requires a value");
+                    usage();
+                    return 2;
+                }
+                if flag == "--label" {
+                    label = argv[i + 1].clone();
+                } else {
+                    output = Some(argv[i + 1].clone());
+                }
+                i += 1;
+            }
+            "-h" | "--help" => {
+                usage();
+                return 0;
+            }
+            "--json" | "--no-vars" => {
+                eprintln!("error: {} is not a decompile-graph option", argv[i]);
+                usage();
+                return 2;
+            }
+            other => rest.push(other.to_string()),
+        }
+        i += 1;
+    }
+    let args = match parse_args(&rest, "decompile-graph") {
         Ok(args) => args,
         Err(error) => {
             eprintln!("error: {error}");
@@ -33,18 +89,17 @@ pub fn run(argv: &[String]) -> i32 {
             return 2;
         }
     };
-    match export(&args) {
-        Ok(text) => {
-            if let Some(path) = &args.output {
-                if let Err(error) = std::fs::write(path, &text) {
+    match export(&args, &label) {
+        Ok(text) => match &output {
+            Some(path) => match std::fs::write(path, &text) {
+                Ok(()) => 0,
+                Err(error) => {
                     eprintln!("error: cannot write {path}: {error}");
-                    return 1;
+                    1
                 }
-                0
-            } else {
-                crate::output::emit_with_status(&text, 0)
-            }
-        }
+            },
+            None => crate::output::emit_with_status(&text, 0),
+        },
         Err(error) => {
             eprintln!("error: {error}");
             1
@@ -52,37 +107,34 @@ pub fn run(argv: &[String]) -> i32 {
     }
 }
 
-fn export(args: &ExportArgs) -> Result<String, String> {
-    let options =
-        mode_options_for_binary(args.mode.as_deref(), &args.binary, args.options.clone())?;
-    let load = Args {
-        binary: args.binary.clone(),
-        json: false,
-        names: None,
-        addrs: Vec::new(),
-        no_vars: false,
-        max_fn_seconds: args.max_fn_seconds.unwrap_or(120),
-        options,
-        func_decls: Vec::new(),
-        assertions: Vec::new(),
-        assert_strict: false,
-        slice: args.slice.clone(),
-        target: args.target.clone(),
-        sleighpath: args.sleighpath.clone(),
-    };
-    let mut prog = load_program(&load, DriverDefaults::Decompile)?;
-    if load.max_fn_seconds > 0 {
-        prog.arch_mut().kuna_fn_budget = Some(std::time::Duration::from_secs(load.max_fn_seconds));
+/// Load once, decompile the selected bodies, walk the program once for edges,
+/// and render.
+fn export(args: &Args, label: &str) -> Result<String, String> {
+    let binary_path = std::fs::canonicalize(&args.binary)
+        .map_err(|_| format!("binary not found: {}", args.binary))?;
+    let mut prog = load_program(args, DriverDefaults::Decompile)?;
+    if args.max_fn_seconds > 0 {
+        prog.arch_mut().kuna_fn_budget =
+            Some(std::time::Duration::from_secs(args.max_fn_seconds));
     }
+
+    // Nodes are the whole inventory; bodies are what `decompile-all` would
+    // decompile. A `--functions` / `--addr` narrowing therefore buys a cheap
+    // whole-program graph with only the named bodies rendered in it.
     let entries = prog.function_entries_canonical();
-    let body_entries: Vec<FunctionEntry> = entries
-        .iter()
-        .filter(|entry| {
-            function_kind(&prog, entry) == "normal" && prog.entry_bytes_mapped(&entry.addr)
-        })
-        .cloned()
-        .collect();
-    let results = decompile_targets(&mut prog, body_entries, false, true, false);
+    // What a row IS never depends on what this run was asked to decompile, so
+    // the executable set is taken from the policy directly rather than read back
+    // off the results.
+    let executable: BTreeSet<u64> =
+        prog.function_entries_executable().iter().map(|e| e.addr.get_offset()).collect();
+    let targets = resolve_targets(&prog, args)?;
+    let results = decompile_targets(
+        &mut prog,
+        targets,
+        /* no_vars= */ false,
+        /* want_proto= */ true,
+        /* want_provenance= */ false,
+    );
     for result in &results {
         if let Some(error) = &result.error {
             eprintln!(
@@ -91,98 +143,55 @@ fn export(args: &ExportArgs) -> Result<String, String> {
             );
         }
     }
-    let result_by_address: BTreeMap<u64, &FuncResult> = results
-        .iter()
-        .map(|result| (result.address, result))
-        .collect();
+    let by_address: BTreeMap<u64, &FuncResult> =
+        results.iter().map(|result| (result.address, result)).collect();
+
+    let graph = CallGraph::build(&prog, &args.binary)?;
+    let classifier =
+        Classifier::new(&prog, &args.binary, entries.iter().map(|e| e.addr.get_offset()));
+    let known: BTreeSet<u64> = entries.iter().map(|e| e.addr.get_offset()).collect();
 
     let bytes = std::fs::read(&args.binary).map_err(|error| format!("{}: {error}", args.binary))?;
     let file = object::File::parse(&*bytes)
         .map_err(|error| format!("could not parse {}: {error}", args.binary))?;
-    let seeds: Vec<u64> = entries
-        .iter()
-        .map(|entry| entry.addr.get_offset())
-        .collect();
-    let xrefs =
-        kuna_analysis::listing::xrefs::build(&file, prog.arch(), prog.arch().translate(), &seeds);
+    let image_entry = file.entry();
+
     let functions = Json::Array(
         entries
             .iter()
             .map(|entry| {
-                let address = entry.addr.get_offset();
-                let kind = function_kind(&prog, entry);
-                let result = result_by_address.get(&address).copied();
-                Json::Object(vec![
-                    ("address".into(), number(address)),
-                    ("name".into(), Json::Str(entry.name.clone())),
-                    ("parameters".into(), parameters(result)),
-                    (
-                        "signature".into(),
-                        result
-                            .and_then(|result| result.proto.as_ref())
-                            .map_or(Json::Null, |value| {
-                                Json::Str(value.trim().trim_end_matches(';').to_string())
-                            }),
-                    ),
-                    (
-                        "assembly".into(),
-                        if kind == "normal" {
-                            assembly(&prog, entry).map_or(Json::Null, Json::Str)
-                        } else {
-                            Json::Null
-                        },
-                    ),
-                    (
-                        "codeC".into(),
-                        result
-                            .and_then(|result| result.code.as_ref())
-                            .map_or(Json::Null, |value| Json::Str(value.clone())),
-                    ),
-                    ("kind".into(), Json::Str(kind.into())),
-                    (
-                        "hasIndirectCalls".into(),
-                        Json::Bool(xrefs.has_indirect_calls(address)),
-                    ),
-                    (
-                        "isEntryPoint".into(),
-                        Json::Bool(is_entry_point(&file, entry)),
-                    ),
-                ])
+                function_json(
+                    &prog,
+                    &classifier,
+                    &graph,
+                    entry,
+                    by_address.get(&entry.addr.get_offset()).copied(),
+                    executable.contains(&entry.addr.get_offset()),
+                    image_entry,
+                )
             })
             .collect(),
     );
-    let edges = edges_json(&entries, &xrefs);
-    let binary_path = std::fs::canonicalize(&args.binary)
-        .map_err(|_| format!("binary not found: {}", args.binary))?;
+    let edges = edges_json(&graph, &known);
     let edge_count = match &edges {
         Json::Array(values) => values.len(),
         _ => 0,
     };
+
     let document = Json::Object(vec![
-        ("schemaVersion".into(), number(2)),
+        ("schemaVersion".into(), number(SCHEMA_VERSION)),
         (
             "binary".into(),
             Json::Object(vec![
                 (
                     "name".into(),
                     Json::Str(
-                        binary_path
-                            .file_name()
-                            .unwrap_or_default()
-                            .to_string_lossy()
-                            .into_owned(),
+                        binary_path.file_name().unwrap_or_default().to_string_lossy().into_owned(),
                     ),
                 ),
-                ("version".into(), Json::Str(args.version.clone())),
-                (
-                    "sourcePath".into(),
-                    Json::Str(binary_path.to_string_lossy().into_owned()),
-                ),
-                (
-                    "analysisImageBase".into(),
-                    analysis_image_base(&file).map_or(Json::Null, number),
-                ),
-                ("sha256".into(), Json::Null),
+                ("label".into(), Json::Str(label.to_string())),
+                ("sourcePath".into(), Json::Str(binary_path.to_string_lossy().into_owned())),
+                ("analysisImageBase".into(), analysis_image_base(&file).map_or(Json::Null, number)),
                 ("functionCount".into(), number(entries.len() as u64)),
                 ("edgeCount".into(), number(edge_count as u64)),
             ]),
@@ -193,41 +202,102 @@ fn export(args: &ExportArgs) -> Result<String, String> {
     Ok(format!("{}\n", dumps_indent2(&document)))
 }
 
-fn function_kind(prog: &ConsoleProgram, entry: &FunctionEntry) -> &'static str {
-    let mapped = prog.entry_bytes_mapped(&entry.addr);
-    if mapped && prog.lone_jump_target(entry.addr.get_offset()).is_some() {
-        "thunk"
-    } else if entry.provenance == EntryProvenance::UndefinedExternal {
-        "external"
-    } else if !mapped {
-        "import"
-    } else {
-        "normal"
+/// One function row.
+///
+/// `codeC` / `assembly` are `null` together with a non-null `error` when the
+/// decompile failed, and `null` with a `null` error when no body was attempted
+/// — a bodyless `kind`, or a target list that did not select this entry.
+fn function_json(
+    prog: &ConsoleProgram,
+    classifier: &Classifier,
+    graph: &CallGraph,
+    entry: &FunctionEntry,
+    result: Option<&FuncResult>,
+    executable: bool,
+    image_entry: u64,
+) -> Json {
+    let address = entry.addr.get_offset();
+    let kind = function_kind(prog, classifier, entry, executable);
+    let code = result.and_then(|r| r.code.as_ref());
+    Json::Object(vec![
+        ("address".into(), number(address)),
+        ("name".into(), Json::Str(entry.name.clone())),
+        ("size".into(), number(entry.size)),
+        ("kind".into(), Json::Str(kind.into())),
+        ("parameters".into(), parameters(result)),
+        (
+            "signature".into(),
+            result.and_then(|r| r.proto.as_ref()).map_or(Json::Null, |value| {
+                Json::Str(value.trim().trim_end_matches(';').to_string())
+            }),
+        ),
+        (
+            "assembly".into(),
+            match code {
+                Some(_) => crate::disassemble::function_listing(
+                    prog,
+                    address,
+                    address.saturating_add(entry.size),
+                )
+                .map_or(Json::Null, Json::Str),
+                None => Json::Null,
+            },
+        ),
+        ("codeC".into(), code.map_or(Json::Null, |value| Json::Str(value.clone()))),
+        (
+            "error".into(),
+            result
+                .and_then(|r| r.error.as_ref())
+                .map_or(Json::Null, |value| Json::Str(value.clone())),
+        ),
+        ("hasIndirectCalls".into(), Json::Bool(graph.has_indirect_calls(address))),
+        ("forwardsTo".into(), forwards_to(prog, graph, address).map_or(Json::Null, number)),
+        ("isEntryPoint".into(), Json::Bool(address == image_entry)),
+    ])
+}
+
+/// What the row is, in this document's four-value vocabulary:
+///
+/// * `external` — a loader-defined undefined symbol: the definition is in
+///   another module and there are no bytes here at all.
+/// * `import` — an entry the whole-binary target policy never decompiles,
+///   because its address is not executable content (a PE import pointer slot,
+///   a data-section symbol). It carries a callable name so a call to it renders,
+///   but it has no body.
+/// * `thunk` — a body that only forwards: a PLT/stub-section entry, an imported
+///   name, or a lone jump ([`Classifier`]).
+/// * `normal` — a body of its own.
+fn function_kind(
+    prog: &ConsoleProgram,
+    classifier: &Classifier,
+    entry: &FunctionEntry,
+    executable: bool,
+) -> &'static str {
+    if !prog.entry_bytes_mapped(&entry.addr)
+        && entry.provenance == EntryProvenance::UndefinedExternal
+    {
+        return "external";
+    }
+    if !executable {
+        return "import";
+    }
+    match classifier.kind(prog, &entry.name, entry.addr.get_offset()) {
+        "plt" | "thunk" => "thunk",
+        _ => "normal",
     }
 }
 
-fn assembly(prog: &ConsoleProgram, entry: &FunctionEntry) -> Option<String> {
-    if entry.size == 0 {
-        return None;
+/// Where a forwarding entry sends control: the destination of a direct lone
+/// jump, or the fixed pointer slot an indirect one (`jmp [slot]`) reads.
+fn forwards_to(prog: &ConsoleProgram, graph: &CallGraph, address: u64) -> Option<u64> {
+    match prog.lone_jump_target(address) {
+        Some(Some(target)) => Some(target),
+        Some(None) => graph.veneer_slot(address),
+        None => None,
     }
-    let mut out = String::new();
-    let mut address = entry.addr.get_offset();
-    let end = address.checked_add(entry.size)?;
-    let mut mnemonic = String::new();
-    let mut body = String::new();
-    while address < end {
-        let length = prog
-            .disassemble_at_into(address, &mut mnemonic, &mut body)
-            .ok()?;
-        if length <= 0 {
-            return None;
-        }
-        let _ = writeln!(out, "{address:08x}  {mnemonic} {body}");
-        address = address.checked_add(length as u64)?;
-    }
-    Some(out.trim_end().to_string())
 }
 
+/// The recovered parameters, in ABI order.
 fn parameters(result: Option<&FuncResult>) -> Json {
     let mut variables: Vec<_> = result
         .into_iter()
@@ -250,52 +320,39 @@ fn parameters(result: Option<&FuncResult>) -> Json {
     )
 }
 
-fn edges_json(entries: &[FunctionEntry], xrefs: &kuna_analysis::listing::xrefs::XrefIndex) -> Json {
-    let known: BTreeSet<u64> = entries
-        .iter()
-        .map(|entry| entry.addr.get_offset())
-        .collect();
+/// The edge list: every caller in address order, each one's callees in
+/// call-site order with a contiguous zero-based `calleeOrder`.
+///
+/// Both endpoints are always rows in `functions` — [`CallGraph::callees_of`]
+/// resolves a target onto the inventory and drops what lands nowhere — so a
+/// consumer can build the graph without a containment test of its own.
+fn edges_json(graph: &CallGraph, known: &BTreeSet<u64>) -> Json {
     let mut edges = Vec::new();
-    for caller in &known {
-        let mut references: Vec<_> = xrefs
-            .refs_from_function(*caller)
+    for &caller in known {
+        for (order, (callee, kind)) in graph
+            .callees_of(caller)
             .into_iter()
-            .filter(|reference| matches!(reference.kind, XrefKind::Call | XrefKind::Jump))
-            .collect();
-        references.sort_by(|left, right| {
-            left.from
-                .cmp(&right.from)
-                .then(left.to.cmp(&right.to))
-                .then(left.kind.cmp(&right.kind))
-        });
-        let mut targets = BTreeSet::new();
-        for reference in references {
-            targets.insert((reference.from, reference.to));
-        }
-        let mut seen_callees = BTreeSet::new();
-        for callee in targets
-            .into_iter()
-            .filter_map(|(_, callee)| seen_callees.insert(callee).then_some(callee))
+            .filter(|(callee, _)| known.contains(callee))
             .enumerate()
         {
-            let (order, callee) = callee;
             edges.push(Json::Object(vec![
-                ("callerAddress".into(), number(*caller)),
+                ("callerAddress".into(), number(caller)),
                 ("calleeAddress".into(), number(callee)),
-                ("calleeModule".into(), Json::Null),
+                (
+                    "kind".into(),
+                    Json::Str(
+                        match kind {
+                            XrefKind::Jump => "jump",
+                            _ => "call",
+                        }
+                        .into(),
+                    ),
+                ),
                 ("calleeOrder".into(), number(order as u64)),
             ]));
         }
     }
     Json::Array(edges)
-}
-
-fn is_entry_point(file: &object::File, entry: &FunctionEntry) -> bool {
-    entry.addr.get_offset() == file.entry()
-        || matches!(
-            entry.name.as_str(),
-            "main" | "WinMain" | "DllMain" | "entry" | "_start"
-        )
 }
 
 fn number(value: u64) -> Json {
@@ -311,85 +368,25 @@ fn analysis_image_base(file: &object::File) -> Option<u64> {
     if pe_base != 0 {
         return Some(pe_base);
     }
-    file.segments()
-        .filter(|segment| segment.size() != 0)
-        .map(|segment| segment.address())
-        .min()
-}
-
-fn parse_args(argv: &[String]) -> Result<ExportArgs, String> {
-    let mut binary = None;
-    let mut version = String::new();
-    let mut output = None;
-    let mut max_fn_seconds = None;
-    let mut options = Vec::new();
-    let mut mode = None;
-    let mut slice = None;
-    let mut target = None;
-    let mut sleighpath = None;
-    let mut i = 0;
-    while i < argv.len() {
-        match argv[i].as_str() {
-            "-o" | "--output" => {
-                i += 1;
-                output = Some(argv.get(i).ok_or("--output requires a value")?.clone());
-            }
-            "--max-fn-seconds" => {
-                i += 1;
-                max_fn_seconds = Some(
-                    argv.get(i)
-                        .ok_or("--max-fn-seconds requires a value")?
-                        .parse()
-                        .map_err(|_| "invalid --max-fn-seconds value")?,
-                );
-            }
-            "--option" => {
-                if i + 2 >= argv.len() {
-                    return Err("--option requires NAME VALUE".into());
-                }
-                options.push((argv[i + 1].clone(), argv[i + 2].clone()));
-                i += 2;
-            }
-            "--mode" => {
-                i += 1;
-                mode = Some(argv.get(i).ok_or("--mode requires a value")?.clone());
-            }
-            "--slice" => {
-                i += 1;
-                slice = Some(argv.get(i).ok_or("--slice requires a value")?.clone());
-            }
-            "--target" => {
-                i += 1;
-                target = Some(argv.get(i).ok_or("--target requires a value")?.clone());
-            }
-            "--sleighpath" => {
-                i += 1;
-                sleighpath = Some(argv.get(i).ok_or("--sleighpath requires a value")?.clone());
-            }
-            "-h" | "--help" => {
-                usage();
-                std::process::exit(0);
-            }
-            value if value.starts_with('-') => return Err(format!("unknown option {value}")),
-            value if binary.is_none() => binary = Some(value.to_string()),
-            value if version.is_empty() => version = value.to_string(),
-            value => return Err(format!("unexpected argument {value:?}")),
-        }
-        i += 1;
-    }
-    Ok(ExportArgs {
-        binary: binary.ok_or("decompile-graph requires <binary>")?,
-        version,
-        output,
-        max_fn_seconds,
-        options,
-        mode,
-        slice,
-        target,
-        sleighpath,
-    })
+    file.segments().filter(|segment| segment.size() != 0).map(|segment| segment.address()).min()
 }
 
 fn usage() {
-    eprintln!("usage: kuna decompile-graph <binary> [version] [-o|--output FILE] [--max-fn-seconds N] [--mode auto|reliable|aggressive|fast] [--option N V]... [--slice ARCH] [--target T] [--sleighpath D]");
+    eprintln!(
+        "usage: kuna decompile-graph <binary> [-o|--output FILE] [--label TEXT] \\\n\
+         \x20                   [--functions a,b,..] [--addr 0xVMA].. [--max-fn-seconds N] \\\n\
+         \x20                   [--mode auto|reliable|aggressive|fast] \\\n\
+         \x20                   [--define-function S[-E][=N]|@FILE].. \\\n\
+         \x20                   [--option N V].. [--slice ARCH] [--target T] [--sleighpath D]\n\
+         \n\
+         The whole program as one JSON document (schema 3): every discovered\n\
+         function with its recovered signature, parameters, C and assembly, plus\n\
+         the call edges between them.  Written to stdout, or to -o FILE.\n\
+         --label TEXT is copied verbatim into `binary.label`, for a consumer that\n\
+         wants to stamp the document with its own version.\n\
+         Every function is a node; --functions/--addr narrow which of them are\n\
+         decompiled, not which appear.  Unfiltered fast runs default to 10 seconds\n\
+         per function, other runs to 120; a function over budget becomes its own\n\
+         `error` record and the run still exits 0."
+    );
 }

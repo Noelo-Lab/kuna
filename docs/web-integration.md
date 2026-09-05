@@ -127,7 +127,8 @@ function. This is the same selector/inventory split as the native front-end:
 selecting one function does not silently export its discovered call closure.
 The output adds one kuna-wasm-only per-function field: `"kind"` —
 `"func"` | `"plt"` | `"thunk"`
-(`kuna-wasm/src/classify.rs`: an `object`-crate re-parse marks entries inside import-stub
+(`kuna-console/src/classify.rs`, shared with `kuna decompile-graph`: an `object`-crate
+re-parse marks entries inside import-stub
 sections — the `.plt` family, Mach-O symbol stubs — or named as imports as `"plt"`, and
 lone-jump entries (`ConsoleProgram::lone_jump_target`, direct-to-another-function or
 indirect) as `"thunk"`; the UI folds those below a divider). CLI:
@@ -403,7 +404,8 @@ benign PE is committed because this environment has no PE linker.
 
 - Harness & commands: `integrations/web/README.md`
 - Browser worker boundary: `integrations/web/{kuna-worker.js,kuna-worker-client.js}`
-- The crate: `decompiler/crates/kuna-wasm/{Cargo.toml, src/lib.rs, src/main.rs, src/classify.rs}`
+- The crate: `decompiler/crates/kuna-wasm/{Cargo.toml, src/lib.rs, src/main.rs}`
+  (the per-function `kind` classifier lives in `kuna-console/src/classify.rs`)
 - The shared decompile loop + artifact builders: `decompiler/crates/kuna-console/src/project.rs`
   (the CLI wrappers: `decompiler/crates/kuna-cli/src/{decompile_all.rs, decompile_project.rs}`)
 - The engine entry it reuses: `kuna_console::engine::bootstrap_from_object`

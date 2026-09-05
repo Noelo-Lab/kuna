@@ -1045,6 +1045,93 @@ The artifact format is purely additive and has no exporter-specific transform
 (spec §9.7); the set of emitted definitions follows the selected P1 discovery
 options, including `fast_funcdisc`.
 
+## `kuna decompile-graph` — the whole program as one JSON graph
+
+```bash
+kuna decompile-graph ./a.out                           # to stdout
+kuna decompile-graph ./a.out -o graph.json --label v3  # to a file
+kuna decompile-graph ./a.out --functions main,parse    # every node, two bodies
+```
+
+One document holding every discovered function — its recovered signature,
+parameters, C body and assembly — plus the call edges between them
+(`decompiler/crates/kuna-cli/src/decompile_graph.rs`). The same in-process
+load-once path and the same flags as `decompile-project`
+(`--functions`/`--addr`/`--max-fn-seconds`/`--mode`/`--define-function`/
+`--option`/`--slice`/`--target`/`--sleighpath`; no `--json`, the document always
+is), plus `-o/--output FILE` and `--label TEXT`, which is copied verbatim into
+`binary.label` for a consumer that wants to stamp the document with its own
+version. Written to stdout when `-o` is absent; with `-o` the file is the only
+output.
+
+**Every discovered function is a node.** `--functions`/`--addr` narrow which
+nodes get a decompiled *body*, not which appear — so `--functions main` buys the
+whole call graph plus one body, at the price of one decompile. The bodies an
+unfiltered run renders are exactly the ones `decompile-all` renders (the
+CODE-backed target policy above).
+
+**Both ends of every edge are rows of the same document.** Edges are the
+`kuna xrefs` reference edges, walked through the same call-graph model
+`--reachable-from` uses: a reference into the middle of a body resolves to the
+body, and one landing in no discovered function (a `CALL 0x0` off a nulled
+relocation, a branch into a gap) is not a call-graph edge and is not emitted.
+Two runs of one command are byte-identical.
+
+### The JSON document
+
+```
+{schemaVersion: 3,
+ binary: {name,label,sourcePath,analysisImageBase,functionCount,edgeCount},
+ functions: [{address,name,size,kind,parameters:[{ordinal,name,type}],signature,
+              assembly,codeC,error,hasIndirectCalls,forwardsTo,isEntryPoint}],
+ edges: [{callerAddress,calleeAddress,kind,calleeOrder}]}
+```
+
+| Field | Meaning |
+|---|---|
+| `schemaVersion` | `3`. Bumped whenever a field is added, removed or changes meaning. |
+| `binary.label` | The `--label` string, `""` when not given. Never interpreted. |
+| `binary.analysisImageBase` | The PE optional-header ImageBase, else the lowest non-empty loadable segment VMA — the same static VMA space as every address below. `null` for a relocatable object, which has no static base. |
+| `address` / `size` | The inventory entry and its byte extent, the same two numbers with the same meanings `kuna functions` reports. |
+| `kind` | `normal` a body of its own; `thunk` a body that only forwards (a PLT/stub-section entry, an imported name, or a lone jump); `import` a callable address that is not executable content, so it is never decompiled (a PE import pointer slot, a data-section symbol); `external` a loader-defined undefined symbol with no bytes here at all. |
+| `parameters` | The recovered parameters in ABI order. Empty for a row with no body. |
+| `signature` | The `.h`-style prototype line, without the trailing `;`. `null` for a row with no body. |
+| `assembly` | The function's instruction listing, one `<vma>  <MNEMONIC operands>` per line — the `kuna disassemble` walk, so an undecodable byte inside the body is a `.byte 0x..` row rather than the end of the listing. |
+| `codeC` | The decompiled body, byte-identical to this function's `decompile-all --json` `code`. |
+| `error` | Why this function has no `codeC`, when the decompile was attempted and failed. `null` with a `null` `codeC` means no body was attempted: a bodyless `kind`, or a `--functions`/`--addr` narrowing that did not select it. |
+| `hasIndirectCalls` | The body contains a computed call (`CALLIND`), which files no edge because it has no static target. An indirect *branch* is not one — see `forwardsTo`. |
+| `forwardsTo` | Where a forwarding entry sends control: the destination of a direct lone jump, or the fixed pointer slot an indirect one (`jmp [slot]`) reads. `null` otherwise. |
+| `isEntryPoint` | This address is the image's declared entry point. Exactly one row carries it, on a format that declares one. |
+| `edges[].kind` | `call` a direct call; `jump` a tail call or a branch into a neighbouring entry — real control flow, labelled because it is not a call. |
+| `edges[].calleeOrder` | Contiguous and zero-based per caller, in first-call-site order, deduplicated on the callee. |
+
+Rows are entry-VMA ordered, and each caller's edges follow that caller's order.
+A field the program cannot supply is `null`, never a placeholder; a field that
+could never be supplied is not carried at all, which is why there is no
+module-qualified callee — the loader retains no library-module mapping.
+
+```json
+{
+  "address": 4195940,
+  "name": "authenticate",
+  "size": 137,
+  "kind": "normal",
+  "parameters": [
+    { "ordinal": 0, "name": "param_1", "type": "char *" },
+    { "ordinal": 1, "name": "param_2", "type": "char *" }
+  ],
+  "signature": "unsigned long authenticate(char *a0,char *a1)",
+  "assembly": "00400664  PUSH RBP\n00400665  MOV RBP,RSP\n...",
+  "codeC": "unsigned long authenticate(char *a0,char *a1)\n{\n...",
+  "error": null,
+  "hasIndirectCalls": false,
+  "forwardsTo": null,
+  "isEntryPoint": false
+}
+```
+
+Design notes and the reasoning behind each rule: spec §9.7.
+
 ## `kuna docs` — the manual, inside the binary
 
 ```bash

@@ -1,6 +1,10 @@
-//! Per-function `kind` classification — the kuna-wasm-only annotation
-//! (`"func"` | `"plt"` | `"thunk"`) the browser UI uses to fold import stubs
-//! and trampolines out of the function list.
+//! Per-function `kind` classification (`"func"` | `"plt"` | `"thunk"`) — the
+//! annotation the browser inventory folds import stubs and trampolines out of,
+//! and the one `kuna decompile-graph` labels its function rows with.
+//!
+//! Shared here (rather than in either front-end) for the same reason
+//! [`crate::project`] is: two surfaces answer "what kind of function is this"
+//! and they must not answer it differently.
 //!
 //! A [`Classifier`] is built once per run from (a) an `object`-crate re-parse
 //! of the binary bytes — the import-stub section ranges (`.plt` family /
@@ -22,7 +26,7 @@
 
 use std::collections::BTreeSet;
 
-use kuna_console::engine::ConsoleProgram;
+use crate::engine::ConsoleProgram;
 use object::{Object, ObjectSection, ObjectSymbol};
 
 /// ELF sections that hold import/linkage stubs (procedure-linkage tables).

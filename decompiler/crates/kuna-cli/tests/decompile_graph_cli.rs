@@ -1,18 +1,21 @@
 //! CLI contract checks for `kuna decompile-graph`.
+//!
+//! The three that carry weight are the last three: an address in a PE's import
+//! table must not be handed a decompiled body, every edge endpoint must be a row
+//! in `functions`, and two runs of the same command must produce the same bytes.
 
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::process::Command;
 
 fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../..")
-        .canonicalize()
-        .unwrap()
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
 
-fn fauxware() -> String {
+fn fixture(name: &str) -> String {
     repo_root()
-        .join("decompiler/crates/kuna-analysis/tests/fixtures/fauxware")
+        .join("decompiler/crates/kuna-analysis/tests/fixtures")
+        .join(name)
         .to_string_lossy()
         .into_owned()
 }
@@ -27,53 +30,92 @@ fn missing_specs(stderr: &str) -> bool {
         || stderr.contains("Could not discover")
 }
 
-#[test]
-fn decompile_graph_emits_v2_json_with_ordered_call_edges() {
+/// Run the command, or `None` as a visible skip when the `.sla` files are absent.
+fn graph(args: &[&str]) -> Option<String> {
+    let specs = specs();
+    let mut argv = vec!["decompile-graph"];
+    argv.extend_from_slice(args);
+    argv.extend_from_slice(&["--sleighpath", &specs]);
     let output = Command::new(env!("CARGO_BIN_EXE_kuna"))
-        .args([
-            "decompile-graph",
-            &fauxware(),
-            "fixture-version",
-            "--sleighpath",
-            &specs(),
-        ])
+        .args(&argv)
         .output()
         .expect("spawn kuna decompile-graph");
-    let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     if !output.status.success() && missing_specs(&stderr) {
         eprintln!("decompile_graph_cli: skipping (no `.sla`; run `make specs`): {stderr}");
-        return;
+        return None;
     }
     assert!(output.status.success(), "decompile-graph failed: {stderr}");
+    Some(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+/// One `"key": value` of a rendered object, unquoted — enough to walk this
+/// document without a JSON dependency the CLI does not have.
+fn field(object: &str, key: &str) -> Option<String> {
+    let at = object.find(&format!("\"{key}\":"))? + key.len() + 3;
+    let rest = object[at..].trim_start();
+    if let Some(body) = rest.strip_prefix('"') {
+        return Some(body[..body.find('"')?].to_string());
+    }
+    let end = rest.find([',', '\n', '}']).unwrap_or(rest.len());
+    Some(rest[..end].trim().to_string())
+}
+
+/// Split the `functions` / `edges` arrays into their top-level objects. The
+/// documents are `dumps_indent2`-rendered, so a row starts at a `    {` line and
+/// ends at the matching `    }`.
+fn rows(document: &str, array: &str) -> Vec<String> {
+    let start = document.find(&format!("\"{array}\": [")).expect("array present");
+    let body = &document[start..];
+    let mut out = Vec::new();
+    let mut current: Option<String> = None;
+    for line in body.lines().skip(1) {
+        if line == "    {" {
+            current = Some(String::new());
+        } else if line == "    }" || line == "    }," {
+            if let Some(row) = current.take() {
+                out.push(row);
+            }
+        } else if line == "  ]," || line == "  ]" {
+            break;
+        } else if let Some(row) = current.as_mut() {
+            row.push_str(line);
+            row.push('\n');
+        }
+    }
+    out
+}
+
+#[test]
+fn the_document_carries_the_schema_and_both_arrays() {
+    let Some(stdout) = graph(&[&fixture("fauxware"), "--label", "fixture-label"]) else { return };
     assert!(stdout.starts_with("{\n"), "not JSON: {stdout}");
     for key in [
-        "\"schemaVersion\": 2",
-        "\"version\": \"fixture-version\"",
+        "\"schemaVersion\": 3",
+        "\"label\": \"fixture-label\"",
         "\"analysisImageBase\": ",
         "\"functions\": [",
         "\"edges\": [",
         "\"kind\": ",
+        "\"error\": ",
         "\"hasIndirectCalls\": ",
+        "\"forwardsTo\": ",
         "\"callerAddress\": ",
         "\"calleeAddress\": ",
         "\"calleeOrder\": ",
     ] {
         assert!(stdout.contains(key), "missing {key} from:\n{stdout}");
     }
-    assert!(
-        !stdout.contains("\"address\": \"0x"),
-        "addresses must be JSON numbers"
-    );
+    assert!(!stdout.contains("\"address\": \"0x"), "addresses must be JSON numbers");
 }
 
 #[test]
-fn decompile_graph_writes_only_to_requested_file() {
+fn a_file_export_writes_nothing_to_stdout() {
     let path = std::env::temp_dir().join(format!("kuna-decompile-graph-{}.json", std::process::id()));
     let output = Command::new(env!("CARGO_BIN_EXE_kuna"))
         .args([
             "decompile-graph",
-            &fauxware(),
+            &fixture("fauxware"),
             "-o",
             path.to_str().unwrap(),
             "--sleighpath",
@@ -86,11 +128,66 @@ fn decompile_graph_writes_only_to_requested_file() {
         return;
     }
     assert!(output.status.success(), "decompile-graph failed: {stderr}");
-    assert!(
-        output.stdout.is_empty(),
-        "file output must not mix JSON into stdout"
-    );
+    assert!(output.stdout.is_empty(), "file output must not mix JSON into stdout");
     let document = std::fs::read_to_string(&path).expect("exported JSON file");
     let _ = std::fs::remove_file(path);
-    assert!(document.contains("\"schemaVersion\": 2"));
+    assert!(document.contains("\"schemaVersion\": 3"));
+}
+
+/// A PE's import pointer slots are named, callable addresses in `.idata`. They
+/// are not code, and lifting them produces a plausible-looking body out of a
+/// pointer table — so the row says `import` and carries no C at all.
+#[test]
+fn a_pe_import_slot_gets_a_label_not_a_body() {
+    let Some(stdout) = graph(&[&fixture("pe_imports.exe")]) else { return };
+    let rows = rows(&stdout, "functions");
+    let imports: Vec<&String> =
+        rows.iter().filter(|r| field(r, "kind").as_deref() == Some("import")).collect();
+    assert!(!imports.is_empty(), "the fixture's import slots vanished from the inventory");
+    for row in &imports {
+        assert_eq!(field(row, "codeC").as_deref(), Some("null"), "invented a body:\n{row}");
+        assert_eq!(field(row, "assembly").as_deref(), Some("null"), "invented a listing:\n{row}");
+        assert_eq!(field(row, "error").as_deref(), Some("null"), "reported a failure:\n{row}");
+    }
+    assert!(
+        imports.iter().any(|r| field(r, "name").as_deref() == Some("DeleteCriticalSection")),
+        "DeleteCriticalSection is a KERNEL32 import slot, not a function of this program"
+    );
+    // Every other row's body and listing arrive together.
+    for row in &rows {
+        if field(row, "codeC").as_deref() != Some("null") {
+            assert_ne!(field(row, "assembly").as_deref(), Some("null"), "C without asm:\n{row}");
+        }
+    }
+}
+
+/// Both ends of every edge must be rows of this document, or a consumer cannot
+/// build the graph without a containment model of its own.
+#[test]
+fn every_edge_endpoint_is_a_function_row() {
+    for name in ["pe_imports.exe", "fauxware", "plt_ppc64le"] {
+        let Some(stdout) = graph(&[&fixture(name)]) else { return };
+        let known: BTreeSet<String> =
+            rows(&stdout, "functions").iter().filter_map(|r| field(r, "address")).collect();
+        for edge in rows(&stdout, "edges") {
+            for end in ["callerAddress", "calleeAddress"] {
+                let address = field(&edge, end).expect("edge endpoint");
+                assert!(known.contains(&address), "{name}: {end} {address} is not a function");
+            }
+            assert!(
+                matches!(field(&edge, "kind").as_deref(), Some("call") | Some("jump")),
+                "{name}: unknown edge kind in {edge}"
+            );
+        }
+    }
+}
+
+/// Two runs of one command must be byte-identical: the document is an input to
+/// diffs and to caches downstream, and unordered iteration would silently break
+/// both.
+#[test]
+fn two_runs_produce_the_same_bytes() {
+    let Some(first) = graph(&[&fixture("pe_imports.exe")]) else { return };
+    let Some(second) = graph(&[&fixture("pe_imports.exe")]) else { return };
+    assert_eq!(first, second, "two runs disagreed");
 }

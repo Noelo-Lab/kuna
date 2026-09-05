@@ -884,7 +884,7 @@ object references change which extensions and pointer conversions are
 representable as casts — kept current alongside `CastStrategyC` so a future
 `PrintJava` port is emitter wiring only.
 
-## 9.7 Whole-program document renders (`kuna decompile-project`, `kuna graph-export`)
+## 9.7 Whole-program document renders (`kuna decompile-project`, `kuna decompile-graph`)
 
 **(kuna) Three additive render surfaces** back the `kuna decompile-project`
 project export (the CLI driver is
@@ -959,34 +959,57 @@ console engine, `decompiler/crates/kuna-console/src/engine.rs
 (ConsoleProgram::sections, disassemble_at, read_bytes, global_data_symbols)`,
 not in this folder.
 
-**GraphRev graph document.** `kuna graph-export` is another additive reader of
-completed program state. It emits schema-v2 JSON: canonical callable entries
-become function rows; failure-isolated C rendering supplies `codeC` and
-recovered parameters; bounded instruction rendering supplies per-function
-assembly; and the post-analysis xref walk supplies deduplicated direct-call and
-cross-function-jump relations. Function rows are entry-VMA ordered; each
-caller's unique edges are ordered by first static instruction VMA and receive
-contiguous zero-based `calleeOrder`. A computed call has no static target edge
-and is represented by `hasIndirectCalls` on its caller.
+**The graph document.** `kuna decompile-graph`
+(`decompiler/crates/kuna-cli/src/decompile_graph.rs`) is another additive reader
+of completed program state: one JSON document holding every discovered function
+with its recovered signature, parameters, C body and assembly, plus the call
+edges between them. It adds no analysis facts, mutates no IR and changes no
+existing C rendering, so it has neither an option row nor a DIV entry. The
+field-by-field schema is `docs/cli.md`; what follows is why the document says
+what it says.
 
-The document is observational: it adds no analysis facts, mutates no IR, and
-changes no existing C rendering, so it has neither an option row nor a DIV
-entry. Unavailable binary or import provenance is JSON `null`, never a
-fabricated address, module name, or placeholder function.
+Every question the document answers is answered by the surface that already owns
+it, because two surfaces disagreeing about one program is the failure mode here.
+Which entries exist and which of them have bodies is the whole-binary target
+policy of §0.2 (`function_entries_canonical` for the rows,
+`decompiler/crates/kuna-cli/src/decompile_all.rs (resolve_targets)` — i.e.
+`function_entries_executable` — for the bodies), so an address that is callable
+but not executable content, a PE import pointer slot above all, is a labelled row
+rather than a body lifted out of a pointer table. What a function *is* comes from
+the shared per-function classifier
+(`decompiler/crates/kuna-console/src/classify.rs`), the same one the browser
+inventory groups by. Bodies and parameters come from the shared decompile loop
+(`decompiler/crates/kuna-console/src/project.rs (decompile_targets)`), which
+isolates a failure to one record — and that record's `error` is carried into the
+document, so a consumer counting functions is not silently counting a subset.
+Assembly comes from the listing walk
+(`decompiler/crates/kuna-cli/src/disassemble.rs (function_listing)`), so an
+undecodable byte inside a body is a `.byte` row and not the loss of the whole
+listing. Edges come from the reference index `kuna xrefs` answers with, through
+the same call-graph model `--reachable-from` walks
+(`decompiler/crates/kuna-cli/src/decompile_all.rs (CallGraph::callees_of)`).
 
-`analysisImageBase` is the PE optional-header ImageBase when present; for other
-linked images it is the lowest non-empty loadable segment VMA. This keeps the
-value in the same static VMA space as function and edge addresses. Relocatable
-objects have no comparable static image base and export `null` rather than their
-synthetic loader layout.
+**Both ends of every edge are rows of the same document.** A reference into the
+middle of a body resolves to the body, and one that lands in no discovered
+function at all — a `CALL 0x0` off a nulled relocation, a branch into a gap
+between entries — is not a call-graph edge and is not emitted, because a
+consumer that has to model containment itself to use the edge list has been given
+the wrong list. Edges are `call` or `jump`: the second is a tail call or a branch
+into a neighbouring entry, kept because it is real control flow, labelled because
+it is not a call. A computed call has no static target and therefore no edge at
+all; it is reported as `hasIndirectCalls` on its caller, which is `CALLIND` only
+(`decompiler/crates/kuna-analysis/src/listing/xrefs.rs (XrefIndex::has_indirect_calls)`)
+— a forwarding veneer's `jmp [slot]` is an indirect *branch* whose destination is
+in fact known, and is reported as `forwardsTo` instead.
 
-Function classification deliberately follows the exporter convention: a mapped
-lone forwarding jump is `thunk`; a loader-defined undefined external is
-`external`; a remaining bodyless entry is `import`; any other mapped entry is
-`normal`. Thus the thunk decision precedes external provenance, and every
-non-body kind has null C and assembly. The present loader does not retain a
-complete library-module/external-location mapping, so it cannot yet rewrite an
-import stub edge to a separate module-qualified `external` function or emit its
-`calleeModule`; these fields remain null rather than guessed. Indirect-call
-presence is observed only from `CALLIND` p-code, not from indirect branches;
-unknown or undecodable call forms consequently cannot produce a synthetic edge.
+**Ordering is total, so two runs of one command are byte-identical.** Function
+rows are entry-VMA ordered; each caller's edges follow in first-call-site order
+with a contiguous zero-based `calleeOrder`, deduplicated on the callee.
+
+**Absent provenance is `null`, never a placeholder.** `analysisImageBase` is the
+PE optional-header ImageBase when present and otherwise the lowest non-empty
+loadable segment VMA, keeping it in the same static VMA space as the function and
+edge addresses; a relocatable object has no comparable static base and reports
+`null` rather than its synthetic loader layout. A field that could never be
+filled is not carried: the loader retains no library-module mapping, so the
+document has no module-qualified callee rather than a key that is always `null`.

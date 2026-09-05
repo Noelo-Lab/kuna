@@ -149,9 +149,8 @@ pub struct XrefIndex {
     decoded: HashSet<u64>,
     /// Every function entry the walk seeded or discovered, in address order.
     funcs: BTreeSet<u64>,
-    /// Function entries whose decoded body contains a computed call. These
-    /// calls deliberately have no target xref, but consumers still need to
-    /// distinguish "no callees" from "callee is computed at runtime".
+    /// Function entries whose decoded body contains a `CALLIND`
+    /// ([`XrefIndex::has_indirect_calls`]).
     indirect_callers: BTreeSet<u64>,
     /// Forwarding veneers, keyed by function entry ([`veneer_at`]).
     veneers: BTreeMap<u64, Veneer>,
@@ -283,7 +282,20 @@ impl XrefIndex {
         self.insns
     }
 
-    /// Whether the function entered at `entry` contains a computed call.
+    /// Does the walk of the function entered at `entry` decode a **computed
+    /// call** — a `CALLIND`, whose destination is a value rather than an
+    /// address?
+    ///
+    /// Such a call files no Call edge (there is no static target to file one
+    /// against), so a caller reading [`Self::refs_from_function`] cannot
+    /// otherwise tell "this function calls nothing" from "this function's
+    /// callee is decided at run time".
+    ///
+    /// `CALLIND` only. An indirect *branch* is not one: a jump table and a
+    /// forwarding veneer's `jmp [slot]` both lift to `BRANCHIND`, and the
+    /// veneer's target is recoverable anyway ([`Self::veneer_slot`]). The
+    /// attribution is the walk's own — the same entry
+    /// [`Self::refs_from_function`] files that instruction's references under.
     pub fn has_indirect_calls(&self, entry: u64) -> bool {
         self.indirect_callers.contains(&entry)
     }
