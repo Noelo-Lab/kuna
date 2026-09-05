@@ -193,6 +193,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         }
         "inputvarnodeadjust" => on_off(conf.input_varnode_adjust),
         "retinputhalf" => on_off(conf.ret_input_half),
+        "inputparamgap" => on_off(conf.input_param_gap),
         // (kuna `rustabi`) Three-valued, so it reports its own token.
         "rustabi" => kuna_decomp::kuna_rustabi::RustAbiMode::from_u8(conf.rust_abi).as_str(),
         "condexeplace" => on_off(conf.condexe_block_placement),

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    615,
-    615
+    620,
+    620
   ],
   "passing": [
     "data:ARRAYSUBFIELD #1: an 8-byte read at offset 0 of char[16] is a sized sub-field, not element 0",
@@ -442,6 +442,11 @@
     "data:ifelseflatten #1: the else-bearing 3-component BlockIf is present (off plus on = 2)",
     "data:ifelseflatten #2: the else-arm constant body survives identically (no-op, not corrupted; off plus on = 2)",
     "data:ifelseflatten #3: enabling the option is byte-identical, the loop tail is unchanged (off plus on = 2)",
+    "data:inputparamgap #1: option off drops the live-in registers sitting behind a 3-register gap (bug reproduced)",
+    "data:inputparamgap #2: option off leaves r9d read with nothing assigning it (bug reproduced)",
+    "data:inputparamgap #3: option on recovers the callback's full ABI signature, filler parameters and all",
+    "data:inputparamgap #4: option on renders the incoming key/state registers as the parameters they are",
+    "data:inputparamgap #5: a 2-register gap already recovered and both passes agree (the option moves only the limit)",
     "data:inputtile-overlap #1: the function is no longer abandoned",
     "data:inputtile-overlap #2: no overlapping-input error text survives",
     "data:inputtile-overlap #3: the wrapper is not an empty shell",

@@ -501,6 +501,10 @@ pub struct Architecture {
     /// (kuna) Let a bounded decode of the callee's own body veto a register
     /// argument the callee provably never reads (option `calleedeadarg`).
     pub callee_dead_arg: bool,
+    /// (kuna) In the function's OWN input recovery, do not let a run of unused
+    /// argument REGISTERS veto a later register the body reads before writing
+    /// (option `inputparamgap`).  See [`crate::p4_calls::kuna_inputparamgap`].
+    pub input_param_gap: bool,
     /// (kuna) Score a variadic call's stack arguments as their own `fillinMap`
     /// resource section, so the empty register slots the ABI leaves between the
     /// fixed parameters and the varargs stop deactivating them (option
@@ -1737,6 +1741,7 @@ impl Architecture {
             recover_lowered_switch: false,
             callsite_stack_args: true,
             callee_dead_arg: true,
+            input_param_gap: true,
             vararg_stack_args: true,
             callee_arity: true,
             callee_arity_fwd: true,
@@ -1943,6 +1948,7 @@ impl Architecture {
         self.recover_lowered_switch = true; // (kuna) default-on (angr port)
         self.callsite_stack_args = true; // (kuna) default-on: restores upstream fspec.cc:5618 (0/675 ablation)
         self.callee_dead_arg = true; // (kuna) default-on (DIV-KUNA_DEADARG_DIV): 0/675 datatests, subtractive only
+        self.input_param_gap = true; // (kuna) DIV-114 default-on: an unused argument-register run in the function's OWN input recovery no longer vetoes a later live-in register, so a pointer-table-only callback recovers its full signature instead of reading undefined locals. Byte-identical (0/675) on the datatest corpus; restore upstream's forceInactiveChain veto with `option inputparamgap off`
         self.vararg_stack_args = true; // (kuna) DIV-101 default-on: a variadic call's stack tail is its own fillinMap section (0/675 ablation)
         self.callee_arity = true; // (kuna) DIV-102 default-on: one callee, one argument list across its call sites (0/675 ablation)
         self.callee_arity_fwd = true; // (kuna) DIV-PENDING default-on: retry that reconciliation against the siblings that finalize later (0/675 ablation)
@@ -2201,6 +2207,12 @@ impl Architecture {
                 let (val, msg) =
                     crate::p4_calls::kuna_callsitestackargs::OptionCallsiteStackArgs.apply(p1)?;
                 self.callsite_stack_args = val;
+                Ok(msg)
+            }
+            "inputparamgap" => {
+                let (val, msg) =
+                    crate::p4_calls::kuna_inputparamgap::OptionInputParamGap.apply(p1)?;
+                self.input_param_gap = val;
                 Ok(msg)
             }
             "calleedeadarg" => {
@@ -3077,6 +3089,7 @@ impl Architecture {
         ctx.recover_lowered_switch = self.recover_lowered_switch; // loweredswitch
         ctx.callsite_stack_args = self.callsite_stack_args; // callsitestackargs
         ctx.callee_dead_arg = self.callee_dead_arg; // calleedeadarg
+        ctx.input_param_gap = self.input_param_gap; // inputparamgap
         ctx.vararg_stack_args = self.vararg_stack_args; // varargstackargs
         ctx.callee_arity = self.callee_arity; // calleearity
         ctx.callee_arity_fwd = self.callee_arity_fwd; // calleearityfwd
