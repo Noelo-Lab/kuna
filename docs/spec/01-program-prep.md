@@ -1296,7 +1296,10 @@ offsets: on a four-function probe it recovers two entries, one of them only
 because record 0 happens to sit at offset 0. The stride follows
 `FileHeader.Machine`, as Ghidra's `ExceptionDataDirectory` dispatches it, and an
 unrecognized machine keeps the 12-byte reading. Chained fragments are not decoded
-on the ARM form — Ghidra does not decode them either.
+on the ARM form — Ghidra does not decode them either. Ghidra additionally routes
+an image whose load-config CHPE metadata pointer is set to its ARM parser
+regardless of `Machine`; kuna parses no load config, so an ARM64EC image that
+declares itself `AMD64` still reads at 12.
 
 **The widened vector-table signature** (`cortexmvectors`, default-off; kuna;
 `decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_cortexmvectors.rs`)
