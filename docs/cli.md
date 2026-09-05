@@ -1045,6 +1045,108 @@ The artifact format is purely additive and has no exporter-specific transform
 (spec §9.7); the set of emitted definitions follows the selected P1 discovery
 options, including `fast_funcdisc`.
 
+## `kuna decompile-graph` — the whole program as one JSON graph
+
+```bash
+kuna decompile-graph ./a.out                           # to stdout
+kuna decompile-graph ./a.out -o graph.json --label v3  # to a file
+kuna decompile-graph ./a.out --functions main,parse    # every node, two bodies
+```
+
+One document holding every discovered function — its recovered signature,
+parameters, C body and assembly — plus the call edges between them
+(`decompiler/crates/kuna-cli/src/decompile_graph.rs`). The same in-process
+load-once path and the same flags as `decompile-project`
+(`--functions`/`--addr`/`--max-fn-seconds`/`--mode`/`--define-function`/
+`--option`/`--slice`/`--target`/`--sleighpath`; no `--json`, the document always
+is), plus `-o/--output FILE` and `--label TEXT`, which is copied verbatim into
+`binary.label` for a consumer that wants to stamp the document with its own
+version. Written to stdout when `-o` is absent; with `-o` the file is the only
+output.
+
+**The document is C.** `codeC` names its language, so this surface refuses any
+other — `--language rust` (or `--option setlanguage rust-language`) is an error
+rather than Rust in a field called `codeC`, and the auto policy that follows a
+rustc-built binary is off here for the same reason it is off for
+`decompile-project`. Use `kuna decompile` or `decompile-all --json` for the other
+output languages.
+
+**`address` is the key, not `name`.** A name repeats inside one document
+whenever several addresses stand for one callable: a PLT thunk and the import
+slot it forwards through are both `printf`, and a Mach-O image carries the two
+plus its stub. A consumer keying rows or edges by name will collide.
+
+**Every discovered function is a node.** `--functions`/`--addr` narrow which
+nodes get a decompiled *body*, not which appear — so `--functions main` buys the
+whole call graph plus one body, at the price of one decompile. The bodies an
+unfiltered run renders are exactly the ones `decompile-all` renders (the
+CODE-backed target policy above); an address outside that policy is a labelled
+row with no body even when `--addr` names it explicitly, and the run says so on
+stderr.
+
+**Both ends of every edge are rows of the same document.** Edges are the
+`kuna xrefs` reference edges, walked through the same call-graph model
+`--reachable-from` uses, and they carry that command's `kind` vocabulary: a
+reference into the middle of a body resolves to the body, and one landing in no
+discovered function (a `CALL 0x0` off a nulled relocation, a branch into a gap,
+a materialized address that is a string) is not a call-graph edge and is not
+emitted. Two runs of one command are byte-identical.
+
+### The JSON document
+
+```
+{schemaVersion: 4,
+ binary: {name,label,sourcePath,analysisImageBase,functionCount,edgeCount},
+ functions: [{address,name,size,kind,parameters:[{ordinal,name,type}],signature,
+              assembly,codeC,error,hasIndirectCalls,forwardsTo,isEntryPoint}],
+ edges: [{callerAddress,calleeAddress,kind,calleeOrder}]}
+```
+
+| Field | Meaning |
+|---|---|
+| `schemaVersion` | `4`. Bumped whenever a field is added, removed or changes meaning. |
+| `binary.label` | The `--label` string, `""` when not given. Never interpreted. |
+| `binary.analysisImageBase` | The PE optional-header ImageBase, else the lowest non-empty loadable segment VMA — the same static VMA space as every address below. `null` for a relocatable object, which has no static base. |
+| `address` / `size` | The inventory entry and its byte extent, the same two numbers with the same meanings `kuna functions` reports. `address` is the document's only unique key — see above. |
+| `kind` | `normal` a body of its own; `thunk` a body that only forwards (a PLT/stub-section entry, an imported name, or a lone jump); `import` a pointer slot the program calls through (a PE `.idata` entry, a Mach-O `__got`/stub slot); `data` any other named address that is not code (a Mach header symbol, an Objective-C class object); `external` a loader-defined undefined symbol with no bytes here at all. The last three are the rows with no body: this surface never decompiles an address that is not executable content, not even one `--addr` names. |
+| `parameters` | The recovered parameters in ABI order. Empty for a row with no body. |
+| `signature` | The `.h`-style prototype line, without the trailing `;`. `null` for a row with no body. |
+| `assembly` | The function's instruction listing, one `<vma>  <MNEMONIC operands>` per line — the `kuna disassemble` walk, so an undecodable byte inside the body is a `.byte 0x..` row rather than the end of the listing. Present whenever a body was attempted, including when the decompile failed: the listing is what is left to look at. |
+| `codeC` | The decompiled body, byte-identical to this function's `decompile-all --json` `code`. |
+| `error` | Why this function has no `codeC`, when the decompile was attempted and failed. `null` with a `null` `codeC` means no body was attempted: a bodyless `kind`, or a `--functions`/`--addr` narrowing that did not select it. |
+| `hasIndirectCalls` | The body contains a computed call (`CALLIND`), which files no edge because it has no static target. An indirect *branch* is not one — see `forwardsTo`. The call site is attributed to the row that contains it, the same rule that decides which function `kuna xrefs --from` lists an instruction under. |
+| `forwardsTo` | Where a forwarding entry sends control: the destination of a direct lone jump, or the fixed pointer slot an indirect one reads. The slot half needs the jump to name it as a decode-time constant, which an x86 `jmp [rip+disp]` stub does and an AArch64 `adrp`/`ldr`/`br x16` stub does not — a Mach-O `__stubs` entry is therefore `kind` `thunk` with a `null` `forwardsTo`, and the import slot it reaches is a row of its own found by name. `null` for anything that does not forward. |
+| `isEntryPoint` | This row is the image's declared entry point, resolved through the inventory so an ARM `e_entry` carrying the Thumb mode bit still lands on it. A format that declares no entry point marks no row. |
+| `edges[].kind` | The `kuna xrefs` kind, so the two surfaces cannot disagree: `call` a direct call; `jump` a tail call or a branch into a neighbouring entry; `data` an address handed to something else to call — the edge that gives `main` a caller, since `_start` passes it to `__libc_start_main` as a pointer rather than calling it. A caller that both calls and mentions one callee gets one edge carrying the strongest of the two. |
+| `edges[].calleeOrder` | Contiguous and zero-based per caller, in first-reference order, deduplicated on the callee. |
+
+Rows are entry-VMA ordered, and each caller's edges follow that caller's order.
+A field the program cannot supply is `null`, never a placeholder; a field that
+could never be supplied is not carried at all, which is why there is no
+module-qualified callee — the loader retains no library-module mapping.
+
+```json
+{
+  "address": 4195940,
+  "name": "authenticate",
+  "size": 137,
+  "kind": "normal",
+  "parameters": [
+    { "ordinal": 0, "name": "param_1", "type": "char *" },
+    { "ordinal": 1, "name": "param_2", "type": "char *" }
+  ],
+  "signature": "unsigned long authenticate(char *a0,char *a1)",
+  "assembly": "00400664  PUSH RBP\n00400665  MOV RBP,RSP\n...",
+  "codeC": "unsigned long authenticate(char *a0,char *a1)\n{\n...",
+  "error": null,
+  "hasIndirectCalls": false,
+  "forwardsTo": null,
+  "isEntryPoint": false
+}
+```
+
+Design notes and the reasoning behind each rule: spec §9.7.
+
 ## `kuna docs` — the manual, inside the binary
 
 ```bash

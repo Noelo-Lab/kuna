@@ -884,7 +884,7 @@ object references change which extensions and pointer conversions are
 representable as casts — kept current alongside `CastStrategyC` so a future
 `PrintJava` port is emitter wiring only.
 
-## 9.7 Whole-program document renders (`kuna decompile-project`)
+## 9.7 Whole-program document renders (`kuna decompile-project`, `kuna decompile-graph`)
 
 **(kuna) Three additive render surfaces** back the `kuna decompile-project`
 project export (the CLI driver is
@@ -958,3 +958,83 @@ bytes, named data symbols for the `.asm`/`README.md` artifacts) lives on the
 console engine, `decompiler/crates/kuna-console/src/engine.rs
 (ConsoleProgram::sections, disassemble_at, read_bytes, global_data_symbols)`,
 not in this folder.
+
+**The graph document.** `kuna decompile-graph`
+(`decompiler/crates/kuna-cli/src/decompile_graph.rs`) is another additive reader
+of completed program state: one JSON document holding every discovered function
+with its recovered signature, parameters, C body and assembly, plus the call
+edges between them. It adds no analysis facts, mutates no IR and changes no
+existing C rendering, so it has neither an option row nor a DIV entry. The
+field-by-field schema is `docs/cli.md`; what follows is why the document says
+what it says.
+
+Every question the document answers is answered by the surface that already owns
+it, because two surfaces disagreeing about one program is the failure mode here.
+Which entries exist and which of them have bodies is the whole-binary target
+policy of §0.2 (`function_entries_canonical` for the rows,
+`decompiler/crates/kuna-cli/src/decompile_all.rs (resolve_targets)` — i.e.
+`function_entries_executable` — for the bodies), so an address that is callable
+but not executable content is a labelled row — `import` for a pointer slot the
+program calls through, `data` for a named address that is simply not code —
+rather than a body lifted out of a pointer table. Naming such an address with
+`--addr` does not buy an exception: the row would then contradict its own `kind`,
+and what the run produced would be a plausible-looking function lifted out of a
+pointer table. What a function *is* comes from
+the shared per-function classifier
+(`decompiler/crates/kuna-console/src/classify.rs`), the same one the browser
+inventory groups by. Bodies and parameters come from the shared decompile loop
+(`decompiler/crates/kuna-console/src/project.rs (decompile_targets)`), which
+isolates a failure to one record — and that record's `error` is carried into the
+document, so a consumer counting functions is not silently counting a subset.
+Assembly comes from the listing walk
+(`decompiler/crates/kuna-cli/src/disassemble.rs (function_listing)`), so an
+undecodable byte inside a body is a `.byte` row and not the loss of the whole
+listing. Edges come from the reference index `kuna xrefs` answers with, through
+the same call-graph model `--reachable-from` walks
+(`decompiler/crates/kuna-cli/src/decompile_all.rs (CallGraph::callees_of)`).
+
+**Both ends of every edge are rows of the same document.** A reference into the
+middle of a body resolves to the body, and one that lands in no discovered
+function at all — a `CALL 0x0` off a nulled relocation, a branch into a gap
+between entries — is not a call-graph edge and is not emitted, because a
+consumer that has to model containment itself to use the edge list has been given
+the wrong list. An edge's kind is the `kuna xrefs` kind, so the document and that
+command cannot describe one program differently: `call`, `jump` for a tail call or
+a branch into a neighbouring entry, and `data` for a function whose address is
+materialized. The third is not optional decoration — it is how `main` has a
+caller at all in a glibc program, where `_start` hands it to `__libc_start_main`
+as a pointer, and dropping it would under-report exactly the indirection an
+obfuscated program leans on. A materialized address that does not land on a known
+function entry is not an edge (that is a string or a global, not a callee), and
+where a caller both calls a function and mentions its address, the one edge
+carries the stronger of the two kinds. A computed call has no static target and
+therefore no edge at all; it is reported as `hasIndirectCalls` on the row that
+contains the call site — `CALLIND` only, folded onto its function by the same
+ordered containment that decides which function an instruction's references are
+listed under
+(`decompiler/crates/kuna-analysis/src/listing/xrefs.rs (XrefIndex::has_indirect_calls)`)
+— while a forwarding veneer's `jmp [slot]` is an indirect *branch* whose
+destination is in fact known, and is reported as `forwardsTo` instead. That slot
+is only recoverable where the jump names it as a decode-time constant, so an
+AArch64 stub that computes it across `adrp`/`ldr`/`br` is a `thunk` row with a
+null `forwardsTo`.
+
+**Ordering is total, so two runs of one command are byte-identical.** Function
+rows are entry-VMA ordered; each caller's edges follow in first-reference order
+with a contiguous zero-based `calleeOrder`, deduplicated on the callee. The key
+is `address` and only `address` — a name is not unique in the document, since a
+thunk, the pointer slot it forwards through and the callable they stand for are
+three rows under one name.
+
+**The document is C.** `codeC` names its language, so this surface refuses any
+other rather than half-honouring the request, exactly as the project export does
+(and it is excluded from the same auto-language policy, so a rustc-built binary
+does not silently produce Rust in a field called `codeC`).
+
+**Absent provenance is `null`, never a placeholder.** `analysisImageBase` is the
+PE optional-header ImageBase when present and otherwise the lowest non-empty
+loadable segment VMA, keeping it in the same static VMA space as the function and
+edge addresses; a relocatable object has no comparable static base and reports
+`null` rather than its synthetic loader layout. A field that could never be
+filled is not carried: the loader retains no library-module mapping, so the
+document has no module-qualified callee rather than a key that is always `null`.
