@@ -135,7 +135,7 @@ python3 -m scripts.repipe.verify --gate --round 1 --json
 |---|---|
 | `admitted` | real, reproducible, not already possible |
 | `not-reproducible` | the probe does not fire — noise, or environment |
-| `already-supported` | the acceptance already passes: **the tester was wrong.** Kept as a ledger — if this bucket is ever empty, the gate is broken |
+| `already-supported` | the acceptance already passes: **the tester was wrong.** Kept as a ledger — but see "an empty bucket is not a broken gate" below before reading a zero |
 | `flaky` | the repeats disagreed. A flaky probe is not evidence |
 | `unrunnable` | malformed, or the target's sha256 does not match — a probe pointed at the wrong file **refuses** rather than returning a confident false verdict |
 
@@ -517,6 +517,71 @@ guard) and it caught this one. **Do not soften it to "absent means not required"
 diagnostic to reach for first is `gh pr view <n> --json mergeable,mergeStateStatus`:
 `CONFLICTING`/`DIRTY` explains an absent suite far more often than anything about the
 workflow file does.
+
+## A quota-killed builder loses its work silently
+
+Round 2's two builders both ended `claude rc=1` about 30 minutes in, well inside
+`REPIPE_BUILDER_TIMEOUT`. The reason lives only in the result JSON:
+
+```
+$ python3 -c 'import json; print(json.load(open(".kuna-repipe/logs/<wid>.result.json"))["result"])'
+You've hit your session limit · resets 4:50am (UTC)
+```
+
+`is_error: true` with `subtype: "success"` — so neither the exit code nor the subtype tells a
+quota kill from a model refusal or a crash. **Check the `result` string.**
+
+One of those builders was in its `docs` phase with 618 insertions across 19 files — a new
+subcommand, a promoted `tests/cli` probe, a console verify test — all uncommitted, and it was
+recovered by hand. `worker.sh` now preserves that itself: on a failed session it commits the
+worktree to the worker's own branch as an explicit `WIP UNFINISHED, DO NOT MERGE` snapshot
+naming the phase and stating that no gate ran, and a re-dispatch onto an existing same-branch
+worktree now **reuses** it instead of dying on `worktree add`.
+
+Two things that fix deliberately does not do, both of which a first attempt did and was
+rejected for:
+
+- It never runs `git worktree remove --force` on a stale or wrong-branch directory. That flag
+  is exactly what deletes a worktree holding modified and untracked files, so tidying would
+  destroy the work the change exists to preserve — strictly worse than today's harmless
+  failure. Those cases still fall through to the add-and-fail path.
+- It is not an `EXIT` trap. An `EXIT` trap fires on SIGTERM without waiting for the foreground
+  `claude` subshell, so it would stage a tree still being written.
+
+The WIP commit is refused when the worktree is detached, mid-rebase, or no longer its own
+worktree: `git commit` lands on whatever HEAD is, and a commit the branch cannot reach while
+the log says otherwise is worse than no commit.
+
+## An empty `already-supported` bucket is not a broken gate
+
+Round 1's criteria say "≥2 rejected as `already-supported`/`user-error` — if this is zero, the
+gate is not working". Round 2 reported **zero** and the gate was fine. The criterion was
+obsoleted by a change made here after round 1.
+
+A result carrying `reasons: ['probe-fail', 'acceptance-pass']` looks like already-supported —
+the bad behaviour is gone *and* the desired behaviour works. Usually it is not. Round 2's one
+such record:
+
+```
+probe.expect      {"stdout_matches": ["sub_418fb0\\(\\)"]}
+acceptance.expect {"stdout_absent":  ["sub_418fb0\\(\\)"]}
+```
+
+**Exact polarity inverses on the same regex.** `probe-fail` and `acceptance-pass` are one
+fact — `sub_418fb0()` is absent — reported twice. Relabelling it `already-supported` would
+assert kuna does the desired thing when all that was observed is the symptom's absence.
+`not-reproducible` is the correct, weaker claim, and the existing precedence already yields it.
+
+The obsolescence is self-inflicted and worth naming. The tester brief now says *assert the
+symptom's absence, not the fix's spelling* — the right fix for round 1's over-specified
+acceptances, and it **manufactures negation-shaped arm pairs**. 11 of round 2's 22
+observations have that shape. The better acceptances get by that rule, the closer this bucket
+goes to zero, because a negation pair can never populate it.
+
+So judge the gate on whether it refutes anything at all — `not-reproducible` and
+`already-supported` together — and treat a zero in either alone as uninformative. A proposal
+to flip the precedence for these pairs was written and **rejected** in review for this reason;
+before re-litigating it, check whether the two arms are independent or complementary.
 
 ## Machinery reference
 
