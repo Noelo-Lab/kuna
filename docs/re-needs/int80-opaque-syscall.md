@@ -24,6 +24,11 @@ Filed by round-1 testers on the crackmes corpus. See `.kuna-repipe/rounds/1/gate
 
 CLOSED in round 1. Shipped: `linuxsyscall` (default OFF -- pass `--option linuxsyscall on`): names the syscall EAX selects and takes the ABI registers as arguments
 
+**Closed WITHOUT an acceptance flip.** Filed by hand, so this record carries no `probe_id`/`acceptance_id` and the gate never closed it -- a human did. The design says only the acceptance probe may close a need; this one did not go through that. The durable evidence that the capability works is:
+- `tests/stages/kuna-linuxsyscall.xml`
+
+Recorded rather than back-filled: a probe retro-fitted now would assert TODAY's behaviour, not the behaviour at closing time, and would look like gate evidence while being nothing of the kind.
+
 ## Decision log
 
 - round 1: gated `admitted`, built, merged in PR #367; probe re-run on the merged build confirms the bad behaviour no longer reproduces.
