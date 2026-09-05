@@ -125,7 +125,8 @@ reaches the requested entry directly. Name selection keeps discovery active so
 a generated `sub_<addr>` name can resolve, then exports only the selected
 function. This is the same selector/inventory split as the native front-end:
 selecting one function does not silently export its discovered call closure.
-The output adds one kuna-wasm-only per-function field: `"kind"` —
+The output adds one per-function field the native `decompile-all --json` does not
+carry: `"kind"` —
 `"func"` | `"plt"` | `"thunk"`
 (`kuna-console/src/classify.rs`, shared with `kuna decompile-graph`: an `object`-crate
 re-parse marks entries inside import-stub
