@@ -2899,6 +2899,7 @@ impl Funcdata {
     /// `blockaction.cc:2242`).  Only MULTIEQUAL / COPY / RETURN ops with
     /// constant/annotation/non-free inputs are allowed.
     fn return_split_is_splittable(&self, b: BlockId) -> bool {
+        let mut global_stores: usize = 0;
         let mut cur = self.bb_op_head(b);
         while let Some(op) = cur {
             let o = self.obank().get(op).expect("isSplittable: stale op");
@@ -2907,6 +2908,28 @@ impl Funcdata {
             match opc {
                 OpCode::CPUI_MULTIEQUAL => {}
                 OpCode::CPUI_COPY | OpCode::CPUI_RETURN => {
+                    // (kuna `retsplitglobal`) upstream never looks at the COPY's
+                    // OUTPUT, so a shared epilogue that stores to globals reads
+                    // as a bare epilogue and gets cloned into every predecessor.
+                    // See `crate::p8_structure::kuna_retsplitglobal`.
+                    // (kuna `retsplitglobal`) upstream never looks at the COPY's
+                    // OUTPUT, so a shared epilogue that stores to globals reads
+                    // as a bare epilogue and gets cloned into every predecessor.
+                    // See `crate::p8_structure::kuna_retsplitglobal`.
+                    let outvn = o.get_out().and_then(|ov| self.vbank().get(ov));
+                    let same_storage = match (outvn, o.get_in(0).and_then(|iv| self.vbank().get(iv)))
+                    {
+                        (Some(ov), Some(iv)) => ov.get_addr() == iv.get_addr(),
+                        _ => false,
+                    };
+                    if crate::p8_structure::kuna_retsplitglobal::is_global_store(
+                        opc == OpCode::CPUI_COPY,
+                        outvn.map(|v| v.is_persist()).unwrap_or(false),
+                        o.is_return_copy(),
+                        same_storage,
+                    ) {
+                        global_stores += 1;
+                    }
                     let n = o.num_input();
                     for i in 0..n {
                         let inv = o.get_in(i).expect("isSplittable: input slot");
@@ -2923,7 +2946,12 @@ impl Funcdata {
             }
             cur = next;
         }
-        true
+        // (kuna `retsplitglobal`) a bare epilogue is cheap to clone; one that
+        // stores to more globals than the bound is not one.
+        !crate::p8_structure::kuna_retsplitglobal::split_is_declined(
+            self.get_arch().ret_split_global,
+            global_stores,
+        )
     }
 
     /// Split the epilog of the function (C++ `ActionReturnSplit::apply`,

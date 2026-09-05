@@ -676,6 +676,35 @@ is a boolean being smeared across the word. Rewrite: `INT_2COMP(b)` (`0 - b`,
 giving 0 or all-ones), which the surrounding compare rules then clean to a
 plain boolean test. Settable `booleanmask`, shipped default **on** (DIV-2).
 
+**simdlane** (repipe `simd-constant-string-initializer`) —
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_simdlane.rs
+(RuleSimdShuffleLane)`, oppool1, fires on SUBPIECE. *Pattern:* a one-byte lane
+read of a byte-shuffle user op whose mask is constant — `SUBPIECE(CALLOTHER
+pshufb(src, m), k)` with `m` a constant Varnode. `pshufb` has no p-code
+semantics (the x86 SLEIGH spec models it as an opaque CALLOTHER over a 16-byte
+value), so after `ActionLaneDivide` splits the vector consumers into byte lanes
+every lane read is a SUBPIECE of something nothing downstream can see through,
+and neither `RuleSubExtComm`/`RuleSubZext` nor copy propagation can collapse
+them. *Rewrite:* the instruction is a pure permutation with an exact per-lane
+definition once the mask is known, `dst[i] = (m[i] & 0x80) ? 0 : src[m[i] &
+(N-1)]`, so the lane read becomes `SUBPIECE(src, m[k] & (N-1))`, or a COPY of
+the constant `0` for a zeroing mask byte. It is an identity, not a heuristic.
+Once every lane read is re-anchored on the source the CALLOTHER loses its last
+reader; for the standard byte-broadcast idiom (`pxor xmm2,xmm2; pshufb
+xmm0,xmm2` — an all-zero mask) all sixteen lanes resolve to `SUBPIECE(src, 0)`
+and collapse into one value. *Bounds/failure:* only a user op the architecture
+registered under a shuffle name (`kuna_simdlane.rs (SHUFFLE_USEROP_NAMES)` =
+`pshufb`, `vpshufb`; the ids are resolved once per program in
+`Architecture::build_arch_handle` and carried on the `ArchContext`, since a Rule
+cannot reach the userop table); only the three-input form whose two operands and
+output all have the vector width; only widths 8 (MMX) and 16 (SSE); only a
+ONE-BYTE lane read, because a wider SUBPIECE of a shuffle is a concatenation of
+lanes and not another SUBPIECE. A mask wider than eight bytes does not fit a
+`uintb` offset and is accepted only at value `0`, where the offset IS the whole
+value and every lane byte is provably zero — the broadcast mask, and the only
+wide constant mask the engine constructs. Settable `simdlane`, shipped default
+**on**.
+
 **flagcompare** (GH-1276 / GH-8777) —
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_flagcompare.rs`, two rules
 under one gate, for architectures that model condition flags as explicit bits.

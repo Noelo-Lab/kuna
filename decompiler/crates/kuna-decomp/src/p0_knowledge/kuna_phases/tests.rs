@@ -54,7 +54,7 @@ fn surface_count_is_108() {
 }
 
 #[test]
-fn settable_count_is_146() {
+fn settable_count_is_148() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -105,12 +105,12 @@ fn settable_count_is_146() {
     // +1 for `unmappedentry` (P1 unmapped-CALL-target entry suppression).
     // +1 for `entrymainproto` (P1 PE CRT entry-function prototype recovery).
     // +1 for `ppclocalentry` (P1 PPC64 ELFv2 local-entry entry suppression).
-    assert_eq!(kuna_num_settables(), 146);
-    assert_eq!(SETTABLE_TABLE.len(), 146);
+    assert_eq!(kuna_num_settables(), 148);
+    assert_eq!(SETTABLE_TABLE.len(), 148);
 }
 
 #[test]
-fn tier_counts_are_34_core_59_transform_53_analysis() {
+fn tier_counts_are_35_core_60_transform_53_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -200,7 +200,7 @@ fn tier_counts_are_34_core_59_transform_53_analysis() {
     // prototype recovery).
     // analysis 50 -> 51: +1 for `ppclocalentry` (P1 PPC64 ELFv2 local-entry entry
     // suppression).
-    assert_eq!((core, transform, analysis), (34, 59, 53));
+    assert_eq!((core, transform, analysis), (35, 60, 53));
 }
 
 #[test]
@@ -390,7 +390,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_48_suppressed_for_94() {
+fn option_values_live_value_present_for_50_suppressed_for_94() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -666,7 +666,9 @@ fn option_values_live_value_present_for_48_suppressed_for_94() {
     // 45 -> 46: +1 for `jtsharepartial` (live_field = jumptable_share_partial).
     // 46 -> 47: +1 for `rodatastring` (live_field = rodata_string, DIV-113).
     // 47 -> 48: +1 for `inputparamgap` (live_field = input_param_gap, DIV-114).
-    assert_eq!(with_live, 48);
+    // 48 -> 49: +1 for `simdlane` (live_field = simd_lane_fold, DIV-115).
+    // 49 -> 50: +1 for `retsplitglobal` (live_field = ret_split_global, DIV-116).
+    assert_eq!(with_live, 50);
 }
 
 #[test]
@@ -794,7 +796,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `ppclocalentry` (another P1 row beside `unmappedentry`, mid-table).
     // +1 for `varargstackargs` and +1 for `calleearity`; both P4 rows sit
     // mid-table beside `callsitestackargs`, so the tail does not move either.
-    assert_eq!(json.matches("},\n").count(), 145);
+    assert_eq!(json.matches("},\n").count(), 147);
 }
 
 #[test]
