@@ -111,6 +111,27 @@ def collect():
     for w in workers:
         w["elapsed_s"] = int(now - w.get("started_at", now))
         w["stale_s"] = int(now - w.get("updated_at", now))
+        # `stale_s` is time since the last `state update`, i.e. since the last PHASE CHANGE --
+        # not since the last sign of life. A worker that dies mid-phase therefore reads
+        # `running` with a growing counter, and reap() only corrects it after
+        # `stale_seconds` (1800) AND only when something calls it. Round 4's captain hit
+        # exactly this and had to fall back to `ps`: "checked with ps, not with status.py,
+        # whose stale_s only ticks on a phase change and still lists b-r4-function-disasse as
+        # running". One label was covering two very different states. A `kill(pid, 0)` is
+        # cheap and answers the question directly.
+        pid = w.get("pid")
+        if not isinstance(pid, int) or pid <= 0:
+            w["alive"] = None            # nothing recorded a pid; unknowable, not "dead"
+        else:
+            try:
+                os.kill(pid, 0)
+                w["alive"] = True
+            except ProcessLookupError:
+                w["alive"] = False
+            except PermissionError:
+                w["alive"] = True        # exists, owned by another uid
+            except OSError:
+                w["alive"] = None
     workers.sort(key=lambda w: w.get("started_at", 0))
     active = [w for w in workers if w.get("status") == "running"]
     return {

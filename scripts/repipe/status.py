@@ -124,9 +124,15 @@ def render(s):
                                                      "STALE", "SLUG / PR"))
         for w in shown:
             stale = int(w.get("stale_s") or 0)
+            # A row saying `running` whose pid is gone is the single most misleading thing
+            # this table can print, and it is what sent round 4's captain to `ps`. Say it.
+            alive = w.get("alive")
+            status_txt = str(w.get("status"))
+            if status_txt == "running" and alive is False:
+                status_txt = "DEAD"
             L.append("  %-18s %-9s %-8s %-8s %-7s %s"
                      % (str(w.get("worker"))[:18], str(w.get("phase"))[:9],
-                        str(w.get("status"))[:8], pstatus._fmt_elapsed(w.get("elapsed_s") or 0),
+                        status_txt[:8], pstatus._fmt_elapsed(w.get("elapsed_s") or 0),
                         ("%ds" % stale) if stale < 120 else ("%ds!" % stale),
                         w.get("pr_url") or w.get("slug") or "-"))
         if hidden:
