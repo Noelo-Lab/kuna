@@ -28,6 +28,7 @@ mod fid;
 mod assertdecl;
 mod funcdecl;
 mod jsonfmt;
+mod litpool;
 mod output;
 mod paths;
 mod specs;

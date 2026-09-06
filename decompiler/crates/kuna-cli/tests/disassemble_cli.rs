@@ -52,6 +52,9 @@ mod decompile_all;
 #[allow(dead_code)]
 #[path = "../src/disassemble.rs"]
 mod disassemble;
+#[allow(dead_code)]
+#[path = "../src/litpool.rs"]
+mod litpool;
 
 use jsonfmt::Json;
 
@@ -195,6 +198,110 @@ fn the_acceptance_probe() {
     assert_eq!(columns(rows[2]), ("0x400721", "4883ec40", "SUB RSP,0x40".to_string()));
     // ...and the call objdump renders as `call 400510 <puts@plt>`.
     assert!(text.contains("CALL 0x400510"), "the call to puts@plt is missing:\n{text}");
+}
+
+/// The third acceptance probe: a word the listed code READS is the constant it
+/// holds, not the instruction its bytes happen to spell.
+///
+/// `sub_8000140` in `cortexm_poolentry_le32` is the shape in the wild
+/// (`1337ARM`'s `main` ends the same way): four Thumb instructions, then the
+/// literal `0x20001000` the `ldr` two rows above loaded. Decoded, those four
+/// bytes read `asrs r0,r0,#0x20` / `movs r0,#0x0` — two instructions nothing
+/// executes, in place of the constant the program is about.
+#[test]
+fn a_literal_pool_word_lists_as_the_constant_it_holds() {
+    let bin = fixture("cortexm_poolentry_le32");
+    let Some((text, notes)) = rendered(&[&bin, "0x8000140", "--addr"]) else {
+        return;
+    };
+    let rows = rows(&text);
+    assert_eq!(
+        columns(rows[1]),
+        ("0x8000142", "0148", "ldr r0,[0x8000148]".to_string()),
+        "the load that proves 0x8000148 is data:\n{text}"
+    );
+    assert_eq!(
+        columns(rows[4]),
+        ("0x8000148", "00100020", ".word 0x20001000".to_string()),
+        "the pool word, and the two Thumb rows it was decoded as folded into one:\n{text}"
+    );
+    assert_eq!(rows.len(), 5, "the extent is unchanged, one row shorter:\n{text}");
+    assert!(!text.contains("asrs"), "the misdecode is gone:\n{text}");
+    assert!(
+        notes.iter().any(|n| n.contains("literal pool")),
+        "a `.word` row must say why it is not an instruction: {notes:?}"
+    );
+
+    // The evidence has to be IN the listing, which is also the escape hatch: ask
+    // for the word on its own and there is no load to prove anything, so it
+    // decodes exactly as it always did.
+    let Some(alone) = listing(&[&bin, "0x8000148-0x800014c"]) else {
+        return;
+    };
+    assert!(alone.contains("asrs r0,r0,#0x20"), "the raw decode is still reachable:\n{alone}");
+}
+
+/// The same row through `--json`, which is the surface an agent reads: the fold
+/// is one row of `size` 4 carrying the pool word's own bytes.
+#[test]
+fn a_pool_word_is_one_json_row_carrying_its_bytes() {
+    let bin = fixture("cortexm_poolentry_le32");
+    let Some(doc) = listing(&[&bin, "0x8000148", "--addr", "--bytes", "20", "--json"]) else {
+        return;
+    };
+    // Listed from the pool word itself there is no load in range, so nothing
+    // folds -- the same self-limiting rule the human surface has.
+    let raw = instructions(&doc);
+    assert_eq!(as_str(field(&raw[0], "mnemonic")), "asrs");
+
+    let Some(doc) = listing(&[&bin, "0x8000140", "--addr", "--json"]) else {
+        return;
+    };
+    let insns = instructions(&doc);
+    let word = insns.iter().find(|i| as_str(field(i, "address_hex")) == "0x8000148").unwrap();
+    assert_eq!(as_str(field(word, "mnemonic")), ".word");
+    assert_eq!(as_str(field(word, "operands")), "0x20001000");
+    assert_eq!(as_str(field(word, "text")), ".word 0x20001000");
+    assert_eq!(as_str(field(word, "bytes")), "00100020");
+    assert_eq!(as_u64(field(word, "size")), 4);
+    // Folding two rows into one must not move the extent the header reports.
+    assert_eq!(as_u64(field(&parse_doc(&doc), "end")), 0x800014c);
+    assert_eq!(as_u64(field(&parse_doc(&doc), "bytes")), 12);
+}
+
+/// The refusals, on the A32 fixture built for the reference walk's own pool
+/// following: a pointer-sized read folds, and a HALFWORD read of the same kind
+/// of slot does not — the width has to come from the access, and two bytes do
+/// not tile a four-byte row.
+#[test]
+fn a_narrow_read_does_not_fold_the_word_around_it() {
+    let bin = fixture("poolref_arm_le32");
+    let Some(wide) = listing(&[&bin, "0x10040", "--addr"]) else {
+        return;
+    };
+    let wide = rows(&wide);
+    assert_eq!(columns(wide[0]), ("0x10040", "00009fe5", "ldr r0,[0x10048]".to_string()));
+    assert_eq!(columns(wide[2]), ("0x10048", "2a000000", ".word 0x0000002a".to_string()));
+
+    let Some(narrow) = listing(&[&bin, "0x10034", "--addr"]) else {
+        return;
+    };
+    let narrow = rows(&narrow);
+    assert_eq!(columns(narrow[0]), ("0x10034", "b000dfe1", "ldrh r0,[0x1003c]".to_string()));
+    let (addr, _, insn) = columns(narrow[2]);
+    assert_eq!(addr, "0x1003c");
+    assert!(!insn.starts_with('.'), "a halfword read must not fold a word: {insn}");
+}
+
+/// x86-64 parks its constants in immediates, so nothing folds there and the
+/// listing an agent already knew is byte-identical.
+#[test]
+fn a_listing_with_no_literal_pool_is_untouched() {
+    let Some((text, notes)) = rendered(&[&fauxware(), "main"]) else {
+        return;
+    };
+    assert!(!text.contains(".word"), "nothing to fold in an x86-64 body:\n{text}");
+    assert!(notes.is_empty(), "and nothing to say about it: {notes:?}");
 }
 
 /// The second acceptance probe: `--json` is valid JSON carrying `address_hex`

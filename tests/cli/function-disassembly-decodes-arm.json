@@ -1,0 +1,86 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "a-0082c83fdc4c",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "disassemble",
+    "{{BIN}}",
+    "0x8000140",
+    "--addr",
+    "--json"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/cortexm_poolentry_le32",
+    "binary_sha256": "8194242c64bafb297cf705e456bd808e08b7544bc843d8118d5051617608471f",
+    "binary_size": 601,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/cortexm_poolentry_le32",
+    "selector": "0x8000140",
+    "selector_kind": "addr"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "stdout_absent": [
+      "\"mnemonic\": \"asrs\""
+    ],
+    "json": [
+      {
+        "path": "count",
+        "op": "eq",
+        "value": 5
+      },
+      {
+        "path": "end_hex",
+        "op": "eq",
+        "value": "0x800014c"
+      },
+      {
+        "path": "instructions[1].text",
+        "op": "eq",
+        "value": "ldr r0,[0x8000148]"
+      },
+      {
+        "path": "instructions[4].address_hex",
+        "op": "eq",
+        "value": "0x8000148"
+      },
+      {
+        "path": "instructions[4].mnemonic",
+        "op": "eq",
+        "value": ".word"
+      },
+      {
+        "path": "instructions[4].operands",
+        "op": "eq",
+        "value": "0x20001000"
+      },
+      {
+        "path": "instructions[4].bytes",
+        "op": "eq",
+        "value": "00100020"
+      },
+      {
+        "path": "instructions[4].size",
+        "op": "eq",
+        "value": 4
+      },
+      {
+        "path": "notes[0]",
+        "op": "contains",
+        "value": "literal pool"
+      }
+    ]
+  },
+  "notes": "Promoted acceptance of function-disassembly-decodes-arm, re-pointed from the dataset witness (main's last word 0x8458 listed as `andeq r0,r0,r9, lsr r5` instead of the 0x539 the ldr at 0x8440 loads) at the vendored cortexm_poolentry_le32 fixture -- CI has no dataset. 0x8000148 is the literal the ldr at 0x8000142 loads; count and end_hex pin that folding two Thumb rows did not move the extent."
+}

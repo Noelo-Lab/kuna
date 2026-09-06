@@ -1,0 +1,131 @@
+{
+  "opportunity": "repipe:5ab77f5733c5d40ad448c380::function-disassembly-decodes-arm",
+  "need_id": "function-disassembly-decodes-arm",
+  "track": "tooling",
+  "round": 4,
+  "test_name": "repipe round 4, challenge 5ab77f5733c5d40ad448c380",
+  "binary": "kuna-re-dataset/challenges/5ab77f5733c5d40ad448c380/bin/1337_ARM.zip.__x/1337ARM.bin",
+  "selector": "main",
+  "func_addr": "0x8290",
+  "option": null,
+  "flag": null,
+  "element_id": null,
+  "change_kind": "correctness-fix",
+  "source_decompiler": "kuna",
+  "inspiration": "repipe round 4 need function-disassembly-decodes-arm; the listing-surface sibling of kuna_poolref (#431), and the shape every disassembler an agent falls back to already has -- IDA's `DCD`, Ghidra's defined data at a pc-relative literal target",
+  "default_on": true,
+  "div": null,
+  "scope": "small",
+  "worker": "b-r4-function-disasse",
+  "branch": "feat/re-function-disassembly-decodes-arm",
+  "hypothesis_status": "no hypothesis was offered; the captain's T_TRIAGE reading (the listing walks an ARM literal pool as code) is upheld exactly. What the symptom line proposes as the fix -- asserting readonly over 0x8458+4 -- is a DECOMPILE knob and does not touch the listing at all; the listing needed its own evidence.",
+  "files": [
+    "decompiler/crates/kuna-cli/src/litpool.rs",
+    "decompiler/crates/kuna-cli/src/disassemble.rs",
+    "decompiler/crates/kuna-cli/src/main.rs",
+    "decompiler/crates/kuna-cli/tests/disassemble_cli.rs",
+    "decompiler/crates/kuna-console/src/engine.rs",
+    "tests/cli/function-disassembly-decodes-arm.json",
+    "docs/cli.md",
+    "docs/spec/01-program-prep.md"
+  ],
+  "parity": "OK",
+  "gates": {
+    "make test": "PARITY OK 675/675",
+    "make test-stages": "PARITY OK 635/635",
+    "make check-spec": "OK",
+    "kuna catalog --check": "catalog OK",
+    "make test-cli": "38/38",
+    "make rust-test": "5669 passed, 1 failed -- verify_w10_proto_unlock::w10_proto_unlock_const_return_collapses_no_tied_roundtrip, PRE-EXISTING and not reachable by this change. It asserts on the output of an EXTERNAL decomp_test_dbg process (KUNA_DECOMP_TEST), and reproduces identically when pointed at the main tree's own binary built before this session. The diff touches no file under kuna-decomp/kuna-base/kuna-sleigh/kuna-analysis/specs. It passed on the first run of this branch only because the worktree had no release decomp_test_dbg yet, which makes the oracle block vacuous -- which is also why CI cannot see it: .github/workflows/tests.yml never sets KUNA_DECOMP_TEST."
+  },
+  "probe_flip": {
+    "probe_still_passes": false,
+    "acceptance_passes": true,
+    "acceptance_row_before": "0x8458  39050000  andeq r0,r0,r9, lsr r5",
+    "acceptance_row_after": "0x8458  39050000  .word 0x00000539"
+  },
+  "promoted_probe": {
+    "path": "tests/cli/function-disassembly-decodes-arm.json",
+    "retargeted": true,
+    "target": "decompiler/crates/kuna-analysis/tests/fixtures/cortexm_poolentry_le32",
+    "why": "the acceptance's own target is `binary_source: dataset` and CI has no dataset; the vendored 601-byte Cortex-M fixture already carries the same defect (0x8000148 is the literal 0x20001000 the ldr at 0x8000142 loads, decoded as `asrs r0,r0,#0x20` / `movs r0,#0x0`), and it exercises the Thumb two-row merge the A32 witness does not"
+  },
+  "no_option_because": "Track `tooling`. `kuna disassemble` is a query -- it loads, decodes and prints, commits nothing into the engine and decompiles nothing -- so no emitted C can change and there is no judgement call for the pipeline to carry. The escape hatch a flag would provide already exists and is better: the rule only fires on evidence inside the listed range, so `kuna disassemble BIN 0x8458-0x845c` decodes the word raw, and the note says so.",
+  "sweep": {
+    "method": "every non-source file in decompiler/crates/kuna-analysis/tests/fixtures (all architectures), `kuna disassemble <entry>` for up to 40 entries each, old binary vs new, full text diff; plus a 32,768-instruction explicit range over the witness",
+    "fixtures_swept": 60,
+    "fixtures_with_any_diff": 5,
+    "architectures_with_any_diff": [
+      "ARM A32",
+      "ARM Thumb/Cortex-M"
+    ],
+    "x86_64_i386_pe_macho_mips_ppc_diffs": 0,
+    "rows_changed_witness_32k_range": 315,
+    "rows_changed_that_were_not_a_pool_word": 1,
+    "the_one": "cortexm_poolentry_le32 0x8000170 -- the fixture's own deliberate SPLIT case, where G's literal reference resolves onto an UNDISCOVERED function's first word. Nothing calls that function and the load really does read those bytes, so the fold is not provably wrong; it is the documented residual false positive and it costs one row.",
+    "oracle": {
+      "what": "an independent A32 LDR-literal decoder (pure Python over the ELF program headers -- no kuna code in the reference path) over the same 0x8290-0x28290 range, computing each pc-relative literal target",
+      "kuna_folded": 315,
+      "folded_not_backed_by_the_oracle": 0,
+      "folded_value_disagreeing_with_the_image_word": 0,
+      "oracle_targets_kuna_left_decoded": 551,
+      "of_which_the_target_was_not_a_decoded_row_boundary": 421,
+      "of_which_the_referencing_ldr_was_never_decoded_by_the_walk": 130,
+      "note": "recall is bounded by the straight-line walk: where it emits 1-byte `.byte` rows it goes out of phase and neither the load nor the pool word lands on a row boundary, and the tiling refusal then declines. No fabricated fold in either direction."
+    }
+  },
+  "speed": {
+    "method": "interleaved before/after, 9 repeats, MIN of N (the box ran the workspace suite throughout, so medians swing +-20% on the same binary and are not used)",
+    "default_listing_115_insns_min_s": {
+      "before": 1.315,
+      "after": 1.312
+    },
+    "explicit_32768_insn_range_min_s": {
+      "before": 1.408,
+      "after": 1.501
+    },
+    "walk_only_32768_insns_s": {
+      "before": 0.1,
+      "after": 0.19
+    },
+    "per_instruction_us": 2.8,
+    "note": "the cost is one extra `one_instruction` decode per row for the p-code. Load dominates every real invocation (1.31 s of both numbers above) and the derived listing is capped at 1024 rows, so the visible cost on a default `kuna disassemble main` is ~0.5 ms and below the noise floor. The op capture is rewound rather than reallocated per instruction (the FullCapture precedent in listing/xrefs.rs); that alone took the 32k walk from 0.25 s to 0.19 s."
+  },
+  "decisions": [
+    {
+      "id": "the-refutation-found-two-real-defects",
+      "claim": "Checking the mechanism against WRONGNESS rather than against no-op found two bugs the witness alone never showed.",
+      "evidence": "(1) An instruction's own fall-through was being counted as a branch target. Every predicated ARM instruction lowers to a CBRANCH over its body, and a literal pool is a run of words that decode as predicated instructions -- so every pool word but the first was vetoed by its predecessor. The witness's `main` has a single pool word and passed throughout; the count on a 32k range went 91 -> 315 once the fall-through was excluded. (2) The read width was taken from the address varnode when SLEIGH lifts a literal load with a `ram` address (`ldrh r0,[0x1003c]` is LOAD out:2 ins=[const, ram:4]), so a halfword read claimed a four-byte word. Both are pinned by unit tests in engine.rs and, for the narrow read, end to end on poolref_arm_le32."
+    },
+    {
+      "id": "the-evidence-must-be-inside-the-listed-range",
+      "claim": "A word is folded only when an instruction IN THE LISTING reads it; no global data/code partition is consulted.",
+      "evidence": "The alternative -- building the whole-image XrefIndex `kuna xrefs` uses -- costs a second full-program recursive descent and makes the answer depend on discovery quality. Keeping the evidence local makes the rule predictable, self-limiting and steerable: `kuna disassemble BIN 0x8458-0x845c` contains no load of 0x8458, so it decodes raw, which is the escape hatch a flag would otherwise have to provide. It also means the rule cannot fire on a range the caller did not ask about."
+    },
+    {
+      "id": "fold-only-on-an-exact-row-tiling",
+      "claim": "A pool word is folded only when its width tiles a whole number of already-decoded rows starting exactly at its address.",
+      "evidence": "This is what makes a false positive cheap. The fold rewrites rows over the same bytes and never re-decodes, so no address after a folded word can shift -- a wrong fold costs one mis-rendered row with its bytes printed beside it, never a re-aligned listing. It is also what makes Thumb work: 0x8000148 in cortexm_poolentry_le32 decodes as two 2-byte rows and both are merged into one 4-byte `.word`, pinned by `a_literal_pool_word_lists_as_the_constant_it_holds`."
+    },
+    {
+      "id": "the-width-must-come-from-the-access",
+      "claim": "The folded width is the LOAD's OUTPUT size, not the size of its address varnode.",
+      "evidence": "A LOAD's address varnode is pointer-sized whatever the access is, so `ldrh r0,[0x1003c]` would otherwise fold four bytes for a two-byte read. Same trap #431 hit one surface over (`kuna-xref-load-width`); `read_width` there and the `op.out` read here are the same rule."
+    },
+    {
+      "id": "a-branch-target-is-never-data",
+      "claim": "An address any instruction in the range branches or calls to is left decoded however else it is read.",
+      "evidence": "Harvested from the same p-code pass at zero extra cost. Without it a jump table's own entries, or a loop head a nearby instruction happens to read, could fold. Pinned by `a_branch_target_is_never_folded`."
+    },
+    {
+      "id": "the-residual-false-positive-is-a-literal-landing-on-code",
+      "claim": "The rule cannot distinguish a pool word from a real instruction that some other instruction reads as a constant, and the repo already contains one.",
+      "evidence": "cortexm_poolentry_le32's SPLIT case: `G`'s `ldr r0,[pc,#4]` resolves onto function `F`'s first word. All the local guards pass (readonly, aligned, tiles a row, after a `pop {r7,pc}`, no symbol, not a branch target) and the two `movs` fold into `.word 0x21082007`. Nothing in the fixture calls F and the load genuinely reads those bytes, so the row is not provably wrong -- but the shape is real (the fixture's own header traces it to betaflight `SCSI_RequestSense`+4). Ruling it out needs a global reachability partition, which is the whole-image walk this deliberately does not do. Documented in litpool.rs, in docs/cli.md and in docs/spec/01-program-prep.md rather than hidden."
+    },
+    {
+      "id": "no-decompile-behaviour-changed",
+      "claim": "The change is confined to the disassembly listing; the decompiler never sees it.",
+      "evidence": "`fold_pool_words` runs inside `disassemble::walk`, which only `kuna disassemble`, `kuna read` and `decompile-graph`'s per-function `assembly` field call. No p-code, prototype, type or emitted C reads it, and all four parity gates are byte-identical."
+    }
+  ]
+}

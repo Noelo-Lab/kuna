@@ -860,6 +860,43 @@ Bytes the translator will not decode are listed in place as `.byte 0x<nn>` rows,
 one byte each, and the walk continues — a listing that ran into inline data says
 so where it happened instead of stopping silently.
 
+### Literal pools are listed as data
+
+A constant that will not fit an ARM/MIPS/PowerPC immediate is parked in `.text`
+beside the code that uses it and loaded PC-relatively, so a function's own extent
+contains words that are not instructions. Decoded, they are a lie: `main` in the
+`1337ARM` crackme ended
+
+```
+0x8454        10a89de8              ldmia sp,{r4,r11,sp,pc}
+0x8458        39050000              andeq r0,r0,r9, lsr r5
+```
+
+where `0x8458` is the success constant `0x539` the `ldr` at `0x8440` loads, and
+`andeq` is four bytes nothing executes. Such a word now lists as the constant it
+holds, with the reason on **stderr** (and in `notes`):
+
+```
+0x8458        39050000              .word 0x00000539
+```
+
+The evidence is inside the listing and nowhere else: some instruction **in the
+listed range** spells the address out and reads it, and none branches to it. A
+word is left decoded if it is in a writable section, if a function symbol sits on
+it, if it is unaligned or not 1/2/4/8 bytes wide, or if its width does not tile a
+whole number of decoded rows — so no address in the listing ever moves, folded or
+not. The width is the width of the **access**, not of the address: `ldrh
+r0,[0x1003c]` reads two bytes out of a four-byte slot, and folds nothing. Listing the word on its own contains no such load, which is the escape hatch
+when the raw decode is what you want:
+
+```
+$ kuna disassemble ./1337ARM.bin 0x8458-0x845c
+0x8458        39050000              andeq r0,r0,r9, lsr r5
+```
+
+The `mnemonic` is `.byte`/`.short`/`.word`/`.quad` by width and `operands` is the
+value zero-padded to it; the row's `bytes` are the image's, as for any other row.
+
 ### The byte view
 
 An instruction listing is the wrong answer for a data address, and for a while it

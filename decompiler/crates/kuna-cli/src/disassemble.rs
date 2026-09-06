@@ -66,12 +66,13 @@
 //! about the decode changes: the same walk, the same bytes, a different view of
 //! them.
 
-use kuna_console::engine::ConsoleProgram;
+use kuna_console::engine::{ConsoleProgram, FixedRefs};
 use kuna_sleigh::loadimage::section_flags;
 
 use crate::decompile::looks_like_addr;
 use crate::decompile_all::{load_program, mode_options_for_binary, Args, DriverDefaults};
 use crate::jsonfmt::{dumps_indent2, Json};
+use crate::litpool;
 
 /// How much to list from an address that lies inside no known function extent:
 /// an unmapped-by-the-inventory blob, a decrypted payload dumped to a file, a
@@ -302,10 +303,13 @@ pub(crate) fn render(args: &DisArgs) -> Result<Listing, String> {
             region.start, args.binary
         ));
     }
-    let (view, notes) = choose_view(&prog, &region, args.view.unwrap_or(ViewRequest::Auto));
+    let (view, mut notes) = choose_view(&prog, &region, args.view.unwrap_or(ViewRequest::Auto));
     let text = match view {
         View::Code => {
-            let (rows, truncated) = walk(&prog, &region, args.count);
+            let (rows, truncated, folded) = walk(&prog, &region, args.count);
+            if folded > 0 {
+                notes.push(pool_note(folded));
+            }
             if args.json {
                 format!("{}\n", dumps_indent2(&result_json(args, &region, &rows, truncated, &notes)))
             } else {
@@ -394,9 +398,38 @@ fn decide_view(want: ViewRequest, from_entry: bool, section: Option<u32>) -> Vie
 /// An address the translator rejects is listed as a single `.byte` row rather
 /// than ending the listing, because the common reason for one is a listing that
 /// ran into inline data and there is usually code again after it.
-fn walk(prog: &ConsoleProgram, region: &Region, count: Option<usize>) -> (Vec<Row>, bool) {
+///
+/// A word the listing's OWN instructions read at a fixed address is then folded
+/// back into a data row rather than left decoded as the instruction its bytes
+/// happen to spell — the literal pool an ARM/MIPS/PPC function carries inside
+/// its own extent. What is folded, and what refuses a fold, is
+/// [`crate::litpool`]; the fold never moves a row, so the listing's addresses
+/// are the same either way.
+///
+/// Returns the rows, whether the walk was truncated, and how many words were
+/// folded — which the caller says out loud, because "this is not an
+/// instruction" is exactly the fact an agent reading a listing needs and cannot
+/// infer from the row.
+fn walk(
+    prog: &ConsoleProgram,
+    region: &Region,
+    count: Option<usize>,
+) -> (Vec<Row>, bool, usize) {
+    let (rows, truncated, refs) = decode_rows(prog, region, count);
+    let (rows, folded) = fold_pool_words(prog, region, rows, &refs);
+    (rows, truncated, folded)
+}
+
+/// The straight-line decode itself: rows in address order, whether the walk was
+/// truncated, and the fixed-address evidence the rows carry.
+fn decode_rows(
+    prog: &ConsoleProgram,
+    region: &Region,
+    count: Option<usize>,
+) -> (Vec<Row>, bool, FixedRefs) {
     let cap = if region.derived { Some(DERIVED_INSTRUCTION_CAP) } else { None };
     let mut rows: Vec<Row> = Vec::new();
+    let mut evidence = FixedRefs::default();
     let mut truncated = false;
     let mut addr = region.start;
     let (mut mnem, mut body, mut raw) = (String::new(), String::new(), Vec::new());
@@ -417,6 +450,7 @@ fn walk(prog: &ConsoleProgram, region: &Region, count: Option<usize>) -> (Vec<Ro
         // never claim a length it cannot show the bytes for.
         match decoded {
             Some(len) if prog.read_bytes_into(addr, len as usize, &mut raw) => {
+                prog.add_fixed_refs_at(addr, &mut evidence);
                 rows.push(Row {
                     addr,
                     size: len as u64,
@@ -441,7 +475,76 @@ fn walk(prog: &ConsoleProgram, region: &Region, count: Option<usize>) -> (Vec<Ro
             }
         }
     }
-    (rows, truncated)
+    (rows, truncated, evidence)
+}
+
+/// Replace each proved literal-pool word with one data row.
+///
+/// The rows a word covers are folded into a single `.word 0x...` row over the
+/// same bytes, so the listing's addresses are untouched — [`crate::litpool`]
+/// only proves a word whose width tiles whole decoded rows, which is what makes
+/// that true.
+fn fold_pool_words(
+    prog: &ConsoleProgram,
+    region: &Region,
+    rows: Vec<Row>,
+    evidence: &FixedRefs,
+) -> (Vec<Row>, usize) {
+    let Some(&Row { addr: first, .. }) = rows.first() else {
+        return (rows, 0);
+    };
+    let last = rows.last().map_or(first, |r| r.addr + r.size);
+    // A word only qualifies where the program says data can live and does not
+    // say code does: a mapped non-writable section (a GOT slot is read by
+    // address too, and a writable `.text` is a packer), and no function symbol
+    // installed at that very address. The extent clip already keeps a *named*
+    // target's listing off the next function, but an explicit multi-function
+    // range walks straight through entries and must not eat one.
+    let sections = prog.sections();
+    let is_pool_slot = |vma: u64| {
+        sections
+            .iter()
+            .find(|(start, size, _)| vma >= *start && vma - start < *size)
+            .is_some_and(|(_, _, flags)| flags & section_flags::READONLY != 0)
+            && prog.function_named_at(vma).is_none()
+    };
+    let boundaries: Vec<litpool::Boundary> = rows.iter().map(|r| (r.addr, r.size)).collect();
+    let pool = litpool::pool_words(
+        &boundaries,
+        &evidence.reads,
+        &evidence.flow_targets,
+        (region.start.max(first), last),
+        &is_pool_slot,
+    );
+    if pool.is_empty() {
+        return (rows, 0);
+    }
+    let big_endian = prog.arch().translate().is_big_endian();
+    let mut out: Vec<Row> = Vec::with_capacity(rows.len());
+    let mut folded = 0;
+    let mut it = rows.into_iter();
+    while let Some(row) = it.next() {
+        let Some(&width) = pool.get(&row.addr) else {
+            out.push(row);
+            continue;
+        };
+        let (addr, mut bytes) = (row.addr, row.bytes);
+        while (bytes.len() as u64) < width {
+            match it.next() {
+                Some(next) => bytes.extend_from_slice(&next.bytes),
+                None => break,
+            }
+        }
+        out.push(Row {
+            addr,
+            size: bytes.len() as u64,
+            mnemonic: litpool::word_mnemonic(width).to_string(),
+            operands: litpool::word_operand(&bytes, big_endian),
+            bytes,
+        });
+        folded += 1;
+    }
+    (out, folded)
 }
 
 /// Read the region's bytes forward from `region.start` into hexdump rows, until
@@ -806,7 +909,7 @@ pub(crate) fn function_listing(prog: &ConsoleProgram, start: u64, end: u64) -> O
     }
     let region =
         Region { start, end: Some(end), name: None, derived: false, from_entry: true };
-    let (rows, _) = walk(prog, &region, None);
+    let (rows, _, _) = walk(prog, &region, None);
     if rows.is_empty() {
         return None;
     }
@@ -815,6 +918,25 @@ pub(crate) fn function_listing(prog: &ConsoleProgram, start: u64, end: u64) -> O
         let _ = writeln!(out, "{:08x}  {}", r.addr, r.text());
     }
     Some(out.trim_end().to_string())
+}
+
+/// Why a row in this listing is a data word and not the instruction its bytes
+/// spell — the one fact an agent reading a `.word` row cannot infer, and the
+/// move that decodes it anyway.
+fn pool_note(folded: usize) -> String {
+    let tail = "-- disassemble such an address on its own to decode it anyway";
+    if folded == 1 {
+        format!(
+            "one word in this range is read as a constant by the range's own instructions \
+             (a literal pool), so it is listed as data rather than decoded {tail}"
+        )
+    } else {
+        format!(
+            "{folded} words in this range are read as constants by the range's own \
+             instructions (a literal pool), so they are listed as data rather than decoded \
+             {tail}"
+        )
+    }
 }
 
 /// What to call the start address in a header: its name and address when the

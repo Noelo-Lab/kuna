@@ -2140,6 +2140,40 @@ the filing crackme — of which an independent capstone-plus-symtab oracle
 corroborates 2,234 and 761 as real PC-relative pool loads, with every one of the
 remainder confirmed by hand as a load the oracle's own sweep missed.
 
+(kuna) The same pool word is a second defect one surface over, in the **listing**
+rather than the reference walk. A function's extent contains its pool, so a
+straight-line disassembly of `main` walks off the end of the code and decodes the
+constant: `1337ARM`'s `main` ended `ldmia sp,{r4,r11,sp,pc}` and then
+`0x8458 39050000 andeq r0,r0,r9, lsr r5` — four bytes nothing executes, listed as
+an instruction, in place of the success constant `0x539` the program is about.
+**Pool-word folding** (`decompiler/crates/kuna-cli/src/litpool.rs`, fed by
+`ConsoleProgram::add_fixed_refs_at`) lists such a word as the constant it holds
+(`.word 0x00000539`) instead. The evidence is the listing's own and nothing
+wider: as each row is decoded, the fixed addresses it names are harvested from
+its p-code — the constant locations it READS, in the two shapes SLEIGH spells one
+in (a `LOAD` off a constant address, and a direct memory varnode), and the
+constant addresses its flow ops name. A word read by some instruction in the
+range, and branched to by none of them, is data.
+
+That the evidence has to be *in the range* is what makes the rule predictable and
+steerable rather than a global guess: listing the pool word on its own contains
+no such load, so it decodes exactly as before, and that is the escape hatch. Four
+further refusals bound it — a writable section (a GOT slot is read by address
+too, and a writable `.text` is a packer), an address a function symbol sits on
+(code by declaration), an unaligned or non-scalar width, and a width that does
+not tile a whole number of decoded rows. As in the reference walk, the width has
+to come from the ACCESS rather than from the address varnode, which a `LOAD`
+makes pointer-sized whatever it reads; and an instruction's own fall-through is
+not counted as a branch target, because every predicated ARM instruction lowers
+to a `CBRANCH` over its body and a literal pool is a run of words that decode as
+predicated instructions — counting it would veto every pool word but the first. The last one is what keeps the listing
+stable: a fold only ever merges whole rows over the same bytes, so no address
+after it can shift and a wrong fold costs one mis-rendered row rather than a
+re-aligned listing. The residual false positive is a literal that lands on real
+code — `cortexm_poolentry_le32` carries one deliberately, where a pool reference
+resolves onto an undiscovered function's first word — and it costs exactly that
+one row, with the bytes beside it and the raw decode one command away.
+
 ## 1.7 The no-return family
 
 Whether a call falls through decides the CFG of every caller, so no-return facts

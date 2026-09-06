@@ -72,6 +72,131 @@ struct ProgramSymbol {
     provenance: EntryProvenance,
 }
 
+/// (kuna) One emitted p-code op, whole: the opcode, the output varnode and
+/// every input. [`OneShotPcodeEmit`] keeps only `in0`; the parts it drops are
+/// what a data-reference scan is made of.
+struct WholeOp {
+    opcode: OpCode,
+    out: Option<VarnodeData>,
+    ins: Vec<VarnodeData>,
+}
+
+/// (kuna) Every FIXED address a RANGE of instructions names, in the two flavours
+/// a listing needs to tell code from data — plus the decode buffer the walk
+/// filling it reuses.
+///
+/// One value is filled by many [`ConsoleProgram::add_fixed_refs_at`] calls, and
+/// the op capture is rewound rather than dropped between them: allocating per op
+/// costs one heap allocation for every p-code op walked, which on a whole-image
+/// listing is millions of them.
+#[derive(Default)]
+pub struct FixedRefs {
+    /// `(address, width)` for each read of an address an instruction spelled
+    /// out. The width is what was READ, not the size of the address varnode.
+    pub reads: Vec<(u64, u32)>,
+    /// Every address a `BRANCH`/`CBRANCH`/`CALL` named outright.
+    pub flow_targets: Vec<u64>,
+    /// The current instruction's ops, over storage retained across instructions.
+    ops: Vec<WholeOp>,
+    /// How many of `ops` the current instruction has filled.
+    filled: usize,
+}
+
+impl kuna_sleigh::translate::PcodeEmit for FixedRefs {
+    fn dump(
+        &mut self,
+        _addr: &Address,
+        opc: OpCode,
+        outvar: Option<&VarnodeData>,
+        vars: &[VarnodeData],
+    ) {
+        if self.filled == self.ops.len() {
+            self.ops.push(WholeOp { opcode: opc, out: outvar.cloned(), ins: vars.to_vec() });
+        } else {
+            let slot = &mut self.ops[self.filled];
+            slot.opcode = opc;
+            slot.out = outvar.cloned();
+            slot.ins.clear();
+            slot.ins.extend_from_slice(vars);
+        }
+        self.filled += 1;
+    }
+}
+
+impl FixedRefs {
+    /// Project the ops the last decode emitted onto the two reference lists.
+    ///
+    /// A read is harvested in the two shapes SLEIGH spells one in: a `LOAD`
+    /// whose address input is a constant (`ldr r3,[0x8458]`) and a direct memory
+    /// varnode in the default data space (`mov eax,[0x404018]`). The width is
+    /// the width of the ACCESS — a `LOAD`'s address varnode is pointer-sized
+    /// whatever the access is, so `ldrh r0,[0x1003c]` must not read as a
+    /// pointer-sized one. The `in0` slot of `LOAD`/`STORE`/`CALLOTHER` and of
+    /// every flow op is skipped: it carries a space id or a destination, not an
+    /// address that is read.
+    ///
+    /// `fall_through` (`vma + len`) is not recorded as a flow target, for the
+    /// same reason [`super::super`]'s reference walk declines it as a value:
+    /// every conditionally-executed ARM instruction lowers to a `CBRANCH` over
+    /// its own body, so its successor is named by a flow op whatever it is.
+    /// Counted, that would mark the word after every predicated instruction as a
+    /// branch label — and a literal pool is a run of them.
+    fn harvest(&mut self, data_space: Option<&Rc<AddrSpace>>, fall_through: u64) {
+        let Self { reads, flow_targets, ops, filled } = self;
+        let is_constant = |vn: &VarnodeData| {
+            vn.space
+                .as_ref()
+                .is_some_and(|s| s.get_type() == kuna_base::space::spacetype::IPTR_CONSTANT)
+        };
+        // Space identity is pointer identity throughout the engine, so match on
+        // the `Rc`, never on the space's name or index.
+        let in_data_space = |vn: &VarnodeData| {
+            matches!((&vn.space, data_space), (Some(s), Some(d)) if Rc::ptr_eq(s, d))
+        };
+        for op in &ops[..*filled] {
+            let flow = matches!(
+                op.opcode,
+                OpCode::CPUI_BRANCH | OpCode::CPUI_CBRANCH | OpCode::CPUI_CALL
+            );
+            if flow {
+                if let Some(vn) = op.ins.first() {
+                    if !is_constant(vn) && vn.offset != fall_through {
+                        flow_targets.push(vn.offset);
+                    }
+                }
+            }
+            for (i, vn) in op.ins.iter().enumerate() {
+                let target_slot = i == 0
+                    && (flow
+                        || matches!(
+                            op.opcode,
+                            OpCode::CPUI_LOAD | OpCode::CPUI_STORE | OpCode::CPUI_CALLOTHER
+                        ));
+                if target_slot {
+                    continue;
+                }
+                let names_an_address = in_data_space(vn)
+                    || (i == 1 && op.opcode == OpCode::CPUI_LOAD && is_constant(vn));
+                if !names_an_address {
+                    continue;
+                }
+                // The width of the ACCESS, which for a `LOAD` is its output and
+                // NOT its address varnode -- SLEIGH gives `ldrh r0,[0x1003c]` a
+                // pointer-sized `ram` address and a 2-byte output, and reading
+                // the address would call a halfword read a word.
+                let width = match op.opcode {
+                    OpCode::CPUI_LOAD if i == 1 => op.out.as_ref().map(|o| o.size),
+                    OpCode::CPUI_STORE => None,
+                    _ => Some(vn.size),
+                };
+                if let Some(width) = width {
+                    reads.push((vn.offset, width));
+                }
+            }
+        }
+    }
+}
+
 /// (kuna) A one-shot [`PcodeEmit`](kuna_sleigh::translate::PcodeEmit) sink:
 /// `Translate::one_instruction` dumps exactly one instruction's p-code, each
 /// op captured here as opcode + first input (the single-instruction pcode
@@ -917,6 +1042,38 @@ impl ConsoleProgram {
             OpCode::CPUI_BRANCHIND => Some(None),
             _ => None,
         }
+    }
+
+    /// (kuna) Add the fixed addresses the instruction at `vma` names — the
+    /// constant locations it reads and the constant addresses it branches or
+    /// calls to — to `into`.
+    ///
+    /// The projection a listing needs to tell a literal-pool word from an
+    /// instruction. A pool word is proved by the code around it (some
+    /// instruction spells its address out and reads it) and disproved the same
+    /// way (a branch names it as a label), so a caller walking a range
+    /// accumulates both facts into one [`FixedRefs`] as it goes. What is
+    /// harvested from the p-code is [`FixedRefs::harvest`].
+    ///
+    /// Adds nothing (never an error, never a panic) for an address that does not
+    /// decode or a program with no code space — this is advisory evidence, and a
+    /// caller that gets none simply learns nothing.
+    pub fn add_fixed_refs_at(&self, vma: u64, into: &mut FixedRefs) {
+        let Some(code_space) = self.arch().manage().get_default_code_space().cloned() else {
+            return;
+        };
+        let addr = Address::new(code_space, vma);
+        into.filled = 0;
+        // Advisory probe: contain a decode `Err` AND any translator panic on
+        // exotic bytes to "no evidence", exactly as `lone_jump_target` does.
+        let decoded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.arch().translate().one_instruction(into, &addr)
+        }));
+        let Ok(Ok(len)) = decoded else {
+            return;
+        };
+        let data_space = self.arch().manage().get_default_data_space().cloned();
+        into.harvest(data_space.as_ref(), vma.wrapping_add(len as u64));
     }
 
     /// This allocating convenience API is retained for occasional reads.
@@ -2951,7 +3108,98 @@ pub const UNBOUNDED_SIZE: int4 = 0;
 
 #[cfg(test)]
 mod tests {
-    use super::{entry_name_rank, is_vtable_slot_name};
+    use std::rc::Rc;
+
+    use kuna_base::space::{spacetype, AddrSpace};
+    use kuna_num::opcodes::OpCode;
+    use kuna_num::pcoderaw::VarnodeData;
+
+    use super::{entry_name_rank, is_vtable_slot_name, FixedRefs, WholeOp};
+
+    /// A throwaway `(ram, constant)` space pair; `ram` stands in for the default
+    /// data space, exactly as `listing::xrefs`'s own tests build it.
+    fn spaces() -> (Rc<AddrSpace>, Rc<AddrSpace>) {
+        (
+            Rc::new(AddrSpace::new_for_decode(spacetype::IPTR_PROCESSOR)),
+            Rc::new(AddrSpace::new_for_decode(spacetype::IPTR_CONSTANT)),
+        )
+    }
+
+    fn vn(space: &Rc<AddrSpace>, offset: u64, size: u32) -> VarnodeData {
+        VarnodeData { space: Some(Rc::clone(space)), offset, size }
+    }
+
+    /// Harvest `ops` as one instruction of length 4 at `vma`.
+    fn harvest(ram: &Rc<AddrSpace>, vma: u64, ops: Vec<WholeOp>) -> FixedRefs {
+        let mut refs = FixedRefs { ops, filled: 0, ..FixedRefs::default() };
+        refs.filled = refs.ops.len();
+        refs.harvest(Some(ram), vma + 4);
+        refs
+    }
+
+    fn op(opcode: OpCode, out: Option<VarnodeData>, ins: Vec<VarnodeData>) -> WholeOp {
+        WholeOp { opcode, out, ins }
+    }
+
+    /// The literal-pool read, in the two shapes SLEIGH spells one in: a `LOAD`
+    /// off a constant address, and a direct memory varnode.
+    #[test]
+    fn a_fixed_address_read_is_reported_with_the_width_of_the_access() {
+        let (ram, cst) = spaces();
+        let load = op(
+            OpCode::CPUI_LOAD,
+            Some(vn(&cst, 0x100, 4)),
+            vec![vn(&cst, 0x1b, 8), vn(&cst, 0x8458, 4)],
+        );
+        assert_eq!(harvest(&ram, 0x8440, vec![load]).reads, vec![(0x8458, 4)]);
+
+        let direct = op(OpCode::CPUI_COPY, None, vec![vn(&ram, 0x404018, 4)]);
+        assert_eq!(harvest(&ram, 0x1000, vec![direct]).reads, vec![(0x404018, 4)]);
+
+        // A `LOAD`'s address varnode is pointer-sized whatever the access is, so
+        // the width has to come from the output: `ldrh r0,[0x1003c]` lifts to a
+        // 4-byte `ram` address and a 2-byte load, and calling that a word would
+        // fold four bytes for a halfword read.
+        let narrow = op(
+            OpCode::CPUI_LOAD,
+            Some(vn(&cst, 0x100, 2)),
+            vec![vn(&cst, 0x1b, 8), vn(&ram, 0x1003c, 4)],
+        );
+        assert_eq!(harvest(&ram, 0x10034, vec![narrow]).reads, vec![(0x1003c, 2)]);
+    }
+
+    /// The `in0` of a `LOAD`/`STORE`/`CALLOTHER` is a space id, and of a flow op
+    /// a destination; neither is an address that was read.
+    #[test]
+    fn a_target_slot_is_never_a_read() {
+        let (ram, cst) = spaces();
+        let store = op(
+            OpCode::CPUI_STORE,
+            None,
+            vec![vn(&cst, 0x1b, 8), vn(&ram, 0x404018, 4), vn(&cst, 7, 4)],
+        );
+        assert!(harvest(&ram, 0x1000, vec![store]).reads.is_empty());
+        let call = op(OpCode::CPUI_CALL, None, vec![vn(&ram, 0x2000, 4)]);
+        let got = harvest(&ram, 0x1000, vec![call]);
+        assert!(got.reads.is_empty());
+        assert_eq!(got.flow_targets, vec![0x2000]);
+    }
+
+    /// Every conditionally-executed ARM instruction lowers to a `CBRANCH` over
+    /// its own body, so its successor is named by a flow op whatever it is.
+    /// Counted, that marks the word after each predicated instruction as a
+    /// branch label — and a literal pool is a run of them, so `andeq` at
+    /// 0x1000c would veto the pool word at 0x10010.
+    #[test]
+    fn an_instructions_own_fall_through_is_not_a_branch_target() {
+        let (ram, _cst) = spaces();
+        let skip = op(OpCode::CPUI_CBRANCH, None, vec![vn(&ram, 0x10010, 4)]);
+        assert!(harvest(&ram, 0x1000c, vec![skip]).flow_targets.is_empty());
+        // A real branch to anywhere else is kept.
+        let real = op(OpCode::CPUI_CBRANCH, None, vec![vn(&ram, 0x83d0, 4)]);
+        assert_eq!(harvest(&ram, 0x1000c, vec![real]).flow_targets, vec![0x83d0]);
+    }
+
 
     /// Which of an entry's names `function_entries_canonical` reports.
     fn wins<'a>(a: &'a str, b: &'a str) -> &'a str {
