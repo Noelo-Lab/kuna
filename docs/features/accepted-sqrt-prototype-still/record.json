@@ -43,11 +43,11 @@
     "result": "(1) `prototype authenticate void *hashit(...)` -> `void * authenticate(void *out,void *input)`, unchanged from before the fix. (2) `prototype 400664 ...` binds, same output as the name form. (3) `0x400670` and (4) `0x600984` (the `sneaky` global) are both `rejected: no function starts at 0x...`, and the C is the unasserted baseline -- an interior or data address never binds. (5) `0x999999` likewise. (6) `return 0x400560::%RBX int4` applies and moves the caller exactly as `return open::%RBX int4` does. On the unpatched tree built from the same worktree, the fauxware probe prints `accepted();` and reports the directive `applied`, and `puts(\"Username: \")` ignores a declared second parameter."
   },
   "gates": {
-    "make test": "PARITY OK, 675/675 assertions",
-    "make test-stages": "PARITY OK",
-    "make rust-test": "5,768 passed / 1 failed. The one failure is `verify_w10_proto_unlock::w10_proto_unlock_const_return_collapses_no_tied_roundtrip` ('oracle promote_compare signature drifted') -- the known repipe-worktree artifact: the loop exports KUNA_DECOMP_TEST pointing at this worktree's decomp_test_dbg. Re-run with it unset: 4/4 pass, and the whole suite re-run with it unset is green.",
+    "make test": "PARITY OK, 675/675 assertions (rebased tree)",
+    "make test-stages": "PARITY OK, 650/650 assertions (rebased tree)",
+    "make rust-test": "5,779 passed / 0 failed with KUNA_DECOMP_TEST unset. With the loop's own KUNA_DECOMP_TEST exported (it points at this worktree's decomp_test_dbg) the run is 5,768/1: verify_w10_proto_unlock::w10_proto_unlock_const_return_collapses_no_tied_roundtrip reports 'oracle promote_compare signature drifted', the known repipe-worktree artifact, and passes 4/4 with the variable unset. Re-run on the rebased tree.",
     "make check-spec": "OK (lenient mode)",
-    "make test-cli": "53/53 with the probe promoted",
+    "make test-cli": "54/54 with the probe promoted",
     "kuna catalog --check": "catalog OK: documents exactly the registered kuna options"
   },
   "acceptance": {
@@ -64,5 +64,6 @@
     "A `0x` operand issued BEFORE `read symbols` in a hand-driven console session is now rejected rather than parked, since no symbol exists yet to resolve it against. The generated script always emits `map prototype` after the analysis commit, so no `kuna` invocation can hit this.",
     "docs/re-needs/index.json is deliberately NOT regenerated: `needs reindex` runs over the whole backlog and this worktree holds only the tracked need docs. The captain reindexes."
   ],
-  "pr": null
+  "pr": null,
+  "rebase": "rebased --onto origin/main (cf4b3e09, #469 string-ownership-misses-literal) from the recorded base c92dddbb; scripts.repipe.counters --fix reports 'no drift; nothing to fix' on the rebased tree (154 settables, tiers 39/61/54, 243 corpus files, next ElementId 4148) and scripts.repipe.mergecheck reports 0 rejects / merge guards clean. This PR adds no option and no stages XML, so it moves none of those counters itself."
 }

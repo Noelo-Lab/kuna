@@ -62,7 +62,7 @@ address, and a `param` qualifier by address; the CLI ones assert the text and
 `--json` surfaces agree. All six fail on the unpatched tree.
 
 `make test` 675/675 PARITY OK · `make test-stages` PARITY OK · `make rust-test`
-5,768 passed · `make check-spec` OK · `make test-cli` 53/53 · `kuna catalog
+5,779 passed · `make check-spec` OK · `make test-cli` 54/54 · `kuna catalog
 --check` OK. No option, no baseline moved.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
