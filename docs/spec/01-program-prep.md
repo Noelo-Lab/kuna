@@ -2339,6 +2339,26 @@ code — `cortexm_poolentry_le32` carries one deliberately, where a pool referen
 resolves onto an undiscovered function's first word — and it costs exactly that
 one row, with the bytes beside it and the raw decode one command away.
 
+(kuna) The tiling refusal has a prerequisite the walk itself has to supply: a
+pool word is only foldable if it **starts a decoded row**, so anything that puts
+the listing off the instruction grid vetoes every word after it. A byte the
+translator refuses is listed as a `.byte` row rather than ending the listing, and
+where the walk resumes from one is architecture-dependent
+(`decompiler/crates/kuna-cli/src/disassemble.rs (resume_grid, recovery_span)`).
+Advancing one byte is right where any address can start an instruction and wrong
+where they must be aligned: on ARM a refused pool word cost one byte, and the
+four rows after it started at `main+0xd5`, `+0xd9`, `+0xdd` and `+0xe1` —
+addresses no ARM instruction can begin at, so the four remaining pool words the
+function's own `ldr`s named were not row starts and none of them folded. One
+refused byte therefore took the whole pool with it. The recovery row instead runs
+**to the next grid boundary**, in one row rather than a run of one-byte rows,
+which is what puts the following row back on the grid. The grid is the alignment
+every row decoded so far shares — the OR of their addresses and sizes — so an ARM
+listing of 4-byte rows resumes on 4 and a Thumb listing that has decoded a 2-byte
+row resumes on 2; an architecture that declares no instruction alignment
+(SLEIGH `define alignment=1`), or a listing with nothing decoded yet to infer a
+grid from, keeps the byte-at-a-time recovery unchanged.
+
 ## 1.7 The no-return family
 
 Whether a call falls through decides the CFG of every caller, so no-return facts

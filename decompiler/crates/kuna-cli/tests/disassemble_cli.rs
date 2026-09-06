@@ -296,6 +296,62 @@ fn a_narrow_read_does_not_fold_the_word_around_it() {
     assert!(!insn.starts_with('.'), "a halfword read must not fold a word: {insn}");
 }
 
+/// A byte the translator refuses must not take the rest of the listing off the
+/// instruction grid.
+///
+/// `armpoolgrid_le32` is the shape a stripped ARM crackme's `main` has: four
+/// PC-relative loads, then the four constants they name — and the first of those,
+/// `0xfffffeb8`, is a bit pattern the ARM translator will not decode. Recovering
+/// from that one byte at a time restarts the walk at `0x10021`, which no ARM
+/// instruction can begin at, and the three pool words after it are then not row
+/// starts, so none of the four folds.
+#[test]
+fn a_refused_byte_resumes_the_listing_on_the_instruction_grid() {
+    let bin = fixture("armpoolgrid_le32");
+    let Some((text, notes)) = rendered(&[&bin, "0x10000", "--addr"]) else {
+        return;
+    };
+    let listed = rows(&text);
+    assert_eq!(listed.len(), 12, "one row per instruction and one per pool word:\n{text}");
+    for (i, (addr, bytes, insn)) in [
+        (8, ("0x10020", "b8feffff", ".word 0xfffffeb8")),
+        (9, ("0x10024", "89feffff", ".word 0xfffffe89")),
+        (10, ("0x10028", "84fdffff", ".word 0xfffffd84")),
+        (11, ("0x1002c", "3ffeffff", ".word 0xfffffe3f")),
+    ] {
+        assert_eq!(columns(listed[i]), (addr, bytes, insn.to_string()), "row {i}:\n{text}");
+    }
+    for off in ["0x10021", "0x10025", "0x10029", "0x1002d"] {
+        assert!(!text.contains(off), "{off} is not an ARM instruction address:\n{text}");
+    }
+    assert!(
+        notes.iter().any(|n| n.contains("literal pool")),
+        "all four words are proved by the range's own loads: {notes:?}"
+    );
+
+    // The extent the header reports is the function's, not one the off-grid
+    // walk overshot: 0x10000..0x10030, not ..0x10031.
+    let Some(doc) = listing(&[&bin, "0x10000", "--addr", "--json"]) else {
+        return;
+    };
+    assert_eq!(as_u64(field(&parse_doc(&doc), "end")), 0x10030);
+    assert_eq!(as_u64(field(&parse_doc(&doc), "bytes")), 48);
+}
+
+/// The grid is inferred from the listing's own rows, so a walk that has decoded
+/// nothing yet has none and keeps the byte-at-a-time recovery: asked for the
+/// refused word on its own, the command still shows the byte it would not decode
+/// rather than inventing a four-byte row around it.
+#[test]
+fn a_walk_that_has_decoded_nothing_yet_still_recovers_one_byte_at_a_time() {
+    let bin = fixture("armpoolgrid_le32");
+    let Some(alone) = listing(&[&bin, "0x10020", "--addr", "--count", "1"]) else {
+        return;
+    };
+    let listed = rows(&alone);
+    assert_eq!(columns(listed[0]), ("0x10020", "b8", ".byte 0xb8".to_string()), "{alone}");
+}
+
 /// x86-64 parks its constants in immediates, so nothing folds there and the
 /// listing an agent already knew is byte-identical.
 #[test]

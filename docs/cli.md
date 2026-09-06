@@ -985,9 +985,23 @@ JSON. `--json` emits
 truncated listing hands back the address to resume from. `kind` is `"code"` here
 and `"data"` in the byte view below.
 
-Bytes the translator will not decode are listed in place as `.byte 0x<nn>` rows,
-one byte each, and the walk continues — a listing that ran into inline data says
-so where it happened instead of stopping silently.
+Bytes the translator will not decode are listed in place as `.byte` rows and the
+walk continues — a listing that ran into inline data says so where it happened
+instead of stopping silently. How far one such row reaches depends on the
+architecture. Where any address can start an instruction the row is one byte, and
+the walk tries the next. Where instructions must be aligned, code can only resume
+on that grid, so the row runs to the next boundary and the listing stays on it:
+
+```
+0x10020       b8feffff              .byte 0xb8,0xfe,0xff,0xff
+```
+
+rather than a `.byte 0xb8` at `0x10020` followed by rows at `0x10021`, `0x10025`
+and `0x10029` — addresses no ARM instruction can begin at. The grid is the
+alignment the rows already decoded all share, so an ARM listing of 4-byte rows
+resumes on 4 and a Thumb listing that has decoded a 2-byte row resumes on 2.
+Staying on the grid is also what lets the literal pool below be recognized at
+all: a pool word is only folded when it starts a decoded row.
 
 ### Literal pools are listed as data
 

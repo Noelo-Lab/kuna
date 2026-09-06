@@ -46,8 +46,10 @@
 //! no decompilation runs, and no emitted C changes.
 //!
 //! Bytes that do not decode are not skipped and not guessed at: they are listed
-//! as `.byte 0x<nn>` rows, one byte at a time, so a listing that walked into
-//! data says so in place rather than silently stopping.
+//! as `.byte` rows, so a listing that walked into data says so in place rather
+//! than silently stopping. On an architecture whose instructions must be
+//! aligned, one such row runs to the next alignment boundary, because that is
+//! the only place code can resume ([`resume_grid`]).
 //!
 //! ## Two views, because a data address is not an instruction stream
 //!
@@ -100,8 +102,13 @@ const DERIVED_ROW_CAP: usize = DERIVED_INSTRUCTION_CAP;
 /// already calibrated to.
 const HEXDUMP_ROW_BYTES: usize = 16;
 
-/// The mnemonic given to a byte the translator would not decode.
+/// The mnemonic given to bytes the translator would not decode.
 const BAD_BYTE_MNEMONIC: &str = ".byte";
+
+/// The widest resume grid [`resume_grid`] will infer from a listing's own rows.
+/// No instruction set aligns further than this, so a wider shared alignment is
+/// a coincidence of a short listing, not a grid.
+const MAX_RESUME_GRID: u64 = 16;
 
 /// What to render at the target.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -395,9 +402,11 @@ fn decide_view(want: ViewRequest, from_entry: bool, section: Option<u32>) -> Vie
 /// Decode forward from `region.start` until a stop is reached: the region's end,
 /// the instruction budget, the derived-length cap, or memory that will not read.
 ///
-/// An address the translator rejects is listed as a single `.byte` row rather
-/// than ending the listing, because the common reason for one is a listing that
-/// ran into inline data and there is usually code again after it.
+/// An address the translator rejects is listed as a `.byte` row rather than
+/// ending the listing, because the common reason for one is a listing that ran
+/// into inline data and there is usually code again after it. Where that code
+/// can resume is [`resume_grid`]: one byte later on a variable-length
+/// architecture, the next alignment boundary on a fixed-width one.
 ///
 /// A word the listing's OWN instructions read at a fixed address is then folded
 /// back into a data row rather than left decoded as the instruction its bytes
@@ -428,10 +437,14 @@ fn decode_rows(
     count: Option<usize>,
 ) -> (Vec<Row>, bool, FixedRefs) {
     let cap = if region.derived { Some(DERIVED_INSTRUCTION_CAP) } else { None };
+    let alignment = u64::try_from(prog.arch().translate().get_alignment()).unwrap_or(1);
     let mut rows: Vec<Row> = Vec::new();
     let mut evidence = FixedRefs::default();
     let mut truncated = false;
     let mut addr = region.start;
+    // The alignment every decoded row so far shares, folded into one OR of
+    // their addresses and sizes; `resume_grid` reads its low zero bits.
+    let mut witness = 0u64;
     let (mut mnem, mut body, mut raw) = (String::new(), String::new(), Vec::new());
     loop {
         if count.is_some_and(|n| rows.len() >= n) {
@@ -451,6 +464,7 @@ fn decode_rows(
         match decoded {
             Some(len) if prog.read_bytes_into(addr, len as usize, &mut raw) => {
                 prog.add_fixed_refs_at(addr, &mut evidence);
+                witness |= addr | len as u64;
                 rows.push(Row {
                     addr,
                     size: len as u64,
@@ -461,21 +475,67 @@ fn decode_rows(
                 addr = addr.saturating_add(len as u64);
             }
             _ => {
-                if !prog.read_bytes_into(addr, 1, &mut raw) {
+                let want = recovery_span(addr, resume_grid(alignment, witness), region.end);
+                // A span that will not read whole falls back to the one byte
+                // that is always safe; a row never claims bytes it cannot show.
+                if !prog.read_bytes_into(addr, want as usize, &mut raw)
+                    && !prog.read_bytes_into(addr, 1, &mut raw)
+                {
                     break;
                 }
                 rows.push(Row {
                     addr,
-                    size: 1,
+                    size: raw.len() as u64,
                     bytes: raw.clone(),
                     mnemonic: BAD_BYTE_MNEMONIC.to_string(),
-                    operands: format!("0x{:02x}", raw[0]),
+                    operands: bad_byte_operand(&raw),
                 });
-                addr = addr.saturating_add(1);
+                addr = addr.saturating_add(raw.len() as u64);
             }
         }
     }
     (rows, truncated, evidence)
+}
+
+/// The address grid a listing resumes on after bytes the translator refused.
+///
+/// One byte is the right answer on a variable-length architecture: any address
+/// can start an instruction there, and inline data is usually followed by code
+/// again. On an architecture whose instructions must be aligned it is the wrong
+/// answer, because code can only resume on the grid — stepping one byte puts
+/// every row after the data off it, which is how an ARM function's five-word
+/// literal pool came back as one `.byte` and four invented instructions.
+///
+/// `alignment` is the architecture's declared minimum (SLEIGH `define
+/// alignment`); `1` means nothing is aligned and the byte-at-a-time recovery
+/// stands. Above that the grid is the alignment the rows already decoded all
+/// share — `witness`, the OR of each decoded row's address and size — so an ARM
+/// listing of 4-byte rows resumes on 4 and a Thumb listing that has decoded a
+/// 2-byte row resumes on 2. With nothing decoded yet there is no grid to infer
+/// and the walk steps one byte.
+fn resume_grid(alignment: u64, witness: u64) -> u64 {
+    if alignment <= 1 || witness == 0 {
+        return 1;
+    }
+    (1u64 << witness.trailing_zeros().min(u64::BITS - 1)).min(MAX_RESUME_GRID)
+}
+
+/// How many bytes one recovery row covers: forward to the next `grid`
+/// boundary — a whole grid step when `addr` is already on one, since an
+/// undecodable slot on an aligned architecture is one instruction's worth of
+/// bytes — clipped to the region's end and never zero.
+fn recovery_span(addr: u64, grid: u64, end: Option<u64>) -> u64 {
+    let span = if grid > 1 { grid - addr % grid } else { 1 };
+    match end {
+        Some(end) => span.min(end.saturating_sub(addr)).max(1),
+        None => span,
+    }
+}
+
+/// The operand of a `.byte` row: every byte it covers, comma-separated in the
+/// spelling an assembler takes back.
+fn bad_byte_operand(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("0x{b:02x}")).collect::<Vec<_>>().join(",")
 }
 
 /// Replace each proved literal-pool word with one data row.
@@ -1093,6 +1153,48 @@ mod tests {
     fn instruction_text_carries_exactly_one_space() {
         assert_eq!(row(0, &[0x55], "PUSH", "RBP").text(), "PUSH RBP");
         assert_eq!(row(0, &[0xc3], "RET", "").text(), "RET");
+    }
+
+    /// A byte that will not decode only re-aligns the listing on an
+    /// architecture that has a grid to re-align to. `witness` is the OR of the
+    /// decoded rows' addresses and sizes.
+    #[test]
+    fn the_resume_grid_is_the_alignment_the_decoded_rows_share() {
+        // ARM: 4-byte rows on 4-byte addresses.
+        assert_eq!(resume_grid(2, 0x5c0 | 0x5c4 | 4), 4);
+        // Thumb: one 2-byte row is enough to say the grid is 2.
+        assert_eq!(resume_grid(2, 0x5c0 | 0x5c2 | 2), 2);
+        // A variable-length architecture keeps its byte-at-a-time recovery
+        // however aligned the rows it happens to have decoded are.
+        assert_eq!(resume_grid(1, 0x401000 | 4), 1);
+        // Nothing decoded yet: no grid to infer.
+        assert_eq!(resume_grid(4, 0), 1);
+        // An odd row address says this listing is not on a grid at all.
+        assert_eq!(resume_grid(2, 0x695 | 4), 1);
+        // A short listing whose rows happen to share more alignment than any
+        // instruction set has is clamped.
+        assert_eq!(resume_grid(2, 0x10000), MAX_RESUME_GRID);
+    }
+
+    /// The row spans TO the boundary, so the next row starts on it — a
+    /// one-byte-at-a-time recovery would leave a row at the unaligned address.
+    #[test]
+    fn a_recovery_row_spans_to_the_next_grid_boundary() {
+        assert_eq!(recovery_span(0x695, 4, None), 3);
+        // Already on the grid: an undecodable slot is one instruction wide.
+        assert_eq!(recovery_span(0x694, 4, None), 4);
+        // No grid: one byte, which is what every variable-length listing gets.
+        assert_eq!(recovery_span(0x694, 1, None), 1);
+        // The region's end clips the span, and never to zero.
+        assert_eq!(recovery_span(0x6a0, 4, Some(0x6a2)), 2);
+        assert_eq!(recovery_span(0x6a0, 4, Some(0x6a4)), 4);
+        assert_eq!(recovery_span(0x6a0, 4, Some(0x6a0)), 1);
+    }
+
+    #[test]
+    fn a_byte_row_spells_every_byte_it_covers() {
+        assert_eq!(bad_byte_operand(&[0xb8]), "0xb8");
+        assert_eq!(bad_byte_operand(&[0xb8, 0xfe, 0xff, 0xff]), "0xb8,0xfe,0xff,0xff");
     }
 
     #[test]

@@ -1,0 +1,60 @@
+{
+  "slug": "arm-literal-pool-disassembly",
+  "need_id": "arm-literal-pool-disassembly",
+  "track": "tooling",
+  "scope": "small",
+  "round": 5,
+  "branch": "feat/re-arm-literal-pool-disassembly",
+  "summary": "A byte the translator refuses no longer takes an aligned architecture's listing off the instruction grid. `kuna disassemble`'s recovery arm advanced one byte on any failed decode; on ARM that put every following row at an address no instruction can begin at, and because pool-word folding requires an exact tiling of decoded rows, one refused pool word cost the whole pool. The recovery row now spans to the next alignment boundary -- ONE row, not a run of one-byte rows -- and the grid is the alignment the listing's own decoded rows share, floored by the architecture's SLEIGH `define alignment`. A variable-length architecture keeps byte-at-a-time recovery unchanged.",
+  "decisions": [
+    {
+      "what": "hypothesis OVERTURNED as filed, and the round-5 refuter's re-diagnosis is confirmed exactly",
+      "detail": "The filed cause names two co-equal ingredients -- 'incomplete literal-pool recognition combines with bytewise recovery'. There is one defect. litpool::pool_words is not incomplete: it refuses correctly, because tiles_whole_rows requires the address to BE a decoded row start and the rows from there to cover exactly the access width, and after one byte of drift 0x694 covers 5 and 0x698/0x69c/0x6a0 are not row starts at all. Loosening that gate would have shipped fabricated data rows. litpool.rs is untouched by this PR."
+    },
+    {
+      "what": "the ISA's declared alignment is a GATE, not the grid",
+      "detail": "The obvious implementation -- resume at the next multiple of Translate::get_alignment() -- does not close the need. ARM.sinc declares `define alignment=2` because of Thumb, so an A32 listing would resume on 2 and the pool words at +4/+8/+0xc still would not be row starts. The grid is instead inferred from the listing: the OR of every decoded row's address and size, whose trailing zeros give the alignment they all share (4 for an A32 body, 2 once a Thumb row is decoded, 1 the moment an odd row address appears). get_alignment() > 1 is kept as the gate, so a short x86 listing whose rows happen to be all-even can never infer a grid it does not have."
+    },
+    {
+      "what": "ONE row to the boundary, not a run of one-byte rows",
+      "detail": "The refuter flagged this as the trap and it is real: emitting `.byte` one byte at a time until the address is aligned leaves a row AT 0x695 (0x10021 in the fixture), which is the literal the acceptance forbids and, more to the point, is still an address no ARM instruction can start at. The recovery row spans to the boundary in one row, so the pool word tiles it exactly and folds."
+    },
+    {
+      "what": "no evidence yet means no grid: with nothing decoded the walk keeps its one-byte step",
+      "detail": "The grid is inferred from decoded INSTRUCTION rows only (recovery rows are not folded into the witness). A walk that fails on its very first address has no witness and steps one byte, which keeps `disassemble <pool word> --count 1` -- the documented escape hatch for seeing the raw bytes -- behaving exactly as before. Falling back to the ISA alignment instead would have made that escape hatch answer with a 2-byte row on ARM for no gain."
+    },
+    {
+      "what": "no option, no stages XML, no catalog counter, no DIV row",
+      "detail": "Tooling track: this is the `kuna disassemble` walk in kuna-cli. It cannot change emitted C -- the command is a query that loads the binary, decodes and prints, and no engine pass reads it. Listing a byte at an address no instruction of the architecture can begin at is wrong output, not a judgement call."
+    }
+  ],
+  "sweep": {
+    "question": "does resuming on the grid produce WRONG output -- a row that hides a real instruction, or a listing that changed where it should not have?",
+    "method": "A/B every function listing (`disassemble <entry> --addr --json`, old binary at c86d2c06 vs new) over every fixture in the tree whose architecture declares an instruction alignment at all -- ARM/Thumb/Cortex-M, AArch64 (ELF, Mach-O, PE), MIPS, PPC64, RISC-V, SPARC, plus betaflight_STM32F405.elf -- since an architecture with alignment 1 cannot reach the new path.",
+    "result": "Witness binary `trap`, all 13 discovered functions A/B'd: 9 byte-identical, 4 changed -- main, _start_main, atexit, pthread_atfork -- and every one of the four is this same defect being fixed. Each gained its pool words as `.word` rows (main 1->5, _start_main 0->3, atexit 0->1, pthread_atfork 0->1), lost only the off-grid rows that started inside them, and ended on a 4-aligned extent (main 0x6a5->0x6a4, which is exactly the 228 bytes `kuna functions` reports). No row moved that was not one of those. Spot-checked by hand on two more: `entrymain_arm` sub_3e0 (Thumb bytes decoded as A32) goes from a 51-byte extent with rows at +0xd/+0x11/... to a 48-byte one entirely on the grid; `macho_arm64e` __mh_execute_header is BYTE-IDENTICAL, because its first row is already off-grid so no grid is inferred -- the conservative clause doing its job. The broader aligned-ISA fixture sweep (ARM/Thumb/Cortex-M, AArch64 ELF+Mach-O+PE, MIPS, PPC64, RISC-V, SPARC) was running at session end and is NOT reported here; it had cleared 27 of 28 fixtures without the harness reporting an error, but the run writes its diff file only at the end and betaflight_STM32F405.elf did not finish in budget, so no number from it is claimed.",
+    "byte_loss": "None is possible by construction: a recovery row still carries every byte it covers, and now spells all of them in its operand (`.byte 0xb8,0xfe,0xff,0xff`). The only claim the wider row makes is that no instruction begins in its interior, which on a fixed-width architecture is a fact about the ISA, and the per-byte view is still one command away (`--count 1` at the address, or `kuna read`)."
+  },
+  "gates": {
+    "make test": "PARITY OK, 675/675 assertions",
+    "make test-stages": "PARITY OK, 654/654 assertions",
+    "make rust-test": "green: 5,802 passed across 363 result blocks. One block reds in this worktree -- verify_w10_proto_unlock 'oracle promote_compare signature drifted' -- which is the known KUNA_DECOMP_TEST artifact: the env var points at this worktree's decomp_test_dbg. Re-run with `env -u KUNA_DECOMP_TEST`: 4 passed, 0 failed. Nothing in this PR is reachable from kuna-decomp.",
+    "make check-spec": "OK (lenient mode)",
+    "make test-cli": "58/58 with the promoted probe added",
+    "kuna catalog --check": "catalog OK",
+    "counters --check": "no drift; mergecheck --against origin/main: merge guards clean, 0 rejects"
+  },
+  "acceptance": {
+    "acceptance_id": "a-158b5fb547d3",
+    "result": "PASS",
+    "transition": "closed",
+    "promoted_to": "tests/cli/arm-literal-pool-disassembly.json",
+    "promotion_note": "The filed acceptance targeted the dataset crackme `trap` (main @0x5c0, five pool words, `.byte 0xb8` at 0x694 then rows at 0x695/0x699/0x69d/0x6a1). CI has no dataset and no vendored fixture carried the shape, so `armpoolgrid_le32` was synthesized beside the existing ARM fixtures (generator committed next to it, the `cortexm_poolentry_le32.py` pattern): four PC-relative loads naming four pool words whose first is the witness's own undecodable 0xfffffeb8. It reproduces every symptom on c86d2c06 -- `.byte 0xb8` at 0x10020, rows at 0x10021/0x10025/0x10029/0x1002d, zero words folded, a 49-byte extent ending at the non-4-aligned 0x10031. The clauses are strengthened past the filed `stdout_absent` to pin the four `.word` rows, the count and the extent, so a fix that merely stops emitting those four addresses cannot pass. `--promote` needed --force because the need is still `open` in this worktree's copy of the backlog. The dataset `trap` stays the witness in Reproduction; re-verified there too (5 of 5 words fold, extent 0x5c0..0x6a4 = the 228 bytes `kuna functions` reports).",
+    "witness_after": "kuna disassemble trap main -> 0x690/0x694/0x698/0x69c/0x6a0 all list as .word; no row at 0x695/0x699/0x69d/0x6a1."
+  },
+  "not_closed": [
+    "The sibling need `arm-pic-literal-pool` (ARM PIC literal-pool string has no owning function) is a kuna-analysis reference-walk defect and is untouched here: different crate, different tier, and neither fix reaches the other.",
+    "A listing whose FIRST address will not decode still recovers one byte at a time, because there is no decoded row to infer a grid from. Using the ISA's declared alignment there would give an ARM listing a 2-byte row, which is neither the old behaviour nor the right one; leaving it is the conservative choice and it is what keeps the raw-decode escape hatch byte-identical.",
+    "docs/re-needs/ is deliberately NOT committed: the round-5 need docs live on the captain's local main and are not in this branch's base. The retargeted acceptance block was written into this worktree's copy so `scripts.repipe.verify --need` could run; the captain owns the backlog file."
+  ],
+  "pr": null
+}
