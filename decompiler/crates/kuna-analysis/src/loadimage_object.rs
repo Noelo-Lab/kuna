@@ -227,6 +227,8 @@ pub struct ObjectLoadImage {
     /// backs; this records each segment's whole RAM footprint. Empty for an
     /// `ET_REL` load, which has no program headers.
     segment_info: Vec<SectionInfo>,
+    /// Executable ELF segment extents, used when section headers are absent.
+    executable_segments: Vec<(u64, u64)>,
     /// Function symbols, in symbol-table order.
     funcsyms: Vec<FuncSym>,
     /// Relocatable-object section coordinates. Empty for linked images.
@@ -465,8 +467,14 @@ impl ObjectLoadImage {
         // path exactly as an unmapped gap would (BFD `SEC_LOAD`-less sections).
         let mut segments: Vec<Segment> = Vec::new();
         let mut segment_info: Vec<SectionInfo> = Vec::new();
+        let mut executable_segments = Vec::new();
         for seg in file.segments() {
             let vma = seg.address();
+            if matches!(seg.flags(), object::SegmentFlags::Elf { p_flags }
+                if p_flags & object::elf::PF_X != 0)
+            {
+                executable_segments.push((vma, seg.size()));
+            }
             let data = seg.data().map_err(|e| {
                 KunaError::lowlevel(format!("File: {filename} : unreadable segment data: {e}"))
             })?;
@@ -643,6 +651,7 @@ impl ObjectLoadImage {
             segments,
             sections,
             segment_info,
+            executable_segments,
             funcsyms,
             reloc_sections: Vec::new(),
             reloc_symbols: Vec::new(),
@@ -735,6 +744,7 @@ impl ObjectLoadImage {
             // No program headers on a relocatable object: the section table is
             // the only mapping story it has, and it always has one.
             segment_info: Vec::new(),
+            executable_segments: Vec::new(),
             funcsyms,
             reloc_sections,
             reloc_symbols,
@@ -785,6 +795,19 @@ impl ObjectLoadImage {
     /// `kuna_sleigh::loadimage::section_flags::*`.
     pub fn section_snapshot(&self) -> Vec<(u64, u64, u32)> {
         self.sections.iter().map(|s| (s.vma, s.size, s.flags)).collect()
+    }
+
+    /// Executable `(vma, size)` extents. Sectionless ELF images use PF_X
+    /// PT_LOAD ranges, including their in-memory tails.
+    pub fn executable_ranges(&self) -> Vec<(u64, u64)> {
+        if self.sections.is_empty() {
+            return self.executable_segments.clone();
+        }
+        self.sections
+            .iter()
+            .filter(|s| s.flags & section_flags::CODE != 0)
+            .map(|s| (s.vma, s.size))
+            .collect()
     }
 
     /// (kuna) The `[start, stop]` (inclusive) ranges whose contents fold to a
@@ -1094,6 +1117,9 @@ impl LoadImage for ObjectLoadImage {
         }
         for s in &mut self.segment_info {
             s.vma = s.vma.wadd(badjust);
+        }
+        for (vma, _) in &mut self.executable_segments {
+            *vma = vma.wadd(badjust);
         }
         for s in &mut self.funcsyms {
             s.addr = s.addr.wadd(badjust);
@@ -1435,6 +1461,43 @@ pub fn coff_language_ids() -> Vec<(String, Option<String>)> {
 mod tests {
     use super::*;
     use kuna_base::space::{addrspace_flags, spacetype, AddrSpaceManager, ConstantSpace};
+
+    #[test]
+    fn executable_ranges_use_sectionless_load_segments_and_rebase() {
+        let mut bytes = build_elf64(0x1000, &[0x90, 0xc3], None);
+        bytes[40..48].fill(0); // e_shoff
+        bytes[58..64].fill(0); // e_shentsize, e_shnum, e_shstrndx
+        bytes[104..112].copy_from_slice(&16u64.to_le_bytes()); // p_memsz, including zero-fill
+        let mut image = ObjectLoadImage::from_bytes("synthetic", &bytes).unwrap();
+        assert!(image.section_snapshot().is_empty());
+        assert_eq!(image.executable_ranges(), vec![(0x1000, 16)]);
+        image.attach_to_space(Rc::clone(manager().get_default_code_space().unwrap()));
+        image.adjust_vma(0x2000);
+        assert_eq!(image.executable_ranges(), vec![(0x3000, 16)]);
+
+        bytes[68..72].copy_from_slice(&object::elf::PF_R.to_le_bytes());
+        let image = ObjectLoadImage::from_bytes("synthetic", &bytes).unwrap();
+        assert!(
+            image.executable_ranges().is_empty(),
+            "non-executable PT_LOAD was included"
+        );
+
+        bytes[68..72].copy_from_slice(&(object::elf::PF_R | object::elf::PF_X).to_le_bytes());
+        bytes[64..68].copy_from_slice(&object::elf::PT_NOTE.to_le_bytes());
+        let image = ObjectLoadImage::from_bytes("synthetic", &bytes).unwrap();
+        assert!(
+            image.executable_ranges().is_empty(),
+            "non-loadable segment was included"
+        );
+    }
+
+    #[test]
+    fn executable_ranges_prefer_sections_to_broader_segments() {
+        let mut bytes = build_elf64(0x1000, &[0x90, 0xc3], None);
+        bytes[104..112].copy_from_slice(&16u64.to_le_bytes());
+        let image = ObjectLoadImage::from_bytes("synthetic", &bytes).unwrap();
+        assert_eq!(image.executable_ranges(), vec![(0x1000, 2)]);
+    }
 
     /// const(0) + ram(1) processor space (little endian, 8-byte addresses).
     fn manager() -> AddrSpaceManager {

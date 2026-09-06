@@ -1019,23 +1019,17 @@ impl ConsoleProgram {
             .arch()
             .with_context_db_mut(|db| db.get_variable_value(b"TMode", &entry))
             .ok()?;
-        if self.bounded_machine_return(vma) {
+        let sleigh = self.arch().translate().as_sleigh()?;
+        if sleigh.with_temporary_context(|| self.bounded_machine_return(vma)) != Some(false) {
             return None;
         }
 
         let alternate = u32::from(current == 0);
-        if self
-            .arch()
-            .with_context_db_mut(|db| db.set_variable(b"TMode", &entry, alternate))
-            .is_err()
-        {
-            return None;
-        }
-        let alternate_returns = self.bounded_machine_return(vma);
-        let _ = self
-            .arch()
-            .with_context_db_mut(|db| db.set_variable(b"TMode", &entry, current));
-        if !alternate_returns {
+        let alternate_returns = sleigh.with_temporary_context(|| {
+            sleigh.with_context_db_mut(|db| db.set_variable(b"TMode", &entry, alternate)).ok()?;
+            self.bounded_machine_return(vma)
+        });
+        if alternate_returns != Some(true) {
             return None;
         }
 
@@ -1054,10 +1048,9 @@ impl ConsoleProgram {
         })
     }
 
-    fn bounded_machine_return(&self, vma: u64) -> bool {
-        let Some(space) = self.arch().manage().get_default_code_space() else {
-            return false;
-        };
+    /// None means the walk exhausted its budget and cannot rule out a return.
+    fn bounded_machine_return(&self, vma: u64) -> Option<bool> {
+        let space = self.arch().manage().get_default_code_space()?;
         let mut emit = OneShotPcodeEmit::default();
         let mut pending = vec![vma];
         let mut visited = std::collections::BTreeSet::new();
@@ -1066,7 +1059,7 @@ impl ConsoleProgram {
                 continue;
             }
             if visited.len() == 16 {
-                break;
+                return None;
             }
             visited.insert(vma);
             emit.ops.clear();
@@ -1081,7 +1074,7 @@ impl ConsoleProgram {
                 continue;
             }
             if emit.ops.iter().any(|(opc, _)| *opc == OpCode::CPUI_RETURN) {
-                return true;
+                return Some(true);
             }
             let mut fallthrough = true;
             for (opc, input) in &emit.ops {
@@ -1106,7 +1099,7 @@ impl ConsoleProgram {
                 }
             }
         }
-        false
+        Some(false)
     }
 
     /// (kuna) The `kuna_wasm` per-function `kind` classification probe: lift
@@ -2206,10 +2199,10 @@ fn input_isa_paints(
     }
 
     Ok(loader
-        .section_snapshot()
+        .executable_ranges()
         .into_iter()
-        .filter_map(|(addr, size, flags)| {
-            if flags & section_flags::CODE == 0 || size == 0 {
+        .filter_map(|(addr, size)| {
+            if size == 0 {
                 return None;
             }
             let end = addr.checked_add(size)?;

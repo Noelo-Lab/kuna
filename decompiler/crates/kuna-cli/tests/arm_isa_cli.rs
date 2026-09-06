@@ -24,6 +24,151 @@ fn run(command: &str, binary: &str, args: &[&str]) -> Output {
         .expect("run kuna")
 }
 
+#[test]
+fn arm_mode_probe_preserves_context_for_later_functions() {
+    use kuna_base::address::Address;
+    use kuna_console::engine::bootstrap_from_object_with_isa;
+    use kuna_console::project::decompile_targets;
+    use std::rc::Rc;
+
+    // Thumb: mov lr,pc; bx lr (call); bx lr (return).
+    // A32: two ordinary instructions followed by a closed loop.
+    let code: Vec<u8> = [
+        0x477046feu32,
+        0xe1a04770,
+        0xeafffffe,
+        0xe1a00000,
+        0xe3a00007,
+        0xe12fff1e,
+    ]
+    .into_iter()
+    .flat_map(u32::to_le_bytes)
+    .collect();
+    let path = common::scratch_file("arm-probe-context", "elf");
+    std::fs::write(
+        &path,
+        arm_images::elf(&code, &[], &[(0, "probe", 12), (16, "second", 8)]),
+    )
+    .unwrap();
+    let load = || {
+        let mut program = bootstrap_from_object_with_isa(
+            path.to_str().unwrap(),
+            "",
+            &[repo_root().join("specs").to_str().unwrap().into()],
+            None,
+        )
+        .unwrap();
+        program.commit_pending_analysis().unwrap();
+        program
+    };
+    let mut alone = load();
+    let entry = alone.find_entry_at(0x10010).unwrap();
+    let expected = decompile_targets(&mut alone, vec![entry], true, false, false);
+    assert!(expected[0].code.as_deref().unwrap().contains("return 7;"));
+
+    for current in [0, 1] {
+        let mut program = load();
+        let space = Rc::clone(program.arch().manage().get_default_code_space().unwrap());
+        program.arch().with_context_db_mut(|db| {
+            db.set_variable_region(
+                b"TMode",
+                &Address::new(Rc::clone(&space), 0x10000),
+                &Address::new(Rc::clone(&space), 0x10010),
+                current,
+            )
+            .unwrap();
+        });
+        let snapshot = |program: &kuna_console::engine::ConsoleProgram| {
+            program.arch().with_context_db_mut(|db| {
+                (0x10000..0x10040)
+                    .map(|vma| {
+                        let addr = Address::new(Rc::clone(&space), vma);
+                        let (values, first, last) = db.get_context_bounds(&addr);
+                        (values.to_vec(), first, last)
+                    })
+                    .collect::<Vec<_>>()
+            })
+        };
+        let before = snapshot(&program);
+        let diagnostic =
+            program.arm_isa_diagnostic_for_output(0x10000, "void probe(void) { return; }");
+        assert_eq!(diagnostic.is_some(), current == 0);
+        assert_eq!(
+            snapshot(&program),
+            before,
+            "probe changed context values or boundaries"
+        );
+        let entry = program.find_entry_at(0x10010).unwrap();
+        let actual = decompile_targets(&mut program, vec![entry], true, false, false);
+        assert_eq!(actual[0].error, expected[0].error);
+        assert_eq!(actual[0].code, expected[0].code);
+    }
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn arm_return_beyond_probe_budget_remains_successful() {
+    let mut words = vec![0xe1a04770u32];
+    words.extend([0xe1a08008; 16]);
+    words.push(0xe12fff1e);
+    let code: Vec<u8> = words.into_iter().flat_map(u32::to_le_bytes).collect();
+    let path = common::scratch_file("arm-long-return", "elf");
+    std::fs::write(
+        &path,
+        arm_images::elf(&code, &[], &[(0, "entry", code.len() as u64)]),
+    )
+    .unwrap();
+    let output = run("decompile", path.to_str().unwrap(), &["entry", "--json"]);
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        output.status.success(),
+        "{text}\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(text.contains("return;"), "{text}");
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn explicit_thumb_applies_without_elf_section_headers() {
+    let mut bytes = arm_images::elf(&[0x07, 0x20, 0x70, 0x47], &[], &[]);
+    bytes[32..36].fill(0); // e_shoff
+    bytes[46..52].fill(0); // e_shentsize, e_shnum, e_shstrndx
+    let path = common::scratch_file("sectionless-thumb", "elf");
+    std::fs::write(&path, bytes).unwrap();
+    for command in ["disassemble", "read"] {
+        let output = run(
+            command,
+            path.to_str().unwrap(),
+            &[
+                "0x10000", "--as", "code", "--count", "2", "--json", "--isa", "thumb",
+            ],
+        );
+        let text = String::from_utf8(output.stdout).unwrap();
+        assert!(
+            output.status.success(),
+            "{command}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(text.matches("\"size\": 2").count(), 2, "{command}: {text}");
+        assert!(text.contains("\"bytes\": \"0720\""), "{command}: {text}");
+        assert!(text.contains("\"bytes\": \"7047\""), "{command}: {text}");
+    }
+    let output = run(
+        "decompile",
+        path.to_str().unwrap(),
+        &["0x10000", "--isa", "thumb", "--json"],
+    );
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        output.status.success(),
+        "{text}\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(text.contains("return 7;"), "{text}");
+    std::fs::remove_file(path).unwrap();
+}
+
 fn unmarked_thumb_pe() -> PathBuf {
     let mut bytes = std::fs::read(
         repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/armv4t_thumb_pe.exe"),

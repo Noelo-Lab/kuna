@@ -88,6 +88,10 @@ fn unmarked_trivial_decode_requires_explicit_isa() {
     let mut bytes = source.clone();
     let pe = u32::from_le_bytes(bytes[0x3c..0x40].try_into().unwrap()) as usize;
     bytes[pe + 4..pe + 6].copy_from_slice(&0x01c0u16.to_le_bytes());
+    let section = pe + 24 + u16::from_le_bytes(bytes[pe + 20..pe + 22].try_into().unwrap()) as usize;
+    bytes[section + 8..section + 12].copy_from_slice(&8u32.to_le_bytes());
+    // Give the A32 probe a closed path, rather than exhausting its budget on padding.
+    bytes[0x204..0x208].copy_from_slice(&0xeafffffeu32.to_le_bytes());
     let path = common::scratch_file("arm-mode", "exe");
     std::fs::write(&path, bytes).unwrap();
     let path_text = path.to_str().unwrap();
@@ -179,6 +183,9 @@ fn unmarked_thumb_loop_does_not_reach_the_return_after_it() {
     let pe = u32::from_le_bytes(bytes[0x3c..0x40].try_into().unwrap()) as usize;
     bytes[pe + 4..pe + 6].copy_from_slice(&0x01c0u16.to_le_bytes());
     bytes[0x200..0x204].copy_from_slice(&[0xfe, 0xe7, 0x70, 0x47]); // b .; bx lr
+    let section = pe + 24 + u16::from_le_bytes(bytes[pe + 20..pe + 22].try_into().unwrap()) as usize;
+    bytes[section + 8..section + 12].copy_from_slice(&8u32.to_le_bytes());
+    bytes[0x204..0x208].copy_from_slice(&0xeafffffeu32.to_le_bytes());
     let path = common::scratch_file("thumb-loop", "exe");
     std::fs::write(&path, bytes).unwrap();
     let mut program = bootstrap_from_object_with_isa(

@@ -338,6 +338,10 @@ fn space_ptr_eq(a: &Option<Rc<AddrSpace>>, b: &Option<Rc<AddrSpace>>) -> bool {
 /// Tracked variables are also queried as a group via get_tracked_set() and
 /// create_set().  These return a list of TrackedContext objects.
 pub trait ContextDatabase {
+    /// Copy all context values, change-point masks, and tracked registers for
+    /// an isolated speculative decode.
+    fn snapshot(&self) -> Box<dyn ContextDatabase>;
+
     /// \brief Retrieve the context variable description object by name
     ///
     /// If the variable doesn't exist an error is returned.  (C++ protected
@@ -830,6 +834,25 @@ impl ContextInternal {
 }
 
 impl ContextDatabase for ContextInternal {
+    fn snapshot(&self) -> Box<dyn ContextDatabase> {
+        // FreeArray::clone implements a new split, which intentionally clears
+        // its masks. A snapshot must retain those explicit change points.
+        let mut database = self.database.clone();
+        database
+            .default_value_mut()
+            .mask
+            .clone_from(&self.database.default_value().mask);
+        for ((_, saved), (_, original)) in database.iter_mut().zip(self.database.iter()) {
+            saved.mask.clone_from(&original.mask);
+        }
+        Box::new(Self {
+            size: self.size,
+            variables: self.variables.clone(),
+            database,
+            trackbase: self.trackbase.clone(),
+        })
+    }
+
     fn get_variable(&self, nm: &[u8]) -> KunaResult<ContextBitRange> {
         match self.variables.get(nm) {
             Some(bitrange) => Ok(*bitrange),
@@ -1071,7 +1094,7 @@ fn space_eq(a: &Address, b: &Address) -> bool {
 /// of caching the raw blob pointer the cache re-fetches the blob through the
 /// single-lookup [`ContextDatabase::get_context`] on a hit (the expensive
 /// bounds query is what the cache skips).
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ContextCache {
     /// If set to \b false, any set_context() call is dropped
     allowset: bool,

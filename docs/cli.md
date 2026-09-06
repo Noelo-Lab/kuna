@@ -491,11 +491,13 @@ uses ELF mapping/FUNC markers, Cortex-M metadata, and Thumb-specific PE/COFF
 machine values, preserving mixed ARM/Thumb images instead of applying an
 image-wide guess. Explicit `arm` or `thumb` takes precedence over that metadata
 during discovery, cross-reference analysis, and graph assembly as well as
-decompilation. Odd ARM function pointers are normalized to their even byte
-address. With no mode evidence, a trivial default decode is not accepted when
+decompilation. On ELF images without section headers, explicit ISA context covers
+executable `PT_LOAD` ranges. Odd ARM function pointers are normalized to their
+even byte address. With no mode evidence, a trivial default decode is not accepted when
 the alternate mode reaches a bounded machine return; the command asks for an
 explicit `--isa` choice. This probe follows direct branches and visits at most
-16 distinct instruction addresses in each mode.
+16 distinct instruction addresses in each mode, in isolated context. Exhausting
+the default-mode budget is inconclusive and preserves the successful output.
 
 **Failure contract (DIV-45).** A function whose decompile pipeline aborts is
 *loud*:

@@ -663,7 +663,9 @@ gates on its architecture, and the commit swallows an unregistered-variable /
 unknown-register error, so a paint on the wrong language is a faithful no-op.
 
 The file front-ends also accept `--isa auto|arm|thumb`. An explicit ARM/Thumb
-choice paints `TMode` across mapped CODE sections before decoding; `auto` uses
+choice paints `TMode` across mapped CODE sections before decoding. If an ELF has
+no section headers, it uses executable `PT_LOAD` memory extents, including their
+zero-filled tails; non-executable segments and gaps remain unpainted. `auto` uses
 the marker facts above, Cortex-M evidence, and Thumb-specific PE/COFF machine
 values. Explicit input state is retained on the architecture so later Listing
 and xref painters cannot replace it with ELF markers or Cortex-M metadata.
@@ -675,9 +677,13 @@ is empty or only `return;`, the console probes at most 16 distinct instruction
 addresses per mode. It follows direct branch targets and conditional
 fallthroughs, ignoring p-code-internal branch offsets as machine destinations;
 visited addresses prevent cycles from consuming an unbounded walk. If the
-default has no bounded machine return but the alternate
-does, the run fails with an explicit-ISA diagnostic instead of reporting a
-successful empty function. Any committed context evidence disables this probe,
+default walk finishes without a machine return but the alternate does, the run
+fails with an explicit-ISA diagnostic instead of reporting a successful empty
+function. Budget exhaustion is inconclusive and preserves the
+successful default output. Each mode runs against its own complete context
+snapshot, retaining existing change-point masks and tracked registers. Probe
+writes and SLEIGH `globalset`s are discarded on return or unwind, together with
+their cache changes. Any committed context evidence disables this probe,
 so genuine A32 returns and mixed-image marker regions are never auto-switched.
 
 ## 1.4 Metadata analyzers
