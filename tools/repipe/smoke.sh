@@ -181,6 +181,18 @@ mk_obs '{"exit_code":{"eq":99}}' '{"exit_code":{"eq":0}}'
 V="$(gate_verdict)"
 [ "$V" = "not-reproducible" ] && ok "probe does not reproduce -> not-reproducible" \
                              || bad "expected not-reproducible, got $V"
+# an arm that arrived as a JSON string codex could not serialise cleanly is UNRUNNABLE, not a
+# traceback: one such observation used to take down the gate for the whole round with it
+"$PY" - > "$GATE_OBS" <<'PY'
+import json
+arm = '{"schema":"re-probe/1","kind":"cli","cmd":["{{KUNA}}","--version"],"expect":{"stdout_matches":["\\s+"]}}'
+json.dump({"kind": "bad-ux", "title": "gate self-test", "what_i_wanted": "x",
+           "what_kuna_did": "y", "severity": "minor",
+           "probe": arm, "acceptance": arm}, open("/dev/stdout", "w"))
+PY
+V="$(gate_verdict)"
+[ "$V" = "unrunnable" ] && ok "an arm that will not parse -> unrunnable, not a traceback" \
+                       || bad "expected unrunnable, got $V"
 
 for f in probe-zero-functions accept-zero-functions accept-functions-size; do
   [ -f "$FIX/$f.json" ] || bad "missing fixture $f.json"
