@@ -16,16 +16,17 @@ fn group_count_is_39() {
 }
 
 #[test]
-fn subphase_count_is_43() {
+fn subphase_count_is_44() {
     // +1 for the P9 `condition-form` subphase (truthycond, DIV-36),
     // +1 for the P9 `brace-form` subphase (braceelide, DIV-37),
-    // +1 for the P9 `warning-style` subphase (warnstyle, DIV-38).
-    assert_eq!(kuna_num_subphases(), 43);
-    assert_eq!(SUBPHASE_TABLE.len(), 43);
+    // +1 for the P9 `warning-style` subphase (warnstyle, DIV-38),
+    // +1 for the P9 `array-cover-width` subphase (arraycoverwidth, DIV-122).
+    assert_eq!(kuna_num_subphases(), 44);
+    assert_eq!(SUBPHASE_TABLE.len(), 44);
 }
 
 #[test]
-fn surface_count_is_108() {
+fn surface_count_is_109() {
     // +1 for the `option switchguardbound` surface row (angr missing-function-call),
     // +1 for the `option switchsharedcase` surface row (angr shared-case-node b2sum),
     // +1 for the `option switchmultipred` surface row (angr abnormal-switch-case-case3),
@@ -49,8 +50,10 @@ fn surface_count_is_108() {
     // a direct jmp preceded by a teardown of exactly the entry block's frame).
     // +1 for the `option rodatastring` surface row (kuna P5 constsequence: collapse
     // a read-only string block copy into builtin_strncpy).
-    assert_eq!(kuna_num_surfaces(), 108);
-    assert_eq!(SURFACE_TABLE.len(), 108);
+    // +1 for the `option arraycoverwidth` surface row (kuna P9 array-cover-width:
+    // render a multi-element array cover at its real width, DIV-122).
+    assert_eq!(kuna_num_surfaces(), 109);
+    assert_eq!(SURFACE_TABLE.len(), 109);
 }
 
 #[test]
@@ -641,6 +644,7 @@ fn option_values_live_value_present_for_52_suppressed_for_94() {
                             | "truthycond"
                             | "braceelide"
                             | "warnstyle"
+                            | "arraycoverwidth"
                             | "callsitestackargs"
                             | "varargstackargs"
                             | "calleearity"

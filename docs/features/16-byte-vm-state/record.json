@@ -39,7 +39,7 @@
     "make check-spec": "OK lenient + strict",
     "kuna catalog --check": "catalog OK",
     "make test-cli": "42/42",
-    "make rust-test": "PENDING"
+    "make rust-test": "green except one pre-existing worktree-environment failure: verify_w10_proto_unlock::w10_proto_unlock_const_return_collapses_no_tied_roundtrip compares against $KUNA_DECOMP_TEST as the 'C++ oracle', which the repipe worktree points at this same Rust build, so the signature it calls drifted is kuna's own. Proved pre-existing: the main tree's release decomp_test_dbg, built before this branch, emits the identical `unsigned int promote_compare(char *a0)` on tests/datatests/promotecompare.xml, and that body contains no array access at all. kuna-decomp lib: 2181 passed / 0 failed"
   },
   "probe_flip": {
     "probe_still_passes": false,
@@ -65,10 +65,10 @@
     "new_tokens": "345 `._0_16_`, 33 `._0_8_`, 25 `._8_8_`",
     "witness_diff": "6 lines: `v30[0] = 0;` / `v32[0] = 0;` / `v13 = v30[0];` / `v30[0] = v32[0];` / `v32[0] = v13;` all gain the width"
   },
-  "speed_method": "scripts.pipeline.timeit (warmup + median over 7 repeats) on the witness function, run while the workspace suite occupied the box; re-measured on a quiet box below",
+  "speed_method": "interleaved off / on / off (null control), 9 rounds, wall clock, min is the statistic; the box carries sibling-agent load so the median is 40% above the min and only the min is usable",
   "speed_target": "kuna decompile KataVM_L1 0x12d0 --addr",
   "speed_budget_pct": 5.0,
-  "speed_note": "printer-only: one predicate (metatype == TYPE_ARRAY, then one element-stride compare) per symbol-mapped composite leaf, evaluated once per printed token. There is no plausible mechanism for a measurable cost.",
+  "speed_note": "+1.54% against a +1.21% null control on byte-identical output, i.e. 0.33 points above the noise floor and not a measurable cost. That matches the mechanism: one metatype test plus one element-stride compare per symbol-mapped composite leaf, at print time. scripts.pipeline.timeit's own 7-repeat runs on this box returned -27.01% and +30.64% on consecutive invocations of the same two binaries, which is why the interleaved min with a null control is the statistic reported here",
   "decisions": [
     "The filed hypothesis ('array lvalue emission may select element zero without preserving the 16-byte access width') is UPHELD verbatim, and so is the round-4 refuter's location: printc.rs's whole-array `name[index]` branch gates on `sym_off >= 0 && (sym_off % elsize) == 0 && st.get_size() > elsize` and never reads the access size.",
     "The fix is one level ABOVE that branch, not in it. `push_partial_symbol_ir`'s top-of-walk whole-symbol break (upstream `pushPartialSymbol`, printc.cc:2033) is what hands a full-width cover to the caller in the first place; suppressing it for an array whose element stride is smaller than the access lets the existing artificial-field arm render the access, so the whole-cover and partial-cover spellings come from the same code path and cannot drift apart again.",
@@ -78,5 +78,11 @@
     "Default-on because the element-zero subscript is not a judgement call, it is a false statement about the access width; the option exists as the escape hatch for diffing against upstream Ghidra, not as a preference. Evidence for the flip: 0/675 datatest assertions, and a 40-image sweep in which every changed line is a token-for-token substitution.",
     "The predicate is narrowed to TYPE_ARRAY with `element align size < access size`, and NOT to `access size > 1` or `access is the whole symbol`. A scalar, a struct and a union all keep the upstream break, and an access that fits inside one element keeps its subscript, which is what `elem()`'s `return g[3];` and the fixture's `return v2[3];` pin.",
     "Not measured on the witness alone: the two `undefined16` locals in the corpus (`undefined16` is internally an undefined1[16] array) also pick up the suffix, which is the source of the 345 `._0_16_` tokens in the sweep. Read in context those are the good case, because they sit next to the `._0_8_`/`._8_8_` writes that built the value."
-  ]
+  ],
+  "speed_off_ms": 646.5,
+  "speed_on_ms": 656.5,
+  "speed_delta_pct": 1.54,
+  "speed_null_control_pct": 1.21,
+  "speed_samples": 9,
+  "speed_within_budget": true
 }
