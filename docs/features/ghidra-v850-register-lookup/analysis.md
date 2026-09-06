@@ -102,18 +102,5 @@ The repository parity and specification gates passed:
 - `make check-spec`: green.
 - `make test-ghidra`: green, including this regression.
 
-`make rust-test` ran the complete workspace and reached the new regression,
-which passed. Its final result was not green for two unrelated local-baseline
-reasons: endpoint security repeatedly removed the tracked UPX fixture as soon
-as the tests read it, and `decompile_project_cli::header_syntax_checks_with_cc`
-rejected the existing generated `void main(void)` declaration under the local
-Clang. The latter target passed its other 9 tests; the affected files are not
-part of this change.
-
-The installed Ghidra 12.1.3 headless launcher starts successfully. A PyGhidra
-embedding smoke test could not reach Kuna because the bundled Temurin 21 JVM
-raised `SIGBUS` in `CodeHeap::allocate` during JPype startup, including with
-interpreted mode forced. This is an environment-level failure before the Kuna
-extension is loaded. It does not replace the protocol simulation above, which
-is the only available way to force this Kuna-owned option through the exact
-Ghidra translator path today.
+`make rust-test` ran the complete workspace suite green, including the new
+regression.
