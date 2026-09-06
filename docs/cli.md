@@ -869,6 +869,18 @@ drained, so it can only add coverage — an address the walk already decoded is
 attributed exactly as before, and an address that does not decode is not recorded as
 a function at all.
 
+The descent also follows a **jump table**. A computed jump has no static successor,
+so the walk used to stop dead at every switch dispatch and the case bodies — with
+every reference they form — were invisible: on a stripped i386 PE, `kuna strings
+--filter "Product Already Registered"` answered `xrefs_count: 0` and no owning
+function for a message the window procedure plainly pushes. The table base is the
+address the dispatch itself materializes, and its entries are read out of read-only
+image content while each lands in the same executable section as the dispatch; the
+first word that is not one ends the table. The case bodies are walked as part of the
+**dispatching function**, so the message above now answers with the handler rather
+than with an address inside it. An import veneer's `jmp [slot]` is not a table (its
+slot is a data operand, not a materialized constant) and is unaffected.
+
 A target nothing references is exit `0` with `count: 0` — an answer, not a
 failure. A name that resolves to nothing is exit `1` with the reason on stderr; a
 malformed command line is exit `2` with the usage block.

@@ -28,6 +28,7 @@ pub mod kuna_tailcallentry;
 mod kuna_picbase;
 mod kuna_poolref;
 mod kuna_ppclocalentry;
+mod kuna_switchtable;
 mod kuna_unmappedentry;
 pub mod model;
 pub mod walk;

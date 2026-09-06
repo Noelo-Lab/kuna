@@ -1,0 +1,38 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/switchtable_i386",
+    "binary_sha256": "7c67abaf4be653478fff9c6344c1fe58fe68675d022bab1e110985f67044a8cc",
+    "binary_size": 9092,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/switchtable_i386"
+  },
+  "timeout_s": 60,
+  "cmd": [
+    "{{KUNA}}",
+    "strings",
+    "{{BIN}}",
+    "--filter",
+    "switch case alpha reached",
+    "--json"
+  ],
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "json": [
+      {
+        "path": "count",
+        "op": "eq",
+        "value": 1
+      },
+      {
+        "path": "strings[0].functions",
+        "op": "len_gt",
+        "value": 0
+      }
+    ]
+  },
+  "notes": "Vendored twin of the reported image: a non-PIE ELF32 dispatching JMP dword ptr [EAX*0x4 + 0x101000] over a four-entry .long table, each case body pushing a literal -- the shape of the reported PUSH 0x403288. The dataset original stays the witness in Reproduction and passes the same assertions; this target is in-repo so the probe promotes into tests/cli/ and runs where there is no dataset."
+}

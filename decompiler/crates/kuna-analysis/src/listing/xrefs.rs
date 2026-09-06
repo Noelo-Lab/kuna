@@ -77,6 +77,7 @@ use super::classify::classify;
 use super::context::ContextPainter;
 use super::kuna_picbase::{self, Ctx as PicCtx, PicBase};
 use super::kuna_poolref::PoolImage;
+use super::kuna_switchtable;
 use super::model::{FlowKind, RawOp};
 
 /// ELF section-header flag `SHF_ALLOC` (the section occupies memory at runtime).
@@ -639,7 +640,27 @@ pub fn build_with_focus(
                 insn_queue.push_back(fall);
             }
 
-            for (to, kind) in drefs {
+            // (kuna) `switchtable`: a computed jump has no static successor, so
+            // the descent stops dead at every switch dispatch and the case
+            // bodies -- and every reference they form -- are invisible. Read the
+            // table the jump indexes and take its entries up as successors of
+            // THIS function: a case body is the dispatcher's own code. See
+            // [`super::kuna_switchtable`].
+            if c.flows.is_empty() && c.flow.is_computed && c.flow.is_jump && !c.flow.is_call {
+                if let Some(p) = pool.as_ref() {
+                    for &(base, kind) in &drefs {
+                        if kind != XrefKind::Data {
+                            continue;
+                        }
+                        for target in kuna_switchtable::targets(base, vma, p, &exec) {
+                            st.file(vma, target, XrefKind::Jump, &text);
+                            insn_queue.push_back(target);
+                        }
+                    }
+                }
+            }
+
+            for &(to, kind) in &drefs {
                 st.file(vma, to, kind, &text);
             }
             // Both halves the deferred base-relative pass needs are pure

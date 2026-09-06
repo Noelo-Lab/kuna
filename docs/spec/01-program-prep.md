@@ -2259,6 +2259,52 @@ the filing crackme — of which an independent capstone-plus-symtab oracle
 corroborates 2,234 and 761 as real PC-relative pool loads, with every one of the
 remainder confirmed by hand as a load the oracle's own sweep missed.
 
+(kuna) Every rule above widens what the walk reads out of an instruction it
+reached; the complementary defect is the instructions it never reaches at all.
+The descent's successors are `classify`'s static targets plus fall-through, and a
+`BRANCHIND` has neither by construction — it is where the design defers to
+jump-table recovery, which runs over a *decompiled* function and so is not
+available to this tier. So the walk stops dead at every switch dispatch. On the
+filing image, an MSVC i386 window procedure, `--from` its entry filed 61
+references whose source addresses run up to the dispatch `JMP dword ptr [EAX*0x4
++ 0x4017c4]` and then resume in the epilogue: the whole 758-byte case-body region
+between them was undecoded, and `kuna strings` reported the message the handler
+plainly pushes with `xrefs_count: 0` and no owning function.
+
+**Jump-table following**
+(`decompiler/crates/kuna-analysis/src/listing/kuna_switchtable.rs`) closes that
+with one table read, of content that cannot change, bounded by the image's own
+partition. The table base is the address the dispatching instruction itself
+materialises — the `Data` reference the constant scan already files for it, which
+is what makes the rule format-independent rather than a pattern match on `JMP
+dword ptr [reg*n + imm]`. A base in a *data-space varnode* is deliberately not a
+candidate: `jmp qword ptr [__imp_X]` and an ELF PLT entry encode their slot that
+way, the constant scan files it as a `Read`, and a veneer must not be read as a
+one-entry table of whatever its unrelocated slot happens to hold. From the base
+the entries are read in order through the same read-only dereference literal-pool
+following uses, and each one is admitted only while it is pointer-sized,
+pointer-aligned, drawn from allocated non-writable memory with file content, and
+an address inside the **same executable section** as the dispatch — a case body
+is code, and it is the dispatcher's own code. The first word that is not all of
+those ends the table, which is what stops the scan at the `int3` padding after
+the last case on the filing image; a run shorter than two entries is not a table
+at all, because one plausible word after a constant is a coincidence and a
+compiler does not lower a one-case switch through a table.
+
+What the accepted entries become is the other half of the rule. They are queued
+as successors of the **dispatching function**, not as function entries of their
+own, so the case bodies are walked under the name of the switch that reaches them
+and every reference they form is attributed there. That is what the query was
+asked for: an agent looking for the handler that prints a message wants the
+handler, not `sub_<the case body's address>`. Measured over a 33-image crackme
+sweep, two images changed and neither lost a reference: the filing image gained
+10 string references and 7 owned strings, and a second gained 8 and 7 — on that
+one the walk also *re-attributed* three strings out of `zlib`'s `inflate`, which
+had been claimed by an address inside `inflate`'s own extent because the real
+entry's descent could not get past the `state->mode` switch, onto the containing
+function.
+
+
 (kuna) The same pool word is a second defect one surface over, in the **listing**
 rather than the reference walk. A function's extent contains its pool, so a
 straight-line disassembly of `main` walks off the end of the code and decodes the

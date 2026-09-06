@@ -113,9 +113,15 @@ impl<'a> PoolImage<'a> {
         Some(word)
     }
 
+    /// The target's pointer width in bytes, which is also the stride of any
+    /// array of pointers in the image (`kuna_switchtable`'s table).
+    pub(super) fn ptr_width(&self) -> u32 {
+        self.ptr
+    }
+
     /// The pointer-sized word at `vma`, when `vma` is pointer-aligned and lies in
     /// a read-only section.
-    fn word_at(&self, vma: u64) -> Option<u64> {
+    pub(super) fn word_at(&self, vma: u64) -> Option<u64> {
         let ptr = u64::from(self.ptr);
         if vma % ptr != 0 {
             return None;
