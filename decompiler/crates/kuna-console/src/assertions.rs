@@ -185,6 +185,20 @@ impl Body {
         )
     }
 
+    /// The function a `param`/`return` directive names, when it names one.
+    ///
+    /// These two are the only function-scoped directives that mean something for
+    /// a function this run does not decompile: they describe a signature, and a
+    /// CALLER needs its callee's signature.  `comment`, `flow`, `name` and `type`
+    /// describe the inside of one function body and have no cross-function
+    /// reading at all.
+    pub(crate) fn cross_function_prototype(&self) -> Option<String> {
+        match self {
+            Body::Param { func, .. } | Body::Return { func, .. } => func.clone(),
+            _ => None,
+        }
+    }
+
     /// Is this directive one that can only be applied to an already-decompiled
     /// function (because the symbol it names does not exist before)?
     fn is_symbol_scoped(&self) -> bool {
@@ -262,6 +276,18 @@ fn parse_storage(prog: &ConsoleProgram, tok: &str) -> Result<Address, String> {
 pub fn apply_program_scoped(prog: &mut ConsoleProgram) {
     let directives = prog.assertions().to_vec();
     for (i, directive) in directives.iter().enumerate() {
+        // A QUALIFIED `param`/`return` is a statement about the named function's
+        // prototype and holds whether or not this run decompiles it, so it is
+        // applied here rather than waiting for a selection that may never name
+        // it (`docs/re-needs/qualified-parameter-assertions-modify.md`).
+        if let Some(func) = directive.body.cross_function_prototype() {
+            let outcome = match apply_cross_function(prog, &func, &directive.body) {
+                Ok(()) => directive.applied(),
+                Err(detail) => directive.rejected(detail),
+            };
+            prog.set_assertion_outcome(i, outcome);
+            continue;
+        }
         if directive.body.is_function_scoped() {
             let outcome = directive.rejected(
                 "no decompiled function matched this directive (name it as \
@@ -436,6 +462,87 @@ fn apply_prototype_to_symbol(prog: &mut ConsoleProgram, pieces: &PrototypePieces
     }
 }
 
+/// Apply a `param <func>::<i> <storage> <decl>` / `return <func>::<storage>
+/// <decl>` to the prototype of the function it NAMES — the in-process twin of
+/// the cross-function arm of the console's `map param` / `map return`.
+///
+/// The parked [`PrototypePieces`] is the one channel a callee's signature
+/// reaches a CALLER through (`ActionDefaultParams` rebuilds each call site's
+/// prototype from the pieces on the callee's `FunctionSymbol`), and it describes
+/// types only — so the explicit storage rides in `input_storage` /
+/// `output_storage`, which `FuncProto::set_pieces` re-applies after the
+/// model-driven assignment.  Parking it also covers the case where the named
+/// function IS the one under decompile: `function_seed` seeds `pending_proto`
+/// from the same store.
+fn apply_cross_function(
+    prog: &mut ConsoleProgram,
+    func: &str,
+    body: &Body,
+) -> Result<(), String> {
+    use kuna_decomp::fspec::parameter_pieces_flags;
+    let org = data_org(prog);
+    let mut pieces = prog.pending_prototype(func).cloned().unwrap_or(PrototypePieces {
+        name: func.to_string(),
+        first_var_arg_slot: -1,
+        ..Default::default()
+    });
+    match body {
+        Body::Param { index, storage, decl, .. } => {
+            if *index < 0 {
+                return Err("a parameter index must not be negative".into());
+            }
+            let addr = parse_storage(prog, storage)?;
+            let (ct, pname) = crate::grammar::parse_type(decl, prog.arch().types(), org)
+                .map_err(|e| e.explain().to_string())?;
+            // A slot no directive has named yet is `undefined<addr_size>` — what
+            // the decompiler says about a value it was told nothing about — so
+            // slots may be declared in any order.
+            let (addr_size, _) = prog.arch().data_org();
+            let filler = prog
+                .arch()
+                .types()
+                .get_base(addr_size, kuna_decomp::dtype::type_metatype::TYPE_UNKNOWN)
+                .map_err(|e| e.explain().to_string())?;
+            let slot = *index as usize;
+            while pieces.intypes.len() <= slot {
+                pieces.intypes.push(Rc::clone(&filler));
+            }
+            while pieces.innames.len() <= slot {
+                pieces.innames.push(String::new());
+            }
+            pieces.intypes[slot] = ct.clone();
+            pieces.innames[slot] = pname;
+            let piece = ParameterPieces {
+                addr,
+                type_: Some(ct),
+                flags: parameter_pieces_flags::TYPELOCK | parameter_pieces_flags::NAMELOCK,
+            };
+            pieces.input_storage.retain(|(i, _)| *i != *index);
+            pieces.input_storage.push((*index, piece));
+        }
+        Body::Return { storage, decl, .. } => {
+            let addr = parse_storage(prog, storage)?;
+            let (ct, _) = crate::grammar::parse_type(decl, prog.arch().types(), org)
+                .map_err(|e| e.explain().to_string())?;
+            pieces.output_storage = Some(ParameterPieces {
+                addr,
+                type_: Some(ct),
+                flags: parameter_pieces_flags::TYPELOCK,
+            });
+        }
+        _ => return Err("internal: not a cross-function prototype directive".into()),
+    }
+    prog.arch_mut().set_function_prototype_pieces(func, pieces.clone());
+    // The symbol retype (what lets a by-value struct argument be split) needs a
+    // return type; `param` alone never declares one, and the storage assignment
+    // behind `getTypeCode` dereferences `outtype` unconditionally.
+    if pieces.outtype.is_some() {
+        apply_prototype_to_symbol(prog, &pieces);
+    }
+    prog.set_pending_prototype(func, pieces);
+    Ok(())
+}
+
 /// `data <addr> <C typedeclaration>` — the in-process twin of the global branch
 /// of `map address` (`IfcMapaddress`): a named, typed, name+type-locked global
 /// mapped at `addr`, so a load through that address renders by name.
@@ -504,6 +611,12 @@ pub fn function_seed(
     };
     for (i, directive) in directives.iter().enumerate() {
         if directive.body.is_symbol_scoped() || !directive.body.is_function_scoped() {
+            continue;
+        }
+        // Already applied program-scoped, onto the prototype of the function it
+        // names; `pending_proto` above picks it back up when that function is the
+        // one being decompiled.
+        if directive.body.cross_function_prototype().is_some() {
             continue;
         }
         if !binds_to(&directive.body, name, single) {

@@ -173,6 +173,73 @@ fn param_locks_the_input_storage_and_name() {
     );
 }
 
+/// A `param` QUALIFIED with another function declares that function's
+/// prototype, and the effect shows up at the CALL SITE
+/// (`docs/re-needs/qualified-parameter-assertions-modify.md`).
+///
+/// Before this the qualifier was dropped on the way to the console, so
+/// `param callee::0 ...` renamed and retyped the CALLER's inputs while the
+/// callee kept its empty argument list.  Both halves are asserted here: the
+/// declared name must not land on the caller, and the storage the directive
+/// names must be the storage the argument is read from — `%RDI` gives
+/// `open(a0)` and `%RSI`, which holds the mode operand, does not.  Same slot,
+/// same type: only the declared storage differs, so a lowering that dropped it
+/// could not tell the two runs apart.
+#[test]
+fn a_qualified_param_declares_the_callee_and_not_the_caller() {
+    let call_line = |storage: &str| -> Option<String> {
+        let (code, report) = decompile_with(vec![directive(
+            &format!("param open::0 {storage} char *pathname"),
+            Body::Param {
+                func: Some("open".into()),
+                index: 0,
+                storage: storage.into(),
+                decl: "char *pathname".into(),
+            },
+        )])?;
+        all_applied(&report);
+        let signature = code.lines().next().unwrap_or_default().to_string();
+        assert!(
+            !signature.contains("pathname"),
+            "the callee's parameter name landed on the CALLER: {signature}"
+        );
+        Some(
+            code.lines()
+                .find(|l| l.contains("open("))
+                .unwrap_or_else(|| panic!("no call to open:\n{code}"))
+                .trim()
+                .to_string(),
+        )
+    };
+    let Some(rdi) = call_line("%RDI") else { return };
+    let Some(rsi) = call_line("%RSI") else { return };
+    assert!(rdi.contains("open(a0)"), "the declared RDI argument is missing: {rdi}");
+    assert_ne!(rdi, rsi, "the declared storage did not pick the argument");
+}
+
+/// The `return` half of the same plumbing: a qualified `return` parks the
+/// callee's output storage, so what the call site reads back moves with it —
+/// and, as above, the caller's own return is left alone.
+#[test]
+fn a_qualified_return_declares_the_callee_output() {
+    let Some((baseline, _)) = decompile_with(Vec::new()) else { return };
+    let Some((code, report)) = decompile_with(vec![directive(
+        "return open::%RBX int4",
+        Body::Return { func: Some("open".into()), storage: "%RBX".into(), decl: "int4".into() },
+    )]) else {
+        return;
+    };
+    all_applied(&report);
+    assert_ne!(
+        baseline, code,
+        "a qualified `return` on a callee changed nothing in the caller"
+    );
+    assert!(
+        code.lines().next().unwrap_or_default().starts_with("unsigned long authenticate("),
+        "the qualified directive rewrote the CALLER's return:\n{code}"
+    );
+}
+
 /// `return` — a locked return storage and type (`map return`).
 ///
 /// This is also the regression for the abort below: the directive parks pieces

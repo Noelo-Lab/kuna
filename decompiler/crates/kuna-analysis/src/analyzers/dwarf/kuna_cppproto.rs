@@ -261,6 +261,7 @@ pub(super) fn build_pieces(
         innames,
         first_var_arg_slot: res.first_var_arg_slot,
         output_storage: None,
+        input_storage: Vec::new(),
     })
 }
 

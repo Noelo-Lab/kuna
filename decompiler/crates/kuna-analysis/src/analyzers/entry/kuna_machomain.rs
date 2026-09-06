@@ -145,6 +145,7 @@ fn main_prototype(ctx: &AnalysisCtx) -> Option<PrototypePieces> {
         innames: vec!["argc".to_string(), "argv".to_string()],
         first_var_arg_slot: -1,
         output_storage: None,
+        input_storage: Vec::new(),
     })
 }
 

@@ -325,5 +325,6 @@ fn prototype_for(arch: &Architecture, main: u64, slots: &[Slot]) -> Option<Proto
         innames,
         first_var_arg_slot: -1,
         output_storage: None,
+        input_storage: Vec::new(),
     })
 }

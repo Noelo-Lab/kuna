@@ -707,6 +707,152 @@ fn run_parse_c(status: &mut IfaceStatus, content: &str) -> IfaceResult<()> {
     }
 }
 
+/// Split a `<func>::<operand>` console token into its two halves, or `None` when
+/// the token carries no qualifier.  A C++ name is split at its LAST `::`, the
+/// same reading `--assert` uses (`kuna_cli::assertdecl::split_qualifier`).
+fn split_qualifier(tok: &str) -> Option<(String, String)> {
+    match tok.rsplit_once("::") {
+        Some((func, operand)) if !func.is_empty() && !operand.is_empty() => {
+            Some((func.to_string(), operand.to_string()))
+        }
+        _ => None,
+    }
+}
+
+/// The `<func>` a `map param` / `map return` operand names, without consuming
+/// the stream.  `map param`'s first operand is a decimal index and `map
+/// return`'s is a machine address, so neither can hold a `::` of its own.
+fn peek_qualifier(s: &CommandStream) -> Option<String> {
+    let text = s.rest();
+    let first = text.split_whitespace().next()?;
+    split_qualifier(first).map(|(func, _)| func)
+}
+
+/// Merge one declared input slot into the prototype pieces parked for `func`.
+///
+/// The pieces store is the only channel a callee's signature reaches a CALLER
+/// through (`IfcDecompile` re-parks every entry onto its `FunctionSymbol`, where
+/// `ActionDefaultParams` reads it), and it describes types — so the explicit
+/// storage rides in `input_storage`, the input-side twin of what `map return`
+/// already parks in `output_storage`.
+///
+/// Slots may be declared in any order; a slot no directive named yet is filled
+/// with `undefined<addr_size>`, which is what the decompiler says about a value
+/// it has not been told anything about.
+fn bind_func_param(
+    status: &mut IfaceStatus,
+    func: &str,
+    index: kuna_base::types::int4,
+    piece: kuna_decomp::fspec::ParameterPieces,
+    pname: &str,
+) -> IfaceResult<()> {
+    use kuna_decomp::fspec::PrototypePieces;
+    if index < 0 {
+        return Err(IfaceError::parse("Parameter index must not be negative"));
+    }
+    let filler = {
+        let dcp = dcp_mut(status)?;
+        let prog = dcp
+            .conf
+            .as_ref()
+            .ok_or_else(|| IfaceError::execution("No load image present"))?;
+        let (addr_size, _) = prog.arch().data_org();
+        prog.arch()
+            .types()
+            .get_base(addr_size, kuna_decomp::dtype::type_metatype::TYPE_UNKNOWN)
+            .map_err(|e| IfaceError::execution(e.explain().to_string()))?
+    };
+    let dcp = dcp_mut(status)?;
+    let entry = dcp
+        .pending_prototypes
+        .entry(func.to_string())
+        .or_insert_with(|| PrototypePieces {
+            name: func.to_string(),
+            first_var_arg_slot: -1,
+            ..Default::default()
+        });
+    let slot = index as usize;
+    while entry.intypes.len() <= slot {
+        entry.intypes.push(std::rc::Rc::clone(&filler));
+    }
+    while entry.innames.len() <= slot {
+        entry.innames.push(String::new());
+    }
+    entry.intypes[slot] = piece.type_.clone().ok_or_else(|| {
+        IfaceError::parse("A parameter declaration must name a data-type")
+    })?;
+    entry.innames[slot] = pname.to_string();
+    entry.input_storage.retain(|(i, _)| *i != index);
+    entry.input_storage.push((index, piece));
+    let pieces = entry.clone();
+    retype_symbol_if_complete(status, &pieces)
+}
+
+/// Park the locked return storage + type of `func` on its prototype pieces —
+/// the cross-function arm of `map return`, and the `output_storage` half of what
+/// [`bind_func_param`] does for inputs.
+fn bind_func_return(
+    status: &mut IfaceStatus,
+    func: &str,
+    piece: kuna_decomp::fspec::ParameterPieces,
+) -> IfaceResult<()> {
+    use kuna_decomp::fspec::PrototypePieces;
+    let dcp = dcp_mut(status)?;
+    let entry = dcp
+        .pending_prototypes
+        .entry(func.to_string())
+        .or_insert_with(|| PrototypePieces {
+            name: func.to_string(),
+            first_var_arg_slot: -1,
+            ..Default::default()
+        });
+    entry.output_storage = Some(piece);
+    let pieces = entry.clone();
+    retype_symbol_if_complete(status, &pieces)
+}
+
+/// Retype the named `FunctionSymbol` to the prototype-bearing `TypeCode`, but
+/// only once the pieces describe a return type.
+///
+/// `param`/`return` build a signature one slot at a time, so the pieces are
+/// incomplete in between — and the storage assignment behind `getTypeCode`
+/// dereferences `outtype` unconditionally.  The `PrototypePieces` parked on the
+/// symbol is what a caller actually reads (`ActionDefaultParams`); the retype is
+/// the extra step that lets a by-value struct argument be split, so skipping it
+/// for an input-only declaration costs nothing else.
+fn retype_symbol_if_complete(
+    status: &mut IfaceStatus,
+    pieces: &kuna_decomp::fspec::PrototypePieces,
+) -> IfaceResult<()> {
+    if pieces.outtype.is_none() {
+        return Ok(());
+    }
+    apply_prototype_to_symbol(status, pieces)
+}
+
+/// Parse the `<storage> <C typedeclaration>` tail both `map param` and `map
+/// return` end in, into a type-locked [`ParameterPieces`] plus the declared name.
+fn parse_storage_and_type(
+    status: &mut IfaceStatus,
+    s: &mut CommandStream,
+    flags: kuna_base::types::uint4,
+) -> IfaceResult<(kuna_decomp::fspec::ParameterPieces, String)> {
+    use kuna_decomp::fspec::ParameterPieces;
+    let dcp = dcp_mut(status)?;
+    let prog = dcp
+        .conf
+        .as_mut()
+        .ok_or_else(|| IfaceError::execution("No load image present"))?;
+    let (addr, _size) = parse_machaddr(prog, s, false).map_err(IfaceError::parse)?;
+    s.skip_ws();
+    let (addr_size, word_size) = prog.arch().data_org();
+    let org = crate::grammar::DataOrg { addr_size, word_size };
+    let typetext = s.rest();
+    let (ct, name) = crate::grammar::parse_type(&typetext, prog.arch().types(), org)
+        .map_err(|e| IfaceError::parse(e.explain().to_string()))?;
+    Ok((ParameterPieces { addr, type_: Some(ct), flags }, name))
+}
+
 /// (kuna) Bind a parsed C prototype to `func`, whatever name the declaration
 /// carries — the console spelling of `--assert 'prototype <func> <decl>'`
 /// (`map prototype`, registered in [`crate::kuna_console`]).
@@ -1338,10 +1484,28 @@ decomp_command!(
     /// parameter on the current function's prototype.
     IfcMapParam,
     fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
+        use kuna_decomp::fspec::{parameter_pieces_flags, ParameterPieces};
+        // (kuna) `map param <func>::<i> <storage> <decl>` declares a slot of the
+        // prototype of the function it NAMES, which need not be the one under
+        // decompile.  Without it a caller has no way to say what a CALLEE takes,
+        // and the qualifier the `--assert` grammar documents was dropped on the
+        // way here, so the directive silently retyped the caller instead
+        // (`docs/re-needs/qualified-parameter-assertions-modify.md`).
+        if peek_qualifier(s).is_some() {
+            let tok = s.read_token();
+            let (func, index_tok) =
+                split_qualifier(&tok).expect("peek_qualifier saw a qualifier");
+            let index: kuna_base::types::int4 = index_tok.parse().map_err(|_| {
+                IfaceError::parse("Parameter index must be a decimal number")
+            })?;
+            s.skip_ws();
+            let flags = parameter_pieces_flags::TYPELOCK | parameter_pieces_flags::NAMELOCK;
+            let (piece, pname) = parse_storage_and_type(status, s, flags)?;
+            return bind_func_param(status, &func, index, piece, &pname);
+        }
         if dcp_mut(status)?.fd.is_none() {
             return Err(IfaceError::execution("No function loaded"));
         }
-        use kuna_decomp::fspec::{parameter_pieces_flags, ParameterPieces};
         // C++ `s >> dec >> i`: the parameter position.
         let i = s.read_int();
         let dcp = dcp_mut(status)?;
@@ -1395,10 +1559,25 @@ decomp_command!(
     /// current function's prototype.
     IfcMapReturn,
     fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
+        use kuna_decomp::fspec::{parameter_pieces_flags, ParameterPieces};
+        // (kuna) `map return <func>::<storage> <decl>` — the cross-function arm,
+        // as for `map param` above.  The storage grammar has no `::` of its own,
+        // so the qualifier is unambiguous.
+        if let Some(func) = peek_qualifier(s) {
+            let text = s.rest();
+            let mut parts = text.trim_start().splitn(2, char::is_whitespace);
+            let first = parts.next().unwrap_or("");
+            let tail = parts.next().unwrap_or("");
+            let storage = split_qualifier(first).map(|(_, op)| op).unwrap_or_default();
+            let dequalified = format!("{storage} {tail}");
+            let mut stream = CommandStream::new(&dequalified);
+            let (piece, _) =
+                parse_storage_and_type(status, &mut stream, parameter_pieces_flags::TYPELOCK)?;
+            return bind_func_return(status, &func, piece);
+        }
         if dcp_mut(status)?.fd.is_none() {
             return Err(IfaceError::execution("No function loaded"));
         }
-        use kuna_decomp::fspec::{parameter_pieces_flags, ParameterPieces};
         let dcp = dcp_mut(status)?;
         let prog = dcp
             .conf

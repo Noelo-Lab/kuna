@@ -782,6 +782,7 @@ fn assign_map_standard_input_walk() {
         innames: vec!["a".into(), "b".into()],
         first_var_arg_slot: -1,
         output_storage: None,
+        input_storage: Vec::new(),
     };
     let mut res: Vec<ParameterPieces> = Vec::new();
     model.assign_map(&proto, &tf, &mut res, &mgr).unwrap();
@@ -847,6 +848,7 @@ fn assign_map_standard_out_hidden_return_emits_indirect_output_plus_pointer_para
         innames: Vec::new(),
         first_var_arg_slot: -1,
         output_storage: None,
+        input_storage: Vec::new(),
     };
     let mut res: Vec<ParameterPieces> = Vec::new();
     model.assign_map(&proto, &tf, &mut res, &mgr).unwrap();
@@ -1096,6 +1098,7 @@ fn proto_model_assign_parameter_storage_orders_output_first() {
         innames: vec!["a".into(), "b".into()],
         first_var_arg_slot: -1,
         output_storage: None,
+        input_storage: Vec::new(),
     };
     let mut res: Vec<ParameterPieces> = Vec::new();
     model
@@ -2113,6 +2116,7 @@ fn modelrule_gotostack_routes_oversized_float_to_aligned_stack_footprint() {
         innames: vec!["x".into(), "z".into()],
         first_var_arg_slot: -1,
         output_storage: None,
+        input_storage: Vec::new(),
     };
     let mut res: Vec<ParameterPieces> = Vec::new();
     model.assign_map(&proto, &tf, &mut res, &mgr).unwrap();
@@ -2146,6 +2150,7 @@ fn modelrule_precedes_metatype_fallback() {
         innames: vec!["a".into()],
         first_var_arg_slot: -1,
         output_storage: None,
+        input_storage: Vec::new(),
     };
     let mut res: Vec<ParameterPieces> = Vec::new();
     model.assign_map(&proto, &tf, &mut res, &mgr).unwrap();
@@ -2188,6 +2193,7 @@ fn no_modelrule_falls_through_to_metatype_fallback() {
         innames: vec!["a".into()],
         first_var_arg_slot: -1,
         output_storage: None,
+        input_storage: Vec::new(),
     };
     let mut res: Vec<ParameterPieces> = Vec::new();
     model.assign_map(&proto, &tf, &mut res, &mgr).unwrap();
@@ -2267,6 +2273,7 @@ fn w10_float_typeclass_failing_rule_does_not_short_circuit_chain() {
         innames: vec!["a".into()],
         first_var_arg_slot: -1,
         output_storage: None,
+        input_storage: Vec::new(),
     };
     let mut res: Vec<ParameterPieces> = Vec::new();
     model.assign_map(&proto, &tf, &mut res, &mgr).unwrap();
@@ -2304,6 +2311,7 @@ fn w10_float_typeclass_pointermax_rule_appends_after_existing_rules() {
         innames: vec!["x".into()],
         first_var_arg_slot: -1,
         output_storage: None,
+        input_storage: Vec::new(),
     };
     let mut res: Vec<ParameterPieces> = Vec::new();
     model.assign_map(&proto, &tf, &mut res, &mgr).unwrap();

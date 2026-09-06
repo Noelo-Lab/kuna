@@ -471,7 +471,16 @@ that machinery.
   called-function evaluation model with a void internal store. (kuna) A
   callee whose parked pieces contain *only* custom return storage — what the
   console `map return` plants — keeps model-driven input recovery and locks
-  just the output on top.
+  just the output on top. (kuna) The parked pieces describe *types*, and
+  storage is otherwise re-derived from the model, so the two spellings that
+  state storage explicitly carry it alongside: `output_storage` for the return
+  and `input_storage` for individual parameter slots. Both are re-applied by
+  `FuncProto::set_pieces` after the model-driven assignment, which is what lets
+  a caller declare a non-default convention for a callee — the console `map
+  param <func>::<i> <storage> <decl>` and `map return <func>::<storage>
+  <decl>`, reached from the CLI as `--assert 'param <func>::<i> …'`. A slot no
+  directive named is `undefined` of pointer width, so slots may be declared in
+  any order.
 - **`ActionExtraPopSetup`** (`coreaction_protos.rs (ActionExtraPopSetup)`)
   models the stack pointer across each call: a known extrapop becomes an
   explicit `INT_ADD sp, #extrapop` after the call; an unknown one becomes an

@@ -1,0 +1,67 @@
+{
+  "slug": "qualified-parameter-assertions-modify",
+  "need_id": "qualified-parameter-assertions-modify",
+  "track": "tooling",
+  "scope": "medium",
+  "round": 4,
+  "branch": "feat/re-qualified-parameter-assertions-modify",
+  "summary": "A `<func>::`-qualified `--assert` now binds to the function it names. `param`/`return` state that function's prototype -- including the declared STORAGE, which rides on the parked PrototypePieces in a new `input_storage` field re-applied by FuncProto::set_pieces -- so a caller can tell kuna what a callee takes and the call site renders against it. `comment`, `flow`, `name` and `type` have no cross-function reading and are rejected with a reason instead of being applied to the selected function.",
+  "decisions": [
+    {
+      "what": "hypothesis UPHELD, and the refuter's reading of the mechanism was exact",
+      "detail": "The `..` in `Body::Param { index, storage, decl, .. }` in kuna-cli/src/assertdecl.rs ate `func`, and the same discard was in the Return/Comment/Flow/Name/Type arms -- six directives, not one. Reproduced on 39fa1a9a: `kuna decompile 'Sabloom Text 6.exe' sub_402020 --assert 'param sub_401c50::0 ECX char *maze' --assert 'param sub_401c50::1 EDX char *moves'` printed `unsigned int sub_402020(char *maze,char *moves)` and kept `v15 = sub_401c50();`, exit 0, empty stderr."
+    },
+    {
+      "what": "the two surfaces disagreed, and the in-process one was already honest",
+      "detail": "The same command with `--json` (which loads in-process rather than spawning decomp_dbg) rejected both directives: `no decompiled function matched this directive`. So the text surface's silent misapplication was a lowering defect, not a missing engine concept -- `kuna_console::assertions::binds_to` had the right rule all along. The fix makes the text surface agree AND gives both the capability the rejection was standing in for."
+    },
+    {
+      "what": "the declared STORAGE is carried, not silently dropped",
+      "detail": "PrototypePieces describes types; storage is re-derived from the model, which is why `map return` already needed a kuna-only `output_storage`. A cross-function `param f::0 ECX ...` has the same problem on the input side, and dropping it would ship exactly this plane's own failure mode (accepted and not what was said). New `input_storage: Vec<(int4, ParameterPieces)>` on PrototypePieces, re-applied by `FuncProto::set_pieces` after `update_all_types`, guarded to slots the model actually assigned. Measured on the witness: `ECX/EDX` -> `sub_401c50((char *)maze,moves)`, types-only (`prototype`, model-derived stack) -> `sub_401c50((char *)v20,moves)`, deliberately wrong `EAX/EBX` -> `sub_401c50(v16,(char *)((unsigned int)v20 << 8))`. Three different arguments from three different declarations, so the field is load-bearing."
+    },
+    {
+      "what": "the qualifier is added to `map param`/`map return`, not to a new console command",
+      "detail": "`map param`'s first operand is a decimal index and `map return`'s is a machine address, so neither can contain a `::` and the qualified spelling is unambiguous -- and it is the spelling docs/cli.md already documents for `--assert`. A new `map funcparam`/`map funcreturn` pair would have made the console's `map fun` prefix ambiguous with `map function`. `rename`/`retype` were deliberately NOT given the qualifier: a C++ local's name can contain `::` and the datatest corpus drives those commands directly."
+    },
+    {
+      "what": "four of the six directives get a rejection rather than a cross-function meaning",
+      "detail": "`comment` is keyed by the owning function's entry, `flow` is consumed by that function's flow follower, and `name`/`type` name a local that only exists once that function has been decompiled. None of them means anything for a function this run did not decompile, so the CLI emits no console line and reports the directive rejected with the reason -- which is the `No rejection warning appears` half of the filed symptom. Under `--addr` the CLI does not know the selected function's name until the script has run, so a qualified directive of those four keeps binding to the selection; documented in docs/cli.md."
+    },
+    {
+      "what": "no option, no stages XML, no catalog counter, no DIV row",
+      "detail": "Tooling track: this is the CLI/console assertion plane plus one inert engine field. A directive an agent did not write cannot move emitted C, and `--assert` is not a decision the pipeline takes on its own. Matches the CLI-tier repipe PRs already merged this round (#448/#449/#452/#454)."
+    }
+  ],
+  "inertness": {
+    "method": "the engine change is one new `PrototypePieces` field and one loop in `FuncProto::set_pieces`. All 24 producers of PrototypePieces outside the two new directive paths construct it with `input_storage: Vec::new()` (or `..Default::default()`), and nothing else in the workspace reads the field, so the loop has nothing to iterate on any run that does not carry a qualified `param`/`return`. The CLI lowering is likewise a no-op for an unqualified directive and for one qualified with the selected function: `names_another` returns None and the emitted console line is byte-identical.",
+    "note": "make test 675/675 PARITY OK and make test-stages 640/640 PARITY OK confirm it."
+  },
+  "sweep": {
+    "question": "does the new lowering change any directive that used to work, and does the cross-function path produce WRONG output?",
+    "method": "(1) unqualified `param 0 RDI char *user` and self-qualified `param authenticate::0 RDI char *user` on fauxware, text surface and `--json`, against the pre-change spelling; (2) the three-way storage discrimination on the witness (ECX/EDX vs prototype-types-only vs EAX/EBX); (3) `%RDI` vs `%RSI` for the same slot and type on fauxware (`open(a0)` vs `open(NULL)`); (4) directive combinations against one callee -- `prototype` then a `param` override, `param` + `return`, and slots declared out of order (1 before 0); (5) `decompile-all` with a cross-function `param` and a qualified `name` in one run.",
+    "result": "(1) all four spellings print the identical `unsigned long authenticate(char *user)`, so the self-qualified case behaves exactly as the unqualified one has always behaved -- `map param` has always truncated the input list to the declared slots, so the pieces path and the mapped_params path are not observably different here. (2)/(3) each declaration produces a different argument, so the storage is honoured rather than re-derived. (4) `prototype open int open(char *path,int flags)` + `param open::1 RDX int mode` gives `open(a0,0)`; `param`+`return` gives `open(a0)`; slots declared 1-then-0 give the same `open(a0,0)` as 0-then-1, because an undeclared slot is filled with `undefined<addr_size>` rather than rejected. (5) both directives report `applied` and both land -- `read(open(a0),credbuf,8)`."
+  },
+  "gates": {
+    "make test": "PARITY OK, 675/675 assertions",
+    "make test-stages": "PARITY OK, 640/640 assertions",
+    "make rust-test": "5,742 passed / 1 failed on the pre-rebase tree. The one failure is `verify_w10_proto_unlock::w10_proto_unlock_const_return_collapses_no_tied_roundtrip` ('oracle drifted') -- the known repipe-worktree artifact: the loop exports KUNA_DECOMP_TEST at this worktree's decomp_test_dbg. Re-run with it unset: 4/4 pass. The rebased tree was re-run with KUNA_DECOMP_TEST unset and was still in flight at 1,135 passed / 0 failed when the PR was opened; the `full-ci` label makes GitHub run the same suite on the merge commit, which is the gate that decides.",
+    "make check-spec": "OK (lenient mode)",
+    "make test-cli": "50/50 with the probe promoted",
+    "kuna catalog --check": "catalog OK: documents exactly the registered kuna options"
+  },
+  "acceptance": {
+    "acceptance_id": "a-64ae0f00be99",
+    "result": "PASS",
+    "transition": "closed",
+    "promoted_to": "tests/cli/qualified-parameter-assertions-modify.json",
+    "promotion_note": "the filed acceptance targets the dataset image (crackmes.one 60be2ad433c5d410b8842c95, 'Sabloom Text 6.exe') and PASSES there -- `scripts.repipe.verify --need qualified-parameter-assertions-modify` reports 1 pass / 0 fail / closed. `--promote` refuses a dataset target and CI has no dataset, so the promoted probe is re-pointed at the vendored `kuna-analysis/tests/fixtures/fauxware`: `param open::0 RDI char *pathname` on `authenticate`, asserting `open(a0)` present and `authenticate(...pathname` / `open(a0,0)` absent. Both expectations fail on the unpatched tree. `notes` was cut to 398 characters for the 400-character schema cap.",
+    "reproduction_confirmed_on_main": "on 39fa1a9a the witness command prints `unsigned int sub_402020(char *maze,char *moves)` with `v15 = sub_401c50();`; after the fix it prints `unsigned int sub_402020(unsigned char *a0,char *a1)` with `v13 = sub_401c50((char *)maze,moves);`. The disassembly agrees with the tester's claim: `MOV ECX,EDI; MOV EDX,ESI` before `CALL 0x401c50`, and the callee opens with `MOV [EBP-0x1c],EDX; MOV [EBP-0x8],ECX`."
+  },
+  "not_closed": [
+    "A qualified `comment`/`flow`/`name`/`type` under `--addr` still binds to the selected function rather than being judged, because the CLI has no name for the selection until the script has run. Judging it would mean either resolving the address to a name before building the script or teaching the console commands the qualifier -- and `rename`/`retype` cannot take one safely, since a C++ local name may contain `::`.",
+    "A cross-function `param` declares the input list it names: a slot nobody declared is `undefined`, and a trailing slot nobody declared does not exist. That is the same contract `map param` has always had for the selected function, but it means `param f::0 ...` alone truncates a two-argument callee to one. Declaring every slot, or using `prototype` and overriding one slot's storage with `param`, both say the whole thing.",
+    "docs/re-needs/index.json is deliberately NOT regenerated: `needs reindex` runs over the whole backlog and this worktree holds only the tracked need docs. The need doc itself is added; the captain reindexes."
+  ],
+  "pr": null,
+  "rebase": "rebased --onto origin/main (bfe843a4, #455 calleearitylive) from the recorded base 39fa1a9a; scripts.repipe.counters --fix re-derived every shared counter on the rebased tree (153 settables, tiers 38/61/54, 242 corpus files, next ElementId 4147) and scripts.repipe.mergecheck reports 0 rejects. This PR adds no option and no stages XML, so it moves none of those counters itself -- the rebuild was needed only to make the built binary agree with #455's phases.toml."
+}

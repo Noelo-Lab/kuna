@@ -132,6 +132,19 @@ fn build_script(
     regions_path: Option<&Path>,
 ) -> String {
     let mut lines: Vec<String> = Vec::new();
+    // The function this run selected, when it was named rather than addressed:
+    // a directive qualified with it binds to the selection, and one qualified
+    // with any other function does not (`crate::assertdecl::console_form`).
+    let selected = if by_address { None } else { Some(target) };
+    // The console lines of one slot, in the order the caller gave them.  A
+    // directive that does not bind this run has no line and is reported by
+    // `assertion_outcomes` instead.
+    let forms = |slot| {
+        assertions
+            .iter()
+            .filter_map(|d| crate::assertdecl::console_form(d, selected).ok())
+            .filter(move |f| f.slot == slot)
+    };
     let image = console_path(binary);
     match bfd_target {
         Some(t) if !t.is_empty() => lines.push(format!("load file {t} {image}")),
@@ -164,10 +177,8 @@ fn build_script(
     // (kuna `--assert`) IMAGE-scoped directives -- a read-only or volatile
     // memory range -- must precede `read symbols`: mapping a symbol folds the
     // range property into its SymbolEntry and never looks at the range again.
-    for form in assertions.iter().filter_map(crate::assertdecl::console_form) {
-        if form.slot == crate::assertdecl::Slot::Image {
-            lines.push(form.line);
-        }
+    for form in forms(crate::assertdecl::Slot::Image) {
+        lines.push(form.line);
     }
     lines.push("read symbols".into());
     // `--define-function` AFTER the analysis commit and BEFORE the load: a
@@ -180,10 +191,8 @@ fn build_script(
     // (kuna `--assert`) The PROGRAM-scoped directives -- a parsed type, a
     // declared prototype, a named global -- go here, after the analysis commit
     // and before the selection, so the function is loaded against them.
-    for form in assertions.iter().filter_map(crate::assertdecl::console_form) {
-        if form.slot == crate::assertdecl::Slot::Program {
-            lines.push(form.line);
-        }
+    for form in forms(crate::assertdecl::Slot::Program) {
+        lines.push(form.line);
     }
     if by_address {
         match EntrySelector::parse(target) {
@@ -204,10 +213,8 @@ fn build_script(
     }
     // FUNCTION-scoped directives need a loaded function and are consumed at flow
     // time, so they precede the first `decompile`.
-    for form in assertions.iter().filter_map(crate::assertdecl::console_form) {
-        if form.slot == crate::assertdecl::Slot::Function {
-            lines.push(form.line);
-        }
+    for form in forms(crate::assertdecl::Slot::Function) {
+        lines.push(form.line);
     }
     for ka in kasserts {
         lines.push(format!("kassert {ka}"));
@@ -218,11 +225,9 @@ fn build_script(
     // `No symbol named: v2`), so they run between two decompiles. The second
     // `decompile` is emitted ONLY when there is such a directive, so every other
     // invocation keeps its current cost.
-    if crate::assertdecl::needs_second_pass(assertions) {
-        for form in assertions.iter().filter_map(crate::assertdecl::console_form) {
-            if form.slot == crate::assertdecl::Slot::Symbol {
-                lines.push(form.line);
-            }
+    if crate::assertdecl::needs_second_pass(assertions, selected) {
+        for form in forms(crate::assertdecl::Slot::Symbol) {
+            lines.push(form.line);
         }
         lines.push("decompile".into());
     }
@@ -484,15 +489,18 @@ fn find_pipeline_failure(out: &str) -> Option<(String, String)> {
 fn assertion_outcomes(
     out: &str,
     directives: &[kuna_console::assertions::Directive],
+    selected: Option<&str>,
 ) -> Vec<kuna_console::assertions::Outcome> {
     use kuna_console::assertions::Outcome;
     directives
         .iter()
         .map(|directive| {
             let (kind, phase, subphase) = directive.body.coords();
-            let detail = match crate::assertdecl::console_form(directive) {
-                Some(form) => command_failure(out, &form.line),
-                None => Some("no console spelling for this directive".to_string()),
+            let detail = match crate::assertdecl::console_form(directive, selected) {
+                Ok(form) => command_failure(out, &form.line),
+                // Nothing was emitted for it: the directive names a function this
+                // run did not decompile, and the reason is the report row.
+                Err(detail) => Some(detail),
             };
             Outcome {
                 directive: directive.raw.clone(),
@@ -632,6 +640,9 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
         .into_iter()
         .partition(|(name, _)| matches!(*name, "listing" | "errortoomanyinstructions"));
 
+    // The selected function's name, or `None` for an `--addr` run — what decides
+    // whether a `<func>::`-qualified directive binds to the selection.
+    let selected: Option<&str> = if by_address { None } else { Some(args.target.as_str()) };
     let attempt = |injected: &[(&'static str, &'static str)]| {
         let script = build_script(
             &binary,
@@ -871,7 +882,7 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
                     ),
                     regions: None,
                     failure: None,
-                    assertions: assertion_outcomes(&stdout_text, &args.assertions),
+                    assertions: assertion_outcomes(&stdout_text, &args.assertions, selected),
                 });
             }
             return Err((
@@ -910,7 +921,7 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
             c: c_text,
             regions: regions_text,
             failure,
-            assertions: assertion_outcomes(&stdout_text, &args.assertions),
+            assertions: assertion_outcomes(&stdout_text, &args.assertions, selected),
         })
     };
 
@@ -1759,7 +1770,7 @@ Decompiling authenticate
 Execution error: No symbol named: v9
 [decomp]> decompile
 ";
-        let report = super::assertion_outcomes(transcript, &directives);
+        let report = super::assertion_outcomes(transcript, &directives, Some("authenticate"));
         assert_eq!(report[0].status, "applied");
         assert_eq!(report[1].status, "rejected");
         assert_eq!(report[1].detail.as_deref(), Some("No symbol named: v9"));
@@ -1770,7 +1781,8 @@ Execution error: No symbol named: v9
     #[test]
     fn an_unreached_directive_is_rejected_not_assumed_applied() {
         let directives = vec![crate::assertdecl::parse_one("name v2 buf").expect("parses")];
-        let report = super::assertion_outcomes("[decomp]> load file /tmp/a.out\n", &directives);
+        let report =
+            super::assertion_outcomes("[decomp]> load file /tmp/a.out\n", &directives, Some("main"));
         assert_eq!(report[0].status, "rejected");
         assert!(report[0].detail.as_deref().unwrap_or_default().contains("did not reach"));
     }

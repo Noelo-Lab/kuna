@@ -139,6 +139,7 @@ pub fn build_override_pieces(
         // installs a FunctionDefinitionDataType with no var-args flag set).
         first_var_arg_slot: -1,
         output_storage: None,
+        input_storage: Vec::new(),
     }))
 }
 

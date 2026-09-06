@@ -325,6 +325,36 @@ happens to have a `v2`, so qualify it:
 kuna decompile-all ./a.out --json --assert 'name authenticate::v2 credbuf'
 ```
 
+**A qualifier names the function the directive describes, which need not be the
+one being decompiled.** `param` and `return` describe a *signature*, and a
+signature is exactly the thing a caller needs to know about its callee, so
+qualifying one with a callee's name states that callee's prototype and the call
+site renders against it:
+
+```bash
+kuna decompile ./maze.exe sub_402020 \
+  --assert 'param sub_401c50::0 ECX char *maze' \
+  --assert 'param sub_401c50::1 EDX char *moves'
+```
+
+```text
+- v15 = sub_401c50();
++ v13 = sub_401c50((char *)maze,moves);
+```
+
+The declared storage is the storage the argument is read from, which is what
+makes a non-default convention statable at all: `ECX`/`EDX` above is a
+`__fastcall` callee, and the same two directives spelled against stack storage
+render different arguments. Slots may be declared in any order and one you do
+not name is `undefined`; declaring them all is the same statement as a
+`prototype` directive with the storage added.
+
+`comment`, `flow`, `name` and `type` describe the inside of one function body
+and have no cross-function reading, so qualifying one with a function this run
+did not decompile is **rejected** — with a `warning:` line naming it, and a
+non-zero exit under `--assert-strict` — rather than quietly applied to the
+function that was selected.
+
 A range property is painted before the image's symbols are mapped, because
 mapping a symbol folds the property into it and never consults the range again —
 so a range you state is honoured even where the loader already gave the address a

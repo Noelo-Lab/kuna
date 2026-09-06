@@ -367,6 +367,7 @@ impl RemoteProto {
                 -1
             },
             output_storage: None,
+            input_storage: Vec::new(),
         };
         for p in &self.params {
             if let Some(ct) = &p.dtype {

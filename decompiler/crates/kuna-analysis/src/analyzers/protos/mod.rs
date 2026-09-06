@@ -166,6 +166,7 @@ fn build_pieces(
         innames,
         first_var_arg_slot: sig.vararg,
         output_storage: None,
+        input_storage: Vec::new(),
     })
 }
 

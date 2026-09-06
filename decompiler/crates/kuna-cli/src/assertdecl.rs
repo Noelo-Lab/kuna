@@ -68,6 +68,7 @@ pub(crate) enum Slot {
 }
 
 /// One directive rendered for the console script.
+#[derive(Debug)]
 pub(crate) struct ConsoleForm {
     pub(crate) slot: Slot,
     pub(crate) line: String,
@@ -324,9 +325,41 @@ pub(crate) fn parse_one(spec: &str) -> Result<Directive, String> {
     Ok(Directive { raw, body })
 }
 
-/// The console line(s) a directive lowers to, and the script slot they belong
-/// in.  `None` for a directive with no console spelling.
-pub(crate) fn console_form(d: &Directive) -> Option<ConsoleForm> {
+/// The function a directive names, when that is NOT the function this run
+/// selected.  `target` is `None` for an `--addr` run, where the CLI does not
+/// know the selected function's name until the script has run.
+fn names_another(func: &Option<String>, target: Option<&str>) -> Option<String> {
+    let f = func.as_deref()?;
+    match target {
+        Some(t) if t == f => None,
+        _ => Some(f.to_string()),
+    }
+}
+
+/// A qualified directive that cannot bind: it names a function this run did not
+/// decompile, and its kind (a local, a comment, a flow edge) has no meaning
+/// outside the function it belongs to.  Silently applying it to the SELECTED
+/// function instead is what made `--assert 'param callee::0 ECX char *maze'`
+/// rename the caller's parameters
+/// (`docs/re-needs/qualified-parameter-assertions-modify.md`).
+fn unbindable(func: &str) -> String {
+    format!(
+        "names {func}, which this run did not decompile (decompile {func}, or use \
+         a directive that crosses functions: prototype, param, return)"
+    )
+}
+
+/// The console line a directive lowers to, and the script slot it belongs in.
+///
+/// `target` is the function the run selected.  A `param`/`return` qualified with
+/// a DIFFERENT function is a statement about that function's prototype, so it
+/// lowers to the cross-function console spelling and moves to the program slot;
+/// every other qualified directive that names a function this run does not
+/// decompile is rejected rather than applied to the selected one.
+pub(crate) fn console_form(
+    d: &Directive,
+    target: Option<&str>,
+) -> Result<ConsoleForm, String> {
     let (slot, line) = match &d.body {
         Body::Function { start, end, name } => {
             let mut line = format!("function bounds {start:#x}");
@@ -349,24 +382,34 @@ pub(crate) fn console_form(d: &Directive) -> Option<ConsoleForm> {
             (Slot::Program, format!("map prototype {func} {}", semicolon(decl)))
         }
         Body::Data { addr, decl } => (Slot::Program, format!("map address {addr:#x} {decl}")),
-        Body::Param { index, storage, decl, .. } => {
-            (Slot::Function, format!("map param {index} {storage} {decl}"))
-        }
-        Body::Return { storage, decl, .. } => {
-            (Slot::Function, format!("map return {storage} {decl}"))
-        }
-        Body::Comment { addr, text, .. } => {
-            (Slot::Function, format!("comment instruction {addr:#x} {text}"))
-        }
-        Body::Flow { addr, kind, .. } => {
-            (Slot::Function, format!("override flow {addr:#x} {kind}"))
-        }
+        Body::Param { func, index, storage, decl } => match names_another(func, target) {
+            Some(f) => (Slot::Program, format!("map param {f}::{index} {storage} {decl}")),
+            None => (Slot::Function, format!("map param {index} {storage} {decl}")),
+        },
+        Body::Return { func, storage, decl } => match names_another(func, target) {
+            Some(f) => (Slot::Program, format!("map return {f}::{storage} {decl}")),
+            None => (Slot::Function, format!("map return {storage} {decl}")),
+        },
+        Body::Comment { func, addr, text } => match names_another(func, target) {
+            Some(f) => return Err(unbindable(&f)),
+            None => (Slot::Function, format!("comment instruction {addr:#x} {text}")),
+        },
+        Body::Flow { func, addr, kind } => match names_another(func, target) {
+            Some(f) => return Err(unbindable(&f)),
+            None => (Slot::Function, format!("override flow {addr:#x} {kind}")),
+        },
         Body::Readonly { addr, size } => (Slot::Image, format!("readonly {addr:#x} {size}")),
         Body::Volatile { addr, size } => (Slot::Image, format!("volatile {addr:#x} {size}")),
-        Body::Name { symbol, newname, .. } => (Slot::Symbol, format!("rename {symbol} {newname}")),
-        Body::Type { symbol, decl, .. } => (Slot::Symbol, format!("retype {symbol} {decl}")),
+        Body::Name { func, symbol, newname } => match names_another(func, target) {
+            Some(f) => return Err(unbindable(&f)),
+            None => (Slot::Symbol, format!("rename {symbol} {newname}")),
+        },
+        Body::Type { func, symbol, decl } => match names_another(func, target) {
+            Some(f) => return Err(unbindable(&f)),
+            None => (Slot::Symbol, format!("retype {symbol} {decl}")),
+        },
     };
-    Some(ConsoleForm { slot, line })
+    Ok(ConsoleForm { slot, line })
 }
 
 fn semicolon(decl: &str) -> String {
@@ -379,10 +422,10 @@ fn semicolon(decl: &str) -> String {
 }
 
 /// Does any directive need the script's second `decompile`?
-pub(crate) fn needs_second_pass(directives: &[Directive]) -> bool {
+pub(crate) fn needs_second_pass(directives: &[Directive], target: Option<&str>) -> bool {
     directives
         .iter()
-        .filter_map(console_form)
+        .filter_map(|d| console_form(d, target).ok())
         .any(|form| form.slot == Slot::Symbol)
 }
 
@@ -533,7 +576,7 @@ mod tests {
     #[test]
     fn a_prototype_that_renames_the_function_still_names_its_target() {
         let d = one("prototype sub_1400055e0 void * sha256(void *out,void *input)");
-        let form = console_form(&d).expect("has a console form");
+        let form = console_form(&d, Some("sub_1400055e0")).expect("has a console form");
         assert_eq!(
             form.line,
             "map prototype sub_1400055e0 void * sha256(void *out,void *input);"
@@ -545,7 +588,7 @@ mod tests {
     fn directives_lower_to_their_console_commands() {
         let lowered = |spec: &str| {
             let d = one(spec);
-            let f = console_form(&d).expect("has a console form");
+            let f = console_form(&d, Some("authenticate")).expect("has a console form");
             (f.slot, f.line)
         };
         assert_eq!(
@@ -637,14 +680,60 @@ mod tests {
         assert!(!implies_readonly_propagation(&[one("name v2 credbuf")]));
     }
 
+    /// A `param`/`return` qualified with a function OTHER than the selected one
+    /// is a statement about that function's prototype, so it lowers to the
+    /// cross-function console spelling and moves to the program slot.  Before
+    /// this the qualifier was dropped and `param callee::0 ECX char *maze`
+    /// retyped the CALLER
+    /// (`docs/re-needs/qualified-parameter-assertions-modify.md`).
+    #[test]
+    fn a_qualified_param_lowers_against_the_function_it_names() {
+        let d = one("param sub_401c50::0 ECX char *maze");
+        let form = console_form(&d, Some("sub_402020")).expect("has a console form");
+        assert_eq!(form.slot, Slot::Program);
+        assert_eq!(form.line, "map param sub_401c50::0 %ECX char *maze");
+
+        let form = console_form(&d, Some("sub_401c50")).expect("has a console form");
+        assert_eq!(form.slot, Slot::Function);
+        assert_eq!(form.line, "map param 0 %ECX char *maze");
+
+        let d = one("return sub_401c50::EAX int4");
+        let form = console_form(&d, Some("sub_402020")).expect("has a console form");
+        assert_eq!(form.slot, Slot::Program);
+        assert_eq!(form.line, "map return sub_401c50::%EAX int4");
+    }
+
+    /// `comment`, `flow`, `name` and `type` describe the inside of one function
+    /// body, so naming a function this run did not decompile cannot be honoured.
+    /// Rejecting says so; applying it to the SELECTED function silently is the
+    /// bug.
+    #[test]
+    fn a_qualified_body_directive_naming_another_function_is_rejected() {
+        for spec in [
+            "name sub_401c50::v2 credbuf",
+            "type sub_401c50::v2 char[16]",
+            "comment sub_401c50::0x401c60 checks the maze",
+            "flow sub_401c50::0x401c60 return",
+        ] {
+            let d = one(spec);
+            let detail = console_form(&d, Some("sub_402020")).expect_err("does not bind");
+            assert!(detail.contains("sub_401c50"), "{spec}: {detail}");
+            // The same directive against its own function still lowers.
+            assert!(console_form(&d, Some("sub_401c50")).is_ok(), "{spec}");
+        }
+    }
+
     /// The second `decompile` is emitted ONLY for a symbol-scoped directive, so
     /// every other invocation keeps its current cost.
     #[test]
     fn only_a_symbol_scoped_directive_forces_a_second_pass() {
-        assert!(!needs_second_pass(&[one("prototype f int4 f(void)")]));
-        assert!(!needs_second_pass(&[one("param 0 RDI int4 a")]));
-        assert!(needs_second_pass(&[one("name v2 buf")]));
-        assert!(needs_second_pass(&[one("prototype f int4 f(void)"), one("type v2 char[4]")]));
+        assert!(!needs_second_pass(&[one("prototype f int4 f(void)")], Some("f")));
+        assert!(!needs_second_pass(&[one("param 0 RDI int4 a")], Some("f")));
+        assert!(needs_second_pass(&[one("name v2 buf")], Some("f")));
+        assert!(needs_second_pass(
+            &[one("prototype f int4 f(void)"), one("type v2 char[4]")],
+            Some("f"),
+        ));
     }
 
     #[test]
