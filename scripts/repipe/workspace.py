@@ -43,6 +43,7 @@ import json
 import os
 import shutil
 import stat
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -395,7 +396,7 @@ def _task_md(meta: dict, primary_t: str, others: list, extras: list) -> str:
     return "\n".join(lines)
 
 
-_AGENTS_MD = """# Tool protocol for this arena
+_AGENTS_MD_HEAD = """# Tool protocol for this arena
 
 `bin/` is on your PATH and holds the only two tools you should reach for. Call them by bare
 name (`kuna`, `ida-decompile`) -- never by an absolute path to the real binary, because the
@@ -403,23 +404,29 @@ bare name is the shim and the shim is what records the run.
 
 ## kuna -- your primary tool
 
-`kuna --help` lists its nine subcommands: `decompile`, `decompile-all`, `decompile-project`,
-`functions`, `test`, `catalog`, `modes`, `specs`, `fid`. `kuna catalog --json` is the full
-option surface; the repo's `docs/cli.md` and `docs/options.md` document both.
+`kuna --help` lists its {n} subcommands: {subcommands}. `kuna docs` is the embedded manual and
+`kuna catalog --json` the full option surface; the repo's `docs/cli.md` and `docs/options.md`
+document both.
 
-Facts already verified about it, so you do not spend your budget rediscovering them:
+That list is read out of the binary in this arena at build time, so it is the surface you
+actually have. Do NOT assume a subcommand is absent because a previous round said so -- this
+pipeline ships CLI capability every round, and a brief that froze the surface is how a tester
+re-files a gap that was closed two rounds ago. Check `kuna <subcommand> --help` before
+concluding something cannot be done.
 
-- `kuna decompile <bin> <fn> --json` exits 2 with `error: unknown option --json`. Only
-  `functions`, `decompile-all` and `catalog` take `--json`.
-- `kuna functions --json` records carry `name`/`address`/`address_hex`/`aliases` and **no
-  size**; `decompile-all --json` records do carry `size`.
-- On a section-header-stripped PIE ELF, `kuna functions --json` returns
-  `{"count": 0, "functions": []}` with **exit 0 and no error message**. An empty result is not
-  proof of an empty binary.
-- There is no `xrefs`, `strings`, `disassemble`, `rename`, `retype` or server subcommand, no
-  persistence between invocations, and every invocation is a cold load.
+What is structurally true of every invocation, and worth not rediscovering:
 
-## ida-decompile -- the reference, and a last resort
+- There is no server mode and no persistence between invocations. Every call is a cold load of
+  the whole binary, so ten calls pay the load ten times; prefer one `decompile-all` over a loop.
+- kuna reports no timing of its own. If a call felt slow, the number lives in
+  `notes/toolcalls.jsonl` and nowhere else.
+- An empty or successful-looking result is not proof: subcommands can exit 0 with
+  `{{"count": 0}}` on a binary whose functions kuna simply failed to find. Cross-check anything
+  surprising against `ida-decompile` before you believe it -- a wrong answer delivered
+  confidently is the single most valuable thing you can find here.
+"""
+
+_AGENTS_MD_TAIL = """## ida-decompile -- the reference, and a last resort
 
 `ida-decompile` is the declib CLI over IDA Pro. It can do things kuna cannot, and it keeps its
 servers and databases inside this arena.
@@ -449,6 +456,31 @@ Write only inside this directory. `notes/` and `report.json` are yours; `target/
 are inputs -- copy a binary before you patch it. Do not read outside the arena and do not use
 the network.
 """
+
+
+def _agents_md(kuna_bin) -> str:
+    """The tool protocol, with kuna's subcommand list read out of the binary being shipped.
+
+    Frozen prose rots one round after it is written: round 4's arenas still told testers there
+    was no `xrefs`, `strings` or `disassemble` subcommand and that `decompile` rejected
+    `--json`, all four of which had shipped by then. Deriving the list means a brief can only
+    ever be as wrong as the binary in the arena.
+    """
+    names = []
+    try:
+        r = subprocess.run([str(kuna_bin), "--help"], capture_output=True, text=True,
+                           timeout=60)
+        for line in (r.stdout + r.stderr).splitlines():
+            if line.startswith("usage: kuna <") and ">" in line:
+                names = line[line.index("<") + 1:line.index(">")].split("|")
+                break
+    except (OSError, subprocess.SubprocessError):
+        names = []
+    if not names:
+        raise RuntimeError("cannot read kuna's subcommand list from %s --help" % kuna_bin)
+    head = _AGENTS_MD_HEAD.format(n=len(names),
+                                  subcommands=", ".join("`%s`" % n for n in names))
+    return head + _AGENTS_MD_TAIL
 
 
 # --- build ------------------------------------------------------------------
@@ -529,7 +561,7 @@ def build(hexid: str, round_n: int = 0, out=None, force: bool = False) -> Path:
     primary_t = _target_rel(prim_rel)
     others = [c["arena_rel"][len("target/"):] for c in copied_bins[1:]]
     _write(staging / "TASK.md", _task_md(meta, primary_t, others, kept_extras))
-    _write(staging / "AGENTS.md", _AGENTS_MD)
+    _write(staging / "AGENTS.md", _agents_md(config.kuna_bin()))
 
     record = {
         "schema": "repipe/arena/1",
