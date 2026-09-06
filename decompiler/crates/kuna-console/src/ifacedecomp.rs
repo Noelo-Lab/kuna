@@ -961,10 +961,6 @@ macro_rules! decomp_command {
 
 // --- Comments (ifacedecomp.cc:292) -----------------------------------------
 
-fn render_for_arm_isa_preflight<T>(is_arm: bool, render: impl FnOnce() -> T) -> Option<T> {
-    is_arm.then(render)
-}
-
 decomp_command!(
     /// C++ `IfcComment` (`ifacedecomp.cc:292`): a comment line in a script
     /// (`//`/`#`/`%`) — does nothing.  Carries the shared module-data builder.
@@ -2188,22 +2184,7 @@ decomp_command!(
             &proto_overrides,
             prefollowed,
         );
-        let result = match step.result {
-            Ok(fd) => {
-                let is_arm = prog.description().starts_with("ARM");
-                let diagnostic = render_for_arm_isa_preflight(is_arm, || {
-                    print_c(prog.arch_mut(), &fd)
-                })
-                .and_then(|rendered| {
-                    prog.arm_isa_diagnostic_for_output(stamp_addr.get_offset(), &rendered)
-                });
-                match diagnostic {
-                    Some(error) => Err(kuna_base::error::KunaError::lowlevel(error)),
-                    None => Ok(fd),
-                }
-            }
-            Err(error) => Err(error),
-        };
+        let result = step.result;
         if !step.discovered.is_empty() {
             status.out("Re-decompiling with format-string varargs typing\n");
         }

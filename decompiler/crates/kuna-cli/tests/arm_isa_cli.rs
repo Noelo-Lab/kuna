@@ -25,12 +25,33 @@ fn run(command: &str, binary: &str, args: &[&str]) -> Output {
 }
 
 #[test]
-fn arm_mode_probe_preserves_context_for_later_functions() {
-    use kuna_base::address::Address;
-    use kuna_console::engine::bootstrap_from_object_with_isa;
-    use kuna_console::project::decompile_targets;
-    use std::rc::Rc;
+fn arm_return_flow_assertion_preserves_successful_output() {
+    let code: Vec<u8> = [0xe1a04770u32, 0xe1a0300e, 0xe12fff13]
+        .into_iter()
+        .flat_map(u32::to_le_bytes)
+        .collect();
+    let path = common::scratch_file("arm-asserted-return", "elf");
+    std::fs::write(&path, arm_images::elf(&code, &[], &[(0, "entry", 12)])).unwrap();
+    for json in [false, true] {
+        let mut args = vec!["entry", "--assert", "flow 0x10008 return"];
+        if json {
+            args.push("--json");
+        }
+        let output = run("decompile", path.to_str().unwrap(), &args);
+        let text = String::from_utf8(output.stdout).unwrap();
+        assert!(
+            output.status.success(),
+            "{text}\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(text.contains("return;"), "{text}");
+        assert!(!text.contains("mode is ambiguous"), "{text}");
+    }
+    std::fs::remove_file(path).unwrap();
+}
 
+#[test]
+fn arm_decompile_all_preserves_later_function_output() {
     // Thumb: mov lr,pc; bx lr (call); bx lr (return).
     // A32: two ordinary instructions followed by a closed loop.
     let code: Vec<u8> = [
@@ -50,59 +71,27 @@ fn arm_mode_probe_preserves_context_for_later_functions() {
         arm_images::elf(&code, &[], &[(0, "probe", 12), (16, "second", 8)]),
     )
     .unwrap();
-    let load = || {
-        let mut program = bootstrap_from_object_with_isa(
-            path.to_str().unwrap(),
-            "",
-            &[repo_root().join("specs").to_str().unwrap().into()],
-            None,
-        )
-        .unwrap();
-        program.commit_pending_analysis().unwrap();
-        program
-    };
-    let mut alone = load();
-    let entry = alone.find_entry_at(0x10010).unwrap();
-    let expected = decompile_targets(&mut alone, vec![entry], true, false, false);
-    assert!(expected[0].code.as_deref().unwrap().contains("return 7;"));
+    let alone = run("decompile", path.to_str().unwrap(), &["second", "--json"]);
+    assert!(
+        alone.status.success(),
+        "{}",
+        String::from_utf8_lossy(&alone.stderr)
+    );
+    assert!(String::from_utf8_lossy(&alone.stdout).contains("return 7;"));
 
-    for current in [0, 1] {
-        let mut program = load();
-        let space = Rc::clone(program.arch().manage().get_default_code_space().unwrap());
-        program.arch().with_context_db_mut(|db| {
-            db.set_variable_region(
-                b"TMode",
-                &Address::new(Rc::clone(&space), 0x10000),
-                &Address::new(Rc::clone(&space), 0x10010),
-                current,
-            )
-            .unwrap();
-        });
-        let snapshot = |program: &kuna_console::engine::ConsoleProgram| {
-            program.arch().with_context_db_mut(|db| {
-                (0x10000..0x10040)
-                    .map(|vma| {
-                        let addr = Address::new(Rc::clone(&space), vma);
-                        let (values, first, last) = db.get_context_bounds(&addr);
-                        (values.to_vec(), first, last)
-                    })
-                    .collect::<Vec<_>>()
-            })
-        };
-        let before = snapshot(&program);
-        let diagnostic =
-            program.arm_isa_diagnostic_for_output(0x10000, "void probe(void) { return; }");
-        assert_eq!(diagnostic.is_some(), current == 0);
-        assert_eq!(
-            snapshot(&program),
-            before,
-            "probe changed context values or boundaries"
-        );
-        let entry = program.find_entry_at(0x10010).unwrap();
-        let actual = decompile_targets(&mut program, vec![entry], true, false, false);
-        assert_eq!(actual[0].error, expected[0].error);
-        assert_eq!(actual[0].code, expected[0].code);
-    }
+    let together = run(
+        "decompile-all",
+        path.to_str().unwrap(),
+        &["--json", "--assert", "flow 0x10008 return"],
+    );
+    let text = String::from_utf8(together.stdout).unwrap();
+    assert!(
+        together.status.success(),
+        "{text}\n{}",
+        String::from_utf8_lossy(&together.stderr)
+    );
+    assert!(text.contains("return;"), "{text}");
+    assert!(text.contains("return 7;"), "{text}");
     std::fs::remove_file(path).unwrap();
 }
 

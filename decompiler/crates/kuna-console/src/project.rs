@@ -289,35 +289,18 @@ pub fn decompile_targets(
                     (code, variables, proto, provenance.line_mappings)
                 }));
                 match rendered {
-                    Ok((code, variables, proto, line_mappings)) => {
-                        if let Some(error) = prog.arm_isa_diagnostic_for_output(address, &code) {
-                            out.push(FuncResult {
-                                name,
-                                address,
-                                size: 0,
-                                code: None,
-                                error: Some(error),
-                                proto: None,
-                                variables: Vec::new(),
-                                line_mappings: Vec::new(),
-                                aliases,
-                                object_location,
-                            });
-                        } else {
-                            out.push(FuncResult {
-                                name,
-                                address,
-                                size: size as i64,
-                                code: Some(code),
-                                error: None,
-                                proto,
-                                variables,
-                                line_mappings,
-                                aliases,
-                                object_location,
-                            });
-                        }
-                    }
+                    Ok((code, variables, proto, line_mappings)) => out.push(FuncResult {
+                        name,
+                        address,
+                        size: size as i64,
+                        code: Some(code),
+                        error: None,
+                        proto,
+                        variables,
+                        line_mappings,
+                        aliases,
+                        object_location,
+                    }),
                     Err(_) => out.push(FuncResult {
                         name,
                         address,

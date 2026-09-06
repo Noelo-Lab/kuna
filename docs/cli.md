@@ -490,18 +490,17 @@ objects whose machine prefix the generic object parser does not recognize.
 `strings`, and `xrefs`. It controls ARM32's per-address `TMode`
 context, which a language id alone cannot select. `auto` is the default: kuna
 uses ELF mapping/FUNC markers, Cortex-M metadata, and Thumb-specific PE/COFF
-machine values, preserving mixed ARM/Thumb images instead of applying an
-image-wide guess. Explicit `arm` or `thumb` takes precedence over that metadata
+machine values when the resolved decoder is ARM32. These inferred hints preserve
+an explicit non-ARM `--target`; explicit `--isa arm|thumb` still requires ARM32.
+Explicit `arm` or `thumb` takes precedence over that metadata
 during discovery, cross-reference analysis, and graph assembly as well as
 decompilation. On ELF images without section headers, explicit ISA context covers
 executable `PT_LOAD` ranges. Fixed-A32 languages without `TMode` accept `--isa arm`
 without a context paint and reject `--isa thumb` with a target-selection diagnostic.
 Odd ARM function pointers are normalized to their even byte address. With no
-mode evidence, a trivial default decode is not accepted when
-the alternate mode reaches a bounded machine return; the command asks for an
-explicit `--isa` choice. This probe follows direct branches and visits at most
-16 distinct instruction addresses in each mode, in isolated context. Exhausting
-the default-mode budget is inconclusive and preserves the successful output.
+mode evidence, decoding uses the selected language's default context; use `--isa`
+to select another mode. Explicit flow assertions remain authoritative, including
+returns that differ from an instruction's raw flow classification.
 
 **Failure contract (DIV-45).** A function whose decompile pipeline aborts is
 *loud*:

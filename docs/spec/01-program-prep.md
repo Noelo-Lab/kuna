@@ -670,7 +670,10 @@ choice paints `TMode` across mapped CODE sections before decoding. If an ELF has
 no section headers, it uses executable `PT_LOAD` memory extents, including their
 zero-filled tails; non-executable segments and gaps remain unpainted. `auto` uses
 the marker facts above, Cortex-M evidence, and Thumb-specific PE/COFF machine
-values. Explicit input state is retained on the architecture so later Listing
+values only when the resolved SLEIGH decoder is ARM32. Inferred container hints
+therefore preserve an explicit non-ARM decoder selection; explicit `arm` or
+`thumb` still fails for a non-ARM decoder. Explicit input state is retained on
+the architecture so later Listing
 and xref painters cannot replace it with ELF markers or Cortex-M metadata.
 The analysis commit applies input paints after all other passes' context facts.
 Before painting, the console checks whether the loaded ARM language exposes `TMode`.
@@ -678,19 +681,12 @@ Fixed-A32 languages without that variable accept explicit `arm` without any pain
 `thumb` fails with an unsupported-mode diagnostic even if there are no code ranges.
 The generic PE ARM machine is not a whole-image A32 hint because such an
 image may mix ARM and Thumb. ARM entry selectors fold the pointer-mode bit and
-decode at the even byte address. For an unmarked entry whose default-mode C body
-is empty or only `return;`, the console probes at most 16 distinct instruction
-addresses per mode. It follows direct branch targets and conditional
-fallthroughs, ignoring p-code-internal branch offsets as machine destinations;
-visited addresses prevent cycles from consuming an unbounded walk. If the
-default walk finishes without a machine return but the alternate does, the run
-fails with an explicit-ISA diagnostic instead of reporting a successful empty
-function. Budget exhaustion is inconclusive and preserves the
-successful default output. Each mode runs against its own complete context
-snapshot, retaining existing change-point masks and tracked registers. Probe
-writes and SLEIGH `globalset`s are discarded on return or unwind, together with
-their cache changes. Any committed context evidence disables this probe,
-so genuine A32 returns and mixed-image marker regions are never auto-switched.
+decode at the even byte address. Without mode evidence, decoding uses the
+selected language's default context. Successful output, including an empty
+return, is preserved: an alternate raw decode reaching a return does not establish
+that the selected mode is wrong. Explicit flow assertions participate in the
+effective flow followed by decompilation, including asserted returns whose raw
+instruction decodes as an indirect branch.
 
 ## 1.4 Metadata analyzers
 

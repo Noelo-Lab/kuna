@@ -83,44 +83,8 @@ fn explicit_thumb_mode_uses_container_mapping() {
 }
 
 #[test]
-fn unmarked_trivial_decode_requires_explicit_isa() {
-    let source = std::fs::read(fixture()).unwrap();
-    let mut bytes = source.clone();
-    let pe = u32::from_le_bytes(bytes[0x3c..0x40].try_into().unwrap()) as usize;
-    bytes[pe + 4..pe + 6].copy_from_slice(&0x01c0u16.to_le_bytes());
-    let section = pe + 24 + u16::from_le_bytes(bytes[pe + 20..pe + 22].try_into().unwrap()) as usize;
-    bytes[section + 8..section + 12].copy_from_slice(&8u32.to_le_bytes());
-    // Give the A32 probe a closed path, rather than exhausting its budget on padding.
-    bytes[0x204..0x208].copy_from_slice(&0xeafffffeu32.to_le_bytes());
-    let path = common::scratch_file("arm-mode", "exe");
-    std::fs::write(&path, bytes).unwrap();
-    let path_text = path.to_str().unwrap();
-    let trivial = "void sub_401000(void)\n{\n  return;\n}";
-
-    let mut automatic =
-        bootstrap_from_object_with_isa(path_text, "ARM:LE:32:v4t:default", &specs(), None).unwrap();
-    automatic.commit_pending_analysis().unwrap();
-    let diagnostic = automatic
-        .arm_isa_diagnostic_for_output(0x401000, trivial)
-        .expect("alternate Thumb return must make a trivial A32 decode ambiguous");
-    assert!(diagnostic.contains("--isa thumb"));
-
-    let mut explicit_arm = bootstrap_from_object_with_isa(
-        path_text,
-        "ARM:LE:32:v4t:default",
-        &specs(),
-        Some(ArmIsa::Arm),
-    )
-    .unwrap();
-    explicit_arm.commit_pending_analysis().unwrap();
-    assert!(
-        explicit_arm
-            .arm_isa_diagnostic_for_output(0x401000, trivial)
-            .is_none(),
-        "explicit A32 context must suppress automatic switching"
-    );
-
-    let mut arm_bytes = source;
+fn unmarked_a32_return_remains_successful() {
+    let mut arm_bytes = std::fs::read(fixture()).unwrap();
     let pe = u32::from_le_bytes(arm_bytes[0x3c..0x40].try_into().unwrap()) as usize;
     arm_bytes[pe + 4..pe + 6].copy_from_slice(&0x01c0u16.to_le_bytes());
     arm_bytes[pe + 40..pe + 44].copy_from_slice(&0x1000u32.to_le_bytes());
@@ -140,7 +104,6 @@ fn unmarked_trivial_decode_requires_explicit_isa() {
     assert!(result[0].error.is_none(), "genuine A32 return was rejected");
     assert!(result[0].code.as_deref().unwrap().contains("return;"));
 
-    std::fs::remove_file(path).unwrap();
     std::fs::remove_file(arm_path).unwrap();
 }
 
@@ -174,32 +137,5 @@ fn unmarked_a32_branch_to_return_is_not_ambiguous() {
     let results = decompile_targets(&mut program, vec![entry], true, false, false);
     assert!(results[0].error.is_none(), "{:?}", results[0].error);
     assert!(results[0].code.as_deref().unwrap().contains("return;"));
-    std::fs::remove_file(path).unwrap();
-}
-
-#[test]
-fn unmarked_thumb_loop_does_not_reach_the_return_after_it() {
-    let mut bytes = std::fs::read(fixture()).unwrap();
-    let pe = u32::from_le_bytes(bytes[0x3c..0x40].try_into().unwrap()) as usize;
-    bytes[pe + 4..pe + 6].copy_from_slice(&0x01c0u16.to_le_bytes());
-    bytes[0x200..0x204].copy_from_slice(&[0xfe, 0xe7, 0x70, 0x47]); // b .; bx lr
-    let section = pe + 24 + u16::from_le_bytes(bytes[pe + 20..pe + 22].try_into().unwrap()) as usize;
-    bytes[section + 8..section + 12].copy_from_slice(&8u32.to_le_bytes());
-    bytes[0x204..0x208].copy_from_slice(&0xeafffffeu32.to_le_bytes());
-    let path = common::scratch_file("thumb-loop", "exe");
-    std::fs::write(&path, bytes).unwrap();
-    let mut program = bootstrap_from_object_with_isa(
-        path.to_str().unwrap(),
-        "ARM:LE:32:v4t:default",
-        &specs(),
-        None,
-    )
-    .unwrap();
-    program.commit_pending_analysis().unwrap();
-    assert!(
-        program
-            .arm_isa_diagnostic_for_output(0x401000, "void f(void) { return; }")
-            .is_none()
-    );
     std::fs::remove_file(path).unwrap();
 }

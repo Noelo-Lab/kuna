@@ -1752,31 +1752,6 @@ impl Sleigh {
         f(&mut **db)
     }
 
-    /// Decode against a private context snapshot, restoring the original
-    /// database and cache even if the closure unwinds. SLEIGH globalsets remain
-    /// visible within the closure but cannot affect later analysis.
-    pub fn with_temporary_context<R>(&self, f: impl FnOnce() -> R) -> R {
-        struct Restore<'a> {
-            engine: &'a Sleigh,
-            database: Box<dyn ContextDatabase>,
-            cache: ContextCache,
-        }
-        impl Drop for Restore<'_> {
-            fn drop(&mut self) {
-                std::mem::swap(&mut *self.engine.context_db.borrow_mut(), &mut self.database);
-                std::mem::swap(&mut *self.engine.cache.borrow_mut(), &mut self.cache);
-            }
-        }
-        let snapshot = self.context_db.borrow().snapshot();
-        let cache = self.cache.borrow().clone();
-        let _restore = Restore {
-            engine: self,
-            database: self.context_db.replace(snapshot),
-            cache,
-        };
-        f()
-    }
-
     /// Resolve a register by name to its [`VarnodeData`] storage (C++
     /// `Translate::getRegister(name)`).  Used by `set track` to record the tracked
     /// register's location.

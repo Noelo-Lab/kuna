@@ -19,8 +19,8 @@ they are hosted, ordered, configured, and restarted.
 The object-file bootstrap records an explicit ARM/Thumb input selection in
 `Architecture::input_arm_isa_override`. This is an input fact, separate from
 analysis options: metadata painters preserve it when discovery or graph/xref
-commands revisit the code. The context precedence and bounded ambiguity probe
-are described in chapter 01, §1.3.
+commands revisit the code. Context precedence and decoder selection are
+described in chapter 01, §1.3.
 
 ## 0.1 The two tiers
 

@@ -327,8 +327,6 @@ pub struct ConsoleProgram {
     /// the decompile loop, because the drive rebuilds the `Funcdata` and the
     /// symbol-table prototype link does not survive that rebuild.
     pending_prototypes: BTreeMap<String, kuna_decomp::fspec::PrototypePieces>,
-    /// Committed ARM decode-mode evidence used by the no-evidence safety check.
-    arm_context_evidence: Vec<kuna_analysis::pass::ContextPaint>,
 }
 
 impl ConsoleProgram {
@@ -993,115 +991,6 @@ impl ConsoleProgram {
         self.arch().translate().print_assembly_into(&addr, mnem, body)
     }
 
-    /// Diagnose a no-evidence ARM decode that prints only an empty return while
-    /// the alternate instruction set reaches a bounded machine return.
-    pub fn arm_isa_diagnostic_for_output(&mut self, vma: u64, code: &str) -> Option<String> {
-        if !self.description.starts_with("ARM") {
-            return None;
-        }
-        let body = code.split_once('{')?.1.rsplit_once('}')?.0;
-        let body: String = body
-            .lines()
-            .map(str::trim)
-            .filter(|line| !line.is_empty() && !line.starts_with("//"))
-            .collect();
-        if !matches!(body.as_str(), "" | "return;") {
-            return None;
-        }
-
-        let vma = self.thumb_normalized(vma);
-        if self.arm_context_evidenced(vma) {
-            return None;
-        }
-        let code_space = Rc::clone(self.arch().manage().get_default_code_space()?);
-        let entry = Address::new(code_space, vma);
-        let current = self
-            .arch()
-            .with_context_db_mut(|db| db.get_variable_value(b"TMode", &entry))
-            .ok()?;
-        let sleigh = self.arch().translate().as_sleigh()?;
-        if sleigh.with_temporary_context(|| self.bounded_machine_return(vma)) != Some(false) {
-            return None;
-        }
-
-        let alternate = u32::from(current == 0);
-        let alternate_returns = sleigh.with_temporary_context(|| {
-            sleigh.with_context_db_mut(|db| db.set_variable(b"TMode", &entry, alternate)).ok()?;
-            self.bounded_machine_return(vma)
-        });
-        if alternate_returns != Some(true) {
-            return None;
-        }
-
-        let alternate = if alternate == 0 { "arm" } else { "thumb" };
-        Some(format!(
-            "ARM instruction-set mode is ambiguous at 0x{vma:x}: the default decode is trivial, \
-             while --isa {alternate} reaches a bounded return; select --isa arm or --isa thumb"
-        ))
-    }
-
-    fn arm_context_evidenced(&self, vma: u64) -> bool {
-        self.arm_context_evidence.iter().any(|paint| {
-            paint.var == "TMode"
-                && paint.addr <= vma
-                && paint.end.is_none_or(|end| vma < end)
-        })
-    }
-
-    /// None means the walk exhausted its budget and cannot rule out a return.
-    fn bounded_machine_return(&self, vma: u64) -> Option<bool> {
-        let space = self.arch().manage().get_default_code_space()?;
-        let mut emit = OneShotPcodeEmit::default();
-        let mut pending = vec![vma];
-        let mut visited = std::collections::BTreeSet::new();
-        while let Some(vma) = pending.pop() {
-            if visited.contains(&vma) {
-                continue;
-            }
-            if visited.len() == 16 {
-                return None;
-            }
-            visited.insert(vma);
-            emit.ops.clear();
-            let addr = Address::new(Rc::clone(space), vma);
-            let decoded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                self.arch().translate().one_instruction(&mut emit, &addr)
-            }));
-            let Ok(Ok(length)) = decoded else {
-                continue;
-            };
-            if length <= 0 {
-                continue;
-            }
-            if emit.ops.iter().any(|(opc, _)| *opc == OpCode::CPUI_RETURN) {
-                return Some(true);
-            }
-            let mut fallthrough = true;
-            for (opc, input) in &emit.ops {
-                match opc {
-                    OpCode::CPUI_BRANCH | OpCode::CPUI_CBRANCH => {
-                        if let Some(target) = input.as_ref().filter(|input| {
-                            input.space.as_ref().is_some_and(|s| s.get_index() == space.get_index())
-                        }) {
-                            pending.push(target.offset);
-                            if *opc == OpCode::CPUI_BRANCH {
-                                fallthrough = false;
-                            }
-                        }
-                    }
-                    OpCode::CPUI_BRANCHIND => fallthrough = false,
-                    _ => {}
-                }
-            }
-            if fallthrough {
-                if let Some(next) = vma.checked_add(length as u64) {
-                    pending.push(next);
-                }
-            }
-        }
-        Some(false)
-    }
-
     /// (kuna) The `kuna_wasm` per-function `kind` classification probe: lift
     /// the single instruction at code-space VMA `vma` to p-code (a one-shot
     /// [`PcodeEmit`](kuna_sleigh::translate::PcodeEmit) sink against the
@@ -1663,13 +1552,6 @@ impl ConsoleProgram {
             &fde_bodies,
         );
         merged.context_paints.extend(input_context_paints);
-        self.arm_context_evidence.extend(
-            merged
-                .context_paints
-                .iter()
-                .copied()
-                .filter(|paint| paint.var == "TMode"),
-        );
         commit_analysis_output(self, &code_space, merged)
     }
 }
@@ -2138,7 +2020,6 @@ pub fn bootstrap_program(
         assertions: Vec::new(),
         assertion_outcomes: Vec::new(),
         pending_prototypes: BTreeMap::new(),
-        arm_context_evidence: Vec::new(),
     };
     // C++ `conf->readLoaderSymbols("::")` (testfunction.cc:160 / consolemain.cc:104):
     // install the binaryimage symbols as FunctionSymbols so a CALL to one resolves
@@ -2308,16 +2189,6 @@ pub fn bootstrap_from_object_with_isa(
         eprintln!("[kuna] {note}");
     }
     let explicit_isa = isa.is_some();
-    let isa = isa.or_else(|| {
-        let file = kuna_analysis::loadimage_object::parse_object(&*bytes).ok()?;
-        kuna_analysis::loadimage_object::arm_isa_hint(&file, &bytes).map(|thumb| {
-            if thumb {
-                ArmIsa::Thumb
-            } else {
-                ArmIsa::Arm
-            }
-        })
-    });
     // LoadImageBfd(filename) + open(): parse the ELF (machine, segments, symbols).
     let mut loader = if target.trim().is_empty() {
         ObjectLoadImage::from_bytes(path, &bytes)?
@@ -2386,6 +2257,20 @@ pub fn bootstrap_from_object_with_isa(
     );
     loader.attach_to_space(Rc::clone(&code_space));
 
+    let isa = isa.or_else(|| {
+        let language = sleigh.arch_id();
+        if !language.starts_with("ARM:") || language.split(':').nth(2) != Some("32") {
+            return None;
+        }
+        let file = kuna_analysis::loadimage_object::parse_object(&*bytes).ok()?;
+        kuna_analysis::loadimage_object::arm_isa_hint(&file, &bytes).map(|thumb| {
+            if thumb {
+                ArmIsa::Thumb
+            } else {
+                ArmIsa::Arm
+            }
+        })
+    });
     let input_context_paints =
         input_isa_paints(&loader, sleigh.base().unwrap(), sleigh.arch_id(), isa)?;
     sleigh.base_mut().unwrap().input_arm_isa_override = explicit_isa;
@@ -2536,7 +2421,6 @@ pub fn bootstrap_from_object_with_isa(
         assertions: Vec::new(),
         assertion_outcomes: Vec::new(),
         pending_prototypes: BTreeMap::new(),
-        arm_context_evidence: Vec::new(),
     };
     // conf->readLoaderSymbols("::"): install the ELF symbols as FunctionSymbols.
     // The deferred analysis commit at `read symbols` REQUIRES this to have run

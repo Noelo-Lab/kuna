@@ -37,6 +37,48 @@ fn successful(output: Output) -> String {
 }
 
 #[test]
+fn inferred_thumb_metadata_preserves_explicit_x86_decoder() {
+    let source = std::fs::read(
+        repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/armv4t_thumb_pe.exe"),
+    )
+    .unwrap();
+    let path = common::scratch_file("pe-decoder-override", "exe");
+    for machine in [0x01c2u16, 0x01c4] {
+        let mut bytes = source.clone();
+        let pe = u32::from_le_bytes(bytes[0x3c..0x40].try_into().unwrap()) as usize;
+        let section =
+            pe + 24 + u16::from_le_bytes(bytes[pe + 20..pe + 22].try_into().unwrap()) as usize;
+        bytes[pe + 4..pe + 6].copy_from_slice(&machine.to_le_bytes());
+        bytes[pe + 40..pe + 44].copy_from_slice(&0x1000u32.to_le_bytes());
+        bytes[section + 8..section + 12].copy_from_slice(&6u32.to_le_bytes());
+        bytes[0x200..0x206].copy_from_slice(&[0xb8, 7, 0, 0, 0, 0xc3]);
+        std::fs::write(&path, bytes).unwrap();
+        for json in [false, true] {
+            let mut args = vec!["0x401000", "--target", "x86:LE:32:default:gcc"];
+            if json {
+                args.push("--json");
+            }
+            let text = successful(run("decompile", &path, &args));
+            assert!(text.contains("return 7;"), "{text}");
+        }
+        for isa in ["arm", "thumb"] {
+            let output = run(
+                "functions",
+                &path,
+                &["--target", "x86:LE:32:default:gcc", "--isa", isa],
+            );
+            assert!(!output.status.success());
+            let error = String::from_utf8(output.stderr).unwrap();
+            assert!(
+                error.contains("requires a 32-bit ARM SLEIGH target"),
+                "{error}"
+            );
+        }
+    }
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
 fn elf32_accepts_16_bit_x86_decoder() {
     // .code16: mov ax,7; ret, carried in an ELF32 executable.
     let mut bytes = arm_images::elf(&[0xb8, 0x07, 0x00, 0xc3], &[], &[(0, "entry", 4)]);
