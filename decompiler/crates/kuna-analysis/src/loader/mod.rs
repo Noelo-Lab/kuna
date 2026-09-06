@@ -35,6 +35,9 @@ pub mod elf_plt;
 // (kuna) ELF section-table tolerance: an image whose section headers are
 // unreadable still has program headers describing every loadable byte.
 pub mod elf_shdr;
+// (kuna) PE data-directory tolerance: a `NumberOfRvaAndSizes` larger than its own
+// optional header is clamped to the directories that are really present.
+pub mod pe_datadirs;
 // (kuna) ET_REL relocatable-object (`.o`) load-layout + relocation engine.
 pub mod reloc_object;
 // Architecture-aware ELF instruction/data relocation encoders used by the

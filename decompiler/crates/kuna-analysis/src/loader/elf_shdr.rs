@@ -20,7 +20,9 @@
 
 use object::read::Object;
 
-/// Read an image file with [`tolerate_unusable_section_table`] applied, so a
+/// Read an image file with the loader's header-tolerance repairs applied --
+/// [`tolerate_unusable_section_table`] for ELF and
+/// [`super::pe_datadirs::tolerate_oversized_data_directories`] for PE -- so a
 /// surface that parses the bytes itself sees the same recovered view the loader
 /// does instead of rejecting the file outright.
 ///
@@ -29,7 +31,8 @@ use object::read::Object;
 /// once for the whole run.
 pub fn read_image(path: &str) -> std::io::Result<Vec<u8>> {
     let bytes = std::fs::read(path)?;
-    Ok(tolerate_unusable_section_table(bytes).0)
+    let bytes = tolerate_unusable_section_table(bytes).0;
+    Ok(super::pe_datadirs::tolerate_oversized_data_directories(bytes).0)
 }
 
 /// ELF header field offsets, by class. `object` reads these through typed

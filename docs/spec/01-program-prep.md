@@ -139,6 +139,26 @@ that parse the image themselves rather than through the loader (`strings`, `xref
 `decompile-graph`, the call graph) read it through the same normalization
 (`elf_shdr (read_image)`), so a recovered image is recovered everywhere.
 
+(kuna) **A PE data-directory count larger than its own header is clamped, not
+fatal** (`decompiler/crates/kuna-analysis/src/loader/pe_datadirs.rs
+(tolerate_oversized_data_directories)`). A PE's optional header ends with an array
+of `IMAGE_DATA_DIRECTORY` entries whose length is declared separately, by
+`NumberOfRvaAndSizes`, and the two can disagree: `SizeOfOptionalHeader` bounds how
+many entries are physically there. Windows trusts the bound and reads
+`min(declared, what fits)`; `object` slices exactly the declared count inside
+`ImageNtHeaders::parse`, so one oversized `u32` rejected the whole image with
+"Invalid PE number of RVA and sizes" before a byte of code was mapped — the shape
+a packer produces by overwriting the field (a reported Invius-packed image
+declared 1531532893 in a 224-byte optional header holding the 16 real
+directories). The count is therefore clamped to what the header holds at the same
+canonical read point as the section-table repair, so the imports are read from the
+real table rather than fabricated, and a count that already fits is passed on byte
+for byte with no parse performed. Unlike the section-table repair, the clamp is
+kept even when the rewritten copy still does not parse: a count larger than its own
+header is wrong however the rest of the file reads, so keeping it lets the caller
+report whatever is actually unreadable instead of a header count that was never
+the whole story.
+
 **Character sanitizing** (`symbolnamechars`, `off|safe|ident`, default `safe`;
 `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_symbolnamechars.rs`) is the
 last step of that name reduction, and it is the only one that treats the name as

@@ -1,0 +1,80 @@
+{
+  "opportunity": "repipe:5ab77f5c33c5d40ad448c67e::pe-data-directory-count",
+  "need_id": "pe-data-directory-count",
+  "track": "tooling",
+  "round": 4,
+  "test_name": "repipe round 4, challenge 5ab77f5c33c5d40ad448c67e",
+  "binary": "kuna-re-dataset/challenges/5ab77f5c33c5d40ad448c67e/bin/bustme.zip.__x/bustme1.exe",
+  "selector": null,
+  "func_addr": "0x40908e",
+  "option": null,
+  "flag": null,
+  "element_id": null,
+  "change_kind": "correctness-fix",
+  "source_decompiler": "kuna",
+  "inspiration": "repipe round 4 need pe-data-directory-count; the shape already exists one format over, in loader/elf_shdr.rs -- object validates a header field eagerly, so repair the field in a copy of the bytes and hand that copy downstream",
+  "default_on": true,
+  "div": null,
+  "scope": "small",
+  "files": [
+    "decompiler/crates/kuna-analysis/src/loader/pe_datadirs.rs",
+    "decompiler/crates/kuna-analysis/src/loader/pe_datadirs/tests.rs",
+    "decompiler/crates/kuna-analysis/src/loader/mod.rs",
+    "decompiler/crates/kuna-analysis/src/loader/elf_shdr.rs",
+    "decompiler/crates/kuna-console/src/engine.rs",
+    "decompiler/crates/kuna-analysis/tests/fixtures/pe_datadircount_i386.exe",
+    "decompiler/crates/kuna-analysis/tests/fixtures/pe_datadircount_i386.py",
+    "tests/cli/pe-data-directory-count.json",
+    "docs/spec/01-program-prep.md",
+    "docs/cli.md",
+    "docs/re-needs/pe-data-directory-count.md"
+  ],
+  "decisions": [
+    "The refuter's hypothesis is UPHELD and its mechanism was exact: object-0.39.1 read/pe/data_directory.rs:30, reached eagerly from ImageNtHeaders::parse, slices exactly NumberOfRvaAndSizes entries out of the optional header, so no 'do not ask for the directories' path exists and every PE surface dies at File::parse.",
+    "Clamp to min(declared, (SizeOfOptionalHeader - 96 for PE32 / 112 for PE32+) / 8), not to a hard 16 -- what Windows does. On the witness that recovers the 16 genuine directory slots that are physically present (optsize 224 = 96 + 16*8), so the imports come from the real table (GetProcAddress/LoadLibraryA resolve) rather than a fabricated one.",
+    "The repair rides elf_shdr::read_image and console engine::bootstrap_from_object, the two points the ELF section-table repair already normalizes at, so every surface is covered without touching decompile_all.rs (held by a sibling builder this round).",
+    "Departure from the ELF sibling: the clamp is KEPT when the rewritten copy still does not parse, where tolerate_unusable_section_table discards itself. A count larger than its own optional header is unambiguously wrong however the rest of the file reads, so keeping it lets the caller report the error that is actually left instead of a header count that was never the whole story. Covered by an explicit unit test."
+  ],
+  "parity": "OK",
+  "gates": {
+    "make test": "PARITY OK 675/675",
+    "make test-stages": "PARITY OK 640/640",
+    "make check-spec": "OK (lenient and --strict)",
+    "kuna catalog --check": "catalog OK",
+    "make test-cli": "47/47",
+    "make rust-test": "green with `env -u KUNA_DECOMP_TEST`: 361 test binaries ok and exactly one failure, verify_w10_proto_unlock::w10_proto_unlock_const_return_collapses_no_tied_roundtrip with `oracle promote_compare signature drifted` -- the repipe launcher pointing KUNA_DECOMP_TEST at kuna's own decomp_test_dbg (the C++ oracle is gone, so CI skips that block). That target passes 4/4 on its own with the variable unset, and this change touches no kuna-decomp file."
+  },
+  "probe_flip": {
+    "probe_still_passes": false,
+    "acceptance_passes": true,
+    "acceptance_functions_before": 0,
+    "acceptance_functions_after": 54
+  },
+  "promoted_probe": {
+    "path": "tests/cli/pe-data-directory-count.json",
+    "retargeted_from": "dataset bin/bustme.zip.__x/bustme1.exe (Invius-packed PE32, NumberOfRvaAndSizes 1531532893 at file offset 0xf4)",
+    "retargeted_to": "decompiler/crates/kuna-analysis/tests/fixtures/pe_datadircount_i386.exe (1024-byte PE32 twin, same trashed count, same 224-byte optional header, two functions)",
+    "why": "CI has no dataset; the vendored twin carries the identical defect in the identical shape and exits 1 with the identical 'Invalid PE number of RVA and sizes' on the unpatched build",
+    "verified_on_witness": "the acceptance also passes on the dataset original: kuna functions bustme1.exe --json goes from exit 1 to count 54 with GetProcAddress/LoadLibraryA named, and kuna decompile --addr 0x40908e emits the entry stub"
+  },
+  "sweep": {
+    "method": "replicated the clamp arithmetic over every MZ/PE image in reach and diffed which ones would be rewritten",
+    "repo_pe_images_scanned": 17,
+    "repo_pe_images_clamped": 1,
+    "repo_pe_images_clamped_detail": "only the new fixture; no existing fixture's bytes change",
+    "dataset_pe_images_scanned": 163,
+    "dataset_pe_images_clamped": 3,
+    "dataset_pe_images_clamped_detail": "bustme1.exe (the witness, 0 -> 54 functions), HyperUnpackMe2 Notepad.exe (0 -> 6), bm3.exe (0 -> 56) -- all three were previously unloadable on every surface; the other 160 are byte-identical",
+    "can_change_a_loading_image": false,
+    "why_not": "the clamp fires only where declared > what the optional header holds, which is exactly the condition on which object::File::parse rejects the image today"
+  },
+  "speed_method": "A/B by binary (unpatched main-tree kuna at the same base commit vs this build), warmup discarded, 11 repeats, median and min reported; a sibling builder's workspace suite shared the box, so treat both as upper bounds",
+  "speed_target": "kuna functions <240 KB healthy PE32, selam.exe> --json",
+  "speed_off_ms": 784.9,
+  "speed_on_ms": 781.6,
+  "speed_delta_pct": -0.43,
+  "speed_samples": 11,
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": true,
+  "speed_note": "the added work on an image that loads today is a handful of header reads (DOS magic, e_lfanew, SizeOfOptionalHeader, the optional-header magic and one u32) and then an early return; nothing is copied and nothing is parsed."
+}

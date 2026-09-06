@@ -2070,6 +2070,18 @@ pub fn bootstrap_from_object(
     if let Some(note) = shdr_note {
         eprintln!("[kuna] {note}");
     }
+    // (kuna) PE data-directory tolerance: the same normalization one format over.
+    // A PE's `NumberOfRvaAndSizes` is declared separately from the room its own
+    // optional header gives the directory array, and packers overwrite it; Windows
+    // reads whatever fits, `object` insists on the declared count and rejects the
+    // image before any code is mapped. Clamping here (and only here) keeps the
+    // loader and the analysis passes on the same recovered view, and reads the
+    // imports from the real table rather than fabricating one.
+    let (bytes, datadir_note) =
+        kuna_analysis::loader::pe_datadirs::tolerate_oversized_data_directories(bytes);
+    if let Some(note) = datadir_note {
+        eprintln!("[kuna] {note}");
+    }
     // LoadImageBfd(filename) + open(): parse the ELF (machine, segments, symbols).
     let mut loader = ObjectLoadImage::from_bytes(path, &bytes)?;
 

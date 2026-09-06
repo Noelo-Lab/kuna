@@ -39,6 +39,21 @@ Discovery then works from the executable `PT_LOAD` segments, so `functions`,
 but its load segments are a decompressor stub, and the zero-discovery diagnostic
 pointing at `kuna unpack` is the more useful answer.
 
+A PE whose **data-directory count does not fit its own optional header** is loaded
+anyway, from the directories that are really there. `NumberOfRvaAndSizes` is
+declared separately from the room `SizeOfOptionalHeader` leaves for the array;
+Windows reads whichever is smaller, and packers overwrite the field, so a count of
+1531532893 in a header holding 16 directories used to exit `1` with `not in
+recognized object file format: Invalid PE number of RVA and sizes` before any code
+was mapped. The count is clamped to what fits — the real import table, not a
+fabricated one — and the run continues, printing one line on stderr:
+
+```
+$ kuna functions ./packed.exe --json
+[kuna] PE NumberOfRvaAndSizes is 1531532893, but only 16 data directories fit in a
+224-byte optional header; clamped to 16 (entry 0x40908e, 8 section(s))
+```
+
 ## `kuna test` — the parity gates
 
 ```bash

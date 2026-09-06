@@ -1,0 +1,43 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "functions",
+    "{{BIN}}",
+    "--json"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/pe_datadircount_i386.exe",
+    "binary_sha256": "a7bd3c04b1159dfc6d31a8426d26d1c6649b23b080f0c3845770313f25a51e9f",
+    "binary_size": 1024,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/pe_datadircount_i386.exe",
+    "selector": null,
+    "selector_kind": "none"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "json": [
+      {
+        "path": "count",
+        "op": "gt",
+        "value": 0
+      }
+    ],
+    "stderr_absent": [
+      "not in recognized object file format"
+    ]
+  },
+  "notes": "Vendored twin of the reported image: a 1024-byte PE32 carrying the reported NumberOfRvaAndSizes verbatim (1531532893) in a 224-byte optional header that holds the 16 real directories, over two functions. The dataset original stays the witness in Reproduction; this target is in-repo so the probe promotes into tests/cli/ and runs where there is no dataset."
+}
