@@ -2259,6 +2259,52 @@ the filing crackme — of which an independent capstone-plus-symtab oracle
 corroborates 2,234 and 761 as real PC-relative pool loads, with every one of the
 remainder confirmed by hand as a load the oracle's own sweep missed.
 
+(kuna) Literal-pool following assumes the pool holds a *pointer*, and in a
+position-independent ARM image it holds no pointer at all. There the pool word is
+the signed distance from the instruction that consumes it to the datum, and the
+address exists only once the two are put together: `ldr r0,[0x6a0]` at 0x660 and
+`add r0,pc,r0` at 0x664 form 0x66c + (-0x1c1) = 0x4ab, the success string of the
+filing crackme. The word is not an address and lands in no section, so following
+it as a pointer correctly declines, and every string reference in the function is
+lost — the reported `xrefs_count: 0` and empty owner list were not one site but
+all four the function makes. **PIC pool composition**
+(`decompiler/crates/kuna-analysis/src/listing/kuna_picpool.rs`) closes that by
+composing the two decode-time constants the pair already carries. It is PIC base
+folding with a per-site base rather than a module-wide one: there the base is a
+register a prologue establishes once and the whole function inherits, so there is
+something to detect and to scope; here each reference carries its own base — the
+PC of its own `add` — so there is nothing to detect once, and what the walk
+carries instead is the pool word itself, from the load to whatever composes it.
+
+A pool word is admitted as a *displacement* only where it comes out of the same
+read-only, pointer-sized, pointer-aligned slot literal-pool following already
+vouches for **and** literal-pool following declined it, so the two rules never
+claim one word: a value that is already a mapped address is a pointer, not a
+displacement. It is then carried forward along fall-through alone, for a bounded
+run of instructions, and dropped at the first write of its register and at any
+branch, call or return — the walk is breadth-first, so the values are keyed by
+the address they reach rather than held as "the previous instruction's state",
+which is what makes the carry independent of the order the queue happens to visit
+a function in. The composition itself is a one-instruction constant fold over
+`COPY`/`INT_ADD`/`INT_SUB` and nothing else, and it reports a value only when
+**both** a pool word and a constant the instruction materialised from its own
+address contributed to it. That second taint is the whole guard: `add r0,r0,#4`
+on the same word can land on a real literal, and only the missing PC separates it
+from a reference. A value that stays in a temporary is not reported, for the same
+reason PIC base folding does not report one — the GOT idiom `ldr r1,[pool]; ldr
+r1,[pc,r1]` composes its slot address into a temporary and dereferences it, and
+the slot is not what the instruction formed.
+
+The `checkOperands` address floor is deliberately not applied to the composed
+value. That floor asks whether an *immediate* is an address or an integer; here
+the PC has already settled the question, and the filing image is an Android PIE
+whose whole layout lives under 0x2828 — applying the floor there would discard
+every reference in the program. Landing in a mapped section is the whole test the
+result has to pass. Measured over a 417-image sweep of the crackme corpus, the
+vendored fixtures and a set of host binaries: no edge is added on any x86-64 or
+PE image (a RIP-relative load already encodes the address it forms), no
+attribution is lost anywhere, and the composed edges are all on ARM images.
+
 (kuna) Every rule above widens what the walk reads out of an instruction it
 reached; the complementary defect is the instructions it never reaches at all.
 The descent's successors are `classify`'s static targets plus fall-through, and a

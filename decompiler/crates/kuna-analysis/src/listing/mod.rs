@@ -26,6 +26,7 @@ pub mod context;
 pub mod decode;
 pub mod kuna_tailcallentry;
 mod kuna_picbase;
+mod kuna_picpool;
 mod kuna_poolref;
 mod kuna_ppclocalentry;
 mod kuna_switchtable;

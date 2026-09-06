@@ -76,6 +76,7 @@ use object::SectionKind;
 use super::classify::classify;
 use super::context::ContextPainter;
 use super::kuna_picbase::{self, Ctx as PicCtx, PicBase};
+use super::kuna_picpool::PicPool;
 use super::kuna_poolref::PoolImage;
 use super::kuna_switchtable;
 use super::model::{FlowKind, RawOp};
@@ -578,6 +579,10 @@ pub fn build_with_focus(
         // body before any of it can be attributed (`kuna_picbase::scope`), and
         // buffering it costs nothing on the overwhelmingly common `None` path.
         let mut body: Vec<kuna_picbase::BaseCandidate> = Vec::new();
+        // (kuna) `picpool`: the pool words this body is carrying towards the
+        // `add` that turns each into an address. Per function, because the values
+        // it tracks are live only inside one straight-line run.
+        let mut picpool = PicPool::default();
         while let Some(vma) = insn_queue.pop_front() {
             if st.decoded.contains(&vma) {
                 continue; // already decoded (the VisitStat dedup)
@@ -613,9 +618,23 @@ pub fn build_with_focus(
                 let fall_through = vma.wrapping_add(len as u64);
                 data_refs(cap.ops(), data_space.as_ref(), &mapped, fall_through, pool.as_ref())
             };
+            // (kuna) `picpool`: the address a PC-relative literal-pool pair forms,
+            // which is in neither of its two instructions on its own. See
+            // [`super::kuna_picpool`].
+            let picrefs = match pool.as_ref() {
+                Some(p) => picpool.step(
+                    vma,
+                    len,
+                    cap.ops(),
+                    p,
+                    &mapped,
+                    data_space.as_ref(),
+                ),
+                None => Vec::new(),
+            };
             // Every row this instruction produces carries the same render, and an
             // instruction that produces none needs no render at all.
-            let text = if c.flows.is_empty() && drefs.is_empty() {
+            let text = if c.flows.is_empty() && drefs.is_empty() && picrefs.is_empty() {
                 String::new()
             } else {
                 assembly(translate, vma, &code_space)
@@ -662,6 +681,9 @@ pub fn build_with_focus(
 
             for &(to, kind) in &drefs {
                 st.file(vma, to, kind, &text);
+            }
+            for &to in &picrefs {
+                st.file(vma, to, XrefKind::Data, &text);
             }
             // Both halves the deferred base-relative pass needs are pure
             // functions of this instruction's ops, so they are computed here
