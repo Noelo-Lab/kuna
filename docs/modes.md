@@ -141,11 +141,14 @@ All four therefore stay manual per-run opt-ins (`--option v850indirectbranch on`
 even under `--mode aggressive`; a named `--option` still wins over the preset by
 last-write precedence.
 
-Separately, three default-off options are **unevaluated** rather than excluded —
-`guardarm`, `loopcondhoist` and `paramcopyhoist`. They are absent from the preset
-only because nobody has run their sweep and speed measurement yet, and each is
-tracked in the `UNEVALUATED` list beside the invariant test. Being on that list is
-a to-do, not a verdict: DIV-93 emptied the four ARM entry options off it.
+Separately, five default-off options are **unevaluated** rather than excluded —
+`guardarm`, `loopcondhoist`, `paramcopyhoist`, `switchselector` and
+`msvcstackguard`. They are absent from the preset only because the sweep and
+speed measurement that would justify preset membership has not been run (for
+`msvcstackguard`, because no corpus here carries a real MSVC `/GS` cookie to run
+it against), and each is tracked in the `UNEVALUATED` list beside the invariant
+test. Being on that list is a to-do, not a verdict: DIV-93 emptied the four ARM
+entry options off it.
 
 ### Caveats
 

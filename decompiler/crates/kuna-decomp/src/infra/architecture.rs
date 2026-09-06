@@ -788,6 +788,11 @@ pub struct Architecture {
     /// (kuna) Strip the glibc -fstack-protector canary epilogue
     /// (C++ `strip_stack_guard`).
     pub strip_stack_guard: bool,
+    /// (kuna) Strip the MSVC `/GS` frame-cookie boilerplate -- the entry-side
+    /// `cookie ^ SP` scramble and the epilogue `__security_check_cookie((cookie
+    /// ^ SP) ^ SP)` call (option `msvcstackguard`, default-off).  The sibling of
+    /// `strip_stack_guard` for the Windows shape, which has no CBRANCH to match.
+    pub strip_msvc_stack_guard: bool,
     /// (kuna) Strip rustc's bounds / slice / divide-by-zero panic branches --
     /// the `core::panicking::*` / `core::slice::index::*` / `core::str::*`
     /// helper calls a Rust binary carries in front of every checked access
@@ -1824,6 +1829,7 @@ impl Architecture {
             recover_loop_break: false,
             fold_call_returns: false,
             strip_stack_guard: false,
+            strip_msvc_stack_guard: false,
             strip_security_check: false,
             branch_flip: false,
             name_style_angr: false,
@@ -2483,6 +2489,9 @@ impl Architecture {
                 Ok(msg)
             }
             "stackguard" => on_off!(strip_stack_guard, "Stack-guard canary stripping"),
+            "msvcstackguard" => {
+                on_off!(strip_msvc_stack_guard, "MSVC /GS frame-cookie stripping")
+            }
             "securitycheck" => {
                 on_off!(strip_security_check, "Rust security-check branch stripping")
             }
@@ -3250,6 +3259,7 @@ impl Architecture {
         ctx.recover_loop_break = self.recover_loop_break; // loopbreak_recovery
         ctx.fold_call_returns = self.fold_call_returns; // foldcallret
         ctx.strip_stack_guard = self.strip_stack_guard; // stackguard
+        ctx.strip_msvc_stack_guard = self.strip_msvc_stack_guard; // msvcstackguard
         ctx.strip_security_check = self.strip_security_check; // securitycheck
         ctx.branch_flip = self.branch_flip; // branchflip (negated-guard branch flipping)
         // (kuna) GH-9203 DIV-3: carry the loop-block COPY-placement gate so the

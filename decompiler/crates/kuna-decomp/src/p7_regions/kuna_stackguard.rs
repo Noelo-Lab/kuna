@@ -276,6 +276,11 @@ fn collect_canary_slots(
 /// `first_block_copy.statements.pop(stmt_idx)`, which pops the entry-side
 /// `canary_slot = *(fs:0x28)` init store (GH-183).
 ///
+/// Shared with the MSVC `/GS` sibling
+/// [`kuna_msvcstackguard`](crate::kuna_msvcstackguard), which resolves its own
+/// cookie slot and releases it here: the step is about the slot's liveness, not
+/// about which protector wrote it.
+///
 /// The init store writes an addrtied stack varnode; because it is a real
 /// (non-marker) write — or an INDIRECT carrying the value across a call under
 /// a different input storage — `ActionDirectWrite` marks it direct-write, so
@@ -288,7 +293,7 @@ fn collect_canary_slots(
 /// store that cannot be tied to a stripped check is never removed; once the
 /// last check is stripped the init store, the LOAD and the TLS-base residue
 /// all die through the stock consume fixpoint.
-fn release_canary_slots(data: &mut Funcdata, slots: &[(Address, int4)]) {
+pub(crate) fn release_canary_slots(data: &mut Funcdata, slots: &[(Address, int4)]) {
     for (addr, size) in slots {
         let ids: Vec<VarnodeId> = data.vbank().iter_loc_size_addr(*size, addr).collect();
         for vn in ids {

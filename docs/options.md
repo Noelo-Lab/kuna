@@ -172,6 +172,10 @@ Three tiers:
 | stack-protector canary compare against fs:0x28 and a __stack_chk_fail branch cluttering the epilogue | [`stackguard`](#stackguard) |
 | shared-return goto forced by the canary check block | [`stackguard`](#stackguard) |
 | flip off to keep the real canary instructions for auditing the protector | [`stackguard`](#stackguard) |
+| a Windows PE function opens with `v8 = dat_140074040 ^ (unsigned long long)v1;` and ends with a one-argument call taking `v8 ^ (unsigned long long)v1` | [`msvcstackguard`](#msvcstackguard) |
+| an unnamed one-argument callee (`__security_check_cookie`) called just before every return | [`msvcstackguard`](#msvcstackguard) |
+| `--option stackguard on` and `off` give byte-identical output on a Windows binary | [`msvcstackguard`](#msvcstackguard) |
+| an otherwise unused 8-byte stack slot declared in every function of an MSVC binary | [`msvcstackguard`](#msvcstackguard) |
 | Rust output littered with `panic_bounds_check()` / `slice_error_fail()` / `panic_const_div_by_zero()` calls | [`securitycheck`](#securitycheck) |
 | every slice index guarded by an `if` whose arm only panics | [`securitycheck`](#securitycheck) |
 | Rust function CFG roughly twice the size of the source control flow | [`securitycheck`](#securitycheck) |
@@ -942,6 +946,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default (DIV-14): removes compiler-inserted stack-protector boilerplate and the shared-return goto it forces. Flip OFF to keep the real canary-check instructions in the output (e.g. to audit the protector itself, or if an unusual non-glibc `ptr+0x28` compare guarding a call is being matched). It is marked destructive because it deletes those real instructions, but it is byte-identical over the 675 datatests (the `Partial splitting` cases opt out via `option stackguard off`).
 - **Where / provenance:** P7/edge-virtualization · angr · opt-in-tool · angr-StackCanarySimplifier
 - **Example:** `option stackguard on`
+
+### `msvcstackguard` -- on | off, default `off` (destructive opt-in)
+
+- **Symptoms:** a Windows PE function opens with `v8 = dat_140074040 ^ (unsigned long long)v1;` and ends with a one-argument call taking `v8 ^ (unsigned long long)v1`; an unnamed one-argument callee (`__security_check_cookie`) called just before every return; `--option stackguard on` and `off` give byte-identical output on a Windows binary; an otherwise unused 8-byte stack slot declared in every function of an MSVC binary.
+- **What it does:** REMOVES CODE: strips the MSVC `/GS` frame-cookie boilerplate -- the epilogue `__security_check_cookie((cookie ^ SP) ^ SP)` call and the entry-side `cookie = __security_cookie ^ SP` scramble with its frame slot. The sibling `stackguard` pins the glibc canary by its compare (`slot != *(fs:0x28)` guarding a `__stack_chk_fail` branch); MSVC keeps the compare inside the checker, so a `/GS` function contains no CBRANCH, no `fs:0x28` load and no failure edge, and `stackguard` is a no-op on it. The trigger here is the arithmetic instead: a CALL argument computed as `(K ^ SP) ^ SP` with BOTH stack-pointer references resolving to the same frame offset, which is what makes the two XORs cancel. The call is dropped with the stock `delete_call_specs`/`opDestroy` pair and the cookie slot released to dead-code, so the two `/GS` lines and the slot declaration leave the function.
+- **When to flip:** Flip ON when reading a Windows PE built with `/GS` (the default for MSVC): every protected function otherwise opens with `v8 = dat_140074040 ^ (unsigned long long)v1;` and ends with `sub_1400015b0(v8 ^ (unsigned long long)v1);`, two lines of compiler boilerplate plus a declaration in each one. Default OFF because it is destructive -- it deletes a real call and a real computation -- so it is opt-in the same way you would leave `stackguard` off to audit the protector itself. Recognition is shape-only and does not depend on the callee being named `__security_check_cookie`, so a stripped PE is covered; it also does not depend on the compiler spec, so a raw MSVC `.text` blob loaded under any x86 cspec is covered. GCC/Clang read the canary from `%fs:0x28` and never mix the stack pointer into it, so the pattern cannot occur in `-fstack-protector` output and the option is byte-identical (0/675) on the datatest corpus. Composes with `cookiescramble`, which fixes a different defect (argument loss) on the same instruction.
+- **Where / provenance:** P7/edge-virtualization · kuna · opt-in-tool · GH-468
+- **Example:** `option msvcstackguard on`
 
 ### `securitycheck` -- on | off, default `on` (destructive opt-in)
 

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    665,
-    665
+    668,
+    668
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -246,7 +246,7 @@
     "data:KUNA-CATALOG #5: each settable carries symptom-keyed use_when guidance for the operator",
     "data:KUNA-CATALOG #6: angr-derived features carry source_decompiler provenance (loweredswitch, namestyle, stackguard, branchflip, foldcallret, dedupvardecls, relocobjects, i386_pie_plt, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, taildup, dedupitetail, returndup, iteregion, iteexpr, switchguardbound, switchsharedcase, switchmultipred, unrolledguard, tailcalljump, regionstructure, regionlooprefine, regionedgeorder, ifelseflatten, noreturn_extern, noreturn_externmatch, earlyreturn, switchreturn, condfold, securitycheck)",
     "data:KUNA-CATALOG #7: change_kind structure-recovery tags the switch/array/loader/loop/tail-call reconstructors (loweredswitch, switchselector, arraystride, relocobjects, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, taildup, dedupitetail, returndup, iteregion, iteexpr, tailcalljump, regionstructure, regionlooprefine, regionedgeorder, ifelseflatten, earlyreturn, switchreturn, condfold, iteboolean, paramcopyhoist, itecondlist, guardarm, loopcondhoist, orchain)",
-    "data:KUNA-CATALOG #8: the opt-in-tool change_kind aligns with the destructive options (returnpair counted twice; +switchguardbound, +switchsharedcase, +switchmultipred, +unrolledguard, +branchflip, +outline, +spillargtrial, +securitycheck)",
+    "data:KUNA-CATALOG #8: the opt-in-tool change_kind aligns with the destructive options (returnpair counted twice; +switchguardbound, +switchsharedcase, +switchmultipred, +unrolledguard, +branchflip, +outline, +spillargtrial, +securitycheck, +msvcstackguard)",
     "data:KUNA-CATALOG #9: every settable carries a machine-readable change_kind so an LLM can judge default-on eligibility",
     "data:KUNA-CONSOLE #1: phase list shows Band B membership",
     "data:KUNA-CONSOLE #2: phase list includes the P3 dead-definition gate sub-phase",
@@ -509,6 +509,9 @@
     "data:iteregion #4: fix (on) -- the rewrite is logged",
     "data:iteregion #5: p-code untouched -- the merged variable still feeds the call in BOTH passes",
     "data:jtsharepartial #2: all three passes are in the scanned stream (one memcpy_opt definition each), so the counts above are not one dropped pass",
+    "data:kuna-msvcstackguard #1: the entry-side cookie scramble is emitted only with the option off",
+    "data:kuna-msvcstackguard #2: the checker call is emitted only with the option off",
+    "data:kuna-msvcstackguard #3: the computation the function actually performs survives both passes",
     "data:mode aggressive enables returndup (warning appears once); mode reliable does not",
     "data:namestyle #1 default: argument renders as aN",
     "data:namestyle #2 default: local renders as vN with a register source-location comment",

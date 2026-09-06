@@ -684,6 +684,19 @@ pub fn universal_sched(
                 ))
             })),
             act!(Box::new(crate::kuna_stackguard::ActionStripStackGuard::new(false, "returnsplit"))),
+            // (kuna) msvcstackguard (option `msvcstackguard`, default-OFF): the
+            // Windows sibling of ActionStripStackGuard.  MSVC `/GS` puts the
+            // compare inside `__security_check_cookie`, so the guarded function
+            // holds no CBRANCH for the glibc matcher to find -- the trigger is the
+            // `(cookie ^ SP) ^ SP` cancel handed to the call, and the edit is the
+            // delete_call_specs/op_destroy pair rather than an edge removal.
+            // Placed next to its sibling so the repeating fullloop re-runs
+            // mainloop's RuleIndirectCollapse and dead-code passes over the
+            // reduced function before P8 structures it.
+            act!(Box::new(crate::kuna_msvcstackguard::ActionStripMsvcStackGuard::new(
+                false,
+                "returnsplit"
+            ))),
             // (kuna) SEFCOM Oxidizer `SecurityCheckRemover` (option `securitycheck`,
             // DIV-82 default-ON): sever the CBRANCH edge to a diverging block whose
             // only call is one of rustc's seven bounds/slice/divide-by-zero panic
