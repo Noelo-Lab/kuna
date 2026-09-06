@@ -1065,14 +1065,18 @@ as a pointer, and dropping it would under-report exactly the indirection an
 obfuscated program leans on. A materialized address that does not land on a known
 function entry is not an edge (that is a string or a global, not a callee), and
 where a caller both calls a function and mentions its address, the one edge
-carries the stronger of the two kinds. A computed call has no static target and
-therefore no edge at all; it is reported as `hasIndirectCalls` on the row that
-contains the call site — `CALLIND` only, folded onto its function by the same
-ordered containment that decides which function an instruction's references are
-listed under
+carries the stronger of the two kinds. A computed call whose destination is not a
+decode-time constant has no static target and therefore no edge at all; it is
+reported as `hasIndirectCalls` on the row that contains the call site — `CALLIND`
+only, folded onto its function by the same ordered containment that decides which
+function an instruction's references are listed under
 (`decompiler/crates/kuna-analysis/src/listing/xrefs.rs (XrefIndex::has_indirect_calls)`)
 — while a forwarding veneer's `jmp [slot]` is an indirect *branch* whose
-destination is in fact known, and is reported as `forwardsTo` instead. That slot
+destination is in fact known, and is reported as `forwardsTo` instead. An
+imported API call, `call qword ptr [slot]`, is the case where a `CALLIND` *does*
+carry an edge: the slot is a decode-time constant the reference walk reads out of
+the instruction (§1.6), so the row is both an edge to the import and
+`hasIndirectCalls`. That slot
 is only recoverable where the jump names it as a decode-time constant, so an
 AArch64 stub that computes it across `adrp`/`ldr`/`br` is a `thunk` row with a
 null `forwardsTo`.
