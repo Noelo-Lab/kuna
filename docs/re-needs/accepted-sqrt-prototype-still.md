@@ -17,7 +17,7 @@ covered_by_option: null
 touches: [decompiler/crates/kuna-console/src/assertions.rs, decompiler/crates/kuna-console/src/ifacedecomp.rs]
 scope: small
 regression_of: null
-pr: null
+pr: https://github.com/Noelo-Lab/kuna/pull/470
 closed_in_round: null
 closing_pr: null
 reject_reason: null

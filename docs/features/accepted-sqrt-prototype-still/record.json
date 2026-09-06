@@ -64,6 +64,6 @@
     "A `0x` operand issued BEFORE `read symbols` in a hand-driven console session is now rejected rather than parked, since no symbol exists yet to resolve it against. The generated script always emits `map prototype` after the analysis commit, so no `kuna` invocation can hit this.",
     "docs/re-needs/index.json is deliberately NOT regenerated: `needs reindex` runs over the whole backlog and this worktree holds only the tracked need docs. The captain reindexes."
   ],
-  "pr": null,
+  "pr": "https://github.com/Noelo-Lab/kuna/pull/470",
   "rebase": "rebased --onto origin/main (cf4b3e09, #469 string-ownership-misses-literal) from the recorded base c92dddbb; scripts.repipe.counters --fix reports 'no drift; nothing to fix' on the rebased tree (154 settables, tiers 39/61/54, 243 corpus files, next ElementId 4148) and scripts.repipe.mergecheck reports 0 rejects / merge guards clean. This PR adds no option and no stages XML, so it moves none of those counters itself."
 }
