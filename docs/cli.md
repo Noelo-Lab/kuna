@@ -192,7 +192,7 @@ One directive per `--assert`, keyed by intent rather than by phase:
 
 | directive | what it states |
 |---|---|
-| `prototype <func> <C declaration>` | the signature of `<func>` (parameter names included) |
+| `prototype <func> <C declaration>` | the signature of `<func>` — a name or an entry address (parameter names included) |
 | `param [<func>::]<i> <storage> <C typedecl>` | the storage and type of one input |
 | `return [<func>::]<storage> <C typedecl>` | the storage and type of the return value |
 | `name [<func>::]<symbol> <newname>` | rename a local |
@@ -243,6 +243,26 @@ The console spelling is `map prototype <func> <C declaration>`, which is why
 `<func>` survives into a hand-driven `decomp_dbg` session too; `parse line
 extern <decl>` binds by the declared name and can only confirm a signature for
 a function that is already called that.
+
+**`<func>` may be an entry address instead of a name**, in `prototype` and in a
+`param`/`return` qualifier alike. A name is tried first, so nothing changes for
+a function you can name; an address is what you need when you cannot, and it is
+the only way to say which of two same-named functions you mean — a PE import
+thunk and the IAT slot it jumps to are both called `sqrt`, and every call in the
+program goes to the thunk:
+
+```bash
+kuna decompile ./KeyCheker.exe sub_140001890 \
+  --assert 'prototype 0x140003ddf float8 sqrt(float8 x)'
+```
+
+```text
+- v26 = (double)sqrt();
++ v26 = sqrt(v35._0_8_);
+```
+
+A `0x`-prefixed operand that starts no function is **rejected**, naming the
+address, rather than accepted and dropped.
 
 Widths come from the target's own compiler spec, so `long` is eight bytes on LP64
 and four on LLP64. Ghidra's sized spellings (`int4`, `uint8`, `float8`,

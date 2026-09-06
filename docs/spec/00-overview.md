@@ -843,6 +843,32 @@ had genuinely parsed. The console spelling of the directive is therefore
 `ifacedecomp.rs (bind_prototype)`), which takes the target as its first token and
 parks the pieces under it; `parse line extern` keeps its upstream meaning.
 
+(kuna) **`<func>` is a name first and an ENTRY ADDRESS second.** Both surfaces
+resolve the operand through
+`decompiler/crates/kuna-console/src/assertions.rs (resolve_proto_target)`: a
+`FunctionSymbol` of that name wins, and failing that a hexadecimal operand that a
+function starts at binds by address. The address form exists because parking by
+name is not always expressible. The park is the callee's `FunctionSymbol`, and
+the READ side — `ArchContext::callee_proto_pieces`, which `ActionDefaultParams`
+consults per call site — is keyed by the callee's ENTRY ADDRESS, so a by-name
+park has to resolve to the same symbol the call reaches. A PE import thunk and
+the IAT slot it jumps to are two FunctionSymbols with the same name; the global
+by-name query answers with one of them while every call in the program targets
+the other, and the directive was accepted, reported `applied`, and read back as
+nothing (`docs/re-needs/accepted-sqrt-prototype-still.md`). Stating the address
+removes the ambiguity, and the park goes through
+`Architecture::set_function_prototype_pieces_at`, the same address-keyed door the
+DWARF and demangled-signature passes use. `pieces.name` is set to the resolved
+function's own display name, so an address operand states a signature without
+renaming the function to its VMA. A `0x`-prefixed operand that starts no function
+is REJECTED with the address in the detail rather than parked under a key nothing
+reads: `0x…` is not a C identifier, so such a directive is provably inert, and an
+accepted-and-inert directive is the one failure an agent cannot see. A bare hex
+token is ambiguous with an identifier (`abc` is both), so it takes the address
+path only when it resolves and nothing of that name exists, and never errors.
+The same resolution serves the cross-function `param <func>::<i>` /
+`return <func>::<storage>` qualifier.
+
 (kuna) **The C the assertion plane accepts is the C it prints.** Six directives
 carry a C declaration, and every one of them goes through the console's
 C-declaration grammar (`decompiler/crates/kuna-console/src/grammar.rs (CParse)`),

@@ -529,3 +529,94 @@ fn an_impossible_scalar_combination_is_rejected_by_name() {
         "the rejection did not name the combination: {detail}"
     );
 }
+
+/// `<func>` may be an ENTRY ADDRESS, not just a name — an agent has the address
+/// long before it has a name it trusts, and the address form used to be
+/// accepted and then dropped on the floor
+/// (`docs/re-needs/accepted-sqrt-prototype-still.md`): nothing is called
+/// `0x400664`, so the by-name park landed on no symbol at all while the report
+/// still said `applied`.
+#[test]
+fn a_prototype_at_an_entry_address_binds_to_the_function_there() {
+    let Some((code, report)) = decompile_with(vec![directive(
+        "prototype 0x400664 void *hashit(void *out,void *input)",
+        Body::Prototype {
+            func: "0x400664".into(),
+            decl: "void *hashit(void *out,void *input)".into(),
+        },
+    )]) else {
+        return;
+    };
+    all_applied(&report);
+    assert!(
+        code.contains("authenticate(void *out,void *input)"),
+        "the address-form signature did not reach the function at 0x400664:\n{code}"
+    );
+    assert!(!code.contains("hashit"), "the declaration's name became a function:\n{code}");
+}
+
+/// The address form is what reaches a CALLEE the name form can miss: the park
+/// is keyed by entry address, which is the key
+/// `ArchContext::callee_proto_pieces` already reads a call site back through.
+/// `strcmp` here is a PLT stub, the same shape as the PE import thunk the need
+/// was filed on.
+#[test]
+fn an_address_form_prototype_reaches_a_callee_at_that_address() {
+    let Some((baseline, _)) = decompile_with(Vec::new()) else { return };
+    assert!(baseline.contains("strcmp(a1,sneaky)"), "baseline moved:\n{baseline}");
+    let Some((code, report)) = decompile_with(vec![directive(
+        "prototype 0x400550 int4 strcmp(char *a,char *b,unsigned long n)",
+        Body::Prototype {
+            func: "0x400550".into(),
+            decl: "int4 strcmp(char *a,char *b,unsigned long n)".into(),
+        },
+    )]) else {
+        return;
+    };
+    all_applied(&report);
+    assert!(
+        code.contains("strcmp(a1,sneaky,"),
+        "the declared third argument never reached the call site:\n{code}"
+    );
+}
+
+/// An explicitly `0x`-prefixed operand that starts no function is REJECTED with
+/// the address in the detail.  `0x...` is not a C identifier, so such a
+/// directive can never bind, and reporting it `applied` — which is what the
+/// whole family did — leaves an agent with no way to tell.
+#[test]
+fn an_address_that_starts_no_function_is_rejected_by_address() {
+    let Some((_code, report)) = decompile_with(vec![directive(
+        "prototype 0x999999 int4 nope(void)",
+        Body::Prototype { func: "0x999999".into(), decl: "int4 nope(void)".into() },
+    )]) else {
+        return;
+    };
+    assert_eq!(report.len(), 1);
+    assert_eq!(report[0].status, "rejected", "{report:?}");
+    let detail = report[0].detail.clone().unwrap_or_default();
+    assert!(detail.contains("no function starts at 0x999999"), "unhelpful detail: {detail}");
+}
+
+/// A qualified `param` takes the same operand, so a callee can be typed by
+/// address as well as by name.
+#[test]
+fn a_qualified_param_accepts_an_entry_address_as_its_function() {
+    let Some((code, report)) = decompile_with(vec![directive(
+        "param 0x400560::0 %RDI char *pathname",
+        Body::Param {
+            func: Some("0x400560".into()),
+            index: 0,
+            storage: "%RDI".into(),
+            decl: "char *pathname".into(),
+        },
+    )]) else {
+        return;
+    };
+    all_applied(&report);
+    let call = code
+        .lines()
+        .find(|l| l.contains("open("))
+        .unwrap_or_else(|| panic!("no call to open:\n{code}"));
+    assert!(call.contains("open(a0)"), "the declared RDI argument is missing: {call}");
+}

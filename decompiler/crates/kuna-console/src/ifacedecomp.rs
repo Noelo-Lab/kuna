@@ -864,6 +864,11 @@ fn parse_storage_and_type(
 /// the signature describes, which is what the in-process surface
 /// (`assertions::apply_prototype`) already did — the two surfaces disagreed
 /// about the same directive (`docs/re-needs/text-output-silently-ignores.md`).
+///
+/// `<func>` is a name or an entry address
+/// ([`crate::assertions::resolve_proto_target`]); the pieces are parked through
+/// the shared [`crate::assertions::park_prototype`] so both surfaces bind the
+/// same operand to the same function.
 pub(crate) fn bind_prototype(
     status: &mut IfaceStatus,
     func: &str,
@@ -898,9 +903,15 @@ pub(crate) fn bind_prototype(
     }
     let mut pieces =
         captured.ok_or_else(|| IfaceError::execution("Not a function declaration"))?;
-    pieces.name = func.to_string();
-    apply_prototype_to_symbol(status, &pieces)?;
-    dcp_mut(status)?.pending_prototypes.insert(func.to_string(), pieces);
+    let dcp = dcp_mut(status)?;
+    let prog = dcp
+        .conf
+        .as_mut()
+        .ok_or_else(|| IfaceError::execution("No load image present"))?;
+    let target = crate::assertions::resolve_proto_target(prog, func)
+        .map_err(IfaceError::execution)?;
+    crate::assertions::park_prototype(prog, &target, &mut pieces);
+    dcp.pending_prototypes.insert(target.name().to_string(), pieces);
     Ok(())
 }
 

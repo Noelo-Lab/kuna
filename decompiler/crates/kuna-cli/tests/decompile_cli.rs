@@ -669,3 +669,100 @@ fn a_prototype_declared_under_another_name_binds_on_both_surfaces() {
         "the two surfaces disagree about the same directive:\n{json}"
     );
 }
+
+/// RE-need `accepted-sqrt-prototype-still`: `<func>` may be an entry ADDRESS,
+/// and it binds on both surfaces.
+///
+/// An agent working a stripped or import-heavy binary has the address long
+/// before it has a name it trusts, and `--assert 'prototype 0x400664 …'` was
+/// accepted and then dropped: the pieces were parked under the literal key
+/// `"0x400664"`, which resolves to no `FunctionSymbol`, while the report still
+/// said `applied`. The callee case is the one the need was filed on — a PE
+/// import thunk whose call site kept `sqrt()` argumentless — and it is the case
+/// the by-name form cannot always state, because the thunk and the slot it
+/// jumps to are two symbols with the same name.
+#[test]
+fn a_prototype_at_an_entry_address_binds_on_both_surfaces() {
+    let bin = fauxware();
+    let run = |directive: &str, extra: &[&str]| -> Option<String> {
+        let mut argv: Vec<String> = vec![
+            "decompile".into(),
+            bin.clone(),
+            "authenticate".into(),
+            "--assert".into(),
+            directive.into(),
+            "--assert-strict".into(),
+            "--sleighpath".into(),
+            specs(),
+        ];
+        argv.extend(extra.iter().map(|s| s.to_string()));
+        let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
+            .args(&argv)
+            .output()
+            .expect("failed to spawn the kuna binary");
+        let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+        if is_specs_skip(&stderr) {
+            eprintln!("skipping: specs-less environment: {stderr}");
+            return None;
+        }
+        assert_eq!(out.status.code(), Some(0), "kuna decompile failed: {stderr}");
+        assert!(!stderr.contains("rejected"), "the directive was rejected: {stderr}");
+        Some(String::from_utf8_lossy(&out.stdout).into_owned())
+    };
+
+    // The selected function itself, addressed by its entry.
+    let selected = "prototype 0x400664 void *hashit(void *out,void *input)";
+    for surface in [&[][..], &["--json"][..]] {
+        let Some(out) = run(selected, surface) else { return };
+        assert!(
+            out.contains("void * authenticate(void *out,void *input)"),
+            "the address-form signature did not reach 0x400664 ({surface:?}):\n{out}"
+        );
+    }
+
+    // A CALLEE, addressed by its entry — the need's own shape (a stub function
+    // the call site targets), and the read side's own key.
+    let callee = "prototype 0x400550 int4 strcmp(char *a,char *b,unsigned long n)";
+    for surface in [&[][..], &["--json"][..]] {
+        let Some(out) = run(callee, surface) else { return };
+        assert!(
+            out.contains("strcmp(a1,sneaky,"),
+            "the declared third argument never reached the call site ({surface:?}):\n{out}"
+        );
+    }
+}
+
+/// An explicitly `0x`-prefixed operand that starts no function is REJECTED with
+/// the address in the detail, on both surfaces — the whole family used to
+/// report it `applied` and do nothing, which leaves an agent no way to tell.
+#[test]
+fn a_prototype_address_that_starts_no_function_is_rejected() {
+    let bin = fauxware();
+    let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .args([
+            "decompile",
+            bin.as_str(),
+            "authenticate",
+            "--json",
+            "--assert",
+            "prototype 0x999999 int4 nope(void)",
+            "--sleighpath",
+            specs().as_str(),
+        ])
+        .output()
+        .expect("failed to spawn the kuna binary");
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    if is_specs_skip(&stderr) {
+        eprintln!("skipping: specs-less environment: {stderr}");
+        return;
+    }
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    assert!(
+        stdout.contains(r#""status": "rejected""#),
+        "an unbindable address was still reported applied:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("no function starts at 0x999999"),
+        "the rejection did not name the address:\n{stdout}"
+    );
+}

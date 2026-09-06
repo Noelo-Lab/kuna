@@ -412,6 +412,121 @@ fn with_semicolon(decl: &str) -> String {
     }
 }
 
+/// Which function a directive's `<func>` operand names, once the loaded program
+/// has been consulted.
+///
+/// `<func>` is a NAME first — that is what every existing directive meant — and
+/// an ENTRY ADDRESS second.  An agent working on a stripped or import-heavy
+/// binary has the address long before it has a name it trusts, and the address
+/// form used to be accepted and then discarded: nothing is called
+/// `0x140003ddf`, so the by-name park landed on no symbol at all and the call
+/// site kept its recovered signature
+/// (`docs/re-needs/accepted-sqrt-prototype-still.md`).
+///
+/// Address is also the key the READ side already uses
+/// (`ArchContext::callee_proto_pieces` looks a call spec's entry address up),
+/// which is why the address form reaches a callee the name form cannot: a
+/// PE import thunk and the IAT slot it jumps to are two FunctionSymbols with
+/// the SAME name, and the by-name query answers with the slot while every call
+/// in the program goes to the thunk.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum ProtoTarget {
+    /// Bind by name.  An unresolved name is still legal — it parks in the
+    /// pending store, which is what lets `map prototype main …` precede the
+    /// symbols it talks about.
+    Named(String),
+    /// Bind by entry address: the address to park at, and the resolved
+    /// function's own display name (the pending store and the printer are both
+    /// keyed by name, so the directive must not rename the function to its VMA).
+    At(Address, String),
+}
+
+impl ProtoTarget {
+    /// The name this prototype describes — the operand itself for the name
+    /// form, the resolved function's display name for the address form.
+    pub(crate) fn name(&self) -> &str {
+        match self {
+            ProtoTarget::Named(n) => n,
+            ProtoTarget::At(_, n) => n,
+        }
+    }
+}
+
+/// Resolve a `<func>` operand against the loaded program (see [`ProtoTarget`]).
+///
+/// An explicitly `0x`-prefixed operand that no function starts at is an ERROR
+/// rather than a silent park: `0x…` is not a C identifier, so such a directive
+/// is provably inert and the caller deserves to hear it.  A bare hex token
+/// (`140003ddf`) is ambiguous with a real identifier (`abc` is both), so it
+/// takes the address path only when it resolves and no function of that name
+/// exists, and never errors.
+pub(crate) fn resolve_proto_target(
+    prog: &ConsoleProgram,
+    func: &str,
+) -> Result<ProtoTarget, String> {
+    let named = match prog.arch().symboltab.get_global_scope() {
+        Some(g) => prog.arch().symboltab.query_function_by_name(g, func).is_some(),
+        None => false,
+    };
+    if named {
+        return Ok(ProtoTarget::Named(func.to_string()));
+    }
+    let hex = func.strip_prefix("0x").or_else(|| func.strip_prefix("0X"));
+    let explicit = hex.is_some();
+    let digits = hex.unwrap_or(func);
+    let vma = if !digits.is_empty() && digits.chars().all(|c| c.is_ascii_hexdigit()) {
+        u64::from_str_radix(digits, 16).ok()
+    } else {
+        None
+    };
+    if let Some(vma) = vma {
+        if let Some(addr) = code_addr(prog, vma) {
+            if let Some(name) = prog.arch().symboltab.function_display_name_across_scopes(&addr) {
+                return Ok(ProtoTarget::At(addr, name));
+            }
+        }
+        if explicit {
+            return Err(format!("no function starts at {func}"));
+        }
+    }
+    Ok(ProtoTarget::Named(func.to_string()))
+}
+
+/// Park `pieces` on the target's `FunctionSymbol`, which is where a CALLER's
+/// `ActionDefaultParams` reads a declared callee signature back from
+/// (`ArchContext::callee_proto_pieces`).
+///
+/// `pieces.name` is set to the target's name first, so a directive that
+/// renames — `prototype sub_1400055e0 void *sha256(…)` — still describes
+/// `sub_1400055e0`, and an address form describes the function that lives
+/// there rather than a function called `0x140003ddf`.
+pub(crate) fn park_proto_pieces(
+    prog: &mut ConsoleProgram,
+    target: &ProtoTarget,
+    pieces: &mut PrototypePieces,
+) {
+    pieces.name = target.name().to_string();
+    match target {
+        ProtoTarget::Named(name) => {
+            prog.arch_mut().set_function_prototype_pieces(name, pieces.clone())
+        }
+        ProtoTarget::At(addr, _) => {
+            prog.arch_mut().set_function_prototype_pieces_at(addr, pieces.clone())
+        }
+    }
+}
+
+/// The two things a full `prototype` directive does: park the pieces for the
+/// callers, and lock the signature onto the symbol itself.
+pub(crate) fn park_prototype(
+    prog: &mut ConsoleProgram,
+    target: &ProtoTarget,
+    pieces: &mut PrototypePieces,
+) {
+    park_proto_pieces(prog, target, pieces);
+    lock_prototype_on_symbol(prog, target, pieces);
+}
+
 /// `prototype <func> <C declaration>` — the in-process twin of `parse line
 /// extern <decl>` (`IfcParseLine`'s `setPrototype` branch).
 ///
@@ -424,7 +539,8 @@ fn with_semicolon(decl: &str) -> String {
 ///
 /// The `<func>` operand is authoritative over the name inside the declaration:
 /// it says *which* function this signature describes, so `prototype sub_1400
-/// int handler(char *)` binds to `sub_1400`.
+/// int handler(char *)` binds to `sub_1400`.  It may be a name or an entry
+/// address ([`resolve_proto_target`]).
 fn apply_prototype(prog: &mut ConsoleProgram, func: &str, decl: &str) -> Result<(), String> {
     use std::cell::RefCell;
     let org = data_org(prog);
@@ -438,24 +554,36 @@ fn apply_prototype(prog: &mut ConsoleProgram, func: &str, decl: &str) -> Result<
     let mut pieces = captured
         .into_inner()
         .ok_or_else(|| "not a function declaration".to_string())?;
-    pieces.name = func.to_string();
-    prog.arch_mut().set_function_prototype_pieces(func, pieces.clone());
-    apply_prototype_to_symbol(prog, &pieces);
-    prog.set_pending_prototype(func, pieces);
+    let target = resolve_proto_target(prog, func)?;
+    park_prototype(prog, &target, &mut pieces);
+    prog.set_pending_prototype(target.name(), pieces);
     Ok(())
 }
 
-/// Lock the parsed prototype onto the named `FunctionSymbol` by retyping it to
-/// the prototype-bearing `TypeCode` (C++ `Architecture::setPrototype`).  A
+/// Lock the parsed prototype onto the target's `FunctionSymbol` by retyping it
+/// to the prototype-bearing `TypeCode` (C++ `Architecture::setPrototype`).  A
 /// missing symbol is a no-op: the pending store above still carries the fact for
 /// the function's own decompile.
-fn apply_prototype_to_symbol(prog: &mut ConsoleProgram, pieces: &PrototypePieces) {
+pub(crate) fn lock_prototype_on_symbol(
+    prog: &mut ConsoleProgram,
+    target: &ProtoTarget,
+    pieces: &PrototypePieces,
+) {
     let arch = prog.arch_mut();
-    let Some(scope) = arch.symboltab.get_global_scope() else {
-        return;
-    };
-    let Some(sid) = arch.symboltab.query_function_by_name(scope, &pieces.name) else {
-        return;
+    let sid = match target {
+        ProtoTarget::Named(name) => {
+            let Some(scope) = arch.symboltab.get_global_scope() else {
+                return;
+            };
+            match arch.symboltab.query_function_by_name(scope, name) {
+                Some(sid) => sid,
+                None => return,
+            }
+        }
+        ProtoTarget::At(addr, _) => match arch.symboltab.find_function_across_scopes(addr) {
+            Some((sid, _)) => sid,
+            None => return,
+        },
     };
     if let Ok(tc) = arch.types().get_type_code_proto(pieces) {
         let _ = arch.symboltab.retype_symbol(sid, tc);
@@ -481,8 +609,9 @@ fn apply_cross_function(
 ) -> Result<(), String> {
     use kuna_decomp::fspec::parameter_pieces_flags;
     let org = data_org(prog);
-    let mut pieces = prog.pending_prototype(func).cloned().unwrap_or(PrototypePieces {
-        name: func.to_string(),
+    let target = resolve_proto_target(prog, func)?;
+    let mut pieces = prog.pending_prototype(target.name()).cloned().unwrap_or(PrototypePieces {
+        name: target.name().to_string(),
         first_var_arg_slot: -1,
         ..Default::default()
     });
@@ -532,14 +661,14 @@ fn apply_cross_function(
         }
         _ => return Err("internal: not a cross-function prototype directive".into()),
     }
-    prog.arch_mut().set_function_prototype_pieces(func, pieces.clone());
+    park_proto_pieces(prog, &target, &mut pieces);
     // The symbol retype (what lets a by-value struct argument be split) needs a
     // return type; `param` alone never declares one, and the storage assignment
     // behind `getTypeCode` dereferences `outtype` unconditionally.
     if pieces.outtype.is_some() {
-        apply_prototype_to_symbol(prog, &pieces);
+        lock_prototype_on_symbol(prog, &target, &pieces);
     }
-    prog.set_pending_prototype(func, pieces);
+    prog.set_pending_prototype(target.name(), pieces);
     Ok(())
 }
 

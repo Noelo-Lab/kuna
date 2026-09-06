@@ -1,0 +1,43 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "main",
+    "--assert",
+    "prototype 0x4006ed int4 accepted(int4 status)"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/fauxware",
+    "binary_sha256": "c2d90645a45e99221593547e55c601a901b80f807ae96f94c60a7661df0b3e0b",
+    "binary_size": 8776,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/fauxware",
+    "selector": "main",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "accepted\\("
+    ],
+    "stdout_absent": [
+      "accepted\\(\\s*\\)"
+    ],
+    "stderr_absent": [
+      "rejected"
+    ]
+  },
+  "notes": "Retargeted onto the in-repo fauxware fixture: same defect, no dataset. `accepted` at 0x4006ed renders `accepted()` and an address-form prototype assertion is reported `applied` while changing nothing; measured on c92dddbb. The dataset KeyCheker.exe sqrt() call stays the witness in Reproduction."
+}

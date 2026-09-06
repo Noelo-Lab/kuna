@@ -1,0 +1,68 @@
+{
+  "slug": "accepted-sqrt-prototype-still",
+  "need_id": "accepted-sqrt-prototype-still",
+  "track": "tooling",
+  "filed_track": "quality",
+  "scope": "small",
+  "round": 4,
+  "branch": "feat/re-accepted-sqrt-prototype-still",
+  "summary": "`<func>` in a `prototype` / `param <func>::` / `return <func>::` assertion may now be an ENTRY ADDRESS, on both the script and the in-process surface. It was resolved by name only, so `--assert 'prototype 0x140003ddf float8 sqrt(float8 x)'` parked its pieces under a key no symbol carries, was reported `applied`, and left the call site argumentless. The park now goes through the address-keyed `set_function_prototype_pieces_at` -- the key `ArchContext::callee_proto_pieces` already reads back -- and a `0x`-prefixed operand that starts no function is rejected by address instead of accepted and dropped.",
+  "decisions": [
+    {
+      "what": "hypothesis OVERTURNED (as the round-3 refuter said), and the captain's p4_calls narrowing with it",
+      "detail": "The filed cause was 'whole-width XMM writes may defeat the locked scalar argument'. Nothing about XMM width is reached: instrumenting ActionDefaultParams on the witness shows all four sqrt call sites at entry 0x140003ddf with `pieces=None` and `has_model=false`, i.e. no declared callee prototype ever arrives and the default-model recovery runs exactly as it does without the directive. Not one line in p4_calls changed."
+    },
+    {
+      "what": "the real cause is one layer above even the refuter's reading",
+      "detail": "The refuter said 'the gap is upstream in the path that turns a --assert prototype into a locked FuncProto on the callee' and did not measure which of parse / attach / lock drops it. It is ATTACH. `Architecture::set_function_prototype_pieces(name)` resolves through `queryFunction(name)`, and `pieces.name` was set to the raw `<func>` operand -- `\"0x140003ddf\"`, which is not a C identifier and matches no symbol -- so the park was a total no-op while `bind_prototype` still returned Ok and the report still said `applied`."
+    },
+    {
+      "what": "the by-NAME form is broken here too, and is deliberately NOT fixed",
+      "detail": "`--assert 'prototype sqrt ...'` also fails on this image, for a different reason: `kuna functions` reports TWO FunctionSymbols named `sqrt` -- the import thunk at 0x140003ddf that all four calls target, and the IAT slot at 0x140005238 -- and the global by-name query answers with the slot. Measured: the callee-proto snapshot after the by-name park contains `off=0x140005238 name=sqrt` and nothing at 0x140003ddf. Disambiguating a duplicated import name would have to change the library-prototype pass (`bootstrap`'s step 5, which parks memcpy/malloc/sqrt by name) and could move both parity corpora. The address form is the sound way to say which one you mean, and it is what the need's own command already said."
+    },
+    {
+      "what": "name first, address second -- and only a `0x` prefix may error",
+      "detail": "`resolve_proto_target` tries the global by-name query first, so every existing directive is bit-identical. A `0x`-prefixed operand is unambiguous (not a C identifier) so it takes the address path and, when no function starts there, is REJECTED with the address in the detail -- an accepted-and-inert directive is the one failure an agent cannot see, which is this need. A BARE hex token is ambiguous with a real identifier (`abc` is both), so it takes the address path only when nothing of that name exists AND a function starts there, and never errors."
+    },
+    {
+      "what": "one resolver, both surfaces",
+      "detail": "The script surface (`kuna decompile` -> forked decomp_dbg -> `map prototype` -> `ifacedecomp::bind_prototype`) and the in-process surface (`decompile-all`/`--json` -> `assertions::apply_prototype`) had already drifted apart once on this exact directive (`text-output-silently-ignores`). Both now call the same `assertions::resolve_proto_target` + `assertions::park_prototype`, and the CLI test asserts the two agree rather than testing either alone. That also closes a smaller pre-existing gap: `bind_prototype` retyped the symbol but never parked the pieces, leaning on the by-name re-park at `decompile` time, which the address form has no key for."
+    },
+    {
+      "what": "no option, no stages XML, no catalog counter, no DIV row",
+      "detail": "Tooling track by mechanism even though the need was filed `quality`: the change is entirely in kuna-console's assertion plane. A directive an agent did not write cannot move emitted C -- `make test` 675/675 and `make test-stages` PARITY OK confirm it -- and `--assert` is not a decision the pipeline takes on its own, so there is no judgement call to gate. Matches the CLI-tier repipe PRs merged this round (#448/#452/#454/#457)."
+    }
+  ],
+  "inertness": {
+    "method": "The three new functions (`resolve_proto_target`, `park_prototype`, `lock_prototype_on_symbol`) have exactly three callers in the workspace -- `assertions::apply_prototype`, `assertions::apply_cross_function` and `ifacedecomp::bind_prototype` -- and those are reachable only from a `prototype`/`param`/`return` directive or the `map prototype` console command. A run with no assertion executes none of them.",
+    "note": "make test 675/675 PARITY OK and make test-stages PARITY OK confirm it; neither corpus carries an assertion directive."
+  },
+  "sweep": {
+    "question": "does the resolver change any operand that used to work, and can it bind the WRONG function?",
+    "method": "Six operand shapes on the vendored fauxware, text surface and --json: (1) a plain name; (2) a bare hex that resolves to a function entry; (3) an address INSIDE a function but not its entry; (4) a data address; (5) a `0x` address in no mapped range; (6) a cross-function `return <addr>::<storage>`. Plus the witness itself on the dataset image, and an A/B of the whole thing against a tree built with the two files reverted.",
+    "result": "(1) `prototype authenticate void *hashit(...)` -> `void * authenticate(void *out,void *input)`, unchanged from before the fix. (2) `prototype 400664 ...` binds, same output as the name form. (3) `0x400670` and (4) `0x600984` (the `sneaky` global) are both `rejected: no function starts at 0x...`, and the C is the unasserted baseline -- an interior or data address never binds. (5) `0x999999` likewise. (6) `return 0x400560::%RBX int4` applies and moves the caller exactly as `return open::%RBX int4` does. On the unpatched tree built from the same worktree, the fauxware probe prints `accepted();` and reports the directive `applied`, and `puts(\"Username: \")` ignores a declared second parameter."
+  },
+  "gates": {
+    "make test": "PARITY OK, 675/675 assertions",
+    "make test-stages": "PARITY OK",
+    "make rust-test": "5,768 passed / 1 failed. The one failure is `verify_w10_proto_unlock::w10_proto_unlock_const_return_collapses_no_tied_roundtrip` ('oracle promote_compare signature drifted') -- the known repipe-worktree artifact: the loop exports KUNA_DECOMP_TEST pointing at this worktree's decomp_test_dbg. Re-run with it unset: 4/4 pass, and the whole suite re-run with it unset is green.",
+    "make check-spec": "OK (lenient mode)",
+    "make test-cli": "53/53 with the probe promoted",
+    "kuna catalog --check": "catalog OK: documents exactly the registered kuna options"
+  },
+  "acceptance": {
+    "acceptance_id": "a-94788ed2c81d",
+    "previous_acceptance_id": "a-bb9896e9cfbb",
+    "result": "PASS",
+    "transition": "closed",
+    "promoted_to": "tests/cli/accepted-sqrt-prototype-still.json",
+    "promotion_note": "The filed acceptance targets the dataset image (crackmes.one 640a526833c5d447bc761899, KeyCheker.exe) and PASSES there after the fix -- `scripts.repipe.verify --need accepted-sqrt-prototype-still` reported 1 pass / 0 fail / closed on the original block before it was retargeted. `--promote` refuses a dataset target and CI has no dataset, so the acceptance was re-pointed at the vendored `kuna-analysis/tests/fixtures/fauxware`, whose `accepted` at 0x4006ed is argumentless for the same reason: `--assert 'prototype 0x4006ed int4 accepted(int4 status)'` must print `accepted(` and must not print `accepted()`. Re-cutting cmd+expect re-derived the id a-bb9896e9cfbb -> a-94788ed2c81d; the need's front matter and Decision log were updated in the same commit.",
+    "reproduction_confirmed_on_main": "On c92dddbb the witness prints `v26 = (double)sqrt();` four times with an empty stderr and exit 0; after the fix it prints `v26 = sqrt(v35._0_8_);`. The vendored twin on c92dddbb prints `accepted();` with the directive reported `applied`; after the fix, `accepted((int)v4);`."
+  },
+  "not_closed": [
+    "`--assert 'prototype sqrt ...'` still parks on the IAT slot rather than the thunk on this image, because two FunctionSymbols share the name. Fixing that means teaching the by-name park which of the two a caller reaches, which is the library-prototype pass's problem and reaches both parity corpora.",
+    "A `0x` operand issued BEFORE `read symbols` in a hand-driven console session is now rejected rather than parked, since no symbol exists yet to resolve it against. The generated script always emits `map prototype` after the analysis commit, so no `kuna` invocation can hit this.",
+    "docs/re-needs/index.json is deliberately NOT regenerated: `needs reindex` runs over the whole backlog and this worktree holds only the tracked need docs. The captain reindexes."
+  ],
+  "pr": null
+}
