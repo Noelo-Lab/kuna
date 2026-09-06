@@ -85,6 +85,69 @@ struct TargetSpec {
     fallback: Option<String>,
 }
 
+/// What the operand resolved to before the walk ran.
+///
+/// A name several entries carry is deliberately NOT decided here. Which
+/// addresses are one callable is a property of the decoded forwarding jumps, and
+/// those are only known once the walk has run — so the candidates ride into the
+/// walk as its focus and the ambiguity is settled against the alias class
+/// afterwards ([`Resolution::settle`]).
+enum Resolution {
+    Settled(TargetSpec),
+    Contested {
+        name: String,
+        candidates: Vec<u64>,
+        error: String,
+    },
+}
+
+impl Resolution {
+    /// The addresses the walk must decode: the settled one, or every candidate a
+    /// contested name carries — an alias class cannot be read off a veneer the
+    /// walk never decoded.
+    fn focus(&self) -> Vec<u64> {
+        match self {
+            Resolution::Settled(spec) => vec![spec.addr],
+            Resolution::Contested { candidates, .. } => candidates.clone(),
+        }
+    }
+
+    /// Decide a contested name against the walk's alias classes.
+    ///
+    /// Candidates that all sit in one class are one callable under several
+    /// addresses — the import shape `--to` already answers identically at either
+    /// end — so the name is not ambiguous in any sense the caller can act on, and
+    /// the query proceeds at the class's code half. Candidates that do not all
+    /// share a class are genuinely distinct functions and keep the error.
+    fn settle(self, index: &XrefIndex) -> Result<TargetSpec, String> {
+        match self {
+            Resolution::Settled(spec) => Ok(spec),
+            Resolution::Contested { name, candidates, error } => {
+                let class =
+                    candidates.first().map_or_else(Default::default, |&c| index.alias_class(c));
+                if !candidates.iter().all(|c| class.contains(c)) {
+                    return Err(error);
+                }
+                Ok(TargetSpec {
+                    addr: canonical_member(index, &candidates),
+                    name: Some(name),
+                    fallback: None,
+                })
+            }
+        }
+    }
+}
+
+/// The address a folded alias class answers at: the forwarding veneer, which is
+/// the code an agent goes on to disassemble, rather than the pointer slot it
+/// jumps through. Lowest address otherwise, so several veneers through one slot
+/// still pick deterministically.
+fn canonical_member(index: &XrefIndex, candidates: &[u64]) -> u64 {
+    let mut sorted = candidates.to_vec();
+    sorted.sort_unstable();
+    sorted.iter().copied().find(|c| index.veneer_slot(*c).is_some()).unwrap_or(sorted[0])
+}
+
 /// `kuna xrefs` entry point.
 pub fn run(argv: &[String]) -> i32 {
     let args = match parse_args(argv) {
@@ -152,17 +215,19 @@ fn query(args: &XrefArgs) -> Result<String, String> {
     // The operand resolves to an address BEFORE the walk so the walk can be
     // pointed at it: a function whose only inbound edge is an indirect call
     // through a table is in no seed set, and a query about it must not answer
-    // "no references" about the very address the caller named.
-    let spec = target_address(&prog, &args.spec)?;
+    // "no references" about the very address the caller named. A name several
+    // entries carry points the walk at all of them and is settled afterwards,
+    // because whether they are one callable is the walk's own finding.
+    let resolution = target_address(&prog, &args.spec)?;
     let index = kuna_analysis::listing::xrefs::build_with_focus(
         &file,
         prog.arch(),
         prog.arch().translate(),
         &seeds,
-        &[spec.addr],
+        &resolution.focus(),
     );
 
-    let target = resolve_target(&prog, &index, spec);
+    let target = resolve_target(&prog, &index, resolution.settle(&index)?);
     let rows = match args.direction {
         // `--to` answers for the callable, not the literal address: an import
         // reached through a veneer and an IAT/GOT slot is one thing under two
@@ -198,43 +263,53 @@ fn query(args: &XrefArgs) -> Result<String, String> {
 /// that as `0xabc` would answer a question nobody asked — and only falls back to
 /// a bare-hex reading when no symbol carries the name.
 ///
-/// A name that identifies several entries is an ERROR naming all of them, not a
-/// miss: falling through to the symbol table would answer for whichever one it
-/// happens to hold first, which is the guess the selector model exists to refuse.
-fn target_address(prog: &ConsoleProgram, spec: &str) -> Result<TargetSpec, String> {
+/// A name that identifies several entries never falls through to the symbol
+/// table: that would answer for whichever one it happens to hold first, which is
+/// the guess the selector model exists to refuse. It is carried out as
+/// [`Resolution::Contested`] instead, because an import is routinely two entries
+/// under one name and refusing it would be a refusal to answer a question that
+/// has exactly one answer.
+fn target_address(prog: &ConsoleProgram, spec: &str) -> Result<Resolution, String> {
     let spec = spec.trim();
     if let Some(body) = spec.strip_prefix("0x").or_else(|| spec.strip_prefix("0X")) {
         let addr = u64::from_str_radix(body, 16)
             .map_err(|_| format!("invalid address {spec:?}"))?;
-        return Ok(TargetSpec { addr, name: None, fallback: None });
+        return Ok(Resolution::Settled(TargetSpec { addr, name: None, fallback: None }));
     }
     match prog.resolve_entry(&EntrySelector::Name(spec.to_string())) {
         Ok(entry) => {
-            return Ok(TargetSpec {
+            return Ok(Resolution::Settled(TargetSpec {
                 addr: entry.addr.get_offset(),
                 name: Some(entry.name),
                 fallback: None,
-            })
+            }))
         }
-        Err(error @ EntryLookupError::Ambiguous { .. }) => return Err(error.to_string()),
-        Err(_) => {}
+        Err(error) => {
+            if let EntryLookupError::Ambiguous { candidates, .. } = &error {
+                return Ok(Resolution::Contested {
+                    name: spec.to_string(),
+                    candidates: candidates.iter().map(|c| c.addr.get_offset()).collect(),
+                    error: error.to_string(),
+                });
+            }
+        }
     }
     if let Some(addr) = prog.lookup_symbol(spec) {
-        return Ok(TargetSpec {
+        return Ok(Resolution::Settled(TargetSpec {
             addr: addr.get_offset(),
             name: None,
             fallback: Some(spec.to_string()),
-        });
+        }));
     }
     if let Some((name, addr, _)) = prog
         .global_data_symbols()
         .into_iter()
         .find(|(name, _, _)| name == spec)
     {
-        return Ok(TargetSpec { addr, name: Some(name), fallback: None });
+        return Ok(Resolution::Settled(TargetSpec { addr, name: Some(name), fallback: None }));
     }
     if let Ok(addr) = u64::from_str_radix(spec, 16) {
-        return Ok(TargetSpec { addr, name: None, fallback: None });
+        return Ok(Resolution::Settled(TargetSpec { addr, name: None, fallback: None }));
     }
     Err(format!("no symbol named {spec:?} (and it is not an address)"))
 }

@@ -1,0 +1,68 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "a-a44980246d40",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "xrefs",
+    "{{BIN}}",
+    "--to",
+    "VirtualProtect",
+    "--json"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 300,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/pe_imports.exe",
+    "binary_sha256": "963e04af7e654da9344fbcfb89e37a49838d38624949895352ca1a77149f74c5",
+    "binary_size": 498895,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/pe_imports.exe",
+    "selector": "VirtualProtect",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "json": [
+      {
+        "path": "target.name",
+        "op": "eq",
+        "value": "VirtualProtect"
+      },
+      {
+        "path": "target.address_hex",
+        "op": "eq",
+        "value": "0x1400079b0"
+      },
+      {
+        "path": "target.aliases[0].address_hex",
+        "op": "eq",
+        "value": "0x14000d234"
+      },
+      {
+        "path": "count",
+        "op": "eq",
+        "value": 2
+      },
+      {
+        "path": "xrefs[0].from_address_hex",
+        "op": "eq",
+        "value": "0x140001a9e"
+      },
+      {
+        "path": "xrefs[1].from_address_hex",
+        "op": "eq",
+        "value": "0x140001cce"
+      }
+    ]
+  },
+  "notes": "Promoted acceptance of docs/re-needs/name-based-xrefs-rejects.md, re-pointed from the dataset crackme to its vendored MinGW twin (CI has no dataset): same shape, an import named by both a .text FF25 veneer and an .rdata IAT slot, where --to <name> exited 1 'is ambiguous' while either address answered fine. Stronger than the recorded count>0: the answer must be the veneer's."
+}

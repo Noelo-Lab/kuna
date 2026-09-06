@@ -1,0 +1,65 @@
+{
+  "slug": "name-based-xrefs-rejects",
+  "need_id": "name-based-xrefs-rejects",
+  "track": "tooling",
+  "scope": "small",
+  "round": 4,
+  "branch": "feat/re-name-based-xrefs-rejects",
+  "summary": "`kuna xrefs --to <name>` answers for an import instead of refusing it. A name that matches several entries is no longer decided at lookup time: the candidates are carried into the reference walk as its focus set and settled against the alias class the walk found, so candidates that are one callable under several addresses (a forwarding veneer and the IAT/GOT slot it jumps through) resolve to the class's code half, and candidates that are genuinely distinct functions keep the ambiguity refusal with every candidate named.",
+  "decisions": [
+    {
+      "what": "hypothesis UPHELD, and the ordering it names is the whole fix",
+      "detail": "The filed hypothesis -- 'ambiguity checking precedes import-thunk alias resolution' -- is exactly right, and it is not merely an ordering accident: the alias relation is derived from decoded `jmp [slot]` instructions, which do not exist until `build_with_focus` has run, and the walk is built AFTER target resolution because it needs the target address to focus on. So the check could not have consulted the alias class where it stood. The fix is to stop deciding at lookup time and carry the candidates forward, not to move a check earlier."
+    },
+    {
+      "what": "the fold is settled against the DECODED forwarding jump, never against the shared name",
+      "detail": "`XrefIndex::alias_class` is the connected component of the veneer/slot forwarding relation and is explicitly documented as never derived from a shared symbol name. `Resolution::settle` folds only when EVERY candidate lies in one class, so the fold inherits that guarantee: two static `duplicate_local`s in a relocatable object, twelve duplicated glibc statics in `mcount_x86_64`, and a C++ overload set all still refuse. The name's only job is to point the walk at the addresses to check."
+    },
+    {
+      "what": "the folded name answers at the VENEER, not the slot",
+      "detail": "Both members answer identically for `--to`, so the choice is about what the caller does next: the veneer is the code an agent goes on to `kuna decompile` or disassemble, the slot is a pointer word. It also makes `--from <name>` meaningful (the veneer's forwarding jump) instead of empty (a data address references nothing). Ties -- several veneers through one slot -- break on the lowest address, so the pick is deterministic. `target.aliases` and the text surface's `# same import at ...` line already disclose the other member, so nothing is hidden by the choice."
+    },
+    {
+      "what": "no option, no stages XML, no catalog counter, no DIV row",
+      "detail": "The diff is one file of `kuna-cli` plus its tests and docs. `kuna xrefs` is a read-only query: it commits nothing into the engine, runs no pass that would not otherwise run, and emits no C. The three parity gates are byte-identical, which is the evidence."
+    }
+  ],
+  "inertness": {
+    "method": "the only source file changed is decompiler/crates/kuna-cli/src/xrefs.rs; no engine, analysis or console source is touched, so emitted C cannot move",
+    "note": "make test 675/675 PARITY OK and make test-stages 635/635 PARITY OK confirm it"
+  },
+  "sweep": {
+    "question": "does the fold ever merge two entries that are NOT one callable -- and does it ever refuse one that is?",
+    "method": "every duplicate-name entry in every binary fixture under kuna-analysis/tests/fixtures and tests/hang-repro (names `kuna functions --json` reports at two or more distinct addresses), queried by NAME, then cross-checked against each candidate ADDRESS. A fold is legitimate only if the name's `xrefs` array is byte-identical to every one of its candidates' -- i.e. the fold answered a question all its candidates already agreed on. A refusal must still name every candidate.",
+    "result": "148 duplicate names across 14 images: 129 folded, 18 refused, 0 mismatches. Every fold matched every one of its own candidates byte for byte; every refusal listed all its candidates. The folds are entirely PE imports (pe_imports 46, pe_imports_stripped 46, pe_dwarf 33, crtmain 3, pe_noreturn_import 1). The refusals are entirely genuine collisions: 12 duplicated glibc statics in the statically-linked mcount_x86_64 (free_mem has EIGHT distinct definitions), the two entry_selectors_x86_64.o duplicate_locals, a C++ overload set (cppproto maxof), and Mach-O printf on 5 images. The one error is pre-existing and unrelated: macho_fat is a fat Mach-O that `kuna xrefs` cannot parse at any selector, address included."
+  },
+  "gates": {
+    "make test": "PARITY OK, 675/675 assertions",
+    "make test-stages": "PARITY OK, 635/635 assertions",
+    "make rust-test": "green on the rebased tree \u2014 5,684 passed / 0 failed / 38 ignored, exit 0, run with KUNA_DECOMP_TEST unset. With the repipe loop's KUNA_DECOMP_TEST exported, `verify_w10_proto_unlock::w10_proto_unlock_const_return_collapses_no_tied_roundtrip` reports an 'oracle drifted' failure -- the known harness artifact, since that variable points the oracle at a Rust decomp_test_dbg. The diff touches no kuna-decomp source.",
+    "make check-spec": "OK (lenient mode)",
+    "make test-cli": "40/40",
+    "kuna catalog --check": "catalog OK",
+    "cargo test -p kuna-cli --test xrefs_cli": "19/19",
+    "cargo test -p kuna-cli": "489/489 (whole crate, after the final refactor)"
+  },
+  "acceptance": {
+    "acceptance_id": "a-6576d0dff8a6",
+    "result": "PASS",
+    "transition": "closed",
+    "promoted_to": "tests/cli/name-based-xrefs-rejects.json",
+    "promotion_note": "verify --promote refused (target.binary_source is 'dataset'; CI has no dataset, and --force does not override that arm). Re-pointed by hand at pe_imports.exe, the vendored MinGW twin the sibling xrefs-unify-pe-import probe already uses -- same shape, an import named by both a .text FF25 veneer (0x1400079b0) and an .rdata IAT slot (0x14000d234). Strengthened past the recorded count>0: target.address_hex must be the veneer and the rows must be the two real uses, so a fold that picked the slot, lost the alias disclosure, or answered with the wrong rows still fails.",
+    "reproduction_confirmed_on_main": "on 49678d6a, `kuna xrefs pe_imports.exe --to VirtualProtect --json` exits 1 with `selector \"VirtualProtect\" is ambiguous`; the dataset crackme reproduces identically on memcmp (0x140007a1b / 0x140009280)"
+  },
+  "not_closed": [
+    "A Mach-O `__stubs` entry and its `__got`/lazy-pointer slot are NOT recognized as one alias class, so `printf` on the five Mach-O fixtures still refuses. This is pre-existing and lives in `veneer_at`, not in name resolution: `--to 0x100003000` on macho_imports already answers `count: 0` with `aliases: []` today, exactly as it did before. Extending veneer recognition to the Mach-O stub shape would close it for both spellings at once.",
+    "The other name-taking surfaces are untouched. `kuna decompile <bin> VirtualProtect` and `kuna decompile-all --functions VirtualProtect` still refuse an import by name, and their refusal is arguably right -- they decompile a body, and an IAT slot has none -- but nothing yet tells a caller which of the two candidates has one.",
+    "The fold is silent on the human surface beyond the existing `# same import at ...` line: a caller who typed a name and expected a refusal is not told that a fold happened, only which addresses were involved."
+  ],
+  "rebase": {
+    "base": "49678d6af166dbb708fa448436ae2962569959bc",
+    "onto": "798f01e56c7fa454856ff9acba482ba6179c8fb8",
+    "note": "origin/main moved by one repipe-docs commit (#439); counters re-derived from a fresh capture on the rebased tree with no drift, mergecheck clean (0 rejects), and every gate re-run after the rebase"
+  },
+  "pr": "https://github.com/Noelo-Lab/kuna/pull/441"
+}

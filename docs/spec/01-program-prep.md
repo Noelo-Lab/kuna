@@ -2030,6 +2030,23 @@ computed, and which therefore lifts to a `LOAD` through a temporary); the class 
 never derived from a shared symbol name, which would fold genuinely distinct
 same-named functions together.
 
+(kuna) The same two addresses make the import's **name** a selector that matches
+two entries, and the selector model's answer to that is a refusal naming every
+candidate — which would refuse a question that has exactly one answer, since either
+address alone answers it. So a contested name is not decided at lookup time at all:
+whether its candidates are one callable is a property of the decoded forwarding
+jumps, which only exist once the walk has run. The candidates are carried into the
+walk as its focus set, so every one of them is decoded, and the ambiguity is settled
+afterwards against the alias class
+(`decompiler/crates/kuna-cli/src/xrefs.rs (Resolution::settle)`). Candidates that all
+lie in one class are one callable and the query proceeds at the class's code half —
+the forwarding veneer rather than the pointer slot, because that is the address the
+answer will next be disassembled at, with the lowest address breaking a tie between
+several veneers through one slot. Candidates that do not all share a class are
+distinct functions and keep the refusal, with every candidate still named. The fold
+therefore still rests on the decoded jump and never on the shared name; the name only
+selects which addresses to check.
+
 (kuna) Because the query runs that descent **itself**, it takes its own analysis
 bundle rather than a decompiling surface's. `kuna functions` and `kuna decompile-all`
 inject the DIV-15/DIV-20/DIV-68 defaults (the Listing, the prologue-pattern scan,

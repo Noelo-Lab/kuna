@@ -1250,39 +1250,6 @@
       "path": "docs/re-needs/getprocaddress-result-discarded.md"
     },
     {
-      "need_id": "name-based-xrefs-rejects",
-      "title": "Name-based xrefs rejects memcmp although its candidates are aliases",
-      "track": "tooling",
-      "status": "open",
-      "severity": "minor",
-      "probe_id": "p-264f6f6dbdd7",
-      "acceptance_id": "a-6576d0dff8a6",
-      "hypothesis_status": "inconclusive",
-      "credibility": 0.7,
-      "instances": 1,
-      "challenges": [
-        "68d9ee36224c0ec5dcedc3fc"
-      ],
-      "rounds": [
-        3
-      ],
-      "first_seen_round": 3,
-      "attempts": 0,
-      "covered_by_option": null,
-      "touches": [
-        "decompiler/crates/kuna-cli/src/xrefs.rs",
-        "decompiler/crates/kuna-analysis/src/listing/xrefs.rs"
-      ],
-      "scope": "small",
-      "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
-      "reject_reason": null,
-      "score": 6.931472,
-      "path": "docs/re-needs/name-based-xrefs-rejects.md"
-    },
-    {
       "need_id": "runtime-decrypted-code-opaque",
       "title": "code decrypted at runtime stays an opaque indirect call",
       "track": "quality",
@@ -1376,12 +1343,45 @@
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
+      "pr": 435,
       "closed_in_round": 4,
-      "closing_pr": null,
+      "closing_pr": 435,
       "reject_reason": null,
       "score": 4.620981,
       "path": "docs/re-needs/function-disassembly-decodes-arm.md"
+    },
+    {
+      "need_id": "name-based-xrefs-rejects",
+      "title": "Name-based xrefs rejects memcmp although its candidates are aliases",
+      "track": "tooling",
+      "status": "open",
+      "severity": "minor",
+      "probe_id": "p-264f6f6dbdd7",
+      "acceptance_id": "a-6576d0dff8a6",
+      "hypothesis_status": "upheld",
+      "credibility": 0.7,
+      "instances": 1,
+      "challenges": [
+        "68d9ee36224c0ec5dcedc3fc"
+      ],
+      "rounds": [
+        3
+      ],
+      "first_seen_round": 3,
+      "attempts": 1,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-cli/src/xrefs.rs",
+        "decompiler/crates/kuna-analysis/src/listing/xrefs.rs"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": "441",
+      "closed_in_round": null,
+      "closing_pr": null,
+      "reject_reason": null,
+      "score": 4.620981,
+      "path": "docs/re-needs/name-based-xrefs-rejects.md"
     },
     {
       "need_id": "stack-string-invalid-cast",

@@ -683,9 +683,11 @@ is always resolved as a symbol first, so a function really called `abc` is not
 silently read as `0xabc`. Function names, the `s_<addr>` string symbols the
 `strings` pass installs, and named data globals all resolve — which is what makes
 the string-to-its-users hop work: `kuna xrefs ./a.out --to s_400915`. A function
-name that identifies several entries — two same-named locals in a relocatable
-object — is reported as ambiguous with every candidate, never answered for
-whichever one the symbol table holds first.
+name that identifies several *distinct* entries — two same-named locals in a
+relocatable object — is reported as ambiguous with every candidate, never answered
+for whichever one the symbol table holds first. A name that identifies several
+addresses of the **same** callable is not ambiguous in any sense the caller can
+act on and is answered; see below.
 
 | `kind` | What it is |
 |---|---|
@@ -714,6 +716,15 @@ it. `target.aliases` lists the other members (empty for everything that is not a
 import, which is nearly everything), and every row still carries the real
 `to_address` it landed on, so an agent can see whether a call site went through
 the veneer or straight through the slot.
+
+Because the name is on both addresses, `--to VirtualProtect` is a selector that
+matches two entries. It is still answered: the candidates are settled against the
+alias class the walk found, and candidates that are all one class are one callable,
+so the query proceeds at the class's code half — the veneer, which is the address
+an agent goes on to `kuna decompile`. Candidates that are *not* one class are
+genuinely different functions and keep the ambiguity error with every candidate
+listed. So the fold never rests on the name: it rests on the decoded forwarding
+jump, and the name only has to point the walk at the addresses to check.
 
 ```
 # 2 references to VirtualProtect @ 0x1400079b0

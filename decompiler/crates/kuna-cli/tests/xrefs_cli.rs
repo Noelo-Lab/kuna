@@ -315,6 +315,57 @@ fn a_slot_reached_only_through_its_veneer_still_finds_its_callers() {
     assert!(doc.contains("\"name\": \"main\""), "call site unattributed:\n{doc}");
 }
 
+/// The `name-based-xrefs-rejects` need: asking for the import by NAME must answer
+/// the same as asking for either of its addresses.
+///
+/// Both addresses carry the name, so the selector model called `VirtualProtect`
+/// ambiguous and exited 1 — refusing a question that has exactly one answer,
+/// while `--to 0x1400079b0` and `--to 0x14000d234` both answered it. The two
+/// candidates are one alias class, so the name settles on the class's code half,
+/// the veneer, and the slot is disclosed as its alias.
+#[test]
+fn an_import_named_by_its_veneer_and_its_slot_resolves_by_name() {
+    let Some(by_name) = xrefs(&[&pe_imports(), "--to", "VirtualProtect", "--json"]) else {
+        return;
+    };
+    let by_veneer = xrefs(&[&pe_imports(), "--to", "0x1400079b0", "--json"]).expect("the veneer");
+
+    assert_eq!(json_str(&by_name, "address_hex").as_deref(), Some("0x1400079b0"), "{by_name}");
+    assert!(by_name.contains("\"0x14000d234\""), "the slot is not disclosed:\n{by_name}");
+    // Not merely the same count: the same rows, byte for byte.
+    let answer = |doc: &str| doc[doc.find("\"xrefs\"").expect("an xrefs array")..].to_string();
+    assert_eq!(answer(&by_name), answer(&by_veneer), "the name and its veneer disagree");
+}
+
+/// The mirror: `puts` is reached through its veneer rather than its slot, so the
+/// fold must not depend on which half the call sites happen to reference.
+#[test]
+fn a_name_folds_whichever_half_of_the_import_is_called() {
+    let Some(doc) = xrefs(&[&pe_imports(), "--to", "puts", "--json"]) else {
+        return;
+    };
+    assert_eq!(json_str(&doc, "address_hex").as_deref(), Some("0x140007240"), "{doc}");
+    assert_eq!(json_int(&doc, "count"), Some(1), "{doc}");
+    assert!(doc.contains("\"from_address_hex\": \"0x1400015a5\""), "not main's call:\n{doc}");
+}
+
+/// The fold is the alias class and nothing looser. Two static `duplicate_local`
+/// definitions in one relocatable object share a name and no forwarding jump, so
+/// the query still refuses them and still names both — picking one would be the
+/// guess the selector model exists to refuse.
+#[test]
+fn two_genuinely_distinct_functions_of_one_name_are_still_refused() {
+    let object = fixture("entry_selectors_x86_64.o");
+    let (_, stderr, code) = run_kuna(&["xrefs", &object, "--to", "duplicate_local"]);
+    if is_specs_skip(&stderr) {
+        return;
+    }
+    assert_eq!(code, 1, "{stderr}");
+    assert!(stderr.contains("ambiguous"), "{stderr}");
+    assert!(stderr.contains(".text.selector_a+0x0"), "{stderr}");
+    assert!(stderr.contains(".text.selector_b+0x0"), "{stderr}");
+}
+
 /// The alias class is built from the decoded forwarding jump, never from a shared
 /// name: an ordinary function keeps an empty `aliases` list and its own answer.
 #[test]
