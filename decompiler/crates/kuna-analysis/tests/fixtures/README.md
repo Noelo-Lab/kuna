@@ -528,8 +528,13 @@ needs `Varnode::externref` on it). `bail`@`0x140001000` ends in that call; `tall
 is deliberately the next function in `.text` and deliberately contains a loop, so an overrun
 past the unbound call is visible in one line of C; `entry`@`0x140001040` calls `bail` under a
 condition, so the dead fall-through after the bound no-return call is visible too. ImageBase
-`0x140000000`, IAT slot `0x140005038`, MinGW `FF 25` veneer `0x140001070`. Built with
-MinGW-w64 in the `kuna-dev` container (the same toolchain as `pe_imports.exe`):
+`0x140000000`, IAT slot `0x140005038`, MinGW `FF 25` veneer `0x140001070`. The same two
+call sites make it the **IAT call-edge** fixture (`kuna-console/tests/verify_iatcall.rs`,
+CLI probe `tests/cli/imported-call-has-no-callee-edge.json`, GH-456): each is a call edge
+to `ExitProcess` rather than a read of a pointer, and the veneer's `JMP qword ptr
+[0x140005038]` — the same slot, but in the flow op's own operand — stays a read and is the
+control. Built with MinGW-w64 in the `kuna-dev` container (the same toolchain as
+`pe_imports.exe`):
 
 ```bash
 docker run --rm -v "$PWD":/w -w /w kuna-dev bash -lc \

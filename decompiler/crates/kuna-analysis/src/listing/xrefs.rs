@@ -29,7 +29,9 @@
 //!    a decode-time constant is exported as a direct `ram` varnode, not a `LOAD`
 //!    — `MOV EAX,[RIP+0x2c3a]` lifts to `EAX = COPY (ram,0x4014,4)`. A `ram`
 //!    *input* is a [`XrefKind::Read`] of that address, a `ram` *output* a
-//!    [`XrefKind::Write`].
+//!    [`XrefKind::Write`] — unless the instruction's own indirect `CALL` takes
+//!    its destination from that operand, which makes it a [`XrefKind::Call`]
+//!    edge to the slot instead ([`is_indirect_call_slot`]).
 //!  * **A constant-space input varnode.** The value form: `LEA RDI,[RIP+0x36a]`
 //!    lifts to `RDI = COPY 0x13c9:8`, and a `LOAD`/`STORE` through a
 //!    computed-then-folded address carries the pointer as a constant. Scanning
@@ -1067,6 +1069,15 @@ fn assembly(translate: &dyn Translate, vma: u64, code_space: &Rc<AddrSpace>) -> 
 /// i.e. one `BRANCHIND` whose `in0` is the import slot, and dropping it left
 /// every import veneer in the program referencing nothing at all.
 ///
+/// A slot an indirect **CALL** takes its destination from is filed as a
+/// [`XrefKind::Call`] rather than as a read of the pointer, because that is the
+/// whole of what `CALL qword ptr [__imp_HeapAlloc]` does
+/// ([`is_indirect_call_slot`]). A `BRANCHIND` slot stays a read: that shape is
+/// the forwarding half of an import veneer, which the index already joins to
+/// its slot as one callable ([`XrefIndex::refs_to_unified`]) and the whole-binary
+/// document already reports as `forwardsTo`, so calling it an edge would say the
+/// same thing a third time.
+///
 /// `fall_through` (`vma + len`) is skipped as a value for the same reason: a
 /// call materializes its own return address, and every architecture spells that
 /// as this instruction's fall-through — x86 stores the constant to the stack,
@@ -1123,7 +1134,12 @@ fn data_refs(
                 continue;
             }
             if in_data_space(vn) {
-                out.push((vn.offset, XrefKind::Read));
+                let kind = if is_indirect_call_slot(ops, vn) {
+                    XrefKind::Call
+                } else {
+                    XrefKind::Read
+                };
+                out.push((vn.offset, kind));
                 follow(&mut out, vn.offset, read_width(op, i, vn));
                 continue;
             }
@@ -1152,6 +1168,47 @@ fn data_refs(
     out.sort_unstable();
     out.dedup();
     out
+}
+
+/// How many single-instruction `COPY`s may stand between a `CALLIND` and the
+/// memory operand it reads its destination out of. One covers x86's `CALL m64`;
+/// the slack past it is a scan over one instruction's ops and costs nothing, but
+/// it stays small so a long chain of temporaries inside a multi-operand
+/// instruction cannot be read as the operand fetch.
+const MAX_SLOT_COPIES: usize = 4;
+
+/// Does the indirect `CALL` in this one instruction read its destination out of
+/// `slot`?
+///
+/// `JMP qword ptr [__imp_X]` puts the slot in the flow op's own `in0`, but the
+/// call spelling does not: `CALL qword ptr [__imp_X]` lifts to `$U = COPY
+/// (ram,slot,8); ...; CALLIND $U`, so the slot is a `COPY` away from the op and
+/// the generic direct-memory-operand arm files the whole import call as a plain
+/// read of a pointer. Walking the chain is what tells that call site from an
+/// instruction that merely loads a global.
+fn is_indirect_call_slot(ops: &[FullOp], slot: &VarnodeData) -> bool {
+    let Some(dest) = ops
+        .iter()
+        .find(|op| op.opcode == OpCode::CPUI_CALLIND)
+        .and_then(|op| op.ins.first())
+    else {
+        return false;
+    };
+    let mut cur = dest;
+    for _ in 0..MAX_SLOT_COPIES {
+        if cur == slot {
+            return true;
+        }
+        let Some(def) = ops
+            .iter()
+            .find(|o| o.opcode == OpCode::CPUI_COPY && o.out.as_ref() == Some(cur))
+        else {
+            return false;
+        };
+        let Some(next) = def.ins.first() else { return false };
+        cur = next;
+    }
+    false
 }
 
 /// `ScalarOperandAnalyzer.checkOperands`' value filter.
@@ -1297,14 +1354,19 @@ mod tests {
     /// destination is read out of, not a static target, and no Call/Jump edge is
     /// filed for it. This is the whole import-veneer shape — `JMP qword ptr
     /// [__imp_X]` is one `BRANCHIND` on the slot — so skipping it loses the only
-    /// reference the instruction makes.
+    /// reference the instruction makes. A veneer's forwarding jump stays a read
+    /// of the slot: the index already joins the two into one callable.
     #[test]
     fn an_indirect_flow_ops_operand_is_the_slot_it_reads() {
         let (ram, _cst) = spaces();
-        for opcode in [OpCode::CPUI_BRANCHIND, OpCode::CPUI_CALLIND] {
+        // `CALLIND` straight off the slot is not a shape x86 emits, but the
+        // walk must not depend on which of the two it gets.
+        for (opcode, kind) in
+            [(OpCode::CPUI_BRANCHIND, XrefKind::Read), (OpCode::CPUI_CALLIND, XrefKind::Call)]
+        {
             assert_eq!(
                 refs(&ram, &[op(opcode, None, vec![vn(&ram, 0x1030)])]),
-                vec![(0x1030, XrefKind::Read)],
+                vec![(0x1030, kind)],
                 "{opcode:?} lost the slot it jumps through"
             );
         }
@@ -1312,6 +1374,48 @@ mod tests {
         let regs = Rc::new(AddrSpace::new_for_decode(spacetype::IPTR_INTERNAL));
         let ops = [op(OpCode::CPUI_BRANCHIND, None, vec![vn(&regs, 0x10)])];
         assert!(refs(&ram, &ops).is_empty());
+    }
+
+    /// `CALL qword ptr [__imp_X]` never puts the slot in the flow op's own
+    /// `in0`: SLEIGH copies the operand into a temporary first, and reading the
+    /// chain is the only thing that tells the import call from a plain load of
+    /// a global.
+    #[test]
+    fn a_call_through_a_slot_is_a_call_edge_across_the_copy() {
+        let (ram, _cst) = spaces();
+        let tmp = Rc::new(AddrSpace::new_for_decode(spacetype::IPTR_INTERNAL));
+        let ops = [
+            op(OpCode::CPUI_COPY, Some(vn(&tmp, 0x100)), vec![vn(&ram, 0x1030)]),
+            op(OpCode::CPUI_CALLIND, None, vec![vn(&tmp, 0x100)]),
+        ];
+        assert_eq!(refs(&ram, &ops), vec![(0x1030, XrefKind::Call)]);
+
+        // The same instruction reading an unrelated global still reads it: only
+        // the operand the destination actually comes from becomes an edge.
+        let ops = [
+            op(OpCode::CPUI_COPY, Some(vn(&tmp, 0x100)), vec![vn(&ram, 0x1030)]),
+            op(OpCode::CPUI_COPY, Some(vn(&tmp, 0x200)), vec![vn(&ram, 0x4010)]),
+            op(OpCode::CPUI_CALLIND, None, vec![vn(&tmp, 0x100)]),
+        ];
+        assert_eq!(
+            refs(&ram, &ops),
+            vec![(0x1030, XrefKind::Call), (0x4010, XrefKind::Read)]
+        );
+    }
+
+    /// The chain is bounded: a temporary the flow op reaches only through more
+    /// than [`MAX_SLOT_COPIES`] copies is not read as the operand fetch.
+    #[test]
+    fn the_copy_chain_to_a_slot_is_bounded() {
+        let (ram, _cst) = spaces();
+        let tmp = Rc::new(AddrSpace::new_for_decode(spacetype::IPTR_INTERNAL));
+        let mut ops =
+            vec![op(OpCode::CPUI_COPY, Some(vn(&tmp, 0)), vec![vn(&ram, 0x1030)])];
+        for i in 0..MAX_SLOT_COPIES as u64 {
+            ops.push(op(OpCode::CPUI_COPY, Some(vn(&tmp, i + 1)), vec![vn(&tmp, i)]));
+        }
+        ops.push(op(OpCode::CPUI_CALLIND, None, vec![vn(&tmp, MAX_SLOT_COPIES as u64)]));
+        assert_eq!(refs(&ram, &ops), vec![(0x1030, XrefKind::Read)]);
     }
 
     /// A `LOAD` through a constant pointer is a read of that address; the

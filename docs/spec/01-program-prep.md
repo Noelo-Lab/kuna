@@ -2173,6 +2173,42 @@ computed, and which therefore lifts to a `LOAD` through a temporary); the class 
 never derived from a shared symbol name, which would fold genuinely distinct
 same-named functions together.
 
+(kuna) The **call** spelling of that first indirection needs a third rule, because
+it does not arrive in the shape the first one reads. `CALL qword ptr
+[__imp_HeapAlloc]` — what MSVC emits for every Win32 call — does not put the slot
+in the flow op's own `in0` the way `JMP` does: SLEIGH lowers it as `$U = COPY
+(ram,slot,8); ...; CALLIND $U`, so the slot reaches the generic
+direct-memory-operand arm and was filed as a `Read` of a pointer. A read is not a
+call-graph edge, so on the filing image — a Windows PE — a function Ghidra lists
+33 callees for came back with 9, and every one of the 24 missing was an imported
+API the function plainly calls. The walk now resolves a `CALLIND`'s destination
+back through the single-instruction `COPY` chain that materialised it
+(`decompiler/crates/kuna-analysis/src/listing/xrefs.rs (is_indirect_call_slot)`)
+and files the slot it lands on as a `Call`. The chain is bounded at four copies
+and never leaves the one instruction, so the rule can only re-label an operand
+that instruction genuinely fetched its destination from; every other data operand
+of the same instruction is judged exactly as before. The `Call` row **replaces**
+the `Read` rather than joining it: one instruction makes one reference, carrying
+the strongest claim it supports, which is already the collapse rule the
+whole-binary graph states (§9.7). The cost is that a caller filtering `--kind
+read` for data readers no longer sees the slot, which is the right trade — the
+instruction is a call site, and the slot is where the callee is named. A
+`BRANCHIND` through a slot keeps its `Read`: that shape is the forwarding veneer,
+which the alias class above already reports as the import's other half and the
+graph already reports as `forwardsTo`.
+
+(kuna) An edge also has to survive being resolved to a **node**, and the walk's
+function set is the wrong authority for this one. The walk calls nothing outside
+an executable section a function — an IAT slot lives in `.rdata`, so it is never
+one — while the inventory does name it, because `pe_iat` (§1.3) registered the
+import there. The graph therefore falls back from the walk's function set to the
+inventory extent containing the target
+(`decompiler/crates/kuna-cli/src/decompile_all.rs (CallGraph::callee_of)`), which
+is the same fold it already applies to every callee it reports. An address in
+neither is still not an edge. Measured over 120 in-tree images, seven changed and
+none lost an edge: on `pe_imports.exe` the functions reachable from the entry
+point went 47 -> 52 and those with no caller 115 -> 103.
+
 (kuna) The same two addresses make the import's **name** a selector that matches
 two entries, and the selector model's answer to that is a refusal naming every
 candidate — which would refuse a question that has exactly one answer, since either

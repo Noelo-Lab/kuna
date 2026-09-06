@@ -433,9 +433,19 @@ impl CallGraph {
 
     /// The call-graph node a reference edge lands on, or `None` when the edge is
     /// not a call-graph edge at all.
+    ///
+    /// A flow edge falls back to the inventory ([`Self::owner_of`]) when the
+    /// walk has no node for the target. The walk only ever calls code a
+    /// function, and an import is reached through its **IAT/GOT slot**, which
+    /// lives in `.rdata`: `CALL qword ptr [__imp_HeapAlloc]` lands on an address
+    /// the walk correctly refuses to decode or attribute instructions to, but
+    /// which the inventory names and the document lists as a node. Without the
+    /// fallback every Windows API call in the program is silently not an edge.
     fn callee_of(&self, r: &Xref) -> Option<u64> {
         match r.kind {
-            XrefKind::Call | XrefKind::Jump => self.node_at(r.to),
+            XrefKind::Call | XrefKind::Jump => {
+                self.node_at(r.to).or_else(|| self.owner_of(r.to))
+            }
             XrefKind::Data => self.index.is_function_entry(r.to).then_some(r.to),
             XrefKind::Read | XrefKind::Write => None,
         }

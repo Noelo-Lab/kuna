@@ -620,7 +620,9 @@ answered with **`kuna xrefs`' own reference edges** (`kuna-analysis`'s
 them. A call, a tail jump, and an *address-taken function pointer* all count as
 edges — the third one matters: on a glibc ELF `_start` reaches `main` only
 through the pointer it hands `__libc_start_main`, and a callback registered with
-`CreateThread` or `atexit` is likewise code the caller reaches. A materialized
+`CreateThread` or `atexit` is likewise code the caller reaches. A `call qword ptr
+[__imp_X]` reaches the import it names, so a Windows program's API calls are
+edges like any other. A materialized
 address that does not land on a known function entry is a string or a global, not
 a callee, and is not an edge. The operand resolves as a name first and only then
 as bare hex, so a function genuinely called `abc` is never read as `0xabc`. A
@@ -852,7 +854,7 @@ act on and is answered; see below.
 
 | `kind` | What it is |
 |---|---|
-| `call` | A direct CALL to the target (a call site). |
+| `call` | A CALL to the target (a call site): a direct `CALL 0x1030`, or a `CALL qword ptr [slot]` that reads its destination out of a fixed slot — the shape every imported Windows API call has. The slot is where the edge lands, because the slot is what carries the import's name. |
 | `jump` | A direct branch to it: a tail call, a PLT thunk. Intra-function branches are control flow, not references, and are omitted from `--from`. |
 | `data` | The target's address is materialized as a value — address-taken: a function pointer, a string pointer, a global's address. Also the value of a **literal pool** word an instruction loads (`ldr r0,[0x86e4]` where 0x86e4 holds the string's address), which is how an ARM literal gets an owning function at all; the pool word itself is a separate `read` row from the same instruction. Only pointer-sized reads of *non-writable* memory are followed. |
 | `read` | The target is loaded from. |
@@ -890,7 +892,7 @@ jump, and the name only has to point the walk at the addresses to check.
 ```
 # 2 references to VirtualProtect @ 0x1400079b0
 # same import at 0x14000d234 (VirtualProtect) - a forwarding veneer and the pointer slot it jumps through
-0x140001a9e	read	__write_memory.part.0+0x18e	CALL qword ptr [0x14000d234]
+0x140001a9e	call	__write_memory.part.0+0x18e	CALL qword ptr [0x14000d234]
 0x140001cce	read	_pei386_runtime_relocator+0x19e	MOV R12,qword ptr [0x14000d234]
 ```
 
@@ -1444,10 +1446,10 @@ emitted. Two runs of one command are byte-identical.
 | `assembly` | The function's instruction listing, one `<vma>  <MNEMONIC operands>` per line — the `kuna disassemble` walk, so an undecodable byte inside the body is a `.byte 0x..` row rather than the end of the listing. Present whenever a body was attempted, including when the decompile failed: the listing is what is left to look at. |
 | `codeC` | The decompiled body, byte-identical to this function's `decompile-all --json` `code`. |
 | `error` | Why this function has no `codeC`, when the decompile was attempted and failed. `null` with a `null` `codeC` means no body was attempted: a bodyless `kind`, or a `--functions`/`--addr` narrowing that did not select it. |
-| `hasIndirectCalls` | The body contains a computed call (`CALLIND`), which files no edge because it has no static target. An indirect *branch* is not one — see `forwardsTo`. The call site is attributed to the row that contains it, the same rule that decides which function `kuna xrefs --from` lists an instruction under. |
+| `hasIndirectCalls` | The body contains a computed call (`CALLIND`). It files no edge when its destination is computed at run time; a `call qword ptr [slot]` through a fixed slot does file one, and sets this flag too. An indirect *branch* is not one — see `forwardsTo`. The call site is attributed to the row that contains it, the same rule that decides which function `kuna xrefs --from` lists an instruction under. |
 | `forwardsTo` | Where a forwarding entry sends control: the destination of a direct lone jump, or the fixed pointer slot an indirect one reads. The slot half needs the jump to name it as a decode-time constant, which an x86 `jmp [rip+disp]` stub does and an AArch64 `adrp`/`ldr`/`br x16` stub does not — a Mach-O `__stubs` entry is therefore `kind` `thunk` with a `null` `forwardsTo`, and the import slot it reaches is a row of its own found by name. `null` for anything that does not forward. |
 | `isEntryPoint` | This row is the image's declared entry point, resolved through the inventory so an ARM `e_entry` carrying the Thumb mode bit still lands on it, and rebased so a Mach-O `LC_MAIN` — which states a `__TEXT`-relative file offset rather than a VMA — marks the row it names. A format that declares no entry point marks no row. |
-| `edges[].kind` | The `kuna xrefs` kind, so the two surfaces cannot disagree: `call` a direct call; `jump` a tail call or a branch into a neighbouring entry; `data` an address handed to something else to call — the edge that gives `main` a caller, since `_start` passes it to `__libc_start_main` as a pointer rather than calling it. A caller that both calls and mentions one callee gets one edge carrying the strongest of the two. |
+| `edges[].kind` | The `kuna xrefs` kind, so the two surfaces cannot disagree: `call` a call, direct or through the fixed slot an imported API is called through; `jump` a tail call or a branch into a neighbouring entry; `data` an address handed to something else to call — the edge that gives `main` a caller, since `_start` passes it to `__libc_start_main` as a pointer rather than calling it. A caller that both calls and mentions one callee gets one edge carrying the strongest of the two. |
 | `edges[].calleeOrder` | Contiguous and zero-based per caller, in first-reference order, deduplicated on the callee. |
 
 Rows are entry-VMA ordered, and each caller's edges follow that caller's order.
