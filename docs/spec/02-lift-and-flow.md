@@ -739,6 +739,20 @@ strand phi state:
   unreachable-block removal. Heritage then rebuilds SSA over the corrected CFG
   and the ordinary structurer/printer emit the switch.
 
+  The synthetic BRANCHIND is inserted through `Funcdata::op_insert`, not the
+  bare block splice, because a p-code op is born on the dead list and only
+  `op_insert` marks it alive. An op left on the dead list is skipped by every
+  alive-list pass, and the one that matters here is the dead-code consume
+  propagation: it is what records that the BRANCHIND reads its selector. Without
+  that record the selector's consume mask stays empty, `ActionVarnodeProps`
+  concludes that no bit of it can be observed and replaces it with the constant
+  0, and the emitted `switch(0)` takes `default` unconditionally while the
+  parameter it dispatched on drops out of the recovered prototype. Where
+  heritage had also widened the read, the same collapse swept the input outright
+  and printed the un-compilable `switch()`. The case set and the binary-search
+  tree shape survive the collapse either way, so only an assertion on the
+  scrutinee can see it.
+
   Install declines whenever the rewiring would take a genuine switch with it.
   Severing the head's out-edges makes everything reachable only through the
   compare spine unreachable, and the trailing sweep deletes it; when one of
@@ -767,49 +781,24 @@ the switch variable constant on a guarded edge, and classifying that constant
 as broken made repair and cond-const toggle the same input forever — the fixed
 infinite-loop hang on stripped openssh/bash binaries (`tests/hang-repro/`).
 
-### The selector the install cannot re-read — `option switchselector`, default off
+### Restricting the re-roll to a locally computed selector — `option switchselector`, default off
 
-Detection and installation do not see the same graph, and nothing checks that
-the install's half of the bargain succeeded. `ActionLowerSwitchDetect` runs on
-the fully simplified, SSA'd CFG and records the cascade's switch-variable
-*storage*; `Funcdata::kuna_install_lowered_switch` runs pre-SSA on the
-**re-lifted** raw p-code of the restart and has to re-find that variable. It has
-two arms — recover the live Varnode from the head comparison
-(`kuna_head_switch_var`), else fall back to a free read of the recorded storage
-— and it commits the CFG surgery whatever it ends up holding. When both arms
-fail, the emitted `switch` dispatches on something that is not the switch value.
+The re-rolled `switch` and the cascade it replaces read the same value, so which
+is the better rendering is a judgement call. When the switch value is a
+*parameter* — a register argument, the slot the prologue spilled it into, or a
+stack argument — the compiler's chain names that parameter at every arm and keeps
+the compiler's own ordering, where the re-rolled `switch` presents the dispatch
+as if the function had derived the selector itself. That is the Win32 callback
+shape: a `DialogProc` dispatching on its `uMsg` parameter.
 
-On x86 the head arm is essentially never the productive one: `cmp`/`jcc` reaches
-the install as flag arithmetic (`ja` is `!(CF|ZF)`, a `BOOL_NEGATE` over a
-`BOOL_OR`), not as a comparison, so the recovery returns nothing and everything
-rests on the fallback read. That read is re-linkable only when heritage can find
-it a reaching definition at pass 0. A **register** always can. A **stack slot the
-function writes** can, once stack-pointer normalization has run. A stack slot
-that is a function **input** cannot: there is no definition to find — the
-incoming value is still a `LOAD` through the frame pointer at that point, and the
-input Varnode set is rebuilt by parameter recovery only *after* heritage. The
-BRANCHIND's input collapses to a constant, and the surgery has already committed.
-
-That is the Win32 callback shape. A `DialogProc` dispatching on its `uMsg`
-parameter renders as `switch(0)`: every `WM_INITDIALOG`/`WM_COMMAND` case
-present and unreachable, and the parameter the function dispatches on absent from
-the recovered prototype, because after the collapse nothing reads it.
-
-`kuna_loweredswitch.rs (install_can_reread)` is the guard: at detection time,
-where the switch variable is a real SSA Varnode, refuse to record a cascade whose
-variable is a function input outside the register space. Declining leaves the
-comparison cascade exactly as the compiler lowered it — an `if`/`else if` chain
-over the real variable, which is correct C that names the parameter. The test is
-deliberately narrow: a stack local the function itself writes is still recorded,
-because the fallback read does resolve for it (measured — the guard applied to
-*every* stack-located switch variable also cost a genuine `switch` in the same
-binary, and that is what narrowed it to the input case).
-
-Measured: byte-identical on the 675-assertion datatest corpus, and across
-seventeen crackmes-corpus binaries exactly one function changes — the witness,
-where five unreachable cases become a five-branch `if`/`else if` chain over the
-recovered parameter. It ships off only because turning it on is a DIV-registry
-default change.
+`kuna_loweredswitch.rs (selector_defined_in_function)` is the knob. Turned on, a
+cascade is recorded only when its switch variable has a defining op in this
+function — a call return, a load, a computed value. Detection runs on the fully
+simplified, SSA'd CFG, where that test is exactly `Varnode::is_written`. A
+declined cascade renders exactly as `option loweredswitch off` renders it, and
+every cascade over a value the function computes still re-rolls, so this is the
+per-cascade form of the whole-pass escape hatch. Measured byte-identical on the
+675-assertion datatest corpus with the guard forced on.
 
 ### Bound extensions: rescuing an unboundable table
 

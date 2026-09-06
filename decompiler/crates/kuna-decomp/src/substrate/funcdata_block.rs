@@ -2077,9 +2077,12 @@ impl Funcdata {
         let newop = self.new_op(1, branch_addr.clone());
         self.op_set_opcode_code(newop, OpCode::CPUI_BRANCHIND);
         self.op_set_input(newop, swvn, 0)?;
-        // Append the BRANCHIND as the head's terminator (the branch flag marks the
-        // block is_switch_out, the same path bb_insert_op uses).
-        self.bb_insert_op(newop, head, None);
+        // Append the BRANCHIND as the head's terminator.  This must go through
+        // `op_insert` (C++ `Funcdata::opInsert`), not the bare block splice: the
+        // op is born on the dead list, and an op left there is invisible to every
+        // alive-list pass - including the dead-code consume propagation that is
+        // what keeps the switch variable from being folded to a constant.
+        self.op_insert(newop, head, None);
 
         // Add one out-edge per distinct target, in (case…, default) order.  The
         // out-edge index equals the order of insertion.
