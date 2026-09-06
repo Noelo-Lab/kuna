@@ -1488,7 +1488,21 @@ truncating the fall-through here"
             }
             self.op_mark_start_instruction(firstop);
             if flowoverride != crate::overrides::flow_type::NONE {
-                self.data.override_flow(curaddr, flowoverride)?;
+                // (kuna) A refused override is a rejected caller assertion, not a
+                // dead function.  `override_flow` refuses before it mutates
+                // anything, so what follows is the IR this run would have produced
+                // with no override at all -- decompile it, and let the front-end
+                // report the refusal (`Funcdata::note_rejected_flow_override`).
+                // Aborting instead deleted the whole body and, on the text CLI,
+                // reported success for it.
+                if let Err(e) = self.data.override_flow(curaddr, flowoverride) {
+                    let reason = e.explain().to_string();
+                    self.data.note_rejected_flow_override(
+                        curaddr.clone(),
+                        flowoverride,
+                        &reason,
+                    );
+                }
             }
             self.xref_control_flow(Some(firstop), startbasic, &mut isfallthru)?;
         }

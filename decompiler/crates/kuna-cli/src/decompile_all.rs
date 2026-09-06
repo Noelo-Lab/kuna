@@ -741,8 +741,9 @@ pub fn run(argv: &[String]) -> i32 {
             // batching forty renames against a re-decompiled binary must not lose
             // all forty to one stale name); `--assert-strict` makes it fatal.
             let rejected = report_rejected_assertions(&run.assertions);
+            let refused = any_refused_assertion(&run.assertions);
             let status = emit_with_discovery_error(&text, discovery_error.as_deref());
-            if status == 0 && args.assert_strict && rejected {
+            if status == 0 && (refused || (args.assert_strict && rejected)) {
                 return 1;
             }
             status
@@ -767,13 +768,28 @@ pub(crate) fn report_rejected_assertions(
     let mut any = false;
     for outcome in outcomes.iter().filter(|o| o.status == "rejected") {
         any = true;
-        eprintln!(
-            "warning: --assert {:?} rejected: {}",
-            outcome.directive,
-            outcome.detail.as_deref().unwrap_or("no reason given")
-        );
+        let reason = outcome.detail.as_deref().unwrap_or("no reason given");
+        if outcome.fatal {
+            eprintln!(
+                "error: --assert {:?} refused by the pipeline: {reason} \
+                 (the C below was produced WITHOUT it)",
+                outcome.directive
+            );
+        } else {
+            eprintln!("warning: --assert {:?} rejected: {reason}", outcome.directive);
+        }
     }
     any
+}
+
+/// Did the pipeline REFUSE a directive it had already accepted
+/// (`kuna_console::assertions::Outcome::fatal`)?
+///
+/// That is the verdict of the run whether or not `--assert-strict` was passed:
+/// unlike a directive that never bound, the C came back looking healthy while
+/// describing a program the directive was never applied to.
+pub(crate) fn any_refused_assertion(outcomes: &[kuna_console::assertions::Outcome]) -> bool {
+    outcomes.iter().any(|o| o.fatal)
 }
 
 fn emit_with_discovery_error(text: &str, discovery_error: Option<&str>) -> i32 {
@@ -1777,6 +1793,7 @@ fn assertions_json(outcomes: &[kuna_console::assertions::Outcome]) -> Json {
                         "detail".into(),
                         o.detail.clone().map(Json::Str).unwrap_or(Json::Null),
                     ),
+                    ("fatal".into(), Json::Bool(o.fatal)),
                 ])
             })
             .collect(),

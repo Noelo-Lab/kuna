@@ -251,6 +251,14 @@ pub fn decompile_targets(
         };
         match result {
             Ok(fd) => {
+                // (kuna `--assert`) The flow overrides the follower REFUSED are only
+                // known now: `function_seed` recorded `applied` when it seeded them.
+                crate::assertions::record_rejected_flow_overrides(
+                    prog,
+                    &name,
+                    single_target,
+                    &fd,
+                );
                 // Render + extract under `catch_unwind`: the decompile drive only
                 // guards the pipeline (decompile_drive.rs), so a fail-fast invariant
                 // in the printer / type declarator on an exotic recovered function

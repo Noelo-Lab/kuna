@@ -313,8 +313,18 @@ the instruction as a jump — which is what puts an indirect call back through
 switch-table recovery — `call` as a call, `callreturn` as a call whose
 fall-through is dead (the "does not return" case), and `return` as the end of the
 function. A type the engine cannot apply at that instruction (`call` on an
-indirect call has no destination to make direct) is not silently dropped: the
-run reports the engine's own refusal as a per-function error.
+indirect call has no destination to make direct) is neither silently dropped nor
+fatal to the function: the override is rejected, the body you would have got
+without the directive still comes back, and the run exits non-zero with the
+engine's own reason.
+
+```console
+$ kuna decompile ./a.out --addr 0x13c9 --assert 'flow 0x1405 call'; echo "exit $?"
+int sub_13c9(void)
+...
+error: --assert "flow 0x1405 call" refused by the pipeline: Could not apply flowoverride (the C below was produced WITHOUT it)
+exit 1
+```
 
 **Every directive's fate is reported.** `--json` grows an `assertions` array — one
 row per directive, in the order you gave them, carrying the directive text, its
@@ -323,13 +333,20 @@ phase and sub-phase, `applied` or `rejected`, and a reason:
 ```json
 {"directive": "name v9 credbuf", "kind": "name", "phase": "P9",
  "subphase": "naming-policy", "status": "rejected",
- "detail": "No symbol named: v9"}
+ "detail": "No symbol named: v9", "fatal": false}
 ```
 
 A rejection is also printed on stderr, on both surfaces. It is **not** fatal by
 default — a batch of forty renames against a re-decompiled binary must not lose the
 other thirty-nine to one stale name — and `--assert-strict` makes any rejection
 exit non-zero.
+
+`"fatal": true` is the exception, and it exits non-zero on its own. It marks a
+directive kuna accepted and then **refused while applying it** — today a `flow`
+override the flow-follower could not apply. A rename that did not bind leaves a
+correct body one annotation short and you can see which; a refused flow override
+leaves C that describes a different control-flow graph than the one you asked for
+and looks exactly like the C you wanted, so it is reported as the run's verdict.
 
 **Order matters, and so does scoping.** Directives are applied in the order given:
 `type v2 char[16]` then `name v2 credbuf` retypes and then renames, where the

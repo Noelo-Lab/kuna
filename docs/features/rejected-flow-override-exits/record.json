@@ -1,0 +1,72 @@
+{
+  "slug": "rejected-flow-override-exits",
+  "need_id": "rejected-flow-override-exits",
+  "track": "tooling",
+  "scope": "small",
+  "round": 5,
+  "branch": "feat/re-rejected-flow-override-exits",
+  "summary": "A flow override the engine cannot apply is now a REJECTED assertion instead of a dead function: FlowInfo::process records the refusal and flow follows on, so the body that would otherwise decompile comes back byte-identical to the no-directive control, the assertion ledger reports `rejected` with the engine's reason and a new `fatal` flag, and the run exits non-zero on it with or without --assert-strict. Separately the text surface now notices a `decompile` that raised at all -- it only looked for the console's swallowed `Skipping` notice -- and every per-function abort is stamped onto the retained Funcdata so the printed shell names its reason.",
+  "family": [
+    "rejected-flow-override-exits (this need, acceptance a-b281b805aa2a)",
+    "branch-flow-assertion-discards (sibling acceptance a-81bb5e409470, held jointly per the dispatch brief)",
+    "conditional-indirect-branches-hide (its LEDGER leg only; the indirect-CALL-to-BRANCHIND promotion leg is quality/large and NOT touched here)"
+  ],
+  "decisions": [
+    {
+      "what": "hypothesis UPHELD -- text and JSON really do handle the same failure differently -- but the filed cause is only half of it",
+      "detail": "`kuna decompile` text drives decomp_dbg as a subprocess and reads the transcript; `--json` drives the engine in process and sees the KunaError directly. The transcript scanner (`find_pipeline_failure`) only ever recognized the console's SWALLOWED abort notice, `Skipping <name>: <reason>` (the LOSS-131 arm). A `decompile` that RAISED prints `Execution error: <reason>` and the session continues, so `print C` rendered the previous, un-decompiled Funcdata as `/* WARNING: structured blocks unavailable (structuring declined) */` and the CLI called that a successful run. That is the divergence. But it is a symptom of a second defect one layer down."
+    },
+    {
+      "what": "the root cause is in the engine, not the CLI: `override flow branch` on something already a branch is a hard abort",
+      "detail": "`Funcdata::override_flow` is byte-faithful to C++ `Funcdata::overrideFlow`: to override TO a branch it calls `findPrimaryBranch(findbranch=false, findcall=true, findreturn=true)` -- it looks for the CALL or RETURN to convert and deliberately skips a BRANCH/BRANCHIND. Both witnesses ask `branch` at an instruction that is ALREADY a BRANCHIND (keygenme.elf 0x101dfb is `JMP dword ptr [EAX*4 + 0x111358]`, Defender.exe 0x401904 is `JMP EBX`), so the search returns None and the C++ raises. Upstream that kills the function. Confirmed by asking for the other three words at the same address: `call`, `callreturn` and `return` all succeed there, only `branch` refuses."
+    },
+    {
+      "what": "the refusal is made non-fatal to the FUNCTION and fatal to the RUN -- the only shape that holds both acceptances",
+      "detail": "The dispatch brief pins two acceptances that pull opposite ways: this need wants exit != 0 with no --assert-strict, the sibling wants the recovered XOR loop back in stdout. Making the override a silent no-op passes the sibling and fails this one; keeping the hard abort passes this one and fails the sibling. `override_flow` returns Err before it mutates any opcode (all three error arms are ahead of every `op_set_opcode_code`), so the IR after a refusal is provably the no-directive IR -- which is what makes `decompile it anyway` correct rather than merely convenient. Verified: `kuna decompile <bin> <addr> --assert 'flow <addr2> branch'` is byte-identical to the same command without the --assert, on both the keygenme witness and the in-repo fixture."
+    },
+    {
+      "what": "`fatal` is a new Outcome field, not a new status value or a blanket policy change",
+      "detail": "docs/cli.md documents that a rejection is NOT fatal by default, for a real reason (a batch of forty renames must not lose thirty-nine to one stale name), and --assert-strict exists for callers who want it strict. Flipping every rejection to fatal would pass this acceptance by breaking that contract. The distinction drawn instead is by REJECTION SITE: a directive that never bound, or whose console command raised at issue time, stays a warning; a directive the pipeline ACCEPTED, seeded and then REFUSED while applying it is fatal. Today that is exactly the deferred class -- `flow` is the only directive applied at flow time -- and it is the only rejection a caller cannot see in the output. Serialized as `\"fatal\": bool` on every assertions[] row (additive; `status` keeps its two values)."
+    },
+    {
+      "what": "the ledger leg the report did not file is fixed on both surfaces, at the two places that know",
+      "detail": "In-process, `assertions::function_seed` writes `applied` when it SEEDS a flow directive, which is before the pipeline can have an opinion; `assertions::record_rejected_flow_overrides` now downgrades it after the decompile by matching (address, flow type) against `Funcdata::kuna_rejected_flow_overrides`. On the script surface the console prints `Rejected <the exact console command>: <reason>` under the `decompile`, and the CLI pairs it back to the directive by that spelling -- `command_failure` cannot, because it scans only the block under a command's OWN echo and `override flow` answers `Successfully added override` there."
+    },
+    {
+      "what": "no option, no stages XML, no catalog counter, no DIV row",
+      "detail": "Tooling track. A refusal path that today deletes a function and reports success is a strict bug fix, not a judgement call, and AGENTS.md gates only what CAN change emitted C on a run the caller did not steer. Nothing here fires without a caller-stated (or analysis-derived) flow override, and the 134-fixture sweep with the derived-override options ON shows 0 output diffs."
+    }
+  ],
+  "inertness": {
+    "method": "The engine edit is one `?` turned into an `if let Err`, reached only when `Funcdata::override_flow` returns Err -- which today aborts the function outright, so there is no run that reaches it and survives. The new Funcdata field is an empty Vec on every other path. The console edit adds output lines only when that Vec is non-empty, plus a stamp that is invisible unless the retained Funcdata has no structured blocks.",
+    "note": "make test 675/675 PARITY OK and make test-stages 650/650 PARITY OK on the pre-rebase tree."
+  },
+  "sweep": {
+    "question": "does letting a refused override through produce WRONG output -- either different C where the override used to abort, or different C anywhere else?",
+    "method": "(1) whole-corpus `decompile-all` before/after over every binary fixture in kuna-analysis/tests/fixtures (134 after filtering sources), with `--option noreturn_error on --option listing on` so the analysis-derived CALL_RETURN flow overrides are live and could hit the same refusal path; (2) byte-compare the refused-override run against the no-directive control on both witnesses; (3) re-run every APPLIED flow-override case in verify_assertflow, which asserts the emitted C changed against a measured baseline.",
+    "result": "(1) 0 of 134 differ. (2) byte-identical on keygenme.elf 0x100054 (955 lines) and on aif_gap_x86_64 sub_13c9 (55 lines) -- a refused override is exactly the run without it, which is the claim the design rests on. (3) all 8 verify_assertflow cases pass: `return` still collapses the body to one statement, `branch` and `callreturn` still land as their own distinct flow types. So the applied path is untouched and the refused path is the control."
+  },
+  "gates": {
+    "make test": "PARITY OK, 675/675 assertions",
+    "make test-stages": "PARITY OK, 650/650 assertions",
+    "make rust-test": "green: 5,789 passed / 0 failed (364 result blocks), run with KUNA_DECOMP_TEST unset so the verify_w10_* oracle resolves the main tree's decomp_test_dbg",
+    "make check-spec": "OK (lenient mode)",
+    "make test-cli": "56/56 with both probes added",
+    "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
+    "counters --check": "no drift"
+  },
+  "acceptance": {
+    "acceptance_id": "a-b281b805aa2a",
+    "result": "PASS",
+    "transition": "closed",
+    "promoted_to": "tests/cli/rejected-flow-override-exits.json",
+    "promotion_note": "The filed acceptance targeted the dataset keygenme.elf and carried no `target` block at all, so it was unrunnable as filed. Re-pointed at the vendored `kuna-analysis/tests/fixtures/aif_gap_x86_64`, where `flow 0x1405 call` is the same defect (an override overrideFlow refuses at sub_13c9's indirect call) and reproduces all three symptoms on 38c461d1: exit 0, empty stderr, `structured blocks unavailable` stub in place of a 55-line body. The expectation is strengthened past the filed `exit_code ne 0` to also require the body back and the reason on stderr, so the cheap wrong fix cannot pass it. The dataset keygenme.elf stays the witness in Reproduction. `--promote` needed --force because the need is still `open` in this worktree's copy of the backlog.",
+    "sibling_acceptance": "a-81bb5e409470 (branch-flow-assertion-discards) also flips: `kuna decompile Defender.exe 0x401746 --addr --assert 'flow 0x401904 branch' --assert-strict` now prints the 25-line body including two `^` lines (the XOR decrypt loop the report says disappears) and exits 1. Verified by hand on the arena image; it has no bound target so `scripts.repipe.verify` cannot run it here."
+  },
+  "not_closed": [
+    "The other leg of conditional-indirect-branches-hide -- promoting an indirect CALL to a multiway BRANCHIND in P2 behind a named option -- is untouched, per the dispatch brief that re-triaged it to quality/large.",
+    "`override flow <addr> branch` at an instruction that is ALREADY a branch is still REFUSED rather than treated as a satisfied no-op. That is upstream's rule (findPrimaryBranch skips the branch it is being asked to produce) and both witnesses ask for exactly it, so an agent that wants the switch-table reading of an indirect jump gets a rejection with a reason rather than a silent success. Changing the rule would be a behaviour change to a ported core routine and belongs behind a named option, not in a failure-path fix.",
+    "docs/re-needs/ is deliberately NOT committed: the round-5 need docs live on the captain's local main and are not in this branch's base. The retargeted acceptance block was written into the local copy so `scripts.repipe.verify --need` could run; the captain owns the backlog file."
+  ],
+  "pr": "https://github.com/Noelo-Lab/kuna/pull/472"
+}

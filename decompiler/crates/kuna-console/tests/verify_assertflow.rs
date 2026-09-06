@@ -164,21 +164,47 @@ fn branch_and_callreturn_land_as_their_own_flow_types() {
 
 /// `call` at this site is the one the ENGINE refuses — an indirect call has no
 /// destination to make direct, so `Funcdata::overrideFlow` raises "Could not
-/// apply flowoverride".  That refusal is the evidence the directive reached the
-/// engine at all: the run reports a per-function error instead of quietly
-/// decompiling as if nothing had been asserted.
+/// apply flowoverride".
+///
+/// The refusal REJECTS the directive; it does not delete the function.  Nothing
+/// is mutated before `overrideFlow` gives up, so the IR that follows is the one
+/// the same run without the directive would have produced — and discarding it
+/// used to cost the caller a 55-line body plus, on the text CLI, any sign that
+/// anything had gone wrong at all (`docs/re-needs/rejected-flow-override-exits.md`).
 #[test]
-fn a_flow_type_the_engine_cannot_apply_surfaces_as_a_pipeline_error() {
-    let Some((_code, error, report)) =
+fn a_flow_type_the_engine_cannot_apply_is_rejected_and_keeps_the_body() {
+    let Some((code, error, report)) =
         run(&[SUB_13C9], vec![flow("flow 0x1405 call", None, INDIRECT_CALL, "call")])
     else {
         return;
     };
-    all_applied(&report);
+    assert_eq!(error, None, "the refusal aborted the function:\n{code}");
+    assert_eq!(report.len(), 1);
+    assert_eq!(report[0].status, "rejected");
+    assert!(report[0].fatal, "a pipeline refusal is fatal: {report:?}");
     assert!(
-        error.as_deref().unwrap_or_default().contains("flowoverride"),
-        "expected the engine's own refusal, got {error:?}"
+        report[0].detail.as_deref().unwrap_or_default().contains("flowoverride"),
+        "expected the engine's own refusal, got {:?}",
+        report[0].detail
     );
+    // The body the abort used to throw away.
+    assert!(code.contains("v25"), "the recovered body did not come back:\n{code}");
+}
+
+/// A directive the pipeline refused is `fatal`; one that merely did not bind is
+/// not.  The distinction is what `kuna decompile` reads to decide whether the run
+/// failed without `--assert-strict`: a refused `flow` means the C describes a
+/// control-flow graph other than the one asked for, and nothing in the C says so,
+/// while an unbound directive left a correct body un-annotated.
+#[test]
+fn only_a_pipeline_refusal_is_fatal() {
+    let Some((_code, report)) =
+        decompile_with(&[SUB_13C9], vec![flow("flow 0x1405 goto", None, INDIRECT_CALL, "goto")])
+    else {
+        return;
+    };
+    assert_eq!(report[0].status, "rejected");
+    assert!(!report[0].fatal, "a directive rejected before the pipeline is not fatal");
 }
 
 /// A spelling outside the four-word vocabulary is REJECTED with a reason, not

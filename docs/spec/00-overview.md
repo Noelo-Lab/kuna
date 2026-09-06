@@ -913,6 +913,12 @@ directive that is accepted and does nothing is worse for an agent than one that
 errors. `--assert-strict` turns any rejection into a non-zero exit; without it a
 rejection is reported and the run continues, so a batch of forty renames against a
 re-decompiled binary does not lose the other thirty-nine to one stale name.
+One class of rejection is fatal without it, and the report marks it `fatal`: a
+directive the pipeline ACCEPTED and then REFUSED while applying it. A rename that
+did not bind leaves a correct body one annotation short, and the caller can see
+which one; a refused `flow` override leaves C that describes a control-flow graph
+other than the one asked for, looking exactly as healthy as the C the caller
+wanted, so silence there is the failure this plane exists to end.
 Durability is caller-carried, as it is for boundaries: `--assert @FILE` is the
 artifact.
 
@@ -934,8 +940,24 @@ command (`kuna-console/src/ifacedecomp.rs (IfcFlowOverride)`), whose facts the
 console re-seeds on every IR rebuild; the two surfaces render the same C. Because
 the override is read at flow time, a type the engine cannot honour at that
 instruction — `call` at an indirect call, which has no destination to make direct —
-raises `Could not apply flowoverride` and the run reports that as the function's
-error, rather than decompiling as though nothing had been asserted.
+raises `Could not apply flowoverride`. That refusal REJECTS the directive; it does
+not discard the function. `Funcdata::overrideFlow` gives up before it rewrites any
+opcode, so the IR that follows is the one the same run without the directive would
+have produced: `FlowInfo::process` records the refused `(instruction, flow type,
+reason)` on the `Funcdata` (`note_rejected_flow_override`) and flow follows on.
+Both surfaces then read that record back — the in-process one directly
+(`assertions::record_rejected_flow_overrides`), the script one from the
+`Rejected <command>: <reason>` line the console prints under the `decompile`
+(`IfcDecompile`) — and turn it into the directive's `rejected` row, which is
+`fatal`. This is the one refusal a caller cannot see in the output, so the C comes
+back and the exit code carries the verdict. Aborting instead deleted whole
+recovered bodies, and on the script surface it deleted them silently: nothing
+looks for a `decompile` that raised, so the run exited 0 with the printer's
+"structured blocks unavailable" shell and an empty stderr while `--json`, driving
+the same engine in process, exited 1 on the same command. Every per-function abort
+is now stamped onto the retained `Funcdata` (`set_kuna_pipeline_failure`) so that
+shell names its reason, and the script surface reports the raised abort the way it
+already reported the swallowed one.
 
 A `readonly` range is the one directive whose effect depends on a second switch:
 folding a read-only load into the value behind it is

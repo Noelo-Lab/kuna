@@ -496,11 +496,21 @@ fn assertion_outcomes(
         .iter()
         .map(|directive| {
             let (kind, phase, subphase) = directive.body.coords();
-            let detail = match crate::assertdecl::console_form(directive, selected) {
-                Ok(form) => command_failure(out, &form.line),
+            let (detail, fatal) = match crate::assertdecl::console_form(directive, selected) {
+                Ok(form) => match command_failure(out, &form.line) {
+                    Some(reason) => (Some(reason), false),
+                    // The console line itself ran clean, which for a DEFERRED
+                    // directive says only that it was taken: an `override flow`
+                    // answers "Successfully added override" and is applied later,
+                    // at flow time, where it can still be refused.
+                    None => match pipeline_refusal(out, &form.line) {
+                        Some(reason) => (Some(reason), true),
+                        None => (None, false),
+                    },
+                },
                 // Nothing was emitted for it: the directive names a function this
                 // run did not decompile, and the reason is the report row.
-                Err(detail) => Some(detail),
+                Err(detail) => (Some(detail), false),
             };
             Outcome {
                 directive: directive.raw.clone(),
@@ -509,6 +519,7 @@ fn assertion_outcomes(
                 subphase,
                 status: if detail.is_none() { "applied" } else { "rejected" },
                 detail,
+                fatal,
             }
         })
         .collect()
@@ -543,8 +554,58 @@ fn command_failure(out: &str, line: &str) -> Option<String> {
     if seen {
         None
     } else {
-        Some("the console script did not reach this directive".into())
+        Some(SCRIPT_NOT_REACHED.into())
     }
+}
+
+/// [`command_failure`]'s answer for a command whose echo never appears.
+const SCRIPT_NOT_REACHED: &str = "the console script did not reach this directive";
+
+/// The reason the pipeline REFUSED the directive that lowered to `line`, or
+/// `None` when it was not refused.
+///
+/// A `flow` override cannot be applied when the `override flow` command runs —
+/// there is no IR yet — so the console accepts it, tries it at flow time and, if
+/// `Funcdata::overrideFlow` will not take it, prints `Rejected <command>:
+/// <reason>` after the `decompile`.  Matching on the command's own spelling is
+/// what pairs the line back to the directive that sent it.
+fn pipeline_refusal(out: &str, line: &str) -> Option<String> {
+    let prefix = format!("Rejected {line}: ");
+    for raw in out.lines() {
+        let text = console_text(raw.trim());
+        if let Some(reason) = text.strip_prefix(&prefix) {
+            let reason = reason.trim();
+            if !reason.is_empty() {
+                return Some(reason.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// The per-function abort the console reported by RAISING on the `decompile`
+/// command, rather than by swallowing it into the `Skipping` notice
+/// ([`find_pipeline_failure`]).
+///
+/// Both leave the same thing behind — the previous, un-decompiled `Funcdata`,
+/// which `print C` renders as a brace-matched shell — so a text-surface caller
+/// that reads only stdout cannot tell either from a genuinely empty function.
+/// The JSON surface has always reported this one (it drives the engine in
+/// process and sees the error directly); the text surface exited 0 with an empty
+/// body and an empty stderr.
+fn decompile_command_failure(out: &str) -> Option<String> {
+    match command_failure(out, "decompile") {
+        Some(reason) if reason != SCRIPT_NOT_REACHED => Some(reason),
+        _ => None,
+    }
+}
+
+/// The function the console last announced (`Decompiling <name>`), so a failure
+/// report names the same function the JSON surface's does.
+fn decompiling_name(out: &str) -> Option<String> {
+    out.lines().rev().find_map(|raw| {
+        console_text(raw.trim()).strip_prefix("Decompiling ").map(|n| n.trim().to_string())
+    })
 }
 
 /// A unique temp path under the system temp dir (no external dep; mirrors
@@ -899,7 +960,14 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
         // alive and `print C` rendered the un-decompiled shell above, so the C
         // is non-empty and only this notice distinguishes the failure from a
         // genuinely empty function.  Report it; `run` exits non-zero.
-        let failure = find_pipeline_failure(&stdout_text).map(|(func, reason)| {
+        let failure = find_pipeline_failure(&stdout_text)
+            .or_else(|| {
+                let reason = decompile_command_failure(&stdout_text)?;
+                let func = decompiling_name(&stdout_text)
+                    .unwrap_or_else(|| args.target.clone());
+                Some((func, reason))
+            })
+            .map(|(func, reason)| {
             let mut msg = format!("decompilation failed for {func} in {binary}: {reason}");
             let note = stderr_text.trim();
             if !note.is_empty() {
@@ -968,13 +1036,17 @@ pub fn run(args: &DecompileArgs) -> i32 {
             // worked.  Emitting first keeps the stdout-then-stderr order.
             let written = crate::output::emit(&text);
             // A rejected assertion is reported and the run continues;
-            // `--assert-strict` makes it the verdict.
+            // `--assert-strict` makes it the verdict.  A directive the PIPELINE
+            // refused is the verdict either way: the C above was produced without
+            // it, and nothing in the C says so.
             let rejected = decompile_all::report_rejected_assertions(&out.assertions);
+            let refused = decompile_all::any_refused_assertion(&out.assertions);
             let status = match out.failure {
                 Some(msg) => {
                     eprintln!("error: {msg}");
                     1
                 }
+                None if refused => 1,
                 None if args.assert_strict && rejected => 1,
                 None => 0,
             };
@@ -1392,6 +1464,13 @@ fn decompile_json(args: &AllArgs, target: &str) -> Result<(String, Option<String
     // A rejected assertion is reported and the run continues; `--assert-strict`
     // makes it the run's verdict (see `report_rejected_assertions`).
     let rejected = decompile_all::report_rejected_assertions(&assertions);
+    // A directive the pipeline refused is the run's verdict AND belongs in the
+    // document: the caller asked for a decompile under that directive and did not
+    // get one, so the run-level `error` says so rather than leaving `assertions[]`
+    // as the only place a reader could notice.
+    if failure.is_none() && decompile_all::any_refused_assertion(&assertions) {
+        failure = Some(format!("--assert directive refused by the pipeline in {}", args.binary));
+    }
     let text = decompile_all::render_result_json(
         &args.binary,
         &funcs,
@@ -1408,8 +1487,9 @@ fn decompile_json(args: &AllArgs, target: &str) -> Result<(String, Option<String
 #[cfg(test)]
 mod tests {
     use super::{
-        arch_failure_reason, build_script, check_errors, console_path, decompile_all,
-        find_pipeline_failure, is_unknown_function, read_symbols_failure, reject_unquotable,
+        arch_failure_reason, build_script, check_errors, command_failure, console_path,
+        decompile_all, decompile_command_failure, decompiling_name, find_pipeline_failure,
+        is_unknown_function, pipeline_refusal, read_symbols_failure, reject_unquotable,
     };
     use std::borrow::Cow;
 
@@ -1613,6 +1693,52 @@ Decompilation complete
     fn body_text_is_not_a_failure() {
         let out = "[decomp]> print C\n  /* Skipping is fine here */\n";
         assert_eq!(find_pipeline_failure(out), None);
+    }
+
+    /// The console's OTHER per-function abort: `decompile` raised instead of
+    /// degrading into the swallowed `Skipping` notice.  It leaves the same
+    /// brace-matched shell behind, so a text-surface caller that reads only stdout
+    /// cannot tell it from a genuinely empty function -- and this surface used to
+    /// answer it with exit 0 and an empty stderr while `--json`, driving the same
+    /// engine in process, exited 1 (`docs/re-needs/rejected-flow-override-exits.md`).
+    #[test]
+    fn finds_a_raised_decompile_abort() {
+        let out = "[decomp]> decompile\nClearing old decompilation\nDecompiling sub_100054\n\
+                   Execution error: Could not apply flowoverride\n[decomp]> print C\n";
+        assert_eq!(find_pipeline_failure(out), None, "it is not the Skipping notice");
+        assert_eq!(
+            decompile_command_failure(out).as_deref(),
+            Some("Could not apply flowoverride")
+        );
+        assert_eq!(decompiling_name(out).as_deref(), Some("sub_100054"));
+    }
+
+    /// A clean `decompile` raises nothing, and a transcript that never reached the
+    /// command is not reported as one that failed it.
+    #[test]
+    fn a_clean_or_unreached_decompile_is_not_an_abort() {
+        let clean = "[decomp]> decompile\nDecompiling main\nDecompilation complete\n";
+        assert_eq!(decompile_command_failure(clean), None);
+        assert_eq!(decompile_command_failure("[decomp]> quit\n"), None);
+    }
+
+    /// A DEFERRED directive -- `override flow`, applied at flow time and not when
+    /// the command runs -- is refused under the `decompile` that discovered it, not
+    /// under its own echo.  `command_failure` therefore sees a clean command and the
+    /// ledger said `applied` for an override the engine had just thrown out.
+    #[test]
+    fn a_deferred_directive_refusal_is_paired_back_to_its_command() {
+        let out = "[decomp]> override flow 0x101dfb branch\nSuccessfully added override\n\
+                   [decomp]> decompile\nDecompiling sub_100054\n\
+                   Rejected override flow 0x101dfb branch: Could not apply flowoverride\n\
+                   Decompilation complete\n";
+        assert_eq!(command_failure(out, "override flow 0x101dfb branch"), None);
+        assert_eq!(
+            pipeline_refusal(out, "override flow 0x101dfb branch").as_deref(),
+            Some("Could not apply flowoverride")
+        );
+        // A different override in the same run is untouched.
+        assert_eq!(pipeline_refusal(out, "override flow 0x1405 call"), None);
     }
 
     /// A path without whitespace is emitted exactly as before — the corpus

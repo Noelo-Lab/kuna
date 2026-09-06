@@ -365,6 +365,15 @@ pub struct Funcdata {
     /// ([`Self::set_kuna_pipeline_failure`]) so the printer says the pipeline
     /// failed, and why, instead of blaming structuring (`PrintC::emit_function_document`).
     kuna_pipeline_failure: Option<String>,
+    /// (kuna) The flow overrides `FlowInfo::process` asked for and
+    /// [`Self::override_flow`] refused, as `(instruction, flow type, reason)`.
+    ///
+    /// A refusal is a REJECTED caller assertion, not a reason to discard the
+    /// function: nothing was mutated before the refusal, so the IR is exactly the
+    /// one this run would have produced without the directive.  Recording it here
+    /// is what lets the front-ends report the rejection (`--assert` ledger, exit
+    /// code) while still emitting the C.
+    kuna_rejected_flow: Vec<(Address, kuna_base::types::uint4, String)>,
     /// (kuna, ghidra Phase 4) WIRE-ONLY symbols the encode-time link pass
     /// synthesized for named HighVariables the analysis deliberately left
     /// symbol-less — see [`crate::database::WireSymbol`].  They are encoded
@@ -495,6 +504,7 @@ impl Funcdata {
             union_map: std::collections::BTreeMap::new(),
             pending_comments: Vec::new(),
             kuna_pipeline_failure: None,
+            kuna_rejected_flow: Vec::new(),
             kuna_wire_symbols: Vec::new(),
             kuna_wire_symbol_for_high: std::collections::BTreeMap::new(),
             kuna_callee_ret_writes: std::collections::HashMap::new(),
@@ -631,6 +641,26 @@ impl Funcdata {
     /// (kuna) Why the decompile pipeline aborted for this function, if it did.
     pub fn kuna_pipeline_failure(&self) -> Option<&str> {
         self.kuna_pipeline_failure.as_deref()
+    }
+
+    /// (kuna) Record a flow override [`Self::override_flow`] refused at `addr`.
+    /// Idempotent per `(addr, type_)`, so a restart re-flow that re-attempts the
+    /// same override does not report it twice.
+    pub fn note_rejected_flow_override(
+        &mut self,
+        addr: Address,
+        type_: kuna_base::types::uint4,
+        reason: &str,
+    ) {
+        if self.kuna_rejected_flow.iter().any(|(a, t, _)| a == &addr && *t == type_) {
+            return;
+        }
+        self.kuna_rejected_flow.push((addr, type_, reason.to_string()));
+    }
+
+    /// (kuna) The flow overrides this function's flow follow refused.
+    pub fn kuna_rejected_flow_overrides(&self) -> &[(Address, kuna_base::types::uint4, String)] {
+        &self.kuna_rejected_flow
     }
 
     /// (kuna `rustabi`) Record what a probe of `entry`'s body proved about the

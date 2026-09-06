@@ -135,6 +135,14 @@ pub struct Outcome {
     pub subphase: &'static str,
     pub status: &'static str,
     pub detail: Option<String>,
+    /// The pipeline ACCEPTED this directive, seeded it, and then refused it while
+    /// applying it -- today only a `flow` override the flow-follower could not
+    /// apply (`Funcdata::kuna_rejected_flow_overrides`).
+    ///
+    /// Such a rejection is fatal without `--assert-strict`, unlike one that never
+    /// bound: the C that came back describes a program the directive was never
+    /// applied to, and nothing in it says so.
+    pub fatal: bool,
 }
 
 impl Body {
@@ -216,6 +224,7 @@ impl Directive {
             subphase,
             status: "applied",
             detail: None,
+            fatal: false,
         }
     }
 
@@ -228,7 +237,14 @@ impl Directive {
             subphase,
             status: "rejected",
             detail: Some(detail.into()),
+            fatal: false,
         }
+    }
+
+    /// The outcome of a directive the pipeline took and then refused
+    /// (see [`Outcome::fatal`]).
+    fn refused(&self, detail: impl Into<String>) -> Outcome {
+        Outcome { fatal: true, ..self.rejected(detail) }
     }
 }
 
@@ -758,6 +774,41 @@ pub fn function_seed(
         prog.set_assertion_outcome(i, outcome);
     }
     seed
+}
+
+/// Downgrade the outcome of every `flow` directive bound to `name` that the flow
+/// follower REFUSED, from the `applied` [`function_seed`] recorded when it merely
+/// seeded it, to a fatal rejection carrying the engine's own reason.
+///
+/// The seed is collected before the pipeline runs, so `function_seed` can only
+/// say the directive was *taken*; whether `Funcdata::override_flow` could apply
+/// it is not known until flow has followed.  Without this the ledger reported
+/// `applied` for an override the engine had just refused, which is the one thing
+/// an agent reads to decide whether its assertion took effect.
+pub fn record_rejected_flow_overrides(
+    prog: &mut ConsoleProgram,
+    name: &str,
+    single: bool,
+    fd: &Funcdata,
+) {
+    let refused = fd.kuna_rejected_flow_overrides();
+    if refused.is_empty() {
+        return;
+    }
+    let directives = prog.assertions().to_vec();
+    for (i, directive) in directives.iter().enumerate() {
+        let Body::Flow { addr, kind, .. } = &directive.body else { continue };
+        if !binds_to(&directive.body, name, single) {
+            continue;
+        }
+        let type_ = kuna_decomp::overrides::Override::string_to_type(kind.as_bytes());
+        let Some(at) = code_addr(prog, *addr) else { continue };
+        let Some((_, _, reason)) = refused.iter().find(|(a, t, _)| a == &at && *t == type_) else {
+            continue;
+        };
+        let outcome = directive.refused(reason.clone());
+        prog.set_assertion_outcome(i, outcome);
+    }
 }
 
 fn seed_one(

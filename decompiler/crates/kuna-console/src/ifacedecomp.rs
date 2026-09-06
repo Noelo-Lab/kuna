@@ -2218,7 +2218,26 @@ decomp_command!(
         dcp.conf = Some(prog);
         match result {
             Ok(fd) => {
+                // (kuna `--assert`) Every flow override the follower REFUSED, named
+                // in the console's own command spelling so a front-end driving
+                // `decomp_dbg` can pair each line with the `override flow` it sent.
+                // The refusal is reported here and not at `override flow` time
+                // because nothing can be applied until flow has followed.
+                let refusals: Vec<String> = fd
+                    .kuna_rejected_flow_overrides()
+                    .iter()
+                    .map(|(addr, type_, reason)| {
+                        format!(
+                            "Rejected override flow {:#x} {}: {reason}\n",
+                            addr.get_offset(),
+                            kuna_decomp::overrides::Override::type_to_string(*type_)
+                        )
+                    })
+                    .collect();
                 dcp.fd = Some(fd);
+                for line in &refusals {
+                    status.out(line);
+                }
                 // C++ res>=0 path: "Decompilation complete".
                 status.out("Decompilation complete\n");
                 Ok(())
@@ -2238,17 +2257,21 @@ decomp_command!(
                 // (e.g. "No function selected") still propagates.  The whole-corpus
                 // (675/675) is inert here: no datatest function aborts, so this arm
                 // is never reached for them.
-                if msg.contains("LOSS-131") {
-                    // Stamp the reason on the retained (un-decompiled) Funcdata:
-                    // it has no structured blocks, so a following `print C`
-                    // would otherwise emit the generic "structuring declined"
-                    // shell and hide the abort.  Guarded on the address so a
-                    // stale, unrelated function is never mislabeled.
-                    if let Some(fd) = dcp.fd.as_mut() {
-                        if fd.get_address() == &stamp_addr {
-                            fd.set_kuna_pipeline_failure(&msg);
-                        }
+                // Stamp the reason on the retained (un-decompiled) Funcdata: it
+                // has no structured blocks, so a following `print C` would
+                // otherwise emit the generic "structuring declined" shell and hide
+                // the abort.  Guarded on the address so a stale, unrelated function
+                // is never mislabeled.  Stamped for EVERY per-function abort, not
+                // only the swallowed one: a `decompile` that raised leaves the same
+                // shell behind, and a front-end that reads only the C (`kuna
+                // decompile`'s text surface) cannot otherwise tell it from a
+                // genuinely empty function.
+                if let Some(fd) = dcp.fd.as_mut() {
+                    if fd.get_address() == &stamp_addr {
+                        fd.set_kuna_pipeline_failure(&msg);
                     }
+                }
+                if msg.contains("LOSS-131") {
                     status.out(&format!("Skipping {name}: {msg}\n"));
                     Ok(())
                 } else {
