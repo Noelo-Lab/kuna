@@ -43,11 +43,11 @@ survived.
   ordinary casted-hex print.
 - Emptiness alone is not the tell: `setlocale(6,"")` is idiomatic, and a linker
   that merges string constants stores a program's only `""` as the tail NUL of
-  another literal. So the rule also reads sixteen bytes at the address and keeps
-  the literal when they read as text — every byte printable ASCII/`\t`/`\n`/`\r`
-  /NUL, and at least one an actual character, because a window of nothing but
-  NULs is padding, not a string. An unreadable window is not evidence and keeps
-  the literal.
+  another literal. So the rule also reads sixteen bytes at the address and
+  declines only when they positively contradict text: skip the terminator run,
+  walk the next run to its NUL, and reject on a byte no C string holds (outside
+  printable ASCII and `\t`/`\n`/`\r`). It is a falsification test, so padding, an
+  unreadable window, and a run still spelling text all keep the literal.
 - What this does not repair: the constant is `char *` because it shares a merged
   live range with a genuine `char *`. That typing is the reason the probe runs at
   all and is left alone.

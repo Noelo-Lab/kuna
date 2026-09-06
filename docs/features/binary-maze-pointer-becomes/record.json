@@ -21,7 +21,8 @@
     "The captain's replacement diagnosis -- the constant is `char *` because it shares a merged live range with a genuine `char *` parameter -- is UPHELD and deliberately NOT repaired. Re-typing a merged live range is P5/P6 work far outside this need's `scope: small`, and the printer is doing the right thing for a `char *` constant once that type exists. What is wrong is the printer's EVIDENCE test: `StringManager::isString` accepts a location on the strength of zero validated characters, because `checkCharacters` walks only to the first terminator.",
     "The captain's warning that the naive fix is gameable turned out to understate it: suppressing every zero-character literal is WRONG, not merely cheap. A whole-corpus sweep found `setlocale(6,\"\")` plus five more genuine empty literals in the vendored coreutils fixtures alone (all one merged `\"\"` at 0x7661 in regglobal_fmt_x86_64, stored as the tail NUL of \"Report bugs to: %s\\n\"), and the naive rule turned every one of them into an address. That is what drove the byte-evidence half of the design.",
     "A 16-byte all-printable-or-NUL window was the SECOND wrong design and was caught by the same sweep: it declined four more real empty literals (du 0x1aa00 and 0x1af20, pathchk 0x8aeb, ssh-keysign 0x836a6), each the head of a short string table whose window runs past the table's end into relocation bytes. The shipped rule judges only the FIRST run after the terminator, which is a falsification test -- it says no only where the bytes positively contradict string data -- so everything it cannot judge keeps the upstream literal.",
-    "The acceptance probe as filed was retargetable but its `expect` was not: `stdout_absent: = \"\";` plus `stdout_matches: 0x403550` says nothing about the real empty literal beside it. The promoted probe asserts BOTH directions on one function -- the blob keeps 0x402020 AND the genuine \"\" keeps its quotes -- so neither the naive rule nor the window rule could pass it."
+    "The acceptance probe as filed was retargetable but its `expect` was not: `stdout_absent: = \"\";` plus `stdout_matches: 0x403550` says nothing about the real empty literal beside it. The promoted probe asserts BOTH directions on one function -- the blob keeps 0x402020 AND the genuine \"\" keeps its quotes -- so neither the naive rule nor the window rule could pass it.",
+    "The one red rust-test target is environmental, not this change: the assertion requires the C++ spelling `xunknown4` from an oracle binary that no longer exists, and the repipe launcher points KUNA_DECOMP_TEST at kuna's own decomp_test_dbg."
   ],
   "speed_method": "scripts.pipeline.timeit (warmup + median over 9 repeats) on the fixture; hand-timed median over 9 runs on the dataset witness",
   "speed_off_ms": 109.3,
@@ -51,7 +52,7 @@
     "make test-cli": "55/55",
     "make check-spec": "OK lenient + strict",
     "kuna catalog --check": "catalog OK",
-    "make rust-test": "PENDING"
+    "make rust-test": "363 targets ok, 1 red: verify_w10_proto_unlock::w10_proto_unlock_const_return_collapses_no_tied_roundtrip, the known KUNA_DECOMP_TEST oracle artifact. Falsified twice: green under `env -u KUNA_DECOMP_TEST cargo test -p kuna-decomp --test verify_w10_proto_unlock`, and the main tree's unmodified decomp_test_dbg produces a promotecompare dump byte-identical to this worktree's (20 lines, neither containing the asserted `xunknown4`, which no kuna build prints)."
   },
   "probe_flip": {
     "probe_still_passes": false,
