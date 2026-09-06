@@ -686,6 +686,35 @@ this case 14 records vanished and the symptom was a round-3 need count reading 2
 append sections, so a PR left open across a round comes back conflicting. Two PRs were closed
 unmerged that way and their content had to be re-applied by hand.
 
+## `SIGTERM` to a supervisor drains the whole loop, not that process
+
+`run.sh` traps `SIGTERM` and does a graceful stop, which writes `.kuna-repipe/STOP`. That
+file is **shared state**: every supervisor sharing the state dir sees it, transitions the
+round to `DRAINING`, and stops dispatching. Removing the file does not undo it —
+`DRAINING → RUNNING` is deliberately not a legal edge, so the round can only go on to
+`STOPPED`.
+
+So `kill <supervisor>` is not "stop this process". It is "end this round". To remove a
+duplicate or stuck supervisor without ending the round, use `kill -9`, which skips the trap.
+
+The situation that leads here is worth naming, because the expensive mistake was three steps
+upstream: **two supervisors were running.** One had been launched hours earlier and declared
+failed because `tail` could not read its log — the log path was wrong, the process was fine.
+They do not corrupt anything (the captain slot lease serialises them, so one always loses the
+race) but they double the tick rate and each counts budget independently.
+
+After launching a supervisor, check that exactly one exists:
+
+```sh
+pgrep -f 'repipe/run.sh' | while read p; do
+  ps -o args= -p "$p" | grep -q shell-snapshot || echo "$p"
+done | wc -l          # must be 1
+```
+
+`pgrep -f` matches this shell's own command line, so a naive count reads 2-3 and hides a real
+duplicate in the noise; filter the wrapper out. And never conclude a background launch failed
+because its log is unreadable — check for the process.
+
 ## Machinery reference
 
 | Piece | What |
