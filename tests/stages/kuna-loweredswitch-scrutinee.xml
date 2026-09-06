@@ -1,0 +1,66 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    loweredswitch: the re-rolled switch must dispatch on the value the cascade
+    compared, and the function must keep the parameter that value came from.
+
+    `loweredswitch` (DIV-4, default on) detects a compiler-lowered comparison
+    cascade on the simplified CFG and then installs a synthesized BRANCHIND plus
+    JumpTable pre-SSA, on the re-lifted p-code of a restart.  The synthesized
+    BRANCHIND has to reach the rest of the pipeline as a live op: an op that is
+    not on the alive list is skipped by the dead-code consume propagation, so
+    nothing records that the BRANCHIND reads its selector, and the selector is
+    then folded to the constant 0 (or swept outright, leaving the un-compilable
+    `switch()`).  The cases and the binary-search tree shape survive either way,
+    so a corpus that asserts only case labels cannot see the difference - which
+    is why the assertions here are about the scrutinee.
+
+    Stage model: S2 "switch-model" sub-stage.  P0 assertion: `option
+    loweredswitch on|off`.
+
+    Layout (x86:LE:64, flat at 0x100000) - the /Od shape the compiler emits for
+    a four-way sparse switch: the parameter is spilled to its home slot and every
+    comparison reads the slot back.
+
+      swfn @ 0x100000 :  sub  rsp,0x28
+                         mov  [rsp+8],edi        ; spill the parameter
+                         cmp  [rsp+8],0x2003 / je / jl
+                         cmp  [rsp+8],0x3007 / je / jl
+                         cmp  [rsp+8],0x400b / je / jl
+                         cmp  [rsp+8],0x1000 / je / jl
+                         (four one-line case bodies and a default)
+
+    Pass 1 (option loweredswitch off): the compiler's own if/else-if chain over
+    the parameter, which is what the re-roll has to agree with.
+    Pass 2 (option loweredswitch on - the shipped default): one switch over that
+    same parameter.
+
+    Asserts #1/#2 are the regression pins: the scrutinee is the parameter, and it
+    is never the constant 0 nor missing.  #3 pins the parameter into both
+    prototypes - before the fix the re-rolled pass rendered `swfn(void)` because
+    the folded selector left nothing reading it.  #4/#5 pin the recovered case
+    labels, #6 the chain that pass 1 keeps, and #7 a case body shared by both.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+4883ec28897c2408817c240803200000743a7c1e817c24080730000074387c10817c24080b40000074367c02eb3ceb3aeb38817c24080010000074067c02eb2aeb28b80a0000004883c428c3b82b0000004883c428c3b8510000004883c428c3b87b0000004883c428c3b8ffffffff4883c428c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="swfn"/>
+</binaryimage>
+<script>
+  <com>lo fu swfn</com>
+  <com>option loweredswitch off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option loweredswitch on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="LOWEREDSWITCH-SCRUTINEE #1: the re-rolled switch dispatches on the compared parameter" min="1" max="1">switch\(a0\)</stringmatch>
+<stringmatch name="LOWEREDSWITCH-SCRUTINEE #2: the scrutinee is never a constant nor empty" min="0" max="0">switch\(0?\)</stringmatch>
+<stringmatch name="LOWEREDSWITCH-SCRUTINEE #3: neither pass drops the dispatched-on parameter from the prototype" min="0" max="0">swfn\(void\)</stringmatch>
+<stringmatch name="LOWEREDSWITCH-SCRUTINEE #4: case 0x1000 recovered" min="1" max="1">case 0x1000:</stringmatch>
+<stringmatch name="LOWEREDSWITCH-SCRUTINEE #5: case 0x400b recovered" min="1" max="1">case 0x400b:</stringmatch>
+<stringmatch name="LOWEREDSWITCH-SCRUTINEE #6: pass 1 keeps the compiler's chain over the same parameter" min="1" max="1">if \(a0 == 0x3007\)</stringmatch>
+<stringmatch name="LOWEREDSWITCH-SCRUTINEE #7: a case body is present in BOTH passes" min="2" max="2">return 0x7b;</stringmatch>
+</decompilertest>

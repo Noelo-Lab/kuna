@@ -738,7 +738,7 @@ fn recover_cascade(
     if st != spacetype::IPTR_PROCESSOR && st != spacetype::IPTR_SPACEBASE {
         return None;
     }
-    if data.get_arch().switch_selector_guard && !install_can_reread(data, swvar, st) {
+    if data.get_arch().switch_selector_guard && !selector_defined_in_function(data, swvar) {
         return None;
     }
 
@@ -763,38 +763,21 @@ fn recover_cascade(
     })
 }
 
-/// (kuna `switchselector`) Will the install be able to re-read this switch
-/// variable at all?
+/// (kuna `switchselector`) Is the switch value computed inside this function?
 ///
-/// Detection and installation do not see the same graph. This half runs on the
-/// fully simplified, SSA'd CFG; the install runs pre-SSA on the RE-LIFTED raw
-/// p-code of a restart, where it re-finds the switch variable from the head
-/// comparison and, failing that, falls back to a free read of the storage
-/// recorded here. The fallback is the arm that actually carries this pass on
-/// x86: `cmp`/`jcc` reaches the install as flag arithmetic, not as a comparison,
-/// so the head arm yields nothing. And a free read is only re-linkable when
-/// heritage can find it a reaching definition at pass 0:
+/// The re-roll replaces the compiler's comparison cascade with a `switch` over
+/// the recorded storage. When the selector is a parameter — a register argument,
+/// a slot the prologue spilled it into, or a stack argument — the recovered
+/// `switch` reads the incoming value, which is correct but hands the reader a
+/// dispatch whose subject is only named by the prototype. This predicate is the
+/// opt-in conservative choice: record only a cascade whose switch variable has a
+/// defining op here (a call return, a load, a computed value), and leave every
+/// parameter-dispatch cascade as the compiler lowered it.
 ///
-/// * a **register** always can — heritage links the read to whatever wrote the
-///   register, exactly as it does for every other free register read;
-/// * a **stack slot the function itself writes** can, once stack-pointer
-///   normalization has run;
-/// * a stack slot that is a function **input** cannot. There is no definition to
-///   find: the incoming value is still a `LOAD` through the frame pointer at
-///   that point, and the input Varnode set is rebuilt by parameter recovery
-///   *after* heritage. The BRANCHIND's input collapses to a constant, and the
-///   install has already committed the CFG surgery by then — the emitted
-///   `switch(0)` has every case unreachable and the dispatched-on parameter
-///   unused. That is the Win32 callback shape (a `DialogProc` dispatching on its
-///   `uMsg` parameter), and it is what this predicate refuses.
-///
-/// Declining leaves the compiler's own `if`/`else if` chain over the real
-/// variable — correct C that names the parameter.
-fn install_can_reread(data: &Funcdata, swvar: VarnodeId, st: spacetype) -> bool {
-    if st == spacetype::IPTR_PROCESSOR {
-        return true;
-    }
-    !data.vbank().get(swvar).map(|v| v.is_input()).unwrap_or(false)
+/// Detection runs on the fully simplified, SSA'd CFG, so "defined in this
+/// function" is exactly `Varnode::is_written`.
+fn selector_defined_in_function(data: &Funcdata, swvar: VarnodeId) -> bool {
+    data.vbank().get(swvar).map(|v| v.is_written()).unwrap_or(false)
 }
 
 /// Find the cascade head, skipping leading sentinel guards (e.g. `V == -1`)
