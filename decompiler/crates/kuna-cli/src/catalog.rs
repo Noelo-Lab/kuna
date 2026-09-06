@@ -30,10 +30,7 @@ use crate::paths;
 fn run_catalog(option: Option<&str>) -> Result<Json, String> {
     let bin = paths::decomp_dbg();
     if !bin.exists() {
-        return Err(format!(
-            "decomp_dbg not built at {} -- run `make binaries`",
-            bin.display()
-        ));
+        return Err(paths::missing_decomp_dbg());
     }
     let specs = paths::specs_dir();
     let cmd = match option {

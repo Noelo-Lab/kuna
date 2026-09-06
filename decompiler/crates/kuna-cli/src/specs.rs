@@ -41,11 +41,7 @@ pub fn run(args: &[String]) -> i32 {
     }
     let bin = paths::slacomp();
     if !bin.exists() {
-        eprintln!(
-            "slacomp not built at {} -- run `make binaries` \
-             (or `cargo build --release -p kuna-slacomp`)",
-            bin.display()
-        );
+        eprintln!("{}", paths::missing_binary("slacomp", "KUNA_SLACOMP", "kuna-slacomp"));
         return 2;
     }
     // Pass the remaining args straight through to slacomp (it owns `-a <dir>` and

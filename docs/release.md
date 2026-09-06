@@ -114,15 +114,18 @@ and 18 tags**.
 
 The binaries resolve each other as siblings of the `kuna` executable, so
 extracting one archive keeps `kuna decompile` (which spawns `decomp_dbg`) and
-`kuna specs` (which spawns `slacomp`) working. The engine additionally needs
-the compiled SLEIGH tree at runtime:
+`kuna specs` (which spawns `slacomp`) working — on Windows too, where the shipped
+names carry `.exe`. The engine additionally needs the compiled SLEIGH tree at
+runtime, and finds it beside or inside the extracted directory:
 
 ```bash
 tar xzf kuna-v<ver>-linux-x86_64.tar.gz
 tar xzf kuna-v<ver>-specs.tar.gz
-export KUNA_SPECS=$PWD/specs
 ./kuna-v<ver>-linux-x86_64/kuna decompile ./a.out main
 ```
+
+Extract it somewhere else and `export KUNA_SPECS=<dir>/specs` instead; the full
+list of overrides is in `docs/cli.md`.
 
 (Inside a repo checkout none of this applies — binaries live in
 `decompiler/target/release/` and specs are found from the repo root.)

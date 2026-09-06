@@ -1138,8 +1138,16 @@ pub(crate) fn load_program(
 
     let spec_roots = spec_roots(args.sleighpath.as_deref());
     let target = args.target.as_deref().unwrap_or("");
-    let mut prog = bootstrap_from_object_with_isa(&binary, target, &spec_roots, args.isa)
-        .map_err(|e| format!("could not build an architecture for {binary}: {}", e.explain()))?;
+    let mut prog =
+        bootstrap_from_object_with_isa(&binary, target, &spec_roots, args.isa).map_err(|e| {
+            let reason = e.explain();
+            let msg = format!("could not build an architecture for {binary}: {reason}");
+            if reason.contains("No sleigh specification") {
+                format!("{msg}\nnote: {}", paths::SPECS_HINT)
+            } else {
+                msg
+            }
+        })?;
 
     for (name, value) in driver_default_options(
         &binary,

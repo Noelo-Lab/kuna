@@ -238,10 +238,10 @@ fn run(args: &TestArgs) -> Result<RunResult, String> {
         None => paths::decomp_test_dbg(),
     };
     if !bin_path.exists() {
-        return Err(format!(
-            "decomp_test_dbg not built at {} -- run `make binaries`",
-            bin_path.display()
-        ));
+        return Err(match &args.binary {
+            Some(b) => format!("decomp_test_dbg not found at {b} (--binary)"),
+            None => paths::missing_binary("decomp_test_dbg", "KUNA_DECOMP_TEST", "kuna-harness"),
+        });
     }
     // Python passes os.path.abspath(...) for -sleighpath / -path; the harness
     // echoes the -path dir verbatim in its file-level error messages, so the
