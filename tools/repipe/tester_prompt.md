@@ -98,6 +98,26 @@ actually observed evidence for.
 If you genuinely need a positive assertion, keep it to the weakest one that would still be
 false today — `stdout_matches: ["write|mprotect|syscall"]` beats naming one of them.
 
+**`cmd` is ONE argv, and there is no shell.** This is the single most common way a good
+observation is thrown away: round 4 lost 6 of 26 to it. `cmd` is exec'd directly against an
+allowlist, so `sh`, `bash` and `timeout` are all refused — a probe that can run code passed as
+an argument makes the allowlist meaningless, and the refusal is deliberate.
+
+You do not need a shell, because the `expect` clauses do what you were reaching for a pipe to
+do:
+
+| you would have written | write instead |
+|---|---|
+| `sh -c 'kuna decompile B f \| grep -c switch'` | `"cmd": ["{{KUNA}}","decompile","{{BIN}}","f"]` + `"stdout_matches": ["switch"]` |
+| `sh -c '... \| grep -v swi(0x80)'` | `"stdout_absent": ["swi\\(0x80\\)"]` |
+| `sh -c '... \| jq .count'` | `"json": [{"path":"count","op":"eq","value":0}]` |
+| `timeout 60 kuna ...` | `"timeout_s": 60` — the field already exists |
+| `sh -c 'kuna a && kuna b'` | two observations, or one probe on the command that actually shows the defect |
+
+If you genuinely cannot express the assertion without a shell, say so in `what_kuna_did` and
+file the observation anyway with the best single-command probe you can — a weaker probe that
+RUNS beats a perfect one the gate has to discard.
+
 A worked example of the shape:
 
 ```json
