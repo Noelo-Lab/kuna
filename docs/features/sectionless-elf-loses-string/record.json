@@ -75,5 +75,6 @@
     "No option, no phases.toml row, no catalog counter and no tests/stages case: tooling track, and this is a strict wrong-output fix in the read-only reference index that cannot change emitted C -- confirmed by the byte-identical decompile-all sweep, not assumed.",
     "The free riders the refutation predicted are structurally un-blinded too: kuna_poolref and kuna_picbase read the same `mapped` and are inert while it is empty, so a section-less ARM image's literal-pool references and a section-less i386 PIC image's GOT-relative ones now have a range list to be classified against. Neither swept image exercises them -- KataVM_L1 is x86-64 and the trace-p crackme is a non-PIE i386 ET_EXEC -- so the un-blinding is claimed as reachability, not as a measured gain.",
     "The acceptance was retargeted from the dataset witness to a vendored twin before promotion, following corrupt-elf-section-table. It was run and passed against the dataset original first, so the retarget trades reach for portability and not for a weaker claim."
-  ]
+  ],
+  "pr": "https://github.com/Noelo-Lab/kuna/pull/451"
 }

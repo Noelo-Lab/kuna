@@ -17,9 +17,9 @@ covered_by_option: null
 touches: [decompiler/crates/kuna-analysis/src/loader, decompiler/crates/kuna-analysis/src/analyzers/strings]
 scope: small
 regression_of: no-strings-inventory
-pr: null
+pr: "451"
 closed_in_round: 4
-closing_pr: null
+closing_pr: "451"
 reject_reason: null
 ---
 
