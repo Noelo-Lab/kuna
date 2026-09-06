@@ -121,7 +121,9 @@ acceptance flips back to FAIL becomes `regressed` and outranks everything.
   after a rollback — move the supervisor to `HALTED` with a reason and stop. Halting loudly
   beats limping.
 - Record every non-obvious decision in the round doc's `notes`. The next tick is a different
-  session with none of your context.
+  session with none of your context — **and `--status` hands you the last few notes, so this
+  is how you talk to it.** Read them before you decide anything; an operator can leave one
+  there too. Widen the window with `--notes N` when you need older history.
 
 ## Finish
 

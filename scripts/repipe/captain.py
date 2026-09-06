@@ -369,6 +369,8 @@ def main(argv=None):
     ap.add_argument("--round", type=int, default=None)
     ap.add_argument("--transition", nargs=2, metavar=("MACHINE", "TO"))
     ap.add_argument("--note", default=None)
+    ap.add_argument("--notes", type=int, default=6,
+                    help="how many of the round's most recent notes --status carries (0 = none)")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args(argv)
 
@@ -402,10 +404,36 @@ def main(argv=None):
 
     if args.status or not args.tick:
         doc = load_round(args.round if args.round is not None else current_round())
+        # The prompt says "record every non-obvious decision in the round doc's `notes`; the
+        # next tick is a different session with none of your context" -- and then nothing put
+        # those notes in front of the next tick. Neither this payload nor
+        # `scripts.repipe.status --json` carried them, so a note was only ever read by a tick
+        # that happened to open rounds/N/round.json by hand. Some did; most did not, and an
+        # operator note sat unread through ~110 ticks of round 4. Notes ARE the continuity
+        # mechanism of this design, so `--status`, the first thing the prompt tells a tick to
+        # read, has to carry them.
+        #
+        # Most recent last, because that is reading order, and tail-truncated per note: a
+        # tick's own write-up runs to paragraphs, and a payload nobody finishes reading is the
+        # same failure again in a different costume. `--notes N` widens it when a tick needs
+        # the older history.
+        notes = []
+        # `[-0:]` is the WHOLE list, not an empty one, so --notes 0 has to be handled before
+        # the slice or it does the opposite of what it says.
+        recent = (doc.get("notes") or [])[-args.notes:] if args.notes > 0 else []
+        for entry in recent:
+            if isinstance(entry, dict):
+                text, by, ts = entry.get("note") or "", entry.get("by"), entry.get("ts")
+            else:
+                text, by, ts = str(entry), None, None
+            text = " ".join(str(text).split())
+            notes.append({"by": by, "ts": ts,
+                          "note": text if len(text) <= 700 else text[:700] + " ...[truncated]"})
         out = {"round": doc["round"], "states": {k: doc[k] for k in MACHINES},
                "free_gb": free_gb(), "split": config.agent_split(),
                "stop": stop_requested(), "pause": paused(), "abort": abort_requested(),
-               "live": {"tester": live_agents("tester"), "builder": live_agents("builder")}}
+               "live": {"tester": live_agents("tester"), "builder": live_agents("builder")},
+               "notes_total": len(doc.get("notes") or []), "notes": notes}
         print(json.dumps(out, indent=2))
         return 0
 
