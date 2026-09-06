@@ -1,0 +1,79 @@
+{
+  "opportunity": "repipe:605443e333c5d42c3d016f59::sectionless-elf-loses-string",
+  "need_id": "sectionless-elf-loses-string",
+  "track": "tooling",
+  "round": 4,
+  "test_name": "repipe round 4, challenge 605443e333c5d42c3d016f59",
+  "binary": "kuna-re-dataset/challenges/605443e333c5d42c3d016f59/bin/KataVM_Level_1.7z.__x/KataVM_Level_1/KataVM_L1",
+  "selector": "0x6b22",
+  "func_addr": "0x1170",
+  "option": null,
+  "flag": null,
+  "element_id": null,
+  "change_kind": "correctness-fix",
+  "source_decompiler": "kuna",
+  "inspiration": "repipe round 4 need sectionless-elf-loses-string; the shape already exists one layer over, in entry::executable_sections' program-header fallback for the plausible-code oracle",
+  "default_on": true,
+  "div": null,
+  "scope": "small",
+  "files": [
+    "decompiler/crates/kuna-analysis/src/listing/xrefs.rs",
+    "decompiler/crates/kuna-analysis/tests/fixtures/sectionless_x86_64",
+    "decompiler/crates/kuna-analysis/tests/fixtures/sectionless_x86_64.py",
+    "tests/cli/sectionless-elf-loses-string.json",
+    "docs/spec/01-program-prep.md",
+    "docs/re-needs/sectionless-elf-loses-string.md"
+  ],
+  "parity": "OK",
+  "gates": {
+    "make test": "PARITY OK 675/675",
+    "make test-stages": "PARITY OK 640/640",
+    "make check-spec": "OK",
+    "kuna catalog --check": "catalog OK",
+    "make test-cli": "45/45",
+    "make rust-test": "green with `env -u KUNA_DECOMP_TEST`; the first run failed only verify_w10_proto_unlock with `oracle promote_compare signature drifted`, which is the repipe launcher pointing KUNA_DECOMP_TEST at kuna's own decomp_test_dbg (the C++ oracle is gone, so CI skips that block). The target passes on its own with the variable unset and no kuna-decomp file is touched by this change."
+  },
+  "probe_flip": {
+    "probe_still_passes": false,
+    "acceptance_passes": true,
+    "acceptance_functions_before": 0,
+    "acceptance_functions_after": 1
+  },
+  "promoted_probe": {
+    "path": "tests/cli/sectionless-elf-loses-string.json",
+    "retargeted_from": "dataset bin/KataVM_Level_1.7z.__x/KataVM_Level_1/KataVM_L1 (string 0x6b22, LEA RDI,[0x6b22] at 0x1181)",
+    "retargeted_to": "decompiler/crates/kuna-analysis/tests/fixtures/sectionless_x86_64 (string 0x2000, LEA RDI,[0x2000] at 0x1004)",
+    "why": "CI has no dataset; the vendored 8 KB twin carries the identical defect in the identical shape -- e_shoff=0, one PF_X PT_LOAD holding the function and one PF_R PT_LOAD holding the string -- and reports functions: [] on the unpatched build",
+    "verified_on_witness": "the acceptance also passes on the dataset original: kuna strings KataVM_L1 --filter Correct now reports xrefs_count 1 and functions [sub_1170], and kuna xrefs --to 0x6b22 returns the LEA RDI,[0x6b22] row at 0x1181"
+  },
+  "speed_method": "warmup discarded, 11 repeats, median and min reported; box carried a concurrent workspace suite, so treat both as an upper bound",
+  "speed_target": "kuna strings <675 KB section-less ELF, Sh4ll8> --json",
+  "speed_off_ms": 170.6,
+  "speed_on_ms": 171.5,
+  "speed_delta_pct": 0.53,
+  "speed_samples": 11,
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": true,
+  "speed_note": "the added work is one iteration of file.segments() -- at most a few dozen program headers -- and only on an image with no section table at all. Every image that has sections takes a single extra is_none() check.",
+  "sweep": {
+    "repo_elf_fixtures_sectionless": 3,
+    "repo_fixtures_changed": 0,
+    "repo_fixtures_note": "overlapbranch_i386, upx_packed_x86_64 and corruptshdr_i386 are byte-identical on functions/strings/decompile-all before and after; the UPX one is declined a step earlier by is_packer_stub, which leaves exec empty and mapped empty regardless",
+    "dataset_sectionless_elfs_swept": 11,
+    "dataset_functions_json_changed": 0,
+    "dataset_strings_json_changed": 2,
+    "dataset_note": "KataVM_L1 and the trace-p crackme; every diff is an addition of the form xrefs_count 0 -> 1 with a named owner, and no attribution anywhere was lost or moved",
+    "full_xref_dump_delta": "KataVM_L1 14 -> 41 rows, trace-p crackme 55 -> 90 rows, all additions, zero removals; spot-checked against disassembly (PUSH 0x8049286, LEA RDI,[0x6b22], JMP qword ptr [0x7f98])",
+    "false_positive_control": "the decisive measurement. One program built twice, differing only in whether the section header table is present. Over the 8 functions both runs discover, the section-less image now answers 13 data references and the sectioned image answers 13 -- identical rows, none added and none lost. So the PT_LOAD coarseness the design risks costs nothing measurable: looks_like_address' 4096 floor already covers the inter-section padding and the ELF header of a low-based PIE.",
+    "decompiled_c_unchanged": "decompile-all --json is byte-identical before/after on KataVM_L1, the trace-p crackme, both halves of the control pair and the new fixture; mapped only feeds the read-only reference index"
+  },
+  "decisions": [
+    "The filed hypothesis ('segment-only analysis may recover call edges while omitting RIP-relative data references') is UPHELD as a symptom description and as a mechanism.",
+    "The refuter's line reading is off by one branch and the conclusion is unaffected, which is worth recording so the next reader is not confused. It says exec is empty on a section-less image and therefore sections_are_runtime is false. It is not: entry::executable_sections already falls back to PF_X PT_LOAD segments, so exec is non-empty, the seeds land in it and sections_are_runtime is TRUE. mapped is empty for the other reason -- mapped_ranges itself iterates file.sections(). That matters for the fix: gating on sections_are_runtime would have been the wrong lever, and the one-line change belongs inside mapped_ranges.",
+    "The ET_REL guard is left exactly as it is, per the refutation. A relocatable object HAS sections that describe a different address space, so it never reaches mapped_ranges at all -- sections_are_runtime is false for it because no seed lands in a pre-link section. The fallback is therefore reachable only when there is no section table, which is the one case where the PT_LOAD table IS the runtime layout.",
+    "A PT_LOAD with p_vaddr 0 is included rather than skipped, unlike the section arm's `lo == 0` guard. The two zeros mean different things: a section at address 0 is unallocated pre-link metadata, while a PIE's first PT_LOAD genuinely maps at 0. Including it is also inert, since looks_like_address rejects everything under 4096.",
+    "No option, no phases.toml row, no catalog counter and no tests/stages case: tooling track, and this is a strict wrong-output fix in the read-only reference index that cannot change emitted C -- confirmed by the byte-identical decompile-all sweep, not assumed.",
+    "The free riders the refutation predicted are structurally un-blinded too: kuna_poolref and kuna_picbase read the same `mapped` and are inert while it is empty, so a section-less ARM image's literal-pool references and a section-less i386 PIC image's GOT-relative ones now have a range list to be classified against. Neither swept image exercises them -- KataVM_L1 is x86-64 and the trace-p crackme is a non-PIE i386 ET_EXEC -- so the un-blinding is claimed as reachability, not as a measured gain.",
+    "The acceptance was retargeted from the dataset witness to a vendored twin before promotion, following corrupt-elf-section-table. It was run and passed against the dataset original first, so the retarget trades reach for portability and not for a weaker claim."
+  ]
+}

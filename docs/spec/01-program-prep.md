@@ -1321,6 +1321,27 @@ such an image — "image appears UPX-packed; try `kuna unpack`", which is what a
 that discovers nothing produces — so a load segment carrying the `UPX!` magic
 declines the fallback and keeps that behavior (`is_packer_stub`).
 
+(kuna) The **data** half of that oracle takes the same substitution, and for the
+same reason. A reference query classifies a candidate data operand by asking
+whether its value lands in memory the image maps
+(`decompiler/crates/kuna-analysis/src/listing/xrefs.rs (mapped_ranges)`), and that
+question was also asked of the section table alone — so on a section-less image
+every data operand answered "nothing is mapped" and was discarded, while control
+flow, which never consults it, survived intact. That asymmetry is what an agent
+sees: `kuna disassemble` prints `LEA RDI,[0x6b22]`, and `kuna xrefs --to 0x6b22`
+and `kuna strings` both answer zero, so the string a program plainly prints is
+owned by no function. Where the section table is *absent* the `PT_LOAD` segments
+stand in for it, and only there: an image that has sections which are **not** the
+runtime layout — a relocatable object, whose section addresses are pre-link and
+describe a different address space — is declined a step earlier and keeps
+answering nothing rather than classifying every reference against the wrong
+partition. The coarseness a `PT_LOAD` carries costs nothing measurable here,
+because the value filter (`looks_like_address`) already rejects everything below
+the address floor, which is where the inter-section padding and the ELF header of
+a low-based PIE live: on a control pair differing only in whether the section
+header table is present, the section-less image now answers the *same* data
+references as the sectioned one over the same functions, with none added.
+
 (kuna) **Not every `.pdata` record is a function** — the PE exception directory
 answers "where does unwinding start from here", which is a coarser question than
 "where does a function start"

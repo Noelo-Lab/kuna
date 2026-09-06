@@ -1,0 +1,47 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "strings",
+    "{{BIN}}",
+    "--filter",
+    "Correct",
+    "--json"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/sectionless_x86_64",
+    "binary_sha256": "0b3c1f3491912be34b1af5421578de88e46cf8cdcdd49979e43241049ab5f0e9",
+    "binary_size": 8206,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/sectionless_x86_64",
+    "selector": null,
+    "selector_kind": "none"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "json": [
+      {
+        "path": "count",
+        "op": "eq",
+        "value": 1
+      },
+      {
+        "path": "strings[0].functions",
+        "op": "len_gt",
+        "value": 0
+      }
+    ]
+  },
+  "notes": "Vendored twin of the reported image: an ELF64 PIE with e_shoff=0 and two PT_LOADs, one PF_X holding a function that forms LEA RDI,[0x2000] and one PF_R holding the string there. The dataset original (KataVM_L1, 0x1181 LEA RDI,[0x6b22]) stays the witness in Reproduction and passes the same assertions; this target is in-repo so the probe promotes into tests/cli/ and runs where there is no dataset."
+}

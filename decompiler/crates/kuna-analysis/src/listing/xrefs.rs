@@ -70,7 +70,7 @@ use kuna_decomp::architecture::Architecture;
 use kuna_num::opcodes::OpCode;
 use kuna_num::pcoderaw::VarnodeData;
 use kuna_sleigh::translate::{AssemblyEmit, PcodeEmit, Translate};
-use object::read::{Object, ObjectSection};
+use object::read::{Object, ObjectSection, ObjectSegment};
 use object::SectionKind;
 
 use super::classify::classify;
@@ -1120,8 +1120,32 @@ pub(super) fn looks_like_address(value: u64) -> bool {
 /// section the image maps at runtime, code included (an immediate that
 /// materializes a function entry is the address-taken case, and is exactly what
 /// makes an indirect-call target findable).
+///
+/// (kuna) An image with NO section table at all presents no sections, so this
+/// would answer "nothing is mapped" and every data reference in it would be
+/// discarded while its control flow survived — a sectionless PIE's strings come
+/// back owner-less and `xrefs --to` a string reports zero. The program header is
+/// the other, independent description of the same image and *is* the runtime
+/// layout there, so fall back to it, exactly as [`crate::entry::executable_sections`]
+/// does. Only the no-section-table arm takes the fallback: an image that has
+/// sections which are not the runtime layout (a relocatable object) is declined
+/// before this is ever called.
 fn mapped_ranges(file: &object::File) -> Vec<(u64, u64)> {
     let mut out = Vec::new();
+    if file.sections().next().is_none() {
+        // `object`'s ELF segment iterator already yields only `PT_LOAD`, which
+        // is by definition mapped; a format with no segment view yields none and
+        // leaves the answer empty, as before.
+        for seg in file.segments() {
+            let (lo, size) = (seg.address(), seg.size());
+            if size == 0 {
+                continue;
+            }
+            out.push((lo, lo.saturating_add(size)));
+        }
+        out.sort_unstable();
+        return out;
+    }
     for sec in file.sections() {
         let (lo, size) = (sec.address(), sec.size());
         if lo == 0 || size == 0 {
@@ -1478,6 +1502,41 @@ mod tests {
         plain.veneers.clear();
         plain.veneers_of_slot.clear();
         assert_eq!(plain.refs_to_unified(0x1030).len(), direct.len());
+    }
+
+    /// A section-less image is classified against its program header. With no
+    /// section table [`mapped_ranges`] would otherwise answer "nothing is
+    /// mapped", and every data operand in the image — the `LEA RDI,[0x2000]`
+    /// this fixture is built around — would be discarded while its control flow
+    /// survived.
+    #[test]
+    fn mapped_ranges_falls_back_to_load_segments_without_a_section_table() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sectionless_x86_64");
+        let data = std::fs::read(path).unwrap();
+        let file = object::File::parse(&*data).unwrap();
+        assert!(file.sections().next().is_none(), "fixture grew a section table");
+        let mapped = mapped_ranges(&file);
+        assert_eq!(mapped, vec![(0x1000, 0x100d), (0x2000, 0x200e)]);
+        assert!(in_range(&mapped, 0x2000), "the string the LEA forms reads as unmapped");
+    }
+
+    /// The fallback is the no-section-table arm only: an image that has sections
+    /// is still classified against them, so the segments' coarser spans (a
+    /// `PT_LOAD` also covers inter-section padding and the ELF header) never
+    /// widen the oracle on an ordinary linked image.
+    #[test]
+    fn mapped_ranges_answers_from_the_sections_when_there_are_some() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fauxware");
+        let data = std::fs::read(path).unwrap();
+        let file = object::File::parse(&*data).unwrap();
+        let mapped = mapped_ranges(&file);
+        assert!(!mapped.is_empty());
+        let sections: Vec<(u64, u64)> =
+            file.sections().map(|s| (s.address(), s.address() + s.size())).collect();
+        for r in &mapped {
+            assert!(sections.contains(r), "{r:x?} is not any section's span");
+        }
+        assert!(!in_range(&mapped, 0), "the ELF header read as mapped data");
     }
 
     /// `sort_dedup` collapses the `(from, to, kind)` triple: one row per site.
