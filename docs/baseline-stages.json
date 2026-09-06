@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    671,
-    671
+    674,
+    674
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -330,6 +330,9 @@
     "data:P3: TOTAL goto-label count across both passes is 1 (off: 1, on: 0)",
     "data:P3: off keeps ONE merged variable return (the transform is fully option-gated)",
     "data:P3: the convergence sink post() is untouched (one per pass = 2 total)",
+    "data:PDB-SIDECAR #1: with the pass off the function keeps the engine placeholder",
+    "data:PDB-SIDECAR #2: the shipped default names it from the sidecar .pdb",
+    "data:PDB-SIDECAR #3: the PE entry is renamed too",
     "data:PEIMPORTCALL #1: off leaves the IAT-slot call unnamed",
     "data:PEIMPORTCALL #2: on binds the slot call to the import name",
     "data:PEIMPORTCALL #3: on gives the bound call its no-return flow effect",

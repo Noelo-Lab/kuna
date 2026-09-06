@@ -12,6 +12,10 @@
     entry `0x140001010` is known, but its direct CALL target `0x140001000`
     is absent from `functions`.
 
+    Both passes also hold `option pdb off`: the fixture ships its matching
+    `pdb_prog.pdb` beside it, and the shipped `pdb` default (DIV-129) would
+    otherwise name both functions from the sidecar, which is a different test.
+
     Pass 2 applies only `mode fast`, exercising the shipped preset default. It
     builds the rooted Listing, promotes the direct target into `functions` as
     `sub_140001000`, and decompiles its real arithmetic body.
@@ -26,11 +30,13 @@ c3
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/pdb_prog.exe</com>
   <com>mode fast</com>
   <com>option fast_funcdisc off</com>
+  <com>option pdb off</com>
   <com>read symbols</com>
   <com>functions</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/pdb_prog.exe</com>
   <com>mode fast</com>
+  <com>option pdb off</com>
   <com>read symbols</com>
   <com>functions</com>
   <com>load function sub_140001000</com>

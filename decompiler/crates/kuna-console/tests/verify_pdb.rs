@@ -1,30 +1,35 @@
-//! pdb end-to-end gate — THE HEADLINE: recover a stripped function's real name
-//! in an x86-64 Windows PE from its matching external `.pdb` (PDB PR-P1).
+//! pdb end-to-end gate — THE HEADLINE: a Windows PE whose matching `.pdb` sits
+//! beside it decompiles with its real function names, with no option line and no
+//! environment variable (DIV-129).
 //!
 //! Fixtures (vendored under `kuna-analysis/tests/fixtures`):
 //!   - `pdb_prog.exe` — a freestanding x86-64 PE built `clang -target
 //!     x86_64-pc-windows-msvc -g -gcodeview -fuse-ld=lld`, so lld-link emitted a
-//!     matching `pdb_prog.pdb` + the RSDS CodeView record. Its function
+//!     matching `pdb_prog.pdb` + the RSDS CodeView record naming it. Its function
 //!     `pdb_demo_compute` carries NO leftover symbol kuna's loader names from (the
 //!     COFF symtab is not a function-naming source), so without the `.pdb` it is a
 //!     stripped `FUN_<addr>`.
-//!   - `pdb_prog.pdb` — the matching `.pdb` (GUID/age agree with the EXE's CodeView
-//!     record).
+//!   - `pdb_prog.pdb` — the matching `.pdb`, vendored **beside** the EXE, which is
+//!     what the sidecar search finds.
 //!   - `pdb_prog_mismatch.pdb` — a DIFFERENT `.pdb` (a different content-hash GUID),
-//!     for the fingerprint-gate negative test.
+//!     for the fingerprint-gate negative tests.
 //! The build recipe + the pinned VMA/GUID are in `tests/fixtures/README.md`.
 //!
-//! ## The two-state proof + the fingerprint gate (the `verify_objc` posture)
+//! ## What is proved
 //!
-//!  - **`--option pdb off`** (default): `pdb_demo_compute` at `0x140001000` is an
-//!    engine `FUN_*`/`sub_*` placeholder — proving the name is NOT a leftover symbol
-//!    and that the PDB pass's value is what's visible.
-//!  - **`--option pdb on` + `kuna_pdb_path=<...>/pdb_prog.pdb`**: the SAME function
-//!    is now **`pdb_demo_compute`** — recovered purely from the matching PDB's
-//!    S_PUB32/S_GPROC32 stream, gated through the GUID/age fingerprint check.
-//!  - **`--option pdb on` + a guid-MISMATCH `.pdb`** (`pdb_prog_mismatch.pdb`): the
-//!    function STAYS a `FUN_*` placeholder — the fingerprint gate rejects the stale
-//!    PDB (never apply the wrong external knowledge).
+//!  - **the shipped default, fixture dir**: `pdb_demo_compute` at `0x140001000`,
+//!    found through the CodeView record's own filename resolved beside the image.
+//!  - **`--option pdb off`**: the same function is an engine `FUN_*`/`sub_*`
+//!    placeholder — proving the name is NOT a leftover symbol and that the PDB
+//!    pass's value is what is visible.
+//!  - **the EXE alone in a directory**: placeholder again — the sidecar, not the
+//!    EXE, is where the name comes from.
+//!  - **a stale `.pdb` beside the EXE** (the mismatch fixture copied to the
+//!    sidecar name): placeholder — the GUID/age gate rejects it, which is what
+//!    makes the automatic search safe to run by default.
+//!  - **`kuna_pdb_path`**: an EXE with no sidecar still recovers its names from an
+//!    explicitly supplied `.pdb`; and an explicit path that does NOT match falls
+//!    through to a sidecar that does.
 //!
 //! Everything runs on the real-PE path (loading an actual PE), so the XML
 //! datatest 675/158 oracles never reach this.
@@ -35,8 +40,7 @@
 //! specs`). When it is absent the bootstrap fails; the test prints that and returns
 //! early (a specs-less CI is a visible skip, never a false green).
 
-use std::path::PathBuf;
-use std::rc::Rc;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use kuna_base::address::Address;
@@ -44,8 +48,8 @@ use kuna_console::engine::{bootstrap_from_object, ConsoleProgram};
 
 /// Serializes the `kuna_pdb_path` env-var dance: the pass reads the process-global
 /// env at LOAD, so two tests setting it in parallel would clobber each other. Each
-/// `#[test]` holds this lock for its whole body (both states), the
-/// `verify_macho_fat` `ENV_LOCK` precedent.
+/// `#[test]` holds this lock for its whole body, the `verify_macho_fat` `ENV_LOCK`
+/// precedent.
 static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 /// The pinned VMA of `pdb_demo_compute` in `pdb_prog.exe` (ImageBase 0x140000000 +
@@ -66,15 +70,48 @@ fn fixtures() -> PathBuf {
     repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures")
 }
 
-/// How to drive the run.
-enum Mode {
-    /// Default: no flag, no `.pdb` (the today baseline — the stripped placeholder).
-    Off,
-    /// `--option pdb on` + `kuna_pdb_path` pointing at the matching `.pdb`.
-    OnMatching,
-    /// `--option pdb on` + `kuna_pdb_path` pointing at a guid-MISMATCH `.pdb`
-    /// (the fingerprint-gate negative case).
-    OnMismatch,
+/// A scratch directory holding a copy of `pdb_prog.exe` and nothing else, so the
+/// sidecar tiers find only what a test puts there.
+fn isolated_exe(tag: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("kuna-verify-pdb-{tag}"));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("create the scratch dir");
+    let exe = dir.join("pdb_prog.exe");
+    std::fs::copy(fixtures().join("pdb_prog.exe"), &exe).expect("copy the PE");
+    exe
+}
+
+/// How to drive one run: which EXE to load, what `kuna_pdb_path` holds, and
+/// whether the `pdb` option is explicitly turned off before the commit.
+struct Run {
+    exe: PathBuf,
+    env: Option<PathBuf>,
+    force_off: bool,
+}
+
+impl Run {
+    /// The vendored fixture, in its own directory (the sidecar is present).
+    fn fixture() -> Run {
+        Run { exe: fixtures().join("pdb_prog.exe"), env: None, force_off: false }
+    }
+    /// A copy of the fixture alone in a scratch directory (no sidecar).
+    fn isolated(tag: &str) -> Run {
+        Run { exe: isolated_exe(tag), env: None, force_off: false }
+    }
+    fn env(mut self, pdb: PathBuf) -> Run {
+        self.env = Some(pdb);
+        self
+    }
+    fn option_off(mut self) -> Run {
+        self.force_off = true;
+        self
+    }
+    /// Place `src` beside the EXE under the sidecar name the CodeView record uses.
+    fn with_sidecar(self, src: &Path) -> Run {
+        let dst = self.exe.parent().expect("the EXE has a parent").join("pdb_prog.pdb");
+        std::fs::copy(src, dst).expect("install the sidecar");
+        self
+    }
 }
 
 /// Resolve the symbol-table name at `COMPUTE_VMA` (the engine placeholder, or the
@@ -82,40 +119,30 @@ enum Mode {
 fn name_at_compute(prog: &ConsoleProgram) -> String {
     let code_space =
         prog.arch().manage().get_default_code_space().expect("a default code space").clone();
-    let addr = Address::new(Rc::clone(&code_space), COMPUTE_VMA);
+    let addr = Address::new(std::rc::Rc::clone(&code_space), COMPUTE_VMA);
     match prog.arch().symboltab.find_function_across_scopes(&addr) {
         Some((sid, _)) => prog.arch().symboltab.symbol(sid).get_name().to_string(),
         None => prog.arch().name_function(&addr),
     }
 }
 
-/// Bootstrap the fixture in `mode`, commit the (gated) PDB facts, and return the
-/// symbol-table name at `COMPUTE_VMA`. `None` ⇒ a specs-less skip.
+/// Bootstrap the run, commit the (gated) PDB facts, and return the symbol-table
+/// name at `COMPUTE_VMA`. `None` ⇒ a specs-less skip.
 ///
-/// The `.pdb` path is read by the pass from `kuna_pdb_path` at LOAD (the facts are
-/// stashed during bootstrap), so the env var is set BEFORE `bootstrap_from_object`;
-/// the `--option pdb on` flag is flipped before the deferred commit. The env var is
-/// always cleared after the load so runs do not leak into one another.
-fn run(mode: Mode) -> Option<String> {
+/// The `.pdb` is located by the pass at LOAD (the facts are stashed during
+/// bootstrap), so `kuna_pdb_path` is set BEFORE `bootstrap_from_object` and always
+/// cleared after, so runs do not leak into one another. The `option` line is
+/// applied before the deferred commit, matching live-CLI ordering.
+fn run(r: Run) -> Option<String> {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
-    let bin = fixtures().join("pdb_prog.exe");
-    assert!(bin.exists(), "missing fixture {bin:?}");
+    assert!(r.exe.exists(), "missing fixture {:?}", r.exe);
 
-    // Set `kuna_pdb_path` BEFORE bootstrap (the pass reads it at load). The Off mode
-    // sets no path (the pass is doubly inert: gate off AND no path).
-    match mode {
-        Mode::Off => std::env::remove_var(PDB_PATH_ENV),
-        Mode::OnMatching => {
-            std::env::set_var(PDB_PATH_ENV, fixtures().join("pdb_prog.pdb"));
-        }
-        Mode::OnMismatch => {
-            std::env::set_var(PDB_PATH_ENV, fixtures().join("pdb_prog_mismatch.pdb"));
-        }
+    match &r.env {
+        Some(p) => std::env::set_var(PDB_PATH_ENV, p),
+        None => std::env::remove_var(PDB_PATH_ENV),
     }
-
-    let prog = bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots);
-    // Clear the env immediately after load so it cannot leak into the next run.
+    let prog = bootstrap_from_object(r.exe.to_str().unwrap(), "", &spec_roots);
     std::env::remove_var(PDB_PATH_ENV);
 
     let mut prog = match prog {
@@ -129,10 +156,8 @@ fn run(mode: Mode) -> Option<String> {
         }
     };
 
-    // Live-CLI ordering: the `option` line precedes the deferred commit. Flip the
-    // flag on the live arch BEFORE committing so the gated pdb facts are applied.
-    if !matches!(mode, Mode::Off) {
-        prog.arch_mut().set_kuna_option("pdb", "on").expect("pdb flips on");
+    if r.force_off {
+        prog.arch_mut().set_kuna_option("pdb", "off").expect("pdb flips off");
     }
     prog.commit_pending_analysis().expect("analysis commit succeeds");
 
@@ -147,85 +172,107 @@ fn is_placeholder(name: &str) -> bool {
         || name.starts_with("LAB_")
 }
 
-/// THE HEADLINE: `0x140001000` in the PE is a generic placeholder by default, and
-/// becomes `pdb_demo_compute` only with `--option pdb on` + a matching `.pdb` —
-/// recovered purely from the PDB symbol stream, gated through the GUID/age check.
+/// THE HEADLINE: the shipped default names `0x140001000` from the `.pdb` sitting
+/// beside the EXE — no option line, no environment variable — and `--option pdb
+/// off` puts the stripped placeholder back.
 #[test]
-fn pdb_recovers_stripped_function_name_from_matching_pdb() {
+fn pdb_sidecar_names_the_function_by_default() {
     let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    let Some(off) = run(Mode::Off) else {
+    let Some(on) = run(Run::fixture()) else {
         return; // specs-less skip
     };
-    let on = run(Mode::OnMatching).expect("second bootstrap succeeds if the first did");
+    let off = run(Run::fixture().option_off()).expect("second bootstrap succeeds if the first did");
 
-    eprintln!("==== 0x{COMPUTE_VMA:x}  OFF: {off:>24}   ON(match): {on:>24} ====");
+    eprintln!("==== 0x{COMPUTE_VMA:x}  default: {on:>24}   option off: {off:>24} ====");
 
-    // 1. pdb OFF (default): the name is a generic engine placeholder — NOT the PDB
-    //    name (the EXE has no leftover symbol for it).
+    assert_eq!(
+        on, COMPUTE_NAME,
+        "the shipped default must name 0x{COMPUTE_VMA:x} {COMPUTE_NAME} from the sidecar .pdb"
+    );
     assert!(
         is_placeholder(&off),
-        "default (pdb off) must leave 0x{COMPUTE_VMA:x} a generic placeholder, got `{off}`"
+        "`option pdb off` must leave 0x{COMPUTE_VMA:x} a generic placeholder, got `{off}`"
     );
     assert_ne!(
         off, COMPUTE_NAME,
-        "default (pdb off) must NOT name the stripped function {COMPUTE_NAME} (proves it is not a leftover symbol)"
+        "`option pdb off` must NOT name the stripped function {COMPUTE_NAME} (proves it is not a leftover symbol)"
     );
-
-    // 2. pdb ON + matching `.pdb`: the SAME function is now `pdb_demo_compute`,
-    //    recovered from the PDB and gated through the fingerprint check.
-    assert_eq!(
-        on, COMPUTE_NAME,
-        "pdb on + matching .pdb must rename 0x{COMPUTE_VMA:x} to {COMPUTE_NAME} from the PDB symbol stream"
-    );
-
-    // 3. The name changed — the PDB pass performed the rename.
-    assert_ne!(off, on, "pdb must change the function's name (placeholder -> {COMPUTE_NAME})");
 }
 
-/// THE FINGERPRINT GATE: with `--option pdb on` but a guid-MISMATCH `.pdb`, the
-/// function STAYS a placeholder — the stale PDB is rejected (never apply the wrong
-/// external knowledge, the FID full-hash-match discipline).
+/// The name comes from the SIDECAR, not the EXE: the same PE alone in a directory
+/// keeps its placeholder, and gains the name back as soon as the `.pdb` is put
+/// beside it.
 #[test]
-fn pdb_fingerprint_gate_rejects_mismatched_pdb() {
+fn pdb_name_follows_the_sidecar_file() {
     let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    // Only meaningful if the mismatch fixture is present.
+    let Some(alone) = run(Run::isolated("alone")) else {
+        return; // specs-less skip
+    };
+    let beside = run(Run::isolated("beside").with_sidecar(&fixtures().join("pdb_prog.pdb")))
+        .expect("bootstrap succeeds if the first did");
+
+    eprintln!("==== EXE alone: {alone:>24}   EXE + .pdb: {beside:>24} ====");
+
+    assert!(is_placeholder(&alone), "a PE with no .pdb beside it must stay stripped, got `{alone}`");
+    assert_eq!(beside, COMPUTE_NAME, "dropping the matching .pdb beside the PE must name it");
+}
+
+/// THE FINGERPRINT GATE on the automatic tier: a STALE `.pdb` sitting beside the
+/// EXE under the recorded name is rejected — the function stays a placeholder.
+/// This is what makes the sidecar search safe to run by default.
+#[test]
+fn pdb_fingerprint_gate_rejects_a_stale_sidecar() {
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let mismatch = fixtures().join("pdb_prog_mismatch.pdb");
     assert!(mismatch.exists(), "missing mismatch fixture {mismatch:?}");
 
-    let Some(off) = run(Mode::Off) else {
+    let Some(stale) = run(Run::isolated("stale").with_sidecar(&mismatch)) else {
         return; // specs-less skip
     };
-    let mismatch_name = run(Mode::OnMismatch).expect("bootstrap succeeds if the first did");
 
-    eprintln!(
-        "==== fingerprint gate: OFF: {off:>24}   ON(mismatch): {mismatch_name:>24} ===="
-    );
+    eprintln!("==== stale sidecar: {stale:>24} ====");
 
-    // The mismatched `.pdb` must be REJECTED: the function stays a placeholder (same
-    // as the off case), NOT renamed to anything from the wrong PDB.
     assert!(
-        is_placeholder(&mismatch_name),
-        "a guid-mismatch .pdb must be rejected — 0x{COMPUTE_VMA:x} must stay a placeholder, got `{mismatch_name}`"
+        is_placeholder(&stale),
+        "a guid-mismatch .pdb beside the EXE must be rejected — 0x{COMPUTE_VMA:x} must stay a placeholder, got `{stale}`"
     );
     assert_ne!(
-        mismatch_name, COMPUTE_NAME,
-        "the mismatch .pdb must NOT recover {COMPUTE_NAME} (the fingerprint gate rejected it)"
-    );
-    // The mismatch result equals the off result (no rename happened).
-    assert_eq!(
-        mismatch_name, off,
-        "a rejected .pdb leaves the name exactly as the default (off) path"
+        stale, COMPUTE_NAME,
+        "the stale .pdb must NOT recover {COMPUTE_NAME} (the fingerprint gate rejected it)"
     );
 }
 
-/// The default path is byte-identical regardless of how it is reached: with NO pdb
-/// flag and no `.pdb` the function stays a placeholder (the pass never fires).
+/// `kuna_pdb_path` still reaches a `.pdb` that is NOT beside the image, and an
+/// explicit path that fails the fingerprint gate falls through to a sidecar that
+/// passes it.
 #[test]
-fn pdb_off_is_the_today_baseline() {
+fn pdb_explicit_path_is_tried_first_and_falls_through() {
     let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    let Some(off) = run(Mode::Off) else {
+    let matching = fixtures().join("pdb_prog.pdb");
+    let mismatch = fixtures().join("pdb_prog_mismatch.pdb");
+
+    // No sidecar anywhere near the EXE: only the env var can supply the `.pdb`.
+    let Some(explicit) = run(Run::isolated("explicit").env(matching.clone())) else {
         return; // specs-less skip
     };
-    assert!(is_placeholder(&off), "default name must be a placeholder, got `{off}`");
-    assert_ne!(off, COMPUTE_NAME, "default must not recover the stripped function name");
+    // An explicit path that does not match, with a matching sidecar present.
+    let fell_through = run(Run::fixture().env(mismatch.clone()))
+        .expect("bootstrap succeeds if the first did");
+    // An explicit path that does not match, with nothing else to fall back to.
+    let nothing_left =
+        run(Run::isolated("nofallback").env(mismatch)).expect("bootstrap succeeds if the first did");
+
+    eprintln!(
+        "==== env only: {explicit:>24}   env mismatch + sidecar: {fell_through:>24}   env mismatch alone: {nothing_left:>24} ===="
+    );
+
+    assert_eq!(explicit, COMPUTE_NAME, "kuna_pdb_path must still reach an out-of-tree .pdb");
+    assert_eq!(
+        fell_through, COMPUTE_NAME,
+        "a mismatching explicit path must not veto a sidecar that does match"
+    );
+    assert!(
+        is_placeholder(&nothing_left),
+        "with every candidate rejected the function stays a placeholder, got `{nothing_left}`"
+    );
 }

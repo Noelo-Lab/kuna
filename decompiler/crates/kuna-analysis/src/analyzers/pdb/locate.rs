@@ -2,44 +2,49 @@
 //!
 //! PDB is the lone **external-file** case in the metadata tier: the PE carries only
 //! a CodeView *fingerprint* (a GUID/sig + age + the `.pdb` path — see
-//! [`crate::pdb::codeview`]), never the debug info itself. So PDB recovery is
-//! conditional on the user *supplying* the `.pdb` — the exact shape of the FID
-//! database (which needs a `.fid` DB supplied out of band), and modeled on the
-//! `fid` `kuna_fid_db` env-var precedent.
+//! [`crate::pdb::codeview`]), never the debug info itself. So PDB recovery needs
+//! the `.pdb` to be *found* before anything can be applied.
 //!
-//! ## Tier-1 (the MVP, this PR)
+//! ## The search tiers
 //!
-//! The `.pdb` path is read from the **`kuna_pdb_path` environment variable** — the
-//! exact `fid::FID_DB_ENV` (`kuna_fid_db`) precedent. This is the simplest
-//! locate strategy and keeps the LLM control surface to a SINGLE new on|off
-//! settable (`--option pdb`): the path source lives off the per-decompilation
-//! `--option` surface (the same posture FID's DB source takes). Tier-2 (same-dir /
-//! local-store sidecar) and tier-3 (symbol-server download) are deferred follow-ons
-//! (design §4.2).
+//! [`pdb_candidates`] returns the paths to try, most specific first; the caller
+//! opens each in turn and applies the first that passes the fingerprint gate.
+//!
+//! 1. **`kuna_pdb_path`** — an explicitly supplied path (the `fid` `kuna_fid_db`
+//!    external-artifact precedent). Whatever the user names is tried first.
+//! 2. **The CodeView record's own filename, beside the image.** A `/Zi` build
+//!    records the `.pdb` it emitted; the *basename* of that record is resolved in
+//!    the image's own directory. The recorded string is a build-machine path
+//!    (`C:\src\obj\prog.pdb`) written into the binary by whoever linked it, so it
+//!    is never opened as a path — only its last segment is used, and only as a
+//!    name inside a directory the caller already handed us.
+//! 3. **`<image stem>.pdb` beside the image** — the sidecar convention that holds
+//!    when the recorded name has been rewritten (a renamed or repackaged binary).
 //!
 //! ## The fingerprint gate (the FID full-hash-match discipline)
 //!
-//! A supplied `.pdb` is applied **only** when its own `pdb_information().guid/age`
-//! matches the PE's CodeView record. A MISMATCH (a stale / wrong / unrelated `.pdb`)
-//! or an ABSENT/unreadable file yields `None` → the pass emits nothing. This is the
-//! exact "never apply the wrong external knowledge" discipline FID's full-hash
-//! bucket-collapse enforces: a wrong PDB would rename functions to *someone else's*
-//! names, far worse than leaving them `FUN_*`.
+//! A candidate is applied **only** when its own `pdb_information().guid/age`
+//! matches the PE's CodeView record. A MISMATCH (a stale / wrong / unrelated
+//! `.pdb`) or an ABSENT/unreadable file moves on to the next candidate, and an
+//! exhausted list emits nothing. This is the exact "never apply the wrong external
+//! knowledge" discipline FID's full-hash bucket-collapse enforces: a wrong PDB
+//! would rename functions to *someone else's* names, far worse than leaving them
+//! `FUN_*`. It is also what makes the automatic tiers safe enough to run by
+//! default — a sidecar that is not this binary's cannot be applied.
 
-use std::path::PathBuf;
+use std::ffi::OsStr;
+use std::path::{Component, Path, PathBuf};
 
 use crate::pdb::codeview::CodeViewInfo;
 
 /// The environment variable naming the external `.pdb` file to apply. Mirrors the
-/// `fid` `kuna_fid_db` env gate exactly (the FID-database external-artifact
-/// precedent): the `.pdb` source is kept OFF the per-decompilation `--option`
-/// surface in tier-1 (so the catalog gains a single on|off `pdb` settable, not a
-/// path-valued one). Absent / empty / unreadable ⇒ the pass is inert.
+/// `fid` `kuna_fid_db` env gate (the FID-database external-artifact precedent):
+/// the `.pdb` source is kept OFF the per-decompilation `--option` surface (so the
+/// catalog carries a single on|off `pdb` settable, not a path-valued one).
 pub const PDB_PATH_ENV: &str = "kuna_pdb_path";
 
-/// Resolve the tier-1 `.pdb` path from [`PDB_PATH_ENV`]. `None` (the inert path)
-/// when the variable is unset or empty. The fingerprint gate ([`fingerprint_ok`])
-/// is applied separately, after the `.pdb` is opened.
+/// Resolve the explicitly supplied `.pdb` path from [`PDB_PATH_ENV`]. `None` when
+/// the variable is unset or empty.
 pub fn pdb_path_from_env() -> Option<PathBuf> {
     let p = std::env::var_os(PDB_PATH_ENV)?;
     if p.is_empty() {
@@ -48,7 +53,58 @@ pub fn pdb_path_from_env() -> Option<PathBuf> {
     Some(PathBuf::from(p))
 }
 
-/// The fingerprint gate: does a supplied `.pdb`'s own `{guid, age}` match the PE's
+/// The ordered `.pdb` candidates for an image, most specific first (see the module
+/// header for the tiers). `image_path` is the image's own on-disk location
+/// ([`crate::pass::AnalysisCtx::image_path`]); `None` leaves only the explicit
+/// env-var tier. Duplicates are collapsed, so a record that already names
+/// `<stem>.pdb` yields one candidate, not two.
+pub fn pdb_candidates(image_path: Option<&Path>, cv: &CodeViewInfo) -> Vec<PathBuf> {
+    let mut out: Vec<PathBuf> = Vec::new();
+    let mut add = |p: PathBuf| {
+        if !out.contains(&p) {
+            out.push(p);
+        }
+    };
+    if let Some(explicit) = pdb_path_from_env() {
+        add(explicit);
+    }
+    let Some(image) = image_path else {
+        return out;
+    };
+    let dir = image.parent().unwrap_or_else(|| Path::new(""));
+    if let Some(name) = recorded_pdb_name(cv.pdb_path()) {
+        add(dir.join(name));
+    }
+    if let Some(stem) = image.file_stem() {
+        let mut sidecar = stem.to_os_string();
+        sidecar.push(".pdb");
+        add(dir.join(sidecar));
+    }
+    out
+}
+
+/// The safe-to-join filename inside a CodeView record's `.pdb` path, or `None`.
+///
+/// The record is attacker-controllable binary content, so this deliberately
+/// throws away everything but the last path segment (splitting on BOTH separators
+/// — a Windows linker writes `\`, which is an ordinary character to a POSIX
+/// `Path`) and then requires that segment to be a single ordinary component
+/// named `*.pdb`. `..`, an absolute path, a Windows drive prefix, and a trailing
+/// separator all yield `None`, so the result can only ever name a file directly
+/// inside a directory the caller chooses.
+fn recorded_pdb_name(recorded: &str) -> Option<&str> {
+    let last = recorded.rsplit(['/', '\\']).next()?;
+    if !last.to_ascii_lowercase().ends_with(".pdb") {
+        return None;
+    }
+    let mut comps = Path::new(last).components();
+    match (comps.next(), comps.next()) {
+        (Some(Component::Normal(c)), None) if c == OsStr::new(last) => Some(last),
+        _ => None,
+    }
+}
+
+/// The fingerprint gate: does a candidate `.pdb`'s own `{guid, age}` match the PE's
 /// CodeView record [`cv`]?
 ///
 /// Compares (1) the **age** (exact `u32` equality) and (2) the **GUID** in its
@@ -62,9 +118,9 @@ pub fn pdb_path_from_env() -> Option<PathBuf> {
 ///
 /// An **NB10** CodeView record (a `u32` signature, no GUID — [`CodeViewInfo::Nb10`])
 /// has no GUID to compare; the modern `RSDS`/`pdb`-crate path is GUID-keyed, so a
-/// `pdb` opened against an NB10 record cannot be fingerprint-matched at this tier
-/// and is rejected (returns `false`). NB10 binaries are rare in practice; tier-1
-/// targets the modern RSDS form the fixture uses.
+/// `pdb` opened against an NB10 record cannot be fingerprint-matched and is
+/// rejected (returns `false`). NB10 binaries are rare in practice; the pass targets
+/// the modern RSDS form the fixture uses.
 ///
 /// `pdb_guid` is the `.pdb`'s `pdb_information().guid` rendered to its canonical
 /// string (the caller passes `info.guid.to_string()`); `pdb_age` is
@@ -87,6 +143,11 @@ pub fn fingerprint_ok(cv: &CodeViewInfo, pdb_guid: &str, pdb_age: u32) -> bool {
 mod tests {
     use super::*;
 
+    /// `kuna_pdb_path` is process-global, so every test that sets or clears it
+    /// holds this for its whole body; cargo runs them on parallel threads in one
+    /// process and they would otherwise clobber each other.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     fn rsds() -> CodeViewInfo {
         // The pdb_min.exe / pdb_prog GUID raw bytes (Microsoft mixed-endian); its
         // canonical text form is "61AC3963-FF48-9024-4C4C-44205044422E".
@@ -97,6 +158,15 @@ mod tests {
             ],
             age: 1,
             pdb_path: "x.pdb".to_string(),
+        }
+    }
+
+    fn rsds_recording(path: &str) -> CodeViewInfo {
+        match rsds() {
+            CodeViewInfo::Rsds { guid, age, .. } => {
+                CodeViewInfo::Rsds { guid, age, pdb_path: path.to_string() }
+            }
+            other => other,
         }
     }
 
@@ -125,13 +195,14 @@ mod tests {
     #[test]
     fn nb10_record_has_no_guid_to_match() {
         // An NB10 record carries a u32 signature, not a GUID — the GUID-keyed gate
-        // cannot match it, so it is rejected (tier-1 targets RSDS).
+        // cannot match it, so it is rejected (the pass targets RSDS).
         let cv = CodeViewInfo::Nb10 { signature: 0xDEAD_BEEF, age: 1, pdb_path: "x.pdb".into() };
         assert!(!fingerprint_ok(&cv, "61AC3963-FF48-9024-4C4C-44205044422E", 1));
     }
 
     #[test]
     fn env_unset_or_empty_is_none() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         // (Serial-ish: tolerate whatever the ambient env holds by setting + clearing.)
         std::env::remove_var(PDB_PATH_ENV);
         assert!(pdb_path_from_env().is_none());
@@ -140,5 +211,70 @@ mod tests {
         std::env::set_var(PDB_PATH_ENV, "/some/where.pdb");
         assert_eq!(pdb_path_from_env(), Some(PathBuf::from("/some/where.pdb")));
         std::env::remove_var(PDB_PATH_ENV);
+    }
+
+    #[test]
+    fn recorded_name_keeps_only_the_basename() {
+        // A Windows build path is reduced to its filename, `\` and `/` alike.
+        assert_eq!(recorded_pdb_name(r"C:\src\obj\prog.pdb"), Some("prog.pdb"));
+        assert_eq!(recorded_pdb_name("/home/u/build/prog.pdb"), Some("prog.pdb"));
+        assert_eq!(recorded_pdb_name("prog.pdb"), Some("prog.pdb"));
+        // Case is preserved but the extension check is case-insensitive.
+        assert_eq!(recorded_pdb_name(r"D:\Out\Prog.PDB"), Some("Prog.PDB"));
+    }
+
+    #[test]
+    fn recorded_name_rejects_traversal_and_non_pdb() {
+        // Nothing that could escape the image's directory survives: a `..` run is
+        // dropped with the rest of the path, leaving a bare filename or nothing.
+        assert_eq!(recorded_pdb_name(r"..\..\..\etc\shadow"), None);
+        assert_eq!(recorded_pdb_name("../../secrets.pdb"), Some("secrets.pdb"));
+        assert_eq!(recorded_pdb_name(".."), None);
+        assert_eq!(recorded_pdb_name(r"C:\src\obj\"), None);
+        assert_eq!(recorded_pdb_name(""), None);
+        // Only a `.pdb` is ever opened.
+        assert_eq!(recorded_pdb_name("/etc/passwd"), None);
+    }
+
+    #[test]
+    fn candidates_are_env_then_record_then_stem() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        std::env::set_var(PDB_PATH_ENV, "/explicit/one.pdb");
+        let cv = rsds_recording(r"C:\build\obj\recorded.pdb");
+        let got = pdb_candidates(Some(Path::new("/bin/dir/prog.exe")), &cv);
+        std::env::remove_var(PDB_PATH_ENV);
+        assert_eq!(
+            got,
+            vec![
+                PathBuf::from("/explicit/one.pdb"),
+                PathBuf::from("/bin/dir/recorded.pdb"),
+                PathBuf::from("/bin/dir/prog.pdb"),
+            ]
+        );
+    }
+
+    #[test]
+    fn candidates_dedupe_and_need_no_env() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        std::env::remove_var(PDB_PATH_ENV);
+        // The record already names `<stem>.pdb`: one candidate, not two.
+        let cv = rsds_recording("prog.pdb");
+        assert_eq!(
+            pdb_candidates(Some(Path::new("/bin/dir/prog.exe")), &cv),
+            vec![PathBuf::from("/bin/dir/prog.pdb")]
+        );
+        // No image path (an in-memory image) and no env var: nothing to try.
+        assert!(pdb_candidates(None, &cv).is_empty());
+    }
+
+    #[test]
+    fn candidates_fall_back_to_the_stem_when_the_record_is_unusable() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        std::env::remove_var(PDB_PATH_ENV);
+        let cv = rsds_recording(r"..\..\evil");
+        assert_eq!(
+            pdb_candidates(Some(Path::new("/bin/dir/prog.exe")), &cv),
+            vec![PathBuf::from("/bin/dir/prog.pdb")]
+        );
     }
 }

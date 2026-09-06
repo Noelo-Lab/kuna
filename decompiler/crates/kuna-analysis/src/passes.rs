@@ -658,7 +658,14 @@ pub fn run_listing_consumers(
     // Known passes so the consumer skips already-modeled callees and the fixpoint
     // treats a Known-no-return callee as terminal.
     let listing = listing.with_noreturn_seeds(noreturn_seeds, callfixup_seeds);
-    let ctx = AnalysisCtx { file: &file, bytes, image, arch, listing: Some(&listing) };
+    let ctx = AnalysisCtx {
+        file: &file,
+        bytes,
+        image,
+        arch,
+        listing: Some(&listing),
+        image_path: image_on_disk_path(image),
+    };
     let mut out: Vec<(&'static str, AnalysisOutput)> = if arch.analysis_listing {
         listing_consumer_passes(arch)
             .into_iter()
@@ -800,13 +807,37 @@ pub fn run_operand_refs(
     // pre-link addresses at the deferred commit.
     let view = crate::loader::kuna_relocrebase::rebased_view(&raw, bytes);
     let (file, bytes) = crate::loader::kuna_relocrebase::select(raw, bytes, &view);
-    let ctx = AnalysisCtx { file: &file, bytes, image, arch, listing: None };
+    let ctx = AnalysisCtx {
+        file: &file,
+        bytes,
+        image,
+        arch,
+        listing: None,
+        image_path: image_on_disk_path(image),
+    };
     let mut out = crate::operand_refs::OperandRefsPass.run(&ctx);
     if let Some(view) = &view {
         crate::loader::kuna_relocrebase::retain_in_image(&mut out, view);
     }
     out.sanitize_names(symbolnamechars_mode());
     out
+}
+
+/// The on-disk path of a load image, for
+/// [`AnalysisCtx::image_path`](crate::pass::AnalysisCtx::image_path).
+///
+/// The load image already carries the name it was opened under (the `LoadImage`
+/// `filename` member, which the bootstrap sets to the path the user named), so
+/// the single derivation point is here rather than a new argument on every
+/// driver entry. `None` when that name does not resolve to an existing file —
+/// an in-memory or synthesized image (a test harness, a Ghidra-provided program)
+/// has no companion files to find, and a pass must not probe the working
+/// directory on the strength of a name that is not a path.
+pub fn image_on_disk_path(image: &ObjectLoadImage) -> Option<&std::path::Path> {
+    use kuna_sleigh::loadimage::LoadImage;
+    let name = image.get_file_name();
+    let path = std::path::Path::new(name);
+    path.is_file().then_some(path)
 }
 
 /// Extract `(addr, name)` for every text/function symbol in the object — the name
@@ -869,7 +900,14 @@ pub fn run_default_analyses(
     let listing = arch
         .analysis_listing
         .then(|| crate::listing::Listing::build(&file, image, arch, translate, &seeds));
-    let ctx = AnalysisCtx { file: &file, bytes, image, arch, listing: listing.as_ref() };
+    let ctx = AnalysisCtx {
+        file: &file,
+        bytes,
+        image,
+        arch,
+        listing: listing.as_ref(),
+        image_path: image_on_disk_path(image),
+    };
     let format = file.format();
     let mut out = run_analyses(&ctx, &passes_for(compiler, format));
     if let Some(view) = &view {
@@ -913,7 +951,14 @@ pub fn run_default_analyses_per_pass(
     let listing = arch
         .analysis_listing
         .then(|| crate::listing::Listing::build(&file, image, arch, translate, &seeds));
-    let ctx = AnalysisCtx { file: &file, bytes, image, arch, listing: listing.as_ref() };
+    let ctx = AnalysisCtx {
+        file: &file,
+        bytes,
+        image,
+        arch,
+        listing: listing.as_ref(),
+        image_path: image_on_disk_path(image),
+    };
     let format = file.format();
     let mut split: Vec<(&'static str, AnalysisOutput)> = passes_for(compiler, format)
         .iter()
@@ -1093,6 +1138,21 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// `image_on_disk_path` reports a load image's path only when that name is
+    /// really a file: a synthesized image name must not make a companion-file
+    /// search (the `pdb` sidecar tiers) probe the working directory.
+    #[test]
+    fn image_on_disk_path_needs_a_real_file() {
+        let bin = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/pdb_prog.exe");
+        let bytes = std::fs::read(bin).expect("read the PE fixture");
+        let real = ObjectLoadImage::from_bytes(bin, &bytes).expect("load the PE");
+        assert_eq!(image_on_disk_path(&real), Some(std::path::Path::new(bin)));
+
+        let synthetic = ObjectLoadImage::from_bytes("ghidra_program", &bytes)
+            .expect("the same bytes under a name that is not a path");
+        assert_eq!(image_on_disk_path(&synthetic), None);
     }
 
     /// The Itanium RTTI pass (`itaniumrtti`) is registered ONLY on an ELF image —
