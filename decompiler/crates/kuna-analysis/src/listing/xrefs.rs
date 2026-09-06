@@ -76,6 +76,7 @@ use object::SectionKind;
 use super::classify::classify;
 use super::context::ContextPainter;
 use super::kuna_picbase::{self, Ctx as PicCtx, PicBase};
+use super::kuna_poolref::PoolImage;
 use super::model::{FlowKind, RawOp};
 
 /// ELF section-header flag `SHF_ALLOC` (the section occupies memory at runtime).
@@ -498,6 +499,12 @@ pub fn build_with_focus(
     };
     let mut pc_thunks = std::collections::HashMap::new();
 
+    // (kuna) `poolref`: the read-only half of the image, so a read of a literal
+    // pool word can be followed to what it points at. `None` (an image with no
+    // read-only mapped section, and every relocatable object, whose sections are
+    // not the runtime ones) leaves every reference below exactly as it was.
+    let pool = if mapped.is_empty() { None } else { PoolImage::new(file) };
+
     let mut st = State {
         by_target: BTreeMap::new(),
         by_source: BTreeMap::new(),
@@ -603,7 +610,7 @@ pub fn build_with_focus(
                 Vec::new()
             } else {
                 let fall_through = vma.wrapping_add(len as u64);
-                data_refs(cap.ops(), data_space.as_ref(), &mapped, fall_through)
+                data_refs(cap.ops(), data_space.as_ref(), &mapped, fall_through, pool.as_ref())
             };
             // Every row this instruction produces carries the same render, and an
             // instruction that produces none needs no render at all.
@@ -1027,8 +1034,24 @@ fn data_refs(
     data_space: Option<&Rc<AddrSpace>>,
     mapped: &[(u64, u64)],
     fall_through: u64,
+    pool: Option<&PoolImage>,
 ) -> Vec<(u64, XrefKind)> {
     let mut out = Vec::new();
+    // (kuna) `poolref`: the second edge a literal-pool load forms, from this same
+    // instruction to the address the pool word holds. See [`super::kuna_poolref`].
+    // `width` is how many bytes the instruction READ, which a `LOAD`'s address
+    // varnode does not carry -- it is pointer-sized whatever the access is, so
+    // `ldrh r0,[0x1003c]` would read as a pointer-sized load of the pool word.
+    let follow = |out: &mut Vec<(u64, XrefKind)>, at: u64, width: Option<u32>| {
+        if let Some(target) = width.and_then(|w| pool.and_then(|p| p.follow(at, w, mapped))) {
+            out.push((target, XrefKind::Data));
+        }
+    };
+    let read_width = |op: &FullOp, slot: usize, vn: &VarnodeData| match op.opcode {
+        OpCode::CPUI_LOAD if slot == 1 => op.out.as_ref().map(|o| o.size),
+        OpCode::CPUI_STORE => None,
+        _ => Some(vn.size),
+    };
     // Space identity is pointer identity throughout the engine (`VarnodeData`'s
     // own `PartialEq` compares spaces that way), so match on the `Rc`, never on
     // the space's name or index.
@@ -1058,6 +1081,7 @@ fn data_refs(
             }
             if in_data_space(vn) {
                 out.push((vn.offset, XrefKind::Read));
+                follow(&mut out, vn.offset, read_width(op, i, vn));
                 continue;
             }
             let Some(space) = &vn.space else { continue };
@@ -1077,6 +1101,9 @@ fn data_refs(
                 continue; // this call's own return address
             }
             out.push((value, kind));
+            if kind == XrefKind::Read {
+                follow(&mut out, value, read_width(op, i, vn));
+            }
         }
     }
     out.sort_unstable();
@@ -1085,7 +1112,7 @@ fn data_refs(
 }
 
 /// `ScalarOperandAnalyzer.checkOperands`' value filter.
-fn looks_like_address(value: u64) -> bool {
+pub(super) fn looks_like_address(value: u64) -> bool {
     value >= MIN_ADDRESS_VALUE && !MASK_VALUES.contains(&value)
 }
 
@@ -1155,10 +1182,20 @@ mod tests {
 
     const MAPPED: [(u64, u64); 2] = [(0x1000, 0x2000), (0x4000, 0x4100)];
 
+    /// A read-only literal pool at 0x1000: a mapped address, a number, a mapped
+    /// address. See [`super::super::kuna_poolref`].
+    const POOL: [u8; 12] = [
+        0x00, 0x40, 0x00, 0x00, 0x2a, 0x00, 0x00, 0x00, 0x10, 0x40, 0x00, 0x00,
+    ];
+
+    fn pool_image() -> PoolImage<'static> {
+        PoolImage::from_ranges(vec![(0x1000, 0x100c, &POOL[..])], 4, true).unwrap()
+    }
+
     /// Run [`data_refs`] with `ram` as the default data space and a fall-through
     /// no op under test materializes.
     fn refs(ram: &Rc<AddrSpace>, ops: &[FullOp]) -> Vec<(u64, XrefKind)> {
-        data_refs(ops, Some(ram), &MAPPED, 0)
+        data_refs(ops, Some(ram), &MAPPED, 0, None)
     }
 
     /// The shape a constant-address memory operand actually lifts to: a direct
@@ -1247,11 +1284,77 @@ mod tests {
             None,
             vec![vn(&cst, 0x1b), vn(&ram, 0x4010), vn(&cst, 0x1104)],
         )];
-        assert!(data_refs(&arm, Some(&ram), &MAPPED, 0x1104).is_empty());
+        assert!(data_refs(&arm, Some(&ram), &MAPPED, 0x1104, None).is_empty());
         assert_eq!(
-            data_refs(&x86, Some(&ram), &MAPPED, 0x1104),
+            data_refs(&x86, Some(&ram), &MAPPED, 0x1104, None),
             vec![(0x4010, XrefKind::Read)]
         );
+    }
+
+    /// (kuna) `poolref`: a pointer-sized read of a read-only word files the
+    /// address that word holds, from the same instruction. The ARM shape — the
+    /// `LOAD`'s address is a direct `ram` varnode and its OUTPUT carries the
+    /// access width.
+    #[test]
+    fn a_literal_pool_load_also_references_what_the_pool_word_holds() {
+        let (ram, cst) = spaces();
+        let pool = pool_image();
+        let mut out = vn(&ram, 0x4020);
+        out.size = 4;
+        let load = op(
+            OpCode::CPUI_LOAD,
+            Some(out),
+            vec![vn(&cst, 0x1b), vn(&ram, 0x1000)],
+        );
+        assert_eq!(
+            data_refs(&[load], Some(&ram), &MAPPED, 0, Some(&pool)),
+            vec![(0x1000, XrefKind::Read), (0x4000, XrefKind::Data), (0x4020, XrefKind::Write)]
+        );
+    }
+
+    /// `ldrh r0,[pool]` reads a number out of the pool, not a pointer — and the
+    /// `LOAD`'s address varnode is pointer-sized either way, so the width has to
+    /// come from the output.
+    #[test]
+    fn a_narrow_load_of_a_pool_word_files_only_the_read() {
+        let (ram, cst) = spaces();
+        let pool = pool_image();
+        let mut out = vn(&ram, 0x4020);
+        out.size = 2;
+        let load = op(
+            OpCode::CPUI_LOAD,
+            Some(out),
+            vec![vn(&cst, 0x1b), vn(&ram, 0x1000)],
+        );
+        assert_eq!(
+            data_refs(&[load], Some(&ram), &MAPPED, 0, Some(&pool)),
+            vec![(0x1000, XrefKind::Read), (0x4020, XrefKind::Write)]
+        );
+    }
+
+    /// The x86 shape: the operand is a direct `ram` varnode input of a `COPY`,
+    /// which carries its own access width.
+    #[test]
+    fn a_direct_ram_read_of_a_pool_word_follows_it_too() {
+        let (ram, _cst) = spaces();
+        let pool = pool_image();
+        let mut src = vn(&ram, 0x1008);
+        src.size = 4;
+        let copy = op(OpCode::CPUI_COPY, None, vec![src]);
+        assert_eq!(
+            data_refs(&[copy], Some(&ram), &MAPPED, 0, Some(&pool)),
+            vec![(0x1008, XrefKind::Read), (0x4010, XrefKind::Data)]
+        );
+    }
+
+    /// Without the read-only image nothing is followed — the pre-feature answer.
+    #[test]
+    fn no_pool_image_leaves_every_reference_as_it_was() {
+        let (ram, _cst) = spaces();
+        let mut src = vn(&ram, 0x1008);
+        src.size = 4;
+        let copy = op(OpCode::CPUI_COPY, None, vec![src]);
+        assert_eq!(refs(&ram, &[copy]), vec![(0x1008, XrefKind::Read)]);
     }
 
     /// The `LEA` shape: a materialized address is address-taken data, even when

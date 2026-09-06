@@ -176,8 +176,16 @@ fn attribute(
         sleighpath: args.sleighpath.clone(),
     };
     let prog = load_program(&load, DriverDefaults::Inventory)?;
-    let seeds: Vec<u64> =
-        prog.function_entries_canonical().iter().map(|e| e.addr.get_offset()).collect();
+    // The inventory, read ONCE. `ConsoleProgram::find_entry_at` rebuilds and
+    // linearly scans this whole vector per call, which is a rounding error while
+    // no string has an owner and 0.85 s of a 2.5 s answer on an ARM image where
+    // 1,792 of them do.
+    let inventory: BTreeMap<u64, String> = prog
+        .function_entries_canonical()
+        .into_iter()
+        .map(|e| (e.addr.get_offset(), e.name))
+        .collect();
+    let seeds: Vec<u64> = inventory.keys().copied().collect();
     let index = kuna_analysis::listing::xrefs::build(
         file,
         prog.arch(),
@@ -204,8 +212,10 @@ fn attribute(
                     if functions.iter().any(|(e, _)| *e == entry) {
                         continue;
                     }
-                    let name =
-                        names.entry(entry).or_insert_with(|| function_name(&prog, entry)).clone();
+                    let name = names
+                        .entry(entry)
+                        .or_insert_with(|| function_name(&prog, &inventory, entry))
+                        .clone();
                     functions.push((entry, name));
                 }
             }
@@ -223,9 +233,11 @@ fn owning_function(prog: &ConsoleProgram, index: &XrefIndex, vma: u64) -> Option
 
 /// The display name for a function entry, falling back to the engine's own
 /// placeholder (`sub_<addr>`) so a row is never nameless.
-fn function_name(prog: &ConsoleProgram, entry: u64) -> String {
-    prog.find_entry_at(entry)
-        .map(|e| e.name)
+fn function_name(prog: &ConsoleProgram, inventory: &BTreeMap<u64, String>, entry: u64) -> String {
+    inventory
+        .get(&entry)
+        .cloned()
+        .or_else(|| prog.find_entry_at(entry).map(|e| e.name))
         .or_else(|| prog.function_named_at(entry))
         .unwrap_or_else(|| match prog.arch().manage().get_default_code_space() {
             Some(space) => prog.arch().name_function(&Address::new(Rc::clone(space), entry)),

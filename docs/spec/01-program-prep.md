@@ -2062,6 +2062,41 @@ establishment up to the next write of it (in GCC output, the epilogue's restore)
 and to no other function. A body that reuses the register for its own purposes
 contributes no references rather than wrong ones.
 
+(kuna) One indirection further out is the same defect on ARM, and PIC base
+folding does not reach it: an ARM immediate cannot hold an arbitrary address, so
+the compiler parks the constant in a **literal pool** in `.text` and the code
+loads it PC-relatively (`ldr r0,[0x86e4]` at 0x862c, and the word at 0x86e4 is
+the string). SLEIGH resolves the pool address at decode time, so the walk files
+that read — and stops, because 0x86e4 is all the instruction says. The literal
+itself is referenced by nothing, and on the filing image `kuna strings --json`
+reported `xrefs_count: 0` and no owning function for a string
+`__libc_start_main` plainly prints. **Literal-pool following**
+(`decompiler/crates/kuna-analysis/src/listing/kuna_poolref.rs`) closes that with
+exactly one dereference, of content that cannot change: a `Read` of a
+pointer-sized, pointer-aligned location in an **allocated, non-writable** section
+with file content, whose word passes the same `checkOperands` value filter the
+constant scan uses and lands in a mapped section, files a second edge to that
+word's value. The edge is filed from the **instruction**, not from the pool word,
+which is the whole point — a pool word is data and belongs to no function, so
+attributing the reference to it would answer the question with another address
+instead of a name.
+
+Each clause is a refusal that would otherwise be a fabricated reference. The read
+must be pointer-*sized*, and the width has to come from the access rather than
+from the address varnode, because a `LOAD`'s address is pointer-sized whatever
+the access is — without that, `ldrh r0,[pool]`, which is reading a number out of
+a pool, reads as a pointer dereference. The section must be non-writable: a GOT
+entry or a `.data` pointer holds whatever the loader or the program last wrote
+there, and the image's copy of it is not evidence. And the value must clear the
+address floor, so a read-only word holding 42 stays a number. The kind filed is
+`Data`, the address-taken case, because that is what the load did. Measured over
+a 15-image sweep: zero edges added on every x86-64 ELF and PE in it (a RIP-relative
+load already encodes the address it forms), zero attributions lost anywhere, and
+on the ARM images 2,239 new string-to-function attributions on u-boot and 763 on
+the filing crackme — of which an independent capstone-plus-symtab oracle
+corroborates 2,234 and 761 as real PC-relative pool loads, with every one of the
+remainder confirmed by hand as a load the oracle's own sweep missed.
+
 ## 1.7 The no-return family
 
 Whether a call falls through decides the CFG of every caller, so no-return facts

@@ -1,0 +1,53 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "a-1dbc4aebc7ab",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "strings",
+    "{{BIN}}",
+    "--filter",
+    "kuna poolref prompt",
+    "--json"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/poolref_arm_le32",
+    "binary_sha256": "78bd433a2407dc59e7219c20a1b27a389ca63d46f722f65f2dea130043283235",
+    "binary_size": 735,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/poolref_arm_le32",
+    "selector": null,
+    "selector_kind": "none"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "json": [
+      {
+        "path": "strings[0].address_hex",
+        "op": "eq",
+        "value": "0x10100"
+      },
+      {
+        "path": "strings[0].xrefs_count",
+        "op": "gt",
+        "value": 0
+      },
+      {
+        "path": "strings[0].functions",
+        "op": "len_gt",
+        "value": 0
+      }
+    ]
+  },
+  "notes": "Promoted acceptance of arm-literal-pool-string, re-pointed from the dataset witness (crackmes.one 5ab77f5733c5d40ad448c380: 'FATAL: kernel too old' reported xrefs_count 0 although __libc_start_main loads it from the pool word at 0x86e4) at the vendored poolref_arm_le32 fixture -- CI has no dataset. xrefs_count keeps an empty functions list from passing. The refusals are in verify_poolref.rs."
+}

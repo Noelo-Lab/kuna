@@ -1,0 +1,127 @@
+{
+  "opportunity": "repipe:5ab77f5733c5d40ad448c380::arm-literal-pool-string",
+  "need_id": "arm-literal-pool-string",
+  "track": "tooling",
+  "round": 3,
+  "test_name": "repipe round 3, challenge 5ab77f5733c5d40ad448c380",
+  "binary": "kuna-re-dataset/challenges/5ab77f5733c5d40ad448c380/bin/1337_ARM.zip.__x/1337ARM.bin",
+  "selector": "0x661bc",
+  "func_addr": "0x862c",
+  "option": null,
+  "flag": null,
+  "element_id": null,
+  "change_kind": "correctness-fix",
+  "source_decompiler": "kuna",
+  "inspiration": "repipe round 3 need arm-literal-pool-string; the sibling of kuna_picbase (the i386 PIC-base fold), and the shape of Ghidra's reference analyzer defining a pc-relative literal target as data before anything else reads it",
+  "default_on": true,
+  "div": null,
+  "scope": "small",
+  "worker": "b-r3-arm-literal-pool",
+  "branch": "feat/re-arm-literal-pool-string",
+  "hypothesis_status": "no hypothesis was offered; the captain's T_TRIAGE reading (the reference scan does not follow an ARM literal-pool load) is upheld exactly",
+  "files": [
+    "decompiler/crates/kuna-analysis/src/listing/kuna_poolref.rs",
+    "decompiler/crates/kuna-analysis/src/listing/xrefs.rs",
+    "decompiler/crates/kuna-analysis/src/listing/mod.rs",
+    "decompiler/crates/kuna-analysis/tests/fixtures/poolref_arm_le32",
+    "decompiler/crates/kuna-analysis/tests/fixtures/poolref_arm_le32.py",
+    "decompiler/crates/kuna-cli/src/strings.rs",
+    "decompiler/crates/kuna-console/tests/verify_poolref.rs",
+    "tests/cli/arm-literal-pool-string.json",
+    "docs/cli.md",
+    "docs/spec/01-program-prep.md"
+  ],
+  "parity": "OK",
+  "gates": {
+    "make test": "PARITY OK 675/675",
+    "make test-stages": "PARITY OK 635/635",
+    "make check-spec": "OK",
+    "kuna catalog --check": "catalog OK",
+    "make test-cli": "35/35",
+    "make rust-test": "green"
+  },
+  "probe_flip": {
+    "probe_still_passes": false,
+    "acceptance_passes": true,
+    "acceptance_functions_before": 0,
+    "acceptance_functions_after": 1,
+    "acceptance_owner": "__libc_start_main"
+  },
+  "promoted_probe": {
+    "path": "tests/cli/arm-literal-pool-string.json",
+    "retargeted": true,
+    "target": "decompiler/crates/kuna-analysis/tests/fixtures/poolref_arm_le32",
+    "why": "the acceptance's own target is `binary_source: dataset` and CI has no dataset; the vendored fixture is a 735-byte hand-assembled A32 ELF carrying the same defect plus the three refusals"
+  },
+  "no_option_because": "Track `tooling`. The change is confined to the on-demand cross-reference index (`listing::xrefs::build`), which is read only by `kuna xrefs`, `kuna strings` and `decompile-all`'s xref/reachability sections. No p-code, prototype or emitted C depends on it, and all four parity gates are byte-identical. `picbase`, the closest precedent, DID take an option -- it is a speculative abstract machine whose ownership claim needed an escape hatch; this is one dereference of immutable image content and has no comparable failure mode. The lease on phases.toml / the catalog counters was held by another builder this round in any case.",
+  "sweep": {
+    "method": "`kuna strings --json` over 15 images, before/after, with both binaries rebuilt and each independently re-checked against the witness probe before use (a sibling agent clobbered a first pair under generic /tmp names)",
+    "binaries": 15,
+    "attributions_lost": 0,
+    "x86_64_and_pe_images": 7,
+    "x86_64_and_pe_edges_added": 0,
+    "arm_images": 6,
+    "new_string_to_function_attributions": {
+      "u-boot (A32)": 2239,
+      "1337ARM.bin (A32, the witness)": 763,
+      "betaflight_STM32F405.elf (Cortex-M)": 1148,
+      "ch.elf (Cortex-M)": 363,
+      "cleanflight_DALRCF405.elf (Cortex-M)": 330,
+      "hello-world.elf (Cortex-M)": 44
+    }
+  },
+  "oracle": {
+    "what": "capstone A32 linear sweep (restarting past undecodable words) + the ELF symtab + kuna's own reported function extents -- no kuna code in the reference path",
+    "u-boot": {
+      "new_pairs": 2239,
+      "backed_by_a_real_pc_relative_pool_load": 2234,
+      "load_inside_kuna_s_extent_for_the_named_function": 2228,
+      "outliers_checked_by_hand": 11,
+      "outliers_that_were_kuna_defects": 0
+    },
+    "1337ARM.bin": {
+      "new_pairs": 763,
+      "backed_by_a_real_pc_relative_pool_load": 761,
+      "load_inside_kuna_s_extent_for_the_named_function": 734,
+      "no_extent_reported_by_kuna": 26,
+      "outliers_checked_by_hand": 3,
+      "outliers_that_were_kuna_defects": 0
+    },
+    "note": "every outlier resolved to a pool load the oracle's own sweep missed, confirmed with `kuna xrefs --to`; none was a fabricated edge"
+  },
+  "speed": {
+    "method": "interleaved before/after, 7 repeats, min-of-N (the box carried other builders throughout, so medians swing +-20% on byte-identical output and are not used)",
+    "walk_only_uboot_xrefs_to_pct": 1.1,
+    "strings_uboot_pct": 1.6,
+    "strings_1337arm_pct": 3.3,
+    "strings_mv_x86_64_pct": -3.8,
+    "note": "the walk itself costs ~1%. The first measurement showed +53% on `kuna strings` for u-boot, and it was NOT the follow: `ConsoleProgram::find_entry_at` rebuilds and linearly scans the whole function inventory per call, which is free while no string has an owner and 0.85 s once 1,792 of them do. strings.rs now reads that inventory once; the output is byte-identical (checked on four images)."
+  },
+  "decisions": [
+    {
+      "id": "the-edge-is-filed-from-the-instruction-not-the-pool-word",
+      "claim": "The followed reference is attributed to the loading instruction, not to the pool word that holds the address.",
+      "evidence": "`kuna strings` answers `functions` by mapping each reference's `from` address to the function containing it. A pool word is data and lies in no function, so an edge filed from 0x86e4 would answer the agent's question with another address instead of a name. Filing from 0x862c also means the new edge inherits EXACTLY the attribution the pre-existing `read` edge to the pool word already had -- same `st.file(vma, ...)` call site, same vma -- so no new ownership logic exists to be wrong."
+    },
+    {
+      "id": "the-width-must-come-from-the-access-not-the-address-varnode",
+      "claim": "A LOAD's address varnode is pointer-sized whatever the access width is, so the pointer-size gate has to read the LOAD's output.",
+      "evidence": "`ldrh r0,[0x1003c]` lifts to `u:2 = *(ram, r0x1003c)`: the address operand is a 4-byte ram varnode and the output is 2 bytes. Taking the width from the address varnode followed the pool word of a HALFWORD load -- caught on the vendored fixture, whose `narrow_read` was attributed to a string before the fix and is not after. Pinned by `a_narrow_load_of_a_pool_word_files_only_the_read` and by verify_poolref.rs."
+    },
+    {
+      "id": "read-only-is-the-license-to-dereference-at-all",
+      "claim": "Only a non-writable allocated section is followed; a GOT entry or a .data pointer is not.",
+      "evidence": "The image's copy of a writable slot is the pre-loader value, not what the program reads. The fixture's `reads_slot` loads a `.data` word holding a literal's address and the literal stays unreferenced. This is also why the change is inert on the linked-PIE GOT reads that DIV-102/#328 covers."
+    },
+    {
+      "id": "the-cortex-m-junk-string-class-is-the-string-scanner-not-this",
+      "claim": "On Cortex-M firmware a handful of the newly-owned rows are short ASCII runs the string scanner extracted from code bytes, colliding with a pool word that holds a Thumb FUNCTION pointer.",
+      "evidence": "betaflight has no .rodata (constants live in .text), and three of its 536 newly-owned rows are `' pGpG'`-shaped -- 0x70 0x47 is `bx lr`. The edge itself is true (the pool word does hold that address) and kuna already filed `data` edges to code addresses from materialized constants; what is wrong is calling four code bytes a string. Left alone: narrowing the follow to exclude code targets would drop the function-pointer tables `decompile-all --reachable-from` legitimately uses."
+    },
+    {
+      "id": "no-recall-claim-beyond-what-is-measured",
+      "claim": "This closes the direct pool load only. A pool word reached through a register (`add r0,pc; ldr r0,[r0]`) or a GOT-relative ARM PIE load is still unfollowed.",
+      "evidence": "The oracle reports 195 u-boot strings and 3 on the witness that a pc-relative pool load reaches and kuna still leaves unowned -- those are in code no descent reached, not shapes the follow declines. No attempt was made to model register-held pool bases; that is picbase's territory and would need the same abstract machine."
+    }
+  ]
+}

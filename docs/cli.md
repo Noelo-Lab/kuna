@@ -645,7 +645,7 @@ whichever one the symbol table holds first.
 |---|---|
 | `call` | A direct CALL to the target (a call site). |
 | `jump` | A direct branch to it: a tail call, a PLT thunk. Intra-function branches are control flow, not references, and are omitted from `--from`. |
-| `data` | The target's address is materialized as a value — address-taken: a function pointer, a string pointer, a global's address. |
+| `data` | The target's address is materialized as a value — address-taken: a function pointer, a string pointer, a global's address. Also the value of a **literal pool** word an instruction loads (`ldr r0,[0x86e4]` where 0x86e4 holds the string's address), which is how an ARM literal gets an owning function at all; the pool word itself is a separate `read` row from the same instruction. Only pointer-sized reads of *non-writable* memory are followed. |
 | `read` | The target is loaded from. |
 | `write` | The target is stored to. |
 
