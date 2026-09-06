@@ -1,0 +1,45 @@
+{
+  "need_id": "mach-o-summary-reports",
+  "track": "tooling",
+  "scope": "small",
+  "worker": "b-r4-mach-o-summary-r",
+  "branch": "feat/re-mach-o-summary-reports",
+  "symptom": "kuna functions --summary --json reported summary.entry.address = 7392 (0x1ce0) on a Mach-O whose main is at 0x100001ce0, and summary.reachable_from_entry = null. 1 instance, round 4.",
+  "diagnosis": "object::File::entry() returns the raw LC_MAIN entryoff -- a __TEXT-relative FILE OFFSET -- for a modern Mach-O, where it returns a virtual address for ELF e_entry, PE AddressOfEntryPoint and Mach-O LC_UNIXTHREAD. Three surfaces reported that field directly.",
+  "hypothesis_status": "upheld",
+  "decisions": [
+    "The filed hypothesis (LC_MAIN.entryoff not translated to a VMA) is exactly right; the refuter's byte-patch controls already proved it and its fix site.",
+    "The rebase is stated once, as kuna_analysis::analyzers::entry::image_entry_vma, rather than inlined at each consumer. It rebases ONLY LC_MAIN (via the existing macho_main_entry_vma, which answers for nothing else) and falls through to the raw field otherwise -- adding __TEXT.vmaddr unconditionally for Mach-O would double-count an LC_UNIXTHREAD entry, whose thread-state PC is already a VMA.",
+    "A THIRD consumer beyond the two the need names: kuna-console/src/project.rs printed file.entry() as the decompile-project README's `Entry point` row, with the identical defect. Fixed in the same change, same helper, one call site.",
+    "A 0 entry stays None rather than 0x0: a relocatable declares no entry and 0 is a real address there. Verified on macho_min.o / macho_dwarf.o, which would break if the rebase were applied by format instead of by load command.",
+    "No option row: a tooling-track change that cannot move emitted C. No phases.toml, options.rs, catalog counter or DIV row touched.",
+    "The acceptance probe's dataset target is not vendorable, so the promoted tests/cli probe is re-pointed onto the in-repo macho_stripped_main fixture, which reproduces the identical defect (entryoff 0x5b0 vs VMA 0x1000005b0).",
+    "The need doc docs/re-needs/mach-o-summary-reports.md is deliberately NOT in this commit: it is untracked on origin/main, need-doc bookkeeping (status/closing_pr) belongs to the captain, and it is the one file in this change likely to collide with a concurrent reindex."
+  ],
+  "changed": [
+    "decompiler/crates/kuna-analysis/src/analyzers/entry/mod.rs",
+    "decompiler/crates/kuna-cli/src/decompile_all.rs",
+    "decompiler/crates/kuna-cli/src/decompile_graph.rs",
+    "decompiler/crates/kuna-console/src/project.rs",
+    "decompiler/crates/kuna-cli/tests/triage_cli.rs",
+    "decompiler/crates/kuna-cli/tests/decompile_graph_cli.rs",
+    "decompiler/crates/kuna-cli/tests/decompile_project_cli.rs",
+    "tests/cli/mach-o-summary-reports.json",
+    "docs/cli.md",
+    "docs/spec/01-program-prep.md"
+  ],
+  "acceptance": "PASS -- summary.entry.address == 4294974688 (0x100001ce0) on the filed instance",
+  "tests": {
+    "kuna-analysis": "3 unit tests on image_entry_vma (rebase / pass-through / no-entry)",
+    "kuna-cli": "3 end-to-end tests, one per consumer; each fails on the unpatched tree",
+    "tests/cli": "mach-o-summary-reports.json, 42/42"
+  },
+  "gates": {
+    "make test": "PARITY OK, 675/675",
+    "make test-stages": "PARITY OK, 635/635",
+    "make check-spec": "OK",
+    "kuna catalog --check": "OK",
+    "make test-cli": "42/42",
+    "make rust-test": "GREEN (rc=0, 0 failures) with `env -u KUNA_DECOMP_TEST`, which is what CI runs. With the repipe launcher's KUNA_DECOMP_TEST exported, verify_w10_proto_unlock goes red with `oracle promote_compare signature drifted` -- the known worktree artifact: the var points the C++ oracle at kuna's own decomp_test_dbg, so kuna's modern `unsigned int` spelling reads as drift. Falsified by rerunning that one target with the var unset (4/4)."
+  }
+}

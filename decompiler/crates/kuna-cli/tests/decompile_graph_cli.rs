@@ -290,3 +290,17 @@ fn a_rust_binary_is_still_exported_as_c() {
         assert!(!body.starts_with("#[allow("), "Rust in codeC: {body}");
     }
 }
+
+/// The graph's `isEntryPoint` roots the document, and it was rooted at the raw
+/// Mach-O `LC_MAIN` entryoff -- an address no row carries, so NO row was flagged
+/// on any `LC_MAIN` image.
+#[test]
+fn a_macho_entry_point_row_is_flagged() {
+    let Some(document) = graph(&[&fixture("macho_stripped_main")]) else { return };
+    let flagged: Vec<String> = rows(&document, "functions")
+        .into_iter()
+        .filter(|row| field(row, "isEntryPoint").as_deref() == Some("true"))
+        .filter_map(|row| field(&row, "name"))
+        .collect();
+    assert_eq!(flagged, vec!["main".to_string()], "exactly the LC_MAIN entry: {document}");
+}

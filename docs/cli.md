@@ -497,7 +497,9 @@ without emitting a function list at all, let alone pseudocode.
 
 - `entry` is the **image's declared entry point** (a PE `AddressOfEntryPoint` is
   the CRT startup, not `main`), named with kuna's best name for it, or `null`
-  when the format declares none.
+  when the format declares none. Always a virtual address: a Mach-O `LC_MAIN`
+  states its entry as a `__TEXT`-relative file offset, and it is rebased here
+  (`0x1000005b0`, not `0x5b0`).
 - `reachable_from_entry` counts *discovered* functions the entry point reaches,
   and is `null` when there is no entry point or nothing was decoded at it (a
   packed image); `no_callers` counts *selected* functions that no CALL site
@@ -1259,7 +1261,7 @@ emitted. Two runs of one command are byte-identical.
 | `error` | Why this function has no `codeC`, when the decompile was attempted and failed. `null` with a `null` `codeC` means no body was attempted: a bodyless `kind`, or a `--functions`/`--addr` narrowing that did not select it. |
 | `hasIndirectCalls` | The body contains a computed call (`CALLIND`), which files no edge because it has no static target. An indirect *branch* is not one — see `forwardsTo`. The call site is attributed to the row that contains it, the same rule that decides which function `kuna xrefs --from` lists an instruction under. |
 | `forwardsTo` | Where a forwarding entry sends control: the destination of a direct lone jump, or the fixed pointer slot an indirect one reads. The slot half needs the jump to name it as a decode-time constant, which an x86 `jmp [rip+disp]` stub does and an AArch64 `adrp`/`ldr`/`br x16` stub does not — a Mach-O `__stubs` entry is therefore `kind` `thunk` with a `null` `forwardsTo`, and the import slot it reaches is a row of its own found by name. `null` for anything that does not forward. |
-| `isEntryPoint` | This row is the image's declared entry point, resolved through the inventory so an ARM `e_entry` carrying the Thumb mode bit still lands on it. A format that declares no entry point marks no row. |
+| `isEntryPoint` | This row is the image's declared entry point, resolved through the inventory so an ARM `e_entry` carrying the Thumb mode bit still lands on it, and rebased so a Mach-O `LC_MAIN` — which states a `__TEXT`-relative file offset rather than a VMA — marks the row it names. A format that declares no entry point marks no row. |
 | `edges[].kind` | The `kuna xrefs` kind, so the two surfaces cannot disagree: `call` a direct call; `jump` a tail call or a branch into a neighbouring entry; `data` an address handed to something else to call — the edge that gives `main` a caller, since `_start` passes it to `__libc_start_main` as a pointer rather than calling it. A caller that both calls and mentions one callee gets one edge carrying the strongest of the two. |
 | `edges[].calleeOrder` | Contiguous and zero-based per caller, in first-reference order, deduplicated on the callee. |
 

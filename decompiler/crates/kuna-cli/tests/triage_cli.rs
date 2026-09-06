@@ -344,6 +344,30 @@ fn an_arm_thumb_entry_resolves_to_its_even_address() {
     assert!(!listing_rows(&odd).is_empty(), "{odd}");
 }
 
+/// A Mach-O `LC_MAIN` states its entry as a `__TEXT`-relative FILE OFFSET where
+/// every other format states a VMA, so the summary reported `0x5b0` -- an address
+/// that names no function, which then made `reachable_from_entry` null and left
+/// the one orientation field an agent starts from useless.
+#[test]
+fn a_macho_lc_main_entry_is_reported_as_a_vma() {
+    let macho = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/macho_stripped_main")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let (out, err, code) = run_kuna(&["functions", &macho, "--summary", "--json"]);
+    if no_specs(&err, code) {
+        eprintln!("skipping: no .sla under {} ({err})", specs());
+        return;
+    }
+    assert_eq!(code, 0, "{err}");
+    assert!(out.contains("\"address_hex\": \"0x1000005b0\""), "__TEXT.vmaddr + entryoff: {out}");
+    assert!(!out.contains("\"address_hex\": \"0x5b0\""), "the raw entryoff must be gone: {out}");
+    assert!(out.contains("\"name\": \"main\""), "the entry names a function: {out}");
+    let reachable = json_field(&out, "reachable_from_entry");
+    assert!(reachable.is_some_and(|n| n > 0), "the entry must reach something: {out}");
+}
+
 /// The zero-discovery verdict belongs to DISCOVERY. A narrowed run on an image
 /// that yielded nothing must still fail loudly — the packer diagnosis is the one
 /// thing the caller can act on, and a filter must not be able to swallow it.

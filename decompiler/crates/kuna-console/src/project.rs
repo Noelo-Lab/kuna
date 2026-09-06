@@ -876,10 +876,15 @@ pub fn build_readme(
 
     // Entry point + named sections come from an `object` re-parse (the engine's
     // section iterator has no name field).
-    let parsed = std::fs::read(binary_path).ok();
-    let parsed = parsed.as_deref().and_then(|b| object::File::parse(b).ok());
+    let raw = std::fs::read(binary_path).unwrap_or_default();
+    let parsed = object::File::parse(&*raw).ok();
     match &parsed {
-        Some(f) => out.push_str(&format!("| Entry point | `0x{:x}` |\n", f.entry())),
+        // `image_entry_vma`, not `entry()`: a Mach-O `LC_MAIN` states a
+        // `__TEXT`-relative file offset where every other format states a VMA.
+        Some(f) => out.push_str(&format!(
+            "| Entry point | `0x{:x}` |\n",
+            kuna_analysis::analyzers::entry::image_entry_vma(f, &raw).unwrap_or(0)
+        )),
         None => out.push_str("| Entry point | unavailable |\n"),
     }
     out.push_str(&format!("| Functions | {} total, {ok} decompiled, {failed} failed |\n", results.len()));

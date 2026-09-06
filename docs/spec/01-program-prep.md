@@ -1593,6 +1593,24 @@ reason to withhold the entry declaration. Structurally inert on every ELF, PE an
 COFF target, which is also why neither parity corpus can observe it in either
 direction: both are symbol-less ELF bytechunks.
 
+The same `entryoff`-is-not-a-VMA fact is what every *reporting* surface has to
+know, so it is stated once as
+`decompiler/crates/kuna-analysis/src/analyzers/entry/mod.rs (image_entry_vma)`
+rather than re-derived. `object`'s `File::entry()` hands back the raw header/
+load-command field, which is already a virtual address for an ELF `e_entry`, for a
+PE `AddressOfEntryPoint` and for a Mach-O `LC_UNIXTHREAD` (the saved thread state's
+PC), and is a `__TEXT`-relative file offset for `LC_MAIN`. Reporting that field
+directly answers `0x1ce0` for a program whose `main` is at `0x100001ce0` — an
+address that matches no function, so the name resolves to a bare hex string and any
+reachability walk rooted there returns nothing. The helper rebases only the
+`LC_MAIN` case (via `macho_main_entry_vma`, which answers for nothing else) and
+falls through to the raw field otherwise, so an `LC_UNIXTHREAD` image does not have
+`__TEXT.vmaddr` added to an address that already carries it. A `0` entry is
+reported as absent rather than as `0x0`, because a relocatable declares no entry
+and `0` is a real address there. The consumers are `kuna functions --summary`'s
+`entry`/`reachable_from_entry`, `kuna decompile-graph`'s `isEntryPoint`, and the
+`kuna decompile-project` README's entry row.
+
 **Address tables** (`addrtable`,
 `decompiler/crates/kuna-analysis/src/analyzers/addrtable/mod.rs (AddrTablePass)`)
 scan `.rodata`/`.data` for runs of pointer-width values all landing in executable

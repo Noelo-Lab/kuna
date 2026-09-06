@@ -591,14 +591,13 @@ fn summarize(
 ///
 /// This is the FORMAT's entry (a PE `AddressOfEntryPoint` is the CRT startup,
 /// not `main`) — the one address every image agrees on, and the honest root for
-/// "what does this program actually reach".
+/// "what does this program actually reach". Taken through
+/// [`kuna_analysis::analyzers::entry::image_entry_vma`], because a Mach-O
+/// `LC_MAIN` states its entry as a `__TEXT`-relative file offset, not a VMA.
 fn image_entry(prog: &ConsoleProgram, binary: &str) -> Option<(u64, String)> {
     let bytes = std::fs::read(binary).ok()?;
     let file = object::File::parse(&*bytes).ok()?;
-    let vma = file.entry();
-    if vma == 0 {
-        return None;
-    }
+    let vma = kuna_analysis::analyzers::entry::image_entry_vma(&file, &bytes)?;
     // Reported THROUGH the inventory, so an ARM `e_entry` carrying the Thumb mode
     // bit is answered at the even entry the rest of the document uses.
     match prog.find_entry_at(vma) {

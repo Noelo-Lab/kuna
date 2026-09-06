@@ -184,12 +184,11 @@ fn export(args: &Args, label: &str) -> Result<String, String> {
     let known: BTreeSet<u64> = entries.iter().map(|e| e.addr.get_offset()).collect();
 
     // Through the inventory, because an ARM ELF stores the Thumb mode bit in
-    // `e_entry` (`0x100d7` for a `_start` reported at `0x100d6`), and a format
-    // that declares no entry reports `0` -- a real address in a relocatable.
-    let image_entry: Option<u64> = match file.entry() {
-        0 => None,
-        vma => Some(prog.find_entry_at(vma).map_or(vma, |e| e.addr.get_offset())),
-    };
+    // `e_entry` (`0x100d7` for a `_start` reported at `0x100d6`); and through
+    // `image_entry_vma`, because a Mach-O `LC_MAIN` states its entry as a
+    // `__TEXT`-relative file offset, which roots the walk at no function at all.
+    let image_entry: Option<u64> = kuna_analysis::analyzers::entry::image_entry_vma(&file, &bytes)
+        .map(|vma| prog.find_entry_at(vma).map_or(vma, |e| e.addr.get_offset()));
 
     let functions = Json::Array(
         entries

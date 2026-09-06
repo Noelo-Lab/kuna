@@ -129,6 +129,20 @@ fn project_folder_written_for_fauxware() {
     assert!(readme_text.contains("## Sections"), "README missing sections table:\n{readme_text}");
 }
 
+/// The README's entry-point row was `object`'s raw `entry()`, which on a Mach-O
+/// `LC_MAIN` image is a `__TEXT`-relative file offset -- so the export claimed an
+/// entry at `0x5b0` for a program whose `main` is at `0x1000005b0`.
+#[test]
+fn macho_readme_entry_point_is_a_vma() {
+    let Some(dir) = project("macho_stripped_main", "macho_entry") else { return };
+    let (_c, _h, _asm, readme) = artifacts(&dir, "macho_stripped_main");
+    let readme_text = std::fs::read_to_string(&readme).unwrap();
+    assert!(
+        readme_text.contains("| Entry point | `0x1000005b0` |"),
+        "README entry point must be the VMA:\n{readme_text}"
+    );
+}
+
 #[test]
 fn asm_labels_match_c_function_names() {
     let Some(dir) = project("fauxware", "labels") else { return };

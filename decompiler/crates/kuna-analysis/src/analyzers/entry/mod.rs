@@ -97,6 +97,34 @@ pub mod patterns;
 mod pe_entry;
 
 // ===========================================================================
+// The image entry point, as a virtual address
+// ===========================================================================
+
+/// The image's declared entry point as a **virtual address**, or `None` when the
+/// format declares none.
+///
+/// `object`'s `File::entry()` returns the raw load-command/header field, which is
+/// already a VMA for ELF (`e_entry`), for PE (`AddressOfEntryPoint`, rebased by
+/// `object`) and for a Mach-O `LC_UNIXTHREAD` (the thread state's PC) — but is a
+/// `__TEXT`-relative **file offset** for `LC_MAIN`, the modern Mach-O entry. The
+/// VMA there is `__TEXT.vmaddr + entryoff` ([`macho_entry::macho_main_entry_vma`],
+/// which answers only for `LC_MAIN` and so leaves `LC_UNIXTHREAD` and dylibs to
+/// the raw field rather than double-counting the segment base).
+///
+/// Anything that REPORTS the entry, or roots a reachability walk at it, wants this
+/// rather than `entry()`: on an `LC_MAIN` image the raw field is an offset into the
+/// file that names no function (`0x1ce0` where `main` is at `0x100001ce0`).
+///
+/// A `0` entry is reported as `None` — a relocatable declares no entry, and `0` is
+/// a real address there.
+pub fn image_entry_vma(file: &object::File, bytes: &[u8]) -> Option<u64> {
+    macho_entry::macho_main_entry_vma(bytes).or(match file.entry() {
+        0 => None,
+        vma => Some(vma),
+    })
+}
+
+// ===========================================================================
 // The pass
 // ===========================================================================
 
@@ -2280,6 +2308,48 @@ mod tests {
     fn fixture(name: &str) -> Vec<u8> {
         let path = format!("{}/tests/fixtures/{}", env!("CARGO_MANIFEST_DIR"), name);
         std::fs::read(&path).unwrap_or_else(|_| panic!("read fixture {path}"))
+    }
+
+    /// A Mach-O `LC_MAIN` states its entry as a `__TEXT`-relative FILE OFFSET, so
+    /// `object`'s `entry()` answers `0x5b0` where the function is at
+    /// `0x1000005b0`. `image_entry_vma` rebases it; the stripped twin proves the
+    /// answer comes from the load command and not from a symbol.
+    #[test]
+    fn image_entry_vma_rebases_a_macho_lc_main() {
+        for name in ["macho_imports", "macho_stripped_main"] {
+            let bytes = fixture(name);
+            let file = object::File::parse(bytes.as_slice()).expect("parse");
+            assert_eq!(file.entry(), 0x5b0, "{name}: object reports the raw entryoff");
+            assert_eq!(image_entry_vma(&file, &bytes), Some(0x1000005b0), "{name}");
+        }
+        let bytes = fixture("macho_imports_arm64");
+        let file = object::File::parse(bytes.as_slice()).expect("parse arm64");
+        assert_eq!(image_entry_vma(&file, &bytes), Some(0x10000056c));
+    }
+
+    /// Every other format already states a VMA, so the rebase must not fire:
+    /// an ELF `e_entry` (including the ARM Thumb-odd spelling) and a PE
+    /// `AddressOfEntryPoint` are passed through byte-for-byte.
+    #[test]
+    fn image_entry_vma_passes_through_a_vma_entry() {
+        for name in ["cet_pie_x86_64", "entrymain_arm", "fauxware"] {
+            let bytes = fixture(name);
+            let file = object::File::parse(bytes.as_slice()).expect("parse");
+            assert_eq!(image_entry_vma(&file, &bytes), Some(file.entry()), "{name}");
+        }
+    }
+
+    /// A relocatable declares no entry, and `0` is a real address there — so it
+    /// is reported as absent rather than as `0x0`. A Mach-O `.o` is the case that
+    /// would break if the rebase were applied unconditionally by format.
+    #[test]
+    fn image_entry_vma_reports_no_entry_as_none() {
+        for name in ["macho_min.o", "macho_dwarf.o"] {
+            let bytes = fixture(name);
+            let file = object::File::parse(bytes.as_slice()).expect("parse");
+            assert_eq!(file.entry(), 0, "{name}");
+            assert_eq!(image_entry_vma(&file, &bytes), None, "{name}");
+        }
     }
 
     /// `bytes` with the ELF section table pointed at garbage -- the shape the
