@@ -1,0 +1,48 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "a-a3786d6af10e",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "0x140001000",
+    "--addr",
+    "--option",
+    "calleearity",
+    "on",
+    "--option",
+    "varargstackargs",
+    "on"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/calleedeadarg_noterm_x86_64.exe",
+    "binary_sha256": "ad8be419ae922b2adce7f7388c92a0f877e07045f02b6766760db7160d2500a6",
+    "binary_size": 2560,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/calleedeadarg_noterm_x86_64.exe",
+    "selector": "0x140001000",
+    "selector_kind": "addr"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "Process32NextW\\([^),]+,[^)]+\\)",
+      "CloseHandle\\([^)]+\\)"
+    ],
+    "stdout_absent": [
+      "Process32NextW\\(\\s*\\)",
+      "CloseHandle\\(\\s*\\)"
+    ]
+  },
+  "notes": "Promoted from need win32-process-enumeration-loses. The dataset witness (KeyCheker.exe) is not vendorable, so the acceptance's expect block is kept verbatim against a 2560-byte PE built by calleedeadarg_noterm_x86_64.py, whose imports reproduce the same argument loss."
+}

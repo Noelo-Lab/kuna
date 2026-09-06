@@ -99,6 +99,13 @@
 //! * An instruction whose p-code contains an internal (constant-space) branch is
 //!   scored against the set it was ENTERED with and credits none of its writes:
 //!   a conditionally-executed write must not hide a later read.
+//! * A walk that records NO terminator at all proves nothing either, and this
+//!   one is easy to read the wrong way round: the "written before every
+//!   terminator" test is a conjunction, so over an empty list it holds for every
+//!   register at once. Every path closing back onto an already-visited address
+//!   is what a body that is one endless loop does — and what a PE import's IAT
+//!   slot does when its pointer bytes are decoded as instructions, which is
+//!   where the argument lists of `CloseHandle` and `Process32NextW` went.
 //! * The instruction budget, a too-large written set or a too-large cut list
 //!   abandon the whole summary, which then proves nothing at all.
 //!
@@ -172,7 +179,9 @@ pub struct CalleeEntryDead {
     reads: Vec<(int4, u64, int4)>,
     /// For every path terminator — a `RETURN` as much as a nested call or an
     /// unresolved branch — the register bytes already written on the way to it.
-    /// A range is only dead if it is fully written before EVERY one of them.
+    /// A range is only dead if it is fully written before EVERY one of them, and
+    /// an EMPTY list is no evidence at all rather than every range dead (see
+    /// [`Self::proves_dead`]).
     cuts: Vec<ByteSet>,
     /// Did the walk cover every path with nothing abandoned?
     complete: bool,
@@ -183,6 +192,15 @@ impl CalleeEntryDead {
     /// `[addr, addr+size)` before writing it?
     pub fn proves_dead(&self, addr: &Address, size: int4) -> bool {
         if !self.complete || size <= 0 {
+            return false;
+        }
+        // No path terminator was recorded, so no path was seen ENDING with the
+        // register written and the conjunction over `cuts` below would hold
+        // vacuously — for every register at once.  A walk reaches here when the
+        // revisit rule closes every path back onto an already-visited address,
+        // which is what a body that is one endless loop does, and what data
+        // decoded as instructions usually does.
+        if self.cuts.is_empty() {
             return false;
         }
         let Some(sp) = addr.get_space() else { return false };

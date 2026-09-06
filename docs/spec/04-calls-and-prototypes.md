@@ -582,7 +582,14 @@ classified:
   undecodable instruction — and the range must already be written when it does,
   because past that point the walk is not reading the code that runs. That is
   what lets a body which overwrites `x0` and *then* calls `printf` still prove
-  `x0` dead, while a body whose first act is a call proves nothing. An
+  `x0` dead, while a body whose first act is a call proves nothing. A walk that
+  records *no* terminator at all proves nothing either, and that case has to be
+  named separately because the "written before every terminator" test is a
+  conjunction and holds vacuously over an empty list — for every register at
+  once. It arises whenever every path closes back onto an address the walk has
+  already visited: a body that is one endless loop, and, in practice, a PE
+  import whose entry address is its IAT slot, so the walk is decoding pointer
+  bytes as instructions. An
   instruction whose p-code branches inside itself is scored against the set it
   was entered with and credits none of its writes, so a conditionally-executed
   write cannot hide a later read. A proven-dead register trial is scored
