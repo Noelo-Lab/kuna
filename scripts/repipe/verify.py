@@ -250,7 +250,7 @@ def gate_reps(p):
     byte-identical output. acceptance_suite() does NOT apply a floor by default: at
     INTEGRATE it re-runs the whole suite, and kuna's worst measured case is 445 s.
     """
-    kind = (p or {}).get("kind")
+    kind = p.get("kind") if isinstance(p, dict) else None
     return config.TIMING_REPS if kind in ("timing", "memory") else config.REPLAY_REPS
 
 
@@ -267,6 +267,8 @@ def run_probe(p, is_acceptance=False, ctx=None, work=None, challenges=(), reps=N
     "we could not tell" as a result rather than lose the observation.
     """
     arm = "acceptance" if is_acceptance else "probe"
+    if isinstance(p, str):
+        return _stub(None, "%s did not parse as JSON, so it is not a probe" % arm, arm)
     if not isinstance(p, dict):
         return _stub(None, "observation carries no %s" % arm, arm)
     if not p.get("cmd"):
