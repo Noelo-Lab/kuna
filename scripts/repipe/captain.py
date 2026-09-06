@@ -413,10 +413,13 @@ def main(argv=None):
         # mechanism of this design, so `--status`, the first thing the prompt tells a tick to
         # read, has to carry them.
         #
-        # Most recent last, because that is reading order, and tail-truncated per note: a
-        # tick's own write-up runs to paragraphs, and a payload nobody finishes reading is the
-        # same failure again in a different costume. `--notes N` widens it when a tick needs
-        # the older history.
+        # Most recent last, because that is reading order. The NEWEST note is never
+        # truncated: it is the actual handoff, and the round-4 captain measured the cost of
+        # cutting it -- "NEXT-TICK ORDERS (--status truncates at ~700 chars -- read the note
+        # above WHOLE from rounds/4/round.json before deciding anything)". A 700-char cap on
+        # a paragraph-long handoff does not save the reader anything; it just sends them to
+        # the file, which is the problem this was meant to remove. Older notes stay capped,
+        # generously, because they are context rather than instructions.
         notes = []
         # `[-0:]` is the WHOLE list, not an empty one, so --notes 0 has to be handled before
         # the slice or it does the opposite of what it says.
@@ -427,8 +430,13 @@ def main(argv=None):
             else:
                 text, by, ts = str(entry), None, None
             text = " ".join(str(text).split())
-            notes.append({"by": by, "ts": ts,
-                          "note": text if len(text) <= 700 else text[:700] + " ...[truncated]"})
+            notes.append({"by": by, "ts": ts, "note": text})
+        if notes:
+            newest = notes[-1]["note"]
+            for n in notes[:-1]:
+                if len(n["note"]) > 2000:
+                    n["note"] = n["note"][:2000] + " ...[truncated, full text in rounds/N/round.json]"
+            notes[-1]["note"] = newest      # the handoff, whole
         out = {"round": doc["round"], "states": {k: doc[k] for k in MACHINES},
                "free_gb": free_gb(), "split": config.agent_split(),
                "stop": stop_requested(), "pause": paused(), "abort": abort_requested(),
