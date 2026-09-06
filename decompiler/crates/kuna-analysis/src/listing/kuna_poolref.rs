@@ -119,6 +119,19 @@ impl<'a> PoolImage<'a> {
         self.ptr
     }
 
+    /// The signed 32-bit word at `vma`, when `vma` is 4-byte aligned and lies in
+    /// a read-only section — the entry width of a delta-encoded jump table
+    /// ([`super::kuna_switchtable`]), which is 32 bits on every target that
+    /// emits one whatever the pointer width is.
+    pub(super) fn word32_at(&self, vma: u64) -> Option<i32> {
+        if vma % 4 != 0 {
+            return None;
+        }
+        let b = self.bytes_at(vma, 4)?;
+        let b: [u8; 4] = b.try_into().ok()?;
+        Some(if self.little_endian { i32::from_le_bytes(b) } else { i32::from_be_bytes(b) })
+    }
+
     /// The pointer-sized word at `vma`, when `vma` is pointer-aligned and lies in
     /// a read-only section.
     pub(super) fn word_at(&self, vma: u64) -> Option<u64> {
@@ -126,20 +139,25 @@ impl<'a> PoolImage<'a> {
         if vma % ptr != 0 {
             return None;
         }
-        let i = self.ro.partition_point(|&(lo, _, _)| lo <= vma).checked_sub(1)?;
-        let (lo, hi, data) = self.ro[i];
-        if vma >= hi {
-            return None;
-        }
-        let off = (vma - lo) as usize;
-        let end = off.checked_add(self.ptr as usize)?;
-        let b = data.get(off..end)?;
+        let b = self.bytes_at(vma, self.ptr)?;
         Some(match (self.ptr, self.little_endian) {
             (8, true) => u64::from_le_bytes(b.try_into().ok()?),
             (8, false) => u64::from_be_bytes(b.try_into().ok()?),
             (_, true) => u64::from(u32::from_le_bytes(b.try_into().ok()?)),
             (_, false) => u64::from(u32::from_be_bytes(b.try_into().ok()?)),
         })
+    }
+
+    /// The `width` bytes of read-only image content at `vma`.
+    fn bytes_at(&self, vma: u64, width: u32) -> Option<&'a [u8]> {
+        let i = self.ro.partition_point(|&(lo, _, _)| lo <= vma).checked_sub(1)?;
+        let (lo, hi, data) = self.ro[i];
+        if vma >= hi {
+            return None;
+        }
+        let off = (vma - lo) as usize;
+        let end = off.checked_add(width as usize)?;
+        data.get(off..end)
     }
 }
 

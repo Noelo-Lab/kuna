@@ -1,0 +1,43 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/pe_switchdelta_x86_64.exe",
+    "binary_sha256": "013837321f893184671d054265b24d0c8a7055dff3db5c5481be863a4c351177",
+    "binary_size": 3072,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/pe_switchdelta_x86_64.exe"
+  },
+  "timeout_s": 60,
+  "cmd": [
+    "{{KUNA}}",
+    "xrefs",
+    "{{BIN}}",
+    "--to",
+    "0x140001010",
+    "--json"
+  ],
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "json": [
+      {
+        "path": "count",
+        "op": "eq",
+        "value": 1
+      },
+      {
+        "path": "xrefs[0].kind",
+        "op": "eq",
+        "value": "call"
+      },
+      {
+        "path": "xrefs[0].from_function.name",
+        "op": "eq",
+        "value": "sub_140001040"
+      }
+    ]
+  },
+  "notes": "Vendored twin of the reported PE (GH-456): sub_140001010 is called only from a switch case body an MSVC delta jump table dispatches to -- LEA RDX,[__ImageBase]; MOV ECX,[RDX + RBX*0x4 + 0x2000]; ADD RCX,RDX; JMP RCX. The computed jump had no successor, so the case bodies were never decoded and this answered count 0."
+}

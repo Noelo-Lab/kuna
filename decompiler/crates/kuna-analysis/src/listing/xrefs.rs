@@ -324,7 +324,7 @@ pub(super) struct FullOp {
 /// place. Allocating per op cost one heap allocation for every p-code op in the
 /// program (1.44 M on a 466 KB obfuscated i386 image).
 #[derive(Default)]
-struct FullCapture {
+pub(super) struct FullCapture {
     ops: Vec<FullOp>,
     /// How many of `ops` the current instruction has filled.
     filled: usize,
@@ -332,12 +332,12 @@ struct FullCapture {
 
 impl FullCapture {
     /// Start capturing a new instruction over the retained storage.
-    fn begin(&mut self) {
+    pub(super) fn begin(&mut self) {
         self.filled = 0;
     }
 
     /// The ops the current instruction emitted.
-    fn ops(&self) -> &[FullOp] {
+    pub(super) fn ops(&self) -> &[FullOp] {
         &self.ops[..self.filled]
     }
 }
@@ -634,7 +634,7 @@ pub fn build_with_focus(
             };
             // Every row this instruction produces carries the same render, and an
             // instruction that produces none needs no render at all.
-            let text = if c.flows.is_empty() && drefs.is_empty() && picrefs.is_empty() {
+            let mut text = if c.flows.is_empty() && drefs.is_empty() && picrefs.is_empty() {
                 String::new()
             } else {
                 assembly(translate, vma, &code_space)
@@ -667,14 +667,43 @@ pub fn build_with_focus(
             // [`super::kuna_switchtable`].
             if c.flows.is_empty() && c.flow.is_computed && c.flow.is_jump && !c.flow.is_call {
                 if let Some(p) = pool.as_ref() {
+                    let mut cases: Vec<u64> = Vec::new();
                     for &(base, kind) in &drefs {
-                        if kind != XrefKind::Data {
-                            continue;
+                        if kind == XrefKind::Data {
+                            cases.extend(kuna_switchtable::targets(base, vma, p, &exec, None));
                         }
-                        for target in kuna_switchtable::targets(base, vma, p, &exec) {
-                            st.file(vma, target, XrefKind::Jump, &text);
-                            insn_queue.push_back(target);
+                    }
+                    // The base is on an instruction of its own and the entries
+                    // are displacements on every x86-64 compiler, so ask what the
+                    // branch register holds when the operand carried nothing.
+                    if cases.is_empty() {
+                        let branch = cap
+                            .ops()
+                            .iter()
+                            .find(|o| o.opcode == OpCode::CPUI_BRANCHIND)
+                            .and_then(|o| o.ins.first());
+                        if let Some(branch) = branch {
+                            cases = kuna_switchtable::register_targets(
+                                translate,
+                                &code_space,
+                                data_space.as_ref(),
+                                &st.decoded,
+                                vma,
+                                branch,
+                                p,
+                                &exec,
+                            );
                         }
+                    }
+                    // A dispatch that names no address rendered nothing above,
+                    // and a row whose instruction column is blank does not say
+                    // which jump reached the case body.
+                    if !cases.is_empty() && text.is_empty() {
+                        text = assembly(translate, vma, &code_space);
+                    }
+                    for target in cases {
+                        st.file(vma, target, XrefKind::Jump, &text);
+                        insn_queue.push_back(target);
                     }
                 }
             }
@@ -1012,7 +1041,7 @@ fn empty() -> XrefIndex {
 ///
 /// A translator panic on exotic bytes is contained to `None` — a query surface
 /// must never take the process down over one bad address.
-fn decode(
+pub(super) fn decode(
     translate: &dyn Translate,
     vma: u64,
     code_space: &Rc<AddrSpace>,

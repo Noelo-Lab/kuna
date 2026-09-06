@@ -2391,6 +2391,49 @@ had been claimed by an address inside `inflate`'s own extent because the real
 entry's descent could not get past the `state->mode` switch, onto the containing
 function.
 
+(kuna) That rule reads the one table shape whose base is an operand of the jump.
+Neither of its two premises holds on an x86-64 image: the base is materialized by
+an instruction of its own — `lea jt(%rip),%rdx` on gcc, `LEA RDX,[__ImageBase]` on
+MSVC — so the dispatch files no data reference at all, and the entries are signed
+32-bit **displacements** rather than pointers, measured from the table on the gcc
+form and from the image base on the MSVC one. So the whole of a `switch`'s direct
+callees was missing from `kuna decompile-graph`: on the filing PE the reporter's
+function listed 9 callees where Ghidra listed 33, and the missing ones were exactly
+the `CALL`s inside case bodies.
+
+**Delta-table following** closes that by asking what the branch register holds
+instead of searching for a constant that might be a table. From the dispatch the
+walk takes a **backward slice** over instructions it has already decoded: an
+instruction joins the slice only where it defines something the chain still wants,
+and the walk stops the moment the chain wants nothing. That is what keeps the cost
+where the value is — a computed jump is usually not a switch at all, and `jmp *%rdx`
+fed by `mov 0x8(%rax),%rdx` is settled one instruction back, because a value that
+reaches the branch through an operation the fold does not model (a multiply, a mask,
+a call's return) is unknown and asks for nothing further. The slice is then folded
+forward through four values: a constant, a constant plus an unknown index, a word
+read out of the array at that address, and that word composed with a constant. A
+table is read only where the `BRANCHIND`'s own input is the last of those, so a jump
+through a plain pointer, a virtual dispatch and a returned function pointer all
+decline before any memory is read. A branch on a *data-space* varnode declines
+first of all, which is the forwarding veneer the shipped rule already refused.
+
+How far the table runs is the other half, and it cannot come from the entries. Two
+delta tables laid back to back — which is what `-O2` gnulib's
+`quotearg_buffer_restyled` has, an eleven-case table immediately followed by a
+127-case one — continue each other seamlessly: read past the end of the first and
+the second one's entries are real code addresses in the right section, merely
+measured from the wrong base, and the walk decodes the middle of unrelated
+functions. The bound therefore comes from the switch's own range check, which a
+compiler always emits ahead of a table dispatch: `cmp $0xa,%r11d; ja default` lifts
+to `INT_LESS(sel, 0xa)` feeding a `CBRANCH`, and eleven is the case count. The
+search for it stops one instruction past that branch, so an unrelated comparison
+further up the block cannot widen the bound, and a dispatch with no readable range
+check is declined outright rather than read unbounded. Measured over a 16-image
+sweep of the fixture corpus: no call-graph edge lost anywhere, and gained where the
+image has a delta switch — `mcount_x86_64` 495 to 508 functions reachable from the
+entry, the gnulib image 89 to 100, the MSVC fixture 2 to 6. `kuna strings` over the
+896 KB `mcount_x86_64`, which holds 470 computed jumps, 676 ms to 704 ms.
+
 
 (kuna) The same pool word is a second defect one surface over, in the **listing**
 rather than the reference walk. A function's extent contains its pool, so a
