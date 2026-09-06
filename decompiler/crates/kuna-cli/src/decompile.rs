@@ -399,7 +399,14 @@ fn check_errors(out: &str, target: &str, binary: &str, by_address: bool) -> Opti
         // one binary-load failure the same way; the generic string survives only
         // where the console printed no reason at all.
         return Some(match arch_failure_reason(out) {
-            Some(reason) => format!("could not build an architecture for {binary}: {reason}"),
+            Some(reason) => {
+                let msg = format!("could not build an architecture for {binary}: {reason}");
+                if reason.contains("No sleigh specification") {
+                    format!("{msg}\nnote: {}", paths::SPECS_HINT)
+                } else {
+                    msg
+                }
+            }
             None => format!(
                 "could not build an architecture for {binary} (unsupported/!recognized binary)"
             ),
@@ -648,16 +655,15 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
         paths::decomp_dbg()
     };
     if !bin_path.exists() {
-        return Err(format!(
-            "decomp_dbg not built at {} -- run `make binaries` \
-             (or `cargo build --release -p kuna-console`)",
-            bin_path.display()
-        ));
+        return Err(match &args.decomp_dbg {
+            Some(d) => format!("decomp_dbg not found at {d} (--decomp-dbg)"),
+            None => paths::missing_decomp_dbg(),
+        });
     }
 
     let specs = match &args.sleighpath {
         Some(s) => PathBuf::from(s),
-        None => paths::specs_dir(),
+        None => paths::require_specs_dir()?,
     };
 
     let mut by_address = args.by_address;
@@ -1341,7 +1347,7 @@ fn usage() {
          \x20                     [--define-function S[-E][=N]|@FILE].. \\\n\
          \x20                     [--assert DIRECTIVE|@FILE].. [--assert-strict] \\\n\
          \x20                     [--isa auto|arm|thumb] [--slice ARCH] [--target T] \\\n\
-         \x20                     [--sleighpath D]\n\
+         \x20                     [--sleighpath D] [--decomp-dbg P]\n\
          \n\
          Decompile ONE function.  The target is a name, or an address with --addr\n\
          (a `0x`-prefixed target implies it).  --json emits the decompile-all record\n\
@@ -1366,6 +1372,10 @@ fn usage() {
          @FILE holds one per line with `#` comments, which is what makes an override\n\
          durable across invocations.  A directive the engine declines is reported and\n\
          the run still succeeds; --assert-strict makes it exit 1 instead.\n\
+         \n\
+         --sleighpath D and --decomp-dbg P override where this run reads the compiled\n\
+         SLEIGH tree and which engine binary it drives; without them both are found\n\
+         beside this executable (see `kuna docs cli`, and KUNA_SPECS/KUNA_DECOMP_DBG).\n\
          \n\
          Whole-binary runs are `kuna decompile-all` / `kuna functions`."
     );

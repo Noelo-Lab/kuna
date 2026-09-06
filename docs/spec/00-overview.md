@@ -522,6 +522,25 @@ Four front-ends drive one engine assembly:
   typelock) and the host's declared types and names get re-derived instead of
   applied.
 
+(kuna) **Locating the engine and the specs.** Two installations are first class
+(`decompiler/crates/kuna-cli/src/paths.rs (binary, specs_dir)`), and neither is
+derived from the other. In a checkout `kuna` is built to
+`<root>/decompiler/target/[<triple>/]<profile>/kuna`, so the repo root is the
+directory above the `decompiler`/`target` pair and `specs/` sits under it. In an
+extracted release archive `kuna`, `decomp_dbg` and `slacomp` are siblings in one
+directory, the separately downloaded `specs/` tree is beside or inside it, and
+there is no repo root at all — popping three parents off the archive directory
+lands on a path that exists nowhere, so the pop is refused rather than reported.
+Each binary probe tries the bare name and then the platform's executable suffix,
+because the Windows archive ships `decomp_dbg.exe` and `Path::exists` applies no
+suffix of its own. The environment overrides (`KUNA_ROOT`, `KUNA_SPECS`,
+`KUNA_DECOMP_DBG`, `KUNA_DECOMP_TEST`, `KUNA_SLACOMP`, `KUNA_RUST_PROFILE`, all
+documented in `docs/cli.md`) win over both layouts. A probe that finds nothing
+names the directories it looked in: the in-tree path a checkout would have built
+to is not an answer on a machine that has no checkout, and a missing SLEIGH tree
+is reported where it is resolved rather than as the engine's downstream
+`No sleigh specification` — which reads as a problem with the binary.
+
 (kuna) **The option-name contract.** Every `kuna` surface that takes
 `--option NAME VALUE` checks the NAME in its own parser, before a binary is
 opened or a `decomp_dbg` spawned

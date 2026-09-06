@@ -54,6 +54,33 @@ $ kuna functions ./packed.exe --json
 224-byte optional header; clamped to 16 (entry 0x40908e, 8 section(s))
 ```
 
+## Where kuna finds the engine and the specs
+
+`kuna` drives two sibling binaries — `decomp_dbg` (the engine behind `decompile`
+and `catalog`) and `slacomp` (behind `kuna specs`) — plus a compiled SLEIGH tree.
+Both shipped layouts resolve with no configuration:
+
+- **a release archive**: `kuna`, `decomp_dbg` and `slacomp` extracted side by side
+  (on Windows as `kuna.exe`, `decomp_dbg.exe`, `slacomp.exe`), with the
+  `kuna-v<ver>-specs` archive's `specs/` tree beside or inside that directory;
+- **a repo checkout**: `decompiler/target/<profile>/`, with the repo's `specs/`.
+
+Each probe tries the bare name and the platform's executable suffix, so a Windows
+install resolves the same way a unix one does. A probe that finds nothing names
+the directories it looked in.
+
+| Variable | What it pins |
+|---|---|
+| `KUNA_SPECS` | The SLEIGH tree passed as `-sleighpath` (`SLEIGHHOME` is the engine's own name for the same thing). |
+| `KUNA_DECOMP_DBG` | The `decomp_dbg` binary. `kuna decompile --decomp-dbg PATH` does the same for one run. |
+| `KUNA_DECOMP_TEST` | The `decomp_test_dbg` datatest harness (`kuna test --binary PATH`). |
+| `KUNA_SLACOMP` | The `slacomp` binary `kuna specs` runs. |
+| `KUNA_ROOT` | The repo root, when the binaries are not in-tree: `specs/`, `tests/datatests/` and `decompiler/target/<profile>/` are all read from it. |
+| `KUNA_RUST_PROFILE` | The `decompiler/target/<profile>` directory the in-tree fallback reads (default `release`). |
+
+An override wins over both layouts, and one pointing at nothing is reported as
+such rather than silently re-probed.
+
 ## `kuna test` — the parity gates
 
 ```bash
