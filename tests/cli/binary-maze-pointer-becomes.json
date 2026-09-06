@@ -1,0 +1,34 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/emptystrconst_x86_64",
+    "binary_sha256": "f1e7a5da26d86d13eafe9e38d4e10db59599bdf0921edb6bfd5d9bb3872bbec6",
+    "binary_size": 14512,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/emptystrconst_x86_64",
+    "selector": "0x401136",
+    "selector_kind": "addr"
+  },
+  "timeout_s": 60,
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "0x401136",
+    "--addr"
+  ],
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "strlen\\(\\(char \\*\\)0x402020\\)",
+      "strlen\\(\"\"\\)"
+    ],
+    "stdout_absent": [
+      "strlen\\(\"\"\\)[^\\n]*\\n[^\\n]*strlen\\(\"\"\\)"
+    ]
+  },
+  "notes": "Vendored reduction of crackmes.one 60be2ad433c5d410b8842c95 (Sabloom Text 6.exe, sub_402020), where both pointers into the 585-byte maze at 0x403550 printed = \"\". Here maze@0x402020 opens with a zero row then blob bytes and must keep its address; merged@0x402060 is a real \"\" inside string data and must keep its quotes. The absent clause is the pre-change output: both on consecutive lines."
+}

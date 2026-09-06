@@ -679,6 +679,16 @@ latent = false
 exposure = "(kuna) option arraycoverwidth -> PrintC::pushPartialSymbol whole-symbol break"
 
 [[subphase]]
+name = "empty-string-constant"
+phase = "P9"
+decision = "a constant pointer whose readonly target holds a zero-character string: the empty literal vs the address, decided on whether the bytes past the terminator contradict string data"
+assertion = "emptystrconst on|off"
+strength = "HARD"
+rewind = "P9"
+latent = false
+exposure = "(kuna) option emptystrconst -> PrintC::pushPtrCharConstant literal gate"
+
+[[subphase]]
 name = "external-refinement"
 phase = "P9"
 decision = "proposed renames/retypes/summaries: an assertion writer into P0 for the next run"
@@ -930,6 +940,12 @@ surface = "option arraycoverwidth"
 phase = "P9"
 subphase = "array-cover-width"
 note = "(kuna) render a multi-element array cover at its real width"
+
+[[surface]]
+surface = "option emptystrconst"
+phase = "P9"
+subphase = "empty-string-constant"
+note = "(kuna) keep the address when the string literal would be empty"
 
 [[surface]]
 surface = "option returnpair"
@@ -1452,6 +1468,25 @@ inspiration = "repipe round 4 (crackmes.one 605443e333c5d42c3d016f59, KataVM_L1)
 change_kind = "correctness-fix"
 tier = "core"
 symptoms = "a 16-byte movaps/movdqa transfer emits as v1[0] = v2[0]|a vector zero store emits as arr[0] = 0|an array-typed local is assigned at element zero for a whole-array copy|the same variable shows both v1._0_4_ and v1[0] for accesses of different width|declared char v[16] but every whole-bank access reads as one byte"
+
+[[settable]]
+option = "emptystrconst"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P9"
+subphase = "empty-string-constant"
+strength = "HARD"
+rewind = "P9"
+issue = "repipe-binary-maze-pointer-becomes"
+summary = "Decline the quoted string literal for a constant pointer whose readonly target spells a ZERO-character string AND does not sit in string data, and print the address instead. `PrintC::pushConstant`'s pointer arm hands a character-printable pointer constant to `pushPtrCharConstant`, which replaces the address with the literal at it -- a good trade when the literal spells something. `StringManager::isString` answers yes for ANY readonly location whose first byte is a NUL, because `checkCharacters` walks only to the first terminator and therefore validates zero characters, so a pointer into a binary blob that opens with a zero row is accepted as a string and rendered `p = \"\"`. That token names no byte of the image and the address it displaced was the only thing in the statement a reader could follow -- a 585-byte packed maze at 0x403550 disappeared from the emitted C entirely, while the 0x403511 and 0x403799 constants around it survived. Not every empty literal is wrong, though: `setlocale(6,\"\")` is idiomatic C, and a linker that merges string constants stores the program's only `\"\"` as the tail NUL of another literal. The two separate on the bytes PAST the terminator, which is the evidence the emptiness test never looked at: sixteen bytes are read, the terminator run is skipped, and the next run is walked to its NUL -- if any byte in it is outside printable ASCII and tab/newline/return, this is not a string table and the literal is declined. It is a falsification test on purpose, so everything it cannot judge keeps the upstream literal: a window of nothing but NULs (section padding), a run still spelling text at the window's end, an unreadable neighbourhood, and any literal with a character of its own. Only the first run after the terminator is judged, so `du`'s `fts_alloc(sp,\"\",0)` -- whose `\"\"` opens the table `\"\" \".\" \"..\"` and is followed by relocation bytes four bytes later -- keeps its quotes."
+use_when = "On by default: an empty literal that is not backed by string data is strictly less informative than the address it replaces, and the rule reaches nothing else -- 0/675 datatest assertions move. Flip off to reproduce upstream Ghidra's (and kuna's pre-existing) `\"\"` spelling when diffing against Ghidra, or when a consumer relies on a pointer to a NUL byte printing as an empty string."
+example = "option emptystrconst off"
+source_decompiler = "kuna"
+inspiration = "repipe round 4 (crackmes.one 60be2ad433c5d410b8842c95, Sabloom Text 6.exe): sub_402020 walks a 585-byte packed maze at 0x403550 whose first row is all zeroes, and both pointers into it printed as empty string literals"
+change_kind = "correctness-fix"
+tier = "core"
+symptoms = "a pointer variable is initialised to an empty string literal and then indexed past its terminator|a data address visible in the disassembly appears nowhere in the emitted C|a blob or table pointer renders as = \"\" instead of its address|two locals are both assigned \"\" and then walked as buffers"
 
 [[settable]]
 option = "warnstyle"

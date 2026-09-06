@@ -675,6 +675,44 @@ the bytes — and leaves the exact-hit path untouched
 fallback: if the address turns out not to be read-only, or the bytes do not
 decode, the constant prints as an integer exactly as before.
 
+**The zero-character literal.** The probe's accept test is the string manager's
+`is_string`, and that answers yes for *any* read-only location whose first
+character-width unit is a NUL: `stringmanage.rs
+(StringManager::check_characters)` walks only as far as the first terminator, so
+for a zero-length string it validates zero characters and can reject nothing.
+A pointer into a binary blob that happens to open with a row of zeroes therefore
+passes the probe and renders `p = ""` — a token that names no byte of the image,
+in place of the address, which was the only thing in the statement a reader
+could follow.
+
+Emptiness alone is not the tell, though, and this is where a narrower rule goes
+wrong: `setlocale(6,"")` is idiomatic C, and a linker that merges string
+constants stores a program's only `""` as the tail NUL of some other literal, so
+the empty string is *real* there and the address would be the worse render.
+What separates the two is the evidence the emptiness test never looked at — the
+bytes *past* the terminator. A genuine `""` is followed by the next literal in
+the table (`00 00 00 65 72 72 6f 72 20 69 6e 20 72 65 67 75`, the `""` `nl`
+hands `setlocale`); a blob pointer is followed by bytes no C string holds
+(`00 00 00 00 00 00 00 00 00 77 df 77 ff fd ff 7f`). **(kuna) emptystrconst**
+(default **on**, `decompiler/crates/kuna-decomp/src/p9_emit/kuna_emptystrconst.rs
+(declines_literal, reads_as_string_data)`) reads sixteen bytes at the constant
+and declines the literal only when the escape walk emitted no characters *and*
+those bytes positively contradict string data: skip the terminator run, walk the
+next run up to its NUL, and reject if any byte in it is outside printable ASCII
+and `\t`/`\n`/`\r`. The constant then falls through to the ordinary casted-hex
+print. It is a falsification test on purpose, so everything it cannot judge keeps
+the upstream literal — a window of nothing but NULs (padding at the end of a
+section), a run that reaches the window's end still spelling text, an address
+whose neighbourhood is unreadable, and of course any literal with even one
+character of its own (`"\n"`, `"%"`). Only the first run after the terminator is
+judged: `du`'s `fts_alloc(sp,"",0)` opens the table `"" "." ".."` and keeps its
+quotes even though relocation bytes follow four bytes later. Turning the option
+off restores the empty literal in every case. What
+this does **not** repair is the reason the blob pointer carried a
+character-pointer type in the first place: it shared a merged live range with a
+genuine `char *` parameter (§6), and the probe is doing what it is supposed to do
+for a `char *` constant once that type is established.
+
 **Comments.** Comments reach the output through the P0 knowledge plane, never
 inline in the IR: analysis passes call `decompiler/crates/kuna-decomp/src/substrate/funcdata.rs
 (Funcdata::warning, Funcdata::warning_header)` — buffered per function, then

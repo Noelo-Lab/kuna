@@ -419,6 +419,10 @@ pub struct PrintCOptions {
     /// renders as the width-carrying `name._<off>_<size>_` field instead of a
     /// subscript / bare name (`option arraycoverwidth`).
     pub array_cover_width: bool,
+    /// (kuna) A constant pointer whose readonly target spells a ZERO-character
+    /// string declines the `""` literal and prints its address instead
+    /// (`option emptystrconst`).
+    pub empty_str_const: bool,
     /// How function-declaration braces are formatted (C++ `option_brace_func`).
     pub brace_func: BraceStyle,
     /// How if/else-block braces are formatted (C++ `option_brace_ifelse`).
@@ -460,6 +464,7 @@ impl PrintCOptions {
             brace_elide: true, // (kuna) DIV-38; no upstream equivalent
             warn_inline: true, // (kuna) DIV-39; no upstream equivalent
             array_cover_width: true, // (kuna) no upstream equivalent
+            empty_str_const: true,   // (kuna) no upstream equivalent
             brace_func: BraceStyle::NextLine,   // (kuna) DIV-34; upstream Emit::skip_line
             brace_ifelse: BraceStyle::SameLine, // Emit::same_line
             brace_loop: BraceStyle::SameLine,   // Emit::same_line
@@ -520,6 +525,15 @@ impl PrintCOptions {
     /// (kuna) Current array-cover width flag.
     pub fn array_cover_width(&self) -> bool {
         self.array_cover_width
+    }
+    /// (kuna) Toggle the zero-character string-constant suppression
+    /// (`option emptystrconst`).
+    pub fn set_empty_str_const(&mut self, val: bool) {
+        self.empty_str_const = val;
+    }
+    /// (kuna) Current empty-string-constant flag.
+    pub fn empty_str_const(&self) -> bool {
+        self.empty_str_const
     }
     /// (kuna) Toggle inline warning style (`option warnstyle`, DIV-39).
     pub fn set_warn_inline(&mut self, val: bool) {
@@ -5364,7 +5378,14 @@ impl PrintC {
                                 .and_then(|o| o.get_in(1))
                                 .and_then(|v| fd.vbank().get(v).map(|vn| vn.get_addr().clone()));
                             if let Some(addr) = in1addr {
-                                if self.print_character_constant(arch, &mut s, &addr, &subct) {
+                                let mut chars_emitted: int4 = 0;
+                                if self.print_character_constant(
+                                    arch,
+                                    &mut s,
+                                    &addr,
+                                    &subct,
+                                    &mut chars_emitted,
+                                ) {
                                     ok = true;
                                 }
                             }
@@ -8254,8 +8275,30 @@ impl PrintC {
             return false;
         }
         let mut s = String::new();
-        if !self.print_character_constant(arch, &mut s, &stringaddr, subct) {
+        let mut chars_emitted: int4 = 0;
+        if !self.print_character_constant(arch, &mut s, &stringaddr, subct, &mut chars_emitted) {
             return false;
+        }
+        // (kuna emptystrconst) A zero-character literal names no byte of the
+        // image, so it is strictly less informative than the address it would
+        // displace -- unless the bytes there really are string data, which is
+        // what a genuine `""` looks like.  Read the neighbourhood and let the
+        // sub-stage decide; an unreadable window is not evidence, so the
+        // upstream literal stands.
+        if self.options.empty_str_const && chars_emitted == 0 {
+            let mut window = [0u8; crate::kuna_emptystrconst::WINDOW];
+            let readable = {
+                let loader_rc = arch.translate().loader_rc();
+                let mut loader = loader_rc.borrow_mut();
+                loader.load_fill(&mut window, &stringaddr).is_ok()
+            };
+            if crate::kuna_emptystrconst::declines_literal(
+                true,
+                chars_emitted,
+                if readable { Some(&window[..]) } else { None },
+            ) {
+                return false;
+            }
         }
         self.push_atom(&Atom::with_op_vn(
             s,
@@ -8279,6 +8322,7 @@ impl PrintC {
         s: &mut String,
         addr: &Address,
         char_type: &std::rc::Rc<crate::dtype::Datatype>,
+        chars_emitted: &mut int4,
     ) -> bool {
         use crate::stringmanage::StringManager;
         // Pull UTF-8 string data through the architecture's persistent
@@ -8318,6 +8362,7 @@ impl PrintC {
                 crate::kuna_lang::StringEscape::CEscapes => print_unicode(s, codepoint),
                 crate::kuna_lang::StringEscape::RustEscapes => print_unicode_rust(s, codepoint),
             }
+            *chars_emitted += 1;
             i += skip;
         }
         if is_trunc {

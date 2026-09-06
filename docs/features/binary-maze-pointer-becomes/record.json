@@ -1,0 +1,93 @@
+{
+  "opportunity": "repipe:60be2ad433c5d410b8842c95::binary-maze-pointer-becomes",
+  "need_id": "binary-maze-pointer-becomes",
+  "track": "quality",
+  "round": 5,
+  "test_name": "repipe round 5, challenge 60be2ad433c5d410b8842c95 (crackmes.one Sabloom Text 6.exe)",
+  "binary": "kuna-re-dataset/challenges/60be2ad433c5d410b8842c95/bin/Sabloom Text 6.exe",
+  "selector": "sub_402020",
+  "option": "emptystrconst",
+  "flag": "PrintCOptions::empty_str_const",
+  "element_id": 4148,
+  "change_kind": "correctness-fix",
+  "source_decompiler": "kuna",
+  "inspiration": "repipe round 4 need binary-maze-pointer-becomes; sub_402020 walks a 585-byte packed maze at 0x403550 whose first row is zeroes, and both pointers into it printed = \"\"",
+  "default_on": true,
+  "div": "DIV-125",
+  "scope": "small",
+  "parity": "OK",
+  "decisions": [
+    "The FILED hypothesis ('string rendering considers the first NUL without accounting for subsequent indexed reads') is OVERTURNED, exactly as the captain's in-tick refutation said, and its one-byte control is reproduced: poking 0x403550 from 00 to 0x41 turns the output into `v16 = \"A\"`, so stopping at the first NUL is not what loses the address.",
+    "The captain's replacement diagnosis -- the constant is `char *` because it shares a merged live range with a genuine `char *` parameter -- is UPHELD and deliberately NOT repaired. Re-typing a merged live range is P5/P6 work far outside this need's `scope: small`, and the printer is doing the right thing for a `char *` constant once that type exists. What is wrong is the printer's EVIDENCE test: `StringManager::isString` accepts a location on the strength of zero validated characters, because `checkCharacters` walks only to the first terminator.",
+    "The captain's warning that the naive fix is gameable turned out to understate it: suppressing every zero-character literal is WRONG, not merely cheap. A whole-corpus sweep found `setlocale(6,\"\")` plus five more genuine empty literals in the vendored coreutils fixtures alone (all one merged `\"\"` at 0x7661 in regglobal_fmt_x86_64, stored as the tail NUL of \"Report bugs to: %s\\n\"), and the naive rule turned every one of them into an address. That is what drove the byte-evidence half of the design.",
+    "A 16-byte all-printable-or-NUL window was the SECOND wrong design and was caught by the same sweep: it declined four more real empty literals (du 0x1aa00 and 0x1af20, pathchk 0x8aeb, ssh-keysign 0x836a6), each the head of a short string table whose window runs past the table's end into relocation bytes. The shipped rule judges only the FIRST run after the terminator, which is a falsification test -- it says no only where the bytes positively contradict string data -- so everything it cannot judge keeps the upstream literal.",
+    "The acceptance probe as filed was retargetable but its `expect` was not: `stdout_absent: = \"\";` plus `stdout_matches: 0x403550` says nothing about the real empty literal beside it. The promoted probe asserts BOTH directions on one function -- the blob keeps 0x402020 AND the genuine \"\" keeps its quotes -- so neither the naive rule nor the window rule could pass it."
+  ],
+  "speed_method": "scripts.pipeline.timeit (warmup + median over 9 repeats) on the fixture; hand-timed median over 9 runs on the dataset witness",
+  "speed_off_ms": 109.3,
+  "speed_on_ms": 100.61,
+  "speed_delta_pct": -7.95,
+  "speed_samples": 9,
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": true,
+  "speed_note": "The fixture's -7.95% is inside the measured noise floor for a single small target; the witness (Sabloom Text 6.exe, sub_402020) is 0.18 s median in BOTH arms. The added work is one 16-byte load_fill per zero-character literal render, which is the only site the gate can reach.",
+  "sweep": {
+    "method": "kuna decompile-all, --option emptystrconst off vs default, over 58 images (decbench ELF corpus + RE-dataset PE/ELF crackmes); the ON arm re-run for every image whose OFF output contains a zero-character literal, which is the only site the gate can reach",
+    "images_compared": 37,
+    "empty_literals_off_arm": 327,
+    "kept_real_empty_strings": 312,
+    "declined_blob_pointers": 15,
+    "changed_lines_total": 15,
+    "hunk_kinds": {
+      "literal->address": 15,
+      "other": 0,
+      "line-count-changed": 0
+    },
+    "note": "every changed line is a 1:1 substitution of a `\"\"` literal by `(type *)0xADDR`; no statement added, deleted, moved or re-anchored, and no file changed line count. Each declined address was read back: the maze, and a jump-table/relocation array at 0x10016 in libbsd.so.0.11.7 (00 00 28 63 ff ff f8 62). The 312 kept are the load-bearing number -- an earlier all-printable-window design declined 4 of them."
+  },
+  "gates": {
+    "make test": "PARITY OK 675/675 (byte-identical)",
+    "make test-stages": "PARITY OK 654/654 (650 + 4 new, re-recorded)",
+    "make test-cli": "55/55",
+    "make check-spec": "OK lenient + strict",
+    "kuna catalog --check": "catalog OK",
+    "make rust-test": "PENDING"
+  },
+  "probe_flip": {
+    "probe_still_passes": false,
+    "acceptance_passes": true,
+    "acceptance_before": "strlen(\"\") ... strlen(\"\")  (blob and real empty string indistinguishable)",
+    "acceptance_after": "strlen((char *)0x402020) ... strlen(\"\")"
+  },
+  "promoted_probe": {
+    "path": "tests/cli/binary-maze-pointer-becomes.json",
+    "retargeted_from": "dataset Sabloom Text 6.exe @ sub_402020",
+    "retargeted_to": "decompiler/crates/kuna-analysis/tests/fixtures/emptystrconst_x86_64 @ 0x401136",
+    "acceptance_id": "a-dec6e1252b85 -> a-79ab40a45635 (cmd and expect both re-cut, so the hash moved; front matter and Decision log updated)",
+    "why": "CI has no dataset; the fixture is a project-authored reduction that reproduces the identical `strlen(\"\")` for BOTH a blob pointer and a real empty string under `--option emptystrconst off`",
+    "strengthened": "the filed acceptance (`stdout_absent: = \"\";` + `stdout_matches: 0x403550`) says nothing about the genuine empty literal beside the blob, so the promoted probe asserts both directions on one function"
+  },
+  "files": [
+    "decompiler/crates/kuna-decomp/src/p9_emit/kuna_emptystrconst.rs",
+    "decompiler/crates/kuna-decomp/src/p9_emit/kuna_emptystrconst/tests.rs",
+    "decompiler/crates/kuna-decomp/src/p9_emit/printc.rs",
+    "decompiler/crates/kuna-decomp/src/p9_emit/mod.rs",
+    "decompiler/crates/kuna-decomp/src/infra/architecture.rs",
+    "decompiler/crates/kuna-decomp/src/p0_knowledge/options.rs",
+    "decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_phases/tests.rs",
+    "decompiler/crates/kuna-decomp/phases.toml",
+    "decompiler/crates/kuna-decomp/tests/catalog_bytecompat.rs",
+    "decompiler/crates/kuna-decomp/tests/fixtures/phase_catalog.json",
+    "decompiler/crates/kuna-base/src/xml.rs",
+    "tests/stages/kuna-emptystrconst.xml",
+    "tests/cli/binary-maze-pointer-becomes.json",
+    "decompiler/crates/kuna-analysis/tests/fixtures/emptystrconst_x86_64",
+    "decompiler/crates/kuna-analysis/tests/fixtures/emptystrconst_x86_64.c",
+    "decompiler/crates/kuna-analysis/tests/fixtures/README.md",
+    "docs/spec/09-emission.md",
+    "docs/history.md",
+    "docs/options.md",
+    "docs/baseline-stages.json",
+    "docs/re-needs/binary-maze-pointer-becomes.md"
+  ]
+}

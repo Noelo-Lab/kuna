@@ -1805,7 +1805,7 @@ mod tests {
         // flow instead of raising the stack pointer by 8 and degenerating the frame
         // and kuna-arraycoverwidth / a sixteen-byte transfer through a `char[16]`
         // VM register bank rendered `v2[0] = v3[0]`, a one-byte lvalue
-        assert_eq!(count, 243, "corpus file count drifted");
+        assert_eq!(count, 244, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

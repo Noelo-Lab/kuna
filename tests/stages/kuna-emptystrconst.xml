@@ -1,0 +1,90 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    repipe-binary-maze-pointer-becomes: "Binary maze pointer becomes an empty
+    string literal"
+    docs/re-needs/binary-maze-pointer-becomes.md
+
+    A packed 585-byte maze at 0x403550 opens with a row of zero bytes.  The
+    function that walks it takes the maze's address in a variable the type
+    lattice had already given `char *`, so the printer replaced the address with
+    the string literal at it - and the literal stops at the first byte, which is
+    the NUL.  Both pointers into the maze printed `= ""`, and 0x403550 appeared
+    nowhere in the emitted C while the 0x403511 and 0x403799 constants around it
+    survived.
+
+    P9 emission.  `PrintC::pushConstant`'s pointer arm hands a character-printable
+    pointer constant to `pushPtrCharConstant`, which renders the readonly bytes at
+    the address instead of the address.  Its gate is `StringManager::isString`,
+    and that answers yes for ANY readonly location whose first byte is a NUL:
+    `checkCharacters` walks only as far as the first terminator, so for a
+    zero-length string it validates zero characters and rejects nothing.
+
+    Fix: `option emptystrconst` (default on) declines the literal when the escaped
+    literal would carry no characters at all, and the constant falls through to
+    the ordinary casted-hex print.  A literal with at least one character, however
+    short, is untouched.
+
+    Not every empty literal is wrong, and the discrimination is the whole point.
+    `setlocale(6,"")` is idiomatic C, and a linker that merges string constants
+    stores the program's only `""` as the tail NUL of another literal, so an
+    empty literal that sits inside a run of string data is REAL.  What the maze
+    has instead is a zero row followed by binary: the sixteen bytes at the
+    address are the evidence, and only that second shape is declined.
+
+    Source (as(1), x86-64, linked -Ttext=0x100000; `use` at 0x100027 and `use2`
+    at 0x100028, both declared `void (char *)` so the three constants are typed
+    char *):
+
+        f:  sub  $0x8,%rsp
+            mov  $0x100100,%edi     ; readonly: zero row, then blob bytes
+            call use
+            mov  $0x100110,%edi     ; readonly: "Hi"
+            call use
+            mov  $0x100120,%edi     ; readonly: a GENUINE "" inside a string run
+            call use2
+            add  $0x8,%rsp
+            ret
+        use:  ret
+        use2: ret
+
+    Pass 1 (default): assertion #1 proves the blob pointer keeps its address, #2
+    that the ordinary two-character literal next to it is untouched, and #3 that
+    the genuine empty literal still prints as `""`.  Pass 2 (emptystrconst off):
+    assertion #4 reproduces the filed bug, and #3's max pins that the two empty
+    literals are told apart rather than both suppressed.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+4883ec08bf00011000e819000000bf10
+011000e80f000000bf20011000e80600
+00004883c408c3c3c3
+</bytechunk>
+<bytechunk space="ram" offset="0x100100" readonly="true">
+000000000000000000
+77df77fffdff7f
+48690000000000000000000000000000
+005265706f7274206275677320746f3a
+2025730a000000000000000000000000
+00000000000000000000000000000000
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="f"/>
+<symbol space="ram" offset="0x100027" name="use"/>
+<symbol space="ram" offset="0x100028" name="use2"/>
+</binaryimage>
+<script>
+  <com>parse line extern void use(char *);</com>
+  <com>parse line extern void use2(char *);</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option emptystrconst off</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="EMPTYSTRCONST #1: the blob pointer keeps its address instead of becoming an empty literal" min="1" max="1">use\(\(char \*\)0x100100\);</stringmatch>
+<stringmatch name="EMPTYSTRCONST #2: an ordinary short literal beside it is untouched, in both passes" min="2" max="2">use\("Hi"\);</stringmatch>
+<stringmatch name="EMPTYSTRCONST #3: a GENUINE empty literal, one that sits inside a run of string data, keeps its quotes in both passes" min="2" max="2">use2\(""\);</stringmatch>
+<stringmatch name="EMPTYSTRCONST #4: emptystrconst off restores the empty-literal form for the blob (the filed bug), exactly once" min="1" max="1">use\(""\);</stringmatch>
+</decompilertest>

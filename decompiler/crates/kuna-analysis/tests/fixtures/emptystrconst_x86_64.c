@@ -1,0 +1,39 @@
+/* Fixture for `emptystrconst` (repipe need binary-maze-pointer-becomes).
+ *
+ * `maze` is a packed binary blob whose first row is zeroes, exactly the shape
+ * of the 585-byte maze at 0x403550 in the crackmes.one witness.  `merged` is a
+ * GENUINE empty string: a linker that merges string constants stores `""` as
+ * the tail NUL of another literal, and the empty one must keep its quotes.
+ *
+ * Built (no toolchain beyond gcc):
+ *   gcc -O0 -no-pie -fno-builtin -o emptystrconst_x86_64 emptystrconst_x86_64.c
+ */
+#include <string.h>
+
+const unsigned char maze[64] = {
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x77, 0xdf, 0x77, 0xff, 0xfd, 0xff, 0x7f,
+    0xfd, 0x00, 0x15, 0x51, 0x50, 0x50, 0x04, 0x11,
+    0x04, 0x15, 0x00, 0x55, 0x75, 0x5f, 0x57, 0xdd,
+    0x77, 0xdf, 0x77, 0xff, 0xfd, 0xff, 0x7f, 0xfd,
+    0x00, 0x15, 0x51, 0x50, 0x50, 0x04, 0x11, 0x04,
+    0x15, 0x00, 0x55, 0x75, 0x5f, 0x57, 0xdd, 0x77,
+    0xdf, 0x77, 0xff, 0xfd, 0xff, 0x7f, 0xfd, 0x00,
+};
+
+const char merged[] = "\0Report bugs to: %s\n";
+const char hi[] = "Hi";
+
+unsigned long probe(void)
+{
+    unsigned long n = 0;
+    n += strlen((const char *)maze);
+    n += strlen(merged);
+    n += strlen(hi);
+    return n;
+}
+
+int main(void)
+{
+    return (int)probe();
+}

@@ -427,6 +427,10 @@ Three tiers:
 | an array-typed local is assigned at element zero for a whole-array copy | [`arraycoverwidth`](#arraycoverwidth) |
 | the same variable shows both v1._0_4_ and v1[0] for accesses of different width | [`arraycoverwidth`](#arraycoverwidth) |
 | declared char v[16] but every whole-bank access reads as one byte | [`arraycoverwidth`](#arraycoverwidth) |
+| a pointer variable is initialised to an empty string literal and then indexed past its terminator | [`emptystrconst`](#emptystrconst) |
+| a data address visible in the disassembly appears nowhere in the emitted C | [`emptystrconst`](#emptystrconst) |
+| a blob or table pointer renders as = "" instead of its address | [`emptystrconst`](#emptystrconst) |
+| two locals are both assigned "" and then walked as buffers | [`emptystrconst`](#emptystrconst) |
 | full-line WARNING banner comments clutter the output | [`warnstyle`](#warnstyle) |
 | warning text wanted inline at the end of the statement it describes | [`warnstyle`](#warnstyle) |
 | terse warning slugs unwanted; full upstream warning text needed | [`warnstyle`](#warnstyle) |
@@ -1520,6 +1524,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default: the element-zero subscript is a false statement about the access width, and every changed line is a token-for-token substitution -- 0/675 datatest assertions move, and a whole-binary sweep over 40 images changed only the accesses whose width the subscript could not carry, with no statement added, deleted or re-anchored. Flip off to reproduce upstream Ghidra's bare whole-symbol name (and kuna's pre-existing element-zero form) when diffing against Ghidra, or when a consumer parses the subscript spelling.
 - **Where / provenance:** P9/array-cover-width · kuna · correctness-fix · repipe-16-byte-vm-state
 - **Example:** `option arraycoverwidth off`
+
+### `emptystrconst` -- on | off, default `on`
+
+- **Symptoms:** a pointer variable is initialised to an empty string literal and then indexed past its terminator; a data address visible in the disassembly appears nowhere in the emitted C; a blob or table pointer renders as = "" instead of its address; two locals are both assigned "" and then walked as buffers.
+- **What it does:** Decline the quoted string literal for a constant pointer whose readonly target spells a ZERO-character string AND does not sit in string data, and print the address instead. `PrintC::pushConstant`'s pointer arm hands a character-printable pointer constant to `pushPtrCharConstant`, which replaces the address with the literal at it -- a good trade when the literal spells something. `StringManager::isString` answers yes for ANY readonly location whose first byte is a NUL, because `checkCharacters` walks only to the first terminator and therefore validates zero characters, so a pointer into a binary blob that opens with a zero row is accepted as a string and rendered `p = ""`. That token names no byte of the image and the address it displaced was the only thing in the statement a reader could follow -- a 585-byte packed maze at 0x403550 disappeared from the emitted C entirely, while the 0x403511 and 0x403799 constants around it survived. Not every empty literal is wrong, though: `setlocale(6,"")` is idiomatic C, and a linker that merges string constants stores the program's only `""` as the tail NUL of another literal. The two separate on the bytes PAST the terminator, which is the evidence the emptiness test never looked at: sixteen bytes are read, the terminator run is skipped, and the next run is walked to its NUL -- if any byte in it is outside printable ASCII and tab/newline/return, this is not a string table and the literal is declined. It is a falsification test on purpose, so everything it cannot judge keeps the upstream literal: a window of nothing but NULs (section padding), a run still spelling text at the window's end, an unreadable neighbourhood, and any literal with a character of its own. Only the first run after the terminator is judged, so `du`'s `fts_alloc(sp,"",0)` -- whose `""` opens the table `"" "." ".."` and is followed by relocation bytes four bytes later -- keeps its quotes.
+- **When to flip:** On by default: an empty literal that is not backed by string data is strictly less informative than the address it replaces, and the rule reaches nothing else -- 0/675 datatest assertions move. Flip off to reproduce upstream Ghidra's (and kuna's pre-existing) `""` spelling when diffing against Ghidra, or when a consumer relies on a pointer to a NUL byte printing as an empty string.
+- **Where / provenance:** P9/empty-string-constant · kuna · correctness-fix · repipe-binary-maze-pointer-becomes
+- **Example:** `option emptystrconst off`
 
 ### `warnstyle` -- inline | banner, default `inline`
 

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    650,
-    650
+    654,
+    654
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -91,6 +91,10 @@
     "data:DWARFVARIANTS #7: on, and so does variant B, so three variants are not two",
     "data:DWARFVARIANTS #8: a plain C-shaped struct in the same image renders identically in BOTH passes",
     "data:DWARFVARIANTS #9: and so does a fieldless enum, which rustc emits as an enumeration type this pass never sees",
+    "data:EMPTYSTRCONST #1: the blob pointer keeps its address instead of becoming an empty literal",
+    "data:EMPTYSTRCONST #2: an ordinary short literal beside it is untouched, in both passes",
+    "data:EMPTYSTRCONST #3: a GENUINE empty literal, one that sits inside a run of string data, keeps its quotes in both passes",
+    "data:EMPTYSTRCONST #4: emptystrconst off restores the empty-literal form for the blob (the filed bug), exactly once",
     "data:EVALCURRENTPROTO #1: off, the __stdcall default model sees only the stack argument",
     "data:EVALCURRENTPROTO #2: off, the ECX argument survives as an undefined local",
     "data:EVALCURRENTPROTO #3: default, the spec's merged model resolves to __fastcall and recovers all three arguments",
