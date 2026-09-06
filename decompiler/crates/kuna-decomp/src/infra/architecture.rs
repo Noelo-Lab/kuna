@@ -1921,7 +1921,7 @@ impl Architecture {
             analysis_tailcallentry: false,
             analysis_gopclntab: false,
             analysis_objc: false,
-            analysis_pdb: false,
+            analysis_pdb: true,
             macho_arm64e: false,
 
             symboltab,
@@ -2156,7 +2156,7 @@ impl Architecture {
         self.analysis_tailcallentry = false; // tail-call function-entry recovery default-off
         self.analysis_gopclntab = true; // Go pclntab name recovery default-on (Go-only pass)
         self.analysis_objc = false; // Mach-O Objective-C metadata recovery default-off (Mach-O-only pass)
-        self.analysis_pdb = false; // PE PDB metadata recovery default-off (PE-only, external-.pdb-gated pass)
+        self.analysis_pdb = true; // (kuna) DIV-129 default-on: a PE whose CodeView record names a .pdb that is actually beside it decompiles with its real function names; the GUID/age fingerprint gate keeps a wrong or stale .pdb from ever being applied. PE-only, and the XML datatest path never runs an analysis pass (0/675)
         self.macho_arm64e = false; // arm64e Apple-Silicon spec selection default-off (opt-in)
     }
 

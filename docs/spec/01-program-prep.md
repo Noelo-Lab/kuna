@@ -27,8 +27,15 @@ option name, and one method `run(&AnalysisCtx) -> AnalysisOutput`. The contract 
 three load-bearing properties:
 
 - **Pure and read-only.** A pass sees only the parsed object (`object::File`), the
-  raw image bytes, the opened load image, the resolved `Architecture`, and (for
-  Listing consumers, §1.6) the built Listing. It mutates nothing.
+  raw image bytes, the opened load image, the resolved `Architecture`, the image's
+  own on-disk path, and (for Listing consumers, §1.6) the built Listing. It mutates
+  nothing. The path is the one input that is not the image's *content*: it is what
+  lets a pass reach a companion file the image only names — a `.pdb` sidecar today,
+  a `.dSYM` bundle or a `.gnu_debuglink` target tomorrow. It is derived once, at the
+  context build, from the load image's own filename
+  (`decompiler/crates/kuna-analysis/src/passes.rs (image_on_disk_path)`) and is
+  absent unless that filename resolves to an existing file, so a synthesized or
+  in-memory image cannot make a pass probe the working directory.
 - **Additive and total.** A pass only ever contributes *more* knowledge — names,
   types, entries, flags — and never fails: a malformed section, an unknown magic, or
   an out-of-range offset yields an *empty* output, never an error or panic.
@@ -79,7 +86,8 @@ bridged across the process by environment variables the CLI exports:
 `KUNA_MACHO_SLICE` (`--slice`), `KUNA_ARM_ISA` (`--isa`). For those,
 the option rows exist for discoverability while the live gate is the env var. The
 external-artifact paths `kuna_fid_db` and `kuna_pdb_path` are different: they only
-*locate* the artifact — the `fid`/`pdb` passes stay flag-gated at the deferred
+*locate* the artifact, and only as one tier among others (`pdb` also searches
+beside the image, §1.4) — the `fid`/`pdb` passes stay flag-gated at the deferred
 commit (`decompiler/crates/kuna-console/src/engine.rs (analysis_pass_enabled)`). Second,
 anything that must **decode instructions** cannot run at load at all — the engine's
 loadimage is attached to the SLEIGH translator only *after* the load-time pass list
@@ -1297,14 +1305,39 @@ every other binary's pass list is byte-identical to before the pass existed):
   small/relative forms), reading pointer slots through the chained-fixup overlay
   (§1.2) on arm64, and rename each IMP `-[Class sel]`/`+[Class sel]` behind the
   placeholder label gate.
-- **PDB** (`pdb`, PE-only, default-off;
+- **PDB** (`pdb`, PE-only, default-on;
   `decompiler/crates/kuna-analysis/src/analyzers/pdb/mod.rs`): Windows' debug info
   lives in a separate `.pdb` the PE only fingerprints, so the pass reads the
-  CodeView record, locates the file via `kuna_pdb_path`, and applies a hard
-  **fingerprint gate** — the `.pdb`'s GUID/age must match or nothing is emitted
-  (never apply a stale PDB) — then walks the global symbol stream
-  (S_PUB32/S_GPROC32) and renames stripped functions behind the label gate.
-  Name-level only; types and lines are deferred.
+  CodeView record, locates the file, applies a hard **fingerprint gate**, then walks
+  the global symbol stream (S_PUB32/S_GPROC32) and renames stripped functions behind
+  the label gate. Name-level only; types and lines are deferred.
+
+  Locating it is a short ordered search
+  (`decompiler/crates/kuna-analysis/src/analyzers/pdb/locate.rs (pdb_candidates)`),
+  most specific first: an explicit path in `kuna_pdb_path`, then the CodeView
+  record's own filename resolved **beside the image**, then `<image stem>.pdb`
+  beside the image. The middle tier is the one a `/Zi` build makes free — the
+  linker writes the name of the `.pdb` it emitted into the binary, and in a normal
+  build tree or release archive that file is sitting right there. What it does not
+  do is trust that recorded string as a path: it is content written by whoever
+  linked the image, so only its last segment is taken (splitting on `\` as well as
+  `/`, since a Windows linker writes the former and a POSIX `Path` does not treat it
+  as a separator), it must be a single ordinary `*.pdb` component, and it is only
+  ever joined onto the directory the caller already opened the image from. A
+  build-machine absolute path, a `..` run, and a Windows drive prefix therefore
+  cannot escape that directory.
+
+  The gate is what makes the search safe to run by default, and it runs per
+  candidate: a `.pdb` is applied only when its own `pdb_information().guid/age`
+  equals the PE's record, so a stale sidecar left beside a rebuilt binary, or an
+  unrelated `.pdb` that happens to share the name, is skipped rather than applied —
+  wrong names are worse than no names. A skipped-because-mismatched candidate gets
+  one `[kuna pdb]` line on stderr naming it: once the search is automatic, silence
+  would make "your `.pdb` is stale" indistinguishable from "there is no `.pdb`
+  here". A candidate that simply does not exist is not reported; most images have no
+  sidecar, and that is not a defect. The cost of the search is per *load* — at most
+  three `open` attempts, only on a PE that carries a CodeView record — and the
+  `.pdb` is parsed only when one of them opens and matches.
 - **FID** (`fid`, default-off, Listing-gated, DB via `kuna_fid_db`;
   `decompiler/crates/kuna-analysis/src/analyzers/fid/mod.rs (FidPass)`): a
   byte-exact port of Ghidra's FunctionID hashing — the operand-masked FNV-1a64

@@ -12,23 +12,23 @@
 //!   (`PdbInfoCodeView`/`PdbInfoDotNet` port). Decodes the RSDS/NB10 record into
 //!   [`codeview::CodeViewInfo`] (`{guid|sig, age, path}`). A pure extractor: no
 //!   `pdb` crate.
-//! - [`locate`] — **PR-P1 (this increment)**: tier-1 `.pdb` location (the
-//!   `kuna_pdb_path` env var, the `fid` `kuna_fid_db` precedent) + the
-//!   GUID/age **fingerprint gate** (the FID full-hash-match discipline — never
-//!   apply a wrong/stale PDB).
+//! - [`locate`] — `.pdb` location: the ordered candidate list (an explicit
+//!   `kuna_pdb_path`, the CodeView record's own filename beside the image, then
+//!   `<image stem>.pdb` beside the image) + the GUID/age **fingerprint gate**
+//!   (the FID full-hash-match discipline — never apply a wrong/stale PDB).
 //! - [`walk`] — **PR-P1**: the global symbol-stream walk (`S_PUB32`/`S_GPROC32`
 //!   → function name + VMA) through the `pdb` crate.
 //!
-//! ## The pass ([`PdbPass`], PR-P1, the headline)
+//! ## The pass ([`PdbPass`], the headline)
 //!
 //! [`PdbPass`] is the `.pdb`-consuming `AnalysisPass`, modeled on [`crate::dwarf`]
 //! (the type/name producer) + the [`crate::fid`] external-artifact precedent
-//! (default-off, externally-gated, *rename*-emitting). On a PE it:
+//! (a *rename*-emitting, externally-gated pass). On a PE it:
 //!   1. calls [`codeview::extract_codeview`] for the PE's `{guid, age, path}`;
-//!   2. locates the `.pdb` (tier-1: the `kuna_pdb_path` env var);
-//!   3. opens it via the `pdb` crate and **fingerprint-gates** it
-//!      ([`locate::fingerprint_ok`] — guid/age must match; MISMATCH/ABSENT →
-//!      empty output);
+//!   2. builds the ordered `.pdb` candidate list ([`locate::pdb_candidates`]);
+//!   3. opens each in turn via the `pdb` crate and **fingerprint-gates** it
+//!      ([`locate::fingerprint_ok`] — guid/age must match; the first match wins,
+//!      a MISMATCH/ABSENT candidate moves on, an exhausted list emits nothing);
 //!   4. on a match, walks the global symbols ([`walk::walk_functions`]) and emits
 //!      function **renames** via `out.fid_names` (the label-gated `FUN_*`/`sub_*`
 //!      placeholder rename, the FID precedent) + `out.symbols` (so the function
@@ -39,13 +39,15 @@
 //!
 //! ## Gating + parity safety
 //!
-//! Default-OFF (`--option pdb`, the `fid` precedent), PE-format gated (registered
-//! in `passes.rs` only for `BinaryFormat::Pe`, and the pass self-gates on PE in
-//! `run`), and inert without a configured + fingerprint-matching `.pdb`. A non-PE
-//! image, no `kuna_pdb_path`, an absent/unreadable `.pdb`, or a GUID/age mismatch
-//! all yield an empty output — so every parity gate (`make test`/`test-stages`/
-//! `rust-test`) is byte-identical by construction (the XML datatest path never
-//! calls `run_default_analyses`).
+//! Default-ON (`--option pdb`, DIV-129), PE-format gated (registered in
+//! `passes.rs` only for `BinaryFormat::Pe`, and the pass self-gates on PE in
+//! `run`), and inert without a fingerprint-matching `.pdb`. A non-PE image, a PE
+//! with no CodeView record, no candidate `.pdb` on disk, an unreadable one, or a
+//! GUID/age mismatch all yield an empty output. The fingerprint gate is what makes
+//! the automatic search safe to run by default: a `.pdb` that is not this image's
+//! cannot be applied. Every parity gate (`make test`/`test-stages`/`rust-test`) is
+//! byte-identical by construction — the XML datatest path never calls
+//! `run_default_analyses`.
 
 pub mod codeview;
 pub mod locate;
@@ -56,14 +58,15 @@ use object::{FileKind, Object};
 
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, FidMatch, Phase, SymFact, SymKind};
 
-/// The PE PDB-consuming pass (gate id `pdb`, default-off).
+/// The PE PDB-consuming pass (gate id `pdb`, default-on, DIV-129).
 ///
 /// The kuna analog of Ghidra's `PdbUniversalAnalyzer` (the pure-Java PDB analyzer;
 /// the MS-DIA `PdbAnalyzer` is Windows-native and out of scope). Pure over `ctx`
-/// (reads `ctx.bytes` for the CodeView record + image base, then the supplied
-/// `.pdb` off the filesystem), additive, never failing. Inert on every non-PE
-/// image, when `kuna_pdb_path` is unset, and when the supplied `.pdb` does not
-/// fingerprint-match — so it cannot perturb the parity oracles.
+/// (reads `ctx.bytes` for the CodeView record + image base and `ctx.image_path`
+/// for the sidecar directory, then the located `.pdb` off the filesystem),
+/// additive, never failing. Inert on every non-PE image, when no candidate `.pdb`
+/// exists on disk, and when none of them fingerprint-match — so it cannot perturb
+/// the parity oracles.
 #[derive(Default)]
 pub struct PdbPass;
 
@@ -88,34 +91,25 @@ impl AnalysisPass for PdbPass {
         let Some(cv) = codeview::extract_codeview(ctx.bytes) else {
             return out;
         };
-        // 2. Tier-1 locate: the `kuna_pdb_path` env var (the fid precedent).
-        //    Unset/empty ⇒ inert.
-        let Some(pdb_path) = locate::pdb_path_from_env() else {
+        // 2. Locate: the ordered candidate list (explicit `kuna_pdb_path`, then the
+        //    record's own filename beside the image, then `<stem>.pdb`). Empty ⇒
+        //    inert.
+        let candidates = locate::pdb_candidates(ctx.image_path, &cv);
+        if candidates.is_empty() {
             return out;
-        };
+        }
         // The RVA→VMA addend: the PE ImageBase. Absent (unparsable) ⇒ inert.
         let Some(image_base) = pe_image_base(ctx.bytes) else {
             return out;
         };
 
-        // 3. Open the supplied `.pdb` and apply the fingerprint gate. Any failure
-        //    (unreadable file, not a `.pdb`, no info stream, or a GUID/age MISMATCH)
-        //    is the inert path — NEVER apply a wrong/stale PDB.
-        let Ok(file) = std::fs::File::open(&pdb_path) else {
+        // 3. Open each candidate in turn and apply the fingerprint gate; the first
+        //    match wins. Any failure (unreadable file, not a `.pdb`, no info
+        //    stream, or a GUID/age MISMATCH) moves on — NEVER apply a wrong/stale
+        //    PDB.
+        let Some(mut pdb) = open_fingerprint_matched(&candidates, &cv) else {
             return out;
         };
-        let Ok(mut pdb) = pdb::PDB::open(file) else {
-            return out;
-        };
-        let Ok(info) = pdb.pdb_information() else {
-            return out;
-        };
-        if !locate::fingerprint_ok(&cv, &info.guid.to_string(), info.age) {
-            // The supplied `.pdb` is not this PE's `.pdb` (or is a stale rebuild) —
-            // emit nothing, the FID "don't apply the wrong external knowledge"
-            // discipline.
-            return out;
-        }
 
         // 4. The fingerprint matched: walk the global symbols and emit the renames.
         for f in walk::walk_functions(&mut pdb, image_base) {
@@ -138,6 +132,46 @@ impl AnalysisPass for PdbPass {
 
         out
     }
+}
+
+/// Open the first candidate `.pdb` whose own `{guid, age}` matches the PE's
+/// CodeView record, or `None` when the list is exhausted.
+///
+/// A candidate that does not exist is silently skipped — most images have no
+/// sidecar and that is not a defect. A candidate that IS there but does not match
+/// gets one line on stderr: with the search automatic, a stale `.pdb` left beside
+/// a rebuilt binary is otherwise indistinguishable from having no `.pdb` at all,
+/// and silence sends the user hunting for a pass that is working exactly as
+/// designed.
+fn open_fingerprint_matched(
+    candidates: &[std::path::PathBuf],
+    cv: &codeview::CodeViewInfo,
+) -> Option<pdb::PDB<'static, std::fs::File>> {
+    for path in candidates {
+        let Ok(file) = std::fs::File::open(path) else {
+            continue;
+        };
+        let Ok(mut pdb) = pdb::PDB::open(file) else {
+            continue;
+        };
+        let Ok(info) = pdb.pdb_information() else {
+            continue;
+        };
+        let guid = info.guid.to_string();
+        if locate::fingerprint_ok(cv, &guid, info.age) {
+            return Some(pdb);
+        }
+        eprintln!(
+            "[kuna pdb] {}: age {} guid {} does not match the image's CodeView record \
+             (age {} guid {}); not applied",
+            path.display(),
+            info.age,
+            guid.to_uppercase(),
+            cv.age(),
+            cv.guid_string().unwrap_or_else(|| "<none, NB10 record>".to_string()),
+        );
+    }
+    None
 }
 
 /// Read the PE `ImageBase` (the RVA→VMA addend) from the optional header via the

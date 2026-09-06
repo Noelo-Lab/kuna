@@ -263,6 +263,10 @@ fn arm_thumb_project_smoke() {
     );
 }
 
+/// `pdb_prog.exe` ships its matching `pdb_prog.pdb` beside it, and the shipped
+/// `pdb` default (DIV-129) inventories every function that PDB names -- the hidden
+/// leaf this test expects only fast discovery to find included. Both runs turn it
+/// off so the discovery under test is the only one operating.
 #[test]
 fn fast_project_discovers_real_function_bodies() {
     let bin = fixture("pdb_prog.exe");
@@ -274,6 +278,9 @@ fn fast_project_discovers_real_function_bodies() {
         dir.to_str().unwrap(),
         "--mode",
         "fast",
+        "--option",
+        "pdb",
+        "off",
         "--sleighpath",
         &specs(),
     ]);
@@ -300,6 +307,9 @@ fn fast_project_discovers_real_function_bodies() {
         "fast",
         "--option",
         "fast_funcdisc",
+        "off",
+        "--option",
+        "pdb",
         "off",
         "--sleighpath",
         &specs(),

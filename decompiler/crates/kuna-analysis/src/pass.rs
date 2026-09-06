@@ -538,6 +538,17 @@ pub struct AnalysisCtx<'a> {
     /// default-off). `None` unless the Listing tier is enabled and built at load
     /// (real-ELF path only). PR1 always leaves this `None`; PR2 builds it.
     pub listing: Option<&'a Listing>,
+    /// Where the image lives **on disk**, when it does.
+    ///
+    /// Everything else in this context is the image's *content*; this is the one
+    /// field that says where the content came from, which is what a pass needs to
+    /// reach a companion file the image itself only names — a `.pdb` sidecar, a
+    /// `.dSYM` bundle, a `.gnu_debuglink` target. Derived once, at the context
+    /// build, from the load image's own filename
+    /// ([`crate::passes::image_on_disk_path`]) and `None` unless that names an
+    /// existing file, so a pass may treat `Some(p)` as "the image is this file"
+    /// and resolve companions relative to `p.parent()`.
+    pub image_path: Option<&'a std::path::Path>,
 }
 
 /// One program-prep analysis. Implementors mirror the `elf_plt` contract: pure

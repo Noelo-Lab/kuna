@@ -92,16 +92,16 @@ build failure. The options it enables:
   also need `listing`, which this preset supplies; off ARM they are measured
   no-ops (identical entry sets on 90 x86-64 twins and 12 i386 PE images).
 
-`returndup` became a shipped default in DIV-54 and is deliberately kept on the
-list: the preset **owns** the option, so an earlier `--option returndup off` on
-the same command line is re-enabled by `--mode aggressive`, and the preset's
-contract ("every recovery pass on") does not silently change if a default drifts
-back.
+`returndup` (DIV-54) and `pdb` (DIV-129) became shipped defaults and are
+deliberately kept on the list: the preset **owns** the option, so an earlier
+`--option returndup off` on the same command line is re-enabled by
+`--mode aggressive`, and the preset's contract ("every recovery pass on") does not
+silently change if a default drifts back.
 
 ### The deliberate exclusions
 
 Most off-by-default options are safe to blanket-enable: the format-specific ones
-are inert off their target (`rtti`/`pdb` = PE, `objc`/`macho-arm64e` = Mach-O,
+are inert off their target (`rtti` = PE, `objc`/`macho-arm64e` = Mach-O,
 `sparcstructret` = the SPARC `unimp`-trap idiom, which cannot occur off SPARC,
 and since DIV-93 the four ARM entry passes, which are inert off ARM). These are
 not, and the invariant test's `EXCLUDED_ON_PURPOSE` list is the authority:

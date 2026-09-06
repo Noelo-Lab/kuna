@@ -1,0 +1,45 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Sidecar .pdb discovery + the `pdb` default (`option pdb off|on`, DIV-129).
+
+    The XML wrapper only provides the harness architecture. Both passes clear it
+    and load the real public PE fixture through the same object bootstrap the
+    CLI uses. `pdb_prog.exe` records the CodeView name `pdb_prog.pdb` and the
+    matching `pdb_prog.pdb` is vendored beside it; kuna's loader never names
+    functions from a COFF symbol table, so `0x140001000` has no name of its own.
+
+    Both passes run `mode fast`, whose rooted discovery inventories the direct
+    callee at `0x140001000` either way, so the two passes differ only in the name.
+
+    Pass 1 (`option pdb off`) is the pre-DIV-129 behavior: nothing locates the
+    sidecar, and the function is the engine placeholder `sub_140001000`.
+
+    Pass 2 applies the shipped default with no option line and no environment
+    variable at all: the CodeView record's own filename resolves beside the
+    image, passes the GUID/age fingerprint gate, and the function is named
+    `pdb_demo_compute` from the PDB global symbol stream.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/pdb_prog.exe</com>
+  <com>mode fast</com>
+  <com>option pdb off</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/pdb_prog.exe</com>
+  <com>mode fast</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>quit</com>
+</script>
+<stringmatch name="PDB-SIDECAR #1: with the pass off the function keeps the engine placeholder" min="1" max="1">0x140001000 sub_140001000</stringmatch>
+<stringmatch name="PDB-SIDECAR #2: the shipped default names it from the sidecar .pdb" min="1" max="1">0x140001000 pdb_demo_compute</stringmatch>
+<stringmatch name="PDB-SIDECAR #3: the PE entry is renamed too" min="1" max="1">0x140001010 mainCRTStartup</stringmatch>
+</decompilertest>

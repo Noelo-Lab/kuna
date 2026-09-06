@@ -93,13 +93,14 @@ pub const MODE_TABLE: &[Mode] = &[
 const RELIABLE_OVERRIDES: &[(&str, &str)] = &[];
 
 /// `aggressive` = every off-by-default option flipped ON, **except**
-/// `v850indirectbranch` and `dwarf_lines`. `returndup` is listed even though
-/// DIV-54 made it a shipped default: the preset owns the option outright, so a
-/// user `--option returndup off` earlier on the command line is re-enabled by
-/// the preset and the contract survives any later default drift.
+/// `v850indirectbranch` and `dwarf_lines`. `returndup` and `pdb` are listed even
+/// though DIV-54 and DIV-129 made them shipped defaults: the preset owns the
+/// option outright, so a user `--option returndup off` earlier on the command
+/// line is re-enabled by the preset and the contract survives any later default
+/// drift.
 ///
 /// The default-off options are safe to blanket-enable except those two. Unlike
-/// the format-gated no-ops (`rtti`/`pdb`=PE, `itaniumrtti`=ELF-with-RTTI,
+/// the format-gated no-ops (`rtti`=PE, `itaniumrtti`=ELF-with-RTTI,
 /// `objc`/`macho-arm64e`=Mach-O, `sparcstructret`=SPARC `unimp`-trap idiom -- all
 /// inert off their target):
 ///
@@ -218,7 +219,7 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     ("tailcallentry", "on"),
     ("poolentry", "on"),
     ("objc", "on"),          // Mach-O-only; no-op off-Mach-O
-    ("pdb", "on"),           // PE-only; no-op off-PE
+    ("pdb", "on"),           // PE-only; no-op off-PE (a shipped default since DIV-129)
     ("macho-arm64e", "on"),  // Mach-O arm64e-only; no-op elsewhere
 ];
 

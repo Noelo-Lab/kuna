@@ -547,7 +547,7 @@ fn option_values_live_value_present_for_53_suppressed_for_97() {
         "objc",
         // (kuna) PE PDB metadata recovery — an analysis-pass gate with no codegen
         // live reader (read console-side via kuna_live_value), like the gates around
-        // it. Default-off, PE-only, externally `.pdb`-gated.
+        // it. Default-on (DIV-129), PE-only, `.pdb`-sidecar-gated.
         "pdb",
         // (kuna) loader-tier gate, no codegen live reader (read console-side via
         // kuna_live_value), same as the analysis-pass gates above.
