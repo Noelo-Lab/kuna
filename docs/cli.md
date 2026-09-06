@@ -70,6 +70,17 @@ interactive prompts never pollute the output. `--option NAME VALUE` (repeatable)
 `--kassert "<args>"` flip phase-model sub-phase assertions per run; `--mode
 auto|reliable|aggressive|fast` applies an option preset (`docs/modes.md`).
 
+An option **name** is checked before anything is loaded, on every surface that takes
+`--option`, and an unrecognized one exits 2 rather than running as if it had not been
+given. Names are case- and separator-sensitive, so the message names the nearest
+catalogued spelling when there is one:
+
+```bash
+kuna decompile ./a.out main --option LOWEREDSWITCH off
+#   error: option LOWEREDSWITCH: Unknown option (did you mean "loweredswitch"?);
+#          `kuna catalog` lists every settable name
+```
+
 **The instruction budget.** Flow following decodes at most `maxinstruction`
 instructions per function — 100000 by default, which no ordinary function comes
 near and an obfuscated one blows through. Past the budget the decompiling

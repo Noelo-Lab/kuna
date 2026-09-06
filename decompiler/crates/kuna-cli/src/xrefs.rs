@@ -579,6 +579,7 @@ fn parse_args(argv: &[String]) -> Result<XrefArgs, String> {
                 if i + 2 >= argv.len() {
                     return Err("--option requires NAME VALUE".into());
                 }
+                crate::optname::check(&argv[i + 1])?;
                 options.push((argv[i + 1].clone(), argv[i + 2].clone()));
                 i += 2;
             }

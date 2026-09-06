@@ -516,6 +516,24 @@ Four front-ends drive one engine assembly:
   typelock) and the host's declared types and names get re-derived instead of
   applied.
 
+(kuna) **The option-name contract.** Every `kuna` surface that takes
+`--option NAME VALUE` checks the NAME in its own parser, before a binary is
+opened or a `decomp_dbg` spawned
+(`decompiler/crates/kuna-cli/src/optname.rs (check)`), against the two tables the
+engine dispatches on: the kuna stage-model options
+(`decompiler/crates/kuna-decomp/src/p0_knowledge/options.rs (KUNA_OPTION_NAMES)`)
+and the upstream `OptionDatabase` element ids
+(`decompiler/crates/kuna-decomp/src/p0_knowledge/options.rs
+(UPSTREAM_OPTION_ELEMENTS)`). An unrecognized name exits 2 and names the nearest
+catalogued spelling; nothing is decompiled. The check is up front rather than at
+dispatch because the settable namespace is the control surface an agent reasons
+with: a name that is silently ignored turns "flipping this decision changed
+nothing" into evidence that the decision is innocent, when in fact it never
+flipped. The subprocess surface could not learn it any other way — the console
+reports an unknown name as an `Execution error:` on **stdout** while keeping the
+session alive and exiting 0, and the driver deliberately does not treat a console
+diagnostic as a verdict (§0.2), so the rejection had nowhere to surface.
+
 (kuna) **Surfacing a failed function.** A per-function pipeline abort is
 *recoverable*: the drive catches the unwind and returns the reason as an error
 (`decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (panic_message)`

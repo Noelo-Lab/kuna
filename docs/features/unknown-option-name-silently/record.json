@@ -1,0 +1,67 @@
+{
+  "slug": "unknown-option-name-silently",
+  "need_id": "unknown-option-name-silently",
+  "track": "tooling",
+  "scope": "small",
+  "round": 4,
+  "branch": "feat/re-unknown-option-name-silently",
+  "summary": "An unrecognized `--option NAME` is now a hard error (exit 2) on every kuna surface that takes one, judged in the parser before a binary is opened, against the two tables the engine dispatches on (KUNA_OPTION_NAMES + UPSTREAM_OPTION_ELEMENTS) plus the load-time gates. The message names the nearest catalogued spelling, which answers all three reported misses (LOWEREDSWITCH / lowered_switch / loweredswitc).",
+  "decisions": [
+    {
+      "what": "hypothesis UPHELD on mechanism, and the one observation it was short of is now made",
+      "detail": "The refuter left the chain one step short: it had not seen the Unknown-option error behave the same once an image IS loaded. It does. A decomp_dbg script of `load file fauxware` + `read symbols` + `load function main` + `option zzzznotanoption off` + `print C` prints `Execution error: Unknown option` on STDOUT and exits 0, so the driver has no failing status to notice and no stderr to forward. hypothesis_status can move from inconclusive to upheld."
+    },
+    {
+      "what": "the hypothesis's enumeration was WRONG: eight of the nine surfaces already rejected the name",
+      "detail": "The need lists seven `--option` parse sites and implies the defect is shared. Measured on 329a7144: only `kuna decompile` on its TEXT path is silent. `decompile --json`, `decompile-all`, `functions`, `strings`, `xrefs`, `disassemble`, `decompile-graph` and `decompile-project` all exit 1 with `error: option zzzznotanoption: Unknown option`, because they apply options in-process through `decompile_all.rs (apply_one_option)`, which already had the `unknown option` arm. The silent one is the subprocess path, exactly as the mechanism predicts. `decompile-project`/`decompile-graph` are not separate parse sites at all -- they share `decompile_all::parse_args` -- so there are five, not seven."
+    },
+    {
+      "what": "validate the NAME up front, rather than making a console `Execution error:` fatal",
+      "detail": "The need offered both. The second is blocked by an existing contract, not just by blast radius: `kuna-cli/tests/decompile_cli.rs (an_unrelated_console_diagnostic_is_not_a_commit_failure)` asserts that an `Execution error: Unknown option` in the transcript must NOT change the exit code, because console diagnostics are attributed to the command echo above them. Validating the name in the parser is also strictly better for the eight surfaces that already rejected it: the answer now comes before the load rather than after it, and it comes with a suggestion."
+    },
+    {
+      "what": "the accept set is the engine's own two tables, not a third copy",
+      "detail": "`KUNA_OPTION_NAMES` and `UPSTREAM_OPTION_ELEMENTS` are exactly what the console handler (`ifacedecomp.rs`) and `apply_one_option` dispatch on, so the CLI cannot reject a name the engine honours. Verified before writing the check by feeding all 193 names of the union through a live decomp_dbg session: zero `Unknown option`. `UPSTREAM_OPTION_ELEMENTS` is a const list while `OptionDatabase::new` registers its 37 options by hand, so a new in-module test (`options/tests.rs`) pins the two together -- a name added to one and not the other is either a silently swallowed option or a good name the CLI would start refusing."
+    },
+    {
+      "what": "a `did you mean` suggestion, because every reported miss was one edit away",
+      "detail": "`LOWEREDSWITCH`, `lowered_switch` and `loweredswitc` are a case slip, a separator slip and a typo. The search normalizes case and drops `_`/`-` first (which answers the first two exactly), then falls back to a single nearest Levenshtein neighbour within one edit for a short name and two for a name of 10 characters or more. `zzzznotanoption` is deliberately outside that budget and gets no suggestion."
+    },
+    {
+      "what": "no option, no stages XML, no catalog counter, no DIV row",
+      "detail": "Argument parsing in kuna-cli ahead of any load, plus one added in-module test in kuna-decomp. No engine or analysis behaviour changes and nothing new runs on a decompiling path, so emitted C cannot move. Matches the three CLI-tier repipe PRs already merged this round (#448/#449/#452), none of which carries a DIV row."
+    }
+  ],
+  "inertness": {
+    "method": "the only non-test source changed is `kuna-cli/src/{optname.rs,main.rs,decompile.rs,decompile_all.rs,disassemble.rs,xrefs.rs,strings.rs}` -- one new module plus one call in each `--option` parse arm, all of which run before a binary is opened. The kuna-decomp change is a `#[test]` only. No kuna-analysis or kuna-console source is touched.",
+    "note": "make test 675/675 PARITY OK and make test-stages 640/640 PARITY OK confirm it; `kuna decompile fauxware main --option loweredswitch off` still produces the same bytes it did before."
+  },
+  "sweep": {
+    "question": "does the check reject any name the engine would have honoured, on any surface?",
+    "method": "(1) the union of KUNA_OPTION_NAMES and UPSTREAM_OPTION_ELEMENTS fed to a live decomp_dbg session with an image loaded, one `option <name>` per line; (2) the 13 load-time gates the same way; (3) five catalogued names (loweredswitch, listing, readonly, setlanguage, relocobjects) through all nine surfaces after the change; (4) `--language rust` (which lowers to `setlanguage`) and `--mode fast` (which injects a preset) on the text path.",
+    "result": "no false rejection anywhere. Every union name is dispatched on (the only `Unknown option` in the sweep was `hideextensions`, whose ArchOption upstream deliberately does not register and which is therefore correctly absent from the accept set). All 13 load-time gates are already in KUNA_OPTION_NAMES; `is_loadtime_gate` is kept in the accept set as insurance, not as the load-bearing arm. AFTER: 9 of 9 surfaces answer a misspelled name with exit 2 and the same message; the working case `--option loweredswitch off` still changes the output (sha a14c226ac488 without it, unchanged with a bogus name before the fix, and a hard error after)."
+  },
+  "gates": {
+    "make test": "PARITY OK, 675/675 assertions",
+    "make test-stages": "PARITY OK, 640/640 assertions",
+    "make rust-test": "5,727 passed / 1 failed / 38 ignored. The one failure is `verify_w10_proto_unlock::w10_proto_unlock_const_return_collapses_no_tied_roundtrip` ('oracle promote_compare signature drifted') -- the known repipe-worktree artifact: the loop exports KUNA_DECOMP_TEST at this worktree's decomp_test_dbg. Re-run with KUNA_DECOMP_TEST unset: 4/4 pass. The diff touches no kuna-decomp source outside a #[test].",
+    "make check-spec": "OK (lenient mode)",
+    "make test-cli": "47/47 with the probe promoted",
+    "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
+    "cargo test -p kuna-cli --test option_name_cli": "4/4 with the fix; 3 of the 4 FAIL without it (A/B by reverting kuna-cli/src and rebuilding). The fourth, `a_catalogued_name_still_gets_past_the_parser`, passes either way by design -- it is the guard that the check did not start refusing real names."
+  },
+  "acceptance": {
+    "acceptance_id": "a-4c01c2fcb1ed",
+    "result": "PASS",
+    "transition": "closed",
+    "promoted_to": "tests/cli/unknown-option-name-silently.json",
+    "promotion_note": "the filed acceptance targeted the dataset image (KataVM_L1 0x12d0 --addr) and PASSED there first (exit 2, stderr names the option); it was then re-pointed at the vendored `kuna-analysis/tests/fixtures/fauxware` in the need doc's Acceptance block, which changed the derived acceptance_id from a-fe136d13b6e0 to a-4c01c2fcb1ed (front matter updated to match). The name is judged in the parser before anything is loaded, so any real binary asks the same question. `--force` because the captain flips `status: open` only on merge. `notes` was cut to 310 characters for the 400-character schema cap.",
+    "reproduction_confirmed_on_main": "on 329a7144, `kuna decompile fauxware main --option LOWEREDSWITCH off` exits 0 with an empty stderr and stdout sha a14c226ac488 -- byte-identical to the run with no --option at all; the same for lowered_switch, loweredswitc and zzzznotanoption, while `--option loweredswitch off` alone changes nothing on this fixture but does on the dataset witness (c4a4013bf5b4 vs af7dfc7999d9)."
+  },
+  "not_closed": [
+    "A bad option VALUE is still swallowed on the same surface, and it is the same friction: `kuna decompile fauxware main --option loweredswitch bogusvalue` exits 0 with an empty stderr and byte-identical output, while `kuna decompile-all` answers `error: option loweredswitch: Must specify toggle value, on/off`. Deliberately out of scope -- this need and its acceptance are about the NAME. Closing it means either duplicating every option's value grammar in the CLI (the drift this PR avoided for names) or teaching the driver to attribute a console `Execution error:` to the `option` line above it, which is a transcript-attribution change worth its own need. Worth filing.",
+    "The check is a name check only, so `--option maxinstruction notanumber` reaches the engine on the text path for the same reason.",
+    "docs/re-needs/index.json is deliberately NOT regenerated: `needs reindex` runs over the whole backlog and this worktree holds only the tracked need docs. The need doc itself is added; the captain reindexes."
+  ],
+  "pr": null
+}

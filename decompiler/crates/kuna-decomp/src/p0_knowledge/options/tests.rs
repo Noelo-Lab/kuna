@@ -1161,3 +1161,17 @@ fn test_decode_lenient_skips_unknown_and_applies_known() {
     assert_eq!(warnings.len(), 1);
     assert!(warnings[0].starts_with("Warning"), "{}", warnings[0]);
 }
+
+/// `UPSTREAM_OPTION_ELEMENTS` is what `kuna-cli` validates a `--option NAME`
+/// against before it spawns a run, while `OptionDatabase::new` is what actually
+/// dispatches the name; a name in one and not the other is either a silently
+/// swallowed option or a good name the CLI refuses, so the two lists must agree.
+#[test]
+fn the_element_list_and_the_dispatch_map_register_the_same_options() {
+    let db = OptionDatabase::new();
+    let dispatched: BTreeMap<uint4, &str> =
+        db.optionmap.iter().map(|(id, opt)| (*id, opt.get_name())).collect();
+    let listed: BTreeMap<uint4, &str> =
+        UPSTREAM_OPTION_ELEMENTS.iter().map(|e| (e.get_id(), e.get_name())).collect();
+    assert_eq!(dispatched, listed);
+}

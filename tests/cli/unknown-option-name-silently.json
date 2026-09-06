@@ -1,0 +1,41 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "main",
+    "--option",
+    "zzzznotanoption",
+    "off"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/fauxware",
+    "binary_sha256": "c2d90645a45e99221593547e55c601a901b80f807ae96f94c60a7661df0b3e0b",
+    "binary_size": 8776,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/fauxware",
+    "selector": "main",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "ne": 0
+    },
+    "stderr_matches": [
+      "zzzznotanoption"
+    ],
+    "stdout_absent": [
+      "(?s)\\bmain\\s*\\("
+    ]
+  },
+  "notes": "Vendored stand-in: the option NAME is judged in the parser, before anything is loaded, so any real binary asks the same question. The dataset original (KataVM_L1 0x12d0 --addr) stays the witness in Reproduction and passes the same assertions; this target is in-repo so the probe runs where there is no dataset."
+}

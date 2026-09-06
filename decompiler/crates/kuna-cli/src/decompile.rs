@@ -1028,6 +1028,10 @@ pub fn main(argv: &[String]) -> i32 {
                     eprintln!("error: --option requires NAME VALUE");
                     return 2;
                 }
+                if let Err(msg) = crate::optname::check(&argv[i + 1]) {
+                    eprintln!("error: {msg}");
+                    return 2;
+                }
                 options.push((argv[i + 1].clone(), argv[i + 2].clone()));
                 forwarded.extend(argv[i..i + 3].iter().cloned());
                 i += 2;

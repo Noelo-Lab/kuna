@@ -44,6 +44,9 @@ mod assertdecl;
 #[path = "../src/funcdecl.rs"]
 mod funcdecl;
 #[allow(dead_code)]
+#[path = "../src/optname.rs"]
+mod optname;
+#[allow(dead_code)]
 #[path = "../src/decompile.rs"]
 mod decompile;
 #[allow(dead_code)]

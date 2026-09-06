@@ -1217,7 +1217,7 @@ pub(crate) fn resolve_targets(
 /// gates are exported as env vars BEFORE the bootstrap; the matching `option`
 /// line is still applied afterward (for the catalog record), exactly as
 /// `kuna decompile` does.
-fn is_loadtime_gate(name: &str) -> bool {
+pub(crate) fn is_loadtime_gate(name: &str) -> bool {
     matches!(
         name,
         "relocobjects"
@@ -2084,6 +2084,7 @@ pub(crate) fn parse_args_with_filters(
                 if i + 2 >= argv.len() {
                     return Err("--option requires NAME VALUE".into());
                 }
+                crate::optname::check(&argv[i + 1])?;
                 options.push((argv[i + 1].clone(), argv[i + 2].clone()));
                 i += 2;
             }
