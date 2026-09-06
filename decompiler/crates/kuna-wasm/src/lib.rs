@@ -289,7 +289,9 @@ fn resolve_language(
         return Ok(explicit);
     }
     let Ok(bytes) = std::fs::read(binary) else { return Ok(None) };
-    let Ok(file) = object::File::parse(&*bytes) else { return Ok(None) };
+    let Ok(file) = kuna_analysis::loadimage_object::parse_object(&*bytes) else {
+        return Ok(None);
+    };
     Ok(match kuna_analysis::sourcelang::detect_compiler(&file, &bytes) {
         kuna_analysis::sourcelang::Compiler::Rustc => Some("rust-language"),
         _ => None,
@@ -356,7 +358,7 @@ fn load_program(
         std::fs::read(binary)
             .ok()
             .and_then(|bytes| {
-                object::File::parse(&*bytes)
+                kuna_analysis::loadimage_object::parse_object(&*bytes)
                     .ok()
                     .map(|file| file.architecture() != object::Architecture::X86_64)
             })

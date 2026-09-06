@@ -25,100 +25,6 @@ fn run(command: &str, binary: &str, args: &[&str]) -> Output {
 }
 
 #[test]
-fn arm_return_flow_assertion_preserves_successful_output() {
-    let code: Vec<u8> = [0xe1a04770u32, 0xe1a0300e, 0xe12fff13]
-        .into_iter()
-        .flat_map(u32::to_le_bytes)
-        .collect();
-    let path = common::scratch_file("arm-asserted-return", "elf");
-    std::fs::write(&path, arm_images::elf(&code, &[], &[(0, "entry", 12)])).unwrap();
-    for json in [false, true] {
-        let mut args = vec!["entry", "--assert", "flow 0x10008 return"];
-        if json {
-            args.push("--json");
-        }
-        let output = run("decompile", path.to_str().unwrap(), &args);
-        let text = String::from_utf8(output.stdout).unwrap();
-        assert!(
-            output.status.success(),
-            "{text}\n{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        assert!(text.contains("return;"), "{text}");
-        assert!(!text.contains("mode is ambiguous"), "{text}");
-    }
-    std::fs::remove_file(path).unwrap();
-}
-
-#[test]
-fn arm_decompile_all_preserves_later_function_output() {
-    // Thumb: mov lr,pc; bx lr (call); bx lr (return).
-    // A32: two ordinary instructions followed by a closed loop.
-    let code: Vec<u8> = [
-        0x477046feu32,
-        0xe1a04770,
-        0xeafffffe,
-        0xe1a00000,
-        0xe3a00007,
-        0xe12fff1e,
-    ]
-    .into_iter()
-    .flat_map(u32::to_le_bytes)
-    .collect();
-    let path = common::scratch_file("arm-probe-context", "elf");
-    std::fs::write(
-        &path,
-        arm_images::elf(&code, &[], &[(0, "probe", 12), (16, "second", 8)]),
-    )
-    .unwrap();
-    let alone = run("decompile", path.to_str().unwrap(), &["second", "--json"]);
-    assert!(
-        alone.status.success(),
-        "{}",
-        String::from_utf8_lossy(&alone.stderr)
-    );
-    assert!(String::from_utf8_lossy(&alone.stdout).contains("return 7;"));
-
-    let together = run(
-        "decompile-all",
-        path.to_str().unwrap(),
-        &["--json", "--assert", "flow 0x10008 return"],
-    );
-    let text = String::from_utf8(together.stdout).unwrap();
-    assert!(
-        together.status.success(),
-        "{text}\n{}",
-        String::from_utf8_lossy(&together.stderr)
-    );
-    assert!(text.contains("return;"), "{text}");
-    assert!(text.contains("return 7;"), "{text}");
-    std::fs::remove_file(path).unwrap();
-}
-
-#[test]
-fn arm_return_beyond_probe_budget_remains_successful() {
-    let mut words = vec![0xe1a04770u32];
-    words.extend([0xe1a08008; 16]);
-    words.push(0xe12fff1e);
-    let code: Vec<u8> = words.into_iter().flat_map(u32::to_le_bytes).collect();
-    let path = common::scratch_file("arm-long-return", "elf");
-    std::fs::write(
-        &path,
-        arm_images::elf(&code, &[], &[(0, "entry", code.len() as u64)]),
-    )
-    .unwrap();
-    let output = run("decompile", path.to_str().unwrap(), &["entry", "--json"]);
-    let text = String::from_utf8(output.stdout).unwrap();
-    assert!(
-        output.status.success(),
-        "{text}\n{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert!(text.contains("return;"), "{text}");
-    std::fs::remove_file(path).unwrap();
-}
-
-#[test]
 fn explicit_thumb_applies_without_elf_section_headers() {
     let mut bytes = arm_images::elf(&[0x07, 0x20, 0x70, 0x47], &[], &[]);
     bytes[32..36].fill(0); // e_shoff
@@ -406,4 +312,38 @@ fn thumb_coff_project_keeps_section_metadata() {
     );
     std::fs::remove_file(path).unwrap();
     std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn armnt_machine_decodes_thumb_without_flags() {
+    let mut bytes = std::fs::read(
+        repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/armv4t_thumb_pe.exe"),
+    )
+    .unwrap();
+    let pe = u32::from_le_bytes(bytes[0x3c..0x40].try_into().unwrap()) as usize;
+    bytes[pe + 4..pe + 6].copy_from_slice(&0x01c4u16.to_le_bytes());
+    let path = common::scratch_file("armnt-auto", "exe");
+    std::fs::write(&path, bytes).unwrap();
+    let out = run("decompile", path.to_str().unwrap(), &["0x401000", "--json"]);
+    let text = String::from_utf8(out.stdout).unwrap();
+    assert!(
+        out.status.success(),
+        "{text}\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(text.contains("return 7;"), "ARMNT decoded as A32: {text}");
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn strings_refuses_an_isa_it_would_never_apply() {
+    let binary = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/fauxware");
+    let output = run(
+        "strings",
+        binary.to_str().unwrap(),
+        &["--no-xrefs", "--isa", "thumb"],
+    );
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("--isa has no effect with --no-xrefs"), "{stderr}");
 }

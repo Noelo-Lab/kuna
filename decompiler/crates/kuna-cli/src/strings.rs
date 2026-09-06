@@ -437,6 +437,11 @@ pub(crate) fn parse_args(argv: &[String]) -> Result<StringsArgs, String> {
     }
 
     let binary = binary.ok_or("strings requires <binary>")?;
+    // `--isa` only reaches the reference walk, which `--no-xrefs` skips: refuse
+    // the pair rather than accept a decode-mode selection that cannot apply.
+    if no_xrefs && isa.is_some() {
+        return Err("--isa has no effect with --no-xrefs (no code is decoded)".into());
+    }
     let (ascii, utf16) = match encoding.as_str() {
         "ascii" => (true, false),
         "utf16" => (false, true),

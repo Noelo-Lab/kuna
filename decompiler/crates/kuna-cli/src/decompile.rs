@@ -1340,7 +1340,8 @@ fn usage() {
          \x20                     [--option N V].. [--kassert ARGS].. \\\n\
          \x20                     [--define-function S[-E][=N]|@FILE].. \\\n\
          \x20                     [--assert DIRECTIVE|@FILE].. [--assert-strict] \\\n\
-         \x20                     [--slice ARCH] [--target T] [--sleighpath D]\n\
+         \x20                     [--isa auto|arm|thumb] [--slice ARCH] [--target T] \\\n\
+         \x20                     [--sleighpath D]\n\
          \n\
          Decompile ONE function.  The target is a name, or an address with --addr\n\
          (a `0x`-prefixed target implies it).  --json emits the decompile-all record\n\

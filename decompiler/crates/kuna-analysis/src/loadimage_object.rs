@@ -418,6 +418,11 @@ impl ObjectLoadImage {
         let fmt = crate::loader::format::detect(&file)?;
 
         let target = target.and_then(explicit_language_target);
+        if emit_diagnostics {
+            if let Some(note) = target.and_then(|t| target_endian_note(&file, t)) {
+                eprintln!("[kuna target] {filename}: {note}");
+            }
+        }
         let effective_arch = effective_architecture(&file, bytes);
         let archtype = language_id_for(
             &file,
@@ -1166,7 +1171,6 @@ fn language_id_for(
     target: Option<&str>,
 ) -> KunaResult<Vec<u8>> {
     if let Some(target) = target {
-        validate_target_endian(file, target, filename)?;
         return Ok(target.as_bytes().to_vec());
     }
     let little = file.is_little_endian();
@@ -1288,22 +1292,18 @@ pub fn explicit_language_target(target: &str) -> Option<&str> {
     }
 }
 
-fn validate_target_endian(
-    file: &object::File,
-    target: &str,
-    filename: &str,
-) -> KunaResult<()> {
-    let target_endian = target.split(':').nth(1);
-
-    if let Some(endian) = target_endian.filter(|value| matches!(*value, "LE" | "BE")) {
-        let container = if file.is_little_endian() { "LE" } else { "BE" };
-        if endian != container {
-            return Err(KunaError::lowlevel(format!(
-                "File: {filename} : target {target:?} is {endian}-endian but the container is {container}-endian"
-            )));
-        }
-    }
-    Ok(())
+/// An explicit target whose endian field contradicts the container's. Reported,
+/// not refused: `--target` overrides what the container declares, and forcing a
+/// byte-swapped decode of a mislabeled image is a legitimate use of it.
+fn target_endian_note(file: &object::File, target: &str) -> Option<String> {
+    let endian = target
+        .split(':')
+        .nth(1)
+        .filter(|value| matches!(*value, "LE" | "BE"))?;
+    let container = if file.is_little_endian() { "LE" } else { "BE" };
+    (endian != container).then(|| {
+        format!("target {target:?} is {endian}-endian but the container is {container}-endian")
+    })
 }
 
 /// Compose the SLEIGH language id from the format-neutral `arch` + `endian`
@@ -1823,20 +1823,38 @@ mod tests {
     }
 
     #[test]
-    fn explicit_target_rejects_pe_endian_conflicts() {
+    fn explicit_target_keeps_pe_mapping_across_an_endian_conflict() {
         let path = format!(
             "{}/tests/fixtures/armv4t_thumb_pe.exe",
             env!("CARGO_MANIFEST_DIR")
         );
         let bytes = std::fs::read(&path).expect("read synthetic ARM PE fixture");
-        let error = ObjectLoadImage::from_bytes_with_target(&path, &bytes, "ARM:BE:32:v4t:default")
-            .expect_err("incompatible target endianness must fail")
-            .explain()
-            .to_string();
-        assert!(
-            error.contains("BE-endian"),
-            "unexpected diagnostic: {error}"
+        let automatic = ObjectLoadImage::from_bytes(&path, &bytes).unwrap();
+        let mut image =
+            ObjectLoadImage::from_bytes_with_target(&path, &bytes, "ARM:BE:32:v4t:default")
+                .expect("an endian-conflicting target is reported, not refused");
+        assert_eq!(image.get_arch_type(), b"ARM:BE:32:v4t:default");
+        assert_eq!(image.section_snapshot(), automatic.section_snapshot());
+        let ram = Rc::clone(manager().get_default_code_space().unwrap());
+        image.attach_to_space(Rc::clone(&ram));
+        assert_eq!(
+            image.load(4, &Address::new(ram, 0x401000)).unwrap(),
+            [0x07, 0x20, 0x70, 0x47]
         );
+    }
+
+    #[test]
+    fn target_endian_note_fires_only_on_a_real_conflict() {
+        let path = format!(
+            "{}/tests/fixtures/armv4t_thumb_pe.exe",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let bytes = std::fs::read(&path).expect("read synthetic ARM PE fixture");
+        let file = object::File::parse(bytes.as_slice()).unwrap();
+        assert!(target_endian_note(&file, "ARM:BE:32:v4t:default")
+            .is_some_and(|note| note.contains("BE-endian") && note.contains("LE-endian")));
+        assert!(target_endian_note(&file, "ARM:LE:32:v4t:default").is_none());
+        assert!(target_endian_note(&file, "ARM").is_none());
     }
 
     #[test]

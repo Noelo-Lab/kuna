@@ -478,8 +478,9 @@ that analysis.
 `--target <SLEIGH-language-id>` selects the decoder while a recognized object
 container continues to own its section mappings and image base. `--target default`
 requests automatic language selection, including the normal compiler-model fallback.
-The decoder's instruction width need not match the container's header class; for
-example, ELF32 can carry 16-bit x86 code. Conflicting endianness is still an error.
+The decoder's instruction width, architecture and endianness need not match what
+the container's header declares; for example, ELF32 can carry 16-bit x86 code. An
+endian disagreement is reported on stderr and the requested decoder is still used.
 This also permits a valid PE/COFF image whose machine value is newer than the object
 parser's architecture table to load under an explicit language. PE/COFF machine
 `0x01c2` is recognized directly as little-endian ARM32, including bare COFF
@@ -497,10 +498,10 @@ during discovery, cross-reference analysis, and graph assembly as well as
 decompilation. On ELF images without section headers, explicit ISA context covers
 executable `PT_LOAD` ranges. Fixed-A32 languages without `TMode` accept `--isa arm`
 without a context paint and reject `--isa thumb` with a target-selection diagnostic.
-Odd ARM function pointers are normalized to their even byte address. With no
-mode evidence, decoding uses the selected language's default context; use `--isa`
-to select another mode. Explicit flow assertions remain authoritative, including
-returns that differ from an instruction's raw flow classification.
+With no mode evidence, decoding uses the selected language's default context; use
+`--isa` to select another mode. `--isa` is refused where it could not apply —
+`strings --no-xrefs` decodes nothing, so the pair is a usage error rather than a
+silently dropped flag.
 
 **Failure contract (DIV-45).** A function whose decompile pipeline aborts is
 *loud*:

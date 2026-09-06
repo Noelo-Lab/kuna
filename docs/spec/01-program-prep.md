@@ -76,7 +76,7 @@ bridged across the process by environment variables the CLI exports:
 `KUNA_RELOCREBASE` (`relocrebase`), `KUNA_DYNRELOCS` (`dynrelocs`),
 `KUNA_MSVCFPCONST` (`msvcfpconst`), `KUNA_PDATACHAINED` (`pdatachained`),
 `KUNA_MACHO_ARM64E` (`macho-arm64e`),
-`KUNA_MACHO_SLICE` (`--slice`). For those,
+`KUNA_MACHO_SLICE` (`--slice`), `KUNA_ARM_ISA` (`--isa`). For those,
 the option rows exist for discoverability while the live gate is the env var. The
 external-artifact paths `kuna_fid_db` and `kuna_pdb_path` are different: they only
 *locate* the artifact — the `fid`/`pdb` passes stay flag-gated at the deferred
@@ -292,25 +292,6 @@ fallback retry to the arch default when the preferred model has no vendored spec
 the section-flag translation, import resolution (§1.3), and extra constant ranges
 (the MIPS GOT). Two format specifics live above the trait:
 
-An explicit target changes only language selection: the parsed container still
-owns section mapping, image base, symbols, and imports. Container header class is
-independent of decoder instruction width, so ELF32 can be decoded with a 16-bit
-x86 language. An explicit endian conflict is rejected. Empty targets and the
-`default` sentinel select the detected architecture and retain compiler-model
-fallback; the loader and console normalize these requests identically.
-This separation lets a recognized container remain loadable when `object` reports
-its architecture as unknown. In particular, PE/COFF machine `0x01c2`
-(`IMAGE_FILE_MACHINE_THUMB`) is treated as little-endian ARM32 for language
-selection and supplies whole-image Thumb context; its sections and PE image base
-still come from the container parser.
-
-Bare THUMB COFF objects use the typed COFF reader before architecture selection:
-the generic `object` magic dispatcher omits machine `0x01c2`. The shared
-`loadimage_object::parse_object` entry point preserves the original machine,
-sections, and symbols, and is also used when analysis or a CLI inspection
-command reopens the image. It retains the typed reader's header and section
-validation; it does not rewrite the machine bytes to another architecture.
-
 - **Relocatable objects** (angr, `relocobjects`, default-on) — a pre-link object
   does not say where its bytes live, and each format fails that differently. An
   ELF `.o` has no program headers, so the faithful loader maps zero bytes and
@@ -467,6 +448,28 @@ validation; it does not rewrite the machine bytes to another architecture.
   parses `LC_DYLD_CHAINED_FIXUPS` into a VMA→resolved-pointer overlay (rebase and
   arm64e auth-rebase handled; bind entries deliberately absent, so a consumer
   misses and falls back rather than reading a wrong address).
+
+An explicit target changes only language selection: the parsed container still
+owns section mapping, image base, symbols, and imports. Container header class is
+independent of decoder instruction width, so ELF32 can be decoded with a 16-bit
+x86 language. An endian disagreement is reported on stderr rather than refused:
+`--target` is the flag that overrides what the container declares, and a
+byte-swapped decode of a mislabeled image is a legitimate use of it. Empty targets
+and the `default` sentinel select the detected architecture and retain the
+compiler-model fallback; the loader and console normalize these requests
+identically.
+This separation lets a recognized container remain loadable when `object` reports
+its architecture as unknown. In particular, PE/COFF machine `0x01c2`
+(`IMAGE_FILE_MACHINE_THUMB`) is treated as little-endian ARM32 for language
+selection and supplies whole-image Thumb context; its sections and PE image base
+still come from the container parser.
+
+Bare THUMB COFF objects use the typed COFF reader before architecture selection:
+the generic `object` magic dispatcher omits machine `0x01c2`. The shared
+`loadimage_object::parse_object` entry point preserves the original machine,
+sections, and symbols, and is also used when analysis or a CLI inspection
+command reopens the image. It retains the typed reader's header and section
+validation; it does not rewrite the machine bytes to another architecture.
 
 ## 1.3 Loader markup
 
@@ -679,14 +682,14 @@ The analysis commit applies input paints after all other passes' context facts.
 Before painting, the console checks whether the loaded ARM language exposes `TMode`.
 Fixed-A32 languages without that variable accept explicit `arm` without any paint;
 `thumb` fails with an unsupported-mode diagnostic even if there are no code ranges.
-The generic PE ARM machine is not a whole-image A32 hint because such an
-image may mix ARM and Thumb. ARM entry selectors fold the pointer-mode bit and
-decode at the even byte address. Without mode evidence, decoding uses the
-selected language's default context. Successful output, including an empty
-return, is preserved: an alternate raw decode reaching a return does not establish
-that the selected mode is wrong. Explicit flow assertions participate in the
-effective flow followed by decompilation, including asserted returns whose raw
-instruction decodes as an indirect branch.
+The generic PE ARM machine (`0x01c0`) is deliberately not a whole-image hint in
+either direction, because such an image may mix ARM and Thumb; the THUMB
+(`0x01c2`) and ARMNT (`0x01c4`) machines are Thumb-only by definition, so those
+two do paint the image, with no flag and no option, where an unflagged run
+previously decoded their bytes as A32. Without mode evidence, decoding uses the
+selected language's default context. `--isa` is refused rather than dropped where
+it could not reach a decode: `strings --no-xrefs` walks no references, so pairing
+the two is a usage error.
 
 ## 1.4 Metadata analyzers
 

@@ -65,7 +65,7 @@ impl Classifier {
     /// `"thunk"`/`"func"`).
     pub fn new(prog: &ConsoleProgram, binary: &str, entries: impl Iterator<Item = u64>) -> Self {
         let bytes = std::fs::read(binary).unwrap_or_default();
-        match object::File::parse(&*bytes) {
+        match kuna_analysis::loadimage_object::parse_object(&*bytes) {
             Ok(file) => Classifier::from_object(prog, Some(&file), entries),
             Err(_) => Classifier::from_object(prog, None, entries),
         }

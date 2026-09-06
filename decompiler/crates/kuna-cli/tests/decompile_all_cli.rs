@@ -801,7 +801,10 @@ fn arm_thumb_pe_functions_and_address_decompile() {
     assert!(ok, "automatic PE Thumb mode failed: {stderr}");
     assert!(stdout.contains("return 7;"), "wrong ARM/Thumb decode:\n{stdout}");
 
-    let (_stdout, stderr, ok) = run_kuna(&[
+    // An endian-conflicting --target is reported, not refused: --target is the
+    // flag that overrides what the container declares, and a byte-swapped decode
+    // of a mislabeled image is a legitimate use of it.
+    let (stdout, stderr, ok) = run_kuna(&[
         "functions",
         &binary,
         "--target",
@@ -809,8 +812,12 @@ fn arm_thumb_pe_functions_and_address_decompile() {
         "--sleighpath",
         &sp,
     ]);
-    assert!(!ok, "endianness-conflicting target must fail");
-    assert!(stderr.contains("BE-endian") && stderr.contains("LE-endian"));
+    assert!(ok, "endian-conflicting target must still load: {stderr}");
+    assert!(
+        stderr.contains("BE-endian") && stderr.contains("LE-endian"),
+        "the mismatch must still be reported: {stderr}"
+    );
+    assert!(stdout.contains("0x401000"), "{stdout}");
 }
 
 /// The past-pathological function of the stripped-ELF hang repro now
