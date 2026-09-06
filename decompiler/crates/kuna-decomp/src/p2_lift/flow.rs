@@ -331,6 +331,19 @@ pub trait FlowEnvironment {
         false
     }
 
+    /// (kuna `int3pad`) Is `op` the CALLIND half of a decoded `int3`, and if so
+    /// how long is the pad and does the flow end there?  See
+    /// [`kuna_int3pad`](crate::kuna_int3pad).  The default shell reports `None`
+    /// (upstream behavior: the pad prints as an indirect call through the `swi`
+    /// userop and nothing says control ran into it).
+    fn int3_pad_site(
+        &self,
+        _fd: &Funcdata,
+        _op: OpId,
+    ) -> Option<crate::kuna_int3pad::Int3PadSite> {
+        None
+    }
+
     /// (kuna) tee-O2 tail-jump: is the direct `CPUI_BRANCH` `op`, whose target is
     /// `dest`, an `-O2` tail call to another known function's entry (and so should
     /// be recovered as a `CALL` + `RETURN` rather than flow-followed into the
@@ -2284,6 +2297,28 @@ truncating the fall-through here"
             let haltop = self.artificial_halt(&addr, pcodeop_flags::noreturn)?;
             self.data.op_dead_insert_after(haltop, op);
             return Ok(true);
+        }
+        // (kuna `int3pad`) The same lowering over vector 3 is a decoded `int3`:
+        // control ran into a breakpoint byte, which the printer otherwise renders
+        // as an ordinary call through a pointer.  Name it, and under `int3pad
+        // halt` end the flow there as well.
+        if let Some(site) = self.env.int3_pad_site(&self.data, op) {
+            let addr = self
+                .data
+                .obank()
+                .get(op)
+                .expect("int3pad: stale call op")
+                .get_addr()
+                .clone();
+            self.data.warning(&crate::kuna_int3pad::warning_text(site.run), &addr);
+            if site.halt {
+                if let Some(idx) = self.data.get_call_specs_index(op) {
+                    self.data.get_call_specs_mut(idx).proto_mut().set_no_return(true);
+                }
+                let haltop = self.artificial_halt(&addr, pcodeop_flags::noreturn)?;
+                self.data.op_dead_insert_after(haltop, op);
+                return Ok(true);
+            }
         }
         // C++ `return checkForFlowModification(*res)` (flow.cc:740).  An indirect
         // call has an invalid entry, so the inline/noreturn flow effects are only

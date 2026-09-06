@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    668,
-    668
+    671,
+    671
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -231,6 +231,9 @@
     "data:GUARDARM #1: OFF inverts the guard and nests the body one level deeper (pass 1 only)",
     "data:GUARDARM #2: ON keeps the guard flat with the fatal call as its clause (pass 2 only)",
     "data:GUARDARM #3: the no-return clause call is emitted in BOTH passes",
+    "data:INT3PAD #1: the four-byte pad is counted and named (warn and halt passes only)",
+    "data:INT3PAD #2: the trap is the function's return value except when it ends the flow",
+    "data:INT3PAD #3: int3pad halt renders the trap as a statement, not a returned call",
     "data:ISAMODE #1: no ISA-mode bookkeeping user-op survives into the emitted C",
     "data:ISAMODE #2: the four table-reachable tail-call arms are intact",
     "data:ISAMODE #3: the table-reachable f0 call sites survive the injection",

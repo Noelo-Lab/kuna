@@ -1954,6 +1954,25 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "int3pad"
+values = "off|warn|halt"
+default = "warn"
+destructive = false
+phase = "P2"
+subphase = "flow-classification"
+strength = "HARD"
+rewind = "P2"
+issue = "GH-468"
+summary = "Name the `int3` pad control ran into, instead of printing it as a call through a pseudo-op. x86 SLEIGH lowers `INT3` to `intloc = swi(3); call [intloc]; return [0:1]` (ia.sinc:3670) - honest lifting, since SLEIGH cannot know what sits behind the vector - and the printer renders that as `v1 = (void *)swi(3); return (*v1)();`, which reads as an ordinary call through a function pointer. Nothing in the C says the byte at that address is `0xcc`, that it is one of a run of them, or that control got there by running off the end of the decoded code; the pad is visible only in `kuna disassemble`. `warn` (the default) recognizes the lowering structurally - a CALLIND reading the storage a `swi` CALLOTHER with the 1-byte constant vector 3 wrote in the same instruction - counts the `0xcc` bytes at the site, and buffers a warning the P9 slug table renders as `// int3-pad xN`. `halt` additionally marks the call spec no-return and plants the artificial halt, so the pad ends the flow instead of contributing the fabricated return value of `return (*v1)();`."
+use_when = "On (`warn`) by default: it adds a comment and changes nothing else, so a decoded `int3` is named wherever one is reached. Set `halt` when reading anti-debug code whose clean-run path falls into a pad and the fabricated `return (*(void *)swi(3))();` is in the way - it is not the default because a debugger attached to the process can step past an `int3`, so ending the flow is a judgement about the pad rather than a fact about the encoding. Set `off` to restore the unannotated upstream rendering. Shape-gated on the `swi` vector 3, so `int 0x29` (Windows __fastfail, see `fastfailnoreturn`), `int 0x80` (Linux, see `linuxsyscall`) and every non-x86 language are untouched; structurally inert wherever no `int3` is decoded, and byte-identical (0/675) on the datatest corpus. The pad length is a loader read: when it fails, or when the encoding is the two-byte `INT 0x03` rather than `0xcc`, the warning is emitted without a count rather than with a guessed one."
+example = "option int3pad halt"
+source_decompiler = "kuna"
+inspiration = "GH-468 finding 8: an anti-debug crackme whose no-debugger path jumps into an `int3` pad at the function tail, rendered as `(*(void *)swi(3))();` with no warning at all"
+change_kind = "presentation-default"
+tier = "transform"
+symptoms = "an int3 pad renders as (*(void *)swi(3))() - a call through a pointer nothing assigns|a function returns the result of a call through swi(3)|nothing in the C says control ran into a run of 0xcc padding bytes|an anti-debug binary's clean-run path ends in an indirect call that only the disassembly explains"
+
+[[settable]]
 option = "noreturn_extern"
 values = "on|off"
 default = "on"

@@ -1,0 +1,64 @@
+<decompilertest>
+<!--
+    int3pad: control that runs into an `int3` pad prints as a call through a
+    pseudo-op, with nothing in the C to say the byte is 0xcc.
+
+    x86 SLEIGH lowers `INT3` to `intloc = swi(3); call [intloc]; return [0:1]`
+    (ia.sinc:3670), which the printer renders as `v1 = (code *)swi(3); return
+    (*v1)();`.  That reads as an ordinary call through a function pointer: the
+    pad, its length, and the fact that control got there by running off the end
+    of the decoded code are all invisible.
+    Stage model: S2 flow classification (`setup_callind_specs`) + S9 warning
+    slugs (`warning_slug`).
+
+    Layout (x86-64), the anti-debug clean-run tail reduced to one site:
+      0x401000  89 f8              mov  eax,edi            ; helper
+      0x401002  c3                 ret
+      0x401003  48 83 ec 08        sub  rsp,8              ; antidbg
+      0x401007  85 ff              test edi,edi
+      0x401009  75 0b              jne  0x401016
+      0x40100b  31 ff              xor  edi,edi            ; the clean run
+      0x40100d  e8 ee ff ff ff     call 0x401000
+      0x401012  cc cc cc cc        int3 x4                 ; ... and falls in
+      0x401016  b8 01 00 00 00     mov  eax,1
+      0x40101b  48 83 c4 08        add  rsp,8
+      0x40101f  c3                 ret
+
+    Pass 1 (int3pad off, the bug): two statements with no warning at all, which
+    is what the reporter could not tell from the C.
+    Pass 2 (int3pad warn, the shipped default): the pad is counted from the
+    image and named with a `// int3-pad x4` slug on the line it lowers to.
+    Pass 3 (int3pad halt): the pad ends the flow, so the fabricated return value
+    of `return (*v1)();` goes away and the trap is a statement.
+
+    The off pass runs FIRST because the console's comment database is keyed by
+    function and persists across `decompile` calls: a warning buffered by an
+    earlier pass would still be printed by a later one that did not produce it.
+
+    Assert #1 pins the slug and its count to the two passes that produce it.
+    Assert #2 pins the fabricated return to the two passes that keep the trap as
+    the function's return value.  Assert #3 pins the halted rendering to its own
+    pass.  None pins an SSA index.
+-->
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x401000" readonly="true">89f8c34883ec0885ff750b31ffe8eeffffffccccccccb8010000004883c408c3</bytechunk>
+<symbol space="ram" offset="0x401000" name="helper"/>
+<symbol space="ram" offset="0x401003" name="antidbg"/>
+</binaryimage>
+<script>
+  <com>option int3pad off</com>
+  <com>lo fu antidbg</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option int3pad warn</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option int3pad halt</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="INT3PAD #1: the four-byte pad is counted and named (warn and halt passes only)" min="2" max="2">// int3-pad x4</stringmatch>
+<stringmatch name="INT3PAD #2: the trap is the function's return value except when it ends the flow" min="2" max="2">return \(\*v[0-9]+\)\(\);</stringmatch>
+<stringmatch name="INT3PAD #3: int3pad halt renders the trap as a statement, not a returned call" min="1" max="1">swi\(3\)\)\(\); // int3-pad x4</stringmatch>
+</decompilertest>
