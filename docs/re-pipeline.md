@@ -715,6 +715,56 @@ done | wc -l          # must be 1
 duplicate in the noise; filter the wrapper out. And never conclude a background launch failed
 because its log is unreadable — check for the process.
 
+## The quality lane is capped at one builder, and the reason may have expired
+
+Round 4's captain found this while answering whether to run testers, and the measurement is
+worth keeping: **`select -k 3` returns TWO picks**, not three, against an 11-need backlog. A
+builder slot is unfillable at any backlog depth. 10 of the 11 open needs are `quality`, and
+
+```python
+TRACK_RESOURCES = {"quality": ["counter:catalog", "counter:stages-corpus", "counter:div",
+                               "file:phases.toml", "file:docs/options.md"], ...}
+```
+
+means every quality need takes the same five leases, so at most one quality builder runs at a
+time. With a quality-heavy backlog — which is what three rounds have produced — two of three
+builder slots idle permanently. Backlog *depth* is not the throughput constraint; lease
+*structure* is.
+
+The serialisation was correct when written. Its stated reason is the silent-identical-edit
+shape: "an identical `85 -> 86` edit on two branches merges CLEANLY to the wrong number",
+which this pipeline hit for real in round 1 (two branches at 131 and 129 when the truth was
+133).
+
+**Two guards have since been built that did not exist then**, and both sit at merge time:
+
+- `builder_prompt.md` takes `lease-acquire --resource merge` and then runs
+  `scripts.repipe.counters --fix` INSIDE that lease, on the rebased tree — every counter is
+  re-derived from the live tree rather than arithmetic, so a raced number is repaired, not
+  shipped.
+- `counters --check` runs in the parity-gates CI job, so a wrong number fails the build even
+  if the repair is skipped.
+
+The merge is therefore already serialised on its own lease, and the numbers are already
+re-derived under it. `TRACK_RESOURCES` additionally serialises the whole BUILD — an hour of
+analyze/design/code/test/docs — to protect a step that takes minutes and is protected twice.
+
+**This is a candidate change, not a conclusion.** What would settle it:
+
+1. Two quality builders working concurrently and merging serially, with `counters --check`
+   green on main afterwards. That is the whole claim.
+2. The residual risk is not the counters but the **DIV number**: two builders each claiming
+   the next free one. `counters --fix` re-derives counts, not registry allocations. Check
+   whether the merge-time DIV claim in `docs/improvement-pipeline.md` §4 actually reallocates,
+   or only renumbers references.
+3. `file:phases.toml` itself is probably safe to drop — two option rows in different places
+   auto-merge, and adjacent ones conflict loudly, which is the safe failure.
+4. `file:docs/options.md` is regenerated from the catalog at merge and never merged, so it
+   needs regeneration, not a lease.
+
+Do not relax this while a round is in flight, and do not relax it without (1). The payoff is
+roughly 3x on quality throughput, which is where this backlog lives.
+
 ## Machinery reference
 
 | Piece | What |
