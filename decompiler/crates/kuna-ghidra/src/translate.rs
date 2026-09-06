@@ -658,8 +658,8 @@ impl<R: Read, W: Write> EngineTranslate for GhidraTranslate<R, W> {
         ) {
             Ok(a) => a,
             // C++ catch(JavaError&): the host's message becomes a LOW-LEVEL
-            // error, so the command still answers with an incomplete function
-            // instead of passing a Java exception back and aborting it.
+            // error, so the warning names the payload rather than repeating the
+            // host's bare text.
             Err(WireError::Kuna(KunaError::Java { explain, .. })) => {
                 return Err(KunaError::lowlevel(format!("Injection error: {explain}")))
             }
