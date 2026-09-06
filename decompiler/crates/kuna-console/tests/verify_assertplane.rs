@@ -410,6 +410,37 @@ fn standard_c_scalar_types_reach_the_emitted_c() {
     );
 }
 
+/// `<func>` is what the signature binds to, not the name inside the declaration
+/// (`docs/re-needs/text-output-silently-ignores.md`).  An agent that has worked
+/// out what a stripped function does writes the declaration under the name it
+/// deserves -- `void *hashit(void *out,void *input)` for `authenticate` -- and
+/// the types must still land on the function that was named as the target.
+///
+/// This surface always did that (`assertions::apply_prototype` overwrites
+/// `pieces.name`); the console script did not, and the two are asserted together
+/// because either alone is self-consistent.
+#[test]
+fn a_declaration_written_under_another_name_still_binds_to_its_target() {
+    let Some((code, report)) = decompile_with(vec![directive(
+        "prototype authenticate void *hashit(void *out,void *input)",
+        Body::Prototype {
+            func: TARGET.into(),
+            decl: "void *hashit(void *out,void *input)".into(),
+        },
+    )]) else {
+        return;
+    };
+    all_applied(&report);
+    assert!(
+        code.contains("authenticate(void *out,void *input)"),
+        "the declared signature did not reach its target:\n{code}"
+    );
+    assert!(
+        !code.contains("hashit"),
+        "the declaration's name became a function:\n{code}"
+    );
+}
+
 /// A combination that is not a C type is named, not answered with a bare
 /// "Syntax error" pointing at the second keyword.
 #[test]

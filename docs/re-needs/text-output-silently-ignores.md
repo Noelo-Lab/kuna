@@ -5,7 +5,7 @@ track: tooling
 status: open
 severity: major
 probe_id: p-8cb750f382af
-acceptance_id: a-5627f7bb77cf
+acceptance_id: a-5a9ec955c9a0
 hypothesis_status: upheld
 credibility: 0.7
 instances: 1
@@ -71,37 +71,48 @@ Assign the hash helper a pointer return and named pointer parameters.
 ```json
 {
   "schema": "re-probe/1",
+  "probe_id": "a-5a9ec955c9a0",
   "kind": "cli",
-  "timeout_s": 60,
   "cmd": [
     "{{KUNA}}",
     "decompile",
     "{{BIN}}",
-    "sub_1400055e0",
+    "authenticate",
     "--assert",
-    "prototype sub_1400055e0 void * sha256(void *out, void *input)",
+    "prototype authenticate void *hashit(void *out,void *input)",
     "--assert-strict"
   ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/fauxware",
+    "binary_sha256": "c2d90645a45e99221593547e55c601a901b80f807ae96f94c60a7661df0b3e0b",
+    "binary_size": 8776,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/fauxware",
+    "selector": "authenticate",
+    "selector_kind": "name"
+  },
   "expect": {
     "exit_code": {
       "eq": 0
     },
-    "stdout_absent": [
-      "^void\\s+[^\\s(]+\\("
-    ],
     "stdout_matches": [
-      "void\\s*\\*"
+      "void \\*\\s*authenticate\\(void \\*out,void \\*input\\)"
+    ],
+    "stdout_absent": [
+      "^unsigned long\\s+authenticate\\("
     ],
     "stderr_absent": [
       "rejected"
     ]
   },
-  "target": {
-    "binary_rel": "bin/frz_crackme_rage_v7.exe",
-    "binary_sha256": "971dbc9fc68f8c2a3f516f49cc7c13534e6c57143d0160c648e0c1490662fbf2",
-    "binary_size": 279552,
-    "binary_source": "dataset"
-  }
+  "notes": "Desired: a prototype assertion whose declaration renames the function still binds to <func>, on the TEXT surface. `--assert 'prototype authenticate void *hashit(...)'` must retype authenticate; before the fix the console script lowered it to `parse line extern`, which binds by the DECLARED name, so text kept `unsigned long authenticate(char *a0,char *a1)` and exited 0 while --json applied it."
 }
 ```
 

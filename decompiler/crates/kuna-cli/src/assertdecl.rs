@@ -339,8 +339,14 @@ pub(crate) fn console_form(d: &Directive) -> Option<ConsoleForm> {
             (Slot::Program, line)
         }
         Body::Typedef { decl } => (Slot::Program, format!("parse line {}", semicolon(decl))),
-        Body::Prototype { func: _, decl } => {
-            (Slot::Program, format!("parse line extern {}", semicolon(decl)))
+        // `parse line extern <decl>` binds the signature to the name INSIDE the
+        // declaration, so a declaration that renames the function landed on a
+        // fresh symbol and left the selected one untouched -- silently, since the
+        // console reported no error (`docs/re-needs/text-output-silently-ignores.md`).
+        // `map prototype` takes the target as its first token, as the in-process
+        // surface always has.
+        Body::Prototype { func, decl } => {
+            (Slot::Program, format!("map prototype {func} {}", semicolon(decl)))
         }
         Body::Data { addr, decl } => (Slot::Program, format!("map address {addr:#x} {decl}")),
         Body::Param { index, storage, decl, .. } => {
@@ -518,6 +524,23 @@ mod tests {
         }
     }
 
+    /// The console line names the function the directive TARGETS, not the one
+    /// the declaration is written around.  `parse line extern <decl>` binds by
+    /// the declared name, so a declaration that renames the function parked its
+    /// signature on a fresh symbol and the selected function kept its recovered
+    /// one, exiting 0 with nothing on stderr
+    /// (`docs/re-needs/text-output-silently-ignores.md`).
+    #[test]
+    fn a_prototype_that_renames_the_function_still_names_its_target() {
+        let d = one("prototype sub_1400055e0 void * sha256(void *out,void *input)");
+        let form = console_form(&d).expect("has a console form");
+        assert_eq!(
+            form.line,
+            "map prototype sub_1400055e0 void * sha256(void *out,void *input);"
+        );
+        assert_eq!(form.slot, Slot::Program);
+    }
+
     #[test]
     fn directives_lower_to_their_console_commands() {
         let lowered = |spec: &str| {
@@ -527,7 +550,7 @@ mod tests {
         };
         assert_eq!(
             lowered("prototype authenticate int4 authenticate(char *u,char *p)"),
-            (Slot::Program, "parse line extern int4 authenticate(char *u,char *p);".into())
+            (Slot::Program, "map prototype authenticate int4 authenticate(char *u,char *p);".into())
         );
         assert_eq!(
             lowered("typedef struct pt { int x; int y; };"),

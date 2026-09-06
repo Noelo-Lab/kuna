@@ -1,0 +1,45 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "a-5a9ec955c9a0",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "authenticate",
+    "--assert",
+    "prototype authenticate void *hashit(void *out,void *input)",
+    "--assert-strict"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/fauxware",
+    "binary_sha256": "c2d90645a45e99221593547e55c601a901b80f807ae96f94c60a7661df0b3e0b",
+    "binary_size": 8776,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/fauxware",
+    "selector": "authenticate",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "void \\*\\s*authenticate\\(void \\*out,void \\*input\\)"
+    ],
+    "stdout_absent": [
+      "^unsigned long\\s+authenticate\\("
+    ],
+    "stderr_absent": [
+      "rejected"
+    ]
+  },
+  "notes": "Desired: a prototype assertion whose declaration renames the function still binds to <func>, on the TEXT surface. `--assert 'prototype authenticate void *hashit(...)'` must retype authenticate; before the fix the console script lowered it to `parse line extern`, which binds by the DECLARED name, so text kept `unsigned long authenticate(char *a0,char *a1)` and exited 0 while --json applied it."
+}

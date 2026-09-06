@@ -1,0 +1,85 @@
+{
+  "opportunity": "repipe:6a0b84982b3df128c1df5c0d::text-output-silently-ignores",
+  "need_id": "text-output-silently-ignores",
+  "track": "tooling",
+  "round": 4,
+  "test_name": "repipe round 4, challenge 6a0b84982b3df128c1df5c0d",
+  "binary": "kuna-re-dataset/challenges/6a0b84982b3df128c1df5c0d/bin/frz_crackme_rage_v7.exe",
+  "selector": "sub_1400055e0",
+  "func_addr": "0x1400055e0",
+  "option": null,
+  "flag": null,
+  "element_id": null,
+  "change_kind": "correctness-fix",
+  "source_decompiler": "kuna",
+  "inspiration": "repipe round 4 need text-output-silently-ignores; the in-process surface's own rule (assertions::apply_prototype overwrites PrototypePieces::name with <func>), applied to the console script the text surface drives",
+  "default_on": true,
+  "div": null,
+  "scope": "small",
+  "worker": "b-r4-text-output-sile",
+  "branch": "feat/re-text-output-silently-ignores",
+  "hypothesis_status": "filed hypothesis ('text and JSON bind the declaration to different function names') is upheld in symptom and half-right in mechanism; the round-3 refuter's correction is what reproduced: ONE path throws <func> away. The discriminator is the DECLARATION's name, not the output format -- a same-name declaration applies on the text surface too, and a renaming declaration is dropped there whatever the format.",
+  "files": [
+    "decompiler/crates/kuna-console/src/ifacedecomp.rs",
+    "decompiler/crates/kuna-console/src/kuna_console.rs",
+    "decompiler/crates/kuna-console/src/kuna_console/tests.rs",
+    "decompiler/crates/kuna-console/tests/verify_assertplane.rs",
+    "decompiler/crates/kuna-cli/src/assertdecl.rs",
+    "decompiler/crates/kuna-cli/src/decompile.rs",
+    "decompiler/crates/kuna-cli/tests/decompile_cli.rs",
+    "tests/cli/text-output-silently-ignores.json",
+    "docs/cli.md",
+    "docs/spec/00-overview.md",
+    "docs/spec/04-calls-and-prototypes.md"
+  ],
+  "parity": "OK",
+  "gates": {
+    "make test": "PARITY OK 675/675",
+    "make test-stages": "PARITY OK 635/635",
+    "make check-spec": "OK",
+    "kuna catalog --check": "catalog OK",
+    "make test-cli": "38/38",
+    "make rust-test": "green -- 359 targets ok. One target, kuna-decomp verify_w10_proto_unlock, fails under the repipe launcher's environment and NOT because of this change: KUNA_DECOMP_TEST is exported pointing at kuna's own decomp_test_dbg, so the test's C++-oracle block (skipped in CI, where decompiler/cpp/decomp_test_dbg does not exist) runs against kuna and reads its modern `unsigned int` spelling as oracle drift. The main tree's UNMODIFIED release decomp_test_dbg prints the same line byte for byte, and the test passes with the variable unset."
+  },
+  "probe_flip": {
+    "probe": "p-8cb750f382af asserts the bad behaviour (text keeps `void sub_1400055e0(...)`) and PASSED before the fix",
+    "acceptance_before": "a-5627f7bb77cf FAILED on the dataset binary at c7e1d512",
+    "acceptance_after": "PASS on the dataset binary (all four clauses: exit 0, `void *` present, `^void\\s+<name>(` absent, no `rejected` on stderr)",
+    "acceptance_recut": "a-5a9ec955c9a0 -- the same assertion retargeted onto the in-repo fauxware fixture, because the dataset target is not vendorable and CI has no dataset"
+  },
+  "promoted_probe": "tests/cli/text-output-silently-ignores.json (a-5a9ec955c9a0); make test-cli 38/38",
+  "no_option_because": "tooling track: the change cannot alter emitted C for any run that does not pass --assert, and for a --assert whose declaration already carries the target's name the generated console script is semantically identical (same parse, same PrototypePieces, same pending-prototype key). Nothing to gate.",
+  "sweep": {
+    "same-name declarations": "byte-identical output old vs new, measured on fauxware for the selected function (`prototype authenticate int4 authenticate(...)`) and for a CALLEE (`prototype read long long read(...)`)",
+    "malformed declarations": "unchanged: `prototype authenticate int4 authenticate(char *u` and the non-prototype `prototype authenticate int4 g` are both `rejected: Bad C syntax` before and after, exit 1 under --assert-strict",
+    "console prefix resolution": "`map param`, `map addr`, `map fun` (the abbreviations the datatest corpus drives) still resolve to their own commands with `map prototype` registered; pinned by map_prototype_does_not_shadow_the_upstream_map_commands",
+    "corpora": "no datatest or stage case drives a `prototype` --assert; 675/675 and 635/635 unchanged"
+  },
+  "oracle": null,
+  "speed": {
+    "method": "not a perf-relevant change and not measured as one: the generated console script has the same number of lines, and `map prototype` runs the same `parse_c` + symbol retype + pending-prototype insert that `parse line extern` ran",
+    "note": "one extra token is parsed per prototype directive"
+  },
+  "decisions": [
+    {
+      "id": "the-seam-is-the-lowering-not-the-output-format",
+      "claim": "There is nothing wrong with the text printer. `assertdecl::console_form` lowered `Body::Prototype { func: _, decl }` -- discarding the target -- to `parse line extern <decl>`, which binds by the DECLARED name.",
+      "evidence": "Measured four ways on the witness at c7e1d512: text + renaming decl drops the override; --json + the same directive applies it; TEXT + a same-name decl applies it; --json + a bogus <func> still touches the selected function. The discriminator is the decl name, so a printer-side fix would have been aimed at the wrong file. This reproduces the round-3 refuter's finding exactly."
+    },
+    {
+      "id": "a-new-console-command-rather-than-a-textual-rewrite-of-the-declaration",
+      "claim": "The console gained `map prototype <func> <C declaration>`; the CLI does not rewrite the declaration's identifier before emitting `parse line extern`.",
+      "evidence": "Rewriting would mean hand-scanning a C declarator in the CLI (`void (*f(int))(void)` has no identifier before the parameter list) and would put a declaration in the generated script that the caller never wrote. The command instead reuses the console's own parse and the in-process rule -- `pieces.name = <func>` -- so the two surfaces now share one semantics rather than two implementations that agree today. `parse line extern` keeps its upstream meaning, so no ported command changed."
+    },
+    {
+      "id": "the-declaration-name-does-not-rename-the-function",
+      "claim": "`prototype sub_1400055e0 void *sha256(...)` types the function and leaves it called `sub_1400055e0`. Documented, not silent.",
+      "evidence": "That is what the in-process surface has always done (`apply_prototype` overwrites `pieces.name`), and matching it is what makes text and JSON one contract. Renaming a FUNCTION is a capability the assert plane does not have at all -- `--assert 'name sub_1400055e0 sha256'` answers `No symbol named: sub_1400055e0`, because `rename` resolves in the decompiled function's local scope -- so implementing it here would have been a second, unrelated feature inside a fix. docs/cli.md now says both halves outright."
+    },
+    {
+      "id": "--assert-strict-is-still-not-a-guard-for-an-inert-directive",
+      "claim": "A prototype directive naming a function that does not exist is still reported `applied`. This fix does not change that, and the acceptance's `stderr_absent: rejected` clause proves nothing on its own.",
+      "evidence": "The text surface recovers each outcome from the console transcript (`decompile.rs (assertion_outcomes)`): a command that printed no diagnostic is `applied`. `map prototype no_such_fn ...` parses cleanly and parks pieces under a name nothing will ask for, exactly as `parse line extern` did for an unreferenced name. Left alone deliberately: rejecting an unknown name would also reject the legitimate case of declaring a callee whose symbol the loader never named, and the pending store is precisely what serves that. The load-bearing clauses of the promoted probe are the two stdout ones."
+    }
+  ]
+}

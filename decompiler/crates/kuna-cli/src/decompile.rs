@@ -1655,9 +1655,9 @@ Decompilation complete
                 .position(|l| l == needle)
                 .unwrap_or_else(|| panic!("{needle:?} missing from:\n{script}"))
         };
-        assert!(line("read symbols") < line("parse line extern int4 authenticate(char *u);"));
+        assert!(line("read symbols") < line("map prototype authenticate int4 authenticate(char *u);"));
         assert!(
-            line("parse line extern int4 authenticate(char *u);")
+            line("map prototype authenticate int4 authenticate(char *u);")
                 < line("load function authenticate")
         );
         assert!(line("load function authenticate") < line("map param 0 %RDI char *u"));

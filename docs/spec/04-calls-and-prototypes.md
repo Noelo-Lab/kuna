@@ -385,7 +385,8 @@ unknown. Before any of it, the drive
 signature is already known, and locks it if so
 (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs
 (Funcdata::apply_locked_prototype)`). Two sources, in precedence order: a
-prototype the operator declared for this run (`parse line extern …`), then the
+prototype the operator declared for this run (`parse line extern …` /
+`map prototype <func> …`, 00 §0.2), then the
 prototype parked on the function's own global `FunctionSymbol` — which is where
 the DWARF pass's recovered `DW_TAG_subprogram` signature lands (01 §1.4) and
 where the library-prototype table lands for a named libc function.

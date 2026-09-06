@@ -605,3 +605,67 @@ fn a_name_that_already_resolved_is_not_re_decompiled_wider() {
     );
     assert!(stdout.contains("while ("), "the real body is a loop, got:\n{stdout}");
 }
+
+/// RE-need `text-output-silently-ignores`: a prototype assertion whose
+/// declaration is written under a NEW name still binds to `<func>` — on both
+/// surfaces.
+///
+/// `--assert 'prototype authenticate void *hashit(...)'` is how an agent states
+/// what it worked out about a stripped function, and it is the shape that broke:
+/// the generated console script lowered every prototype to `parse line extern
+/// <decl>`, which binds by the DECLARED name, so the signature landed on a fresh
+/// `hashit` symbol and `authenticate` kept its recovered one — exit 0, nothing on
+/// stderr, `--assert-strict` included. The in-process `--json` path overwrote the
+/// parsed name with `<func>` all along, so the same directive applied there and
+/// not here. Both are asserted in one test because either alone is
+/// self-consistent: that is exactly how they drifted apart.
+#[test]
+fn a_prototype_declared_under_another_name_binds_on_both_surfaces() {
+    let bin = fauxware();
+    let directive = "prototype authenticate void *hashit(void *out,void *input)";
+    let run = |extra: &[&str]| -> Option<String> {
+        let mut argv: Vec<String> = vec![
+            "decompile".into(),
+            bin.clone(),
+            "authenticate".into(),
+            "--assert".into(),
+            directive.into(),
+            "--assert-strict".into(),
+            "--sleighpath".into(),
+            specs(),
+        ];
+        argv.extend(extra.iter().map(|s| s.to_string()));
+        let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
+            .args(&argv)
+            .output()
+            .expect("failed to spawn the kuna binary");
+        let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+        if is_specs_skip(&stderr) {
+            eprintln!("skipping: specs-less environment: {stderr}");
+            return None;
+        }
+        assert_eq!(out.status.code(), Some(0), "kuna decompile failed: {stderr}");
+        assert!(!stderr.contains("rejected"), "the directive was rejected: {stderr}");
+        Some(String::from_utf8_lossy(&out.stdout).into_owned())
+    };
+
+    let Some(text) = run(&[]) else { return };
+    assert!(
+        text.contains("void * authenticate(void *out,void *input)"),
+        "the text surface dropped the override:\n{text}"
+    );
+    assert!(
+        !text.contains("hashit"),
+        "the declaration's name became a function of its own:\n{text}"
+    );
+
+    let Some(json) = run(&["--json"]) else { return };
+    assert!(
+        json.contains(r#""status": "applied""#),
+        "the JSON surface stopped reporting the directive applied:\n{json}"
+    );
+    assert!(
+        json.contains("void * authenticate(void *out,void *input)"),
+        "the two surfaces disagree about the same directive:\n{json}"
+    );
+}

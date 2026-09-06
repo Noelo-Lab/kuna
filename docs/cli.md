@@ -160,7 +160,7 @@ One directive per `--assert`, keyed by intent rather than by phase:
 
 | directive | what it states |
 |---|---|
-| `prototype <func> <C declaration>` | the function's signature (parameter names included) |
+| `prototype <func> <C declaration>` | the signature of `<func>` (parameter names included) |
 | `param [<func>::]<i> <storage> <C typedecl>` | the storage and type of one input |
 | `return [<func>::]<storage> <C typedecl>` | the storage and type of the return value |
 | `name [<func>::]<symbol> <newname>` | rename a local |
@@ -189,6 +189,28 @@ pasted straight back at it:
 kuna decompile ./a.out sub_140004dcc --json \
   --assert 'prototype VirtualAlloc void *VirtualAlloc(void *p,unsigned int n,unsigned int a,unsigned int b)'
 ```
+
+**`<func>` is what the prototype binds to, not the name inside the
+declaration.** The reason to state a signature at all is usually that the
+function has no name worth keeping, so the declaration gets written under the
+name the function deserves:
+
+```bash
+kuna decompile ./rage.exe sub_1400055e0 \
+  --assert 'prototype sub_1400055e0 void *sha256(void *out,void *input)'
+```
+
+```text
+- void sub_1400055e0(unsigned int *a0,unsigned long long *a1)
++ void * sub_1400055e0(void *out,void *input)
+```
+
+The declaration supplies the types and the parameter names; `sha256` names
+nothing (`--assert` cannot rename a function today — `name` renames a local).
+The console spelling is `map prototype <func> <C declaration>`, which is why
+`<func>` survives into a hand-driven `decomp_dbg` session too; `parse line
+extern <decl>` binds by the declared name and can only confirm a signature for
+a function that is already called that.
 
 Widths come from the target's own compiler spec, so `long` is eight bytes on LP64
 and four on LLP64. Ghidra's sized spellings (`int4`, `uint8`, `float8`,

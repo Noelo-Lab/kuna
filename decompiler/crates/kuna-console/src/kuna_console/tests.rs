@@ -60,19 +60,19 @@ fn run_one(line: &str) -> String {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn registers_all_eighteen_kuna_commands() {
+fn registers_all_nineteen_kuna_commands() {
     // register_decomp_commands registers 105 (see ifacedecomp/tests.rs); the
-    // kuna capability adds 18: phase list/map/status/catalog (plus the four
+    // kuna capability adds 19: phase list/map/status/catalog (plus the four
     // deprecated `stage ...` alias registrations), kassert, restarts,
-    // pipeline, mode, quality, functions, region tree/blocks/walk, and
-    // `function bounds`.
+    // pipeline, mode, quality, functions, region tree/blocks/walk,
+    // `function bounds` and `map prototype`.
     let only_kuna = {
         let mut st = ConsoleCommands::into_status(vec![]);
         register_kuna_commands(&mut st);
         st.num_commands()
     };
-    assert_eq!(only_kuna, 18);
-    assert_eq!(console(&[]).num_commands(), 105 + 18);
+    assert_eq!(only_kuna, 19);
+    assert_eq!(console(&[]).num_commands(), 105 + 19);
 }
 
 #[test]
@@ -95,6 +95,48 @@ fn kuna_command_prefixes_expand() {
     assert_eq!(status.resolve("region blocks").unwrap(), vec!["region", "blocks"]);
     assert_eq!(status.resolve("region walk").unwrap(), vec!["region", "walk"]);
     assert_eq!(status.resolve("restarts").unwrap(), vec!["restarts"]);
+}
+
+// ---------------------------------------------------------------------------
+// `map prototype <func> <C declaration>` — the console spelling of
+// `--assert 'prototype <func> <decl>'`.
+// ---------------------------------------------------------------------------
+
+/// The new command must not have made the upstream `map ...` set ambiguous:
+/// `map param` and `map address` are what the datatest corpus drives, `map fun`
+/// among them as an abbreviation.
+#[test]
+fn map_prototype_does_not_shadow_the_upstream_map_commands() {
+    let mut status = console(&[]);
+    assert_eq!(status.resolve("map prototype f void f(void)").unwrap(), vec!["map", "prototype"]);
+    assert_eq!(status.resolve("map param 0 %RDI int4 x").unwrap(), vec!["map", "param"]);
+    assert_eq!(status.resolve("map addr 0x1000 int4 g").unwrap(), vec!["map", "address"]);
+    assert_eq!(status.resolve("map fun 0x1000").unwrap(), vec!["map", "function"]);
+}
+
+/// Both operands are required, and the guards read like the rest of the module
+/// (`function bounds`' "Missing ..." parse errors) rather than as a C syntax
+/// error three layers down.
+#[test]
+fn map_prototype_names_a_missing_operand() {
+    assert!(
+        run_one("map prototype").contains("Missing function name"),
+        "out: {:?}",
+        run_one("map prototype")
+    );
+    assert!(
+        run_one("map prototype authenticate").contains("Missing C declaration"),
+        "out: {:?}",
+        run_one("map prototype authenticate")
+    );
+}
+
+/// With both operands but no image, the guard is the module's own
+/// ("No load image present") — the same one `parse line` gives.
+#[test]
+fn map_prototype_without_image_is_no_load_image_present() {
+    let out = run_one("map prototype authenticate void *hashit(void *out,void *input)");
+    assert!(out.contains("No load image present"), "out: {out:?}");
 }
 
 // ---------------------------------------------------------------------------

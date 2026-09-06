@@ -766,7 +766,7 @@ to know that renaming is P9 to rename something — parsed by
 |---|---|---|
 | `function <start>[-<end>][=<name>]` | `function bounds` | P1, the `--define-function` spelling |
 | `typedef <C declaration>` | `parse line` | P5 type-propagation |
-| `prototype <func> <C declaration>` | `parse line extern` | P4 prototype-source |
+| `prototype <func> <C declaration>` | `map prototype` | P4 prototype-source |
 | `data <addr> <C typedeclaration>` | `map address` | P5 const-pointer |
 | `param [<func>::]<i> <storage> <C typedeclaration>` | `map param` | P4 prototype-source |
 | `return [<func>::]<storage> <C typedeclaration>` | `map return` | P4 prototype-source |
@@ -805,6 +805,25 @@ the function, so every run without one costs exactly what it did before. The
 script surface (`decompiler/crates/kuna-cli/src/decompile.rs (build_script)`)
 emits the same facts at the same three slots, with the same conditional second
 `decompile`.
+
+(kuna) **A `prototype` directive binds to `<func>`, whatever name its declaration
+carries.** The operand says which function the signature describes; the
+declaration supplies the return type, the parameter types and the parameter
+names. That is what makes the directive usable on the function an agent has just
+worked out — `prototype sub_1400055e0 void *sha256(void *out,void *input)` — where
+the whole point is that the declaration is written under a name the image does
+not use. The in-process surface has always overwritten the parsed
+`PrototypePieces::name` with `<func>` (`assertions::apply_prototype`); the script
+surface lowered the directive to `parse line extern <decl>`, which is keyed by the
+DECLARED name (`Architecture::setPrototype`'s `queryFunction(basename)`), so a
+renaming declaration parked a signature on a fresh symbol nothing referenced and
+left the selected function with its recovered one — silently, and `exit 0` even
+under `--assert-strict`, because the console reported no error for a prototype it
+had genuinely parsed. The console spelling of the directive is therefore
+`map prototype <func> <C declaration>`
+(`decompiler/crates/kuna-console/src/kuna_console.rs (IfcKunaMapPrototype)` ->
+`ifacedecomp.rs (bind_prototype)`), which takes the target as its first token and
+parks the pieces under it; `parse line extern` keeps its upstream meaning.
 
 (kuna) **The C the assertion plane accepts is the C it prints.** Six directives
 carry a C declaration, and every one of them goes through the console's

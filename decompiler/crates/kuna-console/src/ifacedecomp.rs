@@ -707,6 +707,57 @@ fn run_parse_c(status: &mut IfaceStatus, content: &str) -> IfaceResult<()> {
     }
 }
 
+/// (kuna) Bind a parsed C prototype to `func`, whatever name the declaration
+/// carries — the console spelling of `--assert 'prototype <func> <decl>'`
+/// (`map prototype`, registered in [`crate::kuna_console`]).
+///
+/// `parse line extern <decl>` keys the prototype by the DECLARATION's name, so a
+/// declaration that renames the function ("this `sub_1400055e0` is really
+/// `sha256`") parks a signature on a fresh unrelated symbol and leaves the
+/// selected function with its recovered one.  Here `<func>` says which function
+/// the signature describes, which is what the in-process surface
+/// (`assertions::apply_prototype`) already did — the two surfaces disagreed
+/// about the same directive (`docs/re-needs/text-output-silently-ignores.md`).
+pub(crate) fn bind_prototype(
+    status: &mut IfaceStatus,
+    func: &str,
+    decl: &str,
+) -> IfaceResult<()> {
+    use std::cell::RefCell;
+    let decl = decl.trim();
+    let text = if decl.ends_with(';') {
+        format!("extern {decl}")
+    } else {
+        format!("extern {decl};")
+    };
+    let (parsed, captured) = {
+        let dcp = dcp_mut(status)?;
+        let prog = dcp
+            .conf
+            .as_ref()
+            .ok_or_else(|| IfaceError::execution("No load image present"))?;
+        let arch = prog.arch();
+        let (addr_size, word_size) = arch.data_org();
+        let org = crate::grammar::DataOrg { addr_size, word_size };
+        let captured: RefCell<Option<kuna_decomp::fspec::PrototypePieces>> = RefCell::new(None);
+        let parsed = crate::grammar::parse_c(&text, arch.types(), org, |pieces| {
+            *captured.borrow_mut() = Some(pieces);
+            Ok(())
+        });
+        (parsed, captured.into_inner())
+    };
+    if let Err(e) = parsed {
+        status.out(&format!("Error in C syntax: {}\n", e.explain()));
+        return Err(IfaceError::execution("Bad C syntax"));
+    }
+    let mut pieces =
+        captured.ok_or_else(|| IfaceError::execution("Not a function declaration"))?;
+    pieces.name = func.to_string();
+    apply_prototype_to_symbol(status, &pieces)?;
+    dcp_mut(status)?.pending_prototypes.insert(func.to_string(), pieces);
+    Ok(())
+}
+
 // ===========================================================================
 // The "decompile" module commands.
 //

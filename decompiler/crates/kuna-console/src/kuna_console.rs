@@ -1302,6 +1302,40 @@ impl IfaceCommandAction for IfcKunaFunctionBounds {
     }
 }
 
+/// (kuna) `map prototype <func> <C declaration>`: bind a declared signature to
+/// the function NAMED by `<func>`.
+///
+/// `parse line extern <decl>` binds by the name inside the declaration, so it
+/// can only confirm a signature for a function that is already called what the
+/// declaration calls it.  The RE case is the other one: an agent that has worked
+/// out that `sub_1400055e0` hashes a buffer writes
+/// `void *sha256(void *out,void *input)`, and every such declaration landed on a
+/// fresh unrelated symbol while the selected function kept its recovered `void
+/// sub_1400055e0(uint4 *,uint8 *)` (`docs/re-needs/text-output-silently-ignores.md`).
+/// `<func>` is authoritative over the declaration's own name; the declaration
+/// supplies the types and the parameter names.
+pub struct IfcKunaMapPrototype;
+
+impl IfaceCommandAction for IfcKunaMapPrototype {
+    fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
+        s.skip_ws();
+        let func = s.read_token();
+        if func.is_empty() {
+            return Err(IfaceError::parse("Missing function name"));
+        }
+        s.skip_ws();
+        let decl = s.rest();
+        if decl.trim().is_empty() {
+            return Err(IfaceError::parse("Missing C declaration"));
+        }
+        crate::ifacedecomp::bind_prototype(status, &func, &decl)
+    }
+
+    fn module(&self) -> String {
+        DECOMPILE_MODULE.to_string()
+    }
+}
+
 /// Read a `0x`-prefixed-or-bare hexadecimal VMA token.  `function bounds` takes
 /// plain numbers rather than the console address grammar precisely so its size
 /// argument cannot be confused with an address width.
@@ -1348,6 +1382,10 @@ pub fn register_kuna_commands(status: &mut IfaceStatus) {
     // (kuna) Not a C++ command: the function-boundary override the `kuna` binary
     // exposes as `--define-function`.
     status.register_com(Box::new(IfcKunaFunctionBounds), &["function", "bounds"]);
+    // (kuna) Not a C++ command either: `parse line extern` binds a prototype by
+    // the name in the declaration, which is the wrong key for an override that
+    // exists because the function has no name worth keeping.
+    status.register_com(Box::new(IfcKunaMapPrototype), &["map", "prototype"]);
 }
 
 /// Join tokens with single spaces — C++ `joinTokens(tokens,0,tokens.size())`.
