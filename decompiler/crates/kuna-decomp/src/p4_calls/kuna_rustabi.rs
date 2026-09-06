@@ -408,9 +408,26 @@ impl CalleeReturnWrites {
             .any(|&(widx, woff, wsz)| widx == idx && woff < end && off < woff + wsz as u64)
     }
 
+    /// The processor-space ranges the walk recorded, as `(space index, offset,
+    /// size)`.  Empty for an incomplete summary, which records nothing.
+    pub fn written_ranges(&self) -> &[(int4, u64, int4)] {
+        &self.writes
+    }
+
     /// Did the walk complete? (Diagnostics and tests.)
     pub fn is_complete(&self) -> bool {
         self.complete
+    }
+
+    /// Assemble a summary from its parts, for tests that pin a seam's reading of
+    /// one rather than the walk that produced it.
+    #[cfg(test)]
+    pub fn from_parts(
+        writes: Vec<(int4, u64, int4)>,
+        store_spaces: Vec<int4>,
+        complete: bool,
+    ) -> Self {
+        CalleeReturnWrites { writes, store_spaces, complete }
     }
 }
 
@@ -653,6 +670,20 @@ pub fn seed_callee_return_writes(
     if !on {
         return;
     }
+    seed_callee_write_probe(arch, data);
+}
+
+/// Take (or reuse) the callee-body write probe for every direct call in `data`,
+/// without asking whether any particular rule wants it.
+///
+/// The gate belongs to the caller: this is shared by
+/// [`seed_callee_return_writes`] and
+/// [`crate::p4_calls::kuna_calleepreserves::seed_callee_preserves`], and the
+/// per-image cache means whichever runs first pays for the decode.
+pub fn seed_callee_write_probe(
+    arch: &mut crate::architecture::Architecture,
+    data: &mut Funcdata,
+) {
     let mut entries: Vec<Address> = Vec::new();
     for i in 0..data.num_calls() {
         let e = data.get_call_specs(i).get_entry_address().clone();

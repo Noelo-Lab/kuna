@@ -514,7 +514,17 @@ const PIN_FAILLOG_VARDECL_UNRESOLVED: [usize; 3] = [0, 0, 0];
 // entirely for a function with fewer than two calls — so +243 DISTINCT decoded
 // instructions is the union of the probed prologues in this session, not
 // per-decompile growth.  Flipping `option calleedeadarg off` restores 1314/801.
-const PIN_FAILLOG_GETPCODE_TOTAL: u64 = 1613;
+// (kuna `calleepreserves`, DIV-124) RAISED the total 1613 -> 1862 and left the
+// DISTINCT count at 1044, unmoved.  That pairing is the whole justification: the
+// call-guard seam takes the same bounded body walk, but without
+// `calleedeadarg`'s "fewer than two calls" skip, so it also probes callees in
+// functions that gate declined -- every one of which this session had already
+// decoded elsewhere.  No new instruction address is read; the +249 is re-asks of
+// known bytes, which cost a host round trip only because ghidra mode has no
+// p-code cache (repeat decompiles re-ask everything, faithful to upstream
+// GhidraTranslate).  Measured both arms on this tree: `calleepreserves off`
+// gives 1613/1044, `on` gives 1862/1044.
+const PIN_FAILLOG_GETPCODE_TOTAL: u64 = 1862;
 const PIN_FAILLOG_DECODED_INSTS: usize = 1044;
 // Whole-session getMappedSymbols traffic: Phase 2 pinned this at 0 (the
 // providers did not exist); Phase 3 pins the real query-through traffic —

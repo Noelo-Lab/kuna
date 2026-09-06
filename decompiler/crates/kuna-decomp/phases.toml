@@ -2483,6 +2483,25 @@ tier = "core"
 symptoms = "a call passes an argument to a callee the same output declares as taking void|_secret_function(v3) called where int _secret_function(void) is declared|the decompiled project does not recompile because a call and its prototype disagree on arity|the return value of the previous call reappears as the next call's argument|a scanf/getchar result is passed to an unrelated no-argument function"
 
 [[settable]]
+option = "calleepreserves"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P3"
+subphase = "call-guard"
+strength = "HARD"
+rewind = "P3"
+issue = "repipe-get-pc-helper-loses"
+summary = "Let a bounded decode of the CALLEE's own body narrow the killed-register set at a call, so a value the caller computed survives a helper that provably does not touch it. Heritage::guardCalls (heritage.cc:1444) asks each call's prototype what it does to every heritaged range, and a cspec's <killedbycall> block answers for the CONVENTION -- x86gcc.cspec lists EAX/ECX/EDX because cdecl allows a callee to clobber them. At an i386 PIE's get-PC thunk (`mov ebx,[esp]; ret`, two bytes of body that gcc emits once per GOT-base register) that answer is false: the effect comes back killedbycall, an INDIRECT creation is planted at the call, and every read of the register after it reads a local with no definition anywhere in the function -- `sub_8049f55(); return __lxstat(3,path,v1);` with `unsigned int v1; // edx` never assigned, while the argument loaded from the same frame AFTER the call is recovered normally. This pass consults the callee-body write probe kuna already takes for the call-output seam (kuna_rustabi::probe_callee_return_writes): the walk follows fall-through and resolved machine branch targets from the callee's entry, ends a path at a RETURN, and declares itself incomplete -- proving nothing -- at a nested CALL/CALLIND/CALLOTHER, an unresolved BRANCHIND, an undecodable instruction, or its instruction budget. When the summary is complete and proves the callee never writes the range, killedbycall is downgraded to unaffected for that one call and no INDIRECT is planted. The claim is one-sided and the limits are what keep it sound: only a processor-space (register) range is ever answered, because a callee's memory writes are STOREs through a runtime address the walk cannot follow; only killedbycall is downgraded, never promoted; a proto carrying its own effect override is left alone; a PLT stub is a BRANCHIND and so is never narrowed, which keeps every library call on the ABI's answer; and recursion is a CALL and lands in the same place. The downgrade is applied before guardCalls's output-active branch, so a range that IS the call's return storage is re-promoted to killedbycall and return-value recovery is reached with the input it had before."
+use_when = "On by default. Keep it on when a value that provably crosses a call in the disassembly renders as an undefined local -- the standard shape is an i386 PIE where an argument is loaded into EDX/ECX before a call to a two-byte get-PC thunk and reappears as `v1` with no assignment, while a second argument loaded after the same call is recovered. Same shape on any hand-written or compiler-emitted helper that preserves more registers than its ABI promises. It only ever fires against a fully decoded, call-free callee body and only ever KEEPS a value, so it cannot invent one. Flip OFF to get the convention-only answer back: the way this could be wrong is a callee decoded in the wrong instruction mode (an ARM/Thumb boundary), where the bytes read are not the instructions that run, or to bisect whether this pass rather than trial scoring changed a call's surroundings."
+example = "option calleepreserves off"
+source_decompiler = "kuna"
+inspiration = "repipe:get-pc-helper-loses, 5ab77f5833c5d40ad448c399 (i386 PIE collide) sub_8049f20 0x8049f20 -> get-PC thunk 0x8049f55; upstream Heritage::guardCalls (heritage.cc:1444) and FuncProto::hasEffect (fspec.cc:4239)"
+change_kind = "correctness-fix"
+tier = "core"
+symptoms = "a call argument is an undefined local the function never assigns|a value loaded before a call is lost while one loaded after the same call is recovered|a get-PC thunk or PIE GOT-base helper eats a live register|an argument register that provably crosses a helper renders as `unsigned int v1; // edx` with no definition|the recovered return of a call is sourced from a register the callee never writes"
+
+[[settable]]
 option = "calloverlap"
 values = "off|in|full"
 default = "off"

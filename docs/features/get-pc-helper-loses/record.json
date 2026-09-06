@@ -1,0 +1,77 @@
+{
+  "opportunity": "repipe:5ab77f5833c5d40ad448c399::get-pc-helper-loses",
+  "need_id": "get-pc-helper-loses",
+  "track": "quality",
+  "round": 4,
+  "test_name": "repipe round 3, challenges 5ab77f5833c5d40ad448c399 + 68d9ee36224c0ec5dcedc3fc",
+  "binary": "kuna-re-dataset/challenges/5ab77f5833c5d40ad448c399/bin/collide.tgz.__x/collide.tar.__x/collide/collide",
+  "selector": "0x8049f20",
+  "func_addr": "0x8049f20",
+  "option": "calleepreserves",
+  "flag": "callee_preserves",
+  "element_id": 4147,
+  "change_kind": "correctness-fix",
+  "source_decompiler": "kuna",
+  "inspiration": "repipe round 3 need get-pc-helper-loses; the input-side sibling of kuna_rustabi's callee-body probe (the call-OUTPUT seam) and of calleedeadarg's entry-liveness probe (the input-TRIAL seam)",
+  "default_on": true,
+  "div": "DIV-124",
+  "scope": "small",
+  "worker": "b-r4-get-pc-helper-lo",
+  "branch": "feat/re-get-pc-helper-loses",
+  "hypothesis_status": "upheld as filed and as measured by the captain at T_REFUTE: an ordinary caller-clobbering ABI model applied to a register-preserving helper. Two refinements the record did not have. (1) Downgrading the effect is only half the fix: guardCalls's output-active branch re-promotes the range to killedbycall whenever it characterizes as return storage, which on i386 EDX does (the EAX:EDX join pentry), so the output arm has to be skipped for the same range. (2) The general form the captain scoped -- 'trust a fully decoded, non-recursive, call-free callee' -- is NOT sound on its own: it regressed 24 stage assertions across 7 testcases, every one a fixture whose callee is a deliberate one-byte `ret` placeholder. Absence of a write needed a positive counterpart (the callee must write a callee-saved register).",
+  "files": [
+    "decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleepreserves.rs",
+    "decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleepreserves/tests.rs",
+    "decompiler/crates/kuna-decomp/src/p3_dataflow/heritage.rs",
+    "decompiler/crates/kuna-decomp/src/p4_calls/kuna_rustabi.rs",
+    "decompiler/crates/kuna-decomp/src/p4_calls/fspec.rs",
+    "decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs",
+    "decompiler/crates/kuna-decomp/src/infra/architecture.rs",
+    "decompiler/crates/kuna-decomp/src/substrate/context.rs",
+    "decompiler/crates/kuna-decomp/phases.toml",
+    "decompiler/crates/kuna-analysis/tests/fixtures/getpcthunk_i386",
+    "tests/stages/kuna-calleepreserves.xml",
+    "tests/cli/get-pc-helper-loses.json",
+    "docs/spec/03-ssa-and-simplification.md",
+    "docs/history.md",
+    "docs/options.md"
+  ],
+  "parity": "OK",
+  "gates": {
+    "make test": "PARITY OK 675/675 (docs/baseline.json untouched)",
+    "make test-stages": "PARITY OK 650/650 (+6, all this testcase; no pre-existing assertion moved)",
+    "make check-spec": "OK",
+    "kuna catalog --check": "catalog OK",
+    "make test-cli": "52/52 (includes the promoted get-pc-helper-loses probe)",
+    "make rust-test": "green (KUNA_DECOMP_TEST unset; that harness var alone reddens verify_w10_proto_unlock)"
+  },
+  "probe_flip": {
+    "probe_still_passes": false,
+    "acceptance_passes": true,
+    "before": "sub_8049f55(); return __lxstat(3,path,v1);  with `unsigned int v1; // edx` never assigned",
+    "after": "sub_8049f55(); return __lxstat(3,path,buf);"
+  },
+  "promoted_probe": {
+    "path": "tests/cli/get-pc-helper-loses.json",
+    "repointed": true,
+    "fixture": "decompiler/crates/kuna-analysis/tests/fixtures/getpcthunk_i386",
+    "why": "the acceptance target is a dataset binary and CI has no dataset; the fixture carries the witness's bytes verbatim with the PLT call retargeted in-image"
+  },
+  "sweep": {
+    "arm_a": "128 decbench ELFs (x86-64 PIE and ARM, O0 and O2), 15,987 functions, decompile-all both arms: 0 functions changed",
+    "arm_b": "47 x86-32 crackme images (PE32 and ELF i386), 7,064 functions: 15 functions changed, 0 that start reading a never-assigned local",
+    "arm_b_detail": "9 functions lose a never-assigned local outright; 4 are __thiscall constructors whose ECX `this` is recovered as a real parameter instead of an unassigned `v1 // ecx`; 1 (SCORPiON sub_40cb88) re-sources the return from the real producer instead of from `pop edi; pop esi; leave; ret`, which is the second filed instance's shape; 1 (ErnoCube sub_402b90) renders an 8-byte join return where a 4-byte pointer read better, the same over-recovery calloverlap documents",
+    "regressions": 0
+  },
+  "decisions": [
+    "The downgrade is applied to the effect guardCalls reads from the prototype AND the output-active arm is skipped for the same range. Downgrading alone is inert on the witness: characterize_as_output(EDX,4) is non-empty on i386 (the EAX:EDX join pentry), so the branch promotes the range straight back to killedbycall.",
+    "Absence of a recorded write is not sufficient evidence. A complete walk over a one-byte `ret` records nothing and so claims that EVERY register survives the call, which deletes the return value of every stub, thunk and placeholder in the image; ghdec-calloverlap's callee is documented as exactly that byte. The callee must ALSO have written a register the model marks <unaffected>, other than the stack pointer (every RET writes it). That is the signature of the hand-rolled helper the rule exists for and it is a positive finding rather than an absence -- the same shape calleedeadarg's header argues for on the input-trial seam.",
+    "No new pass and no new Action: the decision is taken at the one seam that consumes the effect (Heritage::guard_calls), and the evidence is the existing kuna_rustabi callee-body walk sharing the existing per-image cache, so a body is decoded at most once per run whichever rule asks.",
+    "REBASE onto origin/main d5aa1165 after siblings #457 (qualified-parameter-assertions-modify, touches p4_calls/fspec.rs) and #458 (pe-header-entry-mapped) merged. Five conflicts, all merge-train bookkeeping: the settable counters, the catalog fixture, the stages corpus count, the stages baseline and the DIV table.",
+    "DIV renumbered 122 -> 124: main claimed DIV-122 (arraycoverwidth) and DIV-123 (calleearitylive) while this branch was open. Renumbered in docs/history.md, record.json and the architecture.rs default comment; the phases.toml row and docs/options.md carry no DIV reference.",
+    "ElementId renumbered 4145 -> 4147, a REAL collision the branch would have shipped: main's arraycoverwidth took 4145 and calleearitylive took 4146 while this branch held 4145. Caught by scripts.repipe.counters, not by any gate.",
+    "The counter conflicts were resolved from main's side plus one, then re-derived with scripts.repipe.counters (154 settables, tiers 39/61/54, 243 corpus files) rather than trusted as arithmetic. option_values_live_value_present_for_52_suppressed_for_NN auto-merged CLEANLY to 95 because main and this branch made the identical 94->95 edit; the correct answer is 96 and it was fixed by hand.",
+    "docs/baseline-stages.json was re-recorded, never hand-merged; the diff is exactly the 6 CALLEEPRESERVES keys plus the 644->650 footer, so no pre-existing stage assertion moved under the rebase.",
+    "ghidra_sim_faillog_pins re-pinned 1613 -> 1862 for whole-session getPcode. Justified as bounded by the SECOND number: distinct-decoded is 1044 in both arms, so the pass reads no instruction address the session had not already decoded. The +249 is re-asks of known bytes (ghidra mode has no p-code cache) from callees in functions calleedeadarg's 'fewer than two calls' gate declined. Measured both arms on the rebased tree by ablating the default: off = 1613/1044 and the test passes, on = 1862/1044."
+  ]
+}

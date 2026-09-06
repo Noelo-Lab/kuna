@@ -142,6 +142,47 @@ call has on the (callee-translated) range (`decompiler/crates/kuna-decomp/src/p4
   delayed CALL output and SUBPIECEs/PIECEs it into the range
   (`heritage.rs (Heritage::try_output_stack_guard)`).
 
+**Narrowing the killed set to the callee's own writes.** A `<killedbycall>`
+block in a compiler spec is a statement about the *convention*, not about any
+particular callee, and there are callees the convention does not describe. The
+one that costs a reader most is the i386 get-PC thunk gcc emits for every PIE
+that reaches a global: `mov ebx,[esp]; ret`, four bytes that write `EBX` and
+nothing else, called in place of a convention-abiding call precisely because it
+is cheaper. `x86gcc.cspec` puts `ECX` and `EDX` in `<killedbycall>`, so a value
+the caller loaded into `EDX` before that call becomes an INDIRECT creation and
+every later read of it prints as a local the function never assigns.
+
+Under `option calleepreserves` the call guard consults the callee's own
+instructions instead. The evidence is the bounded body walk chapter 04 already
+takes for the call-output seam (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_rustabi.rs
+(probe_callee_return_writes)`): from the callee's entry it follows fall-through
+and resolved machine branch targets, ends a path at a `RETURN`, and declares
+itself *incomplete* — proving nothing — at a nested call, an unresolved
+`BRANCHIND`, an undecodable instruction, or its instruction budget. A complete
+walk that records no write to the range downgrades *killed by call* to
+*unaffected* for that one call, so no INDIRECT is planted and the caller's value
+flows across (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleepreserves.rs
+(callee_preserves_range)`). The output-active arm is skipped for the same range:
+a register the callee provably never writes cannot be carrying its return value
+either, so registering an output trial for it would put the clobber straight
+back.
+
+Absence of a recorded write is not on its own enough to act on, and the second
+half of the test is what keeps the rule off a body that is not really a body. A
+summary with no writes at all is the maximal claim — *every* register survives
+this call — drawn from the weakest possible reading, and a one-byte `ret` is
+what a stub, a placeholder and a misidentified entry all decode to. So the
+callee must also have written a register the model itself marks `<unaffected>`,
+excluding the stack pointer, which every `RET` writes
+(`kuna_calleepreserves.rs (body_departs_from_convention)`). That is the
+signature of the hand-rolled helper the rule exists for — the get-PC thunk's
+`EBX` is callee-saved, so the convention is already not a description of it —
+and it is a positive finding rather than an absence. Only a processor-space
+range is ever answered, because a callee's memory writes are `STORE`s through an
+address the walk cannot follow; only *killed by call* is downgraded, never
+promoted; and a prototype carrying its own effect-record override has had a
+deliberate statement made about it and is left alone.
+
 **Partial-range call overlap.** A heritaged range can be strictly *larger* than
 the ABI storage it contains — the characterization is `ContainedBy` rather than
 `ContainsJustified`, so none of the whole-range arms above apply. This is

@@ -520,6 +520,10 @@ pub struct Architecture {
     /// (kuna) Let a bounded decode of the callee's own body veto a register
     /// argument the callee provably never reads (option `calleedeadarg`).
     pub callee_dead_arg: bool,
+    /// (kuna) Narrow a call's `killedbycall` set to the registers a bounded
+    /// decode of the callee's own body proves it writes (option
+    /// `calleepreserves`).  See [`crate::p4_calls::kuna_calleepreserves`].
+    pub callee_preserves: bool,
     /// (kuna) In the function's OWN input recovery, do not let a run of unused
     /// argument REGISTERS veto a later register the body reads before writing
     /// (option `inputparamgap`).  See [`crate::p4_calls::kuna_inputparamgap`].
@@ -1778,6 +1782,7 @@ impl Architecture {
             recover_lowered_switch: false,
             callsite_stack_args: true,
             callee_dead_arg: true,
+            callee_preserves: true,
             input_param_gap: true,
             vararg_stack_args: true,
             callee_arity: true,
@@ -1991,6 +1996,7 @@ impl Architecture {
         self.recover_lowered_switch = true; // (kuna) default-on (angr port)
         self.callsite_stack_args = true; // (kuna) default-on: restores upstream fspec.cc:5618 (0/675 ablation)
         self.callee_dead_arg = true; // (kuna) default-on (DIV-KUNA_DEADARG_DIV): 0/675 datatests, subtractive only
+        self.callee_preserves = true; // (kuna) DIV-124 default-on: a fully decoded, call-free callee's own writes narrow the cspec killedbycall set, so a value that crosses a get-PC thunk survives (0/675 ablation)
         self.input_param_gap = true; // (kuna) DIV-114 default-on: an unused argument-register run in the function's OWN input recovery no longer vetoes a later live-in register, so a pointer-table-only callback recovers its full signature instead of reading undefined locals. Byte-identical (0/675) on the datatest corpus; restore upstream's forceInactiveChain veto with `option inputparamgap off`
         self.vararg_stack_args = true; // (kuna) DIV-101 default-on: a variadic call's stack tail is its own fillinMap section (0/675 ablation)
         self.callee_arity = true; // (kuna) DIV-102 default-on: one callee, one argument list across its call sites (0/675 ablation)
@@ -2283,6 +2289,12 @@ impl Architecture {
                 let (val, msg) =
                     crate::p4_calls::kuna_calleedeadarg::OptionCalleeDeadArg.apply(p1)?;
                 self.callee_dead_arg = val;
+                Ok(msg)
+            }
+            "calleepreserves" => {
+                let (val, msg) =
+                    crate::p4_calls::kuna_calleepreserves::OptionCalleePreserves.apply(p1)?;
+                self.callee_preserves = val;
                 Ok(msg)
             }
             "varargstackargs" => {
@@ -3180,6 +3192,7 @@ impl Architecture {
         ctx.recover_lowered_switch = self.recover_lowered_switch; // loweredswitch
         ctx.callsite_stack_args = self.callsite_stack_args; // callsitestackargs
         ctx.callee_dead_arg = self.callee_dead_arg; // calleedeadarg
+        ctx.callee_preserves = self.callee_preserves; // calleepreserves
         ctx.input_param_gap = self.input_param_gap; // inputparamgap
         ctx.vararg_stack_args = self.vararg_stack_args; // varargstackargs
         ctx.callee_arity = self.callee_arity; // calleearity

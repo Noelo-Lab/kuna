@@ -1539,6 +1539,26 @@ impl Heritage {
             // heritage.cc:1468) because the output-active branch can promote it to
             // `killedbycall`.
             let mut effecttype = fc.proto().has_effect(&trans_addr, size);
+            // (kuna) `calleepreserves` — the cspec's `killedbycall` set is a
+            // statement about the CONVENTION, not about this callee.  When a
+            // bounded decode of the callee's own body proves it never writes
+            // this register, downgrade the effect to `unaffected` so the
+            // caller's value flows across the call instead of being replaced by
+            // an INDIRECT creation with no definition.  The output-active branch
+            // is skipped for the same range: a register the callee provably
+            // never writes cannot be carrying its return value either, so
+            // registering an output trial for it would put the clobber straight
+            // back.  See [`crate::p4_calls::kuna_calleepreserves`].
+            let preserved = effecttype == effect_type::KILLEDBYCALL
+                && crate::p4_calls::kuna_calleepreserves::callee_preserves_range(
+                    fd,
+                    fc,
+                    &trans_addr,
+                    size,
+                );
+            if preserved {
+                effecttype = effect_type::UNAFFECTED;
+            }
 
             // Output-active branch (heritage.cc:1470-1487): register a return-value
             // trial for the call's killed output register and, when the effect is a
@@ -1547,7 +1567,7 @@ impl Heritage {
             // tracks whether this range became a fresh output trial (controls the
             // `markIndirectCreation` in0 flag).
             let mut possibleoutput = false;
-            if fc.is_output_active() && tryregister {
+            if !preserved && fc.is_output_active() && tryregister {
                 let output_character = fc.proto().characterize_as_output(&trans_addr, size);
                 if output_character != Containment::NoContainment {
                     if effecttype != effect_type::KILLEDBYCALL && fc.proto().is_auto_killed_by_call() {

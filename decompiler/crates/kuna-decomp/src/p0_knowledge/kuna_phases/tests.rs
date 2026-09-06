@@ -57,7 +57,7 @@ fn surface_count_is_109() {
 }
 
 #[test]
-fn settable_count_is_153() {
+fn settable_count_is_154() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -112,12 +112,12 @@ fn settable_count_is_153() {
     // suppression, DIV-117, GH-403).
     // +1 for `noreturnretuse` (P4 terminal no-return call use in return trials,
     // DIV-118).
-    assert_eq!(kuna_num_settables(), 153);
-    assert_eq!(SETTABLE_TABLE.len(), 153);
+    assert_eq!(kuna_num_settables(), 154);
+    assert_eq!(SETTABLE_TABLE.len(), 154);
 }
 
 #[test]
-fn tier_counts_are_38_core_61_transform_54_analysis() {
+fn tier_counts_are_39_core_61_transform_54_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -212,7 +212,7 @@ fn tier_counts_are_38_core_61_transform_54_analysis() {
     // core 35 -> 36: +1 for `noreturnretuse` (P4 terminal no-return call use in
     // return trials, DIV-118) -- core, not transform: it narrows which competing
     // uses veto an output trial, changing no p-code of its own.
-    assert_eq!((core, transform, analysis), (38, 61, 54));
+    assert_eq!((core, transform, analysis), (39, 61, 54));
 }
 
 #[test]
@@ -402,7 +402,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_52_suppressed_for_95() {
+fn option_values_live_value_present_for_52_suppressed_for_96() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -651,6 +651,7 @@ fn option_values_live_value_present_for_52_suppressed_for_95() {
                             | "calleearityfwd"
                             | "calleearitylive"
                             | "calleedeadarg"
+                            | "calleepreserves"
                             | "calloverlap"
                             | "spillargtrial"
                             | "paramcopyhoist"
@@ -820,7 +821,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // mid-table beside `callsitestackargs`, so the tail does not move either.
     // 148 -> 149: +1 for `noreturnretuse` (DIV-118); its P4 row is appended after
     // the last one, so the previous tail row gains a comma and it becomes the tail.
-    assert_eq!(json.matches("},\n").count(), 152);
+    assert_eq!(json.matches("},\n").count(), 153);
 }
 
 #[test]

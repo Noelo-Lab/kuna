@@ -5782,6 +5782,22 @@ impl FuncProto {
             &self.effectlist
         }
     }
+    /// (kuna `calleepreserves`) Does this proto carry its OWN effect records,
+    /// rather than deferring to the model's?  A non-empty override list is a
+    /// deliberate statement about this function's side effects and is never
+    /// second-guessed by the callee-body probe.
+    pub fn has_effect_override(&self) -> bool {
+        !self.effectlist.is_empty()
+    }
+
+    /// Append an effect-record override and re-sort (test/builder hook, mirroring
+    /// [`ProtoModel::push_effect`]).
+    #[cfg(test)]
+    pub fn push_effect_override(&mut self, eff: EffectRecord) {
+        self.effectlist.push(eff);
+        self.effectlist.sort_by(EffectRecord::compare_by_address);
+    }
+
     /// Get the likely-trash list (C++ `trashBegin`/`trashEnd`).
     pub fn trash_list(&self) -> &[VarnodeData] {
         if self.likelytrash.is_empty() {

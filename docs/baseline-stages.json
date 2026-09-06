@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    644,
-    644
+    650,
+    650
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -25,6 +25,12 @@
     "data:BRANCHFLIP-ARMSWAP #4: branchflip off is the un-flipped reference, both siblings nested",
     "data:BRANCHFLIP-ARMSWAP #5: no else-if collapse of a statement-carrying arm",
     "data:BRANCHFLIP-ARMSWAP #6: no sibling if escapes to the outer statement indent",
+    "data:CALLEEPRESERVES #1: off, the value that crossed the thunk is a local nothing assigns",
+    "data:CALLEEPRESERVES #2: off, f loses the parameter that value was loaded from",
+    "data:CALLEEPRESERVES #3: on, EDX survives the thunk and f regains its second parameter",
+    "data:CALLEEPRESERVES #4: on, the third argument is the caller's own parameter, not an undefined local",
+    "data:CALLEEPRESERVES #5: both passes, the second call is rendered identically (its callee writes no unaffected register)",
+    "data:CALLEEPRESERVES #6: both passes, the thunk is still called and still returns nothing",
     "data:CALLOVERLAP #1: off, the call is emitted with no arguments at all (the CVTSI2SD result never reaches it)",
     "data:CALLOVERLAP #2: off, f loses its own parameter list because the argument chain dies with the trial",
     "data:CALLOVERLAP #3: off, the call result is read from a local that nothing ever assigns",

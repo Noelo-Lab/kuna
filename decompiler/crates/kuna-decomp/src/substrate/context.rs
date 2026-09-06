@@ -719,6 +719,11 @@ pub struct ArchContext {
     /// [`check_input_trial_use`](crate::funcdata_callsite::check_input_trial_use)
     /// through [`crate::p4_calls::kuna_calleedeadarg::trial_is_dead_in_callee`].
     pub callee_dead_arg: bool,
+    /// (kuna) narrow a call's `killedbycall` set to the registers a bounded
+    /// decode of the callee's own body proves it writes (`calleepreserves`).
+    /// Read by `Heritage::guard_calls` through
+    /// [`crate::p4_calls::kuna_calleepreserves::callee_preserves_range`].
+    pub callee_preserves: bool,
     /// (kuna) in the function's OWN input recovery, tolerate a run of unused
     /// argument REGISTERS before a live-in register (`inputparamgap`).  Read by
     /// `ActionInputPrototype`, which stamps it onto the
@@ -1202,6 +1207,7 @@ impl ArchContext {
             // calleedeadarg only ever REMOVES an argument, and only against a
             // decoded callee body; the fixture seam carries the real default.
             callee_dead_arg: true,
+            callee_preserves: true,
             input_param_gap: true,
             vararg_stack_args: true,     // varargstackargs (DIV-101 default-on)
             callee_arity: true,          // calleearity (DIV-102 default-on)

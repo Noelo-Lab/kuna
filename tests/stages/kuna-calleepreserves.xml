@@ -1,0 +1,74 @@
+<decompilertest>
+<binaryimage arch="x86:LE:32:default:gcc">
+<!--
+    kuna calleepreserves: an i386 get-PC thunk eats a live argument.
+
+    x86gcc.cspec lists ECX and EDX as killedbycall because cdecl allows a callee
+    to clobber them, and Heritage::guardCalls (heritage.cc:1444) applies that
+    answer to every call.  It is an answer about the CONVENTION, and at a get-PC
+    thunk it is false: gcc emits "mov ebx,[esp]; ret", four bytes that write EBX
+    and nothing else, once per PIE that reaches a global, precisely because it is
+    cheaper than a convention-abiding call.
+
+    The bytes are function sub_8049f20 of the i386 PIE "collide", verbatim, with
+    its thunk at 0x8049f55 immediately after it:
+
+        8049f20  55                 PUSH   EBP
+        8049f21  89 e5              MOV    EBP,ESP
+        8049f23  83 ec 10           SUB    ESP,0x10
+        8049f26  89 5d fc           MOV    [EBP + -0x4],EBX
+        8049f29  8b 55 0c           MOV    EDX,[EBP + 0xc]   ; the second parameter
+        8049f2c  e8 24 00 00 00     CALL   0x8049f55         ; the get-PC thunk
+        8049f31  81 c3 6f 01 00 00  ADD    EBX,0x16f
+        8049f37  c7 04 24 03 ...    MOV    [ESP],0x3
+        8049f3e  89 54 24 08        MOV    [ESP + 0x8],EDX   ; third argument of the call
+        8049f42  8b 55 08           MOV    EDX,[EBP + 0x8]   ; the first parameter
+        8049f45  89 54 24 04        MOV    [ESP + 0x4],EDX
+        8049f49  e8 12 e4 ff ff     CALL   0x8048360
+        8049f4e  8b 5d fc           MOV    EBX,[EBP + -0x4]
+        8049f51  89 ec              MOV    ESP,EBP
+        8049f53  5d                 POP    EBP
+        8049f54  c3                 RET
+        8049f55  8b 1c 24           MOV    EBX,[ESP]
+        8049f58  c3                 RET
+
+    The controlled comparison is inside the one function: the first parameter is
+    loaded from the frame AFTER the call and is recovered, the second is loaded
+    BEFORE it and is lost.  The only difference between them is that EDX crosses
+    the CALL.
+
+    0x8048360 stands in for the PLT entry the original called and is
+    "xor eax,eax; ret".  Its body writes EAX (an output and likelytrash register)
+    and ESP, and no register x86gcc.cspec marks unaffected, so it never departs
+    from the convention and its own killed set is left exactly as written; both
+    passes render that call identically.
+
+    Stage: P3 heritage call guarding, option calleepreserves off|on.  Pass 1
+    (off) pins the bug, pass 2 (on, the default) pins the fix.
+-->
+<bytechunk space="ram" offset="0x8049f20">
+5589e583ec10895dfc8b550ce82400000081c36f010000c7042403000000895424088b550889542404e812e4ffff8b5dfc89ec5dc38b1c24c3
+</bytechunk>
+<bytechunk space="ram" offset="0x8048360">
+31c0c3
+</bytechunk>
+<symbol space="ram" offset="0x8049f20" name="f"/>
+<symbol space="ram" offset="0x8048360" name="reportstat"/>
+</binaryimage>
+<script>
+  <com>option calleepreserves off</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option calleepreserves on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="CALLEEPRESERVES #1: off, the value that crossed the thunk is a local nothing assigns" min="1" max="1">unsigned int v1; // edx</stringmatch>
+<stringmatch name="CALLEEPRESERVES #2: off, f loses the parameter that value was loaded from" min="1" max="1">void f\(unsigned int a0\)</stringmatch>
+<stringmatch name="CALLEEPRESERVES #3: on, EDX survives the thunk and f regains its second parameter" min="1" max="1">void f\(unsigned int a0,unsigned int a1\)</stringmatch>
+<stringmatch name="CALLEEPRESERVES #4: on, the third argument is the caller's own parameter, not an undefined local" min="1" max="1">v1 = a1;</stringmatch>
+<stringmatch name="CALLEEPRESERVES #5: both passes, the second call is rendered identically (its callee writes no unaffected register)" min="2" max="2">reportstat\(3,a0,v1\);</stringmatch>
+<stringmatch name="CALLEEPRESERVES #6: both passes, the thunk is still called and still returns nothing" min="2" max="2">sub_8049f55\(\);</stringmatch>
+</decompilertest>

@@ -1,0 +1,48 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "a-8fb669a549b6",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "0x8049f20",
+    "--addr",
+    "--assert",
+    "prototype sub_8049f20 int4 sub_8049f20(char *path,void *buf);",
+    "--option",
+    "calleearity",
+    "on",
+    "--option",
+    "varargstackargs",
+    "on"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/getpcthunk_i386",
+    "binary_sha256": "6ffdac39f28967a3ce2426581ae054440f7440bcfb0edc926d2627d888842237",
+    "binary_size": 4104,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/getpcthunk_i386",
+    "selector": "0x8049f20",
+    "selector_kind": "addr"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "sub_8049f60\\(3,path,[^;]*buf"
+    ],
+    "stdout_absent": [
+      "sub_8049f60\\(3,path,v[0-9]+\\)"
+    ]
+  },
+  "notes": "Promoted acceptance of get-pc-helper-loses, re-pointed from the dataset witness (crackmes.one 5ab77f5833c5d40ad448c399 'collide', sub_8049f20 and its get-PC thunk at 0x8049f55) at the vendored getpcthunk_i386 fixture: CI has no dataset. The fixture carries the witness's bytes verbatim with the PLT call retargeted in-image. Without calleepreserves the third argument is an undefined v1."
+}
