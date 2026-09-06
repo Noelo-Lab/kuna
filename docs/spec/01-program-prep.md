@@ -159,6 +159,29 @@ header is wrong however the rest of the file reads, so keeping it lets the calle
 report whatever is actually unreadable instead of a header count that was never
 the whole story.
 
+(kuna) **A PE's header page is mapped, read-only**
+(`decompiler/crates/kuna-analysis/src/loader/pe_headers.rs (header_region)`).
+Windows maps a PE in two parts: `SizeOfHeaders` file bytes are copied to
+`ImageBase` as `PAGE_READONLY`, and only then is each section copied to
+`ImageBase + VirtualAddress`. `object`'s neutral view enumerates the sections
+alone, so everything below the first section's RVA — the MZ stub, the PE
+signature, the COFF and optional headers, the section table — was mapped nowhere,
+and an address there answered "is not mapped in this input" on every surface,
+including `decompile --define-function`. A compiler puts no code in the header, but
+a hand-built or packed image may: a reported keygenme declares
+`AddressOfEntryPoint` `0x154`, the byte immediately after its own two-entry section
+table, so its declared entry was unreachable. The region is therefore published to
+the segment and section walks as one more mapping unit, `DATA | READONLY`. It is
+read-only, not executable, both because that is what Windows does and because it
+keeps the executable-region scans of §1.6 out of the MZ/PE bytes of every PE — so
+function *discovery* is unchanged and reaching a header entry stays an explicit act
+(a name, an address, or a `--define-function`). Its extent is `SizeOfHeaders`
+clamped twice, to the file length and to the first section's RVA, so a malformed
+value — the same field a packer overwrites two paragraphs above — can never shadow
+real content; a clamp to zero publishes nothing. No other format defines one
+(`ObjectFormat::header_region` defaults to `None`), because an ELF's `PT_LOAD`
+headers already describe whatever of the header is in the mapping.
+
 **Character sanitizing** (`symbolnamechars`, `off|safe|ident`, default `safe`;
 `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_symbolnamechars.rs`) is the
 last step of that name reduction, and it is the only one that treats the name as

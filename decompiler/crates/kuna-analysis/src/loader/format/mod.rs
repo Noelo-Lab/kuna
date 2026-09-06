@@ -48,6 +48,20 @@ pub struct ImportSym {
     pub name: Vec<u8>,
 }
 
+/// The file-backed **header page** a format maps ahead of its first section:
+/// the bytes at file offset 0 that appear at virtual address `vma` at run time.
+///
+/// Only PE publishes one today (`SizeOfHeaders` bytes at `ImageBase`, which
+/// Windows maps `PAGE_READONLY`). An ELF's `PT_LOAD` program headers already
+/// describe the whole mapping, including any header bytes that are in it, so
+/// there is nothing left over to add.
+pub struct HeaderRegion {
+    /// Virtual address the header bytes are mapped at.
+    pub vma: u64,
+    /// How many bytes from file offset 0 are mapped there.
+    pub len: usize,
+}
+
 /// Which object format an [`ObjectFormat`] implements.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum FormatKind {
@@ -91,6 +105,15 @@ pub trait ObjectFormat {
     /// re-parse the neutral `object::File` view does not expose); the ELF impl
     /// ignores it.
     fn resolve_imports(&self, file: &object::File, bytes: &[u8]) -> Vec<ImportSym>;
+
+    /// The image's header page, if the format maps one outside its sections.
+    ///
+    /// PE only (`SizeOfHeaders` bytes at `ImageBase`); every other format
+    /// inherits the `None` default and keeps a section/segment-derived map
+    /// byte-for-byte. See [`crate::loader::pe_headers`].
+    fn header_region(&self, _file: &object::File, _bytes: &[u8]) -> Option<HeaderRegion> {
+        None
+    }
 
     /// Read-only VMA ranges to constant-fold beyond the section-flag scan (the
     /// MIPS GOT external slots today; usually empty).

@@ -1,0 +1,83 @@
+{
+  "opportunity": "repipe:5ab77f6333c5d40ad448ca40::pe-header-entry-mapped",
+  "need_id": "pe-header-entry-mapped",
+  "track": "tooling",
+  "round": 4,
+  "test_name": "repipe round 4, challenge 5ab77f6333c5d40ad448ca40",
+  "binary": "kuna-re-dataset/challenges/5ab77f6333c5d40ad448ca40/bin/BUG.cRYPTO.kEYGENME.zip.__x/BUG.exe",
+  "selector": null,
+  "func_addr": "0x400154",
+  "option": null,
+  "flag": null,
+  "element_id": null,
+  "change_kind": "correctness-fix",
+  "source_decompiler": "kuna",
+  "inspiration": "repipe round 4 need pe-header-entry-mapped; the shape is the PE half of what the ELF path already gets for free -- an ELF's PT_LOAD headers describe the header bytes that are in the mapping, a PE's section table does not",
+  "default_on": true,
+  "div": null,
+  "scope": "small",
+  "files": [
+    "decompiler/crates/kuna-analysis/src/loader/pe_headers.rs",
+    "decompiler/crates/kuna-analysis/src/loader/pe_headers/tests.rs",
+    "decompiler/crates/kuna-analysis/src/loader/format/mod.rs",
+    "decompiler/crates/kuna-analysis/src/loader/format/pe.rs",
+    "decompiler/crates/kuna-analysis/src/loader/mod.rs",
+    "decompiler/crates/kuna-analysis/src/loadimage_object.rs",
+    "decompiler/crates/kuna-analysis/tests/fixtures/pe_headerentry_i386.exe",
+    "decompiler/crates/kuna-analysis/tests/fixtures/pe_headerentry_i386.py",
+    "tests/cli/pe-header-entry-mapped.json",
+    "docs/spec/01-program-prep.md",
+    "docs/re-needs/pe-header-entry-mapped.md"
+  ],
+  "decisions": [
+    "The refuter's hypothesis is UPHELD and its mechanism was exact. loadimage_object.rs builds its map from file.segments(), which for a PE is the section list; nothing anywhere published the SizeOfHeaders bytes Windows maps at ImageBase, so vma_is_mapped() answered false at 0x400154 and the entry could not be selected by any route.",
+    "Read-only DATA, not CODE, as the refuter's two controls already showed sufficient. Beyond matching PAGE_READONLY it is what makes the change safe to default on: entry discovery scans executable regions, so a non-executable header page cannot add a phantom entry to the 17 in-repo and 163 dataset PEs. Measured, not argued -- `kuna functions --json` is byte-identical across 57 PE images.",
+    "The region rides a new ObjectFormat::header_region with a None default rather than a format branch in the load path, so ELF/Mach-O/COFF are unreachable by construction and the boundary keeps its stated role as the single funnel for per-format knowledge.",
+    "Clamped to min(SizeOfHeaders, file length, first section RVA). The first-section clamp is the load-bearing one: SizeOfHeaders is a header field a packer is free to lie about, and without the clamp an inflated value would shadow section 1 -- which is exactly how the refuter's own control accidentally dropped that image from 2 functions to 0. A clamp to zero publishes no region rather than an empty one (unit-tested with a section at RVA 0).",
+    "No phases.toml option: a loader mapping unit cannot be a judgement call, the change is measured byte-identical on every image that loads today, and the tooling track's rule is that a strict correctness fix ships without a flag. Same disposition as the two sibling loader fixes this round (#451, #453)."
+  ],
+  "parity": "OK",
+  "gates": {
+    "rebased_onto": "origin/main bfe843a4 (#455)",
+    "make test": "PARITY OK 675/675",
+    "make test-stages": "PARITY OK 644/644",
+    "make check-spec": "OK (lenient)",
+    "kuna catalog --check": "catalog OK",
+    "make test-cli": "50/50",
+    "make rust-test": "green, exit 0, 363 test binaries ok / 0 failed, run as `env -u KUNA_DECOMP_TEST make rust-test`. With the repipe launcher's KUNA_DECOMP_TEST left set (it points at kuna's own decomp_test_dbg, and the C++ oracle is gone so CI skips that block) the one target verify_w10_proto_unlock fails with `oracle promote_compare signature drifted`; it passes 4/4 unset, and this change touches no kuna-decomp file.",
+    "mergecheck": "merge guards clean against origin/main; counters re-derived on the rebased tree agree at 153 settables, tiers (38, 61, 54), 242 corpus files"
+  },
+  "probe_flip": {
+    "probe_still_passes": false,
+    "acceptance_passes": true
+  },
+  "promoted_probe": {
+    "path": "tests/cli/pe-header-entry-mapped.json",
+    "retargeted_from": "dataset bin/BUG.cRYPTO.kEYGENME.zip.__x/BUG.exe (aPLib-packed PE32, AddressOfEntryPoint 0x154 inside a 0x200-byte header page)",
+    "retargeted_to": "decompiler/crates/kuna-analysis/tests/fixtures/pe_headerentry_i386.exe (1024-byte PE32 twin: e_lfanew 0x0c, 0xe0-byte optional header, two sections, section table 0x104..0x154, entry 0x154)",
+    "why": "CI has no dataset; the twin carries the identical defect at the identical address and exits 1 with the identical 'address 0x400154 is not mapped in this input' on the unpatched build",
+    "verified_on_witness": "the acceptance passed on the dataset original first: `kuna decompile BUG.exe 0x400154 --addr --define-function 0x400154=entry` goes from exit 1 to exit 0 emitting C for entry(), and `disassemble --addr 0x400154 --as code` decodes the aPLib-style bit-reader stub the refuter predicted"
+  },
+  "sweep": {
+    "method": "A/B by binary: the patched release kuna against one built from the recorded base commit with the four source files reverted, both replayed over every PE image in reach",
+    "pe_images_swept": 57,
+    "pe_images_detail": "all 17 in-repo MZ fixtures plus the 40 smallest of the 169 dataset PE images",
+    "decompile_all_json_changed": 0,
+    "functions_json_changed": 0,
+    "functions_decompiled_total": 3524,
+    "strings_json_changed": 0,
+    "xrefs_json_changed": 3,
+    "xrefs_detail": "`xrefs --to 0x400154` on the 3 images whose header page actually covers that address: target.name goes from null to sub_400154 because the address is now mapped. count stays 0 and the reference list is unchanged on all 57 -- i.e. the only movement is the fix itself, at an address deliberately chosen to be inside the header page.",
+    "can_change_a_loading_image": false,
+    "why_not": "the region is published read-only DATA below the first section's RVA, so it adds no CODE span (function extents and discovery both key on CODE) and overlaps nothing that was already mapped; the only new answers are at addresses that previously had none"
+  },
+  "speed_method": "A/B by binary, interleaved ABBA over 11 rounds, warmup discarded; a sibling builder shared the box, so the run-to-run stdev (262 ms, ~6%) dwarfs the effect",
+  "speed_target": "kuna functions <5.7 MB PE32, antivm.exe> --json",
+  "speed_off_ms": 4097.9,
+  "speed_on_ms": 4064.1,
+  "speed_delta_pct": -0.82,
+  "speed_samples": 11,
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": true,
+  "speed_note": "median -0.82%, min-of-11 +0.05%, i.e. indistinguishable from noise. Per PE load the added work is one typed header parse and a memcpy of at most SizeOfHeaders (0x200-0x400 bytes); a non-PE returns None before reading anything."
+}

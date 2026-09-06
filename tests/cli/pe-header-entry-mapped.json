@@ -1,0 +1,33 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/pe_headerentry_i386.exe",
+    "binary_sha256": "ca5f1405e7c60baccf2f00e0848febf941243e35f070b1a8adfd64ce3df82705",
+    "binary_size": 1024,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/pe_headerentry_i386.exe"
+  },
+  "timeout_s": 60,
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "0x400154",
+    "--addr",
+    "--define-function",
+    "0x400154=entry"
+  ],
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "\\{"
+    ],
+    "stderr_absent": [
+      "address 0x400154 is not mapped"
+    ]
+  },
+  "notes": "Vendored twin of the reported image (kuna-analysis/tests/fixtures/pe_headerentry_i386.py): e_lfanew 0x0c and a 0xe0-byte optional header over two sections, so the section table runs 0x104..0x154 and AddressOfEntryPoint 0x154 lands one byte past it, in the header page. The dataset original stays the witness in Reproduction; this target is in-repo so the probe runs where there is no dataset."
+}

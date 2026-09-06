@@ -20,7 +20,7 @@ use object::{Architecture, SectionFlags, SectionKind};
 
 use kuna_sleigh::loadimage::section_flags;
 
-use super::{FormatKind, ImportSym, ObjectFormat};
+use super::{FormatKind, HeaderRegion, ImportSym, ObjectFormat};
 
 /// The PE (Windows portable-executable) object format.
 pub struct PeFormat;
@@ -94,6 +94,12 @@ impl ObjectFormat for PeFormat {
         // `loader/pe_iat.rs` (design §3.2). Pure & total: a non-PE / no-import
         // / unparsable layout yields an empty `Vec`.
         crate::loader::pe_iat::resolve_pe_imports(file, bytes)
+    }
+
+    fn header_region(&self, file: &object::File, bytes: &[u8]) -> Option<HeaderRegion> {
+        // The `SizeOfHeaders` bytes Windows maps read-only at `ImageBase`, which
+        // the section walk never covers (design: `loader/pe_headers.rs`).
+        crate::loader::pe_headers::header_region(file, bytes)
     }
 }
 

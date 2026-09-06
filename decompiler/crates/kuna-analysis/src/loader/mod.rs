@@ -38,6 +38,9 @@ pub mod elf_shdr;
 // (kuna) PE data-directory tolerance: a `NumberOfRvaAndSizes` larger than its own
 // optional header is clamped to the directories that are really present.
 pub mod pe_datadirs;
+// (kuna) The PE header page: the `SizeOfHeaders` file bytes Windows maps
+// read-only at `ImageBase`, below the first section and outside the section walk.
+pub mod pe_headers;
 // (kuna) ET_REL relocatable-object (`.o`) load-layout + relocation engine.
 pub mod reloc_object;
 // Architecture-aware ELF instruction/data relocation encoders used by the

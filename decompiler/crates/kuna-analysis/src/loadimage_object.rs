@@ -450,6 +450,25 @@ impl ObjectLoadImage {
             }
             segments.push(Segment { vma, data: data.to_vec() });
         }
+        // (kuna, `pe-header-entry-mapped`) The header page a format maps ahead
+        // of its first section. `file.segments()` enumerates sections, so a PE's
+        // `SizeOfHeaders` bytes at `ImageBase` were mapped nowhere and an entry
+        // declared inside them read back "not mapped" even with an explicit
+        // `--define-function`. Read-only and DATA, as Windows maps it, so the
+        // executable-region scans stay out of every PE's MZ/PE bytes.
+        // `None` for every other format; see [`crate::loader::pe_headers`].
+        let header = fmt.header_region(&file, bytes).map(|region| SectionInfo {
+            vma: region.vma,
+            size: region.len as u64, // cast: clamped to the file length
+            flags: section_flags::DATA | section_flags::READONLY,
+        });
+        if let Some(region) = &header {
+            segments.push(Segment {
+                vma: region.vma,
+                data: bytes[..region.size as usize].to_vec(), // cast: ditto
+            });
+            segment_info.push(region.clone());
+        }
         segment_info.sort_by_key(|s| s.vma);
         // Ascending vma order so find_section's "closest greater" walk is a
         // simple scan (the BFD list is already address-ordered for ELF).
@@ -464,6 +483,7 @@ impl ObjectLoadImage {
             let flags = fmt.section_bits(sec.kind(), sec.flags());
             sections.push(SectionInfo { vma: sec.address(), size: sec.size(), flags });
         }
+        sections.extend(header);
 
         // Snapshot the function symbols.  Three sources, deduped by address so an
         // import that appears in several tables is registered exactly once:
@@ -1609,6 +1629,60 @@ mod tests {
             segments.iter().all(|&(vma, size, _)| size > 0 && vma > 0),
             "zero-size records are dropped; got {segments:?}"
         );
+    }
+
+    /// (kuna, `pe-header-entry-mapped`) The PE header page reaches the map: an
+    /// entry declared inside it has readable bytes, and the region is published
+    /// as read-only DATA so the executable-region scans stay out of it.
+    #[test]
+    fn a_pe_maps_its_header_page_read_only() {
+        use kuna_sleigh::loadimage::LoadImage;
+        let path = format!(
+            "{}/tests/fixtures/pe_headerentry_i386.exe",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let bytes = std::fs::read(&path).expect("fixture");
+        let m = manager();
+        let ram = Rc::clone(m.get_space_by_name("ram").unwrap());
+        let mut img = ObjectLoadImage::from_bytes(&path, &bytes).expect("load the PE");
+        img.attach_to_space(Rc::clone(&ram));
+
+        let header = (0x40_0000u64, 0x200u64, section_flags::DATA | section_flags::READONLY);
+        assert!(
+            img.get_segments().contains(&header),
+            "SizeOfHeaders bytes are mapped at ImageBase; got {:?}",
+            img.get_segments()
+        );
+        assert!(
+            img.section_snapshot().contains(&header),
+            "and are published to the section walk, so the address resolves as mapped"
+        );
+
+        // The declared entry sits at RVA 0x154, one byte past the section table.
+        let mut code = [0u8; 3];
+        img.load_fill(&mut code, &Address::new(Rc::clone(&ram), 0x40_0154)).expect("entry is mapped");
+        assert_eq!(code, [0x55, 0x89, 0xe5], "push ebp; mov ebp,esp");
+    }
+
+    /// The clamp in practice: the header page stops where the first section
+    /// starts, so nothing it publishes can shadow real content.
+    #[test]
+    fn the_header_page_never_overlaps_a_section() {
+        let path = format!("{}/tests/fixtures/pe_imports.exe", env!("CARGO_MANIFEST_DIR"));
+        let bytes = std::fs::read(&path).expect("fixture");
+        let img = ObjectLoadImage::from_bytes(&path, &bytes).expect("load the PE");
+        let sections = img.section_snapshot();
+        let &(hvma, hsize, hflags) = sections
+            .iter()
+            .min_by_key(|&&(vma, _, _)| vma)
+            .expect("a PE has sections");
+        assert_eq!(hflags, section_flags::DATA | section_flags::READONLY, "the header page sorts first");
+        for &(vma, size, _) in &sections {
+            if vma == hvma {
+                continue;
+            }
+            assert!(vma >= hvma + hsize, "section 0x{vma:x}+0x{size:x} overlaps the header page");
+        }
     }
 
     #[test]
