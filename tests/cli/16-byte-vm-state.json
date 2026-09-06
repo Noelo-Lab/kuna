@@ -1,0 +1,40 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "vm"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/arraycoverwidth_x86_64",
+    "binary_sha256": "0d768f2d5738cac7e9eda386c36b0a8b40058b001f27867f4f2bcb53d55c2788",
+    "binary_size": 5040,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/arraycoverwidth_x86_64",
+    "selector": "vm",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "v[0-9]+\\._0_16_ = v[0-9]+\\[0\\]\\._0_16_;",
+      "v[0-9]+\\._0_16_ = 0;",
+      "return v[0-9]+\\[3\\];"
+    ],
+    "stdout_absent": [
+      "v[0-9]+\\s*\\[\\s*0\\s*\\]\\s*=\\s*v[0-9]+\\s*\\[\\s*0\\s*\\]\\s*;"
+    ]
+  },
+  "notes": "Desired: an access spanning more than one array element reports the width it touches. Dataset witness: crackmes.one 605443e333c5d42c3d016f59 (KataVM_L1 @0x12d0), whose two VM register banks are swapped with movdqa/movaps and printed `v30[0] = v32[0];`. This fixture (source arraycoverwidth_x86_64.s) is its reduction. `return vN[3]` pins that a real in-element read keeps its subscript."
+}

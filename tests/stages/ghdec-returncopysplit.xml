@@ -99,6 +99,6 @@ cc1cfaffe961ffffff0f1f8000000000660f6f05c8600200c644242000488d6c
      canary init, so the fs_offset/canary-slot locals are gone and the high-half
      destination renumbers v6->v5. The split-copy property under test is unchanged. -->
 <stringmatch name="returncopysplit #4: the real copy site still reads the literal's high half per byte" min="1" max="1">v5\[7\] = s_92e50\[0xf\];</stringmatch>
-<stringmatch name="returncopysplit #5: the rule-off pass pins the unsplit whole-half rendering" min="1" max="1">v2\[0\] = \(char\[8\]\)s_92e50\._0_8_;</stringmatch>
+<stringmatch name="returncopysplit #5: the rule-off pass pins the unsplit whole-half rendering" min="1" max="1">v2\._0_8_ = \(char\[8\]\)s_92e50\._0_8_;</stringmatch>
 <stringmatch name="returncopysplit #6: every reference to the literal in the transcript is a read (16 in pass 1, 2 in pass 2)" min="18" max="18">s_92e50(\[|\._)</stringmatch>
 </decompilertest>

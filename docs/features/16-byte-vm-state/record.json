@@ -1,0 +1,82 @@
+{
+  "opportunity": "repipe:605443e333c5d42c3d016f59::16-byte-vm-state",
+  "need_id": "16-byte-vm-state",
+  "track": "quality",
+  "round": 4,
+  "test_name": "repipe round 4, challenge 605443e333c5d42c3d016f59 (crackmes.one KataVM_Level_1)",
+  "binary": "kuna-re-dataset/challenges/605443e333c5d42c3d016f59/bin/KataVM_Level_1.7z.__x/KataVM_Level_1/KataVM_L1",
+  "selector": "0x12d0",
+  "func_addr": "0x12d0",
+  "option": "arraycoverwidth",
+  "flag": "PrintCOptions::array_cover_width",
+  "element_id": 4145,
+  "change_kind": "correctness-fix",
+  "source_decompiler": "kuna",
+  "inspiration": "repipe round 4 need 16-byte-vm-state; the VM interpreter's two four-word register banks are swapped with movdqa/movaps at 0x1410-0x1428 and the swap emitted as `v30[0] = v32[0];`",
+  "default_on": true,
+  "div": "DIV-122",
+  "scope": "small",
+  "files": [
+    "decompiler/crates/kuna-decomp/src/p9_emit/kuna_arraycoverwidth.rs",
+    "decompiler/crates/kuna-decomp/src/p9_emit/kuna_arraycoverwidth/tests.rs",
+    "decompiler/crates/kuna-decomp/src/p9_emit/printc.rs",
+    "decompiler/crates/kuna-decomp/src/p9_emit/mod.rs",
+    "decompiler/crates/kuna-decomp/src/infra/architecture.rs",
+    "decompiler/crates/kuna-decomp/src/p0_knowledge/options.rs",
+    "decompiler/crates/kuna-decomp/phases.toml",
+    "tests/stages/kuna-arraycoverwidth.xml",
+    "tests/cli/16-byte-vm-state.json",
+    "decompiler/crates/kuna-analysis/tests/fixtures/arraycoverwidth_x86_64",
+    "decompiler/crates/kuna-analysis/tests/fixtures/arraycoverwidth_x86_64.s",
+    "docs/spec/09-emission.md",
+    "docs/history.md",
+    "docs/options.md"
+  ],
+  "parity": "OK",
+  "gates": {
+    "make test": "PARITY OK 675/675",
+    "make test-stages": "PARITY OK 640/640 (635 + 5 new, re-recorded)",
+    "make check-spec": "OK lenient + strict",
+    "kuna catalog --check": "catalog OK",
+    "make test-cli": "42/42",
+    "make rust-test": "PENDING"
+  },
+  "probe_flip": {
+    "probe_still_passes": false,
+    "acceptance_passes": true,
+    "acceptance_clause": "stdout_absent v[0-9]+\\s*\\[\\s*0\\s*\\]\\s*=\\s*v[0-9]+\\s*\\[\\s*0\\s*\\]\\s*;",
+    "acceptance_actual_before": "v30[0] = v32[0];",
+    "acceptance_actual_after": "v30._0_16_ = v32._0_16_;"
+  },
+  "promoted_probe": {
+    "path": "tests/cli/16-byte-vm-state.json",
+    "retargeted_from": "dataset KataVM_L1 @0x12d0",
+    "retargeted_to": "decompiler/crates/kuna-analysis/tests/fixtures/arraycoverwidth_x86_64 (function `vm`)",
+    "why": "CI has no dataset; arraycoverwidth_x86_64 is a project-authored reduction of the witness shape (two 16-byte stack banks, movaps zero-init, movdqa/movaps swap) that reproduces the identical `v2[0] = v3[0];` under `--option arraycoverwidth off`",
+    "strengthened": "stdout_absent alone is satisfiable by emitting nothing, so the promoted probe also pins the positive forms `vN._0_16_ = vM[0]._0_16_;` and `vN._0_16_ = 0;`, plus `return vN[3];` so the fix cannot pass by suppressing subscripts wholesale"
+  },
+  "sweep": {
+    "method": "kuna decompile-all, default vs --option arraycoverwidth off, over 40 images (10 Linux system binaries, 30 RE-dataset ELF/PE crackmes)",
+    "changed_lines_total": 1979,
+    "images_with_no_change": 7,
+    "removed_vs_added": "identical per file (26/26, 58/58, 63/63, 22/22, 19/19, 13/13, 1/1, 204/204, 1/1, 599/599, 1/1)",
+    "unpaired_after_erasing_the_suffix": 0,
+    "note": "every hunk is a 1:1 line substitution: after erasing `._N_M_` and `[0]` from both sides the removed and added line multisets are identical on every file, so no statement was added, deleted, moved or re-anchored, and no non-zero subscript was lost",
+    "new_tokens": "345 `._0_16_`, 33 `._0_8_`, 25 `._8_8_`",
+    "witness_diff": "6 lines: `v30[0] = 0;` / `v32[0] = 0;` / `v13 = v30[0];` / `v30[0] = v32[0];` / `v32[0] = v13;` all gain the width"
+  },
+  "speed_method": "scripts.pipeline.timeit (warmup + median over 7 repeats) on the witness function, run while the workspace suite occupied the box; re-measured on a quiet box below",
+  "speed_target": "kuna decompile KataVM_L1 0x12d0 --addr",
+  "speed_budget_pct": 5.0,
+  "speed_note": "printer-only: one predicate (metatype == TYPE_ARRAY, then one element-stride compare) per symbol-mapped composite leaf, evaluated once per printed token. There is no plausible mechanism for a measurable cost.",
+  "decisions": [
+    "The filed hypothesis ('array lvalue emission may select element zero without preserving the 16-byte access width') is UPHELD verbatim, and so is the round-4 refuter's location: printc.rs's whole-array `name[index]` branch gates on `sym_off >= 0 && (sym_off % elsize) == 0 && st.get_size() > elsize` and never reads the access size.",
+    "The fix is one level ABOVE that branch, not in it. `push_partial_symbol_ir`'s top-of-walk whole-symbol break (upstream `pushPartialSymbol`, printc.cc:2033) is what hands a full-width cover to the caller in the first place; suppressing it for an array whose element stride is smaller than the access lets the existing artificial-field arm render the access, so the whole-cover and partial-cover spellings come from the same code path and cannot drift apart again.",
+    "The refuter's warning that a bare-name fallback is not enough is CONFIRMED and drove the design. Simply tightening the `name[index]` guard yields `v30 = v32;` and `v30 = 0;`, which is not valid C either (arrays are not assignable) and drops the width instead of stating it. `._0_16_` is the notation kuna already uses for `N bytes at offset M of this symbol` and appears four lines away in the same function as `v30._0_4_`.",
+    "A second defect the need did not file: the pre-existing rendering was INCONSISTENT, not merely wrong. The identical 16-byte whole cover printed a bare `v1` where the HighVariable's symbol offset happened to be -1 (gh275 `SUB168(v1,0)`, arraysubfield `return v1 << 0x40;`) and `v30[0]` where it was 0. Both now print `._0_16_`, which is why 3 of the 7 moved stage assertions are bare-name sites rather than subscript sites.",
+    "Seven pre-existing stage assertions were re-pinned, and each was inspected as emitted C rather than as a regex: `rodatastring #2` and `returncopysplit #5` are 8-byte writes into a `char[8]` that printed `v1[0]`/`v2[0]`, `undefname #8` is a TWELVE-byte read that printed `v3[0]`, and `ARRAYSUBFIELD #7` plus the three `GH275` rows are the bare-name variant. None of them is a behaviour the corpus was defending; `ARRAYSUBFIELD #7`'s comment explicitly documented the whole-container render as the part that was NOT fixed, and this is the part of it that is.",
+    "Default-on because the element-zero subscript is not a judgement call, it is a false statement about the access width; the option exists as the escape hatch for diffing against upstream Ghidra, not as a preference. Evidence for the flip: 0/675 datatest assertions, and a 40-image sweep in which every changed line is a token-for-token substitution.",
+    "The predicate is narrowed to TYPE_ARRAY with `element align size < access size`, and NOT to `access size > 1` or `access is the whole symbol`. A scalar, a struct and a union all keep the upstream break, and an access that fits inside one element keeps its subscript, which is what `elem()`'s `return g[3];` and the fixture's `return v2[3];` pin.",
+    "Not measured on the witness alone: the two `undefined16` locals in the corpus (`undefined16` is internally an undefined1[16] array) also pick up the suffix, which is the source of the 345 `._0_16_` tokens in the sweep. Read in context those are the good case, because they sit next to the `._0_8_`/`._8_8_` writes that built the value."
+  ]
+}

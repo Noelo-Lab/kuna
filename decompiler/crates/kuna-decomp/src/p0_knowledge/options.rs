@@ -246,6 +246,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "truthycond",
     "braceelide",
     "warnstyle",
+    "arraycoverwidth",
     "thumbfuncptr",
     "inferfuncentry",
     "returnpair",

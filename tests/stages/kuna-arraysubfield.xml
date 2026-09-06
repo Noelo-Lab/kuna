@@ -38,9 +38,11 @@
     offset 3 KEEPS its `g[3]` subscript; shift64 is the reported reproducer
     (interp-bee `eval_result_noun` @ 0xa3e0), a 16-byte register-pair return whose
     two 8-byte halves are written into an `undefined1[16]` container.  The
-    shift line of shift64 is upstream-faithful and is NOT fixed here: the function
-    is still not compilable C.  This test is about the access size, assertion #7
-    pins the part that survives.
+    shift line of shift64 is NOT fixed here: the function is still not compilable
+    C.  This test is about the access size, assertion #7 pins the part that
+    survives; it reads `v1._0_16_ << 0x40` rather than the upstream bare
+    `v1 << 0x40` because `arraycoverwidth` (default on) also states the width of
+    a WHOLE-array cover; the shift of an array member is what remains wrong.
 -->
 <bytechunk space="ram" offset="0x401130">
 f30f1efa488b05052f0000c30f1f4000f30f1efa488b05fd2e0000c30f1f4000
@@ -76,5 +78,5 @@ f30f1efa0fb605e82e0000c30f1f4000f30f1efa4889fa31c0c3
 <stringmatch name="ARRAYSUBFIELD #4: a genuine one-byte in-element access KEEPS its subscript" min="1" max="1">g\[3\]</stringmatch>
 <stringmatch name="ARRAYSUBFIELD #5: the reported reproducer writes the low half of the 16-byte return container at its real width" min="1" max="1">v1\._0_8_ = a0;</stringmatch>
 <stringmatch name="ARRAYSUBFIELD #6: and the high half likewise" min="1" max="1">v1\._8_8_ = 0;</stringmatch>
-<stringmatch name="ARRAYSUBFIELD #7: honest about what is NOT fixed: the whole-container shift is upstream-faithful and still not valid C" min="1" max="1">return v1 &lt;&lt; 0x40;</stringmatch>
+<stringmatch name="ARRAYSUBFIELD #7: honest about what is NOT fixed: the whole-container shift is upstream-faithful and still not valid C" min="1" max="1">return v1\._0_16_ &lt;&lt; 0x40;</stringmatch>
 </decompilertest>

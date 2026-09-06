@@ -167,5 +167,5 @@ e87b39feff85c0782e89efe89039feff31c0488b54242864482b142528000000
 <stringmatch name="undefname #5: that identifier is the one the prologue initialises" min="2" max="2">v12 = \*a1;</stringmatch>
 <stringmatch name="undefname #6: the ifreq union slot no high covers wholly is named by the wired assignDefaultNames" min="2" max="2">char v5 \[16\]; // stack - 0x38</stringmatch>
 <stringmatch name="undefname #7: and it takes the highest index in the function, after every other local" min="2" max="2">unsigned long v4; // stack - 0x28</stringmatch>
-<stringmatch name="undefname #8: the body writes that slot through the same name" min="2" max="2">v5 = CONCAT124\(v3\[0\],a1\);</stringmatch>
+<stringmatch name="undefname #8: the body writes that slot through the same name" min="2" max="2">v5 = CONCAT124\(v3\._0_12_,a1\);</stringmatch>
 </decompilertest>

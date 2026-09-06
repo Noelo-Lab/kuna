@@ -1,9 +1,14 @@
 {
   "data_footer": [
-    635,
-    635
+    640,
+    640
   ],
   "passing": [
+    "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
+    "data:ARRAYCOVERWIDTH #2: and so does bank B's",
+    "data:ARRAYCOVERWIDTH #3: the swap's first leg carries the transfer width on both sides",
+    "data:ARRAYCOVERWIDTH #4: a genuine one-byte in-element read KEEPS its subscript, in both passes",
+    "data:ARRAYCOVERWIDTH #5: arraycoverwidth off restores the size-blind element-zero form (the filed bug), exactly once",
     "data:ARRAYSUBFIELD #1: an 8-byte read at offset 0 of char[16] is a sized sub-field, not element 0",
     "data:ARRAYSUBFIELD #2: an 8-byte read at offset 8 is a sized sub-field, not the ninth byte",
     "data:ARRAYSUBFIELD #3: the bug: no size-blind element subscript survives on either wide read",

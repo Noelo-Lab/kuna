@@ -17,6 +17,7 @@ pub mod kuna_dedupvardecls;
 pub mod kuna_truthycond;
 pub mod kuna_braceelide;
 pub mod kuna_warnstyle;
+pub mod kuna_arraycoverwidth;
 pub mod kuna_lang; // (kuna) the output-language plane: profile + capabilities
 pub mod kuna_langtypes; // (kuna) the type-spelling seam (TypeSpeller + SpellCtx)
 pub mod kuna_langc; // (kuna) the c-language policy objects (CSpeller)

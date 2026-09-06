@@ -1,0 +1,79 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    repipe-16-byte-vm-state: "16-byte VM state swaps emit as one-byte array
+    assignments"
+    docs/re-needs/16-byte-vm-state.md
+
+    A VM interpreter keeps two four-word register banks in a 16-byte stack slot
+    each and swaps them with a movdqa/movdqa/movaps/movaps quartet.  Both banks
+    recover as `char v[16]`, and the printer rendered the sixteen-byte transfer
+    `v2[0] = v3[0];` - a one-byte lvalue for a sixteen-byte copy, and a false
+    statement about the program.  The vector zero-init became `v2[0] = 0;` the
+    same way.
+
+    P9 emission.  `PrintC::pushSymbolDetail` routes a symbol-mapped access
+    through `pushPartialSymbol`, whose walk breaks out at the top on a whole
+    symbol cover (off == 0 and size == the symbol's size) and leaves the caller
+    to render.  kuna's caller has a dedicated whole-array `name[index]` branch
+    computing `index = symboloff / elementAlignSize` that never consults the
+    access size, so every whole-array cover printed element zero.  A PARTIAL
+    multi-element access was already repaired - it reaches the walk's artificial
+    `._<off>_<size>_` field - so `v.._0_4_` and `v..[0]` appeared side by side in
+    one function for accesses four times apart in width.
+
+    Fix: `option arraycoverwidth` (default on) suppresses that top-of-walk break
+    for an array whose element stride is smaller than the access, so the cover
+    falls to the same artificial field a partial access gets and renders
+    `v2._0_16_`.  An access that fits inside one element keeps its subscript;
+    scalars, structs and unions keep the upstream break.
+
+    Source (as(1), x86-64, linked -Ttext=0x100000, `sink` at 0x100049):
+
+        vm: sub $0x38,%rsp             ; two 16-byte banks at rsp+0 and rsp+0x10
+            pxor %xmm0,%xmm0
+            movaps %xmm0,(%rsp)        ; bank A = 0     (16-byte store)
+            movaps %xmm0,0x10(%rsp)    ; bank B = 0     (16-byte store)
+            mov %rsp,%rdi ; call sink  ; both banks escape, so nothing is dead
+            lea 0x10(%rsp),%rdi ; call sink
+            movdqa (%rsp),%xmm1        ; the swap, verbatim from the witness
+            movdqa 0x10(%rsp),%xmm2
+            movaps %xmm2,(%rsp)
+            movaps %xmm1,0x10(%rsp)
+            mov %rsp,%rdi ; call sink
+            movzbl 0x3(%rsp),%eax      ; one genuine in-element byte read
+            add $0x38,%rsp ; ret
+        sink: ret
+
+    Pass 1 (default): assertions #1-#3 prove every sixteen-byte access carries
+    its width, and #4 that the one-byte read keeps its subscript in both passes.
+    Pass 2 (arraycoverwidth off): assertion #5 reproduces the filed bug, and its
+    max="1" is what pins the repair - the same line appears once, not twice.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+4883ec38660fefc00f2904240f294424
+104889e7e830000000488d7c2410e826
+000000660f6f0c24660f6f5424100f29
+14240f294c24104889e7e80a0000000f
+b64424034883c438c3c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="vm"/>
+<symbol space="ram" offset="0x100049" name="sink"/>
+</binaryimage>
+<script>
+  <com>parse line extern void sink(void *);</com>
+  <com>lo fu vm</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option arraycoverwidth off</com>
+  <com>lo fu vm</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero" min="1" max="1">v2\._0_16_ = 0;</stringmatch>
+<stringmatch name="ARRAYCOVERWIDTH #2: and so does bank B's" min="1" max="1">v3\[0\]\._0_16_ = 0;</stringmatch>
+<stringmatch name="ARRAYCOVERWIDTH #3: the swap's first leg carries the transfer width on both sides" min="1" max="1">v2\._0_16_ = v3\[0\]\._0_16_;</stringmatch>
+<stringmatch name="ARRAYCOVERWIDTH #4: a genuine one-byte in-element read KEEPS its subscript, in both passes" min="2" max="2">return v2\[3\];</stringmatch>
+<stringmatch name="ARRAYCOVERWIDTH #5: arraycoverwidth off restores the size-blind element-zero form (the filed bug), exactly once" min="1" max="1">v2\[0\] = v3\[0\];</stringmatch>
+</decompilertest>

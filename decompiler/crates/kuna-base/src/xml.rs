@@ -1803,7 +1803,9 @@ mod tests {
         // out-edge the two-way block readers index off the end of)
         // and kuna-fastfailnoreturn / a Windows `int 0x29` (`__fastfail`) ends the
         // flow instead of raising the stack pointer by 8 and degenerating the frame
-        assert_eq!(count, 240, "corpus file count drifted");
+        // and kuna-arraycoverwidth / a sixteen-byte transfer through a `char[16]`
+        // VM register bank rendered `v2[0] = v3[0]`, a one-byte lvalue
+        assert_eq!(count, 241, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

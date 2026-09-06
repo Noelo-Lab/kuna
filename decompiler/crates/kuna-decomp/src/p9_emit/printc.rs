@@ -415,6 +415,10 @@ pub struct PrintCOptions {
     /// statement they describe instead of full `/* WARNING: ... */` banner
     /// lines (DIV-39, `option warnstyle inline|banner`).
     pub warn_inline: bool,
+    /// (kuna) An access spanning more than one element of a mapped array Symbol
+    /// renders as the width-carrying `name._<off>_<size>_` field instead of a
+    /// subscript / bare name (`option arraycoverwidth`).
+    pub array_cover_width: bool,
     /// How function-declaration braces are formatted (C++ `option_brace_func`).
     pub brace_func: BraceStyle,
     /// How if/else-block braces are formatted (C++ `option_brace_ifelse`).
@@ -455,6 +459,7 @@ impl PrintCOptions {
             truthy_cond: true, // (kuna) DIV-37; no upstream equivalent
             brace_elide: true, // (kuna) DIV-38; no upstream equivalent
             warn_inline: true, // (kuna) DIV-39; no upstream equivalent
+            array_cover_width: true, // (kuna) no upstream equivalent
             brace_func: BraceStyle::NextLine,   // (kuna) DIV-34; upstream Emit::skip_line
             brace_ifelse: BraceStyle::SameLine, // Emit::same_line
             brace_loop: BraceStyle::SameLine,   // Emit::same_line
@@ -506,6 +511,15 @@ impl PrintCOptions {
     /// (kuna) Current brace-elision flag.
     pub fn brace_elide(&self) -> bool {
         self.brace_elide
+    }
+    /// (kuna) Toggle the width-carrying multi-element array-cover render
+    /// (`option arraycoverwidth`).
+    pub fn set_array_cover_width(&mut self, val: bool) {
+        self.array_cover_width = val;
+    }
+    /// (kuna) Current array-cover width flag.
+    pub fn array_cover_width(&self) -> bool {
+        self.array_cover_width
     }
     /// (kuna) Toggle inline warning style (`option warnstyle`, DIV-39).
     pub fn set_warn_inline(&mut self, val: bool) {
@@ -6591,7 +6605,20 @@ impl PrintC {
         let mut finalcast: Option<std::rc::Rc<crate::dtype::Datatype>> = None;
 
         while let Some(cur) = ct.clone() {
+            // (kuna arraycoverwidth) The upstream whole-symbol break exits the
+            // walk before the ARRAY arm can see a cover that spans more than one
+            // element, so a 16-byte `movaps` transfer through a `char v30[16]`
+            // bank left the caller to render `v30[0]` -- a one-byte lvalue for a
+            // sixteen-byte access.  Such a cover has no subscript that describes
+            // it; letting the walk continue reaches the artificial-field branch
+            // below and renders `v30._0_16_`, the same width-carrying notation a
+            // PARTIAL multi-element access already gets.  Scalars, structs,
+            // unions and single-element covers keep the upstream break.
+            let wide_array_cover = self.options.array_cover_width
+                && sz != 0
+                && crate::kuna_arraycoverwidth::spans_multiple_elements(&cur, sz);
             if off == 0
+                && !wide_array_cover
                 && (sz == 0
                     || (sz == cur.get_size()
                         && (!cur.needs_resolution()

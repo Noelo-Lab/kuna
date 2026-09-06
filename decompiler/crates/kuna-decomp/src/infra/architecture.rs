@@ -2182,6 +2182,12 @@ impl Architecture {
                 self.print_mut().options.set_warn_inline(val);
                 Ok(msg)
             }
+            "arraycoverwidth" => {
+                let (val, msg) =
+                    crate::kuna_arraycoverwidth::OptionArrayCoverWidth.apply(p1)?;
+                self.print_mut().options.set_array_cover_width(val);
+                Ok(msg)
+            }
             "thumbfuncptr" => on_off!(preserve_thumb_funcptr, "Thumb function-pointer preservation"),
             "inferfuncentry" => on_off!(infer_funcentry, "Function-entry constant inference"),
             "returnpair" => {

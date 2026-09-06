@@ -72,7 +72,7 @@ c3
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="GH275 #1: default (spillargtrial off) drops the first call's second argument to the caller-save spill" min="1" max="1">atan2\(SUB168\(v[0-9]+,0\)\);</stringmatch>
-<stringmatch name="GH275 #2: spillargtrial reload recovers the first call's second argument" min="1" max="1">atan2\(SUB168\(v[0-9]+,0\),SUB164\(v[0-9]+,8\)\);</stringmatch>
-<stringmatch name="GH275 #3: spillargtrial reload binds the second call's argument to the register, not a spurious stack local" min="1" max="1">atan2\(v[0-9]+,SUB164\(v[0-9]+,8\)\)</stringmatch>
+<stringmatch name="GH275 #1: default (spillargtrial off) drops the first call's second argument to the caller-save spill" min="1" max="1">atan2\(SUB168\(v[0-9]+\._0_16_,0\)\);</stringmatch>
+<stringmatch name="GH275 #2: spillargtrial reload recovers the first call's second argument" min="1" max="1">atan2\(SUB168\(v[0-9]+\._0_16_,0\),SUB164\(v[0-9]+\._0_16_,8\)\);</stringmatch>
+<stringmatch name="GH275 #3: spillargtrial reload binds the second call's argument to the register, not a spurious stack local" min="1" max="1">atan2\(v[0-9]+,SUB164\(v[0-9]+\._0_16_,8\)\)</stringmatch>
 </decompilertest>

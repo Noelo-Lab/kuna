@@ -332,16 +332,36 @@ sized `._<off>_<size>_` member carries every access that spans elements. The
 same walk keeps descending afterwards, so an array of unions resolves past the
 subscript into the cached field (`arr[3].ffield`).
 
+**The whole-array cover** reaches the walk but not its ARRAY arm, because
+upstream breaks out at the top of the walk whenever the request is the symbol
+in full (offset 0, size equal to the symbol's) and leaves the caller to render
+a bare name. For an array that break is the same size-blindness one level up:
+kuna's caller then took its own whole-array `name[index]` branch, and a
+sixteen-byte `movaps` transfer through a `char v30[16]` VM register bank
+printed `v30[0] = v32[0];` — one byte named on each side of a sixteen-byte
+copy — while the four-byte accesses to the same bank a few lines away printed
+`v30._0_4_`. **(kuna) arraycoverwidth** (default **on**,
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_arraycoverwidth.rs
+(spans_multiple_elements)`) suppresses that break for a TYPE_ARRAY whose
+element stride is smaller than the access, so a full-width cover falls to the
+same artificial `._<off>_<size>_` member a partial one gets and the two
+spellings agree: `v30._0_16_ = v32._0_16_;`. The predicate is deliberately
+narrow — a scalar, a struct, a union, and any access that fits inside one
+element are all left with the upstream break, so `g[3]` and the bare
+whole-symbol name for a non-array are unchanged. Turning the option off
+restores the upstream break and with it the element-zero subscript.
+
 This is what makes the 16-byte register-pair return legible. P5's type factory
 has no integer primitive wider than `max_basetype_size`, so a
 `CONCAT88`-shaped return value is typed `undefined1[16]` (upstream behavior,
 §5), and P6 merges the two halves the callee writes into that one local. The
 halves are then eight-byte writes into a byte array — exactly the access the
-subscript cannot describe — and they render `v1._0_8_` / `v1._8_8_`. What this
-does **not** fix is the whole-container operand: `return v1 << 0x40;` shifts an
-array, which is upstream-faithful and still not compilable C. Recovering that
-needs either a scalar wide-integer type or a mid-end fold of the
-`CONCAT88(0,x) << 64` idiom; neither is done here.
+subscript cannot describe — and they render `v1._0_8_` / `v1._8_8_`. The
+whole-container operand reads `return v1._0_16_ << 0x40;` under
+`arraycoverwidth`, which states the width but is still not compilable C: it
+shifts a member of an array. What this does **not** fix is that container type
+itself. Recovering it needs either a scalar wide-integer type or a mid-end fold
+of the `CONCAT88(0,x) << 64` idiom; neither is done here.
 
 **Leaves with no Symbol.** Not every leaf has one. When no mapped symbol covers
 the storage the leaf falls through to the upstream `pushUnnamedLocation`

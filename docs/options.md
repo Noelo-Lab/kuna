@@ -422,6 +422,11 @@ Three tiers:
 | single-statement if body keeps braces | [`braceelide`](#braceelide) |
 | braced one-liner bodies unwanted | [`braceelide`](#braceelide) |
 | brace style needs to match upstream ghidra for diffing | [`braceelide`](#braceelide) |
+| a 16-byte movaps/movdqa transfer emits as v1[0] = v2[0] | [`arraycoverwidth`](#arraycoverwidth) |
+| a vector zero store emits as arr[0] = 0 | [`arraycoverwidth`](#arraycoverwidth) |
+| an array-typed local is assigned at element zero for a whole-array copy | [`arraycoverwidth`](#arraycoverwidth) |
+| the same variable shows both v1._0_4_ and v1[0] for accesses of different width | [`arraycoverwidth`](#arraycoverwidth) |
+| declared char v[16] but every whole-bank access reads as one byte | [`arraycoverwidth`](#arraycoverwidth) |
 | full-line WARNING banner comments clutter the output | [`warnstyle`](#warnstyle) |
 | warning text wanted inline at the end of the statement it describes | [`warnstyle`](#warnstyle) |
 | terse warning slugs unwanted; full upstream warning text needed | [`warnstyle`](#warnstyle) |
@@ -1497,6 +1502,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default (DIV-37): idiomatic C for one-statement then-bodies. Flip off to reproduce upstream Ghidra's braced form or to diff against Ghidra output. Only plain single-statement bodies elide: labels, comments, and multi-statement bodies keep their braces; the if (cond) goto L; one-liner and else-if collapse are unaffected.
 - **Where / provenance:** P9/brace-form · kuna · presentation-default · kuna-cnorm-fmt
 - **Example:** `option braceelide off`
+
+### `arraycoverwidth` -- on | off, default `on`
+
+- **Symptoms:** a 16-byte movaps/movdqa transfer emits as v1[0] = v2[0]; a vector zero store emits as arr[0] = 0; an array-typed local is assigned at element zero for a whole-array copy; the same variable shows both v1._0_4_ and v1[0] for accesses of different width; declared char v[16] but every whole-bank access reads as one byte.
+- **What it does:** Render an access that spans more than one element of a mapped array Symbol as the width-carrying `name._<off>_<size>_` field instead of an element-zero subscript. `PrintC::pushSymbolDetail` sends a symbol-mapped access into `pushPartialSymbol`, whose walk breaks out at the top on a whole-symbol cover and leaves the caller to render; kuna's caller has a dedicated whole-array `name[index]` branch computing `index = symboloff / elementAlignSize` that never consults the access size. So a sixteen-byte `movaps` transfer through a `char v30[16]` VM register bank printed `v30[0] = v32[0];` -- a one-byte lvalue for a sixteen-byte copy -- and the vector zero-init printed `v30[0] = 0;`. A PARTIAL multi-element access was already repaired, because it misses the break and reaches the walk's artificial `._<off>_<size>_` field, so `v30._0_4_` and `v30[0]` appeared side by side in one function for accesses four times apart in width. On, the top-of-walk break is suppressed for a TYPE_ARRAY whose element stride is smaller than the access, so the cover falls to that same artificial field and both spellings agree. An access that fits inside one element still renders its subscript (`g[3]`), and scalars, structs and unions keep the upstream break untouched.
+- **When to flip:** On by default: the element-zero subscript is a false statement about the access width, and every changed line is a token-for-token substitution -- 0/675 datatest assertions move, and a whole-binary sweep over 40 images changed only the accesses whose width the subscript could not carry, with no statement added, deleted or re-anchored. Flip off to reproduce upstream Ghidra's bare whole-symbol name (and kuna's pre-existing element-zero form) when diffing against Ghidra, or when a consumer parses the subscript spelling.
+- **Where / provenance:** P9/array-cover-width · kuna · correctness-fix · repipe-16-byte-vm-state
+- **Example:** `option arraycoverwidth off`
 
 ### `warnstyle` -- inline | banner, default `inline`
 

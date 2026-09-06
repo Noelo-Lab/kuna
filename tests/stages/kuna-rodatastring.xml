@@ -10,7 +10,7 @@
     GCC -O2 copies the whole literal out of .rodata with two 128-bit
     movdqa/movaps pairs.  The wide loads survive as free read-only memory
     varnodes, so the copy reaches the printer as partial-symbol slice
-    assignments - `v1[0] = (char[8])msg._0_8_;` - which are not valid C (C
+    assignments - `v1._0_8_ = (char[8])msg._0_8_;` - which are not valid C (C
     has no array cast) and which hide the string the decompiler has already
     recovered at that address.
 
@@ -53,5 +53,5 @@ e8db1f00004883c428c3
   <com>quit</com>
 </script>
 <stringmatch name="rodatastring #1: default pipeline recovers the read-only block copy as one builtin_strncpy" min="1" max="1">builtin_strncpy\(v1,"the quick brown fox jumped once",0x20\);</stringmatch>
-<stringmatch name="rodatastring #2: rodatastring off restores the invalid array-typed cast (the filed bug)" min="1" max="1">v1\[0\] = \(char\[8\]\)msg\._0_8_;</stringmatch>
+<stringmatch name="rodatastring #2: rodatastring off restores the invalid array-typed cast (the filed bug)" min="1" max="1">v1\._0_8_ = \(char\[8\]\)msg\._0_8_;</stringmatch>
 </decompilertest>
