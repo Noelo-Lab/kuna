@@ -166,6 +166,10 @@ fn cmd_test(argv: &[String]) -> i32 {
             "--baseline" => baseline = take_value(argv, &mut i, "--baseline"),
             "--save-baseline" => save_baseline = take_value(argv, &mut i, "--save-baseline"),
             "--json" => json = true,
+            "-h" | "--help" => {
+                usage_test();
+                return 0;
+            }
             s if s.starts_with("--") => {
                 eprintln!("error: unknown option {s}");
                 return 2;
@@ -196,6 +200,26 @@ fn cmd_test(argv: &[String]) -> i32 {
         json,
     };
     test::run_cmd(&targs)
+}
+
+fn usage_test() {
+    eprintln!(
+        "usage: kuna test [--all|--unittests|--datatests] [--name N].. [--json] \\\n\
+         \x20                [--datatests-dir D] [--baseline F] [--save-baseline F] \\\n\
+         \x20                [--binary B] [--sleighpath D]\n\
+         \n\
+         Run the parity gates.  Unit results are parsed off stderr and datatest\n\
+         results off stdout, and the exit code is nonzero on any failure OR any\n\
+         regression against --baseline.  Default is --all.\n\
+         --name N (repeatable) narrows to named tests and requires --unittests or\n\
+         --datatests.\n\
+         \n\
+         --datatests-dir D selects the corpus: tests/datatests (the default, = make\n\
+         test) or tests/stages (the kuna-owned issue cases, = make test-stages).\n\
+         --baseline F compares against a recorded result; --save-baseline F re-records\n\
+         one.  Re-recording docs/baseline.json to absorb a regression is never\n\
+         sanctioned -- see docs/agents.md."
+    );
 }
 
 // --- catalog -----------------------------------------------------------------
@@ -229,6 +253,10 @@ fn cmd_catalog(argv: &[String]) -> i32 {
                     std::env::set_var("KUNA_SPECS", v);
                 }
             }
+            "-h" | "--help" => {
+                usage_catalog();
+                return 0;
+            }
             s if s.starts_with("--") => {
                 eprintln!("error: unknown option {s}");
                 return 2;
@@ -256,6 +284,27 @@ fn cmd_catalog(argv: &[String]) -> i32 {
     } else {
         catalog::cmd_text(option.as_deref(), tier.as_deref())
     }
+}
+
+fn usage_catalog() {
+    eprintln!(
+        "usage: kuna catalog [--json|--markdown|--check] [--option NAME] \\\n\
+         \x20                   [--tier transform|analysis|core] [--sleighpath D]\n\
+         \n\
+         List the settable phase-model assertions -- the decisions `--option NAME VALUE`\n\
+         flips on every decompiling surface.  Each row carries its phase, tier, values,\n\
+         default, the symptoms it addresses and when to flip it.\n\
+         \n\
+         --json is the machine-readable form an agent selects options from.\n\
+         --markdown regenerates docs/options.md (tier-grouped, symptom-indexed).\n\
+         --check cross-checks the catalog against the engine's registered option\n\
+         names and exits nonzero on drift; this is the CI gate.\n\
+         --option NAME reports one row; --tier keeps one tier.\n\
+         \n\
+         Upstream OptionDatabase names (maxinstruction, errortoomanyinstructions, ..)\n\
+         are reachable through --option but are NOT catalog rows, so they do not\n\
+         appear here.  Mode presets are `kuna modes`."
+    );
 }
 
 // --- modes -------------------------------------------------------------------

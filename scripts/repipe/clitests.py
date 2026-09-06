@@ -16,7 +16,7 @@ import json
 import os
 import sys
 
-from . import config, probe
+from . import config, probe, verify
 
 
 def cases(directory=None):
@@ -35,14 +35,14 @@ def run_one(path, reps=None):
     except (OSError, ValueError) as exc:
         return name, False, {"error": "unreadable: %s" % exc}
 
-    target = doc.get("target") or {}
-    if target.get("binary_source") != "in-repo":
-        # Refuse rather than skip: a dataset-backed probe here would pass on a developer's
-        # box and fail in CI, which is worse than not having the test.
-        return name, False, {"error": "target.binary_source is %r, not 'in-repo' -- this "
-                                      "corpus must run without the dataset"
-                                      % target.get("binary_source")}
-    rel = target.get("in_repo_path")
+    # Refuse rather than skip: a dataset-backed probe here would pass on a developer's box
+    # and fail in CI, which is worse than not having the test. The predicate is the one
+    # `verify --promote` admitted the probe under, so the two can never disagree -- a probe
+    # that needs no binary at all (`kuna decompile --help`) is runnable anywhere.
+    ok, why = verify.vendorable(doc)
+    if not ok:
+        return name, False, {"error": "%s -- this corpus must run without the dataset" % why}
+    rel = (doc.get("target") or {}).get("in_repo_path")
     ctx = {"work": str(config.repo_root())}
     if rel:
         ctx["bin"] = os.path.join(str(config.repo_root()), rel)

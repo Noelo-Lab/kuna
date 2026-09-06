@@ -30,6 +30,12 @@ decode identically to the C++-built ones.  Use `kuna specs -a <dir>` to compile,
 and `kuna test --datatests --baseline docs/baseline.json` as the end-to-end gate.";
 
 pub fn run(args: &[String]) -> i32 {
+    // Ahead of the passthrough: slacomp owns no help flag and answers `-h` with
+    // `Unknown option` and exit 1, so the alias has to describe itself.
+    if args.iter().any(|a| a == "-h" || a == "--help") {
+        usage();
+        return 0;
+    }
     if args.iter().any(|a| a == "--diff") {
         return crate::output::emit_with_status(&format!("{DIFF_NOTE}\n"), 0);
     }
@@ -96,4 +102,20 @@ pub fn run(args: &[String]) -> i32 {
         Some(err) => crate::output::status_after(err, status),
         None => status,
     }
+}
+
+fn usage() {
+    eprintln!(
+        "usage: kuna specs [-a <dir>] [<file.slaspec>..] [--diff]\n\
+         \n\
+         Compile SLEIGH processor specifications with the Rust SLEIGH compiler\n\
+         (`slacomp`), which this command is a thin alias for -- every other flag is\n\
+         passed straight through, and it takes upstream `sleigh_opt`'s CLI.\n\
+         \n\
+         -a <dir> compiles every .slaspec under <dir> recursively (= make specs over\n\
+         specs/); a bare list of files compiles just those.  A .sla is a build\n\
+         artifact and is gitignored; the engine finds them under KUNA_SPECS /\n\
+         SLEIGHHOME.\n\
+         --diff prints why the old C++ byte-for-byte differential is moot."
+    );
 }

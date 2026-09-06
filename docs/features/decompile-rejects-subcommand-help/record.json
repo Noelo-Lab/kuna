@@ -1,0 +1,67 @@
+{
+  "slug": "decompile-rejects-subcommand-help",
+  "need_id": "decompile-rejects-subcommand-help",
+  "track": "tooling",
+  "scope": "small",
+  "round": 4,
+  "branch": "feat/re-decompile-rejects-subcommand-help",
+  "summary": "`kuna <subcommand> -h|--help` prints that subcommand's own usage block and exits 0, on all sixteen subcommands. Four had no help arm: `decompile` (the filed case), `test`, `catalog` and `specs`. Each of the four gained a multi-line block in the style of the twelve that already had one, naming the flags a caller is looking for -- for `decompile` that is the `--assert` vocabulary, the `--define-function` contract and the `--json` shape, none of which the one-line summary in `kuna --help` carries.",
+  "decisions": [
+    {
+      "what": "no hypothesis to uphold or overturn; the refuter's located mechanism is CONFIRMED and its enumeration was INCOMPLETE",
+      "detail": "The tester offered no hypothesis, so `hypothesis_status: inconclusive` stands. The refuter located the mechanism exactly -- there is no `-h | --help` arm in decompile.rs, cmd_test or cmd_catalog, while the other parsers each have one -- and it holds. But it swept 14 subcommands and reported three; sweeping all 16 finds a FOURTH. `kuna specs` forwards its argv straight to `slacomp`, which owns no help flag, so it answered `Unknown option: --help` with exit 1: a different message and a different exit code from the filed `error: unknown option --help` / exit 2, which is why a grep for the filed string missed it."
+    },
+    {
+      "what": "`-h` was broken in a second, quieter way, and is fixed with the same arm",
+      "detail": "`-h` does not start with `--`, so it never reached the unknown-option catch-all: it fell through to the positional arm. `kuna decompile -h` answered `error: decompile requires <binary> and <func>` and `kuna catalog -h` answered `error: unexpected argument \"-h\"` -- diagnostics that describe a missing operand rather than an unrecognised flag, so an agent reading them would conclude the command needs arguments, not that help is unavailable. The acceptance probe only exercises `--help`; the cargo test covers both spellings on all sixteen."
+    },
+    {
+      "what": "a full block per subcommand, not the one-liner main.rs already had",
+      "detail": "`main.rs usage()` carries a single usage line for each of the four, so extracting those was the cheap option. It was rejected against the observation itself -- 'Discover decompile flags through subcommand help' -- because the one-liner names `--assert DIRECTIVE|@FILE` without any of its twelve-directive vocabulary, `--define-function` without its exclusive-end contract, and `--json` without its document shape. The twelve working subcommands each print a fuller block; matching them is both the surrounding convention and the thing that was actually asked for."
+    },
+    {
+      "what": "help stays on stderr",
+      "detail": "All twelve existing blocks and the top-level `kuna --help` go to stderr and write nothing to stdout. The acceptance probe checks only the exit code and the absence of the error string, so either stream passes it. Moving help to stdout is defensible (GNU convention: requested output is not a diagnostic) but it is a behaviour change to twelve subcommands this need did not ask about, and a split -- four on stdout, twelve on stderr -- would be worse than either uniform choice. Left as a whole-CLI question; recorded under not_closed."
+    },
+    {
+      "what": "a second, unfiled defect had to be closed for the promoted probe to be runnable at all",
+      "detail": "`verify.vendorable()` explicitly admits a probe with no target that never substitutes {{BIN}} ('no binary target'), and `verify --promote` vendored this acceptance on that basis. `clitests.run_one()` re-derived a stricter rule of its own -- `target.binary_source == 'in-repo'`, unconditionally -- so the promoted probe FAILED `make test-cli` the moment it landed (42 cases, 41 passing). Every probe promoted before this one happened to carry a binary, so the disagreement had never fired. clitests now calls `vendorable()` rather than duplicating it, which is also the only way the two can be kept from drifting apart again."
+    },
+    {
+      "what": "no option, no stages XML, no catalog counter, no DIV row",
+      "detail": "Argument parsing in kuna-cli, ahead of any load. No engine, analysis or console source is touched and nothing new runs on any decompiling path, so emitted C cannot move. Track `tooling` per docs/re-pipeline.md."
+    }
+  ],
+  "inertness": {
+    "method": "the only source files changed are decompiler/crates/kuna-cli/src/{decompile.rs,main.rs,specs.rs}; each adds one match arm plus a `usage()` that only runs on that arm, and specs.rs's guard sits ahead of the slacomp spawn. No kuna-decomp, kuna-analysis or kuna-console source is touched.",
+    "note": "make test 675/675 PARITY OK and make test-stages 635/635 PARITY OK confirm it"
+  },
+  "sweep": {
+    "question": "which subcommands reject `-h`/`--help`, and does adding the arm break any argument that could legitimately be `-h` or `--help`?",
+    "method": "both spellings against every subcommand `main.rs` dispatches, before and after. Then a read of every value-taking flag in the four parsers: each consumes its argument through `take_value`/`take` before the loop re-dispatches, so a value is never re-matched as a flag.",
+    "result": "BEFORE, 4 of 16 rejected `--help`: decompile (rc 2, `unknown option --help`), test (rc 2), catalog (rc 2), specs (rc 1, `Unknown option: --help` from slacomp). All 4 also mishandled `-h`, as a positional. AFTER, 16 of 16 answer both spellings with rc 0 and their own block. No value position can collide: the new arm is reached only when the token is dispatched as a flag, and the arms are additive -- the `s if s.starts_with(\"--\")` catch-all was already last, so nothing that used to be recognised changed meaning. `kuna specs` still forwards `-a`, bare `.slaspec` files and every other flag to slacomp untouched; only the two help spellings are intercepted, and `--diff` still answers as before."
+  },
+  "gates": {
+    "make test": "PARITY OK, 675/675 assertions",
+    "make test-stages": "PARITY OK, 635/635 assertions",
+    "make rust-test": "5,689 passed / 1 failed / 38 ignored. The one failure is `verify_w10_proto_unlock::w10_proto_unlock_const_return_collapses_no_tied_roundtrip` reporting 'oracle promote_compare signature drifted' -- the known repipe-worktree harness artifact: the loop exports KUNA_DECOMP_TEST, which points the oracle at this worktree's decomp_test_dbg. Re-run with KUNA_DECOMP_TEST unset: 4/4 pass. The diff touches no kuna-decomp source.",
+    "make check-spec": "OK (lenient mode)",
+    "make test-cli": "42/42 (41/42 with the probe promoted and clitests.py unchanged -- see decisions)",
+    "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
+    "cargo test -p kuna-cli --test subcommand_help": "5/5 with the fix; 4 of the 5 FAIL without it (A/B run by reverting the three source files and rebuilding). The fifth, `an_unknown_option_is_still_a_usage_error`, passes either way by design: it is the guard that the new arm did not swallow a real usage error."
+  },
+  "acceptance": {
+    "acceptance_id": "a-a47f53062e49",
+    "result": "PASS",
+    "transition": "closed",
+    "promoted_to": "tests/cli/decompile-rejects-subcommand-help.json",
+    "promotion_note": "`verify --promote` refused only on `status: open` (the captain flips that on merge), so --force, exactly as the sibling needs of this round did. The probe itself is vendorable unchanged: it takes no binary, so nothing had to be re-pointed and CI needs no dataset. It is the first binary-less probe in tests/cli/, which is what exposed the clitests/vendorable disagreement.",
+    "reproduction_confirmed_on_main": "on 68d27c99, `kuna decompile --help` exits 2 with `error: unknown option --help`; `kuna test --help` and `kuna catalog --help` identically; `kuna specs --help` exits 1 with `Unknown option: --help`"
+  },
+  "not_closed": [
+    "Help still goes to stderr with an empty stdout, on all sixteen. `kuna decompile --help | grep -- --assert` therefore finds nothing. Flipping the stream is a change to twelve subcommands this need did not ask about and belongs in its own PR, applied to the whole CLI at once.",
+    "The blocks are hand-written prose next to a hand-rolled parser, so nothing enforces that a newly added flag reaches its usage block. `the_repaired_blocks_document_their_flags` pins the flags that exist today for the four repaired subcommands; it cannot notice a seventeenth flag added tomorrow.",
+    "docs/re-needs/index.json is deliberately NOT touched: it is generated by `needs reindex` over the whole backlog, and regenerating it from this worktree -- which holds only the tracked need docs, not the round's untracked ones -- would silently shrink it. The need doc itself is added; the captain reindexes."
+  ],
+  "pr": null
+}

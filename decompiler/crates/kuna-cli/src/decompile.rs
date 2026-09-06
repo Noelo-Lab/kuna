@@ -1097,6 +1097,10 @@ pub fn main(argv: &[String]) -> i32 {
             "--decomp-dbg" => decomp_dbg = take_value(argv, &mut i, "--decomp-dbg"),
             "--engine" => engine = take_value(argv, &mut i, "--engine"),
             "--sleighpath" => sleighpath = take_value(argv, &mut i, "--sleighpath"),
+            "-h" | "--help" => {
+                usage();
+                return 0;
+            }
             "--timeout" => {
                 // Accepted for compatibility; the in-process child has no timeout
                 // wall (the Python timeout guarded a hung subprocess — out of scope
@@ -1214,6 +1218,43 @@ fn take_value(argv: &[String], i: &mut usize, flag: &str) -> Option<String> {
         eprintln!("error: {flag} requires a value");
         None
     }
+}
+
+fn usage() {
+    eprintln!(
+        "usage: kuna decompile <binary> <name|0xaddr> [--addr] [--json] [--raw] [--regions] \\\n\
+         \x20                     [--language auto|c|rust] [--mode auto|reliable|aggressive|fast] \\\n\
+         \x20                     [--option N V].. [--kassert ARGS].. \\\n\
+         \x20                     [--define-function S[-E][=N]|@FILE].. \\\n\
+         \x20                     [--assert DIRECTIVE|@FILE].. [--assert-strict] \\\n\
+         \x20                     [--slice ARCH] [--target T] [--sleighpath D]\n\
+         \n\
+         Decompile ONE function.  The target is a name, or an address with --addr\n\
+         (a `0x`-prefixed target implies it).  --json emits the decompile-all record\n\
+         for that one function ({{binary,count,functions:[{{name,address,code,variables,..}}]}});\n\
+         without it, the C text alone.\n\
+         \n\
+         --option NAME VALUE (repeatable) flips one phase-model decision for this run;\n\
+         `kuna catalog` lists them and `kuna docs options` explains the tiers.\n\
+         --mode applies an option preset (`kuna modes`); omitted, `auto` picks one by\n\
+         input size.  Explicit --option values win over the preset.\n\
+         --language selects the output language; omitted, it follows the binary.\n\
+         \n\
+         --define-function <start[-end][=name] | @file> (repeatable) declares where a\n\
+         function starts and ends: start names an entry discovery missed, the\n\
+         exclusive end bounds its flow so it stops swallowing its neighbours.\n\
+         \n\
+         --assert <directive | @file> (repeatable) states a fact the engine could not\n\
+         derive.  The vocabulary is function, typedef, prototype, data, param, return,\n\
+         name, type, comment, flow, readonly, volatile -- for instance\n\
+         `prototype login int login(char *user,char *pw)`, `type v2 char[16]`,\n\
+         `name v2 credbuf`, `readonly 0x404028+8`, `flow 0x1405 return`.\n\
+         @FILE holds one per line with `#` comments, which is what makes an override\n\
+         durable across invocations.  A directive the engine declines is reported and\n\
+         the run still succeeds; --assert-strict makes it exit 1 instead.\n\
+         \n\
+         Whole-binary runs are `kuna decompile-all` / `kuna functions`."
+    );
 }
 
 // --- the --json surface ------------------------------------------------------

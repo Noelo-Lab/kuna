@@ -1,0 +1,18 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "timeout_s": 60,
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "--help"
+  ],
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stderr_absent": [
+      "unknown option --help"
+    ]
+  }
+}

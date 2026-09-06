@@ -5,6 +5,12 @@ The user-facing commands are the single Rust binary `kuna`
 `make binaries`). This is the full reference; the one-screen version is in
 `docs/agents.md`.
 
+**Every subcommand describes itself.** `kuna <subcommand> -h|--help` prints that
+command's own usage block — its flags, what they take, and the shape of its `--json`
+document — and exits `0` before anything is loaded, so it needs neither an input binary
+nor a compiled `.sla`. `kuna --help` lists the subcommands. Help goes to stderr, as
+every usage block in this CLI does.
+
 All command output goes through a fallible stdout boundary. A downstream reader that closes
 the pipe early is a normal terminal condition, not the `println!` panic (exit `101`) it used
 to be: no panic text, no broken-pipe diagnostic. It suppresses the *diagnostic*, not the
@@ -1348,4 +1354,4 @@ A thin alias for `slacomp` (same CLI as upstream's `sleigh_opt`).
 
 `kuna modes` (list the option presets) and `kuna fid` (function identification) also
 exist, plus minor flags not covered here (`--no-vars`, `--raw`, `--regions`, `--timeout`,
-…) — see the usage block in `decompiler/crates/kuna-cli/src/main.rs`.
+…) — ask the command itself with `kuna <subcommand> --help`.
