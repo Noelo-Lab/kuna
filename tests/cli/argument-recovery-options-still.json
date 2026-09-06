@@ -1,0 +1,46 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "a-1951c6a10115",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "caller",
+    "--option",
+    "calleearity",
+    "on",
+    "--option",
+    "varargstackargs",
+    "on"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/calleearitylive_x86_64",
+    "binary_sha256": "4c6b06153e6db89cf53f44e8151475fcdbce542c5f50e3a04c3f8e1559d4d216",
+    "binary_size": 4904,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/calleearitylive_x86_64",
+    "selector": "caller",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_absent": [
+      "callee\\(a[0-9]+,4,a[0-9]+\\);"
+    ],
+    "stdout_matches": [
+      "callee\\(a[0-9]+,4,a[0-9]+,v[0-9]+\\);",
+      "callee\\(a[0-9]+,4,a[0-9]+,\\(int\\)"
+    ]
+  },
+  "notes": "Promoted acceptance of RE-need argument-recovery-options-still, re-pointed from the dataset witness (ELF x86-64 graphy sub_1002c90, whose fifteen calls to sub_1005250 rendered eleven times with five arguments and four times with three) at the vendored calleearitylive_x86_64 fixture: CI has no dataset. The witness clause is load-bearing. Fails with --option calleearitylive off."
+}

@@ -343,6 +343,48 @@ because the slot numbering the captured Varnodes came from does not survive
 `delete_unused_trials`. It is inert unless `calleearity` is also on, so one
 option still turns all sibling reconciliation off.
 
+Both of those refuse a call that recovered *any* argument, and that refusal is
+measured rather than cautious: without it the rule reads "same callee, same
+arity", which the whole-corpus sweep showed is false for a variadic callee and
+for a witness that itself over-recovered — `Sleep(200)` became `Sleep(200,0)`,
+and a variadic internal logger `sub_1b11c(5,0,"Zip: empty archive?")` gained two
+arguments its format string has no conversions for. A sibling call is simply not
+evidence that a shorter argument list is a broken one. But a partial list can
+still be wrong: one helper called fifteen times in one function renders eleven
+times with five arguments and four times with three, from
+instruction-for-instruction identical code, because `only_op_use` rejects the
+last recovered trial on a competing use elsewhere in the function — a `CBRANCH`,
+a `LOAD`, a `STORE` — and `fillin_map` then drops that argument and every
+argument behind it.
+
+(kuna) `calleearitylive` (default-on,
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleearitylive.rs`) extends a
+partial list, and pays for the relaxation with evidence the sibling does not
+carry: the **callee's own body**. It reuses the bounded entry decode
+`calleedeadarg` takes for the subtractive direction
+(`kuna_calleedeadarg.rs (probe_callee_entry_dead)`), which already records which
+register bytes some path reads before writing, and asks two things of it. Every
+register the witness claims beyond this site's own list must be read before
+written by the callee, so it genuinely carries an input; and **no other argument
+location of the prototype model may be**, so the witness's list is the callee's
+whole register argument list and not a prefix of it. The second half is what
+refuses the two shapes the sweep found: an import has no body to decode and
+declines outright, while a variadic register-save prologue (`str x3,[sp,#136];
+stp x4,x5,[sp,#144]; stp x6,x7,[sp,#160]`) reads argument registers a
+five-argument witness does not claim. A fixed-arity callee reads exactly the
+registers its prototype names.
+
+Two limits are this rule's own, on top of `calleearity`'s. The site's own
+recovered list must be exactly the **leading run** of the witness's, because
+parameters are positional and a site whose arguments disagree with the witness
+*in place* is a different call rather than a shorter one. And it is always
+deferred, never in-order: on the witness the four short sites are the first four
+and the first five-argument site is the fifth, so an in-order rule has no witness
+at any of them. Like `calleearityfwd` it captures its candidate Varnodes in
+`build_input_from_trials` and replays them at the end of the same
+`ActionActiveParam::apply`, rather than moving when a spec finalizes. It is inert
+unless `calleearity` is also on.
+
 The `Register` (unordered) variant skips all ordering logic: every active
 trial that lands justified in an entry is a parameter
 (`fillin_map_register`). The output variant first lets the model rules claim

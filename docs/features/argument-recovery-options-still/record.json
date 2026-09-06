@@ -1,0 +1,45 @@
+{
+  "opportunity": "argument-recovery-options-still",
+  "track": "quality",
+  "need_id": "argument-recovery-options-still",
+  "witness_binary": "kuna-re-dataset/challenges/69761b7a39e9c4d85c2f9fc1/bin/graphy-release.zip.__x/graphy",
+  "selector": "sub_1002c90",
+  "callee": "0x1005250",
+  "option": "calleearitylive",
+  "flag": "callee_arity_live",
+  "element_id": 4146,
+  "change_kind": "correctness-fix",
+  "source_decompiler": "kuna",
+  "default_on": true,
+  "div": "DIV-123",
+  "scope": "medium",
+  "ablation_changed": 0,
+  "parity": {
+    "make_test": "PARITY OK 675/675",
+    "make_test_stages": "PARITY OK 644/644 (4 new assertions, none pre-existing moved)"
+  },
+  "speed_method": "scripts.pipeline.timeit, warmup + median of 7",
+  "speed_off_ms": 2246.59,
+  "speed_on_ms": 1914.39,
+  "speed_delta_pct": -14.79,
+  "speed_samples": 7,
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": true,
+  "sweep": {
+    "binaries_decompiled": 51,
+    "binaries_load_failed_identically": 14,
+    "functions": 9753,
+    "functions_changed": 42,
+    "changed_pct": 0.43,
+    "regressions_found": 0,
+    "regression_witnesses_held": "ObfuscationFiesta.exe sub_140002530 (Sleep) and linker64 sub_18798 (variadic sub_1b11c) are byte-identical with the option on"
+  },
+  "probe_flip": "acceptance a-ee7c01822c2a FAIL -> PASS; promoted to tests/cli/argument-recovery-options-still.json re-pointed at decompiler/crates/kuna-analysis/tests/fixtures/calleearitylive_x86_64",
+  "decisions": [
+    "The filed hypothesis STANDS -- sibling reconciliation rescues empty argument lists and leaves partial ones alone -- but the captain's refutation is right that the one-line gate flip is a measured regression, so the fix is a new discriminator rather than a relaxation.",
+    "The captain's diagnosis named onlyOpUse's CBRANCH rejection. Instrumented on the witness, the trial that actually decides is R8, not RCX: ancestor_op_use answers only=false at 0x10033c7 on a CPUI_STORE at 0x10036d5 (a competing use of the same register value a thousand bytes away, reached through a MULTIEQUAL), and fillin_map's positional rule then drops RCX behind the hole. RCX itself is only=false at the GOOD site too. The class is the same -- a competing use anywhere in the function sinks the last recovered trial -- but the specific opcode is STORE, not CBRANCH.",
+    "The discriminator is the callee's own body, and the load-bearing half is the NEGATIVE one: not 'the missing registers are read' but 'no OTHER argument register of the model is'. Liveness alone would have re-admitted the linker64 variadic regression, because an AArch64 va_start register-save area reads x3..x7 before writing them. Requiring the witness to be the callee's WHOLE register argument list refuses it.",
+    "No new probe was written: CalleeEntryDead already records read-before-write ranges for calleedeadarg's subtractive direction, so this adds one accessor (proves_read) and widens the seed gate.",
+    "Deferred-only, not in-order. On the witness the four short sites are the first four and the first five-argument site is the fifth, so an in-order rule has no witness at any of them; reordering finalization is refused for calleearityfwd's reason (check_call_double_use reads whether another spec is still input_active while scoring)."
+  ]
+}

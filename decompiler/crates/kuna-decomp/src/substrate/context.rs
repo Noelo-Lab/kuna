@@ -743,6 +743,12 @@ pub struct ArchContext {
     /// [`crate::p4_calls::kuna_calleearityfwd::capture_empty_call`]; inert
     /// unless `callee_arity` is also set.
     pub callee_arity_fwd: bool,
+    /// (kuna) Extend a PARTIALLY recovered argument list to a sibling call's,
+    /// when the callee's own body proves the missing registers are the ones it
+    /// reads (`calleearitylive`).  Read by
+    /// [`crate::p4_calls::kuna_calleearitylive::capture_partial_call`]; inert
+    /// unless `callee_arity` is also set.
+    pub callee_arity_live: bool,
     /// (kuna) completion level for the two upstream partial-range call-overlap
     /// guards (`calloverlap`): `0` = both stay inert (what kuna shipped before the
     /// option), `1` = `Heritage::guardCallOverlappingInput` only, `2` = that plus
@@ -1200,6 +1206,7 @@ impl ArchContext {
             vararg_stack_args: true,     // varargstackargs (DIV-101 default-on)
             callee_arity: true,          // calleearity (DIV-102 default-on)
             callee_arity_fwd: true,      // calleearityfwd (default-on)
+            callee_arity_live: true,     // calleearitylive (default-on)
             call_overlap: 0,             // calloverlap (0 = both overlap guards inert)
             spill_arg_trial: 0,          // spillargtrial (0 = upstream: every STORE rejects)
             load_guard_range: true,      // loadguardrange (upstream behavior, default-on)

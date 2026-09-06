@@ -1094,6 +1094,10 @@ impl Action for ActionActiveParam {
         // list, retried at the end of the pass against the siblings that finalize
         // after them.  See [`crate::p4_calls::kuna_calleearityfwd`].
         let mut pending_rescue = Vec::new();
+        // (kuna) `calleearitylive`: call sites that finalize with a SHORT argument
+        // list, retried the same way.  See
+        // [`crate::p4_calls::kuna_calleearitylive`].
+        let mut pending_extend = Vec::new();
 
         // INDEX-BASED (CORRECTION-7 #3): keep the call specs ON `data.qlst` so
         // each sub-function's input-trial ancestor walk can look up the *other*
@@ -1162,8 +1166,12 @@ impl Action for ActionActiveParam {
                 // resolveModel(activeinput) + deriveInputMap(activeinput): resolve
                 // the model and fill in the trial → parameter map.
                 let _ = fc.resolve_and_derive_input_map(&manager_rc);
-                if let Some(p) = build_input_from_trials(&mut fc, data) {
+                let fixup = build_input_from_trials(&mut fc, data);
+                if let Some(p) = fixup.rescue {
                     pending_rescue.push(p);
+                }
+                if let Some(p) = fixup.extend {
+                    pending_extend.push(p);
                 }
                 fc.clear_active_input();
                 data.restore_call_specs_at(idx, fc);
@@ -1173,6 +1181,8 @@ impl Action for ActionActiveParam {
         // (kuna) `calleearityfwd`: every spec in this pass is final now, so the
         // sites that recovered nothing get their one retry.
         crate::p4_calls::kuna_calleearityfwd::rescue_pending(data, &pending_rescue);
+        // (kuna) `calleearitylive`: and the sites that recovered too FEW get theirs.
+        crate::p4_calls::kuna_calleearitylive::extend_pending(data, &pending_extend);
         0
     }
 }

@@ -1,0 +1,102 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    RE-friction round 4, need `argument-recovery-options-still` (challenge
+    69761b7a39e9c4d85c2f9fc1, ELF x86-64 `graphy`): `kuna decompile ...
+    sub_1002c90` calls one helper fifteen times and renders eleven of them with
+    five arguments and four with three, from instruction-for-instruction
+    identical code:
+
+        sub_1005250(&v24,v22 & 0xffffffff,v8 & 0xff);                      0x1003470
+        sub_1005250(&v24,v22 & 0xffffffff,v8 & 0xff,v38,sub_1004ef0(..));  0x1003750
+
+    Root cause (P4, trial finalization).  Argument recovery scores each trial
+    from the CALLER's data flow alone, and `Funcdata::onlyOpUse`
+    (funcdata_varnode.cc:1851) rejects a trial whose Varnode has any competing
+    use - a CBRANCH, a LOAD, a STORE - anywhere in the function.  When the
+    rejected trial is the LAST recovered argument, `ParamListStandard::fillinMap`
+    drops it and every argument behind it, so the site renders short.
+
+    `calleearity` and `calleearityfwd` exist for exactly this and both decline,
+    because both refuse a call that recovered ANY argument.  That limit is not
+    arbitrary: the whole-corpus sweep that bought it measured `Sleep(200)`
+    becoming `Sleep(200,0)` from an over-recovered sibling, and a variadic
+    internal logger `sub_1b11c(5,0,"Zip: empty archive?")` gaining two arguments
+    its format string has no conversions for.  A sibling alone cannot tell a
+    shorter call from a broken one.
+
+    What can is the CALLEE'S OWN BODY, decoded by the same bounded walk
+    `calleedeadarg` takes for the subtractive direction, and read for two things:
+    every register the witness claims beyond this site's list is read before
+    written by the callee, AND no other argument register of the model is.  A
+    fixed-arity callee reads exactly the registers its prototype names; an import
+    has no body, and a variadic register-save prologue reads every argument
+    register there is.
+
+    Stage / sub-stage: P4 "trial-finalization".  The P0 assertion
+    `option calleearitylive on|off` decides whether that extension happens; it
+    reuses `calleearity`'s refusals, is inert with `calleearity off`, and is
+    deferred to the end of `ActionActiveParam::apply` because on the witness the
+    four short sites are the FIRST four.
+
+    The fixture is the same construct on SysV x86-64, in two halves:
+
+        callee:  mov %rdi,%rax; add %esi,%eax; add %edx,%eax; add %ecx,%eax; ret
+        callee2: the same, plus add %r8d,%eax
+
+        caller / caller2, identically shaped:
+                mov  %rsi,%r8 ; mov %rdx,%r9
+                lea  0x8000(%r9),%ecx      # the 4th argument
+                mov  $4,%esi ; mov %r8,%rdx
+                cmp  $0xffff,%ecx          # ...which is also branched on
+                ja   L2
+                call callee                # SHORT: the ecx trial is rejected
+                ret
+        L2:     shr  $0x10,%r9
+                lea  0x8000(%r9),%ecx      # a fresh ecx, no competing use
+                mov  $4,%esi ; mov %r8,%rdx
+                call callee                # WITNESS: four arguments
+                ret
+
+    `caller` is the fix and `caller2` is the discriminator.  They differ only in
+    which callee they call: `callee2` also reads `r8d`, a register the
+    four-argument witness does not claim, so the callee's body contradicts the
+    witness and the extension is declined - the same refusal a variadic callee
+    gets.  Pass 1 (`option calleearitylive off`) reproduces the BUG in both.
+    Pass 2 (`option calleearitylive on`) fixes `caller` and leaves `caller2`
+    exactly as it was.
+-->
+<bytechunk space="ram" offset="0x100000">
+4889f801f001d001c8c3660f1f4400004889f801f001d001c84401c0c30f1f00
+4989f04989d1418d8900800000be040000004c89c281f9ffff00007706e8beff
+ffffc349c1e910418d8900800000be040000004c89c2e8a5ffffffc30f1f4000
+4989f24989d3418d8b00800000be040000004c89d281f9ffff00007706e88eff
+ffffc349c1eb10418d8b00800000be040000004c89d2e875ffffffc3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="callee"/>
+<symbol space="ram" offset="0x100010" name="callee2"/>
+<symbol space="ram" offset="0x100020" name="caller"/>
+<symbol space="ram" offset="0x100060" name="caller2"/>
+</binaryimage>
+<script>
+  <com>option calleearitylive off</com>
+  <com>lo fu caller</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu caller2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option calleearitylive on</com>
+  <com>lo fu caller</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu caller2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="calleearitylive #1: option off drops the branched-on 4th argument at both callees (bug reproduced)" min="3" max="3">callee2?\(a[0-9]+,4,a[0-9]+\);</stringmatch>
+<stringmatch name="calleearitylive #2: option on extends the short site to the sibling call's four arguments" min="1" max="1">callee\(a[0-9]+,4,a[0-9]+,v[0-9]+\);</stringmatch>
+<stringmatch name="calleearitylive #3: the callee that also reads r8d contradicts a four-argument witness, so its short site is left alone in BOTH passes" min="2" max="2">callee2\(a[0-9]+,4,a[0-9]+\);</stringmatch>
+<stringmatch name="calleearitylive #4: the witness site keeps exactly four arguments in all four decompilations" min="4" max="4">callee2?\(a[0-9]+,4,a[0-9]+,[^;]*0x8000\);</stringmatch>
+</decompilertest>

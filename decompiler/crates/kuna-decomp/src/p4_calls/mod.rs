@@ -18,6 +18,7 @@ pub mod kuna_spillargtrial;
 pub mod kuna_varargstackargs; // (kuna) the variadic call's stack tail is its own fillinMap section
 pub mod kuna_calleearity; // (kuna) one callee, one argument list across its call sites
 pub mod kuna_calleearityfwd; // (kuna) reconcile against a sibling call that finalizes later
+pub mod kuna_calleearitylive; // (kuna) extend a partial argument list when the callee body agrees
 pub mod kuna_inputparamgap; // (kuna) an unused-argument-register run must not veto a later live-in
 pub mod kuna_rustabi; // (kuna) the rustc two-register return: keep the pair, connect it at the call
 pub mod kuna_langabi; // (kuna) the ABI seam: per-language `extern` rendering

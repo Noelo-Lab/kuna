@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    640,
-    640
+    644,
+    644
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -413,6 +413,10 @@
     "data:calleearityfwd #1: option off drops the argument at the call site that finalizes BEFORE its witness (bug reproduced)",
     "data:calleearityfwd #2: option on recovers the size the small arm leaves in the argument register",
     "data:calleearityfwd #3: the site that was already right keeps exactly one argument in both passes",
+    "data:calleearitylive #1: option off drops the branched-on 4th argument at both callees (bug reproduced)",
+    "data:calleearitylive #2: option on extends the short site to the sibling call's four arguments",
+    "data:calleearitylive #3: the callee that also reads r8d contradicts a four-argument witness, so its short site is left alone in BOTH passes",
+    "data:calleearitylive #4: the witness site keeps exactly four arguments in all four decompilations",
     "data:calleedeadarg #1: option off passes the previous call's return value to a callee that never reads it (bug reproduced)",
     "data:calleedeadarg #2: option on drops the argument the callee's own body proves it never reads",
     "data:calleedeadarg #3: with the argument gone the producer call stands on its own (only the fixed pass)",

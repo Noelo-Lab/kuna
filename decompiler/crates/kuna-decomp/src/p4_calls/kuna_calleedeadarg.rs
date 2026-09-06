@@ -222,6 +222,30 @@ impl CalleeEntryDead {
         self.cuts.iter().all(|c| (off..end).all(|b| c.contains(&(idx, b))))
     }
 
+    /// Does this summary show some path READING any byte of `[addr, addr+size)`
+    /// before writing it — the callee consuming the register as an input?
+    ///
+    /// The mirror of [`Self::proves_dead`] and the evidence
+    /// [`crate::p4_calls::kuna_calleearitylive`] extends an argument list on.
+    /// An incomplete walk clears `reads`, so it answers `false` there too.
+    pub fn proves_read(&self, addr: &Address, size: int4) -> bool {
+        if !self.complete || size <= 0 {
+            return false;
+        }
+        let Some(sp) = addr.get_space() else { return false };
+        if self.reg_idx < 0 || sp.get_index() != self.reg_idx {
+            return false;
+        }
+        let (idx, off) = (self.reg_idx, addr.get_offset());
+        let end = off.wrapping_add(size as u64);
+        if end < off {
+            return false;
+        }
+        self.reads
+            .iter()
+            .any(|&(ridx, roff, rsz)| ridx == idx && roff < end && off < roff + rsz as u64)
+    }
+
     /// Did the walk complete? (Diagnostics and tests.)
     pub fn is_complete(&self) -> bool {
         self.complete
@@ -465,7 +489,7 @@ pub fn seed_callee_entry_dead(
     arch: &mut crate::architecture::Architecture,
     data: &mut Funcdata,
 ) {
-    if !arch.callee_dead_arg {
+    if !arch.callee_dead_arg && !(arch.callee_arity && arch.callee_arity_live) {
         return;
     }
     // The veto needs an EARLIER call to have left the value in the register, so

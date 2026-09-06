@@ -37,6 +37,20 @@ use crate::funcdata_varnode::AncestorRealistic;
 use crate::context::{OpId, VarnodeId};
 use crate::varmap::AliasChecker;
 
+/// (kuna) The deferred argument-list retry one finalized call leaves behind.
+///
+/// At most one of the two is ever set: a call whose list came out EMPTY is
+/// [`crate::p4_calls::kuna_calleearityfwd`]'s, one whose list came out SHORT is
+/// [`crate::p4_calls::kuna_calleearitylive`]'s. Both are replayed at the end of
+/// `ActionActiveParam::apply`, when every spec in the pass is final.
+#[derive(Default)]
+pub struct PendingCallFixup {
+    /// The empty-list rescue candidate (`calleearityfwd`).
+    pub rescue: Option<crate::p4_calls::kuna_calleearityfwd::PendingRescue>,
+    /// The short-list extension candidate (`calleearitylive`).
+    pub extend: Option<crate::p4_calls::kuna_calleearitylive::PendingExtend>,
+}
+
 /// C++ `FuncCallSpecs::checkInputTrialUse` (`fspec.cc:5592`).
 ///
 /// Run through each input trial and decide whether it is \e active (a write
@@ -263,14 +277,16 @@ pub fn final_input_check(fc: &mut FuncCallSpecs, data: &mut Funcdata) {
 /// trial whose Varnode is bigger than its recovered type is truncated with a
 /// `SUBPIECE`.  Spacebase parameters mark their stack range as unmapped.
 ///
-/// (kuna) Returns the `calleearityfwd` rescue candidate when this call comes out
-/// with an empty argument list: the sibling that could still speak for it may not
-/// be final yet, and the Varnodes its trials point at are reachable only here,
-/// before `opSetAllInput` drops them.
+/// (kuna) Returns the deferred-retry candidate this call leaves behind — the
+/// `calleearityfwd` rescue when its argument list comes out EMPTY, the
+/// `calleearitylive` extension when it comes out SHORT. In both cases the
+/// sibling that could speak for it may not be final yet, and the Varnodes its
+/// dropped trials point at are reachable only here, before `opSetAllInput`
+/// drops them.
 pub fn build_input_from_trials(
     fc: &mut FuncCallSpecs,
     data: &mut Funcdata,
-) -> Option<crate::p4_calls::kuna_calleearityfwd::PendingRescue> {
+) -> PendingCallFixup {
     let op = fc.get_op();
     let mut newparam: Vec<VarnodeId> = Vec::new();
     // Preserve the fspec parameter (in0).
@@ -362,12 +378,18 @@ pub fn build_input_from_trials(
             data.scope_local_mark_not_mapped(&spc, off, sz, true);
         }
     }
-    // (kuna) `calleearityfwd`: capture the retry candidate while the trials and
-    // the CALL's pre-rewrite inputs are both still there.
+    // (kuna) `calleearityfwd` / `calleearitylive`: capture the retry candidate
+    // while the trials and the CALL's pre-rewrite inputs are both still there.
     let pending = if newparam.len() < 2 {
-        crate::p4_calls::kuna_calleearityfwd::capture_empty_call(fc, data)
+        PendingCallFixup {
+            rescue: crate::p4_calls::kuna_calleearityfwd::capture_empty_call(fc, data),
+            extend: None,
+        }
     } else {
-        None
+        PendingCallFixup {
+            rescue: None,
+            extend: crate::p4_calls::kuna_calleearitylive::capture_partial_call(fc, data),
+        }
     };
     let _ = data.op_set_all_input(op, &newparam);
     // (kuna) `calleearity`: remember WHERE each recovered argument lived before
