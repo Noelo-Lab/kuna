@@ -1,0 +1,60 @@
+{
+  "need_id": "zero-function-sizes-make",
+  "track": "tooling",
+  "scope": "small",
+  "worker": "b-r4-zero-function-si",
+  "branch": "feat/re-zero-function-sizes-make",
+  "symptom": "All 12 discovered functions of a sectionless ELF64 PIE had size 0, so `kuna functions --min-size 1 --json` answered count 0 / total 12 / error null and `--summary` reported code_bytes 0. 1 instance, round 4 (crackmes.one 605443e333c5d42c3d016f59, KataVM_L1).",
+  "diagnosis": "funcextent::clip returns 0 when no CODE span contains the entry, and code_spans() is built only from the loader section table. An image with no section table publishes no spans at all, so every entry takes that early return -- 12 of 12 is the only reachable outcome, not a coincidence.",
+  "hypothesis_status": "upheld",
+  "decisions": [
+    "The filed hypothesis ('segment-only discovery may not propagate recovered extents into inventory metadata') is right, and so is the captain's fix direction: clip against the executable PT_LOAD segments when the section table yields no CODE span. Reproduced independently with the same-binary control -- /bin/true reports 0 of 54 entries at size 0; the same bytes with e_shoff/e_shnum/e_shstrndx zeroed report 11 of 11.",
+    "The fallback is whole-table, never per-entry: it triggers only when code_spans(sections) is empty. A per-entry fallback would hand a body to exactly the PE import pointer slots and undefined externals the 0 sentinel exists for, and would make the open `whole-binary-decompilation-treats` need worse.",
+    "The gate is 'no CODE span', not 'no sections'. A section table of pure data sections leaves the same empty world an absent one does, and the sentinel is about CODE containment, not about the table's existence.",
+    "The loader reports segments as a SEPARATE query (LoadImage::get_segments, a new defaulted trait method) rather than synthesizing sections from segments. Synthesis would have changed function_entries_executable's documented sectionless behaviour ('Loaders without section metadata retain the complete inventory') as a side effect and would have taken the loader lease the five-need sectionless block holds.",
+    "ObjectLoadImage keeps the segment metadata in a new segment_info snapshot beside `sections`, not on the byte-owning `Segment` struct: the metadata records each PT_LOAD's whole RAM footprint while `Segment` covers only what the file backs, and the ET_REL path (no program headers) then reports an honest empty list rather than a fabricated flag.",
+    "A segment's CODE bit is its execute permission, which lets the same code_spans filter read both vocabularies. Mach-O initprot and COFF characteristics are mapped too; an unmodelled permission word yields no bits, so a reader keying on CODE ignores the segment rather than guessing.",
+    "No option row: a tooling-track change that emits no C. No phases.toml, options.rs, catalog counter, DIV row or tests/stages case touched.",
+    "The acceptance probe's dataset target is not vendorable, so it is re-pointed at a new 304-byte in-repo fixture, noshdr_x86_64 (generator vendored beside it). cmd and expect are untouched, so the acceptance_id a-fe6b8034e76c is unchanged -- probe_id hashes cmd+expect only, not the target."
+  ],
+  "changed": [
+    "decompiler/crates/kuna-sleigh/src/loadimage.rs",
+    "decompiler/crates/kuna-analysis/src/loadimage_object.rs",
+    "decompiler/crates/kuna-console/src/funcextent.rs",
+    "decompiler/crates/kuna-console/src/engine.rs",
+    "decompiler/crates/kuna-console/tests/verify_sectionlessextent.rs",
+    "decompiler/crates/kuna-analysis/tests/fixtures/noshdr_x86_64",
+    "decompiler/crates/kuna-analysis/tests/fixtures/noshdr_x86_64.py",
+    "tests/cli/zero-function-sizes-make.json",
+    "docs/cli.md",
+    "docs/spec/01-program-prep.md",
+    "docs/re-needs/zero-function-sizes-make.md"
+  ],
+  "acceptance": "PASS -- count 2 of total 2 with --min-size 1 on the vendored twin; on the filed dataset witness, count 12 of 12, summary code_bytes 0 -> 4821, and `largest` now ranks the VM interpreter sub_12d0 first at 4101 bytes.",
+  "sweep": {
+    "kuna-analysis fixtures": "135 images through `kuna functions --json`, per-entry (address,size) compared: 2 changed, 115 identical, 18 emit no JSON either way. Both changed images are sectionless -- corruptshdr_i386 (0,0 -> 15,8) and overlapbranch_i386 (0 -> 20) -- and every change is 0 -> a real extent.",
+    "real binaries": "29 sectioned ELF/PE/Mach-O images (system binaries + repo fixtures): 0 changed.",
+    "kuna disassemble": "the derived window on the two sectionless fixtures narrows from the 64-byte default to the real function extent, dropping only trailing zero padding."
+  },
+  "speed": {
+    "method": "kuna functions /bin/bash --json, warmup + 7 repeats",
+    "before": "median 0.32 s",
+    "after": "median 0.32 s",
+    "delta": "0.0% -- the fallback adds one loader borrow and a 3-element vector per inventory build"
+  },
+  "tests": {
+    "kuna-console/src/funcextent.rs": "4 unit tests on spans(): sections win when present, the executable-segment fallback and its segment-end clip, a CODE-less section table still falls back, and neither source leaves the extent unrecovered",
+    "kuna-analysis/src/loadimage_object.rs": "2 unit tests on get_segments(): permission-to-flag translation and ascending order on the sectionless fixture, and a sectioned image reporting both views",
+    "kuna-console/tests/verify_sectionlessextent.rs": "4 e2e tests on noshdr_x86_64 -- the premise (no sections, one executable segment of three), both clip arms (16 and 6, where the unpatched tree reports 0 and 0), the --addr path plus data/unmapped addresses keeping no extent, and fauxware's section-table clip unchanged at 195",
+    "tests/cli": "zero-function-sizes-make.json, 45/45"
+  },
+  "gates": {
+    "make test": "PARITY OK, 675/675",
+    "make test-stages": "PARITY OK, 640/640",
+    "make check-spec": "OK (strict OK)",
+    "kuna catalog --check": "OK",
+    "make test-cli": "45/45",
+    "make rust-test": "GREEN (rc=0, 5709 tests passed, 0 failures) with `env -u KUNA_DECOMP_TEST`, which is what CI runs. With the repipe launcher's KUNA_DECOMP_TEST exported, verify_w10_proto_unlock goes red with `oracle promote_compare signature drifted` -- the known worktree artifact: the var points the C++ oracle at kuna's own decomp_test_dbg, so kuna's modern `unsigned int` spelling reads as drift. That target is in kuna-decomp's printer, which this change cannot reach.",
+    "re acceptance suite": "54 needs replayed: 0 regressed; zero-function-sizes-make PASS"
+  }
+}

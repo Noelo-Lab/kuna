@@ -541,6 +541,26 @@ name, including the decompiling ones; their alternative, the recovered
 `Funcdata::get_size()`, is the *requested* flow bound rather than a measurement,
 and a whole-binary run always requests an unbounded extent.
 
+(kuna) The zero has that meaning only while a section table exists. An image that
+publishes none — a sectionless ELF, or one whose section headers are corrupt
+enough that the loader continues from the program headers — has no CODE section
+anywhere, so every entry fell to the same answer and the whole binary reported
+zero; size-based triage then discarded all of it, `--min-size 1` reporting a count
+of none out of a total of twelve with no error to distinguish that from a binary
+that really holds nothing. When the section table yields no CODE span at all, the
+clip runs against the **executable load segments** instead, which the loader now
+reports beside the sections
+(`decompiler/crates/kuna-analysis/src/loadimage_object.rs (ObjectLoadImage::get_segments)`,
+reaching the console as `ConsoleProgram::segments`); a segment's CODE bit is its
+execute permission, so the same filter reads both. The container is coarser, and
+the last entry of a segment therefore runs to the end of it rather than to the end
+of a `.text`, but that is the same kind of answer the field already gives: an
+upper bound clipped at the next entry. The fallback is whole-table, never
+per-entry. An entry that misses the CODE spans an image *does* publish is the
+pointer slot the zero exists for, and choosing a segment for it would hand a body
+to exactly those. The analyzer tier already degrades this way for entry point
+discovery, which is where the shape comes from.
+
 Naming a pointer slot is not by itself enough to bind a call *through* it. An ELF
 PLT stub and a Mach-O `__stubs` entry are code, so the call is direct and the name
 resolves at flow time; a PE Import Address Table slot is data, so `call dword ptr

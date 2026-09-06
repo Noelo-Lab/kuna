@@ -179,6 +179,20 @@ pub trait LoadImage {
         false
     }
 
+    /// (kuna) The mapped **load segments** as `(vma, size, flags)`, `flags` per
+    /// [`section_flags`] — the coarser mapping unit underneath the section
+    /// table.
+    ///
+    /// Not a C++ method. BFD builds its `asection` list from an ELF's section
+    /// headers, so upstream has no answer at all for an image that carries none,
+    /// and every section-keyed reader silently sees an empty world. This reports
+    /// what the program headers still say, so a reader can fall back to the
+    /// segment that contains an address when no section does. Empty by default:
+    /// a loader that does not model segments keeps reporting nothing.
+    fn get_segments(&self) -> Vec<(u64, u64, u32)> {
+        Vec::new()
+    }
+
     /// Return list of \e readonly address ranges.
     ///
     /// This method should read out information about \e all address ranges

@@ -558,7 +558,12 @@ first — so inter-function alignment padding is counted in. Against ELF `st_siz
 the 1428 symbolized-fixture functions with ground truth it is never short, exact for
 231, and overshoots by a median of 8 bytes (worst 52). An entry in no CODE section — an
 import pointer slot, an undefined external — reports `0`, as does a function whose
-extent could not be measured. A caller needing the exact body must still decompile.
+extent could not be measured. An image with no usable section table at all (a
+sectionless ELF; a corrupt one the loader recovers from the program headers) is clipped
+against its executable load segments instead, so the last entry of a segment runs to
+the end of that segment rather than to the end of a `.text` — looser, but still an
+upper bound, where every entry used to report `0` and `--min-size 1` discarded the
+whole binary. A caller needing the exact body must still decompile.
 
 Per-function `code` matches `kuna decompile ... --option listing on` byte-for-byte on
 x86-64 (elsewhere, see the injected defaults below), `error` isolates a single failed

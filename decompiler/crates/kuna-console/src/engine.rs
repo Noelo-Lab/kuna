@@ -489,7 +489,7 @@ impl ConsoleProgram {
         // this adds no decode to the cheap inventory call.
         crate::funcextent::assign_extents(
             &mut entries,
-            &crate::funcextent::code_spans(&self.sections()),
+            &crate::funcextent::spans(&self.sections(), &self.segments()),
         );
         // A caller-declared extent is an assertion, not a guess: it outranks the
         // clip everywhere the clip is reported (`declared_extents`).
@@ -524,7 +524,7 @@ impl ConsoleProgram {
         crate::funcextent::extent_at(
             entry,
             &entries,
-            &crate::funcextent::code_spans(&self.sections()),
+            &crate::funcextent::spans(&self.sections(), &self.segments()),
         )
     }
 
@@ -902,6 +902,20 @@ impl ConsoleProgram {
         }
         loader.close_section_info();
         out
+    }
+
+    /// (kuna, `zero-function-sizes-make`) The loadable segments as
+    /// `(vma, size, flags)` triples — the coarser mapping unit under
+    /// [`Self::sections`], with the same [`section_flags`] vocabulary (a
+    /// segment's CODE bit is its execute permission).
+    ///
+    /// The answer for an image whose section table is absent or unusable, where
+    /// `sections()` is empty and every section-keyed question loses its
+    /// container. Empty for a loader that does not model segments (the XML
+    /// `<binaryimage>` corpus loader, a relocatable object) — the trait method
+    /// defaults to it.
+    pub fn segments(&self) -> Vec<(u64, u64, u32)> {
+        self.arch().translate().loader_rc().borrow().get_segments()
     }
 
     /// (kuna) Whether the load image can actually read bytes at `addr` — i.e.

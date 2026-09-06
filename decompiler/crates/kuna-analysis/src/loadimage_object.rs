@@ -56,7 +56,7 @@ use std::collections::HashSet;
 use std::rc::Rc;
 
 use object::read::{Object, ObjectSection, ObjectSegment, ObjectSymbol};
-use object::{Architecture, SymbolKind};
+use object::{Architecture, SegmentFlags, SymbolKind};
 
 use kuna_base::address::{Address, RangeList};
 use kuna_base::error::{KunaError, KunaResult};
@@ -122,6 +122,29 @@ struct Segment {
     /// The bytes present at `vma` (a copy of the ELF segment's file data; the
     /// region's `size` is `data.len()`, the C++ `secsize`).
     data: Vec<u8>,
+}
+
+/// A load segment's [`section_flags`] bits, from the format's own permission
+/// word — the segment-level counterpart of the per-format `section_bits`.
+///
+/// Execute permission is what the CODE bit means here; everything else mapped
+/// is DATA, and a segment that cannot be written is READONLY. A permission word
+/// in a format this does not model yields no bits, so a reader that keys on
+/// CODE ignores the segment rather than guessing.
+fn segment_bits(flags: SegmentFlags) -> u32 {
+    let (exec, write) = match flags {
+        SegmentFlags::Elf { p_flags, .. } => (p_flags & 1 != 0, p_flags & 2 != 0),
+        SegmentFlags::MachO { initprot, .. } => (initprot & 4 != 0, initprot & 2 != 0),
+        SegmentFlags::Coff { characteristics } => {
+            (characteristics & 0x2000_0000 != 0, characteristics & 0x8000_0000 != 0)
+        }
+        _ => return 0,
+    };
+    let mut bits = if exec { section_flags::CODE } else { section_flags::DATA };
+    if !write {
+        bits |= section_flags::READONLY;
+    }
+    bits
 }
 
 /// One ELF section, for the `getNextSection`/`getReadonly` info walks (the BFD
@@ -196,6 +219,14 @@ pub struct ObjectLoadImage {
     segments: Vec<Segment>,
     /// ELF sections, in file order (the BFD `asection` list for the info walks).
     sections: Vec<SectionInfo>,
+    /// (kuna) The loadable segments as mapping *metadata*, ascending by vma —
+    /// the same `(vma, size, flags)` shape as [`Self::sections`], reported by
+    /// `getSegments` so a section-keyed reader has a container to fall back on
+    /// when the image carries no usable section table. Distinct from
+    /// [`Self::segments`], which owns the bytes and covers only what the file
+    /// backs; this records each segment's whole RAM footprint. Empty for an
+    /// `ET_REL` load, which has no program headers.
+    segment_info: Vec<SectionInfo>,
     /// Function symbols, in symbol-table order.
     funcsyms: Vec<FuncSym>,
     /// Relocatable-object section coordinates. Empty for linked images.
@@ -399,16 +430,27 @@ impl ObjectLoadImage {
         // is the file extent and any RAM tail past it falls into the zero-fill
         // path exactly as an unmapped gap would (BFD `SEC_LOAD`-less sections).
         let mut segments: Vec<Segment> = Vec::new();
+        let mut segment_info: Vec<SectionInfo> = Vec::new();
         for seg in file.segments() {
             let vma = seg.address();
             let data = seg.data().map_err(|e| {
                 KunaError::lowlevel(format!("File: {filename} : unreadable segment data: {e}"))
             })?;
+            // The metadata records the RAM footprint whether or not the file
+            // backs it, so a `.bss` tail still reads as mapped.
+            if seg.size() != 0 {
+                segment_info.push(SectionInfo {
+                    vma,
+                    size: seg.size(),
+                    flags: segment_bits(seg.flags()),
+                });
+            }
             if data.is_empty() {
                 continue;
             }
             segments.push(Segment { vma, data: data.to_vec() });
         }
+        segment_info.sort_by_key(|s| s.vma);
         // Ascending vma order so find_section's "closest greater" walk is a
         // simple scan (the BFD list is already address-ordered for ELF).
         segments.sort_by_key(|s| s.vma);
@@ -546,6 +588,7 @@ impl ObjectLoadImage {
             fallback_archtype,
             segments,
             sections,
+            segment_info,
             funcsyms,
             reloc_sections: Vec::new(),
             reloc_symbols: Vec::new(),
@@ -638,6 +681,9 @@ impl ObjectLoadImage {
             fallback_archtype,
             segments,
             sections,
+            // No program headers on a relocatable object: the section table is
+            // the only mapping story it has, and it always has one.
+            segment_info: Vec::new(),
             funcsyms,
             reloc_sections,
             reloc_symbols,
@@ -944,6 +990,10 @@ impl LoadImage for ObjectLoadImage {
         *cur < self.sections.len()
     }
 
+    fn get_segments(&self) -> Vec<(u64, u64, u32)> {
+        self.segment_info.iter().map(|s| (s.vma, s.size, s.flags)).collect()
+    }
+
     fn get_readonly(&self, list: &mut RangeList) {
         // List all ranges that are read only (C++ `LoadImageBfd::getReadonly`).
         let Some(space) = self.spaceid.as_ref() else {
@@ -989,6 +1039,9 @@ impl LoadImage for ObjectLoadImage {
             s.vma = s.vma.wadd(badjust);
         }
         for s in &mut self.sections {
+            s.vma = s.vma.wadd(badjust);
+        }
+        for s in &mut self.segment_info {
             s.vma = s.vma.wadd(badjust);
         }
         for s in &mut self.funcsyms {
@@ -1515,6 +1568,47 @@ mod tests {
             out.insert(rec.address.get_offset(), String::from_utf8_lossy(&rec.name).into_owned());
         }
         out
+    }
+
+    /// (kuna, `zero-function-sizes-make`) `getSegments` reports the program
+    /// headers with their permissions translated into section flags — the only
+    /// mapping story a sectionless image has left.
+    #[test]
+    fn segments_carry_the_load_permissions_of_a_sectionless_image() {
+        use kuna_sleigh::loadimage::LoadImage;
+        let path = format!("{}/tests/fixtures/noshdr_x86_64", env!("CARGO_MANIFEST_DIR"));
+        let bytes = std::fs::read(&path).expect("fixture");
+        let img = ObjectLoadImage::from_bytes(&path, &bytes).expect("load sectionless PIE");
+        assert!(img.section_snapshot().is_empty(), "e_shoff is zero — no section table");
+        assert_eq!(
+            img.get_segments(),
+            vec![
+                (0x0, 0xe8, section_flags::DATA | section_flags::READONLY),
+                (0x100, 0x16, section_flags::CODE | section_flags::READONLY),
+                (0x120, 0x10, section_flags::DATA),
+            ],
+            "PF_X is the CODE bit, PF_W clears READONLY, and the order is ascending vma"
+        );
+    }
+
+    /// A linked image with a section table still reports both, independently:
+    /// the segments are a second, coarser view, not a replacement.
+    #[test]
+    fn a_sectioned_image_reports_segments_as_well() {
+        use kuna_sleigh::loadimage::LoadImage;
+        let path = format!("{}/tests/fixtures/fauxware", env!("CARGO_MANIFEST_DIR"));
+        let bytes = std::fs::read(&path).expect("fixture");
+        let img = ObjectLoadImage::from_bytes(&path, &bytes).expect("load fauxware");
+        let segments = img.get_segments();
+        assert!(!img.section_snapshot().is_empty(), "fauxware has sections");
+        assert!(
+            segments.iter().any(|&(_, _, flags)| flags & section_flags::CODE != 0),
+            "one PT_LOAD is executable; got {segments:?}"
+        );
+        assert!(
+            segments.iter().all(|&(vma, size, _)| size > 0 && vma > 0),
+            "zero-size records are dropped; got {segments:?}"
+        );
     }
 
     #[test]

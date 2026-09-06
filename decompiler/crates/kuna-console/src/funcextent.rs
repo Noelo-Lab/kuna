@@ -31,6 +31,19 @@
 //! an undefined external is an address, not a body, and `0` is the established
 //! "no extent recovered" answer on the decompile path.
 //!
+//! That sentinel only means what it says while a section table exists. An image
+//! carrying none — a sectionless ELF, or one whose section headers are corrupt
+//! enough that the loader continues from the program headers — publishes no CODE
+//! span anywhere, so *every* entry took the sentinel and the whole binary
+//! reported `0` (`docs/re-needs/zero-function-sizes-make.md`: size-based triage
+//! then discards all of it, `--min-size 1` answering count 0 of total 12 with no
+//! error). When the section table yields no CODE span at all, [`spans`] clips
+//! against the executable load segments instead — coarser, but the same kind of
+//! answer, since the number was always an upper bound clipped at the next entry.
+//! The fallback is whole-table, never per-entry: an entry that misses the CODE
+//! spans an image *does* publish is the import pointer slot the sentinel exists
+//! for, and widening it there would hand a body to exactly those.
+//!
 //! # LOSS
 //!
 //! Address-contiguous, not flow-reachable: an outlined or interleaved body (a
@@ -80,6 +93,20 @@ pub(crate) fn code_spans(sections: &[(u64, u64, u32)]) -> Vec<CodeSpan> {
         .collect();
     spans.sort_unstable();
     spans
+}
+
+/// The CODE spans to clip against: the section table's, or the executable load
+/// segments' when the table publishes none.
+///
+/// Both arguments are `(vma, size, flags)` in the loader's own vocabulary
+/// (`ConsoleProgram::sections` and `ConsoleProgram::segments`), which is why one
+/// filter reads both — a segment's CODE bit is its execute permission.
+pub(crate) fn spans(sections: &[(u64, u64, u32)], segments: &[(u64, u64, u32)]) -> Vec<CodeSpan> {
+    let from_sections = code_spans(sections);
+    if !from_sections.is_empty() {
+        return from_sections;
+    }
+    code_spans(segments)
 }
 
 /// The extent of a single address against an ascending entry list — the
@@ -156,6 +183,46 @@ mod tests {
             (0x0500, 0x080, section_flags::CODE | section_flags::READONLY),
         ];
         assert_eq!(code_spans(&sections), vec![(0x500, 0x580), (0x1000, 0x1100)]);
+    }
+
+    #[test]
+    fn spans_prefer_the_section_table() {
+        use kuna_sleigh::loadimage::section_flags;
+        let sections = vec![(0x1000, 0x100, section_flags::CODE)];
+        let segments = vec![(0x0, 0x8000, section_flags::CODE)];
+        assert_eq!(spans(&sections, &segments), vec![(0x1000, 0x1100)]);
+    }
+
+    #[test]
+    fn spans_fall_back_to_the_executable_segments() {
+        use kuna_sleigh::loadimage::section_flags;
+        // A sectionless ELF: no section table at all, four PT_LOADs, one of them
+        // executable. Only the executable one can contain a body.
+        let segments = vec![
+            (0x0000, 0x810, section_flags::DATA | section_flags::READONLY),
+            (0x1000, 0x12d5, section_flags::CODE | section_flags::READONLY),
+            (0x3000, 0xd20, section_flags::DATA | section_flags::READONLY),
+            (0x7d78, 0x2a8, section_flags::DATA),
+        ];
+        assert_eq!(spans(&[], &segments), vec![(0x1000, 0x22d5)]);
+        // The last entry of that segment runs to its end, where before every
+        // entry in the image reported 0.
+        assert_eq!(clip(0x12d0, None, &spans(&[], &segments)), 0x1005);
+    }
+
+    #[test]
+    fn a_section_table_with_no_code_still_falls_back() {
+        use kuna_sleigh::loadimage::section_flags;
+        // The blindness is "no CODE span", not "no sections": a table of pure
+        // data sections leaves the same empty world an absent one does.
+        let sections = vec![(0x3000, 0x100, section_flags::DATA)];
+        let segments = vec![(0x1000, 0x100, section_flags::CODE)];
+        assert_eq!(spans(&sections, &segments), vec![(0x1000, 0x1100)]);
+    }
+
+    #[test]
+    fn no_segments_either_leaves_the_extent_unrecovered() {
+        assert_eq!(spans(&[], &[]), Vec::<CodeSpan>::new());
     }
 
     #[test]
