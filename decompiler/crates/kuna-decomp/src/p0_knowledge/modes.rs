@@ -435,6 +435,14 @@ mod tests {
             // hold back -- preset membership is a DIV-recorded default change,
             // and the DIV registry is not this change's to write.
             "switchselector",
+            // `msvcstackguard` strips the MSVC `/GS` frame cookie, and every
+            // corpus this repo can sweep is ELF or a hand-built PE -- none carries
+            // a real `/GS` cookie, so the ON-shape effect cannot be measured here
+            // at all. The OFF-shape evidence exists (0/675 datatests, 561
+            // functions across two glibc `-fstack-protector` binaries unchanged),
+            // but preset membership is a DIV-recorded default change and the
+            // measurement that would justify it needs a `/GS` corpus first.
+            "msvcstackguard",
         ];
 
         let agg = mode_overrides("aggressive").unwrap();

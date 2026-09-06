@@ -17,9 +17,9 @@ the identifier builds a private copy of the CFG and never mutates p-code,
 `bblocks`, or any P0 state. It is also *unscheduled* — no node of the pass
 tree (00-overview §0.6) runs it; it is computed on demand by its consumers
 (the console/CLI surfaces of §7.4 and the chapter-08 region structurer). The
-folder's two scheduled passes are the stack-guard transform of §7.3 and the
-rustc security-check transform of §7.4, which the schedule places back to back
-in fullloop's tail. Option defaults and flip guidance for
+folder's three scheduled passes are the glibc stack-guard transform of §7.3,
+the rustc security-check transform of §7.4 and the MSVC `/GS` transform of
+§7.5, which the schedule places back to back in fullloop's tail. Option defaults and flip guidance for
 every option named below live in the generated catalog
 ([docs/options.md](../options.md)); the registry rows are in
 `decompiler/crates/kuna-decomp/phases.toml` and the default divergences are
@@ -381,7 +381,94 @@ genuinely unused, and parameter recovery may then trim it — the same trade the
 `stackguard` option makes with the canary slot, and the reason the option
 exists. `tests/stages/oxidizer-securitycheck.xml` pins both directions.
 
-## 7.5 Observability (kuna)
+## 7.5 kuna passes at the region tier: msvcstackguard (kuna)
+
+The folder's third scheduled, output-changing pass:
+`decompiler/crates/kuna-decomp/src/p7_regions/kuna_msvcstackguard.rs
+(ActionStripMsvcStackGuard)` — the Windows sibling of §7.3 (`option
+msvcstackguard`, [docs/options.md](../options.md); registry row
+P7/`edge-virtualization`, `source_decompiler = "kuna"`, GH-468 finding 3).
+Registered in the same `returnsplit` group, immediately after
+`ActionStripStackGuard`.
+
+**Why §7.3 structurally cannot see this shape.** MSVC's `/GS` protector puts
+the compare in a *callee*. The prologue loads a global cookie, scrambles it
+with the stack pointer and stores the result in the frame
+(`mov rax,[__security_cookie]; xor rax,rsp; mov [rsp+N],rax`); each epilogue
+reloads the slot, unscrambles it with the same stack pointer and hands the
+result to `__security_check_cookie`
+(`mov rcx,[rsp+N]; xor rcx,rsp; call ...`), which does the compare and
+diverges through `__fastfail`. The guarded function therefore contains no
+CBRANCH, no `fs:0x28` LOAD and no failure edge, and every clause of §7.3's
+detector fails on the first test — on a Windows PE `option stackguard on` and
+`off` are byte-identical and the `/GS` boilerplate survives in every protected
+function.
+
+**What it matches.** The recognizer is the arithmetic, not the callee name: a
+stripped PE has no `__security_check_cookie` symbol, so a name trigger of the
+§7.4 kind is not available. What survives stripping is that the value handed
+to the checker is `(K ^ SP) ^ SP`, and that the two stack-pointer operands are
+the *same* stack-pointer value — which is exactly what makes the two XORs
+cancel back to the cookie. `kuna_msvcstackguard.rs (cookie_cancel)` requires
+an `INT_XOR` feeding a CALL argument whose operands are a stack-pointer-derived
+Varnode at frame offset `d` and a value produced by a second `INT_XOR` of a
+non-stack, non-constant operand with a stack-pointer-derived Varnode at the
+same offset `d`. Both offsets are resolved against the function's entry stack
+pointer by `kuna_msvcstackguard.rs (stack_pointer_offset)`, which recognizes
+the stack space's base-register storage (or the `spacebase`-flagged input) and
+walks the `PTRSUB`/`PTRADD`/`INT_ADD`-of-a-constant chain the stack-pointer
+normalization of chapter 06 leaves behind, so an `/Od` frame and an `/O2`
+frame agree. The saved value may reach the epilogue through a MULTIEQUAL join,
+in which case `kuna_msvcstackguard.rs (cookie_scramble)` requires *every*
+input to be a scramble at that same offset. Three further gates keep the edit
+honest: the victim must be a direct `CPUI_CALL` (the checker is statically
+linked into the image, never an import thunk); the call's output must have no
+reader (the checker returns `void`, and destroying a read Varnode is not
+recoverable); and exactly one argument may be a cookie cancel — a call that
+takes the pattern twice is not the one-argument checker.
+
+**What it REMOVES.** The check call, with the stock pair
+`Funcdata::block_remove_internal` uses for a CALL inside a deleted block and
+`cleanupcode` (chapter 02) uses for a Rust drop call: `delete_call_specs` to
+drop the `FuncCallSpecs` record, then `op_destroy`. Nothing else is deleted by
+hand. The epilogue `INT_XOR` loses its last reader and dies in the following
+dead-code pass; the INDIRECTs that carried values across the call collapse in
+`RuleIndirectCollapse`'s "the indirect effect is gone" arm, which is exactly
+the destroyed-source case; and the repeating fullloop re-runs mainloop over
+the reduced function before chapter 08 structures it. The entry-side scramble
+is released the same way §7.3 releases the glibc canary init:
+`kuna_msvcstackguard.rs (collect_cookie_slots)` runs a forward fixpoint from
+each scramble's output over the value-preserving readers — COPY/CAST (the
+store into the frame slot), INDIRECT (the slot carried across a call), and a
+MULTIEQUAL only when every input is already known to hold the scramble — and
+records the storage of every addrtied member; `kuna_stackguard.rs
+(release_canary_slots)`, shared verbatim with §7.3, then clears `addrforce`
+there and excises the range from the local scope. As in §7.3 nothing is
+deleted by that step: a slot version still feeding a live reader survives, and
+the store, the cookie read and the scramble die only through the ordinary
+consume fixpoint.
+
+**Why tier=transform, destructive, default-off.** Like §7.3 and §7.4 it
+deletes real instructions the binary executes (`REMOVES CODE`,
+`destructive = true`). It ships **off** because the cost of a wrong match is a
+deleted call and a deleted argument computation, and because a reader who
+wants to audit the protector itself should get the same escape hatch
+`stackguard off` gives — kept as a separate option so flipping one never
+silently changes the other. Nothing in the pass consults the compiler spec:
+the shape is the gate, and GCC/Clang read the canary from `%fs:0x28` and never
+mix the stack pointer into it, so `(K ^ SP) ^ SP` cannot occur in
+`-fstack-protector` output and the option is byte-identical (0/675) on the
+datatest corpus. There is one visible second-order effect on a real `/GS`
+function: `xor rax,rsp` is the only non-additive use of the raw stack pointer
+in most such frames, and deleting it removes the local-alias escape site that
+`AliasChecker::gatherAdditiveBase` (chapter 06) had been recording at the
+bottom of the frame, so dead stores the aliasing had been keeping alive are
+collected too. That is the same defect the `cookiescramble` alias exemption
+addresses on the same instruction, from the other side; the two compose.
+`tests/stages/kuna-msvcstackguard.xml` pins both directions, with the callee
+deliberately unnamed so the shape-only claim is what is tested.
+
+## 7.6 Observability (kuna)
 
 Three console commands expose the region tree
 (`decompiler/crates/kuna-console/src/kuna_console.rs (IfcKunaRegionTree,

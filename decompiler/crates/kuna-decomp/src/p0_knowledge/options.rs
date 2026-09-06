@@ -327,6 +327,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "switchreturn",
     "foldcallret",
     "stackguard",
+    "msvcstackguard",
     "securitycheck",
     "branchflip",
     "loopbreak_recovery",

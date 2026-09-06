@@ -939,6 +939,10 @@ pub struct ArchContext {
     /// [`crate::kuna_stackguard`]'s `ActionStripStackGuard`.
     pub strip_stack_guard: bool,
     /// (kuna) strip rustc's bounds / slice / divide-by-zero panic branches
+    /// (kuna) Strip the MSVC `/GS` frame-cookie boilerplate (option
+    /// `msvcstackguard`, default-off).  Read by
+    /// [`crate::kuna_msvcstackguard`]'s `ActionStripMsvcStackGuard`.
+    pub strip_msvc_stack_guard: bool,
     /// (option `securitycheck`, DIV-82 default-on).  Read by
     /// [`crate::kuna_securitycheck`]'s `ActionRemoveSecurityCheck`.
     pub strip_security_check: bool,
@@ -1252,6 +1256,7 @@ impl ArchContext {
             recover_loop_break: false,   // loopbreak_recovery (opt-in default-off)
             fold_call_returns: false, // foldcallret (opt-in default-off)
             strip_stack_guard: false,    // stackguard (opt-in default-off)
+            strip_msvc_stack_guard: false, // msvcstackguard (fixture default-off; the live gate rides build_arch_handle)
             strip_security_check: false, // securitycheck (fixture default-off; the live gate rides build_arch_handle)
             branch_flip: false,          // branchflip (opt-in default-off)
             // (kuna) DIV-3 default-on (GH-9203): architecture.cc sets condexe_block_placement=true.

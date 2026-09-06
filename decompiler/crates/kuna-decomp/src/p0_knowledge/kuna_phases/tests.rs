@@ -27,7 +27,7 @@ fn subphase_count_is_45() {
 }
 
 #[test]
-fn surface_count_is_110() {
+fn surface_count_is_111() {
     // +1 for the `option switchguardbound` surface row (angr missing-function-call),
     // +1 for the `option switchsharedcase` surface row (angr shared-case-node b2sum),
     // +1 for the `option switchmultipred` surface row (angr abnormal-switch-case-case3),
@@ -55,12 +55,14 @@ fn surface_count_is_110() {
     // render a multi-element array cover at its real width, DIV-122).
     // +1 for the `option emptystrconst` surface row (kuna P9 empty-string-constant:
     // keep the address when the string literal would be empty, DIV-125).
-    assert_eq!(kuna_num_surfaces(), 110);
-    assert_eq!(SURFACE_TABLE.len(), 110);
+    // +1 for the `option msvcstackguard` surface row (kuna P7 edge-virtualization:
+    // the MSVC /GS frame-cookie sibling of `stackguard`, GH-468).
+    assert_eq!(kuna_num_surfaces(), 111);
+    assert_eq!(SURFACE_TABLE.len(), 111);
 }
 
 #[test]
-fn settable_count_is_156() {
+fn settable_count_is_157() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -115,12 +117,13 @@ fn settable_count_is_156() {
     // suppression, DIV-117, GH-403).
     // +1 for `noreturnretuse` (P4 terminal no-return call use in return trials,
     // DIV-118).
-    assert_eq!(kuna_num_settables(), 156);
-    assert_eq!(SETTABLE_TABLE.len(), 156);
+    // +1 for `msvcstackguard` (P7 MSVC /GS frame-cookie stripping, GH-468).
+    assert_eq!(kuna_num_settables(), 157);
+    assert_eq!(SETTABLE_TABLE.len(), 157);
 }
 
 #[test]
-fn tier_counts_are_41_core_61_transform_54_analysis() {
+fn tier_counts_are_41_core_62_transform_54_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -215,7 +218,10 @@ fn tier_counts_are_41_core_61_transform_54_analysis() {
     // core 35 -> 36: +1 for `noreturnretuse` (P4 terminal no-return call use in
     // return trials, DIV-118) -- core, not transform: it narrows which competing
     // uses veto an output trial, changing no p-code of its own.
-    assert_eq!((core, transform, analysis), (41, 61, 54));
+    // transform 61 -> 62: +1 for `msvcstackguard` (P7 MSVC /GS frame-cookie
+    // stripping, GH-468) -- it deletes real instructions, like its `stackguard`
+    // and `securitycheck` siblings.
+    assert_eq!((core, transform, analysis), (41, 62, 54));
 }
 
 #[test]
@@ -405,7 +411,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_53_suppressed_for_96() {
+fn option_values_live_value_present_for_53_suppressed_for_97() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -625,6 +631,7 @@ fn option_values_live_value_present_for_53_suppressed_for_96() {
                             | "regionedgeorder"
                             | "condfold"
                             | "stackguard"
+                            | "msvcstackguard"
                             | "securitycheck"
                             | "branchflip"
                             | "namestyle"
@@ -825,7 +832,9 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // mid-table beside `callsitestackargs`, so the tail does not move either.
     // 148 -> 149: +1 for `noreturnretuse` (DIV-118); its P4 row is appended after
     // the last one, so the previous tail row gains a comma and it becomes the tail.
-    assert_eq!(json.matches("},\n").count(), 155);
+    // 149 -> 150: +1 for `msvcstackguard` (GH-468); its P7 row sits mid-table
+    // beside `securitycheck`, so the tail does not move.
+    assert_eq!(json.matches("},\n").count(), 156);
 }
 
 #[test]

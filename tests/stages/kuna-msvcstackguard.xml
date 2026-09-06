@@ -1,0 +1,68 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    (kuna) `option msvcstackguard` (P7 edge-virtualization, default OFF), the
+    Windows sibling of `stackguard`.  GH-468 finding 3.
+
+    MSVC's /GS scrambles a global cookie with the stack pointer at entry and
+    hands the unscrambled value to a checker at every exit:
+
+        100000  sub  rsp,0x48
+        100004  mov  rax,[rip+0xff5]     ; __security_cookie @ 0x101000
+        10000b  xor  rax,rsp             ; cookie ^ SP
+        10000e  mov  [rsp+0x38],rax
+        ...
+        100028  mov  rdi,[rsp+0x38]
+        10002d  xor  rdi,rsp             ; (cookie ^ SP) ^ SP  ==  cookie
+        100034  call 100050              ; __security_check_cookie
+        100039  mov  eax,[rsp+0x2c]
+        10003d  add  rsp,0x48
+        100041  ret
+
+    The compare lives inside the callee (0x100050: `cmp rdi,[cookie] / jne
+    __fastfail`), so the guarded function contains no CBRANCH, no fs:0x28 load
+    and no failure edge.  The glibc matcher `stackguard` runs cannot see any of
+    it, and `option stackguard on|off` is byte-identical here.
+
+    The callee is deliberately left UNNAMED (there is no `<symbol>` for it) so
+    the test pins the claim that recognition is shape-only: the trigger is the
+    CALL argument computed as `(K ^ SP) ^ SP` with both stack-pointer references
+    at the same frame offset, which is what makes the two XORs cancel.  A
+    stripped PE has no `__security_check_cookie` symbol.
+
+    The cookie chunk at 0x101000 is deliberately NOT readonly: MSVC's
+    __security_cookie lives in writable data, and a readonly one would fold to a
+    constant.
+
+    P0 assertion: `option msvcstackguard on|off`.
+    Pass 1 (default, off) is the bug: both /GS lines and the checker call
+      survive (assertions #1, #2).
+    Pass 2 (on) is the fix: neither survives, and the function is the one
+      statement it actually computes (assertion #3, emitted by both passes).
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+4883ec48488b05f50f00004831e04889442438897c2430488d542410c70241414141
+8b4424300302488b7c24384831e78944242ce8170000008b44242c4883c448c3
+</bytechunk>
+<bytechunk space="ram" offset="0x100050" readonly="true">
+483b3da90f00007501c3bf02000000cd29
+</bytechunk>
+<bytechunk space="ram" offset="0x101000">
+32a2df2d992b0000
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="guarded"/>
+</binaryimage>
+<script>
+  <com>option msvcstackguard off</com>
+  <com>lo fu guarded</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option msvcstackguard on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="kuna-msvcstackguard #1: the entry-side cookie scramble is emitted only with the option off" min="1" max="1">dat_101000 \^</stringmatch>
+<stringmatch name="kuna-msvcstackguard #2: the checker call is emitted only with the option off" min="1" max="1">sub_100050\(</stringmatch>
+<stringmatch name="kuna-msvcstackguard #3: the computation the function actually performs survives both passes" min="2" max="2">a0 \+ 0x41414141</stringmatch>
+</decompilertest>
