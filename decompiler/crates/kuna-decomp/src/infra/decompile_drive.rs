@@ -347,16 +347,11 @@ impl FlowEnvironment for ArchFlowEnv {
             let space = vnref.get_space();
             let off = vnref.get_offset();
             let size = vnref.get_size();
-            let raw = arch
-                .translate()
-                .as_sleigh()
-                .expect("v850 indirect-branch predicate: standalone Sleigh engine")
-                .base()
-                .get_register_name(space, off, size);
-            if raw.is_empty() {
+            let name = arch.translate().get_register_name(space, off, size);
+            if name.is_empty() {
                 None
             } else {
-                Some(String::from_utf8_lossy(&raw).into_owned())
+                Some(name)
             }
         })();
         crate::kuna_v850indbranch::kuna_is_v850_indirect_jmp(

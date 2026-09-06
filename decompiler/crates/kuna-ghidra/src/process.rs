@@ -247,6 +247,28 @@ impl<R: Read + 'static, W: Write + 'static> GhidraProcess<R, W> {
         }
     }
 
+    /// Apply a kuna-owned option to a live session for integration tests.
+    ///
+    /// Kuna options do not have upstream wire element ids, so the stock Java
+    /// client cannot place one in its `<optionslist>`.  Tests use this seam to
+    /// exercise option-gated engine paths through the real ghidra-mode process
+    /// without changing the production wire protocol.
+    #[doc(hidden)]
+    pub fn set_kuna_option_for_test(
+        &mut self,
+        archid: usize,
+        name: &str,
+        value: &str,
+    ) -> KunaResult<String> {
+        let arch = self
+            .archlist
+            .get_mut(archid)
+            .and_then(Option::as_mut)
+            .and_then(|session| session.architecture.as_mut())
+            .ok_or_else(|| KunaError::lowlevel(format!("no live architecture {archid}")))?;
+        arch.set_kuna_option(name, value)
+    }
+
     /// Run the process loop until a command terminates it (C++ `main`'s
     /// `while(status == 0) status = readCommand(...)`,
     /// ghidra_process.cc:532-535).  Returns the terminating status.

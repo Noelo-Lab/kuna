@@ -518,7 +518,14 @@ spec lifts `jmp [reg]` to a CALLIND, so a compiler switch dispatch never
 reaches jump-table recovery (which is gated on BRANCHIND). When on, a CALLIND
 through a named non-PC hardware register is reclassified to BRANCHIND at the
 top of `xref_control_flow`. Kept opt-in per program because the same pattern is
-a genuine computed call on other architectures.
+a genuine computed call on other architectures. The register name is resolved
+through the translator-neutral `RegisterLookup::get_register_name` surface:
+standalone runs read SLEIGH's local register table, while Ghidra mode uses its
+existing `getRegisterName` host callback. The shared flow predicate must not
+downcast through `EngineTranslate::as_sleigh`, because Ghidra deliberately has
+no standalone SLEIGH engine. The backend-boundary failure and regression drive
+are recorded in
+[`docs/features/ghidra-v850-register-lookup/analysis.md`](../features/ghidra-v850-register-lookup/analysis.md).
 
 ## 2.3 Jump tables & switch recovery
 
