@@ -1807,7 +1807,7 @@ mod tests {
         // VM register bank rendered `v2[0] = v3[0]`, a one-byte lvalue
         // and kuna-msvcstackguard / the MSVC /GS frame-cookie shape the glibc
         // stackguard matcher cannot see (GH-468)
-        assert_eq!(count, 247, "corpus file count drifted");
+        assert_eq!(count, 248, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

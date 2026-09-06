@@ -98,7 +98,9 @@ render as terse `// slug` end-of-line comments on the line they describe
 (kuna default `inline`, DIV-39): `printc.rs (PrintC::emit_comment_group)`
 maps each WARNING-type comment through the slug table
 (`printc.rs (warning_slug)` — `no-return`, `branch-flip`, `return-dupe`,
-`jump-as-call`, count-suffixed header slugs like `early-return x3`; an
+`jump-as-call`, count-suffixed slugs like the header's `early-return x3` and
+the `int3-pad x4` chapter 02 buffers for a decoded `int3`, where the count is
+the pad's length in bytes; an
 unrecognized text keeps its full body behind a `warn:` marker) and collects
 it; `printc.rs (PrintC::flush_eol_warnings)` appends the collected slugs as
 one `// slug, slug` token at the owning line's last token — the statement

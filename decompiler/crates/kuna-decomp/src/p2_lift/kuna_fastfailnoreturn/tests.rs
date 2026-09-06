@@ -212,3 +212,26 @@ fn windows_gate_accepts_only_the_windows_cspecs() {
     assert!(!archid_is_windows("ARM:LE:32:v8:default"));
     assert!(!archid_is_windows(""));
 }
+
+/// The boundary the unique-space fast reject moved: the same idiom built over
+/// non-temporary storage.  Every x86 `swi` form declares `intloc` as a SLEIGH
+/// inline local (`intloc:$(SIZE) = swi(tmp)`, `ia.sinc:3669-3675`), which the
+/// lifter allocates in the unique space, so nothing the lifter emits can take
+/// this shape -- but the walk used to accept it on the address match alone and
+/// now declines it before walking.
+#[test]
+fn a_non_temporary_call_target_is_declined() {
+    let mut fd = build_fd();
+    let ram = space(&fd, "ram");
+    let callother = make_op(&mut fd, OpCode::CPUI_CALLOTHER, 0x1000, 2, true);
+    set_const_input(&mut fd, callother, 0, 3, 4);
+    set_const_input(&mut fd, callother, 1, FASTFAIL_VECTOR, 1);
+    let out = fd.vbank_mut().create(8, Address::new(Rc::clone(&ram), 0x2000), unk_type(8));
+    fd.obank_mut().get_mut(callother).unwrap().set_output(Some(out));
+
+    let callind = make_op(&mut fd, OpCode::CPUI_CALLIND, 0x1000, 1, false);
+    let target = fd.vbank_mut().create(8, Address::new(ram, 0x2000), unk_type(8));
+    fd.obank_mut().get_mut(callind).unwrap().set_input(Some(target), 0);
+    assert!(!is_fastfail_callind(&fd, callind, resolver));
+    assert_eq!(swi_vector_of_callind(&fd, callind, resolver), None);
+}

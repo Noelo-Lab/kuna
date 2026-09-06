@@ -52,9 +52,10 @@
 //! # What it will not do
 //!
 //! * **Only `int 0x29`.** `INT1`/`INT3`/`INTO` carry a `return [0:1]` in their own
-//!   SLEIGH semantics and genuinely do return; `int 0x80` is a Linux syscall and
-//!   is [`linuxsyscall`](crate::kuna_linuxsyscall)'s. The vector must be the
-//!   1-byte constant `0x29`.
+//!   SLEIGH semantics and genuinely do return (`int3` is named, not halted, by
+//!   [`int3pad`](crate::kuna_int3pad)); `int 0x80` is a Linux syscall and is
+//!   [`linuxsyscall`](crate::kuna_linuxsyscall)'s. The vector must be the 1-byte
+//!   constant `0x29`.
 //! * **Only a Windows image.** `int 0x29` is `__fastfail` by Windows convention
 //!   alone. The gate is the compiler-spec component of the resolved language id
 //!   ([`archid_is_windows`]), so an `x86:LE:64:default:gcc` image is untouched.
@@ -106,31 +107,49 @@ pub fn is_fastfail_callind<F>(data: &Funcdata, op: OpId, userop_name: F) -> bool
 where
     F: Fn(u32) -> Option<String>,
 {
-    let Some(opref) = data.obank().get(op) else { return false };
+    swi_vector_of_callind(data, op, userop_name) == Some(FASTFAIL_VECTOR)
+}
+
+/// The interrupt vector `op` is the `CALLIND` half of, or `None` when `op` is not
+/// one.
+///
+/// The shape walk [`is_fastfail_callind`] is built on, read for the vector rather
+/// than tested against `0x29`, so a sibling pass over another vector
+/// ([`kuna_int3pad`](crate::kuna_int3pad)) shares one copy of the lowering's
+/// structure.
+pub fn swi_vector_of_callind<F>(data: &Funcdata, op: OpId, userop_name: F) -> Option<uintb>
+where
+    F: Fn(u32) -> Option<String>,
+{
+    let opref = data.obank().get(op)?;
     if opref.code() != OpCode::CPUI_CALLIND {
-        return false;
+        return None;
     }
     let insn = opref.get_addr().clone();
-    let Some(target) = opref.get_in(0).and_then(|v| data.vbank().get(v)) else { return false };
+    let target = opref.get_in(0).and_then(|v| data.vbank().get(v))?;
+    // The `intloc` the lowering calls through is a SLEIGH local temp, so an
+    // ordinary indirect call is rejected here rather than by the dead-list walk
+    // below, which is linear in the function's op count.
+    if target.get_space().get_type() != kuna_base::space::spacetype::IPTR_INTERNAL {
+        return None;
+    }
     let (target_addr, target_size) = (target.get_addr().clone(), target.get_size());
 
     let deadlist: Vec<OpId> = data.obank().iter_dead().collect();
-    let Some(mut pos) = deadlist.iter().position(|&o| o == op) else { return false };
+    let mut pos = deadlist.iter().position(|&o| o == op)?;
 
     loop {
         let cur = deadlist[pos];
-        let Some(curref) = data.obank().get(cur) else { return false };
+        let curref = data.obank().get(cur)?;
         if curref.code() == OpCode::CPUI_CALLOTHER
             && curref.num_input() == 2
             && curref.get_addr() == &insn
         {
-            let vector_ok = curref
+            let vector = curref
                 .get_in(1)
                 .and_then(|v| data.vbank().get(v))
-                .map(|v| {
-                    v.is_constant() && v.get_size() == 1 && v.get_offset() == FASTFAIL_VECTOR
-                })
-                .unwrap_or(false);
+                .filter(|v| v.is_constant() && v.get_size() == 1)
+                .map(|v| v.get_offset());
             let feeds_call = curref
                 .get_out()
                 .and_then(|v| data.vbank().get(v))
@@ -143,12 +162,14 @@ where
                 .and_then(|v| userop_name(v.get_offset() as u32))
                 .map(|n| n == SWI_USEROP)
                 .unwrap_or(false);
-            if vector_ok && feeds_call && is_swi {
-                return true;
+            if let Some(vector) = vector {
+                if feeds_call && is_swi {
+                    return Some(vector);
+                }
             }
         }
         if curref.is_instruction_start() || pos == 0 {
-            return false;
+            return None;
         }
         pos -= 1;
     }

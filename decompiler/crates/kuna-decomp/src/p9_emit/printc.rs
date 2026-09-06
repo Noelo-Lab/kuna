@@ -569,6 +569,22 @@ impl PrintCOptions {
 // Self-contained constant / type formatting
 // ===========================================================================
 
+/// The first run of decimal digits in `s`, parsed — the `{changes}` count a
+/// count-carrying warning text embeds.
+fn first_integer(s: &str) -> Option<u64> {
+    let mut started = false;
+    let mut out = String::new();
+    for c in s.chars() {
+        if c.is_ascii_digit() {
+            started = true;
+            out.push(c);
+        } else if started {
+            break;
+        }
+    }
+    out.parse().ok()
+}
+
 /// (kuna warnstyle, DIV-39) Map a stored warning text (which carries its
 /// `WARNING: ` / `WARNING (jumptable): ` prefix from `Funcdata::warning_prefix`)
 /// to the terse `// slug` form.  Producer-tagged kuna warnings (`branchflip:`,
@@ -585,22 +601,7 @@ pub fn warning_slug(text: &str) -> String {
         (text, false)
     };
     // First integer in the body (the `{changes}` count of the P8 header warnings).
-    let count: Option<u64> = {
-        let digits: String = {
-            let mut started = false;
-            let mut out = String::new();
-            for c in body.chars() {
-                if c.is_ascii_digit() {
-                    started = true;
-                    out.push(c);
-                } else if started {
-                    break;
-                }
-            }
-            out
-        };
-        digits.parse().ok()
-    };
+    let count: Option<u64> = first_integer(body);
     let xn = |slug: &str| -> String {
         match count {
             Some(n) if n > 1 => format!("{slug} x{n}"),
@@ -630,6 +631,13 @@ pub fn warning_slug(text: &str) -> String {
         "return-dupe".to_string()
     } else if body.starts_with("crossjumprevert:") {
         "crossjump-dupe".to_string()
+    } else if let Some(rest) = body.strip_prefix("int3pad:") {
+        // The count is read from the text AFTER the tag: the tag itself carries a
+        // digit, so the shared `count` above would report it as the pad length.
+        match first_integer(rest) {
+            Some(n) if n > 1 => format!("int3-pad x{n}"),
+            _ => "int3-pad".to_string(),
+        }
     } else if body.starts_with("outline:") {
         xn("outlined")
     } else if body.starts_with("returndup:") {

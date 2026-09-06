@@ -404,6 +404,33 @@ impl FlowEnvironment for ArchFlowEnv {
         })
     }
 
+    fn int3_pad_site(
+        &self,
+        fd: &Funcdata,
+        op: crate::context::OpId,
+    ) -> Option<crate::kuna_int3pad::Int3PadSite> {
+        // (kuna `int3pad`) wire the decoded-`int3` predicate.  The gate is the
+        // architecture-owned `int3_pad` mode (`option int3pad off|warn|halt`,
+        // default `warn`); the shape and user-op name resolution are
+        // `fastfailnoreturn`'s, read for vector 3.  No language gate: the shape
+        // itself is x86's, so no other processor reaches the match.
+        let arch = self.arch();
+        if !arch.int3_pad.warns() {
+            // Fast-path the gate without touching the IR.
+            return None;
+        }
+        if !crate::kuna_int3pad::is_int3_callind(fd, op, |id| {
+            arch.userops.get_op(id).map(|uo| String::from_utf8_lossy(uo.get_name()).into_owned())
+        }) {
+            return None;
+        }
+        let addr = fd.obank().get(op)?.get_addr().clone();
+        Some(crate::kuna_int3pad::Int3PadSite {
+            run: crate::kuna_int3pad::pad_run_length(fd, &addr),
+            halt: arch.int3_pad.halts(),
+        })
+    }
+
     fn is_tail_call_branch(&self, fd: &Funcdata, op: crate::context::OpId, dest: &Address) -> bool {
         // (kuna) tee-O2 tail-jump: wire the ported `kuna_is_tail_call_branch`
         // predicate.  The gate is the architecture-owned `tail_call_jumps` flag

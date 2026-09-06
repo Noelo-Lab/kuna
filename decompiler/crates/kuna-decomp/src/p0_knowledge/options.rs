@@ -259,6 +259,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "flagcompare",
     "v850indirectbranch",
     "fastfailnoreturn",
+    "int3pad",
     "msvcftol",
     "tailcalljump",
     "tailcallframe",

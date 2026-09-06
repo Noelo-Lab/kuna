@@ -452,6 +452,33 @@ a Linux syscall (`option linuxsyscall`) and `int1`/`int3`/`into` carry a
 compiler-spec component of the resolved language id, since `int 0x29` is
 `__fastfail` by Windows convention alone.
 
+**(kuna) The `int3` pad control ran into — `option int3pad`, default `warn`
+(DIV-128), `decompiler/crates/kuna-decomp/src/p2_lift/kuna_int3pad.rs
+(is_int3_callind)`.** `INT3` lowers the same way (`intloc = swi(3); call
+[intloc]; return [0:1]`), so a decoded breakpoint byte prints as `v1 = (code
+*)swi(3); return (*v1)();` — an ordinary call through a function pointer, whose
+result the function then returns. Nothing in the C says the byte at that address
+is `0xcc`, that it is one of a run of them, or that control got there by running
+off the end of the decoded code; on an anti-debug binary the clean-run path
+frequently ends in exactly that pad, and only the disassembly shows it. Decision
+rule: a CALLIND that reads the storage a `swi` CALLOTHER wrote in the same
+instruction, from the one-byte constant vector `3`, is a decoded `int3` — the
+same shape walk `fastfailnoreturn` uses, read for the vector rather than tested
+against `0x29` (`kuna_fastfailnoreturn.rs (swi_vector_of_callind)`). The site is
+named: `kuna_int3pad.rs (pad_run_length)` counts the `0xcc` bytes at the address
+one loader read at a time (the loader fills a full word and refuses a short one
+at a section end, which is where a pad tends to sit) and
+`FlowInfo::setup_callind_specs` buffers the warning the P9 slug table renders as
+`// int3-pad xN` (chapter 09, `printc.rs (warning_slug)`). The count is dropped rather
+than guessed when the read fails or the encoding is the two-byte `INT 0x03`
+rather than `0xcc`. Under `option int3pad halt` the call spec is additionally
+marked no-return and the artificial halt is planted, so the pad renders as a
+statement and the fabricated return value goes away; that is not the default,
+because an `int3` does return to a debugger that steps past it, and the value of
+naming the pad does not depend on asserting that the process dies there. `option
+int3pad off` restores the unannotated rendering. Exercised by
+`tests/stages/kuna-int3pad.xml`.
+
 **(kuna) Overlapping branch target — `option overlapbranch`, default on
 (DIV-106), `decompiler/crates/kuna-decomp/src/p2_lift/kuna_overlapbranch.rs
 (kuna_overlaps_pending_branch)`.** A conditional branch pushes both successors and
