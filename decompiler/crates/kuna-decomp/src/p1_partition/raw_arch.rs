@@ -132,6 +132,11 @@ impl RawBinaryArchitecture {
         &mut self.sleigh
     }
 
+    /// Consume the raw frontend after its loader has been handed to the engine.
+    pub fn into_sleigh(self) -> SleighArchitecture {
+        self.sleigh
+    }
+
     /// The VMA adjustment (C++ `adjustvma`).
     pub fn adjustvma(&self) -> i64 {
         self.adjustvma
@@ -173,6 +178,25 @@ impl RawBinaryArchitecture {
             ldr.adjust_vma(self.adjustvma);
         }
         self.loader = Some(ldr);
+        Ok(())
+    }
+
+    /// Build a raw-image loader at an explicit address-space base.
+    ///
+    /// The live CLI path attaches the resolved code space before applying the
+    /// VMA so [`RawLoadImage::adjust_vma`] can scale address units correctly.
+    pub fn build_loader_at(
+        &mut self,
+        default_code_space: Rc<AddrSpace>,
+        base: u64,
+    ) -> KunaResult<()> {
+        let mut loader = RawLoadImage::new(self.sleigh.get_filename());
+        loader.open()?;
+        loader.attach_to_space(default_code_space);
+        if base != 0 {
+            loader.adjust_vma(base as i64);
+        }
+        self.loader = Some(loader);
         Ok(())
     }
 

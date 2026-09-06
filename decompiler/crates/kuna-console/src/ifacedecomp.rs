@@ -72,7 +72,9 @@
 //! `Architecture`), each `engine_unavailable` site is the single place to wire
 //! the real call; the surrounding faithful structure does not change.
 
-use crate::engine::{bootstrap_from_file, ConsoleProgram, UNBOUNDED_SIZE};
+use crate::engine::{
+    bootstrap_from_file, bootstrap_from_raw, ArmIsa, ConsoleProgram, UNBOUNDED_SIZE,
+};
 use crate::interface::{
     CommandStream, IfaceCommandAction, IfaceData, IfaceError, IfaceResult, IfaceStatus,
 };
@@ -1194,6 +1196,71 @@ decomp_command!(
                 // C++ on init failure: print the error + "Could not create
                 // architecture", then leave conf null (NOT a thrown error).
                 status.out(&format!("{}\n", e.explain()));
+                status.out("Could not create architecture\n");
+                Ok(())
+            }
+        }
+    }
+);
+
+fn parse_raw_address(token: &str) -> Result<u64, IfaceError> {
+    let token = token.trim();
+    let digits = token
+        .strip_prefix("0x")
+        .or_else(|| token.strip_prefix("0X"))
+        .unwrap_or(token);
+    u64::from_str_radix(digits, 16)
+        .map_err(|_| IfaceError::parse(format!("Invalid raw address {token:?}")))
+}
+
+decomp_command!(
+    /// Load a headerless image with explicit language, base, and entry seeds.
+    IfcLoadRaw,
+    fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
+        let target = s.read_token();
+        let base_token = s.read_token();
+        let entries_token = s.read_token();
+        let filename = s.read_filename();
+        s.skip_ws();
+        if target.is_empty()
+            || base_token.is_empty()
+            || entries_token.is_empty()
+            || filename.is_empty()
+        {
+            return Err(IfaceError::parse(
+                "usage: load raw <target> <base> <entry[,entry...]> <filename>",
+            ));
+        }
+        if !s.eof() {
+            return Err(IfaceError::parse("Unexpected argument after raw image filename"));
+        }
+        let base = parse_raw_address(&base_token)?;
+        let entries = entries_token
+            .split(',')
+            .map(parse_raw_address)
+            .collect::<Result<Vec<_>, _>>()?;
+        let isa = std::env::var(crate::engine::ARM_ISA_ENV)
+            .ok()
+            .map(|value| ArmIsa::parse(&value))
+            .transpose()
+            .map_err(IfaceError::parse)?
+            .flatten();
+        {
+            let dcp = dcp_mut(status)?;
+            if dcp.conf.is_some() {
+                return Err(IfaceError::execution("Load image already present"));
+            }
+        }
+        let spec_roots = dcp_mut(status)?.spec_roots.clone();
+        match bootstrap_from_raw(&filename, &target, base, &entries, isa, &spec_roots) {
+            Ok(prog) => {
+                let desc = prog.description().to_string();
+                dcp_mut(status)?.conf = Some(prog);
+                status.out(&format!("{filename} successfully loaded: {desc}\n"));
+                Ok(())
+            }
+            Err(error) => {
+                status.out(&format!("{}\n", error.explain()));
                 status.out("Could not create architecture\n");
                 Ok(())
             }
@@ -4084,6 +4151,7 @@ pub fn register_decomp_commands(status: &mut IfaceStatus) {
 /// matching a console where the command was never added).
 pub fn register_console_commands(status: &mut IfaceStatus) {
     status.register_com(Box::new(IfcLoadFile), &["load", "file"]);
+    status.register_com(Box::new(IfcLoadRaw), &["load", "raw"]);
 }
 
 // ===========================================================================

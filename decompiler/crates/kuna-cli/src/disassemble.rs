@@ -322,6 +322,8 @@ fn load_args(args: &DisArgs, options: Vec<(String, String)>) -> Args {
         target: args.target.clone(),
         sleighpath: args.sleighpath.clone(),
         isa: args.isa,
+        raw_image: false,
+        base: None,
     }
 }
 

@@ -18,6 +18,8 @@
 
 #![cfg(unix)]
 
+mod common;
+
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -54,12 +56,15 @@ fn stub_decomp_dbg(tag: &str, c_body: &str, transcript: &str, stderr_text: &str)
     let script = format!(
         "#!/bin/sh\n\
          out=\n\
+         saw_load=0\n\
          if [ \"${{KUNA_EXPECT_ARM_ISA+x}}\" = x ] && [ \"$KUNA_ARM_ISA\" != \"$KUNA_EXPECT_ARM_ISA\" ]; then exit 9; fi\n\
          while IFS= read -r line; do\n\
+         \x20 if [ \"${{KUNA_EXPECT_LOAD_LINE+x}}\" = x ] && [ \"$line\" = \"$KUNA_EXPECT_LOAD_LINE\" ]; then saw_load=1; fi\n\
          \x20 case \"$line\" in\n\
          \x20   'openfile write '*) out=${{line#openfile write }} ;;\n\
          \x20 esac\n\
          done\n\
+         if [ \"${{KUNA_EXPECT_LOAD_LINE+x}}\" = x ] && [ \"$saw_load\" != 1 ]; then exit 8; fi\n\
          [ -n \"$out\" ] && cat > \"$out\" <<'KUNA_C_EOF'\n{c_body}\nKUNA_C_EOF\n\
          cat <<'KUNA_OUT_EOF'\n{transcript}\nKUNA_OUT_EOF\n\
          cat >&2 <<'KUNA_ERR_EOF'\n{stderr_text}\nKUNA_ERR_EOF\n\
@@ -164,6 +169,49 @@ fn arm_isa_override_reaches_single_function_engine() {
         .expect("run kuna decompile with --isa thumb");
     let _ = std::fs::remove_file(&stub);
     assert!(out.status.success(), "--isa did not reach decomp_dbg");
+}
+
+#[test]
+fn raw_image_flags_reach_single_function_engine_with_quoted_path() {
+    let raw = common::scratch_file("raw single image", "bin");
+    std::fs::write(&raw, [0x07, 0x20, 0x70, 0x47]).unwrap();
+    let stub = stub_decomp_dbg(
+        "raw_input",
+        "unsigned int sub_4000(void)\n{\n  return 7;\n}",
+        "[decomp]> decompile\nDecompiling sub_4000\nDecompilation complete\n[decomp]> print C",
+        "",
+    );
+    let expected = format!(
+        "load raw ARM:LE:32:v4t:default 0x4000 0x4001 \"{}\"",
+        raw.display()
+    );
+    let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .env("KUNA_EXPECT_ARM_ISA", "thumb")
+        .env("KUNA_EXPECT_LOAD_LINE", expected)
+        .args([
+            "decompile",
+            raw.to_str().unwrap(),
+            "0x4001",
+            "--raw-image",
+            "--target",
+            "ARM:LE:32:v4t:default",
+            "--base",
+            "0x4000",
+            "--isa",
+            "thumb",
+            "--decomp-dbg",
+            stub.to_str().unwrap(),
+        ])
+        .output()
+        .expect("run kuna decompile over raw input");
+    let _ = std::fs::remove_file(&stub);
+    let _ = std::fs::remove_file(&raw);
+    assert!(
+        out.status.success(),
+        "raw load command did not reach decomp_dbg: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(String::from_utf8_lossy(&out.stdout).contains("return 7;"));
 }
 
 /// An empty `print C` keeps the pre-existing "no C output" error (that path is

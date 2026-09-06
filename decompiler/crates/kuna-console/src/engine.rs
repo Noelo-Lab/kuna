@@ -45,6 +45,7 @@ use kuna_base::xml::{DocumentStorage, Element};
 
 use kuna_decomp::architecture::Architecture;
 use kuna_decomp::options::register_option_elements;
+use kuna_decomp::raw_arch::RawBinaryArchitectureCapability;
 use kuna_decomp::sleigh_arch::{register_sleigh_arch_ids, LanguageDatabase, SleighArchitecture};
 use kuna_decomp::xml_arch::XmlArchitectureCapability;
 
@@ -338,6 +339,8 @@ pub struct ConsoleProgram {
     /// the decompile loop, because the drive rebuilds the `Funcdata` and the
     /// symbol-table prototype link does not survive that rebuild.
     pending_prototypes: BTreeMap<String, kuna_decomp::fspec::PrototypePieces>,
+    /// Raw-input address-unit width and whether bit zero is an ARM state bit.
+    raw_address_units: Option<(u64, bool)>,
 }
 
 impl ConsoleProgram {
@@ -369,6 +372,19 @@ impl ConsoleProgram {
     /// C++ `conf->getDescription()` — the load-success description line.
     pub fn description(&self) -> &str {
         &self.description
+    }
+
+    /// Convert a user-facing code address to the engine's byte offset.
+    pub fn input_code_offset(&self, value: u64) -> KunaResult<u64> {
+        let Some((word_size, arm32)) = self.raw_address_units else {
+            return Ok(value);
+        };
+        let units = if arm32 { value & !1 } else { value };
+        units.checked_mul(word_size).ok_or_else(|| {
+            KunaError::lowlevel(format!(
+                "raw entry 0x{value:x} overflows the target's {word_size}-byte code-space units"
+            ))
+        })
     }
 
     /// Resolve a function entry address by symbol name (the `queryFunction`
@@ -2139,6 +2155,7 @@ pub fn bootstrap_program(
         assertions: Vec::new(),
         assertion_outcomes: Vec::new(),
         pending_prototypes: BTreeMap::new(),
+        raw_address_units: None,
     };
     // C++ `conf->readLoaderSymbols("::")` (testfunction.cc:160 / consolemain.cc:104):
     // install the binaryimage symbols as FunctionSymbols so a CALL to one resolves
@@ -2189,10 +2206,19 @@ fn input_isa_paints(
     arch_id: &str,
     isa: Option<ArmIsa>,
 ) -> KunaResult<Vec<kuna_analysis::pass::ContextPaint>> {
+    input_isa_paints_for_ranges(&loader.executable_ranges(), arch, arch_id, isa)
+}
+
+fn input_isa_paints_for_ranges(
+    ranges: &[(u64, u64)],
+    arch: &Architecture,
+    arch_id: &str,
+    isa: Option<ArmIsa>,
+) -> KunaResult<Vec<kuna_analysis::pass::ContextPaint>> {
     let Some(isa) = isa else {
         return Ok(Vec::new());
     };
-    if !arch_id.starts_with("ARM:") {
+    if !arch_id.starts_with("ARM:") || arch_id.split(':').nth(2) != Some("32") {
         return Err(KunaError::lowlevel(format!(
             "--isa {} requires a 32-bit ARM SLEIGH target (resolved {arch_id})",
             isa.as_str()
@@ -2207,10 +2233,9 @@ fn input_isa_paints(
         };
     }
 
-    Ok(loader
-        .executable_ranges()
-        .into_iter()
-        .filter_map(|(addr, size)| {
+    Ok(ranges
+        .iter()
+        .filter_map(|&(addr, size)| {
             if size == 0 {
                 return None;
             }
@@ -2223,6 +2248,171 @@ fn input_isa_paints(
             })
         })
         .collect())
+}
+
+/// Bootstrap a headerless byte image at a caller-supplied target and base.
+pub fn bootstrap_from_raw(
+    path: &str,
+    target: &str,
+    base: u64,
+    entries: &[u64],
+    isa: Option<ArmIsa>,
+    spec_roots: &[String],
+) -> KunaResult<ConsoleProgram> {
+    if target.trim().is_empty() {
+        return Err(KunaError::lowlevel(
+            "raw image input requires --target <SLEIGH-language-id>",
+        ));
+    }
+    if entries.is_empty() {
+        return Err(KunaError::lowlevel(
+            "raw image input requires at least one --entry or --addr",
+        ));
+    }
+
+    let registry = build_registry();
+    let capability = RawBinaryArchitectureCapability::new();
+    let mut raw = capability.build_architecture(path, target);
+    let db = scan_language_database(spec_roots, &registry)?;
+    raw.resolve_architecture(&db)?;
+    if raw.sleigh().language_index() < 0 {
+        return Err(KunaError::lowlevel(format!(
+            "No sleigh specification for architecture {target}"
+        )));
+    }
+    build_engine_and_init(raw.sleigh_mut(), &db)?;
+
+    let code_space = Rc::clone(
+        raw.sleigh()
+            .base()
+            .unwrap()
+            .manage()
+            .get_default_code_space()
+            .ok_or_else(|| KunaError::lowlevel("no default code space after init"))?,
+    );
+    let word_size = u64::from(code_space.get_word_size());
+    let address_to_byte = |value: u64, label: &str| {
+        value.checked_mul(word_size).ok_or_else(|| {
+            KunaError::lowlevel(format!(
+                "raw {label} 0x{value:x} overflows the target's {word_size}-byte code-space units"
+            ))
+        })
+    };
+    let base_bytes = address_to_byte(base, "base")?;
+    raw.build_loader_at(Rc::clone(&code_space), base)?;
+    let loader = raw
+        .loader()
+        .ok_or_else(|| KunaError::lowlevel("raw loader vanished after open"))?;
+    let image_base = loader.vma();
+    if image_base != base_bytes {
+        return Err(KunaError::lowlevel(
+            "raw loader and code-space base conversion disagree",
+        ));
+    }
+    let image_size = loader.file_size();
+    if image_size == 0 {
+        return Err(KunaError::lowlevel("raw image is empty"));
+    }
+    let image_end = image_base
+        .checked_add(image_size)
+        .ok_or_else(|| KunaError::lowlevel("raw image base plus file size overflows"))?;
+    if image_end - 1 > code_space.get_highest() {
+        return Err(KunaError::lowlevel(format!(
+            "raw image range 0x{image_base:x}..0x{image_end:x} exceeds the target address space"
+        )));
+    }
+
+    let arch_id = raw.sleigh().arch_id().to_string();
+    let arm32 = arch_id.starts_with("ARM:") && arch_id.split(':').nth(2) == Some("32");
+    if arm32 && isa.is_none() {
+        return Err(KunaError::lowlevel(
+            "raw ARM32 input requires --isa arm or --isa thumb",
+        ));
+    }
+    let mut normalized_entries = Vec::new();
+    for &entry in entries {
+        let entry_units = if arm32 { entry & !1 } else { entry };
+        let normalized = address_to_byte(entry_units, "entry")?;
+        if normalized < image_base || normalized >= image_end {
+            return Err(KunaError::lowlevel(format!(
+                "raw entry 0x{entry:x} is outside mapped range 0x{image_base:x}..0x{image_end:x}"
+            )));
+        }
+        if !normalized_entries.contains(&normalized) {
+            normalized_entries.push(normalized);
+        }
+    }
+
+    let ranges = [(image_base, image_size)];
+    let input_context_paints = input_isa_paints_for_ranges(
+        &ranges,
+        raw.sleigh().base().unwrap(),
+        &arch_id,
+        isa,
+    )?;
+    raw.sleigh_mut().base_mut().unwrap().input_arm_isa_override = isa.is_some();
+    for paint in &input_context_paints {
+        let begin = Address::new(Rc::clone(&code_space), paint.addr);
+        let end = paint
+            .end
+            .map(|end| Address::new(Rc::clone(&code_space), end));
+        raw.sleigh().base().unwrap().with_context_db_mut(|db| match end {
+            Some(end) => {
+                db.set_variable_region(paint.var.as_bytes(), &begin, &end, paint.value)
+            }
+            None => db.set_variable(paint.var.as_bytes(), &begin, paint.value),
+        })?;
+    }
+
+    let symbols = normalized_entries
+        .into_iter()
+        .map(|entry| ProgramSymbol {
+            name: format!("sub_{entry:x}"),
+            addr: Address::new(Rc::clone(&code_space), entry),
+            object_location: None,
+            binding: None,
+            provenance: EntryProvenance::Mapped,
+        })
+        .collect();
+    let description = raw
+        .sleigh()
+        .base()
+        .unwrap()
+        .get_description()
+        .to_string();
+    let image = raw
+        .take_loader()
+        .ok_or_else(|| KunaError::lowlevel("raw loader vanished after validation"))?;
+    raw.sleigh_mut()
+        .base_mut()
+        .unwrap()
+        .set_loader(Box::new(image));
+
+    let mut pending_analysis = Vec::new();
+    if !input_context_paints.is_empty() {
+        let mut explicit = kuna_analysis::pass::AnalysisOutput::default();
+        explicit.context_paints = input_context_paints;
+        pending_analysis.push(("input_isa", explicit));
+    }
+    let mut prog = ConsoleProgram {
+        arch: raw.into_sleigh(),
+        registry,
+        symbols,
+        object_sections: Vec::new(),
+        description,
+        pending_analysis,
+        analysis_code_space: Some(code_space),
+        dwarf_locals: Vec::new(),
+        analysis_image: None,
+        loader_data_objects: Vec::new(),
+        declared_extents: BTreeMap::new(),
+        assertions: Vec::new(),
+        assertion_outcomes: Vec::new(),
+        pending_prototypes: BTreeMap::new(),
+        raw_address_units: Some((word_size, arm32)),
+    };
+    prog.read_loader_symbols()?;
+    Ok(prog)
 }
 
 /// Bootstrap a [`ConsoleProgram`] from a **real object-format** binary on disk
@@ -2541,6 +2731,7 @@ pub fn bootstrap_from_object_with_isa(
         assertions: Vec::new(),
         assertion_outcomes: Vec::new(),
         pending_prototypes: BTreeMap::new(),
+        raw_address_units: None,
     };
     // conf->readLoaderSymbols("::"): install the ELF symbols as FunctionSymbols.
     // The deferred analysis commit at `read symbols` REQUIRES this to have run
@@ -3311,6 +3502,17 @@ pub fn bootstrap_from_file(
         // Real object-format binary (ELF / PE / Mach-O / COFF): drive the
         // object-crate loader.
         return bootstrap_from_object(path, target, spec_roots);
+    }
+    if !bytes
+        .iter()
+        .copied()
+        .skip_while(u8::is_ascii_whitespace)
+        .next()
+        .is_some_and(|byte| byte == b'<')
+    {
+        return Err(KunaError::lowlevel(
+            "unrecognized input format; for a headerless image use --raw-image --target <SLEIGH-language-id> --base <address> and at least one --entry/--addr <address>",
+        ));
     }
     let mut store = DocumentStorage::new();
     let root = store.parse_document(&bytes)?.get_root().clone();

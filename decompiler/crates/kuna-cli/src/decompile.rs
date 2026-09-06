@@ -55,6 +55,10 @@ pub struct DecompileArgs {
     pub slice: Option<String>,
     /// Explicit ARM instruction-set state for every mapped code section.
     pub isa: Option<ArmIsa>,
+    /// Treat the input as a headerless contiguous image.
+    pub raw_image: bool,
+    /// Address assigned to raw file offset zero.
+    pub base: Option<u64>,
 }
 
 /// Whether an `--option` value selects the "on" state (the `on_or_off` token set
@@ -100,6 +104,15 @@ fn selected_vma(target: &str, by_address: bool) -> Option<u64> {
     u64::from_str_radix(digits, 16).ok()
 }
 
+fn parse_cli_address(value: &str) -> Result<u64, String> {
+    let value = value.trim();
+    let digits = value
+        .strip_prefix("0x")
+        .or_else(|| value.strip_prefix("0X"))
+        .unwrap_or(value);
+    u64::from_str_radix(digits, 16).map_err(|_| format!("invalid address {value:?}"))
+}
+
 /// Quote a path for the console script when — and only when — it needs it.
 ///
 /// The console reads a filename with `CommandStream::read_filename`, which
@@ -141,11 +154,13 @@ fn reject_unquotable(what: &str, path: &str) -> Result<(), String> {
 }
 
 /// Build the stdin script fed to `decomp_dbg` — port of `_build_script`.
-fn build_script(
+fn build_script_for_input(
     binary: &str,
     target: &str,
     by_address: bool,
     bfd_target: Option<&str>,
+    raw_image: bool,
+    base: Option<u64>,
     raw: bool,
     out_path: &Path,
     injected: &[(&'static str, &'static str)],
@@ -170,9 +185,15 @@ fn build_script(
             .filter(move |f| f.slot == slot)
     };
     let image = console_path(binary);
-    match bfd_target {
-        Some(t) if !t.is_empty() => lines.push(format!("load file {t} {image}")),
-        _ => lines.push(format!("load file {image}")),
+    if raw_image {
+        let language = bfd_target.expect("raw parser requires --target");
+        let base = base.expect("raw parser requires --base");
+        lines.push(format!("load raw {language} 0x{base:x} {target} {image}"));
+    } else {
+        match bfd_target {
+            Some(t) if !t.is_empty() => lines.push(format!("load file {t} {image}")),
+            _ => lines.push(format!("load file {image}")),
+        }
     }
     // `option` lines MUST precede `read symbols`: the kuna_analysis passes are
     // committed (gated by the per-pass `--option <id> on|off` flags) inside
@@ -284,6 +305,27 @@ fn build_script(
     }
     lines.push("quit".into());
     lines.join("\n") + "\n"
+}
+
+#[cfg(test)]
+fn build_script(
+    binary: &str,
+    target: &str,
+    by_address: bool,
+    bfd_target: Option<&str>,
+    raw: bool,
+    out_path: &Path,
+    injected: &[(&'static str, &'static str)],
+    options: &[(String, String)],
+    kasserts: &[String],
+    func_decls: &[crate::funcdecl::FuncDecl],
+    assertions: &[kuna_console::assertions::Directive],
+    regions_path: Option<&Path>,
+) -> String {
+    build_script_for_input(
+        binary, target, by_address, bfd_target, false, None, raw, out_path, injected, options,
+        kasserts, func_decls, assertions, regions_path,
+    )
 }
 
 /// The console prompt `decomp_dbg` writes before echoing each command; a
@@ -748,11 +790,13 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
     // whether a `<func>::`-qualified directive binds to the selection.
     let selected: Option<&str> = if by_address { None } else { Some(args.target.as_str()) };
     let attempt = |injected: &[(&'static str, &'static str)]| {
-        let script = build_script(
+        let script = build_script_for_input(
             &binary,
             &args.target,
             by_address,
             args.bfd_target.as_deref(),
+            args.raw_image,
+            args.base,
             args.raw,
             &out_path,
             injected,
@@ -1144,6 +1188,8 @@ pub fn main(argv: &[String]) -> i32 {
     let mut sleighpath: Option<String> = None;
     let mut slice: Option<String> = None;
     let mut isa: Option<ArmIsa> = None;
+    let mut raw_image = false;
+    let mut base: Option<u64> = None;
 
     let mut i = 0;
     while i < argv.len() {
@@ -1152,6 +1198,17 @@ pub fn main(argv: &[String]) -> i32 {
             "--addr" => addr = true,
             "--json" => json = true,
             "--raw" => raw = true,
+            "--raw-image" => raw_image = true,
+            "--base" => match take_value(argv, &mut i, "--base") {
+                Some(value) => match parse_cli_address(&value) {
+                    Ok(value) => base = Some(value),
+                    Err(error) => {
+                        eprintln!("error: {error}");
+                        return 2;
+                    }
+                },
+                None => return 2,
+            },
             "--regions" => regions = true,
             "--slice" => slice = take_value(argv, &mut i, "--slice"),
             "--isa" => match take_value(argv, &mut i, "--isa") {
@@ -1294,6 +1351,29 @@ pub fn main(argv: &[String]) -> i32 {
     }
     addr |= looks_like_addr(&target);
 
+    if raw_image {
+        if bfd_target.as_deref().is_none_or(|value| value.trim().is_empty()) {
+            eprintln!("error: --raw-image requires --target <SLEIGH-language-id>");
+            return 2;
+        }
+        if base.is_none() {
+            eprintln!("error: --raw-image requires --base <address>");
+            return 2;
+        }
+        if parse_cli_address(&target).is_err() {
+            eprintln!("error: --raw-image requires a numeric entry address");
+            return 2;
+        }
+        if slice.is_some() {
+            eprintln!("error: --slice does not apply to --raw-image input");
+            return 2;
+        }
+        addr = true;
+    } else if base.is_some() {
+        eprintln!("error: --base requires --raw-image");
+        return 2;
+    }
+
     if json {
         // Refused, not ignored: each of these is a `decomp_dbg` transcript the
         // in-process JSON path never produces, and silently dropping half a
@@ -1318,6 +1398,8 @@ pub fn main(argv: &[String]) -> i32 {
             bfd_target: bfd_target.as_deref(),
             slice: slice.as_deref(),
             sleighpath: sleighpath.as_deref(),
+            raw_image,
+            base,
         });
     }
 
@@ -1360,6 +1442,8 @@ pub fn main(argv: &[String]) -> i32 {
         sleighpath,
         slice,
         isa,
+        raw_image,
+        base,
     })
 }
 
@@ -1383,6 +1467,7 @@ fn usage() {
          \x20                     [--assert DIRECTIVE|@FILE].. [--assert-strict] \\\n\
          \x20                     [--isa auto|arm|thumb] [--slice ARCH] [--target T] \\\n\
          \x20                     [--sleighpath D] [--decomp-dbg P]\n\
+         \x20                     [--raw-image --target T --base VMA]\n\
          \n\
          Decompile ONE function.  The target is a name, or an address with --addr\n\
          (a `0x`-prefixed target implies it).  --json emits the decompile-all record\n\
@@ -1430,6 +1515,8 @@ struct JsonRequest<'a> {
     bfd_target: Option<&'a str>,
     slice: Option<&'a str>,
     sleighpath: Option<&'a str>,
+    raw_image: bool,
+    base: Option<u64>,
 }
 
 /// `kuna decompile --json`: `decompile-all`'s in-process load narrowed to the one
@@ -1453,6 +1540,11 @@ fn run_json(req: &JsonRequest) -> i32 {
     } else {
         argv.push("--functions".into());
         argv.push(req.target.to_string());
+    }
+    if req.raw_image {
+        argv.push("--raw-image".into());
+        argv.push("--base".into());
+        argv.push(format!("0x{:x}", req.base.expect("raw parser requires --base")));
     }
     argv.extend(req.forwarded.iter().cloned());
     for (flag, value) in [

@@ -87,8 +87,8 @@ use std::fmt::Write as _;
 use kuna_analysis::listing::xrefs::{Xref, XrefIndex, XrefKind};
 use kuna_analysis::loader::macho_fat::SlicePref;
 use kuna_console::engine::{
-    bootstrap_from_object_with_isa, ArmIsa, ConsoleProgram, EntryLookupError, EntrySelector,
-    FunctionEntry, ObjectLocation,
+    bootstrap_from_object_with_isa, bootstrap_from_raw, ArmIsa, ConsoleProgram, EntryLookupError,
+    EntrySelector, FunctionEntry, ObjectLocation,
 };
 // The decompile loop + result shape live in the shared decompile-project core
 // (`kuna_console::project` — also reused by the `kuna_wasm` front-end).
@@ -145,6 +145,10 @@ pub(crate) struct Args {
     pub(crate) target: Option<String>,
     pub(crate) sleighpath: Option<String>,
     pub(crate) isa: Option<ArmIsa>,
+    /// Treat the input as one headerless, contiguous code image.
+    pub(crate) raw_image: bool,
+    /// Address assigned to raw file offset zero.
+    pub(crate) base: Option<u64>,
 }
 
 impl Args {
@@ -1175,16 +1179,42 @@ pub(crate) fn load_program(
 
     let spec_roots = spec_roots(args.sleighpath.as_deref());
     let target = args.target.as_deref().unwrap_or("");
-    let mut prog =
-        bootstrap_from_object_with_isa(&binary, target, &spec_roots, args.isa).map_err(|e| {
-            let reason = e.explain();
-            let msg = format!("could not build an architecture for {binary}: {reason}");
-            if reason.contains("No sleigh specification") {
-                format!("{msg}\nnote: {}", paths::SPECS_HINT)
-            } else {
-                msg
-            }
-        })?;
+    let mut prog = if args.raw_image {
+        let entries: Vec<u64> = args
+            .addrs
+            .iter()
+            .filter_map(|selector| match selector {
+                EntrySelector::Numeric(entry) => Some(*entry),
+                _ => None,
+            })
+            .collect();
+        bootstrap_from_raw(
+            &binary,
+            target,
+            args.base.expect("raw parser requires --base"),
+            &entries,
+            args.isa,
+            &spec_roots,
+        )
+    } else {
+        bootstrap_from_object_with_isa(&binary, target, &spec_roots, args.isa)
+    }
+    .map_err(|e| {
+        let detail = e.explain();
+        let msg = format!("could not build an architecture for {binary}: {detail}");
+        if detail.contains("No sleigh specification") {
+            return format!("{msg}\nnote: {}", paths::SPECS_HINT);
+        }
+        let raw_hint = if !args.raw_image
+            && (detail.contains("not in recognized object file format")
+                || detail.contains("Unsupported file format"))
+        {
+            "; for a headerless image use --raw-image --target <SLEIGH-language-id> --base <address> and at least one --entry/--addr <address>"
+        } else {
+            ""
+        };
+        format!("{msg}{raw_hint}")
+    })?;
 
     for (name, value) in driver_default_options(
         &binary,
@@ -1237,7 +1267,15 @@ pub(crate) fn resolve_targets(
 
     // Resolve every address form through the program's shared selector model.
     for selector in &args.addrs {
-        targets.push(prog.resolve_entry(selector).map_err(|error| error.to_string())?);
+        let selector = match (args.raw_image, selector) {
+            (true, EntrySelector::Numeric(entry)) => EntrySelector::Numeric(
+                prog.input_code_offset(*entry)
+                    .map_err(|error| error.explain().to_string())?,
+            ),
+            (true, _) => unreachable!("raw parser requires numeric entries"),
+            (false, selector) => selector.clone(),
+        };
+        targets.push(prog.resolve_entry(&selector).map_err(|error| error.to_string())?);
     }
 
     // `--functions a,b,c`: intersect names with the enumerated set.  An ALIAS
@@ -2135,6 +2173,9 @@ pub(crate) fn parse_args_with_filters(
     let mut target: Option<String> = None;
     let mut sleighpath: Option<String> = None;
     let mut isa: Option<ArmIsa> = None;
+    let mut raw_image = false;
+    let mut base: Option<u64> = None;
+    let mut saw_entry = false;
     let mut saw_language = false;
 
     let mut i = 0;
@@ -2147,8 +2188,10 @@ pub(crate) fn parse_args_with_filters(
                 let v = take(argv, &mut i, "--functions")?;
                 names = Some(v.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect());
             }
-            "--addr" => {
-                let v = take(argv, &mut i, "--addr")?;
+            "--addr" | "--entry" => {
+                let flag = a;
+                saw_entry |= flag == "--entry";
+                let v = take(argv, &mut i, flag)?;
                 addrs.push(parse_entry_selector(&v)?);
             }
             "--define-function" => {
@@ -2221,6 +2264,8 @@ pub(crate) fn parse_args_with_filters(
             "--mode" => mode = Some(take(argv, &mut i, "--mode")?),
             "--slice" => slice = Some(take(argv, &mut i, "--slice")?),
             "--isa" => isa = ArmIsa::parse(&take(argv, &mut i, "--isa")?)?,
+            "--raw-image" => raw_image = true,
+            "--base" => base = Some(parse_hex(&take(argv, &mut i, "--base")?)?),
             "--target" => target = Some(take(argv, &mut i, "--target")?),
             "--sleighpath" => sleighpath = Some(take(argv, &mut i, "--sleighpath")?),
             "-h" | "--help" => {
@@ -2244,6 +2289,40 @@ pub(crate) fn parse_args_with_filters(
     }
 
     let binary = binary.ok_or_else(|| format!("{cmd} requires <binary>"))?;
+
+    if raw_image {
+        if cmd == "decompile-graph" {
+            return Err("--raw-image is not supported by decompile-graph".into());
+        }
+        if target.as_deref().is_none_or(|value| value.trim().is_empty()) {
+            return Err("--raw-image requires --target <SLEIGH-language-id>".into());
+        }
+        if base.is_none() {
+            return Err("--raw-image requires --base <address>".into());
+        }
+        if names.is_some() {
+            return Err("--raw-image uses explicit --entry/--addr seeds, not --functions".into());
+        }
+        if addrs.is_empty() {
+            return Err("--raw-image requires at least one --entry or --addr".into());
+        }
+        if addrs.iter().any(|selector| !matches!(selector, EntrySelector::Numeric(_))) {
+            return Err("raw image entries must be numeric addresses".into());
+        }
+        if slice.is_some() {
+            return Err("--slice does not apply to --raw-image input".into());
+        }
+        if filters.reachable_from.is_some() || filters.summary {
+            return Err("--reachable-from and --summary require object-file metadata and do not apply to --raw-image input".into());
+        }
+    } else {
+        if base.is_some() {
+            return Err("--base requires --raw-image".into());
+        }
+        if saw_entry {
+            return Err("--entry requires --raw-image".into());
+        }
+    }
 
     // (kuna outlang, DIV-80) The auto policy: with no `--language` and no
     // explicit `--option setlanguage`, follow the binary. `decompile-project` and
@@ -2303,6 +2382,8 @@ pub(crate) fn parse_args_with_filters(
             target,
             sleighpath,
             isa,
+            raw_image,
+            base,
         },
         filters,
     ))
@@ -2346,6 +2427,7 @@ fn usage_decompile_all() {
          \x20                   [--reachable-from <name|0xaddr>] [--sort addr|size|name] [--limit N] \\\n\
          \x20                   [--summary] [--define-function S[-E][=N]|@FILE].. \\\n\
          \x20                   [--option N V].. [--isa auto|arm|thumb] [--slice ARCH] [--target T] [--sleighpath D]\n\
+         \x20                   [--raw-image --target T --base VMA (--entry|--addr VMA)..]\n\
          \n\
          Decompile every CODE-backed function in one in-process load (load-once,\n\
          decompile-many).  --json emits {{binary,count,functions:[{{name,address,code,variables,..}}]}};\n\
@@ -2379,6 +2461,7 @@ fn usage_functions() {
          \x20               [--reachable-from <name|0xaddr>] [--sort addr|size|name] [--limit N] \\\n\
          \x20               [--define-function S[-E][=N]|@FILE].. \\\n\
          \x20               [--mode auto|reliable|aggressive|fast] [--isa auto|arm|thumb] [--slice ARCH] [--target T] [--sleighpath D]\n\
+         \x20               [--raw-image --target T --base VMA (--entry|--addr VMA)..]\n\
          \n\
          List every function kuna discovers in a binary as `<addr>\\t<name>` (or\n\
          --json: {{binary,count,total,functions:[{{name,address,address_hex,aliases,size}}]}}).\n\

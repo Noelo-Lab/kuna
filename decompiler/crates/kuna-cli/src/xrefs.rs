@@ -199,6 +199,8 @@ fn query(args: &XrefArgs) -> Result<String, String> {
         target: args.target.clone(),
         sleighpath: args.sleighpath.clone(),
         isa: args.isa,
+        raw_image: false,
+        base: None,
     };
     let prog = load_program(&load, DriverDefaults::Query)?;
 

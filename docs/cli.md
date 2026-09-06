@@ -602,6 +602,42 @@ With no mode evidence, decoding uses the selected language's default context; us
 `strings --no-xrefs` decodes nothing, so the pair is a usage error rather than a
 silently dropped flag.
 
+### Headerless raw images
+
+`--raw-image` loads a file that has no object header. It is separate from
+`decompile --raw`, which still means “also print raw p-code.” A raw image must
+name its decoder with `--target <SLEIGH-language-id>`, map file offset zero with
+`--base <address>`, and supply at least one numeric entry. `decompile` uses its
+positional address; the other supported commands accept repeatable `--entry` or
+`--addr` values.
+
+```bash
+kuna decompile payload.bin 0x4001 --raw-image \
+  --target ARM:LE:32:v4t:default --base 0x4000 --isa thumb
+
+kuna functions payload.bin --json --raw-image \
+  --target ARM:LE:32:v4t:default --base 0x4000 \
+  --entry 0x4001 --isa thumb
+```
+
+The whole nonempty file is one contiguous executable `CODE` mapping. Base and
+entry values use the selected language's address units, so address `1` in a
+two-byte word-addressed code space selects file byte offset `2`. The mapping is
+checked for arithmetic and address-space overflow, and an entry outside its
+half-open range is rejected. Duplicate entries collapse. ARM32 raw input requires
+`--isa arm|thumb`; odd ARM function pointers are normalized to their underlying
+even byte address before validation.
+
+Raw images carry no symbols or trustworthy boundary metadata, so `functions`
+reports the explicit seeds. Named `--functions`, section-relative selectors,
+`--slice`, `--summary`, and `--reachable-from` are rejected. Support is limited
+to `decompile` (text and JSON), `decompile-all`, `functions`, and
+`decompile-project`; `decompile-graph`, `disassemble`/`read`, `xrefs`, and
+`strings` require object metadata. A headerless file used without `--raw-image`
+reports the required raw-image command shape. Quoted console filenames preserve
+paths containing whitespace; the interactive spelling is
+`load raw <target> <base> <entry[,entry...]> <filename>`.
+
 **Failure contract (DIV-45).** A function whose decompile pipeline aborts is
 *loud*:
 

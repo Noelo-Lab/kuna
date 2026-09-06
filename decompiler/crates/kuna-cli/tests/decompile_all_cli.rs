@@ -9,6 +9,8 @@
 //! the test prints that and returns early (a specs-less CI is a visible skip,
 //! never a false green).
 
+mod common;
+
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -1179,6 +1181,141 @@ fn dwarf_source_line_comments_stay_opt_in_under_every_mode() {
         opted_in.contains("/* debug_symbol.c:124 */"),
         "`--option dwarf_lines on` must still annotate source lines:\n{opted_in}"
     );
+}
+
+#[test]
+fn raw_image_supported_surfaces_share_seed_and_base_semantics() {
+    let path = common::scratch_file("raw thumb image", "bin");
+    std::fs::write(&path, [0x07, 0x20, 0x70, 0x47]).unwrap();
+    let binary = path.to_string_lossy().into_owned();
+    let sp = specs();
+    let target = "ARM:LE:32:v4t:default";
+    let spec = PathBuf::from(&sp).join("Ghidra/Processors/ARM/data/languages/ARM8_le.sla");
+    if !spec.exists() {
+        eprintln!("raw_image CLI: skipping (no ARM `.sla`)");
+        let _ = std::fs::remove_file(path);
+        return;
+    }
+
+    let (stdout, stderr, ok) = run_kuna(&[
+        "functions", &binary, "--json", "--raw-image", "--target", target, "--base",
+        "0x4000", "--entry", "0x4001", "--isa", "thumb", "--sleighpath", &sp,
+    ]);
+    assert!(ok, "raw functions failed: {stderr}");
+    assert!(stdout.contains("\"count\": 1"), "{stdout}");
+    assert!(stdout.contains("\"address_hex\": \"0x4000\""), "{stdout}");
+
+    let (stdout, stderr, ok) = run_kuna(&[
+        "decompile-all", &binary, "--raw-image", "--target", target, "--base", "0x4000",
+        "--addr", "0x4001", "--isa", "thumb", "--sleighpath", &sp,
+    ]);
+    assert!(ok, "raw decompile-all failed: {stderr}");
+    assert!(stdout.contains("return 7;"), "unexpected raw body:\n{stdout}");
+
+    let (stdout, stderr, ok) = run_kuna(&[
+        "decompile", &binary, "0x4001", "--json", "--raw-image", "--target", target,
+        "--base", "0x4000", "--isa", "thumb", "--sleighpath", &sp,
+    ]);
+    assert!(ok, "raw decompile --json failed: {stderr}");
+    assert!(stdout.contains("\"address\": 16384"), "{stdout}");
+    assert!(stdout.contains("return 7;"), "{stdout}");
+
+    let out_dir = common::scratch_file("raw-project", "dir");
+    let (stdout, stderr, ok) = run_kuna(&[
+        "decompile-project", &binary, "-o", out_dir.to_str().unwrap(), "--raw-image",
+        "--target", target, "--base", "0x4000", "--entry", "0x4001", "--isa",
+        "thumb", "--sleighpath", &sp,
+    ]);
+    assert!(ok, "raw project export failed: {stderr}");
+    assert!(stdout.contains("functions: 1 ok, 0 failed"), "{stdout}");
+    let artifacts: Vec<String> = std::fs::read_dir(&out_dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert!(artifacts.iter().any(|name| name.ends_with(".c")), "{artifacts:?}");
+    assert!(artifacts.iter().any(|name| name.ends_with(".asm")), "{artifacts:?}");
+    assert!(artifacts.iter().any(|name| name == "README.md"), "{artifacts:?}");
+
+    std::fs::remove_dir_all(out_dir).unwrap();
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn raw_image_decompile_scales_word_addressed_selector() {
+    let path = common::scratch_file("raw-avr-return", "bin");
+    std::fs::write(&path, [0, 0, 0x08, 0x95]).unwrap();
+    let binary = path.to_string_lossy().into_owned();
+    let sp = specs();
+    let spec = PathBuf::from(&sp).join("Ghidra/Processors/Atmel/data/languages/avr8.sla");
+    if !spec.exists() {
+        eprintln!("raw_image CLI: skipping (no AVR8 `.sla`)");
+        let _ = std::fs::remove_file(path);
+        return;
+    }
+
+    let (stdout, stderr, ok) = run_kuna(&[
+        "decompile-all", &binary, "--raw-image", "--target", "avr8:LE:16:default",
+        "--base", "0x100", "--entry", "0x101", "--sleighpath", &sp,
+    ]);
+    assert!(ok, "word-addressed raw selector failed: {stderr}");
+    assert!(stdout.contains("sub_202"), "{stdout}");
+
+    let (stdout, stderr, ok) = run_kuna(&[
+        "decompile", &binary, "0x101", "--raw-image", "--target", "avr8:LE:16:default",
+        "--base", "0x100", "--sleighpath", &sp,
+    ]);
+    assert!(ok, "word-addressed raw text decompile failed: {stderr}");
+    assert!(stdout.contains("sub_202"), "{stdout}");
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn raw_image_rejects_missing_metadata_and_object_only_surfaces() {
+    let path = common::scratch_file("raw-parser", "bin");
+    std::fs::write(&path, [0x07, 0x20, 0x70, 0x47]).unwrap();
+    let binary = path.to_string_lossy().into_owned();
+    let target = "ARM:LE:32:v4t:default";
+    let cases: &[(&[&str], &str)] = &[
+        (&["functions", &binary, "--raw-image", "--base", "0", "--entry", "0"],
+         "--raw-image requires --target"),
+        (&["functions", &binary, "--raw-image", "--target", target, "--entry", "0"],
+         "--raw-image requires --base"),
+        (&["functions", &binary, "--raw-image", "--target", target, "--base", "0"],
+         "--raw-image requires at least one"),
+        (&["functions", &binary, "--base", "0"], "--base requires --raw-image"),
+        (&["functions", &binary, "--entry", "0"], "--entry requires --raw-image"),
+        (&["functions", &binary, "--raw-image", "--target", target, "--base", "0",
+           "--functions", "main"], "not --functions"),
+        (&["functions", &binary, "--raw-image", "--target", target, "--base", "0",
+           "--addr", "main"], "invalid address"),
+        (&["functions", &binary, "--raw-image", "--target", target, "--base", "0",
+           "--addr", ".text+0"], "raw image entries must be numeric"),
+        (&["functions", &binary, "--raw-image", "--target", target, "--base", "0",
+           "--entry", "0", "--slice", "arm"], "--slice does not apply"),
+        (&["decompile-all", &binary, "--raw-image", "--target", target, "--base", "0",
+           "--entry", "0", "--summary"], "require object-file metadata"),
+        (&["decompile-graph", &binary, "--raw-image", "--target", target, "--base", "0",
+           "--entry", "0"], "not supported by decompile-graph"),
+        (&["disassemble", &binary, "0", "--raw-image", "--target", target, "--base", "0"],
+         "unknown option --raw-image"),
+    ];
+    for (args, expected) in cases {
+        let (_stdout, stderr, ok) = run_kuna(args);
+        assert!(!ok, "{args:?} unexpectedly succeeded");
+        assert!(stderr.contains(expected), "{args:?}: expected {expected:?}, got {stderr:?}");
+    }
+
+    let (_stdout, stderr, ok) = run_kuna(&["functions", &binary]);
+    assert!(!ok, "headerless input without raw flags unexpectedly loaded");
+    assert!(stderr.contains("--raw-image") && stderr.contains("--base"),
+            "unknown-format diagnostic omitted raw guidance: {stderr}");
+
+    let (_stdout, stderr, ok) = run_kuna(&[
+        "decompile", &binary, "main", "--raw-image", "--target", target, "--base", "0",
+    ]);
+    assert!(!ok, "named raw decompile entry unexpectedly succeeded");
+    assert!(stderr.contains("requires a numeric entry"), "{stderr}");
+    std::fs::remove_file(path).unwrap();
 }
 
 /// Every `"size": N` in a `--json` document, in document order.
