@@ -401,7 +401,7 @@ impl ObjectLoadImage {
         target: Option<&str>,
     ) -> KunaResult<ObjectLoadImage> {
         // Parse the object file.
-        let file = object::File::parse(bytes).map_err(|e| {
+        let file = parse_object(bytes).map_err(|e| {
             KunaError::lowlevel(format!(
                 "File: {filename} : not in recognized object file format: {e}"
             ))
@@ -1198,6 +1198,15 @@ fn fallback_language_id(
 const IMAGE_FILE_MACHINE_THUMB: u16 = 0x01c2;
 const IMAGE_FILE_MACHINE_ARMNT: u16 = 0x01c4;
 
+/// Parse an object, including bare THUMB COFF omitted by `object`'s magic dispatch.
+pub fn parse_object(bytes: &[u8]) -> object::read::Result<object::File<'_>> {
+    if bytes.starts_with(&IMAGE_FILE_MACHINE_THUMB.to_le_bytes()) {
+        object::read::coff::CoffFile::parse(bytes).map(object::File::Coff)
+    } else {
+        object::File::parse(bytes)
+    }
+}
+
 /// Architecture used for language selection when the neutral parser does not
 /// recognize a container's machine value. PE/COFF machine `0x01c2` is the
 /// documented 32-bit little-endian Thumb/ARM code value.
@@ -1725,6 +1734,38 @@ mod tests {
                 .to_string();
             assert!(error.contains(fragment), "unexpected diagnostic: {error}");
         }
+    }
+
+    #[test]
+    fn thumb_coff_typed_parser_preserves_machine_and_mapping() {
+        use object::{BinaryFormat, Endianness, SectionKind};
+        let mut obj = object::write::Object::new(BinaryFormat::Coff, Architecture::Arm, Endianness::Little);
+        let text = obj.add_section(Vec::new(), b".text".to_vec(), SectionKind::Text);
+        obj.append_section_data(text, &[0x07, 0x20, 0x70, 0x47], 4);
+        let mut bytes = obj.write().unwrap();
+        bytes[..2].copy_from_slice(&IMAGE_FILE_MACHINE_THUMB.to_le_bytes());
+        let file = parse_object(&bytes).unwrap();
+        assert_eq!(file.format(), BinaryFormat::Coff);
+        assert_eq!(container_machine(&file, &bytes), Some(IMAGE_FILE_MACHINE_THUMB));
+        assert_eq!(effective_architecture(&file, &bytes), Architecture::Arm);
+        assert_eq!(arm_isa_hint(&file, &bytes), Some(true));
+        let mut image = ObjectLoadImage::from_bytes("thumb.obj", &bytes).unwrap();
+        assert!(image.get_arch_type().starts_with(b"ARM:LE:32:"));
+        let start = image.section_snapshot().iter().find(|(_, _, flags)| flags & section_flags::CODE != 0).unwrap().0;
+        let m = manager();
+        let ram = Rc::clone(m.get_space_by_name("ram").unwrap());
+        image.attach_to_space(Rc::clone(&ram));
+        assert_eq!(image.load(4, &Address::new(ram, start)).unwrap(), [0x07, 0x20, 0x70, 0x47]);
+    }
+
+    #[test]
+    fn thumb_coff_typed_parser_rejects_truncated_headers_and_sections() {
+        assert!(parse_object(&[0xc2, 0x01]).is_err());
+        let mut header = [0u8; 20];
+        header[..2].copy_from_slice(&IMAGE_FILE_MACHINE_THUMB.to_le_bytes());
+        header[2..4].copy_from_slice(&1u16.to_le_bytes());
+        assert!(parse_object(&header).is_err());
+        assert!(parse_object(b"unrecognized object").is_err());
     }
 
     // ---- Real-ELF PLT/GOT import-name resolution (elf_plt) -----------------

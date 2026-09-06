@@ -34,6 +34,8 @@
 //! correctly fills every region in between. The walk then decodes against an
 //! already-painted context DB, so each [`decode_one`](crate::listing::decode::decode_one)
 //! reads the right mode.
+//! An explicit file input ARM/Thumb selection suppresses metadata TMode paints;
+//! the bootstrap has already painted that selection over the code sections.
 //!
 //! # Gate safety (x86-64 and every non-ARM/MIPS language is untouched)
 //!
@@ -73,7 +75,7 @@ impl ContextPainter {
     /// and MIPS marker logic (design §4.2). The marker scans self-gate on the
     /// object architecture, so for x86-64 (or any language without a decode-mode
     /// context variable) this yields an empty, no-op painter.
-    pub(super) fn new(file: &object::File) -> Self {
+    pub(super) fn new(file: &object::File, arch: &Architecture) -> Self {
         let mut paints = Vec::new();
         // ARM `$t`/`$a` mapping symbols + STT_FUNC-LSB → `TMode` (Thumb). The scan
         // is ARM-gated; on a non-ARM object it returns an empty output.
@@ -87,6 +89,9 @@ impl ContextPainter {
         // what lets `main` and the rest of the call tree decode as Thumb). Empty on
         // any non-Cortex-M ARM object and every non-ARM arch.
         paints.extend(crate::analyzers::entry::cortexm_thumb_paints(file, false));
+        if arch.input_arm_isa_override {
+            paints.retain(|paint| paint.var != "TMode");
+        }
         // MIPS STT_FUNC-LSB / `STO_MIPS_MIPS16` `st_other` → `ISA_MODE` (MIPS16e /
         // microMIPS). The scan is MIPS-gated; empty on a non-MIPS object.
         paints.extend(scan_mips_isa_markers(file).context_paints);

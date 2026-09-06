@@ -902,7 +902,7 @@ pub fn build_readme(
     // Entry point + named sections come from an `object` re-parse (the engine's
     // section iterator has no name field).
     let raw = std::fs::read(binary_path).unwrap_or_default();
-    let parsed = object::File::parse(&*raw).ok();
+    let parsed = kuna_analysis::loadimage_object::parse_object(&*raw).ok();
     match &parsed {
         // `image_entry_vma`, not `entry()`: a Mach-O `LC_MAIN` states a
         // `__TEXT`-relative file offset where every other format states a VMA.

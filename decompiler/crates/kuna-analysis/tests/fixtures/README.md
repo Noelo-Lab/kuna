@@ -101,6 +101,11 @@ armv4t_thumb_pe.s -o armv4t_thumb_pe.obj`, then `lld-link /machine:arm
 Machine field from ARMNT (`0x01c4`) to THUMB (`0x01c2`); the intermediate object
 is not retained. The four instruction bytes are independently authored and the
 fixture contains no vendor input.
+The ARM input-context CLI regressions also generate small ELF and THUMB COFF
+images in memory from project-authored instruction bytes using `object::write`
+(`kuna-cli/tests/common/arm_images.rs`, same Apache-2.0 license). Their mapping
+symbols deliberately exercise conflicting and mixed ARM/Thumb metadata;
+generated files are scratch artifacts and are not repository fixtures.
 `cpp_noreturn_x86_64`: `g++ -O0 -no-pie -fno-pic -o cpp_noreturn_x86_64
 cpp_noreturn_x86_64.cpp` (source vendored alongside) — a `fail()` that tail-calls
 `std::terminate()` plus a `throw` (→ `__cxa_throw`); both are mangled no-return

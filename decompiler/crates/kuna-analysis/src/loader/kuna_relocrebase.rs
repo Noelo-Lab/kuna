@@ -140,7 +140,7 @@ pub fn select<'a>(
     view: &'a Option<RebasedView>,
 ) -> (object::File<'a>, &'a [u8]) {
     match view {
-        Some(v) => match object::File::parse(&*v.bytes) {
+        Some(v) => match crate::loadimage_object::parse_object(&*v.bytes) {
             Ok(file) => (file, &v.bytes[..]),
             Err(_) => (raw, bytes),
         },

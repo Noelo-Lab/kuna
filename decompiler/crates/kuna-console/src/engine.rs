@@ -1054,37 +1054,57 @@ impl ConsoleProgram {
         })
     }
 
-    fn bounded_machine_return(&self, mut vma: u64) -> bool {
+    fn bounded_machine_return(&self, vma: u64) -> bool {
         let Some(space) = self.arch().manage().get_default_code_space() else {
             return false;
         };
         let mut emit = OneShotPcodeEmit::default();
-        for _ in 0..16 {
+        let mut pending = vec![vma];
+        let mut visited = std::collections::BTreeSet::new();
+        while let Some(vma) = pending.pop() {
+            if visited.contains(&vma) {
+                continue;
+            }
+            if visited.len() == 16 {
+                break;
+            }
+            visited.insert(vma);
             emit.ops.clear();
             let addr = Address::new(Rc::clone(space), vma);
             let decoded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 self.arch().translate().one_instruction(&mut emit, &addr)
             }));
             let Ok(Ok(length)) = decoded else {
-                return false;
+                continue;
             };
             if length <= 0 {
-                return false;
+                continue;
             }
             if emit.ops.iter().any(|(opc, _)| *opc == OpCode::CPUI_RETURN) {
                 return true;
             }
-            if emit
-                .ops
-                .iter()
-                .any(|(opc, _)| matches!(opc, OpCode::CPUI_BRANCH | OpCode::CPUI_BRANCHIND))
-            {
-                return false;
+            let mut fallthrough = true;
+            for (opc, input) in &emit.ops {
+                match opc {
+                    OpCode::CPUI_BRANCH | OpCode::CPUI_CBRANCH => {
+                        if let Some(target) = input.as_ref().filter(|input| {
+                            input.space.as_ref().is_some_and(|s| s.get_index() == space.get_index())
+                        }) {
+                            pending.push(target.offset);
+                            if *opc == OpCode::CPUI_BRANCH {
+                                fallthrough = false;
+                            }
+                        }
+                    }
+                    OpCode::CPUI_BRANCHIND => fallthrough = false,
+                    _ => {}
+                }
             }
-            let Some(next) = vma.checked_add(length as u64) else {
-                return false;
-            };
-            vma = next;
+            if fallthrough {
+                if let Some(next) = vma.checked_add(length as u64) {
+                    pending.push(next);
+                }
+            }
         }
         false
     }
@@ -1560,7 +1580,12 @@ impl ConsoleProgram {
         // Filter by the per-pass enable flags (default-on, set by the user's
         // `--option <id> on|off`), then merge the survivors in pass order.
         let mut merged = kuna_analysis::pass::AnalysisOutput::default();
+        let mut input_context_paints = Vec::new();
         for (id, out) in pending {
+            if id == "input_isa" {
+                input_context_paints.extend(out.context_paints);
+                continue;
+            }
             if analysis_pass_enabled(self.arch(), id) {
                 merged.merge(out);
             }
@@ -1644,6 +1669,7 @@ impl ConsoleProgram {
             &mut merged.entries,
             &fde_bodies,
         );
+        merged.context_paints.extend(input_context_paints);
         self.arm_context_evidence.extend(
             merged
                 .context_paints
@@ -2277,8 +2303,9 @@ pub fn bootstrap_from_object_with_isa(
     if let Some(note) = datadir_note {
         eprintln!("[kuna] {note}");
     }
+    let explicit_isa = isa.is_some();
     let isa = isa.or_else(|| {
-        let file = object::File::parse(&*bytes).ok()?;
+        let file = kuna_analysis::loadimage_object::parse_object(&*bytes).ok()?;
         kuna_analysis::loadimage_object::arm_isa_hint(&file, &bytes).map(|thumb| {
             if thumb {
                 ArmIsa::Thumb
@@ -2356,6 +2383,7 @@ pub fn bootstrap_from_object_with_isa(
     loader.attach_to_space(Rc::clone(&code_space));
 
     let input_context_paints = input_isa_paints(&loader, sleigh.arch_id(), isa)?;
+    sleigh.base_mut().unwrap().input_arm_isa_override = explicit_isa;
     for paint in &input_context_paints {
         let begin = Address::new(Rc::clone(&code_space), paint.addr);
         let end = paint

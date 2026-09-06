@@ -480,7 +480,8 @@ container continues to own its section mappings and image base. The target must
 match the container's address width and endianness; a conflict is an error. This
 also permits a valid PE/COFF image whose machine value is newer than the object
 parser's architecture table to load under an explicit language. PE/COFF machine
-`0x01c2` is recognized directly as little-endian ARM32.
+`0x01c2` is recognized directly as little-endian ARM32, including bare COFF
+objects whose machine prefix the generic object parser does not recognize.
 
 `--isa auto|arm|thumb` is available on `decompile`, `decompile-all`,
 `decompile-project`, `decompile-graph`, `functions`, `disassemble`/`read`,
@@ -488,10 +489,13 @@ parser's architecture table to load under an explicit language. PE/COFF machine
 context, which a language id alone cannot select. `auto` is the default: kuna
 uses ELF mapping/FUNC markers, Cortex-M metadata, and Thumb-specific PE/COFF
 machine values, preserving mixed ARM/Thumb images instead of applying an
-image-wide guess. Odd ARM function pointers are normalized to their even byte
+image-wide guess. Explicit `arm` or `thumb` takes precedence over that metadata
+during discovery, cross-reference analysis, and graph assembly as well as
+decompilation. Odd ARM function pointers are normalized to their even byte
 address. With no mode evidence, a trivial default decode is not accepted when
 the alternate mode reaches a bounded machine return; the command asks for an
-explicit `--isa` choice.
+explicit `--isa` choice. This probe follows direct branches and visits at most
+16 distinct instruction addresses in each mode.
 
 **Failure contract (DIV-45).** A function whose decompile pipeline aborts is
 *loud*:

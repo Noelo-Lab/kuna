@@ -89,7 +89,7 @@ pub fn run(argv: &[String]) -> i32 {
 pub(crate) fn query(args: &StringsArgs) -> Result<String, String> {
     let bytes = kuna_analysis::loader::elf_shdr::read_image(&args.binary)
         .map_err(|e| format!("{}: {e}", args.binary))?;
-    let file = object::File::parse(&*bytes)
+    let file = kuna_analysis::loadimage_object::parse_object(&*bytes)
         .map_err(|e| format!("could not parse {}: {e}", args.binary))?;
 
     let inv = kuna_stringinv::inventory(

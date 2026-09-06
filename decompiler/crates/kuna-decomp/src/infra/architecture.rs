@@ -245,6 +245,9 @@ pub struct Architecture {
     /// ID string uniquely describing this architecture (C++ `archid`).
     pub archid: String,
 
+    /// File input explicitly selected ARM/Thumb state; metadata must not repaint TMode.
+    pub input_arm_isa_override: bool,
+
     // --- Configuration data (architecture.hh:170-208) ---------------------
     /// How many levels to let parameter trims recurse (C++ `trim_recurse_max`).
     pub trim_recurse_max: int4,
@@ -1717,6 +1720,7 @@ impl Architecture {
 
         let mut arch = Architecture {
             archid: archid.to_string(),
+            input_arm_isa_override: false,
 
             trim_recurse_max: 0,
             max_implied_ref: 0,

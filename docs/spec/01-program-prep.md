@@ -301,6 +301,13 @@ its architecture as unknown. In particular, PE/COFF machine `0x01c2`
 selection and supplies whole-image Thumb context; its sections and PE image base
 still come from the container parser.
 
+Bare THUMB COFF objects use the typed COFF reader before architecture selection:
+the generic `object` magic dispatcher omits machine `0x01c2`. The shared
+`loadimage_object::parse_object` entry point preserves the original machine,
+sections, and symbols, and is also used when analysis or a CLI inspection
+command reopens the image. It retains the typed reader's header and section
+validation; it does not rewrite the machine bytes to another architecture.
+
 - **Relocatable objects** (angr, `relocobjects`, default-on) — a pre-link object
   does not say where its bytes live, and each format fails that differently. An
   ELF `.o` has no program headers, so the faithful loader maps zero bytes and
@@ -658,11 +665,17 @@ unknown-register error, so a paint on the wrong language is a faithful no-op.
 The file front-ends also accept `--isa auto|arm|thumb`. An explicit ARM/Thumb
 choice paints `TMode` across mapped CODE sections before decoding; `auto` uses
 the marker facts above, Cortex-M evidence, and Thumb-specific PE/COFF machine
-values. The generic PE ARM machine is not a whole-image A32 hint because such an
+values. Explicit input state is retained on the architecture so later Listing
+and xref painters cannot replace it with ELF markers or Cortex-M metadata.
+The analysis commit applies input paints after all other passes' context facts.
+The generic PE ARM machine is not a whole-image A32 hint because such an
 image may mix ARM and Thumb. ARM entry selectors fold the pointer-mode bit and
 decode at the even byte address. For an unmarked entry whose default-mode C body
-is empty or only `return;`, the console probes at most 16 alternate-mode
-instructions. If the default has no bounded machine return but the alternate
+is empty or only `return;`, the console probes at most 16 distinct instruction
+addresses per mode. It follows direct branch targets and conditional
+fallthroughs, ignoring p-code-internal branch offsets as machine destinations;
+visited addresses prevent cycles from consuming an unbounded walk. If the
+default has no bounded machine return but the alternate
 does, the run fails with an explicit-ISA diagnostic instead of reporting a
 successful empty function. Any committed context evidence disables this probe,
 so genuine A32 returns and mixed-image marker regions are never auto-switched.

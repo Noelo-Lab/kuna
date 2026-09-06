@@ -170,7 +170,7 @@ impl Listing {
         // decode-mode context) this painter is empty and the walk decodes exactly
         // as before; on ARM/MIPS it paints Thumb/MIPS16 mode so alt-ISA functions
         // decode correctly instead of as A32/MIPS32 garbage.
-        let painter = context::ContextPainter::new(file);
+        let painter = context::ContextPainter::new(file, arch);
 
         // The PPC64 ELFv2 local-entry fold (`ppclocalentry`): an intra-module `bl`
         // targets `st_value + <localentry>`, which is a point inside the callee,

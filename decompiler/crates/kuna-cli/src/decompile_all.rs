@@ -317,7 +317,7 @@ impl CallGraph {
     pub(crate) fn build(prog: &ConsoleProgram, binary: &str) -> Result<CallGraph, String> {
         let bytes = kuna_analysis::loader::elf_shdr::read_image(binary)
             .map_err(|e| format!("{binary}: {e}"))?;
-        let file = object::File::parse(&*bytes)
+        let file = kuna_analysis::loadimage_object::parse_object(&*bytes)
             .map_err(|e| format!("could not parse {binary}: {e}"))?;
         Ok(CallGraph::build_from(prog, &file))
     }
@@ -595,7 +595,7 @@ fn summarize(
 /// `LC_MAIN` states its entry as a `__TEXT`-relative file offset, not a VMA.
 fn image_entry(prog: &ConsoleProgram, binary: &str) -> Option<(u64, String)> {
     let bytes = std::fs::read(binary).ok()?;
-    let file = object::File::parse(&*bytes).ok()?;
+    let file = kuna_analysis::loadimage_object::parse_object(&*bytes).ok()?;
     let vma = kuna_analysis::analyzers::entry::image_entry_vma(&file, &bytes)?;
     // Reported THROUGH the inventory, so an ARM `e_entry` carrying the Thumb mode
     // bit is answered at the even entry the rest of the document uses.
@@ -1085,7 +1085,7 @@ pub(crate) fn driver_default_options(
     let non_x86_64 = kuna_analysis::loader::elf_shdr::read_image(binary)
         .ok()
         .and_then(|bytes| {
-            object::File::parse(&*bytes)
+            kuna_analysis::loadimage_object::parse_object(&*bytes)
                 .ok()
                 .map(|file| file.architecture() != object::Architecture::X86_64)
         })
@@ -1455,7 +1455,7 @@ fn apply_loadtime_env(options: &[(String, String)], slice: Option<&str>) -> Load
 /// one away.
 pub fn detected_output_language(binary: &str) -> Option<&'static str> {
     let bytes = std::fs::read(binary).ok()?;
-    let file = object::File::parse(&*bytes).ok()?;
+    let file = kuna_analysis::loadimage_object::parse_object(&*bytes).ok()?;
     match kuna_analysis::sourcelang::detect_compiler(&file, &bytes) {
         kuna_analysis::sourcelang::Compiler::Rustc => Some("rust-language"),
         _ => None,
@@ -1588,7 +1588,7 @@ fn image_has_executable_content(bytes: &[u8]) -> bool {
     // ELF program header flag PF_X.
     const PF_X: u32 = 0x1;
 
-    let Ok(file) = object::File::parse(bytes) else {
+    let Ok(file) = kuna_analysis::loadimage_object::parse_object(bytes) else {
         return true;
     };
     let executable_section = file.sections().any(|sec| {

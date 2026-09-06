@@ -472,7 +472,7 @@ pub fn build_with_focus(
     // first decode, exactly as the Listing walk does — without it a Thumb
     // function reads as A32 garbage and its references are fiction. Empty (and
     // free) on x86-64 and every language with no decode-mode context.
-    let painter = ContextPainter::new(file);
+    let painter = ContextPainter::new(file, arch);
     if !painter.is_empty() {
         painter.paint_all(arch, &code_space);
     }

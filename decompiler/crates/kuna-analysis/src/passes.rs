@@ -481,7 +481,7 @@ pub fn run_listing_consumers(
     noreturn_seeds: &[u64],
     callfixup_seeds: &[u64],
 ) -> Vec<(&'static str, AnalysisOutput)> {
-    let Ok(file) = object::File::parse(bytes) else {
+    let Ok(file) = crate::loadimage_object::parse_object(bytes) else {
         return Vec::new();
     };
     // A relocatable object is laid out synthetically by the loader, so every
@@ -791,7 +791,7 @@ pub fn run_operand_refs(
     image: &ObjectLoadImage,
     arch: &Architecture,
 ) -> AnalysisOutput {
-    let Ok(raw) = object::File::parse(bytes) else {
+    let Ok(raw) = crate::loadimage_object::parse_object(bytes) else {
         return AnalysisOutput::default();
     };
     // (kuna `relocrebase`, GH-289) This pass scans section bytes and emits
@@ -848,7 +848,7 @@ pub fn run_default_analyses(
     arch: &Architecture,
     translate: &dyn Translate,
 ) -> AnalysisOutput {
-    let Ok(raw) = object::File::parse(bytes) else {
+    let Ok(raw) = crate::loadimage_object::parse_object(bytes) else {
         return AnalysisOutput::default();
     };
     // (kuna `relocrebase`, GH-289) A relocatable object is laid out synthetically
@@ -894,7 +894,7 @@ pub fn run_default_analyses_per_pass(
     arch: &Architecture,
     translate: &dyn Translate,
 ) -> Vec<(&'static str, AnalysisOutput)> {
-    let Ok(raw) = object::File::parse(bytes) else {
+    let Ok(raw) = crate::loadimage_object::parse_object(bytes) else {
         return Vec::new();
     };
     // (kuna `relocrebase`, GH-289) See `run_default_analyses`: a relocatable

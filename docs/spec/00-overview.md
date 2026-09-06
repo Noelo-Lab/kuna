@@ -16,6 +16,12 @@ hand-off, the front-ends, the IR containers, the knowledge plane, the two
 pipeline non-linear. The algorithms themselves live in chapters 01–09; this is how
 they are hosted, ordered, configured, and restarted.
 
+The object-file bootstrap records an explicit ARM/Thumb input selection in
+`Architecture::input_arm_isa_override`. This is an input fact, separate from
+analysis options: metadata painters preserve it when discovery or graph/xref
+commands revisit the code. The context precedence and bounded ambiguity probe
+are described in chapter 01, §1.3.
+
 ## 0.1 The two tiers
 
 kuna is two engines with one boundary. The **program-preparation tier**
