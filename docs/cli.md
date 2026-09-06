@@ -975,6 +975,17 @@ first word that is not one ends the table. The case bodies are walked as part of
 than with an address inside it. An import veneer's `jmp [slot]` is not a table (its
 slot is a data operand, not a materialized constant) and is unaffected.
 
+Real x86-64 compilers write neither half of that shape: the base lands in a register
+one to a few instructions ahead of the jump and the entries are signed 32-bit
+displacements from it, gcc measuring them from the table and MSVC from the image
+base. The walk therefore also asks what the branch register holds, stepping back over
+the already-decoded instructions that feed it, and reads a displacement table where
+they compose one. How far the table runs comes from the switch's own range check —
+`cmp $0xa,%r11d; ja default` is eleven cases — because two such tables laid back to
+back are indistinguishable from one long one. Without a range check to read, nothing
+is followed. This is what puts the callees inside a `switch` on
+`kuna decompile-graph`'s callee list.
+
 A target nothing references is exit `0` with `count: 0` — an answer, not a
 failure. A name that resolves to nothing is exit `1` with the reason on stderr; a
 malformed command line is exit `2` with the usage block.

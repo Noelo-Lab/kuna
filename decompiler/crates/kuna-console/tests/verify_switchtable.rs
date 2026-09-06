@@ -8,6 +8,14 @@
 //! plainly pushes — the descent has no successor for `JMP dword ptr [EAX*0x4 +
 //! 0x4017c4]`, so every case body of the message switch was undecoded.
 //!
+//! Two more fixtures cover the shape real x86-64 compilers emit, reported as
+//! GH-456: the table base is materialized by an instruction of its own and the
+//! entries are signed 32-bit displacements, not pointers. `switchtable_pic_x86_64`
+//! is the gcc form (`lea jt(%rip),%rdx; movslq (%rdx,%rax,4),%rax; add %rdx,%rax`,
+//! base == table) and `pe_switchdelta_x86_64.exe` the MSVC one (`LEA
+//! RDX,[__ImageBase]; MOV ECX,[RDX+RBX*4+0x2000]; ADD RCX,RDX`, base != table),
+//! where each case body holds a direct `CALL` nothing else in the image reaches.
+//!
 //! Each fixture is one `dispatch` whose four cases push a distinct literal and
 //! whose default arm pushes a fifth. The default arm is the control: it is
 //! reached by the `JA` and was always attributed correctly, so a run where only
@@ -65,16 +73,49 @@ const X86_64: Fixture = Fixture {
     table: 0x101000,
 };
 
+/// A delta-encoded table: the base is on its own instruction and the entries are
+/// 32-bit displacements from it, so the dispatching instruction materializes no
+/// constant and files no data reference at all.
+struct Delta {
+    name: &'static str,
+    dispatch: u64,
+    /// The `JMP <reg>` the chain ends in.
+    branch: u64,
+    /// The four case bodies, in table order.
+    cases: [u64; 4],
+    /// The table, which is `base + RVA` on the MSVC form.
+    table: u64,
+    /// What each case body reaches and nothing else does — a literal on the ELF,
+    /// a direct callee on the PE.
+    reached: [u64; 4],
+}
+
+const PIC_X86_64: Delta = Delta {
+    name: "switchtable_pic_x86_64",
+    dispatch: 0x100000,
+    branch: 0x100015,
+    cases: [0x100017, 0x100020, 0x100029, 0x100032],
+    table: 0x101000,
+    reached: [0x101010, 0x10102a, 0x101043, 0x10105d],
+};
+
+const PE_MSVC: Delta = Delta {
+    name: "pe_switchdelta_x86_64.exe",
+    dispatch: 0x140001040,
+    branch: 0x14000105d,
+    cases: [0x140001060, 0x140001070, 0x140001080, 0x140001090],
+    table: 0x140002000,
+    reached: [0x140001000, 0x140001010, 0x140001020, 0x140001030],
+};
+
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
 
-/// Bootstrap `fx` and build the index `kuna xrefs` / `kuna strings` answer out
-/// of. `None` is a visible skip when the `.sla` is missing.
-fn index(fx: &Fixture) -> Option<XrefIndex> {
-    let bin = repo_root()
-        .join("decompiler/crates/kuna-analysis/tests/fixtures")
-        .join(fx.name);
+/// Bootstrap the named fixture and build the index `kuna xrefs` / `kuna strings`
+/// answer out of. `None` is a visible skip when the `.sla` is missing.
+fn index_of(name: &str) -> Option<XrefIndex> {
+    let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures").join(name);
     let specs = repo_root().join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
     let mut prog = match bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots) {
@@ -83,7 +124,7 @@ fn index(fx: &Fixture) -> Option<XrefIndex> {
             eprintln!(
                 "verify_switchtable: skipping {} (bootstrap failed, build `.sla` \
                  with `make specs`): {}",
-                fx.name,
+                name,
                 e.explain()
             );
             return None;
@@ -103,7 +144,7 @@ fn index(fx: &Fixture) -> Option<XrefIndex> {
 #[test]
 fn a_literal_in_a_switch_case_body_is_owned_by_the_dispatching_function() {
     for fx in [I386, X86_64] {
-        let Some(idx) = index(&fx) else { continue };
+        let Some(idx) = index_of(fx.name) else { continue };
         for (i, &lit) in fx.literals.iter().enumerate() {
             let refs: Vec<u64> = idx.refs_to(lit).iter().map(|r| r.from).collect();
             assert!(
@@ -130,7 +171,7 @@ fn a_literal_in_a_switch_case_body_is_owned_by_the_dispatching_function() {
 #[test]
 fn the_dispatch_files_a_jump_edge_to_every_case_body() {
     for fx in [I386, X86_64] {
-        let Some(idx) = index(&fx) else { continue };
+        let Some(idx) = index_of(fx.name) else { continue };
         for (i, &case) in fx.cases.iter().enumerate() {
             let refs: Vec<(u64, XrefKind)> =
                 idx.refs_to(case).iter().map(|r| (r.from, r.kind)).collect();
@@ -151,7 +192,7 @@ fn the_dispatch_files_a_jump_edge_to_every_case_body() {
 #[test]
 fn the_table_scan_stops_at_the_end_of_the_table() {
     for fx in [I386, X86_64] {
-        let Some(idx) = index(&fx) else { continue };
+        let Some(idx) = index_of(fx.name) else { continue };
         let mut jumps: Vec<u64> = idx
             .refs_from_instruction(fx.branch)
             .iter()
@@ -174,7 +215,7 @@ fn the_table_scan_stops_at_the_end_of_the_table() {
 #[test]
 fn the_table_is_still_data_and_the_default_arm_is_unchanged() {
     for fx in [I386, X86_64] {
-        let Some(idx) = index(&fx) else { continue };
+        let Some(idx) = index_of(fx.name) else { continue };
         let table: Vec<(u64, XrefKind)> =
             idx.refs_to(fx.table).iter().map(|r| (r.from, r.kind)).collect();
         assert_eq!(
@@ -186,5 +227,82 @@ fn the_table_is_still_data_and_the_default_arm_is_unchanged() {
         let refs: Vec<u64> = idx.refs_to(fx.default_literal).iter().map(|r| r.from).collect();
         assert_eq!(refs.len(), 1, "{}: got {refs:?}", fx.name);
         assert_eq!(idx.function_containing(refs[0]), Some(fx.dispatch), "{}", fx.name);
+    }
+}
+
+/// The GH-456 defect: with the base on its own instruction and the entries
+/// encoded as displacements, the dispatch had no successor at all, so the case
+/// bodies — and on the PE the direct calls inside them — were invisible.
+#[test]
+fn a_delta_table_dispatches_to_every_case_body() {
+    for fx in [PIC_X86_64, PE_MSVC] {
+        let Some(idx) = index_of(fx.name) else { continue };
+        let mut jumps: Vec<u64> = idx
+            .refs_from_instruction(fx.branch)
+            .iter()
+            .filter(|r| r.kind == XrefKind::Jump)
+            .map(|r| r.to)
+            .collect();
+        jumps.sort_unstable();
+        assert_eq!(
+            jumps,
+            fx.cases.to_vec(),
+            "{}: the dispatch reaches exactly the four table entries",
+            fx.name
+        );
+    }
+}
+
+/// A case body is the dispatcher's own code, so what it reaches is attributed
+/// there — the callee list `kuna decompile-graph` answers with.
+#[test]
+fn what_a_delta_case_body_reaches_belongs_to_the_dispatcher() {
+    for fx in [PIC_X86_64, PE_MSVC] {
+        let Some(idx) = index_of(fx.name) else { continue };
+        for (i, &to) in fx.reached.iter().enumerate() {
+            let refs: Vec<u64> = idx.refs_to(to).iter().map(|r| r.from).collect();
+            assert!(
+                !refs.is_empty(),
+                "{}: case {i} reaches {to:#x} and nothing else does",
+                fx.name
+            );
+            for from in refs {
+                assert_eq!(
+                    idx.function_containing(from),
+                    Some(fx.dispatch),
+                    "{}: the reference at {from:#x} belongs to the dispatcher",
+                    fx.name
+                );
+            }
+        }
+    }
+}
+
+/// The negative half, and why the shipped rule could not answer these: the
+/// dispatching instruction materializes no constant, so the table is not among
+/// the data references it files. On the MSVC form the constant that IS
+/// materialized is the image base, which is not the table either.
+#[test]
+fn the_delta_dispatch_materializes_no_table_address() {
+    for fx in [PIC_X86_64, PE_MSVC] {
+        let Some(idx) = index_of(fx.name) else { continue };
+        let from_branch: Vec<(u64, XrefKind)> = idx
+            .refs_from_instruction(fx.branch)
+            .iter()
+            .filter(|r| r.kind == XrefKind::Data)
+            .map(|r| (r.to, r.kind))
+            .collect();
+        assert!(
+            from_branch.is_empty(),
+            "{}: the dispatch itself names no address; got {from_branch:?}",
+            fx.name
+        );
+        let table_refs: Vec<u64> = idx.refs_to(fx.table).iter().map(|r| r.from).collect();
+        assert!(
+            !table_refs.contains(&fx.branch),
+            "{}: the table at {:#x} is not an operand of the branch",
+            fx.name,
+            fx.table
+        );
     }
 }
