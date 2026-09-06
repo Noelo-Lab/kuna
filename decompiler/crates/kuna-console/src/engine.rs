@@ -2185,6 +2185,7 @@ impl ArmIsa {
 
 fn input_isa_paints(
     loader: &ObjectLoadImage,
+    arch: &Architecture,
     arch_id: &str,
     isa: Option<ArmIsa>,
 ) -> KunaResult<Vec<kuna_analysis::pass::ContextPaint>> {
@@ -2196,6 +2197,14 @@ fn input_isa_paints(
             "--isa {} requires a 32-bit ARM SLEIGH target (resolved {arch_id})",
             isa.as_str()
         )));
+    }
+    if !arch.with_context_db_mut(|db| db.get_variable(b"TMode").is_ok()) {
+        return match isa {
+            ArmIsa::Arm => Ok(Vec::new()),
+            ArmIsa::Thumb => Err(KunaError::lowlevel(format!(
+                "ARM SLEIGH target {arch_id} does not support Thumb decoding; select a Thumb-capable --target"
+            ))),
+        };
     }
 
     Ok(loader
@@ -2232,8 +2241,9 @@ fn input_isa_paints(
 /// loader to the engine.
 ///
 /// `target` is an optional explicit language id (the `load file <target> <path>`
-/// first token, C++ BFD target): when non-empty it overrides the object-derived
-/// id (so an unmapped machine can still be driven), exactly as the C++
+/// first token, C++ BFD target): empty or `default` requests automatic selection;
+/// other values override the object-derived id (so an unmapped machine can still
+/// be driven), exactly as the C++
 /// `getTarget()` path takes precedence over the loader's arch type.
 pub fn bootstrap_from_object(
     path: &str,
@@ -2258,6 +2268,7 @@ pub fn bootstrap_from_object_with_isa(
     spec_roots: &[String],
     isa: Option<ArmIsa>,
 ) -> KunaResult<ConsoleProgram> {
+    let target = kuna_analysis::loadimage_object::explicit_language_target(target).unwrap_or("");
     let registry = build_registry();
 
     // Read the image bytes once: reused for the loader AND the analysis-pass
@@ -2375,7 +2386,8 @@ pub fn bootstrap_from_object_with_isa(
     );
     loader.attach_to_space(Rc::clone(&code_space));
 
-    let input_context_paints = input_isa_paints(&loader, sleigh.arch_id(), isa)?;
+    let input_context_paints =
+        input_isa_paints(&loader, sleigh.base().unwrap(), sleigh.arch_id(), isa)?;
     sleigh.base_mut().unwrap().input_arm_isa_override = explicit_isa;
     for paint in &input_context_paints {
         let begin = Address::new(Rc::clone(&code_space), paint.addr);

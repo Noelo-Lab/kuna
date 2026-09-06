@@ -293,8 +293,11 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
 (the MIPS GOT). Two format specifics live above the trait:
 
 An explicit target changes only language selection: the parsed container still
-owns section mapping, image base, symbols, and imports. The target is rejected
-when its SLEIGH id declares a different width or endianness from the container.
+owns section mapping, image base, symbols, and imports. Container header class is
+independent of decoder instruction width, so ELF32 can be decoded with a 16-bit
+x86 language. An explicit endian conflict is rejected. Empty targets and the
+`default` sentinel select the detected architecture and retain compiler-model
+fallback; the loader and console normalize these requests identically.
 This separation lets a recognized container remain loadable when `object` reports
 its architecture as unknown. In particular, PE/COFF machine `0x01c2`
 (`IMAGE_FILE_MACHINE_THUMB`) is treated as little-endian ARM32 for language
@@ -670,6 +673,9 @@ the marker facts above, Cortex-M evidence, and Thumb-specific PE/COFF machine
 values. Explicit input state is retained on the architecture so later Listing
 and xref painters cannot replace it with ELF markers or Cortex-M metadata.
 The analysis commit applies input paints after all other passes' context facts.
+Before painting, the console checks whether the loaded ARM language exposes `TMode`.
+Fixed-A32 languages without that variable accept explicit `arm` without any paint;
+`thumb` fails with an unsupported-mode diagnostic even if there are no code ranges.
 The generic PE ARM machine is not a whole-image A32 hint because such an
 image may mix ARM and Thumb. ARM entry selectors fold the pointer-mode bit and
 decode at the even byte address. For an unmarked entry whose default-mode C body

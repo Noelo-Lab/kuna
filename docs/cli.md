@@ -476,9 +476,11 @@ explicitly spelling `--option fast_funcdisc on` opts an address run back into
 that analysis.
 
 `--target <SLEIGH-language-id>` selects the decoder while a recognized object
-container continues to own its section mappings and image base. The target must
-match the container's address width and endianness; a conflict is an error. This
-also permits a valid PE/COFF image whose machine value is newer than the object
+container continues to own its section mappings and image base. `--target default`
+requests automatic language selection, including the normal compiler-model fallback.
+The decoder's instruction width need not match the container's header class; for
+example, ELF32 can carry 16-bit x86 code. Conflicting endianness is still an error.
+This also permits a valid PE/COFF image whose machine value is newer than the object
 parser's architecture table to load under an explicit language. PE/COFF machine
 `0x01c2` is recognized directly as little-endian ARM32, including bare COFF
 objects whose machine prefix the generic object parser does not recognize.
@@ -492,8 +494,10 @@ machine values, preserving mixed ARM/Thumb images instead of applying an
 image-wide guess. Explicit `arm` or `thumb` takes precedence over that metadata
 during discovery, cross-reference analysis, and graph assembly as well as
 decompilation. On ELF images without section headers, explicit ISA context covers
-executable `PT_LOAD` ranges. Odd ARM function pointers are normalized to their
-even byte address. With no mode evidence, a trivial default decode is not accepted when
+executable `PT_LOAD` ranges. Fixed-A32 languages without `TMode` accept `--isa arm`
+without a context paint and reject `--isa thumb` with a target-selection diagnostic.
+Odd ARM function pointers are normalized to their even byte address. With no
+mode evidence, a trivial default decode is not accepted when
 the alternate mode reaches a bounded machine return; the command asks for an
 explicit `--isa` choice. This probe follows direct branches and visits at most
 16 distinct instruction addresses in each mode, in isolated context. Exhausting

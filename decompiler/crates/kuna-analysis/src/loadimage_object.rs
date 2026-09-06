@@ -417,7 +417,7 @@ impl ObjectLoadImage {
         // here), so no behavior changes.
         let fmt = crate::loader::format::detect(&file)?;
 
-        let target = target.filter(|target| !target.trim().is_empty());
+        let target = target.and_then(explicit_language_target);
         let effective_arch = effective_architecture(&file, bytes);
         let archtype = language_id_for(
             &file,
@@ -1166,7 +1166,7 @@ fn language_id_for(
     target: Option<&str>,
 ) -> KunaResult<Vec<u8>> {
     if let Some(target) = target {
-        validate_target_container(file, target, filename)?;
+        validate_target_endian(file, target, filename)?;
         return Ok(target.as_bytes().to_vec());
     }
     let little = file.is_little_endian();
@@ -1279,29 +1279,27 @@ fn pe_machine(bytes: &[u8]) -> Option<u16> {
     Some(u16::from_le_bytes([machine[0], machine[1]]))
 }
 
-fn validate_target_container(
+/// Empty input and the `default` sentinel request container-derived selection,
+/// including the normal compiler-model fallback.
+pub fn explicit_language_target(target: &str) -> Option<&str> {
+    match target.trim() {
+        "" | "default" => None,
+        target => Some(target),
+    }
+}
+
+fn validate_target_endian(
     file: &object::File,
     target: &str,
     filename: &str,
 ) -> KunaResult<()> {
-    let mut fields = target.split(':');
-    let _processor = fields.next();
-    let target_endian = fields.next();
-    let target_bits = fields.next();
+    let target_endian = target.split(':').nth(1);
 
     if let Some(endian) = target_endian.filter(|value| matches!(*value, "LE" | "BE")) {
         let container = if file.is_little_endian() { "LE" } else { "BE" };
         if endian != container {
             return Err(KunaError::lowlevel(format!(
                 "File: {filename} : target {target:?} is {endian}-endian but the container is {container}-endian"
-            )));
-        }
-    }
-    if let Some(bits) = target_bits.and_then(|value| value.parse::<u8>().ok()) {
-        let container = if file.is_64() { 64 } else { 32 };
-        if bits != container {
-            return Err(KunaError::lowlevel(format!(
-                "File: {filename} : target {target:?} is {bits}-bit but the container is {container}-bit"
             )));
         }
     }
@@ -1780,23 +1778,65 @@ mod tests {
     }
 
     #[test]
-    fn explicit_target_rejects_pe_width_and_endian_conflicts() {
+    fn default_target_preserves_detected_language_and_fallback() {
+        let elf = build_elf64(0x1000, &[0xb8, 0x07, 0x00, 0xc3], None);
+        let pe = std::fs::read(format!(
+            "{}/tests/fixtures/armv4t_thumb_pe.exe",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap();
+        for bytes in [&elf, &pe] {
+            let automatic = ObjectLoadImage::from_bytes("synthetic", bytes).unwrap();
+            for target in ["", "default", " default ", " \t"] {
+                for load in [
+                    ObjectLoadImage::from_bytes_with_target,
+                    ObjectLoadImage::from_bytes_silent_with_target,
+                ] {
+                    let image = load("synthetic", bytes, target).unwrap();
+                    assert_eq!(image.arch_id(), automatic.arch_id());
+                    assert_eq!(image.fallback_arch_id(), automatic.fallback_arch_id());
+                    assert_eq!(image.section_snapshot(), automatic.section_snapshot());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn explicit_decoder_width_preserves_elf_container_mapping() {
+        let code = [0xb8, 0x07, 0x00, 0xc3];
+        let bytes = build_elf64(0x1000, &code, None);
+        let automatic = ObjectLoadImage::from_bytes("synthetic", &bytes).unwrap();
+        for target in ["x86:LE:16:Real Mode:default", "x86:LE:32:default:gcc"] {
+            let mut image =
+                ObjectLoadImage::from_bytes_with_target("synthetic", &bytes, target).unwrap();
+            assert_eq!(image.arch_id(), target.as_bytes());
+            assert_eq!(image.section_snapshot(), automatic.section_snapshot());
+            let ram = Rc::clone(manager().get_default_code_space().unwrap());
+            image.attach_to_space(Rc::clone(&ram));
+            assert_eq!(
+                image
+                    .load(code.len() as i32, &Address::new(ram, 0x1000))
+                    .unwrap(),
+                code
+            );
+        }
+    }
+
+    #[test]
+    fn explicit_target_rejects_pe_endian_conflicts() {
         let path = format!(
             "{}/tests/fixtures/armv4t_thumb_pe.exe",
             env!("CARGO_MANIFEST_DIR")
         );
         let bytes = std::fs::read(&path).expect("read synthetic ARM PE fixture");
-        for (target, fragment) in [
-            ("ARM:BE:32:v4t:default", "BE-endian"),
-            ("avr8:LE:16:default", "16-bit"),
-            ("AARCH64:LE:64:v8A:default", "64-bit"),
-        ] {
-            let error = ObjectLoadImage::from_bytes_with_target(&path, &bytes, target)
-                .expect_err("incompatible target must fail")
-                .explain()
-                .to_string();
-            assert!(error.contains(fragment), "unexpected diagnostic: {error}");
-        }
+        let error = ObjectLoadImage::from_bytes_with_target(&path, &bytes, "ARM:BE:32:v4t:default")
+            .expect_err("incompatible target endianness must fail")
+            .explain()
+            .to_string();
+        assert!(
+            error.contains("BE-endian"),
+            "unexpected diagnostic: {error}"
+        );
     }
 
     #[test]
