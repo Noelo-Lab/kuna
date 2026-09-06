@@ -2168,6 +2168,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "cookiescramble"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P6"
+subphase = "alias-facets"
+strength = "HARD"
+rewind = "P4"
+issue = "re-needs-variadic-prototype-still-drops"
+summary = "Treat an INT_XOR of the stack pointer -- MSVC's /GS cookie mix -- as a non-address use, so it does not record a local-alias escape site at the bottom of the frame."
+use_when = "On by default (DIV-126). With it OFF, `xor rax,rsp` in an MSVC /GS prologue makes the raw stack pointer an escape site at frame offset 0, so `hasLocalAlias` answers yes for every stack location in the function and `checkInputTrialUse` scores every stack-passed call argument no-use: calls in /GS-protected functions truncate at the register budget (x86-64 Windows: four arguments), the variable tail of a `...` prototype never appears, and the dropped argument's computation is dead-code eliminated. GCC/Clang read the cookie from %fs:0x28 and never touch the stack pointer, so the flip is inert on ELF corpora. Flip OFF to restore upstream `gatherAdditiveBase` for a bisect or an ablation."
+example = "option cookiescramble off"
+source_decompiler = "ghidra-upstream"
+inspiration = "upstream AliasChecker::gatherAdditiveBase (varmap.cc:733) + FuncCallSpecs::checkInputTrialUse (fspec.cc:5616)"
+change_kind = "correctness-fix"
+tier = "core"
+symptoms = "an msvc /GS binary drops the stack-passed arguments of every call in a function|a variadic call renders with only its register arguments after the format string|a value stored to [rsp+0x20] right before a call never reaches the call|an argument-producing store survives as a dead assignment to a stack local"
+live_field = "cookie_scramble"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "dynamichashmax"
 values = "on|off"
 default = "on"

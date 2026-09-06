@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    654,
-    654
+    657,
+    657
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -449,6 +449,9 @@
     "data:condfold-ruleb #4: OFF, the declined cascade nests the last two guards inside the first one's arm (pass 1 only)",
     "data:condfold-ruleb #5: the failure arm consumes the escaping call result in both renderings, which is what keeps that result non-implied and printed (off plus on = 2)",
     "data:condfold-ruleb #6: the guarded body is untouched by the fold (off plus on = 2)",
+    "data:cookiescramble #1: the /GS cookie mix drops both stack-passed arguments (bug reproduced)",
+    "data:cookiescramble #2: option off leaves the dropped arguments as dead stores to locals",
+    "data:cookiescramble #3: option on recovers both stack-passed arguments",
     "data:cspecprotos #1: default model, the ECX this-pointer is not a parameter",
     "data:cspecprotos #2: default model, the this-pointer degrades to an uninitialized local",
     "data:cspecprotos #3: default model, only the stack argument becomes a parameter",

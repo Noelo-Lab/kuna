@@ -484,6 +484,33 @@ stack pointer gets a `PTRSUB(sp, #0)` spliced in so the type system renders
 `&local` instead of the bare register (`funcdata_spacebase.rs
 (Funcdata::annotate_raw_stack_ptr)`).
 
+**What counts as a pointer escaping (kuna `cookiescramble`, default on).**
+The escape sites `gather_additive_base` records are the *non-additive* uses of
+a stack-pointer-derived Varnode: the walk follows `COPY`/`INT_ADD`/`PTRADD`/
+`PTRSUB`/`INT_SUB` chains and treats every other use as "this address left our
+sight". An `INT_XOR` is not an address computation, and MSVC's `/GS` prologue
+mixes the raw stack pointer into the frame cookie with one (`mov rax,
+[__security_cookie]; xor rax,rsp; mov [rsp+N],rax`). Read as an escape it
+records a site at the *bottom* of the frame — the shallowest offset there is —
+so `has_local_alias` answers yes for every stack location in the function.
+That answer is consumed by the call-site input recovery
+(`funcdata_callsite.rs (check_input_trial_use)`, §4): a stack argument trial
+whose slot is locally aliased is scored *no-use*, its CALL input is replaced
+with a constant `0`, and the argument's computation is dead-code eliminated.
+The result is that every stack-passed argument at every call site in a `/GS`
+function is dropped — visibly, the variable tail of a `...` prototype never
+appears. With `cookiescramble` on, an `INT_XOR` no longer records an escape
+site, and the boundary is decided by the genuine address-forming uses. The
+exemption applies **only** to the checker the call-site recovery builds
+(`Funcdata::build_alias_checker_deferred` / `Funcdata::alias_gather_access`);
+the local-layout gather (`gather_open`, which drives the `RangeHint` open
+ranges above) always answers upstream, so stack-variable layout is unchanged
+either way. The rule is not conditioned on the XOR's second operand — whether
+the cookie is loaded or has been folded to an immediate is a property of the
+optimizer, not of the aliasing — and its cost is a deliberately masked pointer
+(`p ^ mask`, dereferenced after a second `^ mask`), whose base stops counting
+as escaped; `option cookiescramble off` restores upstream's answer.
+
 **Name recommendations.** A namelocked-but-NOT-typelocked local never
 survives restructure — `clearUnlockedCategory(-1)` removes every non-typelocked
 category-less symbol at the pass head — so its *name* survives separately: C++

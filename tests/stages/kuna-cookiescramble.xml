@@ -1,0 +1,78 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    repipe round 5, need variadic-prototype-still-drops (crackme
+    65acadf3eef082e477ff5ede, ObfuscationFiesta.exe, sub_140002530): an
+    explicitly asserted variadic prototype still rendered
+    sub_140001180(out,size,"%s%s",v38) - one value for two conversions - while
+    the disassembly stores the missing pointer to [RSP+0x20] immediately before
+    the call.  The same call spelled with five FIXED parameters recovered all
+    five, so the value was live and the stack slot was reachable.
+
+    Root cause (P6 local-alias gather, consumed by P4 trial scoring).
+    AliasChecker::gatherAdditiveBase walks the stack pointer's def/use graph and
+    records an escape site at the frame offset of every NON-additive use.
+    MSVC's /GS prologue mixes the stack pointer into the frame cookie:
+
+        sub  rsp,0x940
+        mov  rax,qword ptr [__security_cookie]
+        xor  rax,rsp                      ; RSP used as a VALUE
+        mov  qword ptr [rsp+0x930],rax
+
+    `xor rax,rsp` is not additive, so the raw stack pointer becomes an escape
+    site at the BOTTOM of the frame - the shallowest offset there is.
+    hasLocalAlias then answers yes for every stack location in the function, and
+    checkInputTrialUse (fspec.cc:5616) scores every outgoing-argument slot
+    no-use: its CALL input is replaced with constant 0 and the argument's
+    computation is dead-code eliminated.  Every stack-passed argument at every
+    call site in a /GS function is dropped.  GCC/Clang read the cookie from
+    %fs:0x28 and never touch the stack pointer, which is why the defect is
+    invisible on ELF corpora.
+
+    Stage model: P6 "alias-facets".  The P0 assertion
+    `option cookiescramble on|off` (default ON) decides whether an INT_XOR of a
+    stack-pointer-derived Varnode records an escape site.
+
+    Witness, hand-assembled to the /GS shape (SysV x86-64 so the last two of
+    eight arguments are stack-passed, plus the `xor %rsp` cookie mix):
+
+        callee:  mov 8(%rsp),%rax ; add 16(%rsp),%rax ; add rdi..r9 ; ret
+        caller:  sub    $0x38,%rsp
+                 movabs $0x123456789abcdef0,%rax
+                 xor    %rsp,%rax              ; the cookie mix
+                 mov    %rax,0x28(%rsp)
+                 mov    %rdi,(%rsp)            ; argument 7
+                 mov    %rsi,0x8(%rsp)         ; argument 8
+                 mov    $1,%edi ... mov $5,%r8d
+                 call   callee
+                 mov    0x28(%rsp),%rcx ; xor %rsp,%rcx ; add %rcx,%rax
+                 add    $0x38,%rsp ; ret
+
+    Pass 1 (option cookiescramble off) reproduces the bug: the call truncates at
+    the six register arguments and the two argument stores survive as dead
+    assignments to stack locals.  Pass 2 (option cookiescramble on, the default)
+    proves the fix: both stack-passed arguments are recovered.
+-->
+<bytechunk space="ram" offset="0x401000">
+488b44240848034424104801f84801f04801d04801c84c01c04c01c8c34883ec
+3848b8f0debc9a785634124831e0488944242848893c244889742408bf010000
+00be02000000ba03000000b90400000041b90600000041b805000000e89fffff
+ff488b4c24284831e14801c84883c438c3
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="callee"/>
+<symbol space="ram" offset="0x40101d" name="caller"/>
+</binaryimage>
+<script>
+  <com>option cookiescramble off</com>
+  <com>lo fu caller</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option cookiescramble on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="cookiescramble #1: the /GS cookie mix drops both stack-passed arguments (bug reproduced)" min="1" max="1">callee\(1,2,3,4,5,6\);</stringmatch>
+<stringmatch name="cookiescramble #2: option off leaves the dropped arguments as dead stores to locals" min="1" max="1">v2 = a0;</stringmatch>
+<stringmatch name="cookiescramble #3: option on recovers both stack-passed arguments" min="1" max="1">callee\(1,2,3,4,5,6,a0,a1\)</stringmatch>
+</decompilertest>

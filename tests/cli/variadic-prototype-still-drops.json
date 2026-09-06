@@ -1,0 +1,47 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "a-c0f7d6583a6b",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "report",
+    "--assert",
+    "prototype fmt int fmt(char *f,...)",
+    "--option",
+    "varargstackargs",
+    "on",
+    "--option",
+    "calleearity",
+    "on"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/gscookie_x86_64",
+    "binary_sha256": "e5c11b8b06a5423f4a61baff9373f389248eb709457651c5fd90130f6987c671",
+    "binary_size": 9064,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/gscookie_x86_64",
+    "selector": "report",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "fmt\\(\"%s%s\",1,2,3,4,5,a0,a1\\);"
+    ],
+    "stdout_absent": [
+      "fmt\\(\"%s%s\",1,2,3,4,5\\);"
+    ]
+  },
+  "notes": "Promoted acceptance of variadic-prototype-still-drops, re-pointed from the dataset witness (ObfuscationFiesta sub_140002530) at the vendored gscookie_x86_64 fixture, since CI has no dataset. The fixture (source alongside it) carries the witness's two ingredients: a frame cookie mixed with `xor %rsp`, and a variadic call with stack-passed arguments."
+}

@@ -1034,7 +1034,7 @@ impl Funcdata {
         bounds: Option<&crate::varmap::ProtoBoundaries>,
     ) {
         // checker.gather(&fd, spaceid, false): build the alias base/offset lists.
-        let mut access = FuncdataAliasAccess { fd: self };
+        let mut access = FuncdataAliasAccess { fd: self, exempt_scramble: false };
         state.checker_mut().gather(Rc::clone(space), bounds, false, &mut access);
 
         // For each AddBase, add an open range at its alias offset.
@@ -1483,6 +1483,10 @@ fn proto_boundaries(proto: &crate::fspec::FuncProto) -> Option<crate::varmap::Pr
 /// def/use graph (C++ `AliasChecker`'s Varnode walks, `varmap.cc:736-858`).
 pub(crate) struct FuncdataAliasAccess<'a> {
     fd: &'a Funcdata,
+    /// (kuna) `cookiescramble`: exempt an `INT_XOR` of the stack pointer from
+    /// the escape-site scan.  Set only for the call-site input-trial checker;
+    /// the local-layout gather (`gather_open`) always answers upstream.
+    exempt_scramble: bool,
 }
 
 impl crate::varmap::AliasGatherAccess for FuncdataAliasAccess<'_> {
@@ -1498,7 +1502,7 @@ impl crate::varmap::AliasGatherAccess for FuncdataAliasAccess<'_> {
         startvn: VarnodeId,
         addbase: &mut Vec<crate::varmap::AddBase>,
     ) {
-        self.fd.gather_additive_base(startvn, addbase);
+        self.fd.gather_additive_base(startvn, addbase, self.exempt_scramble);
     }
 
     fn gather_offset(&mut self, vn: VarnodeId) -> uintb {
@@ -1513,7 +1517,7 @@ impl Funcdata {
     /// `gatherAdditiveBase`/`gatherOffset`).  Used by the call-site input recovery
     /// (`checkInputTrialUse`'s spacebase branch).
     pub(crate) fn alias_gather_access(&self) -> FuncdataAliasAccess<'_> {
-        FuncdataAliasAccess { fd: self }
+        FuncdataAliasAccess { fd: self, exempt_scramble: self.get_arch().cookie_scramble }
     }
 
     /// Build the deferred local-alias checker the call-site input recovery uses
@@ -1568,6 +1572,7 @@ impl Funcdata {
         &self,
         startvn: VarnodeId,
         addbase: &mut Vec<crate::varmap::AddBase>,
+        exempt_scramble: bool,
     ) {
         use std::collections::BTreeSet;
         // (base, index) queue.
@@ -1641,7 +1646,13 @@ impl Funcdata {
                         }
                     }
                     _ => {
-                        nonadduse = true; // Used in a non-additive expression.
+                        // (kuna) `cookiescramble`: a stack-pointer scramble
+                        // against a live value (MSVC's `/GS` cookie) is not an
+                        // address, so it does not open an escape site here.
+                        nonadduse |= crate::p6_variables::kuna_cookiescramble::is_escape_site(
+                            exempt_scramble,
+                            code,
+                        );
                     }
                 }
             }

@@ -1,0 +1,58 @@
+{
+  "opportunity": "repipe:65acadf3eef082e477ff5ede::variadic-prototype-still-drops",
+  "need_id": "variadic-prototype-still-drops",
+  "track": "quality",
+  "round": 5,
+  "test_name": "repipe round 5, challenge 65acadf3eef082e477ff5ede (ObfuscationFiesta.exe)",
+  "binary": "kuna-re-dataset/challenges/65acadf3eef082e477ff5ede/bin/ObfuscationFiesta.exe",
+  "selector": "sub_140002530",
+  "option": "cookiescramble",
+  "flag": "cookie_scramble",
+  "element_id": 4149,
+  "change_kind": "correctness-fix",
+  "source_decompiler": "ghidra-upstream",
+  "default_on": true,
+  "div": "DIV-126",
+  "scope": "small",
+  "worker": "b-r5-variadic-prototy",
+  "branch": "feat/re-variadic-prototype-still-drops",
+  "hypothesis_status": "OVERTURNED. The symptom stands exactly as filed, but neither the need's leads nor the refuter's pinned locus is the cause. (1) The refuter's one-line read was answered NO: ActionFuncLink::func_link_input DOES carry upstream's `!inputlocked || varargs` half (coreaction_protos.rs:654), so active-input recovery does run for a locked variadic. (2) The defect is not in the variadic path at all. It is in P6's local-alias gather: AliasChecker::gatherAdditiveBase treats every non-additive use of a stack-pointer-derived Varnode as a pointer escape, and MSVC's /GS prologue mixes the raw stack pointer into the frame cookie with `xor rax,rsp`. That records an escape site at the BOTTOM of the frame, hasLocalAlias then answers yes for every stack location in the function, and checkInputTrialUse scores EVERY stack-passed argument trial no-use. Instrumented on the witness, the trial at stack:0x28 (= [RSP+0x20]) is registered, characterized ContainsJustified and reaches the scorer with alias=true, outside=false, calleepop=false -- the alias veto and nothing else. The variadic case is only where it is VISIBLE: a locked prototype's NAMED parameters are materialized directly by func_link_input (op_stack_load), bypassing trial scoring entirely, which is exactly why the refuter's five-fixed-parameter A/B recovered the argument. The same defect drops stack-passed arguments at every call site in every /GS function; the whole-binary sweep shows it on ordinary non-variadic calls too (__stdio_common_vfprintf losing its va_list).",
+  "decisions": [
+    "Named `cookiescramble`, P6/alias-facets, default ON: it restores what the ABI actually means rather than adding a judgment call, so it is the callsitestackargs shape -- an ablation handle, not a preference.",
+    "The rule is NOT conditioned on the XOR's second operand. A first cut exempted only `ptr ^ non-constant` on the theory that `ptr ^ const` is tagged-pointer arithmetic; the synthesized witness immediately falsified it (a cookie folded to an immediate is the same construct), and a rule that flips on an optimizer detail answers the wrong question.",
+    "SCOPED TO THE CALL-SITE CHECKER ONLY. The first implementation changed gather_additive_base for every AliasChecker, including MapState's local-layout gather. Measured on the witness binary that was 17/159 functions changed and Stack<hex> unnamed-address references going 5 -> 38, because dropping the escape site also drops the fake covering array ScopeLocal builds at the alias offset (on this binary a char[32] that overlapped the canary slot). Narrowing the exemption to Funcdata::alias_gather_access -- the checker ActionActiveParam builds -- leaves stack-variable layout byte-identical and cuts the same binary to 6/159 with Stack<hex> unchanged at 3 -> 3. The broader flip is a real second opportunity and is deliberately NOT taken here."
+  ],
+  "files": [
+    "decompiler/crates/kuna-decomp/src/p6_variables/kuna_cookiescramble.rs",
+    "decompiler/crates/kuna-decomp/src/p6_variables/kuna_cookiescramble/tests.rs",
+    "decompiler/crates/kuna-decomp/src/p6_variables/funcdata_spacebase.rs",
+    "decompiler/crates/kuna-decomp/src/p6_variables/mod.rs",
+    "decompiler/crates/kuna-decomp/src/infra/architecture.rs",
+    "decompiler/crates/kuna-decomp/src/substrate/context.rs",
+    "decompiler/crates/kuna-decomp/src/p0_knowledge/options.rs",
+    "decompiler/crates/kuna-decomp/phases.toml",
+    "decompiler/crates/kuna-analysis/tests/fixtures/gscookie_x86_64",
+    "tests/stages/kuna-cookiescramble.xml",
+    "tests/cli/variadic-prototype-still-drops.json",
+    "docs/spec/06-variables-and-merge.md",
+    "docs/history.md",
+    "docs/options.md"
+  ],
+  "probe_flip": {
+    "probe_still_passes": false,
+    "acceptance_passes": true
+  },
+  "speed_off_ms": 1788.03,
+  "speed_on_ms": 1665.69,
+  "speed_delta_pct": -6.84,
+  "speed_samples": 7,
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": true,
+  "sweep": {
+    "images": 8,
+    "functions": 3111,
+    "changed": 17,
+    "regressions": 0,
+    "note": "decompile-all on both arms over the RE-dataset images that finished inside the sweep budget. Every changed function grew a call's argument list; no call lost an argument, no callee disappeared, no goto appeared. sub_140002530's loop mix moved 4 while -> 4 for (same 42 loops)."
+  }
+}

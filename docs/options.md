@@ -455,6 +455,10 @@ Three tiers:
 | &pxVar[-0x1000] page-probe noise in a large-frame function | [`stackprobeloop`](#stackprobeloop) |
 | calls rendered argument-less because the stack pointer never resolved to a constant offset | [`stackprobeloop`](#stackprobeloop) |
 | gcc stack-clash probe loop leaves the frame layout unrecovered | [`stackprobeloop`](#stackprobeloop) |
+| an msvc /GS binary drops the stack-passed arguments of every call in a function | [`cookiescramble`](#cookiescramble) |
+| a variadic call renders with only its register arguments after the format string | [`cookiescramble`](#cookiescramble) |
+| a value stored to [rsp+0x20] right before a call never reaches the call | [`cookiescramble`](#cookiescramble) |
+| an argument-producing store survives as a dead assignment to a stack local | [`cookiescramble`](#cookiescramble) |
 | decompilation aborts with 'Unable to find unique hash for varnode' | [`dynamichashmax`](#dynamichashmax) |
 | dense unrolled simd/neon loop (aarch64, go) fails to decompile at symbol mapping | [`dynamichashmax`](#dynamichashmax) |
 | loop walks an array with a raw offset accumulator (iVar += 0x414) instead of an index | [`arraystride`](#arraystride) |
@@ -1604,6 +1608,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** Set on when a large-frame function shows &pxVar[-0x1000] page-probe noise or argument-less calls; shape-gated, so it is inert on functions without a probe loop.
 - **Where / provenance:** P2/stack-pointer-normalization · ghidra-upstream · correctness-fix · GH-8017/6858
 - **Example:** `option stackprobeloop on`
+
+### `cookiescramble` -- on | off, default `on`
+
+- **Symptoms:** an msvc /GS binary drops the stack-passed arguments of every call in a function; a variadic call renders with only its register arguments after the format string; a value stored to [rsp+0x20] right before a call never reaches the call; an argument-producing store survives as a dead assignment to a stack local.
+- **What it does:** Treat an INT_XOR of the stack pointer -- MSVC's /GS cookie mix -- as a non-address use, so it does not record a local-alias escape site at the bottom of the frame.
+- **When to flip:** On by default (DIV-126). With it OFF, `xor rax,rsp` in an MSVC /GS prologue makes the raw stack pointer an escape site at frame offset 0, so `hasLocalAlias` answers yes for every stack location in the function and `checkInputTrialUse` scores every stack-passed call argument no-use: calls in /GS-protected functions truncate at the register budget (x86-64 Windows: four arguments), the variable tail of a `...` prototype never appears, and the dropped argument's computation is dead-code eliminated. GCC/Clang read the cookie from %fs:0x28 and never touch the stack pointer, so the flip is inert on ELF corpora. Flip OFF to restore upstream `gatherAdditiveBase` for a bisect or an ablation.
+- **Where / provenance:** P6/alias-facets · ghidra-upstream · correctness-fix · re-needs-variadic-prototype-still-drops
+- **Example:** `option cookiescramble off`
 
 ### `dynamichashmax` -- on | off, default `on`
 

@@ -517,6 +517,9 @@ pub struct Architecture {
     /// (kuna) Recover stack-passed call arguments at call sites with an unlocked
     /// callee prototype (default-on; restores upstream `fspec.cc:5618`).
     pub callsite_stack_args: bool,
+    /// (kuna) A stack-pointer scramble against a live value (MSVC's `/GS`
+    /// cookie) does not open a local-alias escape site (option `cookiescramble`).
+    pub cookie_scramble: bool,
     /// (kuna) Let a bounded decode of the callee's own body veto a register
     /// argument the callee provably never reads (option `calleedeadarg`).
     pub callee_dead_arg: bool,
@@ -1781,6 +1784,7 @@ impl Architecture {
             recover_array_stride: false,
             recover_lowered_switch: false,
             callsite_stack_args: true,
+            cookie_scramble: true,
             callee_dead_arg: true,
             callee_preserves: true,
             input_param_gap: true,
@@ -1995,6 +1999,7 @@ impl Architecture {
         self.recover_array_stride = true; // (kuna) DIV-3 default-on (GH-8724)
         self.recover_lowered_switch = true; // (kuna) default-on (angr port)
         self.callsite_stack_args = true; // (kuna) default-on: restores upstream fspec.cc:5618 (0/675 ablation)
+        self.cookie_scramble = true; // (kuna) DIV-126 default-on: an `xor rax,rsp` cookie mix no longer collapses the local-alias boundary to the bottom of the frame (0/675 ablation)
         self.callee_dead_arg = true; // (kuna) default-on (DIV-KUNA_DEADARG_DIV): 0/675 datatests, subtractive only
         self.callee_preserves = true; // (kuna) DIV-124 default-on: a fully decoded, call-free callee's own writes narrow the cspec killedbycall set, so a value that crosses a get-PC thunk survives (0/675 ablation)
         self.input_param_gap = true; // (kuna) DIV-114 default-on: an unused argument-register run in the function's OWN input recovery no longer vetoes a later live-in register, so a pointer-table-only callback recovers its full signature instead of reading undefined locals. Byte-identical (0/675) on the datatest corpus; restore upstream's forceInactiveChain veto with `option inputparamgap off`
@@ -2282,6 +2287,12 @@ impl Architecture {
                 let (val, msg) =
                     crate::p4_calls::kuna_callsitestackargs::OptionCallsiteStackArgs.apply(p1)?;
                 self.callsite_stack_args = val;
+                Ok(msg)
+            }
+            "cookiescramble" => {
+                let (val, msg) =
+                    crate::p6_variables::kuna_cookiescramble::OptionCookieScramble.apply(p1)?;
+                self.cookie_scramble = val;
                 Ok(msg)
             }
             "inputparamgap" => {
@@ -3196,6 +3207,7 @@ impl Architecture {
         ctx.model_stack_probe_loop = self.model_stack_probe_loop; // GH-8017 stackprobeloop
         ctx.recover_lowered_switch = self.recover_lowered_switch; // loweredswitch
         ctx.callsite_stack_args = self.callsite_stack_args; // callsitestackargs
+        ctx.cookie_scramble = self.cookie_scramble; // cookiescramble
         ctx.callee_dead_arg = self.callee_dead_arg; // calleedeadarg
         ctx.callee_preserves = self.callee_preserves; // calleepreserves
         ctx.input_param_gap = self.input_param_gap; // inputparamgap
