@@ -216,16 +216,32 @@ if [ $RC -ne 0 ]; then
   QUOTA="$("$KUNA_PY" - "$RESULT_JSON" <<'QEOF' 2>/dev/null
 import json, re, sys
 try:
-    r = str(json.load(open(sys.argv[1])).get("result") or "")
+    d = json.load(open(sys.argv[1]))
 except Exception:
-    r = ""
-pat = r"(session|usage|rate)\s+limit|limit\s+(reached|exceeded)"
-print(r.strip() if re.search(pat, r, re.I) else "")
+    d = {}
+# Two DIFFERENT stops, and only one of them says anything in `result`.
+#
+#   account/session limit  ->  subtype "success", is_error true, and the reason ONLY in
+#                              `result` ("You've hit your session limit ...").
+#   --max-budget-usd cap   ->  subtype "error_max_budget_usd" and `result` is NULL.
+#
+# Reading `result` alone therefore classified a budget cap as a generic `claude rc=N`,
+# and round 4's captain had to diagnose "the budget-cap salvage case" by opening the
+# result JSON itself. Check `subtype` first: where it is informative it is exact, and
+# it is the only signal the budget case has.
+sub = str(d.get("subtype") or "")
+if sub.startswith("error_max_budget"):
+    print("builder budget cap ($%s over %s turns)"
+          % (d.get("total_cost_usd") or "?", d.get("num_turns") or "?"))
+else:
+    r = str(d.get("result") or "")
+    pat = r"(session|usage|rate)\s+limit|limit\s+(reached|exceeded)"
+    print(r.strip() if re.search(pat, r, re.I) else "")
 QEOF
 )"
   if [ -n "$QUOTA" ]; then
-    log "ACCOUNT LIMIT, not a build failure: $QUOTA"
-    NOTE="quota: $QUOTA (claude rc=$RC)"
+    log "STOPPED BY A CAP, not a build failure: $QUOTA"
+    NOTE="capped: $QUOTA (claude rc=$RC)"
   else
     NOTE="claude rc=$RC"
   fi
