@@ -1390,9 +1390,10 @@ fuses the feasible subset of Ghidra's `EntryPointAnalyzer`,
 Ghidra-faithful names (`_INIT_<i>`/`_FINI_<i>`/`_DT_INIT`/`_DT_FINI`) through the
 `entry_names` overlay; (3) every `.eh_frame` FDE's `pcBegin` — the highest-value
 oracle on C/C++ binaries, since unwind data survives stripping; (4) the
-`_start`→`main` libc-start idiom (x86-64 PC-relative `lea rdi`, and the
+`_start`→`main` libc-start idiom (x86-64 PC-relative `lea rdi`, the
 AArch64/ARM/RISC-V PIE form that loads `main` indirectly through an
-`R_*_RELATIVE`-relocated GOT slot) — (kuna) the disassembly-free stand-in for the
+`R_*_RELATIVE`-relocated GOT slot, and — for the non-PIE ARM form, which carries
+no such relocation — the separately gated `armlibcmain` below) — (kuna) the disassembly-free stand-in for the
 call-target sweep the tier cannot do without a Listing; and (5) a minimal always-on
 set of three bare x86-64 gcc prologue byte patterns; and (6, kuna) the reset +
 handler pointers of an empirically-detected **ARM Cortex-M hardware vector table**
@@ -1750,6 +1751,64 @@ register at a callee with no prototype is a prototype-coverage problem, not a
 reason to withhold the entry declaration. Structurally inert on every ELF, PE and
 COFF target, which is also why neither parity corpus can observe it in either
 direction: both are symbol-less ELF bytechunks.
+
+(kuna) **The non-PIE ARM crt1 entry** (`armlibcmain`, default-on, DIV-132;
+`decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_armlibcmain.rs
+(ArmLibcMainPass)`) is oracle 4's question again on the container that answers it
+least directly. Oracle 4's ARM path is written around a relocation: crt1 loads
+`main` from a GOT slot, and the slot is identified by the `R_ARM_RELATIVE` a
+position-independent image must carry to relocate it. A non-PIE executable
+carries no such relocation, because the linker knows the final address and simply
+stores it — so the cross-check finds nothing, the oracle returns `None`, and
+`main` is never discovered.
+
+The cost of that miss is not a shorter inventory, which is the reason it survived
+so long unnoticed. A kuna `FunctionSymbol` has no extent, so a discovered entry
+is reported as running to the next one; on a stripped image the whole gap between
+the last discovered entry and the end of `.text` is therefore *nominally* owned by
+whichever entry precedes it — typically an `INIT_ARRAY` routine that ends in an
+unconditional branch a few instructions in. Asking "is this address covered?"
+answers yes. But the recursive-descent walk follows that routine's real control
+flow, stops at its real terminator, and never decodes the rest of the gap, so
+every literal the missing code loads has no reader: `kuna strings` reports the
+program's own prompt with `xrefs_count 0` and an empty `functions` list, and
+`kuna xrefs --to` that address finds nothing. On the witness (crackmes.one
+`5ab77f5d33c5d40ad448c69c`, a stripped ARM keygen-me) `_INIT_0` declared a
+3368-byte extent from `0x83e8` and the walk stopped 36 bytes in, at the `b 0x8350`
+at `0x8404` — leaving `main` at `0x8cf8`, and the `ldr r0,[0x9024]` four
+instructions before its `printf` call, undecoded.
+
+The pass decodes the `_start` window as A32 and reads the value `r0` holds at the
+call, in the two shapes glibc's ARM `crt1.o` has shipped: the classic literal-pool
+form, `ldr r0,[pc,#imm]` whose pool word IS `main`'s address; and the GOT-indexed
+form a modern `-no-pie` link supplies, `ldr r0,[pc,#imm]` followed by
+`ldr r0,[rN,r0]`, where the pool word is a `.got`-relative offset and the slot at
+`.got + off` holds `main` — written by the linker, with no dynamic relocation to
+find it by. The GOT base is taken to be the `.got` section address, the same
+invariant oracle 4's PIE path already relies on rather than simulating the
+two-load-plus-add base computation.
+
+Both shapes are anchored on one landmark: the `bl` whose target is the PLT stub
+the import table names `__libc_start_main`. That is what makes the recovered word
+`main` rather than a plausible code address — the ARM procedure call standard
+puts the first argument in `r0`, so the last write to `r0` before that call is by
+definition what the C runtime is being handed. Without the landmark nothing is
+claimed, which is also the refusal that covers a static link and any entry point
+that is not a C runtime at all. The pass further refuses anything that is not a
+32-bit ARM ELF, a Thumb `_start` (glibc's ARM crt1 is A32), a `bl` with no
+`ldr r0,[pc,#imm]` before it in the window, a recovered address outside every
+executable section or equal to `_start` itself, and one that already carries a
+function symbol — whatever named it has the better name. The address is emitted
+through the same `entry_names` overlay (§1.6) as `main`.
+
+Measured on 143 images — the 129 object fixtures of the workspace suite plus every
+ARM binary in the RE corpus — it fires on exactly 2, both stripped non-PIE ARM
+ELFs, and on both it adds exactly one function and moves no emitted C: every
+pre-existing function's body is byte-identical in both arms, and the only other
+change is that the gap-fill extent above it shrinks by the length of the function
+now sitting there. It is structurally inert on the PIE ARM images oracle 4 already
+resolves, and neither parity corpus can observe it for the reason `machomain`
+cannot: both are symbol-less ELF bytechunks with no PLT.
 
 The same `entryoff`-is-not-a-VMA fact is what every *reporting* surface has to
 know, so it is stated once as

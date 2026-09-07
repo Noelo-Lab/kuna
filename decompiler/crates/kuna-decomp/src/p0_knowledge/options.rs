@@ -396,6 +396,12 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // slots.  Default-ON; off restores the `void(void)` form exactly.
     "entrymainproto",
     "machomain",
+    // (kuna) non-PIE ARM crt1 `_start`->`main` recovery: entry oracle 4's ARM path
+    // identifies the GOT slot crt1 loads `main` from by the `R_ARM_RELATIVE` that
+    // relocates it, and a non-PIE executable carries no such relocation, so `main`
+    // is never discovered and the rest of `.text` is never decoded.  Default-ON;
+    // off restores the previous inventory exactly.
+    "armlibcmain",
     // (kuna) `.eh_frame` LSDA landing-pad discovery — a sub-feature of the
     // always-on `entry_disc` pass (GccExceptionAnalyzer). Default-off
     // (output-changing: adds the discovered exception landing pads as entries).

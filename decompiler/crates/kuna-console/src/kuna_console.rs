@@ -256,6 +256,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "picbase" => on_off(conf.analysis_picbase),
         "entrymainproto" => on_off(conf.analysis_entrymainproto),
         "machomain" => on_off(conf.analysis_machomain),
+        "armlibcmain" => on_off(conf.analysis_armlibcmain),
         "fast_funcdisc" => on_off(conf.analysis_fast_funcdisc),
         "gopclntab" => on_off(conf.analysis_gopclntab),
         // (PR-8) Mach-O arm64e spec selection: reflects the recorded requested

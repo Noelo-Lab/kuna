@@ -64,7 +64,7 @@ fn surface_count_is_112() {
 }
 
 #[test]
-fn settable_count_is_159() {
+fn settable_count_is_160() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -120,12 +120,12 @@ fn settable_count_is_159() {
     // +1 for `noreturnretuse` (P4 terminal no-return call use in return trials,
     // DIV-118).
     // +1 for `msvcstackguard` (P7 MSVC /GS frame-cookie stripping, GH-468).
-    assert_eq!(kuna_num_settables(), 159);
-    assert_eq!(SETTABLE_TABLE.len(), 159);
+    assert_eq!(kuna_num_settables(), 160);
+    assert_eq!(SETTABLE_TABLE.len(), 160);
 }
 
 #[test]
-fn tier_counts_are_41_core_64_transform_54_analysis() {
+fn tier_counts_are_41_core_64_transform_55_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -223,7 +223,7 @@ fn tier_counts_are_41_core_64_transform_54_analysis() {
     // transform 61 -> 62: +1 for `msvcstackguard` (P7 MSVC /GS frame-cookie
     // stripping, GH-468) -- it deletes real instructions, like its `stackguard`
     // and `securitycheck` siblings.
-    assert_eq!((core, transform, analysis), (41, 64, 54));
+    assert_eq!((core, transform, analysis), (41, 64, 55));
 }
 
 #[test]
@@ -513,6 +513,10 @@ fn option_values_live_value_present_for_54_suppressed_for_97() {
         // of `entrymainproto` above and the same seam: an analysis-tier gate with no
         // codegen live reader, read console-side via kuna_live_value. Default-ON.
         "machomain",
+        // (kuna) non-PIE ARM crt1 `_start`->`main` recovery -- the ARM ELF counterpart
+        // of `machomain` above and the same seam: an analysis-tier gate with no
+        // codegen live reader, read console-side via kuna_live_value. Default-ON.
+        "armlibcmain",
         // (kuna) Unmapped-CALL-target entry suppression -- an analysis-tier gate with
         // no codegen live reader (read console-side via kuna_live_value), like the
         // discovery gates around it. Default-ON.
@@ -842,7 +846,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // the last one, so the previous tail row gains a comma and it becomes the tail.
     // 149 -> 150: +1 for `msvcstackguard` (GH-468); its P7 row sits mid-table
     // beside `securitycheck`, so the tail does not move.
-    assert_eq!(json.matches("},\n").count(), 158);
+    assert_eq!(json.matches("},\n").count(), 159);
 }
 
 #[test]
