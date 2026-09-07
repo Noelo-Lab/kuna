@@ -2042,7 +2042,7 @@ impl Architecture {
         self.recover_lowered_switch = true; // (kuna) default-on (angr port)
         self.callsite_stack_args = true; // (kuna) default-on: restores upstream fspec.cc:5618 (0/675 ablation)
         self.cookie_scramble = true; // (kuna) DIV-126 default-on: an `xor rax,rsp` cookie mix no longer collapses the local-alias boundary to the bottom of the frame (0/675 ablation)
-        self.callee_pop = true; // (kuna) DIV-CALLEEPOP default-on: an unknown extrapop is read off the caller's push run instead of guessed as "pops nothing" (0/675 ablation)
+        self.callee_pop = true; // (kuna) default-on (0/675 ablation): an unknown extrapop is read off the caller's push run instead of guessed as "pops nothing" (0/675 ablation)
         self.callee_dead_arg = true; // (kuna) default-on (DIV-KUNA_DEADARG_DIV): 0/675 datatests, subtractive only
         self.callee_preserves = true; // (kuna) DIV-124 default-on: a fully decoded, call-free callee's own writes narrow the cspec killedbycall set, so a value that crosses a get-PC thunk survives (0/675 ablation)
         self.input_param_gap = true; // (kuna) DIV-114 default-on: an unused argument-register run in the function's OWN input recovery no longer vetoes a later live-in register, so a pointer-table-only callback recovers its full signature instead of reading undefined locals. Byte-identical (0/675) on the datatest corpus; restore upstream's forceInactiveChain veto with `option inputparamgap off`
