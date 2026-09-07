@@ -49,6 +49,8 @@ pub struct PendingCallFixup {
     pub rescue: Option<crate::p4_calls::kuna_calleearityfwd::PendingRescue>,
     /// The short-list extension candidate (`calleearitylive`).
     pub extend: Option<crate::p4_calls::kuna_calleearitylive::PendingExtend>,
+    /// The no-sibling body-recovery candidate (`calleearitybody`).
+    pub body: Option<crate::p4_calls::kuna_calleearitybody::PendingBodyArgs>,
 }
 
 /// C++ `FuncCallSpecs::checkInputTrialUse` (`fspec.cc:5592`).
@@ -384,11 +386,13 @@ pub fn build_input_from_trials(
         PendingCallFixup {
             rescue: crate::p4_calls::kuna_calleearityfwd::capture_empty_call(fc, data),
             extend: None,
+            body: crate::p4_calls::kuna_calleearitybody::capture_lone_call(fc, data),
         }
     } else {
         PendingCallFixup {
             rescue: None,
             extend: crate::p4_calls::kuna_calleearitylive::capture_partial_call(fc, data),
+            body: None,
         }
     };
     let _ = data.op_set_all_input(op, &newparam);

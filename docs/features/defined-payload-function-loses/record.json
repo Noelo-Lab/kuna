@@ -1,0 +1,42 @@
+{
+  "need": "defined-payload-function-loses",
+  "track": "quality",
+  "scope": "small",
+  "option": "calleearitybody",
+  "default": "on",
+  "module": "decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleearitybody.rs",
+  "witness": "runtime.exe (PE x86-64) sub_14000b62c -> payload @0x14000ca0c, reduced and vendored as decompiler/crates/kuna-analysis/tests/fixtures/calleearitybody_x86_64",
+  "decisions": [
+    "The captain's refutation is UPHELD in full and its second hypothesis bullet is the right one: callee input recovery is not broken (payload alone recovers `unsigned long long payload(unsigned int *a0)`); the call site simply never consults it, and calleearity/calleearityfwd/calleearitylive are all sibling reconciliation, inert by construction where the callee is called once. The address-taken `lea 0x14000ca0c` for CreateThread is not a call site.",
+    "onlyOpUse is NOT relaxed, as the refutation demanded. The witness is the callee's own bounded body decode (probe_callee_entry_dead), standing alone rather than extending a sibling's list.",
+    "The BOUNDARY is what makes the rule safe and it is the part the refutation did not specify. `proves_read` is an existential: on its own it would claim a run and never say where the argument list ends, and a variadic register-save prologue reads every argument register there is. So the run must END at an argument register the callee is PROVEN to overwrite before ever reading it, no argument location outside the run may be read, and no register the caller wrote may sit in FRONT of the run (which would print a promoted value in its neighbour's position).",
+    "SWEEP FINDING 1 (corrected mid-build): `xor ecx,ecx` reads ECX in p-code, so an API-resolution stub (`xor ecx,ecx; lea rdx,[..]; call`, crackme_shroud.exe sub_1408d4f74) read as taking a first argument it discards. `or rdx,-1` (sub_1408d56a8) is the same shape. probe_callee_entry_dead now records those value-erasing reads in a separate set that only this option consults; `proves_read`/`proves_dead` -- the subtractive direction calleedeadarg uses -- are byte-unchanged, because dropping a read there could only DELETE arguments.",
+    "SWEEP FINDING 2 (corrected mid-build): a Go futex wrapper (`xor sil,0x81; ...; syscall`) genuinely consumes SIL while leaving RDI untouched, so an unconstrained rule promoted the second argument register into the first printed position. Refusing a promotable register in front of the run fixed it and cost nothing on the witness, where the three registers behind the run are all live.",
+    "The seeding gate `data.num_calls() < 2` is lifted for this option only: its whole subject is the callee that is called once."
+  ],
+  "sweep": {
+    "corpus": "134 dataset binaries, kuna decompile-all, option off vs on",
+    "changed_binaries": 12,
+    "promoted_calls_consistent_with_callee_decl": 303,
+    "promoted_calls_contradicting_callee_decl": 0,
+    "note": "the two contradicting shapes found in the first pass (an xor-zeroed scratch register and a positionally-shifted syscall argument) are both closed by the two corrections above; re-swept on the final build"
+  },
+  "speed": {
+    "command": "scripts.pipeline.timeit --option calleearitybody, runtime.exe 0x14000b62c",
+    "reps": 7,
+    "median_ms_off": 152.52,
+    "median_ms_on": 153.06,
+    "delta_pct": 0.35,
+    "verdict": "within the 5% budget"
+  },
+  "gates": {
+    "make test": "PARITY OK 675/675",
+    "make test-stages": "PARITY OK 677/677",
+    "make rust-test": "green (5984 passed, 0 failed) with `env -u KUNA_DECOMP_TEST`; the repipe launcher points that variable at kuna's own decomp_test_dbg, which makes verify_w10_proto_unlock's C++ oracle assertion unsatisfiable for any kuna build",
+    "make check-spec": "OK (strict)",
+    "kuna catalog --check": "catalog OK",
+    "make test-cli": "73/73",
+    "acceptance": "PASS"
+  },
+  "instance_coverage": "Closes the runtime.exe instance (68bffbe9224c0ec5dcedbe7a) only. The second instance 69d6e9ba (XNextEvent) is a UND import with no body to decode, so the probe declines by design and it needs a known-library-prototype source for Xlib. Re-file it."
+}

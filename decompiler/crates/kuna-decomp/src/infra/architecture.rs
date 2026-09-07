@@ -564,6 +564,11 @@ pub struct Architecture {
     /// when the callee's own body agrees (option `calleearitylive`).  See
     /// [`crate::p4_calls::kuna_calleearitylive`].
     pub callee_arity_live: bool,
+
+    /// (kuna) Recover the argument list of a call with NO sibling from the
+    /// callee's own body (option `calleearitybody`).  See
+    /// [`crate::p4_calls::kuna_calleearitybody`].
+    pub callee_arity_body: bool,
     /// (kuna) Completion level for the two upstream partial-range call-overlap
     /// guards `Heritage::guardCallOverlappingInput` and
     /// `Heritage::tryOutputOverlapGuard`, which kuna shipped as comment-only stubs
@@ -1837,6 +1842,7 @@ impl Architecture {
             callee_arity: true,
             callee_arity_fwd: true,
             callee_arity_live: true,
+            callee_arity_body: true,
             call_overlap: 0,
             spill_arg_trial: 0,
             load_guard_range: false, // (kuna) option loadguardrange; reset_defaults sets the shipped default
@@ -2058,6 +2064,7 @@ impl Architecture {
         self.callee_arity = true; // (kuna) DIV-102 default-on: one callee, one argument list across its call sites (0/675 ablation)
         self.callee_arity_fwd = true; // (kuna) DIV-PENDING default-on: retry that reconciliation against the siblings that finalize later (0/675 ablation)
         self.callee_arity_live = true; // (kuna) DIV-PENDING default-on: extend a partial argument list when the callee body agrees (0/675 ablation)
+        self.callee_arity_body = true; // (kuna) DIV-PENDING default-on: a call with no sibling recovers its argument list from the callee's own body (0/675 ablation)
         self.call_overlap = 0; // (kuna) calloverlap: PLACEHOLDER default (set from measurement)
         self.spill_arg_trial = 0; // (kuna) spillargtrial default-OFF opt-in (diverges from upstream onlyOpUse; the failure mode is a spurious trailing argument, which no gate can see)
         self.load_guard_range = true; // (kuna) DIV-77 default-on: restores upstream Heritage::analyzeNewLoadGuards ValueSet range refinement of indexed-stack LOAD/STORE guards (0/675 ablation); `option loadguardrange off` reverts to whole-space guards with no index bound
@@ -2383,6 +2390,12 @@ impl Architecture {
                     crate::p4_calls::kuna_varargstackargs::OptionVarargStackArgs.apply(p1)?;
                 self.vararg_stack_args = val;
                 Ok(msg)
+            }
+            "calleearitybody" => {
+                let (val, msg) =
+                    crate::p4_calls::kuna_calleearitybody::OptionCalleeArityBody.apply(p1)?;
+                self.callee_arity_body = val;
+                return Ok(msg);
             }
             "calleearitylive" => {
                 let (val, msg) =
@@ -3287,6 +3300,7 @@ impl Architecture {
         ctx.callee_arity = self.callee_arity; // calleearity
         ctx.callee_arity_fwd = self.callee_arity_fwd; // calleearityfwd
         ctx.callee_arity_live = self.callee_arity_live; // calleearitylive
+        ctx.callee_arity_body = self.callee_arity_body; // calleearitybody
         ctx.call_overlap = self.call_overlap; // calloverlap
         ctx.spill_arg_trial = self.spill_arg_trial; // spillargtrial
         ctx.load_guard_range = self.load_guard_range; // loadguardrange
