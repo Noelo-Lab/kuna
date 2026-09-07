@@ -47,6 +47,32 @@ fn specs() -> Vec<String> {
         .unwrap_or_else(|_| repo_root().join("specs").to_string_lossy().into_owned())]
 }
 
+fn run_console(script: &str, isa: Option<&str>) -> std::process::Output {
+    let roots = specs();
+    let mut command = Command::new(env!("CARGO_BIN_EXE_decomp_dbg"));
+    command
+        .args(["-sleighpath", &roots[0]])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    match isa {
+        Some(isa) => {
+            command.env(kuna_console::engine::ARM_ISA_ENV, isa);
+        }
+        None => {
+            command.env_remove(kuna_console::engine::ARM_ISA_ENV);
+        }
+    }
+    let mut child = command.spawn().expect("spawn decomp_dbg");
+    child
+        .stdin
+        .as_mut()
+        .expect("console stdin")
+        .write_all(script.as_bytes())
+        .expect("write console commands");
+    child.wait_with_output().expect("wait for decomp_dbg")
+}
+
 #[test]
 fn raw_thumb_maps_base_zero_and_nonzero() {
     let fixture = RawFixture::thumb_return_7();
@@ -123,6 +149,71 @@ fn word_addressed_targets_scale_base_and_entries_to_byte_offsets() {
     assert_eq!(entry.addr.get_offset(), 2);
     assert_eq!(at_second_word.output_code_offset(entry.addr.get_offset()), 1);
     assert!(at_second_word.entry_bytes_mapped(&entry.addr));
+}
+
+#[test]
+fn raw_console_reports_word_addresses_in_target_units() {
+    let fixture = RawFixture::new("raw-word-report", &[0, 0, 0x08, 0x95]);
+    let roots = specs();
+    if !PathBuf::from(&roots[0])
+        .join("Ghidra/Processors/Atmel/data/languages/avr8.sla")
+        .exists()
+    {
+        eprintln!("verify_raw_image: skipping console report test (no AVR8 `.sla`)");
+        return;
+    }
+    let script = format!(
+        "load raw avr8:LE:16:default 0x100 0x101 \"{}\"\n\
+         read symbols\n\
+         functions\n\
+         load addr 0x101\n\
+         decompile\n\
+         region blocks\n\
+         region tree\n\
+         region walk\n\
+         quit\n",
+        fixture.0.display()
+    );
+    let output = run_console(&script, None);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "{stdout}\n{stderr}");
+    for expected in ["0x101 sub_101", "[0x101]", "region head=0x101", "walk 0x101"] {
+        assert!(stdout.contains(expected), "missing {expected:?}:\n{stdout}\n{stderr}");
+    }
+    for byte_address in ["0x202 sub_101", "[0x202]", "region head=0x202", "walk 0x202"] {
+        assert!(
+            !stdout.contains(byte_address),
+            "leaked byte address {byte_address:?}:\n{stdout}\n{stderr}"
+        );
+    }
+}
+
+#[test]
+fn raw_map_function_normalizes_an_odd_thumb_pointer() {
+    let fixture = RawFixture::thumb_return_7();
+    let roots = specs();
+    if !PathBuf::from(&roots[0])
+        .join("Ghidra/Processors/ARM/data/languages/ARM8_le.sla")
+        .exists()
+    {
+        eprintln!("verify_raw_image: skipping map function test (no ARM `.sla`)");
+        return;
+    }
+    let script = format!(
+        "load raw ARM:LE:32:v4t:default 0x4000 0x4000 \"{}\"\n\
+         map function 0x4001 mapped_thumb\n\
+         decompile\n\
+         print C\n\
+         quit\n",
+        fixture.0.display()
+    );
+    let output = run_console(&script, Some("thumb"));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "{stdout}\n{stderr}");
+    assert!(stdout.contains("mapped_thumb"), "{stdout}\n{stderr}");
+    assert!(stdout.contains("return 7;"), "{stdout}\n{stderr}");
 }
 
 #[test]
@@ -213,6 +304,32 @@ fn raw_input_rejects_entry_at_end_of_mapping() {
         error.contains("outside mapped range"),
         "unexpected error: {error}"
     );
+}
+
+#[test]
+fn word_addressed_mapping_errors_report_target_units() {
+    let fixture = RawFixture::new("raw-word-bounds", &[0, 0, 0, 0]);
+    let path = fixture.0.to_string_lossy();
+    let error = match bootstrap_from_raw(
+        &path,
+        "avr8:LE:16:default",
+        0x100,
+        &[0x103],
+        None,
+        &specs(),
+    ) {
+        Ok(_) => panic!("out-of-range word-addressed entry unexpectedly loaded"),
+        Err(error) => error.explain().to_string(),
+    };
+    if error.contains("No sleigh specification") {
+        eprintln!("verify_raw_image: skipping target-unit bounds test (no AVR8 `.sla`): {error}");
+        return;
+    }
+    assert!(
+        error.contains("raw entry 0x103 is outside mapped range 0x100..0x102"),
+        "unexpected error: {error}"
+    );
+    assert!(!error.contains("0x200..0x204"), "byte bounds leaked: {error}");
 }
 
 #[test]

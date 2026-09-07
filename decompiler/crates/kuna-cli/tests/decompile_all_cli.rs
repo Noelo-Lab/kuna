@@ -1301,6 +1301,16 @@ fn raw_image_decompile_scales_word_addressed_selector() {
     assert!(stdout.contains("sub_101"), "{stdout}");
 
     let (stdout, stderr, ok) = run_kuna(&[
+        "decompile", &binary, "0x101", "--regions", "--raw-image", "--target",
+        "avr8:LE:16:default", "--base", "0x100", "--sleighpath", &sp,
+    ]);
+    assert!(ok, "word-addressed raw regions failed: {stderr}");
+    assert!(stdout.contains("[0x101]"), "{stdout}");
+    assert!(stdout.contains("region head=0x101"), "{stdout}");
+    assert!(!stdout.contains("[0x202]"), "{stdout}");
+    assert!(!stdout.contains("region head=0x202"), "{stdout}");
+
+    let (stdout, stderr, ok) = run_kuna(&[
         "decompile", &binary, "0x101", "--json", "--raw-image", "--target",
         "avr8:LE:16:default", "--base", "0x100", "--sleighpath", &sp,
     ]);

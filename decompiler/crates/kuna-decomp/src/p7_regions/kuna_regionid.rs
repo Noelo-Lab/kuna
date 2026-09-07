@@ -2205,21 +2205,35 @@ impl KunaRegionIdentifier {
     /// the text is deterministic.  Returns the empty string if `compute()` has
     /// not run.
     pub fn render_tree(&self) -> String {
+        self.render_tree_with(&|address| address)
+    }
+
+    /// Render the region tree after mapping each internal block address to its
+    /// presentation coordinate.
+    pub fn render_tree_with(&self, display_address: &dyn Fn(uintb) -> uintb) -> String {
         let mut os = String::new();
         if let Some(top) = self.top_region {
-            self.render_region(top, 0, &mut os);
+            self.render_region(top, 0, display_address, &mut os);
         }
         os
     }
 
     /// Recursive helper for [`render_tree`].
-    fn render_region(&self, region_id: RegionPayloadId, depth: usize, os: &mut String) {
+    fn render_region(
+        &self,
+        region_id: RegionPayloadId,
+        depth: usize,
+        display_address: &dyn Fn(uintb) -> uintb,
+        os: &mut String,
+    ) {
         let region = &self.region_pool[region_id.0 as usize];
         for _ in 0..depth {
             os.push_str("  ");
         }
         os.push_str("region head=0x");
-        let head_addr = region.get_head().map(|h| self.pool.get(h).get_addr()).unwrap_or(0);
+        let head_addr = display_address(
+            region.get_head().map(|h| self.pool.get(h).get_addr()).unwrap_or(0),
+        );
         os.push_str(&format!("{head_addr:x}"));
         os.push_str(" nodes=");
         os.push_str(&region.graph.num_nodes().to_string());
@@ -2232,7 +2246,7 @@ impl KunaRegionIdentifier {
             let node = self.pool.get(mk.id);
             if node.is_region() {
                 if let Some(sub) = node.get_region() {
-                    self.render_region(sub, depth + 1, os);
+                    self.render_region(sub, depth + 1, display_address, os);
                 }
             } else if node.is_multi() {
                 let chain: Vec<KunaNodeId> = node.get_chain().to_vec();
@@ -2241,7 +2255,7 @@ impl KunaRegionIdentifier {
                         os.push_str("  ");
                     }
                     os.push_str("block 0x");
-                    os.push_str(&format!("{:x}", self.pool.get(m).get_addr()));
+                    os.push_str(&format!("{:x}", display_address(self.pool.get(m).get_addr())));
                     os.push('\n');
                 }
             } else if node.get_kind() == NodeKind::Block {
@@ -2249,7 +2263,7 @@ impl KunaRegionIdentifier {
                     os.push_str("  ");
                 }
                 os.push_str("block 0x");
-                os.push_str(&format!("{:x}", node.get_addr()));
+                os.push_str(&format!("{:x}", display_address(node.get_addr())));
                 os.push('\n');
             }
         }
@@ -2601,4 +2615,3 @@ mod tests {
         }
     }
 }
-

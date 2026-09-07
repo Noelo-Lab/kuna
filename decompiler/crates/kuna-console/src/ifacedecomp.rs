@@ -1770,7 +1770,7 @@ decomp_command!(
         }
         let dcp = dcp_mut(status)?;
         let prog = dcp.conf.as_mut().expect("conf checked non-None above");
-        let (addr, _size) = parse_machaddr(prog, s, false).map_err(IfaceError::parse)?;
+        let (addr, _size) = parse_input_code_address(prog, s).map_err(IfaceError::parse)?;
         s.skip_ws();
         let mut name = s.read_token(); // optional
         if name.is_empty() {

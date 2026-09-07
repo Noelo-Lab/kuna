@@ -348,6 +348,14 @@ pub struct ConsoleProgram {
     raw_address_units: Option<(u64, bool)>,
 }
 
+fn code_offset_in_target_units(value: u64, word_size: u64) -> u64 {
+    value / word_size
+}
+
+fn code_end_in_target_units(value: u64, word_size: u64) -> u64 {
+    value / word_size + u64::from(value % word_size != 0)
+}
+
 impl ConsoleProgram {
     /// Borrow the `Architecture` god object (C++ `dcp->conf`, viewed as the base).
     pub fn arch(&self) -> &Architecture {
@@ -418,7 +426,7 @@ impl ConsoleProgram {
     /// raw CLI. Object-backed programs already expose byte VMAs and are unchanged.
     pub fn output_code_offset(&self, value: u64) -> u64 {
         match self.raw_address_units {
-            Some((word_size, _)) => value / word_size,
+            Some((word_size, _)) => code_offset_in_target_units(value, word_size),
             None => value,
         }
     }
@@ -427,7 +435,7 @@ impl ConsoleProgram {
     /// up when the final code unit is only partially present.
     pub fn output_code_end_offset(&self, value: u64) -> u64 {
         match self.raw_address_units {
-            Some((word_size, _)) => value / word_size + u64::from(value % word_size != 0),
+            Some((word_size, _)) => code_end_in_target_units(value, word_size),
             None => value,
         }
     }
@@ -2380,9 +2388,11 @@ pub fn bootstrap_from_raw(
     let image_end = image_base
         .checked_add(image_size)
         .ok_or_else(|| KunaError::lowlevel("raw image base plus file size overflows"))?;
+    let display_image_base = code_offset_in_target_units(image_base, word_size);
+    let display_image_end = code_end_in_target_units(image_end, word_size);
     if image_end - 1 > code_space.get_highest() {
         return Err(KunaError::lowlevel(format!(
-            "raw image range 0x{image_base:x}..0x{image_end:x} exceeds the target address space"
+            "raw image range 0x{display_image_base:x}..0x{display_image_end:x} exceeds the target address space"
         )));
     }
 
@@ -2399,7 +2409,7 @@ pub fn bootstrap_from_raw(
         let normalized = address_to_byte(entry_units, "entry")?;
         if normalized < image_base || normalized >= image_end {
             return Err(KunaError::lowlevel(format!(
-                "raw entry 0x{entry:x} is outside mapped range 0x{image_base:x}..0x{image_end:x}"
+                "raw entry 0x{entry:x} is outside mapped range 0x{display_image_base:x}..0x{display_image_end:x}"
             )));
         }
         if !normalized_entries.contains(&normalized) {
