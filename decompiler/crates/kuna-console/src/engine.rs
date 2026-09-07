@@ -240,9 +240,14 @@ pub struct ConsoleProgram {
     /// The marshaling id registry (C++ `ElementId` global table) for option-name
     /// resolution.
     registry: IdRegistry,
-    /// The binaryimage's function symbols (name → entry address), read once at
-    /// load (the `readLoaderSymbols` hook).
+    /// The program's function symbols (name → entry address), installed through
+    /// the `readLoaderSymbols` hook. Object/XML names are collected at load;
+    /// synthetic raw names are collected after options are applied.
     symbols: Vec<ProgramSymbol>,
+    /// Raw-image entry addresses awaiting synthetic names. Raw inputs have no
+    /// source names, so their names are generated at `read symbols`, after the
+    /// CLI has applied options such as `namestyle`.
+    pending_raw_entries: Vec<Address>,
     /// Original-to-synthetic section map for relocatable objects.
     object_sections: Vec<ObjectSectionLocation>,
     /// A human-readable description of the loaded program (C++
@@ -363,8 +368,8 @@ impl ConsoleProgram {
         &self.registry
     }
 
-    /// The number of function symbols read from the binaryimage (what the
-    /// `readLoaderSymbols` hook yields).
+    /// The number of function symbols collected for the `readLoaderSymbols`
+    /// hook.
     pub fn num_symbols(&self) -> usize {
         self.symbols.len()
     }
@@ -1554,6 +1559,9 @@ impl ConsoleProgram {
     /// runs AFTER the CLI's `option` lines, so a disabled pass's facts are
     /// dropped here rather than committed.
     ///
+    /// Raw-image entries are named and installed here for the same ordering
+    /// reason: their synthetic names must honor the active `namestyle` option.
+    ///
     /// Drains the stash (so a second `read symbols` does not re-commit), merges
     /// only the **enabled** passes' outputs in pass order, and commits the merged
     /// [`AnalysisOutput`] via [`commit_analysis_output`]. A no-op when nothing is
@@ -1568,6 +1576,21 @@ impl ConsoleProgram {
     /// defensively re-gated facts merge into the same `merged` output committed
     /// below. With Listing off, this whole block is skipped.
     pub fn commit_pending_analysis(&mut self) -> KunaResult<()> {
+        if !self.pending_raw_entries.is_empty() {
+            let entries = std::mem::take(&mut self.pending_raw_entries);
+            let symbols = entries
+                .into_iter()
+                .map(|addr| ProgramSymbol {
+                    name: self.arch().name_function(&addr),
+                    addr,
+                    object_location: None,
+                    binding: None,
+                    provenance: EntryProvenance::Mapped,
+                })
+                .collect::<Vec<_>>();
+            self.symbols.extend(symbols);
+            self.read_loader_symbols()?;
+        }
         if self.pending_analysis.is_empty() && self.loader_data_objects.is_empty() {
             // Drop the deferred-Listing stash too: nothing to commit against, and
             // a session with no analysis tier (XML path) must not build a Listing.
@@ -2143,6 +2166,7 @@ pub fn bootstrap_program(
         arch: arch.into_sleigh(),
         registry,
         symbols,
+        pending_raw_entries: Vec::new(),
         object_sections: Vec::new(),
         description,
         pending_analysis: Vec::new(),
@@ -2364,15 +2388,9 @@ pub fn bootstrap_from_raw(
         })?;
     }
 
-    let symbols = normalized_entries
+    let pending_raw_entries = normalized_entries
         .into_iter()
-        .map(|entry| ProgramSymbol {
-            name: format!("sub_{entry:x}"),
-            addr: Address::new(Rc::clone(&code_space), entry),
-            object_location: None,
-            binding: None,
-            provenance: EntryProvenance::Mapped,
-        })
+        .map(|entry| Address::new(Rc::clone(&code_space), entry))
         .collect();
     let description = raw
         .sleigh()
@@ -2394,10 +2412,11 @@ pub fn bootstrap_from_raw(
         explicit.context_paints = input_context_paints;
         pending_analysis.push(("input_isa", explicit));
     }
-    let mut prog = ConsoleProgram {
+    let prog = ConsoleProgram {
         arch: raw.into_sleigh(),
         registry,
-        symbols,
+        symbols: Vec::new(),
+        pending_raw_entries,
         object_sections: Vec::new(),
         description,
         pending_analysis,
@@ -2411,7 +2430,6 @@ pub fn bootstrap_from_raw(
         pending_prototypes: BTreeMap::new(),
         raw_address_units: Some((word_size, arm32)),
     };
-    prog.read_loader_symbols()?;
     Ok(prog)
 }
 
@@ -2712,6 +2730,7 @@ pub fn bootstrap_from_object_with_isa(
         arch: sleigh,
         registry,
         symbols,
+        pending_raw_entries: Vec::new(),
         object_sections,
         description,
         // Stash the per-pass analysis facts + the code space for the gated commit

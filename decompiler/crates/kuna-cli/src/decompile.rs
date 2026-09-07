@@ -463,8 +463,16 @@ fn selection_failure(out: &str) -> Option<String> {
 /// The architecture arm must stay ahead of the analysis-commit arm: a failed
 /// `load file` leaves no image, so every later command — `read symbols`
 /// included — answers `No load image present`, which is a consequence, not the
-/// reason.
-fn check_errors(out: &str, target: &str, binary: &str, by_address: bool) -> Option<String> {
+/// reason. `unmapped_is_external` is false for raw images because their seeds
+/// are known to be mapped; a short or undecodable raw image can produce the
+/// same loader diagnostic while failing to decode a real entry.
+fn check_errors(
+    out: &str,
+    target: &str,
+    binary: &str,
+    by_address: bool,
+    unmapped_is_external: bool,
+) -> Option<String> {
     if out.contains("Could not discover root of Ghidra installation") {
         return Some(
             "decomp_dbg could not find SLEIGH specs; pass --sleighpath or set SLEIGHHOME".into(),
@@ -501,8 +509,10 @@ fn check_errors(out: &str, target: &str, binary: &str, by_address: bool) -> Opti
     // report names every candidate. Return it verbatim: the transcript dump the
     // caller falls back to is capped at its FIRST 2000 characters, which in the
     // default mode is all option chatter, so the answer would be cut off. The
-    // unmapped-entry probe stays ahead of it — an external is not a bad selector.
-    if !is_unmapped_entry(out) {
+    // For object inputs, the unmapped-entry probe stays ahead of it — an
+    // external is not a bad selector. Raw entries were range-validated at load,
+    // so the same text is a decode failure and must remain an error.
+    if !(unmapped_is_external && is_unmapped_entry(out)) {
         if let Some(reason) = selection_failure(out) {
             return Some(reason);
         }
@@ -526,10 +536,11 @@ fn is_unknown_function(out: &str) -> bool {
 /// (`LoadImage::load_fill`'s "Unable to load N bytes at <addr>", raised the
 /// moment the flow-follower asks for the first instruction).
 ///
-/// That is the signature of an **external**: an entry that carries an address
-/// for call naming but whose definition is in another module. It is not
-/// reachable for a real function — a mapped entry that fails mid-pipeline
-/// surfaces as the `Skipping <name>` notice below instead.
+/// For an object-backed input, that is the signature of an **external**: an
+/// entry that carries an address for call naming but whose definition is in
+/// another module. A raw image can emit the same diagnostic when a mapped entry
+/// reaches EOF or undecodable trailing bytes, so callers must not apply this
+/// shortcut to raw inputs.
 fn is_unmapped_entry(out: &str) -> bool {
     out.contains("Unable to load ") && out.contains(" bytes at ")
 }
@@ -1011,7 +1022,13 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
         let stdout_text = String::from_utf8_lossy(&output.stdout).into_owned();
         let stderr_text = String::from_utf8_lossy(&output.stderr).into_owned();
         let combined = format!("{stdout_text}\n{stderr_text}");
-        if let Some(msg) = check_errors(&combined, &args.target, &binary, by_address) {
+        if let Some(msg) = check_errors(
+            &combined,
+            &args.target,
+            &binary,
+            by_address,
+            !args.raw_image,
+        ) {
             return Err((msg, !by_address && is_unknown_function(&combined)));
         }
 
@@ -1030,7 +1047,7 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
             // way through `kuna_console::project::decompile_targets`, which asks
             // the engine directly (`ConsoleProgram::entry_bytes_mapped`); this
             // path drives `decomp_dbg` as a subprocess and so reads its report.
-            if is_unmapped_entry(&combined) {
+            if !args.raw_image && is_unmapped_entry(&combined) {
                 return Ok(DecompileOutcome {
                     c: format!(
                         "// {}: external symbol -- no code at this address in this module",
@@ -1739,7 +1756,7 @@ Decompilation complete
     #[test]
     fn load_failure_matches_the_in_process_wording() {
         assert_eq!(
-            check_errors(EMPTY_SCOPE, "main", "/x/hostile_scope_x86_64", false).as_deref(),
+            check_errors(EMPTY_SCOPE, "main", "/x/hostile_scope_x86_64", false, true).as_deref(),
             Some(
                 "could not build an architecture for /x/hostile_scope_x86_64: \
                  Non-global scope has empty name"
@@ -1753,7 +1770,7 @@ Decompilation complete
         let out = "Could not create architecture\n";
         assert_eq!(arch_failure_reason(out), None);
         assert_eq!(
-            check_errors(out, "main", "/x/a.out", false).as_deref(),
+            check_errors(out, "main", "/x/a.out", false, true).as_deref(),
             Some("could not build an architecture for /x/a.out (unsupported/!recognized binary)")
         );
     }
@@ -1765,7 +1782,7 @@ Decompilation complete
         let out = "[decomp]> load file /x/a.out\nCould not create architecture\n[decomp]> quit\n";
         assert_eq!(arch_failure_reason(out), None);
         assert!(
-            check_errors(out, "main", "/x/a.out", false)
+            check_errors(out, "main", "/x/a.out", false, true)
                 .expect("still an error")
                 .ends_with("(unsupported/!recognized binary)")
         );
@@ -1780,7 +1797,7 @@ Decompilation complete
             Some("g_a symbol created with zero size type")
         );
         assert_eq!(
-            check_errors(COMMIT_FAILED, "main", "/x/sz.elf", false).as_deref(),
+            check_errors(COMMIT_FAILED, "main", "/x/sz.elf", false, true).as_deref(),
             Some("read symbols (analysis commit) failed: g_a symbol created with zero size type")
         );
     }
@@ -1798,7 +1815,7 @@ Execution error: Unknown function name: nosuch
 ";
         assert_eq!(read_symbols_failure(other), None);
         assert!(
-            check_errors(EMPTY_SCOPE, "main", "/x/hostile_scope_x86_64", false)
+            check_errors(EMPTY_SCOPE, "main", "/x/hostile_scope_x86_64", false, true)
                 .expect("still an error")
                 .starts_with("could not build an architecture"),
             "the load failure wins over the No-load-image consequence"
@@ -1818,7 +1835,7 @@ Decompilation complete
 ";
         assert_eq!(read_symbols_failure(out), None);
         assert_eq!(arch_failure_reason(out), None);
-        assert_eq!(check_errors(out, "main", "/x/a.out", false), None);
+        assert_eq!(check_errors(out, "main", "/x/a.out", false, true), None);
     }
 
     /// The real console transcript shape (`decomp_dbg` echoes the prompt, then

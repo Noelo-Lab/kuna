@@ -126,6 +126,9 @@ fn noreturn_error_fixture() -> String {
 /// Run the built `kuna` binary, returning `(stdout, stderr, success)`.
 fn run_kuna(args: &[&str]) -> (String, String, bool) {
     let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .env_remove("KUNA_DECOMP_DBG")
+        .env_remove("KUNA_DECOMP_TEST")
+        .env_remove("KUNA_SLACOMP")
         .args(args)
         .output()
         .expect("failed to spawn the kuna binary");
@@ -143,6 +146,9 @@ fn run_kuna(args: &[&str]) -> (String, String, bool) {
 fn run_kuna_with_timeout(args: &[&str], cap: Duration) -> Option<(String, String, bool)> {
     use std::io::Read;
     let mut child = Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .env_remove("KUNA_DECOMP_DBG")
+        .env_remove("KUNA_DECOMP_TEST")
+        .env_remove("KUNA_SLACOMP")
         .args(args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -1206,6 +1212,15 @@ fn raw_image_supported_surfaces_share_seed_and_base_semantics() {
     assert!(stdout.contains("\"address_hex\": \"0x4000\""), "{stdout}");
 
     let (stdout, stderr, ok) = run_kuna(&[
+        "functions", &binary, "--json", "--raw-image", "--target", target, "--base",
+        "0x4000", "--entry", "0x4001", "--isa", "thumb", "--option", "namestyle",
+        "ghidra", "--filter", "^func_", "--sleighpath", &sp,
+    ]);
+    assert!(ok, "raw functions with ghidra names failed: {stderr}");
+    assert!(stdout.contains("\"count\": 1"), "{stdout}");
+    assert!(stdout.contains("\"name\": \"func_"), "{stdout}");
+
+    let (stdout, stderr, ok) = run_kuna(&[
         "decompile-all", &binary, "--raw-image", "--target", target, "--base", "0x4000",
         "--addr", "0x4001", "--isa", "thumb", "--sleighpath", &sp,
     ]);
@@ -1258,14 +1273,37 @@ fn raw_image_decompile_scales_word_addressed_selector() {
         "--base", "0x100", "--entry", "0x101", "--sleighpath", &sp,
     ]);
     assert!(ok, "word-addressed raw selector failed: {stderr}");
-    assert!(stdout.contains("sub_202"), "{stdout}");
+    assert!(stdout.contains("sub_101"), "{stdout}");
 
     let (stdout, stderr, ok) = run_kuna(&[
         "decompile", &binary, "0x101", "--raw-image", "--target", "avr8:LE:16:default",
         "--base", "0x100", "--sleighpath", &sp,
     ]);
     assert!(ok, "word-addressed raw text decompile failed: {stderr}");
-    assert!(stdout.contains("sub_202"), "{stdout}");
+    assert!(stdout.contains("sub_101"), "{stdout}");
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn raw_text_decode_failure_is_not_reported_as_an_external() {
+    let path = common::scratch_file("raw-truncated-x86", "bin");
+    std::fs::write(&path, [0x90]).unwrap();
+    let binary = path.to_string_lossy().into_owned();
+    let sp = specs();
+    let spec = PathBuf::from(&sp).join("Ghidra/Processors/x86/data/languages/x86-64.sla");
+    if !spec.exists() {
+        eprintln!("raw_image CLI: skipping (no x86-64 `.sla`)");
+        let _ = std::fs::remove_file(path);
+        return;
+    }
+
+    let (stdout, stderr, ok) = run_kuna(&[
+        "decompile", &binary, "0", "--raw-image", "--target", "x86:LE:64:default",
+        "--base", "0", "--sleighpath", &sp,
+    ]);
+    assert!(!ok, "truncated mapped raw entry unexpectedly succeeded");
+    assert!(!stdout.contains("external symbol"), "{stdout}");
+    assert!(stderr.contains("Unable to load"), "{stderr}");
     std::fs::remove_file(path).unwrap();
 }
 

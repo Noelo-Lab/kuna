@@ -94,7 +94,7 @@ fn word_addressed_targets_scale_base_and_entries_to_byte_offsets() {
     let fixture = RawFixture::new("raw-avr-nops", &[0, 0, 0, 0]);
     let path = fixture.0.to_string_lossy();
 
-    let at_nonzero_base =
+    let mut at_nonzero_base =
         match bootstrap_from_raw(&path, "avr8:LE:16:default", 0x100, &[0x100], None, &specs()) {
             Ok(program) => program,
             Err(error) => {
@@ -105,14 +105,16 @@ fn word_addressed_targets_scale_base_and_entries_to_byte_offsets() {
                 return;
             }
         };
+    at_nonzero_base.commit_pending_analysis().unwrap();
     assert_eq!(at_nonzero_base.sections(), vec![(0x200, 4, 4)]);
     let entry = at_nonzero_base
         .find_entry_at(0x200)
         .expect("word-addressed base must become a byte VMA");
     assert!(at_nonzero_base.entry_bytes_mapped(&entry.addr));
 
-    let at_second_word = bootstrap_from_raw(&path, "avr8:LE:16:default", 0, &[1], None, &specs())
+    let mut at_second_word = bootstrap_from_raw(&path, "avr8:LE:16:default", 0, &[1], None, &specs())
         .expect("same built AVR8 specification");
+    at_second_word.commit_pending_analysis().unwrap();
     let entry = at_second_word
         .find_entry_at(2)
         .expect("entry word 1 must select file byte offset 2");
