@@ -18,4 +18,5 @@ pub mod dynamic;
 pub mod kuna_dynamichashmax;
 pub mod coreaction_stackptr;
 pub mod kuna_paramcopyhoist;
+pub mod kuna_calleepop;
 pub mod kuna_cookiescramble;

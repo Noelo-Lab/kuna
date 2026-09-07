@@ -818,3 +818,33 @@ every spacebase reference — one variable per reference, sentinel 65535 for
 honest: an unsolvable system leaves the INDIRECTs in place, the affected
 frame offsets never promote, and the function keeps raw pointer arithmetic
 where locals should be.
+
+The guessed equation is where kuna diverges (option `calleepop`, default on).
+Upstream's constant `extrapop = 4` states that the callee pops none of its
+arguments, and under a compiler spec whose `<default_proto>` carries
+`extrapop="unknown"` — `x86win.cspec`'s `__stdcall` is the one that matters —
+that is wrong for most calls, cumulatively: the solve latches its answer into
+`INT_ADD sp, #c` at every reference, so each unpopped argument run displaces
+every stack slot after it. A slot whose address is taken before a call and read
+after it then splits into two variables, the read half acquires no reaching
+definition, and the emitted C computes over a constant where the callee's bytes
+should be. With the option on the guess is raised for the one family whose
+convention the platform fixes — an **imported** callee, which is `__stdcall` by
+the Win32 ABI and which kuna can already identify because `peimportcall` paints
+`Varnode::externref` over the Import Address Table. An internal callee keeps
+upstream's guess. For an import the argument bytes are counted off the caller's
+own push run
+(`decompiler/crates/kuna-decomp/src/p6_variables/kuna_calleepop.rs
+(guess_extra_pop)`): back from the return-address slot in pointer-sized steps,
+stopping at the first push that stores a register's own input Varnode (a
+prologue callee-save) or at a step that is no push at all (a bare `sub esp,n`).
+A caller that raises the stack pointer past that whole run afterwards is
+performing a `__cdecl` cleanup, and the guess falls back to `4`; the height is
+measured as the topmost pushed slot reachable from the call rather than as an
+`add esp,#k` op, because the normalization re-bases a following push run onto
+the call's own result and leaves the cleanup Varnode dead. The reading stays a
+*guess* — it is consulted only where the exact equations leave the variable
+free — and a more faithful frame can expose weaknesses further down: an
+outgoing-argument slot that lands inside the caller's `localrange` once the
+frame is the right size is scored no-use by `checkInputTrialUse` (§4.4) and the
+argument is dropped, which is visible on deep-frame MSVC CRT helpers.

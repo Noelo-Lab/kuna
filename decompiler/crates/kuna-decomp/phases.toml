@@ -2221,6 +2221,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "calleepop"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P6"
+subphase = "stack-pointer-flow"
+strength = "HARD"
+rewind = "P6"
+issue = "re-needs-pixel-reader-uses-undefined"
+summary = "Read the argument bytes a callee pops off the caller's own push run, instead of guessing that an unknown extrapop pops nothing. StackSolver (coreaction.cc:238) contributes the guessed equation `extrapop = 4` for every call whose prototype model declares `extrapop=\"unknown\"` -- on x86 Windows that is EVERY call, because `x86win.cspec`'s `<default_proto>` is `__stdcall extrapop=\"unknown\"` and the convention is decided per callee. The guess says the callee pops none of its arguments, so each `__stdcall` call leaves the modelled stack pointer 4*nargs too low, and the error accumulates: the solver latches the solution into `INT_ADD sp, #c` at every reference, so every stack slot after the first call is displaced by the running total. With the option on, a call whose result is consumed by an `INT_ADD sp, #+k` is read as caller cleanup (`__cdecl`) and keeps the upstream guess; otherwise the argument pushes are counted back from the return-address slot in pointer-sized steps, stopping at the first push that stores a register's own input Varnode (a prologue callee-save) or at a step with no spacebase reference (a bare `sub esp,n`)."
+use_when = "On by default: the flip moves 0 of 675 datatest assertions and is inert on any spec that states its own extrapop. Flip OFF to restore upstream's constant guess. With it off, an MSVC x86 PE that calls a stdcall API and then reads the buffer that API filled splits ONE stack slot into two variables -- the address handed to the callee and the slot read afterwards land at different offsets, the read half has no reaching definition, and the emitted C computes over a constant instead of over the bytes the callee wrote. The displaced locals also drift onto an earlier call's outgoing-argument slots, so a declared prototype for that callee makes the local unmappable and it prints as a raw `&Stackffffffe0`. Inert wherever the compiler spec states its own extrapop (x86gcc `__cdecl extrapop=\"4\"`, x86-64, every RISC spec): those calls contribute an exact equation and never reach the guess."
+example = "option calleepop off"
+source_decompiler = "kuna"
+inspiration = "upstream StackSolver::build (coreaction.cc:162) guessed equation + x86win.cspec `__stdcall extrapop=\"unknown\"`"
+change_kind = "correctness-fix"
+tier = "core"
+symptoms = "an x86 windows pe passes `&Stackffffffe0` to an api and reads a DIFFERENT variable afterwards|a buffer filled by ReadFile/RegQueryValueEx is checksummed as a constant zero|declaring a prototype for one callee turns another function's locals into raw `&Stack` references|stack locals in an msvc x86 pe sit at offsets that drift further from the truth after every call"
+live_field = "callee_pop"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "cookiescramble"
 values = "on|off"
 default = "on"

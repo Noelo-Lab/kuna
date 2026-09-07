@@ -1,0 +1,33 @@
+stdcallpop_pe_i386.exe -- the x86 Windows witness for `calleepop`
+(`kuna_decomp::p6_variables::kuna_calleepop`).
+
+What it is
+  A 40,960-byte 32-bit MSVC Windows GUI crackme. It matters because it is an
+  ordinary `x86:LE:32:default:windows` image whose logic calls Win32 APIs
+  through the Import Address Table in the usual `__stdcall` way, with one
+  `__cdecl` varargs import (`wsprintfA`) mixed in and internal `__cdecl` helpers
+  around it -- the three conventions kuna has to tell apart with no type
+  information at all.
+
+  The function at 0x401290 is the one the regression probe reads. It calls
+  `ReadFile` with a pointer to a four-byte stack slot, then checksums the same
+  slot afterwards. With the callee-pop guess wrong that one slot is modelled at
+  two different offsets, so the checksum reads a variable nothing writes and the
+  buffer prints as a raw `&Stackffffffe0`.
+
+Why it is vendored rather than built
+  No MSVC targets the Linux CI image, and neither parity corpus can carry the
+  defect: both are symbol-less byte chunks, and the mechanism is gated on
+  `Varnode::externref` -- a fact that only exists once a real PE import
+  directory has been parsed.
+
+Where it came from
+  The RE-friction loop's round-6 witness: challenge 5ab77f5d33c5d40ad448c6f6 in
+  the kuna-re-dataset crackme corpus ("imagination by kratorius",
+  https://crackmes.one/crackme/5ab77f5d33c5d40ad448c6f6),
+  `bin/Imagination.zip.__x/Imagination.exe`, byte-identical. That is the binary
+  on which a tester found the pixel reader using undeclared stack objects and
+  filed docs/re-needs/pixel-reader-uses-undefined.md.
+
+  sha256 78d28ec6d13b9c1634101e86b2042ed61560db31ba63705adfb2b75f5757b7b4
+  It is a third-party crackme, included unmodified as test data only.

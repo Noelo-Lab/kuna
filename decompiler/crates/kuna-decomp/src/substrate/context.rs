@@ -719,6 +719,11 @@ pub struct ArchContext {
     /// Read by [`Funcdata::gather_additive_base`](crate::funcdata_spacebase)
     /// through [`crate::p6_variables::kuna_cookiescramble::is_escape_site`].
     pub cookie_scramble: bool,
+    /// (kuna) read the caller's own stack discipline for the argument bytes a
+    /// callee pops (`calleepop`).  Read by
+    /// [`StackSolver::build`](crate::coreaction_stackptr) through
+    /// [`crate::p6_variables::kuna_calleepop::guess_extra_pop`].
+    pub callee_pop: bool,
     /// (kuna) let a bounded decode of the callee's own body veto a register
     /// argument the callee provably never reads (`calleedeadarg`).  Read by
     /// [`check_input_trial_use`](crate::funcdata_callsite::check_input_trial_use)
@@ -1219,6 +1224,9 @@ impl ArchContext {
             // cookiescramble only ever REMOVES a false escape site, so the
             // hand-built-fixture seam carries the same default the real path does.
             cookie_scramble: true,
+            // calleepop only refines a guess the solver already had to make, so
+            // the hand-built-fixture seam carries the same default.
+            callee_pop: true,
             // calleedeadarg only ever REMOVES an argument, and only against a
             // decoded callee body; the fixture seam carries the real default.
             callee_dead_arg: true,
