@@ -177,6 +177,14 @@ pub struct CalleeEntryDead {
     reg_idx: int4,
     /// Register byte ranges some path READS before writing — `(space, offset, size)`.
     reads: Vec<(int4, u64, int4)>,
+    /// The same, minus the reads whose value provably cannot matter: `xor
+    /// ecx,ecx`, `and edx,0` and `or rdx,-1` all write a CONSTANT, but their
+    /// p-code says `ECX = ECX ^ ECX`, so a walk that counts every read calls a
+    /// scratch register an input.  `reads` keeps them, because dropping a read
+    /// can only make [`Self::proves_dead`] answer `true` more often and that
+    /// direction deletes arguments; [`Self::proves_input`] reads this one
+    /// instead.
+    reads_live: Vec<(int4, u64, int4)>,
     /// For every path terminator — a `RETURN` as much as a nested call or an
     /// unresolved branch — the register bytes already written on the way to it.
     /// A range is only dead if it is fully written before EVERY one of them, and
@@ -246,9 +254,55 @@ impl CalleeEntryDead {
             .any(|&(ridx, roff, rsz)| ridx == idx && roff < end && off < roff + rsz as u64)
     }
 
+    /// Does this summary show some path reading any byte of `[addr, addr+size)`
+    /// before writing it, for a value that can actually reach something?
+    ///
+    /// [`Self::proves_read`] with the register-zeroing idiom excluded, and the
+    /// evidence [`crate::p4_calls::kuna_calleearitybody`] recovers an argument
+    /// list on.  The distinction matters there and only there: that rule takes
+    /// a read as proof of an INPUT with no sibling call to check it against, and
+    /// an API-resolution stub whose prologue is `xor ecx,ecx; lea rdx,[..]; call`
+    /// would otherwise be read as taking a first argument it discards, and a
+    /// body reached through `or rdx,-1` as taking a second.
+    pub fn proves_input(&self, addr: &Address, size: int4) -> bool {
+        if !self.complete || size <= 0 {
+            return false;
+        }
+        let Some(sp) = addr.get_space() else { return false };
+        if self.reg_idx < 0 || sp.get_index() != self.reg_idx {
+            return false;
+        }
+        let (idx, off) = (self.reg_idx, addr.get_offset());
+        let end = off.wrapping_add(size as u64);
+        if end < off {
+            return false;
+        }
+        self.reads_live
+            .iter()
+            .any(|&(ridx, roff, rsz)| ridx == idx && roff < end && off < roff + rsz as u64)
+    }
+
     /// Did the walk complete? (Diagnostics and tests.)
     pub fn is_complete(&self) -> bool {
         self.complete
+    }
+
+    /// Build a summary by hand, so a module that only CONSUMES this evidence can
+    /// unit-test its own decisions without standing up a translator.
+    #[cfg(test)]
+    pub(crate) fn from_parts(
+        reg_idx: int4,
+        reads: Vec<(int4, u64, int4)>,
+        cuts: Vec<Vec<(int4, u64)>>,
+        complete: bool,
+    ) -> Self {
+        CalleeEntryDead {
+            reg_idx,
+            reads_live: reads.clone(),
+            reads,
+            cuts: cuts.into_iter().map(|c| c.into_iter().collect()).collect(),
+            complete,
+        }
     }
 }
 
@@ -307,8 +361,13 @@ pub fn probe_callee_entry_dead<T: kuna_sleigh::translate::Translate + ?Sized>(
     entry: &Address,
     reg_idx: int4,
 ) -> CalleeEntryDead {
-    let mut res =
-        CalleeEntryDead { reg_idx, reads: Vec::new(), cuts: Vec::new(), complete: true };
+    let mut res = CalleeEntryDead {
+        reg_idx,
+        reads: Vec::new(),
+        reads_live: Vec::new(),
+        cuts: Vec::new(),
+        complete: true,
+    };
     let Some(entry_space) = entry.get_space() else {
         res.complete = false;
         return res;
@@ -356,9 +415,45 @@ pub fn probe_callee_entry_dead<T: kuna_sleigh::translate::Translate + ?Sized>(
     }
     if !res.complete {
         res.reads.clear();
+        res.reads_live.clear();
         res.cuts.clear();
     }
     res
+}
+
+/// Is this op's result a CONSTANT whatever the register held — a compiler's way
+/// of writing a fixed value into a register it is about to reuse?
+///
+/// `xor ecx,ecx` and `sub eax,eax` are how every compiler writes zero, `and
+/// edx,0` the same, and `or rdx,-1` is how it writes all-ones; each of them
+/// reads the register it is about to clobber, and the p-code says so. The read
+/// is formal — the result does not depend on it — and counting it would make a
+/// scratch register look like an incoming argument.
+fn is_value_erasing(op: &RawOp) -> bool {
+    if op.ins.len() != 2 {
+        return false;
+    }
+    let (a, b) = (&op.ins[0], &op.ins[1]);
+    let same_varnode = a.size == b.size
+        && a.offset == b.offset
+        && match (a.space.as_ref(), b.space.as_ref()) {
+            (Some(x), Some(y)) => x.get_index() == y.get_index(),
+            _ => false,
+        };
+    let constant = |v: &VarnodeData, want: u64| {
+        v.space.as_ref().map(|s| s.get_type() == spacetype::IPTR_CONSTANT).unwrap_or(false)
+            && v.offset == want
+    };
+    let all_ones = |v: &VarnodeData| {
+        let mask = if v.size >= 8 { u64::MAX } else { (1u64 << (v.size * 8)) - 1 };
+        constant(v, mask)
+    };
+    match op.opc {
+        OpCode::CPUI_INT_XOR | OpCode::CPUI_INT_SUB => same_varnode,
+        OpCode::CPUI_INT_AND => constant(a, 0) || constant(b, 0),
+        OpCode::CPUI_INT_OR => all_ones(a) || all_ones(b),
+        _ => false,
+    }
 }
 
 /// Run one decoded instruction's p-code against the incoming written set.
@@ -382,6 +477,7 @@ fn step_instruction(
         // the set it was entered with, since a conditionally-executed write
         // earlier in the same instruction may not have run.
         let base = if emit.internal_flow { &incoming } else { &cur };
+        let value_erasing = is_value_erasing(op);
         for (i, v) in op.ins.iter().enumerate() {
             if skip_input(op.opc, i) {
                 continue;
@@ -393,6 +489,9 @@ fn step_instruction(
             let (idx, off, sz) = (res.reg_idx, v.offset, v.size as int4);
             if (off..off + v.size as u64).any(|b| !base.contains(&(idx, b))) {
                 res.reads.push((idx, off, sz));
+                if !value_erasing {
+                    res.reads_live.push((idx, off, sz));
+                }
             }
         }
         match op.opc {
@@ -489,14 +588,19 @@ pub fn seed_callee_entry_dead(
     arch: &mut crate::architecture::Architecture,
     data: &mut Funcdata,
 ) {
-    if !arch.callee_dead_arg && !(arch.callee_arity && arch.callee_arity_live) {
+    let body_arity = arch.callee_arity && arch.callee_arity_body;
+    if !arch.callee_dead_arg
+        && !(arch.callee_arity && arch.callee_arity_live)
+        && !body_arity
+    {
         return;
     }
     // The veto needs an EARLIER call to have left the value in the register, so
     // a function with fewer than two calls can never produce one — and probing
     // its callees would be pure cost.  This matters most in ghidra mode, where a
-    // decode is a round trip to the host.
-    if data.num_calls() < 2 {
+    // decode is a round trip to the host.  `calleearitybody` is the exception:
+    // its whole subject is the callee that is called ONCE.
+    if data.num_calls() < 2 && !body_arity {
         return;
     }
     let reg_idx =

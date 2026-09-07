@@ -1098,6 +1098,11 @@ impl Action for ActionActiveParam {
         // list, retried the same way.  See
         // [`crate::p4_calls::kuna_calleearitylive`].
         let mut pending_extend = Vec::new();
+        // (kuna) `calleearitybody`: call sites that recovered nothing and have no
+        // sibling to compare against, answered from the callee's own body after
+        // the sibling rules have had their turn.  See
+        // [`crate::p4_calls::kuna_calleearitybody`].
+        let mut pending_body = Vec::new();
 
         // INDEX-BASED (CORRECTION-7 #3): keep the call specs ON `data.qlst` so
         // each sub-function's input-trial ancestor walk can look up the *other*
@@ -1173,6 +1178,9 @@ impl Action for ActionActiveParam {
                 if let Some(p) = fixup.extend {
                     pending_extend.push(p);
                 }
+                if let Some(p) = fixup.body {
+                    pending_body.push(p);
+                }
                 fc.clear_active_input();
                 data.restore_call_specs_at(idx, fc);
                 self.base.count += 1;
@@ -1183,6 +1191,9 @@ impl Action for ActionActiveParam {
         crate::p4_calls::kuna_calleearityfwd::rescue_pending(data, &pending_rescue);
         // (kuna) `calleearitylive`: and the sites that recovered too FEW get theirs.
         crate::p4_calls::kuna_calleearitylive::extend_pending(data, &pending_extend);
+        // (kuna) `calleearitybody`: last, so a site a sibling could speak for is
+        // already non-empty and is left alone.
+        crate::p4_calls::kuna_calleearitybody::recover_pending(data, &pending_body);
         0
     }
 }

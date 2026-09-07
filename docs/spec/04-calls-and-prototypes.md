@@ -400,6 +400,45 @@ at any of them. Like `calleearityfwd` it captures its candidate Varnodes in
 `ActionActiveParam::apply`, rather than moving when a spec finalizes. It is inert
 unless `calleearity` is also on.
 
+All three of those rules are *sibling* reconciliation: each needs another call to
+the same entry address in the same function. That leaves the callee called
+exactly **once** with nothing to compare against — a thread entry point, a
+one-shot payload, a handler reached from one place — and the family is inert
+there by construction, not by choice. On a Win64 image a caller that passes its
+own first parameter straight through (`mov rbx,rcx; cmp dword[rcx+0x238],edi;
+je payload_call`, with `rcx` untouched to the `CALL`) renders `payload();`, while
+decompiling that same callee on its own recovers `payload(unsigned int *)`. The
+only other mention of the callee in that function is an address-taken `lea` for a
+`CreateThread` argument, and an address-taken `lea` is not a call site, so the
+witness search has nothing to find.
+
+(kuna) `calleearitybody` (default-on,
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleearitybody.rs`) lets the
+callee-body evidence stand **alone** as the witness in that quadrant, rather than
+only extending a sibling's list. It takes the same summary
+`calleearitylive` reads (`kuna_calleedeadarg.rs (probe_callee_entry_dead)`) and
+walks the call's trials in prototype order: the recovered list is the leading run
+of argument registers the callee is proven to **read before writing**, and that
+run must end at a register the callee is proven to **overwrite before ever
+reading**, on every path. The second half is the whole safety of the rule.
+"Some path reads this register" is an existential and would happily run to the
+end of the argument registers on its own; what bounds an argument list is a
+register the callee is *proven* not to consume. It is also what refuses the shape
+the family's sweep found — a variadic register-save prologue reads every argument
+register there is, so no dead one follows the run and the rule declines rather
+than inventing an argument per register. An import, a thunk, and a body past the
+decode budget answer neither and decline the same way.
+
+Everything else is `calleearity`'s, unchanged: register storage only, real
+Varnodes only, all-or-nothing, never subtractive, and only a call that recovered
+**nothing at all** — a site with a partial list is `calleearitylive`'s. It
+captures its candidate Varnodes in `build_input_from_trials` like the other two
+deferred rules and replays them at the end of the same `ActionActiveParam::apply`,
+after both of them, so a site any sibling can speak for is already non-empty and
+is left alone. It is inert unless `calleearity` is also on. Because its whole
+subject is the callee called once, it is also the one reader for which
+`seed_callee_entry_dead` probes a function with fewer than two calls.
+
 The `Register` (unordered) variant skips all ordering logic: every active
 trial that lands justified in an entry is a parameter
 (`fillin_map_register`). The output variant first lets the model rules claim

@@ -302,6 +302,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "calleearity",
     "calleearityfwd",
     "calleearitylive",
+    "calleearitybody",
     "calloverlap",
     "spillargtrial",
     "loadguardrange",
