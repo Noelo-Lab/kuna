@@ -15,6 +15,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::path::Path;
 
+use kuna_base::address::Address;
 use kuna_decomp::decompile_drive::{
     extract_variables, print_c, print_c_prototype, print_c_with_provenance, LineMapping, VarInfo,
 };
@@ -792,6 +793,7 @@ struct DataLabel {
     name: String,
     type_size: Option<i64>,
     dat_alias: bool,
+    address: Option<Address>,
 }
 
 /// `; --- data ---`: address-sorted deduped labels (named globals ∪ `dat_`
@@ -804,10 +806,16 @@ fn emit_data_tail(
     out: &mut String,
 ) {
     let mut data: BTreeMap<u64, DataLabel> = BTreeMap::new();
-    for (name, vma, type_size) in prog.global_data_symbols() {
+    for (name, address, type_size) in prog.global_data_symbol_addresses() {
+        let vma = address.get_offset();
         // First named symbol at a VMA wins (global_data_symbols is
         // (vma, name)-sorted; duplicates at one address are aliases).
-        data.entry(vma).or_insert(DataLabel { name, type_size: Some(type_size), dat_alias: false });
+        data.entry(vma).or_insert(DataLabel {
+            name,
+            type_size: Some(type_size),
+            dat_alias: false,
+            address: Some(address),
+        });
     }
     for &vma in dat_addrs {
         data.entry(vma)
@@ -816,6 +824,7 @@ fn emit_data_tail(
                 name: format!("dat_{vma:x}"),
                 type_size: None,
                 dat_alias: false,
+                address: None,
             });
     }
     if data.is_empty() {
@@ -825,7 +834,10 @@ fn emit_data_tail(
     out.push_str("\n; --- data ---\n");
     let addrs: Vec<u64> = data.keys().copied().collect();
     for (idx, (&vma, label)) in data.iter().enumerate() {
-        let display_vma = prog.output_code_offset(vma);
+        let display_vma = label
+            .address
+            .as_ref()
+            .map_or(vma, |address| prog.output_address_offset(address));
         // Size: a typed symbol's datatype size; a bare `dat_` gets
         // min(gap to the next label / containing-section end, 32), floor 1.
         let size = match label.type_size {
@@ -855,7 +867,11 @@ fn emit_data_tail(
         } else {
             out.push_str(&format!("{}:  ; 0x{display_vma:x}\n", label.name));
         }
-        match prog.read_bytes(vma, size as usize) {
+        let bytes = match label.address.as_ref() {
+            Some(address) => prog.read_bytes_at(address, size as usize),
+            None => prog.read_bytes(vma, size as usize),
+        };
+        match bytes {
             Some(bytes) => {
                 for (row, chunk) in bytes.chunks(16).enumerate() {
                     let hex =
@@ -864,10 +880,19 @@ fn emit_data_tail(
                         .iter()
                         .map(|&b| if (0x20..0x7f).contains(&b) { b as char } else { '.' })
                         .collect();
-                    out.push_str(&format!(
-                        "  {:08x}: {hex:<47}  |{ascii}|\n",
-                        prog.output_code_offset(vma + row as u64 * 16)
-                    ));
+                    let byte_offset = vma + row as u64 * 16;
+                    let display_offset = match label.address.as_ref() {
+                        Some(address) => {
+                            let space = address
+                                .get_space()
+                                .cloned()
+                                .expect("mapped data label has an address space");
+                            let row_address = Address::new(space, byte_offset);
+                            prog.output_address_offset(&row_address)
+                        }
+                        None => byte_offset,
+                    };
+                    out.push_str(&format!("  {display_offset:08x}: {hex:<47}  |{ascii}|\n"));
                 }
             }
             None => {

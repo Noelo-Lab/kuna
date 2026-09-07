@@ -278,6 +278,18 @@ fn code_addr(prog: &ConsoleProgram, vma: u64) -> Result<Address, String> {
     Ok(Address::new(space, vma))
 }
 
+/// Scale a user address without treating its low bit as a function state bit.
+fn data_addr(prog: &ConsoleProgram, vma: u64) -> Result<Address, String> {
+    let vma = prog.input_address_offset(vma).map_err(|e| e.explain().to_string())?;
+    let space = prog
+        .arch()
+        .manage()
+        .get_default_code_space()
+        .cloned()
+        .ok_or_else(|| "the loaded program has no default code space".to_string())?;
+    Ok(Address::new(space, vma))
+}
+
 /// Parse a storage token (`%RDI`, `[stack,-0x18,8]`, `s0x10`) through the
 /// console's own machine-address grammar, so `--assert` and the console spell
 /// storage the same way.
@@ -392,7 +404,7 @@ fn paint_property(
     if size <= 0 {
         return Err("a range needs a size of at least one byte".into());
     }
-    let first = code_addr(prog, vma)?;
+    let first = data_addr(prog, vma)?;
     let space = first
         .get_space()
         .cloned()
@@ -764,7 +776,7 @@ fn apply_cross_function(
 fn apply_data(prog: &mut ConsoleProgram, vma: u64, decl: &str) -> Result<(), String> {
     use kuna_decomp::varnode::varnode_flags;
     let org = data_org(prog);
-    let addr = code_addr(prog, vma)?;
+    let addr = data_addr(prog, vma)?;
     let (ct, name) = crate::grammar::parse_type(decl, prog.arch().types(), org)
         .map_err(|e| e.explain().to_string())?;
     if name.is_empty() {

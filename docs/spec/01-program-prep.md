@@ -2892,7 +2892,10 @@ the C++ inheritance chain modeled by composition:
   conversion to internal byte offsets. The complete nonempty file is published as
   one `CODE` section, and only caller-supplied entries are installed. ARM32 also
   requires an explicit ARM/Thumb state, painted across that section and preserved
-  through the deferred analysis commit.
+  through the deferred analysis commit. Function pointers consume the ARM state bit,
+  while data and property addresses preserve it. Presentation converts an address with
+  its own address space's word size; data-space `dat_<hex>` tokens retain the coordinate
+  emitted in C rather than inheriting the code space's word size.
 
 The real-binary path of §1.2 is the fourth binding, console-side: `bootstrap_from_object`
 plays the leaf role itself — it resolves the language from the object header

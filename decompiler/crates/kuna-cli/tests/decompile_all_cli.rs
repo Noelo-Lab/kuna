@@ -1239,7 +1239,7 @@ fn raw_image_supported_surfaces_share_seed_and_base_semantics() {
     let (stdout, stderr, ok) = run_kuna(&[
         "decompile-project", &binary, "-o", out_dir.to_str().unwrap(), "--raw-image",
         "--target", target, "--base", "0x4000", "--entry", "0x4001", "--isa",
-        "thumb", "--sleighpath", &sp,
+        "thumb", "--assert", "data 0x4001 char odd_data", "--sleighpath", &sp,
     ]);
     assert!(ok, "raw project export failed: {stderr}");
     assert!(stdout.contains("functions: 1 ok, 0 failed"), "{stdout}");
@@ -1250,6 +1250,12 @@ fn raw_image_supported_surfaces_share_seed_and_base_semantics() {
     assert!(artifacts.iter().any(|name| name.ends_with(".c")), "{artifacts:?}");
     assert!(artifacts.iter().any(|name| name.ends_with(".asm")), "{artifacts:?}");
     assert!(artifacts.iter().any(|name| name == "README.md"), "{artifacts:?}");
+    let asm_name = artifacts.iter().find(|name| name.ends_with(".asm")).unwrap();
+    let asm = std::fs::read_to_string(out_dir.join(asm_name)).unwrap();
+    let data_tail = asm.split("; --- data ---").nth(1).expect("project data tail");
+    assert!(data_tail.contains("odd_data:  ; 0x4001"), "{data_tail}");
+    assert!(data_tail.contains("  00004001:"), "{data_tail}");
+    assert!(!data_tail.contains("odd_data:  ; 0x4000"), "{data_tail}");
 
     std::fs::remove_dir_all(out_dir).unwrap();
     std::fs::remove_file(path).unwrap();
@@ -1349,6 +1355,48 @@ fn raw_image_decompile_scales_word_addressed_selector() {
     assert!(data_tail.contains("  00000101:"), "{data_tail}");
     assert!(!data_tail.contains("foo:  ; 0x202"), "{data_tail}");
     assert!(!data_tail.contains("  00000202:"), "{data_tail}");
+    std::fs::remove_dir_all(out_dir).unwrap();
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn raw_project_preserves_byte_addressed_data_coordinates() {
+    let path = common::scratch_file("raw-avr-data-reference", "bin");
+    std::fs::write(&path, [0x80, 0x91, 0x00, 0x01, 0x08, 0x95]).unwrap();
+    let binary = path.to_string_lossy().into_owned();
+    let sp = specs();
+    let spec = PathBuf::from(&sp).join("Ghidra/Processors/Atmel/data/languages/avr8.sla");
+    if !spec.exists() {
+        eprintln!("raw_image CLI: skipping (no AVR8 `.sla`)");
+        let _ = std::fs::remove_file(path);
+        return;
+    }
+
+    let out_dir = common::scratch_file("raw-avr-data-project", "dir");
+    let (stdout, stderr, ok) = run_kuna(&[
+        "decompile-project", &binary, "-o", out_dir.to_str().unwrap(), "--raw-image",
+        "--target", "avr8:LE:16:default", "--base", "0", "--entry", "0",
+        "--sleighpath", &sp,
+    ]);
+    assert!(ok, "word-addressed raw data project failed: {stderr}");
+    assert!(stdout.contains("functions: 1 ok, 0 failed"), "{stdout}");
+    let files: Vec<_> = std::fs::read_dir(&out_dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect();
+    let c = std::fs::read_to_string(
+        files.iter().find(|path| path.extension().is_some_and(|ext| ext == "c")).unwrap(),
+    )
+    .unwrap();
+    let asm = std::fs::read_to_string(
+        files.iter().find(|path| path.extension().is_some_and(|ext| ext == "asm")).unwrap(),
+    )
+    .unwrap();
+    assert!(c.contains("dat_100"), "{c}");
+    let data_tail = asm.split("; --- data ---").nth(1).expect("project data tail");
+    assert!(data_tail.contains("dat_100:  ; 0x100"), "{data_tail}");
+    assert!(data_tail.contains("  00000100:"), "{data_tail}");
+    assert!(!data_tail.contains("dat_100:  ; 0x80"), "{data_tail}");
     std::fs::remove_dir_all(out_dir).unwrap();
     std::fs::remove_file(path).unwrap();
 }

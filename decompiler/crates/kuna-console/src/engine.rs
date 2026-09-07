@@ -387,17 +387,26 @@ impl ConsoleProgram {
         &self.description
     }
 
-    /// Convert a user-facing code address to the engine's byte offset.
-    pub fn input_code_offset(&self, value: u64) -> KunaResult<u64> {
-        let Some((word_size, arm32)) = self.raw_address_units else {
+    /// Scale a user-facing raw address to the engine's byte offset without
+    /// interpreting any low bits as processor state.
+    pub fn input_address_offset(&self, value: u64) -> KunaResult<u64> {
+        let Some((word_size, _)) = self.raw_address_units else {
             return Ok(value);
         };
-        let units = if arm32 { value & !1 } else { value };
-        units.checked_mul(word_size).ok_or_else(|| {
+        value.checked_mul(word_size).ok_or_else(|| {
             KunaError::lowlevel(format!(
                 "raw address 0x{value:x} overflows the target's {word_size}-byte code-space units"
             ))
         })
+    }
+
+    /// Convert a user-facing code pointer to the engine's byte offset.
+    pub fn input_code_offset(&self, value: u64) -> KunaResult<u64> {
+        let units = match self.raw_address_units {
+            Some((_, true)) => value & !1,
+            _ => value,
+        };
+        self.input_address_offset(units)
     }
 
     /// Finish normalization after the console address grammar has already
@@ -429,6 +438,17 @@ impl ConsoleProgram {
             Some((word_size, _)) => code_offset_in_target_units(value, word_size),
             None => value,
         }
+    }
+
+    /// Convert an engine address to its own space's target units for raw input.
+    pub fn output_address_offset(&self, address: &Address) -> u64 {
+        let value = address.get_offset();
+        if self.raw_address_units.is_none() {
+            return value;
+        }
+        address.get_space().map_or(value, |space| {
+            code_offset_in_target_units(value, u64::from(space.get_word_size()))
+        })
     }
 
     /// Convert an exclusive engine byte end to target address units, rounding
@@ -1252,6 +1272,17 @@ impl ConsoleProgram {
         self.read_bytes_into(vma, size, &mut bytes).then_some(bytes)
     }
 
+    /// Read bytes at an address while preserving its address-space identity.
+    pub fn read_bytes_at(&self, address: &Address, size: usize) -> Option<Vec<u8>> {
+        if size > i32::MAX as usize {
+            return None;
+        }
+        let mut bytes = vec![0; size];
+        let loader_rc = self.arch().translate().loader_rc();
+        loader_rc.borrow_mut().load_fill(&mut bytes, address).ok()?;
+        Some(bytes)
+    }
+
     /// (kuna) Read `size` raw image bytes at code-space VMA `vma` into a
     /// caller-owned buffer, retaining its allocation across calls.
     ///
@@ -1296,6 +1327,14 @@ impl ConsoleProgram {
     /// string symbols) is kept. `type_size` is the mapped datatype's byte size.
     /// Sorted by VMA.
     pub fn global_data_symbols(&self) -> Vec<(String, u64, i64)> {
+        self.global_data_symbol_addresses()
+            .into_iter()
+            .map(|(name, address, size)| (name, address.get_offset(), size))
+            .collect()
+    }
+
+    /// Global data symbols with their address-space identity retained.
+    pub fn global_data_symbol_addresses(&self) -> Vec<(String, Address, i64)> {
         use kuna_decomp::dtype::type_metatype;
         let arch = self.arch();
         let Some(scope) = arch.symboltab.get_global_scope() else {
@@ -1305,14 +1344,14 @@ impl ConsoleProgram {
             return Vec::new();
         };
         let space_index = data_space.get_index() as usize;
-        let mut out: Vec<(String, u64, i64)> = arch
+        let mut out: Vec<(String, Address, i64)> = arch
             .symboltab
             .scope_space_symbol_specs(scope, space_index)
             .into_iter()
             .filter(|(_, ct, _, _)| ct.get_metatype() != type_metatype::TYPE_CODE)
-            .map(|(name, ct, addr, _)| (name, addr.get_offset(), i64::from(ct.get_size())))
+            .map(|(name, ct, addr, _)| (name, addr, i64::from(ct.get_size())))
             .collect();
-        out.sort_by(|a, b| (a.1, &a.0).cmp(&(b.1, &b.0)));
+        out.sort_by(|a, b| (&a.1, &a.0).cmp(&(&b.1, &b.0)));
         out
     }
 

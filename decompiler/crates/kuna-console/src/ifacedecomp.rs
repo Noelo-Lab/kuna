@@ -583,7 +583,7 @@ fn mark_property_range(
     let dcp = dcp_mut(status)?;
     let prog = dcp.conf.as_mut().expect("conf checked non-None above");
     // C++ Address addr = parse_machaddr(s,size,*dcp->conf->types).
-    let (addr, mut size) = parse_input_code_address(prog, s).map_err(IfaceError::parse)?;
+    let (addr, mut size) = parse_machaddr(prog, s, false).map_err(IfaceError::parse)?;
     // (kuna) An explicit size may follow the address.  The C++ takes the size
     // only from the bracketed `[space,offset,size]` form, which forces a caller
     // that wants a sized range to also name the address space; `--assert
@@ -1507,8 +1507,7 @@ decomp_command!(
             use kuna_decomp::varnode::varnode_flags;
             let dcp = dcp_mut(status)?;
             let prog = dcp.conf.as_mut().expect("conf checked non-None above");
-            let (addr, _size) =
-                parse_input_code_address(prog, s).map_err(IfaceError::parse)?;
+            let (addr, _size) = parse_machaddr(prog, s, false).map_err(IfaceError::parse)?;
             s.skip_ws();
             let (addr_size, word_size) = prog.arch().data_org();
             let org = crate::grammar::DataOrg { addr_size, word_size };
@@ -1528,7 +1527,7 @@ decomp_command!(
         }
         let dcp = dcp_mut(status)?;
         let prog = dcp.conf.as_mut().expect("conf checked non-None above");
-        let (addr, _size) = parse_input_code_address(prog, s).map_err(IfaceError::parse)?;
+        let (addr, _size) = parse_machaddr(prog, s, false).map_err(IfaceError::parse)?;
         s.skip_ws();
         // Parse the required type + name (C++ parse_type).
         let (addr_size, word_size) = prog.arch().data_org();

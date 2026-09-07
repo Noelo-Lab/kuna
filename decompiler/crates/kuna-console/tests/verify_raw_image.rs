@@ -6,8 +6,11 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
+use kuna_base::address::Address;
+use kuna_console::assertions::{self, Body, Directive};
 use kuna_console::engine::{bootstrap_from_raw, ArmIsa};
 use kuna_console::project::decompile_targets;
+use kuna_decomp::varnode::varnode_flags;
 
 struct RawFixture(PathBuf);
 
@@ -116,6 +119,55 @@ fn raw_thumb_maps_base_zero_and_nonzero() {
 }
 
 #[test]
+fn raw_arm_data_addresses_preserve_their_low_bit() {
+    let fixture = RawFixture::thumb_return_7();
+    let path = fixture.0.to_string_lossy();
+    let mut program = match bootstrap_from_raw(
+        &path,
+        "ARM:LE:32:v4t:default",
+        0x4000,
+        &[0x4001],
+        Some(ArmIsa::Thumb),
+        &specs(),
+    ) {
+        Ok(program) => program,
+        Err(error) => {
+            eprintln!(
+                "verify_raw_image: skipping (build the ARM `.sla`): {}",
+                error.explain()
+            );
+            return;
+        }
+    };
+    program.commit_pending_analysis().unwrap();
+    assert_eq!(program.input_address_offset(0x4001).unwrap(), 0x4001);
+    assert_eq!(program.input_code_offset(0x4001).unwrap(), 0x4000);
+    program.set_assertions(vec![
+        Directive {
+            raw: "data 0x4001 char odd_data".into(),
+            body: Body::Data { addr: 0x4001, decl: "char odd_data".into() },
+        },
+        Directive {
+            raw: "volatile 0x4001+1".into(),
+            body: Body::Volatile { addr: 0x4001, size: 1 },
+        },
+    ]);
+    assertions::apply_program_scoped(&mut program);
+    assert!(program.assertion_outcomes().iter().all(|outcome| outcome.status == "applied"));
+    let (_, address, _) = program
+        .global_data_symbol_addresses()
+        .into_iter()
+        .find(|(name, _, _)| name == "odd_data")
+        .expect("odd-address data symbol");
+    assert_eq!(address.get_offset(), 0x4001);
+    let code = program.arch().manage().get_default_code_space().unwrap();
+    let odd = Address::new(std::rc::Rc::clone(code), 0x4001);
+    let even = Address::new(std::rc::Rc::clone(code), 0x4000);
+    assert_ne!(program.arch().symboltab.get_property(&odd) & varnode_flags::volatil, 0);
+    assert_eq!(program.arch().symboltab.get_property(&even) & varnode_flags::volatil, 0);
+}
+
+#[test]
 fn word_addressed_targets_scale_base_and_entries_to_byte_offsets() {
     let fixture = RawFixture::new("raw-avr-nops", &[0, 0, 0, 0]);
     let path = fixture.0.to_string_lossy();
@@ -214,6 +266,40 @@ fn raw_map_function_normalizes_an_odd_thumb_pointer() {
     assert!(output.status.success(), "{stdout}\n{stderr}");
     assert!(stdout.contains("mapped_thumb"), "{stdout}\n{stderr}");
     assert!(stdout.contains("return 7;"), "{stdout}\n{stderr}");
+}
+
+#[test]
+fn raw_map_address_preserves_an_odd_arm_data_address() {
+    let fixture = RawFixture::new(
+        "raw-thumb-odd-data",
+        &[0x01, 0x48, 0x00, 0x78, 0x70, 0x47, 0, 0, 0x01, 0x40, 0, 0],
+    );
+    let roots = specs();
+    if !PathBuf::from(&roots[0])
+        .join("Ghidra/Processors/ARM/data/languages/ARM8_le.sla")
+        .exists()
+    {
+        eprintln!("verify_raw_image: skipping map address test (no ARM `.sla`)");
+        return;
+    }
+    let script = format!(
+        "load raw ARM:LE:32:v4t:default 0x4000 0x4001 \"{}\"\n\
+         map address 0x4001 char odd_data\n\
+         readonly 0x4008 4\n\
+         option readonly on\n\
+         read symbols\n\
+         load addr 0x4001\n\
+         decompile\n\
+         print C\n\
+         quit\n",
+        fixture.0.display()
+    );
+    let output = run_console(&script, Some("thumb"));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "{stdout}\n{stderr}");
+    assert!(stdout.contains("return odd_data;"), "{stdout}\n{stderr}");
+    assert!(!stdout.contains("return dat_4001;"), "{stdout}\n{stderr}");
 }
 
 #[test]

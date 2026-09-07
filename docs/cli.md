@@ -626,7 +626,8 @@ two-byte word-addressed code space selects file byte offset `2`. The mapping is
 checked for arithmetic and address-space overflow, and an entry outside its
 half-open range is rejected. Duplicate entries collapse. ARM32 raw input requires
 `--isa arm|thumb`; odd ARM function pointers are normalized to their underlying
-even byte address before validation.
+even byte address before validation. Other addresses retain every input bit, so
+an odd ARM data or property address still selects the odd byte.
 
 Raw images carry no symbols or trustworthy boundary metadata, so `functions`
 reports the explicit seeds. Named `--functions`, section-relative selectors,
@@ -1529,7 +1530,9 @@ binary and attempt recompilation:
 - `<name>.asm` — labeled linear disassembly of every CODE section: labels match the `.c`
   function names, per-function `; arg:`/`; stack:` comments map decompiled variables to
   storage, undecodable bytes as `db` lines, and a `; --- data ---` tail labeling named
-  globals plus every `dat_<hex>` the `.c` references, with raw bytes.
+  globals plus every `dat_<hex>` the `.c` references, with raw bytes. Data-tail addresses
+  use their source address space's units; a `dat_<hex>` label retains the coordinate
+  printed in C.
 - `README.md` — size, arch id, entry point, function counts, sections table, file
   inventory.
 
