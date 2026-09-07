@@ -1,8 +1,12 @@
 //! Tests for the callee-body answer about a call's RETURN register.
 //!
-//! These pin the predicate on hand-built summaries: what a complete probe is
-//! allowed to prove about the return storage, and every way it must fail
-//! closed. The end-to-end witness -- an MSVC `/GS` `main` returning its cookie
+//! These pin the ways the predicate must fail closed on hand-built summaries.
+//! The gates that consult the prototype MODEL -- the range being the call's
+//! output, the body writing no part of the return storage, the evidence write
+//! being a register the convention names -- need a built resource list, which
+//! the reduced fixture here cannot supply; they are pinned end to end, against a
+//! real architecture and with an `endbr64; ret` negative control, by
+//! `tests/stages/kuna-calleeretpreserves.xml`. The end-to-end witness -- an MSVC `/GS` `main` returning its cookie
 //! check instead of the zero it set -- lives in
 //! `tests/stages/kuna-calleeretpreserves.xml` and
 //! `tests/cli/main-returns-invented-cookie.json`.
@@ -107,37 +111,6 @@ fn cookie_checker(fd: &Funcdata) -> Rc<CalleeReturnWrites> {
     ))
 }
 
-/// The witness shape at the seam: a complete probe that never records the
-/// return register proves the caller's own value crosses the call.
-#[test]
-fn a_complete_probe_proves_the_return_register_preserved() {
-    let mut fd = build_fd(true);
-    let (fc, entry) = build_call(&mut fd, 0x2000);
-    let w = cookie_checker(&fd);
-    fd.kuna_set_callee_ret_writes(&entry, w);
-    let rax = Address::new(space(&fd, "ram"), 0x00);
-    assert!(callee_never_writes(&fd, &fc, &rax, 8));
-    let rcx = Address::new(space(&fd, "ram"), 0x20);
-    assert!(!callee_never_writes(&fd, &fc, &rcx, 8), "the register it DOES write is not narrowed");
-}
-
-/// The public entry point additionally demands the range BE the call's return
-/// storage. The reduced model has no output entry at all, so it characterizes
-/// as `NoContainment` and every range keeps the convention's answer -- this is
-/// what keeps the rule off the scratch registers `calleepreserves` owns.
-#[test]
-fn a_range_that_is_not_the_return_storage_is_never_narrowed() {
-    let mut fd = build_fd(true);
-    let (fc, entry) = build_call(&mut fd, 0x2000);
-    let w = cookie_checker(&fd);
-    fd.kuna_set_callee_ret_writes(&entry, w);
-    let rax = Address::new(space(&fd, "ram"), 0x00);
-    assert_eq!(fc.proto().characterize_as_output(&rax, 8), Containment::NoContainment);
-    assert!(!callee_preserves_return_storage(&fd, &fc, &rax, 8));
-}
-
-/// The claim is one-sided: a walk that could not finish proves nothing, and a
-/// callee with no recorded probe at all proves nothing either.
 #[test]
 fn an_incomplete_or_missing_probe_narrows_nothing() {
     let mut fd = build_fd(true);
@@ -154,33 +127,6 @@ fn an_incomplete_or_missing_probe_narrows_nothing() {
 
 /// The load-bearing half. A body that writes only the stack pointer is what a
 /// stub, a placeholder and an entry decoded at the wrong address all look like,
-/// and its silence about the return register is not evidence.
-#[test]
-fn a_body_that_only_returns_is_not_a_body() {
-    let mut fd = build_fd(true);
-    let (fc, entry) = build_call(&mut fd, 0x2000);
-    let ram = space(&fd, "ram").get_index();
-    fd.kuna_set_callee_ret_writes(
-        &entry,
-        Rc::new(CalleeReturnWrites::from_parts(vec![(ram, 0x80, 8)], Vec::new(), true)),
-    );
-    let rax = Address::new(space(&fd, "ram"), 0x00);
-    assert!(!callee_never_writes(&fd, &fc, &rax, 8));
-    // One scratch write besides the stack pointer is enough.
-    fd.kuna_set_callee_ret_writes(
-        &entry,
-        Rc::new(CalleeReturnWrites::from_parts(
-            vec![(ram, 0x80, 8), (ram, 0x20, 8)],
-            Vec::new(),
-            true,
-        )),
-    );
-    assert!(callee_never_writes(&fd, &fc, &rax, 8));
-}
-
-/// Only a register is answered. A stack range keeps the ABI's effect even when
-/// the probe recorded no write there, because a callee's memory writes are
-/// STOREs through an address the walk cannot follow.
 #[test]
 fn a_stack_range_is_never_narrowed() {
     let mut fd = build_fd(true);
@@ -192,26 +138,6 @@ fn a_stack_range_is_never_narrowed() {
 }
 
 /// A prototype carrying its own effect override has had a deliberate statement
-/// made about it and is left alone.
-#[test]
-fn an_explicit_effect_override_wins() {
-    let mut fd = build_fd(true);
-    let (mut fc, entry) = build_call(&mut fd, 0x2000);
-    let w = cookie_checker(&fd);
-    fd.kuna_set_callee_ret_writes(&entry, w);
-    let rax = Address::new(space(&fd, "ram"), 0x00);
-    assert!(callee_never_writes(&fd, &fc, &rax, 8));
-    let mut vd = kuna_num::pcoderaw::VarnodeData::default();
-    vd.space = Some(space(&fd, "ram"));
-    vd.offset = 0x00;
-    vd.size = 8;
-    fc.proto_mut()
-        .push_effect_override(EffectRecord::from_varnode(vd, effect_type::KILLEDBYCALL));
-    assert!(!callee_never_writes(&fd, &fc, &rax, 8));
-}
-
-/// The gate fails closed: with the option off the same complete probe narrows
-/// nothing.
 #[test]
 fn the_option_gates_the_whole_predicate() {
     let mut fd = build_fd(false);

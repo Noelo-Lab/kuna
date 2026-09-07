@@ -671,6 +671,7 @@ fn option_values_live_value_present_for_55_suppressed_for_97() {
                             | "calleearitybody"
                             | "calleedeadarg"
                             | "calleepreserves"
+                            | "calleeretpreserves"
                             | "calloverlap"
                             | "spillargtrial"
                             | "paramcopyhoist"
