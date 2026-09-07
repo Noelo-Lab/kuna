@@ -1376,7 +1376,7 @@ fn raw_project_preserves_byte_addressed_data_coordinates() {
     let (stdout, stderr, ok) = run_kuna(&[
         "decompile-project", &binary, "-o", out_dir.to_str().unwrap(), "--raw-image",
         "--target", "avr8:LE:16:default", "--base", "0", "--entry", "0",
-        "--sleighpath", &sp,
+        "--assert", "data 0x80 int foo", "--sleighpath", &sp,
     ]);
     assert!(ok, "word-addressed raw data project failed: {stderr}");
     assert!(stdout.contains("functions: 1 ok, 0 failed"), "{stdout}");
@@ -1394,8 +1394,10 @@ fn raw_project_preserves_byte_addressed_data_coordinates() {
     .unwrap();
     assert!(c.contains("dat_100"), "{c}");
     let data_tail = asm.split("; --- data ---").nth(1).expect("project data tail");
+    assert!(data_tail.contains("foo:  ; 0x80"), "{data_tail}");
     assert!(data_tail.contains("dat_100:  ; 0x100"), "{data_tail}");
     assert!(data_tail.contains("  00000100:"), "{data_tail}");
+    assert!(!data_tail.contains("foo:  ; 0x80 = dat_100"), "{data_tail}");
     assert!(!data_tail.contains("dat_100:  ; 0x80"), "{data_tail}");
     std::fs::remove_dir_all(out_dir).unwrap();
     std::fs::remove_file(path).unwrap();
@@ -1483,6 +1485,20 @@ fn raw_text_decode_failure_is_not_reported_as_an_external() {
     assert!(!ok, "truncated mapped raw entry unexpectedly succeeded");
     assert!(!stdout.contains("external symbol"), "{stdout}");
     assert!(stderr.contains("Unable to load"), "{stderr}");
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn raw_text_unknown_format_hint_handles_a_leading_lt_byte() {
+    let path = common::scratch_file("raw-leading-lt", "bin");
+    std::fs::write(&path, [0x3c, 0x00, 0xc3]).unwrap();
+    let binary = path.to_string_lossy().into_owned();
+    let (_stdout, stderr, ok) = run_kuna(&["decompile", &binary, "0"]);
+    assert!(!ok, "headerless input without raw flags unexpectedly loaded");
+    assert!(
+        stderr.contains("--raw-image") && stderr.contains("--target") && stderr.contains("--base"),
+        "leading-< diagnostic omitted raw guidance: {stderr}"
+    );
     std::fs::remove_file(path).unwrap();
 }
 

@@ -2895,7 +2895,11 @@ the C++ inheritance chain modeled by composition:
   through the deferred analysis commit. Function pointers consume the ARM state bit,
   while data and property addresses preserve it. Presentation converts an address with
   its own address space's word size; data-space `dat_<hex>` tokens retain the coordinate
-  emitted in C rather than inheriting the code space's word size.
+  emitted in C rather than inheriting the code space's word size, and merge with a named
+  data label only when both the address space and presentation coordinate match. An
+  ordinary load accepts XML only after parsing a document containing `<binaryimage>`;
+  parse failures retain the headerless-image command guidance even when the first byte
+  is `<`.
 
 The real-binary path of §1.2 is the fourth binding, console-side: `bootstrap_from_object`
 plays the leaf role itself — it resolves the language from the object header

@@ -3584,11 +3584,14 @@ fn select_macho_slice(bytes: Vec<u8>, target: &str) -> Vec<u8> {
     peel_fat_image(bytes, slice_pref(None, Some(target)))
 }
 
+const RAW_IMAGE_INPUT_HINT: &str =
+    "unrecognized input format; for a headerless image use --raw-image --target <SLEIGH-language-id> --base <address> and at least one --entry/--addr <address>";
+
 /// Bootstrap from a file path (the `decomp_dbg` `load file [<target>] <path>`
 /// body).  Detects the format by its leading bytes: an object-format magic
 /// ([`is_object_binary`]) routes to the real-binary [`ObjectLoadImage`] path;
-/// anything else is parsed as the XML `<binaryimage>`/`<decompilertest>` corpus
-/// format.
+/// a non-object is accepted as XML only when it parses and contains the corpus's
+/// `<binaryimage>` element. Other bytes receive the raw-image command guidance.
 ///
 /// This mirrors the C++ `ArchitectureCapability::findCapability` dispatch: the
 /// `xml` capability's `isFileMatch` claims a `<bi…` document, otherwise the BFD
@@ -3618,12 +3621,18 @@ pub fn bootstrap_from_file(
         .next()
         .is_some_and(|byte| byte == b'<')
     {
-        return Err(KunaError::lowlevel(
-            "unrecognized input format; for a headerless image use --raw-image --target <SLEIGH-language-id> --base <address> and at least one --entry/--addr <address>",
-        ));
+        return Err(KunaError::lowlevel(RAW_IMAGE_INPUT_HINT));
     }
     let mut store = DocumentStorage::new();
-    let root = store.parse_document(&bytes)?.get_root().clone();
+    let root = match store.parse_document(&bytes) {
+        Ok(document) => document.get_root().clone(),
+        Err(error) => {
+            return Err(KunaError::lowlevel(format!("{error}; {RAW_IMAGE_INPUT_HINT}")));
+        }
+    };
+    if find_binaryimage(&root).is_none() {
+        return Err(KunaError::lowlevel(RAW_IMAGE_INPUT_HINT));
+    }
     bootstrap_from_root(&root, spec_roots)
 }
 

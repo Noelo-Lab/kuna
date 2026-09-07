@@ -635,9 +635,10 @@ reports the explicit seeds. Named `--functions`, section-relative selectors,
 to `decompile` (text and JSON), `decompile-all`, `functions`, and
 `decompile-project`; `decompile-graph`, `disassemble`/`read`, `xrefs`, and
 `strings` require object metadata. A headerless file used without `--raw-image`
-reports the required raw-image command shape. Quoted console filenames preserve
-paths containing whitespace; the interactive spelling is
-`load raw <target> <base> <entry[,entry...]> <filename>`.
+reports the required raw-image command shape, including when its first byte is
+`<`; only a parsed document containing `<binaryimage>` is treated as XML. Quoted
+console filenames preserve paths containing whitespace; the interactive spelling
+is `load raw <target> <base> <entry[,entry...]> <filename>`.
 
 **Failure contract (DIV-45).** A function whose decompile pipeline aborts is
 *loud*:
@@ -1532,7 +1533,8 @@ binary and attempt recompilation:
   storage, undecodable bytes as `db` lines, and a `; --- data ---` tail labeling named
   globals plus every `dat_<hex>` the `.c` references, with raw bytes. Data-tail addresses
   use their source address space's units; a `dat_<hex>` label retains the coordinate
-  printed in C.
+  printed in C, and aliases a named symbol only in the same address space at the same
+  displayed coordinate.
 - `README.md` — size, arch id, entry point, function counts, sections table, file
   inventory.
 

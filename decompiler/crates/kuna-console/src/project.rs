@@ -442,7 +442,8 @@ pub fn build_c(file_name: &str, results: &[FuncResult]) -> String {
 /// `dat_` + 1+ lowercase-hex chars, and the char after the hex run must not
 /// be an identifier char either (so a user symbol like `dat_foo` or
 /// `dat_12x3` never false-positives — the printer's tokens are exact by
-/// construction).  Returns the parsed VMAs.
+/// construction). Returns the presentation coordinates exactly as printed;
+/// they are not engine byte offsets on a word-addressed target.
 pub fn collect_dat_addrs(results: &[FuncResult]) -> BTreeSet<u64> {
     fn is_ident(b: u8) -> bool {
         b.is_ascii_alphanumeric() || b == b'_'
@@ -805,23 +806,29 @@ fn emit_data_tail(
     dat_addrs: &BTreeSet<u64>,
     out: &mut String,
 ) {
-    let mut data: BTreeMap<u64, DataLabel> = BTreeMap::new();
+    let mut data: BTreeMap<(u64, i32), DataLabel> = BTreeMap::new();
     for (name, address, type_size) in prog.global_data_symbol_addresses() {
-        let vma = address.get_offset();
-        // First named symbol at a VMA wins (global_data_symbols is
-        // (vma, name)-sorted; duplicates at one address are aliases).
-        data.entry(vma).or_insert(DataLabel {
+        let display_vma = prog.output_address_offset(&address);
+        let space_index = address.get_space().map_or(i32::MAX, |space| space.get_index());
+        // First named symbol at a displayed address wins (global_data_symbols
+        // is address/name-sorted; duplicates at one address are aliases).
+        data.entry((display_vma, space_index)).or_insert(DataLabel {
             name,
             type_size: Some(type_size),
             dat_alias: false,
             address: Some(address),
         });
     }
-    for &vma in dat_addrs {
-        data.entry(vma)
+    let data_space_index = prog
+        .arch()
+        .manage()
+        .get_default_data_space()
+        .map_or(i32::MAX, |space| space.get_index());
+    for &display_vma in dat_addrs {
+        data.entry((display_vma, data_space_index))
             .and_modify(|l| l.dat_alias = true)
             .or_insert_with(|| DataLabel {
-                name: format!("dat_{vma:x}"),
+                name: format!("dat_{display_vma:x}"),
                 type_size: None,
                 dat_alias: false,
                 address: None,
@@ -832,27 +839,36 @@ fn emit_data_tail(
     }
 
     out.push_str("\n; --- data ---\n");
-    let addrs: Vec<u64> = data.keys().copied().collect();
-    for (idx, (&vma, label)) in data.iter().enumerate() {
-        let display_vma = label
-            .address
-            .as_ref()
-            .map_or(vma, |address| prog.output_address_offset(address));
+    for (&(display_vma, _space_index), label) in &data {
+        let byte_vma = label.address.as_ref().map_or(display_vma, Address::get_offset);
         // Size: a typed symbol's datatype size; a bare `dat_` gets
         // min(gap to the next label / containing-section end, 32), floor 1.
         let size = match label.type_size {
             Some(s) if s > 0 => s as u64,
             _ => {
-                let next_label = addrs.get(idx + 1).copied();
+                let next_label = data
+                    .keys()
+                    .map(|&(addr, _)| addr)
+                    .find(|&addr| addr > display_vma);
                 let sec_end = sections
                     .iter()
-                    .find(|&&(sv, ss, _)| vma >= sv && vma < sv.saturating_add(ss))
-                    .map(|&(sv, ss, _)| sv + ss);
+                    .find(|&&(sv, ss, _)| byte_vma >= sv && byte_vma < sv.saturating_add(ss))
+                    .map(|&(sv, ss, _)| sv.saturating_add(ss))
+                    .map(|byte_end| {
+                        label
+                            .address
+                            .as_ref()
+                            .and_then(Address::get_space)
+                            .cloned()
+                            .map_or(byte_end, |space| {
+                                prog.output_address_offset(&Address::new(space, byte_end))
+                            })
+                    });
                 let bound = [next_label, sec_end]
                     .into_iter()
                     .flatten()
-                    .filter(|&b| b > vma)
-                    .map(|b| b - vma)
+                    .filter(|&b| b > display_vma)
+                    .map(|b| b - display_vma)
                     .min()
                     .unwrap_or(DAT_SIZE_CAP);
                 bound.clamp(1, DAT_SIZE_CAP)
@@ -861,7 +877,7 @@ fn emit_data_tail(
         out.push('\n');
         if label.dat_alias {
             out.push_str(&format!(
-                "{}:  ; 0x{display_vma:x} = dat_{vma:x}\n",
+                "{}:  ; 0x{display_vma:x} = dat_{display_vma:x}\n",
                 label.name
             ));
         } else {
@@ -869,7 +885,7 @@ fn emit_data_tail(
         }
         let bytes = match label.address.as_ref() {
             Some(address) => prog.read_bytes_at(address, size as usize),
-            None => prog.read_bytes(vma, size as usize),
+            None => prog.read_bytes(byte_vma, size as usize),
         };
         match bytes {
             Some(bytes) => {
@@ -880,7 +896,7 @@ fn emit_data_tail(
                         .iter()
                         .map(|&b| if (0x20..0x7f).contains(&b) { b as char } else { '.' })
                         .collect();
-                    let byte_offset = vma + row as u64 * 16;
+                    let byte_offset = byte_vma + row as u64 * 16;
                     let display_offset = match label.address.as_ref() {
                         Some(address) => {
                             let space = address
@@ -890,7 +906,7 @@ fn emit_data_tail(
                             let row_address = Address::new(space, byte_offset);
                             prog.output_address_offset(&row_address)
                         }
-                        None => byte_offset,
+                        None => display_vma + row as u64 * 16,
                     };
                     out.push_str(&format!("  {display_offset:08x}: {hex:<47}  |{ascii}|\n"));
                 }
