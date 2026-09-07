@@ -1,0 +1,98 @@
+{
+  "slug": "disassembling-40-instructions-takes",
+  "need_id": "disassembling-40-instructions-takes",
+  "track": "perf",
+  "scope": "small",
+  "scope_filed": "large",
+  "worker": "b-r6-disassembling-40",
+  "round": 6,
+  "attempt": 1,
+  "date": "2026-09-07",
+  "symptom": "Disassembling 40 instructions takes about 21 seconds (major, 1 instance, challenge 69d7f15a8afd9d6c48b48871). `kuna disassemble ./crackme_shroud.exe 0x140001000 --addr --count 40 --json` returned 40 instructions in 20.9154 s and 20.7541 s.",
+  "hypothesis_filed": "Address-based disassembly pays for whole-image analysis.",
+  "hypothesis_verdict": "upheld, and the round-5 refuter's correction of it is exact",
+  "decisions": [
+    {
+      "what": "the refuter's five findings all reproduced, and its point (3) is what made the fix findable",
+      "detail": "--count 1 / 40 / 400 all cost ~20 s, so nothing is per-instruction; `--option listing off` is byte-identical AND no faster. The reason listing is inert is that a 9.4 MB file resolves `--mode auto` to `fast`, whose FAST_OVERRIDES set `listing off` + `fast_funcdisc on`. `fast_funcdisc` is the second gate of `run_listing_consumers`, so the deferred Listing is built anyway. `--option fast_funcdisc off` gives 1.54 s and BYTE-IDENTICAL json. A 24-sample gdb-as-parent profile of the default run: 16/24 in `Listing::build_with_meta`, 14/24 in `run_listing_consumers`, the rest in the SLEIGH decode underneath."
+    },
+    {
+      "what": "the filed scope of `large` was overturned; the design the refuter asked for is one file",
+      "detail": "The refuter's point (5) -- 'give disassemble a lighter DriverDefaults and you pass the acceptance while breaking name resolution' -- is right about a VARIANT SWAP and does not apply to a lazy one. The fallback makes the two answers provably equal: the discovery walk reaches a caller-bounded listing through exactly two values (the target name and `from_entry`, which forces the view), both of which `resolve_region` already computes, so the windowed answer can be tested against the walk's before it is kept. No new pass, no new module, no `DriverDefaults` variant -- the suppression rides the existing `--option` list, which `load_program` already applies AFTER the driver defaults."
+    },
+    {
+      "what": "the derived-window case is not attempted at all, rather than attempted and rolled back",
+      "detail": "`kuna disassemble <target>` with no `--count`/`--bytes`/range takes its stop from `function_extent_at`, which the walk can shorten by discovering a closer next entry. That is decided from argv before any load, so the full walk runs FIRST and the double load never happens there: measured +0.6% (noise) on the witness."
+    },
+    {
+      "what": "the loader tolerance notes had to become say-once, or the invariance claim was false",
+      "detail": "The first sweep found 21 differences in 3,838 cases, ALL stderr and ALL the same shape: a second load of the same image re-announces `[kuna] ELF section table unusable ...`, the PE data-directory clamp, and the ET_REL report. Routed the six loader-note sites through a new `kuna_base::notes::say_once`, keyed by the image so two images with identical note text each get theirs. Re-swept: 0 differences."
+    }
+  ],
+  "mechanism": "`disassemble::render` runs a windowed load first when `window_is_caller_bounded` (--count | --bytes | an explicit start-end range). `windowed_options` appends `listing off` + `fast_funcdisc off` -- the two gates of `kuna_analysis::passes::run_listing_consumers` -- to the resolved `--mode` option list, skipping any the caller named. `windowed_answer_is_final` keeps that answer only when the region carries a name AND (it came from a function entry OR `decide_view` agrees for both settings of `from_entry`). Otherwise the command reloads with the full bundle and answers exactly as before.",
+  "measurement": {
+    "method": "interleaved base/new, same shell, taskset-pinned to one core, warmup + 5 reps (9 on the small fixtures)",
+    "targets": [
+      {
+        "target": "crackme_shroud.exe (9.4 MB PE32+, 99.4% .text) 0x140001000 --addr --count 40",
+        "base_median_ms": 19692.9,
+        "new_median_ms": 1170.0,
+        "delta_pct": -94.1,
+        "output": "byte-identical"
+      },
+      {
+        "target": "the same by generated name, sub_140001000 --count 40",
+        "base_median_ms": 19677.7,
+        "new_median_ms": 1158.8,
+        "delta_pct": -94.1
+      },
+      {
+        "target": "ssh-sk-helper (in-repo, 461 KB) 0x5000 --addr --count 40",
+        "base_median_ms": 838.9,
+        "new_median_ms": 323.7,
+        "delta_pct": -61.4
+      },
+      {
+        "target": "pe_imports.exe (in-repo, 499 KB) 0x140001000 --addr --count 40",
+        "base_median_ms": 200.7,
+        "new_median_ms": 150.7,
+        "delta_pct": -24.9
+      },
+      {
+        "target": "crackme_shroud.exe 0x140001000 --addr, NO --count (derived window)",
+        "base_median_ms": 19695.7,
+        "new_median_ms": 19812.0,
+        "delta_pct": 0.6,
+        "note": "not attempted -- decided from argv, so no windowed load runs"
+      },
+      {
+        "target": "crackme_shroud.exe 0x140001007 --addr --count 3 (mid-function, escalates)",
+        "base_median_ms": 19734.0,
+        "new_median_ms": 20921.6,
+        "delta_pct": 6.0,
+        "note": "the honest cost of the fallback: one extra minimal load (1.16 s here) on top of the walk. Bounded by the minimal load, so it is 6% of a 20 s walk on this image and tens of ms elsewhere."
+      }
+    ]
+  },
+  "acceptance": "scripts.repipe.verify --need disassembling-40-instructions-takes --json -- PASS on the rebased tree (wall_ms median 1873.9 < 10000; 1 closed, 0 regressed)",
+  "tests": [
+    "tests/cli/disassembling-40-instructions-takes.json (repointed to the in-repo ssh-sk-helper fixture, min of 5 < 600 ms -- 833 ms on base; CI has no dataset)",
+    "decompiler/crates/kuna-cli/tests/disassemble_cli.rs::a_name_only_the_discovery_walk_invents_still_resolves",
+    "decompiler/crates/kuna-cli/tests/disassemble_cli.rs::a_bounded_listing_agrees_with_the_walk_it_skipped",
+    "decompiler/crates/kuna-cli/src/disassemble.rs::tests::a_window_is_the_callers_when_count_bytes_or_a_range_bounds_it",
+    "decompiler/crates/kuna-cli/src/disassemble.rs::tests::the_windowed_load_turns_the_discovery_walk_off_unless_the_caller_named_it",
+    "decompiler/crates/kuna-cli/src/disassemble.rs::tests::the_windowed_answer_stands_only_when_the_walk_could_not_have_changed_it"
+  ],
+  "sweep": "3,838 `kuna disassemble` / `kuna read` invocations over 139 in-repo binaries (ELF/PE/Mach-O/COFF, x86-64/i386/ARM/AArch64/Thumb/MIPS/PPC/RISC-V/SPARC, executables, shared objects and relocatable objects), base vs new, comparing stdout, stderr and exit code. Targets per binary: `main` bounded and unbounded, and for five entries each (first, a generated `sub_*`, a symbol-named one, the last) the address form bounded by --count/--bytes/range/unbounded, the address+1 mid-function form, the `--as data` form, `kuna read`, and the name form. Result: 0 stdout differences, 0 exit-code differences, 0 stderr differences.",
+  "no_div_row": "No DIV row: the registry records why a kuna DEFAULT differs from upstream, and this changes no default and no output -- `kuna disassemble` has no upstream counterpart at all, and the DIV-15/DIV-20/DIV-68 driver bundles are untouched for every surface. The behaviour is described in docs/spec/00-overview.md and docs/cli.md instead. (`counter:div` was also held by a live builder this round.)",
+  "gates": {
+    "make test": "PARITY OK, datatests 675/675 assertions passed (post-rebase)",
+    "make test-stages": "PARITY OK (post-rebase)",
+    "make check-spec": "check-spec OK",
+    "make test-cli": "tests/cli 65/65 passed (includes the promoted probe)",
+    "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
+    "make rust-test": "369 suites green; the single failure is kuna-decomp::verify_w10_proto_unlock::w10_proto_unlock_const_return_collapses_no_tied_roundtrip, the known KUNA_DECOMP_TEST artifact -- the repipe launcher points the C++ oracle at kuna's own decomp_test_dbg, and the assertion requires `xunknown4` which no kuna build prints. Falsified per the recipe: `env -u KUNA_DECOMP_TEST cargo test -p kuna-decomp --test verify_w10_proto_unlock` is 4/4 green, which is how CI runs it (no C++ tree exists there).",
+    "scripts.repipe.mergecheck --against origin/main": "merge guards clean, 0 rejects; all shared counters re-derived and agree (159 settables, tiers 41/64/54, 250 corpus files, next ElementId 4151)"
+  },
+  "status": "merged-pending"
+}

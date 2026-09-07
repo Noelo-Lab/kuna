@@ -420,7 +420,7 @@ impl ObjectLoadImage {
         let target = target.and_then(explicit_language_target);
         if emit_diagnostics {
             if let Some(note) = target.and_then(|t| target_endian_note(&file, t)) {
-                eprintln!("[kuna target] {filename}: {note}");
+                kuna_base::notes::say_once(filename, &format!("[kuna target] {filename}: {note}"));
             }
         }
         let effective_arch = effective_architecture(&file, bytes);
@@ -698,14 +698,20 @@ impl ObjectLoadImage {
         // backing at all otherwise), and both halves get a foldable range.
         let fpconst = crate::loader::kuna_msvcfpconst::plan(file, &layout);
         for w in &fpconst.warnings {
-            eprintln!("[kuna msvcfpconst] {filename}: {w}");
+            kuna_base::notes::say_once(
+                filename,
+                &format!("[kuna msvcfpconst] {filename}: {w}"),
+            );
         }
 
         // One bounded report per loader construction. Analysis-side consumers
         // may construct another layout for address rebasing, but never print it.
         if emit_diagnostics {
             for line in layout.diagnostics.report_lines() {
-                eprintln!("[kuna ET_REL loader] {filename}: {line}");
+                kuna_base::notes::say_once(
+                    filename,
+                    &format!("[kuna ET_REL loader] {filename}: {line}"),
+                );
             }
         }
 

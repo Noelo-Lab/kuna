@@ -281,9 +281,33 @@ fn run_as(argv: &[String], default_view: ViewRequest) -> i32 {
 /// boundary, so the listing is testable without a subprocess.
 pub(crate) fn render(args: &DisArgs) -> Result<Listing, String> {
     let options = mode_options_for_binary(args.mode.as_deref(), &args.binary, args.options.clone())?;
+
+    // A caller-bounded window is answerable without the program-wide discovery
+    // walk, so try it there first and keep the answer only if it is already the
+    // one the full inventory would give ([`windowed_answer_is_final`]).
+    if window_is_caller_bounded(args) {
+        let load = load_args(args, windowed_options(&options, &args.options));
+        let prog = load_program(&load, DriverDefaults::Inventory)?;
+        if let Ok(region) = resolve_region(&prog, args) {
+            let section = section_flags_at(&prog, region.start);
+            if windowed_answer_is_final(&region, section, args.view.unwrap_or(ViewRequest::Auto)) {
+                return listing_for(args, &prog, region);
+            }
+        }
+    }
+
     // The inventory bundle: this surface enumerates entries to resolve a name
     // and to bound a function, and decompiles nothing.
-    let load = Args {
+    let load = load_args(args, options);
+    let prog = load_program(&load, DriverDefaults::Inventory)?;
+
+    let region = resolve_region(&prog, args)?;
+    listing_for(args, &prog, region)
+}
+
+/// The load arguments this surface takes, with `options` already resolved.
+fn load_args(args: &DisArgs, options: Vec<(String, String)>) -> Args {
+    Args {
         binary: args.binary.clone(),
         json: args.json,
         names: None,
@@ -298,10 +322,11 @@ pub(crate) fn render(args: &DisArgs) -> Result<Listing, String> {
         target: args.target.clone(),
         sleighpath: args.sleighpath.clone(),
         isa: args.isa,
-    };
-    let prog = load_program(&load, DriverDefaults::Inventory)?;
+    }
+}
 
-    let region = resolve_region(&prog, args)?;
+/// Render the listing for an already-resolved target.
+fn listing_for(args: &DisArgs, prog: &ConsoleProgram, region: Region) -> Result<Listing, String> {
     // A packed image is the common way to hold an address that is real in the
     // program and absent from the file, so the failure names the move that fixes
     // it rather than leaving the caller to guess.
@@ -312,10 +337,10 @@ pub(crate) fn render(args: &DisArgs) -> Result<Listing, String> {
             region.start, args.binary
         ));
     }
-    let (view, mut notes) = choose_view(&prog, &region, args.view.unwrap_or(ViewRequest::Auto));
+    let (view, mut notes) = choose_view(prog, &region, args.view.unwrap_or(ViewRequest::Auto));
     let text = match view {
         View::Code => {
-            let (rows, truncated, folded) = walk(&prog, &region, args.count);
+            let (rows, truncated, folded) = walk(prog, &region, args.count);
             if folded > 0 {
                 notes.push(pool_note(folded));
             }
@@ -326,7 +351,7 @@ pub(crate) fn render(args: &DisArgs) -> Result<Listing, String> {
             }
         }
         View::Data => {
-            let (rows, truncated) = walk_data(&prog, &region, args.count);
+            let (rows, truncated) = walk_data(prog, &region, args.count);
             if args.json {
                 format!(
                     "{}\n",
@@ -338,6 +363,65 @@ pub(crate) fn render(args: &DisArgs) -> Result<Listing, String> {
         }
     };
     Ok(Listing { text, notes })
+}
+
+// --- the windowed load --------------------------------------------------------
+
+/// The whole-image discovery passes a caller-bounded listing does not need.
+///
+/// These two are the gates of the analysis tier's deferred Listing build
+/// (`kuna_analysis::passes::run_listing_consumers`); every other discovery pass a
+/// `--mode` preset turns on — `funcstart_patterns`, `aif`, `ptrentry`,
+/// `tailcallentry`, `poolentry` — is a consumer of that build and is inert once
+/// they are off.
+const WINDOW_SUPPRESSED: [&str; 2] = ["listing", "fast_funcdisc"];
+
+/// Did the caller bound the listing themselves — `--count`, `--bytes`, or an
+/// explicit `start-end` range?
+///
+/// A window the caller did not bound is the function extent the inventory
+/// reports (`function_extent_at`), so there is nothing to answer without it.
+fn window_is_caller_bounded(args: &DisArgs) -> bool {
+    args.count.is_some() || args.bytes.is_some() || split_range(args.spec.trim()).is_some()
+}
+
+/// `options` with the whole-image discovery passes turned off, unless the caller
+/// named one — then their word stands.
+///
+/// What turns them on here is the resolved `--mode` preset, and that preset is a
+/// whole-binary *decompilation* policy: `auto` selects `fast` from 2 MiB up, and
+/// the walk `fast` retains (`fast_funcdisc`) decodes every executable byte in the
+/// image. On a 9.4 MB PE whose `.text` is 99.4% of the file that is 20 s of
+/// recursive descent to print 40 instructions, and the listing itself reads
+/// nothing the walk produces. `explicit` is the caller's own `--option` list,
+/// before the preset was merged into it.
+fn windowed_options(
+    options: &[(String, String)],
+    explicit: &[(String, String)],
+) -> Vec<(String, String)> {
+    let mut out = options.to_vec();
+    for name in WINDOW_SUPPRESSED {
+        if !explicit.iter().any(|(option, _)| option == name) {
+            out.push((name.to_string(), "off".to_string()));
+        }
+    }
+    out
+}
+
+/// Is the windowed load's answer already the one the full inventory would give?
+///
+/// The discovery walk reaches a caller-bounded listing through exactly two
+/// values: the target's `name`, and `from_entry`, which forces the instruction
+/// view. So the windowed answer stands when the program named the target from a
+/// fact it already held, and when the view it picked does not turn on an entry
+/// the walk might have found there. Everything else — a name only discovery
+/// invents, a bare address in a data section — falls back and pays for the walk,
+/// which is why the fallback is what keeps this from being the variant swap that
+/// loses `kuna disassemble <generated name>` on a stripped image.
+fn windowed_answer_is_final(region: &Region, section: Option<u32>, want: ViewRequest) -> bool {
+    region.name.is_some()
+        && (region.from_entry
+            || decide_view(want, false, section) == decide_view(want, true, section))
 }
 
 // --- which view ---------------------------------------------------------------
@@ -1344,6 +1428,109 @@ mod tests {
                 decide_view(want, from_entry, flags),
                 expect,
                 "{want:?} / from_entry {from_entry} / flags {flags:?}"
+            );
+        }
+    }
+
+    fn dis_args(spec: &str, count: Option<usize>, bytes: Option<u64>) -> DisArgs {
+        DisArgs {
+            binary: "bin".into(),
+            spec: spec.into(),
+            by_address: false,
+            view: None,
+            count,
+            bytes,
+            json: false,
+            options: Vec::new(),
+            func_decls: Vec::new(),
+            mode: None,
+            slice: None,
+            target: None,
+            sleighpath: None,
+            isa: None,
+        }
+    }
+
+    #[test]
+    fn a_window_is_the_callers_when_count_bytes_or_a_range_bounds_it() {
+        for (spec, count, bytes, expect) in [
+            ("main", Some(8), None, true),
+            ("main", None, Some(64), true),
+            ("0x401000", Some(1), None, true),
+            ("0x401000-0x401040", None, None, true),
+            ("0x401000..0x401040", None, None, true),
+            // Nothing bounds these but the inventory's own function extent.
+            ("main", None, None, false),
+            ("0x401000", None, None, false),
+        ] {
+            assert_eq!(
+                window_is_caller_bounded(&dis_args(spec, count, bytes)),
+                expect,
+                "{spec:?} / count {count:?} / bytes {bytes:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_windowed_load_turns_the_discovery_walk_off_unless_the_caller_named_it() {
+        let preset: Vec<(String, String)> =
+            vec![("listing".into(), "off".into()), ("fast_funcdisc".into(), "on".into())];
+
+        let suppressed = windowed_options(&preset, &[]);
+        for name in WINDOW_SUPPRESSED {
+            assert_eq!(
+                suppressed.iter().filter(|(o, _)| o == name).next_back().map(|(_, v)| v.as_str()),
+                Some("off"),
+                "{name} must end the list off"
+            );
+        }
+
+        // The caller's own `--option` is the last word: naming one skips it.
+        let named: Vec<(String, String)> = vec![("fast_funcdisc".into(), "on".into())];
+        let mut merged = preset.clone();
+        merged.extend(named.clone());
+        let kept = windowed_options(&merged, &named);
+        assert_eq!(
+            kept.iter().filter(|(o, _)| o == "fast_funcdisc").next_back().map(|(_, v)| v.as_str()),
+            Some("on")
+        );
+        assert_eq!(
+            kept.iter().filter(|(o, _)| o == "listing").next_back().map(|(_, v)| v.as_str()),
+            Some("off")
+        );
+    }
+
+    #[test]
+    fn the_windowed_answer_stands_only_when_the_walk_could_not_have_changed_it() {
+        let data = section_flags::DATA | section_flags::READONLY;
+        let code = section_flags::CODE;
+        let region = |name: Option<&str>, from_entry: bool| Region {
+            start: 0x401000,
+            end: Some(0x401040),
+            name: name.map(str::to_string),
+            derived: false,
+            from_entry,
+        };
+        use ViewRequest::{Auto, Data as WantData};
+        for (name, from_entry, section, want, expect) in [
+            // Named from a fact the windowed load already held, in a section
+            // whose view does not depend on there being an entry.
+            (Some("main"), true, Some(code), Auto, true),
+            (Some("sub_401000"), true, Some(data), Auto, true),
+            (Some("g_table"), false, Some(code), Auto, true),
+            (Some("g_table"), false, None, Auto, true),
+            // Only the walk could name this one.
+            (None, false, Some(code), Auto, false),
+            // A data section renders as bytes here and as instructions if the
+            // walk finds an entry, so the answer is not settled yet.
+            (Some("g_table"), false, Some(data), Auto, false),
+            // ...unless the caller pinned the view, which outranks the entry.
+            (Some("g_table"), false, Some(data), WantData, true),
+        ] {
+            assert_eq!(
+                windowed_answer_is_final(&region(name, from_entry), section, want),
+                expect,
+                "{name:?} / from_entry {from_entry} / section {section:?} / {want:?}"
             );
         }
     }

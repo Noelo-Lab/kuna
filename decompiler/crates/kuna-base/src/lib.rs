@@ -29,6 +29,7 @@ pub mod marshal;
 pub mod space;
 pub mod address;
 pub mod cfmt;
+pub mod notes;
 pub mod crc32;
 pub mod compression;
 pub mod filemanage;

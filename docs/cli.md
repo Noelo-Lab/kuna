@@ -1184,6 +1184,20 @@ emitted C changes. Verified against `objdump -d`: 19,368 instructions across fou
 binaries — a 32-bit x86 ELF, an x86-64 ELF, a stripped x86-64 PIE and an x86-64
 PE — byte-identical at every address, with the same instruction boundaries.
 
+A window the caller bounded — `--count`, `--bytes`, or an explicit `start-end`
+range — does not pay for the program-wide function-discovery walk. That walk is
+what `--mode` turns on for a whole-binary *decompilation*, and on a large image it
+dominates: `auto` selects `fast` from 2 MiB up, whose retained discovery pass
+decodes every executable byte, so listing 40 instructions of a 9.4 MB PE whose
+`.text` is 99.4% of the file took 20.1 s, of which 40 instructions were 0.1 s.
+Such a listing is answered from the load's own symbols instead (1.4 s, the same
+bytes). The walk is not skipped, only deferred: when it is the only thing that can
+answer — a name it invents (`sub_1190` on a stripped image), an address it alone
+knows, a bare address in a data section whose view depends on there being an entry
+— the command falls back to it and answers exactly as before. Naming `--option
+listing` or `--option fast_funcdisc` yourself keeps your setting either way, and a
+listing whose length came from the function extent always takes the full walk.
+
 Exit codes follow the house contract: a listing is `0`; an unresolvable name or
 an address with nothing mapped behind it is `1` with the reason on stderr (on a
 packed image, run `kuna unpack` first — the original addresses do not exist until

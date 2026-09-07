@@ -161,14 +161,17 @@ fn open_fingerprint_matched(
         if locate::fingerprint_ok(cv, &guid, info.age) {
             return Some(pdb);
         }
-        eprintln!(
-            "[kuna pdb] {}: age {} guid {} does not match the image's CodeView record \
-             (age {} guid {}); not applied",
-            path.display(),
-            info.age,
-            guid.to_uppercase(),
-            cv.age(),
-            cv.guid_string().unwrap_or_else(|| "<none, NB10 record>".to_string()),
+        kuna_base::notes::say_once(
+            &path.display().to_string(),
+            &format!(
+                "[kuna pdb] {}: age {} guid {} does not match the image's CodeView record \
+                 (age {} guid {}); not applied",
+                path.display(),
+                info.age,
+                guid.to_uppercase(),
+                cv.age(),
+                cv.guid_string().unwrap_or_else(|| "<none, NB10 record>".to_string()),
+            ),
         );
     }
     None

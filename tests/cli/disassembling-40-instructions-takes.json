@@ -1,0 +1,53 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "disassemble",
+    "{{BIN}}",
+    "0x5000",
+    "--addr",
+    "--count",
+    "40",
+    "--json"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 5,
+  "target": {
+    "binary_rel": "tests/hang-repro/ssh-sk-helper",
+    "binary_sha256": "e03a07c44cc41d6f08bbe4b0275ddd1037c973d116ece33e6f14b66a0712b25b",
+    "binary_size": 461448,
+    "binary_source": "in-repo",
+    "in_repo_path": "tests/hang-repro/ssh-sk-helper",
+    "selector": "0x5000",
+    "selector_kind": "addr"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "json": [
+      {
+        "path": "count",
+        "op": "eq",
+        "value": 40
+      },
+      {
+        "path": "target.name",
+        "op": "eq",
+        "value": "_DT_INIT"
+      }
+    ],
+    "wall_ms": {
+      "stat": "min",
+      "lt": 600
+    }
+  },
+  "notes": "Acceptance of RE-need disassembling-40-instructions-takes, repointed from its dataset image (9.4 MB PE32+, 99.4% .text, 19,693 -> 1,170 ms median) to the largest in-repo fixture under the 500 KiB threshold that turns the discovery walk on: CI has no dataset. Bound recalibrated, min of 5: 833 ms before, 318 after. `target.name` too -- the cheap way to pass a wall bound here is to lose the name."
+}

@@ -2196,7 +2196,7 @@ pub fn bootstrap_from_object_with_isa(
     // same recovered view. A file with a usable section table is untouched.
     let (bytes, shdr_note) = kuna_analysis::loader::elf_shdr::tolerate_unusable_section_table(bytes);
     if let Some(note) = shdr_note {
-        eprintln!("[kuna] {note}");
+        kuna_base::notes::say_once(path, &format!("[kuna] {note}"));
     }
     // (kuna) PE data-directory tolerance: the same normalization one format over.
     // A PE's `NumberOfRvaAndSizes` is declared separately from the room its own
@@ -2208,7 +2208,7 @@ pub fn bootstrap_from_object_with_isa(
     let (bytes, datadir_note) =
         kuna_analysis::loader::pe_datadirs::tolerate_oversized_data_directories(bytes);
     if let Some(note) = datadir_note {
-        eprintln!("[kuna] {note}");
+        kuna_base::notes::say_once(path, &format!("[kuna] {note}"));
     }
     let explicit_isa = isa.is_some();
     // LoadImageBfd(filename) + open(): parse the ELF (machine, segments, symbols).

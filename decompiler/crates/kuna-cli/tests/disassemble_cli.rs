@@ -863,3 +863,68 @@ fn the_cli_reports_a_missing_binary_as_exit_one() {
         "the reason must be legible, got: {stderr}"
     );
 }
+
+// --- the windowed load --------------------------------------------------------
+//
+// A caller-bounded listing is answered without the program-wide discovery walk,
+// and falls back to it when the walk is the only thing that can answer. These
+// pin both halves: the fallback still resolves a name only discovery invents,
+// and the fast half agrees with the walk it skipped.
+
+/// The stripped x86-64 fixture whose `sub_1190` exists ONLY because the Listing
+/// tier's discovery walk found it: `kuna functions` lists 20 entries with the
+/// walk on and 19 with it off, and `sub_1190` is the difference.
+fn stripped_dynamic() -> String {
+    fixture("stripped_dynamic_x86_64")
+}
+
+/// The name the discovery walk invents still resolves, by either spelling.
+///
+/// This is the regression the windowed load could have shipped: skip the walk
+/// for a bounded window and `kuna disassemble sub_1190 --count 4` answers "no
+/// symbol named" for a name `kuna functions` prints (RE-need
+/// `analysis-generated-function-name`).
+#[test]
+fn a_name_only_the_discovery_walk_invents_still_resolves() {
+    let Some(by_name) = listing(&[&stripped_dynamic(), "sub_1190", "--count", "4"])
+    else {
+        return;
+    };
+    assert_eq!(rows(&by_name).len(), 4, "{by_name}");
+    assert!(by_name.contains("sub_1190 @ 0x1190"), "{by_name}");
+
+    // The address spelling of the same target: the windowed load has no name for
+    // it either, so it must fall back too rather than print a nameless header.
+    let by_addr = listing(&[&stripped_dynamic(), "0x1190", "--addr", "--count", "4"])
+        .expect("the same load already succeeded");
+    assert_eq!(rows(&by_addr), rows(&by_name), "{by_addr}");
+    assert!(by_addr.contains("sub_1190 @ 0x1190"), "{by_addr}");
+}
+
+/// The bounded listing is the same one the discovery walk would have produced.
+///
+/// The right-hand side names both walk options, which the windowed load leaves
+/// alone (the caller's word is the last one), so it is the full-inventory answer
+/// — and the left-hand side is the windowed one.
+#[test]
+fn a_bounded_listing_agrees_with_the_walk_it_skipped() {
+    let walk = ["--option", "listing", "on", "--option", "fast_funcdisc", "on"];
+    for (binary, target, bound) in [
+        (fauxware(), "main", ["--count", "6"]),
+        (fauxware(), "main", ["--bytes", "24"]),
+        (fauxware(), "0x40071d", ["--addr", "--count"]),
+        (stripped_dynamic(), "sub_1020", ["--count", "6"]),
+        (stripped_dynamic(), "0x1020-0x1040", ["--count", "6"]),
+    ] {
+        // `0x40071d --addr` needs its count spelled after the flag pair above.
+        let bound: Vec<&str> =
+            if bound[1] == "--count" { vec![bound[0], bound[1], "6"] } else { bound.to_vec() };
+        let mut plain = vec![binary.as_str(), target];
+        plain.extend(bound.iter().copied());
+        let Some(windowed) = listing(&plain) else { return };
+        let mut full = plain.clone();
+        full.extend(walk.iter().copied());
+        let full = listing(&full).expect("the same load already succeeded");
+        assert_eq!(windowed, full, "{plain:?}");
+    }
+}
