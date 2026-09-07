@@ -942,6 +942,12 @@ impl TypeDeclarator {
         &self.ident
     }
 
+    /// C++ `getModel` (`grammar.hh:185`): the calling convention the
+    /// declaration named, or `""` when it named none.
+    pub fn get_model(&self) -> &str {
+        &self.model
+    }
+
     /// C++ `hasProperty` (`grammar.hh:187`).
     pub fn has_property(&self, mask: uint4) -> bool {
         (self.flags & mask) != 0
@@ -1223,6 +1229,10 @@ enum PToken {
     Scoperes,
 }
 
+/// The empty prototype-model registry — the classification a parse with no
+/// architecture behind it gets ([`CParse::new`]).
+const NO_MODELS: &[String] = &[];
+
 /// The C-declaration parser (C++ `CParse`, `grammar.hh:207-286` +
 /// `grammar.cc:861-1387`).
 ///
@@ -1232,6 +1242,11 @@ enum PToken {
 /// through the by-value AST), so they are dropped.
 pub struct CParse<'a> {
     factory: &'a dyn TypeFactory,
+    /// The prototype-model names the loaded `Architecture` has registered
+    /// (C++ `glb->protoModels`, read by `lookupIdentifier`'s `glb->hasModel`).
+    /// Empty when the caller has no architecture, which is the classification
+    /// this parser had before the registry was reachable.
+    models: &'a [String],
     /// The data-organization record (the `glb` state `build_type`/`get_prototype`
     /// read).  In C++ this is part of the `Architecture *glb` the parser holds; the
     /// kuna split carries it alongside the factory.  // STUB(w6-fspec-2)
@@ -1271,6 +1286,7 @@ impl<'a> CParse<'a> {
         keywords.insert("enum".to_string(), flags::F_ENUM);
         CParse {
             factory,
+            models: NO_MODELS,
             org,
             keywords,
             lexer: GrammarLexer::new(maxbuf),
@@ -1281,6 +1297,20 @@ impl<'a> CParse<'a> {
             lastdecls: None,
             pushed: None,
         }
+    }
+
+    /// [`CParse::new`] with the architecture's registered prototype-model names,
+    /// so `__stdcall` and friends classify as function specifiers rather than as
+    /// bare identifiers (C++ `CParse` reaches them through its `glb`).
+    pub fn with_models(
+        factory: &'a dyn TypeFactory,
+        org: DataOrg,
+        maxbuf: int4,
+        models: &'a [String],
+    ) -> CParse<'a> {
+        let mut p = CParse::new(factory, org, maxbuf);
+        p.models = models;
+        p
     }
 
     /// C++ `getError` (`grammar.hh:283`).
@@ -1360,9 +1390,11 @@ impl<'a> CParse<'a> {
         if let Ok(Some(tp)) = self.factory.find_by_name(nm) {
             return IdentClass::TypeName(tp);
         }
-        // glb->hasModel(nm) -> FUNCTION_SPECIFIER.  The kuna Architecture has no
-        // model registry, so this never fires (it would classify e.g.
-        // "__stdcall" as a function specifier).  // STUB(w6-fspec-2)
+        // glb->hasModel(nm) -> FUNCTION_SPECIFIER (grammar.cc:1268): an identifier
+        // the Architecture knows as a prototype model names a calling convention.
+        if self.models.iter().any(|m| m == nm) {
+            return IdentClass::FunctionSpecifier;
+        }
         IdentClass::Identifier
     }
 
@@ -1450,26 +1482,40 @@ impl<'a> CParse<'a> {
     // -- grammar.y reduce actions (grammar.cc:900-1190) -----------------------
 
     /// C++ `mergeSpecDec(TypeSpecifiers*,TypeDeclarator*)` (`grammar.cc:900-907`).
-    fn merge_spec_dec(spec: &TypeSpecifiers, mut dec: TypeDeclarator) -> TypeDeclarator {
+    ///
+    /// (kuna) The declarator may already carry a calling convention of its own
+    /// ([`CParse::declarator_model`]), so the specifier run only overwrites when
+    /// it names one; naming a convention in both places is the same mistake
+    /// `addFuncSpecifier` rejects.
+    fn merge_spec_dec(&mut self, spec: &TypeSpecifiers, mut dec: TypeDeclarator) -> TypeDeclarator {
         dec.basetype = spec.type_specifier.clone();
-        dec.model = spec.function_specifier.clone();
+        if !spec.function_specifier.is_empty() {
+            if !dec.model.is_empty() {
+                self.set_error("Multiple parameter models");
+            }
+            dec.model = spec.function_specifier.clone();
+        }
         dec.flags |= spec.flags;
         dec
     }
 
     /// C++ `mergeSpecDec(TypeSpecifiers*)` (`grammar.cc:909-915`).
-    fn merge_spec_dec_empty(spec: &TypeSpecifiers) -> TypeDeclarator {
-        Self::merge_spec_dec(spec, TypeDeclarator::new())
+    fn merge_spec_dec_empty(&mut self, spec: &TypeSpecifiers) -> TypeDeclarator {
+        self.merge_spec_dec(spec, TypeDeclarator::new())
     }
 
     /// C++ `mergeSpecDecVec(TypeSpecifiers*,vector*)` (`grammar.cc:917-923`).
-    fn merge_spec_dec_vec(spec: &TypeSpecifiers, declist: Vec<TypeDeclarator>) -> Vec<TypeDeclarator> {
-        declist.into_iter().map(|d| Self::merge_spec_dec(spec, d)).collect()
+    fn merge_spec_dec_vec(
+        &mut self,
+        spec: &TypeSpecifiers,
+        declist: Vec<TypeDeclarator>,
+    ) -> Vec<TypeDeclarator> {
+        declist.into_iter().map(|d| self.merge_spec_dec(spec, d)).collect()
     }
 
     /// C++ `mergeSpecDecVec(TypeSpecifiers*)` (`grammar.cc:925-935`).
-    fn merge_spec_dec_vec_empty(spec: &TypeSpecifiers) -> Vec<TypeDeclarator> {
-        vec![Self::merge_spec_dec_empty(spec)]
+    fn merge_spec_dec_vec_empty(&mut self, spec: &TypeSpecifiers) -> Vec<TypeDeclarator> {
+        vec![self.merge_spec_dec_empty(spec)]
     }
 
     /// C++ `convertFlag(string*)` (`grammar.cc:937-947`).
@@ -1567,12 +1613,12 @@ impl<'a> CParse<'a> {
         match self.peek()? {
             PToken::Punct(c) if *c == b';' => {
                 self.next()?;
-                Ok(Self::merge_spec_dec_vec_empty(&spec))
+                Ok(self.merge_spec_dec_vec_empty(&spec))
             }
             _ => {
                 let declist = self.init_declarator_list()?;
                 self.expect_punct(b';')?;
-                Ok(Self::merge_spec_dec_vec(&spec, declist))
+                Ok(self.merge_spec_dec_vec(&spec, declist))
             }
         }
     }
@@ -1882,7 +1928,7 @@ impl<'a> CParse<'a> {
         let spec = self.specifier_qualifier_list()?;
         let declist = self.struct_declarator_list()?;
         self.expect_punct(b';')?;
-        Ok(Self::merge_spec_dec_vec(&spec, declist))
+        Ok(self.merge_spec_dec_vec(&spec, declist))
     }
 
     /// `specifier_qualifier_list` (`grammar.y:117-122`).
@@ -2008,13 +2054,69 @@ impl<'a> CParse<'a> {
     /// `declarator: direct_declarator | pointer direct_declarator`
     /// (`grammar.y:152-155`).
     fn declarator(&mut self) -> KunaResult<TypeDeclarator> {
-        if matches!(self.peek()?, PToken::Punct(b'*')) {
+        // (kuna) A calling convention may sit on either side of the pointer run:
+        // `int4 (__stdcall *cb)(int4)` is the Win32 callback spelling,
+        // `void * __stdcall f(void)` the pointer-returning-function one.
+        let mut model = self.declarator_model()?;
+        let mut dec = if matches!(self.peek()?, PToken::Punct(b'*')) {
             let ptr = self.pointer()?;
+            let after = self.declarator_model()?;
+            if !after.is_empty() {
+                if !model.is_empty() {
+                    self.set_error("Multiple parameter models");
+                    return Err(KunaError::parse(self.lasterror.clone()));
+                }
+                model = after;
+            }
             let dec = self.direct_declarator()?;
-            Ok(Self::merge_pointer(&ptr, dec))
+            Self::merge_pointer(&ptr, dec)
         } else {
-            self.direct_declarator()
+            self.direct_declarator()?
+        };
+        if !model.is_empty() {
+            dec.model = model;
         }
+        Ok(dec)
+    }
+
+    /// (kuna) A calling convention named in DECLARATOR position — the
+    /// `void * __stdcall LoadLibraryExW(...)` spelling that Windows headers,
+    /// MSVC and Ghidra's own listings use.  The C-standard grammar admits a
+    /// function specifier only in `declaration_specifiers`, which sits *before*
+    /// the `*`, so a pointer-returning function has nowhere to put its
+    /// convention and the whole declaration is rejected as bad syntax.
+    ///
+    /// Returns the empty string when the lookahead names no convention.  Only a
+    /// registered prototype model is taken here; a reserved specifier
+    /// (`inline`) is left for the productions that own it.
+    /// Does the lookahead name a calling convention (as opposed to a reserved
+    /// function specifier like `inline`)?
+    fn peek_is_model(&mut self) -> KunaResult<bool> {
+        let nm = match self.peek()? {
+            PToken::FunctionSpecifier(s) => s.clone(),
+            _ => return Ok(false),
+        };
+        Ok(!self.keywords.contains_key(&nm))
+    }
+
+    fn declarator_model(&mut self) -> KunaResult<String> {
+        let mut model = String::new();
+        loop {
+            let nm = match self.peek()? {
+                PToken::FunctionSpecifier(s) => s.clone(),
+                _ => break,
+            };
+            if self.keywords.contains_key(&nm) {
+                break;
+            }
+            self.next()?;
+            if !model.is_empty() {
+                self.set_error("Multiple parameter models");
+                return Err(KunaError::parse(self.lasterror.clone()));
+            }
+            model = nm;
+        }
+        Ok(model)
     }
 
     /// `var_identifier: IDENTIFIER (SCOPERES IDENTIFIER)*` (`grammar.y:157-160`):
@@ -2168,28 +2270,28 @@ impl<'a> CParse<'a> {
                         // Could be a (possibly abstract) declarator continuation.
                         let inner = self.declarator_or_abstract_after_pointer()?;
                         let dec = Self::merge_pointer(&ptr, inner);
-                        Ok(Self::merge_spec_dec(&spec, dec))
+                        Ok(self.merge_spec_dec(&spec, dec))
                     }
                     _ => {
                         // abstract_declarator: pointer  (grammar.y:201)
                         let dec = Self::merge_pointer(&ptr, TypeDeclarator::new());
-                        Ok(Self::merge_spec_dec(&spec, dec))
+                        Ok(self.merge_spec_dec(&spec, dec))
                     }
                 }
             }
             PToken::Identifier(_) => {
                 let dec = self.declarator()?;
-                Ok(Self::merge_spec_dec(&spec, dec))
+                Ok(self.merge_spec_dec(&spec, dec))
             }
             PToken::Punct(b'(') | PToken::Punct(b'[') => {
                 // direct_abstract_declarator (or a parenthesised concrete
                 // declarator).  Try the (abstract-or-concrete) direct declarator.
                 let dec = self.direct_abstract_or_concrete()?;
-                Ok(Self::merge_spec_dec(&spec, dec))
+                Ok(self.merge_spec_dec(&spec, dec))
             }
             _ => {
                 // declaration_specifiers alone (grammar.y:196).
-                Ok(Self::merge_spec_dec_empty(&spec))
+                Ok(self.merge_spec_dec_empty(&spec))
             }
         }
     }
@@ -2218,14 +2320,18 @@ impl<'a> CParse<'a> {
                 // '(' declarator ')'  OR  '(' abstract_declarator ')'  OR
                 // a function suffix '(' parameter_type_list ')' on an EMPTY
                 // direct_abstract_declarator (grammar.y:206-211).
-                match self.peek()? {
-                    PToken::Punct(b'*') | PToken::Identifier(_) => {
+                // A leading calling convention (`(__stdcall *cb)`) makes this a
+                // parenthesised declarator, not a function suffix.
+                let paren_declarator = self.peek_is_model()?
+                    || matches!(self.peek()?, PToken::Punct(b'*') | PToken::Identifier(_));
+                match paren_declarator {
+                    true => {
                         // Parenthesised (abstract-or-concrete) declarator.
                         let inner = self.declarator_or_abstract_or_empty()?;
                         self.expect_punct(b')')?;
                         inner
                     }
-                    _ => {
+                    false => {
                         // '(' parameter_type_list ')' suffix on an empty
                         // abstract declarator: the leading '(' starts a function.
                         let declist = self.parameter_type_list()?;
@@ -2247,18 +2353,31 @@ impl<'a> CParse<'a> {
     /// Inside `(...)`: a declarator that may carry a leading pointer and may be
     /// abstract or concrete.
     fn declarator_or_abstract_or_empty(&mut self) -> KunaResult<TypeDeclarator> {
-        if matches!(self.peek()?, PToken::Punct(b'*')) {
+        let mut model = self.declarator_model()?;
+        let mut dec = if matches!(self.peek()?, PToken::Punct(b'*')) {
             let ptr = self.pointer()?;
+            let after = self.declarator_model()?;
+            if !after.is_empty() {
+                if !model.is_empty() {
+                    self.set_error("Multiple parameter models");
+                    return Err(KunaError::parse(self.lasterror.clone()));
+                }
+                model = after;
+            }
             match self.peek()? {
                 PToken::Identifier(_) | PToken::Punct(b'(') | PToken::Punct(b'[') => {
                     let inner = self.direct_abstract_or_concrete()?;
-                    Ok(Self::merge_pointer(&ptr, inner))
+                    Self::merge_pointer(&ptr, inner)
                 }
-                _ => Ok(Self::merge_pointer(&ptr, TypeDeclarator::new())),
+                _ => Self::merge_pointer(&ptr, TypeDeclarator::new()),
             }
         } else {
-            self.direct_abstract_or_concrete()
+            self.direct_abstract_or_concrete()?
+        };
+        if !model.is_empty() {
+            dec.model = model;
         }
+        Ok(dec)
     }
 
     /// `assignment_expression: NUMBER` (`grammar.y:214-216`).
@@ -2519,9 +2638,11 @@ pub fn parse_protopieces(
 /// data straight into the data structures (a `parse line`/`parse file` body).
 ///
 /// The C++ `Architecture *glb` is split into the [`TypeFactory`] (the construction
-/// store-writes go through it), the [`DataOrg`], and `set_prototype` — a callback
-/// standing in for `glb->setPrototype(pieces)` (which needs `symboltab`/`Funcdata`,
-/// surfaces the console owns, not the grammar).  The construction itself (struct/
+/// store-writes go through it), the [`DataOrg`], the registered prototype-model
+/// names (`glb->hasModel`), and `set_prototype` — a callback standing in for
+/// `glb->setPrototype(pieces)` (which needs `symboltab`/`Funcdata`, surfaces the
+/// console owns, not the grammar).  The callback also receives the calling
+/// convention the declaration named (`""` when it named none).  The construction itself (struct/
 /// union/enum stub + `assignRawFields`/`setEnumValues`; typedef -> `setName`/
 /// `getTypedef`) is fully wired into the factory.
 ///
@@ -2533,9 +2654,10 @@ pub fn parse_c(
     input: &str,
     factory: &dyn TypeFactory,
     org: DataOrg,
-    set_prototype: impl FnOnce(PrototypePieces) -> KunaResult<()>,
+    models: &[String],
+    set_prototype: impl FnOnce(PrototypePieces, &str) -> KunaResult<()>,
 ) -> KunaResult<()> {
-    let mut parser = CParse::new(factory, org, 4096);
+    let mut parser = CParse::with_models(factory, org, 4096, models);
     if !parser.parse_stream(input.as_bytes().to_vec(), DocType::Declaration)? {
         return Err(KunaError::parse(parser.get_error().to_string()));
     }
@@ -2557,7 +2679,7 @@ pub fn parse_c(
         if !decl.get_prototype(&mut pieces, factory, &org)? {
             return Err(KunaError::parse("Did not parse prototype as expected"));
         }
-        set_prototype(pieces)?;
+        set_prototype(pieces, decl.get_model())?;
     } else if decl.has_property(flags::F_TYPEDEF) {
         let ct = decl.build_type(factory, &org)?;
         if decl.get_identifier().is_empty() {

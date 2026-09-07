@@ -615,6 +615,7 @@ fn mark_property_range(
 fn apply_prototype_to_symbol(
     status: &mut IfaceStatus,
     pieces: &kuna_decomp::fspec::PrototypePieces,
+    model: Option<&std::rc::Rc<kuna_decomp::fspec::ProtoModel>>,
 ) -> IfaceResult<()> {
     let dcp = dcp_mut(status)?;
     let prog = match dcp.conf.as_mut() {
@@ -635,7 +636,13 @@ fn apply_prototype_to_symbol(
     // getTypeCode(pieces): the prototype-bearing TypeCode the symbol's
     // getPrototype() will return.  A build failure (no proto context) is a
     // no-op — fall back to the stashed-pieces path.
-    let type_code = match arch.types().get_type_code_proto(pieces) {
+    // A declaration that named a calling convention is built under it, so the
+    // storage a CALLER sees for each argument is the declared convention's.
+    let built = match model {
+        Some(m) => arch.types_impl().get_type_code_proto_model(pieces, std::rc::Rc::clone(m)),
+        None => arch.types().get_type_code_proto(pieces),
+    };
+    let type_code = match built {
         Ok(tc) => tc,
         Err(_) => return Ok(()),
     };
@@ -659,8 +666,10 @@ fn run_parse_c(status: &mut IfaceStatus, content: &str) -> IfaceResult<()> {
         let org = crate::grammar::DataOrg { addr_size, word_size };
         // setPrototype branch: stash the parsed pieces (applied below, against the
         // mutable `dcp`); the symbol existence check mirrors C++ queryFunction.
-        let captured: RefCell<Option<kuna_decomp::fspec::PrototypePieces>> = RefCell::new(None);
-        let res = crate::grammar::parse_c(content, arch.types(), org, |pieces| {
+        let captured: RefCell<Option<(kuna_decomp::fspec::PrototypePieces, String)>> =
+            RefCell::new(None);
+        let models: Vec<String> = arch.proto_model_names().map(str::to_string).collect();
+        let res = crate::grammar::parse_c(content, arch.types(), org, &models, |pieces, model| {
             // C++ Architecture::setPrototype resolves the function via queryFunction
             // (which lazily builds the Funcdata from the function symbol) and locks
             // the prototype.  In the kuna console boundary the named function may live
@@ -670,7 +679,7 @@ fn run_parse_c(status: &mut IfaceStatus, content: &str) -> IfaceResult<()> {
             // pieces are captured here and stashed (applied at load time) rather
             // than rejected — letting `parse line extern` take effect and the test
             // proceed to decompile.  // STUB(W4 queryFunction/FuncProto restore)
-            *captured.borrow_mut() = Some(pieces);
+            *captured.borrow_mut() = Some((pieces, model.to_string()));
             Ok(())
         });
         (org, captured.into_inner(), res)
@@ -678,7 +687,7 @@ fn run_parse_c(status: &mut IfaceStatus, content: &str) -> IfaceResult<()> {
     let _ = org; // org is consumed by parse_c; kept for symmetry with the C++ glb
     match parse_result {
         Ok(()) => {
-            if let Some(pieces) = extern_pieces {
+            if let Some((pieces, model)) = extern_pieces {
                 // C++ `Architecture::setPrototype(pieces)` (architecture.cc:393):
                 // resolve the FunctionSymbol by name and lock the parsed prototype
                 // onto it (`fd->getFuncProto().setPieces(pieces)`).  In kuna the
@@ -691,7 +700,24 @@ fn run_parse_c(status: &mut IfaceStatus, content: &str) -> IfaceResult<()> {
                 // param type and `RulePieceStructure` cannot split its CONCAT into
                 // per-field writes.  (Generic over the signature: keyed by the
                 // declared name only, exactly as the C++ `queryFunction(basename)`.)
-                apply_prototype_to_symbol(status, &pieces)?;
+                // The calling convention the declaration named (`__stdcall` &c.),
+                // so parameter storage is assigned under it rather than under the
+                // architecture default.
+                let model = {
+                    let dcp = dcp_mut(status)?;
+                    match dcp.conf.as_mut() {
+                        Some(prog) => {
+                            let m = crate::assertions::declared_model(prog, &model);
+                            if let Some(m) = m.as_ref() {
+                                prog.arch_mut()
+                                    .set_function_prototype_model(&pieces.name, m.clone());
+                            }
+                            m
+                        }
+                        None => None,
+                    }
+                };
+                apply_prototype_to_symbol(status, &pieces, model.as_ref())?;
                 // Also stash for re-application when THIS function is the one being
                 // decompiled (the IR is rebuilt on `decompile`, discarding the
                 // symbol-table proto link for the active Funcdata).
@@ -827,7 +853,16 @@ fn retype_symbol_if_complete(
     if pieces.outtype.is_none() {
         return Ok(());
     }
-    apply_prototype_to_symbol(status, pieces)
+    // A convention a previous `prototype` directive named for this function is
+    // kept: the incremental `param`/`return` rebuild must not silently revert
+    // the signature to the architecture default.
+    let model = {
+        let dcp = dcp_mut(status)?;
+        dcp.conf
+            .as_ref()
+            .and_then(|prog| prog.arch().function_prototype_model(&pieces.name).cloned())
+    };
+    apply_prototype_to_symbol(status, pieces, model.as_ref())
 }
 
 /// Parse the `<storage> <C typedeclaration>` tail both `map param` and `map
@@ -890,9 +925,11 @@ pub(crate) fn bind_prototype(
         let arch = prog.arch();
         let (addr_size, word_size) = arch.data_org();
         let org = crate::grammar::DataOrg { addr_size, word_size };
-        let captured: RefCell<Option<kuna_decomp::fspec::PrototypePieces>> = RefCell::new(None);
-        let parsed = crate::grammar::parse_c(&text, arch.types(), org, |pieces| {
-            *captured.borrow_mut() = Some(pieces);
+        let captured: RefCell<Option<(kuna_decomp::fspec::PrototypePieces, String)>> =
+            RefCell::new(None);
+        let models: Vec<String> = arch.proto_model_names().map(str::to_string).collect();
+        let parsed = crate::grammar::parse_c(&text, arch.types(), org, &models, |pieces, model| {
+            *captured.borrow_mut() = Some((pieces, model.to_string()));
             Ok(())
         });
         (parsed, captured.into_inner())
@@ -901,7 +938,7 @@ pub(crate) fn bind_prototype(
         status.out(&format!("Error in C syntax: {}\n", e.explain()));
         return Err(IfaceError::execution("Bad C syntax"));
     }
-    let mut pieces =
+    let (mut pieces, model) =
         captured.ok_or_else(|| IfaceError::execution("Not a function declaration"))?;
     let dcp = dcp_mut(status)?;
     let prog = dcp
@@ -910,7 +947,8 @@ pub(crate) fn bind_prototype(
         .ok_or_else(|| IfaceError::execution("No load image present"))?;
     let target = crate::assertions::resolve_proto_target(prog, func)
         .map_err(IfaceError::execution)?;
-    crate::assertions::park_prototype(prog, &target, &mut pieces);
+    let model = crate::assertions::declared_model(prog, &model);
+    crate::assertions::park_prototype(prog, &target, &mut pieces, model.as_ref());
     dcp.pending_prototypes.insert(target.name().to_string(), pieces);
     Ok(())
 }

@@ -219,7 +219,7 @@ One directive per `--assert`, keyed by intent rather than by phase:
 
 | directive | what it states |
 |---|---|
-| `prototype <func> <C declaration>` | the signature of `<func>` — a name or an entry address (parameter names included) |
+| `prototype <func> <C declaration>` | the signature of `<func>` — a name or an entry address (parameter names and calling convention included) |
 | `param [<func>::]<i> <storage> <C typedecl>` | the storage and type of one input |
 | `return [<func>::]<storage> <C typedecl>` | the storage and type of the return value |
 | `name [<func>::]<symbol> <newname>` | rename a local |
@@ -303,6 +303,23 @@ kuna decompile ./illusion.exe 0x401571 --assert-strict \
 - void sub_401571(unsigned int a0,int4 a1,int4 a2)
 + void sub_401571(uint4 key,uint4 start,uint4 end)
 ```
+
+**A prototype may name its calling convention**, in either of the two C
+positions — before the return type, or between the return type's `*` and the
+function name, which is where Windows headers put it:
+
+```bash
+kuna decompile ./Cube.exe sub_401ba0 \
+  --assert 'prototype 0x4050a6 void * __stdcall LoadLibraryExW(unsigned short *n,void *f,unsigned int g)'
+```
+
+The conventions you may name are the ones the target's compiler spec declares —
+`__stdcall`, `__cdecl`, `__fastcall` and `__thiscall` on x86 Windows,
+`__stdcall`, `MSABI` and `syscall` on x86-64 gcc. The convention decides where
+each argument lives, so declaring one on a callee changes what the caller's
+arguments resolve to. A spelling the spec does not declare is **rejected**
+rather than ignored, so a misremembered convention name cannot silently leave
+the default in place.
 
 Widths come from the target's own compiler spec, so `long` is eight bytes on LP64
 and four on LLP64. Ghidra's sized spellings (`int4`, `uint8`, `float8`,

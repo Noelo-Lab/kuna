@@ -64,8 +64,23 @@ default under that name — and the name rule then gives the clone
 `hasThisPointer`. Aliasing a merged model, or an alias of an alias, is refused
 exactly as upstream refuses it.
 
-Registration selects nothing. Which model a function is evaluated with is
-unchanged by the presence of the named ones: nothing reads the registry except
+Registration selects nothing by itself. Which model a function is evaluated with
+is unchanged by the presence of the named ones; three things read the registry.
+The first is a **declaration that names its convention** — `--assert 'prototype
+<func> void * __stdcall f(...)'` and the console `map prototype` / `parse line
+extern` behind it (00 §0.2). The parser only classifies an identifier as a
+convention because the registry names it, so the resolution cannot fail: the
+resolved `ProtoModel` is recorded against the function
+(`decompiler/crates/kuna-decomp/src/infra/architecture.rs
+(Architecture::set_function_prototype_model)`) and used in both directions. The
+function's own prototype is seeded under it rather than under `defaultfp`, and
+the prototype-bearing `TypeCode` the declaration locks onto the symbol is built
+under it too — which is the copy a CALLER reads (`ArchContext::query_callee_proto`
+/ `ArchContext::callee_proto_model`,
+`decompiler/crates/kuna-decomp/src/substrate/context.rs`), so declaring a callee
+`__fastcall` moves where the caller's arguments come from. Without that second
+half the keyword would parse and change nothing, which is the failure mode the
+directive exists to avoid. The other two are
 `option defaultprototype` / `option protoeval`
 (`decompiler/crates/kuna-decomp/src/p0_knowledge/options.rs (OptionDefaultPrototype,
 OptionProtoEval)`) — the ABI-trust knob of the `abi-trust` sub-phase row in
@@ -426,7 +441,9 @@ unknown. Before any of it, the drive
 (`decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs`) asks whether the
 signature is already known, and locks it if so
 (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs
-(Funcdata::apply_locked_prototype)`). Two sources, in precedence order: a
+(Funcdata::apply_locked_prototype)`). The model it is locked under is the one the
+declaration named when it named one (§4.1), else the architecture default. Two
+sources, in precedence order: a
 prototype the operator declared for this run (`parse line extern …` /
 `map prototype <func> …`, 00 §0.2), then the
 prototype parked on the function's own global `FunctionSymbol` — which is where

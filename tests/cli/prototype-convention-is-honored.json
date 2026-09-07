@@ -1,0 +1,44 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "main",
+    "--assert",
+    "prototype 0x4006ed int4 MSABI accepted(int4 status)",
+    "--assert-strict"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/fauxware",
+    "binary_sha256": "c2d90645a45e99221593547e55c601a901b80f807ae96f94c60a7661df0b3e0b",
+    "binary_size": 8776,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/fauxware",
+    "selector": "main",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "accepted\\(a3\\)"
+    ],
+    "stdout_absent": [
+      "accepted\\(\\(int\\)"
+    ],
+    "stderr_absent": [
+      "rejected"
+    ]
+  },
+  "notes": "The anti-swallow guard for prototype-assertion-parser-rejects: accepting the keyword is not enough, it has to drive storage. x86-64-gcc.cspec registers MSABI (RCX/RDX/R8/R9) beside the System V default; declaring accepted() MSABI moves its argument off the stack and the call renders accepted(a3), not accepted((int)v4). Lexing the keyword and dropping it fails here."
+}

@@ -1,0 +1,47 @@
+{
+  "need_id": "prototype-assertion-parser-rejects",
+  "track": "tooling",
+  "scope": "small",
+  "worker": "b-r7-prototype-assert",
+  "branch": "feat/re-prototype-assertion-parser-rejects",
+  "summary": "A prototype assertion naming a calling convention (`void * __stdcall f(...)`) parses, and the named convention drives parameter storage for the function and for its callers.",
+  "decisions": [
+    {
+      "what": "The filed hypothesis is upheld and the named file/line was right.",
+      "detail": "`CParse::lookup_identifier` (grammar.rs) returned `IdentClass::Identifier` where upstream returns FUNCTION_SPECIFIER for `glb->hasModel(nm)` -- a STUB(w6-fspec-2) left when the Architecture had no model registry. It has one now (`Architecture::get_model`/`proto_model_names`, fed by the cspec `<prototype name=...>` decode), so the arm is a lookup, not a feature."
+    },
+    {
+      "what": "The refuter's warning drove the design: the acceptance is satisfiable by a fix that does nothing.",
+      "detail": "Restoring only the lookup would let `__stdcall` lex and be dropped, keeping the default model. The convention is therefore resolved to an `Rc<ProtoModel>` and used at BOTH seeding sites: `Funcdata::apply_locked_prototype_with_model` for the function's own prototype, and the prototype-bearing `TypeCode` built by `lock_prototype_on_symbol` / `apply_prototype_to_symbol`, which is what a caller reads back through `ArchContext::query_callee_proto`. Measured: on the witness binary, declaring LoadLibraryExW `__fastcall` renders `LoadLibraryExW(name,file,v1 + (int)file)` where `__stdcall`/`__cdecl`/no-convention all render `LoadLibraryExW((unsigned short *)(v1 + v6),file,flags)`."
+    },
+    {
+      "what": "Second grammar gap found while implementing, not in the filing.",
+      "detail": "The reported spelling puts the convention in DECLARATOR position (after the return type's `*`), which upstream's `declaration_specifiers` run cannot reach. `CParse::declarator` / `declarator_or_abstract_or_empty` now accept a convention on either side of the pointer run, and the parenthesised-declarator lookahead in `direct_abstract_or_concrete` admits one so `int (__stdcall *cb)(int)` is a declarator rather than a function suffix."
+    },
+    {
+      "what": "No option row, no stage test.",
+      "detail": "Tooling track: the change is reachable only through an explicit operator directive (`--assert prototype` / `map prototype` / `parse line extern`), so it cannot move default output. `make test` 675/675 and `make test-stages` 677/677 confirm zero movement."
+    },
+    {
+      "what": "Files another builder holds were avoided.",
+      "detail": "`decompiler/crates/kuna-decomp/src/p4_calls` is leased by `defined-payload-function-loses`. The natural C++-faithful shape (a `model` field on `PrototypePieces`) lives there, so the convention rides an address-keyed side channel instead: `Architecture::declared_proto_models` joined onto the parked pieces in `build_arch_handle` and read through the EXISTING `ArchContext::callee_proto_model` seam, which `ActionDefaultParams` already consumes. Zero p4_calls edits."
+    }
+  ],
+  "acceptance": {
+    "probe": "a-75f3ebee0ff0",
+    "status": "PASS",
+    "promoted": [
+      "tests/cli/prototype-assertion-parser-rejects.json",
+      "tests/cli/prototype-convention-is-honored.json"
+    ],
+    "note": "The recorded acceptance targets a dataset binary, so `verify --promote` refuses it. Both promoted probes are retargeted onto the in-repo `fauxware` fixture (the pattern `accepted-sqrt-prototype-still.json` established); x86-64-gcc.cspec names its default model `__stdcall` and also registers `MSABI`, so the same post-pointer position and the same honoring check run with no dataset."
+  },
+  "gates": {
+    "make test": "PARITY OK, 675/675",
+    "make test-stages": "PARITY OK, 677/677",
+    "make test-cli": "70/70",
+    "make check-spec": "OK",
+    "kuna catalog --check": "OK",
+    "make rust-test": "green with `env -u KUNA_DECOMP_TEST`. With the launcher's KUNA_DECOMP_TEST set, `verify_w10_proto_unlock` fails 'oracle promote_compare signature drifted' -- the oracle becomes kuna itself and the assertion requires the removed C++ tree's `xunknown4` spelling, so it cannot pass for any kuna build. CI skips that block."
+  }
+}

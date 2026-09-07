@@ -977,6 +977,31 @@ that happens to be spelled with a keyword resolve to exactly the interned type
 they always did. Only combinations, and the keywords the type factory does not
 name, take the width-driven path.
 
+(kuna) **A `prototype` declaration may name its calling convention**, which is
+the other half of speaking the target's own C: on Windows every declaration
+worth pasting carries one. An identifier the loaded compiler spec registered as
+a prototype model is classified as a function specifier rather than as a bare
+identifier (`decompiler/crates/kuna-console/src/grammar.rs
+(CParse::lookup_identifier)`, upstream's `glb->hasModel`), so `__stdcall`,
+`__cdecl`, `__fastcall` and `__thiscall` parse on an x86 Windows target and
+`MSABI` or `syscall` parse on x86-64 gcc — while a spelling the spec does not
+declare stays an identifier and the declaration is still rejected, so a
+misremembered name cannot be silently dropped. C admits the specifier in two
+positions and both are accepted: before the return type (`int __fastcall
+f(int)`) and in declarator position, after the return type's `*` and before the
+name (`void * __stdcall LoadLibraryExW(...)`, the spelling Windows headers and
+Ghidra's own listings use, which the C-standard specifier run cannot reach
+because it ends at the `*`). The same allowance covers a parenthesised
+declarator, so the callback shape `int (__stdcall *cb)(int)` parses too. Naming
+two conventions in one declaration is the error `addFuncSpecifier` already had a
+diagnostic for, `Multiple parameter models`.
+
+Where the named convention goes is §4: it is resolved against the architecture's
+model registry and rides with the parked prototype, so the declared function's
+parameter storage — and, for a callee, the storage a *caller* reads its arguments
+out of — is assigned under the convention the operator declared rather than
+under the target's default.
+
 A directive that names no function binds to the function being decompiled, which
 is unambiguous only when the run selected exactly one; on a whole-binary run it
 would silently mean *every* function that happens to have a `v2`, so it is
