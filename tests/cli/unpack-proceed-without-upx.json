@@ -1,0 +1,32 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "unpack",
+    "{{BIN}}",
+    "--json",
+    "-o",
+    "{{TMP}}/out.bin"
+  ],
+  "cwd": "{{TMP}}",
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/upx_packed_pe_i386.exe",
+    "binary_sha256": "4004f1b83d3e89ce35908d39c0e4ae06c0aad92fe6bdf8e7711b09b2baba4689",
+    "binary_size": 22016,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/upx_packed_pe_i386.exe",
+    "selector": null,
+    "selector_kind": "none"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stderr_absent": [
+      "no UPX PackHeader found"
+    ]
+  }
+}

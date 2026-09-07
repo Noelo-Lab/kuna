@@ -479,6 +479,44 @@ sections, and symbols, and is also used when analysis or a CLI inspection
 command reopens the image. It retains the typed reader's header and section
 validation; it does not rewrite the machine bytes to another architecture.
 
+(kuna) **Static unpacking.** A UPX-packed image is the one input on which the whole
+tier is honestly useless: it maps a loader stub and a compressed blob, so every
+address the original program used is absent until something recovers it.
+`decompiler/crates/kuna-analysis/src/upx` reimplements the recovery in-process --
+the UCL NRV2B/NRV2D/NRV2E decoders (`nrv.rs`), UPX's branch-target filters
+(`filter.rs`), and one reconstruction walk per target family. `kuna unpack` is the
+only caller; nothing on the load path unpacks implicitly, because the recovered
+file is an artifact an analyst reads and names, not a hidden rewrite of their input.
+
+The two families share nothing but the codecs, because the packed layouts do not
+resemble each other. An ELF (`upx/elf.rs`) carries its `PackHeader` in the tail and
+its payload as one block stream per original `PT_LOAD` plus the gaps between them.
+A PE (`upx/pe.rs`) carries the `PackHeader` in the header padding immediately before
+the compressed data -- outside the tail window entirely -- and holds the whole image
+in a single block, followed by a trailer that the packer's own loader consumes at
+run time and the unpacker replays instead: the original PE header and section table,
+the import descriptors, thunk arrays and hint/name entries UPX strips out of the
+image, and the resource leaves it moves out of it. The DLL *names* are not in the
+trailer at all; they stay in the packed loader's own import table, which the trailer
+addresses by offset. That table is found by agreement with the trailer rather than
+through the packed image's import data directory, because retargeting the directory
+at a decoy is the first thing a repacker does to a UPX image, and the witness in
+`tests/fixtures/upx_packed_pe_i386.exe` is exactly that.
+
+Refusing beats guessing, in both arms. The output is a file a reader will
+disassemble and believe, and a subtly wrong one is more expensive than none: an
+unreversed filter leaves every call target wrong while every size still adds up. So
+each arm proves its own reconstruction rather than assuming it -- both of the
+packer's Adler-32s, a total that equals the original file size the header declares
+to the byte, and every rebuilt directory confined to the section the recovered
+header says owns it. The PE arm adds one guard the ELF arm does not need: which
+trailer steps run depends on which data directories the original image had, so an
+unimplemented one would silently desynchronize every later read. The walk therefore
+tallies the trailer bytes it consumed against the trailer's real length and refuses
+a mismatch, on top of naming base relocations, TLS, bound and delay-loaded imports
+up front. Everything unimplemented -- LZMA, the 64-bit and ARM PE targets, the
+`ctojr`/PowerPC/RISC-V filters -- is a named refusal and writes no file.
+
 ## 1.3 Loader markup
 
 Import naming exists because a CALL into a linkage stub carries no symbol: without
