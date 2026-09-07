@@ -134,6 +134,18 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // consults the `entry_names` overlay this pass writes and installs the
         // function the prototype is parked on.
         Box::new(crate::entry::kuna_machomain::MachoMainPass),
+        // (kuna `armlibcmain`) S1 non-PIE ARM `_start`->`main`: the arm of entry
+        // oracle 4 that reads the value crt1 hands `__libc_start_main` out of the
+        // image (a literal-pool word, or a statically filled `.got` slot) instead
+        // of out of the `R_ARM_RELATIVE` table a non-PIE executable does not
+        // carry, so a stripped ARM binary stops attributing its whole body to
+        // whichever entry precedes it. Registered always (the pass self-gates on a
+        // 32-bit ARM ELF with an A32 `_start` and a PLT stub named
+        // `__libc_start_main`, so it emits nothing anywhere else), COMMIT gated by
+        // `--option armlibcmain on|off` via `engine.rs::analysis_pass_enabled`.
+        // After EntryDiscoveryPass, whose commit consults the `entry_names`
+        // overlay this pass writes.
+        Box::new(crate::entry::kuna_armlibcmain::ArmLibcMainPass),
         // S1 widened ARM Cortex-M vector-table discovery (`cortexmvectors`): the
         // reset/exception handler seeds and the whole-image Thumb region paint of a
         // hardware vector table the always-on oracle 6 signature rejects (an A-only

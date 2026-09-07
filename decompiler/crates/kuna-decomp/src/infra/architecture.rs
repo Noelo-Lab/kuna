@@ -1049,6 +1049,19 @@ pub struct Architecture {
     /// entry already carries a function symbol. Off restores the `sub_<addr>` /
     /// `void(void)` form exactly.
     pub analysis_machomain: bool,
+    /// (kuna) Recover `main` from the crt1 `_start` of a non-PIE ARM32 ELF
+    /// (`armlibcmain`); default **on**. Entry oracle 4 reads the
+    /// `_start` → `__libc_start_main(main, …)` idiom on x86-64, AArch64, RISC-V
+    /// and PIE ARM, but its ARM path identifies the GOT slot by the
+    /// `R_ARM_RELATIVE` that relocates it — a relocation a non-PIE executable
+    /// does not carry, because the linker stores the final address instead. With
+    /// `main` undiscovered the whole gap to the end of `.text` is nominally owned
+    /// by the entry before it, so the walk stops at that entry's real terminator
+    /// and the rest is never decoded: every literal it loads reports no reader.
+    /// Decodes both crt1 shapes (literal-pool word, and GOT-indexed slot),
+    /// anchored on the `bl` to the PLT stub named `__libc_start_main`. Off
+    /// restores the previous inventory exactly.
+    pub analysis_armlibcmain: bool,
     /// (kuna) Reject a discovered function entry that falls strictly inside a
     /// single-function `.eh_frame` FDE body (`fdeinterior`); default **on**.
     /// kuna's function symbols carry no extent, so every discovery oracle can
@@ -1875,6 +1888,7 @@ impl Architecture {
             analysis_picbase: false,
             analysis_entrymainproto: false,
             analysis_machomain: false,
+            analysis_armlibcmain: false,
             analysis_strings: false,
             analysis_widestrings: false,
             analysis_entry_disc: false,
@@ -2105,6 +2119,8 @@ impl Architecture {
         self.analysis_entrymainproto = true;
         // (kuna) Mach-O `LC_MAIN` entry naming + prototype -- default-ON (DIV-111).
         self.analysis_machomain = true;
+        // (kuna) non-PIE ARM crt1 `_start`->`main` recovery -- default-ON (DIV-132).
+        self.analysis_armlibcmain = true;
         // (kuna) `.eh_frame` LSDA landing-pad discovery — default-OFF (opt-in,
         // output-changing: adds the discovered exception landing pads as entries).
         self.analysis_eh_frame_full = false;
@@ -2565,6 +2581,9 @@ impl Architecture {
             }
             "machomain" => {
                 on_off!(analysis_machomain, "Mach-O LC_MAIN entry naming + prototype")
+            }
+            "armlibcmain" => {
+                on_off!(analysis_armlibcmain, "non-PIE ARM crt1 _start->main recovery")
             }
             "eh_frame_full" => {
                 on_off!(analysis_eh_frame_full, ".eh_frame LSDA landing-pad discovery")

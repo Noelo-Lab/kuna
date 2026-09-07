@@ -1,0 +1,53 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "a-4ee45e28fb67",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "strings",
+    "{{BIN}}",
+    "--json",
+    "--filter",
+    "armlibcmain prompt"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/armlibcmain_le32",
+    "binary_sha256": "9df3e29ed40dcd06ef28711ab0d51e0fc0b7600b1978fd628bb0beb63deb6351",
+    "binary_size": 5196,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/armlibcmain_le32",
+    "selector": null,
+    "selector_kind": "none"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "json": [
+      {
+        "path": "strings[0].functions",
+        "op": "len_gt",
+        "value": 0
+      },
+      {
+        "path": "strings[0].xrefs_count",
+        "op": "gt",
+        "value": 0
+      },
+      {
+        "path": "strings[0].functions[0].name",
+        "op": "eq",
+        "value": "main"
+      }
+    ]
+  },
+  "notes": "Promoted acceptance of arm-prompt-string-owning (crackmes.one 5ab77f5d33c5d40ad448c69c: the prompt at 0x9124 had xrefs_count 0 and functions [] although main at 0x8cf8 loads it from the pool word at 0x9024), re-pointed at the vendored armlibcmain_le32 -- CI has no dataset. The name clause is what the dataset probe could not assert: blaming the gap-fill entry satisfies the other two."
+}

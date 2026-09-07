@@ -1,0 +1,76 @@
+{
+  "need_id": "arm-prompt-string-owning",
+  "track": "quality",
+  "route": "RE-friction (docs/re-pipeline.md), round 6",
+  "opportunity": "arm-prompt-string-owning",
+  "witness": "crackmes.one 5ab77f5d33c5d40ad448c69c (arm_kgme1) -- ELF 32-bit LSB executable, ARM EABI4, dynamically linked, stripped",
+  "selector": "0x9124 (the \"Enter your key: \\n\" prompt)",
+  "source_decompiler": "kuna",
+  "phase": "P1 (program prep, entry discovery)",
+  "module": "decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_armlibcmain.rs (ArmLibcMainPass)",
+  "change_kind": "correctness-fix",
+  "tier": "analysis",
+  "option": "armlibcmain",
+  "default_on": true,
+  "gated": true,
+  "gating_rationale": "It adds a function entry, so it can change emitted C, and CLAUDE.md's rule is that anything that can ships behind a named option. Default-ON is required by the acceptance probe and is the same call DIV-111 made for machomain: the discovery is a restatement of what the crt1 call site states, not a judgment call, and the ablation restores the previous inventory exactly.",
+  "history_entry": "DIV-132 (docs/history.md)",
+  "scope": "small",
+  "decisions": [
+    "The filed hypothesis ('may follow from incomplete function discovery') and the captain's refutation are both UPHELD and were reproduced independently: `main` at 0x8cf8 is never discovered, and _INIT_0's 3368-byte extent is gap-fill whose walk stops at the `b 0x8350` at 0x8404.",
+    "The refuter's suggested fix shape -- 'an ARM prologue-signature scan over undiscovered gaps' -- was NOT taken. The image states where main is, so nothing has to be guessed: `_start` @0x8368 does `ldr r0,[0x8398]` (pool word = 0x8cf8) then `bl 0x8320` (__libc_start_main@plt). A prologue scan would be a heuristic where a fact is available, and would fire on images that carry no such fact.",
+    "The real gap is narrower than 'discovery is incomplete': entry oracle 4 ALREADY reads this idiom on ARM. Its ARM path (mod.rs::arm_main_target) identifies the GOT slot by the R_ARM_RELATIVE that relocates it, and a non-PIE executable carries no such relocation -- so the oracle is not missing, it is PIE-only. The new pass is the non-PIE arm of the same oracle.",
+    "A second crt1 shape was found while building the fixture and is handled too: a modern `-no-pie` ARM link emits `ldr r0,[pc,#imm]; ldr r0,[rN,r0]`, where the pool word is a .got offset and the slot is filled STATICALLY (still no relocation). Shipping only the literal-pool arm would have left every binary this host's toolchain can produce broken.",
+    "The decode is anchored on the `bl` to the PLT stub named __libc_start_main rather than on the shape of the pool load alone. AAPCS puts the first argument in r0, so the last write to r0 before that call IS main by the C runtime's contract; without the landmark the pass claims nothing, which is what makes it safe to apply the name `main`.",
+    "The promoted CLI probe asserts strings[0].functions[0].name == 'main', which the dataset acceptance could not: the captain's own trap note observed that attributing the string to the gap-fill entry already covering the load site satisfies the len_gt/xrefs_count clauses without discovering anything."
+  ],
+  "acceptance": {
+    "probe_id": "a-7837f5c28063",
+    "command": "kuna strings <arm_kgme1> --json --filter 'Enter your key'",
+    "before": "xrefs_count 0, functions []",
+    "after": "xrefs_count 1, functions [{name: main, address_hex: 0x8cf8}]",
+    "verify": "scripts.repipe.verify --need arm-prompt-string-owning --json => pass 1 / fail 0, transition 'closed'",
+    "promoted_to": "tests/cli/arm-prompt-string-owning.json (re-pointed at the vendored armlibcmain_le32 fixture; CI has no dataset)"
+  },
+  "ablation": {
+    "method": "--option armlibcmain off on the witness and on both fixtures",
+    "result": "the previous inventory returns exactly: no `main` symbol, no function at that address under any name, xrefs_count 0 and functions [] for the prompt"
+  },
+  "regression_sweep": {
+    "method": "`kuna functions --json` in both arms over 143 images -- the 129 object fixtures under decompiler/crates/*/tests/fixtures plus every ARM binary in the RE dataset (14) -- then a full `kuna decompile-all --json` both-arm diff on every image that changed at all",
+    "fired_on": 2,
+    "fired": ["decompiler/crates/kuna-analysis/tests/fixtures/armlibcmain_le32 + armlibcmain_got_le32 (the new fixtures)", "kuna-re-dataset arm_kgme1 (the witness)", "kuna-re-dataset armageddon (challenge 5edb0b8533c5d449d91ae73b, an unrelated stripped non-PIE ARM ELF -- main recovered at 0x14a04)"],
+    "emitted_c_hunks_moved": 0,
+    "classification": "on both dataset images the diff is exactly ONE function added (main) and ZERO changes to any pre-existing function's `code`; the only other movement is the gap-fill extent above it shrinking by the length of the function now sitting there (arm_kgme1 _INIT_0 3368 -> 2320, armageddon _INIT_0 19960 -> 17736)",
+    "inert_elsewhere": "127 of 129 repo fixtures and 12 of 14 dataset ARM binaries are byte-identical in both arms, including every PIE ARM image (oracle 4 already resolves those), every AArch64 image, the ARM PE, and every static ARM ELF (no __libc_start_main stub to anchor on)"
+  },
+  "speed": {
+    "method": "scripts.pipeline.timeit, warmup + median of 9",
+    "arm_target": "armlibcmain_le32 `_start` (present in both arms): off=82.14 ms, on=82.00 ms, delta -0.17% (budget 5%)",
+    "non_arm_control": "fauxware `authenticate`: off=142.18 ms, on=100.61 ms, delta -29.24% on structurally byte-identical output -- reported as the machine's single-target noise floor, not an effect (docs/features/returncopysplit/record.json measured -20.23% / -12.18% on byte-identical output on the same host)"
+  },
+  "tests": {
+    "unit": "decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_armlibcmain.rs (5 tests): both crt1 shapes claimed at the right VMA, the PIE/static/non-ARM refusals, and the three A32 decoders on the exact words the witness _start carries",
+    "end_to_end": "decompiler/crates/kuna-console/tests/verify_armlibcmain.rs (3 tests, two-pass): option off = no function covers main at all; default = both shapes recover it and its body reaches the printf/fgets calls; and the count guard (exactly one entry added, none on a PIE ARM image)",
+    "cli": "tests/cli/arm-prompt-string-owning.json -- make test-cli 66/66",
+    "stage_test": null,
+    "stage_test_rationale": "tests/stages is a bytechunk corpus with no ELF container, so it cannot carry a case whose whole premise is a PLT stub and a program header; the two-pass gate lives in verify_armlibcmain.rs instead, which is where machomain's does for the same reason."
+  },
+  "fixtures": [
+    "decompiler/crates/kuna-analysis/tests/fixtures/armlibcmain_le32 (+ .c) -- the classic crt1 literal-pool shape, `_start` written out because a modern -no-pie link supplies the other one",
+    "decompiler/crates/kuna-analysis/tests/fixtures/armlibcmain_got_le32 (+ .c) -- the GOT-indexed shape, a plain -no-pie link"
+  ],
+  "gates": {
+    "make test": "675/675 PARITY OK (docs/baseline.json NOT re-pinned)",
+    "make test-stages": "677/677 PARITY OK (baseline NOT re-recorded -- no stage case added)",
+    "make rust-test": "green",
+    "make check-spec": "check-spec OK (strict mode)",
+    "make test-cli": "66/66",
+    "kuna catalog --check": "catalog OK"
+  },
+  "docs": {
+    "spec": "docs/spec/01-program-prep.md -- the oracle-4 sentence now names the non-PIE ARM arm, and a new section after the machomain one states the mechanism, the refusals and the sweep",
+    "options": "docs/options.md regenerated",
+    "history": "DIV-132"
+  }
+}
