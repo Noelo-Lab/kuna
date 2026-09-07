@@ -284,6 +284,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "memsetrecover",
     "rodatastring",
     "switchmodbound",
+    "constselectjump",
     "switchguardbound",
     "switchsharedcase",
     "switchmultipred",

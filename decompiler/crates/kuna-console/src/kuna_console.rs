@@ -206,6 +206,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "stackprobeloop" => on_off(conf.model_stack_probe_loop),
         "v850indirectbranch" => on_off(conf.v850_indirect_branch),
         "switchmodbound" => on_off(conf.switch_modulo_bound),
+        "constselectjump" => on_off(conf.const_select_jump),
         "switchsharedcase" => on_off(conf.switch_shared_case),
         "realtypes" => on_off(conf.realtypes),
         // (kuna `calloverlap`) Three-valued, so it reports its own token.

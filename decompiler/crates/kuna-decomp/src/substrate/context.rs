@@ -1012,6 +1012,9 @@ pub struct ArchContext {
     /// architecture.  Read by `JumpBasic::recoverModel` before
     /// `kunaTryModuloBoundTable`.  `false` (default off / upstream byte-identical).
     pub switch_modulo_bound: bool,
+    /// (kuna) Recover a `BRANCHIND` whose destination is a select over constant
+    /// addresses (`option constselectjump`, `p2_lift/kuna_constselectjump.rs`).
+    pub const_select_jump: bool,
     /// (kuna) Bound a LOAD-table jumptable by an out-of-band CBRANCH range guard
     /// when the basic model's guard analysis could not (C++
     /// `Architecture::switch_guard_bound`, flipped by `option switchguardbound`,
@@ -1278,6 +1281,7 @@ impl ArchContext {
             // the thumb guard never fires regardless of this flag.
             preserve_thumb_funcptr: true,
             switch_modulo_bound: false, // (kuna) GH-9191 default off (upstream byte-identical)
+            const_select_jump: false, // (kuna) constant-select indirect branch: default off
             switch_guard_bound: false, // (kuna) angr opt-in default off (upstream byte-identical)
             switch_shared_case: false, // (kuna) angr opt-in default off (upstream byte-identical)
             switch_multi_pred: false, // (kuna) angr opt-in default off (upstream byte-identical)

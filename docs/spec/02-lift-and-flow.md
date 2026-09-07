@@ -675,11 +675,33 @@ to the non-constant path and iterates the range *plus* that one extra value
 last entry; a dominance check (`check_normal_dominance`) decides whether the
 normalization walk can proceed past the join.
 
+**Model 3 — the constant destination set** (`kuna_constselectjump.rs
+(JumpModelConstSelect)`, kuna, `option constselectjump`, default off). Both
+models above are value-range models over one switch variable, and
+`jumptable.rs (JumpBasic::isprune)` stops the backward walk at any marker op, so
+a destination computed by a conditional move — `CMOVZ R11,R10; JMP R11` over two
+`LEA`-loaded code addresses — leaves the MULTIEQUAL output as the normalized
+variable with nothing to bound it. The destination set is not lost there, it is
+simply never promoted into the CFG: every reaching definition is already a
+literal address. When the option is on and both value-range models have
+declined, `kuna_constselectjump.rs (kuna_collect_const_destinations)` walks the
+MULTIEQUAL/COPY web behind the BRANCHIND input; if every reaching definition is
+a constant, the set becomes a fixed address table whose case labels are the
+target addresses themselves, and recovery proceeds as for any recovered table.
+The walk admits only MULTIEQUAL and COPY and requires at least one MULTIEQUAL
+and two distinct destinations, so it can never claim a shape either basic model
+already handles. Every destination must also sit within `0xffff` of the branch —
+the same intraprocedural-vs-thunk yardstick `sanity_check` uses above — so a
+conditional *tail call* between two distant function entries keeps the upstream
+`CALLIND` rendering rather than splicing both callee bodies into the caller.
+Without the option the branch is truncated to a `CALLIND` carrying
+`"Treating indirect jump as call"` and neither arm is ever decoded.
+
 **What is deliberately absent.** The CALLOTHER-assisted `JumpAssisted` model
 (the `jumpassist` user-op family) and the manual `JumpBasicOverride` model are
 unported shells: `jumptable.rs (JumpTable::set_override)` and the
 `<basicoverride>` arm of `jumptable.rs (JumpTable::decode)` return errors, and
-`recover_model` walks only JumpBasic/JumpBasic2 (Trivial exists only as the label-time fallback). Likewise upstream's
+`recover_model` walks only JumpBasic/JumpBasic2 and, when `option constselectjump` is on, the constant-destination model above (Trivial exists only as the label-time fallback). Likewise upstream's
 multistage *restart* accounting — persisting a table whose size disagrees at
 `matchModel` time and restarting the whole function — is a recorded loss: kuna
 keeps the flow-recovered addresses instead (`jumptable.rs

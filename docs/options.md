@@ -76,6 +76,9 @@ Three tiers:
 | dead fall-through after exit or assert-fail in an object file | [`noreturn_extern`](#noreturn_extern) |
 | switch reports 'Could not recover jumptable ... Too many branches' and renders as a computed call | [`switchmodbound`](#switchmodbound) |
 | indirect jump bounded only by a modulo or and-mask on its index never becomes a switch | [`switchmodbound`](#switchmodbound) |
+| indirect jump renders as a computed (code *)() call whose destinations are already constants in the emitted C | [`constselectjump`](#constselectjump) |
+| 'Treating indirect jump as call' on a CMOV/predicated dispatch | [`constselectjump`](#constselectjump) |
+| the body behind a conditional indirect branch is never decoded | [`constselectjump`](#constselectjump) |
 | 'Too many branches' jumptable failure where a cbranch range guard bounds the index | [`switchguardbound`](#switchguardbound) |
 | computed (code *)() call at a gcc sub/ja guarded dispatch with the index spilled to the stack | [`switchguardbound`](#switchguardbound) |
 | getopt-style switch inside a loop degrades to a computed call with goto spaghetti | [`switchsharedcase`](#switchsharedcase) |
@@ -704,6 +707,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** Set on PER PROGRAM when a switch reports 'Could not recover jumptable ... Too many branches' and renders as a computed call; DESTRUCTIVE as a global default (may over-bound an unrelated indirect jump).
 - **Where / provenance:** P2/switch-model · ghidra-upstream · opt-in-tool · GH-9191
 - **Example:** `option switchmodbound on`
+
+### `constselectjump` -- on | off, default `off` (destructive opt-in)
+
+- **Symptoms:** indirect jump renders as a computed (code *)() call whose destinations are already constants in the emitted C; 'Treating indirect jump as call' on a CMOV/predicated dispatch; the body behind a conditional indirect branch is never decoded.
+- **What it does:** Recover an indirect branch whose destination is selected between constant addresses (a CMOV/predicated dispatch) as a jump table over that constant set, instead of truncating it to a call.
+- **When to flip:** An indirect jump renders as a computed `(*v)()` call carrying a 'Treating indirect jump as call' warning while the destinations are already visible as address constants in the emitted C, and the code behind them is missing. DESTRUCTIVE as a global default: a conditional TAIL CALL selecting between two nearby function entries is the same shape, and recovering it splices both callee bodies into the caller.
+- **Where / provenance:** P2/switch-model · kuna · structure-recovery · re-conditional-indirect-branches-hide
+- **Example:** `option constselectjump on`
 
 ### `switchguardbound` -- on | off, default `off` (destructive opt-in)
 

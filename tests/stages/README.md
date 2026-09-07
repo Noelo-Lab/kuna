@@ -89,6 +89,8 @@ writeup, not here.
 
 | `gh9191-switchmodbound.xml` | [GH-9191](https://github.com/NationalSecurityAgency/ghidra/issues/9191) | S2 switch model (modulo/and-mask LOAD-table index bound) | `option switchmodbound on\|off` |
 
+| `re-constselectjump.xml` | RE-friction need `conditional-indirect-branches-hide` | S2 switch model (destination selected between constant addresses by a conditional move) | `option constselectjump on\|off` |
+
 | `gh8017-stackprobeloop.xml` | [GH-8017](https://github.com/NationalSecurityAgency/ghidra/issues/8017) | S2 stack-pointer normalization (stack-probe loop) | `option stackprobeloop on\|off` |
 
 | `gh8467-dynamichashmax.xml` | [GH-8467](https://github.com/NationalSecurityAgency/ghidra/issues/8467) | S6 alias-facets (dynamic-symbol DynamicHash collision budget) | `option dynamichashmax on\|off` |

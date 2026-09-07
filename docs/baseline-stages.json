@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    674,
-    674
+    677,
+    677
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -65,6 +65,9 @@
     "data:CNORM-WARNSTYLE #3: banner WARNINGs appear only in the banner pass (indirect-jump + read-only)",
     "data:CNORM-WARNSTYLE #4: a condition-block warning rides to the header flush point after the brace",
     "data:CNORM-WARNSTYLE #5: the slug never fires inside the comma-separated header parens",
+    "data:CONSTSELECTJUMP #1: the selected destination renders as a computed call (bug reproduced)",
+    "data:CONSTSELECTJUMP #2: constselectjump on recovers the constant destination set as a switch",
+    "data:CONSTSELECTJUMP #3: both arms behind the branch are decoded",
     "data:CORTEXMPRIV #1: OFF leaves the privilege user-op in the emitted C (pass 1 only)",
     "data:CORTEXMPRIV #2: OFF turns a straight-line special-register read into a branch (pass 1 only)",
     "data:CORTEXMPRIV #3: the real effect survives in BOTH passes",
@@ -248,7 +251,7 @@
     "data:KUNA-CATALOG #4: v850indirectbranch is the other opt-in (off, destructive global)",
     "data:KUNA-CATALOG #5: each settable carries symptom-keyed use_when guidance for the operator",
     "data:KUNA-CATALOG #6: angr-derived features carry source_decompiler provenance (loweredswitch, namestyle, stackguard, branchflip, foldcallret, dedupvardecls, relocobjects, i386_pie_plt, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, taildup, dedupitetail, returndup, iteregion, iteexpr, switchguardbound, switchsharedcase, switchmultipred, unrolledguard, tailcalljump, regionstructure, regionlooprefine, regionedgeorder, ifelseflatten, noreturn_extern, noreturn_externmatch, earlyreturn, switchreturn, condfold, securitycheck)",
-    "data:KUNA-CATALOG #7: change_kind structure-recovery tags the switch/array/loader/loop/tail-call reconstructors (loweredswitch, switchselector, arraystride, relocobjects, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, taildup, dedupitetail, returndup, iteregion, iteexpr, tailcalljump, regionstructure, regionlooprefine, regionedgeorder, ifelseflatten, earlyreturn, switchreturn, condfold, iteboolean, paramcopyhoist, itecondlist, guardarm, loopcondhoist, orchain)",
+    "data:KUNA-CATALOG #7: change_kind structure-recovery tags the switch/array/loader/loop/tail-call reconstructors (loweredswitch, switchselector, constselectjump, arraystride, relocobjects, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, taildup, dedupitetail, returndup, iteregion, iteexpr, tailcalljump, regionstructure, regionlooprefine, regionedgeorder, ifelseflatten, earlyreturn, switchreturn, condfold, iteboolean, paramcopyhoist, itecondlist, guardarm, loopcondhoist, orchain)",
     "data:KUNA-CATALOG #8: the opt-in-tool change_kind aligns with the destructive options (returnpair counted twice; +switchguardbound, +switchsharedcase, +switchmultipred, +unrolledguard, +branchflip, +outline, +spillargtrial, +securitycheck, +msvcstackguard)",
     "data:KUNA-CATALOG #9: every settable carries a machine-readable change_kind so an LLM can judge default-on eligibility",
     "data:KUNA-CONSOLE #1: phase list shows Band B membership",
