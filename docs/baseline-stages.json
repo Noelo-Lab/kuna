@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    677,
-    677
+    683,
+    683
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -31,6 +31,12 @@
     "data:CALLEEPRESERVES #4: on, the third argument is the caller's own parameter, not an undefined local",
     "data:CALLEEPRESERVES #5: both passes, the second call is rendered identically (its callee writes no unaffected register)",
     "data:CALLEEPRESERVES #6: both passes, the thunk is still called and still returns nothing",
+    "data:CALLEERETPRESERVES #1: off, the zero set before the cookie check is gone and f returns nothing",
+    "data:CALLEERETPRESERVES #2: on, f returns the constant the caller placed in EAX",
+    "data:CALLEERETPRESERVES #3: on, and that value gives f its own return type back",
+    "data:CALLEERETPRESERVES #4: both passes, the checker is still called with the same argument",
+    "data:CALLEERETPRESERVES #5: both passes, an endbr64/ret stub proves nothing and g is unchanged",
+    "data:CALLEERETPRESERVES #6: both passes, the stub call keeps the convention's answer",
     "data:CALLOVERLAP #1: off, the call is emitted with no arguments at all (the CVTSI2SD result never reaches it)",
     "data:CALLOVERLAP #2: off, f loses its own parameter list because the argument chain dies with the trial",
     "data:CALLOVERLAP #3: off, the call result is read from a local that nothing ever assigns",

@@ -1,0 +1,96 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:windows">
+<!--
+    kuna calleeretpreserves: an MSVC /GS caller loses the zero it set before the
+    frame-cookie check, and the call it makes acquires a return value the machine
+    never computes.
+
+    x86-64-win.cspec lists RAX in <killedbycall> for the default __fastcall, so
+    Heritage::guardCalls (heritage.cc:1444) plants an INDIRECT creation of RAX at
+    every call and registers a return trial for it.  That is an answer about the
+    CONVENTION.  __security_check_cookie contradicts it: its returning path is
+    "cmp rcx,[cookie]; rol rcx,0x10; test cx,0xffff; ret" and it never touches
+    RAX, which is exactly why MSVC sets EAX before the call rather than after it.
+
+    f, at 0x1000, is that shape reduced to the seam:
+
+        1000  48 83 ec 28     SUB   RSP,0x28
+        1004  33 c0           XOR   EAX,EAX          ; the value f returns
+        1006  48 83 c1 01     ADD   RCX,0x1
+        100a  e8 f1 00 00 00  CALL  0x1100           ; the cookie checker
+        100f  48 83 c4 28     ADD   RSP,0x28
+        1013  c3              RET
+
+    and 0x1100 is __security_check_cookie's body verbatim, with its failure path
+    leaving by the same direct JMP into a __fastfail stub:
+
+        1100  48 3b 0d f9 ..  CMP   RCX,[0x1200]
+        1107  75 10           JNZ   0x1119
+        1109  48 c1 c1 10     ROL   RCX,0x10
+        110d  66 f7 c1 ff ff  TEST  CX,0xffff
+        1112  75 01           JNZ   0x1115
+        1114  c3              RET
+        1115  48 c1 c9 10     ROR   RCX,0x10
+        1119  e9 12 00 00 00  JMP   0x1130
+        1130  b9 02 00 00 00  MOV   ECX,0x2
+        1135  cd 29           INT   0x29             ; __fastfail, never returns
+        1137  c3              RET
+
+    The int 0x29 is why the callee-body write probe has to know about
+    fastfailnoreturn: x86 SLEIGH lifts INT imm8 to "intloc = swi(imm8);
+    call [intloc]" (ia.sinc:3671), and an unrecognized indirect call makes the
+    walk declare itself incomplete, which proves nothing about RAX.
+
+    g, at 0x1400, is the NEGATIVE control and has f's shape exactly, except that
+    its callee at 0x1410 is "endbr64; ret" - a stub, which is also what a
+    placeholder and an entry decoded at the wrong address look like.  Its silence
+    about RAX is not evidence, so g must render identically in both passes.
+
+    Stage: P3 heritage call guarding, option calleeretpreserves off|on.  Pass 1
+    (off) pins the bug, pass 2 (on, the default) pins the fix.
+-->
+<bytechunk space="ram" offset="0x1000">
+4883ec2833c04883c101e8f10000004883c428c3
+</bytechunk>
+<bytechunk space="ram" offset="0x1100">
+483b0df9000000751048c1c11066f7c1ffff7501c348c1c910e912000000
+</bytechunk>
+<bytechunk space="ram" offset="0x1130">
+b902000000cd29c3
+</bytechunk>
+<bytechunk space="ram" offset="0x1200">
+efcdab8967452301
+</bytechunk>
+<bytechunk space="ram" offset="0x1400">
+4883ec2833c0e8050000004883c428c3
+</bytechunk>
+<bytechunk space="ram" offset="0x1410">
+f30f1efac3
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="f"/>
+<symbol space="ram" offset="0x1400" name="g"/>
+</binaryimage>
+<script>
+  <com>option calleeretpreserves off</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu g</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option calleeretpreserves on</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu g</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="CALLEERETPRESERVES #1: off, the zero set before the cookie check is gone and f returns nothing" min="1" max="1">^void f\(int8 a0\)$</stringmatch>
+<stringmatch name="CALLEERETPRESERVES #2: on, f returns the constant the caller placed in EAX" min="1" max="1">^  return 0;$</stringmatch>
+<stringmatch name="CALLEERETPRESERVES #3: on, and that value gives f its own return type back" min="1" max="1">^unsigned long long f\(int8 a0\)$</stringmatch>
+<stringmatch name="CALLEERETPRESERVES #4: both passes, the checker is still called with the same argument" min="2" max="2">^  sub_1100\(a0 \+ 1\);$</stringmatch>
+<stringmatch name="CALLEERETPRESERVES #5: both passes, an endbr64/ret stub proves nothing and g is unchanged" min="2" max="2">^void g\(void\)$</stringmatch>
+<stringmatch name="CALLEERETPRESERVES #6: both passes, the stub call keeps the convention's answer" min="2" max="2">^  sub_1410\(\);$</stringmatch>
+</decompilertest>

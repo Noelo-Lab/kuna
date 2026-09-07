@@ -1549,13 +1549,24 @@ impl Heritage {
             // never writes cannot be carrying its return value either, so
             // registering an output trial for it would put the clobber straight
             // back.  See [`crate::p4_calls::kuna_calleepreserves`].
+            // (kuna) `calleeretpreserves` — the same evidence, asked of the
+            // call's RETURN storage, where `calleepreserves`'s own
+            // positive-evidence gate (the callee must write a register the
+            // convention promises is preserved) declines a helper that clobbers
+            // only what it is allowed to.  See
+            // [`crate::p4_calls::kuna_calleeretpreserves`].
             let preserved = effecttype == effect_type::KILLEDBYCALL
-                && crate::p4_calls::kuna_calleepreserves::callee_preserves_range(
+                && (crate::p4_calls::kuna_calleepreserves::callee_preserves_range(
                     fd,
                     fc,
                     &trans_addr,
                     size,
-                );
+                ) || crate::p4_calls::kuna_calleeretpreserves::callee_preserves_return_storage(
+                    fd,
+                    fc,
+                    &trans_addr,
+                    size,
+                ));
             if preserved {
                 effecttype = effect_type::UNAFFECTED;
             }

@@ -543,6 +543,10 @@ pub struct Architecture {
     /// decode of the callee's own body proves it writes (option
     /// `calleepreserves`).  See [`crate::p4_calls::kuna_calleepreserves`].
     pub callee_preserves: bool,
+    /// (kuna) Let the callee's decoded body answer for the call's RETURN
+    /// register too (option `calleeretpreserves`).  See
+    /// [`crate::p4_calls::kuna_calleeretpreserves`].
+    pub callee_ret_preserves: bool,
     /// (kuna) In the function's OWN input recovery, do not let a run of unused
     /// argument REGISTERS veto a later register the body reads before writing
     /// (option `inputparamgap`).  See [`crate::p4_calls::kuna_inputparamgap`].
@@ -1837,6 +1841,7 @@ impl Architecture {
             callee_pop: true,
             callee_dead_arg: true,
             callee_preserves: true,
+            callee_ret_preserves: true,
             input_param_gap: true,
             vararg_stack_args: true,
             callee_arity: true,
@@ -2059,6 +2064,7 @@ impl Architecture {
         self.callee_pop = true; // (kuna) default-on (0/675 ablation): an unknown extrapop is read off the caller's push run instead of guessed as "pops nothing" (0/675 ablation)
         self.callee_dead_arg = true; // (kuna) default-on (DIV-KUNA_DEADARG_DIV): 0/675 datatests, subtractive only
         self.callee_preserves = true; // (kuna) DIV-124 default-on: a fully decoded, call-free callee's own writes narrow the cspec killedbycall set, so a value that crosses a get-PC thunk survives (0/675 ablation)
+        self.callee_ret_preserves = true; // (kuna) DIV-PENDING default-on: a fully decoded callee body that never writes the call's return register also answers for that register, so an MSVC /GS `main` returns the zero it set instead of the cookie check's invented result (0/675 ablation)
         self.input_param_gap = true; // (kuna) DIV-114 default-on: an unused argument-register run in the function's OWN input recovery no longer vetoes a later live-in register, so a pointer-table-only callback recovers its full signature instead of reading undefined locals. Byte-identical (0/675) on the datatest corpus; restore upstream's forceInactiveChain veto with `option inputparamgap off`
         self.vararg_stack_args = true; // (kuna) DIV-101 default-on: a variadic call's stack tail is its own fillinMap section (0/675 ablation)
         self.callee_arity = true; // (kuna) DIV-102 default-on: one callee, one argument list across its call sites (0/675 ablation)
@@ -2383,6 +2389,12 @@ impl Architecture {
                 let (val, msg) =
                     crate::p4_calls::kuna_calleepreserves::OptionCalleePreserves.apply(p1)?;
                 self.callee_preserves = val;
+                Ok(msg)
+            }
+            "calleeretpreserves" => {
+                let (val, msg) =
+                    crate::p4_calls::kuna_calleeretpreserves::OptionCalleeRetPreserves.apply(p1)?;
+                self.callee_ret_preserves = val;
                 Ok(msg)
             }
             "varargstackargs" => {
@@ -3295,6 +3307,7 @@ impl Architecture {
         ctx.callee_pop = self.callee_pop; // calleepop
         ctx.callee_dead_arg = self.callee_dead_arg; // calleedeadarg
         ctx.callee_preserves = self.callee_preserves; // calleepreserves
+        ctx.callee_ret_preserves = self.callee_ret_preserves; // calleeretpreserves
         ctx.input_param_gap = self.input_param_gap; // inputparamgap
         ctx.vararg_stack_args = self.vararg_stack_args; // varargstackargs
         ctx.callee_arity = self.callee_arity; // calleearity

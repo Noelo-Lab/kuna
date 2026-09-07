@@ -734,6 +734,11 @@ pub struct ArchContext {
     /// Read by `Heritage::guard_calls` through
     /// [`crate::p4_calls::kuna_calleepreserves::callee_preserves_range`].
     pub callee_preserves: bool,
+    /// (kuna) let the callee's decoded body answer for the call's RETURN
+    /// register too (`calleeretpreserves`).  Read by `Heritage::guard_calls`
+    /// through
+    /// [`crate::p4_calls::kuna_calleeretpreserves::callee_preserves_return_storage`].
+    pub callee_ret_preserves: bool,
     /// (kuna) in the function's OWN input recovery, tolerate a run of unused
     /// argument REGISTERS before a live-in register (`inputparamgap`).  Read by
     /// `ActionInputPrototype`, which stamps it onto the
@@ -1246,6 +1251,7 @@ impl ArchContext {
             // decoded callee body; the fixture seam carries the real default.
             callee_dead_arg: true,
             callee_preserves: true,
+            callee_ret_preserves: true,
             input_param_gap: true,
             vararg_stack_args: true,     // varargstackargs (DIV-101 default-on)
             callee_arity: true,          // calleearity (DIV-102 default-on)

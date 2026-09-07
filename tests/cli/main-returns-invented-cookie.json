@@ -1,0 +1,32 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "timeout_s": 60,
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "0x140001000",
+    "--addr"
+  ],
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_absent": [
+      "return\\s+sub_[0-9a-fA-F]+\\([^;]*\\);\\s*\\}"
+    ],
+    "stdout_matches": [
+      "return\\s+(?:0|0x0)\\s*;"
+    ]
+  },
+  "target": {
+    "binary_rel": "pe_cookiecheck_x86_64.exe",
+    "binary_sha256": "97095d9bf909a03e82924dfa826988c27ef3aac9b1c90b64bc4f71f4e3582f12",
+    "binary_size": 1536,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/pe_cookiecheck_x86_64.exe",
+    "selector": "0x140001000",
+    "selector_kind": "addr"
+  }
+}
