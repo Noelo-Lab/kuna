@@ -254,6 +254,31 @@ Four front-ends drive one engine assembly:
   and `__TEXT,__const` decode perfectly well into `ADD`/`OR` rows that describe
   nothing in the program, which is what sent two RE-loop testers to `xxd` and
   `objdump -s` (`docs/re-needs/cli-mode-read-raw.md`).
+
+  (kuna) **A window the caller bounded is answered without the discovery walk.**
+  `--count`, `--bytes` and an explicit `start-end` range each bound the listing on
+  their own (`decompiler/crates/kuna-cli/src/disassemble.rs
+  (window_is_caller_bounded)`), so such a target does not need the program-wide
+  function inventory the whole-binary driver defaults build. It is loaded once
+  with the analysis tier's two discovery gates — `listing` and `fast_funcdisc` —
+  turned off (`decompiler/crates/kuna-cli/src/disassemble.rs
+  (windowed_options)`), unless the caller named either option, in which case their
+  word stands. The walk is deferred, not dropped: the inventory reaches a bounded
+  listing through exactly two values, the target's name and whether it resolved to
+  an entry, so the windowed answer is kept only when the program named the target
+  from a fact it already held AND the view it chose does not depend on there being
+  an entry at that address (`decompiler/crates/kuna-cli/src/disassemble.rs
+  (windowed_answer_is_final)`). Anything else — a name only discovery invents, an
+  address only it knows, a bare address in a data section — reloads with the full
+  bundle and answers exactly as it did before, which is what keeps `kuna
+  disassemble sub_1190` from becoming the "no function matches" regression
+  `docs/re-needs/analysis-generated-function-name.md` records. A listing whose
+  length is the function extent is never bounded by the caller, so it always takes
+  the full walk. The motive is that the walk is priced by the image, not by the
+  request: `--mode auto` selects `fast` from 2 MiB up, whose retained
+  `fast_funcdisc` pass decodes every executable byte, and on a 9.4 MB PE that is
+  99.4% `.text` printing 40 instructions cost 20.1 s
+  (`docs/re-needs/disassembling-40-instructions-takes.md`).
 - **`kuna_ghidra`** (`decompiler/crates/kuna-ghidra/src/bin/kuna_ghidra.rs`) —
   the ghidra-mode process front-end: the stock Ghidra GUI spawns it as its
   decompiler core and talks the burst-framed stdin/stdout protocol
