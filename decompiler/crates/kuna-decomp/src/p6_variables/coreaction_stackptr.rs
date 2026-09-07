@@ -294,6 +294,7 @@ impl StackSolver {
                         .and_then(|v| v.get_addr().get_space())
                         .map(|s| s.get_type() == kuna_base::space::spacetype::IPTR_IOP)
                         .unwrap_or(false);
+                    let mut callee: Option<int4> = None;
                     if is_iop {
                         let off = iopvn
                             .and_then(|v| data.vbank().get(v))
@@ -301,6 +302,7 @@ impl StackSolver {
                         if let Some(off) = off {
                             let iop = crate::funcdata_varnode::op_iop_decode(off);
                             if let Some(fc_idx) = data.get_call_specs_index(iop) {
+                                callee = Some(fc_idx);
                                 let extrapop = data.get_call_specs(fc_idx).get_extra_pop();
                                 if extrapop != EXTRAPOP_UNKNOWN {
                                     self.eqs.push(StackEqn {
@@ -313,8 +315,21 @@ impl StackSolver {
                             }
                         }
                     }
-                    // Otherwise make a guess.
-                    self.guess.push(StackEqn { var1: i as int4, var2: idx, rhs: 4 });
+                    // Otherwise make a guess.  (kuna) `calleepop`: upstream's
+                    // constant 4 assumes the callee pops nothing, which is
+                    // wrong for the majority of calls under a spec whose
+                    // default model is `__stdcall extrapop="unknown"`.
+                    let mut rhs = crate::kuna_calleepop::RETURN_ADDRESS_ONLY;
+                    if data.get_arch().callee_pop {
+                        let out = data.obank().get(op).and_then(|o| o.get_out());
+                        if let (Some(sp), Some(out), Some(fc_idx)) = (othervn, out, callee) {
+                            let entry = data.get_call_specs(fc_idx).get_entry_address().clone();
+                            rhs = crate::kuna_calleepop::guess_extra_pop(
+                                data, &spacebase, &entry, sp, out,
+                            );
+                        }
+                    }
+                    self.guess.push(StackEqn { var1: i as int4, var2: idx, rhs });
                 }
                 OpCode::CPUI_MULTIEQUAL => {
                     let n = data.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
@@ -382,7 +397,7 @@ impl StackSolver {
 }
 
 /// Order-by-value address comparison (C++ `getAddr() != spacebase`).
-fn addr_eq(a: &Address, b: &Address) -> bool {
+pub(crate) fn addr_eq(a: &Address, b: &Address) -> bool {
     let sa = a.get_space().map(|s| s.get_index());
     let sb = b.get_space().map(|s| s.get_index());
     sa == sb && a.get_offset() == b.get_offset()

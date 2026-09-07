@@ -532,6 +532,10 @@ pub struct Architecture {
     /// (kuna) A stack-pointer scramble against a live value (MSVC's `/GS`
     /// cookie) does not open a local-alias escape site (option `cookiescramble`).
     pub cookie_scramble: bool,
+    /// (kuna) Read the caller's own stack discipline for the argument bytes a
+    /// callee pops, instead of guessing that it pops none (option
+    /// `calleepop`).  See [`crate::p6_variables::kuna_calleepop`].
+    pub callee_pop: bool,
     /// (kuna) Let a bounded decode of the callee's own body veto a register
     /// argument the callee provably never reads (option `calleedeadarg`).
     pub callee_dead_arg: bool,
@@ -1818,6 +1822,7 @@ impl Architecture {
             recover_lowered_switch: false,
             callsite_stack_args: true,
             cookie_scramble: true,
+            callee_pop: true,
             callee_dead_arg: true,
             callee_preserves: true,
             input_param_gap: true,
@@ -2037,6 +2042,7 @@ impl Architecture {
         self.recover_lowered_switch = true; // (kuna) default-on (angr port)
         self.callsite_stack_args = true; // (kuna) default-on: restores upstream fspec.cc:5618 (0/675 ablation)
         self.cookie_scramble = true; // (kuna) DIV-126 default-on: an `xor rax,rsp` cookie mix no longer collapses the local-alias boundary to the bottom of the frame (0/675 ablation)
+        self.callee_pop = true; // (kuna) DIV-CALLEEPOP default-on: an unknown extrapop is read off the caller's push run instead of guessed as "pops nothing" (0/675 ablation)
         self.callee_dead_arg = true; // (kuna) default-on (DIV-KUNA_DEADARG_DIV): 0/675 datatests, subtractive only
         self.callee_preserves = true; // (kuna) DIV-124 default-on: a fully decoded, call-free callee's own writes narrow the cspec killedbycall set, so a value that crosses a get-PC thunk survives (0/675 ablation)
         self.input_param_gap = true; // (kuna) DIV-114 default-on: an unused argument-register run in the function's OWN input recovery no longer vetoes a later live-in register, so a pointer-table-only callback recovers its full signature instead of reading undefined locals. Byte-identical (0/675) on the datatest corpus; restore upstream's forceInactiveChain veto with `option inputparamgap off`
@@ -2338,6 +2344,12 @@ impl Architecture {
                 let (val, msg) =
                     crate::p6_variables::kuna_cookiescramble::OptionCookieScramble.apply(p1)?;
                 self.cookie_scramble = val;
+                Ok(msg)
+            }
+            "calleepop" => {
+                let (val, msg) =
+                    crate::p6_variables::kuna_calleepop::OptionCalleePop.apply(p1)?;
+                self.callee_pop = val;
                 Ok(msg)
             }
             "inputparamgap" => {
@@ -3259,6 +3271,7 @@ impl Architecture {
         ctx.recover_lowered_switch = self.recover_lowered_switch; // loweredswitch
         ctx.callsite_stack_args = self.callsite_stack_args; // callsitestackargs
         ctx.cookie_scramble = self.cookie_scramble; // cookiescramble
+        ctx.callee_pop = self.callee_pop; // calleepop
         ctx.callee_dead_arg = self.callee_dead_arg; // calleedeadarg
         ctx.callee_preserves = self.callee_preserves; // calleepreserves
         ctx.input_param_gap = self.input_param_gap; // inputparamgap

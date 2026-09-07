@@ -1,0 +1,40 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "timeout_s": 60,
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "sub_401290",
+    "--assert",
+    "prototype LocalAlloc void *LocalAlloc(unsigned int flags,unsigned int size)",
+    "--json"
+  ],
+  "target": {
+    "binary_rel": "bin/Imagination.zip.__x/Imagination.exe",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/stdcallpop_pe_i386.exe",
+    "binary_sha256": "78d28ec6d13b9c1634101e86b2042ed61560db31ba63705adfb2b75f5757b7b4",
+    "binary_size": 40960,
+    "binary_source": "in-repo"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "ReadFile\\([^;]*,&(v\\d+),4,&v\\d+,0\\);",
+      "wsprintfA\\([^;]*\\(v\\d+ >> 8 & 0xff\\)"
+    ],
+    "stdout_absent": [
+      "&Stack[fF0-9a-f]+"
+    ],
+    "json": [
+      {
+        "path": "assertions[0].status",
+        "op": "eq",
+        "value": "applied"
+      }
+    ]
+  }
+}

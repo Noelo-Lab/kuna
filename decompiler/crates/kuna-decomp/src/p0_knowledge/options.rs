@@ -294,6 +294,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "loweredswitch",
     "callsitestackargs",
     "cookiescramble",
+    "calleepop",
     "calleedeadarg",
     "calleepreserves",
     "inputparamgap",

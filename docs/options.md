@@ -471,6 +471,10 @@ Three tiers:
 | &pxVar[-0x1000] page-probe noise in a large-frame function | [`stackprobeloop`](#stackprobeloop) |
 | calls rendered argument-less because the stack pointer never resolved to a constant offset | [`stackprobeloop`](#stackprobeloop) |
 | gcc stack-clash probe loop leaves the frame layout unrecovered | [`stackprobeloop`](#stackprobeloop) |
+| an x86 windows pe passes `&Stackffffffe0` to an api and reads a DIFFERENT variable afterwards | [`calleepop`](#calleepop) |
+| a buffer filled by ReadFile/RegQueryValueEx is checksummed as a constant zero | [`calleepop`](#calleepop) |
+| declaring a prototype for one callee turns another function's locals into raw `&Stack` references | [`calleepop`](#calleepop) |
+| stack locals in an msvc x86 pe sit at offsets that drift further from the truth after every call | [`calleepop`](#calleepop) |
 | an msvc /GS binary drops the stack-passed arguments of every call in a function | [`cookiescramble`](#cookiescramble) |
 | a variadic call renders with only its register arguments after the format string | [`cookiescramble`](#cookiescramble) |
 | a value stored to [rsp+0x20] right before a call never reaches the call | [`cookiescramble`](#cookiescramble) |
@@ -1656,6 +1660,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** Set on when a large-frame function shows &pxVar[-0x1000] page-probe noise or argument-less calls; shape-gated, so it is inert on functions without a probe loop.
 - **Where / provenance:** P2/stack-pointer-normalization · ghidra-upstream · correctness-fix · GH-8017/6858
 - **Example:** `option stackprobeloop on`
+
+### `calleepop` -- on | off, default `on`
+
+- **Symptoms:** an x86 windows pe passes `&Stackffffffe0` to an api and reads a DIFFERENT variable afterwards; a buffer filled by ReadFile/RegQueryValueEx is checksummed as a constant zero; declaring a prototype for one callee turns another function's locals into raw `&Stack` references; stack locals in an msvc x86 pe sit at offsets that drift further from the truth after every call.
+- **What it does:** Read the argument bytes a callee pops off the caller's own push run, instead of guessing that an unknown extrapop pops nothing. StackSolver (coreaction.cc:238) contributes the guessed equation `extrapop = 4` for every call whose prototype model declares `extrapop="unknown"` -- on x86 Windows that is EVERY call, because `x86win.cspec`'s `<default_proto>` is `__stdcall extrapop="unknown"` and the convention is decided per callee. The guess says the callee pops none of its arguments, so each `__stdcall` call leaves the modelled stack pointer 4*nargs too low, and the error accumulates: the solver latches the solution into `INT_ADD sp, #c` at every reference, so every stack slot after the first call is displaced by the running total. With the option on, a call whose result is consumed by an `INT_ADD sp, #+k` is read as caller cleanup (`__cdecl`) and keeps the upstream guess; otherwise the argument pushes are counted back from the return-address slot in pointer-sized steps, stopping at the first push that stores a register's own input Varnode (a prologue callee-save) or at a step with no spacebase reference (a bare `sub esp,n`).
+- **When to flip:** On by default (DIV-CALLEEPOP). Flip OFF to restore upstream's constant guess. With it off, an MSVC x86 PE that calls a stdcall API and then reads the buffer that API filled splits ONE stack slot into two variables -- the address handed to the callee and the slot read afterwards land at different offsets, the read half has no reaching definition, and the emitted C computes over a constant instead of over the bytes the callee wrote. The displaced locals also drift onto an earlier call's outgoing-argument slots, so a declared prototype for that callee makes the local unmappable and it prints as a raw `&Stackffffffe0`. Inert wherever the compiler spec states its own extrapop (x86gcc `__cdecl extrapop="4"`, x86-64, every RISC spec): those calls contribute an exact equation and never reach the guess.
+- **Where / provenance:** P6/stack-pointer-flow · kuna · correctness-fix · re-needs-pixel-reader-uses-undefined
+- **Example:** `option calleepop off`
 
 ### `cookiescramble` -- on | off, default `on`
 

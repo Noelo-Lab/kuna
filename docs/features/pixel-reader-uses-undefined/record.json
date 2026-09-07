@@ -1,0 +1,43 @@
+{
+  "need": "pixel-reader-uses-undefined",
+  "track": "quality",
+  "scope": "small",
+  "option": "calleepop",
+  "default": "on",
+  "module": "decompiler/crates/kuna-decomp/src/p6_variables/kuna_calleepop.rs",
+  "witness": "Imagination.exe (PE32 x86, MSVC) sub_401290, vendored as decompiler/crates/kuna-analysis/tests/fixtures/stdcallpop_pe_i386.exe",
+  "decisions": [
+    "Hypothesis H1 ('possibly incorrect x86 Windows callee stack-cleanup tracking') is UPHELD and now located exactly: StackSolver::build (coreaction.cc:238) contributes the guessed equation `extrapop = 4` for every call whose model carries extrapop=unknown, which is every call under x86win.cspec's __stdcall default. Measured drift on the witness: hFile off by 8 (LocalAlloc's 2 args), the ReadFile buffer/count off by 24 (LocalAlloc+SetFilePointer), the checksum load off by 44 (+ReadFile+GetLastError) -- exactly the cumulative unpopped argument bytes.",
+    "The captain's refutation note is confirmed and its acceptance trap avoided: the promoted probe additionally requires the wsprintfA checksum operand to be the same vN the ReadFile lpBuffer points at, so a cosmetic rename cannot pass.",
+    "The second, independent defect the captain recorded (sub_401290 declared void, hFile modelled as an uninitialised local) is ALSO closed by the same change: with the frame correct the read at ESP+0x1c lands at entry+4 and recovers as a parameter.",
+    "The guess is restricted to IMPORTED callees (Varnode::externref over the IAT, painted by peimportcall). That is the ABI rule -- Win32 entry points are __stdcall -- and it is also what separates the wins from the losses in the measured sweep: every improved call was an import, and the first draft's three regressions were all internal MSVC __cdecl helpers.",
+    "The __cdecl varargs imports (wsprintfA) are separated by a caller-cleanup test measured as the highest stack-pointer value reachable from the call, not by looking for an `add esp,#k` op: the additive normalization re-bases the following push run onto the call's own result and leaves the cleanup Varnode dead.",
+    "Residual, documented in the spec and the option's use_when: a correct frame is bigger, so on deep-frame MSVC CRT helpers (sub_40264d, sub_40457e, sub_4047cd on the witness) an outgoing-argument slot now falls inside the caller's localrange and checkInputTrialUse scores it no-use, dropping arguments those functions previously recovered by accident of a wrong frame. The stack model there is provably right (the return-address push lands at exactly stack-0x1bc, the hand-traced truth); the loss is a separate argument-recovery weakness this exposes."
+  ],
+  "sweep": {
+    "binary": "stdcallpop_pe_i386.exe",
+    "functions": 87,
+    "changed": 16,
+    "errors_on": 0,
+    "errors_off": 0,
+    "improved": ["0x401040", "0x4011f0", "0x401290", "0x401340", "0x4013e0", "0x401470", "0x4015c0", "0x401630", "0x401820", "0x401f93", "0x4020c5", "0x40229d", "0x40357f"],
+    "degraded": ["0x40264d", "0x40457e", "0x4047cd"],
+    "note": "option off is byte-identical to the pre-change build over the whole binary"
+  },
+  "speed": {
+    "command": "kuna decompile-all stdcallpop_pe_i386.exe",
+    "reps": 7,
+    "median_ms_on": 926,
+    "median_ms_off": 942,
+    "delta_pct": -1.7,
+    "verdict": "inside noise"
+  },
+  "gates": {
+    "make test": "PARITY OK 675/675",
+    "make test-stages": "PARITY OK",
+    "make check-spec": "OK",
+    "kuna catalog --check": "catalog OK",
+    "make test-cli": "68/68",
+    "acceptance": "PASS"
+  }
+}
