@@ -5027,6 +5027,18 @@ impl JumpTable {
             self.jmodel = Some(Box::new(jbasic2));
             return Ok(());
         }
+        // (kuna) Neither value-range model could bound the destination.  When
+        // `option constselectjump on`, the destination may still be a select over
+        // constants -- a set both models prune away at the MULTIEQUAL rather than
+        // lose.  See `p2_lift/kuna_constselectjump.rs`.
+        if fd.get_arch().const_select_jump {
+            let mut jconst = crate::kuna_constselectjump::JumpModelConstSelect::new();
+            if jconst.recover_model(fd, indirect, self.addresstable.len() as uint4, max_table_size)?
+            {
+                self.jmodel = Some(Box::new(jconst));
+                return Ok(());
+            }
+        }
         // No model matched.
         self.jmodel = None;
         Ok(())

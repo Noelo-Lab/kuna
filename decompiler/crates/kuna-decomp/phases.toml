@@ -1296,6 +1296,12 @@ subphase = "switch-model"
 note = "(kuna GH-9191) bound a LOAD-table jumptable by a modulo/and-mask on its index"
 
 [[surface]]
+surface = "option constselectjump"
+phase = "P2"
+subphase = "switch-model"
+note = "(kuna) recover a BRANCHIND whose destination is a select over constant addresses"
+
+[[surface]]
 surface = "option switchguardbound"
 phase = "P2"
 subphase = "switch-model"
@@ -2035,6 +2041,28 @@ change_kind = "opt-in-tool"
 tier = "transform"
 symptoms = "switch reports 'Could not recover jumptable ... Too many branches' and renders as a computed call|indirect jump bounded only by a modulo or and-mask on its index never becomes a switch"
 live_field = "switch_modulo_bound"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
+option = "constselectjump"
+values = "on|off"
+default = "off"
+destructive = true
+phase = "P2"
+subphase = "switch-model"
+strength = "HARD"
+rewind = "P2"
+issue = "re-conditional-indirect-branches-hide"
+summary = "Recover an indirect branch whose destination is selected between constant addresses (a CMOV/predicated dispatch) as a jump table over that constant set, instead of truncating it to a call."
+use_when = "An indirect jump renders as a computed `(*v)()` call carrying a 'Treating indirect jump as call' warning while the destinations are already visible as address constants in the emitted C, and the code behind them is missing. DESTRUCTIVE as a global default: a conditional TAIL CALL selecting between two nearby function entries is the same shape, and recovering it splices both callee bodies into the caller."
+example = "option constselectjump on"
+source_decompiler = "kuna"
+inspiration = "RE-friction need conditional-indirect-branches-hide: a Mach-O decoder dispatches through `CMOVZ R11,R10; JMP R11` over two LEA-loaded code addresses"
+change_kind = "structure-recovery"
+tier = "transform"
+symptoms = "indirect jump renders as a computed (code *)() call whose destinations are already constants in the emitted C|'Treating indirect jump as call' on a CMOV/predicated dispatch|the body behind a conditional indirect branch is never decoded"
+live_field = "const_select_jump"
 live_true = "on"
 live_false = "off"
 

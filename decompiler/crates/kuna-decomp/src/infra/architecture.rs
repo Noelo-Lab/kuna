@@ -458,6 +458,9 @@ pub struct Architecture {
     /// (kuna GH-9191) Bound a modulo/and-mask LOAD-table jumptable index
     /// (C++ `switch_modulo_bound`).
     pub switch_modulo_bound: bool,
+    /// (kuna) Recover a `BRANCHIND` whose destination is a select over constant
+    /// addresses (`p2_lift/kuna_constselectjump.rs`).
+    pub const_select_jump: bool,
     /// (kuna, angr `test_decompiling_missing_function_call`) Bound a LOAD-table
     /// jumptable index by an out-of-band CBRANCH range guard the basic model's
     /// guard analysis could not turn into a bound (C++ `switch_guard_bound`).
@@ -1790,6 +1793,7 @@ impl Architecture {
             model_stack_probe_loop: false,
             fold_flag_compare: false,
             switch_modulo_bound: false,
+            const_select_jump: false,
             switch_guard_bound: false,
             switch_shared_case: false,
             switch_multi_pred: false,
@@ -2007,6 +2011,7 @@ impl Architecture {
         self.dynamic_hash_maxdup_high = true; // (kuna) DIV-3 default-on (GH-8467)
         self.fold_flag_compare = true; // (kuna) DIV-3 default-on (GH-1276/8777)
         self.switch_modulo_bound = false; // (kuna) default: upstream byte-identical (GH-9191)
+        self.const_select_jump = false; // (kuna) default: upstream byte-identical (constant-select indirect branch)
         self.switch_guard_bound = false; // (kuna) default: upstream byte-identical (angr opt-in)
         self.switch_shared_case = true; // (kuna) DIV-14 default-on (angr loop-carried-guard PIC switch recovery; slower on the functions it recovers, kept on for quality; 0/675 byte-identical)
         self.switch_multi_pred = true; // (kuna) DIV-13 default-on (angr multi-predecessor unrolled-guard jump-table; 0/675 ablation)
@@ -2295,6 +2300,7 @@ impl Architecture {
                 Ok(msg)
             }
             "switchmodbound" => on_off!(switch_modulo_bound, "Switch modulo/and-mask index bound"),
+            "constselectjump" => on_off!(const_select_jump, "Constant-select indirect branch recovery"),
             "switchguardbound" => on_off!(switch_guard_bound, "Switch CBRANCH-guard index bound"),
             "switchsharedcase" => on_off!(switch_shared_case, "Switch loop-carried-guard table"),
             "switchmultipred" => on_off!(switch_multi_pred, "Switch multi-predecessor unrolled-guard table"),
@@ -3317,6 +3323,9 @@ impl Architecture {
         // (kuna) GH-9191: carry the modulo/and-mask jump-table index-bound gate
         // (`option switchmodbound`) so `JumpBasic::recoverModel` reaches it.
         ctx.switch_modulo_bound = self.switch_modulo_bound;
+        // (kuna) carry the constant-select indirect-branch gate
+        // (`option constselectjump`) so `JumpTable::recoverModel` reaches it.
+        ctx.const_select_jump = self.const_select_jump;
         // (kuna, angr) carry the CBRANCH-guard jump-table index-bound gate
         // (`option switchguardbound`) so `JumpBasic::recoverModel` reaches it.
         ctx.switch_guard_bound = self.switch_guard_bound;

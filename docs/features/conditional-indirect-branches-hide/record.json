@@ -1,0 +1,56 @@
+{
+ "need_id": "conditional-indirect-branches-hide",
+ "track": "quality",
+ "opportunity": "conditional-indirect-branches-hide",
+ "title": "Conditional indirect branches hide the decoder body",
+ "route": "C (RE-friction)",
+ "binary": "/home/mahaloz/github/kuna-re-dataset/challenges/5b52f6eb33c5d41c0b8ae55f/bin/LOL",
+ "selector": "0x10003c9e0",
+ "func_addr": "0x10003c9e0",
+ "source_decompiler": "kuna",
+ "inspiration": "RE-friction round 5, needs conditional-indirect-branches-hide (2 instances, blocker). Precedent named by the refuter: option v850indirectbranch, the same class of surgery on a different cause.",
+ "phase": "P2 (switch-model)",
+ "module": "decompiler/crates/kuna-decomp/src/p2_lift/kuna_constselectjump.rs",
+ "change_kind": "structure-recovery",
+ "option": "constselectjump",
+ "flag": "const_select_jump",
+ "element_id": null,
+ "default_on": false,
+ "aggressive_preset": true,
+ "gated": true,
+ "gating_rationale": "A conditional TAIL CALL selecting between two nearby function entries is structurally the same shape as an intraprocedural predicated dispatch, and recovering it splices both callee bodies into the caller. That is a judgment call, so the catalog default stays off; AGGRESSIVE_OVERRIDES membership is the delivery route (auto picks aggressive under 500 KiB), and the aggressive_carries_every_default_off_option invariant makes membership mandatory anyway.",
+ "history_entry": "DIV-131 (docs/history.md)",
+ "decisions": [
+  "The need's FILED hypothesis (both CMOV destinations are not enumerated) is REFUTED, and I agree with the round-5 refuter, having reproduced it: both destinations are present in the emitted C as constants. The defect is that the destination set is never promoted into the CFG.",
+  "The refuter's own diagnosis was CONFIRMED against p-code: `print raw` on the witness shows `R11 = MULTIEQUAL(#0x10003ca26, #0x10003cb26); callind R11`. The CALLIND is not a lift artifact -- SLEIGH lifts `JMP R11` to BRANCHIND and `FlowInfo::truncateIndirectJump` rewrites it after jump-table recovery declines.",
+  "The refuter's suggested starting point (option v850indirectbranch, a CALLIND->BRANCHIND reclassification at flow-classification time) is the WRONG surface here: the op already IS a BRANCHIND when recovery runs. The gap is in JumpTable::recover_model, which walks only value-range models.",
+  "The need was triaged scope=large. Implemented as ONE new module plus a hook, because the JumpModel trait and JumpModelTrivial already provide the fixed-table shape; no new pass type, no structuring work, one ported-core anchor file (jumptable.rs).",
+  "The need's SECOND instance (keygenme.elf, `JMP [EAX*4+0x111358]`) is a genuine LOAD-table jump table with an unbounded memory-sourced index, NOT a constant select. Re-checked on the binary: still 3 jump-as-call sites, unchanged by this change. Its acceptance is not stored on this need (witness-only), so it stays open."
+ ],
+ "mechanism_verified": true,
+ "mechanism_note": "Verified at p-code level on the witness before writing code (decomp_dbg `print raw`), and end-to-end on both the witness and a reduced fixture. The transform is reachable only after BOTH value-range models decline, i.e. only where the alternative is the jump-as-call truncation.",
+ "wrongness_refutation": "The two ways this could produce WRONG output are (a) a conditional tail call, and (b) a constant that is not code. (a) is bounded by the 0xffff intraprocedural window, upstream's own thunk yardstick in JumpTable::sanity_check; (b) by JumpModelConstSelect::sanity_check, which declines the table whole unless every destination has loadable bytes behind it. Declining returns the branch to the pre-change CALLIND rendering, so every rejection path is the old behaviour exactly.",
+ "gates": {},
+ "stage_test": {
+  "path": "tests/stages/re-constselectjump.xml",
+  "passes": "two-pass: pass 1 default (option off, the bug), pass 2 `option constselectjump on` (the fix)",
+  "assertions": 3
+ },
+ "cli_probe": "tests/cli/conditional-indirect-branches-hide.json (vendored fixture decompiler/crates/kuna-analysis/tests/fixtures/constselectjump_x86_64; the recorded acceptance targets a dataset binary and is not vendorable)",
+ "speed": {
+  "fixture_csjmp": {
+   "off_ms": 106.96,
+   "on_ms": 107.84,
+   "delta_pct": 0.82,
+   "samples": 9
+  },
+  "coreutils_ls_main": {
+   "off_ms": 4555.51,
+   "on_ms": 4613.9,
+   "delta_pct": 1.28,
+   "samples": 7
+  },
+  "budget_pct": 5.0,
+  "within_budget": true
+ }
+}
