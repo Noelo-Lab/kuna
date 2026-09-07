@@ -1323,7 +1323,7 @@ fn raw_image_decompile_scales_word_addressed_selector() {
     let (stdout, stderr, ok) = run_kuna(&[
         "decompile-project", &binary, "-o", out_dir.to_str().unwrap(), "--raw-image",
         "--target", "avr8:LE:16:default", "--base", "0x100", "--entry", "0x101",
-        "--sleighpath", &sp,
+        "--assert", "data 0x101 int foo", "--sleighpath", &sp,
     ]);
     assert!(ok, "word-addressed raw project failed: {stderr}");
     assert!(stdout.contains("functions: 1 ok, 0 failed"), "{stdout}");
@@ -1344,6 +1344,11 @@ fn raw_image_decompile_scales_word_addressed_selector() {
     assert!(c.contains("// Function: sub_101 @ 0x101"), "{c}");
     assert!(asm.contains("sub_101:  ; 0x101"), "{asm}");
     assert!(asm.contains("00000101:"), "{asm}");
+    let data_tail = asm.split("; --- data ---").nth(1).expect("project data tail");
+    assert!(data_tail.contains("foo:  ; 0x101"), "{data_tail}");
+    assert!(data_tail.contains("  00000101:"), "{data_tail}");
+    assert!(!data_tail.contains("foo:  ; 0x202"), "{data_tail}");
+    assert!(!data_tail.contains("  00000202:"), "{data_tail}");
     std::fs::remove_dir_all(out_dir).unwrap();
     std::fs::remove_file(path).unwrap();
 }

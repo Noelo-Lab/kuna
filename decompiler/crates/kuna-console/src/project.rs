@@ -825,6 +825,7 @@ fn emit_data_tail(
     out.push_str("\n; --- data ---\n");
     let addrs: Vec<u64> = data.keys().copied().collect();
     for (idx, (&vma, label)) in data.iter().enumerate() {
+        let display_vma = prog.output_code_offset(vma);
         // Size: a typed symbol's datatype size; a bare `dat_` gets
         // min(gap to the next label / containing-section end, 32), floor 1.
         let size = match label.type_size {
@@ -847,9 +848,12 @@ fn emit_data_tail(
         };
         out.push('\n');
         if label.dat_alias {
-            out.push_str(&format!("{}:  ; 0x{vma:x} = dat_{vma:x}\n", label.name));
+            out.push_str(&format!(
+                "{}:  ; 0x{display_vma:x} = dat_{vma:x}\n",
+                label.name
+            ));
         } else {
-            out.push_str(&format!("{}:  ; 0x{vma:x}\n", label.name));
+            out.push_str(&format!("{}:  ; 0x{display_vma:x}\n", label.name));
         }
         match prog.read_bytes(vma, size as usize) {
             Some(bytes) => {
@@ -862,13 +866,13 @@ fn emit_data_tail(
                         .collect();
                     out.push_str(&format!(
                         "  {:08x}: {hex:<47}  |{ascii}|\n",
-                        vma + row as u64 * 16
+                        prog.output_code_offset(vma + row as u64 * 16)
                     ));
                 }
             }
             None => {
                 out.push_str(&format!(
-                    "  {vma:08x}: ?? (uninitialized/unmapped, {size} bytes)\n"
+                    "  {display_vma:08x}: ?? (uninitialized/unmapped, {size} bytes)\n"
                 ));
             }
         }
