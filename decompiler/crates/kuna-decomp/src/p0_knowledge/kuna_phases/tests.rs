@@ -413,7 +413,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_54_suppressed_for_97() {
+fn option_values_live_value_present_for_55_suppressed_for_97() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -712,7 +712,8 @@ fn option_values_live_value_present_for_54_suppressed_for_97() {
     // 50 -> 51: +1 for `noreturnretuse` (live_field = noreturn_ret_use, DIV-118).
     // 51 -> 52: +1 for `fastfailnoreturn` (live_field = fastfail_noreturn, DIV-119).
     // 53 -> 54: +1 for `constselectjump` (live_field = const_select_jump).
-    assert_eq!(with_live, 54);
+    // 54 -> 55: +1 for `calleepop` (live_field = callee_pop).
+    assert_eq!(with_live, 55);
 }
 
 #[test]
