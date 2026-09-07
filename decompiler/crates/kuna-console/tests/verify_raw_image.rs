@@ -111,6 +111,8 @@ fn word_addressed_targets_scale_base_and_entries_to_byte_offsets() {
         .find_entry_at(0x200)
         .expect("word-addressed base must become a byte VMA");
     assert!(at_nonzero_base.entry_bytes_mapped(&entry.addr));
+    assert_eq!(at_nonzero_base.output_code_offset(entry.addr.get_offset()), 0x100);
+    assert_eq!(at_nonzero_base.output_code_end_offset(0x201), 0x101);
 
     let mut at_second_word = bootstrap_from_raw(&path, "avr8:LE:16:default", 0, &[1], None, &specs())
         .expect("same built AVR8 specification");
@@ -119,6 +121,7 @@ fn word_addressed_targets_scale_base_and_entries_to_byte_offsets() {
         .find_entry_at(2)
         .expect("entry word 1 must select file byte offset 2");
     assert_eq!(entry.addr.get_offset(), 2);
+    assert_eq!(at_second_word.output_code_offset(entry.addr.get_offset()), 1);
     assert!(at_second_word.entry_bytes_mapped(&entry.addr));
 }
 

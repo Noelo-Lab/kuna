@@ -651,13 +651,17 @@ fn summary_json(
     summary: &Summary,
     selected: usize,
     error: Option<&str>,
+    display_address: &dyn Fn(u64) -> u64,
 ) -> String {
     let entry = match &summary.entry {
-        Some((vma, name)) => Json::Object(vec![
-            ("name".into(), Json::Str(name.clone())),
-            ("address".into(), Json::Number(vma.to_string())),
-            ("address_hex".into(), Json::Str(format!("0x{vma:x}"))),
-        ]),
+        Some((vma, name)) => {
+            let address = display_address(*vma);
+            Json::Object(vec![
+                ("name".into(), Json::Str(name.clone())),
+                ("address".into(), Json::Number(address.to_string())),
+                ("address_hex".into(), Json::Str(format!("0x{address:x}"))),
+            ])
+        }
         None => Json::Null,
     };
     let buckets = Json::Array(
@@ -703,20 +707,26 @@ fn summary_json(
                     ("no_callers".into(), Json::Number(summary.no_callers.to_string())),
                     ("code_bytes".into(), Json::Number(summary.code_bytes.to_string())),
                     ("size_buckets".into(), buckets),
-                    ("largest".into(), entries_json(&summary.largest)),
+                    ("largest".into(), entries_json(&summary.largest, display_address)),
                 ])
             ),
         ]))
     )
 }
 
-fn summary_text(binary: &str, summary: &Summary, selected: usize) -> String {
+fn summary_text(
+    binary: &str,
+    summary: &Summary,
+    selected: usize,
+    display_address: &dyn Fn(u64) -> u64,
+) -> String {
     let mut out = String::new();
     let _ = writeln!(out, "binary\t{binary}");
     let _ = writeln!(out, "functions\t{selected} selected / {} discovered", summary.total);
     match &summary.entry {
         Some((vma, name)) => {
-            let _ = writeln!(out, "entry\t0x{vma:x}\t{name}");
+            let address = display_address(*vma);
+            let _ = writeln!(out, "entry\t0x{address:x}\t{name}");
         }
         None => {
             let _ = writeln!(out, "entry\t(none declared)");
@@ -733,7 +743,8 @@ fn summary_text(binary: &str, summary: &Summary, selected: usize) -> String {
     }
     let _ = writeln!(out, "largest:");
     for e in &summary.largest {
-        let _ = writeln!(out, "  0x{:x}\t{}\t{}", e.addr.get_offset(), e.size, e.name);
+        let address = display_address(e.addr.get_offset());
+        let _ = writeln!(out, "  0x{address:x}\t{}\t{}", e.size, e.name);
     }
     out
 }
@@ -871,7 +882,13 @@ pub fn run_functions(argv: &[String]) -> i32 {
                 }
             };
             let text = if args.json {
-                functions_json(&args.binary, &entries, total, discovery_error.as_deref())
+                functions_json(
+                    &args.binary,
+                    &entries,
+                    total,
+                    discovery_error.as_deref(),
+                    &|address| prog.output_code_offset(address),
+                )
             } else {
                 let mut text = String::new();
                 for e in &entries {
@@ -882,7 +899,8 @@ pub fn run_functions(argv: &[String]) -> i32 {
                     } else {
                         format!("\t({})", e.aliases.join(", "))
                     };
-                    let _ = writeln!(text, "0x{:x}\t{}{extra}", e.addr.get_offset(), e.name);
+                    let address = prog.output_code_offset(e.addr.get_offset());
+                    let _ = writeln!(text, "0x{address:x}\t{}{extra}", e.name);
                 }
                 text
             };
@@ -925,9 +943,20 @@ fn run_summary(args: &Args, filters: &Filters) -> i32 {
     };
     let summary = summarize(&prog, &args.binary, args.slice_pref(), filters, &graph, &all, &selected);
     let text = if args.json {
-        summary_json(&args.binary, &summary, selected.len(), discovery_error.as_deref())
+        summary_json(
+            &args.binary,
+            &summary,
+            selected.len(),
+            discovery_error.as_deref(),
+            &|address| prog.output_code_offset(address),
+        )
     } else {
-        summary_text(&args.binary, &summary, selected.len())
+        summary_text(
+            &args.binary,
+            &summary,
+            selected.len(),
+            &|address| prog.output_code_offset(address),
+        )
     };
     emit_with_discovery_error(&text, discovery_error.as_deref())
 }
@@ -1804,6 +1833,7 @@ fn functions_json(
     entries: &[FunctionEntry],
     total: usize,
     error: Option<&str>,
+    display_address: &dyn Fn(u64) -> u64,
 ) -> String {
     format!(
         "{}\n",
@@ -1812,19 +1842,19 @@ fn functions_json(
             ("count".into(), Json::Number(entries.len().to_string())),
             ("total".into(), Json::Number(total.to_string())),
             ("error".into(), error_json(error)),
-            ("functions".into(), entries_json(entries)),
+            ("functions".into(), entries_json(entries, display_address)),
         ]))
     )
 }
 
 /// The inventory-record array shared by the `functions` listing and the
 /// `--summary` document's `largest`.
-fn entries_json(entries: &[FunctionEntry]) -> Json {
+fn entries_json(entries: &[FunctionEntry], display_address: &dyn Fn(u64) -> u64) -> Json {
     Json::Array(
         entries
             .iter()
             .map(|e| {
-                let a = e.addr.get_offset();
+                let a = display_address(e.addr.get_offset());
                 Json::Object(vec![
                     ("name".into(), Json::Str(e.name.clone())),
                     ("address".into(), Json::Number(a.to_string())),
@@ -2030,6 +2060,7 @@ mod provenance_json_tests {
         let function = FuncResult {
             name: "f".into(),
             address: 0x401000,
+            byte_address: 0x401000,
             size: 12,
             code: Some("int f(int x)\n{\n  return x;\n}".into()),
             error: None,
@@ -2659,9 +2690,15 @@ mod discovery_tests {
     /// reads it unconditionally rather than inferring failure from `count`.
     #[test]
     fn the_run_level_error_field_is_always_present() {
-        let healthy = functions_json("fixture", &[], 0, None);
+        let healthy = functions_json("fixture", &[], 0, None, &|address| address);
         assert!(healthy.contains("\"error\": null"), "{healthy}");
-        let failed = functions_json("fixture", &[], 0, Some("no functions discovered in fixture"));
+        let failed = functions_json(
+            "fixture",
+            &[],
+            0,
+            Some("no functions discovered in fixture"),
+            &|address| address,
+        );
         assert!(
             failed.contains("\"error\": \"no functions discovered in fixture\""),
             "{failed}"

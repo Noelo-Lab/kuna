@@ -47,7 +47,10 @@ pub fn default_fn_budget_seconds(mode: &str, whole_binary: bool) -> u64 {
 /// `error`).
 pub struct FuncResult {
     pub name: String,
+    /// User-facing address, in the target's address units for a raw image.
     pub address: u64,
+    /// Engine address, always stored as a byte offset.
+    pub byte_address: u64,
     /// The entry's byte extent, carried through from
     /// [`FunctionEntry::size`](crate::engine::FunctionEntry::size) so this
     /// surface and the `functions` inventory report ONE number with one meaning.
@@ -105,7 +108,8 @@ pub fn decompile_targets(
         ..
     } in targets
     {
-        let address = entry.get_offset();
+        let byte_address = entry.get_offset();
+        let address = prog.output_code_offset(byte_address);
         // (kuna) An entry with no mapped bytes is an EXTERNAL, not a decompile
         // failure: a relocatable object's undefined symbols (and a PE import
         // slot) carry an address only so a call to one renders by name, and the
@@ -123,6 +127,7 @@ pub fn decompile_targets(
                 )),
                 name,
                 address,
+                byte_address,
                 size: size as i64,
                 error: None,
                 proto: None,
@@ -137,6 +142,7 @@ pub fn decompile_targets(
             out.push(FuncResult {
                 name,
                 address,
+                byte_address,
                 size: size as i64,
                 code: None,
                 error: Some("entry address is not mapped in this input".into()),
@@ -152,7 +158,7 @@ pub fn decompile_targets(
         // `-g` binary renders DWARF names/types) and decompile.  The drive itself
         // catches un-ported-seam panics and returns Err, so a single bad function
         // degrades to an `error` record instead of aborting the binary.
-        let mapped = prog.dwarf_locals_for(address);
+        let mapped = prog.dwarf_locals_for(byte_address);
         // (kuna, Ghidra-gap) `CALL_RETURN` flow overrides for the binary's
         // `call error(nonzero,…)` sites — prune the fall-through so the flow-follower
         // stops at the no-return call (Ghidra "Subroutine does not return") instead of
@@ -186,7 +192,7 @@ pub fn decompile_targets(
         // A caller-declared extent (`function bounds` / `kuna --define-function`)
         // bounds this function's flow follow; 0 — the usual case — is the natural,
         // unbounded extent.
-        let declared = prog.declared_extent(address);
+        let declared = prog.declared_extent(byte_address);
         // (kuna `--assert`) The caller-declared facts this function is decompiled
         // AGAINST: a `prototype`/`param`/`return` directive is consumed at flow
         // time, so it has to be seeded here rather than applied afterwards. Every
@@ -278,6 +284,11 @@ pub fn decompile_targets(
                     let mut variables =
                         if no_vars { Vec::new() } else { extract_variables(prog.arch(), &fd) };
                     provenance.apply_to_variables(&fd, &mut variables);
+                    for variable in &mut variables {
+                        for address in &mut variable.addresses {
+                            *address = prog.output_code_offset(*address);
+                        }
+                    }
                     // The prototype must be captured HERE (fd is dropped at the
                     // end of the iteration) and inside the same guard (the
                     // declarator walk shares the printer's fail-fast invariants).
@@ -286,12 +297,19 @@ pub fn decompile_targets(
                     } else {
                         None
                     };
-                    (code, variables, proto, provenance.line_mappings)
+                    let mut line_mappings = provenance.line_mappings;
+                    for mapping in &mut line_mappings {
+                        for address in &mut mapping.addresses {
+                            *address = prog.output_code_offset(*address);
+                        }
+                    }
+                    (code, variables, proto, line_mappings)
                 }));
                 match rendered {
                     Ok((code, variables, proto, line_mappings)) => out.push(FuncResult {
                         name,
                         address,
+                        byte_address,
                         size: size as i64,
                         code: Some(code),
                         error: None,
@@ -304,6 +322,7 @@ pub fn decompile_targets(
                     Err(_) => out.push(FuncResult {
                         name,
                         address,
+                        byte_address,
                         size: size as i64,
                         code: None,
                         error: Some("panic while rendering C / extracting variables".into()),
@@ -318,6 +337,7 @@ pub fn decompile_targets(
             Err(e) => out.push(FuncResult {
                 name,
                 address,
+                byte_address,
                 size: size as i64,
                 code: None,
                 error: Some(e.explain().to_string()),
@@ -559,7 +579,7 @@ pub fn build_asm(
 
     let mut labels: LabelMap = BTreeMap::new();
     for r in results {
-        labels.entry(normalize(r.address)).or_default().push(r);
+        labels.entry(normalize(r.byte_address)).or_default().push(r);
     }
 
     let sections = prog.sections();
@@ -576,7 +596,11 @@ pub fn build_asm(
     let mut scratch = AssemblyScratch::new();
     for (vma, size) in code_secs {
         let end = vma.saturating_add(size);
-        out.push_str(&format!("\n; --- code section 0x{vma:x}..0x{end:x} ---\n"));
+        let display_vma = prog.output_code_offset(vma);
+        let display_end = prog.output_code_end_offset(end);
+        out.push_str(&format!(
+            "\n; --- code section 0x{display_vma:x}..0x{display_end:x} ---\n"
+        ));
         sweep_code(prog, &labels, vma, end, &mut scratch, &mut out);
     }
 
@@ -614,17 +638,17 @@ fn sweep_code(
             Ok(len) if len > 0 && addr + len as u64 <= next_stop => {
                 scratch.flush_db(out);
                 prog.read_bytes_into(addr, len as usize, &mut scratch.raw);
-                scratch.emit_instruction(addr, out);
+                scratch.emit_instruction(prog.output_code_offset(addr), out);
                 addr += len as u64;
             }
             _ => {
                 // Decode failure (or a decode that would cross the next label):
                 // one raw byte, coalesced into up-to-8-byte `db` lines.
                 if prog.read_bytes_into(addr, 1, &mut scratch.raw) {
-                    scratch.push_db(addr, scratch.raw[0], out);
+                    scratch.push_db(prog.output_code_offset(addr), scratch.raw[0], out);
                 } else {
                     scratch.flush_db(out);
-                    scratch.emit_unreadable(addr, out);
+                    scratch.emit_unreadable(prog.output_code_offset(addr), out);
                 }
                 addr += 1;
             }

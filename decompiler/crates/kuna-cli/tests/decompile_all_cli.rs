@@ -1269,11 +1269,29 @@ fn raw_image_decompile_scales_word_addressed_selector() {
     }
 
     let (stdout, stderr, ok) = run_kuna(&[
+        "functions", &binary, "--json", "--raw-image", "--target",
+        "avr8:LE:16:default", "--base", "0x100", "--entry", "0x101",
+        "--sleighpath", &sp,
+    ]);
+    assert!(ok, "word-addressed raw inventory failed: {stderr}");
+    assert!(stdout.contains("\"address\": 257"), "{stdout}");
+    assert!(stdout.contains("\"address_hex\": \"0x101\""), "{stdout}");
+    assert!(!stdout.contains("\"address_hex\": \"0x202\""), "{stdout}");
+
+    let (stdout, stderr, ok) = run_kuna(&[
+        "functions", &binary, "--raw-image", "--target", "avr8:LE:16:default",
+        "--base", "0x100", "--entry", "0x101", "--sleighpath", &sp,
+    ]);
+    assert!(ok, "word-addressed raw text inventory failed: {stderr}");
+    assert!(stdout.contains("0x101\tsub_101"), "{stdout}");
+
+    let (stdout, stderr, ok) = run_kuna(&[
         "decompile-all", &binary, "--raw-image", "--target", "avr8:LE:16:default",
         "--base", "0x100", "--entry", "0x101", "--sleighpath", &sp,
     ]);
     assert!(ok, "word-addressed raw selector failed: {stderr}");
     assert!(stdout.contains("sub_101"), "{stdout}");
+    assert!(stdout.contains("@ 0x101"), "{stdout}");
 
     let (stdout, stderr, ok) = run_kuna(&[
         "decompile", &binary, "0x101", "--raw-image", "--target", "avr8:LE:16:default",
@@ -1281,7 +1299,105 @@ fn raw_image_decompile_scales_word_addressed_selector() {
     ]);
     assert!(ok, "word-addressed raw text decompile failed: {stderr}");
     assert!(stdout.contains("sub_101"), "{stdout}");
+
+    let (stdout, stderr, ok) = run_kuna(&[
+        "decompile", &binary, "0x101", "--json", "--raw-image", "--target",
+        "avr8:LE:16:default", "--base", "0x100", "--sleighpath", &sp,
+    ]);
+    assert!(ok, "word-addressed raw JSON decompile failed: {stderr}");
+    assert!(stdout.contains("\"address\": 257"), "{stdout}");
+    assert!(stdout.contains("\"address_hex\": \"0x101\""), "{stdout}");
+    assert!(stdout.contains("\"addresses\": [\n            257"), "{stdout}");
+
+    let out_dir = common::scratch_file("raw-avr-project", "dir");
+    let (stdout, stderr, ok) = run_kuna(&[
+        "decompile-project", &binary, "-o", out_dir.to_str().unwrap(), "--raw-image",
+        "--target", "avr8:LE:16:default", "--base", "0x100", "--entry", "0x101",
+        "--sleighpath", &sp,
+    ]);
+    assert!(ok, "word-addressed raw project failed: {stderr}");
+    assert!(stdout.contains("functions: 1 ok, 0 failed"), "{stdout}");
+    let files: Vec<_> = std::fs::read_dir(&out_dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect();
+    let c_path = files
+        .iter()
+        .find(|path| path.extension().is_some_and(|ext| ext == "c"))
+        .expect("project C file");
+    let asm_path = files
+        .iter()
+        .find(|path| path.extension().is_some_and(|ext| ext == "asm"))
+        .expect("project asm file");
+    let c = std::fs::read_to_string(c_path).unwrap();
+    let asm = std::fs::read_to_string(asm_path).unwrap();
+    assert!(c.contains("// Function: sub_101 @ 0x101"), "{c}");
+    assert!(asm.contains("sub_101:  ; 0x101"), "{asm}");
+    assert!(asm.contains("00000101:"), "{asm}");
+    std::fs::remove_dir_all(out_dir).unwrap();
     std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn raw_address_directives_use_target_units() {
+    let sp = specs();
+    let avr_spec = PathBuf::from(&sp).join("Ghidra/Processors/Atmel/data/languages/avr8.sla");
+    let arm_spec = PathBuf::from(&sp).join("Ghidra/Processors/ARM/data/languages/ARM8_le.sla");
+    if !avr_spec.exists() || !arm_spec.exists() {
+        eprintln!("raw_image CLI: skipping (no AVR8 or ARM `.sla`)");
+        return;
+    }
+
+    let avr_path = common::scratch_file("raw-avr-directives", "bin");
+    std::fs::write(&avr_path, [0, 0, 0x08, 0x95]).unwrap();
+    let avr = avr_path.to_string_lossy().into_owned();
+    let (stdout, stderr, ok) = run_kuna(&[
+        "decompile", &avr, "0x101", "--json", "--raw-image", "--target",
+        "avr8:LE:16:default", "--base", "0x100", "--define-function",
+        "0x101-0x102=bounded", "--assert", "comment 0x101 WORD_COMMENT", "--sleighpath",
+        &sp,
+    ]);
+    assert!(ok, "word-addressed raw directives failed: {stderr}");
+    assert!(stdout.contains("\"name\": \"bounded\""), "{stdout}");
+    assert!(stdout.contains("\"address\": 257"), "{stdout}");
+    assert!(stdout.contains("\"size\": 2"), "{stdout}");
+    assert!(stdout.contains("/* WORD_COMMENT */"), "{stdout}");
+
+    let (stdout, stderr, ok) = run_kuna(&[
+        "decompile", &avr, "0x101", "--raw-image", "--target", "avr8:LE:16:default",
+        "--base", "0x100", "--define-function", "0x101-0x102=bounded", "--assert",
+        "comment 0x101 WORD_COMMENT", "--sleighpath", &sp,
+    ]);
+    assert!(ok, "word-addressed raw text directives failed: {stderr}");
+    assert!(stdout.contains("bounded"), "{stdout}");
+    assert!(stdout.contains("/* WORD_COMMENT */"), "{stdout}");
+    std::fs::remove_file(avr_path).unwrap();
+
+    let arm_path = common::scratch_file("raw-thumb-directives", "bin");
+    std::fs::write(&arm_path, [0x07, 0x20, 0x70, 0x47]).unwrap();
+    let arm = arm_path.to_string_lossy().into_owned();
+    let (stdout, stderr, ok) = run_kuna(&[
+        "decompile", &arm, "0x4001", "--json", "--raw-image", "--target",
+        "ARM:LE:32:v4t:default", "--base", "0x4000", "--isa", "thumb", "--assert",
+        "function 0x4001-0x4003=thumb_bounded", "--assert",
+        "comment 0x4001 THUMB_COMMENT", "--sleighpath", &sp,
+    ]);
+    assert!(ok, "odd-Thumb raw directives failed: {stderr}");
+    assert!(stdout.contains("\"name\": \"thumb_bounded\""), "{stdout}");
+    assert!(stdout.contains("\"address\": 16384"), "{stdout}");
+    assert!(stdout.contains("\"size\": 2"), "{stdout}");
+    assert!(stdout.contains("/* THUMB_COMMENT */"), "{stdout}");
+
+    let (stdout, stderr, ok) = run_kuna(&[
+        "decompile", &arm, "0x4001", "--raw-image", "--target", "ARM:LE:32:v4t:default",
+        "--base", "0x4000", "--isa", "thumb", "--assert",
+        "function 0x4001-0x4003=thumb_bounded", "--assert",
+        "comment 0x4001 THUMB_COMMENT", "--sleighpath", &sp,
+    ]);
+    assert!(ok, "odd-Thumb raw text directives failed: {stderr}");
+    assert!(stdout.contains("thumb_bounded"), "{stdout}");
+    assert!(stdout.contains("/* THUMB_COMMENT */"), "{stdout}");
+    std::fs::remove_file(arm_path).unwrap();
 }
 
 #[test]

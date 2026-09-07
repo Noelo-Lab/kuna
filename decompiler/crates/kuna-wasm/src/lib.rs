@@ -163,7 +163,9 @@ pub fn run_with(
                 /* want_provenance= */ false,
             );
             let kinds: Vec<&'static str> =
-                out.iter().map(|f| classifier.kind(&prog, &f.name, f.address)).collect();
+                out.iter()
+                    .map(|f| classifier.kind(&prog, &f.name, f.byte_address))
+                    .collect();
             Ok(result_json(binary, &out, &kinds))
         }
     }

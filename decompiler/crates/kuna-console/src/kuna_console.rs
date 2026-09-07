@@ -1271,20 +1271,38 @@ impl IfaceCommandAction for IfcKunaFunctionBounds {
         } else {
             return Err(IfaceError::parse(format!("Unexpected token {tok:?} (expected 'as')")));
         };
-        let size = match end {
-            None => 0,
-            Some(end) if end > start => (end - start) as kuna_base::types::int4,
-            Some(end) => {
+        if let Some(end) = end {
+            if end <= start {
                 return Err(IfaceError::parse(format!(
                     "function bounds: end {end:#x} must be above start {start:#x}"
-                )))
+                )));
             }
-        };
+        }
+        let display_start = start;
         let dcp = dcp_mut(status)?;
         let prog = dcp
             .conf
             .as_mut()
             .ok_or_else(|| IfaceError::execution("No load image present"))?;
+        let start = prog
+            .input_code_offset(start)
+            .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+        let size = match end {
+            None => 0,
+            Some(end) => {
+                let end = prog
+                    .input_code_offset(end)
+                    .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+                let size = end.checked_sub(start).filter(|size| *size > 0).ok_or_else(|| {
+                    IfaceError::parse(
+                        "function bounds: end must be above start after target address conversion",
+                    )
+                })?;
+                kuna_base::types::int4::try_from(size).map_err(|_| {
+                    IfaceError::execution("function bounds: byte extent exceeds supported range")
+                })?
+            }
+        };
         let space = prog
             .arch()
             .manage()
@@ -1295,7 +1313,9 @@ impl IfaceCommandAction for IfcKunaFunctionBounds {
         let name = prog
             .declare_function(addr, name.as_deref(), size)
             .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
-        status.out(&format!("Declared {name} at {start:#x} spanning {size} bytes\n"));
+        status.out(&format!(
+            "Declared {name} at {display_start:#x} spanning {size} bytes\n"
+        ));
         Ok(())
     }
 

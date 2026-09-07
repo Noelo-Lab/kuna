@@ -404,6 +404,16 @@ pub(crate) fn parse_machaddr(
     Ok((res, defaultsize))
 }
 
+/// Parse a user code address. The address-space parser already scales target
+/// units to bytes; raw ARM inputs additionally need their state bit removed.
+fn parse_input_code_address(
+    prog: &ConsoleProgram,
+    s: &mut CommandStream,
+) -> Result<(kuna_base::address::Address, int4), String> {
+    let (address, size) = parse_machaddr(prog, s, false)?;
+    Ok((prog.normalize_parsed_code_address(address), size))
+}
+
 /// C++ `parse_varnode(istream &s,int4 &size,Address &pc,uintm &uq,
 /// const TypeFactory &typegrp)` (`grammar.cc:3055-3084`): scan a specific
 /// varnode specifier — a storage address, then `(` [`i` | defining-pc] [`:`uniq]
@@ -573,7 +583,7 @@ fn mark_property_range(
     let dcp = dcp_mut(status)?;
     let prog = dcp.conf.as_mut().expect("conf checked non-None above");
     // C++ Address addr = parse_machaddr(s,size,*dcp->conf->types).
-    let (addr, mut size) = parse_machaddr(prog, s, false).map_err(IfaceError::parse)?;
+    let (addr, mut size) = parse_input_code_address(prog, s).map_err(IfaceError::parse)?;
     // (kuna) An explicit size may follow the address.  The C++ takes the size
     // only from the bracketed `[space,offset,size]` form, which forces a caller
     // that wants a sized range to also name the address space; `--assert
@@ -1497,7 +1507,8 @@ decomp_command!(
             use kuna_decomp::varnode::varnode_flags;
             let dcp = dcp_mut(status)?;
             let prog = dcp.conf.as_mut().expect("conf checked non-None above");
-            let (addr, _size) = parse_machaddr(prog, s, false).map_err(IfaceError::parse)?;
+            let (addr, _size) =
+                parse_input_code_address(prog, s).map_err(IfaceError::parse)?;
             s.skip_ws();
             let (addr_size, word_size) = prog.arch().data_org();
             let org = crate::grammar::DataOrg { addr_size, word_size };
@@ -1517,7 +1528,7 @@ decomp_command!(
         }
         let dcp = dcp_mut(status)?;
         let prog = dcp.conf.as_mut().expect("conf checked non-None above");
-        let (addr, _size) = parse_machaddr(prog, s, false).map_err(IfaceError::parse)?;
+        let (addr, _size) = parse_input_code_address(prog, s).map_err(IfaceError::parse)?;
         s.skip_ws();
         // Parse the required type + name (C++ parse_type).
         let (addr_size, word_size) = prog.arch().data_org();
@@ -3287,7 +3298,7 @@ decomp_command!(
         let dcp = dcp_mut(status)?;
         let prog = dcp.conf.as_ref().expect("conf present when fd present");
         // C++ Address addr( parse_machaddr(s,discard,*dcp->conf->types) ).
-        let (addr, _size) = parse_machaddr(prog, s, false).map_err(IfaceError::parse)?;
+        let (addr, _size) = parse_input_code_address(prog, s).map_err(IfaceError::parse)?;
         s.skip_ws();
         let token = s.read_token();
         if token.is_empty() {
@@ -3587,7 +3598,7 @@ decomp_command!(
         }
         let dcp = dcp_mut(status)?;
         let prog = dcp.conf.as_ref().expect("conf checked non-None above");
-        let (addr, _size) = parse_machaddr(prog, s, false).map_err(IfaceError::parse)?;
+        let (addr, _size) = parse_input_code_address(prog, s).map_err(IfaceError::parse)?;
         // C++ skips ws then reads char-by-char to EOL as the comment body.
         s.skip_ws();
         let comment = s.rest();

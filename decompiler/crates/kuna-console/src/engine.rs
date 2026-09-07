@@ -387,9 +387,49 @@ impl ConsoleProgram {
         let units = if arm32 { value & !1 } else { value };
         units.checked_mul(word_size).ok_or_else(|| {
             KunaError::lowlevel(format!(
-                "raw entry 0x{value:x} overflows the target's {word_size}-byte code-space units"
+                "raw address 0x{value:x} overflows the target's {word_size}-byte code-space units"
             ))
         })
+    }
+
+    /// Finish normalization after the console address grammar has already
+    /// converted address units to bytes. Raw ARM code pointers still carry a
+    /// state bit that is not part of the mapped byte address.
+    pub fn normalize_parsed_code_address(&self, address: Address) -> Address {
+        let Some((_, true)) = self.raw_address_units else {
+            return address;
+        };
+        let Some(space) = address.get_space() else {
+            return address;
+        };
+        let in_default_space = self
+            .arch()
+            .manage()
+            .get_default_code_space()
+            .is_some_and(|default| Rc::ptr_eq(space, default));
+        if in_default_space {
+            Address::new(Rc::clone(space), address.get_offset() & !1)
+        } else {
+            address
+        }
+    }
+
+    /// Convert an engine byte offset back to the address units accepted by the
+    /// raw CLI. Object-backed programs already expose byte VMAs and are unchanged.
+    pub fn output_code_offset(&self, value: u64) -> u64 {
+        match self.raw_address_units {
+            Some((word_size, _)) => value / word_size,
+            None => value,
+        }
+    }
+
+    /// Convert an exclusive engine byte end to target address units, rounding
+    /// up when the final code unit is only partially present.
+    pub fn output_code_end_offset(&self, value: u64) -> u64 {
+        match self.raw_address_units {
+            Some((word_size, _)) => value / word_size + u64::from(value % word_size != 0),
+            None => value,
+        }
     }
 
     /// Resolve a function entry address by symbol name (the `queryFunction`
