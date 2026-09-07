@@ -29,6 +29,7 @@ pub mod filter;
 pub mod nrv;
 
 mod elf;
+mod pe;
 
 use std::fmt;
 
@@ -64,7 +65,8 @@ pub struct PackInfo {
     pub c_adler: u32,
     /// Size of the original, unpacked file.
     pub u_file_size: u32,
-    /// Offset of the `p_info` that starts the compressed overlay.
+    /// Offset of the `p_info` that starts the compressed overlay; `0` for a
+    /// target whose layout has no overlay, which is every PE.
     pub overlay_offset: u32,
 }
 
@@ -138,6 +140,11 @@ pub fn detect(image: &[u8]) -> Option<PackInfo> {
 /// Unpack `image`, returning the original file.
 pub fn unpack(image: &[u8]) -> Result<Unpacked, UpxError> {
     let info = parse_pack_header(image)?;
+    if pe::is_pe_format(info.format) {
+        let img = pe::Image::new(image)?;
+        let (bytes, blocks) = pe::unpack(&img, &info)?;
+        return Ok(Unpacked { info, bytes, blocks });
+    }
     if !is_elf_format(info.format) {
         return Err(UpxError::Unsupported(format!(
             "target format {} ({}) -- only the ELF formats are implemented",
@@ -153,9 +160,14 @@ pub fn unpack(image: &[u8]) -> Result<Unpacked, UpxError> {
     Ok(Unpacked { info, bytes, blocks })
 }
 
-/// UPX's `find_overlay_offset` + `decodePackHeaderFromBuf`: the PackHeader sits
-/// just before the trailing 4-byte overlay offset, after any zero padding.
+/// Locate and decode the `PackHeader`. A PE keeps it in the header padding
+/// right before the compressed block, so that layout is probed first; every
+/// other target UPX supports puts it in the tail, which is where
+/// `find_overlay_offset` + `decodePackHeaderFromBuf` look.
 fn parse_pack_header(image: &[u8]) -> Result<PackInfo, UpxError> {
+    if let Some(at) = pe::find_pack_header(image) {
+        return decode_pack_header(image, at, false);
+    }
     if image.len() < PACK_HEADER_SIZE + 4 {
         return Err(UpxError::NotPacked);
     }
@@ -186,7 +198,17 @@ fn parse_pack_header(image: &[u8]) -> Result<PackInfo, UpxError> {
         found = Some(i);
     }
     let i = found.ok_or(UpxError::NotPacked)?;
-    let p = &tail[i..];
+    decode_pack_header(image, base + i, true)
+}
+
+/// Decode the 32-byte `PackHeader` at `at`. `overlay` says whether the le32
+/// after it is the overlay offset -- true for the tail layout every non-PE
+/// target uses, false for a PE, where those four bytes are compressed data.
+fn decode_pack_header(image: &[u8], at: usize, overlay: bool) -> Result<PackInfo, UpxError> {
+    let p = image
+        .get(at..)
+        .filter(|p| p.len() >= PACK_HEADER_SIZE + if overlay { 4 } else { 0 })
+        .ok_or(UpxError::NotPacked)?;
     let big_endian = p[5] >= 128;
     let rd = |o: usize| -> u32 {
         let a = [p[o], p[o + 1], p[o + 2], p[o + 3]];
@@ -201,23 +223,14 @@ fn parse_pack_header(image: &[u8]) -> Result<PackInfo, UpxError> {
     } else {
         (rd(16), rd(20), rd(8), rd(12), rd(24))
     };
-    // The overlay offset is the le32/be32 word right after the header.
-    let overlay_offset = {
-        let o = PACK_HEADER_SIZE;
-        let a = [p[o], p[o + 1], p[o + 2], p[o + 3]];
-        if big_endian {
-            u32::from_be_bytes(a)
-        } else {
-            u32::from_le_bytes(a)
-        }
-    };
-    if u_file_size == 0 || (overlay_offset as usize) >= image.len() {
+    let overlay_offset = if overlay { rd(PACK_HEADER_SIZE) } else { 0 };
+    if u_file_size == 0 || (overlay && overlay_offset as usize >= image.len()) {
         return Err(UpxError::Corrupt(
             "PackHeader declares an overlay outside the file".into(),
         ));
     }
     Ok(PackInfo {
-        pack_header_offset: base + i,
+        pack_header_offset: at,
         version: p[4],
         format: p[5],
         method: p[6],
@@ -440,6 +453,174 @@ mod tests {
         buf[105] = 22;
         buf[131] = 0xff; // deliberately wrong header checksum
         assert!(detect(&buf).is_none());
+    }
+
+    /// The vendored win32/pe witness (see its `.provenance` sidecar): the
+    /// crackme on which `kuna unpack` reported "no UPX PackHeader found" of a
+    /// file that is unambiguously UPX-packed.
+    fn pe_fixture() -> Vec<u8> {
+        let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/upx_packed_pe_i386.exe");
+        std::fs::read(&p).unwrap_or_else(|e| panic!("read {}: {e}", p.display()))
+    }
+
+    /// Walk a PE's import directory the way a disassembler would, returning
+    /// `DLL!name` for every thunk. A rebuild that produced descriptors nothing
+    /// can follow is the failure this guards.
+    fn pe_imports(image: &[u8]) -> Vec<String> {
+        let rd = |o: usize| u32::from_le_bytes(image[o..o + 4].try_into().unwrap());
+        let pe = rd(0x3c) as usize;
+        let opt = pe + 24;
+        let nsec = u16::from_le_bytes([image[pe + 6], image[pe + 7]]) as usize;
+        let table = opt + u16::from_le_bytes([image[pe + 20], image[pe + 21]]) as usize;
+        let secs: Vec<(u32, u32, u32)> = (0..nsec)
+            .map(|i| {
+                let o = table + 40 * i;
+                (rd(o + 12), rd(o + 16), rd(o + 20))
+            })
+            .collect();
+        let off = |rva: u32| -> usize {
+            let (va, sz, ptr) = *secs
+                .iter()
+                .find(|(va, sz, _)| rva >= *va && rva - *va < *sz)
+                .expect("rva is mapped");
+            let _ = sz;
+            (ptr + (rva - va)) as usize
+        };
+        let cstr = |rva: u32| -> String {
+            let a = off(rva);
+            let n = image[a..].iter().position(|&c| c == 0).unwrap();
+            String::from_utf8_lossy(&image[a..a + n]).into_owned()
+        };
+        let mut out = Vec::new();
+        let mut d = off(rd(opt + 96 + 8));
+        while rd(d + 12) != 0 {
+            let dll = cstr(rd(d + 12));
+            let mut thunk = rd(d + 16);
+            while rd(off(thunk)) != 0 {
+                let v = rd(off(thunk));
+                out.push(if v & 0x8000_0000 != 0 {
+                    format!("{dll}!#{}", v & 0xffff)
+                } else {
+                    format!("{dll}!{}", cstr(v + 2))
+                });
+                thunk += 4;
+            }
+            d += 20;
+        }
+        out
+    }
+
+    /// A PE keeps its PackHeader in the header padding, not the tail -- the one
+    /// structural reason the ELF-shaped scan never saw this file.
+    #[test]
+    fn detects_the_pe_witness_in_its_header_padding() {
+        let info = detect(&pe_fixture()).expect("fixture is UPX-packed");
+        assert_eq!(info.pack_header_offset, 0x3e0);
+        assert_eq!(info.version, 12);
+        assert_eq!(info.format, 9);
+        assert_eq!(info.format_name(), "win32/pe");
+        assert_eq!(info.method, 2);
+        assert_eq!(info.method_name(), "NRV2B_LE32");
+        assert_eq!(info.level, 4);
+        assert_eq!(info.filter, 0x26);
+        assert_eq!(info.u_len, 0xc6a0);
+        assert_eq!(info.c_len, 0x454e);
+        assert_eq!(info.u_file_size, 49152);
+        // The tail layout's overlay offset is not a field on a PE, so it is not
+        // invented.
+        assert_eq!(info.overlay_offset, 0);
+    }
+
+    /// The end-to-end contract: a PE whose sections, import table and resource
+    /// directory are all back, not merely a file of the right length.
+    #[test]
+    fn unpacks_the_pe_witness_to_a_usable_pe() {
+        let out = unpack(&pe_fixture()).expect("fixture unpacks");
+        assert_eq!(out.bytes.len(), 49152);
+        assert_eq!(&out.bytes[..2], b"MZ");
+        assert_eq!(out.blocks.len(), 1);
+        assert_eq!(out.compressed_bytes(), 0x454e);
+
+        let img = &out.bytes;
+        let rd = |o: usize| u32::from_le_bytes(img[o..o + 4].try_into().unwrap());
+        let pe = rd(0x3c) as usize;
+        assert_eq!(&img[pe..pe + 4], b"PE\0\0");
+        // The packed file showed four sections named .text/.data/.rsrc/.reloc
+        // with an empty .text; the original has real ones.
+        let table = pe + 24 + u16::from_le_bytes([img[pe + 20], img[pe + 21]]) as usize;
+        let names: Vec<String> = (0..4)
+            .map(|i| {
+                let o = table + 40 * i;
+                String::from_utf8_lossy(&img[o..o + 8]).trim_end_matches('\0').to_owned()
+            })
+            .collect();
+        assert_eq!(names, [".text", ".rdata", ".data", ".rsrc"]);
+        assert_eq!(rd(table + 16), 0x5000, ".text has raw bytes again");
+
+        // `AddressOfEntryPoint` lands on the MSVC startup prologue -- the
+        // address the packed image never mapped.
+        assert_eq!(rd(pe + 24 + 16), 0x1d91);
+        assert_eq!(&img[0x1d91..0x1d97], &[0x55, 0x8b, 0xec, 0x6a, 0xff, 0x68]);
+
+        // Leaving the filter unreversed would keep every rewritten branch
+        // looking like a call while pointing somewhere else: the last call
+        // before the entry stores `e8 05 00 0f fb` packed and must read as
+        // `call 0x401fff` here.
+        assert_eq!(&img[0x1d89..0x1d8e], &[0xe8, 0x71, 0x02, 0x00, 0x00]);
+
+        let imports = pe_imports(img);
+        assert_eq!(imports.len(), 79);
+        assert_eq!(imports[0], "KERNEL32.DLL!DebugBreak");
+        assert!(imports.contains(&"COMCTL32.dll!InitCommonControlsEx".to_string()), "{imports:?}");
+        assert!(imports.contains(&"USER32.dll!DialogBoxParamA".to_string()), "{imports:?}");
+        assert!(imports.contains(&"KERNEL32.DLL!GetVersion".to_string()), "{imports:?}");
+
+        // The resource directory is back at the original image's address, with
+        // the two leaves UPX moved repointed into the recovered .rsrc.
+        let (res_rva, res_size) = (rd(pe + 24 + 96 + 16), rd(pe + 24 + 100 + 16));
+        assert_eq!((res_rva, res_size), (0xc000, 0x5b8));
+        assert_eq!(u16::from_le_bytes([img[0xb00e], img[0xb00f]]), 3, "three resource types");
+        // The icon leaf UPX moved out of the image is repointed at the address
+        // the original had, and its bitmap header is there.
+        assert_eq!((rd(0xb058), rd(0xb05c)), (0xc2b8, 0x2e8));
+        assert_eq!(&img[0xb2b8..0xb2c0], &[0x28, 0, 0, 0, 0x20, 0, 0, 0]);
+    }
+
+    /// The DLL names live in the packed loader's own import table, which this
+    /// witness reaches only by agreement with the trailer: its PE import data
+    /// directory was retargeted at a decoy. Blanking the directory entirely
+    /// must not change the recovered file.
+    #[test]
+    fn the_loader_import_table_is_found_without_the_data_directory() {
+        let good = unpack(&pe_fixture()).expect("fixture unpacks").bytes;
+        let mut bytes = pe_fixture();
+        let pe = u32::from_le_bytes(bytes[0x3c..0x40].try_into().unwrap()) as usize;
+        bytes[pe + 24 + 96 + 8..pe + 24 + 96 + 12].copy_from_slice(&0u32.to_le_bytes());
+        let out = unpack(&bytes).expect("a blanked import directory is not fatal");
+        assert_eq!(out.bytes, good);
+    }
+
+    /// The same guard the ELF arm has: an LZ stream has no internal integrity,
+    /// so only the packer's Adler-32 separates a wrong image from a right one.
+    #[test]
+    fn a_corrupted_pe_literal_is_caught_by_the_checksum() {
+        let mut bytes = pe_fixture();
+        bytes[0x800] ^= 0xff;
+        assert!(detect(&bytes).is_some(), "a corrupt stream is still a UPX file");
+        let err = unpack(&bytes).expect_err("a corrupted stream must not unpack");
+        assert!(format!("{err}").contains("checksum mismatch"), "{err}");
+    }
+
+    /// A `UPX!` in the header padding is only a PackHeader if the compressed
+    /// stream behind it checksums, so a stray magic cannot make a plain PE
+    /// report as packed.
+    #[test]
+    fn a_plain_pe_with_a_stray_magic_is_not_packed() {
+        let mut bytes = pe_fixture();
+        // Break the compressed stream's own Adler-32 in the header.
+        bytes[0x3ec..0x3f0].copy_from_slice(&0u32.to_le_bytes());
+        assert!(detect(&bytes).is_none());
     }
 
     #[test]

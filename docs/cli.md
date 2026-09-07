@@ -1343,12 +1343,18 @@ compressed_size,unpacked_size,count,blocks:[{offset,offset_hex,u_len,c_len,metho
 method_name,filter,filter_hex,stored}]}`, where `count` is the number of compressed
 blocks consumed.
 
-**Coverage, and the failure contract.** Implemented: the ELF formats, methods 2–10
-(NRV2B/NRV2D/NRV2E in their `_LE32`, `_LE16` and `_8` bit layouts) and the x86
-`cto`/`ctoj`/`ctok` and ARM/AArch64 branch filters. Everything else — LZMA (method
-14), the non-ELF targets, a packed shared library, the pre-12 loader block layout, the
-`ctojr`/PowerPC/RISC-V/delta filters — exits `1` with the thing it cannot do **named**,
-and writes no file:
+**Coverage, and the failure contract.** Implemented: the ELF formats and 32-bit
+`win32/pe`, methods 2–10 (NRV2B/NRV2D/NRV2E in their `_LE32`, `_LE16` and `_8` bit
+layouts) and the x86 `cto`/`ctoj`/`ctok` and ARM/AArch64 branch filters. A PE keeps
+its `PackHeader` in the header padding rather than the tail, and its payload in one
+block followed by a trailer the unpacker replays: the original PE header and section
+table, the import descriptors and names UPX stripped out of the image, and the
+resources it moved out of it all come back, so the recovered file has a working
+import table and not just working code. Everything else — LZMA (method 14), the
+64-bit and ARM PE targets, the remaining non-ELF targets, a packed shared library, a
+PE whose original image had base relocations, TLS or delay-loaded imports, the
+pre-12 loader block layout, the `ctojr`/PowerPC/RISC-V/delta filters — exits `1`
+with the thing it cannot do **named**, and writes no file:
 
 ```text
 error: ./x: unsupported UPX image: compression method 14 (LZMA)
@@ -1361,8 +1367,9 @@ output at all: an unreversed filter leaves every call target in the file pointin
 somewhere wrong while every size still adds up, the ELF still parses, and a reader has
 no way to tell. So a run either produces the original file or refuses. Success is not
 assumed from "it decoded" either — the walk requires the block stream to end on the
-`UPX!` marker adjacent to the PackHeader, to total exactly the original file size, and
-to reproduce **both** of the packer's own Adler-32 checksums (a flipped literal byte
+`UPX!` marker adjacent to the PackHeader (on a PE, to account for every byte of the
+packer's trailer), to total exactly the original file size, and to reproduce **both**
+of the packer's own Adler-32 checksums (a flipped literal byte
 decodes to a wrong image of exactly the right length; only the checksum catches it).
 
 ## `kuna decompile-project` — recompile-oriented project export

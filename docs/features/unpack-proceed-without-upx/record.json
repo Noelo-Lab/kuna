@@ -1,0 +1,57 @@
+{
+  "need_id": "unpack-proceed-without-upx",
+  "track": "tooling",
+  "scope": "large",
+  "worker": "b-r6-unpack-proceed-w",
+  "branch": "feat/re-unpack-proceed-without-upx",
+  "symptom": "`kuna unpack ./EndOfWorld.exe --json` exits 1 with \"no UPX PackHeader found\" and \"this file is not one\", of a file that is unambiguously UPX-packed. 1 instance, round 6 (crackmes.one 5ab77f5433c5d40ad448c1cd, end_of_the_world by ultrasound). `kuna functions` on the packed image reports 1 function.",
+  "diagnosis": "Two structural gaps, both in kuna-analysis/src/upx. parse_pack_header scans only the last 8265 bytes because the ELF layout puts the PackHeader in the tail; a PE puts it in the header padding immediately before the compressed data (0x3e0 on this 0x5600-byte file), so the scan never sees it. And unpack() gated on is_elf_format, so format 9 (win32/pe) would have been refused even if found.",
+  "hypothesis_status": "overturned",
+  "decisions": [
+    "The filed hypothesis ('a modified UPX-family loader with removed metadata') is wrong and the round-6 refuter's re-diagnosis is right, confirmed independently here: the PackHeader at 0x3e0 is intact and self-consistent (magic UPX!, version 12, format 9, method 2, level 4, checksum 0x52 == computed), and both of the packer's Adler-32s reproduce exactly on decompression. Nothing is removed; the layout is simply not the ELF one.",
+    "The refuter's scope call ('needs the win32/pe target end to end') is upheld in kind but not in size. The codecs were already there -- nrv.rs decodes NRV2B_LE32 and filter.rs reverses filter 0x26, which is what this image uses -- so the work was one new module (upx/pe.rs) beside the existing upx/elf.rs, not a new subsystem. Everything landed behind that one file plus a dispatch in mod.rs.",
+    "The recovered file is not the decompressed block. UPX strips the import descriptors, thunk arrays and hint/name entries out of the image and moves the resource leaves out of it, replacing both with a trailer its own loader replays at run time. Recovering only the block would have produced a PE with 0 imports and an empty .rsrc -- exactly the shape that looks fine and disassembles wrong. rebuild_imports and rebuild_resources replay the trailer instead: on the witness that is 79 imports over 4 DLLs and 3 resource leaves.",
+    "The DLL name strings are not in the trailer; they live in the packed loader's own import table, which the trailer addresses by offset. UPX reaches that table through the packed image's import data directory -- which on this witness points at a decoy (Kernel32.dll!Beep in an appended section), because retargeting it is the first thing a repacker does. So the table is located by AGREEMENT with the trailer (descriptor k's name field must equal base + the trailer's k-th offset) and accepted only if unique; the declared directory is tried first and used when it agrees. Stock UPX would mis-resolve this file.",
+    "The trailer is a stream whose steps are conditional on the ORIGINAL image's data directories, so an unimplemented step would silently desynchronize every later read rather than fail. The walk therefore tallies the bytes it consumed against the trailer's real length (8 for imports + 2 for resources + the 4-byte back-pointer = 14 on the witness, exactly) and refuses a mismatch, on top of naming base relocations, TLS, bound and delay-loaded imports up front.",
+    "filter.rs was left alone. UPX initializes the PE filter with `codebase - rvamin` as its addend and kuna's unfilter folds that term out (the ELF path always passes 0); rather than add an unverifiable addvalue parameter to a file the ELF arm shares, an image whose code does not start at the first section is refused by name. Every image in the corpus has codebase == rvamin.",
+    "The corpus sweep found a real defect in the first cut and it is fixed rather than accepted: a packed image that shrank its DOS header to 12 bytes has thrown the original's away, so the recovered PE header lands at an offset nothing points at and the output was a file kuna could not even load. That is now a named refusal, with a read-back of the assembled headers as a backstop. Real `upx -d` writes the same broken file.",
+    "No option row: a tooling-track change that emits no C. No phases.toml, options.rs, catalog counter, DIV row or tests/stages case touched; `kuna catalog --check` and scripts.repipe.counters both report no drift.",
+    "The acceptance probe's target was unbound and its witness is a dataset crackme, so it is re-pointed at a vendored copy (upx_packed_pe_i386.exe, with a .provenance sidecar, the same convention the ELF witness upx_packed_x86_64 already uses). `-o {{TMP}}/out.bin` and `cwd {{TMP}}` were added to both arms so `make test-cli` does not write a 48 KB artifact into the source tree -- the expect blocks are untouched, which is what the verdict turns on, and it matches the sibling probe tests/cli/unpack-upx-packed-executable.json.",
+    "docs/re-needs/index.json is deliberately NOT in this PR. Reindexing in this worktree picks up 15 need docs belonging to other rounds and builders (51 committed -> 66), so a builder-side index would carry their bookkeeping and collide; the need doc and the promoted probe are the durable artifacts and the captain reindexes."
+  ],
+  "changed": [
+    "decompiler/crates/kuna-analysis/src/upx/pe.rs",
+    "decompiler/crates/kuna-analysis/src/upx/mod.rs",
+    "decompiler/crates/kuna-analysis/tests/fixtures/upx_packed_pe_i386.exe",
+    "decompiler/crates/kuna-analysis/tests/fixtures/upx_packed_pe_i386.exe.provenance",
+    "tests/cli/unpack-proceed-without-upx.json",
+    "docs/cli.md",
+    "docs/spec/01-program-prep.md",
+    "docs/re-needs/unpack-proceed-without-upx.md"
+  ],
+  "acceptance": "PASS -- `kuna unpack` exits 0 on the witness and writes a 49,152-byte PE whose length equals the PackHeader's u_file_size to the byte. `kuna functions` on it goes from 1 to 167; the entry point is back at 0x401d91 (the address the tester's disassembly predicted) on the MSVC startup prologue; 79 imports resolve by name, so `kuna decompile` renders GetVersion() rather than an indirect call through a zeroed slot.",
+  "sweep": {
+    "repo fixtures": "156 binaries through `kuna unpack`, patched vs stock, comparing exit code and message: 1 changed. The ELF witness upx_packed_x86_64 unpacks to a byte-identical file.",
+    "dataset PEs": "156 PE images in kuna-re-dataset. 2 unpack (the witness at 1 -> 167 functions and an unrelated UPX 3.x keygenme at 7 -> 423 functions, 80 imports over 3 DLLs -- an independent witness the fix was not written against), 3 are named refusals that write no file (base relocations; a truncated DOS header, twice), 151 still report not packed. No false positive.",
+    "dataset ELFs": "94 ELF images, patched vs stock: 0 differ in exit code, message or output bytes. The shared parse_pack_header refactor leaves the ELF arm alone.",
+    "mutation fuzz": "4,500 single- to six-byte mutations of the vendored PE witness through upx::unpack, biased at the headers and the packed block: 293 still unpacked, 4,207 refused, 0 panics -- in both a release and an overflow-checked debug build, which is what the saturating rva arithmetic is there for."
+  },
+  "speed": {
+    "method": "kuna unpack <target> -o /tmp/out, warmup + median of 11",
+    "before": "ELF fixture 5.0 ms; non-packed /bin/bash 5.2 ms",
+    "after": "ELF fixture 4.4 ms; non-packed /bin/bash 5.6 ms; PE fixture 4.0 ms",
+    "delta": "within process-spawn noise (~5 ms floor). The PE probe parses one PE header and scans a 1 KiB window before the tail scan, and returns immediately on a non-PE."
+  },
+  "tests": {
+    "kuna-analysis/src/upx/mod.rs": "5 new unit tests on the vendored PE witness: the PackHeader is found in the header padding (and no overlay offset is invented), the end-to-end unpack (section names, entry prologue, a filtered call restored, 79 imports walked back out of the rebuilt directory, the relocated resource tree), the loader import table found with the data directory blanked, a corrupted literal caught by the Adler-32 while the file still reports as packed, and a broken stream checksum not making a plain PE report as packed",
+    "tests/cli": "unpack-proceed-without-upx.json, 66/66"
+  },
+  "gates": {
+    "make test": "PARITY OK, 675/675",
+    "make test-stages": "PARITY OK, 677/677",
+    "make check-spec": "OK (strict OK)",
+    "kuna catalog --check": "OK",
+    "make test-cli": "66/66",
+    "make rust-test": "GREEN (rc=0, 5945 tests passed, 0 failures) with `env -u KUNA_DECOMP_TEST`, which is what CI runs. With the repipe launcher's KUNA_DECOMP_TEST exported, verify_w10_proto_unlock fails on an oracle drift unrelated to this change (it passes on its own once the var is unset)."
+  }
+}

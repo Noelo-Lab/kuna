@@ -1,0 +1,37 @@
+upx_packed_pe_i386.exe -- the UPX-packed win32/pe fixture for `kuna unpack` /
+`kuna_analysis::upx::pe`.
+
+What it is
+  A 32-bit MSVC Windows GUI crackme packed with UPX 1.25. 22,016 bytes packed;
+  49,152 bytes unpacked. Unlike the ELF witness next to it, its UPX! PackHeader
+  is NOT in the tail: it sits in the header padding at 0x3e0, immediately before
+  the compressed block, and reads version=12, format=9 (win32/pe), method=2
+  (NRV2B_LE32), level=4, filter=0x26 (cto32_e8e9). One compressed block:
+  0x454e bytes in, 0xc6a0 out.
+
+  It exercises every part of the PE arm at once -- the header-padding PackHeader,
+  the single-block layout, the trailer that carries the original PE header and
+  section table, the import rebuild (4 DLLs, 79 imports by name), and the
+  resource rebuild (3 leaves, two of which UPX moved out of the image).
+
+  It also carries one thing a stock `upx -o` output does not: the section table
+  was renamed to .text/.data/.rsrc/.reloc and a fourth section was appended with
+  a decoy import directory (Kernel32.dll!Beep) that the PE data directory points
+  at, so the real loader import table has to be found by agreement with the
+  trailer rather than read out of the directory. That is why it is the fixture.
+
+Why it is vendored rather than built
+  `upx` is not a build dependency of this repo and is not installed on CI, so a
+  packed fixture cannot be produced at build time -- and no packer targeting
+  win32/pe runs on the Linux CI image at all.
+
+Where it came from
+  The RE-friction loop's round-6 witness: challenge 5ab77f5433c5d40ad448c1cd in
+  the kuna-re-dataset crackme corpus ("end_of_the_world by ultrasound",
+  https://crackmes.one/crackme/5ab77f5433c5d40ad448c1cd), `bin/EndOfWorld.zip.__x/
+  EndOfWorld.exe`, byte-identical. That is the binary on which a tester found
+  `kuna unpack` exiting 1 with "no UPX PackHeader found" and filed
+  docs/re-needs/unpack-proceed-without-upx.md.
+
+  sha256(packed)   see `sha256sum upx_packed_pe_i386.exe`
+  It is a third-party crackme, included unmodified as test data only.
