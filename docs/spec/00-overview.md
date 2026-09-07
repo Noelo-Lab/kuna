@@ -894,6 +894,31 @@ path only when it resolves and nothing of that name exists, and never errors.
 The same resolution serves the cross-function `param <func>::<i>` /
 `return <func>::<storage>` qualifier.
 
+(kuna) **A by-address selection DECLARES its own entry, so a directive can name
+it.** `load addr <vma>` builds the `Funcdata` and follows flow from an address
+without installing a `FunctionSymbol` there (the symbol-table `addFunction` is a
+later boundary), which is fine for printing C and fatal for the assertion plane:
+the resolution above reads the symbol table, so `kuna decompile <bin> 0x401571
+--assert 'prototype 0x401571 …'` emitted the function in full and answered
+`rejected: no function starts at 0x401571` — the address it had just decompiled —
+while the identical directive bound the moment the same run selected the function
+BY NAME. Pointing `--addr` at an address is itself the claim that a function
+starts there, so the generated script declares that entry
+(`decompiler/crates/kuna-cli/src/decompile.rs (build_script, selected_vma)` ->
+`function bounds <vma>` -> `ConsoleProgram::declare_function`) between the
+caller's own `--define-function` declarations and the program-scoped directives.
+It is the same install `--define-function <start>` performs, and it is skipped
+when the caller declared that start themselves, whose extent a second bare
+declaration would clear back to unbounded. The declaration is the SELECTION's
+alone: an operand naming some other address that starts no function is still
+rejected, which is the only signal an agent gets that a directive is inert
+(`docs/re-needs/prototype-assertion-rejects-explicit.md`). Declaring an entry
+preserves why that entry exists — an import's synthetic address stays an
+`UndefinedExternal`, so an addressed import keeps answering with its
+external-symbol note rather than `not mapped in this input` — and folds the
+ARM/Thumb mode bit out of the address, so the declaration lands where every later
+resolution of it looks.
+
 (kuna) **The C the assertion plane accepts is the C it prints.** Six directives
 carry a C declaration, and every one of them goes through the console's
 C-declaration grammar (`decompiler/crates/kuna-console/src/grammar.rs (CParse)`),

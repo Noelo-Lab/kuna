@@ -1235,21 +1235,31 @@ impl ConsoleProgram {
     /// the name->address entry so the (binaryimage-symbol-backed) `load function`
     /// path can find a function the user mapped by hand.  Replaces any prior entry
     /// of the same name.
+    ///
+    /// Re-registering a name at the address it ALREADY holds keeps that entry's
+    /// provenance: an import's synthetic address is an `UndefinedExternal`, and
+    /// recomputing it as `Mapped` would make [`Self::resolve_entry`] answer "not
+    /// mapped in this input" for an entry it used to select.
     pub fn register_symbol(&mut self, name: &str, addr: Address) {
         // (kuna `symbolnamebound`) Same bound as the loader stream above, so an
         // analysis-discovered or hand-mapped name agrees with the scope path the
         // symbol table nests it under.
         let name = &*kuna_decomp::kuna_symbolnamebound::bound_scope_path(name, "::");
+        let prior = self
+            .symbols
+            .iter()
+            .find(|s| s.name == name && s.addr == addr)
+            .map(|s| s.provenance);
         self.symbols.retain(|s| s.name != name);
         let object_location = self.object_location_at(addr.get_offset());
         self.symbols.push(ProgramSymbol {
             name: name.to_string(),
             addr,
-            provenance: if object_location.is_some() {
+            provenance: prior.unwrap_or(if object_location.is_some() {
                 EntryProvenance::DefinedObject
             } else {
                 EntryProvenance::Mapped
-            },
+            }),
             object_location,
             binding: None,
         });
@@ -1339,12 +1349,24 @@ impl ConsoleProgram {
     /// keys a function by address, so adding a second symbol there would leave
     /// two names competing for one entry.  With no explicit name, an already-named
     /// address keeps its name and only the extent is recorded.
+    ///
+    /// The ARM/Thumb mode bit is folded out of `addr` first, so the declaration
+    /// lands on the address every later resolution of it uses
+    /// ([`Self::resolve_entry`] normalizes the same way) rather than on an odd
+    /// shadow entry the loads would never find.
     pub fn declare_function(
         &mut self,
         addr: Address,
         name: Option<&str>,
         size: int4,
     ) -> KunaResult<String> {
+        let addr = match addr.get_space() {
+            Some(space) => Address::new(
+                std::rc::Rc::clone(space),
+                self.thumb_normalized(addr.get_offset()),
+            ),
+            None => addr,
+        };
         let explicit = name.map(str::to_string).filter(|n| !n.is_empty());
         let name = match &explicit {
             Some(n) => n.clone(),

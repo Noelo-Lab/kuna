@@ -792,3 +792,85 @@ fn a_prototype_address_that_starts_no_function_is_rejected() {
         "the rejection did not name the address:\n{stdout}"
     );
 }
+
+/// RE-need `prototype-assertion-rejects-explicit`: a directive may name the
+/// address this run was pointed at.
+///
+/// `kuna decompile <bin> 0xADDR` emitted the function in full and answered
+/// `prototype 0xADDR …` with `rejected: no function starts at 0xADDR` — the
+/// address it had just decompiled. `load addr` follows flow from an address
+/// without installing a `FunctionSymbol`, so nothing in the by-address path
+/// registered the entry the directive resolves against; the same run selected
+/// BY NAME bound the identical directive. 0x400678 is an instruction boundary
+/// inside `authenticate` that discovery does not call a function start, which
+/// is the shape the need was filed on (a PE entry only the wider discovery
+/// bundle finds).
+#[test]
+fn a_prototype_binds_to_the_address_the_run_selected() {
+    let bin = fauxware();
+    let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .args([
+            "decompile",
+            bin.as_str(),
+            "0x400678",
+            "--addr",
+            "--assert-strict",
+            "--assert",
+            "prototype 0x400678 int4 checkpw(char *user,char *pass)",
+            "--sleighpath",
+            specs().as_str(),
+        ])
+        .output()
+        .expect("failed to spawn the kuna binary");
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    if is_specs_skip(&stderr) {
+        eprintln!("skipping: specs-less environment: {stderr}");
+        return;
+    }
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    assert!(
+        !stderr.contains("no function starts at 0x400678"),
+        "the run rejected the address it decompiled:\n{stderr}"
+    );
+    assert_eq!(out.status.code(), Some(0), "--assert-strict failed: {stderr}");
+    assert!(
+        stdout.contains("(char *user,char *pass)"),
+        "the declared signature never reached the selection:\n{stdout}"
+    );
+}
+
+/// The declaration is the SELECTION's, not an amnesty for every address: a
+/// directive naming an address this run never selected is still rejected, which
+/// is the only signal an agent gets that its directive is inert.
+#[test]
+fn an_unselected_address_that_starts_no_function_is_still_rejected() {
+    let bin = fauxware();
+    let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .args([
+            "decompile",
+            bin.as_str(),
+            "0x400678",
+            "--addr",
+            "--json",
+            "--assert",
+            "prototype 0x999999 int4 nope(void)",
+            "--sleighpath",
+            specs().as_str(),
+        ])
+        .output()
+        .expect("failed to spawn the kuna binary");
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    if is_specs_skip(&stderr) {
+        eprintln!("skipping: specs-less environment: {stderr}");
+        return;
+    }
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    assert!(
+        stdout.contains(r#""status": "rejected""#),
+        "an unbindable address was reported applied:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("no function starts at 0x999999"),
+        "the rejection did not name the address:\n{stdout}"
+    );
+}

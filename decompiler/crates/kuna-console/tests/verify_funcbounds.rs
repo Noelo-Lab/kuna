@@ -256,3 +256,72 @@ fn an_unnamed_declaration_does_not_overwrite_an_existing_name() {
         .iter()
         .any(|e| e.addr.get_offset() == named && e.name == "_DT_FINI"));
 }
+
+/// Bootstrap an arbitrary fixture. `None` ⇒ specs-less skip.
+fn load_fixture(rel: &str) -> Option<ConsoleProgram> {
+    let root = repo_root();
+    let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
+    let bin = root.join("decompiler/crates/kuna-analysis/tests/fixtures").join(rel);
+    let mut prog = match bootstrap_from_object(bin.to_str()?, "", &spec_roots) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("verify_funcbounds: skipping {rel} (bootstrap failed): {}", e.explain());
+            return None;
+        }
+    };
+    prog.commit_pending_analysis().expect("analysis commit succeeds");
+    Some(prog)
+}
+
+/// Declaring an entry keeps WHY that entry exists: an import's synthetic address
+/// is an `UndefinedExternal`, and re-registering its name as a plain mapped
+/// symbol made `resolve_entry` answer "not mapped in this input" for an address
+/// it used to select — so `kuna decompile <obj> 0xIMPORT --addr` lost its
+/// external-symbol note and exited non-zero.
+#[test]
+fn declaring_an_import_keeps_its_external_provenance() {
+    let Some(mut prog) = load_fixture("et_rel_status_arm.o") else { return };
+    let Some(import) = prog
+        .function_entries_canonical()
+        .into_iter()
+        .find(|e| e.provenance == kuna_console::engine::EntryProvenance::UndefinedExternal)
+    else {
+        eprintln!("verify_funcbounds: skipping (no undefined external in the fixture)");
+        return;
+    };
+    let vma = import.addr.get_offset();
+    let addr = code_addr(&prog, vma);
+    prog.declare_function(addr, None, 0).expect("declared");
+    let after = prog
+        .function_entries_canonical()
+        .into_iter()
+        .find(|e| e.addr.get_offset() == vma)
+        .expect("the import is still enumerated");
+    assert_eq!(
+        after.provenance,
+        kuna_console::engine::EntryProvenance::UndefinedExternal,
+        "the declaration downgraded an import to a mapped entry: {after:?}"
+    );
+}
+
+/// A declaration lands on the address every later resolution uses: an ARM caller
+/// legitimately holds a Thumb `entry|1` (an ELF symbol value, a DWARF entry PC),
+/// and declaring at the odd shadow left an entry no load would ever find.
+#[test]
+fn a_thumb_declaration_folds_the_mode_bit() {
+    let Some(mut prog) = load_fixture("arm_thumb_linked_le32") else { return };
+    let Some(entry) = prog
+        .function_entries_canonical()
+        .into_iter()
+        .find(|e| e.name == "compute")
+    else {
+        eprintln!("verify_funcbounds: skipping (the fixture lost its `compute` entry)");
+        return;
+    };
+    assert_eq!(entry.addr.get_offset() % 2, 0, "the enumeration reports the even entry");
+    let even = entry.addr.get_offset();
+    let addr = code_addr(&prog, even | 1);
+    prog.declare_function(addr, None, 0x10).expect("declared");
+    assert_eq!(prog.declared_extent(even), 0x10, "the extent missed the real entry");
+    assert_eq!(prog.declared_extent(even | 1), 0, "an odd shadow entry was declared");
+}

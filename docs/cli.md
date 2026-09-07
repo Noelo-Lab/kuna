@@ -289,7 +289,20 @@ kuna decompile ./KeyCheker.exe sub_140001890 \
 ```
 
 A `0x`-prefixed operand that starts no function is **rejected**, naming the
-address, rather than accepted and dropped.
+address, rather than accepted and dropped. The address you selected with `--addr`
+always counts as one: pointing `--addr` at an address declares that a function
+starts there, so a directive may name the very address this run is decompiling
+even when discovery never found an entry at it.
+
+```bash
+kuna decompile ./illusion.exe 0x401571 --assert-strict \
+  --assert 'prototype 0x401571 void decrypt(unsigned int key, unsigned int start, unsigned int end)'
+```
+
+```text
+- void sub_401571(unsigned int a0,int4 a1,int4 a2)
++ void sub_401571(uint4 key,uint4 start,uint4 end)
+```
 
 Widths come from the target's own compiler spec, so `long` is eight bytes on LP64
 and four on LLP64. Ghidra's sized spellings (`int4`, `uint8`, `float8`,
