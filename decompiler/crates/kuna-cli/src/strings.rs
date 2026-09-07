@@ -87,8 +87,10 @@ pub fn run(argv: &[String]) -> i32 {
 
 /// Scan, attribute, filter, render — the whole command in one pass.
 pub(crate) fn query(args: &StringsArgs) -> Result<String, String> {
-    let bytes = kuna_analysis::loader::elf_shdr::read_image(&args.binary)
-        .map_err(|e| format!("{}: {e}", args.binary))?;
+    let bytes = crate::decompile_all::image_bytes(
+        &args.binary,
+        kuna_analysis::loader::macho_fat::slice_pref(args.slice.as_deref(), args.target.as_deref()),
+    )?;
     let file = kuna_analysis::loadimage_object::parse_object(&*bytes)
         .map_err(|e| format!("could not parse {}: {e}", args.binary))?;
 

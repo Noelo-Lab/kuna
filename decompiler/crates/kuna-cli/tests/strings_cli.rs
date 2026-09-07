@@ -523,3 +523,48 @@ fn the_cli_exit_codes() {
     assert_eq!(code, 1, "an unreadable binary is a failed query, not a usage error");
     assert!(stderr.starts_with("error: "), "{stderr}");
 }
+
+// --- a fat / universal Mach-O ------------------------------------------------
+
+/// The recorded defect: `strings` re-parses the image itself, and that raw parse
+/// used to skip the Mach-O fat-header peel the engine load applies — so a
+/// UNIVERSAL binary answered `could not parse <bin>: Unsupported file format`
+/// while `kuna functions` on the same file returned an inventory
+/// (crackmes.one 5ab77f5633c5d40ad448c29b). The scan needs no `.sla`, so this
+/// runs with `--no-xrefs` and is never a skip.
+#[test]
+fn a_universal_macho_is_scanned_not_rejected() {
+    let out = listing(&[&fixture("macho_fat"), "--no-xrefs", "--min-length", "2"])
+        .expect("the scan needs no .sla");
+    let rows = rows(&out);
+    let cstring = row_at(&rows, "0x1000005ee").expect("the x86-64 slice's format string");
+    assert_eq!(cstring[3], "__cstring");
+    assert!(cstring[6].starts_with("%d"), "the literal itself: {cstring:?}");
+    assert_eq!(rows.len(), 5, "the whole x86-64 slice, no more:\n{out}");
+}
+
+/// `--slice` is LIVE on this path, not merely non-fatal: it was parsed and then
+/// threaded only into the reference walk, never into the scan's own parse, so
+/// `--slice <arch>` failed with the identical message. The two slices carry the
+/// same literal at different addresses, which is what proves the override chose.
+#[test]
+fn the_slice_override_picks_which_slice_is_scanned() {
+    let scan = |slice: &str| {
+        let out = listing(&[
+            &fixture("macho_fat"),
+            "--no-xrefs",
+            "--min-length",
+            "2",
+            "--slice",
+            slice,
+        ])
+        .expect("the scan needs no .sla");
+        rows(&out)
+    };
+    let x86 = scan("x86_64");
+    let arm = scan("arm64");
+    assert!(row_at(&x86, "0x1000005ee").is_some(), "the x86-64 literal: {x86:?}");
+    assert!(row_at(&arm, "0x1000005d0").is_some(), "the arm64 literal: {arm:?}");
+    assert!(row_at(&arm, "0x1000005ee").is_none(), "the arm64 scan is not the x86-64 one: {arm:?}");
+    assert_ne!(x86.len(), arm.len(), "two slices, two inventories");
+}

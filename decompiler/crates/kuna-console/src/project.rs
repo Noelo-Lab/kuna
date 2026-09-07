@@ -884,7 +884,8 @@ pub fn build_readme(
 
     // Entry point + named sections come from an `object` re-parse (the engine's
     // section iterator has no name field).
-    let raw = std::fs::read(binary_path).unwrap_or_default();
+    let raw = kuna_analysis::loader::elf_shdr::read_image(&binary_path.to_string_lossy())
+        .unwrap_or_default();
     let parsed = kuna_analysis::loadimage_object::parse_object(&*raw).ok();
     match &parsed {
         // `image_entry_vma`, not `entry()`: a Mach-O `LC_MAIN` states a

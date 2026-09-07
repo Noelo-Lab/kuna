@@ -368,6 +368,83 @@ fn a_macho_lc_main_entry_is_reported_as_a_vma() {
     assert!(reachable.is_some_and(|n| n > 0), "the entry must reach something: {out}");
 }
 
+/// `--summary` builds a call graph, which re-parses the image outside the engine
+/// load -- and that raw parse used to skip the Mach-O fat-header peel the load
+/// applies, so `functions --json` returned an inventory for a UNIVERSAL binary
+/// while `functions --summary --json` exited 1 with "Unsupported file format"
+/// (crackmes.one 5ab77f5633c5d40ad448c29b). The summary must count the same
+/// functions the plain inventory does, and `--slice` must steer it.
+#[test]
+fn a_universal_macho_summarizes_the_slice_the_inventory_loaded() {
+    let fat = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/macho_fat")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let (plain, err, code) = run_kuna(&["functions", &fat, "--json"]);
+    if no_specs(&err, code) {
+        eprintln!("skipping: no .sla under {} ({err})", specs());
+        return;
+    }
+    assert_eq!(code, 0, "{err}");
+    let inventory = json_field(&plain, "count").expect("the plain inventory reports a count");
+
+    let (out, err, code) = run_kuna(&["functions", &fat, "--summary", "--json"]);
+    assert_eq!(code, 0, "{err}");
+    assert!(!err.contains("Unsupported file format"), "{err}");
+    assert_eq!(
+        json_field(&out, "count"),
+        Some(inventory),
+        "the summary counts what the inventory found: {out}"
+    );
+    assert!(out.contains("\"address_hex\": \"0x1000005b0\""), "the x86-64 slice's _main: {out}");
+    assert!(
+        json_field(&out, "reachable_from_entry").is_some_and(|n| n > 0),
+        "the entry must reach something: {out}"
+    );
+
+    // `--slice` is live on this path, not merely non-fatal: the arm64 slice
+    // states its own `_main` at a different address.
+    let (arm64, err, code) = run_kuna(&["functions", &fat, "--summary", "--json", "--slice", "arm64"]);
+    if no_specs(&err, code) {
+        eprintln!("skipping: no AARCH64 .sla under {} ({err})", specs());
+        return;
+    }
+    assert_eq!(code, 0, "{err}");
+    assert!(arm64.contains("\"address_hex\": \"0x10000056c\""), "the arm64 slice's _main: {arm64}");
+}
+
+/// The summary's entry came from a raw `std::fs::read`, so an image that only
+/// parses after the loader's header repairs — a corrupt ELF section table, an
+/// oversized PE data-directory count — reported `entry: null` and
+/// `reachable_from_entry: null` while the inventory beside it listed functions.
+/// Read through the same repaired view the loader uses and the field is answered.
+#[test]
+fn a_repaired_header_still_reports_the_summary_entry() {
+    for (name, entry) in [
+        ("corruptshdr_i386", "0x8048054"),
+        ("pe_datadircount_i386.exe", "0x401000"),
+    ] {
+        let image = repo_root()
+            .join("decompiler/crates/kuna-analysis/tests/fixtures")
+            .join(name)
+            .to_str()
+            .unwrap()
+            .to_string();
+        let (out, err, code) = run_kuna(&["functions", &image, "--summary", "--json"]);
+        if no_specs(&err, code) {
+            eprintln!("skipping: no .sla under {} ({err})", specs());
+            return;
+        }
+        assert_eq!(code, 0, "{name}: {err}");
+        assert!(out.contains(entry), "{name}: the entry must be reported: {out}");
+        assert!(
+            json_field(&out, "reachable_from_entry").is_some_and(|n| n > 0),
+            "{name}: and it must reach something: {out}"
+        );
+    }
+}
+
 /// The zero-discovery verdict belongs to DISCOVERY. A narrowed run on an image
 /// that yielded nothing must still fail loudly — the packer diagnosis is the one
 /// thing the caller can act on, and a filter must not be able to swallow it.

@@ -443,11 +443,21 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   away from this path — a read-only section in a `.o` holds *pre*-relocation
   bytes, but a `__real@` COMDAT carries no relocation, and a disagreement between
   the bytes and the name drops the range with a warning rather than folding it.
-- **Mach-O fat/arm64e** — a universal binary is peeled to one slice's bytes at a
-  single canonical point before anything else parses it
+- **Mach-O fat/arm64e** — a universal binary is peeled to one slice's bytes
+  before anything else parses it, because `object::File::parse` has no fat arm
+  and rejects the whole file with "Unsupported file format"
   (`decompiler/crates/kuna-analysis/src/loader/macho_fat.rs (select_fat_slice)`;
   preference `--slice`/`--target`, else x86-64 → arm64 → first), so the loader,
-  every pass, and the deferred-Listing stash all see the same thin slice. An
+  every pass, and the deferred-Listing stash all see the same thin slice. The
+  peel is one policy with two readers: the engine dispatch, and the canonical
+  image read every surface that parses the file for itself goes through
+  (`macho_fat (peel_fat_image)` from `elf_shdr (read_image)`, the same point the
+  ELF and PE header repairs above are applied). Reading the file directly instead
+  is what made `strings`, `xrefs` and the `functions --summary`/`--reachable-from`
+  call graph exit 1 on a universal image whose `functions` inventory loaded fine,
+  and what made `--slice` inert on those surfaces — it steers both readers, so a
+  slice named on the command line selects the same image the inventory reports.
+  An
   arm64e slice selects the Apple-Silicon pointer-auth SLEIGH spec instead of
   generic v8A only under the `macho-arm64e` env gate
   (`decompiler/crates/kuna-analysis/src/loader/format/macho.rs (MACHO_ARM64E_ENV)`).

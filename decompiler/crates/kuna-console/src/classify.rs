@@ -60,11 +60,13 @@ pub struct Classifier {
 impl Classifier {
     /// Build the context: re-parse `binary`'s bytes with the `object` crate
     /// (already the LoadImage backend's parser — no new dependency) and
-    /// normalize the engine's deduped entry list. A missing/unparsable file
+    /// normalize the engine's deduped entry list. Read through `read_image`, so
+    /// a fat Mach-O is peeled to the same slice the load used rather than
+    /// failing to parse. A missing/unparsable file
     /// degrades to empty ranges/imports (every entry then probes as
     /// `"thunk"`/`"func"`).
     pub fn new(prog: &ConsoleProgram, binary: &str, entries: impl Iterator<Item = u64>) -> Self {
-        let bytes = std::fs::read(binary).unwrap_or_default();
+        let bytes = kuna_analysis::loader::elf_shdr::read_image(binary).unwrap_or_default();
         match kuna_analysis::loadimage_object::parse_object(&*bytes) {
             Ok(file) => Classifier::from_object(prog, Some(&file), entries),
             Err(_) => Classifier::from_object(prog, None, entries),

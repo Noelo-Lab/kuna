@@ -20,17 +20,35 @@
 
 use object::read::Object;
 
-/// Read an image file with the loader's header-tolerance repairs applied --
-/// [`tolerate_unusable_section_table`] for ELF and
+/// Read an image file as the loader sees it: a fat / universal Mach-O peeled to
+/// one arch slice ([`super::macho_fat::peel_fat_image`]) and the header-tolerance
+/// repairs applied -- [`tolerate_unusable_section_table`] for ELF and
 /// [`super::pe_datadirs::tolerate_oversized_data_directories`] for PE -- so a
 /// surface that parses the bytes itself sees the same recovered view the loader
 /// does instead of rejecting the file outright.
+///
+/// The slice is the one [`super::macho_fat::slice_pref`] resolves from the
+/// `KUNA_MACHO_SLICE` environment override, else the deterministic default; a
+/// caller holding an explicit `--slice`/`--target` token passes it through
+/// [`read_image_sliced`] instead.
 ///
 /// Silent by design: the surfaces that call this already report their own errors,
 /// and the interactive load path (`bootstrap_from_object`) prints the diagnostic
 /// once for the whole run.
 pub fn read_image(path: &str) -> std::io::Result<Vec<u8>> {
+    read_image_sliced(path, super::macho_fat::slice_pref(None, None))
+}
+
+/// [`read_image`] with an explicit Mach-O fat-slice preference -- the
+/// `--slice`/`--target` token a CLI surface holds directly, which is not
+/// otherwise visible here because the load-time environment export lives only
+/// around the engine load.
+pub fn read_image_sliced(
+    path: &str,
+    pref: super::macho_fat::SlicePref,
+) -> std::io::Result<Vec<u8>> {
     let bytes = std::fs::read(path)?;
+    let bytes = super::macho_fat::peel_fat_image(bytes, pref);
     let bytes = tolerate_unusable_section_table(bytes).0;
     Ok(super::pe_datadirs::tolerate_oversized_data_directories(bytes).0)
 }

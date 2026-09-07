@@ -19,6 +19,15 @@
 //! through this same selector, so the loadimage and the import naming can never
 //! drift onto different slices.
 //!
+//! The dispatch is not the only reader of an image, though: every surface that
+//! re-parses the file for itself (`strings`, `xrefs`, the `functions --summary`
+//! call graph, the project export) needs the same peel, or it dies on the fat
+//! header while the decompile of the same file succeeds. Those surfaces read
+//! through [`crate::loader::elf_shdr::read_image`], which applies
+//! [`peel_fat_image`] with the preference [`slice_pref`] resolves — so the peel
+//! policy, including the `--slice` override, is stated here once and obeyed
+//! everywhere.
+//!
 //! ## Which slice
 //!
 //! With no override the preference is **x86-64, then arm64, then the first arch**
@@ -106,6 +115,50 @@ pub fn select_fat_slice(bytes: &[u8], pref: SlicePref) -> Option<&[u8]> {
     }
 }
 
+/// The environment variable carrying a `--slice <arch>` fat-slice override.
+/// Read live (per image read) so a test — and the in-process CLI surfaces — can
+/// set it without threading a token; empty/unset selects the default slice.
+pub const SLICE_ENV: &str = "KUNA_MACHO_SLICE";
+
+/// The slice preference a run asks for, in precedence order: an explicit
+/// `--slice` token, else [`SLICE_ENV`], else the `--target` token's leading arch
+/// stem, else the deterministic default. An explicit slice that names nothing
+/// recognizable stays the default rather than falling through to `--target`, so
+/// a typo'd `--slice` cannot be silently answered by the language override.
+pub fn slice_pref(slice: Option<&str>, target: Option<&str>) -> SlicePref {
+    let explicit = slice
+        .map(str::trim)
+        .filter(|token| !token.is_empty())
+        .map(str::to_string)
+        .or_else(|| std::env::var(SLICE_ENV).ok().filter(|t| !t.trim().is_empty()));
+    if let Some(token) = explicit {
+        return SlicePref::parse(&token);
+    }
+    match target.map(str::trim).filter(|token| !token.is_empty()) {
+        Some(token) => SlicePref::parse(token),
+        None => SlicePref::default(),
+    }
+}
+
+/// Reduce a fat / universal Mach-O to one arch slice's bytes — the peel every
+/// surface that parses an image itself must apply, because `object::File::parse`
+/// has no fat arm and answers "Unsupported file format" for the whole file.
+///
+/// A thin (non-fat) input is returned **verbatim** (an exact, zero-copy move),
+/// so the ELF / thin-Mach-O / PE / COFF paths are byte-identical. A fat header
+/// that cannot be peeled (unparsable, or no usable slice) is likewise left
+/// untouched, so the downstream parse produces the existing error rather than
+/// this silently mis-loading.
+pub fn peel_fat_image(bytes: Vec<u8>, pref: SlicePref) -> Vec<u8> {
+    if !is_fat(&bytes) {
+        return bytes;
+    }
+    match select_fat_slice(&bytes, pref) {
+        Some(slice) => slice.to_vec(),
+        None => bytes,
+    }
+}
+
 /// Whether `bytes` begins with a fat / universal Mach-O magic (`FAT_MAGIC` /
 /// `FAT_MAGIC_64`, either byte order). The cheap pre-check the engine dispatch
 /// uses to decide whether to peel a slice.
@@ -171,6 +224,46 @@ mod tests {
         assert!(!is_fat(&[]));
         // select_fat_slice on a non-fat input is None (no peel).
         assert!(select_fat_slice(&[0x7f, b'E', b'L', b'F'], SlicePref::default()).is_none());
+    }
+
+    /// The preference order the CLI and the dispatch share. The environment
+    /// override is asserted through an explicit token rather than by setting the
+    /// var, because `std::env` is process-global and cargo runs these in
+    /// parallel.
+    #[test]
+    fn slice_pref_prefers_an_explicit_slice_over_a_target_stem() {
+        assert_eq!(
+            slice_pref(Some("arm64"), Some("x86:LE:64:default:gcc")).0,
+            Some(Architecture::Aarch64),
+            "--slice wins over the --target stem"
+        );
+        // The `--target`-only fallbacks read the environment first, so they are
+        // only meaningful with no ambient override set.
+        if std::env::var_os(SLICE_ENV).is_none() {
+            assert_eq!(
+                slice_pref(None, Some("x86:LE:64:default:gcc")).0,
+                Some(Architecture::X86_64),
+                "--target alone still steers the slice"
+            );
+            // A blank token is not an override.
+            assert_eq!(slice_pref(Some("  "), Some("arm64")).0, Some(Architecture::Aarch64));
+            assert_eq!(slice_pref(None, None).0, None);
+        }
+        // An unrecognized --slice stays the DEFAULT rather than falling through
+        // to --target: a typo must not be answered by the language override.
+        assert_eq!(slice_pref(Some("riscv-banana"), Some("arm64")).0, None);
+    }
+
+    /// A non-fat image is handed back byte for byte -- the ELF / thin-Mach-O /
+    /// PE / COFF paths must be untouched by a peel that does not apply.
+    #[test]
+    fn peel_returns_a_non_fat_image_verbatim() {
+        let elf = vec![0x7f, b'E', b'L', b'F', 2, 1, 1, 0];
+        assert_eq!(peel_fat_image(elf.clone(), SlicePref::default()), elf);
+        // A fat magic with nothing behind it cannot be peeled; it is left for the
+        // downstream parse to reject rather than truncated here.
+        let stub = vec![0xca, 0xfe, 0xba, 0xbe, 0, 0, 0, 2];
+        assert_eq!(peel_fat_image(stub.clone(), SlicePref::default()), stub);
     }
 
     // The selection *policy* (override-wins, then x86-64 → arm64 → first) is

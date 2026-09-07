@@ -1,0 +1,41 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "strings",
+    "{{BIN}}",
+    "--json",
+    "--min-length",
+    "2"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/macho_fat",
+    "binary_sha256": "4877d6d86c3374b884d2c9db78e346f3221edcaaa1a208f92eff8698cc6bae2a",
+    "binary_size": 99168,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/macho_fat"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "stdout_matches": [
+      "\"count\": 5",
+      "\"section\": \"__cstring\"",
+      "\"address_hex\": \"0x1000005ee\""
+    ],
+    "stderr_absent": [
+      "Unsupported file format"
+    ]
+  },
+  "notes": "Desired: a fat/universal Mach-O yields a string inventory, not \"Unsupported file format\". Witness: crackmes.one 5ab77f5633c5d40ad448c29b, where strings --json exited 1 while functions --json returned 84. Retargeted onto the vendored 2-slice macho_fat fixture (CI has no dataset); --min-length 2 makes it non-empty, so exit 0 alone cannot pass, and the addresses pin the x86-64 slice."
+}

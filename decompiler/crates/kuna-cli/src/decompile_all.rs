@@ -85,6 +85,7 @@ use std::fmt::Write as _;
 
 // The call-graph edges `--reachable-from` walks are `kuna xrefs`' own edges.
 use kuna_analysis::listing::xrefs::{Xref, XrefIndex, XrefKind};
+use kuna_analysis::loader::macho_fat::SlicePref;
 use kuna_console::engine::{
     bootstrap_from_object_with_isa, ArmIsa, ConsoleProgram, EntryLookupError, EntrySelector,
     FunctionEntry, ObjectLocation,
@@ -144,6 +145,27 @@ pub(crate) struct Args {
     pub(crate) target: Option<String>,
     pub(crate) sleighpath: Option<String>,
     pub(crate) isa: Option<ArmIsa>,
+}
+
+impl Args {
+    /// The Mach-O fat-slice preference this run's `--slice` / `--target` names.
+    pub(crate) fn slice_pref(&self) -> SlicePref {
+        kuna_analysis::loader::macho_fat::slice_pref(self.slice.as_deref(), self.target.as_deref())
+    }
+}
+
+/// The image bytes a surface that re-parses the file for itself must read: the
+/// loader's own view, with a fat / universal Mach-O already peeled to the slice
+/// `pref` selects.
+///
+/// Every raw `object` parse in this crate goes through here. Reading the file
+/// directly instead is the bug behind "could not parse <bin>: Unsupported file
+/// format" on a universal Mach-O whose `functions` inventory loads fine: the
+/// engine dispatch peels the fat header, and a surface that read the raw bytes
+/// did not.
+pub(crate) fn image_bytes(binary: &str, pref: SlicePref) -> Result<Vec<u8>, String> {
+    kuna_analysis::loader::elf_shdr::read_image_sliced(binary, pref)
+        .map_err(|e| format!("{binary}: {e}"))
 }
 
 // --- triage: narrowing a whole-binary run before it runs ---------------------
@@ -240,10 +262,11 @@ impl Filters {
         &self,
         prog: &ConsoleProgram,
         binary: &str,
+        pref: SlicePref,
         entries: Vec<FunctionEntry>,
     ) -> Result<(Vec<FunctionEntry>, Option<CallGraph>), String> {
         let graph = (self.reachable_from.is_some() || self.summary)
-            .then(|| CallGraph::build(prog, binary))
+            .then(|| CallGraph::build(prog, binary, pref))
             .transpose()?;
         let reachable = match (&self.reachable_from, &graph) {
             (Some(spec), Some(graph)) => Some(graph.reachable_from(prog, spec)?),
@@ -314,9 +337,12 @@ pub(crate) struct CallGraph {
 }
 
 impl CallGraph {
-    pub(crate) fn build(prog: &ConsoleProgram, binary: &str) -> Result<CallGraph, String> {
-        let bytes = kuna_analysis::loader::elf_shdr::read_image(binary)
-            .map_err(|e| format!("{binary}: {e}"))?;
+    pub(crate) fn build(
+        prog: &ConsoleProgram,
+        binary: &str,
+        pref: SlicePref,
+    ) -> Result<CallGraph, String> {
+        let bytes = image_bytes(binary, pref)?;
         let file = kuna_analysis::loadimage_object::parse_object(&*bytes)
             .map_err(|e| format!("could not parse {binary}: {e}"))?;
         Ok(CallGraph::build_from(prog, &file))
@@ -557,12 +583,13 @@ struct Summary {
 fn summarize(
     prog: &ConsoleProgram,
     binary: &str,
+    pref: SlicePref,
     filters: &Filters,
     graph: &CallGraph,
     all: &[FunctionEntry],
     selected: &[FunctionEntry],
 ) -> Summary {
-    let entry = image_entry(prog, binary);
+    let entry = image_entry(prog, binary, pref);
     let reachable_from_entry = entry.as_ref().and_then(|(vma, _)| {
         let reached = graph.reachable_from(prog, &format!("0x{vma:x}")).ok()?;
         Some(all.iter().filter(|e| reached.contains(&e.addr.get_offset())).count())
@@ -603,8 +630,8 @@ fn summarize(
 /// "what does this program actually reach". Taken through
 /// [`kuna_analysis::analyzers::entry::image_entry_vma`], because a Mach-O
 /// `LC_MAIN` states its entry as a `__TEXT`-relative file offset, not a VMA.
-fn image_entry(prog: &ConsoleProgram, binary: &str) -> Option<(u64, String)> {
-    let bytes = std::fs::read(binary).ok()?;
+fn image_entry(prog: &ConsoleProgram, binary: &str, pref: SlicePref) -> Option<(u64, String)> {
+    let bytes = image_bytes(binary, pref).ok()?;
     let file = kuna_analysis::loadimage_object::parse_object(&*bytes).ok()?;
     let vma = kuna_analysis::analyzers::entry::image_entry_vma(&file, &bytes)?;
     // Reported THROUGH the inventory, so an ARM `e_entry` carrying the Thumb mode
@@ -832,7 +859,7 @@ pub fn run_functions(argv: &[String]) -> i32 {
                 .then(|| zero_discovery_error(&args.binary))
                 .flatten();
             let total = all.len();
-            let entries = match filters.select(&prog, &args.binary, all) {
+            let entries = match filters.select(&prog, &args.binary, args.slice_pref(), all) {
                 Ok((entries, _)) => entries,
                 Err(e) => {
                     eprintln!("error: {e}");
@@ -881,7 +908,7 @@ fn run_summary(args: &Args, filters: &Filters) -> i32 {
         .is_empty()
         .then(|| zero_discovery_error(&args.binary))
         .flatten();
-    let (selected, graph) = match filters.select(&prog, &args.binary, all.clone()) {
+    let (selected, graph) = match filters.select(&prog, &args.binary, args.slice_pref(), all.clone()) {
         Ok(pair) => pair,
         Err(e) => {
             eprintln!("error: {e}");
@@ -892,7 +919,7 @@ fn run_summary(args: &Args, filters: &Filters) -> i32 {
         eprintln!("error: --summary could not build the program call graph");
         return 1;
     };
-    let summary = summarize(&prog, &args.binary, filters, &graph, &all, &selected);
+    let summary = summarize(&prog, &args.binary, args.slice_pref(), filters, &graph, &all, &selected);
     let text = if args.json {
         summary_json(&args.binary, &summary, selected.len(), discovery_error.as_deref())
     } else {
@@ -923,7 +950,7 @@ fn decompile_all(args: &Args, filters: &Filters) -> Result<AllRun, String> {
     let targets = resolve_targets(&prog, args)?;
     let discovered = targets.len();
     let targets = if filters.narrows() {
-        filters.select(&prog, &args.binary, targets)?.0
+        filters.select(&prog, &args.binary, args.slice_pref(), targets)?.0
     } else {
         targets
     };
@@ -1472,7 +1499,7 @@ fn apply_loadtime_env(options: &[(String, String)], slice: Option<&str>) -> Load
 /// leaves the C default in place: this can only ever ADD a language, never take
 /// one away.
 pub fn detected_output_language(binary: &str) -> Option<&'static str> {
-    let bytes = std::fs::read(binary).ok()?;
+    let bytes = kuna_analysis::loader::elf_shdr::read_image(binary).ok()?;
     let file = kuna_analysis::loadimage_object::parse_object(&*bytes).ok()?;
     match kuna_analysis::sourcelang::detect_compiler(&file, &bytes) {
         kuna_analysis::sourcelang::Compiler::Rustc => Some("rust-language"),
@@ -1568,7 +1595,7 @@ fn spec_roots(sleighpath: Option<&str>) -> Vec<String> {
 /// the message names the cause it can prove, because a packed image is the one
 /// an agent can act on.
 pub(crate) fn zero_discovery_error(binary: &str) -> Option<String> {
-    let bytes = std::fs::read(binary).unwrap_or_default();
+    let bytes = kuna_analysis::loader::elf_shdr::read_image(binary).unwrap_or_default();
     if !bytes.is_empty() && !image_has_executable_content(&bytes) {
         return None;
     }

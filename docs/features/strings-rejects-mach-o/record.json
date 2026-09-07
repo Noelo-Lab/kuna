@@ -1,0 +1,87 @@
+{
+  "opportunity": "repipe:5ab77f5633c5d40ad448c29b::strings-rejects-mach-o",
+  "need_id": "strings-rejects-mach-o",
+  "also_closes": [
+    "adding-summary-makes-working"
+  ],
+  "track": "tooling",
+  "round": 7,
+  "test_name": "repipe round 7, challenge 5ab77f5633c5d40ad448c29b (crackmes.one CrackMe.app, Mach-O universal x86_64+i386)",
+  "binary": "kuna-re-dataset/challenges/5ab77f5633c5d40ad448c29b/bin/CrackMe.zip.__x/CrackMe.app/Contents/MacOS/CrackMe",
+  "option": null,
+  "change_kind": "correctness-fix",
+  "why_no_option": "Tooling track: a CLI/loader surface that could not read a file at all. It cannot change emitted C, so no phases.toml row, no catalog counter, no stages testcase (tests/stages/README.md scopes that corpus to stage-model issues).",
+  "scope": "small",
+  "files": [
+    "decompiler/crates/kuna-analysis/src/loader/macho_fat.rs",
+    "decompiler/crates/kuna-analysis/src/loader/elf_shdr.rs",
+    "decompiler/crates/kuna-analysis/src/loader/elf_shdr/tests.rs",
+    "decompiler/crates/kuna-cli/src/decompile_all.rs",
+    "decompiler/crates/kuna-cli/src/decompile_graph.rs",
+    "decompiler/crates/kuna-cli/src/strings.rs",
+    "decompiler/crates/kuna-cli/src/xrefs.rs",
+    "decompiler/crates/kuna-cli/tests/strings_cli.rs",
+    "decompiler/crates/kuna-cli/tests/triage_cli.rs",
+    "decompiler/crates/kuna-console/src/engine.rs",
+    "decompiler/crates/kuna-console/src/classify.rs",
+    "decompiler/crates/kuna-console/src/project.rs",
+    "decompiler/crates/kuna-wasm/src/lib.rs",
+    "tests/cli/strings-rejects-mach-o.json",
+    "tests/cli/adding-summary-makes-working.json",
+    "docs/cli.md",
+    "docs/spec/01-program-prep.md"
+  ],
+  "decisions": [
+    "The r7 refuter's diagnosis is CONFIRMED, not overturned: the two paths share one loader, and what differs is a missing pre-step. `object::File::parse` has no fat arm, so a universal Mach-O must be peeled to one slice before parsing; the peel (loader/macho_fat.rs select_fat_slice) was applied at exactly one point, the engine dispatch, while kuna-cli parsed the raw file bytes.",
+    "The fix is placed at elf_shdr::read_image rather than inside parse_object. parse_object returns an object::File borrowed from the caller's bytes, and several callers use file AND bytes together (image_entry_vma, detect_compiler, container_machine). Peeling inside parse_object would leave the caller holding fat-file offsets against a slice-relative File. Peeling at the read keeps the two in agreement, and read_image is already the point where the ELF section-table and PE data-directory repairs are applied for exactly this reason.",
+    "--slice is threaded explicitly (Args::slice_pref / macho_fat::slice_pref) rather than left to the KUNA_MACHO_SLICE env bridge, because that bridge is installed by a RAII guard scoped to load_program and is already restored by the time the call graph or the string scan re-parses the image.",
+    "The refuter's `--reachable-from entry` clause does not hold as written, and not because of this bug: `entry` is not a magic token, it is a name lookup (resolve_function_spec), and this Mach-O has no symbol named `entry`. Post-fix it answers `no function named \"entry\"` instead of `Unsupported file format`. `--reachable-from 0x100001c54` (the image entry the summary reports) returns 4 functions, matching the summary's reachable_from_entry: 4.",
+    "The refuter's `--slice x86_64 vs --slice arm64` clause was checked against the real witness, which is x86_64 + i386, not arm64. Ran as x86_64 (131 strings, VMAs 0x1000029xx) vs i386 (129 strings, VMAs 0x36xx) -- different inventories, so the override is live. The in-repo macho_fat fixture is x86_64 + arm64 and carries the same discriminator.",
+    "Found and fixed a second instance of the same shape while sweeping: functions --summary took its entry from a raw std::fs::read, so an image that only parses after the loader's header repairs reported entry: null / reachable_from_entry: null beside a populated inventory."
+  ],
+  "probe_flip": {
+    "probe_still_passes": false,
+    "acceptance_passes": true,
+    "acceptance_before": "exit 1, stderr `could not parse <bin>: Unsupported file format`, no stdout",
+    "acceptance_after": "exit 0, a 131-row JSON inventory including `Code Valid`, `Code Invalid` and the Objective-C selectors (`checkCode:`)",
+    "sibling_acceptance_before": "functions --summary --json: exit 1, same message",
+    "sibling_acceptance_after": "exit 0, size buckets totalling 84 -- the same 84 the plain inventory reports"
+  },
+  "acceptance_traps_answered": {
+    "strings_not_empty": "131 rows on the witness; the promoted CI copy asserts the fixture's own __cstring literal at the x86-64 slice's address, which an empty inventory cannot satisfy",
+    "slice_override_live": "witness x86_64 131 rows @0x1000029xx vs i386 129 rows @0x36xx; fixture x86_64 5 rows (%d\\n @0x1000005ee) vs arm64 2 rows (%d\\n @0x1000005d0)",
+    "summary_total_matches_inventory": "witness: plain 84, summary buckets 10+34+19+17+4 = 84; fixture: plain count 6, summary count 6",
+    "third_site_confirmed": "kuna xrefs <witness> --to 0x100001d2b --json now answers (count 0 with a resolved target) instead of failing to parse"
+  },
+  "promoted_probes": [
+    {
+      "path": "tests/cli/strings-rejects-mach-o.json",
+      "retargeted_from": "dataset CrackMe.app (Mach-O universal x86_64+i386)",
+      "retargeted_to": "decompiler/crates/kuna-analysis/tests/fixtures/macho_fat (the vendored 2-slice x86_64+arm64 fixture)",
+      "why": "CI has no dataset. The fixture reproduces the defect exactly: the pre-fix binary answers `Unsupported file format` on it too.",
+      "strengthened": "the filed acceptance is only exit 0 + stdout_is_json, which an empty inventory satisfies; --min-length 2 makes the tiny fixture non-empty and the clauses pin `\"count\": 5`, `__cstring`, and 0x1000005ee -- the x86-64 slice's own address, so a peel onto the wrong slice fails too"
+    },
+    {
+      "path": "tests/cli/adding-summary-makes-working.json",
+      "retargeted_to": "the same macho_fat fixture",
+      "strengthened": "count and total must both equal the plain inventory's 6, and the entry address pins the x86-64 slice (arm64 _main is at 0x10000056c)"
+    }
+  ],
+  "sweep": {
+    "method": "old (base 0bd41f10) vs new binary, `functions --json`, `functions --summary --json`, `strings --json` and `decompile-graph` over every file in decompiler/crates/kuna-analysis/tests/fixtures",
+    "fixtures": 185,
+    "differing": "macho_fat (the fix), plus corruptshdr_i386 and pe_datadircount_i386.exe on --summary only",
+    "classification": "macho_fat: `Unsupported file format` -> a real inventory/scan/graph. corruptshdr_i386 + pe_datadircount_i386.exe: summary `entry: null, reachable_from_entry: null` -> the real entry and a non-zero reach. No other surface on any other fixture moved a byte."
+  },
+  "gates": {
+    "make test": "PARITY OK 675/675",
+    "make test-stages": "PARITY OK 677/677",
+    "make check-spec": "OK (lenient)",
+    "kuna catalog --check": "catalog OK",
+    "make test-cli": "70/70",
+    "make rust-test": "5958 passed / 1 failed. The one failure is the documented repipe-worktree environment failure, not this change: verify_w10_proto_unlock::w10_proto_unlock_const_return_collapses_no_tied_roundtrip compares against $KUNA_DECOMP_TEST as the 'C++ oracle', which a repipe worktree points at this same Rust build. Proved pre-existing: the MAIN tree's release decomp_test_dbg, built at base 0bd41f10 before this branch, emits the identical `unsigned int promote_compare(char *a0)` on tests/datatests/promotecompare.xml where the test wants `xunknown4 promote_compare(char *`. This diff touches no file under decompiler/crates/kuna-decomp.",
+    "counters --check": "no drift",
+    "docs/options.md": "unchanged (no option added)",
+    "cargo check -p kuna-wasm --target wasm32-wasip1": "clean"
+  }
+}
