@@ -1578,6 +1578,25 @@ kuna specs <file.slaspec>        # compile one
 
 A thin alias for `slacomp` (same CLI as upstream's `sleigh_opt`).
 
+## `--slice ARCH` — which arch of a universal Mach-O
+
+A Mach-O universal ("fat") binary is several thin images in one file, and every
+kuna surface works on exactly one of them. With no override the pick is
+deterministic: x86-64, else arm64, else the first arch present. `--slice ARCH`
+names another (`x86_64`, `arm64`, `arm64e`, `i386`, `arm`, `ppc`, `ppc64`, …); a
+`--target` SLEIGH id steers it too, by its leading arch stem. A slice the file
+does not carry falls back to the default rather than failing.
+
+```
+$ kuna functions ./CrackMe --json | head -3          # the default slice
+$ kuna strings ./CrackMe --json --slice i386         # the other one
+```
+
+It applies to every surface that reads the image — `decompile`, `functions`,
+`decompile-all`, `strings`, `xrefs`, `disassemble`, `decompile-graph`,
+`decompile-project` — so an inventory, its `--summary`, and a string scan of the
+same file all describe the same slice.
+
 ## Everything else
 
 `kuna modes` (list the option presets) and `kuna fid` (function identification) also

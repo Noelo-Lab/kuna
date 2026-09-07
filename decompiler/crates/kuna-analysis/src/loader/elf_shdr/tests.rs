@@ -148,3 +148,38 @@ fn unrepairable_image_keeps_its_original_bytes() {
     assert_eq!(out, bytes, "a repair that does not make the file parse is discarded");
     assert!(note.is_none());
 }
+
+/// `read_image` is the view every surface that parses an image itself reads
+/// through, so it must peel a fat / universal Mach-O the way the engine dispatch
+/// does. Before it did, `object::File::parse` answered "Unsupported file format"
+/// for the whole file and `kuna strings` / `functions --summary` / `xrefs` died
+/// on an image `kuna functions` loaded fine.
+#[test]
+fn read_image_peels_a_universal_macho_to_one_slice() {
+    use crate::loader::macho_fat::SlicePref;
+    use object::Object;
+
+    let fat = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/macho_fat");
+    let raw = std::fs::read(fat).expect("the vendored 2-slice fixture");
+    assert!(crate::loadimage_object::parse_object(&raw).is_err(), "the fat header itself");
+
+    let default = read_image_sliced(fat, SlicePref::default()).unwrap();
+    let file = crate::loadimage_object::parse_object(&default).expect("the peeled slice parses");
+    assert_eq!(file.architecture(), object::Architecture::X86_64, "x86-64 → arm64 → first");
+
+    let arm = read_image_sliced(fat, SlicePref::parse("arm64")).unwrap();
+    let file = crate::loadimage_object::parse_object(&arm).expect("the peeled slice parses");
+    assert_eq!(file.architecture(), object::Architecture::Aarch64, "the override wins");
+    assert_ne!(default, arm, "two slices, two images");
+}
+
+/// The peel must be invisible to every other format: a thin image comes back
+/// byte for byte, exactly as before.
+#[test]
+fn read_image_leaves_a_thin_image_alone() {
+    use crate::loader::macho_fat::SlicePref;
+    let elf = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fauxware");
+    let raw = std::fs::read(elf).expect("the vendored ELF");
+    assert_eq!(read_image_sliced(elf, SlicePref::parse("arm64")).unwrap(), raw);
+    assert_eq!(read_image(elf).unwrap(), raw);
+}

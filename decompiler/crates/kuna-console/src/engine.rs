@@ -3174,41 +3174,21 @@ fn is_object_binary(bytes: &[u8]) -> bool {
     COFF_MACHINES.contains(&machine)
 }
 
-/// The environment-variable name carrying a Mach-O fat-slice override
-/// (`--slice <arch>`). Read live (per `load file`) so a test can set it
-/// in-process; empty/unset selects the deterministic default slice.
-const MACHO_SLICE_ENV: &str = "KUNA_MACHO_SLICE";
-
 /// Reduce a Mach-O fat / universal binary to one arch slice's bytes — the single,
 /// canonical slice-selection point at dispatch (design §3.4 / §8 PR-8). For a
 /// thin (non-fat) input the `bytes` are returned **verbatim** (an exact, zero-copy
 /// move), so the ELF / thin-Mach-O / PE / COFF paths are byte-identical.
 ///
 /// The slice preference is, in order: an explicit `--slice <arch>` (the
-/// [`MACHO_SLICE_ENV`] env var the CLI exports), then the `--target` token's
+/// `KUNA_MACHO_SLICE` env var the CLI exports), then the `--target` token's
 /// leading arch stem (so the existing language-override flag also steers the
 /// slice), else the deterministic default (x86-64 → arm64 → first arch present).
 /// A fat header that cannot be peeled (unparsable, or no usable slice) is left
 /// untouched, so the downstream `object::File::parse` produces the existing
 /// "Unsupported file format" error rather than this silently mis-loading.
 fn select_macho_slice(bytes: Vec<u8>, target: &str) -> Vec<u8> {
-    use kuna_analysis::loader::macho_fat::{is_fat, select_fat_slice, SlicePref};
-    if !is_fat(&bytes) {
-        return bytes; // thin / ELF / PE / COFF — verbatim, no copy of a slice.
-    }
-    // `--slice` (env) wins; else fall back to the `--target` arch stem.
-    let slice_token = std::env::var(MACHO_SLICE_ENV).unwrap_or_default();
-    let pref = if !slice_token.trim().is_empty() {
-        SlicePref::parse(&slice_token)
-    } else if !target.trim().is_empty() {
-        SlicePref::parse(target)
-    } else {
-        SlicePref::default()
-    };
-    match select_fat_slice(&bytes, pref) {
-        Some(slice) => slice.to_vec(),
-        None => bytes, // unpeelable fat: leave it for object::File::parse to reject.
-    }
+    use kuna_analysis::loader::macho_fat::{peel_fat_image, slice_pref};
+    peel_fat_image(bytes, slice_pref(None, Some(target)))
 }
 
 /// Bootstrap from a file path (the `decomp_dbg` `load file [<target>] <path>`

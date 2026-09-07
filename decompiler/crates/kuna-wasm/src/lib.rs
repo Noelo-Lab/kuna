@@ -288,7 +288,9 @@ fn resolve_language(
     if explicit.is_some() {
         return Ok(explicit);
     }
-    let Ok(bytes) = std::fs::read(binary) else { return Ok(None) };
+    let Ok(bytes) = kuna_analysis::loader::elf_shdr::read_image(binary) else {
+        return Ok(None);
+    };
     let Ok(file) = kuna_analysis::loadimage_object::parse_object(&*bytes) else {
         return Ok(None);
     };
@@ -355,7 +357,7 @@ fn load_program(
 
     use object::Object;
     let non_x86_64 = if !mode_owns("funcstart_patterns") || !mode_owns("aif") {
-        std::fs::read(binary)
+        kuna_analysis::loader::elf_shdr::read_image(binary)
             .ok()
             .and_then(|bytes| {
                 kuna_analysis::loadimage_object::parse_object(&*bytes)

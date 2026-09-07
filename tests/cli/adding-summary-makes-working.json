@@ -1,0 +1,41 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "functions",
+    "{{BIN}}",
+    "--summary",
+    "--json"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/macho_fat",
+    "binary_sha256": "4877d6d86c3374b884d2c9db78e346f3221edcaaa1a208f92eff8698cc6bae2a",
+    "binary_size": 99168,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/macho_fat"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "stdout_matches": [
+      "\"count\": 6",
+      "\"total\": 6",
+      "\"reachable_from_entry\": 2",
+      "\"address_hex\": \"0x1000005b0\""
+    ],
+    "stderr_absent": [
+      "Unsupported file format"
+    ]
+  },
+  "notes": "Desired: the --summary call graph loads the same fat/universal Mach-O the plain inventory does. Witness: crackmes.one 5ab77f5633c5d40ad448c29b, where functions --json returned 84 and --summary exited 1 with \"Unsupported file format\". Retargeted onto the vendored macho_fat fixture (no dataset in CI). count/total must equal the plain inventory's 6 -- an EMPTY summary also exits 0."
+}
