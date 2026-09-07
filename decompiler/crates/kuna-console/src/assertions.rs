@@ -78,7 +78,7 @@ use std::rc::Rc;
 use kuna_base::address::Address;
 use kuna_base::types::{int4, uint4};
 use kuna_decomp::dtype::Datatype;
-use kuna_decomp::fspec::{ParameterPieces, PrototypePieces};
+use kuna_decomp::fspec::{ParameterPieces, ProtoModel, PrototypePieces};
 use kuna_decomp::funcdata::Funcdata;
 
 use crate::engine::ConsoleProgram;
@@ -333,7 +333,8 @@ fn apply_one_program_scoped(prog: &mut ConsoleProgram, body: &Body) -> Result<()
         Body::Typedef { decl } => {
             let org = data_org(prog);
             let text = with_semicolon(decl);
-            crate::grammar::parse_c(&text, prog.arch().types(), org, |_| Ok(()))
+            let models = model_names(prog);
+            crate::grammar::parse_c(&text, prog.arch().types(), org, &models, |_, _| Ok(()))
                 .map_err(|e| e.explain().to_string())
         }
         Body::Prototype { func, decl } => apply_prototype(prog, func, decl),
@@ -532,15 +533,18 @@ pub(crate) fn park_proto_pieces(
     }
 }
 
-/// The two things a full `prototype` directive does: park the pieces for the
-/// callers, and lock the signature onto the symbol itself.
+/// The three things a full `prototype` directive does: park the pieces for the
+/// callers, record the calling convention it named, and lock the signature onto
+/// the symbol itself.
 pub(crate) fn park_prototype(
     prog: &mut ConsoleProgram,
     target: &ProtoTarget,
     pieces: &mut PrototypePieces,
+    model: Option<&Rc<ProtoModel>>,
 ) {
     park_proto_pieces(prog, target, pieces);
-    lock_prototype_on_symbol(prog, target, pieces);
+    park_proto_model(prog, target, model);
+    lock_prototype_on_symbol(prog, target, pieces, model);
 }
 
 /// `prototype <func> <C declaration>` — the in-process twin of `parse line
@@ -561,19 +565,55 @@ fn apply_prototype(prog: &mut ConsoleProgram, func: &str, decl: &str) -> Result<
     use std::cell::RefCell;
     let org = data_org(prog);
     let text = format!("extern {}", with_semicolon(decl));
-    let captured: RefCell<Option<PrototypePieces>> = RefCell::new(None);
-    crate::grammar::parse_c(&text, prog.arch().types(), org, |pieces| {
-        *captured.borrow_mut() = Some(pieces);
+    let captured: RefCell<Option<(PrototypePieces, String)>> = RefCell::new(None);
+    let models = model_names(prog);
+    crate::grammar::parse_c(&text, prog.arch().types(), org, &models, |pieces, model| {
+        *captured.borrow_mut() = Some((pieces, model.to_string()));
         Ok(())
     })
     .map_err(|e| e.explain().to_string())?;
-    let mut pieces = captured
+    let (mut pieces, model) = captured
         .into_inner()
         .ok_or_else(|| "not a function declaration".to_string())?;
     let target = resolve_proto_target(prog, func)?;
-    park_prototype(prog, &target, &mut pieces);
+    let model = declared_model(prog, &model);
+    park_prototype(prog, &target, &mut pieces, model.as_ref());
     prog.set_pending_prototype(target.name(), pieces);
     Ok(())
+}
+
+/// The prototype-model names the loaded program's architecture has registered,
+/// as the C declaration parser needs them (`glb->hasModel`).
+pub(crate) fn model_names(prog: &ConsoleProgram) -> Vec<String> {
+    prog.arch().proto_model_names().map(str::to_string).collect()
+}
+
+/// The calling convention a declaration named, resolved against the loaded
+/// compiler spec's model registry.  `None` when the declaration named none; a
+/// name the registry does not carry cannot reach here, because the parser only
+/// classified it as a convention *because* the registry named it.
+pub(crate) fn declared_model(prog: &ConsoleProgram, model: &str) -> Option<Rc<ProtoModel>> {
+    if model.is_empty() {
+        return None;
+    }
+    prog.arch().get_model(model).cloned()
+}
+
+/// Record the calling convention a `prototype` directive named, so the
+/// function's own decompile is seeded under it rather than under the
+/// architecture default.
+///
+/// Keyed by the target's NAME, which is the key the arch handle joins against
+/// the parked pieces — those carry `pieces.name == target.name()`
+/// ([`park_proto_pieces`]).
+pub(crate) fn park_proto_model(
+    prog: &mut ConsoleProgram,
+    target: &ProtoTarget,
+    model: Option<&Rc<ProtoModel>>,
+) {
+    let Some(m) = model else { return };
+    let name = target.name().to_string();
+    prog.arch_mut().set_function_prototype_model(&name, Rc::clone(m));
 }
 
 /// Lock the parsed prototype onto the target's `FunctionSymbol` by retyping it
@@ -584,6 +624,7 @@ pub(crate) fn lock_prototype_on_symbol(
     prog: &mut ConsoleProgram,
     target: &ProtoTarget,
     pieces: &PrototypePieces,
+    model: Option<&Rc<ProtoModel>>,
 ) {
     let arch = prog.arch_mut();
     let sid = match target {
@@ -601,7 +642,15 @@ pub(crate) fn lock_prototype_on_symbol(
             None => return,
         },
     };
-    if let Ok(tc) = arch.types().get_type_code_proto(pieces) {
+    // The prototype-bearing `TypeCode` is what a CALLER reads a declared callee's
+    // signature back from (`ArchContext::query_callee_proto`), so the declared
+    // convention has to be baked in here: the storage the caller sees for each
+    // argument is assigned when this `FuncProto` is built.
+    let tc = match model {
+        Some(m) => arch.types_impl().get_type_code_proto_model(pieces, Rc::clone(m)),
+        None => arch.types().get_type_code_proto(pieces),
+    };
+    if let Ok(tc) = tc {
         let _ = arch.symboltab.retype_symbol(sid, tc);
     }
 }
@@ -682,7 +731,8 @@ fn apply_cross_function(
     // return type; `param` alone never declares one, and the storage assignment
     // behind `getTypeCode` dereferences `outtype` unconditionally.
     if pieces.outtype.is_some() {
-        lock_prototype_on_symbol(prog, &target, &pieces);
+        let model = prog.arch().function_prototype_model(target.name()).cloned();
+        lock_prototype_on_symbol(prog, &target, &pieces, model.as_ref());
     }
     prog.set_pending_prototype(target.name(), pieces);
     Ok(())

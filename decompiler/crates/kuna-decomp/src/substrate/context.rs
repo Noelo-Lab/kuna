@@ -1137,6 +1137,14 @@ pub struct ArchContext {
     /// `fc->copy(otherfunc->getFuncProto())` (`coreaction.cc:2385`).  Empty for
     /// hand-built fixtures and undeclared callees.
     pub callee_protos: Vec<(int4, kuna_base::types::uintb, crate::fspec::PrototypePieces)>,
+    /// The calling convention each declared callee was declared under, keyed the
+    /// same way [`Self::callee_protos`] is.  Snapshotted at `build_arch_handle`
+    /// from the architecture's declared-convention map and read back by
+    /// [`Self::callee_proto_model`], so `ActionDefaultParams` seeds the locked
+    /// callee pieces under the declared convention rather than `defaultfp`.
+    /// Empty when no declaration named a convention.
+    pub callee_proto_models:
+        Vec<(int4, kuna_base::types::uintb, Rc<crate::fspec::ProtoModel>)>,
     /// Snapshot of the engine's tracked-register database (C++ `glb->context`'s
     /// track base, populated by `set track <reg> <val> [start end]`).  The
     /// per-function `glb` skeleton does not hold the `ContextDatabase`, so
@@ -1169,6 +1177,7 @@ impl ArchContext {
             lanerecords: Vec::new(),
             opbehaviors: Vec::new(),
             floatformats: Vec::new(),
+            callee_proto_models: Vec::new(),
             defaultfp: None,
             evalfp_current: None,
             default_return_addr: None,
@@ -1456,16 +1465,25 @@ impl ArchContext {
     /// to copy the locked callee prototype into the call site.  Matched by
     /// `(space_index, offset)` — the ArchContext carries no `Rc<AddrSpace>` identities for
     /// the global scope, only the snapshotted indices.
-    /// (kuna, Phase 3) The host-declared prototype MODEL of a locked callee
-    /// signature (ghidra-mode `<prototype model=…>`), when the remote provider
-    /// resolved one — the model `ActionDefaultParams` seeds the locked pieces
-    /// under instead of `defaultfp`.  `None` on the standalone path (the CLI's
-    /// `parse line extern` pieces are model-less), keeping it byte-identical.
+    /// The prototype MODEL a locked callee signature was declared under — the
+    /// model `ActionDefaultParams` seeds the locked pieces under instead of
+    /// `defaultfp`.  Two sources: ghidra-mode's host `<prototype model=…>`
+    /// (Phase 3), and a standalone declaration that named a calling convention
+    /// (`--assert 'prototype f void * __stdcall f(...)'`).  `None` when the
+    /// declaration named none, which keeps the default-model seed.
     pub fn callee_proto_model(
         &self,
         addr: &Address,
     ) -> Option<std::rc::Rc<crate::fspec::ProtoModel>> {
-        self.remote_scope.as_ref()?.callee_model_at(addr)
+        if let Some(remote) = &self.remote_scope {
+            return remote.callee_model_at(addr);
+        }
+        let space_index = addr.get_space()?.get_index();
+        let offset = addr.get_offset();
+        self.callee_proto_models
+            .iter()
+            .find(|(sp, off, _)| *sp == space_index && *off == offset)
+            .map(|(_, _, m)| std::rc::Rc::clone(m))
     }
 
     pub fn callee_proto_pieces(&self, addr: &Address) -> Option<crate::fspec::PrototypePieces> {

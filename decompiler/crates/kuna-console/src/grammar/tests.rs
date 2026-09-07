@@ -564,7 +564,7 @@ fn struct_construction_lands_in_factory() {
     // computed size (two int4 fields => 8 bytes) and completed (no longer
     // incomplete).
     let f = factory();
-    super::parse_c("struct mystruct { int4 a; int4 b; };", &f, org(), |_| {
+    super::parse_c("struct mystruct { int4 a; int4 b; };", &f, org(), &[], |_, _| {
         panic!("a bare struct is not an extern prototype")
     })
     .expect("struct construction should succeed");
@@ -585,7 +585,7 @@ fn enum_construction_lands_in_factory() {
     // the size-0 mask would collapse all values, exactly as the C++ would.
     let f = factory();
     f.setup_sizes(Some(4), 4, 4);
-    super::parse_c("enum mycolor { RED=1, GREEN=2, BLUE };", &f, org(), |_| {
+    super::parse_c("enum mycolor { RED=1, GREEN=2, BLUE };", &f, org(), &[], |_, _| {
         panic!("a bare enum is not an extern prototype")
     })
     .expect("enum construction should succeed");
@@ -601,7 +601,7 @@ fn typedef_lands_in_factory() {
     // `parse line typedef int4 myint;` creates a typedef interned under the new
     // name.
     let f = factory();
-    super::parse_c("typedef int4 myint;", &f, org(), |_| {
+    super::parse_c("typedef int4 myint;", &f, org(), &[], |_, _| {
         panic!("a typedef is not an extern prototype")
     })
     .expect("typedef should succeed");
@@ -927,4 +927,98 @@ fn a_scalar_keyword_with_no_declared_width_is_a_parse_error() {
         err.explain()
     );
     assert_eq!(parse_type("unsigned int x", &f, org()).unwrap().0.get_name(), "uint4");
+}
+
+// ===========================================================================
+// Calling conventions (`glb->hasModel` -> FUNCTION_SPECIFIER)
+// ===========================================================================
+
+/// The prototype-model names an x86 Windows compiler spec registers.
+fn win_models() -> Vec<String> {
+    ["__stdcall", "__cdecl", "__fastcall", "__thiscall"].iter().map(|s| s.to_string()).collect()
+}
+
+/// Parse one `extern` declaration and report the convention it named.
+fn proto_model(decl: &str, models: &[String]) -> Result<String, String> {
+    use std::cell::RefCell;
+    let f = factory();
+    let seen: RefCell<Option<String>> = RefCell::new(None);
+    super::parse_c(decl, &f, org(), models, |_, model| {
+        *seen.borrow_mut() = Some(model.to_string());
+        Ok(())
+    })
+    .map_err(|e| e.explain().to_string())?;
+    seen.into_inner().ok_or_else(|| "not a prototype".to_string())
+}
+
+#[test]
+fn convention_after_a_pointer_return_parses() {
+    // The reported spelling: a `__stdcall` on a pointer-returning Win32 import.
+    // The convention sits in DECLARATOR position, after the `*`, which the
+    // C-standard specifier run cannot reach.
+    assert_eq!(
+        proto_model("extern void * __stdcall LoadLibraryExW(uint2 *n,void *f,uint4 g);",
+                    &win_models()),
+        Ok("__stdcall".to_string())
+    );
+}
+
+#[test]
+fn convention_before_the_return_type_parses() {
+    assert_eq!(
+        proto_model("extern int4 __fastcall f(int4 a);", &win_models()),
+        Ok("__fastcall".to_string())
+    );
+}
+
+#[test]
+fn a_declaration_naming_no_convention_reports_none() {
+    assert_eq!(proto_model("extern int4 f(int4 a);", &win_models()), Ok(String::new()));
+}
+
+#[test]
+fn an_unregistered_convention_is_still_a_syntax_error() {
+    // The classification is the registry's: a spelling the loaded compiler spec
+    // does not declare stays a plain identifier and the declaration is rejected,
+    // so a typo cannot be silently dropped on the floor.
+    let err = proto_model("extern int4 __pascal f(int4 a);", &win_models()).unwrap_err();
+    assert!(!err.is_empty(), "an unknown convention must not parse");
+}
+
+#[test]
+fn a_convention_needs_a_registry_to_be_one() {
+    // With no architecture behind the parse (no models registered) the
+    // declaration is rejected exactly as it was before the registry was
+    // reachable -- this is the behaviour the fix flips.
+    let err = proto_model("extern void * __stdcall f(int4 a);", &[]).unwrap_err();
+    assert!(!err.is_empty(), "no registry means no convention");
+}
+
+#[test]
+fn two_conventions_in_one_declaration_are_rejected() {
+    let err =
+        proto_model("extern int4 __stdcall __cdecl f(int4 a);", &win_models()).unwrap_err();
+    assert!(
+        err.contains("Multiple parameter models"),
+        "expected the duplicate-model diagnostic, got {err:?}"
+    );
+    let err =
+        proto_model("extern int4 __stdcall * __cdecl f(int4 a);", &win_models()).unwrap_err();
+    assert!(
+        err.contains("Multiple parameter models"),
+        "expected the duplicate-model diagnostic, got {err:?}"
+    );
+}
+
+#[test]
+fn a_convention_on_a_function_pointer_parameter_parses_as_it_did_without_one() {
+    // `__stdcall` inside a parenthesised declarator (`int4 (__stdcall *cb)(int4)`)
+    // is the callback spelling every Win32 header uses.  The convention on a
+    // function-pointer PARAMETER is dropped (the parameter's type is a code
+    // pointer, which carries no model in this port), but it must not change how
+    // the declaration parses.
+    assert_eq!(
+        proto_model("extern int4 f(int4 (__stdcall *cb)(int4));", &win_models()),
+        proto_model("extern int4 f(int4 (*cb)(int4));", &win_models())
+    );
 }

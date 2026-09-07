@@ -1611,6 +1611,13 @@ pub struct Architecture {
     /// A `BTreeMap` (ADR 0002) for deterministic iteration matching the C++
     /// `map<string,ProtoModel*>` ordered traversal in `parseCompilerConfig`.
     proto_models: std::collections::BTreeMap<String, Rc<ProtoModel>>,
+    /// The calling convention a function was DECLARED under, by function name
+    /// (`--assert 'prototype f void * __stdcall f(...)'`, `parse line extern`).
+    /// Joined against the parked [`crate::fspec::PrototypePieces`] in
+    /// [`Self::build_arch_handle`] so a caller's `ActionDefaultParams` assigns
+    /// the callee's parameter storage under the declared convention instead of
+    /// the architecture default.  Empty when no declaration named one.
+    declared_proto_models: std::collections::BTreeMap<String, Rc<ProtoModel>>,
     /// The default prototype model (C++ `defaultfp`).  `None` until a cspec is
     /// parsed (or a default is seeded by [`build_default_proto`]).
     defaultfp: Option<Rc<ProtoModel>>,
@@ -1963,6 +1970,7 @@ impl Architecture {
             types: Rc::new(TypeFactoryImpl::new()),
             print: PrintC::new(),
             proto_models: std::collections::BTreeMap::new(),
+            declared_proto_models: std::collections::BTreeMap::new(),
             defaultfp: None,
             evalfp_current: None,
             evalfp_current_spec: None,
@@ -3400,6 +3408,23 @@ impl Architecture {
         // `ActionDefaultParams` copies a known callee's locked `FuncProto` into the
         // call site (C++ `coreaction.cc:2385` `fc->copy(otherfunc->getFuncProto())`).
         ctx.callee_protos = self.symboltab.build_callee_proto_pieces();
+        // (kuna) The convention each of those callees was DECLARED under, keyed
+        // the same way the pieces are (entry address).  The declaration names the
+        // function, the parked pieces carry that name, and the read side
+        // (`ArchContext::callee_proto_model`) is address-keyed — so the join
+        // happens here, once per drive, rather than at every call site.
+        ctx.callee_proto_models = if self.declared_proto_models.is_empty() {
+            Vec::new()
+        } else {
+            ctx.callee_protos
+                .iter()
+                .filter_map(|(space_index, offset, pieces)| {
+                    self.declared_proto_models
+                        .get(&pieces.name)
+                        .map(|m| (*space_index, *offset, Rc::clone(m)))
+                })
+                .collect()
+        };
         // Carry the constant-pointer-inference config (C++ `glb->infer_pointers` /
         // `infer_funcentry`) and the ordered inferable-pointer spaces (C++
         // `glb->inferPtrSpaces`, built by cacheAddrSpaceProperties) so
@@ -4293,6 +4318,17 @@ impl Architecture {
     /// to `defaultfp` when unset (C++ `evalfp_current==0 ? defaultfp : …`).
     pub fn eval_fp_current(&self) -> Option<&Rc<ProtoModel>> {
         self.evalfp_current.as_ref().or(self.defaultfp.as_ref())
+    }
+
+    /// Record the calling convention `name` was declared under (see
+    /// [`Self::declared_proto_models`]).
+    pub fn set_function_prototype_model(&mut self, name: &str, model: Rc<ProtoModel>) {
+        self.declared_proto_models.insert(name.to_string(), model);
+    }
+
+    /// The calling convention `name` was declared under, or `None`.
+    pub fn function_prototype_model(&self, name: &str) -> Option<&Rc<ProtoModel>> {
+        self.declared_proto_models.get(name)
     }
 
     /// Register a prototype model under its name (C++ `protoModels[name] =`).
