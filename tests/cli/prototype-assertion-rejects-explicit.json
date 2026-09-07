@@ -1,0 +1,43 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "a-a5a2238dff30",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "0x400678",
+    "--addr",
+    "--assert-strict",
+    "--assert",
+    "prototype 0x400678 int4 checkpw(char *user,char *pass)"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/fauxware",
+    "binary_sha256": "c2d90645a45e99221593547e55c601a901b80f807ae96f94c60a7661df0b3e0b",
+    "binary_size": 8776,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/fauxware",
+    "selector": "0x400678",
+    "selector_kind": "addr"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "\\(char \\*user,char \\*pass\\)"
+    ],
+    "stderr_absent": [
+      "rejected: no function starts"
+    ]
+  },
+  "notes": "Retargeted onto the in-repo fauxware fixture: same defect, no dataset. 0x400678 is an instruction boundary inside `authenticate` that discovery does not call a function start, so only the by-address selection puts a function there -- the dataset witness's shape (illusion.exe 0x401571). Before: exit 1, `rejected: no function starts at 0x400678`."
+}

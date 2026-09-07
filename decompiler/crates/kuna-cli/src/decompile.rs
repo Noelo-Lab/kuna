@@ -78,6 +78,28 @@ pub(crate) fn looks_like_addr(target: &str) -> bool {
     target.starts_with("0x") || target.starts_with("0X")
 }
 
+/// The VMA a by-address run selected, or `None` when the target is an
+/// object-file coordinate (`.text+0x10`) or does not parse as an address.
+///
+/// The number grammar is `--addr`'s own — `0x`-prefixed or bare hex — which is
+/// the same one [`build_script`] uses to spell the `load addr` line.
+fn selected_vma(target: &str, by_address: bool) -> Option<u64> {
+    if !by_address {
+        return None;
+    }
+    if matches!(
+        EntrySelector::parse(target),
+        EntrySelector::SectionOffset { .. } | EntrySelector::SectionIndexOffset { .. }
+    ) {
+        return None;
+    }
+    let digits = target.strip_prefix("0x").or_else(|| target.strip_prefix("0X")).unwrap_or(target);
+    if digits.is_empty() || !digits.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+    u64::from_str_radix(digits, 16).ok()
+}
+
 /// Quote a path for the console script when — and only when — it needs it.
 ///
 /// The console reads a filename with `CommandStream::read_filename`, which
@@ -189,6 +211,19 @@ fn build_script(
     // declared extent (`ConsoleProgram::declared_extent`).
     for decl in func_decls {
         lines.push(decl.console_line());
+    }
+    // (kuna, RE-need `prototype-assertion-rejects-explicit`) A by-address run
+    // DECLARES that a function starts where it points: `load addr` follows flow
+    // from the address without installing a `FunctionSymbol`, so a directive
+    // naming the very address this run decompiles was answered `no function
+    // starts at 0x…` while the body was emitted in full.  This is the same
+    // install `--define-function <start>` performs — skipped when the caller
+    // already declared that start, whose extent a second bare declaration would
+    // clear.
+    if let Some(vma) = selected_vma(target, by_address) {
+        if !func_decls.iter().any(|decl| decl.start == vma) {
+            lines.push(format!("function bounds {vma:#x}"));
+        }
     }
     // (kuna `--assert`) The PROGRAM-scoped directives -- a parsed type, a
     // declared prototype, a named global -- go here, after the analysis commit
@@ -1836,6 +1871,96 @@ Decompilation complete
                 < line("function bounds 0x1400 0x1480 as decrypt")
                     && line("function bounds 0x1400 0x1480 as decrypt") < line("load addr 0x1400"),
             "wrong order in:\n{script}"
+        );
+    }
+
+    /// A by-address run DECLARES the entry it points at, before the directives
+    /// that name it: `load addr` alone installs no `FunctionSymbol`, so
+    /// `prototype 0x…` for the very address being decompiled was rejected.
+    #[test]
+    fn build_script_declares_the_entry_a_by_address_run_selected() {
+        let directives = vec![crate::assertdecl::parse_one(
+            "prototype 0x401571 void decrypt(unsigned int key)",
+        )
+        .expect("parses")];
+        let script = build_script(
+            "/tmp/a.out",
+            "0x401571",
+            true,
+            None,
+            false,
+            Path::new("/tmp/kuna.c"),
+            LISTING,
+            &[],
+            &[],
+            &[],
+            &directives,
+            None,
+        );
+        let line = |needle: &str| {
+            script
+                .lines()
+                .position(|l| l == needle)
+                .unwrap_or_else(|| panic!("{needle:?} missing from:\n{script}"))
+        };
+        assert!(
+            line("read symbols") < line("function bounds 0x401571")
+                && line("function bounds 0x401571")
+                    < line("map prototype 0x401571 void decrypt(unsigned int key);"),
+            "wrong order in:\n{script}"
+        );
+    }
+
+    /// A bare hex target under `--addr` takes the same declaration, and a NAMED
+    /// selection takes none — the name path resolves through the symbol table
+    /// that already has the entry.
+    #[test]
+    fn only_an_addressed_selection_is_declared() {
+        let script = |target: &str, by_address: bool| {
+            build_script(
+                "/tmp/a.out",
+                target,
+                by_address,
+                None,
+                false,
+                Path::new("/tmp/kuna.c"),
+                LISTING,
+                &[],
+                &[],
+                &[],
+                &[],
+                None,
+            )
+        };
+        assert!(script("401571", true).contains("\nfunction bounds 0x401571\n"));
+        assert!(!script("authenticate", false).contains("function bounds"));
+        // An object-file coordinate is not a VMA, so there is nothing to declare.
+        assert!(!script(".text+0x10", true).contains("function bounds"));
+    }
+
+    /// A caller who declared the same start keeps the extent they declared: a
+    /// second, bare declaration of that entry would clear it back to unbounded.
+    #[test]
+    fn a_declared_start_is_not_re_declared_without_its_extent() {
+        let decls = crate::funcdecl::parse_flag("0x1400-0x1480=decrypt").expect("parses");
+        let script = build_script(
+            "/tmp/a.out",
+            "0x1400",
+            true,
+            None,
+            false,
+            Path::new("/tmp/kuna.c"),
+            LISTING,
+            &[],
+            &[],
+            &decls,
+            &[],
+            None,
+        );
+        assert_eq!(
+            script.lines().filter(|l| l.starts_with("function bounds")).count(),
+            1,
+            "the declared extent was re-declared away:\n{script}"
         );
     }
 
