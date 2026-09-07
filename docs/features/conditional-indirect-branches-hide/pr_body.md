@@ -79,8 +79,14 @@ probe over a vendored 5 KB fixture. Gates: `make test` PARITY OK 675/675
 additive), `make rust-test` green, `make check-spec` OK, `catalog OK`,
 `make test-cli` 63/63.
 
-`decompile-all --mode aggressive` over 108 binaries, both arms: byte-identical
-everywhere. Speed +0.82% (fixture, median of 9) and +1.28% (`coreutils/ls main`,
+`decompile-all --mode aggressive` over 108 binaries, both arms, all exiting 0 in
+both: 106 byte-identical. The two that differ are the witness and one real
+function — `replace_problematic_chars` in `O2-noinline/coreutils/df`, where gcc
+compiled `(tty_out ? replace_invalid_chars : replace_control_chars)(cell)` into
+exactly this dispatch. That is the tail-call trade-off named above rather than a
+defect: the C is faithful, but both callee bodies are now inlined as switch arms
+where the two callee names used to be visible. It is why the catalog default is
+off. Speed +0.82% (fixture, median of 9) and +1.28% (`coreutils/ls main`,
 median of 7), inside the 5% budget — the model only runs where recovery had
 already failed.
 

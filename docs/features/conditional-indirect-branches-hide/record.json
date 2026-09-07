@@ -30,7 +30,15 @@
  "mechanism_verified": true,
  "mechanism_note": "Verified at p-code level on the witness before writing code (decomp_dbg `print raw`), and end-to-end on both the witness and a reduced fixture. The transform is reachable only after BOTH value-range models decline, i.e. only where the alternative is the jump-as-call truncation.",
  "wrongness_refutation": "The two ways this could produce WRONG output are (a) a conditional tail call, and (b) a constant that is not code. (a) is bounded by the 0xffff intraprocedural window, upstream's own thunk yardstick in JumpTable::sanity_check; (b) by JumpModelConstSelect::sanity_check, which declines the table whole unless every destination has loadable bytes behind it. Declining returns the branch to the pre-change CALLIND rendering, so every rejection path is the old behaviour exactly.",
- "gates": {},
+ "gates": {
+  "make test": "675/675 PARITY OK (docs/baseline.json NOT re-pinned)",
+  "make test-stages": "677/677 PARITY OK (baseline re-recorded: purely additive, 674 -> 677 keys; one KUNA-CATALOG #7 assertion NAME changed with its option list)",
+  "make rust-test": "green (rc=0, 0 failed targets) with `env -u KUNA_DECOMP_TEST`. With the repipe launcher's KUNA_DECOMP_TEST exported, verify_w10_proto_unlock::w10_proto_unlock_const_return_collapses_no_tied_roundtrip fails 'oracle promote_compare signature drifted' -- a known worktree-environment artifact (the oracle becomes kuna itself, which prints `unsigned int` where the assertion wants the C++ `xunknown4`); falsified by re-running that one target with the variable unset: 4/4 green.",
+  "make check-spec": "check-spec OK (lenient and --strict)",
+  "kuna catalog --check": "catalog OK",
+  "make test-cli": "63/63 passed",
+  "acceptance": "scripts.repipe.verify --need conditional-indirect-branches-hide: PASS (closed)"
+ },
  "stage_test": {
   "path": "tests/stages/re-constselectjump.xml",
   "passes": "two-pass: pass 1 default (option off, the bug), pass 2 `option constselectjump on` (the fix)",
@@ -52,5 +60,17 @@
   },
   "budget_pct": 5.0,
   "within_budget": true
+ },
+ "regression_sweep": {
+  "method": "`kuna decompile-all --mode aggressive --max-fn-seconds 20`, option on vs `--option constselectjump off`, whole-output diff",
+  "binaries": 108,
+  "all_exit_0_both_arms": true,
+  "byte_identical": 106,
+  "changed": 2,
+  "changed_detail": [
+   "kuna-re-dataset 5b52f6eb.../LOL -- the witness; the intended recovery",
+   "O2-noinline/coreutils/df replace_problematic_chars @0x49e0 -- gcc compiled `(tty_out ? replace_invalid_chars : replace_control_chars)(cell)` as a CMOV-select conditional TAIL CALL, and both callees sit inside the 0xffff window. The emitted C is faithful, but both callee bodies are now inlined into the caller as switch arms where before the two callee NAMES were visible in `(*v2)(cell); // jump-as-call`. This is the documented trade-off and the reason the catalog default is off; a reader who prefers the pointer form has `--option constselectjump off`."
+  ],
+  "note": "An earlier partial sweep also flagged O2/coreutils/mv; that was an artifact of the sweep's own 20 s per-function cap (copy_internal runs 18 s and the two arms are byte-identical with the cap lifted), and it did not recur on the final run."
  }
 }
