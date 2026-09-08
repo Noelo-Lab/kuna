@@ -33,7 +33,7 @@
 //! function entry the faithful way (the binaryimage's own symbol records, which
 //! is precisely what `readLoaderSymbols` reads).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
 use kuna_base::address::Address;
@@ -312,6 +312,17 @@ pub struct ConsoleProgram {
     /// Non-zero sizes only: a bare declaration with no extent leaves the entry
     /// unbounded, which is the engine-wide `UNBOUNDED_SIZE` default.
     declared_extents: BTreeMap<u64, int4>,
+    /// (kuna) **Caller-declared function entries**, entry VMA — every address a
+    /// caller asserted a function at through `function bounds` /
+    /// `--define-function`, extent or no extent.
+    ///
+    /// Separate from [`Self::declared_extents`] because a bare declaration
+    /// carries no size and would otherwise be indistinguishable from a
+    /// discovered entry. What reads it is the whole-binary target list
+    /// ([`Self::function_entries_executable`]): a declaration is an assertion
+    /// that this address IS a function, so it outranks the section-flag test
+    /// that list otherwise filters by.
+    declared_entries: BTreeSet<u64>,
     /// (kuna `--assert`) The caller-supplied assertions this program was loaded
     /// with, in the order they were given -- the one override plane an agent
     /// states facts through (`crate::assertions`).  Empty for every invocation
@@ -533,6 +544,14 @@ impl ConsoleProgram {
     /// Import pointer slots remain in the canonical inventory for call naming
     /// and explicit address selection, but data addresses are not function bodies.
     /// Loaders without section metadata retain the complete inventory.
+    ///
+    /// A CALLER-DECLARED entry is kept whatever the section flags say. The flag
+    /// test is a guess about where code lives, and it is wrong exactly where an
+    /// agent reaches for `--define-function`: a packer that marks its whole
+    /// image data (every section `INITIALIZED_DATA|READ|WRITE`, none
+    /// `MEM_EXECUTE`) leaves this list empty, so a declared function was
+    /// enumerated by `kuna functions`, decompiled fine by `kuna decompile`, and
+    /// then silently dropped from the whole-binary run.
     pub fn function_entries_executable(&self) -> Vec<FunctionEntry> {
         let sections = self.sections();
         if sections.is_empty() {
@@ -543,9 +562,10 @@ impl ConsoleProgram {
             .into_iter()
             .filter(|entry| {
                 let vma = entry.addr.get_offset();
-                sections.iter().any(|&(start, size, flags)| {
-                    flags & section_flags::CODE != 0 && vma >= start && vma - start < size
-                })
+                self.is_declared_entry(vma)
+                    || sections.iter().any(|&(start, size, flags)| {
+                        flags & section_flags::CODE != 0 && vma >= start && vma - start < size
+                    })
             })
             .collect()
     }
@@ -1288,6 +1308,12 @@ impl ConsoleProgram {
         !self.declared_extents.is_empty()
     }
 
+    /// Did a caller assert a function at `vma` (`function bounds` /
+    /// `--define-function`)?
+    pub fn is_declared_entry(&self, vma: u64) -> bool {
+        self.declared_entries.contains(&self.thumb_normalized(vma))
+    }
+
     // --- the `--assert` override plane (see `crate::assertions`) -------------
 
     /// Install the caller's assertions.  One outcome slot is reserved per
@@ -1396,6 +1422,7 @@ impl ConsoleProgram {
         let vma = addr.get_offset();
         self.register_symbol(&name, addr);
         self.declare_extent(vma, size);
+        self.declared_entries.insert(vma);
         Ok(name)
     }
 
@@ -2043,6 +2070,7 @@ pub fn bootstrap_program(
         analysis_image: None,
         loader_data_objects: Vec::new(),
         declared_extents: BTreeMap::new(),
+        declared_entries: BTreeSet::new(),
         assertions: Vec::new(),
         assertion_outcomes: Vec::new(),
         pending_prototypes: BTreeMap::new(),
@@ -2444,6 +2472,7 @@ pub fn bootstrap_from_object_with_isa(
         analysis_image: Some((path.to_string(), bytes)),
         loader_data_objects,
         declared_extents: BTreeMap::new(),
+        declared_entries: BTreeSet::new(),
         assertions: Vec::new(),
         assertion_outcomes: Vec::new(),
         pending_prototypes: BTreeMap::new(),

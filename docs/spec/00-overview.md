@@ -215,6 +215,16 @@ Four front-ends drive one engine assembly:
   unrestricted explicit address selection; name selection keeps its normal
   first matching canonical-entry behavior when a stub and slot share a name. A
   loader that publishes no section metadata retains the complete canonical set.
+  A **caller-declared** entry (the declared-extent plane below) is kept whatever the section flags say
+  (`decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::is_declared_entry)`).
+  The `CODE` test is a guess about where code lives, and a packer defeats it for
+  free by not setting the bit: a NEOLite-packed PE flags all six of its sections
+  `INITIALIZED_DATA|READ|WRITE`, `.text` included, so `--define-function
+  0x4f7001-0x4f700c=entry` enumerated an 11-byte function that `kuna decompile`
+  emitted a body for and that unfiltered `decompile-all` then dropped, answering
+  `count: 0` with a null error. A declaration is an assertion rather than a
+  candidate, so it outranks the filter; nothing undeclared is lifted with it, and
+  the filter is unchanged for every image whose flags mean what they say.
   Explicit selection of an entry with **no mapped bytes** — an import slot, or a
   relocatable object's undefined symbol bound to a synthetic extern-area address
   so that calls to it render by name — answers with the entry's nature rather
@@ -796,7 +806,26 @@ consulted by every later load of that entry — `load function`, `load addr`
 it as the `Funcdata` size that bounds flow following (chapter
 [02 §2.1](02-lift-and-flow.md)), and by `funcextent` when the inventory reports an
 extent. A declaration therefore outlives the one command that made it, which is
-what separates an interface from a one-shot flag.
+what separates an interface from a one-shot flag. It also enters the whole-binary
+target list whatever the image says about where code lives, because the entry-VMA
+set `declare_function` writes
+(`decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::declared_entries)`)
+is consulted by the section-flag filter above.
+
+(kuna) The same lying flags reach the **run verdict**. A run that discovered
+nothing is a failure only when the image carries executable content — a data-only
+relocatable object and a resource-only PE have no functions to find, and failing
+those would turn a correct answer into an error
+(`decompiler/crates/kuna-cli/src/decompile_all.rs (classify_code_evidence)`). An
+image where *nothing* is flagged executable cleared that test, so the packed case
+answered `count: 0`, exit `0`, silent stderr: a successful run's voice for a file
+an agent could still get a body out of. An image that declares an **entry point
+inside one of its sections** carries code whatever its flags claim, so it is a
+failure instead, and the message names the address and the section it landed in
+and points at `--define-function`, which is the command that recovers the run.
+Landing inside a section is the whole test: a PE with no `AddressOfEntryPoint` is
+reported as entering at its bare image base, which no section covers, so the
+resource-only case keeps its honest empty answer.
 
 Two surfaces reach it. The console command is `function bounds <start> [<end>]
 [as <name>]`

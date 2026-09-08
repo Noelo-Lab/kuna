@@ -1596,15 +1596,28 @@ fn spec_roots(sleighpath: Option<&str>) -> Vec<String> {
 /// an agent can act on.
 pub(crate) fn zero_discovery_error(binary: &str) -> Option<String> {
     let bytes = kuna_analysis::loader::elf_shdr::read_image(binary).unwrap_or_default();
-    if !bytes.is_empty() && !image_has_executable_content(&bytes) {
+    let evidence = if bytes.is_empty() {
+        CodeEvidence::Flagged
+    } else {
+        classify_code_evidence(&bytes)
+    };
+    let mut detail: Vec<String> = Vec::new();
+    if let CodeEvidence::None = evidence {
         return None;
     }
-    Some(match detect_packer(&bytes) {
-        Some(packer) => format!(
-            "no functions discovered in {binary}: image appears {packer}-packed; \
-             try `kuna unpack`"
-        ),
-        None => format!("no functions discovered in {binary}"),
+    if let CodeEvidence::EntryPointOnly { entry, section } = &evidence {
+        detail.push(format!(
+            "its entry point {entry:#x} lies in {section}, which the image does not flag \
+             executable -- pass `--define-function {entry:#x}` to decompile there anyway"
+        ));
+    }
+    if let Some(packer) = detect_packer(&bytes) {
+        detail.push(format!("image appears {packer}-packed; try `kuna unpack`"));
+    }
+    Some(if detail.is_empty() {
+        format!("no functions discovered in {binary}")
+    } else {
+        format!("no functions discovered in {binary}: {}", detail.join("; "))
     })
 }
 
@@ -1618,14 +1631,33 @@ fn detect_packer(bytes: &[u8]) -> Option<&'static str> {
     bytes.windows(4).any(|w| w == b"UPX!").then_some("UPX")
 }
 
-/// Does this image carry executable content at all?
+/// What an image claims about carrying executable content.
+enum CodeEvidence {
+    /// A section or segment is flagged executable — an ordinary image.
+    Flagged,
+    /// NOTHING is flagged executable, yet the image declares an entry point
+    /// inside one of its sections.
+    EntryPointOnly { entry: u64, section: String },
+    /// Nothing in the image claims to be code.
+    None,
+}
+
+/// Does this image carry executable content at all, and on what evidence?
 ///
 /// Section flags first (the per-format executable test `kuna-analysis`'s entry
 /// analyzers use), then the ELF program headers — a section-header-stripped PIE
 /// has no section table at all, and the program header is what the loader obeys.
 /// An image `object` cannot parse (a raw blob, a `<binaryimage>` document)
-/// answers `true`: nothing there clears the run, so it stays a failure.
-fn image_has_executable_content(bytes: &[u8]) -> bool {
+/// answers [`CodeEvidence::Flagged`]: nothing there clears the run, so it stays
+/// a failure.
+///
+/// The entry-point arm is what a packer looks like. Setting the executable bit
+/// is the packer's choice, and NEOLite (and friends) simply do not: the reported
+/// image flags all six of its sections `INITIALIZED_DATA|READ|WRITE`, `.text`
+/// included, and points `AddressOfEntryPoint` into the stub section. An image
+/// that declares where execution starts is not a data blob, whatever its flags
+/// say, so a run that found nothing in it is a failure that should say so.
+fn classify_code_evidence(bytes: &[u8]) -> CodeEvidence {
     // ELF section header flag SHF_EXECINSTR; the Mach-O instruction attributes.
     const SHF_EXECINSTR: u64 = 0x4;
     const S_ATTR_PURE_INSTRUCTIONS: u32 = 0x8000_0000;
@@ -1634,7 +1666,7 @@ fn image_has_executable_content(bytes: &[u8]) -> bool {
     const PF_X: u32 = 0x1;
 
     let Ok(file) = kuna_analysis::loadimage_object::parse_object(bytes) else {
-        return true;
+        return CodeEvidence::Flagged;
     };
     let executable_section = file.sections().any(|sec| {
         sec.size() != 0
@@ -1650,15 +1682,39 @@ fn image_has_executable_content(bytes: &[u8]) -> bool {
                 _ => sec.kind() == object::SectionKind::Text,
             }
     });
-    executable_section
-        || file.segments().any(|seg| {
-            seg.size() != 0
-                && matches!(
-                    seg.flags(),
-                    object::SegmentFlags::Elf { p_flags } if p_flags & PF_X != 0
-                )
-        })
+    let executable_segment = file.segments().any(|seg| {
+        seg.size() != 0
+            && matches!(
+                seg.flags(),
+                object::SegmentFlags::Elf { p_flags } if p_flags & PF_X != 0
+            )
+    });
+    if executable_section || executable_segment {
+        return CodeEvidence::Flagged;
+    }
+
+    // A resource-only PE and a data-only relocatable object both reach here and
+    // must stay the honest empty case, so the entry has to land INSIDE a
+    // section: `object` reports a PE with no `AddressOfEntryPoint` as entering
+    // at its bare image base, which no section covers.
+    let entry = file.entry();
+    let landed = (entry != 0).then(|| {
+        file.sections()
+            .find(|sec| sec.size() != 0 && entry >= sec.address() && entry - sec.address() < sec.size())
+    });
+    match landed.flatten() {
+        Some(sec) => CodeEvidence::EntryPointOnly {
+            entry,
+            section: match sec.name() {
+                Ok(name) => format!("section {name}"),
+                Err(_) => "a section".to_string(),
+            },
+        },
+        None => CodeEvidence::None,
+    }
 }
+
+
 
 // --- output rendering --------------------------------------------------------
 
@@ -2465,7 +2521,7 @@ mod discovery_tests {
     #[test]
     fn an_image_with_no_code_keeps_its_honest_empty_answer() {
         let bytes = data_only_object();
-        assert!(!image_has_executable_content(&bytes));
+        assert!(matches!(classify_code_evidence(&bytes), CodeEvidence::None));
         let path = temp_image("dataonly", &bytes);
         assert_eq!(zero_discovery_error(path.to_str().unwrap()), None);
         std::fs::remove_file(path).expect("remove the discovery fixture");
@@ -2475,8 +2531,33 @@ mod discovery_tests {
     /// found nothing in it still failed.
     #[test]
     fn an_unparseable_image_is_still_a_failure() {
-        assert!(image_has_executable_content(b"not an object file at all"));
-        assert!(image_has_executable_content(&[]));
+        assert!(matches!(
+            classify_code_evidence(b"not an object file at all"),
+            CodeEvidence::Flagged
+        ));
+        assert!(matches!(classify_code_evidence(&[]), CodeEvidence::Flagged));
+    }
+
+    /// The packer shape: nothing flagged executable anywhere, and the entry
+    /// point in one of those data sections. Reporting `count: 0` in a
+    /// successful run's voice there is the thing this must not do — the image
+    /// says where execution starts, so the run failed.
+    #[test]
+    fn an_entry_point_in_a_data_section_is_still_executable_content() {
+        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../kuna-analysis/tests/fixtures/pe_datasection_entry_i386.exe");
+        let bytes = std::fs::read(&fixture).expect("the fixture is checked in");
+        let CodeEvidence::EntryPointOnly { entry, section } = classify_code_evidence(&bytes) else {
+            panic!("an all-data PE with an entry point is not the honest empty case");
+        };
+        assert_eq!(entry, 0x402001);
+        assert_eq!(section, "section .stub");
+
+        let message = zero_discovery_error(fixture.to_str().unwrap())
+            .expect("an image that declares an entry point and yielded nothing is a failure");
+        assert!(message.contains("no functions"), "{message}");
+        assert!(message.contains("0x402001"), "{message}");
+        assert!(message.contains("--define-function"), "{message}");
     }
 
     /// The checked-in x86-64 fixture the acceptance probes use: real code, real
@@ -2487,7 +2568,7 @@ mod discovery_tests {
         let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../kuna-analysis/tests/fixtures/aif_gap_x86_64");
         let bytes = std::fs::read(fixture).expect("the fixture is checked in");
-        assert!(image_has_executable_content(&bytes));
+        assert!(matches!(classify_code_evidence(&bytes), CodeEvidence::Flagged));
         assert_eq!(detect_packer(&bytes), None);
     }
 
