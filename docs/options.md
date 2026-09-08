@@ -244,6 +244,12 @@ Three tiers:
 | a wrapper around a libc function loses its return value or return type | [`libcsigs`](#libcsigs) |
 | __printf_chk / __fprintf_chk arguments are shifted by the fortify flag | [`libcsigs`](#libcsigs) |
 | an exit or __stack_chk_fail call shows phantom arguments | [`libcsigs`](#libcsigs) |
+| a Windows API call renders with an empty argument list | [`win32sigs`](#win32sigs) |
+| LoadLibraryExW() or CreateFileW() has no arguments but the pushes are visible above it | [`win32sigs`](#win32sigs) |
+| a PE function declares dozens of stack locals that only ever hold outgoing call arguments | [`win32sigs`](#win32sigs) |
+| CALL fall-through addresses are assigned to stack variables | [`win32sigs`](#win32sigs) |
+| a Win32 call's wide string argument renders as a bare 0x... constant | [`win32sigs`](#win32sigs) |
+| calleearity and varargstackargs both on and a Windows API call is still argumentless | [`win32sigs`](#win32sigs) |
 | a call to a function I named with --define-function still renders with no arguments | [`declaredlibcproto`](#declaredlibcproto) |
 | the argument stores are emitted as raw stack writes on the lines above an argumentless call | [`declaredlibcproto`](#declaredlibcproto) |
 | naming a callee changes the spelling of the call and nothing else | [`declaredlibcproto`](#declaredlibcproto) |
@@ -1172,6 +1178,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On (default) types the arguments of every common libc call, so a caller whose parameter only flows into one gets a concrete type (char *path) instead of the inferred unsigned long, and the callee's return type is known. Flip OFF when a binary links a private library that reuses libc spellings with different signatures and is NOT statically linked (the pass already skips any name the image defines), or to ablate this table's contribution to a type-recovery difference; off is byte-identical to the 27-entry base table alone.
 - **Where / provenance:** P1/external-refinement · kuna · correctness-fix · kuna-analysis-libcsigs
 - **Example:** `option libcsigs off`
+
+### `win32sigs` -- on | off, default `on`
+
+- **Symptoms:** a Windows API call renders with an empty argument list; LoadLibraryExW() or CreateFileW() has no arguments but the pushes are visible above it; a PE function declares dozens of stack locals that only ever hold outgoing call arguments; CALL fall-through addresses are assigned to stack variables; a Win32 call's wide string argument renders as a bare 0x... constant; calleearity and varargstackargs both on and a Windows API call is still argumentless.
+- **What it does:** Seed built-in Win32 API prototypes onto a PE's imported API names, keyed by ENTRY ADDRESS. kuna carried libc signatures (libproto, libcsigs) and not one Windows API signature, so on a PE every LoadLibraryExW/CreateFileW/WriteFile call reached ActionDefaultParams with an empty prototype and its arguments had to be recovered from the call site alone; where that recovery loses -- the ordinary case for an image that writes its outgoing slots well before the call -- the call renders `LoadLibraryExW()` and the argument stores survive as mapped stack locals, along with the return-address push the call itself makes. The table is ~130 WINAPI exports ranked by an import histogram over the 54 PE images of the RE arena corpus (admitted at >= 5 images), plus the resource/loader family (FindResourceW, LoadResource, SizeofResource, EnumResourceTypesW/NamesW) below that bar. Each signature is reduced to the width-stable Ty vocabulary and a declaration with a slot that has no honest spelling (a by-value LARGE_INTEGER, a DWORD64) is rejected rather than approximated. Address is the key because a PE import is TWO FunctionSymbols -- the size-0 IAT slot the engine constant-folds through and the `FF 25` thunk veneer a direct `call` targets -- and the global by-name query used by libproto answers with the slot, which is not the address ActionDefaultParams asks about. Imported names only, so a program's own function sharing a Win32 spelling is never retyped; no CRT (__cdecl) spelling is admitted, because on x86 the PE default model is __stdcall and a locked arity is also the callee's stack pop.
+- **When to flip:** On by default (DIV-141). On, a Windows PE renders `LoadLibraryExW(v1,0,8)` / `WriteFile(h,buf,n,&written,0)` instead of `LoadLibraryExW()` with the pushed values left behind as `v41 = 0x401baf;`-style stack stores. Flip OFF to ablate the table's contribution -- to check whether a Win32 call's arguments came from the parked signature rather than from recovery, or if a target statically links its own function under a Win32 spelling that the imports-only restriction did not catch. Every non-PE target is byte-identical either way.
+- **Where / provenance:** P1/external-refinement · kuna · correctness-fix · repipe-resource-loader-c-retains
+- **Example:** `option win32sigs off`
 
 ### `declaredlibcproto` -- on | off, default `on`
 

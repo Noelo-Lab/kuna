@@ -86,6 +86,14 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // `--option libcsigs on|off` via `engine.rs::analysis_pass_enabled`, so `off`
         // is byte-identical to the base table alone.
         Box::new(crate::protos::kuna_libcsigs::LibcSigsPass),
+        // S1 built-in Win32 API signatures (`win32sigs`): the Windows half of the
+        // `.gdt` stand-in, which nothing in the tree carried. PE/COFF only, and
+        // keyed by ENTRY ADDRESS rather than by name -- a PE import is TWO
+        // FunctionSymbols (the IAT slot and the `FF 25` thunk veneer) and the
+        // global by-name query answers with the slot, which is not the address a
+        // direct `call` resolves to. Registered always; the COMMIT is gated by
+        // `--option win32sigs on|off` via `engine.rs::analysis_pass_enabled`.
+        Box::new(crate::protos::kuna_win32sigs::Win32SigsPass),
         // S1 entry discovery: find function entry points for stripped targets —
         // ELF e_entry, DT_INIT/DT_FINI + INIT_ARRAY/FINI_ARRAY pointer tables,
         // `.eh_frame` FDE pcBegin starts, the x86-64 `_start`→`main` libc-start

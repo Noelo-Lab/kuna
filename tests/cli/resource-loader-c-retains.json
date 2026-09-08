@@ -1,0 +1,38 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "timeout_s": 60,
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "0x401020",
+    "--option",
+    "calleearity",
+    "on",
+    "--option",
+    "varargstackargs",
+    "on"
+  ],
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "LoadLibraryExW\\([^;\\n]*,[^;\\n]*,[^;\\n]*\\);"
+    ],
+    "stdout_absent": [
+      "LoadLibraryExW\\(\\s*\\)"
+    ]
+  },
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/win32sigs_pe_i386.exe",
+    "binary_sha256": "5ee4b01f7352ab14e6c5a54010bd67206f355412421288d737f1a818dfe566d0",
+    "binary_size": 4608,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/win32sigs_pe_i386.exe",
+    "selector": "0x401020",
+    "selector_kind": "addr"
+  },
+  "notes": "Retargeted from the dataset witness (Cube.exe sub_401ba0) to an in-repo PE32 fixture with the same shape: the argument slots are filled well before the call, with an unrelated call in between, so call-site recovery has nothing local to score. Unpatched the call keeps one argument; with the built-in Win32 signature on the import THUNK it is LoadLibraryExW(L\"kernel32.dll\",NULL,8)."
+}

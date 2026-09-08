@@ -1040,6 +1040,9 @@ pub struct Architecture {
     pub analysis_libproto: bool,
     /// (kuna) Gate the measured libc signature extension (`libcsigs`); default on.
     pub analysis_libcsigs: bool,
+    /// (kuna) Gate the built-in Win32 API signature table (`win32sigs`); default
+    /// on.  PE/COFF only; the facts are keyed by entry address, not by name.
+    pub analysis_win32sigs: bool,
     /// (kuna) Gate the built-in libc signature lookup for a function name the
     /// operator DECLARED (`declaredlibcproto`); default on.  Read at declaration
     /// time by `ConsoleProgram::declare_function`, not by an analysis pass.
@@ -1968,6 +1971,7 @@ impl Architecture {
             analysis_peimportcall: false,
             analysis_libproto: false,
             analysis_libcsigs: false,
+            analysis_win32sigs: false,
             analysis_declaredlibcproto: false,
             analysis_unmappedentry: false,
             analysis_ppclocalentry: false,
@@ -2197,6 +2201,8 @@ impl Architecture {
         self.analysis_libproto = true;
         // (kuna) DIV-65 measured libc signature extension — default-ON.
         self.analysis_libcsigs = true;
+        // (kuna) DIV-141 built-in Win32 API signature table -- default-ON.
+        self.analysis_win32sigs = true;
         // (kuna) DIV-139 declared-name libc prototype lookup -- default-ON.
         self.analysis_declaredlibcproto = true;
         self.analysis_strings = true;
@@ -2706,6 +2712,7 @@ impl Architecture {
             "peimportcall" => on_off!(analysis_peimportcall, "PE import-call binding"),
             "libproto" => on_off!(analysis_libproto, "Library-prototype analysis pass"),
             "libcsigs" => on_off!(analysis_libcsigs, "Measured libc signature extension"),
+            "win32sigs" => on_off!(analysis_win32sigs, "Built-in Win32 API signature table"),
             "declaredlibcproto" => {
                 on_off!(analysis_declaredlibcproto, "Declared-name libc prototype lookup")
             }

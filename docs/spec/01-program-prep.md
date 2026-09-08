@@ -1049,6 +1049,37 @@ moves.
   a leading `int flag` before the format string, `__fprintf_chk` a `FILE *` and a
   flag, so treating either as its plain namesake would shift every argument of the
   most frequent call in the corpus.
+- **(kuna) Win32 API signatures** (`win32sigs`,
+  `decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_win32sigs.rs (Win32SigsPass)`):
+  the Windows half of the same `.gdt` stand-in, which the tree did not carry at all.
+  A PE's `LoadLibraryExW` / `CreateFileW` / `WriteFile` therefore reached
+  `ActionDefaultParams` with an empty prototype and its arguments had to come from
+  the call site alone; where that recovery loses — the ordinary case for an image
+  that fills its outgoing slots well before the call — the call renders
+  `LoadLibraryExW()` and the argument stores survive as mapped stack locals, along
+  with the return-address push the CALL itself makes. Which names the table carries
+  was measured the same way the libc one was: an import histogram over the PE images
+  of the RE arena corpus, admitting a name at five or more images, plus the
+  resource/loader family below that bar because it is the family the defect was
+  reported against. The reduction rule is the one above, with the Windows spellings
+  named — handles and `LPVOID` are `void *`, `DWORD`/`UINT`/`LCID` are unsigned
+  4-byte, `BOOL`/`LONG` signed 4-byte, `SIZE_T` pointer-width, `LPCSTR` a `char *`,
+  `LPCWSTR` a `wchar_t *` at the compiler spec's `wchar_size`, `LPDWORD` an
+  `unsigned int *` — and a declaration with a slot that has no honest spelling is
+  rejected, which is why `SetFilePointerEx` and the `RtlVirtualUnwind` family are
+  absent. Two things are specific to Windows. The **arity** is load-bearing beyond
+  typing: the x86 PE default prototype model is `__stdcall` with an unknown
+  `extrapop`, so a locked N-parameter prototype also states that the callee pops
+  `4 + 4N` bytes, which is why the table admits only callee-cleans `WINAPI` exports
+  and no `__cdecl` CRT spelling. And the prototypes are parked by **entry address**,
+  not by name: a PE import is registered as two `FunctionSymbol`s — the size-0 IAT
+  slot the engine constant-folds through and the `FF 25` thunk veneer a direct
+  `call` targets — the global by-name query answers with the slot, and
+  `ActionDefaultParams` asks about whichever one the call resolved to, so a by-name
+  park is a silent no-op on exactly the calls that need it. The pass emits one
+  address-keyed prototype per name the import resolver reports, which lands on both.
+  PE/COFF only, and imported names only, so an image that defines its own function
+  under a Win32 spelling is never retyped.
 - **(kuna) Declared names** (`declaredlibcproto`,
   `decompiler/crates/kuna-analysis/src/analyzers/protos/mod.rs (declared_libc_prototype)`,
   consulted from `decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::declare_function)`):

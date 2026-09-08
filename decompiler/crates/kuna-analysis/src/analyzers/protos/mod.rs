@@ -35,6 +35,7 @@ use kuna_decomp::fspec::PrototypePieces;
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
 
 pub mod kuna_libcsigs;
+pub mod kuna_win32sigs;
 
 /// Port of `ApplyDataArchiveAnalyzer`: seed built-in libc prototypes onto matching
 /// FunctionSymbols so call arguments get typed.
@@ -64,6 +65,10 @@ enum Ty {
     CharPtrPtr,
     /// `int *`.
     IntPtr,
+    /// `unsigned int *` (`LPDWORD`, `PDWORD`).
+    UIntPtr,
+    /// `wchar_t *` (`LPWSTR` / `LPCWSTR`), at the compiler spec's `wchar_size`.
+    WCharPtr,
     /// `void *` (also used for `FILE *`, opaque handles).
     VoidPtr,
 }
@@ -144,6 +149,14 @@ fn build_ty(t: Ty, types: &dyn TypeFactory, word_size: uint4) -> KunaResult<Rc<D
         Ty::IntPtr => {
             let i = types.get_base(4, type_metatype::TYPE_INT)?;
             types.get_type_pointer(ptr, i, word_size)
+        }
+        Ty::UIntPtr => {
+            let u = types.get_base(4, type_metatype::TYPE_UINT)?;
+            types.get_type_pointer(ptr, u, word_size)
+        }
+        Ty::WCharPtr => {
+            let w = types.get_type_char(types.get_size_of_wchar())?;
+            types.get_type_pointer(ptr, w, word_size)
         }
         Ty::VoidPtr => {
             let v = types.get_type_void()?;
