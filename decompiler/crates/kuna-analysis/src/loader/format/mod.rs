@@ -60,6 +60,12 @@ pub struct HeaderRegion {
     pub vma: u64,
     /// How many bytes from file offset 0 are mapped there.
     pub len: usize,
+    /// Does the region hold code? The header page is data on every image a
+    /// compiler produces, and the map records it as such. It is code when the
+    /// image itself says so — when `AddressOfEntryPoint` points into it, which
+    /// is a packer laying its stub in the slack after the section table. See
+    /// [`crate::loader::pe_headers::declared_entry_in_header`].
+    pub code: bool,
 }
 
 /// Which object format an [`ObjectFormat`] implements.

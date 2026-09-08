@@ -886,7 +886,11 @@ Behaviors specific to `decompile-all`:
   covers a packed PE that keeps its whole import directory inside its one
   `CODE|EXECUTE` section, where the section flags cannot tell the two apart.
   Analysis-discovered entries inside executable sections join
-  this default set. A name that identifies entries at several addresses is rejected as
+  this default set, and so does a PE entry point declared inside the image's own
+  header page — the `SizeOfHeaders` bytes before the first section, where a
+  packer is free to lay its stub and where no section flag speaks for the bytes
+  at all. Nothing else in a header page is decompiled; an entry in a section the
+  image flags non-executable still needs the `--define-function` above. A name that identifies entries at several addresses is rejected as
   ambiguous instead of selecting the first. Loaders without section metadata retain the
   complete inventory. A `--define-function` declaration outranks both tests, so an
   address the import directory claims can still be decompiled on request.

@@ -114,3 +114,67 @@ fn a_non_pe_has_no_header_page() {
     assert!(object::File::parse(elf.as_slice()).is_ok());
     assert!(region_of(&elf).is_none());
 }
+
+/// `AddressOfEntryPoint`, at optional-header offset 16.
+const ENTRY_OFF: usize = DOS + 4 + 20 + 16;
+
+fn with_entry(mut bytes: Vec<u8>, rva: u32) -> Vec<u8> {
+    bytes[ENTRY_OFF..ENTRY_OFF + 4].copy_from_slice(&rva.to_le_bytes());
+    bytes
+}
+
+/// The header page of everything a compiler emits is data: the entry is in a
+/// section, so nothing declares the MZ/PE bytes to be code.
+#[test]
+fn a_compiler_header_page_is_data() {
+    let bytes = pe(FILE_ALIGN, 0x1000);
+    let region = region_of(&bytes).expect("a PE has a header page");
+    assert!(!region.code, "no entry in the header page, so no code in it");
+    let file = object::File::parse(bytes.as_slice()).expect("fixture parses");
+    assert_eq!(header_entry(&file, &bytes), None);
+}
+
+/// The packer case: `AddressOfEntryPoint` lands in the header page, which is
+/// the image declaring those bytes to be code.
+#[test]
+fn an_entry_in_the_header_page_is_code() {
+    let bytes = with_entry(pe(FILE_ALIGN, 0x1000), 0x154);
+    let region = region_of(&bytes).expect("a PE has a header page");
+    assert!(region.code, "the declared entry is inside the region");
+    let file = object::File::parse(bytes.as_slice()).expect("fixture parses");
+    assert_eq!(header_entry(&file, &bytes), Some(IMAGE_BASE + 0x154));
+}
+
+/// `AddressOfEntryPoint` 0 means "no entry point", and `object` reports it as
+/// `ImageBase` — which is inside the header page. The `MZ` signature is not a
+/// function.
+#[test]
+fn a_zero_entry_rva_declares_nothing() {
+    let bytes = with_entry(pe(FILE_ALIGN, 0x1000), 0);
+    let region = region_of(&bytes).expect("a PE has a header page");
+    assert!(!region.code, "entry RVA 0 is the no-entry encoding");
+    let file = object::File::parse(bytes.as_slice()).expect("fixture parses");
+    assert_eq!(header_entry(&file, &bytes), None);
+}
+
+/// An entry past the header page — the ordinary case, restated on the boundary
+/// the clamp produces.
+#[test]
+fn an_entry_past_the_header_page_is_not_in_it() {
+    let bytes = with_entry(pe(FILE_ALIGN, 0x1000), FILE_ALIGN);
+    assert!(!region_of(&bytes).expect("a PE has a header page").code);
+}
+
+/// The vendored twin of the reported keygenme, end to end.
+#[test]
+fn the_packed_witness_declares_its_header_page_code() {
+    let bytes = std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/pe_headercode_i386.exe"
+    ))
+    .expect("vendored PE fixture");
+    let file = object::File::parse(bytes.as_slice()).expect("fixture parses");
+    let region = header_region(&file, &bytes).expect("a PE has a header page");
+    assert!(region.code);
+    assert_eq!(header_entry(&file, &bytes), Some(0x40_0154));
+}
