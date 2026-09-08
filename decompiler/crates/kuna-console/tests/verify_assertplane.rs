@@ -620,3 +620,41 @@ fn a_qualified_param_accepts_an_entry_address_as_its_function() {
         .unwrap_or_else(|| panic!("no call to open:\n{code}"));
     assert!(call.contains("open(a0)"), "the declared RDI argument is missing: {call}");
 }
+
+/// A parameter may be named after a type
+/// (`docs/re-needs/prototype-parser-rejects-valid.md`).  `code` is one of the
+/// core types every compiler spec registers, so the lexer handed it to the
+/// parser as `TYPE_NAME` and `unsigned char *code` was a syntax error with the
+/// caret on the name -- while the same declaration with the parameter renamed
+/// applied.  Every interned name is in that class: the core types, a tag or
+/// typedef declared earlier in the same run, and on a `-g` binary every DWARF
+/// type name the program uses.
+#[test]
+fn a_parameter_named_after_a_type_reaches_the_emitted_c() {
+    let Some((code, report)) = decompile_with(vec![
+        directive(
+            "prototype authenticate unsigned int authenticate(char *code,char *pass)",
+            Body::Prototype {
+                func: TARGET.into(),
+                decl: "unsigned int authenticate(char *code,char *pass)".into(),
+            },
+        ),
+        // A function-pointer parameter named after a type: the same name
+        // position, reached through the parenthesised declarator.  It needs a
+        // real prototype model behind the factory, which is why it is pinned
+        // here rather than in the grammar unit tests.
+        directive(
+            "prototype read int read(int4 (*code)(int4 n))",
+            Body::Prototype { func: "read".into(), decl: "int read(int4 (*code)(int4 n))".into() },
+        ),
+    ]) else {
+        return;
+    };
+    all_applied(&report);
+    let sig = code
+        .lines()
+        .find(|l| l.contains("authenticate("))
+        .unwrap_or_else(|| panic!("no signature:\n{code}"));
+    assert!(sig.contains("char *code"), "the declared name did not reach the C: {sig}");
+    assert!(sig.contains("char *pass"), "the second parameter moved too: {sig}");
+}

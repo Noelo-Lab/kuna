@@ -291,6 +291,19 @@ kuna decompile ./a.out sub_140004dcc --json \
   --assert 'prototype VirtualAlloc void *VirtualAlloc(void *p,unsigned int n,unsigned int a,unsigned int b)'
 ```
 
+**A parameter may be named after a type.** kuna interns a type called `code`,
+and a `-g` binary interns every DWARF type name it uses, so the name you want
+for a parameter is often already a type name; the declaration still reads it as
+the parameter's name, exactly as C does:
+
+```bash
+kuna decompile ./graphy 0x1005350 --addr --json \
+  --assert 'prototype 0x1005350 unsigned long vm(unsigned char *code,unsigned int index,void *ctx)'
+```
+
+Only the parenthesised form stays a type: `int4 (code)` is a function of one
+`code`, which is what C reads it as.
+
 A tag you declared earlier in the same run is usable as a type, in the `struct
 X` / `union X` / `enum X` spelling as well as by bare name — including as a
 return type, which is how a function returning a small struct by value gets its

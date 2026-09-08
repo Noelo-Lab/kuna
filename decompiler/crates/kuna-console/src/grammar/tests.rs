@@ -1080,3 +1080,138 @@ fn a_convention_on_a_function_pointer_parameter_parses_as_it_did_without_one() {
         proto_model("extern int4 f(int4 (*cb)(int4));", &win_models())
     );
 }
+
+// ===========================================================================
+// (kuna) A declarator named after a type
+// ===========================================================================
+
+/// [`factory_sized`] plus `code`, the core type every compiler spec registers
+/// for a function body.  It is also an ordinary English word, so it is the
+/// name an agent reaches for when it declares an interpreter's instruction
+/// stream — and the collision is what made the declaration unparseable.
+fn factory_with_code() -> TypeFactoryImpl {
+    let f = factory_sized(8);
+    f.set_core_type("code", 1, meta::TYPE_CODE, false).unwrap();
+    f.cache_core_types().unwrap();
+    f
+}
+
+#[test]
+fn a_pointer_parameter_may_be_named_after_a_type() {
+    let f = factory_with_code();
+    let p = parse_protopieces(
+        "extern unsigned long vm(unsigned char *code,unsigned int index,void *ctx);",
+        &f,
+        org(),
+    )
+    .expect("`code` is a parameter name here, not a second type specifier");
+    assert_eq!(p.name, "vm");
+    assert_eq!(p.innames, vec!["code", "index", "ctx"]);
+    assert_eq!(p.intypes[0].get_ptr_to().unwrap().get_name(), "uint1");
+    assert_eq!(p.intypes[1].get_name(), "uint4");
+    assert_eq!(p.intypes[2].get_metatype(), meta::TYPE_PTR);
+}
+
+#[test]
+fn a_value_parameter_may_be_named_after_a_type() {
+    // Without the pointer the collision lands in `declaration_specifiers`
+    // instead of the declarator, and used to read "Multiple type specifiers".
+    let f = factory_with_code();
+    for (decl, want_type) in
+        [("unsigned char code", "uint1"), ("int4 code", "int4"), ("char *code", "char")]
+    {
+        let (ty, name) = parse_type(decl, &f, org()).unwrap_or_else(|e| {
+            panic!("{decl:?} must parse: {}", e.explain());
+        });
+        let base = ty.get_ptr_to().unwrap_or(ty);
+        assert_eq!(base.get_name(), want_type, "{decl:?}");
+        assert_eq!(name, "code", "{decl:?}");
+    }
+}
+
+#[test]
+fn a_type_named_declarator_works_through_pointers_and_arrays() {
+    // A function-POINTER parameter named after a type needs a factory with a
+    // prototype model behind it, so that half is pinned end-to-end in
+    // `kuna-console/tests/verify_assertplane.rs` instead.
+    let f = factory_with_code();
+    for decl in [
+        "extern int4 f(unsigned char **code);",
+        "extern int4 f(unsigned char *code[4]);",
+        "extern int4 f(unsigned char *code,unsigned char code2);",
+    ] {
+        parse_protopieces(decl, &f, org()).unwrap_or_else(|e| {
+            panic!("{decl:?} must parse: {}", e.explain());
+        });
+    }
+    // ... and in a struct member, where `specifier_qualifier_list` is the
+    // greedy run rather than `declaration_specifiers`.
+    let (ty, _) = parse_type("struct s { unsigned char *code; int4 len; } v", &f, org())
+        .expect("a struct member may be named after a type");
+    assert_eq!(ty.get_metatype(), meta::TYPE_STRUCT);
+    // `org()` is a 4-byte address space, so the pointer and the int4 are 4 each.
+    assert_eq!(ty.get_size(), 8);
+}
+
+#[test]
+fn a_type_name_is_still_a_type_in_type_position() {
+    // The fix only reaches the declarator's NAME; the first specifier of a run
+    // is unchanged, so `code` still names the core type where a type belongs.
+    let f = factory_with_code();
+    let (ty, name) = parse_type("code *p", &f, org()).expect("`code *p` is a pointer to code");
+    assert_eq!(ty.get_ptr_to().unwrap().get_metatype(), meta::TYPE_CODE);
+    assert_eq!(name, "p");
+    let p = parse_protopieces("extern code *j(code c);", &f, org()).expect("code in both slots");
+    assert_eq!(p.intypes[0].get_metatype(), meta::TYPE_CODE);
+    assert_eq!(p.outtype.as_ref().unwrap().get_metatype(), meta::TYPE_PTR);
+}
+
+#[test]
+fn a_parenthesised_type_name_is_still_read_as_a_type() {
+    // `int4 (code)` is ambiguous in C and resolves to the abstract reading -- a
+    // function of one `code`, not a variable named `code`.  Only the
+    // unparenthesised name position moved, so this must not have changed.
+    //
+    // Pinned by outcome rather than by the built type: a function type needs a
+    // prototype model this bare factory has none of, so the function reading is
+    // exactly the one that reports `getTypeCode`.  `int4 (p)` is the contrast --
+    // a parenthesised declarator naming `p`, which builds fine.
+    let f = factory_with_code();
+    let took_the_function_reading = |decl: &str| match parse_type(decl, &f, org()) {
+        Ok((ty, name)) => Err(format!("{}/{name}", ty.get_name())),
+        Err(e) => Ok(e.explain().contains("getTypeCode")),
+    };
+    assert_eq!(took_the_function_reading("int4 (code)"), Ok(true), "`int4 (code)`");
+    assert_eq!(
+        took_the_function_reading("int4 (code)"),
+        took_the_function_reading("int4 (int4)"),
+        "`int4 (code)` must read exactly like the unambiguous abstract spelling"
+    );
+    assert_eq!(
+        took_the_function_reading("int4 (p)"),
+        Err("int4/p".to_string()),
+        "an ordinary identifier in parentheses is still a declarator name"
+    );
+}
+
+#[test]
+fn a_type_name_may_head_an_enumerator() {
+    // `setup_sizes` for the same reason `enum_construction_lands_in_factory`
+    // calls it: the enum width comes from there, and a zero one masks every
+    // auto-assigned constant to the same value.
+    let f = factory_with_code();
+    f.setup_sizes(Some(4), 4, 4);
+    super::parse_c("enum e { code, other };", &f, org(), &[], |_, _| {
+        panic!("a bare enum is not an extern prototype")
+    })
+    .expect("an enum constant may be named after a type");
+    assert!(f.find_by_name("e").unwrap().expect("enum e is interned").is_enum_type());
+}
+
+#[test]
+fn a_type_name_may_end_a_scoped_name() {
+    let f = factory_with_code();
+    let p = parse_protopieces("extern int4 ns::code(int4 a);", &f, org())
+        .expect("a scoped name may end in a type name");
+    assert_eq!(p.name, "ns::code");
+}
