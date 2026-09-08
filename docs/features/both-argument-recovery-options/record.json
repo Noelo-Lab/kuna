@@ -1,0 +1,55 @@
+{
+  "need_id": "both-argument-recovery-options",
+  "track": "quality",
+  "scope": "small",
+  "option": "declaredlibcproto",
+  "div": "DIV-139",
+  "phase": "P1",
+  "module": "decompiler/crates/kuna-analysis/src/analyzers/protos/mod.rs (declared_libc_prototype) + decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::seed_declared_libc_prototype)",
+  "default": "on",
+  "decisions": [
+    "The refuter's overturn is upheld and is the whole diagnosis. Caller-side stack-argument recovery is NOT defeated on the witness: with a prototype declared, the same loop-carried esp accesses yield ptrace(v18[-0xc],v18[-0xb],(void *)v18[-10],(void *)v18[-9]) at every one of the 13 sites. Nothing in stack-arg recovery or the esp/alignment model was touched.",
+    "The refuter's prescription ('a name-to-signature libc table is what flips this acceptance') needed one correction: kuna ALREADY has two such tables (libproto's 27 entries, libcsigs' ~200). What it does not have is a way for a name that is not in the object to reach them. `present_function_names` unions the FUNC symbols with the import resolver, and this image is stripped, statically linked and has no section header table, so the name exists only because --define-function supplied it. The gap is the LOOKUP SEAM, not the table -- plus one missing row.",
+    "Parked by ADDRESS (set_function_prototype_pieces_at), not by name. ActionDefaultParams reads a callee prototype by entry address, and the by-name park queries the global scope only, which answers with the wrong symbol whenever two share a spelling (an import thunk and its IAT slot -- the defect PR #470 half-fixed). --define-function hands us the address outright, so there is no reason to route through a name query.",
+    "Both tables are searched from the declared-name seam, libcsigs' imports-only restriction included. That restriction is about a COINCIDENTAL spelling retyping a function the image defines itself; an operator who declared the entry is not a coincidence. Recorded as a deliberate lift, not an oversight.",
+    "ptrace went into the BASE table rather than the measured extension: the extension's membership rule is a measured frequency bar over the decbench C corpus and ptrace clears neither (0 of 1709 decbench ELFs carry the symbol at all), so adding it there would contradict that module's stated selection rule. The base table is the one whose documented job is 'common libc signatures, conservative and correct', and it already grew this way once (setlocale, docs/features/setlocale-rettype).",
+    "The 4-slot signature is not written from memory, which this module forbids: glibc DECLARES `long ptrace(enum __ptrace_request, ...)` and its own wrapper (sysdeps/unix/sysv/linux/ptrace.c) fetches pid_t, void *, void * after the request with va_arg. Those three plus the request are the four slots, and every one is width-stable on ILP32 and LP64.",
+    "The declaration seam runs BEFORE the assertion plane (the generated console script emits `function bounds` then `map prototype`), so an explicit --assert prototype on the same function still wins -- verified: `--assert 'prototype ptrace int ptrace(int a)'` renders ptrace(0) on the witness.",
+    "Not a tooling-track change despite living in kuna-console: it moves emitted C, so it ships behind a phases.toml option with a DIV row. Default ON because the acceptance probe passes no --option, and because the flip is structurally inert without a declaration.",
+    "A stages XML IS possible here, contrary to the usual analysis-tier rule: `function bounds ... as NAME` is a console command and the XML `<com>` plane reaches it over a plain <bytechunk>, no object file needed. The two-pass case is therefore a real gate test, not just a cargo test.",
+    "SALVAGE (round 10, second session): the work was committed but unpushed and never gated against current main. Rebased onto 81ea1078 with zero conflicts and re-ran every gate. One real defect was found and fixed in the rebase check: the DIV-139 registry row had been appended to the SAME LINE as the sibling's DIV-138 row, so it would not have rendered as a table row and mergecheck read it as DIV-138 being deleted. docs/history.md is now purely additive (1 insertion, 0 deletions) vs origin/main."
+  ],
+  "gates": {
+    "make test": "PARITY OK 675/675 (0 datatest assertions changed)",
+    "make test-stages": "PARITY OK 702/702",
+    "make rust-test": "green on the rebased tree: 378 suites, 6,135 passed, 0 failed (run with `env -u KUNA_DECOMP_TEST`; the repipe launcher exports it at this worktree's own decomp_test_dbg, which CI does not do)",
+    "make check-spec": "OK (strict)",
+    "make test-cli": "95/95 (94 on main + the promoted probe)",
+    "kuna catalog --check": "catalog OK",
+    "known_env_failure": "verify_w10_proto_unlock::w10_proto_unlock_const_return_collapses_no_tied_roundtrip fails ONLY with KUNA_DECOMP_TEST exported (the repipe launcher points it at kuna's own decomp_test_dbg). Falsified here: green under `env -u KUNA_DECOMP_TEST`. CI does not export it."
+  },
+  "speed": {
+    "method": "interleaved, median of 11, on the dataset witness; the arms are byte-identical because the declared name (`mystery_stub`) is one NEITHER table knows, so only the lookup itself is timed",
+    "lookup_only_ms_off": 176.94,
+    "lookup_only_ms_on": 183.02,
+    "lookup_only_delta_pct": 3.43,
+    "budget_pct": 5.0,
+    "within_budget": true,
+    "with_the_signature_parked": "+39.6% on the witness (322.65 -> 450.56 ms) -- that is not the lookup, it is the argument recovery the parked signature enables at 15 call sites; the two arms emit different C, so the comparison is 'no answer fast' against 'the answer'",
+    "no_declaration": "scripts.pipeline.timeit on the witness with no declaration at all: off 450.16 ms, on 428.12 ms, -4.9% (n=9) -- pure noise, the option cannot fire"
+  },
+  "sweep": {
+    "method": "two measurements, because the PR has two halves with disjoint reach",
+    "console_seam": "kuna decompile-all in both arms (--option declaredlibcproto off vs default) over dataset images. The seam is ConsoleProgram::declare_function, whose only callers are --define-function, --assert function and the console `function bounds` command, so a decompile-all with no declaration cannot reach it; the arms are expected byte-identical and the run confirms it.",
+    "ptrace_table_row_reach": "the base-table row can only touch an image that carries a `ptrace` FUNC symbol. Scanned: 1709 decbench ELFs -> 0 hits; 94 RE-dataset ELFs -> 16 hits, of which 14 are UND imports (which is exactly what libproto is for) and 2 are definitions (a libc.so and one static image).",
+    "deviation": "the ptrace row's effect on those 16 was measured by REACH rather than by a two-build before/after diff -- the row is only reachable through the already-default-ON libproto pass, and a per-entry ablation does not exist. Stated here rather than glossed."
+  },
+  "promoted_probe": {
+    "path": "tests/cli/both-argument-recovery-options.json",
+    "retargeted_from": "crackmes.one 5ab77f5c33c5d40ad448c615 bin/trace-p.zip.__x/crackme sub_80483b0 (dataset)",
+    "retargeted_to": "decompiler/crates/kuna-analysis/tests/fixtures/declaredlibcproto_i386 0x8049000 (vendored)",
+    "why": "the need's acceptance stays on the dataset witness so later B_VERIFY runs keep testing the real image; CI has no dataset, so this is the twin",
+    "verified_on_witness": "scripts.repipe.verify --need both-argument-recovery-options --json reports acceptance PASS (1/1 closed) on the dataset image",
+    "target_binding": "the need's probe and acceptance carried NO target block, so neither could resolve {{BIN}} and the acceptance was unrunnable. Bound both to the dataset challenge (bin/trace-p.zip.__x/crackme); acceptance_id a-804be55f4379 is unchanged, since the hash is over cmd+expect only."
+  }
+}

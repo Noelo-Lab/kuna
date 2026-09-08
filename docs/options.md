@@ -244,6 +244,11 @@ Three tiers:
 | a wrapper around a libc function loses its return value or return type | [`libcsigs`](#libcsigs) |
 | __printf_chk / __fprintf_chk arguments are shifted by the fortify flag | [`libcsigs`](#libcsigs) |
 | an exit or __stack_chk_fail call shows phantom arguments | [`libcsigs`](#libcsigs) |
+| a call to a function I named with --define-function still renders with no arguments | [`declaredlibcproto`](#declaredlibcproto) |
+| the argument stores are emitted as raw stack writes on the lines above an argumentless call | [`declaredlibcproto`](#declaredlibcproto) |
+| naming a callee changes the spelling of the call and nothing else | [`declaredlibcproto`](#declaredlibcproto) |
+| calleearity and varargstackargs both on and a stripped statically linked libc call is still argumentless | [`declaredlibcproto`](#declaredlibcproto) |
+| a declared ptrace/read/write/open call loses every argument | [`declaredlibcproto`](#declaredlibcproto) |
 | string constants render as raw addresses or unnamed data instead of quoted char[N] literals | [`strings`](#strings) |
 | no data symbols at ascii runs in rodata | [`strings`](#strings) |
 | a wide Windows API argument renders as a one-character string literal | [`widestrings`](#widestrings) |
@@ -1162,6 +1167,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On (default) types the arguments of every common libc call, so a caller whose parameter only flows into one gets a concrete type (char *path) instead of the inferred unsigned long, and the callee's return type is known. Flip OFF when a binary links a private library that reuses libc spellings with different signatures and is NOT statically linked (the pass already skips any name the image defines), or to ablate this table's contribution to a type-recovery difference; off is byte-identical to the 27-entry base table alone.
 - **Where / provenance:** P1/external-refinement · kuna · correctness-fix · kuna-analysis-libcsigs
 - **Example:** `option libcsigs off`
+
+### `declaredlibcproto` -- on | off, default `on`
+
+- **Symptoms:** a call to a function I named with --define-function still renders with no arguments; the argument stores are emitted as raw stack writes on the lines above an argumentless call; naming a callee changes the spelling of the call and nothing else; calleearity and varargstackargs both on and a stripped statically linked libc call is still argumentless; a declared ptrace/read/write/open call loses every argument.
+- **What it does:** Answer a DECLARED function name out of the built-in libc signature tables, so naming a callee also gives it a prototype. `libproto` and `libcsigs` match a name the IMAGE carries -- its FUNC symbols, its imports -- which is exactly the evidence a stripped, statically linked target does not have. There the name exists only because the operator supplied it (`--define-function 0x8048968=ptrace`, `--assert 'function 0x8048968 ptrace'`), and until now that named the entry and nothing more: the call sites still rendered `ptrace()` with no arguments, because the callee's arity has to come from somewhere and a glibc varargs wrapper (`long ptrace(enum __ptrace_request, ...)`, the rest fetched with `va_arg`) cannot yield it to any amount of body analysis. With this on, a declared name is looked up in both tables and the matching signature is parked on the DECLARED ENTRY ADDRESS -- the key `ActionDefaultParams` reads back per call site, and the only key that survives two symbols sharing a name. The imports-only restriction the `libcsigs` table carries is deliberately lifted here: it exists so a coincidental spelling cannot retype a function the image defines itself, and that is a judgement about evidence, which is different once a human or an agent has identified the entry outright.
+- **When to flip:** On by default: naming a callee is the one thing an RE agent always does, and a name that buys no prototype buys almost nothing. The shape that needs it is a stripped or packed image where argument recovery has nothing to work from -- the tell is a call rendered `f()` with the pushed argument slots visible as raw stores on the lines above it (`*(int *)(esp - 4) = ...` four times, then `v += ptrace();`). Structurally inert unless a run declares a function name (`--define-function START=NAME`, `--assert function`, console `function bounds ... as NAME`), so it is byte-identical over both parity corpora, and inert again unless that name is one of the ~230 the built-in tables carry. Flip OFF when a target defines its own function that merely shares a libc spelling and the declaration is about that function, not the library one -- or to check whether the parked signature, rather than recovery, is what moved a call's arguments. An explicit `--assert prototype` on the same function still wins: it is applied after the declaration.
+- **Where / provenance:** P1/external-refinement · kuna · correctness-fix · kuna-analysis-declaredlibcproto
+- **Example:** `kuna decompile ./crackme sub_80483b0 --define-function 0x8048968=ptrace`
 
 ### `strings` -- on | off, default `on`
 

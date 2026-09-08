@@ -55,7 +55,7 @@ pub struct LibcSigsPass;
 
 /// The measured extension to the base `LIBC` table. Disjoint from it by
 /// construction (`table_is_disjoint_from_base`).
-const LIBC_EXT: &[(&str, Sig)] = &[
+pub(super) const LIBC_EXT: &[(&str, Sig)] = &[
     // stdio.h
     ("__fpending", Sig { ret: Ty::Size, params: &[Ty::VoidPtr], vararg: -1 }),
     ("__fpurge", Sig { ret: Ty::Void, params: &[Ty::VoidPtr], vararg: -1 }),

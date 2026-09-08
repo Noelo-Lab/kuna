@@ -1627,10 +1627,40 @@ impl ConsoleProgram {
             }
         };
         let vma = addr.get_offset();
-        self.register_symbol(&name, addr);
+        self.register_symbol(&name, addr.clone());
         self.declare_extent(vma, size);
         self.declared_entries.insert(vma);
+        if explicit.is_some() {
+            self.seed_declared_libc_prototype(&name, &addr);
+        }
         Ok(name)
+    }
+
+    /// (kuna `declaredlibcproto`) Park the built-in libc signature for `name` on the
+    /// FunctionSymbol at `addr`, when the tables know the name.
+    ///
+    /// The load-time prototype passes match names the image carries, so a stripped
+    /// target that only has the name because the operator declared it gets nothing
+    /// from them and its call sites keep rendering `f()`. The park is ADDRESS-keyed:
+    /// `ActionDefaultParams` reads a callee prototype by entry address, and the
+    /// by-name query answers out of the global scope, which is the wrong symbol
+    /// whenever two share a spelling (an import thunk and its IAT slot).
+    ///
+    /// A silent no-op when the option is off, when neither table knows the name, or
+    /// when the declaration named an entry that already carries a locked prototype
+    /// from a stronger source.
+    fn seed_declared_libc_prototype(&mut self, name: &str, addr: &Address) {
+        if !self.arch().analysis_declaredlibcproto {
+            return;
+        }
+        let (_addr_size, word_size) = self.arch().data_org();
+        let pieces = {
+            let types = self.arch().types();
+            kuna_analysis::protos::declared_libc_prototype(name, types, word_size)
+        };
+        if let Some(pieces) = pieces {
+            self.arch_mut().set_function_prototype_pieces_at(addr, pieces);
+        }
     }
 
     /// (kuna) Build the `map addr`-shaped stack-symbol specs for the DWARF stack

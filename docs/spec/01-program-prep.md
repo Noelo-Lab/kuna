@@ -1020,6 +1020,30 @@ moves. `kuna strings --termination nul` is that same view as a report.
   a leading `int flag` before the format string, `__fprintf_chk` a `FILE *` and a
   flag, so treating either as its plain namesake would shift every argument of the
   most frequent call in the corpus.
+- **(kuna) Declared names** (`declaredlibcproto`,
+  `decompiler/crates/kuna-analysis/src/analyzers/protos/mod.rs (declared_libc_prototype)`,
+  consulted from `decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::declare_function)`):
+  both passes above match a name the **image** carries — its FUNC symbols, its
+  imports — which is exactly the evidence a stripped, statically linked target does
+  not have. There the name exists only because an operator supplied it
+  (`--define-function 0x8048968=ptrace`, `--assert 'function 0x8048968 ptrace'`,
+  console `function bounds … as ptrace`), and a name that buys no prototype buys
+  almost nothing: the callee's arity has to come from somewhere, and a varargs
+  wrapper cannot yield it to any amount of body analysis, so the call sites keep
+  rendering `ptrace()` with the pushed argument slots stranded as raw stores on the
+  lines above. So a declared name is looked up in both tables at declaration time
+  and the matching signature parked on the **declared entry address** — the key
+  `ActionDefaultParams` reads a callee prototype back by, and the only key that
+  survives two symbols sharing a spelling. The imports-only restriction the measured
+  table carries is deliberately lifted here: it exists so a *coincidental* spelling
+  cannot retype a function the image defines itself, which is a judgement about
+  evidence, and the evidence is different once a human or an agent has identified
+  the entry outright. The lookup runs after the declaration is registered and before
+  any assertion is applied, so an explicit `--assert prototype` on the same function
+  still wins. The base table carries `ptrace` for this reason: glibc *declares* it
+  `long ptrace(enum __ptrace_request, …)` and fetches the rest with `va_arg`, so the
+  four fixed slots — glibc's own, and the call form `ptrace(2)` documents — can only
+  come from a table.
 - **DWARF** (`dwarf`, the `DWARFAnalyzer` port,
   `decompiler/crates/kuna-analysis/src/analyzers/dwarf/mod.rs (DwarfPass)`), the
   parser wholesale-substituted by `gimli` (the same dependency-substitution loss as

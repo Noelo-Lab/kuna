@@ -368,6 +368,10 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // 27-entry `libproto` table does not carry, ranked out of the frozen decbench C
     // corpus and reduced from the platform headers. Imported names only.
     "libcsigs",
+    // (kuna) The built-in libc signature lookup for a name the OPERATOR declared
+    // (`--define-function 0x8048968=ptrace`), which no load-time pass can reach: on a
+    // stripped image the name exists only because the caller supplied it.
+    "declaredlibcproto",
     "strings",
     // (kuna) The 2-byte (UTF-16LE) width of the string-literal pass -- Ghidra's
     // `StringsAnalyzer.allCharWidths`, which kuna's 1-byte port left as a documented

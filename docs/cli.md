@@ -204,6 +204,15 @@ already named keeps its name unless you supply one); `end` is optional too — a
 `--define-function 0x4014a0` asserts an entry and leaves the extent natural.
 Addresses are hexadecimal with or without `0x`.
 
+A name that one of kuna's built-in libc signature tables knows also carries that
+signature to the entry, so declaring the callee gives its call sites a prototype
+and not just a spelling — `--define-function 0x8048968=ptrace` on a stripped,
+statically linked image turns `ptrace()` into
+`ptrace(v18[-0xc],v18[-0xb],(void *)v18[-10],(void *)v18[-9])`. The load-time
+prototype passes cannot reach this case: they match a name the *image* carries,
+and a stripped image carries none. An explicit `--assert prototype` on the same
+function still wins, and `--option declaredlibcproto off` declares the name alone.
+
 A declared `end` that cuts real control flow is reported rather than silently
 truncating the body: the function carries a `// warn: Function flows out of bounds`
 comment on its prototype and one at each cut edge, naming the address the edge left
