@@ -9,8 +9,9 @@
 //! It is a reimplementation, not a wrapper: `upx -d` cannot be assumed present
 //! on a machine running a release `kuna`, and shelling out to a packer to look
 //! at a hostile binary is not a thing an analyzer should do. The compressed
-//! stream is UCL NRV2B/NRV2D/NRV2E ([`nrv`]) under a per-block branch filter
-//! ([`filter`]); the reconstruction walk lives in `elf`.
+//! stream is UCL NRV2B/NRV2D/NRV2E ([`nrv`]) or LZMA ([`lzma`]) under a
+//! per-block branch filter ([`filter`]); the reconstruction walk lives in
+//! `elf`.
 //!
 //! # Refusing beats guessing
 //!
@@ -23,9 +24,11 @@
 //! and to total exactly the original file size the header declares.
 //!
 //! Ported from UPX (GPL-2.0-or-later): `src/p_lx_elf.cpp`, `src/p_unix.cpp`,
-//! `src/packhead.cpp`, `src/filter/*.h`, and UCL's `src/n2{b,d,e}_d.c`.
+//! `src/packhead.cpp`, `src/filter/*.h`, and UCL's `src/n2{b,d,e}_d.c`; the
+//! LZMA back-end follows the public-domain LZMA SDK reference decoder.
 
 pub mod filter;
+pub mod lzma;
 pub mod nrv;
 
 mod elf;
@@ -416,6 +419,59 @@ mod tests {
         // resolves only if the ctok unfilter ran.
         assert_eq!(&out.bytes[0x2580..0x2586], &[0xf3, 0x0f, 0x1e, 0xfa, 0x31, 0xed]);
         assert_eq!(&out.bytes[0x2598..0x259f], &[0x48, 0x8d, 0x3d, 0xb5, 0x24, 0x00, 0x00]);
+    }
+
+    /// The LZMA witness (see its `.provenance` sidecar) is the *same* original
+    /// program as [`fixture`], repacked with `upx --lzma`. That makes the two
+    /// unpacks comparable byte for byte: an LZMA decoder that is subtly wrong
+    /// cannot agree with the NRV one on 31,640 bytes by accident.
+    fn lzma_fixture() -> Vec<u8> {
+        let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/upx_packed_lzma_x86_64");
+        std::fs::read(&p).unwrap_or_else(|e| panic!("read {}: {e}", p.display()))
+    }
+
+    #[test]
+    fn detects_the_lzma_witness() {
+        let info = detect(&lzma_fixture()).expect("fixture is UPX-packed");
+        assert_eq!(info.version, 14);
+        assert_eq!(info.format, 22);
+        assert_eq!(info.method, 14);
+        assert_eq!(info.method_name(), "LZMA");
+        assert_eq!(info.u_file_size, 31640);
+    }
+
+    /// The end-to-end contract for method 14: an image UPX compressed with LZMA
+    /// recovers the identical original file, filters and all.
+    #[test]
+    fn unpacks_the_lzma_witness_byte_for_byte() {
+        let lzma = unpack(&lzma_fixture()).expect("the LZMA fixture unpacks");
+        let nrv = unpack(&fixture()).expect("the NRV fixture unpacks");
+        assert_eq!(lzma.bytes.len(), 31640);
+        assert_eq!(lzma.bytes, nrv.bytes, "the two packings disagree on the original file");
+
+        // Every block really went through the LZMA path, and the one filtered
+        // block was unfiltered after it -- a decoder that produced the right
+        // bytes but skipped the unfilter would still pass a length check.
+        assert!(lzma.blocks.iter().all(|b| b.method == 14 || b.stored));
+        let filtered: Vec<&Block> = lzma.blocks.iter().filter(|b| b.filter != 0).collect();
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].filter, 0x49);
+    }
+
+    /// A one-byte corruption inside an LZMA block must be refused too: the
+    /// range coder happily decodes garbage, so the packer's Adler-32 is what
+    /// stands between a flipped bit and a plausible-looking image.
+    #[test]
+    fn a_corrupted_lzma_literal_is_refused() {
+        let mut bytes = lzma_fixture();
+        bytes[0x600] ^= 0xff;
+        let err = unpack(&bytes).expect_err("a corrupted LZMA stream must not unpack");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("checksum mismatch") || msg.contains("block at"),
+            "unhelpful diagnostic: {msg}"
+        );
     }
 
     /// A one-byte corruption inside the compressed stream must be refused, not

@@ -1390,8 +1390,9 @@ functions` goes from `count: 0` to 70, `main` included.
 
 It runs **in-process**, with no external tooling: `upx -d` cannot be assumed present
 wherever a release `kuna` runs, and handing a hostile binary to a packer to look at it
-is not a thing an analyzer should do. The UCL NRV2B / NRV2D / NRV2E decompressors and
-the branch-target filters are reimplemented in `kuna-analysis/src/upx/`.
+is not a thing an analyzer should do. The UCL NRV2B / NRV2D / NRV2E decompressors, the
+LZMA1 decoder and the branch-target filters are reimplemented in
+`kuna-analysis/src/upx/`.
 
 Default output is `<binary>.unpacked`, overwritten if it exists (the name is
 unambiguously this command's own artifact, and a command that fails its second
@@ -1404,19 +1405,22 @@ blocks consumed.
 
 **Coverage, and the failure contract.** Implemented: the ELF formats and 32-bit
 `win32/pe`, methods 2–10 (NRV2B/NRV2D/NRV2E in their `_LE32`, `_LE16` and `_8` bit
-layouts) and the x86 `cto`/`ctoj`/`ctok` and ARM/AArch64 branch filters. A PE keeps
+layouts) and 14 (LZMA — what `upx --lzma` and `upx --best` write, and what most
+recent packed binaries carry), and the x86 `cto`/`ctoj`/`ctok` and ARM/AArch64 branch
+filters. A PE keeps
 its `PackHeader` in the header padding rather than the tail, and its payload in one
 block followed by a trailer the unpacker replays: the original PE header and section
 table, the import descriptors and names UPX stripped out of the image, and the
 resources it moved out of it all come back, so the recovered file has a working
-import table and not just working code. Everything else — LZMA (method 14), the
-64-bit and ARM PE targets, the remaining non-ELF targets, a packed shared library, a
+import table and not just working code. Everything else — the remaining methods
+(CL1B, DEFLATE, ZSTD, BZIP2), the 64-bit and ARM PE targets, the remaining non-ELF
+targets, a packed shared library, a
 PE whose original image had base relocations, TLS or delay-loaded imports, the
 pre-12 loader block layout, the `ctojr`/PowerPC/RISC-V/delta filters — exits `1`
 with the thing it cannot do **named**, and writes no file:
 
 ```text
-error: ./x: unsupported UPX image: compression method 14 (LZMA)
+error: ./x: unsupported UPX image: compression method 15 (DEFLATE)
 error: ./x: unsupported UPX image: unimplemented UPX filter 0x80 (ctojr32: …)
 error: ./x: no UPX PackHeader found
 ```
