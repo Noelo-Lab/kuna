@@ -1,0 +1,70 @@
+<decompilertest>
+<binaryimage arch="x86:LE:32:default:gcc">
+<!--
+    RE-friction round 10, challenge 64f1f7fad931496abf909535 (i386 Windows PE
+    `illusion.exe`): `kuna decompile ... 0x401571` opened the recovered
+    key-derivation helper with a re-declaration of its own first parameter,
+
+        void sub_401571(unsigned int a0,int4 a1,int4 a2)
+        {
+          int4 a0;
+          ...
+          v1 = CryptDeriveKey(v4,&amp;a0,4,0);
+
+    where the `&amp;a0` line maps to `LEA ECX,[EBP + 0x8]`, the incoming parameter's
+    own slot on an i386 cdecl frame.  Two objects of one name and two types in
+    one scope is not valid C, so a `decompile-project` export of the function
+    cannot be recompiled.
+
+    Root cause (P9, naming policy).  Upstream declares a body's locals by walking
+    the ScopeLocal Symbol table for `no_category` Symbols only
+    (PrintC::emitScopeVarDecls, printc.cc:2667), so a `function_parameter`
+    Symbol renders in the signature and nowhere else.  kuna's printer walks
+    HighVariables instead and asks whether a `function_parameter` Symbol
+    CONTAINS THE STORAGE of one of the high's member Varnodes.  An address-taken
+    parameter has no such member: ActionNameVars::linkSpacebaseSymbol
+    (coreaction.cc:3005) encodes `&amp;symbol` as the offset CONSTANT of a
+    PTRSUB(spacebase, off) and binds that constant's high to the Symbol owning
+    the slot, so when the body never touches the slot any other way every
+    Varnode of the high lives in the constant space.  The storage test answers
+    "not a parameter", and the high is declared in the body under the name it
+    took from the parameter Symbol it is bound to.
+
+    Stage / sub-stage: P9 "naming-policy".  The P0 assertion
+    `option paramrefdecl on|off` decides whether the printer may use the Symbol
+    IDENTITY the reference already carries (HighVariable::kuna_ref_symbol, the
+    port of Varnode::setSymbolReference) instead of the storage containment
+    test.  A reference to a `no_category` local is a different category and is
+    untouched.
+
+    The fixture is the same construct, hand assembled: `derive_key` is an i386
+    cdecl function that passes its first parameter BY ADDRESS
+    (`lea 0x8(%ebp),%eax`) and never reads that slot as a value, so `&amp;a0` is the
+    parameter's only appearance.
+
+    Pass 1 (`option paramrefdecl off`) reproduces the BUG: the parameter is
+    declared a second time in the body.
+    Pass 2 (`option paramrefdecl on`) is the FIX: the body declares nothing and
+    the `&amp;a0` argument resolves to the signature's own parameter.
+-->
+<bytechunk space="ram" offset="0x100000">
+5589e58d4508ff750c50e80500000083c4085dc38b4424048b0003442408c3
+0000000000000000
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="derive_key"/>
+<symbol space="ram" offset="0x100014" name="consume"/>
+</binaryimage>
+<script>
+  <com>option paramrefdecl off</com>
+  <com>lo fu derive_key</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option paramrefdecl on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="paramrefdecl #1: option off re-declares the signature parameter as a body local (bug reproduced)" min="1" max="1">^ *[a-z0-9_]+ a0;$</stringmatch>
+<stringmatch name="paramrefdecl #2: the address-taken parameter is passed by address in both passes" min="2" max="2">consume\(&amp;a0,a1\);</stringmatch>
+<stringmatch name="paramrefdecl #3: the parameter keeps its place in the signature in both passes" min="2" max="2">^void derive_key\(unsigned int a0,unsigned int a1\)$</stringmatch>
+</decompilertest>

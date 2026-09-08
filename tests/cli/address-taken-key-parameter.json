@@ -1,0 +1,39 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "derive_key"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/paramrefdecl_i386",
+    "binary_sha256": "8b15e655828fb6d867c79d88e0e3b0a7731223aee67aee1874deee9218e10da8",
+    "binary_size": 4532,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/paramrefdecl_i386",
+    "selector": "derive_key",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_absent": [
+      "(?s)\\([^\\)\\n]*\\b(a[0-9]+)\\b[^\\)\\n]*\\)\\s*\\{[^}]*\\n\\s*\\w+\\s+\\1\\s*;"
+    ],
+    "stdout_matches": [
+      "void derive_key\\(unsigned int a0,unsigned int a1\\)",
+      "consume\\(&a0,a1\\);"
+    ]
+  },
+  "notes": "need address-taken-key-parameter. Witness: crackmes.one 64f1f7fad931496abf909535 illusion.exe sub_401571, whose signature declared `unsigned int a0` and whose body then declared `int4 a0;` with `&a0` (LEA ECX,[EBP+8]) the only use. Retargeted onto the vendored paramrefdecl_i386: derive_key passes its first parameter by address and never reads that slot. stdout_absent is the acceptance regex."
+}

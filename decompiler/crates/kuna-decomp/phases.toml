@@ -3546,6 +3546,28 @@ live_field = "dedup_var_decls"
 live_true = "on"
 live_false = "off"
 
+[[settable]]
+option = "paramrefdecl"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P9"
+subphase = "naming-policy"
+strength = "HARD"
+rewind = "P9"
+issue = "repipe-address-taken-key-parameter"
+summary = "Do not declare an `&parameter` reference as a body local. Upstream declares a function's locals by walking the ScopeLocal Symbol table for `no_category` Symbols only (`PrintC::emitScopeVarDecls`, printc.cc:2667), so a `function_parameter` Symbol is rendered in the signature and nowhere else. kuna's printer instead walks HighVariables and decides that a high is a parameter by asking whether a `function_parameter` Symbol CONTAINS THE STORAGE of one of the high's member Varnodes. That test cannot see an address-taken parameter. `ActionNameVars::linkSpacebaseSymbol` (coreaction.cc:3005) encodes `&symbol` as the offset CONSTANT of a `PTRSUB(spacebase, off)` and binds that constant's high to the Symbol owning the referenced frame slot; when the slot is an incoming stack parameter and the body never touches the slot any other way, every Varnode of that high lives in the constant space, so no member storage is contained by anything and the storage test answers `no`. The high is then declared in the body -- under the name it took from the parameter Symbol it is bound to, and with the constant high's own data type. The witness is a 32-bit Windows PE whose key-derivation helper reads its four-byte key parameter only by address: `void sub_401571(unsigned int a0,int4 a1,int4 a2)` opens with `int4 a0;` and the sole use is `CryptDeriveKey(v4,&a0,4,0)`, whose `&a0` maps to `LEA ECX,[EBP + 0x8]` -- the parameter's own slot on an i386 cdecl frame. Two objects of one name and two types in one scope is not valid C, so a `decompile-project` export of such a function cannot be recompiled, and a reader cannot tell that the address handed to the callee is the caller's argument. This option supplies the Symbol-IDENTITY test the storage test cannot make: a high bound to a `function_parameter` Symbol is that parameter wherever its Varnodes live, so the printer skips its declaration and the `&a0` in the body resolves to the signature's `a0`. It is bounded three ways. It reads the Symbol the reference is already bound to (`HighVariable::kuna_ref_symbol`, kuna's port of `Varnode::setSymbolReference`), so it invents no association and cannot merge two distinct frame slots. It keeps the storage arm's guard that the high's name is one of the prototype's parameter names, so a divergence between the Symbol's name and the signature's leaves the declaration in place rather than emitting an undeclared variable. And it only ever REMOVES a declaration that duplicates a signature parameter -- a reference to a `no_category` local (`&v7`) has a different category and is untouched. The same Symbol identity is carried to the `variables` JSON surface, which collects a parameter's uses by matching Varnodes against the parameter's STORAGE and so reported an address-taken parameter as unused while the C showed the reference; the reference is attributed to the parameter only when no storage-backed or name-backed evidence was found."
+use_when = "On by default (DIV-143). Keep it on when a function's body re-declares one of its own parameters -- the shape is a signature `f(unsigned int a0, ...)` immediately followed by `int4 a0;`, with `&a0` the only use, and the disassembly showing that `&a0` is a `LEA` of the parameter's own frame slot. It is the standard rendering for a parameter passed by address to an API (`CryptDeriveKey`, `GetTokenInformation`, any out-parameter), because the body then never reads the slot as a value and the parameter's storage carries no Varnode. Inert unless an `&symbol` reference resolves to a `function_parameter` Symbol, so any function that does not take the address of a parameter is byte-identical. Flip OFF to restore the duplicate declaration -- worth doing only to confirm that a variable you expected to be a local really is the parameter."
+example = "option paramrefdecl off"
+live_field = "param_ref_decl"
+live_true = "on"
+live_false = "off"
+source_decompiler = "kuna"
+inspiration = "repipe:address-taken-key-parameter, 64f1f7fad931496abf909535 (i386 Windows PE illusion.exe) sub_401571, the CryptDeriveKey call site at 0x401641; upstream PrintC::emitScopeVarDecls (printc.cc:2667)"
+change_kind = "correctness-fix"
+tier = "core"
+symptoms = "a parameter from the signature is declared again as a local at the top of the body|the duplicate declaration has a different type from the signature (unsigned int a0 then int4 a0)|the only use of the redeclared name is &name passed to a call|a decompile-project export does not compile because a local shadows a parameter of the same name|--json reports a parameter with no line_numbers although the C shows it used"
+
 # ---------------------------------------------------------------------------
 # Analysis-pass gates (8 rows): per-run `--option <id> on|off` enablement of the
 # `kuna_analysis` passes. The option id IS the pass's `AnalysisPass::id()`. The

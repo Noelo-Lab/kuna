@@ -354,6 +354,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "codescalar",
     "cortexmpriv",
     "dedupvardecls",
+    "paramrefdecl",
     // (kuna) Analysis-pass gates (per-run `--option <id> on|off`): one settable
     // per `kuna_analysis::passes` pass id, default-on (except `addrtable`, off).
     // These do NOT dispatch through the upstream `OptionDatabase`; like the other
