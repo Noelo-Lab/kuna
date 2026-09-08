@@ -1090,6 +1090,7 @@ impl Action for ActionActiveParam {
         let manager_rc = data.get_arch().manage.clone();
         // (kuna) varargstackargs
         let vararg_stack_args = data.get_arch().vararg_stack_args;
+        let stack_arg_gap = data.get_arch().stack_arg_gap;
         // (kuna) `calleearityfwd`: call sites that finalize with an empty argument
         // list, retried at the end of the pass against the siblings that finalize
         // after them.  See [`crate::p4_calls::kuna_calleearityfwd`].
@@ -1168,6 +1169,11 @@ impl Action for ActionActiveParam {
                 // the recovery has run past the argument list.
                 let vararg_split = vararg_stack_args && fc.is_dotdotdot();
                 fc.get_active_input().set_vararg_stack_split(vararg_split);
+                // (kuna) `stackarggap`: tell `fillinMap` that an argument
+                // register this caller never wrote ends the argument list when
+                // the next slot is on the stack -- the ABI reaches the stack
+                // only past a full register file.
+                fc.get_active_input().set_stack_arg_gap(stack_arg_gap);
                 // resolveModel(activeinput) + deriveInputMap(activeinput): resolve
                 // the model and fill in the trial → parameter map.
                 let _ = fc.resolve_and_derive_input_map(&manager_rc);

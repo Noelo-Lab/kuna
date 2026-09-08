@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    702,
-    702
+    704,
+    704
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -656,6 +656,8 @@
     "data:spacebase-unnamed #4: positive frame offset renders as its storage",
     "data:spacebase-unnamed #5: zero frame offset renders as its storage",
     "data:spacebase-unnamed #6: negative frame offset wraps in the space address size",
+    "data:stackarggap #1: option off invents a fourth and fifth argument to reach a stack slot (bug reproduced)",
+    "data:stackarggap #2: option on ends the argument list at the register the caller never wrote",
     "data:stalejumptable #1: the real jump-table switch survives on BOTH passes (0 before the fix: pass 1 panicked)",
     "data:stalejumptable #2: case 0x7a ('z') on both passes",
     "data:stalejumptable #3: case 0x80 (CHECK_ORDER) on both passes",

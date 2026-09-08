@@ -25,5 +25,6 @@ pub mod kuna_calleearitycut; // (kuna) accept that run when the callee decode is
 pub mod kuna_calleearityscratch; // (kuna) let a caller-scratch register bound that cut run
 pub mod kuna_calleearitylive; // (kuna) extend a partial argument list when the callee body agrees
 pub mod kuna_inputparamgap; // (kuna) an unused-argument-register run must not veto a later live-in
+pub mod kuna_stackarggap; // (kuna) an unwritten argument register ends a call site's argument list
 pub mod kuna_rustabi; // (kuna) the rustc two-register return: keep the pair, connect it at the call
 pub mod kuna_langabi; // (kuna) the ABI seam: per-language `extern` rendering

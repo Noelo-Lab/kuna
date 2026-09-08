@@ -1,0 +1,45 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "hash_final",
+    "--option",
+    "calleearity",
+    "on",
+    "--option",
+    "varargstackargs",
+    "on"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/stackarggap_x86_64",
+    "binary_sha256": "d9f0c0a1be9261562dea5d7271bfd8edfa0a5f96b2082b656fdbe34438c3df83",
+    "binary_size": 9024,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/stackarggap_x86_64",
+    "selector": "hash_final",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_absent": [
+      "\\(\\*dat_[0-9a-f]+\\)\\([^,\\n]+,[^,\\n]+,[^,\\n]+,[^,\\n]+,[^,\\n]+,[^,\\n]+\\)",
+      "void hash_final\\(unsigned long \\*a0,"
+    ],
+    "stdout_matches": [
+      "\\(\\*dat_[0-9a-f]+\\)\\(a0\\[4\\],a0\\[3\\],a0\\[2\\],a0\\[1\\],\\*a0\\);"
+    ]
+  },
+  "notes": "need sha-finalization-receives-two. Witness: crackmes.one 6869d705aadb6eeafb399027 sub_14000b970, where EVP_DigestFinal_ex (3 arguments) rendered as EVP_DigestFinal_ex(v3,v9,v7,a3,1). Retargeted onto the vendored stackarggap_x86_64, no dataset in CI: hash_final loads RDI..R8, never writes R9, and leaves a 1 in the first outgoing stack slot, so with the veto off the call takes seven arguments."
+}

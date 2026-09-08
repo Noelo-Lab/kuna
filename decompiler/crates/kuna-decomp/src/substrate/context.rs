@@ -755,6 +755,14 @@ pub struct ArchContext {
     /// consults through
     /// [`crate::p4_calls::kuna_inputparamgap::gap_slot_is_exempt`].
     pub input_param_gap: bool,
+    /// (kuna) at a CALL SITE, let an unreferenced argument register whose next
+    /// slot is on the stack end the argument list (`stackarggap`).  Read by
+    /// `ActionActiveParam`, which stamps it onto the
+    /// [`ParamActive`](crate::fspec::ParamActive) that
+    /// [`ParamListStandard::fillin_map`](crate::fspec::ParamListStandard) then
+    /// consults through
+    /// [`crate::p4_calls::kuna_stackarggap::ends_argument_list`].
+    pub stack_arg_gap: bool,
     /// (kuna) score a variadic call's stack arguments as their own `fillinMap`
     /// resource section (`varargstackargs`).  Read by
     /// [`ParamListStandard::fillin_map`](crate::fspec::ParamListStandard) through
@@ -1288,6 +1296,7 @@ impl ArchContext {
             callee_ret_preserves: true,
             indirect_anchor: true,      // indirectanchor (default-on)
             input_param_gap: true,
+            stack_arg_gap: true,         // stackarggap (DIV-140 default-on)
             vararg_stack_args: true,     // varargstackargs (DIV-101 default-on)
             callee_arity: true,          // calleearity (DIV-102 default-on)
             callee_arity_fwd: true,      // calleearityfwd (default-on)
