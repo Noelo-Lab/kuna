@@ -841,6 +841,10 @@ pub struct Heritage {
     /// re-declaring the field.
     #[allow(dead_code)]
     load_copy_ops: Vec<crate::context::OpId>,
+    /// (kuna) `calleeprotostack` — the local-alias checker this pass answers
+    /// "can a pointer reach this stack slot?" with, gathered at most once per
+    /// pass.  See [`crate::p4_calls::kuna_calleeprotostack`].
+    protostack_alias: Option<Option<crate::varmap::AliasChecker>>,
 }
 
 impl Heritage {
@@ -862,6 +866,7 @@ impl Heritage {
             load_guard: Vec::new(),
             store_guard: Vec::new(),
             load_copy_ops: Vec::new(),
+            protostack_alias: None,
         }
     }
 
@@ -1473,6 +1478,31 @@ impl Heritage {
         }
     }
 
+    /// (kuna `calleeprotostack`) Can a pointer in this function reach the stack
+    /// slot at `offset`?
+    ///
+    /// The gather is [`crate::varmap::AliasChecker`]'s — the same test
+    /// `FuncCallSpecs::checkInputTrialUse` applies before it will call a stack
+    /// slot a parameter — and it is deferred, so a function that never reaches
+    /// the declared-callee branch never pays for it.  Answers `true` (aliased,
+    /// keep the guard) whenever there is no checker to ask.
+    fn protostack_is_aliased(
+        &mut self,
+        fd: &crate::funcdata::Funcdata,
+        spc: &Rc<AddrSpace>,
+        offset: uintb,
+    ) -> bool {
+        if self.protostack_alias.is_none() {
+            self.protostack_alias = Some(fd.build_alias_checker_deferred());
+        }
+        let checker = match self.protostack_alias.as_mut().and_then(|c| c.as_mut()) {
+            Some(c) => c,
+            None => return true,
+        };
+        let mut access = fd.alias_gather_access();
+        checker.has_local_alias(Some((Rc::clone(spc), offset)), &mut access)
+    }
+
     /// Guard CALL ops (C++ `Heritage::guardCalls`, `heritage.cc:1444`).
     ///
     /// STUB(W4): iterating call sites needs `Funcdata::numCalls`/`getCallSpecs`
@@ -1539,6 +1569,31 @@ impl Heritage {
             // heritage.cc:1468) because the output-active branch can promote it to
             // `killedbycall`.
             let mut effecttype = fc.proto().has_effect(&trans_addr, size);
+            // (kuna) `calleeprotostack` — a callee with a locked, non-variadic
+            // prototype owns the return-address slot and its own parameter area
+            // and nothing above them.  A caller slot above that floor is reachable
+            // only through a pointer, so the range is left unguarded unless the
+            // local-alias checker says a pointer could reach it.  See
+            // [`crate::p4_calls::kuna_calleeprotostack`].
+            if effecttype == effect_type::UNKNOWN_EFFECT
+                && spc.get_type() == spacetype::IPTR_SPACEBASE
+                && tryregister
+            {
+                if let Some(floor) = crate::p4_calls::kuna_calleeprotostack::declared_caller_frame_floor(
+                    fd.get_arch().callee_proto_stack,
+                    fc.proto(),
+                ) {
+                    if crate::p4_calls::kuna_calleeprotostack::above_callee_frame(
+                        trans_addr.get_offset(),
+                        size,
+                        spc.get_addr_size() as int4,
+                        floor,
+                    ) && !self.protostack_is_aliased(fd, &spc, addr.get_offset())
+                    {
+                        effecttype = effect_type::UNAFFECTED;
+                    }
+                }
+            }
             // (kuna) `calleepreserves` — the cspec's `killedbycall` set is a
             // statement about the CONVENTION, not about this callee.  When a
             // bounded decode of the callee's own body proves it never writes
@@ -4442,6 +4497,9 @@ impl Heritage {
         if block_count == 0 {
             return;
         }
+        // (kuna `calleeprotostack`) The alias gather is only valid for the
+        // data-flow as it stands, so it is dropped at every pass boundary.
+        self.protostack_alias = None;
         if self.maxdepth == -1 {
             // Has a restructure been forced
             self.build_adt(fd);

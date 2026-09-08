@@ -572,6 +572,7 @@ impl AddBase {
 /// available at this wave boundary.  The boundary-derivation, offset-gathering
 /// (`gatherOffset`), alias sort, and the `hasLocalAlias` decision are ported in
 /// full; the graph walk routes through [`AliasGatherAccess`].
+#[derive(Debug)]
 pub struct AliasChecker {
     /// AddressSpace in which to search (C++ `space`).
     space: Option<Rc<AddrSpace>>,

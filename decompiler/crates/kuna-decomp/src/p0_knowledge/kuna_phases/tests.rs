@@ -64,7 +64,7 @@ fn surface_count_is_112() {
 }
 
 #[test]
-fn settable_count_is_171() {
+fn settable_count_is_172() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -120,12 +120,12 @@ fn settable_count_is_171() {
     // +1 for `noreturnretuse` (P4 terminal no-return call use in return trials,
     // DIV-118).
     // +1 for `msvcstackguard` (P7 MSVC /GS frame-cookie stripping, GH-468).
-    assert_eq!(kuna_num_settables(), 171);
-    assert_eq!(SETTABLE_TABLE.len(), 171);
+    assert_eq!(kuna_num_settables(), 172);
+    assert_eq!(SETTABLE_TABLE.len(), 172);
 }
 
 #[test]
-fn tier_counts_are_48_core_66_transform_57_analysis() {
+fn tier_counts_are_49_core_66_transform_57_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -223,7 +223,7 @@ fn tier_counts_are_48_core_66_transform_57_analysis() {
     // transform 61 -> 62: +1 for `msvcstackguard` (P7 MSVC /GS frame-cookie
     // stripping, GH-468) -- it deletes real instructions, like its `stackguard`
     // and `securitycheck` siblings.
-    assert_eq!((core, transform, analysis), (48, 66, 57));
+    assert_eq!((core, transform, analysis), (49, 66, 57));
 }
 
 #[test]
@@ -413,7 +413,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_58_suppressed_for_101() {
+fn option_values_live_value_present_for_59_suppressed_for_101() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -729,7 +729,9 @@ fn option_values_live_value_present_for_58_suppressed_for_101() {
     // 55 -> 56: +1 for `litpoolconst` (live_field = litpoolconst, DIV-136).
     // 56 -> 57: +1 for `codescalar` (live_field = codescalar, DIV-138).
     // 57 -> 58: +1 for `stackarggap` (live_field = stack_arg_gap, DIV-140).
-    assert_eq!(with_live, 58);
+    // 58 -> 59: +1 for `calleeprotostack` (live_field = callee_proto_stack,
+    // DIV-142).
+    assert_eq!(with_live, 59);
 }
 
 #[test]
@@ -863,7 +865,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // the last one, so the previous tail row gains a comma and it becomes the tail.
     // 149 -> 150: +1 for `msvcstackguard` (GH-468); its P7 row sits mid-table
     // beside `securitycheck`, so the tail does not move.
-    assert_eq!(json.matches("},\n").count(), 170);
+    assert_eq!(json.matches("},\n").count(), 171);
 }
 
 #[test]

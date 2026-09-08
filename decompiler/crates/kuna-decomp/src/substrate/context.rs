@@ -728,6 +728,9 @@ pub struct ArchContext {
     /// [`StackSolver::build`](crate::coreaction_stackptr) through
     /// [`crate::p6_variables::kuna_calleepop::guess_extra_pop`].
     pub callee_pop: bool,
+    /// (kuna) `calleeprotostack` — a declared callee's locked prototype states
+    /// its stack contract.  See [`crate::p4_calls::kuna_calleeprotostack`].
+    pub callee_proto_stack: bool,
     /// (kuna) let a bounded decode of the callee's own body veto a register
     /// argument the callee provably never reads (`calleedeadarg`).  Read by
     /// [`check_input_trial_use`](crate::funcdata_callsite::check_input_trial_use)
@@ -1289,6 +1292,7 @@ impl ArchContext {
             // calleepop only refines a guess the solver already had to make, so
             // the hand-built-fixture seam carries the same default.
             callee_pop: true,
+            callee_proto_stack: true,
             // calleedeadarg only ever REMOVES an argument, and only against a
             // decoded callee body; the fixture seam carries the real default.
             callee_dead_arg: true,

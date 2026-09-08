@@ -1,0 +1,35 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "timeout_s": 60,
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "0x401000",
+    "--addr"
+  ],
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_absent": [
+      "GetLastError\\([^)]*[^\\s()]\\)",
+      "FormatMessageA\\((?:[^()]|\\([^()]*\\))*\\ba[0-9]\\b"
+    ],
+    "stdout_matches": [
+      "GetLastError\\(\\)",
+      "FormatMessageA\\((?:[^,()]*(?:\\([^()]*\\))?[^,()]*,){6}",
+      "FormatMessageA\\((?:[^()]|\\([^()]*\\))*&"
+    ]
+  },
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/calleeprotostack_pe_i386.exe",
+    "binary_sha256": "a1734e48030ee5035a5f6d57cf044e8e894422bec392246d865c72ea60889d2e",
+    "binary_size": 8704,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/calleeprotostack_pe_i386.exe",
+    "selector": "0x401000",
+    "selector_kind": "addr"
+  }
+}

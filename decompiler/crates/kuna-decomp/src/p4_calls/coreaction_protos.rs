@@ -448,7 +448,17 @@ impl Action for ActionDefaultParams {
                                 types,
                                 arch.manage(),
                             ) {
-                                Ok(()) => Some(fp),
+                                // (kuna) `calleeprotostack`: a locked parameter
+                                // list under a model that leaves its extrapop
+                                // unknown states how much the callee pops.  See
+                                // [`crate::p4_calls::kuna_calleeprotostack`].
+                                Ok(()) => {
+                                    crate::p4_calls::kuna_calleeprotostack::resolve_declared_extra_pop(
+                                        arch.callee_proto_stack,
+                                        &mut fp,
+                                    );
+                                    Some(fp)
+                                }
                                 // The callee storage assignment hit an un-ported boundary: fall
                                 // back to the default-model recovery for this call site.
                                 Err(_) => None,
