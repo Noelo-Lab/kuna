@@ -16,11 +16,15 @@
 //! "address 0x400154 is not mapped in this input" — including `decompile
 //! --define-function`, i.e. an explicit definition could not reach it either.
 //!
-//! The region is mapped read-only rather than executable, which is both what
-//! Windows does and what keeps the executable-region scans away from the MZ/PE
-//! bytes of every PE in the corpus, so function discovery cannot invent entries
-//! in a header. Reaching the entry there stays an explicit act — a name, an
-//! address, or a `--define-function`.
+//! The region is mapped read-only, which is what Windows does, and as DATA,
+//! which keeps the code scans away from the MZ/PE bytes of every PE in the
+//! corpus so function discovery cannot invent entries in a header — with one
+//! exception the image itself declares. When `AddressOfEntryPoint` points into
+//! the header page the region is marked CODE
+//! ([`declared_entry_in_header`]): no scan guessed that, the image named the
+//! address the OS jumps to, and treating it as data is what left the witness for
+//! `docs/re-needs/whole-binary-decompilation-treats.md` reporting zero functions
+//! from `kuna decompile-all`.
 
 use object::pe::{ImageNtHeaders32, ImageNtHeaders64};
 use object::read::pe::{ImageNtHeaders, ImageOptionalHeader, PeFile32, PeFile64};
@@ -48,7 +52,57 @@ pub(crate) fn header_region(file: &object::File, bytes: &[u8]) -> Option<HeaderR
     if len == 0 {
         return None;
     }
-    Some(HeaderRegion { vma: base, len: len as usize })
+    let mut region = HeaderRegion { vma: base, len: len as usize, code: false };
+    region.code = declared_entry_in_header(bytes, &region).is_some();
+    Some(region)
+}
+
+/// The declared entry point, when the image puts it inside its own header page.
+///
+/// The composed form of [`header_region`] + [`declared_entry_in_header`], for
+/// callers that have the file and not the region.
+pub(crate) fn header_entry(file: &object::File, bytes: &[u8]) -> Option<u64> {
+    declared_entry_in_header(bytes, &header_region(file, bytes)?)
+}
+
+/// The declared entry point when the image puts it inside its own header page.
+///
+/// `AddressOfEntryPoint` is the one address a PE names as code without any help
+/// from a section flag, and a packer that lays its stub in the slack after the
+/// section table names one in here: the witness for
+/// `docs/re-needs/whole-binary-decompilation-treats.md` declares `0x154`, the
+/// byte immediately after its two-entry table. Mapping those bytes as data left
+/// whole-binary decompilation reporting zero functions on an image whose entry
+/// `kuna decompile --addr 0x400154` renders in full.
+///
+/// An `AddressOfEntryPoint` of `0` is the "no entry point" encoding a
+/// resource-only DLL uses. `object` still reports that as `ImageBase`, which is
+/// inside the header page, so it is rejected here rather than declaring the `MZ`
+/// signature to be code.
+pub(crate) fn declared_entry_in_header(bytes: &[u8], region: &HeaderRegion) -> Option<u64> {
+    let rva = declared_entry_rva(bytes)?;
+    if rva == 0 {
+        return None;
+    }
+    let entry = region.vma.checked_add(u64::from(rva))?;
+    let end = region.vma.checked_add(region.len as u64)?;
+    (entry < end).then_some(entry)
+}
+
+/// `AddressOfEntryPoint` as the header spells it (an RVA), off the typed
+/// optional header the neutral `object::File` view does not expose.
+pub(crate) fn declared_entry_rva(bytes: &[u8]) -> Option<u32> {
+    match FileKind::parse(bytes).ok()? {
+        FileKind::Pe32 => {
+            let nt = PeFile32::parse(bytes).ok()?.nt_headers().optional_header();
+            Some(nt.address_of_entry_point())
+        }
+        FileKind::Pe64 => {
+            let nt = PeFile64::parse(bytes).ok()?.nt_headers().optional_header();
+            Some(nt.address_of_entry_point())
+        }
+        _ => None,
+    }
 }
 
 /// `(ImageBase, SizeOfHeaders)` off the typed optional header, whose width the

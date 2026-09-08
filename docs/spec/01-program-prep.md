@@ -182,13 +182,35 @@ table, so its declared entry was unreachable. The region is therefore published 
 the segment and section walks as one more mapping unit, `DATA | READONLY`. It is
 read-only, not executable, both because that is what Windows does and because it
 keeps the executable-region scans of §1.6 out of the MZ/PE bytes of every PE — so
-function *discovery* is unchanged and reaching a header entry stays an explicit act
-(a name, an address, or a `--define-function`). Its extent is `SizeOfHeaders`
+function *discovery* invents nothing in a header. Its extent is `SizeOfHeaders`
 clamped twice, to the file length and to the first section's RVA, so a malformed
 value — the same field a packer overwrites two paragraphs above — can never shadow
 real content; a clamp to zero publishes nothing. No other format defines one
 (`ObjectFormat::header_region` defaults to `None`), because an ELF's `PT_LOAD`
 headers already describe whatever of the header is in the mapping.
+
+(kuna) **The one thing that makes a header page code is the image saying so**
+(`decompiler/crates/kuna-analysis/src/loader/pe_headers.rs
+(declared_entry_in_header)`). Mapping the page was not enough to *decompile* the
+keygenme above: the header page is no section, so the executable-section filter of
+§1.6 rejected the entry as implausible code, and both of that image's sections
+carry characteristics `0xc00000e0` — `CNT_CODE|INITIALIZED|UNINITIALIZED|READ|
+WRITE` with `MEM_EXECUTE` clear — so there was no executable section for any other
+candidate to land in either. Its whole inventory was the two Import Address Table
+slots, and once those were correctly withheld from the batch set (§1.9)
+`decompile-all` answered `count: 0` on an image `decompile --addr 0x400154`
+renders in full. Where `AddressOfEntryPoint` points into the header page the
+region is therefore published `CODE | READONLY` instead of `DATA | READONLY`, and
+that one address is exempt from the executable-section filter. Nothing is guessed:
+the image names the address the OS jumps to, and no section flag ever spoke for
+bytes that are in no section. Three things keep it that narrow. An
+`AddressOfEntryPoint` of `0` is the "no entry point" encoding, which `object`
+reports as `ImageBase` — inside the page — so it is rejected rather than declaring
+the `MZ` signature to be a function. Only the entry is exempt, never a `.pdata`,
+TLS or export candidate. And an entry inside a section the image flags
+non-executable is **not** exempt: there the flag is a statement about those bytes,
+and kuna answers it by naming the cause and the `--define-function` that overrides
+it (§1.9), rather than overriding it silently.
 
 (kuna) **A segment's zero-filled tail is mapped, not a hole**
 (`decompiler/crates/kuna-analysis/src/loadimage_object.rs (Segment::mapped_size)`).

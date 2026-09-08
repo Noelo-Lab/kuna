@@ -432,4 +432,31 @@ mod tests {
         // 0x140001030 is `AddressOfEntryPoint`, which oracle 1 still supplies.
         assert_eq!(after, vec![0x140001030], "only the entry point survives: {after:#x?}");
     }
+
+    /// The header page is no section, so no section flag ever spoke for the
+    /// bytes in it — but the image's own `AddressOfEntryPoint` does. Discovery
+    /// found nothing at all on this shape (both sections `MEM_EXECUTE`-clear,
+    /// the entry in the header page), so `kuna decompile-all` answered
+    /// `count: 0` on an image whose entry `kuna decompile --addr` renders in
+    /// full (`docs/re-needs/whole-binary-decompilation-treats.md`).
+    #[test]
+    fn a_header_page_entry_is_discovered() {
+        let bytes = fixture("pe_headercode_i386.exe");
+        let file = object::File::parse(bytes.as_slice()).expect("parse packed PE");
+        let entries = super::super::collect_entries(&file, bytes.as_slice());
+        assert_eq!(entries, vec![0x40_0154], "the declared entry is the only function");
+    }
+
+    /// The other half of that rule: an entry inside a section the image flags
+    /// non-executable is NOT exempt. There the flag is a statement about those
+    /// bytes, and kuna answers it by naming the cause and the
+    /// `--define-function` that overrides it, which is what
+    /// `docs/re-needs/batch-silently-omits-explicitly.md` shipped.
+    #[test]
+    fn a_data_section_entry_is_not_discovered() {
+        let bytes = fixture("pe_datasection_entry_i386.exe");
+        let file = object::File::parse(bytes.as_slice()).expect("parse data-section PE");
+        let entries = super::super::collect_entries(&file, bytes.as_slice());
+        assert!(entries.is_empty(), "0x402001 is in a section flagged data: {entries:#x?}");
+    }
 }

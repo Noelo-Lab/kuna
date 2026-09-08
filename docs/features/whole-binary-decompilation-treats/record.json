@@ -1,0 +1,72 @@
+{
+  "opportunity": "repipe:5ab77f6333c5d40ad448ca40::whole-binary-decompilation-treats",
+  "need_id": "whole-binary-decompilation-treats",
+  "track": "loader",
+  "round": 10,
+  "test_name": "repipe round 10, challenge 5ab77f6333c5d40ad448ca40",
+  "binary": "kuna-re-dataset/challenges/5ab77f6333c5d40ad448ca40/bin/BUG.cRYPTO.kEYGENME.zip.__x/BUG.exe",
+  "selector": "0x400154",
+  "func_addr": "0x400154",
+  "option": null,
+  "flag": null,
+  "element_id": null,
+  "change_kind": "correctness-fix",
+  "source_decompiler": "kuna",
+  "inspiration": "repipe round 10 need whole-binary-decompilation-treats; the round-10 refuter's re-measurement, which established that the filed defect (IAT slots decoded as function bodies) was already closed by #509 and that what remains is zero PE function discovery on the same image.",
+  "default_on": true,
+  "div": null,
+  "scope": "small",
+  "files": [
+    "decompiler/crates/kuna-analysis/src/loader/format/mod.rs",
+    "decompiler/crates/kuna-analysis/src/loader/pe_headers.rs",
+    "decompiler/crates/kuna-analysis/src/loader/pe_headers/tests.rs",
+    "decompiler/crates/kuna-analysis/src/loadimage_object.rs",
+    "decompiler/crates/kuna-analysis/src/analyzers/entry/mod.rs",
+    "decompiler/crates/kuna-analysis/src/analyzers/entry/pe_entry.rs",
+    "decompiler/crates/kuna-analysis/tests/fixtures/pe_headercode_i386.exe",
+    "decompiler/crates/kuna-analysis/tests/fixtures/pe_headercode_i386.py",
+    "tests/cli/whole-binary-decompilation-treats.json",
+    "docs/spec/01-program-prep.md",
+    "docs/cli.md",
+    "docs/re-needs/whole-binary-decompilation-treats.md"
+  ],
+  "decisions": [
+    "THE FILED SYMPTOM NO LONGER EXISTS AND THE ROUND-10 REFUTER IS RIGHT. On this tree `decompile-all --json` on BUG.exe emits neither 0x44f264 nor 0x44f268 and no `out(` body: #509 closed that half. What is left is that the image's whole function inventory was those two import pointer slots, so withholding them left `count: 0`. The work is PE function discovery, not the import filter, and nothing in this PR touches the import filter.",
+    "ROOT CAUSE, measured: `entry::collect_entries` keeps a candidate only if `in_executable_section` holds, and that fails twice over on this image. Its entry (RVA 0x154, the byte after its two-entry section table) is in the header page, which is no section at all; and both of its sections carry characteristics 0xc00000e0 -- CNT_CODE|INITIALIZED|UNINITIALIZED|READ|WRITE with MEM_EXECUTE clear -- so `executable_sections` returns EMPTY and there is no section for any candidate to land in. Verified by experiment: patching MEM_EXECUTE into both section headers of a copy still yields only the two IAT slots, because the entry is not in a section either way.",
+    "The exemption is the DECLARED ENTRY ONLY, and only where the image maps it in the header page. That page is no section, so no section flag ever spoke for the bytes in it -- `AddressOfEntryPoint` is the image's only statement about them, and it is the address the OS jumps to. `.pdata`, TLS and export candidates are not exempt.",
+    "DELIBERATELY NARROWED after measurement. A first cut also exempted an entry inside a section the image flags non-executable. That auto-discovers 0x402001 in `pe_datasection_entry_i386.exe` and turns off the diagnosis `batch-silently-omits-explicitly` shipped in round 8, whose promoted probe `tests/cli/batch-silently-omits-explicitly-diagnosis.json` asserts exit 1 plus `its entry point 0x402001 lies in section .stub`. Two needs would then demand opposite behaviour from one command. The narrowing is not test-appeasement: where an entry IS in a section, the flag is a statement about those bytes and kuna's shipped answer is to name the cause and the `--define-function` that overrides it. `a_data_section_entry_is_not_discovered` pins the line.",
+    "An `AddressOfEntryPoint` of 0 is the `no entry point` encoding a resource-only DLL uses, and `object` reports it as `ImageBase`, which is inside the header page. Reading the raw RVA off the typed optional header rather than trusting `file.entry()` is what keeps a function off the `MZ` signature; `a_zero_entry_rva_declares_nothing` pins it.",
+    "ACCEPTANCE RETARGETED, and this is the one judgement call a reviewer should check. The filed clause `count > 2` is unreachable on the witness at any amount of engine work. The image's own dispatch table proves it: the entry does `xchg esp,[0x44f250]` then `popad`, loading ebx = 0x44f254, a table holding 0x4001e8 / 0x4001dc / 0x4001de (helpers reached only through `call [ebx+N]`), 0x4098a3 (the original entry, in the section whose SizeOfRawData is 0 -- zeroes in the file until the stub unpacks it) and the two IAT slots the acceptance forbids. Exactly one function body is statically discoverable, and `count > 2` only ever read as `more than the two IAT slots` because the slots were counted as functions. The acceptance now runs on a vendored twin and asserts the ask directly -- slots absent, declared entry present, real body naming both imports -- which is un-gameable in the way the round-9 captain note demanded: an empty list fails both `count == 1` and the address clause. Same precedent as the anchor need bulk-decompilation-decodes-pe, whose acceptance was likewise retargeted at a vendored twin.",
+    "A SECOND DATASET WITNESS came out of the sweep unprompted: JinKu.keygenme.exe (challenge 5ab77f6333c5d40ad448ca3e) has the identical layout -- entry RVA 0x154, two nameless sections both 0xc00000e0 -- and goes 0 -> 1 with the same unpacker stub decompiled.",
+    "ONE EXISTING EXPECTATION MOVES WITH THE RULE, and it is the intended behaviour rather than test-appeasement. `loadimage_object.rs :: a_pe_maps_its_header_page_read_only` asserted DATA|READONLY for the header page of `pe_headerentry_i386.exe` -- an image that declares its entry at RVA 0x154, i.e. exactly the shape this PR reclassifies -- so it now asserts CODE|READONLY. The guarantee it was written to protect is unchanged and is still pinned, by `the_header_page_never_overlaps_a_section` on `pe_imports.exe`: the header page of an image that declares no entry in it stays DATA|READONLY, which is every image a compiler emits. `kuna functions` on pe_headerentry_i386.exe returns exactly one function, 0x400154, so the CODE flag does not let discovery invent anything else in a header (prologue scanning walks `object::File` sections, which the header page is not, and is x86-64 only)."
+  ],
+  "parity": "OK",
+  "gates": {
+    "make test": "PARITY OK, 675/675 assertions",
+    "make test-stages": "PARITY OK, 698/698 assertions",
+    "make rust-test": "green (exit 0), full workspace, run with `env -u KUNA_DECOMP_TEST` to match CI's skipped C++ oracle block; kuna-analysis --lib 678/678",
+    "make check-spec": "check-spec OK",
+    "make test-cli": "95/95, including the newly promoted whole-binary-decompilation-treats and batch-silently-omits-explicitly-diagnosis",
+    "kuna catalog --check": "catalog OK (no option added; loader-tier fix)",
+    "acceptance": "scripts.repipe.verify --need whole-binary-decompilation-treats: pass 1 / fail 0, transition closed, on rebased sha"
+  },
+  "probe_flip": {
+    "probe_still_passes": false,
+    "probe_note": "the filed probe asserts the pre-#509 behaviour (IAT slots as function bodies with an `out(` body) and already failed on main before this PR",
+    "acceptance_passes": true,
+    "acceptance_id": "a-a28f3cfabf9d",
+    "acceptance_retargeted_to": "decompiler/crates/kuna-analysis/tests/fixtures/pe_headercode_i386.exe",
+    "acceptance_replaces_clause": "json[0] count > 2 (unreachable on the witness; see decisions)",
+    "bug_functions_before": 2,
+    "bug_functions_after": 3,
+    "bug_decompile_all_count_before": 0,
+    "bug_decompile_all_count_after": 1
+  },
+  "pairing_control": {
+    "requirement": "the round-8 need batch-silently-omits-explicitly must keep its diagnosis: `decompile-all` on an image whose entry is in a section flagged data must still exit 1 naming the cause",
+    "command": "make test-cli",
+    "result": "95/95, including batch-silently-omits-explicitly-diagnosis and the newly promoted whole-binary-decompilation-treats"
+  },
+  "sweep": {},
+  "speed_note": "No measurable cost and none expected: one extra `AddressOfEntryPoint` read per PE load, off an optional header the same function already parses for ImageBase/SizeOfHeaders, and one `Option<u64>` compare per entry candidate. Every non-PE image takes the `None` default and never enters it. 3-run `decompile-all` on pe_imports_stripped.exe: 2436 ms before, 2537 ms after -- inside the noise floor for a 3-run loop and far inside the 20% bar."
+}

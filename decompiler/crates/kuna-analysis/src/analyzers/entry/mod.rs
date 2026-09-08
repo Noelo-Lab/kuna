@@ -366,6 +366,9 @@ pub fn collect_entries(file: &object::File, bytes: &[u8]) -> Vec<u64> {
 
     let kind = crate::loader::format::detect(file).map(|f| f.kind()).ok();
     let mut cand: Vec<u64> = Vec::new();
+    // The one candidate the exec-section gate below is not allowed to reject
+    // (PE only; see the arm that sets it).
+    let mut exempt: Option<u64> = None;
 
     match kind {
         // ELF: e_entry, the dynamic INIT/FINI tables, .eh_frame FDEs, and the
@@ -413,6 +416,15 @@ pub fn collect_entries(file: &object::File, bytes: &[u8]) -> Vec<u64> {
         // begins (the `.eh_frame` analog), TLS callbacks, and exports (PR-12).
         Some(FormatKind::Pe) => {
             cand.extend(pe_entry::pe_entry_candidates(file, bytes));
+            // (kuna) The header page is no section, so no section flag ever spoke
+            // for the bytes in it: `AddressOfEntryPoint` is the image's only
+            // statement about them, and a packer that lays its stub in the slack
+            // after the section table makes that statement. An entry inside a
+            // section the image flags non-executable is deliberately NOT exempt
+            // -- there the flag IS a statement, and kuna answers it by naming the
+            // cause and the `--define-function` that overrides it
+            // (`docs/re-needs/batch-silently-omits-explicitly.md`).
+            exempt = crate::loader::pe_headers::header_entry(file, bytes);
         }
         // Mach-O: entry (`LC_MAIN`/`LC_UNIXTHREAD`), `LC_FUNCTION_STARTS` (the
         // richest, stripped-surviving source), `__mod_init_func`, and exports
@@ -431,14 +443,14 @@ pub fn collect_entries(file: &object::File, bytes: &[u8]) -> Vec<u64> {
         cand.extend(prologue_pattern_starts(&execs));
     }
 
-    // Keep only plausible code addresses (inside an executable section), drop any
-    // already named by a funcsym, dedup, sort.
+    // Keep only plausible code addresses (inside an executable section, or the one
+    // address `exempt` names), drop any already named by a funcsym, dedup, sort.
     let mut out: Vec<u64> = Vec::new();
     for vma in cand {
         if vma == 0 {
             continue;
         }
-        if !in_executable_section(&execs, vma) {
+        if !in_executable_section(&execs, vma) && Some(vma) != exempt {
             continue;
         }
         if funcsyms.binary_search(&vma).is_ok() {

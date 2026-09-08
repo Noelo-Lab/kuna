@@ -1,0 +1,46 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/pe_headercode_i386.exe",
+    "binary_sha256": "43d2d88fd87b1756b1a0ae6feac7ee8701f40a91b30be8171f689aeea7f88382",
+    "binary_size": 1024,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/pe_headercode_i386.exe"
+  },
+  "timeout_s": 60,
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--json",
+    "--no-vars"
+  ],
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "stdout_absent": [
+      "\"address_hex\": \"0x40200[04]\""
+    ],
+    "json": [
+      {
+        "path": "count",
+        "op": "eq",
+        "value": 1
+      },
+      {
+        "path": "functions[*].address_hex",
+        "op": "eq",
+        "value": "0x400154"
+      },
+      {
+        "path": "functions[*].code",
+        "op": "contains",
+        "value": "GetProcAddress(LoadLibraryA("
+      }
+    ]
+  },
+  "notes": "Vendored twin of the reported keygenme: two nameless sections both 0xc00000e0 (MEM_EXECUTE clear), AddressOfEntryPoint 0x154 in the header page. Built by tests/fixtures/pe_headercode_i386.py; unpatched it answers count 0 as the dataset image does, which stays the witness in Reproduction. REPLACES the filed `count > 2`, unreachable there -- see the decision log."
+}

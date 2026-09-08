@@ -553,13 +553,17 @@ impl ObjectLoadImage {
         // of its first section. `file.segments()` enumerates sections, so a PE's
         // `SizeOfHeaders` bytes at `ImageBase` were mapped nowhere and an entry
         // declared inside them read back "not mapped" even with an explicit
-        // `--define-function`. Read-only and DATA, as Windows maps it, so the
-        // executable-region scans stay out of every PE's MZ/PE bytes.
+        // `--define-function`. Read-only, as Windows maps it, and DATA unless
+        // the image declares its own entry point inside it (a packer stub in the
+        // slack after the section table), so the code scans stay out of every
+        // PE's MZ/PE bytes without also hiding the one address the image itself
+        // calls code.
         // `None` for every other format; see [`crate::loader::pe_headers`].
         let header = fmt.header_region(&file, bytes).map(|region| SectionInfo {
             vma: region.vma,
             size: region.len as u64, // cast: clamped to the file length
-            flags: section_flags::DATA | section_flags::READONLY,
+            flags: if region.code { section_flags::CODE } else { section_flags::DATA }
+                | section_flags::READONLY,
         });
         if let Some(region) = &header {
             segments.push(Segment::file_backed(
@@ -2051,8 +2055,11 @@ mod tests {
     }
 
     /// (kuna, `pe-header-entry-mapped`) The PE header page reaches the map: an
-    /// entry declared inside it has readable bytes, and the region is published
-    /// as read-only DATA so the executable-region scans stay out of it.
+    /// entry declared inside it has readable bytes. This fixture declares one,
+    /// so the region is read-only CODE — the image itself named those bytes
+    /// (`whole-binary-decompilation-treats`). The header page of an image that
+    /// declares no such entry stays DATA, which is
+    /// `the_header_page_never_overlaps_a_section` below.
     #[test]
     fn a_pe_maps_its_header_page_read_only() {
         use kuna_sleigh::loadimage::LoadImage;
@@ -2066,7 +2073,7 @@ mod tests {
         let mut img = ObjectLoadImage::from_bytes(&path, &bytes).expect("load the PE");
         img.attach_to_space(Rc::clone(&ram));
 
-        let header = (0x40_0000u64, 0x200u64, section_flags::DATA | section_flags::READONLY);
+        let header = (0x40_0000u64, 0x200u64, section_flags::CODE | section_flags::READONLY);
         assert!(
             img.get_segments().contains(&header),
             "SizeOfHeaders bytes are mapped at ImageBase; got {:?}",
