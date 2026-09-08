@@ -90,6 +90,36 @@ block and the walk stops at the first op that is not one), so it collects the ru
 off the block's intrusive op list rather than materializing every op of every
 successor once per CFG edge per pass.
 
+**Op properties on a heritage-created op.** The three op-codes heritage installs
+(the phi, the read-size SUBPIECE, the write-size PIECE) take their property flags
+from the same op-code table every other producer of p-code resolves through
+(`decompiler/crates/kuna-decomp/src/p5_types/typeop.rs (seam_type_op_for)`), so a
+heritage-created op is indistinguishable from the same op-code installed by a
+simplification rule. The phi's entry carries `special`, `marker` and `nocollapse`
+together, and each of the three is load-bearing somewhere: `marker` is what
+`is_marker` reads, `nocollapse` keeps the constant folder off a phi whose inputs
+happen to all be constants, and `special` — read as `get_eval_type() == special` —
+is the test every pass that splices an op into a block, moves an op within one,
+or gathers an expression uses to recognise that a MULTIEQUAL is not an ordinary
+computation. `ScopeLocal::annotate_raw_stack_ptr` (chapter 06) is the sharpest
+case: it splices a zero-offset `PTRSUB` placeholder in front of each op that
+reads the raw input stack pointer, and skips `special` readers precisely so the
+placeholder cannot land inside a block's leading phi run. A phi that fails that
+test takes a `PTRSUB` in front of it, and both consumers of the leading run — the
+renaming walk above, and `ConditionalJoin::cut_down_multiequals` (chapter 08),
+which drops one in-edge slot from every phi of a joined exit block — stop at the
+placeholder, leaving the phis behind it with one input more than their block has
+in-edges. Skipping the phi is the only correct choice — a phi's input must be
+defined on the incoming edge, so there is nowhere in the phi's own block the
+placeholder could legally go — but it has a visible cost: `mov rax,rsp` merges
+the unaffected input stack pointer into the same HighVariable as the register
+that copies it, and `HighVariable::has_name` (chapter 06) refuses to name a high
+carrying the stack pointer, so with no placeholder the leaf is printed from the
+member's own storage and renders a bare register or `Unique<hex>` name rather
+than `&Stack00000000`. Annotating the raw stack pointer on a phi's *incoming
+edge* would recover the frame-relative spelling, but upstream does not do it and
+it would be a new decision point, not part of this invariant.
+
 **Materializing an input over existing pieces (kuna, DIV-50).** The input a
 stack-empty read materializes may land on storage that already holds input
 varnodes. Upstream refuses that outright — `Funcdata::set_input_varnode` raises

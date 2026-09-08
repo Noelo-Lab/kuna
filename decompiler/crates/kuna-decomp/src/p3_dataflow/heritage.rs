@@ -4677,28 +4677,17 @@ impl Heritage {
     }
 }
 
-/// Build the minimal [`TypeOp`] skeleton heritage needs for the ops it creates
-/// (C++ `glb->inst[opc]` — the op-property triple `op_set_opcode` caches).
+/// Build the [`TypeOp`] triple heritage needs for the ops it creates (C++
+/// `glb->inst[opc]` — the op-property triple `op_set_opcode` caches).
 ///
-/// Heritage creates MULTIEQUAL (the phi, which must carry the `marker` flag so
-/// `is_marker()` / the renameRecurse MULTIEQUAL test see it), SUBPIECE (the
-/// read-size normalizer), and PIECE (the write-size normalizer's concat).  The
-/// merged `Funcdata` reaches only the `context::ArchContext` (no `inst` table),
-/// so the property triple is built inline with the exact flags upstream's
-/// `TypeOpMulti`/`TypeOpSubpiece`/`TypeOpPiece` carry.
+/// Resolves through the canonical `inst[]` table
+/// ([`crate::typeop::seam_type_op_for`]) so a heritage-created op carries the
+/// same `opflags` as the same op-code installed anywhere else.  The phi needs
+/// all three of `special|marker|nocollapse` (`TypeOpMulti`, `typeop.cc:1946`):
+/// `getEvalType() == special` is what keeps the passes that splice ops into a
+/// block, move ops, or fold constants away from a MULTIEQUAL.
 fn typeop_skeleton(opc: kuna_num::opcodes::OpCode) -> crate::context::TypeOp {
-    use crate::op::pcodeop_flags as f;
-    use kuna_num::opcodes::OpCode;
-    let (flags, name) = match opc {
-        // TypeOpMulti: marker (a special, non-evaluated phi node).
-        OpCode::CPUI_MULTIEQUAL => (f::marker, "?"),
-        // TypeOpSubpiece: binary.
-        OpCode::CPUI_SUBPIECE => (f::binary, "SUB"),
-        // TypeOpPiece: binary (the write-size-normalizer concat, "CONCAT").
-        OpCode::CPUI_PIECE => (f::binary, "CONCAT"),
-        _ => panic!("heritage typeop_skeleton: unexpected opcode {opc:?}"),
-    };
-    crate::context::TypeOp::new(opc, flags, name)
+    crate::typeop::seam_type_op_for(opc)
 }
 
 /// `PcodeOp::getOpFromConst(def->getIn(1)->getAddr())` for the INDIRECT

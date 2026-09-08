@@ -1813,7 +1813,10 @@ mod tests {
         // as scratch bounds a cut callee-body argument run (repipe r9)
         // and kuna-declaredlibcproto / a DECLARED function name is answered out of
         // the built-in libc signature tables (repipe r10)
-        assert_eq!(count, 256, "corpus file count drifted");
+        // and gh510-phiopflags / the phi's op-property triple carries `special`, so
+        // the raw-stack-pointer PTRSUB placeholder cannot land inside a leading phi
+        // run and strand a phi with more inputs than its block has in-edges
+        assert_eq!(count, 257, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

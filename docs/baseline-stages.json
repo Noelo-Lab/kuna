@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    704,
-    704
+    709,
+    709
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -154,6 +154,11 @@
     "data:GH403 #4: the conditional's surviving arm is unchanged by the truncation (both passes)",
     "data:GH4788 #1: disp17 Bcond decodes as bnc to 0x1963d8 (not ld.hu)",
     "data:GH4788 #2: the bytes are no longer mis-decoded as ld.hu",
+    "data:GH510 #1: the function is decompiled instead of abandoned (no LOSS-131 record)",
+    "data:GH510 #2: no parameterless error stub survives",
+    "data:GH510 #3: the record loop is recovered",
+    "data:GH510 #4: the first helper call is recovered",
+    "data:GH510 #5: the second helper call is recovered",
     "data:GH558 #1: compareform canonical restores upstream x < 9 (old behavior, opt-in)",
     "data:GH558 #2: default pipeline keeps the source form x <= 8 (fix is DIV-2 default)",
     "data:GH558 #3: arraynotation off restores upstream pointer arithmetic (old behavior, opt-in)",

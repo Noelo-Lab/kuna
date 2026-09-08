@@ -1,0 +1,105 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:windows">
+<!--
+    kuna GH-510: repeated `index out of bounds: the len is N but the index is N`
+    panics on an 18 MB Windows PE, each one dropping a whole function from the
+    output as a LOSS-131 error record.
+    https://github.com/Noelo-Lab/kuna/issues/510
+
+    Stage / sub-stage: P3 SSA construction, the op-property triple heritage
+    caches on the ops it creates (the C++ `glb->inst[opc]` seam).  Correctness
+    fix restoring upstream, no option.
+
+    The bytes below are a hand-written reconstruction of the MSVC idiom the
+    reported functions share: the `mov rax,rsp` prologue that saves the register
+    arguments through the raw stack pointer, then a loop whose body calls two
+    helpers and folds their results into one boolean with `cmovne`.  The two
+    calls deliberately leave the mapped chunk, as they do in the reported image.
+
+      140001000 4889e0         mov rax,rsp
+      140001003 48895808       mov QWORD PTR [rax+0x8],rbx
+      140001007 48896810       mov QWORD PTR [rax+0x10],rbp
+      14000100b 48897018       mov QWORD PTR [rax+0x18],rsi
+      14000100f 48897820       mov QWORD PTR [rax+0x20],rdi
+      140001013 4154           push r12
+      140001015 4156           push r14
+      140001017 4157           push r15
+      140001019 4883ec30       sub rsp,0x30
+      14000101d 488b7108       mov rsi,QWORD PTR [rcx+0x8]
+      140001021 4030ff         xor dil,dil
+      140001024 488b19         mov rbx,QWORD PTR [rcx]
+      140001027 4d89cc         mov r12,r9
+      14000102a 4d89c6         mov r14,r8
+      14000102d 4989d7         mov r15,rdx
+      140001030 4839f3         cmp rbx,rsi
+      140001033 7447           je 0x14000107c
+      140001035 408a6c2478     mov bpl,BYTE PTR [rsp+0x78]
+      14000103a 4d89f0         mov r8,r14
+      14000103d 4c89fa         mov rdx,r15
+      140001040 4889d9         mov rcx,rbx
+      140001043 e8b80f0000     call 0x140002000
+      140001048 84c0           test al,al
+      14000104a 7427           je 0x140001073
+      14000104c 4c8b4c2470     mov r9,QWORD PTR [rsp+0x70]
+      140001051 4d89e0         mov r8,r12
+      140001054 8b5310         mov edx,DWORD PTR [rbx+0x10]
+      140001057 488b4b18       mov rcx,QWORD PTR [rbx+0x18]
+      14000105b 40886c2420     mov BYTE PTR [rsp+0x20],bpl
+      140001060 e89b100000     call 0x140002100
+      140001065 84c0           test al,al
+      140001067 400fb6ff       movzx edi,dil
+      14000106b b901000000     mov ecx,0x1
+      140001070 0f45f9         cmovne edi,ecx
+      140001073 4883c320       add rbx,0x20
+      140001077 4839f3         cmp rbx,rsi
+      14000107a 75be           jne 0x14000103a
+      14000107c 488b5c2450     mov rbx,QWORD PTR [rsp+0x50]
+      140001081 4088f8         mov al,dil
+      140001084 488b7c2468     mov rdi,QWORD PTR [rsp+0x68]
+      140001089 488b6c2458     mov rbp,QWORD PTR [rsp+0x58]
+      14000108e 488b742460     mov rsi,QWORD PTR [rsp+0x60]
+      140001093 4883c430       add rsp,0x30
+      140001097 415f           pop r15
+      140001099 415e           pop r14
+      14000109b 415c           pop r12
+      14000109d c3             ret
+
+    The bug: `Heritage` built the property triple for the ops it creates from a
+    hand-written local table that gave CPUI_MULTIEQUAL only the `marker` flag,
+    where upstream's `TypeOpMulti` (typeop.cc:1946) carries
+    `special|marker|nocollapse`.  `getEvalType()` therefore answered 0 instead
+    of `special`, so `ScopeLocal::annotateRawStackPtr` (varmap.cc:396) did not
+    recognise the phi that reads the raw input stack pointer as a special op and
+    spliced its zero-offset `PTRSUB(sp,#0)` placeholder in FRONT of it, inside
+    the block's leading phi run.  `ConditionalJoin::cutDownMultiequals`
+    (blockaction.cc:1981) then stopped at that PTRSUB while removing one in-edge
+    slot from each phi of the joined exit block, leaving the phis behind it with
+    one input more than their block has in-edges; the next read of a phi slot
+    against the parent's in-edge vector is out of bounds.
+
+    Single pass, default pipeline.  Pre-fix `print C` renders the error stub
+    `void scan_list(void)` carrying the LOSS-131 warning and nothing else, so
+    all five assertions fail; post-fix the loop, both calls and the parameters
+    come back and all five pass.
+-->
+<bytechunk space="ram" offset="0x140001000" readonly="true">
+4889e0488958084889681048897018488978204154415641574883ec30488b71084030ff488b19
+4d89cc4d89c64989d74839f37447408a6c24784d89f04c89fa4889d9e8b80f000084c074274c8b
+4c24704d89e08b5310488b4b1840886c2420e89b10000084c0400fb6ffb9010000000f45f94883
+c3204839f375be488b5c24504088f8488b7c2468488b6c2458488b7424604883c430415f415e41
+5cc3
+</bytechunk>
+<symbol space="ram" offset="0x140001000" name="scan_list"/>
+</binaryimage>
+<script>
+  <com>lo fu scan_list</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GH510 #1: the function is decompiled instead of abandoned (no LOSS-131 record)" min="0" max="0">LOSS-131</stringmatch>
+<stringmatch name="GH510 #2: no parameterless error stub survives" min="0" max="0">void scan_list\(void\)</stringmatch>
+<stringmatch name="GH510 #3: the record loop is recovered" min="1" max="99">while</stringmatch>
+<stringmatch name="GH510 #4: the first helper call is recovered" min="1" max="99">sub_140002000</stringmatch>
+<stringmatch name="GH510 #5: the second helper call is recovered" min="1" max="99">sub_140002100</stringmatch>
+</decompilertest>
