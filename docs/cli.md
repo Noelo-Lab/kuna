@@ -436,6 +436,27 @@ error: --assert "flow 0x1405 call" refused by the pipeline: Could not apply flow
 exit 1
 ```
 
+**A `call` override follows the RET-call chain it starts.** `push
+<continuation>; push <target>; ret` is a call written without a `call`
+instruction: the `ret` pops `<target>` and jumps to it, and the callee returns to
+`<continuation>`, which is the instruction right after the `ret`. Packers and
+crackmes build whole bodies out of them, one link per callee. Reclassifying one
+link recovers one call — and the next link is still a `ret`, so the rest of the
+body is dead and prints as `return;`, with nothing to say the chain continues.
+So `call` and `callreturn` walk the chain from the link you named and plant
+themselves on the rest of it. The walk follows unconditional jumps, falls through
+everything else, and stops at the first `ret` the run reaching it did not push a
+continuation for — an ordinary epilogue, which never pushes the address of the
+instruction after itself, so an ordinary `flow <addr> call` extends to nothing.
+The console prints the links it added.
+
+```console
+$ kuna decompile ./bm3.exe 0x401757 --addr --assert 'flow 0x40176f call'
+-  void sub_401757(void) { LoadLibraryA(s_40151e); }
++  dat_40151a = GetProcAddress(LoadLibraryA());
++  ...  VirtualProtect(...); CreateFileA(...); ReadFile(...);   /* 21 more links */
+```
+
 **Every directive's fate is reported.** `--json` grows an `assertions` array — one
 row per directive, in the order you gave them, carrying the directive text, its
 phase and sub-phase, `applied` or `rejected`, and a reason:

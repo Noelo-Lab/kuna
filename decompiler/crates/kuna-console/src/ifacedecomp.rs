@@ -3308,17 +3308,47 @@ decomp_command!(
         if type_ == kuna_decomp::overrides::flow_type::NONE {
             return Err(IfaceError::parse("Bad override type"));
         }
+        // (kuna) A `call` override on a `push <cont>; push <target>; ret` link
+        // recovers ONE call of a chain built entirely out of them; the follower
+        // then resumes at the continuation and meets the next link's `ret`,
+        // which is still a return, so the rest of the body decompiles away.
+        // Plant the same override on the links this one leads to
+        // (`kuna_retcallchain`), which is what the caller asked for and the only
+        // way it can even see they exist.
+        let entry = dcp.fd.as_ref().expect("fd present").get_address().clone();
+        let prog = dcp.conf.as_ref().expect("conf present when fd present");
+        let chained = if type_ == kuna_decomp::overrides::flow_type::CALL
+            || type_ == kuna_decomp::overrides::flow_type::CALL_RETURN
+        {
+            crate::kuna_retcallchain::kuna_chain_sites(
+                prog.arch().translate(),
+                &entry,
+                &addr,
+                crate::kuna_retcallchain::CHAIN_MAX_SITES,
+                crate::kuna_retcallchain::CHAIN_MAX_INSNS,
+            )
+        } else {
+            Vec::new()
+        };
         // C++ dcp->fd->getOverride().insertFlowOverride(addr,type).
         let fname = dcp.fd.as_ref().expect("fd present").get_name().to_string();
-        dcp.fd
-            .as_mut()
-            .expect("fd present")
-            .get_override_mut()
-            .insert_flow_override(addr.clone(), type_);
-        // Stash by function name so the override survives the IR rebuild on
-        // `load function`/`decompile` (the kuna console rebuilds the Funcdata).
-        dcp.pending_flow_overrides.entry(fname).or_default().push((addr, type_));
+        for site in std::iter::once(addr.clone()).chain(chained.iter().cloned()) {
+            dcp.fd
+                .as_mut()
+                .expect("fd present")
+                .get_override_mut()
+                .insert_flow_override(site.clone(), type_);
+            // Stash by function name so the override survives the IR rebuild on
+            // `load function`/`decompile` (the kuna console rebuilds the Funcdata).
+            dcp.pending_flow_overrides.entry(fname.clone()).or_default().push((site, type_));
+        }
         status.out("Successfully added override\n");
+        if !chained.is_empty() {
+            status.out(&format!(
+                "Extended it along the ret-call chain to {}\n",
+                crate::kuna_retcallchain::kuna_render_sites(&chained)
+            ));
+        }
         Ok(())
     }
 );

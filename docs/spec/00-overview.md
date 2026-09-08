@@ -1125,6 +1125,38 @@ is now stamped onto the retained `Funcdata` (`set_kuna_pipeline_failure`) so tha
 shell names its reason, and the script surface reports the raised abort the way it
 already reported the swallowed one.
 
+A `call` (or `callreturn`) override carries one more fact with it: the RET-call
+chain it starts. `push <continuation>; push <target>; ret` is a call spelled
+without a `call` instruction — the `ret` pops `<target>`, and the callee returns
+to `<continuation>`, which is the address of the instruction right after the
+`ret`. A body built out of them is one such `ret` per callee, and reclassifying
+one link is not enough: P2 resumes at the continuation exactly as it should, meets
+the next link's `ret`, and ends the flow there, so everything past the first
+recovered call is dead and prints as `return;`. The caller gets one call and no
+evidence the chain exists. So both surfaces extend the directive before they seed
+it (`decompiler/crates/kuna-console/src/kuna_retcallchain.rs
+(kuna_chain_sites)`): a straight-line walk from the function's entry decodes each
+instruction through a `PcodeEmit` that records the literals it stores to memory
+and how it leaves, follows an unconditional direct branch, falls through
+everything else (a conditional branch and a real `call` both reach their
+fall-through), and at each `CPUI_RETURN` asks whether the run that reached it
+stored that `ret`'s OWN fall-through address. That is the whole test, and it is
+what makes the extension safe to do unasked: an ordinary epilogue never pushes the
+address of the instruction after itself, and a real `call` does push its own
+fall-through but is not a `ret` — its literals are dropped for that reason. The
+walk clears the collected literals at every link, stops at the first `ret` that
+fails the test, at an indirect branch, at a decode failure, at an address it has
+already decoded, and at the site/instruction caps; and it reports nothing at all
+unless the overridden address is itself one of the links it found, so a `flow
+<addr> call` anywhere in ordinary code extends to nothing. The literals come
+through two `COPY`s (SLEIGH's `push` macros hand the immediate to a unique before
+the `STORE`), so the scan tracks a constant per varnode within the instruction
+rather than reading the `STORE` value operand directly. Both the ported console
+command and the in-process seed run it, so the script and `--json` surfaces render
+the same C. Measured on the round-9 witness (`docs/re-needs/
+flow-call-override-retain.md`): one directive against a 22-link body, which went
+from `LoadLibraryA(s_40151e);` to the whole self-unpacking sequence.
+
 A `readonly` range is the one directive whose effect depends on a second switch:
 folding a read-only load into the value behind it is
 `ActionVarnodeProps`/`Funcdata::fillin_read_only`, gated on the program-wide

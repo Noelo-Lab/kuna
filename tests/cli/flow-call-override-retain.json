@@ -1,0 +1,39 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "chain_entry",
+    "--assert",
+    "flow 0x8049019 call"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/retcallchain_i386",
+    "binary_sha256": "dfcdcf8481d07ba3caf4ecf96f7f4db3ed7223042c528b6fcc94750d53db10b5",
+    "binary_size": 8864,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/retcallchain_i386",
+    "selector": "chain_entry",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "\\(\\*dat_804a000\\)\\(\\)",
+      "\\(\\*dat_804a004\\)\\(\\)",
+      "\\(\\*dat_804a008\\)\\(\\)"
+    ]
+  },
+  "notes": "Desired: a `flow <addr> call` override on one `push <cont>; push <target>; ret` link follows the chain it starts, instead of recovering one call and leaving the rest of the body dead. Witness: crackmes.one 5ab77f5c33c5d40ad448c681 (bm3.exe sub_401757 @0x40176f), 22 such links, which printed `LoadLibraryA(s_40151e);` and nothing else. Unpatched, only the first call here appears."
+}

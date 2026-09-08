@@ -951,7 +951,23 @@ fn seed_one(
                 ));
             }
             let at = code_addr(prog, *addr)?;
-            seed.flow_overrides.push((at, type_));
+            seed.flow_overrides.push((at.clone(), type_));
+            // (kuna) The same chain extension the `override flow` console
+            // command performs, for the in-process drive (`decompile-all`,
+            // `decompile-project`, the WASM front-end), which never runs it.
+            if type_ == kuna_decomp::overrides::flow_type::CALL
+                || type_ == kuna_decomp::overrides::flow_type::CALL_RETURN
+            {
+                for site in crate::kuna_retcallchain::kuna_chain_sites(
+                    prog.arch().translate(),
+                    entry,
+                    &at,
+                    crate::kuna_retcallchain::CHAIN_MAX_SITES,
+                    crate::kuna_retcallchain::CHAIN_MAX_INSNS,
+                ) {
+                    seed.flow_overrides.push((site, type_));
+                }
+            }
             Ok(())
         }
         _ => Err("internal: not a function-scoped directive".into()),
