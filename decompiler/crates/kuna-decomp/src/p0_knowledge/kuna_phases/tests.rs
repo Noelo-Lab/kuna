@@ -413,7 +413,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_58_suppressed_for_101() {
+fn option_values_live_value_present_for_59_suppressed_for_101() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -729,7 +729,9 @@ fn option_values_live_value_present_for_58_suppressed_for_101() {
     // 55 -> 56: +1 for `litpoolconst` (live_field = litpoolconst, DIV-136).
     // 56 -> 57: +1 for `codescalar` (live_field = codescalar, DIV-138).
     // 57 -> 58: +1 for `stackarggap` (live_field = stack_arg_gap, DIV-140).
-    assert_eq!(with_live, 58);
+    // 58 -> 59: +1 for `calleeprotostack` (live_field = callee_proto_stack,
+    // DIV-142).
+    assert_eq!(with_live, 59);
 }
 
 #[test]

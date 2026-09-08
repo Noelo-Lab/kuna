@@ -6,13 +6,21 @@
   "div": "DIV-142",
   "pr": "https://github.com/Noelo-Lab/kuna/pull/521",
   "acceptance": "PASS",
-  "gates": {"test": "PARITY OK 675/675", "test-stages": "PARITY OK 704/704", "test-cli": "100/100", "check-spec": "OK", "rust-test": "green", "catalog": "OK"},
+  "gates": {
+    "test": "PARITY OK 675/675",
+    "test-stages": "PARITY OK 704/704",
+    "test-cli": "100/100",
+    "check-spec": "OK",
+    "rust-test": "green",
+    "catalog": "OK"
+  },
   "decisions": [
     "The filed symptom was stale: win32sigs (DIV-141) already fixed the argument-EATING half. The live defect was the mirror image, the staged pushes being DROPPED.",
     "Root cause differs from the need's reference note: FuncProto::resolve_extra_pop is a ported function nothing in the tree ever called, so a locked import prototype still reached StackSolver as extrapop-unknown and calleepop guessed the cleanup off the caller's push run.",
     "Second half needed for the acceptance's address-of clause: Heritage::guardCalls plants an INDIRECT over the caller's stack at every call, which stops a staged value reaching the call it was staged for.",
     "A plain 'the callee does not touch the caller's stack' rule is UNSOUND -- it would break ReadFile(h,&buf,...). Gated on AliasChecker::has_local_alias, the same test checkInputTrialUse already applies.",
     "Dropped a third half (delivering the parked prototype at ActionDeindirect) after measuring that it moved two existing tests/cli expectations; the vendored fixture was instead made to end in a no-return import, which is what the reported image does and what triggers the restart that delivers the signature.",
-    "No tests/stages case: the datatest harness cannot 'load file' a synthesized PE (the pre-existing win32sigs_pe_i386.exe fails there too). Measured blind spot, recorded not worked around."
+    "No tests/stages case: the datatest harness cannot 'load file' a synthesized PE (the pre-existing win32sigs_pe_i386.exe fails there too). Measured blind spot, recorded not worked around.",
+    "Workspace-suite repair (salvage): the two new unit tests panicked `FuncProto::store: null` because the fixture built a store-less `FuncProto::new()` and then called the MUTATOR `set_input_lock`, which walks the parameter list. The FIXTURE was wrong, not the code: both production entry points read the lock through `is_input_locked`, which already reports a store-less prototype as unlocked, and `resolve_declared_extra_pop`'s only caller runs it on a prototype `seed_locked_from_pieces` has just given a store. Fixture now attaches the stand-alone store (the `fspec/tests.rs` idiom), and a new test `store_less_prototype_declines` pins the null-store tolerance so the panic cannot come back as a real one."
   ]
 }
