@@ -1,0 +1,60 @@
+{
+  "need": "hint-printing-call-loses",
+  "track": "quality",
+  "scope": "small",
+  "option": "calleearityscratch",
+  "default": "on",
+  "module": "decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleearityscratch.rs",
+  "witness": "cr4ckm3_0x (ELF x86-64, statically linked, stripped; challenge 5e51836e33c5d4439bb2dc24) 0x400f30 -> sub_417f80 @0x401007, reduced and vendored as decompiler/crates/kuna-analysis/tests/fixtures/calleearityscratch_x86_64",
+  "decisions": [
+    "THE FILED HYPOTHESIS WAS ALREADY OVERTURNED IN THE NEED and the refuter's diagnosis held under my own instrumentation. It said `single-site callee analysis does not establish its arity`; kuna has exactly that (`calleearitybody`, default-on) and it establishes the run {rdi} correctly here. The loss is one line further on, in `calleearitycut`'s boundary test.",
+    "REPRODUCED AND INSTRUMENTED. Printing every BodyTrial at the captured call shows all six SysV register trials scoring inactive and the run picked as {rdi}; the boundary trial is rsi, whose Varnode at the CALL slot is written (a loop MULTIEQUAL over the unrolled XOR body) and so fails `caller_quiet`. `accepts_cut_run` returns false and the whole one-argument list is dropped.",
+    "THE DISCRIMINATOR IS UPSTREAM'S OWN, ALREADY COMPUTED. Argument setup is a value used for nothing but the call -- `Funcdata::onlyOpUse` -- and `FuncCallSpecs::checkInputTrialUse` runs `ancestor_op_use` over every trial and marks it ACTIVE only when that is true. rsi's trial is INACTIVE here because the caller reads sil in the XOR. So the widening reads `trial.is_checked() && !trial.is_active()` rather than inventing a second walk; no new analysis, no new decode.",
+    "THE WITNESS'S SIL USE IS NOT VISIBLE ON THE 8-BYTE rsi VARNODE. Instrumented: that Varnode's only descendant is the CALL, because the byte read hangs off the 4-byte esi in the def chain. A naive `has a descendant other than the CALL` test would have MISSED the witness; `ancestor_op_use`, which walks the def chain, does not. This is why the recorded trial verdict is the right thing to read and a locally-computed one is not.",
+    "A CONSTANT IS NEVER SCRATCH, and this restriction is load-bearing, not decoration. The `boundary_const` control (`mov $2,%esi; add %rsi,%rbx` before the CALL) scores checked+INACTIVE, so the trial verdict alone would accept it; instrumented, `caller_constant` is what refuses it. Materializing a constant into the next argument register right before a CALL is argument setup in its most literal form.",
+    "THE FAILURE MODE IS BOUNDED BY THE RULE IT WIDENS. `calleearitycut`'s contiguity and stops-short conditions are untouched, and `capture_lone_call` only ever fires on a site that recovered NOTHING, so the worst reachable outcome is a SHORT argument list against a site that was printing an empty one -- never an argument in the wrong position, and never an argument removed.",
+    "IT IS ITS OWN OPTION rather than a relaxation of `calleearitycut` because it is a judgement call with a real cost (a boundary the caller both computes and consumes could still be a further argument), and because `calleearitycut` shipped default-on with the narrower contract that its own module header argues for.",
+    "THE NEED'S OTHER TWO INSTANCES ARE A DIFFERENT DEFECT and the T_DEDUP note said so before I started: the witness is a TOTAL loss (zero arguments) and goes through `calleearitybody`/`calleearitycut`, which are eligible only for a call that recovered nothing at all; 6a095817 (memcpy keeps 2 of 3) and 6a148dd6 (init_state keeps 1 of 4) are PARTIAL and are `calleearitylive`'s territory. Closing this need does not close them and their return in a later round is not a regression."
+  ],
+  "sweep": {
+    "corpus": "90 binaries -- 60 decbench (O0 / O2 / O2-noinline, x86-64 and ARM) plus 30 crackmes.one arena images (PE and ELF) -- kuna decompile-all --json, option on vs off; 3 of the 90 discover no function in EITHER arm and are excluded",
+    "functions": 27417,
+    "changed_functions": 38,
+    "changed_binaries": 9,
+    "functions_added": 0,
+    "functions_removed": 0,
+    "empty_argument_lists_filled": 38,
+    "calls_that_lost_an_argument": 0,
+    "arguments_emitted_in_the_wrong_position": 0,
+    "no_op_check": "a per-binary call-arity histogram over both arms (name -> arity -> count): NO zero-argument form increases anywhere, and the only positive-arity count that falls is `CONCAT71/2` in CrackMe.exe (20 -> 16), which is the printer's concat pseudo-op being hoisted into a variable and reused, not a call. So no call anywhere lost an argument.",
+    "checked_against_source_or_the_line_beside_it": "`__subvdi3(v5,src)` in OpenBSD `strlcpy` x4 (ssh, ssh-agent, ssh-keyscan, ssh-pkcs11-helper) -- the function returns `s - src - 1` and `__addvdi3(v4,0xffffffffffffffff)` is the next line; `sub_1ad20(v17,v10,a0,a1)` in `almost` matching the `sub_1a2f0(v17,v10,a0,a1)` in the sibling branch of the same `if`; `sub_14001d34c((long long)(int)fd)` in CrackMe.exe / `sub_1406b5274` in crackme_shroud.exe feeding `FlushFileBuffers`, which is MSVC's `_commit`; `sub_1400180f0(*(long long *)&v2[0x76])` in phantomgate.exe under its own `if (ptr)` guard; `sub_140001800(v)` x11 in vm.exe, one per opcode handler.",
+    "downstream_churn": "6 of the 38 changed functions gain no argument themselves -- they are the callers whose OWN dataflow shifts because a call inside them gained one (a hoisted subexpression, a renumbered local, a re-rolled loop). Read individually, all 6 are the same shape: a repeated expression becomes a named variable. None loses a statement."
+  },
+  "speed": {
+    "single_target": {
+      "command": "scripts.pipeline.timeit --option calleearityscratch, cr4ckm3_0x 0x400f30",
+      "reps": 9,
+      "median_ms_off": 249.88,
+      "median_ms_on": 237.06,
+      "delta_pct": -5.13
+    },
+    "whole_binary": {
+      "command": "kuna decompile-all phantomgate.exe --json, interleaved off/on",
+      "pairs": 4,
+      "median_s_off": 31.445,
+      "median_s_on": 31.435,
+      "delta_pct": -0.03
+    },
+    "verdict": "no measurable cost. The single-target number is inside this machine's known noise floor (docs/features/returncopysplit/record.json measured -20.23% on byte-identical output), which is why the 31-second whole-binary pair is the one to read: -0.03%. Structurally the rule reads three booleans already recorded on a trial, on a call `calleearitybody` had already captured, and takes no new decode."
+  },
+  "gates": {
+    "make test": "PARITY OK 675/675",
+    "make test-stages": "PARITY OK 692/692 (687 -> 692, purely additive)",
+    "make rust-test": "green (6,076 passed, 0 failed) with `env -u KUNA_DECOMP_TEST`; the repipe launcher points that variable at kuna's own decomp_test_dbg, which makes verify_w10_* oracle assertions unsatisfiable for any kuna build",
+    "make check-spec": "OK (strict)",
+    "kuna catalog --check": "catalog OK",
+    "make test-cli": "85/85",
+    "acceptance": "PASS"
+  },
+  "instance_coverage": "Closes the witness instance 5e51836e33c5d4439bb2dc24, which is the only one carrying an acceptance clause. The other two filed instances (6a09581717539b5175d122b9 memcpy, 6a148dd62b3df128c1df5c9e init_state) are partial-list losses on a different path and are NOT closed by this."
+}

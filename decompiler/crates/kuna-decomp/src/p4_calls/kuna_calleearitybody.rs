@@ -121,6 +121,16 @@ pub struct BodyTrial {
     /// all?  Read by [`crate::p4_calls::kuna_calleearitycut`], which refuses to
     /// end a run at a register the caller loaded a value into.
     pub caller_quiet: bool,
+    /// Has `check_input_trial_use` scored this trial at all?
+    pub caller_checked: bool,
+    /// Did that scoring mark the trial ACTIVE — `ancestor_op_use` finding the
+    /// value reaches the CALL and nothing else?  Read by
+    /// [`crate::p4_calls::kuna_calleearityscratch`], which lets an INACTIVE
+    /// boundary end a run the caller wrote into.
+    pub caller_active: bool,
+    /// Is the Varnode standing at this trial a constant the caller materialized?
+    /// Never scratch, however the trial scored.
+    pub caller_constant: bool,
 }
 
 /// A call site that finalized with an empty argument list and no sibling to
@@ -181,6 +191,12 @@ pub fn capture_lone_call(fc: &FuncCallSpecs, data: &Funcdata) -> Option<PendingB
                 .and_then(|v| data.vbank().get(v))
                 .map(|x| !x.is_written() && !x.is_constant())
                 .unwrap_or(true);
+        let caller_checked = t.is_checked();
+        let caller_active = t.is_active();
+        let caller_constant = at_slot
+            .and_then(|v| data.vbank().get(v))
+            .map(|x| x.is_constant())
+            .unwrap_or(false);
         let mut vn = None;
         if !t.is_definitely_not_used() && !t.is_unref() {
             if let Some(v) = at_slot {
@@ -192,7 +208,15 @@ pub fn capture_lone_call(fc: &FuncCallSpecs, data: &Funcdata) -> Option<PendingB
                 }
             }
         }
-        trials.push(BodyTrial { addr, size, vn, caller_quiet });
+        trials.push(BodyTrial {
+            addr,
+            size,
+            vn,
+            caller_quiet,
+            caller_checked,
+            caller_active,
+            caller_constant,
+        });
     }
     if !trials.first().map(|t| is_register(&t.addr)).unwrap_or(false) {
         return None;
@@ -223,6 +247,7 @@ pub fn plan_from_body(
     entries: &[(Address, int4)],
     live: &CalleeEntryDead,
     cut: bool,
+    scratch: bool,
 ) -> Option<Vec<int4>> {
     if !live.is_complete() || entries.is_empty() {
         return None;
@@ -265,7 +290,9 @@ pub fn plan_from_body(
     }
     if !left.iter().any(|(a, sz)| live.proves_dead(a, *sz))
         && !(cut
-            && crate::p4_calls::kuna_calleearitycut::accepts_cut_run(trials, &picked, entries))
+            && crate::p4_calls::kuna_calleearitycut::accepts_cut_run(
+                trials, &picked, entries, scratch,
+            ))
     {
         return None;
     }
@@ -311,6 +338,7 @@ fn recover_one(data: &mut Funcdata, p: &PendingBodyArgs) -> bool {
         _ => return false,
     }
     let cut = data.get_arch().callee_arity_cut;
+    let scratch = data.get_arch().callee_arity_scratch;
     let Some(idx) = data.get_call_specs_index(p.op) else { return false };
     let entries = {
         let fc = data.get_call_specs(idx);
@@ -321,7 +349,7 @@ fn recover_one(data: &mut Funcdata, p: &PendingBodyArgs) -> bool {
     };
     let picked = {
         let Some(live) = data.kuna_callee_entry_dead(&p.entry) else { return false };
-        match plan_from_body(&p.trials, &entries, live, cut) {
+        match plan_from_body(&p.trials, &entries, live, cut, scratch) {
             Some(v) => v,
             None => return false,
         }

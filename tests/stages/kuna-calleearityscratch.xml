@@ -1,0 +1,115 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    RE-friction round 9, need `hint-printing-call-loses` (challenge
+    5e51836e33c5d4439bb2dc24, ELF x86-64 `cr4ckm3_0x`): the function at 0x400f30
+    decodes a 23-byte string with an unrolled XOR loop and hands the buffer to
+    its hint printer, and `kuna decompile` renders that call with no arguments,
+
+        sub_417f80();                         0x401007
+
+    although 0x400f58 `lea rdi,[rbp-0x30]` sets rdi to the buffer and nothing
+    redefines rdi before the CALL.  Asserting a prototype for the callee restores
+    `sub_417f80((char *)v2)`, so the caller-side dataflow is intact and the loss
+    is entirely in unlocked call-site recovery.
+
+    Root cause (P4, trial finalization).  `calleearitybody` picks the run {rdi} -
+    the callee reads rdi at 0x417f84 - and its decode is cut three instructions
+    later at 0x417f8d, so nothing proves rsi dead and `calleearitycut` is asked
+    to bound the run by the register it stops at.  `calleearitycut` requires that
+    register to be QUIET, meaning the caller put no value in it, and the caller
+    did: 0x400fc9 `movzx esi,byte ptr [rbp-0x1a]` puts the XOR key in rsi and
+    0x400fcd `xor byte ptr [r8+0x6],sil` consumes it.  The boundary is not quiet,
+    the run is refused, and the whole one-argument list is dropped.
+
+    But "the caller wrote it" and "the caller is passing it" are different
+    claims, and a register allocator will spend an argument register on a
+    throwaway.  Argument setup is a value used for NOTHING but the call, which is
+    `Funcdata::onlyOpUse` (funcdata_varnode.cc:1851) - and upstream has already
+    asked it: `FuncCallSpecs::checkInputTrialUse` runs `ancestorOpUse` over every
+    trial and marks it ACTIVE only when the answer is yes.  The XOR is the other
+    use, so rsi's trial scores INACTIVE, and an inactive boundary is scratch.
+
+    Stage / sub-stage: P4 "trial-finalization".  The P0 assertion
+    `option calleearityscratch on|off` decides whether an inactive boundary can
+    end the run; it is inert with `calleearitycut off`.
+
+    The fixture is the same construct on SysV x86-64.  Every callee reads rdi and
+    then calls `sink`, so the callee-body walk is cut there and the run {rdi} has
+    no proven boundary; every caller passes its own incoming rdi straight through
+    (`AncestorRealistic::execute` refuses an input Varnode, so the site recovers
+    nothing) and differs only in what it puts in rsi:
+
+        sink:  ret
+        calN:  mov %rdi,%rax; call sink; ret
+
+        scratch_wide:   push %rbx; mov %rdi,%rbx
+                        mov (%rdi),%rsi ; add %rsi,%rbx   # caller consumes rsi
+                        call cal1 ; add %ebx,%eax ; pop %rbx ; ret
+        scratch_byte:   ... movzbl (%rdi),%esi ; xor %sil,0x4(%rdi) ...
+        boundary_live:  ... mov (%rdi),%rsi ...            # nothing else uses it
+        boundary_const: ... mov $2,%esi ; add %rsi,%rbx ...
+
+    `scratch_wide` and `scratch_byte` are the fix.  The other two are the
+    discriminators, unchanged in BOTH passes: `boundary_live` uses rsi for
+    nothing but the call, so its trial scores active and the site recovers rsi on
+    its own, and `boundary_const` materializes a constant, which is argument
+    setup in its most literal form and is never scratch however the trial scored.
+    Pass 1 (`option calleearityscratch off`) reproduces the BUG in the first two.
+-->
+<bytechunk space="ram" offset="0x100000">
+c30000000000000000000000000000004889f8e8e8ffffffc300000000000000
+4889f8e8d8ffffffc3000000000000004889f8e8c8ffffffc300000000000000
+4889f8e8b8ffffffc300000000000000534889fb488b374801f3e8b1ffffff01
+d85bc30000000000000000000000000000000000000000000000000000000000
+534889fb0fb63740307704e890ffffff01d85bc3000000000000000000000000
+00000000000000000000000000000000534889fb488b37e874ffffff01d85bc3
+0000000000000000000000000000000000000000000000000000000000000000
+534889fbbe020000004801f3e84fffffff01d85bc30000000000000000000000
+00000000000000000000000000000000
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="sink"/>
+<symbol space="ram" offset="0x100010" name="cal1"/>
+<symbol space="ram" offset="0x100020" name="cal2"/>
+<symbol space="ram" offset="0x100030" name="cal3"/>
+<symbol space="ram" offset="0x100040" name="cal4"/>
+<symbol space="ram" offset="0x100050" name="scratch_wide"/>
+<symbol space="ram" offset="0x100080" name="scratch_byte"/>
+<symbol space="ram" offset="0x1000b0" name="boundary_live"/>
+<symbol space="ram" offset="0x1000e0" name="boundary_const"/>
+</binaryimage>
+<script>
+  <com>option calleearityscratch off</com>
+  <com>lo fu scratch_wide</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu scratch_byte</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu boundary_live</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu boundary_const</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option calleearityscratch on</com>
+  <com>lo fu scratch_wide</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu scratch_byte</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu boundary_live</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu boundary_const</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="calleearityscratch #1: with the option off both scratch sites render an empty argument list -- the bug" min="2" max="2">cal[12]\(\)</stringmatch>
+<stringmatch name="calleearityscratch #2: option on bounds the run at the 64-bit scratch register and recovers the one argument the callee reads" min="1" max="1">cal1\(a[0-9]+\)</stringmatch>
+<stringmatch name="calleearityscratch #3: the witness's own byte-scratch shape recovers the same way" min="1" max="1">cal2\(a[0-9]+\)</stringmatch>
+<stringmatch name="calleearityscratch #4: a boundary the caller uses for nothing but the call scores active and the site recovers it on its own, in both passes" min="2" max="2">cal3\(a[0-9]+,[^)]+\)</stringmatch>
+<stringmatch name="calleearityscratch #5: a constant boundary is never scratch, so that site is untouched in both passes" min="2" max="2">cal4\(\)</stringmatch>
+</decompilertest>

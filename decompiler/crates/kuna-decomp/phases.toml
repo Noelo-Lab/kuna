@@ -2612,6 +2612,25 @@ tier = "core"
 symptoms = "a call renders with no arguments although the disassembly loads every argument register before it|calleearitybody leaves an empty argument list alone on a callee whose prologue calls another function|the caller passes its own incoming parameters straight through and every one of them disappears at the call|f() is called where a separate decompile of f declares f(int8,char *,int8,uint4)|only the argument register the caller writes just before the CALL survives trial scoring, and the list still comes out empty"
 
 [[settable]]
+option = "calleearityscratch"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P4"
+subphase = "trial-finalization"
+strength = "HARD"
+rewind = "P4"
+issue = "repipe-hint-printing-call-loses"
+summary = "Let a boundary register the caller only used as SCRATCH end a `calleearitycut` argument run. `calleearitycut` bounds a lone call's callee-body argument run by the register the run stops at, and requires that register to be QUIET -- the caller must have placed nothing in it -- because a caller that computes a value into the next argument register right before the CALL is usually passing a further argument, and truncating there would hide it. A register allocator does not respect that: it will spend an argument register on a throwaway. An x86-64 ELF crackme decodes a string with an unrolled XOR loop and hands the buffer to its hint printer -- `lea rdi,[rbp-0x30]` sets up the argument, then `movzx esi,byte ptr [rbp-0x1a]` puts the XOR key in the SECOND argument register and `xor byte ptr [r8+0x6],sil` consumes it, and 0x3e bytes later `call 0x417f80`. The callee reads rdi at its first instruction, so the run is `{rdi}`; its decode is cut three instructions later at a nested call, so nothing proves rsi dead; rsi is the register the run stops at, the caller wrote it, and the whole one-argument list is dropped -- the call renders `sub_417f80();`. This rule separates `the caller wrote it` from `the caller is passing it` using the answer upstream has already computed: `FuncCallSpecs::checkInputTrialUse` runs `Funcdata::ancestorOpUse` (funcdata_varnode.cc:1963) over every trial and marks it ACTIVE only when the value reaches the CALL and nothing else, so the XOR gives rsi's trial an INACTIVE score. An inactive boundary is scratch and bounds the run; an active one is upstream saying the value goes nowhere but the call, and stays refused. A constant is never scratch, however it scored -- materializing a constant into the next argument register right before a CALL is argument setup in the most literal form there is. All of `calleearitycut`'s own guards still apply first: the run must be contiguous and must stop short, so the reachable error stays a MISSING trailing argument, never one printed in the wrong position."
+use_when = "On by default (DIV-PENDING). Keep it on when a call to a callee called only ONCE renders `f();` although the disassembly loads at least the first argument register, `calleearitybody` and `calleearitycut` together still recover nothing, and the register just past the ones the callee reads is written by the caller for the caller's OWN use -- a loop counter, an unrolled XOR key, a scratch byte that is stored or compared before the CALL. Inert unless `calleearitycut` (and so `calleearitybody` and `calleearity`) is also on. Flip OFF if a call gains a SHORT argument list where the register just past it really was a further argument the caller both computed and used for something else; the result is a prefix of the true list, never a misplaced argument, because the run is still required to be contiguous."
+example = "option calleearityscratch off"
+source_decompiler = "kuna"
+inspiration = "repipe:hint-printing-call-loses, 5e51836e33c5d4439bb2dc24 (ELF x86-64 cr4ckm3_0x) 0x400f30 -> sub_417f80 at 0x401007; upstream Funcdata::onlyOpUse (funcdata_varnode.cc:1851) and FuncCallSpecs::checkInputTrialUse (fspec.cc:5592)"
+change_kind = "correctness-fix"
+tier = "core"
+symptoms = "a call still renders with no arguments although calleearity, calleearitybody and calleearitycut are all on|an explicit prototype assert restores the argument that the unlocked call site drops|the argument register just past the recovered run is written inside an unrolled loop for the caller's own use|a decoding loop is followed by f() where the buffer pointer is plainly live into the CALL|the register the callee-body run stops at is compared, stored or XORed by the caller before the CALL"
+
+[[settable]]
 option = "inputparamgap"
 values = "on|off"
 default = "on"

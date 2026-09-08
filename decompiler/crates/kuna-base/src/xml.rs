@@ -1809,7 +1809,9 @@ mod tests {
         // stackguard matcher cannot see (GH-468)
         // and kuna-pdb-sidecar / a Windows PE whose matching `.pdb` sits beside it
         // is named from that sidecar with no option and no environment variable
-        assert_eq!(count, 252, "corpus file count drifted");
+        // and kuna-calleearityscratch / a boundary register the caller only used
+        // as scratch bounds a cut callee-body argument run (repipe r9)
+        assert_eq!(count, 253, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

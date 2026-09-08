@@ -604,6 +604,11 @@ pub struct Architecture {
     /// rather than by a provably dead register (option `calleearitycut`).  See
     /// [`crate::p4_calls::kuna_calleearitycut`].
     pub callee_arity_cut: bool,
+
+    /// (kuna) Let a boundary register the caller only used as scratch end that
+    /// cut run (option `calleearityscratch`).  See
+    /// [`crate::p4_calls::kuna_calleearityscratch`].
+    pub callee_arity_scratch: bool,
     /// (kuna) Completion level for the two upstream partial-range call-overlap
     /// guards `Heritage::guardCallOverlappingInput` and
     /// `Heritage::tryOutputOverlapGuard`, which kuna shipped as comment-only stubs
@@ -1883,6 +1888,7 @@ impl Architecture {
             callee_arity_live: true,
             callee_arity_body: true,
             callee_arity_cut: true,
+            callee_arity_scratch: true,
             call_overlap: 0,
             spill_arg_trial: 0,
             load_guard_range: false, // (kuna) option loadguardrange; reset_defaults sets the shipped default
@@ -2108,6 +2114,7 @@ impl Architecture {
         self.callee_arity_live = true; // (kuna) DIV-PENDING default-on: extend a partial argument list when the callee body agrees (0/675 ablation)
         self.callee_arity_body = true; // (kuna) DIV-PENDING default-on: a call with no sibling recovers its argument list from the callee's own body (0/675 ablation)
         self.callee_arity_cut = true; // (kuna) DIV-PENDING default-on: a callee-body argument run that stops short of the last argument register is bounded by that register, so a body whose decode is cut at a nested call still speaks (0/675 ablation)
+        self.callee_arity_scratch = true; // (kuna) DIV-PENDING default-on: a boundary register the caller's own trial scoring marked inactive is scratch, not a further argument, so a run that stops at one is still bounded (0/675 ablation)
         self.call_overlap = 0; // (kuna) calloverlap: PLACEHOLDER default (set from measurement)
         self.spill_arg_trial = 0; // (kuna) spillargtrial default-OFF opt-in (diverges from upstream onlyOpUse; the failure mode is a spurious trailing argument, which no gate can see)
         self.load_guard_range = true; // (kuna) DIV-77 default-on: restores upstream Heritage::analyzeNewLoadGuards ValueSet range refinement of indexed-stack LOAD/STORE guards (0/675 ablation); `option loadguardrange off` reverts to whole-space guards with no index bound
@@ -2457,6 +2464,12 @@ impl Architecture {
                 let (val, msg) =
                     crate::p4_calls::kuna_calleearitycut::OptionCalleeArityCut.apply(p1)?;
                 self.callee_arity_cut = val;
+                return Ok(msg);
+            }
+            "calleearityscratch" => {
+                let (val, msg) =
+                    crate::p4_calls::kuna_calleearityscratch::OptionCalleeArityScratch.apply(p1)?;
+                self.callee_arity_scratch = val;
                 return Ok(msg);
             }
             "calleearitylive" => {
@@ -3369,6 +3382,7 @@ impl Architecture {
         ctx.callee_arity_live = self.callee_arity_live; // calleearitylive
         ctx.callee_arity_body = self.callee_arity_body; // calleearitybody
         ctx.callee_arity_cut = self.callee_arity_cut; // calleearitycut
+        ctx.callee_arity_scratch = self.callee_arity_scratch; // calleearityscratch
         ctx.call_overlap = self.call_overlap; // calloverlap
         ctx.spill_arg_trial = self.spill_arg_trial; // spillargtrial
         ctx.load_guard_range = self.load_guard_range; // loadguardrange

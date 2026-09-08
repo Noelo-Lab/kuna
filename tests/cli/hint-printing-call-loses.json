@@ -1,0 +1,44 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "a-4b651bbc7db0",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "scratch_byte",
+    "--option",
+    "calleearity",
+    "on",
+    "--option",
+    "varargstackargs",
+    "on"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/calleearityscratch_x86_64",
+    "binary_sha256": "49dc9ba334164a2bfc44b842da2646c191c39bd00b833ad37fdcb33ea484545e",
+    "binary_size": 5016,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/calleearityscratch_x86_64",
+    "selector": "scratch_byte",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_absent": [
+      "cal2\\(\\)"
+    ],
+    "stdout_matches": [
+      "cal2\\(a[0-9]+\\)"
+    ]
+  }
+}
