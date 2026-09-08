@@ -90,6 +90,18 @@ impl FlowEnvironment for ArchFlowEnv {
     fn resolve_typeop(&self, opc: OpCode) -> TypeOp {
         self.arch().resolve_typeop(opc)
     }
+    /// (kuna) One-byte probe through the load image — the same question
+    /// `ConsoleProgram::entry_bytes_mapped` asks, answered here for a branch
+    /// target the walk is about to queue.  A loader already borrowed elsewhere
+    /// reports `true` (queue it), which is the behaviour that predates the probe.
+    fn code_bytes_mapped(&self, addr: &Address) -> bool {
+        let loader_rc = self.arch().translate().loader_rc();
+        let Ok(mut loader) = loader_rc.try_borrow_mut() else {
+            return true;
+        };
+        let mut probe = [0u8; 1];
+        loader.load_fill(&mut probe, addr).is_ok()
+    }
     fn query_call(&self, entry: &Address) -> Option<String> {
         let arch = self.arch();
         // (kuna, Phase 3) ghidra-mode: the callee name comes from the host's

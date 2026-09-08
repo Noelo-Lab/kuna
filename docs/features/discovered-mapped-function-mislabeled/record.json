@@ -1,0 +1,41 @@
+{
+  "slug": "discovered-mapped-function-mislabeled",
+  "need_id": "discovered-mapped-function-mislabeled",
+  "track": "tooling",
+  "scope": "small",
+  "round": 9,
+  "branch": "feat/re-discovered-mapped-function-mislabeled",
+  "option": null,
+  "default": null,
+  "div": null,
+  "touches": [
+    "decompiler/crates/kuna-decomp/src/p2_lift/flow.rs",
+    "decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs"
+  ],
+  "summary": "A branch target with no bytes behind it now ends that flow path instead of aborting the function. `FlowInfo::new_address` probes the load image for one byte at the target before queueing it; an unmapped target is recorded on `unprocessed` and in the out-of-extent set, so the edge lands on the halt `fillin_branch_stubs` already plants for it, under a per-site `Funcdata::warning` and a once-per-function `Function flows into unmapped memory` header. Previously the target was queued, the walk popped it, `load_fill` raised `Unable to load N bytes`, and the raise unwound the whole flow follow -- so a function whose own 160 bytes disassemble cleanly produced no C, and `kuna decompile`, reading that failure out of the console transcript, reported the SELECTED entry as an external symbol in another module.",
+  "decisions": [
+    {
+      "what": "the filed hypothesis is upheld, and so is the refuter's refinement",
+      "detail": "Filed: 'automatic flow analysis follows an unresolved call or tail jump to zero, then misclassifies the failure as an external entry.' Confirmed end to end. The refuter's two corrections both hold: the CALL is innocent (`CALL 0x0` already renders as `sub_0(...)`, because a call target is never followed), and the trigger is the tail JMP alone. The second layer the refuter named -- `decompile.rs (is_unmapped_entry)` grepping the WHOLE decomp_dbg transcript for `Unable to load N bytes` and attributing it to the selection -- is real but is deliberately left alone here: with the raise gone it has no false input from this defect, `ptx.o`'s genuine externals still classify correctly, and rewriting the classifier is a second idea in a PR that already has one."
+    },
+    {
+      "what": "engine, not CLI, even though the need is filed `touches: kuna-cli`",
+      "detail": "The CLI could have recovered by re-running with the function's discovered extent as a declared boundary (`--define-function 0x496920-0x4969c0` produces the right body today, which is what proved the downstream already handles the cut edge). That fixes one subcommand. The defect is in the walk, so fixing it there also fixes `decompile-all`, `decompile-project`, the Ghidra front-end and the WASM one -- and it needs no extra in-process load to look an extent up. Measured on the vendored corpus, the wider fix recovered a second function nobody had filed: the UPX unpacking stub of `upx_packed_pe_i386.exe`, 1 error line -> 185 lines of C."
+    },
+    {
+      "what": "no option, and no DIV row",
+      "detail": "No option: the change cannot alter any body that previously decoded. The probe is only reached for a target already inside the allowed range and not already decoded, and the only address that fails it is one the loader has no bytes for -- which previously ended the whole function. Same shape and same call as #422 (`checker-exceeds-instruction-ceiling`) and the declared-extent stub fix, both of which shipped this error-to-truncated-body change ungated. Measured, not argued: 167/167 fixture binaries, 165 byte-identical documents and 2 that went from an error line to a body. No DIV row: the `counter:div` lease was held by the concurrent `hint-printing-call-loses` builder for this whole session, and taking a DIV number would have raced it. This is not a default flip of any option; the behaviour is described in the owning spec chapter (`docs/spec/02-lift-and-flow.md`, 'Branch targets the image cannot supply')."
+    },
+    {
+      "what": "the probe is paid per new target, not per branch",
+      "detail": "The mapped-ness probe is placed AFTER the `seen_instruction` short-circuit, so a branch back to an already-decoded address never reaches the loader. An unmapped address can never be in `visited` during `generate_ops` -- only `fillin_branch_stubs` registers one, and that runs in `generate_blocks` -- so the reorder is semantically inert."
+    },
+    {
+      "what": "the promoted probe is a vendored restatement, not the acceptance verbatim",
+      "detail": "`verify --promote` refuses the acceptance's `binary_source: dataset` target and CI has no dataset, so the shape is reduced to a 346-byte assembled ELF, `unmapped_branch_x86_64` (generator alongside it, as `unmapped_call_x86_64.py` does): 17 mapped bytes, six clean instructions, `jmp 0x0`. Same command shape and same clauses as the acceptance, plus the refuter's requested positive witness -- the acceptance's only positive clause is the regex `\\{`, which an empty `void f(void) { }` stub would satisfy, so the promoted probe asserts the body's own `0x539` (the fixture's stand-in for the dataset witness's `0x7f8`)."
+    }
+  ],
+  "collateral_sweep": "`kuna decompile-all` over all 167 binary fixtures under `kuna-analysis/tests/fixtures`, before and after. Exit codes: 167/167 identical. Documents: 165/167 byte-identical; the two that differ both go from no body to a body -- the new `unmapped_branch_x86_64` fixture, and `upx_packed_pe_i386.exe`'s `sub_4100a0`, which was one line (`error: Unable to load 512 bytes at r0x00401d91`) and is now 185 lines of C for the UPX unpacking stub. Nothing shrank, nothing was re-anchored, no function lost a statement. Externals stay externals: `ptx.o`'s `xnmalloc`/`xstrtoimax` still report `external symbol -- no code at this address in this module`, because the probe guards branch TARGETS and never the selected entry.",
+  "cost": "One `LoadImage::load_fill` of a single byte per newly discovered branch target, off the per-instruction path. Interleaved A/B, same host, 7 alternating repeats of `decompile-all` on `regglobal_fmt_x86_64` (224 KB, 2.1 s): min 2.088 s before vs 2.088 s after (-0.01%), median 2.402 s vs 2.130 s with a before-arm stdev of 0.221 s -- i.e. the medians are inside the noise and the mins are identical.",
+  "not_closed": "`decompile.rs (is_unmapped_entry)` still decides 'external' by grepping the whole console transcript for `Unable to load N bytes` rather than asking whether the SELECTED entry has bytes (`ConsoleProgram::entry_bytes_mapped`, which the whole-binary surface already uses at `project.rs:122`). This PR removes the input that made it wrong here; it does not make the test authoritative. Fall-through that runs off the end of a mapped region still raises out of `process_instruction` -- only explicit branch targets are probed."
+}

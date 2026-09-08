@@ -1,0 +1,34 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "sub_401000"
+  ],
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/unmapped_branch_x86_64",
+    "binary_sha256": "d247ac33c817ead01c4fcd637253cec336962178704b0881e9c66e39bc153086",
+    "binary_size": 346,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/unmapped_branch_x86_64",
+    "selector": null,
+    "selector_kind": "none"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "\\{",
+      "0x539"
+    ],
+    "stdout_absent": [
+      "external symbol -- no code at this address"
+    ]
+  },
+  "notes": "Reported on crackmes.one/5e51836e33c5d4439bb2dc24 sub_496920 (160 mapped bytes, a clean disassembly, a tail jump to 0x0); retargeted to the vendored reduction, since CI has no dataset. FlowInfo::new_address queued a branch target with no bytes behind it, load_fill raised, and the raise unwound the whole flow follow. The positive clause is the body's own constant, so an empty stub cannot pass."
+}
