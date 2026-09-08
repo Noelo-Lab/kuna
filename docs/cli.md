@@ -1465,6 +1465,7 @@ the reason on stderr; a malformed command line is exit `2` with the usage block.
 ```bash
 kuna unpack ./packed                                   # writes ./packed.unpacked
 kuna unpack ./packed -o snake.bin --json
+kuna unpack ./stripped --raw-lzma 0x1403ea000:0x14053e47c -o payload.bin --json
 ```
 
 The first move on a packed binary, and the only one that helps: every other kuna
@@ -1510,6 +1511,41 @@ error: ./x: unsupported UPX image: compression method 15 (DEFLATE)
 error: ./x: unsupported UPX image: unimplemented UPX filter 0x80 (ctojr32: …)
 error: ./x: no UPX PackHeader found
 ```
+
+**`--raw-lzma` — when discovery cannot work.** A repacker that strips the
+`PackHeader`, or a private packer that only borrows UPX's codec, leaves an image whose
+payload is perfectly decodable and whose metadata is gone. `no UPX PackHeader found` is
+then a correct answer and a dead end, because the one thing that gets past it —
+*where the stream is* — is knowledge the reader already has:
+
+```bash
+kuna unpack ./keygenme.exe -o payload.bin --raw-lzma 0x1403ea000:0x14053e47c --json
+#   "unpacked_size": 5489913,  "end_marker": false
+```
+
+`--raw-lzma START:END` skips discovery and decodes that range as one raw LZMA1 stream.
+`END` is exclusive and `START+LENGTH` is accepted; endpoints are virtual addresses read
+in hex — what you copy out of `kuna disassemble` or `kuna xrefs` — clamped to the bytes
+the file actually stores for the section. `--raw-offsets` reads them as file offsets
+instead, which is also the only reading available for an image no object parser
+recognises.
+
+Nothing declares the uncompressed size in this situation, so the decode runs to the end
+of the *input* rather than to a length: **the size is a result, not a parameter**.
+`--raw-max-size N` caps it (default 512 MiB) so a range that is not really a stream
+fails instead of running until memory does. By default the range's first two bytes are
+read as UPX's parameter prefix (`pb` in the low three bits of the first; `lc` and `lp`
+in the low and high nibbles of the second); `--lzma-props pb,lp,lc` — or those two bytes
+as hex, `--lzma-props 0x1a03` — overrides that for a stream carrying no prefix, and then
+the range is stream body from its first byte. `--json` emits
+`{binary,output,packer,codec,range_kind,range_start,range_start_hex,range_end,
+range_end_hex,file_offset,file_offset_hex,lc,lp,pb,packed_size,compressed_size,
+compressed_read,unpacked_size,end_marker}`.
+
+What comes out is a payload, not a rebuilt executable — imports, relocations and a PE
+header are not reconstructed, and `end_marker: false` is the normal answer because UPX
+writes none. It is bytes to carve further, not a program to hand back to `kuna
+decompile`.
 
 That asymmetry is deliberate. A wrong unpacked binary is far more expensive than no
 output at all: an unreversed filter leaves every call target in the file pointing

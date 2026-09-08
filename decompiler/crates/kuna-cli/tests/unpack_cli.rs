@@ -292,6 +292,163 @@ fn unpack_recovers_an_lzma_packed_elf() {
     assert_eq!(bytes, std::fs::read(&nrv_out).expect("read"), "the two packings disagree");
 }
 
+/// The PE64 whose payload is a real UPX LZMA1 stream and whose `PackHeader`
+/// does not exist; built by its `.py` sidecar out of `lzma_fixture`'s first
+/// block. `--raw-lzma` is the only thing that recovers it.
+fn headerless_fixture() -> String {
+    repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/rawlzma_headerless_pe_x86_64.exe")
+        .to_str()
+        .unwrap()
+        .to_string()
+}
+
+/// The stream's virtual extent in that fixture, and what it decodes to.
+const HEADERLESS_RANGE: &str = "0x140002000:0x1400020ab";
+const HEADERLESS_SIZE: usize = 792;
+
+/// The acceptance probe of `docs/re-needs/headerless-lzma-payload-unpacked.md`,
+/// against a vendored stand-in for its 1.4 MB dataset image: the range the
+/// analyst read out of the decompiler, and a size nobody passed in.
+#[test]
+fn raw_lzma_recovers_a_stream_no_pack_header_describes() {
+    let scratch = Scratch::new("rawlzma");
+    let out = scratch.path("payload.bin");
+    let (stdout, stderr, ok) = run_kuna(&[
+        "unpack",
+        &headerless_fixture(),
+        "-o",
+        &out,
+        "--raw-lzma",
+        HEADERLESS_RANGE,
+        "--json",
+    ]);
+    if !ok {
+        if is_unwired(&stderr) {
+            eprintln!("unpack_cli: skipping (kuna unpack not wired into main.rs yet): {stderr}");
+            return;
+        }
+        panic!("kuna unpack --raw-lzma failed: {stderr}");
+    }
+
+    assert!(!stderr.contains("no UPX PackHeader found"), "discovery ran anyway:\n{stderr}");
+    assert!(stdout.contains(r#""unpacked_size": 792"#), "size is not a result:\n{stdout}");
+    assert!(stdout.contains(r#""range_kind": "vma""#), "range was not read as an address:\n{stdout}");
+    assert!(stdout.contains(r#""end_marker": false"#), "UPX writes no end marker:\n{stdout}");
+
+    let bytes = std::fs::read(&out).expect("payload was written");
+    assert_eq!(bytes.len(), HEADERLESS_SIZE);
+    assert_eq!(&bytes[..4], b"\x7fELF");
+}
+
+/// The trap the override must not fall into: an image that genuinely is not
+/// UPX-packed still gets the correct refusal, and still gets no file. Passing
+/// the acceptance by making `unpack` exit 0 on everything would ship a
+/// regression of a right answer.
+#[test]
+fn the_pack_header_search_is_not_degraded_by_the_override() {
+    let scratch = Scratch::new("nodegrade");
+    let out = scratch.path("payload.bin");
+    let (_stdout, stderr, ok) = run_kuna(&["unpack", &headerless_fixture(), "-o", &out]);
+    if is_unwired(&stderr) {
+        return;
+    }
+    assert!(!ok, "a file with no PackHeader must not unpack:\n{stderr}");
+    assert!(stderr.contains("no UPX PackHeader found"), "{stderr}");
+    assert!(!PathBuf::from(&out).exists(), "a refusal wrote a file anyway");
+}
+
+/// The other two spellings an analyst reaches for: a file offset (the only
+/// reading available when nothing maps the image) and explicit coder
+/// parameters (a stream carrying no two-byte prefix). Both must land on the
+/// same bytes as the address form.
+#[test]
+fn raw_lzma_accepts_file_offsets_and_explicit_properties() {
+    let scratch = Scratch::new("rawspell");
+    let out = scratch.path("payload.bin");
+    // 0x200 is where the section's raw data starts; +2 skips the prefix that
+    // --lzma-props then supplies by hand.
+    let (stdout, stderr, ok) = run_kuna(&[
+        "unpack",
+        &headerless_fixture(),
+        "-o",
+        &out,
+        "--raw-lzma",
+        "0x202:0x2ab",
+        "--raw-offsets",
+        "--lzma-props",
+        "2,0,3",
+        "--json",
+    ]);
+    if is_unwired(&stderr) {
+        return;
+    }
+    assert!(ok, "kuna unpack --raw-offsets failed: {stderr}");
+    assert!(stdout.contains(r#""range_kind": "file-offset""#), "{stdout}");
+    let bytes = std::fs::read(&out).expect("payload was written");
+    assert_eq!(bytes.len(), HEADERLESS_SIZE);
+    assert_eq!(&bytes[..4], b"\x7fELF");
+
+    // The same two bytes given as the prefix pair rather than as three fields.
+    let hex = scratch.path("payload.hex.bin");
+    let (_o, stderr, ok) = run_kuna(&[
+        "unpack",
+        &headerless_fixture(),
+        "-o",
+        &hex,
+        "--raw-lzma",
+        "0x202+169",
+        "--raw-offsets",
+        "--lzma-props",
+        "0x1a03",
+    ]);
+    assert!(ok, "the prefix-pair spelling failed: {stderr}");
+    assert_eq!(std::fs::read(&hex).unwrap(), bytes);
+}
+
+/// A range that is not a stream, and a range outside the image: refused by
+/// name, and no file written. The `--raw-max-size` cap is what stops a decode
+/// that would otherwise run until memory does.
+#[test]
+fn a_range_that_is_not_a_stream_is_refused_not_half_written() {
+    let scratch = Scratch::new("rawbad");
+    let out = scratch.path("payload.bin");
+    let (_o, stderr, ok) =
+        run_kuna(&["unpack", &headerless_fixture(), "-o", &out, "--raw-lzma", "0x140009000:0x14000a000"]);
+    if is_unwired(&stderr) {
+        return;
+    }
+    assert!(!ok, "an unmapped range must not decode");
+    assert!(stderr.contains("not inside any section"), "{stderr}");
+    assert!(!PathBuf::from(&out).exists(), "a refusal wrote a file anyway");
+
+    let (_o, stderr, ok) = run_kuna(&[
+        "unpack",
+        &headerless_fixture(),
+        "-o",
+        &out,
+        "--raw-lzma",
+        HEADERLESS_RANGE,
+        "--raw-max-size",
+        "128",
+    ]);
+    assert!(!ok, "the cap must bound a length-less decode");
+    assert!(stderr.contains("output cap"), "{stderr}");
+    assert!(!PathBuf::from(&out).exists(), "a refusal wrote a file anyway");
+}
+
+/// The raw-mode modifiers are inert on their own, so they are a usage error
+/// rather than a silent fall-back to a PackHeader search.
+#[test]
+fn a_raw_modifier_without_a_range_is_a_usage_error() {
+    let (_o, stderr, ok) = run_kuna(&["unpack", &plain_fixture(), "--lzma-props", "2,0,3"]);
+    if is_unwired(&stderr) {
+        return;
+    }
+    assert!(!ok);
+    assert!(stderr.contains("only applies with --raw-lzma"), "{stderr}");
+}
+
 /// Write the NRV witness out with its `b_method` overwritten and its header
 /// checksum repaired, so the walk gets as far as the block decode.
 fn reheaded_fixture(method: u8, to: &str) {

@@ -1,0 +1,48 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "unpack",
+    "{{BIN}}",
+    "-o",
+    "{{TMP}}/payload.bin",
+    "--raw-lzma",
+    "0x140002000:0x1400020ab",
+    "--json"
+  ],
+  "cwd": "{{TMP}}",
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/rawlzma_headerless_pe_x86_64.exe",
+    "binary_sha256": "dc9e3053afd7e8ec04c44120e98dcdeec64aafefd19eb8341a3d5710983f0d3e",
+    "binary_size": 1024,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/rawlzma_headerless_pe_x86_64.exe",
+    "selector": null,
+    "selector_kind": "none"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "json": [
+      {
+        "path": "unpacked_size",
+        "op": "eq",
+        "value": 792
+      },
+      {
+        "path": "output",
+        "op": "matches",
+        "value": "payload\\.bin$"
+      }
+    ],
+    "stderr_absent": [
+      "no UPX PackHeader found"
+    ]
+  },
+  "notes": "Desired: a payload whose PackHeader is gone is still recoverable from an analyst-supplied range. Witness: crackmes.one 68ac5cd78fac2855fe6fb898 keygenme.exe, where the tester left kuna to decode 0x1403ea000:0x14053e47c in Python. Retargeted onto rawlzma_headerless_pe_x86_64.exe: block 0 of the vendored LZMA witness in a PE64 with no PackHeader. No size is passed in, so only a decode yields 792."
+}
