@@ -84,9 +84,9 @@ impl ObjectFormat for ElfFormat {
         out
     }
 
-    fn resolve_imports(&self, file: &object::File, _bytes: &[u8]) -> Vec<ImportSym> {
+    fn resolve_imports(&self, file: &object::File, bytes: &[u8]) -> Vec<ImportSym> {
         // `elf_plt`'s internals are unchanged; just re-wrap each PltSym.
-        crate::loader::elf_plt::resolve_plt_imports(file)
+        crate::loader::elf_plt::resolve_plt_imports(file, bytes)
             .into_iter()
             .map(|p| ImportSym { addr: p.addr, name: p.name })
             .collect()

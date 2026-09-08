@@ -1,0 +1,77 @@
+{
+  "opportunity": "repipe:605443e333c5d42c3d016f59::sectionless-elf-import-relocations",
+  "need_id": "sectionless-elf-import-relocations",
+  "track": "loader",
+  "round": 10,
+  "test_name": "repipe round 10, challenge 605443e333c5d42c3d016f59 (KataVM_L1)",
+  "binary": "kuna-re-dataset/challenges/605443e333c5d42c3d016f59/bin/KataVM_Level_1.7z.__x/KataVM_Level_1/KataVM_L1",
+  "selector": "0x10c0",
+  "func_addr": "0x10c0",
+  "option": null,
+  "flag": null,
+  "element_id": null,
+  "change_kind": "correctness-fix",
+  "source_decompiler": "kuna",
+  "inspiration": "repipe round 10 need sectionless-elf-import-relocations; readelf -r --use-dynamic names all eight PLT relocations of an image kuna named none of, so the data is present and only the route to it was section-bound",
+  "default_on": true,
+  "div": null,
+  "scope": "small",
+  "files": [
+    "decompiler/crates/kuna-analysis/src/loader/elf_dynseg.rs",
+    "decompiler/crates/kuna-analysis/src/loader/elf_dynseg/tests.rs",
+    "decompiler/crates/kuna-analysis/src/loader/elf_plt.rs",
+    "decompiler/crates/kuna-analysis/src/loader/mod.rs",
+    "decompiler/crates/kuna-analysis/src/loader/format/elf.rs",
+    "decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_armlibcmain.rs",
+    "decompiler/crates/kuna-analysis/tests/fixtures/dynseg_plt_x86_64",
+    "decompiler/crates/kuna-analysis/tests/fixtures/dynseg_plt_x86_64.py",
+    "tests/cli/sectionless-elf-import-relocations.json",
+    "docs/spec/01-program-prep.md",
+    "docs/re-needs/sectionless-elf-import-relocations.md"
+  ],
+  "decisions": [
+    "The filed hypothesis is UPHELD and the round-4 refuter's strong form is exact: there is no PT_DYNAMIC reader anywhere in kuna-analysis, and all three naming routes are section-gated. `object`'s `dynamic_relocations()` builds its iterator from a SectionTable scan for SHT_REL/SHT_RELA, `dynamic_symbols()` reads `.dynsym` as a section, and `elf_plt`'s stub scan finds `.plt*` by section name. KataVM_L1 has e_shoff = e_shnum = 0, so all three yield nothing and its `puts` thunk renders `(*dat_7f98)()`.",
+    "The refuter's wrong-output warning is honoured by NOT reconstructing a `.plt` range at all. With no section name left there is no honest bound for it, and its named failure mode -- deriving a sub-range of an executable segment -- names stubs off by an entry. Instead each executable PT_LOAD window is handed whole to the existing per-architecture decoders, whose decoded-GOT-target match against the relocation slots is already self-correcting. The relocation slots ARE the bound, which is what the refuter asked for ('derive it from DT_PLTGOT + the reloc slots it actually sees').",
+    "The fallback runs only when the section-driven resolution returned an EMPTY vector, so an image with an intact section table cannot reach the new code by any path. That makes the change strictly additive: on a sectionless image it turns zero names into names; on every other image the byte-for-byte output is the previous one. It is why no option gates this -- there is no judgement call, only a route to data that was already being read.",
+    "The fixture `dynseg_plt_x86_64` is synthesized rather than gcc-built-and-patched: 808 bytes, hermetic, no toolchain dependency, matching the `noshdr_x86_64.py` convention beside it. It deliberately places `main` as a THIRD 16-byte-aligned run of code immediately after the two stubs, so the off-by-a-range failure mode the refuter warned about is what a test asserts against.",
+    "PowerPC and MIPS are excluded from the fallback. Neither resolves through a `.plt` code section (PPC's stubs are TOC-relative and inline in `.text`; MIPS carries the correspondence in its GOT layout via DT_MIPS_LOCAL_GOTNO/DT_MIPS_GOTSYM), and both anchors are section-derived. A sectionless PPC/MIPS image is left exactly as it was rather than half-resolved.",
+    "The scope stops at import naming. DT_SYMTAB also carries the image's DEFINED exported functions and a sectionless image loses those names too, and `kuna_dynrelocs` reads its relocations through the same section-driven `object` API -- both are the same class of gap on the same image, and both are separate needs. This PR moves the probe and nothing else.",
+    "Inertness is measured, not argued: the same 131 files were resolved with the BASE-COMMIT binary and with this one, unmodified, and `kuna functions --json` is byte-identical on all 131. That covers the case the sectioned-vs-sectionless sweep cannot -- a SECTIONED image whose PLT decode happens to find nothing (SPARC, PPC, MIPS) and would therefore enter the fallback."
+  ],
+  "parity": "OK",
+  "gates": {
+    "make test": "PARITY OK, 675/675 assertions",
+    "make test-stages": "PARITY OK, 692/692 assertions",
+    "make check-spec": "check-spec OK (lenient mode)",
+    "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
+    "make test-cli": "91/91 (90 + the one promoted here)",
+    "make rust-test": "green (rc=0) with `env -u KUNA_DECOMP_TEST`. Left set, the launcher points that variable at kuna's own decomp_test_dbg, so verify_w10_proto_unlock's oracle compares kuna against itself and reports 'oracle promote_compare signature drifted'; that test is a kuna-decomp bytechunk oracle with no ELF loading in it, and it is green on the base commit and on this tree once the variable is unset."
+  },
+  "probe_flip": {
+    "probe_still_passes": false,
+    "acceptance_passes": true,
+    "acceptance_id": "a-4c6a2962c043",
+    "acceptance_verified_on_dataset_witness_first": true,
+    "witness_before": "void sub_10c0(void) { (*dat_7f98)(); // jump-as-call }",
+    "witness_after": "int puts(char *a0) { int v1; v1 = (*dat_7f98)(); return v1; }",
+    "witness_names_recovered": 9,
+    "acceptance_retargeted_to": "decompiler/crates/kuna-analysis/tests/fixtures/dynseg_plt_x86_64",
+    "retarget_reason": "the acceptance's target is a dataset binary, which `verify --promote` refuses because CI has no dataset; the promoted probe is the same command shape against the vendored reduction"
+  },
+  "sweep": {
+    "population": "131 ELF images resolved twice each -- once as shipped, once with e_shoff/e_shnum/e_shstrndx zeroed (which changes no mapped byte, so the section table is the only difference). 98 repo fixtures spanning x86-64, i386, AArch64, ARM, RISC-V, SPARC, MIPS and PPC64; 33 system binaries from /bin with 19 to 233 imports each.",
+    "method": "`kuna functions --json` on both, comparing every non-`sub_` name by address. The sectioned answer is the ground truth: a segment-path name at an address the section path names differently, or does not name at all, is a defect.",
+    "mismatches": 0,
+    "extra_names": 0,
+    "note": "Recovery is total on x86-64/i386/AArch64/RISC-V: every import the section path names, the segment path names at the same address (i386_pie_nl 56, regglobal_fmt_x86_64 52, /bin/boltctl 233, /bin/apt-ftparchive 198). The residual gap on each file is the handful of `.symtab`/`.dynsym` SECTION names (_init, _start, main, _fini) that no segment carries and this change does not claim.",
+    "excluded": "MIPS/PPC fixtures (plt_mips32, plt_ppc64le) recover 0 by design and are unchanged; plt_sparc64 recovers 0 because its stub decode needs an anchor the segment window does not supply -- also unchanged, not a regression."
+  },
+  "acceptance_suite": {
+    "run": "verify --acceptance-suite --all on the patched tree",
+    "total": 87,
+    "closed": 34,
+    "regressed": 2,
+    "note": "Both `regressed` needs are PE (.exe) witnesses that this ELF-only change cannot reach. `getprocaddress-result-discarded` fails its stdout clause identically on the BASE COMMIT build (measured A/B on ObfuscationFiesta.exe sub_140002530: 0 matches both sides). `decompiling-3396-byte-main` is the wall-clock clause (median 10.29 s against a < 10 s bar, samples 10.16-10.85 s) measured while `make rust-test` was saturating the box; it is the known phantom perf regression, not a code change."
+  },
+  "speed_note": "No measurable cost and none possible on a normal image: the new walk is behind an `if out.is_empty()` on the section-driven result, so an ELF with a section table never enters it. On a sectionless image it is one pass over the program headers plus one pass over each relocation table (8 entries on KataVM_L1), then the same per-architecture stub decode the section path runs, over the executable segment instead of the `.plt*` sections. The witness decompiles in 166 ms end to end."
+}

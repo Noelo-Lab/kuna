@@ -1,0 +1,39 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "0x240",
+    "--addr"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/dynseg_plt_x86_64",
+    "binary_sha256": "79c289f19884d8591cc7f8501a8cb045329dbfa19789b0433838a0ea25e837bf",
+    "binary_size": 808,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/dynseg_plt_x86_64",
+    "selector": "0x240",
+    "selector_kind": "addr"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "\\bputs\\b"
+    ],
+    "stdout_absent": [
+      "sub_240"
+    ]
+  },
+  "notes": "Desired: a PLT stub in a section-table-free ELF is still named, from its dynamic relocation. Dataset witness: crackmes.one 605443e333c5d42c3d016f59 (KataVM_L1 @0x10c0) emitted `void sub_10c0(void) { (*dat_7f98)(); }` for the puts thunk. This fixture (generator dynseg_plt_x86_64.py) reduces it: e_shoff/e_shnum/e_shstrndx are zero, so `puts` can only come from PT_DYNAMIC."
+}

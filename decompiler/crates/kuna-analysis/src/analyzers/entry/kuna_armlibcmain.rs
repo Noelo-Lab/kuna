@@ -111,7 +111,7 @@ fn main_vma(file: &object::File, bytes: &[u8]) -> Option<u64> {
     if entry == 0 || entry & 1 != 0 {
         return None;
     }
-    let stub = libc_start_main_stub(file)?;
+    let stub = libc_start_main_stub(file, bytes)?;
     let (sec_addr, data) = super::section_bytes_containing(file, entry)?;
     let start = (entry - sec_addr) as usize;
     let end = (start + WINDOW as usize).min(data.len());
@@ -157,8 +157,8 @@ fn decode_window(file: &object::File, entry: u64, window: &[u8], stub: u64) -> O
 }
 
 /// The address of the PLT stub the import table names `__libc_start_main`.
-fn libc_start_main_stub(file: &object::File) -> Option<u64> {
-    crate::loader::elf_plt::resolve_plt_imports(file)
+fn libc_start_main_stub(file: &object::File, bytes: &[u8]) -> Option<u64> {
+    crate::loader::elf_plt::resolve_plt_imports(file, bytes)
         .into_iter()
         .find(|s| s.name == LIBC_START_MAIN)
         .map(|s| s.addr)
