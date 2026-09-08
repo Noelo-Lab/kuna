@@ -16,6 +16,12 @@
 //! reason [`super::nrv`] is: the input is a hostile file, so every array index,
 //! match distance and output write is bounds-checked and returns [`LzmaError`]
 //! instead of panicking or emitting a partial image.
+//!
+//! An analyst who found a stream this decoder can read but no `b_info` to go
+//! with it -- a stripped `PackHeader`, a private packer, a blob addressed by
+//! hand -- has no `u_len`, so [`decompress_exhaustive`] runs the same decoder to
+//! the end of the *input* instead, capping the output rather than the length it
+//! was told to expect. `kuna unpack --raw-lzma` is that caller.
 
 use std::fmt;
 
@@ -60,6 +66,10 @@ pub enum LzmaError {
     /// A distance-model index the LZMA constants make unreachable; a guard, not
     /// a stream a real encoder can produce.
     ModelIndex,
+    /// A length-less decode reached the caller's output cap. Distinct from
+    /// [`LzmaError::OutputOverrun`]: nothing declared this size, so it means
+    /// "raise the cap or the range is wrong", not "the stream disagrees".
+    OutputCap { max: usize },
 }
 
 impl fmt::Display for LzmaError {
@@ -81,6 +91,9 @@ impl fmt::Display for LzmaError {
                 write!(f, "block decoded to {got} bytes, header declared {want}")
             }
             LzmaError::ModelIndex => write!(f, "LZMA distance model index out of range"),
+            LzmaError::OutputCap { max } => {
+                write!(f, "stream kept expanding past the {max}-byte output cap")
+            }
         }
     }
 }
@@ -96,9 +109,41 @@ impl fmt::Display for LzmaError {
 /// bytes, which the walk verifies.
 pub fn decompress(src: &[u8], u_len: usize) -> Result<Vec<u8>, LzmaError> {
     let (props, body) = Properties::split(src)?;
-    let mut dec = Decoder::new(props, body, u_len)?;
+    let mut dec = Decoder::new(props, body, Some(u_len), u_len)?;
     dec.run()?;
     Ok(dec.out)
+}
+
+/// What a length-less decode recovered.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Exhausted {
+    pub bytes: Vec<u8>,
+    /// Whether the stream stopped on its own end-of-stream marker. UPX writes
+    /// none, so `false` is the normal answer and not a defect -- it only says
+    /// the tail is bounded by the input rather than by the encoder.
+    pub end_marker: bool,
+    /// Compressed bytes the range coder actually read, header bytes included.
+    /// Up to four fewer than `src.len()` on a well-formed stream, since the
+    /// coder holds lookahead it never uses.
+    pub consumed: usize,
+}
+
+/// Decompress a raw LZMA1 stream of *unknown* uncompressed length, header bytes
+/// included, stopping on the end marker or on the end of `src` -- whichever
+/// comes first -- and never producing more than `max` bytes.
+///
+/// This is the entry point for a stream nothing declares the size of: a UPX
+/// image whose `PackHeader` was stripped, or a payload an analyst located in the
+/// decompiler and passed in by address. Running out of input is the expected
+/// ending here, so it returns what was decoded instead of [`LzmaError::Truncated`];
+/// a corrupt stream still fails, because a bad distance or model index is a
+/// different fact from a short one.
+pub fn decompress_exhaustive(src: &[u8], max: usize) -> Result<Exhausted, LzmaError> {
+    let (props, body) = Properties::split(src)?;
+    let mut dec = Decoder::new(props, body, None, max)?;
+    dec.run()?;
+    let consumed = HEADER_LEN + dec.rc.pos;
+    Ok(Exhausted { bytes: std::mem::take(&mut dec.out), end_marker: dec.end_marker, consumed })
 }
 
 /// `lc`/`lp`/`pb` as the two UPX header bytes spell them.
@@ -260,7 +305,13 @@ struct Decoder<'a> {
     rc: RangeDecoder<'a>,
     props: Properties,
     out: Vec<u8>,
-    u_len: usize,
+    /// The declared uncompressed length, or `None` when the caller has none and
+    /// the stream's own input is the only bound.
+    u_len: Option<usize>,
+    /// The hard ceiling on `out`: `u_len` when it is known, otherwise the cap
+    /// [`decompress_exhaustive`] was given.
+    max_out: usize,
+    end_marker: bool,
 
     literal: Vec<u16>,
     is_match: Vec<u16>,
@@ -277,13 +328,20 @@ struct Decoder<'a> {
 }
 
 impl<'a> Decoder<'a> {
-    fn new(props: Properties, body: &'a [u8], u_len: usize) -> Result<Self, LzmaError> {
+    fn new(
+        props: Properties,
+        body: &'a [u8],
+        u_len: Option<usize>,
+        max_out: usize,
+    ) -> Result<Self, LzmaError> {
         let pos_states = 1usize << props.pb;
         Ok(Decoder {
             rc: RangeDecoder::new(body)?,
             props,
-            out: Vec::with_capacity(u_len),
+            out: Vec::with_capacity(u_len.unwrap_or(0)),
             u_len,
+            max_out,
+            end_marker: false,
             literal: vec![PROB_INIT; LIT_SIZE << (props.lc + props.lp)],
             is_match: vec![PROB_INIT; NUM_STATES << NUM_POS_BITS_MAX],
             is_rep: vec![PROB_INIT; NUM_STATES],
@@ -299,13 +357,33 @@ impl<'a> Decoder<'a> {
         })
     }
 
+    /// The decode, plus the two endings only a *declared* length can judge: a
+    /// stream that stops short of `u_len` is truncated, while one that stops
+    /// short of the input with no length to reach is simply over.
     fn run(&mut self) -> Result<(), LzmaError> {
+        match self.decode() {
+            Ok(()) => {}
+            // Running out of input is this mode's normal ending, not a defect.
+            Err(LzmaError::InputOverrun) if self.u_len.is_none() => return Ok(()),
+            Err(e) => return Err(e),
+        }
+        match self.u_len {
+            Some(want) if self.out.len() != want => {
+                Err(LzmaError::Truncated { got: self.out.len(), want })
+            }
+            _ => Ok(()),
+        }
+    }
+
+    fn decode(&mut self) -> Result<(), LzmaError> {
         let pb_mask = (1usize << self.props.pb) - 1;
         let lp_mask = (1usize << self.props.lp) - 1;
         let mut state = 0usize;
         let (mut rep0, mut rep1, mut rep2, mut rep3) = (0u32, 0u32, 0u32, 0u32);
 
-        while self.out.len() < self.u_len {
+        // `max_out` is `u_len` when one was declared, so this one condition
+        // serves both modes: the declared length, or the caller's cap.
+        while self.out.len() < self.max_out {
             let pos = self.out.len();
             let pos_state = pos & pb_mask;
             if self.rc.bit(&mut self.is_match[(state << NUM_POS_BITS_MAX) + pos_state])? == 0 {
@@ -362,15 +440,20 @@ impl<'a> Decoder<'a> {
                 match self.distance(len)? {
                     Some(d) => rep0 = d,
                     // The end marker: legal, but only where the block is done.
-                    None => break,
+                    None => {
+                        self.end_marker = true;
+                        break;
+                    }
                 }
             }
 
             self.copy_match(rep0, len + MATCH_MIN_LEN)?;
         }
-
-        if self.out.len() != self.u_len {
-            return Err(LzmaError::Truncated { got: self.out.len(), want: self.u_len });
+        // With no declared length the loop has exactly two honest endings, and
+        // both leave it early: the end marker, or input the range coder ran
+        // off. Falling out of the condition instead means the cap bound it.
+        if self.u_len.is_none() && !self.end_marker {
+            return Err(LzmaError::OutputCap { max: self.max_out });
         }
         Ok(())
     }
@@ -452,8 +535,11 @@ impl<'a> Decoder<'a> {
     }
 
     fn copy_match(&mut self, dist: u32, len: usize) -> Result<(), LzmaError> {
-        if self.out.len() + len > self.u_len {
-            return Err(LzmaError::OutputOverrun);
+        if self.out.len() + len > self.max_out {
+            return Err(match self.u_len {
+                Some(_) => LzmaError::OutputOverrun,
+                None => LzmaError::OutputCap { max: self.max_out },
+            });
         }
         let mut at = self
             .out
@@ -535,4 +621,50 @@ mod tests {
 
     /// The first `b_info` in the fixture, right after `l_info` + `p_info`.
     const FIRST_BLOCK: usize = 0x100;
+
+    /// The same block again with its `u_len` withheld -- the situation
+    /// `--raw-lzma` is for. UPX writes no end marker, so the decode has nothing
+    /// to stop on but the input, and the byte count is what it recovers rather
+    /// than what it was told.
+    #[test]
+    fn a_length_less_decode_ends_on_the_input_and_finds_the_same_bytes() {
+        let (block, u_len) = witness_block();
+        let got = decompress_exhaustive(&block, 1 << 20).expect("first block");
+        assert_eq!(got.bytes.len(), u_len);
+        assert_eq!(&got.bytes[..4], b"\x7fELF");
+        assert!(!got.end_marker, "UPX writes no end-of-stream marker");
+        assert_eq!(got.consumed, block.len(), "the whole block is read");
+        assert_eq!(got.bytes, decompress(&block, u_len).unwrap());
+    }
+
+    /// The cap is the only bound a length-less decode has, so hitting it is
+    /// reported rather than returned as a short answer.
+    #[test]
+    fn a_length_less_decode_that_hits_the_cap_says_so() {
+        let (block, u_len) = witness_block();
+        let err = decompress_exhaustive(&block, u_len / 2).unwrap_err();
+        assert_eq!(err, LzmaError::OutputCap { max: u_len / 2 });
+    }
+
+    /// A declared length still judges the same stream the old way in both
+    /// directions -- this is the path every `kuna unpack` of a real UPX image
+    /// takes, and the cap that now serves the length-less mode must not have
+    /// loosened it.
+    #[test]
+    fn a_declared_length_still_refuses_a_stream_that_misses_it() {
+        let (block, u_len) = witness_block();
+        assert_eq!(decompress(&block, u_len + 1).unwrap_err(), LzmaError::InputOverrun);
+        assert_eq!(decompress(&block, u_len - 1).unwrap_err(), LzmaError::OutputOverrun);
+    }
+
+    /// The vendored witness's first block, and the `u_len` its `b_info` declares.
+    fn witness_block() -> (Vec<u8>, usize) {
+        let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/upx_packed_lzma_x86_64");
+        let packed = std::fs::read(&p).unwrap_or_else(|e| panic!("read {}: {e}", p.display()));
+        let at = FIRST_BLOCK;
+        let u_len = u32::from_le_bytes(packed[at..at + 4].try_into().unwrap()) as usize;
+        let c_len = u32::from_le_bytes(packed[at + 4..at + 8].try_into().unwrap()) as usize;
+        (packed[at + 12..at + 12 + c_len].to_vec(), u_len)
+    }
 }

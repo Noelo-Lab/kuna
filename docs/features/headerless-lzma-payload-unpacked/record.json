@@ -1,0 +1,68 @@
+{
+  "opportunity": "repipe:68ac5cd78fac2855fe6fb898::headerless-lzma-payload-unpacked",
+  "need_id": "headerless-lzma-payload-unpacked",
+  "track": "tooling",
+  "round": 9,
+  "test_name": "repipe round 9, challenge 68ac5cd78fac2855fe6fb898",
+  "binary": "kuna-re-dataset/challenges/68ac5cd78fac2855fe6fb898/bin/keygenme.exe",
+  "selector": null,
+  "func_addr": null,
+  "option": null,
+  "flag": null,
+  "element_id": null,
+  "change_kind": "cli-capability",
+  "source_decompiler": "kuna",
+  "inspiration": "repipe round 9 need headerless-lzma-payload-unpacked; the capability was already in the crate -- upx::lzma reads exactly this stream -- and only the way to point at it was missing",
+  "default_on": null,
+  "div": null,
+  "scope": "medium",
+  "files": [
+    "decompiler/crates/kuna-analysis/src/upx/lzma.rs",
+    "decompiler/crates/kuna-analysis/tests/fixtures/rawlzma_headerless_pe_x86_64.exe",
+    "decompiler/crates/kuna-analysis/tests/fixtures/rawlzma_headerless_pe_x86_64.py",
+    "decompiler/crates/kuna-cli/src/unpack.rs",
+    "decompiler/crates/kuna-cli/tests/unpack_cli.rs",
+    "tests/cli/headerless-lzma-payload-unpacked.json",
+    "docs/cli.md",
+    "docs/spec/01-program-prep.md",
+    "docs/re-needs/headerless-lzma-payload-unpacked.md"
+  ],
+  "decisions": [
+    "The filed hypothesis is UPHELD and so is the captain's refutation of the ORIGINAL acceptance. 'PackHeader discovery is mandatory even when stream parameters can be recovered independently' is exactly right: parse_pack_header is the only entry to upx::unpack, and `kuna unpack --help` exposed no range, codec or props override. The captain's rewritten acceptance (explicit --raw-lzma range, positive unpacked_size witness) is what was implemented; the original bare-`unpack`-exits-0 form was passable by degrading the error path and is guarded against by a test, not just by intent.",
+    "The engine work was one function, not a decoder. `upx::lzma::Properties::split` already parses the 2-byte prefix this stream carries (1a 03 -> pb 2, lc 3, lp 0) and the LZMA1 decoder already reads the stream; the only thing it could not do was run without a declared u_len. decompress_exhaustive is the same Decoder with u_len: Option<usize> and a caller-supplied max_out, catching InputOverrun as the ending instead of an error. Measured against liblzma on the filing witness: 5,489,913 bytes, byte-identical to the tester's notes/decompressed.bin, eof False in both.",
+    "The size clause is non-circular and that is deliberate. Nothing on the command line names 5489913 (or 792 on the fixture), so the clause can only be met by decoding to input exhaustion. An implementation that echoed a supplied --raw-size would not pass it.",
+    "Virtual addresses are the default reading, resolved through object's section table and CLAMPED to the section's file_range. On the filing witness UPX1 is VA 0x1403ea000 at raw 0x400, so 0x1403ea000:0x14053e47c is exactly the 1,393,788 stored bytes; a section's VirtualSize routinely runs past its raw data and that excess is zero fill, which would feed the range coder garbage. --raw-offsets is the fallback (and the only reading for an image object cannot parse, e.g. a section-less packed ELF), and it is an explicit flag rather than an auto-fallback because silently reinterpreting an address as an offset produces a plausible-looking wrong answer.",
+    "No phases.toml option, no stage XML, no catalog counters. A new subcommand flag on the unpack driver cannot change emitted C -- the artifact is a file the analyst names -- so the CLAUDE.md rule that scopes options to emitted-C changes does not reach it. `kuna catalog --check` is green and no count test was touched.",
+    "The raw modifiers are a usage error without --raw-lzma rather than silently inert. --lzma-props alone previously would have fallen through to a PackHeader search and reported 'no UPX PackHeader found', which reads as a diagnosis of the image rather than of the command line.",
+    "The output cap is an error, not a truncation. With no declared length the only bound is the caller's, so hitting it means 'raise the cap or the range is wrong' -- a distinct LzmaError::OutputCap rather than reusing OutputOverrun, whose message ('past its declared size') would be a lie here.",
+    "What comes out is a payload, not a program: no imports, no relocations, no rebuilt PE header, and none of the reconstruction proofs (declared total, UPX! marker, both Adler-32s) the real walk applies -- there is nothing to check them against. That is stated in docs/cli.md and in the spec, and it is the reason this is an explicit override rather than a fallback the search reaches on its own. The need's own Reference says the same about the witness.",
+    "probe_still_passes is TRUE and that is the intended outcome, not a miss. The need's probe asserts that bare `kuna unpack <non-UPX file>` exits 1 with 'no UPX PackHeader found'; that answer is correct for the witness (it genuinely is not a UPX image kuna can discover) and degrading it was the trap the captain's refutation flagged. The capability is the override, so the acceptance is the arm that flipped."
+  ],
+  "parity": "OK",
+  "gates": {
+    "rebased_onto": "6e04360709eba0c9458e40dcdad3f13d2f279142",
+    "make test": "PARITY OK 675/675",
+    "make test-stages": "PARITY OK 687/687",
+    "make rust-test": "green: 377 targets, 6103 passed, 0 failed",
+    "make check-spec": "OK (lenient mode)",
+    "make test-cli": "88/88 passed",
+    "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
+    "acceptance": "PASS (total 1, pass 1, closed 1, regressed 0)",
+    "counters": "re-derived on the rebuilt rebased tree: 167 settables, tiers (47, 65, 55), 253 corpus files, next ElementId 4157 -- no drift from this branch",
+    "mergecheck": "merge guards clean (0 rejects)",
+    "known_env_artifact": "The suite above was run with `env -u KUNA_DECOMP_TEST`. With the repipe launcher's KUNA_DECOMP_TEST left set to this worktree's own decomp_test_dbg, verify_w10_proto_unlock::w10_proto_unlock_const_return_collapses_no_tied_roundtrip fails with 'oracle promote_compare signature drifted' -- a known worktree artifact unrelated to this change (4/4 green unset, and CI does not set the var).",
+    "counters_hazard": "`counters --fix` run before rebuilding the rebased tree reverted the sibling PR's catalog counters (166 vs 167) because the release binary still predated its option. Reverted, rebuilt, re-derived."
+  },
+  "probe_flip": {
+    "probe_still_passes": true,
+    "acceptance_passes": true
+  },
+  "promoted_probe": {
+    "path": "tests/cli/headerless-lzma-payload-unpacked.json",
+    "retargeted_from": "dataset bin/keygenme.exe (1,400,832 B, PE32+ UPX0/UPX1/.rsrc, no PackHeader; --raw-lzma 0x1403ea000:0x14053e47c -> 5,489,913 bytes)",
+    "retargeted_to": "decompiler/crates/kuna-analysis/tests/fixtures/rawlzma_headerless_pe_x86_64.exe (1,024 B PE64 twin: block 0 of the vendored upx_packed_lzma_x86_64 witness, prefix and all, in a UPX1 section at VA 0x140002000 with no PackHeader anywhere; --raw-lzma 0x140002000:0x1400020ab -> 792 bytes)",
+    "why": "CI has no dataset. The twin is a real UPX encoder's stream -- including no end-of-stream marker, which is what makes the length-less decode necessary -- so it exercises the same VA mapping, the same exhaustion ending and the same size-as-result clause; it exits 1 with 'unknown option --raw-lzma' on the unpatched build",
+    "verified_on_witness": "the acceptance passed on the dataset original first: exit 0, unpacked_size 5489913, and the 5,489,913-byte artifact is byte-identical (cmp) to the reader's own Python recovery in the arena notes"
+  },
+  "speed": "kuna unpack --raw-lzma on the 1.4 MB witness: 0.16 s wall for a 5.5 MB payload. No path that existed before this PR runs the new code: the PackHeader arm is entered unchanged, and lzma::decompress keeps its exact-length contract (proved in both directions by a_declared_length_still_refuses_a_stream_that_misses_it)."
+}

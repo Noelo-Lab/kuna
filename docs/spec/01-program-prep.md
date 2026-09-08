@@ -577,6 +577,36 @@ contract is input consumption: an LZMA range coder holds lookahead bytes it neve
 uses, so trailing slack is a property of a valid stream, and the packer's Adler-32
 over the decoded bytes is what proves the block instead.
 
+(kuna) **Decoding without the metadata.** Discovery can fail on an image whose payload
+is intact: a repacker that strips the `PackHeader`, a private packer that borrows only
+the codec, a blob a reader located by hand. `no UPX PackHeader found` is then a correct
+answer and a dead end, and the missing input -- where the stream is -- is something the
+reader already has. `kuna unpack --raw-lzma START:END` supplies it: discovery is skipped
+entirely and that range is decoded as one raw LZMA1 stream. Endpoints are virtual
+addresses, resolved through the object's own section table (the table the address was
+read out of) and clamped to the bytes the file stores for that section, since a
+section's virtual size routinely runs past its raw data and the excess is zero fill, not
+stream; `--raw-offsets` reads them as file offsets, which is also the only reading
+available for an image no object parser recognises.
+
+The consequence that shapes the decoder is that **no `b_info` exists to declare the
+uncompressed length**. `lzma::decompress_exhaustive` therefore runs the same decoder to
+the end of the *input* instead of to a length: the recovered size is a result, capped by
+the caller rather than predicted, and running out of input is this mode's ordinary
+ending rather than the `Truncated` refusal a declared length earns. A corrupt stream
+still fails, because a bad distance or an unreachable model index is a different fact
+from a short one. By default the range's first two bytes are the UPX parameter prefix;
+`--lzma-props` names `pb`/`lp`/`lc` for a stream that carries none, and the prefix is
+synthesized so one decoder path serves both.
+
+What this arm produces is a payload, not a program: no imports, no relocations, no
+rebuilt header, and none of the reconstruction proofs the walk applies -- there is no
+declared size, no `UPX!` marker and no Adler-32 to check it against. That is why it is
+an explicit override and not a fallback the `PackHeader` search reaches on its own. The
+refusal path is unchanged and deliberately so: an image that genuinely is not packed
+still exits `1` naming that, because an `unpack` that exited `0` on everything would
+trade a right answer for a reachable one.
+
 ## 1.3 Loader markup
 
 Import naming exists because a CALL into a linkage stub carries no symbol: without
