@@ -1,0 +1,40 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "a-b2711189a00a",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "0x420",
+    "--addr"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/picpool_arm_le32",
+    "binary_sha256": "1b83d695683e6b7c32b6596c2e61839d7c811828032744e05ca50be9b00b6825",
+    "binary_size": 1297,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/picpool_arm_le32",
+    "selector": "0x420",
+    "selector_kind": "addr"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_absent": [
+      "dat_[0-9a-f]+"
+    ],
+    "stdout_matches": [
+      "return 0x300;"
+    ]
+  },
+  "notes": "Promoted acceptance of default-arm-output-hides, re-pointed from the dataset witness (1337ARM.bin main ended `v3 = dat_8458;` where the disassembly shows `.word 0x00000539` at 0x8458) at the vendored picpool_arm_le32 fixture -- CI has no dataset. Same shape: a PC-relative pool word in .text read as a value. Off it prints `return dat_42c + 0x42c;`."
+}

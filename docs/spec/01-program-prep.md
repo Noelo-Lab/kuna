@@ -652,6 +652,46 @@ funcsym stream:
   This is a different path from `relocobjects`/`relocrebase` above, which own the
   *pre-link* `ET_REL` object; a relocatable object's relocations are applied by
   the layout pass and this walk does not run for it.
+- **In-code literal pools** (kuna, `litpoolconst`, default-on, DIV-136,
+  `decompiler/crates/kuna-decomp/src/p1_partition/kuna_litpoolconst.rs`): the
+  third user of the same "constant by construction, not by policy" exception, and
+  the one that needs no loader pass at all — only the section table the loader
+  already reports.
+
+  An ARM immediate too wide for the instruction encoding is not in the
+  instruction: the compiler parks it in a **literal pool** in `.text` and loads it
+  PC-relatively, so the value a function returns can be a word a few bytes past
+  its own last instruction. `getReadonly` already covers that word — `.text` is
+  `SHF_ALLOC` without `SHF_WRITE`, so every varnode reading it carries
+  `Varnode::readonly` — but folding it is gated by the program-wide `option
+  readonly`, which is off. The default C therefore said `v3 = dat_8458;` where
+  `kuna disassemble` printed `0x8458 39050000 .word 0x00000539` in the same
+  listing: the number the program returns was nowhere in the output, and reading
+  it meant inspecting the pool by hand.
+
+  `code_const_ranges` takes the `(vma, size, flags)` section snapshot and keeps
+  the rows that are allocated, executable, non-writable and file-backed
+  (`CODE|READONLY`, neither `UNALLOC` nor `NOLOAD`), falling back to the `PF_X`
+  load segments when no section qualifies — the sectionless-ELF case. The merged
+  ranges are carried on `Architecture::litpool_const`, and `ActionVarnodeProps`
+  folds a read-only varnode that lies **entirely** inside one even with global
+  propagation off (§3.4). Entirely, not merely starting there: a word straddling
+  the end of `.text` is half instruction stream and half something else, and
+  neither half is evidence about the other.
+
+  The warrant is the mapping itself. Executable non-writable memory is mapped
+  `r-x`, so a store to it faults and the image's copy of those bytes *is* the
+  run-time value — the same standard `PT_GNU_RELRO` supplies for the slots above.
+  What it deliberately does not cover is a non-writable *data* section —
+  `.rodata`, `.data.rel.ro` — which stays behind `option readonly` unless the
+  image maps it executable as well, as a firmware image with one RX region does.
+  The warrant is the permission, not the section name. That is the direction that
+  matters on a corpus of packers and protectors: a data section's flags are least
+  trustworthy exactly where an image rewrites its own data, and a program that
+  patches itself has to make the page writable first. An image whose
+  loader reports neither sections nor segments — the XML `<binaryimage>` corpus,
+  the raw-bytes loader — contributes no ranges, so the option is structurally
+  inert for the datatest oracle and the whole feature is a no-op there.
 - **i386-PIE stubs** (angr, `i386_pie_plt`, default-on, env-bridged): a PIE i386
   PLT entry is GOT-relative (`jmp *disp(%ebx)`, bytes `FF A3 <disp32>`), so naming
   it needs the GOT base `%ebx` holds at run time; `elf_plt.rs (i386_got_base)`

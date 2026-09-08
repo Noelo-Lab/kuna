@@ -1,0 +1,37 @@
+{
+  "need_id": "default-arm-output-hides",
+  "track": "quality",
+  "scope": "small",
+  "option": "litpoolconst",
+  "default": "on",
+  "div": "DIV-136",
+  "decisions": [
+    "The filed hypothesis ('readonly folding is disabled in the default mode') and the refuter's narrowing both stand, and the refuter's route is the one taken: NOT flipping the program-wide `readonly` default, but folding only what the instruction stream itself carries. The refuter's own framing -- 'a literal-pool word the ARM pool analysis already found inside the function's own extent' -- was NOT implemented as stated, and deliberately. The Listing's pool analysis is gated behind `--option listing on`, and 'inside the function's own extent' makes a memory fact order-dependent (function A folds the word, function B a few bytes later does not). The predicate shipped is a property of the mapping instead: an allocated, executable, non-writable, file-backed region. It needs no Listing pass, it covers a pool placed just past the function that uses it, and its soundness argument is the same one `dynrelocs` uses for PT_GNU_RELRO.",
+    "No new mechanism was needed on the loader side either. `get_readonly` already paints `.text`, and `ObjectLoadImage::section_snapshot()` already reports `(vma, size, flags)` with the CODE and READONLY bits, so the whole feature is one pure function over that snapshot plus one term in the existing `ActionVarnodeProps` gate. kuna-analysis is untouched.",
+    "The blast radius was measured, not argued, and it caught a real regression the witness could never show. `decompile-all` on both arms over 65 decbench binaries surfaced ONE binary (crazyflie firmware.elf) where a 453-line function DISAPPEARED with the option on: `RuleStringStore` fed a folded two-byte constant to `StringManager::getCodepoint`, whose UTF-8 3-byte arm reads `buf[2]` with no bounds check. The C++ reads the neighbouring bytes of a larger array; Rust panics, and the panic aborts the whole function's decompilation. Fixed at the seam (a truncated encoding answers -1, 'not a legal encoding', which is what checkCharacters means) rather than by narrowing the feature away from it -- the out-of-bounds read is a bug at any input.",
+    "Every x86-64 ELF diff in the sweep was a per-function 10 s watchdog flake under load (bash's `read_token.part.0` and `execute_command_internal` decompiled in one arm and not the other), not the option. x86-64 has no literal pools, so the option is structurally near-inert there; the one genuine PE change is mingw's `__do_global_ctors` folding the permanent `-1` in `__CTOR_LIST__[0]` and dropping its now-dead guard, which is correct.",
+    "The acceptance probe was re-pointed onto a fixture the repo owns. `picpool_arm_le32` (1,297 B, generator `picpool_arm_le32.py`) reproduces the witness verbatim -- `sub_420` returns `dat_42c + 0x42c` with the option off and `0x300` by default -- and its literals live in a read-only DATA section OUTSIDE the foldable range, so the fixture also pins the narrowing.",
+    "There is no `tests/stages/` case and there cannot be: the XML `<binaryimage>` loader implements neither `get_next_section` nor `get_segments`, so the range list is empty on that path and the option is a no-op. That is also the proof behind the default-on flip -- 0/675 is structural, not lucky.",
+    "MERGE HAZARD, recorded deliberately. The captain's B_DRAIN note on this need says it was filed `track: tooling` / `touches: kuna-cli`, so it drew none of the option-counter leases and was dispatched alongside `hint-printing-call-loses`, which holds `counter:catalog`, `counter:div`, `counter:stages-corpus`, `file:phases.toml` and `file:docs/options.md`. Both branches therefore touch phases.toml, docs/options.md, the phase_catalog.json fixture, the catalog counters and the DIV registry. Every one of those must be RE-DERIVED from a fresh capture after the rebase -- never merged arithmetically. `option_values_live_value_present_for_NN_suppressed_for_99` is the trap: an identical N -> N+1 edit on both sides merges cleanly to the wrong answer."
+  ],
+  "gates": {
+    "make test": "PARITY OK 675/675",
+    "make test-stages": "PARITY OK",
+    "make test-cli": "85/85",
+    "make check-spec": "green (strict mode too)",
+    "kuna catalog --check": "catalog OK",
+    "make rust-test": "pending on the rebased tree; run as `env -u KUNA_DECOMP_TEST make rust-test` (the worker env points that at the worktree's own binary, which grades kuna against itself)"
+  },
+  "sweep": {
+    "binaries": 65,
+    "binaries_changed": 40,
+    "binaries_identical": 25,
+    "functions_added": 0,
+    "functions_removed": 0,
+    "regressions_found_and_fixed": 1
+  },
+  "speed": {
+    "decompile 1337ARM.bin main": "127.41 ms -> 125.71 ms (-1.33%, median of 7)",
+    "decompile usbmidi.elf main": "102.60 ms -> 106.48 ms (+3.78%, median of 7, inside the 5% budget)"
+  }
+}

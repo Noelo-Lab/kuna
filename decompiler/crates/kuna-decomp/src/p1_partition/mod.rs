@@ -4,6 +4,7 @@
 //! `lib.rs` so public paths (`kuna_decomp::<module>`) are unchanged.
 
 pub mod kuna_cppsig;
+pub mod kuna_litpoolconst;
 pub mod sleigh_arch;
 pub mod raw_arch;
 pub mod xml_arch;

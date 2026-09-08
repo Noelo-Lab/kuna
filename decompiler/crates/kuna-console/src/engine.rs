@@ -2756,6 +2756,16 @@ pub fn bootstrap_from_object_with_isa(
     // `option readonly`. Empty for a non-ELF, an `ET_REL` object, or the gate off.
     let dynreloc_const: Vec<(u64, u64)> = loader.dynreloc_const_ranges().to_vec();
 
+    // (kuna `litpoolconst`) The image's executable read-only regions, read off the
+    // same loader: `r-x` memory cannot be written, so the literal-pool words the
+    // instruction stream carries inside itself fold to their constants without the
+    // program-wide `option readonly`. Sections when the image has a usable table,
+    // the `PF_X` load segments when it does not.
+    let litpool_const: Vec<(u64, u64)> = kuna_decomp::kuna_litpoolconst::code_const_ranges(
+        &loader.section_snapshot(),
+        &kuna_sleigh::loadimage::LoadImage::get_segments(&loader),
+    );
+
     // readLoaderSymbols (the ELF FUNC symbols) BEFORE handing the loader off.
     let mut symbols = read_loader_symbols_generic(&loader);
     let object_sections: Vec<ObjectSectionLocation> = loader
@@ -2866,6 +2876,12 @@ pub fn bootstrap_from_object_with_isa(
         ranges.sort_unstable();
         prog.arch_mut().dynreloc_const = std::rc::Rc::new(ranges);
     }
+
+    // (kuna `litpoolconst`) ... and the executable read-only regions the in-code
+    // literal pools live in. Already sorted, disjoint and merged by
+    // `code_const_ranges`, so `GlobalContainer::litpool_const_contains` can
+    // binary-search.
+    prog.arch_mut().litpool_const = std::rc::Rc::new(litpool_const);
 
     // NB: the analysis-pass facts are committed later, gated, in
     // `commit_analysis_passes` (called from `IfcReadSymbols`), after the per-pass

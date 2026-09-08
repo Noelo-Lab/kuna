@@ -410,15 +410,29 @@ impl StringManager {
     /// Extract the next unicode codepoint from `buf`.  One or more bytes are
     /// consumed; the number consumed is passed back via `skip`.  Returns the
     /// codepoint or -1 if the encoding is invalid.
+    ///
+    /// (kuna) A lead byte that announces more bytes than `buf` holds is an
+    /// invalid encoding, not a read past the end.  `checkCharacters` hands this
+    /// the tail `&buf[i..]` of a fixed-size window, so a window whose LAST byte
+    /// is a multi-byte lead reaches every arm below with too few bytes; the C++
+    /// reads the neighbouring bytes of a larger array and Rust panics, which
+    /// aborts the whole function's decompilation (`RuleStringStore` on a folded
+    /// in-code constant sequence found one).
     pub fn get_codepoint(buf: &[uint1], charsize: int4, bigend: bool, skip: &mut int4) -> int4 {
         let codepoint: int4;
         let mut sk: int4 = 0;
         if charsize == 2 {
             // UTF-16
+            if buf.len() < 2 {
+                return -1;
+            }
             let mut cp = StringManager::read_utf16(buf, bigend);
             sk += 2;
             if (0xD800..=0xDBFF).contains(&cp) {
                 // high surrogate
+                if buf.len() < 4 {
+                    return -1;
+                }
                 let trail = StringManager::read_utf16(&buf[2..], bigend);
                 sk += 2;
                 if !(0xDC00..=0xDFFF).contains(&trail) {
@@ -431,11 +445,17 @@ impl StringManager {
             codepoint = cp;
         } else if charsize == 1 {
             // UTF-8
+            if buf.is_empty() {
+                return -1;
+            }
             let val = buf[0] as int4;
             if (val & 0x80) == 0 {
                 codepoint = val;
                 sk = 1;
             } else if (val & 0xe0) == 0xc0 {
+                if buf.len() < 2 {
+                    return -1;
+                }
                 let val2 = buf[1] as int4;
                 sk = 2;
                 if (val2 & 0xc0) != 0x80 {
@@ -443,6 +463,9 @@ impl StringManager {
                 }
                 codepoint = ((val & 0x1f) << 6) | (val2 & 0x3f);
             } else if (val & 0xf0) == 0xe0 {
+                if buf.len() < 3 {
+                    return -1;
+                }
                 let val2 = buf[1] as int4;
                 let val3 = buf[2] as int4;
                 sk = 3;
@@ -451,6 +474,9 @@ impl StringManager {
                 }
                 codepoint = ((val & 0xf) << 12) | ((val2 & 0x3f) << 6) | (val3 & 0x3f);
             } else if (val & 0xf8) == 0xf0 {
+                if buf.len() < 4 {
+                    return -1;
+                }
                 let val2 = buf[1] as int4;
                 let val3 = buf[2] as int4;
                 let val4 = buf[3] as int4;
@@ -465,6 +491,9 @@ impl StringManager {
             }
         } else if charsize == 4 {
             // UTF-32
+            if buf.len() < 4 {
+                return -1;
+            }
             sk = 4;
             if bigend {
                 codepoint = ((buf[0] as int4) << 24)

@@ -274,6 +274,28 @@ pub struct Architecture {
     /// every per-function handle by `build_arch_handle`. Empty on every other
     /// path, so it is inert for the XML datatest oracle.
     pub dynreloc_const: Rc<Vec<(u64, u64)>>,
+    /// (kuna `litpoolconst`) `[start, stop]` (inclusive) offsets of the image's
+    /// allocated, executable, non-writable, file-backed regions — the program's
+    /// own instruction stream, and so the ARM/MIPS/PPC literal pools embedded in
+    /// it. A read that lies entirely inside one folds with
+    /// [`Self::readonlypropagate`] off, gated by [`Self::litpoolconst`]; derived
+    /// by [`crate::kuna_litpoolconst::code_const_ranges`] and installed by the
+    /// object bootstrap beside [`Self::dynreloc_const`]. Empty on every other
+    /// path, so it is inert for the XML datatest oracle.
+    pub litpool_const: Rc<Vec<(u64, u64)>>,
+    /// (kuna) Fold a read from executable read-only memory to the constant it
+    /// holds (`litpoolconst`); default **on** (DIV-136). An ARM immediate too
+    /// wide for the instruction encoding is parked in a literal pool in `.text`
+    /// and loaded PC-relatively, so the value a function returns is a word inside
+    /// its own extent. Those bytes are painted `Varnode::readonly` already, but
+    /// folding a read-only global is gated by the program-wide `option readonly`,
+    /// which is off because it would fold every `.rodata` read in the program —
+    /// so the default output is `v3 = dat_8458;` and the number is nowhere in the
+    /// C. This is the narrow half: mapped `r-x` memory cannot be written, so the
+    /// image's copy of it IS the run-time value, while `.rodata` and every other
+    /// non-writable data section keep today's behaviour. Reads
+    /// [`Self::litpool_const`]; a no-op when it is empty.
+    pub litpoolconst: bool,
     /// Infer pointers from likely-address constants (C++ `infer_pointers`).
     pub infer_pointers: bool,
     /// How many bits of alignment a function ptr has (C++ `funcptr_align`).
@@ -1790,6 +1812,8 @@ impl Architecture {
             aggressive_ext_trim: false,
             readonlypropagate: false,
             dynreloc_const: Rc::new(Vec::new()),
+            litpool_const: Rc::new(Vec::new()),
+            litpoolconst: false,
             infer_pointers: false,
             funcptr_align: 0,
             flowoptions: 0,
@@ -2126,6 +2150,7 @@ impl Architecture {
         self.present_lessequal = true; // (kuna) DIV-2 default-on (GH-558)
         self.preserve_thumb_funcptr = true; // (kuna) DIV-2 default-on (GH-8471)
         self.readonlypropagate = false;
+        self.litpoolconst = true; // (kuna) DIV-136 default-on: fold a read from executable read-only memory (an ARM literal pool) even with `readonly` off; structurally inert on the XML corpus, which reports no sections
         self.nan_ignore_all = false;
         self.nan_ignore_compare = true; // Ignore NaN ops associated with FP comparisons by default
         self.alias_block_level = 2; // Block structs and arrays by default
@@ -2601,6 +2626,9 @@ impl Architecture {
                 on_off!(strip_security_check, "Rust security-check branch stripping")
             }
             "branchflip" => on_off!(branch_flip, "Negated-guard branch flipping for linearity"),
+            "litpoolconst" => {
+                on_off!(litpoolconst, "In-code literal-pool constant folding")
+            }
             "loopbreak_recovery" => {
                 let (val, msg) =
                     crate::kuna_loopbreak_recovery::OptionLoopBreakRecovery.apply(p1)?;
@@ -3444,6 +3472,8 @@ impl Architecture {
         // slots so `ActionVarnodeProps` folds those loads with global read-only
         // propagation still off. `Rc` clone: the list is built once at load.
         ctx.dynreloc_const = Rc::clone(&self.dynreloc_const);
+        ctx.litpool_const = Rc::clone(&self.litpool_const);
+        ctx.litpoolconst = self.litpoolconst; // litpoolconst (in-code literal-pool folding)
         // Carry the data-type-splitting toggle bits (C++ `glb->split_datatype_config`)
         // so `SplitDatatype` / `RuleSplit{Copy,Load,Store}` reach them per function.
         ctx.split_datatype_config = self.split_datatype_config;

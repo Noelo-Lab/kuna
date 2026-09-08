@@ -337,6 +337,10 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "msvcstackguard",
     "securitycheck",
     "branchflip",
+    // (kuna) DIV-136: fold a read from executable read-only memory (the ARM
+    // literal pool the instruction stream carries inside itself) to the constant
+    // it holds, without the program-wide `readonly`. Default-ON.
+    "litpoolconst",
     "loopbreak_recovery",
     "namestyle",
     "realtypes",

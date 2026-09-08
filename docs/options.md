@@ -190,6 +190,10 @@ Three tiers:
 | if (x == 0) guard with the common path in the else arm | [`branchflip`](#branchflip) |
 | negated condition where angr renders the positive complement first | [`branchflip`](#branchflip) |
 | if/else polarity inverted versus the source's reading order | [`branchflip`](#branchflip) |
+| an arm function returns or assigns dat_<addr> where the disassembly shows a .word literal | [`litpoolconst`](#litpoolconst) |
+| a pc-relative literal-pool constant renders as an opaque global instead of its value | [`litpoolconst`](#litpoolconst) |
+| option readonly on exposes a constant the default output hides | [`litpoolconst`](#litpoolconst) |
+| a value loaded from inside the function's own extent has no readable definition | [`litpoolconst`](#litpoolconst) |
 | loop exit rendered as goto label_N; plus a synthesized label instead of break; | [`loopbreak_recovery`](#loopbreak_recovery) |
 | switch-case exit gotos where break; is expected | [`loopbreak_recovery`](#loopbreak_recovery) |
 | error paths leave a loop by goto to its successor label | [`loopbreak_recovery`](#loopbreak_recovery) |
@@ -1025,6 +1029,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** An `if (x == 0)` negated guard reads inverted versus the angr-style positive form. On by default (DIV-14): the non-negated comparison becomes the `if` condition and the if/else arms swap to match; flip OFF to keep Ghidra's polarity. A flip is logged as a `branchflip:` warning comment at the if. Only fires on `if/else` (3-component) blocks whose condition flips cleanly in place.
 - **Where / provenance:** P8/readability-rewrites · angr · opt-in-tool · angr-SAILR-condition-polarity
 - **Example:** `option branchflip on`
+
+### `litpoolconst` -- on | off, default `on`
+
+- **Symptoms:** an arm function returns or assigns dat_<addr> where the disassembly shows a .word literal; a pc-relative literal-pool constant renders as an opaque global instead of its value; option readonly on exposes a constant the default output hides; a value loaded from inside the function's own extent has no readable definition.
+- **What it does:** Fold a read from EXECUTABLE read-only memory to the constant it holds, without the program-wide option readonly. An ARM immediate too wide for the instruction encoding is parked in a literal pool in .text and loaded PC-relatively, so the value a function returns can be a word a few bytes past its own last instruction: main of a statically linked ARM crackme ends `ldr r3,[0x8458]` with `0x8458 39050000 .word 0x00000539` in the same listing kuna disassembles, and the default C says `v3 = dat_8458;` -- the number the program returns is not in the output at all. kuna already paints that word Varnode::readonly (.text is SHF_ALLOC without SHF_WRITE), but folding a read-only global is gated by readonly, which is off by default because it folds every .rodata read in the program. This is the narrow half of that switch: a read that lies ENTIRELY inside an allocated, executable, non-writable, file-backed region is folded, because those bytes are the instruction stream -- mapped r-x, so a store to them faults and the image's copy IS the run-time value. A non-writable DATA section (.rodata, .data.rel.ro) keeps today's behaviour unless the image maps it executable too, which a single-RX-region firmware image does: the warrant is the permission, not the section name. That is the direction that matters on a corpus of packers and protectors, where a data section's flags are least trustworthy. Ranges come from the loader's section table, or from the PF_X load segments when the image carries no sections; an image whose loader reports neither (the XML datatest corpus, the raw-bytes loader) contributes none and the option is structurally inert.
+- **When to flip:** On (default, DIV-136): an ARM/MIPS/PPC literal-pool constant renders as its value instead of dat_<addr>. Flip off to restore the pre-feature rendering exactly -- every in-code pool read back to an opaque global. Use `option readonly on` instead when you also want .rodata folded program-wide.
+- **Where / provenance:** P1/code-data-partition · kuna · correctness-fix · repipe-default-arm-output-hides
+- **Example:** `option litpoolconst off`
 
 ### `loopbreak_recovery` -- on | off, default `on`
 
