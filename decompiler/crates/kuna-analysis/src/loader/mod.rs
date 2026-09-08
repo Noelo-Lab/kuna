@@ -31,6 +31,10 @@
 //! defined-function reader lifted out of [`crate::loadimage_object`].
 
 pub mod arm_markers;
+// (kuna) ELF import markup read out of `PT_DYNAMIC`, for an image whose section
+// table is missing or unusable and whose `.dynsym`/`.rela.*`/`.plt*` are
+// therefore invisible.
+pub mod elf_dynseg;
 pub mod elf_plt;
 // (kuna) ELF section-table tolerance: an image whose section headers are
 // unreadable still has program headers describing every loadable byte.

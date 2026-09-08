@@ -28,6 +28,11 @@
 //!    to slots that are not symbol-bearing relocations, so they fall out of the
 //!    map and are dropped automatically.
 //!
+//! Both inputs are section-keyed, so an ELF with no usable section table gets
+//! neither.  [`resolve_from_dynamic_segment`] re-derives them from `PT_DYNAMIC`
+//! (see [`crate::loader::elf_dynseg`]) and runs only when the section path found
+//! nothing at all.
+//!
 //! Everything degrades gracefully: an unsupported architecture, a missing
 //! dynamic symbol table, or an undecodable stub yields fewer (or zero) entries,
 //! leaving the pre-existing behavior unchanged.  This module never panics and
@@ -53,7 +58,23 @@ pub(crate) struct PltSym {
 /// target matches a symbol-bearing dynamic relocation.  Empty when the binary
 /// has no dynamic imports, an unsupported architecture, or stubs this decoder
 /// does not recognize.
-pub(crate) fn resolve_plt_imports(file: &object::File) -> Vec<PltSym> {
+///
+/// `bytes` is the raw image, used only by the `PT_DYNAMIC` fallback below.
+pub(crate) fn resolve_plt_imports(file: &object::File, bytes: &[u8]) -> Vec<PltSym> {
+    let out = resolve_from_sections(file);
+    if !out.is_empty() {
+        return out;
+    }
+    // Every input above is keyed on the section table, so an ELF without one
+    // yields nothing at all.  Re-derive the same facts from `PT_DYNAMIC`, which
+    // is how the run-time loader finds them.  See [`resolve_from_dynamic_segment`].
+    resolve_from_dynamic_segment(file, bytes)
+}
+
+/// The section-driven resolution: `.dynsym`/`SHT_RELA` for the names, `.plt*`
+/// for the stubs.  Unchanged behavior for any image whose section table is
+/// intact — which is every image that ever reached this code before.
+fn resolve_from_sections(file: &object::File) -> Vec<PltSym> {
     let arch = file.architecture();
 
     // MIPS has no regular `.plt` code section and emits NO `R_MIPS_JUMP_SLOT`
@@ -158,6 +179,70 @@ pub(crate) fn resolve_plt_imports(file: &object::File) -> Vec<PltSym> {
         decode_ppc_text(file, arch, &got_to_name, &mut out, &mut named_got);
     }
 
+    out
+}
+
+/// Sectionless fallback: name the PLT stubs of an ELF whose section table is
+/// missing or unusable, from its `PT_DYNAMIC` segment.
+///
+/// Only ever runs when [`resolve_from_sections`] produced **nothing**, so it can
+/// add names but never move one: an image with a working section table takes the
+/// path above and never reaches here.
+///
+/// The stubs are found by handing each executable `PT_LOAD` window to the same
+/// per-architecture decoders the section scan uses.  That is deliberate, and the
+/// alternative is worse: with no section names left there is no honest way to
+/// bound the `.plt`, and a guessed sub-range of an executable segment names
+/// stubs off by an entry.  The decoders only ever emit a name for a stub whose
+/// *decoded* GOT target is a symbol-bearing relocation slot, so the relocations
+/// decide which instructions in the window were stubs — the same correlation the
+/// section path relies on, over a wider window.
+///
+/// PowerPC and MIPS are excluded: neither resolves through a `.plt` code section
+/// at all (PowerPC's stubs are TOC-relative and inline in `.text`, MIPS carries
+/// the correspondence in its GOT layout), so both need a section-derived anchor
+/// this path cannot supply.
+fn resolve_from_dynamic_segment(file: &object::File, bytes: &[u8]) -> Vec<PltSym> {
+    let arch = file.architecture();
+    if matches!(
+        arch,
+        Architecture::Mips
+            | Architecture::Mips64
+            | Architecture::PowerPc
+            | Architecture::PowerPc64
+    ) {
+        return Vec::new();
+    }
+    let Some(imports) = super::elf_dynseg::dynamic_imports(bytes) else {
+        return Vec::new();
+    };
+    if imports.got_to_name.is_empty() {
+        return Vec::new();
+    }
+
+    // `DT_PLTGOT` *is* `_GLOBAL_OFFSET_TABLE_`, so it is the same anchor
+    // [`i386_got_base`] reads off `.got.plt` when the sections are there.
+    let i386_got_base = if matches!(arch, Architecture::I386)
+        && kuna_decomp::kuna_i386_pie_plt::i386_pie_plt_enabled()
+    {
+        imports.pltgot
+    } else {
+        None
+    };
+
+    let mut out: Vec<PltSym> = Vec::new();
+    let mut named_got: HashSet<u64> = HashSet::new();
+    for (vma, data) in super::elf_dynseg::exec_segments(bytes) {
+        decode_plt_section(
+            arch,
+            vma,
+            data,
+            i386_got_base,
+            &imports.got_to_name,
+            &mut out,
+            &mut named_got,
+        );
+    }
     out
 }
 

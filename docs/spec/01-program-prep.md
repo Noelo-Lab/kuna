@@ -635,6 +635,28 @@ funcsym stream:
   `DT_MIPS_GOTSYM`) and marks the external GOT slots constant, so with
   read-only propagation the `lw $t9, off($gp); jalr $t9` sequence folds to the
   named import (the bootstrap turns `readonlypropagate` on for MIPS only).
+  Every input named so far is keyed on the section table — `object` builds its
+  dynamic-relocation iterator by scanning it for `SHT_REL`/`SHT_RELA`, reads
+  `.dynsym` as a section, and the stub scan finds `.plt*` by name — so an ELF
+  whose section table is absent or unusable gets its bytes and none of its import
+  markup, and every library call prints `(*dat_<slot>)(...)`. None of that
+  information is actually section-bound.
+  `decompiler/crates/kuna-analysis/src/loader/elf_dynseg.rs (dynamic_imports)`
+  reads it out of `PT_DYNAMIC` instead — `DT_SYMTAB`/`DT_STRTAB`/`DT_SYMENT` for
+  the names, `DT_JMPREL` (with `DT_PLTREL`/`DT_PLTRELSZ`) and `DT_RELA`/`DT_REL`
+  for the slots they attach to, `DT_PLTGOT` as the i386 GOT anchor
+  `_GLOBAL_OFFSET_TABLE_` otherwise supplies — translating each virtual address
+  through the `PT_LOAD` map, which is how the run-time loader finds the same
+  tables. It runs only when the section-driven resolution produced **nothing at
+  all**, so it adds names to an image that had none and can never move a name on
+  an image whose sections are intact. The PLT is deliberately not reconstructed
+  as a range: with no section name left there is no honest bound for it, and a
+  guessed sub-range of an executable segment names stubs off by an entry.
+  Each executable `PT_LOAD` window is handed whole to the same per-architecture
+  decoders, and the decoded-GOT-target match above decides which instructions in
+  it were stubs — the relocation slots are the bound. PowerPC and MIPS are
+  excluded: neither resolves through a `.plt` code section at all, and both need a
+  section-derived anchor this path cannot supply.
 - **Linked-image dynamic relocations** (kuna, `dynrelocs`, default-on,
   env-bridged): the loader maps the `PT_LOAD` bytes the *linker* wrote, which is
   not the image a process runs. Every slot filled by a dynamic relocation —
