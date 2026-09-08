@@ -34,7 +34,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      # /dev-viz derives its cadence chart from complete repository history.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install Rust (stable) + wasm32-wasip1 target
         run: |
@@ -68,6 +71,9 @@ jobs:
 
       - name: Test the browser Worker boundary
         run: node integrations/web/test/worker.mjs
+
+      - name: Test the development evidence snapshot
+        run: node integrations/web/test/dev-viz.mjs
 
       # Serve every file verbatim (belt-and-suspenders; the artifact path skips Jekyll).
       - name: Disable Jekyll
