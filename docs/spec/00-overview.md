@@ -1028,6 +1028,21 @@ that happens to be spelled with a keyword resolve to exactly the interned type
 they always did. Only combinations, and the keywords the type factory does not
 name, take the width-driven path.
 
+(kuna) **A tag survives being declared.** `findByName` is also how the lexer
+classifies every other identifier, so the moment `struct JSValue { … };` interns
+the tag, `JSValue` stops reaching the parser as an identifier and comes back as
+a type name. Upstream's `struct_or_union_specifier` reads its tag from the
+identifier terminal alone, which made the second mention of any struct — `struct
+JSValue` as a return type, a parameter, a field — a bare syntax error, while a
+typedef alias for the same structure worked. The tag position therefore accepts
+a type name as well (`decompiler/crates/kuna-console/src/grammar.rs
+(CParse::tag_identifier)`), and `enum` reads its tag the same way. The position
+is unambiguous: a type name after `struct`, `union` or `enum` matched no
+production before, with or without a body. Which type the tag names is still
+decided by the construction action, not by the token — `oldStruct` rejects a tag
+that names something other than a struct with the kind error it always had, so
+`struct int4` is refused for saying `struct`, not for being unparseable.
+
 (kuna) **A `prototype` declaration may name its calling convention**, which is
 the other half of speaking the target's own C: on Windows every declaration
 worth pasting carries one. An identifier the loaded compiler spec registered as

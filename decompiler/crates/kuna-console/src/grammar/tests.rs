@@ -483,6 +483,60 @@ fn struct_pointer_param_resolves_named_type() {
 }
 
 // ===========================================================================
+// Tag references to an already-interned struct / union / enum
+// ===========================================================================
+
+#[test]
+fn struct_tag_return_type_resolves_interned_tag() {
+    // `struct JSValue { ... };` interns the tag, after which the lexer hands
+    // `JSValue` back as a TYPE_NAME; `struct JSValue` as a return type used to
+    // be a syntax error.
+    let f = factory();
+    f.get_type_struct("JSValue").unwrap();
+    let p = parse_protopieces("extern struct JSValue jsv(void *ctx);", &f, org()).unwrap();
+    assert_eq!(p.outtype.as_ref().unwrap().get_name(), "JSValue");
+    assert_eq!(p.outtype.as_ref().unwrap().get_metatype(), meta::TYPE_STRUCT);
+    assert_eq!(p.intypes.len(), 1);
+}
+
+#[test]
+fn struct_tag_pointer_param_resolves_interned_tag() {
+    let f = factory();
+    f.get_type_struct("JSValue").unwrap();
+    let p = parse_protopieces("extern void take(struct JSValue *v);", &f, org()).unwrap();
+    assert_eq!(p.intypes.len(), 1);
+    assert_eq!(p.intypes[0].get_metatype(), meta::TYPE_PTR);
+    assert_eq!(p.intypes[0].get_ptr_to().unwrap().get_name(), "JSValue");
+}
+
+#[test]
+fn union_tag_return_type_resolves_interned_tag() {
+    let f = factory();
+    f.get_type_union("myunion").unwrap();
+    let p = parse_protopieces("extern union myunion pick(int4 n);", &f, org()).unwrap();
+    assert_eq!(p.outtype.as_ref().unwrap().get_name(), "myunion");
+    assert_eq!(p.outtype.as_ref().unwrap().get_metatype(), meta::TYPE_UNION);
+}
+
+#[test]
+fn enum_tag_param_type_resolves_interned_tag() {
+    let f = factory();
+    f.get_type_enum("mode").unwrap();
+    let p = parse_protopieces("extern void set(enum mode m);", &f, org()).unwrap();
+    assert_eq!(p.intypes.len(), 1);
+    assert_eq!(p.intypes[0].get_name(), "mode");
+}
+
+#[test]
+fn struct_tag_type_parses_outside_a_prototype() {
+    let f = factory();
+    f.get_type_struct("JSValue").unwrap();
+    let t = parse_type("struct JSValue *", &f, org()).unwrap();
+    assert_eq!(t.0.get_metatype(), meta::TYPE_PTR);
+    assert_eq!(t.0.get_ptr_to().unwrap().get_name(), "JSValue");
+}
+
+// ===========================================================================
 // Rejection / error-text paths
 // ===========================================================================
 
@@ -527,12 +581,16 @@ fn reject_old_struct_not_a_struct() {
 }
 
 #[test]
-fn reject_struct_type_name_is_syntax_error() {
-    // `struct int4`: int4 is a TYPE_NAME, so neither `STRUCT IDENTIFIER` nor
-    // `STRUCT '{' ... '}'` matches -> syntax error (matches C++).
+fn reject_struct_type_name_of_the_wrong_kind() {
+    // `struct int4`: int4 is a TYPE_NAME, and a type name in tag position is
+    // read as the tag, so the kind check rejects it rather than the grammar.
     let f = factory();
     let err = parse_protopieces("extern struct int4 f(void);", &f, org()).unwrap_err();
-    assert!(err.explain().contains("Syntax error"), "got: {}", err.explain());
+    assert!(
+        err.explain().contains("Identifier does not represent a struct as required"),
+        "got: {}",
+        err.explain()
+    );
 }
 
 #[test]
