@@ -445,6 +445,10 @@ fn option_values_live_value_present_for_58_suppressed_for_101() {
         // declaration time (`ConsoleProgram::declare_function`), so it has no
         // codegen live reader either. Default-ON (DIV-139).
         "declaredlibcproto",
+        // (kuna) The built-in Win32 API signature table — an analysis-pass gate
+        // with no codegen live reader (read console-side via kuna_live_value),
+        // same as `libcsigs` above. Default-ON (DIV-141).
+        "win32sigs",
         "strings",
         // (kuna) The 2-byte (UTF-16LE) width of the string-literal pass — an
         // analysis-pass gate read at the commit boundary (console-side via
