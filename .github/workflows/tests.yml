@@ -70,6 +70,9 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
+        with:
+          # integrations/web/build.sh generates /dev-viz from git history.
+          fetch-depth: 0
 
       - name: Install Rust (stable) + wasm32-wasip1 target
         run: |
@@ -177,6 +180,7 @@ jobs:
         run: |
           bash integrations/web/build.sh
           node integrations/web/test/worker.mjs
+          node integrations/web/test/dev-viz.mjs
 
   rust-test:
     name: cargo workspace suite
