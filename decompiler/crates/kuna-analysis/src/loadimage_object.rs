@@ -999,6 +999,53 @@ impl ObjectLoadImage {
         None
     }
 
+    /// Fill `dst` with the image bytes starting at address `start`, zero-filling
+    /// any part of the span no segment maps (a `.bss`-style RAM tail, or a hole
+    /// between two segments).  This is the body of the C++
+    /// `LoadImageBfd::loadFill` read loop, lifted out so it can fill either the
+    /// staging buffer or the caller's slice directly.
+    ///
+    /// Returns the number of bytes it could not fill: `0` on success, and
+    /// `dst.len()` when the very first byte is unmapped (the C++ `offset == 0`
+    /// break, which is the only failure the loop reports).  The loop counter is
+    /// a `usize` rather than the C++ `int4`, so a span longer than 2 GiB is
+    /// still counted correctly instead of wrapping negative.
+    fn fill_span(&self, dst: &mut [u8], start: u64) -> usize {
+        let mut offset: usize = 0;
+        let mut cursize: usize = dst.len();
+        let mut curaddr = start;
+
+        while cursize > 0 {
+            let Some((idx, secsize)) = self.find_section(curaddr) else {
+                if offset == 0 {
+                    break; // Initial address not mapped
+                }
+                // Fill the rest with zero.
+                dst[offset..].fill(0);
+                return 0;
+            };
+            let seg_vma = self.segments[idx].vma;
+            let readsize: usize;
+            if seg_vma > curaddr {
+                // No section matches at curaddr: zeroes to the next section.
+                if offset == 0 {
+                    break; // Initial address not mapped
+                }
+                readsize = (seg_vma - curaddr).min(cursize as u64) as usize;
+                dst[offset..offset + readsize].fill(0);
+            } else {
+                let avail = seg_vma.wadd(secsize).wsub(curaddr);
+                readsize = avail.min(cursize as u64) as usize;
+                let seg_off = curaddr - seg_vma; // file-relative read offset
+                self.copy_segment(idx, seg_off, &mut dst[offset..offset + readsize]);
+            }
+            offset += readsize;
+            cursize -= readsize;
+            curaddr = curaddr.wadd(readsize as u64);
+        }
+        cursize
+    }
+
     /// Copy `len` bytes out of segment `idx` starting at file-relative
     /// `seg_off` into `dst` (the C++ `bfd_get_section_contents`).  A read past
     /// the segment's file data zero-fills the remainder (a `.bss`-style RAM tail
@@ -1018,8 +1065,6 @@ impl LoadImage for ObjectLoadImage {
     }
 
     fn load_fill(&mut self, ptr: &mut [u8], addr: &Address) -> KunaResult<()> {
-        // cast: the C++ `int4 size` parameter (slice length; see trait docs).
-        let size: i32 = ptr.len() as i32;
         let space = addr
             .get_space()
             .expect("ObjectLoadImage::loadFill: address with null space (C++ UB)");
@@ -1034,13 +1079,36 @@ impl LoadImage for ObjectLoadImage {
         }
 
         let curaddr0: u64 = addr.get_offset();
+
+        // (kuna) A request larger than the staging buffer cannot be served out
+        // of it. Upstream copies the answer back with `memcpy(ptr,buffer,size)`
+        // and so reads past the end of a 512-byte buffer for any such request —
+        // a silent heap over-read that only upstream's own <= 16-byte callers
+        // keep out of reach. kuna reads whole objects (a typed global's
+        // datatype size), which routinely exceed 512 bytes, and the same copy
+        // spelled as a Rust slice panics instead. Fill the caller's slice
+        // directly and leave the buffer window untouched: a span this long can
+        // never be answered from a 512-byte window anyway, so nothing is lost
+        // by not caching it, and the window a neighbouring small read is being
+        // served from stays valid.
+        if ptr.len() > BUFSIZE {
+            let remaining = self.fill_span(ptr, curaddr0);
+            if remaining > 0 {
+                let mut errmsg =
+                    format!("Unable to load {} bytes at {}", remaining, addr.get_shortcut());
+                addr.print_raw(&mut errmsg)?;
+                return Err(KunaError::data_unavail(errmsg));
+            }
+            return Ok(());
+        }
+
         let mut bufoffset = self.bufoffset.borrow_mut();
         let mut buffer = self.buffer.borrow_mut();
 
         // The C++ comparison is exact uintb arithmetic (BUFSIZE is 512, so the
         // `+ size` cannot wrap for any real request).
         if curaddr0 >= *bufoffset
-            && curaddr0.wadd(size as u64) < (*bufoffset).wadd(BUFSIZE as u64)
+            && curaddr0.wadd(ptr.len() as u64) < (*bufoffset).wadd(BUFSIZE as u64)
         {
             let start = (curaddr0 - *bufoffset) as usize; // cast: in-buffer offset
             ptr.copy_from_slice(&buffer[start..start + ptr.len()]);
@@ -1049,52 +1117,7 @@ impl LoadImage for ObjectLoadImage {
 
         // Load the buffer with bytes from the new address.
         *bufoffset = curaddr0;
-        let mut offset: usize = 0;
-        let mut cursize: i32 = BUFSIZE as i32; // read an entire buffer
-        let mut curaddr = curaddr0;
-
-        while cursize > 0 {
-            let found = self.find_section(curaddr);
-            let Some((idx, secsize)) = found else {
-                if offset == 0 {
-                    break; // Initial address not mapped
-                }
-                // Fill the rest with zero.
-                for b in &mut buffer[offset..offset + cursize as usize] {
-                    *b = 0;
-                }
-                ptr.copy_from_slice(&buffer[..ptr.len()]);
-                return Ok(());
-            };
-            let seg_vma = self.segments[idx].vma;
-            let readsize: u64;
-            if seg_vma > curaddr {
-                // No section matches at curaddr.
-                if offset == 0 {
-                    break; // Initial address not mapped
-                }
-                let mut rs = seg_vma - curaddr;
-                if rs > cursize as u64 {
-                    rs = cursize as u64;
-                }
-                // Zeroes to the next section.
-                for b in &mut buffer[offset..offset + rs as usize] {
-                    *b = 0;
-                }
-                readsize = rs;
-            } else {
-                let mut rs = cursize as u64;
-                if curaddr.wadd(rs) > seg_vma.wadd(secsize) {
-                    rs = seg_vma.wadd(secsize).wsub(curaddr);
-                }
-                let seg_off = curaddr - seg_vma; // file-relative read offset
-                self.copy_segment(idx, seg_off, &mut buffer[offset..offset + rs as usize]);
-                readsize = rs;
-            }
-            offset += readsize as usize; // cast: readsize <= BUFSIZE here
-            cursize -= readsize as i32; // cast: readsize <= cursize (an int4) here
-            curaddr = curaddr.wadd(readsize);
-        }
+        let cursize = self.fill_span(&mut buffer[..], curaddr0);
         if cursize > 0 {
             // (offset==0 break path) Unable to load N bytes at <addr>.
             //
@@ -1118,7 +1141,6 @@ impl LoadImage for ObjectLoadImage {
         }
         // Copy the requested bytes out.
         ptr.copy_from_slice(&buffer[..ptr.len()]);
-        let _ = size; // size mirrors ptr.len(); kept for the C++ correspondence
         Ok(())
     }
 
@@ -2180,6 +2202,62 @@ mod tests {
             matches!(err, KunaError::DataUnavail { .. }),
             "an executable segment's tail is not materialised as code; got {err:?}"
         );
+    }
+
+    /// (kuna) A read longer than the 512-byte staging buffer is served straight
+    /// into the caller's slice.  Upstream copies its answer back with
+    /// `memcpy(ptr,buffer,size)` and over-reads the buffer for any such
+    /// request; the same copy spelled as a Rust slice panicked ("range end
+    /// index 667 out of range for slice of length 512"), which took a whole
+    /// `decompile-project` export down at the first global whose declared
+    /// datatype was bigger than the buffer.
+    #[test]
+    fn a_read_larger_than_the_staging_buffer_is_served_whole() {
+        use kuna_sleigh::loadimage::LoadImage;
+        let payload: Vec<u8> = (0..1024u32).map(|i| (i % 251) as u8).collect();
+        let bytes = build_elf64(0x401000, &payload, None);
+        let m = manager();
+        let ram = Rc::clone(m.get_space_by_name("ram").unwrap());
+        let mut img = ObjectLoadImage::from_bytes("t.elf", &bytes).expect("load the ELF");
+        img.attach_to_space(Rc::clone(&ram));
+        let at = |o: u64| Address::new(Rc::clone(&ram), o);
+
+        // The size out of the crash report, then the buffer seam either side of
+        // it, then spans that start and end off the buffer's own boundaries.
+        for (off, len) in [(0usize, 667usize), (0, 512), (0, 513), (3, 1021), (500, 524)] {
+            let got = img.load(len as i32, &at(0x401000 + off as u64)).expect("mapped");
+            assert_eq!(got, payload[off..off + len], "{len} bytes at +{off}");
+        }
+
+        // A big read is not cached, so it must leave the window a neighbouring
+        // small read is being served from exactly as it found it.
+        let warm = img.load(8, &at(0x401000)).expect("mapped");
+        img.load(667, &at(0x401100)).expect("mapped");
+        assert_eq!(img.load(8, &at(0x401000)).expect("mapped"), warm, "window poisoned");
+    }
+
+    /// A big read gets the same answers at the edges of mapped memory that the
+    /// buffered path gives: run off the end and the tail reads as zeroes, start
+    /// where nothing is mapped and it is `DataUnavail` — not a panic.
+    #[test]
+    fn a_big_read_off_the_end_zero_fills_and_an_unmapped_one_raises() {
+        use kuna_sleigh::loadimage::LoadImage;
+        let payload: Vec<u8> = (0..600u32).map(|i| (i % 251) as u8).collect();
+        let bytes = build_elf64(0x401000, &payload, None);
+        let m = manager();
+        let ram = Rc::clone(m.get_space_by_name("ram").unwrap());
+        let mut img = ObjectLoadImage::from_bytes("t.elf", &bytes).expect("load the ELF");
+        img.attach_to_space(Rc::clone(&ram));
+        let at = |o: u64| Address::new(Rc::clone(&ram), o);
+
+        let got = img.load(700, &at(0x401000)).expect("the first byte is mapped");
+        assert_eq!(got[..600], payload[..], "the mapped bytes come back verbatim");
+        assert!(got[600..].iter().all(|&b| b == 0), "the unmapped tail reads as zeroes");
+
+        let err = img.load(667, &at(0x900000)).unwrap_err();
+        assert!(matches!(err, KunaError::DataUnavail { .. }), "unmapped start: {err:?}");
+        let err = img.load(667, &at(0x401000 - 8)).unwrap_err();
+        assert!(matches!(err, KunaError::DataUnavail { .. }), "starts below the map: {err:?}");
     }
 
     /// A zero-filled tail is trimmed at the next segment, and only the tail is:
