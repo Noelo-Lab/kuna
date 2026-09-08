@@ -779,6 +779,26 @@ scaffolding INDIRECTs. Documented seam: the multi-register call-return join
 rather than building the concat — the shipped models recover single-register
 call outputs; only the *function's own* return supports the join below.
 
+That collection walks *backwards* from the CALL and stops at the first op that
+is not a `CPUI_INDIRECT`, so it is exact only while the guard INDIRECTs form one
+unbroken run immediately before the CALL. Upstream keeps that run whole from both
+sides: `op_insert_before` skips back over it, and `op_insert_after`
+(`decompiler/crates/kuna-decomp/src/substrate/funcdata_op.rs (Funcdata::op_insert_after)`)
+redirects — asked to insert after an INDIRECT marker it decodes the iop annotation
+in the marker's second input and inserts after the CALL (or STORE) that marker
+speaks for. kuna carried that redirect as a stub, so an op inserted after a guard
+INDIRECT landed between the guards and their CALL, the backward walk stopped
+there, every output trial was marked no-use, and the call lost its return value
+while its INDIRECT creation stayed behind as a local the emitted C reads and never
+assigns. The (kuna) `indirectanchor` gate
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_indirectanchor.rs (anchor_of)`)
+completes the redirect; with it off the op is inserted after the INDIRECT itself.
+The shape that reaches it is `RulePullsubIndirect` pulling a SUBPIECE through the
+guard INDIRECT of a frame slot whose upper half is read after the call. A `prev`
+that is not an INDIRECT marker, an INDIRECT whose second input is not an iop
+annotation, and an iop that decodes to a dead op are all left where they were
+going.
+
 The function's own return runs in mainloop
 (`coreaction_protos.rs (ActionReturnRecovery)`): every live RETURN op's trial
 Varnodes go through the same realism + sole-use tests, the container freezes

@@ -1,0 +1,32 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "timeout_s": 60,
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "__printf_fp_l"
+  ],
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "= hack_digit\\("
+    ],
+    "stdout_absent": [
+      "(?m)^\\s*hack_digit\\("
+    ]
+  },
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/mcount_x86_64",
+    "binary_sha256": "913d35f45475cc129d2fd6a94e35e62bd1b6be720a7207b74852705850611ee7",
+    "binary_size": 896032,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/mcount_x86_64",
+    "selector": "__printf_fp_l",
+    "selector_kind": "name"
+  },
+  "notes": "Retargeted from the dataset witness (selamv2.exe sub_140003f80, BCryptGetProperty) to an in-repo fixture with the same defect: __printf_fp_l calls hack_digit three times and loses the result of exactly one of them. CI has no dataset."
+}
