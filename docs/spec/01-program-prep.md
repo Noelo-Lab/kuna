@@ -987,6 +987,35 @@ and is not a C string. The markup passes are unaffected: they ask for
 `Termination::Nul` and commit exactly the facts they always did, so no emitted C
 moves. `kuna strings --termination nul` is that same view as a report.
 
+The same query takes a second reading of the **1-byte** width, for the same
+reason and with the same confinement to the report
+(`decompiler/crates/kuna-analysis/src/analyzers/strings/kuna_utf8strings.rs
+(scan_utf8_runs)`). The recognizer is `AsciiCharSetRecognizer`, so every byte
+`>= 0x80` closes a run, and a literal whose first characters are multi-byte is
+reported starting at the byte AFTER its last sequence — on the filing image the
+prompt `＿φ( °-°)/ so what was the magical keycombination? ` at `0x2000` came back
+as its ASCII tail at `0x200c`. What makes that more than a cosmetic truncation is
+the address: `0x200c` is not an address anything in the image refers to, so the
+row also arrived with `xrefs_count 0` and no owning function while
+`kuna xrefs --to 0x2000` already answered one. The reference machinery had the
+literal's true start all along; only the reported address was wrong, so one
+change closes both halves. `scan_utf8_runs` is the same matcher with a
+well-formed UTF-8 sequence admitted as one character when its scalar is not a
+control — the same charset for single bytes, the same termination policy, the
+same minimum, counted in characters rather than bytes. It is a *superset* of the
+ASCII reading, not a rival: a continuation byte is never in the 1-byte charset,
+so no accepted sequence can swallow a byte the ASCII matcher would have taken,
+and an ill-formed sequence advances one byte and lets the scan continue — every
+ASCII run is therefore a subrange of some UTF-8 run. Hence the query runs one
+1-byte scan or the other rather than both (`--encoding utf8` and `--encoding
+all`), and labels each row by what its bytes hold, so a row with no multi-byte
+sequence is reported as `ascii` under either and a pure-ASCII image reads
+identically. Overlong encodings, surrogates, lead bytes past `U+10FFFF` and
+control scalars are declined, which is what stops a stray byte pair inside code
+from joining two neighbouring runs. The markup passes are untouched: they still
+scan at the ASCII and 2-byte widths only, so no `char[N]` fact and no emitted C
+moves.
+
 - **Library prototypes** (`libproto`, the `ApplyDataArchiveAnalyzer` analog,
   `decompiler/crates/kuna-analysis/src/analyzers/protos/mod.rs (LibProtoPass)`):
   Ghidra ships parsed C headers as `.gdt` archives; kuna substitutes a built-in

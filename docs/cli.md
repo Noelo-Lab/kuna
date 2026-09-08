@@ -1386,6 +1386,7 @@ kuna strings ./a.out                                  # every literal, with the 
 kuna strings ./crackme.exe --json                     # machine-readable
 kuna strings ./a.out --filter '(?i)password|flag'     # regex over the text
 kuna strings ./crackme.exe --encoding utf16           # wide Windows literals
+kuna strings ./crackme --encoding utf8                # literals opening with a non-ASCII character
 kuna strings ./a.out --section .rodata --min-length 8
 kuna strings ./bundle --termination nul               # only the char[N] literals
 ```
@@ -1408,7 +1409,7 @@ no emitted C changes.
 | `address` / `address_hex` | The **virtual** address of the first character byte — not a file offset, so it pastes straight into `kuna decompile --addr` or `kuna xrefs --to`. |
 | `text` | The literal, terminator excluded. TAB/CR/LF are escaped in the text surface so a row stays one line; `--json` carries them verbatim. |
 | `length` | Visible characters (code units for a UTF-16 row). `byte_length` is what it occupies, terminator included. |
-| `encoding` | `ascii` or `utf16` — which width found it. |
+| `encoding` | `ascii`, `utf8` or `utf16` — which reading found it. A row is `utf8` only when it actually holds a multi-byte sequence. |
 | `nul_terminated` | The run ended at a NUL, so it is a C string and not merely printable text. Always `true` under `--termination nul`. |
 | `section` | The section it lives in, `null` on an image scanned by segment. |
 | `xrefs_count` | How many references land anywhere in the literal's extent, so `lea rax,[fmt+4]` still counts as a use. |
@@ -1416,14 +1417,43 @@ no emitted C changes.
 
 ### Flags
 
-`--encoding ascii\|utf16\|all` (default `ascii`). `ascii` is the analyzer's own
-1-byte width. **`utf16` is not a convenience** — a UTF-16LE literal read at 1-byte
-width ends at the NUL after its first character, which is exactly why a wide
-Windows API argument renders as `LoadLibraryW("n")` instead of `L"ntdll.dll"`. The
-2-byte matcher mirrors the 1-byte one exactly (same character recognizer, same
-require-NUL-end rule, same minimum), over units on even addresses. Scope is
-UTF-16**LE** whose units are in the 1-byte charset — the Windows-API case; a
-big-endian or non-Latin wide literal is not recovered.
+`--encoding ascii\|utf8\|utf16\|all` (default `ascii`). `ascii` is the analyzer's
+own 1-byte width. **`utf16` is not a convenience** — a UTF-16LE literal read at
+1-byte width ends at the NUL after its first character, which is exactly why a
+wide Windows API argument renders as `LoadLibraryW("n")` instead of
+`L"ntdll.dll"`. The 2-byte matcher mirrors the 1-byte one exactly (same character
+recognizer, same require-NUL-end rule, same minimum), over units on even
+addresses. Scope is UTF-16**LE** whose units are in the 1-byte charset — the
+Windows-API case; a big-endian or non-Latin wide literal is not recovered.
+
+`utf8` is the other reading of the **1-byte** width, not a third width. The
+recognizer is ASCII, so a byte `>= 0x80` ends a run and a literal that opens with
+a non-ASCII character is reported from the byte after its last multi-byte
+sequence — an address nothing in the image refers to, so that row also comes back
+with `xrefs_count 0` and no `functions` while `kuna xrefs --to` the literal's real
+start answers one. `utf8` decodes well-formed sequences as characters, which puts
+the row back on the address the code loads and lets the existing reference walk
+fill the last two columns:
+
+```
+$ kuna strings ./no-standards --encoding all --json --filter magical      # before
+  "address_hex": "0x200c", "text": ")/ so what was the magical keycombination? ",
+  "length": 43, "encoding": "ascii", "xrefs_count": 0, "functions": []
+$ kuna strings ./no-standards --encoding all --json --filter magical      # now
+  "address_hex": "0x2000", "text": "＿φ( °-°)/ so what was the magical keycombination? ",
+  "length": 50, "encoding": "utf8", "xrefs_count": 1, "functions": [{"name": "sub_1011", …}]
+```
+
+It is a superset of the ASCII reading rather than a rival to it — a continuation
+byte is never in the 1-byte charset, so no decoded sequence can swallow a byte
+the ASCII matcher would have taken, and an ill-formed sequence costs one byte and
+the scan carries on. So `all` takes it *in place of* the ASCII reading (running
+both would report the same text twice, once at a truncated address), a row with
+no multi-byte content is still reported as `ascii`, and an image with no
+multi-byte content reads identically under `ascii` and `utf8`. `--min-length`
+counts characters, so a 5-character kaomoji in 12 bytes is 5. Overlong encodings,
+surrogates, out-of-range lead bytes and control characters are all declined, so
+none of them joins two neighbouring runs into one.
 
 `--termination nul|any` (default `any`). Ghidra's `requireNullEnd` takes only a
 run closed by a NUL, because the markup it plants is a `char[N]` and nothing else

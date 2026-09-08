@@ -1,0 +1,82 @@
+{
+  "need_id": "utf-8-prompt-loses",
+  "track": "tooling",
+  "scope": "small",
+  "option": null,
+  "div": null,
+  "phase": null,
+  "module": "decompiler/crates/kuna-analysis/src/analyzers/strings/kuna_utf8strings.rs (scan_utf8_runs), consumed by kuna_stringinv.rs (inventory) and reached by `kuna strings --encoding utf8|all`",
+  "default": "`--encoding ascii` (the default) is untouched; `utf8` is a new value and `all` now takes it in place of the ascii reading. Nothing here can change emitted C -- the markup passes (StringLiteralPass / scan_wide_strings) still scan at the ASCII and 2-byte widths only -- so no phases.toml row, no options.rs registration and no catalog counter (docs/agents.md scopes the option rule to behaviour that CAN change emitted C).",
+  "decisions": [
+    "The filed hypothesis -- 'the matcher supports ASCII and limited UTF-16 but lacks UTF-8 decoding' -- is UPHELD, and so is the refuter's sharpening that the second half of the symptom is a consequence rather than a second defect. `kuna xrefs --to 0x2000` answered count 1 on the unpatched tree while the strings row claimed 0x200c; the reference machinery had the literal's true start all along, so decoding the prefix fills xrefs_count and functions with no separate work.",
+    "UTF-8 is a READING of the existing 1-byte width, not a third width. That is what makes the merge rule provable: is_string_char rejects every byte >= 0x80, and a UTF-8 continuation byte is 0x80..0xbf, so no accepted sequence can swallow a byte the ASCII matcher would have taken; an ill-formed sequence advances exactly one byte and the scan resumes on it. Every ASCII run is therefore a subrange of some UTF-8 run (asserted over both terminations on two fixtures by the_utf8_reading_is_a_superset_of_the_ascii_one).",
+    "So the inventory runs ONE 1-byte scan or the other, never both. Running both would report the same text twice -- once at the truncated address the need is about -- and `--encoding all` would still lead with the wrong row. This is the only place the ascii path is touched, and only when utf8 is asked for.",
+    "The row's `encoding` is labelled from its BYTES, not from which scan found it: a UTF-8 run with no multi-byte sequence is reported as `ascii`. That is what keeps the promise the builder note asked for -- an image with no multi-byte content reads identically under `ascii`, `utf8` and `all` (asserted on fauxware and on the fixture's control literal).",
+    "`min_len` counts CHARACTERS at this reading, matching the utf16 arm (which counts code units) and the `length` column. `Run::visible_len` stays in bytes at every width, which is the existing invariant the region slice and byte_len depend on.",
+    "The recognizer declines an overlong encoding, a surrogate, a lead byte past U+10FFFF and any control scalar (C0 and C1). Without that, a stray byte pair inside code could join two neighbouring runs into one -- the accept rule has to be narrow because .text is in the scanned address set.",
+    "`all` including utf8 is the one default-visible judgement the refuter flagged. It is taken because the acceptance asks `--encoding all` and because `all` is the documented give-me-everything knob; the plain default stays `ascii`, so an unflagged `kuna strings` is byte-identical."
+  ],
+  "gates": {
+    "make test": "PARITY OK (675/675)",
+    "make test-stages": "PARITY OK (698/698)",
+    "make check-spec": "OK (lenient)",
+    "make test-cli": "95/95 (94/95 before this PR's probe landed)",
+    "kuna catalog --check": "catalog OK (no option added)",
+    "make rust-test": "376 test targets ok / 1 failed -- the one failure is the known env artifact: verify_w10_proto_unlock::w10_proto_unlock_const_return_collapses_no_tied_roundtrip reads its 'C++ oracle' from KUNA_DECOMP_TEST, which the repipe launcher points at kuna's own decomp_test_dbg, so kuna is compared against itself. Green under `env -u KUNA_DECOMP_TEST` (4/4). This change touches only kuna-analysis and kuna-cli and cannot reach a kuna-decomp oracle. CI does not export the variable."
+  },
+  "speed": {
+    "note": "No measurable cost. The UTF-8 scan is the same single linear pass over the same bytes; the extra work is one match on the lead byte and one std::str::from_utf8 over 2-4 bytes, and only on a byte the ASCII matcher was going to reject anyway. `kuna strings /usr/bin/htop --encoding all --no-xrefs`, median of 5: 0.01 s before and after.",
+    "witness_ms": {
+      "base": 10,
+      "new": 10
+    }
+  },
+  "sweep": {
+    "method": "A/B of the full `kuna strings --encoding all --no-xrefs` inventory (text surface, sorted) between the base commit's kuna and the patched one, whole-image and then per data section.",
+    "corpora": [
+      "/usr/bin/ncat",
+      "/usr/bin/htop",
+      "/bin/ls",
+      "kuna-analysis/tests/fixtures/fauxware"
+    ],
+    "rows_changed": "ncat 1208 -> 1223, htop 2010 -> 2030, ls 795 -> 814, fauxware 14 -> 14 (unchanged)",
+    "classification": "EVERY changed row on all three real images is in .text. `.rodata` is byte-identical on all three under both terminations (713/713, 856/856, 409/409 rows), and `.data` holds no rows. The .text rows are the documented cost of scanning code at all (docs/cli.md already records 2,565 of the relaxed scan's additions as .text instruction bytes): a run like `[]A\\A]A^A_` now continues through the following `c3 90 48` as one row instead of stopping, and a few sub-minimum ASCII fragments join into a >=5-character run. Under `--termination nul` the additions are 2-6 rows per image, all .text, again with .rodata untouched.",
+    "not_covered": "A non-Latin UTF-16 literal is still not recovered -- unchanged scope of the utf16 arm, restated in the spec."
+  },
+  "acceptance": {
+    "probe_id": "p-34a6b92abff4",
+    "acceptance_id": "a-2b59e0e61f43",
+    "verdict": "PASS",
+    "command": "kuna strings <no-standards> --encoding all --json --filter magical",
+    "before": {
+      "address_hex": "0x200c",
+      "length": 43,
+      "encoding": "ascii",
+      "xrefs_count": 0,
+      "functions": 0
+    },
+    "after": {
+      "address_hex": "0x2000",
+      "length": 50,
+      "encoding": "utf8",
+      "xrefs_count": 1,
+      "functions": 1
+    },
+    "target_binding": "The filed probes carried no `target` block, so both arms were unrunnable (`{{BIN}} used but the context supplies no bin`). Bound to the dataset binary challenges/6736b3a09b533b4c22bd2b9f/bin/no-standards (sha256 5cb1538c...); no expectation was changed.",
+    "promoted_to": "tests/cli/utf-8-prompt-loses.json",
+    "promotion_note": "The witness is a dataset binary, so the promoted probe is re-pointed at the vendored 9 KB utf8prompt_x86_64 fixture (CI has no dataset) -- same shape, same filter word, prompt at 0x101000 with its ASCII suffix at 0x10100c. Unfixed, the base commit's kuna answers 0x10100c / 43 chars / no functions on that fixture too."
+  },
+  "files": [
+    "decompiler/crates/kuna-analysis/src/analyzers/strings/kuna_utf8strings.rs",
+    "decompiler/crates/kuna-analysis/src/analyzers/strings/kuna_stringinv.rs",
+    "decompiler/crates/kuna-analysis/src/analyzers/strings/mod.rs",
+    "decompiler/crates/kuna-cli/src/strings.rs",
+    "decompiler/crates/kuna-cli/tests/strings_cli.rs",
+    "decompiler/crates/kuna-analysis/tests/fixtures/utf8prompt_x86_64",
+    "decompiler/crates/kuna-analysis/tests/fixtures/utf8prompt_x86_64.s",
+    "decompiler/crates/kuna-analysis/tests/fixtures/README.md",
+    "tests/cli/utf-8-prompt-loses.json",
+    "docs/cli.md",
+    "docs/spec/01-program-prep.md"
+  ]
+}
