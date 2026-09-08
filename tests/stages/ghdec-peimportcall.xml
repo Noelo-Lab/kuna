@@ -31,6 +31,11 @@
     Pass 2 (`option peimportcall on`) is the FIX: the same site renders
     `ExitProcess(0xc)` and carries the no-return flow effect, so the dead
     fall-through after it is gone.
+
+    `bail` prints `ExitProcess(a0)`, not `ExitProcess()`: `win32sigs` (DIV-141)
+    supplies the import's one-UINT prototype, which is what the source declares.
+    The empty-parens spelling this assertion carried before that option existed
+    was the argument being lost.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -64,5 +69,5 @@ c3
 <stringmatch name="PEIMPORTCALL #2: on binds the slot call to the import name" min="1" max="1">ExitProcess\(0xc\); // no-return</stringmatch>
 <stringmatch name="PEIMPORTCALL #3: on gives the bound call its no-return flow effect" min="2" max="2">// no-return</stringmatch>
 <stringmatch name="PEIMPORTCALL #4: off leaves bail calling the raw slot pointer" min="1" max="1">\(\*dat_140005038\)\(\);</stringmatch>
-<stringmatch name="PEIMPORTCALL #5: on ends bail at the bound no-return import" min="1" max="1">ExitProcess\(\); // no-return</stringmatch>
+<stringmatch name="PEIMPORTCALL #5: on ends bail at the bound no-return import" min="1" max="1">ExitProcess\(a0\); // no-return</stringmatch>
 </decompilertest>

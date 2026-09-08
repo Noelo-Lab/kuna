@@ -154,3 +154,49 @@ Corroborating evidence that the arguments really are recovered as far as the slo
 5. RECOMMENDED SHAPE (advisory): treat it as ONE need with two halves, because the acceptance already forces both. Half A -- when a call-site stack-argument trial is scored inactive, do not leave its slot mapped (or re-run the deadcode fixpoint over the abandoned trial's slots), which removes the return-address stores AND ~39 spurious declarations. Half B -- give the promoted-name import a prototype so the trials win at all. Half A alone is measurable and safe; half B is the one that flips the second clause. If the builder cannot do both, this should come back as a PROPOSAL rather than a half-fix that cannot close.
 
 SEVERITY/SCOPE: severity blocker stands (47 declarations vs 8 is the difference between readable and unreadable, and it fires on every PE32 call site in the image). SCOPE should probably move from small to MEDIUM given half B. The other two instances in this bucket are NOT this mechanism and were deliberately kept merged at T_DEDUP -- 'argument recovery drops the resolved checker call's input' and 'GetTickCount64 receives a fabricated argument' are the same p4_calls plane (too few / too many at a call site) but a fix for one need not move the others; their own probes are preserved in rounds/7/gate.json results[].observation.
+
+## Captain note (round 10, re-dispatch after a failed merge)
+
+PR #520 carries the whole feature but its merge bailed: CI step `make test-stages`
+returned 703/704, `REGRESSED (1): data:PEIMPORTCALL #5: on ends bail at the bound
+no-return import`. `make test` passed 675/675. Main was never touched.
+
+Two things were measured before this re-dispatch; do not re-derive them.
+
+1. The first builder's green parity gates were an artifact of a STALE HELPER.
+   `make test` (Makefile:46) and `make test-stages` (Makefile:52) guard the helper with
+   `test -x $(BINDIR)/decomp_test_dbg || $(MAKE) binaries` -- an existence test, never a
+   freshness test -- and `kuna test --datatests` FORKS that binary. The worktree's copy
+   predated the feature commit by ~30 minutes, so both gates measured a pre-win32sigs
+   decompiler. `decomp_test_dbg` is built by **kuna-harness**, not kuna-console:
+   `cargo build --release -p kuna-console` does NOT relink it. Run `make binaries` (or
+   `cargo build --release -p kuna-harness`) BEFORE trusting any parity result. The
+   worktree was RECREATED for this attempt, so worker.sh's initial `make binaries` has
+   already built a helper matching the branch tip -- but rebuild it again after any Rust
+   change you make.
+
+2. With the fresh helper: `make test` is 675/675 PARITY OK, so the DIV-141 default-ON
+   evidence bar genuinely holds and the feature does not need re-scoping. The single
+   stages assertion is the only real defect.
+
+Root cause of that assertion, measured on the same fixture and binary:
+
+```
+kuna decompile .../pe_noreturn_import.exe bail --option win32sigs off
+  ExitProcess(); // no-return
+kuna decompile .../pe_noreturn_import.exe bail            # default, win32sigs on
+  ExitProcess(a0); // no-return
+```
+
+`tests/stages/ghdec-peimportcall.xml` asserts the regex `ExitProcess\(\); // no-return`
+(min=1 max=1), an empty-parens spelling frozen in by DIV-57 (#254) when kuna had no
+Win32 prototypes. ExitProcess really does take one UINT, so the arg-bearing output is
+correct and the regex is what is stale; what the test exists to protect -- peimportcall
+binding the call to its import, and the `// no-return` bail surviving -- is unchanged.
+
+Expected fix: update that one assertion to the arg-bearing spelling and re-record
+`docs/baseline-stages.json`. That is an expectation update for an intentional, measured
+change on a kuna-owned test, not a re-pin of `docs/baseline.json` (untouched, green).
+Own the justification in the PR. Then re-run `--merge` on the SAME branch; do not open a
+new one. Note `make check-spec` and `kuna catalog --check` were never evidenced on disk
+by the first builder -- run all four gates yourself.

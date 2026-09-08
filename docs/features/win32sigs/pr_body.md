@@ -50,7 +50,15 @@ arities, the CRT exclusion, and that the resolver names both the slot and the
 thunk. Sweep over 22 PE images / 3,029 functions: 168 changed, 0 added, 0 removed,
 and every changed function contains a call to a table name — 35 call sites gain
 arguments to the documented arity, 16 shed invented ones
-(`GetCurrentProcess(CONCAT44(dat_c,argc))` → `GetCurrentProcess()`). Parity
-675/675 and 704/704 unchanged; `sub_401ba0` decompiles 16.9% faster.
+(`GetCurrentProcess(CONCAT44(dat_c,argc))` → `GetCurrentProcess()`). Parity is
+675/675 and 704/704, and `sub_401ba0` decompiles 16.9% faster.
+
+One kuna-owned stage assertion moved with the change. `ghdec-peimportcall` pinned
+`ExitProcess(); // no-return`, an empty-parens spelling from before kuna had any
+Win32 prototype. `ExitProcess` takes one `UINT`, and that fixture's
+`bail(int code)` passes it, so `ExitProcess(a0)` is the correct rendering and the
+old regex was pinning the argument being lost. What the test exists to protect,
+the IAT-slot call binding to its import and keeping its no-return flow effect, is
+unchanged; the other four assertions in the file are untouched.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
