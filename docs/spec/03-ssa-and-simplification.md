@@ -183,6 +183,48 @@ address the walk cannot follow; only *killed by call* is downgraded, never
 promoted; and a prototype carrying its own effect-record override has had a
 deliberate statement made about it and is left alone.
 
+**The return register is a different question.** That positive finding — a write
+to a register the model marks `<unaffected>` — is the signature of a hand-rolled
+helper, and a helper that clobbers only what its convention already allows never
+produces it. MSVC's frame-cookie checker is the case: `x86-64-win.cspec` lists
+`RAX` in `<killedbycall>`, `__security_check_cookie` writes `RCX` and the flags
+and returns, and a `/GS` epilogue therefore prints `return
+__security_check_cookie(v12);` — a return value the machine never computes,
+although the caller set `EAX` to zero *before* the call precisely because the
+checker leaves it alone. Declaring the callee void does not help; it turns the
+invented call result into an uninitialised local.
+
+For the call's return storage the evidence available is sharper than for a
+scratch register, and `option calleeretpreserves` asks for that instead: a callee
+that returns a value in `RAX` must *write* `RAX`, so a complete walk that records
+no write to the return storage proves the call has no return value at all
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleeretpreserves.rs
+(callee_preserves_return_storage)`). The effect is downgraded to *unaffected*,
+the output-active arm is skipped, and the caller's own definition flows across
+the call.
+
+Three conditions bound it. The range must characterize as the call's *output*,
+so every other killed range stays where the paragraph above left it. The body
+must write **no** part of the return storage: a callee that writes `RAX` and
+leaves `RDX` alone is a scalar-returning function whose second return register is
+merely dead, and the convention is still the better answer for the whole call.
+And the body must be a body — more than one decoded instruction, and a write to a
+register the convention itself names, either an argument register or one its
+`<unaffected>`/`<killedbycall>` lists mention (`kuna_calleeretpreserves.rs
+(body_is_a_body)`). `ret` and `endbr64; ret` are what a stub, a placeholder and
+an entry decoded at the wrong address all decode to, and they write nothing but
+the stack pointer and the program counter; reading one as a promise about `RAX`
+deletes the call results the rest of a function is built on.
+
+The walk itself gained one fact to reach this callee at all. The checker's
+failure path leaves by a direct `JMP` into a `__fastfail` stub, and x86 SLEIGH
+lifts `INT imm8` to `intloc = swi(imm8); call [intloc]` (`ia.sinc:3671`), whose
+`CALLIND` would make the walk incomplete and prove nothing. Under the gate
+`fastfailnoreturn` already applies — the option, plus a Windows
+compiler-spec id — a Windows `int 0x29` ends the path instead
+(`kuna_rustabi.rs (ProbeEmit::note_fastfail_swi)`), which is the same statement
+the flow builder makes about the same two ops.
+
 **Partial-range call overlap.** A heritaged range can be strictly *larger* than
 the ABI storage it contains — the characterization is `ContainedBy` rather than
 `ContainsJustified`, so none of the whole-range arms above apply. This is

@@ -72,11 +72,12 @@
 //!   `return_address` record is left exactly as the spec wrote it, and nothing
 //!   here ever promotes a range to killed. The pass can only ever *keep* a value
 //!   that the machine keeps.
-//! * **The return register is not affected.** The downgrade is applied to the
-//!   effect the spec supplies; `guardCalls`'s own output-active branch
-//!   re-promotes the range to `killedbycall` when it is the call's return
-//!   storage, so return-value recovery is reached with the same input it had
-//!   before.
+//! * **The return register needs its own evidence.** The gate above asks the
+//!   callee to have written a register the convention promises is *preserved*,
+//!   which a helper that clobbers only what it is allowed to never does. The
+//!   call's return storage is therefore
+//!   [`calleeretpreserves`](crate::p4_calls::kuna_calleeretpreserves)'s
+//!   question, on a different positive finding.
 //! * **An explicitly overridden prototype wins.** A call whose `FuncProto`
 //!   carries its own effect list (a decoded `<unaffected>`/`<killedbycall>`
 //!   override) has had a deliberate statement made about it and is left alone.

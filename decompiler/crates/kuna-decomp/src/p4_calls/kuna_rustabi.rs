@@ -385,6 +385,8 @@ pub struct CalleeReturnWrites {
     store_spaces: Vec<int4>,
     /// Did the walk cover every path to a `RETURN` with nothing unresolved?
     complete: bool,
+    /// How many machine instructions the walk decoded.  One is a bare `ret`.
+    instructions: u32,
 }
 
 impl CalleeReturnWrites {
@@ -419,6 +421,13 @@ impl CalleeReturnWrites {
         self.complete
     }
 
+    /// How many machine instructions the walk decoded.  A body of one is a bare
+    /// `ret`, which is what a stub, a placeholder and an entry decoded at the
+    /// wrong address all look like.
+    pub fn instruction_count(&self) -> u32 {
+        self.instructions
+    }
+
     /// Assemble a summary from its parts, for tests that pin a seam's reading of
     /// one rather than the walk that produced it.
     #[cfg(test)]
@@ -427,7 +436,19 @@ impl CalleeReturnWrites {
         store_spaces: Vec<int4>,
         complete: bool,
     ) -> Self {
-        CalleeReturnWrites { writes, store_spaces, complete }
+        CalleeReturnWrites { writes, store_spaces, complete, instructions: 2 }
+    }
+
+    /// As [`from_parts`](Self::from_parts), with the decoded instruction count
+    /// stated (the bodies the return-register rule declines to read).
+    #[cfg(test)]
+    pub fn from_parts_sized(
+        writes: Vec<(int4, u64, int4)>,
+        store_spaces: Vec<int4>,
+        complete: bool,
+        instructions: u32,
+    ) -> Self {
+        CalleeReturnWrites { writes, store_spaces, complete, instructions }
     }
 }
 
@@ -452,6 +473,55 @@ struct ProbeEmit {
     targets: Vec<Address>,
     ends_flow: bool,
     unresolved: bool,
+    /// The `swi` user-op id, when a Windows `int 0x29` is known to end the path
+    /// (`option fastfailnoreturn`, the gate the flow builder already applies).
+    fastfail_swi: Option<u32>,
+    /// Constants a `COPY` placed into an internal temp inside this instruction,
+    /// as `(offset, size, value)`.  `INT imm8` lifts the vector through one.
+    temp_consts: Vec<(u64, int4, u64)>,
+    /// The `intloc` temp a matched `swi(0x29)` wrote, as `(offset, size)`.
+    fastfail_intloc: Option<(u64, int4)>,
+}
+
+impl ProbeEmit {
+    /// The constant `v` holds: itself when it is one, or the value a `COPY`
+    /// earlier in this instruction placed in it.
+    fn const_value(&self, v: &kuna_num::pcoderaw::VarnodeData) -> Option<u64> {
+        match v.space.as_ref().map(|sp| sp.get_type()) {
+            Some(kuna_base::space::spacetype::IPTR_CONSTANT) => Some(v.offset),
+            Some(kuna_base::space::spacetype::IPTR_INTERNAL) => self
+                .temp_consts
+                .iter()
+                .find(|&&(off, sz, _)| off == v.offset && sz == v.size as int4)
+                .map(|&(_, _, val)| val),
+            _ => None,
+        }
+    }
+
+    /// Is this `CALLOTHER` the `swi(0x29)` half of a Windows `__fastfail`?  When
+    /// it is, remember the `intloc` it wrote so the `CALLIND` that reads it can
+    /// be recognized as the end of the path rather than a call to anywhere.
+    fn note_fastfail_swi(
+        &mut self,
+        outvar: Option<&kuna_num::pcoderaw::VarnodeData>,
+        vars: &[kuna_num::pcoderaw::VarnodeData],
+    ) -> bool {
+        let Some(swi) = self.fastfail_swi else { return false };
+        if vars.len() != 2 || self.const_value(&vars[0]) != Some(swi as u64) {
+            return false;
+        }
+        if self.const_value(&vars[1]) != Some(crate::kuna_fastfailnoreturn::FASTFAIL_VECTOR) {
+            return false;
+        }
+        let Some(o) = outvar else { return false };
+        match o.space.as_ref().map(|sp| sp.get_type()) {
+            Some(kuna_base::space::spacetype::IPTR_INTERNAL) => {
+                self.fastfail_intloc = Some((o.offset, o.size as int4));
+                true
+            }
+            _ => false,
+        }
+    }
 }
 
 impl kuna_sleigh::translate::PcodeEmit for ProbeEmit {
@@ -470,12 +540,48 @@ impl kuna_sleigh::translate::PcodeEmit for ProbeEmit {
             }
         }
         match opc {
-            // Anything that transfers control to code the walk is not reading
-            // can write any register at all.
-            OpCode::CPUI_CALL
-            | OpCode::CPUI_CALLIND
-            | OpCode::CPUI_CALLOTHER
-            | OpCode::CPUI_BRANCHIND => self.unresolved = true,
+            // The vector of an `INT imm8` reaches the `swi` user-op through an
+            // internal temp, so the constant has to be carried that far.
+            OpCode::CPUI_COPY => {
+                if let (Some(o), Some(v)) = (outvar, vars.first()) {
+                    let internal_out = o.space.as_ref().map(|sp| sp.get_type())
+                        == Some(kuna_base::space::spacetype::IPTR_INTERNAL);
+                    if internal_out {
+                        if let Some(val) = self.const_value(v) {
+                            self.temp_consts.push((o.offset, o.size as int4, val));
+                        }
+                    }
+                }
+            }
+            // A Windows `int 0x29` is `__fastfail`: the path ends there, so the
+            // `swi` CALLOTHER and the CALLIND reading its `intloc` are the end of
+            // the walk rather than a transfer to code it cannot read.  Same gate
+            // and same shape as the flow builder's
+            // [`kuna_fastfailnoreturn`](crate::kuna_fastfailnoreturn).
+            OpCode::CPUI_CALLOTHER => {
+                if !self.note_fastfail_swi(outvar, vars) {
+                    self.unresolved = true;
+                }
+            }
+            OpCode::CPUI_CALLIND => {
+                let is_fastfail = self.fastfail_intloc.is_some()
+                    && vars
+                        .first()
+                        .map(|v| {
+                            self.fastfail_intloc == Some((v.offset, v.size as int4))
+                                && v.space.as_ref().map(|sp| sp.get_type())
+                                    == Some(kuna_base::space::spacetype::IPTR_INTERNAL)
+                        })
+                        .unwrap_or(false);
+                if is_fastfail {
+                    self.ends_flow = true;
+                } else {
+                    self.unresolved = true;
+                }
+            }
+            // Anything else that transfers control to code the walk is not
+            // reading can write any register at all.
+            OpCode::CPUI_CALL | OpCode::CPUI_BRANCHIND => self.unresolved = true,
             OpCode::CPUI_RETURN => self.ends_flow = true,
             // The `<spaceid>` operand's offset IS the space-manager index
             // (`Varnode::getSpaceFromConst`).
@@ -517,9 +623,14 @@ impl kuna_sleigh::translate::PcodeEmit for ProbeEmit {
 pub fn probe_callee_return_writes<T: kuna_sleigh::translate::Translate + ?Sized>(
     tr: &T,
     entry: &Address,
+    fastfail_swi: Option<u32>,
 ) -> CalleeReturnWrites {
-    let mut res =
-        CalleeReturnWrites { writes: Vec::new(), store_spaces: Vec::new(), complete: true };
+    let mut res = CalleeReturnWrites {
+        writes: Vec::new(),
+        store_spaces: Vec::new(),
+        complete: true,
+        instructions: 0,
+    };
     let Some(entry_space) = entry.get_space() else {
         res.complete = false;
         return res;
@@ -544,7 +655,7 @@ pub fn probe_callee_return_writes<T: kuna_sleigh::translate::Translate + ?Sized>
             break;
         }
         budget -= 1;
-        let mut emit = ProbeEmit::default();
+        let mut emit = ProbeEmit { fastfail_swi, ..ProbeEmit::default() };
         let len = match tr.one_instruction(&mut emit, &at) {
             Ok(n) if n > 0 => n,
             _ => {
@@ -552,6 +663,7 @@ pub fn probe_callee_return_writes<T: kuna_sleigh::translate::Translate + ?Sized>
                 break;
             }
         };
+        res.instructions += 1;
         res.writes.append(&mut emit.writes);
         for sp in emit.store_spaces.drain(..) {
             if !res.store_spaces.contains(&sp) {
@@ -684,6 +796,7 @@ pub fn seed_callee_write_probe(
     arch: &mut crate::architecture::Architecture,
     data: &mut Funcdata,
 ) {
+    let fastfail_swi = fastfail_swi_userop(arch);
     let mut entries: Vec<Address> = Vec::new();
     for i in 0..data.num_calls() {
         let e = data.get_call_specs(i).get_entry_address().clone();
@@ -696,13 +809,31 @@ pub fn seed_callee_write_probe(
         let Some(sp) = e.get_space() else { continue };
         let key = (sp.get_index(), e.get_offset());
         if !arch.kuna_callee_write_cache.contains_key(&key) {
-            let probed = probe_callee_return_writes(arch.translate(), &e);
+            let probed = probe_callee_return_writes(arch.translate(), &e, fastfail_swi);
             arch.kuna_callee_write_cache.insert(key, Rc::new(probed));
         }
         if let Some(w) = arch.kuna_callee_write_cache.get(&key) {
             data.kuna_set_callee_ret_writes(&e, Rc::clone(w));
         }
     }
+}
+
+/// The `swi` user-op id, when a Windows `int 0x29` in a probed callee body is
+/// known to end the path rather than to call somewhere the walk cannot read.
+///
+/// The two gates are the flow builder's own (`decompile_drive`'s
+/// `is_fastfail_callind`): `option fastfailnoreturn` plus the compiler-spec
+/// component of the resolved language id, because `int 0x29` is `__fastfail` by
+/// Windows convention alone.
+fn fastfail_swi_userop(arch: &crate::architecture::Architecture) -> Option<u32> {
+    if !arch.fastfail_noreturn
+        || !crate::kuna_fastfailnoreturn::archid_is_windows(arch.get_description())
+    {
+        return None;
+    }
+    arch.userops
+        .get_op_by_name(crate::kuna_fastfailnoreturn::SWI_USEROP.as_bytes())
+        .map(|uo| uo.get_index() as u32)
 }
 
 /// Build the call's two-piece output the model asked for (C++

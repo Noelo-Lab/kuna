@@ -64,7 +64,7 @@ fn surface_count_is_112() {
 }
 
 #[test]
-fn settable_count_is_162() {
+fn settable_count_is_163() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -120,12 +120,12 @@ fn settable_count_is_162() {
     // +1 for `noreturnretuse` (P4 terminal no-return call use in return trials,
     // DIV-118).
     // +1 for `msvcstackguard` (P7 MSVC /GS frame-cookie stripping, GH-468).
-    assert_eq!(kuna_num_settables(), 162);
-    assert_eq!(SETTABLE_TABLE.len(), 162);
+    assert_eq!(kuna_num_settables(), 163);
+    assert_eq!(SETTABLE_TABLE.len(), 163);
 }
 
 #[test]
-fn tier_counts_are_43_core_64_transform_55_analysis() {
+fn tier_counts_are_44_core_64_transform_55_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -223,7 +223,7 @@ fn tier_counts_are_43_core_64_transform_55_analysis() {
     // transform 61 -> 62: +1 for `msvcstackguard` (P7 MSVC /GS frame-cookie
     // stripping, GH-468) -- it deletes real instructions, like its `stackguard`
     // and `securitycheck` siblings.
-    assert_eq!((core, transform, analysis), (43, 64, 55));
+    assert_eq!((core, transform, analysis), (44, 64, 55));
 }
 
 #[test]
@@ -671,6 +671,7 @@ fn option_values_live_value_present_for_55_suppressed_for_97() {
                             | "calleearitybody"
                             | "calleedeadarg"
                             | "calleepreserves"
+                            | "calleeretpreserves"
                             | "calloverlap"
                             | "spillargtrial"
                             | "paramcopyhoist"
@@ -848,7 +849,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // the last one, so the previous tail row gains a comma and it becomes the tail.
     // 149 -> 150: +1 for `msvcstackguard` (GH-468); its P7 row sits mid-table
     // beside `securitycheck`, so the tail does not move.
-    assert_eq!(json.matches("},\n").count(), 161);
+    assert_eq!(json.matches("},\n").count(), 162);
 }
 
 #[test]
