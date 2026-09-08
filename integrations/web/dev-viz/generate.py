@@ -2,7 +2,8 @@
 """Export a reproducible, public development snapshot from tracked Kuna evidence.
 
 Requires Python 3.11+ and complete git history. No GitHub API, private campaign
-state, author identities, or local binary paths are included in the output.
+state, commit author emails, or local binary paths are included in the output.
+Community credits use public GitHub handles from a reviewed record file.
 """
 from __future__ import annotations
 
@@ -41,7 +42,11 @@ MILESTONES = [
     {"date": "2026-06-20", "title": "Rust takes over", "commit": "9346a1a5",
      "detail": "The C++ engine is removed after verification; Rust is the engine."},
     {"date": "2026-07-04", "title": "DecBench loop", "commit": "6b270a3e",
-     "detail": "Real-binary benchmark differences drive the mine, triage and rescore loop."},
+     "detail": "The benchmark loop starts finding, reproducing, and measuring changes on compiled programs."},
+    {"date": "2026-08-08", "title": "Top of optimized C", "url": "https://decbench.com/",
+     "detail": "Kuna ranks first on DecBench’s optimized C dataset."},
+    {"date": "2026-08-31", "title": "RE-needs pipeline starts", "commit": "63a124ae",
+     "detail": "The first run records problems found while using Kuna for reverse engineering; fixes follow from the re-needs backlog."},
 ]
 
 
@@ -203,6 +208,10 @@ def export(repo: Path) -> dict:
     novel_text = (repo / "docs/decbench/novel.md").read_text()
     novel_match = re.search(r"([\d,]+) cases in ([\d,]+) groups", novel_text)
     phase_counts = Counter(o["phase"] for o in options)
+    community = json.loads((repo / "integrations/web/dev-viz/community.json").read_text())
+    merged_prs = {int(m[1]) for c in commits
+                  if (m := re.search(r"\(#(\d+)\)$", c["subject"]))}
+    community["changes"] = [c for c in community["changes"] if c["pr"] in merged_prs]
     return {
         "schemaVersion": 1,
         "meta": {"sha": sha, "repository": "https://github.com/Noelo-Lab/kuna",
@@ -211,6 +220,7 @@ def export(repo: Path) -> dict:
         "phases": [{"id": pid, "name": name, "description": desc, "options": phase_counts[pid]}
                    for pid, name, desc in PHASES],
         "milestones": MILESTONES,
+        "community": community,
         "commits": commits,
         "options": options,
         "records": records,

@@ -6,7 +6,8 @@ const longDate = new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric
 const $ = (id) => document.getElementById(id);
 const esc = (value) => String(value).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const title = (slug) => slug.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-const sourceLabel = (source) => ({'ghidra-upstream':'Ghidra upstream','ghidra':'Ghidra','angr':'angr','ida':'IDA','kuna':'Kuna','oxidizer':'Oxidizer'}[source] || title(source));
+const sourceKey = (source) => source === 'ghidra-upstream' ? 'ghidra' : source;
+const sourceLabel = (source) => ({'ghidra':'Ghidra','angr':'angr','ida':'IDA','kuna':'Kuna','oxidizer':'Oxidizer'}[sourceKey(source)] || title(source));
 const iso = (date) => new Date(`${date}T00:00:00Z`);
 const repoLink = (path, line = '') => `${REPO}/blob/main/${path}${line ? `#L${line}` : ''}`;
 
@@ -34,7 +35,7 @@ function summarize(data) {
   $('stat-agent').textContent = `${Math.round(agent / commits * 100)}%`;
   $('stat-options').textContent = number.format(data.options.length);
   $('stat-tests').textContent = number.format(upstream[1] + stages[1]);
-  $('snapshot').innerHTML = `Snapshot <a href="${REPO}/commit/${data.meta.sha}">${data.meta.sha.slice(0, 8)}</a> · ${longDate.format(iso(data.meta.end))} UTC · generated from tracked history and evidence files`;
+  $('snapshot').innerHTML = `Repository snapshot <a href="${REPO}/commit/${data.meta.sha}">${data.meta.sha.slice(0, 8)}</a> · ${longDate.format(iso(data.meta.end))} UTC`;
   $('data-note').innerHTML = `Generated from Kuna commit <a href="${REPO}/commit/${data.meta.sha}">${data.meta.sha.slice(0, 8)}</a>. Commit attribution counts explicit <code>[AUTOMATED]</code> markers or agent co-author trailers; source churn is added plus removed Rust/C/C++ lines in non-merge commits.`;
   $('decbench-options').textContent = number.format(data.options.filter((o) => o.decbench).length);
   $('novel-cases').textContent = data.novelPool.cases == null ? '—' : number.format(data.novelPool.cases);
@@ -52,22 +53,25 @@ function summarize(data) {
 function renderMilestones(data) {
   $('milestones').innerHTML = data.milestones.map((m) => `<li>
     <time datetime="${m.date}">${shortDate.format(iso(m.date))}</time>
-    <h3><a href="${REPO}/commit/${m.commit}">${esc(m.title)}</a></h3>
+    <h3><a href="${esc(m.url || `${REPO}/commit/${m.commit}`)}">${esc(m.title)}</a></h3>
     <p>${esc(m.detail)}</p>
   </li>`).join('');
 }
 
 function dailyRows(data) {
-  const grouped = new Map(daysBetween(data.meta.start, data.meta.end).map((date) => [date, {date, commits:0, agent:0, added:0, removed:0}]));
+  const grouped = new Map();
   for (const commit of data.commits) {
+    if (!grouped.has(commit.date)) grouped.set(commit.date, {date:commit.date, commits:0, agent:0, added:0, removed:0});
     const row = grouped.get(commit.date);
-    if (!row) continue;
     row.commits++;
     row.agent += commit.agent ? 1 : 0;
     row.added += commit.added;
     row.removed += commit.removed;
   }
-  return [...grouped.values()];
+  return [...grouped.values()].sort((a, b) => a.date.localeCompare(b.date)).map((row, i, rows) => ({
+    ...row,
+    skipped: i ? Math.round((iso(row.date) - iso(rows[i - 1].date)) / 86400000) - 1 : 0,
+  }));
 }
 
 function renderPace(data) {
@@ -84,18 +88,20 @@ function renderPace(data) {
   canvas.height = cssHeight * ratio;
   const ctx = canvas.getContext('2d');
   ctx.scale(ratio, ratio);
-  const pad = {left:44,right:48,top:30,bottom:48};
+  const pad = {left:44,right:48,top:30,bottom:62};
   const width = cssWidth - pad.left - pad.right;
   const height = cssHeight - pad.top - pad.bottom;
   const step = width / rows.length;
   const maxCommit = Math.max(...rows.map((r) => r.commits));
   const maxChurn = Math.max(...rows.map((r) => r.added + r.removed));
-  const portStart = rows.findIndex((r) => r.date === '2026-06-10');
-  const portEnd = rows.findIndex((r) => r.date === data.meta.portEnd);
-  ctx.fillStyle = '#F7F4F3';
-  ctx.fillRect(pad.left + portStart * step, pad.top, (portEnd - portStart + 1) * step, height);
-  ctx.fillStyle = '#6E6663'; ctx.font = '10px "Roboto Mono", monospace';
-  ctx.fillText('RUST PORT', pad.left + portStart * step + 6, pad.top + 13);
+  const portDays = rows.map((r, i) => r.date >= '2026-06-10' && r.date <= data.meta.portEnd ? i : -1).filter((i) => i >= 0);
+  ctx.font = '10px "Roboto Mono", monospace';
+  if (portDays.length) {
+    ctx.fillStyle = '#F7F4F3';
+    ctx.fillRect(pad.left + portDays[0] * step, pad.top, portDays.length * step, height);
+    ctx.fillStyle = '#6E6663';
+    ctx.fillText('RUST PORT', pad.left + portDays[0] * step + 6, pad.top + 13);
+  }
   ctx.strokeStyle = '#E4DDDB'; ctx.lineWidth = 1;
   for (let i = 0; i <= 4; i++) {
     const y = pad.top + height * i / 4;
@@ -117,30 +123,52 @@ function renderPace(data) {
     i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
   });
   ctx.strokeStyle = '#B80D1E'; ctx.lineWidth = 2; ctx.stroke();
-  const ticks = rows.filter((_, i) => i % 14 === 0 || i === rows.length - 1);
+  const tickStride = Math.max(1, Math.ceil(72 / step));
+  const ticks = rows.filter((_, i) => i % tickStride === 0 && i < rows.length - tickStride || i === rows.length - 1);
   ctx.fillStyle = '#6E6663'; ctx.font = '10px "Roboto Mono", monospace';
   for (const row of ticks) {
     const i = rows.indexOf(row), x = pad.left + (i + .5) * step;
-    ctx.fillText(shortDate.format(iso(row.date)), Math.min(x, cssWidth - 80), cssHeight - 18);
+    ctx.fillText(shortDate.format(iso(row.date)), Math.min(x, cssWidth - 80), cssHeight - 32);
   }
-  const active = rows.filter((r) => r.commits);
-  const peak = active.reduce((a, b) => b.commits > a.commits ? b : a);
-  $('pace-summary').textContent = `${number.format(data.commits.length)} non-merge commits across ${active.length} active UTC days. Peak: ${peak.commits} commits on ${longDate.format(iso(peak.date))}. Source churn counts additions and removals, including the verified Rust port.`;
+  const breaks = rows.filter((row) => row.skipped);
+  ctx.fillStyle = '#B80D1E';
+  for (const row of breaks) {
+    const x = pad.left + rows.indexOf(row) * step;
+    ctx.fillText('//', x - 6, pad.top + height + 13);
+  }
+  ctx.fillStyle = '#6E6663';
+  ctx.fillText('Active days (UTC) · // date jump', pad.left, cssHeight - 9);
+  $('pace-breaks').textContent = breaks.length ? 'Date jumps: ' + breaks.map((row) => {
+    const previous = rows[rows.indexOf(row) - 1];
+    return `${shortDate.format(iso(previous.date))} → ${shortDate.format(iso(row.date))} (${row.skipped} ${row.skipped === 1 ? 'day' : 'days'} without commits)`;
+  }).join(' · ') + '.' : 'No days without commits in this snapshot.';
+  const peak = rows.reduce((a, b) => b.commits > a.commits ? b : a);
+  const summary = `${number.format(data.commits.length)} non-merge commits across ${rows.length} active UTC days. Peak: ${peak.commits} commits on ${longDate.format(iso(peak.date))}. Lines changed includes both additions and removals.`;
+  $('pace-summary').textContent = summary;
+  let selected = rows.length - 1;
 
-  function inspect(event) {
-    const rect = canvas.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const index = Math.max(0, Math.min(rows.length - 1, Math.floor((x - pad.left) / step)));
+  function inspect(index) {
+    selected = index;
     const row = rows[index];
     tip.hidden = false;
-    tip.innerHTML = `<b>${longDate.format(iso(row.date))}</b><br>${row.commits} commit${row.commits === 1 ? '' : 's'} · ${row.agent} agent-attributed<br><em>${number.format(row.added + row.removed)} source lines changed</em>`;
+    const description = `${longDate.format(iso(row.date))} UTC: ${row.commits} commits; ${row.agent} marked as agent-assisted; ${number.format(row.added + row.removed)} source lines changed.${row.skipped ? ` ${row.skipped} days without commits omitted before this date.` : ''}`;
+    tip.innerHTML = `<b>${longDate.format(iso(row.date))} UTC</b><br>${row.commits} commits · ${row.agent} agent-assisted<br><em>${number.format(row.added + row.removed)} source lines changed</em>${row.skipped ? `<br>${row.skipped} days without commits omitted` : ''}`;
     const left = Math.max(8, Math.min(cssWidth - 205, pad.left + index * step - shell.scrollLeft));
     tip.style.left = `${left + shell.scrollLeft}px`; tip.style.top = '38px';
-    $('pace-summary').textContent = tip.textContent;
+    $('pace-summary').textContent = description;
   }
-  canvas.onpointermove = inspect;
-  canvas.onpointerleave = () => { tip.hidden = true; };
-  canvas.onfocus = () => inspect({clientX: canvas.getBoundingClientRect().left + pad.left + width / 2});
+  canvas.onpointermove = (event) => inspect(Math.max(0, Math.min(rows.length - 1, Math.floor((event.clientX - canvas.getBoundingClientRect().left - pad.left) / step))));
+  const dismiss = () => { tip.hidden = true; $('pace-summary').textContent = summary; };
+  canvas.onpointerleave = dismiss;
+  canvas.onblur = dismiss;
+  canvas.onfocus = () => inspect(selected);
+  canvas.onkeydown = (event) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? rows.length - 1 : selected + (event.key === 'ArrowLeft' ? -1 : 1);
+    inspect(Math.max(0, Math.min(rows.length - 1, next)));
+    shell.scrollLeft = Math.max(0, pad.left + (selected + .5) * step - shell.clientWidth / 2);
+  };
 }
 
 function weeklyPhase(data) {
@@ -193,7 +221,10 @@ function renderHeatmap(data) {
 
 function renderProvenance(data) {
   const groups = new Map();
-  for (const option of data.options) groups.set(option.source, (groups.get(option.source) || 0) + 1);
+  for (const option of data.options) {
+    const source = sourceKey(option.source);
+    groups.set(source, (groups.get(source) || 0) + 1);
+  }
   const ordered = [...groups].sort((a, b) => b[1] - a[1]);
   const max = ordered[0][1];
   $('prov-bars').innerHTML = ordered.map(([source, count]) => `<div class="prov-row"><span>${esc(sourceLabel(source))}</span><div class="prov-track"><div class="prov-fill" style="width:${count / max * 100}%"></div></div><strong>${count}</strong></div>`).join('');
@@ -206,8 +237,8 @@ function renderProvenance(data) {
   function render() {
     const query = search.value.trim().toLowerCase();
     const source = select.value;
-    const filtered = data.options.filter((o) => (!source || o.source === source) && (!query || [o.name,o.phase,o.source,o.inspiration,o.summary].some((v) => String(v).toLowerCase().includes(query))));
-    $('catalog-list').innerHTML = filtered.length ? filtered.slice(0, limit).map((o) => `<article class="catalog-item"><header><a href="${repoLink('decompiler/crates/kuna-decomp/phases.toml', o.line)}">${esc(o.name)}</a><span class="tag">${o.phase}</span><span class="tag">${esc(sourceLabel(o.source))}</span>${o.decbench ? '<span class="tag">decbench</span>' : ''}</header><p>${esc(o.inspiration)}</p></article>`).join('') : '<p class="catalog-empty">No decisions match that filter.</p>';
+    const filtered = data.options.filter((o) => (!source || sourceKey(o.source) === source) && (!query || [o.name,o.phase,o.source,o.inspiration,o.summary].some((v) => String(v).toLowerCase().includes(query))));
+    $('catalog-list').innerHTML = filtered.length ? filtered.slice(0, limit).map((o) => `<article class="catalog-item"><header><a href="${repoLink('decompiler/crates/kuna-decomp/phases.toml', o.line)}">${esc(o.name)}</a><span class="tag">${o.phase}</span><span class="tag">${esc(sourceLabel(o.source))}</span>${o.decbench ? '<span class="tag">decbench</span>' : ''}</header><p>${esc(o.inspiration)}</p></article>`).join('') : '<p class="catalog-empty">No options match that filter.</p>';
     more.hidden = filtered.length <= limit;
     more.textContent = `Show ${Math.min(24, filtered.length - limit)} more of ${filtered.length}`;
   }
@@ -217,13 +248,22 @@ function renderProvenance(data) {
   render();
 }
 
+function renderContributions(data) {
+  const {changes, checkedThrough} = data.community;
+  const authored = changes.filter((c) => c.externalPr).length;
+  $('community-count').textContent = number.format(changes.length);
+  $('community-summary').textContent = `${authored} PRs submitted by outside contributors and ${changes.length - authored} other PRs prompted by their issue reports.`;
+  $('community-list').innerHTML = changes.map((c) => `<li><a href="${REPO}/pull/${c.pr}">#${c.pr}: ${esc(c.title)}</a> <span>— ${c.externalPr ? 'PR by' : 'reported by'} <a href="https://github.com/${esc(c.contributor)}">${esc(c.contributor)}</a>${c.issues.length ? ` · ${c.issues.map((id) => `<a href="${REPO}/issues/${id}">issue #${id}</a>`).join(', ')}` : ''}</span></li>`).join('');
+  $('community-note').innerHTML = `Reviewed through ${longDate.format(iso(checkedThrough))}. Each merged PR counts once, including agent-assisted submissions and partial fixes. This is a documented minimum based on the <a href="${repoLink('integrations/web/dev-viz/community.json')}">linked PRs and reports</a>.`;
+}
+
 function renderGed(data) {
   const rows = data.records.filter((r) => r.ged && Number.isFinite(r.ged.before) && Number.isFinite(r.ged.after))
     .sort((a, b) => (b.ged.before - b.ged.after) - (a.ged.before - a.ged.after));
   const max = Math.max(...rows.flatMap((r) => [r.ged.before, r.ged.after]));
   $('ged-chart').innerHTML = rows.map((r) => {
     const delta = r.ged.after - r.ged.before;
-    const result = delta < 0 ? `<span class="down">${Math.abs(delta)} lower</span>` : delta === 0 ? 'held' : `${delta} higher`;
+    const result = delta < 0 ? `<span class="down">${Math.abs(delta)} lower</span>` : delta === 0 ? 'unchanged' : `${delta} higher`;
     return `<div class="ged-row"><div class="ged-name"><a href="${repoLink(r.path)}">${esc(title(r.slug))}</a><small>${esc(r.ged.case)}</small></div><div class="ged-track" title="before ${r.ged.before}; after ${r.ged.after}"><span class="ged-before" style="width:${r.ged.before / max * 100}%"></span><span class="ged-after" style="width:${r.ged.after / max * 100}%"></span></div><p class="ged-value"><strong>${r.ged.before} → ${r.ged.after}</strong><br>${result}</p></div>`;
   }).join('');
 }
@@ -233,7 +273,7 @@ async function main() {
     const response = await fetch('./data.json');
     if (!response.ok) throw new Error(`snapshot request failed: ${response.status}`);
     const data = await response.json();
-    summarize(data); renderMilestones(data); renderPace(data); renderHeatmap(data); renderProvenance(data); renderGed(data);
+    summarize(data); renderMilestones(data); renderPace(data); renderHeatmap(data); renderProvenance(data); renderContributions(data); renderGed(data);
     let timer;
     addEventListener('resize', () => { clearTimeout(timer); timer = setTimeout(() => renderPace(data), 100); });
   } catch (error) {
