@@ -594,7 +594,12 @@ impl ConsoleProgram {
             .function_entries_canonical()
             .into_iter()
             .filter(|e| e.name == want || e.aliases.iter().any(|a| a == want));
-        let entry = matches.next()?;
+        let Some(entry) = matches.next() else {
+            // (kuna, RE-need `string-owner-function-name`) Same placeholder
+            // fallback [`Self::resolve_entry`] takes, so the two name lookups
+            // answer one name the same way.
+            return self.entry_by_placeholder_name(want);
+        };
         matches.next().is_none().then_some(entry)
     }
 
@@ -641,6 +646,16 @@ impl ConsoleProgram {
                         entry.name == *want || entry.aliases.iter().any(|alias| alias == want)
                     })
                     .collect();
+                // (kuna, RE-need `string-owner-function-name`) Nothing carries
+                // that name, so read it as the placeholder it looks like: a
+                // `sub_<addr>` this build would mint at a mapped address denotes
+                // that address and nothing else.  Only on a MISS, so a binary
+                // that really does have a symbol spelled that way still wins.
+                if candidates.is_empty() {
+                    if let Some(entry) = self.entry_by_placeholder_name(want) {
+                        return Ok(entry);
+                    }
+                }
                 self.one_candidate(selector, candidates)
             }
             EntrySelector::SectionOffset { section, offset } => {
@@ -820,6 +835,56 @@ impl ConsoleProgram {
                 candidates,
             }),
         }
+    }
+
+    /// (kuna, RE-need `string-owner-function-name`) The address an ENGINE-MINTED
+    /// placeholder name spells, when this program would mint exactly that name
+    /// there.
+    ///
+    /// kuna calls a function no symbol covers `sub_<addr>`, and the attribution
+    /// surfaces mint one for an entry the canonical inventory does not hold at
+    /// all: `kuna strings` names a literal's owner from the xref walk's own flow
+    /// attribution (`strings.rs (owning_function)`), which reaches starts
+    /// discovery never recorded. The printed name was then unusable as a
+    /// selector — `kuna strings graphy` reported `sub_100a3be` as the owner of
+    /// `"No error information"` while `kuna decompile graphy sub_100a3be`
+    /// answered `no function matches` and only `--addr 0x100a3be` worked. A
+    /// placeholder carries no information beyond the address, so reading it back
+    /// as one loses nothing and closes that round trip.
+    ///
+    /// Decided by MINTING rather than by parsing: a candidate is accepted only
+    /// when [`Architecture::name_function`] renders it as the requested name, so
+    /// whichever naming style is active (`sub_`/`func_`/`FUN_`) and a
+    /// word-addressed space's scaling both follow for free, and a name this
+    /// build would never print is not resolved.
+    fn placeholder_name_address(&self, name: &str) -> Option<u64> {
+        let digits = name.rsplit_once('_')?.1;
+        let digits = digits
+            .strip_prefix("0x")
+            .or_else(|| digits.strip_prefix("0X"))
+            .unwrap_or(digits);
+        if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return None;
+        }
+        let spelled = u64::from_str_radix(digits, 16).ok()?;
+        let space = self.arch().manage().get_default_code_space()?;
+        let scaled = AddrSpace::address_to_byte(spelled, space.get_word_size());
+        let mut candidates = vec![spelled];
+        if scaled != spelled {
+            candidates.push(scaled);
+        }
+        candidates
+            .into_iter()
+            .find(|&vma| self.arch().name_function(&Address::new(Rc::clone(space), vma)) == name)
+    }
+
+    /// The entry a placeholder name denotes, or `None` when the name is not one
+    /// or the address it spells holds no mapped bytes.  The mapped test is the
+    /// numeric selector's own ([`Self::resolve_entry`]), so a name resolved this
+    /// way reaches exactly the function `--addr` on the same address reaches.
+    fn entry_by_placeholder_name(&self, name: &str) -> Option<FunctionEntry> {
+        let vma = self.placeholder_name_address(name)?;
+        self.vma_is_mapped(vma).then(|| self.entry_at_or_named(vma))
     }
 
     fn entry_at_or_named(&self, vma: u64) -> FunctionEntry {

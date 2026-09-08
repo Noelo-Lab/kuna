@@ -1,0 +1,71 @@
+{
+  "slug": "string-owner-function-name",
+  "need_id": "string-owner-function-name",
+  "track": "tooling",
+  "scope": "small",
+  "round": 8,
+  "branch": "feat/re-string-owner-function-name",
+  "summary": "A by-name selection that matches nothing is retried as the address the name spells, when the name is one this build would MINT there and that address holds mapped bytes. One change in ConsoleProgram::resolve_entry / find_entry_by_name, so kuna decompile, decompile-all --functions, disassemble and xrefs all accept the generated sub_<addr> names kuna prints. Every selection that already resolved is untouched by construction: the fallback runs only after the name match found nothing.",
+  "decisions": [
+    {
+      "what": "hypothesis PARTLY upheld -- two inventories, but neither is the thing to fix",
+      "detail": "Filed hypothesis: 'String ownership and named decompilation use different function inventories.' That half is true and I confirmed it. `kuna strings` attributes a literal's owner with `index.function_containing(vma)` -- the reference walk's OWN flow attribution (kuna-cli/src/strings.rs (owning_function)) -- and only falls back to the engine inventory. On graphy the walk sees `CALL 0x100a3be` at 0x1008ce5 and calls 0x100a3be a function; `kuna functions` reports 55 entries and 0x100a3be is not one of them, because discovery folded that call target into sub_100a2b6, whose extent is 0x100a2b6-0x100a400. So two inventories really do disagree. But the captain's triage pointed at kuna-cli/src/decompile.rs (is_unknown_function / the resolve_entry miss at :455-479), and that is not where this lives either: `kuna decompile-all --functions sub_100a3be`, `kuna disassemble` and `kuna xrefs --from` all refuse the same name through the SAME two lookups in kuna-console. Widening the inventory to match the walk is an analyzer-tier change with an entry-set blast radius (exactly the trade PR #470 measured and rejected for `analysis-generated-function-name`: 8 funcboundflow truncations over 33 non-x86-64 fixtures). Reading the NAME is not: `sub_<hex>` is minted by Architecture::name_function and carries no information beyond the address, so a by-name miss can be answered as the address the name spells."
+    },
+    {
+      "what": "decided by MINTING, not by parsing the prefix",
+      "detail": "The obvious shape -- strip `sub_`, parse the hex -- is wrong in two ways that a round-trip gets right for free. (1) The prefix is a MODE, not a constant: name_function emits `sub_<bare hex>` under name_style_angr (the kuna default), `func_<print_raw>` upstream, `FUN_%08x` in ghidra mode. (2) The hex is NOT the byte offset on a word-addressed space: kuna_bare_addr prints byte_to_address(offset, wordsize), so the inverse is address_to_byte. placeholder_name_address therefore builds the candidate offsets and accepts one only when self.arch().name_function(addr) == name. That is exact by construction and self-limiting: a name this build would never print is never resolved, which is why `FUN_00001170` and `func_00001170` still miss on a default (angr-naming) program."
+    },
+    {
+      "what": "gated on a MISS and on mapped bytes",
+      "detail": "The fallback runs only after the name/alias filter produced zero candidates, so an ambiguity is still reported with its candidates and a binary that genuinely carries a symbol spelled `sub_1234` still wins -- no name that resolved before can change. The accepted address must additionally satisfy vma_is_mapped, which is the numeric selector's own test in the same function, so a resolved placeholder reaches exactly the entry `--addr` on that address reaches and `sub_deadbeef` still answers `no function`. Deliberate consequence: a `sub_<hex>` naming a mapped-but-not-code address (BSS, .data) now decompiles instead of erroring, exactly as `--addr` on it does. Making the by-name form STRICTER than --addr was the alternative and was rejected: vma_is_mapped falls back to a byte probe when the loader publishes no sections (the XML corpus, sectionless ELFs), so a CODE-flag test would have made the fallback inert on precisely the stripped images that need it."
+    },
+    {
+      "what": "placed in kuna-console, not kuna-cli",
+      "detail": "`touches:` named kuna-cli/src/decompile.rs and strings.rs. Both name lookups every surface goes through are ConsoleProgram::resolve_entry (console `load function`, which is what `kuna decompile` scripts, plus decompile-all --functions and xrefs) and ConsoleProgram::find_entry_by_name (disassemble, decompile-all's resolve_function_spec). One helper behind both closes the round trip on all of them; the same fix in decompile.rs would have closed it for one command and left the other three refusing the name kuna printed. strings.rs is unchanged -- it was never wrong, it just named an entry nothing could then select."
+    },
+    {
+      "what": "no option, no counters, no stages XML",
+      "detail": "Tooling track. Name resolution cannot change emitted C for any selection that already resolved (the fallback is unreachable unless the lookup missed), so there is no judgement call to put behind a phases.toml row: no options.rs registration, no catalog counters, no docs/options.md, no tests/stages case, no DIV row."
+    }
+  ],
+  "collateral_sweep": {
+    "method": "Two arms, both with the pre-fix and post-fix RELEASE pair (kuna AND decomp_dbg -- `kuna decompile` forks decomp_dbg, and KUNA_DECOMP_DBG is exported in a repipe worktree, so pointing only the kuna binary at the old build measures nothing). Arm 1: `kuna decompile-all <bin> --functions <every name and alias kuna functions reports, 250 cap> --json` over all 136 vendored fixtures in kuna-analysis/tests/fixtures, comparing per-entry (name, code, error). Arm 2: every sub_/func_/FUN_ token kuna PRINTS in that output that is not in the inventory, run through `kuna decompile <bin> <name>` on both builds.",
+    "fixtures": 136,
+    "fixtures_with_comparable_json": 121,
+    "functions_compared": 1428,
+    "identical": 1428,
+    "changed": 0,
+    "entries_gained_or_lost": 0,
+    "fixtures_that_error_out": "15, all on an AMBIGUOUS name (macho `printf` as stub+slot, pe_imports `__lconv_init` x3, mcount `read_encoded_value_with_base.cold` x2). stderr is byte-identical on both builds: the fallback runs only when the name match found NOTHING, so an ambiguity is still reported with its candidates rather than guessed.",
+    "unlocked": "5 of the 10 printed-but-unselectable names -- plt_ppc64le sub_6f8/sub_7c8/sub_8b8/sub_948 and tailcallframe_x86_64 sub_1170 -- go exit 1 -> exit 0.",
+    "still_refused": "The other 5 (entrymain_arm sub_3c520/sub_2ad8bc/sub_26ea54, coff_obj.obj + coff_comdat_i386.obj sub_402000) still answer `no function`, which is correct: entrymain_arm is a 5,528-byte image whose functions live at 0x4xx, so those are unrelocated far-call targets with no bytes behind them, and 0x402000 is outside the COFF object's mapped sections. That is the vma_is_mapped gate doing its job, not a shortfall."
+  },
+  "not_closed": [
+    "kuna functions and kuna strings STILL disagree about the entry set. 0x100a3be is a CALL target discovery folded into sub_100a2b6 (extent 0x100a2b6-0x100a400), so `kuna functions graphy` still reports 55 entries without it, and tailcallframe_x86_64 still does not list its recovered tail-call target sub_1170. This closes the SELECTOR round trip -- a name kuna prints is a name kuna accepts -- not the inventory gap. That is analyzer-tier and deserves a need of its own.",
+    "A sub_<hex> naming a mapped but NON-CODE address (BSS, .data, a PE header) now decompiles instead of erroring, exactly as `--addr` on the same address does. Deliberate (the two surfaces are meant to answer alike) but it does mean the by-name surface no longer refuses every address that is not a function.",
+    "Only the kuna naming styles round-trip. A name a DIFFERENT tool minted -- Ghidra's FUN_ on an angr-named program, IDA's sub_ with its own hex spelling -- is still refused, because the acceptance test is `this build would print exactly this`. That is the conservative choice and it is why FUN_00001170 is in the negative test."
+  ],
+  "cost": {
+    "method": "3 runs each, wall clock, interleaved pre/post release pairs, witness graphy (ELF x86-64, 40,472 bytes, statically linked, stripped)",
+    "name_that_already_resolved": "unchanged -- identical script and identical code path. sub_1002c90: pre 2.17/2.54/3.01 s, post 2.18/2.48/2.51 s.",
+    "the_miss_that_now_resolves": "pre 0.19/0.27/0.28 s (exit 1), post 0.20/0.28/0.28 s (full C). The retry is a lookup inside the load the command had already paid for, not a second decomp_dbg run.",
+    "note": "Unlike the sibling `analysis-generated-function-name` fix, this needs no second attempt: the fallback is inside resolve_entry, so it costs one extra Architecture::name_function render on a name that was about to fail anyway."
+  },
+  "acceptance": {
+    "acceptance_id": "a-37f20d36850b",
+    "result": "PASS",
+    "verifier": "scripts.repipe.verify --need string-owner-function-name --json -> counts.pass 1, transition closed. The recorded acceptance is UNCHANGED and still measures the dataset witness graphy (sha 1fb1f75b6a3939...): `kuna decompile <bin> sub_100a3be` now exits 0 and prints `char * sub_100a3be(unsigned int a0) { ... return &\"No error information\"[...]; }`.",
+    "promoted_to": "tests/cli/string-owner-function-name.json",
+    "promotion_note": "verify --promote refuses: the acceptance targets binary_source 'dataset' and CI has no copy of graphy. Hand-written against the in-repo tailcallframe_x86_64 instead, keeping the same command shape (`kuna decompile {{BIN}} sub_<hex>`) and the same three clauses. The acceptance block in docs/re-needs/ was deliberately NOT re-cut onto the fixture, per the captain's B_VERIFY note -- so the need keeps measuring the real witness and the regression test keeps running in CI.",
+    "twin_justification": "tailcallframe_x86_64 fails the same way pre-fix and for the same reason: `kuna decompile <bin> sub_11b0` PRINTS `sub_1170(a0)` (a recovered tail call to 0x1170), `kuna functions` does not list 0x1170, and `kuna decompile <bin> sub_1170` answered `no function` while `--addr 0x1170` decompiled it.",
+    "negative_control": "With engine.rs reverted and the release pair rebuilt: the promoted probe FAILS on all three clauses (exit 1, no `sub_1170` on stdout, `no function` on stderr) and the graphy acceptance reports counts.pass 0 / fail 1. Rebuilt with the change, both pass. The two new cargo tests in verify_entry_selectors.rs panic on the reverted tree at the `.expect(\"the printed placeholder name resolves\")`."
+  },
+  "gates": {
+    "make test": "PARITY OK (675/675)",
+    "make test-stages": "PARITY OK",
+    "make check-spec": "OK (lenient mode)",
+    "make test-cli": "74/74 passed (includes the newly promoted string-owner-function-name.json)",
+    "kuna catalog --check": "catalog OK",
+    "make rust-test": "green except one ENVIRONMENTAL failure that is not this change and cannot be green in a repipe worktree. Full run: `error: 1 target failed: -p kuna-decomp --test verify_w10_proto_unlock`, on `oracle promote_compare signature drifted`. Falsified twice: (1) `env -u KUNA_DECOMP_TEST cargo test -p kuna-decomp --test verify_w10_proto_unlock` -> 4/4 ok; (2) the MAIN tree's unmodified release decomp_test_dbg at bfacf0c6 and this worktree's produce BYTE-IDENTICAL KUNA_DUMP output for promotecompare.xml, and neither contains the `xunknown4` the assertion requires. The repipe launcher exports KUNA_DECOMP_TEST=<worktree>/target/release/decomp_test_dbg, which makes kuna its own C++ oracle; CI does not set it, so the oracle block is skipped there. A full re-run with `env -u KUNA_DECOMP_TEST` reached 319 targets with 0 failures before I stopped it to free the cargo lock for the parity gates."
+  }
+}

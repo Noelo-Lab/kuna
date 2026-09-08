@@ -195,7 +195,29 @@ Four front-ends drive one engine assembly:
   shorter name, then lexicographic order, so the choice is total and independent of
   symbol-stream order. Name-keyed selection resolves aliases too
   (`decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::find_entry_by_name)`),
-  so collapsing the records never makes a name stop selecting its function. On an
+  so collapsing the records never makes a name stop selecting its function.
+
+  A name-keyed selection that matches nothing is then retried as the ADDRESS it
+  spells, when — and only when — it is a name this build would MINT there
+  (`decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::placeholder_name_address)`).
+  The decision is made by minting rather than by parsing: the candidate offset is
+  rendered through `Architecture::name_function` and accepted only if it comes
+  back as the requested name, so whichever naming style is active (`sub_<addr>`
+  by default, `func_<addr>` upstream, `FUN_<addr>` in ghidra mode) and a
+  word-addressed space's scaling of the printed offset both follow without
+  parsing either of them. The retry is additionally gated on the address holding
+  mapped bytes — the numeric selector's own test — so a name resolved this way
+  reaches exactly the function `--addr` on the same address reaches, and every
+  other miss keeps its by-name `NotFound`. A binary that really does carry a
+  symbol spelled like a placeholder is unaffected: the fallback runs only after
+  the name match found nothing. This exists because a placeholder carries no
+  information beyond the address while kuna prints them for entries the canonical
+  inventory does not hold — a recovered tail call renders `sub_1170(a0)` at a
+  call target that discovery folded into the enclosing function, and `kuna
+  strings` names a literal's owner from the reference walk's own flow attribution
+  (`decompiler/crates/kuna-cli/src/strings.rs (owning_function)`), which reaches
+  starts the inventory never recorded — so the name kuna printed was one the
+  by-name selector then refused. On an
   ARM-family spec the grouping key folds away the Thumb mode bit (`vma & !1`, the
   same normalization
   `decompiler/crates/kuna-console/src/project.rs (build_asm)` applies to its
