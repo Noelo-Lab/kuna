@@ -349,6 +349,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "framelayout",
     "voidtailreturn",
     "ptrdepthcap",
+    "codescalar",
     "cortexmpriv",
     "dedupvardecls",
     // (kuna) Analysis-pass gates (per-run `--option <id> on|off`): one settable

@@ -18,3 +18,4 @@ pub mod coreaction_infertypes;
 pub mod kuna_memsetsequence;
 pub mod kuna_rodatastring;
 pub mod kuna_ptrdepth;
+pub mod kuna_codescalar;

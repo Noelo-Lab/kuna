@@ -351,6 +351,16 @@ pub struct Architecture {
     /// upstream `TypeFactory::getTypePointerNoDepth`'s rule (`type.cc:1509`)
     /// applied at the propagation funnel rather than only at LOAD/STORE.
     pub ptrdepthcap: bool,
+    /// (kuna `codescalar`) Refuse a `code` pointee as the data-type of a
+    /// dereferenced value.
+    ///
+    /// `code` is built size 1 so that `code *` arithmetic steps one byte, and
+    /// `TypeOp::propagateFromPointer` tests only `ptrto->getSize() == sz`, so a
+    /// 1-byte LOAD/STORE through a function pointer adopts `code` as the value's
+    /// type; the C back-end prints that scalar `void`.  When set, the pointee is
+    /// refused on the value side (`kuna_codescalar::blocks_value_type`) and the
+    /// STORE's cast to it is suppressed; the pointer keeps `code *`.
+    pub codescalar: bool,
     /// (kuna GH-8913) Fuse 8-bit carry-chain 16-bit adds into one wide add
     /// (C++ `add_carry_chain`).
     pub add_carry_chain: bool,
@@ -1836,6 +1846,7 @@ impl Architecture {
             memset_recover: false,
             rodata_string: false, // (kuna) option rodatastring; reset_defaults sets the shipped default
             ptrdepthcap: false, // (kuna) option ptrdepthcap; reset_defaults sets the shipped default
+            codescalar: false, // (kuna) option codescalar; reset_defaults sets the shipped default
             add_carry_chain: false,
             v850_indirect_branch: false,
             fastfail_noreturn: false, // (kuna) option fastfailnoreturn; reset_defaults sets the shipped default
@@ -2150,6 +2161,7 @@ impl Architecture {
         self.voidtailreturn = false; // (kuna) option voidtailreturn; default-OFF until its corpus bidirectional sweep is recorded in a DIV row
         self.cortexmpriv = false; // (kuna) DIV-99: default-OFF -- "the core is privileged" is a modelling judgement, not a proof (Cortex-M Thread mode can run unprivileged); ON in the `aggressive` preset, which `auto` selects under 500 KiB, so it is the default rendering for real firmware
         self.ptrdepthcap = false; // (kuna) DIV-108: default-OFF in the catalog because it changes INFERRED types and the datatest corpus pins the upstream spellings; ON in the `aggressive` preset, which `auto` selects under 500 KiB, so the cap is the default rendering for every real binary
+        self.codescalar = true; // (kuna) DIV-138 default-on: a `code` pointee is never a value type, so blocking it can only replace a widthless scalar with the size-correct default
         self.condexe_block_placement = true; // (kuna) DIV-3 default-on (GH-9203)
         self.add_carry_chain = true; // (kuna) DIV-2 default-on (GH-8913)
         self.model_stack_probe_loop = true; // (kuna) DIV-3 default-on (GH-8017)
@@ -2658,6 +2670,7 @@ impl Architecture {
             "framelayout" => on_off!(framelayout, "recovered stack-frame reporting"),
             "voidtailreturn" => on_off!(voidtailreturn, "void tail-return elision"),
             "ptrdepthcap" => on_off!(ptrdepthcap, "inferred pointer-nesting cap"),
+            "codescalar" => on_off!(codescalar, "code-pointee scalar-value guard"),
             "cortexmpriv" => on_off!(cortexmpriv, "Cortex-M privileged-mode guard folding"),
             "dedupvardecls" => {
                 let (val, msg) = crate::kuna_dedupvardecls::OptionDedupVarDecls.apply(p1)?;
@@ -3366,6 +3379,7 @@ impl Architecture {
         ctx.memset_recover = self.memset_recover; // GH-9230/1537 memsetrecover
         ctx.rodata_string = self.rodata_string; // (kuna) rodatastring
         ctx.ptrdepthcap = self.ptrdepthcap; // (kuna) ptrdepthcap
+        ctx.codescalar = self.codescalar; // (kuna) codescalar
         ctx.model_stack_probe_loop = self.model_stack_probe_loop; // GH-8017 stackprobeloop
         ctx.recover_lowered_switch = self.recover_lowered_switch; // loweredswitch
         ctx.callsite_stack_args = self.callsite_stack_args; // callsitestackargs

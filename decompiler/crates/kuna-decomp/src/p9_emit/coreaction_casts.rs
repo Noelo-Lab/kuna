@@ -458,6 +458,13 @@ fn get_input_cast_store(
         return None;
     }
     // slot == 2: cast the value, not the pointer.
+    // (kuna `codescalar`) The other half of the size-1 `code` reading: with the
+    // stored value typed by its own width, the pointee still demands a cast to
+    // `code`, which prints `(void)`.  A `code` destination is not a value type,
+    // so the store needs no cast at all.
+    if data.get_arch().codescalar && crate::kuna_codescalar::blocks_value_type(&pointed_to) {
+        return None;
+    }
     strat.cast_standard(&pointed_to, &value_type, false, true)
 }
 

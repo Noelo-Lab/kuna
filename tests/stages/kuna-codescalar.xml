@@ -1,0 +1,76 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    RE-friction round 9, need `decompiler-emits-void-scalar` (challenges
+    5ab77f5f33c5d40ad448c834 and 6a148dd62b3df128c1df5c9e): a scalar local is
+    declared with no width and then used in byte arithmetic.  On `crkme.exe` the
+    INT3-detection stub at 0x44ac6b renders
+
+        void v4; // al
+        v4 = (void)sub_44ac7a();
+        *v1 = v4;
+        ...
+        v4 = (char)((char)v4 + '$');
+
+    A `void` scalar cannot be declared, assigned or added in C, and the byte the
+    stub actually patches into its own callee has no type at all.
+
+    Root cause (P5, type propagation).  `TypeFactory::getTypeCode` builds the
+    generic `code` type with size 1 so that `code *` arithmetic steps one byte at
+    a time.  `TypeOp::propagateFromPointer` (typeop.cc:207) decides what a
+    dereference yields by testing only `ptrto->getSize() == sz`, so it reads that
+    convenience as a claim that a byte-wide value can hold a function body: a
+    1-byte LOAD or STORE through a recovered function pointer adopts `code` as
+    the VALUE type, `INT_EQUAL` spreads it to the compared constant, and the
+    merged high is declared `code v4; // al` - printed `void v4;` by the C
+    back-end.  The store then demands a cast back to the pointee, which prints
+    `(void)`.
+
+    Stage / sub-stage: P5 "type-propagation".  The P0 assertion
+    `option codescalar on|off` decides whether a `code` pointee may type a
+    dereferenced value.
+
+    The fixture is the same construct on SysV x86-64.  Both functions take a
+    pointer and a flag, zero al, and on the taken arm call something and store al
+    through the pointer; they differ only in WHAT they call:
+
+        codebyte:  call *%rbx      # rbx is the call target -> code *
+        databyte:  call sink       # rbx is never called    -> plain data pointer
+
+    `codebyte` is the witness.  `databyte` is the discriminator and is identical
+    in BOTH passes: nothing types its pointer `code *`, so the byte was always
+    `char`.  Pass 1 (`option codescalar off`) reproduces the bug.
+-->
+<bytechunk space="ram" offset="0x100000">
+c3000000000000000000000000000000534889fb31c085f67404ffd388030424
+0fb6c05bc30000000000000000000000534889fb31c085f67407e8c1ffffff88
+0304240fb6c05bc30000000000000000
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="sink"/>
+<symbol space="ram" offset="0x100010" name="codebyte"/>
+<symbol space="ram" offset="0x100030" name="databyte"/>
+</binaryimage>
+<script>
+  <com>option codescalar off</com>
+  <com>lo fu codebyte</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu databyte</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option codescalar on</com>
+  <com>lo fu codebyte</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu databyte</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="codescalar #1: with the option off the dereferenced byte is typed by the size-1 code pointee -- the bug" min="1" max="1">code v[0-9]+; // al</stringmatch>
+<stringmatch name="codescalar #2: and the value stored back through the function pointer is cast to that widthless type" min="1" max="1">= \(code\)\(\*a[0-9]+\)\(\)</stringmatch>
+<stringmatch name="codescalar #3: with the option on the byte carries the width the access has, in the witness and in the control" min="3" max="3">char v[0-9]+; // al</stringmatch>
+<stringmatch name="codescalar #4: the cast is gone with it, so the store is a plain assignment" min="1" max="1">= \(\*a[0-9]+\)\(\);</stringmatch>
+<stringmatch name="codescalar #5: the POINTER keeps its code type in both passes, so the indirect call still renders" min="2" max="2">code \*a[0-9]+</stringmatch>
+<stringmatch name="codescalar #6: the data control is untouched in both passes -- its pointer was never a code pointer" min="2" max="2">char \*a[0-9]+,int4 a[0-9]+</stringmatch>
+</decompilertest>

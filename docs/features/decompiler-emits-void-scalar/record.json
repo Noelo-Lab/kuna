@@ -1,0 +1,60 @@
+{
+  "need_id": "decompiler-emits-void-scalar",
+  "track": "quality",
+  "scope": "small",
+  "option": "codescalar",
+  "div": "DIV-138",
+  "phase": "P5",
+  "module": "decompiler/crates/kuna-decomp/src/p5_types/kuna_codescalar.rs",
+  "default": "on",
+  "decisions": [
+    "The filed symptom is exact but the WORD is wrong: the type on the scalar is not TYPE_VOID, it is TYPE_CODE. Instrumented Varnode::update_type/update_type_locked/new for a size>0 varnode adopting TYPE_VOID and got ZERO hits on the witness; decomp_dbg's raw dialect prints the same local `code v4; // al` where the C dialect prints `void v4;`. Switching the instrumentation to TYPE_CODE produced four hits, all inside run_infer_types: CPUI_LOAD inslot=1 outslot=-1 outsize=1, CPUI_STORE inslot=1 outslot=2 outsize=1, and two CPUI_INT_EQUAL edges spreading it to the compared constant 0xcc.",
+    "The refuter's ruling that propagate_from_pointer's `ptrto.get_size() == sz` guard cannot be the route assumed a size-0 pointee. It IS the route: TypeFactory::getTypeCode builds `code` with size 1 (dtype.rs get_type_code_impl, Datatype::new_with_align(1,1,TYPE_CODE)), matching upstream TypeCode(), so a 1-byte dereference of a `code *` satisfies the equality exactly. The refuter's advice to state the fix as 'a value varnode never carries a size-0 type' would have missed it; the sound statement is 'a code pointee never types a dereferenced value'.",
+    "Upstream Ghidra has the same behaviour -- /home/mahaloz/github/ghidra typeop.cc:207 propagateFromPointer has no TYPE_CODE case -- so this is a divergence and ships behind a named option with a DIV row, default ON.",
+    "The propagation guard alone left `*v1 = (void)v4;`: with the value typed by its own width, TypeOpStore::getInputCast still demands a cast to the `code` pointee. The same predicate suppresses that cast (slot 2 only), which is the second half of the fix and the half the acceptance's `\\(void\\)` clause pins.",
+    "The need's second instance (6a148dd6 p0tp.exe sub_140006280) already renders `unsigned char v4;` on the base commit -- byte-identical output from the main tree's binary at 7e77fb8c -- so it was closed by an earlier merge, not by this change. The witness half is what this closes."
+  ],
+  "gates": {
+    "make test": "PARITY OK 675/675 (0 datatest assertions changed)",
+    "make test-stages": "PARITY OK, 692 -> 698 keys, purely additive",
+    "make rust-test": "green, 6108 passed / 0 failed",
+    "make check-spec": "OK (strict)",
+    "make test-cli": "91/91",
+    "kuna catalog --check": "catalog OK",
+    "known_env_failure": "verify_w10_proto_unlock::w10_proto_unlock_const_return_collapses_no_tied_roundtrip fails ONLY with KUNA_DECOMP_TEST exported (the repipe launcher points it at kuna's own decomp_test_dbg, so the C++ oracle is kuna and its `unsigned int promote_compare` reads as drift against the required `xunknown4`). Falsified twice: green under `env -u KUNA_DECOMP_TEST`, and identically red with the MAIN tree's unmodified decomp_test_dbg at the base commit. CI does not export it."
+  },
+  "speed": {
+    "witness_ms_off": 116.17,
+    "witness_ms_on": 115.87,
+    "witness_delta_pct": -0.26,
+    "witness_samples": 9,
+    "whole_binary": "decompile-all crkme.exe, interleaved median of 5: off 3.08 s, on 2.97 s (-3.6%)",
+    "budget_pct": 5.0,
+    "within_budget": true
+  },
+  "sweep": {
+    "method": "kuna decompile-all in both arms (--option codescalar off vs default) over every loadable image in the RE dataset",
+    "images_attempted": 274,
+    "images_decompiled_in_both": 243,
+    "images_changed": 27,
+    "functions_in_changed_images": 30731,
+    "functions_changed": 40,
+    "functions_added": 0,
+    "functions_removed": 0,
+    "call_histogram": "identical in both arms for every binary except a DECREASE in SUB41/SUB81 truncation intrinsics; no call name lost or gained anywhere",
+    "shapes": [
+      "code v16; -> uint1 v16; (widthless declaration gains its width)",
+      "(void)/(code) cast at the store disappears",
+      "casts at each USE disappear: if (((uint1)v16 & 0xf) == 10) -> if ((v16 & 0xf) == 10)",
+      "void *v1; -> char *v1; where the pointer was only ever a byte pointer",
+      "v6 = SUB41(v7,0); -> v6 = (char)v7;"
+    ]
+  },
+  "promoted_probe": {
+    "path": "tests/cli/decompiler-emits-void-scalar.json",
+    "retargeted_from": "crackmes.one 5ab77f5f33c5d40ad448c834 bin/crackme1.zip.__x/crkme.exe 0x44ac6b (dataset)",
+    "retargeted_to": "decompiler/crates/kuna-analysis/tests/fixtures/codescalar_x86_64 codebyte (vendored)",
+    "why": "the captain bound the dataset target in B_DRAIN and wrote the cmd spelling as binding, so the need's own acceptance stays on the dataset witness and this is the CI twin; CI has no dataset",
+    "verified_on_witness": "scripts.repipe.verify --need decompiler-emits-void-scalar --json reports acceptance PASS (1/1 closed) on the dataset image"
+  }
+}

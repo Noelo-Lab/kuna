@@ -1811,7 +1811,7 @@ mod tests {
         // is named from that sidecar with no option and no environment variable
         // and kuna-calleearityscratch / a boundary register the caller only used
         // as scratch bounds a cut callee-body argument run (repipe r9)
-        assert_eq!(count, 253, "corpus file count drifted");
+        assert_eq!(count, 254, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

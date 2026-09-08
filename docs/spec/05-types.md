@@ -292,6 +292,28 @@ already held, so the `0 > type_order` test rejects it and the lattice settles
 instead of running to the ceiling. Depth 1 and depth 2 over a concrete base are
 untouched, so a genuine `char **argv` keeps its spelling.
 
+**The `code` pointee (`codescalar`).** The generic `code` type is built with
+size 1, so that `code *` arithmetic steps one byte at a time, and
+`propagate_from_pointer` decides what a dereference yields by testing only
+whether the pointee's size equals the access width. Those two facts together
+say that a one-byte read through a function pointer yields a *value* of type
+`code`. It does not: `code` has no width to hold, and the C back-end prints
+that scalar `void`, so the local is declared `void v4; // al` and every later
+use of it is cast back to a real width. The shape is ordinary in packers and
+anti-debug stubs, which read and patch a byte of their own callee
+(`v1 = *(code **)g; if (*v1 != 0xcc) (*v1)(); *v1 = f();`) — the LOAD types the
+compared byte, the STORE types the stored one, and `INT_EQUAL` spreads `code`
+to the compared constant as well. When `codescalar` is on (the shipped default,
+DIV-138),
+`decompiler/crates/kuna-decomp/src/p5_types/kuna_codescalar.rs
+(blocks_value_type)` declines a `TYPE_CODE` pointee on the value side of the
+LOAD/STORE transfer function, so the value keeps the size-correct default the
+access already gives it. The same test is consulted once more in the cast
+tail — `TypeOpStore`'s value cast would otherwise re-impose the pointee on the
+stored value and print `(void)` — and nowhere else: the *pointer* keeps its own
+`code *` type, so the indirect call still renders `(*v1)()`, and a `code **`
+load, whose pointee is a pointer, is untouched.
+
 **The casting boundary.** Inference annotates; it never converts. Where the
 final Varnode type disagrees with what an op requires, nothing in phase 5
 reconciles it — the disagreement survives to
