@@ -1,0 +1,37 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "target": {
+      "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/pe_iatincode_i386.exe",
+      "binary_sha256": "fc9a367d8615741a122c5b0dbd3d3042f408cbce93451a796bcc45f7710c719b",
+      "binary_size": 4608,
+      "binary_source": "in-repo",
+      "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/pe_iatincode_i386.exe"
+  },
+  "timeout_s": 60,
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--json",
+    "--no-vars"
+  ],
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "json": [
+      {
+        "path": "count",
+        "op": "eq",
+        "value": 1
+      },
+      {
+        "path": "functions[0].code",
+        "op": "matches",
+        "value": "VirtualAlloc\\(0x40,GetModuleHandleA\\(0\\)\\)"
+      }
+    ]
+  },
+  "notes": "Pairing clause for bulk-decompilation-decodes-pe: suppressing an IAT slot's BODY must not cost the import's NAME. Keeping the slots as data leaves one real function, whose two calls still render VirtualAlloc( and GetModuleHandleA( through those same slots. Without this a fix that stopped registering PE imports at all would pass the count==0 acceptance."
+}

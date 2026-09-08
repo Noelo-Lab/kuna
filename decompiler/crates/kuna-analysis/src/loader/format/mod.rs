@@ -121,6 +121,19 @@ pub trait ObjectFormat {
         Vec::new()
     }
 
+    /// The **import pointer slots** of the image as half-open `[lo, hi)` VMA
+    /// ranges: the words a run-time loader fills with a resolved import address.
+    ///
+    /// [`ObjectFormat::resolve_imports`] registers a `FunctionSymbol` at each of
+    /// them so a `call [slot]` renders the import name, but such an address is a
+    /// pointer word, not a function entry. This is the address half of that same
+    /// answer, so a consumer that enumerates *bodies* can tell the two apart
+    /// without re-deriving the layout. PE's Import Address Table today; every
+    /// other format inherits the empty default and is unchanged.
+    fn import_slots(&self, _file: &object::File, _bytes: &[u8]) -> Vec<(u64, u64)> {
+        Vec::new()
+    }
+
     /// Whether this file is a **pre-link relocatable object** whose sections must
     /// be laid out synthetically ([`crate::loader::reloc_object`]) instead of read
     /// off the linked image's own mapping.
@@ -179,6 +192,16 @@ pub fn detect(file: &object::File) -> KunaResult<Box<dyn ObjectFormat>> {
 pub fn resolve_imports(file: &object::File, bytes: &[u8]) -> Vec<ImportSym> {
     match detect(file) {
         Ok(fmt) => fmt.resolve_imports(file, bytes),
+        Err(_) => Vec::new(),
+    }
+}
+
+/// Free dispatch over [`detect`] + [`ObjectFormat::import_slots`], the address
+/// half of [`resolve_imports`]. Same contract: never panics, and a format
+/// `detect` rejects yields an empty `Vec`.
+pub fn import_slots(file: &object::File, bytes: &[u8]) -> Vec<(u64, u64)> {
+    match detect(file) {
+        Ok(fmt) => fmt.import_slots(file, bytes),
         Err(_) => Vec::new(),
     }
 }

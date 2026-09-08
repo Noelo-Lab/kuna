@@ -346,6 +346,16 @@ pub struct ConsoleProgram {
     pending_prototypes: BTreeMap<String, kuna_decomp::fspec::PrototypePieces>,
     /// Raw-input address-unit width and whether bit zero is an ARM state bit.
     raw_address_units: Option<(u64, bool)>,
+    /// (kuna) The loader's **import pointer slots** as half-open `[lo, hi)` VMA
+    /// ranges — the PE Import Address Table words, read off
+    /// `ObjectLoadImage::import_slot_ranges` at bootstrap.
+    ///
+    /// The loader registers a `FunctionSymbol` at each slot so a
+    /// `call dword ptr [slot]` renders the import name, and that is the whole
+    /// point of them; the slot is still a pointer word rather than a function
+    /// entry, which is what [`Self::function_entries_executable`] reads this for.
+    /// Empty on the XML datatest path and for every non-PE image.
+    import_slots: Vec<(u64, u64)>,
 }
 
 fn code_offset_in_target_units(value: u64, word_size: u64) -> u64 {
@@ -634,8 +644,20 @@ impl ConsoleProgram {
     /// and explicit address selection, but data addresses are not function bodies.
     /// Loaders without section metadata retain the complete inventory.
     ///
-    /// A CALLER-DECLARED entry is kept whatever the section flags say. The flag
-    /// test is a guess about where code lives, and it is wrong exactly where an
+    /// Two things disqualify an entry, and the second is not a section-flag
+    /// question at all. The flag test asks whether the address is in CODE-bearing
+    /// memory. That is the right question for a discovered entry and the wrong
+    /// one for an import slot, because a PE is free to put its Import Address
+    /// Table inside its code section — a packed image with one
+    /// `CODE|EXECUTE|WRITE` section holding both the stub and the whole import
+    /// directory passes the flag test at every slot, so 50 of a 56-entry
+    /// inventory were pointer words that decompiled to a body dereferencing an
+    /// uninitialized pointer. The loader knows which addresses those are
+    /// ([`Self::import_slots`]) because it put the names there, so the slots are
+    /// excluded on that knowledge instead.
+    ///
+    /// A CALLER-DECLARED entry is kept whatever either test says. The flag test
+    /// is a guess about where code lives, and it is wrong exactly where an
     /// agent reaches for `--define-function`: a packer that marks its whole
     /// image data (every section `INITIALIZED_DATA|READ|WRITE`, none
     /// `MEM_EXECUTE`) leaves this list empty, so a declared function was
@@ -643,20 +665,32 @@ impl ConsoleProgram {
     /// then silently dropped from the whole-binary run.
     pub fn function_entries_executable(&self) -> Vec<FunctionEntry> {
         let sections = self.sections();
-        if sections.is_empty() {
-            return self.function_entries_canonical();
-        }
-
         self.function_entries_canonical()
             .into_iter()
             .filter(|entry| {
                 let vma = entry.addr.get_offset();
-                self.is_declared_entry(vma)
+                if self.is_declared_entry(vma) {
+                    return true;
+                }
+                if self.is_import_slot(vma) {
+                    return false;
+                }
+                sections.is_empty()
                     || sections.iter().any(|&(start, size, flags)| {
                         flags & section_flags::CODE != 0 && vma >= start && vma - start < size
                     })
             })
             .collect()
+    }
+
+    /// Does `vma` fall inside an import pointer slot — a word the run-time
+    /// loader fills with a resolved import address?
+    ///
+    /// The address half of the loader's import resolution
+    /// (`ObjectLoadImage::import_slot_ranges`). Always false on the XML datatest
+    /// path, for a raw image, and for every non-PE object.
+    pub fn is_import_slot(&self, vma: u64) -> bool {
+        self.import_slots.iter().any(|&(lo, hi)| vma >= lo && vma < hi)
     }
 
     /// (kuna, issue #197) Resolve a canonical entry by ANY of its names — the
@@ -2267,6 +2301,7 @@ pub fn bootstrap_program(
         assertion_outcomes: Vec::new(),
         pending_prototypes: BTreeMap::new(),
         raw_address_units: None,
+        import_slots: Vec::new(),
     };
     // C++ `conf->readLoaderSymbols("::")` (testfunction.cc:160 / consolemain.cc:104):
     // install the binaryimage symbols as FunctionSymbols so a CALL to one resolves
@@ -2519,6 +2554,7 @@ pub fn bootstrap_from_raw(
         pending_prototypes: BTreeMap::new(),
         declared_entries: BTreeSet::new(),
         raw_address_units: Some((word_size, arm32)),
+        import_slots: Vec::new(),
     };
     Ok(prog)
 }
@@ -2756,6 +2792,12 @@ pub fn bootstrap_from_object_with_isa(
     // `option readonly`. Empty for a non-ELF, an `ET_REL` object, or the gate off.
     let dynreloc_const: Vec<(u64, u64)> = loader.dynreloc_const_ranges().to_vec();
 
+    // (kuna, RE-need `bulk-decompilation-decodes-pe`) The import pointer slots,
+    // read off the same loader: `read_loader_symbols_generic` below installs a
+    // FunctionSymbol at each of them for call naming, and the whole-binary
+    // enumeration needs to know those addresses hold a pointer, not a body.
+    let import_slots: Vec<(u64, u64)> = loader.import_slot_ranges().to_vec();
+
     // (kuna `litpoolconst`) The image's executable read-only regions, read off the
     // same loader: `r-x` memory cannot be written, so the literal-pool words the
     // instruction stream carries inside itself fold to their constants without the
@@ -2851,6 +2893,7 @@ pub fn bootstrap_from_object_with_isa(
         assertion_outcomes: Vec::new(),
         pending_prototypes: BTreeMap::new(),
         raw_address_units: None,
+        import_slots,
     };
     // conf->readLoaderSymbols("::"): install the ELF symbols as FunctionSymbols.
     // The deferred analysis commit at `read symbols` REQUIRES this to have run

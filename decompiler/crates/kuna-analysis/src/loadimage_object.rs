@@ -301,6 +301,14 @@ pub struct ObjectLoadImage {
     ///
     /// Empty for a non-ELF linked image, and with both gates off.
     dynreloc_const: Vec<(u64, u64)>,
+    /// (kuna) The image's **import pointer slots** as half-open `[lo, hi)` VMA
+    /// ranges — the PE Import Address Table words a run-time loader fills with a
+    /// resolved import address. [`Self::funcsyms`] carries a `FunctionSymbol` at
+    /// each of them so a `call [slot]` renders the import name; this records that
+    /// those addresses hold a POINTER rather than a function body, which is what
+    /// a whole-binary enumeration needs to keep them out of the decompile set.
+    /// Empty for every non-PE image and for a relocatable object.
+    import_slots: Vec<(u64, u64)>,
     /// The address space the file bytes map to (C++ `spaceid`, null until
     /// `attachToSpace`).
     spaceid: Option<Rc<AddrSpace>>,
@@ -678,6 +686,11 @@ impl ObjectLoadImage {
         // Through the boundary: `ElfFormat::const_ranges` is `mips_got_const_ranges`.
         let const_ranges = fmt.const_ranges(&file, bytes);
 
+        // (kuna) The import pointer slots the funcsym walk above just registered
+        // names at — recorded as addresses so the enumeration can tell a pointer
+        // word from a function entry. Empty off-PE.
+        let import_slots = fmt.import_slots(&file, bytes);
+
         // (kuna `dynrelocs`) A linked image's `PT_LOAD` bytes are the LINKER's,
         // not the run-time loader's: every slot a dynamic relocation fills reads
         // back as 0. Fill them in here, on the owned segment copies, before
@@ -708,6 +721,7 @@ impl ObjectLoadImage {
             datasyms,
             const_ranges,
             dynreloc_const,
+            import_slots,
             spaceid: None,
             buffer: RefCell::new(vec![0u8; BUFSIZE]),
             bufoffset: RefCell::new(!0u64), // ~((uintb)0)
@@ -821,6 +835,9 @@ impl ObjectLoadImage {
             // `msvcfpconst`, whose ranges qualify for exactly the same reason —
             // a datum that is known by construction, not by policy.
             dynreloc_const: fpconst.const_ranges,
+            // A pre-link object has no Import Address Table: its external calls
+            // are relocations, resolved by the layout pass.
+            import_slots: Vec::new(),
             spaceid: None,
             buffer: RefCell::new(vec![0u8; BUFSIZE]),
             bufoffset: RefCell::new(!0u64),
@@ -887,6 +904,20 @@ impl ObjectLoadImage {
     /// varnode inside one even when global propagation is off.
     pub fn dynreloc_const_ranges(&self) -> &[(u64, u64)] {
         &self.dynreloc_const
+    }
+
+    /// (kuna) The image's import pointer slots as half-open `[lo, hi)` VMA
+    /// ranges — the PE Import Address Table words.
+    ///
+    /// The loader registers a `FunctionSymbol` at each slot so a
+    /// `call dword ptr [slot]` renders the import name, and that registration is
+    /// what a name-keyed lookup and an explicit `--addr` selection resolve
+    /// through. It is not a claim that a function BODY starts there: the slot
+    /// holds a pointer the run-time loader writes. The engine reports these
+    /// ranges so its whole-binary enumeration can decompile the image's code
+    /// without inventing a body for every import.
+    pub fn import_slot_ranges(&self) -> &[(u64, u64)] {
+        &self.import_slots
     }
 
     /// The loader's function symbols as `(load_vma, name)` pairs — the SAME list

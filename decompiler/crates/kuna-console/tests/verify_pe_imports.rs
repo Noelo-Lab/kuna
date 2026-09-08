@@ -45,6 +45,7 @@
 
 use std::path::PathBuf;
 
+use kuna_base::address::Address;
 use kuna_console::engine::{bootstrap_from_object, ConsoleProgram};
 use kuna_console::ifacedecomp::{
     execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE,
@@ -212,5 +213,91 @@ fn pe_batch_targets_exclude_iat_data_slots() {
     assert!(
         prog.find_entry_at(PUTS_IAT_VMA).is_some(),
         "PE: explicit lookup must retain the puts IAT slot"
+    );
+}
+
+// ---- The IAT inside a CODE section (RE-need `bulk-decompilation-decodes-pe`) --
+//
+// `pe_iatincode_i386.exe` (synthesized; see the sibling `.py`) reproduces a
+// round-9 crypter whose one section is CODE|EXECUTE|READ|WRITE and holds the
+// whole import directory. The section-flag test above cannot see the difference
+// there, so every pointer slot passed it and decompiled to a body dereferencing
+// an uninitialized pointer.
+//
+//   entry              @ 0x401010   (calls both slots)
+//   VirtualAlloc IAT   @ 0x401000
+//   GetModuleHandleA   @ 0x401004
+//   ExitProcess        @ 0x401008
+const IATINCODE_ENTRY_VMA: u64 = 0x401010;
+const IATINCODE_SLOTS: [u64; 3] = [0x401000, 0x401004, 0x401008];
+
+/// An import slot in an executable section is still a pointer word: the batch
+/// set is the entry alone, while the inventory and explicit lookup keep all four.
+#[test]
+fn pe_batch_excludes_iat_slots_inside_a_code_section() {
+    let Some(mut prog) = boot("pe_iatincode_i386.exe") else { return };
+    prog.commit_pending_analysis().expect("PE analysis commit must succeed");
+
+    let canonical: Vec<u64> =
+        prog.function_entries_canonical().iter().map(|e| e.addr.get_offset()).collect();
+    let executable: Vec<u64> =
+        prog.function_entries_executable().iter().map(|e| e.addr.get_offset()).collect();
+
+    assert!(
+        executable.contains(&IATINCODE_ENTRY_VMA),
+        "PE: the entry function must stay in the batch set, got {executable:x?}"
+    );
+    for slot in IATINCODE_SLOTS {
+        assert!(
+            canonical.contains(&slot),
+            "PE: canonical inventory must retain the slot at {slot:#x}, got {canonical:x?}"
+        );
+        assert!(
+            prog.is_import_slot(slot),
+            "PE: {slot:#x} must be recognized as an import pointer slot"
+        );
+        assert!(
+            !executable.contains(&slot),
+            "PE: batch set must exclude the slot at {slot:#x}, got {executable:x?}"
+        );
+        assert!(
+            prog.find_entry_at(slot).is_some(),
+            "PE: explicit lookup must retain the slot at {slot:#x}"
+        );
+    }
+    assert_eq!(executable, vec![IATINCODE_ENTRY_VMA]);
+}
+
+/// Suppressing the body must not cost the name: the entry's two calls still
+/// render `VirtualAlloc(` / `GetModuleHandleA(` through the same slots.
+#[test]
+fn pe_iat_slots_in_code_still_name_their_calls() {
+    let Some(mut prog) = boot("pe_iatincode_i386.exe") else { return };
+    prog.commit_pending_analysis().expect("PE analysis commit must succeed");
+    let out = decompile_func(prog, &format!("load addr {IATINCODE_ENTRY_VMA:#x}"));
+    for name in ["VirtualAlloc(", "GetModuleHandleA("] {
+        assert!(out.contains(name), "PE: the entry's call must render {name}, got:\n{out}");
+    }
+}
+
+/// A caller-declared entry outranks the slot test, so an analyst who asserts a
+/// function at an address the import directory claims still gets a body.
+#[test]
+fn pe_declared_entry_outranks_the_import_slot_test() {
+    let Some(mut prog) = boot("pe_iatincode_i386.exe") else { return };
+    prog.commit_pending_analysis().expect("PE analysis commit must succeed");
+    let space = prog
+        .arch()
+        .manage()
+        .get_default_code_space()
+        .cloned()
+        .expect("a default code space");
+    prog.declare_function(Address::new(space, IATINCODE_SLOTS[0]), Some("declared"), 4)
+        .expect("the declaration is accepted");
+    let executable: Vec<u64> =
+        prog.function_entries_executable().iter().map(|e| e.addr.get_offset()).collect();
+    assert!(
+        executable.contains(&IATINCODE_SLOTS[0]),
+        "PE: a declared entry must survive the slot test, got {executable:x?}"
     );
 }

@@ -1,0 +1,77 @@
+{
+  "opportunity": "repipe:5ab77f5c33c5d40ad448c681::bulk-decompilation-decodes-pe",
+  "need_id": "bulk-decompilation-decodes-pe",
+  "track": "loader",
+  "round": 9,
+  "test_name": "repipe round 9, challenge 5ab77f5c33c5d40ad448c681",
+  "binary": "kuna-re-dataset/challenges/5ab77f5c33c5d40ad448c681/bin/bm3.zip.__x/bm3.exe",
+  "selector": "VirtualAlloc",
+  "func_addr": "0x4010ce",
+  "option": null,
+  "flag": null,
+  "element_id": null,
+  "change_kind": "correctness-fix",
+  "source_decompiler": "kuna",
+  "inspiration": "repipe round 9 need bulk-decompilation-decodes-pe; the ELF GOT model already answers this everywhere the IAT is in .idata, so the missing piece is the address list, not a new rule",
+  "default_on": true,
+  "div": null,
+  "scope": "small",
+  "files": [
+    "decompiler/crates/kuna-analysis/src/loader/format/mod.rs",
+    "decompiler/crates/kuna-analysis/src/loader/format/pe.rs",
+    "decompiler/crates/kuna-analysis/src/loadimage_object.rs",
+    "decompiler/crates/kuna-console/src/engine.rs",
+    "decompiler/crates/kuna-console/tests/verify_pe_imports.rs",
+    "decompiler/crates/kuna-analysis/tests/fixtures/pe_iatincode_i386.exe",
+    "decompiler/crates/kuna-analysis/tests/fixtures/pe_iatincode_i386.py",
+    "tests/cli/bulk-decompilation-decodes-pe.json",
+    "tests/cli/pe-iat-in-code-keeps-call-names.json",
+    "docs/spec/01-program-prep.md",
+    "docs/cli.md",
+    "docs/re-needs/bulk-decompilation-decodes-pe.md"
+  ],
+  "decisions": [
+    "The filed hypothesis is UPHELD and the round-9 refuter's refinement is exact: `function_entries_executable` already intends to keep import pointer slots out of the batch set (its doc comment said so before this change), but its only discriminator was the loader CODE-section flag. bm3.exe's one section is 0xe0000060 (CODE|EXECUTE|READ|WRITE) and contains the whole import directory, so every slot passed. 50 of its 56 inventory entries were pointer words.",
+    "The fix publishes the address list the loader already computes rather than adding a suppression rule. `pe_iat::resolve_pe_import_slots` (used since `peimportcall` to paint Varnode::externref) is lifted to a format-neutral `ObjectFormat::import_slots`, carried on `ObjectLoadImage` and read into `ConsoleProgram::is_import_slot`. Every non-PE format inherits an empty default, so the change is structurally inert off-PE.",
+    "Deliberately NOT read from the peimportcall pass output, which is the same data one layer up. That gate is a decompiler option; an agent who turns it off to compare against upstream should not get 50 phantom function bodies back. The loader answer is ungated.",
+    "The slot test is placed BELOW the caller-declared escape hatch and ABOVE the section-flag test. A `--define-function` at an address the import directory claims still gets a body, which is the recourse if an image's import directory is a lie. Covered by a unit test.",
+    "Nothing is removed from the inventory. `kuna functions` still reports all 56 entries of bm3.exe, `--addr`/`--functions VirtualAlloc` still decompiles the slot on request, and `find_entry_at` still resolves it. Only the automatic whole-binary target list changed.",
+    "The acceptance is absence-only and a fix that stopped registering PE imports would pass it, so the pairing clause the round-9 triage recorded is enforced two ways: as a second promoted probe (tests/cli/pe-iat-in-code-keeps-call-names.json, the entry's calls must still render VirtualAlloc(0x40,GetModuleHandleA(0))) and as the hand-run phantomgate control below.",
+    "The sibling need whole-binary-decompilation-treats (BUG.exe, the same defect on a second image) also loses its two phantom bodies here, but its acceptance additionally requires count > 2 and that image's discovery finds ZERO real functions (entry RVA 0x154 lands in the PE headers -- the pe-header-entry-mapped trait). This PR does not close it."
+  ],
+  "parity": "OK",
+  "gates": {
+    "make test": "PARITY OK 675/675",
+    "make test-stages": "PARITY OK 687/687",
+    "make check-spec": "check-spec OK (lenient mode)",
+    "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
+    "make test-cli": "89/89 on the rebased tree (87 + the two promoted here)",
+    "make rust-test": "green (rc=0) on the rebased tree with `env -u KUNA_DECOMP_TEST` -- the launcher points that variable at kuna's own decomp_test_dbg, which makes the verify_w10_* oracle block compare kuna against itself. An earlier run also reported `-p kuna-cli --test docs_cli` red; that was a stale docs/cli.md embed from editing that file mid-run and is 23/23 on rerun."
+  },
+  "probe_flip": {
+    "probe_still_passes": false,
+    "acceptance_passes": true,
+    "acceptance_id": "a-64ea8ac57030",
+    "acceptance_retargeted_to": "decompiler/crates/kuna-analysis/tests/fixtures/pe_iatincode_i386.exe",
+    "acceptance_verified_on_dataset_witness_first": true,
+    "bm3_count_before": 1,
+    "bm3_count_after": 0,
+    "bm3_total_before": 56,
+    "bm3_total_after": 6
+  },
+  "pairing_control": {
+    "requirement": "round-9 triage: phantomgate.exe `decompile-all --json --filter ^CloseHandle$` must still emit the thunk body at 0x14001d0d8",
+    "command": "kuna decompile-all .kuna-repipe/arena/9/6a09581717539b5175d122b9/target/phantomgate.exe --json --filter '^CloseHandle$'",
+    "result": "count 1, total 1204, 0x14001d0d8 CloseHandle size 8, body `void CloseHandle(void) { CloseHandle(); }` -- unchanged from before the fix",
+    "promoted_as": "tests/cli/pe-iat-in-code-keeps-call-names.json (the in-repo analog; phantomgate.exe is an arena binary and not vendorable)"
+  },
+  "sweep": {
+    "population": "158 PE images in kuna-re-dataset/challenges, before/after `decompile-all --json --filter zzz_no_match_zzz --no-vars`, reading the `total` field (the size of the executable target list) so nothing is decompiled",
+    "changed": 20,
+    "unchanged": 137,
+    "unrunnable": 1,
+    "note": "138 images are byte-identical because their IAT is in .idata/.rdata and the section-flag test already excluded it. For 19 of the 20 that changed, the number of entries dropped equals an INDEPENDENT Python parse of the image's own Import Directory exactly. The 20th, crypto1.exe, drops one more (84 vs 83): a discovered `sub_4010ae`, unaligned, inside the IAT block, whose pre-fix body is the filed symptom verbatim -- `*v1 = *v1 + (char)v1;` with a funcboundflow warning. No image lost a real function.",
+    "largest": "Silvers-CrackMe-1.exe 1879 -> 1758 (121 slots); bm3.exe 56 -> 6 (50 slots)"
+  },
+  "speed_note": "No measurable cost and none expected: the loader's slot walk is the one `peimportcall` already runs on every PE, and the batch filter is a linear scan of a list whose length is the image's import count (50 on bm3.exe, 121 on the largest sweep image) done once per whole-binary run, not per function. Every non-PE image carries an empty list and does not enter the loop."
+}
