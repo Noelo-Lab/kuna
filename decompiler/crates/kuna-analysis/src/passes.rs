@@ -538,6 +538,13 @@ pub fn run_listing_consumers(
     }
     let seed_names = funcsym_names(&file);
     let funcsym_seeds = crate::entry::existing_function_addrs(&file, bytes);
+    // Every consumer that reads an `Insn`'s disassembly text — the
+    // `listing_consumer_passes`, `tailcallentry` and `poolentry` below — is itself
+    // gated on `analysis_listing`. When only `fast_funcdisc` asked for this Listing
+    // there is no text reader left (AIF's fingerprint re-decodes the two addresses
+    // it needs), so the walk skips capturing text: a second SLEIGH parse per
+    // instruction. See `listing::decode::decode_one`.
+    let want_assembly = arch.analysis_listing;
     let mut listing = crate::listing::Listing::build_with_meta(
         &file,
         image,
@@ -546,6 +553,7 @@ pub fn run_listing_consumers(
         &seeds,
         &funcsym_seeds,
         &seed_names,
+        want_assembly,
     );
     // (kuna, Stage-2 ARM discovery) Raw, UNPAIRED Thumb-prologue gap seeding — the
     // angr `CFGFast._func_addrs_from_prologues()` mirror. After the first walk, scan
@@ -584,6 +592,7 @@ pub fn run_listing_consumers(
                         &seeds,
                         &funcsym_seeds,
                         &seed_names,
+                        want_assembly,
                     );
                 }
             }
@@ -628,6 +637,7 @@ pub fn run_listing_consumers(
                         &seeds,
                         &funcsym_seeds,
                         &seed_names,
+                        want_assembly,
                     );
                 }
             }

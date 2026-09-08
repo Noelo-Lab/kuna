@@ -294,7 +294,7 @@ pub fn run_pool_pass(
         pools.iter().copied().filter(|p| follows_return(&ends, p.lo)).collect();
 
     let mut added = Vec::new();
-    let hist = super::build_fingerprint_histogram(listing);
+    let hist = super::build_fingerprint_histogram(listing, &mut decoder);
     if hist.values().any(|&c| c >= super::FINGERPRINT_THRESHOLD) {
         let mut accepted: BTreeSet<u64> = BTreeSet::new();
         for p in &add_pools {
