@@ -314,3 +314,57 @@ fn arm_thumb_symbols_keep_raw_object_coordinates_and_normalized_entry_vmas() {
     assert_eq!(by_name.provenance, EntryProvenance::DefinedObject);
     assert_eq!(by_name.binding.as_deref(), Some("global"));
 }
+
+/// (RE-need `string-owner-function-name`) A placeholder name kuna PRINTS is a
+/// name kuna ACCEPTS.
+///
+/// `tailcallframe_x86_64` renders `sub_1170(a0)` inside `sub_11b0` — a recovered
+/// tail call to an address the canonical inventory does not hold as an entry —
+/// and the by-name selector answered `no function matches "sub_1170"` while
+/// `--addr 0x1170` decompiled it. Both name lookups now read the placeholder as
+/// the address it spells and land on exactly the entry the numeric selector does.
+#[test]
+fn a_generated_placeholder_name_resolves_to_the_address_it_spells() {
+    let Some(program) = boot_fixture("tailcallframe_x86_64") else {
+        return;
+    };
+    assert!(
+        program.find_entry_at(0x1170).is_none(),
+        "fixture no longer reproduces: 0x1170 is a discovered entry"
+    );
+
+    let by_addr = program
+        .resolve_entry(&EntrySelector::Numeric(0x1170))
+        .expect("the numeric selector always reached this function");
+    let by_name = program
+        .resolve_entry(&EntrySelector::Name("sub_1170".into()))
+        .expect("the printed placeholder name resolves");
+    assert_eq!(by_name.addr.get_offset(), by_addr.addr.get_offset());
+    assert_eq!(by_name.name, "sub_1170");
+    assert_eq!(
+        program.find_entry_by_name("sub_1170").map(|e| e.addr.get_offset()),
+        Some(0x1170),
+        "the yes/no lookup answers the same name the same way"
+    );
+}
+
+/// The reading is minted, not parsed: only a name THIS build would print at a
+/// MAPPED address is read as one, so a hex-tailed name that is not a placeholder,
+/// a placeholder in a naming style that is not active, and one spelling an
+/// address with no bytes behind it all still miss.
+#[test]
+fn a_placeholder_name_is_not_read_as_an_address_unless_this_build_would_mint_it() {
+    let Some(program) = boot_fixture("tailcallframe_x86_64") else {
+        return;
+    };
+    for miss in ["sub_deadbeef", "FUN_00001170", "func_00001170", "handler_1170", "sub_"] {
+        let error = program
+            .resolve_entry(&EntrySelector::Name(miss.into()))
+            .expect_err("not a name this program mints at a mapped address");
+        assert!(
+            matches!(error, EntryLookupError::NotFound { .. }),
+            "{miss}: {error}"
+        );
+        assert!(program.find_entry_by_name(miss).is_none(), "{miss}");
+    }
+}

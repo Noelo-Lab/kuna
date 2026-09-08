@@ -1,0 +1,38 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "sub_1170"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/tailcallframe_x86_64",
+    "binary_sha256": "dd89e801ad4db6a0c559658ada9cb626dcaed2a856e354a3d182a828da3d8080",
+    "binary_size": 14488,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/tailcallframe_x86_64",
+    "selector": "sub_1170",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "sub_1170"
+    ],
+    "stderr_absent": [
+      "no function"
+    ]
+  },
+  "notes": "Promoted acceptance of string-owner-function-name (crackmes.one 69761b7a: `kuna strings` named sub_100a3be the owner of \"No error information\" while `kuna decompile <bin> sub_100a3be` answered `no function`), re-pointed at the vendored tailcallframe_x86_64 -- CI has no dataset. Same shape: `decompile <bin> sub_11b0` prints a call to sub_1170, which `kuna functions` does not list."
+}

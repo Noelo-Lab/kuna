@@ -123,6 +123,30 @@ kuna decompile ./a.out main --option LOWEREDSWITCH off
 #          `kuna catalog` lists every settable name
 ```
 
+**A generated name is a selector.** kuna calls a function no symbol covers
+`sub_<addr>`, and it prints such a name for entries the whole-binary inventory
+does not hold — a recovered tail call renders `sub_1170(a0)`, and `kuna strings`
+names a literal's owner from the reference walk's own flow attribution. Those
+names now select:
+
+```bash
+# `kuna strings` reported sub_100a3be as the owner of "No error information";
+# before, only the address form reached it
+kuna decompile ./graphy sub_100a3be
+#   char * sub_100a3be(unsigned int a0) { ... }
+```
+
+The name is read as the address it spells only when this build would *mint* it
+there, and only when that address holds mapped bytes — so it lands on exactly
+what `--addr` on the same address lands on, and a real symbol spelled that way
+still wins. Anything else keeps the by-name miss:
+
+```bash
+kuna decompile ./graphy sub_deadbeef
+#   error: no function "sub_deadbeef" in ./graphy; for a stripped binary pass
+#          an address with --addr
+```
+
 **The instruction budget.** Flow following decodes at most `maxinstruction`
 instructions per function — 100000 by default, which no ordinary function comes
 near and an obfuscated one blows through. Past the budget the decompiling
