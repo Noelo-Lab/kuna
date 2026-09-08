@@ -1008,6 +1008,12 @@ subphase = "flow-classification"
 note = "(kuna) recover a direct jmp whose target no discovery oracle found as a tail call, from the frame teardown that precedes it, instead of decoding the callee into the caller"
 
 [[surface]]
+surface = "option calltrampoline"
+phase = "P2"
+subphase = "flow-classification"
+note = "(kuna) flow a `call` through a callee that discards the pushed return address and jumps back into the stream, instead of decoding a fall-through at a return address control never reaches"
+
+[[surface]]
 surface = "option funcboundflow"
 phase = "P2"
 subphase = "flow-classification"
@@ -1824,6 +1830,28 @@ change_kind = "correctness-fix"
 tier = "transform"
 symptoms = "a function decompiled by address continues into an unrelated function's body|an event/listener callback emits a second routine's UI strings and callees|the same callee is emitted twice in one function, once as a named call and once inlined|an unconditional jmp after add rsp,N; pop reg is followed instead of ending the function|kuna emits thousands of lines for a function the disassembly shows is a few hundred bytes"
 live_field = "tail_call_frame"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
+option = "calltrampoline"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P2"
+subphase = "flow-classification"
+strength = "HARD"
+rewind = "P2"
+issue = "beria-call-fragments-produce"
+summary = "RESTORES CODE: flow a direct `call` through a callee that throws the pushed return address away and jumps back into the instruction stream, instead of decoding a fall-through at the return address. `CALL` is a fall-through op, so kuna decodes the return address as the next instruction; a protector fragment of the form `lea esp,[esp+4]; <one instruction>; jmp <back into the caller>` makes that address unreachable, and the byte there is free to be junk. The junk decodes into the emitted C (on the round-9 witness, a store to a global that exists nowhere) and leaves everything after it one byte out of phase with the real stream. This decodes the callee's raw p-code out of band and fires when the stack pointer passes through exactly `entrySP + <pointer size>` -- the instant the return address stops existing -- and the run then ends in a direct unconditional branch, with no call, conditional branch, indirect branch or return in between and no unaccountable stack-pointer write. The re-entry point is read off the fragment's own `jmp`, never assumed to be `return address + 1`. The branch target must NOT be a known function entry, which is what separates the fragment from an ordinary tail-call thunk (`add esp,4; jmp printf`); those stay a `CALL`. Logs a `calltrampoline:` WARNING at the call site."
+use_when = "The emitted C assigns a global whose name is nonsense (`dat_8364c783 = f();`) right after a call, and the disassembly shows the callee starts by discarding the return address (`lea esp,[esp+4]` / `add esp,4` / `pop reg`) and ends in a `jmp` back into the caller -- so the store was lifted from a byte control never reaches. Typical of the Beria/PE protector family, where one table of such fragments is called from every protected function. On by default; flip OFF to restore the fall-through decode at the return address."
+example = "option calltrampoline off"
+source_decompiler = "kuna"
+inspiration = "round-9 RE-friction crackme (Beria-protected PE): sub_40d120 calls five fragments in the 0x44ac2f table; the one at 0x44ac6b re-enters at 0x40d1b4, one byte past the return address, and the skipped `a3 83 c7 64 83` lifts as `MOV [0x8364c783],EAX`"
+change_kind = "correctness-fix"
+tier = "transform"
+symptoms = "a store to a nonsense global (dat_<huge hex>) appears right after a call|the callee of a call starts with lea esp,[esp+4] / add esp,4 / pop reg and ends in a jmp back into the caller|the body after a call is decoded one byte out of phase with the disassembly|a protected PE emits garbage arithmetic on undefined registers after each call fragment"
+live_field = "call_trampoline"
 live_true = "on"
 live_false = "off"
 

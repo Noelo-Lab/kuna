@@ -41,6 +41,10 @@ Three tiers:
 | the same callee is emitted twice in one function, once as a named call and once inlined | [`tailcallframe`](#tailcallframe) |
 | an unconditional jmp after add rsp,N; pop reg is followed instead of ending the function | [`tailcallframe`](#tailcallframe) |
 | kuna emits thousands of lines for a function the disassembly shows is a few hundred bytes | [`tailcallframe`](#tailcallframe) |
+| a store to a nonsense global (dat_<huge hex>) appears right after a call | [`calltrampoline`](#calltrampoline) |
+| the callee of a call starts with lea esp,[esp+4] / add esp,4 / pop reg and ends in a jmp back into the caller | [`calltrampoline`](#calltrampoline) |
+| the body after a call is decoded one byte out of phase with the disassembly | [`calltrampoline`](#calltrampoline) |
+| a protected PE emits garbage arithmetic on undefined registers after each call fragment | [`calltrampoline`](#calltrampoline) |
 | a function's tail is really the body of the NEXT function | [`funcboundflow`](#funcboundflow) |
 | dead/garbage code after a call to a die()/fatal()/throw wrapper that never returns | [`funcboundflow`](#funcboundflow) |
 | two adjacent functions merged into one, the second also decompiled on its own | [`funcboundflow`](#funcboundflow) |
@@ -703,6 +707,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** A function decompiled by address runs on into an unrelated function's body -- the output starts with the code you asked for and continues through a second routine's logic, strings and callees -- and the disassembly shows an unconditional `jmp` to that routine right after a stack-frame teardown (`add rsp,N; pop reg; jmp X`). Typical of an indirect-only callback (an event/listener/vtable entry) in a stripped binary, where the callee is not in `kuna functions` and so `tailcalljump` cannot see it. On by default; flip OFF to restore the flow-into-the-callee decode.
 - **Where / provenance:** P2/flow-classification · ida · correctness-fix · direct-address-keyboard-handler
 - **Example:** `option tailcallframe off`
+
+### `calltrampoline` -- on | off, default `on`
+
+- **Symptoms:** a store to a nonsense global (dat_<huge hex>) appears right after a call; the callee of a call starts with lea esp,[esp+4] / add esp,4 / pop reg and ends in a jmp back into the caller; the body after a call is decoded one byte out of phase with the disassembly; a protected PE emits garbage arithmetic on undefined registers after each call fragment.
+- **What it does:** RESTORES CODE: flow a direct `call` through a callee that throws the pushed return address away and jumps back into the instruction stream, instead of decoding a fall-through at the return address. `CALL` is a fall-through op, so kuna decodes the return address as the next instruction; a protector fragment of the form `lea esp,[esp+4]; <one instruction>; jmp <back into the caller>` makes that address unreachable, and the byte there is free to be junk. The junk decodes into the emitted C (on the round-9 witness, a store to a global that exists nowhere) and leaves everything after it one byte out of phase with the real stream. This decodes the callee's raw p-code out of band and fires when the stack pointer passes through exactly `entrySP + <pointer size>` -- the instant the return address stops existing -- and the run then ends in a direct unconditional branch, with no call, conditional branch, indirect branch or return in between and no unaccountable stack-pointer write. The re-entry point is read off the fragment's own `jmp`, never assumed to be `return address + 1`. The branch target must NOT be a known function entry, which is what separates the fragment from an ordinary tail-call thunk (`add esp,4; jmp printf`); those stay a `CALL`. Logs a `calltrampoline:` WARNING at the call site.
+- **When to flip:** The emitted C assigns a global whose name is nonsense (`dat_8364c783 = f();`) right after a call, and the disassembly shows the callee starts by discarding the return address (`lea esp,[esp+4]` / `add esp,4` / `pop reg`) and ends in a `jmp` back into the caller -- so the store was lifted from a byte control never reaches. Typical of the Beria/PE protector family, where one table of such fragments is called from every protected function. On by default; flip OFF to restore the fall-through decode at the return address.
+- **Where / provenance:** P2/flow-classification · kuna · correctness-fix · beria-call-fragments-produce
+- **Example:** `option calltrampoline off`
 
 ### `funcboundflow` -- on | off, default `on`
 

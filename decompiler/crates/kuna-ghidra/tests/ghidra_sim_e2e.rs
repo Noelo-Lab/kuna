@@ -524,7 +524,20 @@ const PIN_FAILLOG_VARDECL_UNRESOLVED: [usize; 3] = [0, 0, 0];
 // p-code cache (repeat decompiles re-ask everything, faithful to upstream
 // GhidraTranslate).  Measured both arms on this tree: `calleepreserves off`
 // gives 1613/1044, `on` gives 1862/1044.
-const PIN_FAILLOG_GETPCODE_TOTAL: u64 = 1862;
+// (kuna `calltrampoline`, DIV-144) RAISED the total 1862 -> 2121 and again left
+// the DISTINCT count at 1044, unmoved, and every rendered pin above it (the C
+// line counts and the diff ratios) unchanged.  The S2 recognizer decodes a direct
+// call's target out of band -- up to six instructions, stopping at the first
+// control transfer -- to ask whether the callee discards the pushed return
+// address, and in ghidra mode each of those decodes is a getPcode round trip.
+// The probe is memoized per call target for the flow follow, which is what keeps
+// this to +259 rather than +575 (measured: without the memo, 2437).  No new
+// instruction address is read: every probed entry is a call target this session
+// had already decoded, so the growth is re-asks of known bytes, which cost a
+// round trip only because ghidra mode has no p-code cache.  The gate short-
+// circuits before any decode, so `calltrampoline off` is the 1862 this pin held
+// before the option existed.
+const PIN_FAILLOG_GETPCODE_TOTAL: u64 = 2121;
 const PIN_FAILLOG_DECODED_INSTS: usize = 1044;
 // Whole-session getMappedSymbols traffic: Phase 2 pinned this at 0 (the
 // providers did not exist); Phase 3 pins the real query-through traffic —

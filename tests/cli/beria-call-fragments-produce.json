@@ -1,0 +1,38 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "protected"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/calltrampoline_i386",
+    "binary_sha256": "679f9cc962983af0000b8466e0bae520258ecac855633a7f5fb137b0f78b7df4",
+    "binary_size": 4584,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/calltrampoline_i386",
+    "selector": "protected",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_absent": [
+      "dat_5d5cc083\\s*="
+    ],
+    "stdout_matches": [
+      "0x6e"
+    ]
+  },
+  "notes": "need beria-call-fragments-produce. Witness: Beria-protected PE crkme.exe sub_40d120, where the fragment at 0x44ac6b discards the return address and re-enters at 0x40d1b4, so the skipped byte lifts as a store to dat_8364c783. Retargeted onto the vendored calltrampoline_i386, same shape: dat_5d5cc083 is the junk store, 0x6e the flowed-through body."
+}

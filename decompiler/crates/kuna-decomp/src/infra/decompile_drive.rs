@@ -64,6 +64,13 @@ use kuna_sleigh::translate::Translate;
 /// drives `resolve_typeop` so the built ops carry the correct
 /// branch/call/coderef/marker property flags.
 struct ArchFlowEnv {
+    /// (kuna `calltrampoline`) Memo of the trampoline probe, keyed by the
+    /// direct-call target.  The verdict depends only on the callee's bytes and
+    /// the symbol table, and a protector calls one fragment from every protected
+    /// function, so without this the same handful of addresses are re-decoded at
+    /// every call site.  In ghidra mode each of those decodes is a `getPcode`
+    /// round trip to the host.
+    tramp_memo: std::cell::RefCell<std::collections::HashMap<(i32, u64), bool>>,
     /// Raw pointer to the architecture (read-only use: `translate` / `resolve_
     /// typeop` / `query_call`).  A raw pointer (rather than `&Architecture`) lets
     /// the jump-table recovery hold `&mut Architecture` for the action sub-
@@ -467,6 +474,27 @@ impl FlowEnvironment for ArchFlowEnv {
         )
     }
 
+    fn is_return_discarding_trampoline(&self, dest: &Address) -> bool {
+        // (kuna `calltrampoline`) Fast-path the gate: this runs at every direct
+        // CALL site, and off it must not touch the decoder.
+        if !self.arch().call_trampoline {
+            return false;
+        }
+        // The verdict is a function of the callee's bytes and the symbol table,
+        // both fixed for the run, so probe each target at most once.
+        let key = dest.get_space().map(|sp| (sp.get_index(), dest.get_offset()));
+        if let Some(k) = key {
+            if let Some(hit) = self.tramp_memo.borrow().get(&k) {
+                return *hit;
+            }
+        }
+        let verdict = self.probe_return_discarding_trampoline(dest);
+        if let Some(k) = key {
+            self.tramp_memo.borrow_mut().insert(k, verdict);
+        }
+        verdict
+    }
+
     fn is_frame_teardown_tail_call(
         &self,
         fd: &Funcdata,
@@ -496,6 +524,99 @@ impl FlowEnvironment for ArchFlowEnv {
             sp.as_ref(),
         )
     }
+}
+
+impl ArchFlowEnv {
+    /// (kuna `calltrampoline`) The uncached probe behind
+    /// [`is_return_discarding_trampoline`](FlowEnvironment::is_return_discarding_trampoline).
+    fn probe_return_discarding_trampoline(&self, dest: &Address) -> bool {
+        let arch = self.arch();
+        let Some(sp) =
+            arch.manage().get_stack_space().and_then(|spc| spc.get_spacebase_full(0).ok())
+        else {
+            return false;
+        };
+        let Some(ops) = decode_raw_run(arch, dest) else { return false };
+        let Some(target) = crate::kuna_calltrampoline::kuna_trampoline_branch_target(&ops, &sp)
+        else {
+            return false;
+        };
+        // The fragment re-enters an instruction stream, not a function.  A
+        // callee the symbol table knows makes this an ordinary tail-call thunk
+        // (`add esp,4; jmp printf`), and flowing through it would decode that
+        // callee into the caller and abandon everything after the call site.
+        let Some(space) = target.space.as_ref() else { return false };
+        let re_entry = Address::new(std::rc::Rc::clone(space), target.offset);
+        self.query_call(&re_entry).is_none()
+    }
+}
+
+/// Collects the raw p-code of an out-of-band decode into a flat list.
+///
+/// The [`FlowEmit`](crate::flow) emitter builds `Funcdata` IR; the trampoline
+/// probe must not, because it runs *before* the flow follower has decided
+/// whether the callee's bytes belong to the function at all.
+struct RawOpCollector {
+    ops: Vec<crate::kuna_calltrampoline::RawOp>,
+    /// Set once a control-transfer op has been seen, so the caller stops
+    /// decoding instead of walking on past the fragment's `jmp`.
+    ended: bool,
+}
+
+impl kuna_sleigh::translate::PcodeEmit for RawOpCollector {
+    fn dump(
+        &mut self,
+        _addr: &Address,
+        opc: OpCode,
+        outvar: Option<&kuna_num::pcoderaw::VarnodeData>,
+        vars: &[kuna_num::pcoderaw::VarnodeData],
+    ) {
+        if matches!(
+            opc,
+            OpCode::CPUI_BRANCH
+                | OpCode::CPUI_CBRANCH
+                | OpCode::CPUI_BRANCHIND
+                | OpCode::CPUI_CALL
+                | OpCode::CPUI_CALLIND
+                | OpCode::CPUI_CALLOTHER
+                | OpCode::CPUI_RETURN
+        ) {
+            self.ended = true;
+        }
+        self.ops.push(crate::kuna_calltrampoline::RawOp {
+            code: opc,
+            out: outvar.cloned(),
+            ins: vars.to_vec(),
+        });
+    }
+}
+
+/// (kuna `calltrampoline`) Decode the straight-line run starting at `entry`
+/// into raw p-code, stopping at the first control-transfer op or at the module's
+/// instruction/op budget.
+///
+/// A decode failure ends the run rather than propagating: this is a *probe* at
+/// an address the flow follower has not committed to, and an address whose bytes
+/// do not disassemble is simply not a trampoline.
+fn decode_raw_run(
+    arch: &Architecture,
+    entry: &Address,
+) -> Option<Vec<crate::kuna_calltrampoline::RawOp>> {
+    use crate::kuna_calltrampoline::{KUNA_TRAMPOLINE_MAX_INSTRS, KUNA_TRAMPOLINE_MAX_OPS};
+    let translate = arch.translate();
+    let mut collector = RawOpCollector { ops: Vec::new(), ended: false };
+    let mut at = entry.clone();
+    for _ in 0..KUNA_TRAMPOLINE_MAX_INSTRS {
+        let step = translate.one_instruction(&mut collector, &at).ok()?;
+        if collector.ended || collector.ops.len() > KUNA_TRAMPOLINE_MAX_OPS {
+            break;
+        }
+        if step <= 0 {
+            return None;
+        }
+        at = &at + step as i64;
+    }
+    Some(collector.ops)
 }
 
 /// Build a [`Funcdata`] for the function `name` at `entry` and follow its flow,
@@ -593,7 +714,7 @@ fn follow_flow_on_fd(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcda
         let space = Rc::clone(start.get_space()?);
         Some((start.clone(), Address::new(space, last)))
     });
-    let env = ArchFlowEnv { arch: arch as *const Architecture };
+    let env = ArchFlowEnv { arch: arch as *const Architecture, tramp_memo: Default::default() };
     let mut flow = FlowInfo::new(fd, &env);
     if let Some((baddr, eaddr)) = range {
         flow.set_range(baddr, eaddr);
@@ -675,7 +796,7 @@ fn run_jumptable_pipeline(
     visited: &crate::flow::VisitedMap,
 ) -> KunaResult<()> {
     // Build the partial's basic blocks (partialflow.generateBlocks).
-    let env = ArchFlowEnv { arch: arch as *const Architecture };
+    let env = ArchFlowEnv { arch: arch as *const Architecture, tramp_memo: Default::default() };
     crate::flow::build_partial_blocks(partial, &env, visited)?;
     // startProcessing prerequisites for heritage (forward dominators + RPO).
     partial.structure_reset();

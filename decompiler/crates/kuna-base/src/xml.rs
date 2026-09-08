@@ -1818,7 +1818,10 @@ mod tests {
         // run and strand a phi with more inputs than its block has in-edges
         // and kuna-paramrefdecl / an address-taken parameter is not declared a
         // second time as a body local (repipe r10)
-        assert_eq!(count, 258, "corpus file count drifted");
+        // and kuna-calltrampoline / a call whose callee discards the pushed return
+        // address is flowed through instead of decoding a junk fall-through at the
+        // unreachable return address (repipe r11)
+        assert_eq!(count, 259, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

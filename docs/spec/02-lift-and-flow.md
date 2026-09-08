@@ -447,6 +447,59 @@ Ghidra both bound decompilation to the function body. The `longdouble` datatest
 functions) and the `ghangr-noreturn_extern` test (which isolates the
 `noreturn_extern` toggle) opt out per-test.
 
+**(kuna) Return-address-discarding call trampolines — `option calltrampoline`,
+default on (DIV-144),
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_calltrampoline.rs
+(kuna_trampoline_branch_target)`.** `CPUI_CALL` is a fall-through op, so the
+follower decodes the return address as the next instruction. A protector breaks
+that assumption with a fragment the caller reaches by `call`: `lea esp,[esp+4]`
+(or `add esp,4`, or a `pop`) throws the pushed return address away, one real
+instruction runs, and an unconditional `jmp` resumes the caller. Control never
+arrives at the return address, so the byte there is free to be junk — and the
+follower lifts it anyway, decoding a store to a global that does not exist and
+leaving the whole remaining body one byte out of phase with the real instruction
+stream. The re-entry point is the fragment's own `jmp` target, which is *usually*
+the return address plus the junk byte but need not be: on the witness the fragment
+at `0x44ac4d` re-enters at exactly the return address, so the rule is written
+against the `jmp` target and never against `ra + 1`.
+
+Decision rule, over the callee's raw p-code decoded out of band (up to
+`KUNA_TRAMPOLINE_MAX_INSTRS` instructions, `KUNA_TRAMPOLINE_MAX_OPS` ops, and
+stopping at the first control transfer): the stack pointer must reach **exactly**
+`entrySP + <pointer size>` — the instant the pushed return address stops
+existing — and the run must then end in a direct `CPUI_BRANCH`, with no call,
+conditional branch, indirect branch or return in between and no unaccountable
+stack-pointer write. The stack pointer is tracked symbolically as
+`entrySP + <constant>` through `COPY`/`INT_ADD`/`INT_SUB` chains, because
+`lea esp,[esp+4]` lowers through a temporary rather than writing `ESP` directly
+the way `add esp,4` does. The *net* delta is deliberately not what is measured:
+the witness's first fragment is `lea esp,[esp+4]; sub esp,0xcfc; jmp`, whose net
+effect is a large allocation — what identifies the shape is that the run passes
+*through* `entrySP + ptrsize`. On an architecture whose call writes a link
+register rather than pushing, the displacement never reaches one pointer word and
+the rule is inert, which is the correct answer: there is no return address on the
+stack to discard.
+
+The rewrite lives in the `CPUI_CALL` arm of `flow.rs
+(FlowInfo::xref_control_flow)`: the op becomes a `CPUI_BRANCH` and its target is
+queued, which is the rewrite `funcdata_op.rs (Funcdata::override_flow)` applies
+for a hand-written `flow <addr> branch` assertion. It is deliberately *not*
+routed through the `CPUI_BRANCH` arm, which would hand the branch to
+`tail_call_kind`: the fragment is a known function entry precisely because it is a
+CALL target, so `tailcalljump` claims it and ends the caller at a synthetic tail
+call — the acceptance-passing, body-deleting outcome. A `calltrampoline` warning
+at the call site makes the reclassification attributable.
+
+**Known limit and its guard:** `add esp,4; jmp printf` has the same p-code shape
+and is an ordinary tail-call thunk; flowing through it would decode `printf` into
+the caller and abandon everything after the call site. Nothing in the callee's
+bytes separates the two, so `decompile_drive.rs
+(ArchFlowEnv::is_return_discarding_trampoline)` additionally requires the `jmp`
+target to be an address `query_call` does **not** resolve as a function entry. A
+fragment that re-enters mid-stream satisfies that by construction; a thunk to a
+discovered callee does not, and stays a `CALL` for `tailcalljump` to claim at its
+own `jmp`.
+
 **(kuna) `__fastfail` is a no-return — `option fastfailnoreturn`, default on
 (DIV-120), `decompiler/crates/kuna-decomp/src/p2_lift/kuna_fastfailnoreturn.rs
 (is_fastfail_callind)`.** x86 SLEIGH lifts `INT imm8` to `intloc = swi(imm8);
