@@ -291,6 +291,17 @@ kuna decompile ./a.out sub_140004dcc --json \
   --assert 'prototype VirtualAlloc void *VirtualAlloc(void *p,unsigned int n,unsigned int a,unsigned int b)'
 ```
 
+A tag you declared earlier in the same run is usable as a type, in the `struct
+X` / `union X` / `enum X` spelling as well as by bare name — including as a
+return type, which is how a function returning a small struct by value gets its
+field accesses back:
+
+```bash
+kuna decompile ./qjs main \
+  --assert 'typedef struct JSValue { unsigned long payload; long tag; };' \
+  --assert 'prototype sub_875e0 struct JSValue JS_ReadObject(void *ctx,char *buf,unsigned long len,unsigned int flags)'
+```
+
 **`<func>` is what the prototype binds to, not the name inside the
 declaration.** The reason to state a signature at all is usually that the
 function has no name worth keeping, so the declaration gets written under the

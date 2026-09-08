@@ -1,0 +1,43 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "main",
+    "--assert",
+    "typedef struct JSValue { unsigned long payload; long tag; };",
+    "--assert",
+    "prototype authenticate struct JSValue authenticate(char *user, char *pass)",
+    "--assert-strict"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/fauxware",
+    "binary_sha256": "c2d90645a45e99221593547e55c601a901b80f807ae96f94c60a7661df0b3e0b",
+    "binary_size": 8776,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/fauxware",
+    "selector": "main",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "authenticate\\(.*\\)\\.payload"
+    ],
+    "stderr_absent": [
+      "rejected: Bad C syntax"
+    ]
+  },
+  "notes": "Desired: a struct tag declared in an earlier --assert is usable as a prototype return type. Dataset witness: crackmes.one 673da52e9b533b4c22bd2eeb (sub_875e0 returning struct JSValue). Once the tag is interned the lexer hands it back as a type name, so `struct JSValue` matched no production and the prototype was dropped with Bad C syntax."
+}

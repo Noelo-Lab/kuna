@@ -1866,19 +1866,33 @@ impl<'a> CParse<'a> {
         }
     }
 
+    /// (kuna) The optional tag of a `struct`/`union`/`enum` specifier.
+    ///
+    /// A tag that has already been interned reaches the parser as `TYPE_NAME`,
+    /// not `IDENTIFIER`, because [`CParse::lookup_identifier`] classifies every
+    /// identifier the type factory names through `findByName`.  Accepting it
+    /// here is what lets a struct be named a second time; the position is
+    /// unambiguous, since a type name after `STRUCT` matched no production
+    /// before, and the `old*`/`new*` actions re-check the kind by name.
+    fn tag_identifier(&mut self) -> KunaResult<String> {
+        match self.peek()? {
+            PToken::Identifier(_) => match self.next()? {
+                PToken::Identifier(s) => Ok(s),
+                _ => unreachable!(),
+            },
+            PToken::TypeName(_) => match self.next()? {
+                PToken::TypeName(tp) => Ok(tp.get_name().to_string()),
+                _ => unreachable!(),
+            },
+            _ => Ok(String::new()),
+        }
+    }
+
     /// `struct_or_union_specifier` (`grammar.y:99-106`).
     fn struct_or_union_specifier(&mut self) -> KunaResult<Rc<Datatype>> {
         let is_struct = matches!(self.next()?, PToken::Struct);
         // optional IDENTIFIER, then optional '{' struct_declaration_list '}'.
-        let ident = if let PToken::Identifier(_) = self.peek()? {
-            if let PToken::Identifier(s) = self.next()? {
-                s
-            } else {
-                unreachable!()
-            }
-        } else {
-            String::new()
-        };
+        let ident = self.tag_identifier()?;
         if matches!(self.peek()?, PToken::Punct(b'{')) {
             self.next()?;
             let declist = self.struct_declaration_list()?;
@@ -1988,15 +2002,7 @@ impl<'a> CParse<'a> {
     /// `enum_specifier` (`grammar.y:134-140`).
     fn enum_specifier(&mut self) -> KunaResult<Rc<Datatype>> {
         self.next()?; // ENUM
-        let ident = if let PToken::Identifier(_) = self.peek()? {
-            if let PToken::Identifier(s) = self.next()? {
-                s
-            } else {
-                unreachable!()
-            }
-        } else {
-            String::new()
-        };
+        let ident = self.tag_identifier()?;
         if matches!(self.peek()?, PToken::Punct(b'{')) {
             self.next()?;
             let vecenum = self.enumerator_list()?;

@@ -1,0 +1,44 @@
+{
+  "need_id": "prototype-parser-rejects-previously",
+  "track": "tooling",
+  "scope": "small",
+  "branch": "feat/re-prototype-parser-rejects-previously",
+  "worker": "b-r9-prototype-parser",
+  "round": 9,
+  "summary": "A struct/union/enum tag stops being usable the moment it is declared: interning it makes the lexer return it as a type name, and the tag position of struct_or_union_specifier only read the identifier terminal. CParse::tag_identifier accepts either.",
+  "files": [
+    "decompiler/crates/kuna-console/src/grammar.rs",
+    "decompiler/crates/kuna-console/src/grammar/tests.rs",
+    "tests/cli/prototype-parser-rejects-previously.json",
+    "docs/spec/00-overview.md",
+    "docs/cli.md"
+  ],
+  "decisions": [
+    "The need offered no hypothesis. The cause is not the CLI and not the prototype path: `parse line struct JSValue v;` fails the same way once the tag is interned, and `parse line struct JSValue { ... };` succeeds only because the tag is still unknown at that point. lookup_identifier resolves every identifier through TypeFactory::findByName, so declaring the tag is exactly what removes it from the identifier terminal the tag position reads.",
+    "Fixed in the parser rather than the lexer. A context-sensitive lexer (suppress findByName right after a struct/union/enum keyword) would need parser state threaded into lex(); accepting TypeName in the one position that could never match a production is local and provably non-widening.",
+    "The tag is passed to old_struct/new_struct by NAME, not as the Rc the token carried, so the existing kind check still runs. This turns `struct int4` from a syntax error into the C++ oldStruct kind error, which is the only expectation that moved: reject_struct_type_name_is_syntax_error was renamed and re-pointed.",
+    "Redeclaring a completed struct is now reachable and errors with `Trying to alter definition of type` (assign_raw_fields_struct), where it used to be a syntax error. Still an error either way, so no behaviour regressed; making an identical redefinition idempotent is a separate type-factory question and was left alone.",
+    "No option row: a declaration grammar that previously refused the input cannot change emitted C on any input it already accepted (tooling track).",
+    "The acceptance probe was retargeted from the dataset crackme onto the vendored fixture decompiler/crates/kuna-analysis/tests/fixtures/fauxware so it could be promoted; acceptance_id re-derived to a-907674c07f28. The fixture's `main` calls `authenticate`, so the probe asserts the struct return actually applies (`authenticate(...).payload`) rather than only that no error was printed."
+  ],
+  "refutation": {
+    "question": "Can the new arm produce wrong output rather than only turn an error into a success?",
+    "answer": "No. In the else-branch the old code did not consume the token, so a TypeName in tag position left `ident` empty and then failed the `{` test as well -- both `STRUCT TYPE_NAME` and `STRUCT TYPE_NAME '{' ... '}'` reached syntax_error(). Every input the arm newly accepts was previously rejected. The type it yields is the type the bare TypeName token already carried, because find_by_name is an exact (name,id) lookup and the tag is re-resolved through the same call.",
+    "sweep": "All 263 `parse line`/`parse file` payloads across tests/datatests + tests/stages (95 files) replayed in per-file order through the pre- and post-change decomp_dbg against a common fixture: 0 differing files."
+  },
+  "acceptance": {
+    "probe_id": "p-0fb156776be6",
+    "acceptance_id": "a-907674c07f28",
+    "result": "PASS",
+    "promoted_to": "tests/cli/prototype-parser-rejects-previously.json"
+  },
+  "speed": "No measurable cost: one extra match arm on a token already peeked, on a path that runs once per asserted declaration.",
+  "gates": {
+    "make test": "PARITY OK, 675/675 assertions",
+    "make test-stages": "PARITY OK, 687/687 assertions",
+    "make rust-test": "green with `env -u KUNA_DECOMP_TEST`. The launcher-exported KUNA_DECOMP_TEST points the C++-oracle block at kuna's own decomp_test_dbg, so verify_w10_proto_unlock:202 fails asking the 'oracle' for `xunknown4 promote_compare(char *` when kuna prints `unsigned int` in every build. kuna-decomp does not depend on kuna-console, so this change cannot reach it; the target is green with the variable unset.",
+    "make check-spec": "OK (lenient mode)",
+    "make test-cli": "81/81 passed, including the promoted probe",
+    "kuna catalog --check": "catalog OK (no option added)"
+  }
+}
