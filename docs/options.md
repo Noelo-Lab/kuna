@@ -490,6 +490,10 @@ Three tiers:
 | &pxVar[-0x1000] page-probe noise in a large-frame function | [`stackprobeloop`](#stackprobeloop) |
 | calls rendered argument-less because the stack pointer never resolved to a constant offset | [`stackprobeloop`](#stackprobeloop) |
 | gcc stack-clash probe loop leaves the frame layout unrecovered | [`stackprobeloop`](#stackprobeloop) |
+| a win32 api renders with only the arguments pushed after an intervening call | [`calleeprotostack`](#calleeprotostack) |
+| GetLastError() or another argument-less import eats the pushes staged for the call after it | [`calleeprotostack`](#calleeprotostack) |
+| a buffer whose address is passed to an api is read back as an incoming parameter instead of the local | [`calleeprotostack`](#calleeprotostack) |
+| an import with a known signature still has its cleanup guessed from the caller's push run | [`calleeprotostack`](#calleeprotostack) |
 | an x86 windows pe passes `&Stackffffffe0` to an api and reads a DIFFERENT variable afterwards | [`calleepop`](#calleepop) |
 | a buffer filled by ReadFile/RegQueryValueEx is checksummed as a constant zero | [`calleepop`](#calleepop) |
 | declaring a prototype for one callee turns another function's locals into raw `&Stack` references | [`calleepop`](#calleepop) |
@@ -1742,6 +1746,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** Set on when a large-frame function shows &pxVar[-0x1000] page-probe noise or argument-less calls; shape-gated, so it is inert on functions without a probe loop.
 - **Where / provenance:** P2/stack-pointer-normalization · ghidra-upstream · correctness-fix · GH-8017/6858
 - **Example:** `option stackprobeloop on`
+
+### `calleeprotostack` -- on | off, default `on`
+
+- **Symptoms:** a win32 api renders with only the arguments pushed after an intervening call; GetLastError() or another argument-less import eats the pushes staged for the call after it; a buffer whose address is passed to an api is read back as an incoming parameter instead of the local; an import with a known signature still has its cleanup guessed from the caller's push run.
+- **What it does:** Read a declared callee's stack contract off its locked prototype: how much it pops, and how much of the CALLER's stack it can reach. A locked parameter list under a model whose `<prototype extrapop="unknown">` declines to state its own cleanup (`x86win.cspec`'s `__stdcall`) implies `4 + <stack argument bytes>`; `FuncProto::resolveExtraPop` computes exactly that and nothing in the tree called it, so a Win32 import with a signature still reached `StackSolver` as extrapop-unknown and `calleepop` guessed its cleanup from the push run in front of the call. That run is not always the callee's: MSVC stages `FormatMessageA`'s last four arguments, calls the argument-less `GetLastError` in the middle of the run, and pushes the first three afterwards -- so the four staged pushes were credited to `GetLastError`, the solver latched a stack pointer 16 bytes too high into every later reference, and `FormatMessageA` rendered with three of its seven arguments. The second half is `Heritage::guardCalls` (heritage.cc:1444), which asks the prototype what the call does to every heritaged range and gets `unknown_effect` for the whole stack: honest for an unknown callee, but a locked non-variadic one owns the return-address slot and its own parameter area and nothing above them. A caller slot above that floor is left unguarded -- unless `AliasChecker` says a pointer in the caller could reach it, which is the `ReadFile(h,&buf,...)` case where the guard is what models the callee's write through the pointer and it stays. Both halves are the same claim, that the declared prototype is the truth about this callee's stack, and both are declined wherever a model states its own extrapop, wherever the prototype is unlocked or variadic, and wherever the range is aliased.
+- **When to flip:** On by default: the flip moves 0 of 675 datatest assertions -- both parity corpora are symbol-less byte chunks whose callees carry no declared prototype, so nothing in them reaches the locked branch. Flip OFF to restore the pre-signature behaviour. With it off, a Win32 API whose arguments are staged across an intervening call renders with only the arguments pushed after that call, the staged ones are dropped, and the buffer whose address was among them decays into an incoming parameter -- so the call that fills it and the calls that read it disagree about which object they are talking about. Inert on any target whose callees carry no signature, and on any spec that states its own extrapop (x86gcc `__cdecl extrapop="4"`, x86-64, every RISC spec).
+- **Where / provenance:** P4/callee-prototype-stack-contract · kuna · correctness-fix · re-needs-getlasterror-consumes-arguments-prepared
+- **Example:** `option calleeprotostack off`
 
 ### `calleepop` -- on | off, default `on`
 

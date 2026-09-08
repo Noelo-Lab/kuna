@@ -1079,6 +1079,55 @@ symbol-backed `ProtoStoreSymbol::encode`, which writes nothing.
 
 ## 4.4 kuna extensions
 
+### (kuna) `calleeprotostack` — the declared callee's stack contract
+
+A locked prototype says two things about the stack, and until this option
+existed the pipeline acted on neither.
+
+**How much the callee pops.** `FuncProto::resolve_extra_pop` turns a locked
+parameter list into the `4 + <stack argument bytes>` a callee-cleans convention
+removes, and it is the only answer available for a model whose
+`<prototype extrapop="unknown">` declines to state one — which on x86 Windows is
+every call, because `x86win.cspec`'s default proto is `__stdcall`. Nothing called
+it, so a locked prototype still reached the stack solver as extrapop-unknown and
+`calleepop` (§6) guessed the cleanup from the push run in front of the call.
+That run is not always the callee's: an image that stages one API's arguments,
+calls a second argument-less API in the middle of the run, and pushes the rest
+afterwards has its staged pushes credited to the wrong callee, and the solver
+latches a stack pointer too high into every later reference. The option asks
+`resolve_extra_pop` for the answer whenever the prototype is input-locked and
+the model states no extrapop of its own; a model that states one already has the
+exact value and is left alone, so `__cdecl`, x86-64 and every RISC spec are
+inert.
+
+The same park is read a second time, at de-indirection. `ActionDefaultParams`
+runs once at the head of the function, when a `call dword ptr [IAT slot]` is
+still a CALLIND with no callee to ask about, so a parked signature reached such a
+call only when something else forced the action list to restart. Asking again in
+`ActionDeindirect`, where the callee has just been resolved, makes the delivery
+deterministic rather than incidental.
+
+**How much of the caller's stack it can reach.** `Heritage::guardCalls` (§4.3,
+*Effect lists*) asks the prototype what the call does to every heritaged range
+and gets `unknown_effect` for the whole stack, so an INDIRECT guard is planted
+over each of the caller's slots. That is the honest answer for an unknown callee.
+For one with a locked, non-variadic prototype it is not: the callee owns the
+return-address slot and its own parameter area, and nothing above them. A range
+wholly above that floor — the prototype's extrapop, read as a signed offset in
+the stack space's own width — is left unguarded, so a value staged before the
+call reaches the call it was staged for as the constant or address-of the source
+wrote, instead of a local assigned on the line before.
+
+The claim is declined wherever it is not evidence: the prototype must be locked
+and non-variadic, the floor must come from the rule above, and the range must be
+one no pointer in the caller can reach. That last test is
+`AliasChecker::has_local_alias` — the same one `FuncCallSpecs::checkInputTrialUse`
+applies before it will call a stack slot a parameter. It is what keeps
+`ReadFile(h,&buf,…)` correct: `buf`'s address is taken, the callee writes it
+through the pointer, the guard is what models that write, and it stays. The
+gather is deferred and cached for the length of one heritage pass, so a function
+that never reaches the locked branch never pays for it.
+
 ### (kuna) `returnpair` — the register-pair return split
 
 Provenance: upstream issue GH-6990, implemented kuna-side

@@ -295,6 +295,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "callsitestackargs",
     "cookiescramble",
     "calleepop",
+    "calleeprotostack",
     "calleedeadarg",
     "calleepreserves",
     "calleeretpreserves",
