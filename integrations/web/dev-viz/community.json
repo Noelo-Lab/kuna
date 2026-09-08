@@ -1,0 +1,28 @@
+{
+  "checkedThrough": "2026-09-08",
+  "changes": [
+    {"pr": 198, "title": "Decompile each function once when it has several names", "contributor": "rdmmf", "externalPr": false, "issues": [197]},
+    {"pr": 272, "title": "Decode 15-byte x86 NOPs", "contributor": "jannschu", "externalPr": false, "issues": [271]},
+    {"pr": 284, "title": "Recover call parameters that overlap wider register writes", "contributor": "jannschu", "externalPr": false, "issues": [275]},
+    {"pr": 315, "title": "Recover call arguments saved to the stack", "contributor": "jannschu", "externalPr": false, "issues": [275]},
+    {"pr": 336, "title": "Handle closed output pipes", "contributor": "phix33", "externalPr": true, "issues": []},
+    {"pr": 350, "title": "Preserve loader selectors", "contributor": "phix33", "externalPr": true, "issues": []},
+    {"pr": 352, "title": "Apply Ghidra’s locked parameter types", "contributor": "psifertex", "externalPr": true, "issues": []},
+    {"pr": 363, "title": "Accept file paths containing spaces", "contributor": "shreethaar", "externalPr": true, "issues": [362]},
+    {"pr": 368, "title": "Apply architecture-specific ELF object relocations", "contributor": "phix33", "externalPr": true, "issues": []},
+    {"pr": 401, "title": "Export decompilation graphs as JSON", "contributor": "dobin", "externalPr": true, "issues": []},
+    {"pr": 408, "title": "Avoid invalid register queries in the Ghidra extension", "contributor": "Tiecoon", "externalPr": false, "issues": [388]},
+    {"pr": 409, "title": "Keep chained PE code fragments in their owning function", "contributor": "dobin", "externalPr": false, "issues": [403]},
+    {"pr": 410, "title": "Correct basic blocks at truncated function boundaries", "contributor": "dobin", "externalPr": false, "issues": [403]},
+    {"pr": 446, "title": "Load Thumb PE/COFF files and select the ARM instruction set", "contributor": "phix33", "externalPr": true, "issues": []},
+    {"pr": 447, "title": "Fix V850 register lookup in the Ghidra extension", "contributor": "TsingShui", "externalPr": true, "issues": []},
+    {"pr": 476, "title": "Find bundled tools and specs in release archives", "contributor": "CloudyTabzy", "externalPr": false, "issues": [468]},
+    {"pr": 477, "title": "Label INT3 padding in decompiled output", "contributor": "CloudyTabzy", "externalPr": false, "issues": [468]},
+    {"pr": 478, "title": "Find and apply adjacent PDB files", "contributor": "CloudyTabzy", "externalPr": false, "issues": [468]},
+    {"pr": 479, "title": "Keep the selector when reconstructing a switch", "contributor": "CloudyTabzy", "externalPr": false, "issues": [468]},
+    {"pr": 480, "title": "Include imported calls in the call graph", "contributor": "dobin", "externalPr": false, "issues": [456]},
+    {"pr": 482, "title": "Follow delta-encoded jump tables in the call graph", "contributor": "dobin", "externalPr": false, "issues": [456]},
+    {"pr": 483, "title": "Add an option to remove MSVC stack-cookie checks", "contributor": "CloudyTabzy", "externalPr": false, "issues": [468]},
+    {"pr": 492, "title": "Decompile headerless images with a specified target and base", "contributor": "phix33", "externalPr": true, "issues": []}
+  ]
+}

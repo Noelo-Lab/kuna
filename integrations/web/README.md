@@ -88,6 +88,25 @@ asset path is relative, so a project subpath just works.
 | `kuna-worker-client.js` | The page-side RPC client. Cancellation terminates/recreates its Worker and rehydrates the retained binary on the next request. |
 | `zip.js` | Dependency-free STORE-only ZIP writer (CRC-32, UTF-8 names, fixed timestamp → deterministic), invoked inside the Worker for Download Binary Source. |
 | `vendor/browser_wasi_shim/` | Vendored [`@bjorn3/browser_wasi_shim`](https://github.com/bjorn3/browser_wasi_shim) (MIT/Apache-2.0) — a pure-JS WASI **preview1** implementation. Pinned in `VERSION`. |
+
+The development chart spaces active UTC days equally and marks omitted dates below
+the axis. Ghidra’s two catalog source labels are combined in both the counts and
+the source filter. Community counts come from `dev-viz/community.json`: a reviewed
+list of merged outside PRs and merged PRs linked to outside issue reports. Each PR
+counts once, only when it appears in the checked-out commit history. The list’s
+review date is shown on the page; builds do not query GitHub. When updating it,
+check PR authorship, merge status, and the report-to-fix link in the issue discussion;
+closing an issue alone does not qualify. Timeline entries live in `generate.py`;
+the August 8 benchmark date is maintainer-supplied and links to the live DecBench
+site, not an archived score table.
+
+For a page-only preview (Python 3.11+), without rebuilding WebAssembly:
+
+```bash
+python3 integrations/web/dev-viz/generate.py
+node integrations/web/test/dev-viz.mjs ../
+python3 -m http.server 8000 --directory integrations/web
+```
 | `build.sh` | Builds `kuna_wasm.wasm`, copies the full runtime SLEIGH tree + the shim + both pages + `assets/` into `dist/`, and bundles the small spec files into `specs-small.json`. `wasm-opt -Oz` is applied if present. |
 | `test/` | Automated gates (below) + committed ELF/Mach-O fixtures. |
 | `dist/` | Assembled output (gitignored — regenerate with `build.sh`). |
