@@ -477,3 +477,35 @@ fn get_string_data_opaque_string_returns_empty() {
     assert!(out.is_empty());
     assert!(!is_trunc);
 }
+
+/// A window whose last byte announces more bytes than the window holds is an
+/// invalid encoding, not a read past the end. `checkCharacters` hands
+/// `getCodepoint` the tail of a fixed-size buffer, so this is reachable from any
+/// two-byte constant whose second byte is a UTF-8 lead — which is what a folded
+/// in-code literal-pool word can be.
+#[test]
+fn a_truncated_encoding_is_refused_rather_than_read_past() {
+    let mut skip: int4 = 1;
+    // 3-byte lead with only 2 bytes present (the panic that lost a whole
+    // function of crazyflie firmware.elf).
+    assert_eq!(StringManager::get_codepoint(&[0xe2, 0x80], 1, false, &mut skip), -1);
+    // 2-byte lead with 1, 4-byte lead with 3, and an empty window.
+    assert_eq!(StringManager::get_codepoint(&[0xc2], 1, false, &mut skip), -1);
+    assert_eq!(StringManager::get_codepoint(&[0xf0, 0x9f, 0x98], 1, false, &mut skip), -1);
+    assert_eq!(StringManager::get_codepoint(&[], 1, false, &mut skip), -1);
+    // UTF-16: a half word, and a high surrogate with no trail.
+    assert_eq!(StringManager::get_codepoint(&[0x41], 2, false, &mut skip), -1);
+    assert_eq!(StringManager::get_codepoint(&[0x00, 0xd8], 2, false, &mut skip), -1);
+    // UTF-32: three bytes of four.
+    assert_eq!(StringManager::get_codepoint(&[0x41, 0, 0], 4, false, &mut skip), -1);
+    // A complete encoding still decodes, so the guard costs nothing.
+    assert_eq!(StringManager::get_codepoint(&[0xe2, 0x82, 0xac], 1, false, &mut skip), 0x20ac);
+    assert_eq!(skip, 3);
+}
+
+/// `checkCharacters` over a window that ENDS in a lead byte answers "not a legal
+/// encoding" instead of aborting the decompilation.
+#[test]
+fn a_window_ending_in_a_lead_byte_is_not_a_string() {
+    assert_eq!(StringManager::check_characters(&[0x41, 0xe2], 2, 1, false), -1);
+}

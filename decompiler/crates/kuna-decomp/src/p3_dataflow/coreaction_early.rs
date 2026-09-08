@@ -570,7 +570,21 @@ impl Action for ActionVarnodeProps {
                         .vbank()
                         .get(vn)
                         .is_some_and(|v| data.get_arch().dynreloc_const_contains(v.get_offset()));
-                if (cachereadonly || dynreloc_fold) && is_read_only {
+                // (kuna `litpoolconst`) The same narrow exception for the
+                // program's own instruction stream: an ARM immediate too wide to
+                // encode is parked in a literal pool in `.text` and loaded
+                // PC-relatively, and `r-x` memory cannot be written, so the word
+                // in the image IS the run-time value. The range list is empty on
+                // every path that has no object loader.
+                let litpool_fold = is_read_only
+                    && !cachereadonly
+                    && data
+                        .vbank()
+                        .get(vn)
+                        .is_some_and(|v| {
+                            data.get_arch().litpool_const_contains(v.get_offset(), vn_size as u32)
+                        });
+                if (cachereadonly || dynreloc_fold || litpool_fold) && is_read_only {
                     if data.fillin_read_only(vn).unwrap_or(false) {
                         self.base.count += 1;
                     }

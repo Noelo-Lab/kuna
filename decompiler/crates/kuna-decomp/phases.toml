@@ -3270,6 +3270,28 @@ tier = "transform"
 symptoms = "if (x == 0) guard with the common path in the else arm|negated condition where angr renders the positive complement first|if/else polarity inverted versus the source's reading order"
 
 [[settable]]
+option = "litpoolconst"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P1"
+subphase = "code-data-partition"
+strength = "HARD"
+rewind = "P1"
+issue = "repipe-default-arm-output-hides"
+summary = "Fold a read from EXECUTABLE read-only memory to the constant it holds, without the program-wide option readonly. An ARM immediate too wide for the instruction encoding is parked in a literal pool in .text and loaded PC-relatively, so the value a function returns can be a word a few bytes past its own last instruction: main of a statically linked ARM crackme ends `ldr r3,[0x8458]` with `0x8458 39050000 .word 0x00000539` in the same listing kuna disassembles, and the default C says `v3 = dat_8458;` -- the number the program returns is not in the output at all. kuna already paints that word Varnode::readonly (.text is SHF_ALLOC without SHF_WRITE), but folding a read-only global is gated by readonly, which is off by default because it folds every .rodata read in the program. This is the narrow half of that switch: a read that lies ENTIRELY inside an allocated, executable, non-writable, file-backed region is folded, because those bytes are the instruction stream -- mapped r-x, so a store to them faults and the image's copy IS the run-time value. A non-writable DATA section (.rodata, .data.rel.ro) keeps today's behaviour unless the image maps it executable too, which a single-RX-region firmware image does: the warrant is the permission, not the section name. That is the direction that matters on a corpus of packers and protectors, where a data section's flags are least trustworthy. Ranges come from the loader's section table, or from the PF_X load segments when the image carries no sections; an image whose loader reports neither (the XML datatest corpus, the raw-bytes loader) contributes none and the option is structurally inert."
+use_when = "On (default, DIV-136): an ARM/MIPS/PPC literal-pool constant renders as its value instead of dat_<addr>. Flip off to restore the pre-feature rendering exactly -- every in-code pool read back to an opaque global. Use `option readonly on` instead when you also want .rodata folded program-wide."
+example = "option litpoolconst off"
+source_decompiler = "kuna"
+inspiration = "A statically linked ARM 1337 crackme: main assigns dat_8458 where kuna disassemble already prints .word 0x00000539 four bytes past main's last instruction, so the success value could only be read by inspecting the literal pool separately."
+change_kind = "correctness-fix"
+tier = "transform"
+symptoms = "an arm function returns or assigns dat_<addr> where the disassembly shows a .word literal|a pc-relative literal-pool constant renders as an opaque global instead of its value|option readonly on exposes a constant the default output hides|a value loaded from inside the function's own extent has no readable definition"
+live_field = "litpoolconst"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "loopbreak_recovery"
 values = "on|off"
 default = "on"

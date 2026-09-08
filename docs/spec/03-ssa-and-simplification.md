@@ -875,7 +875,9 @@ replaces *read-only* storage with its image constant when
 `readonlypropagate` is set — or, with that program-wide switch off, when the
 varnode lies in one of the loader's `dynrelocs` ranges, the `PT_GNU_RELRO`-frozen
 dynamic-relocation slots whose value the linker itself computed (§1.2), which is
-what turns a call through a relocated GOT slot back into a named call — expands
+what turns a call through a relocated GOT slot back into a named call, or when the
+read lies entirely inside the image's executable read-only memory (`litpoolconst`,
+§1.2), which is what renders an ARM literal-pool constant as its value — expands
 *volatile* access into its user-op form,
 and folds to zero any varnode whose consumed bits and nonzero mask are
 disjoint (skipping constants and COPYs of nonzero constants, which would
