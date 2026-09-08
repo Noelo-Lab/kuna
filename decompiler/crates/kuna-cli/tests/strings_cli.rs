@@ -24,6 +24,11 @@
 //! `LoadLibraryW("n")` for `L"ntdll.dll"`. It runs on a synthetic ELF built
 //! in-process, so it needs no vendored fixture.
 //!
+//! [`a_utf8_prompt_keeps_its_start_address`] is the other one: a literal whose
+//! first characters are multi-byte is reported from the byte AFTER its last
+//! sequence, which is not an address anything in the image refers to — so the
+//! row also arrives with no references and no owning function.
+//!
 //! ## `.sla` precondition
 //!
 //! The reference walk bootstraps the architecture, which needs the built `x86`
@@ -87,6 +92,13 @@ fn fauxware() -> String {
 /// pair `--termination` separates.
 fn nametable() -> String {
     fixture("nametable_x86_64")
+}
+
+/// The vendored `utf8prompt_x86_64`: `prompt_user` loads a prompt at `0x101000`
+/// whose first characters are multi-byte UTF-8, then an ASCII-only control
+/// literal at `0x101038`.
+fn utf8prompt() -> String {
+    fixture("utf8prompt_x86_64")
 }
 
 /// `true` when a failure is a missing-`.sla` bootstrap failure (a legitimate
@@ -499,6 +511,70 @@ fn encoding_all_reports_both_widths() {
     assert_eq!(wide[6], "ntdll.dll");
 
     let _ = std::fs::remove_file(path);
+}
+
+/// The recorded defect: the ASCII recognizer ends a run at every byte `>= 0x80`,
+/// so a prompt opening with a kaomoji is reported from the byte after its LAST
+/// multi-byte sequence — and that address, unlike the literal's own, is not one
+/// the image refers to, which is why the row also arrives ownerless.
+#[test]
+fn a_utf8_prompt_keeps_its_start_address() {
+    // 1-byte width: the row starts twelve bytes into the literal, holds 43 of
+    // its 50 characters, and nothing references it.
+    let Some(ascii) = listing(&[&utf8prompt(), "--filter", "magical"]) else { return };
+    let ascii_rows = rows(&ascii);
+    let truncated = row_at(&ascii_rows, "0x10100c").expect("the ASCII reading loses the prefix");
+    assert_eq!(truncated[1], "ascii");
+    assert_eq!(truncated[2], "43");
+    assert_eq!(truncated[4], "0", "no reference lands on a mid-literal address");
+    assert_eq!(truncated[5], "-", "so no function owns it");
+
+    // UTF-8: the whole literal, at the address `prompt_user` loads.
+    let Some(utf8) = listing(&[&utf8prompt(), "--encoding", "utf8", "--filter", "magical"])
+    else {
+        return;
+    };
+    let utf8_rows = rows(&utf8);
+    assert!(row_at(&utf8_rows, "0x10100c").is_none(), "the truncated row is gone:\n{utf8}");
+    let whole =
+        row_at(&utf8_rows, "0x101000").expect("the literal is reported at its own address");
+    assert_eq!(whole[1], "utf8");
+    assert_eq!(whole[2], "50", "fifty characters in fifty-five bytes");
+    assert_eq!(whole[4], "1", "the LEA the reference walk already found");
+    assert_eq!(whole[5], "prompt_user");
+    assert!(whole[6].starts_with('\u{ff3f}'), "the fullwidth low line leads it: {:?}", whole[6]);
+}
+
+/// A row with no multi-byte content reads identically under both readings of the
+/// 1-byte width — same address, same width label, same text — so turning UTF-8
+/// on costs an ASCII-only image nothing.
+#[test]
+fn an_ascii_only_row_is_unmoved_by_the_utf8_reading() {
+    let Some(ascii) = listing(&[&utf8prompt(), "--no-xrefs", "--filter", "control literal"])
+    else {
+        return;
+    };
+    let Some(utf8) = listing(&[
+        &utf8prompt(),
+        "--no-xrefs",
+        "--encoding",
+        "utf8",
+        "--filter",
+        "control literal",
+    ]) else {
+        return;
+    };
+    assert_eq!(rows(&ascii), rows(&utf8), "the control literal must not move");
+    let ascii_rows = rows(&ascii);
+    let control = row_at(&ascii_rows, "0x101038").expect("the ASCII-only control literal");
+    assert_eq!(control[1], "ascii");
+    assert_eq!(control[6], "plain ascii control literal");
+
+    // And the whole fauxware inventory, which holds no multi-byte sequence at
+    // all, is byte-identical under `ascii` and `utf8`.
+    let Some(a) = listing(&[&fauxware(), "--no-xrefs"]) else { return };
+    let Some(u) = listing(&[&fauxware(), "--no-xrefs", "--encoding", "utf8"]) else { return };
+    assert_eq!(rows(&a), rows(&u), "a pure-ASCII image reads the same either way");
 }
 
 /// An image with no usable section table — a UPX-packed ELF keeps its program

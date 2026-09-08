@@ -42,6 +42,7 @@
 //! Recorded in `docs/missing-analyses.md` / `docs/history/analysis-port-log.md`.
 
 pub mod kuna_stringinv;
+pub mod kuna_utf8strings;
 pub mod kuna_widestrings;
 
 use object::read::{Object, ObjectSection};

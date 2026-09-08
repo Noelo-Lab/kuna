@@ -44,9 +44,25 @@
 //! Scope: UTF-16**LE** whose code units are all in the 1-byte recognizer's
 //! charset (the Windows-API case). A big-endian or non-Latin UTF-16 literal is
 //! not recovered.
+//!
+//! # UTF-8
+//!
+//! [`super::is_string_char`] is the ASCII recognizer, so every byte `>= 0x80`
+//! ends a run and a literal that opens with a non-ASCII character is reported
+//! starting after its last multi-byte sequence — an address nothing in the image
+//! refers to, which is why such a row also arrives with no references and no
+//! owning function. [`scan_utf8_runs`](super::kuna_utf8strings::scan_utf8_runs)
+//! is the same 1-byte matcher with well-formed UTF-8 sequences admitted as
+//! characters, and it is a strict superset of the ASCII one: no accepted
+//! sequence can swallow a byte the ASCII matcher would have taken. So the two
+//! never run together — [`Query::utf8`] chooses which reading answers the 1-byte
+//! width — and each row is labelled by what its bytes actually hold, so a row
+//! with no multi-byte content is reported as [`Encoding::Ascii`] either way and
+//! a pure-ASCII image reads identically under both.
 
 use object::read::{Object, ObjectSection, ObjectSegment};
 
+use super::kuna_utf8strings::scan_utf8_runs;
 use super::kuna_widestrings::scan_utf16_runs;
 use super::{is_loaded_initialized, scan_runs, Run};
 
@@ -57,6 +73,11 @@ pub use super::Termination;
 pub enum Encoding {
     /// 1-byte characters — [`super::StringLiteralPass`]'s own width.
     Ascii,
+    /// 1-byte characters plus multi-byte UTF-8 sequences
+    /// (`kuna_utf8strings::scan_utf8_runs`). Only a row that actually holds a
+    /// multi-byte sequence is reported at this width; a pure-ASCII row found by
+    /// the same scan is [`Encoding::Ascii`].
+    Utf8,
     /// 2-byte little-endian code units (`kuna_widestrings::scan_utf16_run`).
     Utf16,
 }
@@ -66,6 +87,7 @@ impl Encoding {
     pub fn as_str(self) -> &'static str {
         match self {
             Encoding::Ascii => "ascii",
+            Encoding::Utf8 => "utf8",
             Encoding::Utf16 => "utf16",
         }
     }
@@ -100,6 +122,12 @@ pub struct Query {
     pub min_len: usize,
     /// Scan at 1-byte width (the pass itself).
     pub ascii: bool,
+    /// Read the 1-byte width as UTF-8 rather than as ASCII, so a multi-byte
+    /// sequence is a character instead of a terminator. Superset of [`ascii`]
+    /// and only meaningful with it: the two readings never both run.
+    ///
+    /// [`ascii`]: Query::ascii
+    pub utf8: bool,
     /// Scan at 2-byte little-endian width.
     pub utf16: bool,
     /// Restrict to this section, by name (a leading `.` is optional).
@@ -191,6 +219,13 @@ fn ascii_text(bytes: &[u8]) -> String {
     bytes.iter().map(|&b| b as char).collect()
 }
 
+/// Read a UTF-8 run back as text. Every character was validated by
+/// [`scan_utf8_runs`], so the decode cannot fail; the lossy form is the
+/// no-panic spelling of that, not a second policy.
+fn utf8_text(bytes: &[u8]) -> String {
+    String::from_utf8_lossy(bytes).into_owned()
+}
+
 /// Read a 2-byte fact back as text (low bytes only — the units are all in the
 /// 1-byte charset by construction).
 fn utf16_text(bytes: &[u8]) -> String {
@@ -210,7 +245,17 @@ pub fn inventory(file: &object::File, q: &Query) -> Inventory {
     let regions = if from_segments { segment_regions(file) } else { sections };
 
     let mut runs: Vec<(Run, Encoding)> = Vec::new();
-    if q.ascii {
+    // One reading answers the 1-byte width. The UTF-8 one is a superset of the
+    // ASCII one — every ASCII run is a subrange of a UTF-8 run — so running both
+    // would report the same text twice, once at a truncated address.
+    if q.ascii && q.utf8 {
+        runs.extend(
+            regions
+                .iter()
+                .flat_map(|r| scan_utf8_runs(r.data, r.vma, q.min_len, q.termination))
+                .map(|r| (r, Encoding::Utf8)),
+        );
+    } else if q.ascii {
         runs.extend(
             regions
                 .iter()
@@ -242,13 +287,21 @@ pub fn inventory(file: &object::File, q: &Query) -> Inventory {
         };
         let text = match encoding {
             Encoding::Ascii => ascii_text(bytes),
+            Encoding::Utf8 => utf8_text(bytes),
             Encoding::Utf16 => utf16_text(bytes),
+        };
+        // A UTF-8 run that holds no multi-byte sequence is a row the ASCII
+        // reading found too, so it is reported at that width and the label keeps
+        // meaning "what is in these bytes".
+        let encoding = match encoding {
+            Encoding::Utf8 if bytes.is_ascii() => Encoding::Ascii,
+            other => other,
         };
         // The extent an xref may land in stops at the last visible byte when
         // nothing terminated the run.
         let terminator = match (run.nul_terminated, encoding) {
             (false, _) => 0,
-            (true, Encoding::Ascii) => 1,
+            (true, Encoding::Ascii | Encoding::Utf8) => 1,
             (true, Encoding::Utf16) => 2,
         };
         strings.push(FoundString {
@@ -279,6 +332,7 @@ mod tests {
         Query {
             min_len,
             ascii,
+            utf8: false,
             utf16,
             section: section.map(str::to_string),
             termination: Termination::Nul,
@@ -367,6 +421,7 @@ mod tests {
             &Query {
                 min_len: 5,
                 ascii: true,
+                utf8: false,
                 utf16: false,
                 section: None,
                 termination: Termination::Any,
@@ -438,6 +493,89 @@ mod tests {
                 "row 0x{:x} is not a StringLiteralPass fact",
                 row.addr
             );
+        }
+    }
+
+    /// The reading that keeps a multi-byte prefix, at the inventory level: the
+    /// vendored `prompt` at 0x101000 opens with a fullwidth low line, so the
+    /// ASCII reading reports it from 0x10100c — twelve bytes past the address
+    /// `prompt_user` actually loads.
+    #[test]
+    fn the_utf8_reading_recovers_a_multi_byte_prefix() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/utf8prompt_x86_64");
+        let bytes = std::fs::read(path).expect("read utf8prompt_x86_64 fixture");
+        let file = object::File::parse(bytes.as_slice()).expect("parse utf8prompt_x86_64");
+        let q = |utf8: bool| Query {
+            min_len: 5,
+            ascii: true,
+            utf8,
+            utf16: false,
+            section: None,
+            termination: Termination::Any,
+        };
+
+        let ascii = inventory(&file, &q(false));
+        let truncated =
+            ascii.strings.iter().find(|s| s.addr == 0x10100c).expect("the ASCII reading");
+        assert_eq!(truncated.char_len, 43);
+        assert_eq!(truncated.encoding, Encoding::Ascii);
+        assert!(!ascii.strings.iter().any(|s| s.addr == 0x101000));
+
+        let utf8 = inventory(&file, &q(true));
+        let whole = utf8.strings.iter().find(|s| s.addr == 0x101000).expect("the UTF-8 reading");
+        assert_eq!(whole.encoding, Encoding::Utf8);
+        assert_eq!(whole.char_len, 50, "fifty characters");
+        assert_eq!(whole.byte_len, 56, "in fifty-five bytes plus the NUL");
+        assert!(whole.text.starts_with('\u{ff3f}'));
+        assert!(whole.text.ends_with("magical keycombination? "));
+        assert!(
+            !utf8.strings.iter().any(|s| s.addr == 0x10100c),
+            "one reading answers the 1-byte width, so the truncated row is gone"
+        );
+
+        // The ASCII-only control literal is the same row under both readings.
+        let control = |inv: &Inventory| {
+            inv.strings.iter().find(|s| s.addr == 0x101038).cloned().expect("the control literal")
+        };
+        assert_eq!(control(&ascii), control(&utf8));
+        assert_eq!(control(&ascii).encoding, Encoding::Ascii);
+    }
+
+    /// The property the one-scan-or-the-other choice rests on: every row the
+    /// ASCII reading finds lies inside a row the UTF-8 reading finds, so nothing
+    /// is lost by not running both. Checked over both endings on an image that
+    /// holds multi-byte sequences and on one that holds none.
+    #[test]
+    fn the_utf8_reading_is_a_superset_of_the_ascii_one() {
+        for name in ["utf8prompt_x86_64", "fauxware"] {
+            let path =
+                std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures"))
+                    .join(name);
+            let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {name}: {e}"));
+            let file = object::File::parse(bytes.as_slice()).expect("parse the fixture");
+            for termination in [Termination::Nul, Termination::Any] {
+                let q = |utf8: bool| Query {
+                    min_len: 5,
+                    ascii: true,
+                    utf8,
+                    utf16: false,
+                    section: None,
+                    termination,
+                };
+                let ascii = inventory(&file, &q(false));
+                let utf8 = inventory(&file, &q(true));
+                for row in &ascii.strings {
+                    let end = row.addr + u64::from(row.byte_len);
+                    assert!(
+                        utf8.strings.iter().any(|w| {
+                            w.addr <= row.addr && w.addr + u64::from(w.byte_len) >= end
+                        }),
+                        "{name} {termination:?}: 0x{:x} {:?} is covered by no UTF-8 row",
+                        row.addr,
+                        row.text
+                    );
+                }
+            }
         }
     }
 

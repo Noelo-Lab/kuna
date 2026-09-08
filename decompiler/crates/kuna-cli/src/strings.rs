@@ -2,7 +2,7 @@
 //!
 //! ```text
 //!   kuna strings <binary> [--json] [--min-length N] [--filter REGEX]
-//!                         [--encoding ascii|utf16|all] [--termination nul|any]
+//!                         [--encoding ascii|utf8|utf16|all] [--termination nul|any]
 //!                         [--section NAME] [--no-xrefs]
 //!                         [--mode MODE] [--option N V].. [--isa auto|arm|thumb] [--slice ARCH] [--target T]
 //!                         [--sleighpath D]
@@ -27,6 +27,18 @@
 //! for and the decompiler needs outright: a UTF-16LE literal read at 1-byte width
 //! ends at the NUL after its first character, which is why `LoadLibraryW` renders
 //! with a one-character argument.
+
+//! `--encoding utf8` is the other reading of the 1-byte width. The matcher's
+//! recognizer is ASCII, so any byte `>= 0x80` ends a run and a literal that opens
+//! with a non-ASCII character is reported starting after its last multi-byte
+//! sequence — a `_φ( °-°)/ so what was the magical keycombination? ` prompt at
+//! 0x2000 came back as `)/ so what was the magical keycombination? ` at 0x200c,
+//! with zero references and no owning function, while `kuna xrefs --to 0x2000`
+//! answered one. Only the reported address was wrong; decoding the sequences puts
+//! the row back on the address the image refers to and the existing reference
+//! walk fills the last two columns. It is a superset of the ASCII reading rather
+//! than a rival to it, so `all` takes it in place of that reading and a row with
+//! no multi-byte content is still reported as `ascii`.
 //!
 //! `--termination` is the third. The markup pass takes only NUL-ended runs
 //! because it plants a `char[N]`, and reporting only those made the inventory
@@ -55,6 +67,7 @@ pub(crate) struct StringsArgs {
     /// The compiled `--filter`, with the pattern it came from (the JSON echoes it).
     filter: Option<(String, Regex)>,
     ascii: bool,
+    utf8: bool,
     utf16: bool,
     encoding_label: String,
     section: Option<String>,
@@ -109,6 +122,7 @@ pub(crate) fn query(args: &StringsArgs) -> Result<String, String> {
         &kuna_stringinv::Query {
             min_len: args.min_length,
             ascii: args.ascii,
+            utf8: args.utf8,
             utf16: args.utf16,
             section: args.section.clone(),
             termination: args.termination,
@@ -477,11 +491,16 @@ pub(crate) fn parse_args(argv: &[String]) -> Result<StringsArgs, String> {
     if no_xrefs && isa.is_some() {
         return Err("--isa has no effect with --no-xrefs (no code is decoded)".into());
     }
-    let (ascii, utf16) = match encoding.as_str() {
-        "ascii" => (true, false),
-        "utf16" => (false, true),
-        "all" => (true, true),
-        other => return Err(format!("unknown --encoding {other:?} (ascii, utf16, all)")),
+    // `utf8` implies the 1-byte width, because the UTF-8 reading IS that width
+    // with multi-byte sequences decoded — an ASCII-only literal is a UTF-8 one.
+    let (ascii, utf8, utf16) = match encoding.as_str() {
+        "ascii" => (true, false, false),
+        "utf8" => (true, true, false),
+        "utf16" => (false, false, true),
+        "all" => (true, true, true),
+        other => {
+            return Err(format!("unknown --encoding {other:?} (ascii, utf8, utf16, all)"))
+        }
     };
     Ok(StringsArgs {
         binary,
@@ -491,6 +510,7 @@ pub(crate) fn parse_args(argv: &[String]) -> Result<StringsArgs, String> {
         min_length: min_length.unwrap_or(5),
         filter,
         ascii,
+        utf8,
         utf16,
         encoding_label: encoding,
         section,
@@ -517,7 +537,7 @@ fn take(argv: &[String], i: &mut usize, flag: &str) -> Result<String, String> {
 fn usage() {
     eprintln!(
         "usage: kuna strings <binary> [--json] [--min-length N] [--filter REGEX] \\\n\
-         \x20                    [--encoding ascii|utf16|all] [--termination nul|any] \\\n\
+         \x20                    [--encoding ascii|utf8|utf16|all] [--termination nul|any] \\\n\
          \x20                    [--section NAME] [--no-xrefs] \\\n\
          \x20                    [--mode auto|reliable|aggressive|fast] [--option N V].. \\\n\
          \x20                    [--isa auto|arm|thumb] [--slice ARCH] [--target T] [--sleighpath D]\n\
@@ -528,6 +548,11 @@ fn usage() {
          \n\
          --encoding utf16 reads 2-byte little-endian units; a wide Windows literal\n\
          is a one-character string at 1-byte width.\n\
+         --encoding utf8 decodes multi-byte sequences at the 1-byte width, so a\n\
+         literal opening with a non-ASCII character keeps its true start address\n\
+         (and therefore its references) instead of being reported from the byte\n\
+         after its last sequence.  `all` uses it in place of the ascii reading;\n\
+         a row with no multi-byte content is still reported as ascii.\n\
          --termination nul takes only NUL-ended runs -- exactly the char[N]\n\
          literals the engine marks up.  The default `any` also reports a run\n\
          closed by any other byte, which is what recovers a length-prefixed name\n\

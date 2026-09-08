@@ -1,0 +1,65 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "a-ad69bf129b27",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "strings",
+    "{{BIN}}",
+    "--encoding",
+    "all",
+    "--json",
+    "--filter",
+    "magical"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/utf8prompt_x86_64",
+    "binary_sha256": "79a72c91129acfa8eea153015378742dca18958d7dbbc4d5e8b761d1954dad97",
+    "binary_size": 9344,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/utf8prompt_x86_64",
+    "selector": null,
+    "selector_kind": "none"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "json": [
+      {
+        "path": "strings[*].address",
+        "op": "eq",
+        "value": 1052672
+      },
+      {
+        "path": "strings[0].functions",
+        "op": "len_gt",
+        "value": 0
+      },
+      {
+        "path": "strings[0].encoding",
+        "op": "eq",
+        "value": "utf8"
+      },
+      {
+        "path": "strings[0].length",
+        "op": "eq",
+        "value": 50
+      },
+      {
+        "path": "strings[0].functions[0].name",
+        "op": "eq",
+        "value": "prompt_user"
+      }
+    ]
+  },
+  "notes": "Promoted acceptance of utf-8-prompt-loses (crackmes.one 6736b3a09b533b4c22bd2b9f no-standards: the prompt at 0x2000 was reported at 0x200c with xrefs_count 0 and no functions, though kuna xrefs --to 0x2000 already found the entry routine's LEA), re-pointed at the vendored utf8prompt_x86_64 -- CI has no dataset. Same shape: prompt at 0x101000, its ASCII suffix at 0x10100c."
+}
