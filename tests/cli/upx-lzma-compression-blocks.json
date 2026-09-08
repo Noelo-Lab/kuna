@@ -1,0 +1,46 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "unpack",
+    "{{BIN}}",
+    "--json",
+    "-o",
+    "{{TMP}}/out.bin"
+  ],
+  "cwd": "{{TMP}}",
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/upx_packed_lzma_x86_64",
+    "binary_sha256": "c57e9889d3fb7431859b30623fee0182e877f71a72241764e403ef732e09d246",
+    "binary_size": 12728,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/upx_packed_lzma_x86_64",
+    "selector": null,
+    "selector_kind": "none"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "json": [
+      {
+        "path": "count",
+        "op": "gt",
+        "value": 0
+      }
+    ],
+    "stdout_matches": [
+      "\"method\": 14",
+      "\"method_name\": \"LZMA\"",
+      "\"unpacked_size\": 31640"
+    ],
+    "stderr_absent": [
+      "unsupported UPX image"
+    ]
+  },
+  "notes": "Desired: a UPX image compressed with LZMA (method 14) unpacks instead of being refused. Witness: crackmes.one 68ae3bfc8fac2855fe6fb8ee bin/keygenme, where `kuna unpack` exited 1 with \"unsupported UPX image: compression method 14 (LZMA)\". Retargeted onto the vendored upx_packed_lzma_x86_64: the NRV witness's own program repacked with `upx --lzma`, so unpacked_size pins it against the NRV arm."
+}

@@ -1,0 +1,30 @@
+upx_packed_lzma_x86_64 -- the LZMA arm of the `kuna unpack` / `kuna_analysis::upx`
+fixture pair.
+
+What it is
+  The *same* program as `upx_packed_x86_64` -- the x86-64 PIE ncurses "snake" game --
+  repacked with `upx --lzma`. 12,728 bytes packed; 31,640 bytes unpacked. Its
+  trailing UPX! PackHeader is at 0x3194 and reads version=14, format=22
+  (linux/amd64 ELF64), method=14 (LZMA), level=8, filter=0x49
+  (ctok32_e8e9_bswap_le).
+
+  Three compressed blocks, the last of them filtered, with the loader stub between
+  the PT_LOAD extents and the gaps.
+
+Why it is a repack of the NRV witness rather than a second binary
+  Because that makes the two unpacks comparable byte for byte. The NRV and LZMA
+  images encode the identical 31,640-byte original, so
+  `unpacks_the_lzma_witness_byte_for_byte` can assert the two recoveries agree
+  exactly -- a check an LZMA decoder that is subtly wrong cannot pass by accident,
+  and one no single-fixture length or magic assertion gives you.
+
+Where it came from
+  Produced from the unpacked `upx_packed_x86_64` with UPX 4.2.4:
+
+      upx -d -o snake upx_packed_x86_64
+      upx --lzma -o upx_packed_lzma_x86_64 snake
+
+  `upx` is not a build dependency of this repo and is not installed on CI, so the
+  packed fixture is vendored rather than produced at build time. The original
+  program's own provenance is `upx_packed_x86_64.provenance`: a third-party
+  CTF-style crackme, included unmodified as test data only.

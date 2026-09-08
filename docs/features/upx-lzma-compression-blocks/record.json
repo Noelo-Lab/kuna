@@ -1,0 +1,65 @@
+{
+  "need_id": "upx-lzma-compression-blocks",
+  "track": "loader",
+  "scope": "large",
+  "rescoped_to": "small",
+  "worker": "b-r8-upx-lzma-compres",
+  "branch": "feat/re-upx-lzma-compression-blocks",
+  "symptom": "`kuna unpack ./keygenme -o notes/unpacked --json` exits 1 with \"unsupported UPX image: compression method 14 (LZMA)\"; `kuna functions` reports zero functions and `decompile-all` refuses. 1 instance, round 8 (crackmes.one 68ae3bfc8fac2855fe6fb8ee, bin/keygenme).",
+  "diagnosis": "Exactly as filed and as the round-8 refuter re-measured: there is no LZMA decoder in the tree. `method_codec` (upx/elf.rs) maps b_method 2..10 onto NRV2B/2D/2E x {Byte,Le16,Le32} and refuses everything else by name; `nrv.rs` is a UCL 1.03 port of those three only. Nothing upstream of the block decode is at fault -- the PackHeader, l_info, p_info and the extent walk all parse this image correctly, which is why the error names method 14 at all.",
+  "hypothesis_status": "upheld",
+  "decisions": [
+    "Rescoped from large to small, deliberately, and implemented rather than parked as a [PROPOSAL]. The captain's `large` rested on one design call -- new third-party dependency vs hand-port -- and the repo has already made that call twice in this same module: nrv.rs is a hand-port of UCL and filter.rs of UPX's filters, both for the stated reason that the input is a hostile file. So the answer was settled by precedent, and what remained fits the builder envelope: one new module (upx/lzma.rs), no new pass type, no ported-core anchor file, one dispatch site widened. No dependency was added to [workspace.dependencies].",
+    "The two-byte UPX prefix is not the standard LZMA properties byte. Measured on the witness (both bytes are 0x1a 0x03 on every block) and cross-read against RetDec's decompressor_lzma.cpp, which is the only independent implementation available offline: pb is the low three bits of byte 0, lc the low nibble and lp the high nibble of byte 1. The standard (pb*5+lp)*9+lc packing would give 0x5d, and a brute force over every (skip, lc, lp, pb) triple on the witness's first block agrees with RetDec's reading and with nothing else.",
+    "The NRV arm's exact-input-consumption rule is NOT inherited. An LZMA range coder pre-reads five bytes at init and leaves lookahead it never uses, so trailing slack is a property of a valid stream rather than a symptom; requiring it would refuse correct images. The block is proved instead by the packer's own Adler-32 over the decoded bytes, which the walk already verifies, plus the exact-length contract (a stream that stops short is Truncated, never a short read).",
+    "method_codec now returns a `Codec` enum rather than an (Variant, BitOrder) pair, so the ELF walk, the PE walk and the up-front refusal in mod.rs all pick a back-end through one place. That gives the PE arm LZMA for free; the corpus has no small win32/pe LZMA witness that this build also unpacks, so that arm is covered by the decoder's own tests rather than end to end, and is called out here rather than claimed.",
+    "kuna-cli/tests/unpack_cli.rs:an_unimplemented_method_is_refused_by_name had to move: its fixture is an NRV stream re-headed as method 14, so it asserted the very refusal this PR removes. It now re-heads as method 15 (DEFLATE), which is still unimplemented. Writing its replacement turned up something the refuter's note assumed away: re-heading the PACKHEADER does not mislabel anything, because decode_block dispatches on the per-block b_info.b_method and the PackHeader's method is only consulted by the courtesy refusal in mod.rs. So the mislabel test patches the first block's b_method instead, and gives it plausible property bytes so the range coder really runs -- otherwise the property range check catches it and the decoder is never exercised.",
+    "No option row and no tests/stages case: a loader-tier change that emits no C. phases.toml, options.rs, docs/options.md, the DIV registry and every catalog counter are untouched; `kuna catalog --check` and scripts.repipe.counters both report no drift.",
+    "The acceptance probe's target is a dataset crackme, so --promote refuses it. tests/cli/upx-lzma-compression-blocks.json is the same probe re-pointed at a vendored fixture, with the dataset keygenme left as the witness in Reproduction -- the convention tests/cli/corrupt-elf-section-table.json and unpack-proceed-without-upx.json already use.",
+    "The vendored fixture is the existing NRV witness's own program repacked with `upx --lzma` rather than a second binary, because that makes the two unpacks comparable byte for byte. An LZMA decoder that is subtly wrong cannot agree with the NRV decoder on 31,640 bytes by accident, and no single-fixture length-or-magic assertion gives you that.",
+    "docs/re-needs/index.json is deliberately not in this PR: reindexing here would pick up other rounds' and builders' need docs. The need doc and the promoted probe are the durable artifacts; the captain reindexes."
+  ],
+  "changed": [
+    "decompiler/crates/kuna-analysis/src/upx/lzma.rs",
+    "decompiler/crates/kuna-analysis/src/upx/elf.rs",
+    "decompiler/crates/kuna-analysis/src/upx/pe.rs",
+    "decompiler/crates/kuna-analysis/src/upx/mod.rs",
+    "decompiler/crates/kuna-analysis/tests/fixtures/upx_packed_lzma_x86_64",
+    "decompiler/crates/kuna-analysis/tests/fixtures/upx_packed_lzma_x86_64.provenance",
+    "decompiler/crates/kuna-cli/tests/unpack_cli.rs",
+    "tests/cli/upx-lzma-compression-blocks.json",
+    "docs/cli.md",
+    "docs/spec/01-program-prep.md",
+    "docs/re-needs/upx-lzma-compression-blocks.md"
+  ],
+  "acceptance": "PASS -- `kuna unpack <keygenme> -o notes/unpacked --json` exits 0, emits JSON with count 9, and writes no \"unsupported UPX image\" on stderr. The 8,501,872-byte file it writes is byte-identical (sha256 6e9c1966...) to what `upx -d` 4.2.4 produces from the same input. `kuna functions` on it goes from 0 to 16,198.",
+  "sweep": {
+    "patched vs stock, whole corpus": "421 ELF/PE/Mach-O images (repo fixtures + every kuna-re-dataset challenge binary) through `kuna unpack`, comparing exit code, stderr and output sha256 against the stock build at the base commit: 2 changed, and they are the two LZMA images (the new fixture and the need's witness), both from a named refusal to a successful unpack. 419 byte-for-byte identical behaviour, including all 6 remaining named refusals and 404 not-packed.",
+    "upx -d oracle": "Of the 11 images this build unpacks, 8 are byte-identical to `upx -d` 4.2.4 (all 6 ELFs, including both LZMA ones). The 2 PE images differ from `upx -d` and 1 has no working `upx -d`; both are NRV2B, and their kuna output is byte-identical to the stock build's, so the difference is pre-existing and not this change.",
+    "independent LZMA witness": "`upx --lzma`-packed /usr/bin/head, a binary this change was not written against, also unpacks byte-identically to `upx -d`."
+  },
+  "speed": {
+    "method": "kuna unpack <target> -o /tmp/out, median of 11",
+    "NRV fixture": "8 ms patched, 8 ms stock",
+    "not-packed /bin/bash": "7 ms patched, 8 ms stock",
+    "LZMA fixture (12.7 KB -> 31.6 KB)": "9 ms",
+    "LZMA witness (1.9 MB -> 8.5 MB)": "185 ms",
+    "delta": "no measurable cost on any path that existed before -- the decoder is only reached from a method id that used to be an immediate refusal."
+  },
+  "tests": {
+    "kuna-analysis/src/upx/lzma.rs": "6 unit tests: the UPX property bytes decode to lc=3 lp=0 pb=2, out-of-range properties are refused rather than allocated, a short block and a non-zero range-init byte are refused, a truncated stream is an error and not a short read, and the vendored witness's first block decodes to a real Ehdr",
+    "kuna-analysis/src/upx/mod.rs": "3 end-to-end tests: the LZMA witness is detected as method 14, unpacks byte-for-byte equal to the NRV witness's recovery with the 0x49 filter reversed, and a one-byte corruption inside an LZMA block is refused",
+    "kuna-cli/tests/unpack_cli.rs": "the LZMA image now unpacks through the CLI and matches the NRV recovery byte for byte; the by-name refusal moved to method 15 (DEFLATE); an NRV block relabelled as LZMA with valid property bytes is refused naming the block, and writes no file",
+    "tests/cli": "upx-lzma-compression-blocks.json, 78/78"
+  },
+  "gates": {
+    "make test": "PARITY OK, 675/675",
+    "make test-stages": "PARITY OK, 683/683",
+    "make rust-test": "GREEN (rc=0, 6007 tests passed, 0 failures), run with `env -u KUNA_DECOMP_TEST`, which is what CI runs",
+    "make check-spec": "OK (lenient mode)",
+    "make test-cli": "78/78",
+    "kuna catalog --check": "catalog OK",
+    "scripts.repipe.counters": "no drift",
+    "acceptance": "PASS on the release build (exit_code, stderr_absent, stdout_is_json, json[0] count>0 all green)"
+  }
+}

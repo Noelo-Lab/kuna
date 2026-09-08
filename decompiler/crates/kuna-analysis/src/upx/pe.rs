@@ -33,7 +33,6 @@
 //! reconstructed file whose length must equal the original's to the byte.
 
 use super::filter;
-use super::nrv;
 use super::{adler32, Block, PackInfo, UpxError};
 
 /// `IMAGE_SIZEOF_SECTION_HEADER`.
@@ -282,8 +281,8 @@ pub(super) fn unpack(img: &Image<'_>, info: &PackInfo) -> Result<(Vec<u8>, Vec<B
         .bytes
         .get(data..data + info.c_len as usize)
         .ok_or_else(|| corrupt("compressed block runs past the end of the file"))?;
-    let (variant, order) = super::elf::method_codec(info.method)?;
-    let mut obuf = nrv::decompress(variant, order, src, info.u_len as usize)
+    let mut obuf = super::elf::method_codec(info.method)?
+        .decompress(src, info.u_len as usize)
         .map_err(|e| corrupt(format!("compressed block at {data:#x}: {e}")))?;
     if adler32(1, &obuf) != info.u_adler {
         return Err(corrupt("uncompressed checksum mismatch"));

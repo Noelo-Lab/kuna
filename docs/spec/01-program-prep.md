@@ -493,8 +493,8 @@ validation; it does not rewrite the machine bytes to another architecture.
 tier is honestly useless: it maps a loader stub and a compressed blob, so every
 address the original program used is absent until something recovers it.
 `decompiler/crates/kuna-analysis/src/upx` reimplements the recovery in-process --
-the UCL NRV2B/NRV2D/NRV2E decoders (`nrv.rs`), UPX's branch-target filters
-(`filter.rs`), and one reconstruction walk per target family. `kuna unpack` is the
+the UCL NRV2B/NRV2D/NRV2E decoders (`nrv.rs`), the LZMA1 decoder (`lzma.rs`), UPX's
+branch-target filters (`filter.rs`), and one reconstruction walk per target family. `kuna unpack` is the
 only caller; nothing on the load path unpacks implicitly, because the recovered
 file is an artifact an analyst reads and names, not a hidden rewrite of their input.
 
@@ -524,8 +524,22 @@ trailer steps run depends on which data directories the original image had, so a
 unimplemented one would silently desynchronize every later read. The walk therefore
 tallies the trailer bytes it consumed against the trailer's real length and refuses
 a mismatch, on top of naming base relocations, TLS, bound and delay-loaded imports
-up front. Everything unimplemented -- LZMA, the 64-bit and ARM PE targets, the
-`ctojr`/PowerPC/RISC-V filters -- is a named refusal and writes no file.
+up front. Everything unimplemented -- the CL1B, DEFLATE, ZSTD and BZIP2 methods, the
+64-bit and ARM PE targets, the `ctojr`/PowerPC/RISC-V filters -- is a named refusal
+and writes no file.
+
+Two codecs sit behind that walk, chosen per block by the `b_info` method id. The UCL
+decoders cover methods 2-10; method 14 is LZMA, which is what `upx --lzma` and
+`upx --best` write and therefore what most recently packed binaries carry. UPX does
+not wrap LZMA in a container: a block is a raw LZMA1 stream with no properties/size
+preamble and no end-of-stream marker, prefixed by two UPX bytes that spell the coder
+parameters -- `pb` in the low three bits of the first, `lc` and `lp` in the low and
+high nibbles of the second. The uncompressed length comes from the block header, so
+the decoder runs to a known size rather than to a marker, and a stream that stops
+short is an error and not a partial block. The one place it relaxes the NRV arm's
+contract is input consumption: an LZMA range coder holds lookahead bytes it never
+uses, so trailing slack is a property of a valid stream, and the packer's Adler-32
+over the decoded bytes is what proves the block instead.
 
 ## 1.3 Loader markup
 

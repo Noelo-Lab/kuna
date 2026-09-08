@@ -35,6 +35,16 @@ fn packed_fixture() -> String {
         .to_string()
 }
 
+/// The same original program as `packed_fixture`, repacked with `upx --lzma`;
+/// see its `.provenance` sidecar.
+fn lzma_fixture() -> String {
+    repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/upx_packed_lzma_x86_64")
+        .to_str()
+        .unwrap()
+        .to_string()
+}
+
 /// An ordinary, unpacked ELF -- the "this is not a packed file" case.
 fn plain_fixture() -> String {
     repo_root()
@@ -202,27 +212,95 @@ fn an_unpacked_binary_is_refused_by_name() {
 
 /// A method this build does not implement must be named, not guessed at: a
 /// wrong unpacked binary is far worse than an honest refusal. The fixture is
-/// re-headed as LZMA (method 14) with a repaired header checksum.
+/// re-headed as DEFLATE (method 15) with a repaired header checksum.
 #[test]
 fn an_unimplemented_method_is_refused_by_name() {
-    let scratch = Scratch::new("lzma");
-    let mut bytes = std::fs::read(packed_fixture()).expect("fixture");
-    let ph = 0x2c40usize;
-    bytes[ph + 6] = 14; // M_LZMA
-    let sum: u32 = bytes[ph + 4..ph + 31].iter().map(|b| u32::from(*b)).sum();
-    bytes[ph + 31] = (sum % 251) as u8;
-    let input = scratch.path("lzma.packed");
-    std::fs::write(&input, &bytes).expect("write the re-headed fixture");
+    let scratch = Scratch::new("deflate");
+    let input = scratch.path("deflate.packed");
+    reheaded_fixture(15, &input);
 
-    let out = scratch.path("lzma.unpacked");
+    let out = scratch.path("deflate.unpacked");
     let (_, stderr, ok) = run_kuna(&["unpack", &input, "-o", &out]);
     if is_unwired(&stderr) {
         eprintln!("unpack_cli: skipping (kuna unpack not wired into main.rs yet): {stderr}");
         return;
     }
-    assert!(!ok, "an LZMA-compressed image must not be unpacked by this build");
-    assert!(stderr.contains("LZMA"), "the refusal does not name the method:\n{stderr}");
+    assert!(!ok, "a DEFLATE-compressed image must not be unpacked by this build");
+    assert!(stderr.contains("DEFLATE"), "the refusal does not name the method:\n{stderr}");
     assert!(!PathBuf::from(&out).exists(), "a refused run must write nothing");
+}
+
+/// The other half of the same contract, now that method 14 *is* implemented: an
+/// NRV block relabelled as LZMA must fail in the decoder rather than produce a
+/// file. The `b_info` is given plausible LZMA property bytes first, so the range
+/// coder really runs -- nothing about the block's sizes gives the lie away, and
+/// this is exactly the case where a lenient decoder writes a plausible-looking
+/// image of garbage.
+#[test]
+fn a_block_mislabelled_as_lzma_is_refused_not_guessed_at() {
+    let scratch = Scratch::new("mislabelled");
+    let mut bytes = std::fs::read(packed_fixture()).expect("fixture");
+    let b_info = 0x100usize; // the first block, right after `l_info` + `p_info`
+    bytes[b_info + 8] = 14; // b_method := M_LZMA
+    bytes[b_info + 12] = 0x1a; // pb = 2
+    bytes[b_info + 13] = 0x03; // lc = 3, lp = 0
+    bytes[b_info + 14] = 0x00; // a range coder starts on a zero byte
+    let input = scratch.path("mislabelled.packed");
+    std::fs::write(&input, &bytes).expect("write the relabelled fixture");
+
+    let out = scratch.path("mislabelled.unpacked");
+    let (_, stderr, ok) = run_kuna(&["unpack", &input, "-o", &out]);
+    if is_unwired(&stderr) {
+        eprintln!("unpack_cli: skipping (kuna unpack not wired into main.rs yet): {stderr}");
+        return;
+    }
+    assert!(!ok, "an NRV block relabelled as LZMA must not unpack");
+    assert!(stderr.contains("block at 0x100"), "the refusal does not name the block:\n{stderr}");
+    assert!(!PathBuf::from(&out).exists(), "a refused run must write nothing");
+}
+
+/// `docs/re-needs/upx-lzma-compression-blocks.md`: a `--lzma` image used to exit
+/// 1 with "unsupported UPX image: compression method 14 (LZMA)". It is the same
+/// original program as `packed_fixture`, so the recovered bytes are checkable
+/// against the NRV witness's.
+#[test]
+fn unpack_recovers_an_lzma_packed_elf() {
+    let scratch = Scratch::new("lzma");
+    let out = scratch.path("snake.lzma.unpacked");
+    let (stdout, stderr, ok) = run_kuna(&["unpack", &lzma_fixture(), "-o", &out, "--json"]);
+    if !ok {
+        if is_unwired(&stderr) {
+            eprintln!("unpack_cli: skipping (kuna unpack not wired into main.rs yet): {stderr}");
+            return;
+        }
+        panic!("kuna unpack failed on an LZMA image: {stderr}");
+    }
+    assert!(!stderr.contains("unsupported UPX image"), "still refused:\n{stderr}");
+    for field in ["\"method\": 14", "\"method_name\": \"LZMA\"", "\"unpacked_size\": 31640"] {
+        assert!(stdout.contains(field), "missing {field} in:\n{stdout}");
+    }
+    assert!(json_count(&stdout).is_some_and(|n| n > 0), "no blocks reported:\n{stdout}");
+
+    let bytes = std::fs::read(&out).expect("unpacked file was written");
+    assert_eq!(bytes.len(), 31640);
+    assert_eq!(&bytes[..4], b"\x7fELF");
+    // The NRV and LZMA witnesses pack the same program: the two recoveries must
+    // agree byte for byte.
+    let nrv_out = scratch.path("snake.nrv.unpacked");
+    let (_, _, ok) = run_kuna(&["unpack", &packed_fixture(), "-o", &nrv_out]);
+    assert!(ok, "the NRV witness stopped unpacking");
+    assert_eq!(bytes, std::fs::read(&nrv_out).expect("read"), "the two packings disagree");
+}
+
+/// Write the NRV witness out with its `b_method` overwritten and its header
+/// checksum repaired, so the walk gets as far as the block decode.
+fn reheaded_fixture(method: u8, to: &str) {
+    let mut bytes = std::fs::read(packed_fixture()).expect("fixture");
+    let ph = 0x2c40usize;
+    bytes[ph + 6] = method;
+    let sum: u32 = bytes[ph + 4..ph + 31].iter().map(|b| u32::from(*b)).sum();
+    bytes[ph + 31] = (sum % 251) as u8;
+    std::fs::write(to, &bytes).expect("write the re-headed fixture");
 }
 
 /// Parse the `"count": N` field out of a `--json` document.

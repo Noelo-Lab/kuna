@@ -23,6 +23,7 @@
 //! cannot satisfy all four returns `Err` rather than a partial image.
 
 use super::filter;
+use super::lzma;
 use super::nrv::{self, BitOrder, Variant};
 use super::{adler32, Block, PackInfo, UpxError};
 
@@ -482,8 +483,8 @@ fn decode_block(
     let mut data = if stored {
         src.to_vec()
     } else {
-        let (variant, order) = method_codec(hdr.method)?;
-        nrv::decompress(variant, order, src, hdr.sz_unc as usize)
+        method_codec(hdr.method)?
+            .decompress(src, hdr.sz_unc as usize)
             .map_err(|e| UpxError::Corrupt(format!("block at {at:#x}: {e}")))?
     };
     // A stored block was never filtered: UPX only records a filter id on a
@@ -504,19 +505,40 @@ fn decode_block(
     Ok(data)
 }
 
-/// Map a UPX `b_method` onto an NRV variant + bit-buffer layout, or refuse it
-/// by name.
-pub(super) fn method_codec(method: u8) -> Result<(Variant, BitOrder), UpxError> {
+/// Which back-end a UPX `b_method` selects.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Codec {
+    /// A UCL variant plus the bit-buffer layout its method id implies.
+    Nrv(Variant, BitOrder),
+    /// UPX's raw LZMA1, properties in the block's own two-byte prefix.
+    Lzma,
+}
+
+impl Codec {
+    /// Decompress one block to exactly `u_len` bytes, or say why not.
+    pub(super) fn decompress(self, src: &[u8], u_len: usize) -> Result<Vec<u8>, String> {
+        match self {
+            Codec::Nrv(variant, order) => {
+                nrv::decompress(variant, order, src, u_len).map_err(|e| e.to_string())
+            }
+            Codec::Lzma => lzma::decompress(src, u_len).map_err(|e| e.to_string()),
+        }
+    }
+}
+
+/// Map a UPX `b_method` onto the back-end that decodes it, or refuse it by name.
+pub(super) fn method_codec(method: u8) -> Result<Codec, UpxError> {
     Ok(match method {
-        2 => (Variant::Nrv2b, BitOrder::Le32),
-        3 => (Variant::Nrv2b, BitOrder::Byte),
-        4 => (Variant::Nrv2b, BitOrder::Le16),
-        5 => (Variant::Nrv2d, BitOrder::Le32),
-        6 => (Variant::Nrv2d, BitOrder::Byte),
-        7 => (Variant::Nrv2d, BitOrder::Le16),
-        8 => (Variant::Nrv2e, BitOrder::Le32),
-        9 => (Variant::Nrv2e, BitOrder::Byte),
-        10 => (Variant::Nrv2e, BitOrder::Le16),
+        2 => Codec::Nrv(Variant::Nrv2b, BitOrder::Le32),
+        3 => Codec::Nrv(Variant::Nrv2b, BitOrder::Byte),
+        4 => Codec::Nrv(Variant::Nrv2b, BitOrder::Le16),
+        5 => Codec::Nrv(Variant::Nrv2d, BitOrder::Le32),
+        6 => Codec::Nrv(Variant::Nrv2d, BitOrder::Byte),
+        7 => Codec::Nrv(Variant::Nrv2d, BitOrder::Le16),
+        8 => Codec::Nrv(Variant::Nrv2e, BitOrder::Le32),
+        9 => Codec::Nrv(Variant::Nrv2e, BitOrder::Byte),
+        10 => Codec::Nrv(Variant::Nrv2e, BitOrder::Le16),
+        14 => Codec::Lzma,
         other => {
             return Err(UpxError::Unsupported(format!(
                 "compression method {other} ({})",
