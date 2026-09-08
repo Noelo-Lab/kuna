@@ -26,6 +26,10 @@
 //!   rejected (since `requireNullEnd`). The NUL is NOT counted toward the minimum
 //!   length. Emit if `visible_len >= min_len`. See [`scan_run`].
 //!
+//! The pass is always `requireNullEnd`, because the markup it commits is a
+//! `char[N]`. The read-only inventory behind `kuna strings` runs the same matcher
+//! under a caller-chosen [`Termination`] — see [`kuna_stringinv`].
+//!
 //! ## LOSS vs Ghidra (documented divergence)
 //!
 //! Ghidra additionally scores each candidate with an n-gram trigram model
@@ -55,18 +59,53 @@ pub(crate) fn is_string_char(b: u8) -> bool {
     (0x20..=0x7e).contains(&b) || b == 0x0d || b == 0x0a || b == 0x09
 }
 
-/// Run the `MinLengthCharSequenceMatcher` over one contiguous byte slice mapped at
-/// virtual address `vma`, returning a [`StringFact`] per NUL-terminated run of
-/// in-charset bytes whose visible length is `>= min_len`.
+/// How a printable run has to end for the matcher to accept it.
 ///
-/// The matcher accumulates a run of [`is_string_char`] bytes; when it hits a NUL
-/// it emits the run if long enough (the run is "null-terminated"); when it hits
-/// any other out-of-charset byte the run is rejected (because `requireNullEnd` is
-/// the default). The NUL is not counted toward `min_len`, but it *is* counted in
-/// the emitted `len` (the `char[N]` array length = visible_len + 1).
-pub(crate) fn scan_run(data: &[u8], vma: u64, min_len: usize) -> Vec<StringFact> {
+/// [`StringLiteralPass`] is always [`Termination::Nul`] — the markup it commits is
+/// a `char[N]`, which only a NUL-ended run describes. The relaxed arm exists for
+/// the read-only inventory query behind `kuna strings`
+/// ([`kuna_stringinv`](self::kuna_stringinv)), where the question is "what text is
+/// in this image", not "where can a `char[N]` be planted".
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Termination {
+    /// `StringsAnalyzer.requireNullEnd`: only a NUL closes an accepted run.
+    Nul,
+    /// Any out-of-charset byte — or the end of the scanned region — closes an
+    /// accepted run, which is `strings(1)`'s rule. This is what recovers a
+    /// length-prefixed name table (`\x0cout.js\x06std\x12_0x8ec6b3`), whose
+    /// entries are separated by their own length byte and never NUL-terminated.
+    Any,
+}
+
+/// One printable run the matcher located, before any `char[N]` is derived from it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Run {
+    /// VMA of the first character byte.
+    pub addr: u64,
+    /// Bytes of visible text, terminator excluded.
+    pub visible_len: usize,
+    /// The run was closed by a NUL, so it is a C string as well as a text run.
+    pub nul_terminated: bool,
+}
+
+/// Run the `MinLengthCharSequenceMatcher` over one contiguous byte slice mapped at
+/// virtual address `vma`, returning every run of in-charset bytes whose visible
+/// length is `>= min_len` and whose ending `term` admits.
+///
+/// The matcher accumulates a run of [`is_string_char`] bytes and closes it on the
+/// first byte outside the charset. Under [`Termination::Nul`] only a NUL closes it
+/// into a result; under [`Termination::Any`] any out-of-charset byte does, as does
+/// running off the end of the slice. The terminator is never counted toward
+/// `min_len`.
+pub(crate) fn scan_runs(data: &[u8], vma: u64, min_len: usize, term: Termination) -> Vec<Run> {
     let mut out = Vec::new();
     let mut run_start: Option<usize> = None;
+    let close = |out: &mut Vec<Run>, start: usize, end: usize, nul: bool| {
+        let visible_len = end - start;
+        if visible_len >= min_len && (nul || term == Termination::Any) {
+            out.push(Run { addr: vma + start as u64, visible_len, nul_terminated: nul });
+        }
+    };
     for (i, &b) in data.iter().enumerate() {
         if is_string_char(b) {
             if run_start.is_none() {
@@ -76,19 +115,27 @@ pub(crate) fn scan_run(data: &[u8], vma: u64, min_len: usize) -> Vec<StringFact>
         }
         // Out-of-charset byte: closes the current run (if any).
         if let Some(start) = run_start.take() {
-            let visible_len = i - start;
-            // requireNullEnd: only a NUL terminator makes the run a string.
-            if b == 0 && visible_len >= min_len {
-                out.push(StringFact {
-                    addr: vma + start as u64,
-                    len: (visible_len + 1) as u32, // + the trailing NUL
-                });
-            }
+            close(&mut out, start, i, b == 0);
         }
     }
-    // A run that reaches the end of the slice without a NUL is rejected
-    // (requireNullEnd): no emission for a trailing `run_start`.
+    // A run that reaches the end of the slice has no terminator at all, so it is
+    // a text run but never a C string.
+    if let Some(start) = run_start {
+        close(&mut out, start, data.len(), false);
+    }
     out
+}
+
+/// The pass's own matcher: [`scan_runs`] under `requireNullEnd`, as a
+/// [`StringFact`] per hit.
+///
+/// The NUL is not counted toward `min_len`, but it *is* counted in the emitted
+/// `len` (the `char[N]` array length = visible_len + 1).
+pub(crate) fn scan_run(data: &[u8], vma: u64, min_len: usize) -> Vec<StringFact> {
+    scan_runs(data, vma, min_len, Termination::Nul)
+        .into_iter()
+        .map(|r| StringFact { addr: r.addr, len: (r.visible_len + 1) as u32 })
+        .collect()
 }
 
 /// Is `sec` part of the loaded+initialized image — i.e. worth scanning for a

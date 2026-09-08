@@ -82,6 +82,13 @@ fn fauxware() -> String {
     fixture("fauxware")
 }
 
+/// The vendored `nametable_x86_64`: a `.rodata` holding a length-prefixed name
+/// table (no NUL anywhere) plus one ordinary NUL-terminated literal, which is the
+/// pair `--termination` separates.
+fn nametable() -> String {
+    fixture("nametable_x86_64")
+}
+
 /// `true` when a failure is a missing-`.sla` bootstrap failure (a legitimate
 /// skip), not a real bug.
 fn is_specs_skip(message: &str) -> bool {
@@ -150,7 +157,8 @@ fn the_inventory_carries_addresses_and_sections() {
     assert_eq!(prompt[3], ".rodata");
     assert_eq!(prompt[6], "Username: ");
     assert!(row_at(&rows, "0x4008d0").is_some(), "the backdoor password must be listed");
-    assert!(out.starts_with("# 13 strings in "), "a header naming the query:\n{out}");
+    assert!(out.starts_with("# 14 strings in "), "a header naming the query:\n{out}");
+    assert!(out.contains("termination any"), "and the ending policy it ran under:\n{out}");
 }
 
 /// The reason to ask kuna rather than `strings(1)`: the row names the function
@@ -178,6 +186,7 @@ fn the_json_document_has_the_house_shape() {
         "min_length",
         "filter",
         "section",
+        "termination",
         "scanned",
         "xrefs",
         "count",
@@ -195,6 +204,7 @@ fn the_json_document_has_the_house_shape() {
         "text",
         "length",
         "byte_length",
+        "nul_terminated",
         "encoding",
         "section",
         "xrefs_count",
@@ -230,6 +240,90 @@ fn min_length_moves_the_analyzer_threshold() {
         rows(&tight).iter().all(|r| r[2].parse::<usize>().unwrap() >= 20),
         "no row shorter than the minimum survives"
     );
+}
+
+/// The recorded defect `--termination` exists for: a length-prefixed name table
+/// holds no NUL, so an inventory that takes only NUL-ended runs answers zero for
+/// a region `strings(1)` reads in full.
+#[test]
+fn a_length_prefixed_name_table_is_reported_by_default() {
+    let bin = nametable();
+    let mut argv = vec![&bin[..], "--no-xrefs", "--section", ".rodata", "--min-length", "4"];
+    let Some(out) = listing(&argv) else { return };
+    let texts: Vec<String> = rows(&out).iter().map(|r| r[6].clone()).collect();
+    assert_eq!(
+        texts,
+        vec!["out.js", "_0x8ec6b3", "_0x3f5c60", "Correct serial!"],
+        "the whole table, plus the ordinary literal:\n{out}"
+    );
+
+    // The pass-faithful policy is the behaviour this replaced: the table is gone
+    // and only the C literal survives.
+    argv.extend_from_slice(&["--termination", "nul"]);
+    let Some(out) = listing(&argv) else { return };
+    let strict = rows(&out);
+    assert_eq!(strict.len(), 1, "only the NUL-ended literal:\n{out}");
+    assert_eq!(strict[0][6], "Correct serial!");
+}
+
+/// An unterminated row is reported as one: it says so, and its extent stops at
+/// its last visible byte rather than claiming a terminator it does not have.
+#[test]
+fn an_unterminated_row_declares_itself() {
+    let Some(out) = listing(&[
+        &nametable(),
+        "--no-xrefs",
+        "--json",
+        "--min-length",
+        "4",
+        "--filter",
+        "^out.js$",
+    ]) else {
+        return;
+    };
+    let parsed = jsonfmt::parse(&out).expect("the document parses as JSON");
+    let jsonfmt::Json::Object(root) = &parsed else { panic!("the document is an object") };
+    let key = |k: &str| root.iter().find(|(name, _)| name == k).map(|(_, v)| v);
+    assert_eq!(key("termination"), Some(&jsonfmt::Json::Str("any".into())), "echoed:\n{out}");
+    let Some(jsonfmt::Json::Array(items)) = key("strings") else { panic!("strings is an array") };
+    assert_eq!(items.len(), 1, "one match:\n{out}");
+    let jsonfmt::Json::Object(row) = &items[0] else { panic!("a row is an object") };
+    let field = |k: &str| row.iter().find(|(name, _)| name == k).map(|(_, v)| v);
+    assert_eq!(field("nul_terminated"), Some(&jsonfmt::Json::Bool(false)));
+    assert_eq!(field("length"), Some(&jsonfmt::Json::Number("6".into())));
+    assert_eq!(
+        field("byte_length"),
+        Some(&jsonfmt::Json::Number("6".into())),
+        "no terminator to count:\n{out}"
+    );
+}
+
+/// Relaxing the ending only adds rows: every NUL-terminated literal keeps its
+/// address, its text and its terminator-inclusive extent.
+#[test]
+fn the_strict_policy_is_a_subset_of_the_default() {
+    let Some(relaxed) = listing(&[&fauxware(), "--no-xrefs", "--json"]) else { return };
+    let Some(strict) = listing(&[&fauxware(), "--no-xrefs", "--json", "--termination", "nul"])
+    else {
+        return;
+    };
+    let rows = |doc: &str| -> Vec<jsonfmt::Json> {
+        let jsonfmt::Json::Object(root) = jsonfmt::parse(doc).expect("JSON") else {
+            panic!("object")
+        };
+        let Some((_, jsonfmt::Json::Array(items))) =
+            root.into_iter().find(|(name, _)| name == "strings")
+        else {
+            panic!("strings is an array")
+        };
+        items
+    };
+    let (relaxed, strict) = (rows(&relaxed), rows(&strict));
+    assert_eq!(strict.len(), 13, "the analyzer's own inventory of fauxware");
+    assert_eq!(relaxed.len(), 14, "plus the one unterminated printable run");
+    for row in &strict {
+        assert!(relaxed.contains(row), "the relaxed ending dropped a row: {row:?}");
+    }
 }
 
 /// `--section` narrows the scan to one section, by name, with the leading dot
@@ -432,6 +526,7 @@ fn the_command_line_contract() {
     for bad in [
         vec![],
         vec![&fauxware()[..], "--encoding", "ebcdic"],
+        vec![&fauxware()[..], "--termination", "maybe"],
         vec![&fauxware()[..], "--min-length", "0"],
         vec![&fauxware()[..], "--min-length", "many"],
         vec![&fauxware()[..], "--nonsense"],
@@ -540,7 +635,11 @@ fn a_universal_macho_is_scanned_not_rejected() {
     let cstring = row_at(&rows, "0x1000005ee").expect("the x86-64 slice's format string");
     assert_eq!(cstring[3], "__cstring");
     assert!(cstring[6].starts_with("%d"), "the literal itself: {cstring:?}");
-    assert_eq!(rows.len(), 5, "the whole x86-64 slice, no more:\n{out}");
+    assert_eq!(rows.len(), 8, "the whole x86-64 slice, no more:\n{out}");
+    assert!(
+        rows.iter().all(|r| r[0].starts_with("0x1000")),
+        "every row is in the x86-64 slice, none from the arm64 one:\n{out}"
+    );
 }
 
 /// `--slice` is LIVE on this path, not merely non-fatal: it was parsed and then
