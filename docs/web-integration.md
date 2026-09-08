@@ -49,9 +49,9 @@ decompiler/crates/kuna-wasm/     the wasm (and native) binary: `kuna_wasm`
 integrations/web/                the project site + browser harness (assembles a static dist/)
 ```
 
-The deployed site is two pages: a **landing page** at `/` and the **decompiler
-application** at `/decompile/` (§4.1). Only the second one loads the wasm; everything below
-describes it.
+The deployed site has a **landing page** at `/`, a repository-derived **development
+visualization** at `/dev-viz/`, and the **decompiler application** at `/decompile/` (§4.1).
+Only the last one loads the wasm; everything below describes it.
 
 `kuna-wasm` is a **purely additive leaf crate**. It depends only on existing engine crates
 (`kuna-console`, `kuna-decomp`, `kuna-base`) and the already-present `object`; it adds no
@@ -228,6 +228,7 @@ the `specs-small.json` preload bundle. Serve `dist/` with any static file server
 
 ```
 /                     index.html          landing page: hero, compare, goals
+/dev-viz/             dev-viz/index.html development record: cadence, phases, provenance, evidence
 /decompile/           decompile/index.html the decompiler application (loads the wasm)
 /assets/              css/site.css · fonts/ · img/ · js/highlight-c.js · js/fnfilter.js
 /compare-samples.js   the compare section's data (samples + rival outputs)

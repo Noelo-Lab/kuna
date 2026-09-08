@@ -54,6 +54,25 @@ cp "$HERE/index.html" "$HERE/compare-samples.js" "$HERE/kuna-web.js" \
 cp -r "$HERE/assets" "$DIST/assets"
 cp -r "$HERE/decompile" "$DIST/decompile"
 cp -r "$HERE/vendor" "$DIST/vendor"
+mkdir -p "$DIST/dev-viz"
+cp "$HERE/dev-viz/index.html" "$HERE/dev-viz/app.js" \
+   "$HERE/dev-viz/dev-viz.css" "$DIST/dev-viz/"
+
+# The development visualization is a public, reproducible snapshot. It reads
+# the full local git history plus tracked provenance/measurement records; no API
+# or private campaign state reaches the bundle. tomllib requires Python 3.11+.
+DEVVIZ_PYTHON=""
+for candidate in python3.14 python3.13 python3.12 python3.11 python3; do
+  if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -c \
+      'import sys; raise SystemExit(sys.version_info < (3, 11))' 2>/dev/null; then
+    DEVVIZ_PYTHON="$candidate"
+    break
+  fi
+done
+[ -n "$DEVVIZ_PYTHON" ] || { echo "error: dev-viz needs Python 3.11+"; exit 1; }
+echo ">> generating the public development snapshot"
+"$DEVVIZ_PYTHON" "$HERE/dev-viz/generate.py" --repo "$REPO" \
+  --output "$DIST/dev-viz/data.json"
 
 # Optionally shrink the wasm (nice-to-have; the demo works without it).
 if command -v wasm-opt >/dev/null; then

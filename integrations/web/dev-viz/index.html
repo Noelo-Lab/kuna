@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>development record — Kuna</title>
+<meta name="description" content="Explore how Kuna develops: phase activity, commit cadence, feature provenance, benchmark-led research, and the evidence gates behind an agent-first decompiler.">
+<meta name="theme-color" content="#ffffff">
+<link rel="icon" type="image/png" href="../assets/img/favicon.png">
+<link rel="stylesheet" href="../assets/css/site.css">
+<link rel="stylesheet" href="./dev-viz.css">
+</head>
+<body class="devviz">
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="../">
+      <img src="../assets/img/kuna-mark.png" alt="">
+      <span class="wordmark">Kuna</span>
+      <span class="at">development record</span>
+    </a>
+    <nav class="nav" aria-label="Primary">
+      <a href="./" class="here" aria-current="page">/dev-viz</a>
+      <a href="../decompile/">/decompile</a>
+      <a href="https://noelo.org">/noelo</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="wrap">
+    <section class="record-hero">
+      <div>
+        <p class="shead"><span class="signal" aria-hidden="true"></span><span class="name">the public development record</span></p>
+        <h1>Watch a decompiler learn.</h1>
+        <p class="lede">Kuna is built by agents against visible evidence: regression corpora, real-binary benchmarks, explicit phase decisions, and records of where an idea came from. This page derives its numbers from the repository at build time.</p>
+        <p class="snapshot" id="snapshot">Loading repository snapshot…</p>
+      </div>
+      <div class="hero-proof" aria-label="Development evidence summary">
+        <div><strong id="stat-commits">—</strong><span>non-merge commits</span></div>
+        <div><strong id="stat-agent">—</strong><span>explicitly agent-attributed</span></div>
+        <div><strong id="stat-options">—</strong><span>flippable decisions</span></div>
+        <div><strong id="stat-tests">—</strong><span>pinned assertions</span></div>
+      </div>
+    </section>
+  </div>
+
+  <div class="wrap">
+    <section class="sec viz-section" id="cadence">
+      <div class="section-intro">
+        <div>
+          <p class="eyebrow">01 / cadence</p>
+          <h2>A research system that ships daily</h2>
+        </div>
+        <p>Each black bar is a day’s non-merge commits. The red line is source churn on a logarithmic scale, so both focused fixes and the early port remain visible. Hover or focus a day for its exact evidence.</p>
+      </div>
+      <div class="chart-shell">
+        <div class="chart-legend" aria-hidden="true">
+          <span><i class="legend-bar"></i> commits</span>
+          <span><i class="legend-line"></i> source lines changed</span>
+          <span><i class="legend-port"></i> Rust port</span>
+        </div>
+        <div class="canvas-scroll" id="pace-scroll">
+          <canvas id="pace-chart" width="1060" height="340" tabindex="0" aria-label="Daily commit frequency and source churn chart"></canvas>
+          <div class="chart-tip" id="pace-tip" hidden></div>
+        </div>
+        <p class="chart-summary" id="pace-summary" aria-live="polite"></p>
+      </div>
+      <ol class="milestones" id="milestones" aria-label="Project milestones"></ol>
+    </section>
+  </div>
+
+  <div class="wrap">
+    <section class="sec viz-section" id="phases">
+      <div class="section-intro">
+        <div>
+          <p class="eyebrow">02 / phase model</p>
+          <h2>Where development lands</h2>
+        </div>
+        <p>The rows follow Kuna’s P0–P9 model; columns are UTC weeks. Color measures source lines added or removed by commits that can be assigned to a phase. Activity shows attention, not percent complete.</p>
+      </div>
+      <div class="heatmap-shell">
+        <div class="heatmap" id="phase-heatmap" aria-label="Weekly source activity by decompiler phase"></div>
+        <div class="heat-legend"><span>quiet</span><i></i><i></i><i></i><i></i><i></i><span>high churn</span></div>
+      </div>
+      <div class="phase-detail" id="phase-detail" aria-live="polite"></div>
+    </section>
+  </div>
+
+  <div class="ink-band">
+    <div class="wrap">
+      <section class="viz-section provenance" id="provenance">
+        <div class="section-intro">
+          <div>
+            <p class="eyebrow">03 / provenance</p>
+            <h2>Ideas keep their receipts</h2>
+          </div>
+          <p>Every flippable decision names its source and inspiration. The catalog separates work derived from other decompilers from behavior developed inside Kuna, while DecBench case IDs link learned behavior back to the function that exposed it.</p>
+        </div>
+        <div class="prov-layout">
+          <div>
+            <div class="prov-bars" id="prov-bars" aria-label="Option provenance counts"></div>
+            <p class="fineprint">Counts are the current option catalog’s <code>source_decompiler</code> field. “Kuna” means the implementation’s recorded source, even when its inspiration cites prior research.</p>
+          </div>
+          <div class="research-counters">
+            <article><strong id="decbench-options">—</strong><span>options tied to an exact DecBench case</span></article>
+            <article><strong id="novel-cases">—</strong><span>NOVEL-pool cases where Kuna is co-best or best, yet still imperfect</span></article>
+            <article><strong id="novel-features">—</strong><span>feature records grown from NOVEL-pool triage</span></article>
+          </div>
+        </div>
+
+        <div class="novel-strip">
+          <div><p class="eyebrow">from the NOVEL pool</p><h3>Kuna led the comparison and still found work to do</h3></div>
+          <div class="novel-list" id="novel-list"></div>
+          <p class="fineprint">NOVEL is a mining label: at the recorded snapshot, Kuna was best or co-best among the available outputs but still had structural or readability defects. It identifies self-directed research opportunities; it is not a claim that an idea has no prior art.</p>
+        </div>
+
+        <div class="catalog-tools">
+          <label for="catalog-search">Inspect the decision catalog</label>
+          <div>
+            <input id="catalog-search" type="search" placeholder="Search option, phase, source, or inspiration">
+            <select id="catalog-source" aria-label="Filter options by provenance"><option value="">all sources</option></select>
+          </div>
+        </div>
+        <div class="catalog-list" id="catalog-list"></div>
+        <button class="text-button" id="catalog-more" type="button" hidden>Show more decisions</button>
+      </section>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <section class="sec viz-section" id="outcomes">
+      <div class="section-intro">
+        <div>
+          <p class="eyebrow">04 / measured outcomes</p>
+          <h2>The score has to move—or hold</h2>
+        </div>
+        <p>Recorded feature witnesses are rescored with graph edit distance (GED): lower is structurally closer to the original source, and zero is exact. Unchanged cases matter because they make limits visible.</p>
+      </div>
+      <div class="ged-chart" id="ged-chart" aria-label="Recorded before and after graph edit distances"></div>
+      <p class="fineprint light">These are per-function feature records, not a cross-tool leaderboard. Each row links to its committed measurement; benchmark columns collected at different dates are used for mining, not publication claims.</p>
+    </section>
+  </div>
+
+  <div class="wrap">
+    <section class="sec viz-section" id="method">
+      <div class="section-intro">
+        <div>
+          <p class="eyebrow">05 / method</p>
+          <h2>Autonomy with a harness</h2>
+        </div>
+        <p>The system is autonomous because the next problem, the implementation, and much of the verification can be agent-run. It stays research-grade because every stage leaves inspectable evidence.</p>
+      </div>
+      <ol class="loop">
+        <li><span>01</span><h3>Mine</h3><p>Find functions where another decompiler wins, or where Kuna leads but remains imperfect.</p></li>
+        <li><span>02</span><h3>Triage</h3><p>Reproduce on today’s engine, compare structure, and test the proposed mechanism.</p></li>
+        <li><span>03</span><h3>Implement</h3><p>Place behavior in its phase and expose judgment calls as per-run options.</p></li>
+        <li><span>04</span><h3>Challenge</h3><p>Run two-pass stage cases, the 675-assertion oracle, workspace tests, and spec checks.</p></li>
+        <li><span>05</span><h3>Measure</h3><p>Rescore the witness, audit every changed function, and retain provenance.</p></li>
+      </ol>
+      <div class="evidence-grid">
+        <article>
+          <p class="metric"><strong id="oracle-count">—</strong> / <span id="oracle-total">—</span></p>
+          <h3>Upstream parity</h3>
+          <p>The original Ghidra regression assertions remain pinned. The baseline is not moved to absorb regressions.</p>
+        </article>
+        <article>
+          <p class="metric"><strong id="stage-count">—</strong> / <span id="stage-total">—</span></p>
+          <h3>Kuna-owned assertions</h3>
+          <p>New behavior gets an end-to-end witness, including an option-off contrast when output can change.</p>
+        </article>
+        <article>
+          <p class="metric"><strong id="triage-count">—</strong> records</p>
+          <h3>Public triage trail</h3>
+          <p id="triage-summary">Repository records show what became a candidate, what an existing option covered, and what was already fixed.</p>
+        </article>
+      </div>
+    </section>
+  </div>
+</main>
+
+<footer class="foot devfoot">
+  <div class="wrap">
+    <p id="data-note">Evidence snapshot loading…</p>
+    <span class="links">
+      <a href="https://github.com/Noelo-Lab/kuna">source</a>
+      <a href="https://github.com/Noelo-Lab/kuna/blob/main/docs/history.md">history</a>
+      <a href="https://github.com/Noelo-Lab/kuna/blob/main/docs/decbench-loop.md">method</a>
+      <a href="../decompile/">decompile</a>
+    </span>
+  </div>
+</footer>
+
+<script type="module" src="./app.js"></script>
+</body>
+</html>
