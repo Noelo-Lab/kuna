@@ -120,8 +120,47 @@ struct Segment {
     /// Virtual address the bytes map to (C++ `asection::vma`).
     vma: u64,
     /// The bytes present at `vma` (a copy of the ELF segment's file data; the
-    /// region's `size` is `data.len()`, the C++ `secsize`).
+    /// C++ `secsize` is `data.len()`).
     data: Vec<u8>,
+    /// (kuna, `pe-zero-filled-data`) The segment's RAM footprint — ELF
+    /// `p_memsz`, PE `VirtualSize`, Mach-O `vmsize` — which may exceed the file
+    /// extent in [`Self::data`]. The excess is the `.bss`-style zero-filled
+    /// tail: mapped memory the file does not back, which the loader must still
+    /// hand out as zeroes rather than as a hole. Recorded only for a segment the
+    /// image marks as data, and clamped at construction so a tail never reaches
+    /// into the next segment.
+    memsz: u64,
+}
+
+impl Segment {
+    /// A segment whose file data is its whole RAM footprint.
+    fn file_backed(vma: u64, data: Vec<u8>) -> Segment {
+        let memsz = data.len() as u64; // cast: segment byte count
+        Segment { vma, data, memsz }
+    }
+
+    /// The mapped extent at [`Self::vma`] — the file data plus any zero-filled
+    /// RAM tail. Never shorter than the file extent.
+    fn mapped_size(&self) -> u64 {
+        self.memsz.max(self.data.len() as u64) // cast: segment byte count
+    }
+}
+
+/// Trim every segment's zero-filled tail so it stops at the next segment's vma.
+///
+/// `segments` must already be vma-sorted. Only the tail is trimmed: a segment's
+/// own file extent is left alone, so a layout that stacks several segments at
+/// one address (a COFF object read through the linked path) maps exactly what it
+/// mapped before.
+fn clamp_virtual_tails(segments: &mut [Segment]) {
+    for i in 0..segments.len() {
+        let Some(next) = segments.get(i + 1).map(|s| s.vma) else {
+            continue;
+        };
+        let seg = &mut segments[i];
+        let room = next.saturating_sub(seg.vma);
+        seg.memsz = seg.memsz.min(room).max(seg.data.len() as u64); // cast: byte count
+    }
 }
 
 /// A load segment's [`section_flags`] bits, from the format's own permission
@@ -466,10 +505,10 @@ impl ObjectLoadImage {
 
         // Snapshot the loadable segments (PT_LOAD), copying their RAM bytes.
         // `data()` returns only the file-backed bytes; a segment's `size()`
-        // (its RAM footprint) may exceed that for `.bss`-style tails, which the
-        // BFD loader reports as zeroes via the gap fill — so the copied `data`
-        // is the file extent and any RAM tail past it falls into the zero-fill
-        // path exactly as an unmapped gap would (BFD `SEC_LOAD`-less sections).
+        // (its RAM footprint) may exceed that for `.bss`-style tails, so both
+        // are kept: `data` is the file extent and `memsz` the mapped extent,
+        // and a read past the file extent zero-fills to `memsz` the way BFD
+        // reports a `SEC_LOAD`-less section.
         let mut segments: Vec<Segment> = Vec::new();
         let mut segment_info: Vec<SectionInfo> = Vec::new();
         let mut executable_segments = Vec::new();
@@ -485,17 +524,22 @@ impl ObjectLoadImage {
             })?;
             // The metadata records the RAM footprint whether or not the file
             // backs it, so a `.bss` tail still reads as mapped.
+            let bits = segment_bits(seg.flags());
             if seg.size() != 0 {
-                segment_info.push(SectionInfo {
-                    vma,
-                    size: seg.size(),
-                    flags: segment_bits(seg.flags()),
-                });
+                segment_info.push(SectionInfo { vma, size: seg.size(), flags: bits });
             }
-            if data.is_empty() {
+            // (kuna, `pe-zero-filled-data`) The RAM footprint is what the tail
+            // is zero-filled to — but only where the image says the region holds
+            // data. An *executable* uninitialized region is a packer's staging
+            // area (`UPX0`: `VirtualSize` 0x9000 over `SizeOfRawData` 0), and
+            // its file-time contents are not its run-time contents, so handing
+            // out zeroes there would put 36 KB of `add [eax],al` into the
+            // instruction stream in place of the honest "unpack first".
+            let memsz = if bits & section_flags::CODE != 0 { 0 } else { seg.size() };
+            if data.is_empty() && memsz == 0 {
                 continue;
             }
-            segments.push(Segment { vma, data: data.to_vec() });
+            segments.push(Segment { vma, data: data.to_vec(), memsz });
         }
         // (kuna, `pe-header-entry-mapped`) The header page a format maps ahead
         // of its first section. `file.segments()` enumerates sections, so a PE's
@@ -510,16 +554,17 @@ impl ObjectLoadImage {
             flags: section_flags::DATA | section_flags::READONLY,
         });
         if let Some(region) = &header {
-            segments.push(Segment {
-                vma: region.vma,
-                data: bytes[..region.size as usize].to_vec(), // cast: ditto
-            });
+            segments.push(Segment::file_backed(
+                region.vma,
+                bytes[..region.size as usize].to_vec(), // cast: ditto
+            ));
             segment_info.push(region.clone());
         }
         segment_info.sort_by_key(|s| s.vma);
         // Ascending vma order so find_section's "closest greater" walk is a
         // simple scan (the BFD list is already address-ordered for ELF).
         segments.sort_by_key(|s| s.vma);
+        clamp_virtual_tails(&mut segments);
 
         // Snapshot the sections for the info walks (the BFD `asection` list).
         // (C) The per-format section-flag translation goes through the boundary; for
@@ -715,9 +760,14 @@ impl ObjectLoadImage {
             }
         }
 
-        let mut segments: Vec<Segment> =
-            layout.segments.into_iter().map(|(vma, data)| Segment { vma, data }).collect();
-        segments.extend(fpconst.writes.into_iter().map(|(vma, data)| Segment { vma, data }));
+        let mut segments: Vec<Segment> = layout
+            .segments
+            .into_iter()
+            .map(|(vma, data)| Segment::file_backed(vma, data))
+            .collect();
+        segments.extend(
+            fpconst.writes.into_iter().map(|(vma, data)| Segment::file_backed(vma, data)),
+        );
         segments.sort_by_key(|s| s.vma);
 
         let sections: Vec<SectionInfo> = layout
@@ -887,11 +937,15 @@ impl ObjectLoadImage {
     /// (C++ `LoadImageBfd::findSection`, `loadimage_bfd.cc:99`).  Returns the
     /// index into [`Self::segments`] and the segment size, or `None` for "no
     /// segment at or above `offset`" (the C++ null `champ`).
+    ///
+    /// The size is the segment's *mapped* extent ([`Segment::mapped_size`]), so
+    /// an address in a zero-filled RAM tail resolves to the segment that maps
+    /// it instead of falling through to the "closest above" scan.
     fn find_section(&self, offset: u64) -> Option<(usize, u64)> {
         // First pass: the segment that actually contains `offset`.
         for (i, s) in self.segments.iter().enumerate() {
             let start = s.vma;
-            let secsize = s.data.len() as u64; // cast: segment byte count
+            let secsize = s.mapped_size();
             let stop = start.wadd(secsize);
             // C++ uses raw `<`/`>=`; a
             // wrapped stop (segment at the top of the space) cannot occur for a
@@ -904,7 +958,7 @@ impl ObjectLoadImage {
         // vma-sorted, so the first such is the closest — the C++ `champ` scan).
         for (i, s) in self.segments.iter().enumerate() {
             if s.vma > offset {
-                return Some((i, s.data.len() as u64));
+                return Some((i, s.mapped_size()));
             }
         }
         None
@@ -2017,6 +2071,98 @@ mod tests {
             }
             assert!(vma >= hvma + hsize, "section 0x{vma:x}+0x{size:x} overlaps the header page");
         }
+    }
+
+    /// (kuna, `pe-zero-filled-data`) A PE section that declares more RAM than
+    /// the file backs maps its whole `VirtualSize`: the file extent reads back
+    /// its own bytes, the tail past `SizeOfRawData` reads back zeroes, and the
+    /// first byte past `VirtualSize` is still unmapped.
+    #[test]
+    fn a_pe_maps_the_zero_filled_tail_of_a_section() {
+        use kuna_sleigh::loadimage::LoadImage;
+        let path = format!(
+            "{}/tests/fixtures/pe_bsstail_x86_64.exe",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let bytes = std::fs::read(&path).expect("fixture");
+        let m = manager();
+        let ram = Rc::clone(m.get_space_by_name("ram").unwrap());
+        let mut img = ObjectLoadImage::from_bytes(&path, &bytes).expect("load the PE");
+        img.attach_to_space(Rc::clone(&ram));
+
+        // .data: RVA 0x2000, VirtualSize 0x7a8, SizeOfRawData 0x200. The bound
+        // is probed first, on a cold image: `loadFill` reads a 512-byte window
+        // at a time and zero-pads the end of one, so a later read inside a
+        // window that started in .data is answered from the buffer.
+        let at = |vma: u64| Address::new(Rc::clone(&ram), vma);
+        let mut past = [0u8; 1];
+        let err = img.load_fill(&mut past, &at(0x1_4000_27a8)).unwrap_err();
+        assert!(
+            matches!(err, KunaError::DataUnavail { .. }),
+            "VirtualSize is still the bound; got {err:?}"
+        );
+
+        let mut buf = [0u8; 8];
+        img.load_fill(&mut buf, &at(0x1_4000_21f8)).expect("the file extent is mapped");
+        assert_eq!(buf, [0xaa; 8], "the last eight bytes SizeOfRawData backs");
+
+        let mut tail = [0xffu8; 64];
+        img.load_fill(&mut tail, &at(0x1_4000_2740)).expect("the virtual tail is mapped");
+        assert_eq!(tail, [0u8; 64], "past SizeOfRawData the tail reads as zeroes");
+    }
+
+    /// The same for an ELF `.bss`: `p_memsz` past `p_filesz` is mapped memory,
+    /// not a hole, so a read there answers zeroes instead of DataUnavail — and
+    /// the tail of an *executable* segment stays a hole, because there its
+    /// file-time zeroes are not what runs.
+    #[test]
+    fn an_elf_bss_tail_reads_as_zeroes() {
+        use kuna_sleigh::loadimage::LoadImage;
+        let mut bytes = build_elf64(0x401000, &[0x55, 0x48, 0x89, 0xe5], None);
+        bytes[104..112].copy_from_slice(&64u64.to_le_bytes()); // p_memsz, 4 backed + 60 zero
+        bytes[68..72].copy_from_slice(&(object::elf::PF_R | object::elf::PF_W).to_le_bytes());
+        let m = manager();
+        let ram = Rc::clone(m.get_space_by_name("ram").unwrap());
+        let mut img = ObjectLoadImage::from_bytes("t.elf", &bytes).expect("load the ELF");
+        img.attach_to_space(Rc::clone(&ram));
+
+        // Cold, so the 512-byte read window cannot answer it (see the PE case).
+        let err = img.load(4, &Address::new(Rc::clone(&ram), 0x401040)).unwrap_err();
+        assert!(matches!(err, KunaError::DataUnavail { .. }), "p_memsz bounds it: {err:?}");
+        let got = img.load(8, &Address::new(Rc::clone(&ram), 0x401000)).expect("mapped");
+        assert_eq!(got, vec![0x55, 0x48, 0x89, 0xe5, 0, 0, 0, 0]);
+        let got = img.load(4, &Address::new(Rc::clone(&ram), 0x401030)).expect("bss tail");
+        assert_eq!(got, vec![0, 0, 0, 0], "wholly inside the .bss tail");
+
+        bytes[68..72].copy_from_slice(&(object::elf::PF_R | object::elf::PF_X).to_le_bytes());
+        let mut img = ObjectLoadImage::from_bytes("t.elf", &bytes).expect("load the ELF");
+        img.attach_to_space(Rc::clone(&ram));
+        let err = img.load(4, &Address::new(Rc::clone(&ram), 0x401030)).unwrap_err();
+        assert!(
+            matches!(err, KunaError::DataUnavail { .. }),
+            "an executable segment's tail is not materialised as code; got {err:?}"
+        );
+    }
+
+    /// A zero-filled tail is trimmed at the next segment, and only the tail is:
+    /// segments stacked at one vma (a COFF object read through the linked path)
+    /// keep every byte the file backs.
+    #[test]
+    fn a_virtual_tail_stops_at_the_next_segment() {
+        let mut segs = vec![
+            Segment { vma: 0x1000, data: vec![1, 2, 3, 4], memsz: 0x4000 },
+            Segment { vma: 0x2000, data: vec![9], memsz: 0x10 },
+        ];
+        clamp_virtual_tails(&mut segs);
+        assert_eq!(segs[0].mapped_size(), 0x1000, "trimmed to where the next segment starts");
+        assert_eq!(segs[1].mapped_size(), 0x10, "the last segment keeps its whole tail");
+
+        let mut stacked = vec![
+            Segment::file_backed(0, vec![1, 2, 3, 4]),
+            Segment::file_backed(0, vec![5, 6]),
+        ];
+        clamp_virtual_tails(&mut stacked);
+        assert_eq!(stacked[0].mapped_size(), 4, "a file extent is never trimmed away");
     }
 
     #[test]
