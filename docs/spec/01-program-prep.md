@@ -105,16 +105,36 @@ real-binary `LoadImage` backend — the substitution for upstream's GPL-licensed
 BFD loader (`LoadImageBfd`), rebuilt on the permissive `object` crate with the C++
 interface semantics preserved exactly: the same 512-byte read buffer, the same
 containing-segment-else-closest-greater walk with gap zero-fill, and the same
-"initial address unmapped → `DataUnavailError`" contract in `loadFill`. One
-deliberate correction inside that contract: the buffer's `bufoffset` is claimed
-at the top of a fill, *before* a byte is read, and a failed fill **releases it
+"initial address unmapped → `DataUnavailError`" contract in `loadFill`. Two
+deliberate corrections inside that contract. The first: the buffer's
+`bufoffset` is claimed at the top of a fill, *before* a byte is read, and a failed fill **releases it
 again** (upstream throws with it still claimed). Left claimed, the buffer's own
 fast path answers every later request within 512 bytes of the failed address out
 of a buffer that was never filled — stale bytes, reported as a successful read.
 Nothing upstream reads twice near a failure, which is why it never surfaced
 there; a caller that probes addresses in order (the extern-slot
-classification of §0.2) walks straight into it. The mapping
-unit is the ELF **`PT_LOAD` segment** (what the OS actually maps), not the BFD
+classification of §0.2) walks straight into it.
+
+(kuna, GH-510) The second: **a read longer than the buffer is served straight
+into the caller's slice**, bypassing the buffer entirely
+(`decompiler/crates/kuna-analysis/src/loadimage_object.rs (fill_span)`).
+Upstream stages every read through the 512-byte window and copies the answer
+back out of it with `memcpy(ptr,buffer,size)`, which for a longer request reads
+past the end of the buffer — a silent heap over-read kept out of reach only by
+upstream's own callers, none of which ask for more than sixteen bytes. kuna's do
+ask for more: the `.asm` data tail of a project export reads each named global
+at its declared datatype size, and the same copy spelled as a Rust slice panics
+instead of over-reading, so any image carrying a string or typed global of 512
+bytes or more — `/bin/ls` among them — aborted the whole `decompile-project` run
+before its output directory was created. A span that
+long could never be answered out of a 512-byte window anyway, so serving it
+directly caches nothing that would have been cached, and the window a
+neighbouring short read is being answered from is left as it was. Nothing else
+about the read changes — the same segment walk, the same zero-fill past the last
+segment it crosses, the same unmapped-start `DataUnavailError` — and a request
+of 512 bytes or fewer still follows exactly the path it always did.
+
+The mapping unit is the ELF **`PT_LOAD` segment** (what the OS actually maps), not the BFD
 section list. Where upstream returns a BFD target string for the Java side to
 re-map, kuna resolves the SLEIGH language id directly off the object header
 (machine + endianness + class → e.g. `x86:LE:64:default:gcc`). The loader's symbol

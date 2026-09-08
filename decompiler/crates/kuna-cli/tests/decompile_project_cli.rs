@@ -439,3 +439,70 @@ fn fast_selected_project_does_not_expand_to_callees() {
     assert!(!c.contains("@ 0x140001000"), "selector expanded to an unrequested callee:\n{c}");
     assert!(stdout.contains("functions: 1 ok, 0 failed"), "unexpected project summary: {stdout}");
 }
+
+/// A named global whose declared datatype is larger than the load image's
+/// 512-byte read window took the whole export down: the loader answered every
+/// read out of that window and indexed past its end, so `decompile-project`
+/// panicked before it created the output directory and wrote nothing at all.
+/// `regglobal_fmt_x86_64` carries a 40,000-byte `unused_word_type`, which is
+/// dumped whole -- the loader serves the read the declared type asks for.
+#[test]
+fn a_global_larger_than_the_load_window_is_dumped_whole() {
+    let Some(dir) = project("regglobal_fmt_x86_64", "big_global") else { return };
+    let (_c, _h, asm, _readme) = artifacts(&dir, "regglobal_fmt_x86_64");
+    let asm_text = std::fs::read_to_string(&asm).unwrap();
+    assert!(
+        asm_text.contains("\nunused_word_type:"),
+        "the 40,000-byte global is missing from the data tail"
+    );
+    let rows = asm_text
+        .lines()
+        .skip_while(|l| !l.starts_with("unused_word_type:"))
+        .skip(1)
+        .take_while(|l| l.starts_with("  "))
+        .count();
+    assert_eq!(rows, 40_000 / 16, "the declared 40,000 bytes, 16 to a row");
+}
+
+/// The same defect on the shape that made it reachable everywhere: a plain
+/// string. `tests/bug-repro/sort` carries a 604-byte usage string at `0x16600`,
+/// and reading it took the export down before `create_dir_all` ran, so the run
+/// wrote nothing at all -- the same failure `/bin/ls` and 52 of the 219 ELF
+/// binaries in `/usr/bin` hit. `--addr` selects one function; the `.asm` data
+/// tail, where the read happens, is emitted for the whole image regardless.
+#[test]
+fn a_binary_with_a_string_over_the_load_window_still_exports() {
+    let bin = repo_root().join("tests/bug-repro/sort");
+    let dir = out_dir("big_string");
+    let (_stdout, stderr, ok) = run_kuna(&[
+        "decompile-project",
+        bin.to_str().unwrap(),
+        "-o",
+        dir.to_str().unwrap(),
+        "--addr",
+        "0x3000",
+        "--sleighpath",
+        &specs(),
+    ]);
+    if !ok {
+        if is_specs_skip(&stderr) {
+            eprintln!("a_binary_with_a_string_over_the_load_window_still_exports: skipping: {stderr}");
+            return;
+        }
+        panic!("kuna decompile-project failed on tests/bug-repro/sort: {stderr}");
+    }
+    let (c, h, asm, readme) = artifacts(&dir, "sort");
+    for f in [&c, &h, &asm, &readme] {
+        assert!(f.exists(), "missing artifact {}", f.display());
+    }
+    let asm_text = std::fs::read_to_string(&asm).unwrap();
+    let rows: Vec<&str> = asm_text
+        .lines()
+        .skip_while(|l| !l.starts_with("s_16600:"))
+        .skip(1)
+        .take_while(|l| l.starts_with("  "))
+        .collect();
+    assert_eq!(rows.len(), 38, "604 bytes, 16 to a row:\n{}", rows.join("\n"));
+    assert!(rows[0].contains("KEYDEF is F[.C]"), "first row: {:?}", rows[0]);
+    assert!(rows[37].starts_with("  00016850: 20 73 75 66 66 69 78 65 73"), "last row: {:?}", rows[37]);
+}
