@@ -413,7 +413,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_57_suppressed_for_100() {
+fn option_values_live_value_present_for_57_suppressed_for_101() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -441,6 +441,10 @@ fn option_values_live_value_present_for_57_suppressed_for_100() {
         // no codegen live reader (read console-side via kuna_live_value), same as
         // `libproto` above. Default-ON (DIV-65).
         "libcsigs",
+        // (kuna) The declared-name libc prototype lookup — read console-side at
+        // declaration time (`ConsoleProgram::declare_function`), so it has no
+        // codegen live reader either. Default-ON (DIV-139).
+        "declaredlibcproto",
         "strings",
         // (kuna) The 2-byte (UTF-16LE) width of the string-literal pass — an
         // analysis-pass gate read at the commit boundary (console-side via

@@ -2190,7 +2190,7 @@ impl Architecture {
         self.analysis_libproto = true;
         // (kuna) DIV-65 measured libc signature extension — default-ON.
         self.analysis_libcsigs = true;
-        // (kuna) DIV-<N> declared-name libc prototype lookup -- default-ON.
+        // (kuna) DIV-139 declared-name libc prototype lookup -- default-ON.
         self.analysis_declaredlibcproto = true;
         self.analysis_strings = true;
         self.analysis_widestrings = true; // (kuna) DIV-110: the StringsAnalyzer `allCharWidths` 2-byte width default-ON (a wide literal was read as its own first character)
