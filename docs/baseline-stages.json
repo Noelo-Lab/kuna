@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    712,
-    712
+    714,
+    714
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -43,6 +43,8 @@
     "data:CALLOVERLAP #4: full, guardCallOverlappingInput recovers the truncated XMM0 argument and tryOutputOverlapGuard the return value",
     "data:CALLOVERLAP #5: full, f regains its own parameter",
     "data:CALLOVERLAP #6: full, the epilogue adds 1.0 to the recovered call result, not to a stale pre-call read",
+    "data:CALLTRAMPOLINE #1: the junk store decoded at the unreachable return address appears only in the calltrampoline-off pass",
+    "data:CALLTRAMPOLINE #2: the default pass flows through the fragment and recovers the real continuation",
     "data:CLEANUPCODE #1: the drop glue call is gone by default; only the cleanupcode-off pass shows it (exactly one occurrence across both passes)",
     "data:CLEANUPCODE #2: the deallocation call is gone by default; the plain (non generic) name arm of the matcher",
     "data:CLEANUPCODE #3: the drop's argument setup dies with the call (pre-SSA seam), so the constant is only in the cleanupcode-off pass",

@@ -431,6 +431,16 @@ pub trait FlowEnvironment {
         false
     }
 
+    /// (kuna `calltrampoline`) Is the direct-call target `dest` a fragment that
+    /// discards the pushed return address and jumps back into the instruction
+    /// stream, so the `CALL` should be flowed through as a branch rather than
+    /// decoding a fall-through at the return address?  See
+    /// [`kuna_calltrampoline`](crate::kuna_calltrampoline).  The default shell
+    /// reports `false` (upstream behavior: every `CALL` falls through).
+    fn is_return_discarding_trampoline(&self, _dest: &Address) -> bool {
+        false
+    }
+
     /// Is the function at the direct-call `entry` address marked \e inline? (C++
     /// `FlowInfo::queryCall` → `fspecs.copyFlowEffects(otherfunc->getFuncProto())`
     /// → `FuncProto::isInline()`).
@@ -1306,7 +1316,45 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                     *startbasic = true;
                 }
                 OpCode::CPUI_CALL => {
-                    if self.setup_call_specs(curop)? {
+                    let destaddr = self.branch_in0_addr(curop);
+                    if !destaddr.is_constant()
+                        && self.env.is_return_discarding_trampoline(&destaddr)
+                    {
+                        // (kuna calltrampoline) The callee throws the return
+                        // address away and jumps back into the stream, so
+                        // control never reaches the return address and the
+                        // fall-through decode there is junk.  Rewrite CALL ->
+                        // BRANCH and follow the target, the same rewrite
+                        // `override_flow(BRANCH)` applies by hand -- but here,
+                        // and not via the CPUI_BRANCH arm, because that arm
+                        // would hand the branch straight to `tail_call_kind`,
+                        // which claims it (the fragment is a known function
+                        // entry precisely because it is a CALL target) and ends
+                        // the caller at a synthetic tail call.
+                        self.data.op_set_opcode_code(curop, OpCode::CPUI_BRANCH);
+                        let site = self
+                            .data
+                            .obank()
+                            .get(curop)
+                            .expect("calltrampoline: stale call op")
+                            .get_addr()
+                            .clone();
+                        let mut destbuf = String::new();
+                        let _ = destaddr.print_raw(&mut destbuf);
+                        self.data.warning(
+                            &format!(
+                                "calltrampoline: {destbuf} discards the return address -- \
+following this call as a branch"
+                            ),
+                            &site,
+                        );
+                        self.new_address(curop, &destaddr)?;
+                        if self.data.obank().get(curop).expect("xref").get_time() >= maxtime {
+                            self.delete_remaining_ops(cursor)?;
+                            cursor = None;
+                        }
+                        *startbasic = true;
+                    } else if self.setup_call_specs(curop)? {
                         // The C++ `--oiter` backs up to the op *after* the call —
                         // the noreturn halt `checkForFlowModification` just inserted
                         // via `opDeadInsertAfter` — so the next iteration picks up

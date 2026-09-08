@@ -1,0 +1,50 @@
+<decompilertest>
+<!--
+    calltrampoline: flow a `call` through a callee that discards the pushed
+    return address and jumps back into the instruction stream.
+
+    CALL is a fall-through op, so kuna decodes the return address as the next
+    instruction.  A protector fragment of the form `lea esp,[esp+4]; jmp <back
+    into the caller>` makes the return address unreachable, and the byte sitting
+    there is then free to be junk: it decodes into the emitted C and leaves
+    everything after it out of phase with the real instruction stream.
+    Stage model: S2 flow classification (`xref_control_flow`, the CPUI_CALL arm).
+
+    Layout (linked flat, x86-32):
+      caller @ 0x100000 : call 0x100010          ; return address is 0x100005
+                    0x100005 : a3                ; JUNK - control never arrives
+                    0x100006 : add eax,5 ; ret   ; the real continuation
+                    0x10000a : ret               ; ends the junk-decode path
+      tramp  @ 0x100010 : lea esp,[esp+4] ; jmp 0x100006
+
+    Decoded at 0x100005 the junk lead byte swallows the real instructions:
+    `a3 83 c0 05 c3` is `MOV [0xc305c083],EAX`, a store to a global that does not
+    exist, and `add eax,5` never appears.
+
+    Pass 1 (default, calltrampoline on): the call is followed as a branch, the
+    fragment is flowed through, and the body is `return a0 + 5`.
+    Pass 2 (calltrampoline off, the bug): the fall-through at 0x100005 is decoded
+    and the junk store appears.
+
+    Assert #1 pins the junk store to EXACTLY ONE occurrence across both print C
+    passes: present in the calltrampoline-off pass, absent in the default one.
+    Assert #2 pins the real continuation the same way, in the other direction:
+    the fix has to RESTORE `a0 + 5`, not merely delete the junk.
+-->
+<binaryimage arch="x86:LE:32:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">e80b000000a383c005c3c3</bytechunk>
+<bytechunk space="ram" offset="0x100010" readonly="true">8d642404e9edffffff</bytechunk>
+<symbol space="ram" offset="0x100000" name="caller"/>
+</binaryimage>
+<script>
+  <com>lo fu caller</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option calltrampoline off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="CALLTRAMPOLINE #1: the junk store decoded at the unreachable return address appears only in the calltrampoline-off pass" min="1" max="1">dat_c305c083 = </stringmatch>
+<stringmatch name="CALLTRAMPOLINE #2: the default pass flows through the fragment and recovers the real continuation" min="1" max="1">return a0 \+ 5;</stringmatch>
+</decompilertest>
