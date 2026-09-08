@@ -26,6 +26,7 @@ pub mod project;
 pub mod classify;
 pub mod funcextent;
 pub mod codedata;
+pub mod kuna_retcallchain;
 pub mod kuna_console;
 pub mod assertions;
 pub mod grammar;

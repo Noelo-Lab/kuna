@@ -1,0 +1,42 @@
+{
+  "need_id": "flow-call-override-retain",
+  "track": "tooling",
+  "scope": "small",
+  "worker": "b-r9-flow-call-overri",
+  "round": 9,
+  "witness": {
+    "challenge": "5ab77f5c33c5d40ad448c681",
+    "binary": "bm3.zip.__x/bm3.exe",
+    "binary_sha256": "8116e2cb1bbe102beba05abe99c6e41f913e8fad7867c1640fcb002492b3fe79",
+    "function": "sub_401757",
+    "site": "0x40176f"
+  },
+  "hypothesis_status": "refuted",
+  "decisions": [
+    "The filed hypothesis -- 'the override may change the operation without extending the original return-terminated worklist' -- is REFUTED. `print raw` under the single override shows `Basic Block 0 0x00401757-0x00401785`: flow resumed at 0x401770, the pushed continuation, and ran on to 0x401785. The continuation is retained.",
+    "The real gap: 0x401785 is another link of the same `push <cont>; push <target>; ret` idiom, still classified a return, so the 22-link body behind it is dead. Two overrides in one command already produced `GetProcAddress(LoadLibraryA(s_40151e),s_40152b)` on the unpatched tree -- nothing walked the chain, and nothing in the output said the next link existed.",
+    "Fixed at the driver tier (kuna-console), not the engine: the change only plants overrides the caller could have written by hand, so it needs no phases.toml option and cannot move any run that does not pass a `flow ... call` directive. This also kept it clear of the kuna-decomp / phases.toml / catalog-counter leases held by a concurrent builder.",
+    "Link test is `the run reaching this ret stored this ret's own fall-through address`. A real `call` also pushes its own fall-through, so a call instruction's literals are dropped; an ordinary epilogue never pushes the address after itself. Both are why the extension is safe to do unasked.",
+    "Literals are tracked per varnode within the instruction: SLEIGH's `push` macros are `tmp:4 = imm32; mysave:4 = tmp; *:4 ESP = mysave`, so the STORE value operand is a unique, never the constant. Reading the STORE operand alone found zero links.",
+    "The acceptance probe was UNRUNNABLE as filed (no target block). Bound to the dataset witness (binary_source dataset, sha verified byte-identical to the arena copy) and promoted onto a vendored reduction instead, because `--promote` refuses a dataset source and CI has no dataset."
+  ],
+  "measured": {
+    "witness_before": "void sub_401757(void) { LoadLibraryA(s_40151e); }",
+    "witness_after": "22 links recovered: GetProcAddress(LoadLibraryA()), MessageBoxA, ExitProcess, GetModuleHandleA, VirtualProtect, CreateFileA, VirtualAlloc, SetFilePointer, ReadFile x3, CloseHandle, three decrypt loops, GetForegroundWindow, GetWindowThreadProcessId, OpenProcess, ReadProcessMemory x2",
+    "known_remaining": "Stack arguments across the recovered links are still modelled as frame stores (`v15 = s_40151e;` beside `LoadLibraryA()`), so some call sites lose their argument list. That is the separate argument-recovery weakness the tester also reported (`calleearity`, `varargstackargs` did not help); it is not made worse here -- before the fix those call sites did not exist at all.",
+    "fixture_before": "(*dat_804a000)();",
+    "fixture_after": "(*dat_804a000)(); (*dat_804a004)(); (*dat_804a008)();"
+  },
+  "gates": {
+    "make test": "PARITY OK (675/675 assertions)",
+    "make test-stages": "PARITY OK (687/687 assertions)",
+    "make rust-test": "green, exit 0, 375 test binaries ok (run with `env -u KUNA_DECOMP_TEST`, which is CI's configuration -- the repipe launcher otherwise points the removed C++ oracle at kuna's own decomp_test_dbg and verify_w10_proto_unlock reds on it; see docs/re-needs notes)",
+    "make check-spec": "OK",
+    "kuna catalog --check": "OK",
+    "make test-cli": "83/83",
+    "scripts.repipe.counters": "no drift (no option added, no stages XML added)",
+    "scripts.repipe.mergecheck": "merge guards clean",
+    "note": "all re-run after `git rebase --onto origin/main` (9703f1d1) on freshly built binaries"
+  },
+  "acceptance": "PASS"
+}
