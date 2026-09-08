@@ -45,6 +45,7 @@ use kuna_base::xml::{DocumentStorage, Element};
 
 use kuna_decomp::architecture::Architecture;
 use kuna_decomp::options::register_option_elements;
+use kuna_decomp::raw_arch::RawBinaryArchitectureCapability;
 use kuna_decomp::sleigh_arch::{register_sleigh_arch_ids, LanguageDatabase, SleighArchitecture};
 use kuna_decomp::xml_arch::XmlArchitectureCapability;
 
@@ -239,9 +240,14 @@ pub struct ConsoleProgram {
     /// The marshaling id registry (C++ `ElementId` global table) for option-name
     /// resolution.
     registry: IdRegistry,
-    /// The binaryimage's function symbols (name → entry address), read once at
-    /// load (the `readLoaderSymbols` hook).
+    /// The program's function symbols (name → entry address), installed through
+    /// the `readLoaderSymbols` hook. Object/XML names are collected at load;
+    /// synthetic raw names are collected after options are applied.
     symbols: Vec<ProgramSymbol>,
+    /// Raw-image entry addresses awaiting synthetic names. Raw inputs have no
+    /// source names, so their names are generated at `read symbols`, after the
+    /// CLI has applied options such as `namestyle`.
+    pending_raw_entries: Vec<Address>,
     /// Original-to-synthetic section map for relocatable objects.
     object_sections: Vec<ObjectSectionLocation>,
     /// A human-readable description of the loaded program (C++
@@ -338,6 +344,16 @@ pub struct ConsoleProgram {
     /// the decompile loop, because the drive rebuilds the `Funcdata` and the
     /// symbol-table prototype link does not survive that rebuild.
     pending_prototypes: BTreeMap<String, kuna_decomp::fspec::PrototypePieces>,
+    /// Raw-input address-unit width and whether bit zero is an ARM state bit.
+    raw_address_units: Option<(u64, bool)>,
+}
+
+fn code_offset_in_target_units(value: u64, word_size: u64) -> u64 {
+    value / word_size
+}
+
+fn code_end_in_target_units(value: u64, word_size: u64) -> u64 {
+    value / word_size + u64::from(value % word_size != 0)
 }
 
 impl ConsoleProgram {
@@ -360,8 +376,8 @@ impl ConsoleProgram {
         &self.registry
     }
 
-    /// The number of function symbols read from the binaryimage (what the
-    /// `readLoaderSymbols` hook yields).
+    /// The number of function symbols collected for the `readLoaderSymbols`
+    /// hook.
     pub fn num_symbols(&self) -> usize {
         self.symbols.len()
     }
@@ -369,6 +385,79 @@ impl ConsoleProgram {
     /// C++ `conf->getDescription()` — the load-success description line.
     pub fn description(&self) -> &str {
         &self.description
+    }
+
+    /// Scale a user-facing raw address to the engine's byte offset without
+    /// interpreting any low bits as processor state.
+    pub fn input_address_offset(&self, value: u64) -> KunaResult<u64> {
+        let Some((word_size, _)) = self.raw_address_units else {
+            return Ok(value);
+        };
+        value.checked_mul(word_size).ok_or_else(|| {
+            KunaError::lowlevel(format!(
+                "raw address 0x{value:x} overflows the target's {word_size}-byte code-space units"
+            ))
+        })
+    }
+
+    /// Convert a user-facing code pointer to the engine's byte offset.
+    pub fn input_code_offset(&self, value: u64) -> KunaResult<u64> {
+        let units = match self.raw_address_units {
+            Some((_, true)) => value & !1,
+            _ => value,
+        };
+        self.input_address_offset(units)
+    }
+
+    /// Finish normalization after the console address grammar has already
+    /// converted address units to bytes. Raw ARM code pointers still carry a
+    /// state bit that is not part of the mapped byte address.
+    pub fn normalize_parsed_code_address(&self, address: Address) -> Address {
+        let Some((_, true)) = self.raw_address_units else {
+            return address;
+        };
+        let Some(space) = address.get_space() else {
+            return address;
+        };
+        let in_default_space = self
+            .arch()
+            .manage()
+            .get_default_code_space()
+            .is_some_and(|default| Rc::ptr_eq(space, default));
+        if in_default_space {
+            Address::new(Rc::clone(space), address.get_offset() & !1)
+        } else {
+            address
+        }
+    }
+
+    /// Convert an engine byte offset back to the address units accepted by the
+    /// raw CLI. Object-backed programs already expose byte VMAs and are unchanged.
+    pub fn output_code_offset(&self, value: u64) -> u64 {
+        match self.raw_address_units {
+            Some((word_size, _)) => code_offset_in_target_units(value, word_size),
+            None => value,
+        }
+    }
+
+    /// Convert an engine address to its own space's target units for raw input.
+    pub fn output_address_offset(&self, address: &Address) -> u64 {
+        let value = address.get_offset();
+        if self.raw_address_units.is_none() {
+            return value;
+        }
+        address.get_space().map_or(value, |space| {
+            code_offset_in_target_units(value, u64::from(space.get_word_size()))
+        })
+    }
+
+    /// Convert an exclusive engine byte end to target address units, rounding
+    /// up when the final code unit is only partially present.
+    pub fn output_code_end_offset(&self, value: u64) -> u64 {
+        match self.raw_address_units {
+            Some((word_size, _)) => code_end_in_target_units(value, word_size),
+            None => value,
+        }
     }
 
     /// Resolve a function entry address by symbol name (the `queryFunction`
@@ -1183,6 +1272,17 @@ impl ConsoleProgram {
         self.read_bytes_into(vma, size, &mut bytes).then_some(bytes)
     }
 
+    /// Read bytes at an address while preserving its address-space identity.
+    pub fn read_bytes_at(&self, address: &Address, size: usize) -> Option<Vec<u8>> {
+        if size > i32::MAX as usize {
+            return None;
+        }
+        let mut bytes = vec![0; size];
+        let loader_rc = self.arch().translate().loader_rc();
+        loader_rc.borrow_mut().load_fill(&mut bytes, address).ok()?;
+        Some(bytes)
+    }
+
     /// (kuna) Read `size` raw image bytes at code-space VMA `vma` into a
     /// caller-owned buffer, retaining its allocation across calls.
     ///
@@ -1227,6 +1327,14 @@ impl ConsoleProgram {
     /// string symbols) is kept. `type_size` is the mapped datatype's byte size.
     /// Sorted by VMA.
     pub fn global_data_symbols(&self) -> Vec<(String, u64, i64)> {
+        self.global_data_symbol_addresses()
+            .into_iter()
+            .map(|(name, address, size)| (name, address.get_offset(), size))
+            .collect()
+    }
+
+    /// Global data symbols with their address-space identity retained.
+    pub fn global_data_symbol_addresses(&self) -> Vec<(String, Address, i64)> {
         use kuna_decomp::dtype::type_metatype;
         let arch = self.arch();
         let Some(scope) = arch.symboltab.get_global_scope() else {
@@ -1236,14 +1344,14 @@ impl ConsoleProgram {
             return Vec::new();
         };
         let space_index = data_space.get_index() as usize;
-        let mut out: Vec<(String, u64, i64)> = arch
+        let mut out: Vec<(String, Address, i64)> = arch
             .symboltab
             .scope_space_symbol_specs(scope, space_index)
             .into_iter()
             .filter(|(_, ct, _, _)| ct.get_metatype() != type_metatype::TYPE_CODE)
-            .map(|(name, ct, addr, _)| (name, addr.get_offset(), i64::from(ct.get_size())))
+            .map(|(name, ct, addr, _)| (name, addr, i64::from(ct.get_size())))
             .collect();
-        out.sort_by(|a, b| (a.1, &a.0).cmp(&(b.1, &b.0)));
+        out.sort_by(|a, b| (&a.1, &a.0).cmp(&(&b.1, &b.0)));
         out
     }
 
@@ -1538,6 +1646,9 @@ impl ConsoleProgram {
     /// runs AFTER the CLI's `option` lines, so a disabled pass's facts are
     /// dropped here rather than committed.
     ///
+    /// Raw-image entries are named and installed here for the same ordering
+    /// reason: their synthetic names must honor the active `namestyle` option.
+    ///
     /// Drains the stash (so a second `read symbols` does not re-commit), merges
     /// only the **enabled** passes' outputs in pass order, and commits the merged
     /// [`AnalysisOutput`] via [`commit_analysis_output`]. A no-op when nothing is
@@ -1552,6 +1663,21 @@ impl ConsoleProgram {
     /// defensively re-gated facts merge into the same `merged` output committed
     /// below. With Listing off, this whole block is skipped.
     pub fn commit_pending_analysis(&mut self) -> KunaResult<()> {
+        if !self.pending_raw_entries.is_empty() {
+            let entries = std::mem::take(&mut self.pending_raw_entries);
+            let symbols = entries
+                .into_iter()
+                .map(|addr| ProgramSymbol {
+                    name: self.arch().name_function(&addr),
+                    addr,
+                    object_location: None,
+                    binding: None,
+                    provenance: EntryProvenance::Mapped,
+                })
+                .collect::<Vec<_>>();
+            self.symbols.extend(symbols);
+            self.read_loader_symbols()?;
+        }
         if self.pending_analysis.is_empty() && self.loader_data_objects.is_empty() {
             // Drop the deferred-Listing stash too: nothing to commit against, and
             // a session with no analysis tier (XML path) must not build a Listing.
@@ -2127,6 +2253,7 @@ pub fn bootstrap_program(
         arch: arch.into_sleigh(),
         registry,
         symbols,
+        pending_raw_entries: Vec::new(),
         object_sections: Vec::new(),
         description,
         pending_analysis: Vec::new(),
@@ -2139,6 +2266,7 @@ pub fn bootstrap_program(
         assertions: Vec::new(),
         assertion_outcomes: Vec::new(),
         pending_prototypes: BTreeMap::new(),
+        raw_address_units: None,
     };
     // C++ `conf->readLoaderSymbols("::")` (testfunction.cc:160 / consolemain.cc:104):
     // install the binaryimage symbols as FunctionSymbols so a CALL to one resolves
@@ -2189,10 +2317,19 @@ fn input_isa_paints(
     arch_id: &str,
     isa: Option<ArmIsa>,
 ) -> KunaResult<Vec<kuna_analysis::pass::ContextPaint>> {
+    input_isa_paints_for_ranges(&loader.executable_ranges(), arch, arch_id, isa)
+}
+
+fn input_isa_paints_for_ranges(
+    ranges: &[(u64, u64)],
+    arch: &Architecture,
+    arch_id: &str,
+    isa: Option<ArmIsa>,
+) -> KunaResult<Vec<kuna_analysis::pass::ContextPaint>> {
     let Some(isa) = isa else {
         return Ok(Vec::new());
     };
-    if !arch_id.starts_with("ARM:") {
+    if !arch_id.starts_with("ARM:") || arch_id.split(':').nth(2) != Some("32") {
         return Err(KunaError::lowlevel(format!(
             "--isa {} requires a 32-bit ARM SLEIGH target (resolved {arch_id})",
             isa.as_str()
@@ -2207,10 +2344,9 @@ fn input_isa_paints(
         };
     }
 
-    Ok(loader
-        .executable_ranges()
-        .into_iter()
-        .filter_map(|(addr, size)| {
+    Ok(ranges
+        .iter()
+        .filter_map(|&(addr, size)| {
             if size == 0 {
                 return None;
             }
@@ -2223,6 +2359,168 @@ fn input_isa_paints(
             })
         })
         .collect())
+}
+
+/// Bootstrap a headerless byte image at a caller-supplied target and base.
+pub fn bootstrap_from_raw(
+    path: &str,
+    target: &str,
+    base: u64,
+    entries: &[u64],
+    isa: Option<ArmIsa>,
+    spec_roots: &[String],
+) -> KunaResult<ConsoleProgram> {
+    if target.trim().is_empty() {
+        return Err(KunaError::lowlevel(
+            "raw image input requires --target <SLEIGH-language-id>",
+        ));
+    }
+    if entries.is_empty() {
+        return Err(KunaError::lowlevel(
+            "raw image input requires at least one --entry or --addr",
+        ));
+    }
+
+    let registry = build_registry();
+    let capability = RawBinaryArchitectureCapability::new();
+    let mut raw = capability.build_architecture(path, target);
+    let db = scan_language_database(spec_roots, &registry)?;
+    raw.resolve_architecture(&db)?;
+    if raw.sleigh().language_index() < 0 {
+        return Err(KunaError::lowlevel(format!(
+            "No sleigh specification for architecture {target}"
+        )));
+    }
+    build_engine_and_init(raw.sleigh_mut(), &db)?;
+
+    let code_space = Rc::clone(
+        raw.sleigh()
+            .base()
+            .unwrap()
+            .manage()
+            .get_default_code_space()
+            .ok_or_else(|| KunaError::lowlevel("no default code space after init"))?,
+    );
+    let word_size = u64::from(code_space.get_word_size());
+    let address_to_byte = |value: u64, label: &str| {
+        value.checked_mul(word_size).ok_or_else(|| {
+            KunaError::lowlevel(format!(
+                "raw {label} 0x{value:x} overflows the target's {word_size}-byte code-space units"
+            ))
+        })
+    };
+    let base_bytes = address_to_byte(base, "base")?;
+    raw.build_loader_at(Rc::clone(&code_space), base)?;
+    let loader = raw
+        .loader()
+        .ok_or_else(|| KunaError::lowlevel("raw loader vanished after open"))?;
+    let image_base = loader.vma();
+    if image_base != base_bytes {
+        return Err(KunaError::lowlevel(
+            "raw loader and code-space base conversion disagree",
+        ));
+    }
+    let image_size = loader.file_size();
+    if image_size == 0 {
+        return Err(KunaError::lowlevel("raw image is empty"));
+    }
+    let image_end = image_base
+        .checked_add(image_size)
+        .ok_or_else(|| KunaError::lowlevel("raw image base plus file size overflows"))?;
+    let display_image_base = code_offset_in_target_units(image_base, word_size);
+    let display_image_end = code_end_in_target_units(image_end, word_size);
+    if image_end - 1 > code_space.get_highest() {
+        return Err(KunaError::lowlevel(format!(
+            "raw image range 0x{display_image_base:x}..0x{display_image_end:x} exceeds the target address space"
+        )));
+    }
+
+    let arch_id = raw.sleigh().arch_id().to_string();
+    let arm32 = arch_id.starts_with("ARM:") && arch_id.split(':').nth(2) == Some("32");
+    if arm32 && isa.is_none() {
+        return Err(KunaError::lowlevel(
+            "raw ARM32 input requires --isa arm or --isa thumb",
+        ));
+    }
+    let mut normalized_entries = Vec::new();
+    for &entry in entries {
+        let entry_units = if arm32 { entry & !1 } else { entry };
+        let normalized = address_to_byte(entry_units, "entry")?;
+        if normalized < image_base || normalized >= image_end {
+            return Err(KunaError::lowlevel(format!(
+                "raw entry 0x{entry:x} is outside mapped range 0x{display_image_base:x}..0x{display_image_end:x}"
+            )));
+        }
+        if !normalized_entries.contains(&normalized) {
+            normalized_entries.push(normalized);
+        }
+    }
+
+    let ranges = [(image_base, image_size)];
+    let input_context_paints = input_isa_paints_for_ranges(
+        &ranges,
+        raw.sleigh().base().unwrap(),
+        &arch_id,
+        isa,
+    )?;
+    raw.sleigh_mut().base_mut().unwrap().input_arm_isa_override = isa.is_some();
+    for paint in &input_context_paints {
+        let begin = Address::new(Rc::clone(&code_space), paint.addr);
+        let end = paint
+            .end
+            .map(|end| Address::new(Rc::clone(&code_space), end));
+        raw.sleigh().base().unwrap().with_context_db_mut(|db| match end {
+            Some(end) => {
+                db.set_variable_region(paint.var.as_bytes(), &begin, &end, paint.value)
+            }
+            None => db.set_variable(paint.var.as_bytes(), &begin, paint.value),
+        })?;
+    }
+
+    let pending_raw_entries = normalized_entries
+        .into_iter()
+        .map(|entry| Address::new(Rc::clone(&code_space), entry))
+        .collect();
+    let description = raw
+        .sleigh()
+        .base()
+        .unwrap()
+        .get_description()
+        .to_string();
+    let image = raw
+        .take_loader()
+        .ok_or_else(|| KunaError::lowlevel("raw loader vanished after validation"))?;
+    raw.sleigh_mut()
+        .base_mut()
+        .unwrap()
+        .set_loader(Box::new(image));
+
+    let mut pending_analysis = Vec::new();
+    if !input_context_paints.is_empty() {
+        let mut explicit = kuna_analysis::pass::AnalysisOutput::default();
+        explicit.context_paints = input_context_paints;
+        pending_analysis.push(("input_isa", explicit));
+    }
+    let prog = ConsoleProgram {
+        arch: raw.into_sleigh(),
+        registry,
+        symbols: Vec::new(),
+        pending_raw_entries,
+        object_sections: Vec::new(),
+        description,
+        pending_analysis,
+        analysis_code_space: Some(code_space),
+        dwarf_locals: Vec::new(),
+        analysis_image: None,
+        loader_data_objects: Vec::new(),
+        declared_extents: BTreeMap::new(),
+        assertions: Vec::new(),
+        assertion_outcomes: Vec::new(),
+        pending_prototypes: BTreeMap::new(),
+        declared_entries: BTreeSet::new(),
+        raw_address_units: Some((word_size, arm32)),
+    };
+    Ok(prog)
 }
 
 /// Bootstrap a [`ConsoleProgram`] from a **real object-format** binary on disk
@@ -2522,6 +2820,7 @@ pub fn bootstrap_from_object_with_isa(
         arch: sleigh,
         registry,
         symbols,
+        pending_raw_entries: Vec::new(),
         object_sections,
         description,
         // Stash the per-pass analysis facts + the code space for the gated commit
@@ -2541,6 +2840,7 @@ pub fn bootstrap_from_object_with_isa(
         assertions: Vec::new(),
         assertion_outcomes: Vec::new(),
         pending_prototypes: BTreeMap::new(),
+        raw_address_units: None,
     };
     // conf->readLoaderSymbols("::"): install the ELF symbols as FunctionSymbols.
     // The deferred analysis commit at `read symbols` REQUIRES this to have run
@@ -3285,11 +3585,14 @@ fn select_macho_slice(bytes: Vec<u8>, target: &str) -> Vec<u8> {
     peel_fat_image(bytes, slice_pref(None, Some(target)))
 }
 
+const RAW_IMAGE_INPUT_HINT: &str =
+    "unrecognized input format; for a headerless image use --raw-image --target <SLEIGH-language-id> --base <address> and at least one --entry/--addr <address>";
+
 /// Bootstrap from a file path (the `decomp_dbg` `load file [<target>] <path>`
 /// body).  Detects the format by its leading bytes: an object-format magic
 /// ([`is_object_binary`]) routes to the real-binary [`ObjectLoadImage`] path;
-/// anything else is parsed as the XML `<binaryimage>`/`<decompilertest>` corpus
-/// format.
+/// a non-object is accepted as XML only when it parses and contains the corpus's
+/// `<binaryimage>` element. Other bytes receive the raw-image command guidance.
 ///
 /// This mirrors the C++ `ArchitectureCapability::findCapability` dispatch: the
 /// `xml` capability's `isFileMatch` claims a `<bi…` document, otherwise the BFD
@@ -3312,8 +3615,25 @@ pub fn bootstrap_from_file(
         // object-crate loader.
         return bootstrap_from_object(path, target, spec_roots);
     }
+    if !bytes
+        .iter()
+        .copied()
+        .skip_while(u8::is_ascii_whitespace)
+        .next()
+        .is_some_and(|byte| byte == b'<')
+    {
+        return Err(KunaError::lowlevel(RAW_IMAGE_INPUT_HINT));
+    }
     let mut store = DocumentStorage::new();
-    let root = store.parse_document(&bytes)?.get_root().clone();
+    let root = match store.parse_document(&bytes) {
+        Ok(document) => document.get_root().clone(),
+        Err(error) => {
+            return Err(KunaError::lowlevel(format!("{error}; {RAW_IMAGE_INPUT_HINT}")));
+        }
+    };
+    if find_binaryimage(&root).is_none() {
+        return Err(KunaError::lowlevel(RAW_IMAGE_INPUT_HINT));
+    }
     bootstrap_from_root(&root, spec_roots)
 }
 

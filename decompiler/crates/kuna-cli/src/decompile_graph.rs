@@ -172,7 +172,7 @@ fn export(args: &Args, label: &str) -> Result<String, String> {
         }
     }
     let by_address: BTreeMap<u64, &FuncResult> =
-        results.iter().map(|result| (result.address, result)).collect();
+        results.iter().map(|result| (result.byte_address, result)).collect();
 
     let bytes = crate::decompile_all::image_bytes(&args.binary, args.slice_pref())?;
     let file = kuna_analysis::loadimage_object::parse_object(&*bytes)

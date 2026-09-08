@@ -602,6 +602,44 @@ With no mode evidence, decoding uses the selected language's default context; us
 `strings --no-xrefs` decodes nothing, so the pair is a usage error rather than a
 silently dropped flag.
 
+### Headerless raw images
+
+`--raw-image` loads a file that has no object header. It is separate from
+`decompile --raw`, which still means “also print raw p-code.” A raw image must
+name its decoder with `--target <SLEIGH-language-id>`, map file offset zero with
+`--base <address>`, and supply at least one numeric entry. `decompile` uses its
+positional address; the other supported commands accept repeatable `--entry` or
+`--addr` values.
+
+```bash
+kuna decompile payload.bin 0x4001 --raw-image \
+  --target ARM:LE:32:v4t:default --base 0x4000 --isa thumb
+
+kuna functions payload.bin --json --raw-image \
+  --target ARM:LE:32:v4t:default --base 0x4000 \
+  --entry 0x4001 --isa thumb
+```
+
+The whole nonempty file is one contiguous executable `CODE` mapping. Base and
+entry values use the selected language's address units, so address `1` in a
+two-byte word-addressed code space selects file byte offset `2`. The mapping is
+checked for arithmetic and address-space overflow, and an entry outside its
+half-open range is rejected. Duplicate entries collapse. ARM32 raw input requires
+`--isa arm|thumb`; odd ARM function pointers are normalized to their underlying
+even byte address before validation. Other addresses retain every input bit, so
+an odd ARM data or property address still selects the odd byte.
+
+Raw images carry no symbols or trustworthy boundary metadata, so `functions`
+reports the explicit seeds. Named `--functions`, section-relative selectors,
+`--slice`, `--summary`, and `--reachable-from` are rejected. Support is limited
+to `decompile` (text and JSON), `decompile-all`, `functions`, and
+`decompile-project`; `decompile-graph`, `disassemble`/`read`, `xrefs`, and
+`strings` require object metadata. A headerless file used without `--raw-image`
+reports the required raw-image command shape, including when its first byte is
+`<`; only a parsed document containing `<binaryimage>` is treated as XML. Quoted
+console filenames preserve paths containing whitespace; the interactive spelling
+is `load raw <target> <base> <entry[,entry...]> <filename>`.
+
 **Failure contract (DIV-45).** A function whose decompile pipeline aborts is
 *loud*:
 
@@ -1493,7 +1531,10 @@ binary and attempt recompilation:
 - `<name>.asm` — labeled linear disassembly of every CODE section: labels match the `.c`
   function names, per-function `; arg:`/`; stack:` comments map decompiled variables to
   storage, undecodable bytes as `db` lines, and a `; --- data ---` tail labeling named
-  globals plus every `dat_<hex>` the `.c` references, with raw bytes.
+  globals plus every `dat_<hex>` the `.c` references, with raw bytes. Data-tail addresses
+  use their source address space's units; a `dat_<hex>` label retains the coordinate
+  printed in C, and aliases a named symbol only in the same address space at the same
+  displayed coordinate.
 - `README.md` — size, arch id, entry point, function counts, sections table, file
   inventory.
 

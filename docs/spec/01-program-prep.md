@@ -2884,7 +2884,22 @@ the C++ inheritance chain modeled by composition:
   (RawBinaryArchitecture)` is the catch-all leaf for a raw byte image: its file
   match always succeeds (so capability sorting pushes it last), the language must
   be supplied by the target, and the loader is a plain offset-mapped
-  `RawLoadImage`.
+  `RawLoadImage`. The live CLI reaches it only through `--raw-image`, with an
+  explicit target, base, and one or more numeric entry seeds. It resolves and
+  initializes the language first, attaches the default code space, and only then
+  applies the VMA. This order gives nonzero bases defined word-addressed behavior.
+  Base and entry values arrive in code-space address units and are checked before
+  conversion to internal byte offsets. The complete nonempty file is published as
+  one `CODE` section, and only caller-supplied entries are installed. ARM32 also
+  requires an explicit ARM/Thumb state, painted across that section and preserved
+  through the deferred analysis commit. Function pointers consume the ARM state bit,
+  while data and property addresses preserve it. Presentation converts an address with
+  its own address space's word size; data-space `dat_<hex>` tokens retain the coordinate
+  emitted in C rather than inheriting the code space's word size, and merge with a named
+  data label only when both the address space and presentation coordinate match. An
+  ordinary load accepts XML only after parsing a document containing `<binaryimage>`;
+  parse failures retain the headerless-image command guidance even when the first byte
+  is `<`.
 
 The real-binary path of §1.2 is the fourth binding, console-side: `bootstrap_from_object`
 plays the leaf role itself — it resolves the language from the object header

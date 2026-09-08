@@ -54,6 +54,7 @@ pub(crate) struct FuncDecl {
 impl FuncDecl {
     /// The declared byte extent, or `0` for "unbounded" (the engine-wide
     /// `UNBOUNDED_SIZE` convention).
+    #[cfg(test)]
     pub(crate) fn size(&self) -> u64 {
         self.end.map(|end| end - self.start).unwrap_or(0)
     }
@@ -153,8 +154,31 @@ pub(crate) fn apply(
         return Err("--define-function: the loaded program has no default code space".into());
     };
     for decl in decls {
-        let addr = kuna_base::address::Address::new(std::rc::Rc::clone(&space), decl.start);
-        prog.declare_function(addr, decl.name.as_deref(), decl.size() as kuna_base::types::int4)
+        let start = prog
+            .input_code_offset(decl.start)
+            .map_err(|e| format!("--define-function {:#x}: {}", decl.start, e.explain()))?;
+        let size = match decl.end {
+            None => 0,
+            Some(end) => {
+                let end = prog.input_code_offset(end).map_err(|e| {
+                    format!("--define-function {:#x}: {}", decl.start, e.explain())
+                })?;
+                let size = end.checked_sub(start).filter(|size| *size > 0).ok_or_else(|| {
+                    format!(
+                        "--define-function {:#x}: end must be above start after target address conversion",
+                        decl.start
+                    )
+                })?;
+                kuna_base::types::int4::try_from(size).map_err(|_| {
+                    format!(
+                        "--define-function {:#x}: byte extent {size:#x} exceeds the supported range",
+                        decl.start
+                    )
+                })?
+            }
+        };
+        let addr = kuna_base::address::Address::new(std::rc::Rc::clone(&space), start);
+        prog.declare_function(addr, decl.name.as_deref(), size)
             .map_err(|e| {
                 format!("--define-function {:#x}: {}", decl.start, e.explain())
             })?;

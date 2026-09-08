@@ -1098,18 +1098,25 @@ struct IfcKunaRegionTree;
 
 impl IfaceCommandAction for IfcKunaRegionTree {
     fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
-        let dcp = dcp_mut(status)?;
-        let fd = match dcp.fd.as_ref() {
-            Some(fd) => fd,
-            None => return Err(IfaceError::execution("No function selected")),
+        let os = {
+            let dcp = dcp_mut(status)?;
+            let fd = match dcp.fd.as_ref() {
+                Some(fd) => fd,
+                None => return Err(IfaceError::execution("No function selected")),
+            };
+            let prog = dcp
+                .conf
+                .as_ref()
+                .ok_or_else(|| IfaceError::execution("No load image present"))?;
+            let fname = fd.get_name().to_string();
+            let ri = build_region_identifier(fd)?;
+            let mut os = String::new();
+            os.push_str("Region tree for ");
+            os.push_str(&fname);
+            os.push_str(":\n");
+            os.push_str(&ri.render_tree_with(&|address| prog.output_code_offset(address)));
+            os
         };
-        let fname = fd.get_name().to_string();
-        let ri = build_region_identifier(fd)?;
-        let mut os = String::new();
-        os.push_str("Region tree for ");
-        os.push_str(&fname);
-        os.push_str(":\n");
-        os.push_str(&ri.render_tree());
         status.file_out(&os);
         Ok(())
     }
@@ -1124,30 +1131,38 @@ struct IfcKunaRegionBlocks;
 
 impl IfaceCommandAction for IfcKunaRegionBlocks {
     fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
-        let dcp = dcp_mut(status)?;
-        let fd = match dcp.fd.as_ref() {
-            Some(fd) => fd,
-            None => return Err(IfaceError::execution("No function selected")),
-        };
-        let fname = fd.get_name().to_string();
-        let ri = build_region_identifier(fd)?;
-        let lists = ri.get_regions_by_block_addrs();
-        let mut os = String::new();
-        os.push_str("Regions for ");
-        os.push_str(&fname);
-        os.push_str(": ");
-        os.push_str(&lists.len().to_string());
-        os.push('\n');
-        for list in lists {
-            os.push('[');
-            for (i, a) in list.iter().enumerate() {
-                if i != 0 {
-                    os.push_str(", ");
+        let os = {
+            let dcp = dcp_mut(status)?;
+            let fd = match dcp.fd.as_ref() {
+                Some(fd) => fd,
+                None => return Err(IfaceError::execution("No function selected")),
+            };
+            let prog = dcp
+                .conf
+                .as_ref()
+                .ok_or_else(|| IfaceError::execution("No load image present"))?;
+            let fname = fd.get_name().to_string();
+            let ri = build_region_identifier(fd)?;
+            let lists = ri.get_regions_by_block_addrs();
+            let mut os = String::new();
+            os.push_str("Regions for ");
+            os.push_str(&fname);
+            os.push_str(": ");
+            os.push_str(&lists.len().to_string());
+            os.push('\n');
+            for list in lists {
+                os.push('[');
+                for (i, address) in list.iter().enumerate() {
+                    if i != 0 {
+                        os.push_str(", ");
+                    }
+                    let address = prog.output_code_offset(*address);
+                    os.push_str(&format!("0x{address:x}"));
                 }
-                os.push_str(&format!("0x{a:x}"));
+                os.push_str("]\n");
             }
-            os.push_str("]\n");
-        }
+            os
+        };
         status.file_out(&os);
         Ok(())
     }
@@ -1158,12 +1173,12 @@ impl IfaceCommandAction for IfcKunaRegionBlocks {
 
 /// Visitor for `region walk`: pushes a `walk 0x<addr>` line per leaf block.
 struct RegionWalkVisitor {
-    out: String,
+    addresses: Vec<u64>,
 }
 
 impl kuna_decomp::kuna_regionid::KunaRegionVisitor for RegionWalkVisitor {
     fn visit_block(&mut self, _block: Option<kuna_decomp::context::BlockId>, addr: u64) {
-        self.out.push_str(&format!("walk 0x{addr:x}\n"));
+        self.addresses.push(addr);
     }
 }
 
@@ -1173,21 +1188,31 @@ struct IfcKunaRegionWalk;
 
 impl IfaceCommandAction for IfcKunaRegionWalk {
     fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
-        let dcp = dcp_mut(status)?;
-        let fd = match dcp.fd.as_ref() {
-            Some(fd) => fd,
-            None => return Err(IfaceError::execution("No function selected")),
+        let os = {
+            let dcp = dcp_mut(status)?;
+            let fd = match dcp.fd.as_ref() {
+                Some(fd) => fd,
+                None => return Err(IfaceError::execution("No function selected")),
+            };
+            let prog = dcp
+                .conf
+                .as_ref()
+                .ok_or_else(|| IfaceError::execution("No load image present"))?;
+            let fname = fd.get_name().to_string();
+            let ri = build_region_identifier(fd)?;
+            let mut visitor = RegionWalkVisitor { addresses: Vec::new() };
+            ri.walk_blocks(&mut visitor)
+                .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+            let mut os = String::new();
+            os.push_str("Region walk for ");
+            os.push_str(&fname);
+            os.push_str(":\n");
+            for address in visitor.addresses {
+                let address = prog.output_code_offset(address);
+                os.push_str(&format!("walk 0x{address:x}\n"));
+            }
+            os
         };
-        let fname = fd.get_name().to_string();
-        let ri = build_region_identifier(fd)?;
-        let mut visitor = RegionWalkVisitor { out: String::new() };
-        ri.walk_blocks(&mut visitor)
-            .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
-        let mut os = String::new();
-        os.push_str("Region walk for ");
-        os.push_str(&fname);
-        os.push_str(":\n");
-        os.push_str(&visitor.out);
         status.file_out(&os);
         Ok(())
     }
@@ -1210,10 +1235,13 @@ impl IfaceCommandAction for IfcKunaFunctions {
             prog.commit_pending_analysis()
                 .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
             prog.function_entries_executable()
+                .into_iter()
+                .map(|entry| (prog.output_code_offset(entry.addr.get_offset()), entry.name))
+                .collect::<Vec<_>>()
         };
         let mut out = String::new();
-        for entry in entries {
-            out.push_str(&format!("{:#x} {}\n", entry.addr.get_offset(), entry.name));
+        for (address, name) in entries {
+            out.push_str(&format!("{address:#x} {name}\n"));
         }
         status.file_out(&out);
         Ok(())
@@ -1271,20 +1299,38 @@ impl IfaceCommandAction for IfcKunaFunctionBounds {
         } else {
             return Err(IfaceError::parse(format!("Unexpected token {tok:?} (expected 'as')")));
         };
-        let size = match end {
-            None => 0,
-            Some(end) if end > start => (end - start) as kuna_base::types::int4,
-            Some(end) => {
+        if let Some(end) = end {
+            if end <= start {
                 return Err(IfaceError::parse(format!(
                     "function bounds: end {end:#x} must be above start {start:#x}"
-                )))
+                )));
             }
-        };
+        }
+        let display_start = start;
         let dcp = dcp_mut(status)?;
         let prog = dcp
             .conf
             .as_mut()
             .ok_or_else(|| IfaceError::execution("No load image present"))?;
+        let start = prog
+            .input_code_offset(start)
+            .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+        let size = match end {
+            None => 0,
+            Some(end) => {
+                let end = prog
+                    .input_code_offset(end)
+                    .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+                let size = end.checked_sub(start).filter(|size| *size > 0).ok_or_else(|| {
+                    IfaceError::parse(
+                        "function bounds: end must be above start after target address conversion",
+                    )
+                })?;
+                kuna_base::types::int4::try_from(size).map_err(|_| {
+                    IfaceError::execution("function bounds: byte extent exceeds supported range")
+                })?
+            }
+        };
         let space = prog
             .arch()
             .manage()
@@ -1295,7 +1341,9 @@ impl IfaceCommandAction for IfcKunaFunctionBounds {
         let name = prog
             .declare_function(addr, name.as_deref(), size)
             .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
-        status.out(&format!("Declared {name} at {start:#x} spanning {size} bytes\n"));
+        status.out(&format!(
+            "Declared {name} at {display_start:#x} spanning {size} bytes\n"
+        ));
         Ok(())
     }
 

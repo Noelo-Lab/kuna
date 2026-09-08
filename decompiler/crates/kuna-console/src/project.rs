@@ -15,6 +15,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::path::Path;
 
+use kuna_base::address::Address;
 use kuna_decomp::decompile_drive::{
     extract_variables, print_c, print_c_prototype, print_c_with_provenance, LineMapping, VarInfo,
 };
@@ -47,7 +48,10 @@ pub fn default_fn_budget_seconds(mode: &str, whole_binary: bool) -> u64 {
 /// `error`).
 pub struct FuncResult {
     pub name: String,
+    /// User-facing address, in the target's address units for a raw image.
     pub address: u64,
+    /// Engine address, always stored as a byte offset.
+    pub byte_address: u64,
     /// The entry's byte extent, carried through from
     /// [`FunctionEntry::size`](crate::engine::FunctionEntry::size) so this
     /// surface and the `functions` inventory report ONE number with one meaning.
@@ -105,7 +109,8 @@ pub fn decompile_targets(
         ..
     } in targets
     {
-        let address = entry.get_offset();
+        let byte_address = entry.get_offset();
+        let address = prog.output_code_offset(byte_address);
         // (kuna) An entry with no mapped bytes is an EXTERNAL, not a decompile
         // failure: a relocatable object's undefined symbols (and a PE import
         // slot) carry an address only so a call to one renders by name, and the
@@ -123,6 +128,7 @@ pub fn decompile_targets(
                 )),
                 name,
                 address,
+                byte_address,
                 size: size as i64,
                 error: None,
                 proto: None,
@@ -137,6 +143,7 @@ pub fn decompile_targets(
             out.push(FuncResult {
                 name,
                 address,
+                byte_address,
                 size: size as i64,
                 code: None,
                 error: Some("entry address is not mapped in this input".into()),
@@ -152,7 +159,7 @@ pub fn decompile_targets(
         // `-g` binary renders DWARF names/types) and decompile.  The drive itself
         // catches un-ported-seam panics and returns Err, so a single bad function
         // degrades to an `error` record instead of aborting the binary.
-        let mapped = prog.dwarf_locals_for(address);
+        let mapped = prog.dwarf_locals_for(byte_address);
         // (kuna, Ghidra-gap) `CALL_RETURN` flow overrides for the binary's
         // `call error(nonzero,…)` sites — prune the fall-through so the flow-follower
         // stops at the no-return call (Ghidra "Subroutine does not return") instead of
@@ -186,7 +193,7 @@ pub fn decompile_targets(
         // A caller-declared extent (`function bounds` / `kuna --define-function`)
         // bounds this function's flow follow; 0 — the usual case — is the natural,
         // unbounded extent.
-        let declared = prog.declared_extent(address);
+        let declared = prog.declared_extent(byte_address);
         // (kuna `--assert`) The caller-declared facts this function is decompiled
         // AGAINST: a `prototype`/`param`/`return` directive is consumed at flow
         // time, so it has to be seeded here rather than applied afterwards. Every
@@ -278,6 +285,11 @@ pub fn decompile_targets(
                     let mut variables =
                         if no_vars { Vec::new() } else { extract_variables(prog.arch(), &fd) };
                     provenance.apply_to_variables(&fd, &mut variables);
+                    for variable in &mut variables {
+                        for address in &mut variable.addresses {
+                            *address = prog.output_code_offset(*address);
+                        }
+                    }
                     // The prototype must be captured HERE (fd is dropped at the
                     // end of the iteration) and inside the same guard (the
                     // declarator walk shares the printer's fail-fast invariants).
@@ -286,12 +298,19 @@ pub fn decompile_targets(
                     } else {
                         None
                     };
-                    (code, variables, proto, provenance.line_mappings)
+                    let mut line_mappings = provenance.line_mappings;
+                    for mapping in &mut line_mappings {
+                        for address in &mut mapping.addresses {
+                            *address = prog.output_code_offset(*address);
+                        }
+                    }
+                    (code, variables, proto, line_mappings)
                 }));
                 match rendered {
                     Ok((code, variables, proto, line_mappings)) => out.push(FuncResult {
                         name,
                         address,
+                        byte_address,
                         size: size as i64,
                         code: Some(code),
                         error: None,
@@ -304,6 +323,7 @@ pub fn decompile_targets(
                     Err(_) => out.push(FuncResult {
                         name,
                         address,
+                        byte_address,
                         size: size as i64,
                         code: None,
                         error: Some("panic while rendering C / extracting variables".into()),
@@ -318,6 +338,7 @@ pub fn decompile_targets(
             Err(e) => out.push(FuncResult {
                 name,
                 address,
+                byte_address,
                 size: size as i64,
                 code: None,
                 error: Some(e.explain().to_string()),
@@ -421,7 +442,8 @@ pub fn build_c(file_name: &str, results: &[FuncResult]) -> String {
 /// `dat_` + 1+ lowercase-hex chars, and the char after the hex run must not
 /// be an identifier char either (so a user symbol like `dat_foo` or
 /// `dat_12x3` never false-positives — the printer's tokens are exact by
-/// construction).  Returns the parsed VMAs.
+/// construction). Returns the presentation coordinates exactly as printed;
+/// they are not engine byte offsets on a word-addressed target.
 pub fn collect_dat_addrs(results: &[FuncResult]) -> BTreeSet<u64> {
     fn is_ident(b: u8) -> bool {
         b.is_ascii_alphanumeric() || b == b'_'
@@ -559,7 +581,7 @@ pub fn build_asm(
 
     let mut labels: LabelMap = BTreeMap::new();
     for r in results {
-        labels.entry(normalize(r.address)).or_default().push(r);
+        labels.entry(normalize(r.byte_address)).or_default().push(r);
     }
 
     let sections = prog.sections();
@@ -576,7 +598,11 @@ pub fn build_asm(
     let mut scratch = AssemblyScratch::new();
     for (vma, size) in code_secs {
         let end = vma.saturating_add(size);
-        out.push_str(&format!("\n; --- code section 0x{vma:x}..0x{end:x} ---\n"));
+        let display_vma = prog.output_code_offset(vma);
+        let display_end = prog.output_code_end_offset(end);
+        out.push_str(&format!(
+            "\n; --- code section 0x{display_vma:x}..0x{display_end:x} ---\n"
+        ));
         sweep_code(prog, &labels, vma, end, &mut scratch, &mut out);
     }
 
@@ -614,17 +640,17 @@ fn sweep_code(
             Ok(len) if len > 0 && addr + len as u64 <= next_stop => {
                 scratch.flush_db(out);
                 prog.read_bytes_into(addr, len as usize, &mut scratch.raw);
-                scratch.emit_instruction(addr, out);
+                scratch.emit_instruction(prog.output_code_offset(addr), out);
                 addr += len as u64;
             }
             _ => {
                 // Decode failure (or a decode that would cross the next label):
                 // one raw byte, coalesced into up-to-8-byte `db` lines.
                 if prog.read_bytes_into(addr, 1, &mut scratch.raw) {
-                    scratch.push_db(addr, scratch.raw[0], out);
+                    scratch.push_db(prog.output_code_offset(addr), scratch.raw[0], out);
                 } else {
                     scratch.flush_db(out);
-                    scratch.emit_unreadable(addr, out);
+                    scratch.emit_unreadable(prog.output_code_offset(addr), out);
                 }
                 addr += 1;
             }
@@ -768,6 +794,7 @@ struct DataLabel {
     name: String,
     type_size: Option<i64>,
     dat_alias: bool,
+    address: Option<Address>,
 }
 
 /// `; --- data ---`: address-sorted deduped labels (named globals ∪ `dat_`
@@ -779,19 +806,32 @@ fn emit_data_tail(
     dat_addrs: &BTreeSet<u64>,
     out: &mut String,
 ) {
-    let mut data: BTreeMap<u64, DataLabel> = BTreeMap::new();
-    for (name, vma, type_size) in prog.global_data_symbols() {
-        // First named symbol at a VMA wins (global_data_symbols is
-        // (vma, name)-sorted; duplicates at one address are aliases).
-        data.entry(vma).or_insert(DataLabel { name, type_size: Some(type_size), dat_alias: false });
+    let mut data: BTreeMap<(u64, i32), DataLabel> = BTreeMap::new();
+    for (name, address, type_size) in prog.global_data_symbol_addresses() {
+        let display_vma = prog.output_address_offset(&address);
+        let space_index = address.get_space().map_or(i32::MAX, |space| space.get_index());
+        // First named symbol at a displayed address wins (global_data_symbols
+        // is address/name-sorted; duplicates at one address are aliases).
+        data.entry((display_vma, space_index)).or_insert(DataLabel {
+            name,
+            type_size: Some(type_size),
+            dat_alias: false,
+            address: Some(address),
+        });
     }
-    for &vma in dat_addrs {
-        data.entry(vma)
+    let data_space_index = prog
+        .arch()
+        .manage()
+        .get_default_data_space()
+        .map_or(i32::MAX, |space| space.get_index());
+    for &display_vma in dat_addrs {
+        data.entry((display_vma, data_space_index))
             .and_modify(|l| l.dat_alias = true)
             .or_insert_with(|| DataLabel {
-                name: format!("dat_{vma:x}"),
+                name: format!("dat_{display_vma:x}"),
                 type_size: None,
                 dat_alias: false,
+                address: None,
             });
     }
     if data.is_empty() {
@@ -799,23 +839,36 @@ fn emit_data_tail(
     }
 
     out.push_str("\n; --- data ---\n");
-    let addrs: Vec<u64> = data.keys().copied().collect();
-    for (idx, (&vma, label)) in data.iter().enumerate() {
+    for (&(display_vma, _space_index), label) in &data {
+        let byte_vma = label.address.as_ref().map_or(display_vma, Address::get_offset);
         // Size: a typed symbol's datatype size; a bare `dat_` gets
         // min(gap to the next label / containing-section end, 32), floor 1.
         let size = match label.type_size {
             Some(s) if s > 0 => s as u64,
             _ => {
-                let next_label = addrs.get(idx + 1).copied();
+                let next_label = data
+                    .range((display_vma.saturating_add(1), i32::MIN)..)
+                    .next()
+                    .map(|(&(addr, _), _)| addr);
                 let sec_end = sections
                     .iter()
-                    .find(|&&(sv, ss, _)| vma >= sv && vma < sv.saturating_add(ss))
-                    .map(|&(sv, ss, _)| sv + ss);
+                    .find(|&&(sv, ss, _)| byte_vma >= sv && byte_vma < sv.saturating_add(ss))
+                    .map(|&(sv, ss, _)| sv.saturating_add(ss))
+                    .map(|byte_end| {
+                        label
+                            .address
+                            .as_ref()
+                            .and_then(Address::get_space)
+                            .cloned()
+                            .map_or(byte_end, |space| {
+                                prog.output_address_offset(&Address::new(space, byte_end))
+                            })
+                    });
                 let bound = [next_label, sec_end]
                     .into_iter()
                     .flatten()
-                    .filter(|&b| b > vma)
-                    .map(|b| b - vma)
+                    .filter(|&b| b > display_vma)
+                    .map(|b| b - display_vma)
                     .min()
                     .unwrap_or(DAT_SIZE_CAP);
                 bound.clamp(1, DAT_SIZE_CAP)
@@ -823,11 +876,18 @@ fn emit_data_tail(
         };
         out.push('\n');
         if label.dat_alias {
-            out.push_str(&format!("{}:  ; 0x{vma:x} = dat_{vma:x}\n", label.name));
+            out.push_str(&format!(
+                "{}:  ; 0x{display_vma:x} = dat_{display_vma:x}\n",
+                label.name
+            ));
         } else {
-            out.push_str(&format!("{}:  ; 0x{vma:x}\n", label.name));
+            out.push_str(&format!("{}:  ; 0x{display_vma:x}\n", label.name));
         }
-        match prog.read_bytes(vma, size as usize) {
+        let bytes = match label.address.as_ref() {
+            Some(address) => prog.read_bytes_at(address, size as usize),
+            None => prog.read_bytes(byte_vma, size as usize),
+        };
+        match bytes {
             Some(bytes) => {
                 for (row, chunk) in bytes.chunks(16).enumerate() {
                     let hex =
@@ -836,15 +896,24 @@ fn emit_data_tail(
                         .iter()
                         .map(|&b| if (0x20..0x7f).contains(&b) { b as char } else { '.' })
                         .collect();
-                    out.push_str(&format!(
-                        "  {:08x}: {hex:<47}  |{ascii}|\n",
-                        vma + row as u64 * 16
-                    ));
+                    let byte_offset = byte_vma + row as u64 * 16;
+                    let display_offset = match label.address.as_ref() {
+                        Some(address) => {
+                            let space = address
+                                .get_space()
+                                .cloned()
+                                .expect("mapped data label has an address space");
+                            let row_address = Address::new(space, byte_offset);
+                            prog.output_address_offset(&row_address)
+                        }
+                        None => display_vma + row as u64 * 16,
+                    };
+                    out.push_str(&format!("  {display_offset:08x}: {hex:<47}  |{ascii}|\n"));
                 }
             }
             None => {
                 out.push_str(&format!(
-                    "  {vma:08x}: ?? (uninitialized/unmapped, {size} bytes)\n"
+                    "  {display_vma:08x}: ?? (uninitialized/unmapped, {size} bytes)\n"
                 ));
             }
         }

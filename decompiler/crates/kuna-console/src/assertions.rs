@@ -266,10 +266,28 @@ fn data_org(prog: &ConsoleProgram) -> DataOrg {
     DataOrg { addr_size, word_size }
 }
 
-/// Build an [`Address`] in the program's default code space.
-fn code_addr(prog: &ConsoleProgram, vma: u64) -> Option<Address> {
-    let space = prog.arch().manage().get_default_code_space().cloned()?;
-    Some(Address::new(space, vma))
+/// Convert a user-facing address and build it in the default code space.
+fn code_addr(prog: &ConsoleProgram, vma: u64) -> Result<Address, String> {
+    let vma = prog.input_code_offset(vma).map_err(|e| e.explain().to_string())?;
+    let space = prog
+        .arch()
+        .manage()
+        .get_default_code_space()
+        .cloned()
+        .ok_or_else(|| "the loaded program has no default code space".to_string())?;
+    Ok(Address::new(space, vma))
+}
+
+/// Scale a user address without treating its low bit as a function state bit.
+fn data_addr(prog: &ConsoleProgram, vma: u64) -> Result<Address, String> {
+    let vma = prog.input_address_offset(vma).map_err(|e| e.explain().to_string())?;
+    let space = prog
+        .arch()
+        .manage()
+        .get_default_code_space()
+        .cloned()
+        .ok_or_else(|| "the loaded program has no default code space".to_string())?;
+    Ok(Address::new(space, vma))
 }
 
 /// Parse a storage token (`%RDI`, `[stack,-0x18,8]`, `s0x10`) through the
@@ -323,9 +341,24 @@ pub fn apply_program_scoped(prog: &mut ConsoleProgram) {
 fn apply_one_program_scoped(prog: &mut ConsoleProgram, body: &Body) -> Result<(), String> {
     match body {
         Body::Function { start, end, name } => {
-            let addr = code_addr(prog, *start)
-                .ok_or_else(|| "the loaded program has no default code space".to_string())?;
-            let size = end.map(|e| e - *start).unwrap_or(0) as int4;
+            let addr = code_addr(prog, *start)?;
+            let size = match end {
+                None => 0,
+                Some(end) => {
+                    let end = prog
+                        .input_code_offset(*end)
+                        .map_err(|e| e.explain().to_string())?;
+                    let size = end
+                        .checked_sub(addr.get_offset())
+                        .filter(|size| *size > 0)
+                        .ok_or_else(|| {
+                            "function end must be above start after target address conversion"
+                                .to_string()
+                        })?;
+                    int4::try_from(size)
+                        .map_err(|_| "function byte extent exceeds the supported range".to_string())?
+                }
+            };
             prog.declare_function(addr, name.as_deref(), size)
                 .map(|_| ())
                 .map_err(|e| e.explain().to_string())
@@ -371,18 +404,18 @@ fn paint_property(
     if size <= 0 {
         return Err("a range needs a size of at least one byte".into());
     }
-    let first = code_addr(prog, vma)
-        .ok_or_else(|| "the loaded program has no default code space".to_string())?;
+    let first = data_addr(prog, vma)?;
     let space = first
         .get_space()
         .cloned()
         .ok_or_else(|| "the loaded program has no default code space".to_string())?;
-    let end = vma
+    let end = first
+        .get_offset()
         .checked_add(size as u64)
         .ok_or_else(|| "the range wraps past the end of the address space".to_string())?;
     let last_open = Address::new(Rc::clone(&space), end);
     prog.arch_mut().symboltab.set_property_range(flag, &first, &last_open);
-    repaint_covered_symbols(prog, &space, vma, end, flag);
+    repaint_covered_symbols(prog, &space, first.get_offset(), end, flag);
     Ok(())
 }
 
@@ -497,10 +530,9 @@ pub(crate) fn resolve_proto_target(
         None
     };
     if let Some(vma) = vma {
-        if let Some(addr) = code_addr(prog, vma) {
-            if let Some(name) = prog.arch().symboltab.function_display_name_across_scopes(&addr) {
-                return Ok(ProtoTarget::At(addr, name));
-            }
+        let addr = code_addr(prog, vma)?;
+        if let Some(name) = prog.arch().symboltab.function_display_name_across_scopes(&addr) {
+            return Ok(ProtoTarget::At(addr, name));
         }
         if explicit {
             return Err(format!("no function starts at {func}"));
@@ -744,8 +776,7 @@ fn apply_cross_function(
 fn apply_data(prog: &mut ConsoleProgram, vma: u64, decl: &str) -> Result<(), String> {
     use kuna_decomp::varnode::varnode_flags;
     let org = data_org(prog);
-    let addr = code_addr(prog, vma)
-        .ok_or_else(|| "the loaded program has no default code space".to_string())?;
+    let addr = data_addr(prog, vma)?;
     let (ct, name) = crate::grammar::parse_type(decl, prog.arch().types(), org)
         .map_err(|e| e.explain().to_string())?;
     if name.is_empty() {
@@ -852,7 +883,7 @@ pub fn record_rejected_flow_overrides(
             continue;
         }
         let type_ = kuna_decomp::overrides::Override::string_to_type(kind.as_bytes());
-        let Some(at) = code_addr(prog, *addr) else { continue };
+        let Ok(at) = code_addr(prog, *addr) else { continue };
         let Some((_, _, reason)) = refused.iter().find(|(a, t, _)| a == &at && *t == type_) else {
             continue;
         };
@@ -906,8 +937,7 @@ fn seed_one(
             Ok(())
         }
         Body::Comment { addr, text, .. } => {
-            let at = code_addr(prog, *addr)
-                .ok_or_else(|| "the loaded program has no default code space".to_string())?;
+            let at = code_addr(prog, *addr)?;
             let arch = prog.arch_mut();
             let ctype = arch.print().instruction_comment_flags();
             arch.commentdb.add_comment(ctype, entry, &at, text);
@@ -920,8 +950,7 @@ fn seed_one(
                     "Bad override type: {kind} (want branch, call, callreturn or return)"
                 ));
             }
-            let at = code_addr(prog, *addr)
-                .ok_or_else(|| "the loaded program has no default code space".to_string())?;
+            let at = code_addr(prog, *addr)?;
             seed.flow_overrides.push((at, type_));
             Ok(())
         }

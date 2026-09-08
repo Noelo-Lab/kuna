@@ -33,6 +33,7 @@
 //! with its previous contents — so an OS-level I/O failure has no defined
 //! oracle behavior; the port surfaces it as `KunaError::Lowlevel`.
 
+use std::cell::Cell;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::rc::Rc;
@@ -255,7 +256,8 @@ pub trait LoadImage {
 /// This is probably the simplest loadimage.  Bytes from the image are read
 /// directly from a file stream.  The address associated with each byte is
 /// determined by a single value, the vma, which is the address of the first
-/// byte in the file.  No symbols or sections are supported
+/// byte in the file. No symbols are supported; the complete mapped file is
+/// published as one synthetic code section.
 #[derive(Debug)]
 pub struct RawLoadImage {
     /// Name of the loadimage (the `LoadImage` base-class member)
@@ -269,6 +271,8 @@ pub struct RawLoadImage {
     /// Address space that the file bytes are mapped to (C++ raw pointer,
     /// null until `attachToSpace`)
     spaceid: Option<Rc<AddrSpace>>,
+    /// Cursor for the synthetic whole-file section record.
+    cursection: Cell<bool>,
 }
 
 impl RawLoadImage {
@@ -280,12 +284,23 @@ impl RawLoadImage {
             thefile: None,
             filesize: 0,
             spaceid: None,
+            cursection: Cell::new(false),
         }
     }
 
     /// Attach the raw image to a particular space
     pub fn attach_to_space(&mut self, id: Rc<AddrSpace>) {
         self.spaceid = Some(id);
+    }
+
+    /// Number of bytes mapped by this raw image after [`Self::open`].
+    pub fn file_size(&self) -> u64 {
+        self.filesize
+    }
+
+    /// Byte address assigned to file offset zero.
+    pub fn vma(&self) -> u64 {
+        self.vma
     }
 
     /// Open the raw file for reading.
@@ -383,6 +398,24 @@ impl LoadImage for RawLoadImage {
         b"unknown".to_vec()
     }
 
+    fn open_section_info(&self) {
+        self.cursection.set(false);
+    }
+
+    fn get_next_section(&self, record: &mut LoadImageSection) -> bool {
+        if self.cursection.replace(true) || self.filesize == 0 {
+            return false;
+        }
+        let space = self
+            .spaceid
+            .as_ref()
+            .expect("RawLoadImage::getNextSection before attachToSpace (C++ null space)");
+        record.address = Address::new(Rc::clone(space), self.vma);
+        record.size = self.filesize;
+        record.flags = section_flags::CODE;
+        false
+    }
+
     fn adjust_vma(&mut self, adjust: i64) {
         // C++ dereferences the (possibly null) `spaceid` pointer — UB when
         // adjustVma is called before attachToSpace (ADR 0004: panic)
@@ -442,6 +475,14 @@ mod tests {
         img.open().unwrap();
         assert_eq!(img.get_arch_type(), b"unknown".to_vec());
         assert_eq!(img.get_file_name(), path.to_str().unwrap());
+        assert_eq!(img.file_size(), 16);
+        assert_eq!(img.vma(), 0);
+        img.open_section_info();
+        let mut section = LoadImageSection::default();
+        assert!(!img.get_next_section(&mut section));
+        assert_eq!(section.address.get_offset(), 0);
+        assert_eq!(section.size, 16);
+        assert_eq!(section.flags, section_flags::CODE);
 
         // vma defaults to 0: address == file offset
         let mut buf = [0xaau8; 4];
