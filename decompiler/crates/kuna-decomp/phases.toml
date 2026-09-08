@@ -2691,6 +2691,25 @@ tier = "core"
 symptoms = "a function returns the result of a call the disassembly makes for its side effect|main ends `return __security_check_cookie(...)` on an MSVC /GS binary|a constant the caller moves into EAX just before a call never reaches the RET|a void helper's call result is assigned to a variable|declaring the callee void trades the invented call result for an uninitialised local|a value read after a call the callee provably never writes is an undefined local"
 
 [[settable]]
+option = "indirectanchor"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P3"
+subphase = "call-guard"
+strength = "HARD"
+rewind = "P3"
+issue = "repipe-bcryptgetproperty-status-tested-through"
+summary = "Anchor an op inserted after a call's guard INDIRECT to the CALL that INDIRECT speaks for, as upstream opInsertAfter does, so the guard run stays unbroken and the call keeps its return value. Heritage::guardCalls plants one INDIRECT per killed range immediately before a CALL, and the return-value trial's Varnode is the output of the INDIRECT CREATION among them; FuncCallSpecs::collectOutputTrialVarnodes (fspec.cc:5543) finds it by walking backwards from the CALL and stopping at the first op that is not a CPUI_INDIRECT, which is exact only while that run is unbroken. Upstream keeps it unbroken from both sides: opInsertBefore skips back over the run, and opInsertAfter (funcdata_op.cc:373) REDIRECTS -- asked to insert after an INDIRECT it decodes the iop annotation in the marker's second input and inserts after the CALL (or STORE) the INDIRECT speaks for. kuna carried that redirect as a STUB(W3-varnode) because the iop decode belonged to a later wave, so an op inserted after a guard INDIRECT landed BETWEEN the guards and their CALL. At `call qword ptr [0x1400282b8]` (BCryptGetProperty) in a Windows PE, heritage refines the 8-byte frame slot at -0x2d0 into two 4-byte halves and defines the upper half with a SUBPIECE inserted after that slot's own guard INDIRECT; the run became INDIRECT-creation of EAX, sixteen global INDIRECTs, one stack INDIRECT, the SUBPIECE, then seventy-nine more INDIRECTs, and the backward walk stopped at the SUBPIECE eighteen ops short of the EAX creation. No trial Varnode was found, checkOutputTrialUse marked every trial no-use, the CALL got no output, and the INDIRECT creation was left standing -- so the emitted C read `if ((v16 < 0) || ...)` off a local it never assigns, while every other bcrypt import in the same function recovered its result normally. Completing the redirect restores the invariant the rest of the call machinery is written against; a prev that is not an INDIRECT marker, an INDIRECT whose second input is not an iop annotation, and an iop that decodes to a dead op are all left exactly where they were going."
+use_when = "On by default. Keep it on when a call is emitted for its side effect and the very next statement branches on a local nothing assigns -- the standard shape is a Win32 API called through its IAT slot whose NTSTATUS is consumed by `test eax,eax; js`, where sibling calls to the same DLL in the same function DO recover their result. Declaring a prototype for the callee is the manual workaround and is what proves the diagnosis. Flip OFF to get the pre-port placement back when bisecting whether op placement rather than trial scoring moved a call's surroundings."
+example = "option indirectanchor off"
+source_decompiler = "ghidra-upstream"
+inspiration = "repipe:bcryptgetproperty-status-tested-through, 6a3d73bfa4b247348ae8069e (x86-64 PE selamv2.exe) sub_140003f80 -> BCryptGetProperty 0x1400282b8 at 0x140004766; upstream Funcdata::opInsertAfter (funcdata_op.cc:373) and FuncCallSpecs::collectOutputTrialVarnodes (fspec.cc:5543)"
+change_kind = "correctness-fix"
+tier = "core"
+symptoms = "a call is emitted as a bare statement and the next line tests a local the function never assigns|a Win32 API called through its IAT slot loses its NTSTATUS while sibling imports keep theirs|declaring a prototype for the callee restores the assignment `v15 = f(...)`|a call whose last stack argument renders as `v70 & 0xffffffff00000000` has no return value|a call's `NTSTATUS` is tested through `v16` where v16 has no definition anywhere in the function"
+
+[[settable]]
 option = "calloverlap"
 values = "off|in|full"
 default = "off"

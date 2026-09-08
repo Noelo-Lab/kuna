@@ -1966,23 +1966,14 @@ impl Funcdata {
     /// Insert the given op immediately after `prev`, honoring the SSA op ordering
     /// invariants (C++ `Funcdata::opInsertAfter`, `funcdata_op.cc:373`).
     ///
-    /// STUB(W3-varnode): the INDIRECT-marker redirect
-    /// decodes an [`OpId`] from the iop-space address offset of the INDIRECT's
-    /// second input (`getOpFromConst`).  That iop encoding is established by the
-    /// funcdata_varnode `newVarnodeIop` factory (a sibling parallel item) and is
-    /// not available here; the redirect is skipped (treated as a no-op marker
-    /// input), so when `prev` is an INDIRECT with an iop input the op is inserted
-    /// after the INDIRECT itself rather than after the INDIRECT's target.
-    /// Recorded as a loss; the funcdata_varnode wave supplies the decode.
+    /// Asked to insert after an INDIRECT marker, upstream redirects to the CALL
+    /// or STORE the marker's iop annotation names, which is what keeps a call's
+    /// guard INDIRECTs one unbroken run — (kuna) `indirectanchor` owns that
+    /// choice; with it off the op is inserted after the INDIRECT itself.
     pub fn op_insert_after(&mut self, op: OpId, prev: OpId) {
         let mut prev = prev;
-        // STUB(W3-varnode): getOpFromConst decode deferred (see doc).
-        if self.obank().get(prev).expect("op_insert_after: stale prev").is_marker()
-            && self.obank().get(prev).expect("op_insert_after").code() == OpCode::CPUI_INDIRECT
-        {
-            // The iop redirect is the deferred part; without it `prev` is unchanged.
-            // (Faithful for every non-iop INDIRECT input, which is the common case
-            // until the iop factory lands.)
+        if let Some(targ) = crate::p3_dataflow::kuna_indirectanchor::anchor_of(self, prev) {
+            prev = targ;
         }
 
         let parent = self

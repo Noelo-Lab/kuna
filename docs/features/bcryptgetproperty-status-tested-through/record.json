@@ -1,0 +1,48 @@
+{
+  "slug": "bcryptgetproperty-status-tested-through",
+  "need_id": "bcryptgetproperty-status-tested-through",
+  "track": "quality",
+  "scope": "small",
+  "option": "indirectanchor",
+  "values": "on|off",
+  "default": "on",
+  "div": "DIV-135",
+  "phase": "P3",
+  "subphase": "call-guard",
+  "module": "decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_indirectanchor.rs",
+  "decisions": [
+    "The filed hypothesis (incomplete imported signature / return-trial scoring) is OVERTURNED. The symptom stands; the cause is Funcdata::opInsertAfter (funcdata_op.cc:373), which carried a STUB(W3-varnode) where upstream redirects an insertion after an INDIRECT marker to the CALL that marker speaks for. RulePullsubIndirect pulls a SUBPIECE through the guard INDIRECT of the frame slot at -0x2d0 and inserted it INSIDE the call's guard run; collectOutputTrialVarnodes walks back from the CALL and stops at the first non-INDIRECT, so it stopped 18 ops short of the EAX INDIRECT creation and every output trial was marked no-use.",
+    "The refuter's 'flags-only consumer of RAX' reading is also overturned: BCryptSetProperty at 0x140004721 has the identical `test eax,eax; js` consumer and recovers its return normally. What separates the two call sites is the interposed SUBPIECE, not the consumer shape.",
+    "Two candidate fixes were built and measured. Teaching collectOutputTrialVarnodes to step over a marshalling op at the call's own address also closes the witness at 0/675, but it is a workaround for a documented port stub; completing the redirect fixes the invariant at its source, is upstream's own behaviour, and additionally collapses the copy-shadow and >> 0x20 splices the misplaced op left around every affected call. The redirect shipped; the walk patch was dropped.",
+    "The SECOND filed observation is NOT closed. BCryptDecrypt's second argument is still literal 0 after the fix, and none of calloverlap in|full, calleedeadarg, calleearity, peimportcall, framelayout, calleepreserves, spillargtrial or retinputhalf moves it. That half is INPUT-trial recovery for a register whose 4-byte sub-range (EDX, read by SUB R8D,EDX at 0x140004b10) is heritaged separately from the 8-byte RDX the caller wrote at 0x140004a7e. It wants its own need.",
+    "No tests/stages/ XML: the trigger needs RulePullsubIndirect to fire on a call's guard INDIRECT while a return trial is still open, and six bytechunk/ELF reductions failed to produce a guarded frame slot (the slot is always proved unaffected or promoted first). The op-list shape is pinned instead by p3_dataflow/kuna_indirectanchor/tests.rs, which builds it against a real Funcdata and asserts both arms, and end to end by tests/cli/bcryptgetproperty-status-tested-through.json.",
+    "The acceptance was retargeted from the dataset witness to the vendored mcount_x86_64 fixture (__printf_fp_l loses exactly one of its three hack_digit results) so it can run in CI; acceptance_id relabelled a-b30578566846 -> a-7c5a8a2de1dd. Both were measured PASS on the same build."
+  ],
+  "gates": {
+    "make_test": "PARITY OK 675/675",
+    "make_test_stages": "PARITY OK 687/687",
+    "make_check_spec": "OK",
+    "make_test_cli": "83/83",
+    "catalog_check": "catalog OK",
+    "make_rust_test": "6054 tests passed; 1 target red -- verify_w10_proto_unlock's cpp-oracle block, which is the known KUNA_DECOMP_TEST worktree trap, not this change: the assertion wants `xunknown4 promote_compare(char *` and every kuna build prints `unsigned int`. Falsified twice -- green under `env -u KUNA_DECOMP_TEST`, and the MAIN tree's unmodified decomp_test_dbg reproduces the identical failure. CI's cargo workspace suite (full-ci label) passed in 11m43s, where the oracle binary is absent and the block is skipped.",
+    "acceptance_probe": "PASS (a-7c5a8a2de1dd, 3/3 clauses, not flaky) on the rebased tree",
+    "rebased_onto": "origin/main 9703f1d1 (#502)"
+  },
+  "sweep": {
+    "crackme_binaries": 35,
+    "crackme_functions": 7919,
+    "crackme_functions_changed": 41,
+    "crackme_functions_added_or_removed": 0,
+    "crackme_line_delta": -28,
+    "fixture_functions": 1676,
+    "fixture_functions_changed": 10,
+    "fixture_line_delta": -29,
+    "classification": "every changed function is one shape: a bare call statement gains its return value, and the copy-shadow / >> 0x20 splices around it collapse. No function grew; none lost a call result."
+  },
+  "speed_off_ms": 5277.24,
+  "speed_on_ms": 4739.31,
+  "speed_delta_pct": -10.19,
+  "speed_samples": 7,
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": true
+}

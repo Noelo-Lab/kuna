@@ -739,6 +739,10 @@ pub struct ArchContext {
     /// through
     /// [`crate::p4_calls::kuna_calleeretpreserves::callee_preserves_return_storage`].
     pub callee_ret_preserves: bool,
+    /// (kuna) anchor an op inserted after a call's guard INDIRECT to the call
+    /// itself (`indirectanchor`).  Read by `Funcdata::op_insert_after` through
+    /// [`crate::p3_dataflow::kuna_indirectanchor::anchor_of`].
+    pub indirect_anchor: bool,
     /// (kuna) in the function's OWN input recovery, tolerate a run of unused
     /// argument REGISTERS before a live-in register (`inputparamgap`).  Read by
     /// `ActionInputPrototype`, which stamps it onto the
@@ -1258,6 +1262,7 @@ impl ArchContext {
             callee_dead_arg: true,
             callee_preserves: true,
             callee_ret_preserves: true,
+            indirect_anchor: true,      // indirectanchor (default-on)
             input_param_gap: true,
             vararg_stack_args: true,     // varargstackargs (DIV-101 default-on)
             callee_arity: true,          // calleearity (DIV-102 default-on)
