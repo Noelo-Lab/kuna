@@ -10,12 +10,23 @@
 //! nothing an analyst would ask for — no text, no section, no encoding — because
 //! nothing downstream of the commit needed it.
 //!
-//! So this module answers those questions **over the pass's own output**: the
-//! ASCII inventory is literally [`super::scan_strings`] (and, on an image with no
-//! sections, [`super::scan_run`] over its PT_LOAD segments), so a row here is a
-//! row the engine also marked up. What is added is presentation — reading the
-//! bytes back as text, attributing each to its section — plus the one thing the
-//! pass documents as out of scope:
+//! So this module answers those questions **over the pass's own matcher**:
+//! [`super::scan_runs`] over the pass's own sections (and, on an image with no
+//! sections, over its PT_LOAD segments). What is added is presentation — reading
+//! the bytes back as text, attributing each to its section — plus the two things
+//! the pass documents as out of scope:
+//!
+//! # Termination
+//!
+//! The pass is [`Termination::Nul`] because it plants a `char[N]`, and under that
+//! policy every row here is a fact the engine also marked up. An *inventory* is a
+//! different question: a length-prefixed name table
+//! (`\x0cout.js\x06std\x12_0x8ec6b3`, the shape a bundled JS or bytecode payload
+//! carries) holds no NUL at all, so require-NUL-end reports zero strings for a
+//! region an analyst can read straight out of a hex dump. [`Termination::Any`] is
+//! `strings(1)`'s rule over the same address set, and every row says which ending
+//! it had ([`FoundString::nul_terminated`]) so a C literal is still
+//! distinguishable from a printable fragment.
 //!
 //! # UTF-16
 //!
@@ -36,10 +47,10 @@
 
 use object::read::{Object, ObjectSection, ObjectSegment};
 
-use crate::pass::StringFact;
+use super::kuna_widestrings::scan_utf16_runs;
+use super::{is_loaded_initialized, scan_runs, Run};
 
-use super::kuna_widestrings::scan_utf16_run;
-use super::{is_loaded_initialized, scan_run, scan_strings};
+pub use super::Termination;
 
 /// The character width a row was found at.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -71,7 +82,11 @@ pub struct FoundString {
     /// code units, not the bytes they occupy).
     pub char_len: usize,
     /// Bytes occupied including the terminator — the extent an xref can land in.
+    /// An unterminated run occupies exactly its visible bytes.
     pub byte_len: u32,
+    /// The run ended at a NUL, so it is a C string and not merely printable text.
+    /// Always true under [`Termination::Nul`].
+    pub nul_terminated: bool,
     /// Which width found it.
     pub encoding: Encoding,
     /// The section it lives in, or `None` on an image scanned by segment.
@@ -89,6 +104,8 @@ pub struct Query {
     pub utf16: bool,
     /// Restrict to this section, by name (a leading `.` is optional).
     pub section: Option<String>,
+    /// Which run endings count as a string.
+    pub termination: Termination,
 }
 
 /// The answer: the rows, plus enough about the scan for a caller to explain an
@@ -182,38 +199,37 @@ fn utf16_text(bytes: &[u8]) -> String {
 
 /// Enumerate the image's string literals.
 ///
-/// The ASCII half is [`super::StringLiteralPass`]'s own scan; the UTF-16 half is
-/// the widened matcher above. Both honor `min_len` and the require-NUL-end rule,
-/// and neither commits anything: this is a read-only query over the parsed
-/// object, so no invocation of the engine can change because of it.
+/// The ASCII half is [`super::StringLiteralPass`]'s own matcher and the UTF-16
+/// half the widened one, both over the pass's own address set, so under
+/// [`Termination::Nul`] every row is a fact the engine also marked up. Nothing is
+/// committed either way: this is a read-only query over the parsed object, so no
+/// invocation of the engine can change because of it.
 pub fn inventory(file: &object::File, q: &Query) -> Inventory {
     let sections = section_regions(file);
     let from_segments = sections.is_empty();
     let regions = if from_segments { segment_regions(file) } else { sections };
 
-    let mut facts: Vec<(StringFact, Encoding)> = Vec::new();
+    let mut runs: Vec<(Run, Encoding)> = Vec::new();
     if q.ascii {
-        // The pass verbatim on a sectioned image; the same matcher over the
-        // segment fallback, which `scan_strings` (a section walk) cannot reach.
-        let ascii = if from_segments {
-            regions.iter().flat_map(|r| scan_run(r.data, r.vma, q.min_len)).collect()
-        } else {
-            scan_strings(file, q.min_len)
-        };
-        facts.extend(ascii.into_iter().map(|f| (f, Encoding::Ascii)));
-    }
-    if q.utf16 {
-        facts.extend(
+        runs.extend(
             regions
                 .iter()
-                .flat_map(|r| scan_utf16_run(r.data, r.vma, q.min_len))
-                .map(|f| (f, Encoding::Utf16)),
+                .flat_map(|r| scan_runs(r.data, r.vma, q.min_len, q.termination))
+                .map(|r| (r, Encoding::Ascii)),
+        );
+    }
+    if q.utf16 {
+        runs.extend(
+            regions
+                .iter()
+                .flat_map(|r| scan_utf16_runs(r.data, r.vma, q.min_len, q.termination))
+                .map(|r| (r, Encoding::Utf16)),
         );
     }
 
     let mut strings: Vec<FoundString> = Vec::new();
-    for (fact, encoding) in facts {
-        let Some(region) = region_of(&regions, fact.addr) else {
+    for (run, encoding) in runs {
+        let Some(region) = region_of(&regions, run.addr) else {
             continue;
         };
         if let Some(want) = &q.section {
@@ -221,23 +237,26 @@ pub fn inventory(file: &object::File, q: &Query) -> Inventory {
                 continue;
             }
         }
-        // `len` counts the terminator (1 byte / 1 unit); the text is what precedes it.
-        let text_bytes = match encoding {
-            Encoding::Ascii => fact.len as usize - 1,
-            Encoding::Utf16 => fact.len as usize - 2,
-        };
-        let Some(bytes) = region.slice(fact.addr, text_bytes) else {
+        let Some(bytes) = region.slice(run.addr, run.visible_len) else {
             continue;
         };
         let text = match encoding {
             Encoding::Ascii => ascii_text(bytes),
             Encoding::Utf16 => utf16_text(bytes),
         };
+        // The extent an xref may land in stops at the last visible byte when
+        // nothing terminated the run.
+        let terminator = match (run.nul_terminated, encoding) {
+            (false, _) => 0,
+            (true, Encoding::Ascii) => 1,
+            (true, Encoding::Utf16) => 2,
+        };
         strings.push(FoundString {
-            addr: fact.addr,
+            addr: run.addr,
             char_len: text.chars().count(),
             text,
-            byte_len: fact.len,
+            byte_len: (run.visible_len + terminator) as u32,
+            nul_terminated: run.nul_terminated,
             encoding,
             section: region.name.clone(),
         });
@@ -251,6 +270,20 @@ pub fn inventory(file: &object::File, q: &Query) -> Inventory {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pass::StringFact;
+    use crate::strings::kuna_widestrings::scan_utf16_run;
+    use crate::strings::{scan_run, scan_strings};
+
+    /// The pass-faithful query, so a test says which policy it is asserting.
+    fn nul(min_len: usize, ascii: bool, utf16: bool, section: Option<&str>) -> Query {
+        Query {
+            min_len,
+            ascii,
+            utf16,
+            section: section.map(str::to_string),
+            termination: Termination::Nul,
+        }
+    }
 
     #[test]
     fn utf16_matcher_mirrors_the_ascii_one() {
@@ -295,6 +328,83 @@ mod tests {
     }
 
     #[test]
+    fn a_length_prefixed_name_table_needs_the_relaxed_ending() {
+        // The reported shape: each name preceded by its own length tag, no NUL
+        // anywhere. `strings(1)` reads all three; require-NUL-end reads none.
+        let data = b"\x0cout.js\x06std\x12_0x8ec6b3\x11".to_vec();
+        let nul_runs = scan_runs(&data, 0x1000, 4, Termination::Nul);
+        assert!(nul_runs.is_empty(), "no run here ends at a NUL: {nul_runs:?}");
+
+        let any_runs = scan_runs(&data, 0x1000, 4, Termination::Any);
+        let texts: Vec<String> = any_runs
+            .iter()
+            .map(|r| ascii_text(&data[(r.addr - 0x1000) as usize..][..r.visible_len]))
+            .collect();
+        assert_eq!(texts, vec!["out.js", "_0x8ec6b3"], "\"std\" is below the minimum");
+        assert!(any_runs.iter().all(|r| !r.nul_terminated), "none of them is a C string");
+    }
+
+    #[test]
+    fn a_run_reaching_the_end_of_a_region_is_a_text_run_only() {
+        let data = b"trailing".to_vec();
+        assert!(scan_runs(&data, 0, 4, Termination::Nul).is_empty());
+        assert_eq!(
+            scan_runs(&data, 0, 4, Termination::Any),
+            vec![Run { addr: 0, visible_len: 8, nul_terminated: false }]
+        );
+    }
+
+    #[test]
+    fn the_relaxed_ending_keeps_every_terminated_row_intact() {
+        // Relaxing the ending only ADDS rows: a NUL-terminated literal keeps its
+        // address, its text and its terminator-inclusive extent.
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fauxware");
+        let bytes = std::fs::read(path).expect("read fauxware fixture");
+        let file = object::File::parse(bytes.as_slice()).expect("parse fauxware");
+        let strict = inventory(&file, &nul(5, true, false, None));
+        let relaxed = inventory(
+            &file,
+            &Query {
+                min_len: 5,
+                ascii: true,
+                utf16: false,
+                section: None,
+                termination: Termination::Any,
+            },
+        );
+        for row in &strict.strings {
+            assert!(row.nul_terminated, "the strict policy admits nothing else");
+            assert!(
+                relaxed.strings.contains(row),
+                "0x{:x} {:?} was dropped by the relaxed ending",
+                row.addr,
+                row.text
+            );
+        }
+        assert!(
+            relaxed.strings.len() > strict.strings.len(),
+            "fauxware has an unterminated printable run"
+        );
+        assert!(relaxed.strings.iter().any(|r| !r.nul_terminated));
+    }
+
+    #[test]
+    fn the_wide_width_takes_the_same_ending_policy() {
+        // "abcde" as UTF-16LE, closed by a non-zero unit instead of 0x0000.
+        let mut data = Vec::new();
+        for ch in "abcde".chars() {
+            data.push(ch as u8);
+            data.push(0);
+        }
+        data.extend_from_slice(&[0x01, 0x02]);
+        assert!(scan_utf16_run(&data, 0, 5).is_empty());
+        assert_eq!(
+            scan_utf16_runs(&data, 0, 5, Termination::Any),
+            vec![Run { addr: 0, visible_len: 10, nul_terminated: false }]
+        );
+    }
+
+    #[test]
     fn section_operand_tolerates_a_missing_dot() {
         assert!(section_matches(Some(".rdata"), "rdata"));
         assert!(section_matches(Some(".rdata"), ".rdata"));
@@ -307,10 +417,7 @@ mod tests {
         let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fauxware");
         let bytes = std::fs::read(path).expect("read fauxware fixture");
         let file = object::File::parse(bytes.as_slice()).expect("parse fauxware");
-        let inv = inventory(
-            &file,
-            &Query { min_len: 5, ascii: true, utf16: false, section: None },
-        );
+        let inv = inventory(&file, &nul(5, true, false, None));
         let row = inv
             .strings
             .iter()
@@ -339,15 +446,7 @@ mod tests {
         let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fauxware");
         let bytes = std::fs::read(path).expect("read fauxware fixture");
         let file = object::File::parse(bytes.as_slice()).expect("parse fauxware");
-        let inv = inventory(
-            &file,
-            &Query {
-                min_len: 5,
-                ascii: true,
-                utf16: false,
-                section: Some("rodata".into()),
-            },
-        );
+        let inv = inventory(&file, &nul(5, true, false, Some("rodata")));
         assert!(!inv.strings.is_empty(), "fauxware has .rodata strings");
         assert!(inv.strings.iter().all(|s| s.section.as_deref() == Some(".rodata")));
         assert!(inv.regions.iter().any(|n| n == ".rodata"));

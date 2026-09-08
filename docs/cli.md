@@ -1270,6 +1270,7 @@ kuna strings ./crackme.exe --json                     # machine-readable
 kuna strings ./a.out --filter '(?i)password|flag'     # regex over the text
 kuna strings ./crackme.exe --encoding utf16           # wide Windows literals
 kuna strings ./a.out --section .rodata --min-length 8
+kuna strings ./bundle --termination nul               # only the char[N] literals
 ```
 
 The triage query: what text is in this binary, where does it live, and — the part
@@ -1277,11 +1278,10 @@ The triage query: what text is in this binary, where does it live, and — the p
 never the goal; opening the routine that prints it is, and that hop is one
 command here because kuna already has both halves.
 
-The rows are the analyzer tier's **existing** string detection, not a second
-scanner: the ASCII inventory is the same `StringLiteralPass` scan
-(`kuna-analysis/src/analyzers/strings/`, the port of Ghidra's `StringsAnalyzer`)
-that runs at load and plants the `char[N]` literals `kuna decompile` prints, so a
-row here is a string the decompiler also knows about, at the same address. The
+The rows come from the analyzer tier's own matcher, not a second scanner
+(`kuna-analysis/src/analyzers/strings/`, the port of Ghidra's `StringsAnalyzer`),
+over the address set that pass scans; under `--termination nul` a row here is
+exactly a `char[N]` literal `kuna decompile` prints, at the same address. The
 reference columns come from the same index behind `kuna xrefs`
 (`kuna-analysis/src/listing/xrefs.rs`). Nothing is committed into the engine and
 no emitted C changes.
@@ -1292,6 +1292,7 @@ no emitted C changes.
 | `text` | The literal, terminator excluded. TAB/CR/LF are escaped in the text surface so a row stays one line; `--json` carries them verbatim. |
 | `length` | Visible characters (code units for a UTF-16 row). `byte_length` is what it occupies, terminator included. |
 | `encoding` | `ascii` or `utf16` — which width found it. |
+| `nul_terminated` | The run ended at a NUL, so it is a C string and not merely printable text. Always `true` under `--termination nul`. |
 | `section` | The section it lives in, `null` on an image scanned by segment. |
 | `xrefs_count` | How many references land anywhere in the literal's extent, so `lea rax,[fmt+4]` still counts as a use. |
 | `functions` | The functions those references come from, `{name, address, address_hex}` each. |
@@ -1307,8 +1308,24 @@ require-NUL-end rule, same minimum), over units on even addresses. Scope is
 UTF-16**LE** whose units are in the 1-byte charset — the Windows-API case; a
 big-endian or non-Latin wide literal is not recovered.
 
-`--min-length N` (default `5`, the analyzer's own `minStringLength`). An unflagged
-run reports exactly the inventory the engine marked up.
+`--termination nul|any` (default `any`). Ghidra's `requireNullEnd` takes only a
+run closed by a NUL, because the markup it plants is a `char[N]` and nothing else
+describes one. As a report that rule loses whole regions: a length-prefixed name
+table — `\x0cout.js\x06std\x12_0x8ec6b3`, the shape a bundled JS or bytecode
+payload carries — holds no NUL at all, so
+`--section .rodata --filter '_0x|out.js'` over a 977 KB Node bundle answered
+`count 0` where `strings -a` read 635 names. The default is therefore `strings(1)`'s
+rule over kuna's address set, and `nul` restores the pass-faithful view. Both
+report `nul_terminated` per row, so a C literal stays distinguishable from a
+printable fragment, and both report the policy in the `termination` field and the
+text header.
+
+The cost is the same one `strings(1)` pays: a printable run inside code is
+usually instruction bytes. On a 1 MB x86-64 image the relaxed scan reports 5,138
+rows against 1,776 — 2,565 of the additions are in `.text`. `--section` and
+`--filter` narrow it; `--termination nul` removes it entirely.
+
+`--min-length N` (default `5`, the analyzer's own `minStringLength`).
 
 `--filter REGEX` matches anywhere in the text. The flavor is
 `. * + ? | () [] {n,m} ^ $`, the `\d \w \s` shorthands and their negations,
@@ -1333,7 +1350,7 @@ Plus the shared `--json`, `--mode`, `--option N V`, `--slice`, `--target`,
 ### Output
 
 ```
-# 8 strings in ./SCORPiON.exe (ascii, min length 5, scanned by sections)
+# 8 strings in ./SCORPiON.exe (ascii, min length 5, termination any, scanned by sections)
 0x416030	ascii	15	.data	1	sub_401160	Correct serial!
 0x41605c	ascii	16	.data	1	sub_401160	E24546F5F6B39F59
 0x41613c	ascii	14	.data	1	sub_401350	%[^-]-%[^-]-%s
@@ -1344,22 +1361,21 @@ encoding, length, section, reference count, referencing functions, text. Text is
 last because it is the only unbounded column.
 
 ```json
-{"binary": "...", "encoding": "ascii", "min_length": 5,
- "filter": null, "section": null, "scanned": "sections", "xrefs": true, "count": N,
- "strings": [{"address","address_hex","text","length","byte_length","encoding",
-              "section","xrefs_count",
+{"binary": "...", "encoding": "ascii", "min_length": 5, "filter": null, "section": null,
+ "termination": "any", "scanned": "sections", "xrefs": true, "count": N,
+ "strings": [{"address","address_hex","text","length","byte_length","nul_terminated",
+              "encoding","section","xrefs_count",
               "functions": [{"name","address","address_hex"}]}]}
 ```
 
 ### What it deliberately does not report
 
 The scan covers the **loaded and initialized** address set — the allocated,
-file-backed sections, which is Ghidra's `getLoadedAndInitializedAddressSet` — and
-takes only NUL-terminated runs. So `.strtab`/`.symtab` symbol names and
-unterminated printable runs, which `strings(1)` prints by the thousand, are
-absent: those are not program strings, and the ones that name something are
-already in `kuna functions`. That narrowing is why the output is a few hundred
-rows instead of a hundred thousand.
+file-backed sections, which is Ghidra's `getLoadedAndInitializedAddressSet`. So
+`.strtab`/`.symtab` symbol names and `.comment` are absent whatever
+`--termination` says: those are not in the image the program runs, and the ones
+that name something are already in `kuna functions`. That is the narrowing
+against `strings -a`, which reads the whole file.
 
 An image with no usable section table — a UPX-packed ELF keeps its program
 headers and nothing else — falls back to its `PT_LOAD` segments, and the

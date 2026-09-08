@@ -1,0 +1,73 @@
+{
+  "slug": "string-inventory-include-non",
+  "need_id": "string-inventory-include-non",
+  "track": "tooling",
+  "scope": "small",
+  "round": 8,
+  "branch": "feat/re-string-inventory-include-non",
+  "summary": "The string matcher takes a termination policy (strings/mod.rs (scan_runs), mirrored at 2-byte width), and `kuna strings` exposes it as --termination nul|any, defaulting to any. The markup passes still ask for Nul and commit exactly the facts they always did, so no emitted C moves; only the read-only inventory query changes. Rows carry nul_terminated so a C literal stays distinguishable from a printable fragment, and an unterminated row's byte_length stops at its last visible byte.",
+  "decisions": [
+    {
+      "what": "no hypothesis was filed; the cause is requireNullEnd, in the matcher and not in the CLI",
+      "detail": "The need offered none. `touches:` named kuna-cli, but the CLI was only reporting what it was given: kuna_stringinv::inventory called scan_strings/scan_utf16_run, whose MinLengthCharSequenceMatcher port rejects any run not closed by a NUL (`requireNullEnd` is StringsAnalyzer's default). The reported .rodata is a length-prefixed name table -- 0x0c 'out.js' 0x06 'std' 0x12 '_0x8ec6b3', each tag being the name's length doubled -- so there is no NUL anywhere in it and the matcher legitimately found nothing. `strings -a | grep -cE '^(_0x|out\\.js)'` reads 635 of them."
+    },
+    {
+      "what": "the DEFAULT had to flip, because the acceptance carries no new flag",
+      "detail": "The captain's target-bound acceptance is `kuna strings <bin> --section .rodata --filter '_0x|out.js' --encoding all --min-length 4 --json` with count > 0 -- no --termination in it. An off-by-default flag cannot close it. Flipping is also the defensible answer on its own: the reference an analyst compares against is strings(1), whose rule IS `any`, and over the loaded+initialized address set the new default lands at 5,138 rows against `strings -a -n 5`'s 5,164 on the same image (the difference is .comment/.shstrtab, which kuna does not scan). The previous docs/cli.md claim -- 'unterminated printable runs ... are not program strings' -- is what this need falsifies, and it is rewritten rather than left standing."
+    },
+    {
+      "what": "one matcher with a policy, not a second scanner",
+      "detail": "scan_run/scan_utf16_run are now thin Nul-policy wrappers over scan_runs/scan_utf16_runs, so the pass and the query cannot drift: there is exactly one recognizer, one minimum-length test and one run-closing rule at each width. The inventory also stopped calling scan_strings and walks its own Region list instead, which is the identical section set (same is_loaded_initialized + non-empty test, same order) and is what lets the segment fallback and the section path share one code path. The pre-existing test that cross-checks every ASCII row against a scan_strings fact is kept and still passes under Nul."
+    },
+    {
+      "what": "byte_length is the xref extent, so it must not invent a terminator",
+      "detail": "FoundString.byte_len feeds `for vma in addr..addr+byte_len` in the CLI's reference attribution. A row that never ended at a NUL occupies exactly its visible bytes, so the terminator is added only when nul_terminated -- 1 byte for ascii, 2 for utf16. Reporting visible+1 uniformly would have made every unterminated row claim one byte of the NEXT string's first character as its own reference extent."
+    },
+    {
+      "what": "the text surface keeps its column count",
+      "detail": "nul_terminated is a per-row property but the text rows are documented as seven tab-separated columns with the unbounded text last, and existing readers index them positionally. The policy goes in the `#` header (`termination any`) and the per-row flag is JSON-only, which is where the machine consumers are."
+    },
+    {
+      "what": "no option, no counters, no stages XML",
+      "detail": "Tooling track. `kuna strings` is a read-only query over the parsed object -- it commits nothing into the engine and cannot reach emitted C -- so there is no phases.toml row, no options.rs registration, no catalog counters, no docs/options.md regeneration, no tests/stages case and no DIV row. The two markup passes are byte-identical by construction (they pass Termination::Nul) and `make test`/`make test-stages` confirm it."
+    }
+  ],
+  "collateral_sweep": {
+    "method": "`kuna strings <fixture> --no-xrefs --json` with and without `--termination nul`, over every file in decompiler/crates/kuna-analysis/tests/fixtures that parses, comparing the full row tuple (address, encoding, text, length, byte_length, section, nul_terminated) as a MULTISET -- an ET_REL object maps several sections at vma 0, so keying on the address alone falsely reports changes.",
+    "fixtures_scanned": 141,
+    "fixtures_total": 152,
+    "strict_rows": 19375,
+    "default_rows": 21727,
+    "rows_added": 2352,
+    "strict_rows_lost": 0,
+    "strict_rows_changed": 0,
+    "reading": "Every row the previous default reported is reported by the new one, byte-identically. The change is additive by construction (the NUL branch of the matcher is unmoved) and this measures it."
+  },
+  "not_closed": [
+    "The added rows are what strings(1) adds: on a 1 MB x86-64 image 2,565 of the 3,362 additions are in .text, i.e. instruction bytes that happen to be printable. Ghidra rejects these with a trigram model (StringModel.sng) that is not vendored and not portable, which is the LOSS the pass already documents; nothing here narrows it. --section, --filter and --termination nul are the levers.",
+    "UTF-16 takes the same relaxed ending for symmetry. A 2-byte run closed by an ordinary unit is a much weaker signal than a 1-byte one, and no fixture in the corpus exercises it at scale -- the wide half of the 2,352 added rows is small enough that it is not separately measured.",
+    "kuna strings still scans only the loaded+initialized address set, so .strtab/.symtab/.comment names remain absent under either policy. That is deliberate and is now stated as the narrowing against `strings -a` rather than as a claim about what is or is not a program string."
+  ],
+  "cost": {
+    "method": "3 runs, wall clock, release binary, witness the reported 977 KB crackme.x86_64.elf",
+    "scan_only": "--no-xrefs: 0.01 s under both policies (5,138 vs 1,776 rows). The matcher visits the same bytes either way; only the emit test changed.",
+    "with_xrefs": "0.79 s under nul, 0.93 s under any (+18% for 2.9x the rows). The reference walk is per-row-extent, so the added rows are the added cost; the load and lift it dominates are unchanged."
+  },
+  "acceptance": {
+    "acceptance_id": "a-7d115bcb7ba0",
+    "result": "PASS",
+    "verifier": "scripts.repipe.verify --need string-inventory-include-non --json -> counts.pass 1, transition closed. The recorded acceptance is UNCHANGED and still measures the dataset witness (sha 19351f6b9a6b8a...): exit 0 with count 635, first row `out.js` at 0xb2024.",
+    "promoted_to": "tests/cli/string-inventory-include-non.json",
+    "promotion_note": "verify --promote refuses: the acceptance targets binary_source 'dataset'. Retargeted by hand onto a new in-repo fixture, keeping the command shape and the count>0 clause and adding three that pin WHICH class of row answered it (text out.js, nul_terminated false, termination any). Per the captain's B_VERIFY note the Acceptance block in docs/re-needs/ was NOT re-cut onto the fixture.",
+    "twin_justification": "decompiler/crates/kuna-analysis/tests/fixtures/nametable_x86_64 (8,528 bytes, built by nametable_x86_64.py beside it) is an ELF64 PIE whose .rodata is `\\x0cout.js\\x06std\\x12_0x8ec6b3\\x12_0x3f5c60\\x11` followed by one NUL-terminated `Correct serial!` that .text forms a LEA to. It fails the same way pre-fix and for the same reason -- `--termination nul` on it today answers count 0 for the same filter, and reports the one literal with its owning function.",
+    "negative_control": "`--termination nul` on both the dataset witness and the vendored fixture reproduces the pre-fix answer exactly (count 0), and the three new kuna-analysis tests assert the Nul arm finds nothing in the table bytes."
+  },
+  "gates": {
+    "make test": "PARITY OK (675/675)",
+    "make test-stages": "PARITY OK (683/683)",
+    "make test-cli": "78/78 passed (includes the newly promoted string-inventory-include-non.json)",
+    "make check-spec": "OK (lenient mode)",
+    "kuna catalog --check": "catalog OK",
+    "make rust-test": "green -- exit 0, 372 test targets, 0 failures. Run with `env -u KUNA_DECOMP_TEST`, which is what CI sees: the repipe launcher exports it at this worktree's own decomp_test_dbg, making kuna its own C++ oracle and reddening the verify_w10_* oracle blocks for reasons unrelated to any change."
+  }
+}

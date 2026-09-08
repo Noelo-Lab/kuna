@@ -29,7 +29,7 @@
     },
     "stdout_is_json": true,
     "stdout_matches": [
-      "\"count\": 5",
+      "\"count\": 8",
       "\"section\": \"__cstring\"",
       "\"address_hex\": \"0x1000005ee\""
     ],
@@ -37,5 +37,5 @@
       "Unsupported file format"
     ]
   },
-  "notes": "Desired: a fat/universal Mach-O yields a string inventory, not \"Unsupported file format\". Witness: crackmes.one 5ab77f5633c5d40ad448c29b, where strings --json exited 1 while functions --json returned 84. Retargeted onto the vendored 2-slice macho_fat fixture (CI has no dataset); --min-length 2 makes it non-empty, so exit 0 alone cannot pass, and the addresses pin the x86-64 slice."
+  "notes": "Desired: a fat/universal Mach-O yields a string inventory, not \"Unsupported file format\". Witness: crackmes.one 5ab77f5633c5d40ad448c29b, where strings --json exited 1 while functions --json returned 84. Retargeted onto the vendored 2-slice macho_fat fixture (CI has no dataset); the addresses pin the x86-64 slice. Count 8 is --min-length 2 under the default --termination any (5 NUL-ended)."
 }

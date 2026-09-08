@@ -782,6 +782,24 @@ The always-on core, in pass order (`passes.rs (passes_for)`):
   units are all in the 1-byte charset (the Windows-API case); a big-endian or
   non-Latin wide literal is not recovered. Default **on**; `off` leaves the markup
   exactly the 1-byte pass's.
+(kuna) The **reporting** face of those two passes is a separate, read-only query
+(`decompiler/crates/kuna-analysis/src/analyzers/strings/kuna_stringinv.rs
+(inventory)`, behind `kuna strings`), and it runs the same matcher over the same
+address set — but not under the same ending rule. `requireNullEnd` is a property
+of what the pass *plants*: only a NUL-ended run describes a `char[N]`. Asked as a
+question about the image it loses whole regions, because a length-prefixed name
+table — `\x0cout.js\x06std\x12_0x8ec6b3`, where each identifier is preceded by
+its own length and followed by the next one's, the shape a bundled JavaScript or
+bytecode payload carries — contains no NUL at all. On the reported 977 KB Node
+bundle that made `kuna strings --section .rodata --filter '_0x|out.js'` answer
+zero for a region `strings -a` reads 635 names out of. So the matcher takes a
+termination policy (`strings/mod.rs (scan_runs)`), the query defaults to the
+relaxed one, and every reported row carries which ending it had — a run closed by
+an ordinary byte, or by the end of its region, occupies exactly its visible bytes
+and is not a C string. The markup passes are unaffected: they ask for
+`Termination::Nul` and commit exactly the facts they always did, so no emitted C
+moves. `kuna strings --termination nul` is that same view as a report.
+
 - **Library prototypes** (`libproto`, the `ApplyDataArchiveAnalyzer` analog,
   `decompiler/crates/kuna-analysis/src/analyzers/protos/mod.rs (LibProtoPass)`):
   Ghidra ships parsed C headers as `.gdt` archives; kuna substitutes a built-in

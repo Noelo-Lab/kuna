@@ -2,7 +2,8 @@
 //!
 //! ```text
 //!   kuna strings <binary> [--json] [--min-length N] [--filter REGEX]
-//!                         [--encoding ascii|utf16|all] [--section NAME] [--no-xrefs]
+//!                         [--encoding ascii|utf16|all] [--termination nul|any]
+//!                         [--section NAME] [--no-xrefs]
 //!                         [--mode MODE] [--option N V].. [--isa auto|arm|thumb] [--slice ARCH] [--target T]
 //!                         [--sleighpath D]
 //! ```
@@ -26,12 +27,20 @@
 //! for and the decompiler needs outright: a UTF-16LE literal read at 1-byte width
 //! ends at the NUL after its first character, which is why `LoadLibraryW` renders
 //! with a one-character argument.
+//!
+//! `--termination` is the third. The markup pass takes only NUL-ended runs
+//! because it plants a `char[N]`, and reporting only those made the inventory
+//! answer **zero** on a length-prefixed name table
+//! (`\x0cout.js\x06std\x12_0x8ec6b3`, the shape a bundled JS or bytecode payload
+//! carries) that `strings(1)` reads in full. The default is therefore `any`,
+//! `strings(1)`'s own rule over kuna's address set; `nul` restores the
+//! pass-faithful view, and every row says which ending it had.
 
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use kuna_analysis::listing::xrefs::XrefIndex;
-use kuna_analysis::strings::kuna_stringinv::{self, FoundString};
+use kuna_analysis::strings::kuna_stringinv::{self, FoundString, Termination};
 use kuna_base::address::Address;
 use kuna_console::engine::ConsoleProgram;
 
@@ -49,6 +58,7 @@ pub(crate) struct StringsArgs {
     utf16: bool,
     encoding_label: String,
     section: Option<String>,
+    termination: Termination,
     no_xrefs: bool,
     options: Vec<(String, String)>,
     mode: Option<String>,
@@ -101,6 +111,7 @@ pub(crate) fn query(args: &StringsArgs) -> Result<String, String> {
             ascii: args.ascii,
             utf16: args.utf16,
             section: args.section.clone(),
+            termination: args.termination,
         },
     );
     if let Some(want) = &args.section {
@@ -293,6 +304,7 @@ fn result_json(args: &StringsArgs, from_segments: bool, rows: &[Row]) -> Json {
                     ("text".into(), Json::Str(row.found.text.clone())),
                     ("length".into(), Json::Number(row.found.char_len.to_string())),
                     ("byte_length".into(), Json::Number(row.found.byte_len.to_string())),
+                    ("nul_terminated".into(), Json::Bool(row.found.nul_terminated)),
                     ("encoding".into(), Json::Str(row.found.encoding.as_str().to_string())),
                     ("section".into(), optional_str(row.found.section.as_deref())),
                     ("xrefs_count".into(), Json::Number(row.xrefs_count.to_string())),
@@ -315,11 +327,20 @@ fn result_json(args: &StringsArgs, from_segments: bool, rows: &[Row]) -> Json {
         ("min_length".into(), Json::Number(args.min_length.to_string())),
         ("filter".into(), optional_str(args.filter.as_ref().map(|(p, _)| p.as_str()))),
         ("section".into(), optional_str(args.section.as_deref())),
+        ("termination".into(), Json::Str(termination_label(args.termination).to_string())),
         ("scanned".into(), Json::Str(scanned_label(from_segments).to_string())),
         ("xrefs".into(), Json::Bool(!args.no_xrefs)),
         ("count".into(), Json::Number(rows.len().to_string())),
         ("strings".into(), strings),
     ])
+}
+
+/// Which run endings the scan accepted — the other answer to "why is this empty".
+fn termination_label(termination: Termination) -> &'static str {
+    match termination {
+        Termination::Nul => "nul",
+        Termination::Any => "any",
+    }
 }
 
 /// Which address set the scan covered — the answer to "why is this empty".
@@ -340,11 +361,12 @@ fn render_text(args: &StringsArgs, from_segments: bool, rows: &[Row]) -> String 
     let plural = if rows.len() == 1 { "string" } else { "strings" };
     let _ = writeln!(
         out,
-        "# {} {plural} in {} ({}, min length {}, scanned by {})",
+        "# {} {plural} in {} ({}, min length {}, termination {}, scanned by {})",
         rows.len(),
         args.binary,
         args.encoding_label,
         args.min_length,
+        termination_label(args.termination),
         scanned_label(from_segments)
     );
     for row in rows {
@@ -377,6 +399,7 @@ pub(crate) fn parse_args(argv: &[String]) -> Result<StringsArgs, String> {
     let mut filter: Option<(String, Regex)> = None;
     let mut encoding = "ascii".to_string();
     let mut section: Option<String> = None;
+    let mut termination = Termination::Any;
     let mut no_xrefs = false;
     let mut options: Vec<(String, String)> = Vec::new();
     let mut mode: Option<String> = None;
@@ -408,6 +431,14 @@ pub(crate) fn parse_args(argv: &[String]) -> Result<StringsArgs, String> {
             }
             "--encoding" => encoding = take(argv, &mut i, "--encoding")?.to_ascii_lowercase(),
             "--section" => section = Some(take(argv, &mut i, "--section")?),
+            "--termination" => {
+                let v = take(argv, &mut i, "--termination")?.to_ascii_lowercase();
+                termination = match v.as_str() {
+                    "any" => Termination::Any,
+                    "nul" | "null" => Termination::Nul,
+                    other => return Err(format!("unknown --termination {other:?} (nul, any)")),
+                };
+            }
             "--no-xrefs" => no_xrefs = true,
             "--option" => {
                 if i + 2 >= argv.len() {
@@ -461,6 +492,7 @@ pub(crate) fn parse_args(argv: &[String]) -> Result<StringsArgs, String> {
         utf16,
         encoding_label: encoding,
         section,
+        termination,
         no_xrefs,
         options,
         mode,
@@ -483,24 +515,29 @@ fn take(argv: &[String], i: &mut usize, flag: &str) -> Result<String, String> {
 fn usage() {
     eprintln!(
         "usage: kuna strings <binary> [--json] [--min-length N] [--filter REGEX] \\\n\
-         \x20                    [--encoding ascii|utf16|all] [--section NAME] [--no-xrefs] \\\n\
+         \x20                    [--encoding ascii|utf16|all] [--termination nul|any] \\\n\
+         \x20                    [--section NAME] [--no-xrefs] \\\n\
          \x20                    [--mode auto|reliable|aggressive|fast] [--option N V].. \\\n\
          \x20                    [--isa auto|arm|thumb] [--slice ARCH] [--target T] [--sleighpath D]\n\
          \n\
-         Lists the string literals the analyzer tier already detects, each with the\n\
-         functions that reference it.  Defaults: ascii, minimum length 5 (the\n\
-         analyzer's own StringsAnalyzer settings).\n\
+         Lists the text the analyzer tier's own matcher finds, each with the\n\
+         functions that reference it.  Defaults: ascii, minimum length 5,\n\
+         termination any.\n\
          \n\
          --encoding utf16 reads 2-byte little-endian units; a wide Windows literal\n\
          is a one-character string at 1-byte width.\n\
+         --termination nul takes only NUL-ended runs -- exactly the char[N]\n\
+         literals the engine marks up.  The default `any` also reports a run\n\
+         closed by any other byte, which is what recovers a length-prefixed name\n\
+         table; every row carries nul_terminated so the two stay distinguishable.\n\
          --filter takes a POSIX-flavored regex (literals . * + ? | () [] {{n,m}}\n\
          ^ $ \\\\d \\\\w \\\\s and their negations, plus a leading (?i)), matched anywhere\n\
          in the text.\n\
          --no-xrefs skips the reference walk (xrefs_count 0, no functions).\n\
          \n\
-         --json emits {{binary,encoding,min_length,count,strings:[{{address,address_hex,\n\
-         text,length,byte_length,encoding,section,xrefs_count,functions}}]}}; without it,\n\
-         one tab-separated row each."
+         --json emits {{binary,encoding,min_length,termination,count,strings:[{{address,\n\
+         address_hex,text,length,byte_length,nul_terminated,encoding,section,xrefs_count,\n\
+         functions}}]}}; without it, one tab-separated row each."
     );
 }
 

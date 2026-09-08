@@ -1,0 +1,57 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "timeout_s": 60,
+  "cmd": [
+    "{{KUNA}}",
+    "strings",
+    "{{BIN}}",
+    "--section",
+    ".rodata",
+    "--filter",
+    "_0x|out.js",
+    "--encoding",
+    "all",
+    "--min-length",
+    "4",
+    "--json"
+  ],
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "json": [
+      {
+        "path": "count",
+        "op": "gt",
+        "value": 0
+      },
+      {
+        "path": "strings[0].text",
+        "op": "eq",
+        "value": "out.js"
+      },
+      {
+        "path": "strings[0].nul_terminated",
+        "op": "eq",
+        "value": false
+      },
+      {
+        "path": "termination",
+        "op": "eq",
+        "value": "any"
+      }
+    ]
+  },
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/nametable_x86_64",
+    "binary_sha256": "dc57ee2fc7da05fb32d6609798f4ffe0f75c02d49874dc0a7266cbc88a0d2020",
+    "binary_size": 8528,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/nametable_x86_64",
+    "selector": null,
+    "selector_kind": "none"
+  },
+  "notes": "Vendored twin of the reported image: an ELF64 PIE whose .rodata opens with a length-prefixed name table (\\x0cout.js\\x06std\\x12_0x8ec6b3), the shape the 977 KB Node SEA bundle carries at 0xb2024. The dataset original stays the witness in Reproduction. Pre-fix, and today under --termination nul, this answers count 0. Built by tests/fixtures/nametable_x86_64.py."
+}
