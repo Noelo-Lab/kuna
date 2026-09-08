@@ -847,9 +847,9 @@ fn emit_data_tail(
             Some(s) if s > 0 => s as u64,
             _ => {
                 let next_label = data
-                    .keys()
-                    .map(|&(addr, _)| addr)
-                    .find(|&addr| addr > display_vma);
+                    .range((display_vma.saturating_add(1), i32::MIN)..)
+                    .next()
+                    .map(|(&(addr, _), _)| addr);
                 let sec_end = sections
                     .iter()
                     .find(|&&(sv, ss, _)| byte_vma >= sv && byte_vma < sv.saturating_add(ss))

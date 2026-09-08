@@ -45,6 +45,13 @@ fn repo_root() -> PathBuf {
         .unwrap()
 }
 
+/// A missing `.sla` is a visible skip; any other bootstrap failure is the test
+/// failing, so a regression can never present as a green skip.
+fn skip_or_fail(reason: &str, spec: &str) {
+    assert!(reason.contains("No sleigh specification"), "raw bootstrap failed: {reason}");
+    eprintln!("verify_raw_image: skipping (build the {spec} `.sla`): {reason}");
+}
+
 fn specs() -> Vec<String> {
     vec![std::env::var("KUNA_SPECS")
         .unwrap_or_else(|_| repo_root().join("specs").to_string_lossy().into_owned())]
@@ -91,10 +98,7 @@ fn raw_thumb_maps_base_zero_and_nonzero() {
         ) {
             Ok(program) => program,
             Err(error) => {
-                eprintln!(
-                    "verify_raw_image: skipping (build the ARM `.sla`): {}",
-                    error.explain()
-                );
+                skip_or_fail(&error.explain().to_string(), "ARM");
                 return;
             }
         };
@@ -132,10 +136,7 @@ fn raw_arm_data_addresses_preserve_their_low_bit() {
     ) {
         Ok(program) => program,
         Err(error) => {
-            eprintln!(
-                "verify_raw_image: skipping (build the ARM `.sla`): {}",
-                error.explain()
-            );
+            skip_or_fail(&error.explain().to_string(), "ARM");
             return;
         }
     };
@@ -176,10 +177,7 @@ fn word_addressed_targets_scale_base_and_entries_to_byte_offsets() {
         match bootstrap_from_raw(&path, "avr8:LE:16:default", 0x100, &[0x100], None, &specs()) {
             Ok(program) => program,
             Err(error) => {
-                eprintln!(
-                    "verify_raw_image: skipping (build the AVR8 `.sla`): {}",
-                    error.explain()
-                );
+                skip_or_fail(&error.explain().to_string(), "AVR8");
                 return;
             }
         };

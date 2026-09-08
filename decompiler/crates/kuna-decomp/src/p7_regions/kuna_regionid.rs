@@ -2203,13 +2203,8 @@ impl KunaRegionIdentifier {
     /// `block 0x..` per leaf block, indent 2 spaces per depth.  The members are
     /// iterated in `KunaNodeOrder` (the `node_keys` order the walker uses), so
     /// the text is deterministic.  Returns the empty string if `compute()` has
-    /// not run.
-    pub fn render_tree(&self) -> String {
-        self.render_tree_with(&|address| address)
-    }
-
-    /// Render the region tree after mapping each internal block address to its
-    /// presentation coordinate.
+    /// not run.  `display_address` maps each internal block address to its
+    /// presentation coordinate (identity for a byte-addressed program).
     pub fn render_tree_with(&self, display_address: &dyn Fn(uintb) -> uintb) -> String {
         let mut os = String::new();
         if let Some(top) = self.top_region {
@@ -2218,7 +2213,7 @@ impl KunaRegionIdentifier {
         os
     }
 
-    /// Recursive helper for [`render_tree`].
+    /// Recursive helper for [`render_tree_with`].
     fn render_region(
         &self,
         region_id: RegionPayloadId,

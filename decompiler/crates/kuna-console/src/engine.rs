@@ -2517,6 +2517,7 @@ pub fn bootstrap_from_raw(
         assertions: Vec::new(),
         assertion_outcomes: Vec::new(),
         pending_prototypes: BTreeMap::new(),
+        declared_entries: BTreeSet::new(),
         raw_address_units: Some((word_size, arm32)),
     };
     Ok(prog)
