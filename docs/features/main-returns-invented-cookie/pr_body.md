@@ -68,7 +68,8 @@ default = the fix) with an `endbr64; ret` negative control that must render
 identically in both passes; `tests/cli/main-returns-invented-cookie.json` runs the
 probe over the vendored `pe_cookiecheck_x86_64.exe`. Gates: `make test` PARITY OK
 675/675 (0 assertions moved), `make test-stages` PARITY OK 683/683 (purely
-additive), `make test-cli` 74/74, `make rust-test` green, `make check-spec` green,
+additive), `make test-cli` 74/74, `make rust-test` 5,989 passed / 0 failed across
+371 targets, `make check-spec` green,
 `kuna catalog --check` OK. Sweep over 28 crackmes.one binaries / 9,355 functions:
 51 functions changed (0.55%) in 4 binaries, 0 added or removed, every binary exit
 0 in both arms. Speed `decompile-all pe_imports.exe` 2.562 s -> 2.486 s (median
