@@ -18,7 +18,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
-use kuna_base::address::RangeList;
 use kuna_base::space::AddrSpace;
 use kuna_decomp::architecture::Architecture;
 use kuna_sleigh::translate::Translate;
@@ -39,8 +38,6 @@ pub(super) struct WalkState {
     pub refs_from: BTreeMap<u64, Vec<Reference>>,
     /// Discovered/seeded functions, keyed by entry VMA (ordered).
     pub funcs: BTreeMap<u64, DiscoveredFunction>,
-    /// Instruction-byte coverage (`[vma, vma+len-1]` per decoded insn).
-    pub covered: RangeList,
 }
 
 impl WalkState {
@@ -50,7 +47,6 @@ impl WalkState {
             refs_to: BTreeMap::new(),
             refs_from: BTreeMap::new(),
             funcs: BTreeMap::new(),
-            covered: RangeList::new(),
         }
     }
 
@@ -84,6 +80,10 @@ pub(super) fn in_exec(exec_ranges: &[(u64, u64)], vma: u64) -> bool {
 /// by the local entry VMA: a CALL landing on one of those is a call into the
 /// INTERIOR of the function at its value, so no function is claimed there. Empty
 /// on every other architecture and whenever the option is off.
+///
+/// `want_assembly` is forwarded to [`decode_one`]: `false` leaves every
+/// [`Insn::mnemonic`]/[`Insn::operands`] empty and skips the second SLEIGH parse
+/// that produces them (see [`decode_one`] for the cost).
 pub(super) fn walk(
     translate: &dyn Translate,
     arch: &Architecture,
@@ -93,6 +93,7 @@ pub(super) fn walk(
     seed_funcs: &BTreeMap<u64, DiscoveredFunction>,
     painter: &ContextPainter,
     local_entries: &BTreeMap<u64, u64>,
+    want_assembly: bool,
 ) -> WalkState {
     // Paint the decode-mode context (ARM TMode / MIPS ISA_MODE) into the engine's
     // ContextDatabase BEFORE we decode a single instruction — the timing the
@@ -132,7 +133,7 @@ pub(super) fn walk(
                 continue; // out-of-bounds gate (flow.rs:891 analog)
             }
 
-            let decoded = match decode_one(translate, vma, code_space) {
+            let decoded = match decode_one(translate, vma, code_space, want_assembly) {
                 Ok(d) => d,
                 Err(_) => continue, // decode error: stop this path (mark gap)
             };
@@ -155,7 +156,6 @@ pub(super) fn walk(
                     pcode: None,
                 },
             );
-            st.covered.insert_range(Rc::clone(code_space), vma, vma + decoded.len as u64 - 1);
 
             // Successor edges.
             for &t in &c.flows {

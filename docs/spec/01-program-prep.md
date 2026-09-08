@@ -2289,6 +2289,28 @@ load-bearing gotchas are worth restating: a constant-space branch operand is
 p-code-relative (an intra-instruction branch), never a VMA; fall-through is decided
 by the *last* op only; and delay slots are already folded into the reported length.
 
+Two things the walk deliberately does **not** always produce. First, the human
+assembly text on each instruction: capturing it means a *second* full SLEIGH parse
+of the same bytes (`Translate::print_assembly`) plus two heap strings per
+instruction, which roughly doubles the cost of the walk and is pure waste whenever
+nothing reads the text. Every bulk consumer of it — `noreturn_propagate`'s
+call/NOP idiom checks, `tailcallentry`, and `poolentry`'s literal-load operands —
+sits behind `listing`, so the walk captures text exactly when `listing` is on and
+leaves the fields empty on the `fast_funcdisc`-only path, which is the path a
+whole-binary export takes on any image large enough for `--mode auto` to resolve
+to `fast`. The one other reader is AIF's function-start fingerprint (§1.5), which
+needs the mnemonics of just the first two instructions of each *discovered*
+function; rather than force whole-image capture for that, it falls back to
+re-decoding those addresses through its own gap decoder when the Listing carries
+no text. Re-decoding an address under the same painted context yields the mnemonic
+the walk would have stored, so the histogram — and every gap-walk and
+pointer-target decision keyed off it — is unchanged, which is what keeps the
+pointer-only entries `fast_funcdisc` exists to find. Second, instruction-byte
+coverage, which is *derived* from the instruction map rather than mirrored into a
+range list: because a range list merges overlapping but not adjacent ranges, a
+straight-line run of instructions would cost one node per instruction, and the
+undefined-gap queries already answer from the instruction map.
+
 **Fast function discovery with conservative pointer validation** (`fast_funcdisc`, default-off;
 `decompiler/crates/kuna-analysis/src/analyzers/fast_funcdisc/mod.rs
 (pointer_table_seeds)`) reuses that one walk without enabling the full Listing

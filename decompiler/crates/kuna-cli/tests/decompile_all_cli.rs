@@ -1725,3 +1725,46 @@ fn instruction_budget_overrun_truncates_instead_of_failing() {
         "`--option errortoomanyinstructions on` must restore the hard failure:\n{failed}"
     );
 }
+
+/// Fast discovery must not depend on the Listing carrying disassembly text.
+///
+/// `--mode fast` builds the Listing for `fast_funcdisc` alone, and that walk
+/// captures no assembly text — nothing left in the mode reads it except AIF's
+/// prologue fingerprint, which re-decodes the two instructions it needs. Drop that
+/// fallback and the fingerprint histogram comes back empty, which silently takes
+/// every pointer-validated function with it: on `aif_gap_x86_64` the target
+/// reachable only through a function-pointer table (`0x13ae`) simply stops being
+/// enumerated.
+#[test]
+fn fast_discovery_finds_the_pointer_only_target() {
+    let bin = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/aif_gap_x86_64")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let sp = specs();
+    let args = ["functions", &bin, "--json", "--sleighpath", &sp, "--mode", "fast"];
+    let (stdout, stderr, ok) = run_kuna(&args);
+    if !ok {
+        if is_specs_skip(&stderr) {
+            eprintln!("fast_discovery_finds_the_pointer_only_target: skipping (no `.sla`)");
+            return;
+        }
+        panic!("kuna functions failed: {stderr}");
+    }
+    let fast = json_addresses(&stdout);
+    assert!(
+        fast.contains(&0x13ae),
+        "`--mode fast` must enumerate the pointer-only function 0x13ae: {fast:x?}"
+    );
+
+    // The control: with the fast walk off, nothing finds it.
+    let mut off = args.to_vec();
+    off.extend_from_slice(&["--option", "fast_funcdisc", "off"]);
+    let (stdout, stderr, ok) = run_kuna(&off);
+    assert!(ok, "kuna functions failed: {stderr}");
+    assert!(
+        !json_addresses(&stdout).contains(&0x13ae),
+        "0x13ae must come from the fast walk alone:\n{stdout}"
+    );
+}

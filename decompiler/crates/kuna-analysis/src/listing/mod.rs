@@ -18,8 +18,15 @@
 //! the engine** (PR2) and has **no `--option` flag** (PR1) and **no
 //! `AnalysisCtx` change** (PR1). `context.rs` (ARM/MIPS decode-context paint) is
 //! PR5; x86-64 (the PR0 target) needs no context. The CodeUnit partition
-//! *queries* are PR3, but the [`model::CodeUnit`] type and the
-//! `covered`/`exec_ranges` fields are defined here now.
+//! *queries* are PR3, but the [`model::CodeUnit`] type and the `exec_ranges`
+//! field are defined here now.
+//!
+//! Instruction-byte coverage is **derived**, never stored: `insns` already maps
+//! each VMA to its length, so [`Listing::first_undefined_after`] and the AIF gap
+//! walk read coverage straight off that map. An earlier `covered: RangeList`
+//! mirror was write-only, and — because `RangeList` merges overlapping but not
+//! *adjacent* ranges — a straight-line instruction run cost one B-tree node per
+//! decoded instruction.
 
 pub mod classify;
 pub mod context;
@@ -37,11 +44,10 @@ pub mod walk;
 // the same decode this tier performs, not a pass; nothing commits its output.
 pub mod xrefs;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Bound;
 use std::rc::Rc;
 
-use kuna_base::address::RangeList;
 use kuna_decomp::architecture::Architecture;
 use kuna_sleigh::translate::Translate;
 
@@ -61,11 +67,10 @@ pub struct Listing {
     refs_from: BTreeMap<u64, Vec<Reference>>,
     /// Discovered/seeded functions, keyed by entry VMA (ordered).
     funcs: BTreeMap<u64, DiscoveredFunction>,
-    /// Instruction-byte coverage (`[vma, vma+len-1]` per decoded insn).
-    #[allow(dead_code)] // gap = exec_ranges - covered: a PR7 (AIF) consumer.
-    covered: RangeList,
     /// The coverage universe for the partition / gap walk (sorted, disjoint).
     exec_ranges: Vec<(u64, u64)>,
+    /// Whether the instruction model carries disassembly text.
+    has_assembly: bool,
 }
 
 impl Listing {
@@ -78,6 +83,8 @@ impl Listing {
     /// `seed_names` is an optional `(addr, name)` overlay for the seed functions
     /// (e.g. from `existing_function_addrs` / entry-name overlays). `from_symbol`
     /// is recorded for every seed listed in `funcsym_seeds`.
+    ///
+    /// Captures assembly text (see [`Listing::build_with_meta`]'s `want_assembly`).
     pub fn build(
         file: &object::File,
         _image: &ObjectLoadImage,
@@ -85,7 +92,7 @@ impl Listing {
         translate: &dyn Translate,
         seeds: &[u64],
     ) -> Listing {
-        Self::build_with_meta(file, _image, arch, translate, seeds, &[], &[])
+        Self::build_with_meta(file, _image, arch, translate, seeds, &[], &[], true)
     }
 
     /// A Listing assembled from a partition someone else already decoded.
@@ -107,14 +114,21 @@ impl Listing {
             refs_to: BTreeMap::new(),
             refs_from: BTreeMap::new(),
             funcs,
-            covered: RangeList::default(),
             exec_ranges,
+            has_assembly: true,
         }
     }
 
     /// Like [`Listing::build`], but with seed metadata: `funcsym_seeds` is the
     /// subset of `seeds` that came from a real funcsym (sets `from_symbol`), and
     /// `seed_names` is an `(addr, name)` overlay for naming seed functions.
+    ///
+    /// `want_assembly` selects whether each [`Insn`] carries its disassembly text.
+    /// Every consumer that reads it runs behind `--option listing on`, except AIF's
+    /// prologue fingerprint, which re-decodes the two addresses it needs; the
+    /// `fast_funcdisc`-only path therefore passes `false` and skips a second full
+    /// SLEIGH parse per instruction (see [`decode::decode_one`]).
+    #[allow(clippy::too_many_arguments)]
     pub fn build_with_meta(
         file: &object::File,
         _image: &ObjectLoadImage,
@@ -123,6 +137,7 @@ impl Listing {
         seeds: &[u64],
         funcsym_seeds: &[u64],
         seed_names: &[(u64, String)],
+        want_assembly: bool,
     ) -> Listing {
         // The executable-range universe (design §2.4 / §3.4 out-of-bounds gate),
         // sorted by low VMA so the partition / gap queries can binary-search it.
@@ -142,15 +157,19 @@ impl Listing {
                     refs_to: BTreeMap::new(),
                     refs_from: BTreeMap::new(),
                     funcs: BTreeMap::new(),
-                    covered: RangeList::new(),
                     exec_ranges,
+                    has_assembly: want_assembly,
                 };
             }
         };
 
-        // Build the seed metadata map.
+        // Build the seed metadata map. `funcsym_seeds` is indexed first: a linear
+        // `contains` per seed is O(|seeds| x |funcsym_seeds|), which on a
+        // several-hundred-thousand-seed image is a membership test in the billions
+        // of comparisons.
         let name_of: BTreeMap<u64, String> =
             seed_names.iter().map(|(a, n)| (*a, n.clone())).collect();
+        let funcsym_set: BTreeSet<u64> = funcsym_seeds.iter().copied().collect();
         let mut seed_funcs: BTreeMap<u64, DiscoveredFunction> = BTreeMap::new();
         for &entry in seeds {
             seed_funcs.insert(
@@ -158,7 +177,7 @@ impl Listing {
                 DiscoveredFunction {
                     entry,
                     name: name_of.get(&entry).cloned(),
-                    from_symbol: funcsym_seeds.contains(&entry),
+                    from_symbol: funcsym_set.contains(&entry),
                     has_no_return: false,
                     call_fixup: None,
                 },
@@ -187,6 +206,7 @@ impl Listing {
             &seed_funcs,
             &painter,
             &local_entries,
+            want_assembly,
         );
 
         let mut refs_to = st.refs_to;
@@ -204,8 +224,8 @@ impl Listing {
             refs_to,
             refs_from,
             funcs: st.funcs,
-            covered: st.covered,
             exec_ranges,
+            has_assembly: want_assembly,
         }
     }
 
@@ -286,6 +306,13 @@ impl Listing {
     /// gap decode (`memory.contains` / executable-block guard).
     pub fn exec_ranges(&self) -> &[(u64, u64)] {
         &self.exec_ranges
+    }
+
+    /// Whether [`Insn::mnemonic`]/[`Insn::operands`] carry disassembly text. False
+    /// for a Listing built with `want_assembly = false`, whose only text reader
+    /// (AIF's prologue fingerprint) re-decodes the addresses it needs.
+    pub fn has_assembly(&self) -> bool {
+        self.has_assembly
     }
 
     /// The decoded instruction whose `[addr, addr+len)` byte span contains `vma`
@@ -494,8 +521,8 @@ mod tests {
             refs_to: BTreeMap::new(),
             refs_from: BTreeMap::new(),
             funcs: BTreeMap::new(),
-            covered: RangeList::new(),
             exec_ranges: Vec::new(),
+            has_assembly: true,
         };
         let addrs = |start, end| {
             listing

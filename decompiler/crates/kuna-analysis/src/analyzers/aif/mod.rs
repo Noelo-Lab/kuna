@@ -230,7 +230,9 @@ impl<'a> GapDecoder<'a> {
         if !self.in_exec(vma) {
             return None;
         }
-        let decoded = decode_one(self.translate, vma, &self.code_space).ok()?;
+        // `want_assembly = true`: the prologue fingerprint below is built from the
+        // mnemonic text.
+        let decoded = decode_one(self.translate, vma, &self.code_space, true).ok()?;
         if decoded.len == 0 {
             return None;
         }
@@ -268,21 +270,41 @@ impl<'a> GapDecoder<'a> {
 }
 
 /// Compute the function-start fingerprint at `entry` over the BUILT Listing (a
-/// discovered function whose prologue is already decoded). The histogram half reads
-/// the Listing's instruction model (no speculative decode needed — these are
-/// reachable functions).
-fn fingerprint_in_listing(listing: &Listing, entry: u64) -> Option<Fingerprint> {
+/// discovered function whose prologue is already decoded). Membership and lengths
+/// come from the Listing's instruction model — these are reachable functions, so
+/// each of the [`FINGERPRINT_INSNS`] steps must be a decoded instruction START
+/// there, exactly as before.
+///
+/// The mnemonic TEXT comes from the Listing when it carries any, and otherwise is
+/// re-decoded one address at a time through `decoder`. The Listing captures
+/// disassembly text only when a text-reading consumer asked for it (see
+/// `listing::decode::decode_one`), and this fingerprint needs just the first
+/// `FINGERPRINT_INSNS` instructions of each function — re-decoding those is ~2 per
+/// function instead of text for every instruction in the image. Equivalent either
+/// way: decoding the same address under the same painted context yields the same
+/// mnemonic the walk would have recorded, and an empty one still rejects.
+fn fingerprint_in_listing(
+    listing: &Listing,
+    decoder: &mut GapDecoder,
+    entry: u64,
+) -> Option<Fingerprint> {
     let mut mnems: Vec<String> = Vec::with_capacity(FINGERPRINT_INSNS);
     let mut total_len: u64 = 0;
     let mut vma = entry;
     for _ in 0..FINGERPRINT_INSNS {
         let insn = listing.instruction_at(vma)?;
-        if insn.mnemonic.is_empty() {
+        let len = insn.len;
+        let mnemonic = if listing.has_assembly() {
+            insn.mnemonic.clone()
+        } else {
+            decoder.probe(vma)?.mnemonic
+        };
+        if mnemonic.is_empty() {
             return None;
         }
-        mnems.push(insn.mnemonic.clone());
-        total_len += insn.len as u64;
-        vma = vma.checked_add(insn.len as u64)?;
+        mnems.push(mnemonic);
+        total_len += len as u64;
+        vma = vma.checked_add(len as u64)?;
     }
     Some((mnems, total_len))
 }
@@ -290,10 +312,13 @@ fn fingerprint_in_listing(listing: &Listing, entry: u64) -> Option<Fingerprint> 
 /// Build the function-start fingerprint histogram over every DISCOVERED function
 /// (Ghidra's `funcStartMap`): map each prologue fingerprint to the number of
 /// discovered functions that share it.
-fn build_fingerprint_histogram(listing: &Listing) -> BTreeMap<Fingerprint, usize> {
+fn build_fingerprint_histogram(
+    listing: &Listing,
+    decoder: &mut GapDecoder,
+) -> BTreeMap<Fingerprint, usize> {
     let mut hist: BTreeMap<Fingerprint, usize> = BTreeMap::new();
     for (&entry, _) in listing.functions() {
-        if let Some(fp) = fingerprint_in_listing(listing, entry) {
+        if let Some(fp) = fingerprint_in_listing(listing, decoder, entry) {
             *hist.entry(fp).or_insert(0) += 1;
         }
     }
@@ -477,12 +502,12 @@ pub fn run_aif(
         return Vec::new();
     }
 
-    let hist = build_fingerprint_histogram(listing);
+    let mut decoder = GapDecoder::new(translate, code_space, exec_ranges);
+    let hist = build_fingerprint_histogram(listing, &mut decoder);
     if !hist.values().any(|&c| c >= FINGERPRINT_THRESHOLD) {
         return Vec::new();
     }
 
-    let mut decoder = GapDecoder::new(translate, code_space, exec_ranges);
     let mut accepted: BTreeSet<u64> = BTreeSet::new();
     let mut claimed: BTreeSet<u64> = BTreeSet::new();
 
@@ -591,12 +616,12 @@ pub(crate) fn validate_pointer_targets(
     exec_ranges: &[(u64, u64)],
     candidates: impl IntoIterator<Item = u64>,
 ) -> Vec<u64> {
-    let hist = build_fingerprint_histogram(listing);
+    let mut decoder = GapDecoder::new(translate, code_space, exec_ranges);
+    let hist = build_fingerprint_histogram(listing, &mut decoder);
     if !hist.values().any(|&count| count >= FINGERPRINT_THRESHOLD) {
         return Vec::new();
     }
 
-    let mut decoder = GapDecoder::new(translate, code_space, exec_ranges);
     let mut accepted = BTreeSet::new();
     let mut claimed = BTreeSet::new();
     for target in candidates {

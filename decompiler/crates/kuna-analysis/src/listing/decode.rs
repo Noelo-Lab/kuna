@@ -78,10 +78,19 @@ pub struct Decoded {
 /// errs after `one_instruction` succeeded, the instruction is still returned
 /// (with whatever mnemonic was captured, possibly empty) — the p-code (and thus
 /// the flow classification) is the load-bearing output.
+///
+/// `want_assembly` selects whether the assembly TEXT is captured at all.
+/// `print_assembly` is a **second, full SLEIGH parse** of the same bytes, so it
+/// roughly doubles the per-instruction decode cost and adds two heap `String`s per
+/// instruction. Only the text-reading consumers need it (`noreturn_propagate`,
+/// `tailcallentry` and `poolentry` off [`super::Insn`], and the AIF prologue
+/// fingerprinter); pass `false` wherever only `len`/`ops` are read and the two
+/// text fields come back empty.
 pub fn decode_one(
     translate: &dyn Translate,
     vma: u64,
     code_space: &Rc<AddrSpace>,
+    want_assembly: bool,
 ) -> KunaResult<Decoded> {
     let addr = Address::new(Rc::clone(code_space), vma);
 
@@ -89,9 +98,11 @@ pub fn decode_one(
     let len = translate.one_instruction(&mut cap, &addr)?;
 
     let mut asm = AsmCapture::default();
-    // The mnemonic is non-essential to flow; if the disassembly emit errs we
-    // keep the (possibly empty) captured string rather than failing the decode.
-    let _ = translate.print_assembly(&mut asm, &addr);
+    if want_assembly {
+        // The mnemonic is non-essential to flow; if the disassembly emit errs we
+        // keep the (possibly empty) captured string rather than failing the decode.
+        let _ = translate.print_assembly(&mut asm, &addr);
+    }
 
     Ok(Decoded { len: len.max(0) as u32, ops: cap.ops, mnemonic: asm.mnemonic, operands: asm.operands })
 }
