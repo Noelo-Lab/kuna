@@ -1876,6 +1876,11 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // facts are computed at LOAD and COMMITTED only when this gate is on, so
         // `off` renders exactly what the base table alone renders.
         "libcsigs" => arch.analysis_libcsigs,
+        // (kuna) The built-in Win32 API signatures — the Windows half of the
+        // `.gdt` stand-in, seeded onto IMPORTED API names only and keyed by entry
+        // address. Facts computed at LOAD, COMMITTED only when this gate is on, so
+        // `off` renders exactly what no Win32 prototype at all renders.
+        "win32sigs" => arch.analysis_win32sigs,
         "strings" => arch.analysis_strings,
         "entry_disc" => arch.analysis_entry_disc,
         // (kuna) `.eh_frame` LSDA landing-pad discovery (GccExceptionAnalyzer) — a
@@ -3417,6 +3422,20 @@ fn commit_analysis_output(
     for pieces in out.prototypes {
         let name = pieces.name.clone();
         prog.arch_mut().set_function_prototype_pieces(&name, pieces);
+    }
+
+    // 5c. (kuna `win32sigs`) The library prototypes bound by ENTRY ADDRESS. Same
+    //     store as 5, different key, and the key is the whole point: a PE import
+    //     is registered TWICE (the size-0 IAT slot the engine constant-folds
+    //     through and the `FF 25` thunk veneer a direct `call` targets), the
+    //     global by-name query of step 5 answers with the slot, and
+    //     `ActionDefaultParams` reads `callee_proto_pieces(entry)` at whichever
+    //     one the call actually resolves to. Applied after 5 so an address-keyed
+    //     signature wins over a by-name one for the same function, and before the
+    //     C++ streams below so DWARF ground truth still wins over both.
+    for (addr, pieces) in out.prototypes_at {
+        let a = Address::new(Rc::clone(code_space), addr);
+        prog.arch_mut().set_function_prototype_pieces_at(&a, pieces);
     }
 
     // 5b. (kuna `cppsig`) The DEMANGLED prototypes, bound by entry address like

@@ -346,6 +346,17 @@ pub struct AnalysisOutput {
     /// copies the callee signature and the argument constants get typed (e.g.
     /// `puts(char*)` types `0x400915` as `char*`, rendering the string literal).
     pub prototypes: Vec<kuna_decomp::fspec::PrototypePieces>,
+    /// (kuna `win32sigs`) Library-function prototypes keyed by ENTRY ADDRESS
+    /// instead of by name, parked with `set_function_prototype_pieces_at`.
+    ///
+    /// The by-name park above resolves through the global scope, and on a PE
+    /// import that is the wrong symbol: `pe_iat` registers both the size-0 IAT
+    /// slot the engine constant-folds through and the `FF 25` thunk veneer a
+    /// direct `call` targets, the by-name query answers with the slot, and
+    /// `ActionDefaultParams` asks `callee_proto_pieces(entry)` at the thunk — so
+    /// the signature is silently dropped. A pass that already knows the addresses
+    /// emits them here instead. See [`crate::protos::kuna_win32sigs`].
+    pub prototypes_at: Vec<(u64, kuna_decomp::fspec::PrototypePieces)>,
     /// Processor-context decode-mode paints (the kuna analog of ARM's
     /// `ARM_ElfExtension`/`ArmSymbolAnalyzer` `programContext.setValue(TMode,…)`).
     /// Each sets a SLEIGH context variable over an address range; the commit boundary
@@ -437,6 +448,7 @@ impl AnalysisOutput {
         self.locals.iter_mut().for_each(|l| fix(&mut l.name));
         self.fid_names.iter_mut().for_each(|f| fix(&mut f.name));
         self.prototypes.iter_mut().for_each(fix_proto);
+        self.prototypes_at.iter_mut().for_each(|(_, p)| fix_proto(p));
         self.cpp_dwarf.symbols.iter_mut().for_each(|s| fix(&mut s.name));
         self.cpp_dwarf.locals.iter_mut().for_each(|l| fix(&mut l.name));
         self.cpp_dwarf.prototypes.iter_mut().for_each(|(_, p)| fix_proto(p));
@@ -507,6 +519,7 @@ impl AnalysisOutput {
         self.strings.extend(other.strings);
         self.wide_strings.extend(other.wide_strings);
         self.prototypes.extend(other.prototypes);
+        self.prototypes_at.extend(other.prototypes_at);
         self.context_paints.extend(other.context_paints);
         self.tracked_regs.extend(other.tracked_regs);
         self.call_fixups.extend(other.call_fixups);
