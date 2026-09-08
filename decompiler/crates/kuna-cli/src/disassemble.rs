@@ -166,6 +166,28 @@ struct Region {
     /// Did the target resolve to a discovered function entry? Such a target is
     /// code by definition, whatever section it was linked into.
     from_entry: bool,
+    /// (kuna, `disassembly-fabricates-zero-byte`) Exclusive end of the mapped
+    /// run holding [`Self::start`] ([`mapped_run_end`]) — a bound the image
+    /// imposes rather than one the caller asked for. `None` where the loader
+    /// publishes no segment map and there is nothing to bound the walk with.
+    mapped_end: Option<u64>,
+}
+
+impl Region {
+    /// Where the walk actually stops: the tighter of the caller's own stop and
+    /// the end of mapped memory.
+    fn stop(&self) -> Option<u64> {
+        match (self.end, self.mapped_end) {
+            (Some(end), Some(mapped)) => Some(end.min(mapped)),
+            (end, mapped) => end.or(mapped),
+        }
+    }
+
+    /// Could the caller's own request have run past the end of mapped memory?
+    /// True for an unbounded `--count` walk, which has no byte stop at all.
+    fn reaches_past_image(&self) -> bool {
+        self.mapped_end.is_some_and(|mapped| self.end.is_none_or(|end| end > mapped))
+    }
 }
 
 /// One listed instruction.
@@ -346,6 +368,10 @@ fn listing_for(args: &DisArgs, prog: &ConsoleProgram, region: Region) -> Result<
             if folded > 0 {
                 notes.push(pool_note(folded));
             }
+            let end = rows.last().map_or(region.start, |r| r.addr + r.size);
+            if cut_short_by_image(&region, args.count, rows.len(), end) {
+                notes.push(image_bound_note(prog, &region));
+            }
             if args.json {
                 format!("{}\n", dumps_indent2(&result_json(args, &region, &rows, truncated, &notes)))
             } else {
@@ -354,6 +380,10 @@ fn listing_for(args: &DisArgs, prog: &ConsoleProgram, region: Region) -> Result<
         }
         View::Data => {
             let (rows, truncated) = walk_data(prog, &region, args.count);
+            let end = rows.last().map_or(region.start, |r| r.addr + r.bytes.len() as u64);
+            if cut_short_by_image(&region, args.count, rows.len(), end) {
+                notes.push(image_bound_note(prog, &region));
+            }
             if args.json {
                 format!(
                     "{}\n",
@@ -424,6 +454,50 @@ fn windowed_answer_is_final(region: &Region, section: Option<u32>, want: ViewReq
     region.name.is_some()
         && (region.from_entry
             || decide_view(want, false, section) == decide_view(want, true, section))
+}
+
+/// (kuna, `disassembly-fabricates-zero-byte`) The exclusive end of the
+/// contiguous mapped run containing `vma`, and the next mapped address above it.
+///
+/// The load image answers a read that STARTS on mapped memory for its whole
+/// length, zero-filling every byte past the last segment it crosses — the
+/// upstream BFD contract (`LoadImageBfd::loadFill`, `loadimage_object.rs`). So
+/// the start address is the only thing that path checks, and a listing that asks
+/// for more bytes than the run holds gets the rest of them invented: `kuna
+/// disassemble 0x80d190b` on an unmapped address correctly refuses, while
+/// `kuna disassemble 0x80d18b0 --count 30` on the same image walked 23 bytes
+/// past the same segment's end and reported eight `ADD byte ptr [EAX],AL` rows
+/// that are not in the file. The bound has to be carried here instead: the start
+/// is checked against the image, and the length is clipped to the run holding
+/// it, so the windowed listing agrees with the direct query.
+///
+/// Adjacent and overlapping segments merge, because a listing that crosses from
+/// one `PT_LOAD` into the next at the very byte the first ends has crossed
+/// nothing — only a genuine hole stops it. `None` when the loader publishes no
+/// segments at all (the XML `<binaryimage>` corpus, a relocatable object): that
+/// is silence, not a bound, and the walk stands as it was.
+fn mapped_run_end(prog: &ConsoleProgram, vma: u64) -> Option<(u64, Option<u64>)> {
+    mapped_run(&prog.segments(), vma)
+}
+
+/// [`mapped_run_end`] over a segment list, so the merge is testable without a
+/// loaded program.
+fn mapped_run(segments: &[(u64, u64, u32)], vma: u64) -> Option<(u64, Option<u64>)> {
+    let mut runs: Vec<(u64, u64)> = segments
+        .iter()
+        .filter(|&&(_, size, _)| size > 0)
+        .map(|&(start, size, _)| (start, start.saturating_add(size)))
+        .collect();
+    runs.sort_unstable();
+    let mut merged: Vec<(u64, u64)> = Vec::with_capacity(runs.len());
+    for (start, end) in runs {
+        match merged.last_mut() {
+            Some(last) if start <= last.1 => last.1 = last.1.max(end),
+            _ => merged.push((start, end)),
+        }
+    }
+    let hit = merged.iter().position(|&(start, end)| vma >= start && vma < end)?;
+    Some((merged[hit].1, merged.get(hit + 1).map(|&(start, _)| start)))
 }
 
 // --- which view ---------------------------------------------------------------
@@ -525,6 +599,7 @@ fn decode_rows(
     count: Option<usize>,
 ) -> (Vec<Row>, bool, FixedRefs) {
     let cap = if region.derived { Some(DERIVED_INSTRUCTION_CAP) } else { None };
+    let stop = region.stop();
     let alignment = u64::try_from(prog.arch().translate().get_alignment()).unwrap_or(1);
     let mut rows: Vec<Row> = Vec::new();
     let mut evidence = FixedRefs::default();
@@ -538,14 +613,23 @@ fn decode_rows(
         if count.is_some_and(|n| rows.len() >= n) {
             break;
         }
-        if region.end.is_some_and(|end| addr >= end) {
+        if stop.is_some_and(|end| addr >= end) {
             break;
         }
         if cap.is_some_and(|c| rows.len() >= c) {
             truncated = true;
             break;
         }
-        let decoded = prog.disassemble_at_into(addr, &mut mnem, &mut body).ok().filter(|&n| n > 0);
+        // An instruction that runs off the end of mapped memory was decoded out
+        // of the load image's zero fill, not out of the file, so it is not an
+        // instruction: the mapped bytes under it are listed as `.byte` instead.
+        let decoded = prog
+            .disassemble_at_into(addr, &mut mnem, &mut body)
+            .ok()
+            .filter(|&n| n > 0)
+            .filter(|&n| {
+                !region.mapped_end.is_some_and(|m| addr.saturating_add(n as u64) > m)
+            });
         // The bytes are read back separately, so a row is only reported as an
         // instruction when BOTH the decode and the read succeeded — a row can
         // never claim a length it cannot show the bytes for.
@@ -563,7 +647,7 @@ fn decode_rows(
                 addr = addr.saturating_add(len as u64);
             }
             _ => {
-                let want = recovery_span(addr, resume_grid(alignment, witness), region.end);
+                let want = recovery_span(addr, resume_grid(alignment, witness), stop);
                 // A span that will not read whole falls back to the one byte
                 // that is always safe; a row never claims bytes it cannot show.
                 if !prog.read_bytes_into(addr, want as usize, &mut raw)
@@ -703,6 +787,7 @@ fn fold_pool_words(
 /// view is that every byte it shows is a byte the image really holds.
 fn walk_data(prog: &ConsoleProgram, region: &Region, count: Option<usize>) -> (Vec<DataRow>, bool) {
     let cap = if region.derived { Some(DERIVED_ROW_CAP) } else { None };
+    let stop = region.stop();
     let mut rows: Vec<DataRow> = Vec::new();
     let mut truncated = false;
     let mut addr = region.start;
@@ -711,14 +796,14 @@ fn walk_data(prog: &ConsoleProgram, region: &Region, count: Option<usize>) -> (V
         if count.is_some_and(|n| rows.len() >= n) {
             break;
         }
-        if region.end.is_some_and(|end| addr >= end) {
+        if stop.is_some_and(|end| addr >= end) {
             break;
         }
         if cap.is_some_and(|c| rows.len() >= c) {
             truncated = true;
             break;
         }
-        let want = match region.end {
+        let want = match stop {
             Some(end) => (end - addr).min(HEXDUMP_ROW_BYTES as u64) as usize,
             None => HEXDUMP_ROW_BYTES,
         };
@@ -784,13 +869,17 @@ fn resolve_region(prog: &ConsoleProgram, args: &DisArgs) -> Result<Region, Strin
         // Both bound the walk, so the tighter one wins — the same "first limit
         // reached" rule `--count` follows.
         let end = args.bytes.map_or(end, |n| end.min(start.saturating_add(n)));
-        return Ok(Region {
-            start,
-            end: Some(end),
-            name: name_at(prog, start),
-            derived: false,
-            from_entry: false,
-        });
+        return Ok(bound_to_image(
+            prog,
+            Region {
+                start,
+                end: Some(end),
+                name: name_at(prog, start),
+                derived: false,
+                from_entry: false,
+                mapped_end: None,
+            },
+        ));
     }
 
     let (start, name, from_entry) = if addressy {
@@ -821,15 +910,18 @@ fn resolve_region(prog: &ConsoleProgram, args: &DisArgs) -> Result<Region, Strin
         ));
     };
 
-    Ok(match (args.bytes, args.count) {
+    let region = match (args.bytes, args.count) {
         (Some(n), _) => Region {
             start,
             end: Some(start.saturating_add(n)),
             name,
             derived: false,
             from_entry,
+            mapped_end: None,
         },
-        (None, Some(_)) => Region { start, end: None, name, derived: false, from_entry },
+        (None, Some(_)) => {
+            Region { start, end: None, name, derived: false, from_entry, mapped_end: None }
+        }
         (None, None) => {
             let extent = prog.function_extent_at(start);
             let span = if extent > 0 { extent } else { DEFAULT_WINDOW_BYTES };
@@ -839,9 +931,45 @@ fn resolve_region(prog: &ConsoleProgram, args: &DisArgs) -> Result<Region, Strin
                 name,
                 derived: true,
                 from_entry,
+                mapped_end: None,
             }
         }
-    })
+    };
+    Ok(bound_to_image(prog, region))
+}
+
+/// (kuna, `disassembly-fabricates-zero-byte`) Record the end of mapped memory
+/// on a resolved region, so no walk over it can list a byte the image does not
+/// hold ([`mapped_run_end`]).
+fn bound_to_image(prog: &ConsoleProgram, region: Region) -> Region {
+    let mapped_end = mapped_run_end(prog, region.start).map(|(end, _)| end);
+    Region { mapped_end, ..region }
+}
+
+/// Did the walk stop at the end of mapped memory with the caller's own request
+/// still unmet? Only then is the image the reason, and only then does saying so
+/// tell the caller something they could not read off the answer.
+fn cut_short_by_image(region: &Region, count: Option<usize>, listed: usize, end: u64) -> bool {
+    region.reaches_past_image()
+        && region.mapped_end == Some(end)
+        && count.is_none_or(|n| listed < n)
+}
+
+/// Say that the image, not the ask, is what ended the listing — the fact an
+/// agent cannot infer from a short answer, and the one that says `--count` will
+/// not buy more.
+fn image_bound_note(prog: &ConsoleProgram, region: &Region) -> String {
+    let mapped_end = region.mapped_end.unwrap_or(region.start);
+    let next = mapped_run_end(prog, region.start).and_then(|(_, next)| next);
+    let resume = match next {
+        Some(addr) => format!(", and the next mapped address is 0x{addr:x}"),
+        None => String::new(),
+    };
+    format!(
+        "the listing stops at 0x{mapped_end:x}, where the segment holding \
+         0x{:x} ends -- the bytes above it are not in the image{resume}",
+        region.start
+    )
 }
 
 /// Split an explicit `start-end` / `start..end` range operand.
@@ -1055,8 +1183,10 @@ pub(crate) fn function_listing(prog: &ConsoleProgram, start: u64, end: u64) -> O
     if end <= start {
         return None;
     }
-    let region =
-        Region { start, end: Some(end), name: None, derived: false, from_entry: true };
+    let region = bound_to_image(
+        prog,
+        Region { start, end: Some(end), name: None, derived: false, from_entry: true, mapped_end: None },
+    );
     let (rows, _, _) = walk(prog, &region, None);
     if rows.is_empty() {
         return None;
@@ -1369,6 +1499,7 @@ mod tests {
             name: Some("main".into()),
             derived: true,
             from_entry: true,
+            mapped_end: None,
         };
         let rows = vec![row(0x1000, &[0x55], "PUSH", "RBP"), row(0x1001, &[0x48, 0x89, 0xe5], "MOV", "RBP,RSP")];
         let text = render_text(&region, &rows, false);
@@ -1389,6 +1520,7 @@ mod tests {
             name: Some("s_400915".into()),
             derived: false,
             from_entry: false,
+            mapped_end: None,
         };
         let rows = vec![DataRow { addr: 0x400915, bytes: b"Username: \0\x01\x02\x03\x04\x05".to_vec() }];
         let text = render_data_text(&region, &rows, false);
@@ -1473,6 +1605,68 @@ mod tests {
         }
     }
 
+    /// The image bound is the end of the run holding the start, and adjacent or
+    /// overlapping segments are one run: a listing that crosses from one
+    /// `PT_LOAD` into the next at the byte the first ends has crossed no hole.
+    #[test]
+    fn the_image_bound_is_the_end_of_the_run_holding_the_address() {
+        let code = section_flags::CODE;
+        let data = section_flags::DATA;
+        // The witness's own layout: R E [0x8048000,0x80d1904), a hole, then RW.
+        let keygenme = [(0x8048000, 0x89904, code), (0x80d2f50, 0x7a9540, data)];
+        assert_eq!(mapped_run(&keygenme, 0x80d18b0), Some((0x80d1904, Some(0x80d2f50))));
+        assert_eq!(mapped_run(&keygenme, 0x80d2f50), Some((0x887c490, None)));
+        // Inside the hole there is no run at all -- the direct query's answer.
+        assert_eq!(mapped_run(&keygenme, 0x80d190b), None);
+        assert_eq!(mapped_run(&keygenme, 0x8047fff), None);
+
+        // Touching and overlapping segments merge, in either input order.
+        let touching = [(0x2000, 0x1000, data), (0x1000, 0x1000, code)];
+        assert_eq!(mapped_run(&touching, 0x1800), Some((0x3000, None)));
+        let overlapping = [(0x1000, 0x1800, code), (0x2000, 0x1000, data)];
+        assert_eq!(mapped_run(&overlapping, 0x1000), Some((0x3000, None)));
+
+        // A zero-size record is not a segment (the `runModel` convention), and
+        // a loader that publishes nothing at all is silence, not a bound.
+        assert_eq!(mapped_run(&[(0x1000, 0, code)], 0x1000), None);
+        assert_eq!(mapped_run(&[], 0x1000), None);
+    }
+
+    /// The walk stops at the tighter of the two bounds, and says the image was
+    /// the reason only when the image really was.
+    #[test]
+    fn the_image_bound_clips_the_walk_and_explains_itself_once() {
+        let region = |end, mapped_end| Region {
+            start: 0x1000,
+            end,
+            name: None,
+            derived: false,
+            from_entry: false,
+            mapped_end,
+        };
+        assert_eq!(region(Some(0x1100), Some(0x1040)).stop(), Some(0x1040));
+        assert_eq!(region(Some(0x1020), Some(0x1040)).stop(), Some(0x1020));
+        assert_eq!(region(None, Some(0x1040)).stop(), Some(0x1040));
+        assert_eq!(region(Some(0x1100), None).stop(), Some(0x1100));
+        assert_eq!(region(None, None).stop(), None);
+
+        // A `--count` walk has no byte stop, so it always reaches past.
+        assert!(region(None, Some(0x1040)).reaches_past_image());
+        assert!(region(Some(0x1100), Some(0x1040)).reaches_past_image());
+        assert!(!region(Some(0x1040), Some(0x1040)).reaches_past_image());
+        assert!(!region(Some(0x1100), None).reaches_past_image());
+
+        // The note is for a walk the image cut short: it stopped on the bound
+        // with the caller's count unmet.
+        assert!(cut_short_by_image(&region(None, Some(0x1040)), Some(30), 9, 0x1040));
+        // Stopped short of the bound -- something else ended it.
+        assert!(!cut_short_by_image(&region(None, Some(0x1040)), Some(30), 9, 0x1030));
+        // The count was met exactly on the bound: the ask ended it, not the image.
+        assert!(!cut_short_by_image(&region(None, Some(0x1040)), Some(9), 9, 0x1040));
+        // The caller asked for exactly the mapped bytes and got them.
+        assert!(!cut_short_by_image(&region(Some(0x1040), Some(0x1040)), None, 4, 0x1040));
+    }
+
     #[test]
     fn the_windowed_load_turns_the_discovery_walk_off_unless_the_caller_named_it() {
         let preset: Vec<(String, String)> =
@@ -1512,6 +1706,7 @@ mod tests {
             name: name.map(str::to_string),
             derived: false,
             from_entry,
+            mapped_end: None,
         };
         use ViewRequest::{Auto, Data as WantData};
         for (name, from_entry, section, want, expect) in [

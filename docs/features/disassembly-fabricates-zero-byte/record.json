@@ -1,0 +1,68 @@
+{
+  "need_id": "disassembly-fabricates-zero-byte",
+  "track": "tooling",
+  "scope": "small",
+  "option": null,
+  "div": null,
+  "phase": null,
+  "module": "decompiler/crates/kuna-cli/src/disassemble.rs (mapped_run / Region::stop)",
+  "default": "always on -- a query surface. Nothing here can change emitted C, so no phases.toml row, no options.rs registration and no catalog counter (docs/agents.md: the option rule is scoped to behaviour that CAN change emitted C).",
+  "decisions": [
+    "The filed hypothesis -- 'reads starting in mapped memory appear to zero-fill an unmapped suffix' -- is upheld and is the upstream BFD contract, not a kuna defect: LoadImageBfd::loadFill (ported at kuna-analysis/src/loadimage_object.rs) fills a 512-byte buffer forward from the requested address and, once ANY byte has been read, zero-fills to the next segment instead of failing. That is what makes a .bss tail read back as zeroes rather than as a hole, so it must not change: the decompiler, the analysis tier and every reader depend on it.",
+    "The refuter's sharper wording is the one that held: this is a MISSING END-CLIP, not a zero-fill policy. The containment guard in listing_for is applied to region.start only (prog.vma_bytes_mapped), and nothing ever bounded the length. The fix therefore lives entirely in the query surface, which is why the need was retracked quality -> tooling before dispatch.",
+    "The bound is the contiguous mapped RUN, not the containing segment. Clipping at a segment edge would truncate a listing that crosses from one PT_LOAD into the next at the byte the first ends -- a real ELF layout, and one that reads through today. mapped_run merges adjacent and overlapping records first, so only a genuine hole stops the walk.",
+    "A loader that publishes no segments at all (the XML <binaryimage> corpus loader, a relocatable object -- both return an empty get_segments) yields no bound and the walk is unchanged. Silence is not evidence of an unmapped image, and treating it as one would have emptied every corpus listing.",
+    "The straddle is half the defect and was not in the filed symptom. At the last mapped byte the translator still decodes a 2-byte `add [eax],al` out of one real byte and one zero-filled one; stopping the LOOP at the bound does not stop THAT row from claiming a byte past it. A decoded row that would cross mapped_end is refused the way a translator refusal is, so the mapped bytes under it list as .byte. The whole-corpus sweep found this is in fact the ONLY thing that changes on already-good images -- 11 of 11 changed listings are that one row.",
+    "truncated stays false. Its documented contract is 'there is more to list, and `end` is where to resume from' -- true for the 1024-row derived cap, false at the end of the image, where resuming at `end` errors. The stop is carried by `notes` instead (present in --json and on stderr), which is also the field the tester said was empty.",
+    "kuna read had the same defect (384 zeroes across the gap under a header claiming the range) and is the same walk, so it is fixed by the same clip; walk_data's read_upto could never shorten because load_fill never fails there."
+  ],
+  "gates": {
+    "make test": "PARITY OK (675/675)",
+    "make test-stages": "PARITY OK",
+    "make rust-test": "6129 passed / 1 failed -- the one failure is the known env artifact: verify_w10_proto_unlock::w10_proto_unlock_const_return_collapses_no_tied_roundtrip reads its 'C++ oracle' from KUNA_DECOMP_TEST, which the repipe launcher points at kuna's own decomp_test_dbg, so kuna is compared against itself. Green under `env -u KUNA_DECOMP_TEST` (4/4). This change touches only kuna-cli and cannot reach a kuna-decomp oracle. CI does not export the variable.",
+    "make check-spec": "OK (lenient)",
+    "make test-cli": "94/94 (93/94 before this PR's probe landed)",
+    "kuna catalog --check": "catalog OK (no option added)"
+  },
+  "speed": {
+    "note": "No measurable cost: the clip is one get_segments() call and a merge over the segment list (2 records on a typical ELF, tens on a PE), once per invocation, outside the decode loop. The per-row cost is one Option compare.",
+    "witness_ms": {
+      "base": null,
+      "new": null
+    }
+  },
+  "sweep": {
+    "method": "A/B of `kuna decompile-graph`'s per-function `assembly` blocks (the same walk `kuna disassemble` uses, via disassemble::function_listing) between the base commit's kuna and the patched one, over every function of every image.",
+    "corpora": [
+      "decompiler/crates/kuna-analysis/tests/fixtures + tests/hang-repro",
+      "26 crackmes.one dataset images (ELF/PE/Mach-O, i386/x86-64/ARM)"
+    ],
+    "binaries_compared": 95,
+    "functions_compared": 16069,
+    "listings_changed": 11,
+    "classification": "11 of 11 are the same single row: the final instruction of a function whose extent reaches the end of a mapped section, previously a fabricated 2-byte `ADD byte ptr [EAX],AL` half of which was zero fill, now `.byte 0x00`. Row counts are IDENTICAL in every case -- no listing was truncated and no row was lost anywhere in either corpus. Witnesses: pe_imports.exe register_frame_ctor@0x140007a10, upx_packed_pe_i386.exe sub_4100a0@0x4100a0, illusion.exe, CTF_Level13.exe, TBMKD.sys.",
+    "not_covered": "The windowed (--count / --bytes / range) path is not reachable from decompile-graph; it is covered by the acceptance probe, the promoted tests/cli case and the two disassemble_cli.rs e2e tests."
+  },
+  "acceptance": {
+    "probe_id": "p-26e8859f6f77",
+    "acceptance_id": "a-bc4ff057bebd",
+    "verdict": "PASS",
+    "command": "kuna disassemble <keygenme> 0x80d18b0 --count 30 --json",
+    "before": {
+      "end": 135076123,
+      "end_hex": "0x80d191b",
+      "count": 30,
+      "truncated": false,
+      "notes": []
+    },
+    "after": {
+      "end": 135076100,
+      "end_hex": "0x80d1904",
+      "count": 19,
+      "truncated": false,
+      "notes": 1
+    },
+    "promoted_to": "tests/cli/disassembly-fabricates-zero-byte.json",
+    "promotion_note": "The dataset witness is 6.5 MB, so the promoted probe is re-pointed at the vendored 4.3 KB segmentgap_i386 fixture (CI has no dataset) -- same layout, same failure: unfixed it answers end 0x804803f with 22 invented rows."
+  }
+}
