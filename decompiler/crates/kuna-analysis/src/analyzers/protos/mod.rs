@@ -115,6 +115,12 @@ const LIBC: &[(&str, Sig)] = &[
     ("memcpy", Sig { ret: Ty::VoidPtr, params: &[Ty::VoidPtr, Ty::VoidPtr, Ty::Size], vararg: -1 }),
     ("memmove", Sig { ret: Ty::VoidPtr, params: &[Ty::VoidPtr, Ty::VoidPtr, Ty::Size], vararg: -1 }),
     ("memset", Sig { ret: Ty::VoidPtr, params: &[Ty::VoidPtr, Ty::Int, Ty::Size], vararg: -1 }),
+    // sys/ptrace.h — `long ptrace(int request, pid_t pid, void *addr, void *data)`.
+    // glibc DECLARES it variadic (`long ptrace(enum __ptrace_request, ...)`), so no
+    // body analysis can derive the arity; the four fixed slots are glibc's own
+    // (`sysdeps/unix/sysv/linux/ptrace.c` fetches `pid_t`, `void *`, `void *` after
+    // the request with `va_arg`), which is also the call form ptrace(2) documents.
+    ("ptrace", Sig { ret: Ty::Long, params: &[Ty::Int, Ty::Int, Ty::VoidPtr, Ty::VoidPtr], vararg: -1 }),
 ];
 
 /// Build the kuna [`Datatype`] for a [`Ty`] using the architecture's type factory.
@@ -168,6 +174,33 @@ fn build_pieces(
         output_storage: None,
         input_storage: Vec::new(),
     })
+}
+
+/// (kuna `declaredlibcproto`) The built-in signature for a function name the
+/// OPERATOR declared, or `None` when neither table knows the name.
+///
+/// The two load-time passes match a name the *image* carries: [`LibProtoPass`]
+/// over the object's own FUNC symbols and imports, [`kuna_libcsigs::LibcSigsPass`]
+/// over the imports alone. Neither can answer for a name that exists only because
+/// a caller said so (`--define-function 0x8048968=ptrace` on a stripped, statically
+/// linked image), which is precisely the reverse-engineering case: the symbol table
+/// is gone, the operator has identified the callee, and the arity is still unknown.
+///
+/// Both tables are searched here, the imports-only restriction included. That
+/// restriction exists because a *coincidental* spelling must not retype a function
+/// the image defines itself — a judgement about evidence, and the evidence is
+/// different when a human or an agent has named the entry outright.
+pub fn declared_libc_prototype(
+    name: &str,
+    types: &dyn TypeFactory,
+    word_size: uint4,
+) -> Option<PrototypePieces> {
+    let sig = LIBC
+        .iter()
+        .chain(kuna_libcsigs::LIBC_EXT.iter())
+        .find(|(n, _)| *n == name)
+        .map(|(_, sig)| sig)?;
+    build_pieces(name, sig, types, word_size).ok()
 }
 
 /// Collect the set of FUNC symbol names present in the object — the names the
@@ -273,6 +306,43 @@ mod tests {
         assert!(matches!(sig.params[0], Ty::Int), "category is int");
         assert!(matches!(sig.params[1], Ty::CharPtr), "locale is const char *");
         assert_eq!(sig.vararg, -1, "setlocale is not variadic");
+    }
+
+    #[test]
+    fn ptrace_is_the_four_slot_documented_call_form() {
+        // glibc DECLARES `long ptrace(enum __ptrace_request, ...)`, so a stripped
+        // static image gives argument recovery nothing to work from. The four
+        // fixed slots are the ones glibc's own wrapper fetches with `va_arg`.
+        let (_, sig) = LIBC.iter().find(|(n, _)| *n == "ptrace").expect("table knows ptrace");
+        assert!(matches!(sig.ret, Ty::Long), "ptrace returns long");
+        assert_eq!(sig.params.len(), 4, "request, pid, addr, data");
+        assert!(matches!(sig.params[0], Ty::Int));
+        assert!(matches!(sig.params[1], Ty::Int));
+        assert!(matches!(sig.params[2], Ty::VoidPtr));
+        assert!(matches!(sig.params[3], Ty::VoidPtr));
+        assert_eq!(sig.vararg, -1, "the fixed form is what a caller is typed against");
+    }
+
+    #[test]
+    fn a_declared_name_is_answered_out_of_either_table() {
+        // The declared-name lookup is what a stripped image has instead of a symbol
+        // table, so it must reach BOTH tables: the imports-only restriction on the
+        // measured extension is about a coincidental spelling, and an operator who
+        // named the entry outright is not a coincidence.
+        let types = kuna_decomp::dtype::TypeFactoryImpl::new();
+        types.set_default_alignment_map();
+        types.set_max_basetype_size(8);
+        types.setup_sizes(Some(4), 4, 4);
+        let _ = types.cache_core_types();
+        let base = declared_libc_prototype("ptrace", &types, 1).expect("base table name");
+        assert_eq!(base.name, "ptrace");
+        assert_eq!(base.intypes.len(), 4);
+        let ext = declared_libc_prototype("read", &types, 1).expect("extension table name");
+        assert_eq!(ext.intypes.len(), 3, "ssize_t read(int, void *, size_t)");
+        assert!(
+            declared_libc_prototype("sub_8049027", &types, 1).is_none(),
+            "a name neither table knows is left alone"
+        );
     }
 
     #[test]

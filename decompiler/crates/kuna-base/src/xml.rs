@@ -1811,7 +1811,9 @@ mod tests {
         // is named from that sidecar with no option and no environment variable
         // and kuna-calleearityscratch / a boundary register the caller only used
         // as scratch bounds a cut callee-body argument run (repipe r9)
-        assert_eq!(count, 254, "corpus file count drifted");
+        // and kuna-declaredlibcproto / a DECLARED function name is answered out of
+        // the built-in libc signature tables (repipe r10)
+        assert_eq!(count, 255, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

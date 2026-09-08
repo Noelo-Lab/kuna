@@ -1,0 +1,66 @@
+<decompilertest>
+<binaryimage arch="x86:LE:32:default:gcc">
+<!--
+    RE-friction round 10, need `both-argument-recovery-options` (challenge
+    5ab77f5c33c5d40ad448c615): a stripped, statically linked i386 crackme whose
+    anti-debug state machine calls glibc's `ptrace`.  With both call-argument
+    recovery options on and the callee named by hand
+    (the console `function bounds ... as ptrace` that the CLI's own
+    define-function flag lowers to), 13 call sites still rendered
+
+        *(unsigned int *)((int)v14 + -4) = v12[v7];
+        *(int *)((int)v14 + -8) = v5;
+        *(int *)((int)v14 + -0xc) = dat_804a4ac;
+        *(unsigned int *)((int)v14 + -0x10) = 6;
+        v16 += ptrace();
+
+    - the four arguments visible as raw stores on the lines above an argumentless
+    call.
+
+    Cause (P1, external refinement).  The two library-prototype passes match a
+    name the IMAGE carries: `libproto` over its FUNC symbols and imports,
+    `libcsigs` over the imports alone.  A stripped, statically linked target
+    carries neither, so the name exists only because the operator supplied it, and
+    naming the entry bought the call sites a spelling and nothing more.  The arity
+    has to come from somewhere and it cannot come from the body: glibc DECLARES
+    `long ptrace(enum __ptrace_request, ...)` and fetches the rest with `va_arg`.
+
+    Stage / sub-stage: P1 "external-refinement".  The P0 assertion
+    `option declaredlibcproto on|off` decides whether a DECLARED function name is
+    answered out of the built-in libc signature tables and the signature parked on
+    the declared entry address.
+
+    The fixture is the same construct: `caller` pushes four `ptrace` arguments per
+    iteration of a loop and calls `wrapper`, a varargs wrapper in the shape glibc's
+    own has - `va_start` takes the address of the first argument and every later
+    read goes through that pointer.  `function bounds 0x8049027 0x804903c as
+    ptrace` is the operator's declaration.  Pass 1 (`option declaredlibcproto off`)
+    reproduces the bug; the callee is named in BOTH passes (`sub_8049027` never
+    appears), so the only thing that moves between them is the signature.
+
+    Source: decompiler/crates/kuna-analysis/tests/fixtures/declaredlibcproto_i386.s
+-->
+<bytechunk space="ram" offset="0x8049000">
+31db31f66804a004086a00536a02e81400000083c41001c64383fb0376e689f3
+b801000000cd805589e58d4508a300a004088b1500a004088b025dc300000000
+</bytechunk>
+<symbol space="ram" offset="0x8049000" name="caller"/>
+</binaryimage>
+<script>
+  <com>option declaredlibcproto off</com>
+  <com>function bounds 0x8049027 0x804903c as ptrace</com>
+  <com>lo fu caller</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option declaredlibcproto on</com>
+  <com>function bounds 0x8049027 0x804903c as ptrace</com>
+  <com>lo fu caller</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="KUNA-DECLAREDLIBCPROTO #1: the declared name renders in both passes" min="2" max="2">ptrace\(2,</stringmatch>
+<stringmatch name="KUNA-DECLAREDLIBCPROTO #2: so naming is not what moved, in either pass" min="0" max="0">sub_8049027</stringmatch>
+<stringmatch name="KUNA-DECLAREDLIBCPROTO #3: off, the arguments carry no type" min="1" max="1">ptrace\(2,[a-z0-9]*,0,0x804a004\)</stringmatch>
+<stringmatch name="KUNA-DECLAREDLIBCPROTO #4: on, the parked signature types them" min="1" max="1">ptrace\(2,[a-z0-9]*,NULL,\(void \*\)0x804a004\)</stringmatch>
+</decompilertest>

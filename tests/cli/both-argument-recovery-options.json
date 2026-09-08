@@ -1,0 +1,47 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "0x8049000",
+    "--addr",
+    "--define-function",
+    "0x8049027=ptrace",
+    "--option",
+    "calleearity",
+    "on",
+    "--option",
+    "varargstackargs",
+    "on"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/declaredlibcproto_i386",
+    "binary_sha256": "0378df5e9972f99f5a6433bfbf2bcacb1695d7da15dd3033209e2ab59712f57e",
+    "binary_size": 8384,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/declaredlibcproto_i386",
+    "selector": "0x8049000",
+    "selector_kind": "addr"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_absent": [
+      "ptrace\\(\\)"
+    ],
+    "stdout_matches": [
+      "ptrace\\(2,[^,)]+,NULL,\\(void \\*\\)0x804a004\\)"
+    ]
+  },
+  "notes": "Naming a callee must also give it a prototype. Dataset witness: crackmes.one 5ab77f5c33c5d40ad448c615, a stripped static i386 crackme whose state machine emitted ptrace() with the four pushed slots as raw stores. Retargeted to the vendored reduction (source declaredlibcproto_i386.s) because CI has no dataset; the NULL/(void *) casts are what proves the declared name reached the signature tables."
+}
