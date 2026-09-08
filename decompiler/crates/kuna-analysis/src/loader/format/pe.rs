@@ -96,6 +96,12 @@ impl ObjectFormat for PeFormat {
         crate::loader::pe_iat::resolve_pe_imports(file, bytes)
     }
 
+    fn import_slots(&self, _file: &object::File, bytes: &[u8]) -> Vec<(u64, u64)> {
+        // The Import Address Table slot words, from the same INT/IAT lockstep
+        // walk `resolve_imports` names them with.
+        crate::loader::pe_iat::resolve_pe_import_slots(bytes)
+    }
+
     fn header_region(&self, file: &object::File, bytes: &[u8]) -> Option<HeaderRegion> {
         // The `SizeOfHeaders` bytes Windows maps read-only at `ImageBase`, which
         // the section walk never covers (design: `loader/pe_headers.rs`).

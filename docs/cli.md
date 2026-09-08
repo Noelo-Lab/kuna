@@ -865,14 +865,18 @@ scoring. `--no-vars` leaves `variables` empty but still emits function line mapp
 Behaviors specific to `decompile-all`:
 
 - **Executable default targets** — an unfiltered run decompiles canonical entries
-  contained by loader sections marked `CODE`. Callable import pointer slots in PE
-  IATs, Mach-O symbol-pointer sections, and similar data areas remain in `kuna
-  functions`, remain installed for named calls and prototypes, and remain
-  reachable through explicit `--addr`; they are not automatically decoded as
-  function bodies. Analysis-discovered entries inside executable sections join
+  contained by loader sections marked `CODE`, minus the **import pointer slots**
+  the loader resolved names at. Callable slots in PE IATs, Mach-O symbol-pointer
+  sections, and similar data areas remain in `kuna functions`, remain installed
+  for named calls and prototypes, and remain reachable through explicit `--addr`;
+  they are not automatically decoded as function bodies. The slot test is what
+  covers a packed PE that keeps its whole import directory inside its one
+  `CODE|EXECUTE` section, where the section flags cannot tell the two apart.
+  Analysis-discovered entries inside executable sections join
   this default set. A name that identifies entries at several addresses is rejected as
   ambiguous instead of selecting the first. Loaders without section metadata retain the
-  complete inventory.
+  complete inventory. A `--define-function` declaration outranks both tests, so an
+  address the import directory claims can still be decompiled on request.
 
 - **Relocatable-object selectors** — an `ET_REL`/`.obj` is loaded into a synthetic VMA
   space, but its original coordinates remain available. `--addr` accepts a synthetic

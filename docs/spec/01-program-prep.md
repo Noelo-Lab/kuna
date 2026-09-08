@@ -726,6 +726,29 @@ remains unrestricted; name selection keeps its normal first-match behavior when
 a stub and slot share a name. Loaders without section metadata keep the complete
 inventory.
 
+(kuna) "In a data section" is the usual place for a slot and not a property of
+one, so the section flags cannot carry that filter alone. A PE is free to put its
+Import Address Table wherever it likes, and a packed image routinely puts it in
+the one section it has: a round-9 crypter's first section is `0xe0000060`
+(`CODE|EXECUTE|READ|WRITE`) and contains the whole import directory, so every
+slot passed the `CODE` test and 50 of its 56 inventory entries decompiled to a
+body dereferencing an uninitialized pointer — the pointer word read as
+instructions, truncated by `funcboundflow` at the next slot. What tells a
+pointer word from a function entry is not where it lives but who put the name
+there, and the loader knows: each format reports the slot addresses it resolved
+names at (`ObjectFormat::import_slots`, the PE Import Address Table today and
+empty everywhere else) beside the names themselves, and the engine carries them
+as `[lo, hi)` ranges (`ObjectLoadImage::import_slot_ranges` →
+`ConsoleProgram::is_import_slot`). An entry inside one is excluded from the
+batch set whatever the section says. Nothing else moves: the canonical
+inventory, `kuna functions`, `--addr`/`--functions` selection and the call
+naming the slot exists for are all unchanged — on the crypter the batch goes
+from 56 entries to its 6 real ones while the surviving body still renders
+`ExitProcess(0)`. A caller-declared entry (`--define-function`) outranks this
+test as it outranks the section-flag one, so an analyst who asserts a function
+at an address the import directory claims still gets a body; that is also the
+recourse if an image's import directory is a lie.
+
 Each canonical entry also carries a byte **extent**, so the inventory answers
 "how big" as well as "what is here" and a caller can order a binary's functions
 by weight without decompiling any of them. kuna's model of a function is its
