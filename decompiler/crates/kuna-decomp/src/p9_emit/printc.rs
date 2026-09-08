@@ -2798,6 +2798,19 @@ impl PrintC {
             if is_param && param_names.contains(name.as_str()) {
                 continue;
             }
+            // (kuna `paramrefdecl`) The Symbol-identity half of the same C++
+            // predicate: an `&parameter` reference high has only the PTRSUB offset
+            // CONSTANT as storage, so the containment test above cannot see that it
+            // IS the parameter -- and declaring it re-declares the signature
+            // parameter under its own name (invalid C).  See
+            // `crate::kuna_paramrefdecl`.  The `param_names` guard is the same one
+            // the storage arm carries: it only ever makes the skip stricter.
+            if arch.param_ref_decl
+                && param_names.contains(name.as_str())
+                && crate::kuna_paramrefdecl::references_parameter_symbol(fd, high)
+            {
+                continue;
+            }
             decls.push((high, name));
         }
         // C++ `emitScopeVarDecls` walks the ScopeLocal *Symbol* table and emits

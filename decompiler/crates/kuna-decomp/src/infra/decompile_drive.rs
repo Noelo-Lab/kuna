@@ -1412,6 +1412,15 @@ impl CodeProvenance {
                 let named_refs = named_high_varrefs(fd, variable);
                 evidence = self.evidence_for_refs(&named_refs);
             }
+            // (kuna `paramrefdecl`) An ADDRESS-TAKEN parameter has no Varnode at its
+            // own storage and no high carrying its `param_N` JSON name -- its only
+            // appearance is the `&a0` reference, a PTRSUB offset constant bound to
+            // the parameter's Symbol.  Both queries above miss it, so the surface
+            // reported a parameter with no uses while the C showed one.
+            if evidence.line_numbers.is_empty() {
+                let reference_refs = parameter_reference_varrefs(fd, variable);
+                evidence = self.evidence_for_refs(&reference_refs);
+            }
             variable.line_numbers = evidence.line_numbers;
             variable.addresses = evidence.addresses;
         }
@@ -1534,6 +1543,21 @@ fn variable_storage_varrefs(fd: &Funcdata, variable: &VarInfo) -> BTreeSet<u64> 
         .map(|(varref, high, _)| (varref, high))
         .collect();
     select_storage_varrefs(fd, &matches, &variable.name)
+}
+
+/// The `&parameter` references of a reported parameter (`option paramrefdecl`):
+/// the varrefs of every high bound to the `function_parameter` Symbol that owns
+/// the parameter's storage.  Empty for a local, and for a parameter whose storage
+/// no Symbol claims.
+fn parameter_reference_varrefs(fd: &Funcdata, variable: &VarInfo) -> BTreeSet<u64> {
+    if !variable.is_param || !fd.get_arch().param_ref_decl {
+        return BTreeSet::new();
+    }
+    let Some(arg_index) = variable.arg_index else { return BTreeSet::new() };
+    let Some((address, _size)) = parameter_storage(fd, arg_index) else {
+        return BTreeSet::new();
+    };
+    crate::kuna_paramrefdecl::parameter_reference_varrefs(fd, &address)
 }
 
 fn high_matches_stack_variable(

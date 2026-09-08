@@ -583,6 +583,46 @@ the declaration representative's storage; `option namestyle ghidra` emits no
 storage comments. DIV-5 re-pinned 185 of the 675 upstream datatest assertions
 to the angr names; `option namestyle ghidra` reproduces the pre-DIV-5 bytes.
 
+**(kuna) paramrefdecl — an `&parameter` reference is the parameter.** Because
+the emitter walks HighVariables rather than the symbol table, it also has to
+decide for itself which highs upstream would *not* have declared:
+`PrintC::emitScopeVarDecls` is asked only for `no_category` symbols, so a
+`function_parameter` symbol appears in the prototype and nowhere else. kuna
+answers that by asking whether a `function_parameter` symbol contains the
+storage of one of the high's member Varnodes — which is right for every high
+that has storage of its own, and blind to a parameter whose address is the only
+thing the body ever takes. A `&symbol` reference is carried as the offset
+constant of a `PTRSUB(spacebase, off)` (§9.3), bound by
+`ActionNameVars::linkSpacebaseSymbol` to the symbol owning the referenced frame
+slot; when that slot is an incoming stack parameter the body never reads as a
+value, every Varnode of the reference high lives in the constant space, the
+storage test finds no parameter, and the high is declared in the body under the
+name it took from the parameter symbol it is bound to. The result is a
+signature parameter and a body local of the same name and different types in one
+scope, which is not compilable C.
+
+The option `paramrefdecl` (default on since DIV-143) supplies the missing half
+of the same predicate, on symbol identity rather than storage: a high whose
+bound symbol — the identity `linkSpacebaseSymbol` already recorded, kuna's
+`HighVariable::kuna_ref_symbol` for upstream `Varnode::setSymbolReference` — has
+category `function_parameter` is that parameter, so no declaration is emitted and
+the `&a0` in the body resolves to the prototype's own `a0`
+(`decompiler/crates/kuna-decomp/src/p9_emit/kuna_paramrefdecl.rs
+(references_parameter_symbol)`). It is not a rename: the parameter is not
+duplicated under a fresh identifier, the second object simply stops existing. The
+skip inherits the storage arm's guard that the high's name is one of the
+prototype's parameter names, so a symbol renamed out from under the prototype
+keeps its declaration rather than becoming an undeclared variable, and a
+reference to a `no_category` local (`&v7`) carries a different category and is
+untouched. The same symbol identity answers the `variables` JSON surface, which
+collects a parameter's uses by matching Varnodes against the parameter's storage
+and so reported an address-taken parameter as unused while the emitted C showed
+the reference; the reference is attributed to the parameter only when no
+storage-backed or name-backed evidence was found
+(`decompiler/crates/kuna-decomp/src/p9_emit/kuna_paramrefdecl.rs
+(parameter_reference_varrefs)`). `option paramrefdecl off` restores the duplicate
+declaration.
+
 **(angr) dedupvardecls — collapsing duplicate declarations.** kuna's
 declaration emitter walks HighVariables, not the upstream symbol table (which
 declares each Symbol exactly once), so many scalar HighVariables sharing one

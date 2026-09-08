@@ -896,6 +896,13 @@ pub struct Architecture {
     /// stack slot mapped onto many same-named HighVariables is declared once
     /// (`option dedupvardecls`; angr-inspired, S9).
     pub dedup_var_decls: bool,
+    /// (kuna `paramrefdecl`) Do not declare an `&parameter` reference as a body
+    /// local: a high bound to a `function_parameter` Symbol is that parameter,
+    /// even when its only Varnode is the PTRSUB offset constant that carries the
+    /// reference.  Read by
+    /// [`PrintC::emit_local_var_decls`](crate::printc) and by the `variables`
+    /// JSON surface (through the ArchContext copy).
+    pub param_ref_decl: bool,
     /// (kuna DIV-6) Render residual `TYPE_UNKNOWN` (`xunknownN`) values as real C
     /// types by size — 1→`char`, 2/4/8→unsigned ints, pointer-to-unknown→`void *` —
     /// instead of the `xunknownN`/`undefined<N>` placeholder.  Default-on; read by
@@ -1951,6 +1958,7 @@ impl Architecture {
             name_style_angr: false,
             name_style_ghidra: false,
             dedup_var_decls: false,
+            param_ref_decl: false,
             realtypes: false,
             ctypes: false, // (kuna) option ctypes; reset_defaults sets the shipped default
             framelayout: false, // (kuna) option framelayout; reset_defaults sets the shipped default
@@ -2176,6 +2184,7 @@ impl Architecture {
         self.branch_flip = true; // (kuna) DIV-13 default-on (angr negated-guard branch flipping; per-test opt-out on the datatests it changes)
         self.name_style_angr = true; // (kuna) default-on: angr-style default naming
         self.dedup_var_decls = true; // (kuna) DIV-7 default-on: collapse duplicate local decls (angr)
+        self.param_ref_decl = true; // (kuna) DIV-143 default-on: an `&parameter` reference is the parameter, so it is not also declared as a body local (0/675 ablation)
         self.realtypes = true; // (kuna) DIV-6 default-on: real C types for unknowns
         self.ctypes = false; // (kuna) DIV-75: default-OFF in the catalog because the datatest corpus pins `int4`/`float8` spellings in 42 assertions; ON in the `aggressive` preset, which `auto` selects under 500 KiB, so valid C is the default RENDERING everywhere a real binary is decompiled
         self.framelayout = true; // (kuna) DIV-97: JSON-surface only (no p-code, no emitted C), so the 675-assertion datatest corpus cannot observe it; measured +1,027 type_match-perfect / -1 over 82,035 decbench functions
@@ -2709,6 +2718,7 @@ impl Architecture {
             "ptrdepthcap" => on_off!(ptrdepthcap, "inferred pointer-nesting cap"),
             "codescalar" => on_off!(codescalar, "code-pointee scalar-value guard"),
             "cortexmpriv" => on_off!(cortexmpriv, "Cortex-M privileged-mode guard folding"),
+            "paramrefdecl" => on_off!(param_ref_decl, "address-taken parameter re-declaration guard"),
             "dedupvardecls" => {
                 let (val, msg) = crate::kuna_dedupvardecls::OptionDedupVarDecls.apply(p1)?;
                 self.dedup_var_decls = val;
@@ -3395,6 +3405,10 @@ impl Architecture {
         // (kuna) carry the duplicate-declaration collapse gate so `emit_local_var_decls`
         // (which reads the ArchContext `arch`) sees `option dedupvardecls`.
         ctx.dedup_var_decls = self.dedup_var_decls;
+        // (kuna) carry the address-taken-parameter guard so the `variables` JSON
+        // surface (which reads the per-function ArchContext) sees `option
+        // paramrefdecl`.
+        ctx.param_ref_decl = self.param_ref_decl;
         // (kuna GH-558) carry the comparison-presentation gate so the
         // `compareform canonical|original` option reaches
         // `ActionPresentCompareForm` via `glb` (the ArchContext read site).

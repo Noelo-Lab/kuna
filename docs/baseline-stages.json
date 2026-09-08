@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    709,
-    709
+    712,
+    712
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -600,6 +600,9 @@
     "data:paramcopyhoist #1: option off sinks the second parameter's copy-shadow below the first guard (gap reproduced)",
     "data:paramcopyhoist #2: option on anchors both copy-shadows in the entry block, ahead of every guard",
     "data:paramcopyhoist #3: both passes keep the guard writing NULL through each parameter",
+    "data:paramrefdecl #1: option off re-declares the signature parameter as a body local (bug reproduced)",
+    "data:paramrefdecl #2: the address-taken parameter is passed by address in both passes",
+    "data:paramrefdecl #3: the parameter keeps its place in the signature in both passes",
     "data:ptrdepthcap #1: option off leaves the unbounded escalation (bug reproduces: 6 four-star decls + 1 cast)",
     "data:ptrdepthcap #2: option on settles the lattice (7 in the off pass + 0 in the on pass = 7; any leak back raises the count)",
     "data:realtypes-pointee #1: the callback-struct parameter declares its 8-byte pointee, not void",
