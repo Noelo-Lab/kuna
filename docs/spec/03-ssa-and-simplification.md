@@ -109,7 +109,16 @@ test takes a `PTRSUB` in front of it, and both consumers of the leading run — 
 renaming walk above, and `ConditionalJoin::cut_down_multiequals` (chapter 08),
 which drops one in-edge slot from every phi of a joined exit block — stop at the
 placeholder, leaving the phis behind it with one input more than their block has
-in-edges.
+in-edges. Skipping the phi is the only correct choice — a phi's input must be
+defined on the incoming edge, so there is nowhere in the phi's own block the
+placeholder could legally go — but it has a visible cost: `mov rax,rsp` merges
+the unaffected input stack pointer into the same HighVariable as the register
+that copies it, and `HighVariable::has_name` (chapter 06) refuses to name a high
+carrying the stack pointer, so with no placeholder the leaf is printed from the
+member's own storage and renders a bare register or `Unique<hex>` name rather
+than `&Stack00000000`. Annotating the raw stack pointer on a phi's *incoming
+edge* would recover the frame-relative spelling, but upstream does not do it and
+it would be a new decision point, not part of this invariant.
 
 **Materializing an input over existing pieces (kuna, DIV-50).** The input a
 stack-empty read materializes may land on storage that already holds input
