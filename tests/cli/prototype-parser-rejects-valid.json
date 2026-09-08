@@ -1,0 +1,60 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "a-555cfdcc80e2",
+  "kind": "cli",
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/fauxware",
+    "binary_sha256": "c2d90645a45e99221593547e55c601a901b80f807ae96f94c60a7661df0b3e0b",
+    "binary_size": 8776,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/fauxware",
+    "selector": "authenticate",
+    "selector_kind": "name"
+  },
+  "timeout_s": 120,
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "authenticate",
+    "--json",
+    "--assert",
+    "prototype authenticate unsigned long vm(unsigned char *code,unsigned int index,void *ctx)",
+    "--assert",
+    "prototype read int read(unsigned char code)"
+  ],
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "json": [
+      {
+        "path": "assertions",
+        "op": "len_eq",
+        "value": 2
+      },
+      {
+        "path": "assertions[0].status",
+        "op": "eq",
+        "value": "applied"
+      },
+      {
+        "path": "assertions[1].status",
+        "op": "eq",
+        "value": "applied"
+      },
+      {
+        "path": "functions[0].code",
+        "op": "contains",
+        "value": "unsigned char *code"
+      }
+    ],
+    "stderr_absent": [
+      "Syntax error",
+      "Multiple type specifiers",
+      "Bad C syntax"
+    ]
+  },
+  "notes": "Desired: a parameter may be named after a type. `code` is a core type every compiler spec registers, so the lexer hands it over as TYPE_NAME; both spellings were rejected -- `unsigned char *code` as a Syntax error on the name, `unsigned char code` as Multiple type specifiers. Retargeted onto the in-repo fauxware fixture so it runs with no dataset; both measured rejected on 7e77fb8c."
+}

@@ -1632,25 +1632,29 @@ impl<'a> CParse<'a> {
             return self.syntax_error();
         }
         // Subsequent specifiers continue while the lookahead begins one.
-        while self.declaration_specifier_starts()? {
+        while self.declaration_specifier_starts(&spec)? {
             self.declaration_specifier_one(&mut spec)?;
         }
         Ok(spec)
     }
 
-    /// Does the lookahead begin a `declaration_specifiers` element?
-    fn declaration_specifier_starts(&mut self) -> KunaResult<bool> {
-        Ok(matches!(
-            self.peek()?,
+    /// Does the lookahead begin a further `declaration_specifiers` element?
+    ///
+    /// (kuna) Once the run has named a type, a following `TYPE_NAME` is the
+    /// declarator's own name and not a second specifier — see
+    /// [`CParse::declarator_identifier`].
+    fn declaration_specifier_starts(&mut self, spec: &TypeSpecifiers) -> KunaResult<bool> {
+        Ok(match self.peek()? {
             PToken::StorageClassSpecifier(_)
-                | PToken::TypeQualifier(_)
-                | PToken::FunctionSpecifier(_)
-                | PToken::TypeName(_)
-                | PToken::ScalarSpecifier(_)
-                | PToken::Struct
-                | PToken::Union
-                | PToken::Enum
-        ))
+            | PToken::TypeQualifier(_)
+            | PToken::FunctionSpecifier(_)
+            | PToken::ScalarSpecifier(_)
+            | PToken::Struct
+            | PToken::Union
+            | PToken::Enum => true,
+            PToken::TypeName(_) => spec.type_specifier.is_none(),
+            _ => false,
+        })
     }
 
     /// Consume one `declaration_specifiers` element into `spec`.  Returns `false`
@@ -1951,6 +1955,9 @@ impl<'a> CParse<'a> {
         let mut any = false;
         loop {
             match self.peek()? {
+                // (kuna) A TYPE_NAME after the list already named a type is the
+                // member's name, not a second specifier.
+                PToken::TypeName(_) if spec.type_specifier.is_some() => break,
                 PToken::TypeName(_)
                 | PToken::ScalarSpecifier(_)
                 | PToken::Struct
@@ -2044,6 +2051,7 @@ impl<'a> CParse<'a> {
     fn enumerator(&mut self) -> KunaResult<Enumerator> {
         let nm = match self.next()? {
             PToken::Identifier(s) => s,
+            PToken::TypeName(tp) => tp.get_name().to_string(),
             _ => return self.syntax_error(),
         };
         if matches!(self.peek()?, PToken::Punct(b'=')) {
@@ -2136,22 +2144,48 @@ impl<'a> CParse<'a> {
                     name.push_str("::");
                     name.push_str(&s);
                 }
+                PToken::TypeName(tp) => {
+                    name.push_str("::");
+                    name.push_str(tp.get_name());
+                }
                 _ => return self.syntax_error(),
             }
         }
         Ok(name)
     }
 
+    /// (kuna) Consume a `var_identifier` in *name* position, whose head the
+    /// lexer may have classified as a type name.
+    ///
+    /// A variable may be named after a type — `unsigned char *code`, where
+    /// `code` is one of the factory's own core types — and C reads the
+    /// declarator's identifier as a new name that hides the type.
+    /// [`CParse::lookup_identifier`] classifies every spelling `findByName`
+    /// answers as `TYPE_NAME`, so the name position has to take that token too.
+    /// Only the unparenthesised position is taken: `int4 (code)` stays a
+    /// function of one `code`, which is what C reads it as.
+    fn declarator_identifier(&mut self) -> KunaResult<String> {
+        match self.next()? {
+            PToken::Identifier(s) => self.var_identifier(s),
+            PToken::TypeName(tp) => {
+                let nm = tp.get_name().to_string();
+                self.var_identifier(nm)
+            }
+            _ => self.syntax_error(),
+        }
+    }
+
     /// `direct_declarator` (`grammar.y:162-170`): the base name or
     /// parenthesised declarator, followed by array `[...]` and function `(...)`
     /// suffixes (left-recursion unrolled to a loop).
     fn direct_declarator(&mut self) -> KunaResult<TypeDeclarator> {
-        let mut dec = match self.next()? {
-            PToken::Identifier(s) => {
-                let name = self.var_identifier(s)?;
+        let mut dec = match self.peek()? {
+            PToken::Identifier(_) | PToken::TypeName(_) => {
+                let name = self.declarator_identifier()?;
                 TypeDeclarator::with_ident(&name)
             }
             PToken::Punct(b'(') => {
+                self.next()?; // '('
                 let inner = self.declarator()?;
                 self.expect_punct(b')')?;
                 inner
@@ -2272,7 +2306,7 @@ impl<'a> CParse<'a> {
                 // pointer, then optional direct_(abstract_)declarator.
                 let ptr = self.pointer()?;
                 match self.peek()? {
-                    PToken::Identifier(_) | PToken::Punct(b'(') => {
+                    PToken::Identifier(_) | PToken::TypeName(_) | PToken::Punct(b'(') => {
                         // Could be a (possibly abstract) declarator continuation.
                         let inner = self.declarator_or_abstract_after_pointer()?;
                         let dec = Self::merge_pointer(&ptr, inner);
@@ -2285,7 +2319,7 @@ impl<'a> CParse<'a> {
                     }
                 }
             }
-            PToken::Identifier(_) => {
+            PToken::Identifier(_) | PToken::TypeName(_) => {
                 let dec = self.declarator()?;
                 Ok(self.merge_spec_dec(&spec, dec))
             }
@@ -2313,13 +2347,9 @@ impl<'a> CParse<'a> {
     /// parenthesised-abstract; both share the array/function suffix loop.
     fn direct_abstract_or_concrete(&mut self) -> KunaResult<TypeDeclarator> {
         let dec = match self.peek()? {
-            PToken::Identifier(_) => {
-                if let PToken::Identifier(s) = self.next()? {
-                    let name = self.var_identifier(s)?;
-                    TypeDeclarator::with_ident(&name)
-                } else {
-                    unreachable!()
-                }
+            PToken::Identifier(_) | PToken::TypeName(_) => {
+                let name = self.declarator_identifier()?;
+                TypeDeclarator::with_ident(&name)
             }
             PToken::Punct(b'(') => {
                 self.next()?; // '('
@@ -2371,7 +2401,10 @@ impl<'a> CParse<'a> {
                 model = after;
             }
             match self.peek()? {
-                PToken::Identifier(_) | PToken::Punct(b'(') | PToken::Punct(b'[') => {
+                PToken::Identifier(_)
+                | PToken::TypeName(_)
+                | PToken::Punct(b'(')
+                | PToken::Punct(b'[') => {
                     let inner = self.direct_abstract_or_concrete()?;
                     Self::merge_pointer(&ptr, inner)
                 }

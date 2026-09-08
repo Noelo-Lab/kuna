@@ -1043,6 +1043,29 @@ decided by the construction action, not by the token — `oldStruct` rejects a t
 that names something other than a struct with the kind error it always had, so
 `struct int4` is refused for saying `struct`, not for being unparseable.
 
+(kuna) **A name that is also a type name is still a name.** The same
+`findByName` classification reaches the declarator, where C says the identifier
+being declared hides any type of that spelling. Upstream's `direct_declarator`
+reads only the identifier terminal, so a variable or parameter named after an
+interned type was a syntax error with the caret on its own name — and `code`,
+one of the core types every compiler spec registers, is also the word an agent
+reaches for when it declares an interpreter's instruction stream. The same
+collision covers a tag or typedef declared earlier in the run, and on a `-g`
+binary every DWARF type name the program uses. Two positions therefore admit a
+type name: the specifier run stops at one once it has already named a type
+(`decompiler/crates/kuna-console/src/grammar.rs
+(CParse::declaration_specifier_starts)`, and its `specifier_qualifier_list`
+twin inside a struct body), and the name position takes it
+(`decompiler/crates/kuna-console/src/grammar.rs (CParse::declarator_identifier)`),
+which together cover `unsigned char code`, `unsigned char *code`, `int4
+(*code)(void)`, a struct field, an enum constant and the tail of a `a::b`
+scoped name. Only the *unparenthesised* name position moved: `int4 (code)` is
+genuinely ambiguous in C and keeps its abstract reading, a function of one
+`code`. Every declaration that parsed before parses to the same type — the
+first specifier of a run is unchanged, so `code *p` is still a pointer to
+`code`, and the two positions that changed were both hard errors ("Syntax
+error" and "Multiple type specifiers") before.
+
 (kuna) **A `prototype` declaration may name its calling convention**, which is
 the other half of speaking the target's own C: on Windows every declaration
 worth pasting carries one. An identifier the loaded compiler spec registered as

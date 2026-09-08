@@ -1,0 +1,38 @@
+{
+  "schema": "re-builder-record/1",
+  "need_id": "prototype-parser-rejects-valid",
+  "worker": "b-r10-prototype-parser",
+  "round": 10,
+  "track": "tooling",
+  "scope": "small",
+  "branch": "feat/re-prototype-parser-rejects-valid",
+  "base_sha": "7e77fb8c9dcaab167c592fc1d25ad230b9e4ad24",
+  "hypothesis_status": "refined",
+  "decisions": [
+    "The filed hypothesis -- 'the parser treats code as an internal reserved word' -- is wrong in its mechanism and right in its consequence. `code` is not a keyword; it is a core data-type that `Architecture::setup_types` registers (`set_core_type(\"code\", 1, TYPE_CODE, false)`), and `CParse::lookup_identifier` classifies every spelling `findByName` answers as TYPE_NAME. So the class is not one reserved word but every interned type name: the ~23 core types, any tag or typedef declared earlier in the same run, and on a -g binary every DWARF type name the program uses.",
+    "The symptom has two distinct halves with two distinct diagnostics, and the filed probe only shows one. `unsigned char *code` dies in `direct_declarator` ('Syntax error'); `unsigned char code` dies in the greedy specifier run ('Multiple type specifiers'). Fixing only the reported half would have left the value-parameter spelling broken, so both are fixed and the promoted probe asserts both.",
+    "The change is monotone by construction: both edited positions unconditionally called `set_error` before (`add_type_specifier` on a second specifier, `syntax_error` in the name position), so every declaration that parsed before parses to the same type. Verified empirically by replaying all 263 `parse line` payloads in tests/datatests + tests/stages through the old and new decomp_dbg -- byte-identical output, zero files differing.",
+    "`int4 (code)` is deliberately NOT changed. Parenthesised, it is genuinely ambiguous in C and resolves to the abstract reading (a function of one `code`); only the unparenthesised name position, where no other production matched, was opened up. A test pins the old reading.",
+    "Track tooling as filed: this corrects a parser that was wrong on its own terms, so no phases.toml option, no stage XML and no catalog counters -- the same shape PR #421 shipped for the sibling need prototype-assertions-reject-ordinary.",
+    "Out of scope, found while testing: `Datatype::assign_values` loops forever when the enum size is 0 (`calc_mask(0)` is 0, so every auto-assigned constant masks to the same value and the `while nmap.contains_key` loop never breaks). It bites any caller that parses an `enum { ... }` through a TypeFactory whose `setup_sizes` was never called. Pre-existing, entirely in kuna-decomp, and upstream-faithful; not touched here.",
+    "make rust-test in a repipe worktree reports one unrelated failure, verify_w10_proto_unlock 'oracle promote_compare signature drifted'. It is the launcher's KUNA_DECOMP_TEST pointing the C++ oracle at kuna's own decomp_test_dbg, whose modern spelling ('unsigned int') cannot contain the 'xunknown4' the assertion requires. Falsified per the recipe: `env -u KUNA_DECOMP_TEST cargo test -p kuna-decomp --test verify_w10_proto_unlock` is 4/4 green. CI has no decomp_test_dbg at the default path and skips the oracle block entirely."
+  ],
+  "acceptance": {
+    "id": "a-555cfdcc80e2",
+    "status": "PASS",
+    "retargeted": "The filed acceptance ran against a dataset binary (graphy), which `verify --promote` refuses because CI has no dataset. Retargeted verbatim in shape onto the in-repo fauxware fixture and re-derived the id; both directives measured `rejected` on the unpatched tree at 7e77fb8c."
+  },
+  "tests": [
+    "decompiler/crates/kuna-console/src/grammar/tests.rs -- 6 cases",
+    "decompiler/crates/kuna-console/tests/verify_assertplane.rs -- 1 end-to-end case",
+    "tests/cli/prototype-parser-rejects-valid.json -- the promoted acceptance"
+  ],
+  "gates": {
+    "make test": "PARITY OK 675/675",
+    "make test-stages": "PARITY OK",
+    "make check-spec": "OK",
+    "make test-cli": "91/91 including the promoted probe",
+    "kuna catalog --check": "catalog OK",
+    "make rust-test": "green with env -u KUNA_DECOMP_TEST (the worktree oracle-env trap is the only difference)"
+  }
+}
