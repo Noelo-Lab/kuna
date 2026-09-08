@@ -35,7 +35,8 @@
     "The fallback runs only when the section-driven resolution returned an EMPTY vector, so an image with an intact section table cannot reach the new code by any path. That makes the change strictly additive: on a sectionless image it turns zero names into names; on every other image the byte-for-byte output is the previous one. It is why no option gates this -- there is no judgement call, only a route to data that was already being read.",
     "The fixture `dynseg_plt_x86_64` is synthesized rather than gcc-built-and-patched: 808 bytes, hermetic, no toolchain dependency, matching the `noshdr_x86_64.py` convention beside it. It deliberately places `main` as a THIRD 16-byte-aligned run of code immediately after the two stubs, so the off-by-a-range failure mode the refuter warned about is what a test asserts against.",
     "PowerPC and MIPS are excluded from the fallback. Neither resolves through a `.plt` code section (PPC's stubs are TOC-relative and inline in `.text`; MIPS carries the correspondence in its GOT layout via DT_MIPS_LOCAL_GOTNO/DT_MIPS_GOTSYM), and both anchors are section-derived. A sectionless PPC/MIPS image is left exactly as it was rather than half-resolved.",
-    "The scope stops at import naming. DT_SYMTAB also carries the image's DEFINED exported functions and a sectionless image loses those names too, and `kuna_dynrelocs` reads its relocations through the same section-driven `object` API -- both are the same class of gap on the same image, and both are separate needs. This PR moves the probe and nothing else."
+    "The scope stops at import naming. DT_SYMTAB also carries the image's DEFINED exported functions and a sectionless image loses those names too, and `kuna_dynrelocs` reads its relocations through the same section-driven `object` API -- both are the same class of gap on the same image, and both are separate needs. This PR moves the probe and nothing else.",
+    "Inertness is measured, not argued: the same 131 files were resolved with the BASE-COMMIT binary and with this one, unmodified, and `kuna functions --json` is byte-identical on all 131. That covers the case the sectioned-vs-sectionless sweep cannot -- a SECTIONED image whose PLT decode happens to find nothing (SPARC, PPC, MIPS) and would therefore enter the fallback."
   ],
   "parity": "OK",
   "gates": {
@@ -44,7 +45,7 @@
     "make check-spec": "check-spec OK (lenient mode)",
     "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
     "make test-cli": "91/91 (90 + the one promoted here)",
-    "make rust-test": "green (rc=0)"
+    "make rust-test": "green (rc=0) with `env -u KUNA_DECOMP_TEST`. Left set, the launcher points that variable at kuna's own decomp_test_dbg, so verify_w10_proto_unlock's oracle compares kuna against itself and reports 'oracle promote_compare signature drifted'; that test is a kuna-decomp bytechunk oracle with no ELF loading in it, and it is green on the base commit and on this tree once the variable is unset."
   },
   "probe_flip": {
     "probe_still_passes": false,

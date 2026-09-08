@@ -201,17 +201,18 @@ pub(crate) fn dynamic_imports(bytes: &[u8]) -> Option<DynImports> {
     let (Some(symtab), Some(strtab)) = (get(DT_SYMTAB), get(DT_STRTAB)) else {
         return Some(DynImports { got_to_name: HashMap::new(), pltgot });
     };
-    // `DT_SYMENT` is mandatory alongside `DT_SYMTAB`, but a hand-written image may
-    // omit it; the ABI size is the only sane reading of the table without it.
-    let syment = get(DT_SYMENT).filter(|&s| s >= 8).unwrap_or(if img.is64 { 24 } else { 16 });
+    // `DT_SYMENT` is mandatory alongside `DT_SYMTAB`, and an image that omits it or
+    // declares a stride shorter than the symbol it strides over is not readable at
+    // all; the ABI size is the only defensible reading.
+    let abi_syment = if img.is64 { 24 } else { 16 };
+    let syment = get(DT_SYMENT).filter(|&s| s >= abi_syment).unwrap_or(abi_syment);
 
     let mut got_to_name: HashMap<u64, Vec<u8>> = HashMap::new();
-    // `DT_JMPREL` (the PLT relocations) first: its `JUMP_SLOT` entries are the
-    // stub targets, and `DT_RELA`/`DT_REL` may overlap it in a `-z now` image
-    // that folded the two tables.
-    // `DT_PLTREL` is mandatory alongside `DT_JMPREL` and says which of the two
-    // entry layouts it uses; without it the table is not readable, and guessing
-    // reads a `r_offset` out of the middle of a different field.
+    // `DT_JMPREL` is read first because its `JUMP_SLOT` entries are the stub
+    // targets and `DT_RELA`/`DT_REL` may cover the same slots in a `-z now` image
+    // whose linker folded the two tables.  `DT_PLTREL` says which of the two entry
+    // layouts it uses and is mandatory beside it; guessing reads an `r_offset` out
+    // of the middle of a different field, so an image without it is skipped.
     let jmprel = match get(DT_PLTREL) {
         Some(DT_RELA) => (get(DT_JMPREL), get(DT_PLTRELSZ), true),
         Some(DT_REL) => (get(DT_JMPREL), get(DT_PLTRELSZ), false),

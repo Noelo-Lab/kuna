@@ -55,8 +55,9 @@ unsigned long sub_1189(void)
   stubs off by an entry. Each executable `PT_LOAD` window goes to the existing
   per-architecture decoders whole, and their decoded-GOT-target match decides
   which instructions in it were stubs — so the relocation slots are the bound.
-  x86-64, i386, AArch64, ARM, RISC-V and SPARC come along for free; PowerPC and
-  MIPS are excluded, since neither resolves through a `.plt` code section.
+  Every architecture those decoders already handle is reached; recovery is
+  measured on x86-64, i386, AArch64 and RISC-V. PowerPC and MIPS are excluded,
+  since neither resolves through a `.plt` code section at all.
 
 ## The tests
 
@@ -68,10 +69,12 @@ The promoted probe `tests/cli/sectionless-elf-import-relocations.json` decompile
 its `puts` stub, which prints `void sub_240(void) { (*dat_318)(); }` without the
 fix.
 
-Equivalence sweep: 131 ELF images (98 repo fixtures across x86-64/i386/AArch64/
-ARM/RISC-V/SPARC/MIPS/PPC, 33 system binaries up to 233 imports) resolved with
-and without their section table. Every name the segment path produced matched the
-section path's answer at the same address; 0 mismatches, 0 extra names.
+Two sweeps over the same 131 ELF images (98 repo fixtures across eight
+architectures, 33 system binaries with up to 233 imports). Resolved with and
+without their section table, every name the segment path produced matched the
+section path's answer at the same address — 0 mismatches, 0 extra names. Resolved
+unmodified against a base-commit build, `kuna functions --json` is identical on
+all 131, which is the inertness claim measured rather than argued.
 
 Gates: `make test` 675/675 PARITY OK · `make test-stages` 692/692 PARITY OK ·
 `make rust-test` green · `make check-spec` OK · `make test-cli` 91/91 ·
