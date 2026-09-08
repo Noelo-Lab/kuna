@@ -1,0 +1,48 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "a-b3c0458f4b68",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--json"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/pe_datasection_entry_i386.exe",
+    "binary_sha256": "1c7aeca2665b5b0645a4930dec027b464051dacf2bc158d966dc9f8871c0492f",
+    "binary_size": 1536,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/pe_datasection_entry_i386.exe"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 1
+    },
+    "stdout_is_json": true,
+    "stderr_matches": [
+      "no functions discovered in .*: its entry point 0x402001 lies in section \\.stub",
+      "--define-function 0x402001"
+    ],
+    "json": [
+      {
+        "path": "count",
+        "op": "eq",
+        "value": 0
+      },
+      {
+        "path": "error",
+        "op": "contains",
+        "value": "0x402001"
+      }
+    ]
+  },
+  "notes": "Desired: a run that discovers nothing in an image which declares where execution starts is a failure that names the cause, not a silent count 0. Same witness as batch-silently-omits-explicitly: every section of the NEOLite-packed CryptoME.exe is flagged data, so the executability test cleared the empty answer as honest. Fixture source: pe_datasection_entry_i386.py."
+}

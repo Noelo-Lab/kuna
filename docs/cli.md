@@ -188,6 +188,24 @@ past it — including a branch to the exclusive end itself, which is what a
 tail-clipped `if (err) goto fail;` looks like. A correct boundary ends in a return
 and produces no warning, so that comment is the signal to widen the range.
 
+A declaration also survives the whole-binary filter. Unfiltered `decompile-all`,
+`decompile-project` and the browser inventory decompile only entries inside a
+section flagged executable, which is a guess a packer defeats simply by not
+setting the bit — a NEOLite-packed PE flags all six of its sections
+`INITIALIZED_DATA|READ|WRITE`, `.text` included. There `kuna functions` listed the
+declared entry and `kuna decompile` emitted its body while `kuna decompile-all`
+with the same flag answered `count: 0`. A declared entry is now kept whatever the
+section flags say; nothing undeclared is lifted with it. And a run that finds
+nothing in an image which declares where execution starts is reported as the
+failure it is, rather than as an empty success:
+
+```console
+$ kuna decompile-all ./packed.exe --json
+error: no functions discovered in ./packed.exe: its entry point 0x4f7001 lies in
+section .NEOpack, which the image does not flag executable -- pass
+`--define-function 0x4f7001` to decompile there anyway
+```
+
 The `@file` form is the durable one: one declaration per line, `#` comments and
 blank lines skipped. kuna does not write boundaries back into the image, so the file
 is the artifact — generate it, diff it, and pass it to every invocation. The flag is
