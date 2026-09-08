@@ -1,0 +1,48 @@
+{
+  "need": "bytecode-reader-call-site",
+  "track": "quality",
+  "scope": "small",
+  "option": "calleearitycut",
+  "default": "on",
+  "module": "decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleearitycut.rs",
+  "witness": "crackme.x86_64.elf (ELF x86-64 `Layers`, challenge 673da52e9b533b4c22bd2eeb) sub_9d9c0 -> sub_875e0 @0x9d9d8, reduced and vendored as decompiler/crates/kuna-analysis/tests/fixtures/calleearitycut_x86_64",
+  "decisions": [
+    "The need filed no hypothesis. The measured cause has two halves, and neither is the one the title suggests (`calleearity`/`varargstackargs` being on is irrelevant -- both are default-on already and neither can reach this site).",
+    "CALLER SIDE: rdi/rsi/rdx are the caller's OWN incoming parameters passed straight through, and `AncestorRealistic::execute` (funcdata_varnode.cc:2159) returns (false,false) for an input Varnode on principle -- upstream policy, `if the parameter itself is an input, we don't consider this realistic, we expect to see active movement into the parameter`. Instrumented: trial0 (rcx, written by `mov ecx,1`) scores realistic+solid+onlyOpUse and is ACTIVE; trials 1-4 (rdx/rsi/rdi/r8) all score realistic=false solid=false and fall to `mark_inactive` via the `vn_is_input` arm. `ParamListStandard::fillinMap` then reads the three-register hole in front of the one active register as the end of the list, so the site recovers NOTHING -- not even the rcx it accepted.",
+    "CALLEE SIDE: `calleearitybody` (#493) is built for exactly this quadrant and reaches the site -- instrumented, it picks trials [rdi,rsi,rdx,rcx] correctly -- and then declines on its boundary guard: `left.any(proves_dead)` is false. probe_callee_entry_dead ends every path at the callee's first nested call (0x8769f) and r8 is clobbered at 0x876d2, 0x33 bytes past it. That guard is not wrong; it is simply unavailable on any callee whose body calls something early, which is most of them.",
+    "The fix does NOT relax AncestorRealistic and does not touch upstream trial scoring. It supplies the missing bound from the run's own shape, in one predicate consulted only where the dead-boundary test already failed.",
+    "THREE CONDITIONS, and the rule is only as safe as their conjunction. (1) CONTIGUOUS: `calleearitybody` skips a non-input register inside the run and keeps going, which can collapse a hole and print a later argument in an earlier one's position; requiring adjacency makes the only reachable error a MISSING TRAILING argument, never a misplaced one. (2) STOPS SHORT: at least one register argument location must follow the run, unclaimed -- a run that consumes every argument register has no boundary at all, which is the AArch64 variadic register-save prologue `calleearitybody`'s own sweep found. (3) QUIET BOUNDARY: the caller must have placed nothing in the register the run stops at.",
+    "CORRECTED MID-BUILD: the first version of (3) tested `Varnode::is_written()`, and the `caller3` control (`mov $2,%r8d` before the CALL) still passed -- constant propagation had already replaced the r8 Varnode at the CALL with the literal 2, and a constant is not `written`. Testing for a constant as well as a write is what makes the control fail; a caller-placed constant is the COMMONEST way a further argument is passed.",
+    "The rule is its own option rather than a widening of `calleearitybody` because it is a judgement call with a real cost (see the ARM truncation in `sweep`), and `calleearitybody` shipped default-on with the narrower contract."
+  ],
+  "sweep": {
+    "corpus": "82 decbench binaries (O0 / O2 / O2-noinline, x86-64 and ARM, stratified by size), kuna decompile-all, option off vs on",
+    "changed_binaries": 8,
+    "empty_argument_lists_filled": 53,
+    "calls_that_lost_an_argument": 0,
+    "arguments_emitted_in_the_wrong_position": 0,
+    "exact_arity_recoveries": 50,
+    "truncated_recoveries": 3,
+    "checked_against_upstream_source": "xrealloc(padding_buffer,padding_buffer_size); sshbuf_ptr(buf) x8; sshbuf_len(buf); sshbuf_allocate(buf,len); path_absolute(p); free_sftp_dirents.part.0(*a2) x3; debugging.isra.0(pc.parse_datetime_debug) x19; memcpy_lowcase.isra.0(v39,v35,v38) matching the memcpy_uppcase sibling on the next line; trig_classify_byname(trig) x4; diversion_current(...) x4; file_stat(&file_from); in_force(0x1000000); statdb_parse_uid/gid; path_cleanup(v3); is_valid_group_name(group_newname)",
+    "truncation_detail": "the 3 are `__aeabi_cdcmple(a0)` in O0/libopencm3/lcd-dma.elf. That callee's second instruction is `bl`, so the walk is cut after `push {r0,lr}` and the run is one register long against a real list of four. SHORT, not wrong -- and `__aeabi_dcmpeq(unsigned int a0)` still says more than the `(void)` it replaces. This is the documented and bounded failure mode of the rule, which is why the option exists.",
+    "no_op_check": "an off-vs-on histogram of every `name()` rendering in all 82 pairs: every count moves DOWN or stays, none moves up, so no call anywhere lost an argument"
+  },
+  "speed": {
+    "command": "scripts.pipeline.timeit --option calleearitycut, crackme.x86_64.elf sub_9d9c0",
+    "reps": 7,
+    "median_ms_off": 276.16,
+    "median_ms_on": 193.8,
+    "delta_pct": -29.82,
+    "verdict": "within the 5% budget as measured, but the number is this machine's known single-target noise floor (docs/features/returncopysplit/record.json measured -20.23% on byte-identical output), not an effect. Structurally the rule adds a handful of address comparisons to a call `calleearitybody` had already captured and takes no new decode."
+  },
+  "gates": {
+    "make test": "PARITY OK 675/675",
+    "make test-stages": "PARITY OK 687/687",
+    "make rust-test": "green (6006 passed, 0 failed) with `env -u KUNA_DECOMP_TEST`; the repipe launcher points that variable at kuna's own decomp_test_dbg, which makes verify_w10_proto_unlock's C++ oracle assertion unsatisfiable for any kuna build",
+    "make check-spec": "OK",
+    "kuna catalog --check": "catalog OK",
+    "make test-cli": "78/78",
+    "acceptance": "PASS"
+  },
+  "instance_coverage": "Closes the single filed instance (673da52e9b533b4c22bd2eeb). The sibling need `bytecode-reader-return-discarded` is the same call in the same function seen from the OUTPUT side; its acceptance was re-run on this build and still fails, so it is a separate defect and is left open."
+}

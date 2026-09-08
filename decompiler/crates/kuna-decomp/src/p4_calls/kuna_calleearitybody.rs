@@ -65,7 +65,9 @@
 //! sibling can speak the sibling still wins.
 //!
 //! Inert unless `calleearity` is also on: this completes that rule rather than
-//! adding a second one.
+//! adding a second one.  [`calleearitycut`](crate::p4_calls::kuna_calleearitycut)
+//! widens the dead-boundary test for the common body whose decode is cut at a
+//! nested call before it can prove one.
 
 use kuna_base::address::Address;
 use kuna_base::error::KunaResult;
@@ -114,6 +116,11 @@ pub struct BodyTrial {
     pub size: int4,
     /// The Varnode standing at this trial, when it is promotable.
     pub vn: Option<VarnodeId>,
+    /// Did the caller place NOTHING in this trial's storage — no computed value
+    /// and no constant, only its own untouched incoming register, or nothing at
+    /// all?  Read by [`crate::p4_calls::kuna_calleearitycut`], which refuses to
+    /// end a run at a register the caller loaded a value into.
+    pub caller_quiet: bool,
 }
 
 /// A call site that finalized with an empty argument list and no sibling to
@@ -130,7 +137,7 @@ pub struct PendingBodyArgs {
 /// `IPTR_PROCESSOR`, and `register` is the name
 /// [`probe_callee_entry_dead`](crate::p4_calls::kuna_calleedeadarg::probe_callee_entry_dead)
 /// resolves its own index from.
-fn is_register(addr: &Address) -> bool {
+pub(crate) fn is_register(addr: &Address) -> bool {
     addr.get_space().map(|s| s.get_name() == "register").unwrap_or(false)
 }
 
@@ -164,9 +171,19 @@ pub fn capture_lone_call(fc: &FuncCallSpecs, data: &Funcdata) -> Option<PendingB
         let addr = t.get_address().clone();
         let size = t.get_size();
         let slot = t.get_slot();
+        let at_slot = (slot >= 1).then(|| data.obank().get(op).and_then(|o| o.get_in(slot))).flatten();
+        // A definitely-not-used or unreferenced trial holds nothing the caller
+        // put there -- `check_input_trial_use` has already overwritten the slot
+        // with a zero constant for the first of those.
+        let caller_quiet = t.is_definitely_not_used()
+            || t.is_unref()
+            || at_slot
+                .and_then(|v| data.vbank().get(v))
+                .map(|x| !x.is_written() && !x.is_constant())
+                .unwrap_or(true);
         let mut vn = None;
-        if !t.is_definitely_not_used() && !t.is_unref() && slot >= 1 {
-            if let Some(v) = data.obank().get(op).and_then(|o| o.get_in(slot)) {
+        if !t.is_definitely_not_used() && !t.is_unref() {
+            if let Some(v) = at_slot {
                 // The normal path would insert a truncating SUBPIECE here; the
                 // retry runs after the trials are gone, so an oversized Varnode
                 // is declined instead.
@@ -175,7 +192,7 @@ pub fn capture_lone_call(fc: &FuncCallSpecs, data: &Funcdata) -> Option<PendingB
                 }
             }
         }
-        trials.push(BodyTrial { addr, size, vn });
+        trials.push(BodyTrial { addr, size, vn, caller_quiet });
     }
     if !trials.first().map(|t| is_register(&t.addr)).unwrap_or(false) {
         return None;
@@ -205,6 +222,7 @@ pub fn plan_from_body(
     trials: &[BodyTrial],
     entries: &[(Address, int4)],
     live: &CalleeEntryDead,
+    cut: bool,
 ) -> Option<Vec<int4>> {
     if !live.is_complete() || entries.is_empty() {
         return None;
@@ -245,7 +263,10 @@ pub fn plan_from_body(
     if left.iter().any(|(a, sz)| live.proves_input(a, *sz)) {
         return None;
     }
-    if !left.iter().any(|(a, sz)| live.proves_dead(a, *sz)) {
+    if !left.iter().any(|(a, sz)| live.proves_dead(a, *sz))
+        && !(cut
+            && crate::p4_calls::kuna_calleearitycut::accepts_cut_run(trials, &picked, entries))
+    {
         return None;
     }
     Some(picked)
@@ -289,6 +310,7 @@ fn recover_one(data: &mut Funcdata, p: &PendingBodyArgs) -> bool {
         Some(o) if !o.is_dead() && o.code() == OpCode::CPUI_CALL && o.num_input() == 1 => {}
         _ => return false,
     }
+    let cut = data.get_arch().callee_arity_cut;
     let Some(idx) = data.get_call_specs_index(p.op) else { return false };
     let entries = {
         let fc = data.get_call_specs(idx);
@@ -299,7 +321,7 @@ fn recover_one(data: &mut Funcdata, p: &PendingBodyArgs) -> bool {
     };
     let picked = {
         let Some(live) = data.kuna_callee_entry_dead(&p.entry) else { return false };
-        match plan_from_body(&p.trials, &entries, live) {
+        match plan_from_body(&p.trials, &entries, live, cut) {
             Some(v) => v,
             None => return false,
         }

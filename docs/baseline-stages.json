@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    683,
-    683
+    687,
+    687
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -443,6 +443,10 @@
     "data:angr-taildup #3 (fix, on): free();return; tail duplicated (1 free off + 2 free on)",
     "data:calleearity #1: option off drops the argument at the call site whose guard branches on it (bug reproduced)",
     "data:calleearity #2: option on gives both call sites of one callee the same arity",
+    "data:calleearitycut #1: five of the six renderings are an empty argument list -- all three sites in pass 1 (bug reproduced) and the two discriminators again in pass 2",
+    "data:calleearitycut #2: option on recovers the four arguments the callee's body reads, bounded by the register the run stops at",
+    "data:calleearitycut #3: a callee that reads every argument register leaves the run no boundary, so its site is untouched in both passes",
+    "data:calleearitycut #4: `caller3` writes the register the run stops at, so it is carrying a further argument and that site is untouched in both passes",
     "data:calleearityfwd #1: option off drops the argument at the call site that finalizes BEFORE its witness (bug reproduced)",
     "data:calleearityfwd #2: option on recovers the size the small arm leaves in the argument register",
     "data:calleearityfwd #3: the site that was already right keeps exactly one argument in both passes",

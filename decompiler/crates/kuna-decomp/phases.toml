@@ -2593,6 +2593,25 @@ tier = "core"
 symptoms = "a callee that is called only once renders with an empty argument list|f() is called where the same output declares f(char *)|calleearity, calleearityfwd and calleearitylive all leave an empty argument list alone|a thread entry point or one-shot payload loses the context pointer the caller passes it|the argument register is compared or branched on just before the CALL and the argument disappears"
 
 [[settable]]
+option = "calleearitycut"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P4"
+subphase = "trial-finalization"
+strength = "HARD"
+rewind = "P4"
+issue = "repipe-bytecode-reader-call-site"
+summary = "Accept a `calleearitybody` argument run that is bounded by a CUT decode instead of by a provably dead register. `calleearitybody` recovers a lone call's argument list as the leading run of argument registers the callee `proves_input`, and requires the run to END at an argument register the callee `proves_dead`. That second half bounds an existential, but it is unavailable far more often than the first, because the bounded callee-body walk ends EVERY path at the callee's first nested call: a register the callee clobbers only past that call is invisible to it. A 977 KB ELF crackme shows the shape -- `mov ecx,0x1; call 0x875e0` with rdi/rsi/rdx passed straight through from the caller's own parameters, a callee whose prologue reads all four (`lea rax,[rsi+rdx]`, `mov eax,ecx`, `add word ptr [rdi+0x30],1`) and then calls, and r8 clobbered 0x30 bytes past that call. Four registers prove input, none proves dead, and `sub_875e0();` renders with no arguments at all while decompiling that same callee alone yields `sub_875e0(int8,char *,int8,uint4)`. The caller side cannot rescue it either: `AncestorRealistic::execute` (funcdata_varnode.cc:2159) refuses an input Varnode outright -- upstream policy, `we expect to see active movement into the parameter` -- so the three pass-through registers are inactive, and `ParamListStandard::fillinMap` reads the hole in front of the one written register as the end of the list. This rule supplies the missing bound from the run's own shape: the run must be CONTIGUOUS (no skipped register inside it, so every emitted argument sits where the ABI puts it and the only reachable error is a missing trailing one, never a misplaced one), it must STOP SHORT of the last argument register (a run that consumes all of them has no boundary -- that is the AArch64 variadic register-save prologue `calleearitybody`'s corpus sweep found), and the register it stops at must be QUIET -- the caller must not have written a value into it, since a caller that does is passing a further argument whatever the callee decode can see. All of `calleearitybody`'s own guards still apply first."
+use_when = "On by default (DIV-PENDING). Keep it on when a call to a callee that is called only ONCE renders `f();` although the disassembly passes registers into it AND `calleearitybody` alone does not recover them -- the tell is a callee whose prologue calls another function early, so the argument register after the ones it reads is clobbered only past that call and nothing can prove it dead. Passing the caller's OWN incoming parameters straight through is the shape that needs this most, because upstream ancestor-realism refuses an input Varnode at a call site on principle. Inert unless `calleearitybody` (and so `calleearity`) is also on. Flip OFF if a call gains a trailing argument the disassembly does not pass; the way that could happen is a callee whose real argument list is longer than the run and whose extra registers the caller left untouched by coincidence -- the result is a SHORT list, never a wrong one, because the run is required to be contiguous."
+example = "option calleearitycut off"
+source_decompiler = "kuna"
+inspiration = "repipe:bytecode-reader-call-site, 673da52e9b533b4c22bd2eeb (ELF x86-64 Layers crackme) sub_9d9c0 -> sub_875e0 at 0x9d9d8; upstream AncestorRealistic::execute (funcdata_varnode.cc:2159) and ParamListStandard::fillinMap (fspec.cc:1560)"
+change_kind = "correctness-fix"
+tier = "core"
+symptoms = "a call renders with no arguments although the disassembly loads every argument register before it|calleearitybody leaves an empty argument list alone on a callee whose prologue calls another function|the caller passes its own incoming parameters straight through and every one of them disappears at the call|f() is called where a separate decompile of f declares f(int8,char *,int8,uint4)|only the argument register the caller writes just before the CALL survives trial scoring, and the list still comes out empty"
+
+[[settable]]
 option = "inputparamgap"
 values = "on|off"
 default = "on"
