@@ -227,7 +227,9 @@ parameter list. For the standard input list the decision sequence is:
    surviving active trial is promoted — interior holes are filled, because
    the list must be contiguous. (kuna) `inputparamgap` exempts an *active
    register* trial from that demotion when the trials are the function's
-   **own** inputs rather than a call's — see below.
+   **own** inputs rather than a call's, and (kuna) `stackarggap` ends a call
+   site's chain at an *unreferenced register* slot whose next credible slot is
+   on the stack — both below.
 5. Whatever is still active is marked **used**.
 
 Steps 3 and 4 both read a hole in a section as evidence that the argument list
@@ -301,6 +303,53 @@ which is what bounds the recovered list to the ABI — six parameters on x86-64
 SysV, four on Win64. And it never makes a trial active that was not already
 active, so a register the body does not read before writing is still not a
 parameter.
+
+Step 4's *promotion* half has a boundary problem of its own, and this one is a
+statement about the ABI rather than about evidence. The rule fills interior holes
+so that the recovered list is contiguous, which is right inside the register
+file: a caller can pass an argument in `rdx` and leave `rcx` looking empty, and
+reading that hole as the end of the list is how a call loses arguments the
+disassembly plainly passes. It is not right across the register/stack boundary,
+because a `ParamListStandard` model allocates in resource order and reaches the
+stack only once the register file in front of it is exhausted. A Win64 call has a
+fifth argument at `[rsp+0x20]` only if it has a fourth in `r9`; an x86-64 SysV
+call spills only past `r9`/`xmm7`. So an argument-register slot with **no
+Varnode at all** — one of the unreferenced fillers step 1 synthesized, meaning
+nothing in the caller ever wrote that register — is not a hole in the middle of
+an argument list but the end of one, and whatever sits in the outgoing-argument
+area behind it is the frame's scratch.
+
+The witness is a body-less IAT import in a Windows PE, which is the shape where
+this bites hardest: with no body the callee cannot answer for its own arity, so
+the call site's leftover state is all the recovery has. `EVP_DigestFinal_ex`,
+whose signature takes three arguments, is called with `rcx`/`rdx`/`r8` loaded,
+`r9` never written, and a `1` left in the fifth-argument slot by the frame's own
+bookkeeping; the stack trial scores active, step 4 promotes the unreferenced
+`r9` filler to reach it, and `build_input_from_trials` materializes the Varnode
+that trial never had by reading `r9` at the call — which resolves to the
+*caller's* untouched incoming `r9`. kuna emitted
+`EVP_DigestFinal_ex(v3,v9,v7,a3,1)`: five arguments, of which the fourth is the
+reader's own parameter and therefore looks load-bearing. (kuna) `stackarggap`
+(default-on, `decompiler/crates/kuna-decomp/src/p4_calls/kuna_stackarggap.rs`)
+sets `seenchain` at such a slot, so the chain ends there, the stack trial behind
+it is deactivated with everything else past the cut, and the hole is never
+filled. This is the same conclusion step 4 already draws one slot to the right,
+where an unreferenced *stack* trial in sub-call recovery ends the chain
+immediately; the option extends it to the register slot in front of the stack.
+
+Four clauses bound it. It reads `ParamActive::is_recover_subcall`, so the
+function's own input recovery — where an untouched argument register is an
+ignored parameter, which is `inputparamgap`'s whole premise — is untouched. It
+fires on **unreferenced** trials only: an inactive register trial still has a
+Varnode, meaning the caller put something there and trial scoring merely could
+not prove it was for the callee, and that ambiguous case still fills, so a
+wrapper forwarding its own fourth parameter is unaffected. It fires only when the
+next non-eliminated trial in the section is a stack slot, so a hole in the middle
+of the register file with a written register behind it keeps the upstream fill.
+And it only stops a trial from being marked active, never marks one — an argument
+list can lose an invented tail, never gain a member. A variadic call site reaches
+none of it, because `varargstackargs` has already cut its stack tail into its own
+section and the register prefix is never scored against it.
 
 ### `build_input_from_trials` — writing the argument list
 

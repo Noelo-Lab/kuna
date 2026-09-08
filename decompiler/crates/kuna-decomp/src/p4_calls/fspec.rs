@@ -1283,6 +1283,10 @@ pub struct ParamActive {
     /// recovery, with the register-gap tolerance enabled?  Set by
     /// `ActionInputPrototype`; see [`crate::p4_calls::kuna_inputparamgap`].
     own_input_gap: bool,
+    /// (kuna) `stackarggap`: may an UNREFERENCED argument register end this CALL
+    /// SITE's argument list when the next slot is on the stack?  Set by
+    /// `ActionActiveParam`; see [`crate::p4_calls::kuna_stackarggap`].
+    stack_arg_gap: bool,
 }
 
 impl ParamActive {
@@ -1300,6 +1304,7 @@ impl ParamActive {
             join_reverse: false,
             vararg_stack_split: false, // (kuna) varargstackargs
             own_input_gap: false,      // (kuna) inputparamgap
+            stack_arg_gap: false,      // (kuna) stackarggap
         }
     }
 
@@ -1414,6 +1419,21 @@ impl ParamActive {
     /// site's trials keep the upstream chain rule.
     pub fn set_own_input_gap(&mut self, val: bool) {
         self.own_input_gap = val;
+    }
+
+    /// (kuna) `stackarggap`: may an unreferenced argument register end this call
+    /// site's argument list?  Read by
+    /// [`Self::force_inactive_chain`](ParamListStandard) through
+    /// [`crate::p4_calls::kuna_stackarggap::ends_argument_list`].
+    pub fn is_stack_arg_gap(&self) -> bool {
+        self.stack_arg_gap
+    }
+
+    /// (kuna) `stackarggap`: record that these are a call site's trials and the
+    /// option is on.  `clear()` leaves it alone -- like `recoversubcall` it is a
+    /// property of the call, not of one pass.
+    pub fn set_stack_arg_gap(&mut self, val: bool) {
+        self.stack_arg_gap = val;
     }
     /// Are these trials for a call to a sub-function (C++ `isRecoverSubcall`).
     pub fn is_recover_subcall(&self) -> bool {
@@ -3042,6 +3062,23 @@ impl ParamListStandard {
             }
             if !is_act {
                 if is_unref && active.is_recover_subcall() && addr_is_spacebase {
+                    seenchain = true;
+                }
+                // (kuna) `stackarggap`: an argument REGISTER the caller never
+                // wrote, with the stack as its next slot, is the end of the
+                // argument list -- the ABI reaches the stack only past a full
+                // register file -- not a hole to fill on the way to a stack
+                // trial.  See [`crate::p4_calls::kuna_stackarggap`].
+                if crate::p4_calls::kuna_stackarggap::ends_argument_list(
+                    active,
+                    i,
+                    stop,
+                    |j| {
+                        crate::p4_calls::kuna_stackarggap::address_is_spacebase(
+                            active.get_trial(j).get_address(),
+                        )
+                    },
+                ) {
                     seenchain = true;
                 }
                 if i == start {

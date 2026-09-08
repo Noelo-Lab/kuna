@@ -1813,7 +1813,7 @@ mod tests {
         // as scratch bounds a cut callee-body argument run (repipe r9)
         // and kuna-declaredlibcproto / a DECLARED function name is answered out of
         // the built-in libc signature tables (repipe r10)
-        assert_eq!(count, 255, "corpus file count drifted");
+        assert_eq!(count, 256, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

@@ -587,6 +587,11 @@ pub struct Architecture {
     /// argument REGISTERS veto a later register the body reads before writing
     /// (option `inputparamgap`).  See [`crate::p4_calls::kuna_inputparamgap`].
     pub input_param_gap: bool,
+    /// (kuna) At a CALL SITE, let an UNREFERENCED argument register whose next
+    /// slot is on the stack end the argument list, instead of being filled in on
+    /// the way to a stack trial (option `stackarggap`).  See
+    /// [`crate::p4_calls::kuna_stackarggap`].
+    pub stack_arg_gap: bool,
     /// (kuna) Score a variadic call's stack arguments as their own `fillinMap`
     /// resource section, so the empty register slots the ABI leaves between the
     /// fixed parameters and the varargs stop deactivating them (option
@@ -1897,6 +1902,7 @@ impl Architecture {
             callee_ret_preserves: true,
             indirect_anchor: true,
             input_param_gap: true,
+            stack_arg_gap: true,
             vararg_stack_args: true,
             callee_arity: true,
             callee_arity_fwd: true,
@@ -2123,6 +2129,7 @@ impl Architecture {
         self.callee_preserves = true; // (kuna) DIV-124 default-on: a fully decoded, call-free callee's own writes narrow the cspec killedbycall set, so a value that crosses a get-PC thunk survives (0/675 ablation)
         self.callee_ret_preserves = true; // (kuna) DIV-PENDING default-on: a fully decoded callee body that never writes the call's return register also answers for that register, so an MSVC /GS `main` returns the zero it set instead of the cookie check's invented result (0/675 ablation)
         self.indirect_anchor = true; // (kuna) DIV-PENDING default-on: an op inserted after a call's guard INDIRECT anchors to the CALL as upstream opInsertAfter does, instead of landing inside the guard run where it hides the return-value trial (0/675 ablation)
+        self.stack_arg_gap = true; // (kuna) DIV-140 default-on: at a call site an argument register the caller never wrote ends the argument list when the next slot is on the stack, so a body-less import stops acquiring the caller's own untouched parameter plus a stack leftover as arguments (0/675 ablation)
         self.input_param_gap = true; // (kuna) DIV-114 default-on: an unused argument-register run in the function's OWN input recovery no longer vetoes a later live-in register, so a pointer-table-only callback recovers its full signature instead of reading undefined locals. Byte-identical (0/675) on the datatest corpus; restore upstream's forceInactiveChain veto with `option inputparamgap off`
         self.vararg_stack_args = true; // (kuna) DIV-101 default-on: a variadic call's stack tail is its own fillinMap section (0/675 ablation)
         self.callee_arity = true; // (kuna) DIV-102 default-on: one callee, one argument list across its call sites (0/675 ablation)
@@ -2435,6 +2442,12 @@ impl Architecture {
                 let (val, msg) =
                     crate::p6_variables::kuna_calleepop::OptionCalleePop.apply(p1)?;
                 self.callee_pop = val;
+                Ok(msg)
+            }
+            "stackarggap" => {
+                let (val, msg) =
+                    crate::p4_calls::kuna_stackarggap::OptionStackArgGap.apply(p1)?;
+                self.stack_arg_gap = val;
                 Ok(msg)
             }
             "inputparamgap" => {
@@ -3400,6 +3413,7 @@ impl Architecture {
         ctx.callee_ret_preserves = self.callee_ret_preserves; // calleeretpreserves
         ctx.indirect_anchor = self.indirect_anchor; // indirectanchor
         ctx.input_param_gap = self.input_param_gap; // inputparamgap
+        ctx.stack_arg_gap = self.stack_arg_gap; // stackarggap
         ctx.vararg_stack_args = self.vararg_stack_args; // varargstackargs
         ctx.callee_arity = self.callee_arity; // calleearity
         ctx.callee_arity_fwd = self.callee_arity_fwd; // calleearityfwd
