@@ -37,17 +37,36 @@ fn trial(sp: &Rc<AddrSpace>, off: u64, vn: u64) -> BodyTrial {
         size: 8,
         vn: Some(vid(vn)),
         caller_quiet: true,
+        caller_checked: true,
+        caller_active: false,
+        caller_constant: false,
     }
 }
 
 /// A trial holding a value the caller COMPUTED into the register.
 fn written(sp: &Rc<AddrSpace>, off: u64, vn: u64) -> BodyTrial {
-    BodyTrial { addr: Address::new(Rc::clone(sp), off), size: 8, vn: Some(vid(vn)), caller_quiet: false }
+    BodyTrial {
+        addr: Address::new(Rc::clone(sp), off),
+        size: 8,
+        vn: Some(vid(vn)),
+        caller_quiet: false,
+        caller_checked: true,
+        caller_active: true,
+        caller_constant: false,
+    }
 }
 
 /// A trial with nothing standing at it.
 fn barren(sp: &Rc<AddrSpace>, off: u64) -> BodyTrial {
-    BodyTrial { addr: Address::new(Rc::clone(sp), off), size: 8, vn: None, caller_quiet: true }
+    BodyTrial {
+        addr: Address::new(Rc::clone(sp), off),
+        size: 8,
+        vn: None,
+        caller_quiet: true,
+        caller_checked: true,
+        caller_active: false,
+        caller_constant: false,
+    }
 }
 
 fn loc(sp: &Rc<AddrSpace>, off: u64) -> (Address, int4) {
@@ -99,8 +118,8 @@ fn a_run_that_stops_short_at_an_untouched_register_is_the_argument_list() {
     let reg = reg_space();
     let trials = witness(&reg);
     let live = cut_body(&[0x38, 0x30, 0x10, 0x8]);
-    assert_eq!(plan_from_body(&trials, &sysv(&reg), &live, false), None);
-    assert_eq!(plan_from_body(&trials, &sysv(&reg), &live, true), Some(vec![0, 1, 2, 3]));
+    assert_eq!(plan_from_body(&trials, &sysv(&reg), &live, false, false), None);
+    assert_eq!(plan_from_body(&trials, &sysv(&reg), &live, true, false), Some(vec![0, 1, 2, 3]));
 }
 
 /// A run that consumes every argument register has no boundary at all — the
@@ -110,7 +129,7 @@ fn a_run_that_reaches_the_last_argument_register_is_refused() {
     let reg = reg_space();
     let trials = witness(&reg);
     let live = cut_body(&[0x38, 0x30, 0x10, 0x8, 0x80, 0x88]);
-    assert_eq!(plan_from_body(&trials, &sysv(&reg), &live, true), None);
+    assert_eq!(plan_from_body(&trials, &sysv(&reg), &live, true, false), None);
 }
 
 /// The caller computed a value into the register the run stops at, so that
@@ -121,7 +140,7 @@ fn a_boundary_register_the_caller_wrote_is_refused() {
     let mut trials = witness(&reg);
     trials[4] = written(&reg, 0x80, 5);
     let live = cut_body(&[0x38, 0x30, 0x10, 0x8]);
-    assert_eq!(plan_from_body(&trials, &sysv(&reg), &live, true), None);
+    assert_eq!(plan_from_body(&trials, &sysv(&reg), &live, true, false), None);
 }
 
 /// A hole inside the run would print the register behind it in the hole's
@@ -131,7 +150,7 @@ fn a_hole_inside_the_run_is_refused() {
     let reg = reg_space();
     let trials = witness(&reg);
     let live = cut_body(&[0x38, 0x30, 0x8]); // rdx skipped
-    assert_eq!(plan_from_body(&trials, &sysv(&reg), &live, true), None);
+    assert_eq!(plan_from_body(&trials, &sysv(&reg), &live, true, false), None);
 }
 
 /// The stack section is not a register argument location, so a run that reaches
@@ -143,7 +162,7 @@ fn a_run_bounded_by_the_stack_is_refused() {
     let trials = vec![trial(&reg, 0x38, 1), trial(&stk, 0x8, 2)];
     let entries = vec![loc(&reg, 0x38), (Address::new(Rc::clone(&stk), 0x8), 500)];
     let live = cut_body(&[0x38]);
-    assert_eq!(plan_from_body(&trials, &entries, &live, true), None);
+    assert_eq!(plan_from_body(&trials, &entries, &live, true, false), None);
 }
 
 /// A register trial the prototype model does not name as an argument location
@@ -154,7 +173,7 @@ fn a_boundary_outside_the_model_is_refused() {
     let trials = vec![trial(&reg, 0x38, 1), trial(&reg, 0x200, 2)];
     let entries = vec![loc(&reg, 0x38), loc(&reg, 0x30)];
     let live = cut_body(&[0x38]);
-    assert_eq!(plan_from_body(&trials, &entries, &live, true), None);
+    assert_eq!(plan_from_body(&trials, &entries, &live, true, false), None);
 }
 
 /// `calleearitybody`'s own guards still answer first: an argument register the
@@ -165,7 +184,7 @@ fn a_read_register_outside_the_run_is_still_refused() {
     let reg = reg_space();
     let trials = vec![trial(&reg, 0x38, 1), barren(&reg, 0x30), trial(&reg, 0x10, 3)];
     let live = cut_body(&[0x38, 0x10]);
-    assert_eq!(plan_from_body(&trials, &sysv(&reg), &live, true), None);
+    assert_eq!(plan_from_body(&trials, &sysv(&reg), &live, true, false), None);
 }
 
 /// An incomplete summary proves nothing in either direction, cut or not.
@@ -174,7 +193,7 @@ fn an_incomplete_walk_is_still_refused() {
     let reg = reg_space();
     let trials = witness(&reg);
     let live = CalleeEntryDead::from_parts(REG, vec![(REG, 0x38, 8)], vec![vec![]], false);
-    assert_eq!(plan_from_body(&trials, &sysv(&reg), &live, true), None);
+    assert_eq!(plan_from_body(&trials, &sysv(&reg), &live, true, false), None);
 }
 
 /// The run is what `calleearitybody` picked; an empty one is never widened.
@@ -182,5 +201,5 @@ fn an_incomplete_walk_is_still_refused() {
 fn an_empty_run_is_never_accepted() {
     let reg = reg_space();
     let trials = witness(&reg);
-    assert!(!accepts_cut_run(&trials, &[], &sysv(&reg)));
+    assert!(!accepts_cut_run(&trials, &[], &sysv(&reg), false));
 }

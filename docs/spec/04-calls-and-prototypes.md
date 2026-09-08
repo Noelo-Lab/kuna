@@ -472,6 +472,34 @@ neither a computed one nor a constant, since a caller that does is passing a
 further argument whatever the callee decode can see. All of `calleearitybody`'s
 own guards still answer first, and the rule is inert unless it is on.
 
+(kuna) `calleearityscratch` (default-on,
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleearityscratch.rs`) widens
+the last of those three, the **quiet** boundary, because "the caller wrote it"
+and "the caller is passing it" are not the same claim and a register allocator
+does not respect the difference. An ELF x86-64 crackme decodes a string with an
+unrolled XOR loop and hands the buffer to its hint printer: `lea rdi,[rbp-0x30]`
+sets up the argument, `movzx esi,byte ptr [rbp-0x1a]` puts the XOR key in the
+*second* argument register, `xor byte ptr [r8+0x6],sil` consumes it, and the
+`CALL` follows. The callee reads `rdi` at its first instruction, so the run is
+`{rdi}`; its decode is cut three instructions later at a nested call, so nothing
+proves `rsi` dead; `rsi` is the register the run stops at, the caller wrote it,
+and the whole one-argument list is dropped.
+
+Argument setup is a value the caller computes and then uses for **nothing but the
+call**, which is `Funcdata::onlyOpUse` — and that question has already been asked
+by the time the rule runs. `check_input_trial_use` puts every trial through
+`ancestor_op_use` and marks it **active** only when the answer is yes, so the XOR
+gives `rsi`'s trial an *inactive* score. An inactive boundary is scratch and is
+quiet enough to end the run; an active one is upstream saying the value reaches
+the call and nothing else, which is exactly the further argument `calleearitycut`
+refuses to hide, and it stays refused. So does a **constant**, however the trial
+scored: materializing a constant into the next argument register right before a
+`CALL` is argument setup in its most literal form. The other two conditions are
+untouched, so the reachable error is still a *missing trailing* argument and
+never a misplaced one — and the site the rule fires on rendered no arguments at
+all, so it trades an empty list for a prefix the callee's own body proves it
+reads. Inert unless `calleearitycut` is also on.
+
 The `Register` (unordered) variant skips all ordering logic: every active
 trial that lands justified in an entry is a parameter
 (`fillin_map_register`). The output variant first lets the model rules claim

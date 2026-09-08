@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    687,
-    687
+    692,
+    692
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -454,6 +454,11 @@
     "data:calleearitylive #2: option on extends the short site to the sibling call's four arguments",
     "data:calleearitylive #3: the callee that also reads r8d contradicts a four-argument witness, so its short site is left alone in BOTH passes",
     "data:calleearitylive #4: the witness site keeps exactly four arguments in all four decompilations",
+    "data:calleearityscratch #1: with the option off both scratch sites render an empty argument list -- the bug",
+    "data:calleearityscratch #2: option on bounds the run at the 64-bit scratch register and recovers the one argument the callee reads",
+    "data:calleearityscratch #3: the witness's own byte-scratch shape recovers the same way",
+    "data:calleearityscratch #4: a boundary the caller uses for nothing but the call scores active and the site recovers it on its own, in both passes",
+    "data:calleearityscratch #5: a constant boundary is never scratch, so that site is untouched in both passes",
     "data:calleedeadarg #1: option off passes the previous call's return value to a callee that never reads it (bug reproduced)",
     "data:calleedeadarg #2: option on drops the argument the callee's own body proves it never reads",
     "data:calleedeadarg #3: with the argument gone the producer call stands on its own (only the fixed pass)",

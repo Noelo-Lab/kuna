@@ -112,17 +112,23 @@ impl OptionCalleeArityCut {
 /// `picked` are indices into `trials`, in prototype order, and `entries` are the
 /// prototype model's own input locations — both exactly as
 /// [`crate::p4_calls::kuna_calleearitybody::plan_from_body`] built them.
+/// `scratch` widens the quiet test with
+/// [`crate::p4_calls::kuna_calleearityscratch`] (option `calleearityscratch`).
 pub fn accepts_cut_run(
     trials: &[BodyTrial],
     picked: &[int4],
     entries: &[(Address, int4)],
+    scratch: bool,
 ) -> bool {
     let (Some(&first), Some(&last)) = (picked.first(), picked.last()) else { return false };
     if (last - first + 1) as usize != picked.len() {
         return false; // a hole inside the run would move a later argument forward
     }
     let Some(bound) = trials.get(last as usize + 1) else { return false };
-    if !is_register(&bound.addr) || !bound.caller_quiet {
+    let quiet = bound.caller_quiet
+        || (scratch
+            && crate::p4_calls::kuna_calleearityscratch::boundary_is_caller_scratch(bound));
+    if !is_register(&bound.addr) || !quiet {
         return false;
     }
     // The boundary must be an argument location the model actually names: a

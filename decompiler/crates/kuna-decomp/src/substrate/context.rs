@@ -785,6 +785,12 @@ pub struct ArchContext {
     /// [`crate::p4_calls::kuna_calleearitybody::recover_pending`]; inert unless
     /// `callee_arity_body` is also set.
     pub callee_arity_cut: bool,
+
+    /// (kuna) Let a boundary register the caller only used as scratch end that
+    /// cut run (`calleearityscratch`).  Read by
+    /// [`crate::p4_calls::kuna_calleearitybody::recover_pending`]; inert unless
+    /// `callee_arity_cut` is also set.
+    pub callee_arity_scratch: bool,
     /// (kuna) completion level for the two upstream partial-range call-overlap
     /// guards (`calloverlap`): `0` = both stay inert (what kuna shipped before the
     /// option), `1` = `Heritage::guardCallOverlappingInput` only, `2` = that plus
@@ -1283,6 +1289,7 @@ impl ArchContext {
             callee_arity_live: true,     // calleearitylive (default-on)
             callee_arity_body: true,     // calleearitybody (default-on)
             callee_arity_cut: true,      // calleearitycut (default-on)
+            callee_arity_scratch: true,  // calleearityscratch (default-on)
             call_overlap: 0,             // calloverlap (0 = both overlap guards inert)
             spill_arg_trial: 0,          // spillargtrial (0 = upstream: every STORE rejects)
             load_guard_range: true,      // loadguardrange (upstream behavior, default-on)
