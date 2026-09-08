@@ -104,6 +104,31 @@ until the boundary-declaration surface existed (chapter
 [00 §0.4](00-overview.md)) and leaves the range at the whole entry-point space, so
 both the bound and its diagnostics are inert for a run that declares nothing.
 
+**Branch targets the image cannot supply.** A declared bound is not the only way
+flow leaves the code: a `jmp` or `jcc` displacement can resolve to an address no
+segment of the image maps at all, which is ordinary in obfuscated, packed and
+statically linked binaries. Such a target is a dead end — there is nothing there
+to decode under any option — but queueing it anyway made the walk pop it and ask
+the loader for its bytes, and `LoadImage::load_fill`'s `Unable to load N bytes`
+raise unwound the entire flow follow. The function was then lost whole: a body
+whose own bytes are mapped and disassemble cleanly produced no C, and the CLI,
+reading that failure out of the console transcript, reported the *selected entry*
+as an external symbol defined in another module.
+
+So `flow.rs (FlowInfo::new_address)` probes the load image for one byte at the
+target (`flow.rs (FlowEnvironment::code_bytes_mapped)`, the same question
+`ConsoleProgram::entry_bytes_mapped` asks) before queueing it, and an unmapped
+target ends that path exactly as an out-of-extent one does: recorded on
+`unprocessed`, registered in the out-of-extent set so §2.2 gives its edge a halt
+to land on, and reported by `flow.rs (FlowInfo::handle_unmapped_target)` as a
+`Funcdata::warning` at the branch site plus a once-per-function
+`Function flows into unmapped memory` header. Unlike the declared bound this has
+no ignore/error mode, because it is a fact about the image rather than a policy
+about a range. The probe is only reached for a target that is already inside the
+allowed range, and only an address with no bytes behind it can fail it, so no
+flow that previously decoded is cut: the change turns functions that produced
+nothing into functions that produce a body carrying the warnings above.
+
 **Decode scratch storage.** Every SLEIGH translation checks out a parser
 context from the engine-local pool
 (`decompiler/crates/kuna-sleigh/src/sleigh.rs (Sleigh::checkout_context)`).

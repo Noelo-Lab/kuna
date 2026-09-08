@@ -116,6 +116,8 @@ pub mod flow_flags {
     pub const reinterpreted_present: uint4 = 0x200;
     /// Indicate the maximum instruction threshold was reached
     pub const toomanyinstructions_present: uint4 = 0x400;
+    /// (kuna) Indicate flow reached a branch target with no mapped bytes
+    pub const unmappedtarget_present: uint4 = 0x800;
     /// Indicate a CALL was converted to a BRANCH and some code may be unreachable
     pub const possible_unreachable: uint4 = 0x1000;
     /// Indicate flow is being generated to in-line (a function)
@@ -211,6 +213,17 @@ pub trait FlowEnvironment {
     /// `data.getOverride().hasFlowOverride()`).  // STUB(W4)
     fn has_flow_override(&self) -> bool {
         false
+    }
+
+    /// (kuna) Does `addr` have at least one byte backed by the load image?
+    ///
+    /// Consulted by [`FlowInfo::new_address`] before a branch target is queued
+    /// for decode: an address the image cannot supply bytes for is a dead end,
+    /// not an instruction.  The default reports `true`, so an environment with
+    /// no load image (the W3 test shells) keeps the unconditional queueing the
+    /// walk has always done.
+    fn code_bytes_mapped(&self, _addr: &Address) -> bool {
+        true
     }
 
     /// Is the CALLOTHER `op` a user-op marked as \e injected (C++
@@ -699,6 +712,10 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
     pub fn has_reinterpreted(&self) -> bool {
         (self.flags & flow_flags::reinterpreted_present) != 0
     }
+    /// (kuna) Did \b this flow reach a branch target with no mapped bytes.
+    pub fn has_unmapped_target(&self) -> bool {
+        (self.flags & flow_flags::unmappedtarget_present) != 0
+    }
     /// Does \b this flow have too many instructions (C++ `hasTooManyInstructions`).
     pub fn has_too_many_instructions(&self) -> bool {
         (self.flags & flow_flags::toomanyinstructions_present) != 0
@@ -898,6 +915,19 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             self.op_mark_start_basic(op);
             return Ok(());
         }
+        // (kuna, RE-need `discovered-mapped-function-mislabeled`) The target has
+        // no bytes in the image, so queueing it decodes nothing: the walk pops it
+        // and `load_fill` raises out of the whole flow follow, losing a function
+        // whose own bytes disassemble cleanly.  End the path instead, exactly as a
+        // target outside a declared extent ends it.
+        if !self.env.code_bytes_mapped(to) {
+            let fromaddr =
+                self.data.obank().get(from).expect("new_address: stale from").get_addr().clone();
+            self.handle_unmapped_target(&fromaddr, to);
+            self.unprocessed.push(to.clone());
+            self.outofbounds.insert(to.clone());
+            return Ok(());
+        }
         self.addrlist.push(to.clone());
         Ok(())
     }
@@ -972,6 +1002,29 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             }
         }
         Ok(())
+    }
+
+    /// (kuna) Report flow into an address the load image cannot supply bytes for.
+    ///
+    /// Unlike [`Self::handle_out_of_bounds`] this has no error/ignore mode: an
+    /// unmapped address is a fact about the image, not a declared-range policy,
+    /// and there is nothing to decode there under any setting.
+    fn handle_unmapped_target(&mut self, fromaddr: &Address, toaddr: &Address) {
+        let mut msg = String::from("Function flow reaches unmapped memory: ");
+        msg.push(fromaddr.get_shortcut());
+        let mut raw = String::new();
+        let _ = fromaddr.print_raw(&mut raw);
+        msg.push_str(&raw);
+        msg.push_str(" flows to ");
+        msg.push(toaddr.get_shortcut());
+        let mut raw2 = String::new();
+        let _ = toaddr.print_raw(&mut raw2);
+        msg.push_str(&raw2);
+        self.data.warning(&msg, toaddr);
+        if !self.has_unmapped_target() {
+            self.flags |= flow_flags::unmappedtarget_present;
+            self.data.warning_header("Function flows into unmapped memory");
+        }
     }
 
     /// Build the C++ out-of-bounds error/warning string (`flow.cc:541-547`).
