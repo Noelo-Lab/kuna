@@ -1,0 +1,35 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/pe_bsstail_x86_64.exe",
+    "binary_sha256": "f52dc6962c6fadfbe5a287286933de4ef22bb34d7eb9750a161bb2bceefcb101",
+    "binary_size": 1536,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/pe_bsstail_x86_64.exe"
+  },
+  "timeout_s": 60,
+  "cmd": [
+    "{{KUNA}}",
+    "read",
+    "{{BIN}}",
+    "0x140002740",
+    "--addr",
+    "--bytes",
+    "64",
+    "--json"
+  ],
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "stdout_matches": [
+      "\"hex\": \"0{128}\""
+    ],
+    "stderr_absent": [
+      "no loaded segment covers it"
+    ]
+  },
+  "notes": "Vendored twin of the reported image (kuna-analysis/tests/fixtures/pe_bsstail_x86_64.py): .data with VirtualSize 0x7a8 over SizeOfRawData 0x200, at RVA 0x2000. 0x140002740 sits 0x540 into the zero-filled tail, as 0x140008740 does in the original, which stays the witness in Reproduction. In-repo, so the probe runs where there is no dataset."
+}

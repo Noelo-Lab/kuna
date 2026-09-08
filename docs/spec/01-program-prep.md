@@ -190,6 +190,42 @@ real content; a clamp to zero publishes nothing. No other format defines one
 (`ObjectFormat::header_region` defaults to `None`), because an ELF's `PT_LOAD`
 headers already describe whatever of the header is in the mapping.
 
+(kuna) **A segment's zero-filled tail is mapped, not a hole**
+(`decompiler/crates/kuna-analysis/src/loadimage_object.rs (Segment::mapped_size)`).
+Every format states a segment's RAM footprint separately from the bytes the file
+supplies for it — ELF `p_memsz` over `p_filesz`, PE `VirtualSize` over
+`SizeOfRawData`, Mach-O `vmsize` over `filesize` — and the excess is the
+zero-initialized data the loader is expected to materialize: `.bss`, and the tail
+of any `.data` whose trailing zeros the linker declined to write out. kuna copied
+only the file extent into each segment, so an address in that tail matched no
+segment, `loadFill` hit the "initial address unmapped" contract, and the surfaces
+above it reported an address the image plainly maps as covered by no loaded
+segment — a reported keygenme keeps its globals at RVA `0x8740`, inside a `.data`
+of `VirtualSize` `0x7a8` over `SizeOfRawData` `0x200`, and reading them was
+refused with the advice to unpack an image that was never packed. Each segment
+therefore records its RAM footprint alongside its bytes, and the
+containing-segment walk answers over the footprint; the part of the read past the
+file extent falls into the zero-fill `copy_segment` was already doing for the
+straddling case. A data segment with no file bytes at all — a `SizeOfRawData` `0`
+section, an ELF `.bss` of its own — is kept for the same reason instead of being
+dropped as empty. The footprint is trimmed at the next segment's vma so a declared
+size can never shadow real content, and the trim only ever shortens the *tail*:
+segments an image stacks at one address (a COFF `.obj` read through the linked
+path described later in this section) map exactly what they mapped before.
+
+The tail is recorded only for a segment the image marks as **data**. An
+executable uninitialized region is a packer's staging area — `UPX0` is
+`VirtualSize` `0x9000` over `SizeOfRawData` `0`, executable — and its file-time
+contents are not its run-time contents, so materializing zeroes there does not
+recover the code, it feeds 36 KB of `add [eax],al` to the flow walk of §1.6 in
+place of the honest `DataUnavail` that stops it. Measured on the in-repo UPX PE:
+without the carve-out, the packed entry stops reporting `Unable to load 512
+bytes` and decompiles to 16,883 lines in 19.6 s, where the answer that helps is
+`kuna unpack`. The consequence is that an image whose only load segment is `RWX`
+does not get its `.bss` read either; that is the conservative direction, and the
+address still resolves through the section walk, which has always described the
+whole footprint.
+
 **Character sanitizing** (`symbolnamechars`, `off|safe|ident`, default `safe`;
 `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_symbolnamechars.rs`) is the
 last step of that name reduction, and it is the only one that treats the name as
