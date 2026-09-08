@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    692,
-    692
+    698,
+    698
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -464,6 +464,12 @@
     "data:calleedeadarg #3: with the argument gone the producer call stands on its own (only the fixed pass)",
     "data:callsitestackargs #1: option off truncates the call at the six register arguments (bug reproduced)",
     "data:callsitestackargs #2: option on recovers both stack-passed arguments",
+    "data:codescalar #1: with the option off the dereferenced byte is typed by the size-1 code pointee -- the bug",
+    "data:codescalar #2: and the value stored back through the function pointer is cast to that widthless type",
+    "data:codescalar #3: with the option on the byte carries the width the access has, in the witness and in the control",
+    "data:codescalar #4: the cast is gone with it, so the store is a plain assignment",
+    "data:codescalar #5: the POINTER keeps its code type in both passes, so the indirect call still renders",
+    "data:codescalar #6: the data control is untouched in both passes -- its pointer was never a code pointer",
     "data:condfold #1: OFF, the fold is declined and the sibling's test becomes a crossing goto (pass 1 only)",
     "data:condfold #2: OFF, the crossing goto needs a label on the shared continuation (pass 1 only)",
     "data:condfold #3: ON, the two conditions fold into one short-circuit OR whose right operand carries the sibling prefix as a comma expression (pass 2 only)",

@@ -169,7 +169,9 @@ match the moved value, EQUAL-class compares coerce both sides to the more
 ordered of the two operand types, LESS-class compares and div/rem/shift gate
 on promotion, PIECE/SUBPIECE/INSERT never cast, and everything else falls to
 the default `cast_standard(input-type-local, read-facing-high-type)`. A `None`
-answer means no cast — only the constant-suffix marking runs. Otherwise the
+answer means no cast — only the constant-suffix marking runs; the STORE's value
+slot returns `None` for a `code` pointee under `codescalar` (chapter 05), which
+is the printing half of that option. Otherwise the
 machinery avoids stacking tokens: a value already produced by a CAST is
 retyped or bypassed rather than double-cast; a constant is simply retyped;
 and a pointer-to-struct being read as pointer-to-its-first-field inserts a

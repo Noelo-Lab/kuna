@@ -1,0 +1,39 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "codebyte"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/codescalar_x86_64",
+    "binary_sha256": "147d82253e9611f26e14077b1fbc4485eb43db3aed85bc8ed62bb415db46fd8f",
+    "binary_size": 5080,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/codescalar_x86_64",
+    "selector": "codebyte",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_absent": [
+      "\\bvoid\\s+[A-Za-z_]\\w*\\s*;",
+      "\\(void\\)"
+    ],
+    "stdout_matches": [
+      "\\(\\*a[0-9]+\\)\\(\\)"
+    ]
+  },
+  "notes": "need decompiler-emits-void-scalar. Witness: crackmes.one 5ab77f5f33c5d40ad448c834 crkme.exe 0x44ac6b, which declared `void v4; // al` and stored `(void)sub_44ac7a()` through a code pointer. Retargeted onto the vendored codescalar_x86_64 (same shape, no dataset in CI): same absent clauses, and the match clause pins the indirect call that must survive."
+}

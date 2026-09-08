@@ -3415,6 +3415,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "codescalar"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P5"
+subphase = "type-propagation"
+strength = "HARD"
+rewind = "P5"
+issue = "repipe-decompiler-emits-void-scalar"
+summary = "Refuse a `code` pointee as the data-type of a dereferenced VALUE. `TypeFactory::getTypeCode` builds the generic `code` type with size 1 so that `code *` arithmetic steps one byte at a time; `TypeOp::propagateFromPointer` (typeop.cc:207) decides what a dereference yields by testing only `ptrto->getSize() == sz`, so it reads that convenience as a claim that a byte-wide value can hold a function body. A 1-byte LOAD or STORE through a function pointer -- the INT3-patch check `v1 = *(code **)(v3 + 0xd4); if (*v1 != 0xcc) v5 = (*v1)(); *v1 = f();` that packers and anti-debug stubs are built from -- therefore types the loaded and stored bytes `code`, `INT_EQUAL` spreads that to the compared constant, and the merged high is declared `code v4; // al`, printed `void v4;` by the C back-end. A scalar with no width cannot be declared, assigned or added in C, and the byte the code manipulates loses its type entirely; the arithmetic that follows is then re-cast back (`v4 = (char)((char)v4 + '$')`). When on, `kuna_codescalar::blocks_value_type` declines the pointee on the value side of a LOAD/STORE propagation, and the same test suppresses the STORE's cast to it (which prints `(void)`), so the value falls back to the size-correct default and the store needs no cast. The POINTER keeps its own `code *` type, so the indirect call still renders `(*v1)()` and a `code **` load is untouched -- only a pointee whose metatype is `TYPE_CODE` is refused."
+use_when = "A local is declared `void` with no `*` and then used as a number -- `void v4; // al` followed by `v4 = (void)f();` and `v4 = (char)((char)v4 + '$')` -- or a store through a recovered function pointer carries a `(void)` cast. On by default: a `code` value type is never right, so blocking it can only replace a widthless scalar with the width the access already has. Flip OFF to restore upstream Ghidra's reading, in which the size-1 `code` type satisfies `propagateFromPointer` for any 1-byte dereference."
+example = "option codescalar off"
+source_decompiler = "kuna"
+inspiration = "RE-friction round 9 (`decompiler-emits-void-scalar`): two testers on two crackmes reported a scalar local declared `void` and then used in byte arithmetic, on `crkme.exe` 0x44ac6b an INT3-detection stub that patches its own callee"
+change_kind = "type-inference"
+tier = "transform"
+symptoms = "a local is declared void with no pointer star and then assigned or added|a call result is cast (void) and stored|void v4; // al followed by (char)v4 arithmetic|a byte loaded or stored through a function pointer has no scalar type"
+live_field = "codescalar"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "framelayout"
 values = "on|off"
 default = "on"
