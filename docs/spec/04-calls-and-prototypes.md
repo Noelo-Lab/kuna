@@ -439,6 +439,39 @@ is left alone. It is inert unless `calleearity` is also on. Because its whole
 subject is the callee called once, it is also the one reader for which
 `seed_callee_entry_dead` probes a function with fewer than two calls.
 
+(kuna) `calleearitycut` (default-on,
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleearitycut.rs`) widens that
+dead-boundary test, because the boundary is unavailable far more often than the
+run is. `probe_callee_entry_dead` ends **every** path at the callee's first
+nested call, so a register the callee clobbers past that call is invisible to it,
+and an entirely ordinary body proves a read run and no boundary at all. On an ELF
+x86-64 image a caller that passes its own `rdi`/`rsi`/`rdx` straight through and
+writes `mov ecx,0x1` before the `CALL` renders `sub_875e0();`, while its callee's
+prologue reads all four (`lea rax,[rsi+rdx]`, `mov eax,ecx`, `add word ptr
+[rdi+0x30],1`) and only then calls; `r8` is clobbered 0x33 bytes past that call.
+The caller side cannot rescue it either, and for a reason that is upstream policy
+rather than a gap: `AncestorRealistic::execute` refuses an input Varnode outright
+— *if the parameter itself is an input, we don't consider this realistic, we
+expect to see active movement into the parameter* — so the three pass-through
+registers score inactive and `fillinMap` reads the hole in front of the one
+written register as the end of the list.
+
+A boundary the callee proves dead is not the only way to know a run is the whole
+list; it is the only way to know it when the run reaches the **last** argument
+register. When the run stops short, the register it stops at is itself the
+boundary, and what has to be ruled out is that the register carries an argument
+the cut walk could not see. Three conditions, and the rule is only as safe as
+their conjunction. The run must be **contiguous** — no skipped register inside
+it, so every emitted argument sits at the position the ABI assigns it and the
+only reachable error is a *missing trailing* argument, never a misplaced one. It
+must **stop short** — at least one register argument location must follow it,
+unclaimed; a run that consumes every argument register has no boundary and is
+refused, which is the variadic register-save prologue again. And the boundary
+must be **quiet** — the caller must not have placed a value in that register,
+neither a computed one nor a constant, since a caller that does is passing a
+further argument whatever the callee decode can see. All of `calleearitybody`'s
+own guards still answer first, and the rule is inert unless it is on.
+
 The `Register` (unordered) variant skips all ordering logic: every active
 trial that lands justified in an entry is a parameter
 (`fillin_map_register`). The output variant first lets the model rules claim

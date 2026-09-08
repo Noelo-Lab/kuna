@@ -1,0 +1,109 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    RE-friction round 8, need `bytecode-reader-call-site` (challenge
+    673da52e9b533b4c22bd2eeb, ELF x86-64 `Layers`): `kuna decompile ...
+    sub_9d9c0` renders the one call it makes to its bytecode reader with no
+    arguments at all,
+
+        sub_875e0();                          0x9d9d8
+
+    while decompiling that same callee on its own recovers four:
+
+        undefined16 sub_875e0(int8 a0,char *a1,int8 a2,uint4 a3)
+
+    The disassembly passes rdi, rsi and rdx straight through from the caller's
+    OWN incoming parameters and writes ecx=1 right before the CALL.
+
+    Root cause (P4, trial finalization).  Two halves.  On the caller's side,
+    `AncestorRealistic::execute` (funcdata_varnode.cc:2159) refuses an input
+    Varnode outright - upstream policy, "if the parameter itself is an input, we
+    don't consider this realistic, we expect to see active movement into the
+    parameter" - so the three pass-through registers score inactive, and
+    `ParamListStandard::fillinMap` reads the hole in front of the one written
+    register as the end of the list.  Nothing is recovered.
+
+    On the callee's side `calleearitybody` exists for exactly this and declines,
+    because it requires the read run to END at an argument register the callee
+    `proves_dead`, and the bounded callee-body walk ends EVERY path at the
+    callee's first nested call.  Here that call is 0x8769f and r8 is clobbered
+    0x33 bytes past it, so nothing is provably dead and the run has no bound.
+
+    What bounds it instead is the run's own shape: a run that STOPS SHORT of the
+    last argument register is bounded by the register it stops at, provided that
+    register is QUIET - the caller put no value in it - and provided the run is
+    CONTIGUOUS, so every emitted argument sits where the ABI puts it and the only
+    reachable error is a missing trailing argument, never a misplaced one.
+
+    Stage / sub-stage: P4 "trial-finalization".  The P0 assertion
+    `option calleearitycut on|off` decides whether that widened boundary applies;
+    it is inert with `calleearitybody off`.
+
+    The fixture is the same construct on SysV x86-64:
+
+        sink:    ret
+        callee:  mov %rdi,%rax; add %esi,%eax; add %edx,%eax; add %ecx,%eax
+                 call sink                  # the decode is cut here
+                 ret
+        callee2: the same, plus add %r8d,%eax; add %r9d,%eax
+
+        caller / caller2 / caller3, identically shaped:
+                 push %rbx; mov %rdi,%rbx
+                 cmp  %rsi,%rdx ; je L      # rsi/rdx get a competing use
+                 mov  $1,%ecx
+                 call callee                # nothing recovered
+                 add  %ebx,%eax ; pop %rbx ; ret
+        L:       xor %eax,%eax ; pop %rbx ; ret
+
+    `caller` is the fix.  `caller2` and `caller3` are the two discriminators:
+    `callee2` reads EVERY argument register, so the run reaches the last one and
+    has no boundary at all - the AArch64 variadic register-save shape - and
+    `caller3` writes `mov $2,%r8d` before the CALL, so the register the run stops
+    at is carrying a fifth argument and truncating there would hide it.  Both are
+    declined in BOTH passes.  Pass 1 (`option calleearitycut off`) reproduces the
+    BUG in all three.
+-->
+<bytechunk space="ram" offset="0x100000">
+c30000000000000000000000000000004889f801f001d001c8e8e2ffffffc300
+000000000000000000000000000000004889f801f001d001c84401c04401c8e8
+bcffffffc30000000000000000000000534889fb4839f2740eb901000000e8ad
+ffffff01d85bc331c05bc3000000000000000000000000000000000000000000
+534889fb4839f2740eb901000000e89dffffff01d85bc331c05bc30000000000
+00000000000000000000000000000000534889fb4839f27414b90100000041b8
+02000000e847ffffff01d85bc331c05bc3000000000000000000000000000000
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="sink"/>
+<symbol space="ram" offset="0x100010" name="callee"/>
+<symbol space="ram" offset="0x100030" name="callee2"/>
+<symbol space="ram" offset="0x100050" name="caller"/>
+<symbol space="ram" offset="0x100080" name="caller2"/>
+<symbol space="ram" offset="0x1000b0" name="caller3"/>
+</binaryimage>
+<script>
+  <com>option calleearitycut off</com>
+  <com>lo fu caller</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu caller2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu caller3</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option calleearitycut on</com>
+  <com>lo fu caller</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu caller2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu caller3</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="calleearitycut #1: five of the six renderings are an empty argument list -- all three sites in pass 1 (bug reproduced) and the two discriminators again in pass 2" min="5" max="5">callee2?\(\)</stringmatch>
+<stringmatch name="calleearitycut #2: option on recovers the four arguments the callee's body reads, bounded by the register the run stops at" min="1" max="1">callee\(a[0-9]+,a[0-9]+,a[0-9]+,1\)</stringmatch>
+<stringmatch name="calleearitycut #3: a callee that reads every argument register leaves the run no boundary, so its site is untouched in both passes" min="2" max="2">callee2\(\)</stringmatch>
+<stringmatch name="calleearitycut #4: `caller3` writes the register the run stops at, so it is carrying a further argument and that site is untouched in both passes" min="3" max="3">callee\(\)</stringmatch>
+</decompilertest>
