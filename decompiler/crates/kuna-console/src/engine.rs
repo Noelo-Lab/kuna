@@ -33,7 +33,7 @@
 //! function entry the faithful way (the binaryimage's own symbol records, which
 //! is precisely what `readLoaderSymbols` reads).
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::rc::Rc;
 
 use kuna_base::address::Address;
@@ -71,6 +71,103 @@ struct ProgramSymbol {
     object_location: Option<ObjectLocation>,
     binding: Option<String>,
     provenance: EntryProvenance,
+}
+
+/// (kuna) The console's function-symbol stream: the records in registration
+/// order, plus an index from each name to the slots holding it.
+///
+/// Registration is "last registration of a name wins". Written as a
+/// `Vec::retain` scan it costs one string compare per live record every time a
+/// symbol is registered — quadratic in the number of registered symbols, and
+/// the analysis tier registers one per discovered function, so an 18 MB PE with
+/// 33k of them spends minutes there. The generated `sub_<hex>` names all share a
+/// length and a prefix, so the compare never short-circuits on the length and a
+/// real byte compare runs at every visit.
+///
+/// Here a registration tombstones that name's indexed slots and appends, both
+/// O(1). Iteration skips the tombstones and so yields exactly the sequence
+/// `retain` + `push` left behind, which is the correctness requirement: every
+/// consumer above reads this stream in order.
+#[derive(Debug, Default)]
+struct SymbolStream {
+    /// Registration order, with a tombstone wherever a record was replaced.
+    records: Vec<Option<ProgramSymbol>>,
+    /// The live slots of each name, ascending. A tombstoned slot is never
+    /// listed: `remove_name` drops the whole entry as it tombstones.
+    by_name: HashMap<String, Vec<usize>>,
+    live: usize,
+}
+
+impl SymbolStream {
+    fn from_loader(records: Vec<ProgramSymbol>) -> Self {
+        let mut stream = Self::default();
+        for record in records {
+            stream.push(record);
+        }
+        stream
+    }
+
+    fn push(&mut self, sym: ProgramSymbol) {
+        self.by_name.entry(sym.name.clone()).or_default().push(self.records.len());
+        self.records.push(Some(sym));
+        self.live += 1;
+    }
+
+    /// Tombstone every record named `name` — the `retain(|s| s.name != name)`
+    /// half of a registration.
+    fn remove_name(&mut self, name: &str) {
+        let Some(stale) = self.by_name.remove(name) else { return };
+        for slot in stale {
+            if self.records[slot].take().is_some() {
+                self.live -= 1;
+            }
+        }
+        self.compact();
+    }
+
+    /// Reclaim the tombstones once they outnumber the live records, so iteration
+    /// stays O(live) however many times a name is re-registered. Rebuilding is
+    /// O(live) and cannot recur until as many records are pushed again, so the
+    /// amortized cost per registration stays constant. Live records keep their
+    /// relative order, which is the order iteration reports.
+    fn compact(&mut self) {
+        if self.records.len() < 64 || self.live * 2 > self.records.len() {
+            return;
+        }
+        let kept: Vec<ProgramSymbol> = self.records.drain(..).flatten().collect();
+        self.by_name.clear();
+        self.live = 0;
+        for record in kept {
+            self.push(record);
+        }
+    }
+
+    fn len(&self) -> usize {
+        self.live
+    }
+
+    /// The first record of `name`, matching the `iter().find()` this replaced —
+    /// the loader can read two records under one name and that picks the earlier.
+    fn lookup(&self, name: &str) -> Option<&ProgramSymbol> {
+        self.slots_of(name).next()
+    }
+
+    /// The first record of `name` sitting at `addr`, if any.
+    fn lookup_at(&self, name: &str, addr: &Address) -> Option<&ProgramSymbol> {
+        self.slots_of(name).find(|record| record.addr == *addr)
+    }
+
+    fn slots_of(&self, name: &str) -> impl Iterator<Item = &ProgramSymbol> {
+        self.by_name
+            .get(name)
+            .into_iter()
+            .flatten()
+            .filter_map(|&slot| self.records[slot].as_ref())
+    }
+
+    fn iter(&self) -> impl Iterator<Item = &ProgramSymbol> {
+        self.records.iter().flatten()
+    }
 }
 
 /// (kuna) One emitted p-code op, whole: the opcode, the output varnode and
@@ -243,7 +340,7 @@ pub struct ConsoleProgram {
     /// The program's function symbols (name → entry address), installed through
     /// the `readLoaderSymbols` hook. Object/XML names are collected at load;
     /// synthetic raw names are collected after options are applied.
-    symbols: Vec<ProgramSymbol>,
+    symbols: SymbolStream,
     /// Raw-image entry addresses awaiting synthetic names. Raw inputs have no
     /// source names, so their names are generated at `read symbols`, after the
     /// CLI has applied options such as `namestyle`.
@@ -479,7 +576,7 @@ impl ConsoleProgram {
         // binary's ORIGINAL name and the one the listing renders. Idempotent, and
         // a no-op for every real name.
         let name = &*kuna_decomp::kuna_symbolnamebound::bound_scope_path(name, "::");
-        self.symbols.iter().find(|s| s.name == name).map(|s| s.addr.clone())
+        self.symbols.lookup(name).map(|s| s.addr.clone())
     }
 
     /// (kuna) Iterate every function symbol kuna knows for the loaded program as
@@ -540,7 +637,7 @@ impl ConsoleProgram {
         // group (rebuilt at the normalized offset, so an ARM twin reports the
         // real, even entry).
         let mut groups: BTreeMap<u64, (Address, Vec<&ProgramSymbol>)> = BTreeMap::new();
-        for s in &self.symbols {
+        for s in self.symbols.iter() {
             // A sentinel (spaceless) address cannot be normalized or rebuilt;
             // such a record is not a real entry, so skip it rather than guess.
             let Some(space) = s.addr.get_space() else { continue };
@@ -1472,12 +1569,8 @@ impl ConsoleProgram {
         // analysis-discovered or hand-mapped name agrees with the scope path the
         // symbol table nests it under.
         let name = &*kuna_decomp::kuna_symbolnamebound::bound_scope_path(name, "::");
-        let prior = self
-            .symbols
-            .iter()
-            .find(|s| s.name == name && s.addr == addr)
-            .map(|s| s.provenance);
-        self.symbols.retain(|s| s.name != name);
+        let prior = self.symbols.lookup_at(name, &addr).map(|s| s.provenance);
+        self.symbols.remove_name(name);
         let object_location = self.object_location_at(addr.get_offset());
         self.symbols.push(ProgramSymbol {
             name: name.to_string(),
@@ -1739,7 +1832,9 @@ impl ConsoleProgram {
                     provenance: EntryProvenance::Mapped,
                 })
                 .collect::<Vec<_>>();
-            self.symbols.extend(symbols);
+            for symbol in symbols {
+                self.symbols.push(symbol);
+            }
             self.read_loader_symbols()?;
         }
         if self.pending_analysis.is_empty() && self.loader_data_objects.is_empty() {
@@ -2321,7 +2416,7 @@ pub fn bootstrap_program(
     let mut prog = ConsoleProgram {
         arch: arch.into_sleigh(),
         registry,
-        symbols,
+        symbols: SymbolStream::from_loader(symbols),
         pending_raw_entries: Vec::new(),
         object_sections: Vec::new(),
         description,
@@ -2574,7 +2669,7 @@ pub fn bootstrap_from_raw(
     let prog = ConsoleProgram {
         arch: raw.into_sleigh(),
         registry,
-        symbols: Vec::new(),
+        symbols: SymbolStream::default(),
         pending_raw_entries,
         object_sections: Vec::new(),
         description,
@@ -2906,7 +3001,7 @@ pub fn bootstrap_from_object_with_isa(
     let mut prog = ConsoleProgram {
         arch: sleigh,
         registry,
-        symbols,
+        symbols: SymbolStream::from_loader(symbols),
         pending_raw_entries: Vec::new(),
         object_sections,
         description,
@@ -3956,5 +4051,129 @@ mod tests {
         ] {
             assert!(!is_vtable_slot_name(not_a_slot), "{not_a_slot} is not a slot name");
         }
+    }
+}
+
+#[cfg(test)]
+mod symbolstream_tests {
+    use std::rc::Rc;
+
+    use kuna_base::address::Address;
+    use kuna_base::space::{spacetype, AddrSpace};
+
+    use super::{EntryProvenance, ProgramSymbol, SymbolStream};
+
+    fn space() -> Rc<AddrSpace> {
+        Rc::new(AddrSpace::new_for_decode(spacetype::IPTR_PROCESSOR))
+    }
+
+    fn sym(sp: &Rc<AddrSpace>, name: &str, off: u64) -> ProgramSymbol {
+        ProgramSymbol {
+            name: name.to_string(),
+            addr: Address::new(Rc::clone(sp), off),
+            object_location: None,
+            binding: None,
+            provenance: EntryProvenance::Mapped,
+        }
+    }
+
+    fn register(stream: &mut SymbolStream, sp: &Rc<AddrSpace>, name: &str, off: u64) {
+        stream.remove_name(name);
+        stream.push(sym(sp, name, off));
+    }
+
+    fn names(stream: &SymbolStream) -> Vec<&str> {
+        stream.iter().map(|r| r.name.as_str()).collect()
+    }
+
+    /// Registering a name drops EVERY earlier record of it and appends the new
+    /// one last — the `retain` + `push` contract the name index replaced.
+    #[test]
+    fn register_replaces_every_prior_record_of_the_name() {
+        let sp = space();
+        let mut stream = SymbolStream::from_loader(vec![
+            sym(&sp, "a", 1),
+            sym(&sp, "dup", 2),
+            sym(&sp, "b", 3),
+            sym(&sp, "dup", 4),
+        ]);
+        assert_eq!(names(&stream), ["a", "dup", "b", "dup"]);
+        assert_eq!(stream.len(), 4);
+
+        register(&mut stream, &sp, "dup", 9);
+        assert_eq!(names(&stream), ["a", "b", "dup"], "both `dup` records go, the new one lands last");
+        assert_eq!(stream.len(), 3);
+        assert_eq!(stream.lookup("dup").unwrap().addr.get_offset(), 9);
+    }
+
+    /// A name the loader read twice resolves to the FIRST record, matching the
+    /// `iter().find()` this replaced.
+    #[test]
+    fn lookup_returns_the_first_record_of_a_duplicated_name() {
+        let sp = space();
+        let stream = SymbolStream::from_loader(vec![sym(&sp, "dup", 1), sym(&sp, "dup", 2)]);
+        assert_eq!(stream.lookup("dup").unwrap().addr.get_offset(), 1);
+        assert!(stream.lookup("absent").is_none());
+    }
+
+    /// The provenance probe reads the record of that name AT that address, not
+    /// merely the first record of the name.
+    #[test]
+    fn lookup_at_selects_by_address_not_just_by_name() {
+        let sp = space();
+        let mut stream = SymbolStream::from_loader(vec![sym(&sp, "dup", 1)]);
+        let mut second = sym(&sp, "dup", 2);
+        second.provenance = EntryProvenance::UndefinedExternal;
+        stream.push(second);
+
+        let at_two = stream.lookup_at("dup", &Address::new(Rc::clone(&sp), 2)).unwrap();
+        assert_eq!(at_two.provenance, EntryProvenance::UndefinedExternal);
+        assert!(stream.lookup_at("dup", &Address::new(Rc::clone(&sp), 3)).is_none());
+        assert!(stream.lookup_at("absent", &Address::new(Rc::clone(&sp), 1)).is_none());
+    }
+
+    /// However many times a name is re-registered, exactly one record stays live,
+    /// and the tombstones neither leak into iteration nor pile up without bound.
+    #[test]
+    fn repeated_registration_keeps_one_live_record() {
+        let sp = space();
+        let mut stream = SymbolStream::default();
+        for off in 1..=500 {
+            register(&mut stream, &sp, "f", off);
+        }
+        register(&mut stream, &sp, "g", 999);
+        assert_eq!(names(&stream), ["f", "g"]);
+        assert_eq!(stream.len(), 2);
+        assert_eq!(stream.lookup("f").unwrap().addr.get_offset(), 500);
+        assert!(stream.records.len() < 128, "tombstones must be reclaimed, not accumulated");
+    }
+
+    /// Compaction renumbers every slot, so the index must survive it. Moving
+    /// `keep0` to the end first makes every other record shift, so a stale slot
+    /// resolves to its NEIGHBOUR rather than harmlessly to itself.
+    #[test]
+    fn compaction_preserves_order_and_the_index() {
+        let sp = space();
+        let mut stream = SymbolStream::default();
+        for i in 0..100u64 {
+            stream.push(sym(&sp, &format!("keep{i}"), i));
+        }
+        register(&mut stream, &sp, "keep0", 1_000);
+        for off in 0..200u64 {
+            register(&mut stream, &sp, "churn", 10_000 + off);
+        }
+
+        let expected: Vec<String> = (1..100u64)
+            .map(|i| format!("keep{i}"))
+            .chain(["keep0".to_string(), "churn".to_string()])
+            .collect();
+        assert_eq!(names(&stream), expected);
+        assert_eq!(stream.len(), 101);
+        for name in &expected {
+            assert_eq!(stream.lookup(name).map(|r| r.name.as_str()), Some(name.as_str()));
+        }
+        assert_eq!(stream.lookup("keep73").unwrap().addr.get_offset(), 73);
+        assert_eq!(stream.lookup("keep0").unwrap().addr.get_offset(), 1_000);
+        assert_eq!(stream.lookup("churn").unwrap().addr.get_offset(), 10_199);
     }
 }

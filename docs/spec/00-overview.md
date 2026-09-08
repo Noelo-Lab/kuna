@@ -81,6 +81,17 @@ the order is load-bearing:
    is therefore the normal state, and §0.2 defines how the whole-binary surfaces
    collapse it.
 
+   That stream (`decompiler/crates/kuna-console/src/engine.rs (SymbolStream)`) is
+   an insertion-ordered record list plus a name index, not a bare vector.
+   Retaining by name as a rescan costs a full pass with a string compare per live
+   record on every registration, and the analysis tier registers one symbol per
+   discovered function, so the load is quadratic in the number of functions — and
+   the generated `sub_<hex>` names all share a length and a prefix, so the length
+   pre-filter never fires and a real byte compare runs at every visit. Registering
+   a name instead tombstones that name's indexed records and appends the new one;
+   iteration skips the tombstones and reports exactly the sequence a
+   retain-and-append would, so the indexing is invisible to every consumer above.
+
 Two pass families cannot run at load at all and are deferred *into* the commit:
 the Listing walk and its consumers (the call-graph no-return fixpoint, §1.6–§1.7;
 `decompiler/crates/kuna-analysis/src/passes.rs (run_listing_consumers)`) and the
