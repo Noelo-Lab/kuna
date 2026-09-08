@@ -27,6 +27,7 @@ mod disassemble;
 mod fid;
 mod assertdecl;
 mod funcdecl;
+mod jobs;
 mod jsonfmt;
 mod litpool;
 mod optname;

@@ -59,6 +59,20 @@ impl FuncDecl {
         self.end.map(|end| end - self.start).unwrap_or(0)
     }
 
+    /// The `--define-function` spelling of this declaration — what a `--jobs`
+    /// worker is handed so its load applies the same caller-declared boundaries
+    /// the parent's did.
+    pub(crate) fn flag_value(&self) -> String {
+        let mut out = format!("{:#x}", self.start);
+        if let Some(end) = self.end {
+            let _ = write!(out, "-{end:#x}");
+        }
+        if let Some(name) = &self.name {
+            let _ = write!(out, "={name}");
+        }
+        out
+    }
+
     /// The `function bounds` console line this declaration lowers to.
     pub(crate) fn console_line(&self) -> String {
         let mut line = format!("function bounds {:#x}", self.start);

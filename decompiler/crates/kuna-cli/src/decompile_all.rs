@@ -4,6 +4,7 @@
 //! ```text
 //!   kuna decompile-all <binary> [--json] [--functions a,b,..] [--addr 0xVMA].. \
 //!                       [--no-vars] [--max-fn-seconds N] [--mode MODE] \
+//!                       [--jobs N|auto] [--jobs-chunk N] [--jobs-full-load] \
 //!                       [--option N V].. [TRIAGE] \
 //!                       [--isa auto|arm|thumb] [--slice ARCH] [--target T] [--sleighpath D]
 //!   kuna functions <binary> [--json] [--summary] [TRIAGE] [--mode MODE] \
@@ -86,6 +87,7 @@ use std::fmt::Write as _;
 // The call-graph edges `--reachable-from` walks are `kuna xrefs`' own edges.
 use kuna_analysis::listing::xrefs::{Xref, XrefIndex, XrefKind};
 use kuna_analysis::loader::macho_fat::SlicePref;
+use kuna_base::address::Address;
 use kuna_console::engine::{
     bootstrap_from_object_with_isa, bootstrap_from_raw, ArmIsa, ConsoleProgram, EntryLookupError,
     EntrySelector, FunctionEntry, ObjectLocation,
@@ -98,11 +100,12 @@ use kuna_console::project::{
 // `File::architecture()` (the ARM-discovery default, decbench) plus the
 // section/segment walks the zero-discovery diagnosis reads.
 use object::{Object, ObjectSection, ObjectSegment};
-use kuna_decomp::decompile_drive::{LineMapping, VarInfo};
+use kuna_decomp::decompile_drive::{print_c_types, LineMapping, VarInfo};
 use kuna_decomp::options::{OptionDatabase, KUNA_OPTION_NAMES, RELOC_OBJECTS_ENV};
 
 use regex::Regex;
 
+use crate::jobs;
 use crate::jsonfmt::{dumps_indent2, Json};
 use crate::paths;
 
@@ -149,9 +152,70 @@ pub(crate) struct Args {
     pub(crate) raw_image: bool,
     /// Address assigned to raw file offset zero.
     pub(crate) base: Option<u64>,
+    /// The concrete mode `auto` resolved to — passed verbatim to a `--jobs`
+    /// worker so a shard cannot re-resolve a different preset.
+    pub(crate) mode: &'static str,
+    /// `--jobs N|auto`: worker processes for the per-function loop (1 = the
+    /// serial in-process path, and every gate's path).
+    pub(crate) jobs: usize,
+    /// `--jobs auto` rather than an explicit count: the pool may then lower the
+    /// number to what the machine's free memory holds.
+    pub(crate) jobs_auto: bool,
+    /// `--jobs-chunk N`: functions handed to one worker invocation.
+    pub(crate) jobs_chunk: Option<usize>,
+    /// `--jobs-full-load`: give workers the parent's exact (discovery-running)
+    /// load instead of the cheap `--addr`-style one plus the inventory hand-off.
+    pub(crate) jobs_full_load: bool,
+    /// Internal: this process IS a `--jobs` worker serving the pool scratch
+    /// directory this names — chunk specs in, framed results out, and the
+    /// parent's function inventory replayed from it so a discovery-free worker
+    /// load still resolves every call the serial run did.
+    pub(crate) jobs_worker: Option<String>,
+    /// Internal: what the worker's caller needs beyond the C — prototypes
+    /// (`decompile-project` / `decompile-graph`), markup provenance
+    /// (`decompile-all --json`), and the rendered type definitions the `.h`
+    /// block is built from.
+    pub(crate) jobs_proto: bool,
+    pub(crate) jobs_provenance: bool,
+    pub(crate) jobs_types: bool,
 }
 
 impl Args {
+    /// A serial run in no worker role: what every surface but the three
+    /// whole-binary ones takes, and what `--jobs 1` (the default) is.  It exists
+    /// so a loader surface that never decompiles (`disassemble`, `strings`,
+    /// `xrefs`) can fill the `--jobs` plane in with one `..Args::serial()` rather
+    /// than restating fields it has no opinion about.
+    pub(crate) fn serial() -> Self {
+        Self {
+            binary: String::new(),
+            json: false,
+            names: None,
+            addrs: Vec::new(),
+            no_vars: false,
+            max_fn_seconds: 0,
+            options: Vec::new(),
+            func_decls: Vec::new(),
+            assertions: Vec::new(),
+            assert_strict: false,
+            slice: None,
+            target: None,
+            sleighpath: None,
+            isa: None,
+            raw_image: false,
+            base: None,
+            mode: "auto",
+            jobs: 1,
+            jobs_auto: false,
+            jobs_chunk: None,
+            jobs_full_load: false,
+            jobs_worker: None,
+            jobs_proto: false,
+            jobs_provenance: false,
+            jobs_types: false,
+        }
+    }
+
     /// The Mach-O fat-slice preference this run's `--slice` / `--target` names.
     pub(crate) fn slice_pref(&self) -> SlicePref {
         kuna_analysis::loader::macho_fat::slice_pref(self.slice.as_deref(), self.target.as_deref())
@@ -759,6 +823,17 @@ pub fn run(argv: &[String]) -> i32 {
             return 2;
         }
     };
+    // A `--jobs` worker writes framed results into the pool's scratch directory
+    // and prints only its chunk acknowledgements: the parent renders the document.
+    if args.jobs_worker.is_some() {
+        return match run_jobs_worker(&args) {
+            Ok(()) => 0,
+            Err(e) => {
+                eprintln!("error: {e}");
+                1
+            }
+        };
+    }
     // `--summary` is an inventory question, so it never enters the decompile
     // loop: the whole point of asking it is to find out what is worth decompiling.
     if filters.summary {
@@ -804,6 +879,180 @@ pub fn run(argv: &[String]) -> i32 {
             1
         }
     }
+}
+
+/// The `--jobs` worker body: load exactly what the parent told us to load, then
+/// serve chunk after chunk off the assignment pipe until the parent says `quit`
+/// or goes away.  Loading once and serving many chunks is the point — the load
+/// is the expensive half of a worker.
+///
+/// Within a chunk, one framed record is flushed per function as it lands, so a
+/// worker killed mid-chunk still delivers its prefix.  Targets come from the
+/// chunk spec rather than [`resolve_targets`], so the name, aliases, extent and
+/// object coordinates a function is decompiled under are the parent's, bit for
+/// bit.
+fn run_jobs_worker(args: &Args) -> Result<(), String> {
+    let scratch = args.jobs_worker.as_deref().expect("worker mode");
+    let assignments = jobs::listen_for_assignments(scratch);
+
+    let mut prog = load_program(args, DriverDefaults::Decompile)?;
+    let inventory = std::path::Path::new(scratch).join(jobs::INVENTORY_FILE);
+    if !args.jobs_full_load && inventory.is_file() {
+        seed_worker_inventory(&mut prog, &inventory.to_string_lossy())?;
+    }
+    if args.max_fn_seconds > 0 {
+        prog.arch_mut().kuna_fn_budget =
+            Some(std::time::Duration::from_secs(args.max_fn_seconds));
+    }
+
+    let dir = std::path::Path::new(scratch);
+    while let Ok(assignment) = assignments.recv() {
+        // The type block is rendered ONCE, when the parent retires this worker:
+        // the factory accumulates over every chunk served, so only its final
+        // state speaks for all of them.
+        let idx = match assignment {
+            jobs::Assignment::Chunk(idx) => idx,
+            jobs::Assignment::Quit(token) => {
+                if args.jobs_types {
+                    jobs::write_type_block(scratch, token, &print_c_types(prog.arch_mut()))?;
+                }
+                break;
+            }
+        };
+        let targets = jobs::read_spec(&dir.join(jobs::spec_name(idx)).to_string_lossy())?;
+        let entries = rehydrate_entries(&prog, targets)?;
+        {
+            let mut out =
+                jobs::ResultWriter::create(&dir.join(jobs::result_name(idx)).to_string_lossy())?;
+            for entry in entries {
+                let produced = decompile_targets(
+                    &mut prog,
+                    vec![entry],
+                    args.no_vars,
+                    args.jobs_proto,
+                    args.jobs_provenance,
+                );
+                for r in &produced {
+                    out.push(r)?;
+                }
+            }
+        }
+        jobs::ack_chunk(idx);
+    }
+    Ok(())
+}
+
+/// Rebuild the parent's [`FunctionEntry`] list from a chunk spec.
+fn rehydrate_entries(
+    prog: &ConsoleProgram,
+    targets: Vec<jobs::TargetSpec>,
+) -> Result<Vec<FunctionEntry>, String> {
+    let manage = prog.arch().manage();
+    targets
+        .into_iter()
+        .map(|t| {
+            let space = manage
+                .get_space_by_name(&t.space)
+                .or_else(|| manage.get_default_code_space())
+                .ok_or("no default code space")?;
+            Ok(FunctionEntry {
+                name: t.name,
+                addr: Address::new(std::rc::Rc::clone(space), t.addr),
+                aliases: t.aliases,
+                size: t.size,
+                object_location: t.object_location,
+                provenance: t.provenance,
+                binding: t.binding,
+            })
+        })
+        .collect()
+}
+
+/// Replay the parent's discovered function inventory into a worker that ran the
+/// cheap, discovery-free load, through the very seam the loader's own symbols
+/// arrive on — so `FlowInfo::queryCall` resolves exactly what the serial run
+/// resolved, which is what decides whether a direct call to another function
+/// renders as its name or as a raw address constant.
+fn seed_worker_inventory(prog: &mut ConsoleProgram, path: &str) -> Result<(), String> {
+    let code_space = prog
+        .arch()
+        .manage()
+        .get_default_code_space()
+        .map(std::rc::Rc::clone)
+        .ok_or("no default code space")?;
+    let manage = prog.arch().manage();
+    let entries: Vec<(String, Address)> = jobs::read_spec(path)?
+        .into_iter()
+        .map(|t| {
+            let space = manage
+                .get_space_by_name(&t.space)
+                .cloned()
+                .unwrap_or_else(|| std::rc::Rc::clone(&code_space));
+            (t.name, Address::new(space, t.addr))
+        })
+        .collect();
+    prog.seed_function_inventory(&entries)
+        .map(|_| ())
+        .map_err(|e| format!("seeding the worker function inventory failed: {}", e.explain()))
+}
+
+/// The parent side of `--jobs N`: flatten the resolved targets (an `Address`
+/// holds an `Rc`, so it cannot cross a thread) and run them through the
+/// subprocess pool, which returns one result per target in target order.
+///
+/// `load_seconds` is how long the caller's own `load_program` took; the pool's
+/// stall watchdog needs it to know when a worker could plausibly have finished
+/// loading.
+pub(crate) fn decompile_targets_pooled(
+    args: &Args,
+    targets: &[FunctionEntry],
+    inventory: &[FunctionEntry],
+    want_proto: bool,
+    want_provenance: bool,
+    want_types: bool,
+    load_seconds: f64,
+) -> Result<jobs::PoolOutput, String> {
+    let flatten = |entries: &[FunctionEntry]| -> Vec<jobs::TargetSpec> {
+        entries
+            .iter()
+            .map(|e| jobs::TargetSpec {
+                addr: e.addr.get_offset(),
+                space: e.addr.get_space().map(|s| s.get_name().to_string()).unwrap_or_default(),
+                name: e.name.clone(),
+                aliases: e.aliases.clone(),
+                size: e.size,
+                object_location: e.object_location.clone(),
+                provenance: e.provenance,
+                binding: e.binding.clone(),
+            })
+            .collect()
+    };
+    let specs = flatten(targets);
+    let inventory = flatten(inventory);
+    jobs::run_pool(
+        &jobs::PoolConfig {
+            jobs: args.jobs,
+            jobs_auto: args.jobs_auto,
+            chunk: args.jobs_chunk,
+            binary: &args.binary,
+            mode: args.mode,
+            options: &args.options,
+            func_decls: args.func_decls.iter().map(crate::funcdecl::FuncDecl::flag_value).collect(),
+            no_vars: args.no_vars,
+            want_proto,
+            want_provenance,
+            want_types,
+            max_fn_seconds: args.max_fn_seconds,
+            full_load: args.jobs_full_load,
+            load_seconds,
+            isa: args.isa.map(ArmIsa::as_str),
+            slice: args.slice.as_deref(),
+            target: args.target.as_deref(),
+            sleighpath: args.sleighpath.as_deref(),
+        },
+        &specs,
+        &inventory,
+    )
 }
 
 /// Emit `text`, then report a discovery failure (stdout before stderr, as
@@ -979,7 +1228,9 @@ struct AllRun {
 /// The filters run BEFORE the decompile loop on purpose: narrowing the output
 /// would still pay for 1,150 decompiles.
 fn decompile_all(args: &Args, filters: &Filters) -> Result<AllRun, String> {
+    let load_started = std::time::Instant::now();
     let mut prog = load_program(args, DriverDefaults::Decompile)?;
+    let load_seconds = load_started.elapsed().as_secs_f64();
     let targets = resolve_targets(&prog, args)?;
     let discovered = targets.len();
     let targets = if filters.narrows() {
@@ -987,6 +1238,25 @@ fn decompile_all(args: &Args, filters: &Filters) -> Result<AllRun, String> {
     } else {
         targets
     };
+    // `--jobs N`: hand the targets to the worker pool and release the parent's
+    // program (2.0 GB on an 18 MB PE) before the workers start — nothing below
+    // needs it on this surface, and it is the parent's RSS that decides how many
+    // workers the machine can hold.
+    if args.jobs > 1 {
+        let inventory = prog.function_entries_canonical();
+        let assertions = prog.assertion_outcomes();
+        drop(prog);
+        let pooled = decompile_targets_pooled(
+            args,
+            &targets,
+            &inventory,
+            /* want_proto= */ false,
+            /* want_provenance= */ args.json,
+            /* want_types= */ false,
+            load_seconds,
+        )?;
+        return Ok(AllRun { funcs: pooled.results, discovered, assertions });
+    }
     let funcs = decompile_entries(&mut prog, args, targets);
     Ok(AllRun { funcs, discovered, assertions: prog.assertion_outcomes() })
 }
@@ -2208,6 +2478,17 @@ pub(crate) fn parse_args_with_filters(
     let mut base: Option<u64> = None;
     let mut saw_entry = false;
     let mut saw_language = false;
+    let mut jobs: usize = 1;
+    let mut jobs_auto = false;
+    let mut jobs_chunk: Option<usize> = None;
+    let mut jobs_full_load = false;
+    let mut jobs_worker: Option<String> = None;
+    let mut jobs_proto = false;
+    let mut jobs_provenance = false;
+    let mut jobs_types = false;
+    // The three whole-binary surfaces; `functions` enumerates and never
+    // decompiles, so there is nothing for a pool to do there.
+    let batch = matches!(cmd, "decompile-all" | "decompile-project" | "decompile-graph");
 
     let mut i = 0;
     while i < argv.len() {
@@ -2234,6 +2515,27 @@ pub(crate) fn parse_args_with_filters(
                 assertions.extend(crate::assertdecl::parse_flag(&v)?);
             }
             "--assert-strict" => assert_strict = true,
+            "--jobs" if batch => {
+                let v = take(argv, &mut i, "--jobs")?;
+                (jobs, jobs_auto) = jobs::parse_jobs(&v)?;
+            }
+            "--jobs-chunk" if batch => {
+                let v = take(argv, &mut i, "--jobs-chunk")?;
+                jobs_chunk = Some(
+                    v.trim()
+                        .parse::<usize>()
+                        .ok()
+                        .filter(|&n| n >= 1)
+                        .ok_or_else(|| format!("invalid --jobs-chunk value {v:?}"))?,
+                );
+            }
+            "--jobs-full-load" if batch => jobs_full_load = true,
+            "--jobs-worker" if cmd == "decompile-all" => {
+                jobs_worker = Some(take(argv, &mut i, "--jobs-worker")?);
+            }
+            "--jobs-proto" if cmd == "decompile-all" => jobs_proto = true,
+            "--jobs-provenance" if cmd == "decompile-all" => jobs_provenance = true,
+            "--jobs-types" if cmd == "decompile-all" => jobs_types = true,
             "--max-fn-seconds"
                 if cmd == "decompile-all"
                     || cmd == "decompile-project"
@@ -2360,7 +2662,11 @@ pub(crate) fn parse_args_with_filters(
     // `decompile-graph` are excluded -- a `.c`/`.h`/`.asm` export and a `codeC`
     // field are C-shaped by construction and refuse any other language, so
     // auto-selecting one there would turn a working export into an error.
+    // A `--jobs` worker takes the parent's resolved options verbatim, including
+    // whatever language the parent settled on. Re-running the auto policy here
+    // would let a `decompile-project` shard emit Rust into a C-only `.h`.
     if !saw_language
+        && jobs_worker.is_none()
         && cmd != "decompile-project"
         && cmd != "decompile-graph"
         && !options.iter().any(|(n, _)| n == "setlanguage")
@@ -2383,13 +2689,26 @@ pub(crate) fn parse_args_with_filters(
     if names.is_none() && !addrs.is_empty() && !explicit_fast_funcdisc {
         options.push(("fast_funcdisc".into(), "off".into()));
     }
-    let whole_binary = (cmd == "decompile-all"
-        || cmd == "decompile-project"
-        || cmd == "decompile-graph")
-        && names.is_none()
-        && addrs.is_empty();
+    let whole_binary = batch && names.is_none() && addrs.is_empty();
     let max_fn_seconds = max_fn_seconds
         .unwrap_or_else(|| default_fn_budget_seconds(concrete_mode, whole_binary));
+    // The pool re-execs this binary, so a policy it cannot express is one the
+    // shards would silently drop rather than honour.
+    if jobs > 1 {
+        if raw_image {
+            return Err(
+                "--jobs does not apply to --raw-image input (the entry seeds are the load)"
+                    .into(),
+            );
+        }
+        if !assertions.is_empty() {
+            return Err(
+                "--assert and --jobs are exclusive: assertion outcomes are per-load state the \
+                 worker pool cannot merge. Re-run with --jobs 1."
+                    .into(),
+            );
+        }
+    }
 
     if let (Some(min), Some(max)) = (filters.min_size, filters.max_size) {
         if min > max {
@@ -2415,6 +2734,15 @@ pub(crate) fn parse_args_with_filters(
             isa,
             raw_image,
             base,
+            mode: concrete_mode,
+            jobs,
+            jobs_auto,
+            jobs_chunk,
+            jobs_full_load,
+            jobs_worker,
+            jobs_proto,
+            jobs_provenance,
+            jobs_types,
         },
         filters,
     ))
@@ -2454,6 +2782,7 @@ fn usage_decompile_all() {
     eprintln!(
         "usage: kuna decompile-all <binary> [--json] [--functions a,b,..] [--addr 0xVMA].. \\\n\
          \x20                   [--no-vars] [--max-fn-seconds N] [--mode auto|reliable|aggressive|fast] \\\n\
+         \x20                   [--jobs N|auto] [--jobs-chunk N] [--jobs-full-load] \\\n\
          \x20                   [--filter REGEX] [--min-size N] [--max-size N] \\\n\
          \x20                   [--reachable-from <name|0xaddr>] [--sort addr|size|name] [--limit N] \\\n\
          \x20                   [--summary] [--define-function S[-E][=N]|@FILE].. \\\n\
@@ -2466,6 +2795,14 @@ fn usage_decompile_all() {
          --max-fn-seconds N caps ONE function's decompile at N seconds (default 10\n\
          for unfiltered fast runs, 120 otherwise; 0 disables); a function over\n\
          budget becomes its own `error` record and the batch continues.\n\
+         --jobs N spreads the per-function loop over N worker processes (auto =\n\
+         this machine's parallelism, capped at 16; 1, the default, is the serial\n\
+         in-process path). Output is merged in target order, so it is identical to\n\
+         --jobs 1; progress goes to stderr. Every worker loads the binary itself,\n\
+         so peak memory is roughly N times one worker's RSS. --jobs-chunk N sets\n\
+         the functions per worker invocation (bigger = less load overhead, more\n\
+         peak RSS); --jobs-full-load makes each worker re-run whole-binary\n\
+         function discovery instead of taking the parent's inventory.\n\
          Omitted --mode uses auto: aggressive below 500 KiB, reliable below\n\
          2 MiB, and fast at 2 MiB or larger. Explicit --option values win.\n\
          An unfiltered run that discovers no function at all exits 1 with the\n\

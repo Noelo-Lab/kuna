@@ -506,3 +506,70 @@ fn a_binary_with_a_string_over_the_load_window_still_exports() {
     assert!(rows[0].contains("KEYDEF is F[.C]"), "first row: {:?}", rows[0]);
     assert!(rows[37].starts_with("  00016850: 20 73 75 66 66 69 78 65 73"), "last row: {:?}", rows[37]);
 }
+
+/// Every artifact, not just the `.c`.  The `.h` is the one that could plausibly
+/// move: its type block renders the type factory AFTER the loop, and a decompile
+/// can intern a type into it, so a sharded run has one factory per worker where a
+/// serial run has one.  The block therefore travels back from the workers, and
+/// this is what holds it to the serial rendering.
+#[test]
+fn jobs_project_artifacts_are_byte_identical_to_serial() {
+    let bin = fixture("dwarfstructs_x86_64");
+    let serial = out_dir("jobs_serial");
+    let (_, stderr, ok) = run_kuna(&[
+        "decompile-project",
+        &bin,
+        "-o",
+        serial.to_str().unwrap(),
+        "--max-fn-seconds",
+        "0",
+        "--sleighpath",
+        &specs(),
+    ]);
+    if !ok {
+        if is_specs_skip(&stderr) {
+            eprintln!("jobs project: skipping (no `.sla`; run `make specs`): {stderr}");
+            return;
+        }
+        panic!("serial project export failed: {stderr}");
+    }
+    let names = [
+        "dwarfstructs_x86_64.c",
+        "dwarfstructs_x86_64.h",
+        "dwarfstructs_x86_64.asm",
+        "README.md",
+    ];
+    let want: Vec<Vec<u8>> =
+        names.iter().map(|n| std::fs::read(serial.join(n)).expect(n)).collect();
+    // The .h really does carry recovered aggregates, or this proves nothing.
+    let header = String::from_utf8_lossy(&want[1]).into_owned();
+    assert!(
+        header.contains("struct Nest {"),
+        "the fixture stopped exercising the type block:\n{header}"
+    );
+
+    for (jobs, chunk) in [("2", "1"), ("4", "3"), ("8", "100")] {
+        let dir = out_dir(&format!("jobs_{jobs}_{chunk}"));
+        let (_, stderr, ok) = run_kuna(&[
+            "decompile-project",
+            &bin,
+            "-o",
+            dir.to_str().unwrap(),
+            "--max-fn-seconds",
+            "0",
+            "--jobs",
+            jobs,
+            "--jobs-chunk",
+            chunk,
+            "--sleighpath",
+            &specs(),
+        ]);
+        assert!(ok, "--jobs {jobs} project export failed: {stderr}");
+        for (name, want) in names.iter().zip(&want) {
+            let got = std::fs::read(dir.join(name)).expect(name);
+            assert!(&got == want, "--jobs {jobs} (chunk {chunk}) moved {name}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+    let _ = std::fs::remove_dir_all(&serial);
+}

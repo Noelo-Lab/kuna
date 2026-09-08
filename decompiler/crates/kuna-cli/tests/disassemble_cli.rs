@@ -50,6 +50,9 @@ mod optname;
 #[path = "../src/decompile.rs"]
 mod decompile;
 #[allow(dead_code)]
+#[path = "../src/jobs.rs"]
+mod jobs;
+#[allow(dead_code)]
 #[path = "../src/decompile_all.rs"]
 mod decompile_all;
 #[allow(dead_code)]

@@ -6,6 +6,7 @@
 //!   kuna decompile-graph <binary> [-o|--output FILE] [--label TEXT]
 //!                        [--functions a,b,..] [--addr 0xVMA].. [--max-fn-seconds N]
 //!                        [--mode auto|reliable|aggressive|fast]
+//!                        [--jobs N|auto] [--jobs-chunk N] [--jobs-full-load]
 //!                        [--define-function S[-E][=N]|@FILE].. [--option N V]..
 //!                        [--isa auto|arm|thumb] [--slice ARCH] [--target T] [--sleighpath D]
 //! ```
@@ -37,7 +38,8 @@ use kuna_console::project::{decompile_targets, FuncResult};
 use object::{Object, ObjectSegment};
 
 use crate::decompile_all::{
-    load_program, parse_args, resolve_targets, Args, CallGraph, DriverDefaults,
+    decompile_targets_pooled, load_program, parse_args, resolve_targets, Args, CallGraph,
+    DriverDefaults,
 };
 use crate::jsonfmt::{dumps_indent2, Json};
 
@@ -126,7 +128,9 @@ pub fn run(argv: &[String]) -> i32 {
 fn export(args: &Args, label: &str) -> Result<String, String> {
     let binary_path = std::fs::canonicalize(&args.binary)
         .map_err(|_| format!("binary not found: {}", args.binary))?;
+    let load_started = std::time::Instant::now();
     let mut prog = load_program(args, DriverDefaults::Decompile)?;
+    let load_seconds = load_started.elapsed().as_secs_f64();
     if prog.arch().print().get_name() != "c-language" {
         return Err(format!(
             "the graph document is C-only (got {}); use `kuna decompile` or \
@@ -156,13 +160,29 @@ fn export(args: &Args, label: &str) -> Result<String, String> {
         }
         selected
     });
-    let results = decompile_targets(
-        &mut prog,
-        targets,
-        /* no_vars= */ false,
-        /* want_proto= */ true,
-        /* want_provenance= */ false,
-    );
+    // `--jobs N` fans the bodies out over worker processes; the parent keeps its
+    // program, because every other field of the document — the classifier, the
+    // call graph, the listing — is a whole-program question only it can answer.
+    let results = if args.jobs > 1 {
+        decompile_targets_pooled(
+            args,
+            &targets,
+            &entries,
+            /* want_proto= */ true,
+            /* want_provenance= */ false,
+            /* want_types= */ false,
+            load_seconds,
+        )?
+        .results
+    } else {
+        decompile_targets(
+            &mut prog,
+            targets,
+            /* no_vars= */ false,
+            /* want_proto= */ true,
+            /* want_provenance= */ false,
+        )
+    };
     for result in &results {
         if let Some(error) = &result.error {
             eprintln!(
@@ -424,6 +444,7 @@ fn usage() {
         "usage: kuna decompile-graph <binary> [-o|--output FILE] [--label TEXT] \\\n\
          \x20                   [--functions a,b,..] [--addr 0xVMA].. [--max-fn-seconds N] \\\n\
          \x20                   [--mode auto|reliable|aggressive|fast] \\\n\
+         \x20                   [--jobs N|auto] [--jobs-chunk N] [--jobs-full-load] \\\n\
          \x20                   [--define-function S[-E][=N]|@FILE].. \\\n\
          \x20                   [--option N V].. [--isa auto|arm|thumb] [--slice ARCH] [--target T] [--sleighpath D]\n\
          \n\
@@ -437,6 +458,10 @@ fn usage() {
          Every function is a node; --functions/--addr narrow which of them are\n\
          decompiled, not which appear.  Unfiltered fast runs default to 10 seconds\n\
          per function, other runs to 120; a function over budget becomes its own\n\
-         `error` record and the run still exits 0."
+         `error` record and the run still exits 0.\n\
+         --jobs N spreads the per-function decompile over N worker processes\n\
+         (auto = this machine's parallelism, capped at 16; 1, the default, is\n\
+         serial). The document is identical to --jobs 1, and peak memory is\n\
+         roughly N times one worker's RSS."
     );
 }

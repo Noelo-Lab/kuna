@@ -1529,6 +1529,59 @@ impl ConsoleProgram {
         Some(db.symbol(sid).get_name().to_string())
     }
 
+    /// Replay a function inventory another process derived into this one, and
+    /// install it through the loader-symbol seam ([`Self::read_loader_symbols`]).
+    /// Returns how many entries were new here.
+    ///
+    /// The `--jobs` worker hand-off (`kuna-cli/src/jobs.rs`): a worker skips
+    /// whole-binary function discovery, which is most of its load, but
+    /// `FlowInfo::queryCall` reads discovery's PRODUCT, so without the inventory a
+    /// call to an entry the worker never discovered renders as a raw constant
+    /// instead of the callee's name.
+    ///
+    /// Strictly additive, which is the whole contract: an address this load
+    /// already resolves is left alone, and so is a name it already carries. A
+    /// name is installed into the scope its `::` path names, so a second symbol
+    /// for one address in a different scope changes which one the across-scopes
+    /// display lookup answers with — replacing anything here is how the seeding
+    /// buries a name the worker had derived correctly. The taken-name set is
+    /// built once rather than probed per entry, so seeding a 33,000-function
+    /// inventory is linear.
+    pub fn seed_function_inventory(
+        &mut self,
+        entries: &[(String, Address)],
+    ) -> KunaResult<usize> {
+        let taken: std::collections::HashSet<String> =
+            self.symbols.iter().map(|s| s.name.clone()).collect();
+        let mut seeded = 0usize;
+        for (name, addr) in entries {
+            let name = &*kuna_decomp::kuna_symbolnamebound::bound_scope_path(name, "::");
+            if taken.contains(name) {
+                continue;
+            }
+            if self.arch().symboltab.find_function_across_scopes(addr).is_some() {
+                continue;
+            }
+            let object_location = self.object_location_at(addr.get_offset());
+            self.symbols.push(ProgramSymbol {
+                name: name.to_string(),
+                addr: addr.clone(),
+                provenance: if object_location.is_some() {
+                    EntryProvenance::DefinedObject
+                } else {
+                    EntryProvenance::Mapped
+                },
+                object_location,
+                binding: None,
+            });
+            seeded += 1;
+        }
+        if seeded > 0 {
+            self.read_loader_symbols()?;
+        }
+        Ok(seeded)
+    }
+
     /// Read the binaryimage's loader symbols into the symbol table as
     /// FunctionSymbols (C++ `Architecture::readLoaderSymbols`, `architecture.cc:347`,
     /// called by `testfunction.cc:160` / `consolemain.cc:104` after load).

@@ -1768,3 +1768,235 @@ fn fast_discovery_finds_the_pointer_only_target() {
         "0x13ae must come from the fast walk alone:\n{stdout}"
     );
 }
+
+// --- `--jobs N`: the worker pool ---------------------------------------------
+
+/// The pool's whole contract: the document must not depend on how many processes
+/// produced it, or on how the work was cut up between them.  Every job count and
+/// chunk size here has to agree with the serial run byte for byte — dispatch
+/// order is longest-first, which is deliberately not output order, so a
+/// positional merge is the only thing that can make this hold.
+#[test]
+fn jobs_output_is_byte_identical_to_serial() {
+    let bin = fauxware();
+    let sp = specs();
+    let (want, stderr, ok) =
+        run_kuna(&["decompile-all", &bin, "--json", "--max-fn-seconds", "0", "--sleighpath", &sp]);
+    if !ok {
+        if is_specs_skip(&stderr) {
+            eprintln!("jobs: skipping (no `.sla`; run `make specs`): {stderr}");
+            return;
+        }
+        panic!("kuna decompile-all failed: {stderr}");
+    }
+    assert!(want.contains("\"name\": \"main\""), "the serial run decompiled nothing:\n{want}");
+
+    for (jobs, chunk) in [("2", None), ("3", Some("1")), ("4", Some("7")), ("8", Some("1000"))] {
+        let mut args = vec![
+            "decompile-all",
+            &bin,
+            "--json",
+            "--max-fn-seconds",
+            "0",
+            "--sleighpath",
+            &sp,
+            "--jobs",
+            jobs,
+        ];
+        if let Some(chunk) = chunk {
+            args.extend_from_slice(&["--jobs-chunk", chunk]);
+        }
+        let (got, stderr, ok) = run_kuna(&args);
+        assert!(ok, "kuna decompile-all --jobs {jobs} failed: {stderr}");
+        assert_eq!(got, want, "--jobs {jobs} (chunk {chunk:?}) moved the document");
+    }
+}
+
+/// `--jobs-full-load` gives every worker the parent's own load instead of the
+/// inventory hand-off.  It exists as the paranoid option, so it has to agree with
+/// the hand-off, not merely with itself.
+#[test]
+fn jobs_full_load_agrees_with_the_inventory_handoff() {
+    let bin = fauxware();
+    let sp = specs();
+    let base = [
+        "decompile-all",
+        bin.as_str(),
+        "--json",
+        "--max-fn-seconds",
+        "0",
+        "--sleighpath",
+        sp.as_str(),
+    ];
+    let (want, stderr, ok) = run_kuna(&base);
+    if !ok {
+        if is_specs_skip(&stderr) {
+            eprintln!("jobs full-load: skipping (no `.sla`; run `make specs`): {stderr}");
+            return;
+        }
+        panic!("kuna decompile-all failed: {stderr}");
+    }
+    let mut args = base.to_vec();
+    args.extend_from_slice(&["--jobs", "3", "--jobs-full-load"]);
+    let (got, stderr, ok) = run_kuna(&args);
+    assert!(ok, "kuna decompile-all --jobs-full-load failed: {stderr}");
+    assert_eq!(got, want, "--jobs-full-load moved the document");
+}
+
+/// A pool cannot honour a policy it cannot express, so the two it cannot are
+/// refused up front rather than silently dropped in the shards.
+#[test]
+fn jobs_refuses_what_a_pool_cannot_carry() {
+    let bin = fauxware();
+    let (_, stderr, ok) = run_kuna(&[
+        "decompile-all",
+        &bin,
+        "--json",
+        "--jobs",
+        "4",
+        "--assert",
+        "name v1 flag",
+        "--sleighpath",
+        &specs(),
+    ]);
+    assert!(!ok, "--assert with --jobs must be refused");
+    assert!(stderr.contains("--assert and --jobs"), "the refusal must say why:\n{stderr}");
+
+    let (_, stderr, ok) =
+        run_kuna(&["decompile-all", &bin, "--json", "--jobs", "0", "--sleighpath", &specs()]);
+    assert!(!ok, "--jobs 0 must be refused");
+    assert!(stderr.contains("--jobs"), "the refusal must name the flag:\n{stderr}");
+}
+
+/// The pool's scratch directory carries the whole program's symbol inventory and
+/// every function's decompiled C, so it must not outlive the run.  Its name
+/// carries the parent's pid, which is what makes this checkable while sibling
+/// tests are running pools of their own.
+#[test]
+fn jobs_leaves_no_scratch_directory_behind() {
+    let bin = fauxware();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .env_remove("KUNA_DECOMP_DBG")
+        .env_remove("KUNA_DECOMP_TEST")
+        .env_remove("KUNA_SLACOMP")
+        .args([
+            "decompile-all",
+            &bin,
+            "--json",
+            "--max-fn-seconds",
+            "0",
+            "--jobs",
+            "4",
+            "--sleighpath",
+            &specs(),
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("failed to spawn the kuna binary");
+    let pid = child.id();
+    let status = child.wait().expect("wait on the kuna binary");
+    if !status.success() {
+        eprintln!("jobs scratch: skipping (the run failed; likely no `.sla`)");
+        return;
+    }
+    let mine = format!("kuna-jobs-{pid}-");
+    let left: Vec<String> = std::fs::read_dir(std::env::temp_dir())
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.starts_with(&mine))
+        .collect();
+    assert!(left.is_empty(), "a finished --jobs run left {left:?} behind");
+}
+
+/// Killing the parent must take the pool with it.  `--jobs` is for hour-long
+/// runs, so the parent being cancelled or timed out is a normal event, and it
+/// used to leave every worker reparented to init with a scratch directory
+/// holding the program's symbol inventory and every function's C.  SIGKILL is
+/// the case that decides the design: no handler in the parent can cover it, so
+/// each worker watches the pipe whose only write end its parent holds.
+#[cfg(target_os = "linux")]
+#[test]
+fn killing_the_parent_takes_the_workers_and_the_scratch_dir_with_it() {
+    fn children_of(pid: u32) -> Vec<u32> {
+        std::fs::read_to_string(format!("/proc/{pid}/task/{pid}/children"))
+            .unwrap_or_default()
+            .split_whitespace()
+            .filter_map(|s| s.parse().ok())
+            .collect()
+    }
+    fn scratch_of(pid: u32) -> Vec<PathBuf> {
+        let mine = format!("kuna-jobs-{pid}-");
+        std::fs::read_dir(std::env::temp_dir())
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| {
+                p.file_name().is_some_and(|n| n.to_string_lossy().starts_with(&mine))
+            })
+            .collect()
+    }
+
+    let bin = hang_repro();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .env_remove("KUNA_DECOMP_DBG")
+        .env_remove("KUNA_DECOMP_TEST")
+        .env_remove("KUNA_SLACOMP")
+        .args([
+            "decompile-all",
+            &bin,
+            "--json",
+            "--max-fn-seconds",
+            "0",
+            "--jobs",
+            "4",
+            "--sleighpath",
+            &specs(),
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("failed to spawn the kuna binary");
+    let pid = child.id();
+
+    // Wait for the pool to be genuinely up: a worker running and the scratch
+    // directory on disk. Nothing to prove until both exist.
+    let deadline = Instant::now() + Duration::from_secs(120);
+    let workers = loop {
+        let workers = children_of(pid);
+        if !workers.is_empty() && !scratch_of(pid).is_empty() {
+            break workers;
+        }
+        if Instant::now() >= deadline || child.try_wait().expect("try_wait").is_some() {
+            let _ = child.kill();
+            let _ = child.wait();
+            eprintln!("jobs cancellation: skipping (the pool never came up; likely no `.sla`)");
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    };
+
+    child.kill().expect("SIGKILL the pool parent");
+    let _ = child.wait();
+
+    let deadline = Instant::now() + Duration::from_secs(60);
+    loop {
+        let alive: Vec<u32> = workers
+            .iter()
+            .copied()
+            .filter(|w| PathBuf::from(format!("/proc/{w}")).exists())
+            .collect();
+        let left = scratch_of(pid);
+        if alive.is_empty() && left.is_empty() {
+            return;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "a SIGKILLed parent left workers {alive:?} and scratch {left:?} behind"
+        );
+        std::thread::sleep(Duration::from_millis(200));
+    }
+}

@@ -755,6 +755,7 @@ kuna decompile-all ./module.o --addr .text+0x660 --json
 kuna functions ./a.out --json                          # full callable-symbol inventory
 kuna functions ./a.out --sort size --limit 10          # the ten biggest functions
 kuna decompile-all ./a.out --reachable-from main --json    # only what main touches
+kuna decompile-all ./a.out --json --jobs 12            # the same answer, 12 processes
 kuna decompile-all ./a.out --functions main,parse --json
 kuna decompile-all ./a.out --json                      # every CODE-backed function
 ```
@@ -1004,6 +1005,55 @@ Behaviors specific to `decompile-all`:
   policy, not a stage-model settable — zero output change for a function whose
   drive completes before expiry; the console / `decomp_dbg` parity path never
   arms it.
+
+- **`--jobs N|auto` — the worker pool.** The per-function loop is ~96% of a
+  whole-binary run's wall clock and the engine is single-threaded, so `--jobs N`
+  spreads it over `N` copies of the `kuna` binary. `--jobs 1` is the default and
+  is today's in-process path, byte for byte. Also on `decompile-project` and
+  `decompile-graph`; `--jobs-chunk N` fixes the functions per scheduling unit and
+  `--jobs-full-load` makes each worker run its own whole-binary discovery instead
+  of taking the parent's inventory.
+  - **The output does not depend on how the pool scheduled it.** Work is handed
+    out in a longest-first order that is deliberately not output order, but every
+    target owns a slot and results are merged positionally, so the document is
+    identical to `--jobs 1` whatever order the workers finish in. The concrete
+    `--mode`, every resolved `--option` and the watchdog budget are settled once
+    by the parent and passed to every worker.
+  - **It can depend on how the work was divided, wherever the engine's own output
+    already does.** A few emission decisions are first-toucher-wins in the
+    per-process type and symbol database, so they are a function of which *other*
+    functions the same process decompiled, and sharding changes that set. On the
+    18 MB PE above this is 2 of 32,777 functions, both a two-byte string constant
+    rendering as `"BM"` where the serial run printed the UTF-16 `"䵂"`. The pool
+    does not cause it: a serial `--filter '^sub_18073e690$'` over the same load
+    prints `"BM"` too, and adding the function that reaches that address first
+    turns it back into `"䵂"`. `--jobs 1` is the definition of the answer.
+  - **Memory, not cores, is the limit.** Every worker loads the binary itself, so
+    peak memory is roughly `N ×` one worker's resident size, on top of the
+    parent's. On an 18 MB PE with 33,214 functions that is 469 MB per worker
+    against the parent's 1.99 GB, because a worker skips the discovery the parent
+    hands over; `--jobs-full-load` puts each worker back on the parent's own load
+    and its memory. `--jobs auto` takes this machine's parallelism capped at 16,
+    then lowers that to what free memory holds and says so; an explicit
+    `--jobs N` is obeyed with a warning instead.
+  - **Small runs are slower.** A worker pays a whole program load before its first
+    function (17 s on that PE), so a run only wins once the work exceeds one such
+    load — a few hundred functions there, and nothing at all on a handful of
+    them.
+  - **The watchdog becomes a real one.** `--max-fn-seconds` is cooperative in
+    process, so a function wedged where nothing polls the deadline runs through
+    it; the parent, which is not the stuck process, kills a worker that has
+    produced no record for well past the budget and records its unfinished
+    functions as `error`. The same budget is a wall clock, so a function that
+    finished just inside it serially can miss it under N-way contention: the run
+    reports how many did and points at `--max-fn-seconds`.
+  - **Cancelling the run stops the pool.** Each worker's stdin is a pipe whose
+    only write end its parent holds; end-of-pipe means the parent is gone by any
+    route including SIGKILL, and the worker deletes the shared scratch directory
+    (0700, holding the symbol inventory and every function's C) and exits.
+  - `--assert` and `--raw-image` are refused with `--jobs > 1`: assertion outcomes
+    are per-load state a pool cannot merge, and a raw image's entry seeds are its
+    load.
 
 The decbench backend (`decbench/decompilers/raw/kuna_raw.py`) shells out to
 `kuna decompile-all --json`.
@@ -1649,6 +1699,7 @@ decodes to a wrong image of exactly the right length; only the checksum catches 
 ```bash
 kuna decompile-project ./a.out                         # writes ./a.out.kuna/
 kuna decompile-project ./a.out -o proj --functions main,parse
+kuna decompile-project ./a.out --jobs 12               # the same folder, 12 processes
 ```
 
 The project-export face of the same in-process core
@@ -1657,7 +1708,7 @@ The project-export face of the same in-process core
 web UI's Download-Binary-Source zip and `kuna_wasm project`). Identical
 load-once/decompile-many path and flags —
 `--functions`/`--addr`/`--max-fn-seconds`/`--mode`/`--option`/`--isa`/`--slice`/
-`--target`/`--sleighpath`; no `--json`. Omitted mode is the same size-based `auto` policy
+`--target`/`--sleighpath`/`--jobs`; no `--json`. Omitted mode is the same size-based `auto` policy
 as the other file front-ends. In particular, a project input at least 2 MiB
 automatically suppresses the exhaustive Listing consumers, prologue scan, and
 AIF gap walk through the `fast` preset, while substituting rooted direct-call
@@ -1697,12 +1748,22 @@ The artifact format is purely additive and has no exporter-specific transform
 (spec §9.7); the set of emitted definitions follows the selected P1 discovery
 options, including `fast_funcdisc`.
 
+Under `--jobs N` the `.h` needs one extra step. Its type block renders the
+architecture's type factory *after* the loop, and a decompile can intern a type
+into it, so a sharded parent's factory would be missing whatever the workers
+recovered. Each worker therefore renders its own block and sends it back: when
+they agree — which is what a shard that interned nothing renderable looks like,
+and what every fixture measured here does — that block is the serial answer and is
+emitted as is. When they disagree the parent says so on stderr and emits their
+ordered union, so the `.h` still declares everything the `.c` uses.
+
 ## `kuna decompile-graph` — the whole program as one JSON graph
 
 ```bash
 kuna decompile-graph ./a.out                           # to stdout
 kuna decompile-graph ./a.out -o graph.json --label v3  # to a file
 kuna decompile-graph ./a.out --functions main,parse    # every node, two bodies
+kuna decompile-graph ./a.out --jobs 12                 # the same document, 12 processes
 ```
 
 One document holding every discovered function — its recovered signature,
@@ -1710,8 +1771,8 @@ parameters, C body and assembly — plus the call edges between them
 (`decompiler/crates/kuna-cli/src/decompile_graph.rs`). The same in-process
 load-once path and the same flags as `decompile-project`
 (`--functions`/`--addr`/`--max-fn-seconds`/`--mode`/`--define-function`/
-`--option`/`--slice`/`--target`/`--sleighpath`; no `--json`, the document always
-is), plus `-o/--output FILE` and `--label TEXT`, which is copied verbatim into
+`--option`/`--slice`/`--target`/`--sleighpath`/`--jobs`; no `--json`, the document
+always is), plus `-o/--output FILE` and `--label TEXT`, which is copied verbatim into
 `binary.label` for a consumer that wants to stamp the document with its own
 version. Written to stdout when `-o` is absent; with `-o` the file is the only
 output.

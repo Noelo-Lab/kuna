@@ -201,6 +201,7 @@ fn query(args: &XrefArgs) -> Result<String, String> {
         isa: args.isa,
         raw_image: false,
         base: None,
+        ..Args::serial()
     };
     let prog = load_program(&load, DriverDefaults::Query)?;
 
