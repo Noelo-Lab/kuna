@@ -1313,6 +1313,23 @@ honors the requested end exactly, where an instruction listing overshoots to the
 end of the instruction that straddles it. `notes` carries anything the command
 would have said on stderr, so a `--json` caller never has to read two streams.
 
+A listing stops at the end of **mapped memory**, whatever length was asked for.
+The load image answers a read that starts on a mapped address for its whole
+length, zero-filling anything the segments do not cover, so a window that runs
+off the end of the code used to decode that fill: on a crackme whose executable
+segment stops at `0x080d1904`, `kuna disassemble 0x80d18b0 --count 30` listed
+eight `ADD byte ptr [EAX],AL` rows out of bytes that are not in the file, while
+`kuna disassemble 0x80d190b` — an address in the same unmapped gap — correctly
+refused. Both now agree: the listing clips to the mapped run holding the start,
+an instruction that would straddle the end lists as `.byte`, and the stop is on
+**stderr** and in `notes`, with the next mapped address to resume from.
+
+```
+$ kuna disassemble ./keygenme 0x80d18b0 --addr --count 30
+note: the listing stops at 0x80d1904, where the segment holding 0x80d18b0 ends --
+the bytes above it are not in the image, and the next mapped address is 0x80d2f50
+```
+
 A listing whose length nobody asked for is capped at 1024 instructions, flagged
 `truncated` and marked in the header. The extent is only an upper bound — clipped
 at the next discovered entry or the end of the CODE section — so where discovery

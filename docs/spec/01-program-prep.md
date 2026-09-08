@@ -2848,6 +2848,30 @@ row resumes on 2; an architecture that declares no instruction alignment
 (SLEIGH `define alignment=1`), or a listing with nothing decoded yet to infer a
 grid from, keeps the byte-at-a-time recovery unchanged.
 
+(kuna) The walk also has to carry its own **end of mapped memory**, because the
+load image will not stop it. `LoadImage::load_fill` answers a read that STARTS on
+a mapped address for its whole length, zero-filling every byte past the last
+segment it crosses — the upstream BFD contract
+(`decompiler/crates/kuna-analysis/src/loadimage_object.rs`), and what makes a
+`.bss` tail read back as zeroes rather than as a hole. Only the start address is
+therefore ever checked, and a windowed listing that runs off the end of the code
+decodes the fill: on a crackme whose executable `PT_LOAD` stops at `0x080d1904`
+with the next segment a page and a half above it, `kuna disassemble 0x80d18b0
+--count 30` walked to `0x80d191b` and reported eight `ADD byte ptr [EAX],AL` rows
+out of bytes that are not in the file — while `kuna disassemble 0x80d190b`, an
+address inside the same hole, correctly refused. The listing clips its own length
+to the **contiguous mapped run** holding the start
+(`decompiler/crates/kuna-cli/src/disassemble.rs (mapped_run)`, over
+`LoadImage::get_segments`): adjacent and overlapping segments are one run, since
+a listing crossing from one `PT_LOAD` into the next at the byte the first ends
+has crossed no hole, and a loader that publishes no segments at all (the XML
+`<binaryimage>` corpus, a relocatable object) is silence rather than a bound. A
+decode that would STRADDLE the bound is refused the same way the translator's own
+refusal is, so the mapped bytes under it list as `.byte` rather than as an
+instruction the file only half contains; and the stop is stated in the listing's
+`notes`, with the next mapped address, because a short answer is otherwise
+indistinguishable from one the caller's own `--count` ended.
+
 ## 1.7 The no-return family
 
 Whether a call falls through decides the CFG of every caller, so no-return facts

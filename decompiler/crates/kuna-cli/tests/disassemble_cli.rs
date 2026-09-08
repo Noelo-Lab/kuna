@@ -928,3 +928,81 @@ fn a_bounded_listing_agrees_with_the_walk_it_skipped() {
         assert_eq!(windowed, full, "{plain:?}");
     }
 }
+
+/// A listing that reaches the end of mapped memory stops there.
+///
+/// The load image answers a read that STARTS on mapped memory for its whole
+/// length, zero-filling whatever the segments do not cover (the upstream BFD
+/// `loadFill` contract), so only the start address was ever checked and the
+/// listing decoded the fill. `segmentgap_i386` is the witness's own layout: one
+/// `R E` `PT_LOAD` ending mid-page at 0x8048014, an unmapped hole, then a `RW`
+/// `PT_LOAD` at 0x804a000. Unbounded, this walked to 0x804803f and reported
+/// twenty-two `ADD byte ptr [EAX],AL` rows the file does not contain.
+#[test]
+fn a_listing_stops_at_the_end_of_mapped_memory() {
+    let bin = fixture("segmentgap_i386");
+    let Some((text, notes)) = rendered(&[&bin, "0x8048000", "--addr", "--count", "30"]) else {
+        return;
+    };
+    let listed = rows(&text);
+    assert_eq!(listed.len(), 9, "the segment holds nine rows, not thirty:\n{text}");
+    assert!(
+        listed.iter().all(|r| !r.starts_with("0x8048014")),
+        "0x8048014 is the first unmapped byte and can hold no row:\n{text}"
+    );
+
+    // The last mapped byte is a lone 0x00. The two-byte `add [eax],al` the
+    // translator reads there straddles the boundary, so it is not an
+    // instruction: the one byte the image really holds is listed instead.
+    assert_eq!(columns(listed[8]), ("0x8048013", "00", ".byte 0x00".to_string()), "{text}");
+    assert!(
+        notes.iter().any(|n| n.contains("0x8048014") && n.contains("not in the image")),
+        "the image, not the ask, ended the listing and must say so: {notes:?}"
+    );
+    assert!(
+        notes.iter().any(|n| n.contains("0x804a000")),
+        "the next mapped address is where a caller resumes: {notes:?}"
+    );
+
+    let Some(doc) = listing(&[&bin, "0x8048000", "--addr", "--count", "30", "--json"]) else {
+        return;
+    };
+    let doc = parse_doc(&doc);
+    assert_eq!(as_u64(field(&doc, "end")), 0x8048014);
+    assert_eq!(as_u64(field(&doc, "count")), 9);
+    assert_eq!(as_u64(field(&doc, "bytes")), 20);
+
+    // The byte view walked the same fill, and stops on the same bound.
+    let Some(bytes) = listing(&[&bin, "0x8048008", "--addr", "--as", "data", "--count", "4"])
+    else {
+        return;
+    };
+    assert_eq!(rows(&bytes).len(), 1, "twelve mapped bytes, not four rows of sixteen:\n{bytes}");
+    assert!(bytes.contains("0x8048008..0x8048014"), "{bytes}");
+}
+
+/// The bound is the end of mapped memory, not the end of a segment: a listing
+/// that asks for less than the image holds is untouched, and one that asks for
+/// exactly the mapped bytes says nothing about it.
+#[test]
+fn a_listing_inside_mapped_memory_is_untouched_by_the_bound() {
+    let bin = fixture("segmentgap_i386");
+    let Some((text, notes)) = rendered(&[&bin, "0x8048000", "--addr", "--count", "4"]) else {
+        return;
+    };
+    assert_eq!(rows(&text).len(), 4, "{text}");
+    assert!(notes.is_empty(), "the ask ended this one: {notes:?}");
+
+    // Exactly the mapped extent, spelled as a range: all of it, and no note.
+    let Some((all, notes)) = rendered(&[&bin, "0x8048000-0x8048014", "--addr"]) else {
+        return;
+    };
+    assert_eq!(rows(&all).len(), 9, "{all}");
+    assert!(notes.is_empty(), "nothing was cut short: {notes:?}");
+
+    // `fauxware`'s `main` is nowhere near a segment edge, so its listing is the
+    // one an agent already knew, byte for byte.
+    let Some((before, _)) = rendered(&[&fauxware(), "main"]) else { return };
+    assert!(before.contains("PUSH RBP"), "{before}");
+    assert!(!before.contains("not in the image"), "{before}");
+}
