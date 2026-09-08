@@ -1180,6 +1180,14 @@ impl From<DuplicateFunctionError> for KunaError {
 /// the hierarchical walk).  A property map ([`PartMap`]) labels memory ranges
 /// with boolean properties (`read-only`, `volatile`) independent of symbols.
 pub struct Database {
+    /// Monotone mutation counter, bumped by every `&mut self` entry point on
+    /// `Database` (no C++ analogue).  A consumer that derives a whole-database
+    /// snapshot — [`Architecture::build_arch_handle`](crate::architecture::Architecture::build_arch_handle),
+    /// once per decompiled function — reuses the previous snapshot while this
+    /// has not moved.  Correctness rests on the bump being exhaustive;
+    /// `tests::kuna_gen_bumped_by_every_mutator` enforces that against the
+    /// source of this file.
+    kuna_gen: u64,
     /// All scopes, owned by the database (replaces the C++ scope `delete` graph).
     scopes: slotmap::SlotMap<ScopeId, Scope>,
     /// All symbols, owned by the database (the C++ `nametree` owns `Symbol *`;
@@ -1198,9 +1206,15 @@ pub struct Database {
 }
 
 impl Database {
+    /// The snapshot-invalidation generation (see [`Database::kuna_gen`]).
+    pub fn kuna_generation(&self) -> u64 {
+        self.kuna_gen
+    }
+
     /// C++ `Database(Architecture *g,bool idByName)` (`database.cc:2954-2961`).
     pub fn new(id_by_name: bool) -> Database {
         Database {
+            kuna_gen: 0,
             scopes: slotmap::SlotMap::with_key(),
             symbols: slotmap::SlotMap::with_key(),
             globalscope: None,
@@ -1228,6 +1242,7 @@ impl Database {
     /// stack space indexes past the maptable end.  Growing only (C++ `resize`
     /// never shrinks a populated table here, since spaces are only added).
     pub fn adjust_caches(&mut self, num_spaces: int4) {
+        self.kuna_gen += 1;
         let n = if num_spaces < 0 { 0 } else { num_spaces as usize };
         for (_id, scope) in self.scopes.iter_mut() {
             if scope.maptable.len() < n {
@@ -1251,6 +1266,7 @@ impl Database {
 
     /// Mutably borrow a scope by id.
     pub fn scope_mut(&mut self, id: ScopeId) -> &mut Scope {
+        self.kuna_gen += 1;
         &mut self.scopes[id]
     }
 
@@ -1261,6 +1277,7 @@ impl Database {
 
     /// Mutably borrow a symbol by id.
     pub fn symbol_mut(&mut self, id: SymbolId) -> &mut Symbol {
+        self.kuna_gen += 1;
         &mut self.symbols[id]
     }
 
@@ -1276,6 +1293,7 @@ impl Database {
 
     /// Replace the property map (C++ `setProperties`).
     pub fn set_properties(&mut self, newflags: PartMap<Address, uint4>) {
+        self.kuna_gen += 1;
         self.flagbase = newflags;
     }
 
@@ -1283,6 +1301,7 @@ impl Database {
     /// `new ScopeInternal(id,nm,glb)`); the id/name/space-count come from the
     /// caller.  Inserted into the arena; *not* yet attached.
     fn build_sub_scope(&mut self, id: uint8, nm: &str, num_spaces: int4) -> ScopeId {
+        self.kuna_gen += 1;
         self.scopes.insert(Scope::new(id, nm, num_spaces))
     }
 
@@ -1291,6 +1310,7 @@ impl Database {
     /// The new Scope must be initially empty.  Passing `None` for `parent`
     /// registers the global Scope (which must have an empty name and be unique).
     pub fn attach_scope(&mut self, newscope: ScopeId, parent: Option<ScopeId>) -> KunaResult<()> {
+        self.kuna_gen += 1;
         let unique_id = self.scopes[newscope].unique_id;
         let name_empty = self.scopes[newscope].name.is_empty();
         match parent {
@@ -1336,6 +1356,7 @@ impl Database {
         parent: Option<ScopeId>,
         num_spaces: int4,
     ) -> KunaResult<ScopeId> {
+        self.kuna_gen += 1;
         if let Some(res) = self.resolve_scope(id) {
             return Ok(res);
         }
@@ -1498,6 +1519,7 @@ impl Database {
     /// C++ `ScopeInternal::insertNameTree` (`database.cc:2742-2757`): insert a
     /// Symbol into the nametree, establishing a dedup id on name collision.
     fn insert_name_tree(&mut self, scope: ScopeId, sym: SymbolId) -> KunaResult<()> {
+        self.kuna_gen += 1;
         use std::collections::btree_map::Entry;
         use std::ops::Bound::Included;
         self.symbols[sym].name_dedup = 0;
@@ -1540,6 +1562,7 @@ impl Database {
     /// symbol id, fill an undefined name, validate the type, and enter the symbol
     /// into the nametree and category tables.
     fn add_symbol_internal(&mut self, scope: ScopeId, sym: SymbolId) -> KunaResult<()> {
+        self.kuna_gen += 1;
         if self.symbols[sym].symbol_id == 0 {
             let unique_id = self.scopes[scope].unique_id;
             let next = self.scopes[scope].next_unique_id;
@@ -1596,6 +1619,7 @@ impl Database {
     /// `cat == 0` (function parameters) the caller's `ind` is honored so a recovered
     /// parameter lands at its 0-based slot.
     pub fn set_category(&mut self, scope: ScopeId, sym: SymbolId, cat: int4, ind: int4) {
+        self.kuna_gen += 1;
         let old_cat = self.symbols[sym].category;
         if old_cat >= 0 {
             let oc = old_cat as usize;
@@ -1763,6 +1787,7 @@ impl Database {
         sz: int4,
         uselim: &RangeList,
     ) -> KunaResult<EntryRef> {
+        self.kuna_gen += 1;
         let space = addr
             .get_space()
             .cloned()
@@ -1822,6 +1847,7 @@ impl Database {
         sz: int4,
         uselim: &RangeList,
     ) -> EntryRef {
+        self.kuna_gen += 1;
         let entry = SymbolEntry::new_dynamic(sym, exfl, hash, off, sz, uselim.clone());
         let slot = self.scopes[scope].dynamicentry.len();
         self.scopes[scope].dynamicentry.push(Some(entry));
@@ -1928,6 +1954,7 @@ impl Database {
         scope: ScopeId,
         mut entry: SymbolEntry,
     ) -> KunaResult<EntryRef> {
+        self.kuna_gen += 1;
         let sym = entry.symbol;
         // First set persistence based on scope (database.cc:1136-1147).
         if self.scopes[scope].is_global() {
@@ -2053,6 +2080,7 @@ impl Database {
         addr: &Address,
         usepoint: &Address,
     ) -> KunaResult<EntryRef> {
+        self.kuna_gen += 1;
         let mut entry = SymbolEntry::new_unintegrated(sym);
         if !usepoint.is_invalid() {
             let space = usepoint
@@ -2079,6 +2107,7 @@ impl Database {
         nm: &str,
         ct: Rc<Datatype>,
     ) -> KunaResult<SymbolId> {
+        self.kuna_gen += 1;
         let sym = self.symbols.insert(Symbol::new(scope, nm, Some(ct)));
         self.add_symbol_internal(scope, sym)?;
         Ok(sym)
@@ -2094,6 +2123,7 @@ impl Database {
         addr: &Address,
         usepoint: &Address,
     ) -> KunaResult<(SymbolId, EntryRef)> {
+        self.kuna_gen += 1;
         // C++ strips a "stripped" type first; the W6 Datatype stub has no
         // hasStripped yet, so it is a no-op here (STUB(W6)).
         let sym = self.symbols.insert(Symbol::new(scope, nm, Some(ct)));
@@ -2112,6 +2142,7 @@ impl Database {
         min_funcsymbol_size: int4,
         type_code: Rc<Datatype>,
     ) -> KunaResult<SymbolId> {
+        self.kuna_gen += 1;
         // C++ warns (printMessage) on overlap; the message channel is W5, so the
         // overlap query is performed but the warning is dropped (STUB(W5)).
         let mut sym = Symbol::new_empty(scope);
@@ -2138,6 +2169,7 @@ impl Database {
     /// recompute its `size_typelock`.  The console `map` commands lock the symbols
     /// they create as name/type-locked.
     pub fn set_attribute(&mut self, sym: SymbolId, attr: uint4) {
+        self.kuna_gen += 1;
         let mask = varnode_flags::typelock
             | varnode_flags::namelock
             | varnode_flags::readonly
@@ -2158,6 +2190,7 @@ impl Database {
         nm: &str,
         lab_type: Rc<Datatype>,
     ) -> KunaResult<SymbolId> {
+        self.kuna_gen += 1;
         let mut sym = Symbol::new_empty(scope);
         sym.dtype = Some(lab_type); // LabSymbol::buildType -> getBase(1, TYPE_UNKNOWN)
         sym.name = nm.to_string();
@@ -2179,6 +2212,7 @@ impl Database {
         caddr: &Address,
         hash: uint8,
     ) -> KunaResult<SymbolId> {
+        self.kuna_gen += 1;
         let sz = ct.get_size();
         let sym = self.symbols.insert(Symbol::new(scope, nm, Some(ct)));
         self.add_symbol_internal(scope, sym)?;
@@ -2203,6 +2237,7 @@ impl Database {
         hash: uint8,
         base1_unknown: Rc<Datatype>,
     ) -> KunaResult<SymbolId> {
+        self.kuna_gen += 1;
         // C++ EquateSymbol ctor.
         let mut sym = Symbol::new(scope, nm, Some(base1_unknown));
         sym.category = symbol_category::EQUATE;
@@ -2229,6 +2264,7 @@ impl Database {
         addr: &Address,
         hash: uint8,
     ) -> KunaResult<SymbolId> {
+        self.kuna_gen += 1;
         let mut sym = Symbol::new(scope, nm, Some(dt));
         sym.category = symbol_category::UNION_FACET;
         sym.kind = SymbolKind::UnionFacet { field_num, addr_based: false };
@@ -2664,6 +2700,7 @@ impl Database {
     /// `infd->getFuncProto().setInline(val)` reached via `OptionInline::apply`).
     /// No-op on a non-Function symbol.
     pub fn set_function_inline(&mut self, sid: SymbolId, val: bool) {
+        self.kuna_gen += 1;
         if let SymbolKind::Function { inline_func, .. } = &mut self.symbols[sid].kind {
             *inline_func = val;
         }
@@ -2673,6 +2710,7 @@ impl Database {
     /// `infd->getFuncProto().setNoReturn(val)` reached via `OptionNoReturn::apply`).
     /// No-op on a non-Function symbol.
     pub fn set_function_no_return(&mut self, sid: SymbolId, val: bool) {
+        self.kuna_gen += 1;
         if let SymbolKind::Function { no_return, .. } = &mut self.symbols[sid].kind {
             *no_return = val;
         }
@@ -2682,6 +2720,7 @@ impl Database {
     /// `fd->getFuncProto().setInjectId(injectid)` reached via `IfcFixupApply`).
     /// No-op on a non-Function symbol.
     pub fn set_function_inject_id(&mut self, sid: SymbolId, injectid: int4) {
+        self.kuna_gen += 1;
         if let SymbolKind::Function { inject_id, .. } = &mut self.symbols[sid].kind {
             *inject_id = injectid;
         }
@@ -2709,6 +2748,7 @@ impl Database {
         sid: SymbolId,
         pieces: crate::fspec::PrototypePieces,
     ) {
+        self.kuna_gen += 1;
         if let SymbolKind::Function { proto_pieces, .. } = &mut self.symbols[sid].kind {
             *proto_pieces = Some(Box::new(pieces));
         }
@@ -3271,6 +3311,7 @@ impl Database {
     /// C++ `Database::clearResolve` (`database.cc:2900-2919`): remove a namespace
     /// scope's owned ranges from the resolve map.
     fn clear_resolve(&mut self, scope: ScopeId) {
+        self.kuna_gen += 1;
         if Some(scope) == self.globalscope {
             return;
         }
@@ -3289,6 +3330,7 @@ impl Database {
 
     /// C++ `Database::fillResolve` (`database.cc:2938-2949`).
     fn fill_resolve(&mut self, scope: ScopeId) {
+        self.kuna_gen += 1;
         if Some(scope) == self.globalscope {
             return;
         }
@@ -3307,6 +3349,7 @@ impl Database {
 
     /// C++ `Database::setRange` (`database.cc:3062-3068`).
     pub fn set_range(&mut self, scope: ScopeId, rlist: RangeList) {
+        self.kuna_gen += 1;
         self.clear_resolve(scope);
         self.scopes[scope].rangetree = rlist;
         self.fill_resolve(scope);
@@ -3319,6 +3362,7 @@ impl Database {
     }
 
     pub fn add_range(&mut self, scope: ScopeId, spc: Rc<AddrSpace>, first: uintb, last: uintb) {
+        self.kuna_gen += 1;
         self.clear_resolve(scope);
         self.scopes[scope].rangetree.insert_range(spc, first, last);
         self.fill_resolve(scope);
@@ -3326,6 +3370,7 @@ impl Database {
 
     /// C++ `Database::removeRange` (`database.cc:3090-3096`).
     pub fn remove_range(&mut self, scope: ScopeId, spc: Rc<AddrSpace>, first: uintb, last: uintb) {
+        self.kuna_gen += 1;
         self.clear_resolve(scope);
         self.scopes[scope].rangetree.remove_range(spc, first, last);
         self.fill_resolve(scope);
@@ -3356,6 +3401,7 @@ impl Database {
         sz: int4,
         parameter: bool,
     ) {
+        self.kuna_gen += 1;
         let addr = Address::new(Rc::clone(&space), first);
         // Remove any symbols under range (C++ findOverlap/removeSymbol loop).
         while let Some(eref) = self.find_overlap(scope, &addr, sz) {
@@ -3388,6 +3434,7 @@ impl Database {
     /// (the architecture-relative one-past-the-end address; the caller supplies it
     /// since the AddrSpaceManager lives in the ArchContext).
     pub fn set_property_range(&mut self, flags: uint4, addr1: &Address, addr2: &Address) {
+        self.kuna_gen += 1;
         self.flagbase.split(addr1);
         if !addr2.is_invalid() {
             self.flagbase.split(addr2);
@@ -3403,6 +3450,7 @@ impl Database {
 
     /// C++ `Database::clearPropertyRange` (`database.cc:3271-3291`).
     pub fn clear_property_range(&mut self, flags: uint4, addr1: &Address, addr2: &Address) {
+        self.kuna_gen += 1;
         self.flagbase.split(addr1);
         if !addr2.is_invalid() {
             self.flagbase.split(addr2);
@@ -3812,6 +3860,7 @@ impl Database {
         start: Option<ScopeId>,
         num_spaces: int4,
     ) -> KunaResult<(ScopeId, String)> {
+        self.kuna_gen += 1;
         // (kuna) The CREATE half of the `symbolnamebound` seam: one Scope per
         // `::` component at ~1.5 KB each makes an unbounded name a ~498x
         // input-to-RSS amplifier on attacker-controlled `.strtab` bytes. Shared
@@ -3853,6 +3902,7 @@ impl Database {
     /// C++ `ScopeInternal::renameSymbol` (`database.cc:2180-2192`): rename `sym`
     /// within its scope, re-keying the name tree (and the multi-entry set).
     pub fn rename_symbol(&mut self, sym: SymbolId, newname: &str) -> KunaResult<()> {
+        self.kuna_gen += 1;
         let scope = self.symbols[sym].scope;
         let oldkey = self.name_key(sym);
         self.scopes[scope].nametree.remove(&oldkey);
@@ -3876,6 +3926,7 @@ impl Database {
     /// swapped in place and the size/type lock recomputed; otherwise, for a
     /// single address-tied mapping, the mapping is rebuilt at the new size.
     pub fn retype_symbol(&mut self, sym: SymbolId, ct: Rc<Datatype>) -> KunaResult<()> {
+        self.kuna_gen += 1;
         let ct = if ct.has_stripped() { ct.get_stripped().unwrap_or(ct) } else { ct };
         let old_size = self.symbols[sym].dtype.as_ref().map(|t| t.get_size()).unwrap_or(0);
         let mapentry_len = self.symbols[sym].mapentry.len();
@@ -3914,6 +3965,7 @@ impl Database {
     /// Erase one SymbolEntry mapping of `sym` from its scope rangemap / dynamic
     /// list (the per-entry half of [`remove_symbol_mappings`]).
     fn erase_mapentry(&mut self, scope: ScopeId, _sym: SymbolId, eref: EntryRef) {
+        self.kuna_gen += 1;
         match eref {
             EntryRef::Dynamic(slot) => {
                 self.scopes[scope].dynamicentry[slot] = None;
@@ -3929,6 +3981,7 @@ impl Database {
     /// C++ `ScopeInternal::removeSymbolMappings` (`database.cc:2145-2164`): drop
     /// all SymbolEntry mappings of `sym`.
     fn remove_symbol_mappings(&mut self, sym: SymbolId) {
+        self.kuna_gen += 1;
         let scope = self.symbols[sym].scope;
         if self.symbols[sym].whole_count > 1 {
             let key = self.name_key(sym);
@@ -3953,6 +4006,7 @@ impl Database {
     /// C++ `ScopeInternal::removeSymbol` (`database.cc:2166-2178`): remove `sym`
     /// entirely (category slot, mappings, name tree, and the object).
     pub fn remove_symbol(&mut self, sym: SymbolId) {
+        self.kuna_gen += 1;
         let scope = self.symbols[sym].scope;
         let cat = self.symbols[sym].category;
         if cat >= 0 {
@@ -3984,6 +4038,7 @@ impl Database {
     /// re-injects it as a competing fixed-array `RangeHint`, overriding the scalar
     /// hint the converted Varnode then supplies.
     pub fn clear_unlocked_category_negative(&mut self, scope: ScopeId) -> KunaResult<()> {
+        self.kuna_gen += 1;
         // C++ iterates `nametree` advancing the iterator before acting on the
         // symbol (the act mutates the tree).  Collect first, then act — the arena
         // equivalent of "advance before remove".
@@ -4024,6 +4079,7 @@ impl Database {
         alias: &[uintb],
         alias_block_level: int4,
     ) {
+        self.kuna_gen += 1;
         use crate::dtype::type_metatype;
         // EntryMap *rangemap = maptable[space->getIndex()]; if 0 return;
         let entries: Vec<(SymbolId, uintb)> = {
@@ -4122,6 +4178,7 @@ impl Database {
         base: &mut int4,
         arch: &dyn DatabaseArch,
     ) -> KunaResult<()> {
+        self.kuna_gen += 1;
         use std::ops::Bound::{Excluded, Unbounded};
         // C++: iter = nametree.upper_bound(Symbol("$$undef")); walk while names
         // are still "undefined".  Collect the undefined-named ids first (the
@@ -4355,6 +4412,7 @@ impl Database {
     /// rename on, but that must not enter the analysis scope — adding it there
     /// would feed the printer's scope queries and change the emitted C.
     pub fn reserve_internal_symbol_id(&mut self, scope: ScopeId) -> uint8 {
+        self.kuna_gen += 1;
         let unique_id = self.scopes[scope].unique_id;
         let next = self.scopes[scope].next_unique_id;
         self.scopes[scope].next_unique_id += 1;
@@ -5232,5 +5290,182 @@ mod tests {
         assert_eq!(*off, 0x2000);
         assert_eq!(snap_pieces.name, "declared_callee");
         assert_eq!(snap_pieces.intypes.len(), 1);
+    }
+
+    /// `Database::kuna_gen` is what `Architecture::build_arch_handle` keys its
+    /// per-function `GlobalQuery`/callee-proto snapshot cache on, so a mutator
+    /// that forgets to bump it makes that cache serve stale symbols.  Enforce
+    /// the invariant structurally: every `&mut self` method in every
+    /// `impl Database` block of this file opens with the bump.
+    #[test]
+    fn kuna_gen_bumped_by_every_mutator() {
+        let src = include_str!("database.rs");
+        let lines: Vec<&str> = src.lines().collect();
+        // Every `impl Database` block must be one the block walk below enters --
+        // a reformatted header would otherwise skip its methods silently.
+        let declared = lines.iter().filter(|l| declares_impl_database(l)).count();
+        let mut entered = 0usize;
+        let mut checked = 0usize;
+        let mut i = 0usize;
+        while i < lines.len() {
+            if lines[i] != "impl Database {" {
+                i += 1;
+                continue;
+            }
+            entered += 1;
+            let mut j = i + 1;
+            while j < lines.len() && lines[j] != "}" {
+                if !is_method_signature_start(lines[j]) {
+                    j += 1;
+                    continue;
+                }
+                // Accumulate the signature through the close of the argument list.
+                let mut sig = String::new();
+                let mut depth = 0i32;
+                let mut started = false;
+                let mut k = j;
+                'sig: while k < lines.len() {
+                    for c in lines[k].chars() {
+                        sig.push(c);
+                        match c {
+                            '(' => {
+                                depth += 1;
+                                started = true;
+                            }
+                            ')' => depth -= 1,
+                            _ => {}
+                        }
+                        if started && depth == 0 {
+                            break 'sig;
+                        }
+                    }
+                    k += 1;
+                }
+                if sig.contains("&mut self") {
+                    let mut b = k;
+                    while b < lines.len() && !lines[b].trim_end().ends_with('{') {
+                        b += 1;
+                    }
+                    assert_eq!(
+                        lines[b + 1].trim(),
+                        "self.kuna_gen += 1;",
+                        "Database mutator at line {} does not bump kuna_gen: {}",
+                        j + 1,
+                        lines[j].trim()
+                    );
+                    checked += 1;
+                }
+                j = k + 1;
+            }
+            i = j + 1;
+        }
+        assert_eq!(declared, entered, "an `impl Database` block was not scanned");
+        assert!(checked >= 44, "the scanner found only {checked} mutators; it is broken");
+
+        // The scan reasons about `&mut self`, so interior mutability anywhere in
+        // the database's own types would let a mutation past it unseen.  Needles
+        // are assembled rather than written out so this module is not its own hit.
+        let hatches = ["Cell".to_string() + "<", "Unsafe".to_string() + "Cell"];
+        let body_end = lines
+            .iter()
+            .position(|l| l.trim() == "mod tests {")
+            .expect("the test module header moved");
+        for (n, line) in lines[..body_end].iter().enumerate() {
+            let code = line.trim_start();
+            if code.starts_with("//") {
+                continue;
+            }
+            for hatch in &hatches {
+                assert!(
+                    !code.contains(hatch.as_str()),
+                    "interior mutability at line {}: a `&mut self` scan cannot see through it, \
+                     so `kuna_gen` would stop covering every mutation",
+                    n + 1
+                );
+            }
+        }
+    }
+
+    /// True for any `impl` header whose *self* type is `Database` — inherent or
+    /// trait, generic or not.  Deliberately more permissive than the exact
+    /// literal the block walk enters on, so a header written any other way is
+    /// counted here, fails the `declared == entered` check, and is never
+    /// silently skipped.
+    fn declares_impl_database(line: &str) -> bool {
+        let rest = match line.trim_start().strip_prefix("impl") {
+            Some(r) => r,
+            None => return false,
+        };
+        // `impl<'a, T>` — drop the generic list before reading the self type.
+        let rest = match rest.trim_start().strip_prefix('<') {
+            Some(r) => match r.split_once('>') {
+                Some((_, after)) => after,
+                None => return false,
+            },
+            None => rest,
+        };
+        // `impl Trait for Database` — the self type is what follows the last `for`.
+        let self_ty = match rest.rsplit_once(" for ") {
+            Some((_, after)) => after,
+            None => rest,
+        };
+        let self_ty = match self_ty.split_once(" where ") {
+            Some((before, _)) => before,
+            None => self_ty,
+        };
+        let self_ty = self_ty.trim().trim_end_matches('{').trim();
+        self_ty == "Database" || self_ty.starts_with("Database<")
+    }
+
+    /// True for a line opening a method signature at `impl` indentation, whatever
+    /// visibility/`const`/`unsafe`/`async` modifiers precede the `fn`.
+    fn is_method_signature_start(line: &str) -> bool {
+        let mut rest = match line.strip_prefix("    ") {
+            Some(r) if !r.starts_with(' ') => r,
+            _ => return false,
+        };
+        if let Some(r) = rest.strip_prefix("pub") {
+            rest = match r.strip_prefix('(') {
+                Some(r) => match r.split_once(')') {
+                    Some((_, after)) => after,
+                    None => return false,
+                },
+                None => r,
+            };
+            rest = match rest.strip_prefix(' ') {
+                Some(r) => r,
+                None => return false,
+            };
+        }
+        for modifier in ["const ", "unsafe ", "async "] {
+            if let Some(r) = rest.strip_prefix(modifier) {
+                rest = r;
+            }
+        }
+        rest.starts_with("fn ")
+    }
+
+    /// The generation moves on a mutation and stands still on a read — the two
+    /// halves of the snapshot cache's contract.
+    #[test]
+    fn kuna_generation_tracks_mutation() {
+        let m = build_manager();
+        let ram = space(&m, 2);
+        let (mut db, g) = db_with_global(m.num_spaces());
+
+        let after_setup = db.kuna_generation();
+        // Pure reads leave the generation alone.
+        let before = db.build_global_query();
+        assert_eq!(db.kuna_generation(), after_setup);
+        let _ = db.build_callee_proto_pieces();
+        assert_eq!(db.kuna_generation(), after_setup);
+
+        // A mapped global moves it, and the snapshot with it.
+        let addr = Address::new(Rc::clone(&ram), 0x4000);
+        db.add_symbol_mapped(g, "gvar", dt(4), &addr, &Address::new_invalid())
+            .expect("map global");
+        assert!(db.kuna_generation() > after_setup);
+        let after = db.build_global_query();
+        assert_ne!(format!("{before:?}"), format!("{after:?}"));
     }
 }

@@ -1195,8 +1195,10 @@ pub struct ArchContext {
     /// from the global FunctionSymbols at `build_arch_handle`; read back by
     /// `ActionDefaultParams::apply` via [`Architecture::callee_proto_pieces`] to
     /// `fc->copy(otherfunc->getFuncProto())` (`coreaction.cc:2385`).  Empty for
-    /// hand-built fixtures and undeclared callees.
-    pub callee_protos: Vec<(int4, kuna_base::types::uintb, crate::fspec::PrototypePieces)>,
+    /// hand-built fixtures and undeclared callees.  Shared behind an `Rc`
+    /// because `build_arch_handle` hands the same snapshot to every function of
+    /// a run.
+    pub callee_protos: Rc<Vec<(int4, kuna_base::types::uintb, crate::fspec::PrototypePieces)>>,
     /// The calling convention each declared callee was declared under, keyed the
     /// same way [`Self::callee_protos`] is.  Snapshotted at `build_arch_handle`
     /// from the architecture's declared-convention map and read back by
@@ -1403,7 +1405,7 @@ impl ArchContext {
             // arch and build_arch_handle shares the result.
             infer_ptr_spaces: Vec::new(),
             // No declared callee prototypes until build_arch_handle snapshots them.
-            callee_protos: Vec::new(),
+            callee_protos: Rc::new(Vec::new()),
             // No tracked registers until build_arch_handle snapshots the context DB.
             tracked_sets: kuna_base::partmap::PartMap::default(),
         }

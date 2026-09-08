@@ -43,6 +43,7 @@
 //! them through the option surface.  Public getters/setters are provided so the
 //! p0-pack can read/flip each without owning the struct layout.
 
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use kuna_base::address::Address;
@@ -1652,6 +1653,14 @@ pub struct Architecture {
     /// `ArchContext` by `build_arch_handle` and consulted by the flow
     /// environment's callee-name/no-return queries.
     pub remote_scope: Option<Rc<crate::remote_provider::RemoteScope>>,
+    /// The two whole-`symboltab` derivations [`Architecture::build_arch_handle`]
+    /// hands every `Funcdata`, memoized on the symbol table's mutation
+    /// generation (no C++ analogue -- the C++ `glb` *is* the live symbol table
+    /// and derives nothing per function).
+    symbol_snapshots: RefCell<SymbolSnapshots>,
+    /// False re-derives both on every handle (`KUNA_NO_SYMBOL_SNAPSHOT_CACHE`),
+    /// so the memoized and re-derived paths can be compared.
+    kuna_snapshot_cache: bool,
     /// Options that can be configured (C++ `options`).
     pub options: OptionDatabase,
     /// Actions that can be applied in this architecture (C++ `allacts`).
@@ -1791,6 +1800,25 @@ pub struct Architecture {
     translate: Box<dyn EngineTranslate>,
 }
 
+/// The memoized whole-`symboltab` derivations [`Architecture::build_arch_handle`]
+/// attaches to every per-function [`ArchContext`].
+///
+/// Both are pure functions of the [`Database`], and re-deriving them is the
+/// dominant per-function cost once the symbol table is large.  `generation` is
+/// the [`Database::kuna_generation`] they were taken at; a mismatch means the
+/// symbol table moved and both are stale.
+#[derive(Default)]
+struct SymbolSnapshots {
+    generation: Option<u64>,
+    global_query: Option<Rc<crate::context::GlobalQuery>>,
+    callee_protos: Option<CalleeProtoSnapshot>,
+}
+
+/// Every declared callee's parked prototype, keyed by `(space index, entry
+/// offset)` -- the [`ArchContext::callee_protos`](crate::context::ArchContext)
+/// snapshot, shared rather than copied per function.
+type CalleeProtoSnapshot = Rc<Vec<(int4, uintb, crate::fspec::PrototypePieces)>>;
+
 impl Architecture {
     /// Construct an `Architecture` over an already-initialized disassembly
     /// engine (C++ `Architecture::Architecture` + the `restoreFromSpec` subsystem
@@ -1844,6 +1872,9 @@ impl Architecture {
         let mut arch = Architecture {
             archid: archid.to_string(),
             input_arm_isa_override: false,
+
+            symbol_snapshots: RefCell::new(SymbolSnapshots::default()),
+            kuna_snapshot_cache: std::env::var_os("KUNA_NO_SYMBOL_SNAPSHOT_CACHE").is_none(),
 
             trim_recurse_max: 0,
             max_implied_ref: 0,
@@ -3576,7 +3607,10 @@ impl Architecture {
         // kuna `glb` is a skeleton, so the global scope is wired here, after every
         // `map addr`).  Global-mapped varnodes then pick up `persist`/`addrtied`
         // and their stores survive `ActionDeadCode`.
-        ctx.global_query = Some(Rc::new(self.symboltab.build_global_query()));
+        // Both whole-`symboltab` derivations come from one memoized read, so they
+        // are always the same generation of the database as each other.
+        let (global_query, callee_protos) = self.symbol_snapshots();
+        ctx.global_query = Some(global_query);
         // (kuna, Phase 3) the ghidra-mode lazy provider rides the handle so the
         // global reads above query through it; None on the standalone path.
         ctx.remote_scope = self.remote_scope.clone();
@@ -3584,7 +3618,7 @@ impl Architecture {
         // FunctionSymbols by `set_function_prototype_pieces`) so the per-function
         // `ActionDefaultParams` copies a known callee's locked `FuncProto` into the
         // call site (C++ `coreaction.cc:2385` `fc->copy(otherfunc->getFuncProto())`).
-        ctx.callee_protos = self.symboltab.build_callee_proto_pieces();
+        ctx.callee_protos = callee_protos;
         // (kuna) The convention each of those callees was DECLARED under, keyed
         // the same way the pieces are (entry address).  The declaration names the
         // function, the parked pieces carry that name, and the read side
@@ -3615,6 +3649,41 @@ impl Architecture {
         // function entry address through the detached per-function skeleton.
         ctx.tracked_sets = self.with_context_db_mut(|db| db.clone_trackbase());
         Rc::new(ctx)
+    }
+
+    /// The two whole-`symboltab` derivations for the `Funcdata` being built,
+    /// reusing the ones the previous function got while `symboltab` has not
+    /// moved since (`Database::kuna_generation`).
+    fn symbol_snapshots(&self) -> (Rc<crate::context::GlobalQuery>, CalleeProtoSnapshot) {
+        if !self.kuna_snapshot_cache {
+            return (
+                Rc::new(self.symboltab.build_global_query()),
+                Rc::new(self.symboltab.build_callee_proto_pieces()),
+            );
+        }
+        let mut slot = self.symbol_snapshots.borrow_mut();
+        let generation = self.symboltab.kuna_generation();
+        if slot.generation != Some(generation) {
+            *slot = SymbolSnapshots { generation: Some(generation), ..SymbolSnapshots::default() };
+        }
+        (
+            Rc::clone(
+                slot.global_query
+                    .get_or_insert_with(|| Rc::new(self.symboltab.build_global_query())),
+            ),
+            Rc::clone(
+                slot.callee_protos
+                    .get_or_insert_with(|| Rc::new(self.symboltab.build_callee_proto_pieces())),
+            ),
+        )
+    }
+
+    /// Turn the `build_arch_handle` symbol-snapshot memoization on or off (on by
+    /// default; `KUNA_NO_SYMBOL_SNAPSHOT_CACHE` turns it off at construction).
+    /// The two paths must agree -- this exists so a test can compare them.
+    pub fn set_symbol_snapshot_cache(&mut self, on: bool) {
+        self.kuna_snapshot_cache = on;
+        *self.symbol_snapshots.borrow_mut() = SymbolSnapshots::default();
     }
 
     /// Insert the analysis-only fspec/iop/join spaces into the single engine
