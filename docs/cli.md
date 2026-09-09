@@ -1926,6 +1926,12 @@ binary and attempt recompilation:
 - `<name>.h` — include guard + a generated recompile prelude (core scalar and
   `undefined`-family typedefs), the recovered user-defined type definitions, and one
   prototype per decompiled function, token-identical to the `.c` definition line.
+  These are recovered signatures, not source-language declarations invented by the
+  exporter. In particular, a `main` whose return register is not recovered can appear
+  as `void main(void)`, which strict C compilers reject because `main` is a reserved
+  entry-point name. A syntax-only consumer can remap it while including the header
+  (`#define main kuna_recovered_main`); making it `int` would assert ABI information
+  the decompiler did not recover and would break the header/definition identity.
 - `<name>.asm` — labeled linear disassembly of every CODE section: labels match the `.c`
   function names, per-function `; arg:`/`; stack:` comments map decompiled variables to
   storage, undecodable bytes as `db` lines, and a `; --- data ---` tail labeling named

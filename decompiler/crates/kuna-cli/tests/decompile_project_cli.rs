@@ -231,12 +231,19 @@ fn header_syntax_checks_with_cc() {
     }
     let Some(dir) = project("fauxware", "cc") else { return };
     let (_c, h, _asm, _r) = artifacts(&dir, "fauxware");
-    // A stub that includes the .h; it must NOT define `main` (the recovered
-    // header declares `void main(void)`, so an `int main` would legitimately
-    // conflict — we are asserting the .h itself is valid, not the decompiled C).
+    // The export preserves the recovered prototype token-for-token, including
+    // a possibly non-standard signature for `main`. Remap that reserved C
+    // identifier so this test checks the header's syntax rather than asking the
+    // host compiler to validate prototype recovery.
     let stub = dir.join("hcheck.c");
-    std::fs::write(&stub, format!("#include \"{}\"\nint stub_entry(void){{return 0;}}\n", h.display()))
-        .unwrap();
+    std::fs::write(
+        &stub,
+        format!(
+            "#define main kuna_recovered_main\n#include \"{}\"\nint stub_entry(void){{return 0;}}\n",
+            h.display()
+        ),
+    )
+    .unwrap();
     let out = Command::new("cc")
         .args(["-std=c99", "-fsyntax-only", stub.to_str().unwrap()])
         .output()

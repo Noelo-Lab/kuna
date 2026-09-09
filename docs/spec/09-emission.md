@@ -1057,7 +1057,10 @@ drive the IDENTICAL token sequence standalone: the same
 `doc_function_full`, plus a trailing `;`, minus the header warning comments.
 The contract this buys the export: the `.h` prototype minus its `;` matches
 the `.c` definition line **token-for-token** — there is no second prototype
-printer to drift. The public driver is `decompile_drive.rs
+printer to drift. The exporter does not canonicalize the reserved C entry-point
+name: a recovered `void main(void)` remains exactly that in both documents rather
+than being rewritten to an unsupported `int` signature. Consumers that only need
+to syntax-check the header can macro-remap `main` before inclusion. The public driver is `decompile_drive.rs
 (print_c_prototype)` (a function with no recovered proto store renders
 `void <name>(void);`).
 
