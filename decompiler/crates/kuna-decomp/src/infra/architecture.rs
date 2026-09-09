@@ -658,6 +658,12 @@ pub struct Architecture {
     /// `tiedstorekeep`, default-on, DIV-105).  See
     /// [`crate::p3_dataflow::kuna_tiedstorekeep`].
     pub tied_store_keep: bool,
+    /// (kuna) Refuse the `RulePropagateCopy` marker propagation that would
+    /// delete the write-back of a loop counter held in an address-tied frame
+    /// slot, so the increment prints on the counter and the loop terminates
+    /// (option `loopcounterstore`, default-on, DIV-146).  See
+    /// [`crate::p3_dataflow::kuna_loopcounterstore`].
+    pub loop_counter_store: bool,
     /// (kuna) Region-based (Phoenix/SAILR) structurer: structure the CFG by
     /// walking the [`KunaRegionIdentifier`](crate::p7_regions::kuna_regionid)
     /// region tree and matching Phoenix acyclic schemas instead of running
@@ -1965,6 +1971,7 @@ impl Architecture {
             spill_arg_trial: 0,
             load_guard_range: false, // (kuna) option loadguardrange; reset_defaults sets the shipped default
             tied_store_keep: false, // (kuna) option tiedstorekeep; reset_defaults sets the shipped default (on)
+            loop_counter_store: false, // (kuna) option loopcounterstore; reset_defaults sets the shipped default (on)
             region_structure: true,
             guard_arm: false,
             loop_cond_hoist: false,
@@ -2197,6 +2204,7 @@ impl Architecture {
         self.spill_arg_trial = 0; // (kuna) spillargtrial default-OFF opt-in (diverges from upstream onlyOpUse; the failure mode is a spurious trailing argument, which no gate can see)
         self.load_guard_range = true; // (kuna) DIV-77 default-on: restores upstream Heritage::analyzeNewLoadGuards ValueSet range refinement of indexed-stack LOAD/STORE guards (0/675 ablation); `option loadguardrange off` reverts to whole-space guards with no index bound
         self.tied_store_keep = true; // (kuna) DIV-105 default-on: RulePropagateCopy refuses the marker propagation that would orphan an address-tied COPY holding a call return, so a `local = f();` frame store survives dead-code elimination (0/675 ablation, speed -0.13%); `option tiedstorekeep off` restores upstream's propagation
+        self.loop_counter_store = true; // (kuna) DIV-146 default-on: RulePropagateCopy refuses the marker propagation that would delete a frame-slot loop counter's write-back, so the increment prints on the counter and the emitted `for` terminates (0/675 ablation); `option loopcounterstore off` restores upstream's propagation
         self.region_structure = true; // (kuna) DIV-12 default-on (region-based Phoenix/SAILR structurer; primary structuring path, falls back to CollapseStructure on irreducible code)
         self.region_loop_refine = true; // (kuna) DIV-13 default-on (region structurer multi-exit/irreducible loop-successor refinement; 0/675 ablation)
         self.region_edge_order = false; // (kuna) SAILR P2 default-OFF opt-in (H2 post-dominator + dominance-tiered edge-virtualization ordering; only reorders which goto is chosen when virtualizing, so OFF is byte-identical)
@@ -2602,6 +2610,9 @@ impl Architecture {
             "loadguardrange" => on_off!(load_guard_range, "Indexed-stack guard ValueSet range refinement"),
             "tiedstorekeep" => {
                 on_off!(tied_store_keep, "Address-tied store copy-propagation brake")
+            }
+            "loopcounterstore" => {
+                on_off!(loop_counter_store, "Frame-slot loop-counter store brake")
             }
             "regionstructure" => {
                 let (val, msg) =
@@ -3497,6 +3508,7 @@ impl Architecture {
         ctx.spill_arg_trial = self.spill_arg_trial; // spillargtrial
         ctx.load_guard_range = self.load_guard_range; // loadguardrange
         ctx.tied_store_keep = self.tied_store_keep; // tiedstorekeep
+        ctx.loop_counter_store = self.loop_counter_store; // loopcounterstore
         ctx.region_structure = self.region_structure; // regionstructure
         ctx.guard_arm = self.guard_arm; // guardarm
         ctx.loop_cond_hoist = self.loop_cond_hoist; // loopcondhoist

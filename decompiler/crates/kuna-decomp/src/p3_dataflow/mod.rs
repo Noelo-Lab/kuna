@@ -27,4 +27,5 @@ pub mod kuna_indirectanchor; // (kuna) an op inserted after a guard INDIRECT anc
 pub mod kuna_inputtile;
 pub mod kuna_calloverlap;
 pub mod kuna_tiedstorekeep;
+pub mod kuna_loopcounterstore;
 pub mod kuna_simdlane;

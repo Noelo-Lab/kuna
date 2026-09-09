@@ -501,6 +501,46 @@ global — a global already has heritage's persist `RETURN-COPY` (§3.1) keeping
 its last store printed, so the brake has nothing to add there. `option
 tiedstorekeep off` restores upstream's behavior exactly.
 
+**Keeping a loop counter's write-back** (`option loopcounterstore`,
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_loopcounterstore.rs
+(declines)`, default-on) is the same refusal for the same op, on a different
+shape. A counter the compiler keeps in a frame slot is read, bumped in a
+register and stored back — `MOV EAX,[RSP+0x84]` / `INC EAX` /
+`MOV [RSP+0x84],EAX` — so after heritage the write-back is an address-tied
+`COPY` whose only reader is the loop header's `MULTIEQUAL`, and that
+`MULTIEQUAL`'s output is *the same frame slot*. Propagating the register into
+that phi cannot make the slot's definition printable, because the phi already
+names the slot; it can only orphan the `COPY`, which then dies as dead. What
+prints instead is the register's own definition under the register's
+HighVariable, so the emitted loop initialises and tests one variable and assigns
+its increment to another — `for (v55 = 0; v55 <= 4; v7 = v55 + 1)`, an induction
+variable that is never updated and a loop that cannot terminate. kuna refuses
+the propagation when all of the following hold: the marker is a `MULTIEQUAL`
+whose address-tied output has exactly the storage — address and size — of the
+`COPY`'s output; the `COPY`'s input is a **register**, not a `unique`; the
+stored value is computed from that same `MULTIEQUAL` output, following `COPY`
+chains, which is what makes it a counter rather than an unrelated value that
+happens to land in the slot; and the marker is the last reader of a non-`persist`
+address-tied `COPY` whose input is not itself address-tied. The register clause
+is what separates `MOV EAX,[m]` / `INC EAX` / `MOV [m],EAX` from
+`ADD dword [m],1`, whose intermediate is a lifter temporary that never becomes a
+named variable and whose store `Merge` always folds; keeping the temporary's
+store alive instead displaces the loop's iterator statement and costs the `for`
+form. The `COPY`-chain walk is not cosmetic either: the rule pool decides for
+itself whether the counter's load side or its write-back is folded first, so a
+predicate that only accepted a direct reference to the phi output would fire or
+not depending on that order. `tiedstorekeep` does not reach this shape — its
+predicate requires the stored value to come from a call, and a counter bump is an
+`INT_ADD` — and `option loopcounterstore off` restores upstream's behavior
+exactly. One printing consequence travels with the brake. Where `Merge` would
+have succeeded anyway the kept `COPY` becomes the statement's root op, with the
+arithmetic hanging off it as an implied expression, and chapter 09's in-place
+render (`option inplaceops`, DIV-36) matches only a bare two-input op — so a
+loop that was never broken came out as `v = v + 1` rather than `v += 1`. The
+renderer therefore looks through a `COPY` of an **implied** two-input value and
+decides on the inner op; a `COPY` of an *explicit* value is left alone, because
+there the statement really is `out = <that name>`.
+
 **Retyping an op mid-rule.** A rule that rewrites an op in place usually changes
 its op-code, and the op-code is not just a tag: `set_opcode` caches the
 op-code's *property word* (`unary`/`binary`/`booloutput`/`commutative`/`marker`/
