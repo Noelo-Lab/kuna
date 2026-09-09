@@ -7535,7 +7535,7 @@ impl PrintC {
                 for i in 0..hv.num_instances() {
                     let ivn = hv.get_instance(i);
                     if let Some(iv) = fd.vbank().get(ivn) {
-                        if iv.is_spacebase() && iv.is_input() {
+                        if iv.is_spacebase() && iv.is_input() && iv.is_unaffected() {
                             loc = iv.get_addr().clone();
                             size = iv.get_size();
                             stack_pointer_storage = true;
