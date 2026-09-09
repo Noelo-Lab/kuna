@@ -756,6 +756,13 @@ pub fn universal_sched(
             // materializes the argument Varnodes and before ActionExtraPopSetup
             // reads its extrapop.  Inert on every language but x86-32.
             act!(crate::p2_lift::kuna_linuxsyscall::ActionLinuxSyscall::boxed("protorecovery")),
+            // (kuna) x64syscall (option `x64syscall`, default-OFF): give the
+            // x86-64 `SYSCALL` user-op the Linux ABI's register effects.  Here
+            // for the same two reasons as its i386 neighbour above: the op is
+            // matched on the RAW p-code, and adding a register read or write to
+            // it is only legal before heritage builds SSA.  Inert on every
+            // language but x86-64 and on any function with no SYSCALL.
+            act!(crate::p2_lift::kuna_x64syscall::ActionX64Syscall::boxed("protorecovery")),
             act!(ActionNormalizeSetup::boxed("normalanalysis")),
             act!(ActionDefaultParams::boxed("base")),
             SchedNode::Action(Box::new(move || {

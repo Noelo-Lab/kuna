@@ -1824,7 +1824,11 @@ mod tests {
         // and ghdec-zeroidiomuse / the x86 register-clearing idiom no longer
         // vetoes a looped call's input trials (option off = watchdog() with an
         // empty argument list) (repipe r12)
-        assert_eq!(count, 263, "corpus file count drifted");
+        // and kuna-x64syscall / the x86-64 SYSCALL user-op carries the Linux ABI's
+        // register effects instead of reading and writing nothing (option off =
+        // syscall() with empty parens and a wrapper returning its own syscall
+        // number) (repipe r12)
+        assert_eq!(count, 264, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

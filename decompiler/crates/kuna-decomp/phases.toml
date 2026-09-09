@@ -2007,6 +2007,25 @@ tier = "transform"
 symptoms = "an int3 pad renders as (*(void *)swi(3))() - a call through a pointer nothing assigns|a function returns the result of a call through swi(3)|nothing in the C says control ran into a run of 0xcc padding bytes|an anti-debug binary's clean-run path ends in an indirect call that only the disassembly explains"
 
 [[settable]]
+option = "x64syscall"
+values = "off|on|abi"
+default = "off"
+destructive = false
+phase = "P2"
+subphase = "flow-classification"
+strength = "HARD"
+rewind = "P2"
+issue = "kuna-x64syscall"
+summary = "Give the x86-64 `SYSCALL` user-op the Linux kernel ABI's register effects, so a syscall wrapper stops returning its own first argument. `ia.sinc:4836` lowers the instruction as `RCX = inst_next; R11 = rflags; syscall();` - a CALLOTHER with NO inputs and NO output - and that one fact produces both halves of the damage. No inputs: the register writes that set the call up have no reader, the dead-code fixpoint collects them, and the number and every argument are erased, so the op prints as `syscall()` with empty parens. No output: nothing redefines RAX across the instruction, so the RAX a wrapper stores afterwards is still the one it loaded from its own `number` parameter and the function is emitted as `syscall(); return number;` - correct copy propagation over an operation kuna has been told writes nothing, which makes the emitted C a false statement about the program. On, the CALLOTHER is rewritten in place before heritage to read RAX and the argument registers and to write RAX; the reads keep the setup alive and the write retires the false return. `linuxsyscall` does not cover this and cannot be extended to it: there is no CALLIND here to retarget (a bare CALLOTHER, not the `int 0x80` `intloc = swi(0x80); call [intloc]` pair), the number is a runtime parameter rather than a constant it could look up, and it is gated to x86-32. RCX and R11 are already written by the SLEIGH constructor and are left alone; a CALLOTHER a compiler spec has specialized with its own `<callotherfixup>` is declined, so a spec-declared model always wins."
+use_when = "Any x86-64 function containing a `SYSCALL`: hand-written asm wrappers, static binaries, shellcode, a libc `syscall()` - anywhere the C reads `syscall();` with empty parens, or returns a value that is really the incoming syscall number. ON in the `aggressive` preset, which `auto` selects for any binary under 500 KiB, so it is the default rendering of `kuna decompile` there; the shipped catalog default is OFF because with a RUNTIME number nothing can say how many of the six argument registers the callee reads, which makes the read set a modelling judgement rather than a fact. The two values are that judgement: `on` takes an argument register only where a bounded backward walk of the CALLOTHER's own basic block finds it written before the instruction, so every read is of a value the function demonstrably places there and no undefined register is ever introduced - the cost is that a wrapper whose setup sits in a predecessor block keeps the old rendering for that argument. Set `abi` for such a wrapper: it takes all six unconditionally, which is what the kernel contract permits the callee to read, at the price that a register the function never writes reads as an undefined input and can add a parameter the source has not got. Inert on every language but x86-64 (RAX and all six argument registers must resolve at 8 bytes and the default code space must be 8 bytes wide) and on any function with no SYSCALL."
+example = "option x64syscall abi"
+source_decompiler = "kuna"
+inspiration = "re-needs x86-64-syscall-wrapper: a crackme's three-argument kernel_call wrapper decompiled to `syscall(); return number;` even with an explicit prototype and every argument-recovery option on"
+change_kind = "correctness-fix"
+tier = "transform"
+symptoms = "an x86-64 syscall renders as syscall() with empty parens, with the number and every argument erased|a syscall wrapper returns its own first parameter, the syscall number, instead of the syscall's result|the register writes feeding a SYSCALL are all missing from the C while kuna disassemble shows them|a SYSCALL's result is never assigned to anything"
+
+[[settable]]
 option = "decodehalt"
 values = "on|off"
 default = "on"

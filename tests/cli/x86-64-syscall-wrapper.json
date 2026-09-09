@@ -1,0 +1,50 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "kernel_call",
+    "--option",
+    "linuxsyscall",
+    "on",
+    "--option",
+    "calleearity",
+    "on",
+    "--option",
+    "varargstackargs",
+    "on",
+    "--assert",
+    "prototype 0x100000 long kernel_call(long number, long address, long length)"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/x64syscall_x86_64",
+    "binary_sha256": "67495c19f0d24f510cbc4c4e50887868aad201093daad983792e0eea9c1b99af",
+    "binary_size": 4720,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/x64syscall_x86_64",
+    "selector": "kernel_call",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "return syscall\\(number,address,length,address\\);"
+    ],
+    "stdout_absent": [
+      "syscall\\(\\s*\\)",
+      "return\\s+number\\s*;"
+    ]
+  },
+  "notes": "Desired: an x86-64 SYSCALL keeps the registers it is handed and the result it returns. Both stdout_absent clauses are the need's acceptance verbatim (a-266d44a4acaf); dataset witness crackmes.one 652e6f896e7e520ff1c3db3c kernel_call@0x78, whose whole body was `syscall(); return number;`. This fixture (source x64syscall_x86_64.s) is its reduction; `--option x64syscall off` restores both clauses."
+}

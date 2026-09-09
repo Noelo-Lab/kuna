@@ -168,6 +168,7 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     // is registered only on a language that declares the user-op, and only 12
     // Thumb-2 constructors emit it.
     ("cortexmpriv", "on"),
+    ("x64syscall", "on"),
     // (kuna, DIV-108) Cap the pointer nesting `ActionInferTypes` will adopt. A
     // small-string-optimized C++ object writes the unsatisfiable equation
     // `T == ptr(T)` into the type lattice, so the propagation adds one pointer

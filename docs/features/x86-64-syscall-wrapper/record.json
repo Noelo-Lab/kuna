@@ -1,0 +1,40 @@
+{
+  "need_id": "x86-64-syscall-wrapper",
+  "track": "quality",
+  "scope": "small",
+  "worker": "b-r12-x86-64-syscall-w",
+  "branch": "feat/re-x86-64-syscall-wrapper",
+  "option": "x64syscall",
+  "symptom": "An x86-64 syscall wrapper emits `syscall(); return number;` -- every argument erased and the return value equal to the incoming syscall number -- even with an explicit prototype and every argument-recovery option on. 1 instance, round 7 (crackmes.one 652e6f896e7e520ff1c3db3c, kernel_call@0x78).",
+  "diagnosis": "ia.sinc:4836 lowers SYSCALL as `RCX = inst_next; R11 = rflags; syscall();` -- a CALLOTHER with no inputs and no output. No inputs: the setup stores have no reader and the dead-code fixpoint collects them. No output: nothing redefines RAX, so the RAX the wrapper stores is still the one loaded from `number`, and `return number;` is correct copy propagation over an operation kuna has been told writes nothing.",
+  "hypothesis_status": "upheld",
+  "decisions": [
+    "The filed hypothesis ('the x86-64 syscall userop likely lacks register input/output effects') is right on both counts, and so is the captain's in-tick refutation: the fix has to be NUMBER-INDEPENDENT, because the number here is an incoming parameter. linuxsyscall's shape does not transfer -- there is no CALLIND to retarget (a bare CALLOTHER, not the `int 0x80` `intloc = swi(0x80); call [intloc]` pair), the number is not a constant to look up in the 332-entry table, and it is gated to x86-32.",
+    "The rewrite is op-level and pre-heritage, not a <callotherfixup>. cortexmpriv's fixup path can only REPLACE the CALLOTHER with a p-code snippet, and no snippet can produce an opaque value out of the ABI registers without emitting a false statement (`RAX = number + address + ...`). Inserting register inputs and an RAX output on the CALLOTHER itself keeps the operation opaque, which is what is true about it.",
+    "The read set is the one judgement in the pass, so the option carries both answers rather than picking one. `on` reads only argument registers a bounded backward walk of the CALLOTHER's own basic block proves are written first, which introduces no undefined register anywhere; `abi` reads all six, which the kernel contract permits and which a multi-block wrapper needs, at the cost of reads the function never writes. RAX is read and written under both.",
+    "Over-reading was rejected as the single default because it can ADD A PARAMETER the source has not got: R8/R9 are in the SysV input list, so on `abi` the witness's prototype grows from three parameters to six. Measured, not argued -- it is the `abi` arm of tests/stages/kuna-x64syscall.xml.",
+    "The user-op ids are resolved once per program into the ArchSeam (`simd_shuffle_userops`' precedent), because the boundary ArchContext carries no userop table. An op a compiler spec specialized with its own <callotherfixup> carries an injection id and is dropped there, so a spec-declared model always wins -- cortexmpriv's third guard, at a different seam.",
+    "No OS gate. On Windows x86-64 the instruction is also the syscall entry (RAX = number, R10 = arg1), so the RAX output is right there too and the in-block walk picks up whatever the stub sets; the pass degrades to an incomplete argument list rather than a wrong one. Naming the option's model 'the Linux ABI' in the catalog and spec is the honest framing.",
+    "Delivery is preset membership, exactly as for cortexmpriv (DIV-99): the catalog default stays `off` because the read set is a modelling judgement, and `aggressive` -- which `auto` selects under 500 KiB -- carries `on`. That is what makes the need's acceptance probe, which passes no x64syscall flag, go green."
+  ],
+  "changed": [
+    "decompiler/crates/kuna-decomp/src/p2_lift/kuna_x64syscall.rs",
+    "decompiler/crates/kuna-decomp/src/p2_lift/kuna_x64syscall/tests.rs",
+    "decompiler/crates/kuna-decomp/src/p2_lift/mod.rs",
+    "decompiler/crates/kuna-decomp/src/infra/architecture.rs",
+    "decompiler/crates/kuna-decomp/src/infra/universalaction.rs",
+    "decompiler/crates/kuna-decomp/src/substrate/context.rs",
+    "decompiler/crates/kuna-decomp/src/p0_knowledge/options.rs",
+    "decompiler/crates/kuna-decomp/src/p0_knowledge/modes.rs",
+    "decompiler/crates/kuna-decomp/phases.toml",
+    "tests/stages/kuna-x64syscall.xml",
+    "tests/cli/x86-64-syscall-wrapper.json",
+    "decompiler/crates/kuna-analysis/tests/fixtures/x64syscall_x86_64",
+    "decompiler/crates/kuna-analysis/tests/fixtures/x64syscall_x86_64.s",
+    "docs/spec/02-lift-and-flow.md",
+    "docs/history.md",
+    "docs/options.md"
+  ],
+  "acceptance": "PASS -- scripts.repipe.verify --need x86-64-syscall-wrapper reports 1/1 pass, need closed. On the filed dataset witness `kuna decompile <crackme> 0x78 --addr ... --assert 'prototype 0x78 long kernel_call(...)'` goes from `syscall(); return number;` to `return syscall(number,address,length,address);` with no x64syscall flag passed (aggressive carries it).",
+  "gates": {}
+}
