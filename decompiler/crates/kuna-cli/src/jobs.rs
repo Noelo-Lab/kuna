@@ -62,9 +62,10 @@
 //! `mpengine.dll` functions *slower* than the serial one (327 s against 113 s).
 //! Chunks stay small anyway, because they now cost only a spec file, and a small
 //! chunk is what keeps a worker from sitting idle at the end of a run.  The one
-//! reason to retire a live worker is memory: the per-function arena is never
-//! released inside a process, so a worker is recycled after [`RECYCLE_AFTER`]
-//! functions.
+//! reason to retire a live worker is memory: a process holds its allocator arena
+//! at the high-water mark of the worst per-function transient it ever saw, so a
+//! worker is recycled after [`RECYCLE_AFTER`] functions and the next one starts
+//! from the floor again.
 //!
 //! ## Wire format
 //!
@@ -119,11 +120,16 @@ const MAX_AUTO_CHUNK: usize = 512;
 const CHUNKS_PER_JOB: usize = 8;
 
 /// How many functions one worker process handles before the pool retires it.
-/// This is the memory bound: the per-function arena is never released inside a
-/// process, so without a ceiling a single worker could not finish a
-/// 274,000-function image at all.  Measured flat over the 3,000 functions one
-/// worker decompiled after its load on an 18 MB PE, so the ceiling is high enough
-/// that an ordinary binary never reaches it and pays no second load.
+///
+/// This is the memory ceiling, and what it bounds is the allocator arena, not a
+/// leak: a counting `#[global_allocator]` over 587 functions of a 274,000-function
+/// IL2CPP `.so` shows the LIVE heap flat at 403 -> 411 MB (~14 KB per function
+/// retained) while RSS climbs non-monotonically to 3.3 GB and does not come back
+/// down.  Per-function transients are freed, but the process keeps their
+/// high-water mark, and only a fresh worker returns to the floor.  RSS was
+/// measured flat over the 3,000 functions one worker decompiled after its load on
+/// an 18 MB PE, so the ceiling is high enough that an ordinary binary never
+/// reaches it and pays no second load.
 const RECYCLE_AFTER: usize = 4096;
 
 /// Ceiling on `--jobs auto`.  Each worker pays a whole program load, so the
@@ -663,9 +669,9 @@ pub(crate) fn run_pool(
                             slots[slot] = Some(r);
                         }
                     }
-                    // Recycling bounds the per-function arena, which a process
-                    // never releases; it costs a whole program load, so it is a
-                    // ceiling rather than a rhythm.
+                    // Recycling returns a worker to the memory floor a process
+                    // cannot reach on its own; it costs a whole program load, so
+                    // it is a ceiling rather than a rhythm.
                     if worker.as_ref().is_some_and(|w| w.functions_done >= RECYCLE_AFTER) {
                         if let Some(w) = worker.take() {
                             retire(w);
@@ -1817,6 +1823,30 @@ mod tests {
         for bad in ["0", "-4", "", "many"] {
             assert!(parse_jobs(bad).is_err(), "{bad:?} must be rejected");
         }
+    }
+
+    /// The memory trim runs on every pool start, so it decides the worker count
+    /// as much as `--jobs` does.  `auto` is a promise not to wreck the machine
+    /// and yields to what free memory holds; an explicit count is an instruction
+    /// and is obeyed with a warning.  A request the machine can hold is never
+    /// touched either way.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn auto_yields_to_free_memory_and_an_explicit_count_does_not() {
+        let mut c = cfg(0, 0.0);
+        c.jobs = 1;
+        assert_eq!(affordable_jobs(&c), 1, "one worker fits on any machine that can run this");
+
+        // Far past what any machine holds, so the trim is reached wherever this
+        // runs rather than only on a loaded box.
+        c.jobs = 1_000_000;
+        c.jobs_auto = true;
+        let trimmed = affordable_jobs(&c);
+        assert!(trimmed >= 1, "the trim must still leave a pool: {trimmed}");
+        assert!(trimmed < c.jobs, "`auto` must come down to what fits: {trimmed}");
+
+        c.jobs_auto = false;
+        assert_eq!(affordable_jobs(&c), 1_000_000, "an explicit --jobs N is obeyed, not lowered");
     }
 
     /// Whatever the planning policy, the plan must cover every slot exactly once

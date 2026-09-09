@@ -74,6 +74,19 @@ fn arm_entrymain() -> String {
         .to_string()
 }
 
+/// A C++ ELF whose `main` calls a **namespaced** member, `foo::Bar::baz`. A name
+/// is installed into the scope its `::` path names, so this is the fixture where
+/// a second function symbol at one address lands in a different scope from the
+/// first and the across-scopes display lookup starts answering with the wrong
+/// one.
+fn cpp_mangled() -> String {
+    repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/cpp_mangled_x86_64")
+        .to_str()
+        .unwrap()
+        .to_string()
+}
+
 /// Parse the `"count": N` field out of the decompile-all `--json` header.
 fn json_count(stdout: &str) -> Option<usize> {
     let i = stdout.find("\"count\":")? + "\"count\":".len();
@@ -1809,6 +1822,16 @@ fn jobs_output_is_byte_identical_to_serial() {
         let (got, stderr, ok) = run_kuna(&args);
         assert!(ok, "kuna decompile-all --jobs {jobs} failed: {stderr}");
         assert_eq!(got, want, "--jobs {jobs} (chunk {chunk:?}) moved the document");
+        // A run that can take an hour has to say where it is, and it has to say
+        // it on stderr — stdout is the document, byte-compared just above.
+        assert!(
+            stderr.contains("[kuna --jobs]") && stderr.contains("worker process(es)"),
+            "--jobs {jobs} reported no plan on stderr:\n{stderr}"
+        );
+        assert!(
+            stderr.contains("[kuna --jobs] done:"),
+            "--jobs {jobs} never reported completion:\n{stderr}"
+        );
     }
 }
 
@@ -1843,8 +1866,79 @@ fn jobs_full_load_agrees_with_the_inventory_handoff() {
     assert_eq!(got, want, "--jobs-full-load moved the document");
 }
 
-/// A pool cannot honour a policy it cannot express, so the two it cannot are
-/// refused up front rather than silently dropped in the shards.
+/// The sharp case for the inventory hand-off, and the one the byte-identity
+/// tests above cannot reach: a **namespaced C++ callee**.  Seeding the parent's
+/// inventory into a worker has to be strictly additive, because a name is
+/// installed into the scope its `::` path names — re-register an address the
+/// worker's own load already named and that address ends up with two function
+/// symbols in different scopes, at which point the across-scopes display lookup
+/// answers with the other one and `main` prints `sub_401136(...)` where the
+/// serial run printed `foo::Bar::baz(...)`.  Preserving callee names is what the
+/// hand-off exists for, so it gets a fixture where it can actually fail.
+#[test]
+fn jobs_preserves_namespaced_cpp_callee_names() {
+    let bin = cpp_mangled();
+    let sp = specs();
+    let base =
+        ["decompile-all", bin.as_str(), "--max-fn-seconds", "0", "--sleighpath", sp.as_str()];
+    let (want, stderr, ok) = run_kuna(&base);
+    if !ok {
+        if is_specs_skip(&stderr) {
+            eprintln!("jobs c++ names: skipping (no `.sla`; run `make specs`): {stderr}");
+            return;
+        }
+        panic!("kuna decompile-all failed: {stderr}");
+    }
+    assert!(
+        want.contains("foo::Bar::baz("),
+        "the fixture no longer calls a namespaced member, so this pins nothing:\n{want}"
+    );
+
+    for chunk in ["1", "2", "3"] {
+        let mut args = base.to_vec();
+        args.extend_from_slice(&["--jobs", "6", "--jobs-chunk", chunk]);
+        let (got, stderr, ok) = run_kuna(&args);
+        assert!(ok, "kuna decompile-all --jobs 6 --jobs-chunk {chunk} failed: {stderr}");
+        assert_eq!(got, want, "--jobs-chunk {chunk} moved a namespaced callee name");
+    }
+}
+
+/// The other half of the surface: `--jobs auto` resolves the worker count from
+/// the machine (cores, capped, then trimmed to what free memory holds) instead
+/// of the command line, and the plain concatenated-C output has no record
+/// framing to hide a mis-ordered merge.  Both have to land on the serial
+/// document exactly.
+#[test]
+fn jobs_auto_and_the_plain_c_surface_match_serial() {
+    let bin = fauxware();
+    let sp = specs();
+    let base =
+        ["decompile-all", bin.as_str(), "--max-fn-seconds", "0", "--sleighpath", sp.as_str()];
+    let (want, stderr, ok) = run_kuna(&base);
+    if !ok {
+        if is_specs_skip(&stderr) {
+            eprintln!("jobs auto: skipping (no `.sla`; run `make specs`): {stderr}");
+            return;
+        }
+        panic!("kuna decompile-all failed: {stderr}");
+    }
+    assert!(want.matches("// Function:").count() > 1, "the fixture must hold several functions");
+
+    for extra in [vec!["--jobs", "auto"], vec!["--jobs", "3", "--jobs-chunk", "1"]] {
+        let mut args = base.to_vec();
+        args.extend_from_slice(&extra);
+        let (got, stderr, ok) = run_kuna(&args);
+        assert!(ok, "kuna decompile-all {extra:?} failed: {stderr}");
+        // Agreeing with the serial document is also what a silent fall back to
+        // the serial path would do, so the pool has to be seen coming up.
+        assert!(stderr.contains("worker process(es)"), "{extra:?} ran no pool:\n{stderr}");
+        assert_eq!(got, want, "{extra:?} moved the concatenated-C document");
+    }
+}
+
+/// A pool cannot honour a policy it cannot express, so the ones it cannot are
+/// refused up front rather than silently dropped in the shards — as is a worker
+/// or chunk count that is not a count at all.
 #[test]
 fn jobs_refuses_what_a_pool_cannot_carry() {
     let bin = fauxware();
@@ -1866,6 +1960,20 @@ fn jobs_refuses_what_a_pool_cannot_carry() {
         run_kuna(&["decompile-all", &bin, "--json", "--jobs", "0", "--sleighpath", &specs()]);
     assert!(!ok, "--jobs 0 must be refused");
     assert!(stderr.contains("--jobs"), "the refusal must name the flag:\n{stderr}");
+
+    let (_, stderr, ok) = run_kuna(&[
+        "decompile-all",
+        &bin,
+        "--json",
+        "--jobs",
+        "2",
+        "--jobs-chunk",
+        "0",
+        "--sleighpath",
+        &specs(),
+    ]);
+    assert!(!ok, "--jobs-chunk 0 must be refused, not rounded up to a real chunk");
+    assert!(stderr.contains("--jobs-chunk"), "the refusal must name the flag:\n{stderr}");
 }
 
 /// The pool's scratch directory carries the whole program's symbol inventory and
