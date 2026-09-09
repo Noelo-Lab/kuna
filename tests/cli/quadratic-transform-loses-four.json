@@ -1,0 +1,44 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "0x401330",
+    "--addr",
+    "--assert",
+    "data 0x4060bc unsigned int coefficients[33028]",
+    "--assert",
+    "readonly 0x4060bc+16"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/indexaliasguard_i386",
+    "binary_sha256": "2d61c6df3716d8b9fa152090939f8000de7c832b2cb7d60cf4d984cc683530b2",
+    "binary_size": 4656,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/indexaliasguard_i386",
+    "selector": "0x401330",
+    "selector_kind": "addr"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "coefficients\\s*\\[\\s*[0-3]\\s*\\]|\\*\\s*coefficients|(?i:35f71e7f|3aa6a7f0|5c642a5|c30f7c)|(?:memcpy|memmove)\\(",
+      "v[0-9]+\\[0\\] = 0x35f71e7f;",
+      "v[0-9]+\\[1\\] = 0x3aa6a7f0;",
+      "v[0-9]+\\[2\\] = 0x5c642a5;",
+      "v[0-9]+\\[3\\] = 0xc30f7c;"
+    ]
+  },
+  "notes": "Desired: a stack buffer initialised by direct frame stores but read only through a LEA-derived pointer keeps its initialisation. Witness: crackmes.one 5ab77f5f33c5d40ad448c820 (sddecoder decoder.exe sub_401330), which declared the array, XORed it through a pointer loop and never assigned it. The fixture vendors those 252 MSVC bytes at their original VMAs."
+}

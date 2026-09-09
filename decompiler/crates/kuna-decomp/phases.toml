@@ -2861,6 +2861,25 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "indexaliasguard"
+values = "off|load|full"
+default = "load"
+destructive = false
+phase = "P3"
+subphase = "heritage-guard"
+strength = "HARD"
+rewind = "P3"
+issue = "re-quadratic-transform-loses-four"
+summary = "Restore the index-alias arm of upstream Heritage::guard (heritage.cc:1194), which kuna shipped stubbed out behind a hard-coded `highPtrPossible == false`. When a stack range is heritaged and a pointer can reach it, upstream adds two kinds of guard op, and this option is a tri-state over them. `load` (the default) runs Heritage::guardLoads (heritage.cc:1570): an addrforce CPUI_COPY read of the range in front of every indexed-stack LOAD whose discovered guard range covers it, so a slot that is only ever READ through a computed pointer still has a reader at the point the pointer is dereferenced. The COPY is artificial -- Heritage::handleNewLoadCopies propagates it away once heritage has finished, keeping only the addrforce marks it earned. `full` adds Heritage::guardStores (heritage.cc:1538), an indirect_store CPUI_INDIRECT in front of every STORE whose space can reach the range, which is what upstream always does; it is not the default because its INDIRECT chain survives into the output as write-backs of values a slot already held and as globals hoisted into temporaries, and over 60 decbench binaries it recovered nothing guardLoads did not. `off` is the pre-port state: neither arm runs, so a frame slot written by a direct `MOV [ESP+k],REG` and read only through a `LEA`-derived pointer has no reader at all and ActionDeadCode deletes the store. kuna::highPtrPossible is the upstream inline (architecture.hh:408) minus the cspec <nohighptr> range list, which only the PIC families set."
+use_when = "`load` by default (DIV-147; 0/675 datatest and 0/714 stages ablation). The `off` symptom is an array that is used before it is set: a stack buffer initialised by a run of direct frame stores, then walked by a pointer loop, prints with its declaration and all of its reads but none of its initialisation -- the analyst sees `unsigned int v11 [4];` followed by `*v6 = *v6 ^ ...` and concludes the buffer starts as garbage, when the binary loaded four constants into it. Flip `off` to reproduce kuna's pre-GH-536 output, or to bisect whether a new addrforce mark on a frame slot came from this arm. Flip `full` to reproduce upstream Ghidra exactly, or when a value written through a pointer looks like it is not reaching the frame slot it aliases; expect noisier output (measured +5 lines on the 1.9% of functions the arm touches at all)."
+example = "option indexaliasguard full"
+source_decompiler = "ghidra-upstream"
+inspiration = "RE-friction round 12, need quadratic-transform-loses-four (sddecoder decoder.exe sub_401330, PE i386: four MOV [ESP+k] stores of a 128-bit constant accumulator dropped); upstream Heritage::guardStores (heritage.cc:1538), Heritage::guardLoads (heritage.cc:1570), Architecture::highPtrPossible (architecture.hh:408)"
+change_kind = "correctness-fix"
+tier = "core"
+symptoms = "stack array declared and read but never initialised in the emitted C|a run of direct frame stores vanishes when the same slots are later read through a pointer|constants loaded from .rdata into a local buffer do not appear in the decompilation|accumulator or key schedule buffer looks uninitialised before an XOR loop walks it|value stored through a pointer does not appear to reach the frame slot it aliases"
+
+[[settable]]
 option = "tiedstorekeep"
 values = "on|off"
 default = "on"

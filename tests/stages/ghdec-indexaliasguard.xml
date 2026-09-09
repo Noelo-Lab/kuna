@@ -1,0 +1,67 @@
+<decompilertest>
+<binaryimage arch="x86:LE:32:default:windows">
+<!--
+    kuna re-quadratic-transform-loses-four: a stack buffer initialised by a run
+    of direct frame stores and then walked by a pointer loop prints with its
+    declaration and all of its reads, but with none of its initialisation.
+
+    Heritage::guard ends with an arm upstream Ghidra runs whenever a pointer can
+    reach the range being heritaged (heritage.cc:1194, gated on
+    Architecture::highPtrPossible).  Heritage::guardLoads (heritage.cc:1570)
+    puts an addrforce CPUI_COPY read of the range in front of every
+    indexed-stack LOAD whose discovered guard range covers it, so a slot that is
+    only ever READ through a computed pointer still has a reader where the
+    pointer is dereferenced.  kuna shipped that arm behind a hard-coded
+    highPtrPossible == false, so the slot had no reader at all and
+    ActionDeadCode deleted the store.
+
+    The vector is sub_401330 of decoder.exe from the sddecoder crackme
+    (challenge 5ab77f5f33c5d40ad448c820), MSVC i386, 252 bytes at 0x401330.  It
+    loads a 128-bit constant into the top four dwords of its own frame:
+
+        401330  83 ec 20              SUB   ESP,0x20
+        401333  a1 bc 60 40 00        MOV   EAX,[0x4060bc]
+        401338  8b 0d c0 60 40 00     MOV   ECX,[0x4060c0]
+        40133e  8b 15 c4 60 40 00     MOV   EDX,[0x4060c4]
+        401344  89 44 24 10           MOV   [ESP+0x10],EAX
+        401348  a1 c8 60 40 00        MOV   EAX,[0x4060c8]
+        40134d  89 4c 24 14           MOV   [ESP+0x14],ECX
+        401355  89 44 24 1c           MOV   [ESP+0x1c],EAX
+        40135d  89 54 24 20           MOV   [ESP+0x20],EDX   ; two pushes deep
+
+    and then reads it only through LEA EAX,[ESP+0x20] at 0x401399 (four pushes
+    deep, so the same 0x10 slot), which the inner loop walks a dword at a time.
+    The four constants live in .rdata at 0x4060bc.
+
+    Stage: P3 heritage guarding, option indexaliasguard off|load|full.  Pass 1
+    (off) pins the bug: the array is declared and XORed through the pointer,
+    with no initialisation anywhere.  Pass 2 (load, the shipped default) pins
+    the recovered stores.  The reads are identical across both passes, which is
+    the point: only the missing writes move.
+-->
+<bytechunk space="ram" offset="0x401330">
+83ec20a1bc6040008b0dc06040008b15c460400089442410a1c8604000894c24148b4c24288944241c5333c0568954242085c957ba04000000894424107e7d8bca55894c241833ed83f9047c5a8b7424348d3c95bc60400003d18a04308954241c884424138b4c24348d4424208a14298a4c241322d18bcff6da1bd283c7108bf2ba040000008bde83c004231983c1043158fc4a75f08b442414453be87ec68b54241c8b4c24188b7424384083c1043bc689442414894c24187c8b5d8b74243c33c085f67e2a8b5424388bc8bf0100000083e11fd3e78bc8c1f905857c8c1c7406c6041001eb04c6041000403bc67cda5f5eb8010000005b83c420c3
+</bytechunk>
+<bytechunk space="ram" offset="0x4060bc" readonly="true">
+7f1ef735f0a7a63aa542c6057c0fc300
+</bytechunk>
+<symbol space="ram" offset="0x401330" name="transform"/>
+</binaryimage>
+<script>
+  <com>option indexaliasguard off</com>
+  <com>lo fu transform</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option indexaliasguard load</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="INDEXALIASGUARD #1: both passes recover the same four-word stack accumulator, so only its initialisation is in question" min="2" max="2">uint4 v[0-9]+ \[4\];</stringmatch>
+<stringmatch name="INDEXALIASGUARD #2: both passes XOR it through the walking pointer, so the reads never moved" min="2" max="2">\*v[0-9]+ = \*v[0-9]+ \^</stringmatch>
+<stringmatch name="INDEXALIASGUARD #3: both passes read the finished accumulator bit by bit" min="2" max="2">v[0-9]+\[v[0-9]+ &gt;&gt; 5\]</stringmatch>
+<stringmatch name="INDEXALIASGUARD #4: load, the MOV [ESP+0x10],EAX at 0x401344 reaches element 0 (off emits no initialisation at all)" min="1" max="1">v[0-9]+\[0\] = dat_4060bc;</stringmatch>
+<stringmatch name="INDEXALIASGUARD #5: load, the MOV [ESP+0x14],ECX at 0x40134d reaches element 1" min="1" max="1">v[0-9]+\[1\] = dat_4060c0;</stringmatch>
+<stringmatch name="INDEXALIASGUARD #6: load, the MOV [ESP+0x20],EDX at 0x40135d reaches element 2 across the two intervening pushes" min="1" max="1">v[0-9]+\[2\] = dat_4060c4;</stringmatch>
+<stringmatch name="INDEXALIASGUARD #7: load, the MOV [ESP+0x1c],EAX at 0x401355 reaches element 3" min="1" max="1">v[0-9]+\[3\] = dat_4060c8;</stringmatch>
+</decompilertest>

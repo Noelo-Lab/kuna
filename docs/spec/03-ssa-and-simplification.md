@@ -336,15 +336,42 @@ store guard is what chapter [06](06-variables-and-merge.md)'s
 narrowed windows also shrink the merge tier's untied-call intersection test
 to the addresses the op can actually touch. With the option off, guards keep
 the maximally conservative whole-space window and are never range-locked —
-the pre-port behavior. One upstream path remains unported: the
-`highPtrPossible` alias path inside `heritage.rs (Heritage::guard)` is
-structurally disabled (its condition is constant false; the `guard_stores`
-body behind it is an explicit unreached stub, and `guard_loads` a second,
-silent no-op behind the same constant — so the load-guard COPY sinks that
-`Heritage::handle_new_load_copies` would mark address-forced are never
-created, and it takes its faithful empty early return). The guards' main
-consumer is the merge tier's untied-call intersection test (chapter 06);
-`RuleIndirectCollapse`'s store-guard branch reads them too.
+the pre-port behavior. The guards' consumers are `option indexaliasguard`
+below, the merge tier's untied-call intersection test (chapter 06), and
+`RuleIndirectCollapse`'s store-guard branch.
+
+**Index-alias guards.** The last arm of `heritage.rs (Heritage::guard)` runs
+only where a pointer can reach the range being heritaged — upstream's
+`Architecture::highPtrPossible`, which is every space but the internal *unique*
+one save for the ranges a compiler spec names in `<nohighptr>` (only the PIC
+families do, and kuna does not read that element). `option indexaliasguard`
+selects how much of that arm runs.
+
+At `load`, the default, `heritage.rs (Heritage::guard_loads)` walks the guard
+list built above and, for every still-live LOAD guard whose `[min,max]` window
+covers the range's address, inserts an `addrforce` `CPUI_COPY` of the range
+immediately before that LOAD and records the COPY as a load-copy sink. The
+point is liveness, not value: a frame slot written by a direct store and read
+only through a pointer derived from it has, before this, no reader at all in
+the SSA, so `ActionDeadCode` deletes the store and the emitted C declares a
+stack array, walks it with a pointer loop and never initialises it. The COPY
+gives the slot a reader exactly where the pointer is dereferenced. It is
+artificial and does not survive: once the pass finishes,
+`heritage.rs (Heritage::handle_new_load_copies)` traces each sink to the
+address-forcing boundary ops, marks those outputs `addrforce` when they fall
+inside a guarded window, and propagates every load-guard COPY away again —
+so what reaches the output is the mark the COPY earned, not the COPY.
+
+At `full`, `heritage.rs (Heritage::guard_stores)` also runs: every STORE whose
+space is the range's space, or is the range's container while the STORE is
+marked `spacebase_ptr`, gets an `indirect_store` `CPUI_INDIRECT` of the range
+in front of it, so a value written through a pointer is not assumed to leave
+the directly-addressed slot alone. That is what upstream always does; it is not
+kuna's default because the INDIRECT chain survives into the emitted C as
+write-backs of values a slot already holds and as globals hoisted into
+temporaries, and it recovers nothing the LOAD guard does not.
+
+At `off` neither runs, which is what kuna shipped before the option.
 
 **The dead-code delay machinery and the dead-definition gate.** Dead-code
 removal is only *allowed* in a space once heritage there is past the space's

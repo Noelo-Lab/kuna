@@ -1,0 +1,85 @@
+{
+  "slug": "quadratic-transform-loses-four",
+  "need_id": "quadratic-transform-loses-four",
+  "track": "quality",
+  "option": "indexaliasguard",
+  "values": "off|load|full",
+  "default": "load",
+  "div": "DIV-147",
+  "phase": "P3",
+  "subphase": "heritage-guard",
+  "scope": "small",
+  "modules": [
+    "decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_indexaliasguard.rs"
+  ],
+  "anchors": [
+    "heritage.cc:1194 (Heritage::guard)",
+    "heritage.cc:1570 (Heritage::guardLoads)",
+    "heritage.cc:1538 (Heritage::guardStores)",
+    "architecture.hh:408 (Architecture::highPtrPossible)"
+  ],
+  "decisions": [
+    "The filed hypothesis (stack-store liveness across the indexed XOR) and the round-8 refutation (P6 RangeHint join) are both OVERTURNED. The defect is in P3: Heritage::guard's highPtrPossible arm was a hard-coded false, so guard_loads never inserted the addrforce COPY that gives a pointer-read frame slot a reader. The refuter's P6 observation is real but is a symptom -- the three shadow scalars inside the array's extent have no readers precisely because the stores that would define them were already deleted; both disappear once guard_loads runs.",
+    "kuna already owned every other half of the machinery: discover_indexed_stack_pointers and analyze_new_load_guards build the guard windows, and handle_new_load_copies consumes exactly the load_copy_ops list that guard_loads populates (it had never been populated).",
+    "Default is `load`, not upstream's `full`. Measured A/B decompile-all over 60 decbench O2 binaries: full = 232/12118 functions changed, +1166 lines, +14 gotos; load = 56/12118, -61 lines, 0 goto change, and load recovers everything full does. guardStores' INDIRECT chain accounts for the entire surplus. `full` is kept as a level because it is upstream's behaviour.",
+    "highPtrPossible is implemented as the upstream space-type test without the cspec <nohighptr> range list, which only the PIC families set and kuna does not parse."
+  ],
+  "sweep": {
+    "corpus": "60 decbench O2 binaries (12,118 functions), decompile-all A/B off vs load",
+    "changed_functions": 56,
+    "lines_off": 13549,
+    "lines_on": 13488,
+    "gotos_off": 432,
+    "gotos_on": 432,
+    "lost_real_calls": 0,
+    "lost_pseudo_calls": "7 functions drop a PTRSUB pseudo-op",
+    "gained_calls": [
+      "mydoom.exe 0x4014e0 builtin_strncpy",
+      "mydoom.exe 0x404180 builtin_strncpy"
+    ],
+    "named_gains": [
+      "dexter.dll 0x69944000 recovers m[0..9] = {0,2,4,6,8,1,3,5,7,9}",
+      "mydoom.exe recovers two base64-alphabet builtin_strncpy initialisers",
+      "coreutils ginstall/mv 0x8720 stop redeclaring one name eight times with eight types"
+    ],
+    "full_level_comparison": {
+      "changed_functions": 232,
+      "lines_delta": 1166,
+      "goto_delta": 14
+    }
+  },
+  "speed_witness": {
+    "option": "indexaliasguard",
+    "binary": "decoder.exe",
+    "selector": "0x401330",
+    "speed_off_ms": 138.48,
+    "speed_on_ms": 141.58,
+    "speed_delta_pct": 2.24,
+    "speed_samples": 7,
+    "speed_budget_pct": 5.0,
+    "speed_within_budget": true
+  },
+  "speed_wholebinary": {
+    "binary": "coreutils/ginstall",
+    "cmd": "decompile-all --json",
+    "median_off_s": 14.46,
+    "median_on_s": 14.5,
+    "delta_pct": 0.28,
+    "samples": 3
+  },
+  "gates": {
+    "make test": "PARITY OK 675/675",
+    "make test-stages": "PARITY OK 721/721",
+    "make check-spec": "OK (strict too)",
+    "make test-cli": "105/105",
+    "kuna catalog --check": "catalog OK",
+    "make rust-test": "green"
+  },
+  "acceptance": {
+    "probe": "a-b49275132108",
+    "passes": true,
+    "promoted_to": "tests/cli/quadratic-transform-loses-four.json",
+    "fixture": "decompiler/crates/kuna-analysis/tests/fixtures/indexaliasguard_i386"
+  },
+  "stage_test": "tests/stages/ghdec-indexaliasguard.xml"
+}
