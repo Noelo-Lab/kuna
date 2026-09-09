@@ -764,20 +764,40 @@ impl ConsoleProgram {
         let sections = self.sections();
         self.function_entries_canonical()
             .into_iter()
-            .filter(|entry| {
-                let vma = entry.addr.get_offset();
-                if self.is_declared_entry(vma) {
-                    return true;
-                }
-                if self.is_import_slot(vma) {
-                    return false;
-                }
-                sections.is_empty()
-                    || sections.iter().any(|&(start, size, flags)| {
-                        flags & section_flags::CODE != 0 && vma >= start && vma - start < size
-                    })
-            })
+            .filter(|entry| self.entry_is_executable(entry.addr.get_offset(), &sections))
             .collect()
+    }
+
+    /// Does `entries` hold anything [`Self::function_entries_executable`] would
+    /// keep — i.e. is this inventory more than import pointer slots and data
+    /// addresses?
+    ///
+    /// The emptiness question every whole-binary surface has to ask, answered
+    /// over the inventory the caller already holds rather than by rebuilding it:
+    /// the section table is walked once, and the canonical enumeration not at
+    /// all. `kuna functions` needs it because an image can enumerate six import
+    /// names and no bodies, which is a total discovery failure that a plain
+    /// `is_empty()` reads as a healthy listing.
+    pub fn any_executable_entry(&self, entries: &[FunctionEntry]) -> bool {
+        let sections = self.sections();
+        entries
+            .iter()
+            .any(|entry| self.entry_is_executable(entry.addr.get_offset(), &sections))
+    }
+
+    /// The per-entry half of [`Self::function_entries_executable`], with the
+    /// section table hoisted out so a whole inventory costs one loader walk.
+    fn entry_is_executable(&self, vma: u64, sections: &[(u64, u64, u32)]) -> bool {
+        if self.is_declared_entry(vma) {
+            return true;
+        }
+        if self.is_import_slot(vma) {
+            return false;
+        }
+        sections.is_empty()
+            || sections.iter().any(|&(start, size, flags)| {
+                flags & section_flags::CODE != 0 && vma >= start && vma - start < size
+            })
     }
 
     /// Does `vma` fall inside an import pointer slot — a word the run-time

@@ -19,6 +19,13 @@
 //! and `--define-function` is the only thing an agent has left once the flags
 //! are lying.
 //!
+//! The same layout raises a second question on the inventory surface, and the
+//! last two tests cover it: the canonical inventory keeps import pointer slots,
+//! so an image like this one enumerates its imported names and no bodies at all.
+//! [`ConsoleProgram::any_executable_entry`] is how a caller asks whether an
+//! inventory holds anything a whole-binary run would decompile without paying
+//! for the enumeration twice (RE-need `function-inventory-silently-lists`).
+//!
 //! ## `.sla` precondition
 //!
 //! Bootstrapping needs the built `x86` `.sla` under `specs/` (gitignored;
@@ -130,6 +137,67 @@ fn an_undeclared_data_address_is_still_dropped() {
         assert!(
             !after.contains(other),
             "declaring {target:#x} must not lift {other:#x} with it"
+        );
+    }
+}
+
+/// The inventory question the same layout raises on the OTHER surface.
+///
+/// `kuna functions` reports the canonical inventory, which keeps import pointer
+/// slots so a call to an import renders its name. Add an import table to the
+/// all-data PE and that inventory is three entries and no bodies — non-empty,
+/// so a surface asking "did discovery find anything?" with `is_empty()` gets the
+/// wrong answer. [`ConsoleProgram::any_executable_entry`] is the question it
+/// should ask instead, and it must agree with `function_entries_executable`
+/// entry for entry.
+#[test]
+fn an_inventory_of_only_import_slots_holds_no_executable_entry() {
+    let Some(mut prog) =
+        boot("decompiler/crates/kuna-analysis/tests/fixtures/pe_dataimports_i386.exe")
+    else {
+        return;
+    };
+    prog.commit_pending_analysis().expect("read symbols (analysis commit) must succeed");
+
+    let canonical = prog.function_entries_canonical();
+    assert_eq!(
+        canonical.iter().map(|e| e.name.as_str()).collect::<Vec<_>>(),
+        vec!["GetProcAddress", "GetModuleHandleA", "LoadLibraryA"],
+        "the import names stay in the inventory: they are how a call to an import renders"
+    );
+    assert!(!canonical.is_empty(), "the fixture's point is a NON-empty inventory");
+    assert!(
+        !prog.any_executable_entry(&canonical),
+        "every one of them is a pointer slot, so not one is a body"
+    );
+    assert!(offsets(&prog).is_empty(), "and the batch is correspondingly empty");
+
+    // A declaration is still the way back in, and it moves both answers together.
+    declare(&mut prog, ENTRY, "entry", EXTENT);
+    let canonical = prog.function_entries_canonical();
+    assert!(prog.any_executable_entry(&canonical));
+    assert_eq!(offsets(&prog), vec![ENTRY]);
+}
+
+/// The two answers are one predicate: whatever the image,
+/// `any_executable_entry` over the canonical inventory is the `is_empty()` of
+/// `function_entries_executable`.
+#[test]
+fn the_two_executable_entry_answers_agree() {
+    for rel in [
+        "decompiler/crates/kuna-analysis/tests/fixtures/fauxware",
+        "decompiler/crates/kuna-analysis/tests/fixtures/ptx.o",
+        "decompiler/crates/kuna-analysis/tests/fixtures/pe_iatincode_i386.exe",
+        "decompiler/crates/kuna-analysis/tests/fixtures/pe_dataimports_i386.exe",
+        "decompiler/crates/kuna-analysis/tests/fixtures/pe_datasection_entry_i386.exe",
+    ] {
+        let Some(mut prog) = boot(rel) else { return };
+        prog.commit_pending_analysis().expect("read symbols (analysis commit) must succeed");
+        let canonical = prog.function_entries_canonical();
+        assert_eq!(
+            prog.any_executable_entry(&canonical),
+            !prog.function_entries_executable().is_empty(),
+            "{rel}: the cheap answer must be the expensive one"
         );
     }
 }

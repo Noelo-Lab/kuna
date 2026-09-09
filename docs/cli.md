@@ -818,6 +818,25 @@ too narrow. `--filter` / `--min-size` / `--max-size` / `--limit` are pure
 inventory arithmetic and cost nothing extra; `--reachable-from` additionally
 walks the program once.
 
+That verdict counts **bodies**, not inventory rows, on `functions` and
+`decompile-all` alike. The inventory keeps an import pointer slot as an entry so
+that a call to an import renders its name, and an image can consist of nothing
+else: a NEOLite-packed PE that flags every section `INITIALIZED_DATA|READ|WRITE`
+enumerates its six imported Win32 names and not one body. The six names are still
+listed — they are what the packed stub is going to call, which is exactly what a
+caller wants from that file — and the run still reports the failure:
+
+```console
+$ kuna functions ./packed.exe --json
+{"binary":"./packed.exe","count":6,"total":6,
+ "error":"no functions discovered in ./packed.exe: its entry point 0x4f7001 lies in
+          section .NEOpack, which the image does not flag executable -- pass
+          `--define-function 0x4f7001` to decompile there anyway",
+ "functions":[{"name":"GetProcAddress", …}, …]}
+$ echo $?
+1
+```
+
 `--reachable-from` is the "what does the entry point actually touch" question,
 answered with **`kuna xrefs`' own reference edges** (`kuna-analysis`'s
 `listing::xrefs`) rather than a second call-graph model that could disagree with

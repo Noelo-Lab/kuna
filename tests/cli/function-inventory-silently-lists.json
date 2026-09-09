@@ -1,0 +1,51 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cwd": "{{TMP}}",
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/pe_dataimports_i386.exe",
+    "binary_sha256": "14c790153086989ce47c834752f857d69f27a429a3b51c6a50b4634b90157a26",
+    "binary_size": 5632,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/pe_dataimports_i386.exe",
+    "selector": null,
+    "selector_kind": "none"
+  },
+  "cmd": [
+    "{{KUNA}}",
+    "functions",
+    "{{BIN}}",
+    "--json"
+  ],
+  "expect": {
+    "exit_code": {
+      "ne": 0
+    },
+    "stdout_is_json": true,
+    "json": [
+      {
+        "path": "error",
+        "op": "ne",
+        "value": null
+      },
+      {
+        "path": "count",
+        "op": "eq",
+        "value": 3
+      },
+      {
+        "path": "functions[*].name",
+        "op": "contains",
+        "value": "GetProcAddress"
+      },
+      {
+        "path": "functions[*].name",
+        "op": "contains",
+        "value": "LoadLibraryA"
+      }
+    ]
+  },
+  "notes": "need function-inventory-silently-lists. Retargeted from the dataset witness (crackmes.one 5ab77f5433c5d40ad448c1c1, NEOLite CryptoME.exe, count 6 error null) to pe_dataimports_i386.exe, the same layout reduced: every section 0xc0000040, entry in .stub, an import table. Both halves are pinned -- the import names survive AND the run reports the discovery failure."
+}

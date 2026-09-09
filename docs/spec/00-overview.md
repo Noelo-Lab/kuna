@@ -267,6 +267,24 @@ Four front-ends drive one engine assembly:
   `count: 0` with a null error. A declaration is an assertion rather than a
   candidate, so it outranks the filter; nothing undeclared is lifted with it, and
   the filter is unchanged for every image whose flags mean what they say.
+
+  (kuna) **The run-level discovery verdict is read off that same executable set,
+  never off the canonical inventory.** An unfiltered run that found no function
+  is reported as the failure it is — non-zero exit, the reason on stderr and in
+  the document's `error` field — and the question "found no function" has to mean
+  *no body*, because the canonical inventory retains import pointer slots for
+  call naming and an image can consist of nothing else. The reported NEOLite PE
+  enumerates six imported Win32 names at its Import Address Table and no body at
+  all, so `decompile-all` named the cause while `kuna functions` and `kuna
+  functions --summary` answered `count: 6` with a null error and exit 0 — the
+  packed-image diagnosis the caller can act on, withheld from the two surfaces an
+  agent orients with first. All three now ask
+  `decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::any_executable_entry)`,
+  which is `function_entries_executable` decided over an inventory already in
+  hand: one section-table walk, no second enumeration. The six names stay in the
+  listing beside the error, because a name the packed stub is going to call is
+  the answer for that file. A declaration is still what clears the verdict: one
+  declared body makes the run a run.
   Explicit selection of an entry with **no mapped bytes** — an import slot, or a
   relocatable object's undefined symbol bound to a synthetic extern-area address
   so that calls to it render by name — answers with the entry's nature rather

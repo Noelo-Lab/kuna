@@ -477,3 +477,52 @@ fn triage_flags_are_not_offered_where_they_do_nothing() {
     assert_eq!(code, 2, "{err}");
     assert!(err.contains("unknown option --filter"), "{err}");
 }
+
+/// An inventory made only of import pointer slots is a total discovery failure
+/// wearing a healthy listing's clothes.
+///
+/// The all-data PE with an import table (`pe_dataimports_i386.exe`, the reduced
+/// NEOLite crackme of RE-need `function-inventory-silently-lists`) enumerates
+/// three imported names and not one body, so `decompile-all` named the cause
+/// while `functions` answered `count: 3`, `error: null`, exit 0 on the same
+/// file. Both halves matter: the names must survive — an agent reads the import
+/// list to find out what the packed image will call — and the run must still say
+/// it found no code.
+#[test]
+fn an_inventory_of_only_imports_is_still_a_failed_run() {
+    let imports_only = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/pe_dataimports_i386.exe")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let (out, err, code) = run_kuna(&["functions", &imports_only, "--json"]);
+    if no_specs(&err, code) {
+        eprintln!("skipping: no .sla under {} ({err})", specs());
+        return;
+    }
+    assert_eq!(code, 1, "{err}");
+    assert_eq!(json_field(&out, "count"), Some(3), "the import names must survive: {out}");
+    for name in ["GetProcAddress", "GetModuleHandleA", "LoadLibraryA"] {
+        assert!(out.contains(name), "{name} must still be listed: {out}");
+    }
+    assert!(out.contains("no functions discovered"), "{out}");
+    assert!(out.contains("0x402001"), "the diagnosis names the entry: {out}");
+    assert!(err.contains("--define-function"), "and what to do about it: {err}");
+
+    // The orientation surface reads the same verdict off the same inventory.
+    let (summary, err, code) = run_kuna(&["functions", &imports_only, "--summary", "--json"]);
+    assert_eq!(code, 1, "a summary of nothing is still a failed run: {err}");
+    assert!(summary.contains("no functions discovered"), "{summary}");
+
+    // And a declaration is still what closes it: one body is enough.
+    let (declared, err, code) = run_kuna(&[
+        "functions",
+        &imports_only,
+        "--json",
+        "--define-function",
+        "0x402001-0x40200c=entry",
+    ]);
+    assert_eq!(code, 0, "a declared body is a discovered body: {err}");
+    assert_eq!(json_field(&declared, "count"), Some(4), "{declared}");
+    assert!(declared.contains("\"error\": null"), "{declared}");
+}
