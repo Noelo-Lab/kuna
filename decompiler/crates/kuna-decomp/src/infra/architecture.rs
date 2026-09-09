@@ -652,6 +652,14 @@ pub struct Architecture {
     /// `MapState::addGuard` can supply real array index bounds in P6
     /// (option `loadguardrange`, default-on: upstream Ghidra's behavior).
     pub load_guard_range: bool,
+    /// (kuna) How much of the upstream index-alias arm at the end of
+    /// `Heritage::guard` (heritage.cc:1194, the `highPtrPossible` gate) runs:
+    /// `0` = neither, `1` = the `addrforce` `COPY` read of the range before
+    /// every indexed-stack LOAD it intersects (`Heritage::guardLoads`), `2` =
+    /// that plus the `INDIRECT` across every STORE that can reach the range
+    /// (`Heritage::guardStores`), i.e. upstream.  See
+    /// [`crate::p3_dataflow::kuna_indexaliasguard`] (option `indexaliasguard`).
+    pub index_alias_guard: int4,
     /// (kuna) Refuse the `RulePropagateCopy` marker propagation that would
     /// orphan an address-tied `COPY` output holding a call's return value,
     /// keeping a `local = f();` frame store in the emitted C (option
@@ -1970,6 +1978,7 @@ impl Architecture {
             call_overlap: 0,
             spill_arg_trial: 0,
             load_guard_range: false, // (kuna) option loadguardrange; reset_defaults sets the shipped default
+            index_alias_guard: 0, // (kuna) option indexaliasguard; reset_defaults sets the shipped default
             tied_store_keep: false, // (kuna) option tiedstorekeep; reset_defaults sets the shipped default (on)
             loop_counter_store: false, // (kuna) option loopcounterstore; reset_defaults sets the shipped default (on)
             region_structure: true,
@@ -2202,6 +2211,7 @@ impl Architecture {
         self.callee_arity_scratch = true; // (kuna) DIV-PENDING default-on: a boundary register the caller's own trial scoring marked inactive is scratch, not a further argument, so a run that stops at one is still bounded (0/675 ablation)
         self.call_overlap = 0; // (kuna) calloverlap: PLACEHOLDER default (set from measurement)
         self.spill_arg_trial = 0; // (kuna) spillargtrial default-OFF opt-in (diverges from upstream onlyOpUse; the failure mode is a spurious trailing argument, which no gate can see)
+        self.index_alias_guard = crate::p3_dataflow::kuna_indexaliasguard::LEVEL_LOAD; // (kuna) DIV-147 default `load`: restores upstream Heritage::guardLoads (heritage.cc:1570), which kuna shipped behind a hard-coded highPtrPossible == false (0/675 datatest, 0/714 stages ablation); `off` drops it again, `full` adds guardStores
         self.load_guard_range = true; // (kuna) DIV-77 default-on: restores upstream Heritage::analyzeNewLoadGuards ValueSet range refinement of indexed-stack LOAD/STORE guards (0/675 ablation); `option loadguardrange off` reverts to whole-space guards with no index bound
         self.tied_store_keep = true; // (kuna) DIV-105 default-on: RulePropagateCopy refuses the marker propagation that would orphan an address-tied COPY holding a call return, so a `local = f();` frame store survives dead-code elimination (0/675 ablation, speed -0.13%); `option tiedstorekeep off` restores upstream's propagation
         self.loop_counter_store = true; // (kuna) DIV-146 default-on: RulePropagateCopy refuses the marker propagation that would delete a frame-slot loop counter's write-back, so the increment prints on the counter and the emitted `for` terminates (0/675 ablation); `option loopcounterstore off` restores upstream's propagation
@@ -2608,6 +2618,12 @@ impl Architecture {
                 Ok(msg)
             }
             "loadguardrange" => on_off!(load_guard_range, "Indexed-stack guard ValueSet range refinement"),
+            "indexaliasguard" => {
+                let (val, msg) =
+                    crate::p3_dataflow::kuna_indexaliasguard::OptionIndexAliasGuard.apply(p1)?;
+                self.index_alias_guard = val;
+                Ok(msg)
+            }
             "tiedstorekeep" => {
                 on_off!(tied_store_keep, "Address-tied store copy-propagation brake")
             }
@@ -3507,6 +3523,7 @@ impl Architecture {
         ctx.call_overlap = self.call_overlap; // calloverlap
         ctx.spill_arg_trial = self.spill_arg_trial; // spillargtrial
         ctx.load_guard_range = self.load_guard_range; // loadguardrange
+        ctx.index_alias_guard = self.index_alias_guard; // indexaliasguard
         ctx.tied_store_keep = self.tied_store_keep; // tiedstorekeep
         ctx.loop_counter_store = self.loop_counter_store; // loopcounterstore
         ctx.region_structure = self.region_structure; // regionstructure

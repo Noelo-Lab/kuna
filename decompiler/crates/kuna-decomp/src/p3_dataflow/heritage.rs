@@ -85,6 +85,7 @@ use kuna_base::types::{int4, uint4, uintb};
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
+use crate::kuna_indexaliasguard::{LEVEL_FULL, LEVEL_OFF};
 use crate::kuna_restartlog::{KunaRestartReason, RestartLog};
 use crate::overrides::Override;
 use crate::context::BlockId;
@@ -1464,15 +1465,22 @@ impl Heritage {
             fl |= fd.query_local_properties(addr, size, &usepoint);
             self.guard_calls(fd, fl, addr, size, write);
             self.guard_returns(fd, fl, addr, size, write);
-            // STUB(W4/W6): highPtrPossible queries the recovered type system /
-            // pointer analysis (`glb->highPtrPossible`), absent from the merged
-            // `context::ArchContext` (which carries only the space manager).  With
-            // no recovered high pointers it is false, so the STORE/LOAD index-
-            // alias guards are not reached (faithful for a function whose stack
-            // is not indexed by a recovered pointer).
-            let high_ptr_possible = false;
+            // (kuna `indexaliasguard`) `Architecture::highPtrPossible`
+            // (architecture.hh:408) is `space type != IPTR_INTERNAL &&
+            // !nohighptr.inRange(loc,size)`.  kuna does not read the cspec
+            // `<nohighptr>` element, which only the PIC families set; for every
+            // other processor the range list is empty and the test reduces to the
+            // space-type check below.
+            let level = fd.get_arch().index_alias_guard;
+            let high_ptr_possible = level != LEVEL_OFF
+                && addr
+                    .get_space()
+                    .map(|s| s.get_type() != spacetype::IPTR_INTERNAL)
+                    .unwrap_or(false);
             if high_ptr_possible {
-                self.guard_stores(fd, addr, size, write);
+                if level >= LEVEL_FULL {
+                    self.guard_stores(fd, addr, size, write);
+                }
                 self.guard_loads(fd, fl, addr, size, write);
             }
         }
@@ -2287,12 +2295,49 @@ impl Heritage {
     /// the critical path; the C++ body folds in with the W4 INDIRECT factory.
     fn guard_stores(
         &mut self,
-        _fd: &mut crate::funcdata::Funcdata,
-        _addr: &Address,
-        _size: int4,
-        _write: &mut [crate::context::VarnodeId],
+        fd: &mut crate::funcdata::Funcdata,
+        addr: &Address,
+        size: int4,
+        write: &mut Vec<crate::context::VarnodeId>,
     ) {
-        unimplemented_stub("Heritage::guard_stores (needs Funcdata::newIndirectOp)");
+        use crate::op::pcodeop_flags;
+        use kuna_num::opcodes::OpCode;
+
+        let spc = addr.get_space().expect("guard_stores: addr space").clone();
+        let container = spc.get_contain().cloned();
+        let stores: Vec<crate::context::OpId> = fd.obank().iter_code(OpCode::CPUI_STORE).collect();
+        for op in stores {
+            let dead = fd.obank().get(op).map(|o| o.is_dead()).unwrap_or(true);
+            if dead {
+                continue;
+            }
+            let store_space = match fd.obank().get(op).and_then(|o| o.get_in(0)) {
+                Some(v) => match store_space_from_const(fd, v) {
+                    Some(s) => s,
+                    None => continue,
+                },
+                None => continue,
+            };
+            let uses_spacebase =
+                fd.obank().get(op).map(|o| o.uses_spacebase_ptr()).unwrap_or(false);
+            let contained =
+                container.as_ref().map(|c| Rc::ptr_eq(c, &store_space)).unwrap_or(false);
+            if !((contained && uses_spacebase) || Rc::ptr_eq(&spc, &store_space)) {
+                continue;
+            }
+            let indop = fd.new_indirect_op(op, addr, size, pcodeop_flags::indirect_store);
+            let invn = fd.obank().get(indop).and_then(|o| o.get_in(0));
+            if let Some(v) = invn.and_then(|v| fd.vbank_mut().get_mut(v)) {
+                v.set_active_heritage();
+            }
+            let outvn = fd.obank().get(indop).and_then(|o| o.get_out());
+            if let Some(out) = outvn {
+                if let Some(v) = fd.vbank_mut().get_mut(out) {
+                    v.set_active_heritage();
+                }
+                write.push(out);
+            }
+        }
     }
 
     /// Guard LOAD ops in the load-guard list (C++ `Heritage::guardLoads`,
@@ -2304,18 +2349,50 @@ impl Heritage {
     /// rejects unrecovered register ranges (`fl==0`).
     fn guard_loads(
         &mut self,
-        _fd: &mut crate::funcdata::Funcdata,
+        fd: &mut crate::funcdata::Funcdata,
         fl: uint4,
-        _addr: &Address,
-        _size: int4,
-        _write: &mut [crate::context::VarnodeId],
+        addr: &Address,
+        size: int4,
+        _write: &mut Vec<crate::context::VarnodeId>,
     ) {
-        // C++: if ((fl & Varnode::addrtied)==0) return;  -- only address-tied
-        // ranges can index-alias a stack LOAD.  The `loadGuard` list is empty
-        // without `discoverIndexedStackPointers` populating it (no indexed-stack
-        // LOADs here), so the COPY-guard loop (heritage.cc:1579-1607) is a no-op
-        // regardless; it folds in once load-guard discovery lands.
-        let _addrtied = (fl & varnode_flags::addrtied) != 0;
+        use kuna_num::opcodes::OpCode;
+
+        if (fl & varnode_flags::addrtied) == 0 {
+            return; // If not address tied, don't consider for index alias
+        }
+        let mut kept: Vec<LoadGuard> = Vec::with_capacity(self.load_guard.len());
+        let guards = std::mem::take(&mut self.load_guard);
+        for guard in guards {
+            if !guard.is_valid(fd, OpCode::CPUI_LOAD) {
+                continue; // erase the stale record
+            }
+            let applies = match addr.get_space() {
+                Some(s) => Rc::ptr_eq(s, &guard.spc),
+                None => false,
+            } && addr.get_offset() >= guard.minimum_offset
+                && addr.get_offset() <= guard.maximum_offset;
+            if !applies {
+                kept.push(guard);
+                continue;
+            }
+            let guard_addr =
+                fd.obank().get(guard.op).expect("guard_loads: live guard op").get_addr().clone();
+            let copyop = fd.new_op(1, guard_addr);
+            let vn = fd.new_varnode_out(size, addr, copyop).expect("guard_loads: COPY out");
+            {
+                let v = fd.vbank_mut().get_mut(vn).expect("guard_loads: COPY out vn");
+                v.set_active_heritage();
+                v.set_addr_force();
+            }
+            fd.op_set_opcode_code(copyop, OpCode::CPUI_COPY);
+            let invn = fd.new_varnode(size, addr, None);
+            fd.vbank_mut().get_mut(invn).expect("guard_loads: COPY in vn").set_active_heritage();
+            let _ = fd.op_set_input(copyop, invn, 0);
+            fd.op_insert_before(copyop, guard.op);
+            self.load_copy_ops.push(copyop);
+            kept.push(guard);
+        }
+        self.load_guard = kept;
     }
 
     /// Remove deprecated CPUI_MULTIEQUAL, CPUI_INDIRECT, or CPUI_COPY ops,
@@ -4636,8 +4713,12 @@ impl Heritage {
         // index bound.
         if fd.get_arch().load_guard_range {
             self.analyze_new_load_guards(fd);
-            self.handle_new_load_copies(fd);
         }
+        // Unconditional, as upstream (heritage.cc:2754): the load-guard COPY
+        // sinks `option indexaliasguard` creates must be marked and propagated
+        // away whether or not their guards were range-refined.  An empty sink
+        // list takes the early return, so this is inert with the arm off.
+        self.handle_new_load_copies(fd);
         // splitmanage.splitAdditional() on pass 0: STUB(W6) PreferSplitManager.
         self.pass += 1;
     }
@@ -4688,6 +4769,22 @@ impl Heritage {
 /// block, move ops, or fold constants away from a MULTIEQUAL.
 fn typeop_skeleton(opc: kuna_num::opcodes::OpCode) -> crate::context::TypeOp {
     crate::typeop::seam_type_op_for(opc)
+}
+
+/// The address space a `CPUI_LOAD`/`CPUI_STORE` space-id constant names (C++
+/// `Varnode::getSpaceFromConst`).  kuna stores the space-manager index in the
+/// constant rather than a raw pointer, so an out-of-range value (a hand-built
+/// fixture's plain constant) answers `None` instead of dereferencing.
+fn store_space_from_const(
+    fd: &crate::funcdata::Funcdata,
+    vn: crate::context::VarnodeId,
+) -> Option<Rc<AddrSpace>> {
+    let idx = fd.vbank().get(vn)?.get_addr().get_offset();
+    let manage = fd.get_arch().manage();
+    if idx >= manage.num_spaces() as uintb {
+        return None;
+    }
+    manage.get_space(idx as int4).map(Rc::clone)
 }
 
 /// `PcodeOp::getOpFromConst(def->getIn(1)->getAddr())` for the INDIRECT

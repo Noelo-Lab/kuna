@@ -1821,7 +1821,7 @@ mod tests {
         // and kuna-calltrampoline / a call whose callee discards the pushed return
         // address is flowed through instead of decoding a junk fall-through at the
         // unreachable return address (repipe r11)
-        assert_eq!(count, 259, "corpus file count drifted");
+        assert_eq!(count, 260, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

@@ -835,6 +835,18 @@ pub struct ArchContext {
     /// (the pre-port behavior).  Read by
     /// [`Heritage::heritage`](crate::p3_dataflow::heritage::Heritage::heritage).
     pub load_guard_range: bool,
+    /// (kuna) `option indexaliasguard off|load|full`: how much of the upstream
+    /// index-alias arm at the end of `Heritage::guard` (`heritage.cc:1194`, the
+    /// `highPtrPossible` gate) runs — `load` puts an `addrforce` `CPUI_COPY`
+    /// read of the range before every indexed-stack LOAD it intersects
+    /// (`Heritage::guardLoads`, heritage.cc:1570), `full` adds the
+    /// `CPUI_INDIRECT` across every STORE that can reach the range
+    /// (`Heritage::guardStores`, heritage.cc:1538).  `off` leaves both arms
+    /// unreached, so a stack slot only ever read through an indexed pointer has
+    /// no reader at all and its initializing store dies to `ActionDeadCode`.
+    /// Levels in [`crate::p3_dataflow::kuna_indexaliasguard`]; read by
+    /// [`Heritage::guard`](crate::p3_dataflow::heritage::Heritage).
+    pub index_alias_guard: int4,
     /// (kuna) `option tiedstorekeep` (default-on, DIV-105): refuse the
     /// `RulePropagateCopy` marker propagation that would leave an address-tied
     /// `COPY` output holding a call's return value with no readers, so a
@@ -1326,6 +1338,7 @@ impl ArchContext {
             call_overlap: 0,             // calloverlap (0 = both overlap guards inert)
             spill_arg_trial: 0,          // spillargtrial (0 = upstream: every STORE rejects)
             load_guard_range: true,      // loadguardrange (upstream behavior, default-on)
+            index_alias_guard: 1,        // indexaliasguard (load; Architecture::reset_defaults sets the shipped default)
             tied_store_keep: false,      // tiedstorekeep (Architecture::reset_defaults sets the shipped default: on)
             loop_counter_store: false,   // loopcounterstore (Architecture::reset_defaults sets the shipped default: on)
             region_structure: false,     // regionstructure (opt-in default-off)

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    714,
-    714
+    721,
+    721
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -247,6 +247,13 @@
     "data:GUARDARM #1: OFF inverts the guard and nests the body one level deeper (pass 1 only)",
     "data:GUARDARM #2: ON keeps the guard flat with the fatal call as its clause (pass 2 only)",
     "data:GUARDARM #3: the no-return clause call is emitted in BOTH passes",
+    "data:INDEXALIASGUARD #1: both passes recover the same four-word stack accumulator, so only its initialisation is in question",
+    "data:INDEXALIASGUARD #2: both passes XOR it through the walking pointer, so the reads never moved",
+    "data:INDEXALIASGUARD #3: both passes read the finished accumulator bit by bit",
+    "data:INDEXALIASGUARD #4: load, the MOV [ESP+0x10],EAX at 0x401344 reaches element 0 (off emits no initialisation at all)",
+    "data:INDEXALIASGUARD #5: load, the MOV [ESP+0x14],ECX at 0x40134d reaches element 1",
+    "data:INDEXALIASGUARD #6: load, the MOV [ESP+0x20],EDX at 0x40135d reaches element 2 across the two intervening pushes",
+    "data:INDEXALIASGUARD #7: load, the MOV [ESP+0x1c],EAX at 0x401355 reaches element 3",
     "data:INT3PAD #1: the four-byte pad is counted and named (warn and halt passes only)",
     "data:INT3PAD #2: the trap is the function's return value except when it ends the flow",
     "data:INT3PAD #3: int3pad halt renders the trap as a statement, not a returned call",
