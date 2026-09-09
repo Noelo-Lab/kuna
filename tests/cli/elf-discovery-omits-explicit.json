@@ -1,0 +1,39 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "functions",
+    "{{BIN}}",
+    "--json"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/funcstart_patterns_x86_64",
+    "binary_sha256": "ff6946f03161c6bbcffabeb6b42d9a05ff65a34d35bb91f8959fa9f5db602017",
+    "binary_size": 14296,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/funcstart_patterns_x86_64",
+    "selector": null,
+    "selector_kind": "none"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "json": [
+      {
+        "path": "functions[*].address",
+        "op": "eq",
+        "value": 4198432
+      }
+    ]
+  },
+  "notes": "elf-discovery-omits-explicit: vendored twin of the reported image. Same non-PIE x86-64 _start, same `mov rdi,imm32` handover of main to __libc_start_main; main is 0x401020 here and 0x11a9b in the dataset witness, which stays the need's acceptance. In-repo so the probe runs where there is no dataset."
+}
