@@ -3824,6 +3824,55 @@ decomp_command!(
     }
 );
 
+// --- byte overlay (kuna) ---------------------------------------------------
+
+decomp_command!(
+    /// (kuna) `override bytes <addr> <hex>`: the bytes mapped at `<addr>` are
+    /// `<hex>`, whatever the image file holds there.  Not a C++ command, so it is
+    /// registered by [`crate::kuna_console::register_kuna_commands`] rather than
+    /// here — `CPP_REGISTER_ORDER` is a transcription of upstream's own list.
+    ///
+    /// The statement a static loader cannot derive.  A stage-1 unpacker's output
+    /// exists only once that stage has run, so an agent that has recovered the
+    /// plaintext otherwise has to patch a copy of the executable outside kuna and
+    /// re-load it (`docs/re-needs/byte-overlay-assertion-recovered.md`).  The
+    /// overlay lives in the load image, so nothing is written to disk, and it
+    /// must be stated before `read symbols` — every later read of those addresses
+    /// serves it, and no read is taken twice.
+    IfcOverrideBytes,
+    fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
+        {
+            let dcp = dcp_mut(status)?;
+            if dcp.conf.is_none() {
+                return Err(IfaceError::execution("No load image present"));
+            }
+        }
+        let dcp = dcp_mut(status)?;
+        let prog = dcp.conf.as_mut().expect("conf checked non-None above");
+        let (addr, _size) = parse_machaddr(prog, s, false).map_err(IfaceError::parse)?;
+        s.skip_ws();
+        if s.eof() {
+            return Err(IfaceError::parse("Missing bytes"));
+        }
+        let data = crate::assertions::parse_hex_bytes(&s.read_token())
+            .map_err(IfaceError::parse)?;
+        let loader_rc = prog.arch().translate().loader_rc();
+        {
+            let mut loader = loader_rc
+                .try_borrow_mut()
+                .map_err(|_| IfaceError::execution("The load image is already borrowed"))?;
+            loader
+                .kuna_overlay_bytes(&addr, &data)
+                .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+        }
+        let mut line = format!("Successfully overlaid {} bytes at ", data.len());
+        addr.print_raw(&mut line).map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+        line.push('\n');
+        status.out(&line);
+        Ok(())
+    }
+);
+
 // --- volatile / readonly (ifacedecomp.cc) ----------------------------------
 
 decomp_command!(

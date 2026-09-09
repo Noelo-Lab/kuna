@@ -1046,6 +1046,43 @@ impl ObjectLoadImage {
         cursize
     }
 
+    /// Write `data` over the mapped bytes at `vma` (the write twin of
+    /// [`Self::fill_span`], and the loader half of `--assert bytes`).
+    ///
+    /// Resolved through [`Self::find_section`] so an overlay lands in exactly the
+    /// segment a read at the same address would come from, and refused unless
+    /// that segment maps the whole span: a partial write would leave half a
+    /// stated instruction stream in place, which is worse than not taking the
+    /// statement at all.  A span reaching into the segment's zero-filled RAM tail
+    /// materialises that tail first — the caller is stating what the running
+    /// program put there, which is precisely a `.bss`-style region's content.
+    fn overlay_span(&mut self, vma: u64, data: &[u8]) -> Result<(), String> {
+        if data.is_empty() {
+            return Err("an overlay needs at least one byte".into());
+        }
+        let end = vma
+            .checked_add(data.len() as u64) // cast: overlay byte count
+            .ok_or_else(|| "the overlay wraps past the end of the address space".to_string())?;
+        let idx = self
+            .find_section(vma)
+            .filter(|(idx, secsize)| {
+                let seg_vma = self.segments[*idx].vma;
+                vma >= seg_vma && end <= seg_vma.wadd(*secsize)
+            })
+            .map(|(idx, _)| idx)
+            .ok_or_else(|| format!("no loaded segment maps {vma:#x}-{end:#x}"))?;
+        let seg = &mut self.segments[idx];
+        let off = (vma - seg.vma) as usize; // cast: offset within a mapped segment
+        let stop = off + data.len();
+        if stop > seg.data.len() {
+            seg.data.resize(stop, 0);
+        }
+        seg.data[off..stop].copy_from_slice(data);
+        // The 512-byte read window may straddle what just moved; drop it.
+        *self.bufoffset.borrow_mut() = !0u64;
+        Ok(())
+    }
+
     /// Copy `len` bytes out of segment `idx` starting at file-relative
     /// `seg_off` into `dst` (the C++ `bfd_get_section_contents`).  A read past
     /// the segment's file data zero-fills the remainder (a `.bss`-style RAM tail
@@ -1188,6 +1225,22 @@ impl LoadImage for ObjectLoadImage {
 
     fn get_segments(&self) -> Vec<(u64, u64, u32)> {
         self.segment_info.iter().map(|s| (s.vma, s.size, s.flags)).collect()
+    }
+
+    fn kuna_overlay_bytes(&mut self, addr: &Address, data: &[u8]) -> KunaResult<()> {
+        let space = addr
+            .get_space()
+            .expect("ObjectLoadImage::kuna_overlay_bytes: address with null space");
+        match &self.spaceid {
+            Some(sp) if Rc::ptr_eq(sp, space) => {}
+            _ => {
+                return Err(KunaError::data_unavail(format!(
+                    "Trying to overlay loadimage bytes in space: {}",
+                    space.get_name()
+                )));
+            }
+        }
+        self.overlay_span(addr.get_offset(), data).map_err(KunaError::data_unavail)
     }
 
     fn get_readonly(&self, list: &mut RangeList) {
@@ -1812,6 +1865,75 @@ mod tests {
             }
             other => panic!("expected DataUnavail, got {other:?}"),
         }
+    }
+
+    /// (kuna `--assert bytes`) The overlay is a statement about RAM: every later
+    /// read serves it, the file on disk is untouched, and an address no segment
+    /// maps is refused rather than invented.
+    #[test]
+    fn an_overlay_replaces_what_every_later_read_returns() {
+        use kuna_sleigh::loadimage::LoadImage;
+        let m = manager();
+        let ram = Rc::clone(m.get_space_by_name("ram").unwrap());
+        let elf = build_elf64(0x401000, &[0x55, 0x48, 0x89, 0xe5], None);
+        let mut img = ObjectLoadImage::from_bytes("t.elf", &elf).unwrap();
+        img.attach_to_space(Rc::clone(&ram));
+
+        // Warm the 512-byte read window first: an overlay that did not drop it
+        // would be invisible to exactly the reads most likely to follow one.
+        assert_eq!(
+            img.load(4, &Address::new(Rc::clone(&ram), 0x401000)).unwrap(),
+            vec![0x55, 0x48, 0x89, 0xe5]
+        );
+        img.kuna_overlay_bytes(&Address::new(Rc::clone(&ram), 0x401001), &[0x31, 0xc0])
+            .expect("inside the segment");
+        assert_eq!(
+            img.load(4, &Address::new(Rc::clone(&ram), 0x401000)).unwrap(),
+            vec![0x55, 0x31, 0xc0, 0xe5]
+        );
+
+        // Unmapped, and straddling the end of the only segment: both refused,
+        // naming the span, because a half-applied overlay is worse than none.
+        for (vma, len) in [(0x1000u64, 1usize), (0x401002, 4)] {
+            let err = img
+                .kuna_overlay_bytes(&Address::new(Rc::clone(&ram), vma), &vec![0x90; len])
+                .unwrap_err();
+            match &err {
+                KunaError::DataUnavail { explain } => {
+                    assert!(explain.contains("no loaded segment maps"), "got {explain}");
+                }
+                other => panic!("expected DataUnavail, got {other:?}"),
+            }
+        }
+        // A wrong-space overlay is the loadFill contract, not a panic.
+        let other = Rc::clone(m.get_space_by_name("const").unwrap());
+        assert!(img.kuna_overlay_bytes(&Address::new(other, 0), &[0x90]).is_err());
+    }
+
+    /// A writable segment's zero-filled RAM tail is real mapped memory, so an
+    /// overlay reaching into it materialises the tail rather than refusing: what
+    /// the running program left there is exactly what a caller is stating.
+    #[test]
+    fn an_overlay_may_reach_into_a_zero_filled_tail() {
+        use kuna_sleigh::loadimage::LoadImage;
+        let mut bytes = build_elf64(0x401000, &[0x55, 0x48, 0x89, 0xe5], None);
+        bytes[104..112].copy_from_slice(&64u64.to_le_bytes()); // p_memsz: 4 backed + 60 zero
+        bytes[68..72].copy_from_slice(&(object::elf::PF_R | object::elf::PF_W).to_le_bytes());
+        let m = manager();
+        let ram = Rc::clone(m.get_space_by_name("ram").unwrap());
+        let mut img = ObjectLoadImage::from_bytes("t.elf", &bytes).unwrap();
+        img.attach_to_space(Rc::clone(&ram));
+
+        img.kuna_overlay_bytes(&Address::new(Rc::clone(&ram), 0x401020), &[0xde, 0xad])
+            .expect("inside the p_memsz tail");
+        assert_eq!(
+            img.load(4, &Address::new(Rc::clone(&ram), 0x40101f)).unwrap(),
+            vec![0x00, 0xde, 0xad, 0x00]
+        );
+        // Past p_memsz is not mapped at all.
+        assert!(img
+            .kuna_overlay_bytes(&Address::new(Rc::clone(&ram), 0x401040), &[0x90])
+            .is_err());
     }
 
     #[test]

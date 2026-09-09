@@ -1,0 +1,91 @@
+{
+  "slug": "byte-overlay-assertion-recovered",
+  "need_id": "byte-overlay-assertion-recovered",
+  "track": "tooling",
+  "scope": "small",
+  "round": 12,
+  "branch": "feat/re-byte-overlay-assertion-recovered",
+  "probe_id": "p-a0a4c1957f1e",
+  "acceptance_id": "a-09471914203f",
+  "instances": 1,
+  "summary": "New `--assert 'bytes <addr> <hex|@FILE>'` directive: the bytes mapped at an address are the caller's, whatever the image file holds. Applied to the load image ahead of the analysis commit (console spelling `override bytes`, image slot before `read symbols`), so every later decode sees them and the file on disk is untouched. Closes the recorded workaround of applying a recovered transform in Python to a patched copy of the executable.",
+  "decisions": [
+    {
+      "what": "no hypothesis was filed and the refuter's coverage check is confirmed",
+      "detail": "The need offers no diagnosis; the round-12 refutation asked the load-bearing question for a missing-capability need -- does the capability exist under another spelling -- and came back clean. Re-confirmed here rather than assumed: `register_decomp_commands` had 105 commands and none of them wrote image bytes, `--assert data` declares a TYPE at an address rather than content, and `--raw-image` sets a load base for a headerless image rather than overlaying an already-mapped PE. This is a genuinely new directive."
+    },
+    {
+      "what": "the ordering hazard the refuter flagged is real, and it decided where the code goes",
+      "detail": "An overlay applied after the image is read is inert, exactly as `readonly` is inert when painted after the symbols it covers are mapped. So `load_program` installs the assertions and runs a new `assertions::apply_image_scoped` BEFORE `commit_pending_analysis`, and `build_script` emits `override bytes` in the existing image slot before `read symbols`. `apply_program_scoped` now skips `Body::Bytes` so the outcome recorded pre-commit survives. Measured, not argued: overlaying `b8 2a 00 00 00 c3` on the fixture's `sample` turns `return scale * a0 + bias + dat_50000000 * 2` into `return 0x2a` on BOTH surfaces."
+    },
+    {
+      "what": "patch the loader's segments, not the file and not a decode cache",
+      "detail": "`LoadImage::kuna_overlay_bytes` is a new defaulted trait method (every other implementor answers `does not support byte overlays`), implemented by `ObjectLoadImage::overlay_span`. It resolves the span through `find_section`, which is the same resolution `fill_span` reads through, so an overlay can never land in a different segment than a read at the same address; it then invalidates the 512-byte read window (`bufoffset = !0`), without which an overlay would be invisible to exactly the reads most likely to follow one. That case is a test, not a comment."
+    },
+    {
+      "what": "an unmapped span is REJECTED, not synthesized",
+      "detail": "A read at an address past a segment's mapped extent zero-fills; the overlay refuses instead, naming the span (`no loaded segment maps 0x90000000-0x90000001`). The asymmetry is deliberate -- inventing backing store would decompile a program the caller never described, and a directive accepted that does nothing is worse than an error. A WRITABLE segment's zero-filled RAM tail is inside `mapped_size()` and IS materialised, because that region is real mapped memory and what the running program left there is precisely what a caller is stating."
+    },
+    {
+      "what": "`@FILE` for the payload, because the reported case is 2967 bytes",
+      "detail": "Inline hex is one unbroken run of digits with an optional `0x`; `@FILE` reads raw bytes. The CLI resolves `@FILE` at parse time so `Body::Bytes` always carries real bytes and both surfaces mean the same thing; the console line it lowers to carries the hex, which was measured working at 5934 characters (the full recovered layer of the witness). Durability is the `--assert @overrides.kuna` contract that already exists: state the bytes and the `function <start>-<end>=<name>` boundaries once, replay on every run.",
+      "limit": "The loader's analysis passes have already run over the file image by the time a caller can say anything, so function discovery does not see a recovered layer. Documented in docs/cli.md and docs/spec/00-overview.md rather than papered over; declaring the recovered functions is what the `function` directive is for, and it is what the witness needs anyway."
+    },
+    {
+      "what": "no option, no phases.toml row, no stages XML, no catalog counter, no DIV row",
+      "detail": "A new assertion directive plus its console command cannot change emitted C for a run that does not pass it -- the code added to a decompiling path is one `matches!` skip in `apply_program_scoped` and one `set_assertions` moved earlier (verified inert: `commit_pending_analysis` never reads `prog.assertions()`). Matches the CLI-tier repipe PRs merged this round. The one hard-coded counter this DOES bump is the KUNA console command count, `kuna_console/tests.rs (registers_all_twenty_kuna_commands)` 19 -> 20. `override bytes` is registered by `register_kuna_commands`, NOT by `register_decomp_commands`: the latter's two count tests are pinned against `CPP_REGISTER_ORDER`, a positional transcription of upstream's own registration list, and a kuna-only command inside it would corrupt what that list means. Registering it in the wrong place is what the workspace suite caught."
+    }
+  ],
+  "inertness": {
+    "method": "The only edits on a path a plain decompile takes are `decompile_all.rs (load_program)` -- `set_assertions` moved ahead of the commit and guarded by `!args.assertions.is_empty()` -- and one `Body::Bytes` skip arm in `apply_program_scoped`. Everything else is new code reachable only from the new directive: a defaulted trait method, `overlay_span`, one console command, one parse arm, one lowering arm.",
+    "note": "Confirmed by the two byte-parity oracles: make test 675/675 PARITY OK and make test-stages 721/721 PARITY OK, plus make test-cli 106/106 (105 previously-promoted probes, many asserting exact output text)."
+  },
+  "sweep": {
+    "question": "does the new command shadow an existing console spelling, and does an overlay leak into a run that did not ask for one?",
+    "method": "(1) the datatest and stages corpora, which drive the console by prefix-expanded command streams, run in full; (2) the same fixture decompiled with and without the directive on both surfaces; (3) the error paths -- unmapped address, span straddling the end of the only segment, odd hex, non-hex, missing payload, missing @FILE, wrong address space -- on both surfaces and in-crate.",
+    "result": "No shadowing: `override bytes` is a two-token command in a family (`override prototype|jumptable|flow`) with no other `b`-initial member, and both corpora are byte-parity. No leak: without the directive the emitted C is what it was, and a REJECTED directive leaves it there too (`an_unmapped_overlay_is_rejected_naming_the_span` asserts the baseline C survives). A rejection is `fatal: false`, so it is a warning row unless `--assert-strict`, which is the contract every other directive has."
+  },
+  "gates": {
+    "make test": "PARITY OK, 675/675 assertions",
+    "make test-stages": "PARITY OK, 721/721 assertions",
+    "make rust-test": "6,271 passed / 0 failed / 38 ignored, 381 result blocks (run with KUNA_DECOMP_TEST unset, per the repipe-worktree oracle artifact)",
+    "make check-spec": "OK (lenient mode)",
+    "make test-cli": "106/106 with the probe promoted",
+    "kuna catalog --check": "catalog OK"
+  },
+  "acceptance": {
+    "acceptance_id": "a-09471914203f",
+    "result": "PASS",
+    "transition": "closed",
+    "promoted_to": "tests/cli/byte-overlay-assertion-recovered.json",
+    "promotion_note": "The need's acceptance arm carried NO target block at all (`ProbeError: {{BIN}} used but the context supplies no bin`, i.e. unrunnable and therefore unclosable). Bound here to the dataset witness -- corrupt.exe, sha256 bb6cd604...f00fc, matched by hash against the arena copy the tester actually ran -- so the backlog probe keeps running the image that produced the symptom; ids did not move (probe_id hashes cmd+expect only). `verify --promote` refuses `binary_source: dataset`, so `tests/cli/byte-overlay-assertion-recovered.json` is a hand-written in-repo twin on the already-vendored `kuna-analysis/tests/fixtures/assertranges_x86_64`, same command shape and clauses PLUS `stdout_matches: return 0x2a` -- the filed clauses (exit 0, JSON, no `unknown directive`) are satisfiable by a directive that parses and does nothing, and that clause is not.",
+    "reproduction_confirmed_on_main": "on b9029a8f the filed command exits 2 with `--assert \"bytes 0x43d0c6 8bd581c21f324000\": unknown directive \"bytes\"`; the same command without the directive exits 0, so the rejection is the parser and not a downstream failure."
+  },
+  "witness": {
+    "binary": "/home/mahaloz/github/kuna-re-dataset/challenges/5ab77f6633c5d40ad448cbec/bin/LoaderCrackMev2.0.zip.__x/corrupt.exe",
+    "selector": "0x43d060",
+    "note": "The tester's recovered plaintext was independently reproduced here: kuna's own decompilation of decrypt_stage1 (a 0xb97-iteration rotate/xor loop over 0x43d0c6) re-implemented in Python yields `8bd581c21f324000...` as its first eight bytes, byte-identical to the directive in the probe. `--assert 'bytes 0x43d0c6 @stage1.bin'` with the whole 2967-byte layer decompiles the next stage -- a call to sub_43d401 and fs-based SEH setup -- from the unmodified original."
+  },
+  "not_closed": [
+    "Function discovery, the string scan and the Listing all run over the FILE image inside `bootstrap_from_object`, before any caller can state anything, so a recovered layer contributes no discovered functions. Threading overlays in ahead of `run_default_analyses_per_pass` means either an env-var bridge carrying arbitrary byte payloads or re-parsing the object twice, and the passes read the raw file buffer rather than the loader, so it is a larger change than this need's scope. Declaring the recovered functions with `function`/`--define-function` is the working answer today and the witness needs a declared boundary regardless.",
+    "The overlay reaches `LoadImage::load_fill` (which is what the lifter, the emulator and jump-table recovery read through) but not readers keyed on section FILE offsets. None is on a decompiling path today; worth knowing before wiring a new one.",
+    "`kuna disassemble` takes no `--assert`, so a recovered layer cannot be listed as instructions without decompiling it. Adjacent, separately fileable.",
+    "docs/re-needs/index.json is deliberately NOT regenerated: `needs reindex` runs over the whole backlog and this worktree holds only the tracked need docs."
+  ],
+  "files": [
+    "decompiler/crates/kuna-sleigh/src/loadimage.rs",
+    "decompiler/crates/kuna-analysis/src/loadimage_object.rs",
+    "decompiler/crates/kuna-console/src/assertions.rs",
+    "decompiler/crates/kuna-console/src/ifacedecomp.rs",
+    "decompiler/crates/kuna-console/src/ifacedecomp/tests.rs",
+    "decompiler/crates/kuna-console/tests/verify_byteoverlay.rs",
+    "decompiler/crates/kuna-cli/src/assertdecl.rs",
+    "decompiler/crates/kuna-cli/src/decompile.rs",
+    "decompiler/crates/kuna-cli/src/decompile_all.rs",
+    "docs/cli.md",
+    "docs/spec/00-overview.md",
+    "docs/re-needs/byte-overlay-assertion-recovered.md",
+    "tests/cli/byte-overlay-assertion-recovered.json"
+  ],
+  "pr": "https://github.com/Noelo-Lab/kuna/pull/538"
+}

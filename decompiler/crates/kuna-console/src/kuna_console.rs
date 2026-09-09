@@ -1437,6 +1437,12 @@ pub fn register_kuna_commands(status: &mut IfaceStatus) {
     // the name in the declaration, which is the wrong key for an override that
     // exists because the function has no name worth keeping.
     status.register_com(Box::new(IfcKunaMapPrototype), &["map", "prototype"]);
+    // (kuna) Nor is this one: the bytes a packer writes over itself exist only
+    // once it has run, so there is no image a loader could read them from.
+    status.register_com(
+        Box::new(crate::ifacedecomp::IfcOverrideBytes),
+        &["override", "bytes"],
+    );
 }
 
 /// Join tokens with single spaces — C++ `joinTokens(tokens,0,tokens.size())`.

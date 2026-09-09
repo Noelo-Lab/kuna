@@ -292,6 +292,7 @@ One directive per `--assert`, keyed by intent rather than by phase:
 | `function <start>[-<end>][=<name>]` | the `--define-function` spelling, on this plane |
 | `readonly <addr>+<size>` | the bytes in this range never change at run time |
 | `volatile <addr>+<size>` | device memory: every access is a real access |
+| `bytes <addr> <hex\|@FILE>` | the bytes mapped here are these, whatever the file holds |
 
 Storage is a register name (`RDI`), the console's `%RDI`, or its address grammar
 (`[stack,-0x18,8]`). Addresses are hexadecimal with or without `0x`. A size is
@@ -435,6 +436,34 @@ Asserting a `readonly` range turns read-only propagation on for the run, because
 painting a range read-only and then not folding it would be a directive that is
 accepted and does nothing. It is applied *before* your own `--option`s, so an
 explicit `--option readonly off` still wins.
+
+**`bytes` is for code that does not exist in the file.** A packer's plaintext
+appears only once the packer has run, so nothing a loader can read will ever
+contain it; without this directive the recovered layer had to be written back
+into a *copy* of the executable with an external script, and every later run
+started from that copy instead of from the original plus a statement.
+
+```bash
+# `decrypt_stage1` rewrites the 2967 bytes above itself. Hand the recovered
+# plaintext back at the addresses it belongs to and the next layer decompiles.
+kuna decompile ./crackme.exe 0x43d0c6 --addr --assert 'bytes 0x43d0c6 @notes/stage1.bin'
+#   - void sub_43d0c6(void) { return; }        // the ciphertext decodes to nothing
+#   + *(int *)(v2 + 0x403393) = v2 + 0x40294c; // the stage-2 body
+```
+
+The payload is one unbroken run of hex digits (an optional `0x` is allowed), or
+`@FILE` for raw bytes — which is what makes a whole recovered layer a single
+directive. The overlay lives in the load image, so **the file on disk is never
+touched**, and `--assert @overrides.kuna` beside a `function <start>-<end>=<name>`
+line for each recovered function is the durable form: state the bytes and the
+boundaries once, replay them on every run.
+
+The statement must land before anything reads those addresses, so it is applied
+ahead of the analysis commit. Two consequences worth knowing: an address no
+loaded segment maps is *rejected*, naming the span, rather than invented; and
+function discovery has already run on the file image, so functions inside a
+recovered layer are yours to declare (`function`/`--define-function`) rather than
+kuna's to find.
 
 **`flow` is the structuring lever**, and the one directive that changes which
 bytes are even *in* the function. kuna decides at P2 whether an instruction

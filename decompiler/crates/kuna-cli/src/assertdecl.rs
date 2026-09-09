@@ -20,6 +20,8 @@
 //!   --assert 'readonly 0x404028+8'
 //!   --assert 'flow 0x1405 return'
 //!   --assert 'volatile 0x50000000+4'
+//!   --assert 'bytes 0x43d0c6 8bd581c21f324000'
+//!   --assert 'bytes 0x43d0c6 @notes/stage1.bin'
 //!   --assert @notes/overrides.kuna
 //! ```
 //!
@@ -296,6 +298,27 @@ pub(crate) fn parse_one(spec: &str) -> Result<Directive, String> {
                 Body::Volatile { addr, size }
             }
         }
+        "bytes" => {
+            let (addr, payload) = take_token(rest);
+            let addr = parse_vma(addr).ok_or_else(|| bad("bytes needs a hex <addr>"))?;
+            let (payload, tail) = take_token(payload);
+            if payload.is_empty() {
+                return Err(bad("bytes needs <addr> then hex, or @FILE of raw bytes"));
+            }
+            if !tail.is_empty() {
+                return Err(bad("bytes takes exactly <addr> <hex|@FILE>"));
+            }
+            let data = match payload.strip_prefix('@') {
+                Some(path) => std::fs::read(path)
+                    .map_err(|e| format!("--assert {raw:?}: {path}: {e}"))?,
+                None => kuna_console::assertions::parse_hex_bytes(payload)
+                    .map_err(|e| bad(&e))?,
+            };
+            if data.is_empty() {
+                return Err(bad("bytes needs at least one byte"));
+            }
+            Body::Bytes { addr, data }
+        }
         "flow" => {
             let (addr, kind) = take_token(rest);
             let (func, addr) = split_qualifier(addr);
@@ -318,7 +341,7 @@ pub(crate) fn parse_one(spec: &str) -> Result<Directive, String> {
             return Err(format!(
                 "--assert {raw:?}: unknown directive {other:?} (want one of \
                  function, typedef, prototype, data, param, return, comment, flow, name, \
-                 type, readonly, volatile)"
+                 type, readonly, volatile, bytes)"
             ))
         }
     };
@@ -398,6 +421,10 @@ pub(crate) fn console_form(
             Some(f) => return Err(unbindable(&f)),
             None => (Slot::Function, format!("override flow {addr:#x} {kind}")),
         },
+        Body::Bytes { addr, data } => {
+            let hex: String = data.iter().map(|b| format!("{b:02x}")).collect();
+            (Slot::Image, format!("override bytes {addr:#x} {hex}"))
+        }
         Body::Readonly { addr, size } => (Slot::Image, format!("readonly {addr:#x} {size}")),
         Body::Volatile { addr, size } => (Slot::Image, format!("volatile {addr:#x} {size}")),
         Body::Name { func, symbol, newname } => match names_another(func, target) {
@@ -686,6 +713,49 @@ mod tests {
     /// this the qualifier was dropped and `param callee::0 ECX char *maze`
     /// retyped the CALLER
     /// (`docs/re-needs/qualified-parameter-assertions-modify.md`).
+    #[test]
+    fn bytes_takes_an_address_and_hex_or_a_file() {
+        assert_eq!(
+            one("bytes 0x43d0c6 8bd581c21f324000").body,
+            Body::Bytes { addr: 0x43d0c6, data: vec![0x8b, 0xd5, 0x81, 0xc2, 0x1f, 0x32, 0x40, 0x00] }
+        );
+        // The address takes the `--define-function` spellings and the payload an
+        // optional 0x, so a copied dump line parses without re-editing.
+        assert_eq!(
+            one("bytes 43d0c6 0x8bd581c2").body,
+            one("bytes 0x43d0c6 8bd581c2").body
+        );
+        let dir = std::env::temp_dir().join(format!("kuna-assertbytes-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("scratch dir");
+        let path = dir.join("stage1.bin");
+        std::fs::write(&path, [0xb8u8, 0x2a, 0x00, 0x00, 0x00, 0xc3]).expect("write");
+        assert_eq!(
+            one(&format!("bytes 0x43d0c6 @{}", path.display())).body,
+            Body::Bytes { addr: 0x43d0c6, data: vec![0xb8, 0x2a, 0x00, 0x00, 0x00, 0xc3] }
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_bytes_directive_without_usable_hex_is_rejected() {
+        for spec in [
+            "bytes 0x43d0c6",
+            "bytes 0x43d0c6 abc",
+            "bytes 0x43d0c6 zz",
+            "bytes notanaddress 90",
+            "bytes 0x43d0c6 90 90",
+        ] {
+            assert!(parse_one(spec).is_err(), "{spec:?} should be rejected");
+        }
+    }
+
+    #[test]
+    fn bytes_lowers_to_the_console_overlay_in_the_image_slot() {
+        let form = console_form(&one("bytes 0x43d0c6 8BD5"), None).expect("lowers");
+        assert_eq!(form.slot, Slot::Image);
+        assert_eq!(form.line, "override bytes 0x43d0c6 8bd5");
+    }
+
     #[test]
     fn a_qualified_param_lowers_against_the_function_it_names() {
         let d = one("param sub_401c50::0 ECX char *maze");

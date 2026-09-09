@@ -1503,9 +1503,11 @@ fn usage() {
          \n\
          --assert <directive | @file> (repeatable) states a fact the engine could not\n\
          derive.  The vocabulary is function, typedef, prototype, data, param, return,\n\
-         name, type, comment, flow, readonly, volatile -- for instance\n\
+         name, type, comment, flow, readonly, volatile, bytes -- for instance\n\
          `prototype login int login(char *user,char *pw)`, `type v2 char[16]`,\n\
          `name v2 credbuf`, `readonly 0x404028+8`, `flow 0x1405 return`.\n\
+         `bytes <addr> <hex|@FILE>` overlays recovered plaintext -- what a packer\n\
+         writes over itself -- onto the loaded image; the file on disk is untouched.\n\
          @FILE holds one per line with `#` comments, which is what makes an override\n\
          durable across invocations.  A directive the engine declines is reported and\n\
          the run still succeeds; --assert-strict makes it exit 1 instead.\n\
