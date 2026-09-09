@@ -1073,10 +1073,18 @@ impl ConsoleProgram {
     /// as one loses nothing and closes that round trip.
     ///
     /// Decided by MINTING rather than by parsing: a candidate is accepted only
-    /// when [`Architecture::name_function`] renders it as the requested name, so
-    /// whichever naming style is active (`sub_`/`func_`/`FUN_`) and a
-    /// word-addressed space's scaling both follow for free, and a name this
-    /// build would never print is not resolved.
+    /// when some naming style renders it as the requested name
+    /// ([`minted_function_names`]), so a word-addressed space's scaling follows
+    /// for free and a name no style would print is not resolved.
+    ///
+    /// (kuna, RE-need `changing-namestyle-invalidates-discovered`) EVERY style,
+    /// not just the active one: `option namestyle` decides how a name is
+    /// PRINTED, and a placeholder holds nothing but the address whichever
+    /// vocabulary spelled it. Matching only the active style made the styles
+    /// disjoint name spaces — `kuna functions` reports `sub_15dc` and ignores
+    /// namestyle, so `kuna decompile BIN sub_15dc --option namestyle ghidra`
+    /// answered `no function matches` for a function the same run decompiles
+    /// under `func_0x000015dc`.
     fn placeholder_name_address(&self, name: &str) -> Option<u64> {
         let digits = name.rsplit_once('_')?.1;
         let digits = digits
@@ -1093,9 +1101,9 @@ impl ConsoleProgram {
         if scaled != spelled {
             candidates.push(scaled);
         }
-        candidates
-            .into_iter()
-            .find(|&vma| self.arch().name_function(&Address::new(Rc::clone(space), vma)) == name)
+        candidates.into_iter().find(|&vma| {
+            minted_function_names(&Address::new(Rc::clone(space), vma)).iter().any(|m| m == name)
+        })
     }
 
     /// The entry a placeholder name denotes, or `None` when the name is not one
@@ -2090,6 +2098,25 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         "pdb" => arch.analysis_pdb,
         _ => true,
     }
+}
+
+/// (kuna, RE-need `changing-namestyle-invalidates-discovered`) Every default
+/// function name kuna's naming vocabularies would mint at `addr` — the angr
+/// `sub_<addr>`, the upstream `func_<raw-addr>` and the ghidra-mode `FUN_%08x`.
+///
+/// One per [`kuna_decomp::database::KunaNameStyle`] arm, in the order
+/// [`Architecture::name_function`] decides them, and rendered by the same three
+/// functions it calls so a change to any spelling reaches both. Used to read a
+/// placeholder name BACK to its address: `option namestyle` decides which of
+/// these gets printed, and a selector must not depend on that choice.
+fn minted_function_names(addr: &Address) -> [String; 3] {
+    [
+        kuna_decomp::database::ghidra_function_name(addr),
+        kuna_decomp::database::kuna_function_name(addr),
+        // Errors only on the fspec/iop spaces, which never hold a function; an
+        // unrenderable address simply matches no name.
+        kuna_decomp::printc::generic_function_name(addr).unwrap_or_default(),
+    ]
 }
 
 /// The FID label gate: is `name` an engine-generated placeholder a FID match may
