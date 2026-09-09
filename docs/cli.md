@@ -136,10 +136,20 @@ kuna decompile ./graphy sub_100a3be
 #   char * sub_100a3be(unsigned int a0) { ... }
 ```
 
-The name is read as the address it spells only when this build would *mint* it
-there, and only when that address holds mapped bytes — so it lands on exactly
-what `--addr` on the same address lands on, and a real symbol spelled that way
-still wins. Anything else keeps the by-name miss:
+The name is read as the address it spells only when some naming style would
+*mint* it there, and only when that address holds mapped bytes — so it lands on
+exactly what `--addr` on the same address lands on, and a real symbol spelled
+that way still wins. All three styles count, not just the run's own, because
+`--option namestyle` decides how a generated name is *printed* and `kuna
+functions` reports the default spelling whatever the run asks for:
+
+```bash
+kuna functions ./a.out --json          # ... "name": "sub_15dc" ...
+kuna decompile ./a.out sub_15dc --option namestyle ghidra
+#   unsigned long sub_15dc(void) { ... }   # same function as func_0x000015dc
+```
+
+Anything else keeps the by-name miss:
 
 ```bash
 kuna decompile ./graphy sub_deadbeef

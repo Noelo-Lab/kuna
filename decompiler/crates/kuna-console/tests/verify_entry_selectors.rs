@@ -348,16 +348,72 @@ fn a_generated_placeholder_name_resolves_to_the_address_it_spells() {
     );
 }
 
-/// The reading is minted, not parsed: only a name THIS build would print at a
-/// MAPPED address is read as one, so a hex-tailed name that is not a placeholder,
-/// a placeholder in a naming style that is not active, and one spelling an
+/// (RE-need `changing-namestyle-invalidates-discovered`) A placeholder resolves
+/// in EVERY naming style, not only the active one.
+///
+/// `option namestyle` decides how a synthesized name is PRINTED; a selector must
+/// not depend on that choice, or the styles become disjoint name spaces. The
+/// tester hit it the other way round: `kuna functions` reports `sub_15dc` and
+/// ignores namestyle, so feeding that name back with `--option namestyle ghidra`
+/// answered `no function matches` for a function the same run decompiles under
+/// `func_0x000015dc`.
+#[test]
+fn a_placeholder_resolves_in_every_naming_style() {
+    let Some(program) = boot_fixture("tailcallframe_x86_64") else {
+        return;
+    };
+    // The default (angr) style is active, so the other two vocabularies' names
+    // are the ones a style flip would put in an agent's hands.
+    for name in ["sub_1170", "func_0x00001170", "FUN_00001170"] {
+        let entry = program
+            .resolve_entry(&EntrySelector::Name(name.into()))
+            .unwrap_or_else(|error| panic!("{name}: {error}"));
+        assert_eq!(entry.addr.get_offset(), 0x1170, "{name}");
+        assert_eq!(
+            program.find_entry_by_name(name).map(|e| e.addr.get_offset()),
+            Some(0x1170),
+            "{name}: the yes/no lookup answers the same name the same way"
+        );
+    }
+}
+
+/// The tester's exact round trip: a name taken from the default-style
+/// enumeration is fed back to a run whose naming style has been flipped.
+///
+/// `option namestyle ghidra` clears `name_style_angr`, which is what used to
+/// take `sub_1170` out of the resolvable set entirely.
+#[test]
+fn a_default_style_name_survives_a_namestyle_flip() {
+    let Some(mut program) = boot_fixture("tailcallframe_x86_64") else {
+        return;
+    };
+    let default_style_name = "sub_1170";
+    program.arch_mut().name_style_angr = false;
+    assert_eq!(
+        program.arch().name_function(
+            &program.resolve_entry(&EntrySelector::Numeric(0x1170)).unwrap().addr
+        ),
+        "func_0x00001170",
+        "the flip must actually change what this build mints, or the test is vacuous"
+    );
+    let entry = program
+        .resolve_entry(&EntrySelector::Name(default_style_name.into()))
+        .expect("a name the default style printed still selects its function");
+    assert_eq!(entry.addr.get_offset(), 0x1170);
+}
+
+/// The reading is minted, not parsed: only a name SOME naming style would print
+/// at a MAPPED address is read as one, so a hex-tailed name that is not a
+/// placeholder, a placeholder misspelled for every style, and one spelling an
 /// address with no bytes behind it all still miss.
 #[test]
 fn a_placeholder_name_is_not_read_as_an_address_unless_this_build_would_mint_it() {
     let Some(program) = boot_fixture("tailcallframe_x86_64") else {
         return;
     };
-    for miss in ["sub_deadbeef", "FUN_00001170", "func_00001170", "handler_1170", "sub_"] {
+    // `func_00001170` misses on its `0x`: the upstream style prints
+    // `func_0x00001170`, and `FUN_` is the only style without the prefix.
+    for miss in ["sub_deadbeef", "FUN_1170", "func_00001170", "handler_1170", "sub_"] {
         let error = program
             .resolve_entry(&EntrySelector::Name(miss.into()))
             .expect_err("not a name this program mints at a mapped address");

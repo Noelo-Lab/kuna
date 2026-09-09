@@ -1,0 +1,42 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "sub_1249",
+    "--option",
+    "namestyle",
+    "ghidra"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/stripped_dynamic_x86_64",
+    "binary_sha256": "f899ab7509c55cc0c5e4e2f7b2e7f781ac1fb1aac6c4f7a2e27b4dba256e1c0a",
+    "binary_size": 14480,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/stripped_dynamic_x86_64",
+    "selector": "sub_1249",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "sub_1249\\(void \\*param_1\\)",
+      "perror\\(\"malloc failed\"\\)"
+    ],
+    "stderr_absent": [
+      "no function"
+    ]
+  },
+  "notes": "Desired: a name `kuna functions` reports still selects its function when the run changes how names are PRINTED. Dataset witness: crackmes.one 6927c8d12d267f28f69b8131 (0xJam3z-Medium @0x15dc), where `sub_15dc --option namestyle ghidra` answered `no function matches` for the function the same run decompiles as `func_0x000015dc`. `param_1` pins that the style really applied."
+}

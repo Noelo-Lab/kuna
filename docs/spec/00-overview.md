@@ -212,11 +212,20 @@ Four front-ends drive one engine assembly:
   spells, when — and only when — it is a name this build would MINT there
   (`decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::placeholder_name_address)`).
   The decision is made by minting rather than by parsing: the candidate offset is
-  rendered through `Architecture::name_function` and accepted only if it comes
-  back as the requested name, so whichever naming style is active (`sub_<addr>`
-  by default, `func_<addr>` upstream, `FUN_<addr>` in ghidra mode) and a
-  word-addressed space's scaling of the printed offset both follow without
-  parsing either of them. The retry is additionally gated on the address holding
+  rendered in EVERY naming style — `sub_<addr>` (the default), `func_<addr>`
+  (upstream) and `FUN_<addr>` (ghidra mode), the three arms of
+  `Architecture::name_function` gathered by
+  `decompiler/crates/kuna-console/src/engine.rs (minted_function_names)` — and
+  accepted only if one of them comes back as the requested name, so a
+  word-addressed space's scaling of the printed offset follows without parsing
+  it. All three rather than only the ACTIVE one because `option namestyle`
+  decides how a placeholder is PRINTED and a placeholder holds nothing but the
+  address whichever vocabulary spelled it; matching one style made the styles
+  disjoint name spaces, so a name taken from `kuna functions` — which reports the
+  default style and takes no naming option — stopped selecting its function the
+  moment a run asked for the other style, and the same binary answered
+  `no function matches "sub_15dc"` while decompiling `func_0x000015dc` in full.
+  The retry is additionally gated on the address holding
   mapped bytes — the numeric selector's own test — so a name resolved this way
   reaches exactly the function `--addr` on the same address reaches, and every
   other miss keeps its by-name `NotFound`. A binary that really does carry a

@@ -1,0 +1,55 @@
+{
+  "slug": "changing-namestyle-invalidates-discovered",
+  "need_id": "changing-namestyle-invalidates-discovered",
+  "track": "tooling",
+  "scope": "small",
+  "round": 11,
+  "branch": "feat/re-changing-namestyle-invalidates-discovered",
+  "summary": "A generated function name is read back as the address it spells if ANY naming style would mint it there, not only the style the run has active. One predicate change in ConsoleProgram::placeholder_name_address, so every by-name surface (kuna decompile, decompile-all --functions, disassemble, xrefs) accepts the sub_<addr> name kuna functions prints regardless of what --option namestyle asks for.",
+  "decisions": [
+    {
+      "what": "hypothesis UPHELD; the refuter's mechanism confirmed exactly",
+      "detail": "Filed: 'Selector resolution may occur after presentation names change without retaining discovered aliases.' Reproduced on the arena binary and on an in-repo fixture. It is not a broken selector and not a lost alias: `option namestyle ghidra` clears Architecture::name_style_angr, so the SAME function is installed and enumerated under func_0x000015dc, and `sub_15dc` -- which kuna functions reports whatever the run asks for, since that surface takes no naming option -- matched nothing. The `func_0x` spelling resolved and decompiled in full at the same moment the `sub_` one answered `no function matches`."
+    },
+    {
+      "what": "the defect is in the retry that already existed, not in aliases",
+      "detail": "PR #499 (RE-need string-owner-function-name) had already made a by-name MISS retry as the address the name spells, deciding by MINTING rather than by parsing: placeholder_name_address rendered the candidate offset through self.arch().name_function(addr) and accepted it only on an exact match. That is what tied the retry to the ACTIVE style. Widening the render set to all three styles is a one-predicate change and needs no new state; the alternative -- populating FunctionEntry.aliases with the other styles' spellings at enumeration time -- would put three synthetic names on every un-symboled entry in `kuna functions --json` output, which is a visible schema change for no extra reach."
+    },
+    {
+      "what": "all three styles, rendered by the same functions name_function calls",
+      "detail": "engine.rs (minted_function_names) returns ghidra_function_name / kuna_function_name / printc::generic_function_name for an address -- one per KunaNameStyle arm, the same three calls Architecture::name_function dispatches between. Deriving them rather than formatting them locally means a change to any spelling reaches the selector for free, and the existing word-addressed-space candidate loop (spelled vs address_to_byte-scaled) is untouched. Placed in kuna-console rather than kuna-cli: kuna-cli only translates the console's miss into its error text (decompile.rs:505), and a fix there would have closed the round trip for `kuna decompile` while disassemble/xrefs/decompile-all kept refusing the same name."
+    },
+    {
+      "what": "nothing that already resolved can change",
+      "detail": "The retry is reached only when the name/alias filter produced ZERO candidates and only when the address holds mapped bytes -- both gates predate this change and are untouched. So the change can only turn a by-name MISS into a hit; an ambiguity is still reported with its candidates, a real symbol spelled like a placeholder still wins, and sub_deadbeef still misses. One existing test case moved as a direct consequence: verify_entry_selectors asserted `FUN_00001170` misses under angr naming, which is precisely the behaviour being fixed. `func_00001170` -- misspelled for every style, since the upstream form is func_0x00001170 -- replaces it in the miss list."
+    },
+    {
+      "what": "no option, no counters, no stages XML, no DIV row",
+      "detail": "Tooling track. Name resolution cannot change emitted C for any selection that already resolved, so there is no judgement call to gate: no phases.toml row, no options.rs registration, no catalog counters, no docs/options.md regeneration, no tests/stages case. docs/spec/00-overview.md owns the paragraph that described the old minting rule and was updated in the same commit; docs/cli.md's 'A generated name is a selector' section gained the namestyle round trip."
+    }
+  ],
+  "collateral_sweep": {
+    "method": "Pre-fix and post-fix RELEASE pairs (kuna AND decomp_dbg -- `kuna decompile` forks decomp_dbg and KUNA_DECOMP_DBG is exported in a repipe worktree, so swapping only the kuna binary measures nothing). For every vendored fixture in kuna-analysis/tests/fixtures, every name and alias `kuna functions --json` reports (40-entry cap) was run through `kuna decompile <bin> <name>` on both builds, twice: at the default naming style and with `--option namestyle ghidra`. Compared on (exit code, stdout).",
+    "identical": 3566,
+    "unlocked": 1290,
+    "changed": 0,
+    "fixtures": 181,
+    "selections_compared": 4856,
+    "reading": "Every one of the 1,290 unlocked selections is a `--option namestyle ghidra` run, which the arithmetic pins without listing them: the two style columns are 2,428 selections each, and 3,566 identical = 2,428 (default column, byte-identical throughout) + 1,138 (ghidra column). So the default naming style is untouched and every change is a MISS becoming a hit on the exact name `kuna functions` prints -- which is the defect. Nothing regressed and no already-resolving selection moved, as the gating makes structural: the retry is unreachable unless the name match found nothing."
+  },
+  "acceptance": {
+    "id": "a-2f69533e66cc",
+    "verifier": "scripts.repipe.verify --need changing-namestyle-invalidates-discovered --json -> counts.pass 1, transition closed. The recorded acceptance is UNCHANGED and still measures the dataset witness 0xJam3z-Medium (sha c1e78f2a0ba7...): `kuna decompile <bin> sub_15dc --option namestyle ghidra` exits 0 and prints the body containing 'Correct! You solved the challenge.'",
+    "promoted_to": "tests/cli/changing-namestyle-invalidates-discovered.json"
+  },
+  "gates": {
+    "make test": "PARITY OK, 675/675 assertions",
+    "make test-stages": "PARITY OK, 714/714 assertions",
+    "make rust-test": "green (rc 0, 379 suites ok, 0 FAILED)",
+    "make check-spec": "OK lenient and --strict",
+    "make test-cli": "103/103 passed (includes the newly promoted probe; 102/103 with the probe present on the unpatched engine)",
+    "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
+    "scripts.repipe.counters": "no drift: every hard-coded site agrees with the derived truth",
+    "scripts.repipe.mergecheck --against origin/main": "merge guards clean"
+  }
+}
