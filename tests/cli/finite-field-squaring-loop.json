@@ -1,0 +1,38 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "gfinv"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/covertrim_x86_64",
+    "binary_sha256": "dcf7f09423cac55e439f01256ee529c019ac400a0e2f9c44c442c63d91be2a26",
+    "binary_size": 4944,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/covertrim_x86_64",
+    "selector": "gfinv",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_absent": [
+      "(v[0-9]+) = 0;\\s*v[0-9]+ = (a[0-9]+);\\s*while \\(\\2 = \\1,"
+    ],
+    "stdout_matches": [
+      "(v[0-9]+) = a0;[\\s\\S]*?\\1 >>= 1;[\\s\\S]*?(v[0-9]+) = a0;[\\s\\S]*?\\2 >>= 1;"
+    ]
+  },
+  "notes": "need finite-field-squaring-loop. Witness: p0tp.exe sub_140006a50 (MSVC GF(2^8) inverse), whose second inlined multiply merged its accumulator R9B with its bit iterator R11B and emitted `v6 = 0; v3 = a0; while (a0 = v6, ...)`. Retargeted onto the vendored covertrim_x86_64: correct output carries TWO iterators, each initialised from the input and each shifted; the merged form carries one."
+}

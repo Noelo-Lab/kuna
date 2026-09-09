@@ -2189,6 +2189,19 @@ impl Funcdata {
             if let Some(v) = self.vbank_mut().get_mut(vn) {
                 v.calc_cover();
             }
+            // C++ `Varnode::calcCover` sets `coverdirty` through `setFlags`, which
+            // forwards the bit to `high->coverDirty()` (varnode.cc:371-380).  In the
+            // arena model `Varnode::set_flags` cannot reach `high_bank`, so the
+            // forward happens here: without it the freshly re-allocated (empty)
+            // Cover sits inside a HighVariable that still reads clean, so
+            // `HighIntersectTest::updateHigh` skips the rebuild and the member
+            // contributes nothing to the intersection test.
+            let realloced = self.vbank().get(vn).map(|v| v.cover().is_some()).unwrap_or(false);
+            if realloced {
+                if let Some(h) = self.vbank().get(vn).and_then(|v| v.get_high()) {
+                    self.high_bank_mut().cover_dirty(h);
+                }
+            }
         }
     }
 
@@ -4618,6 +4631,33 @@ mod tests {
         assert!(!fd.vbank.get(v).unwrap().is_cover_dirty_flag());
         let cover = fd.vbank.get(v).unwrap().cover().expect("cover built");
         assert!(!cover.get_cover_block(0).empty());
+    }
+
+    #[test]
+    fn recalculated_cover_dirties_the_owning_high() {
+        // A Varnode whose Cover was dropped (`opUnsetOutput` -> `clearCover`) and
+        // then re-allocated by `setVarnodeProperties` must leave its HighVariable
+        // cover-dirty, mirroring the C++ `calcCover` -> `setFlags(coverdirty)` ->
+        // `high->coverDirty()` forward.  Without it `HighIntersectTest::updateHigh`
+        // reads a clean high, never rebuilds the empty member Cover, and an
+        // intersecting merge looks legal.
+        let mut fd = build_fd();
+        let v = make_insert_vn(&mut fd, 0x40, unk_type());
+        fd.set_high_level();
+        let h = fd.vbank.get(v).unwrap().get_high().expect("high assigned");
+        fd.high_update_cover(h);
+        assert!(!fd.high_bank.get(h).unwrap().is_cover_dirty());
+        // The `opUnsetOutput` half: the Cover object goes away entirely.
+        fd.vbank.get_mut(v).unwrap().clear_cover();
+        assert!(fd.vbank.get(v).unwrap().cover().is_none());
+        // The `opSetOutput` half: `setVarnodeProperties` re-allocates it empty.
+        fd.set_varnode_properties(v);
+        assert!(fd.vbank.get(v).unwrap().cover().is_some());
+        assert!(fd.vbank.get(v).unwrap().is_cover_dirty_flag());
+        assert!(
+            fd.high_bank.get(h).unwrap().is_cover_dirty(),
+            "the re-allocated empty Cover must dirty its HighVariable"
+        );
     }
 
     #[test]

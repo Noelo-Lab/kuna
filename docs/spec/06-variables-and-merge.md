@@ -93,6 +93,19 @@ owning HighVariable — a member whose Cover went stale makes the whole variable
 cover stale, and `variable.rs (HighIntersectTest::update_high)` refuses to
 recompute a variable it believes is clean.
 
+That forward is owed on every path that dirties a member, including the one where
+the Cover object is *replaced* rather than invalidated. Re-pointing an op's output
+drops the old output's Cover entirely
+(`funcdata_op.rs (Funcdata::op_unset_output)`), and the next
+`funcdata.rs (Funcdata::set_varnode_properties)` allocates a fresh, empty one. A
+Varnode that is already a member of a settled variable therefore re-enters that
+variable carrying no live range at all, and unless the allocation dirties the
+high, the empty range is what the intersection test reads: the member is treated
+as live nowhere and an overlapping merge is accepted. This bites the trim COPYs
+`merge.rs (Merge::merge_op)` inserts, whose outputs are re-pointed after they have
+joined a high — the merged variable then holds two values that are live at the
+same instant.
+
 **What makes two Varnodes mergeable.** The gate is a three-rung test ladder in
 `decompiler/crates/kuna-decomp/src/p6_variables/merge.rs`, and the rung used
 determines how aggressive the merge may be:

@@ -1,0 +1,75 @@
+{
+  "opportunity": "repipe:6a148dd62b3df128c1df5c9e::finite-field-squaring-loop",
+  "need_id": "finite-field-squaring-loop",
+  "track": "quality",
+  "round": 11,
+  "test_name": "repipe round 11, challenge 6a148dd62b3df128c1df5c9e (p0tp.exe sub_140006a50)",
+  "binary": "kuna-re-dataset/challenges/6a148dd62b3df128c1df5c9e/bin/p0tp.exe",
+  "selector": "sub_140006a50",
+  "func_addr": "0x140006a50",
+  "option": null,
+  "flag": null,
+  "element_id": null,
+  "change_kind": "correctness-fix",
+  "source_decompiler": "kuna",
+  "inspiration": "repipe round 11 need finite-field-squaring-loop; the second inlined GF(2^8) multiply emitted `v6 = 0; v3 = a0; while (a0 = v6, v7 = a0 != 0, v7)`, skipping the squaring loop for every input",
+  "default_on": true,
+  "div": null,
+  "scope": "small",
+  "files": [
+    "decompiler/crates/kuna-decomp/src/substrate/funcdata.rs",
+    "decompiler/crates/kuna-analysis/tests/fixtures/covertrim_x86_64",
+    "decompiler/crates/kuna-analysis/tests/fixtures/covertrim_x86_64.s",
+    "tests/cli/finite-field-squaring-loop.json",
+    "docs/spec/06-variables-and-merge.md"
+  ],
+  "parity": "OK",
+  "gates": {
+    "make test": "PARITY OK 675/675",
+    "make test-stages": "PARITY OK 714/714",
+    "make check-spec": "check-spec OK (lenient mode)",
+    "kuna catalog --check": "catalog OK",
+    "make test-cli": "103/103 (102 existing + the promoted probe)",
+    "make rust-test": "green; 379 `test result` lines, all `0 failed`, no panics (run with `env -u KUNA_DECOMP_TEST` so the verify_w10_* oracle tests do not point at this build)"
+  },
+  "probe_flip": {
+    "probe_still_passes": false,
+    "acceptance_passes": true,
+    "acceptance_clause": "stdout_absent (v[0-9]+) = 0;\\s*v[0-9]+ = (a[0-9]+);\\s*while \\(\\2 = \\1,",
+    "acceptance_actual_before": "v6 = 0;\\n      v3 = a0;\\n      while (a0 = v6, v7 = a0 != 0, v7) {",
+    "acceptance_actual_after": "v6 = 0;\\n      v7 = a0;\\n      v3 = a0;\\n      while (a0 = v6, v7) {"
+  },
+  "promoted_probe": {
+    "path": "tests/cli/finite-field-squaring-loop.json",
+    "retargeted_from": "dataset p0tp.exe sub_140006a50",
+    "retargeted_to": "decompiler/crates/kuna-analysis/tests/fixtures/covertrim_x86_64 (function `gfinv`)",
+    "why": "CI has no dataset. covertrim_x86_64 is a 4944-byte project-authored ELF carrying the same instruction shape (GF(2^8) inverse, two inlined multiplies, the R9B -> CL -> R11B copy cycle across the outer back edge). Measured: the unpatched tree emits the identical `v6 = 0; v3 = a0; while (a0 = v6, v7 = a0 != 0, v7)` on it. A gcc -O2 build of the same C source does NOT reproduce it -- gcc allocates around the cycle -- so the fixture is hand-written assembly.",
+    "strengthened": "the filed acceptance is absence-only and is satisfiable by reordering two lines, so the promoted probe also pins the positive witness the round-9 refuter asked for: TWO distinct iterators, each initialised from the input and each shifted (`(v[0-9]+) = a0; ... \\1 >>= 1; ... (v[0-9]+) = a0; ... \\2 >>= 1;`). Measured on the fixture: unpatched fails BOTH clauses, patched passes both."
+  },
+  "sweep": {
+    "method": "kuna decompile-all, unpatched build vs patched build, over 41 decbench images sampled every 20th across O0 / O2 / O2-noinline",
+    "images_with_no_change": 33,
+    "images_changed": 8,
+    "removed_vs_added_per_file": "2/3, 61/62, 272/263, 5/7, 390/388, 43/41, 66/68, 13/14",
+    "note": "the mechanism can only REFUSE a merge, never accept one, so every hunk is a HighVariable split: a value that shared a name now has its own, and the copy that was implicit becomes explicit. Three changed hunks were read against the disassembly.",
+    "inspected": [
+      "zlib/minigzip `scan_tree`: `v9` splits into `v14`/`v9`/`v10`; the shift-and-shadow loop is line-for-line equivalent",
+      "libedit `history_truncate_file` @0x2e2dc (O0, stack-slot pointer): the unpatched output DROPPED an instruction. `addq $0x1,-0x1058(%rbp)` at 0x2e2a7 had no rendering at all, because the merged high forced an eager `cp = v2` writeback that destroyed the one-step-behind shadow carrying the +1. Patched emits `v2 = cp;` there, and `if (v5 <= cp)` now compares the incremented pointer, matching `cmp %rax,-0x1058(%rbp)` at 0x2e2bc.",
+      "coreutils/sort `init_node`: the unpatched output merged the incoming `parent` parameter with `node_pool` and emitted the self-referential `parent = node_pool; ... parent->parent = (merge_node *)parent; ... parent->level = parent->level + 1`. Patched keeps them apart (`parent_00 = node_pool; parent_00->parent = (merge_node *)parent; parent_00->level = parent->level + 1`) and, with the cover no longer fragmented, folds four address temporaries (`v1 = &parent->nlo; v5 = *v1 >> 1;`) back into direct field reads."
+    ]
+  },
+  "speed_method": "warmup + median of 5, `kuna decompile-all` per image, unpatched main-tree release binary vs patched worktree release binary, KUNA_DECOMP_DBG unset so each driver forks its own engine",
+  "speed_target": "decompile-all over 4 images (O2 sort, O2 dpkg, O0 libedit, O2 minigzip)",
+  "speed_budget_pct": 20.0,
+  "speed_delta_pct": 1.63,
+  "speed_note": "per-image medians: sort -1.00%, dpkg +1.63%, libedit +0.56%, minigzip -4.44%. Two of four are negative, so the spread is noise, not cost -- consistent with the mechanism (one extra dirty-bit write on a path that already reallocates a Cover). docs/features/returncopysplit/record.json measured a -20.23%/-12.18% noise floor on byte-identical output on this box, so nothing under 20% is a measurement.",
+  "speed_within_budget": true,
+  "decisions": [
+    "The filed hypothesis ('possibly incorrect merging or placement of loop-carried copies') is UPHELD, and the round-9 refuter's sharpening is confirmed exactly: the copy cycle R9B -> CL -> R11B across the outer back edge is the trigger, and the parameter's HighVariable is NOT an attractor.",
+    "The cause is one level below the merge logic, and it is a port loss rather than a design choice. C++ `Varnode::calcCover` sets `coverdirty` through `setFlags`, which forwards the bit to `high->coverDirty()` (varnode.cc:371-380). kuna's arena model cannot reach `high_bank` from `Varnode::set_flags`, and `docs/rust-port/losses.md` records the notification as reconciled at the Funcdata level -- but only one call site actually reconciled it. `Funcdata::set_varnode_properties`, which re-allocates a Cover the preceding `op_unset_output` dropped, did not.",
+    "Measured, not argued. `Merge::merge` was instrumented to dump both HighVariables' per-instance Covers at every intersection test. At the merge that creates the defect, `unique:10000054` -- a copy trim `Merge::merge_op` inserted, already a member of CL's high -- carries `cov=` (empty), while the SAME varnode carries `b2:0-0;b12:2200002-ffffffff;b13:0-ffffffff;b14:0-800002;b18:0-ffffffff;` one merge later. `Cover::intersect` scores an empty block 0, so the member is treated as live nowhere and the overlapping merge is accepted.",
+    "No option, and this is deliberate. The rule gates behaviour that is a judgement call; a HighVariable holding two values that are live at the same instant is not one. The mechanism is also one-directional: restoring the dirty bit can only make an intersection test see MORE cover, so merges can only be refused, never accepted. It cannot delete or move a statement -- and the sweep found the opposite, that the unpatched build was the one dropping one (libedit above).",
+    "Scoped to the re-allocation path only. `Varnode::set_def`, `add_descend` and `erase_descend` also set the bit without forwarding it; those are far hotter and would dirty many more highs per pass. They are a separate change with separate evidence and are not touched here.",
+    "No existing option covers it: the round-9 refuter measured paramcopyhoist, condexeplace, foldcallret, simdlane, tiedstorekeep, calleepop and `--mode reliable` all leaving the defect at 50 lines, and the catalog's single merge-aggressiveness row (paramcopyhoist) is inert on this function."
+  ]
+}
