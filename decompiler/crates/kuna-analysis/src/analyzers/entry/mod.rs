@@ -93,6 +93,7 @@ pub mod kuna_armlibcmain;
 pub mod kuna_machomain;
 pub mod kuna_cortexmvectors;
 pub mod kuna_fdeinterior;
+pub mod kuna_pereloccode;
 mod macho_entry;
 pub mod patterns;
 mod pe_entry;
@@ -415,7 +416,7 @@ pub fn collect_entries(file: &object::File, bytes: &[u8]) -> Vec<u64> {
         // PE: entry (AddressOfEntryPoint+ImageBase), `.pdata` RUNTIME_FUNCTION
         // begins (the `.eh_frame` analog), TLS callbacks, and exports (PR-12).
         Some(FormatKind::Pe) => {
-            cand.extend(pe_entry::pe_entry_candidates(file, bytes));
+            cand.extend(pe_entry::pe_entry_candidates(file, bytes, &execs));
             // (kuna) The header page is no section, so no section flag ever spoke
             // for the bytes in it: `AddressOfEntryPoint` is the image's only
             // statement about them, and a packer that lays its stub in the slack

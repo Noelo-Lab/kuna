@@ -35,6 +35,12 @@
 //!    NULL-terminated list of `PIMAGE_TLS_CALLBACK` function pointers (absolute
 //!    VAs, not RVAs) the loader runs before the entry point. Ghidra's
 //!    `TLSDataDirectory`. Each non-null pointer is a function start.
+//! 5. **Relocated code pointers** — the base-relocation table names every image
+//!    word holding an absolute address, and one landing in an executable section
+//!    is a stored code address: an address-taken function nothing else describes
+//!    (a VM handler table, a vtable slot, a registered callback).
+//!    [`super::kuna_pereloccode`] owns it, including the `.pdata` interior guard
+//!    that separates a stored function start from a switch-table label.
 //! 4. **Exports** (`file.exports()`) — a DLL / export-bearing exe's named
 //!    entry points. Already a funcsym source in `pe_iat::resolve_pe_imports`, but
 //!    re-unioned here so an export with no `.pdata`/symbol is still discovered as
@@ -67,7 +73,11 @@ use object::{FileKind, LittleEndian as LE};
 /// Pure & total: a non-PE input, an unparsable layout, or a missing directory
 /// yields fewer (or zero) candidates — never an error or panic. The caller
 /// (`super::collect_entries`) does the exec-section / funcsym-dedup filtering.
-pub(super) fn pe_entry_candidates(file: &object::File, bytes: &[u8]) -> Vec<u64> {
+pub(super) fn pe_entry_candidates(
+    file: &object::File,
+    bytes: &[u8],
+    execs: &[(u64, u64, Vec<u8>)],
+) -> Vec<u64> {
     let mut out: Vec<u64> = Vec::new();
 
     // Oracle 1: the entry point. `object` returns the rebased VMA for PE.
@@ -91,12 +101,12 @@ pub(super) fn pe_entry_candidates(file: &object::File, bytes: &[u8]) -> Vec<u64>
     match FileKind::parse(bytes) {
         Ok(FileKind::Pe64) => {
             if let Ok(pe) = PeFile64::parse(bytes) {
-                collect_typed::<ImageNtHeaders64>(&pe, bytes, 8, &mut out);
+                collect_typed::<ImageNtHeaders64>(&pe, bytes, 8, execs, &mut out);
             }
         }
         Ok(FileKind::Pe32) => {
             if let Ok(pe) = PeFile32::parse(bytes) {
-                collect_typed::<ImageNtHeaders32>(&pe, bytes, 4, &mut out);
+                collect_typed::<ImageNtHeaders32>(&pe, bytes, 4, execs, &mut out);
             }
         }
         _ => {}
@@ -105,18 +115,20 @@ pub(super) fn pe_entry_candidates(file: &object::File, bytes: &[u8]) -> Vec<u64>
     out
 }
 
-/// Append the `.pdata` `BeginAddress`es and the TLS callbacks for a typed PE.
-/// `ptr` is the pointer width (8 for PE32+, 4 for PE32) — the TLS callback array
-/// holds absolute VAs of that width.
+/// Append the `.pdata` `BeginAddress`es, the TLS callbacks and the relocated
+/// code pointers for a typed PE. `ptr` is the pointer width (8 for PE32+, 4 for
+/// PE32) — the TLS callback array and the relocated words are both of that width.
 fn collect_typed<Pe: ImageNtHeaders>(
     pe: &PeFile<Pe>,
     bytes: &[u8],
     ptr: usize,
+    execs: &[(u64, u64, Vec<u8>)],
     out: &mut Vec<u64>,
 ) {
     let image_base = pe.relative_address_base();
     pdata_begins(pe, bytes, image_base, out);
     tls_callbacks(pe, bytes, ptr, out);
+    super::kuna_pereloccode::reloc_code_pointers(pe, bytes, image_base, ptr, execs, out);
 }
 
 /// Walk the exception directory (`.pdata`) as an array of `RUNTIME_FUNCTION`
@@ -332,7 +344,7 @@ mod tests {
     fn pe_stripped_pdata_recovers_functions() {
         let bytes = fixture("pe_imports_stripped.exe");
         let file = object::File::parse(bytes.as_slice()).expect("parse stripped PE");
-        let cands = pe_entry_candidates(&file, bytes.as_slice());
+        let cands = pe_entry_candidates(&file, bytes.as_slice(), &super::super::executable_sections(&file));
         // The entry point (oracle 1).
         assert!(cands.contains(&0x1400014f0), "entry 0x1400014f0 missing from {cands:#x?}");
         // `.pdata`-covered functions (oracle 2), incl. `main`.
@@ -355,7 +367,7 @@ mod tests {
         std::env::remove_var(kuna_decomp::kuna_pdatachained::PDATACHAINED_ENV);
         let bytes = fixture("pe_chainedunwind_x86_64.exe");
         let file = object::File::parse(bytes.as_slice()).expect("parse chained-unwind PE");
-        let cands = pe_entry_candidates(&file, bytes.as_slice());
+        let cands = pe_entry_candidates(&file, bytes.as_slice(), &super::super::executable_sections(&file));
         assert!(cands.contains(&0x140001000), "primary missing from {cands:#x?}");
         assert!(cands.contains(&0x140001040), "entry point missing from {cands:#x?}");
         assert!(
@@ -372,7 +384,7 @@ mod tests {
     fn pdata_arm64_uses_the_eight_byte_record() {
         let bytes = fixture("pe_pdata_arm64.exe");
         let file = object::File::parse(bytes.as_slice()).expect("parse arm64 PE");
-        let cands = pe_entry_candidates(&file, bytes.as_slice());
+        let cands = pe_entry_candidates(&file, bytes.as_slice(), &super::super::executable_sections(&file));
         for vma in [0x140001000u64, 0x140001010, 0x140001020, 0x140001030] {
             assert!(cands.contains(&vma), "{vma:#x} missing from {cands:#x?}");
         }
@@ -419,13 +431,13 @@ mod tests {
     fn pdata_unsupported_machine_is_not_parsed() {
         let mut bytes = fixture("pe_pdata_arm64.exe");
         let file = object::File::parse(bytes.as_slice()).expect("parse arm64 PE");
-        let before = pe_entry_candidates(&file, bytes.as_slice());
+        let before = pe_entry_candidates(&file, bytes.as_slice(), &super::super::executable_sections(&file));
         assert!(before.contains(&0x140001000), "fixture lost its .pdata: {before:#x?}");
 
         let nt = u32::from_le_bytes([bytes[0x3c], bytes[0x3d], bytes[0x3e], bytes[0x3f]]) as usize;
         bytes[nt + 4..nt + 6].copy_from_slice(&0x0166u16.to_le_bytes());
         let file = object::File::parse(bytes.as_slice()).expect("parse retyped PE");
-        let after = pe_entry_candidates(&file, bytes.as_slice());
+        let after = pe_entry_candidates(&file, bytes.as_slice(), &super::super::executable_sections(&file));
         for vma in [0x140001000u64, 0x140001010, 0x140001020] {
             assert!(!after.contains(&vma), "{vma:#x} still parsed in {after:#x?}");
         }

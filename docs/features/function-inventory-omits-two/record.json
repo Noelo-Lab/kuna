@@ -1,0 +1,76 @@
+{
+  "need_id": "function-inventory-omits-two",
+  "track": "loader",
+  "scope": "small",
+  "opportunity": "RE-need function-inventory-omits-two \u2014 `kuna functions` on an x64 MSVC VM crackme listed 228 entries and omitted the handlers at 0x140003c60 and 0x1400041b0, whose pointers occupy entries 27 and 28 of the handler table (crackmes.one 69b7492049fa49a2a260218f bin/vm.exe, round 12).",
+  "test_name": "kuna functions inventory, witness + 150-binary dataset PE sweep",
+  "binary": "decompiler/crates/kuna-analysis/tests/fixtures/pe_reloctable_x86_64.exe",
+  "selector": "0x140001060",
+  "option": null,
+  "flag": null,
+  "change_kind": "analysis-oracle",
+  "tier": "analysis",
+  "source_decompiler": "kuna",
+  "default_on": true,
+  "div_row": null,
+  "decisions": [
+    "The refuter's overturn is UPHELD and its measurement reproduced exactly. The filed cause ('PE discovery may miss leaf handlers without unwind entries') is not the discriminator: sub_140003c50 has no .pdata entry either and IS in the inventory. The inventory is (analyzer oracles) union (direct CALL targets), and an address-taken-only function is seeded by nothing. The refuter's extra finding also held: FOUR entries are missing, not two \u2014 0x140003c20 and 0x140003f40 as well \u2014 so the witness goes 228 -> 232, not 228 -> 230.",
+    "The oracle is the base-relocation directory, not a heuristic table scan. A PE lists every image word holding an absolute address so the loader can rebase it; a relocated word landing in an executable section is a stored code address by construction. That is a stronger statement than the refuter's contiguous-run heuristic and needs no run length, stride or alignment rule: on vm.exe it yields 39 distinct exec-landing targets, 35 already known and exactly the 4 missing ones new.",
+    "TWO false-positive classes showed up in the 152-binary sweep and both are settled by .pdata rather than by a heuristic. (1) A non-PIC switch jump table is a run of relocated addresses pointing INTO the switching function: a candidate strictly inside a RUNTIME_FUNCTION's [Begin, End) is dropped. (2) A packed or single-section image breaks the exec-section test outright \u2014 jormungandr.exe merges its payload into .text, so a UTF-16 locale table ('hr-HR', 'ko-KR', ...) sits at executable addresses and 666 relocated pointers into it read as code pointers. Its .pdata records cover 0x1400091c0 upwards and every one of those strings is below that, so a candidate must also lie in the span of its own section that the exception table vouches for. That guard alone removed 717 of 1485 raw additions and every one of the 18 additions whose first 8 bytes were zero.",
+    "The hull guard is also the precondition: an image vouching for no code region abstains. That excludes PE32 without an exception directory (72 of the 152 swept, one carrying 3287 relocated code addresses) and the ARM/ARM64 8-byte record form, which has no EndAddress. A documented scope limit, taken deliberately over seeding thousands of unvetted addresses.",
+    "NO new option, and no phases.toml/options.rs/catalog/DIV/docs/options.md edits. A relocation is the image's own statement that the word is an address, so this corrects wrong output rather than adding a judgement call \u2014 the docs/agents.md carve-out for a strict bug fix, and the same shape the sibling loader-track need arm-inventory-omits-41 (#537) shipped with this round. It is also what the leases allowed: counter:catalog, counter:div, file:phases.toml and file:docs/options.md were all held by the rax-preserving-stack-probe builder.",
+    "No tests/stages/ XML testcase: the datatest/stages path uses LoadImageXml over <bytechunk> and never constructs an ObjectLoadImage, so a PE data-directory oracle is unreachable from it. Gated on cargo tests in the owning crate plus the promoted CLI probe instead (the same deviation relocobjects/cortexmvectors/arm-inventory-omits-41 recorded).",
+    "The refuter's size hazard held and is a correction, not a regression: seeding gives the bounder something to stop at, so sub_140003c50 goes 32 -> 16 and sub_140004050 384 -> 352 on the witness (plus sub_140003bc0 144 -> 96, sub_140003db0 464 -> 400). 31 entries disappear corpus-wide and every one is a start the new seed supersedes rather than a loss \u2014 0x140028d1c in CrackVM-V2.exe was four bytes into the MOV RAX,[RSP+0x28] that opens the function its vtable slot names, and the new start 0x140028d18 is the real entry (kuna's own RTTI naming agrees: std::codecvt::vfunc_8)."
+  ],
+  "acceptance": {
+    "probe_id": "p-7893d3fda03c",
+    "acceptance_id": "a-e8bc8dd2c6a2",
+    "before": "FAIL (228 functions; neither 0x140003c60 nor 0x1400041b0 present)",
+    "after": "PASS",
+    "verify": "scripts.repipe.verify --need function-inventory-omits-two --json -> pass 1 / fail 0 / unrunnable 0, transition closed"
+  },
+  "promoted_probe": {
+    "path": "tests/cli/function-inventory-omits-two.json",
+    "retargeted_from": "dataset challenges/69b7492049fa49a2a260218f/bin/vm.exe (44032 bytes)",
+    "retargeted_to": "decompiler/crates/kuna-analysis/tests/fixtures/pe_reloctable_x86_64.exe (3584 bytes, hand-assembled)",
+    "why": "`verify --promote` refuses a dataset target (CI has no dataset) and the witness is a third-party crackme. The fixture is the same shape: a PE32+ whose .rdata pointer table names a handler that has no .pdata record and no call site, sitting in a hole between two described bodies. The twin also carries the two negatives, so it guards the guards as well as the fix.",
+    "verified_on_witness": true
+  },
+  "witness": {
+    "binary": "crackmes.one 69b7492049fa49a2a260218f bin/vm.exe",
+    "functions_before": 228,
+    "functions_after": 232,
+    "recovered": [
+      "0x140003c20",
+      "0x140003c60",
+      "0x140003f40",
+      "0x1400041b0"
+    ],
+    "entries_removed": [],
+    "sizes_corrected": {
+      "sub_140003bc0": "144 -> 96",
+      "sub_140003c50": "32 -> 16",
+      "sub_140003db0": "464 -> 400",
+      "sub_140004050": "384 -> 352"
+    },
+    "handler_table": "30 absolute pointers at 0x1400093e0..0x1400094c8, all base-relocated; the four recovered are entries 20, 24, 27 and 28"
+  },
+  "sweep": {
+    "corpus": "152 PE images in the RE dataset (80 PE32+, 72 PE32); 150 compared, 2 (hideandseek.exe, Medusa.exe) time out at 120 s on BOTH arms",
+    "method": "`kuna functions --json` before and after, inventories compared as {address: (name, size)} maps",
+    "errors_changed": 0,
+    "binaries_with_a_changed_inventory": 38,
+    "entries_added": 747,
+    "entries_removed": 31,
+    "entries_resized": 579,
+    "unguarded_variant": "without the .pdata-hull guard the same sweep added 1485 and removed 33; the extra 717 were the jormungandr.exe locale table (666) and vm_crackme.exe (28) plus scattered section-slack addresses, 18 of which began with 8 zero bytes. With the guard, 0 of the 747 additions begin with 8 zero bytes.",
+    "removals_audited": "all 31; each is superseded by a new start 4-0x400 bytes earlier, three sampled by disassembly (CrackVM-V2 0x140028d18, 0x1400010a0; nikos_crack_me 0x1400137fc)"
+  },
+  "gates": {
+    "make test": "675/675 PARITY OK",
+    "make test-stages": "725/725 PARITY OK",
+    "make check-spec": "OK",
+    "make test-cli": "109/109",
+    "kuna catalog --check": "catalog OK"
+  }
+}
