@@ -28,6 +28,7 @@ pub mod funcextent;
 pub mod codedata;
 pub mod kuna_retcallchain;
 pub mod kuna_console;
+pub mod kuna_hightarget;
 pub mod assertions;
 pub mod grammar;
 pub mod rulecompile;

@@ -658,3 +658,104 @@ fn a_parameter_named_after_a_type_reaches_the_emitted_c() {
     assert!(sig.contains("char *code"), "the declared name did not reach the C: {sig}");
     assert!(sig.contains("char *pass"), "the second parameter moved too: {sig}");
 }
+
+// --- the register locals (`docs/re-needs/local-type-assertion-target.md`) ----
+//
+// `authenticate`'s `int v1; // eax` is a HighVariable the naming pass named, not
+// a Symbol in the local scope, so the by-name resolution the plane was built on
+// could not see it -- and a register local is what most of a function's
+// variables are.  Every case below drives the same fixture the rest of the file
+// does, and every one of them checks the emitted C, not the return value.
+
+/// The need's own case: a type stated on a register local reaches the
+/// declaration.  Before this the directive answered `No symbol named: v1`.
+#[test]
+fn a_type_on_a_register_local_reaches_the_declaration() {
+    let Some((code, report)) = decompile_with(vec![directive(
+        "type v1 unsigned int",
+        Body::Type { func: None, symbol: "v1".into(), decl: "unsigned int".into() },
+    )]) else {
+        return;
+    };
+    all_applied(&report);
+    assert!(code.contains("uint4 v1; // eax"), "the retype did not land:\n{code}");
+}
+
+/// And a name: the body reads the caller's identifier, not `v1`.
+#[test]
+fn a_name_on_a_register_local_reaches_the_body() {
+    let Some((code, report)) = decompile_with(vec![directive(
+        "name v1 rc",
+        Body::Name { func: None, symbol: "v1".into(), newname: "rc".into() },
+    )]) else {
+        return;
+    };
+    all_applied(&report);
+    assert!(code.contains("int4 rc; // eax"), "the rename did not land:\n{code}");
+    assert!(code.contains("rc = strcmp("), "the body still uses the old name:\n{code}");
+}
+
+/// A Symbol covers `sizeof(type)` bytes from the storage address, so a type
+/// WIDER than the target describes the next register along: `char *` at EAX's
+/// address is RAX.  Reported as a rejection with both widths, because the one
+/// thing the caller cannot read off the C is how wide kuna thinks the variable
+/// is -- and `applied` over an unchanged `v1` is the failure this plane exists
+/// to end.
+#[test]
+fn a_type_wider_than_the_register_is_rejected_with_both_widths() {
+    let Some((code, report)) = decompile_with(vec![directive(
+        "type v1 char *",
+        Body::Type { func: None, symbol: "v1".into(), decl: "char *".into() },
+    )]) else {
+        return;
+    };
+    assert_eq!(report[0].status, "rejected");
+    assert_eq!(
+        report[0].detail.as_deref(),
+        Some("Storage is 4 bytes, the stated type is 8")
+    );
+    assert!(code.contains("int4 v1; // eax"), "a rejected directive still moved v1:\n{code}");
+}
+
+/// A name nothing answers to keeps the wording an agent has already been taught
+/// to read: the fallback must not turn a typo into a different error.
+#[test]
+fn a_name_no_local_answers_to_is_still_no_symbol_named() {
+    let Some((_, report)) = decompile_with(vec![directive(
+        "type v9 int",
+        Body::Type { func: None, symbol: "v9".into(), decl: "int".into() },
+    )]) else {
+        return;
+    };
+    assert_eq!(report[0].status, "rejected");
+    assert_eq!(report[0].detail.as_deref(), Some("No symbol named: v9"));
+}
+
+/// The scope owns the stack slots, so a directive that misses there because an
+/// EARLIER directive in the same batch renamed the Symbol must not fall through
+/// and map a second Symbol over the same slot.  `v2` is `char v2 [8]` on the
+/// stack; after `name v2 credbuf` the high still reports `v2`, and the second
+/// directive has to be the rejection it always was.
+#[test]
+fn a_renamed_stack_local_does_not_get_a_second_symbol() {
+    let Some((code, report)) = decompile_with(vec![
+        directive(
+            "name v2 credbuf",
+            Body::Name { func: None, symbol: "v2".into(), newname: "credbuf".into() },
+        ),
+        directive(
+            "type v2 char[8]",
+            Body::Type { func: None, symbol: "v2".into(), decl: "char[8]".into() },
+        ),
+    ]) else {
+        return;
+    };
+    assert_eq!(report[0].status, "applied");
+    assert_eq!(report[1].status, "rejected");
+    assert_eq!(report[1].detail.as_deref(), Some("No symbol named: v2"));
+    assert_eq!(
+        code.matches("credbuf").count(),
+        code.matches("credbuf").count().max(1),
+        "the rename vanished:\n{code}"
+    );
+}
