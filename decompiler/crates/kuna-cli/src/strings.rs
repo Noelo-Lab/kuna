@@ -206,6 +206,7 @@ fn attribute(
         isa: args.isa,
         raw_image: false,
         base: None,
+        ..Args::serial()
     };
     let prog = load_program(&load, DriverDefaults::Inventory)?;
     // The inventory, read ONCE. `ConsoleProgram::find_entry_at` rebuilds and

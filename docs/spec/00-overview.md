@@ -826,6 +826,59 @@ console/parity paths never set one. It is not a hard wall around discovery,
 unprobed SLEIGH work, C rendering and variable extraction, assembly/JSON
 construction, total project time, or memory.
 
+(kuna) **The worker pool.** The per-function loop is ~96% of a whole-binary run's
+wall clock, and the engine is structurally single-threaded: a `Funcdata` holds
+`Rc<ArchContext>` and the flow environment a raw `*const Architecture`, so nothing
+in the pipeline is `Send`. `--jobs N` on `decompile-all`, `decompile-project` and
+`decompile-graph` therefore fans the loop out over **processes**, re-executing the
+`kuna` binary itself (`decompiler/crates/kuna-cli/src/jobs.rs`) in a hidden worker
+mode. `--jobs 1` is the default and is the in-process loop above, unchanged; the
+console and parity paths never see a pool.
+
+The pool is driver policy, and its contract is that it cannot be observed in the
+output. Work is planned longest-first into equal-work chunks and handed out
+dynamically, which is deliberately not output order; every target owns a slot
+index and results are filed positionally, so the merged document is identical to
+`--jobs 1` whatever order the workers finish in. What the pool cannot make
+identical is the emission the engine already makes depend on decompile history:
+a handful of type and symbol decisions are first-toucher-wins inside one
+process's database, so they follow the SET of functions that process decompiled,
+and sharding changes that set. Measured at 2 records in 32,777 on an 18 MB PE,
+both a two-byte string constant rendering as `"BM"` rather than the UTF-16
+`"䵂"`; narrowing a serial run to one of those functions flips it the same way,
+so the dependence is the engine's and not the pool's. The parent resolves the concrete
+`--mode`, every `--option` and the watchdog budget once and passes them to every
+worker, so a shard cannot resolve a different policy just because the run was
+sharded. `--assert` and `--raw-image` are refused with a pool: assertion outcomes
+are per-load state a merge cannot reconstruct, and a raw image's entry seeds are
+its load.
+
+A worker's load is the expensive half of it — 17 s and 469 MB on an 18 MB PE, next
+to ~70 ms for the average function — so a worker is started once and then serves
+chunk after chunk down a pipe until the plan is empty, and is recycled only when
+the functions it has decompiled reach the ceiling that bounds the per-function
+arena a process never releases. A worker also skips the whole-binary discovery the
+parent has already run (`fast_funcdisc`), because that discovery is most of the
+load; its *product* is what `FlowInfo::queryCall` reads, so the parent hands its
+canonical inventory over instead, replayed through the loader-symbol seam
+(`decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::seed_function_inventory)`).
+The seeding is strictly additive — an address this load already resolves, or a name
+it already carries, is left alone — because a name is installed into the scope its
+`::` path names, and replacing one buries a name the worker derived correctly.
+`--jobs-full-load` restores the parent's exact load in every worker.
+
+A pool is also the first arrangement that can enforce the watchdog for real. The
+in-process deadline above is cooperative, so a function wedged where nothing probes
+it runs straight through; the parent, which is not the stuck process, kills a
+worker that has produced no record for well past the budget and records that
+chunk's unfinished functions as `error`. The same budget is a wall clock, so a
+function that finished just inside it serially can miss it under N-way contention;
+the run counts those and says so, as it counts the functions lost to a worker that
+died. Cancellation runs the other way: each worker's stdin is a pipe whose only
+write end its parent holds, so end of pipe means the parent is gone by any route
+including SIGKILL, and the worker removes the pool's scratch directory and exits
+rather than running on reparented to init.
+
 (kuna) **Declared function boundaries.** Every function boundary the engine knows
 is derived: discovery supplies the entries, and the extent is the
 address-contiguous clip `[entry, next_entry)` over an unbounded flow follow

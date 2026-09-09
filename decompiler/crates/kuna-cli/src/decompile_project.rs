@@ -4,6 +4,7 @@
 //!   kuna decompile-project <binary> [-o|--output DIR] [--functions a,b,..]
 //!                          [--addr 0xVMA].. [--max-fn-seconds N]
 //!                          [--mode auto|reliable|aggressive|fast] [--option N V]..
+//!                          [--jobs N|auto] [--jobs-chunk N] [--jobs-full-load]
 //!                          [--isa auto|arm|thumb] [--slice ARCH] [--target T]
 //!                          [--sleighpath D]
 //! ```
@@ -43,7 +44,9 @@ use kuna_console::project::{
 };
 use kuna_decomp::decompile_drive::{print_c_recompile_prelude, print_c_types};
 
-use crate::decompile_all::{load_program, parse_args, resolve_targets, Args, DriverDefaults};
+use crate::decompile_all::{
+    decompile_targets_pooled, load_program, parse_args, resolve_targets, Args, DriverDefaults,
+};
 
 /// `kuna decompile-project` entry point.
 pub fn run(argv: &[String]) -> i32 {
@@ -97,6 +100,7 @@ fn usage() {
     eprintln!(
         "usage: kuna decompile-project <binary> [-o|--output DIR] [--functions a,b,..] \\\n\
          \x20                   [--addr 0xVMA].. [--max-fn-seconds N] [--mode auto|reliable|aggressive|fast] \\\n\
+         \x20                   [--jobs N|auto] [--jobs-chunk N] [--jobs-full-load] \\\n\
          \x20                   [--define-function S[-E][=N]|@FILE].. \\\n\
          \x20                   [--option N V].. [--isa auto|arm|thumb] [--slice ARCH] [--target T] [--sleighpath D]\n\
          \x20                   [--raw-image --target T --base VMA (--entry|--addr VMA)..]\n\
@@ -110,6 +114,10 @@ fn usage() {
          \x20 README.md   binary metadata (size, arch, entry, sections, counts)\n\
          Unfiltered fast exports default to 10 seconds per function; other runs\n\
          default to 120. --max-fn-seconds overrides that policy (0 disables).\n\
+         --jobs N spreads the per-function decompile over N worker processes\n\
+         (auto = this machine's parallelism, capped at 16; 1, the default, is\n\
+         serial). The artifacts are identical to --jobs 1; progress goes to\n\
+         stderr, and peak memory is roughly N times one worker's RSS.\n\
          Individual function failures are recorded in the artifacts; the run still\n\
          exits 0 (load errors / an empty target set / I/O errors exit nonzero)."
     );
@@ -133,7 +141,9 @@ fn decompile_project(args: &Args, output: Option<&str>) -> Result<String, String
             .join(format!("{file_name}.kuna")),
     };
 
+    let load_started = std::time::Instant::now();
     let mut prog = load_program(args, DriverDefaults::Decompile)?;
+    let load_seconds = load_started.elapsed().as_secs_f64();
     // Per-function watchdog — same driver policy as `decompile-all` (10 s for
     // an unfiltered fast export, 120 s otherwise, 0 disables): a non-converging
     // function becomes its own error record instead of hanging the export.
@@ -159,14 +169,35 @@ fn decompile_project(args: &Args, output: Option<&str>) -> Result<String, String
         return Err(format!("no functions selected/discovered in {}", args.binary));
     }
 
-    let mut results =
-        decompile_targets(
-            &mut prog,
-            targets,
-            /* no_vars= */ false,
+    // `--jobs N`: the per-function loop fans out over worker processes, but the
+    // parent's program stays loaded — the `.asm` section sweep and the README
+    // metadata are whole-program artifacts only it can build. The `.h` type
+    // block is the exception: `print_c_types` renders types the DECOMPILE
+    // interns, so in a sharded run it has to come back from the workers.
+    let (mut results, pooled_types) = if args.jobs > 1 {
+        let inventory = prog.function_entries_canonical();
+        let pooled = decompile_targets_pooled(
+            args,
+            &targets,
+            &inventory,
             /* want_proto= */ true,
             /* want_provenance= */ false,
-        );
+            /* want_types= */ true,
+            load_seconds,
+        )?;
+        (pooled.results, pooled.types)
+    } else {
+        (
+            decompile_targets(
+                &mut prog,
+                targets,
+                /* no_vars= */ false,
+                /* want_proto= */ true,
+                /* want_provenance= */ false,
+            ),
+            None,
+        )
+    };
     // Every artifact is address-ordered (resolve_targets only guarantees that
     // for the no-filter default; --addr/--functions arrive in user order).
     results.sort_by(|a, b| a.address.cmp(&b.address).then_with(|| a.name.cmp(&b.name)));
@@ -174,7 +205,7 @@ fn decompile_project(args: &Args, output: Option<&str>) -> Result<String, String
     // `print_c_types` AFTER the decompile loop: user-defined types are interned
     // into the factory as functions decompile.
     let prelude = print_c_recompile_prelude(prog.arch());
-    let types = print_c_types(prog.arch_mut());
+    let types = pooled_types.unwrap_or_else(|| print_c_types(prog.arch_mut()));
 
     let header = build_header(&file_name, &prelude, &types, &results);
     let c_file = build_c(&file_name, &results);

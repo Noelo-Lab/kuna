@@ -346,6 +346,7 @@ fn load_args(args: &DisArgs, options: Vec<(String, String)>) -> Args {
         isa: args.isa,
         raw_image: false,
         base: None,
+        ..Args::serial()
     }
 }
 
