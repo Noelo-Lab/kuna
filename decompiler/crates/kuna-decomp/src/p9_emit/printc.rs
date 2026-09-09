@@ -7529,7 +7529,23 @@ impl PrintC {
         };
         let mut loc = v.get_addr().clone();
         let mut size = v.get_size();
-        if !renders_as_global(&loc, size) {
+        let mut stack_pointer_storage = false;
+        if let Some(h) = v.get_high() {
+            if let Some(hv) = fd.high_bank().get(h) {
+                for i in 0..hv.num_instances() {
+                    let ivn = hv.get_instance(i);
+                    if let Some(iv) = fd.vbank().get(ivn) {
+                        if iv.is_spacebase() && iv.is_input() {
+                            loc = iv.get_addr().clone();
+                            size = iv.get_size();
+                            stack_pointer_storage = true;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        if !stack_pointer_storage && !renders_as_global(&loc, size) {
             if let Some(h) = v.get_high() {
                 if let Some(hv) = fd.high_bank().get(h) {
                     for i in 0..hv.num_instances() {
@@ -7545,7 +7561,11 @@ impl PrintC {
                 }
             }
         }
-        let name = match kuna_unnamed_location_name(arch, &loc, size) {
+        let name = match if stack_pointer_storage {
+            kuna_storage_location_name(&loc)
+        } else {
+            kuna_unnamed_location_name(arch, &loc, size)
+        } {
             Some(n) => n,
             None => return,
         };
@@ -9157,6 +9177,22 @@ fn kuna_unnamed_location_name(
     if kuna_global_naming(spc) {
         return Some(kuna_global_data_name(arch.kuna_name_style(), loc.get_offset()));
     }
+    let mut s = String::new();
+    let sn = spc.get_name();
+    let mut chars = sn.chars();
+    if let Some(c0) = chars.next() {
+        s.extend(c0.to_uppercase());
+        s.push_str(chars.as_str());
+    }
+    use std::fmt::Write;
+    let _ = write!(s, "{:0width$x}", loc.get_offset(), width = (2 * spc.get_addr_size()) as usize);
+    Some(s)
+}
+
+/// Spell an address as storage, without treating a covering register name as a
+/// source-level identifier.
+fn kuna_storage_location_name(loc: &kuna_base::address::Address) -> Option<String> {
+    let spc = loc.get_space()?;
     let mut s = String::new();
     let sn = spc.get_name();
     let mut chars = sn.chars();

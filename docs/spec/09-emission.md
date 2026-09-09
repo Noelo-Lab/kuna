@@ -393,6 +393,15 @@ lives somewhere the analysis never resolved to a variable, exactly as upstream's
 `stack0x00000008` is (kuna capitalizes the space and drops the `0x` so the
 token is at least a legal C identifier).
 
+One unnamed high-variable case is deliberately canonicalized before that
+choice. If any member is the unaffected input stack pointer, every member uses
+that member's storage-form leaf (`Register0000000000000000` on x86-64), with
+the translator's register-name shortcut disabled. Copy propagation can merge
+the input stack pointer with register and unique-space members; printing each
+member's own address would otherwise make one value appear under unrelated,
+undeclared names such as `RAX` and `Unique10000064`. This spelling change does
+not synthesize the definition that may be absent after the merge.
+
 The same leaf serves the **spacebase** arm of `printc.rs
 (PrintC::op_ptrsub_ir)`. A `PTRSUB(sp, off)` is a reference into the stack (or
 global) frame; P6 binds a Symbol to the offset constant whenever the recovered

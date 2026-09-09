@@ -13,6 +13,30 @@
 use super::*;
 use crate::printlanguage::{parentheses, ReversePolish};
 
+#[test]
+fn stack_pointer_high_leaf_uses_storage_spelling() {
+    use kuna_base::address::Address;
+    use kuna_base::space::{addrspace_flags, spacetype, AddrSpace};
+    use std::rc::Rc;
+
+    let register = Rc::new(AddrSpace::new(
+        spacetype::IPTR_PROCESSOR,
+        "register",
+        false,
+        8,
+        1,
+        1,
+        addrspace_flags::hasphysical,
+        1,
+        1,
+    ));
+    let rsp_storage = Address::new(register, 0);
+    assert_eq!(
+        kuna_storage_location_name(&rsp_storage).as_deref(),
+        Some("Register0000000000000000")
+    );
+}
+
 fn rpn(tok: &'static OpToken, visited: int4) -> ReversePolish {
     ReversePolish { tok, visited, paren: false, op: None, id: 0, id2: 0 }
 }
