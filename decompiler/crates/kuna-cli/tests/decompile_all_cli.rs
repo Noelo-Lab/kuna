@@ -815,6 +815,11 @@ fn arm_thumb_pe_functions_and_address_decompile() {
         stdout.contains("\"address_hex\": \"0x401000\""),
         "odd Thumb entry was not normalized:\n{stdout}"
     );
+    // The name follows the normalized address, not the raw entry word.
+    assert!(
+        stdout.contains("\"name\": \"sub_401000\"") && !stdout.contains("sub_401001"),
+        "the entry function must be named at its even address:\n{stdout}"
+    );
 
     let (stdout, stderr, ok) = run_kuna(&[
         "decompile-all",

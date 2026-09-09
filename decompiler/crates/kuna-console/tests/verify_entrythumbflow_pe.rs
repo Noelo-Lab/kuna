@@ -118,6 +118,7 @@ fn an_arm_machine_pe_with_a_thumb_entry_gets_the_entry_walk() {
     assert!(program.description().starts_with("ARM:LE:32"), "{}", program.description());
     let entry = program.find_entry_at(0x401001).expect("the odd PE entry resolves");
     assert_eq!(entry.addr.get_offset(), 0x401000);
+    assert_eq!(entry.name, "sub_401000", "named at the even address it lives at");
     assert_eq!(tmode_at(&program, 0x401000), 1, "the walk paints the entry Thumb");
 
     let Some(off) = load(&path, &[("entrythumbflow", "off")]) else {
