@@ -1,0 +1,44 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "printf",
+    "--option",
+    "calleearity",
+    "on",
+    "--option",
+    "varargstackargs",
+    "on"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/macho_imports",
+    "binary_sha256": "0394e1be81c4ccdfb28a50cf5dba55a6d95a692cd5504f2305a8f139e8f86675",
+    "binary_size": 16688,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/macho_imports",
+    "selector": "printf",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "printf\\("
+    ],
+    "stderr_absent": [
+      "is ambiguous"
+    ]
+  },
+  "notes": "mach-o-import-data: an import name spelled on both a __stubs veneer and its __la_symbol_ptr slot made the name unselectable. Witness crackmes.one 64c8b272b25df8732eebc2a6 bin/main (strcmp, 9 such pairs); retargeted onto the vendored macho_imports, the same shape at printf 0x1000005cc / 0x100003000, so it runs where there is no dataset."
+}

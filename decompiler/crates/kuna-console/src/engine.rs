@@ -866,27 +866,34 @@ impl ConsoleProgram {
     /// name-narrowing the old `(name, offset)` dedup was keeping duplicate records
     /// for.
     ///
-    /// `None` also when the name identifies SEVERAL entries: a caller that can
+    /// `None` also when the name identifies SEVERAL entries no
+    /// [`Self::lone_executable_candidate`] narrowing settles: a caller that can
     /// only answer yes-or-no must not silently pick one of them. A caller that
     /// can report the ambiguity asks [`Self::resolve_entry`] instead, which
-    /// names every candidate.
+    /// names every candidate. The narrowing is shared with `resolve_entry` so
+    /// that the two name lookups cannot answer one name at two addresses —
+    /// `disassemble` and `read` reach a name through this one and fall through
+    /// to the raw symbol table when it declines, which on a PE import pair is
+    /// the pointer slot rather than the thunk `decompile` would have picked.
     pub fn find_entry_by_name(&self, want: &str) -> Option<FunctionEntry> {
         // (kuna `symbolnamebound`) The enumeration reports the bounded spelling,
         // so bound the query too -- a caller holding the binary's ORIGINAL name
         // must still resolve. Idempotent, so the bounded spelling resolves as
         // well, and a no-op for every real name.
         let want = &*kuna_decomp::kuna_symbolnamebound::bound_scope_path(want, "::");
-        let mut matches = self
+        let mut matches: Vec<FunctionEntry> = self
             .function_entries_canonical()
             .into_iter()
-            .filter(|e| e.name == want || e.aliases.iter().any(|a| a == want));
-        let Some(entry) = matches.next() else {
-            // (kuna, RE-need `string-owner-function-name`) Same placeholder
-            // fallback [`Self::resolve_entry`] takes, so the two name lookups
-            // answer one name the same way.
-            return self.entry_by_placeholder_name(want);
-        };
-        matches.next().is_none().then_some(entry)
+            .filter(|e| e.name == want || e.aliases.iter().any(|a| a == want))
+            .collect();
+        // On a miss, the (kuna, RE-need `string-owner-function-name`) placeholder
+        // fallback [`Self::resolve_entry`] takes, so the two name lookups answer
+        // one name the same way.
+        match matches.len() {
+            0 => self.entry_by_placeholder_name(want),
+            1 => Some(matches.remove(0)),
+            _ => self.lone_executable_candidate(&matches),
+        }
     }
 
     /// (kuna, issue #197) Resolve the canonical entry AT `vma`, tolerating an
@@ -1111,6 +1118,11 @@ impl ConsoleProgram {
     ) -> Result<FunctionEntry, EntryLookupError> {
         candidates.sort_by_key(|entry| entry.addr.get_offset());
         candidates.dedup_by_key(|entry| entry.addr.get_offset());
+        if candidates.len() > 1 {
+            if let Some(entry) = self.lone_executable_candidate(&candidates) {
+                return Ok(entry);
+            }
+        }
         match candidates.len() {
             0 => Err(EntryLookupError::NotFound {
                 selector: selector.display(),
@@ -1121,6 +1133,34 @@ impl ConsoleProgram {
                 candidates,
             }),
         }
+    }
+
+    /// (kuna, RE-need `mach-o-import-data`) The one candidate that lives in
+    /// executable memory, when a selector matches several and exactly one does.
+    ///
+    /// An import name is spelled twice in a dynamically linked image: once on
+    /// the stub a direct call jumps to, and once on the pointer slot that stub
+    /// reads. Both are entries — the slot's name is what makes an indirect call
+    /// through it readable, and a slot with no stub twin (`__DATA,__got`,
+    /// `__DATA,__nl_symbol_ptr`) is the only place its name appears at all — so
+    /// neither can be dropped from the inventory. On a Mach-O they collide by
+    /// name, and `kuna decompile <image> strcmp` answered `selector "strcmp" is
+    /// ambiguous` for all nine imports of a 26-entry inventory, with only a raw
+    /// `--addr` left to the caller. ELF already behaves the way this makes
+    /// Mach-O behave, by naming only the PLT stub.
+    ///
+    /// Resolved at SELECTION time rather than by pruning the inventory, so it
+    /// fires only where a twin actually exists and every lone slot row survives.
+    /// Narrowing to EXACTLY one keeps a genuine collision an error: two
+    /// same-named definitions in different code sections of a relocatable object
+    /// are both executable, and picking either would be a guess.
+    fn lone_executable_candidate(&self, candidates: &[FunctionEntry]) -> Option<FunctionEntry> {
+        let sections = self.sections();
+        let mut executable = candidates
+            .iter()
+            .filter(|entry| self.entry_is_executable(entry.addr.get_offset(), &sections));
+        let only = executable.next()?;
+        executable.next().is_none().then(|| only.clone())
     }
 
     /// (kuna, RE-need `string-owner-function-name`) The address an ENGINE-MINTED
