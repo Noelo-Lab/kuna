@@ -137,8 +137,9 @@ pub(crate) struct Args {
     /// flag can be non-empty.
     pub(crate) func_decls: Vec<crate::funcdecl::FuncDecl>,
     /// `--assert <directive> | @FILE` (repeatable): the caller-supplied
-    /// assertions, installed by [`load_program`] right after the analysis commit
-    /// and dispatched by the decompile loop (`kuna_console::assertions`). Empty
+    /// assertions, installed by [`load_program`] before the analysis commit for
+    /// the image-scoped `bytes` and right after it for the program-scoped rest,
+    /// then dispatched by the decompile loop (`kuna_console::assertions`). Empty
     /// for every invocation that passed none.
     pub(crate) assertions: Vec<kuna_console::assertions::Directive>,
     /// `--assert-strict`: a rejected directive makes the run exit non-zero
@@ -1538,6 +1539,15 @@ pub(crate) fn load_program(
     // BEFORE the gated analysis commit (the `option` < `read symbols` ordering
     // the script path enforces), so a per-pass gate takes effect.
     apply_runtime_options(&mut prog, &args.options)?;
+    // (kuna `--assert bytes`) The IMAGE-scoped directives, before the commit and
+    // before any read of the addresses they name: a byte overlay states what the
+    // running program put there, and every later decode has to see it. The
+    // console script surface emits `override bytes` in the same slot, ahead of
+    // `read symbols`.
+    if !args.assertions.is_empty() {
+        prog.set_assertions(args.assertions.clone());
+        kuna_console::assertions::apply_image_scoped(&mut prog);
+    }
     prog.commit_pending_analysis()
         .map_err(|e| format!("read symbols (analysis commit) failed: {}", e.explain()))?;
     // AFTER the commit: a caller-declared boundary is an assertion that outranks
@@ -1548,7 +1558,6 @@ pub(crate) fn load_program(
     // directives take effect here; the function- and symbol-scoped ones are
     // dispatched by the decompile loop (`kuna_console::assertions`).
     if !args.assertions.is_empty() {
-        prog.set_assertions(args.assertions.clone());
         kuna_console::assertions::apply_program_scoped(&mut prog);
     }
     Ok(prog)

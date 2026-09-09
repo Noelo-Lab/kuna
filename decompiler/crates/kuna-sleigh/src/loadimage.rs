@@ -180,6 +180,22 @@ pub trait LoadImage {
         false
     }
 
+    /// (kuna) Replace the mapped bytes at `addr` with `data` — the caller
+    /// states that the image content there is not what the file holds.
+    ///
+    /// The one fact a static loader cannot derive.  Code a stage-1 unpacker
+    /// writes over itself exists only after that stage has run, so an agent that
+    /// has recovered the plaintext has no way to hand it back: the recorded
+    /// workaround was Python and a patched copy of the executable
+    /// (`docs/re-needs/byte-overlay-assertion-recovered.md`).  The overlay is a
+    /// statement about RAM, not about the file, so nothing is written to disk.
+    ///
+    /// A loader that cannot take one says so rather than accepting it silently.
+    fn kuna_overlay_bytes(&mut self, addr: &Address, data: &[u8]) -> KunaResult<()> {
+        let _ = (addr, data);
+        Err(KunaError::lowlevel("this load image does not support byte overlays"))
+    }
+
     /// (kuna) The mapped **load segments** as `(vma, size, flags)`, `flags` per
     /// [`section_flags`] — the coarser mapping unit underneath the section
     /// table.

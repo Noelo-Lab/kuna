@@ -968,9 +968,14 @@ to know that renaming is P9 to rename something — parsed by
 | `type [<func>::]<symbol> <C type>` | `retype` | P5 type-propagation |
 | `readonly <addr>+<size>` | `readonly` | P1 code-data-partition |
 | `volatile <addr>+<size>` | `volatile` | P1 code-data-partition |
+| `bytes <addr> <hex\|@FILE>` | `override bytes` | P1 code-data-partition |
 
 Four application points, and the ordering between them is forced rather than
-stylistic. **Image-scoped** directives (`readonly`, `volatile`) OR one boolean
+stylistic. **Image-scoped** directives state what memory holds before anything
+reads it. `bytes` replaces the mapped bytes at an address with the caller's own
+(`assertions::apply_image_scoped` -> `LoadImage::kuna_overlay_bytes`, implemented
+by `decompiler/crates/kuna-analysis/src/loadimage_object.rs (overlay_span)`);
+`readonly` and `volatile` OR one boolean
 Varnode property over a memory range, and must be stated before the image's
 symbols are mapped: `Scope::addMap` folds the range property into each
 `SymbolEntry` as it maps it (`database.cc:1156-1158`) and never consults the range
@@ -979,7 +984,21 @@ loader named. The generated console script therefore emits them ahead of `read
 symbols`; the in-process surface, where `bootstrap_from_object` has already read
 the loader's symbols before a caller can say anything, re-applies the property to
 the symbols the range covers (`assertions::paint_property`). Both surfaces then
-render the same C. **Program-scoped** directives (`function`, `typedef`, `prototype`,
+render the same C. `bytes` is bound by the same ordering for a different reason:
+the bytes it states are the INPUT to every later decode, and nothing re-reads an
+address it has already lifted, so it is applied ahead of the analysis commit on
+both surfaces (`load_program` before `commit_pending_analysis`; the script's
+image slot before `read symbols`). It is the one fact a loader cannot derive at
+all — a packer's plaintext exists only once the packer has run — and the recorded
+workaround was patching a copy of the executable with an external script
+(`docs/re-needs/byte-overlay-assertion-recovered.md`). The overlay lives in the
+load image and nothing is written to disk. Two limits follow from where it lands
+and are reported rather than papered over: an address no loaded segment maps is
+REJECTED naming the span, since inventing backing store would decompile a program
+the caller never described; and the loader's analysis passes have already run over
+the file image, so function discovery does not see a recovered layer — its
+functions are declared with `function`/`--define-function` in the same assertion
+file. **Program-scoped** directives (`function`, `typedef`, `prototype`,
 `data`) are applied right after the analysis commit
 (`ConsoleProgram::set_assertions` + `assertions::apply_program_scoped`, called
 from `decompiler/crates/kuna-cli/src/decompile_all.rs (load_program)`), for the

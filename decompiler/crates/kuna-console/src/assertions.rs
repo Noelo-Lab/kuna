@@ -28,6 +28,7 @@
 //!   function <start>[-<end>][=<name>]      function bounds      P1  (= --define-function)
 //!   readonly <addr>+<size>                 readonly             P1 code-data-partition
 //!   volatile <addr>+<size>                 volatile             P1 code-data-partition
+//!   bytes <addr> <hex|@file>               override bytes       P1 code-data-partition
 //! ```
 //!
 //! [`Directive`] is the parsed form; the CLI's `assertdecl` module owns the text
@@ -40,12 +41,17 @@
 //!
 //! The ordering is not cosmetic; it is what makes the plane work at all.
 //!
-//! * **Image-scoped** (`readonly`, `volatile`) paints a boolean property over a
-//!   memory range.  A range property has to be stated BEFORE the symbols over it
-//!   are mapped, because `Scope::addMap` folds the property into each
-//!   `SymbolEntry` as it maps it (`database.cc:1156-1158`) and never looks at
-//!   the range again; the generated console script therefore emits these before
-//!   `read symbols`, and the in-process surface — where the loader's symbols are
+//! * **Image-scoped** (`bytes`, `readonly`, `volatile`) states what memory holds
+//!   before anything reads it.  `bytes` overlays the caller's own bytes onto the
+//!   loaded image and so must land before the analysis commit — the plaintext a
+//!   packer writes over itself is the input to every later decode, and a lifter
+//!   that has already read the ciphertext will not read it again.  `readonly`
+//!   and `volatile` paint a boolean property over a memory range, which has to
+//!   be stated BEFORE the symbols over it are mapped, because `Scope::addMap`
+//!   folds the property into each `SymbolEntry` as it maps it
+//!   (`database.cc:1156-1158`) and never looks at the range again; the generated
+//!   console script therefore emits these before `read symbols`, and the
+//!   in-process surface — where the loader's symbols are
 //!   already mapped by the time a caller can say anything — re-applies the
 //!   property to the symbols the range covers.
 //! * **Program-scoped** (`function`, `typedef`, `prototype`, `data`) is applied
@@ -123,6 +129,9 @@ pub enum Body {
     /// `volatile <addr>+<size>` — device memory: every access is a real access
     /// and two reads of one address are two reads.
     Volatile { addr: u64, size: int4 },
+    /// `bytes <addr> <hex|@file>` — the bytes mapped at this address are these,
+    /// whatever the file holds.  The plaintext a packer writes over itself.
+    Bytes { addr: u64, data: Vec<u8> },
 }
 
 /// What became of one directive.  `status` is `applied` or `rejected`; a
@@ -163,6 +172,7 @@ impl Body {
             Body::Type { .. } => ("type", "P5", "type-propagation"),
             Body::Readonly { .. } => ("readonly", "P1", "code-data-partition"),
             Body::Volatile { .. } => ("volatile", "P1", "code-data-partition"),
+            Body::Bytes { .. } => ("bytes", "P1", "code-data-partition"),
         }
     }
 
@@ -298,6 +308,66 @@ fn parse_storage(prog: &ConsoleProgram, tok: &str) -> Result<Address, String> {
     crate::ifacedecomp::parse_machaddr(prog, &mut s, false).map(|(addr, _size)| addr)
 }
 
+/// Parse a `bytes` directive's payload: one unbroken, even-length run of hex
+/// digits, optionally `0x`-prefixed.
+///
+/// One grammar for both surfaces — the `--assert` flag and the console's
+/// `override bytes` — so a directive means the same thing however it arrives.
+pub fn parse_hex_bytes(tok: &str) -> Result<Vec<u8>, String> {
+    let digits = tok.strip_prefix("0x").or_else(|| tok.strip_prefix("0X")).unwrap_or(tok);
+    if digits.is_empty() {
+        return Err("bytes needs at least one byte of hex".into());
+    }
+    if !digits.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(format!("{tok:?} is not hex"));
+    }
+    if digits.len() % 2 != 0 {
+        return Err(format!("{tok:?} has an odd number of hex digits"));
+    }
+    (0..digits.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&digits[i..i + 2], 16).map_err(|e| e.to_string()))
+        .collect()
+}
+
+/// Apply the image-scoped directives (today only `bytes`) and record an
+/// [`Outcome`] for each.
+///
+/// Called BEFORE the analysis commit, which is the only ordering that can work:
+/// the bytes a caller states are the input to every later read of that address,
+/// and nothing re-reads an address it has already decoded.  The
+/// `readonly`/`volatile` precedent is the same constraint inverted — a range
+/// property stated after the symbols over it are mapped is silently inert.
+pub fn apply_image_scoped(prog: &mut ConsoleProgram) {
+    let directives = prog.assertions().to_vec();
+    for (i, directive) in directives.iter().enumerate() {
+        let Body::Bytes { addr, data } = &directive.body else {
+            continue;
+        };
+        let outcome = match overlay_bytes(prog, *addr, data) {
+            Ok(()) => directive.applied(),
+            Err(detail) => directive.rejected(detail),
+        };
+        prog.set_assertion_outcome(i, outcome);
+    }
+}
+
+/// `bytes` — the in-process twin of the console's `override bytes`: hand the
+/// caller's plaintext to the loader, which serves it to every later read of
+/// those addresses.
+///
+/// Nothing is written to the file on disk.  The statement is about what is in
+/// RAM at that address once the program has run itself far enough to put it
+/// there, which is exactly the fact a static loader cannot derive.
+fn overlay_bytes(prog: &mut ConsoleProgram, vma: u64, data: &[u8]) -> Result<(), String> {
+    let addr = data_addr(prog, vma)?;
+    let loader_rc = prog.arch().translate().loader_rc();
+    let mut loader = loader_rc
+        .try_borrow_mut()
+        .map_err(|_| "the load image is already borrowed".to_string())?;
+    loader.kuna_overlay_bytes(&addr, data).map_err(|e| e.explain().to_string())
+}
+
 /// Apply the program-scoped directives (`function`, `typedef`, `prototype`,
 /// `data`) and record an [`Outcome`] for each.
 ///
@@ -320,6 +390,11 @@ pub fn apply_program_scoped(prog: &mut ConsoleProgram) {
                 Err(detail) => directive.rejected(detail),
             };
             prog.set_assertion_outcome(i, outcome);
+            continue;
+        }
+        // Image-scoped: already applied (and reported) by `apply_image_scoped`,
+        // which had to run before the commit this function follows.
+        if matches!(directive.body, Body::Bytes { .. }) {
             continue;
         }
         if directive.body.is_function_scoped() {
