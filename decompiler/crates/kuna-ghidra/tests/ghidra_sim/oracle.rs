@@ -149,6 +149,10 @@ pub struct SimOracle {
     /// analysis-committed libproto/DWARF signatures the CLI path consumes; the
     /// `<mapsym><function><prototype>` answer source.
     pub callee_pieces: BTreeMap<u64, PrototypePieces>,
+    /// Entry offsets whose localdb includes Java's AUTO hidden-return parameter.
+    pub hidden_return_overrides: BTreeSet<u64>,
+    /// Real register storage for the x86-64 parameter stream.
+    parameter_registers: Vec<VarnodeData>,
     /// Read-only image ranges (READONLY|CODE sections) — the `<hole>`
     /// mutability source (the CLI paints the same const-ness from ELF flags).
     pub readonly_ranges: Vec<(u64, u64)>,
@@ -245,6 +249,10 @@ impl SimOracle {
         let mut reglist: BTreeMap<VarnodeData, String> = BTreeMap::new();
         sleigh.get_all_registers(&mut reglist);
         let register_names: BTreeSet<String> = reglist.into_values().collect();
+        let parameter_registers = [b"RDI".as_slice(), b"RSI", b"RDX", b"RCX", b"R8", b"R9"]
+            .into_iter()
+            .filter_map(|name| sleigh.get_register_varnode(name).ok())
+            .collect();
 
         let data_symbols: BTreeMap<u64, (String, i64)> = prog
             .global_data_symbols()
@@ -280,6 +288,8 @@ impl SimOracle {
             label_overrides: BTreeMap::new(),
             data_symbols,
             callee_pieces,
+            hidden_return_overrides: BTreeSet::new(),
+            parameter_registers,
             readonly_ranges,
             tracked_overrides: Vec::new(),
             local_var_overrides: BTreeMap::new(),
@@ -518,7 +528,7 @@ impl SimOracle {
                 .map(|v| v.as_slice())
                 .unwrap_or(&[]);
             if pieces.is_some() || !locals.is_empty() {
-                self.encode_localdb(&mut e, name, pieces, locals);
+                self.encode_localdb(&mut e, entry.get_offset(), name, pieces, locals);
             }
             if let Some(p) = pieces {
                 self.encode_prototype(&mut e, p);
@@ -541,6 +551,7 @@ impl SimOracle {
     fn encode_localdb(
         &self,
         e: &mut PackedEncode,
+        entry: u64,
         fname: &str,
         pieces: Option<&PrototypePieces>,
         locals: &[HostLocalVar],
@@ -615,27 +626,52 @@ impl SimOracle {
             e.close_element(&ELEM_LOCALDB);
             return;
         };
-        for (i, ct) in pieces.intypes.iter().enumerate() {
+        let hidden = self.hidden_return_overrides.contains(&entry);
+        let total = pieces.intypes.len() + usize::from(hidden);
+        for i in 0..total {
+            let declared_index = i.checked_sub(usize::from(hidden));
+            let ct = declared_index.map(|j| &pieces.intypes[j]);
             e.open_element(&ELEM_MAPSYM);
             e.open_element(&ELEM_SYMBOL);
-            let pname = pieces
-                .innames
-                .get(i)
-                .cloned()
+            let pname = declared_index
+                .and_then(|j| pieces.innames.get(j).cloned())
                 .filter(|n| !n.is_empty())
-                .unwrap_or_else(|| format!("param_{}", i + 1));
+                .unwrap_or_else(|| {
+                    if declared_index.is_none() {
+                        "__return_storage_ptr__".to_string()
+                    } else {
+                        format!("param_{}", i + 1)
+                    }
+                });
             e.write_string(&ATTRIB_NAME, pname.as_bytes());
             e.write_bool(&ATTRIB_TYPELOCK, true);
             e.write_bool(&ATTRIB_NAMELOCK, true);
             e.write_signed_integer(&ATTRIB_CAT, 0);
             e.write_unsigned_integer(&ATTRIB_INDEX, i as u64);
-            self.encode_wire_type(e, ct);
+            if declared_index.is_none() {
+                e.write_bool(&kuna_base::marshal::ATTRIB_HIDDENRETPARM, true);
+                e.open_element(&ELEM_TYPE);
+                e.write_string(&ATTRIB_NAME, b"");
+                e.write_string(&ATTRIB_METATYPE, b"ptr");
+                e.write_signed_integer(&ATTRIB_SIZE, 8);
+                self.encode_wire_type(e, pieces.outtype.as_ref().expect("hidden return type"));
+                e.close_element(&ELEM_TYPE);
+            } else {
+                self.encode_wire_type(e, ct.expect("declared parameter type"));
+            }
             e.close_element(&ELEM_SYMBOL);
-            // Storage entry: a dynamic <hash> (the decoder needs no static
-            // storage for a parameter) + empty <rangelist/>.
-            e.open_element(&ELEM_HASH);
-            e.write_unsigned_integer(&ATTRIB_VAL, 1);
-            e.close_element(&ELEM_HASH);
+            if let Some(storage) = self.parameter_registers.get(i) {
+                Address::new(
+                    Rc::clone(storage.space.as_ref().expect("register space")),
+                    storage.offset,
+                )
+                .encode_sized(e, storage.size as i32)
+                .expect("parameter storage encodes");
+            } else {
+                e.open_element(&ELEM_HASH);
+                e.write_unsigned_integer(&ATTRIB_VAL, 1);
+                e.close_element(&ELEM_HASH);
+            }
             e.open_element(&ELEM_RANGELIST);
             e.close_element(&ELEM_RANGELIST);
             e.close_element(&ELEM_MAPSYM);

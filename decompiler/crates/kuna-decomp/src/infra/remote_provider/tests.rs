@@ -169,6 +169,9 @@ fn function_mapsym_decodes_prototype_and_params() {
             e.write_bool(&ATTRIB_NAMELOCK, true);
             e.write_signed_integer(&ATTRIB_CAT, 0);
             e.write_unsigned_integer(&ATTRIB_INDEX, idx);
+            if idx == 0 {
+                e.write_bool(&kuna_base::marshal::ATTRIB_HIDDENRETPARM, true);
+            }
             e.open_element(&crate::dtype::ELEM_TYPEREF);
             e.write_string(&ATTRIB_NAME, b"int4");
             e.write_unsigned_integer(&ATTRIB_ID, int4.get_id());
@@ -223,11 +226,13 @@ fn function_mapsym_decodes_prototype_and_params() {
     // Sorted by slot index despite reversed wire order.
     assert_eq!(proto.params.len(), 2);
     assert_eq!(proto.params[0].name, "first");
+    assert!(proto.params[0].hidden);
     assert_eq!(proto.params[1].name, "second");
+    assert!(!proto.params[1].hidden);
     let pieces = proto.to_pieces(&func.name);
     assert_eq!(pieces.name, "my_exit");
-    assert_eq!(pieces.intypes.len(), 2);
-    assert_eq!(pieces.innames, vec!["first".to_string(), "second".to_string()]);
+    assert_eq!(pieces.intypes.len(), 1);
+    assert_eq!(pieces.innames, vec!["second".to_string()]);
     assert_eq!(pieces.first_var_arg_slot, -1);
 }
 

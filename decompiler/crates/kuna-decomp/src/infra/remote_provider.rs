@@ -236,6 +236,8 @@ pub struct RemoteSymbolRecord {
     pub category: i64,
     /// Category index (parameter slot) when `category == 0`.
     pub cat_index: u64,
+    /// Whether this is the host's AUTO hidden-return storage parameter.
+    pub hidden_return: bool,
     /// The decoded data-type (data symbols; `None` for label/function shells).
     pub dtype: Option<Rc<Datatype>>,
     /// The mapped storage entries.
@@ -310,6 +312,8 @@ pub struct RemoteParam {
     /// function force-commit a kuna-rederived signature over the user's.
     /// Invalid when the host sent a dynamic/hash entry.
     pub storage: Address,
+    /// The host's AUTO hidden-return parameter, re-derived by the prototype model.
+    pub hidden: bool,
 }
 
 /// One non-parameter local symbol delivered in the current function's
@@ -362,7 +366,10 @@ impl RemoteProto {
             intypes: Vec::new(),
             innames: Vec::new(),
             first_var_arg_slot: if self.dotdotdot {
-                self.params.len() as int4
+                self.params
+                    .iter()
+                    .filter(|p| !p.hidden && p.dtype.is_some())
+                    .count() as int4
             } else {
                 -1
             },
@@ -370,6 +377,9 @@ impl RemoteProto {
             input_storage: Vec::new(),
         };
         for p in &self.params {
+            if p.hidden {
+                continue;
+            }
             if let Some(ct) = &p.dtype {
                 pieces.intypes.push(Rc::clone(ct));
                 pieces.innames.push(p.name.clone());
@@ -480,6 +490,7 @@ pub fn decode_mapsym(
             flags: varnode_flags::typelock | varnode_flags::readonly,
             category: -1,
             cat_index: 0,
+            hidden_return: false,
             // C++ ExternRefSymbol::buildNameType: the pointer's type is
             // pointer-to-code (glb->types->getTypePointer(...getTypeCode())).
             dtype: types
@@ -509,6 +520,7 @@ pub fn decode_mapsym(
             flags: varnode_flags::namelock | varnode_flags::typelock,
             category: -1,
             cat_index: 0,
+            hidden_return: false,
             dtype: None,
             entries: Vec::new(),
             func: Some(func),
@@ -559,6 +571,7 @@ fn decode_symbol_header(
         flags: 0,
         category: -1,
         cat_index: 0,
+        hidden_return: false,
         dtype: None,
         entries: Vec::new(),
         func: None,
@@ -598,8 +611,10 @@ fn decode_symbol_header(
             rec.category = decoder.read_signed_integer()?;
         } else if aid == ATTRIB_INDEX.get_id() {
             rec.cat_index = decoder.read_unsigned_integer()?;
+        } else if aid == kuna_base::marshal::ATTRIB_HIDDENRETPARM.get_id() {
+            rec.hidden_return = decoder.read_bool()?;
         }
-        // merge/thisptr/hiddenretparm/format/indirectstorage: skipped (the
+        // merge/thisptr/format/indirectstorage: skipped (the
         // Phase-3 seams do not consume them).
     }
     if rec.display_name.is_empty() {
@@ -733,6 +748,7 @@ fn decode_localdb_params(
                             dtype: rec.dtype,
                             typelock: (rec.flags & varnode_flags::typelock) != 0,
                             storage,
+                            hidden: rec.hidden_return,
                         });
                     } else if rec.category < 0 {
                         // A plain local committed to the host database: keep
@@ -1389,8 +1405,11 @@ impl RemoteScope {
                                 model_name = Some(p.model.clone());
                             }
                             // SLOT BASIS: the storage overrides address the
-                            // slots of the prototype `to_pieces` builds, which
-                            // COMPACTS OUT any parameter with no decodable type
+                            // slots of the FuncProto store.  This counts the
+                            // model's hidden-return slot at input 0, matching
+                            // Java's cat-0 numbering even though `to_pieces`
+                            // omits the host's copy.  It COMPACTS OUT any
+                            // parameter with no decodable type
                             // — so count in that same compacted basis, never
                             // `rp.index`.  A host cat-0 parameter whose type
                             // failed to decode would otherwise shift every
