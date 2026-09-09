@@ -232,31 +232,44 @@ fn an_address_taken_callee_is_still_an_edge() {
 }
 
 /// `forwardsTo` and the edge list are two views of one recovered veneer
-/// relation. The function row points at its IAT slot, and that exact pair is a
-/// jump edge so reachability can traverse it.
+/// relation. The function row points at its import slot, and that exact pair is
+/// a jump edge so reachability can traverse it. PE already inventories the IAT
+/// slot; ELF's loader names only the PLT veneer, so the graph must materialize a
+/// GOT-slot import row from the decoded relation.
 #[test]
-fn a_forwarding_veneer_is_a_jump_edge_to_its_forwards_to_target() {
-    let Some(stdout) = graph(&[&fixture("pe_noreturn_import.exe")]) else { return };
-    let veneer = 0x140001070u64.to_string();
-    let slot = 0x140005038u64.to_string();
-    let row = rows(&stdout, "functions")
-        .into_iter()
-        .find(|r| field(r, "address").as_deref() == Some(veneer.as_str()))
-        .expect("ExitProcess veneer row");
-    assert_eq!(
-        field(&row, "forwardsTo").as_deref(),
-        Some(slot.as_str()),
-        "wrong forwarding row: {row}"
-    );
+fn forwarding_veneers_are_jump_edges_to_import_rows_on_pe_and_elf() {
+    for (binary, veneer, slot) in [
+        ("pe_noreturn_import.exe", 0x140001070u64, 0x140005038u64),
+        ("aif_gap_x86_64", 0x1030, 0x3ff8),
+    ] {
+        let Some(stdout) = graph(&[&fixture(binary)]) else { return };
+        let veneer = veneer.to_string();
+        let slot = slot.to_string();
+        let functions = rows(&stdout, "functions");
+        let row = functions
+            .iter()
+            .find(|r| field(r, "address").as_deref() == Some(veneer.as_str()))
+            .unwrap_or_else(|| panic!("{binary}: import veneer row"));
+        assert_eq!(
+            field(row, "forwardsTo").as_deref(),
+            Some(slot.as_str()),
+            "{binary}: wrong forwarding row: {row}"
+        );
+        let slot_row = functions
+            .iter()
+            .find(|r| field(r, "address").as_deref() == Some(slot.as_str()))
+            .unwrap_or_else(|| panic!("{binary}: import slot row"));
+        assert_eq!(field(slot_row, "kind").as_deref(), Some("import"), "{binary}: {slot_row}");
 
-    let edge = rows(&stdout, "edges")
-        .into_iter()
-        .find(|e| {
-            field(e, "callerAddress").as_deref() == Some(veneer.as_str())
-                && field(e, "calleeAddress").as_deref() == Some(slot.as_str())
-        })
-        .expect("veneer -> IAT slot edge");
-    assert_eq!(field(&edge, "kind").as_deref(), Some("jump"), "wrong edge: {edge}");
+        let edge = rows(&stdout, "edges")
+            .into_iter()
+            .find(|e| {
+                field(e, "callerAddress").as_deref() == Some(veneer.as_str())
+                    && field(e, "calleeAddress").as_deref() == Some(slot.as_str())
+            })
+            .unwrap_or_else(|| panic!("{binary}: veneer -> import slot edge"));
+        assert_eq!(field(&edge, "kind").as_deref(), Some("jump"), "{binary}: {edge}");
+    }
 }
 
 /// `--addr` selects which bodies are rendered, never whether the target policy

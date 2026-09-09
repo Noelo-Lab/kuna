@@ -437,6 +437,18 @@ impl CallGraph {
             prog.arch().translate(),
             &seeds,
         );
+        // PE names both the IAT slot and its veneer in the canonical inventory;
+        // ELF traditionally names only the PLT veneer. Keep the graph vocabulary
+        // symmetric by admitting every decoded forwarding slot as a zero-extent
+        // node. decompile-graph materializes the missing rows from the same
+        // relation; inventory-only surfaces still enumerate their established
+        // loader records.
+        for (_, slot) in index.forwarding_veneers() {
+            if !entries.iter().any(|(entry, _)| *entry == slot) {
+                entries.push((slot, 0));
+            }
+        }
+        entries.sort_unstable();
         CallGraph { index, entries }
     }
 
@@ -536,10 +548,11 @@ impl CallGraph {
     /// A flow edge falls back to the inventory ([`Self::owner_of`]) when the
     /// walk has no node for the target. The walk only ever calls code a
     /// function, and an import is reached through its **IAT/GOT slot**, which
-    /// lives in `.rdata`: `CALL qword ptr [__imp_HeapAlloc]` lands on an address
-    /// the walk correctly refuses to decode or attribute instructions to, but
-    /// which the inventory names and the document lists as a node. Without the
-    /// fallback every Windows API call in the program is silently not an edge.
+    /// lives in data: `CALL qword ptr [__imp_HeapAlloc]` lands on an address the
+    /// walk correctly refuses to decode or attribute instructions to. PE names
+    /// that slot in the inventory; the graph's forwarding-node completion above
+    /// supplies the corresponding ELF GOT node. Without those fallbacks the
+    /// import call is silently not an edge.
     fn callee_of(&self, r: &Xref) -> Option<u64> {
         match r.kind {
             XrefKind::Call | XrefKind::Jump => {
@@ -581,6 +594,13 @@ impl CallGraph {
     /// (`jmp [slot]`), or `None` when `entry` is not one.
     pub(crate) fn veneer_slot(&self, entry: u64) -> Option<u64> {
         self.index.veneer_slot(entry)
+    }
+
+    /// Every decoded forwarding veneer and slot. Some formats (PE) already
+    /// inventory both; ELF generally inventories only the veneer, so graph
+    /// exporters use this relation to materialize the missing slot row.
+    pub(crate) fn forwarding_veneers(&self) -> Vec<(u64, u64)> {
+        self.index.forwarding_veneers()
     }
 
     /// Does anything CALL `vma`?  Data and branch references do not count: the

@@ -2837,13 +2837,21 @@ and x86 ELF PLT stubs from `read` to `jump`.
 function set is the wrong authority for this one. The walk calls nothing outside
 an executable section a function — an IAT slot lives in `.rdata`, so it is never
 one — while the inventory does name it, because `pe_iat` (§1.3) registered the
-import there. The graph therefore falls back from the walk's function set to the
-inventory extent containing the target
+import there. For PE, the graph therefore falls back from the walk's function
+set to the inventory extent containing the target
 (`decompiler/crates/kuna-cli/src/decompile_all.rs (CallGraph::callee_of)`), which
-is the same fold it already applies to every callee it reports. An address in
-neither is still not an edge. Measured over 120 in-tree images, seven changed and
-none lost an edge: on `pe_imports.exe` the functions reachable from the entry
-point went 47 -> 52 and those with no caller 115 -> 103.
+is the same fold it already applies to every callee it reports. ELF historically
+inventories the PLT veneer only, not its GOT slot, so the graph admits the slot
+half of each decoded forwarding relation as a zero-extent node; `decompile-graph`
+materializes that missing node as a bodyless `import` row with the veneer's name.
+Its `forwardsTo` target and jump-edge endpoint are therefore the same row on both
+formats. This is deliberately confined to the graph model: `kuna functions`
+keeps its established loader inventory, while an ELF `decompile-graph` document's
+`functionCount` and `functions` array gain the recovered GOT-slot rows. An address
+in neither the inventory nor a decoded forwarding relation is still not an edge.
+Measured over 120 in-tree images, seven changed and none lost an edge: on
+`pe_imports.exe` the functions reachable from the entry point went 47 -> 52 and
+those with no caller 115 -> 103.
 
 (kuna) The same two addresses make the import's **name** a selector that matches
 two entries, and the selector model's answer to that is a refusal naming every

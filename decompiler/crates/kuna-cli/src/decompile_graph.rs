@@ -143,7 +143,7 @@ fn export(args: &Args, label: &str) -> Result<String, String> {
             Some(std::time::Duration::from_secs(args.max_fn_seconds));
     }
 
-    let entries = prog.function_entries_canonical();
+    let mut entries = prog.function_entries_canonical();
     // What a row IS never depends on what this run was asked to decompile, so
     // the executable set comes from the policy, not from the results.
     let executable: BTreeSet<u64> =
@@ -198,6 +198,34 @@ fn export(args: &Args, label: &str) -> Result<String, String> {
     let file = kuna_analysis::loadimage_object::parse_object(&*bytes)
         .map_err(|error| format!("could not parse {}: {error}", args.binary))?;
     let graph = CallGraph::build_from(&prog, &file);
+    // PE already inventories both halves of an import. ELF names its PLT veneer
+    // but not the GOT slot, so materialize the missing half from the very same
+    // decoded relation that supplies `forwardsTo` and the jump edge.
+    let mut known_entries: BTreeSet<u64> =
+        entries.iter().map(|entry| entry.addr.get_offset()).collect();
+    for (veneer, slot) in graph.forwarding_veneers() {
+        if known_entries.contains(&slot) {
+            continue;
+        }
+        let Some(source) = entries.iter().find(|entry| entry.addr.get_offset() == veneer).cloned()
+        else {
+            continue;
+        };
+        let Some(space) = source.addr.get_space() else {
+            continue;
+        };
+        known_entries.insert(slot);
+        entries.push(FunctionEntry {
+            name: source.name,
+            addr: kuna_base::address::Address::new(std::rc::Rc::clone(space), slot),
+            aliases: source.aliases,
+            size: 0,
+            object_location: None,
+            provenance: source.provenance,
+            binding: source.binding,
+        });
+    }
+    entries.sort_by_key(|entry| entry.addr.get_offset());
     let classifier =
         Classifier::from_object(&prog, Some(&file), entries.iter().map(|e| e.addr.get_offset()));
     let known: BTreeSet<u64> = entries.iter().map(|e| e.addr.get_offset()).collect();

@@ -241,6 +241,13 @@ impl XrefIndex {
         self.veneers.get(&entry).map(|v| v.slot)
     }
 
+    /// Every decoded forwarding veneer and its fixed pointer slot, ordered by
+    /// veneer entry. A caller that exposes graph nodes can use this to represent
+    /// an ELF GOT slot that the loader names only through its PLT veneer.
+    pub fn forwarding_veneers(&self) -> Vec<(u64, u64)> {
+        self.veneers.iter().map(|(&entry, veneer)| (entry, veneer.slot)).collect()
+    }
+
     /// Everything the single instruction at `vma` references.
     pub fn refs_from_instruction(&self, vma: u64) -> &[Xref] {
         self.by_source.get(&vma).map_or(&[], Vec::as_slice)
