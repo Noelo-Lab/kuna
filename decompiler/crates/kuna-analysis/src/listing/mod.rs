@@ -229,6 +229,22 @@ impl Listing {
         }
     }
 
+    /// Test-only: a Listing over exactly `insns`, with no xrefs, no discovered
+    /// functions and one all-covering exec range. `has_assembly` selects whether the
+    /// instruction model claims to carry disassembly text, so a consumer's own unit
+    /// tests can pin either path without a live SLEIGH decoder.
+    #[cfg(test)]
+    pub(crate) fn from_insns_for_test(insns: Vec<Insn>, has_assembly: bool) -> Listing {
+        Listing {
+            insns: insns.into_iter().map(|i| (i.addr, i)).collect(),
+            refs_to: BTreeMap::new(),
+            refs_from: BTreeMap::new(),
+            funcs: BTreeMap::new(),
+            exec_ranges: vec![(0, u64::MAX)],
+            has_assembly,
+        }
+    }
+
     /// Seed the discovered-function model's `has_no_return` / `call_fixup` flags
     /// from the load-time Known passes (the `noreturn_known` / `callfixup` pass
     /// outputs, by entry VMA), so a Listing consumer can skip already-modeled

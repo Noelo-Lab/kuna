@@ -280,13 +280,32 @@ impl<'a> GapDecoder<'a> {
 /// disassembly text only when a text-reading consumer asked for it (see
 /// `listing::decode::decode_one`), and this fingerprint needs just the first
 /// `FINGERPRINT_INSNS` instructions of each function — re-decoding those is ~2 per
-/// function instead of text for every instruction in the image. Equivalent either
-/// way: decoding the same address under the same painted context yields the same
-/// mnemonic the walk would have recorded, and an empty one still rejects.
+/// function instead of text for every instruction in the image.
+///
+/// That re-decode is equivalent only if it saw the SAME instruction the walk
+/// recorded, which is not free: `Sleigh::one_instruction` commits `globalset`
+/// context writes, and both the ARM (`TMode`) and MIPS (`ISA_MODE`) specs globalset
+/// a decode mode at a branch target, so a later decode can leave an address in a
+/// different mode than the walk read it in. The instruction length is the
+/// observable of that — an alternate-ISA re-decode is a different width — so a
+/// length disagreement declines the fingerprint outright rather than pairing one
+/// instruction's mnemonic with another's stride.
 fn fingerprint_in_listing(
     listing: &Listing,
     decoder: &mut GapDecoder,
     entry: u64,
+) -> Option<Fingerprint> {
+    fingerprint_over_listing(listing, entry, |vma| {
+        decoder.probe(vma).map(|p| (p.mnemonic, p.len))
+    })
+}
+
+/// [`fingerprint_in_listing`] with the lazy re-decode as a parameter, so the
+/// length-agreement guard is testable without a live SLEIGH decoder.
+fn fingerprint_over_listing(
+    listing: &Listing,
+    entry: u64,
+    mut redecode: impl FnMut(u64) -> Option<(String, u32)>,
 ) -> Option<Fingerprint> {
     let mut mnems: Vec<String> = Vec::with_capacity(FINGERPRINT_INSNS);
     let mut total_len: u64 = 0;
@@ -297,7 +316,11 @@ fn fingerprint_in_listing(
         let mnemonic = if listing.has_assembly() {
             insn.mnemonic.clone()
         } else {
-            decoder.probe(vma)?.mnemonic
+            let (mnemonic, probed_len) = redecode(vma)?;
+            if probed_len != len {
+                return None;
+            }
+            mnemonic
         };
         if mnemonic.is_empty() {
             return None;
@@ -953,6 +976,7 @@ fn is_thumb_function_prologue(data: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::listing::Insn;
 
     // The fingerprint + gap-walk + valid-subroutine logic is exercised end-to-end
     // by the cross-crate `verify_aif.rs` gate (a stripped x86-64 fixture with a
@@ -1015,6 +1039,71 @@ mod tests {
         assert!(!is_thumb_function_prologue(&[0xB5, 0x10])); // 0xB5 in the wrong byte
         assert!(!is_thumb_function_prologue(&[0x2D, 0xE9])); // truncated 32-bit -> reject
         assert!(!is_thumb_function_prologue(&[0x2D]));
+    }
+
+    /// A text-free Listing builds a HYBRID fingerprint record — mnemonic from the
+    /// re-decode, stride and total length from the Listing — and the re-decode is
+    /// not guaranteed to see the instruction the walk saw: `Sleigh::one_instruction`
+    /// commits `globalset` context writes, and both the ARM (`TMode`) and MIPS
+    /// (`ISA_MODE`) specs globalset a decode mode at a branch target, so a later
+    /// decode can change the mode a given address decodes in. The lengths are the
+    /// observable, so a disagreement must decline the fingerprint rather than pair
+    /// one instruction's mnemonic with another's stride.
+    #[test]
+    fn a_relaxed_redecode_declines_rather_than_mixing_two_instructions() {
+        // Two 4-byte instructions the walk decoded, with no captured text — the
+        // Listing a `--mode fast` load produces.
+        let insn = |addr: u64, mnemonic: &str| Insn {
+            addr,
+            len: 4,
+            fall_through: Some(addr + 4),
+            flow: Default::default(),
+            flows: Vec::new(),
+            mnemonic: mnemonic.to_string(),
+            operands: String::new(),
+            pcode: None,
+        };
+        let textless =
+            Listing::from_insns_for_test(vec![insn(0x1000, ""), insn(0x1004, "")], false);
+
+        // Agreement: the re-decode read the same two 4-byte instructions, so the
+        // fingerprint is exactly what a text-carrying Listing would have produced.
+        let agreeing = |vma: u64| Some((if vma == 0x1000 { "PUSH" } else { "MOV" }.to_string(), 4));
+        assert_eq!(
+            fingerprint_over_listing(&textless, 0x1000, agreeing),
+            Some((vec!["PUSH".to_string(), "MOV".to_string()], 8))
+        );
+
+        // Disagreement on the FIRST instruction (a 2-byte Thumb/MIPS16 re-decode of
+        // what the walk read as a 4-byte A32/MIPS32 word) — decline.
+        let alt_isa = |vma: u64| Some((if vma == 0x1000 { "push" } else { "MOV" }.to_string(), 2));
+        assert_eq!(fingerprint_over_listing(&textless, 0x1000, alt_isa), None);
+
+        // ...and on the SECOND, where the first step already contributed a mnemonic.
+        let alt_isa_second = |vma: u64| {
+            if vma == 0x1000 {
+                Some(("PUSH".to_string(), 4))
+            } else {
+                Some(("movs".to_string(), 2))
+            }
+        };
+        assert_eq!(fingerprint_over_listing(&textless, 0x1000, alt_isa_second), None);
+
+        // An undecodable re-decode and an empty mnemonic still reject, as before.
+        assert_eq!(fingerprint_over_listing(&textless, 0x1000, |_| None), None);
+        assert_eq!(
+            fingerprint_over_listing(&textless, 0x1000, |_| Some((String::new(), 4))),
+            None
+        );
+
+        // A Listing that DOES carry text never consults the re-decode at all, so a
+        // hostile probe cannot change the answer.
+        let with_text =
+            Listing::from_insns_for_test(vec![insn(0x1000, "PUSH"), insn(0x1004, "MOV")], true);
+        assert_eq!(
+            fingerprint_over_listing(&with_text, 0x1000, |_| panic!("must not re-decode")),
+            Some((vec!["PUSH".to_string(), "MOV".to_string()], 8))
+        );
     }
 
     #[test]

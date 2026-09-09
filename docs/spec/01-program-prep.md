@@ -2437,8 +2437,19 @@ to `fast`. The one other reader is AIF's function-start fingerprint (§1.5), whi
 needs the mnemonics of just the first two instructions of each *discovered*
 function; rather than force whole-image capture for that, it falls back to
 re-decoding those addresses through its own gap decoder when the Listing carries
-no text. Re-decoding an address under the same painted context yields the mnemonic
-the walk would have stored, so the histogram — and every gap-walk and
+no text. That the re-decode reproduces the walk's own reading is checked rather
+than assumed: decoding an instruction commits the `globalset` context writes its
+constructor asks for, and both the ARM and MIPS specs globalset a decode mode
+(`TMode`, `ISA_MODE`) at a branch target, so a *later* decode can leave an address
+in a different mode than the walk read it in — and the re-decode would then hand
+back a mnemonic belonging to a different instruction while the stride and total
+length still came from the Listing. Instruction length is the observable of
+exactly that disagreement, since an alternate-ISA reading is a different width, so
+the fingerprint compares the re-decoded length against the Listing's and declines
+to fingerprint the function at all when they differ. Declining is the safe
+direction: a function that contributes no fingerprint only makes the histogram
+smaller, which can never admit a gap candidate the text-carrying path would have
+rejected. Where the two agree the histogram — and every gap-walk and
 pointer-target decision keyed off it — is unchanged, which is what keeps the
 pointer-only entries `fast_funcdisc` exists to find. Second, instruction-byte
 coverage, which is *derived* from the instruction map rather than mirrored into a
