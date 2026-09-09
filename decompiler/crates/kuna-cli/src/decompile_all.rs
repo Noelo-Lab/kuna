@@ -74,7 +74,11 @@
 //! silent `count: 0` is indistinguishable from a file that genuinely has no
 //! functions, and the caller acts on the difference. [`zero_discovery_error`]
 //! draws the line at executable content, so a data-only object still answers
-//! with an honest empty inventory and exit 0.
+//! with an honest empty inventory and exit 0. All three surfaces count the same
+//! things: the verdict is read off the entries a whole-binary run would
+//! decompile (`ConsoleProgram::any_executable_entry`), never off the raw
+//! inventory, which also carries the import pointer slots that give a call its
+//! name.
 //!
 //! [`render_result_json`] and [`decompile_entries`] are also `kuna decompile
 //! --json`'s (`decompile.rs`) — one schema and one decompile policy across the
@@ -1116,11 +1120,17 @@ pub fn run_functions(argv: &[String]) -> i32 {
     }
     match list_functions(&args) {
         Ok((prog, all)) => {
-            // DISCOVERY, not selection, decides the verdict: an empty inventory
-            // is a total discovery failure, while a triage filter that matched
-            // nothing is an answer.
-            let discovery_error = all
-                .is_empty()
+            // DISCOVERY, not selection, decides the verdict: an inventory with
+            // no BODY in it is a total discovery failure, while a triage filter
+            // that matched nothing is an answer. The emptiness test is the one
+            // `decompile-all` reads its own verdict off
+            // (`function_entries_executable`), because the canonical inventory
+            // also carries import pointer slots for call naming: a NEOLite-packed
+            // image whose sections are none of them flagged executable enumerated
+            // its six imported names and not one body, and `is_empty()` reported
+            // that as a healthy listing while `decompile-all` on the same file
+            // named the cause.
+            let discovery_error = (!prog.any_executable_entry(&all))
                 .then(|| zero_discovery_error(&args.binary))
                 .flatten();
             let total = all.len();
@@ -1176,8 +1186,9 @@ fn run_summary(args: &Args, filters: &Filters) -> i32 {
             return 1;
         }
     };
-    let discovery_error = all
-        .is_empty()
+    // The same verdict `run_functions` reads, over the same inventory: an
+    // orientation document made only of import names oriented nobody.
+    let discovery_error = (!prog.any_executable_entry(&all))
         .then(|| zero_discovery_error(&args.binary))
         .flatten();
     let (selected, graph) = match filters.select(&prog, &args.binary, args.slice_pref(), all.clone()) {
