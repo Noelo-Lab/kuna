@@ -194,8 +194,7 @@ fn function_mapsym_decodes_prototype_and_params() {
         e.write_bool(&ATTRIB_CUSTOM, true);
         e.open_element(&ELEM_RETURNSYM);
         e.write_bool(&ATTRIB_TYPELOCK, true);
-        e.open_element(&kuna_base::address::ELEM_ADDR);
-        e.close_element(&kuna_base::address::ELEM_ADDR);
+        Address::new(ram(&m), 0x88).encode_sized(&mut e, 1).unwrap();
         e.open_element(&ELEM_VOID);
         e.close_element(&ELEM_VOID);
         e.close_element(&ELEM_RETURNSYM);
@@ -222,6 +221,7 @@ fn function_mapsym_decodes_prototype_and_params() {
     assert_eq!(proto.model, "default");
     assert_eq!(proto.extrapop, None); // the "unknown" string form
     assert!(proto.custom);
+    assert_eq!(proto.out_storage.get_offset(), 0x88);
     assert!(proto.out_lock);
     assert!(proto.out_type.as_ref().unwrap().get_metatype() == type_metatype::TYPE_VOID);
     assert!(proto.is_input_locked());
@@ -232,6 +232,12 @@ fn function_mapsym_decodes_prototype_and_params() {
     assert_eq!(proto.params[1].name, "second");
     assert!(!proto.params[1].hidden);
     let pieces = proto.to_pieces(&func.name);
+    let output = pieces.output_storage.as_ref().expect("custom return storage");
+    assert_eq!(output.addr.get_offset(), 0x88);
+    assert_ne!(
+        output.flags & crate::fspec::parameter_pieces_flags::CUSTOM_STORAGE,
+        0
+    );
     assert_eq!(pieces.name, "my_exit");
     assert_eq!(pieces.intypes.len(), 1);
     assert_eq!(pieces.innames, vec!["second".to_string()]);

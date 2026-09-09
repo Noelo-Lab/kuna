@@ -289,6 +289,8 @@ pub struct RemoteProto {
     pub out_lock: bool,
     /// The decoded return type.
     pub out_type: Option<Rc<Datatype>>,
+    /// Exact return storage from the host's `<returnsym><addr>`.
+    pub out_storage: Address,
     /// Whether Ghidra declared custom variable storage for this prototype.
     pub custom: bool,
     /// Parameters from the `<localdb>` cat-0 symbols, sorted by slot index.
@@ -378,6 +380,16 @@ impl RemoteProto {
             output_storage: None,
             input_storage: Vec::new(),
         };
+        if self.custom {
+            pieces.output_storage = self.out_type.as_ref().map(|ct| {
+                crate::fspec::ParameterPieces {
+                    addr: self.out_storage.clone(),
+                    type_: Some(Rc::clone(ct)),
+                    flags: crate::fspec::parameter_pieces_flags::TYPELOCK
+                        | crate::fspec::parameter_pieces_flags::CUSTOM_STORAGE,
+                }
+            });
+        }
         for p in &self.params {
             if p.hidden {
                 continue;
@@ -839,6 +851,7 @@ fn decode_prototype(
         no_return: false,
         out_lock: false,
         out_type: None,
+        out_storage: Address::new_invalid(),
         custom: false,
         params: Vec::new(),
         params_locked: false,
@@ -879,7 +892,7 @@ fn decode_prototype(
                 }
             }
             // <addr> (possibly attribute-less), then the return type.
-            let _addr = Address::decode(decoder)?;
+            proto.out_storage = Address::decode(decoder)?;
             proto.out_type = Some(types.decode_type(decoder)?);
             decoder.close_element_skipping(rid)?;
         } else {

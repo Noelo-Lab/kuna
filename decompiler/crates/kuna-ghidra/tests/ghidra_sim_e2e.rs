@@ -1342,6 +1342,7 @@ fn ghidra_sim_custom_large_return_has_no_auto_hidden_param() {
             .get_offset();
         oracle.custom_storage_overrides.insert(entry);
         oracle.parameter_address_overrides.insert(entry);
+        oracle.custom_return_address_overrides.insert(entry);
     }) else {
         return;
     };
@@ -1351,5 +1352,33 @@ fn ghidra_sim_custom_large_return_has_no_auto_hidden_param() {
         .lines()
         .find(|line| line.contains("ret_big("))
         .expect("signature line");
-    assert_eq!(signature, "Big24 * ret_big(long q)", "{c}");
+    assert_eq!(signature, "Big24 ret_big(long q)", "{c}");
+}
+
+#[test]
+fn ghidra_sim_custom_large_return_with_no_formals_clears_hidden_input() {
+    let binary =
+        repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/dwarfstructs_x86_64");
+    let Some(run) = run_session_with(&binary, &["ret_big"], |oracle| {
+        let entry = oracle
+            .prog
+            .find_entry_by_name("ret_big")
+            .expect("ret_big fixture symbol")
+            .addr
+            .get_offset();
+        let pieces = oracle.callee_pieces.get_mut(&entry).expect("ret_big prototype");
+        pieces.intypes.clear();
+        pieces.innames.clear();
+        oracle.custom_storage_overrides.insert(entry);
+        oracle.custom_return_address_overrides.insert(entry);
+    }) else {
+        return;
+    };
+    assert_structure(&run);
+    let c = &run.docs[0].c_text;
+    let signature = c
+        .lines()
+        .find(|line| line.contains("ret_big("))
+        .expect("signature line");
+    assert_eq!(signature, "Big24 ret_big(void)", "{c}");
 }

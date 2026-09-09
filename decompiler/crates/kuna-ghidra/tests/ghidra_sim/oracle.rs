@@ -155,8 +155,11 @@ pub struct SimOracle {
     pub custom_storage_overrides: BTreeSet<u64>,
     /// Entry offsets whose parameter records should carry address storage.
     pub parameter_address_overrides: BTreeSet<u64>,
+    /// Entry offsets whose custom return should carry explicit RAX storage.
+    pub custom_return_address_overrides: BTreeSet<u64>,
     /// Real register storage for the x86-64 parameter stream.
     parameter_registers: Vec<VarnodeData>,
+    return_register: Option<VarnodeData>,
     /// Read-only image ranges (READONLY|CODE sections) — the `<hole>`
     /// mutability source (the CLI paints the same const-ness from ELF flags).
     pub readonly_ranges: Vec<(u64, u64)>,
@@ -257,6 +260,7 @@ impl SimOracle {
             .into_iter()
             .filter_map(|name| sleigh.get_register_varnode(name).ok())
             .collect();
+        let return_register = sleigh.get_register_varnode(b"RAX").ok();
 
         let data_symbols: BTreeMap<u64, (String, i64)> = prog
             .global_data_symbols()
@@ -295,7 +299,9 @@ impl SimOracle {
             hidden_return_overrides: BTreeSet::new(),
             custom_storage_overrides: BTreeSet::new(),
             parameter_address_overrides: BTreeSet::new(),
+            custom_return_address_overrides: BTreeSet::new(),
             parameter_registers,
+            return_register,
             readonly_ranges,
             tracked_overrides: Vec::new(),
             local_var_overrides: BTreeMap::new(),
@@ -710,9 +716,19 @@ impl SimOracle {
         }
         e.open_element(&ELEM_RETURNSYM);
         e.write_bool(&ATTRIB_TYPELOCK, true);
-        // Blank <addr/>: the decompiler's model assigns return storage.
-        e.open_element(&kuna_base::address::ELEM_ADDR);
-        e.close_element(&kuna_base::address::ELEM_ADDR);
+        if self.custom_return_address_overrides.contains(&entry) {
+            let storage = self.return_register.as_ref().expect("x86-64 return register");
+            let size = pieces.outtype.as_ref().map(|ct| ct.get_size()).unwrap_or(1);
+            Address::new(
+                Rc::clone(storage.space.as_ref().expect("return register space")),
+                storage.offset,
+            )
+            .encode_sized(e, size)
+            .expect("custom return storage encodes");
+        } else {
+            e.open_element(&kuna_base::address::ELEM_ADDR);
+            e.close_element(&kuna_base::address::ELEM_ADDR);
+        }
         match &pieces.outtype {
             Some(ct) => self.encode_wire_type(e, ct),
             None => {
