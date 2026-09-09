@@ -62,6 +62,21 @@ braces; the pre-existing `if (cond) goto L;` one-liner and the `else if`
 collapse are unaffected. `option braceelide off` restores upstream Ghidra's
 braced form, exercised by `tests/stages/kuna-cnorm-braceelide.xml`.
 
+**(kuna) Decode-failure halt statements (`option decodehalt`, default `on`).**
+A `CPUI_RETURN` the flow follower planted because the bytes would not decode
+(chapter 02) is not a return, and printing it as one asserts something about the
+program that the analysis never established. `printc.rs` renders the three
+decode-failure halt causes as upstream `PrintC::opReturn`'s pseudo-calls —
+`halt_baddata()`, `halt_unimplemented()`, `halt_missing()`
+(`kuna_decodehalt.rs (halt_call_name)`) — and the P2 warnings land beside them
+through the ordinary comment channel. `noreturn` halts keep the plain `return;`.
+The elision below is suppressed for exactly those three causes while the option
+is on: that statement is the truncation marker, not the source falling off the
+end of a void body, and eliding it deletes the only thing saying the body is
+incomplete — leaving its warning attached to whatever decoded before it. A
+`noreturn` halt keeps whatever the elision already did with it, and `option
+decodehalt off` restores both halves together.
+
 **Void tail-return elision (P9/`brace-form`, `option voidtailreturn`, default
 OFF).** kuna prints the function's final `CPUI_RETURN` unconditionally, so a void
 function ends `... }` / `return;` / `}` — a statement the C source it was compiled

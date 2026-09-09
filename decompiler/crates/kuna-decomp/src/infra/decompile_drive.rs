@@ -203,6 +203,12 @@ impl FlowEnvironment for ArchFlowEnv {
         // encoding swallows the branch's own target.
         self.arch().overlap_branch
     }
+    fn decode_halt_reports(&self) -> bool {
+        // (kuna decodehalt) the Architecture-owned gate (`option decodehalt`).
+        // When on, a halt planted because the decode failed carries the upstream
+        // truncation + header warnings.
+        self.arch().decode_halt
+    }
     fn query_call_inline(&self, entry: &Address) -> bool {
         // C++ `queryCall` copies the callee proto's `isInline()` flow effect; the
         // flag is set by `option inline <name>` (OptionInline) on the resolved

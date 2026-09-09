@@ -431,6 +431,17 @@ pub trait FlowEnvironment {
         false
     }
 
+    /// (kuna `decodehalt`) Does an artificial halt planted because the decode
+    /// failed report itself (`option decodehalt`, `Architecture::decode_halt`)?
+    /// When on, `handle_decode_error` buffers upstream's truncation warning and
+    /// header warning at the failure, which the P9 printer renders beside the
+    /// `halt_baddata()` / `halt_unimplemented()` statement.  The default shell
+    /// reports `false` (the silent `return;`).  See
+    /// [`kuna_decodehalt`](crate::kuna_decodehalt).
+    fn decode_halt_reports(&self) -> bool {
+        false
+    }
+
     /// (kuna `calltrampoline`) Is the direct-call target `dest` a fragment that
     /// discards the pushed return address and jumps back into the instruction
     /// stream, so the `CALL` should be flowed through as a branch rather than
@@ -1711,11 +1722,16 @@ truncating the fall-through here"
     fn handle_decode_error(&mut self, curaddr: &Address, err: KunaError) -> KunaResult<int4> {
         match &err {
             KunaError::Unimpl { instruction_length, .. } => {
+                let reports = self.env.decode_halt_reports();
                 if (self.flags & flow_flags::ignore_unimplemented) != 0 {
                     let step = *instruction_length;
                     if !self.has_unimplemented() {
                         self.flags |= flow_flags::unimplemented_present;
-                        // data.warningHeader("Control flow ignored unimplemented instructions");  -- STUB(W4)
+                        if reports {
+                            self.data.warning_header(
+                                crate::kuna_decodehalt::UNIMPLEMENTED_IGNORED_HEADER,
+                            );
+                        }
                     }
                     Ok(step)
                 } else if (self.flags & flow_flags::error_unimplemented) != 0 {
@@ -1723,10 +1739,16 @@ truncating the fall-through here"
                 } else {
                     // Add infinite loop instruction (pretend size 1).
                     self.artificial_halt(curaddr, pcodeop_flags::unimplemented)?;
-                    // data.warning("Unimplemented instruction - Truncating control flow here", curaddr);  -- STUB(W4)
+                    if reports {
+                        self.data
+                            .warning(crate::kuna_decodehalt::UNIMPLEMENTED_WARNING, curaddr);
+                    }
                     if !self.has_unimplemented() {
                         self.flags |= flow_flags::unimplemented_present;
-                        // data.warningHeader("Control flow encountered unimplemented instructions");  -- STUB(W4)
+                        if reports {
+                            self.data
+                                .warning_header(crate::kuna_decodehalt::UNIMPLEMENTED_HEADER);
+                        }
                     }
                     Ok(1)
                 }
@@ -1736,10 +1758,17 @@ truncating the fall-through here"
                     Err(err) // rethrow
                 } else {
                     self.artificial_halt(curaddr, pcodeop_flags::badinstruction)?;
-                    // data.warning("Bad instruction - Truncating control flow here", curaddr);  -- STUB(W4)
+                    let reports = self.env.decode_halt_reports();
+                    if reports {
+                        self.data
+                            .warning(crate::kuna_decodehalt::BAD_INSTRUCTION_WARNING, curaddr);
+                    }
                     if !self.has_bad_data() {
                         self.flags |= flow_flags::baddata_present;
-                        // data.warningHeader("Control flow encountered bad instruction data");  -- STUB(W4)
+                        if reports {
+                            self.data
+                                .warning_header(crate::kuna_decodehalt::BAD_INSTRUCTION_HEADER);
+                        }
                     }
                     Ok(1)
                 }

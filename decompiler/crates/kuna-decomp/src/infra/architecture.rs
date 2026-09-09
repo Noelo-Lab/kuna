@@ -381,6 +381,13 @@ pub struct Architecture {
     /// names the pad, and `halt` additionally ends the flow at it.  See
     /// [`kuna_int3pad`](crate::kuna_int3pad).
     pub int3_pad: crate::kuna_int3pad::Int3PadMode,
+    /// (kuna `decodehalt`) Does an artificial halt planted because the DECODE
+    /// failed report itself?  On (the default) renders the three decode-failure
+    /// halt types as upstream's `halt_baddata()` / `halt_unimplemented()` /
+    /// `halt_missing()` pseudo-calls instead of a bare `return;`, and buffers the
+    /// upstream truncation + header warnings at the failure.  See
+    /// [`kuna_decodehalt`](crate::kuna_decodehalt).
+    pub decode_halt: bool,
     /// (kuna `msvcftol`) Install the synthesized MSVC `__ftol`-family call-fixup
     /// (`p2_lift/kuna_msvcftol.rs`) so an x86-32 float-to-integer CRT helper call
     /// lowers to a p-code truncation and its x87 (`ST0`) argument survives.
@@ -1931,6 +1938,7 @@ impl Architecture {
             v850_indirect_branch: false,
             fastfail_noreturn: false, // (kuna) option fastfailnoreturn; reset_defaults sets the shipped default
             int3_pad: crate::kuna_int3pad::Int3PadMode::Off, // (kuna) option int3pad; reset_defaults sets the shipped default
+            decode_halt: false, // (kuna) option decodehalt; reset_defaults sets the shipped default
             msvc_ftol: false, // (kuna) option msvcftol; reset_defaults sets the shipped default
             tail_call_jumps: false,
             tail_call_frame: false, // (kuna) option tailcallframe; reset_defaults sets the shipped default
@@ -2169,6 +2177,7 @@ impl Architecture {
         self.rodata_string = true; // (kuna) DIV-113 default-on: a read-only string block copy collapses to builtin_strncpy instead of the invalid-C partial-symbol slice assignments. Byte-identical (0/675) — the corpus carries no data symbols, so the covering-string-symbol guard never fires. Restore the slice assignments with `option rodatastring off`
         self.v850_indirect_branch = false; // (kuna) default: upstream (GH-8817)
         self.int3_pad = crate::kuna_int3pad::Int3PadMode::Warn; // (kuna) DIV-128 default `warn`: ADDS A COMMENT ONLY. Names the `int3` pad control ran into, which x86 SLEIGH lifts to `intloc = swi(3); call [intloc]` and the printer renders as an ordinary indirect call. Shape-gated on a `swi` CALLOTHER with the 1-byte constant vector 3, so it is structurally inert wherever no `int3` is decoded and byte-identical on the datatest corpus (0/675); `option int3pad halt` also ends the flow at the pad, `option int3pad off` restores the unannotated rendering
+        self.decode_halt = true; // (kuna) DIV-151 default-on: a `CPUI_RETURN` kuna planted because it could NOT decode the bytes renders as upstream `PrintC::opReturn`'s `halt_baddata()`/`halt_unimplemented()`/`halt_missing()` pseudo-call rather than a bare `return;`, and carries the upstream truncation + header warnings. Reachable only through the three decode-failure halt types, which no datatest function produces, so it is byte-identical there (0/675); `option decodehalt off` restores the silent `return;`
         self.fastfail_noreturn = true; // (kuna) DIV-119 default-on: REMOVES CODE. Ends the flow at a Windows `int 0x29` (`__fastfail`), whose SLEIGH lifting is a call with no matching push and so gains 8 bytes of stack pointer from the cspec's `extrapop` at every site. Windows-cspec-gated and shape-gated on `swi(0x29:1)`, so it is structurally inert on the datatest corpus and byte-identical there (0/675); restore the unbalanced fall-through with `option fastfailnoreturn off`
         self.msvc_ftol = true; // (kuna) DIV-74 default-on: x86-32-only, and inert unless the binary imports an `__ftol`/`__ftol2`/`__ftol2_sse` symbol. Byte-identical (0/675) — no corpus function carries one of those names. Restore the un-fixed `__ftol()` rendering with `option msvcftol off`
         self.tail_call_jumps = true; // (kuna) DIV-13 default-on (angr tail-call recovery; per-test opt-out on Long double #1/#2)
@@ -2464,6 +2473,7 @@ impl Architecture {
                 self.int3_pad = mode;
                 Ok(msg)
             }
+            "decodehalt" => on_off!(decode_halt, "Decode-failure halt reporting"),
             "msvcftol" => on_off!(msvc_ftol, "MSVC __ftol-family call-fixup"),
             "tailcalljump" => on_off!(tail_call_jumps, "Tail-call jump recovery"),
             "tailcallframe" => on_off!(tail_call_frame, "Frame-teardown tail-call recovery"),

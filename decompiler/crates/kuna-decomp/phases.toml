@@ -2007,6 +2007,28 @@ tier = "transform"
 symptoms = "an int3 pad renders as (*(void *)swi(3))() - a call through a pointer nothing assigns|a function returns the result of a call through swi(3)|nothing in the C says control ran into a run of 0xcc padding bytes|an anti-debug binary's clean-run path ends in an indirect call that only the disassembly explains"
 
 [[settable]]
+option = "decodehalt"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P2"
+subphase = "flow-classification"
+strength = "HARD"
+rewind = "P2"
+issue = "undecodable-encrypted-code-becomes"
+summary = "A `RETURN` kuna planted because it could NOT decode the bytes says so, instead of printing as an ordinary `return;`. `FlowInfo` ends a path it cannot follow with an ARTIFICIAL HALT - a `CPUI_RETURN` carrying the constant 1 and one of the `getHaltType()` bits (`artificial_halt`, flow.cc:483). Three of those bits are decode failures rather than program returns: `badinstruction` (the bytes at the address are not an instruction), `unimplemented` (SLEIGH decoded them but has no semantics) and `missing` (the address was never decoded at all, e.g. a branch that leaves a caller-declared `--define-function` extent). Upstream `PrintC::opReturn` (printc.cc:774) renders those three as the pseudo-calls `halt_baddata()` / `halt_unimplemented()` / `halt_missing()`, and `FlowInfo::processInstruction` buffers `Bad instruction - Truncating control flow here` at the failing address plus a `Control flow encountered bad instruction data` header on the function (flow.cc:441-475). kuna ported the halt but neither the rendering nor the warnings, so a function that ran off into bytes it could not read ended with a bare `return;`, `error: null` in `--json`, and nothing anywhere saying the body is incomplete - which reads as `analysis complete, nothing here`. The fourth halt bit, `noreturn`, is deliberately NOT renamed: it is not a decode failure, kuna already reports it as `// no-return` on the call, and its rendering is pinned by the whole-corpus measurements behind `noreturn_propagate` and `guardarm`. `voidtailreturn` additionally stops eliding a trailing `RETURN` marked with one of those three causes while this option is on, because that statement is the truncation marker and not the source falling off the end of a void body - eliding it deletes the marker and leaves its warning attached to whatever decoded before it. That half is gated together with the rendering, so `decodehalt off` restores both and a `noreturn` halt is untouched in either arm."
+use_when = "On by default (DIV-151): kuna cannot honestly assert a normal return at an address it could not read, so the flip is strictly more truthful and there is no source shape it reports wrongly. Reachable only through the three decode-failure halt types, so it is structurally inert on code that decodes - byte-identical (0/675) on the datatest corpus. SWEPT `decompile-all` in both arms over 82 binaries / 31,862 functions (27 decbench ELFs across the O0/O2/O2-noinline slices spanning x86-64/i386/ARM/AArch64/MIPS/PPC64/RISC-V, plus 55 crackme PE/ELF images): 89 functions in 19 binaries change, +178/-154 lines, 61 `halt_baddata()` and 35 `halt_missing()` (no `halt_unimplemented()` in this corpus) under 62 warned prototypes. **24 functions GAIN a statement and none loses one**, and with comments stripped every single hunk is `return;` -> `halt_<cause>();` - no other code moves. The 24 gains are the elision half doing its job: in `bustme1.exe` an anti-debug stub read `if (rdtsc-check) return; // warn: Function flow reaches unmapped memory`, blaming a NORMAL early return for the unmapped jump, because voidtailreturn had deleted the halt and orphaned its warning onto the statement above; on, that reads `if (rdtsc-check) return;` then `halt_missing(); // warn: ...`. MEASURED on the crackmes.one self-decrypting stub `Defender.exe` (`5ab77f5c33c5d40ad448c65c`) `sub_401746`, a packer that XORs 0x30a bytes in place and jumps into the plaintext through `PUSH 0x40190e / POP EBX / JMP EBX`: off, the decrypt loop is followed by `switch(0x40190e) { case 0x40190e: return; }` and nothing else; on, the same body ends `halt_baddata(); // warn: Bad instruction - Truncating control flow here` under a `// warn: Control flow encountered bad instruction data` prototype. One residue in the sweep, reported rather than hidden: in `Crackme#7.exe sub_403b64` the halt sits inside a degenerate `switch(0x403bf3) { }` that prints no arm, so its truncation warning attaches to the decoded call above it instead of to a `halt_baddata()` statement - a comment placement, no code difference. Set off to restore the silent `return;`."
+example = "option decodehalt off"
+source_decompiler = "ghidra-upstream"
+inspiration = "RE-friction round 12, need undecodable-encrypted-code-becomes: a tester read `case 0x40190e: return;` with error null as `the stub does nothing` and stopped; upstream Ghidra prints `halt_baddata()` there"
+change_kind = "presentation-default"
+tier = "core"
+symptoms = "a function that runs into undecodable, encrypted or packed bytes ends with a plain return; and no warning|a self-decrypting stub decompiles to case 0x<hex>: return; with error null in --json|nothing in the emitted C says the decompiled body is incomplete|a branch that leaves a --define-function extent renders as an ordinary return|kuna disassemble reports .byte at an address the decompiled C returns from"
+live_field = "decode_halt"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "noreturn_extern"
 values = "on|off"
 default = "on"
