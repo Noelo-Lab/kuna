@@ -1009,3 +1009,107 @@ fn a_listing_inside_mapped_memory_is_untouched_by_the_bound() {
     assert!(before.contains("PUSH RBP"), "{before}");
     assert!(!before.contains("not in the image"), "{before}");
 }
+
+// --- decoy bytes and the branch targets a straight line walks over -----------
+
+/// (kuna, `linear-disassembly-silently-skips`) The straight line says so when it
+/// decodes across an address the range's own branches name.
+///
+/// `jumpoverdecoy_i386` is the round-12 witness's own 60 bytes rebased to
+/// `0x10000` — a decryption loop entered through `EB 01` / `EB 04` jumps over one
+/// junk byte each. What a plain listing of it gets wrong is not the missing row:
+/// it prints a `JMP` outside the image and a `CALL` to a negative displacement,
+/// and neither is in the bytes.
+#[test]
+fn a_straight_line_listing_names_the_branch_targets_it_decoded_across() {
+    let bin = fixture("jumpoverdecoy_i386");
+    let Some((text, notes)) = rendered(&[&bin, "0x10000", "--addr", "--count", "70"]) else {
+        return;
+    };
+    let note = notes
+        .iter()
+        .find(|n| n.contains("ran across"))
+        .unwrap_or_else(|| panic!("no skipped-target note in {notes:?}\n{text}"));
+    for target in ["0x10008", "0x10024", "0x10037"] {
+        assert!(note.contains(target), "{target} is not named in {note:?}");
+        assert!(
+            !rows(&text).iter().any(|r| r.starts_with(&format!("0x{}", &target[2..]))),
+            "{target} starts a row, so it was not walked over:\n{text}"
+        );
+    }
+    assert!(note.contains("--follow"), "the note must name the move that fixes it: {note:?}");
+    // The rows that ARE there, and are wrong — the harm the note is about.
+    assert!(text.contains("JMP 0x496c8e8"), "the invented out-of-image jump:\n{text}");
+    assert!(text.contains("CALL -0x1d546d91"), "the invented call:\n{text}");
+}
+
+/// The same range under `--follow`: every branch target starts a row, the
+/// invented instructions are gone, and the loop the bytes really spell — LODSB,
+/// STOSB, and a `LOOP` back edge — is readable.
+#[test]
+fn follow_decodes_from_the_targets_the_straight_line_walked_over() {
+    let bin = fixture("jumpoverdecoy_i386");
+    let Some((text, notes)) =
+        rendered(&[&bin, "0x10000", "--addr", "--count", "70", "--follow"])
+    else {
+        return;
+    };
+    assert!(
+        !notes.iter().any(|n| n.contains("ran across")),
+        "nothing was walked over this time: {notes:?}\n{text}"
+    );
+    assert!(
+        notes.iter().any(|n| n.contains("--follow decoded from")),
+        "--follow must say what it re-anchored: {notes:?}"
+    );
+    for (addr, insn) in
+        [("0x10008", "LODSB"), ("0x10024", "ROR AL,0x95"), ("0x10037", "XOR AL,0x92")]
+    {
+        let row = rows(&text)
+            .into_iter()
+            .find(|r| r.starts_with(addr))
+            .unwrap_or_else(|| panic!("no row at {addr}:\n{text}"));
+        assert!(row.contains(insn), "{row:?} is not {insn}");
+    }
+    assert!(text.contains("STOSB"), "{text}");
+    assert!(text.contains("LOOP 0x10008"), "the back edge that closes the loop:\n{text}");
+    assert!(!text.contains("JMP 0x496c8e8"), "the invented jump survived:\n{text}");
+    assert!(!text.contains("CALL -0x1d546d91"), "the invented call survived:\n{text}");
+    // A byte no flow reaches is still listed, spelled as the byte it is.
+    assert!(text.contains(".byte 0xc2"), "the decoy byte is not in the listing:\n{text}");
+}
+
+/// `--follow` never lists less than the straight line: it covers the same span,
+/// and on a function with no decoys in it the two listings are the same bytes.
+#[test]
+fn follow_leaves_an_ordinary_listing_alone() {
+    let Some((plain, notes)) = rendered(&[&fauxware(), "main"]) else { return };
+    assert!(notes.is_empty(), "an ordinary main has nothing to report: {notes:?}");
+    let Some((followed, notes)) = rendered(&[&fauxware(), "main", "--follow"]) else { return };
+    assert!(notes.is_empty(), "{notes:?}");
+    assert_eq!(plain, followed, "--follow moved a row in a function with no decoy in it");
+}
+
+/// The two views cover the same addresses: `--follow` re-anchors rows, it does
+/// not drop the bytes between them.
+#[test]
+fn follow_covers_the_same_bytes_as_the_straight_line() {
+    let bin = fixture("jumpoverdecoy_i386");
+    let span = |argv: &[&str]| {
+        instructions(&listing(argv)?).into_iter().fold(None, |acc: Option<(u64, u64)>, row| {
+            let addr = as_u64(field(&row, "address"));
+            let end = addr + as_u64(field(&row, "size"));
+            Some(acc.map_or((addr, end), |(lo, hi)| (lo.min(addr), hi.max(end))))
+        })
+    };
+    let Some(plain) = span(&[&bin, "0x10000", "--addr", "--count", "70", "--json"]) else {
+        return;
+    };
+    let Some(followed) =
+        span(&[&bin, "0x10000", "--addr", "--count", "70", "--follow", "--json"])
+    else {
+        return;
+    };
+    assert_eq!(plain, followed, "the two listings must cover the same bytes");
+    assert_eq!(plain, (0x10000, 0x1003d), "the whole mapped run");
+}

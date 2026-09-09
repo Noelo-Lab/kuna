@@ -1299,8 +1299,8 @@ The target is a **name**, an **address**, or a **range**:
 
 `--count N` stops after N listed entries and `--bytes N` after N bytes; either
 overrides the derived extent, and a listing stops at whichever limit it reaches
-first. Also accepted: `--as`, `--json`, plus the shared `--mode`, `--option N V`,
-`--slice`, `--target`, `--sleighpath`.
+first. Also accepted: `--as`, `--follow`, `--json`, plus the shared `--mode`,
+`--option N V`, `--slice`, `--target`, `--sleighpath`.
 
 ```
 $ kuna disassemble ./fauxware main --count 9
@@ -1387,6 +1387,68 @@ $ kuna disassemble ./1337ARM.bin 0x8458-0x845c
 
 The `mnemonic` is `.byte`/`.short`/`.word`/`.quad` by width and `operands` is the
 value zero-padded to it; the row's `bytes` are the image's, as for any other row.
+
+### Branch targets a straight line walks over — and `--follow`
+
+Decoding forward from one end assumes every byte starts an instruction or is
+inside one. Hand-written and obfuscated code breaks that on purpose: a two-byte
+`EB 01` jumps over one junk byte, and from the junk byte on the listing is a
+reading of instructions the program never executes. The rows that come back are
+not merely missing one — they are wrong, and nothing in them says so:
+
+```
+$ kuna disassemble ./corrupt.exe 0x43d060 --addr --count 70
+0x43d08c      eb04                  JMP 0x43d092
+0x43d08f      eb01                  JMP 0x43d092
+0x43d091      c2aceb                RET 0xebac          <- covers 0x43d092
+...
+0x43d0ad      e9c0c89504            JMP 0x4d99972       <- outside the image
+0x43d0c0      e83492aae2            CALL -0x1d119d07    <- not in the bytes
+```
+
+Two things now happen. Every listing reports the addresses **its own branches
+name** that no row of it starts at, on **stderr** and in `notes`:
+
+```
+note: the decode ran across 3 addresses this range's own branches name --
+0x43d092, 0x43d0ae, 0x43d0c1 -- so no row starts at them; the instruction printed
+over each one, and the rows after it until the decode re-synchronizes, spell bytes
+the program never executes that way -- re-run with --follow to decode from those
+addresses too
+```
+
+Only targets inside the listed span are reported: a branch out of the range says
+nothing about the range. On ordinary compiler output there is nothing to report —
+across ~800 vendored fixture functions the note fires on eight, every one of them
+a real desynchronization.
+
+`--follow` then decodes from those addresses as well as from the start, to a
+fixpoint over whatever the new rows themselves branch to. One re-anchor is not
+enough: at `0x43d092` the very next instruction is another `EB 01`, and only
+following that one too reaches the real `0x43d096`.
+
+```
+$ kuna disassemble ./corrupt.exe 0x43d060 --addr --count 70 --follow
+0x43d08f      eb01                  JMP 0x43d092
+0x43d091      c2                    .byte 0xc2
+0x43d092      ac                    LODSB ESI
+0x43d093      eb01                  JMP 0x43d096
+...
+0x43d0c3      aa                    STOSB ES:EDI
+0x43d0c4      e2cc                  LOOP 0x43d092
+```
+
+— a LODSB/STOSB decryption loop with its back edge, where the straight line had a
+call and a jump that are not in the file.
+
+`--follow` never lists **less** than the plain listing: bytes no flow reaches are
+still listed, decoded straight-line in between and spelled `.byte` where they do
+not tile an instruction, and the two listings cover the same span. Where two
+reachable paths read the same bytes as different instructions — a conditional
+branch into the middle of the instruction it skips — both rows are listed, so
+rows can overlap under `--follow` and only under it. It is off by default because
+it costs a second walk and a straight line is the right answer for compiler
+output.
 
 ### The byte view
 
