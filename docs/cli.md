@@ -157,6 +157,25 @@ kuna decompile ./graphy sub_deadbeef
 #          an address with --addr
 ```
 
+**An import name selects the code half.** A dynamically linked image spells an
+import's name twice — on the forwarding veneer a direct `call` targets, and on
+the IAT/GOT slot that veneer reads — so `strcmp` matches two entries. The
+executable one wins: the veneer is the only candidate that has a body, so the
+selector is answered there rather than refused.
+
+```bash
+kuna decompile ./mach-o-crackme strcmp
+#   int strcmp(char *a0,char *a1) { ... }      # the __TEXT,__stubs veneer
+```
+
+Both entries stay in `kuna functions` — a slot with no veneer (`__DATA,__got`,
+`__DATA,__nl_symbol_ptr`, an IAT entry a `call [slot]` reaches directly) is the
+only place its name appears at all — and every surface that takes a name
+(`decompile`, `decompile-all --functions`, `disassemble`, `read`, `xrefs`)
+resolves it to the same veneer. The narrowing needs **exactly one** executable
+candidate, so two same-named definitions in different code sections of a
+relocatable object still report the ambiguity with every candidate listed.
+
 **The instruction budget.** Flow following decodes at most `maxinstruction`
 instructions per function — 100000 by default, which no ordinary function comes
 near and an obfuscated one blows through. Past the budget the decompiling

@@ -1,0 +1,53 @@
+{
+  "need_id": "mach-o-import-data",
+  "track": "loader",
+  "scope": "small",
+  "worker": "b-r12-mach-o-import-da",
+  "branch": "feat/re-mach-o-import-data",
+  "symptom": "`kuna decompile <macho> strcmp` exits 1 with `selector \"strcmp\" is ambiguous; candidates: strcmp at synthetic 0x100003ede / strcmp at synthetic 0x100008030`. 1 instance, round 12 (crackmes.one 64c8b272b25df8732eebc2a6, bin/main), and all 9 imports of that 26-row inventory are the same shape.",
+  "diagnosis": "An import's name is on two entries -- the __TEXT,__stubs veneer and the __DATA,__la_symbol_ptr slot it reads -- and `ConsoleProgram::one_candidate` returned `Ok` only for a single candidate, so every by-name surface refused the name. The engine already knew which candidate is code: `entry_is_executable` (CODE section flag, minus the loader's own import slots) backs `function_entries_executable`. It was simply never consulted at selection.",
+  "hypothesis_status": "upheld",
+  "decisions": [
+    "The filed hypothesis ('import pointer slots compete with executable stubs during function selection') is right and the refuter's safe rule is implemented verbatim: narrow at SELECTION time, prefer the executable candidate, fire only when EXACTLY one candidate qualifies.",
+    "The inventory is NOT pruned. Dropping non-executable import rows settles the ambiguity too and is wrong: a slot with no veneer is the only place its name appears. Re-measured on the sibling `mach-o-objc-msgsend`'s own binary -- 84 rows before and after, objc_msgSend still at 0x100004038 and dyld_stub_binder still at 0x100004028, and both still resolve by name.",
+    "Wired into BOTH name lookups, not just `resolve_entry`. `disassemble` and `read` reach a name through `find_entry_by_name`, which returns None on several candidates and falls through to the raw symbol table -- which on an import pair holds the pointer word. Fixing only `resolve_entry` would have left `kuna decompile X memcpy` and `kuna disassemble X memcpy` answering at two different addresses; measured, 78 names across the vendored PE fixtures moved from the slot's bytes to the thunk's `jmp [slot]`.",
+    "The predicate is the existing `entry_is_executable`, not a fresh section-flag test. That is what covers the one-section PE where the IAT lives inside the CODE section: win32sigs_pe_i386.exe's LoadLibraryExW slot at 0x401000 passes the flag test and is still excluded, because the loader knows it put the name there.",
+    "EXACTLY one, never a majority. Two same-named definitions in different code sections of a relocatable object are both executable and keep the ambiguity error, and a sectionless XML image reads every address as executable, so the datatest corpus cannot reach the narrowing at all.",
+    "No option row and no DIV row: a selector-resolution bug fix that corrects a refusal. It emits no C that was emitted before -- the previous answer on every case it touches was an error or a data address. phases.toml, options.rs, docs/options.md, docs/history.md, the catalog counters and tests/stages are untouched (they are also the sibling builder's leases this wave).",
+    "The acceptance stays on the dataset witness; `tests/cli/mach-o-import-data.json` is a hand-written CI twin retargeted onto the already-vendored `macho_imports` fixture, whose printf carries the identical veneer(0x1000005cc)+slot(0x100003000) shape. No new fixture binary was needed."
+  ],
+  "changed": [
+    "decompiler/crates/kuna-console/src/engine.rs",
+    "decompiler/crates/kuna-console/tests/verify_entry_selectors.rs",
+    "tests/cli/mach-o-import-data.json",
+    "docs/cli.md",
+    "docs/spec/00-overview.md",
+    "docs/re-needs/mach-o-import-data.md"
+  ],
+  "acceptance": "PASS -- on the filed dataset witness, `kuna decompile bin/main strcmp --option calleearity on --option varargstackargs on` exits 0 and emits `int strcmp(char *a0,char *a1)`; both clauses (exit_code, stdout_matches `strcmp\\(`) flipped from fail.",
+  "sweep": {
+    "duplicate names, resolve_entry": "163 vendored ELF/PE/Mach-O/COFF images, every duplicated name run through `kuna decompile-all --functions <name>` before and after: 155 duplicated names, 134 changed, ALL of them rc=1 (ambiguous) -> rc=0. Zero went the other way and zero previously-successful resolution moved. The 21 unchanged are same-named CODE definitions (mcount_x86_64's duplicated libc symbols, entry_selectors_x86_64.o, cppproto_x86_64) or PE pairs where both candidates are import slots.",
+    "duplicate names, find_entry_by_name": "the same names through `kuna disassemble` and `kuna read`: 310 pairs, 156 changed (78 names x 2 surfaces). Every one moves from the pointer word to its thunk -- 77 of 78 old picks were flagged by kuna's own `--as auto` as 'in a non-executable data section'; the 78th (win32sigs_pe_i386.exe LoadLibraryExW) is the one-section PE where the IAT shares the CODE section, and its old pick disassembled the pointer bytes 0x00401010 as `MOV AL,[0x10]` while the new pick is `JMP dword ptr [0x401000]`.",
+    "sibling need": "mach-o-objc-msgsend's binary (arena 11/5ab77f56): 84 rows before and after, same 7 duplicated names, both lone slot rows intact. All 9 names now resolve by `kuna decompile`; the 2 lone ones were never ambiguous and are unchanged.",
+    "xrefs": "the 7 duplicated names on that binary go from `error: ... is ambiguous` to a real answer at the veneer; the 2 lone rows answer identically before and after."
+  },
+  "speed": {
+    "method": "kuna functions / kuna decompile-all --functions main on pe_imports.exe, warmup + 8 repeats, median",
+    "before": "functions 0.29 s, decompile-all 0.29 s",
+    "after": "functions 0.28 s, decompile-all 0.29 s",
+    "delta": "0.0% -- the section walk runs only on the multi-candidate path, at most once per selector"
+  },
+  "tests": {
+    "kuna-console/tests/verify_entry_selectors.rs": "2 e2e tests on the vendored macho_imports: printf resolves to the 0x1000005cc veneer while BOTH canonical rows survive (fails on the unpatched tree with the two-candidate Ambiguous), and two .text definitions of `duplicate_local` stay ambiguous so the narrowing cannot be a majority vote",
+    "tests/cli": "mach-o-import-data.json, 116/116"
+  },
+  "gates": {
+    "make test": "PARITY OK, 675/675",
+    "make test-stages": "PARITY OK, 730/730",
+    "make rust-test": "GREEN (rc=0, 6325 tests passed, 0 failures), run with `env -u KUNA_DECOMP_TEST` -- the repipe launcher exports that var at the worktree's own decomp_test_dbg, which makes verify_w10_* read as oracle drift",
+    "make check-spec": "OK (strict OK)",
+    "kuna catalog --check": "OK",
+    "make test-cli": "116/116",
+    "re acceptance suite": "111 needs replayed: mach-o-import-data CLOSED, 56 closed, 0 regressions attributable here. The two rows the suite calls `regressed` are pre-existing: `getprocaddress-result-discarded` produces BYTE-IDENTICAL output on a build without this change, and `decompiling-3396-byte-main` is the 10s wall-clock bar, measured at 10.2-10.6 s unpatched and 10.0-10.2 s patched."
+  }
+}

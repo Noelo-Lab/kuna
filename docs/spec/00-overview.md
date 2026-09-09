@@ -254,9 +254,31 @@ Four front-ends drive one engine assembly:
   `decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::function_entries_executable)`:
   only entries inside a loader section carrying `CODE` are treated as function
   bodies. Import slots remain installed for call naming, prototypes, and
-  unrestricted explicit address selection; name selection keeps its normal
-  first matching canonical-entry behavior when a stub and slot share a name. A
+  unrestricted explicit address selection. A
   loader that publishes no section metadata retains the complete canonical set.
+
+  When a stub and its slot share a name, that same executability test settles the
+  SELECTION rather than pruning the inventory
+  (`decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::lone_executable_candidate)`,
+  reached from both name lookups). A dynamically linked image spells an import's
+  name on both the forwarding veneer a direct call targets and the IAT/GOT slot
+  that veneer reads, so the name matches two entries and every by-name surface
+  refused it: `kuna decompile <macho> strcmp` answered `selector "strcmp" is
+  ambiguous` for all nine imports of a 26-entry inventory, while `disassemble`
+  and `read`, which fall through to the raw symbol table when
+  `find_entry_by_name` declines, answered at the pointer word instead — 78 names
+  across the vendored PE fixtures listed the slot's bytes rather than the thunk's
+  `jmp [slot]`. Exactly one candidate is executable, and it is the only one that
+  can have a body, so that one is the answer. Pruning the data row would settle
+  the ambiguity too and is wrong: a slot with no veneer — a `__DATA,__got` or
+  `__DATA,__nl_symbol_ptr` word, an IAT entry a `call [slot]` reaches directly —
+  is the only place its name appears at all, and on one measured Mach-O two of
+  nine non-executable rows were lone. The narrowing therefore fires only where a
+  veneer exists, and it requires EXACTLY one executable candidate: two
+  same-named definitions in different code sections of a relocatable object are
+  both executable and keep the ambiguity error, as does every candidate set on a
+  sectionless image, where the test reads every address as executable. This is
+  what makes Mach-O behave the way ELF already did by naming only the PLT stub.
   A **caller-declared** entry (the declared-extent plane below) is kept whatever the section flags say
   (`decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::is_declared_entry)`).
   The `CODE` test is a guess about where code lives, and a packer defeats it for

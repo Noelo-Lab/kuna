@@ -424,3 +424,51 @@ fn a_placeholder_name_is_not_read_as_an_address_unless_this_build_would_mint_it(
         assert!(program.find_entry_by_name(miss).is_none(), "{miss}");
     }
 }
+
+/// (RE-need `mach-o-import-data`) An import name spelled on both a `__stubs`
+/// veneer and the `__la_symbol_ptr` slot that veneer reads resolves to the
+/// veneer, and BOTH entries stay in the inventory.
+///
+/// Dropping the data row would close the ambiguity too, and would delete the
+/// only name a slot with no veneer (`__DATA,__got`, `__DATA,__nl_symbol_ptr`)
+/// ever carries — so the narrowing is at selection, not in the enumeration.
+#[test]
+fn a_macho_import_name_resolves_to_its_stub_without_losing_the_slot() {
+    let Some(program) = boot_fixture("macho_imports") else {
+        return;
+    };
+
+    let entry = program
+        .resolve_entry(&EntrySelector::Name("printf".into()))
+        .expect("the __stubs veneer is the one executable candidate");
+    assert_eq!(entry.addr.get_offset(), 0x1000005cc);
+
+    let rows: Vec<u64> = program
+        .function_entries_canonical()
+        .into_iter()
+        .filter(|e| e.name == "printf")
+        .map(|e| e.addr.get_offset())
+        .collect();
+    assert_eq!(rows, vec![0x1000005cc, 0x100003000], "both rows survive");
+    assert!(
+        !program.any_executable_entry(&[program
+            .find_entry_at(0x100003000)
+            .expect("the slot row")]),
+        "the slot is what makes the veneer the lone executable candidate"
+    );
+}
+
+/// The narrowing needs EXACTLY one executable candidate: two definitions in
+/// different code sections of one object are both executable and stay
+/// ambiguous, and a sectionless XML image reads every address as executable, so
+/// neither can be silently guessed.
+#[test]
+fn same_named_code_definitions_are_still_ambiguous() {
+    let Some(program) = boot_fixture("entry_selectors_x86_64.o") else {
+        return;
+    };
+    let error = program
+        .resolve_entry(&EntrySelector::Name("duplicate_local".into()))
+        .expect_err("two .text definitions are both executable");
+    assert!(matches!(error, EntryLookupError::Ambiguous { .. }), "{error}");
+}
