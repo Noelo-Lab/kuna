@@ -2782,6 +2782,25 @@ tier = "core"
 symptoms = "a function returns the result of a call the disassembly makes for its side effect|main ends `return __security_check_cookie(...)` on an MSVC /GS binary|a constant the caller moves into EAX just before a call never reaches the RET|a void helper's call result is assigned to a variable|declaring the callee void trades the invented call result for an uninitialised local|a value read after a call the callee provably never writes is an undefined local"
 
 [[settable]]
+option = "calleescratchbody"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P3"
+subphase = "call-guard"
+strength = "HARD"
+rewind = "P3"
+issue = "repipe-rax-preserving-stack-probe"
+summary = "Accept a decoded callee that clobbers only SCRATCH registers as calleepreserves evidence, so a value the caller sets before a well-behaved helper survives the call. Every MSVC frame larger than a page opens `mov eax,<size>; call __chkstk; sub rsp,rax`, and the out-of-line probe reads RAX and never writes it -- `sub rsp,0x10; mov [rsp],r10; mov [rsp+8],r11; xor r11,r11; lea r10,[rsp+0x18]; sub r10,rax; ...; mov r10,[rsp]; mov r11,[rsp+8]; add rsp,0x10; ret`. kuna lost the constant anyway: the body came out `sub_1408d0000(); v1 = -v2;` with `int8 v2; // rax` never assigned, and every local in the frame was then indexed off that undefined value as `*(unsigned long long *)&(&Stack000000000005dfd0)[v1] = v7;` -- one INDIRECT creation destroying the whole frame rather than one expression. calleepreserves is the pass that narrows a cspec killedbycall set from the callee's own body and its evidence was already sufficient here: the callee-body write probe walks all nineteen instructions, completes, and proves RAX untouched. What declined was its POSITIVE-evidence gate, which asks the callee to have written a register the convention promises is preserved -- the signature of the i386 get-PC thunk the pass was written for, whose `mov ebx,[esp]` writes an <unaffected> register. __chkstk writes RSP, R10 and R11, and x86-64-win.cspec names none of them in either <unaffected> or <killedbycall>: they are scratch, and clobbering scratch is not a departure from the convention, so the gate never fires on a well-behaved helper. This option adds a second, independent way for a summary to count as a body, and requires both marks. The body must have written MEMORY -- a register-preserving helper's own save slot is why it can use a register at all, and `ret`, `endbr64; ret`, a placeholder and an entry decoded at the wrong address store nothing. And it must have written a register other than the stack pointer, which every RET writes. Nothing else about calleepreserves moves: the summary must still be complete, still prove the queried range untouched, the range must still be a register, a proto carrying its own effect override is still left alone, only killedbycall is downgraded and never promoted, so the pass can still only ever KEEP a value the machine keeps."
+use_when = "On by default (DIV-149). Keep it on when a constant or pointer the disassembly plainly carries across a helper call renders as an undefined local -- the standard shape is a Windows x86-64 binary whose large-frame prologue calls __chkstk, where `sub rsp,rax` becomes `v1 = -v2` off an unassigned `// rax` and every frame slot is then indexed by it. Naming the helper __chkstk does not help and neither does declaring it `void`: the killed set, not the prototype, is what loses the value. Flip OFF to require a convention-PRESERVED write again, which is the shipped calleepreserves gate: the way this could be wrong is a callee decoded in the wrong instruction mode (an ARM/Thumb boundary), where the bytes read are not the instructions that run, or to bisect whether this clause rather than trial scoring changed a call's surroundings."
+example = "option calleescratchbody off"
+source_decompiler = "kuna"
+inspiration = "repipe:rax-preserving-stack-probe, 69d7f15a8afd9d6c48b48871 (x86-64 PE crackme_shroud.exe) sub_140001000 0x140001000 -> __chkstk 0x1408d0000; upstream Heritage::guardCalls (heritage.cc:1444) and FuncProto::hasEffect (fspec.cc:4239)"
+change_kind = "correctness-fix"
+tier = "core"
+symptoms = "a large-frame MSVC prologue loses its stack allocation and indexes every local off an undefined local|`sub rsp,rax` renders as `v1 = -v2` with `// rax` never assigned|frame slots render as `&(&Stack000000000005dfd0)[v1]` instead of fixed offsets|a constant the caller loads before a __chkstk / stack-probe call disappears|naming a helper __chkstk or declaring it void does not recover the value it preserves|calleepreserves declines a helper that clobbers only volatile registers"
+
+[[settable]]
 option = "indirectanchor"
 values = "on|off"
 default = "on"

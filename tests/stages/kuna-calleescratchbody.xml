@@ -1,0 +1,101 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:windows">
+<!--
+    kuna calleescratchbody: a large-frame MSVC prologue loses its whole stack
+    allocation across the out-of-line stack probe, and every local is then
+    indexed off a value the function never assigns.
+
+    x86-64-win.cspec lists RAX in <killedbycall> for the default __fastcall, so
+    Heritage::guardCalls (heritage.cc:1444) plants an INDIRECT creation of RAX at
+    every call.  That is an answer about the CONVENTION.  __chkstk contradicts
+    it: it READS RAX (the frame size the caller loaded) and never writes it,
+    which is the entire point of the calling sequence
+    "mov eax,SIZE; call __chkstk; sub rsp,rax".
+
+    calleepreserves is the pass that narrows killedbycall from the callee's own
+    body, and its probe already proves RAX untouched here.  What declined was its
+    positive-evidence gate, which asks the callee to have written a register the
+    convention promises is PRESERVED - the signature of the i386 get-PC thunk it
+    was written for.  __chkstk writes RSP, R10 and R11, and this cspec names none
+    of them in either <unaffected> or <killedbycall>: they are scratch, and
+    clobbering scratch is not a departure from the convention.
+
+    f, at 0x1000, is the calling sequence reduced to the seam:
+
+        1000  b8 00 20 00 00        MOV   EAX,0x2000
+        1005  e8 f6 00 00 00        CALL  0x1100        ; __chkstk
+        100a  48 29 c4              SUB   RSP,RAX
+        100d  48 89 4c 24 08        MOV   [RSP+0x8],RCX
+        1012  48 8b 44 24 08        MOV   RAX,[RSP+0x8]
+        1017  48 81 c4 00 20 00 00  ADD   RSP,0x2000
+        101e  c3                    RET
+
+    and 0x1100 is MSVC's __chkstk verbatim, spill slot and probe loop included:
+
+        1100  48 83 ec 10           SUB   RSP,0x10
+        1104  4c 89 14 24           MOV   [RSP],R10     ; the save that makes it
+        1108  4c 89 5c 24 08        MOV   [RSP+0x8],R11 ; safe to clobber R10/R11
+        110d  4d 33 db              XOR   R11,R11
+        1110  4c 8d 54 24 18        LEA   R10,[RSP+0x18]
+        1115  4c 2b d0              SUB   R10,RAX       ; reads RAX
+        1118  4d 0f 42 d3           CMOVC R10,R11
+        111c  65 4c 8b 1c 25 ..     MOV   R11,GS:[0x10]
+        1125  4d 3b d3              CMP   R10,R11
+        1128  73 16                 JNC   0x1140
+        112a  66 41 81 e2 00 f0     AND   R10W,0xf000
+        1130  4d 8d 9b 00 f0 ff ff  LEA   R11,[R11-0x1000]
+        1137  41 c6 03 00           MOV   byte ptr [R11],0x0
+        113b  4d 3b d3              CMP   R10,R11
+        113e  75 f0                 JNZ   0x1130
+        1140  4c 8b 14 24           MOV   R10,[RSP]
+        1144  4c 8b 5c 24 08        MOV   R11,[RSP+0x8]
+        1149  48 83 c4 10           ADD   RSP,0x10
+        114d  c3                    RET
+
+    g, at 0x1400, is the NEGATIVE control and has f's shape byte for byte, except
+    that its callee at 0x1500 is "endbr64; ret" - a stub, which is also what a
+    placeholder and an entry decoded at the wrong address look like.  It writes
+    no memory, so its silence about RAX is not evidence and g must render
+    identically in both passes.
+
+    Stage: P3 heritage call guarding, option calleescratchbody off|on.  Pass 1
+    (off) pins the bug, pass 2 (on, the default) pins the fix.
+-->
+<bytechunk space="ram" offset="0x1000">
+b800200000e8f60000004829c448894c2408488b4424084881c400200000c3
+</bytechunk>
+<bytechunk space="ram" offset="0x1100">
+4883ec104c8914244c895c24084d33db4c8d5424184c2bd04d0f42d3654c8b1c25100000004d3bd37316664181e200f04d8d9b00f0ffff41c603004d3bd375f04c8b14244c8b5c24084883c410c3
+</bytechunk>
+<bytechunk space="ram" offset="0x1400">
+b800200000e8f60000004829c448894c2408488b4424084881c400200000c3
+</bytechunk>
+<bytechunk space="ram" offset="0x1500">
+f30f1efac3
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="f"/>
+<symbol space="ram" offset="0x1400" name="g"/>
+</binaryimage>
+<script>
+  <com>option calleescratchbody off</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu g</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option calleescratchbody on</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu g</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="CALLEESCRATCHBODY #1: off, the whole frame is indexed off the value __chkstk supposedly returns" min="1" max="1">Stack0000000000000008\)\[-sub_1100\(\)\] = a0;$</stringmatch>
+<stringmatch name="CALLEESCRATCHBODY #2: on, the probe is called for its side effect and the frame slot is a fixed offset" min="1" max="1">^  sub_1100\(\);$</stringmatch>
+<stringmatch name="CALLEESCRATCHBODY #3: on, the slot written and read back at that offset is the argument" min="1" max="1">^  return a0;$</stringmatch>
+<stringmatch name="CALLEESCRATCHBODY #4: both passes, an endbr64/ret stub writes no memory and proves nothing" min="2" max="2">Stack0000000000000008\)\[-sub_1500\(\)\] = a0;$</stringmatch>
+<stringmatch name="CALLEESCRATCHBODY #5: both passes, so g keeps the convention's answer unchanged" min="2" max="2">^unsigned long long g\(unsigned long long a0\)$</stringmatch>
+</decompilertest>

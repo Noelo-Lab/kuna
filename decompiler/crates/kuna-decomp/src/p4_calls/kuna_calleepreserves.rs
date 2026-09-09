@@ -72,6 +72,12 @@
 //!   `return_address` record is left exactly as the spec wrote it, and nothing
 //!   here ever promotes a range to killed. The pass can only ever *keep* a value
 //!   that the machine keeps.
+//! * **A well-behaved helper needs its own evidence.** The gate below asks the
+//!   callee to have written a register the convention promises is *preserved*,
+//!   which a helper that clobbers only scratch never does — MSVC's out-of-line
+//!   stack probe writes `RSP`/`R10`/`R11` and `x86-64-win.cspec` names none of
+//!   them. That body is admitted on a second, independent mark instead, by
+//!   [`calleescratchbody`](crate::p4_calls::kuna_calleescratchbody).
 //! * **The return register needs its own evidence.** The gate above asks the
 //!   callee to have written a register the convention promises is *preserved*,
 //!   which a helper that clobbers only what it is allowed to never does. The
@@ -173,6 +179,7 @@ pub fn callee_preserves_range(
         return false;
     }
     body_departs_from_convention(data, fc, w)
+        || crate::p4_calls::kuna_calleescratchbody::scratch_body_is_a_body(data, w)
 }
 
 /// Does the decoded body demonstrably depart from the convention the effect list
@@ -188,6 +195,10 @@ pub fn callee_preserves_range(
 /// which `x86gcc.cspec` lists as `<unaffected>`, so the convention is already
 /// not a description of it. The stack pointer does not count -- every `RET`
 /// writes it.
+///
+/// A helper that clobbers only scratch registers is invisible to this reading
+/// and is admitted by
+/// [`calleescratchbody`](crate::p4_calls::kuna_calleescratchbody) instead.
 fn body_departs_from_convention(
     data: &Funcdata,
     fc: &FuncCallSpecs,

@@ -1,0 +1,38 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "f"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/calleescratchbody_x86_64",
+    "binary_sha256": "64a463c8d9b2f57b4bc6595d16ade2b992e2ad03fb61b2edf437738a377fa0cf",
+    "binary_size": 4768,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/calleescratchbody_x86_64",
+    "selector": "f",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "chkstk\\(\\)"
+    ],
+    "stdout_absent": [
+      "Stack[0-9a-fA-F]+\\)\\["
+    ]
+  },
+  "notes": "Promoted acceptance of rax-preserving-stack-probe, re-pointed from the dataset witness (crackme_shroud.exe sub_140001000, whose whole frame indexed off an unassigned rax local) at the vendored calleescratchbody_x86_64 fixture -- CI has no dataset. Its source .s is MSVC's __chkstk behind `mov eax,SIZE; call; sub rsp,rax`; `--option calleescratchbody off` fails stdout_absent."
+}

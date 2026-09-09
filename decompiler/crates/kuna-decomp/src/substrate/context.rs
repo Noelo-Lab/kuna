@@ -755,6 +755,10 @@ pub struct ArchContext {
     /// through
     /// [`crate::p4_calls::kuna_calleeretpreserves::callee_preserves_return_storage`].
     pub callee_ret_preserves: bool,
+    /// (kuna) accept a callee that clobbers only scratch registers as
+    /// `calleepreserves` evidence (`calleescratchbody`).  Read by
+    /// [`crate::p4_calls::kuna_calleescratchbody::scratch_body_is_a_body`].
+    pub callee_scratch_body: bool,
     /// (kuna) anchor an op inserted after a call's guard INDIRECT to the call
     /// itself (`indirectanchor`).  Read by `Funcdata::op_insert_after` through
     /// [`crate::p3_dataflow::kuna_indirectanchor::anchor_of`].
@@ -1332,6 +1336,7 @@ impl ArchContext {
             callee_dead_arg: true,
             callee_preserves: true,
             callee_ret_preserves: true,
+            callee_scratch_body: true,  // calleescratchbody (DIV-149 default-on)
             indirect_anchor: true,      // indirectanchor (default-on)
             input_param_gap: true,
             stack_arg_gap: true,         // stackarggap (DIV-140 default-on)

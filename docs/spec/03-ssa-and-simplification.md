@@ -213,6 +213,32 @@ address the walk cannot follow; only *killed by call* is downgraded, never
 promoted; and a prototype carrying its own effect-record override has had a
 deliberate statement made about it and is left alone.
 
+**A well-behaved helper is invisible to that test.** Requiring a write the
+model marks `<unaffected>` is a positive finding, but only for a callee that
+breaks its convention. MSVC's out-of-line stack probe does not: it writes `RSP`,
+`R10` and `R11`, and `x86-64-win.cspec` names none of them in either
+`<unaffected>` or `<killedbycall>`. They are scratch, and clobbering scratch is
+what the convention permits. So every large-frame prologue — `mov eax,SIZE; call
+__chkstk; sub rsp,rax`, which MSVC emits for every frame over a page — lost the
+size the caller loaded even though the probe *reads* `RAX` and never writes it,
+and `sub rsp,rax` became `v1 = -v2` off an unassigned local with every frame
+slot then indexed by it. That is the whole frame destroyed by one INDIRECT
+creation, not one expression.
+
+`option calleescratchbody` adds a second, independent way for a summary to count
+as a body, and requires both of its marks
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleescratchbody.rs
+(scratch_body_is_a_body)`). The body must have written **memory**: a
+register-preserving helper's own save slot is why it can use a register at all
+— `__chkstk` spills `R10`/`R11` into its frame before it touches them and
+reloads them before it returns — while `ret`, `endbr64; ret`, a placeholder and
+an entry decoded at the wrong address store nothing at all. And it must have
+written a register other than the stack pointer, which every `RET` writes, so
+the vacuous summary is still refused. Nothing the paragraphs above establish
+moves: the walk must still be complete, the range must still be a register the
+walk proves untouched, an explicit effect override still wins, and only *killed
+by call* is ever downgraded.
+
 **The return register is a different question.** That positive finding — a write
 to a register the model marks `<unaffected>` — is the signature of a hand-rolled
 helper, and a helper that clobbers only what its convention already allows never

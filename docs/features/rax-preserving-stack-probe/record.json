@@ -1,0 +1,49 @@
+{
+  "need_id": "rax-preserving-stack-probe",
+  "track": "quality",
+  "scope": "small",
+  "option": "calleescratchbody",
+  "div": "DIV-149",
+  "status": "closed",
+  "acceptance": {
+    "id": "a-5557685cdbec",
+    "passed": true,
+    "clauses": {
+      "exit_code == 0": "PASS",
+      "stdout_absent Stack<hex>)[v<n>]": "PASS (the filed defect; 8 hits before, 0 after)",
+      "functions[0].error == null": "PASS",
+      "functions[0].code matches \"sub_1408d0000\\(\"": "PASS (degradation guard: the helper call is still emitted)"
+    },
+    "note": "The contract this branch first measured against (a-ccd85db0e5f2) required `line_mappings len_gt 7` on a function decompiled under `--define-function 0x140001000-0x140001043`, an extent that cuts the function's own flow at 0x140001041. Once the frame index folds to a constant the eight register-save stores are unread locals and are removed, so that clause could not be met by any correct fix; it was replaced by the captain in round 12 with the degradation guard above, and all four clauses now pass."
+  },
+  "decisions": [
+    "The filed hypothesis (callee preservation loses RAX) is UPHELD; the round-5 refutation's MECHANISM is overturned. It read `MOV R11,qword ptr GS:[0x10]` as a CALLOTHER that makes the callee-body walk incomplete. x86-64 SLEIGH lowers a segment override to `GS_OFFSET + disp` (ia.sinc:1117 and 1143), not to the `segment` userop, and the walk was measured complete at 19 instructions with proves_untouched(RAX) true.",
+    "The real blocker is calleepreserves' positive-evidence gate body_departs_from_convention: it requires a write to a register the model marks <unaffected>, and __chkstk writes only RSP/R10/R11, which x86-64-win.cspec names in neither list.",
+    "Shipped as a separate option rather than a relaxation of calleepreserves so the two evidence clauses stay independently ablatable, matching how calleeretpreserves was split out.",
+    "The anti-vacuity mark is the callee's own memory write (its save slot), not an instruction-count threshold: `ret`, `endbr64; ret`, a placeholder and a wrong-address decode all store nothing, which is exactly the set the shipped gate exists to reject.",
+    "The removal of the clipped function's frame stores was traced to RuleEarlyRemoval (ruleaction_1.rs:129), not to ActionDeadCode: it destroys any op whose output has no descendants unless the Varnode is `is_auto_live`, and a stack COPY reaching only an artificial-halt RETURN has neither. Marking the stack Varnodes `addrforce` inside ActionDeadCode does not survive -- funcdata_spacebase's symbol sync mass-clears addrtied/addrforce (funcdata_spacebase.rs:1405) between the two. A prototype guard in RuleEarlyRemoval keyed on `flow left the declared extent` does restore all eight stores and both parameters, but it also keeps the CALL's return-address slot (`v23 = 0x140001016;`) and eight unused register declarations, and it is a second defect -- a declared extent that cuts flow makes the region's memory writes look like nothing happened -- not this one. Left out of this PR; worth its own need."
+  ],
+  "tests": {
+    "stages": "tests/stages/kuna-calleescratchbody.xml (two-pass, 5 assertions, __chkstk verbatim + an endbr64/ret negative control)",
+    "unit": "decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleescratchbody/tests.rs (5 tests)",
+    "cli_probe": "tests/cli/rax-preserving-stack-probe.json, hand-promoted: `verify --promote` refuses a `binary_source: dataset` target and the witness image is 9.4 MB, so the probe is re-pointed at a new vendored fixture, decompiler/crates/kuna-analysis/tests/fixtures/calleescratchbody_x86_64 (4,768 bytes, source .s checked in beside it) -- MSVC's __chkstk verbatim behind the real calling sequence. `--option calleescratchbody off` renders `*(unsigned long *)&(&Stack0000000000000008)[-chkstk()] = a0;` and fails the probe's stdout_absent clause; the default renders `chkstk(); return a0;`."
+  },
+  "gates": {
+    "make test": "PARITY OK 675/675",
+    "make test-stages": "PARITY OK 730/730",
+    "make rust-test": "green (rc 0)",
+    "make check-spec": "green",
+    "make test-cli": "109/109 (108 + the promoted probe)",
+    "kuna catalog --check": "catalog OK",
+    "scripts.repipe.counters": "no drift"
+  },
+  "sweep": {
+    "corpus": "10 x86-64 PEs from the arena, 4,220 comparable functions, decompile-all --json both arms",
+    "changed_binaries": 4,
+    "changed_functions": 26,
+    "functions_losing_a_call": 0,
+    "functions_gaining_a_call": 3,
+    "lines": "+81 / -2592, where the whole -2592 is one function whose 10 s per-function watchdog landed in one arm only and which is byte-identical without a budget"
+  },
+  "speed": "nikos_crack_me.exe sub_140023350 (2,537 lines, the corpus's slowest witness): 10.21 s off / 10.11 s on, medians of 3, byte-identical output."
+}

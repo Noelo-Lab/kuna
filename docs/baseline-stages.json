@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    725,
-    725
+    730,
+    730
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -37,6 +37,11 @@
     "data:CALLEERETPRESERVES #4: both passes, the checker is still called with the same argument",
     "data:CALLEERETPRESERVES #5: both passes, an endbr64/ret stub proves nothing and g is unchanged",
     "data:CALLEERETPRESERVES #6: both passes, the stub call keeps the convention's answer",
+    "data:CALLEESCRATCHBODY #1: off, the whole frame is indexed off the value __chkstk supposedly returns",
+    "data:CALLEESCRATCHBODY #2: on, the probe is called for its side effect and the frame slot is a fixed offset",
+    "data:CALLEESCRATCHBODY #3: on, the slot written and read back at that offset is the argument",
+    "data:CALLEESCRATCHBODY #4: both passes, an endbr64/ret stub writes no memory and proves nothing",
+    "data:CALLEESCRATCHBODY #5: both passes, so g keeps the convention's answer unchanged",
     "data:CALLOVERLAP #1: off, the call is emitted with no arguments at all (the CVTSI2SD result never reaches it)",
     "data:CALLOVERLAP #2: off, f loses its own parameter list because the argument chain dies with the trial",
     "data:CALLOVERLAP #3: off, the call result is read from a local that nothing ever assigns",

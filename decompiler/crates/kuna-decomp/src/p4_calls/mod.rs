@@ -11,6 +11,7 @@ pub mod kuna_calleedeadarg;
 pub mod kuna_calleepreserves; // (kuna) the decoded callee's writes narrow the cspec killedbycall set
 pub mod kuna_calleeprotostack; // (kuna) a declared callee's prototype states its stack contract
 pub mod kuna_calleeretpreserves; // (kuna) the decoded callee's silence answers for the call's return register
+pub mod kuna_calleescratchbody; // (kuna) a scratch-only clobberer is still a body for calleepreserves
 pub mod kuna_callsitestackargs;
 pub mod kuna_dfunaffected;
 pub mod kuna_noreturnretuse;
