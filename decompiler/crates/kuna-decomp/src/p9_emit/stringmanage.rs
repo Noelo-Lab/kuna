@@ -52,6 +52,10 @@ use kuna_base::crc32::crc_update;
 
 /// Marshaling attribute `trunc` (C++ `ATTRIB_TRUNC = AttributeId("trunc",69)`).
 pub const ATTRIB_TRUNC: AttributeId = AttributeId::new("trunc", 69);
+/// Character width of a cached load-image classification.
+pub const ATTRIB_STRING_CHARSIZE: AttributeId = AttributeId::new("stringcharsize", 4000);
+/// Whether a cached classification used an opaque string type.
+pub const ATTRIB_STRING_OPAQUE: AttributeId = AttributeId::new("stringopaque", 4001);
 
 /// Marshaling element `<bytes>` (C++ `ELEM_BYTES = ElementId("bytes",83)`).
 pub const ELEM_BYTES: ElementId = ElementId::new("bytes", 83);
@@ -63,15 +67,22 @@ pub const ELEM_STRINGMANAGE: ElementId = ElementId::new("stringmanage", 85);
 
 /// String data (a sequence of bytes) stored by [`StringManager`]
 /// (C++ `StringManager::StringData`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StringDecodeKey {
+    pub char_size: int4,
+    pub opaque: bool,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct StringData {
     /// `true` if the string is truncated (C++ `isTruncated`).
     pub is_truncated: bool,
     /// UTF-8 encoded string data (C++ `byteData`, a `vector<uint1>`).
     pub byte_data: Vec<uint1>,
-    /// Character width used to classify load-image data at this address.
-    /// Zero denotes data decoded from the width-agnostic legacy format.
-    pub char_size: int4,
+    /// Complete decode identity for load-image classification. Legacy
+    /// marshalled entries have no identity and are never reused for a typed
+    /// load-image lookup.
+    pub decode_key: Option<StringDecodeKey>,
 }
 
 /// Storage for decoding and storing strings associated with an address
@@ -254,7 +265,10 @@ impl StringManager {
         let hash = StringManager::calc_internal_hash(addr, buf, size);
         let const_addr = manager.get_constant(hash);
         let mut data = StringData::default();
-        data.char_size = charsize;
+        data.decode_key = Some(StringDecodeKey {
+            char_size: charsize,
+            opaque: char_type.is_opaque_string(),
+        });
         // assignStringData borrows `self` immutably while mutating `data`; build
         // the StringData detached, then insert it (one `stringMap[constAddr]`
         // slot, matching the C++ which mutates the single map entry in place).
@@ -298,6 +312,10 @@ impl StringManager {
             addr.encode(encoder)?;
             encoder.open_element(&ELEM_BYTES);
             encoder.write_bool(&ATTRIB_TRUNC, string_data.is_truncated);
+            if let Some(key) = string_data.decode_key {
+                encoder.write_signed_integer(&ATTRIB_STRING_CHARSIZE, key.char_size as i64);
+                encoder.write_bool(&ATTRIB_STRING_OPAQUE, key.opaque);
+            }
             let mut s = String::new();
             s.push('\n');
             for (i, b) in string_data.byte_data.iter().enumerate() {
@@ -330,7 +348,24 @@ impl StringManager {
             let addr = Address::decode(decoder)?;
             let mut string_data = StringData::default();
             let sub_id2 = decoder.open_element_id(&ELEM_BYTES)?;
-            string_data.is_truncated = decoder.read_bool_id(&ATTRIB_TRUNC)?;
+            let mut char_size = None;
+            let mut opaque = None;
+            loop {
+                let attrib_id = decoder.get_next_attribute_id()?;
+                if attrib_id == 0 {
+                    break;
+                }
+                if attrib_id == ATTRIB_TRUNC {
+                    string_data.is_truncated = decoder.read_bool()?;
+                } else if attrib_id == ATTRIB_STRING_CHARSIZE {
+                    char_size = Some(decoder.read_signed_integer()? as int4);
+                } else if attrib_id == ATTRIB_STRING_OPAQUE {
+                    opaque = Some(decoder.read_bool()?);
+                }
+            }
+            string_data.decode_key = char_size.zip(opaque).map(|(char_size, opaque)| {
+                StringDecodeKey { char_size, opaque }
+            });
             let content = decoder.read_string_id(&ATTRIB_CONTENT)?;
             decode_hex_bytes(&content, &mut string_data.byte_data);
             decoder.close_element(sub_id2)?;
@@ -623,11 +658,15 @@ impl StringManagerUnicode {
         is_trunc: &mut bool,
     ) -> &[uint1] {
         let charsize = char_type.get_size();
+        let decode_key = StringDecodeKey {
+            char_size: charsize,
+            opaque: char_type.is_opaque_string(),
+        };
         if self
             .base
             .string_map
             .get(addr)
-            .is_some_and(|data| data.char_size == 0 || data.char_size == charsize)
+            .is_some_and(|data| data.decode_key == Some(decode_key))
         {
             let d = &self.base.string_map[addr];
             *is_trunc = d.is_truncated;
@@ -639,7 +678,7 @@ impl StringManagerUnicode {
             let entry = self.base.string_map.entry(addr.clone()).or_default();
             entry.byte_data.clear();
             entry.is_truncated = false;
-            entry.char_size = charsize;
+            entry.decode_key = Some(decode_key);
         }
         *is_trunc = false;
 
