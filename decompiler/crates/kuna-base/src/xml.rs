@@ -1828,7 +1828,10 @@ mod tests {
         // register effects instead of reading and writing nothing (option off =
         // syscall() with empty parens and a wrapper returning its own syscall
         // number) (repipe r12)
-        assert_eq!(count, 264, "corpus file count drifted");
+        // and kuna-splitstorekeep / a 31-byte stack-to-stack copy whose middle
+        // two 8-byte stores overlap keeps them (option off = the head store and
+        // the tail store with the fifteen bytes between them gone) (repipe r12)
+        assert_eq!(count, 265, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

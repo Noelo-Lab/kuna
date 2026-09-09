@@ -694,6 +694,12 @@ pub struct Architecture {
     /// (option `loopcounterstore`, default-on, DIV-146).  See
     /// [`crate::p3_dataflow::kuna_loopcounterstore`].
     pub loop_counter_store: bool,
+    /// (kuna) Carry the `stack_store` mark from a stack store onto the
+    /// refinement pieces `Heritage::refineWrite` cuts it into, so an
+    /// overlapping-range frame store is still a direct write and survives
+    /// `ActionDeadCode` (option `splitstorekeep`, default-on, DIV-153).  See
+    /// [`crate::p3_dataflow::kuna_splitstorekeep`].
+    pub split_store_keep: bool,
     /// (kuna) Region-based (Phoenix/SAILR) structurer: structure the CFG by
     /// walking the [`KunaRegionIdentifier`](crate::p7_regions::kuna_regionid)
     /// region tree and matching Phoenix acyclic schemas instead of running
@@ -2007,6 +2013,7 @@ impl Architecture {
             index_alias_guard: 0, // (kuna) option indexaliasguard; reset_defaults sets the shipped default
             tied_store_keep: false, // (kuna) option tiedstorekeep; reset_defaults sets the shipped default (on)
             loop_counter_store: false, // (kuna) option loopcounterstore; reset_defaults sets the shipped default (on)
+            split_store_keep: false, // (kuna) option splitstorekeep; reset_defaults sets the shipped default (on)
             region_structure: true,
             guard_arm: false,
             loop_cond_hoist: false,
@@ -2245,6 +2252,7 @@ impl Architecture {
         self.load_guard_range = true; // (kuna) DIV-77 default-on: restores upstream Heritage::analyzeNewLoadGuards ValueSet range refinement of indexed-stack LOAD/STORE guards (0/675 ablation); `option loadguardrange off` reverts to whole-space guards with no index bound
         self.tied_store_keep = true; // (kuna) DIV-105 default-on: RulePropagateCopy refuses the marker propagation that would orphan an address-tied COPY holding a call return, so a `local = f();` frame store survives dead-code elimination (0/675 ablation, speed -0.13%); `option tiedstorekeep off` restores upstream's propagation
         self.loop_counter_store = true; // (kuna) DIV-146 default-on: RulePropagateCopy refuses the marker propagation that would delete a frame-slot loop counter's write-back, so the increment prints on the counter and the emitted `for` terminates (0/675 ablation); `option loopcounterstore off` restores upstream's propagation
+        self.split_store_keep = true; // (kuna) DIV-153 default-on: Heritage::refineWrite carries the stack_store mark onto its refinement pieces, so an overlapping-range frame store stays a direct write and is not swept by ActionDeadCode (0/675 ablation); `option splitstorekeep off` restores upstream's unmarked pieces
         self.region_structure = true; // (kuna) DIV-12 default-on (region-based Phoenix/SAILR structurer; primary structuring path, falls back to CollapseStructure on irreducible code)
         self.region_loop_refine = true; // (kuna) DIV-13 default-on (region structurer multi-exit/irreducible loop-successor refinement; 0/675 ablation)
         self.region_edge_order = false; // (kuna) SAILR P2 default-OFF opt-in (H2 post-dominator + dominance-tiered edge-virtualization ordering; only reorders which goto is chosen when virtualizing, so OFF is byte-identical)
@@ -2672,6 +2680,9 @@ impl Architecture {
             }
             "loopcounterstore" => {
                 on_off!(loop_counter_store, "Frame-slot loop-counter store brake")
+            }
+            "splitstorekeep" => {
+                on_off!(split_store_keep, "Refinement-split stack store mark")
             }
             "regionstructure" => {
                 let (val, msg) =
@@ -3573,6 +3584,7 @@ impl Architecture {
         ctx.index_alias_guard = self.index_alias_guard; // indexaliasguard
         ctx.tied_store_keep = self.tied_store_keep; // tiedstorekeep
         ctx.loop_counter_store = self.loop_counter_store; // loopcounterstore
+        ctx.split_store_keep = self.split_store_keep; // splitstorekeep
         ctx.region_structure = self.region_structure; // regionstructure
         ctx.guard_arm = self.guard_arm; // guardarm
         ctx.loop_cond_hoist = self.loop_cond_hoist; // loopcondhoist

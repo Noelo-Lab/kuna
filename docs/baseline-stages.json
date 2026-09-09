@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    740,
-    740
+    746,
+    746
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -398,6 +398,12 @@
     "data:SETLOCALE RETTYPE #1: NULL locale arg is typed char *",
     "data:SETLOCALE RETTYPE #2: no untyped indirect call",
     "data:SETLOCALE RETTYPE #3: call is the named setlocale",
+    "data:SPLITSTOREKEEP #1: the seven-byte cell the store at src+8 was cut down to is a variable, at the default only",
+    "data:SPLITSTOREKEEP #2: and so is its destination cell at dst+8",
+    "data:SPLITSTOREKEEP #3: the one byte the two middle stores overlap on is its own cell",
+    "data:SPLITSTOREKEEP #4: copy31 is five assignments at the default and one with the mark off, while the non-overlapping control copy32 is four in each pass",
+    "data:SPLITSTOREKEEP #5: splitstorekeep off restores the filed bug, the head store with the middle fifteen bytes gone",
+    "data:SPLITSTOREKEEP #6: the control's word at dst+0x18 is a plain eight-byte local in BOTH passes, so refinement never touched it",
     "data:SWITCHSELECTOR #1: the re-rolled switch dispatches on the message parameter, and only the off pass re-rolls",
     "data:SWITCHSELECTOR #2: the case labels exist only in the pass that re-rolled",
     "data:SWITCHSELECTOR #3: with the option on the cascade survives as the compiler lowered it, over the same parameter",

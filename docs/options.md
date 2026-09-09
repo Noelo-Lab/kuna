@@ -636,6 +636,11 @@ Three tiers:
 | several loop counters lose their increments to one shared register temporary | [`loopcounterstore`](#loopcounterstore) |
 | a stack-resident counter is incremented into a variable that has no storage comment | [`loopcounterstore`](#loopcounterstore) |
 | the loop test compares against a value nothing ever assigns | [`loopcounterstore`](#loopcounterstore) |
+| a stack-to-stack buffer copy is missing the bytes in its middle | [`splitstorekeep`](#splitstorekeep) |
+| a struct or array assignment emits only its first and last word | [`splitstorekeep`](#splitstorekeep) |
+| two of the four MOVs of an inlined memcpy have no statement in the emitted C | [`splitstorekeep`](#splitstorekeep) |
+| a copied buffer looks half-uninitialised although the disassembly writes every byte | [`splitstorekeep`](#splitstorekeep) |
+| the stores that vanish are exactly the ones whose 8-byte ranges overlap | [`splitstorekeep`](#splitstorekeep) |
 | iVar1/uVar2/param_1 ghidra-style names wanted instead of v1/a1 (set ghidra) | [`namestyle`](#namestyle) |
 | v-numbered locals and sub_/dat_/label_ names in the default output | [`namestyle`](#namestyle) |
 | byte-for-byte comparison against upstream ghidra naming | [`namestyle`](#namestyle) |
@@ -2048,6 +2053,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default (DIV-146). The OFF symptom is a `for` loop whose increment slot assigns to a different variable than the one it initialises and tests -- `for (v55 = 0; v55 <= 4; v7 = v55 + 1)` -- which as written is an infinite loop, and where the same register temporary collects the increments of several unrelated counters plus a few call returns. It shows up on frame-resident counters, so on unoptimized or obfuscated code rather than on -O2 register loops. Flip OFF to reproduce upstream Ghidra's propagation exactly, or to bisect whether a counter's increment came from this brake. The `computed from the phi output` clause is what keeps the brake narrow: without it an ordinary call return stored to a frame local is kept too, which re-prints `v134 = _time64(0);` as a temporary plus a store and un-folds `v43 -= 0x2a` into `v43 = v43 - 0x2a`.
 - **Where / provenance:** P3/copy-propagation · kuna · correctness-fix · re-live-loop-counter-stores
 - **Example:** `option loopcounterstore off`
+
+### `splitstorekeep` -- on | off, default `on`
+
+- **Symptoms:** a stack-to-stack buffer copy is missing the bytes in its middle; a struct or array assignment emits only its first and last word; two of the four MOVs of an inlined memcpy have no statement in the emitted C; a copied buffer looks half-uninitialised although the disassembly writes every byte; the stores that vanish are exactly the ones whose 8-byte ranges overlap.
+- **What it does:** Carry the `stack_store` mark from a frame store onto the refinement pieces Heritage::refineWrite cuts it into. A frame store lowers to a CPUI_STORE, and RuleStoreVarnode rewrites it to a direct `stackvn = COPY(value)` whose output it marks `stack_store` -- "originally came from a CPUI_STORE". That mark is the whole reason the store survives: ActionDirectWrite (coreaction.cc:1366) calls a COPY into the frame a DIRECT WRITE only when its output isStackStore(), and ActionDeadCode (coreaction.cc:4146) opens by dropping the addrforce mark of anything that is not a direct write, after which nothing consumes the store and the COPY is swept. Heritage::refinement (heritage.cc:1891) breaks that chain: when two accesses to one stack range overlap, refineWrite (heritage.cc:1807) re-points the store's defining op at a fresh unique and rebuilds its storage from SUBPIECEs, one per partition cell, and splitByRefinement builds those cells with plain Funcdata::newVarnode -- so none of them carries the mark. Every refined piece is a non-direct-write, loses its addrforce and is deleted, while the unrefined stores beside it survive. ON copies the mark onto the cells, which claims nothing new: a piece of a store is a store. OFF is upstream Ghidra's behavior exactly.
+- **When to flip:** On by default (DIV-153). The OFF symptom is a buffer copy that silently loses its middle: the compiler copies a 31-byte array with four 8-byte moves at offsets 0, 8, 15 and 23, so the middle two overlap on byte 15, refinement splits exactly those two, and the emitted C copies bytes 0..7 and 23..30 with the fifteen in between never written -- `v7[7] = v6[7];` followed straight by `v7[0x17] = v6[0x17];`. It is the compiler's standard idiom for any word-copy of a size that is not a multiple of eight, so it shows up on struct assignments and inlined memcpy rather than on loops, and an analyst reads the gap as an uninitialised tail. Inert on any function whose stack accesses all agree on their boundaries, because refinement does not split there at all: 0/675 datatest assertions move and a 40-binary decompile-all sweep changed 6 functions, every one of them by ADDING the copies of an overlapping-store run. Flip OFF to reproduce upstream Ghidra's unmarked pieces, or to bisect whether a newly-appearing frame store came from this mark.
+- **Where / provenance:** P3/heritage-refinement · kuna · correctness-fix · re-31-byte-buffer-copy
+- **Example:** `option splitstorekeep off`
 
 ### `namestyle` -- angr | ghidra, default `angr`
 

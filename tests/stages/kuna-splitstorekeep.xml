@@ -1,0 +1,93 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    repipe-31-byte-buffer-copy: "31-byte buffer copy loses its middle fifteen
+    bytes"
+    docs/re-needs/31-byte-buffer-copy.md
+
+    A crackme copies a 31-byte stack buffer into another with the compiler's
+    standard idiom for a size that is not a multiple of the word: four 8-byte
+    moves at offsets 0, 8, 15 and 23, so the middle two overlap on byte 15.
+    kuna emitted the first and the last and nothing in between, so the C copied
+    bytes 0..7 and 23..30 and left the fifteen between them never written.
+
+    P3 heritage.  RuleStoreVarnode rewrites a frame STORE to a direct
+    `stackvn = COPY(value)` and marks the output `stack_store`.  That mark is
+    load-bearing: ActionDirectWrite calls a COPY into the frame a direct write
+    only when its output isStackStore(), and ActionDeadCode opens by dropping
+    the addrforce mark of anything that is not a direct write, after which
+    nothing consumes the store and the COPY is swept.  Heritage::refinement cuts
+    every access in an overlapping range to a common partition, and
+    Heritage::refineWrite rebuilds the store's storage out of SUBPIECEs whose
+    cells splitByRefinement creates with plain newVarnode and they carry no mark.
+    So exactly the stores that overlap lose their addrforce and are deleted,
+    while the unrefined ones beside them survive.
+
+    Fix: `option splitstorekeep` (default on) copies the mark from the write
+    being refined onto its partition cells.  A piece of a store is a store.
+
+    Source (as(1), x86-64, linked -Ttext=0x100000; fixture
+    decompiler/crates/kuna-analysis/tests/fixtures/splitstorekeep_x86_64.s):
+
+        copy31: sub $0x58,%rsp          ; src at rsp+0, dst at rsp+0x20
+                mov %rsp,%rdi ; call sink    ; src escapes, so nothing is dead
+                mov (%rsp),%rax             ; the witness quartet, verbatim
+                mov 0x8(%rsp),%rdx
+                mov %rax,0x20(%rsp)         ; [0,8)
+                mov %rdx,0x28(%rsp)         ; [8,16)
+                mov 0xf(%rsp),%rax
+                mov 0x17(%rsp),%rdx
+                mov %rax,0x2f(%rsp)         ; [15,23)  ; overlaps [8,16)
+                mov %rdx,0x37(%rsp)         ; [23,31)
+                lea 0x20(%rsp),%rdi ; call sink
+                add $0x58,%rsp ; ret
+        copy32: the same shape at 32 bytes, so the four moves tile [0,32) and
+                none of them overlaps.  The control: refinement never fires and
+                its C is identical in both passes.
+        sink:   ret
+
+    Pass 1 (default): the refined partition is 8 + 7 + 1 + 7 + 8, so copy31 is
+    five assignments and the two seven-byte cells and the one-byte cell they
+    overlap on are variables in their own right (#1 to #3).  Pass 2
+    (splitstorekeep off): #5 reproduces the filed bug so the head store, then
+    the tail store, and nothing for the fifteen bytes between them.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+4883ec584889e7e878000000488b0424
+488b5424084889442420488954242848
+8b44240f488b542417488944242f4889
+542437488d7c2420e8470000004883c4
+58c34883ec584889e7e836000000488b
+0424488b542408488944242048895424
+28488b442410488b5424184889442430
+4889542438488d7c2420e80500000048
+83c458c3c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="copy31"/>
+<symbol space="ram" offset="0x100042" name="copy32"/>
+<symbol space="ram" offset="0x100084" name="sink"/>
+</binaryimage>
+<script>
+  <com>parse line extern void sink(void *);</com>
+  <com>lo fu copy31</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu copy32</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option splitstorekeep off</com>
+  <com>lo fu copy31</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu copy32</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="SPLITSTOREKEEP #1: the seven-byte cell the store at src+8 was cut down to is a variable, at the default only" min="1" max="1">undefined7 v[0-9]+; // stack - 0x50</stringmatch>
+<stringmatch name="SPLITSTOREKEEP #2: and so is its destination cell at dst+8" min="1" max="1">undefined7 v[0-9]+; // stack - 0x30</stringmatch>
+<stringmatch name="SPLITSTOREKEEP #3: the one byte the two middle stores overlap on is its own cell" min="1" max="1">char v[0-9]+; // stack - 0x49</stringmatch>
+<stringmatch name="SPLITSTOREKEEP #4: copy31 is five assignments at the default and one with the mark off, while the non-overlapping control copy32 is four in each pass" min="14" max="14">v[0-9]+ = v[0-9]+;</stringmatch>
+<stringmatch name="SPLITSTOREKEEP #5: splitstorekeep off restores the filed bug, the head store with the middle fifteen bytes gone" min="1" max="1">v[0-9]+\[0\] = v[0-9]+\[0\];</stringmatch>
+<stringmatch name="SPLITSTOREKEEP #6: the control's word at dst+0x18 is a plain eight-byte local in BOTH passes, so refinement never touched it" min="2" max="2">unsigned long v[0-9]+; // stack - 0x20</stringmatch>
+</decompilertest>
