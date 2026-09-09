@@ -902,11 +902,13 @@ its load.
 A worker's load is the expensive half of it — 17 s and 469 MB on an 18 MB PE, next
 to ~70 ms for the average function — so a worker is started once and then serves
 chunk after chunk down a pipe until the plan is empty, and is recycled only when
-the functions it has decompiled reach the ceiling that bounds the per-function
-arena a process never releases. A worker also skips the whole-binary discovery the
-parent has already run (`fast_funcdisc`), because that discovery is most of the
-load; its *product* is what `FlowInfo::queryCall` reads, so the parent hands its
-canonical inventory over instead, replayed through the loader-symbol seam
+the functions it has decompiled reach a ceiling. That ceiling bounds an allocator
+arena rather than a leak: per-function transients are freed, but a process keeps
+their high-water mark, so only a fresh worker returns to the memory floor. A
+worker also skips the whole-binary discovery the parent has already run
+(`fast_funcdisc`), because that discovery is most of the load; its *product* is
+what `FlowInfo::queryCall` reads, so the parent hands its canonical inventory
+over instead, replayed through the loader-symbol seam
 (`decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::seed_function_inventory)`).
 The seeding is strictly additive — an address this load already resolves, or a name
 it already carries, is left alone — because a name is installed into the scope its
