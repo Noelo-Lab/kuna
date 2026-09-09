@@ -1115,7 +1115,18 @@ fn apply_one_symbol_scoped(
         .map(|lm| lm.query_by_name(symbol))
         .unwrap_or_default();
     match found.len() {
-        0 => return Err(format!("No symbol named: {symbol}")),
+        // (kuna) A register-resident local is a HighVariable the printer named,
+        // with no Symbol behind it, so the scope query cannot see it -- map a
+        // locked Symbol over its storage instead (`crate::kuna_hightarget`).
+        0 => {
+            let target = crate::kuna_hightarget::resolve_printed_local(fd, symbol)?;
+            let (bind, ct) = match (body, retype) {
+                (Body::Name { newname, .. }, _) => (newname.clone(), target.dtype.clone()),
+                (Body::Type { .. }, Some((ct, newname))) => (newname.clone(), ct),
+                _ => unreachable!("symbol-scoped directive kinds are exhausted above"),
+            };
+            return crate::kuna_hightarget::bind_printed_local(fd, &target, &bind, ct);
+        }
         1 => {}
         n => return Err(format!("More than one symbol named: {symbol} ({n})")),
     }
@@ -1176,4 +1187,16 @@ pub fn unclaimed(directive: &Directive) -> Outcome {
 /// rebuild).
 pub fn carried_symbols(fd: &Funcdata) -> Vec<(String, Rc<Datatype>, Address, uint4)> {
     fd.mapped_symbol_specs()
+}
+
+/// The usepoint-scoped half of the same carry: the register-storage Symbols a
+/// `name`/`type` directive on a printed local maps
+/// (`crate::kuna_hightarget::bind_printed_local`).  `carried_symbols` walks the
+/// stack space and the addr-tied globals, so without this a retyped register
+/// temporary is simply dropped on the second pass and the directive reports
+/// `applied` over unchanged output.
+pub fn carried_usepoint_symbols(
+    fd: &Funcdata,
+) -> Vec<(String, Rc<Datatype>, Address, uint4, Address, bool)> {
+    fd.usepoint_symbol_specs()
 }

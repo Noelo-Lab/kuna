@@ -300,6 +300,26 @@ decimal unless it carries a `0x`, and `<addr> <size>` is accepted wherever
 `<addr>+<size>` is. A C type may be anything the console's `parse line` accepts,
 including a `typedef` you asserted earlier in the same run.
 
+**`name`/`type` reach the register locals, not just the stack ones.** A local
+kuna prints with a storage comment — `unsigned long v6; // rax` — has no symbol
+behind it; naming one used to answer `No symbol named: v6` no matter how it was
+spelled. It now resolves: the directive maps a locked symbol over that
+variable's storage at its use point, and the second pass types it there.
+
+```bash
+kuna decompile ./graphy sub_1005350 --json --assert 'type v6 unsigned long *'
+#   unsigned long *v6;  // rax        (was: unsigned long v6;)
+```
+
+Two consequences worth knowing before you use it. A bare `type <local> <T>`
+states no name, so the retyped local may come back under a different `vN` — the
+storage comment identifies it across the two passes, and
+`type v6 unsigned long *vmtop` pins a name outright. And a local the decompiler
+holds in a temporary rather than in a register or on the stack (kuna prints those
+without a storage comment) has no location a symbol can be mapped to; the
+directive is `rejected` with `Not addressable storage` rather than accepted and
+dropped.
+
 **Write the type in C.** The standard scalar keywords — `void`, `char`, `short`,
 `int`, `long`, `float`, `double`, `signed`, `unsigned`, `_Bool`, `wchar_t` — are
 accepted in any legal combination, in return position, in parameter position and

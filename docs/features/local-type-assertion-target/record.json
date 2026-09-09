@@ -1,0 +1,60 @@
+{
+  "slug": "local-type-assertion-target",
+  "need_id": "local-type-assertion-target",
+  "track": "tooling",
+  "scope": "small",
+  "round": 12,
+  "branch": "feat/re-local-type-assertion-target",
+  "summary": "`--assert name`/`type` now reach a REGISTER-resident local on the in-process surface (`kuna decompile --json`, `decompile-all`, `decompile-project`), by mapping an isolated, locked Symbol over the printed local's storage at its use point -- the mapping `type varnode %REG(pc)` already made, keyed by the identifier the printer chose. A run with no symbol-scoped directive is untouched.",
+  "files": [
+    "decompiler/crates/kuna-console/src/kuna_hightarget.rs",
+    "decompiler/crates/kuna-console/src/lib.rs",
+    "decompiler/crates/kuna-console/src/assertions.rs",
+    "decompiler/crates/kuna-console/src/ifacedecomp.rs",
+    "decompiler/crates/kuna-console/src/project.rs",
+    "decompiler/crates/kuna-console/tests/verify_assertplane.rs",
+    "tests/cli/local-type-assertion-target.json",
+    "docs/cli.md",
+    "docs/spec/00-overview.md"
+  ],
+  "decisions": [
+    {
+      "what": "the filed hypothesis is UPHELD, the round-12 refuter's scope is CORRECTED",
+      "detail": "The hypothesis -- 'the assertion resolver only sees backed symbols while emission invents names for register temporaries' -- is exactly right, and the refuter's control table (stack slots and parameters resolve, register temporaries do not) reproduces. What is NOT right is that this is a property of kuna: it is a property of ONE of kuna's two surfaces. On main, `kuna decompile <bin> sub_1005350 --assert 'type v6 unsigned long *'` WITHOUT --json applies the directive and emits `unsigned long *v7; // rax`; the same command WITH --json reports rejected and changes nothing. The console script path and the in-process path run the same `read_symbol`, which is `ScopeLocal::query_by_name` in both, so the resolver is not the difference -- the SCOPE CONTENTS are. The refuter's measurements were all taken through --json, so the table stands as filed; it just describes the in-process surface. That surface is the one every JSON consumer and every whole-binary run uses, so the need is real either way."
+    },
+    {
+      "what": "the usepoint is the mechanism, and mapping without one is invalid C",
+      "detail": "Mapped with an INVALID usepoint -- the whole-scope mapping an ordinary stack local gets -- the entry's `SymbolEntry::inUse` matches every read of the register in the function, more than one high binds it, and the printer emits `unsigned long *v6; // rax` beside a bare `unsigned long v6;` in a body that uses both. Measured on the witness before the usepoint was threaded. The target therefore carries `Varnode::getUsePoint` of the high's name representative, which is the address `Funcdata::linkSymbol` queries the local scope with."
+    },
+    {
+      "what": "the Symbol is left NAMELESS, and that is the second invalid-C avoidance",
+      "detail": "Binding the printed identifier back as a namelocked Symbol reads better -- `type v6 <T>` leaves the variable called v6 -- and is invalid C: the `vN` allocator (`ScopeLocal::resolve_default_name`) renames with a bare `format!(\"v{base}\")` and never consults the scope, so it hands the same name to an unrelated temporary. Measured: `type v5 char *` and `type v7 short` on the witness each produced two declarations of one name. A bare `type` therefore states no name and the retyped local can come back under a different number; `type v6 <T> <newname>` pins one outright."
+    },
+    {
+      "what": "three rejections were added because `applied` has to mean something",
+      "detail": "(1) A `unique`-space or JOIN target: renumbered on every IR rebuild, so the Symbol binds nothing on the second pass and survives as a declared-but-unused local while the caller's variable is unchanged -- measured for `type v2 char[16]` on the witness. (2) A type whose width differs from the storage: a Symbol covers sizeof(type) bytes from the storage address, so `char *` at EAX's address is RAX -- `type v1 char *` on fauxware came back applied with v1 untouched and the neighbouring register retyped. (3) Storage whose NAME REPRESENTATIVE another named high shares: the naming pass has a usepoint-blind arm as well, both highs take the Symbol's name, and the printer declares it twice -- measured for `name v5 zz_v5` on graphy sub_100590d. Each is reported with its own detail rather than accepted and dropped."
+    },
+    {
+      "what": "no option, no counters, no stages XML",
+      "detail": "Tooling track. The fallback only runs when the scope query returns nothing, which only happens when a caller passed a symbol-scoped `--assert`; no run without one reaches any new code, so there is no judgement call to put behind a phases.toml row. No options.rs registration, no catalog counter, no docs/options.md regeneration, no DIV row. The other builders' `counter:catalog`, `counter:div`, `counter:stages-corpus`, `file:phases.toml` and `file:docs/options.md` leases are untouched, as is `kuna-cli/src/disassemble.rs`."
+    }
+  ],
+  "collateral_sweep": {
+    "method": "for every printed local of 9 graphy functions, both `type <v> unsigned long *` and `name <v> zz_<v>` through `kuna decompile --json`, with the emitted C parsed for (a) a name declared twice and (b) an identifier used in the body with no declaration",
+    "functions": 9,
+    "locals": 84,
+    "directive_runs": 168,
+    "duplicate_declarations": 0,
+    "undeclared_identifiers": 0,
+    "note": "the three rejections above were each ADDED in response to a failure this sweep found; the run reported here is the final build"
+  },
+  "acceptance": "PASS -- kuna decompile <graphy> sub_1005350 --assert 'type v6 unsigned long *' --json reports assertions[0].status == applied with no `No symbol named:` on stderr, and the body's rax local becomes `unsigned long *v6`",
+  "gates": {
+    "make test": "PARITY OK, 675/675",
+    "make test-stages": "PARITY OK",
+    "make check-spec": "OK",
+    "kuna catalog --check": "OK",
+    "make test-cli": "114/114 (was 113/113)",
+    "make rust-test": "green"
+  }
+}

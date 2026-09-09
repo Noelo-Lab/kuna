@@ -234,6 +234,7 @@ pub fn decompile_targets(
             {
                 if crate::assertions::apply_symbol_scoped(prog, &mut fd, &name, single_target) {
                     let carried = crate::assertions::carried_symbols(&fd);
+                    let carried_usepoint = crate::assertions::carried_usepoint_symbols(&fd);
                     crate::decompile_step::decompile_one(
                         prog.arch_mut(),
                         &name,
@@ -241,7 +242,7 @@ pub fn decompile_targets(
                         declared,
                         &crate::decompile_step::DecompileSeed {
                             mapped_symbols: &carried,
-                            usepoint_symbols: &[],
+                            usepoint_symbols: &carried_usepoint,
                             dynamic_symbols: &[],
                             pending_proto: seed.pending_proto.as_ref(),
                             flow_overrides: &flow_ovr,

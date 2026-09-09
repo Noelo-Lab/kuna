@@ -2803,7 +2803,20 @@ decomp_command!(
         let dcp = dcp_mut(status)?;
         let sym_list = dcp.read_symbol(&oldname)?;
         if sym_list.is_empty() {
-            return Err(IfaceError::execution(format!("No symbol named: {oldname}")));
+            // (kuna) The local scope backs the stack slots and the parameters
+            // only; a register-resident local exists solely as the HighVariable
+            // the printer named (`v6 // rax`), so fall back to mapping a Symbol
+            // over that high's storage at its use point
+            // (`crate::kuna_hightarget`).
+            let fd = dcp
+                .fd
+                .as_mut()
+                .ok_or_else(|| IfaceError::execution("No function selected"))?;
+            let target = crate::kuna_hightarget::resolve_printed_local(fd, &oldname)
+                .map_err(IfaceError::execution)?;
+            let ct = target.dtype.clone();
+            return crate::kuna_hightarget::bind_printed_local(fd, &target, &newname, ct)
+                .map_err(IfaceError::execution);
         }
         if sym_list.len() > 1 {
             return Err(IfaceError::execution(format!("More than one symbol named: {oldname}")));
@@ -2874,7 +2887,16 @@ decomp_command!(
         let dcp = dcp_mut(status)?;
         let sym_list = dcp.read_symbol(&name)?;
         if sym_list.is_empty() {
-            return Err(IfaceError::execution(format!("No symbol named: {name}")));
+            // (kuna) See `IfcRename` above: a register-resident local has no
+            // Symbol to retype, so map a locked one over its storage instead.
+            let fd = dcp
+                .fd
+                .as_mut()
+                .ok_or_else(|| IfaceError::execution("No function selected"))?;
+            let target = crate::kuna_hightarget::resolve_printed_local(fd, &name)
+                .map_err(IfaceError::execution)?;
+            return crate::kuna_hightarget::bind_printed_local(fd, &target, &newname, ct)
+                .map_err(IfaceError::execution);
         }
         if sym_list.len() > 1 {
             return Err(IfaceError::execution(format!("More than one symbol named : {name}")));

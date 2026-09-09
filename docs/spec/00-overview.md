@@ -1035,6 +1035,48 @@ script surface (`decompiler/crates/kuna-cli/src/decompile.rs (build_script)`)
 emits the same facts at the same three slots, with the same conditional second
 `decompile`.
 
+(kuna) **A symbol-scoped directive reaches the register locals too, by mapping a
+Symbol over their storage.** `name`/`type` resolve their target through
+`ScopeLocal::query_by_name`, which sees only the locals a `Symbol` backs: the
+stack slots and the parameters. Every register-resident local kuna prints
+(`v6 // rax`) is a HighVariable the naming pass named directly, with nothing in
+the scope behind it, so the plane could not name the majority of a function's
+variables — while `kuna decompile --help` taught `type v2 char[16]` on exactly
+such a name. When the scope answers nothing,
+`decompiler/crates/kuna-console/src/kuna_hightarget.rs` looks the printed
+identifier up among the HighVariables, takes the name representative's storage
+and `Varnode::getUsePoint`, and maps an isolated, locked Symbol there — the
+mapping `type varnode %RAX(pc) <type>` already made, keyed by the identifier the
+printer chose instead of by a hand-written varnode specifier. `linkSymbol`'s
+`query_container_for_link(addr, usepoint)` then binds it on the second pass, and
+`assertions::carried_usepoint_symbols` carries it across the in-process surface's
+IR rebuild.
+
+Three properties of that mapping are load-bearing, each measured on
+`sub_1005350` of the `graphy` VM:
+
+* **The usepoint is not decoration.** Mapped with an invalid usepoint — the
+  whole-scope mapping an ordinary stack local gets — the entry matches every read
+  of the register in the function, more than one high binds it, and the printer
+  declares the storage twice (`unsigned long *v6; // rax` beside a bare
+  `unsigned long v6;`) in a body that uses both. That is invalid C, so the target
+  carries the representative's own use point.
+* **The Symbol is left for the naming pass to number.** Binding the printed
+  identifier back as a namelocked Symbol keeps the caller's name on the variable,
+  and is also invalid C: the `vN` allocator does not consult the scope, so it
+  hands the same `v5` to an unrelated temporary and the body declares `v5` twice.
+  A bare `type v6 <T>` therefore states no name, and the retyped local can come
+  back under a different number; its storage comment is what identifies it across
+  the two passes, and `type v6 <T> <newname>` pins a name outright.
+* **Only addressable storage is a target.** A `unique`-space temporary is
+  renumbered on every IR rebuild and a `join` is a synthetic register pair, so a
+  Symbol mapped over one binds nothing on the second pass and survives as a
+  declared-but-unused local while the variable the caller aimed at is unchanged.
+  Reporting that as `applied` is the failure this plane exists to end, so such a
+  target is rejected with `Not addressable storage`. Naming a decompiler
+  temporary durably needs the dynamic-hash channel
+  (`Funcdata::seed_dynamic_recommendations`), which this does not use.
+
 (kuna) **A `prototype` directive binds to `<func>`, whatever name its declaration
 carries.** The operand says which function the signature describes; the
 declaration supplies the return type, the parameter types and the parameter
