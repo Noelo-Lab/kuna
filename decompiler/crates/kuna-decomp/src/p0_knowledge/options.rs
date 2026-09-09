@@ -275,6 +275,10 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // (kuna) DIV-118: a CALL on a block that ends in a no-return halt does not
     // veto the RETURN's output trial in `only_op_use`. Default ON.
     "noreturnretuse",
+    // (kuna) DIV-PENDING: an `INT_XOR`/`INT_SUB` of a value with itself is 0
+    // whatever the value is, so it does not veto that value's input trial in
+    // `only_op_use`. Default ON.
+    "zeroidiomuse",
     "rustabi",
     "condexeplace",
     "sparcstructret",

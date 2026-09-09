@@ -779,6 +779,36 @@ classified:
   `-O2` inlined 64-byte `memcpy`, the four `movaps` stores that fill the local
   buffer are never read back, so `reload` declines them while `spill` turns them
   into four invented leading arguments.
+  The descendant walk follows the value through arbitrary arithmetic, which is
+  right for anything that can carry it and wrong for the one shape that cannot:
+  a self-cancelling operation. `xor esi,esi` is how x86 clears a register, and
+  after heritage it is `INT_XOR(SUBPIECE(rsi,0), SUBPIECE(rsi,0))` — a live
+  descendant of whatever `rsi` last held. Inside a loop that puts a *fake*
+  competing use on every call: the value passed at the bottom of the body
+  reaches the next iteration's clear through the killed-by-call INDIRECT and the
+  loop-head MULTIEQUAL, and from there the call that follows the clear, whose
+  own trial for that register is active. `check_call_double_use` then rejects,
+  both of the bottom call's arguments go inactive, and it renders `f()` while
+  the two instructions before it plainly load its argument registers.
+
+  (kuna) `zeroidiomuse` (default-on,
+  `decompiler/crates/kuna-decomp/src/p4_calls/kuna_zeroidiomuse.rs`) skips such
+  an op entirely — neither a rejection nor a step the walk continues through —
+  when it is an `INT_XOR` or `INT_SUB` whose two operands are the same value.
+  `INT_XOR(v,v)` is `0` whatever `v` is, so nothing downstream of it can observe
+  the value being scored and the use it would veto on does not exist. Sameness
+  has to be judged structurally rather than by Varnode identity: the two
+  operands are still two distinct `SUBPIECE` Varnodes at this point in the
+  schedule, because the common-subexpression elimination that would merge them
+  (and let the constant fold fire) runs after `ActionActiveParam`. The test
+  accepts identical Varnodes, equal constants, or the same pure reshaping op —
+  `COPY`, `SUBPIECE`, `PIECE`, `INT_ZEXT`, `INT_SEXT` — over operands that are
+  themselves the same value, to a depth of two. `INT_AND` and `INT_OR` are
+  deliberately not in the set: `v & v` is `v`, so the value does survive them.
+  The rule is one-directional, promoting no trial by itself and admitting no
+  storage the upstream walk would not have admitted; `off` restores the
+  upstream walk, in which the zeroing idiom is followed like any other
+  arithmetic.
 - **Callee-body evidence** (kuna, `decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleedeadarg.rs`):
   every test above reasons on the *caller's* side of the call, and on that side
   a live argument register at an unprototyped callee is exactly what a real

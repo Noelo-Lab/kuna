@@ -2257,6 +2257,13 @@ impl Funcdata {
                 None => Vec::new(),
             };
             for op in descend {
+                // (kuna) `zeroidiomuse` — an `INT_XOR`/`INT_SUB` of a value with
+                // itself is `0` whatever the value is, so it neither observes the
+                // Varnode nor carries it onward.  See
+                // [`crate::p4_calls::kuna_zeroidiomuse`].
+                if crate::p4_calls::kuna_zeroidiomuse::op_discards_operand(self, op) {
+                    continue;
+                }
                 let o = match self.obank().get(op) {
                     Some(o) => o,
                     None => continue,

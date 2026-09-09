@@ -1,0 +1,72 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna re-argument-recovery-drops-both: a call inside a loop renders with an
+    empty argument list while the two instructions before it plainly load its
+    argument registers, and the very same function recovers arguments fine at a
+    call that is not in that loop.
+
+    Funcdata::onlyOpUse (funcdata_varnode.cc:1851) walks every descendant of the
+    Varnode reaching a CALL in a candidate argument register and rejects the
+    trial when another CALL also consumes it.  The x86 register-clearing idiom
+    puts a fake such consumer on every loop: the value passed at the bottom of
+    the body reaches the next iteration's `xor esi,esi` through the
+    killed-by-call INDIRECT, the loop-head MULTIEQUAL and the SUBPIECE that
+    slices esi out of rsi, and from there the call that follows the clear, whose
+    own trial for that register is active.  INT_XOR(v,v) is 0 whatever v is, so
+    that use cannot observe the value at all.  The operands are still two
+    distinct SUBPIECE Varnodes here, so the sameness test has to be structural.
+
+    The vector is sub_113d9 of WeeperVM Level 1 (challenge
+    67f9bdc38f555589f3530a85), a stripped x86-64 ELF whose per-input-byte
+    watchdog(timers, count) call at 0x11477 renders watchdog(), reduced to one
+    loop and assembled from
+    decompiler/crates/kuna-analysis/tests/fixtures/zeroidiomuse_x86_64.s:
+
+        401068  44 39 e3        CMP   EBX,R12D      ; loop head
+        40106b  7e 20           JLE   0x40108d
+        40106d  31 f6           XOR   ESI,ESI       ; the fake competing use
+        40106f  31 ff           XOR   EDI,EDI
+        401071  e8 8a ff ff ff  CALL  reader        ; its trials are active
+        401076  be 02 00 00 00  MOV   ESI,0x2
+        40107b  bf 00 20 40 00  MOV   EDI,0x402000
+        401080  41 ff c4        INC   R12D
+        401083  e8 88 ff ff ff  CALL  watchdog      ; both trials sink
+        401088  48 85 c0        TEST  RAX,RAX
+        40108b  74 db           JZ    0x401068
+
+    watchdog itself pushes rcx and calls out before its loop, which is what
+    keeps the calleearity family from reconstructing the list from the callee
+    body instead.
+
+    Phase: P4 active input-trial scoring, option zeroidiomuse off|on.  Pass 1
+    (off) pins the bug: watchdog() with no arguments.  Pass 2 (on, the shipped
+    default) pins the recovered pair.  Nothing else in the function moves.
+-->
+<bytechunk space="ram" offset="0x401000">
+89f801f0c366662e0f1f840000000000554889fd31ff5389f351e83100000031d24889c139d37e16488b44d5004889ce48ffc2482b304883fe027ee8eb0231c05a5b5dc366662e0f1f84000000000090b8c9000000c3662e0f1f84000000000041545389fb4531e44439e37e2031f631ffe88affffffbe02000000bf0020400041ffc4e888ffffff4885c074db4489e05b415cc366662e0f1f84000000000090bf03000000e8b6ffffff89c7b83c0000000f05
+</bytechunk>
+<bytechunk space="ram" offset="0x402000">
+00000000000000000000000000000000
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="reader"/>
+<symbol space="ram" offset="0x401010" name="watchdog"/>
+<symbol space="ram" offset="0x401050" name="now"/>
+<symbol space="ram" offset="0x401060" name="feed"/>
+<symbol space="ram" offset="0x402000" name="timers"/>
+</binaryimage>
+<script>
+  <com>option zeroidiomuse off</com>
+  <com>lo fu feed</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option zeroidiomuse on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="ZEROIDIOMUSE #1: off, the watchdog call inside the loop has an empty argument list" min="1" max="1">watchdog\(\)</stringmatch>
+<stringmatch name="ZEROIDIOMUSE #2: on, both loaded registers reach the call as arguments" min="1" max="1">watchdog\(timers,2\)</stringmatch>
+<stringmatch name="ZEROIDIOMUSE #3: the zeroing idiom itself is folded to the constants reader is called with in BOTH passes, so the option moved no other call" min="2" max="2">reader\(0,0\)</stringmatch>
+<stringmatch name="ZEROIDIOMUSE #4: both passes keep the loop counter and its two returns, so only the argument list moved" min="4" max="4">return v[0-9]+;</stringmatch>
+</decompilertest>

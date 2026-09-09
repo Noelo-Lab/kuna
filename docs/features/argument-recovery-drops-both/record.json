@@ -1,0 +1,65 @@
+{
+  "slug": "argument-recovery-drops-both",
+  "need_id": "argument-recovery-drops-both",
+  "track": "quality",
+  "scope": "small",
+  "option": "zeroidiomuse",
+  "default": "on",
+  "div": "DIV-148",
+  "phase": "P4",
+  "module": "decompiler/crates/kuna-decomp/src/p4_calls/kuna_zeroidiomuse.rs",
+  "witness": {
+    "challenge": "67f9bdc38f555589f3530a85",
+    "binary": "WeeperVM--Level_1",
+    "sha256": "8ecacb009c64989b3d269193617a742ee039ffad7e2690ed148f11312751ef03",
+    "caller": "0x113d9",
+    "callee": "0x110ff",
+    "call_site": "0x11477",
+    "before": "if (watchdog()) {",
+    "after": "if (watchdog(0x13050,2)) {"
+  },
+  "decisions": [
+    "The filed hypothesis (callee arity not applied at this call site) is WRONG and the round-12 refuter already said so; arity inference succeeds, the callee alone recovers four parameters. Confirmed by instrumenting the trial machinery: at 0x11477 the RSI and RDI trials come back active=false nouse=false, i.e. realism passed and ancestor_op_use/only_op_use returned false.",
+    "The refuter's redirect (caller-side trial activation, only_op_use) is RIGHT, and the exact gate is check_call_double_use. Dumping the only_op_use descendant walk names the rejecting op: CPUI_CALL @0x11430, reached from the 0x1146f value through INDIRECT@0x11477 -> MULTIEQUAL@0x1141b -> SUBPIECE@0x11422 -> INT_XOR@0x11422 -> PIECE/ZEXT -> the call. The competing use is the next iteration's `xor edi,edi`.",
+    "INT_XOR(v,v) is 0 regardless of v, so that descendant carries nothing and the rejection is unearned. The fix skips such an op in the walk rather than tuning any scoring rule.",
+    "Sameness is structural, not Varnode identity: at ActionActiveParam the two `esi` reads are two distinct SUBPIECE Varnodes (CSE has not run), which is exactly why the constant fold has not fired and the idiom is still live dataflow. A depth-2 walk over COPY/SUBPIECE/PIECE/INT_ZEXT/INT_SEXT is what the shape needs.",
+    "INT_AND and INT_OR are deliberately not in the set: `v & v` is `v`, so those uses really do observe the value.",
+    "Default-ON is required by the acceptance probe, which passes no --option, and is earned: 0/675 datatests and a sweep whose direction is 148 recovered argument positions against 6 given up.",
+    "The 6 given-up positions are not a defect of this change. Making a trial active at call A is exactly what upstream's check_call_double_use consults when scoring call B, so a value two calls share can be exclusively a parameter of only one. Both losing hunks are +/-0 lines and the value stays live at its other use."
+  ],
+  "sweep": {
+    "method": "kuna decompile-all --json in both arms (--option zeroidiomuse off vs default), variable numbering normalized",
+    "binaries": 21,
+    "functions": 5857,
+    "functions_changed": 141,
+    "arg_positions_gained": 148,
+    "arg_positions_lost": 6,
+    "statements_deleted": 0,
+    "corpus": "bc diff dumpkeys find grep gzip kmod lsof m4 mawk ncat netstat patch sed sort ssh-add tar tnftp unzip xz + the vendored fixture"
+  },
+  "speed_off_ms": 156.72,
+  "speed_on_ms": 132.09,
+  "speed_delta_pct": -15.72,
+  "speed_samples": 7,
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": true,
+  "speed_note": "inside the +/-20% single-target noise floor docs/features/returncopysplit/record.json recorded on byte-identical output; not claimed as a speedup",
+  "gates": {
+    "make test": "PARITY OK 675/675",
+    "make test-stages": "PARITY OK 725/725",
+    "make check-spec": "green (strict too)",
+    "make test-cli": "106/106",
+    "kuna catalog --check": "catalog OK"
+  },
+  "tests": {
+    "unit": "decompiler/crates/kuna-decomp/src/p4_calls/kuna_zeroidiomuse/tests.rs (11 cases)",
+    "stage": "tests/stages/ghdec-zeroidiomuse.xml (two-pass: off = watchdog(), default = watchdog(timers,2))",
+    "cli": "tests/cli/argument-recovery-drops-both.json (promoted acceptance, retargeted onto the vendored fixture)"
+  },
+  "promoted_probe": {
+    "retargeted_from": "dataset 67f9bdc38f555589f3530a85 bin/WeeperVM--Level_1 @0x113d9",
+    "retargeted_to": "decompiler/crates/kuna-analysis/tests/fixtures/zeroidiomuse_x86_64 feed",
+    "why": "verify --promote refuses binary_source: dataset (CI has no dataset); the fixture is the witness loop reduced and assembled from a .s in-tree",
+    "verified_on_witness": true
+  }
+}

@@ -1821,7 +1821,10 @@ mod tests {
         // and kuna-calltrampoline / a call whose callee discards the pushed return
         // address is flowed through instead of decoding a junk fall-through at the
         // unreachable return address (repipe r11)
-        assert_eq!(count, 260, "corpus file count drifted");
+        // and ghdec-zeroidiomuse / the x86 register-clearing idiom no longer
+        // vetoes a looped call's input trials (option off = watchdog() with an
+        // empty argument list) (repipe r12)
+        assert_eq!(count, 261, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
