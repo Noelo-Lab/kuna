@@ -1,0 +1,63 @@
+{
+  "need_id": "neopack-payload-requires-external",
+  "track": "loader",
+  "scope": "small",
+  "opportunity": "RE-need neopack-payload-requires-external \u2014 `kuna unpack` exits 1 with 'no UPX PackHeader found' on a NEOLite-packed PE, so no surface of the CLI has a program to work on; the tester recovered the sections by executing the stub's decompressor in Unicorn (crackmes.one 5ab77f5433c5d40ad448c1c1 bin/CryptoME.zip.__x/CryptoME.exe, round 12).",
+  "test_name": "kuna unpack, witness + 169-binary dataset PE sweep",
+  "binary": "decompiler/crates/kuna-analysis/tests/fixtures/neolite_packed_pe_i386.exe",
+  "selector": null,
+  "option": null,
+  "flag": null,
+  "change_kind": "loader-capability",
+  "tier": "analysis",
+  "source_decompiler": "kuna",
+  "default_on": true,
+  "div_row": null,
+  "decisions": [
+    "The refuter's re-scope is PARTLY OVERTURNED. Its diagnosis of the FILE is exact and reproduced: NEOLite, not LZMA; entry 0xf7001 inside .NEOpack; --raw-lzma cannot reach it. Its conclusion \u2014 that recovering the image needs stub emulation and is therefore PROPOSAL-sized \u2014 does not hold. NEOLite compresses each section IN PLACE and leaves the original section table untouched, so every virtual address and virtual size in the packed file still describes the original image and nothing has to be inferred by running anything. The codec was read out of the stub (LZX-derived; the tables at 0x4f7096/0x4f70bb/0x4f70e0 are DEFLATE's length base/extra and LZX's 58 position-slot extras) and a reference decoder written in Python decoded .text, .rdata and .data correctly on the first run, with the recovered OEP landing on an MSVC SEH prologue. That measurement, not an argument, is what moved this out of proposal scope.",
+    "The refuter's OTHER finding is upheld and acted on: the acceptance as filed (exit 0 + stdout_is_json, no content clause) is satisfiable by a one-line 'not packed, rc 0', and the naive route to it would have flipped the rc-1 clause of every sibling unpack probe. Both hazards are closed by construction rather than by care. Recognition is a POSITIVE test \u2014 a .NEOpack section that OWNS the entry point \u2014 asked BEFORE upx::unpack, so the UPX arm is not reached differently and its message on a file that is not packed is byte-identical. And the promoted probe carries five content clauses (packer, entry_hex, count, unpacked_size, import_directory), so an exit 0 that recovered nothing fails it.",
+    "NO new option, no phases.toml/options.rs/catalog/DIV/docs/options.md edits. A new subcommand format cannot change emitted C for any input \u2014 kuna unpack writes a separate artifact and nothing on the load path unpacks implicitly \u2014 so the docs/agents.md 'ships behind a named option' rule does not reach it, the same shape the existing UPX arm has. It is also what the leases allowed: counter:catalog, counter:div, file:phases.toml and file:docs/options.md were held by the rax-preserving-stack-probe builder.",
+    "No tests/stages/ XML testcase: the datatest path is LoadImageXml over <bytechunk> and never constructs a PE object loader, so a packed-PE rebuild is unreachable from it. Gated on nine cargo tests in the owning crate plus the promoted CLI probe (the deviation relocobjects/cortexmvectors/arm-inventory-omits-41/function-inventory-omits-two all recorded).",
+    "Three things are restored beyond the decompressed bytes, each on evidence rather than convention. The entry point is the operand of the stub's own 'push OEP; ret' hand-over, accepted only when it resolves into a non-stub section. The import data directory is re-pointed at the program's descriptor array found by walking the RECOVERED image (validated: zero TimeDateStamp/ForwarderChain, a Name RVA spelling a printable *.dll, a mapped FirstThunk, a zero terminator) \u2014 the packed file's own directory points at the stub's two-entry decoy. And CNT_CODE|MEM_EXECUTE|MEM_READ is restored on the section the recovered entry lands in, and on no other: NEOLite flags all six sections INITIALIZED_DATA|READ|WRITE, which docs/cli.md already records as the reason decompile-all answered count: 0 on this exact file.",
+    "Completeness of a Huffman code table is load-bearing, not hygiene. NEOLite leaves some sections uncompressed (.rsrc here: 82,944 bytes of intact resource directory), and the ONLY thing separating those bytes from a stream is that their first block header does not build a complete canonical code. Huffman::build therefore refuses both over- and under-subscribed tables exactly, and a section that fails is carried through verbatim and reported \"compressed\": false.",
+    "Only PE32 x86 is rebuilt. One NEOLite image exists to check against, and a PE32+ layout would be rebuilt from offsets nothing has verified, so it is declined by name. The parse reads the entry point and section table BEFORE the optional-header magic (both live at magic-independent offsets) so that such an image is still RECOGNIZED and gets 'unsupported NEOLite image: ...' rather than the misleading 'not packed'."
+  ],
+  "acceptance": {
+    "probe_id": "p-c9020a5d7fe1",
+    "acceptance_id": "a-74d47ac7b3b6",
+    "before": "FAIL (rc 1, 'no UPX PackHeader found')",
+    "after": "PASS",
+    "verify": "scripts.repipe.verify --need neopack-payload-requires-external --json -> pass 1 / fail 0 / regressed 0, transition closed"
+  },
+  "promoted_probe": {
+    "path": "tests/cli/neopack-payload-requires-external.json",
+    "retargeted_from": "dataset challenges/5ab77f5433c5d40ad448c1c1/bin/CryptoME.zip.__x/CryptoME.exe (139776 bytes)",
+    "retargeted_to": "decompiler/crates/kuna-analysis/tests/fixtures/neolite_packed_pe_i386.exe (3584 bytes, sha256 18903a09ce759dd33e8ddcc5ec5b11ebf0420ec080b37a01279667fc48e94725)",
+    "why": "verify --promote refuses a dataset target and the witness is a third-party crackme. No NEOLite compressor is obtainable, so the .py sidecar carries a REFERENCE ENCODER for the format and builds the fixture: a verbatim block, an aligned-offset block, extended lengths through the length tree, a repeated-offset (R0) match, a zero tail encoded as matches, a stored plaintext section, and a two-DLL import array. The acceptance's own clauses were tightened from {exit 0, is_json} to five content clauses, because the filed pair could not tell a decode from an empty success.",
+    "verified_on_witness": true
+  },
+  "witness": {
+    "binary": "crackmes.one 5ab77f5433c5d40ad448c1c1 bin/CryptoME.zip.__x/CryptoME.exe",
+    "sha256": "bcfe3d24b0b7453c65476eb11778224b69f47efb7555db4d2240d32b966cf8bd",
+    "before": "kuna unpack -> rc 1, 'no UPX PackHeader found'; kuna functions -> 64 entries, all imports",
+    "after": "kuna unpack -> rc 0, 3 sections decoded, 139,776 -> 447,488 bytes, entry 0xf7001 -> 0x365a, imports 0xf7fac -> 0x12bd4; kuna functions on the result -> 387 entries with import names; the recovered entry decompiles to the MSVC CRT startup (GetVersion, __security_init_cookie chain)",
+    "sections": ".text 36,352 -> 61,440; .rdata 8,192 -> 16,384; .data 4,096 -> 278,528; .rsrc 82,944 stored"
+  },
+  "sweep": {
+    "corpus": "169 MZ-headed images in the RE dataset",
+    "method": "kuna unpack -o /tmp/... --json on every one, outcome classified",
+    "neolite": 1,
+    "upx": 2,
+    "unchanged_no_pack_header_message": 162,
+    "other_rc1": 4,
+    "note": "exactly one image in the dataset carries a .NEOpack section -- the witness -- so the new arm is structurally inert on the other 168, and every non-NEOLite outcome is the one the UPX arm already produced. tests/cli's four sibling unpack probes (unpack-proceed-without-upx, unpack-upx-packed-executable, upx-lzma-compression-blocks, headerless-lzma-payload-unpacked) all still pass, which is the direct check on the hazard the refuter named."
+  },
+  "gates": {
+    "make test": "675/675 PARITY OK",
+    "make test-stages": "725/725 PARITY OK",
+    "make check-spec": "OK",
+    "make test-cli": "111/111",
+    "kuna catalog --check": "catalog OK",
+    "make rust-test": "green (382 test-result blocks ok, 0 failed)"
+  }
+}
