@@ -61,6 +61,7 @@
 
 use std::path::PathBuf;
 
+use kuna_analysis::listing::Listing;
 use kuna_console::engine::bootstrap_from_object;
 use kuna_console::ifacedecomp::{execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE};
 use kuna_console::ifaceterm::ConsoleCommands;
@@ -175,6 +176,90 @@ fn aif_recovers_function_reachable_only_via_data_path() {
     assert!(
         body.contains("return"),
         "expected a C function body (with a return) for {HIDDEN_FN}, got:\n{body}"
+    );
+}
+
+/// The fingerprint histogram AIF gates every candidate on is built from the
+/// Listing's mnemonic text, and a `--mode fast` load captures none: the walk skips
+/// the disassembly render when no text consumer will run, so the fingerprint
+/// re-decodes each function's first two instructions through its own `GapDecoder`
+/// instead. This gate holds that substitution to its claim end-to-end with a real
+/// SLEIGH decoder: the entry set AIF accepts off a text-free Listing must equal the
+/// one it accepts off a text-carrying Listing over the same seeds.
+///
+/// The re-decode is not assumption-free — `Sleigh::one_instruction` commits
+/// `globalset` context writes, so on an architecture that globalsets a decode mode
+/// (ARM `TMode`, MIPS `ISA_MODE`) a later decode can change the mode an address
+/// decodes in, and the fingerprint's length-agreement guard declines rather than
+/// mixing two instructions. This fixture is x86-64, which has no decode mode: what
+/// it proves is that the substitution is exact where the re-decode agrees, and that
+/// the guard rejects nothing it should not.
+#[test]
+fn a_text_free_listing_fingerprints_exactly_like_a_text_carrying_one() {
+    let bin = fixture();
+    let path = bin.to_str().unwrap().to_string();
+    let root = repo_root();
+    let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
+    let prog = match bootstrap_from_object(&path, "", &spec_roots) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("verify_aif: skipping (bootstrap failed, `make specs`): {}", e.explain());
+            return; // specs-less skip
+        }
+    };
+
+    let bytes = std::fs::read(&bin).expect("read fixture bytes");
+    let file = object::File::parse(&*bytes).expect("parse fixture ELF");
+    let image = kuna_analysis::loadimage_object::ObjectLoadImage::from_bytes(&path, &bytes)
+        .expect("open loadimage");
+    let arch = prog.arch();
+    let translate = arch.translate();
+    let seeds = kuna_analysis::entry::collect_entries(&file, &bytes);
+    let code_space =
+        std::rc::Rc::clone(arch.manage().get_default_code_space().expect("code space"));
+
+    let run = |want_assembly: bool| {
+        let listing = Listing::build_with_meta(
+            &file,
+            &image,
+            arch,
+            translate,
+            &seeds,
+            &seeds,
+            &[],
+            want_assembly,
+        );
+        let count = listing.function_count();
+        let exec = listing.exec_ranges().to_vec();
+        let entries = kuna_analysis::aif::run_aif(
+            &listing,
+            translate,
+            std::rc::Rc::clone(&code_space),
+            &exec,
+            false,
+            false,
+        );
+        (count, entries)
+    };
+
+    let (with_text, texted_entries) = run(true);
+    let (without_text, textless_entries) = run(false);
+
+    assert_eq!(with_text, without_text, "the walk itself must not depend on text capture");
+    assert!(
+        with_text >= 20,
+        "the fixture must clear MINIMUM_FUNCTION_COUNT or the comparison is vacuous \
+         (got {with_text} discovered functions)"
+    );
+    assert!(
+        !texted_entries.is_empty(),
+        "AIF must accept the indirect-only function off the text-carrying Listing, \
+         or the comparison is vacuous"
+    );
+    assert_eq!(
+        texted_entries, textless_entries,
+        "the lazy re-decode must reproduce the text-carrying fingerprint exactly: \
+         AIF accepted {texted_entries:?} with text and {textless_entries:?} without"
     );
 }
 
