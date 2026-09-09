@@ -180,7 +180,12 @@ ENABLE_IDA = os.environ.get("REPIPE_ENABLE_IDA", "1") not in ("0", "false", "no"
 # --- models -----------------------------------------------------------------
 
 TESTER_MODEL = os.environ.get("REPIPE_TESTER_MODEL", "")     # "" -> codex config default
+TESTER_REASONING = os.environ.get("REPIPE_TESTER_REASONING", "")
 BUILDER_MODEL = os.environ.get("REPIPE_BUILDER_MODEL", "opus")
-CAPTAIN_MODEL = os.environ.get("REPIPE_CAPTAIN_MODEL", "opus")
+CAPTAIN_BACKEND = os.environ.get("REPIPE_CAPTAIN_BACKEND", "claude")
+CAPTAIN_MODEL = os.environ.get(
+    "REPIPE_CAPTAIN_MODEL", "gpt-5.6-sol" if CAPTAIN_BACKEND == "codex" else "opus"
+)
+CAPTAIN_REASONING = os.environ.get("REPIPE_CAPTAIN_REASONING", "low")
 
 GH_REPO = os.environ.get("REPIPE_GH_REPO", "Noelo-Lab/kuna")
