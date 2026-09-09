@@ -242,6 +242,7 @@ fn f4_stringmanage_roundtrip_and_20byte_break() {
         StringData {
             is_truncated: true,
             byte_data: payload.clone(),
+            char_size: 0,
         },
     );
 

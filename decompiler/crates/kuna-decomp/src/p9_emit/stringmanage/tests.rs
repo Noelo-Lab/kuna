@@ -268,6 +268,7 @@ fn encode_decode_roundtrip() {
         StringData {
             is_truncated: false,
             byte_data: b"hello world\0".to_vec(),
+            char_size: 0,
         },
     );
     let a2 = Address::new(ram.clone(), 0x2000);
@@ -276,6 +277,7 @@ fn encode_decode_roundtrip() {
         StringData {
             is_truncated: true,
             byte_data: (0u8..25).collect(),
+            char_size: 0,
         },
     );
 
@@ -430,6 +432,35 @@ fn get_string_data_caches_second_lookup() {
         .get_string_data(&addr, &ct, &mut empty_loader, &mut is_trunc)
         .to_vec();
     assert_eq!(second, first);
+}
+
+#[test]
+fn cache_classification_is_scoped_to_character_width() {
+    let mgr = build_manager();
+    let ram = mgr.get_space_by_name("ram").unwrap().clone();
+    let addr = Address::new(ram, 0x6800);
+    let bytes = b"B\0M\0\0\0".to_vec();
+
+    for widths in [[1, 2], [2, 1]] {
+        let mut sm = StringManagerUnicode::new(2048);
+        let mut loader = MockLoad {
+            base: 0x6800,
+            bytes: bytes.clone(),
+            mapped_len: 64,
+        };
+        let mut is_trunc = false;
+        let first = sm
+            .get_string_data(&addr, &chartype(widths[0]), &mut loader, &mut is_trunc)
+            .to_vec();
+        let second = sm
+            .get_string_data(&addr, &chartype(widths[1]), &mut loader, &mut is_trunc)
+            .to_vec();
+
+        let expected_first: &[u8] = if widths[0] == 1 { b"B\0" } else { b"BM\0" };
+        let expected_second: &[u8] = if widths[1] == 1 { b"B\0" } else { b"BM\0" };
+        assert_eq!(&first[..expected_first.len()], expected_first);
+        assert_eq!(&second[..expected_second.len()], expected_second);
+    }
 }
 
 #[test]

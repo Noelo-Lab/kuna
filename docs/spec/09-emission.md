@@ -712,7 +712,9 @@ character-width-aligned NUL (no terminator within budget, or unreadable
 memory ⇒ not a string), validates the whole buffer as UTF-8/UTF-16/UTF-32 by
 element width (any invalid codepoint or unpaired surrogate rejects the entire
 literal), re-encodes to UTF-8, and caches the result — including negative
-results — keyed by address (`stringmanage.rs
+results — keyed by address and character width, so an address classified as an
+ASCII string cannot supply the cached result for a later UTF-16 use (or vice
+versa), regardless of function-decompilation order (`stringmanage.rs
 (StringManagerUnicode::get_string_data)`). Rendering escapes per codepoint:
 `printlanguage.rs (unicode_needs_escape)` classifies control characters,
 separators, bidi markers, surrogates and private-use ranges as escape-worthy,

@@ -69,6 +69,9 @@ pub struct StringData {
     pub is_truncated: bool,
     /// UTF-8 encoded string data (C++ `byteData`, a `vector<uint1>`).
     pub byte_data: Vec<uint1>,
+    /// Character width used to classify load-image data at this address.
+    /// Zero denotes data decoded from the width-agnostic legacy format.
+    pub char_size: int4,
 }
 
 /// Storage for decoding and storing strings associated with an address
@@ -251,6 +254,7 @@ impl StringManager {
         let hash = StringManager::calc_internal_hash(addr, buf, size);
         let const_addr = manager.get_constant(hash);
         let mut data = StringData::default();
+        data.char_size = charsize;
         // assignStringData borrows `self` immutably while mutating `data`; build
         // the StringData detached, then insert it (one `stringMap[constAddr]`
         // slot, matching the C++ which mutates the single map entry in place).
@@ -618,7 +622,13 @@ impl StringManagerUnicode {
         loader: &mut dyn LoadImage,
         is_trunc: &mut bool,
     ) -> &[uint1] {
-        if self.base.string_map.contains_key(addr) {
+        let charsize = char_type.get_size();
+        if self
+            .base
+            .string_map
+            .get(addr)
+            .is_some_and(|data| data.char_size == 0 || data.char_size == charsize)
+        {
             let d = &self.base.string_map[addr];
             *is_trunc = d.is_truncated;
             return &self.base.string_map[addr].byte_data;
@@ -627,7 +637,9 @@ impl StringManagerUnicode {
         // Allocate the map entry (initially empty).
         {
             let entry = self.base.string_map.entry(addr.clone()).or_default();
+            entry.byte_data.clear();
             entry.is_truncated = false;
+            entry.char_size = charsize;
         }
         *is_trunc = false;
 
@@ -637,8 +649,6 @@ impl StringManagerUnicode {
         }
 
         let mut cur_buffer_size: int4 = 0;
-        let charsize = char_type.get_size();
-
         // A non-closure transcription of the C++ do/while: the `'fill` block
         // mirrors the `try` body, returning the load_fill Result so the
         // DataUnavail catch is handled below.
