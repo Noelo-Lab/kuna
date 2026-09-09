@@ -2221,6 +2221,24 @@ per-function instruction worklist over branch and fall-through successors, bound
 by the executable ranges and monotonic visit sets. Indirect targets are recorded
 with their computed/indirect predicates but contribute no static successor.
 
+(kuna) The seed set carries one more source, under the same `funcstart_patterns`
+gate as the prologue starts: **the entries the load-time passes have already
+committed**, handed down from `engine.rs (commit_pending_analysis)` rather than
+recomputed. `listing_seeds` rebuilds its roots from the object, which is exactly
+the §1.5 oracle union — so an entry that only a separately gated standalone pass
+knows about was invisible to the walk. `armlibcmain`'s non-PIE ARM `main` is the
+case that matters, because on such an image it is the *only* address that reaches
+the program: nothing else names `main`, and `_start` hands it to
+`__libc_start_main` through a literal pool word rather than a branch, so a walk
+rooted only at `e_entry` stops inside crt1. A stripped ARM executable whose `main`
+called 41 validators therefore reported 17 functions, one of them a 17 KB run-on
+covering all 41, while `kuna xrefs` — which seeds its own descent from the
+*committed* inventory — followed the same call graph and named every one of them.
+The two surfaces disagreeing about what is a function is the defect; the seeds
+are read off the merged output, so a pass whose gate rejected its entries does
+not seed the walk with them either, and they are exec-filtered like every other
+seed, so a junk-word CALL target outside the image stays a non-function.
+
 (kuna) The two worklists must agree about what counts as code, and
 `unmappedentry` (default-on;
 `decompiler/crates/kuna-analysis/src/listing/kuna_unmappedentry.rs
