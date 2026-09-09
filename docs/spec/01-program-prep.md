@@ -2825,10 +2825,13 @@ the `Read` rather than joining it: one instruction makes one reference, carrying
 the strongest claim it supports, which is already the collapse rule the
 whole-binary graph states (§9.7). The cost is that a caller filtering `--kind
 read` for data readers no longer sees the slot, which is the right trade — the
-instruction is a call site, and the slot is where the callee is named. A
-`BRANCHIND` through a slot keeps its `Read`: that shape is the forwarding veneer,
-which the alias class above already reports as the import's other half and the
-graph already reports as `forwardsTo`.
+instruction is a call site, and the slot is where the callee is named. The same
+rule files a `BRANCHIND` directly through a slot as `Jump`, making a forwarding
+veneer a call-graph edge to the import. That edge and `forwardsTo` describe the
+same relation; the alias-class query still excludes the forwarding instruction
+from inbound results, so asking who calls the import does not count its own
+veneer. This intentionally changes the public xref `kind` for PE `FF 25` veneers
+and x86 ELF PLT stubs from `read` to `jump`.
 
 (kuna) An edge also has to survive being resolved to a **node**, and the walk's
 function set is the wrong authority for this one. The walk calls nothing outside
@@ -3035,7 +3038,7 @@ materialises — the `Data` reference the constant scan already files for it, wh
 is what makes the rule format-independent rather than a pattern match on `JMP
 dword ptr [reg*n + imm]`. A base in a *data-space varnode* is deliberately not a
 candidate: `jmp qword ptr [__imp_X]` and an ELF PLT entry encode their slot that
-way, the constant scan files it as a `Read`, and a veneer must not be read as a
+way, the constant scan files it as a `Jump`, and a veneer must not be read as a
 one-entry table of whatever its unrelocated slot happens to hold. From the base
 the entries are read in order through the same read-only dereference literal-pool
 following uses, and each one is admitted only while it is pointer-sized,

@@ -231,6 +231,34 @@ fn an_address_taken_callee_is_still_an_edge() {
     assert_eq!(field(&edge, "kind").as_deref(), Some("data"), "wrong kind: {edge}");
 }
 
+/// `forwardsTo` and the edge list are two views of one recovered veneer
+/// relation. The function row points at its IAT slot, and that exact pair is a
+/// jump edge so reachability can traverse it.
+#[test]
+fn a_forwarding_veneer_is_a_jump_edge_to_its_forwards_to_target() {
+    let Some(stdout) = graph(&[&fixture("pe_noreturn_import.exe")]) else { return };
+    let veneer = 0x140001070u64.to_string();
+    let slot = 0x140005038u64.to_string();
+    let row = rows(&stdout, "functions")
+        .into_iter()
+        .find(|r| field(r, "address").as_deref() == Some(veneer.as_str()))
+        .expect("ExitProcess veneer row");
+    assert_eq!(
+        field(&row, "forwardsTo").as_deref(),
+        Some(slot.as_str()),
+        "wrong forwarding row: {row}"
+    );
+
+    let edge = rows(&stdout, "edges")
+        .into_iter()
+        .find(|e| {
+            field(e, "callerAddress").as_deref() == Some(veneer.as_str())
+                && field(e, "calleeAddress").as_deref() == Some(slot.as_str())
+        })
+        .expect("veneer -> IAT slot edge");
+    assert_eq!(field(&edge, "kind").as_deref(), Some("jump"), "wrong edge: {edge}");
+}
+
 /// `--addr` selects which bodies are rendered, never whether the target policy
 /// applies: a PE import slot named outright is still a labelled row, and the run
 /// says on stderr that it exported no body for it.

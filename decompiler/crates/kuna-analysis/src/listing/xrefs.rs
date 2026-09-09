@@ -1098,14 +1098,13 @@ fn assembly(translate: &dyn Translate, vma: u64, code_space: &Rc<AddrSpace>) -> 
 /// i.e. one `BRANCHIND` whose `in0` is the import slot, and dropping it left
 /// every import veneer in the program referencing nothing at all.
 ///
-/// A slot an indirect **CALL** takes its destination from is filed as a
-/// [`XrefKind::Call`] rather than as a read of the pointer, because that is the
-/// whole of what `CALL qword ptr [__imp_HeapAlloc]` does
-/// ([`is_indirect_call_slot`]). A `BRANCHIND` slot stays a read: that shape is
-/// the forwarding half of an import veneer, which the index already joins to
-/// its slot as one callable ([`XrefIndex::refs_to_unified`]) and the whole-binary
-/// document already reports as `forwardsTo`, so calling it an edge would say the
-/// same thing a third time.
+/// A slot an indirect flow op takes its destination from carries that flow's
+/// kind rather than a read of the pointer. Thus `CALL qword ptr
+/// [__imp_HeapAlloc]` is a [`XrefKind::Call`] ([`is_indirect_call_slot`]), while
+/// a forwarding veneer's `JMP qword ptr [__imp_X]` is a [`XrefKind::Jump`]. The
+/// latter is both the edge consumed by the call graph and the same relation
+/// exposed as `forwardsTo`; [`XrefIndex::refs_to_unified`] still removes it from
+/// inbound alias-class queries so it is not counted as an external caller.
 ///
 /// `fall_through` (`vma + len`) is skipped as a value for the same reason: a
 /// call materializes its own return address, and every architecture spells that
@@ -1163,7 +1162,9 @@ fn data_refs(
                 continue;
             }
             if in_data_space(vn) {
-                let kind = if is_indirect_call_slot(ops, vn) {
+                let kind = if op.opcode == OpCode::CPUI_BRANCHIND {
+                    XrefKind::Jump
+                } else if is_indirect_call_slot(ops, vn) {
                     XrefKind::Call
                 } else {
                     XrefKind::Read
@@ -1383,15 +1384,15 @@ mod tests {
     /// destination is read out of, not a static target, and no Call/Jump edge is
     /// filed for it. This is the whole import-veneer shape — `JMP qword ptr
     /// [__imp_X]` is one `BRANCHIND` on the slot — so skipping it loses the only
-    /// reference the instruction makes. A veneer's forwarding jump stays a read
-    /// of the slot: the index already joins the two into one callable.
+    /// reference the instruction makes. A veneer's forwarding jump is a jump
+    /// edge to the slot; unified inbound queries remove that alias-internal edge.
     #[test]
     fn an_indirect_flow_ops_operand_is_the_slot_it_reads() {
         let (ram, _cst) = spaces();
         // `CALLIND` straight off the slot is not a shape x86 emits, but the
         // walk must not depend on which of the two it gets.
         for (opcode, kind) in
-            [(OpCode::CPUI_BRANCHIND, XrefKind::Read), (OpCode::CPUI_CALLIND, XrefKind::Call)]
+            [(OpCode::CPUI_BRANCHIND, XrefKind::Jump), (OpCode::CPUI_CALLIND, XrefKind::Call)]
         {
             assert_eq!(
                 refs(&ram, &[op(opcode, None, vec![vn(&ram, 0x1030)])]),
@@ -1595,7 +1596,7 @@ mod tests {
         let mk = |from, to, kind| Xref { from, to, kind, instruction: String::new() };
         let edges = [
             mk(0x1102, 0x1030, XrefKind::Call), // a direct call to the veneer
-            mk(0x1030, 0x4008, XrefKind::Read), // the veneer's own jmp [slot]
+            mk(0x1030, 0x4008, XrefKind::Jump), // the veneer's own jmp [slot]
             mk(0x1200, 0x4008, XrefKind::Read), // a call straight through the slot
         ];
         let mut st = State {

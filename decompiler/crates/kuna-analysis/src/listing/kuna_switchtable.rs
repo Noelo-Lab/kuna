@@ -44,7 +44,7 @@
 //! A `ram` *varnode* base is deliberately not a candidate. `jmp dword ptr
 //! [__imp_X]` — a PE import veneer, an ELF PLT entry — encodes its slot as a
 //! direct data-space operand, which the constant scan files as a
-//! [`Read`](super::xrefs::XrefKind::Read) and not a `Data`, so a veneer is never
+//! [`Jump`](super::xrefs::XrefKind::Jump) and not a `Data`, so a veneer is never
 //! read as a one-entry table of whatever its unrelocated slot happens to hold.
 //!
 //! # The shape real compilers emit

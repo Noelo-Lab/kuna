@@ -315,6 +315,27 @@ fn a_slot_reached_only_through_its_veneer_still_finds_its_callers() {
     assert!(doc.contains("\"name\": \"main\""), "call site unattributed:\n{doc}");
 }
 
+/// A forwarding jump is a call-graph edge, not a data read. This is observable
+/// on both object formats that encode an x86 veneer as `FF 25`: PE IAT thunks
+/// and ELF PLT entries. Inbound unified queries above still hide this
+/// alias-internal edge.
+#[test]
+fn forwarding_veneer_edges_are_jumps_on_pe_and_elf() {
+    for (binary, veneer, slot) in [
+        (pe_imports(), "0x140007240", "0x14000d33c"),
+        (aif_gap(), "0x1030", "0x3ff8"),
+    ] {
+        let Some(doc) = xrefs(&[&binary, "--from", veneer, "--json"]) else {
+            return;
+        };
+        assert_eq!(kinds(&doc), vec!["jump"], "{veneer} did not forward:\n{doc}");
+        assert!(
+            doc.contains(&format!("\"to_address_hex\": \"{slot}\"")),
+            "{veneer} did not target {slot}:\n{doc}"
+        );
+    }
+}
+
 /// The `name-based-xrefs-rejects` need: asking for the import by NAME must answer
 /// the same as asking for either of its addresses.
 ///
