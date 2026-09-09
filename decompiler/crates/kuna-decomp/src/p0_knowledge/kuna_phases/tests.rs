@@ -686,6 +686,7 @@ fn option_values_live_value_present_for_62_suppressed_for_101() {
                             | "calleeretpreserves"
                             | "indirectanchor"
                             | "calloverlap"
+                            | "indexaliasguard"
                             | "spillargtrial"
                             | "paramcopyhoist"
                             | "guardarm"
