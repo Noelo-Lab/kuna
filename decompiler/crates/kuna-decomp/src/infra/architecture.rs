@@ -592,6 +592,10 @@ pub struct Architecture {
     /// register too (option `calleeretpreserves`).  See
     /// [`crate::p4_calls::kuna_calleeretpreserves`].
     pub callee_ret_preserves: bool,
+    /// (kuna) Accept a callee that clobbers only scratch registers as
+    /// `calleepreserves` evidence (option `calleescratchbody`).  See
+    /// [`crate::p4_calls::kuna_calleescratchbody`].
+    pub callee_scratch_body: bool,
     /// (kuna) Anchor an op inserted after a call's guard INDIRECT to the call
     /// itself, as upstream `opInsertAfter` does (option `indirectanchor`).  See
     /// [`crate::p3_dataflow::kuna_indirectanchor`].
@@ -1970,6 +1974,7 @@ impl Architecture {
             callee_dead_arg: true,
             callee_preserves: true,
             callee_ret_preserves: true,
+            callee_scratch_body: true,
             indirect_anchor: true,
             input_param_gap: true,
             stack_arg_gap: true,
@@ -2205,6 +2210,7 @@ impl Architecture {
         self.callee_dead_arg = true; // (kuna) default-on (DIV-KUNA_DEADARG_DIV): 0/675 datatests, subtractive only
         self.callee_preserves = true; // (kuna) DIV-124 default-on: a fully decoded, call-free callee's own writes narrow the cspec killedbycall set, so a value that crosses a get-PC thunk survives (0/675 ablation)
         self.callee_ret_preserves = true; // (kuna) DIV-PENDING default-on: a fully decoded callee body that never writes the call's return register also answers for that register, so an MSVC /GS `main` returns the zero it set instead of the cookie check's invented result (0/675 ablation)
+        self.callee_scratch_body = true; // (kuna) DIV-149 default-on: a decoded callee that clobbers only SCRATCH registers still counts as a body for calleepreserves, so the value a caller sets before MSVC's out-of-line stack probe survives it (0/675 ablation)
         self.indirect_anchor = true; // (kuna) DIV-PENDING default-on: an op inserted after a call's guard INDIRECT anchors to the CALL as upstream opInsertAfter does, instead of landing inside the guard run where it hides the return-value trial (0/675 ablation)
         self.stack_arg_gap = true; // (kuna) DIV-140 default-on: at a call site an argument register the caller never wrote ends the argument list when the next slot is on the stack, so a body-less import stops acquiring the caller's own untouched parameter plus a stack leftover as arguments (0/675 ablation)
         self.input_param_gap = true; // (kuna) DIV-114 default-on: an unused argument-register run in the function's OWN input recovery no longer vetoes a later live-in register, so a pointer-table-only callback recovers its full signature instead of reading undefined locals. Byte-identical (0/675) on the datatest corpus; restore upstream's forceInactiveChain veto with `option inputparamgap off`
@@ -2562,6 +2568,12 @@ impl Architecture {
                 let (val, msg) =
                     crate::p4_calls::kuna_calleeretpreserves::OptionCalleeRetPreserves.apply(p1)?;
                 self.callee_ret_preserves = val;
+                Ok(msg)
+            }
+            "calleescratchbody" => {
+                let (val, msg) =
+                    crate::p4_calls::kuna_calleescratchbody::OptionCalleeScratchBody.apply(p1)?;
+                self.callee_scratch_body = val;
                 Ok(msg)
             }
             "indirectanchor" => {
@@ -3520,6 +3532,7 @@ impl Architecture {
         ctx.callee_dead_arg = self.callee_dead_arg; // calleedeadarg
         ctx.callee_preserves = self.callee_preserves; // calleepreserves
         ctx.callee_ret_preserves = self.callee_ret_preserves; // calleeretpreserves
+        ctx.callee_scratch_body = self.callee_scratch_body; // calleescratchbody
         ctx.indirect_anchor = self.indirect_anchor; // indirectanchor
         ctx.input_param_gap = self.input_param_gap; // inputparamgap
         ctx.stack_arg_gap = self.stack_arg_gap; // stackarggap

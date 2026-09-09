@@ -416,6 +416,13 @@ impl CalleeReturnWrites {
         &self.writes
     }
 
+    /// The space indices the walk saw a `STORE` into.  Empty for an incomplete
+    /// summary, and empty for a body that writes no memory at all -- which is
+    /// what every stub, placeholder and wrong-address decode looks like.
+    pub fn store_spaces(&self) -> &[int4] {
+        &self.store_spaces
+    }
+
     /// Did the walk complete? (Diagnostics and tests.)
     pub fn is_complete(&self) -> bool {
         self.complete

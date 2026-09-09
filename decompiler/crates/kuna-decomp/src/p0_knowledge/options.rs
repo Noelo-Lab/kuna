@@ -304,6 +304,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "calleedeadarg",
     "calleepreserves",
     "calleeretpreserves",
+    "calleescratchbody",
     "indirectanchor",
     "inputparamgap",
     "stackarggap",
