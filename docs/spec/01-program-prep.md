@@ -1799,6 +1799,33 @@ signature. PE and Mach-O dispatch to their own oracles (`.pdata`/TLS/entry;
 a wrong entry is a garbage `sub_<addr>`; a missed one is invisible until a caller
 overruns into it (§1.7).
 
+(kuna) **The x86-64 half of oracle 4 reads two encodings, because "PC-relative" is
+a link model and not part of the idiom.** `main` reaches `rdi` as a `lea
+rdi,[rip+disp]` only in a position-independent crt; a non-PIE `_start` hands it
+over as a bare address immediate — `mov edi,imm32`, `mov rdi,imm32` or `movabs
+rdi,imm64` — immediately before the same `__libc_start_main` call. Matching the
+`lea` opcode alone lost `main` outright on such an image, and with it everything
+`main` calls, since nothing else seeds the walk into that subtree: a stripped
+non-PIE executable built without `.eh_frame` has no second path to `main`, and the
+always-on prologue patterns (5) do not match a `push rbp` that is not followed by
+`mov rbp,rsp`. The inventory then stopped at the C runtime and one earlier entry
+ran on through `main`'s bytes. The immediate forms are read only where the
+PC-relative scan finds nothing
+(`decompiler/crates/kuna-analysis/src/analyzers/entry/mod.rs
+(x86_64_immediate_main_target)`), so a PIE image decodes exactly as it did.
+
+A bare immediate is far weaker evidence than a `lea` displacement — one opcode
+byte, and any four bytes read as an address — so a candidate is emitted only when a
+`call` (`e8 <rel32>` or `ff /2`) begins within sixteen bytes of it, when the
+immediate lands inside an executable section, and when it is the **only**
+immediate in the `_start` window that satisfies both. An ambiguous decode is a
+clean miss rather than a guess, the same rule the ARM GOT-offset decode applies to
+its candidates. Measured over 1,919 x86-64 ELF executables and shared objects,
+1,788 carry the `lea` and are untouched by construction; of the 131 that reach the
+immediate scan, 119 were runnable on both builds and two gained `main` — both
+verified as real function prologues, and both correcting an earlier entry that had
+run on through it.
+
 (kuna) **With no section table, the plausible-code oracle is the program header.**
 "Restricted to executable sections" is a filter every oracle above passes through
 (`decompiler/crates/kuna-analysis/src/analyzers/entry/mod.rs

@@ -1,0 +1,96 @@
+{
+  "need_id": "elf-discovery-omits-explicit",
+  "track": "loader",
+  "scope": "small",
+  "opportunity": "RE-need elf-discovery-omits-explicit — `kuna functions` on a stripped non-PIE x86-64 crackme reported 34 entries and omitted `main` at 0x11a9b, which _start names explicitly (crackmes.one 67f9bdc38f555589f3530a85 bin/WeeperVM--Level_1, round 12).",
+  "test_name": "kuna functions inventory, witness + 1,919-binary x86-64 ELF A/B sweep + 43-binary RE-dataset sweep",
+  "binary": "decompiler/crates/kuna-analysis/tests/fixtures/funcstart_patterns_x86_64",
+  "selector": "0x401020",
+  "option": null,
+  "flag": null,
+  "change_kind": "analysis-decode",
+  "tier": "analysis",
+  "source_decompiler": "kuna",
+  "default_on": true,
+  "div_row": null,
+  "decisions": [
+    "The filed hypothesis is UPHELD and the refuter's mechanism is exact to the byte. Oracle 4 (`_start`->`main` libc-start idiom) matched on the three-byte prefix `48 8d 3d` (`lea rdi,[rip+disp32]`) alone. This `_start` hands `main` over as an ABSOLUTE immediate instead — `48 c7 c7 9b 1a 01 00` = `mov rdi,0x11a9b` at 0x10a18, immediately followed by the `ff 15` `__libc_start_main` GOT call. Same idiom, same register, same call, one encoding the matcher did not know. The 64-byte window was NOT the limiter (the instruction is at window index 0x18 of 0x40).",
+    "PC-relative vs absolute is a LINK MODEL, not a different idiom. The fix reads the three non-PIE encodings (`bf imm32`, `48 c7 c7 imm32`, `48 bf imm64`) as a fallback consulted only when the `lea` scan finds nothing, so every PIE image decodes byte-identically to before. Measured: of 1,919 x86-64 ELF64 objects, 1,788 carry the `lea` and are unchanged by construction.",
+    "A bare immediate is far weaker evidence than a `lea` displacement — one opcode byte, and any four bytes read as an address — so three guards were added rather than emitting the first match: a `call` (`e8` or `ff /2`) must begin within 16 bytes, the immediate must land in an executable section, and it must be the ONLY immediate in the window that satisfies both. An ambiguous decode is a clean miss, the rule `arm_main_target_raw` already applies to its GOT offsets. `ff /4` (`jmp r/m`, the tail-call form) is rejected by reading the ModRM extension rather than the `ff` byte.",
+    "NO new option, no phases.toml/catalog/DIV edits. Oracle 4 is an always-on decode of an instruction whose meaning is fixed by the ABI; reading a second encoding of it is a strict correction of a matcher that did not implement its own documented contract, not a judgment call. Same shape as the sibling loader fix arm-inventory-omits-41 (#537). The catalog/DIV/phases.toml counters were also held by another builder this round.",
+    "The refuter's second caution HELD and the change is not purely additive: seeding `main` corrects two run-on bodies. On the witness `sub_112e9` shrinks 2230 -> 1855 bytes (it had swallowed `main` at 0x11a9b) and `_INIT_0` shrinks 716 -> 6 bytes — 0x10af0 is genuinely a 6-byte `endbr64; jmp` thunk and 0x10af6 is a separate `push %r12` function it had been running into. Both are corrections. No entry is lost on any binary in either sweep.",
+    "The loss was bigger than one function, as filed: nothing decoded `main`'s body, so its callees were invisible. `xrefs --to 0x11266` reported count 0 before and count 1 after; the inventory goes 34 -> 41 with six further genuine prologues recovered (0x10af6, 0x10d2e, 0x10e27, 0x10fe7, 0x11266, 0x11a28), each verified as a real function start by disassembly.",
+    "The symptom's second clause — `main` renders with `undefined16` and four spurious parameters even with `entrymainproto` on — is NOT closed here and is not closable by that option: `entrymainproto` is PE-only by design, and its module says so, because on ELF the argument-passing call site lives in libc and is not in the image. That is a separate defect on the prototype surface; the acceptance asks only for the inventory entry and does not depend on it.",
+    "`funcstart_patterns off` was the obvious existing-option candidate and the refuter had already closed it: `decompile-all --option funcstart_patterns on` returns the same 34 functions. Re-confirmed. No shipped option covers this.",
+    "No `tests/stages/` XML testcase: the datatest/stages path uses `LoadImageXml` over `<bytechunk>` and never constructs an `ObjectLoadImage`, so an analysis-tier oracle is unreachable from it. Gated on the cargo suite plus the promoted CLI probe instead (the deviation `relocobjects`/`cortexmvectors`/`arm-inventory-omits-41` recorded)."
+  ],
+  "acceptance": {
+    "probe_id": "p-2bbc8bf1ae41",
+    "acceptance_id": "a-18663b946a0d",
+    "before": "FAIL (34 functions, no functions[*].address == 72347)",
+    "after": "PASS",
+    "verify": "scripts.repipe.verify --need elf-discovery-omits-explicit --json -> pass 1 / fail 0 / unrunnable 0, transition closed"
+  },
+  "promoted_probe": {
+    "path": "tests/cli/elf-discovery-omits-explicit.json",
+    "retargeted_from": "dataset challenges/67f9bdc38f555589f3530a85/bin/WeeperVM--Level_1 (14112 bytes)",
+    "retargeted_to": "decompiler/crates/kuna-analysis/tests/fixtures/funcstart_patterns_x86_64 (14296 bytes, already vendored)",
+    "why": "`verify --promote` refuses a dataset target (CI has no dataset) and the witness is a third-party crackme. The already-vendored fixture is the same shape and carried the same defect: stripped non-PIE x86-64, `_start` at 0x401040 handing `main` over as `mov rdi,0x401020` before `call [rip+d32]`, and `main` reachable from no other oracle. No new binary was added.",
+    "verified_on_witness": true
+  },
+  "witness": {
+    "binary": "crackmes.one 67f9bdc38f555589f3530a85 bin/WeeperVM--Level_1",
+    "functions_before": 34,
+    "functions_after": 41,
+    "main": "0x11a9b, absent before, present after (size 260)",
+    "run_on_bodies_corrected": {
+      "sub_112e9": "2230 -> 1855 bytes",
+      "_INIT_0": "716 -> 6 bytes"
+    },
+    "xrefs_to_0x11266": "count 0 -> count 1",
+    "entries_lost": 0
+  },
+  "sweep": {
+    "corpus_system": {
+      "scanned_x86_64_elf64": 1919,
+      "carry_the_lea_unchanged_by_construction": 1788,
+      "reach_the_immediate_scan": 131,
+      "runnable_on_both_builds": 119,
+      "inventories_changed": 2,
+      "changed": [
+        "/usr/bin/busybox: 2116 -> 2164 functions, main 0x525a1d recovered (endbr64; push rbp)",
+        "decompiler/crates/kuna-analysis/tests/fixtures/funcstart_patterns_x86_64: 8 -> 9, main 0x401020 recovered"
+      ],
+      "entries_lost": 0
+    },
+    "corpus_re_dataset": {
+      "scanned_elf": 43,
+      "inventories_changed": 2,
+      "changed": [
+        "67f9bdc38f555589f3530a85/WeeperVM--Level_1 (the witness): 34 -> 41",
+        "69a1f44218b5d7ee4709351d/howo-not-to-simple-keygen: 1047 -> 1048, main 0x401640 recovered; the entry at 0x40162f had run through it"
+      ],
+      "entries_lost": 0
+    },
+    "every_new_entry_verified_by_disassembly": true
+  },
+  "speed": {
+    "method": "3 runs each of `kuna functions <bin> --json`, before/after binaries built from the same tree",
+    "witness_s": {"before": [0.15, 0.14, 0.15], "after": [0.16, 0.15, 0.16]},
+    "busybox_s": {"before": [1.66, 1.31, 1.83], "after": [1.56, 1.61, 1.69]},
+    "verdict": "no measurable cost; the fallback runs only when the lea scan misses, and the extra work is one 64-byte rescan plus the walk over a genuinely larger call tree"
+  },
+  "gates": {
+    "make test": "PARITY OK, 675/675",
+    "make test-stages": "PARITY OK, 725/725",
+    "make rust-test": "green",
+    "make check-spec": "green",
+    "make test-cli": "109/109",
+    "kuna catalog --check": "catalog OK"
+  },
+  "files": [
+    "decompiler/crates/kuna-analysis/src/analyzers/entry/mod.rs",
+    "docs/spec/01-program-prep.md",
+    "tests/cli/elf-discovery-omits-explicit.json"
+  ]
+}

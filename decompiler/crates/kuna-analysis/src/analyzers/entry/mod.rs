@@ -938,10 +938,17 @@ fn libc_start_main_target(file: &object::File, entry: u64) -> Option<u64> {
     }
 }
 
-/// x86-64 SysV `_start` idiom: `main` is loaded into `rdi` (`lea rdi,[rip+disp]`,
-/// bytes `48 8d 3d <disp32>`) immediately before the `call *__libc_start_main@GOT`.
-/// Scan a small window at `e_entry` for that `lea rdi` and compute
-/// `main = (lea_addr + 7) + sign_extend(disp32)`.
+/// x86-64 SysV `_start` idiom: `main` is loaded into `rdi` immediately before the
+/// `call *__libc_start_main@GOT`. Two encodings carry it, and which one a crt uses
+/// is a link-model choice, not a different idiom:
+///
+/// - **PC-relative** (`lea rdi,[rip+disp]`, `48 8d 3d <disp32>`) — the PIE form,
+///   `main = (lea_addr + 7) + sign_extend(disp32)`.
+/// - **Absolute immediate** (`mov rdi,imm32`/`mov edi,imm32`/`movabs rdi,imm64`)
+///   — the non-PIE form, where `main` *is* the immediate.
+///
+/// The PC-relative scan runs first and is unchanged, so a PIE image decodes exactly
+/// as before; [`x86_64_immediate_main_target`] is consulted only when it misses.
 fn x86_64_main_target(file: &object::File, entry: u64) -> Option<u64> {
     let (sec_addr, data) = section_bytes_containing(file, entry)?;
     let start = (entry - sec_addr) as usize;
@@ -958,7 +965,93 @@ fn x86_64_main_target(file: &object::File, entry: u64) -> Option<u64> {
         }
         i += 1;
     }
-    None
+    x86_64_immediate_main_target(file, window)
+}
+
+/// Non-PIE x86-64 `_start`: `main` reaches `rdi` as a bare address immediate
+/// rather than a `lea` displacement — `mov edi,imm32` (`bf`, glibc's `-no-pie`
+/// crt1), `mov rdi,imm32` (`48 c7 c7`, sign-extended) or `movabs rdi,imm64`
+/// (`48 bf`). Same idiom, same register, same following call; only the encoding
+/// differs, and matching on the `lea` opcode alone loses `main` outright on an
+/// image with no `.eh_frame` to fall back on.
+///
+/// A bare immediate is a far weaker signal than a `lea` displacement (one opcode
+/// byte, and any four bytes read as an address), so a candidate is emitted only
+/// when all three of these hold:
+///
+/// - a `call` follows within [`IMM_CALL_LOOKAHEAD`] bytes (the
+///   `__libc_start_main` call the idiom is defined by),
+/// - the immediate lands inside an executable section, and
+/// - it is the *only* immediate in the window that does — an ambiguous decode is
+///   a clean miss, the same rule [`arm_main_target_raw`] applies to its GOT
+///   offsets.
+fn x86_64_immediate_main_target(file: &object::File, window: &[u8]) -> Option<u64> {
+    let execs = executable_sections(file);
+    let mut hits: Vec<u64> = Vec::new();
+    let mut i = 0usize;
+    while i < window.len() {
+        // (encoded length, main) for each `main`-into-rdi immediate encoding.
+        let hit = if window[i] == 0xbf && i + 5 <= window.len() {
+            // mov edi,imm32 — zero-extended into rdi.
+            Some((5usize, read_i32(&window[i + 1..]) as u32 as u64))
+        } else if window[i] == 0x48
+            && i + 7 <= window.len()
+            && window[i + 1] == 0xc7
+            && window[i + 2] == 0xc7
+        {
+            // mov rdi,imm32 — sign-extended into rdi.
+            Some((7usize, read_i32(&window[i + 3..]) as i64 as u64))
+        } else if window[i] == 0x48 && i + 10 <= window.len() && window[i + 1] == 0xbf {
+            // movabs rdi,imm64.
+            read_u64_opt(&window[i + 2..]).map(|v| (10usize, v))
+        } else {
+            None
+        };
+        if let Some((len, main)) = hit {
+            if main != 0
+                && in_executable_section(&execs, main)
+                && x86_64_call_follows(window, i + len)
+            {
+                hits.push(main);
+            }
+        }
+        i += 1;
+    }
+    hits.sort_unstable();
+    hits.dedup();
+    match hits.as_slice() {
+        [main] => Some(*main),
+        _ => None,
+    }
+}
+
+/// How far past a candidate `main` immediate the `__libc_start_main` call may sit.
+/// In every crt form the call is the very next instruction; the slack absorbs an
+/// `endbr64`/`nop` or a reordered argument setup without admitting an unrelated
+/// call further down `_start`.
+const IMM_CALL_LOOKAHEAD: usize = 16;
+
+/// True if a `call` begins within [`IMM_CALL_LOOKAHEAD`] bytes of `off` —
+/// `e8 <rel32>` (direct) or `ff /2` (indirect, the `call *__libc_start_main@GOT`
+/// form). Byte-level, so it is a necessary condition rather than a decode.
+fn x86_64_call_follows(window: &[u8], off: usize) -> bool {
+    let end = (off + IMM_CALL_LOOKAHEAD).min(window.len());
+    let mut i = off;
+    while i < end {
+        if window[i] == 0xe8 {
+            return true;
+        }
+        // `ff /2` = CALL r/m: the ModRM reg field selects the opcode extension.
+        if window[i] == 0xff {
+            if let Some(&modrm) = window.get(i + 1) {
+                if (modrm >> 3) & 0x7 == 2 {
+                    return true;
+                }
+            }
+        }
+        i += 1;
+    }
+    false
 }
 
 /// AArch64 PIE `_start` idiom: `main` is loaded into `x0` from a GOT slot via the
@@ -2657,6 +2750,74 @@ mod tests {
         let main = libc_start_main_target(&file, file.entry());
         // lea rdi at 0x1178, disp 0x286 → 0x117f + 0x286 = 0x1405 = main.
         assert_eq!(main, Some(0x1405), "libc-start idiom should recover main at 0x1405");
+    }
+
+    /// Non-PIE x86-64: `_start` hands `main` over as `mov rdi,imm32`
+    /// (`48 c7 c7 20 10 40 00`) rather than `lea rdi,[rip+disp]`, and the
+    /// immediate IS `main`. The `lea`-only matcher missed it, so nothing seeded
+    /// the walk into `main` and the entry before it ran on through its bytes.
+    #[test]
+    fn libc_start_main_idiom_absolute_immediate() {
+        let bytes = fixture("funcstart_patterns_x86_64");
+        let file = object::File::parse(bytes.as_slice()).expect("parse funcstart_patterns");
+        assert_eq!(file.entry(), 0x401040, "non-PIE _start (e_entry)");
+        let main = libc_start_main_target(&file, file.entry());
+        assert_eq!(main, Some(0x401020), "absolute-immediate idiom should recover main at 0x401020");
+        assert!(
+            collect_entries(&file, bytes.as_slice()).contains(&0x401020),
+            "the recovered main must reach the entry union"
+        );
+    }
+
+    /// The three guards on the immediate form, each on its own: a candidate with
+    /// no following `call` is not the libc-start idiom; two candidates that both
+    /// pass every test are an ambiguous decode and yield nothing; and the
+    /// `mov edi,imm32` encoding is read like the REX.W one.
+    #[test]
+    fn immediate_main_guards() {
+        let bytes = fixture("funcstart_patterns_x86_64");
+        let file = object::File::parse(bytes.as_slice()).expect("parse funcstart_patterns");
+
+        // mov rdi,0x401020 followed only by nops — no call, so no idiom.
+        let mut w = vec![0x48, 0xc7, 0xc7, 0x20, 0x10, 0x40, 0x00];
+        w.extend(std::iter::repeat(0x90).take(32));
+        assert_eq!(x86_64_immediate_main_target(&file, &w), None);
+
+        // The same load with the indirect `call [rip+d32]` after it.
+        let mut w = vec![0x48, 0xc7, 0xc7, 0x20, 0x10, 0x40, 0x00];
+        w.extend_from_slice(&[0xff, 0x15, 0x00, 0x00, 0x00, 0x00]);
+        assert_eq!(x86_64_immediate_main_target(&file, &w), Some(0x401020));
+
+        // Two distinct exec-section immediates, both call-followed: ambiguous.
+        let mut w = vec![0x48, 0xc7, 0xc7, 0x20, 0x10, 0x40, 0x00];
+        w.extend_from_slice(&[0xe8, 0x00, 0x00, 0x00, 0x00]);
+        w.extend_from_slice(&[0xbf, 0x40, 0x10, 0x40, 0x00]);
+        w.extend_from_slice(&[0xe8, 0x00, 0x00, 0x00, 0x00]);
+        assert_eq!(x86_64_immediate_main_target(&file, &w), None);
+
+        // `mov edi,imm32` alone, with a direct call: the glibc -no-pie form.
+        let w = vec![0xbf, 0x20, 0x10, 0x40, 0x00, 0xe8, 0x00, 0x00, 0x00, 0x00];
+        assert_eq!(x86_64_immediate_main_target(&file, &w), Some(0x401020));
+
+        // An immediate outside every executable section is not a function start.
+        let w = vec![0xbf, 0x00, 0x00, 0x00, 0x00, 0xe8, 0x00, 0x00, 0x00, 0x00];
+        assert_eq!(x86_64_immediate_main_target(&file, &w), None);
+    }
+
+    /// `x86_64_call_follows` accepts both call encodings within the lookahead and
+    /// rejects `ff /4` (`jmp r/m`), which shares the `ff` opcode byte.
+    #[test]
+    fn call_follows_reads_the_modrm_extension() {
+        assert!(x86_64_call_follows(&[0xe8, 0, 0, 0, 0], 0));
+        assert!(x86_64_call_follows(&[0xff, 0x15, 0, 0, 0, 0], 0));
+        assert!(x86_64_call_follows(&[0xff, 0xd0], 0));
+        // ff /4 = jmp r/m64 — the tail-call form, not the idiom's call.
+        assert!(!x86_64_call_follows(&[0xff, 0x25, 0, 0, 0, 0], 0));
+        assert!(!x86_64_call_follows(&[0xff, 0xe0], 0));
+        // Beyond the lookahead window.
+        let mut far = vec![0x90; IMM_CALL_LOOKAHEAD + 1];
+        far.push(0xe8);
+        assert!(!x86_64_call_follows(&far, 0));
     }
 
     // -- Oracle 4 cross-arch: _start -> main idiom (Increment 23) --------------
