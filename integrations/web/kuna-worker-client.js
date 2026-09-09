@@ -39,28 +39,64 @@ export class KunaWorkerClient {
 
   spawn() {
     const generation = ++this.generation;
-    const worker = this.workerFactory(this.workerUrl, { type: 'module' });
+    let worker;
+    try {
+      worker = this.workerFactory(this.workerUrl, { type: 'module' });
+    } catch (error) {
+      throw this.startupError(error?.message);
+    }
     this.worker = worker;
     this.workerSession = null;
+    this.fatalError = null;
+    let starting = true;
     worker.onmessage = ({ data }) => {
       if (generation !== this.generation) return;
       const pending = this.pending.get(data?.id);
       if (!pending) return;
       this.pending.delete(data.id);
-      if (data.ok) pending.resolve(data.result);
+      if (data.ok) {
+        starting = false;
+        pending.resolve(data.result);
+      }
       else pending.reject(new Error(data.error || 'decompiler worker request failed'));
     };
     worker.onerror = (event) => {
       if (generation !== this.generation) return;
-      const message = event?.message || 'decompiler worker failed';
-      this.rejectPending(new Error(message));
+      const error = starting
+        ? this.startupError(event?.message)
+        : new Error(event?.message || 'decompiler worker failed');
+      this.failWorker(error, generation, worker);
+    };
+    worker.onmessageerror = () => {
+      if (generation !== this.generation) return;
+      this.failWorker(
+        new Error('decompiler worker returned an unreadable response'),
+        generation,
+        worker,
+      );
     };
     this.readyPromise = this.request('init', this.initParams);
     this.readyPromise.catch(() => {});
   }
 
+  startupError(detail) {
+    const url = new URL(this.workerUrl);
+    const message = `decompiler worker could not start (${url.pathname}). ` +
+      'A content blocker or browser privacy setting may have blocked it; ' +
+      'allow this site and reload the page.';
+    return new Error(detail ? `${message} Browser error: ${detail}` : message);
+  }
+
+  failWorker(error, generation, worker) {
+    if (generation !== this.generation || worker !== this.worker || this.fatalError) return;
+    this.fatalError = error;
+    worker.terminate();
+    this.rejectPending(error);
+  }
+
   request(method, params = {}, transfer = []) {
     if (this.closed) return Promise.reject(new Error('decompiler worker is closed'));
+    if (this.fatalError) return Promise.reject(this.fatalError);
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
       this.pending.set(id, { resolve, reject });

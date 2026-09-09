@@ -639,14 +639,16 @@ pub(crate) fn run_pool(
     let cursor = AtomicUsize::new(0);
     let completed = AtomicUsize::new(0);
     let retired = AtomicUsize::new(0);
+    let worker_ids = AtomicUsize::new(0);
     let slots: Mutex<Vec<Option<FuncResult>>> = Mutex::new((0..total).map(|_| None).collect());
     let type_blocks: Mutex<Vec<String>> = Mutex::new(Vec::new());
-    let progress = Progress::new(total);
+    let progress = Progress::new(total, workers);
     let start = Instant::now();
 
     std::thread::scope(|scope| {
         for _ in 0..workers {
             scope.spawn(|| {
+                let worker_id = worker_ids.fetch_add(1, Ordering::SeqCst);
                 let mut worker: Option<Worker> = None;
                 // Retiring a worker is where its type block comes from, so every
                 // exit from this loop goes through the same closure.
@@ -678,7 +680,7 @@ pub(crate) fn run_pool(
                         }
                     }
                     let done = completed.fetch_add(indices.len(), Ordering::SeqCst) + indices.len();
-                    progress.report(done, start);
+                    progress.report(worker_id, done, start);
                 }
                 if let Some(w) = worker.take() {
                     retire(w);
@@ -1414,32 +1416,82 @@ pub(crate) fn ack_chunk(idx: usize) {
 /// byte-clean for `--json`).  A 33,000-function export runs for many minutes and
 /// otherwise prints nothing at all until it finishes.
 struct Progress {
-    last: Mutex<Instant>,
+    state: Mutex<ProgressState>,
     total: usize,
 }
 
-impl Progress {
-    fn new(total: usize) -> Self {
-        Self { last: Mutex::new(Instant::now()), total }
+struct ProgressState {
+    last: Instant,
+    warmed: Vec<bool>,
+    warm_count: usize,
+    observed_done: usize,
+    baseline: Option<(usize, Instant)>,
+}
+
+impl ProgressState {
+    fn new(workers: usize, now: Instant) -> Self {
+        Self {
+            last: now,
+            warmed: vec![false; workers],
+            warm_count: 0,
+            observed_done: 0,
+            baseline: None,
+        }
     }
 
-    fn report(&self, done: usize, start: Instant) {
-        {
-            let mut last = self.last.lock().unwrap_or_else(|e| e.into_inner());
-            if last.elapsed() < Duration::from_secs(2) && done < self.total {
-                return;
+    fn observe(
+        &mut self,
+        worker_id: usize,
+        done: usize,
+        now: Instant,
+    ) -> (usize, Option<(usize, f64)>) {
+        self.observed_done = self.observed_done.max(done);
+        if !self.warmed[worker_id] {
+            self.warmed[worker_id] = true;
+            self.warm_count += 1;
+            if self.warm_count == self.warmed.len() {
+                self.baseline = Some((self.observed_done, now));
             }
-            *last = Instant::now();
+            return (self.observed_done, None);
         }
+        let sample = self.baseline.and_then(|(baseline_done, baseline_at)| {
+            self.observed_done
+                .checked_sub(baseline_done)
+                .map(|n| (n, now.duration_since(baseline_at).as_secs_f64()))
+        });
+        (self.observed_done, sample)
+    }
+}
+
+impl Progress {
+    fn new(total: usize, workers: usize) -> Self {
+        Self {
+            state: Mutex::new(ProgressState::new(workers, Instant::now())),
+            total,
+        }
+    }
+
+    fn report(&self, worker_id: usize, done: usize, start: Instant) {
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        let now = Instant::now();
+        let (done, sample) = state.observe(worker_id, done, now);
+        if now.duration_since(state.last) < Duration::from_secs(2) && done < self.total {
+            return;
+        }
+        state.last = now;
         let elapsed = start.elapsed().as_secs_f64();
         let frac = done as f64 / self.total.max(1) as f64;
-        let eta = if done == 0 { 0.0 } else { elapsed / frac - elapsed };
+        let eta = sample
+            .and_then(|(sample_done, sample_seconds)| {
+                progress_eta(self.total, done, sample_done, sample_seconds)
+            })
+            .map(|seconds| format!(", ETA {}", hms(seconds)))
+            .unwrap_or_default();
         eprintln!(
-            "[kuna --jobs] {done}/{} functions ({:.1}%), {} elapsed, ETA {}",
+            "[kuna --jobs] {done}/{} functions ({:.1}%), {} elapsed{eta}",
             self.total,
             frac * 100.0,
-            hms(elapsed),
-            hms(eta)
+            hms(elapsed)
         );
     }
 
@@ -1449,6 +1501,18 @@ impl Progress {
             hms(start.elapsed().as_secs_f64())
         );
     }
+}
+
+fn progress_eta(
+    total: usize,
+    done: usize,
+    sample_done: usize,
+    sample_seconds: f64,
+) -> Option<f64> {
+    if sample_done == 0 || !sample_seconds.is_finite() || sample_seconds <= 0.0 {
+        return None;
+    }
+    Some(total.saturating_sub(done) as f64 * sample_seconds / sample_done as f64)
 }
 
 fn hms(seconds: f64) -> String {
@@ -1531,6 +1595,23 @@ mod tests {
                     && x.line_numbers == y.line_numbers
                     && x.addresses == y.addresses
             })
+    }
+
+    #[test]
+    fn progress_waits_for_every_worker_then_resets_its_rate_baseline() {
+        let start = Instant::now();
+        let mut state = ProgressState::new(3, start);
+
+        assert_eq!(state.observe(0, 10, start + Duration::from_secs(10)).1, None);
+        assert_eq!(state.observe(0, 20, start + Duration::from_secs(12)).1, None);
+        assert_eq!(state.observe(1, 30, start + Duration::from_secs(20)).1, None);
+        assert_eq!(state.observe(0, 40, start + Duration::from_secs(22)).1, None);
+
+        let (done, sample) = state.observe(2, 50, start + Duration::from_secs(40));
+        assert_eq!((done, sample), (50, None));
+        let (done, sample) = state.observe(0, 60, start + Duration::from_secs(42));
+        assert_eq!((done, sample), (60, Some((10, 2.0))));
+        assert_eq!(progress_eta(1000, done, 10, 2.0), Some(188.0));
     }
 
     #[test]

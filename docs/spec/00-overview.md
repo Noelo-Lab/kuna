@@ -937,6 +937,11 @@ it already carries, is left alone — because a name is installed into the scope
 `::` path names, and replacing one buries a name the worker derived correctly.
 `--jobs-full-load` restores the parent's exact load in every worker.
 
+Progress is written to stderr. Its ETA is withheld until each worker has completed
+its first chunk and then uses only the rate measured after that point, so every
+one-time worker load remains in elapsed time without being charged again to each
+remaining function.
+
 A pool is also the first arrangement that can enforce the watchdog for real. The
 in-process deadline above is cooperative, so a function wedged where nothing probes
 it runs straight through; the parent, which is not the stuck process, kills a

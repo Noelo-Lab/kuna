@@ -13,6 +13,155 @@
 use super::*;
 use crate::printlanguage::{parentheses, ReversePolish};
 
+mod stack_pointer_high_leaf {
+    use super::*;
+    use crate::context::ArchContext;
+    use crate::dtype::{type_metatype, Datatype};
+    use crate::funcdata::Funcdata;
+    use kuna_base::address::Address;
+    use kuna_base::error::{KunaError, KunaResult};
+    use kuna_base::space::{
+        addrspace_flags, spacetype, AddrSpace, AddrSpaceManager, ConstantSpace, UniqueSpace,
+    };
+    use kuna_sleigh::globalcontext::ContextInternal;
+    use kuna_sleigh::loadimage::LoadImage;
+    use kuna_sleigh::sleigh::Sleigh;
+    use std::rc::Rc;
+
+    struct DummyImg;
+    impl LoadImage for DummyImg {
+        fn get_file_name(&self) -> &str {
+            "dummy"
+        }
+        fn load_fill(&mut self, _ptr: &mut [u8], _addr: &Address) -> KunaResult<()> {
+            Err(KunaError::data_unavail("dummy"))
+        }
+        fn get_arch_type(&self) -> Vec<u8> {
+            Vec::new()
+        }
+        fn adjust_vma(&mut self, _adjust: i64) {}
+    }
+
+    fn bare_arch() -> crate::architecture::Architecture {
+        crate::architecture::Architecture::new(
+            "t",
+            Sleigh::new(Box::new(DummyImg), Box::new(ContextInternal::new())),
+        )
+    }
+
+    fn build_fd() -> (Funcdata, Rc<AddrSpace>) {
+        let mut manage = AddrSpaceManager::new();
+        manage.insert_space(Rc::new(ConstantSpace::new())).unwrap();
+        manage.insert_space(Rc::new(UniqueSpace::new(1, 0, false))).unwrap();
+        let ram = Rc::new(AddrSpace::new(
+            spacetype::IPTR_PROCESSOR,
+            "ram",
+            false,
+            8,
+            1,
+            2,
+            addrspace_flags::hasphysical,
+            1,
+            1,
+        ));
+        manage.insert_space(Rc::clone(&ram)).unwrap();
+        let register = Rc::new(AddrSpace::new(
+            spacetype::IPTR_PROCESSOR,
+            "register",
+            false,
+            8,
+            1,
+            3,
+            addrspace_flags::hasphysical,
+            1,
+            1,
+        ));
+        manage.insert_space(Rc::clone(&register)).unwrap();
+        let glb = Rc::new(ArchContext::new(manage));
+        let fd =
+            Funcdata::new("f", "f", glb, Address::new(ram, 0x1000), 0x1000, 0x20).unwrap();
+        (fd, register)
+    }
+
+    fn unknown8() -> Rc<Datatype> {
+        Rc::new(Datatype::new(8, type_metatype::TYPE_UNKNOWN))
+    }
+
+    fn merge_highs(fd: &mut Funcdata, first: VarnodeId, rest: &[VarnodeId]) {
+        fd.set_high_level();
+        let first_high = fd.vbank().get(first).unwrap().get_high().unwrap();
+        for &vn in rest {
+            let other = fd.vbank().get(vn).unwrap().get_high().unwrap();
+            let mut writes = Vec::new();
+            fd.with_high_split(|bank, ctx| {
+                bank.merge_internal(first_high, other, false, ctx, &mut |vn, high, group| {
+                    writes.push((vn, high, group));
+                })
+            })
+            .unwrap();
+            for (vn, high, group) in writes {
+                fd.vbank_mut().get_mut(vn).unwrap().set_high(high, group);
+            }
+        }
+    }
+
+    fn render_leaf(fd: &Funcdata, vn: VarnodeId, op: OpId) -> String {
+        let mut print = PrintC::new();
+        print.set_output_stream();
+        print.push_vn_explicit_ir(fd, &bare_arch(), vn, op);
+        print.emit_mut().output_str().to_string()
+    }
+
+    #[test]
+    fn merged_unaffected_input_stack_pointer_canonicalizes_every_member() {
+        let (mut fd, register) = build_fd();
+        let sp = fd.new_varnode(8, &Address::new(Rc::clone(&register), 0), Some(unknown8()));
+        let sp = fd.set_input_varnode(sp).unwrap();
+        {
+            let sp = fd.vbank_mut().get_mut(sp).unwrap();
+            sp.set_spacebase();
+            sp.set_unaffected();
+        }
+        let scratch_register = fd.new_varnode(
+            8,
+            &Address::new(Rc::clone(&register), 0x20),
+            Some(unknown8()),
+        );
+        let scratch_unique = fd.new_unique(8, Some(unknown8()));
+        merge_highs(&mut fd, sp, &[scratch_register, scratch_unique]);
+        let high = fd.vbank().get(sp).unwrap().get_high();
+        assert_eq!(fd.vbank().get(scratch_register).unwrap().get_high(), high);
+        assert_eq!(fd.vbank().get(scratch_unique).unwrap().get_high(), high);
+        let op = fd.new_op(0, Address::new(register, 0x1000));
+
+        for vn in [sp, scratch_register, scratch_unique] {
+            assert_eq!(render_leaf(&fd, vn, op), "Register0000000000000000");
+        }
+    }
+
+    #[test]
+    fn input_spacebase_without_unaffected_flag_does_not_canonicalize_high() {
+        let (mut fd, register) = build_fd();
+        let sp = fd.new_varnode(8, &Address::new(Rc::clone(&register), 0), Some(unknown8()));
+        let sp = fd.set_input_varnode(sp).unwrap();
+        fd.vbank_mut().get_mut(sp).unwrap().set_spacebase();
+        let scratch_unique = fd.new_unique(8, Some(unknown8()));
+        let unique_name = {
+            let v = fd.vbank().get(scratch_unique).unwrap();
+            kuna_storage_location_name(v.get_addr()).unwrap()
+        };
+        merge_highs(&mut fd, sp, &[scratch_unique]);
+        assert_eq!(
+            fd.vbank().get(sp).unwrap().get_high(),
+            fd.vbank().get(scratch_unique).unwrap().get_high()
+        );
+        let op = fd.new_op(0, Address::new(register, 0x1000));
+
+        assert_eq!(render_leaf(&fd, scratch_unique, op), unique_name);
+        assert!(unique_name.starts_with("Unique"));
+    }
+}
+
 fn rpn(tok: &'static OpToken, visited: int4) -> ReversePolish {
     ReversePolish { tok, visited, paren: false, op: None, id: 0, id2: 0 }
 }

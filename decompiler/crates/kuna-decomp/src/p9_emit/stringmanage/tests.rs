@@ -21,6 +21,12 @@ fn chartype(size: int4) -> Datatype {
     Datatype::new(size, type_metatype::TYPE_INT)
 }
 
+fn opaque_chartype(size: int4) -> Datatype {
+    let mut ct = chartype(size);
+    ct.flags |= crate::dtype::flags::opaque_string;
+    ct
+}
+
 /// `write_utf8` into a fresh Vec.
 fn utf8(cp: int4) -> Vec<u8> {
     let mut v = Vec::new();
@@ -248,6 +254,8 @@ fn build_manager() -> AddrSpaceManager {
 fn registry() -> IdRegistry {
     let mut reg = IdRegistry::with_base_ids();
     reg.register_attribute(&ATTRIB_TRUNC);
+    reg.register_attribute(&ATTRIB_STRING_CHARSIZE);
+    reg.register_attribute(&ATTRIB_STRING_OPAQUE);
     for e in [&ELEM_BYTES, &ELEM_STRING, &ELEM_STRINGMANAGE] {
         reg.register_element(e);
     }
@@ -268,6 +276,7 @@ fn encode_decode_roundtrip() {
         StringData {
             is_truncated: false,
             byte_data: b"hello world\0".to_vec(),
+            decode_key: None,
         },
     );
     let a2 = Address::new(ram.clone(), 0x2000);
@@ -276,6 +285,7 @@ fn encode_decode_roundtrip() {
         StringData {
             is_truncated: true,
             byte_data: (0u8..25).collect(),
+            decode_key: None,
         },
     );
 
@@ -430,6 +440,157 @@ fn get_string_data_caches_second_lookup() {
         .get_string_data(&addr, &ct, &mut empty_loader, &mut is_trunc)
         .to_vec();
     assert_eq!(second, first);
+}
+
+#[test]
+fn cache_classification_is_scoped_to_character_width() {
+    let mgr = build_manager();
+    let ram = mgr.get_space_by_name("ram").unwrap().clone();
+    let addr = Address::new(ram, 0x6800);
+    let bytes = b"B\0M\0\0\0".to_vec();
+
+    for widths in [[1, 2, 1], [2, 1, 2]] {
+        let mut sm = StringManagerUnicode::new(2048);
+        let mut loader = MockLoad {
+            base: 0x6800,
+            bytes: bytes.clone(),
+            mapped_len: 64,
+        };
+        let mut is_trunc = false;
+        let first = sm
+            .get_string_data(&addr, &chartype(widths[0]), &mut loader, &mut is_trunc)
+            .to_vec();
+        let second = sm
+            .get_string_data(&addr, &chartype(widths[1]), &mut loader, &mut is_trunc)
+            .to_vec();
+        let third = sm
+            .get_string_data(&addr, &chartype(widths[2]), &mut loader, &mut is_trunc)
+            .to_vec();
+
+        let expected_first: &[u8] = if widths[0] == 1 { b"B\0" } else { b"BM\0" };
+        let expected_second: &[u8] = if widths[1] == 1 { b"B\0" } else { b"BM\0" };
+        let expected_third: &[u8] = if widths[2] == 1 { b"B\0" } else { b"BM\0" };
+        assert_eq!(&first[..expected_first.len()], expected_first);
+        assert_eq!(&second[..expected_second.len()], expected_second);
+        assert_eq!(&third[..expected_third.len()], expected_third);
+    }
+}
+
+#[test]
+fn cache_classification_is_scoped_to_opaque_mode() {
+    let mgr = build_manager();
+    let ram = mgr.get_space_by_name("ram").unwrap().clone();
+    let addr = Address::new(ram, 0x6900);
+
+    for opaque_first in [false, true] {
+        let mut sm = StringManagerUnicode::new(2048);
+        let mut loader = MockLoad {
+            base: 0x6900,
+            bytes: b"hello\0".to_vec(),
+            mapped_len: 64,
+        };
+        let mut is_trunc = false;
+        let normal = chartype(1);
+        let opaque = opaque_chartype(1);
+        let types = if opaque_first { [&opaque, &normal] } else { [&normal, &opaque] };
+        let first = sm.get_string_data(&addr, types[0], &mut loader, &mut is_trunc).to_vec();
+        let second = sm.get_string_data(&addr, types[1], &mut loader, &mut is_trunc).to_vec();
+
+        let normal_result = if opaque_first { &second } else { &first };
+        let opaque_result = if opaque_first { &first } else { &second };
+        assert_eq!(&normal_result[..6], b"hello\0");
+        assert!(opaque_result.is_empty());
+    }
+}
+
+#[test]
+fn negative_result_at_one_width_does_not_poison_another() {
+    let mgr = build_manager();
+    let ram = mgr.get_space_by_name("ram").unwrap().clone();
+    let addr = Address::new(ram, 0x6a00);
+    let mut sm = StringManagerUnicode::new(2048);
+    let mut loader = MockLoad {
+        base: 0x6a00,
+        bytes: vec![0x80, 0, 0, 0],
+        mapped_len: 64,
+    };
+    let mut is_trunc = false;
+
+    assert!(sm.get_string_data(&addr, &chartype(1), &mut loader, &mut is_trunc).is_empty());
+    assert_eq!(
+        &sm.get_string_data(&addr, &chartype(2), &mut loader, &mut is_trunc)[..3],
+        &[0xc2, 0x80, 0]
+    );
+}
+
+#[test]
+fn serialized_classification_keeps_its_identity() {
+    let mgr = build_manager();
+    let ram = mgr.get_space_by_name("ram").unwrap().clone();
+    let addr = Address::new(ram, 0x6b00);
+    let mut sm = StringManagerUnicode::new(2048);
+    let mut loader = MockLoad {
+        base: 0x6b00,
+        bytes: b"B\0M\0\0\0".to_vec(),
+        mapped_len: 64,
+    };
+    let mut is_trunc = false;
+    sm.get_string_data(&addr, &chartype(1), &mut loader, &mut is_trunc);
+
+    let mut buf = Vec::new();
+    {
+        let mut enc = XmlEncode::new(&mut buf);
+        sm.base.encode(&mut enc).unwrap();
+    }
+    let reg = registry();
+    let mut dec = XmlDecode::new(&mgr, &reg);
+    dec.ingest_stream(&buf).unwrap();
+    let mut restored = StringManagerUnicode::new(2048);
+    restored.base.decode(&mut dec).unwrap();
+
+    let mut unavailable = MockLoad { base: 0, bytes: Vec::new(), mapped_len: 0 };
+    assert_eq!(
+        &restored.get_string_data(&addr, &chartype(1), &mut unavailable, &mut is_trunc)[..2],
+        b"B\0"
+    );
+    assert_eq!(
+        &restored.get_string_data(&addr, &chartype(2), &mut loader, &mut is_trunc)[..3],
+        b"BM\0"
+    );
+}
+
+#[test]
+fn legacy_serialized_entry_is_not_a_wildcard_cache_hit() {
+    let mgr = build_manager();
+    let ram = mgr.get_space_by_name("ram").unwrap().clone();
+    let addr = Address::new(ram, 0x6c00);
+    let mut old = StringManager::new(2048);
+    old.string_map.insert(addr.clone(), StringData {
+        is_truncated: false,
+        byte_data: b"wrong\0".to_vec(),
+        decode_key: None,
+    });
+    let mut buf = Vec::new();
+    {
+        let mut enc = XmlEncode::new(&mut buf);
+        old.encode(&mut enc).unwrap();
+    }
+    let reg = registry();
+    let mut dec = XmlDecode::new(&mgr, &reg);
+    dec.ingest_stream(&buf).unwrap();
+    let mut restored = StringManagerUnicode::new(2048);
+    restored.base.decode(&mut dec).unwrap();
+    let mut loader = MockLoad {
+        base: 0x6c00,
+        bytes: b"right\0".to_vec(),
+        mapped_len: 64,
+    };
+    let mut is_trunc = false;
+
+    assert_eq!(
+        &restored.get_string_data(&addr, &chartype(1), &mut loader, &mut is_trunc)[..6],
+        b"right\0"
+    );
 }
 
 #[test]

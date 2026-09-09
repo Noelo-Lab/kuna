@@ -19,8 +19,8 @@ use kuna_base::marshal::{Decoder, IdRegistry, XmlDecode, XmlEncode};
 use kuna_base::types::int4;
 use kuna_decomp::dtype::{type_metatype, Datatype};
 use kuna_decomp::stringmanage::{
-    StringData, StringManager, StringManagerUnicode, ATTRIB_TRUNC, ELEM_BYTES, ELEM_STRING,
-    ELEM_STRINGMANAGE,
+    StringData, StringManager, StringManagerUnicode, ATTRIB_STRING_CHARSIZE,
+    ATTRIB_STRING_OPAQUE, ATTRIB_TRUNC, ELEM_BYTES, ELEM_STRING, ELEM_STRINGMANAGE,
 };
 use kuna_sleigh::loadimage::LoadImage;
 
@@ -220,6 +220,8 @@ fn f3_register_internal_legality_and_constant_keying() {
 fn registry() -> IdRegistry {
     let mut reg = IdRegistry::with_base_ids();
     reg.register_attribute(&ATTRIB_TRUNC);
+    reg.register_attribute(&ATTRIB_STRING_CHARSIZE);
+    reg.register_attribute(&ATTRIB_STRING_OPAQUE);
     for e in [&ELEM_BYTES, &ELEM_STRING, &ELEM_STRINGMANAGE] {
         reg.register_element(e);
     }
@@ -242,6 +244,7 @@ fn f4_stringmanage_roundtrip_and_20byte_break() {
         StringData {
             is_truncated: true,
             byte_data: payload.clone(),
+            decode_key: None,
         },
     );
 

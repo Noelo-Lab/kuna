@@ -32,6 +32,10 @@ Preflight requires: `git`, `gh` (authed, `repo` scope), `codex`, `claude`, `pyth
 `kuna`, compiled `.sla`, the dataset, and `REPIPE_MIN_FREE_GB` free. It also **fails if
 `bwrap` is unavailable** — see §2, containment is not optional by default.
 
+The default captain remains Claude for compatibility. Set `REPIPE_CAPTAIN_BACKEND=codex` to
+run bounded captain ticks with Codex instead; the preflight still requires both binaries
+because builders use Claude and testers use Codex.
+
 Everything is stdlib Python run as `PYTHONPATH=$REPO python3 -m scripts.repipe.<mod>`; there is
 no install step and no third-party dependency, matching `scripts/pipeline/`.
 
@@ -57,6 +61,10 @@ touch .kuna-repipe/ABORT                # hard stop; worktrees and arenas left i
 | `REPIPE_SANDBOX` | `auto` \| `bwrap` \| `none` — `none` is prompt-only containment |
 | `REPIPE_ENABLE_IDA` | let testers reach IDA as a logged last resort (1) |
 | `REPIPE_REFUTE_MODE` | `absence-skip` — do not spend refuters on "the subcommand does not exist" |
+| `REPIPE_TESTER_MODEL` / `REPIPE_TESTER_REASONING` | optional Codex tester model and reasoning effort overrides |
+| `REPIPE_CAPTAIN_BACKEND` | `claude` \| `codex` (default `claude`) |
+| `REPIPE_CAPTAIN_MODEL` / `REPIPE_CAPTAIN_REASONING` | captain model; Codex defaults to `gpt-5.6-sol` / `low` |
+| `REPIPE_CAPTAIN_USD` | Claude-only dollar cap; Codex ticks are bounded by timeout, model, and reasoning effort |
 | `REPIPE_DATASET` | the crackme corpus (`~/github/kuna-re-dataset`) |
 | `KUNA_PIPELINE_STATE_DIR` | live state (`.kuna-repipe/`, gitignored) |
 
@@ -295,7 +303,7 @@ Three layers, cheapest first:
 
 ## 8. The captain
 
-A Claude Code session that performs **one bounded, guarded state transition per tick** and
+A Claude Code or Codex session that performs **one bounded, guarded state transition per tick** and
 exits; `run.sh` re-invokes it. `captain.py` owns three machines (Supervisor / TestTrack /
 BuildTrack), appends every transition to `rounds/<n>/transitions.jsonl`, and **raises and exits
 2 on an illegal one** — the captain cannot talk the machine into skipping a gate.

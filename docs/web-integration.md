@@ -194,6 +194,12 @@ responsive. The client rejects every in-flight RPC with `KunaWorkerCancelledErro
 creates a clean Worker, and keeps the uploaded bytes on the page side solely to restore
 the session for the next request.
 
+If the Worker script is blocked before initialization (for example by a content-blocker
+rule or a browser privacy setting), the client reports that startup failure separately
+with the blocked path and instructions to allow the site and reload. The failed Worker is
+terminated, and later RPCs reject with the same error instead of waiting forever on a
+worker that cannot answer.
+
 **Robust, format-agnostic specs (whatever the CLI supports).** The demo carries
 **no per-format or per-arch logic** — the *engine* detects the format
 (ELF/PE/Mach-O/COFF) and resolves the SLEIGH language for any binary, exactly as

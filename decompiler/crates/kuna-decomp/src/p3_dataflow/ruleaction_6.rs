@@ -2100,6 +2100,66 @@ impl RuleDivOpt {
         RuleDivOpt { group: g.into() }
     }
 
+    fn recover_div3_double(op: OpId, data: &mut Funcdata) -> bool {
+        if code(data, op) != OpCode::CPUI_INT_AND || size(data, out_vn(data, op)) != 8 {
+            return false;
+        }
+        let (masked_vn, mask_vn) = if is_const(data, in_vn(data, op, 1)) {
+            (in_vn(data, op, 0), in_vn(data, op, 1))
+        } else if is_const(data, in_vn(data, op, 0)) {
+            (in_vn(data, op, 1), in_vn(data, op, 0))
+        } else { return false };
+        if offset(data, mask_vn) != u64::MAX - 1 || !is_written(data, masked_vn) {
+            return false;
+        }
+        let sub_op = def_of(data, masked_vn).expect("divopt: masked vn has no def");
+        if code(data, sub_op) != OpCode::CPUI_SUBPIECE
+            || offset(data, in_vn(data, sub_op, 1)) != 8 { return false }
+        let wide_product = in_vn(data, sub_op, 0);
+        if size(data, wide_product) != 16 || !is_written(data, wide_product) { return false }
+        let mult_op = def_of(data, wide_product).expect("divopt: product has no def");
+        if code(data, mult_op) != OpCode::CPUI_INT_MULT { return false }
+        let wide_x = if is_constant_extended(data, in_vn(data, mult_op, 1))
+            == Some([0xaaaa_aaaa_aaaa_aaab, 0]) {
+            in_vn(data, mult_op, 0)
+        } else if is_constant_extended(data, in_vn(data, mult_op, 0))
+            == Some([0xaaaa_aaaa_aaaa_aaab, 0]) {
+            in_vn(data, mult_op, 1)
+        } else { return false };
+        if !is_written(data, wide_x) { return false }
+        let ext_op = def_of(data, wide_x).expect("divopt: wide multiplicand has no def");
+        let x = match code(data, ext_op) {
+            OpCode::CPUI_INT_ZEXT if size(data, wide_x) == 16
+                && size(data, in_vn(data, ext_op, 0)) == 8 => in_vn(data, ext_op, 0),
+            OpCode::CPUI_PIECE if is_const(data, in_vn(data, ext_op, 0))
+                && offset(data, in_vn(data, ext_op, 0)) == 0
+                && size(data, wide_x) == 16
+                && size(data, in_vn(data, ext_op, 1)) == 8 => in_vn(data, ext_op, 1),
+            _ => return false,
+        };
+        let and_op = data.obank().get(op).expect("divopt: stale AND");
+        let Some(and_parent) = and_op.get_parent() else { return false };
+        let and_order = and_op.get_seq_num().get_order();
+        let quotient = data.descend_snapshot(x).into_iter().find_map(|div_op| {
+            if code(data, div_op) != OpCode::CPUI_INT_DIV || in_vn(data, div_op, 0) != x {
+                return None;
+            }
+            let candidate = data.obank().get(div_op).expect("divopt: stale quotient");
+            if candidate.get_parent() != Some(and_parent)
+                || candidate.get_seq_num().get_order() >= and_order {
+                return None;
+            }
+            let divisor = in_vn(data, div_op, 1);
+            (is_const(data, divisor) && offset(data, divisor) == 3).then(|| out_vn(data, div_op))
+        });
+        let Some(quotient) = quotient else { return false };
+        data.op_set_opcode(op, typeop_for(OpCode::CPUI_INT_MULT));
+        data.op_set_input(op, quotient, 0).expect("divopt: quotient input");
+        let two = data.new_constant(8, 2);
+        data.op_set_input(op, two, 1).expect("divopt: scale input");
+        true
+    }
+
     /// Compute `divisor = 2^n/(y-1)` with the optimized-encoding sanity checks
     /// (C++ `RuleDivOpt::calcDivisor`).  Pure 128-bit arithmetic — fully
     /// transcribed.  Returns the divisor, or 0 if the checks fail.
@@ -2369,7 +2429,8 @@ impl RuleDivOpt {
 
 impl Rule for RuleDivOpt {
     fn get_op_list(&self) -> Vec<OpCode> {
-        vec![OpCode::CPUI_SUBPIECE, OpCode::CPUI_INT_RIGHT, OpCode::CPUI_INT_SRIGHT]
+        vec![OpCode::CPUI_SUBPIECE, OpCode::CPUI_INT_RIGHT, OpCode::CPUI_INT_SRIGHT,
+             OpCode::CPUI_INT_AND]
     }
 
     fn clone_rule(&self, grouplist: &ActionGroupList) -> Option<Box<dyn Rule>> {
@@ -2380,6 +2441,9 @@ impl Rule for RuleDivOpt {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
+        if Self::recover_div3_double(op, data) {
+            return 1;
+        }
         let (mut in_vn0, n, y, mut xsize, ext_opc) = match Self::find_form(data, op) {
             Some(t) => t,
             None => return 0,

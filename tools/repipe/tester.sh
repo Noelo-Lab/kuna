@@ -26,6 +26,7 @@ STATE_DIR="${KUNA_PIPELINE_STATE_DIR:-$REPO/.kuna-repipe}"
 DATASET="${REPIPE_DATASET:-$HOME/github/kuna-re-dataset}"
 TIMEOUT="${REPIPE_TESTER_TIMEOUT:-3600}"
 MODEL="${REPIPE_TESTER_MODEL:-}"
+REASONING="${REPIPE_TESTER_REASONING:-}"
 SANDBOX="${REPIPE_SANDBOX:-auto}"
 ENABLE_IDA="${REPIPE_ENABLE_IDA:-1}"
 
@@ -132,6 +133,7 @@ CODEX_ARGS=(exec
   --output-schema "$REPO/tools/repipe/schema/report.schema.json"
   -o "$ARENA/report.json")
 [ -n "$MODEL" ] && CODEX_ARGS+=(-m "$MODEL")
+[ -n "$REASONING" ] && CODEX_ARGS+=(-c "model_reasoning_effort=$REASONING")
 
 # `-a/--ask-for-approval` does NOT exist on `codex exec` (it is interactive-only), which is
 # why the approval policy is a `-c` override. network_access=false also removes "search the

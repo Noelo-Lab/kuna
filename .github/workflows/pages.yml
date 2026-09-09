@@ -72,6 +72,9 @@ jobs:
       - name: Test the browser Worker boundary
         run: node integrations/web/test/worker.mjs
 
+      - name: Test worker startup errors
+        run: node integrations/web/test/worker-errors.mjs
+
       - name: Test the development evidence snapshot
         run: node integrations/web/test/dev-viz.mjs
 

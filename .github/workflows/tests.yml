@@ -180,6 +180,7 @@ jobs:
         run: |
           bash integrations/web/build.sh
           node integrations/web/test/worker.mjs
+          node integrations/web/test/worker-errors.mjs
           node integrations/web/test/dev-viz.mjs
 
   rust-test:

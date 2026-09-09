@@ -105,14 +105,14 @@ fn both_ends_of_the_import_answer_with_two_call_sites() {
 }
 
 /// The control. The veneer's own `JMP qword ptr [slot]` is the import's other
-/// half, not a call site of it, and it keeps the read it always filed — as does
-/// the direct call, which never went through a slot at all.
+/// half, not a call site of it, and is classified as a forwarding jump. The
+/// direct call, which never went through a slot at all, remains a call.
 #[test]
-fn the_forwarding_veneer_and_the_direct_call_are_unchanged() {
+fn the_forwarding_veneer_is_a_jump_and_the_direct_call_stays_a_call() {
     let Some(idx) = index() else { return };
     let jump: Vec<(u64, XrefKind)> =
         idx.refs_from_instruction(VENEER).iter().map(|r| (r.to, r.kind)).collect();
-    assert_eq!(jump, vec![(SLOT, XrefKind::Read)]);
+    assert_eq!(jump, vec![(SLOT, XrefKind::Jump)]);
 
     let (site, callee) = DIRECT_CALL;
     let direct: Vec<(u64, XrefKind)> =

@@ -169,6 +169,9 @@ fn function_mapsym_decodes_prototype_and_params() {
             e.write_bool(&ATTRIB_NAMELOCK, true);
             e.write_signed_integer(&ATTRIB_CAT, 0);
             e.write_unsigned_integer(&ATTRIB_INDEX, idx);
+            if idx == 0 {
+                e.write_bool(&kuna_base::marshal::ATTRIB_HIDDENRETPARM, true);
+            }
             e.open_element(&crate::dtype::ELEM_TYPEREF);
             e.write_string(&ATTRIB_NAME, b"int4");
             e.write_unsigned_integer(&ATTRIB_ID, int4.get_id());
@@ -188,10 +191,10 @@ fn function_mapsym_decodes_prototype_and_params() {
         e.open_element(&ELEM_PROTOTYPE);
         e.write_string(&ATTRIB_EXTRAPOP, b"unknown");
         e.write_string(&ATTRIB_MODEL, b"default");
+        e.write_bool(&ATTRIB_CUSTOM, true);
         e.open_element(&ELEM_RETURNSYM);
         e.write_bool(&ATTRIB_TYPELOCK, true);
-        e.open_element(&kuna_base::address::ELEM_ADDR);
-        e.close_element(&kuna_base::address::ELEM_ADDR);
+        Address::new(ram(&m), 0x88).encode_sized(&mut e, 1).unwrap();
         e.open_element(&ELEM_VOID);
         e.close_element(&ELEM_VOID);
         e.close_element(&ELEM_RETURNSYM);
@@ -217,17 +220,27 @@ fn function_mapsym_decodes_prototype_and_params() {
     let proto = func.proto.as_ref().expect("prototype decoded");
     assert_eq!(proto.model, "default");
     assert_eq!(proto.extrapop, None); // the "unknown" string form
+    assert!(proto.custom);
+    assert_eq!(proto.out_storage.get_offset(), 0x88);
     assert!(proto.out_lock);
     assert!(proto.out_type.as_ref().unwrap().get_metatype() == type_metatype::TYPE_VOID);
     assert!(proto.is_input_locked());
     // Sorted by slot index despite reversed wire order.
     assert_eq!(proto.params.len(), 2);
     assert_eq!(proto.params[0].name, "first");
+    assert!(proto.params[0].hidden);
     assert_eq!(proto.params[1].name, "second");
+    assert!(!proto.params[1].hidden);
     let pieces = proto.to_pieces(&func.name);
+    let output = pieces.output_storage.as_ref().expect("custom return storage");
+    assert_eq!(output.addr.get_offset(), 0x88);
+    assert_ne!(
+        output.flags & crate::fspec::parameter_pieces_flags::CUSTOM_STORAGE,
+        0
+    );
     assert_eq!(pieces.name, "my_exit");
-    assert_eq!(pieces.intypes.len(), 2);
-    assert_eq!(pieces.innames, vec!["first".to_string(), "second".to_string()]);
+    assert_eq!(pieces.intypes.len(), 1);
+    assert_eq!(pieces.innames, vec!["second".to_string()]);
     assert_eq!(pieces.first_var_arg_slot, -1);
 }
 

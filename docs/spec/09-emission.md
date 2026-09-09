@@ -393,6 +393,15 @@ lives somewhere the analysis never resolved to a variable, exactly as upstream's
 `stack0x00000008` is (kuna capitalizes the space and drops the `0x` so the
 token is at least a legal C identifier).
 
+One unnamed high-variable case is deliberately canonicalized before that
+choice. If any member is the unaffected input stack pointer, every member uses
+that member's storage-form leaf (`Register0000000000000000` on x86-64), with
+the translator's register-name shortcut disabled. Copy propagation can merge
+the input stack pointer with register and unique-space members; printing each
+member's own address would otherwise make one value appear under unrelated,
+undeclared names such as `RAX` and `Unique10000064`. This spelling change does
+not synthesize the definition that may be absent after the merge.
+
 The same leaf serves the **spacebase** arm of `printc.rs
 (PrintC::op_ptrsub_ir)`. A `PTRSUB(sp, off)` is a reference into the stack (or
 global) frame; P6 binds a Symbol to the offset constant whenever the recovered
@@ -703,8 +712,11 @@ character-width-aligned NUL (no terminator within budget, or unreadable
 memory ⇒ not a string), validates the whole buffer as UTF-8/UTF-16/UTF-32 by
 element width (any invalid codepoint or unpaired surrogate rejects the entire
 literal), re-encodes to UTF-8, and caches the result — including negative
-results — keyed by address (`stringmanage.rs
-(StringManagerUnicode::get_string_data)`). Rendering escapes per codepoint:
+results — keyed by address and the complete decode mode (character width plus
+opaque-string status), so one interpretation cannot supply the cached result
+for another regardless of function-decompilation order. The decode mode is
+marshalled with the result; legacy entries without it are not cache hits
+(`stringmanage.rs (StringManagerUnicode::get_string_data)`). Rendering escapes per codepoint:
 `printlanguage.rs (unicode_needs_escape)` classifies control characters,
 separators, bidi markers, surrogates and private-use ranges as escape-worthy,
 and `printc.rs (print_unicode)` emits the named C escapes then falls to `print_char_hex_escape`, which emits only `\x` (zero-padded to 2/4/8 hex digits by codepoint magnitude). Internal strings
@@ -1057,7 +1069,10 @@ drive the IDENTICAL token sequence standalone: the same
 `doc_function_full`, plus a trailing `;`, minus the header warning comments.
 The contract this buys the export: the `.h` prototype minus its `;` matches
 the `.c` definition line **token-for-token** — there is no second prototype
-printer to drift. The public driver is `decompile_drive.rs
+printer to drift. The exporter does not canonicalize the reserved C entry-point
+name: a recovered `void main(void)` remains exactly that in both documents rather
+than being rewritten to an unsupported `int` signature. Consumers that only need
+to syntax-check the header can macro-remap `main` before inclusion. The public driver is `decompile_drive.rs
 (print_c_prototype)` (a function with no recovered proto store renders
 `void <name>(void);`).
 
