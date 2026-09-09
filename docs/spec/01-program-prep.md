@@ -2843,9 +2843,11 @@ set to the inventory extent containing the target
 is the same fold it already applies to every callee it reports. ELF historically
 inventories the PLT veneer only, not its GOT slot, so the graph admits the slot
 half of each decoded forwarding relation as a zero-extent node; `decompile-graph`
-materializes that missing node as a bodyless `import` row with the veneer's name.
-Its `forwardsTo` target and jump-edge endpoint are therefore the same row on both
-formats. This is deliberately confined to the graph model: `kuna functions`
+materializes that missing node as a bodyless row with the veneer's name. The
+ordinary named import case classifies as `import`, while an unnamed linkage
+target such as ELF PLT0 classifies as `data`. Its `forwardsTo` target and
+jump-edge endpoint are therefore the same row on both formats. This is
+deliberately confined to the graph model: `kuna functions`
 keeps its established loader inventory, while an ELF `decompile-graph` document's
 `functionCount` and `functions` array gain the recovered GOT-slot rows. An address
 in neither the inventory nor a decoded forwarding relation is still not an edge.

@@ -243,7 +243,8 @@ impl XrefIndex {
 
     /// Every decoded forwarding veneer and its fixed pointer slot, ordered by
     /// veneer entry. A caller that exposes graph nodes can use this to represent
-    /// an ELF GOT slot that the loader names only through its PLT veneer.
+    /// an ELF fixed-slot target that the loader inventories only through its PLT
+    /// entry, including the unnamed PLT0 linkage target.
     pub fn forwarding_veneers(&self) -> Vec<(u64, u64)> {
         self.veneers.iter().map(|(&entry, veneer)| (entry, veneer.slot)).collect()
     }
