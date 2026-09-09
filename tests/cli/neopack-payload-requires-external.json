@@ -1,0 +1,61 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "unpack",
+    "{{BIN}}",
+    "-o",
+    "{{TMP}}/payload.bin",
+    "--json"
+  ],
+  "cwd": "{{TMP}}",
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/neolite_packed_pe_i386.exe",
+    "binary_sha256": "18903a09ce759dd33e8ddcc5ec5b11ebf0420ec080b37a01279667fc48e94725",
+    "binary_size": 3584,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/neolite_packed_pe_i386.exe",
+    "selector": null,
+    "selector_kind": "none"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "json": [
+      {
+        "path": "packer",
+        "op": "eq",
+        "value": "neolite"
+      },
+      {
+        "path": "entry_hex",
+        "op": "eq",
+        "value": "0x1000"
+      },
+      {
+        "path": "count",
+        "op": "eq",
+        "value": 3
+      },
+      {
+        "path": "unpacked_size",
+        "op": "eq",
+        "value": 15360
+      },
+      {
+        "path": "import_directory",
+        "op": "eq",
+        "value": 8256
+      }
+    ],
+    "stdout_absent": [
+      "no UPX PackHeader found"
+    ]
+  },
+  "notes": "Desired: a NEOLite-packed PE yields an analyzable image, not 'no UPX PackHeader found'. Witness: crackmes.one 5ab77f5433c5d40ad448c1c1 CryptoME.exe, where the tester ran the stub under Unicorn to get the sections; kuna functions there goes 0 -> 387. Retargeted onto neolite_packed_pe_i386.exe, built by its .py sidecar. The size, entry and import clauses separate a decode from an empty exit 0."
+}

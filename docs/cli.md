@@ -1645,7 +1645,7 @@ A binary with no strings is exit `0` with `count: 0` — an answer, not a failur
 An unreadable or unparseable binary, or an unknown `--section`, is exit `1` with
 the reason on stderr; a malformed command line is exit `2` with the usage block.
 
-## `kuna unpack` — statically unpack a UPX-packed executable
+## `kuna unpack` — statically unpack a UPX- or NEOLite-packed executable
 
 ```bash
 kuna unpack ./packed                                   # writes ./packed.unpacked
@@ -1659,6 +1659,11 @@ compressed blob, so `kuna functions` finds nothing, and decompiling the entry po
 gives you the decompressor. `kuna unpack` reconstructs the original image so the rest
 of the CLI has a program to work on — on the witness that filed this gap, `kuna
 functions` goes from `count: 0` to 70, `main` included.
+
+Two packers are recognized, and which one is decided before anything is decoded, so
+the answer on a file that is neither is unchanged. A **NEOLite** image announces
+itself with a `.NEOpack` section that owns the entry point; everything else goes to
+the UPX arm, whose `no UPX PackHeader found` is still what an unpacked file gets.
 
 It runs **in-process**, with no external tooling: `upx -d` cannot be assumed present
 wherever a release `kuna` runs, and handing a hostile binary to a packer to look at it
@@ -1674,6 +1679,44 @@ filter,filter_hex,pack_header_offset,pack_header_offset_hex,packed_size,
 compressed_size,unpacked_size,count,blocks:[{offset,offset_hex,u_len,c_len,method,
 method_name,filter,filter_hex,stored}]}`, where `count` is the number of compressed
 blocks consumed.
+
+### NEOLite
+
+```bash
+kuna unpack ./CryptoME.exe --json     # "packer": "neolite"
+```
+
+NEOLite (NeoWorx, ~1999) compresses each original section **in place** and appends
+`.NEOpack`, the loader stub, and `.NEOdata`. The original section table survives
+untouched, so every virtual address and virtual size still describes the original
+image and nothing has to be inferred by running the stub — which is what the tester
+who filed this had to do, in Unicorn. The codec is an LZX derivative (58 position
+slots, three repeated offsets, `256 + slot * 8 + len_slot` main symbols) with
+DEFLATE's length tables and code-length transmission; `kuna-analysis/src/neolite.rs`
+decodes it.
+
+Three things are restored beyond the bytes: the entry point moves off the stub to
+the `push OEP; ret` operand the stub hands over with, the import data directory is
+re-pointed at the program's own descriptor array (found in the recovered `.rdata`,
+not the stub's decoy), and the section the entry point lands in gets its
+`CNT_CODE | MEM_EXECUTE | MEM_READ` back — the packer rewrites every section to plain
+read-write data, and a `.text` that does not say it is code is a section no
+disassembler walks. A section the packer stored uncompressed — resources usually are
+— is carried through as it stands and reported `"compressed": false`; it fails the
+code-table validity test on its first block header, which is what keeps plaintext
+out of the decoder.
+
+`--json` emits `{binary,output,packer,entry,entry_hex,stub_entry,stub_entry_hex,
+import_directory,packed_size,compressed_size,unpacked_size,count,sections:[{name,va,
+va_hex,packed_size,unpacked_size,compressed}]}`, where `count` is the number of
+sections that held a stream. On the witness (`CryptoME.exe`, 139,776 bytes) that is
+3 sections and 447,488 bytes out, after which `kuna functions` goes from 0 to 387
+with import names, and the recovered entry decompiles to the MSVC CRT startup.
+
+Only 32-bit x86 PE32 images are rebuilt; a `.NEOpack` image with any other optional
+header magic exits `1` naming it rather than rebuilding a layout nothing has been
+checked against. The original imports come back but the packed image's own
+`.NEOpack`/`.NEOdata` sections are kept, so the stub is still there to read.
 
 **Coverage, and the failure contract.** Implemented: the ELF formats and 32-bit
 `win32/pe`, methods 2–10 (NRV2B/NRV2D/NRV2E in their `_LE32`, `_LE16` and `_8` bit

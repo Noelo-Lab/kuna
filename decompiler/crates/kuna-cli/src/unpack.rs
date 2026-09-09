@@ -47,6 +47,7 @@
 use std::fmt::Write as _;
 use std::path::PathBuf;
 
+use kuna_analysis::neolite::{self, NeoliteError};
 use kuna_analysis::upx::lzma;
 use kuna_analysis::upx::{self, UpxError};
 use object::{Object, ObjectSection};
@@ -108,6 +109,13 @@ pub fn run(argv: &[String]) -> i32 {
         }
     };
 
+    // NEOLite is recognized before UPX is even asked, on its own loader section
+    // rather than on UPX's failure, so nothing about the UPX arm -- including
+    // what it says about a file that is not packed at all -- changes here.
+    if neolite::detect(&image) {
+        return run_neolite(&args, &image);
+    }
+
     let unpacked = match upx::unpack(&image) {
         Ok(u) => u,
         Err(e) => {
@@ -137,6 +145,132 @@ pub fn run(argv: &[String]) -> i32 {
         render_text(&args.binary, &out_path, &unpacked, image.len())
     };
     crate::output::emit_with_status(&text, 0)
+}
+
+/// The NEOLite arm. The original section table survives packing, so the
+/// rebuilt image is the packed one with each section's stream decoded back to
+/// the virtual size that table already declares, the entry point moved off the
+/// stub, and the import directory pointed back at the program's own.
+fn run_neolite(args: &Args, image: &[u8]) -> i32 {
+    let unpacked = match neolite::unpack(image) {
+        Ok(u) => u,
+        Err(e) => {
+            eprintln!("error: {}: {e}", args.binary);
+            if let NeoliteError::Unsupported(_) = e {
+                eprintln!(
+                    "note: the image carries a NEOLite loader section but not a layout this \
+                     build can rebuild"
+                );
+            }
+            return 1;
+        }
+    };
+
+    let out_path = args
+        .output
+        .clone()
+        .unwrap_or_else(|| default_output(&args.binary).to_string_lossy().into_owned());
+    if let Err(e) = std::fs::write(&out_path, &unpacked.bytes) {
+        eprintln!("error: could not write {out_path}: {e}");
+        return 1;
+    }
+
+    let text = if args.json {
+        format!(
+            "{}\n",
+            dumps_indent2(&neolite_json(&args.binary, &out_path, &unpacked, image.len()))
+        )
+    } else {
+        render_neolite(&args.binary, &out_path, &unpacked, image.len())
+    };
+    crate::output::emit_with_status(&text, 0)
+}
+
+fn render_neolite(
+    binary: &str,
+    out_path: &str,
+    u: &neolite::Unpacked,
+    packed_size: usize,
+) -> String {
+    let mut s = String::new();
+    let _ = writeln!(s, "{binary}: NEOLite-packed");
+    let _ = writeln!(
+        s,
+        "  entry point   {:#x} (stub entry {:#x})",
+        u.entry, u.stub_entry
+    );
+    match u.imports {
+        Some(rva) => {
+            let _ = writeln!(s, "  imports       {rva:#x} (recovered)");
+        }
+        None => {
+            let _ = writeln!(s, "  imports       not found -- the stub's own table is kept");
+        }
+    }
+    let _ = writeln!(
+        s,
+        "  {} of {} sections decompressed, {} -> {} bytes",
+        u.compressed_sections(),
+        u.sections.len(),
+        packed_size,
+        u.bytes.len()
+    );
+    for sec in &u.sections {
+        let _ = writeln!(
+            s,
+            "    {:<10} {:#010x}  {:>9} -> {:>9}{}",
+            sec.name,
+            sec.va,
+            sec.packed,
+            sec.unpacked,
+            if sec.compressed { "" } else { "  (stored)" }
+        );
+    }
+    let _ = writeln!(s, "  wrote {out_path}");
+    s
+}
+
+fn neolite_json(
+    binary: &str,
+    out_path: &str,
+    u: &neolite::Unpacked,
+    packed_size: usize,
+) -> Json {
+    let sections: Vec<Json> = u
+        .sections
+        .iter()
+        .map(|sec| {
+            Json::Object(vec![
+                ("name".into(), Json::Str(sec.name.clone())),
+                ("va".into(), num(u64::from(sec.va))),
+                ("va_hex".into(), Json::Str(format!("{:#x}", sec.va))),
+                ("packed_size".into(), num(u64::from(sec.packed))),
+                ("unpacked_size".into(), num(u64::from(sec.unpacked))),
+                ("compressed".into(), Json::Bool(sec.compressed)),
+            ])
+        })
+        .collect();
+    Json::Object(vec![
+        ("binary".into(), Json::Str(binary.into())),
+        ("output".into(), Json::Str(out_path.into())),
+        ("packer".into(), Json::Str("neolite".into())),
+        ("entry".into(), num(u64::from(u.entry))),
+        ("entry_hex".into(), Json::Str(format!("{:#x}", u.entry))),
+        ("stub_entry".into(), num(u64::from(u.stub_entry))),
+        ("stub_entry_hex".into(), Json::Str(format!("{:#x}", u.stub_entry))),
+        (
+            "import_directory".into(),
+            match u.imports {
+                Some(rva) => num(u64::from(rva)),
+                None => Json::Null,
+            },
+        ),
+        ("packed_size".into(), num(packed_size as u64)),
+        ("compressed_size".into(), num(u.compressed_bytes())),
+        ("unpacked_size".into(), num(u.bytes.len() as u64)),
+        ("count".into(), num(u.compressed_sections() as u64)),
+        ("sections".into(), Json::Array(sections)),
+    ])
 }
 
 /// The `--raw-lzma` arm: no discovery, no `PackHeader`, no declared length --

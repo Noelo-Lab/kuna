@@ -567,7 +567,7 @@ sections, and symbols, and is also used when analysis or a CLI inspection
 command reopens the image. It retains the typed reader's header and section
 validation; it does not rewrite the machine bytes to another architecture.
 
-(kuna) **Static unpacking.** A UPX-packed image is the one input on which the whole
+(kuna) **Static unpacking.** A packed image is the one input on which the whole
 tier is honestly useless: it maps a loader stub and a compressed blob, so every
 address the original program used is absent until something recovers it.
 `decompiler/crates/kuna-analysis/src/upx` reimplements the recovery in-process --
@@ -590,6 +590,48 @@ addresses by offset. That table is found by agreement with the trailer rather th
 through the packed image's import data directory, because retargeting the directory
 at a decoy is the first thing a repacker does to a UPX image, and the witness in
 `tests/fixtures/upx_packed_pe_i386.exe` is exactly that.
+
+(kuna) **NEOLite.** A second packer, recognized before UPX is asked and on evidence
+of its own, so nothing about the UPX arm -- including what it answers for a file that
+is not packed at all -- depends on this. `decompiler/crates/kuna-analysis/src/neolite.rs`
+takes an image with a `.NEOpack` section that **owns the entry point**; the section
+name alone is a string anyone can write into a header, and it is the entry landing
+inside the stub that says the stub runs first.
+
+The layout is the opposite of UPX's, and it is why this is recoverable statically at
+all. NEOLite compresses each original section in place and appends only its two
+loader sections, leaving the original section table untouched -- so every virtual
+address and virtual size in the packed file still describes the original image, and
+"where does this decompress to" is a question the file already answers. What the
+stub computes at run time is then only what the file also still holds: the original
+entry point is the operand of its `push OEP; ret` hand-over, and the original import
+directory is inside the `.rdata` that was just decompressed.
+
+The codec is an LZX derivative rather than anything UPX carries. A block transmits
+757 Huffman code lengths -- 721 main, 28 length, 8 aligned -- through a 19-symbol
+code-length tree, DEFLATE-style with the run codes 16/17/18, each length delta-coded
+modulo 16 against the previous block's so consecutive blocks pay only for what moved.
+The main alphabet merges match length and position slot the way LZX does
+(`256 + slot * 8 + len_slot`) over LZX's 58 position slots and its three repeated
+offsets, and only the eighth length slot escapes to the length tree, which indexes
+DEFLATE's length base/extra tables. Distances come out raw or, when the block's
+aligned tree is not the uniform three-bit one that means "verbatim", as high bits
+plus a three-bit aligned symbol. Symbol 720 ends a block and introduces the next
+one's trees.
+
+Completeness of a code table is the whole validity test a section's bytes get, and it
+carries real weight: a packer routinely leaves resources uncompressed, and the only
+thing separating those bytes from a stream is that their first block header does not
+build a complete canonical code. A section that fails it is carried through exactly
+as it stands rather than decoded into nonsense. The rebuild then restores three
+things beyond the bytes -- the entry point, the import data directory, and
+`CNT_CODE | MEM_EXECUTE | MEM_READ` on the section the recovered entry lands in,
+because the packer rewrites every section to plain read-write data and a `.text` that
+does not claim to be code is a section the executable-section filter skips. No other
+section's flags are touched: the narrow claim is the one the entry point itself
+warrants. Only PE32 x86 is rebuilt; any other optional-header magic is declined by
+name, which is why the parse reads the entry point and section table before it looks
+at the magic at all.
 
 Refusing beats guessing, in both arms. The output is a file a reader will
 disassemble and believe, and a subtly wrong one is more expensive than none: an
