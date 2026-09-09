@@ -493,6 +493,13 @@ fn dispatch_if_enabled<T>(enabled: bool, run: impl FnOnce() -> T) -> Option<T> {
 /// no-return / call-fixup passes flagged (so the Listing's `DiscoveredFunction`s
 /// carry `has_no_return`/`call_fixup`, letting the consumer skip already-modeled
 /// callees and seed the fixpoint's terminal set faithfully).
+///
+/// `committed_entries` is the function-entry set the load-time passes have already
+/// agreed on at this point (the caller's merged `entries`), used as additional walk
+/// roots under the same `funcstart_patterns` gate as the prologue starts. Without it
+/// the walk is rooted only in what [`listing_seeds`] can recompute from the object,
+/// so every standalone entry oracle's finding is invisible to the recursive
+/// descent.
 pub fn run_listing_consumers(
     bytes: &[u8],
     image: &ObjectLoadImage,
@@ -500,6 +507,7 @@ pub fn run_listing_consumers(
     translate: &dyn Translate,
     noreturn_seeds: &[u64],
     callfixup_seeds: &[u64],
+    committed_entries: &[u64],
 ) -> Vec<(&'static str, AnalysisOutput)> {
     let Ok(file) = crate::loadimage_object::parse_object(bytes) else {
         return Vec::new();
@@ -531,6 +539,23 @@ pub fn run_listing_consumers(
         seeds.extend(
             crate::entry::full_pattern_starts(&file)
                 .into_iter()
+                .filter(|&vma| crate::entry::in_executable_section(&execs, vma)),
+        );
+        // (kuna `armdiscseed`) ...and with the entries the LOAD-TIME oracles already
+        // committed, which `listing_seeds` cannot see. It rebuilds the seed set from
+        // `collect_entries`, so an entry recovered by a standalone pass beside that
+        // function -- `armlibcmain`'s non-PIE ARM `main`, `cortexmvectors`' handlers,
+        // `eh_frame_full`'s landing pads, `machomain`'s `LC_MAIN` -- was never a root
+        // of the walk. On a stripped non-PIE ARM executable that is the whole program:
+        // `main` is the only oracle that reaches the body, `_start` hands it to
+        // `__libc_start_main` through a literal-pool word rather than a `bl`, and the
+        // walk therefore stopped at crt1 while `kuna xrefs` (which seeds off the
+        // committed inventory) followed the same call graph and found 41 more
+        // functions than `kuna functions` reported.
+        seeds.extend(
+            committed_entries
+                .iter()
+                .copied()
                 .filter(|&vma| crate::entry::in_executable_section(&execs, vma)),
         );
         seeds.sort_unstable();

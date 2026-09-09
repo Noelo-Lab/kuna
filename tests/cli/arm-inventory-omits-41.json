@@ -1,0 +1,37 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "functions",
+    "{{BIN}}",
+    "--json"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/armdiscseed_le32",
+    "binary_sha256": "764d73a9cced8612a09049011c059a0681b7792dee15c729fda038a81562b60b",
+    "binary_size": 1028,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/armdiscseed_le32",
+    "selector": null,
+    "selector_kind": "none"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "stdout_matches": [
+      "\"address_hex\"\\s*:\\s*\"0x10190\"",
+      "\"name\"\\s*:\\s*\"main\""
+    ]
+  },
+  "notes": "CI twin of the dataset witness (crackmes.one 5edb0b8533c5d449d91ae73b bin/armageddon), whose `kuna functions` listed 17 entries and omitted the 41 validators main calls. Retargeted onto the vendored armdiscseed_le32: the same shape hand-assembled, main reachable only through the non-PIE ARM crt1 pool word and 0x10190 only by main's bl."
+}

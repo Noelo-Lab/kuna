@@ -1,0 +1,98 @@
+{
+  "need_id": "arm-inventory-omits-41",
+  "track": "loader",
+  "scope": "small",
+  "opportunity": "RE-need arm-inventory-omits-41 \u2014 `kuna functions` on a stripped non-PIE ARM32 executable reported 17 entries and omitted all 41 validators `main` calls (crackmes.one 5edb0b8533c5d449d91ae73b bin/armageddon, round 12).",
+  "test_name": "kuna functions / decompile-all inventory, witness + 803-binary decbench sweep",
+  "binary": "decompiler/crates/kuna-analysis/tests/fixtures/armdiscseed_le32",
+  "selector": "0x10190",
+  "option": null,
+  "flag": null,
+  "change_kind": "analysis-wiring",
+  "tier": "analysis",
+  "source_decompiler": "kuna",
+  "default_on": true,
+  "div_row": null,
+  "decisions": [
+    "The filed hypothesis is UPHELD and the refuter's mechanism is exact, but the layer is one step further in than 'discovery does not incorporate ARM call targets': kuna's recursive-descent walk DOES claim a function at every direct CALL target (listing/walk.rs). What it lacked was a root. `passes::run_listing_consumers` rebuilt its seed set from the object via `listing_seeds` = `existing_function_addrs` + `entry::collect_entries`, so only the oracles that live INSIDE collect_entries could seed it. `armlibcmain` is a separately gated standalone pass, so its non-PIE ARM `main` was committed to the inventory but was never a walk root \u2014 and on this image `main` is the only address that reaches the program body.",
+    "The decisive asymmetry: `kuna xrefs --from main` already listed all 41 validators as functions, because `xrefs.rs` seeds its own descent from `prog.function_entries_canonical()` \u2014 the COMMITTED inventory. The same call graph, two surfaces, two answers. The fix makes the analysis-tier walk read the same seed source.",
+    "NO new option, and no phases.toml/catalog/DIV edits. The behaviour is already gated: the extra seeding sits in the existing `analysis_listing && analysis_funcstart_patterns` block beside the prologue-start seeding, and the commit that promotes the walk's functions (`funcdisc_recursive`) rides that same flag. `--option funcstart_patterns off` (or `listing off`) restores the previous inventory exactly, and x86-64 \u2014 where the flag is default-off \u2014 is unchanged by construction. This is a strict correction of an implementation that did not match its own documented contract ('explores the CALL graph out of every discovered function'), not a new judgment call. It is also what the leases allowed: counter:catalog, counter:div, file:phases.toml and file:docs/options.md were all held by a sibling builder this round.",
+    "The refuter's three warnings all held. (1) The probe demands 0x104f4 exactly, and the branch-over-junk obfuscation puts the real prologue at 0x104fc \u2014 a prologue-pattern approach would have failed; the BL target is the oracle that names the right byte, which is what this change follows. (2) The junk-word `bl 0x59684c` is rejected: the new seeds are exec-filtered exactly like the existing ones, and `admits_call_entry`/`in_exec` already guarded the walk's own claims. A dedicated test asserts an out-of-image seed is not walked. (3) Bounding moved as predicted: `_INIT_0` shrank from 17736 to 56 bytes.",
+    "One entry is REMOVED on the witness: `sub_152b4`. It is not a loss \u2014 0x152b4 is a junk word inside main that `b 0x152b8` at 0x152b0 branches over, and it was previously minted by the AIF gap-walk only because main's bytes had never been decoded. It is the sibling need `arm-inventory-invents-function`'s error class, so this change reduces that too rather than trading against it.",
+    "No `tests/stages/` XML testcase: the datatest/stages path uses `LoadImageXml` over `<bytechunk>` and never constructs an `ObjectLoadImage`, so a loader/analysis-tier seed set is unreachable from it. Gated on the cargo suite plus the promoted CLI probe instead (the same deviation `relocobjects`/`cortexmvectors` recorded).",
+    "The acceptance probe arrived UNBOUND (`{{BIN}} used but the context supplies no bin`). Bound to the dataset witness by sha256 match between the arena and dataset copies; `acceptance_id` is unchanged because the hash is over cmd+expect only. The need keeps the dataset witness; `tests/cli/arm-inventory-omits-41.json` is the CI twin on the vendored fixture.",
+    "It also closes the sibling need `arm-inventory-invents-function` (`stdout_absent 0x152b4`), which was filed as the opposite error on the same image. Not self-closed here \u2014 recorded for the captain."
+  ],
+  "acceptance": {
+    "probe_id": "p-c41c2026e1e6",
+    "acceptance_id": "a-849f8de4d221",
+    "before": "FAIL (17 functions, no 0x104f4)",
+    "after": "PASS",
+    "verify": "scripts.repipe.verify --need arm-inventory-omits-41 --json -> pass 1 / fail 0 / unrunnable 0, transition closed"
+  },
+  "promoted_probe": {
+    "path": "tests/cli/arm-inventory-omits-41.json",
+    "retargeted_from": "dataset challenges/5edb0b8533c5d449d91ae73b/bin/armageddon (25996 bytes)",
+    "retargeted_to": "decompiler/crates/kuna-analysis/tests/fixtures/armdiscseed_le32 (1028 bytes, hand-assembled)",
+    "why": "`verify --promote` refuses a dataset target (CI has no dataset), and the witness is a third-party crackme. The fixture is the same shape: stripped non-PIE ARM32, `main` reachable only through the crt1 literal pool word, and the callee reachable only by `main`'s `bl`.",
+    "verified_on_witness": true
+  },
+  "witness": {
+    "binary": "crackmes.one 5edb0b8533c5d449d91ae73b bin/armageddon",
+    "functions_before": 17,
+    "functions_after": 57,
+    "validators_recovered": 41,
+    "entries_removed": [
+      "sub_152b4 (a junk word branched over by `b 0x152b8`)"
+    ],
+    "init0_size": "17736 -> 56",
+    "out_of_image_bl_target_0x59684c": "still not a function",
+    "decompile_all": "57 functions, 0 errors, 0.39 s; sub_104f4 renders as a readable byte-product check ending in `puts(\"[!] Code did not validate! :(\") ; exit(0)`"
+  },
+  "sweep": {
+    "corpus": "decbench-dataset/binaries, all 803 images >1k (O0 / O2 / O2-noinline, x86-64 + ARM + Cortex-M + MIPS + PPC)",
+    "method": "`kuna functions --json` before and after, inventories compared as {(address, name)} sets",
+    "errors": 0,
+    "binaries_with_a_changed_inventory": 0,
+    "entries_added": 0,
+    "entries_removed": 0,
+    "note": "Zero movement corpus-wide: on those images `merged.entries` is already a subset of the recomputed seed set, and every x86-64 image has `funcstart_patterns` off so the block does not run at all. In-repo fixtures swept the same way: 0 of 200+ changed, which is why a new fixture had to be assembled."
+  },
+  "speed": {
+    "surface": "kuna functions, witness (26 KB ARM)",
+    "samples": 9,
+    "units": "ms (median wall clock, 2 warmups)",
+    "before": 92.7,
+    "after": 171.5,
+    "delta_pct": 85.0,
+    "note": "Not overhead: the walk now decodes the 17 KB of .text it previously never entered, and the run discovers 40 more functions. On every corpus binary the seed set (and therefore the walk) is unchanged, so the cost is confined to the images the change fixes."
+  },
+  "gates": {
+    "make test": "PARITY OK 675/675",
+    "make test-stages": "PARITY OK 721/721",
+    "make rust-test": "green",
+    "make check-spec": "green (lenient)",
+    "make test-cli": "106/106",
+    "kuna catalog --check": "catalog OK"
+  },
+  "files": {
+    "wiring": "decompiler/crates/kuna-analysis/src/passes.rs",
+    "call_site": "decompiler/crates/kuna-console/src/engine.rs",
+    "fixture": "decompiler/crates/kuna-analysis/tests/fixtures/armdiscseed_le32",
+    "fixture_generator": "decompiler/crates/kuna-analysis/tests/fixtures/armdiscseed_le32.py",
+    "e2e": "decompiler/crates/kuna-console/tests/verify_armdiscseed.rs",
+    "probe": "tests/cli/arm-inventory-omits-41.json",
+    "spec": "docs/spec/01-program-prep.md"
+  },
+  "acceptance_suite": {
+    "when": "on the fixed build, 101 need records in the worktree",
+    "counts": {
+      "pass": 83,
+      "fail": 10,
+      "regressed": 1,
+      "indeterminate": 8
+    },
+    "regressed": "getprocaddress-result-discarded \u2014 PRE-EXISTING, not this change: `kuna decompile <ObfuscationFiesta.exe> sub_140002530` is byte-identical (md5 ad4057c5298835898f8e390b7c234579) on the before and after builds. It is a PE x86-64 image, where `funcstart_patterns` is off and the new seeding block never runs.",
+    "also_closed_by_this_change": "arm-inventory-invents-function (0x152b4 is gone from the witness inventory)"
+  }
+}

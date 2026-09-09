@@ -1961,11 +1961,19 @@ impl ConsoleProgram {
                     // the load-time pass flagged resolved to addresses via the
                     // (already installed) symbol table.
                     if want_listing || want_fast_funcdisc {
+                        let mut committed_entry_seeds = merged.entries.clone();
+                        committed_entry_seeds.sort_unstable();
+                        committed_entry_seeds.dedup();
                         let arch = self.arch();
                         // The call-fixup seed list is empty: a fixup'd callee is also
                         // skipped via the consumer's no-return-disc `function_at(..)`
                         // checks, and there is no fixup-address index here. The
                         // no-return seeds (above) are the load-bearing skip set.
+                        //
+                        // (kuna `armdiscseed`) The entries the load-time oracles have
+                        // already agreed on are handed over as extra walk roots. They
+                        // are read off `merged` rather than recomputed, so a pass whose
+                        // gate rejected it above never seeds the walk either.
                         let consumer_out = kuna_analysis::passes::run_listing_consumers(
                             &bytes,
                             &image,
@@ -1973,6 +1981,7 @@ impl ConsoleProgram {
                             arch.translate(),
                             &noreturn_seed_addrs,
                             &[],
+                            &committed_entry_seeds,
                         );
                         for (id, out) in consumer_out {
                             if analysis_pass_enabled(self.arch(), id) {
