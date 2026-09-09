@@ -141,6 +141,9 @@ node integrations/web/test/auto-mode.mjs
 #    cancellation/restart, and worker-side project ZIP.
 node integrations/web/test/worker.mjs
 
+# Worker startup failure behavior — no build needed.
+node integrations/web/test/worker-errors.mjs
+
 # F. Sidebar filter query semantics — no build needed.
 node integrations/web/test/fnfilter.mjs
 ```
@@ -164,6 +167,9 @@ node integrations/web/test/fnfilter.mjs
   threads, proving inventory-first/lazy-address behavior, terminate-and-recreate
   cancellation, session rehydration, and transfer of a complete project ZIP without its
   intermediate artifact object.
+- **`worker-errors.mjs`** simulates a content blocker stopping the Worker before its
+  initialization reply, and pins the actionable error plus terminal behavior for later
+  requests.
 - **`fnfilter.mjs`** pins the sidebar filter: name/alias/address terms are AND and
   case-insensitive, `/regex/` runs case-insensitively unless it names flags, an
   unparseable regex reports its error and matches nothing, and the header/divider counts
