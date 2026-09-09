@@ -1553,6 +1553,31 @@ built. Two consequences:
   already followed (§0.8), and that adoption is refused the moment any command at
   all — an `option` among them — has run since the load.
 
+Two of those snapshots — the global-symbol query and the callee-prototype list —
+are whole-database derivations, so re-deriving them once per function dominates
+per-function cost as soon as the symbol table is large. On an 18 MB Windows PE
+with 73,366 mapped globals each pair costs about 25 ms to build and 12 ms to free,
+flat in the size of the function being decompiled, and the symbol table it reads
+does not move once for the whole run. Both are pure functions of the symbol
+database (`decompiler/crates/kuna-decomp/src/p0_knowledge/database.rs (Database)`),
+so `build_arch_handle` derives them at most once per state of that database and
+hands every `Funcdata` a shared `Rc` to the same pair, keyed on a monotone
+mutation generation the database bumps in every one of its `&mut self` entry
+points (`decompiler/crates/kuna-decomp/src/p0_knowledge/database.rs
+(kuna_generation)`). A mutation between two function builds — a `map addr`, a
+rename, a recovered prototype — moves the generation and both snapshots are
+rebuilt on the next build, so what a `Funcdata` sees is still the database as of
+its own build and the emitted C does not move.
+
+The reuse is only as sound as that bump, which is why the generation is not
+maintained by hand at the call sites that matter: a unit test re-reads the
+database source and fails if any `&mut self` method does not open with the bump,
+if an `impl Database` block is written in a form that scan cannot enter, or if
+interior mutability appears in the database's own types (which would let a
+mutation past a `&mut self` scan unseen). `KUNA_NO_SYMBOL_SNAPSHOT_CACHE`
+re-derives both snapshots on every handle, so the memoized and re-derived paths
+can be compared on any binary.
+
 ## 0.6 The schedule
 
 The pipeline's execution order is not the folder order. Every per-function run
