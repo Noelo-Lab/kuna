@@ -56,12 +56,26 @@ at `read symbols` (`engine.rs (commit_pending_analysis)`) — after the CLI's
 `option` lines have been applied — so a disabled load-time pass's already-computed
 facts are simply dropped at the gate (`engine.rs (analysis_pass_enabled)`; an id
 with no registered gate fails *open*, so a new pass runs by default). Deferred
-decoder-dependent work is dispatched after those options are known: a disabled
-Listing consumer, AIF gap walk, or operand-reference scan is not invoked at all,
-and its commit gate remains as a defensive check. This is semantically load-bearing
+work is dispatched after those options are known: a disabled Listing consumer, AIF
+gap walk, or operand-reference scan is not invoked at all, and its commit gate
+remains as a defensive check. This is semantically load-bearing
 for AIF: speculative SLEIGH decoding can paint processor context, so `aif off`
 means no speculative decode, not merely discarding its discovered-entry facts.
 The stash is drained on commit, so a second `read symbols` cannot double-commit.
+
+Stash-at-load is the default, but it only pays when computing the facts is cheap
+relative to the chance of using them. A pass whose sweep is expensive and whose gate
+is normally off is *deferred* instead — kept out of `passes_for` and run from the
+commit point by `passes.rs (run_deferred_entry_passes)`, where the gate is already
+in effect. `funcstart_patterns` (§1.5) is the one entry pass in that category: its
+whole-image pattern sweep is a fixed load-time cost on every subcommand and is
+discarded on every default run. Deferring an entry pass is output-neutral because
+the commit's entry arm is idempotent by address and resolves each name from the
+fully merged `entry_names`, so merge position never changes what installs; the
+deferred run rebuilds the object view exactly as the load-time run does,
+`relocrebase` (§1.2) included, so a relocatable object still yields entries in the
+loaded image's address space. It is dispatched *before* the deferred Listing build,
+whose walk takes the committed entry set as extra roots.
 
 `engine.rs (commit_analysis_output)` then installs the merged facts into the engine
 once, each arm idempotent against the loader's own funcsym stream: a function fact
@@ -2079,7 +2093,9 @@ faithful `FunctionStartAnalyzer` port over the vendored per-arch pattern XML
 postpattern (the prologue shape) matches at it *and* a prepattern (RET/JMP/NOP
 context) matches immediately before it, at instruction alignment. The
 `after="defined"`/`validcode` post-rules need a pseudo-disassembler and are a
-documented loss. Output-changing, hence default-off — but (kuna, DIV-20) the
+documented loss. It is the one **deferred** entry pass (§1.1): the sweep is far too
+expensive to run at load and discard, so it runs at the commit point once its gate
+is known. Output-changing, hence default-off — but (kuna, DIV-20) the
 `decompile-all` driver turns it on for non-x86-64 binaries, where it is the
 *primary* discovery source on stripped ARM firmware, alongside the always-on
 Cortex-M vector-table oracle (6) above: with the vector-table seeds + Thumb region

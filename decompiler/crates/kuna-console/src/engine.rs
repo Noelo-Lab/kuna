@@ -2051,7 +2051,12 @@ impl ConsoleProgram {
         let want_listing = self.arch().analysis_listing;
         let want_fast_funcdisc = self.arch().analysis_fast_funcdisc;
         let want_operand_refs = self.arch().analysis_operand_refs;
-        if (want_listing || want_fast_funcdisc || want_operand_refs)
+        // (kuna) The full byte-pattern entry sweep is deferred here too — not
+        // because it decodes, but because its gate is only known now. Registered at
+        // load it swept the whole image on every binary and was discarded whenever
+        // the gate was off (the default). See `passes::run_deferred_entry_passes`.
+        let want_funcstart_patterns = self.arch().analysis_funcstart_patterns;
+        if (want_listing || want_fast_funcdisc || want_operand_refs || want_funcstart_patterns)
             && self.analysis_image.is_some()
         {
             let analysis_target = self.arch.arch_id().to_string();
@@ -2065,6 +2070,22 @@ impl ConsoleProgram {
                     &analysis_target,
                 )
                 {
+                    // Deferred entry-discovery passes FIRST: their entries must be
+                    // in `merged` before `committed_entry_seeds` is read below, which
+                    // is what hands the load-time inventory to the Listing walk as
+                    // extra roots (`armdiscseed`).
+                    if want_funcstart_patterns {
+                        let entry_out = kuna_analysis::passes::run_deferred_entry_passes(
+                            &bytes,
+                            &image,
+                            self.arch(),
+                        );
+                        for (id, out) in entry_out {
+                            if analysis_pass_enabled(self.arch(), id) {
+                                merged.merge(out);
+                            }
+                        }
+                    }
                     // Deferred Listing build + consumer/fast-inventory run, gated
                     // on the matching option. The call-fixup seed list is the names
                     // the load-time pass flagged resolved to addresses via the

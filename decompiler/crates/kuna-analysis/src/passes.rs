@@ -179,21 +179,11 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // constrains what the others emit, and the suppression is applied to the
         // fully merged entry set (the deferred Listing consumers included).
         Box::new(crate::entry::kuna_fdeinterior::FdeInteriorPass),
-        // S1 full byte-pattern function starts (FuncStartPatternPass): the faithful
-        // port of Ghidra's `FunctionStartAnalyzer` over the ENTIRE vendored pattern
-        // corpus (`entry/patterns/*.xml`: the `<patternpairs>` pre/post sequences
-        // + bare `<funcstart/>` patterns, x86/x86-64 headline + AArch64/ARM/RISC-V/
-        // MIPS/PPC). Unlike `EntryDiscoveryPass`'s always-on minimal oracle 5 (three
-        // bare x86-64 prologues), this applies the full set with the upstream
-        // pre/post matching: a candidate is a start iff a postpattern matches at it
-        // AND a prepattern matches the bytes immediately before it. Default-**OFF**
-        // (output-changing: discovers more functions): registered always, but its
-        // facts are dropped at commit unless `--option funcstart_patterns on`
-        // (`engine.rs::analysis_pass_enabled` reads `arch.analysis_funcstart_patterns`,
-        // default false), so a default run is byte-identical. After EntryDiscoveryPass
-        // (its discoveries are a superset; the commit boundary dedups against the entries
-        // EntryDiscoveryPass already emits). See `entry::FuncStartPatternPass`.
-        Box::new(crate::entry::FuncStartPatternPass),
+        // NB: the full byte-pattern function-start pass (`funcstart_patterns`) is
+        // NOT registered here. It is a DEFERRED pass, run at the commit point by
+        // [`run_deferred_entry_passes`] where its (default-OFF) gate is finally in
+        // effect, rather than swept at load on every binary and discarded. See
+        // `entry::FuncStartPatternPass`.
         // S1 ARM/Thumb decode-mode markers: paint the SLEIGH `TMode` context
         // variable from ARM mapping symbols (`$t`/`$a`) + the STT_FUNC odd-address
         // (LSB=1 ⇒ Thumb) convention, so Thumb code decodes as Thumb. The kuna
@@ -436,6 +426,63 @@ pub fn listing_seeds(file: &object::File, bytes: &[u8]) -> Vec<u64> {
     seeds.sort_unstable();
     seeds.dedup();
     seeds
+}
+
+/// The **deferred entry-discovery** passes — kept OUT of [`passes_for`] for the
+/// same reason as [`listing_consumer_passes`]: their `--option <id> on|off` gate
+/// is set by the CLI *after* `load file`, so running them at load pays their full
+/// cost on every binary and throws the result away whenever the gate is off.
+///
+/// Today that is `funcstart_patterns` alone, whose whole-image sweep over the
+/// vendored `<patternpairs>` corpus is the most expensive load-time pass on a
+/// large image and is discarded on every default run. Deferring an entry pass is
+/// output-neutral: the commit boundary's entry arm is idempotent by address and
+/// resolves each name from the fully merged `entry_names`, so where a pass's
+/// entries land in the merge order does not change what is installed.
+fn deferred_entry_passes() -> Vec<Box<dyn AnalysisPass>> {
+    vec![Box::new(crate::entry::FuncStartPatternPass)]
+}
+
+/// Run the [`deferred_entry_passes`] over the stashed image at the commit point,
+/// keyed by [`AnalysisPass::id`] (the same per-pass-split shape as
+/// [`run_default_analyses_per_pass`], so the console applies the identical
+/// `analysis_pass_enabled` filter).
+///
+/// The object view is built exactly as [`run_default_analyses_per_pass`] builds
+/// it, `relocrebase` rebasing included: a relocatable object is laid out
+/// synthetically by the loader, so a pass reading the raw view would emit
+/// pre-link, section-relative entries in an address space the engine does not
+/// have. A parse failure yields an empty list (additive, never fails).
+pub fn run_deferred_entry_passes(
+    bytes: &[u8],
+    image: &ObjectLoadImage,
+    arch: &Architecture,
+) -> Vec<(&'static str, AnalysisOutput)> {
+    let Ok(raw) = crate::loadimage_object::parse_object(bytes) else {
+        return Vec::new();
+    };
+    let view = crate::loader::kuna_relocrebase::rebased_view(&raw, bytes);
+    let (file, bytes) = crate::loader::kuna_relocrebase::select(raw, bytes, &view);
+    let ctx = AnalysisCtx {
+        file: &file,
+        bytes,
+        image,
+        arch,
+        listing: None,
+        image_path: image_on_disk_path(image),
+    };
+    let mut split: Vec<(&'static str, AnalysisOutput)> = deferred_entry_passes()
+        .iter()
+        .map(|pass| {
+            let mut out = pass.run(&ctx);
+            if let Some(view) = &view {
+                crate::loader::kuna_relocrebase::retain_in_image(&mut out, view);
+            }
+            (pass.id(), out)
+        })
+        .collect();
+    sanitize_all_names(&mut split);
+    split
 }
 
 /// The Listing/xref-tier **consumer** passes — those that read the built Listing

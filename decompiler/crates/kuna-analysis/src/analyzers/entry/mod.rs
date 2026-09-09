@@ -234,18 +234,23 @@ impl AnalysisPass for EhFrameLsdaPass {
 /// corpus (`entry/patterns/*.xml`, `<patternpairs>` pre/post + bare
 /// `<funcstart/>`), as a *separate*, default-**OFF** analysis pass.
 ///
-/// ## Why a separate pass (not an extra oracle inside `EntryDiscoveryPass`)
+/// ## Why a separate, DEFERRED pass (not an extra oracle inside `EntryDiscoveryPass`)
 ///
 /// `EntryDiscoveryPass` runs at **bootstrap** (`run_default_analyses_per_pass`),
 /// while the `--option funcstart_patterns on|off` flag is applied **later**
-/// (before `read symbols`). A pass cannot read its own gate at run time — so kuna
-/// gates whole passes at *commit* time: each pass `run`s unconditionally at
-/// bootstrap, and the console's `commit_analysis_output` keeps only the enabled
-/// passes' facts (`engine.rs::analysis_pass_enabled`, keyed by `id()`). Mirroring
-/// that exactly, this is its own `AnalysisPass` with `id() == "funcstart_patterns"`
-/// and an `analysis_funcstart_patterns` gate that defaults **off**, so its extra
-/// discoveries are dropped at commit unless the user turns it on — keeping every
+/// (before `read symbols`). A pass cannot read its own gate at run time, so this
+/// is its own `AnalysisPass` with `id() == "funcstart_patterns"` and an
+/// `analysis_funcstart_patterns` gate that defaults **off**, keeping every
 /// default-off run byte-identical (the parity contract).
+///
+/// Unlike the always-on passes it is **not** registered in `passes_for`: a
+/// whole-image sweep over the vendored pattern corpus is far too expensive to run
+/// and then discard, which is what a load-time registration did on every binary
+/// and every subcommand. It runs instead from the console's deferred commit via
+/// `passes::run_deferred_entry_passes`, where the flag is finally in effect — the
+/// same deferral the Listing consumers use. Output-neutral: the commit boundary's
+/// entry arm is idempotent by address and resolves names from the fully merged
+/// `entry_names`, so merge position does not change what installs.
 ///
 /// ## What it adds
 ///
