@@ -1127,6 +1127,10 @@ Behaviors specific to `decompile-all`:
     function (17 s on that PE), so a run only wins once the work exceeds one such
     load — a few hundred functions there, and nothing at all on a handful of
     them.
+  - **The first progress lines omit ETA.** The pool waits until every worker has
+    completed its first chunk, then estimates from work completed after that
+    point. Worker startup is therefore shown in elapsed time but is not projected
+    across the remaining functions.
   - **The watchdog becomes a real one.** `--max-fn-seconds` is cooperative in
     process, so a function wedged where nothing polls the deadline runs through
     it; the parent, which is not the stuck process, kills a worker that has
