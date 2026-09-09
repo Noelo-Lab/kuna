@@ -36,5 +36,26 @@
     "docs/options.md"
   ],
   "acceptance": "PASS -- scripts.repipe.verify --need x86-64-syscall-wrapper reports 1/1 pass, need closed. On the filed dataset witness `kuna decompile <crackme> 0x78 --addr ... --assert 'prototype 0x78 long kernel_call(...)'` goes from `syscall(); return number;` to `return syscall(number,address,length,address);` with no x64syscall flag passed (aggressive carries it).",
-  "gates": {}
+  "gates": {
+    "make test": "675/675 PARITY OK (no re-pin; option default-off in the catalog)",
+    "make test-stages": "740/740 PARITY OK (734 -> 740, baseline re-recorded for the 6 new assertions, none moved)",
+    "make test-cli": "118/118",
+    "make rust-test": "green -- 383 targets, 6,346 passed, 0 failed",
+    "make check-spec": "green, lenient and strict",
+    "kuna catalog --check": "OK; 179 -> 180 settables, transform tier 67 -> 68"
+  },
+  "sweep": {
+    "method": "decompile-all --json in both arms (--option x64syscall off vs on), every function body compared by address; a changed body is classified by whether either rendering mentions `syscall`.",
+    "corpus": "19 x86-64 ELF binaries / 558 function bodies -- 14 syscall-bearing images from the RE dataset plus 5 no-SYSCALL controls. 3 more were skipped (decompile-all non-zero or over the 90 s arm timeout).",
+    "result": "64 bodies change and ALL 64 are SYSCALL-bearing: COLLATERAL exactly 0. The no-SYSCALL control arm is 0-changed. Discovery IDENTICAL on all 19 (same function set, same error count). 37 of 64 get shorter and NOT ONE retains an empty `syscall()`.",
+    "worked_example": "FlipVM sub_13b88: `syscall(); return 3;` -> `return syscall(3);` -- the off arm returns the syscall NUMBER, the witness's false statement with a constant in place of a parameter.",
+    "inertness": "This branch at `--option x64syscall off` is byte-identical to unmodified main on all 19 binaries / 558 bodies, 0 differing -- registering the pass costs nothing when off.",
+    "honest_limit": "19 binaries rather than the ~80 first attempted: this box was saturated by concurrent agents and the first two sweep runs did not finish. The population swept is the one the feature targets, and the collateral question is structural -- the pass cannot fire on a function with no matched SYSCALL CALLOTHER."
+  },
+  "speed": {
+    "method": "whole-binary `decompile-all --json --max-fn-seconds 20` on the witness image (30 functions), interleaved alternating arms, median of 7 after a warmup; plus scripts.pipeline.timeit on the witness function.",
+    "whole_binary": "0.713 s (off) -> 0.712 s (on), -0.22% median, -1.50% min-of-7 -- flat.",
+    "single_function": "scripts.pipeline.timeit --option x64syscall, median of 9: 353.13 ms -> 140.82 ms, -60.12%, within the 5% budget. Folding the `undefined16` RAX:RDX composite return that the missing output forced does remove real type/merge work, but on one 14-instruction function under load this is not a claim; the whole-binary flat reading is the honest one."
+  },
+  "div": "DIV-152"
 }

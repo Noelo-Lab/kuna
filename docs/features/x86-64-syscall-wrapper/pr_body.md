@@ -57,3 +57,5 @@ propagation over an operation kuna has been told writes nothing.
 no-`SYSCALL` control and a split-block wrapper; `#1`/`#2` are the defect and fail
 at `on`. `tests/cli/x86-64-syscall-wrapper.json` carries the need's acceptance
 clauses verbatim against a vendored fixture.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
