@@ -4,35 +4,38 @@
   "scope": "small",
   "option": "calleescratchbody",
   "div": "DIV-149",
-  "status": "implemented-partial",
+  "status": "closed",
   "acceptance": {
-    "id": "a-ccd85db0e5f2",
-    "passed": false,
+    "id": "a-5557685cdbec",
+    "passed": true,
     "clauses": {
       "exit_code == 0": "PASS",
       "stdout_absent Stack<hex>)[v<n>]": "PASS (the filed defect; 8 hits before, 0 after)",
       "functions[0].error == null": "PASS",
-      "functions[0].line_mappings len_gt 7": "FAIL (2)"
+      "functions[0].code matches \"sub_1408d0000\\(\"": "PASS (degradation guard: the helper call is still emitted)"
     },
-    "why_the_last_clause_cannot_pass": "The probe decompiles under --define-function 0x140001000-0x140001043, an extent that cuts the function's own flow (0x140001041 JMP 0x140001053 leaves it). Once the frame index folds to a constant, the eight register-save stores are unread locals and dead-store elimination removes them, leaving `void sub_140001000(void) { sub_1408d0000(); return; }`. Independent control: a byte overlay that replaces the whole calling sequence with a literal `sub rsp,0x5e028` and no call at all (--assert 'bytes 0x14000100c 4881ec28e00500909090909090') produces the SAME empty body, so the collapse is not caused by this change. Keeping a clipped function's frame live-out is a second, independent change in P3 dead code; a prototype seeding every address-tied stack Varnode as consumed at the top of ActionDeadCode did NOT restore them, so the removal is upstream of that seam and is real work, not a one-line guard. On a function whose flow is not cut, the fix is complete."
+    "note": "The contract this branch first measured against (a-ccd85db0e5f2) required `line_mappings len_gt 7` on a function decompiled under `--define-function 0x140001000-0x140001043`, an extent that cuts the function's own flow at 0x140001041. Once the frame index folds to a constant the eight register-save stores are unread locals and are removed, so that clause could not be met by any correct fix; it was replaced by the captain in round 12 with the degradation guard above, and all four clauses now pass."
   },
   "decisions": [
     "The filed hypothesis (callee preservation loses RAX) is UPHELD; the round-5 refutation's MECHANISM is overturned. It read `MOV R11,qword ptr GS:[0x10]` as a CALLOTHER that makes the callee-body walk incomplete. x86-64 SLEIGH lowers a segment override to `GS_OFFSET + disp` (ia.sinc:1117 and 1143), not to the `segment` userop, and the walk was measured complete at 19 instructions with proves_untouched(RAX) true.",
     "The real blocker is calleepreserves' positive-evidence gate body_departs_from_convention: it requires a write to a register the model marks <unaffected>, and __chkstk writes only RSP/R10/R11, which x86-64-win.cspec names in neither list.",
     "Shipped as a separate option rather than a relaxation of calleepreserves so the two evidence clauses stay independently ablatable, matching how calleeretpreserves was split out.",
-    "The anti-vacuity mark is the callee's own memory write (its save slot), not an instruction-count threshold: `ret`, `endbr64; ret`, a placeholder and a wrong-address decode all store nothing, which is exactly the set the shipped gate exists to reject."
+    "The anti-vacuity mark is the callee's own memory write (its save slot), not an instruction-count threshold: `ret`, `endbr64; ret`, a placeholder and a wrong-address decode all store nothing, which is exactly the set the shipped gate exists to reject.",
+    "The removal of the clipped function's frame stores was traced to RuleEarlyRemoval (ruleaction_1.rs:129), not to ActionDeadCode: it destroys any op whose output has no descendants unless the Varnode is `is_auto_live`, and a stack COPY reaching only an artificial-halt RETURN has neither. Marking the stack Varnodes `addrforce` inside ActionDeadCode does not survive -- funcdata_spacebase's symbol sync mass-clears addrtied/addrforce (funcdata_spacebase.rs:1405) between the two. A prototype guard in RuleEarlyRemoval keyed on `flow left the declared extent` does restore all eight stores and both parameters, but it also keeps the CALL's return-address slot (`v23 = 0x140001016;`) and eight unused register declarations, and it is a second defect -- a declared extent that cuts flow makes the region's memory writes look like nothing happened -- not this one. Left out of this PR; worth its own need."
   ],
   "tests": {
     "stages": "tests/stages/kuna-calleescratchbody.xml (two-pass, 5 assertions, __chkstk verbatim + an endbr64/ret negative control)",
     "unit": "decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleescratchbody/tests.rs (5 tests)",
-    "cli_probe": "NOT promoted: `verify --promote` refuses because the need is still open (the shape clause above) and because the probe's target is binary_source=dataset, which CI has no access to. The stages case is the permanent regression test."
+    "cli_probe": "tests/cli/rax-preserving-stack-probe.json, hand-promoted: `verify --promote` refuses a `binary_source: dataset` target and the witness image is 9.4 MB, so the probe is re-pointed at a new vendored fixture, decompiler/crates/kuna-analysis/tests/fixtures/calleescratchbody_x86_64 (4,768 bytes, source .s checked in beside it) -- MSVC's __chkstk verbatim behind the real calling sequence. `--option calleescratchbody off` renders `*(unsigned long *)&(&Stack0000000000000008)[-chkstk()] = a0;` and fails the probe's stdout_absent clause; the default renders `chkstk(); return a0;`."
   },
   "gates": {
     "make test": "PARITY OK 675/675",
     "make test-stages": "PARITY OK 730/730",
-    "make test-cli": "108/108",
+    "make rust-test": "green (rc 0)",
     "make check-spec": "green",
-    "kuna catalog --check": "catalog OK"
+    "make test-cli": "109/109 (108 + the promoted probe)",
+    "kuna catalog --check": "catalog OK",
+    "scripts.repipe.counters": "no drift"
   },
   "sweep": {
     "corpus": "10 x86-64 PEs from the arena, 4,220 comparable functions, decompile-all --json both arms",

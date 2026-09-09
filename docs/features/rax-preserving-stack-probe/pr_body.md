@@ -78,3 +78,14 @@ void sub_1408dcdf8(unsigned long long *a0,uint4 a1,char *a2,uint8 a3)
 off` pinning the bug and the default pinning the fix, plus an `endbr64; ret`
 negative control that must render identically in both passes. Five unit tests in
 `kuna_calleescratchbody/tests.rs` pin each way the clause fails closed.
+
+`tests/cli/rax-preserving-stack-probe.json` runs the same shape end to end
+through the CLI against a new 4,768-byte fixture,
+`decompiler/crates/kuna-analysis/tests/fixtures/calleescratchbody_x86_64` (its
+`.s` is checked in beside it). With the option off it renders
+`*(unsigned long *)&(&Stack0000000000000008)[-chkstk()] = a0;` and fails.
+
+Gates: `make test` 675/675, `make test-stages` 730/730, `make test-cli` 109/109,
+`make rust-test` green, `make check-spec` green, `kuna catalog --check` OK.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
