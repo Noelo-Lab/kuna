@@ -1627,6 +1627,8 @@ pub mod parameter_pieces_flags {
     pub const TYPELOCK: uint4 = 16;
     /// Size of the parameter is locked (but not the data-type).
     pub const SIZELOCK: uint4 = 32;
+    /// Storage belongs to a host-declared custom prototype.
+    pub const CUSTOM_STORAGE: uint4 = 64;
 }
 
 /// Basic elements of a parameter: address, data-type, properties (C++
@@ -5640,6 +5642,14 @@ impl FuncProto {
             self.set_model(model);
         }
         self.update_all_types(pieces, typefactory, manager)?;
+        let custom_storage = pieces
+            .input_storage
+            .iter()
+            .any(|(_, p)| (p.flags & parameter_pieces_flags::CUSTOM_STORAGE) != 0)
+            || pieces
+                .output_storage
+                .as_ref()
+                .is_some_and(|p| (p.flags & parameter_pieces_flags::CUSTOM_STORAGE) != 0);
         // (kuna) A console `map return <addr>` parks an explicit, model-overriding
         // locked output storage on the pieces.  `update_all_types` re-derived the
         // output from the model (e.g. RAX for an int8 return); replace it with the
@@ -5652,7 +5662,17 @@ impl FuncProto {
         // named explicitly (`map param <func>::<i> <storage> <decl>`).  Only a
         // slot the model actually assigned is replaced, so a stale index cannot
         // punch a hole into the parameter list.
-        let assigned = self.store().get_num_inputs();
+        if custom_storage {
+            self.store_mut().clear_all_inputs();
+            self.flags |= func_proto_flags::CUSTOM_STORAGE;
+        } else {
+            self.flags &= !func_proto_flags::CUSTOM_STORAGE;
+        }
+        let assigned = if custom_storage {
+            int4::MAX
+        } else {
+            self.store().get_num_inputs()
+        };
         for (slot, custom_in) in pieces.input_storage.iter() {
             if *slot < 0 || *slot >= assigned {
                 continue;

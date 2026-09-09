@@ -289,6 +289,8 @@ pub struct RemoteProto {
     pub out_lock: bool,
     /// The decoded return type.
     pub out_type: Option<Rc<Datatype>>,
+    /// Whether Ghidra declared custom variable storage for this prototype.
+    pub custom: bool,
     /// Parameters from the `<localdb>` cat-0 symbols, sorted by slot index.
     pub params: Vec<RemoteParam>,
     /// Whether every parameter carried `typelock` (a locked signature).
@@ -383,6 +385,19 @@ impl RemoteProto {
             if let Some(ct) = &p.dtype {
                 pieces.intypes.push(Rc::clone(ct));
                 pieces.innames.push(p.name.clone());
+                if self.custom && !p.storage.is_invalid() {
+                    let slot = (pieces.intypes.len() - 1) as int4;
+                    pieces.input_storage.push((
+                        slot,
+                        crate::fspec::ParameterPieces {
+                            addr: p.storage.clone(),
+                            type_: Some(Rc::clone(ct)),
+                            flags: crate::fspec::parameter_pieces_flags::TYPELOCK
+                                | crate::fspec::parameter_pieces_flags::NAMELOCK
+                                | crate::fspec::parameter_pieces_flags::CUSTOM_STORAGE,
+                        },
+                    ));
+                }
             }
         }
         pieces
@@ -824,6 +839,7 @@ fn decode_prototype(
         no_return: false,
         out_lock: false,
         out_type: None,
+        custom: false,
         params: Vec::new(),
         params_locked: false,
     };
@@ -844,8 +860,10 @@ fn decode_prototype(
             proto.voidlock = decoder.read_bool()?;
         } else if aid == ATTRIB_NORETURN.get_id() {
             proto.no_return = decoder.read_bool()?;
+        } else if aid == ATTRIB_CUSTOM.get_id() {
+            proto.custom = decoder.read_bool()?;
         }
-        // modellock/inline/custom/constructor/destructor: not consumed.
+        // modellock/inline/constructor/destructor: not consumed.
     }
     while decoder.peek_element()? != 0 {
         let sub = decoder.peek_element()?;

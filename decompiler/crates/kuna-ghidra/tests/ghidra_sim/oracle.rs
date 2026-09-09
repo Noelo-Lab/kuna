@@ -151,6 +151,10 @@ pub struct SimOracle {
     pub callee_pieces: BTreeMap<u64, PrototypePieces>,
     /// Entry offsets whose localdb includes Java's AUTO hidden-return parameter.
     pub hidden_return_overrides: BTreeSet<u64>,
+    /// Entry offsets whose prototype uses custom variable storage.
+    pub custom_storage_overrides: BTreeSet<u64>,
+    /// Entry offsets whose parameter records should carry address storage.
+    pub parameter_address_overrides: BTreeSet<u64>,
     /// Real register storage for the x86-64 parameter stream.
     parameter_registers: Vec<VarnodeData>,
     /// Read-only image ranges (READONLY|CODE sections) — the `<hole>`
@@ -289,6 +293,8 @@ impl SimOracle {
             data_symbols,
             callee_pieces,
             hidden_return_overrides: BTreeSet::new(),
+            custom_storage_overrides: BTreeSet::new(),
+            parameter_address_overrides: BTreeSet::new(),
             parameter_registers,
             readonly_ranges,
             tracked_overrides: Vec::new(),
@@ -531,7 +537,7 @@ impl SimOracle {
                 self.encode_localdb(&mut e, entry.get_offset(), name, pieces, locals);
             }
             if let Some(p) = pieces {
-                self.encode_prototype(&mut e, p);
+                self.encode_prototype(&mut e, entry.get_offset(), p);
             }
             e.close_element(&ELEM_FUNCTION);
             // The mapping SymbolEntry: <addr size=1/> + empty <rangelist/>.
@@ -627,6 +633,7 @@ impl SimOracle {
             return;
         };
         let hidden = self.hidden_return_overrides.contains(&entry);
+        let custom = self.custom_storage_overrides.contains(&entry);
         let total = pieces.intypes.len() + usize::from(hidden);
         for i in 0..total {
             let declared_index = i.checked_sub(usize::from(hidden));
@@ -660,7 +667,12 @@ impl SimOracle {
                 self.encode_wire_type(e, ct.expect("declared parameter type"));
             }
             e.close_element(&ELEM_SYMBOL);
-            if let Some(storage) = self.parameter_registers.get(i) {
+            if let Some(storage) = self
+                .parameter_address_overrides
+                .contains(&entry)
+                .then(|| self.parameter_registers.get(i + usize::from(custom)))
+                .flatten()
+            {
                 Address::new(
                     Rc::clone(storage.space.as_ref().expect("register space")),
                     storage.offset,
@@ -683,10 +695,13 @@ impl SimOracle {
 
     /// `<prototype extrapop="unknown" model="default" …><returnsym>` (Java
     /// `FunctionPrototype.encodePrototype`, params via `<localdb>`).
-    fn encode_prototype(&self, e: &mut PackedEncode, pieces: &PrototypePieces) {
+    fn encode_prototype(&self, e: &mut PackedEncode, entry: u64, pieces: &PrototypePieces) {
         e.open_element(&ELEM_PROTOTYPE);
         e.write_string(&ATTRIB_EXTRAPOP, b"unknown");
         e.write_string(&ATTRIB_MODEL, b"default");
+        if self.custom_storage_overrides.contains(&entry) {
+            e.write_bool(&kuna_decomp::remote_provider::ATTRIB_CUSTOM, true);
+        }
         if pieces.first_var_arg_slot >= 0 {
             e.write_bool(&ATTRIB_DOTDOTDOT, true);
         }

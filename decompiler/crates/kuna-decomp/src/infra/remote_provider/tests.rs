@@ -191,6 +191,7 @@ fn function_mapsym_decodes_prototype_and_params() {
         e.open_element(&ELEM_PROTOTYPE);
         e.write_string(&ATTRIB_EXTRAPOP, b"unknown");
         e.write_string(&ATTRIB_MODEL, b"default");
+        e.write_bool(&ATTRIB_CUSTOM, true);
         e.open_element(&ELEM_RETURNSYM);
         e.write_bool(&ATTRIB_TYPELOCK, true);
         e.open_element(&kuna_base::address::ELEM_ADDR);
@@ -220,6 +221,7 @@ fn function_mapsym_decodes_prototype_and_params() {
     let proto = func.proto.as_ref().expect("prototype decoded");
     assert_eq!(proto.model, "default");
     assert_eq!(proto.extrapop, None); // the "unknown" string form
+    assert!(proto.custom);
     assert!(proto.out_lock);
     assert!(proto.out_type.as_ref().unwrap().get_metatype() == type_metatype::TYPE_VOID);
     assert!(proto.is_input_locked());
