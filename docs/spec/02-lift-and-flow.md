@@ -573,6 +573,58 @@ naming the pad does not depend on asserting that the process dies there. `option
 int3pad off` restores the unannotated rendering. Exercised by
 `tests/stages/kuna-int3pad.xml`.
 
+**(kuna) The x86-64 `SYSCALL` user-op's ABI effects — `option x64syscall`,
+default `off` and `on` in the `aggressive` preset (DIV-152),
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_x64syscall.rs
+(ActionX64Syscall)`.** The 64-bit instruction is not an interrupt and takes none
+of the paths above: `ia.sinc:4836` lowers it as `RCX = inst_next; R11 = rflags;
+syscall();`, a `CALLOTHER` with no inputs and no output at all. That one fact
+produces both halves of the damage on a syscall wrapper. With no inputs the
+register writes that set the call up have no reader, the dead-code fixpoint
+collects them, and the number and every argument are erased — the op prints as
+`syscall()` with empty parens. With no output nothing redefines `RAX` across the
+instruction, so the `RAX` the wrapper stores afterwards is still the one it
+loaded from its own `number` parameter, and the whole body comes out as
+`syscall(); return number;`. The return value is not invented: it is correct copy
+propagation over an operation kuna has been told writes nothing, which is what
+makes the emitted C a false statement about the program rather than an incomplete
+one. `linuxsyscall` above cannot be extended to cover it — there is no `CALLIND`
+to retarget, the number is a runtime value rather than a constant to look up in
+the syscall table, and it is gated to x86-32 — so the fix has to be
+number-independent. Decision rule: a `CALLOTHER` whose only input is the user-op
+index, with no output, whose index is one the architecture resolved for the name
+`syscall` into the ArchSeam (`architecture.rs`, alongside `simd_shuffle_userops`,
+because the boundary `ArchContext` carries no userop table), is the instruction.
+It is rewritten in place — register reads inserted after the index, `RAX`
+installed as the output — which is why the pass sits in the once-per-function
+block beside `ActionLinuxSyscall`: like it, the pattern is read off the raw
+p-code, and adding a register read or write is only legal before heritage builds
+SSA. `RCX` and `R11` are already written by the SLEIGH constructor and are left
+alone, and a user-op a compiler spec has specialized with its own
+`<callotherfixup>` carries an injection id and is dropped at seam-resolution
+time, so a spec-declared model always wins.
+
+Which argument registers are read is the one judgement in the pass, and with a
+runtime number nothing can settle it, so the option carries both answers. Under
+`on` an argument register is taken only where a bounded backward walk of the
+`CALLOTHER`'s own basic block finds an op writing it before the instruction —
+declining at the first call or branch, at the top of the block and at a 64-op
+budget, and counting any overlapping output, since a 32-bit `MOV ESI` sets up
+`RSI` just as a 64-bit one does. Every read it adds is therefore of a value the
+function demonstrably places there, and no undefined register is ever introduced;
+the cost is that a wrapper whose setup sits in a predecessor block keeps the old
+rendering for that argument. Under `abi` all six are taken unconditionally, which
+is what the kernel contract permits the callee to read and is the answer for a
+multi-block wrapper, at the price that a register the function never writes reads
+as an undefined input and can add a parameter the source has not got. `RAX` is
+read and written under both: the number is in it by definition, and the output is
+the half that retires the false return. Inert on every language but x86-64 —
+`RAX` and all six argument registers must resolve at eight bytes and the default
+code space must be eight bytes wide — and on any function with no `SYSCALL`.
+Exercised by `tests/stages/kuna-x64syscall.xml`, whose three functions are the
+witness, a no-`SYSCALL` control and a split-block wrapper that separates `on`
+from `abi`.
+
 **(kuna) Overlapping branch target — `option overlapbranch`, default on
 (DIV-106), `decompiler/crates/kuna-decomp/src/p2_lift/kuna_overlapbranch.rs
 (kuna_overlaps_pending_branch)`.** A conditional branch pushes both successors and

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    734,
-    734
+    740,
+    740
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -737,7 +737,13 @@
     "data:whiledo-complex #2: no statement is inlined inside a while-parens condition (plain form absent)",
     "data:whiledo-complex #3: the bound check is a proper if statement in the loop body",
     "data:whiledo-complex #4: the loop exit is a proper break statement",
-    "data:whiledo-complex #5: the bound-check return is a statement, not condition text"
+    "data:whiledo-complex #5: the bound-check return is a statement, not condition text",
+    "data:x64syscall #1: with the option off the user-op reads nothing, so it prints with empty parens in both syscall-bearing functions -- the bug",
+    "data:x64syscall #2: and nothing redefines RAX, so kernel_call returns the RAX:RDX pair it was handed instead of a result",
+    "data:x64syscall #3: on, kernel_call recovers the number and all three arguments, and returns the syscall's own result",
+    "data:x64syscall #4: on, split_setup keeps RAX alone -- its RDI is set two blocks back, which the in-block walk does not claim",
+    "data:x64syscall #5: abi takes all six argument registers, recovering split_setup's RDI at the price of the ones nothing writes",
+    "data:x64syscall #6: the no-SYSCALL control is byte-identical in all three passes"
   ],
   "returncode": 0,
   "unit_footer": null

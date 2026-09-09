@@ -930,6 +930,16 @@ pub struct ArchContext {
     /// the number in `EAX` selects.  Read by
     /// [`ActionLinuxSyscall`](crate::p2_lift::kuna_linuxsyscall::ActionLinuxSyscall).
     pub linux_syscall: bool,
+    /// (kuna) `option x64syscall`: what register effects the x86-64 `SYSCALL`
+    /// user-op carries.  Read by
+    /// [`ActionX64Syscall`](crate::p2_lift::kuna_x64syscall::ActionX64Syscall).
+    pub x64_syscall: crate::p2_lift::kuna_x64syscall::X64SyscallMode,
+    /// (kuna) The user-op indices the `SYSCALL` constructor emits, resolved once
+    /// per program because the boundary `ArchContext` carries no userop table.
+    /// A user-op a compiler spec specialized with its own `<callotherfixup>` is
+    /// left out, so a spec-declared model always wins.  Read by
+    /// [`ActionX64Syscall`](crate::p2_lift::kuna_x64syscall::ActionX64Syscall).
+    pub x64_syscall_userops: Vec<kuna_base::types::uint4>,
     /// (kuna) `option switchselector`: refuse a recovered lowered-switch record
     /// whose synthesized BRANCHIND would not get the switch value as its
     /// selector.  Read by
@@ -1361,6 +1371,8 @@ impl ArchContext {
             outline_spec: String::new(), // outline (opt-in default-off; empty = off)
             remove_cleanup_code: true,   // cleanupcode (DIV-81 default-on; inert on a non-Rust binary)
             linux_syscall: false,        // linuxsyscall (opt-in default-off)
+            x64_syscall: crate::p2_lift::kuna_x64syscall::X64SyscallMode::Off, // x64syscall (opt-in default-off)
+            x64_syscall_userops: Vec::new(),
             switch_selector_guard: false, // switchselector (opt-in default-off)
             cond_fold: 0,                // condfold (opt-in default-off; 0 = off)
             reduce_return_gotos: false,  // gotoreduce (opt-in default-off)

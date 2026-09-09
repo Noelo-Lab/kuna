@@ -260,6 +260,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "v850indirectbranch",
     "fastfailnoreturn",
     "int3pad",
+    "x64syscall",
     "decodehalt",
     "msvcftol",
     "tailcalljump",

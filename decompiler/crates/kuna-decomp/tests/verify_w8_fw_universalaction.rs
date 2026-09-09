@@ -201,28 +201,31 @@ fn w8_fw_universalaction_allgroups_full_order_count_head_tail() {
     // drop/deallocate call removal in the pre-SSA window, DIV-81); and
     // `linuxsyscall`, option-gated default-off, directly after `constbase` (S2
     // 32-bit Linux `int 0x80` naming: it reads the RAW p-code and its call spec
-    // is input-locked, so it has to precede `funclink`).)
+    // is input-locked, so it has to precede `funclink`); and `x64syscall`,
+    // option-gated default-off, directly after it (S2 x86-64 SYSCALL ABI
+    // effects: also read off the RAW p-code, and adding a register read or
+    // write is only legal before heritage).)
     assert_eq!(
         UNPORTED_ALLOWLIST.len(),
         0,
         "all universalAction passes are ported; UNPORTED_ALLOWLIST must be empty"
     );
     assert_eq!(
-        nonblank, 278,
-        "full universal tree must render 252 C++ leaves + 19 kuna leaves (branchflip + cleanupcode + linuxsyscall + outline + gotoreduce + taildup + ifelseflatten + crossjumprevert + dedupitetail + returndup + iteregion + iteboolean + earlyreturn + switchreturn + paramcopyhoist + removesecuritycheck + stripmsvcstackguard + rodatastringcopy + simdshufflelane) + 7 container headers"
+        nonblank, 279,
+        "full universal tree must render 252 C++ leaves + 20 kuna leaves (branchflip + cleanupcode + linuxsyscall + x64syscall + outline + gotoreduce + taildup + ifelseflatten + crossjumprevert + dedupitetail + returndup + iteregion + iteboolean + earlyreturn + switchreturn + paramcopyhoist + removesecuritycheck + stripmsvcstackguard + rodatastringcopy + simdshufflelane) + 7 container headers"
     );
 
     // Head: the universal restart-group prelude, in C++ order.  Note
     // `normalizesetup` (normalanalysis) and `funclink_outonly` (noproto) are
     // PRESENT here but absent in the decompile oracle — the part of the order
     // the gate never sees.
-    let head: Vec<&str> = lines.iter().take(11).map(|l| name_of(l)).collect();
+    let head: Vec<&str> = lines.iter().take(12).map(|l| name_of(l)).collect();
     assert_eq!(
         head,
         vec![
-            "universal", "start", "constbase", "linuxsyscall", "normalizesetup",
-            "defaultparams", "extrapopsetup", "prototypetypes", "funclink",
-            "funclink_outonly", "fullloop",
+            "universal", "start", "constbase", "linuxsyscall", "x64syscall",
+            "normalizesetup", "defaultparams", "extrapopsetup", "prototypetypes",
+            "funclink", "funclink_outonly", "fullloop",
         ]
     );
 
