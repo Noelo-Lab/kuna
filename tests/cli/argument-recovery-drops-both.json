@@ -1,0 +1,33 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "feed"
+  ],
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/zeroidiomuse_x86_64",
+    "binary_sha256": "fb9454dd959782a03674fbd5833ec548b0410b76c1211d82919289af475912bf",
+    "binary_size": 8928,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/zeroidiomuse_x86_64",
+    "selector": "feed",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_absent": [
+      "watchdog\\(\\)"
+    ],
+    "stdout_matches": [
+      "watchdog\\(0x402000,2\\)"
+    ]
+  },
+  "notes": "Desired: a call inside a loop keeps the arguments the two instructions before it load. Witness: crackmes.one 67f9bdc38f555589f3530a85 WeeperVM, sub_113d9 -> watchdog @0x110ff, which rendered watchdog(). Retargeted onto the vendored zeroidiomuse_x86_64 (CI has no dataset): same loop shape, same clauses."
+}

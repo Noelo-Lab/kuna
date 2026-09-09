@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    721,
-    721
+    725,
+    725
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -422,6 +422,10 @@
     "data:TAILCALLFRAME #4: the introduced call is attributed to the option that introduced it",
     "data:VOIDTAILRETURN #1: the bare trailing return; is printed by EXACTLY ONE of the two passes - the shipped default keeps it, `option voidtailreturn on` elides it (2 would mean the option did nothing)",
     "data:VOIDTAILRETURN #2: both passes really emitted the function, so #1 cannot pass vacuously on a pass that produced no C",
+    "data:ZEROIDIOMUSE #1: off, the watchdog call inside the loop has an empty argument list",
+    "data:ZEROIDIOMUSE #2: on, both loaded registers reach the call as arguments",
+    "data:ZEROIDIOMUSE #3: the zeroing idiom itself is folded to the constants reader is called with in BOTH passes, so the option moved no other call",
+    "data:ZEROIDIOMUSE #4: both passes keep the loop counter and its two returns, so only the argument list moved",
     "data:angr-LoweredSwitch #1: exactly one switch (none in pass 1 off, one in pass 2 on)",
     "data:angr-LoweredSwitch #2: default present",
     "data:angr-LoweredSwitch #3: case 0x70 (p) recovered",

@@ -626,6 +626,10 @@ pub struct ArchContext {
     /// RETURN's output trial (`option noreturnretuse`); read by
     /// [`crate::p4_calls::kuna_noreturnretuse`].
     pub noreturn_ret_use: bool,
+    /// (kuna) Let an `INT_XOR`/`INT_SUB` of a value with itself coexist with that
+    /// value's input trial (`option zeroidiomuse`); read by
+    /// [`crate::p4_calls::kuna_zeroidiomuse`].
+    pub zero_idiom_use: bool,
     /// (kuna) `option rustabi` (0 off / 1 auto / 2 always): keep a rustc
     /// two-register `ScalarPair` return intact; read by [`crate::kuna_rustabi`].
     pub rust_abi: u8,
@@ -1278,6 +1282,9 @@ impl ArchContext {
             // (kuna) `option noreturnretuse` default-on; the real value is copied
             // from the engine Architecture in `build_arch_handle`.
             noreturn_ret_use: true,
+            // (kuna) `option zeroidiomuse` default-on; the real value is copied
+            // from the engine Architecture in `build_arch_handle`.
+            zero_idiom_use: true,
             // (kuna) `option rustabi` default-off; the real value is copied from
             // the engine Architecture in `build_arch_handle`.
             rust_abi: 0,
