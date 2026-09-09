@@ -528,9 +528,9 @@ group):
 For the 64-bit unsigned divide-by-three reciprocal, GCC can share one wide
 multiply between the quotient and remainder. After `RuleDivOpt` recovers
 `x / 3`, the sibling `(high64(x * 0xaaaaaaaaaaaaaaab) & ~1)` is exactly twice
-that quotient. `RuleDivOpt` substitutes `(x / 3) * 2` only when the same `x / 3`
-node is present; the ordinary term collection and `RuleModOpt` rules can then
-recover `x % 3`. Other masks, reciprocals, widths, wide divisions, and
+that quotient. `RuleDivOpt` substitutes `(x / 3) * 2` only when the same
+`x / 3` node precedes it in the same basic block; the ordinary term collection
+and `RuleModOpt` rules can then recover `x % 3`. Other masks, reciprocals, widths, wide divisions, and
 multiply-without-a-matching-quotient forms are declined.
 
 **Keeping a frame store that only a marker still reads** (`option tiedstorekeep`,

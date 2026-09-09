@@ -2129,14 +2129,24 @@ impl RuleDivOpt {
         if !is_written(data, wide_x) { return false }
         let ext_op = def_of(data, wide_x).expect("divopt: wide multiplicand has no def");
         let x = match code(data, ext_op) {
-            OpCode::CPUI_INT_ZEXT => in_vn(data, ext_op, 0),
+            OpCode::CPUI_INT_ZEXT if size(data, wide_x) == 16
+                && size(data, in_vn(data, ext_op, 0)) == 8 => in_vn(data, ext_op, 0),
             OpCode::CPUI_PIECE if is_const(data, in_vn(data, ext_op, 0))
                 && offset(data, in_vn(data, ext_op, 0)) == 0
+                && size(data, wide_x) == 16
                 && size(data, in_vn(data, ext_op, 1)) == 8 => in_vn(data, ext_op, 1),
             _ => return false,
         };
+        let and_op = data.obank().get(op).expect("divopt: stale AND");
+        let Some(and_parent) = and_op.get_parent() else { return false };
+        let and_order = and_op.get_seq_num().get_order();
         let quotient = data.descend_snapshot(x).into_iter().find_map(|div_op| {
             if code(data, div_op) != OpCode::CPUI_INT_DIV || in_vn(data, div_op, 0) != x {
+                return None;
+            }
+            let candidate = data.obank().get(div_op).expect("divopt: stale quotient");
+            if candidate.get_parent() != Some(and_parent)
+                || candidate.get_seq_num().get_order() >= and_order {
                 return None;
             }
             let divisor = in_vn(data, div_op, 1);

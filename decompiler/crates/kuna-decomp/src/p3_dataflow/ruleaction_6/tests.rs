@@ -325,6 +325,78 @@ fn find_form_rejects_non_shift_non_subpiece_root() {
     assert!(RuleDivOpt::find_form(&fd, add).is_none());
 }
 
+fn div3_double_pattern(xsize: int4, quotient_before: bool, magic: uintb, mask: uintb)
+    -> (Funcdata, OpId)
+{
+    let mut fd = build_fd();
+    let root = fd.bblocks_ref().root.expect("bblocks root");
+    let block = fd.bblocks_mut().new_block_basic(root);
+    let x = mk_vn(&mut fd, 0x1100, xsize);
+    fd.vbank_mut().set_input(x, &mut no_replace()).unwrap();
+
+    let ext = mk_op(&mut fd, 1, 0x1010, OpCode::CPUI_INT_ZEXT);
+    set_in(&mut fd, ext, x, 0);
+    let wide_x = give_output(&mut fd, ext, 0x1200, 16);
+    let mult = mk_op(&mut fd, 2, 0x1020, OpCode::CPUI_INT_MULT);
+    set_in(&mut fd, mult, wide_x, 0);
+    let magic = mk_const(&mut fd, 16, magic);
+    set_in(&mut fd, mult, magic, 1);
+    let product = give_output(&mut fd, mult, 0x1210, 16);
+    let sub = mk_op(&mut fd, 2, 0x1030, OpCode::CPUI_SUBPIECE);
+    set_in(&mut fd, sub, product, 0);
+    let eight = mk_const(&mut fd, 4, 8);
+    set_in(&mut fd, sub, eight, 1);
+    let high = give_output(&mut fd, sub, 0x1220, 8);
+    let div = mk_op(&mut fd, 2, 0x1040, OpCode::CPUI_INT_DIV);
+    set_in(&mut fd, div, x, 0);
+    let three = mk_const(&mut fd, xsize, 3);
+    set_in(&mut fd, div, three, 1);
+    give_output(&mut fd, div, 0x1230, xsize);
+    let and = mk_op(&mut fd, 2, 0x1050, OpCode::CPUI_INT_AND);
+    set_in(&mut fd, and, high, 0);
+    let mask = mk_const(&mut fd, 8, mask);
+    set_in(&mut fd, and, mask, 1);
+    give_output(&mut fd, and, 0x1240, 8);
+
+    for (op, order) in [(ext, 0), (mult, 1), (sub, 2),
+                         (div, if quotient_before { 3 } else { 4 }),
+                         (and, if quotient_before { 4 } else { 3 })] {
+        let op = fd.obank_mut().get_mut(op).unwrap();
+        op.set_parent(Some(block));
+        op.set_order(order);
+    }
+    (fd, and)
+}
+
+#[test]
+fn div3_double_requires_a_full_width_input() {
+    let (mut fd, and) = div3_double_pattern(4, true, 0xaaaa_aaaa_aaaa_aaab, u64::MAX - 1);
+    assert!(!RuleDivOpt::recover_div3_double(and, &mut fd));
+    assert_eq!(code(&fd, and), OpCode::CPUI_INT_AND);
+}
+
+#[test]
+fn div3_double_reuses_a_preceding_same_block_quotient() {
+    let (mut fd, and) = div3_double_pattern(8, true, 0xaaaa_aaaa_aaaa_aaab, u64::MAX - 1);
+    assert!(RuleDivOpt::recover_div3_double(and, &mut fd));
+    assert_eq!(code(&fd, and), OpCode::CPUI_INT_MULT);
+}
+
+#[test]
+fn div3_double_requires_a_preceding_quotient() {
+    let (mut fd, and) = div3_double_pattern(8, false, 0xaaaa_aaaa_aaaa_aaab, u64::MAX - 1);
+    assert!(!RuleDivOpt::recover_div3_double(and, &mut fd));
+    assert_eq!(code(&fd, and), OpCode::CPUI_INT_AND);
+}
+
+#[test]
+fn div3_double_declines_other_magic_and_mask_forms() {
+    let (mut fd, and) = div3_double_pattern(8, true, 0x0101_0101_0101_0101, u64::MAX - 1);
+    assert!(!RuleDivOpt::recover_div3_double(and, &mut fd));
+    let (mut fd, and) = div3_double_pattern(8, true, 0xaaaa_aaaa_aaaa_aaab, u64::MAX - 3);
+    assert!(!RuleDivOpt::recover_div3_double(and, &mut fd));
+}
+
 // =============================================================================
 // RuleDivOpt::move_sign_bit_extraction — fully committed (opSetInput only)
 // =============================================================================
