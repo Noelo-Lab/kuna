@@ -1940,6 +1940,54 @@ either. Ghidra additionally routes an image whose load-config CHPE metadata
 pointer is set to its ARM parser regardless of `Machine`; kuna parses no load
 config, so an ARM64EC image that declares itself `AMD64` still reads at 12.
 
+(kuna) **An address-taken function is described by nothing else in a PE**, and the
+base-relocation table is what finds it
+(`decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_pereloccode.rs`). The
+oracles above answer for functions the image declares — the entry point, an
+export, a TLS callback, a `.pdata` record — and the recursive-descent walk claims
+every direct `CALL` target. A function reached only through a stored pointer is in
+none of those sets: a VM interpreter's handler table, a C++ vtable slot, a
+callback handed to the runtime. The witness is an x64 MSVC crackme whose 30-entry
+handler table in `.rdata` is read with `LEA RCX,[handler]`; four of its handlers
+are leaves MSVC left out of `.pdata`, so `kuna functions` listed 228 entries with
+none of them, and the bounder folded each into the function ahead of it —
+`sub_140003c50` reported 32 bytes for a 16-byte function.
+
+The relocation directory answers exactly the question the scan needs. It lists the
+image words holding an absolute address, because the loader has to fix them up when
+the image lands off its preferred base, so a relocated word whose value falls in an
+executable section is a *stored code address* rather than a byte pattern that
+resembles one. `IMAGE_REL_BASED_DIR64` is read on a PE32+ and
+`IMAGE_REL_BASED_HIGHLOW` on a PE32, each against its own pointer width, and the
+walk is total: an unreadable block or an RVA no section covers yields fewer
+candidates, never an error.
+
+A stored code address is a function start unless it is a label or is not code, and
+`.pdata` separates both. A non-PIC switch jump table is a run of relocated
+addresses pointing *into* the function that switches on them, so a candidate
+strictly inside a `RUNTIME_FUNCTION`'s `[BeginAddress, EndAddress)` is dropped — a
+`BeginAddress` itself is kept, being a start the `.pdata` oracle already has. And a
+packed or single-section image breaks the executable-section test outright:
+`jormungandr.exe` merges its payload into `.text`, so a UTF-16 locale table
+(`hr-HR`, `ko-KR`, …) sits at executable addresses and 666 relocated pointers into
+it read as code pointers. The same directory settles that too — its records cover
+`0x1400091c0` upwards while every one of those strings lies below — so a candidate
+must fall inside the span of its own section that the exception table vouches for.
+On the witness that costs nothing: `vm.exe`'s records span `.text` end to end, and
+the four handlers sit in holes inside it.
+
+That guard is also the precondition. An image vouching for no code region — a PE32
+with no exception directory, or an ARM/ARM64 PE whose 8-byte records carry no
+`EndAddress` — cannot distinguish a jump table from a handler table, so the oracle
+**abstains** there rather than seed unvetted addresses; 72 of the 152 PE images
+swept are PE32 without `.pdata`, one of them carrying 3287 relocated code
+addresses. The rule is not gated: a relocation is the image's own statement that
+the word is an address, so the oracle corrects wrong output rather than trading one
+plausible reading for another. Measured over 150 of those images, 38 inventories move,
+747 starts are added and 31 removed — every removal a start the new seed supersedes,
+including `0x140028d1c` in `CrackVM-V2.exe`, which was four bytes into the
+`MOV RAX,[RSP+0x28]` that opens the function the vtable slot names.
+
 The object bootstrap paints executable sections as Thumb for THUMB and ARMNT
 machine values, and retains that context through the analysis commit. Per-entry
 mode evidence for a generic ARM header remains a follow-up: the `BeginAddress`

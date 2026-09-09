@@ -1,0 +1,39 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "functions",
+    "{{BIN}}",
+    "--json"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/pe_reloctable_x86_64.exe",
+    "binary_sha256": "fdc28c5e4538e07ab23b6356c82a21ec0399d8481a18862918b3ce084c178000",
+    "binary_size": 3584,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/pe_reloctable_x86_64.exe",
+    "selector": null,
+    "selector_kind": "none"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "stdout_matches": [
+      "\"address_hex\"\\s*:\\s*\"0x140001060\""
+    ],
+    "stdout_absent": [
+      "\"address_hex\"\\s*:\\s*\"0x140001040\""
+    ]
+  },
+  "notes": "CI twin of the dataset witness (crackmes.one 69b7492049fa49a2a260218f bin/vm.exe), whose inventory omitted the handlers at 0x140003c60 and 0x1400041b0. Retargeted onto the vendored pe_reloctable_x86_64.exe: 0x140001060 is address-taken only, and 0x140001040 is a jump-table label the oracle must decline."
+}
