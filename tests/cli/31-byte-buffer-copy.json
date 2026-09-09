@@ -1,0 +1,41 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "copy31"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/splitstorekeep_x86_64",
+    "binary_sha256": "4f2ee6ff1861a50fba58cba13e1e1ed6dccadcca84d6144200183326344a9671",
+    "binary_size": 4800,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/splitstorekeep_x86_64",
+    "selector": "copy31",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "(v[0-9]+ = v[0-9]+;\\s*){5}",
+      "undefined7 v[0-9]+; // stack - 0x50",
+      "char v[0-9]+; // stack - 0x49",
+      "undefined7 v[0-9]+; // stack - 0x30"
+    ],
+    "stdout_absent": [
+      "v[0-9]+\\[0\\] = v[0-9]+\\[0\\];"
+    ]
+  },
+  "notes": "Desired: a stack-to-stack copy whose 8-byte stores overlap keeps all of them. Witness: 0xJam3z-Medium sub_15dc (crackmes.one 6927c8d1), a 31-byte copy as four moves at 0, 8, 15 and 23 whose two overlapping middle stores were deleted. This fixture reduces it: the refined partition is 8+7+1+7+8, so a repaired copy31 is five assignments. copy32 is the non-overlapping control."
+}

@@ -323,6 +323,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "indexaliasguard",
     "tiedstorekeep",
     "loopcounterstore",
+    "splitstorekeep",
     "regionstructure",
     "guardarm",
     "loopcondhoist",

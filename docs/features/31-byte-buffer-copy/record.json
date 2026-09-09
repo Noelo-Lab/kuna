@@ -1,0 +1,52 @@
+{
+  "slug": "31-byte-buffer-copy",
+  "need_id": "31-byte-buffer-copy",
+  "track": "quality",
+  "scope": "small",
+  "option": "splitstorekeep",
+  "default": "on",
+  "div": "DIV-153",
+  "phase": "P3",
+  "module": "decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_splitstorekeep.rs",
+  "seam": "Heritage::refine_write -> split_by_refinement pieces",
+  "decisions": [
+    "The filed hypothesis ('lost pieces during stack-copy merging') and the round-11 triage note ('a type-assertion / array-cover rendering defect; a builder should develop against that assertion pair') are both overturned. The loss is in P3 heritage and reproduces at the DEFAULT with no assertion at all: `kuna decompile <bin> sub_15dc` emits two of the four stores. The char[31] assertions only change how the two SURVIVING stores are spelled (element-wise instead of word-wise); they neither cause nor deepen the loss.",
+    "Root cause bisected by tracking the store ops through the action schedule: they survive heritage pass 3 as five correct stack-to-stack COPYs and are deleted by the ActionDeadCode that follows. The discriminator between the survivors and the dead is Varnode::isStackStore(), false on every refinement piece and true on the two unrefined stores; ActionDirectWrite's COPY arm reads exactly that flag, and ActionDeadCode clears addrforce on anything it does not mark.",
+    "Fixed at the source of the flag loss (refine_write) rather than by widening ActionDirectWrite's COPY arm: a piece of a store is a store, so carrying the mark claims nothing new, while relaxing the direct-write test would mark ordinary stack COPYs the upstream test deliberately excludes.",
+    "Shipped behind a named option even though it only corrects wrong output, because it diverges from upstream Ghidra (whose splitByRefinement also drops the mark) -- 'when in doubt, gate it'."
+  ],
+  "covered_by_existing_option": false,
+  "options_tried": [
+    "stackalias on",
+    "indexaliasguard full",
+    "indexaliasguard off",
+    "loadguardrange off"
+  ],
+  "acceptance_passes": true,
+  "speed_off_ms": 158.68,
+  "speed_on_ms": 159.01,
+  "speed_delta_pct": 0.21,
+  "speed_samples": 5,
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": true,
+  "speed_forced_off": false,
+  "sweep": {
+    "method": "kuna decompile-all, option off vs on, whole stdout compared",
+    "binaries": 55,
+    "binaries_changed": 0,
+    "note": "Refinement only splits a range whose accesses disagree on their boundaries, so a function with no overlapping stack access cannot reach the mark. The two changes measured are the witness (bytes 8..22 restored, 2 statements -> 5, none moved or deleted) and the vendored reduction."
+  },
+  "gates": {
+    "make test": "PARITY OK 675/675",
+    "make test-stages": "PARITY OK 746/746 (740 -> 746, 6 new)",
+    "make test-cli": "119/119",
+    "make check-spec": "green",
+    "kuna catalog --check": "OK"
+  },
+  "artifacts": {
+    "fixture": "decompiler/crates/kuna-analysis/tests/fixtures/splitstorekeep_x86_64",
+    "stage_test": "tests/stages/kuna-splitstorekeep.xml",
+    "cli_probe": "tests/cli/31-byte-buffer-copy.json",
+    "spec": "docs/spec/03-ssa-and-simplification.md"
+  }
+}

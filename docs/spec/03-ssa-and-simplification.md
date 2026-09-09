@@ -151,6 +151,26 @@ smaller size, the stale MULTIEQUAL/INDIRECT/return-COPY markers from the earlier
 pass are deleted and the old outputs re-derived as SUBPIECEs of the new full
 range (`heritage.rs (Heritage::remove_revisited_markers)`).
 
+**Refinement pieces keep the store mark** (`option splitstorekeep`,
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_splitstorekeep.rs
+(keep_store_mark)`, default **on**). A frame store reaches this phase as a
+direct `stackvn = COPY(value)` whose output `RuleStoreVarnode` marked
+`stack_store` — "originally came from a CPUI_STORE". That mark is what keeps the
+store printed: `ActionDirectWrite` calls a COPY into the frame a *direct write*
+only when its output is a stack store, and dead-code elimination opens by
+dropping the `addrforce` mark of anything that is not a direct write, after
+which nothing consumes the store and the COPY is swept (§3.9, §9.2). The pieces
+`refine_write` cuts a store into are fresh varnodes, so upstream they carry no
+mark and every one of them is deleted — which is visible exactly where two
+stack accesses overlap, since that is the only thing that makes refinement
+split. The shape is the compiler's own idiom for copying an object whose size is
+not a multiple of the word: a 31-byte copy done as four 8-byte moves at offsets
+0, 8, 15 and 23 overlaps on byte 15, so the two middle stores are refined away
+and the emitted C copies the first eight bytes and the last eight and nothing
+between them. With the option on the mark is carried onto each partition cell,
+which claims nothing new — a piece of a store is a store — and the copy prints
+in full. `option splitstorekeep off` restores upstream's unmarked pieces.
+
 **Call and return guards.** For ranges with new addresses, data-flow across
 call sites is made explicit before renaming
 (`heritage.rs (Heritage::guard_calls)`). Each call spec is asked what effect the

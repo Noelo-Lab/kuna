@@ -3637,6 +3637,11 @@ impl Heritage {
         if newvn.is_empty() {
             return;
         }
+        // (kuna `splitstorekeep`) The partition cells are fresh Varnodes, so
+        // without this the `stack_store` mark `RuleStoreVarnode` put on the
+        // store's output does not reach them and `ActionDirectWrite` declines
+        // every piece.  See [`crate::p3_dataflow::kuna_splitstorekeep`].
+        crate::p3_dataflow::kuna_splitstorekeep::keep_store_mark(fd, vn, newvn);
         let (vnsize, vnaddr) = {
             let v = fd.vbank().get(vn).expect("refine_write: vn");
             (v.get_size(), v.get_addr().clone())
