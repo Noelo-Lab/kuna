@@ -3259,7 +3259,7 @@ impl PrintC {
         // is purely to bound memory, not for correctness).
         self.emit.reset_pending_fired();
         self.void_tail_return = if arch.voidtailreturn {
-            elidable_void_tail_return(fd)
+            elidable_void_tail_return(fd, arch.decode_halt)
         } else {
             None
         };
@@ -5019,9 +5019,23 @@ impl PrintC {
                     self.emit.close_group(id);
                 }
             }
-            // RETURN (printc.cc:774 opReturn, the plain-return case).
+            // RETURN (printc.cc:774 opReturn).
             OpCode::CPUI_RETURN => {
                 let kw_markup = self.op_markup(fd, op);
+                // (kuna decodehalt) The `getHaltType()` arms of the upstream
+                // switch: a RETURN kuna planted because the bytes would not
+                // decode is a pseudo-call naming the failure, not a return.
+                let halt = fd.obank().get(op).map(|o| o.get_halt_type()).unwrap_or(0);
+                let named = arch
+                    .decode_halt
+                    .then(|| crate::kuna_decodehalt::halt_call_name(halt))
+                    .flatten();
+                if let Some(nm) = named {
+                    self.emit.tag_func_name(nm, SyntaxHighlight::FuncnameColor, &kw_markup);
+                    self.emit.print(crate::printlanguage::OPEN_PAREN, SyntaxHighlight::NoColor);
+                    self.emit.print(crate::printlanguage::CLOSE_PAREN, SyntaxHighlight::NoColor);
+                    return;
+                }
                 self.emit.tag_op(self.lang().kw_return, SyntaxHighlight::KeywordColor, &kw_markup);
                 let nin = fd.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
                 if nin > 1 {
@@ -8478,7 +8492,7 @@ fn sblocks_basic_head(fd: &Funcdata, bb: BlockId) -> Option<OpId> {
 ///    SAME RETURN `OpId`; suppressing by id would then also delete genuine
 ///    mid-body early returns.  Requiring a unique owner makes the elision
 ///    positional, not identity-based.
-fn elidable_void_tail_return(fd: &Funcdata) -> Option<OpId> {
+fn elidable_void_tail_return(fd: &Funcdata, decode_halt: bool) -> Option<OpId> {
     use crate::block::BlockType;
     use crate::dtype::type_metatype;
 
@@ -8509,6 +8523,15 @@ fn elidable_void_tail_return(fd: &Funcdata) -> Option<OpId> {
     let tail = structured_leaf_tail(fd, cur)?;
     let op = fd.obank().get(tail)?;
     if op.code() != OpCode::CPUI_RETURN || op.num_input() > 1 || op.not_printed() {
+        return None;
+    }
+    // (kuna decodehalt) A decode-failure halt is a `RETURN` with one input, so it
+    // matches the shape above -- but it is not the source's trailing fall-off, it
+    // is the marker for flow kuna could not follow, and eliding it deletes the
+    // only statement that says so.  Gated with the rendering, and only over the
+    // halt causes the rendering claims: `decodehalt off` restores both halves,
+    // and a `noreturn` halt keeps whatever `voidtailreturn` already did with it.
+    if decode_halt && crate::kuna_decodehalt::halt_call_name(op.get_halt_type()).is_some() {
         return None;
     }
 

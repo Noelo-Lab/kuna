@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    730,
-    730
+    734,
+    734
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -91,6 +91,10 @@
     "data:CTYPES #4: on, LP64 spells an 8-byte unsigned `unsigned long`, not `unsigned long long`",
     "data:CTYPES #5: on, the 4-byte parameter is `unsigned int`",
     "data:CTYPES #6: off, that parameter carries the core-type name",
+    "data:DECODEHALT #1: off, the undecodable path leaves no statement at all and the prototype says nothing",
+    "data:DECODEHALT #2: on, the halt names the decode failure and carries the truncation warning",
+    "data:DECODEHALT #3: on, the function header says the body is incomplete",
+    "data:DECODEHALT #4: exactly one of the two passes renders the pseudo-call",
     "data:DWARFVARIANTS #10: no variant name is ever synthesized",
     "data:DWARFVARIANTS #11: off, an overlaying Result payload is a raw byte offset",
     "data:DWARFVARIANTS #12: on, the overlaying Result keeps its recovered tag field",

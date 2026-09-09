@@ -1824,7 +1824,7 @@ mod tests {
         // and ghdec-zeroidiomuse / the x86 register-clearing idiom no longer
         // vetoes a looped call's input trials (option off = watchdog() with an
         // empty argument list) (repipe r12)
-        assert_eq!(count, 262, "corpus file count drifted");
+        assert_eq!(count, 263, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

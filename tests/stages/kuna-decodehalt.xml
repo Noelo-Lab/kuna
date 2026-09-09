@@ -1,0 +1,72 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna decodehalt (DIV-151): a RETURN kuna planted because it could NOT
+    decode the bytes says so, instead of printing as an ordinary `return;`.
+
+    FlowInfo ends a path it cannot follow with an ARTIFICIAL HALT - a
+    CPUI_RETURN carrying the constant 1 and one of the getHaltType() bits.
+    Three of those bits are decode failures rather than program returns:
+    badinstruction, unimplemented and missing.  Upstream PrintC::opReturn
+    (printc.cc:774) renders them as the pseudo-calls halt_baddata() /
+    halt_unimplemented() / halt_missing(), and processInstruction buffers
+    "Bad instruction - Truncating control flow here" at the failing address
+    plus a header warning on the function.  kuna ported the halt but neither
+    the rendering nor the warnings, so a function that ran off into bytes it
+    could not read ended with a bare `return;` and nothing said so.
+
+    Stage model: P2 lift / flow-classification.  P0 assertion:
+    `option decodehalt on|off`.
+
+    dh_fn (0x100000): test edi,edi / je +1 / ret / .byte 0x06
+      0x06 (PUSH ES) is not an instruction in 64-bit mode, so the je target
+      at 0x100005 is undecodable and the flow follower halts there.
+
+    `option voidtailreturn on` is set for both passes because that is what
+    `kuna decompile` runs (mode auto -> aggressive), and it is the seam this
+    feature has to survive: voidtailreturn elides a void function's trailing
+    bare `return;`, and the artificial halt has exactly that shape, so without
+    the halt-type exclusion in elidable_void_tail_return the truncation marker
+    is deleted and its warning lands on whatever statement decoded before it.
+
+    Pass 1 (option decodehalt off, the pre-fix behaviour): the truncated path
+    ends in NOTHING - the halt is a bare `return;` and voidtailreturn elides
+    it - so the body reads as a fully analysed function with a clean early
+    exit, and the prototype carries no warning (assert #1, a 5-line chain,
+    exactly once).  The option is set BEFORE `lo fu` on purpose: the comment
+    database accumulates across passes, so a warning buffered by an earlier
+    flow-follow would still be printed here.
+
+    Pass 2 (option decodehalt on, the shipped default): the same body ends
+    halt_baddata() carrying the truncation warning (assert #2) under a
+    prototype carrying the header warning (assert #3), and the pseudo-call
+    appears exactly once over both passes (assert #4), so it is pass 2 that
+    produced it.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+85ff7401c306
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="dh_fn"/>
+</binaryimage>
+<script>
+  <com>parse line extern void dh_fn(int x);</com>
+  <com>option voidtailreturn on</com>
+  <com>option decodehalt off</com>
+  <com>lo fu dh_fn</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option decodehalt on</com>
+  <com>lo fu dh_fn</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="DECODEHALT #1: off, the undecodable path leaves no statement at all and the prototype says nothing" min="1" max="1">^void dh_fn\(int4 x\)$
+^\{$
+^  if \(x\)$
+^    return;$
+^\}$</stringmatch>
+<stringmatch name="DECODEHALT #2: on, the halt names the decode failure and carries the truncation warning" min="1" max="1">^  halt_baddata\(\); // warn: Bad instruction - Truncating control flow here$</stringmatch>
+<stringmatch name="DECODEHALT #3: on, the function header says the body is incomplete" min="1" max="1">^void dh_fn\(int4 x\) // warn: Control flow encountered bad instruction data$</stringmatch>
+<stringmatch name="DECODEHALT #4: exactly one of the two passes renders the pseudo-call" min="1" max="1">halt_baddata</stringmatch>
+</decompilertest>

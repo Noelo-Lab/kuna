@@ -1,0 +1,71 @@
+{
+  "need_id": "undecodable-encrypted-code-becomes",
+  "track": "quality",
+  "scope": "small",
+  "option": "decodehalt",
+  "div": "DIV-151",
+  "status": "closed",
+  "acceptance": {
+    "id": "a-224d0ec3cc25",
+    "passed": true,
+    "clauses": {
+      "stdout_matches while\\s*\\(": "PASS (the decrypt loop is retained -- this clause already passed before the fix)",
+      "stdout_absent case 0x<hex>:\\s*return;": "PASS (the invented return is gone; the case arm now holds halt_baddata())"
+    },
+    "note": "The round-5 refutation pinned the trap and it held: a `// warn:` comment on the existing `return;` would NOT have flipped this probe, because the literal `return;` survives a trailing comment. The synthesized RETURN itself had to stop being a return."
+  },
+  "decisions": [
+    {
+      "what": "The filed hypothesis is upheld, and the refuter's narrower reading is the one implemented.",
+      "detail": "The need's hypothesis reads as 'invent an incompleteness diagnostic'. It is not an invention: upstream PrintC::opReturn (printc.cc:774) already switches on getHaltType() and FlowInfo::processInstruction already buffers two warnings (flow.cc:441-475). kuna ported the halt and left the printer's plain-return arm plus three STUB(W4) warning comments. The change is finishing that port."
+    },
+    {
+      "what": "noreturn, the fourth halt cause, is deliberately NOT renamed, though upstream renames it to halt_noreturn().",
+      "detail": "It is not a decode failure, kuna already reports it as `// no-return` on the call it follows, and its rendering is pinned by the whole-corpus measurements behind noreturn_propagate and guardarm. Renaming it would move output on a shape this need says nothing about."
+    },
+    {
+      "what": "The voidtailreturn exclusion is gated on decodehalt and scoped to the three renamed causes -- narrowed from the first implementation, which excluded every halt-marked RETURN unconditionally.",
+      "detail": "Unconditional was wrong twice over: with `decodehalt off` it would print a `return;` main elides, so the option would not restore main; and it changed noreturn halts in BOTH arms, which this option explicitly does not claim. Measured load-bearing, not defensive: ablating the exclusion on a straight-line truncation (`movq $1,sink(%rip); .byte 0x06`) deletes halt_baddata() and leaves `dat_101000 = 1; // warn: Bad instruction - Truncating control flow here` -- the truncation blamed on an instruction that decoded fine. The sweep found 24 real instances of that shape."
+    },
+    {
+      "what": "The stage test runs with `option voidtailreturn on` because that is what kuna decompile runs (auto -> aggressive), and without it the test cannot reach the elision seam.",
+      "detail": "It also makes the off arm's failure sharper: with voidtailreturn on, the pre-fix output is not a bare `return;` -- the truncated path leaves NO statement at all, so the function reads as fully analysed with a clean early exit."
+    }
+  ],
+  "tests": {
+    "stages": "tests/stages/kuna-decodehalt.xml (two-pass, 4 assertions, an x86-64 `test edi,edi / je +1 / ret / .byte 0x06` where 0x06 is not an instruction in 64-bit mode)",
+    "unit": "decompiler/crates/kuna-decomp/src/p2_lift/kuna_decodehalt/tests.rs (6 tests: the option parse, the three cause->pseudo-call mappings, the noreturn/halt/plain negatives, the combined-mask precedence, the upstream warning strings, the ElementId range)",
+    "cli_probe": "tests/cli/undecodable-encrypted-code-becomes.json, hand-promoted: `verify --promote` refuses a `binary_source: dataset` target, so the probe is re-pointed at a new vendored fixture, decompiler/crates/kuna-analysis/tests/fixtures/decodehalt_x86_64 (9,824 bytes, source .s checked in beside it) -- an XOR-in-place decrypt loop over a payload whose first byte is 0x06 at load time, reached through `push $payload; pop %rbx; jmp *%rbx`. `--option decodehalt off` renders `case 0x101000: return;` and fails the probe's stdout_absent clause; the default renders `halt_baddata()`."
+  },
+  "gates": {
+    "make test": "PARITY OK 675/675",
+    "make test-stages": "PARITY OK 734/734",
+    "make rust-test": "green (rc 0, 6,340 tests, 0 failures) -- run on the rebased tree",
+    "make check-spec": "green, and green under --strict",
+    "make test-cli": "117/117 (116 + the promoted probe). One run scored 116/117 while the workspace suite was compiling on the same box; two clean re-runs, before and after, are 117/117, so it was contention and not a probe.",
+    "kuna catalog --check": "catalog OK",
+    "scripts.repipe.counters": "no drift"
+  },
+  "sweep": {
+    "corpus": "82 binaries / 31,862 functions, decompile-all --json both arms: 27 decbench ELFs across the O0/O2/O2-noinline slices spanning x86-64/i386/ARM/AArch64/MIPS/PPC64/RISC-V, plus 55 crackme PE/ELF images including the witness",
+    "changed_binaries": 19,
+    "changed_functions": 89,
+    "functions_gaining_a_statement": 24,
+    "functions_losing_a_statement": 0,
+    "lines": "+178 / -154",
+    "pseudo_calls": {
+      "halt_baddata": 61,
+      "halt_missing": 35,
+      "halt_unimplemented": 0
+    },
+    "prototypes_gaining_the_header_warning": 62,
+    "non_halt_code_changes": 0,
+    "classification": "With comments stripped, every one of the 89 hunks is `return;` -> `halt_<cause>();` (or, for the 24 gains, a restored `return;` PLUS the halt statement). No statement anywhere else moves. The gains are the elision half: bustme1.exe's anti-debug stubs read `if (rdtsc-check) return; // warn: Function flow reaches unmapped memory: r0x004093f5 flows to r0x003f3465` -- the warning orphaned onto a NORMAL early return because voidtailreturn had deleted the halt it belonged to -- and now read `if (rdtsc-check) return;` then `halt_missing(); // warn: ...`. The other cluster is u-boot's ARM exception vectors (do_undefined_instruction, do_data_abort, do_fiq, do_software_interrupt, do_prefetch_abort, do_not_used), which really do end in undecodable bytes.",
+    "residue": "One function of 31,862: Crackme#7.exe sub_403b64, where the halt lands inside a degenerate `switch(0x403bf3) { }` that prints no arm, so the truncation warning attaches to the decoded call above it rather than to a halt_baddata() statement. Comment placement only -- the empty switch is printed identically in both arms and is a separate, pre-existing rendering defect.",
+    "unusable": "1 of 83 candidates dropped: probebin/.../1337ARM.bin, a raw ARM blob whose decompile-all exceeded the 1,800 s harness timeout in both arms."
+  },
+  "speed": {
+    "witness": "Defender.exe sub_401746: off 131.3 ms / on 129.96 ms, delta -1.02%, median of 7 (scripts.pipeline.timeit, budget 5%). Inside the +/-20% single-target noise floor returncopysplit recorded, so not claimed as a speedup.",
+    "whole_binary": "system.exe decompile-all (4,037 functions): off 64.51 s / on 65.08 s, medians of 3, +0.88%."
+  }
+}

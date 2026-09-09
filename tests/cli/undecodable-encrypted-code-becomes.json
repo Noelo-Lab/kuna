@@ -1,0 +1,38 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "stub"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/decodehalt_x86_64",
+    "binary_sha256": "dbe72f3f3ce10f969be05d8049b0aed4879687fc8dd7a83f142723cca5097998",
+    "binary_size": 9824,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/decodehalt_x86_64",
+    "selector": "stub",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "while\\s*\\("
+    ],
+    "stdout_absent": [
+      "case 0x[0-9a-f]+:\\s*return;"
+    ]
+  },
+  "notes": "need undecodable-encrypted-code-becomes. Witness: crackmes.one Defender.exe sub_401746, a self-decrypting stub that XORs its payload in place and jumps into it; the bytes there are ciphertext at load time, so kuna decoded until one would not decode and printed switch(0x40190e) { case 0x40190e: return; } with error null. Retargeted onto the vendored decodehalt_x86_64, same shape."
+}

@@ -167,6 +167,22 @@ throw under `error_reinterpreted`). An artificial halt
 its cause (`unimplemented`/`badinstruction`/`noreturn`/`missing`), so the CFG
 always terminates cleanly and the printer can attribute the truncation.
 
+**(kuna) A decode-failure halt says so — `option decodehalt`, default `on`.**
+Three of the four halt causes are decode failures rather than program returns:
+`badinstruction` (the bytes at the address are not an instruction),
+`unimplemented` (SLEIGH decoded them but has no semantics for them) and
+`missing` (the address was never decoded at all — the out-of-extent branch stub
+of §2.2). With the option on, `flow.rs (FlowInfo::handle_decode_error)` buffers
+the truncation warning at the failing address and, once per function, the header
+warning naming the cause
+(`kuna_decodehalt.rs` holds the strings), and P9 renders the halt as the
+pseudo-call naming it rather than as a `return;` (chapter 09). Off, the halt is
+still planted and still terminates the CFG — it simply reports nothing, which is
+what kuna did before: a function that ran off into bytes it could not read
+printed a bare `return;` and `error: null`, indistinguishable from a function
+that returns normally. The fourth cause, `noreturn`, is not a decode failure and
+is deliberately untouched: it is already reported on the call it follows.
+
 **The instruction budget.** `max_instructions` (100000 by default, `option
 maxinstruction N`) caps how many instructions one function's flow may decode.
 Reaching it either throws — `option errortoomanyinstructions on`, upstream's
