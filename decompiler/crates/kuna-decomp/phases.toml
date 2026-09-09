@@ -2883,6 +2883,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "loopcounterstore"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P3"
+subphase = "copy-propagation"
+strength = "HARD"
+rewind = "P3"
+issue = "re-live-loop-counter-stores"
+summary = "Refuse the one RulePropagateCopy marker propagation that deletes a loop counter's write-back to its frame slot. A counter the compiler keeps on the stack is read, bumped in a register and stored back (`MOV EAX,[RSP+0x84]` / `INC EAX` / `MOV [RSP+0x84],EAX`); after heritage the store is an address-tied `stackvn = COPY(EAX)` whose only reader is the loop header's MULTIEQUAL, and that MULTIEQUAL's output is the same frame slot. RulePropagateCopy (ruleaction.cc:3943) rewrites the marker to read EAX directly, the COPY loses its last descendant and dies to dead-code elimination, and what prints is the register's own def under the register's HighVariable: `for (v55 = 0; v55 <= 4; v7 = v55 + 1)`. That is not a naming nit -- the induction variable is never updated, so the emitted loop does not terminate. Merge normally hides it by merging the register high into the tied high, but where one register carries several counters and a few call returns the covers intersect, the merge is declined, and every such loop in the function comes out this way. ON declines the propagation when the marker is a MULTIEQUAL whose address-tied output has exactly the storage of the COPY's output AND the stored value is computed from that same MULTIEQUAL output -- the self-updating tied phi, i.e. a counter. OFF is upstream Ghidra's behavior exactly. `tiedstorekeep` does not cover this: its predicate requires the stored value to come from a CALL/CALLIND/CALLOTHER/INDIRECT, and a counter bump is an INT_ADD."
+use_when = "On by default (DIV-146). The OFF symptom is a `for` loop whose increment slot assigns to a different variable than the one it initialises and tests -- `for (v55 = 0; v55 <= 4; v7 = v55 + 1)` -- which as written is an infinite loop, and where the same register temporary collects the increments of several unrelated counters plus a few call returns. It shows up on frame-resident counters, so on unoptimized or obfuscated code rather than on -O2 register loops. Flip OFF to reproduce upstream Ghidra's propagation exactly, or to bisect whether a counter's increment came from this brake. The `computed from the phi output` clause is what keeps the brake narrow: without it an ordinary call return stored to a frame local is kept too, which re-prints `v134 = _time64(0);` as a temporary plus a store and un-folds `v43 -= 0x2a` into `v43 = v43 - 0x2a`."
+example = "option loopcounterstore off"
+source_decompiler = "kuna"
+inspiration = "RE-friction round 5, need live-loop-counter-stores (ObfuscationFiesta.exe sub_140002530, PE x86-64, control-flow obfuscation); upstream RulePropagateCopy (ruleaction.cc:3943) and its own addrforce refusal"
+change_kind = "correctness-fix"
+tier = "core"
+symptoms = "a for loop initialises and tests one variable but assigns its increment to another|the induction variable is never updated so the emitted loop cannot terminate|several loop counters lose their increments to one shared register temporary|a stack-resident counter is incremented into a variable that has no storage comment|the loop test compares against a value nothing ever assigns"
+live_field = "loop_counter_store"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "regionstructure"
 values = "on|off"
 default = "on"

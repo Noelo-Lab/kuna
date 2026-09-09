@@ -1952,6 +1952,13 @@ impl Rule for RulePropagateCopy {
                 if crate::p3_dataflow::kuna_tiedstorekeep::declines(data, op, vn, invn) {
                     continue;
                 }
+                // (kuna) `option loopcounterstore on` refuses the same
+                // propagation for a self-updating address-tied phi, which is how
+                // a frame-slot loop counter's write-back is deleted.  See
+                // [`crate::p3_dataflow::kuna_loopcounterstore`].
+                if crate::p3_dataflow::kuna_loopcounterstore::declines(data, op, vn, invn) {
+                    continue;
+                }
                 if op_code(data, op) == OpCode::CPUI_MULTIEQUAL {
                     let op_parent =
                         data.obank().get(op).expect("RulePropagateCopy: stale op").get_parent();

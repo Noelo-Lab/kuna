@@ -4721,6 +4721,34 @@ impl PrintC {
         }
     }
 
+    /// (kuna) The `loopcounterstore` / `tiedstorekeep` seam for
+    /// [`Self::emit_inplace_op`]: when `op` is a `CPUI_COPY` of an IMPLIED
+    /// two-input value, answer that value's defining op and its two inputs, so
+    /// the in-place render can be decided on the arithmetic rather than on the
+    /// store that survived on top of it.  `None` for every other shape, which
+    /// leaves upstream's behaviour untouched.
+    fn inplace_through_copy(
+        &self,
+        fd: &Funcdata,
+        opc: OpCode,
+        in0: Option<VarnodeId>,
+        num_input: int4,
+    ) -> Option<(OpId, VarnodeId, VarnodeId)> {
+        if opc != OpCode::CPUI_COPY || num_input != 1 {
+            return None;
+        }
+        let src = in0?;
+        let srcvn = fd.vbank().get(src)?;
+        if !srcvn.is_implied() {
+            return None;
+        }
+        let def = fd.obank().get(srcvn.get_def()?)?;
+        if def.num_input() != 2 {
+            return None;
+        }
+        Some((srcvn.get_def()?, def.get_in(0)?, def.get_in(1)?))
+    }
+
     /// C++ `PrintC::emitInplaceOp` (printc.cc, directly above `emitExpression`;
     /// gated by the `option_inplace_ops` head at printc.cc:2546 which upstream
     /// never wires beyond the flag — ported here as the flag's consumer,
@@ -4740,6 +4768,24 @@ impl PrintC {
         let (opc, out, in0, in1, num_input) = match fd.obank().get(op) {
             Some(o) => (o.code(), o.get_out(), o.get_in(0), o.get_in(1), o.num_input()),
             None => return false,
+        };
+        // (kuna) See through a surviving store: `option loopcounterstore` keeps
+        // the address-tied `COPY` that writes a loop counter back to its frame
+        // slot, so the statement's root op is that `COPY` and the arithmetic
+        // hangs off it as an implied expression -- `out = out OP y` reaches here
+        // as `out = COPY(t)` with `t = out OP y`.  Render it from the inner op,
+        // which is what upstream would have seen had the copy been propagated.
+        // Only an IMPLIED input qualifies: an explicit one has a name of its own
+        // and the statement really is `out = <that name>`.
+        let (opc, in0, in1, num_input, op) = match self.inplace_through_copy(fd, opc, in0, num_input) {
+            Some((inner_op, i0, i1)) => (
+                fd.obank().get(inner_op).map(|o| o.code()).unwrap_or(opc),
+                Some(i0),
+                Some(i1),
+                2,
+                inner_op,
+            ),
+            None => (opc, in0, in1, num_input, op),
         };
         let tok: &'static OpToken = match opc {
             OpCode::CPUI_INT_MULT => &tokens::MULTEQUAL,

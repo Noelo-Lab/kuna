@@ -842,6 +842,13 @@ pub struct ArchContext {
     /// vanishing from the emitted C.  Read by
     /// [`crate::p3_dataflow::kuna_tiedstorekeep::declines`].
     pub tied_store_keep: bool,
+    /// (kuna) `option loopcounterstore` (default-on, DIV-146): refuse the
+    /// `RulePropagateCopy` marker propagation that would delete the write-back
+    /// of a loop counter living in an address-tied frame slot, so the counter's
+    /// increment prints on the counter instead of on the register that carried
+    /// it.  Read by
+    /// [`crate::p3_dataflow::kuna_loopcounterstore::declines`].
+    pub loop_counter_store: bool,
     /// (kuna) region-based (Phoenix/SAILR) structurer: structure the CFG by
     /// walking the [`KunaRegionIdentifier`](crate::p7_regions::kuna_regionid)
     /// region tree and matching Phoenix acyclic schemas instead of running
@@ -1320,6 +1327,7 @@ impl ArchContext {
             spill_arg_trial: 0,          // spillargtrial (0 = upstream: every STORE rejects)
             load_guard_range: true,      // loadguardrange (upstream behavior, default-on)
             tied_store_keep: false,      // tiedstorekeep (Architecture::reset_defaults sets the shipped default: on)
+            loop_counter_store: false,   // loopcounterstore (Architecture::reset_defaults sets the shipped default: on)
             region_structure: false,     // regionstructure (opt-in default-off)
             guard_arm: false,            // guardarm (opt-in default-off)
             loop_cond_hoist: false,      // loopcondhoist (opt-in default-off)
