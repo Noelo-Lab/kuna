@@ -51,6 +51,24 @@
 //! aligned, one such row runs to the next alignment boundary, because that is
 //! the only place code can resume ([`resume_grid`]).
 //!
+//! ## Where a straight line is the wrong walk
+//!
+//! Decoding forward from one end is a guess that every byte in the range starts
+//! an instruction or is inside one, and hand-written or obfuscated code breaks
+//! it deliberately: an `EB 01` jumps over one junk byte, and from that byte on
+//! the listing is a decode of instructions the program never executes. It does
+//! not merely lose a row — it invents calls and out-of-image jumps that are not
+//! in the bytes (`docs/re-needs/linear-disassembly-silently-skips.md`).
+//!
+//! Two answers. The listing always reports the addresses its OWN branches name
+//! that no row of it starts at ([`skipped_targets`]), because a decode a byte
+//! out of phase is spelled exactly like one that is not. And `--follow` decodes
+//! from those addresses as well as from the start ([`follow_rows`]), filling
+//! what flow never reaches with the same straight-line walk, so it never lists
+//! less than the plain listing does. Where two reachable paths read the same
+//! bytes as different instructions, `--follow` lists both rows: that is what the
+//! bytes mean, and dropping either would be a guess.
+//!
 //! ## Two views, because a data address is not an instruction stream
 //!
 //! Listing a data blob as instructions is worse than useless: an RE agent that
@@ -67,6 +85,9 @@
 //! puts real code in `.data` and a compiler puts real data in `__TEXT`. Nothing
 //! about the decode changes: the same walk, the same bytes, a different view of
 //! them.
+
+use std::cmp::Reverse;
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 
 use kuna_console::engine::{ConsoleProgram, FixedRefs};
 use kuna_sleigh::loadimage::section_flags;
@@ -105,6 +126,12 @@ const HEXDUMP_ROW_BYTES: usize = 16;
 /// The mnemonic given to bytes the translator would not decode.
 const BAD_BYTE_MNEMONIC: &str = ".byte";
 
+/// How many skipped branch targets [`skipped_note`] spells out before it counts
+/// the rest. Three is the whole crop on the witness (a 70-instruction listing of
+/// `EB 01` jump-over-junk idioms), so a note that names six is a note that names
+/// them all on anything but a listing already beyond reading.
+const SKIPPED_NOTE_ADDRS: usize = 6;
+
 /// The widest resume grid [`resume_grid`] will infer from a listing's own rows.
 /// No instruction set aligns further than this, so a wider shared alignment is
 /// a coincidence of a short listing, not a grid.
@@ -142,6 +169,9 @@ pub(crate) struct DisArgs {
     pub(crate) count: Option<usize>,
     /// `--bytes N`: stop after N bytes.
     pub(crate) bytes: Option<u64>,
+    /// `--follow`: decode from every address the range's own branches name, not
+    /// only from one end ([`follow_rows`]).
+    pub(crate) follow: bool,
     pub(crate) json: bool,
     pub(crate) options: Vec<(String, String)>,
     /// `--define-function <start[-end][=name] | @file>` (repeatable): declared
@@ -365,9 +395,16 @@ fn listing_for(args: &DisArgs, prog: &ConsoleProgram, region: Region) -> Result<
     let (view, mut notes) = choose_view(prog, &region, args.view.unwrap_or(ViewRequest::Auto));
     let text = match view {
         View::Code => {
-            let (rows, truncated, folded) = walk(prog, &region, args.count);
+            let CodeWalk { rows, truncated, folded, skipped, anchored } =
+                walk(prog, &region, args.count, args.follow);
             if folded > 0 {
                 notes.push(pool_note(folded));
+            }
+            if anchored > 0 {
+                notes.push(follow_note(anchored));
+            }
+            if !skipped.is_empty() {
+                notes.push(skipped_note(&skipped, args.follow));
             }
             let end = rows.last().map_or(region.start, |r| r.addr + r.size);
             if cut_short_by_image(&region, args.count, rows.len(), end) {
@@ -578,26 +615,260 @@ fn decide_view(want: ViewRequest, from_entry: bool, section: Option<u32>) -> Vie
 /// [`crate::litpool`]; the fold never moves a row, so the listing's addresses
 /// are the same either way.
 ///
-/// Returns the rows, whether the walk was truncated, and how many words were
-/// folded — which the caller says out loud, because "this is not an
-/// instruction" is exactly the fact an agent reading a listing needs and cannot
-/// infer from the row.
+/// Under `--follow` the straight line is not the only anchor: the walk also
+/// starts at every address the range's own branches name, so a jump over a
+/// decoy byte cannot pull the rest of the listing out of phase
+/// ([`follow_rows`]).
+///
+/// Either way the branch targets no row starts at are reported
+/// ([`skipped_targets`]) — the fact an agent reading an obfuscated listing
+/// cannot infer, because a desynchronized decode looks exactly like an ordinary
+/// one.
 fn walk(
     prog: &ConsoleProgram,
     region: &Region,
     count: Option<usize>,
-) -> (Vec<Row>, bool, usize) {
-    let (rows, truncated, refs) = decode_rows(prog, region, count);
+    follow: bool,
+) -> CodeWalk {
+    // What the straight line makes of this window is the baseline either way:
+    // without `--follow` it IS the listing, and with it, its skipped targets are
+    // the count of what following recovered.
+    let (rows, truncated, refs) = decode_rows(prog, region, count, 0);
+    let plain = skipped_targets(&rows, &refs);
+    let (rows, truncated, refs, anchored) = if follow {
+        let (rows, truncated, refs) = follow_rows(prog, region, count);
+        (rows, truncated, refs, plain.len())
+    } else {
+        (rows, truncated, refs, 0)
+    };
+    // Before the fold, so the targets are tested against the boundaries the
+    // decode actually produced rather than against a pool word's merged span.
+    let skipped = if follow { skipped_targets(&rows, &refs) } else { plain };
     let (rows, folded) = fold_pool_words(prog, region, rows, &refs);
-    (rows, truncated, folded)
+    CodeWalk { rows, truncated, folded, skipped, anchored }
+}
+
+/// What one code-view walk produced: the rows, whether it was cut short, how
+/// many literal-pool words were folded, which branch targets it has no row for,
+/// and how many of those the straight line would have walked over (0 without
+/// `--follow`, where they are reported rather than decoded).
+struct CodeWalk {
+    rows: Vec<Row>,
+    truncated: bool,
+    folded: usize,
+    skipped: Vec<u64>,
+    anchored: usize,
+}
+
+/// (kuna, `linear-disassembly-silently-skips`) The addresses this listing's own
+/// branches name that no row in it starts at.
+///
+/// Rows tile their span, so an in-range target no row starts at lies strictly
+/// inside one — which means the instruction printed over it is a decode of bytes
+/// the program never executes as that instruction, and so is everything after it
+/// until the decode happens to re-synchronize. That is the whole `EB 01`
+/// jump-over-a-decoy-byte idiom, and a straight-line listing of it is not merely
+/// missing a row: it prints calls and jumps the bytes do not contain.
+///
+/// Only targets INSIDE the listed span are reported. A branch out of the range
+/// is not evidence about the range, and the listing is not claiming to have
+/// decoded where it points.
+fn skipped_targets(rows: &[Row], evidence: &FixedRefs) -> Vec<u64> {
+    let (Some(first), Some(last)) = (rows.first(), rows.last()) else {
+        return Vec::new();
+    };
+    let span = first.addr..(last.addr + last.size);
+    let starts: BTreeSet<u64> = rows.iter().map(|r| r.addr).collect();
+    let mut out: Vec<u64> = evidence
+        .flow_targets
+        .iter()
+        .copied()
+        .filter(|t| span.contains(t) && !starts.contains(t))
+        .collect();
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
+/// `--follow`: the same window, decoded from every address its own branches name
+/// rather than from one end only.
+///
+/// Two passes. The first is an ordinary recursive descent seeded at
+/// `region.start`: each run steps forward while the instruction falls through
+/// (`FixedRefs::falls_through`, the `xref_control_flow` last-op rule), stops at
+/// an address some earlier run already claimed, and hands every in-window
+/// address it branches or calls to back to the worklist. Seeds are taken in
+/// address order, so a bounded walk spends its budget on the rows it is going to
+/// print. Where two runs contest the same bytes the earlier claim stands, which
+/// is what makes the pass terminate: no address is ever decoded twice.
+///
+/// The second pass fills what flow never reached — the decoy byte a jump was
+/// over, the padding after a return, a handler nothing in this window calls — by
+/// running the ordinary straight-line [`decode_rows`] across each gap, clipped so
+/// that no instruction crosses into a claimed row. So `--follow` never lists
+/// LESS than the straight line does: it is the same listing with every branch
+/// target forced to start a row, and the bytes that then do not tile an
+/// instruction spelled out as `.byte`.
+///
+/// Returns the rows, whether the listing was cut short, and the fixed-address
+/// evidence from both passes.
+fn follow_rows(
+    prog: &ConsoleProgram,
+    region: &Region,
+    count: Option<usize>,
+) -> (Vec<Row>, bool, FixedRefs) {
+    let cap = if region.derived { Some(DERIVED_INSTRUCTION_CAP) } else { None };
+    let stop = region.stop();
+    let in_window = |a: u64| a >= region.start && stop.is_none_or(|end| a < end);
+    let mut evidence = FixedRefs::default();
+    let mut claimed: BTreeMap<u64, Row> = BTreeMap::new();
+    // Address order, so a listing bounded by `--count` claims the low addresses
+    // it will actually print before it spends the budget on a far callee.
+    let mut seeds: BinaryHeap<Reverse<u64>> = BinaryHeap::new();
+    seeds.push(Reverse(region.start));
+    // A row can only be printed once, so the printed budget bounds the claims;
+    // an explicit range that asked for neither is bounded by the window itself.
+    let claim_budget = count.or(cap).unwrap_or(usize::MAX);
+    let (mut mnem, mut body, mut raw) = (String::new(), String::new(), Vec::new());
+    while let Some(Reverse(seed)) = seeds.pop() {
+        if !in_window(seed) || claimed.contains_key(&seed) {
+            continue;
+        }
+        let mut addr = seed;
+        while in_window(addr) && !claimed.contains_key(&addr) && claimed.len() < claim_budget {
+            // No instruction may reach past mapped memory or into bytes an
+            // earlier run already spelled as an instruction. The window's own
+            // end is NOT a ceiling: the straight line lists the instruction
+            // straddling it whole, and `--follow` must not list less.
+            let ceiling = claimed
+                .range(addr.saturating_add(1)..)
+                .next()
+                .map(|(&a, _)| a)
+                .into_iter()
+                .chain(region.mapped_end)
+                .min();
+            let decoded = prog
+                .disassemble_at_into(addr, &mut mnem, &mut body)
+                .ok()
+                .filter(|&n| n > 0)
+                .filter(|&n| ceiling.is_none_or(|c| addr.saturating_add(n as u64) <= c));
+            let Some(len) = decoded else { break };
+            if !prog.read_bytes_into(addr, len as usize, &mut raw) {
+                break;
+            }
+            let known = evidence.flow_targets.len();
+            prog.add_fixed_refs_at(addr, &mut evidence);
+            for &target in &evidence.flow_targets[known..] {
+                if in_window(target) {
+                    seeds.push(Reverse(target));
+                }
+            }
+            claimed.insert(
+                addr,
+                Row {
+                    addr,
+                    size: len as u64,
+                    bytes: raw.clone(),
+                    mnemonic: mnem.clone(),
+                    operands: body.clone(),
+                },
+            );
+            if !evidence.falls_through {
+                break;
+            }
+            addr = addr.saturating_add(len as u64);
+        }
+    }
+    let (rows, truncated) = fill_between(prog, region, claimed, count, cap, &mut evidence);
+    (rows, truncated, evidence)
+}
+
+/// Merge the claimed rows with a straight-line decode of everything between
+/// them, in address order, until the row budget or the window runs out.
+fn fill_between(
+    prog: &ConsoleProgram,
+    region: &Region,
+    claimed: BTreeMap<u64, Row>,
+    count: Option<usize>,
+    cap: Option<usize>,
+    evidence: &mut FixedRefs,
+) -> (Vec<Row>, bool) {
+    let stop = region.stop();
+    // The row budget both bounds impose, whichever is tighter.
+    let budget = match (count, cap) {
+        (Some(asked), Some(derived)) => Some(asked.min(derived)),
+        (asked, derived) => asked.or(derived),
+    };
+    // Every claimed row is alignment evidence for the gaps between them, which
+    // have none of their own: a gap that opens on bytes the translator refuses
+    // must still resume on the architecture's grid.
+    let witness = claimed.values().fold(0u64, |w, r| w | r.addr | r.size);
+    let mut out: Vec<Row> = Vec::new();
+    let mut cursor = region.start;
+    let mut claims = claimed.into_values().peekable();
+    loop {
+        let left = match budget {
+            // Out of budget with something still to list: the answer is short by
+            // the ask, not by the image.
+            Some(n) if out.len() >= n => {
+                return (out, claims.peek().is_some() || stop.is_none_or(|end| cursor < end));
+            }
+            Some(n) => Some(n - out.len()),
+            // Unbounded only where the window has an end of its own, so the gap
+            // decode below still stops.
+            None => None,
+        };
+        match claims.peek() {
+            Some(row) if row.addr <= cursor => {
+                let row = claims.next().expect("peeked");
+                cursor = cursor.max(row.addr.saturating_add(row.size));
+                out.push(row);
+            }
+            next => {
+                // The gap runs to the next claim, or to the end of the window.
+                let gap_end = next.map(|r| r.addr).or(stop);
+                if gap_end.is_some_and(|end| end <= cursor) {
+                    return (out, false);
+                }
+                let gap = Region {
+                    start: cursor,
+                    end: gap_end,
+                    name: None,
+                    derived: false,
+                    from_entry: false,
+                    // The clip: nothing decoded in a gap may reach into a
+                    // claimed row or past mapped memory. The window's own end
+                    // is not one, so the last row of a `--follow` listing is
+                    // the same row the straight line ends on.
+                    mapped_end: next.map(|r| r.addr).or(region.mapped_end),
+                };
+                let (filled, _, refs) = decode_rows(prog, &gap, left, witness);
+                let Some(last) = filled.last() else {
+                    return (out, false);
+                };
+                cursor = last.addr.saturating_add(last.size);
+                evidence.reads.extend(refs.reads);
+                evidence.flow_targets.extend(refs.flow_targets);
+                out.extend(filled);
+            }
+        }
+    }
 }
 
 /// The straight-line decode itself: rows in address order, whether the walk was
 /// truncated, and the fixed-address evidence the rows carry.
+///
+/// `seed_witness` is the alignment evidence a caller already holds — the OR of
+/// the addresses and sizes of rows it decoded elsewhere in this same listing.
+/// A walk that starts on undecodable bytes has none of its own, and on a
+/// fixed-width architecture that is the difference between resuming on the
+/// instruction grid and resuming one byte in ([`resume_grid`]). `0` for a walk
+/// that is the whole listing.
 fn decode_rows(
     prog: &ConsoleProgram,
     region: &Region,
     count: Option<usize>,
+    seed_witness: u64,
 ) -> (Vec<Row>, bool, FixedRefs) {
     let cap = if region.derived { Some(DERIVED_INSTRUCTION_CAP) } else { None };
     let stop = region.stop();
@@ -608,7 +879,7 @@ fn decode_rows(
     let mut addr = region.start;
     // The alignment every decoded row so far shares, folded into one OR of
     // their addresses and sizes; `resume_grid` reads its low zero bits.
-    let mut witness = 0u64;
+    let mut witness = seed_witness;
     let (mut mnem, mut body, mut raw) = (String::new(), String::new(), Vec::new());
     loop {
         if count.is_some_and(|n| rows.len() >= n) {
@@ -1188,7 +1459,7 @@ pub(crate) fn function_listing(prog: &ConsoleProgram, start: u64, end: u64) -> O
         prog,
         Region { start, end: Some(end), name: None, derived: false, from_entry: true, mapped_end: None },
     );
-    let (rows, _, _) = walk(prog, &region, None);
+    let CodeWalk { rows, .. } = walk(prog, &region, None, false);
     if rows.is_empty() {
         return None;
     }
@@ -1218,6 +1489,60 @@ fn pool_note(folded: usize) -> String {
     }
 }
 
+/// (kuna, `linear-disassembly-silently-skips`) Say that the straight line walked
+/// OVER an address this range's own branches name — the one fact an agent
+/// reading a listing cannot infer, because a decode that is a byte out of phase
+/// is spelled exactly like one that is not.
+///
+/// It is not a missing row that matters. The instruction covering the target,
+/// and every row after it until the decode re-synchronizes, are a reading of
+/// bytes the program never executes that way: on the witness the listing prints
+/// a `CALL` and a `JMP` to an address outside the image, neither of which is in
+/// the bytes. So the note leads with what is wrong with the rows that ARE
+/// there, and names the move that fixes them.
+fn skipped_note(skipped: &[u64], followed: bool) -> String {
+    let shown: Vec<String> =
+        skipped.iter().take(SKIPPED_NOTE_ADDRS).map(|a| format!("0x{a:x}")).collect();
+    let more = match skipped.len() - shown.len() {
+        0 => String::new(),
+        n => format!(" and {n} more"),
+    };
+    let (count, subject) = match skipped.len() {
+        1 => ("an address".to_string(), "it"),
+        n => (format!("{n} addresses"), "them"),
+    };
+    // Under --follow whatever is left is out of the window's reach -- named by
+    // bytes no flow arrives at, or sitting at the very edge of the extent -- so
+    // re-running the same command is not the move.
+    let fix = if followed {
+        "--follow could not re-anchor these, so disassemble one of them on its own to \
+         decode from it"
+    } else {
+        "re-run with --follow to decode from those addresses too"
+    };
+    format!(
+        "the decode ran across {count} this range's own branches name -- {}{more} -- so no \
+         row starts at {subject}; the instruction printed over each one, and the rows after \
+         it until the decode re-synchronizes, spell bytes the program never executes that \
+         way -- {fix}",
+        shown.join(", ")
+    )
+}
+
+/// (kuna, `linear-disassembly-silently-skips`) Say how much of the listing
+/// `--follow` re-anchored, so a caller comparing two runs of the same range
+/// knows how many rows moved and why.
+fn follow_note(anchored: usize) -> String {
+    let n = match anchored {
+        1 => "one address".to_string(),
+        n => format!("{n} addresses"),
+    };
+    format!(
+        "--follow decoded from {n} the straight line would have walked over; bytes no \
+         flow reaches are still listed, straight-line, in between"
+    )
+}
+
 /// What to call the start address in a header: its name and address when the
 /// program has a name for it, the bare address otherwise.
 fn label(region: &Region) -> String {
@@ -1235,6 +1560,7 @@ pub(crate) fn parse_args(argv: &[String]) -> Result<DisArgs, String> {
     let mut view: Option<ViewRequest> = None;
     let mut count: Option<usize> = None;
     let mut bytes: Option<u64> = None;
+    let mut follow = false;
     let mut json = false;
     let mut options: Vec<(String, String)> = Vec::new();
     let mut func_decls: Vec<crate::funcdecl::FuncDecl> = Vec::new();
@@ -1251,6 +1577,7 @@ pub(crate) fn parse_args(argv: &[String]) -> Result<DisArgs, String> {
             "--addr" => by_address = true,
             "--as" => view = Some(parse_view(&take(argv, &mut i, "--as")?)?),
             "--json" => json = true,
+            "--follow" => follow = true,
             "--count" => count = Some(parse_positive(&take(argv, &mut i, a)?, a)? as usize),
             "--bytes" => bytes = Some(parse_positive(&take(argv, &mut i, a)?, a)?),
             "--option" => {
@@ -1293,6 +1620,7 @@ pub(crate) fn parse_args(argv: &[String]) -> Result<DisArgs, String> {
         view,
         count,
         bytes,
+        follow,
         json,
         options,
         func_decls,
@@ -1332,7 +1660,7 @@ fn take(argv: &[String], i: &mut usize, flag: &str) -> Result<String, String> {
 fn usage() {
     eprintln!(
         "usage: kuna disassemble|read <binary> <name|0xaddr|0xstart-0xend> [--addr] \\\n\
-         \x20                    [--as code|data|auto] [--count N] [--bytes N] [--json] \\\n\
+         \x20                    [--as code|data|auto] [--count N] [--bytes N] [--follow] [--json] \\\n\
          \x20                    [--mode auto|reliable|aggressive|fast] \\\n\
          \x20                    [--define-function S[-E][=N]|@FILE].. \\\n\
          \x20                    [--option N V].. [--isa auto|arm|thumb] [--slice ARCH] [--target T] [--sleighpath D]\n\
@@ -1349,6 +1677,11 @@ fn usage() {
          \n\
          --define-function <start[-end][=name] | @file> (repeatable) declares a\n\
          boundary first, so a name the image never carried becomes a valid target.\n\
+         \n\
+         --follow decodes from every address the range's own branches name, not just\n\
+         from its start, so a jump over a decoy byte cannot pull the rest of the\n\
+         listing out of phase. Bytes no flow reaches are still listed in between.\n\
+         Without it, such an address is reported in notes rather than decoded.\n\
          \n\
          --json emits {{binary,kind,target,start,end,count,bytes,truncated,notes}} plus\n\
          instructions:[{{address,address_hex,size,bytes,mnemonic,operands,text}}] in the\n\
@@ -1380,6 +1713,48 @@ mod tests {
     /// A byte that will not decode only re-aligns the listing on an
     /// architecture that has a grid to re-align to. `witness` is the OR of the
     /// decoded rows' addresses and sizes.
+    /// The predicate the diagnostic rests on: an in-range target no row starts
+    /// at. A target that starts a row is fine, and one outside the listed span
+    /// says nothing about the span.
+    #[test]
+    fn a_skipped_target_is_one_inside_the_listing_that_no_row_starts_at() {
+        let rows = vec![
+            row(0x1000, &[0xeb, 0x04], "JMP", "0x1006"),
+            row(0x1002, &[0x90], "NOP", ""),
+            row(0x1003, &[0xc2, 0xac, 0xeb], "RET", "0xebac"),
+            row(0x1006, &[0x90], "NOP", ""),
+        ];
+        let mut refs = FixedRefs::default();
+        // 0x1004 is covered by the RET; 0x1006 starts a row; 0x2000 is out of
+        // the span; 0x1000 is the listing's own first row.
+        refs.flow_targets = vec![0x1004, 0x1006, 0x2000, 0x1000, 0x1004];
+        assert_eq!(skipped_targets(&rows, &refs), vec![0x1004]);
+        assert!(skipped_targets(&[], &refs).is_empty());
+    }
+
+    /// The note names the addresses, counts what it cannot name, and says which
+    /// move fixes it — a different move once `--follow` is already on.
+    #[test]
+    fn the_skipped_note_names_the_addresses_and_the_move_that_fixes_them() {
+        let one = skipped_note(&[0x43d092], false);
+        assert!(one.contains("an address"), "{one}");
+        assert!(one.contains("0x43d092"), "{one}");
+        assert!(one.contains("--follow"), "{one}");
+
+        let three = skipped_note(&[0x43d092, 0x43d0ae, 0x43d0c1], false);
+        assert!(three.contains("3 addresses"), "{three}");
+        assert!(three.contains("0x43d092, 0x43d0ae, 0x43d0c1"), "{three}");
+
+        let many: Vec<u64> = (0..SKIPPED_NOTE_ADDRS as u64 + 3).map(|i| 0x1000 + i).collect();
+        let note = skipped_note(&many, false);
+        assert!(note.contains("and 3 more"), "{note}");
+        assert!(!note.contains("0x1006"), "the seventh must not be spelled out: {note}");
+
+        let followed = skipped_note(&[0x43d092], true);
+        assert!(!followed.contains("re-run with --follow"), "already on: {followed}");
+        assert!(followed.contains("on its own"), "{followed}");
+    }
+
     #[test]
     fn the_resume_grid_is_the_alignment_the_decoded_rows_share() {
         // ARM: 4-byte rows on 4-byte addresses.
@@ -1575,6 +1950,7 @@ mod tests {
             view: None,
             count,
             bytes,
+            follow: false,
             json: false,
             options: Vec::new(),
             func_decls: Vec::new(),

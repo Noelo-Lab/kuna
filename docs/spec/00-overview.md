@@ -325,6 +325,34 @@ Four front-ends drive one engine assembly:
   nothing in the program, which is what sent two RE-loop testers to `xxd` and
   `objdump -s` (`docs/re-needs/cli-mode-read-raw.md`).
 
+  (kuna) **A listing names the branch targets it decoded across, and `--follow`
+  decodes from them.** A straight-line walk assumes every byte in the range
+  starts an instruction or is inside one; hand-written and obfuscated code breaks
+  that deliberately, and the resulting listing is not merely short a row — it
+  spells calls and out-of-image jumps the bytes do not contain. So every code
+  listing reports the addresses its own instructions branch or call to that no
+  row of it starts at (`decompiler/crates/kuna-cli/src/disassemble.rs
+  (skipped_targets)`), on stderr and in the JSON `notes`. The evidence is the
+  listing's own: the fixed flow targets already harvested for the literal-pool
+  fold (`decompiler/crates/kuna-console/src/engine.rs (FixedRefs)`), restricted to
+  the listed span, because a branch out of the range says nothing about the range.
+  `--follow` (`decompiler/crates/kuna-cli/src/disassemble.rs (follow_rows)`) then
+  decodes from those addresses as well as from the start, to a fixpoint over
+  whatever the newly decoded rows themselves name: one re-anchor is not enough,
+  because the instruction at a jumped-to address is commonly another jump over
+  another decoy byte. A run steps forward while the instruction has a
+  fall-through successor — the `xref_control_flow` last-op rule
+  (`decompiler/crates/kuna-console/src/engine.rs (FixedRefs::harvest)`), where a
+  `goto` whose destination is the instruction's own fall-through is not a dead
+  end, since SLEIGH gives the x86 `E8 00000000` get-PC idiom its own `goto`
+  constructor — and stops where an earlier run already claimed the bytes, so no
+  address is decoded twice and the fixpoint terminates. What flow never reaches is
+  then filled by the ordinary straight-line walk between the claimed rows, clipped
+  so nothing crosses into one, which is why `--follow` never lists less than the
+  plain listing and both cover the same span. It is off by default because it
+  costs a second walk and the straight line is the right answer for compiler
+  output (`docs/re-needs/linear-disassembly-silently-skips.md`).
+
   (kuna) **A window the caller bounded is answered without the discovery walk.**
   `--count`, `--bytes` and an explicit `start-end` range each bound the listing on
   their own (`decompiler/crates/kuna-cli/src/disassemble.rs

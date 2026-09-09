@@ -1,0 +1,84 @@
+{
+  "slug": "linear-disassembly-silently-skips",
+  "need_id": "linear-disassembly-silently-skips",
+  "track": "tooling",
+  "filed_track": "tooling",
+  "scope": "small",
+  "round": 12,
+  "branch": "feat/re-linear-disassembly-silently-skips",
+  "div": "DIV-150",
+  "option": null,
+  "summary": "`kuna disassemble` now reports, always, the addresses its own instructions branch or call to that no row of its listing starts at -- the tell that a straight-line decode is a byte out of phase, which is otherwise spelled exactly like a correct one. The new `--follow` flag additionally decodes from those addresses, to a fixpoint over whatever the newly decoded rows themselves name, and fills what flow never reaches with the ordinary straight-line walk between the anchored rows.",
+  "decisions": [
+    {
+      "what": "hypothesis UPHELD, and all four of the round-12 refuter's corrections were load-bearing",
+      "detail": "The filed cause ('the linear sweep does not diagnose instructions covering direct branch targets') is exactly right and the refuter had already proved it at the code level: `kuna disassemble` has three note producers (choose_view's data-section note, pool_note, image_bound_note) and none is branch-aware. Its four corrections are all carried: (1) THREE targets, not one -- 0x43d092, 0x43d0ae, 0x43d0c1, which is what the shipped note prints; (2) the harm is the FABRICATED rows, not the missing one, which is what the note text and the PR body lead with; (3) a one-shot restart is not a fix -- 0x43d092's own next instruction is another EB 01, so the follow walk is a fixpoint; (4) the acceptance was tightened to name 0x43d092 before dispatch, and the shipped note satisfies it."
+    },
+    {
+      "what": "the diagnostic is always on; only the follow walk is a flag",
+      "detail": "An agent cannot infer a desynchronized decode from the output -- that is the whole defect -- so the note must not be behind anything. It is also not spam: swept over ~800 functions of every vendored fixture it fires on 8, and all 8 are real (the row covering the target is `00ff ADD BH,BH` / `0031` / `12e8 ADC CH,AL` -- run-on decodes of padding at the extent edge). The follow walk costs a second decode and changes which bytes are read as which instruction, so it is opt-in."
+    },
+    {
+      "what": "the evidence was already being collected; nothing new is decoded for the note",
+      "detail": "`FixedRefs::flow_targets` is harvested per row for the literal-pool fold (`add_fixed_refs_at`). `skipped_targets` is one filter over it: in the listed span, not a row start. Cost is one BTreeSet of row addresses per listing."
+    },
+    {
+      "what": "one measured fall-through rule decides whether the follow walk works at all",
+      "detail": "The first follow implementation reproduced the linear listing exactly, because the run stopped at 0x43d067 `CALL 0x43d06c`. Dumping the p-code showed [INT_SUB, STORE, BRANCH], not CALL: Ghidra's x86 spec gives `E8 00000000` -- the get-PC idiom every packer stub opens with -- its own constructor `:CALL rel32 is ... simm32=0 & rel32 { push24(&:4 inst_next); goto rel32; }` (ia.sinc:2969). `harvest` therefore treats a final BRANCH whose destination IS the fall-through address as falling through, alongside the constant-space (p-code-relative) case. Without that clause the walk dies at the first instruction of the witness."
+    },
+    {
+      "what": "--follow must never list less than the straight line, and two early versions did",
+      "detail": "A whole-fixture sweep caught both. (a) On ARM the gap decode started with no alignment witness, so a refused byte resumed one byte later and every row after it was off the 4-byte grid -- 9 invented instructions in entrymain_arm. Fixed by seeding `decode_rows` with the OR of the claimed rows' addresses and sizes. (b) The gap and claim clips used the window's own end as a ceiling, so the last row of a --follow listing was clipped where the straight line lists the instruction straddling the end whole (macho_objc). Fixed by clipping only on claimed rows and on mapped memory. After both, the sweep goes from 33 differing listings to 2."
+    },
+    {
+      "what": "rows may overlap under --follow, and that is the answer, not a bug",
+      "detail": "In overlapbranch_i386 a `JNZ 0x8048825` jumps into the middle of the 5-byte CALL at 0x8048824, and both readings are reachable: the fall-through path executes the CALL, the taken path executes `ADD EAX,0x7`. --follow lists both rows. Dropping either would be a guess about which path runs. Documented in docs/cli.md and the module header; only --follow can produce it."
+    },
+    {
+      "what": "no option, no phases.toml row, no catalog counter, no stages XML",
+      "detail": "Driver tier: the change is entirely in kuna-cli's listing surface plus one derived bit on kuna-console's FixedRefs. A listing is a query -- nothing is committed into the engine and no emitted C can move, which `make test` 675/675 and `make test-stages` PARITY OK confirm. The stage/datatest corpora are XML <binaryimage> documents that never reach this surface. A DIV row IS required, because the always-on note is an intentional default-behaviour change."
+    }
+  ],
+  "sweep": {
+    "question": "does --follow ever produce a listing that is WRONG, or the note ever fire where nothing is wrong?",
+    "method": "`kuna disassemble <fn>` with and without `--follow` for up to 8 functions of every file under decompiler/crates/kuna-analysis/tests/fixtures and tests/hang-repro -- ~800 functions across x86, x86-64, i386 PE, x86-64 PE, ARM A32/Thumb, Mach-O (x86-64 and arm64), MIPS16, PPC64LE and RISC-V -- diffing the text listings and counting the skipped-target notes.",
+    "result": "2 listings differ, both anti-disassembly cases and both improvements: jumpoverdecoy_i386 (the vendored witness reduction -- LODSB/STOSB/LOOP recovered where the straight line printed CALL and an out-of-image JMP) and overlapbranch_i386 (recovers `ADD EAX,0x7` at 0x8048825, hidden inside the CALL its JNZ jumps over). Every other listing is byte-identical. The note fires on 8 of ~800: crtmain_x86_64.exe, jumpoverdecoy_i386, overlapbranch_i386, pe_cookiecheck_x86_64.exe, pe_headercode_i386.exe, pe_iatincode_i386.exe, unmapped_call_x86_64, win32sigs_pe_i386.exe -- each one a call target the last row of the listing runs across, with a fabricated row over it.",
+    "earlier_arm": "The same sweep on the first implementation reported 33 differing listings; the two clip/alignment defects it exposed are in `decisions` above and were fixed before this run."
+  },
+  "promoted_probe": {
+    "retargeted_from": "kuna-re-dataset challenge 5ab77f6633c5d40ad448cbec, bin/LoaderCrackMev2.0.zip.__x/corrupt.exe @ 0x43d060 (skipped 0x43d092, 0x43d0ae, 0x43d0c1)",
+    "retargeted_to": "decompiler/crates/kuna-analysis/tests/fixtures/jumpoverdecoy_i386 @ 0x10000 (skipped 0x10008, 0x10024, 0x10037)",
+    "why": "verify --promote refuses a dataset target and CI has no dataset. The fixture's .text is the witness's own 60 bytes (corrupt.exe 0x43d08a..0x43d0c6) rebased to 0x10000 -- every branch in the run is PC-relative, so the shape is bit-identical -- wrapped in a hand-written ELF32/EM_386 by jumpoverdecoy_i386.py, no toolchain needed.",
+    "verified_on_witness": "verify --need linear-disassembly-silently-skips --json on the dataset witness: 1 pass / 0 fail / 1 closed. json[0] `notes` matches 0x43d092.",
+    "acceptance_id_unchanged": "a-c5bcbf266674 -- the need doc's cmd and expect are untouched; only tests/cli/ carries the retargeted twin."
+  },
+  "files": [
+    "decompiler/crates/kuna-cli/src/disassemble.rs",
+    "decompiler/crates/kuna-cli/tests/disassemble_cli.rs",
+    "decompiler/crates/kuna-console/src/engine.rs",
+    "decompiler/crates/kuna-analysis/tests/fixtures/jumpoverdecoy_i386",
+    "decompiler/crates/kuna-analysis/tests/fixtures/jumpoverdecoy_i386.py",
+    "tests/cli/linear-disassembly-silently-skips.json",
+    "docs/cli.md",
+    "docs/spec/00-overview.md",
+    "docs/history.md"
+  ],
+  "probe_flip": {
+    "probe_still_passes": false,
+    "acceptance_passes": true,
+    "acceptance_clause": "json notes matches 0x43d092",
+    "acceptance_actual_before": "[]",
+    "acceptance_actual_after": "the decode ran across 3 addresses this range's own branches name -- 0x43d092, 0x43d0ae, 0x43d0c1 -- ..."
+  },
+  "gates": {
+    "make test": "PARITY OK 675/675",
+    "make test-stages": "PARITY OK",
+    "make rust-test": "green, rc=0, 6,318 passed / 0 failed. Run with `env -u KUNA_DECOMP_TEST`: with the repipe loop's own value exported it points at this worktree's decomp_test_dbg, so verify_w10_proto_unlock compares kuna against itself and reports 'oracle drifted' -- the known worktree artifact, unrelated to this change.",
+    "make check-spec": "OK, lenient and strict",
+    "make test-cli": "114/114 with the probe promoted",
+    "kuna catalog --check": "catalog OK: documents exactly the registered kuna options (178 settables, unchanged -- no option was added)",
+    "acceptance": "verify --need linear-disassembly-silently-skips: 1 pass / 0 fail / 1 closed",
+    "mergecheck": "merge guards clean against origin/main; DIV-150 confirmed free; all shared counters re-derived and agree",
+    "rebase": "origin/main was still 17da9472, the recorded base, so the rebase was a no-op and the gated tree is the merged tree"
+  }
+}

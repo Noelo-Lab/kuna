@@ -1,0 +1,49 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "disassemble",
+    "{{BIN}}",
+    "0x10000",
+    "--addr",
+    "--count",
+    "70",
+    "--json"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/jumpoverdecoy_i386",
+    "binary_sha256": "2934acf78111b1738a672fe5cd9beb61e0e2a27f32b1eed64601c2b1d397ba0e",
+    "binary_size": 282,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/jumpoverdecoy_i386",
+    "selector": "0x10000",
+    "selector_kind": "addr"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "json": [
+      {
+        "path": "notes",
+        "op": "matches",
+        "value": "ran across [^\"]*0x10008"
+      },
+      {
+        "path": "notes",
+        "op": "matches",
+        "value": "0x10008, 0x10024, 0x10037"
+      }
+    ]
+  },
+  "notes": "Promoted acceptance of linear-disassembly-silently-skips, re-pointed from the dataset witness (corrupt.exe 0x43d060, skipped targets 0x43d092/0x43d0ae/0x43d0c1) at jumpoverdecoy_i386, whose .text is those same 60 witness bytes rebased to 0x10000 -- CI has no dataset. Same clause: the listing must name the branch targets it decoded across."
+}

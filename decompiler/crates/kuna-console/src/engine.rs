@@ -187,17 +187,38 @@ struct WholeOp {
 /// the op capture is rewound rather than dropped between them: allocating per op
 /// costs one heap allocation for every p-code op walked, which on a whole-image
 /// listing is millions of them.
-#[derive(Default)]
 pub struct FixedRefs {
     /// `(address, width)` for each read of an address an instruction spelled
     /// out. The width is what was READ, not the size of the address varnode.
     pub reads: Vec<(u64, u32)>,
     /// Every address a `BRANCH`/`CBRANCH`/`CALL` named outright.
     pub flow_targets: Vec<u64>,
+    /// (kuna, `linear-disassembly-silently-skips`) Does the instruction handed
+    /// to the LAST [`ConsoleProgram::add_fixed_refs_at`] call have a
+    /// fall-through successor? False only where its last p-code op is
+    /// `BRANCH`/`BRANCHIND`/`RETURN`, the `xref_control_flow` rule
+    /// (`decompiler/cpp/flow.cc`, ported at `p2_lift/flow.rs`): fall-through is
+    /// decided by the LAST op, never by the first, so a multi-op instruction
+    /// that branches early still falls through. An instruction that did not
+    /// decode leaves this `true` — a caller that learned nothing must not read
+    /// that as a dead end.
+    pub falls_through: bool,
     /// The current instruction's ops, over storage retained across instructions.
     ops: Vec<WholeOp>,
     /// How many of `ops` the current instruction has filled.
     filled: usize,
+}
+
+impl Default for FixedRefs {
+    fn default() -> Self {
+        Self {
+            reads: Vec::new(),
+            flow_targets: Vec::new(),
+            falls_through: true,
+            ops: Vec::new(),
+            filled: 0,
+        }
+    }
 }
 
 impl kuna_sleigh::translate::PcodeEmit for FixedRefs {
@@ -239,8 +260,12 @@ impl FixedRefs {
     /// its own body, so its successor is named by a flow op whatever it is.
     /// Counted, that would mark the word after every predicated instruction as a
     /// branch label — and a literal pool is a run of them.
+    ///
+    /// The same walk settles [`Self::falls_through`] for this one instruction,
+    /// so a caller stepping a listing learns where the straight line ends
+    /// without decoding it a second time.
     fn harvest(&mut self, data_space: Option<&Rc<AddrSpace>>, fall_through: u64) {
-        let Self { reads, flow_targets, ops, filled } = self;
+        let Self { reads, flow_targets, falls_through, ops, filled } = self;
         let is_constant = |vn: &VarnodeData| {
             vn.space
                 .as_ref()
@@ -292,6 +317,27 @@ impl FixedRefs {
                 }
             }
         }
+        // Fall-through is the LAST-op test, never the first: an instruction
+        // falls through unless its final op is BRANCH / BRANCHIND / RETURN, and
+        // one that emitted no ops at all falls through
+        // (`p2_lift/flow.rs::xref_control_flow`, the `isfallthru` tail). Two
+        // BRANCHes are not dead ends: one into the CONSTANT space, which is
+        // p-code-relative and lands inside this same instruction, and one whose
+        // destination IS the fall-through address -- SLEIGH gives the x86
+        // get-PC idiom `E8 00000000` its own `goto rel32` constructor
+        // (`ia.sinc`, the `simm32=0` CALL), so the straight line does continue
+        // at the next address.
+        *falls_through = match ops[..*filled].last() {
+            None => true,
+            Some(last) => match last.opcode {
+                OpCode::CPUI_BRANCH => last
+                    .ins
+                    .first()
+                    .is_some_and(|vn| is_constant(vn) || vn.offset == fall_through),
+                OpCode::CPUI_BRANCHIND | OpCode::CPUI_RETURN => false,
+                _ => true,
+            },
+        };
     }
 }
 
@@ -1411,6 +1457,9 @@ impl ConsoleProgram {
         };
         let addr = Address::new(code_space, vma);
         into.filled = 0;
+        // An advisory probe that learns nothing must report the conservative
+        // answer, so the fall-through bit is armed before the decode can fail.
+        into.falls_through = true;
         // Advisory probe: contain a decode `Err` AND any translator panic on
         // exotic bytes to "no evidence", exactly as `lone_jump_target` does.
         let decoded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -4044,6 +4093,33 @@ mod tests {
 
     fn op(opcode: OpCode, out: Option<VarnodeData>, ins: Vec<VarnodeData>) -> WholeOp {
         WholeOp { opcode, out, ins }
+    }
+
+    /// (kuna, `linear-disassembly-silently-skips`) Where the straight line ends.
+    /// Two BRANCHes are not dead ends: one into the constant space, which is
+    /// p-code-relative and lands inside this same instruction, and one whose
+    /// destination IS the fall-through address — SLEIGH gives the x86 get-PC
+    /// idiom `E8 00000000` its own `goto rel32` constructor (`ia.sinc`), and a
+    /// listing that reads that as a dead end loses the thread at the first
+    /// instruction of most packer stubs.
+    #[test]
+    fn only_a_branch_that_leaves_the_instruction_ends_the_straight_line() {
+        let (ram, cst) = spaces();
+        let branch = |space: &Rc<AddrSpace>, target: u64| {
+            op(OpCode::CPUI_BRANCH, None, vec![vn(space, target, 4)])
+        };
+        let plain = || op(OpCode::CPUI_COPY, None, vec![vn(&cst, 1, 4)]);
+        let falls = |ops: Vec<WholeOp>| harvest(&ram, 0x1000, ops).falls_through;
+
+        assert!(falls(vec![]), "no ops at all is a fall-through");
+        assert!(falls(vec![plain()]));
+        assert!(!falls(vec![branch(&ram, 0x2000)]), "an ordinary jmp ends it");
+        assert!(falls(vec![branch(&ram, 0x2000), plain()]), "the LAST op decides");
+        assert!(falls(vec![branch(&cst, 2)]), "p-code-relative, inside this instruction");
+        assert!(falls(vec![branch(&ram, 0x1004)]), "`goto` to its own fall-through");
+        assert!(!falls(vec![op(OpCode::CPUI_BRANCHIND, None, vec![vn(&ram, 0, 4)])]));
+        assert!(!falls(vec![op(OpCode::CPUI_RETURN, None, vec![vn(&ram, 0, 4)])]));
+        assert!(falls(vec![op(OpCode::CPUI_CALL, None, vec![vn(&ram, 0x2000, 4)])]));
     }
 
     /// The literal-pool read, in the two shapes SLEIGH spells one in: a `LOAD`
