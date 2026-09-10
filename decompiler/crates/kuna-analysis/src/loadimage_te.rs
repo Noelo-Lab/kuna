@@ -989,27 +989,6 @@ mod tests {
         assert_eq!(read, [0, 0]);
     }
 
-    /// No mapped record may hold more bytes than it maps, whatever the image's
-    /// file and section alignments are.
-    #[test]
-    fn every_mapping_holds_at_most_what_it_maps() {
-        for image in [
-            TeImage::thumb(&[0x07, 0x20, 0x70, 0x47]).build(),
-            TeImage::thumb(&[0x07, 0x20, 0x70, 0x47]).raw_pointer(0x200).build(),
-        ] {
-            let image = TeLoadImage::from_bytes("alignments.te", &image).unwrap();
-            for (mapped, backed) in image.get_segments().iter().zip(image.file_backed_segments()) {
-                assert!(
-                    backed.1 <= mapped.1,
-                    "mapping at {:#x} holds {:#x} bytes but maps {:#x}",
-                    mapped.0,
-                    backed.1,
-                    mapped.1
-                );
-            }
-        }
-    }
-
     /// The entry's low bit is Thumb state for the language that decodes the
     /// image, which an explicit target may make something other than the
     /// machine word's; the console folds by the resolved language, so the
@@ -1105,20 +1084,6 @@ mod tests {
         assert_eq!(checked_in, built);
     }
 
-    /// A zero-filled virtual tail is mapped memory, but the file carries no
-    /// copy of it, so it is not evidence for the constant-folding ranges.
-    #[test]
-    fn file_backed_segments_stop_at_the_initialized_bytes() {
-        let mut bytes = synthetic_thumb_te();
-        bytes[48..52].copy_from_slice(&8u32.to_le_bytes());
-        let image = TeLoadImage::from_bytes("zero-tail.te", &bytes).unwrap();
-        assert_eq!(image.get_segments()[1], (0x401000, 8, section_flags::CODE | section_flags::READONLY));
-        assert_eq!(
-            image.file_backed_segments()[1],
-            (0x401000, 4, section_flags::CODE | section_flags::READONLY)
-        );
-    }
-
     /// `VZ` is two ASCII letters an unrelated file can open with; claiming the
     /// format on the signature alone misdiagnoses every such input.
     #[test]
@@ -1174,54 +1139,22 @@ mod tests {
     }
 
     #[test]
-    fn aarch64_te_defaults_to_the_uefi_abi() {
-        let mut bytes = synthetic_thumb_te();
-        bytes[2..4].copy_from_slice(&IMAGE_FILE_MACHINE_ARM64.to_le_bytes());
-        bytes[8..12].copy_from_slice(&0x1000u32.to_le_bytes());
-
-        let automatic = TeLoadImage::from_bytes("aarch64.te", &bytes).unwrap();
-        assert_eq!(automatic.get_arch_type(), b"AARCH64:LE:64:v8A:default");
-        assert_eq!(automatic.fallback_arch_id(), None);
-
-        let explicit_windows =
-            TeLoadImage::from_bytes_with_target("aarch64.te", &bytes, "AARCH64:LE:64:v8A:windows")
-                .unwrap();
-        assert_eq!(
-            explicit_windows.get_arch_type(),
-            b"AARCH64:LE:64:v8A:windows"
-        );
-    }
-
-    #[test]
-    fn ia32_and_armnt_te_default_to_uefi_abis() {
-        let mut ia32_bytes = synthetic_thumb_te();
-        ia32_bytes[2..4].copy_from_slice(&IMAGE_FILE_MACHINE_I386.to_le_bytes());
-        let automatic_ia32 = TeLoadImage::from_bytes("ia32.te", &ia32_bytes).unwrap();
-        assert_eq!(automatic_ia32.get_arch_type(), b"x86:LE:32:default:gcc");
-        assert_eq!(automatic_ia32.fallback_arch_id(), None);
-        let explicit_ia32_windows = TeLoadImage::from_bytes_with_target(
-            "ia32.te",
-            &ia32_bytes,
-            "x86:LE:32:default:windows",
-        )
-        .unwrap();
-        assert_eq!(
-            explicit_ia32_windows.get_arch_type(),
-            b"x86:LE:32:default:windows"
-        );
-
-        let mut armnt_bytes = synthetic_thumb_te();
-        armnt_bytes[2..4].copy_from_slice(&IMAGE_FILE_MACHINE_ARMNT.to_le_bytes());
-        let automatic_armnt = TeLoadImage::from_bytes("armnt.te", &armnt_bytes).unwrap();
-        assert_eq!(automatic_armnt.get_arch_type(), b"ARM:LE:32:v8:default");
-        assert_eq!(automatic_armnt.fallback_arch_id(), None);
-        let explicit_armnt_windows =
-            TeLoadImage::from_bytes_with_target("armnt.te", &armnt_bytes, "ARM:LE:32:v8:windows")
-                .unwrap();
-        assert_eq!(
-            explicit_armnt_windows.get_arch_type(),
-            b"ARM:LE:32:v8:windows"
-        );
+    fn te_defaults_to_uefi_abis_and_honors_explicit_windows_models() {
+        for (machine, default, windows) in [
+            (IMAGE_FILE_MACHINE_ARM64, "AARCH64:LE:64:v8A:default", "AARCH64:LE:64:v8A:windows"),
+            (IMAGE_FILE_MACHINE_I386, "x86:LE:32:default:gcc", "x86:LE:32:default:windows"),
+            (IMAGE_FILE_MACHINE_ARMNT, "ARM:LE:32:v8:default", "ARM:LE:32:v8:windows"),
+        ] {
+            let bytes = TeImage::thumb(&[0x07, 0x20, 0x70, 0x47])
+                .machine(machine)
+                .entry_rva(CODE_RVA)
+                .build();
+            let automatic = TeLoadImage::from_bytes("abi.te", &bytes).unwrap();
+            assert_eq!(automatic.get_arch_type(), default.as_bytes(), "machine {machine:#x}");
+            assert_eq!(automatic.fallback_arch_id(), None, "machine {machine:#x}");
+            let explicit = TeLoadImage::from_bytes_with_target("abi.te", &bytes, windows).unwrap();
+            assert_eq!(explicit.get_arch_type(), windows.as_bytes(), "machine {machine:#x}");
+        }
     }
 
     #[test]
@@ -1250,6 +1183,7 @@ mod tests {
                 (0x401000, 4, section_flags::CODE | section_flags::READONLY),
             ]
         );
+        assert_eq!(image.file_backed_segments(), image.get_segments());
         assert_eq!(
             image.section_metadata(),
             vec![ObjectSectionMetadata {
@@ -1433,7 +1367,11 @@ mod tests {
         let mut bytes = synthetic_thumb_te();
         bytes[48..52].copy_from_slice(&8u32.to_le_bytes());
         let mut image = TeLoadImage::from_bytes("zero-tail.te", &bytes).unwrap();
-        assert_eq!(image.get_segments()[1].1, 8);
+        assert_eq!(image.get_segments()[1], (0x401000, 8, section_flags::CODE | section_flags::READONLY));
+        assert_eq!(
+            image.file_backed_segments()[1],
+            (0x401000, 4, section_flags::CODE | section_flags::READONLY)
+        );
         let manager = manager();
         let ram = Rc::clone(manager.get_space_by_name("ram").unwrap());
         image.attach_to_space(Rc::clone(&ram));

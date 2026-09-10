@@ -57,8 +57,6 @@ impl TeFixture {
         Self::write("te-thumb-calls-arm", image.build())
     }
 
-    /// `MAX_INSTRUCTIONS + 1` Thumb `nop`s then `bx lr`: one instruction more
-    /// than the walk's budget.
     /// `blx` to an A32 helper that sits BELOW a Thumb callee reached by `bl`:
     /// the `blx` decode's own `globalset(TMode=0)` at its target would, if it
     /// reached the database, flatten every Thumb address above the helper.
@@ -81,6 +79,8 @@ impl TeFixture {
         Self::write("te-thumb-zero-tail", bytes)
     }
 
+    /// `MAX_INSTRUCTIONS + 1` Thumb `nop`s then `bx lr`: one instruction more
+    /// than the walk's budget.
     fn long_thumb_entry() -> Self {
         let mut code = Vec::with_capacity((MAX_INSTRUCTIONS + 1) * 2 + 2);
         for _ in 0..=MAX_INSTRUCTIONS {
@@ -182,16 +182,22 @@ fn thumb_te_dispatches_maps_and_decompiles() {
 }
 
 #[test]
-fn explicit_target_keeps_te_mappings() {
+fn explicit_targets_keep_te_mappings_and_use_the_selected_entry_convention() {
     let fixture = TeFixture::thumb_return_7();
     let path = fixture.0.to_string_lossy();
-    let Some(mut program) = load_or_skip(&path, "ARM:LE:32:v4t:default", None) else {
-        return;
-    };
-    program.commit_pending_analysis().unwrap();
-    assert!(program.find_entry_at(0x401001).is_some());
-    assert!(program.vma_bytes_mapped(0x401000));
-    assert!(!program.vma_bytes_mapped(0x400000));
+    for (target, entry) in [
+        ("ARM:LE:32:v4t:default", 0x401000),
+        ("x86:LE:32:default:gcc", 0x401001),
+    ] {
+        let Some(mut program) = load_or_skip(&path, target, None) else {
+            continue;
+        };
+        program.commit_pending_analysis().unwrap();
+        assert!(program.description().starts_with(target), "{}", program.description());
+        assert_eq!(program.find_entry_at(0x401001).unwrap().addr.get_offset(), entry, "{target}");
+        assert!(program.vma_bytes_mapped(0x401000), "{target}");
+        assert!(!program.vma_bytes_mapped(0x400000), "{target}");
+    }
 }
 
 #[test]
@@ -410,7 +416,7 @@ fn odd_thumb_entry_walk_truncates_at_its_budget_and_keeps_the_load_usable() {
 /// The `blx` decode runs the language's `globalset(TMode=0)` at its target.
 /// With the helper below the Thumb callee, letting that write reach the
 /// database during the walk flattens the callee to A32; the walk decodes with
-/// context sets suppressed, so the callee keeps its mode.
+/// TMode writes suppressed, so the callee keeps its mode.
 #[test]
 fn a_blx_target_below_a_thumb_callee_does_not_flatten_it() {
     let fixture = TeFixture::thumb_blx_below_thumb_callee();
@@ -476,100 +482,30 @@ fn entrythumbflow_off_leaves_the_entry_at_the_language_default() {
 }
 
 #[test]
-fn odd_generic_arm_entry_does_not_paint_the_whole_code_section_thumb() {
-    let fixture = TeFixture::mixed_arm_with_odd_thumb_entry();
-    let path = fixture.0.to_string_lossy();
-    let Some(mut program) = load_or_skip(&path, "", None) else {
-        return;
-    };
-    program.commit_pending_analysis().unwrap();
+fn odd_generic_arm_entry_preserves_a32_code_on_either_side() {
+    for (fixture, arm_addr, thumb_addr) in [
+        (TeFixture::mixed_arm_with_odd_thumb_entry(), 0x401000, 0x401004),
+        (TeFixture::thumb_entry_before_arm(), 0x401004, 0x401000),
+    ] {
+        let path = fixture.0.to_string_lossy();
+        let Some(mut program) = load_or_skip(&path, "", None) else {
+            return;
+        };
+        program.commit_pending_analysis().unwrap();
+        assert_eq!(tmode_at(&program, thumb_addr), 1, "entry at {thumb_addr:#x}");
+        assert_eq!(tmode_at(&program, thumb_addr + 2), 1, "reachable Thumb return");
+        assert_eq!(tmode_at(&program, arm_addr), 0, "A32 function at {arm_addr:#x}");
 
-    let arm = program
-        .resolve_entry(&EntrySelector::Numeric(0x401000))
-        .expect("mapped A32 function before the entry");
-    let thumb = program
-        .find_entry_at(0x401005)
-        .expect("odd TE entry must normalize and remain Thumb");
-    let results = decompile_targets(&mut program, vec![arm, thumb], true, false, false);
-    let arm = results
-        .iter()
-        .find(|result| result.address == 0x401000)
-        .expect("A32 result");
-    assert!(arm.error.is_none(), "{:?}", arm.error);
-    assert!(
-        arm.code.as_deref().unwrap().contains("return;"),
-        "{:?}",
-        arm.code
-    );
-    let thumb = results
-        .iter()
-        .find(|result| result.address == 0x401004)
-        .expect("Thumb result");
-    assert!(thumb.error.is_none(), "{:?}", thumb.error);
-    assert!(
-        thumb.code.as_deref().unwrap().contains("return 7;"),
-        "{:?}",
-        thumb.code
-    );
-}
-
-#[test]
-fn odd_generic_arm_entry_does_not_paint_later_code_thumb() {
-    let fixture = TeFixture::thumb_entry_before_arm();
-    let path = fixture.0.to_string_lossy();
-    let Some(mut program) = load_or_skip(&path, "", None) else {
-        return;
-    };
-    program.commit_pending_analysis().unwrap();
-
-    let thumb = program.find_entry_at(0x401001).expect("odd Thumb entry");
-    let arm = program
-        .resolve_entry(&EntrySelector::Numeric(0x401004))
-        .expect("later A32 function");
-    assert_eq!(
-        program
-            .arch()
-            .with_context_db_mut(|db| db.get_variable_value(b"TMode", &thumb.addr))
-            .unwrap(),
-        1
-    );
-    let thumb_continuation = kuna_base::address::Address::new(
-        thumb.addr.get_space().cloned().unwrap(),
-        0x401002,
-    );
-    assert_eq!(
-        program
-            .arch()
-            .with_context_db_mut(|db| db.get_variable_value(b"TMode", &thumb_continuation))
-            .unwrap(),
-        1,
-        "reachable Thumb instructions retain entry mode"
-    );
-    assert_eq!(
-        program
-            .arch()
-            .with_context_db_mut(|db| db.get_variable_value(b"TMode", &arm.addr))
-            .unwrap(),
-        0,
-        "entry-derived Thumb state must not reach later code"
-    );
-    let results = decompile_targets(&mut program, vec![thumb, arm], true, false, false);
-    let thumb = results
-        .iter()
-        .find(|result| result.address == 0x401000)
-        .expect("Thumb result");
-    assert!(thumb.error.is_none(), "{:?}", thumb.error);
-    assert!(
-        thumb.code.as_deref().unwrap().contains("return 7;"),
-        "{:?}",
-        thumb.code
-    );
-    let arm = results
-        .iter()
-        .find(|result| result.address == 0x401004)
-        .expect("A32 result");
-    assert!(arm.error.is_none(), "{:?}", arm.error);
-    assert!(arm.code.as_deref().unwrap().contains("return;"), "{:?}", arm.code);
+        let arm = program.resolve_entry(&EntrySelector::Numeric(arm_addr)).expect("A32 function");
+        let thumb = program.find_entry_at(thumb_addr | 1).expect("odd Thumb entry");
+        let entries = if arm_addr < thumb_addr { vec![arm, thumb] } else { vec![thumb, arm] };
+        let results = decompile_targets(&mut program, entries, true, false, false);
+        for (addr, expected) in [(arm_addr, "return;"), (thumb_addr, "return 7;")] {
+            let result = results.iter().find(|result| result.address == addr).unwrap();
+            assert!(result.error.is_none(), "{addr:#x}: {:?}", result.error);
+            assert!(result.code.as_deref().unwrap().contains(expected), "{addr:#x}: {:?}", result.code);
+        }
+    }
 }
 
 #[test]
@@ -713,17 +649,6 @@ fn assert_entry_returns_7(program: &mut ConsoleProgram) {
     let results = decompile_targets(program, vec![entry], true, false, false);
     assert!(results[0].error.is_none(), "{:?}", results[0].error);
     assert!(results[0].code.as_deref().unwrap().contains("return 7;"), "{:?}", results[0].code);
-}
-
-#[test]
-fn explicit_non_arm_target_ignores_thumb_machine_hint() {
-    let fixture = TeFixture::thumb_return_7();
-    let path = fixture.0.to_string_lossy();
-    let Some(program) = load_or_skip(&path, "x86:LE:32:default:gcc", None) else {
-        return;
-    };
-    assert!(program.description().starts_with("x86:LE:32"));
-    assert!(program.vma_bytes_mapped(0x401000));
 }
 
 #[test]

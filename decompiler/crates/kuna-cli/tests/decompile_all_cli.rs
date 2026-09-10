@@ -926,27 +926,6 @@ fn te_image_auto_detects_entry_mapping_and_thumb_context() {
     assert!(stdout.contains("\"bytes\": 1"), "{stdout}");
     assert!(stdout.contains("\"hex\": \"47\""), "{stdout}");
 
-    // Every object-view consumer answers with the same capability error, never
-    // the object crate's own parse failure.
-    for (command, flag) in [
-        ("functions", vec!["--summary"]),
-        ("functions", vec!["--reachable-from", "0x401000"]),
-        ("decompile-all", vec!["--summary"]),
-        ("decompile-all", vec!["--reachable-from", "0x401000"]),
-        ("xrefs", vec!["--to", "0x401000"]),
-        ("decompile-graph", vec![]),
-        ("strings", vec!["--no-xrefs"]),
-    ] {
-        let mut args = vec![command, &binary, "--sleighpath", &sp];
-        args.extend(flag);
-        let (_stdout, stderr, ok) = run_kuna(&args);
-        assert!(!ok, "TE {command} unexpectedly succeeded");
-        assert!(
-            stderr.contains("UEFI TE input has no object-file view"),
-            "unexpected TE diagnostic from {command}: {stderr}"
-        );
-        assert!(!stderr.contains("Unknown file magic"), "leaked object parser error: {stderr}");
-    }
     // `--slice` names a Mach-O fat slice; a thin image ignores it, and a TE is
     // a thin image, so it is accepted on every surface rather than rejected on
     // some.
@@ -954,44 +933,6 @@ fn te_image_auto_detects_entry_mapping_and_thumb_context() {
         run_kuna(&["functions", &binary, "--json", "--slice", "arm64", "--sleighpath", &sp]);
     assert!(ok, "TE --slice must be ignored like any thin image: {stderr}");
     assert!(stdout.contains("\"count\": 1"), "{stdout}");
-
-    // A TE for a machine kuna has no binding for is still a TE: the user is
-    // told which machine, not handed the headerless-image guidance.
-    let ebc = common::scratch_file("ebc", "te");
-    std::fs::write(
-        &ebc,
-        kuna_analysis::loadimage_te::synthetic::TeImage::thumb(&[0; 4]).machine(0x0ebc).build(),
-    )
-    .unwrap();
-    let ebc_path = ebc.to_string_lossy().into_owned();
-    let (_stdout, stderr, ok) = run_kuna(&["functions", &ebc_path, "--json", "--sleighpath", &sp]);
-    assert!(!ok, "an EBC TE unexpectedly loaded");
-    assert!(
-        stderr.contains("unsupported machine value 0x0ebc"),
-        "an unsupported TE machine must be named: {stderr}"
-    );
-    std::fs::remove_file(ebc).unwrap();
-
-    // A file that merely opens with the two signature letters is not a TE
-    // image: it keeps the unrecognized-input guidance rather than being routed
-    // into the TE parser or refused as one.
-    let prose = common::scratch_file("not-a-te", "bin");
-    std::fs::write(&prose, b"VZ: a note about the build, not a container").unwrap();
-    let prose_path = prose.to_string_lossy().into_owned();
-    let (_stdout, stderr, ok) =
-        run_kuna(&["functions", &prose_path, "--json", "--sleighpath", &sp]);
-    assert!(!ok, "a non-container unexpectedly loaded");
-    assert!(
-        stderr.contains("--raw-image") && !stderr.contains("TE"),
-        "a `VZ`-prefixed non-container must keep the raw-image guidance: {stderr}"
-    );
-    let (_stdout, stderr, ok) = run_kuna(&["strings", &prose_path, "--no-xrefs"]);
-    assert!(!ok, "a non-container unexpectedly scanned");
-    assert!(
-        !stderr.contains("UEFI TE"),
-        "a `VZ`-prefixed non-container must not be diagnosed as TE: {stderr}"
-    );
-    std::fs::remove_file(prose).unwrap();
 
     let (stdout, stderr, ok) = run_kuna(&[
         "decompile-all",
@@ -1042,6 +983,87 @@ fn te_image_auto_detects_entry_mapping_and_thumb_context() {
         "TE README omitted its named code section:\n{readme}"
     );
     std::fs::remove_dir_all(project_dir).unwrap();
+
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn te_object_view_commands_report_capability_errors() {
+    let path = write_thumb_te();
+    let binary = path.to_string_lossy().into_owned();
+    let sp = specs();
+
+    // Every object-view consumer answers with the same capability error, never
+    // the object crate's own parse failure.
+    for (command, flag) in [
+        ("functions", vec!["--summary"]),
+        ("functions", vec!["--reachable-from", "0x401000"]),
+        ("decompile-all", vec!["--summary"]),
+        ("decompile-all", vec!["--reachable-from", "0x401000"]),
+        ("xrefs", vec!["--to", "0x401000"]),
+        ("decompile-graph", vec![]),
+        ("strings", vec!["--no-xrefs"]),
+    ] {
+        let mut args = vec![command, &binary, "--sleighpath", &sp];
+        args.extend(flag);
+        let (_stdout, stderr, ok) = run_kuna(&args);
+        if !ok && matches!(command, "functions" | "decompile-all") && is_specs_skip(&stderr) {
+            eprintln!("TE {command} filters: skipping (no ARM `.sla`): {stderr}");
+            continue;
+        }
+        assert!(!ok, "TE {command} unexpectedly succeeded");
+        assert!(
+            stderr.contains("UEFI TE input has no object-file view"),
+            "unexpected TE diagnostic from {command}: {stderr}"
+        );
+        assert!(!stderr.contains("Unknown file magic"), "leaked object parser error: {stderr}");
+    }
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn te_input_errors_preserve_format_and_target_diagnostics() {
+    let path = write_thumb_te();
+    let binary = path.to_string_lossy().into_owned();
+    let sp = specs();
+
+    // A TE for a machine kuna has no binding for is still a TE: the user is
+    // told which machine, not handed the headerless-image guidance.
+    let ebc = common::scratch_file("ebc", "te");
+    std::fs::write(
+        &ebc,
+        kuna_analysis::loadimage_te::synthetic::TeImage::thumb(&[0; 4]).machine(0x0ebc).build(),
+    )
+    .unwrap();
+    let ebc_path = ebc.to_string_lossy().into_owned();
+    let (_stdout, stderr, ok) = run_kuna(&["functions", &ebc_path, "--json", "--sleighpath", &sp]);
+    assert!(!ok, "an EBC TE unexpectedly loaded");
+    assert!(
+        stderr.contains("unsupported machine value 0x0ebc"),
+        "an unsupported TE machine must be named: {stderr}"
+    );
+    std::fs::remove_file(ebc).unwrap();
+
+    // A file that merely opens with the two signature letters is not a TE
+    // image: it keeps the unrecognized-input guidance rather than being routed
+    // into the TE parser or refused as one.
+    let prose = common::scratch_file("not-a-te", "bin");
+    std::fs::write(&prose, b"VZ: a note about the build, not a container").unwrap();
+    let prose_path = prose.to_string_lossy().into_owned();
+    let (_stdout, stderr, ok) =
+        run_kuna(&["functions", &prose_path, "--json", "--sleighpath", &sp]);
+    assert!(!ok, "a non-container unexpectedly loaded");
+    assert!(
+        stderr.contains("--raw-image") && !stderr.contains("TE"),
+        "a `VZ`-prefixed non-container must keep the raw-image guidance: {stderr}"
+    );
+    let (_stdout, stderr, ok) = run_kuna(&["strings", &prose_path, "--no-xrefs"]);
+    assert!(!ok, "a non-container unexpectedly scanned");
+    assert!(
+        !stderr.contains("UEFI TE"),
+        "a `VZ`-prefixed non-container must not be diagnosed as TE: {stderr}"
+    );
+    std::fs::remove_file(prose).unwrap();
 
     let (_stdout, stderr, ok) = run_kuna(&[
         "functions",
