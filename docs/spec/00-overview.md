@@ -29,6 +29,9 @@ SLA initialization uses the packed decoder in
 is inlined into the attribute readers so startup does not pay a function call
 per encoded byte. Chunk transitions, end-of-stream errors, NUL termination,
 and the packed format remain unchanged; this requires no cached program state.
+An integer contained within a chunk is decoded from a checked slice, advancing
+the cursor once rather than once per byte. Reads ending at or crossing a chunk
+boundary retain the byte-cursor path, including the final-byte EOF check.
 
 kuna is two engines with one boundary. The **program-preparation tier**
 (`kuna-analysis`, chapter 01) looks at the whole binary once — loader parse, symbol

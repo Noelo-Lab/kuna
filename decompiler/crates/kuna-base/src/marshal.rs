@@ -1516,8 +1516,17 @@ impl<'a> PackedDecode<'a> {
     /// bytes.  The integer is encoded, 7-bits per byte, starting with the
     /// most significant 7-bits.  The integer is decoded from the \e current
     /// position, and the position is advanced.
+    #[inline]
     fn read_integer(&mut self, mut len: i32) -> KunaResult<u64> {
         let mut res: u64 = 0;
+        if len >= 0 && (len as usize) < self.cur_pos.end - self.cur_pos.current {
+            let end = self.cur_pos.current + len as usize;
+            for &byte in &self.in_stream[self.cur_pos.seq][self.cur_pos.current..end] {
+                res = (res << pf::RAWDATA_BITSPERBYTE) | u64::from(byte & pf::RAWDATA_MASK);
+            }
+            self.cur_pos.current = end;
+            return Ok(res);
+        }
         while len > 0 {
             res <<= pf::RAWDATA_BITSPERBYTE;
             res |= (Self::get_next_byte(&self.in_stream, &mut self.cur_pos)? & pf::RAWDATA_MASK)
@@ -2456,6 +2465,34 @@ mod tests {
             dec.close_element(el).unwrap();
             assert_eq!(dec.peek_element().unwrap(), 0);
         }
+    }
+
+    #[test]
+    fn test_marshal_packed_integer_fast_path_matches_chunked_reads() {
+        let manager = test_manager();
+        let chunks = vec![vec![0xff; 32], vec![0xfe; 32]];
+        for len in 0..=15 {
+            for start in 16..32 {
+                let mut dec = PackedDecode::new(&manager);
+                dec.in_stream = chunks.clone();
+                dec.cur_pos = Position { seq: 0, current: start, end: 32 };
+                let mut expected_pos = dec.cur_pos;
+                let mut expected = 0u64;
+                for _ in 0..len {
+                    expected = (expected << pf::RAWDATA_BITSPERBYTE)
+                        | u64::from(PackedDecode::get_next_byte(&chunks, &mut expected_pos).unwrap()
+                            & pf::RAWDATA_MASK);
+                }
+                assert_eq!(dec.read_integer(len).unwrap(), expected, "{start}, {len}");
+                assert_eq!(dec.cur_pos.seq, expected_pos.seq);
+                assert_eq!(dec.cur_pos.current, expected_pos.current);
+                assert_eq!(dec.cur_pos.end, expected_pos.end);
+            }
+        }
+        let mut dec = PackedDecode::new(&manager);
+        dec.in_stream = vec![vec![0xff; 4]];
+        dec.cur_pos = Position { seq: 0, current: 0, end: 4 };
+        assert_eq!(dec.read_integer(4).unwrap_err().to_string(), "Unexpected end of stream");
     }
 
     #[test]
