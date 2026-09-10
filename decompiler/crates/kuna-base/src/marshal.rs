@@ -1452,6 +1452,24 @@ impl<'a> PackedDecode<'a> {
         }
     }
 
+    /// Ingest an owned buffer, copying only the final partial chunk for padding.
+    pub fn ingest_owned(&mut self, mut data: Vec<u8>) -> KunaResult<()> {
+        let length = data.iter().position(|&byte| byte == 0).unwrap_or(data.len());
+        let remainder = length % Self::BUFFER_SIZE as usize;
+        let full_length = length - remainder;
+        if full_length == 0 {
+            return self.ingest_stream(&data[..length]);
+        }
+        data.truncate(length);
+        let mut tail = data.split_off(full_length);
+        tail.resize(if remainder == 0 { 1 } else { Self::BUFFER_SIZE as usize }, 0);
+        tail[remainder] = pf::ELEMENT_END;
+        self.in_stream.push(data);
+        self.in_stream.push(tail);
+        self.end_pos = Position { seq: 0, current: 0, end: self.in_stream[0].len() };
+        Ok(())
+    }
+
     /// Get the byte at the current position, do not advance
     fn get_byte(in_stream: &[Vec<u8>], pos: &Position) -> u8 {
         in_stream[pos.seq][pos.current]
@@ -2464,6 +2482,81 @@ mod tests {
             assert_eq!(dec.read_signed_integer_id(&ATTRIB_ID).unwrap(), i64::MIN);
             dec.close_element(el).unwrap();
             assert_eq!(dec.peek_element().unwrap(), 0);
+        }
+    }
+
+    #[test]
+    fn test_marshal_owned_ingestion_matches_borrowed_stream() {
+        let manager = test_manager();
+        for length in [0, 1, 1000, 1018, 1019, 1020, 1021, 1024, 2042, 4096, 8192] {
+            let mut encoded = Vec::new();
+            let mut enc = PackedEncode::new(&mut encoded);
+            enc.open_element(&ELEM_DATA);
+            enc.write_string(&ATTRIB_NAME, &vec![b'x'; length]);
+            enc.write_unsigned_integer(&ATTRIB_OFFSET, u64::MAX);
+            enc.write_bool(&ATTRIB_STORAGE, true);
+            enc.close_element(&ELEM_DATA);
+            for nul in [false, true] {
+                let mut input = encoded.clone();
+                if nul {
+                    input.extend_from_slice(&[0, 0x41, 0x81]);
+                }
+                let mut borrowed = PackedDecode::new(&manager);
+                borrowed.ingest_stream(&input).unwrap();
+                let mut owned = PackedDecode::new(&manager);
+                owned.ingest_owned(input).unwrap();
+                let expected: Vec<_> = borrowed.in_stream.iter().flatten().copied().collect();
+                let actual: Vec<_> = owned.in_stream.iter().flatten().copied().collect();
+                assert_eq!(actual, expected, "padding for length {length}");
+                let el = owned.open_element_id(&ELEM_DATA).unwrap();
+                assert!(owned.read_bool_id(&ATTRIB_STORAGE).unwrap());
+                assert_eq!(owned.read_unsigned_integer_id(&ATTRIB_OFFSET).unwrap(), u64::MAX);
+                assert_eq!(owned.read_string_id(&ATTRIB_NAME).unwrap(), vec![b'x'; length]);
+                owned.rewind_attributes();
+                assert_eq!(owned.get_next_attribute_id().unwrap(), ATTRIB_NAME.get_id());
+                assert_eq!(owned.get_next_attribute_id().unwrap(), ATTRIB_OFFSET.get_id());
+                assert_eq!(owned.read_unsigned_integer().unwrap(), u64::MAX);
+                owned.close_element(el).unwrap();
+                assert_eq!(owned.peek_element().unwrap(), 0);
+            }
+        }
+        for input in [vec![], vec![0, 0x41, 0x81]] {
+            let mut dec = PackedDecode::new(&manager);
+            assert_eq!(dec.ingest_owned(input).unwrap_err().to_string(), "Ended ingestion without any input");
+        }
+    }
+
+    #[test]
+    fn test_marshal_owned_ingestion_reuses_all_full_chunks() {
+        let manager = test_manager();
+        for length in [1024, 1025, 2048, 2049, 8192] {
+            let input = vec![0x81; length];
+            let ptr = input.as_ptr();
+            let mut dec = PackedDecode::new(&manager);
+            dec.ingest_owned(input).unwrap();
+            assert_eq!(dec.in_stream.len(), 2);
+            assert_eq!(dec.in_stream[0].as_ptr(), ptr);
+            assert_eq!(dec.in_stream[0].len(), length / 1024 * 1024);
+            assert_eq!(dec.in_stream[1][length % 1024], pf::ELEMENT_END);
+        }
+    }
+
+    #[test]
+    fn test_marshal_owned_ingestion_preserves_truncated_integer_errors() {
+        let manager = test_manager();
+        let mut input = vec![0x81; 1024];
+        input[0] = 0x41;
+        input[1022] = 0xd0;
+        input[1023] = 0x4f;
+        for owned in [false, true] {
+            let mut dec = PackedDecode::new(&manager);
+            if owned {
+                dec.ingest_owned(input.clone()).unwrap();
+            } else {
+                dec.ingest_stream(&input).unwrap();
+            }
+            dec.cur_pos = Position { seq: 0, current: 1022, end: 1024 };
+            assert_eq!(dec.read_unsigned_integer().unwrap_err().to_string(), "Unexpected end of stream");
         }
     }
 

@@ -32,6 +32,11 @@ and the packed format remain unchanged; this requires no cached program state.
 An integer contained within a chunk is decoded from a checked slice, advancing
 the cursor once rather than once per byte. Reads ending at or crossing a chunk
 boundary retain the byte-cursor path, including the final-byte EOF check.
+`decompiler/crates/kuna-sleigh/src/slaformat.rs (FormatDecode)` transfers the
+decompressed allocation to `PackedDecode` instead of copying it into chunks.
+Only the final partial 1024-byte chunk is copied for padding; complete chunks
+share one contiguous allocation. The first NUL still terminates packed input,
+and decompression still validates the entire zlib stream before decoding.
 
 kuna is two engines with one boundary. The **program-preparation tier**
 (`kuna-analysis`, chapter 01) looks at the whole binary once — loader parse, symbol
