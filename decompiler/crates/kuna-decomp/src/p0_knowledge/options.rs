@@ -449,6 +449,15 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // FDE), and an entry AT an FDE start is always kept.  Default-ON (DIV-61); off
     // restores the previous discovery set exactly.
     "fdeinterior",
+    // (kuna) `.pdata` RUNTIME_FUNCTION-interior entry suppression: the PE half of
+    // `fdeinterior`.  An x64 PE's exception directory records `[BeginAddress,
+    // EndAddress)` per function, so an entry strictly inside one is a point inside
+    // a body rather than a function — `aif`'s gap walk mints them inside an
+    // obfuscated dispatcher and `funcboundflow` then truncates the real function
+    // there.  Only ranges holding no other named start and no other record's
+    // `BeginAddress` are used; an entry AT a `BeginAddress` is always kept.
+    // Default-ON; off restores the previous discovery set exactly.
+    "pdatainterior",
     // (kuna) The full byte-pattern function-start pass (Ghidra FunctionStartAnalyzer
     // over the entire vendored pattern corpus), default-OFF (output-changing:
     // discovers more functions). A separate gate from `entry_disc` (whose always-on

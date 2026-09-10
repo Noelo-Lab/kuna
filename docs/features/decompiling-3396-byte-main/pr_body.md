@@ -1,66 +1,59 @@
-## What was measured
+## The problem
 
-RE-friction need `decompiling-3396-byte-main` was re-filed as `regressed` on the theory that
-#406 cost this witness ~680 ms. It did not. Two builds, `fba4ebd8` and `96224463`, each with
-its **own** `kuna` *and* `decomp_dbg` (the CLI forks the engine, so pinning only `kuna` times
-the other arm), 8 interleaved pairs of the acceptance command:
-
-```
-pre  #406   median 9,619 ms   min 9,146   max 10,903
-post #406   median 9,742 ms   min 9,111   max 11,740
-            paired mean +3.00% ± 6.77 → 0.4σ, median-of-medians +1.28%
-```
-
-and both builds emit the same 120,063 bytes (`sha256 8ee55baf…`), so #406 never fires here.
-The named follow-up — `simdshufflelane` registered unconditionally in the `analysis` rule
-group, i.e. schedule cost that grows with every default-ON pass — was ablated by deleting its
-`rrow!` line and rebuilding: **+0.23% ± 5.33**. One more rule on `CPUI_SUBPIECE`, one of the
-hottest dispatch lists there is, is not measurable on this function.
-
-Six 7-8 sample medians taken this session on one build ranged **9,002–9,742 ms** against the
-10,000 ms bar, and the acceptance suite passed at 9,199 and 9,444 ms with one failure between
-them. The margin is ~7% and the box's spread is ±10%: the need is measurement-limited. The bar
-is not moved.
-
-## What ships
-
-Not a fix — the instrument that produced those numbers, which five prior attempts each
-rebuilt as a throwaway patch and threw away:
+An x64 PE's `.pdata` says which byte ranges are one function's body, and kuna
+starts functions in the middle of them anyway. `nikos_crack_me.exe` declares one
+43,152-byte body at `[0x140023350, 0x14002dbe0)`; the gap walk decodes what
+recursive descent could not reach and mints three functions inside it, and the
+fall-through bound then truncates the real function's flow when it reaches one:
 
 ```
-$ KUNA_ACTION_PROF=/tmp/prof kuna decompile nikos_crack_me.exe sub_140023350
-$ head -6 /tmp/prof
-total_exclusive_ms 8853.6
-    1205.8 ms   13.62%         68 calls  decompile/oppool1
-    1180.3 ms   13.33%         20 calls  decompile/heritage
-    1083.5 ms   12.24%         27 calls  decompile/deadcode
-    1065.3 ms   12.03%         20 calls  decompile/infertypes
-     601.4 ms    6.79%          5 calls  jumptable/heritage
+$ kuna functions nikos_crack_me.exe | grep -E '14002(3e34|b324|b6a8)'
+0x140023e34	sub_140023e34
+0x14002b324	sub_14002b324
+0x14002b6a8	sub_14002b6a8
+
+$ kuna decompile nikos_crack_me.exe sub_140023350 | grep funcboundflow
+        v74 = 0x140024921; // warn: funcboundflow: fall-through reached the next function entry; truncating flow here
+        if ((v21 + (v83 - 1) & 1) != (v21 + (v83 - 1) & 1)) { // warn: funcboundflow: ...
 ```
 
-- Time is **exclusive**: a group is charged only what it runs outside its children, so rows sum
-  to the schedule's wall time and a container cannot hide a leaf. A sampler cannot do this, and
-  `perf` is unavailable on the machines this engine is tuned on.
-- Rows are keyed by **root variant**, which separates the reduced `jumptable` pipeline running
-  on a partial clone from the function's own `decompile` pass. The label comes from
-  `ActionDatabase::set_current`, not from the root Action — `clone_filtered` keeps the universal
-  tree's name, so every row otherwise reads `universal/…`.
-- **Call counts**, because "68 calls of `oppool1`" is the fact a flat profile turns on and no
-  sampler reports.
-- Inert unless `KUNA_ACTION_PROF` is set: one cached read per `apply`, and `apply` is coarse.
-  Measured off-cost on the same witness, 8 interleaved pairs: **+0.89% ± 3.84** (i.e. nothing),
-  stdout byte-identical.
+The image's own exception table contradicts all three: none is a
+`BeginAddress`, and every one is strictly inside the record that starts at
+`0x140023350`.
 
-No option row: this cannot change emitted C. It follows the existing env-gated debug-hook
-convention (`KUNA_DEFAULT_ON`, `KUNA_SYMBOLNAMEBOUND`).
+## The fix
 
-## Tests
+- New P1 pass `pdatainterior` (`on|off`, default on): report the
+  `RUNTIME_FUNCTION` bodies that describe exactly one function, and let the
+  commit boundary reject a discovered entry strictly inside one.
+- It reports on the same `fde_bodies` channel `fdeinterior` (DIV-61) already
+  uses for `.eh_frame`, so the filter that covers the deferred gap walk on ELF
+  now covers it on PE without a second filter.
+- A range is used only if it holds no other named function start and no other
+  record's `BeginAddress`, and does not overlap the range kept before it — the
+  `.pdata` reading of the guard that keeps `fdeinterior` off the linker's
+  single whole-PLT FDE. An entry *at* a `BeginAddress` is always kept.
+- x86/x64 PE only. The 8-byte ARM/ARM64 record carries no `EndAddress` and an
+  image with no exception directory vouches for nothing, so the pass abstains
+  rather than guess.
 
-Four unit tests in `infra/actionprof/tests.rs`: a parent is not charged its child's time, two
-roots do not share a row, `render` sorts by cost and totals, and an unbalanced `leave` is inert
-rather than a panic. `make test` PARITY OK 675/675 · `make test-stages` PARITY OK 628/628 ·
-`make rust-test` green (352 targets) · `make check-spec` OK · `kuna catalog --check` OK ·
-`make test-cli` 29/29 · acceptance `a-53d616afcb6a` PASS at a 7-rep median of **9,227 ms**
-(8,863–9,484).
+## The tests
+
+Seven unit tests over the existing `pe_reloctable_x86_64.exe` fixture: the
+interior label is rejected, the `BeginAddress` and the exclusive `EndAddress`
+are kept, both eligibility guards reject a range that swallows another
+function, and a zeroed exception directory, an ARM64 machine word and a non-PE
+each abstain. Swept over 201 x86/x64 PE images: 8 inventories move, 104 starts
+dropped, **0 added**. On the witness, 438 → 424 entries and both truncation
+warnings are gone; `--option pdatainterior off` restores the previous set
+exactly.
+
+Gates: `make test` 675/675 PARITY OK, `make test-stages` 749/749 PARITY OK,
+`make rust-test` green, `make check-spec` green, `make test-cli` 119/119,
+`kuna catalog --check` OK.
+
+Side effect, measured because this branch is the `decompiling-3396-byte-main`
+perf need: removing the false starts takes that witness **10,432 → 9,988 ms
+median** (ABBA-balanced, 6 blocks, paired mean −4.16% ± 1.45, 6/6 blocks a win).
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)

@@ -66,7 +66,7 @@ fn surface_count_is_113() {
 }
 
 #[test]
-fn settable_count_is_182() {
+fn settable_count_is_183() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -123,12 +123,13 @@ fn settable_count_is_182() {
     // DIV-118).
     // +1 for `msvcstackguard` (P7 MSVC /GS frame-cookie stripping, GH-468).
     // +1 for `entrythumbflow` (P1 entry-reachable Thumb context walk, DIV-154).
-    assert_eq!(kuna_num_settables(), 182);
-    assert_eq!(SETTABLE_TABLE.len(), 182);
+    // +1 for `pdatainterior` (P1 `.pdata` RUNTIME_FUNCTION-interior entry suppression).
+    assert_eq!(kuna_num_settables(), 183);
+    assert_eq!(SETTABLE_TABLE.len(), 183);
 }
 
 #[test]
-fn tier_counts_are_56_core_68_transform_58_analysis() {
+fn tier_counts_are_56_core_68_transform_59_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -228,7 +229,9 @@ fn tier_counts_are_56_core_68_transform_58_analysis() {
     // and `securitycheck` siblings.
     // analysis 57 -> 58: +1 for `entrythumbflow` (P1 entry-reachable Thumb
     // context walk, DIV-154).
-    assert_eq!((core, transform, analysis), (56, 68, 58));
+    // analysis 58 -> 59: +1 for `pdatainterior` (P1 `.pdata`
+    // RUNTIME_FUNCTION-interior entry suppression).
+    assert_eq!((core, transform, analysis), (56, 68, 59));
 }
 
 #[test]
@@ -467,6 +470,10 @@ fn option_values_live_value_present_for_66_suppressed_for_102() {
         // with no codegen live reader (read console-side via kuna_live_value), same
         // as the gates around it. Default-ON (DIV-61).
         "fdeinterior",
+        // (kuna) `.pdata` RUNTIME_FUNCTION-interior entry suppression — the PE half
+        // of `fdeinterior`, an analysis-pass gate with no codegen live reader.
+        // Default-ON.
+        "pdatainterior",
         // (kuna) The full byte-pattern function-start pass — an analysis-pass gate
         // with no codegen live reader (read console-side via kuna_live_value), same
         // as the gates around it. Default-off.
@@ -868,6 +875,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // do not move the tail).
     // symbolnamerepair's P1 and msvcfpconst's P1 rows sit mid-table, so they do
     // not move the tail).
+    // +1 for `pdatainterior` (a P1 row beside `fdeinterior`, mid-table, so it only
+    // bumps the count).
     // 123 -> 124: +1 for `framelayout` (DIV-97; its P6 row sits mid-table ahead of
     // `ctypes`, so it does not move the tail either).
     // 127 -> 129: +1 for `unmappedentry` and +1 for `entrymainproto` (both P1 rows
@@ -884,7 +893,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // beside `securitycheck`, so the tail does not move.
     // 180 -> 181: +1 for `entrythumbflow` (DIV-154); its P1 row sits mid-table
     // beside `tailcallentry`, so the tail does not move.
-    assert_eq!(json.matches("},\n").count(), 181);
+    assert_eq!(json.matches("},\n").count(), 182);
 }
 
 #[test]

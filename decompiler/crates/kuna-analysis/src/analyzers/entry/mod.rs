@@ -93,6 +93,7 @@ pub mod kuna_armlibcmain;
 pub mod kuna_machomain;
 pub mod kuna_cortexmvectors;
 pub mod kuna_fdeinterior;
+pub mod kuna_pdatainterior;
 pub mod kuna_pereloccode;
 mod macho_entry;
 pub mod patterns;

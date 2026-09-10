@@ -280,6 +280,11 @@ Three tiers:
 | function count inflated by unwinder-only landing pads | [`fdeinterior`](#fdeinterior) |
 | a function entry lands in the middle of an instruction | [`fdeinterior`](#fdeinterior) |
 | extra entries between two real functions in a binary built with exceptions | [`fdeinterior`](#fdeinterior) |
+| a pe function entry inside another function's known address range | [`pdatainterior`](#pdatainterior) |
+| an unaligned sub_<addr> that starts in the middle of an instruction | [`pdatainterior`](#pdatainterior) |
+| decompiled output stops early with a funcboundflow truncation warning | [`pdatainterior`](#pdatainterior) |
+| function count inflated by gap-walk starts on an obfuscated pe | [`pdatainterior`](#pdatainterior) |
+| a large .pdata-described function decompiles as a fragment | [`pdatainterior`](#pdatainterior) |
 | a function entry at an address outside every section of the image | [`unmappedentry`](#unmappedentry) |
 | kuna functions lists a size-0 sub_<addr> far above or below the image | [`unmappedentry`](#unmappedentry) |
 | decompiling a discovered function returns no body at all | [`unmappedentry`](#unmappedentry) |
@@ -1301,6 +1306,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On (default) keeps mid-function artifacts out of the function list: the tell-tale is a sub_<addr> whose body dereferences an undefined frame pointer, or a run of sub_<addr> entries between two real functions in a C++ binary built with exceptions. Flip off to restore the previous discovery set exactly - e.g. to inspect a landing pad as its own function, or on a hand-written-assembly image whose .eh_frame deliberately covers several entry points with one FDE.
 - **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-fdeinterior
 - **Example:** `--option fdeinterior off`
+
+### `pdatainterior` -- on | off, default `on`
+
+- **Symptoms:** a pe function entry inside another function's known address range; an unaligned sub_<addr> that starts in the middle of an instruction; decompiled output stops early with a funcboundflow truncation warning; function count inflated by gap-walk starts on an obfuscated pe; a large .pdata-described function decompiles as a fragment.
+- **What it does:** Reject a discovered function entry that falls strictly inside another function's .pdata RUNTIME_FUNCTION body - the PE half of fdeinterior, which does the same job from .eh_frame on ELF. A kuna FunctionSymbol is an entry address with no extent, so the commit boundary cannot answer 'is this candidate already inside a known function?' and every discovery oracle plants a sub_<addr> in the middle of a body it cannot see. An x64 PE's exception directory answers it exactly: each RUNTIME_FUNCTION records one function's [BeginAddress, EndAddress), which is the extent the symbol table never carried, so an entry strictly inside one is a point inside a function rather than a function of its own. The oracle that trips this on PE is aif, whose gap walk decodes whatever recursive descent could not reach and starts a function at the first undecoded byte - on an obfuscated dispatcher that is routinely mid-body and sometimes mid-instruction. funcboundflow then truncates the enclosing function's flow when it falls through into one, so the function the image itself describes decompiles as a fragment. Only ranges that describe a single function are used: no other named function start inside, no other record's BeginAddress inside, and no overlap with the range kept before it. An entry AT a BeginAddress is always kept, so the .pdata oracle's own product is preserved. x86/x64 PE only - the 8-byte ARM/ARM64 RUNTIME_FUNCTION carries no EndAddress and a PE without an exception directory vouches for no body, so the pass abstains on both.
+- **When to flip:** On (default) keeps mid-function artifacts out of a PE's function list: the tell-tale is a sub_<addr> inside the address range of a function you already have, an unaligned sub_<addr> that starts mid-instruction, or a decompiled function that stops early with the funcboundflow truncation warning at an address the exception table says is inside it. Flip off to restore the previous discovery set exactly - e.g. on a packed or hand-written image whose .pdata deliberately describes several entry points with one record.
+- **Where / provenance:** P1/code-data-partition · kuna · correctness-fix · kuna-analysis-pdatainterior
+- **Example:** `--option pdatainterior off`
 
 ### `unmappedentry` -- on | off, default `on`
 

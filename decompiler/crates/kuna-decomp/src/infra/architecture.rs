@@ -1205,6 +1205,18 @@ pub struct Architecture {
     /// and an entry AT an FDE start is always kept. Off restores the previous
     /// discovery set exactly; inert on any image with no `.eh_frame` FDEs.
     pub analysis_fdeinterior: bool,
+    /// (kuna) Reject a discovered function entry that falls strictly inside a
+    /// single-function `.pdata` `RUNTIME_FUNCTION` body (`pdatainterior`);
+    /// default **on**. The PE half of [`Self::analysis_fdeinterior`] and the same
+    /// defect: an x64 PE's exception directory records `[BeginAddress,
+    /// EndAddress)` per function, which is the extent a kuna `FunctionSymbol`
+    /// never carried, so `aif`'s gap walk mints a `sub_<addr>` inside a body it
+    /// cannot see and `funcboundflow` then truncates the real function's flow at
+    /// it. Only ranges that hold no other named function start and no other
+    /// record's `BeginAddress` are used, and an entry AT a `BeginAddress` is
+    /// always kept. Off restores the previous discovery set exactly; inert on
+    /// ELF, on ARM/ARM64 PE and on any image with no exception directory.
+    pub analysis_pdatainterior: bool,
     /// (kuna) Gate the **full byte-pattern function-start** pass
     /// (`funcstart_patterns`); default **off** (output-changing: it discovers more
     /// functions). The faithful port of Ghidra's `FunctionStartAnalyzer` over the
@@ -2089,6 +2101,7 @@ impl Architecture {
             analysis_entry_disc: false,
             analysis_eh_frame_full: false,
             analysis_fdeinterior: false,
+            analysis_pdatainterior: false,
             analysis_funcstart_patterns: false,
             analysis_cortexmvectors: false,
             analysis_ptrentry: false,
@@ -2346,6 +2359,8 @@ impl Architecture {
         self.analysis_eh_frame_full = false;
         // (kuna) DIV-61 `.eh_frame` FDE-interior entry suppression — default-ON.
         self.analysis_fdeinterior = true;
+        // (kuna) `.pdata` RUNTIME_FUNCTION-interior entry suppression — default-ON.
+        self.analysis_pdatainterior = true;
         self.analysis_funcstart_patterns = false; // full byte-pattern starts default-off (output-changing)
         self.analysis_cortexmvectors = false; // (kuna) widened Cortex-M vector signature default-off (output-changing)
         self.analysis_ptrentry = false; // (kuna) pointer-referenced ARM entries default-off (output-changing)
@@ -2894,6 +2909,9 @@ impl Architecture {
             }
             "fdeinterior" => {
                 on_off!(analysis_fdeinterior, ".eh_frame FDE-interior entry suppression")
+            }
+            "pdatainterior" => {
+                on_off!(analysis_pdatainterior, ".pdata RUNTIME_FUNCTION-interior entry suppression")
             }
             "funcstart_patterns" => {
                 on_off!(analysis_funcstart_patterns, "Full byte-pattern function-start pass")

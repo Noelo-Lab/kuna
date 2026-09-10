@@ -2246,6 +2246,30 @@ without `.eh_frame` FDEs, which covers essentially the whole bare-metal ARM
 population (they unwind through `.ARM.exidx`), so the ARM entry-recall options
 compose with it unchanged.
 
+**(kuna) `.pdata` interiors are not function starts either** (`pdatainterior`,
+default-**on**, DIV-155;
+`decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_pdatainterior.rs`). The
+PE half of the paragraph above, answering the same question from the container PE
+actually ships. An x86/x64 PE's exception directory is an array of
+`RUNTIME_FUNCTION` records, each holding `[BeginAddress, EndAddress)` — the image's
+own statement that the range is one function's body — so an entry strictly inside
+one is a point inside a function rather than a function. The oracle that trips it
+here is the gap walk (§1.6): on an obfuscated image whose dispatcher recursive
+descent cannot reach, it decodes the leftovers and starts a function at the first
+undecoded byte, which lands mid-body and sometimes mid-instruction. The
+fall-through bound (`funcboundflow`, §2) then truncates the enclosing function's
+flow when it reaches one, so the function the image describes decompiles as a
+fragment. Eligibility mirrors the FDE test minus the part with no PE analogue —
+import thunks live in a section the exception table does not cover — so a range is
+used only when it holds no other named function start and no other record's
+`BeginAddress`, and only when it does not overlap the range kept before it (which
+keeps the list disjoint for the interior search the two passes share). An entry
+*at* a `BeginAddress` is always kept, so the `.pdata` start oracle's own product
+survives. x86/x64 PE only: the 8-byte ARM/ARM64 `RUNTIME_FUNCTION` carries no
+`EndAddress` and an image with no exception directory vouches for no body at all,
+so the pass abstains on both rather than guess — the same stance the
+base-relocation oracle takes.
+
 (kuna) **The PE CRT entry-function prototype** (`entrymainproto`, default-on;
 `decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_entrymainproto.rs
 (EntryMainProtoPass)`) is discovery's answer to a question the rest of the pipeline
