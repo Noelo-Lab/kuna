@@ -22,9 +22,9 @@
 //! The walk covers file-backed bytes and successfully materialized overlays.
 //! A mapped tail the loader zero-fills decodes as two-byte Thumb no-ops, which
 //! would march the walk to the section end, so the caller hands it file-backed
-//! extents plus initialized overlay spans. A direct call to a callee the
-//! load-time facts know never returns has no fall-through, so the bytes after
-//! it keep their own mode.
+//! extents plus initialized overlay spans. An unconditional direct call to a
+//! callee the enabled load-time facts know never returns has no fall-through;
+//! an IT guard still leaves the condition-false path reachable.
 //!
 //! Decoding needs the context set before the bytes are read, so the walk seeds
 //! `TMode=1` over every executable range as one region write per range, decodes,
@@ -215,10 +215,10 @@ fn walk_from_entry(
         } else {
             true
         };
-        // A direct call to a callee the load-time facts know never returns
-        // has no fall-through: the bytes after it are padding, a pool, or the
-        // next function, in whatever mode that is.
+        // Only an unconditional no-return call removes fall-through. An IT
+        // guard can skip the call, leaving its successor reachable.
         let returns = !classified.flow.is_call
+            || classified.flow.is_conditional
             || !classified.flows.iter().any(|target| noreturn.contains(&(target & !1)));
         if follow_targets {
             pending.extend(classified.flows.into_iter().map(|target| target & !1));

@@ -2090,11 +2090,12 @@ impl ConsoleProgram {
                 let code_space = self.analysis_code_space.clone().ok_or_else(|| {
                     KunaError::lowlevel("no code space for the deferred entry context walk")
                 })?;
-                // The callees the load-time facts already know never return,
-                // so the walk does not fall through past a direct call to one.
+                // Only enabled load-time passes can supply no-return facts
+                // to this walk, just as at the later Listing and fact commit.
                 let noreturn: Vec<u64> = self
                     .pending_analysis
                     .iter()
+                    .filter(|(id, _)| analysis_pass_enabled(self.arch(), id))
                     .flat_map(|(_, out)| out.noreturn.iter().map(|fact| fact.addr))
                     .collect();
                 let flow = kuna_analysis::listing::kuna_entrythumbflow::entry_thumb_flow(
@@ -2171,6 +2172,7 @@ impl ConsoleProgram {
         // skips already-modeled callees and seeds the fixpoint's terminal set.
         let noreturn_seed_addrs: Vec<u64> = pending
             .iter()
+            .filter(|(id, _)| analysis_pass_enabled(self.arch(), id))
             .flat_map(|(_, out)| out.noreturn.iter().map(|f| f.addr))
             .collect();
         // Filter by the per-pass enable flags (default-on, set by the user's

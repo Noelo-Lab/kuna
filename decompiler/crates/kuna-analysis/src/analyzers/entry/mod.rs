@@ -128,9 +128,9 @@ pub fn image_entry_vma(file: &object::File, bytes: &[u8]) -> Option<u64> {
 
 /// The container's entry as a CODE address: on 32-bit ARM the low bit is
 /// Thumb state, not part of the address, so it is folded off and reported
-/// separately. Keyed on the effective architecture, because the neutral parser
-/// leaves the ARM PE machine words `Unknown`. Every consumer that names,
-/// seeds, or paints from the entry goes through here, so there is one mask.
+/// separately. This container-derived hint uses the effective architecture,
+/// because the neutral parser leaves the ARM PE machine words `Unknown`.
+/// Discovery with a selected decoder uses `collect_entries_for_language`.
 pub fn image_code_entry(file: &object::File, bytes: &[u8]) -> Option<(u64, bool)> {
     let vma = image_entry_vma(file, bytes)?;
     let arm = crate::loadimage_object::effective_architecture(file, bytes)
@@ -169,7 +169,7 @@ impl AnalysisPass for EntryDiscoveryPass {
         ) {
             return out;
         }
-        out.entries = collect_entries(ctx.file, ctx.bytes);
+        out.entries = collect_entries_for_language(ctx.file, ctx.bytes, ctx.arch.get_description());
         // ARM/Thumb: a discovered `main` whose libc-start GOT pointer had the
         // Thumb LSB set needs a `TMode=1` decode-mode paint at its (even) entry —
         // this stripped binary carries no `$t` mapping symbol for `arm_markers` to
@@ -379,6 +379,22 @@ fn existing_function_addrs_for_file(file: &object::File) -> Vec<u64> {
 ///
 /// This is the testable seam (drive it over fixture bytes).
 pub fn collect_entries(file: &object::File, bytes: &[u8]) -> Vec<u64> {
+    let arm = crate::loadimage_object::effective_architecture(file, bytes)
+        == object::Architecture::Arm;
+    collect_entries_with_pe_mode(file, bytes, arm)
+}
+
+/// Discover entries using the selected decoder's PE address convention. The
+/// container-only wrapper retains automatic mode for callers without a decoder.
+pub(crate) fn collect_entries_for_language(
+    file: &object::File,
+    bytes: &[u8],
+    language: &str,
+) -> Vec<u64> {
+    collect_entries_with_pe_mode(file, bytes, crate::loadimage_object::is_arm32_language(language))
+}
+
+fn collect_entries_with_pe_mode(file: &object::File, bytes: &[u8], pe_arm: bool) -> Vec<u64> {
     let execs = executable_sections(file);
     let funcsyms = existing_function_addrs(file, bytes);
 
@@ -430,14 +446,9 @@ pub fn collect_entries(file: &object::File, bytes: &[u8]) -> Vec<u64> {
         // PE: entry (AddressOfEntryPoint+ImageBase), `.pdata` RUNTIME_FUNCTION
         // begins (the `.eh_frame` analog), TLS callbacks, and exports (PR-12).
         Some(FormatKind::Pe) => {
-            // A PE's ARM code addresses carry the Thumb bit the same way an ELF
-            // `e_entry` does, and the neutral parser leaves the ARM PE machine
-            // words `Unknown`, so the mask has to key on the effective
-            // architecture: an unmasked `AddressOfEntryPoint` seeds — and names
-            // — a function one byte past its real start.
-            let arm = crate::loadimage_object::effective_architecture(file, bytes)
-                == object::Architecture::Arm;
-            let code_address = |vma: u64| if arm { vma & !1 } else { vma };
+            // Normalize before filtering and naming, using the selected decoder
+            // when available: a non-ARM override can have a real odd entry.
+            let code_address = |vma: u64| if pe_arm { vma & !1 } else { vma };
             cand.extend(
                 pe_entry::pe_entry_candidates(file, bytes, &execs).into_iter().map(code_address),
             );

@@ -660,7 +660,10 @@ walk covers file-backed executable bytes plus successfully applied byte
 overlays clipped to executable mappings. Adjacent and overlapping spans merge
 before decoding, so an instruction can cross their boundary, while unwritten
 gaps and tails remain excluded: zero-filled bytes can decode as Thumb no-ops.
-A direct call to a callee the load-time no-return facts name has no fall-through.
+Only enabled analysis passes supply no-return seeds to the entry walk and the
+later Listing consumers. An unconditional direct call to one of those callees
+has no fall-through; an IT-guarded call, including `BLX`, retains the successor
+reached when its condition is false.
 The walk is bounded at 4096 instructions; reaching the bound publishes the ranges
 walked so far, reports the truncation once on stderr, and leaves the unreached
 code at the language default, so the load never fails on the size of the image.
@@ -668,6 +671,13 @@ The pending entry is consumed before the walk runs, so a failure cannot re-arm
 it, and a walk that publishes nothing leaves the context partition as it found
 it. A wholly Thumb image can opt into the explicit `--isa thumb` range paint
 instead.
+
+PE entry discovery and Listing seeds normalize the low bit according to the
+selected decoder before deduplication and naming. A 32-bit ARM decoder clears
+the Thumb bit; a non-ARM override preserves an odd address even when the header
+machine is ARM, THUMB, or ARMNT. The header-page entry exemption and the loader's
+reported image entry use the same selected-decoder convention. Container-only
+discovery, which has no selected language, retains the automatic machine policy.
 
 The parsed entry and named sections are retained as format-neutral program
 metadata (`decompiler/crates/kuna-console/src/engine.rs (ProgramImageMetadata)`),

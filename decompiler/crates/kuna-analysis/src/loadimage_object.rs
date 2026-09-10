@@ -622,8 +622,9 @@ impl ObjectLoadImage {
             }
         }
         sections.extend(header);
-        let image_entry =
-            crate::analyzers::entry::image_code_entry(&file, bytes).map(|(vma, _)| vma);
+        let arm32_decoder = is_arm32_language(&String::from_utf8_lossy(&archtype));
+        let image_entry = crate::analyzers::entry::image_entry_vma(&file, bytes)
+            .map(|vma| if arm32_decoder { vma & !1 } else { vma });
 
         // Snapshot the function symbols.  Three sources, deduped by address so an
         // import that appears in several tables is registered exactly once:
