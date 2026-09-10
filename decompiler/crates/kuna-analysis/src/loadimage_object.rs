@@ -186,6 +186,25 @@ fn segment_bits(flags: SegmentFlags) -> u32 {
     bits
 }
 
+/// One named section as format-neutral export metadata: the project README's
+/// section table. `kind` is the parsed object's `SectionKind` rendered with
+/// `Debug`, which is what the README printed from its own re-parse before the
+/// loader carried the names.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ObjectSectionMetadata {
+    pub name: String,
+    pub vma: u64,
+    pub size: u64,
+    pub kind: String,
+}
+
+impl ObjectSectionMetadata {
+    /// The one place the `SectionKind` is rendered for export.
+    pub fn new(name: &str, vma: u64, size: u64, kind: object::SectionKind) -> Self {
+        Self { name: name.to_string(), vma, size, kind: format!("{kind:?}") }
+    }
+}
+
 /// One ELF section, for the `getNextSection`/`getReadonly` info walks (the BFD
 /// `asection` list).
 #[derive(Debug, Clone)]
@@ -258,6 +277,12 @@ pub struct ObjectLoadImage {
     segments: Vec<Segment>,
     /// ELF sections, in file order (the BFD `asection` list for the info walks).
     sections: Vec<SectionInfo>,
+    /// The named sections as export metadata, in file order; see
+    /// [`ObjectSectionMetadata`].
+    section_metadata: Vec<ObjectSectionMetadata>,
+    /// The container's declared entry as a code address (the Thumb bit folded
+    /// on ARM), `None` for a relocatable object or an image that declares none.
+    image_entry: Option<u64>,
     /// (kuna) The loadable segments as mapping *metadata*, ascending by vma —
     /// the same `(vma, size, flags)` shape as [`Self::sections`], reported by
     /// `getSegments` so a section-keyed reader has a container to fall back on
@@ -583,11 +608,23 @@ impl ObjectLoadImage {
         // ELF this is the old `section_kind_flags` body, lifted verbatim into
         // `ElfFormat::section_bits`.
         let mut sections: Vec<SectionInfo> = Vec::new();
+        let mut section_metadata: Vec<ObjectSectionMetadata> = Vec::new();
         for sec in file.sections() {
             let flags = fmt.section_bits(sec.kind(), sec.flags());
             sections.push(SectionInfo { vma: sec.address(), size: sec.size(), flags });
+            if let Ok(name) = sec.name() {
+                section_metadata.push(ObjectSectionMetadata::new(
+                    name,
+                    sec.address(),
+                    sec.size(),
+                    sec.kind(),
+                ));
+            }
         }
         sections.extend(header);
+        let arm32_decoder = is_arm32_language(&String::from_utf8_lossy(&archtype));
+        let image_entry = crate::analyzers::entry::image_entry_vma(&file, bytes)
+            .map(|vma| if arm32_decoder { vma & !1 } else { vma });
 
         // Snapshot the function symbols.  Three sources, deduped by address so an
         // import that appears in several tables is registered exactly once:
@@ -717,6 +754,8 @@ impl ObjectLoadImage {
             fallback_archtype,
             segments,
             sections,
+            section_metadata,
+            image_entry,
             segment_info,
             executable_segments,
             funcsyms,
@@ -793,6 +832,15 @@ impl ObjectLoadImage {
             .into_iter()
             .map(|(vma, size, flags)| SectionInfo { vma, size, flags })
             .collect();
+        // The laid-out sections at their synthetic load VMAs, so the export
+        // metadata names the addresses the rest of the export uses.
+        let section_metadata: Vec<ObjectSectionMetadata> = file
+            .sections()
+            .filter_map(|sec| {
+                let vma = *layout.section_vma.get(&sec.index())?;
+                Some(ObjectSectionMetadata::new(sec.name().ok()?, vma, sec.size(), sec.kind()))
+            })
+            .collect();
 
         // Defined functions (rebased) + extern call targets, demangled + deduped
         // by address — the same `seen`/`demangle_funcsym_name` discipline the
@@ -820,6 +868,9 @@ impl ObjectLoadImage {
             fallback_archtype,
             segments,
             sections,
+            section_metadata,
+            // A pre-link object declares no entry.
+            image_entry: None,
             // No program headers on a relocatable object: the section table is
             // the only mapping story it has, and it always has one.
             segment_info: Vec::new(),
@@ -877,6 +928,16 @@ impl ObjectLoadImage {
     /// `kuna_sleigh::loadimage::section_flags::*`.
     pub fn section_snapshot(&self) -> Vec<(u64, u64, u32)> {
         self.sections.iter().map(|s| (s.vma, s.size, s.flags)).collect()
+    }
+
+    /// The named sections as export metadata (see [`ObjectSectionMetadata`]).
+    pub fn section_metadata(&self) -> &[ObjectSectionMetadata] {
+        &self.section_metadata
+    }
+
+    /// The container's declared entry as a code address, if it declares one.
+    pub fn image_entry(&self) -> Option<u64> {
+        self.image_entry
     }
 
     /// Executable `(vma, size)` extents. Sectionless ELF images use PF_X
@@ -1299,6 +1360,12 @@ impl LoadImage for ObjectLoadImage {
         for s in &mut self.funcsyms {
             s.addr = s.addr.wadd(badjust);
         }
+        for s in &mut self.section_metadata {
+            s.vma = s.vma.wadd(badjust);
+        }
+        if let Some(entry) = &mut self.image_entry {
+            *entry = entry.wadd(badjust);
+        }
         for r in &mut self.const_ranges {
             r.0 = r.0.wadd(badjust);
             r.1 = r.1.wadd(badjust);
@@ -1395,8 +1462,7 @@ fn fallback_language_id(
     }
 }
 
-const IMAGE_FILE_MACHINE_THUMB: u16 = 0x01c2;
-const IMAGE_FILE_MACHINE_ARMNT: u16 = 0x01c4;
+use object::pe::{IMAGE_FILE_MACHINE_ARM, IMAGE_FILE_MACHINE_ARMNT, IMAGE_FILE_MACHINE_THUMB};
 
 /// Parse an object, including bare THUMB COFF omitted by `object`'s magic dispatch.
 pub fn parse_object(bytes: &[u8]) -> object::read::Result<object::File<'_>> {
@@ -1408,30 +1474,100 @@ pub fn parse_object(bytes: &[u8]) -> object::read::Result<object::File<'_>> {
 }
 
 /// Architecture used for language selection when the neutral parser does not
-/// recognize a container's machine value. PE/COFF machine `0x01c2` is the
-/// documented 32-bit little-endian Thumb/ARM code value.
+/// recognize a container's machine value. PE/COFF machines `0x01c0` (`ARM`)
+/// and `0x01c2` (`THUMB`) are both documented 32-bit little-endian ARM code
+/// values the parser leaves `Unknown`; what each says about the decode mode is
+/// [`pe_arm_mode_policy`]'s question, not this one's.
 pub fn effective_architecture(file: &object::File, bytes: &[u8]) -> Architecture {
     let parsed = file.architecture();
     if parsed != Architecture::Unknown {
         return parsed;
     }
-    let machine = container_machine(file, bytes);
-    if machine == Some(IMAGE_FILE_MACHINE_THUMB) {
-        Architecture::Arm
-    } else {
-        parsed
+    match container_machine(file, bytes) {
+        Some(IMAGE_FILE_MACHINE_ARM | IMAGE_FILE_MACHINE_THUMB) => Architecture::Arm,
+        _ => parsed,
     }
 }
 
-/// Container-level ARM decode-mode evidence. The PE/COFF machine values for
-/// THUMB and ARMNT describe Thumb instruction streams. The older ARM value can
-/// describe mixed ARM/Thumb images, so it is deliberately not a whole-image
-/// hint. Other formats and machines provide no whole-image hint.
-pub fn arm_isa_hint(file: &object::File, bytes: &[u8]) -> Option<bool> {
-    match container_machine(file, bytes)? {
-        IMAGE_FILE_MACHINE_THUMB | IMAGE_FILE_MACHINE_ARMNT => Some(true),
+/// The PE-family machine words kuna ships a SLEIGH language for. One list,
+/// read by the bare-COFF dispatcher, the TE probe, and both loaders' machine
+/// tables, so a machine added to one is added to all.
+pub const PE_MACHINES: [u16; 6] = [
+    object::pe::IMAGE_FILE_MACHINE_I386,
+    object::pe::IMAGE_FILE_MACHINE_AMD64,
+    IMAGE_FILE_MACHINE_ARM,
+    IMAGE_FILE_MACHINE_THUMB,
+    IMAGE_FILE_MACHINE_ARMNT,
+    object::pe::IMAGE_FILE_MACHINE_ARM64,
+];
+
+/// The `object` architecture a PE-family machine word names, for
+/// [`PE_MACHINES`]. The three ARM words share one architecture; what each says
+/// about the decode mode is [`pe_arm_mode_policy`]'s question.
+pub fn pe_machine_architecture(machine: u16) -> Option<Architecture> {
+    Some(match machine {
+        object::pe::IMAGE_FILE_MACHINE_I386 => Architecture::I386,
+        object::pe::IMAGE_FILE_MACHINE_AMD64 => Architecture::X86_64,
+        IMAGE_FILE_MACHINE_ARM | IMAGE_FILE_MACHINE_THUMB | IMAGE_FILE_MACHINE_ARMNT => {
+            Architecture::Arm
+        }
+        object::pe::IMAGE_FILE_MACHINE_ARM64 => Architecture::Aarch64,
+        _ => return None,
+    })
+}
+
+/// Whether a SLEIGH language id decodes as 32-bit ARM (processor `ARM`, width
+/// `32`) — the property every Thumb-bit rule keys on.
+pub fn is_arm32_language(arch_id: &str) -> bool {
+    let mut fields = arch_id.split(':');
+    fields.next() == Some("ARM") && fields.nth(1) == Some("32")
+}
+
+/// What a PE-family machine word says about the ARM decode mode.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ArmModePolicy {
+    /// The whole instruction stream is Thumb.
+    WholeImageThumb,
+    /// Only the entry's low bit is evidence; the `entrythumbflow` walk carries
+    /// it along the reachable flow.
+    EntryBit,
+}
+
+/// The one table both PE-family loaders read. `ARMNT` is Thumb-only by
+/// definition on every container and `ARM` may interwork on every container;
+/// `THUMB` (`0x1c2`) is the word the two families read differently. Windows
+/// names it Thumb and a PE carrying it is painted as such; the UEFI bindings
+/// name the same value `ARMTHUMB_MIXED` and its modules interwork, so a TE
+/// carrying it relies on the entry bit. That is a container-family decision,
+/// and it is made here once rather than in each loader.
+pub fn pe_arm_mode_policy(machine: u16, uefi_te: bool) -> Option<ArmModePolicy> {
+    match machine {
+        IMAGE_FILE_MACHINE_ARMNT => Some(ArmModePolicy::WholeImageThumb),
+        IMAGE_FILE_MACHINE_THUMB if !uefi_te => Some(ArmModePolicy::WholeImageThumb),
+        IMAGE_FILE_MACHINE_THUMB | IMAGE_FILE_MACHINE_ARM => Some(ArmModePolicy::EntryBit),
         _ => None,
     }
+}
+
+/// Container-level whole-image ARM decode-mode evidence for a PE/COFF image:
+/// `Some(true)` when [`pe_arm_mode_policy`] says the whole stream is Thumb.
+/// Other formats and machines provide no whole-image hint.
+pub fn arm_isa_hint(file: &object::File, bytes: &[u8]) -> Option<bool> {
+    match pe_arm_mode_policy(container_machine(file, bytes)?, false)? {
+        ArmModePolicy::WholeImageThumb => Some(true),
+        ArmModePolicy::EntryBit => None,
+    }
+}
+
+/// The normalized entry of a PE image whose machine word leaves the mode to the
+/// entry bit and whose `AddressOfEntryPoint` carries it: the seed for the
+/// `entrythumbflow` walk. `None` for every other image.
+pub fn arm_entry_thumb_hint(file: &object::File, bytes: &[u8]) -> Option<u64> {
+    if pe_arm_mode_policy(container_machine(file, bytes)?, false)? != ArmModePolicy::EntryBit {
+        return None;
+    }
+    let (entry, thumb) = crate::analyzers::entry::image_code_entry(file, bytes)?;
+    thumb.then_some(entry)
 }
 
 fn container_machine(file: &object::File, bytes: &[u8]) -> Option<u16> {
@@ -1481,7 +1617,7 @@ fn target_endian_note(file: &object::File, target: &str) -> Option<String> {
 /// `.sla` stem for. The single source of truth for the id string shape, shared
 /// by [`language_id_for`] and [`elf_language_ids`] so the resolves-in-the-DB
 /// test cannot drift from the producer.
-fn compose_language_id(arch: Architecture, endian: &str, model: Option<&str>) -> Option<String> {
+pub(crate) fn compose_language_id(arch: Architecture, endian: &str, model: Option<&str>) -> Option<String> {
     Some(match arch {
         Architecture::X86_64 => format!("x86:LE:64:default:{}", model.unwrap_or("gcc")),
         Architecture::I386 => format!("x86:LE:32:default:{}", model.unwrap_or("gcc")),
@@ -1986,6 +2122,45 @@ mod tests {
     fn non_elf_is_rejected() {
         let err = ObjectLoadImage::from_bytes("x", b"not an object file").unwrap_err();
         assert!(matches!(err, KunaError::Lowlevel { .. }));
+    }
+
+    /// The one ARM mode table both PE-family loaders read: the container
+    /// family decides how machine `0x1c2` is named, and nothing else differs.
+    #[test]
+    fn the_arm_mode_policy_is_one_table_read_per_container_family() {
+        use object::pe::{IMAGE_FILE_MACHINE_AMD64, IMAGE_FILE_MACHINE_ARMNT};
+        for uefi_te in [false, true] {
+            assert_eq!(
+                pe_arm_mode_policy(IMAGE_FILE_MACHINE_ARMNT, uefi_te),
+                Some(ArmModePolicy::WholeImageThumb)
+            );
+            assert_eq!(pe_arm_mode_policy(IMAGE_FILE_MACHINE_ARM, uefi_te), Some(ArmModePolicy::EntryBit));
+            assert_eq!(pe_arm_mode_policy(IMAGE_FILE_MACHINE_AMD64, uefi_te), None);
+        }
+        assert_eq!(
+            pe_arm_mode_policy(IMAGE_FILE_MACHINE_THUMB, false),
+            Some(ArmModePolicy::WholeImageThumb),
+            "Windows names 0x1c2 THUMB"
+        );
+        assert_eq!(
+            pe_arm_mode_policy(IMAGE_FILE_MACHINE_THUMB, true),
+            Some(ArmModePolicy::EntryBit),
+            "the UEFI bindings name 0x1c2 ARMTHUMB_MIXED"
+        );
+
+        // A PE whose machine word is ARM loads as 32-bit ARM with no whole-image
+        // claim, and its odd entry is the walk's seed.
+        let path = format!("{}/tests/fixtures/armv4t_thumb_pe.exe", env!("CARGO_MANIFEST_DIR"));
+        let mut bytes = std::fs::read(&path).expect("read synthetic ARM PE fixture");
+        let pe = u32::from_le_bytes(bytes[0x3c..0x40].try_into().unwrap()) as usize;
+        bytes[pe + 4..pe + 6].copy_from_slice(&IMAGE_FILE_MACHINE_ARM.to_le_bytes());
+        let file = object::File::parse(bytes.as_slice()).expect("parse the ARM-machine PE");
+        assert_eq!(effective_architecture(&file, &bytes), Architecture::Arm);
+        assert_eq!(arm_isa_hint(&file, &bytes), None);
+        assert_eq!(arm_entry_thumb_hint(&file, &bytes), Some(0x401000));
+        let image = ObjectLoadImage::from_bytes("arm-machine.exe", &bytes).expect("loads without a target");
+        assert_eq!(image.arch_id(), b"ARM:LE:32:v8:windows");
+        assert_eq!(image.image_entry(), Some(0x401000), "the retained entry is a code address");
     }
 
     #[test]

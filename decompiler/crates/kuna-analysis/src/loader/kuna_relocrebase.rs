@@ -398,17 +398,7 @@ fn patch_coff(layout: &RelocLayout, out: &mut [u8]) -> Option<()> {
     Some(())
 }
 
-fn read_u16(b: &[u8], at: usize) -> Option<u16> {
-    Some(u16::from_le_bytes(b.get(at..at + 2)?.try_into().ok()?))
-}
-
-fn read_u32(b: &[u8], at: usize) -> Option<u32> {
-    Some(u32::from_le_bytes(b.get(at..at + 4)?.try_into().ok()?))
-}
-
-fn read_u64(b: &[u8], at: usize) -> Option<u64> {
-    Some(u64::from_le_bytes(b.get(at..at + 8)?.try_into().ok()?))
-}
+use super::le::{read_u16, read_u32, read_u64};
 
 fn write_uint(b: &mut [u8], at: usize, width: usize, value: u64) -> Option<()> {
     let field = b.get_mut(at..at + width)?;

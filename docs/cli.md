@@ -734,6 +734,69 @@ With no mode evidence, decoding uses the selected language's default context; us
 `strings --no-xrefs` decodes nothing, so the pair is a usage error rather than a
 silently dropped flag.
 
+### UEFI TE images
+
+UEFI TE images are recognized directly on `decompile`,
+`decompile-all`, `functions`, `disassemble`/`read`, `decompile-project`, the
+interactive console, and the browser front-end, which all load through one
+dispatcher. The TE header owns the image base, entry point, and section
+mappings; `--target` may select a compatible SLEIGH language but does not
+reinterpret those addresses. Kuna applies the TE stripped-header bias to
+section file offsets while retaining their original loaded VMAs. Recognition reads the `VZ`
+signature, the machine word, and `StrippedSize`, so a file that merely opens
+with those two letters keeps the headerless-image guidance. The retained
+TE header, section table, and padding are mapped read-only from
+`ImageBase + StrippedSize - 40` up to `ImageBase + BaseOfCode`; the file backs
+that region only up to the first section's adjusted raw offset, and the
+alignment slack behind it reads as zero, so an ordinary 0x200-file-aligned
+image loads. Kuna validates that the file-backed part lies inside the file and
+that no section's raw data starts inside the section table. It validates the two data directories and every other
+header/section/file range before allocation, and seeds the container entry as
+the initial function using the active `namestyle`. A `bytes` assertion or
+console `override bytes` can replace a complete span within one TE mapping,
+including its zero-filled virtual tail; a span crossing the mapping boundary is
+rejected without changing any bytes. A nonzero section `VirtualSize` bounds its
+mapped extent even when `SizeOfRawData` includes file-alignment padding; a zero
+`VirtualSize` falls back to the raw extent, and a virtual tail beyond the raw
+bytes is zero-filled but never folded to a constant, since the image carries no
+copy of it.
+
+Language selection uses the same machine table as PE: `ARM`, `ARMTHUMB_MIXED`,
+and `ARMNT` all select the Thumb-2-capable `ARM:LE:32:v8` language, with the
+UEFI calling conventions as the compiler model (C/cdecl for IA-32, the UEFI x64
+convention for x64, AAPCS for AArch32, AAPCS64/LP64 for AArch64); an explicit
+compatible `--target` can request another model. The ARM decode-mode policy is
+one table shared with the PE loader: `ARMNT` declares a wholly Thumb stream on
+every container, `ARM` may interwork on every container, and machine `0x1c2` is
+read the way its container family names it — `THUMB` on a PE (painted wholly
+Thumb) and `ARMTHUMB_MIXED` on a TE (interworking). Where the policy leaves the
+mode to the entry bit, on a TE or a PE alike, an odd entry proves Thumb at the
+entry alone, and the `entrythumbflow` option (default on) carries that mode
+along the flow reachable from the entry, after any byte overlays:
+fall-through, direct branches, and direct `BL` calls, while an interworking
+`BLX` target keeps the mode its own encoding selects. Exactly the instruction
+ranges the walk decoded are painted Thumb, so A32 code elsewhere keeps its mode.
+The walk covers only the bytes the file backs, does not fall through past a
+direct call to a callee the loader already knows never returns, and decodes
+with the language's own context writes suppressed, so an interworking `blx`
+cannot flatten the Thumb code above its target.
+The walk is bounded at 4096 instructions; reaching the bound keeps the ranges
+walked so far, reports that once on stderr, and leaves the unreached code at the
+language default. `--isa thumb` paints the whole image when it is wholly Thumb;
+`--option entrythumbflow off` disables the walk. Unsupported machines and target
+width/data-endianness conflicts are explicit errors.
+
+A TE image has no `object`-crate view, so the discovery passes that re-parse the
+input (`listing`, `aif`, `funcstart_patterns`, and the other Listing consumers)
+do not run: `functions` reports the container entry plus any declared
+boundaries, and every TE load says so once on stderr rather than leaving an
+inventory of one to be inferred. For the same reason `strings`, `xrefs`, `decompile-graph`, and
+the graph-backed `--summary` and `--reachable-from` filters reject a TE with a
+capability error naming the supported commands. `--slice` names a Mach-O fat
+slice and is ignored, as on any thin image. Project exports retain the TE entry
+(reported through the inventory, at its even address) and the named section
+table.
+
 ### Headerless raw images
 
 `--raw-image` loads a file that has no object header. It is separate from
@@ -1944,7 +2007,12 @@ binary and attempt recompilation:
   printed in C, and aliases a named symbol only in the same address space at the same
   displayed coordinate.
 - `README.md` — size, arch id, entry point, function counts, sections table, file
-  inventory.
+  inventory. The entry point is the container's, reported through the inventory
+  (an ARM entry carrying the Thumb bit prints at its even address) and
+  `unavailable` for a container that declares none, such as a relocatable
+  object. The sections table lists the loader's named, mapped sections at their
+  load addresses — for a relocatable object, the synthetic layout the rest of
+  the export uses, not every section at file offset zero.
 
 The artifact format is purely additive and has no exporter-specific transform
 (spec §9.7); the set of emitted definitions follows the selected P1 discovery

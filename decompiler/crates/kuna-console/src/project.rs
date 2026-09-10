@@ -25,7 +25,6 @@ use kuna_decomp::decompile_drive::{
 // real constants are used directly here (kuna-cli, which deliberately does not
 // depend on kuna-sleigh, used to mirror the stable, upstream-fixed CODE bit).
 use kuna_sleigh::loadimage::section_flags;
-use object::{Object, ObjectSection};
 
 use crate::engine::{ConsoleProgram, EntryProvenance, FunctionEntry, ObjectLocation};
 
@@ -923,14 +922,16 @@ fn emit_data_tail(
 
 // --- README.md ---------------------------------------------------------------
 
-/// `README.md`: binary metadata (file size, arch id, entry point + sections
-/// re-parsed via the `object` crate — the engine's LoadImage sections carry no
-/// names), function counts, and the artifact inventory / labeling conventions.
+/// `README.md`: binary metadata (file size, arch id, entry point + sections),
+/// function counts, and the artifact inventory / labeling conventions. The
+/// entry point and section table are the loader's retained
+/// [`crate::engine::ProgramImageMetadata`]; the entry is reported through the
+/// inventory, so an ARM entry carrying the Thumb mode bit prints at the even
+/// address the rest of the export uses.
 ///
 /// `path_label` is the path string printed in the `| Path |` row (the CLI
 /// passes `binary_path.display()`; the wasm front-end a virtual name);
-/// `binary_path` itself is still read for the file size and the `object`
-/// re-parse.
+/// `binary_path` itself is read for the file size.
 pub fn build_readme(
     binary_path: &Path,
     path_label: &str,
@@ -952,32 +953,23 @@ pub fn build_readme(
     out.push_str(&format!("| File size | {file_size} bytes |\n"));
     out.push_str(&format!("| Architecture | `{}` |\n", prog.description()));
 
-    // Entry point + named sections come from an `object` re-parse (the engine's
-    // section iterator has no name field).
-    let raw = kuna_analysis::loader::elf_shdr::read_image(&binary_path.to_string_lossy())
-        .unwrap_or_default();
-    let parsed = kuna_analysis::loadimage_object::parse_object(&*raw).ok();
-    match &parsed {
-        // `image_entry_vma`, not `entry()`: a Mach-O `LC_MAIN` states a
-        // `__TEXT`-relative file offset where every other format states a VMA.
-        Some(f) => out.push_str(&format!(
-            "| Entry point | `0x{:x}` |\n",
-            kuna_analysis::analyzers::entry::image_entry_vma(f, &raw).unwrap_or(0)
-        )),
+    let metadata = prog.image_metadata();
+    let entry = metadata
+        .and_then(|value| value.entry)
+        .map(|vma| prog.find_entry_at(vma).map_or(vma, |entry| entry.addr.get_offset()));
+    match entry {
+        Some(entry) => out.push_str(&format!("| Entry point | `0x{entry:x}` |\n")),
         None => out.push_str("| Entry point | unavailable |\n"),
     }
     out.push_str(&format!("| Functions | {} total, {ok} decompiled, {failed} failed |\n", results.len()));
 
-    if let Some(f) = &parsed {
+    if let Some(metadata) = metadata.filter(|value| !value.sections.is_empty()) {
         out.push_str("\n## Sections\n\n");
         out.push_str("| Name | Address | Size | Kind |\n|---|---|---|---|\n");
-        for s in f.sections() {
+        for section in &metadata.sections {
             out.push_str(&format!(
-                "| `{}` | `0x{:x}` | `0x{:x}` | {:?} |\n",
-                s.name().unwrap_or("?"),
-                s.address(),
-                s.size(),
-                s.kind()
+                "| `{}` | `0x{:x}` | `0x{:x}` | {} |\n",
+                section.name, section.vma, section.size, section.kind
             ));
         }
     }

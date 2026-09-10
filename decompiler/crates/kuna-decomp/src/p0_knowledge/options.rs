@@ -465,6 +465,10 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // Default-OFF (output-changing: it adds and relocates discovered functions).
     "poolentry",
     "arm_markers",
+    // (kuna) The entry-reachable Thumb context walk for a mixed ARM image whose
+    // container entry carries the Thumb bit (a UEFI TE with machine ARM or
+    // ARMTHUMB_MIXED). Default-ON; inert on every image without such an entry.
+    "entrythumbflow",
     "mips_gp",
     // (kuna) i386-PIE PLT-stub decode (angr test_decompiling_nl_i386_pie). A
     // loader-tier gate read via the `kuna_i386_pie_plt` env var (not committed

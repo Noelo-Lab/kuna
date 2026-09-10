@@ -1,0 +1,45 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    The entry-reachable Thumb context walk (`option entrythumbflow on|off`,
+    default on, DIV-154).
+
+    The XML wrapper only provides the harness architecture. Both passes clear
+    it and load the synthetic UEFI TE fixture through the same bounded TE
+    bootstrap the CLI uses: machine ARM (0x1c0), which makes no whole-image
+    mode claim, and an AddressOfEntryPoint carrying the Thumb bit. Its .text
+    is a Thumb `movs r0,#7; bx lr` at 0x401000 followed by an A32 `bx lr`.
+
+    Pass 1 (`entrythumbflow off`) reproduces the defect: the entry decodes
+    with the language default (A32), so `07 20 70 47` is read as a store and
+    a return with no value, `void sub_401000(void) { return; }`.
+
+    Pass 2 (the shipped default) walks the flow from the entry as Thumb and
+    paints exactly the two instructions it decoded, so the function returns 7
+    while the A32 `bx lr` behind it keeps its own mode.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/te_entrythumbflow_arm.te</com>
+  <com>option entrythumbflow off</com>
+  <com>read symbols</com>
+  <com>load function sub_401000</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/te_entrythumbflow_arm.te</com>
+  <com>read symbols</com>
+  <com>load function sub_401000</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="ENTRYTHUMBFLOW #1: off, the Thumb entry decodes as A32 and returns nothing" min="1" max="1">void sub_401000\(void\)</stringmatch>
+<stringmatch name="ENTRYTHUMBFLOW #2: default, the entry is walked as Thumb and returns its constant" min="1" max="1">unsigned int sub_401000\(void\)</stringmatch>
+<stringmatch name="ENTRYTHUMBFLOW #3: the constant the Thumb body returns appears exactly once, in the default pass" min="1" max="1">return 7;</stringmatch>
+</decompilertest>

@@ -365,7 +365,10 @@ fn overlay_bytes(prog: &mut ConsoleProgram, vma: u64, data: &[u8]) -> Result<(),
     let mut loader = loader_rc
         .try_borrow_mut()
         .map_err(|_| "the load image is already borrowed".to_string())?;
-    loader.kuna_overlay_bytes(&addr, data).map_err(|e| e.explain().to_string())
+    loader.kuna_overlay_bytes(&addr, data).map_err(|e| e.explain().to_string())?;
+    drop(loader);
+    prog.note_materialized_bytes(&addr, data.len());
+    Ok(())
 }
 
 /// Apply the program-scoped directives (`function`, `typedef`, `prototype`,

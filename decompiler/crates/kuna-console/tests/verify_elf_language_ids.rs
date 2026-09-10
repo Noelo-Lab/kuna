@@ -130,6 +130,16 @@ fn every_object_format_language_id_resolves_in_the_database() {
             kuna_analysis::loadimage_object::coff_language_ids(),
             &["x86:LE:64:default:windows"],
         ),
+        (
+            "TE",
+            kuna_analysis::loadimage_te::te_language_ids(),
+            &[
+                "x86:LE:32:default:gcc",
+                "x86:LE:64:default:windows",
+                "ARM:LE:32:v8:default",
+                "AARCH64:LE:64:v8A:default",
+            ],
+        ),
     ];
 
     for (fmt_name, ids, expected) in suites {

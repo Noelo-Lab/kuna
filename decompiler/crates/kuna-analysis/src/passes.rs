@@ -413,14 +413,26 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
 /// `in_executable_section` gate to both to be robust against a funcsym pointing
 /// at a non-exec address.
 ///
-/// `pub` so the cross-crate `verify_listing_*` gates can build the *exact* seed
-/// set the live driver uses (the build-through-engine proof), instead of
-/// reconstructing it from the `pub(crate)` `entry` helpers.
+/// Container-derived seeds for callers without a selected decoder. The live
+/// driver uses `listing_seeds_for_language` so explicit decoder overrides also
+/// govern the entry addresses it follows.
 pub fn listing_seeds(file: &object::File, bytes: &[u8]) -> Vec<u64> {
+    listing_seeds_for_language(file, bytes, None)
+}
+
+fn listing_seeds_for_language(
+    file: &object::File,
+    bytes: &[u8],
+    language: Option<&str>,
+) -> Vec<u64> {
     let execs = crate::entry::executable_sections(file);
+    let entries = match language {
+        Some(language) => crate::entry::collect_entries_for_language(file, bytes, language),
+        None => crate::entry::collect_entries(file, bytes),
+    };
     let mut seeds: Vec<u64> = crate::entry::existing_function_addrs(file, bytes)
         .into_iter()
-        .chain(crate::entry::collect_entries(file, bytes))
+        .chain(entries)
         .filter(|&vma| crate::entry::in_executable_section(&execs, vma))
         .collect();
     seeds.sort_unstable();
@@ -571,7 +583,7 @@ pub fn run_listing_consumers(
     if crate::loader::reloc_object::is_synthetically_laid_out(&file) {
         return Vec::new();
     }
-    let mut seeds = listing_seeds(&file, bytes);
+    let mut seeds = listing_seeds_for_language(&file, bytes, Some(arch.get_description()));
     // (kuna, recursive-descent discovery) When the prologue-pattern pass is active
     // (`funcstart_patterns`, default-ON for non-x86-64 on `decompile-all`, DIV-20),
     // seed the recursive-descent walk with its `<patternpairs>` function starts too — not
@@ -998,7 +1010,7 @@ pub fn run_default_analyses(
     // when `--option listing on` (default-off ⇒ `None` ⇒ no decode work, byte
     // -identical to today). Owned here so it outlives the pass loop, borrowed
     // read-only by every consumer pass via `ctx.listing`.
-    let seeds = listing_seeds(&file, bytes);
+    let seeds = listing_seeds_for_language(&file, bytes, Some(arch.get_description()));
     let listing = arch
         .analysis_listing
         .then(|| crate::listing::Listing::build(&file, image, arch, translate, &seeds));
@@ -1049,7 +1061,7 @@ pub fn run_default_analyses_per_pass(
     // real-ELF bootstrap is byte-identical to today. The `Listing` is owned here
     // (same lifetime shape as `file`), outlives the pass loop, and is borrowed
     // read-only by every consumer pass via `ctx.listing`.
-    let seeds = listing_seeds(&file, bytes);
+    let seeds = listing_seeds_for_language(&file, bytes, Some(arch.get_description()));
     let listing = arch
         .analysis_listing
         .then(|| crate::listing::Listing::build(&file, image, arch, translate, &seeds));
