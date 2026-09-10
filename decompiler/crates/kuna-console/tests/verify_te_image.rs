@@ -312,6 +312,51 @@ fn tmode_at(program: &kuna_console::engine::ConsoleProgram, offset: u64) -> u32 
         .unwrap()
 }
 
+#[test]
+fn it_guarded_branch_preserves_both_return_paths() {
+    assert_it_return_paths(&[
+        0x00, 0x28, // cmp r0,#0
+        0x08, 0xbf, // it eq
+        0x01, 0xe0, // beq 0x40100a
+        0x07, 0x20, 0x70, 0x47, // movs r0,#7; bx lr
+        0x00, 0x20, 0x70, 0x47, // movs r0,#0; bx lr
+    ]);
+}
+
+#[test]
+fn it_guarded_return_preserves_fall_through() {
+    assert_it_return_paths(&[
+        0x00, 0x28, // cmp r0,#0
+        0x08, 0xbf, // it eq
+        0x70, 0x47, // bxeq lr
+        0x07, 0x20, 0x70, 0x47, // movs r0,#7; bx lr
+    ]);
+}
+
+fn assert_it_return_paths(code: &[u8]) {
+    let fixture = TeFixture::write(
+        "te-thumb-it",
+        TeImage::arm(code).entry_rva(CODE_RVA | 1).build(),
+    );
+    let path = fixture.0.to_string_lossy();
+    let mut outputs = Vec::new();
+    for isa in [None, Some(ArmIsa::Thumb)] {
+        let Some(mut program) = load_or_skip(&path, "", isa) else {
+            return;
+        };
+        program.commit_pending_analysis().unwrap();
+        assert_eq!(tmode_at(&program, 0x401006), 1, "the conditional fall-through is Thumb");
+        assert_eq!(tmode_at(&program, 0x401008), 1, "the fall-through return is Thumb");
+        let entry = program.find_entry_at(0x401001).unwrap();
+        let results = decompile_targets(&mut program, vec![entry], true, false, false);
+        assert!(results[0].error.is_none(), "{:?}", results[0].error);
+        let code = results[0].code.clone().unwrap();
+        assert!(code.contains("if (") && code.contains("return 7;"), "{code}");
+        outputs.push(code);
+    }
+    assert_eq!(outputs[0], outputs[1], "entry-local and explicit Thumb must agree");
+}
+
 /// The walk's budget is a bound on its own work, not on the load: the ranges
 /// it did walk are painted, the load succeeds, and the code past the bound is
 /// left at the language default. The paint is one context region, not one
@@ -564,6 +609,110 @@ fn entry_thumb_walk_decodes_overlaid_bytes() {
         "{:?}",
         results[0].code
     );
+}
+
+#[test]
+fn entry_thumb_walk_reaches_a_materialized_virtual_tail() {
+    let mut bytes = TeImage::arm(&[0x00, 0xbf, 0x00, 0xbf]).entry_rva(CODE_RVA | 1).build();
+    bytes[48..52].copy_from_slice(&16u32.to_le_bytes());
+    let fixture = TeFixture::write("te-thumb-tail-overlay", bytes);
+    let path = fixture.0.to_string_lossy();
+    let Some(mut program) = load_or_skip(&path, "", None) else {
+        return;
+    };
+    apply_byte_assertions(&mut program, &[
+        (0x401000, &[0x02, 0xe0]),
+        (0x401008, &[0x07, 0x20, 0x70, 0x47]),
+    ]);
+    program.commit_pending_analysis().unwrap();
+    assert_eq!(tmode_at(&program, 0x401008), 1, "materialized branch target");
+    assert_eq!(tmode_at(&program, 0x40100a), 1, "materialized return");
+    for offset in [0x401002, 0x401004, 0x401006, 0x40100c, 0x40100e] {
+        assert_eq!(tmode_at(&program, offset), 0, "unreached or uninitialized: {offset:x}");
+    }
+    assert_entry_returns_7(&mut program);
+}
+
+#[test]
+fn entry_thumb_walk_merges_adjacent_and_overlapping_materialized_spans() {
+    let mut bytes = TeImage::arm(&[0x4f, 0xf0]).entry_rva(CODE_RVA | 1).build();
+    bytes[48..52].copy_from_slice(&16u32.to_le_bytes());
+    let fixture = TeFixture::write("te-thumb-split-overlay", bytes);
+    let path = fixture.0.to_string_lossy();
+    let Some(mut program) = load_or_skip(&path, "", None) else {
+        return;
+    };
+    apply_byte_assertions(&mut program, &[
+        (0x401004, &[0x70, 0x47]),
+        (0x401003, &[0x00]),
+        (0x401001, &[0xf0, 0x07]),
+    ]);
+    program.commit_pending_analysis().unwrap();
+    assert_eq!(tmode_at(&program, 0x401000), 1, "mov.w spans the file and two overlays");
+    assert_eq!(tmode_at(&program, 0x401004), 1);
+    assert_eq!(tmode_at(&program, 0x401006), 0, "uninitialized tail");
+    assert_entry_returns_7(&mut program);
+}
+
+#[test]
+fn entry_thumb_walk_excludes_uninitialized_gaps_and_rejected_overlays() {
+    let mut bytes = TeImage::arm(&[0x02, 0xe0]).entry_rva(CODE_RVA | 1).build();
+    bytes[48..52].copy_from_slice(&16u32.to_le_bytes());
+    let fixture = TeFixture::write("te-thumb-incomplete-overlay", bytes);
+    let path = fixture.0.to_string_lossy();
+    let Some(mut program) = load_or_skip(&path, "", None) else {
+        return;
+    };
+    apply_byte_assertions(&mut program, &[
+        (0x401008, &[0x4f, 0xf0]),
+        (0x40100c, &[0x70, 0x47]),
+    ]);
+    program.set_assertions(vec![Directive {
+        raw: "bytes 0x40100a 0700704700000000".into(),
+        body: Body::Bytes { addr: 0x40100a, data: vec![0x07, 0x00, 0x70, 0x47, 0, 0, 0, 0] },
+    }]);
+    assertions::apply_image_scoped(&mut program);
+    assert_eq!(program.assertion_outcomes()[0].status, "rejected");
+    program.commit_pending_analysis().unwrap();
+    assert_eq!(tmode_at(&program, 0x401000), 1);
+    assert_eq!(tmode_at(&program, 0x401008), 0, "incomplete Thumb-2 instruction");
+    assert_eq!(tmode_at(&program, 0x40100a), 0, "rejected bytes did not fill the gap");
+    assert_eq!(tmode_at(&program, 0x40100c), 0, "unreachable return beyond the gap");
+}
+
+#[test]
+fn entry_thumb_walk_excludes_overlays_in_nonexecutable_mappings() {
+    let fixture = TeFixture::write(
+        "te-thumb-data-overlay",
+        TeImage::arm(&[0xfa, 0xe7]).entry_rva(CODE_RVA | 1).build(),
+    );
+    let path = fixture.0.to_string_lossy();
+    let Some(mut program) = load_or_skip(&path, "", None) else {
+        return;
+    };
+    apply_byte_assertions(&mut program, &[(0x400ff8, &[0x07, 0x20, 0x70, 0x47])]);
+    program.commit_pending_analysis().unwrap();
+    assert_eq!(tmode_at(&program, 0x401000), 1);
+    assert_eq!(tmode_at(&program, 0x400ff8), 0, "the branch target is not executable");
+}
+
+fn apply_byte_assertions(program: &mut ConsoleProgram, overlays: &[(u64, &[u8])]) {
+    program.set_assertions(overlays.iter().map(|&(addr, data)| {
+        let hex = data.iter().map(|b| format!("{b:02x}")).collect::<String>();
+        Directive {
+            raw: format!("bytes 0x{addr:x} {hex}"),
+            body: Body::Bytes { addr, data: data.to_vec() },
+        }
+    }).collect());
+    assertions::apply_image_scoped(program);
+    assert!(program.assertion_outcomes().iter().all(|outcome| outcome.status == "applied"));
+}
+
+fn assert_entry_returns_7(program: &mut ConsoleProgram) {
+    let entry = program.find_entry_at(0x401001).unwrap();
+    let results = decompile_targets(program, vec![entry], true, false, false);
+    assert!(results[0].error.is_none(), "{:?}", results[0].error);
+    assert!(results[0].code.as_deref().unwrap().contains("return 7;"), "{:?}", results[0].code);
 }
 
 #[test]

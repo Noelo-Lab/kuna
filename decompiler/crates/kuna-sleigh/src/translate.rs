@@ -441,6 +441,12 @@ pub trait Translate: RegisterLookup {
     /// \param val is \b true to allow context changes, \b false prevents changes
     fn allow_context_set(&self, _val: bool) {}
 
+    /// Replace the writable bits in one context word for translation commits,
+    /// returning the previous mask so a temporary restriction can be restored.
+    fn set_context_write_mask(&self, _word: usize, _mask: u32) -> u32 {
+        u32::MAX
+    }
+
     /// \brief Get a list of all register names and the corresponding location
     ///
     /// Most processors have a list of named registers and possibly other

@@ -649,14 +649,19 @@ than the one at its start, and publishes exactly the decoded instruction ranges
 as bounded `TMode=1` paints under its own gated pass id — written to the
 context database at once as well as stashed, because the deferred Listing
 consumers decode the same bytes before the stash is committed. Decoding inside
-the walk runs with the language's context writes suppressed
-(`allow_context_set`): a Thumb `blx` runs `globalset(TMode=0)` at its target,
+the walk masks only the `TMode` bits out of the language's context writes
+(`set_context_write_mask`): a Thumb `blx` runs `globalset(TMode=0)` at its target,
 which would flatten every Thumb address above that target for the rest of the
-walk, and the seed already answers the mode question for the whole range. The
-walk covers only file-backed bytes — a zero-filled tail decodes as a run of
-Thumb no-ops — and a direct call to a callee the load-time no-return facts name
-has no fall-through. The
-walk is bounded at 4096 instructions; reaching the bound publishes the ranges
+walk, and the seed already answers the mode question for the whole range.
+Other context writes still propagate, including the IT condition at the next
+instruction, so guarded branches and returns retain their fall-through. The
+previous write mask is restored when the walk finishes, even at its budget. The
+walk covers file-backed executable bytes plus successfully applied byte
+overlays clipped to executable mappings. Adjacent and overlapping spans merge
+before decoding, so an instruction can cross their boundary, while unwritten
+gaps and tails remain excluded: zero-filled bytes can decode as Thumb no-ops.
+A direct call to a callee the load-time no-return facts name has no fall-through.
+The walk is bounded at 4096 instructions; reaching the bound publishes the ranges
 walked so far, reports the truncation once on stderr, and leaves the unreached
 code at the language default, so the load never fails on the size of the image.
 The pending entry is consumed before the walk runs, so a failure cannot re-arm

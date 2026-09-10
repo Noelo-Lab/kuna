@@ -3887,6 +3887,7 @@ decomp_command!(
                 .kuna_overlay_bytes(&addr, &data)
                 .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
         }
+        prog.note_materialized_bytes(&addr, data.len());
         let mut line = format!("Successfully overlaid {} bytes at ", data.len());
         addr.print_raw(&mut line).map_err(|e| IfaceError::execution(e.explain().to_string()))?;
         line.push('\n');

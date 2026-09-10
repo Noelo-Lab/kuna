@@ -1075,6 +1075,8 @@ fn space_eq(a: &Address, b: &Address) -> bool {
 pub struct ContextCache {
     /// If set to \b false, any set_context() call is dropped
     allowset: bool,
+    /// Bits that translation may write in each context word (all by default).
+    write_masks: Vec<u32>,
     /// Address space of the current valid range (`None` = cache invalid,
     /// the C++ null `curspace`)
     curspace: Option<Rc<AddrSpace>>,
@@ -1097,6 +1099,7 @@ impl ContextCache {
         ContextCache {
             curspace: None, // Mark cache as invalid
             allowset: true,
+            write_masks: Vec::new(),
             // C++ leaves first/last uninitialized (they are only read once
             // curspace is set); zeroed here
             first: 0,
@@ -1107,6 +1110,16 @@ impl ContextCache {
     /// Toggle whether set_context() calls are ignored
     pub fn allow_set(&mut self, val: bool) {
         self.allowset = val;
+    }
+
+    /// Replace the writable bits for one context word, returning the old mask.
+    /// This filter also applies to bounded commits; `allow_set(false)` still
+    /// suppresses every write regardless of these masks.
+    pub fn set_write_mask(&mut self, word: usize, mask: u32) -> u32 {
+        if self.write_masks.len() <= word {
+            self.write_masks.resize(word + 1, u32::MAX);
+        }
+        std::mem::replace(&mut self.write_masks[word], mask)
     }
 
     /// Return \b true if the cached range covers the given address (the
@@ -1167,7 +1180,11 @@ impl ContextCache {
         if !self.allowset {
             return;
         }
-        database.set_context_change_point(addr, num, mask, value);
+        let mask = mask & self.write_masks.get(num as usize).copied().unwrap_or(u32::MAX);
+        if mask == 0 {
+            return;
+        }
+        database.set_context_change_point(addr, num, mask, value & mask);
         if self.cache_covers(addr) {
             self.curspace = None; // Invalidate cache
         }
@@ -1197,7 +1214,11 @@ impl ContextCache {
         if !self.allowset {
             return;
         }
-        database.set_context_region(addr1, addr2, num, mask, value);
+        let mask = mask & self.write_masks.get(num as usize).copied().unwrap_or(u32::MAX);
+        if mask == 0 {
+            return;
+        }
+        database.set_context_region(addr1, addr2, num, mask, value & mask);
         if self.cache_covers(addr1) {
             self.curspace = None; // Invalidate cache
         }
@@ -1518,6 +1539,39 @@ mod tests {
         assert_eq!(var.get_value(&buf), 9);
         cache.get_context(&db, &addr(&manager, "ram", 0x500), &mut buf);
         assert_eq!(var.get_value(&buf), 7);
+    }
+
+    #[test]
+    fn context_write_mask_preserves_other_fields_and_restores_writes() {
+        let manager = test_manager();
+        let start = addr(&manager, "ram", 0x100);
+        let end = addr(&manager, "ram", 0x200);
+        for bounded in [false, true] {
+            let mut db = test_db();
+            db.set_variable_default(b"fldA", 0x12).unwrap();
+            let field = db.get_variable(b"fldA").unwrap();
+            let mask = field.get_mask() << field.get_shift();
+            let mut cache = ContextCache::new();
+            let previous = cache.set_write_mask(0, !mask);
+            for value in [u32::MAX, 0] {
+                if bounded {
+                    cache.set_context_region(&mut db, &start, &end, 0, u32::MAX, value);
+                } else {
+                    cache.set_context(&mut db, &start, 0, u32::MAX, value);
+                }
+                assert_eq!(get(&db, &manager, b"fldA", 0x100), 0x12);
+                assert_eq!(get(&db, &manager, b"fldB", 0x100), value & 0xff);
+            }
+            cache.set_context(&mut db, &start, 1, u32::MAX, 0xcafe);
+            assert_eq!(get(&db, &manager, b"wide", 0x100), 0xcafe);
+            cache.set_write_mask(0, previous);
+            cache.allow_set(false);
+            cache.set_context(&mut db, &start, 0, mask, 0);
+            assert_eq!(get(&db, &manager, b"fldA", 0x100), 0x12);
+            cache.allow_set(true);
+            cache.set_context(&mut db, &start, 0, mask, 0);
+            assert_eq!(get(&db, &manager, b"fldA", 0x100), 0);
+        }
     }
 
     #[test]

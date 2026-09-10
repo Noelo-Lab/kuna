@@ -19,11 +19,12 @@
 //! even entry would have produced anyway; `--isa thumb` covers a wholly Thumb
 //! image.
 //!
-//! The walk covers only the bytes the file backs. A mapped tail the loader
-//! zero-fills decodes as a run of two-byte Thumb no-ops, which would march the
-//! walk to the section end and paint it, so the caller hands it file-backed
-//! extents; and a direct call to a callee the load-time facts know never
-//! returns has no fall-through, so the bytes after it keep their own mode.
+//! The walk covers file-backed bytes and successfully materialized overlays.
+//! A mapped tail the loader zero-fills decodes as two-byte Thumb no-ops, which
+//! would march the walk to the section end, so the caller hands it file-backed
+//! extents plus initialized overlay spans. A direct call to a callee the
+//! load-time facts know never returns has no fall-through, so the bytes after
+//! it keep their own mode.
 //!
 //! Decoding needs the context set before the bytes are read, so the walk seeds
 //! `TMode=1` over every executable range as one region write per range, decodes,
@@ -76,17 +77,21 @@ pub fn entry_thumb_flow(
     entry: u64,
     noreturn: &[u64],
 ) -> KunaResult<EntryThumbFlow> {
-    let ranges: Vec<(u64, u64)> = ranges
+    let mut ranges: Vec<(u64, u64)> = ranges
         .iter()
         .filter_map(|&(start, size)| {
             let end = start.checked_add(size)?;
             (size != 0).then_some((start, end))
         })
         .collect();
+    merge_ranges(&mut ranges);
     if range_holding(&ranges, entry).is_none() {
         return Ok(EntryThumbFlow::default());
     }
     let addr_at = |offset: u64| Address::new(Rc::clone(code_space), offset);
+    let Ok(tmode) = arch.with_context_db_mut(|db| db.get_variable(TMODE)) else {
+        return Ok(EntryThumbFlow::default());
+    };
 
     // Every fallible READ happens before the first write, so a language that
     // registers no `TMode` leaves the database exactly as it found it.
@@ -101,10 +106,11 @@ pub fn entry_thumb_flow(
     // From the first seed onward every exit path restores: a walk abandoned
     // partway must not leave a range decoding as Thumb for the rest of the
     // session, and it must not report success while it does. Decoding is also
-    // kept from writing context of its own: a Thumb `blx` runs the language's
+    // kept from writing TMode: a Thumb `blx` runs the language's
     // `globalset(TMode=0)` at its target, which would flatten every Thumb
     // address above that target for the rest of the walk. The seed already
-    // answers the mode question for the whole range.
+    // answers the mode question for the whole range. Other context commits,
+    // including IT conditions, must still reach the next instruction.
     let translate = arch.translate();
     let walked = ranges
         .iter()
@@ -114,9 +120,14 @@ pub fn entry_thumb_flow(
             })
         })
         .map(|()| {
-            translate.allow_context_set(false);
+            let word = tmode.get_word() as usize;
+            let saved_mask = translate.set_context_write_mask(word, u32::MAX);
+            translate.set_context_write_mask(
+                word,
+                saved_mask & !(tmode.get_mask() << tmode.get_shift()),
+            );
             let walked = walk_from_entry(arch, code_space, &ranges, entry, noreturn);
-            translate.allow_context_set(true);
+            translate.set_context_write_mask(word, saved_mask);
             walked
         });
     for &(start, end, value) in &saved {
@@ -126,21 +137,30 @@ pub fn entry_thumb_flow(
     }
     let (mut painted, truncated) = walked?;
 
-    painted.sort_unstable();
-    let mut merged: Vec<(u64, u64)> = Vec::new();
-    for (start, end) in painted {
-        match merged.last_mut() {
-            Some(last) if start <= last.1 => last.1 = last.1.max(end),
-            _ => merged.push((start, end)),
-        }
-    }
+    merge_ranges(&mut painted);
     Ok(EntryThumbFlow {
-        paints: merged
+        paints: painted
             .into_iter()
             .map(|(addr, end)| ContextPaint { addr, end: Some(end), var: "TMode", value: 1 })
             .collect(),
         truncated,
     })
+}
+
+/// Merge overlapping and adjacent half-open ranges, preserving every gap.
+fn merge_ranges(ranges: &mut Vec<(u64, u64)>) {
+    ranges.sort_unstable();
+    let mut count = 0;
+    for index in 0..ranges.len() {
+        let (start, end) = ranges[index];
+        if count > 0 && start <= ranges[count - 1].1 {
+            ranges[count - 1].1 = ranges[count - 1].1.max(end);
+        } else {
+            ranges[count] = (start, end);
+            count += 1;
+        }
+    }
+    ranges.truncate(count);
 }
 
 /// The end of the executable range holding `addr`, if one does.

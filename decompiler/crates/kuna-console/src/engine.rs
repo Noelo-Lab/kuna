@@ -194,6 +194,7 @@ enum ProgramContainer {
 /// A mixed-ARM container entry with the Thumb bit set, awaiting the
 /// `entrythumbflow` walk at the analysis commit (after byte overlays).
 struct PendingEntryThumb {
+    /// Initialized executable spans, including overlays applied before the walk.
     executable_ranges: Vec<(u64, u64)>,
     entry: u64,
 }
@@ -2012,6 +2013,34 @@ impl ConsoleProgram {
             .collect()
     }
 
+    /// Add a successfully applied byte overlay to the deferred walk, clipped
+    /// to executable mappings. Unwritten virtual tails remain outside its ranges.
+    pub(crate) fn note_materialized_bytes(&mut self, addr: &Address, size: usize) {
+        if self.pending_entry_thumb.is_none()
+            || !self.analysis_code_space.as_ref().zip(addr.get_space())
+                .is_some_and(|(code, space)| Rc::ptr_eq(code, space))
+        {
+            return;
+        }
+        let start = addr.get_offset();
+        let Some(end) = start.checked_add(size as u64) else {
+            return;
+        };
+        let spans: Vec<_> = self.sections().into_iter()
+            .filter_map(|(base, size, flags)| {
+                if flags & section_flags::CODE == 0 {
+                    return None;
+                }
+                let first = start.max(base);
+                let last = end.min(base.checked_add(size)?);
+                (first < last).then(|| (first, last - first))
+            })
+            .collect();
+        if let Some(pending) = self.pending_entry_thumb.as_mut() {
+            pending.executable_ranges.extend(spans);
+        }
+    }
+
     /// (kuna) Commit the stashed per-pass analysis facts, gated by the per-pass
     /// `--option <id> on|off` enable flags — the deferred half of the analysis
     /// boundary (conflict #4). Called from `IfcReadSymbols` (`read symbols`), which
@@ -3208,8 +3237,8 @@ pub fn bootstrap_from_te_bytes(
             .collect()
     };
     let executable_ranges = code_ranges(&segments);
-    // The walk decodes bytes, so it is bounded by what the file holds; the
-    // zero-filled tail beyond would read as a run of Thumb no-ops.
+    // Start with file-backed bytes; successful overlays add their executable
+    // spans before the walk. Uninitialized tails would decode as Thumb no-ops.
     let walkable_ranges = code_ranges(&loader.file_backed_segments());
     let litpool_const =
         kuna_decomp::kuna_litpoolconst::code_const_ranges(&loader.file_backed_segments(), &[]);

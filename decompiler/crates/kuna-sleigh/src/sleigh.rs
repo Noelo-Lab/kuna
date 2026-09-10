@@ -2616,6 +2616,9 @@ impl Translate for Sleigh {
     fn allow_context_set(&self, val: bool) {
         self.cache.borrow_mut().allow_set(val);
     }
+    fn set_context_write_mask(&self, word: usize, mask: u32) -> u32 {
+        self.cache.borrow_mut().set_write_mask(word, mask)
+    }
     #[allow(clippy::mutable_key_type)]
     fn get_all_registers(&self, reglist: &mut std::collections::BTreeMap<VarnodeData, String>) {
         for (vs, name) in self.base.get_all_registers() {
