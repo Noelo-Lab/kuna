@@ -2286,12 +2286,15 @@ impl ConsoleProgram {
             // Both deferred passes off: drop the stash (no deferred build).
             self.analysis_image = None;
         }
-        // (kuna, `fdeinterior`) Reject every discovered entry that falls strictly
-        // inside a single-function `.eh_frame` FDE body. Applied HERE, on the fully
-        // merged set, so it covers the deferred Listing consumers (`aif`'s gap
-        // starts) as well as the load-time oracles (`eh_frame_full`'s landing pads,
-        // the prologue patterns). `fde_bodies` is empty unless the `fdeinterior`
-        // gate let its pass through above, so `off` is a byte-identical no-op.
+        // (kuna, `fdeinterior` / `pdatainterior`) Reject every discovered entry
+        // that falls strictly inside a single-function body the image itself
+        // describes — an `.eh_frame` FDE on ELF, a `.pdata` `RUNTIME_FUNCTION` on
+        // PE. Applied HERE, on the fully merged set, so it covers the deferred
+        // Listing consumers (`aif`'s gap starts) as well as the load-time oracles
+        // (`eh_frame_full`'s landing pads, the prologue patterns). `fde_bodies` is
+        // empty unless a gate let one of those passes through above, so `off` is a
+        // byte-identical no-op; only one of the two can be non-empty for a given
+        // image, so the merged list stays sorted and disjoint.
         let fde_bodies = std::mem::take(&mut merged.fde_bodies);
         kuna_analysis::entry::kuna_fdeinterior::suppress_interior_entries(
             &mut merged.entries,
@@ -2349,6 +2352,7 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // strictly inside one. Default-ON; with the gate off the fact stream is
         // dropped here and the discovery set is exactly what it was before.
         "fdeinterior" => arch.analysis_fdeinterior,
+        "pdatainterior" => arch.analysis_pdatainterior,
         // (kuna) The widened Cortex-M vector-table oracle — a standalone stashed
         // pass whose handler seeds + Thumb region paint are computed at LOAD but
         // COMMITTED only when this gate is on. Default-off (output-changing: adds

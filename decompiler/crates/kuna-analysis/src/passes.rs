@@ -179,6 +179,17 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // constrains what the others emit, and the suppression is applied to the
         // fully merged entry set (the deferred Listing consumers included).
         Box::new(crate::entry::kuna_fdeinterior::FdeInteriorPass),
+        // S1 `.pdata` RUNTIME_FUNCTION-interior entry suppression
+        // (`pdatainterior`): the PE half of `fdeinterior`, reporting on the same
+        // `fde_bodies` channel. An x64 PE's exception directory records
+        // `[BeginAddress, EndAddress)` per function, which is the extent kuna's
+        // extent-free `FunctionSymbol` never carried, so an entry strictly inside
+        // one is a point inside a function rather than a function. Registered
+        // always, the COMMIT gated by `--option pdatainterior on` (default-ON;
+        // `off` restores the previous discovery set exactly). Inert on ELF, on
+        // ARM/ARM64 PE (whose 8-byte records carry no `EndAddress`) and on any
+        // image with no exception directory.
+        Box::new(crate::entry::kuna_pdatainterior::PdataInteriorPass),
         // NB: the full byte-pattern function-start pass (`funcstart_patterns`) is
         // NOT registered here. It is a DEFERRED pass, run at the commit point by
         // [`run_deferred_entry_passes`] where its (default-OFF) gate is finally in
