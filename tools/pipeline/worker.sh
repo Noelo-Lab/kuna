@@ -25,6 +25,8 @@ STATE_DIRNAME="${PIPELINE_STATE_DIRNAME:-.kuna-pipeline}"
 WORKER_BUDGET_USD="${WORKER_BUDGET_USD:-}"      # empty = no --max-budget-usd flag
 WORKER_SESSION_ID="${WORKER_SESSION_ID:-}"      # empty = let claude allocate one
 WORKER_EXTRA_PROMPT="${WORKER_EXTRA_PROMPT:-}"  # file spliced in at {{SIBLINGS}}
+WORKER_BRANCH="${WORKER_BRANCH:-}"              # empty = BRANCH_PREFIX + SLUG
+WORKER_PREPARE_ONLY="${WORKER_PREPARE_ONLY:-0}" # test seam: stop after worktree setup
 
 : "${WORKER_ID:?need WORKER_ID}"
 : "${OPP_ID:?need OPP_ID}"
@@ -47,8 +49,14 @@ export KUNA_PIPELINE_STATE_DIR="${KUNA_PIPELINE_STATE_DIR:-$REPO/$STATE_DIRNAME}
 # an APPROVED proposal's existing branch (RESUME_BRANCH) instead of branching fresh.
 IMPL_PROPOSAL="${IMPL_PROPOSAL:-0}"
 RESUME_BRANCH="${RESUME_BRANCH:-}"
-if [ "$IMPL_PROPOSAL" = 1 ] && [ -n "$RESUME_BRANCH" ]; then
+if [ "$IMPL_PROPOSAL" = 1 ] && [ -z "$RESUME_BRANCH" ]; then
+  echo "worker $WORKER_ID: IMPL_PROPOSAL=1 requires RESUME_BRANCH" >&2
+  exit 2
+fi
+if [ "$IMPL_PROPOSAL" = 1 ]; then
   BRANCH="$RESUME_BRANCH"
+elif [ -n "$WORKER_BRANCH" ]; then
+  BRANCH="$WORKER_BRANCH"
 else
   BRANCH="${BRANCH_PREFIX}${SLUG}"
 fi
@@ -62,6 +70,15 @@ LOG="$LOG_DIR/$WORKER_ID.log"
 
 log() { echo "[$(date +%H:%M:%S)] worker $WORKER_ID: $*" | tee -a "$LOG"; }
 
+git_common_dir() {
+  local root="$1" raw
+  raw="$(git -C "$root" rev-parse --git-common-dir 2>/dev/null)" || return 1
+  case "$raw" in
+    /*) (cd "$raw" 2>/dev/null && pwd -P) ;;
+    *)  (cd "$root/$raw" 2>/dev/null && pwd -P) ;;
+  esac
+}
+
 # --- 1. isolated worktree (fresh branch, or an approved proposal's branch) --
 if [ "$IMPL_PROPOSAL" = 1 ]; then
   log "resuming approved proposal on existing branch $BRANCH"
@@ -69,28 +86,35 @@ if [ "$IMPL_PROPOSAL" = 1 ]; then
     "$KUNA_PY" -m scripts.pipeline.state update --worker "$WORKER_ID" --status failed --note "resume worktree add failed"
     exit 1
   }
-elif [ -d "$WT" ] && git -C "$REPO" worktree list --porcelain 2>/dev/null \
-       | grep -qxF "branch refs/heads/$BRANCH" ; then
+elif [ -d "$WT" ] \
+     && [ "$(git -C "$WT" rev-parse --show-toplevel 2>/dev/null)" = "$WT" ] \
+     && [ "$(git_common_dir "$WT")" = "$(git_common_dir "$REPO")" ] \
+     && [ "$(git -C "$WT" symbolic-ref --quiet --short HEAD 2>/dev/null)" = "$BRANCH" ]; then
   # A killed builder leaves its worktree behind on purpose ("for inspection"), and
   # `worktree add` FAILS on an existing path -- so before this arm, the second attempt at a
   # need could not even start, let alone resume the first attempt's work. Reuse it.
   #
-  # Only this one case is handled here. A stale or wrong-branch directory is deliberately NOT
-  # cleaned up: `git worktree remove --force` is precisely the flag that deletes a worktree
-  # holding modified and untracked files, so "tidying" would destroy the work this arm exists
-  # to preserve -- strictly more destructive than main's behaviour of failing. Those cases
-  # still fall through to the add-and-fail path below, where a human or the GC decides.
+  # Only this exact path+branch case is reusable. Matching the branch anywhere in `worktree
+  # list` is insufficient: the expected path may be a different, dirty worktree.
   log "reusing the existing worktree $WT, already on $BRANCH"
+elif [ -e "$WT" ]; then
+  log "refusing to replace ambiguous existing path $WT; inspect it and choose explicit recovery"
+  "$KUNA_PY" -m scripts.pipeline.state update --worker "$WORKER_ID" --status failed --note "ambiguous worktree path exists" >>"$LOG" 2>&1
+  exit 1
+elif git -C "$REPO" show-ref --verify --quiet "refs/heads/$BRANCH"; then
+  log "refusing to reuse ambiguous existing branch $BRANCH without its exact worktree; set IMPL_PROPOSAL=1 and RESUME_BRANCH to resume it, or WORKER_BRANCH to create a fresh branch"
+  "$KUNA_PY" -m scripts.pipeline.state update --worker "$WORKER_ID" --status failed --note "ambiguous branch exists without worktree" >>"$LOG" 2>&1
+  exit 1
 else
   log "creating worktree $WT on $BRANCH (base $BASE_BRANCH)"
   git -C "$REPO" worktree add -b "$BRANCH" "$WT" "$BASE_BRANCH" >>"$LOG" 2>&1 || {
-    log "worktree add failed (branch may exist); trying detached reuse"
-    git -C "$REPO" worktree add "$WT" "$BASE_BRANCH" >>"$LOG" 2>&1 || {
-      "$KUNA_PY" -m scripts.pipeline.state update --worker "$WORKER_ID" --status failed --note "worktree add failed"
-      exit 1
-    }
+    log "worktree add failed; preserving every existing path and ref"
+    "$KUNA_PY" -m scripts.pipeline.state update --worker "$WORKER_ID" --status failed --note "worktree add failed" >>"$LOG" 2>&1
+    exit 1
   }
 fi
+
+[ "$WORKER_PREPARE_ONLY" = 1 ] && { log "prepare-only: worktree ready"; exit 0; }
 
 # --pid $$ is THIS driver's pid, which lives as long as the worker does. Without it the
 # inventory records the ephemeral `state register` process and reap() cannot tell a live

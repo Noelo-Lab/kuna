@@ -337,7 +337,18 @@ come from a slot.
 - **IDA `.i64`** files land in the arena, because `bin/ida-decompile` points declib's
   `DECLIB_SERVER_REGISTRY` and `--project-dir` there and IDA only ever sees the arena copy.
 - **Crash recovery.** State is the file, not the process. `captain.py --recover` reaps dead
-  pids (freeing their slots, claims and leases) and resumes at the *recorded* state.
+  pids (freeing their slots, claims and leases) and resumes at the *recorded* state. It does
+  not leave `HALTED`: after correcting a halt, an operator uses `captain.py --resume-halted`.
+  That command reaps again, requires empty tester/builder pools, refuses `STOP` or `ABORT`,
+  reruns preflight, consumes the old `HALT_REASON`, and then records the operator restart. A
+  reason written by a later halt is therefore never removed after `RUNNING` is published.
+- **Builder branches fail closed.** `tools/pipeline/worker.sh` accepts `WORKER_BRANCH` as an
+  explicit fresh-branch seam. Normal RE builders use the stable round-specific name
+  `feat/re-<need>-r<round>`, avoiding old canonical refs from earlier rounds. Only an exact
+  worktree-path/branch match is reused. An existing wrong path or branch without that exact
+  worktree is preserved and refused; resuming it requires `IMPL_PROPOSAL=1` plus
+  `RESUME_BRANCH`. The launcher never deletes, resets, renames, stashes, or falls back to a
+  detached/base-branch checkout when setup is ambiguous.
 - **The genuinely unsafe part, stated plainly.** Builders run
   `claude -p --dangerously-skip-permissions` with the network on, inside a worktree, confined
   only by convention and post-hoc checks. There is no sandbox around a builder, and that is

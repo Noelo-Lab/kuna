@@ -221,6 +221,10 @@ def spawn_tester(round_n, hexid):
     return str(log)
 
 
+def _builder_branch(round_n, need_id):
+    return "feat/re-%s-r%s" % (need_id, round_n)
+
+
 def spawn_builder(round_n, need, resources):
     """Reuse tools/pipeline/worker.sh through its seams rather than forking it.
 
@@ -248,6 +252,7 @@ def spawn_builder(round_n, need, resources):
         SLUG=need.need_id, ARCH="",
         WORKER_PROMPT=str(config.repo_root() / "tools" / "repipe" / "builder_prompt.md"),
         WORKER_BRANCH_PREFIX="feat/re-",
+        WORKER_BRANCH=_builder_branch(round_n, need.need_id),
         WORKER_EXTRA_PROMPT=str(contracts),
         WORKER_BUDGET_USD=str(config.BUILDER_USD),
         WORKER_TIMEOUT=str(config.BUILDER_TIMEOUT),
@@ -360,10 +365,66 @@ def recover():
     return {"round": n, "reaped": reaped, "resumed_at": {k: doc[k] for k in MACHINES}}
 
 
+def resume_halted():
+    """Operator-only recovery from HALTED after the machine is safe again."""
+    reaped = pstate.reap(stale_seconds=0)
+    n = current_round()
+    controls = [name for name, present in (("STOP", stop_requested()), ("ABORT", abort_requested()))
+                if present]
+    if controls:
+        return {"ok": False, "round": n, "reaped": reaped,
+                "problems": ["%s control file present" % ", ".join(controls)]}
+    live = {pool: live_agents(pool) for pool in ("tester", "builder")}
+    if any(live.values()):
+        return {"ok": False, "round": n, "reaped": reaped,
+                "problems": ["live agent slots remain"], "live": live}
+    problems = preflight()
+    if problems:
+        return {"ok": False, "round": n, "reaped": reaped, "problems": problems, "live": live}
+
+    note = "operator resume after reap, empty agent slots, and preflight OK"
+    with _round_lock(n):
+        doc = load_round(n)
+        if doc["supervisor"] != "HALTED":
+            return {"ok": False, "round": n, "reaped": reaped,
+                    "problems": ["supervisor is %s, not HALTED" % doc["supervisor"]],
+                    "live": live}
+        controls = [name for name, present in (("STOP", stop_requested()),
+                                                ("ABORT", abort_requested())) if present]
+        if controls:
+            return {"ok": False, "round": n, "reaped": reaped,
+                    "problems": ["%s control file appeared during recovery"
+                                 % ", ".join(controls)], "live": live}
+        # Recheck after acquiring the state lock. A halted supervisor cannot legitimately spawn,
+        # but an operator may have touched the shared inventory while preflight was running.
+        live = {pool: live_agents(pool) for pool in ("tester", "builder")}
+        if any(live.values()):
+            return {"ok": False, "round": n, "reaped": reaped,
+                    "problems": ["live agent slots appeared during recovery"], "live": live}
+        # Consume the reason for this halt before publishing RUNNING. A later halt may write a
+        # new reason after save_round(); there must be no post-publication unlink that erases it.
+        halt_reason = config.state_dir() / "HALT_REASON"
+        try:
+            halt_reason.unlink()
+        except FileNotFoundError:
+            pass
+        doc["supervisor"] = "RUNNING"
+        doc.setdefault("notes", []).append(note)
+        rec = {"ts": time.time(), "machine": "supervisor", "from": "HALTED",
+               "to": "RUNNING", "note": note, "pid": os.getpid(), "operator_resume": True}
+        with open(_round_dir(n) / "transitions.jsonl", "a") as fh:
+            fh.write(json.dumps(rec) + "\n")
+        save_round(doc)
+
+    return {"ok": True, "round": n, "reaped": reaped,
+            "resumed_at": {k: doc[k] for k in MACHINES}, "live": live}
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="python -m scripts.repipe.captain")
     ap.add_argument("--tick", action="store_true")
     ap.add_argument("--recover", action="store_true")
+    ap.add_argument("--resume-halted", action="store_true")
     ap.add_argument("--preflight", action="store_true")
     ap.add_argument("--status", action="store_true")
     ap.add_argument("--round", type=int, default=None)
@@ -386,6 +447,11 @@ def main(argv=None):
         out = recover()
         print(json.dumps(out, indent=2, default=str))
         return 0
+
+    if args.resume_halted:
+        out = resume_halted()
+        print(json.dumps(out, indent=2, default=str))
+        return 0 if out["ok"] else 1
 
     if args.transition:
         machine, to = args.transition

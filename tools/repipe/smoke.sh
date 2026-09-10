@@ -89,6 +89,155 @@ for shape in shape-B-averted shape-C-averted shape-C2-averted; do
   echo "$MC" | grep -q "$shape" && ok "$shape" || bad "$shape not caught"
 done
 
+head_ "L0  worker worktree collisions fail closed"
+LAUNCH_REPO="$SMOKE_STATE/launcher-repo"
+git init -q -b main "$LAUNCH_REPO"
+git -C "$LAUNCH_REPO" config user.email smoke@example.invalid
+git -C "$LAUNCH_REPO" config user.name smoke
+printf 'base\n' > "$LAUNCH_REPO/tracked"
+git -C "$LAUNCH_REPO" add tracked
+git -C "$LAUNCH_REPO" commit -qm base
+run_prepare() {
+  KUNA_REPO="$LAUNCH_REPO" KUNA_PY="$PY" PIPELINE_STATE_DIRNAME=.state \
+    WORKER_PREPARE_ONLY=1 WORKER_ID="$1" OPP_ID=smoke TEST_NAME=smoke \
+    SELECTOR=- BINARY=- SLUG=collision ARCH= WORKER_BRANCH="$2" \
+    IMPL_PROPOSAL="${3:-0}" RESUME_BRANCH="${4:-}" \
+    bash "$REPO/tools/pipeline/worker.sh" >/dev/null 2>&1
+}
+if run_prepare fresh feat/re-collision-r7 \
+   && [ "$(git -C "$LAUNCH_REPO/.state/worktrees/fresh" branch --show-current)" = feat/re-collision-r7 ]; then
+  ok "explicit WORKER_BRANCH creates an attached fresh worktree"
+else
+  bad "explicit WORKER_BRANCH did not create the requested branch"
+fi
+run_prepare fresh feat/re-collision-r7 \
+  && ok "an exact path+branch worktree is reusable" \
+  || bad "exact path+branch reuse was refused"
+
+git -C "$LAUNCH_REPO" branch feat/re-stale main
+STALE_BEFORE="$(git -C "$LAUNCH_REPO" rev-parse feat/re-stale)"
+if run_prepare stale feat/re-stale; then
+  bad "a stale branch without its worktree was reused"
+elif [ ! -e "$LAUNCH_REPO/.state/worktrees/stale" ] \
+     && [ "$(git -C "$LAUNCH_REPO" rev-parse feat/re-stale)" = "$STALE_BEFORE" ] \
+     && [ "$(git -C "$LAUNCH_REPO" branch --show-current)" = main ]; then
+  ok "a stale branch is refused without moving its ref or root checkout"
+else
+  bad "stale-branch refusal mutated a path, ref, or root checkout"
+fi
+
+git -C "$LAUNCH_REPO" worktree add -q -b feat/re-wrong "$LAUNCH_REPO/.state/worktrees/wrong" main
+printf 'keep\n' > "$LAUNCH_REPO/.state/worktrees/wrong/untracked"
+if run_prepare wrong feat/re-wanted; then
+  bad "an existing wrong-branch path was replaced"
+elif [ -f "$LAUNCH_REPO/.state/worktrees/wrong/untracked" ] \
+     && [ "$(git -C "$LAUNCH_REPO/.state/worktrees/wrong" branch --show-current)" = feat/re-wrong ] \
+     && ! git -C "$LAUNCH_REPO" show-ref --verify --quiet refs/heads/feat/re-wanted; then
+  ok "a wrong-branch dirty path and its untracked file are preserved"
+else
+  bad "wrong-path refusal damaged the existing worktree"
+fi
+
+FOREIGN="$LAUNCH_REPO/.state/worktrees/foreign"
+git init -q -b feat/re-foreign "$FOREIGN"
+git -C "$FOREIGN" config user.email smoke@example.invalid
+git -C "$FOREIGN" config user.name smoke
+printf 'foreign\n' > "$FOREIGN/keep"
+git -C "$FOREIGN" add keep
+git -C "$FOREIGN" commit -qm foreign
+if run_prepare foreign feat/re-foreign; then
+  bad "an independent repository with the requested branch was reused"
+elif [ "$(git -C "$FOREIGN" rev-parse --show-toplevel)" = "$FOREIGN" ] \
+     && [ "$(git -C "$FOREIGN" branch --show-current)" = feat/re-foreign ] \
+     && [ "$(cat "$FOREIGN/keep")" = foreign ]; then
+  ok "same-named branch in an independent repository is preserved and refused"
+else
+  bad "foreign repository refusal damaged the independent repository"
+fi
+
+git -C "$LAUNCH_REPO" branch feat/re-resume main
+if run_prepare missing-resume feat/re-must-not-exist 1; then
+  bad "proposal mode accepted an empty RESUME_BRANCH"
+elif [ ! -e "$LAUNCH_REPO/.state/worktrees/missing-resume" ] \
+     && ! git -C "$LAUNCH_REPO" show-ref --verify --quiet refs/heads/feat/re-must-not-exist; then
+  ok "proposal mode without RESUME_BRANCH fails before creating a ref or worktree"
+else
+  bad "empty proposal resume created or attached Git state"
+fi
+if run_prepare resume ignored 1 feat/re-resume \
+   && [ "$(git -C "$LAUNCH_REPO/.state/worktrees/resume" branch --show-current)" = feat/re-resume ]; then
+  ok "IMPL_PROPOSAL and RESUME_BRANCH still attach the approved branch"
+else
+  bad "explicit proposal resume no longer works"
+fi
+
+CAP_BRANCH="$($PY -c 'from scripts.repipe.captain import _builder_branch; print(_builder_branch(12, "need-name"))')"
+[ "$CAP_BRANCH" = feat/re-need-name-r12 ] \
+  && ok "RE captain assigns a stable round-specific fresh branch" \
+  || bad "RE captain branch is not stable and round-specific" "$CAP_BRANCH"
+
+KUNA_PIPELINE_STATE_DIR="$SMOKE_STATE/resume-test" "$PY" - <<'PY' >/dev/null 2>&1 \
+  && ok "operator resume is guarded and clears HALT_REASON only on success" \
+  || bad "operator HALTED recovery guard failed"
+from scripts.repipe import captain, config
+
+doc = captain.load_round(9)
+doc["supervisor"] = "HALTED"
+captain.save_round(doc)
+reason = config.state_dir() / "HALT_REASON"
+reason.write_text("smoke halt\n")
+captain.current_round = lambda: 9
+captain.pstate.reap = lambda stale_seconds=0: []
+captain.preflight = lambda: []
+captain.live_agents = lambda pool: []
+out = captain.resume_halted()
+assert out["ok"], out
+assert captain.load_round(9)["supervisor"] == "RUNNING"
+assert captain.load_round(9)["notes"][-1].startswith("operator resume after reap"), captain.load_round(9)
+assert not reason.exists()
+rec = list((config.rounds_dir() / "9" / "transitions.jsonl").read_text().splitlines())[-1]
+assert '"from": "HALTED"' in rec and '"operator_resume": true' in rec, rec
+
+doc = captain.load_round(9)
+doc["supervisor"] = "HALTED"
+captain.save_round(doc)
+reason.write_text("keep me\n")
+captain.live_agents = lambda pool: ["busy"] if pool == "builder" else []
+out = captain.resume_halted()
+assert not out["ok"], out
+assert captain.load_round(9)["supervisor"] == "HALTED"
+assert reason.read_text() == "keep me\n"
+
+captain.live_agents = lambda pool: []
+(config.state_dir() / "STOP").write_text("")
+out = captain.resume_halted()
+assert not out["ok"] and "STOP" in out["problems"][0], out
+assert captain.load_round(9)["supervisor"] == "HALTED"
+assert reason.read_text() == "keep me\n"
+(config.state_dir() / "STOP").unlink()
+
+def controls_during_preflight():
+    (config.state_dir() / "ABORT").write_text("")
+    return []
+captain.preflight = controls_during_preflight
+out = captain.resume_halted()
+assert not out["ok"] and "ABORT" in out["problems"][0], out
+assert captain.load_round(9)["supervisor"] == "HALTED"
+assert reason.read_text() == "keep me\n"
+(config.state_dir() / "ABORT").unlink()
+
+captain.preflight = lambda: []
+real_save = captain.save_round
+def later_halt(doc):
+    real_save(doc)
+    reason.write_text("later halt\n")
+captain.save_round = later_halt
+out = captain.resume_halted()
+assert out["ok"], out
+assert captain.load_round(9)["supervisor"] == "RUNNING"
+assert reason.read_text() == "later halt\n"
+PY
+
 [ "$LEVEL" = "0" ] && { printf '\nL0 only: %d passed, %d failed\n' "$PASS" "$FAIL"; exit $((FAIL>0)); }
 
 # ---------------------------------------------------------------- level 1 ---
