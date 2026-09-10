@@ -24,6 +24,12 @@ described in chapter 01, §1.3.
 
 ## 0.1 The two tiers
 
+SLA initialization uses the packed decoder in
+`decompiler/crates/kuna-base/src/marshal.rs (PackedDecode)`. Its hot byte cursor
+is inlined into the attribute readers so startup does not pay a function call
+per encoded byte. Chunk transitions, end-of-stream errors, NUL termination,
+and the packed format remain unchanged; this requires no cached program state.
+
 kuna is two engines with one boundary. The **program-preparation tier**
 (`kuna-analysis`, chapter 01) looks at the whole binary once — loader parse, symbol
 and relocation markup, strings, DWARF, entry discovery, the Listing, the no-return

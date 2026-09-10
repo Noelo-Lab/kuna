@@ -1474,6 +1474,7 @@ impl<'a> PackedDecode<'a> {
 
     /// Get the byte at the current position and advance to the next byte.
     /// An error is returned if there are no additional bytes in the stream.
+    #[inline(always)]
     fn get_next_byte(in_stream: &[Vec<u8>], pos: &mut Position) -> KunaResult<u8> {
         let res = in_stream[pos.seq][pos.current];
         pos.current += 1;
@@ -2434,6 +2435,39 @@ mod tests {
         let nextel = dec.peek_element().unwrap();
         assert_eq!(nextel, 0);
         dec.close_element(el).unwrap();
+    }
+
+    #[test]
+    fn test_marshal_packed_integer_at_every_chunk_edge() {
+        let manager = test_manager();
+        for length in 1008..1032 {
+            let mut buf = Vec::new();
+            let mut enc = PackedEncode::new(&mut buf);
+            enc.open_element(&ELEM_DATA);
+            enc.write_string(&ATTRIB_NAME, &vec![b'x'; length]);
+            enc.write_unsigned_integer(&ATTRIB_OFFSET, u64::MAX);
+            enc.write_signed_integer(&ATTRIB_ID, i64::MIN);
+            enc.close_element(&ELEM_DATA);
+            let mut dec = PackedDecode::new(&manager);
+            dec.ingest_stream(&buf).unwrap();
+            let el = dec.open_element_id(&ELEM_DATA).unwrap();
+            assert_eq!(dec.read_unsigned_integer_id(&ATTRIB_OFFSET).unwrap(), u64::MAX);
+            assert_eq!(dec.read_signed_integer_id(&ATTRIB_ID).unwrap(), i64::MIN);
+            dec.close_element(el).unwrap();
+            assert_eq!(dec.peek_element().unwrap(), 0);
+        }
+    }
+
+    #[test]
+    fn test_marshal_packed_byte_cursor_bounds() {
+        let chunks = vec![vec![0x81, 0x82], vec![0x83]];
+        let mut pos = Position { seq: 0, current: 0, end: 2 };
+        assert_eq!(PackedDecode::get_next_byte(&chunks, &mut pos).unwrap(), 0x81);
+        assert_eq!((pos.seq, pos.current, pos.end), (0, 1, 2));
+        assert_eq!(PackedDecode::get_next_byte(&chunks, &mut pos).unwrap(), 0x82);
+        assert_eq!((pos.seq, pos.current, pos.end), (1, 0, 1));
+        let err = PackedDecode::get_next_byte(&chunks, &mut pos).unwrap_err();
+        assert_eq!(err.to_string(), "Unexpected end of stream");
     }
 
     #[test]
