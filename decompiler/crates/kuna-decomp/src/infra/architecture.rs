@@ -421,6 +421,12 @@ pub struct Architecture {
     /// stream, instead of decoding a fall-through at the return address
     /// (`option calltrampoline`).  See [`crate::p2_lift::kuna_calltrampoline`].
     pub call_trampoline: bool,
+
+    /// (kuna `callpopret`) Flow a direct `call` through a callee that pops the
+    /// pushed return address off the stack and `ret`s through the word above it,
+    /// instead of decoding a fall-through at a return address control never
+    /// reaches (`option callpopret`).  See [`crate::p2_lift::kuna_callpopret`].
+    pub call_pop_ret: bool,
     /// (kuna `cleanupcode`) Delete the Rust drop/deallocate call sites (the
     /// `core::ptr::drop_in_place` / `Drop::drop` / `RawVecInner::deallocate` /
     /// `__rust_dealloc` family) from the pre-SSA op graph, so the drop glue and
@@ -2007,6 +2013,7 @@ impl Architecture {
             tail_call_frame: false, // (kuna) option tailcallframe; reset_defaults sets the shipped default
             tail_call_saved: false, // (kuna) option tailcallsaved; reset_defaults sets the shipped default
             call_trampoline: false, // (kuna) option calltrampoline; reset_defaults sets the shipped default
+            call_pop_ret: false, // (kuna) option callpopret; reset_defaults sets the shipped default
             funcbound_flow: false, // (kuna) option funcboundflow; reset_defaults sets the shipped default
             overlap_branch: false, // (kuna) option overlapbranch; reset_defaults sets the shipped default
             remove_cleanup_code: false, // (kuna) option cleanupcode; reset_defaults sets the shipped default
@@ -2257,6 +2264,7 @@ impl Architecture {
         self.tail_call_frame = true; // (kuna) DIV-109 default-on: REMOVES CODE. A direct jmp preceded by a teardown of exactly the entry block's frame is a tail call even when the callee was never discovered. Byte-identical (0/675) on the datatest corpus; restore the flow-into-the-callee decode with `option tailcallframe off`
         self.tail_call_saved = true; // (kuna) DIV-157 default-on: a run that raises the stack pointer without loading a single byte back through it is cdecl argument cleanup, not a frame teardown, so `push ebx; push esi; ...; call f; add esp,8; jmp L` no longer truncates the function at an internal join. Narrows `tailcallframe` only; 0/675 byte-identical on the datatest corpus. Restore the delta-only test with `option tailcallsaved off`
         self.call_trampoline = true; // (kuna) DIV-144 default-on: RESTORES CODE. Flows a `call` whose callee discards the pushed return address and jumps back into the stream (the Beria-family protector fragment) through as a branch, instead of decoding a fall-through at a return address control never reaches -- which on the witness lifts a junk byte into a store to a global that does not exist and puts the rest of the body one byte out of phase. Requires the callee's raw p-code to pass through `entrySP + ptrsize` and end in a direct branch to an address the symbol table does NOT know as a function entry, so an ordinary tail-call thunk (`add esp,4; jmp printf`) never matches; byte-identical (0/675) on the datatest corpus. Restore the fall-through decode with `option calltrampoline off`
+        self.call_pop_ret = true; // (kuna) DIV-163 default-on: RESTORES CODE. Flows a `call` whose callee pops the pushed return address and `ret`s through the word above it -- the call-over-inline-data idiom -- through as a branch, instead of decoding a fall-through at a return address control never reaches. On the witness (a packed PE) the bytes after the call are an embedded "kernel32.dll\0GetProcAddress\0..." table, and the fall-through lifts them as port-input operations and stores through never-set registers; flowed through, the caller prints as the one-line `return s_4f703c;` it is. The callee's raw p-code must pass through `entrySP + ptrsize` AND end in a `RETURN` through the untouched word at `entrySP + ptrsize`, so `mov ebx,[esp]; ret` (the `__x86.get_pc_thunk` family, which does return to the call site) never matches; byte-identical (0/675) on the datatest corpus. Restore the fall-through decode with `option callpopret off`
         self.funcbound_flow = true; // (kuna) DIV-67 default-on: REMOVES CODE. Truncates a fall-through that reaches another known function's entry (a function ending in an unnamed static no-return `exit`/`abort`/`die()` wrapper) instead of decoding the next function's body into it. Byte-identical (0/675) on the datatest corpus; restore upstream flow-into-callee with `option funcboundflow off`
         self.overlap_branch = true; // (kuna) DIV-106 default-on: REMOVES CODE. Ends a conditional branch's fall-through in a halt when the branch's own target lies strictly inside that fall-through instruction's encoding (the anti-disassembly junk-lead-byte overlap), instead of letting the bogus decode swallow the target and desynchronise the stream. Two real instruction starts cannot sit at `next` and strictly inside `next`, so the trigger never matches well-formed code and is byte-identical (0/675) on the datatest corpus; restore the fall-through-wins decode with `option overlapbranch off`
         self.remove_cleanup_code = true; // (kuna) DIV-81 default-on: REMOVES CODE. Deletes the Rust drop/deallocate call sites (`core::ptr::drop_in_place`, `Drop::drop`, `alloc::raw_vec::RawVecInner::deallocate`, `__rust_dealloc`) and the argument setup that only feeds them. Structurally inert outside a Rust binary (no C ELF resolves a call to one of those names), so byte-identical (0/675) on the datatest corpus; keep the drop glue with `option cleanupcode off`
@@ -2575,6 +2583,7 @@ impl Architecture {
                 on_off!(tail_call_saved, "Saved-register restore test for a frame teardown")
             }
             "calltrampoline" => on_off!(call_trampoline, "Return-address-discarding call trampoline flow-through"),
+            "callpopret" => on_off!(call_pop_ret, "Return-address-popping call transfer flow-through"),
             "funcboundflow" => on_off!(funcbound_flow, "Fall-through bound at function entries"),
             "overlapbranch" => on_off!(overlap_branch, "Overlapping-branch fall-through truncation"),
             "cleanupcode" => on_off!(remove_cleanup_code, "Rust drop/deallocate call removal"),

@@ -550,6 +550,40 @@ fragment that re-enters mid-stream satisfies that by construction; a thunk to a
 discovered callee does not, and stays a `CALL` for `tailcalljump` to claim at its
 own `jmp`.
 
+**(kuna) Return-address-popping call transfers — `option callpopret`, default
+on (DIV-163),
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_callpopret.rs
+(kuna_call_pops_return_address)`.** A second flavour of the same family ends in
+`ret` instead of `jmp`: `call` jumps over inline data, the callee pops the
+pushed return address into a result register, adjusts that pointer, then `ret`s
+through the word above it. The callee therefore returns to its caller's caller;
+the call site never regains control, and its fall-through bytes are data. The
+round-12 witness is `call 0x4f708d; nop; "kernel32.dll\\0..."`, with
+`pop eax; inc eax; ret` at the target. Following the ordinary CALL fall-through
+decodes the DLL names as port-input operations and arbitrary stores; treating
+the call as a transfer lets normal dataflow emit `return s_4f703c;`.
+
+The bounded out-of-band decode shares `calltrampoline`'s six-instruction and
+64-op limits, but proves a different terminator. It symbolically tracks the
+stack pointer and values loaded through it. A match requires the stack pointer
+to pass through exactly `entrySP + pointer-size`, then a `CPUI_RETURN` through
+the untouched pointer-sized word loaded from that address. Any call, branch,
+CALLOTHER, store, unaccountable stack-pointer write, or a return through another
+slot declines. Thus `mov ebx,[esp]; ret` (`__x86.get_pc_thunk`) stays an ordinary
+call because the stack pointer never discards the call site's return address;
+the `add esp,4; ...; jmp` flavour remains owned by `calltrampoline`; and a callee
+that pops two words is declined because it consumes the caller's frame beyond
+this rule's claim. Link-register architectures decline because their call does
+not put a return address on the stack.
+
+On a match the same `FlowInfo::xref_control_flow` seam rewrites CALL to BRANCH
+and queues the callee entry. The push, pop and final return then belong to one
+flow graph, preserving the pointer result while excluding the unreachable
+inline bytes. A `callpopret` warning at the call site makes the rewrite
+attributable. Section executability is deliberately irrelevant: the witness's
+whole packer stub, both code and inline data, occupies a section without the
+executable flag.
+
 **(kuna) `__fastfail` is a no-return — `option fastfailnoreturn`, default on
 (DIV-120), `decompiler/crates/kuna-decomp/src/p2_lift/kuna_fastfailnoreturn.rs
 (is_fastfail_callind)`.** x86 SLEIGH lifts `INT imm8` to `intloc = swi(imm8);

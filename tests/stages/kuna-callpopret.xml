@@ -1,0 +1,54 @@
+<decompilertest>
+<!--
+    callpopret: flow a `call` through a callee that pops the pushed return
+    address off the stack and `ret`s through the word above it.
+
+    CALL is a fall-through op, so kuna decodes the return address as the next
+    instruction.  The oldest position-independent idiom on x86 breaks that by
+    calling over its own inline data: the callee pops the pushed return address,
+    steps past a pad byte and `ret`s, so control returns to the CALLER'S caller
+    with a pointer to the data in a register.  The return address is never
+    reached and the bytes after the call are not instructions.
+    Stage model: S2 flow classification (`xref_control_flow`, the CPUI_CALL arm).
+
+    Layout (linked flat, x86-32):
+      caller @ 0x100000 : call 0x100010      ; return address is 0x100005
+                 0x100005 : 90               ; pad - control never arrives here
+                 0x100006 : 6c 6c c3         ; DATA - the pointer the helper returns
+      getptr @ 0x100010 : pop eax            ; EAX = 0x100005
+                 0x100011 : inc eax          ; step past the pad -> 0x100006
+                 0x100012 : ret              ; return to caller's OWN caller
+
+    Decoded as a fall-through the data lifts as instructions: `6c` is INSB, so
+    the body fills with port reads the program never performs, and the pointer
+    the helper exists to hand back appears nowhere.
+
+    Pass 1 (callpopret off, the bug): the fall-through at 0x100005 is decoded and
+    the port reads appear.
+    Pass 2 (default, callpopret on): the call is followed as a branch, the pop
+    and the `ret` join the caller, and the body is `return 0x100006`.
+
+    Assert #1 pins the recovered pointer to EXACTLY ONE occurrence across both
+    print C passes: present in the default pass, absent in the callpopret-off
+    one.  Assert #2 pins the two port reads the other way round (both bytes of
+    the data decode as INSB), so the fix has to RESTORE the pointer and not
+    merely stop emitting junk.
+-->
+<binaryimage arch="x86:LE:32:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">e80b000000906c6cc3</bytechunk>
+<bytechunk space="ram" offset="0x100010" readonly="true">5840c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="caller"/>
+</binaryimage>
+<script>
+  <com>option callpopret off</com>
+  <com>lo fu caller</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option callpopret on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="CALLPOPRET #1: the default pass follows the call as a branch and recovers the pointer to the inline data" min="1" max="1">return 0x100006;</stringmatch>
+<stringmatch name="CALLPOPRET #2: the two port reads decoded at the unreachable return address appear only in the callpopret-off pass" min="2" max="2">in\(</stringmatch>
+</decompilertest>

@@ -49,6 +49,10 @@ Three tiers:
 | the callee of a call starts with lea esp,[esp+4] / add esp,4 / pop reg and ends in a jmp back into the caller | [`calltrampoline`](#calltrampoline) |
 | the body after a call is decoded one byte out of phase with the disassembly | [`calltrampoline`](#calltrampoline) |
 | a protected PE emits garbage arithmetic on undefined registers after each call fragment | [`calltrampoline`](#calltrampoline) |
+| port-input operations (`in(...)`) appear in a function that does no I/O | [`callpopret`](#callpopret) |
+| the body after a call is ASCII decoded as instructions | [`callpopret`](#callpopret) |
+| a one-line pointer helper decompiles to dozens of statements over undefined registers | [`callpopret`](#callpopret) |
+| the callee of a call is `pop reg; ret` or `add esp,4; ret` and the bytes after the call are a string table | [`callpopret`](#callpopret) |
 | a function's tail is really the body of the NEXT function | [`funcboundflow`](#funcboundflow) |
 | dead/garbage code after a call to a die()/fatal()/throw wrapper that never returns | [`funcboundflow`](#funcboundflow) |
 | two adjacent functions merged into one, the second also decompiled on its own | [`funcboundflow`](#funcboundflow) |
@@ -793,6 +797,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** The emitted C assigns a global whose name is nonsense (`dat_8364c783 = f();`) right after a call, and the disassembly shows the callee starts by discarding the return address (`lea esp,[esp+4]` / `add esp,4` / `pop reg`) and ends in a `jmp` back into the caller -- so the store was lifted from a byte control never reaches. Typical of the Beria/PE protector family, where one table of such fragments is called from every protected function. On by default; flip OFF to restore the fall-through decode at the return address.
 - **Where / provenance:** P2/flow-classification · kuna · correctness-fix · beria-call-fragments-produce
 - **Example:** `option calltrampoline off`
+
+### `callpopret` -- on | off, default `on`
+
+- **Symptoms:** port-input operations (`in(...)`) appear in a function that does no I/O; the body after a call is ASCII decoded as instructions; a one-line pointer helper decompiles to dozens of statements over undefined registers; the callee of a call is `pop reg; ret` or `add esp,4; ret` and the bytes after the call are a string table.
+- **What it does:** RESTORES CODE: flow a direct `call` through a callee that pops the pushed return address off the stack and `ret`s through the word above it, instead of decoding a fall-through at the return address. This is the oldest position-independent idiom on x86 -- `call` over your own inline data, `pop` the address of it, `ret` to the grandparent -- and `CALL` being a fall-through op, kuna decodes the data as instructions. On the round-12 witness (a packed PE) the data is an embedded NUL-separated `kernel32.dll` / `GetProcAddress` / ... name table and it lifts as port-input operations and stores through registers that were never set, while the pointer the helper exists to hand back appears nowhere. Section flags are not the discriminator: the whole packer stub sits in one non-executable-flagged section, so a rule keyed on executability would refuse the `call` as readily as the string. This decodes the callee's raw p-code out of band and fires only when the stack pointer passes through exactly `entrySP + <pointer size>` -- the instant the pushed return address stops existing -- AND the run ends in a `RETURN` through the untouched word at `entrySP + <pointer size>`, with no call, branch or store in between and no unaccountable stack-pointer write. That second clause is what keeps the `__x86.get_pc_thunk` family (`mov ebx,[esp]; ret`, which reads the return address without consuming it and DOES come back to the call site) an ordinary `CALL`. On a match the `call` is rewritten to a branch and the callee's bytes are followed into the caller, so the push, the pop and the `ret` are all one function and the popped constant is recovered by ordinary dataflow. Logs a `callpopret:` WARNING at the call site. The `jmp` flavour of the same idiom belongs to `calltrampoline`.
+- **When to flip:** A function decompiled by address emits port-input operations (`in(...)`), stores through registers that were never assigned, or arithmetic on undefined locals, and the disassembly shows the body is a single `call` followed by ASCII -- library names, a format string, a key table. Check the callee: `pop reg; ret` or `add esp,4; ret` means it never returns to the call site, and everything after the call is data. On by default; flip OFF to restore the fall-through decode at the return address.
+- **Where / provenance:** P2/flow-classification · kuna · correctness-fix · call-pop-pointer-helper
+- **Example:** `option callpopret off`
 
 ### `funcboundflow` -- on | off, default `on`
 

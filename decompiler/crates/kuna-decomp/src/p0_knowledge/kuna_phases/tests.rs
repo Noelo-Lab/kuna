@@ -27,7 +27,7 @@ fn subphase_count_is_45() {
 }
 
 #[test]
-fn surface_count_is_115() {
+fn surface_count_is_116() {
     // +1 for the `option switchguardbound` surface row (angr missing-function-call),
     // +1 for the `option switchsharedcase` surface row (angr shared-case-node b2sum),
     // +1 for the `option switchmultipred` surface row (angr abnormal-switch-case-case3),
@@ -66,12 +66,14 @@ fn surface_count_is_115() {
     // returned register half, DIV-156).
     // +1 for the `option tailcallsaved` surface row (kuna P2 flow-classification:
     // a teardown has to give back what the entry block saved, DIV-157).
-    assert_eq!(kuna_num_surfaces(), 115);
-    assert_eq!(SURFACE_TABLE.len(), 115);
+    // +1 for the `option callpopret` surface row (kuna P2 flow-classification:
+    // a call-over-data helper that returns through its caller's caller, DIV-163).
+    assert_eq!(kuna_num_surfaces(), 116);
+    assert_eq!(SURFACE_TABLE.len(), 116);
 }
 
 #[test]
-fn settable_count_is_189() {
+fn settable_count_is_190() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -130,12 +132,12 @@ fn settable_count_is_189() {
     // +1 for `entrythumbflow` (P1 entry-reachable Thumb context walk, DIV-154).
     // +1 for `pdatainterior` (P1 `.pdata` RUNTIME_FUNCTION-interior entry suppression).
     // +1 for `callretpair` (P4 two-register CALL output completion, DIV-162).
-    assert_eq!(kuna_num_settables(), 189);
-    assert_eq!(SETTABLE_TABLE.len(), 189);
+    assert_eq!(kuna_num_settables(), 190);
+    assert_eq!(SETTABLE_TABLE.len(), 190);
 }
 
 #[test]
-fn tier_counts_are_61_core_69_transform_59_analysis() {
+fn tier_counts_are_61_core_70_transform_59_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -239,7 +241,7 @@ fn tier_counts_are_61_core_69_transform_59_analysis() {
     // RUNTIME_FUNCTION-interior entry suppression).
     // core 60 -> 61: +1 for `callretpair` (P4 two-register CALL output
     // completion, DIV-162).
-    assert_eq!((core, transform, analysis), (61, 69, 59));
+    assert_eq!((core, transform, analysis), (61, 70, 59));
 }
 
 #[test]
@@ -429,7 +431,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_72_suppressed_for_102() {
+fn option_values_live_value_present_for_73() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -771,7 +773,8 @@ fn option_values_live_value_present_for_72_suppressed_for_102() {
     // 70 -> 71: +1 for `exclusivearguse` (live_field = exclusive_arg_use,
     // DIV-161).
     // 71 -> 72: +1 for `callretpair` (live_field = call_ret_pair, DIV-162).
-    assert_eq!(with_live, 72);
+    // 72 -> 73: +1 for `callpopret` (live_field = call_pop_ret, DIV-163).
+    assert_eq!(with_live, 73);
 }
 
 #[test]
@@ -909,7 +912,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // beside `securitycheck`, so the tail does not move.
     // 180 -> 181: +1 for `entrythumbflow` (DIV-154); its P1 row sits mid-table
     // beside `tailcallentry`, so the tail does not move.
-    assert_eq!(json.matches("},\n").count(), 188);
+    assert_eq!(json.matches("},\n").count(), 189);
 }
 
 #[test]
