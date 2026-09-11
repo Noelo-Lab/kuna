@@ -536,6 +536,10 @@ Three tiers:
 | a two-register struct return comes back as one register when the second half is just an argument | [`retinputhalf`](#retinputhalf) |
 | two near-identical functions recover different arities, one dropping an argument | [`retinputhalf`](#retinputhalf) |
 | the returned pair survives when the half is arithmetic but not when it is a plain copy of a parameter | [`retinputhalf`](#retinputhalf) |
+| a function grows one more argument than the disassembly passes, used only as the high half of the return | [`retpushedhalf`](#retpushedhalf) |
+| an alignment push/pop around the body turns a pointer return into undefined16 | [`retpushedhalf`](#retpushedhalf) |
+| the recovered signature ends in an extra argument whose only appearance is `v._8_8_ = aN;` | [`retpushedhalf`](#retpushedhalf) |
+| a prologue PUSH of an argument register and an epilogue POP into a different register invent a 128-bit return | [`retpushedhalf`](#retpushedhalf) |
 | a Rust Result or Option producer recovers as bool and the payload register is missing from the return | [`rustabi`](#rustabi) |
 | a local commented with a register name is declared and read but never assigned anywhere in the function | [`rustabi`](#rustabi) |
 | a call to a Rust function that returns Result renders with no output at all | [`rustabi`](#rustabi) |
@@ -1902,6 +1906,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default: a value the function was handed and deliberately moved into the return register is a real return, and dropping it also deletes the parameter it came from, so the recovered signature loses an argument the disassembly plainly passes. Byte-identical (0/675) on the datatest corpus; 1 of 7307 functions changes across grep/sort/faillog/libselinux/betaflight and 31 of 1577 on a static-PIE Rust binary, every one recovering a return half or a parameter. Set off to restore the strict `unwritten means leftover` terminal rule.
 - **Where / provenance:** P4/output-prototype · kuna · correctness-fix · kuna-returned-input-half
 - **Example:** `option retinputhalf off`
+
+### `retpushedhalf` -- on | off, default `on`
+
+- **Symptoms:** a function grows one more argument than the disassembly passes, used only as the high half of the return; an alignment push/pop around the body turns a pointer return into undefined16; the recovered signature ends in an extra argument whose only appearance is `v._8_8_ = aN;`; a prologue PUSH of an argument register and an epilogue POP into a different register invent a 128-bit return.
+- **What it does:** Reject a register the function only ever PUSHED as the source of a returned register half. `retinputhalf` keeps a returned half whose value traces back to an input parameter at a DIFFERENT address than the half, on the reading that the function executed an instruction to put it there. An alignment `push %r8` in the prologue paired with a `pop %rdx` in the epilogue satisfies that reading by accident: RDX at the RETURN traces to R8 at entry, so R8 becomes a parameter, and R8 being a parameter is the only evidence that the half is a returned argument. A four-argument decryptor returning `void *` came out `undefined16 sub_10e27(long,int,long,int,unsigned long)` with `v1._8_8_ = a4`. By the time the repair runs, copy propagation has collapsed the store and the load and `RDX = COPY(R8)` is indistinguishable from a deliberate `mov %r8,%rdx`, so the evidence is gathered during the flow build instead: a register some stack-adjusting instruction stores to memory and no instruction in the function ever writes is push-only, and a push-only register is not a placement source.
+- **When to flip:** On by default: it only ever narrows `retinputhalf`, and only for a register the function pushes and never writes -- the ordinary callee-saved save/restore writes the register in the pop, so it does not qualify. Byte-identical (0/675) on the datatest corpus. Set off to restore the address-only placement test, which is what you want if a function really does hand back an argument it preserved on the stack and popped into another register.
+- **Where / provenance:** P4/output-prototype · kuna · correctness-fix · kuna-alignment-push-pop
+- **Example:** `option retpushedhalf off`
 
 ### `rustabi` -- off | auto | always, default `off`
 

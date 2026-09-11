@@ -1,0 +1,67 @@
+{
+  "need_id": "alignment-push-pop-invents",
+  "slug": "retpushedhalf",
+  "track": "quality",
+  "scope": "small",
+  "option": "retpushedhalf",
+  "default": "on",
+  "div": "DIV-156",
+  "phase": "P4",
+  "subphase": "output-prototype",
+  "module": "decompiler/crates/kuna-decomp/src/p4_calls/kuna_retpushedhalf.rs",
+  "symptom": "Alignment push/pop invents a fifth decryptor argument and 128-bit return (major, 1 instance, crackmes.one 67f9bdc38f555589f3530a85 WeeperVM--Level_1 sub_10e27 @0x10e27)",
+  "decisions": [
+    "The filed hypothesis ('the incidental RDX value restored from an alignment slot is treated as a second return register') was already overturned by the round-12 refuter and is confirmed wrong here: the alignment SLOT is irrelevant. dead_rdx_write (mov %rdi,%rax; add $7,%rax; mov %rsi,%rdx; ret) touches no stack and shows the identical undefined16 + v._8_8_ = a1 shape. It is genuinely ambiguous (indistinguishable from a struct{long,long} return) and is deliberately left alone.",
+    "The real gate is the shipped default-ON retinputhalf (DIV-85), whose placement test -- a terminal at a DIFFERENT address than the half means the function moved the argument there -- is satisfied by an accident. The circularity is the defect proper: keeping the half is what gives R8 a reader, and R8 having a reader is what makes it a parameter.",
+    "Neither escape hatch is usable as a fix. Re-measured here: `--option retinputhalf off` turns __int128 wide_ret(long,long) into `unsigned long wide_ret(...){return a1;}` (high half silently lost); `--option returnpair single` loses a return half AND a whole parameter on struct{long,long} two_ret. Both destroy genuine 128-bit returns.",
+    "The discriminator is NOT available where the decision is made. Dumped the IR at ActionOutputPrototype for the witness, for cross_reg_restore (push %r8/pop %rdx) and for five() (mov %r8,%rdx): all three are `RDX = COPY(R8_input)` at the RETURN address, byte-for-byte identical. Copy propagation has already collapsed the store and the load, and the dead ops are gone from the optree (checked: iter_all shows 4 ops). So the evidence must be captured during the flow build.",
+    "Rule shipped: a register is push-only when some stack-adjusting instruction stores it to memory and no instruction in the function ever writes it. The write test excludes the ordinary callee-saved save/restore (the pop writes the register it pushed); the stack-adjust test excludes every genuine shape measured. Recorded in p2_lift/flow.rs (6 lines), consulted by kuna_retinputhalf::is_input_parameter.",
+    "The SLEIGH push stages the value through a unique temp (`t = COPY(R8); RSP = RSP - 8; STORE(ram,RSP,t)`), and before heritage every use is its own free Varnode, so the temp is followed by STORAGE, not by Varnode identity. That was the difference between a no-op and a working rule.",
+    "Known residual, not papered over: a function that pushes an argument register purely to preserve it across a call and pops it into a DIFFERENT register that it then returns is read as maintenance. Nothing local separates that from the alignment idiom; documented in the module header, the spec and the option's use_when.",
+    "Controls re-measured on the final build, not inherited: wide_ret keeps undefined16 with v1._8_8_ = a0 / v1._0_8_ = a1 and two_ret keeps both computed halves, so no genuine 128-bit return is touched; the three-way idiom discriminator is exact -- cross_reg_restore goes from the 5-argument undefined16 to `long sub_100a(long a0)` while same_reg_restore and dead_rdx_write are byte-identical with the option on and off.",
+    "scripts.repipe.mergecheck reports MERGE BLOCKED on this branch and the block is a structural false positive for every new-option PR, not a hazard here. All 14 rejects are shape-C `line-added-twice` on phases.toml: adding one `[[settable]]` row necessarily increments the count of each boilerplate key line (`tier = \"core\"`, `strength = \"HARD\"`, `values = \"on|off\"`, ...), and the multiset check cannot tell a legitimately added row from a keep-both duplicated one. Measured control: the last merged option PR, DIV-155 pdatainterior (#557) which IS origin/main, trips 11 of the identical rejects against its own parent, while its non-phases.toml predecessor 8b85b588 trips 0. The hazard shape-C actually guards is impossible here -- `line-removed` is 0 on every keepboth path and the branch is a single commit fast-forward on origin/main, so no 3-way merge and no keep-both resolution ever occurred. The guards that discriminate are all clean: shape-A confirms DIV-156 is still the next free number on origin/main and lists all 9 references as consistent, shape-B re-derives every shared counter and agrees (184 settables, tiers 57/68/59, 267 corpus files, next ElementId 4162), and docs/baseline.json is byte-identical to origin/main."
+  ],
+  "witness": {
+    "binary": "crackmes.one 67f9bdc38f555589f3530a85 bin/WeeperVM--Level_1",
+    "function": "sub_10e27 @ 0x10e27",
+    "before": "undefined16 sub_10e27(long a0,int a1,long a2,int a3,unsigned long a4) ... v1._8_8_ = a4; return v1._0_16_;",
+    "after": "void * sub_10e27(long a0,int a1,long a2,int a3) ... return v1;"
+  },
+  "ablation": {
+    "method": "whole-binary `kuna decompile-all`, option off vs default, unified diff of the emitted C",
+    "linked_binaries": "5 (tests/bug-repro: grep 449 fns, sort 490, faillog 69, libselinux.so.1 621, betaflight_STM32F405.elf 5797 = 7426 functions) -- 0 changed lines",
+    "crackme_elfs": "33 of the kuna-re-dataset challenge ELFs (10 more exceeded the 180 s cap and were skipped) -- 1 changed function, the witness (13 changed lines)",
+    "datatests": "0/675, byte-identical"
+  },
+  "speed_method": "interleaved whole-binary decompile-all on tests/bug-repro/grep (byte-identical output, so the delta is the recording pass alone), 5 repeats",
+  "speed_grep_median_on_ms": 11480,
+  "speed_grep_median_off_ms": 11450,
+  "speed_grep_delta_pct": 0.3,
+  "speed_off_ms": 148.34,
+  "speed_on_ms": 141.81,
+  "speed_delta_pct": -4.4,
+  "speed_samples": 9,
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": true,
+  "tests": {
+    "stage": "tests/stages/kuna-retpushedhalf.xml (3 functions, 2 passes, 5 assertions)",
+    "unit": "decompiler/crates/kuna-decomp/src/p4_calls/kuna_retpushedhalf/tests.rs (5 tests)",
+    "fixture": "decompiler/crates/kuna-analysis/tests/fixtures/retpushedhalf_x86_64 (+ .s source)",
+    "promoted_probe": {
+      "path": "tests/cli/alignment-push-pop-invents.json",
+      "retargeted_from": "crackmes.one 67f9bdc38f555589f3530a85 bin/WeeperVM--Level_1 @0x10e27",
+      "retargeted_to": "decompiler/crates/kuna-analysis/tests/fixtures/retpushedhalf_x86_64 xordec",
+      "why": "the need's target is binary_source dataset and CI has no dataset; the need record keeps the dataset acceptance so every later B_VERIFY still runs the real witness",
+      "verified_on_witness": true
+    }
+  },
+  "gates": {
+    "make test": "675/675 PARITY OK",
+    "make test-stages": "754/754 PARITY OK",
+    "make rust-test": "green (rc=0, 386 suite segments, 0 failures)",
+    "make check-spec": "OK (lenient + strict)",
+    "make test-cli": "120/120",
+    "kuna catalog --check": "catalog OK",
+    "acceptance probe": "PASS (scripts.repipe.verify --need alignment-push-pop-invents)"
+  }
+}

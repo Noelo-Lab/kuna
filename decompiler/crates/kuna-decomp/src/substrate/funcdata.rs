@@ -405,6 +405,12 @@ pub struct Funcdata {
         (int4, kuna_base::types::uintb),
         std::rc::Rc<crate::kuna_calleedeadarg::CalleeEntryDead>,
     >,
+    /// (kuna `retpushedhalf`) Registers this function only ever pushed, gathered
+    /// during the flow build while the store and the load still exist and read at
+    /// the return-half placement test
+    /// ([`crate::kuna_retpushedhalf::PushedRegisters`]).  Empty unless
+    /// `option retpushedhalf` is live for this function.
+    kuna_pushed_registers: crate::kuna_retpushedhalf::PushedRegisters,
 }
 
 /// Opaque handle for a jump-table (C++ `JumpTable *` slot in `jumpvec`).
@@ -509,6 +515,7 @@ impl Funcdata {
             kuna_wire_symbol_for_high: std::collections::BTreeMap::new(),
             kuna_callee_ret_writes: std::collections::HashMap::new(),
             kuna_callee_entry_dead: std::collections::HashMap::new(),
+            kuna_pushed_registers: crate::kuna_retpushedhalf::PushedRegisters::default(),
         })
     }
 
@@ -704,6 +711,18 @@ impl Funcdata {
     ) -> Option<&crate::kuna_calleedeadarg::CalleeEntryDead> {
         let sp = entry.get_space()?;
         self.kuna_callee_entry_dead.get(&(sp.get_index(), entry.get_offset())).map(|r| r.as_ref())
+    }
+
+    /// (kuna `retpushedhalf`) The flow build's record of registers this function
+    /// only ever pushed, for appending to.
+    pub fn kuna_pushed_registers_mut(&mut self) -> &mut crate::kuna_retpushedhalf::PushedRegisters {
+        &mut self.kuna_pushed_registers
+    }
+
+    /// (kuna `retpushedhalf`) The flow build's record of registers this function
+    /// only ever pushed.
+    pub fn kuna_pushed_registers(&self) -> &crate::kuna_retpushedhalf::PushedRegisters {
+        &self.kuna_pushed_registers
     }
 
     /// Get the entry point address (C++ `getAddress`).

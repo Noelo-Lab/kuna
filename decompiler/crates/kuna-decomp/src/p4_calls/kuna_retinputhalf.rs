@@ -98,12 +98,13 @@ use crate::funcdata::Funcdata;
 /// Is `vn` an unwritten Varnode that is a **formal input parameter** of this
 /// function, rather than leftover the function never computed?
 ///
-/// Four conditions, all necessary: `option retinputhalf` is on, the Varnode is
+/// Five conditions, all necessary: `option retinputhalf` is on, the Varnode is
 /// unwritten (a written one is not this shape and is classified by its defining
 /// op), heritage flagged it a function input (a free Varnode is not a parameter),
-/// and it sits in storage the prototype model characterizes as input-parameter
-/// storage. The last is what separates a passed argument from a local frame slot
-/// the function only reads.
+/// it is not a register the function only ever pushed (`option retpushedhalf`;
+/// see [`crate::kuna_retpushedhalf`]), and it sits in storage the prototype model
+/// characterizes as input-parameter storage. The last is what separates a passed
+/// argument from a local frame slot the function only reads.
 ///
 /// The caller adds the **placement** test — see `computes_from` in
 /// [`crate::kuna_returnuncomputed`].
@@ -121,6 +122,9 @@ pub fn is_input_parameter(data: &Funcdata, vn: VarnodeId) -> bool {
         return false;
     }
     let (addr, size) = (v.get_addr().clone(), v.get_size());
+    if data.kuna_pushed_registers().is_push_only(&addr, size) {
+        return false;
+    }
     data.get_func_proto().possible_input_param(&addr, size)
 }
 
