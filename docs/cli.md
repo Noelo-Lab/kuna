@@ -2144,7 +2144,7 @@ the export runs.
 | `phase` | `loading`, `decompiling`, `finalizing` or `failed`. |
 | `pid` | The exporting process, so a reader can tell a live export from an abandoned one. |
 | `started_at` / `updated_at` | Unix seconds: when the export started, and when this file was last written. |
-| `elapsed_s` | Seconds since `started_at`. Stays `0` for the whole load — see below. |
+| `elapsed_s` | Seconds since `started_at`. |
 | `jobs` | Workers actually spawned — `--jobs N` asks, the pool's memory trim answers, and this is what is running. `1` is the serial run. |
 | `seeds` | How many seeds the order started from. `0` means neither the entry point nor `main` was a target, so the order is address order. |
 | `functions_total` | Targets for this run. `null` while `phase` is `loading`. |
@@ -2157,11 +2157,7 @@ the export runs.
 
 It is written on the writer's own 500 ms clock rather than per result, so it can trail
 `index.jsonl` by up to one tick; the index is the live feed and the status file is the
-summary. That clock only starts with the decompile: the file is written once before
-the load and not rewritten until the writer thread exists, so through the whole load —
-91 s on the image measured below — `updated_at` equals `started_at` and `elapsed_s`
-stays `0`. A long load and a hung one look identical in the file; what tells them
-apart is whether `pid` is still alive.
+summary.
 
 **Failure is reported in the folder.** Any error after the folder exists — an
 unloadable image, a non-C output language, an empty target set, an I/O error on the
