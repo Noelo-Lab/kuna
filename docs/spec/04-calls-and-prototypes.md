@@ -809,6 +809,57 @@ classified:
   storage the upstream walk would not have admitted; `off` restores the
   upstream walk, in which the zeroing idiom is followed like any other
   arithmetic.
+
+  The LOAD/STORE rejection asks the right question of the wrong set of ops. It
+  is asking whether the value is used for something other than this call *on the
+  execution that reaches this call*, and the walk has no notion of execution at
+  all: it counts every descendant anywhere in the function. A container `append`
+  compiled with the one-element fast path inlined and the grow path left as a
+  call sets both of the call's arguments up **before** the capacity test,
+  because both arms need them, and the fast path then dereferences exactly those
+  Varnodes — `mov rdx,[rbx+8]; lea r8,[rsi+rdi]; cmp rdx,[rbx+0x10]; jz slow`,
+  then `movzx eax,[r8]; mov [rdx],al` on one arm and `call append_slow` on the
+  other. Both trials sink, and `append_slow(container, end, src)` renders
+  `append_slow(container)` — the callee's own recovery having meanwhile settled
+  on three parameters.
+
+  (kuna) `exclusivearguse` (default-on,
+  `decompiler/crates/kuna-decomp/src/p4_calls/kuna_exclusivearguse.rs`) skips a
+  `CPUI_LOAD`/`CPUI_STORE` descendant when the matched op is a `CALL`/`CALLIND`,
+  the walked Varnode is the **address** operand of the access rather than the
+  stored datum, the walked Varnode is **defined in a block that both the
+  access's block and the call's block are immediate successors of**, and the
+  access and the call sit in distinct basic blocks with neither reachable from
+  the other. The reachability test is the whole soundness
+  of the rule: an execution path is one walk from the entry block, so a path
+  holding both blocks would make the later one reachable from the earlier, and
+  mutual unreachability therefore means no path holds both. It is conservative
+  around loops for the same reason — two arms of an `if` inside a loop body do
+  reach each other through the back edge, so the rule declines them.
+
+  The definition test is what keeps the rule from inventing arguments, and it was
+  written against a measured false positive rather than out of caution. Without
+  it a register the compiler picked as a long-lived scratch copy qualifies:
+  `phantomgate.exe`'s `random_device` constructor opens `mov r8,rcx` and then
+  dereferences `r8` on the arms that succeed, so every `throw` call on an arm
+  that fails gained a third argument the disassembly does not pass. The witness
+  shape is the opposite of that — the pointers are computed in the two
+  instructions before the test — and requiring the definition to sit in the very
+  block that branches says exactly that: the value was set up *for* this branch,
+  not merely still live when it was taken. A function input, which has no
+  defining op at all, is declined for the same reason.
+
+  The remaining restrictions keep it disjoint from its neighbours rather than
+  merely narrow. The address-operand test hands the `STORE` value slot to
+  `spillargtrial` and takes only the pointer slot, so the two options never
+  decide the same descendant. The `CALL` match restricts it to caller-side input
+  trials, leaving the function's own output trial to `noreturnretuse`. And
+  `BRANCH`/`CBRANCH`/`BRANCHIND` keep the upstream rejection outright: the
+  `calleearity` family below was built for a `CBRANCH` use in a block that
+  *dominates* the call (`test rcx,rcx; jz; call`), and a dominating block always
+  co-executes with the call, so relaxing that shape is the fabrication the
+  family's own design notes warn against. `off` restores the upstream
+  rejection, in which any LOAD or STORE of the value sinks the trial.
 - **Callee-body evidence** (kuna, `decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleedeadarg.rs`):
   every test above reasons on the *caller's* side of the call, and on that side
   a live argument register at an unprototyped callee is exactly what a real

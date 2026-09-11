@@ -2278,15 +2278,35 @@ impl Funcdata {
                 match code {
                     OpCode::CPUI_BRANCH
                     | OpCode::CPUI_CBRANCH
-                    | OpCode::CPUI_BRANCHIND
-                    | OpCode::CPUI_LOAD => {
+                    | OpCode::CPUI_BRANCHIND => {
+                        res = false;
+                    }
+                    OpCode::CPUI_LOAD => {
+                        // (kuna) `exclusivearguse` — a dereference on a path that
+                        // cannot co-execute with the matched call is not a competing
+                        // use of the pointer the call is passed, and the value it
+                        // reads is not the value being scored, so the walk skips the
+                        // op outright.  See
+                        // [`crate::p4_calls::kuna_exclusivearguse`].
+                        if crate::p4_calls::kuna_exclusivearguse::access_cannot_reach_call(
+                            self, opmatch, op, vn,
+                        ) {
+                            continue;
+                        }
                         res = false;
                     }
                     OpCode::CPUI_STORE => {
                         // (kuna) `spillargtrial off|reload|spill` — upstream rejects
                         // on every STORE (`off`); the other levels tolerate the
                         // caller's own caller-save spill of the argument value.  See
-                        // [`crate::p4_calls::kuna_spillargtrial`].
+                        // [`crate::p4_calls::kuna_spillargtrial`].  `exclusivearguse`
+                        // covers the disjoint case where the trial Varnode is the
+                        // store's ADDRESS on a path that cannot reach the call.
+                        if crate::p4_calls::kuna_exclusivearguse::access_cannot_reach_call(
+                            self, opmatch, op, vn,
+                        ) {
+                            continue;
+                        }
                         if !crate::p4_calls::kuna_spillargtrial::store_is_caller_save_spill(
                             self, op, vn,
                         ) {
