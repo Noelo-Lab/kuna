@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    749,
-    749
+    754,
+    754
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -387,6 +387,11 @@
     "data:RETINPUTHALF #3: with the option off the bug returns: the half is dropped AND the argument vanishes (a one-argument wide)",
     "data:RETINPUTHALF #4: w2, whose high half is arithmetic on the same argument, is identical in both passes (the rule only ever spoke about unwritten terminals)",
     "data:RETINPUTHALF #5: nothing ever recovers a one-argument w2",
+    "data:RETPUSHEDHALF #1: by default the alignment push/pop leaves a one-argument function returning one register",
+    "data:RETPUSHEDHALF #2: with the option off the bug returns: the pushed register becomes a fifth argument",
+    "data:RETPUSHEDHALF #3: and the invented argument is used only as the high half of the return",
+    "data:RETPUSHEDHALF #4: the same-register save/restore is unmoved in both passes, because the pop writes the register it pushed",
+    "data:RETPUSHEDHALF #5: a plain register-to-register move into RDX is unmoved in both passes: no stack, no push, nothing to reject",
     "data:RUSTABI #10: and its call keeps no output in either pass",
     "data:RUSTABI #11: the one-byte discriminant write is a genuine element access and keeps its subscript",
     "data:RUSTABI #1: by default the producer collapses to the one-bit discriminant and the EDX payload is deleted",

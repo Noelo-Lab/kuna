@@ -274,6 +274,10 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "noreturn_extern",
     "inputvarnodeadjust",
     "retinputhalf",
+    // (kuna) DIV-156: a register the function only ever PUSHED is stack
+    // maintenance, not a value it placed in a return register. Narrows
+    // `retinputhalf`. Default ON.
+    "retpushedhalf",
     // (kuna) DIV-118: a CALL on a block that ends in a no-return halt does not
     // veto the RETURN's output trial in `only_op_use`. Default ON.
     "noreturnretuse",

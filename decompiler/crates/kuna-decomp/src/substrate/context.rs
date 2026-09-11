@@ -622,6 +622,10 @@ pub struct ArchContext {
     /// parameter, instead of dropping it as uncomputed leftover
     /// (`option retinputhalf`); read by [`crate::kuna_retinputhalf`].
     pub ret_input_half: bool,
+    /// (kuna) A register the function only ever pushed is not a placement source
+    /// for a returned half (`option retpushedhalf`); read by
+    /// [`crate::kuna_retpushedhalf`].
+    pub ret_pushed_half: bool,
     /// (kuna) Let a CALL on a block that ends in a no-return halt coexist with the
     /// RETURN's output trial (`option noreturnretuse`); read by
     /// [`crate::p4_calls::kuna_noreturnretuse`].
@@ -1295,6 +1299,9 @@ impl ArchContext {
             // (kuna) `option retinputhalf` default-on; the real value is copied
             // from the engine Architecture in `build_arch_handle`.
             ret_input_half: true,
+            // (kuna) `option retpushedhalf` default-on; the real value is copied
+            // from the engine Architecture in `build_arch_handle`.
+            ret_pushed_half: true,
             // (kuna) `option noreturnretuse` default-on; the real value is copied
             // from the engine Architecture in `build_arch_handle`.
             noreturn_ret_use: true,

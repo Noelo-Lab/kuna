@@ -1270,6 +1270,40 @@ The predicate runs inside `ActionOutputPrototype`, which is scheduled *before*
 the question goes to the model — the same fall-through
 `possible_input_param` takes when no locked parameters exist.
 
+#### (kuna) The register that was only ever pushed (`retpushedhalf`)
+
+The placement test asks whether the terminal arrived from a *different* address
+than the half it reaches, and reads a different address as "the function executed
+an instruction to move the argument here". A stack-alignment `push` in the
+prologue paired with a `pop` into another register in the epilogue satisfies that
+reading by accident. A four-argument XOR decryptor returning the buffer it
+allocated pushes `R8` to realign the stack and pops that slot into `RDX`; `RDX`
+at the RETURN therefore traces back to `R8` at entry, the half is kept, keeping
+the half is what gives `R8` a reader, and `R8` having a reader is what makes it a
+parameter — so the function recovers `undefined16 f(long,int,long,int,unsigned
+long)` with `v._8_8_ = a4`, a fifth argument that exists only to be the high half
+of a return that does not exist either.
+
+The evidence that separates the accident from a deliberate `mov %r8,%rdx` does
+not survive to the repair. Copy propagation collapses the store and the load long
+before `ActionOutputPrototype` runs, and what is left — `RDX = COPY(R8)` at the
+RETURN — is byte-for-byte what the deliberate move leaves behind. So it is
+gathered during the flow build instead, while the instructions are still being
+lifted: a register is **push-only** when some stack-adjusting instruction stores
+it to memory and no instruction in the function ever writes it. `option
+retpushedhalf` (default on, DIV-156) makes a push-only register fail the
+input-parameter terminal test, so the half is uncomputed and the pair collapses
+to the register that carries a value.
+
+The rule reaches nothing that has no stack-adjusting store: a genuine returned
+fifth argument moved with `mov %r8,%rdx`, and the untouched `RAX:RDX` of a real
+128-bit return, are decided exactly as before. The ordinary callee-saved
+save/restore is excluded by the write test, because the pop writes the register
+it pushed. What it cannot separate is a function that pushes an argument register
+purely to preserve it across a call and pops it into a *different* register that
+it then returns; nothing local distinguishes that from the alignment idiom, and
+this rule reads it as maintenance.
+
 #### (kuna, rustc) The two-register `ScalarPair` return (`rustabi`)
 
 rustc returns a `Result`, an `Option`, a slice or a fat pointer whose layout it

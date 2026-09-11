@@ -1,0 +1,32 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "xordec",
+    "--json"
+  ],
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/retpushedhalf_x86_64",
+    "binary_sha256": "74c13dc3cd8745e0996563684e2aa41cb9d18922513ee2c66d793712b768d3b1",
+    "binary_size": 4784,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/retpushedhalf_x86_64",
+    "selector": "xordec",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_absent": [
+      "undefined16",
+      "\\._8_8_ = a[0-9]+;"
+    ]
+  },
+  "notes": "Desired: an alignment push/pop does not invent an argument or a 128-bit return. Witness: crackmes.one 67f9bdc38f555589f3530a85 WeeperVM, sub_10e27 @0x10e27. Retargeted onto the vendored retpushedhalf_x86_64 (CI has no dataset): the same push %r8 / pop %rdx prologue idiom, same clauses."
+}

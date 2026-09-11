@@ -1356,6 +1356,12 @@ subphase = "output-prototype"
 note = "(kuna) keep a returned register half that carries a formal input parameter, instead of discarding it as uncomputed leftover (the dropped-half/dropped-argument defect)"
 
 [[surface]]
+surface = "option retpushedhalf"
+phase = "P4"
+subphase = "output-prototype"
+note = "(kuna) a register the function only ever PUSHED is stack maintenance, not a value it placed in a return register (the alignment push/pop invented-argument defect)"
+
+[[surface]]
 surface = "option rustabi"
 phase = "P4"
 subphase = "output-prototype"
@@ -2506,6 +2512,28 @@ change_kind = "correctness-fix"
 tier = "core"
 symptoms = "a parameter the disassembly plainly passes is missing from the recovered signature|a two-register struct return comes back as one register when the second half is just an argument|two near-identical functions recover different arities, one dropping an argument|the returned pair survives when the half is arithmetic but not when it is a plain copy of a parameter"
 live_field = "ret_input_half"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
+option = "retpushedhalf"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P4"
+subphase = "output-prototype"
+strength = "HARD"
+rewind = "P2"
+issue = "kuna-alignment-push-pop"
+summary = "Reject a register the function only ever PUSHED as the source of a returned register half. `retinputhalf` keeps a returned half whose value traces back to an input parameter at a DIFFERENT address than the half, on the reading that the function executed an instruction to put it there. An alignment `push %r8` in the prologue paired with a `pop %rdx` in the epilogue satisfies that reading by accident: RDX at the RETURN traces to R8 at entry, so R8 becomes a parameter, and R8 being a parameter is the only evidence that the half is a returned argument. A four-argument decryptor returning `void *` came out `undefined16 sub_10e27(long,int,long,int,unsigned long)` with `v1._8_8_ = a4`. By the time the repair runs, copy propagation has collapsed the store and the load and `RDX = COPY(R8)` is indistinguishable from a deliberate `mov %r8,%rdx`, so the evidence is gathered during the flow build instead: a register some stack-adjusting instruction stores to memory and no instruction in the function ever writes is push-only, and a push-only register is not a placement source."
+use_when = "On by default: it only ever narrows `retinputhalf`, and only for a register the function pushes and never writes -- the ordinary callee-saved save/restore writes the register in the pop, so it does not qualify. Byte-identical (0/675) on the datatest corpus. Set off to restore the address-only placement test, which is what you want if a function really does hand back an argument it preserved on the stack and popped into another register."
+example = "option retpushedhalf off"
+source_decompiler = "kuna"
+inspiration = "kuna WeeperVM sub_10e27 (gcc x86-64 alignment push %r8 / pop %rdx around a four-argument XOR decryptor)"
+change_kind = "correctness-fix"
+tier = "core"
+symptoms = "a function grows one more argument than the disassembly passes, used only as the high half of the return|an alignment push/pop around the body turns a pointer return into undefined16|the recovered signature ends in an extra argument whose only appearance is `v._8_8_ = aN;`|a prologue PUSH of an argument register and an epilogue POP into a different register invent a 128-bit return"
+live_field = "ret_pushed_half"
 live_true = "on"
 live_false = "off"
 
