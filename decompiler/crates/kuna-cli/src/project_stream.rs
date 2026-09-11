@@ -812,8 +812,7 @@ fn export(args: &Args, layout: &Layout, run: &StreamRun) -> Result<String, Strin
         shared.status.seeds = seeds.len();
         shared.status.last_result = Instant::now();
     }
-    run.publish_status()?;
-    run.publish_readme()?;
+    run.publish_progress(true);
 
     let (tx, rx) = mpsc::channel::<Vec<FuncResult>>();
     let opts = DecompileOptions {
@@ -921,6 +920,15 @@ fn export(args: &Args, layout: &Layout, run: &StreamRun) -> Result<String, Strin
 /// `seconds_since_last_result: 0` with a live pid for all of it, which is
 /// exactly what a hung process looks like to a poller.
 fn load_with_heartbeat(args: &Args, run: &StreamRun) -> Result<ConsoleProgram, String> {
+    /// Stops the clock however the load ends — a panicking load would otherwise
+    /// leave the thread spinning and the scope waiting on it forever.
+    struct Stopper<'a>(&'a AtomicBool);
+    impl Drop for Stopper<'_> {
+        fn drop(&mut self) {
+            self.0.store(false, Ordering::SeqCst);
+        }
+    }
+
     let loading = AtomicBool::new(true);
     std::thread::scope(|scope| {
         scope.spawn(|| {
@@ -939,9 +947,8 @@ fn load_with_heartbeat(args: &Args, run: &StreamRun) -> Result<ConsoleProgram, S
                 }
             }
         });
-        let prog = load_program(args, DriverDefaults::Decompile);
-        loading.store(false, Ordering::SeqCst);
-        prog
+        let _stop = Stopper(&loading);
+        load_program(args, DriverDefaults::Decompile)
     })
 }
 

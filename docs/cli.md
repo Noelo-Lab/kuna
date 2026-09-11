@@ -2172,9 +2172,10 @@ Two things are deliberately not run failures. Per-function failures — includin
 worker process that cannot be spawned, which degrades that whole chunk to error
 records — are `error` records in the `.c` and in `index.jsonl`, and the run exits `0`
 with `functions_failed` counting them, so a poller that sees no `failed` phase still
-has to read that field. And a failed `.streaming` or `README.md` rewrite, which report
-on the export rather than being it, warn once on stderr and are retried on the next
-tick.
+has to read that field. And a `.streaming` or `README.md` rewrite that fails mid-run,
+since those report on the export rather than being it, warns once on stderr and is
+retried on the next tick — only the first pair, written at t=0 as the proof the folder
+can be written at all, fails the run.
 
 A binary that does not exist is refused before anything is created: exit `1`,
 `error: binary not found: …`, and no folder. So is a folder another live export is

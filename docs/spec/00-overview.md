@@ -1030,6 +1030,19 @@ steady rate. At `--jobs 1` there is no pool thread and the main thread
 alternates decompile batches with sweep steps instead, so a serial streamed run
 starts producing C after its first function and still finishes its `.asm` early.
 
+Owning every artifact also makes the writer the run's failure oracle. A write it
+cannot complete means nothing a reader polls is advancing, so it records its own
+error, publishes the `failed` status itself and raises a stop flag that the
+serial pull closure and the scheduler both read: each producer finishes the
+function or chunk it is on and stops, and the run reports the writer's error
+rather than the closed channel its producers saw. What a failed run leaves behind
+follows the same rule from the other end — until this run has truncated an
+artifact of its own, the folder still describes the previous export, so a
+failure before that point restores its `README.md` and leaves the status file as
+the only trace. Progress writes are the exception in both directions: the status
+file and the running README report on the export rather than being it, so a
+failed rewrite of either warns and is retried on the next tick.
+
 (kuna) **Declared function boundaries.** Every function boundary the engine knows
 is derived: discovery supplies the entries, and the extent is the
 address-contiguous clip `[entry, next_entry)` over an unbounded flow follow
