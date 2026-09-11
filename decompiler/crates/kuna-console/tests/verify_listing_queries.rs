@@ -24,7 +24,9 @@
 
 use std::path::PathBuf;
 
-use kuna_analysis::listing::{CodeUnit, Listing, ListingDetail, RefKind};
+use kuna_analysis::listing::{
+    CodeUnit, DiscoveredFunction, FlowType, Listing, ListingDetail, RefKind,
+};
 use kuna_console::engine::bootstrap_from_object;
 
 fn repo_root() -> PathBuf {
@@ -345,17 +347,26 @@ fn a_partition_only_listing_walks_identically_and_files_no_references() {
         full.function_count()
     );
 
+    // Everything the walk produces except the two fields the lean build is also
+    // asked not to capture (`mnemonic` / `operands`): each instruction's extent
+    // AND its classified flow, plus whole `DiscoveredFunction` values. Comparing
+    // addresses alone would pass on a walk that decoded the same bytes and
+    // classified them differently.
     let partition = |l: &Listing| {
-        let insns: Vec<(u64, u32)> = l.instructions().map(|(&a, i)| (a, i.len)).collect();
-        let funcs: Vec<(u64, Option<String>, bool)> =
-            l.functions().map(|(&a, f)| (a, f.name.clone(), f.from_symbol)).collect();
+        let insns: Vec<(u64, u32, Option<u64>, FlowType, Vec<u64>)> = l
+            .instructions()
+            .map(|(&a, i)| (a, i.len, i.fall_through, i.flow, i.flows.clone()))
+            .collect();
+        let funcs: Vec<(u64, DiscoveredFunction)> =
+            l.functions().map(|(&a, f)| (a, f.clone())).collect();
         (insns, funcs, l.exec_ranges().to_vec())
     };
     assert_eq!(
         partition(&full),
         partition(&lean),
-        "the instruction partition, the discovered-function model and the executable \
-         ranges must not depend on whether the reference model was built"
+        "the decoded instructions (extent, fall-through and classified flow), the \
+         discovered-function model and the executable ranges must not depend on \
+         whether the reference model was built"
     );
 
     // The full build has real edges at the sites the query gate pins; the lean

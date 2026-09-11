@@ -194,6 +194,9 @@ impl Listing {
             Some(s) => Rc::clone(s),
             None => {
                 // No code space ⇒ nothing decodable; return an empty Listing.
+                // There was no walk, so there is no reference model whatever the
+                // caller asked for: `has_refs` reports what was built, not what
+                // was requested.
                 return Listing {
                     insns: BTreeMap::new(),
                     refs_to: BTreeMap::new(),
@@ -201,7 +204,7 @@ impl Listing {
                     funcs: BTreeMap::new(),
                     exec_ranges,
                     has_assembly: detail.assembly,
-                    has_refs: detail.refs,
+                    has_refs: false,
                 };
             }
         };
@@ -370,9 +373,13 @@ impl Listing {
         &self.exec_ranges
     }
 
-    /// Whether [`Listing::refs_to`]/[`Listing::refs_from`] were populated. False
-    /// for a Listing built with [`ListingDetail::refs`] off, where both answer
-    /// "no references" for every address because none were ever filed.
+    /// Whether a reference model was built. False for a Listing built with
+    /// [`ListingDetail::refs`] off — and for one with nothing to walk — where
+    /// every reference query answers "none" because none were ever filed.
+    ///
+    /// A consumer whose result depends on the *absence* of a reference (the
+    /// `tailcallentry` guards do) has to check this first: an empty bucket is
+    /// otherwise indistinguishable from an unbuilt model.
     pub fn has_refs(&self) -> bool {
         self.has_refs
     }
@@ -471,6 +478,12 @@ impl Listing {
     }
 
     // ---- xref model (read-only, design §6 / PR4) ----
+    //
+    // Every reader below answers over the model that was actually built, so each
+    // reports "none" on a PARTITION_ONLY Listing; `has_refs` is what tells that
+    // apart from a genuinely unreferenced address. They stay callable there on
+    // purpose — the walk-equivalence test reads them to pin that a
+    // partition-only build files nothing.
 
     /// Incoming references to `to` (callers / branch sources), sorted by source
     /// VMA then kind, de-duplicated on `(from, to, kind)`.

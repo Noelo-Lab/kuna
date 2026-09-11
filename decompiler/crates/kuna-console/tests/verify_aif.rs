@@ -194,6 +194,15 @@ fn aif_recovers_function_reachable_only_via_data_path() {
 /// mixing two instructions. This fixture is x86-64, which has no decode mode: what
 /// it proves is that the substitution is exact where the re-decode agrees, and that
 /// the guard rejects nothing it should not.
+///
+/// Text is the only thing that varies here: the lean run asks for
+/// `ListingDetail { assembly: false, refs: true }` rather than
+/// [`ListingDetail::PARTITION_ONLY`], so a difference cannot be laid at the
+/// reference model's door. That is also the one place the mixed `ListingDetail`
+/// combination is exercised — production only ever asks for the two named
+/// constants — and the refs axis has its own single-variable gate,
+/// `a_partition_only_listing_walks_identically_and_files_no_references` in
+/// `verify_listing_queries.rs`.
 #[test]
 fn a_text_free_listing_fingerprints_exactly_like_a_text_carrying_one() {
     let bin = fixture();
@@ -243,15 +252,15 @@ fn a_text_free_listing_fingerprints_exactly_like_a_text_carrying_one() {
         (count, insns, entries)
     };
 
-    let (with_text, full_insns, texted_entries) = run(ListingDetail::FULL);
-    let (without_text, lean_insns, textless_entries) = run(ListingDetail::PARTITION_ONLY);
+    let (with_text, texted_insns, texted_entries) = run(ListingDetail::FULL);
+    let (without_text, textless_insns, textless_entries) =
+        run(ListingDetail { assembly: false, refs: true });
 
     assert_eq!(with_text, without_text, "the walk itself must not depend on text capture");
     assert_eq!(
-        full_insns, lean_insns,
-        "the instruction partition must not depend on what the walk was asked to \
-         capture alongside it: {full_insns} instructions with text + references, \
-         {lean_insns} without"
+        texted_insns, textless_insns,
+        "the instruction partition must not depend on text capture: \
+         {texted_insns} instructions with text, {textless_insns} without"
     );
     assert!(
         with_text >= 20,

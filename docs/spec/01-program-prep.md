@@ -2522,15 +2522,18 @@ the instruction worklist uses, so the walk claims a function only where it is
 willing to disassemble. It withholds the function claim only: wherever the
 reference model is being built at all, the Call cross-reference is filed in both
 directions either way, because the instruction really does encode a call to that
-address and `kuna xrefs` should still say so. A target inside an executable
-section is admitted exactly as before even when the decode there fails — that
-is a genuine gap in the walk, not a fabricated entry — so the gate can never
-remove an entry that had a body. Measured over 234 crackmes images it removes
-150 entries on 19 of them and adds none; every one is `size: 0`
-and outside every executable section, and emitted C over 6,085 functions of those
-images changes in exactly one function, where two parameters wrongly typed `code *`
-(a phantom sat at the address they pointed to) come back as the data pointers they
-are. Off restores the previous, phantom-producing discovery set exactly.
+address. Where that model was not built the Listing's own xref API answers
+"none" for this edge as for every other; the `kuna xrefs` and `decompile-graph`
+answers are unaffected either way, because they come from a separate index over
+the same bytes (`decompiler/crates/kuna-analysis/src/listing/xrefs.rs (build)`)
+and not from the Listing. A target inside an executable section is admitted
+exactly as before even when the decode there fails — that is a genuine gap in
+the walk, not a fabricated entry — so the gate can never remove an entry that
+had a body. Measured over 234 crackmes images it removes 150 entries on 19 of
+them and adds none; every one is `size: 0` and outside every executable section,
+and emitted C over 6,085 functions of those images changes in exactly one
+function, where two parameters wrongly typed `code *` (a phantom sat at the
+address they pointed to) come back as the data pointers they are. Off restores the previous, phantom-producing discovery set exactly.
 
 (kuna) The same seam carries `ppclocalentry` (default-on;
 `decompiler/crates/kuna-analysis/src/listing/kuna_ppclocalentry.rs (fold_map)`),
@@ -2618,7 +2621,18 @@ identical either way, and `Listing::has_refs` reports which model was built rath
 than leaving a caller to read an empty map as an answer. On a 147 MB C++ server
 image (20.2 million instructions, 392,814 functions) the skipped model is 23.3
 million edges: the whole `kuna functions` run drops from 12.9 GB resident to 6.0
-GB and from 90.9 s to 73.7 s, for byte-identical output.
+GB and from 90.9 s to 73.7 s. The output of that command is byte-identical:
+`kuna functions` carries no per-function budget, so nothing it prints can depend
+on how long the run took. The whole-binary decompile surfaces do carry one —
+`decompile-all`, `decompile-project` and `decompile-graph` under `--mode fast`
+abandon a function after ten seconds of WALL CLOCK
+(`decompiler/crates/kuna-console/src/project.rs`,
+`FAST_WHOLE_BINARY_FN_BUDGET_SECONDS`) — so a run that spends less time
+elsewhere legitimately finishes functions a slower one gave up on: measured on
+this image, 4 of 2,233 A/B function pairs differ, in both directions, every one
+of them at that budget. Those surfaces are byte-identical at a fixed budget
+(`--max-fn-seconds 0`), and the wall-clock watchdog is the documented exception
+— the same exception for any change that moves the clock.
 
 Third, instruction-byte coverage, which is *derived* from the instruction map
 rather than mirrored into a range list: because a range list merges overlapping
@@ -2825,7 +2839,15 @@ unmatched `PUSH`/`SUB SP` still open) was implemented, measured, and dominated b
 it on both precision and recall. As with `ptrentry`, the region is the
 entry-ordered one — the nearest preceding discovered entry — which is the
 granularity the tier has and errs conservative on a sparsely discovered image.
-Output-changing (more functions), hence default-off; ARM-only and Listing-tier, so
+Two of the four guards are satisfied by an *absent* model rather than by
+evidence: the predecessor test reads the reference model and the epilogue test
+the disassembly text, and a walk can be told to capture neither (above), which
+would leave the naive rule — and on the fixture it accepts the shared epilogue
+the full model rejects. So the pass checks for both models up front and yields
+nothing without them. In production the gate that enables the pass is the same
+one that enables the models, so the check is invisible there; it is what keeps a
+later change to either gate from quietly reducing the four guards to the rule
+they replaced. Output-changing (more functions), hence default-off; ARM-only and Listing-tier, so
 it is a strict no-op on every other architecture, with `listing off`, and on the
 XML datatest path.
 
