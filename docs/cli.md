@@ -2055,8 +2055,8 @@ answered yet, and `.streaming`, phase `loading`, which keeps ticking on its own 
 for as long as the load runs so `updated_at` and `elapsed_s` separate a live load from
 a dead process. Nothing else is touched, so a previous export of the same binary keeps
 its `.c`/`.h`/`.asm` — and, if this run fails while loading, its `README.md` — while a
-new one loads.
-Once the program is loaded, the C-only check passes and the target set is non-empty,
+new one loads. Once the program is loaded, the C-only check passes and the target set
+is non-empty,
 the four artifacts plus `index.jsonl` are truncated and created — the `.c` with its
 `#include`, the `.h` with the prelude and a pending type block, the `.asm` with its
 two header lines, `index.jsonl` empty — and `.streaming` moves to phase `decompiling`
