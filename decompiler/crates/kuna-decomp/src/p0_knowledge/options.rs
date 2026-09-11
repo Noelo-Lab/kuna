@@ -291,6 +291,10 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // whatever the value is, so it does not veto that value's input trial in
     // `only_op_use`. Default ON.
     "zeroidiomuse",
+    // (kuna) DIV-PENDING: a LOAD/STORE through a trial Varnode on a path that
+    // cannot co-execute with the call does not veto that call's input trial in
+    // `only_op_use`. Default ON.
+    "exclusivearguse",
     "rustabi",
     "condexeplace",
     "sparcstructret",

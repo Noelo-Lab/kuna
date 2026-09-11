@@ -1,0 +1,76 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna re-bytecode-append-call-loses: a call renders with fewer arguments
+    than the disassembly sets up, and the missing registers are the ones
+    written BEFORE the branch the call sits behind.
+
+    Funcdata::onlyOpUse (funcdata_varnode.cc:1851) walks every descendant of
+    the Varnode reaching a CALL in a candidate argument register and rejects
+    the trial on any CPUI_LOAD or CPUI_STORE.  A container append compiled with
+    the one-element fast path inlined and the grow path left as a call sets
+    both of the call's arguments up before the capacity test, because both arms
+    need them; the fast path then dereferences exactly those Varnodes, and the
+    trials sink.  No execution path runs both arms, so neither access can
+    compete with the call.
+
+    The vector is sub_140004540 of vm.exe (challenge
+    69b7492049fa49a2a260218f, stripped MSVC x86-64 PE) whose
+    sub_140007be0(container, end, src) call at 0x1400046cc renders
+    sub_140007be0(a0), reduced to one branch, re-spelled in the SysV ABI and
+    assembled from
+    decompiler/crates/kuna-analysis/tests/fixtures/exclusivearguse_x86_64.s:
+
+        401024  lea  0xfd5(%rip),%rdx     ; the source byte,  3rd argument
+        40102e  mov  0x8(%rdi),%rsi       ; the write cursor, 2nd argument
+        401032  cmp  0x10(%rdi),%rsi
+        401036  je   401044
+        401038  movzbl (%rdx),%eax        ; fast path: LOAD through rdx
+        40103b  mov  %al,(%rsi)           ;            STORE through rsi
+        401042  jmp  401049
+        401044  call append_slow          ; the other arm
+
+    append_loop is the control: the same two arms inside a loop, where the back
+    edge makes each arm reachable from the other, so the rule declines and the
+    call keeps its one argument in both passes.  append_slow leaves rcx
+    untouched, which is what keeps the calleearity family from reconstructing
+    the list from the callee body instead.
+
+    Phase: P4 active input-trial scoring, option exclusivearguse off|on.  Pass 1
+    (off) pins the bug: append_slow() with no arguments.  Pass 2 (on, the
+    shipped default) pins all three.  Nothing else moves.
+-->
+<bytechunk space="ram" offset="0x401000">
+488b0748897708440fb6124488104889c2c366662e0f1f8400000000000f1f00400fb6c6488d15d50f00004801c2488b7708483b7710740c0fb60288064883470801eb05e8b7ffffffc3660f1f44000053554889fb4889f54889df4889ea488b7308483b7310740c0fb60288064883430801eb05e887ffffff836b180175d95d5bc3
+</bytechunk>
+<bytechunk space="ram" offset="0x402000">
+0001020304050607
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="append_slow"/>
+<symbol space="ram" offset="0x401020" name="append"/>
+<symbol space="ram" offset="0x401050" name="append_loop"/>
+<symbol space="ram" offset="0x402000" name="table"/>
+</binaryimage>
+<script>
+  <com>option exclusivearguse off</com>
+  <com>lo fu append</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu append_loop</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option exclusivearguse on</com>
+  <com>lo fu append</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu append_loop</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="EXCLUSIVEARGUSE #1: off, the slow-path call has an empty argument list" min="1" max="1">append_slow\(\)</stringmatch>
+<stringmatch name="EXCLUSIVEARGUSE #2: on, the write cursor and the source byte both reach the call" min="1" max="1">append_slow\(a0,v[0-9]+,&amp;table\[a1\]\)</stringmatch>
+<stringmatch name="EXCLUSIVEARGUSE #3: the loop control keeps its one argument in BOTH passes, so a back edge still counts the dereference as competing" min="2" max="2">append_slow\(a0\)</stringmatch>
+<stringmatch name="EXCLUSIVEARGUSE #4: append's fast path still writes the byte it read in BOTH passes, so only the argument list moved" min="2" max="2">= table\[a1\];</stringmatch>
+<stringmatch name="EXCLUSIVEARGUSE #5: the loop control's fast path is untouched in BOTH passes" min="2" max="2">\*\*\(char \*\*\)\(a0 \+ 8\) = \*a1;</stringmatch>
+</decompilertest>

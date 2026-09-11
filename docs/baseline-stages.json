@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    763,
-    763
+    768,
+    768
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -121,6 +121,11 @@
     "data:EVALCURRENTPROTO #1: off, the __stdcall default model sees only the stack argument",
     "data:EVALCURRENTPROTO #2: off, the ECX argument survives as an undefined local",
     "data:EVALCURRENTPROTO #3: default, the spec's merged model resolves to __fastcall and recovers all three arguments",
+    "data:EXCLUSIVEARGUSE #1: off, the slow-path call has an empty argument list",
+    "data:EXCLUSIVEARGUSE #2: on, the write cursor and the source byte both reach the call",
+    "data:EXCLUSIVEARGUSE #3: the loop control keeps its one argument in BOTH passes, so a back edge still counts the dereference as competing",
+    "data:EXCLUSIVEARGUSE #4: append's fast path still writes the byte it read in BOTH passes, so only the argument list moved",
+    "data:EXCLUSIVEARGUSE #5: the loop control's fast path is untouched in BOTH passes",
     "data:FAST-FUNCDISC #1: loader-known entry is present in both inventories",
     "data:FAST-FUNCDISC #2: direct callee is absent off and present on",
     "data:FAST-FUNCDISC #3: the newly inventoried callee has a real decompiled body",
