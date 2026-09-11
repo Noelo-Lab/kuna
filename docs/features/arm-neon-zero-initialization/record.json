@@ -20,11 +20,11 @@
     "The filed hypothesis ('vector-store expansion may treat a constant vector as a source pointer') was overturned by the round-12 refuter and is confirmed wrong here. The vst1 lowering is innocent: ARMneon.sinc:6026 buildVst1DdList is two clean 8-byte stores through mult_addr with no pointer-typed read. The refuter's own diagnosis -- the pointer is born in the vmov's dynamic const-space export -- is confirmed by the raw p-code: `u0x00024200:16 = #0x0:16` then `u0x00024300:16 = *(const,u0x00024200:16)`.",
     "The refuter named RuleLoadVarnode as the wrong-fix trap and that is exactly right, but the reason it cannot fire is one level earlier than 'size 16 is unrepresentable': RuleLoadVarnode is registered in OPPOOL2 (post-blockstructure), not oppool1, so ActionLaneDivide runs first and there is no 16-byte LOAD left by the time RuleLoadVarnode sees the function. What it sees are the four lane LOADs, and it folds only the one at offset 0 -- which is the `v1 = 0` control the refuter identified.",
     "The lane split is the defect, not the missing fold. In the constant space an address IS the value, so `LOAD(const, v+4)` is the constant 4, not the second word of v. Folding the three offset lanes where they stand (the naive fix) would have printed 4, 8 and 0xc and the acceptance probe's stdout_absent clause would have gone green on wrong output.",
-    "Shipped as the general identity instead: `out:N = LOAD(const, p:S)` -> COPY p / SUBPIECE(p,0) / INT_ZEXT p, applied in oppool1 so it precedes ActionLaneDivide and each lane is cut from the value. This also fixes the NON-ZERO case for free, which the widening fix would have corrupted.",
+    "Shipped as the EQUAL-WIDTH identity only: `out:N = LOAD(const, p:N)` -> `COPY p`, applied in oppool1 so it precedes ActionLaneDivide and each lane is cut from the value.",
     "Regression evidence against wrongness, as the refuter demanded, is measured and not argued: the vendored fixture and the stage test both carry `vmov.i32 q8,#1` beside `vmov.i32 q9,#0`. With the option on the four lanes are 1,1,1,1; with it off they are the `v1._0_16_` pointer arithmetic. The witness binary cannot detect a truncating fix because its immediate is zero.",
     "A constant pointer is deliberately left to RuleLoadVarnode rather than handled here: its apply_op also clears the spacebase-placeholder trigger a call sets up and calls resolve_spacebase_relative, which a bare COPY would drop. A LOAD whose output is that placeholder is declined for the same reason.",
     "No new Action: this is a Rule in the existing oppool1, so the universal schedule's pass adjacencies (verify_w8x_allowlist) are untouched. It does move the byte-exact list_action_decompile_oracle fixture by one line (the rule renders as a leaf), and the w8 leaf count 279 -> 280.",
-    "Corpus sweep hunk classification. The single binary that changes is an AVX-512 static x86-64 keygen; its 2258-line diff is (a) a variable-renumbering cascade and (b) the real change, which is that an AVX-512 mask-register value is now rendered at its true width. `vpcmpd ymm,ymm -> k` compares 8 dwords, so the mask IS 8 bits, and the option-on output says so with an explicit `& 0xff` where the option-off output had an opaque cast off an unfoldable const-space LOAD. Checked against the disassembly (0x445d7d `vpcmpeqb (%rdi),%ymm16,%k0` / `kmovd %k0,%eax` / `test %eax,%eax` is byte-comparison, 32 lanes, and correctly keeps a bare `if (v)`). No statement is deleted -- the file grows by 62 lines, all declarations. Recorded as a rendering change on AVX-512 code, not a no-op."
+    "The first cut of this rule also resized: SUBPIECE(p,0) when N < S and INT_ZEXT p when N > S. The corpus sweep caught it. Those arms changed 5 further binaries, all statically linked AVX-512 glibc, by re-rendering `k` mask registers at their true width (`& 0xff` for the 8-lane vpcmpd, `& 0xffff`/`& 0xffffffff` for vpcmpub/vptestmb). Most of that was a faithful rendering improvement and deleted no statement -- but in the __strlen_evex-shaped `sub_476bc0` of two of them it was WRONG: at `label_476da0`, reached both by fall-through and by a goto, the live mask ended up in `v1`/`v4` on one path and `v9` on the other while the scan loop read `v3`, a stale mask from the previous compare. The option-off arm used one variable `v2` on all three paths and was correct. Withdrawing the resize arms removed all 5 diffs -- re-measured, the shipped rule changes exactly 1 of 122 compared binaries, the witness. The refuter predicted the shape of this trap (it warned the acceptance probe would go green on a wrong fix); the trap was one level over from where it pointed -- not a truncated constant, but a lost reaching definition."
   ],
   "tests": {
     "stage": "tests/stages/ghdec-constspaceload.xml (2 passes, 5 assertions)",
@@ -38,15 +38,25 @@
       "verified_on_witness": true
     }
   },
-  "gates": {},
+  "gates": {
+    "make test": "PARITY OK 675/675",
+    "make test-stages": "PARITY OK 763/763",
+    "make test-cli": "122/122",
+    "make rust-test": "green (rc=0)",
+    "make check-spec": "OK",
+    "kuna catalog --check": "OK",
+    "acceptance probe": "PASS on the dataset witness"
+  },
   "ablation": {
     "method": "whole-binary `kuna decompile-all`, option off vs default, unified diff of the emitted C",
     "targets": "5 linked binaries from tests/bug-repro (betaflight_STM32F405.elf, faillog, grep, libselinux.so.1, sort) + RE-dataset challenge images",
-    "compared": 120,
-    "unchanged": 115,
-    "changed": 5,
-    "skipped": 10,
-    "changed_class": "all 3 are the same AVX-512 static glibc strlen/memchr family: a k mask-register value is rendered at its true width (& 0xff for the 8-lane vpcmpd, & 0xffffffff for the 32-lane vpcmpub) instead of an opaque cast off an unfoldable const-space LOAD; no statement deleted",
+    "total_targets": 137,
+    "compared": 122,
+    "unchanged": 121,
+    "changed": 1,
+    "skipped": 15,
+    "changed_class": "the witness only (crackmes.one 68d40081 trap, 18 changed lines): the three near-null reads become zero assignments",
+    "note": "the 5 further binaries changed by the withdrawn SUBPIECE/INT_ZEXT arms were re-measured after the narrowing and are byte-identical",
     "datatests": "0/675, byte-identical"
   }
 }

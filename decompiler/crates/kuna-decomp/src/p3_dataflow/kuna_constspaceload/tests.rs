@@ -137,38 +137,27 @@ fn a_same_width_const_space_load_becomes_a_copy_of_the_pointer() {
 }
 
 #[test]
-fn a_narrower_read_takes_the_low_bytes() {
+fn a_narrower_read_is_declined() {
     let mut fd = build_fd(true);
-    let (op, ptr) = build_load(&mut fd, CONST_SPACE_IDX, 8, 4, false);
+    let (op, _ptr) = build_load(&mut fd, CONST_SPACE_IDX, 8, 4, false);
 
     let mut rule = RuleConstSpaceLoad::new(false);
-    assert_eq!(rule.apply_op(op, &mut fd), 1);
+    assert_eq!(rule.apply_op(op, &mut fd), 0, "a width mismatch is not the identity");
 
-    let (code, in0, n) = shape(&fd, op);
-    assert_eq!(code, OpCode::CPUI_SUBPIECE);
-    assert_eq!(in0, Some(ptr));
-    assert_eq!(n, 2);
-    let k = fd
-        .obank()
-        .get(op)
-        .and_then(|o| o.get_in(1))
-        .and_then(|v| fd.vbank().get(v).map(|vn| vn.get_offset()))
-        .unwrap();
-    assert_eq!(k, 0, "the constant a const-space address denotes is masked, not shifted");
+    let (code, _, _) = shape(&fd, op);
+    assert_eq!(code, OpCode::CPUI_LOAD);
 }
 
 #[test]
-fn a_wider_read_zero_extends() {
+fn a_wider_read_is_declined() {
     let mut fd = build_fd(true);
-    let (op, ptr) = build_load(&mut fd, CONST_SPACE_IDX, 4, 8, false);
+    let (op, _ptr) = build_load(&mut fd, CONST_SPACE_IDX, 4, 8, false);
 
     let mut rule = RuleConstSpaceLoad::new(false);
-    assert_eq!(rule.apply_op(op, &mut fd), 1);
+    assert_eq!(rule.apply_op(op, &mut fd), 0, "a width mismatch is not the identity");
 
-    let (code, in0, n) = shape(&fd, op);
-    assert_eq!(code, OpCode::CPUI_INT_ZEXT);
-    assert_eq!(in0, Some(ptr));
-    assert_eq!(n, 1);
+    let (code, _, _) = shape(&fd, op);
+    assert_eq!(code, OpCode::CPUI_LOAD);
 }
 
 #[test]

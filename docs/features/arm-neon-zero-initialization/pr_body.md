@@ -36,8 +36,8 @@ crackmes.one `68d40081224c0ec5dcedc2d2` (ARM32 ELF `trap`, `_start_main`), whose
   `RuleLoadVarnode` already applies, but only to a constant `v`.
   `RuleCollapseConstants` cannot supply one for a 16-byte `v`, since
   `PcodeOp::isCollapsible` declines any op wider than a `uintb`. New rule
-  `RuleConstSpaceLoad` applies the identity to a defined pointer: `COPY p`,
-  `SUBPIECE(p, 0)` or `INT_ZEXT p` by width.
+  `RuleConstSpaceLoad` applies the identity to a defined pointer: `COPY p`, at
+  equal widths only.
 - It runs in oppool1, before `ActionLaneDivide` — the point of the change.
   Splitting a const-space LOAD into lane LOADs at `v+4`, `v+8`, `v+0xc` is not a
   narrowing but a different value, which is why lane 0 is right and folding the
@@ -46,6 +46,13 @@ crackmes.one `68d40081224c0ec5dcedc2d2` (ARM32 ELF `trap`, `_start_main`), whose
   const-space load works only because this need's immediate is zero, and
   silently truncates every other `simdExpImm_16` arm. `vmov.i32 q8,#1` is in the
   fixture and in the stage test for that reason.
+- A width mismatch is declined rather than resized. The first cut also emitted
+  `SUBPIECE(p, 0)` / `INT_ZEXT p`, which re-rendered live AVX-512 `k` mask
+  registers on statically linked glibc; in `__strlen_evex`-shaped code a mask
+  then lost its reaching definition at a label reached from two paths and the
+  scan loop read a stale earlier compare. A dynamic `export *[const]:N tmp`
+  gives the operand and `tmp` the same size anyway, so `N != S` is a different
+  shape and resizing it invents a truncation instead of applying an identity.
 - A constant pointer stays with `RuleLoadVarnode`, which also clears the
   spacebase-placeholder trigger a bare COPY would drop; free pointers and
   placeholder outputs are declined. Shipped as `constspaceload`, default **on**
@@ -54,10 +61,13 @@ crackmes.one `68d40081224c0ec5dcedc2d2` (ARM32 ELF `trap`, `_start_main`), whose
 ## The tests
 
 `tests/stages/ghdec-constspaceload.xml` runs the fixture twice and pins both
-arms; six unit tests cover the three width arms and each declining clause;
-`tests/cli/arm-neon-zero-initialization.json` is the promoted acceptance probe.
-`make test` 675/675 and `make test-stages` 763/763 PARITY OK with no
-pre-existing assertion moved. `decompile-all` sweep, option off vs default:
-over 119 binaries compared under both arms (5 linked binaries from tests/bug-repro incl. betaflight_STM32F405.elf, plus RE-dataset challenge images; 10 exceeded the 150 s cap or failed to load under both arms and were skipped): 3 changed, all three the same class -- an AVX-512 static glibc strlen/memchr family where a k mask-register value is now rendered at its true width (`& 0xff` for the 8-lane `vpcmpd`, `& 0xffffffff` for the 32-lane `vpcmpub`) instead of an opaque cast off an unfoldable const-space LOAD. No statement is deleted in any of them.
+arms; six unit tests cover the equal-width rewrite, both declined width
+mismatches and each declining clause; `tests/cli/arm-neon-zero-initialization.json`
+is the promoted acceptance probe. `make test` 675/675 and `make test-stages`
+763/763 PARITY OK with no pre-existing assertion moved, `make test-cli` 122/122.
+`decompile-all` sweep, option off vs default, over 137 targets (5 linked
+binaries from `tests/bug-repro` incl. `betaflight_STM32F405.elf`, plus RE-dataset
+challenge images; 15 hit the 150 s cap or failed to load under both arms, leaving
+122 compared): exactly 1 changed, the witness itself.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)

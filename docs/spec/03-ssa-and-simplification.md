@@ -963,14 +963,18 @@ a LOAD through a pointer. `ActionLaneDivide` then splits it into one lane LOAD
 per word at `v`, `v+4`, `v+8`, `v+0xc` — invalid in the constant space, where
 offsetting an address changes the value rather than selecting a word of it, so
 lane 0 folds correctly and the rest read near-null memory. *Rewrite:*
-`out:N = LOAD(const, p:S)` becomes `COPY p` when `N == S`, `SUBPIECE(p, 0)` when
-`N < S` and `INT_ZEXT p` when `N > S`. The truncating arm takes the low bytes in
-either endianness, because the constant a const-space address denotes is that
-address masked to the output size. Applied in oppool1 it lands before
-`ActionLaneDivide`, so each lane is split off the *value*. *Bounds/failure:*
-only the constant space is matched; a constant pointer is left to
-`RuleLoadVarnode`, which also resolves the spacebase-placeholder tail that a
-bare COPY would drop; a free pointer is declined. Settable `constspaceload`,
+`out:N = LOAD(const, p:N)` becomes `COPY p`, and only at equal widths. Applied
+in oppool1 it lands before `ActionLaneDivide`, so each lane is split off the
+*value*. *Bounds/failure:* only the constant space is matched; a width mismatch
+is declined, because a dynamic `export *[const]:N tmp` gives the operand and
+`tmp` the same size, so `N != S` is a different shape and resizing it would
+invent a truncation rather than apply an identity — a `SUBPIECE`/`INT_ZEXT`
+version of this rewrite was measured to re-render live AVX-512 `k` mask
+registers on statically linked glibc, and in `__strlen_evex`-shaped code one
+mask lost its reaching definition at a shared label, so the scan loop read a
+stale earlier compare; a constant pointer is left to `RuleLoadVarnode`, which
+also resolves the spacebase-placeholder tail that a bare COPY would drop; a
+free pointer is declined. Settable `constspaceload`,
 shipped default **on** (DIV-158).
 
 **flagcompare** (GH-1276 / GH-8777) —

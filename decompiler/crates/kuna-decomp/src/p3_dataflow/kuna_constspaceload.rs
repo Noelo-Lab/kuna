@@ -42,20 +42,18 @@
 //!
 //! # The rule
 //!
-//! For the constant space, `LOAD(const, p)` of size `N` **is** `p`, resized to
-//! `N`: that is the same identity `RuleLoadVarnode` applies to a constant `p`,
-//! and it does not stop holding when `p` is a temporary. So the rewrite is
+//! For the constant space, `LOAD(const, p)` **is** `p`: that is the same
+//! identity `RuleLoadVarnode` applies to a constant `p`, and it does not stop
+//! holding when `p` is a temporary. So the rewrite is
 //!
 //! ```text
-//! out:N = LOAD(const, p:S)   ->   out = COPY p          (N == S)
-//!                                 out = SUBPIECE(p, 0)  (N <  S)
-//!                                 out = INT_ZEXT p      (N >  S)
+//! out:N = LOAD(const, p:N)   ->   out = COPY p
 //! ```
 //!
-//! The truncating arm takes the low bytes in either endianness, because the
-//! constant a LOAD from the constant space denotes is its address masked to the
-//! output size (`Varnode::getOffset` & `calc_mask`), and that mask keeps the
-//! low bytes.
+//! and only at equal widths. A dynamic `export *[const]:N tmp` gives the
+//! exported operand and `tmp` the same size, so a width mismatch is some other
+//! shape; resizing there would be inventing a truncation rather than applying
+//! an identity, and it was measured to do harm (see *Bounds*).
 //!
 //! Applied in `oppool1` the rewrite lands **before** `ActionLaneDivide`, so the
 //! vector immediate is an ordinary 16-byte value by the time the lanes are cut
@@ -68,6 +66,12 @@
 //!
 //! * Only a LOAD whose space operand decodes to the **constant** space is
 //!   matched; every other space is a real memory read and is left alone.
+//! * Only an **equal-width** LOAD is matched. Rewriting a narrower or wider
+//!   read as a `SUBPIECE`/`INT_ZEXT` of the pointer was tried and withdrawn: on
+//!   statically linked AVX-512 glibc it re-renders live `k` mask registers, and
+//!   in `__strlen_evex`-shaped code one such mask lost its reaching definition
+//!   at a shared label (the scan loop read a stale earlier compare instead of
+//!   the live one). The NEON case this rule exists for is equal-width.
 //! * A constant pointer is left to `RuleLoadVarnode`, which additionally
 //!   resolves the spacebase-placeholder tail a plain COPY would lose.
 //! * A free pointer Varnode is declined: it has no definition to copy from.
@@ -81,7 +85,7 @@
 use kuna_base::error::KunaResult;
 use kuna_base::marshal::ElementId;
 use kuna_base::space::spacetype;
-use kuna_base::types::{int4, uintb};
+use kuna_base::types::int4;
 use kuna_num::opcodes::OpCode;
 
 use crate::action::{ActionGroupList, Rule, RuleSpec};
@@ -178,20 +182,21 @@ impl Rule for RuleConstSpaceLoad {
             Some(v) => v.get_size(),
             None => return 0,
         };
+        // Only the same-width identity. A dynamic `export *[const]:N tmp` gives
+        // the operand and `tmp` the same size, so N != S is some other shape and
+        // resizing there would be inventing a truncation the rest of the
+        // pipeline has not agreed to -- measured to re-render live AVX-512 mask
+        // registers, one of which lost its reaching definition.  See the module
+        // docs, "Bounds".
+        if out_size != ptr_size {
+            return 0;
+        }
 
         // `RuleLoadVarnode`'s order: overwrite the space operand first, then drop
         // the pointer slot, so neither Varnode is ever left without a descendant.
         data.op_set_input(op, ptr, 0).expect("RuleConstSpaceLoad: opSetInput");
         data.op_remove_input(op, 1);
-        if out_size == ptr_size {
-            data.op_set_opcode(op, crate::typeop::type_op_for(OpCode::CPUI_COPY));
-        } else if out_size < ptr_size {
-            data.op_set_opcode(op, crate::typeop::type_op_for(OpCode::CPUI_SUBPIECE));
-            let zero = data.new_constant(4, 0 as uintb);
-            data.op_insert_input(op, zero, 1).expect("RuleConstSpaceLoad: opInsertInput");
-        } else {
-            data.op_set_opcode(op, crate::typeop::type_op_for(OpCode::CPUI_INT_ZEXT));
-        }
+        data.op_set_opcode(op, crate::typeop::type_op_for(OpCode::CPUI_COPY));
         1
     }
 }
