@@ -1145,6 +1145,43 @@ def _stat_clause(metric, sp, runs, baselines):
     return ok, actual
 
 
+def _stat_sample_outcomes(metric, sp, runs, baselines):
+    """Evaluate an aggregate predicate against each measured sample.
+
+    A median/mean predicate still passes or fails on its requested aggregate. These
+    per-sample outcomes answer a different question: did the repeated observations
+    stay on one side of the boundary? Crossing it is the aggregate equivalent of
+    ordinary per-run disagreement and therefore makes the verdict flaky rather than
+    evidence for a state transition.
+    """
+    # A max/min predicate intentionally makes one extreme sample decisive; treating
+    # the other samples as disagreement would erase that authored contract.
+    if sp.get("stat") not in ("median", "mean"):
+        return []
+    samples = _samples(runs, metric)
+    base = None
+    if "ratio_lt" in sp or "ratio_gt" in sp:
+        base = _baseline_stat(baselines, sp.get("rel_to"), metric, sp["stat"])
+        if base is None or base == 0:
+            return []
+
+    outcomes = []
+    for value in samples:
+        ok = True
+        if "lt" in sp:
+            ok = ok and value < sp["lt"]
+        if "gt" in sp:
+            ok = ok and value > sp["gt"]
+        if base is not None:
+            ratio = value / base
+            if "ratio_lt" in sp:
+                ok = ok and ratio < sp["ratio_lt"]
+            if "ratio_gt" in sp:
+                ok = ok and ratio > sp["ratio_gt"]
+        outcomes.append(ok)
+    return outcomes
+
+
 def _collapse(actuals):
     keys = set()
     for a in actuals:
@@ -1162,11 +1199,13 @@ def evaluate(probe, observation):
     caller can tell "the behaviour is not there" from "the gate could not decide". A flaky probe
     never passes, since passing requires every run to satisfy every clause.
 
-    ``wall_ms``/``max_rss_kb`` are aggregates over the repeats and so cannot be attributed to one
-    run; they are excluded from the flakiness verdict and evaluated once. A run that timed out or
-    could not be executed adds a synthetic failing ``run`` clause: an incomplete observation is not
-    a pass. ``rel_to`` baselines are read from ``observation["baselines"]``, which :func:`run`
-    copies out of ``ctx["baselines"]`` -- the caller must supply them.
+    ``wall_ms``/``max_rss_kb`` pass or fail on their requested aggregate, but each sample is also
+    tested against the same bound for stability. Samples on both sides make the verdict flaky:
+    a median that changes truth when one near-bound sample moves is not evidence for a pipeline
+    state transition. A run that timed out or could not be executed adds a synthetic failing
+    ``run`` clause: an incomplete observation is not a pass. ``rel_to`` baselines are read from
+    ``observation["baselines"]``, which :func:`run` copies out of ``ctx["baselines"]`` -- the
+    caller must supply them.
     """
     p = normalize(probe)
     expect = p["expect"]
@@ -1190,11 +1229,15 @@ def evaluate(probe, observation):
             "actual": _collapse([x[1] for x in results]),
             "ok": bool(results) and all(x[0] for x in results),
         })
+    aggregate_flaky = []
     for metric in _STAT_CLAUSES:
         if metric in expect:
             ok, actual = _stat_clause(metric, expect[metric], runs, baselines)
             clauses.append({"clause": metric, "expected": expect[metric],
                             "actual": actual, "ok": ok})
+            outcomes = _stat_sample_outcomes(metric, expect[metric], runs, baselines)
+            if len(set(outcomes)) > 1:
+                aggregate_flaky.append(metric)
 
     broken = [r for r in runs if r.get("timed_out") or r.get("error")]
     if not runs:
@@ -1210,12 +1253,14 @@ def evaluate(probe, observation):
     per_run = [all(fn(r, parsed[i])[0] for _, _, fn in checkers) for i, r in enumerate(runs)]
     wall = _samples(runs, "wall_ms")
     rss = _samples(runs, "max_rss_kb")
+    is_flaky = len(set(per_run)) > 1 or bool(aggregate_flaky)
     return {
         "schema": "re-verdict/1",
         "probe_id": p["probe_id"],
         "kind": p.get("kind"),
-        "passed": bool(runs) and all(c["ok"] for c in clauses),
-        "flaky": len(set(per_run)) > 1,
+        "passed": bool(runs) and all(c["ok"] for c in clauses) and not is_flaky,
+        "flaky": is_flaky,
+        "flaky_clauses": aggregate_flaky,
         "repeat": len(runs),
         "run_passed": per_run,
         "clauses": clauses,
