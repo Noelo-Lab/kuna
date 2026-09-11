@@ -285,9 +285,14 @@ python3 -m scripts.repipe.verify --acceptance-suite --all --json
 ```
 
 A previously-closed need whose acceptance flips back becomes `regressed` and outranks
-everything. The next round's testers are automatically handed the closed set with an explicit
-mandate to try to break it, so the loop closes on evidence twice: a machine re-runs the
-predicate, and a fresh agent attacks the new surface.
+everything. Aggregate performance clauses have two extra evidence guards without changing
+their authored bound: repeated samples that land on both sides of the bound are `flaky`, and
+an otherwise-stable timing- or memory-only failure must fail a second independent batch before
+it can trigger that transition. A contradictory batch is `indeterminate`, not PASS, so the
+contract remains visible without rolling back unrelated code on a near-bound coin flip. The
+next round's testers are automatically handed the closed set with an explicit mandate to try to
+break it, so the loop closes on evidence twice: a machine re-runs the predicate, and a fresh
+agent attacks the new surface.
 
 ## 7. Collision avoidance
 

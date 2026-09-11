@@ -28,8 +28,10 @@ The five verdicts, in the precedence `gate()` decides them:
 `acceptance_suite()` is the other half of the loop and the machine's entire answer to
 "have the builders fixed what the testers asked for": it re-runs the acceptance probe of
 every need in docs/re-needs/ against the CURRENT build. FAIL->PASS closes a need; PASS->
-FAIL on a closed need is a regression that goes back at rank 0. Neither is a judgment
-call, and neither fires off a flaky or unrunnable replay.
+FAIL on a closed need is a regression that goes back at rank 0. Neither fires off a flaky
+or unrunnable replay. An otherwise-stable aggregate-only regression is measured in a
+second independent batch before it can move state; disagreement is flaky evidence, not a
+reason to roll back unrelated code.
 
 `promote()` copies a closed need's acceptance probe verbatim into tests/cli/<need_id>.json
 so every shipped need leaves a permanent regression test behind it. It refuses a probe
@@ -677,6 +679,49 @@ def _wants_baseline(probe_doc):
     return False
 
 
+def _aggregate_only_failure(verdict):
+    """Whether only a central wall-time or memory aggregate made this verdict fail."""
+    return bool(_failed_central_aggregates(verdict))
+
+
+def _failed_central_aggregates(verdict):
+    """Return the central aggregate clauses responsible for a clean failure."""
+    clauses = list((verdict or {}).get("clauses") or [])
+    failed = [c for c in clauses if not c.get("ok")]
+    if not failed or not all(
+        c.get("clause") in ("wall_ms", "max_rss_kb")
+        and (c.get("expected") or {}).get("stat") in ("median", "mean")
+        for c in failed
+    ):
+        return ()
+    return tuple(sorted(c["clause"] for c in failed))
+
+
+def _confirm_aggregate_regression(primary, confirmation):
+    """Attach a second batch and withhold a regression unless it reproduces.
+
+    This does not turn either failed batch into a pass or alter the probe's bound.
+    It only prevents a noisy aggregate from causing the PASS->FAIL state transition
+    when another independent replay cannot confirm it.
+    """
+    out = dict(primary)
+    out["confirmation"] = confirmation
+    out["batch_passed"] = [bool(primary.get("passed")), bool(confirmation.get("passed"))]
+    inconclusive = (
+        confirmation.get("unrunnable")
+        or confirmation.get("flaky")
+        or confirmation.get("passed")
+        or _failed_central_aggregates(confirmation)
+        != _failed_central_aggregates(primary)
+    )
+    if inconclusive:
+        out["flaky"] = True
+        reasons = list(out.get("flaky_clauses") or [])
+        reasons.append("aggregate-confirmation")
+        out["flaky_clauses"] = reasons
+    return out
+
+
 def acceptance_suite(need_ids=None, reps=None):
     """Re-run every filed acceptance probe against the CURRENT build.
 
@@ -684,7 +729,9 @@ def acceptance_suite(need_ids=None, reps=None):
     for". A need whose acceptance flips FAIL->PASS is `closed`; a previously-closed need
     whose acceptance flips PASS->FAIL is `regressed` and must be re-queued at rank 0. A
     flaky or unrunnable replay is `indeterminate` and moves nothing -- closing a need on a
-    coin-flip would be worse than not closing it.
+    coin-flip would be worse than not closing it. A closed need whose only failure is an
+    otherwise-stable wall-time or memory aggregate gets one independent confirmation batch;
+    only two failures may requeue it as a regression.
     """
     sha = head_sha()
     rows, closed, regressed = [], [], []
@@ -708,6 +755,18 @@ def acceptance_suite(need_ids=None, reps=None):
         # whole perf idiom dead on arrival.
         baselines = _acceptance_baselines(rec, chal, reps)
         v = run_probe(p, True, None, None, chal, reps, baselines=baselines)
+        if (
+            status == "closed"
+            and not v.get("passed")
+            and not v.get("unrunnable")
+            and not v.get("flaky")
+            and _aggregate_only_failure(v)
+        ):
+            confirmation_baselines = _acceptance_baselines(rec, chal, reps)
+            confirmation = run_probe(
+                p, True, None, None, chal, reps, baselines=confirmation_baselines
+            )
+            v = _confirm_aggregate_regression(v, confirmation)
         if v.get("unrunnable") or v.get("flaky"):
             trans = "indeterminate"
         elif v.get("passed") and status in OPEN_STATUSES:

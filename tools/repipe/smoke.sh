@@ -44,6 +44,66 @@ for m in config probe verify workspace redact sample grade needs cluster select 
   if "$PY" -c "import scripts.repipe.$m" 2>/dev/null; then ok "import $m"; else bad "import $m"; fi
 done
 
+head_ "L0  aggregate performance regressions require stable evidence"
+"$PY" - <<'PY' >/dev/null 2>&1 \
+  && ok "near-bound samples and contradictory confirmation cannot requeue a need" \
+  || bad "aggregate timing noise can still trigger a regression"
+from scripts.repipe import probe, verify
+
+doc = {
+    "schema": "re-probe/1", "kind": "timing", "cmd": ["kuna"], "timeout_s": 5,
+    "repeat": 3, "expect": {"exit_code": {"eq": 0},
+                            "wall_ms": {"stat": "median", "lt": 10}},
+}
+def observation(samples):
+    return {"runs": [{"exit_code": 0, "stdout": "", "stderr": "", "wall_ms": value,
+                       "timed_out": False, "error": None} for value in samples],
+            "baselines": {}}
+
+crossing = probe.evaluate(probe.normalize(doc), observation([9, 11, 12]))
+assert not crossing["passed"] and crossing["flaky"], crossing
+assert crossing["flaky_clauses"] == ["wall_ms"], crossing
+crossing_pass = probe.evaluate(probe.normalize(doc), observation([9, 9, 11]))
+assert not crossing_pass["passed"] and crossing_pass["flaky"], crossing_pass
+max_doc = dict(doc, expect={"exit_code": {"eq": 0},
+                            "wall_ms": {"stat": "max", "lt": 10}})
+extreme = probe.evaluate(probe.normalize(max_doc), observation([9, 11, 12]))
+assert not extreme["passed"] and not extreme["flaky"], extreme
+
+def verdict(passed):
+    return {"passed": passed, "flaky": False, "unrunnable": False, "error": None,
+            "probe_id": "a-smoke", "clauses": [
+                {"clause": "exit_code", "ok": True},
+                {"clause": "wall_ms", "ok": passed,
+                 "expected": {"stat": "median", "lt": 10}},
+            ]}
+
+record = {"need_id": "perf-smoke", "front_matter": {"status": "closed", "challenges": []}}
+verify.need_records = lambda _ids=None: [record]
+verify.acceptance_of = lambda _rec: (doc, "{}", "record")
+verify.head_sha = lambda: "abc123"
+
+answers = iter([verdict(False), verdict(True)])
+verify.run_probe = lambda *_args, **_kwargs: next(answers)
+row = verify.acceptance_suite()["needs"][0]
+assert row["transition"] == "indeterminate" and row["flaky"], row
+assert row["acceptance"]["batch_passed"] == [False, True], row
+
+answers = iter([verdict(False), dict(verdict(False), clauses=[
+    {"clause": "exit_code", "ok": False},
+    {"clause": "wall_ms", "ok": True,
+     "expected": {"stat": "median", "lt": 10}},
+])])
+verify.run_probe = lambda *_args, **_kwargs: next(answers)
+row = verify.acceptance_suite()["needs"][0]
+assert row["transition"] == "indeterminate" and row["flaky"], row
+
+answers = iter([verdict(False), verdict(False)])
+verify.run_probe = lambda *_args, **_kwargs: next(answers)
+row = verify.acceptance_suite()["needs"][0]
+assert row["transition"] == "regressed" and not row["flaky"], row
+PY
+
 head_ "L0  agent split matches the documented table"
 SPLIT="$("$PY" -c 'from scripts.repipe import config; import json; print(json.dumps({n: config.agent_split(n) for n in (2,4,5,7,9)}))')"
 echo "$SPLIT" | grep -q '"7": {"captain": 1, "testers": 3, "builders": 3' \
