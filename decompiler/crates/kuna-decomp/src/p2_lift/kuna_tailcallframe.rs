@@ -51,6 +51,11 @@
 //! evidence, and an unconditional intraprocedural jump would be
 //! indistinguishable from a tail call.
 //!
+//! A delta that cancels is necessary but not sufficient: the run ending at the
+//! branch is also asked to give back what the entry run put on the stack, which
+//! is what tells a teardown apart from cdecl argument cleanup.  See
+//! [`kuna_tailcallsaved`](crate::kuna_tailcallsaved) (`option tailcallsaved`).
+//!
 //! ## What this rule cannot distinguish
 //!
 //! The evidence is the frame, not the function bound, and kuna's
@@ -89,6 +94,9 @@ use kuna_num::opcodes::OpCode;
 
 use crate::context::OpId;
 use crate::funcdata::Funcdata;
+use crate::kuna_tailcallsaved::{
+    kuna_stack_restored_bytes, kuna_stack_saved_bytes, kuna_teardown_restores_saves,
+};
 
 /// Marshaling element `<tailcallframe>` (kuna).  ElementIds live in the 4000+
 /// range; `scripts.repipe.counters --check` derives the next free id and fails
@@ -237,8 +245,9 @@ fn adjacent(cur: &Address, next: &Address, forward: bool) -> bool {
 }
 
 /// Net constant stack-pointer delta over the straight-line run that *starts* at
-/// `entry` (the prologue), or `None` when the run cannot be accounted for.
-fn prologue_delta(data: &Funcdata, entry: &Address, sp: &VarnodeStorage) -> Option<i64> {
+/// `entry` (the prologue), together with the bytes that run saved *through* the
+/// stack pointer, or `None` when the run cannot be accounted for.
+fn prologue_frame(data: &Funcdata, entry: &Address, sp: &VarnodeStorage) -> Option<(i64, u64)> {
     // Nothing decoded at the entry address: the caller asked about a Funcdata
     // whose entry is not this instruction stream.
     let first = data.obank().first_op_at_or_after(entry)?;
@@ -246,6 +255,7 @@ fn prologue_delta(data: &Funcdata, entry: &Address, sp: &VarnodeStorage) -> Opti
         return None;
     }
     let mut delta: i64 = 0;
+    let mut saved: u64 = 0;
     let mut at = entry.clone();
     for _ in 0..MAX_SCAN_INSTRS {
         let eff = group_effect(data, &at, sp);
@@ -256,6 +266,7 @@ fn prologue_delta(data: &Funcdata, entry: &Address, sp: &VarnodeStorage) -> Opti
             return None;
         }
         delta = delta.wrapping_add(eff.delta);
+        saved = saved.saturating_add(kuna_stack_saved_bytes(data, &at, sp, eff.delta));
         let Some((sq, _)) = data.obank().first_after_seq(&SeqNum::new(at.clone(), uintm::MAX))
         else {
             break;
@@ -266,18 +277,20 @@ fn prologue_delta(data: &Funcdata, entry: &Address, sp: &VarnodeStorage) -> Opti
         }
         at = next;
     }
-    Some(delta)
+    Some((delta, saved))
 }
 
 /// Net constant stack-pointer delta over the straight-line run that *ends* at
-/// the instruction holding `branch` (the epilogue), or `None` when the run
-/// cannot be accounted for.  The branch's own instruction is excluded: it is a
+/// the instruction holding `branch` (the epilogue), together with the bytes that
+/// run restored *through* the stack pointer, or `None` when the run cannot be
+/// accounted for.  The branch's own instruction is excluded: it is a
 /// control-flow instruction by construction.
-fn epilogue_delta(data: &Funcdata, branch: OpId, sp: &VarnodeStorage) -> Option<i64> {
+fn epilogue_teardown(data: &Funcdata, branch: OpId, sp: &VarnodeStorage) -> Option<(i64, u64)> {
     let site = data.obank().get(branch)?.get_addr().clone();
     let first_at_site = data.obank().iter_at(&site).next().map(|(_, id)| id)?;
     let mut cur = data.obank().op_before(first_at_site);
     let mut delta: i64 = 0;
+    let mut restored: u64 = 0;
     let mut prev = site;
     for _ in 0..MAX_SCAN_INSTRS {
         let Some(id) = cur else { break };
@@ -293,11 +306,12 @@ fn epilogue_delta(data: &Funcdata, branch: OpId, sp: &VarnodeStorage) -> Option<
             return None;
         }
         delta = delta.wrapping_add(eff.delta);
+        restored = restored.saturating_add(kuna_stack_restored_bytes(data, &at, sp, eff.delta));
         let first_at = data.obank().iter_at(&at).next().map(|(_, i)| i)?;
         cur = data.obank().op_before(first_at);
         prev = at;
     }
-    Some(delta)
+    Some((delta, restored))
 }
 
 /// (kuna) Is `op` a direct `jmp` that tears the frame down first, and so is a
@@ -325,6 +339,7 @@ pub fn kuna_is_frame_teardown_tail_call(
     entry: &Address,
     dest: &Address,
     sp: Option<&VarnodeStorage>,
+    saved_gate: bool,
 ) -> bool {
     if !gate {
         return false;
@@ -342,12 +357,15 @@ pub fn kuna_is_frame_teardown_tail_call(
     if data.obank().iter_at(dest).next().is_some() {
         return false;
     }
-    let Some(prologue) = prologue_delta(data, entry, sp) else { return false };
+    let Some((prologue, saved)) = prologue_frame(data, entry, sp) else { return false };
     if prologue >= 0 {
         return false;
     }
-    let Some(epilogue) = epilogue_delta(data, op, sp) else { return false };
-    epilogue > 0 && epilogue == -prologue
+    let Some((epilogue, restored)) = epilogue_teardown(data, op, sp) else { return false };
+    if epilogue <= 0 || epilogue != -prologue {
+        return false;
+    }
+    kuna_teardown_restores_saves(saved_gate, saved, restored)
 }
 
 #[cfg(test)]

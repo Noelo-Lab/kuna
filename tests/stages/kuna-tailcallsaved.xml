@@ -1,0 +1,60 @@
+<decompilertest>
+<!--
+    tailcallsaved: a run that raises the stack pointer without loading a single
+    byte back through it is cdecl argument cleanup, not a frame teardown, so it
+    is not evidence of a tail call.  `tailcallframe` (DIV-109, default on) reads
+    a direct `jmp` as a tail call when the straight-line run ending at it raises
+    the stack pointer by exactly what the run leaving the entry address lowered
+    it by.  Both scans stop at the first control-flow op, so on a cdecl caller
+    the backward one measures the `add esp,8` that discards the two arguments of
+    the `call` above it and never sees the two pushes that put them there.
+    Stage model: S2 flow classification (`xref_control_flow`, the CPUI_BRANCH
+    arm), the `kuna_tailcallsaved` predicate inside `kuna_tailcallframe`.
+
+    Layout (linked flat), 32-bit cdecl:
+      caller @ 0x100040 : push ebx; push esi          (frame = -8, saved = 8)
+                          test eax,eax; jz L2
+                          push 1; push 2; call helper
+                          add esp,8                   (teardown = +8, restored = 0)
+                          jmp JOIN                    // read as a tail call today
+                     L2 : mov eax,0x1234
+                   JOIN : test eax,eax; jz R; or eax,7
+                      R : pop esi; pop ebx; ret
+      helper @ 0x100074 : return arg0 + 0x5a5a5a;
+
+    JOIN at 0x100059 is an ordinary block of `caller`, reached by both sides of
+    the branch at 0x100044; ebx and esi are still on the stack when the `jmp`
+    executes.  The teardown restores neither.
+
+    Pass 1 (default, tailcallsaved on): the deltas still cancel, but the run
+    ending at the branch gives nothing back, so the jump stays intraprocedural
+    flow and the whole function is emitted, including `| 7` from JOIN.
+    Pass 2 (tailcallsaved off, the bug): the jump becomes a CALL + RETURN to
+    0x100059, so `caller` ends at a call to its own join block and everything
+    after it is emitted as a separate callee.
+
+    Assert #1 pins the false call to EXACTLY ONE occurrence across both print C
+    passes: absent in the default pass (the fix), present in the off pass (the
+    bug).  Assert #2 pins the warning that attributes it, the mirror image.
+    Assert #3 pins JOIN's own arithmetic to the default pass only, with the
+    bug it lives in the callee instead.  Assert #4 pins the helper call to BOTH
+    passes, so the only difference between them is the tail-call boundary.
+-->
+<binaryimage arch="x86:LE:32:default:windows">
+<bytechunk space="ram" offset="0x100040" readonly="true">535685c0740e6a016a02e82500000083c408eb05b83412000085c0740483c807905e5bc3cccccccccccccccccccccccccccccccc8b442404055a5a5a00c3</bytechunk>
+<symbol space="ram" offset="0x100040" name="caller"/>
+</binaryimage>
+<script>
+  <com>lo fu caller</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option tailcallsaved off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="TAILCALLSAVED #1: only the tailcallsaved-off pass turns the jump into a call to the function's own join block" min="1" max="1">sub_100059\(</stringmatch>
+<stringmatch name="TAILCALLSAVED #2: the false call is attributed to the rule that made it, in that pass only" min="1" max="1">tailcallframe: recovered tail call</stringmatch>
+<stringmatch name="TAILCALLSAVED #3: only the default pass keeps the join block's own arithmetic inside the function" min="1" max="1">\| 7</stringmatch>
+<stringmatch name="TAILCALLSAVED #4: both passes keep the cdecl call whose arguments the add esp,8 discards, so the sole difference is the tail-call boundary" min="2" max="2">sub_100074\(2,1\)</stringmatch>
+</decompilertest>

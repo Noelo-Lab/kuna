@@ -528,6 +528,7 @@ impl FlowEnvironment for ArchFlowEnv {
             fd.get_address(),
             dest,
             sp.as_ref(),
+            arch.tail_call_saved,
         )
     }
 }

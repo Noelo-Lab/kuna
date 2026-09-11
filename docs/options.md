@@ -41,6 +41,10 @@ Three tiers:
 | the same callee is emitted twice in one function, once as a named call and once inlined | [`tailcallframe`](#tailcallframe) |
 | an unconditional jmp after add rsp,N; pop reg is followed instead of ending the function | [`tailcallframe`](#tailcallframe) |
 | kuna emits thousands of lines for a function the disassembly shows is a few hundred bytes | [`tailcallframe`](#tailcallframe) |
+| a recovered tail call whose target is an internal block of the same function | [`tailcallsaved`](#tailcallsaved) |
+| `tailcallframe: recovered tail call` on a `jmp` that follows `call f; add esp,N` | [`tailcallsaved`](#tailcallsaved) |
+| the tail of a cdecl function is emitted as a separate callee instead of inline | [`tailcallsaved`](#tailcallsaved) |
+| a function decompiled by address stops at an if/else join and calls sub_<join address> | [`tailcallsaved`](#tailcallsaved) |
 | a store to a nonsense global (dat_<huge hex>) appears right after a call | [`calltrampoline`](#calltrampoline) |
 | the callee of a call starts with lea esp,[esp+4] / add esp,4 / pop reg and ends in a jmp back into the caller | [`calltrampoline`](#calltrampoline) |
 | the body after a call is decoded one byte out of phase with the disassembly | [`calltrampoline`](#calltrampoline) |
@@ -754,6 +758,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** A function decompiled by address runs on into an unrelated function's body -- the output starts with the code you asked for and continues through a second routine's logic, strings and callees -- and the disassembly shows an unconditional `jmp` to that routine right after a stack-frame teardown (`add rsp,N; pop reg; jmp X`). Typical of an indirect-only callback (an event/listener/vtable entry) in a stripped binary, where the callee is not in `kuna functions` and so `tailcalljump` cannot see it. On by default; flip OFF to restore the flow-into-the-callee decode.
 - **Where / provenance:** P2/flow-classification · ida · correctness-fix · direct-address-keyboard-handler
 - **Example:** `option tailcallframe off`
+
+### `tailcallsaved` -- on | off, default `on`
+
+- **Symptoms:** a recovered tail call whose target is an internal block of the same function; `tailcallframe: recovered tail call` on a `jmp` that follows `call f; add esp,N`; the tail of a cdecl function is emitted as a separate callee instead of inline; a function decompiled by address stops at an if/else join and calls sub_<join address>.
+- **What it does:** PRESERVES CODE: narrow `tailcallframe` so a stack-pointer run that gives back nothing the entry block saved is read as argument cleanup rather than as a frame teardown. `tailcallframe` fires when the straight-line run ending at a direct `jmp` raises the stack pointer by exactly what the run leaving the entry address lowered it by; the backward scan stops at the first control-flow op, so on a cdecl caller (`push ebx; push esi; ...; push arg; push arg; call f; add esp,8; jmp L`) it measures the `add esp,8` that discards the call's two arguments and never sees the two pushes that put them there. The saved registers are still on the stack and the jump target is an ordinary block of the same function, so the recovered call truncates the function at an internal join and the rest of its body is emitted as a separate callee. A tail jump runs with the stack as `ret` would find it, so every callee-saved register the entry block pushed must have been popped back before the branch. This asks each scan for a second number beside its delta: the bytes it moved THROUGH the stack pointer -- an instruction that lowers the stack pointer and stores through it is saving, one that raises it and loads through it is restoring, each capped at that instruction's own stack-pointer motion -- and requires `restored >= saved`. A frame built purely by `sub rsp,N` saves nothing and demands nothing, so the `sub rsp,8; call f; add rsp,8; jmp g` alignment shape gcc emits at -O2 is decided exactly as before. One-directional: it can only decline a recovery `tailcallframe` would have made.
+- **When to flip:** A function decompiled by address ends in a `sub_X()` tail call to an address the disassembly shows is a block INSIDE the same function -- typically the join both sides of an if/else reach -- with a `tailcallframe: recovered tail call` warning on it, and the code after that block is missing from the output. Look for `add esp,N` immediately after a `call` in front of the `jmp`: that is cdecl argument cleanup, not a teardown. On by default; flip OFF to restore the delta-only test.
+- **Where / provenance:** P2/flow-classification · ida · correctness-fix · argument-cleanup-creates-false
+- **Example:** `option tailcallsaved off`
 
 ### `calltrampoline` -- on | off, default `on`
 

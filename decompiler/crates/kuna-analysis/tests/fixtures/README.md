@@ -975,6 +975,16 @@ names either passes `option pdb off` or copies the EXE somewhere on its own. The
 GUID** — re-read both with the `s1_pdb` extractor + `pdb` crate and re-pin if you
 rebuild.
 
+`tailcallsaved_i386` (~4.5 KB, source `tailcallsaved_i386.s`, `gcc -m32 -nostdlib
+-no-pie -Wl,--build-id=none`) is the `tailcallsaved` witness: `classify` pushes
+`%ebx` and `%esi` for a `-8` frame, and the run ending at its `jmp .Ljoin` is the
+`addl $8,%esp` that discards the two arguments of the `call helper` above it, so
+the two stack-pointer deltas cancel while both saved registers are still on the
+stack and `.Ljoin` is an ordinary block of `classify`. `tests/cli/argument-cleanup-creates-false.json`
+proves both arms: default keeps the whole function (`| 7` from `.Ljoin`), `option
+tailcallsaved off` ends it at `return sub_804901d();` with a `tailcallframe:
+recovered tail call` warning.
+
 NB: a `.pdb` (MSF container) has a minimum multi-stream page-table overhead, so
 `pdb_prog.pdb` / `pdb_prog_mismatch.pdb` are ~72 KB each — the two PDBs are the only
 fixtures over 32 KB (a PDB cannot be made smaller). All other fixtures are under 32

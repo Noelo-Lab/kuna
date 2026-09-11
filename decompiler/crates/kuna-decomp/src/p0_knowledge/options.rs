@@ -265,6 +265,10 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "msvcftol",
     "tailcalljump",
     "tailcallframe",
+    // (kuna) DIV-157: a teardown that restores nothing the entry block saved
+    // is cdecl argument cleanup, not a frame teardown. Narrows `tailcallframe`.
+    // Default ON.
+    "tailcallsaved",
     "calltrampoline",
     "funcboundflow",
     "overlapbranch",

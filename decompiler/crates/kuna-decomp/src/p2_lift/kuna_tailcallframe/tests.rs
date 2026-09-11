@@ -118,6 +118,50 @@ fn emit_branch(fd: &mut Funcdata, at: u64, dest: u64) -> OpId {
     op
 }
 
+/// `*(ram, SP) = <8-byte register>` at instruction address `at` — the store half
+/// of a `push`.
+fn emit_sp_store(fd: &mut Funcdata, at: u64) {
+    let ram = space_of(fd, "ram");
+    let op = fd.obank_mut().create_at(3, Address::new(Rc::clone(&ram), at));
+    fd.obank_mut().change_opcode(op, TypeOp::new(OpCode::CPUI_STORE, 0, "op"));
+    let cst = space_of(fd, "const");
+    let spc = fd.vbank_mut().create(8, Address::new(cst, ram.get_index() as u64), unk_type(8));
+    let ptr = sp_vn(fd);
+    let reg = space_of(fd, "register");
+    let val = fd.vbank_mut().create(8, Address::new(reg, 0x8), unk_type(8));
+    fd.obank_mut().get_mut(op).unwrap().set_input(Some(spc), 0);
+    fd.obank_mut().get_mut(op).unwrap().set_input(Some(ptr), 1);
+    fd.obank_mut().get_mut(op).unwrap().set_input(Some(val), 2);
+}
+
+/// `<8-byte register> = *(ram, SP)` at instruction address `at` — the load half
+/// of a `pop`.
+fn emit_sp_load(fd: &mut Funcdata, at: u64) {
+    let ram = space_of(fd, "ram");
+    let op = fd.obank_mut().create_at(2, Address::new(Rc::clone(&ram), at));
+    fd.obank_mut().change_opcode(op, TypeOp::new(OpCode::CPUI_LOAD, 0, "op"));
+    let cst = space_of(fd, "const");
+    let spc = fd.vbank_mut().create(8, Address::new(cst, ram.get_index() as u64), unk_type(8));
+    let ptr = sp_vn(fd);
+    let reg = space_of(fd, "register");
+    let out = fd.vbank_mut().create(8, Address::new(reg, 0x8), unk_type(8));
+    fd.obank_mut().get_mut(op).unwrap().set_input(Some(spc), 0);
+    fd.obank_mut().get_mut(op).unwrap().set_input(Some(ptr), 1);
+    fd.obank_mut().get_mut(op).unwrap().set_output(Some(out));
+}
+
+/// A real `push reg`: the stack pointer drops and the register lands on top.
+fn emit_push(fd: &mut Funcdata, at: u64) {
+    emit_sp_arith(fd, at, OpCode::CPUI_INT_SUB, 8);
+    emit_sp_store(fd, at);
+}
+
+/// A real `pop reg`: the register comes back off the top and the pointer rises.
+fn emit_pop(fd: &mut Funcdata, at: u64) {
+    emit_sp_load(fd, at);
+    emit_sp_arith(fd, at, OpCode::CPUI_INT_ADD, 8);
+}
+
 /// `push rbx; sub rsp,0x10; mov rbx,rdi` at 0x1000/0x1001/0x1005, then
 /// `add rsp,0x10; pop rbx; jmp dest` at 0x1100/0x1104/0x1105.
 fn build_teardown_shape(fd: &mut Funcdata, dest: u64) -> OpId {
@@ -143,7 +187,7 @@ fn gate_off_never_fires() {
     let br = build_teardown_shape(&mut fd, 0x2000);
     let sp = sp_loc(&fd);
     let (e, d) = (entry_addr(&fd), dest_addr(&fd, 0x2000));
-    assert!(!kuna_is_frame_teardown_tail_call(&fd, br, false, &e, &d, Some(&sp)));
+    assert!(!kuna_is_frame_teardown_tail_call(&fd, br, false, &e, &d, Some(&sp), true));
 }
 
 #[test]
@@ -152,7 +196,7 @@ fn exact_teardown_of_the_entry_frame_fires() {
     let br = build_teardown_shape(&mut fd, 0x2000);
     let sp = sp_loc(&fd);
     let (e, d) = (entry_addr(&fd), dest_addr(&fd, 0x2000));
-    assert!(kuna_is_frame_teardown_tail_call(&fd, br, true, &e, &d, Some(&sp)));
+    assert!(kuna_is_frame_teardown_tail_call(&fd, br, true, &e, &d, Some(&sp), true));
 }
 
 #[test]
@@ -160,7 +204,7 @@ fn no_stack_pointer_location_declines() {
     let mut fd = build_fd();
     let br = build_teardown_shape(&mut fd, 0x2000);
     let (e, d) = (entry_addr(&fd), dest_addr(&fd, 0x2000));
-    assert!(!kuna_is_frame_teardown_tail_call(&fd, br, true, &e, &d, None));
+    assert!(!kuna_is_frame_teardown_tail_call(&fd, br, true, &e, &d, None, true));
 }
 
 #[test]
@@ -175,7 +219,7 @@ fn partial_teardown_declines() {
     let br = emit_branch(&mut fd, 0x1104, 0x2000);
     let sp = sp_loc(&fd);
     let (e, d) = (entry_addr(&fd), dest_addr(&fd, 0x2000));
-    assert!(!kuna_is_frame_teardown_tail_call(&fd, br, true, &e, &d, Some(&sp)));
+    assert!(!kuna_is_frame_teardown_tail_call(&fd, br, true, &e, &d, Some(&sp), true));
 }
 
 #[test]
@@ -187,7 +231,7 @@ fn frameless_leaf_never_fires() {
     let br = emit_branch(&mut fd, 0x1100, 0x2000);
     let sp = sp_loc(&fd);
     let (e, d) = (entry_addr(&fd), dest_addr(&fd, 0x2000));
-    assert!(!kuna_is_frame_teardown_tail_call(&fd, br, true, &e, &d, Some(&sp)));
+    assert!(!kuna_is_frame_teardown_tail_call(&fd, br, true, &e, &d, Some(&sp), true));
 }
 
 #[test]
@@ -209,7 +253,7 @@ fn opaque_frame_pointer_restore_declines() {
     let br = emit_branch(&mut fd, 0x1104, 0x2000);
     let sp = sp_loc(&fd);
     let (e, d) = (entry_addr(&fd), dest_addr(&fd, 0x2000));
-    assert!(!kuna_is_frame_teardown_tail_call(&fd, br, true, &e, &d, Some(&sp)));
+    assert!(!kuna_is_frame_teardown_tail_call(&fd, br, true, &e, &d, Some(&sp), true));
 }
 
 #[test]
@@ -218,7 +262,7 @@ fn self_tail_recursion_excluded() {
     let br = build_teardown_shape(&mut fd, 0x1000);
     let sp = sp_loc(&fd);
     let (e, d) = (entry_addr(&fd), dest_addr(&fd, 0x1000));
-    assert!(!kuna_is_frame_teardown_tail_call(&fd, br, true, &e, &d, Some(&sp)));
+    assert!(!kuna_is_frame_teardown_tail_call(&fd, br, true, &e, &d, Some(&sp), true));
 }
 
 #[test]
@@ -229,7 +273,7 @@ fn already_decoded_target_excluded() {
     let br = build_teardown_shape(&mut fd, 0x1005);
     let sp = sp_loc(&fd);
     let (e, d) = (entry_addr(&fd), dest_addr(&fd, 0x1005));
-    assert!(!kuna_is_frame_teardown_tail_call(&fd, br, true, &e, &d, Some(&sp)));
+    assert!(!kuna_is_frame_teardown_tail_call(&fd, br, true, &e, &d, Some(&sp), true));
 }
 
 #[test]
@@ -243,7 +287,7 @@ fn indirect_branch_excluded() {
     fd.obank_mut().get_mut(op).unwrap().set_input(Some(vn), 0);
     let sp = sp_loc(&fd);
     let (e, d) = (entry_addr(&fd), dest_addr(&fd, 0x2000));
-    assert!(!kuna_is_frame_teardown_tail_call(&fd, op, true, &e, &d, Some(&sp)));
+    assert!(!kuna_is_frame_teardown_tail_call(&fd, op, true, &e, &d, Some(&sp), true));
 }
 
 #[test]
@@ -259,5 +303,54 @@ fn a_gap_before_the_branch_ends_the_epilogue_run() {
     let br = emit_branch(&mut fd, 0x1150, 0x2000);
     let sp = sp_loc(&fd);
     let (e, d) = (entry_addr(&fd), dest_addr(&fd, 0x2000));
-    assert!(!kuna_is_frame_teardown_tail_call(&fd, br, true, &e, &d, Some(&sp)));
+    assert!(!kuna_is_frame_teardown_tail_call(&fd, br, true, &e, &d, Some(&sp), true));
+}
+
+#[test]
+fn argument_cleanup_after_a_call_is_not_a_teardown() {
+    // The round-8 witness in miniature: the entry block PUSHES two registers,
+    // and the only stack motion the backward scan can see is the `add esp,0x10`
+    // that discards the two arguments of the call above it.  The deltas cancel,
+    // but both saved registers are still on the stack.
+    let mut fd = build_fd();
+    emit_push(&mut fd, 0x1000);
+    emit_push(&mut fd, 0x1001);
+    emit_filler(&mut fd, 0x1005);
+    emit_sp_arith(&mut fd, 0x1100, OpCode::CPUI_INT_ADD, 0x10);
+    let br = emit_branch(&mut fd, 0x1104, 0x2000);
+    let sp = sp_loc(&fd);
+    let (e, d) = (entry_addr(&fd), dest_addr(&fd, 0x2000));
+    assert!(!kuna_is_frame_teardown_tail_call(&fd, br, true, &e, &d, Some(&sp), true));
+    // ... and with `tailcallsaved` off it is the pre-existing false positive.
+    assert!(kuna_is_frame_teardown_tail_call(&fd, br, true, &e, &d, Some(&sp), false));
+}
+
+#[test]
+fn popping_back_what_was_pushed_still_fires() {
+    // `push; push; ...; pop; pop; jmp X`: the registers come back, so the run
+    // ending at the branch really is the frame teardown.
+    let mut fd = build_fd();
+    emit_push(&mut fd, 0x1000);
+    emit_push(&mut fd, 0x1001);
+    emit_filler(&mut fd, 0x1005);
+    emit_pop(&mut fd, 0x1100);
+    emit_pop(&mut fd, 0x1101);
+    let br = emit_branch(&mut fd, 0x1104, 0x2000);
+    let sp = sp_loc(&fd);
+    let (e, d) = (entry_addr(&fd), dest_addr(&fd, 0x2000));
+    assert!(kuna_is_frame_teardown_tail_call(&fd, br, true, &e, &d, Some(&sp), true));
+}
+
+#[test]
+fn an_alignment_only_frame_still_fires() {
+    // `sub rsp,8 ... add rsp,8; jmp X` saves no register, so the restore test
+    // demands none: gcc's -O2 alignment shape is decided exactly as before.
+    let mut fd = build_fd();
+    emit_sp_arith(&mut fd, 0x1000, OpCode::CPUI_INT_SUB, 8);
+    emit_filler(&mut fd, 0x1005);
+    emit_sp_arith(&mut fd, 0x1100, OpCode::CPUI_INT_ADD, 8);
+    let br = emit_branch(&mut fd, 0x1104, 0x2000);
+    let sp = sp_loc(&fd);
+    let (e, d) = (entry_addr(&fd), dest_addr(&fd, 0x2000));
+    assert!(kuna_is_frame_teardown_tail_call(&fd, br, true, &e, &d, Some(&sp), true));
 }

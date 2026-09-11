@@ -1,0 +1,47 @@
+{
+  "slug": "argument-cleanup-creates-false",
+  "need_id": "argument-cleanup-creates-false",
+  "track": "quality",
+  "scope": "small",
+  "option": "tailcallsaved",
+  "div": "DIV-157",
+  "default": "on",
+  "phase": "P2",
+  "subphase": "flow-classification",
+  "module": "decompiler/crates/kuna-decomp/src/p2_lift/kuna_tailcallsaved.rs",
+  "symptom": "Argument cleanup creates a false internal tail call (major, 1 instance, crackmes.one 5ab77f5f33c5d40ad448c820). Classified the jump at 0x4010f2 as a tail call after ADD ESP,8 removes two call arguments. Its destination, 0x401102, is an internal TEST EAX,EAX reached by both paths; saved registers remain on the stack.",
+  "hypothesis_status": "confirmed",
+  "decisions": [
+    "The filed hypothesis -- 'frame matching may confuse argument cleanup with restoration of saved registers' -- is exactly right and is recorded as confirmed, not overturned. tailcallframe's backward scan stops at the first control-flow op, so on the witness it measures the `add esp,8` in front of the branch and stops at the `call 0x40167d` above it, never seeing the two argument pushes that the cleanup undoes. The entry run is `push ebx; push esi` (-8) and the cleanup is +8, so the exact-cancellation test is satisfied by two unrelated stack motions.",
+    "Not covered by an existing option. `kuna catalog --json` has one option in this family, `tailcallframe` itself (DIV-109), and turning it off closes the witness only by giving up the capability it exists for: the round-2 keyboard-callback witness (tailcallframe_x86_64 on_key at 0x11b0) regresses to inlining its callee. So this is a narrowing of that predicate, not a default flip.",
+    "Chose the ABI invariant over the two alternatives considered. (a) Scanning backward THROUGH a call, accounting it as SP-neutral, would also reject the residual `sub esp,N` shape, but it is unsound on exactly this binary class: a stdcall callee cleans its own arguments with `ret N`, so a call is not SP-neutral on Windows PE, and a noreturn callee never restores anything. (b) Rejecting any epilogue run terminated by a CALL would break a real and common shape -- gcc -O2 emits `sub rsp,8; call f; add rsp,8; jmp g` -- which the chosen rule keeps, because a frame built purely by `sub rsp,N` saves no register and so demands none back.",
+    "The rule cannot create a false negative on a genuine tail call: the ABI requires every callee-saved register the prologue pushed to be restored before the jump, so `restored >= saved` holds for any real tail-call epilogue. Verified on both existing tailcallframe witnesses (the round-2 fixture `push rbp`/`pop rbp`, and tests/stages/tailcallframe.xml `push rbx; sub rsp,0x10` / `add rsp,0x10; pop rbx`), both of which still fire.",
+    "Known residual, not papered over: a frame built purely by `sub esp,N` whose N happens to equal a cdecl argument cleanup in front of the branch still matches, because with no register saved there is nothing to ask for. Closing that needs the flow-ordering change tailcallframe's own module header already names as the sound fix."
+  ],
+  "sweep": {
+    "method": "whole-binary `kuna decompile-all` A/B, `--option tailcallsaved off` (byte-identical to the pre-change tree, since the gate is the only behavioural difference) vs default, over every binary in the decbench corpus",
+    "binaries": 803,
+    "changed_binaries": 0,
+    "changed_lines": 0,
+    "errors_or_timeouts": 0
+  },
+  "gates": {
+    "datatests": "675/675 PARITY OK",
+    "stages": "758/758 PARITY OK (754 + 4 new)",
+    "test_cli": "121/121",
+    "check_spec": "OK",
+    "catalog_check": "catalog OK"
+  },
+  "speed_method": "whole-binary `decompile-all` of openssh-portable/sftp (O2, 872 KB), 5 interleaved rounds alternating arm order after one warmup, medians; output byte-identical between arms",
+  "speed_off_ms": 9319,
+  "speed_on_ms": 9240,
+  "speed_delta_pct": -0.84,
+  "speed_note": "Indistinguishable from noise. The single-function timeit on the witness itself reports +38.9%, which is not the predicate's cost: with the option ON the function is no longer truncated at a false tail call, so the ON arm decompiles the whole classifier and the OFF arm decompiles about half of it.",
+  "tests": [
+    "tests/stages/kuna-tailcallsaved.xml (two-pass: option off = the bug, default = the fix)",
+    "tests/cli/argument-cleanup-creates-false.json (promoted acceptance, in-repo fixture tailcallsaved_i386)",
+    "decompiler/crates/kuna-decomp/src/p2_lift/kuna_tailcallsaved/tests.rs (10 cases)",
+    "decompiler/crates/kuna-decomp/src/p2_lift/kuna_tailcallframe/tests.rs (+3 cases)"
+  ],
+  "acceptance": "a-d6135fbc9bd1 PASS"
+}
