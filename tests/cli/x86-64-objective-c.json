@@ -1,0 +1,34 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "timeout_s": 60,
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "-[Greeter greet:]",
+    "--json"
+  ],
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "json": [
+      {
+        "path": "functions[0].address",
+        "op": "eq",
+        "value": 4294968897
+      }
+    ]
+  },
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/macho_objc_odd_imp",
+    "binary_sha256": "254ed9afc05e4c4913b325058e436fc4ecbfa15ca950777a83ff064cc87753c2",
+    "binary_size": 16728,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/macho_objc_odd_imp",
+    "selector": "-[Greeter greet:]",
+    "selector_kind": "name"
+  },
+  "notes": "Vendored x86-64 twin of the reported Objective-C metadata defect. Its absolute method_t stores the valid odd IMP 0x100000641; the preceding even byte is padding. The dataset witness remains unchanged in Reproduction."
+}

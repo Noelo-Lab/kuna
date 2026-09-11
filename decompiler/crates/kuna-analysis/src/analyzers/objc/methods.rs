@@ -20,6 +20,7 @@
 //! `-[Class sel]` / `+[Class sel]`.
 
 use super::sections::MachoImage;
+use object::Architecture;
 
 /// `method_list_t.entsizeAndFlags` high bit: the list holds **small / relative**
 /// `method_t` records (12-byte, `i32` self-relative fields) rather than the
@@ -58,7 +59,7 @@ pub struct Method {
 /// Caps the count at a sane bound so a corrupt header can never spin. A record
 /// whose selector/imp is unreadable is skipped (additive, never fails). Empty for
 /// a NULL/unreadable list.
-pub fn walk_method_list(img: &MachoImage, list_va: u64) -> Vec<Method> {
+pub fn walk_method_list(img: &MachoImage, list_va: u64, architecture: Architecture) -> Vec<Method> {
     let mut out = Vec::new();
     let Some(ent) = img.read_u32(list_va + method_list::ENTSIZE_AND_FLAGS) else {
         return out;
@@ -82,7 +83,11 @@ pub fn walk_method_list(img: &MachoImage, list_va: u64) -> Vec<Method> {
         let m = list_va
             .wrapping_add(method_list::FIRST)
             .wrapping_add(i.wrapping_mul(entsize));
-        let method = if small { read_small(img, m) } else { read_large(img, m) };
+        let method = if small {
+            read_small(img, m, architecture)
+        } else {
+            read_large(img, m, architecture)
+        };
         if let Some(method) = method {
             out.push(method);
         }
@@ -93,7 +98,7 @@ pub fn walk_method_list(img: &MachoImage, list_va: u64) -> Vec<Method> {
 /// A **large / absolute** `method_t` at `m`: `name`, `types`, `imp` are three
 /// pointer-sized absolute VMAs. `name`/`types` point at the strings directly; `imp`
 /// is the function VA.
-fn read_large(img: &MachoImage, m: u64) -> Option<Method> {
+fn read_large(img: &MachoImage, m: u64, architecture: Architecture) -> Option<Method> {
     let ps = img.ptr_size();
     let name_ptr = img.read_ptr(m)?;
     let types_ptr = img.read_ptr(m.wrapping_add(ps))?;
@@ -103,13 +108,18 @@ fn read_large(img: &MachoImage, m: u64) -> Option<Method> {
     }
     let selector = img.read_cstr(name_ptr)?;
     let types = img.read_cstr(types_ptr);
-    Some(Method { selector, selector_va: name_ptr, types, imp: strip_thumb(imp) })
+    Some(Method {
+        selector,
+        selector_va: name_ptr,
+        types,
+        imp: normalize_imp(architecture, imp),
+    })
 }
 
 /// A **small / relative** `method_t` at `m`: `name`, `types`, `imp` are three
 /// self-relative `i32` displacements. The `name` field points at a **selref**
 /// (`*selref` is the selector-string VMA); `types`/`imp` are direct.
-fn read_small(img: &MachoImage, m: u64) -> Option<Method> {
+fn read_small(img: &MachoImage, m: u64, architecture: Architecture) -> Option<Method> {
     let n_rel = img.read_i32(m)?;
     let t_rel = img.read_i32(m.wrapping_add(4))?;
     let i_rel = img.read_i32(m.wrapping_add(8))?;
@@ -134,7 +144,12 @@ fn read_small(img: &MachoImage, m: u64) -> Option<Method> {
     if imp == 0 {
         return None;
     }
-    Some(Method { selector, selector_va: sel_ptr, types, imp: strip_thumb(imp) })
+    Some(Method {
+        selector,
+        selector_va: sel_ptr,
+        types,
+        imp: normalize_imp(architecture, imp),
+    })
 }
 
 /// Add a signed self-relative `i32` displacement to a base VMA with wrapping
@@ -145,10 +160,30 @@ fn rel_to(base: u64, rel: i32) -> u64 {
     base.wrapping_add(rel as i64 as u64)
 }
 
-/// Strip the 32-bit ARM Thumb-mode low bit from an IMP address. On AArch64 / x86
-/// this is a no-op (those IMPs are even-aligned); on 32-bit ARM the IMP's LSB
-/// flags Thumb and is not part of the address. (The x86-64 MVP never sets it; this
-/// is the forward-compatible normalization Ghidra's `ObjcMethod` applies.)
-fn strip_thumb(imp: u64) -> u64 {
-    imp & !1u64
+/// Strip the Thumb-state bit only when the target is 32-bit ARM. Other
+/// architectures may legitimately place an IMP at an odd byte address.
+fn normalize_imp(architecture: Architecture, imp: u64) -> u64 {
+    if architecture == Architecture::Arm {
+        imp & !1u64
+    } else {
+        imp
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn x86_64_odd_imp_is_an_address() {
+        assert_eq!(
+            normalize_imp(Architecture::X86_64, 0x1_0000_1d2b),
+            0x1_0000_1d2b
+        );
+    }
+
+    #[test]
+    fn arm32_odd_imp_carries_thumb_state() {
+        assert_eq!(normalize_imp(Architecture::Arm, 0x1001), 0x1000);
+    }
 }

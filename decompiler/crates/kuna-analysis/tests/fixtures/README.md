@@ -763,6 +763,19 @@ like `macho_imports`) — so this slice is also the **no-op proof** for the
 chained-fixup resolver (the resolver yields an empty overlay here, and `read_ptr`
 reads raw section words exactly as before).
 
+`macho_objc_odd_imp` is the x86-64 low-bit regression twin. Its assembly source
+is the same root-class metadata shape with one byte before the method label, so
+the absolute `method_t.imp` is the valid odd address `0x100000641`. The byte at
+`0x100000640` is padding; decompiling there demonstrates the incorrect rounding,
+while the odd entry returns `n * 3 + 7`. Rebuild it without an Apple SDK:
+
+```bash
+clang -target x86_64-apple-macos11 -c macho_objc_odd_imp.s -o m.o
+LLD=$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin/gcc-ld/ld64.lld
+"$LLD" -arch x86_64 -platform_version macos 11.0 11.0 \
+       -undefined dynamic_lookup -x -e _main -o macho_objc_odd_imp m.o
+```
+
 ### `macho_objc_arm64` — the chained-fixup + arm64 slice (PR-O0 + PR-O2)
 
 `macho_objc_arm64` (arm64, ~49 KB) is the **same `macho_objc.m` source** built for

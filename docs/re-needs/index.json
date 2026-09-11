@@ -5,8 +5,8 @@
   "rejected_count": 1,
   "by_status": {
     "blocked": 1,
-    "closed": 122,
-    "open": 74
+    "closed": 124,
+    "open": 72
   },
   "by_track": {
     "loader": 10,
@@ -4754,10 +4754,10 @@
       "need_id": "x86-64-objective-c",
       "title": "x86-64 Objective-C recovery rounds odd IMP addresses down",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
       "probe_id": "p-dfea0a57f6e4",
-      "acceptance_id": "a-1cb5293fa3a7",
+      "acceptance_id": "a-78b86f730467",
       "hypothesis_status": "upheld",
       "credibility": 0.85,
       "instances": 1,
@@ -4775,9 +4775,9 @@
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": "https://github.com/Noelo-Lab/kuna/pull/571",
+      "closed_in_round": 12,
+      "closing_pr": 571,
       "reject_reason": null,
       "score": 13.862944,
       "path": "docs/re-needs/x86-64-objective-c.md"
