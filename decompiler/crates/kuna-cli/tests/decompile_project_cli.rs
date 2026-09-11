@@ -903,15 +903,19 @@ fn stream_refuses_an_assertion_and_is_not_a_whole_binary_flag() {
 
 /// A failed load is reported in `.streaming`, and leaves whatever a previous
 /// export wrote into that folder alone — the whole reason nothing is truncated
-/// before the program loads.
+/// before the program loads, README.md included.
 #[test]
 fn a_failed_load_reports_itself_and_spares_a_previous_export() {
     let Some(dir) = project("fauxware", "stream_failed") else { return };
-    let (c, h, asm, _readme) = artifacts(&dir, "fauxware");
+    let (c, h, asm, readme) = artifacts(&dir, "fauxware");
     let before: Vec<Vec<u8>> =
-        [&c, &h, &asm].iter().map(|f| std::fs::read(f).unwrap()).collect();
+        [&c, &h, &asm, &readme].iter().map(|f| std::fs::read(f).unwrap()).collect();
 
-    let junk = dir.join("not-a-binary");
+    // NAMED after the fixture and outside the folder, so a run that did truncate
+    // its artifacts would truncate exactly the ones this test hashes.
+    let junk_dir = out_dir("stream_failed_input");
+    std::fs::create_dir_all(&junk_dir).unwrap();
+    let junk = junk_dir.join("fauxware");
     std::fs::write(&junk, b"this is not an object file\n").unwrap();
     let (_, stderr, ok) = run_kuna(&[
         "decompile-project",
@@ -928,11 +932,10 @@ fn a_failed_load_reports_itself_and_spares_a_previous_export() {
     assert!(status.contains("\"phase\":\"failed\""), "no failed phase: {status}");
     assert!(status.contains("\"schema\":1"), "no schema: {status}");
     assert!(!status.contains("\"error\":null"), "a failed run must say why: {status}");
-    assert!(
-        std::fs::read_to_string(dir.join("README.md")).unwrap().contains("still streaming"),
-        "the README must say the folder is mid-export"
-    );
-    let after: Vec<Vec<u8>> = [&c, &h, &asm].iter().map(|f| std::fs::read(f).unwrap()).collect();
+    let after: Vec<Vec<u8>> =
+        [&c, &h, &asm, &readme].iter().map(|f| std::fs::read(f).unwrap()).collect();
     assert_eq!(before, after, "a failed load overwrote a previous export's artifacts");
-    let _ = std::fs::remove_dir_all(dir);
+    for dir in [dir, junk_dir] {
+        let _ = std::fs::remove_dir_all(dir);
+    }
 }

@@ -140,13 +140,12 @@ fn usage() {
          default to 120. --max-fn-seconds overrides that policy (0 disables).\n\
          --jobs N spreads the per-function decompile over N worker processes\n\
          (auto = this machine's parallelism, capped at 16; 1, the default, is\n\
-         serial). The artifacts are identical to --jobs 1; progress goes to\n\
-         stderr, and peak memory is roughly N times one worker's RSS.\n\
-         --stream writes the folder as the run goes instead of at the end: the\n\
-         artifacts exist before the binary is decompiled, the entry point and what\n\
-         it calls are written first, index.jsonl announces each finished function\n\
-         and .streaming reports progress until the export completes. The .c is then\n\
-         in decompile order, not address order. Not available with --assert.\n\
+         serial). The artifacts are identical to a --jobs 1 run without --stream;\n\
+         progress goes to stderr, and peak memory is roughly N times one worker's RSS.\n\
+         --stream writes the folder as the run goes instead of at the end: the entry\n\
+         point and what it calls are written first, index.jsonl announces each\n\
+         finished function and .streaming reports progress until the export\n\
+         completes. The .c is then in decompile order. Not available with --assert.\n\
          Individual function failures are recorded in the artifacts; the run still\n\
          exits 0 (load errors / an empty target set / I/O errors exit nonzero)."
     );

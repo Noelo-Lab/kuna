@@ -982,20 +982,29 @@ fn run_jobs_worker(args: &Args) -> Result<(), String> {
                 single_target: false,
             };
             let mut pending = entries.into_iter();
-            let mut write_error: Option<String> = None;
+            // A result file this worker cannot write is the whole chunk lost, so
+            // the pull stops at the current function rather than decompiling the
+            // rest of it into a dead file.
+            let write_error: std::cell::RefCell<Option<String>> = std::cell::RefCell::new(None);
             decompile_pulled(
                 &mut prog,
                 &opts,
-                &mut || pending.next(),
+                &mut || {
+                    if write_error.borrow().is_some() {
+                        return None;
+                    }
+                    pending.next()
+                },
                 &mut |r| {
-                    if write_error.is_none() {
+                    let mut slot = write_error.borrow_mut();
+                    if slot.is_none() {
                         if let Err(e) = out.push(&r) {
-                            write_error = Some(e);
+                            *slot = Some(e);
                         }
                     }
                 },
             );
-            if let Some(e) = write_error {
+            if let Some(e) = write_error.into_inner() {
                 return Err(e);
             }
         }

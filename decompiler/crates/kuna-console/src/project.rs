@@ -1259,15 +1259,13 @@ pub fn render_readme(
 /// The README of an export that is still running: [`render_readme`] with a
 /// banner and a streaming-status section around it.
 pub fn render_readme_streaming(facts: &ReadmeFacts, progress: &StreamProgress) -> String {
-    let mut out = render_readme_inner(
-        facts,
-        progress.counts(),
-        ReadmeLayout::Streamed,
-        Some(
-            "**This export is still streaming** — `.streaming` exists until every artifact is \
-             final; files are appended / rewritten while it does.",
-        ),
+    // A failed export is not still streaming: the banner would contradict the
+    // `| Phase | failed |` row two lines under it.
+    let banner = (progress.phase != StreamPhase::Failed).then_some(
+        "**This export is still streaming** — `.streaming` exists until every artifact is \
+         final; files are appended / rewritten while it does.",
     );
+    let mut out = render_readme_inner(facts, progress.counts(), ReadmeLayout::Streamed, banner);
     out.push_str(&render_streaming_status(facts, progress));
     out
 }

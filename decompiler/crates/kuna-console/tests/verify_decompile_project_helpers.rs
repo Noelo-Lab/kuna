@@ -380,6 +380,10 @@ fn streaming_readme_renders_pending_facts_then_the_streamed_layout() {
     );
     assert!(failed.contains("| Phase | failed |\n"));
     assert!(failed.contains("| Error | cannot load the binary |\n"));
+    assert!(
+        !failed.contains("still streaming"),
+        "a failed export is not still streaming:\n{failed}"
+    );
 
     let Some(prog) = loaded_fauxware() else { return };
     let facts = ReadmeFacts::snapshot(&fauxware(), "/tmp/fauxware", "fauxware", &prog);

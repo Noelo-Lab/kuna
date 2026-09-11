@@ -32,11 +32,12 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use kuna_console::engine::{ConsoleProgram, FunctionEntry};
+use kuna_console::engine::{ConsoleProgram, EntrySelector, FunctionEntry};
 use kuna_console::project::{
     build_header, collect_dat_addrs, decompile_pulled, render_c, render_readme,
     render_readme_streaming, AsmPhase, DecompileOptions, FuncResult, ReadmeCounts, ReadmeFacts,
@@ -57,15 +58,18 @@ use crate::jsonfmt::{dumps_compact, Json};
 /// The status file, present only while an export is running.
 const STATUS_FILE: &str = ".streaming";
 const INDEX_FILE: &str = "index.jsonl";
+const README_FILE: &str = "README.md";
 
 /// How long the writer waits for a result before going round its clock again.
 const TICK: Duration = Duration::from_millis(500);
+/// How often the load clock looks at whether the load has finished.
+const CLOCK_GRANULARITY: Duration = Duration::from_millis(100);
 /// How often the running README is rewritten, when the counts moved.
 const README_EVERY: Duration = Duration::from_secs(5);
 /// The `.h` rewrite back-off: never more often than this, and at least this
 /// seldom once the prototype count stops doubling.
 const HEADER_MIN: Duration = Duration::from_secs(2);
-const HEADER_MAX: Duration = Duration::from_secs(30);
+const HEADER_MAX: Duration = Duration::from_secs(60);
 
 /// One sweep step's budget when the sweep has a thread to itself (`--jobs N`).
 /// Only a flush rhythm: it decides how often a reader sees the `.asm` grow.
@@ -79,6 +83,13 @@ const MIN_SWEEP_STEP_BYTES: u64 = 1024 * 1024;
 /// first `.c` block lands immediately) to this ceiling.
 const SERIAL_BATCH_MAX: usize = 64;
 const SERIAL_BATCH_GROWTH: usize = 8;
+/// Targets below which the `--jobs auto` hint is noise: a handful of functions
+/// is not a run anyone would parallelise.
+const SERIAL_HINT_MIN: usize = 32;
+
+/// What a producer reports when all it saw was its channel close — the writer's
+/// own error is what the run reports whenever it has one.
+const WRITER_STOPPED: &str = "the streaming writer stopped early";
 
 /// Where the export writes and what it calls itself.
 struct Layout {
@@ -89,12 +100,12 @@ struct Layout {
 }
 
 impl Layout {
-    /// Resolve the output folder WITHOUT requiring the binary to exist: a
-    /// streamed run reports a failed load through its own status file, which it
-    /// can only do if it already knows where to write.
+    /// Resolve the output folder.  The binary has to exist first: a typo'd path
+    /// must fail the way the non-stream export fails it, before a folder, a
+    /// status file or a README is created anywhere.
     fn resolve(args: &Args, output: Option<&str>) -> Result<Self, String> {
-        let binary_path =
-            std::fs::canonicalize(&args.binary).unwrap_or_else(|_| PathBuf::from(&args.binary));
+        let binary_path = std::fs::canonicalize(&args.binary)
+            .map_err(|_| format!("binary not found: {}", args.binary))?;
         let file_name = binary_path
             .file_name()
             .ok_or_else(|| format!("binary has no file name: {}", args.binary))?
@@ -200,30 +211,170 @@ struct Shared {
     status: StreamStatus,
 }
 
+/// The run's stop signal.
+///
+/// The writer thread owns every artifact a reader polls, so when it dies the
+/// producers have to stop at the function they are on instead of decompiling
+/// the rest of the binary into a closed channel — on a 392,814-function image
+/// that is hours of full-rate work nobody will ever read.
+#[derive(Default)]
+struct Abort {
+    stopped: AtomicBool,
+    /// The writer's own error, which is the run's real cause; a producer only
+    /// ever sees its channel close.
+    error: Mutex<Option<String>>,
+}
+
+impl Abort {
+    fn stop(&self, error: Option<String>) {
+        if let Some(error) = error {
+            let mut slot = self.error.lock().unwrap_or_else(|e| e.into_inner());
+            slot.get_or_insert(error);
+        }
+        self.stopped.store(true, Ordering::SeqCst);
+    }
+
+    fn stopped(&self) -> bool {
+        self.stopped.load(Ordering::SeqCst)
+    }
+
+    /// Why the run is stopping, preferring the writer's own message.
+    fn reason(&self) -> String {
+        self.error
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+            .unwrap_or_else(|| WRITER_STOPPED.to_string())
+    }
+}
+
+/// The run as every thread sees it: the status value, the stop signal, and the
+/// folder they all report into.
+struct StreamRun {
+    dir: PathBuf,
+    state: Mutex<Shared>,
+    /// Shared with the scheduler, so a pool thread stops pulling chunks.
+    abort: Arc<Abort>,
+    /// Workers the pool actually spawned: `--jobs` asks, the memory trim
+    /// answers, and `.streaming` reports what is running.
+    workers: AtomicUsize,
+    /// Has a failed status/README publish already been reported?  One line per
+    /// outage, not one per tick.
+    publish_warned: AtomicBool,
+    /// Has this run truncated an artifact of its own yet?  Until it has, a
+    /// failure must leave the folder as it found it.
+    artifacts: AtomicBool,
+}
+
+impl StreamRun {
+    fn new(dir: PathBuf, facts: ReadmeFacts, jobs: usize) -> Self {
+        Self {
+            dir,
+            state: Mutex::new(Shared { facts, status: StreamStatus::new(jobs) }),
+            abort: Arc::new(Abort::default()),
+            workers: AtomicUsize::new(jobs),
+            publish_warned: AtomicBool::new(false),
+            artifacts: AtomicBool::new(false),
+        }
+    }
+
+    fn lock(&self) -> MutexGuard<'_, Shared> {
+        self.state.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// The facts and the status as a reader sees them — `jobs` reporting the
+    /// workers the pool really spawned rather than the number asked for.
+    fn snapshot(&self) -> (ReadmeFacts, StreamStatus) {
+        let shared = self.lock();
+        let mut status = shared.status.clone();
+        status.jobs = self.workers.load(Ordering::SeqCst);
+        (shared.facts.clone(), status)
+    }
+
+    fn publish_status(&self) -> Result<(), String> {
+        let text = format!("{}\n", dumps_compact(&self.snapshot().1.to_json()));
+        write_atomic(&self.dir.join(STATUS_FILE), text.as_bytes())
+    }
+
+    fn publish_readme(&self) -> Result<(), String> {
+        let (facts, status) = self.snapshot();
+        write_atomic(
+            &self.dir.join(README_FILE),
+            render_readme_streaming(&facts, &status.progress()).as_bytes(),
+        )
+    }
+
+    /// The clock's publishes.  `.streaming` and the running README report on the
+    /// export rather than being it, so a failed one warns once and is retried on
+    /// the next tick instead of ending an otherwise healthy run — the `.c`, the
+    /// `index.jsonl` and the `.h` are the export, and those stay fatal.
+    fn publish_progress(&self, readme: bool) {
+        let published = self
+            .publish_status()
+            .and_then(|()| if readme { self.publish_readme() } else { Ok(()) });
+        match published {
+            Ok(()) => self.publish_warned.store(false, Ordering::SeqCst),
+            Err(e) => {
+                if !self.publish_warned.swap(true, Ordering::SeqCst) {
+                    eprintln!("[kuna --stream] warning: {e}; retrying on the next tick");
+                }
+            }
+        }
+    }
+
+    fn set_asm_phase(&self, phase: AsmPhase) {
+        self.lock().status.asm = phase;
+    }
+
+    fn fail(&self, error: &str) {
+        let mut shared = self.lock();
+        shared.status.phase = StreamPhase::Failed;
+        shared.status.error = Some(error.to_string());
+    }
+}
+
 fn unix_now() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
 
 /// Replace `path` in one step: a reader polling the status file or the README
-/// must never see a half-written one.
+/// must never see a half-written one.  The temp name carries this process's pid
+/// so two exports into one folder cannot fight over it.
 fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
-    let temp = path.with_extension("kuna-tmp");
+    let name = path.file_name().map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+    let temp = path.with_file_name(format!("{name}.kuna-tmp.{}", std::process::id()));
     std::fs::write(&temp, bytes).map_err(|e| format!("cannot write {}: {e}", temp.display()))?;
     std::fs::rename(&temp, path)
         .map_err(|e| format!("cannot replace {}: {e}", path.display()))
 }
 
-fn publish_status(dir: &Path, shared: &Mutex<Shared>) -> Result<(), String> {
-    let status = shared.lock().unwrap_or_else(|e| e.into_inner()).status.clone();
-    write_atomic(&dir.join(STATUS_FILE), format!("{}\n", dumps_compact(&status.to_json())).as_bytes())
+/// Refuse to stream into a folder another live export is streaming into: the
+/// second run truncates the first's `.c` and `index.jsonl` mid-flight, which
+/// silently invalidates every offset a reader has taken from them.
+fn refuse_a_live_export(dir: &Path) -> Result<(), String> {
+    // /proc is how liveness is checked, so elsewhere the folder is the user's
+    // to manage.
+    if !cfg!(target_os = "linux") {
+        return Ok(());
+    }
+    let Ok(status) = std::fs::read_to_string(dir.join(STATUS_FILE)) else { return Ok(()) };
+    let Some(pid) = json_number(&status, "pid") else { return Ok(()) };
+    if pid == u64::from(std::process::id()) || !Path::new(&format!("/proc/{pid}")).exists() {
+        return Ok(());
+    }
+    Err(format!(
+        "a streamed export (pid {pid}) is already writing {}: two exports into one folder \
+         truncate each other's .c. Wait for it, or pass -o to export somewhere else.",
+        dir.display()
+    ))
 }
 
-fn publish_running_readme(dir: &Path, shared: &Mutex<Shared>) -> Result<(), String> {
-    let (facts, progress) = {
-        let shared = shared.lock().unwrap_or_else(|e| e.into_inner());
-        (shared.facts.clone(), shared.status.progress())
-    };
-    write_atomic(&dir.join("README.md"), render_readme_streaming(&facts, &progress).as_bytes())
+/// The value of a compact-JSON number field, for the one field this module has
+/// to read back out of a status file it did not write.
+fn json_number(line: &str, key: &str) -> Option<u64> {
+    let at = line.find(&format!("\"{key}\":"))? + key.len() + 3;
+    let digits: String = line[at..].chars().take_while(char::is_ascii_digit).collect();
+    digits.parse().ok()
 }
 
 // --- the scheduler -----------------------------------------------------------
@@ -242,17 +393,29 @@ pub(crate) struct Scheduler {
     total: usize,
     jobs: usize,
     chunk: Option<usize>,
+    abort: Arc<Abort>,
 }
 
 struct SchedState {
     frontier: VecDeque<usize>,
+    /// Is this target already sitting in the frontier?  Without it a function
+    /// with many callers is queued once per caller, which inflates the frontier
+    /// length the chunk size reads and makes a drained frontier look deep.
+    queued: Vec<bool>,
     cursor: usize,
     claimed: Vec<bool>,
     claimed_count: usize,
 }
 
+/// The frontier is followed closely while it is thin, so the order stays
+/// entry-point-first; the address-order fallback is the bulk of a large export
+/// and goes out in full chunks, because every chunk costs a spec write, a pipe
+/// assignment, a result file and an ack.
+const FRONTIER_CHUNK_THIN: usize = 4;
+const CHUNK_MAX: usize = 64;
+
 impl Scheduler {
-    fn new(specs: &[TargetSpec], jobs: usize, chunk: Option<usize>) -> Self {
+    fn new(specs: &[TargetSpec], jobs: usize, chunk: Option<usize>, abort: Arc<Abort>) -> Self {
         let mut by_addr = BTreeMap::new();
         for (i, spec) in specs.iter().enumerate() {
             by_addr.entry(spec.addr).or_insert(i);
@@ -260,6 +423,7 @@ impl Scheduler {
         Self {
             state: Mutex::new(SchedState {
                 frontier: VecDeque::new(),
+                queued: vec![false; specs.len()],
                 cursor: 0,
                 claimed: vec![false; specs.len()],
                 claimed_count: 0,
@@ -268,6 +432,7 @@ impl Scheduler {
             total: specs.len(),
             jobs: jobs.max(1),
             chunk,
+            abort,
         }
     }
 
@@ -281,6 +446,7 @@ impl Scheduler {
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         for (n, &i) in indices.iter().enumerate() {
             state.frontier.insert(n, i);
+            state.queued[i] = true;
         }
     }
 
@@ -297,16 +463,20 @@ impl Scheduler {
 
     /// One target, frontier first — the serial loop's pull.
     fn claim_one(&self) -> Option<usize> {
-        self.next_chunk_of(1).map(|c| c[0])
+        if self.abort.stopped() {
+            return None;
+        }
+        self.next_chunk_of(1, 1).map(|c| c[0])
     }
 
-    /// File every callee hint that names an unclaimed target.
+    /// File every callee hint that names an unclaimed, unqueued target.
     fn on_results(&self, results: &[FuncResult]) {
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         for r in results {
             for hint in &r.callee_hints {
                 let Some(i) = self.by_addr.get(hint).copied() else { continue };
-                if !state.claimed[i] {
+                if !state.claimed[i] && !state.queued[i] {
+                    state.queued[i] = true;
                     state.frontier.push_back(i);
                 }
             }
@@ -319,11 +489,17 @@ impl Scheduler {
         state.claimed_count >= self.total
     }
 
-    fn next_chunk_of(&self, k: usize) -> Option<Vec<usize>> {
+    #[cfg(test)]
+    fn frontier_len(&self) -> usize {
+        self.state.lock().unwrap_or_else(|e| e.into_inner()).frontier.len()
+    }
+
+    fn next_chunk_of(&self, frontier_k: usize, cursor_k: usize) -> Option<Vec<usize>> {
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         let mut out = Vec::new();
-        while out.len() < k {
+        while out.len() < frontier_k {
             let Some(i) = state.frontier.pop_front() else { break };
+            state.queued[i] = false;
             if !state.claimed[i] {
                 state.claimed[i] = true;
                 state.claimed_count += 1;
@@ -333,7 +509,7 @@ impl Scheduler {
         // Only when the frontier had nothing left: a short frontier chunk goes
         // out as it is, so the hints a worker is about to return still lead.
         if out.is_empty() {
-            while out.len() < k && state.cursor < self.total {
+            while out.len() < cursor_k && state.cursor < self.total {
                 let i = state.cursor;
                 state.cursor += 1;
                 if !state.claimed[i] {
@@ -346,28 +522,29 @@ impl Scheduler {
         (!out.is_empty()).then_some(out)
     }
 
-    /// Chunk size: small while the frontier is thin, so a deepening frontier is
-    /// followed rather than buried under a big address-ordered batch, and large
-    /// once there is enough of it (or once the run is down to the fallback).
-    fn chunk_size(&self) -> usize {
+    /// `(frontier chunk, address-cursor chunk)`.
+    fn chunk_sizes(&self) -> (usize, usize) {
         if let Some(fixed) = self.chunk {
-            return fixed.max(1);
+            let fixed = fixed.max(1);
+            return (fixed, fixed);
         }
         let thin = {
             let state = self.state.lock().unwrap_or_else(|e| e.into_inner());
             state.frontier.len() < 8 * self.jobs
         };
-        if thin {
-            4
-        } else {
-            64
-        }
+        (if thin { FRONTIER_CHUNK_THIN } else { CHUNK_MAX }, CHUNK_MAX)
     }
 }
 
 impl ChunkSource for Scheduler {
     fn next_chunk(&self) -> Option<Vec<usize>> {
-        self.next_chunk_of(self.chunk_size())
+        // A stopped run hands out no more work: each pool thread finishes the
+        // chunk it is on and leaves.
+        if self.abort.stopped() {
+            return None;
+        }
+        let (frontier, cursor) = self.chunk_sizes();
+        self.next_chunk_of(frontier, cursor)
     }
 }
 
@@ -437,7 +614,7 @@ impl ProjectWriter {
 
     /// Append one finished function: its `.c` block, then its `index.jsonl`
     /// line, then the compact record the tail artifacts are built from.
-    fn append(&mut self, mut r: FuncResult, shared: &Mutex<Shared>) -> Result<(), String> {
+    fn append(&mut self, mut r: FuncResult, run: &StreamRun) -> Result<(), String> {
         let block = render_c(std::slice::from_ref(&r));
         self.c
             .write_all(block.as_bytes())
@@ -465,7 +642,7 @@ impl ProjectWriter {
         r.object_location = None;
         self.records.push(r);
 
-        let mut shared = shared.lock().unwrap_or_else(|e| e.into_inner());
+        let mut shared = run.lock();
         shared.status.done += 1;
         shared.status.failed += usize::from(failed);
         shared.status.c_bytes = self.c_bytes;
@@ -477,15 +654,15 @@ impl ProjectWriter {
     /// functions land in bursts still reports at a steady rate: the status file
     /// every tick, the README when the counts have moved, the `.h` on a doubling
     /// back-off.
-    fn tick(&mut self, shared: &Mutex<Shared>) -> Result<(), String> {
+    fn tick(&mut self, run: &StreamRun) -> Result<(), String> {
         if self.last_status.elapsed() < TICK {
             return Ok(());
         }
-        publish_status(&self.dir, shared)?;
+        let done = run.lock().status.done;
+        let readme = done != self.last_readme_done && self.last_readme.elapsed() >= README_EVERY;
+        run.publish_progress(readme);
         self.last_status = Instant::now();
-        let done = shared.lock().unwrap_or_else(|e| e.into_inner()).status.done;
-        if done != self.last_readme_done && self.last_readme.elapsed() >= README_EVERY {
-            publish_running_readme(&self.dir, shared)?;
+        if readme {
             self.last_readme = Instant::now();
             self.last_readme_done = done;
         }
@@ -535,36 +712,43 @@ fn index_line(seq: usize, r: &FuncResult, offset: u64, len: usize) -> String {
 /// `kuna decompile-project --stream`: the whole timeline.
 pub(crate) fn run(args: &Args, output: Option<&str>) -> Result<String, String> {
     let layout = Layout::resolve(args, output)?;
+    refuse_a_live_export(&layout.out_dir)?;
+    // A previous export's README is the only file in the folder that says which
+    // binary the artifacts around it describe.  This run replaces it at t=0 and
+    // puts it back byte for byte if it fails before truncating anything.
+    let prior_readme = std::fs::read(layout.out_dir.join(README_FILE)).ok();
     std::fs::create_dir_all(&layout.out_dir)
         .map_err(|e| format!("cannot create {}: {e}", layout.out_dir.display()))?;
-    let shared = Mutex::new(Shared {
-        facts: ReadmeFacts::pending(&layout.binary_path, &layout.path_label, &layout.file_name),
-        status: StreamStatus::new(args.jobs.max(1)),
-    });
-    publish_status(&layout.out_dir, &shared)?;
-    publish_running_readme(&layout.out_dir, &shared)?;
-    if args.jobs <= 1 {
-        eprintln!("[kuna --stream] serial run; --jobs auto uses every core");
-    }
+    let run = StreamRun::new(
+        layout.out_dir.clone(),
+        ReadmeFacts::pending(&layout.binary_path, &layout.path_label, &layout.file_name),
+        args.jobs.max(1),
+    );
 
-    match export(args, &layout, &shared) {
+    // The two t=0 writes are fatal: they are the proof the folder can be written
+    // at all, and there is no next tick to retry them on yet.
+    let opened = run.publish_status().and_then(|()| run.publish_readme());
+    match opened.and_then(|()| export(args, &layout, &run)) {
         Ok(summary) => Ok(summary),
         Err(error) => {
-            {
-                let mut shared = shared.lock().unwrap_or_else(|e| e.into_inner());
-                shared.status.phase = StreamPhase::Failed;
-                shared.status.error = Some(error.clone());
+            run.fail(&error);
+            let _ = run.publish_status();
+            match prior_readme {
+                Some(bytes) if !run.artifacts.load(Ordering::SeqCst) => {
+                    let _ = write_atomic(&layout.out_dir.join(README_FILE), &bytes);
+                }
+                _ => {
+                    let _ = run.publish_readme();
+                }
             }
-            let _ = publish_status(&layout.out_dir, &shared);
-            let _ = publish_running_readme(&layout.out_dir, &shared);
             Err(error)
         }
     }
 }
 
-fn export(args: &Args, layout: &Layout, shared: &Mutex<Shared>) -> Result<String, String> {
+fn export(args: &Args, layout: &Layout, run: &StreamRun) -> Result<String, String> {
     let load_started = Instant::now();
-    let mut prog = load_program(args, DriverDefaults::Decompile)?;
+    let mut prog = load_with_heartbeat(args, run)?;
     let load_seconds = load_started.elapsed().as_secs_f64();
     if args.max_fn_seconds > 0 {
         prog.arch_mut().kuna_fn_budget = Some(Duration::from_secs(args.max_fn_seconds));
@@ -586,9 +770,12 @@ fn export(args: &Args, layout: &Layout, shared: &Mutex<Shared>) -> Result<String
         a.addr.get_offset().cmp(&b.addr.get_offset()).then_with(|| a.name.cmp(&b.name))
     });
     let specs = flatten_targets(&targets);
+    if args.jobs <= 1 && targets.len() > SERIAL_HINT_MIN {
+        eprintln!("[kuna --stream] serial run; --jobs auto uses every core");
+    }
 
-    let scheduler = Scheduler::new(&specs, args.jobs, args.jobs_chunk);
-    let seeds = seed_indices(&prog, &scheduler);
+    let scheduler = Scheduler::new(&specs, args.jobs, args.jobs_chunk, Arc::clone(&run.abort));
+    let seeds = seed_indices(&prog, args, &scheduler);
     if seeds.is_empty() {
         eprintln!(
             "[kuna --stream] warning: neither the image entry point nor `main` is in this \
@@ -600,12 +787,20 @@ fn export(args: &Args, layout: &Layout, shared: &Mutex<Shared>) -> Result<String
     let prelude = print_c_recompile_prelude(prog.arch());
     let mut sweep =
         AsmSweep::new(&prog, &layout.file_name, asm_labels_from_entries(&prog, &targets));
+    // An image with no CODE section has nothing to sweep, so its `.asm` is final
+    // before the first function is decompiled: `pending` means the sweep has not
+    // started, and an agent waiting for `complete` must not wait for the export.
+    if sweep.is_done() {
+        run.set_asm_phase(AsmPhase::Complete);
+    }
+    // From here the folder is this run's: everything below truncates.
+    run.artifacts.store(true, Ordering::SeqCst);
     let mut asm = BufWriter::new(create(&layout.out_dir.join(format!("{}.asm", layout.file_name)))?);
     asm.write_all(sweep.header_lines().as_bytes())
         .map_err(|e| format!("cannot write {}.asm: {e}", layout.file_name))?;
     let writer = ProjectWriter::create(layout, prelude.clone())?;
     {
-        let mut shared = shared.lock().unwrap_or_else(|e| e.into_inner());
+        let mut shared = run.lock();
         shared.facts = ReadmeFacts::snapshot(
             &layout.binary_path,
             &layout.path_label,
@@ -617,8 +812,8 @@ fn export(args: &Args, layout: &Layout, shared: &Mutex<Shared>) -> Result<String
         shared.status.seeds = seeds.len();
         shared.status.last_result = Instant::now();
     }
-    publish_status(&layout.out_dir, shared)?;
-    publish_running_readme(&layout.out_dir, shared)?;
+    run.publish_status()?;
+    run.publish_readme()?;
 
     let (tx, rx) = mpsc::channel::<Vec<FuncResult>>();
     let opts = DecompileOptions {
@@ -632,45 +827,52 @@ fn export(args: &Args, layout: &Layout, shared: &Mutex<Shared>) -> Result<String
         single_target: false,
     };
 
-    let (mut writer, types) = std::thread::scope(
-        |scope| -> Result<(ProjectWriter, Option<String>), String> {
-            let writing = scope.spawn(move || writer_loop(writer, rx, shared));
-            let types = if args.jobs > 1 {
+    let (mut writer, mut type_blocks) = std::thread::scope(
+        |scope| -> Result<(ProjectWriter, Vec<String>), String> {
+            let writing = scope.spawn(move || writer_loop(writer, rx, run));
+            let produced = if args.jobs > 1 {
                 let pooled = run_pooled(
                     args, layout, &mut prog, &targets, &specs, &scheduler, &seeds, &opts, &tx,
-                    load_seconds, &mut sweep, &mut asm, shared, scope,
+                    load_seconds, &mut sweep, &mut asm, run, scope,
                 );
                 drop(tx);
-                pooled?
+                pooled
             } else {
                 let serial = run_serial(
-                    &mut prog, &targets, &scheduler, &opts, &tx, &mut sweep, &mut asm, shared,
+                    &mut prog, &targets, &scheduler, &opts, &tx, &mut sweep, &mut asm, run,
                 );
                 drop(tx);
-                serial?;
-                Some(print_c_types(prog.arch_mut()))
+                serial.map(|()| Vec::new())
             };
-            let writer = writing.join().map_err(|_| "the streaming writer panicked".to_string())??;
-            Ok((writer, types))
+            // The writer owns every artifact, so ITS error is why the run
+            // stopped; a producer that only saw its channel close carries the
+            // sentinel, and the writer is joined before either is propagated.
+            let written = writing.join().map_err(|_| "the streaming writer panicked".to_string())?;
+            match (produced, written) {
+                (Ok(blocks), Ok(writer)) => Ok((writer, blocks)),
+                (_, Err(writer)) => Err(writer),
+                (Err(produced), Ok(_)) => Err(produced),
+            }
         },
     )?;
 
-    {
-        let mut shared = shared.lock().unwrap_or_else(|e| e.into_inner());
-        shared.status.phase = StreamPhase::Finalizing;
-    }
-    publish_status(&layout.out_dir, shared)?;
-
     // Reconcile: every target owns exactly one record.  A chunk lost to a dead
     // worker already comes back as `error` records, so this only ever fires on a
-    // scheduling gap — and it is written like any other function.
+    // scheduling gap — and it is written like any other function.  The
+    // `finalizing` status goes out after them, so the last counts a reader sees
+    // agree with README.md and index.jsonl.
     let seen: BTreeSet<u64> = writer.records.iter().map(|r| r.byte_address).collect();
     for spec in specs.iter().filter(|s| !seen.contains(&s.addr)) {
-        writer.append(jobs::missing_result(spec), shared)?;
+        writer.append(jobs::missing_result(spec), run)?;
     }
+    run.lock().status.phase = StreamPhase::Finalizing;
+    run.publish_progress(false);
     jobs::warn_about_streamed_anomalies(&writer.errors, args.max_fn_seconds);
 
-    let types = types.unwrap_or_else(|| print_c_types(prog.arch_mut()));
+    // The parent is one more type shard: at `--jobs N` it decompiled the seeds
+    // itself, and whatever those interned lives only in its own factory.
+    type_blocks.push(print_c_types(prog.arch_mut()));
+    let types = jobs::merge_type_definitions(&type_blocks, jobs::STREAM_TAG);
     writer.write_header(Some(&types))?;
     asm.write_all(render_variables_section(&writer.records).as_bytes())
         .and_then(|()| asm.write_all(render_data_tail(&prog, &writer.dat).as_bytes()))
@@ -678,18 +880,22 @@ fn export(args: &Args, layout: &Layout, shared: &Mutex<Shared>) -> Result<String
         .map_err(|e| format!("cannot write {}.asm: {e}", layout.file_name))?;
 
     let counts = ReadmeCounts::of(&writer.records);
-    let facts = shared.lock().unwrap_or_else(|e| e.into_inner()).facts.clone();
+    let facts = run.lock().facts.clone();
     write_atomic(
-        &layout.out_dir.join("README.md"),
+        &layout.out_dir.join(README_FILE),
         render_readme(&facts, Some(counts), ReadmeLayout::Streamed).as_bytes(),
     )?;
-    let _ = std::fs::remove_file(layout.out_dir.join(STATUS_FILE));
+    // A `.streaming` left behind means "killed" to every reader, so failing to
+    // remove it is a failed export, not a detail.
+    let status = layout.out_dir.join(STATUS_FILE);
+    std::fs::remove_file(&status)
+        .map_err(|e| format!("cannot remove {}: {e}", status.display()))?;
 
     let files = [
         format!("{}.c", layout.file_name),
         format!("{}.h", layout.file_name),
         format!("{}.asm", layout.file_name),
-        "README.md".to_string(),
+        README_FILE.to_string(),
         INDEX_FILE.to_string(),
     ]
     .iter()
@@ -707,16 +913,66 @@ fn export(args: &Args, layout: &Layout, shared: &Mutex<Shared>) -> Result<String
     ))
 }
 
+/// Load the program while the status file keeps ticking.
+///
+/// The load is the longest single wait in a large export — 96 s on the 147 MB
+/// image this flag was built for — and it happens before any other thread
+/// exists.  Without a clock, `.streaming` holds `elapsed_s: 0` and
+/// `seconds_since_last_result: 0` with a live pid for all of it, which is
+/// exactly what a hung process looks like to a poller.
+fn load_with_heartbeat(args: &Args, run: &StreamRun) -> Result<ConsoleProgram, String> {
+    let loading = AtomicBool::new(true);
+    std::thread::scope(|scope| {
+        scope.spawn(|| {
+            let mut last_status = Instant::now();
+            let mut last_readme = Instant::now();
+            while loading.load(Ordering::SeqCst) {
+                std::thread::sleep(CLOCK_GRANULARITY);
+                if !loading.load(Ordering::SeqCst) || last_status.elapsed() < TICK {
+                    continue;
+                }
+                let readme = last_readme.elapsed() >= README_EVERY;
+                run.publish_progress(readme);
+                last_status = Instant::now();
+                if readme {
+                    last_readme = Instant::now();
+                }
+            }
+        });
+        let prog = load_program(args, DriverDefaults::Decompile);
+        loading.store(false, Ordering::SeqCst);
+        prog
+    })
+}
+
 /// The image entry point, then `main` — the two starting points an export has
 /// without a call graph, each taken only when it is one of THIS run's targets.
-fn seed_indices(prog: &ConsoleProgram, scheduler: &Scheduler) -> Vec<usize> {
+///
+/// A headerless image has no entry in its metadata, so there the caller's own
+/// `--entry`/`--addr` are the entry points it named.
+fn seed_indices(prog: &ConsoleProgram, args: &Args, scheduler: &Scheduler) -> Vec<usize> {
+    let entry = prog.image_metadata().and_then(|m| m.entry);
+    let mut addrs: Vec<u64> = match entry {
+        Some(vma) => vec![vma],
+        None => args
+            .addrs
+            .iter()
+            .filter_map(|selector| match selector {
+                EntrySelector::Numeric(vma) if args.raw_image => prog.input_code_offset(*vma).ok(),
+                EntrySelector::Numeric(vma) => Some(*vma),
+                _ => None,
+            })
+            .collect(),
+    };
+    addrs = addrs
+        .into_iter()
+        .map(|vma| prog.find_entry_at(vma).map_or(vma, |e| e.addr.get_offset()))
+        .collect();
+    if let Some(named) = prog.find_entry_by_name("main") {
+        addrs.push(named.addr.get_offset());
+    }
     let mut seeds: Vec<usize> = Vec::new();
-    let entry = prog
-        .image_metadata()
-        .and_then(|m| m.entry)
-        .map(|vma| prog.find_entry_at(vma).map_or(vma, |e| e.addr.get_offset()));
-    let named = prog.find_entry_by_name("main").map(|e| e.addr.get_offset());
-    for addr in entry.into_iter().chain(named) {
+    for addr in addrs {
         if let Some(i) = scheduler.index_of(addr) {
             if !seeds.contains(&i) {
                 seeds.push(i);
@@ -731,22 +987,33 @@ fn seed_indices(prog: &ConsoleProgram, scheduler: &Scheduler) -> Vec<usize> {
 fn writer_loop(
     mut writer: ProjectWriter,
     rx: mpsc::Receiver<Vec<FuncResult>>,
-    shared: &Mutex<Shared>,
+    run: &StreamRun,
 ) -> Result<ProjectWriter, String> {
     loop {
         match rx.recv_timeout(TICK) {
             Ok(batch) => {
                 for r in batch {
-                    writer.append(r, shared)?;
+                    writer.append(r, run).map_err(|e| writer_died(run, e))?;
                 }
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {}
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
         }
-        writer.tick(shared)?;
+        writer.tick(run).map_err(|e| writer_died(run, e))?;
     }
-    publish_status(&writer.dir, shared)?;
+    run.publish_progress(false);
     Ok(writer)
+}
+
+/// The writer reports its own death: it is the only thread that writes
+/// `.streaming`, so the status file has to say why before it stops — a poller
+/// would otherwise read a frozen-but-healthy export for as long as the
+/// producers took to notice.
+fn writer_died(run: &StreamRun, error: String) -> String {
+    run.abort.stop(Some(error.clone()));
+    run.fail(&error);
+    let _ = run.publish_status();
+    error
 }
 
 /// `--jobs N`: the seeds in-process, then the worker pool on its own thread
@@ -765,10 +1032,10 @@ fn run_pooled<'scope, 'env>(
     load_seconds: f64,
     sweep: &mut AsmSweep,
     asm: &mut BufWriter<File>,
-    shared: &Mutex<Shared>,
+    run: &'env StreamRun,
     scope: &'scope std::thread::Scope<'scope, 'env>,
-) -> Result<Option<String>, String> {
-    decompile_in_process(prog, seeds, targets, scheduler, opts, tx)?;
+) -> Result<Vec<String>, String> {
+    decompile_in_process(prog, seeds, targets, scheduler, opts, tx, run)?;
 
     let cfg = pool_config(
         args,
@@ -780,15 +1047,26 @@ fn run_pooled<'scope, 'env>(
     );
     let inventory = flatten_targets(&prog.function_entries_canonical());
     let send = Mutex::new(tx.clone());
+    let done_base = seeds.len();
     let pool = scope.spawn(move || {
         let sink = |_indices: &[usize], produced: Vec<FuncResult>| {
             scheduler.on_results(&produced);
-            let _ = send.lock().unwrap_or_else(|e| e.into_inner()).send(produced);
+            if send.lock().unwrap_or_else(|e| e.into_inner()).send(produced).is_err() {
+                run.abort.stop(None);
+            }
         };
-        jobs::run_pool_streaming(&cfg, specs, &inventory, scheduler, &sink)
+        jobs::run_pool_streaming(
+            &cfg,
+            specs,
+            &inventory,
+            scheduler,
+            done_base,
+            &run.workers,
+            &sink,
+        )
     });
 
-    let swept = sweep_to_end(prog, sweep, asm, shared);
+    let swept = sweep_to_end(prog, sweep, asm, run);
     let types = pool.join().map_err(|_| "the --stream worker pool panicked".to_string())?;
     swept.map_err(|e| format!("cannot write {}.asm: {e}", layout.file_name))?;
     types
@@ -806,10 +1084,12 @@ fn run_serial(
     tx: &mpsc::Sender<Vec<FuncResult>>,
     sweep: &mut AsmSweep,
     asm: &mut BufWriter<File>,
-    shared: &Mutex<Shared>,
+    run: &StreamRun,
 ) -> Result<(), String> {
     let step = (code_bytes(prog) / SWEEP_STEPS).max(MIN_SWEEP_STEP_BYTES);
-    set_asm_phase(shared, AsmPhase::Sweeping);
+    if sweep.is_done() {
+        run.set_asm_phase(AsmPhase::Complete);
+    }
     let mut batch = 1usize;
     loop {
         // The callee-hint context is built once per `decompile_pulled` call, so
@@ -817,12 +1097,11 @@ fn run_serial(
         // is out of the way the rest of the run is ONE call.
         let limit = if sweep.is_done() { usize::MAX } else { batch };
         let mut taken = 0usize;
-        let mut send_failed = false;
         decompile_pulled(
             prog,
             opts,
             &mut || {
-                if taken >= limit {
+                if taken >= limit || run.abort.stopped() {
                     return None;
                 }
                 scheduler.claim_one().map(|i| {
@@ -832,19 +1111,22 @@ fn run_serial(
             },
             &mut |r| {
                 scheduler.on_results(std::slice::from_ref(&r));
-                send_failed |= tx.send(vec![r]).is_err();
+                if tx.send(vec![r]).is_err() {
+                    run.abort.stop(None);
+                }
             },
         );
-        if send_failed {
-            return Err("the streaming writer stopped early".into());
+        if run.abort.stopped() {
+            return Err(run.abort.reason());
         }
         if !sweep.is_done() {
+            run.set_asm_phase(AsmPhase::Sweeping);
             sweep
                 .step(prog, step, asm)
                 .and_then(|_| asm.flush())
                 .map_err(|e| format!("cannot write the disassembly: {e}"))?;
             if sweep.is_done() {
-                set_asm_phase(shared, AsmPhase::Complete);
+                run.set_asm_phase(AsmPhase::Complete);
             }
         }
         if taken == 0 && sweep.is_done() {
@@ -865,19 +1147,26 @@ fn decompile_in_process(
     scheduler: &Scheduler,
     opts: &DecompileOptions,
     tx: &mpsc::Sender<Vec<FuncResult>>,
+    run: &StreamRun,
 ) -> Result<(), String> {
     if indices.is_empty() {
         return Ok(());
     }
     scheduler.claim(indices);
     let mut pending = indices.iter().map(|&i| targets[i].clone()).collect::<Vec<_>>().into_iter();
-    let mut send_failed = false;
-    decompile_pulled(prog, opts, &mut || pending.next(), &mut |r| {
-        scheduler.on_results(std::slice::from_ref(&r));
-        send_failed |= tx.send(vec![r]).is_err();
-    });
-    if send_failed {
-        return Err("the streaming writer stopped early".into());
+    decompile_pulled(
+        prog,
+        opts,
+        &mut || if run.abort.stopped() { None } else { pending.next() },
+        &mut |r| {
+            scheduler.on_results(std::slice::from_ref(&r));
+            if tx.send(vec![r]).is_err() {
+                run.abort.stop(None);
+            }
+        },
+    );
+    if run.abort.stopped() {
+        return Err(run.abort.reason());
     }
     Ok(())
 }
@@ -886,19 +1175,24 @@ fn sweep_to_end(
     prog: &ConsoleProgram,
     sweep: &mut AsmSweep,
     asm: &mut BufWriter<File>,
-    shared: &Mutex<Shared>,
+    run: &StreamRun,
 ) -> std::io::Result<()> {
-    set_asm_phase(shared, AsmPhase::Sweeping);
+    if sweep.is_done() {
+        run.set_asm_phase(AsmPhase::Complete);
+        return Ok(());
+    }
+    run.set_asm_phase(AsmPhase::Sweeping);
     while !sweep.is_done() {
+        // The run is over: a finished `.asm` is no use to an export that is
+        // about to report why it stopped.
+        if run.abort.stopped() {
+            return Ok(());
+        }
         sweep.step(prog, SWEEP_STEP_BYTES, asm)?;
         asm.flush()?;
     }
-    set_asm_phase(shared, AsmPhase::Complete);
+    run.set_asm_phase(AsmPhase::Complete);
     Ok(())
-}
-
-fn set_asm_phase(shared: &Mutex<Shared>, phase: AsmPhase) {
-    shared.lock().unwrap_or_else(|e| e.into_inner()).status.asm = phase;
 }
 
 fn code_bytes(prog: &ConsoleProgram) -> u64 {
@@ -948,12 +1242,16 @@ mod tests {
         (0..n).map(|i| spec(0x1000 + i * 0x20)).collect()
     }
 
+    fn scheduler(specs: &[TargetSpec], jobs: usize, chunk: Option<usize>) -> Scheduler {
+        Scheduler::new(specs, jobs, chunk, Arc::new(Abort::default()))
+    }
+
     /// The contract the `.c`'s order rests on: seeds first, then what they
     /// reach, and only then the address-ordered remainder.
     #[test]
     fn the_scheduler_runs_the_frontier_before_the_address_cursor() {
         let specs = specs(8);
-        let sched = Scheduler::new(&specs, 1, Some(1));
+        let sched = scheduler(&specs, 1, Some(1));
         sched.seed(&[5]);
         assert_eq!(sched.claim_one(), Some(5), "a seed leads");
 
@@ -971,7 +1269,7 @@ mod tests {
     #[test]
     fn every_target_is_claimed_exactly_once() {
         let specs = specs(40);
-        let sched = Scheduler::new(&specs, 4, None);
+        let sched = scheduler(&specs, 4, None);
         sched.seed(&[3, 9]);
         let mut seen: Vec<usize> = Vec::new();
         while let Some(chunk) = sched.next_chunk() {
@@ -997,7 +1295,7 @@ mod tests {
     #[test]
     fn a_hint_outside_the_target_set_is_ignored() {
         let specs = specs(3);
-        let sched = Scheduler::new(&specs, 1, Some(4));
+        let sched = scheduler(&specs, 1, Some(4));
         sched.on_results(&[result(specs[0].addr, vec![0xdead_beef, specs[2].addr])]);
         assert_eq!(sched.next_chunk(), Some(vec![2]));
         assert_eq!(sched.next_chunk(), Some(vec![0, 1]));
@@ -1005,18 +1303,137 @@ mod tests {
     }
 
     /// `--jobs-chunk N` pins the size; otherwise it follows how much frontier
-    /// there is to follow.
+    /// there is to follow — and the address-order fallback, which is where most
+    /// of a large export runs, takes full chunks whatever the frontier says.
     #[test]
     fn the_chunk_size_is_fixed_by_the_flag_and_adaptive_without_it() {
         let specs = specs(600);
-        let fixed = Scheduler::new(&specs, 4, Some(7));
+        let fixed = scheduler(&specs, 4, Some(7));
         assert_eq!(fixed.next_chunk().unwrap().len(), 7);
+        assert_eq!(fixed.chunk_sizes(), (7, 7), "--jobs-chunk pins both halves");
 
-        let auto = Scheduler::new(&specs, 4, None);
-        assert_eq!(auto.chunk_size(), 4, "a thin frontier is followed closely");
-        let hints: Vec<u64> = specs[..200].iter().map(|s| s.addr).collect();
+        let auto = scheduler(&specs, 4, None);
+        assert_eq!(auto.chunk_sizes(), (4, CHUNK_MAX), "a thin frontier is followed closely");
+        assert_eq!(
+            auto.next_chunk().unwrap().len(),
+            CHUNK_MAX,
+            "an empty frontier IS the fallback: the cursor goes out in full chunks"
+        );
+        let hints: Vec<u64> = specs[100..300].iter().map(|s| s.addr).collect();
         auto.on_results(&[result(0x1, hints)]);
-        assert_eq!(auto.chunk_size(), 64, "a deep frontier batches");
+        assert_eq!(auto.chunk_sizes(), (CHUNK_MAX, CHUNK_MAX), "a deep frontier batches");
+    }
+
+    /// A callee with many callers is queued once: the frontier length decides
+    /// the chunk size, so duplicates would make a drained frontier read as deep.
+    #[test]
+    fn a_repeated_hint_is_queued_once() {
+        let specs = specs(8);
+        let sched = scheduler(&specs, 1, Some(1));
+        let callee = specs[5].addr;
+        for caller in 0..4 {
+            sched.on_results(&[result(specs[caller].addr, vec![callee, callee])]);
+        }
+        assert_eq!(sched.frontier_len(), 1, "one entry per queued target");
+        assert_eq!(sched.claim_one(), Some(5));
+        assert_eq!(sched.frontier_len(), 0, "and it leaves when it is claimed");
+        assert_eq!(sched.claim_one(), Some(0), "the cursor takes over");
+    }
+
+    /// The writer owns every artifact, so when it dies the pool must stop
+    /// pulling chunks rather than decompile the rest of the binary into a
+    /// closed channel.
+    #[test]
+    fn an_aborted_run_hands_out_no_more_work() {
+        let specs = specs(40);
+        let abort = Arc::new(Abort::default());
+        let sched = Scheduler::new(&specs, 4, Some(4), Arc::clone(&abort));
+        assert_eq!(sched.next_chunk().map(|c| c.len()), Some(4));
+        abort.stop(Some("cannot replace x.h: Is a directory (os error 21)".into()));
+        assert_eq!(sched.next_chunk(), None, "a stopped run schedules nothing");
+        assert_eq!(sched.claim_one(), None);
+        assert!(abort.reason().contains("Is a directory"), "the writer's error is the reason");
+    }
+
+    /// A producer that only saw its channel close still reports something.
+    #[test]
+    fn an_abort_without_a_writer_error_reports_the_sentinel() {
+        let abort = Abort::default();
+        abort.stop(None);
+        assert!(abort.stopped());
+        assert_eq!(abort.reason(), WRITER_STOPPED);
+        abort.stop(Some("second".into()));
+        assert_eq!(abort.reason(), "second", "the first real error wins over the sentinel");
+        abort.stop(Some("third".into()));
+        assert_eq!(abort.reason(), "second", "and is not overwritten by a later one");
+    }
+
+    /// Two streamed exports into one folder truncate each other's `.c` and
+    /// invalidate every offset a reader took, so the second one refuses while
+    /// the first is alive — and takes the folder once it is not.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_second_export_refuses_a_folder_a_live_one_is_writing() {
+        let dir = std::env::temp_dir().join(format!("kuna_stream_live_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(refuse_a_live_export(&dir).is_ok(), "an empty folder is free");
+
+        // pid 1 is alive on any Linux this runs on.
+        std::fs::write(dir.join(STATUS_FILE), "{\"schema\":1,\"phase\":\"decompiling\",\"pid\":1}\n")
+            .unwrap();
+        let refused = refuse_a_live_export(&dir).unwrap_err();
+        assert!(refused.contains("pid 1"), "{refused}");
+        assert!(refused.contains("-o"), "the refusal has to say what to do instead: {refused}");
+
+        std::fs::write(
+            dir.join(STATUS_FILE),
+            format!("{{\"schema\":1,\"pid\":{}}}\n", std::process::id()),
+        )
+        .unwrap();
+        assert!(refuse_a_live_export(&dir).is_ok(), "our own pid is not a second export");
+
+        // Past `pid_max`, so no process can hold it: the run was killed and the
+        // folder is free.
+        let dead: u64 = std::fs::read_to_string("/proc/sys/kernel/pid_max")
+            .map(|s| s.trim().parse::<u64>().unwrap_or(4_194_304))
+            .unwrap_or(4_194_304)
+            + 1;
+        std::fs::write(dir.join(STATUS_FILE), format!("{{\"pid\":{dead}}}\n")).unwrap();
+        assert!(refuse_a_live_export(&dir).is_ok(), "a dead pid does not hold the folder");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The status file's `pid` is what a second export reads to decide whether
+    /// the first is still alive.
+    #[test]
+    fn the_status_pid_is_readable_back_out_of_the_line() {
+        let status = StreamStatus::new(2);
+        let line = dumps_compact(&status.to_json());
+        assert_eq!(json_number(&line, "pid"), Some(u64::from(std::process::id())));
+        assert_eq!(json_number(&line, "functions_done"), Some(0));
+        assert_eq!(json_number(&line, "functions_total"), None, "a null is not a number");
+        assert_eq!(json_number(&line, "nope"), None);
+    }
+
+    /// Two exports into one folder must not fight over one temp path.
+    #[test]
+    fn an_atomic_write_names_its_temp_after_the_process() {
+        let dir = std::env::temp_dir().join(format!("kuna_stream_atomic_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("x.h");
+        write_atomic(&path, b"one").unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"one");
+        let leftovers: Vec<String> = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|e| Some(e.ok()?.file_name().to_string_lossy().into_owned()))
+            .filter(|n| n.contains("kuna-tmp"))
+            .collect();
+        assert!(leftovers.is_empty(), "the temp file is renamed away: {leftovers:?}");
+        assert!(
+            write_atomic(&dir.join("nested/x.h"), b"two").is_err(),
+            "a path that cannot be written is an error, not a panic"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// The status file is the run's only contract with a polling reader.

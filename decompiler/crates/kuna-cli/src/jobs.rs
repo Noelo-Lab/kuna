@@ -609,6 +609,11 @@ pub(crate) struct PoolOutput {
     pub(crate) types: Option<String>,
 }
 
+/// How a pool run brands its stderr: `--jobs` for the static plan, `--stream`
+/// for the dynamic frontier, so every line of one run reads as one run.
+pub(crate) const JOBS_TAG: &str = "--jobs";
+pub(crate) const STREAM_TAG: &str = "--stream";
+
 /// Where a pool thread gets its next chunk.
 ///
 /// The static plan a `--jobs N` run computes up front and the dynamic,
@@ -647,7 +652,7 @@ pub(crate) fn run_pool(
     if total == 0 {
         return Ok(PoolOutput { results: Vec::new(), types: None });
     }
-    let jobs = affordable_jobs(cfg);
+    let jobs = affordable_jobs(cfg, JOBS_TAG);
     // Dispatch order is NOT output order: work is planned longest-first into
     // equal-work chunks, and every result is filed by its slot index, so the
     // merged document does not depend on how the pool scheduled anything.
@@ -662,13 +667,12 @@ pub(crate) fn run_pool(
     let source = PlannedChunks { plan, cursor: AtomicUsize::new(0) };
 
     let slots: Mutex<Vec<Option<FuncResult>>> = Mutex::new((0..total).map(|_| None).collect());
-    let types = run_pool_with(
+    let blocks = run_pool_with(
         cfg,
         targets,
         inventory,
         &source,
-        workers,
-        &banner,
+        &PoolReport { tag: JOBS_TAG, banner, workers, done_base: 0 },
         &|indices: &[usize], produced: Vec<FuncResult>| {
             let mut slots = slots.lock().unwrap_or_else(|e| e.into_inner());
             for (&slot, r) in indices.iter().zip(produced) {
@@ -684,12 +688,22 @@ pub(crate) fn run_pool(
         .map(|(slot, t)| slot.unwrap_or_else(|| lost_result(t, NO_RECORD)))
         .collect();
     warn_about_anomalies(&results, cfg.max_fn_seconds);
+    // After the anomaly warnings, which report the run itself: the type-shard
+    // disagreement is a note about one artifact.
+    let types =
+        (cfg.want_types && !blocks.is_empty()).then(|| merge_type_definitions(&blocks, JOBS_TAG));
     Ok(PoolOutput { results, types })
 }
 
 /// The `--stream` pool: the same workers over a caller-supplied dynamic
 /// [`ChunkSource`], with each finished chunk handed to `sink` as it lands
-/// instead of being filed into a slot table.  Returns the merged type block.
+/// instead of being filed into a slot table.  Returns each retired worker's
+/// type block, unmerged — the streamed caller decompiles the seeds itself and
+/// merges its own factory in as one more shard.
+///
+/// `done_base` is how many targets the caller already decompiled in-process, so
+/// the progress line counts them; `workers_out` reports how many workers the
+/// memory trim actually left, which is what `.streaming` publishes.
 ///
 /// The caller owns the record keeping a streamed run needs (one record per
 /// target, the anomaly warnings, the end-of-run reconciliation), because it is
@@ -699,33 +713,53 @@ pub(crate) fn run_pool_streaming(
     targets: &[TargetSpec],
     inventory: &[TargetSpec],
     source: &dyn ChunkSource,
+    done_base: usize,
+    workers_out: &AtomicUsize,
     sink: &(dyn Fn(&[usize], Vec<FuncResult>) + Sync),
-) -> Result<Option<String>, String> {
+) -> Result<Vec<String>, String> {
     let total = targets.len();
     if total == 0 {
-        return Ok(None);
+        return Ok(Vec::new());
     }
-    let workers = affordable_jobs(cfg).min(total);
+    let workers = affordable_jobs(cfg, STREAM_TAG).min(total);
+    workers_out.store(workers, Ordering::SeqCst);
     let banner = format!(
         "[kuna --stream] {total} functions, entry-point-first dynamic scheduling, \
          {workers} worker process(es)"
     );
-    run_pool_with(cfg, targets, inventory, source, workers, &banner, sink)
+    run_pool_with(
+        cfg,
+        targets,
+        inventory,
+        source,
+        &PoolReport { tag: STREAM_TAG, banner, workers, done_base },
+        sink,
+    )
 }
 
-/// The pool itself: `workers` threads, each driving one worker process through
-/// chunk after chunk of `source` until it runs dry, with every finished chunk
-/// handed to `sink` as `(slot indices, results)`.  Returns the merged
-/// user-defined type block when `cfg.want_types` asked for one.
+/// The stderr brand of a pool run, and where its progress line starts counting.
+struct PoolReport {
+    /// `--jobs` or `--stream`: every line this run prints is `[kuna <tag>]`.
+    tag: &'static str,
+    banner: String,
+    workers: usize,
+    done_base: usize,
+}
+
+/// The pool itself: `report.workers` threads, each driving one worker process
+/// through chunk after chunk of `source` until it runs dry, with every finished
+/// chunk handed to `sink` as `(slot indices, results)`.  Returns one rendered
+/// user-defined type block per retired worker when `cfg.want_types` asked for
+/// them.
 fn run_pool_with(
     cfg: &PoolConfig,
     targets: &[TargetSpec],
     inventory: &[TargetSpec],
     source: &dyn ChunkSource,
-    workers: usize,
-    banner: &str,
+    report: &PoolReport,
     sink: &(dyn Fn(&[usize], Vec<FuncResult>) + Sync),
-) -> Result<Option<String>, String> {
+) -> Result<Vec<String>, String> {
+    let workers = report.workers;
     let total = targets.len();
     let exe = std::env::current_exe().map_err(|e| format!("cannot locate the kuna binary: {e}"))?;
     let scratch = ScratchDir::create()?;
@@ -734,14 +768,14 @@ fn run_pool_with(
         std::fs::write(&path, encode_spec(inventory))
             .map_err(|e| format!("cannot write the worker inventory {}: {e}", path.display()))?;
     }
-    eprintln!("{banner}");
+    eprintln!("{}", report.banner);
 
     let chunk_ids = AtomicUsize::new(0);
-    let completed = AtomicUsize::new(0);
+    let completed = AtomicUsize::new(report.done_base);
     let retired = AtomicUsize::new(0);
     let worker_ids = AtomicUsize::new(0);
     let type_blocks: Mutex<Vec<String>> = Mutex::new(Vec::new());
-    let progress = Progress::new(total, workers);
+    let progress = Progress::new(total, workers, report.tag);
     let start = Instant::now();
 
     std::thread::scope(|scope| {
@@ -787,8 +821,7 @@ fn run_pool_with(
 
     // No block at all means no worker retired cleanly, which is a failed run, not
     // a program with no types: leave the caller its own factory to fall back on.
-    let blocks = type_blocks.into_inner().unwrap_or_else(|e| e.into_inner());
-    Ok((cfg.want_types && !blocks.is_empty()).then(|| merge_type_definitions(&blocks)))
+    Ok(type_blocks.into_inner().unwrap_or_else(|e| e.into_inner()))
 }
 
 /// Hand one chunk to this thread's worker, starting one first if the thread has
@@ -1077,13 +1110,13 @@ fn stall_deadline(cfg: &PoolConfig, warm: bool) -> Option<Duration> {
 /// answer.  When they differ the parent says so and emits the ordered union,
 /// deduplicated by definition line, so the `.h` still declares everything the
 /// `.c` uses; the exact serial ordering is what `--jobs 1` is for.
-fn merge_type_definitions(blocks: &[String]) -> String {
+pub(crate) fn merge_type_definitions(blocks: &[String], tag: &str) -> String {
     let Some(first) = blocks.first() else { return String::new() };
     if blocks.iter().all(|b| b == first) {
         return first.clone();
     }
     eprintln!(
-        "[kuna --jobs] warning: worker shards recovered different user-defined types, so the .h \
+        "[kuna {tag}] warning: worker shards recovered different user-defined types, so the .h \
          type block is their union rather than the exact --jobs 1 rendering. Re-run with \
          --jobs 1 if the ordering matters."
     );
@@ -1146,26 +1179,30 @@ fn count_error_anomalies<'a>(errors: impl Iterator<Item = &'a str>) -> (usize, u
 /// bad function must not kill a 33,000-function export — but exiting 0 without a
 /// word about it is not reporting.
 fn warn_about_anomalies(results: &[FuncResult], max_fn_seconds: u64) {
-    warn_about_counts(count_anomalies(results), max_fn_seconds);
+    warn_about_counts(count_anomalies(results), max_fn_seconds, JOBS_TAG);
 }
 
 /// The same two warnings for a run whose results were consumed as they landed
 /// (`--stream`), which keeps only the error strings.
 pub(crate) fn warn_about_streamed_anomalies(errors: &[String], max_fn_seconds: u64) {
-    warn_about_counts(count_error_anomalies(errors.iter().map(String::as_str)), max_fn_seconds);
+    warn_about_counts(
+        count_error_anomalies(errors.iter().map(String::as_str)),
+        max_fn_seconds,
+        STREAM_TAG,
+    );
 }
 
-fn warn_about_counts((tripped, lost): (usize, usize), max_fn_seconds: u64) {
+fn warn_about_counts((tripped, lost): (usize, usize), max_fn_seconds: u64, tag: &str) {
     if tripped > 0 && max_fn_seconds > 0 {
         eprintln!(
-            "[kuna --jobs] warning: {tripped} function(s) hit the {max_fn_seconds}s per-function \
+            "[kuna {tag}] warning: {tripped} function(s) hit the {max_fn_seconds}s per-function \
              watchdog. It is wall-clock, so heavy functions can trip it under parallel load that \
              would pass serially — re-run with a larger --max-fn-seconds (or 0) if you need them."
         );
     }
     if lost > 0 {
         eprintln!(
-            "[kuna --jobs] warning: {lost} function(s) have no result because their worker process \
+            "[kuna {tag}] warning: {lost} function(s) have no result because their worker process \
              failed (crash, OOM kill, an external signal, or the stall watchdog); they are `error` \
              records in the output. Re-run those functions, with fewer --jobs if the machine ran \
              out of memory."
@@ -1180,7 +1217,7 @@ fn warn_about_counts((tripped, lost): (usize, usize), max_fn_seconds: u64) {
 ///
 /// `auto` is a promise not to wreck the machine, so it yields; an explicit
 /// number is an instruction, so it is obeyed with a warning.
-fn affordable_jobs(cfg: &PoolConfig) -> usize {
+fn affordable_jobs(cfg: &PoolConfig, tag: &str) -> usize {
     let (Some(per_worker), Some(available)) =
         (worker_estimate(cfg.full_load), available_memory_bytes())
     else {
@@ -1195,7 +1232,7 @@ fn affordable_jobs(cfg: &PoolConfig) -> usize {
     let gb = |b: u64| b as f64 / (1024.0 * 1024.0 * 1024.0);
     if cfg.jobs_auto {
         eprintln!(
-            "[kuna --jobs] auto: {affordable} worker(s), not {} — one worker needs about {:.1} GB \
+            "[kuna {tag}] auto: {affordable} worker(s), not {} — one worker needs about {:.1} GB \
              here and {:.1} GB is free. Pass --jobs N to override.",
             cfg.jobs,
             gb(per_worker),
@@ -1204,7 +1241,7 @@ fn affordable_jobs(cfg: &PoolConfig) -> usize {
         return affordable;
     }
     eprintln!(
-        "[kuna --jobs] warning: {} workers at about {:.1} GB each is more than the {:.1} GB free \
+        "[kuna {tag}] warning: {} workers at about {:.1} GB each is more than the {:.1} GB free \
          on this machine; expect swapping or an OOM kill. {affordable} would fit.",
         cfg.jobs,
         gb(per_worker),
@@ -1528,6 +1565,7 @@ pub(crate) fn ack_chunk(idx: usize) {
 struct Progress {
     state: Mutex<ProgressState>,
     total: usize,
+    tag: &'static str,
 }
 
 struct ProgressState {
@@ -1574,10 +1612,11 @@ impl ProgressState {
 }
 
 impl Progress {
-    fn new(total: usize, workers: usize) -> Self {
+    fn new(total: usize, workers: usize, tag: &'static str) -> Self {
         Self {
             state: Mutex::new(ProgressState::new(workers, Instant::now())),
             total,
+            tag,
         }
     }
 
@@ -1598,7 +1637,8 @@ impl Progress {
             .map(|seconds| format!(", ETA {}", hms(seconds)))
             .unwrap_or_default();
         eprintln!(
-            "[kuna --jobs] {done}/{} functions ({:.1}%), {} elapsed{eta}",
+            "[kuna {}] {done}/{} functions ({:.1}%), {} elapsed{eta}",
+            self.tag,
             self.total,
             frac * 100.0,
             hms(elapsed)
@@ -1607,7 +1647,8 @@ impl Progress {
 
     fn finish(&self, total: usize, start: Instant) {
         eprintln!(
-            "[kuna --jobs] done: {total} functions in {}",
+            "[kuna {}] done: {total} functions in {}",
+            self.tag,
             hms(start.elapsed().as_secs_f64())
         );
     }
@@ -2054,18 +2095,22 @@ mod tests {
     fn auto_yields_to_free_memory_and_an_explicit_count_does_not() {
         let mut c = cfg(0, 0.0);
         c.jobs = 1;
-        assert_eq!(affordable_jobs(&c), 1, "one worker fits on any machine that can run this");
+        assert_eq!(affordable_jobs(&c, JOBS_TAG), 1, "one worker fits on any machine that can run this");
 
         // Far past what any machine holds, so the trim is reached wherever this
         // runs rather than only on a loaded box.
         c.jobs = 1_000_000;
         c.jobs_auto = true;
-        let trimmed = affordable_jobs(&c);
+        let trimmed = affordable_jobs(&c, JOBS_TAG);
         assert!(trimmed >= 1, "the trim must still leave a pool: {trimmed}");
         assert!(trimmed < c.jobs, "`auto` must come down to what fits: {trimmed}");
 
         c.jobs_auto = false;
-        assert_eq!(affordable_jobs(&c), 1_000_000, "an explicit --jobs N is obeyed, not lowered");
+        assert_eq!(
+            affordable_jobs(&c, JOBS_TAG),
+            1_000_000,
+            "an explicit --jobs N is obeyed, not lowered"
+        );
     }
 
     /// Whatever the planning policy, the plan must cover every slot exactly once
@@ -2133,12 +2178,12 @@ mod tests {
     #[test]
     fn the_type_block_is_the_shards_agreement_or_their_union() {
         let a = "typedef struct s s;\nstruct s { int x; };\n".to_string();
-        assert_eq!(merge_type_definitions(&[a.clone(), a.clone()]), a);
-        assert_eq!(merge_type_definitions(&[]), "");
-        assert_eq!(merge_type_definitions(std::slice::from_ref(&a)), a);
+        assert_eq!(merge_type_definitions(&[a.clone(), a.clone()], JOBS_TAG), a);
+        assert_eq!(merge_type_definitions(&[], JOBS_TAG), "");
+        assert_eq!(merge_type_definitions(std::slice::from_ref(&a), JOBS_TAG), a);
 
         let b = "typedef struct s s;\nstruct s { int x; };\ntypedef struct t t;\n".to_string();
-        let merged = merge_type_definitions(&[a, b]);
+        let merged = merge_type_definitions(&[a, b], JOBS_TAG);
         for line in ["typedef struct s s;", "struct s { int x; };", "typedef struct t t;"] {
             assert_eq!(merged.matches(line).count(), 1, "{line} must appear exactly once");
         }
