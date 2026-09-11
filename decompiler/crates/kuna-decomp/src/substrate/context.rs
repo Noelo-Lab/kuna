@@ -678,6 +678,11 @@ pub struct ArchContext {
     /// to the source lane it selects (`simdlane`).  Read by
     /// [`RuleSimdShuffleLane`](crate::kuna_simdlane::RuleSimdShuffleLane).
     pub simd_lane_fold: bool,
+
+    /// (kuna) Resolve a SLEIGH dynamic constant-space export to the value it
+    /// exports (`constspaceload`).  Read by
+    /// [`RuleConstSpaceLoad`](crate::kuna_constspaceload::RuleConstSpaceLoad).
+    pub const_space_load_fold: bool,
     /// (kuna) CALLOTHER user-op ids the architecture registered under a byte
     /// shuffle name ([`SHUFFLE_USEROP_NAMES`](crate::kuna_simdlane::SHUFFLE_USEROP_NAMES)),
     /// resolved once per program in `Architecture::build_arch_handle` so
@@ -1329,6 +1334,7 @@ impl ArchContext {
             fold_boolean_mask: false,    // GH-1282 booleanmask
             ret_split_global: false,     // retsplitglobal (the ArchSeam carries the real default)
             simd_lane_fold: false,       // simdlane (the ArchSeam carries the real default)
+            const_space_load_fold: false, // constspaceload (the ArchSeam carries the real default)
             simd_shuffle_userops: Vec::new(),
             fold_flag_compare: false,    // GH-1276/8777 flagcompare
             add_carry_chain: false,      // GH-8913 addcarrychain

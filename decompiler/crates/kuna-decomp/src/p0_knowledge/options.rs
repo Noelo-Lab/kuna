@@ -255,6 +255,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "ovlesssimplify",
     "booleanmask",
     "simdlane",
+    "constspaceload",
     "retsplitglobal",
     "flagcompare",
     "v850indirectbranch",

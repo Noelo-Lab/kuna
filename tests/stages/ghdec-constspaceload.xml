@@ -1,0 +1,76 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v8:default">
+<!--
+    RE-friction round 12 case, need `arm-neon-zero-initialization`
+    (challenge 68d40081224c0ec5dcedc2d2, ARM 32-bit ELF `trap`,
+    `_start_main`).
+
+    P3 dataflow, before ActionLaneDivide.  A SLEIGH constructor that ends in
+    `export *[const]:N v` is a DYNAMIC constant-space export, and it lowers to
+    `LOAD(const, v)`.  The defining property of the constant space is that an
+    address IS its own value, which is the identity `RuleLoadVarnode`
+    (ruleaction.cc:4258) applies when `v` is already a constant Varnode.  The
+    identity does not stop holding when `v` is a temporary, but nothing applied
+    it there, and `RuleCollapseConstants` cannot turn a 16-byte `v` into a
+    constant at all (`PcodeOp::isCollapsible` rejects any output wider than a
+    `uintb`).  So `vmov.i32 q8,#0` (ARMneon.sinc:549, whose body is
+    `tmp:16 = 0; export *[const]:16 tmp`) survived as a LOAD through a pointer,
+    `ActionLaneDivide` sliced that LOAD into one word-sized read per lane at
+    `v`, `v+4`, `v+8`, `v+0xc`, and the filed output was
+
+        v2 = *(unsigned int *)(0 + 4);
+        v3 = *(unsigned int *)(0 + 8);
+        v4 = *(unsigned int *)(0 + 0xc);
+        v1 = 0;
+
+    Lane 0 needs no offset and folded correctly; the other three read near-null
+    memory.  Offsetting a constant-space address changes the value rather than
+    selecting a word of it, so folding those three where they stand would have
+    printed the literals 4, 8 and 0xc instead.
+
+    The fix rewrites `out:N = LOAD(const, p:S)` to `COPY p` (N == S), to
+    `SUBPIECE(p, 0)` (N &lt; S) or to `INT_ZEXT p` (N &gt; S) before the lanes are
+    cut, so each lane is split off the VALUE.
+
+    Bytes: hand-encoded A32, the same body as the vendored fixture
+    `kuna-analysis/tests/fixtures/neonimm_arm_le32`.  `neon_init` fills a
+    32-byte stack buffer with two NEON immediates and passes its address to
+    `sink`, stubbed `bx lr`; without that call the whole initialization is dead
+    code and neither rendering reaches the output.
+
+    The NON-ZERO immediate `vmov.i32 q8,#1` is here on purpose and is the
+    regression that the witness binary cannot carry.  The obvious wrong fix is
+    to widen `RuleLoadVarnode` so it folds a 16-byte const-space load; that
+    works only because this need's value is zero, and would silently TRUNCATE
+    every other `simdExpImm_16` arm (ARMneon.sinc:556, 574, 596, ...), none of
+    which appears in the witness.  Pass 1 pins all four lanes of `#1` at 1.
+
+    Pass 1 (default) asserts the fix; pass 2 (`option constspaceload off`) pins
+    the upstream rendering, which is the bug.  Assertion counts span both
+    passes.
+-->
+<bytechunk space="ram" offset="0x10004">
+00482de90db0a0e120d04de25100c0f20d10a0e1cd0a41f45020c0f2cd2a41f4
+0d00a0e1f4ffffeb0bd0a0e10088bde8
+</bytechunk>
+<!-- The callee, stubbed `bx lr`. -->
+<bytechunk space="ram" offset="0x10000" readonly="true">1eff2fe1</bytechunk>
+</binaryimage>
+<script>
+  <com>map function r0x10000 sink</com>
+  <com>map function r0x10004 neon_init</com>
+  <com>lo fu neon_init</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option constspaceload off</com>
+  <com>lo fu neon_init</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="constspaceload #1: the non-zero immediate vmov.i32 q8,#1 folds to all four of its 32-bit lanes, default pass only" min="4" max="4">v[0-9]+ = 1;</stringmatch>
+<stringmatch name="constspaceload #2: the zero immediate vmov.i32 q9,#0 becomes two whole 8-byte zero slots, default pass only" min="2" max="2">unsigned long long v[0-9]+; // stack - 0x1</stringmatch>
+<stringmatch name="constspaceload #3: only the option-off pass reads near-null memory for the lanes that need an offset" min="3" max="3">\*\)\(0 \+ (?:4|8|0xc)\)</stringmatch>
+<stringmatch name="constspaceload #4: only the option-off pass leaves the immediate as a 16-byte pointer-shaped value" min="1" max="1">_0_16_ \+ 0xc</stringmatch>
+<stringmatch name="constspaceload #5: the buffer still escapes to the callee in both passes" min="2" max="2">sink\(&amp;v[0-9]+,&amp;Stackfffffff8\);</stringmatch>
+</decompilertest>

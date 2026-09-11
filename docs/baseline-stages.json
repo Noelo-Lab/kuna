@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    758,
-    758
+    763,
+    763
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -536,6 +536,11 @@
     "data:condfold-ruleb #4: OFF, the declined cascade nests the last two guards inside the first one's arm (pass 1 only)",
     "data:condfold-ruleb #5: the failure arm consumes the escaping call result in both renderings, which is what keeps that result non-implied and printed (off plus on = 2)",
     "data:condfold-ruleb #6: the guarded body is untouched by the fold (off plus on = 2)",
+    "data:constspaceload #1: the non-zero immediate vmov.i32 q8,#1 folds to all four of its 32-bit lanes, default pass only",
+    "data:constspaceload #2: the zero immediate vmov.i32 q9,#0 becomes two whole 8-byte zero slots, default pass only",
+    "data:constspaceload #3: only the option-off pass reads near-null memory for the lanes that need an offset",
+    "data:constspaceload #4: only the option-off pass leaves the immediate as a 16-byte pointer-shaped value",
+    "data:constspaceload #5: the buffer still escapes to the callee in both passes",
     "data:cookiescramble #1: the /GS cookie mix drops both stack-passed arguments (bug reproduced)",
     "data:cookiescramble #2: option off leaves the dropped arguments as dead stores to locals",
     "data:cookiescramble #3: option on recovers both stack-passed arguments",
