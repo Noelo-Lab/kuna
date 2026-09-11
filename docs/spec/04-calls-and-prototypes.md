@@ -1482,6 +1482,40 @@ connected to its producer. Spelling that value as a Rust enum is a chapter
 [05](05-types.md) decision that cannot be made until the value survives to be
 spelled.
 
+#### The two-register CALL output on any image (`callretpair`)
+
+**(kuna)** The consumer half above is not about Rust and neither is the gap it
+closes. A sixteen-byte aggregate return in `RAX:RDX` is ordinary System V C — a
+QuickJS `JSValue` is `{ JSValueUnion u; int64_t tag; }` and comes back in exactly
+that pair — and `option rustabi auto` cannot see a GCC image at all, so on every
+non-Rust binary the stubbed multi-trial branch stayed stubbed. The visible
+consequence is the strongest argument against it: ask kuna about the callee and
+it answers `undefined16 sub_875e0(int8,char *,int8,uint4)`; ask it about the
+caller and the same call has no output, with both halves rendered as locals the
+function never assigns.
+
+`option callretpair on|off`
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_callretpair.rs`) opens the same
+arm with the language test dropped, and nothing else: the classification is
+`classify_call_output_pair` unchanged, the callee-body veto is the same one, and
+`build_call_output_pair` is the same code — the two options simply both reach it.
+`rustabi` keeps the producer-side pair (`holds_scalar_pair`, which `callretpair`
+does not touch), so a rustc image behaves identically whichever is set.
+
+The reach is whatever the cspec's output model asks for, not an architecture
+list: two used output trials arise wherever a convention describes its return
+storage as two consecutive register pentries with a join rule over them. That is
+`<join_dual_class/>` on x86-64 System V and MIPS64, and the plain `<join/>` rule
+over `r0`/`r1` on 32-bit ARM, where it is how every soft-float `double` comes
+back from `__aeabi_dmul`.
+
+The shipped default is **on**, which is upstream's behaviour for this branch and
+the reason the option is a completion rather than a feature. Its evidence is that
+it only ever adds a definition: the arm replaces two INDIRECT creations — values
+standing for "the callee wrote something here" — with two `SUBPIECE`s of a value
+the CALL now produces, so no statement is removed that was not a read of an
+undefined local, and no call can lose an argument. Set it off to restore the stub.
+
 ### The ABI seam (`kuna_langabi.rs`)
 
 **(kuna, output languages)** How a recovered calling convention *appears* is a

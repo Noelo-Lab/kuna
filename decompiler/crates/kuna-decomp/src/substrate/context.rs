@@ -640,6 +640,11 @@ pub struct ArchContext {
     /// [`Funcdata::only_op_use`](crate::funcdata::Funcdata) through
     /// [`crate::p4_calls::kuna_exclusivearguse::access_cannot_reach_call`].
     pub exclusive_arg_use: bool,
+    /// (kuna) `option callretpair`: whether the two-register CALL output arm of
+    /// `FuncCallSpecs::buildOutputFromTrials` runs on any image rather than only
+    /// a detected rustc one.  Read by
+    /// [`crate::p4_calls::kuna_callretpair::live`].
+    pub call_ret_pair: bool,
     /// (kuna) `option rustabi` (0 off / 1 auto / 2 always): keep a rustc
     /// two-register `ScalarPair` return intact; read by [`crate::kuna_rustabi`].
     pub rust_abi: u8,
@@ -1323,6 +1328,9 @@ impl ArchContext {
             // from the engine Architecture in `build_arch_handle`.
             zero_idiom_use: true,
             exclusive_arg_use: true,
+            // (kuna) `option callretpair` default-on; the real value is copied
+            // from the engine Architecture in `build_arch_handle`.
+            call_ret_pair: true,
             // (kuna) `option rustabi` default-off; the real value is copied from
             // the engine Architecture in `build_arch_handle`.
             rust_abi: 0,

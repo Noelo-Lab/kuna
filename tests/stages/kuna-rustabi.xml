@@ -70,6 +70,7 @@
 <symbol space="ram" offset="0x201250" name="pair_shaped_reader"/>
 </binaryimage>
 <script>
+  <com>option callretpair off</com>
   <com>lo fu prod</com>
   <com>decompile</com>
   <com>print C</com>

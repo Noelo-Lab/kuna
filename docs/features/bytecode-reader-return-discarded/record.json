@@ -1,0 +1,65 @@
+{
+  "slug": "bytecode-reader-return-discarded",
+  "need_id": "bytecode-reader-return-discarded",
+  "track": "quality",
+  "scope": "small",
+  "option": "callretpair",
+  "div": "DIV-162",
+  "phase": "P4",
+  "subphase": "output-prototype",
+  "default": "on",
+  "module": "decompiler/crates/kuna-decomp/src/p4_calls/kuna_callretpair.rs",
+  "witness": {
+    "challenge": "673da52e9b533b4c22bd2eeb",
+    "binary": "crackme.x86_64.elf",
+    "note": "a stripped gcc 9.4 QuickJS interpreter; JSValue is { JSValueUnion u; int64_t tag; }, sixteen bytes, returned in RAX:RDX",
+    "caller": "sub_9d9c0",
+    "callee": "sub_875e0",
+    "call_site": "0x9d9d8"
+  },
+  "decisions": [
+    "The need was filed with an EMPTY hypothesis, so there was no filed diagnosis to overturn. The cause found: FuncCallSpecs::buildOutputFromTrials (fspec.cc:5777) handles one used output trial; upstream handles two; kuna shipped the multi-trial arm as STUB(W4 translate-on-handle). The cspec output rule had already put two active trials on the call, so the call got no output at all and both INDIRECT creations survived as locals nothing assigns.",
+    "The parameter asserts in the probe are a red herring: the symptom is byte-identical with no --assert at all. They neither cause nor mask the defect.",
+    "NOT a new mechanism. kuna_rustabi (DIV-136) already completed this arm with a sound, language-agnostic classification (model rule + both halves read + a one-sided callee-body veto) and then gated it on Compiler::Rustc, which a GCC image can never satisfy. `--option rustabi always` closes the acceptance today; it is not a default-flip candidate because `always` also drops the language test for the PRODUCER-side rule, which is why rustabi ships off. The fix is to split the consumer half out behind its own gate.",
+    "Default ON: the arm only ever ADDS a definition -- two INDIRECT creations become two SUBPIECEs of a value the CALL now produces. No statement can be removed that was not a read of an undefined local, and no call can lose an argument. Measured on 498 images, this held with no exceptions.",
+    "The reach is the cspec's output model, not an architecture list: <join_dual_class/> on x86-64 System V and MIPS64, and the plain <join/> over r0/r1 on 32-bit ARM -- which is how every soft-float double comes back from __aeabi_dmul. The ARM half was found by a stage-test regression, not by design, and the sweep was widened to 93 ARM/MIPS images because of it.",
+    "Widening seed_callee_return_writes so this option's veto keeps its evidence exposed a pre-existing latent coupling: seed_callee_preserves is gated on `calleepreserves`, so the default-ON `calleeretpreserves` was silently dead whenever `calleepreserves` was off. Under default options the widening is a strict no-op (calleepreserves already seeds every direct call). tests/stages/kuna-calleepreserves.xml now holds BOTH rules off in its off pass, because either one closes its witness."
+  ],
+  "gates": {
+    "make_test": "PARITY OK 675/675",
+    "make_test_stages": "PARITY OK 774/774 (768 -> 774, six new assertions)",
+    "make_test_cli": "126/126",
+    "make_check_spec": "OK (strict)",
+    "kuna_catalog_check": "catalog OK"
+  },
+  "datatest_delta": "0/675 assertions changed",
+  "sweep": {
+    "method": "kuna decompile-all, --option callretpair off vs default, whole-binary text compared",
+    "images_total": 498,
+    "images_identical": 484,
+    "images_changed": 14,
+    "images_unmeasurable": 1,
+    "corpora": "398 decbench C builds (O0/O2/O2-noinline) + 11 RE-dataset x86-64 ELFs + 93 ARM/MIPS images (decbench Cortex-M firmware, RE-dataset ARM crackmes, kuna-analysis ARM/MIPS/PPC fixtures)",
+    "calls_lost": 0,
+    "calls_gained": 0,
+    "functions_with_more_never_assigned_locals": 0,
+    "witness_image": "422 of 1587 functions changed; never-assigned locals 3304 -> 1688 (-48.9%); emitted C 89520 -> 88183 lines",
+    "statement_drops_read_individually": "43 functions; every one the same collapse, `f(); v4 = v3; return v4;` -> `return f();`",
+    "elsewhere": "coreutils make-prime-list process_prime stores the halves of __udivti3's 128-bit quotient instead of two undefined locals; newlib scalbn on ARM returns __aeabi_dmul(...) instead of CONCAT44 of two phantoms (17 never-assigned locals -> 5)"
+  },
+  "speed_off_ms": 177.26,
+  "speed_on_ms": 131.39,
+  "speed_delta_pct": -25.88,
+  "speed_samples": 7,
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": true,
+  "speed_forced_off": false,
+  "speed_note": "median of 7 on the witness function via scripts.pipeline.timeit; forming the pair deletes IR (two INDIRECT creations and their inputs) rather than adding it",
+  "tests": {
+    "stage": "tests/stages/kuna-callretpair.xml (two-pass, plus a callee-veto control identical in both passes)",
+    "cli": "tests/cli/bytecode-reader-return-discarded.json (retargeted onto the vendored callretpair_x86_64; the dataset witness is not vendorable)",
+    "unit": "kuna_callretpair/tests.rs (the gate) and kuna_rustabi/tests.rs (the shared arm, on callretpair alone and with both gates off)",
+    "fixture": "decompiler/crates/kuna-analysis/tests/fixtures/callretpair_x86_64{,.s}"
+  },
+  "acceptance": "PASS (scripts.repipe.verify --need bytecode-reader-return-discarded)"
+}

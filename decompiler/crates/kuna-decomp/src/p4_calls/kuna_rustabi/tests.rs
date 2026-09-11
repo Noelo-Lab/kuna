@@ -282,6 +282,12 @@ fn without_a_prototype_model_nothing_is_an_incoming_pointer() {
 /// A fixture whose manager carries a register lookup, so
 /// `construct_join_address` can build the pair storage the CALL output needs.
 fn build_call_fd(mode: RustAbiMode) -> Funcdata {
+    build_call_fd_gates(mode, false, true)
+}
+
+/// `build_call_fd` with both gates and the language fact spelled out, for the
+/// tests that are about which gate opened the arm.
+fn build_call_fd_gates(mode: RustAbiMode, call_ret_pair: bool, is_rust: bool) -> Funcdata {
     let mut m = AddrSpaceManager::new();
     m.insert_space(Rc::new(ConstantSpace::new())).unwrap();
     m.insert_space(Rc::new(UniqueSpace::new(1, 0, false))).unwrap();
@@ -301,7 +307,10 @@ fn build_call_fd(mode: RustAbiMode) -> Funcdata {
     m.set_register_lookup(Rc::new(NamelessRegisters));
     let mut ctx = ArchContext::new(m);
     ctx.rust_abi = mode.as_u8();
-    ctx.source_is_rust = true;
+    ctx.source_is_rust = is_rust;
+    // `callretpair` reaches the same arm and ships on, so the rustabi tests hold
+    // it off and the callretpair ones turn it on explicitly.
+    ctx.call_ret_pair = call_ret_pair;
     let glb = Rc::new(ctx);
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let addr = Address::new(ram, 0x1000);
@@ -494,6 +503,40 @@ fn a_partial_write_of_the_payload_register_counts() {
 #[test]
 fn the_call_seam_fails_closed_when_the_option_is_off() {
     let mut fd = build_call_fd(RustAbiMode::Off);
+    let (call, lo, hi) = build_call_with_pair(&mut fd, true);
+    let entry = callee_entry(&fd);
+    assert!(!build_call_output_pair(call, &mut fd, &[lo, hi], Some(&entry)));
+    assert!(fd.obank().get(call).and_then(|o| o.get_out()).is_none());
+}
+
+/// `callretpair` opens the same arm with the language test dropped, which is how
+/// a `gcc`-built image reaches it: `rustabi` is off and `source_is_rust` is
+/// irrelevant.
+#[test]
+fn the_call_seam_builds_the_pair_on_callretpair_alone() {
+    let mut fd = build_call_fd_gates(RustAbiMode::Off, true, false);
+    let (call, lo, hi) = build_call_with_pair(&mut fd, true);
+    let entry = callee_entry(&fd);
+    assert!(build_call_output_pair(call, &mut fd, &[lo, hi], Some(&entry)));
+    let out = fd.obank().get(call).and_then(|o| o.get_out()).expect("the CALL gained an output");
+    assert!(fd.vbank().get(out).expect("output varnode").get_addr().is_join());
+}
+
+/// The callee veto is the same one, so `callretpair` refuses the pair exactly
+/// where `rustabi` does.
+#[test]
+fn callretpair_honours_the_callee_veto() {
+    let mut fd = build_call_fd_gates(RustAbiMode::Off, true, false);
+    let (call, lo, hi) = build_call_with_pair(&mut fd, true);
+    let entry = callee_entry(&fd);
+    fd.kuna_set_callee_ret_writes(&entry, Rc::new(proves_nothing_written()));
+    assert!(!build_call_output_pair(call, &mut fd, &[lo, hi], Some(&entry)));
+    assert!(fd.obank().get(call).and_then(|o| o.get_out()).is_none());
+}
+
+#[test]
+fn the_call_seam_fails_closed_when_both_gates_are_off() {
+    let mut fd = build_call_fd_gates(RustAbiMode::Off, false, false);
     let (call, lo, hi) = build_call_with_pair(&mut fd, true);
     let entry = callee_entry(&fd);
     assert!(!build_call_output_pair(call, &mut fd, &[lo, hi], Some(&entry)));

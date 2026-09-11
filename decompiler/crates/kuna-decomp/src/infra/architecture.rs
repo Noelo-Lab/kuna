@@ -507,6 +507,11 @@ pub struct Architecture {
     /// `only_op_use` through
     /// [`crate::p4_calls::kuna_exclusivearguse::access_cannot_reach_call`].
     pub exclusive_arg_use: bool,
+    /// (kuna) `option callretpair`: complete the two-register CALL output arm of
+    /// `FuncCallSpecs::buildOutputFromTrials` on any image, not only a detected
+    /// rustc one.  Read by [`crate::p4_calls::kuna_callretpair`] through the
+    /// `ArchContext` handle.
+    pub call_ret_pair: bool,
     /// (kuna) `option rustabi`: how hard to try to keep a rustc two-register
     /// (`ScalarPair`) return intact -- 0 off, 1 auto (only on a detected rustc
     /// image), 2 always.  Read by [`crate::kuna_rustabi`] through the
@@ -2020,6 +2025,7 @@ impl Architecture {
             noreturn_ret_use: false, // (kuna) option noreturnretuse; reset_defaults sets the shipped default
             zero_idiom_use: false, // (kuna) option zeroidiomuse; reset_defaults sets the shipped default
             exclusive_arg_use: false, // (kuna) option exclusivearguse; reset_defaults sets the shipped default
+            call_ret_pair: false, // (kuna) option callretpair; reset_defaults sets the shipped default
             rust_abi: 0,        // (kuna) option rustabi; reset_defaults sets the shipped default
             source_is_rust: false, // (kuna) a load-time fact; set by the console's `load file`
             condexe_block_placement: false,
@@ -2269,6 +2275,7 @@ impl Architecture {
         self.noreturn_ret_use = true; // (kuna) DIV-118 default-on: a status value handed to a no-return failure call at the end of its block cannot compete with the same value at the function's RETURN, so it no longer forces the prototype to void. 0/675 byte-identical on the datatest corpus and 0 changed lines across 23 linked binaries; restore the upstream blanket rejection with `option noreturnretuse off`
         self.zero_idiom_use = true; // (kuna) DIV-PENDING default-on: `INT_XOR(v,v)` is 0 whatever v is, so the x86 register-clearing idiom is not a competing use of the value it consumes and no longer sinks a call's input trials. An identity, one-directional (it can only decline a veto); 0/675 byte-identical on the datatest corpus. Restore the upstream walk with `option zeroidiomuse off`
         self.exclusive_arg_use = true; // (kuna) DIV-PENDING default-on: a LOAD/STORE on a path that provably cannot co-execute with a call is not a competing use of the value the call is passed, so it no longer sinks the call's input trial. 0/675 byte-identical on the datatest corpus. Restore the upstream rejection with `option exclusivearguse off`
+        self.call_ret_pair = true; // (kuna) DIV-162 default-on: the multi-trial arm of `FuncCallSpecs::buildOutputFromTrials` (fspec.cc:5777) shipped as a stub, so a CALL whose cspec output rule asked for a register pair got NO output and both halves rendered as locals the function never assigns. Completing it is upstream behaviour and is not language-specific -- a 16-byte aggregate return in RAX:RDX is ordinary System V C. 0/675 byte-identical on the datatest corpus. Restore the stub with `option callretpair off`
         self.rust_abi = 0; // (kuna) option rustabi default off: the pair-keeping rules are opt-in this round
         self.dynamic_hash_maxdup_high = true; // (kuna) DIV-3 default-on (GH-8467)
         self.fold_flag_compare = true; // (kuna) DIV-3 default-on (GH-1276/8777)
@@ -2580,6 +2587,7 @@ impl Architecture {
             "noreturnretuse" => on_off!(noreturn_ret_use, "No-return call argument use in return trials"),
             "zeroidiomuse" => on_off!(zero_idiom_use, "Self-cancelling zeroing-idiom use in input trials"),
             "exclusivearguse" => on_off!(exclusive_arg_use, "Mutually-exclusive-path dereference in input trials"),
+            "callretpair" => on_off!(call_ret_pair, "Two-register CALL output completion"),
             "rustabi" => {
                 let (mode, msg) = crate::kuna_rustabi::parse_rust_abi_mode(p1)?;
                 self.rust_abi = mode.as_u8();
@@ -3604,6 +3612,9 @@ impl Architecture {
         // (kuna) carry the mutually-exclusive-path dereference gate so `only_op_use`
         // reaches `option exclusivearguse` via `glb`.
         ctx.exclusive_arg_use = self.exclusive_arg_use;
+        // (kuna) carry the two-register CALL output gate so `kuna_callretpair`
+        // reaches `option callretpair` via `glb`.
+        ctx.call_ret_pair = self.call_ret_pair;
         // (kuna) carry the Rust return-ABI gate and the detected source language
         // so `kuna_rustabi` reaches both via `glb`.
         ctx.rust_abi = self.rust_abi;

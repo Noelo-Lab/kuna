@@ -295,6 +295,10 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // cannot co-execute with the call does not veto that call's input trial in
     // `only_op_use`. Default ON.
     "exclusivearguse",
+    // (kuna) DIV-162: complete the two-register CALL output arm of
+    // `buildOutputFromTrials` on any image, not only a detected rustc one.
+    // Default ON.
+    "callretpair",
     "rustabi",
     "condexeplace",
     "sparcstructret",

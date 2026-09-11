@@ -62,6 +62,6 @@ c3
 </script>
 <stringmatch name="ISAMODE #1: no ISA-mode bookkeeping user-op survives into the emitted C" min="0" max="0">setISAMode</stringmatch>
 <stringmatch name="ISAMODE #2: the four table-reachable tail-call arms are intact" min="4" max="4">return f[0-9]\(a1,a1,a2,a3\); // tail-call</stringmatch>
-<stringmatch name="ISAMODE #3: the table-reachable f0 call sites survive the injection" min="2" max="2">^      f0\(a1\);</stringmatch>
+<stringmatch name="ISAMODE #3: the table-reachable f0 call sites survive the injection" min="2" max="2">^      v[0-9]+ = f0\(a1\);</stringmatch>
 <stringmatch name="ISAMODE #4: flow still reaches the last jump-table entry" min="1" max="1">^    case 7:</stringmatch>
 </decompilertest>

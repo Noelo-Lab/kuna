@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    768,
-    768
+    774,
+    774
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -48,6 +48,12 @@
     "data:CALLOVERLAP #4: full, guardCallOverlappingInput recovers the truncated XMM0 argument and tryOutputOverlapGuard the return value",
     "data:CALLOVERLAP #5: full, f regains its own parameter",
     "data:CALLOVERLAP #6: full, the epilogue adds 1.0 to the recovered call result, not to a stale pre-call read",
+    "data:CALLRETPAIR #1: off, the call is a bare statement and its JSValue is discarded",
+    "data:CALLRETPAIR #2: on, the call gains the 16-byte join output the cspec output rule asked for",
+    "data:CALLRETPAIR #3: on, both halves are SUBPIECEs of the call output instead of locals with no definition",
+    "data:CALLRETPAIR #4: the unassigned rdx local survives in three of the four renderings, and is gone only where the pair formed",
+    "data:CALLRETPAIR #5: the control keeps its bare call in BOTH passes, because the bounded callee decode proves no_payload never writes rdx",
+    "data:CALLRETPAIR #6: on, the recovered return stops being the garbage pointer the discarded half left behind",
     "data:CALLTRAMPOLINE #1: the junk store decoded at the unreachable return address appears only in the calltrampoline-off pass",
     "data:CALLTRAMPOLINE #2: the default pass flows through the fragment and recovers the real continuation",
     "data:CLEANUPCODE #1: the drop glue call is gone by default; only the cleanupcode-off pass shows it (exactly one occurrence across both passes)",
