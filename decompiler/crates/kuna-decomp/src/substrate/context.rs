@@ -661,6 +661,9 @@ pub struct ArchContext {
     /// `option paramrefdecl`, mirrored from
     /// [`Architecture::param_ref_decl`](crate::architecture::Architecture).
     pub param_ref_decl: bool,
+    /// `option declhightype`, mirrored from
+    /// [`Architecture::decl_high_type`](crate::architecture::Architecture).
+    pub decl_high_type: bool,
     /// (kuna) GH-558: present canonicalized `INT_LESS(x, c+1)` comparisons in
     /// their original `x <= c` form (C++ `present_lessequal`, DIV-2 default-on).
     /// Read by [`ActionPresentCompareForm`](crate::kuna_compareform::ActionPresentCompareForm).
@@ -1325,6 +1328,7 @@ impl ArchContext {
             // Architecture in `build_arch_handle` (`option dedupvardecls`).
             dedup_var_decls: false,
             param_ref_decl: false,
+            decl_high_type: false,
             // (kuna) DIV-2 default-on (GH-558): resetDefaults sets present_lessequal=true.
             present_lessequal: true,
             // (kuna) the real arch overwrites each of these in `build_arch_handle`;

@@ -3204,9 +3204,25 @@ impl PrintC {
         // `getFirstWholeMap()` storage (e.g. the ACC register), NOT a trim-COPY
         // unique.  Fall back to instance 0 if none is addr-tied.
         let rep = decl_rep_varnode(fd, high);
+        // (kuna `declhightype`) The declared type is the merged high's own -- the
+        // one `ActionSetCasts` checked every use in the body against -- not
+        // whichever member happens to be address-tied or first.  See
+        // `crate::kuna_declhightype`.
+        let type_rep = if arch.decl_high_type {
+            crate::kuna_declhightype::type_representative(fd, high)
+        } else {
+            None
+        };
+        let type_rep = type_rep.filter(|_| {
+            crate::kuna_declhightype::declares_from_high(fd, high)
+        });
         let (type_name, comment) = match rep.and_then(|vn| fd.vbank().get(vn)) {
             Some(v) => {
-                let tn = type_name_for_decl(v.get_type(), self.rt_ctx);
+                let decl_ty = type_rep
+                    .and_then(|vn| fd.vbank().get(vn))
+                    .map(|tv| tv.get_type())
+                    .unwrap_or_else(|| v.get_type());
+                let tn = type_name_for_decl(decl_ty, self.rt_ctx);
                 let loc = v.get_addr().clone();
                 let size = v.get_size();
                 let comment = loc.get_space().and_then(|spc| {

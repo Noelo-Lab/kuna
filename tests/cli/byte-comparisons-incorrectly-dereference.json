@@ -1,0 +1,38 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "lookup_service"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/covercopy_x86_64",
+    "binary_sha256": "39b43dbe5da561f922ee67896b27295fa7a7bcaedaf4175cc995b63e35ecf28b",
+    "binary_size": 16312,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/covercopy_x86_64",
+    "selector": "lookup_service",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "char \\*v[0-9]+; // rax"
+    ],
+    "stdout_absent": [
+      "unsigned long \\*v[0-9]+; // rax"
+    ]
+  },
+  "notes": "In-repo twin of the reported case: one merged RAX declared at a type no use in the body was checked against. lookup_service assigns its char * parameter to v2 uncast, so `unsigned long *v2` contradicts its own body as the witness's `unsigned long long *v9` contradicts `(uint4)*v9`. The dataset image stays the witness in Reproduction."
+}

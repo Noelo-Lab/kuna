@@ -256,6 +256,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "booleanmask",
     "simdlane",
     "constspaceload",
+    "declhightype",
     "retsplitglobal",
     "flagcompare",
     "v850indirectbranch",
