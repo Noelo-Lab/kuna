@@ -40,7 +40,7 @@ head_() { printf '\n\033[1m%s\033[0m\n' "$1"; }
 
 # ---------------------------------------------------------------- level 0 ---
 head_ "L0  modules import and self-describe"
-for m in config probe verify workspace redact sample grade needs cluster select counters mergecheck captain webui render_tester_prompt; do
+for m in config probe verify workspace redact sample grade needs cluster select counters mergecheck captain supervisor_lock webui render_tester_prompt; do
   if "$PY" -c "import scripts.repipe.$m" 2>/dev/null; then ok "import $m"; else bad "import $m"; fi
 done
 
@@ -557,6 +557,57 @@ assert len(operator_edges) == 1, records
 assert operator_edges[0]["from"] == "STOPPED" and operator_edges[0]["to"] == "RUNNING"
 PY
 
+KUNA_PIPELINE_STATE_DIR="$SMOKE_STATE/lifetime-lock" "$PY" - <<'PY' >/dev/null 2>&1 \
+  && ok "supervisor lifetime lock refuses a live owner, forwards TERM, and releases" \
+  || bad "supervisor lifetime ownership lock failed"
+import os
+from pathlib import Path
+import subprocess
+import sys
+import time
+
+root = Path(os.environ["KUNA_PIPELINE_STATE_DIR"])
+root.mkdir(parents=True)
+lock = root / "supervisor.lock"
+ready = root / "ready"
+release = root / "release"
+unexpected = root / "unexpected"
+success = root / "success"
+holder_code = """\
+import pathlib, sys, time
+ready, release = map(pathlib.Path, sys.argv[1:])
+ready.touch()
+deadline = time.time() + 10
+while not release.exists() and time.time() < deadline:
+    time.sleep(0.01)
+raise SystemExit(0 if release.exists() else 2)
+"""
+holder = subprocess.Popen([
+    sys.executable, "-m", "scripts.repipe.supervisor_lock", "--lock", str(lock), "--",
+    sys.executable, "-c", holder_code, str(ready), str(release),
+])
+deadline = time.time() + 5
+while not ready.exists() and time.time() < deadline:
+    time.sleep(0.01)
+assert ready.exists()
+loser = subprocess.run([
+    sys.executable, "-m", "scripts.repipe.supervisor_lock", "--lock", str(lock), "--",
+    sys.executable, "-c", "import sys; from pathlib import Path; Path(sys.argv[1]).touch()",
+    str(unexpected),
+], capture_output=True, text=True, timeout=5)
+assert loser.returncode == 1, loser
+assert "already owns" in loser.stderr, loser.stderr
+assert not unexpected.exists()
+holder.terminate()
+assert holder.wait(timeout=5) == 143
+successor = subprocess.run([
+    sys.executable, "-m", "scripts.repipe.supervisor_lock", "--lock", str(lock), "--",
+    sys.executable, "-c", "import sys; from pathlib import Path; Path(sys.argv[1]).touch()",
+    str(success),
+], timeout=5)
+assert successor.returncode == 0 and success.exists(), successor
+PY
+
 RUN_REPO="$SMOKE_STATE/run-repo"
 RUN_PY="$SMOKE_STATE/fake-run-python"
 mkdir -p "$RUN_REPO/tools/repipe" "$RUN_REPO/.state"
@@ -577,7 +628,7 @@ printf '%s\n' \
   'esac' > "$RUN_PY"
 chmod +x "$RUN_REPO/tools/repipe/captain.sh" "$RUN_PY"
 touch "$RUN_REPO/.state/STOP"
-if KUNA_REPO="$RUN_REPO" KUNA_PY="$RUN_PY" REPIPE_STATE_DIRNAME=.state \
+if KUNA_REPO="$RUN_REPO" KUNA_PY="$RUN_PY" REPIPE_LOCK_PY="$PY" REPIPE_STATE_DIRNAME=.state \
    bash "$REPO/tools/repipe/run.sh" >/dev/null 2>&1 \
    && [ -e "$RUN_REPO/.state/restarted" ] && [ ! -e "$RUN_REPO/.state/STOP" ]; then
   ok "run.sh consumes a completed STOP and invokes guarded restart"
@@ -586,7 +637,7 @@ else
 fi
 rm -f "$RUN_REPO/.state/restarted"
 touch "$RUN_REPO/.state/STOP" "$RUN_REPO/.state/ABORT"
-if KUNA_REPO="$RUN_REPO" KUNA_PY="$RUN_PY" REPIPE_STATE_DIRNAME=.state \
+if KUNA_REPO="$RUN_REPO" KUNA_PY="$RUN_PY" REPIPE_LOCK_PY="$PY" REPIPE_STATE_DIRNAME=.state \
    bash "$REPO/tools/repipe/run.sh" >/dev/null 2>&1; then
   bad "run.sh accepted an uncleared ABORT"
 elif [ -e "$RUN_REPO/.state/STOP" ] && [ -e "$RUN_REPO/.state/ABORT" ] \
@@ -597,29 +648,84 @@ else
 fi
 
 CONCURRENT_REPO="$SMOKE_STATE/concurrent-run-repo"
-mkdir -p "$CONCURRENT_REPO/tools/repipe" "$CONCURRENT_REPO/.state"
+mkdir -p "$CONCURRENT_REPO/tools/repipe" "$CONCURRENT_REPO/.state" "$CONCURRENT_REPO/gate"
 printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "$CONCURRENT_REPO/tools/repipe/captain.sh"
 chmod +x "$CONCURRENT_REPO/tools/repipe/captain.sh"
 printf 'STOPPED\n' > "$CONCURRENT_REPO/.state/fake-state"
 touch "$CONCURRENT_REPO/.state/STOP"
-KUNA_REPO="$CONCURRENT_REPO" KUNA_PY="$FIX/concurrent_launcher_python.py" \
-  REPIPE_STATE_DIRNAME=.state timeout 15 bash "$REPO/tools/repipe/run.sh" \
-  >"$SMOKE_STATE/concurrent-run-1.log" 2>&1 &
+(
+  touch "$CONCURRENT_REPO/gate/1"
+  while [ ! -e "$CONCURRENT_REPO/gate/2" ]; do sleep 0.01; done
+  KUNA_REPO="$CONCURRENT_REPO" KUNA_PY="$FIX/concurrent_launcher_python.py" \
+    REPIPE_LOCK_PY="$PY" REPIPE_STATE_DIRNAME=.state REPIPE_POLL=0 \
+    timeout 15 bash "$REPO/tools/repipe/run.sh"
+) >"$SMOKE_STATE/concurrent-run-1.log" 2>&1 &
 RUN1=$!
-KUNA_REPO="$CONCURRENT_REPO" KUNA_PY="$FIX/concurrent_launcher_python.py" \
-  REPIPE_STATE_DIRNAME=.state timeout 15 bash "$REPO/tools/repipe/run.sh" \
-  >"$SMOKE_STATE/concurrent-run-2.log" 2>&1 &
+(
+  touch "$CONCURRENT_REPO/gate/2"
+  while [ ! -e "$CONCURRENT_REPO/gate/1" ]; do sleep 0.01; done
+  KUNA_REPO="$CONCURRENT_REPO" KUNA_PY="$FIX/concurrent_launcher_python.py" \
+    REPIPE_LOCK_PY="$PY" REPIPE_STATE_DIRNAME=.state REPIPE_POLL=0 \
+    timeout 15 bash "$REPO/tools/repipe/run.sh"
+) >"$SMOKE_STATE/concurrent-run-2.log" 2>&1 &
 RUN2=$!
+READY=0
+for _ in $(seq 1 500); do
+  if [ -e "$CONCURRENT_REPO/.state/tick-waiting" ] \
+     && grep -q "already owns" "$SMOKE_STATE"/concurrent-run-*.log; then
+    READY=1
+    break
+  fi
+  sleep 0.01
+done
+touch "$CONCURRENT_REPO/.state/release-supervisor"
 wait "$RUN1"; RC1=$?
 wait "$RUN2"; RC2=$?
-RESTARTS="$(wc -l < "$CONCURRENT_REPO/.state/fake-restarts" 2>/dev/null || echo 0)"
-if [ $((RC1 + RC2)) -eq 1 ] && [ "$RESTARTS" -eq 1 ] \
-   && [ "$(cat "$CONCURRENT_REPO/.state/fake-state")" = RUNNING ] \
+RESTARTS=0
+[ ! -e "$CONCURRENT_REPO/.state/fake-restarts" ] \
+  || RESTARTS="$(wc -l < "$CONCURRENT_REPO/.state/fake-restarts")"
+if [ "$READY" -eq 1 ] && [ $((RC1 + RC2)) -eq 1 ] && [ "$RESTARTS" -eq 1 ] \
+   && [ "$(cat "$CONCURRENT_REPO/.state/fake-state")" = STOPPED ] \
    && [ ! -e "$CONCURRENT_REPO/.state/STOP" ]; then
-  ok "two concurrent run.sh launchers cannot restore a stale STOP"
+  ok "simultaneous run.sh launchers admit exactly one lifetime owner"
 else
-  bad "concurrent run.sh restart was not serialized" \
-    "rc=$RC1/$RC2 restarts=$RESTARTS state=$(cat "$CONCURRENT_REPO/.state/fake-state") stop=$([ -e "$CONCURRENT_REPO/.state/STOP" ] && echo yes || echo no)"
+  bad "simultaneous run.sh ownership was not exclusive" \
+    "ready=$READY rc=$RC1/$RC2 restarts=$RESTARTS state=$(cat "$CONCURRENT_REPO/.state/fake-state") stop=$([ -e "$CONCURRENT_REPO/.state/STOP" ] && echo yes || echo no)"
+fi
+
+DELAYED_REPO="$SMOKE_STATE/delayed-run-repo"
+mkdir -p "$DELAYED_REPO/tools/repipe" "$DELAYED_REPO/.state"
+printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "$DELAYED_REPO/tools/repipe/captain.sh"
+chmod +x "$DELAYED_REPO/tools/repipe/captain.sh"
+printf 'STOPPED\n' > "$DELAYED_REPO/.state/fake-state"
+touch "$DELAYED_REPO/.state/STOP"
+KUNA_REPO="$DELAYED_REPO" KUNA_PY="$FIX/concurrent_launcher_python.py" \
+  REPIPE_LOCK_PY="$PY" REPIPE_STATE_DIRNAME=.state REPIPE_POLL=0 \
+  timeout 15 bash "$REPO/tools/repipe/run.sh" \
+  >"$SMOKE_STATE/delayed-run-1.log" 2>&1 &
+RUN1=$!
+READY=0
+for _ in $(seq 1 500); do
+  if [ -e "$DELAYED_REPO/.state/tick-waiting" ]; then READY=1; break; fi
+  sleep 0.01
+done
+KUNA_REPO="$DELAYED_REPO" KUNA_PY="$FIX/concurrent_launcher_python.py" \
+  REPIPE_LOCK_PY="$PY" REPIPE_STATE_DIRNAME=.state REPIPE_POLL=0 \
+  timeout 5 bash "$REPO/tools/repipe/run.sh" \
+  >"$SMOKE_STATE/delayed-run-2.log" 2>&1
+RC2=$?
+touch "$DELAYED_REPO/.state/release-supervisor"
+wait "$RUN1"; RC1=$?
+RESTARTS=0
+[ ! -e "$DELAYED_REPO/.state/fake-restarts" ] \
+  || RESTARTS="$(wc -l < "$DELAYED_REPO/.state/fake-restarts")"
+if [ "$READY" -eq 1 ] && [ "$RC1" -eq 0 ] && [ "$RC2" -eq 1 ] \
+   && grep -q "already owns" "$SMOKE_STATE/delayed-run-2.log" \
+   && [ "$RESTARTS" -eq 1 ] && [ ! -e "$DELAYED_REPO/.state/STOP" ]; then
+  ok "delayed run.sh launcher cannot join an already-RUNNING supervisor"
+else
+  bad "delayed run.sh launcher bypassed lifetime ownership" \
+    "ready=$READY rc=$RC1/$RC2 restarts=$RESTARTS stop=$([ -e "$DELAYED_REPO/.state/STOP" ] && echo yes || echo no)"
 fi
 
 [ "$LEVEL" = "0" ] && { printf '\nL0 only: %d passed, %d failed\n' "$PASS" "$FAIL"; exit $((FAIL>0)); }

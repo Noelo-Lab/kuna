@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Minimal KUNA_PY stand-in for the concurrent run.sh restart smoke."""
+"""Minimal KUNA_PY stand-in for run.sh lifetime-lock smoke tests."""
 import fcntl
 import json
 import os
@@ -31,20 +31,21 @@ if "--restart-stopped" in args:
         (state_dir / "fake-state").write_text("RUNNING\n")
         with open(state_dir / "fake-restarts", "a") as out:
             out.write("restart\n")
-        time.sleep(0.1)
+    raise SystemExit(0)
+
+if "--tick" in args:
+    (state_dir / "tick-waiting").touch()
+    deadline = time.time() + 10
+    while not (state_dir / "release-supervisor").exists() and time.time() < deadline:
+        time.sleep(0.01)
+    if not (state_dir / "release-supervisor").exists():
+        raise SystemExit(2)
+    (state_dir / "fake-state").write_text("STOPPED\n")
     raise SystemExit(0)
 
 if "--status" in args:
-    with locked("fake-status.lock"):
-        count_path = state_dir / "fake-status-count"
-        count = int(count_path.read_text()) if count_path.exists() else 0
-        count += 1
-        count_path.write_text(str(count))
-    if count <= 2:
-        deadline = time.time() + 10
-        while int(count_path.read_text()) < 2 and time.time() < deadline:
-            time.sleep(0.01)
-    print(json.dumps({"states": {"supervisor": "STOPPED"}, "round": 1}))
+    state = (state_dir / "fake-state").read_text().strip()
+    print(json.dumps({"states": {"supervisor": state}, "round": 1}))
     raise SystemExit(0)
 
 if "-c" in args:

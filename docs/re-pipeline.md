@@ -358,8 +358,11 @@ come from a slot.
   A fresh `run.sh` invocation similarly consumes the completed round's `STOP` and uses
   `captain.py --restart-stopped` to leave `STOPPED`; the same empty-pool, control-file, and
   preflight guards apply. Startup recovery is serialized, `STOP` is consumed under the round
-  lock, and the `STOPPED -> RUNNING` operator edge is appended to the transition audit.
-  `ABORT` is never consumed implicitly.
+  lock, and the `STOPPED -> RUNNING` operator edge is appended to the transition audit. A
+  separate process-lifetime ownership lock admits only one `run.sh` loop, including when a
+  second launcher arrives after the first has already published `RUNNING`; the kernel releases
+  that lock if its owner exits, so crash recovery remains possible. `ABORT` is never consumed
+  implicitly.
 - **Builder branches fail closed.** `tools/pipeline/worker.sh` accepts `WORKER_BRANCH` as an
   explicit fresh-branch seam. Normal RE builders use the stable round-specific name
   `feat/re-<need>-r<round>`, avoiding old canonical refs from earlier rounds. Only an exact

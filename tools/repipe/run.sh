@@ -23,11 +23,13 @@ ROUNDS="${REPIPE_ROUNDS:-3}"
 HOURS="${REPIPE_HOURS:-0}"
 CAPTAIN_TIMEOUT="${REPIPE_CAPTAIN_TIMEOUT:-3600}"
 ONCE=0
+SUPERVISOR_LOCK_HELD=0
 
 for a in "$@"; do
   case "$a" in
     --once) ONCE=1; ROUNDS=1;;
     --preflight) PREFLIGHT_ONLY=1;;
+    --internal-supervisor-lock-held) SUPERVISOR_LOCK_HELD=1;;
     *) echo "unknown flag: $a" 1>&2; exit 2;;
   esac
 done
@@ -39,6 +41,17 @@ export REPIPE_STATE_DIRNAME="${REPIPE_STATE_DIRNAME:-.kuna-repipe}"
 mkdir -p "$STATE_DIR/logs" "$STATE_DIR/rounds" "$STATE_DIR/arena" "$STATE_DIR/runs" "$STATE_DIR/worktrees"
 
 log() { echo "[$(date +%H:%M:%S)] supervisor: $*" | tee -a "$STATE_DIR/logs/supervisor.log"; }
+
+# A state transition lock only serializes the instant STOPPED becomes RUNNING. Keep a distinct
+# ownership lock for this process's whole lifetime so a late launcher cannot observe RUNNING and
+# join the same supervisor loop. The lock runner owns the descriptor; captain/worker descendants
+# do not inherit it, and a killed/crashed owner releases it automatically.
+if [ "${PREFLIGHT_ONLY:-0}" != 1 ] && [ "$SUPERVISOR_LOCK_HELD" != 1 ]; then
+  LOCK_PY="${REPIPE_LOCK_PY:-$KUNA_PY}"
+  exec "$LOCK_PY" -m scripts.repipe.supervisor_lock \
+    --lock "$STATE_DIR/.supervisor.lock" -- \
+    bash "$0" --internal-supervisor-lock-held "$@"
+fi
 
 if ! "$KUNA_PY" -m scripts.repipe.captain --preflight; then
   log "preflight failed; refusing to start"
