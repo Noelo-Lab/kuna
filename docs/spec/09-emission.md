@@ -1050,6 +1050,10 @@ project export (the CLI driver is
 after analysis, insert no ops, flip no options, and change no byte of any
 existing render path (the datatest / stages / `decompile-all --json` outputs
 are untouched), which is why none carries a `phases.toml` row or a DIV entry.
+That still holds under `--stream`, one level down: the streamed export
+drives these same renders and changes no byte any of them produces, but the
+project folder it assembles from them has a layout of its own — the single
+documented exception, described at the end of this section.
 
 **Type definitions — the `docTypeDefinitions` port.** `printc.rs
 (PrintC::doc_type_definitions)` is the previously-unported C++
@@ -1118,6 +1122,32 @@ bytes, named data symbols for the `.asm`/`README.md` artifacts) lives on the
 console engine, `decompiler/crates/kuna-console/src/engine.rs
 (ConsoleProgram::sections, disassemble_at, read_bytes, global_data_symbols)`,
 not in this folder.
+
+**The streamed layout.** `kuna decompile-project --stream` (chapter
+[00](00-overview.md)) drives these same renders one result at a time and
+adds three pieces of its own, none of which a non-stream export can see.
+The linear disassembly walk becomes **resumable**
+(`decompiler/crates/kuna-console/src/project_stream.rs (AsmSweep)`): the
+same section-by-section walk
+`decompiler/crates/kuna-console/src/project.rs (build_asm)` performs,
+cut into steps against a code-byte budget, carrying its scratch state —
+above all an in-progress `db` run — across the cut, so a chopped budget
+shifts which step a byte is written in and not which byte is written.
+`header_lines()` plus every step plus the data tail is the non-stream
+`.asm` exactly. The **variables section** (`project_stream.rs
+(render_variables_section)`) then carries what the labels lost: a
+streamed sweep runs to completion long before any function has
+variables, and an append-only file cannot go back under a label, so the
+per-function `; arg:` / `; stack:` blocks are collected into one address-then-name
+ordered `; --- variables ---` section appended after the sweep, ahead of the unchanged
+`; --- data ---` tail (`project_stream.rs (render_data_tail)`). The set of comment
+lines is exactly the set removed from under the labels. Finally the
+README gains a second **layout** and an in-progress render
+(`decompiler/crates/kuna-console/src/project.rs (render_readme,
+ReadmeLayout, render_readme_streaming)`), the first describing the
+streamed `.c`/`.asm` and the two extra files, the second adding a banner
+and a status table while the export runs; the `Standard` layout is
+byte-identical to what the single renderer emitted before it was split.
 
 **The graph document.** `kuna decompile-graph`
 (`decompiler/crates/kuna-cli/src/decompile_graph.rs`) is another additive reader
