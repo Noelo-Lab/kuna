@@ -3776,6 +3776,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "declhightype"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P9"
+subphase = "naming-policy"
+strength = "HARD"
+rewind = "P9"
+issue = "repipe-byte-comparisons-incorrectly-dereference"
+summary = "Declare a merged local at the data-type its own body was cast against. Upstream writes a local's declaration from the Symbol it is mapped to (`PrintC::emitVarDecl`, printc.cc:1719 `sym->getType()`), and that type is the merged HighVariable's -- the type of the member Varnode `HighVariable::getTypeRepresentative` (variable.cc:377-396) picks as the most specialized. The same type is what `ActionSetCasts` reads through `Varnode::getHighTypeReadFacing` when it decides whether a use needs a cast, so upstream's declaration and body agree by construction. kuna's printer walks HighVariables instead of Symbols and takes the declared type off its DECLARATION representative -- the first address-tied member Varnode, else member zero -- which is a different Varnode. For a high whose members all carry one type the two agree and nothing moves. For a merged register high whose members carry different types, the declaration states a type that no use in the body was ever checked against, and a pointer is the case where that is not cosmetic: an obfuscated x86-64 state machine merges one RAX across the whole function, so `MOVSX EAX,byte ptr [RAX]` after a `char *`-returning call prints as `unsigned long long *v9;` plus an uncast `v8 = (uint4)*v9;`. The cast machinery saw a one-byte pointee and correctly left the dereference alone; read against the declaration the same token is an eight-byte load, seven bytes past the object and with the sign extension dropped. This option declares the type representative's type -- the `sym->getType()` upstream would have written -- so the declaration agrees with the casts already in the body. It is presentation only: no cast, no statement and no p-code moves, and the declaration representative still supplies the storage comment, the array adornment and the mapped-Symbol composite override, all of which outrank it."
+use_when = "On by default. Keep it on when a declaration contradicts its own uses: the tell is one identifier that is declared a pointer and dereferenced at a different width than the declared pointee (`unsigned long long *v9` with `(uint4)*v9`), or declared one pointer type and assigned another without a cast. It is the standard rendering wherever one register is merged across a whole function -- obfuscated dispatch loops, and any `-O2` body that reuses a scratch register for both a pointer and a count -- because the merged high then holds members of several types and the address-tied one decides the declaration by accident. Flip OFF to restore the declaration-representative type, which is worth doing only to see which member Varnode the old declaration came from. Inert on any local whose member Varnodes agree on a type, so a function with no width-conflicting merge is byte-identical."
+example = "option declhightype off"
+live_field = "decl_high_type"
+live_true = "on"
+live_false = "off"
+source_decompiler = "kuna"
+inspiration = "repipe:byte-comparisons-incorrectly-dereference, 68a915938fac2855fe6fb805 (x86-64 Windows PE crackme.obf.exe) sub_1400542a1, the MOVSX at 0x140054b87; upstream PrintC::emitVarDecl (printc.cc:1719) and HighVariable::getTypeRepresentative (variable.cc:377-396)"
+change_kind = "correctness-fix"
+tier = "core"
+symptoms = "a variable is declared a pointer to one width and dereferenced at another|a byte comparison reads through an unsigned long long pointer|the declared type disagrees with the cast on the line that assigns the variable|an integer is assigned to a variable declared as a pointer with no cast|a one-byte load prints without the sign extension the instruction performs"
+
+[[settable]]
 option = "paramrefdecl"
 values = "on|off"
 default = "on"

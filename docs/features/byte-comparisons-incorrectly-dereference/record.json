@@ -1,0 +1,48 @@
+{
+  "need_id": "byte-comparisons-incorrectly-dereference",
+  "track": "quality",
+  "scope": "small",
+  "option": "declhightype",
+  "div": "DIV-160",
+  "default": "on",
+  "phase": "P9",
+  "module": "decompiler/crates/kuna-decomp/src/p9_emit/kuna_declhightype.rs",
+  "summary": "A merged local was declared at a pointer type no use in its body was checked against, so a one-byte MOVSX comparison read as an eight-byte dereference. The declaration now takes the HighVariable's own type, which is what upstream's sym->getType() writes and what ActionSetCasts checked every use against.",
+  "decisions": [
+    "The filed hypothesis (merged register variables retain one pointer type across differently sized accesses without per-use casts) and the round-12 refutation (the IR is innocent; only the printed declaration is wrong) are both UPHELD, and the refutation is what located the defect. kuna's printer takes the declared type off decl_rep_varnode -- the first address-tied member Varnode, else member zero -- while every cast in the body was decided against HighVariable::getType, which is the TYPE representative (the most specialized member). Those are different Varnodes, and for a merged register high they carry different types.",
+    "Not a lifter, load-width or p6-merge change. Measured: with the fix the same emitted line v8 = (uint4)*v9 is a one-byte signed load through char *v9 -- exactly MOVSX EAX,byte ptr [RAX] -- and no cast, statement or p-code op moved.",
+    "Gated to a high with no mapped ScopeLocal Symbol. The ungated rule changed 517 of 22,848 swept functions; among them it re-declared DWARF-typed locals (acl_copy_ext's acl_entry_obj_tag *entry_obj_p became obj_prefix) because kuna does not type-lock the storage a Symbol claims, so the most specialized member of a mapped local can be a transient the Symbol never described. Upstream declares a mapped local at sym->getType(); the guard keeps that.",
+    "No tests/stages/ testcase. The defect needs a merged HighVariable whose members carry mutually incompatible RECOVERED types, which needs callee prototypes and loader-tier analysis the raw-bytechunk stage corpus cannot supply. Three synthetic x86-64 constructions (two typed callees, an integer/pointer merge, a loop-carried phi) and two real-function byte extractions were built and measured: in all five, type propagation unified the members and both option arms were byte-identical. tests/stages/README.md scopes that corpus to stage-model issues; the regression evidence is the promoted probe plus seven unit tests.",
+    "Cross-validated on the SIBLING need vm-temporary-declared-as, as its refutation demanded (\"a fix validated on only one of them is not validated\"). Different binary, challenge and tester: graphy, sub_1005350, challenge 69761b7a39e9c4d85c2f9fc1. Its acceptance regex (an `unsigned long vN` that is later dereferenced) MATCHES with `declhightype off` and is ABSENT at the default, so this one option closes both needs. Its acceptance probe passes on this tree.",
+    "`mergecheck --against origin/main` reports MERGE BLOCKED with 13 shape-C `line-added-twice` rejects. Structural false positive for any new `[[settable]]` row: measured control -- the two most recently MERGED option PRs, DIV-158 `constspaceload` (#561) and DIV-157 `tailcallsaved` (#560), trip 13 and 14 of the identical rejects against their own parents. Every reject here is new-old == exactly 1, there are ZERO `line-removed`, and the discriminating guards are clean: shape-B re-derive agrees (187 settables), docs/baseline.json byte-identical, DIV-160 still the next free number."
+  ],
+  "sweep": {
+    "method": "kuna decompile-all --json, option off vs default, 73 decbench binaries",
+    "functions_compared_ungated": 22848,
+    "functions_changed_ungated": 517,
+    "changed_lines_that_were_not_declarations": 0,
+    "functions_compared_gated": 22595,
+    "functions_changed_gated": 277,
+    "declaration_lines_changed_gated": 382,
+    "pointer_depth_changed": 220,
+    "pointee_type_changed": 78,
+    "scalar_spelling_or_signedness": 84
+  },
+  "gates": {
+    "make test": "PARITY OK 675/675",
+    "make test-stages": "PARITY OK 763/763",
+    "make test-cli": "124/124",
+    "make check-spec": "OK",
+    "kuna catalog --check": "catalog OK",
+    "make rust-test": "green (6458 tests, 0 failed)",
+    "scripts.repipe.mergecheck": "13 shape-C line-added-twice rejects -- structural for a new settable row (control: merged #561/#560 trip 13/14); line-removed 0, shape-B re-derive agrees, baseline untouched"
+  },
+  "promoted_probe": {
+    "retargeted_from": "dataset bin/crackme.obf.exe sub_1400542a1",
+    "retargeted_to": "decompiler/crates/kuna-analysis/tests/fixtures/covercopy_x86_64 lookup_service",
+    "why": "CI has no dataset; the vendored fixture carries the same shape (unsigned long *v2 assigned an uncast char * parameter)",
+    "verified_on_witness": true
+  },
+  "acceptance": "PASS",
+  "sibling_closed": "vm-temporary-declared-as (acceptance PASS; A/B confirms the option is what closes it)"
+}

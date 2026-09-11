@@ -607,6 +607,34 @@ the declaration representative's storage; `option namestyle ghidra` emits no
 storage comments. DIV-5 re-pinned 185 of the 675 upstream datatest assertions
 to the angr names; `option namestyle ghidra` reproduces the pre-DIV-5 bytes.
 
+**(kuna) declhightype — the declared type is the merged variable's own.**
+Walking HighVariables rather than the symbol table also decides *which type* a
+declaration states. Upstream writes `sym->getType()`, and a symbol's type is the
+merged HighVariable's — the type of the member Varnode
+`HighVariable::getTypeRepresentative` picks as the most specialized, which is
+also the type `ActionSetCasts` queried through `getHighTypeReadFacing` when it
+decided whether each use in the body needed a cast. Declaration and body
+therefore agree by construction. kuna instead reads the type off its
+*declaration representative* — the first address-tied member, else member zero —
+which is a different Varnode, and for a high whose members disagree the
+declaration then states a type no use was ever checked against. The witness is
+an obfuscated x86-64 dispatch loop that merges one RAX across the whole
+function: a `char *`-returning call feeds `MOVSX EAX,byte ptr [RAX]`, the cast
+machinery sees a one-byte pointee and leaves the dereference uncast, and the
+declaration says `unsigned long long *` — so the same `*v9` reads eight bytes
+past the object and drops the sign extension. The option `declhightype`
+(default on) declares the type representative's type, which is the
+`sym->getType()` upstream would have written
+(`decompiler/crates/kuna-decomp/src/p9_emit/kuna_declhightype.rs
+(type_representative)`). It is presentation only: no cast, no statement and no
+p-code moves. It applies only to a high the symbol table does not describe — a
+mapped local keeps the declaration representative's type, because kuna does not
+always type-lock the storage a symbol claims and the most specialized member of
+a mapped local can be a transient the symbol never described. The declaration
+representative still supplies the storage comment, the array adornment and the
+composite mapped-symbol override, all of which outrank this. `option
+declhightype off` restores the declaration representative's type.
+
 **(kuna) paramrefdecl — an `&parameter` reference is the parameter.** Because
 the emitter walks HighVariables rather than the symbol table, it also has to
 decide for itself which highs upstream would *not* have declared:
