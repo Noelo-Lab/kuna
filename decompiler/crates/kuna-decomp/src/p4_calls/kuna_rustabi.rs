@@ -786,7 +786,9 @@ pub fn seed_callee_return_writes(
         RustAbiMode::Auto => arch.source_is_rust,
         RustAbiMode::Always => true,
     };
-    if !on {
+    // `option callretpair` reaches the same call-output arm and needs the same
+    // callee evidence to veto a pair with, so it seeds the probe too.
+    if !on && !crate::p4_calls::kuna_callretpair::live_arch(arch) {
         return;
     }
     seed_callee_write_probe(arch, data);
@@ -855,13 +857,17 @@ fn fastfail_swi_userop(arch: &crate::architecture::Architecture) -> Option<u32> 
 /// each half becomes a SUBPIECE of it inserted after the CALL, and the INDIRECT
 /// creations are destroyed. Returns `false` (changing nothing) when the gate is
 /// off, the classification declines, or the join address cannot be constructed.
+///
+/// Two options reach this arm: `option rustabi auto|always`, which also governs
+/// the producer-side pair, and the language-agnostic
+/// [`crate::p4_calls::kuna_callretpair`], which is the shipped default.
 pub fn build_call_output_pair(
     callop: OpId,
     data: &mut Funcdata,
     finalvn: &[VarnodeId],
     callee_entry: Option<&Address>,
 ) -> bool {
-    if !live(data) {
+    if !live(data) && !crate::p4_calls::kuna_callretpair::live(data) {
         return false;
     }
     if classify_call_output_pair(data, finalvn, callee_entry) != CallPairRepr::ScalarPair {

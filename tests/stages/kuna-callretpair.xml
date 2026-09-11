@@ -1,0 +1,73 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna re-bytecode-reader-return-discarded: a call whose cspec output rule
+    asked for a register PAIR got no output at all, and both halves rendered
+    as locals the function never assigns.
+
+    FuncCallSpecs::buildOutputFromTrials (fspec.cc:5777) moves the single used
+    output trial to the CALL; upstream also handles two, and kuna shipped that
+    arm as a stub.  The x86-64 System V cspec returns any 16-byte aggregate in
+    RAX:RDX and says so with its join_dual_class output rule, so a caller that
+    reads both registers puts two active trials on the call.  With the arm
+    stubbed the INDIRECT creations standing for "the callee wrote something
+    here" survived and the returned value had no definition anywhere.
+
+    The vector is sub_9d9c0 of a stripped gcc 9.4 QuickJS interpreter
+    (challenge 673da52e9b533b4c22bd2eeb), whose JSValue-returning call to
+    sub_875e0 at 0x9d9d8 rendered as a bare statement followed by a cast of an
+    unassigned rdx local.  Reduced to one call and assembled from
+    decompiler/crates/kuna-analysis/tests/fixtures/callretpair_x86_64.s:
+
+        401020  push %rbx
+        40102b  call read_value            ; returns { void *u; long tag; }
+        401030  mov  %rax,%rbx             ; the payload half
+        401033  cmp  $0x6,%edx             ; the tag half, JS_TAG_EXCEPTION
+
+    read_tag_clobber is the control: no_payload provably never writes rdx, so
+    the bounded callee decode refuses the pair and the call keeps no output in
+    BOTH passes.
+
+    Phase: P4 output prototype, option callretpair off|on.  Pass 1 (off) pins
+    the bug: a bare read_value() call and an unassigned rdx local.  Pass 2 (on,
+    the shipped default) pins the join output and both halves.  The control
+    does not move.
+-->
+<bytechunk space="ram" offset="0x401000">
+488b06488b560885c97507ba0600000031c0c366662e0f1f840000000000669053b901000000ba10000000e8d0ffffff4889c383fa067408488b0348
+01d05bc348c7c0ffffffff5bc30f1f8000000000488b074883c001c30f1f84000000000053ba07000000e8e5ffffff4889c383fa067408488b034801
+d05bc348c7c0ffffffff5bc3488d35750f000031ffe88effffff4889c7e8c6ffffffb83c0000000f05
+</bytechunk>
+<bytechunk space="ram" offset="0x402000">
+00000000000000000300000000000000
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="read_value"/>
+<symbol space="ram" offset="0x401020" name="read_tag"/>
+<symbol space="ram" offset="0x401050" name="no_payload"/>
+<symbol space="ram" offset="0x401060" name="read_tag_clobber"/>
+<symbol space="ram" offset="0x402000" name="buf"/>
+</binaryimage>
+<script>
+  <com>option callretpair off</com>
+  <com>lo fu read_tag</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu read_tag_clobber</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option callretpair on</com>
+  <com>lo fu read_tag</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu read_tag_clobber</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="CALLRETPAIR #1: off, the call is a bare statement and its JSValue is discarded" min="1" max="1">^  read_value\(a0,a1,0x10,1\);$</stringmatch>
+<stringmatch name="CALLRETPAIR #2: on, the call gains the 16-byte join output the cspec output rule asked for" min="1" max="1">v1 = read_value\(a0,a1,0x10,1\);</stringmatch>
+<stringmatch name="CALLRETPAIR #3: on, both halves are SUBPIECEs of the call output instead of locals with no definition" min="1" max="1">return \*SUB168\(v1,0\) \+ SUB168\(v1,8\);</stringmatch>
+<stringmatch name="CALLRETPAIR #4: the unassigned rdx local survives in three of the four renderings, and is gone only where the pair formed" min="3" max="3">int8 v2; // rdx</stringmatch>
+<stringmatch name="CALLRETPAIR #5: the control keeps its bare call in BOTH passes, because the bounded callee decode proves no_payload never writes rdx" min="2" max="2">^  no_payload\(a0,a1,7\);$</stringmatch>
+<stringmatch name="CALLRETPAIR #6: on, the recovered return stops being the garbage pointer the discarded half left behind" min="1" max="1">int8 read_tag\(unsigned long a0,unsigned long a1\)</stringmatch>
+</decompilertest>

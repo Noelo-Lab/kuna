@@ -57,9 +57,11 @@
 </binaryimage>
 <script>
   <com>option calleepreserves off</com>
+  <com>option calleeretpreserves off</com>
   <com>lo fu f</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>option calleeretpreserves on</com>
   <com>option calleepreserves on</com>
   <com>decompile</com>
   <com>print C</com>

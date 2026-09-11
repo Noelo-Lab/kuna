@@ -1,0 +1,34 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "read_tag"
+  ],
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/callretpair_x86_64",
+    "binary_sha256": "708d5d66c9dbbbbae3e3e32ce25ec2cf5eebdea98c97cc29846f250992f647b5",
+    "binary_size": 8976,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/callretpair_x86_64",
+    "selector": "read_tag",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_absent": [
+      "(?m)^  read_value\\(a0,a1,0x10,1\\);$"
+    ],
+    "stdout_matches": [
+      "v[0-9]+ = read_value\\(a0,a1,0x10,1\\);",
+      "return \\*SUB168\\(v[0-9]+,0\\) \\+ SUB168\\(v[0-9]+,8\\);"
+    ]
+  },
+  "notes": "Desired: a call whose cspec output rule asks for a register pair gets that pair, so both halves are SUBPIECEs of the call's result instead of locals the function never assigns. Witness: challenge 673da52e9b533b4c22bd2eeb sub_9d9c0 -> JSValue callee sub_875e0 @0x9d9d8, which rendered a bare call and an unassigned rdx local. Retargeted onto the vendored callretpair_x86_64 (CI has no dataset)."
+}
