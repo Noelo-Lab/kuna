@@ -24,7 +24,7 @@
 
 use std::path::PathBuf;
 
-use kuna_analysis::listing::{CodeUnit, Listing, RefKind};
+use kuna_analysis::listing::{CodeUnit, Listing, ListingDetail, RefKind};
 use kuna_console::engine::bootstrap_from_object;
 
 fn repo_root() -> PathBuf {
@@ -285,4 +285,96 @@ fn listing_query_surface_partition_functions_and_xrefs() {
             .collect::<Vec<_>>()
     );
     eprintln!("  ref_count_to(authenticate) (Call) = {call_refs_to_auth}");
+}
+
+/// A `ListingDetail::PARTITION_ONLY` build is the same walk with the reference
+/// model left unbuilt: the instructions it decodes and the functions it discovers
+/// must be identical to a full build's, and every xref query must answer "none".
+///
+/// This is the claim the `fast_funcdisc`-only path rests on. That path asks for a
+/// program-wide walk purely to enumerate functions, and the two readers of the
+/// reference model (`noreturn_disc` and `tailcallentry`) are both gated on
+/// `--option listing on`, so it builds neither map. On a large image the skipped
+/// work is the same order as the instruction model itself — a 94 MB `.text`
+/// produced 23 million edges across two `BTreeMap`s — so what has to hold is that
+/// dropping it changes nothing else about the walk.
+#[test]
+fn a_partition_only_listing_walks_identically_and_files_no_references() {
+    let root = repo_root();
+    let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
+
+    let bin = match fauxware().to_str() {
+        Some(s) => s.to_string(),
+        None => return,
+    };
+    let prog = match bootstrap_from_object(&bin, "", &spec_roots) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!(
+                "verify_listing_queries: skipping (bootstrap failed, `make specs`): {}",
+                e.explain()
+            );
+            return;
+        }
+    };
+
+    let bytes = std::fs::read(&bin).expect("read fixture bytes");
+    let file = object::File::parse(&*bytes).expect("parse fixture ELF");
+    let image = kuna_analysis::loadimage_object::ObjectLoadImage::from_bytes(&bin, &bytes)
+        .expect("open throwaway loadimage");
+    let arch = prog.arch();
+    let translate = arch.translate();
+    let mut seeds = kuna_analysis::entry::collect_entries(&file, &bytes);
+    seeds.push(MAIN);
+    seeds.push(CSU_INIT);
+    seeds.sort_unstable();
+    seeds.dedup();
+
+    let build = |detail| {
+        Listing::build_with_meta(&file, &image, arch, translate, &seeds, &seeds, &[], detail)
+    };
+    let full = build(ListingDetail::FULL);
+    let lean = build(ListingDetail::PARTITION_ONLY);
+
+    assert!(full.has_refs() && !lean.has_refs(), "each build must report what it captured");
+    assert!(
+        full.num_instructions() > 50 && full.function_count() > 2,
+        "the fixture must decode a real program or the comparison is vacuous \
+         ({} instructions, {} functions)",
+        full.num_instructions(),
+        full.function_count()
+    );
+
+    let partition = |l: &Listing| {
+        let insns: Vec<(u64, u32)> = l.instructions().map(|(&a, i)| (a, i.len)).collect();
+        let funcs: Vec<(u64, Option<String>, bool)> =
+            l.functions().map(|(&a, f)| (a, f.name.clone(), f.from_symbol)).collect();
+        (insns, funcs, l.exec_ranges().to_vec())
+    };
+    assert_eq!(
+        partition(&full),
+        partition(&lean),
+        "the instruction partition, the discovered-function model and the executable \
+         ranges must not depend on whether the reference model was built"
+    );
+
+    // The full build has real edges at the sites the query gate pins; the lean
+    // build answers "none" at every one of them rather than a wrong subset.
+    assert!(full.has_refs_to(AUTHENTICATE), "the full build must see the call to authenticate");
+    assert!(!full.refs_from(CALL_AUTH).is_empty(), "the full build must see the call site's edge");
+    assert_eq!(lean.ref_source_iter().count(), 0, "a partition-only build files no ref sources");
+    for &vma in &[MAIN, MAIN_MID, AUTHENTICATE, CALL_AUTH, RET, CSU_INIT] {
+        assert!(lean.refs_to(vma).is_empty(), "refs_to({vma:#x}) must be empty");
+        assert!(lean.refs_from(vma).is_empty(), "refs_from({vma:#x}) must be empty");
+        assert!(!lean.has_refs_to(vma), "has_refs_to({vma:#x}) must be false");
+        assert_eq!(lean.ref_count_to(vma), 0, "ref_count_to({vma:#x}) must be 0");
+    }
+
+    eprintln!(
+        "verify_listing_queries: partition {} insns / {} funcs; refs {} sources (full) vs {} (lean)",
+        full.num_instructions(),
+        full.function_count(),
+        full.ref_source_iter().count(),
+        lean.ref_source_iter().count(),
+    );
 }

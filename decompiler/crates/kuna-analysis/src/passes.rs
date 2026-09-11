@@ -639,7 +639,18 @@ pub fn run_listing_consumers(
     // there is no text reader left (AIF's fingerprint re-decodes the two addresses
     // it needs), so the walk skips capturing text: a second SLEIGH parse per
     // instruction. See `listing::decode::decode_one`.
-    let want_assembly = arch.analysis_listing;
+    //
+    // The reference model has the same two gated readers and nothing else —
+    // `noreturn_disc` (a `listing_consumer_passes` pass) and `tailcallentry` —
+    // so a `fast_funcdisc`-only build skips it too. It is not a rounding error
+    // on a large image: the walk files an edge per control-flow successor of
+    // every instruction, a fall-through included, so a 94 MB `.text` produced 23
+    // million edges spread over two `BTreeMap<u64, Vec<Reference>>` that nothing
+    // then read.
+    let detail = crate::listing::ListingDetail {
+        assembly: arch.analysis_listing,
+        refs: arch.analysis_listing,
+    };
     let mut listing = crate::listing::Listing::build_with_meta(
         &file,
         image,
@@ -648,7 +659,7 @@ pub fn run_listing_consumers(
         &seeds,
         &funcsym_seeds,
         &seed_names,
-        want_assembly,
+        detail,
     );
     // (kuna, Stage-2 ARM discovery) Raw, UNPAIRED Thumb-prologue gap seeding — the
     // angr `CFGFast._func_addrs_from_prologues()` mirror. After the first walk, scan
@@ -687,7 +698,7 @@ pub fn run_listing_consumers(
                         &seeds,
                         &funcsym_seeds,
                         &seed_names,
-                        want_assembly,
+                        detail,
                     );
                 }
             }
@@ -732,7 +743,7 @@ pub fn run_listing_consumers(
                         &seeds,
                         &funcsym_seeds,
                         &seed_names,
-                        want_assembly,
+                        detail,
                     );
                 }
             }

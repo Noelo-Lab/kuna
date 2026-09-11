@@ -61,7 +61,7 @@
 
 use std::path::PathBuf;
 
-use kuna_analysis::listing::Listing;
+use kuna_analysis::listing::{Listing, ListingDetail};
 use kuna_console::engine::bootstrap_from_object;
 use kuna_console::ifacedecomp::{execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE};
 use kuna_console::ifaceterm::ConsoleCommands;
@@ -218,7 +218,7 @@ fn a_text_free_listing_fingerprints_exactly_like_a_text_carrying_one() {
     let code_space =
         std::rc::Rc::clone(arch.manage().get_default_code_space().expect("code space"));
 
-    let run = |want_assembly: bool| {
+    let run = |detail: ListingDetail| {
         let listing = Listing::build_with_meta(
             &file,
             &image,
@@ -227,9 +227,10 @@ fn a_text_free_listing_fingerprints_exactly_like_a_text_carrying_one() {
             &seeds,
             &seeds,
             &[],
-            want_assembly,
+            detail,
         );
         let count = listing.function_count();
+        let insns = listing.num_instructions();
         let exec = listing.exec_ranges().to_vec();
         let entries = kuna_analysis::aif::run_aif(
             &listing,
@@ -239,13 +240,19 @@ fn a_text_free_listing_fingerprints_exactly_like_a_text_carrying_one() {
             false,
             false,
         );
-        (count, entries)
+        (count, insns, entries)
     };
 
-    let (with_text, texted_entries) = run(true);
-    let (without_text, textless_entries) = run(false);
+    let (with_text, full_insns, texted_entries) = run(ListingDetail::FULL);
+    let (without_text, lean_insns, textless_entries) = run(ListingDetail::PARTITION_ONLY);
 
     assert_eq!(with_text, without_text, "the walk itself must not depend on text capture");
+    assert_eq!(
+        full_insns, lean_insns,
+        "the instruction partition must not depend on what the walk was asked to \
+         capture alongside it: {full_insns} instructions with text + references, \
+         {lean_insns} without"
+    );
     assert!(
         with_text >= 20,
         "the fixture must clear MINIMUM_FUNCTION_COUNT or the comparison is vacuous \
