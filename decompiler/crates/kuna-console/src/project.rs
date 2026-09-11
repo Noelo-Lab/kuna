@@ -1,7 +1,15 @@
 //! Shared **decompile-project core**: the whole-binary decompile loop
-//! ([`decompile_targets`] / [`FuncResult`] / [`render_c`]) and the four
-//! project-export artifact builders behind `kuna decompile-project`
-//! (`<name>.c` / `<name>.h` / `<name>.asm` / `README.md`).
+//! ([`decompile_targets`] / [`decompile_pulled`] / [`FuncResult`] /
+//! [`render_c`]) and the four project-export artifact builders behind
+//! `kuna decompile-project` (`<name>.c` / `<name>.h` / `<name>.asm` /
+//! `README.md`).
+//!
+//! A `--stream` export builds the same artifacts incrementally: it pulls targets
+//! one at a time ([`decompile_pulled`]), steers the order with
+//! [`FuncResult::callee_hints`], renders its README from a snapshot
+//! ([`ReadmeFacts`] / [`render_readme`] / [`render_readme_streaming`]) rather
+//! than from the program, and drives the disassembly in bounded steps
+//! ([`crate::project_stream`]).
 //!
 //! Used by both the `kuna` CLI (`kuna-cli`'s `decompile-all` /
 //! `decompile-project` surfaces) and the `kuna_wasm` in-browser front-end —
@@ -19,6 +27,8 @@ use kuna_base::address::Address;
 use kuna_decomp::decompile_drive::{
     extract_variables, print_c, print_c_prototype, print_c_with_provenance, LineMapping, VarInfo,
 };
+use kuna_decomp::funcdata::Funcdata;
+use kuna_num::opcodes::OpCode;
 // `ConsoleProgram::sections` documents its `flags` word as exactly the
 // `kuna_sleigh::loadimage::section_flags` constant set (UNALLOC=1, NOLOAD=2,
 // CODE=4, DATA=8, READONLY=16).  kuna-console depends on kuna-sleigh, so the
@@ -78,6 +88,37 @@ pub struct FuncResult {
     pub aliases: Vec<String>,
     /// Original object-file coordinate for a relocatable definition.
     pub object_location: Option<ObjectLocation>,
+    /// (kuna `--stream`) Byte addresses this function reaches: the entry address
+    /// of every direct `CALL`, plus every constant that names a known function
+    /// entry living in code (the address-taken case — `_start` hands `main` to
+    /// `__libc_start_main` as a pointer).  Thumb-bit normalized, sorted,
+    /// deduped, and never containing this function's own entry.
+    ///
+    /// A SCHEDULING HINT for `kuna decompile-project --stream`, which decompiles
+    /// a function's callees before unrelated functions so the export fills in
+    /// entry-point-first.  It is NOT the CLI's call-edge model (`CallGraph` in
+    /// kuna-cli, which answers reference questions from the xref index over the
+    /// whole image) and is never serialized into any exported document.  Empty on
+    /// every error record, and on every run that did not ask for it
+    /// ([`DecompileOptions::want_callee_hints`]).
+    pub callee_hints: Vec<u64>,
+}
+
+/// What a decompile batch captures beyond the C itself.
+///
+/// `single_target` is an explicit input rather than a count: it gates the
+/// `--assert` plane's unqualified directives (a directive that names no function
+/// binds to "the function under decompile", which is only unambiguous when the
+/// run selected exactly one), and a pull-based batch does not know its own
+/// length up front.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct DecompileOptions {
+    pub no_vars: bool,
+    pub want_proto: bool,
+    pub want_provenance: bool,
+    /// Collect [`FuncResult::callee_hints`] — the `--stream` scheduler's frontier.
+    pub want_callee_hints: bool,
+    pub single_target: bool,
 }
 
 /// Decompile each `(name, entry)` target in turn against the already-loaded
@@ -87,6 +128,9 @@ pub struct FuncResult {
 /// ([`print_c_prototype`]) inside the same panic guard as the C render — the
 /// `decompile-project` `.h` surface. `want_provenance` runs the markup emitter
 /// after the plain render and resolves its token references against the IR.
+///
+/// The eager form of [`decompile_pulled`], with `single_target` derived from the
+/// target count.
 pub fn decompile_targets(
     prog: &mut ConsoleProgram,
     targets: Vec<FunctionEntry>,
@@ -94,11 +138,52 @@ pub fn decompile_targets(
     want_proto: bool,
     want_provenance: bool,
 ) -> Vec<FuncResult> {
+    let opts = DecompileOptions {
+        no_vars,
+        want_proto,
+        want_provenance,
+        want_callee_hints: false,
+        single_target: targets.len() == 1,
+    };
     let mut out = Vec::with_capacity(targets.len());
-    // (kuna `--assert`) An unqualified directive binds to "the function under
-    // decompile", which is only unambiguous when the run selected exactly one.
-    let single_target = targets.len() == 1;
-    for FunctionEntry {
+    let mut pending = targets.into_iter();
+    decompile_pulled(prog, &opts, &mut || pending.next(), &mut |r| out.push(r));
+    out
+}
+
+/// One target's decompile, for a caller holding a single [`FunctionEntry`].
+pub fn decompile_entry(
+    prog: &mut ConsoleProgram,
+    target: FunctionEntry,
+    opts: &DecompileOptions,
+) -> FuncResult {
+    let mut pending = Some(target);
+    let mut out = None;
+    decompile_pulled(prog, opts, &mut || pending.take(), &mut |r| out = Some(r));
+    out.expect("decompile_pulled emits exactly one result per target")
+}
+
+/// The pull/push form of [`decompile_targets`]: take targets from `next` until
+/// it returns `None`, handing each finished [`FuncResult`] to `sink` before the
+/// next target is decompiled.
+///
+/// Exactly one result per target, in the order `next` produced them — the
+/// streaming project export consumes results as they land instead of waiting for
+/// the whole batch, and feeds `next` from a scheduler that the results
+/// themselves steer ([`FuncResult::callee_hints`]).
+///
+/// The callee-hint context (the program's function-entry set and its code
+/// ranges) is built once per call, on the first target, and only when
+/// `opts.want_callee_hints` is set.
+pub fn decompile_pulled(
+    prog: &mut ConsoleProgram,
+    opts: &DecompileOptions,
+    next: &mut dyn FnMut() -> Option<FunctionEntry>,
+    sink: &mut dyn FnMut(FuncResult),
+) {
+    let DecompileOptions { no_vars, want_proto, want_provenance, single_target, .. } = *opts;
+    let mut hints: Option<CalleeHintContext> = None;
+    while let Some(FunctionEntry {
         name,
         addr: entry,
         aliases,
@@ -106,8 +191,11 @@ pub fn decompile_targets(
         object_location,
         provenance,
         ..
-    } in targets
+    }) = next()
     {
+        if opts.want_callee_hints && hints.is_none() {
+            hints = Some(CalleeHintContext::new(prog));
+        }
         let byte_address = entry.get_offset();
         let address = prog.output_code_offset(byte_address);
         // (kuna) An entry with no mapped bytes is an EXTERNAL, not a decompile
@@ -121,7 +209,7 @@ pub fn decompile_targets(
         // decompile. Say what it actually is instead. See
         // `ConsoleProgram::entry_bytes_mapped`.
         if !prog.entry_bytes_mapped(&entry) && provenance == EntryProvenance::UndefinedExternal {
-            out.push(FuncResult {
+            sink(FuncResult {
                 code: Some(format!(
                     "// {name}: external symbol -- no code at this address in this module\n"
                 )),
@@ -135,11 +223,12 @@ pub fn decompile_targets(
                 line_mappings: Vec::new(),
                 aliases,
                 object_location,
+                callee_hints: Vec::new(),
             });
             continue;
         }
         if !prog.entry_bytes_mapped(&entry) {
-            out.push(FuncResult {
+            sink(FuncResult {
                 name,
                 address,
                 byte_address,
@@ -151,6 +240,7 @@ pub fn decompile_targets(
                 line_mappings: Vec::new(),
                 aliases,
                 object_location,
+                callee_hints: Vec::new(),
             });
             continue;
         }
@@ -304,10 +394,14 @@ pub fn decompile_targets(
                             *address = prog.output_code_offset(*address);
                         }
                     }
-                    (code, variables, proto, line_mappings)
+                    let callee_hints = hints
+                        .as_ref()
+                        .map(|ctx| ctx.scan(&fd, byte_address))
+                        .unwrap_or_default();
+                    (code, variables, proto, line_mappings, callee_hints)
                 }));
                 match rendered {
-                    Ok((code, variables, proto, line_mappings)) => out.push(FuncResult {
+                    Ok((code, variables, proto, line_mappings, callee_hints)) => sink(FuncResult {
                         name,
                         address,
                         byte_address,
@@ -319,8 +413,9 @@ pub fn decompile_targets(
                         line_mappings,
                         aliases,
                         object_location,
+                        callee_hints,
                     }),
-                    Err(_) => out.push(FuncResult {
+                    Err(_) => sink(FuncResult {
                         name,
                         address,
                         byte_address,
@@ -332,10 +427,11 @@ pub fn decompile_targets(
                         line_mappings: Vec::new(),
                         aliases,
                         object_location,
+                        callee_hints: Vec::new(),
                     }),
                 }
             }
-            Err(e) => out.push(FuncResult {
+            Err(e) => sink(FuncResult {
                 name,
                 address,
                 byte_address,
@@ -347,10 +443,113 @@ pub fn decompile_targets(
                 line_mappings: Vec::new(),
                 aliases,
                 object_location,
+                callee_hints: Vec::new(),
             }),
         }
     }
-    out
+}
+
+/// The per-batch facts [`FuncResult::callee_hints`] is filtered against: which
+/// addresses are function entries, which of them live in code, and how wide a
+/// code pointer is.
+///
+/// Owned rather than borrowed from the program, so the scan can run inside the
+/// render guard while the printer holds `prog` mutably.  Built once per
+/// [`decompile_pulled`] call: the entry set is the canonical inventory's address
+/// set (`ConsoleProgram::find_entry_at` answers from the same set, but rebuilds
+/// the whole inventory on every probe, which a per-constant test cannot afford).
+struct CalleeHintContext {
+    arm: bool,
+    /// Every function-entry address, Thumb-bit normalized and sorted — a whole
+    /// image's worth, probed once per constant varnode.
+    entries: Vec<u64>,
+    /// `(start, end)` of each code range, or empty when the container publishes
+    /// none — in which case being a known entry is the whole test.
+    code: Vec<(u64, u64)>,
+    pointer_size: i32,
+}
+
+impl CalleeHintContext {
+    fn new(prog: &ConsoleProgram) -> Self {
+        let arm = prog.description().starts_with("ARM");
+        let normalize = |vma: u64| if arm { vma & !1 } else { vma };
+        let mut entries: Vec<u64> = prog
+            .function_entries()
+            .filter(|(_, addr)| addr.get_space().is_some())
+            .map(|(_, addr)| normalize(addr.get_offset()))
+            .collect();
+        entries.sort_unstable();
+        entries.dedup();
+        // Sections first, segments where the container publishes no section
+        // table (a sectionless ELF, the XML corpus loader): the same fallback
+        // order the executable-entry filter uses.
+        let mut code: Vec<(u64, u64)> = code_ranges(&prog.sections());
+        if code.is_empty() {
+            code = code_ranges(&prog.segments());
+        }
+        let pointer_size = prog
+            .arch()
+            .manage()
+            .get_default_code_space()
+            .map_or(0, |space| space.get_addr_size() as i32);
+        Self { arm, entries, code, pointer_size }
+    }
+
+    fn normalize(&self, vma: u64) -> u64 {
+        if self.arm {
+            vma & !1
+        } else {
+            vma
+        }
+    }
+
+    /// Is `vma` a function entry that code could plausibly be reached at?
+    fn is_code_entry(&self, vma: u64) -> bool {
+        self.entries.binary_search(&vma).is_ok()
+            && (self.code.is_empty()
+                || self.code.iter().any(|&(start, end)| vma >= start && vma < end))
+    }
+
+    /// The hints for one decompiled function: direct-call callees, plus every
+    /// constant that names a code entry (an address-taken callee).  `entry` is
+    /// the function's own byte address, which is never its own hint.
+    fn scan(&self, fd: &Funcdata, entry: u64) -> Vec<u64> {
+        let mut out: BTreeSet<u64> = BTreeSet::new();
+        for i in 0..fd.num_calls() {
+            let spec = fd.get_call_specs(i);
+            let Some(op) = fd.obank().get(spec.get_op()) else { continue };
+            // A CALLIND's call spec carries a spaceless, invalid entry address.
+            if op.code() != OpCode::CPUI_CALL {
+                continue;
+            }
+            let callee = spec.get_entry_address();
+            if callee.get_space().is_some() {
+                out.insert(self.normalize(callee.get_offset()));
+            }
+        }
+        if self.pointer_size > 0 {
+            for id in fd.vbank().iter_loc() {
+                let Some(vn) = fd.vbank().get(id) else { continue };
+                if !vn.is_constant() || vn.get_size() <= 0 || vn.get_size() > self.pointer_size {
+                    continue;
+                }
+                let vma = self.normalize(vn.get_offset());
+                if self.is_code_entry(vma) {
+                    out.insert(vma);
+                }
+            }
+        }
+        out.remove(&self.normalize(entry));
+        out.into_iter().collect()
+    }
+}
+
+fn code_ranges(spans: &[(u64, u64, u32)]) -> Vec<(u64, u64)> {
+    spans
+        .iter()
+        .filter(|(_, _, flags)| flags & section_flags::CODE != 0)
+        .map(|&(vma, size, _)| (vma, vma.saturating_add(size)))
+        .collect()
 }
 
 /// Render the functions as concatenated C with `// Function:` headers (the human
@@ -475,22 +674,18 @@ pub fn collect_dat_addrs(results: &[FuncResult]) -> BTreeSet<u64> {
 
 // --- .asm ------------------------------------------------------------------
 
-/// A function label in the sweep: the (possibly several — alias names at one
-/// address survive `resolve_targets`) results anchored at a normalized VMA.
-type LabelMap<'a> = BTreeMap<u64, Vec<&'a FuncResult>>;
-
 /// Reusable storage for the full-section disassembly sweep.
-struct AssemblyScratch {
-    mnem: String,
-    body: String,
-    raw: Vec<u8>,
+pub(crate) struct AssemblyScratch {
+    pub(crate) mnem: String,
+    pub(crate) body: String,
+    pub(crate) raw: Vec<u8>,
     line: String,
     db_start: Option<u64>,
     db: Vec<u8>,
 }
 
 impl AssemblyScratch {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             mnem: String::with_capacity(16),
             body: String::with_capacity(64),
@@ -501,7 +696,7 @@ impl AssemblyScratch {
         }
     }
 
-    fn emit_instruction(&mut self, addr: u64, out: &mut String) {
+    pub(crate) fn emit_instruction(&mut self, addr: u64, out: &mut String) {
         self.line.clear();
         write!(&mut self.line, "  {addr:08x}: ").unwrap();
         for (idx, &byte) in self.raw.iter().enumerate() {
@@ -526,7 +721,7 @@ impl AssemblyScratch {
         out.push_str(&self.line);
     }
 
-    fn push_db(&mut self, addr: u64, byte: u8, out: &mut String) {
+    pub(crate) fn push_db(&mut self, addr: u64, byte: u8, out: &mut String) {
         if self.db_start.is_none() {
             self.db_start = Some(addr);
         }
@@ -536,7 +731,7 @@ impl AssemblyScratch {
         }
     }
 
-    fn flush_db(&mut self, out: &mut String) {
+    pub(crate) fn flush_db(&mut self, out: &mut String) {
         let Some(addr) = self.db_start.take() else { return };
         self.line.clear();
         write!(&mut self.line, "  {addr:08x}: db ").unwrap();
@@ -552,7 +747,7 @@ impl AssemblyScratch {
         self.db.clear();
     }
 
-    fn emit_unreadable(&mut self, addr: u64, out: &mut String) {
+    pub(crate) fn emit_unreadable(&mut self, addr: u64, out: &mut String) {
         self.line.clear();
         writeln!(&mut self.line, "  {addr:08x}: db ?? (unreadable)").unwrap();
         out.push_str(&self.line);
@@ -568,95 +763,23 @@ fn push_lower_hex_byte(out: &mut String, byte: u8) {
 /// `<name>.asm`: linear sweep of every CODE section with function labels +
 /// stack-var comment blocks, then the `; --- data ---` tail (named globals ∪
 /// the `dat_<hex>` set, with raw bytes).
+///
+/// The one-shot form of [`crate::project_stream::AsmSweep`], run to completion
+/// with an unbounded budget.
 pub fn build_asm(
     prog: &ConsoleProgram,
     results: &[FuncResult],
     dat_addrs: &BTreeSet<u64>,
     file_name: &str,
 ) -> String {
-    // On ARM-family specs a Thumb function's entry VMA carries the mode bit;
-    // the sweep walks even byte addresses, so labels are keyed on `vma & !1`.
-    let arm = prog.description().starts_with("ARM");
-    let normalize = |vma: u64| if arm { vma & !1 } else { vma };
-
-    let mut labels: LabelMap = BTreeMap::new();
-    for r in results {
-        labels.entry(normalize(r.byte_address)).or_default().push(r);
-    }
-
-    let sections = prog.sections();
-    let mut out = String::new();
-    out.push_str(&format!("; kuna decompile-project — {file_name}\n"));
-    out.push_str(&format!("; arch: {}\n", prog.description()));
-
-    let mut code_secs: Vec<(u64, u64)> = sections
-        .iter()
-        .filter(|(_, _, flags)| flags & section_flags::CODE != 0)
-        .map(|&(vma, size, _)| (vma, size))
-        .collect();
-    code_secs.sort_unstable();
-    let mut scratch = AssemblyScratch::new();
-    for (vma, size) in code_secs {
-        let end = vma.saturating_add(size);
-        let display_vma = prog.output_code_offset(vma);
-        let display_end = prog.output_code_end_offset(end);
-        out.push_str(&format!(
-            "\n; --- code section 0x{display_vma:x}..0x{display_end:x} ---\n"
-        ));
-        sweep_code(prog, &labels, vma, end, &mut scratch, &mut out);
-    }
-
-    emit_data_tail(prog, &sections, dat_addrs, &mut out);
+    let labels = crate::project_stream::asm_labels_from_results(results);
+    let mut sweep = crate::project_stream::AsmSweep::new(prog, file_name, labels);
+    let mut buf: Vec<u8> = Vec::new();
+    buf.extend_from_slice(sweep.header_lines().as_bytes());
+    while !sweep.step(prog, u64::MAX, &mut buf).expect("a Vec sink cannot fail") {}
+    let mut out = String::from_utf8(buf).expect("the sweep emits UTF-8");
+    emit_data_tail(prog, &prog.sections(), dat_addrs, &mut out);
     out
-}
-
-/// Disassemble `[start, end)` linearly: labels + stack-var headers at function
-/// entries, one instruction line per decode, `db` byte lines (coalesced up to
-/// 8, clamped at the next label) where decoding fails.
-fn sweep_code(
-    prog: &ConsoleProgram,
-    labels: &LabelMap,
-    start: u64,
-    end: u64,
-    scratch: &mut AssemblyScratch,
-    out: &mut String,
-) {
-    let mut addr = start;
-    while addr < end {
-        if let Some(rs) = labels.get(&addr) {
-            scratch.flush_db(out);
-            for r in rs {
-                out.push('\n');
-                out.push_str(&format!("{}:  ; 0x{:x}\n", r.name, r.address));
-                emit_var_header(r, out);
-            }
-        }
-        // Never decode across the next label (a mis-sync would otherwise
-        // swallow a function label into an instruction's byte extent) or the
-        // section end.
-        let next_stop =
-            labels.range(addr + 1..).next().map(|(&a, _)| a.min(end)).unwrap_or(end);
-        match prog.disassemble_at_into(addr, &mut scratch.mnem, &mut scratch.body) {
-            Ok(len) if len > 0 && addr + len as u64 <= next_stop => {
-                scratch.flush_db(out);
-                prog.read_bytes_into(addr, len as usize, &mut scratch.raw);
-                scratch.emit_instruction(prog.output_code_offset(addr), out);
-                addr += len as u64;
-            }
-            _ => {
-                // Decode failure (or a decode that would cross the next label):
-                // one raw byte, coalesced into up-to-8-byte `db` lines.
-                if prog.read_bytes_into(addr, 1, &mut scratch.raw) {
-                    scratch.push_db(prog.output_code_offset(addr), scratch.raw[0], out);
-                } else {
-                    scratch.flush_db(out);
-                    scratch.emit_unreadable(prog.output_code_offset(addr), out);
-                }
-                addr += 1;
-            }
-        }
-    }
-    scratch.flush_db(out);
 }
 
 #[cfg(test)]
@@ -765,6 +888,13 @@ mod tests {
 
 /// The per-function variable comment block: `; arg:` lines (ABI order), then
 /// `; stack:` lines with the signed frame offset the decompiled name lives at.
+/// Empty when the function recovered no variables.
+pub(crate) fn var_header_lines(r: &FuncResult) -> String {
+    let mut out = String::new();
+    emit_var_header(r, &mut out);
+    out
+}
+
 fn emit_var_header(r: &FuncResult, out: &mut String) {
     for v in r.variables.iter().filter(|v| v.is_param) {
         out.push_str(&format!("; arg:   {} ({})\n", v.name, v.type_name));
@@ -800,7 +930,7 @@ struct DataLabel {
 /// `; --- data ---`: address-sorted deduped labels (named globals ∪ `dat_`
 /// tokens), each with a raw-byte dump (16/line + printable-ASCII column) or an
 /// `?? (uninitialized/unmapped)` line for image-backed-less ranges (.bss).
-fn emit_data_tail(
+pub(crate) fn emit_data_tail(
     prog: &ConsoleProgram,
     sections: &[(u64, u64, u32)],
     dat_addrs: &BTreeSet<u64>,
@@ -922,12 +1052,185 @@ fn emit_data_tail(
 
 // --- README.md ---------------------------------------------------------------
 
+/// One row of the README's section table.
+#[derive(Debug, Clone)]
+pub struct ReadmeSectionRow {
+    pub name: String,
+    pub vma: u64,
+    pub size: u64,
+    pub kind: String,
+}
+
+/// Everything the README says about the binary, as plain owned data.
+///
+/// Snapshotted from the `ConsoleProgram` on the thread that owns it
+/// ([`Self::snapshot`]), so a streamed export can keep rewriting its README from
+/// a writer thread that never sees the program.
+#[derive(Debug, Clone, Default)]
+pub struct ReadmeFacts {
+    /// The path string printed in the `| Path |` row (the CLI passes the
+    /// canonicalized on-disk path; the wasm front-end a virtual name).
+    pub path_label: String,
+    /// The base name the artifacts are named after.
+    pub file_name: String,
+    /// `None` when the file could not be stat'd, which prints as `?`.
+    pub file_size: Option<u64>,
+    /// The loader's description line.  `None` before the program is loaded, and
+    /// every program-derived row then prints `pending`.
+    pub description: Option<String>,
+    /// The image entry point, resolved through the inventory so an ARM entry
+    /// carrying the Thumb mode bit prints at the even address the rest of the
+    /// export uses.
+    pub entry: Option<u64>,
+    pub sections: Vec<ReadmeSectionRow>,
+}
+
+impl ReadmeFacts {
+    /// The facts known before the program is loaded: the path and its size.
+    pub fn pending(binary_path: &Path, path_label: &str, file_name: &str) -> Self {
+        Self {
+            path_label: path_label.to_string(),
+            file_name: file_name.to_string(),
+            file_size: std::fs::metadata(binary_path).map(|m| m.len()).ok(),
+            description: None,
+            entry: None,
+            sections: Vec::new(),
+        }
+    }
+
+    /// The facts a loaded program carries: [`Self::pending`] plus the
+    /// architecture, entry point and section table.
+    pub fn snapshot(
+        binary_path: &Path,
+        path_label: &str,
+        file_name: &str,
+        prog: &ConsoleProgram,
+    ) -> Self {
+        let metadata = prog.image_metadata();
+        Self {
+            description: Some(prog.description().to_string()),
+            entry: metadata
+                .and_then(|value| value.entry)
+                .map(|vma| prog.find_entry_at(vma).map_or(vma, |entry| entry.addr.get_offset())),
+            sections: metadata
+                .map(|value| {
+                    value
+                        .sections
+                        .iter()
+                        .map(|section| ReadmeSectionRow {
+                            name: section.name.clone(),
+                            vma: section.vma,
+                            size: section.size,
+                            kind: section.kind.to_string(),
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
+            ..Self::pending(binary_path, path_label, file_name)
+        }
+    }
+}
+
+/// The README's function tally.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ReadmeCounts {
+    pub total: usize,
+    pub ok: usize,
+    pub failed: usize,
+}
+
+impl ReadmeCounts {
+    pub fn of(results: &[FuncResult]) -> Self {
+        let ok = results.iter().filter(|r| r.error.is_none()).count();
+        Self { total: results.len(), ok, failed: results.len() - ok }
+    }
+}
+
+/// Which export the README describes: the artifacts differ, so the file
+/// inventory does too.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReadmeLayout {
+    /// A whole-binary export written in one go.
+    Standard,
+    /// A `--stream` export: decompile-ordered `.c`, `.asm` variable comments in
+    /// their own section, plus `index.jsonl` and `.streaming`.
+    Streamed,
+}
+
+/// Which phase a streamed export is in — the `phase` field of `.streaming`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum StreamPhase {
+    /// Loading and analyzing the binary; nothing but the README exists yet.
+    #[default]
+    Loading,
+    /// Functions are being decompiled and appended.
+    Decompiling,
+    /// Every function is in; the type block and the `.asm` tails are being written.
+    Finalizing,
+    /// The run gave up; `error` says why.
+    Failed,
+}
+
+impl StreamPhase {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            StreamPhase::Loading => "loading",
+            StreamPhase::Decompiling => "decompiling",
+            StreamPhase::Finalizing => "finalizing",
+            StreamPhase::Failed => "failed",
+        }
+    }
+}
+
+/// How far the `.asm` sweep has got — the `asm` field of `.streaming`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AsmPhase {
+    #[default]
+    Pending,
+    Sweeping,
+    Complete,
+}
+
+impl AsmPhase {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            AsmPhase::Pending => "pending",
+            AsmPhase::Sweeping => "sweeping",
+            AsmPhase::Complete => "complete",
+        }
+    }
+}
+
+/// A streamed export's progress, as the in-progress README and `.streaming`
+/// report it.
+#[derive(Debug, Clone, Default)]
+pub struct StreamProgress {
+    pub phase: StreamPhase,
+    /// Worker processes actually in use (1 when the run is serial).
+    pub jobs: usize,
+    /// Targets selected; `None` until the load resolves them.
+    pub total: Option<usize>,
+    /// Results written so far, failures included.
+    pub done: usize,
+    /// How many of `done` are error records.
+    pub failed: usize,
+    pub asm: AsmPhase,
+    pub error: Option<String>,
+    pub elapsed_s: u64,
+}
+
+impl StreamProgress {
+    fn counts(&self) -> Option<ReadmeCounts> {
+        self.total.map(|total| ReadmeCounts {
+            total,
+            ok: self.done.saturating_sub(self.failed),
+            failed: self.failed,
+        })
+    }
+}
+
 /// `README.md`: binary metadata (file size, arch id, entry point + sections),
-/// function counts, and the artifact inventory / labeling conventions. The
-/// entry point and section table are the loader's retained
-/// [`crate::engine::ProgramImageMetadata`]; the entry is reported through the
-/// inventory, so an ARM entry carrying the Thumb mode bit prints at the even
-/// address the rest of the export uses.
+/// function counts, and the artifact inventory / labeling conventions.
 ///
 /// `path_label` is the path string printed in the `| Path |` row (the CLI
 /// passes `binary_path.display()`; the wasm front-end a virtual name);
@@ -939,34 +1242,82 @@ pub fn build_readme(
     prog: &ConsoleProgram,
     results: &[FuncResult],
 ) -> String {
-    let file_size =
-        std::fs::metadata(binary_path).map(|m| m.len().to_string()).unwrap_or_else(|_| "?".into());
-    let ok = results.iter().filter(|r| r.error.is_none()).count();
-    let failed = results.len() - ok;
+    let facts = ReadmeFacts::snapshot(binary_path, path_label, file_name, prog);
+    render_readme(&facts, Some(ReadmeCounts::of(results)), ReadmeLayout::Standard)
+}
+
+/// Render a README from snapshotted facts.  `counts` is `None` while the target
+/// set is still unknown, which prints the function tally as `pending`.
+pub fn render_readme(
+    facts: &ReadmeFacts,
+    counts: Option<ReadmeCounts>,
+    layout: ReadmeLayout,
+) -> String {
+    render_readme_inner(facts, counts, layout, None)
+}
+
+/// The README of an export that is still running: [`render_readme`] with a
+/// banner and a streaming-status section around it.
+pub fn render_readme_streaming(facts: &ReadmeFacts, progress: &StreamProgress) -> String {
+    let mut out = render_readme_inner(
+        facts,
+        progress.counts(),
+        ReadmeLayout::Streamed,
+        Some(
+            "**This export is still streaming** — `.streaming` exists until every artifact is \
+             final; files are appended / rewritten while it does.",
+        ),
+    );
+    out.push_str(&render_streaming_status(facts, progress));
+    out
+}
+
+fn render_readme_inner(
+    facts: &ReadmeFacts,
+    counts: Option<ReadmeCounts>,
+    layout: ReadmeLayout,
+    banner: Option<&str>,
+) -> String {
+    let file_name = &facts.file_name;
+    let file_size = facts.file_size.map_or_else(|| "?".to_string(), |size| size.to_string());
 
     let mut out = String::new();
     out.push_str(&format!("# {file_name} — kuna project export\n\n"));
-    out.push_str("Generated by `kuna decompile-project`.\n\n");
+    if let Some(banner) = banner {
+        out.push_str(banner);
+        out.push_str("\n\n");
+    }
+    match layout {
+        ReadmeLayout::Standard => out.push_str("Generated by `kuna decompile-project`.\n\n"),
+        ReadmeLayout::Streamed => {
+            out.push_str("Generated by `kuna decompile-project --stream`.\n\n")
+        }
+    }
     out.push_str("## Binary\n\n");
     out.push_str("| Field | Value |\n|---|---|\n");
-    out.push_str(&format!("| Path | `{path_label}` |\n"));
+    out.push_str(&format!("| Path | `{}` |\n", facts.path_label));
     out.push_str(&format!("| File size | {file_size} bytes |\n"));
-    out.push_str(&format!("| Architecture | `{}` |\n", prog.description()));
-
-    let metadata = prog.image_metadata();
-    let entry = metadata
-        .and_then(|value| value.entry)
-        .map(|vma| prog.find_entry_at(vma).map_or(vma, |entry| entry.addr.get_offset()));
-    match entry {
-        Some(entry) => out.push_str(&format!("| Entry point | `0x{entry:x}` |\n")),
-        None => out.push_str("| Entry point | unavailable |\n"),
+    match &facts.description {
+        Some(description) => out.push_str(&format!("| Architecture | `{description}` |\n")),
+        None => out.push_str("| Architecture | pending |\n"),
     }
-    out.push_str(&format!("| Functions | {} total, {ok} decompiled, {failed} failed |\n", results.len()));
+    match (&facts.description, facts.entry) {
+        (None, _) => out.push_str("| Entry point | pending |\n"),
+        (Some(_), Some(entry)) => out.push_str(&format!("| Entry point | `0x{entry:x}` |\n")),
+        (Some(_), None) => out.push_str("| Entry point | unavailable |\n"),
+    }
+    match counts {
+        Some(counts) => out.push_str(&format!(
+            "| Functions | {} total, {} decompiled, {} failed |\n",
+            counts.total, counts.ok, counts.failed
+        )),
+        None => out.push_str("| Functions | pending |\n"),
+    }
 
-    if let Some(metadata) = metadata.filter(|value| !value.sections.is_empty()) {
+    if !facts.sections.is_empty() {
         out.push_str("\n## Sections\n\n");
         out.push_str("| Name | Address | Size | Kind |\n|---|---|---|---|\n");
-        for section in &metadata.sections {
+        for section in &facts.sections {
             out.push_str(&format!(
                 "| `{}` | `0x{:x}` | `0x{:x}` | {} |\n",
                 section.name, section.vma, section.size, section.kind
@@ -974,23 +1325,66 @@ pub fn build_readme(
         }
     }
 
+    out.push_str("\n## Files\n\n");
+    match layout {
+        ReadmeLayout::Standard => out.push_str(&format!(
+            "- `{file_name}.c` — every decompiled function, address-ordered, each under a\n\
+             \x20 `// Function: <name> @ <addr>` header (failures appear as\n\
+             \x20 `// Function: <name> @ <addr>  (error: ...)` comments). Includes `{file_name}.h`.\n"
+        )),
+        ReadmeLayout::Streamed => out.push_str(&format!(
+            "- `{file_name}.c` — every decompiled function, each under a\n\
+             \x20 `// Function: <name> @ <addr>` header (failures appear as\n\
+             \x20 `// Function: <name> @ <addr>  (error: ...)` comments). Includes `{file_name}.h`.\n\
+             \x20 The blocks are in DECOMPILE order, not address order: the entry point and the\n\
+             \x20 functions it reaches first, then the rest address-ordered. Under `--jobs N`\n\
+             \x20 the interleaving is worker completion order and is not reproducible run to\n\
+             \x20 run; `index.jsonl` is the address-to-offset index.\n"
+        )),
+    }
     out.push_str(&format!(
-        "\n## Files\n\n\
-         - `{file_name}.c` — every decompiled function, address-ordered, each under a\n\
-         \x20 `// Function: <name> @ <addr>` header (failures appear as\n\
-         \x20 `// Function: <name> @ <addr>  (error: ...)` comments). Includes `{file_name}.h`.\n\
-         - `{file_name}.h` — recompilation aid: the generated core-typedef prelude (the\n\
+        "- `{file_name}.h` — recompilation aid: the generated core-typedef prelude (the\n\
          \x20 Ghidra/kuna `undefined` family included), the user-defined type definitions\n\
          \x20 recovered during decompilation, and one prototype per decompiled function\n\
-         \x20 (token-identical to its `.c` definition line).\n\
-         - `{file_name}.asm` — labeled linear disassembly of every code section. Function\n\
-         \x20 labels match the `.c` names exactly (`main:`, `sub_<addr>:`); under each label\n\
-         \x20 a comment block maps the decompiled variables to their storage\n\
-         \x20 (`; arg: <name> (<type>)`, `; stack: <name> @ [stack-0x18] (<type>)`).\n\
-         \x20 Undecodable bytes appear as `db` lines. The `; --- data ---` tail labels the\n\
-         \x20 named globals and every `dat_<hex>` address the `.c` references, with raw\n\
-         \x20 bytes (`??` for unmapped/.bss ranges).\n\
-         - `README.md` — this file.\n\
+         \x20 (token-identical to its `.c` definition line).\n"
+    ));
+    match layout {
+        ReadmeLayout::Standard => out.push_str(&format!(
+            "- `{file_name}.asm` — labeled linear disassembly of every code section. Function\n\
+             \x20 labels match the `.c` names exactly (`main:`, `sub_<addr>:`); under each label\n\
+             \x20 a comment block maps the decompiled variables to their storage\n\
+             \x20 (`; arg: <name> (<type>)`, `; stack: <name> @ [stack-0x18] (<type>)`).\n\
+             \x20 Undecodable bytes appear as `db` lines. The `; --- data ---` tail labels the\n\
+             \x20 named globals and every `dat_<hex>` address the `.c` references, with raw\n\
+             \x20 bytes (`??` for unmapped/.bss ranges).\n"
+        )),
+        ReadmeLayout::Streamed => out.push_str(&format!(
+            "- `{file_name}.asm` — labeled linear disassembly of every code section. Function\n\
+             \x20 labels match the `.c` names exactly (`main:`, `sub_<addr>:`); undecodable\n\
+             \x20 bytes appear as `db` lines. The disassembly is swept before the decompile\n\
+             \x20 finishes, so the variable comment blocks a non-stream export prints under\n\
+             \x20 each label are appended in a `; --- variables ---` section instead\n\
+             \x20 (`; arg: <name> (<type>)`, `; stack: <name> @ [stack-0x18] (<type>)`), ahead\n\
+             \x20 of the `; --- data ---` tail. That tail labels the named globals and every\n\
+             \x20 `dat_<hex>` address the `.c` references, with raw bytes (`??` for\n\
+             \x20 unmapped/.bss ranges).\n"
+        )),
+    }
+    if layout == ReadmeLayout::Streamed {
+        out.push_str(
+            "- `index.jsonl` — one JSON object per function, appended after that function's\n\
+             \x20 `.c` block is written: `{\"seq\", \"name\", \"addr\", \"size\", \"c_offset\",\n\
+             \x20 \"c_len\", \"error\"}`. `c_offset`/`c_len` slice the `.c` to exactly that\n\
+             \x20 block, so the line is also the proof the block is complete.\n\
+             - `.streaming` — present only while the export is running: a JSON status file\n\
+             \x20 (`schema`, `phase`, `pid`, timestamps, counts, `asm`, `error`), rewritten as\n\
+             \x20 the run progresses and removed when it succeeds. A `failed` phase records\n\
+             \x20 why the run stopped; a `.streaming` left behind with a dead `pid` and no\n\
+             \x20 `failed` phase means the run was killed.\n",
+        );
+    }
+    out.push_str(&format!(
+        "- `README.md` — this file.\n\
          \n\
          ## Labeling conventions\n\n\
          - Functions without a symbol name keep the generated `sub_<addr>` /\n\
@@ -1000,6 +1394,35 @@ pub fn build_readme(
          \x20 the same spelling labels the bytes in the `.asm` data tail. When a named\n\
          \x20 global covers that address the symbol name stays the label and the `dat_`\n\
          \x20 spelling is appended: `<name>:  ; 0x<addr> = dat_<hex>`.\n"
+    ));
+    out
+}
+
+fn render_streaming_status(facts: &ReadmeFacts, progress: &StreamProgress) -> String {
+    let file_name = &facts.file_name;
+    let mut out = String::from("\n## Streaming status\n\n| Field | Value |\n|---|---|\n");
+    out.push_str(&format!("| Phase | {} |\n", progress.phase.as_str()));
+    out.push_str(&format!("| Elapsed | {}s |\n", progress.elapsed_s));
+    out.push_str(&format!("| Workers | {} |\n", progress.jobs));
+    match progress.total {
+        Some(total) => out.push_str(&format!(
+            "| Functions written | {} of {total} ({} failed) |\n",
+            progress.done, progress.failed
+        )),
+        None => out.push_str("| Functions written | pending |\n"),
+    }
+    out.push_str(&format!("| Disassembly | {} |\n", progress.asm.as_str()));
+    if let Some(error) = &progress.error {
+        out.push_str(&format!("| Error | {error} |\n"));
+    }
+    out.push_str(&format!(
+        "\nWhile `.streaming` exists the export is incomplete:\n\n\
+         - `{file_name}.c` and `{file_name}.asm` are append-only and may end mid-block; a\n\
+         \x20 line in `index.jsonl` is what says a `.c` block is whole.\n\
+         - `{file_name}.h` and `README.md` are rewritten whole every time, so they are always\n\
+         \x20 readable — but the `.h` carries no type definitions until the export completes,\n\
+         \x20 and until then it does not compile against the `.c`.\n\
+         - Function blocks already written are never rewritten: a `.c` offset stays valid.\n"
     ));
     out
 }

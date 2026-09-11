@@ -2411,6 +2411,7 @@ mod provenance_json_tests {
             }],
             aliases: Vec::new(),
             object_location: None,
+            callee_hints: Vec::new(),
         };
 
         let rendered = dumps_indent2(&result_json("fixture", &[function], "c-language", None, None, &[]));

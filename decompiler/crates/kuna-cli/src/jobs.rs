@@ -591,6 +591,7 @@ fn decode_one(body: &[u8]) -> Option<FuncResult> {
         line_mappings,
         aliases,
         object_location,
+        callee_hints: Vec::new(),
     })
 }
 
@@ -1224,6 +1225,7 @@ fn lost_result(t: &TargetSpec, reason: &str) -> FuncResult {
         line_mappings: Vec::new(),
         aliases: t.aliases.clone(),
         object_location: t.object_location.clone(),
+        callee_hints: Vec::new(),
     }
 }
 
@@ -1570,6 +1572,7 @@ mod tests {
                 section: ".text".into(),
                 offset: 0x40,
             }),
+            callee_hints: Vec::new(),
         }
     }
 
@@ -1631,6 +1634,7 @@ mod tests {
             line_mappings: Vec::new(),
             aliases: Vec::new(),
             object_location: None,
+            callee_hints: Vec::new(),
         };
         {
             let mut w = ResultWriter::create(&path).unwrap();
@@ -1829,6 +1833,7 @@ mod tests {
             line_mappings: Vec::new(),
             aliases: Vec::new(),
             object_location: None,
+            callee_hints: Vec::new(),
         };
         let results = vec![
             err("budget exceeded (30s)"),
