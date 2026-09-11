@@ -23,13 +23,11 @@ ROUNDS="${REPIPE_ROUNDS:-3}"
 HOURS="${REPIPE_HOURS:-0}"
 CAPTAIN_TIMEOUT="${REPIPE_CAPTAIN_TIMEOUT:-3600}"
 ONCE=0
-SUPERVISOR_LOCK_HELD=0
 
 for a in "$@"; do
   case "$a" in
     --once) ONCE=1; ROUNDS=1;;
     --preflight) PREFLIGHT_ONLY=1;;
-    --internal-supervisor-lock-held) SUPERVISOR_LOCK_HELD=1;;
     *) echo "unknown flag: $a" 1>&2; exit 2;;
   esac
 done
@@ -42,15 +40,22 @@ mkdir -p "$STATE_DIR/logs" "$STATE_DIR/rounds" "$STATE_DIR/arena" "$STATE_DIR/ru
 
 log() { echo "[$(date +%H:%M:%S)] supervisor: $*" | tee -a "$STATE_DIR/logs/supervisor.log"; }
 
-# A state transition lock only serializes the instant STOPPED becomes RUNNING. Keep a distinct
-# ownership lock for this process's whole lifetime so a late launcher cannot observe RUNNING and
-# join the same supervisor loop. The lock runner owns the descriptor; captain/worker descendants
-# do not inherit it, and a killed/crashed owner releases it automatically.
-if [ "${PREFLIGHT_ONLY:-0}" != 1 ] && [ "$SUPERVISOR_LOCK_HELD" != 1 ]; then
+# A state transition lock only serializes the instant STOPPED becomes RUNNING. The outer launch
+# execs back into this script while holding a distinct lifetime lock. Re-entry is accepted only
+# when a helper verifies the inherited locked FD and this shell's PID-bound capability. Foreground
+# descendants retain the FD, so a killed shell cannot release ownership around an orphan captain.
+if [ "${PREFLIGHT_ONLY:-0}" != 1 ]; then
   LOCK_PY="${REPIPE_LOCK_PY:-$KUNA_PY}"
-  exec "$LOCK_PY" -m scripts.repipe.supervisor_lock \
-    --lock "$STATE_DIR/.supervisor.lock" -- \
-    bash "$0" --internal-supervisor-lock-held "$@"
+  if [ -n "${REPIPE_SUPERVISOR_LOCK_FD:-}" ] \
+     && [ -n "${REPIPE_SUPERVISOR_LOCK_OWNER_PID:-}" ] \
+     && "$LOCK_PY" -m scripts.repipe.supervisor_lock --verify \
+          --lock "$STATE_DIR/.supervisor.lock" --owner-pid "$$"; then
+    : # This exact supervisor process owns the inherited lock capability.
+  else
+    unset REPIPE_SUPERVISOR_LOCK_FD REPIPE_SUPERVISOR_LOCK_OWNER_PID
+    exec "$LOCK_PY" -m scripts.repipe.supervisor_lock \
+      --lock "$STATE_DIR/.supervisor.lock" -- bash "$0" "$@"
+  fi
 fi
 
 if ! "$KUNA_PY" -m scripts.repipe.captain --preflight; then

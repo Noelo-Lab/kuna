@@ -557,55 +557,102 @@ assert len(operator_edges) == 1, records
 assert operator_edges[0]["from"] == "STOPPED" and operator_edges[0]["to"] == "RUNNING"
 PY
 
-KUNA_PIPELINE_STATE_DIR="$SMOKE_STATE/lifetime-lock" "$PY" - <<'PY' >/dev/null 2>&1 \
-  && ok "supervisor lifetime lock refuses a live owner, forwards TERM, and releases" \
-  || bad "supervisor lifetime ownership lock failed"
+KUNA_PIPELINE_STATE_DIR="$SMOKE_STATE/lifetime-lock" \
+  REPIPE_LOCK_TREE="$FIX/supervisor_lock_tree.sh" "$PY" - <<'PY' >/dev/null 2>&1 \
+  && ok "nested foreground trees retain supervisor ownership across TERM and SIGKILL" \
+  || bad "nested supervisor lifetime ownership failed"
 import os
 from pathlib import Path
+import signal
 import subprocess
 import sys
 import time
 
 root = Path(os.environ["KUNA_PIPELINE_STATE_DIR"])
 root.mkdir(parents=True)
-lock = root / "supervisor.lock"
-ready = root / "ready"
-release = root / "release"
-unexpected = root / "unexpected"
-success = root / "success"
-holder_code = """\
-import pathlib, sys, time
-ready, release = map(pathlib.Path, sys.argv[1:])
-ready.touch()
-deadline = time.time() + 10
-while not release.exists() and time.time() < deadline:
-    time.sleep(0.01)
-raise SystemExit(0 if release.exists() else 2)
-"""
-holder = subprocess.Popen([
-    sys.executable, "-m", "scripts.repipe.supervisor_lock", "--lock", str(lock), "--",
-    sys.executable, "-c", holder_code, str(ready), str(release),
-])
-deadline = time.time() + 5
-while not ready.exists() and time.time() < deadline:
-    time.sleep(0.01)
-assert ready.exists()
-loser = subprocess.run([
-    sys.executable, "-m", "scripts.repipe.supervisor_lock", "--lock", str(lock), "--",
-    sys.executable, "-c", "import sys; from pathlib import Path; Path(sys.argv[1]).touch()",
-    str(unexpected),
-], capture_output=True, text=True, timeout=5)
-assert loser.returncode == 1, loser
-assert "already owns" in loser.stderr, loser.stderr
-assert not unexpected.exists()
-holder.terminate()
-assert holder.wait(timeout=5) == 143
-successor = subprocess.run([
-    sys.executable, "-m", "scripts.repipe.supervisor_lock", "--lock", str(lock), "--",
-    sys.executable, "-c", "import sys; from pathlib import Path; Path(sys.argv[1]).touch()",
-    str(success),
+tree = os.environ["REPIPE_LOCK_TREE"]
+
+def wait_for(path, timeout=5):
+    deadline = time.time() + timeout
+    while not path.exists() and time.time() < deadline:
+        time.sleep(0.01)
+    assert path.exists(), path
+
+def launch(state):
+    state.mkdir()
+    lock = state / "supervisor.lock"
+    holder = subprocess.Popen([
+        sys.executable, "-m", "scripts.repipe.supervisor_lock", "--lock", str(lock), "--",
+        "bash", tree, str(state), "owner",
+    ])
+    wait_for(state / "tree-ready")
+    assert int((state / "owner.pid").read_text()) == holder.pid
+    return lock, holder
+
+def contender(lock, marker):
+    result = subprocess.run([
+        sys.executable, "-m", "scripts.repipe.supervisor_lock", "--lock", str(lock), "--",
+        sys.executable, "-c",
+        "import sys; from pathlib import Path; Path(sys.argv[1]).touch()", str(marker),
+    ], capture_output=True, text=True, timeout=5)
+    assert result.returncode == 1, result
+    assert "already owns" in result.stderr, result.stderr
+    assert not marker.exists()
+
+term_state = root / "term"
+term_lock, term_owner = launch(term_state)
+term_owner.send_signal(signal.SIGTERM)
+time.sleep(0.1)
+assert term_owner.poll() is None, "owner did not defer TERM while its child was foreground"
+assert not (term_state / "owner-term").exists()
+contender(term_lock, term_state / "overlap")
+(term_state / "release-tree").touch()
+assert term_owner.wait(timeout=5) == 0
+wait_for(term_state / "owner-term")
+success = term_state / "success"
+result = subprocess.run([
+    sys.executable, "-m", "scripts.repipe.supervisor_lock", "--lock", str(term_lock), "--",
+    sys.executable, "-c",
+    "import sys; from pathlib import Path; Path(sys.argv[1]).touch()", str(success),
 ], timeout=5)
-assert successor.returncode == 0 and success.exists(), successor
+assert result.returncode == 0 and success.exists(), result
+
+kill_state = root / "kill"
+kill_lock, kill_owner = launch(kill_state)
+child_pid = int((kill_state / "child.pid").read_text())
+grandchild_pid = int((kill_state / "grandchild.pid").read_text())
+kill_owner.kill()
+assert kill_owner.wait(timeout=5) == -signal.SIGKILL
+os.kill(child_pid, 0)
+os.kill(grandchild_pid, 0)
+contender(kill_lock, kill_state / "overlap")
+(kill_state / "release-tree").touch()
+wait_for(kill_state / "child-returned")
+success = kill_state / "success"
+deadline = time.time() + 5
+while time.time() < deadline:
+    result = subprocess.run([
+        sys.executable, "-m", "scripts.repipe.supervisor_lock", "--lock", str(kill_lock), "--",
+        sys.executable, "-c",
+        "import sys; from pathlib import Path; Path(sys.argv[1]).touch()", str(success),
+    ], capture_output=True, timeout=5)
+    if result.returncode == 0:
+        break
+    time.sleep(0.01)
+assert result.returncode == 0 and success.exists(), result
+
+# A public environment value plus an unrelated inherited descriptor is not a capability.
+forged = root / "forged"
+forged.touch()
+env = os.environ.copy()
+with open(forged) as unrelated:
+    env["REPIPE_SUPERVISOR_LOCK_FD"] = str(unrelated.fileno())
+    env["REPIPE_SUPERVISOR_LOCK_OWNER_PID"] = str(os.getpid())
+    result = subprocess.run([
+        sys.executable, "-m", "scripts.repipe.supervisor_lock", "--verify",
+        "--lock", str(term_lock), "--owner-pid", str(os.getpid()),
+    ], env=env, pass_fds=(unrelated.fileno(),), timeout=5)
+assert result.returncode == 1, result
 PY
 
 RUN_REPO="$SMOKE_STATE/run-repo"
@@ -645,6 +692,14 @@ elif [ -e "$RUN_REPO/.state/STOP" ] && [ -e "$RUN_REPO/.state/ABORT" ] \
   ok "run.sh refuses ABORT without consuming control files"
 else
   bad "run.sh mutated control files while refusing ABORT"
+fi
+KUNA_REPO="$RUN_REPO" KUNA_PY="$RUN_PY" REPIPE_LOCK_PY="$PY" REPIPE_STATE_DIRNAME=.state \
+  bash "$REPO/tools/repipe/run.sh" --internal-supervisor-lock-held >/dev/null 2>&1
+RC=$?
+if [ "$RC" -eq 2 ] && [ ! -e "$RUN_REPO/.state/restarted" ]; then
+  ok "run.sh rejects the former public lifetime-lock bypass flag"
+else
+  bad "run.sh still accepts a public lifetime-lock bypass" "rc=$RC"
 fi
 
 CONCURRENT_REPO="$SMOKE_STATE/concurrent-run-repo"
