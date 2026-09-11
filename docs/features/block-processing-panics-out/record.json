@@ -53,8 +53,11 @@
     "datatests": "0/675, byte-identical"
   },
   "speed": {
-    "method": "the change adds no work on a well-formed block -- the loop visits the identical set of ops and only the terminator differs (break vs continue over the remaining ops of one block). No timing claim is made because there is no measurable target: 0 of 803 decbench binaries reach the changed branch at all.",
-    "delta": "none measurable"
+    "method": "paired A/B, alternating before/after runs of `kuna decompile-all` on decbench O2 gzip (332 KB, warm), 5 repeats each, median.",
+    "before_ms": 5821,
+    "after_ms": 5780,
+    "delta": "-0.7% (noise; the run-to-run spread is +/-10% under load). No work is added on a well-formed block: `bb_ops` already materialises the target's entire op list, so the only delta is one opcode lookup per op past the marker run.",
+    "reached_targets": "0 of 803 decbench binaries reach the changed branch at all, so there is no target on which a timing claim could be made."
   },
   "gates": {
     "make test": "PARITY OK 675/675",
