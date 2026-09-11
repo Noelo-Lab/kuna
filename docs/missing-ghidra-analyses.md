@@ -280,8 +280,14 @@ so imports get correct prototypes and parameter types.
 **kuna:** the `.gdt` format is a binary archive kuna does not vendor, so the pass
 substitutes a **built-in signature table** — `libproto` (`LibProtoPass`, the
 original 27-entry minimal stand-in) plus `libcsigs` (`LibcSigsPass`, the measured
-~200-entry extension). Everything the table does not name still falls back to
-kuna's usage inference (S4/S5, 🟡). Residual LOSS vs a real header archive: no
+~200-entry extension). The libc passes retain name-keyed output where a spelling
+is unambiguous and also bind known imports at every concrete address supplied by
+the format resolver, so a PE IAT slot and its same-named veneer both receive the
+signature. If the image also defines/exports that spelling, the unsafe global
+name key is omitted while those provenance-confirmed import addresses stay typed.
+Everything the table does not name still falls back to kuna's usage inference
+(S4/S5, 🟡).
+Residual LOSS vs a real header archive: no
 struct/enum/typedef definitions travel with a signature (a `struct stat *` is a
 `void *` here), the vocabulary carries only width-stable slots — a declaration
 using `off_t`/`time_t`/`long long` is rejected rather than approximated — and the

@@ -55,7 +55,7 @@ use object::read::pe::{ImageNtHeaders, ImportTable, PeFile, PeFile32, PeFile64};
 use object::read::{Object, ObjectSection};
 use object::{FileKind, LittleEndian as LE};
 
-use super::format::ImportSym;
+use super::format::{ImportSym, ImportSymKind};
 
 /// Resolve PE import slots (and the thunk veneers that jump through them) to
 /// their imported function names.
@@ -155,7 +155,11 @@ fn collect<Pe: ImageNtHeaders>(
         for e in exports {
             let name = e.name();
             if !name.is_empty() {
-                out.push(ImportSym { addr: e.address(), name: name.to_vec() });
+                out.push(ImportSym {
+                    addr: e.address(),
+                    name: name.to_vec(),
+                    kind: ImportSymKind::Export,
+                });
             }
         }
     }
@@ -211,7 +215,11 @@ fn walk_import_table<Pe: ImageNtHeaders>(
                 }
             };
             slot_to_name.insert(slot_va, name.clone());
-            out.push(ImportSym { addr: slot_va, name });
+            out.push(ImportSym {
+                addr: slot_va,
+                name,
+                kind: ImportSymKind::Import,
+            });
             i += 1;
         }
     }
@@ -299,7 +307,11 @@ fn decode_ff25(
             if let Some(name) = slot_to_name.get(&slot) {
                 // The thunk entry is the `FF` byte (the `call` target).  MinGW
                 // veneers have no CET `endbr` prefix, so no back-up is needed.
-                out.push(ImportSym { addr: insn_addr, name: name.clone() });
+                out.push(ImportSym {
+                    addr: insn_addr,
+                    name: name.clone(),
+                    kind: ImportSymKind::Import,
+                });
             }
             i += 6;
         } else {

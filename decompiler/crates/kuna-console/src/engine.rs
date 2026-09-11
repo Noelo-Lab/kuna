@@ -4052,7 +4052,7 @@ fn commit_analysis_output(
         prog.arch_mut().set_function_prototype_pieces(&name, pieces);
     }
 
-    // 5c. (kuna `win32sigs`) The library prototypes bound by ENTRY ADDRESS. Same
+    // 5c. Library prototypes bound by ENTRY ADDRESS. Same
     //     store as 5, different key, and the key is the whole point: a PE import
     //     is registered TWICE (the size-0 IAT slot the engine constant-folds
     //     through and the `FF 25` thunk veneer a direct `call` targets), the

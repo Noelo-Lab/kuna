@@ -33,19 +33,30 @@ pub mod elf;
 pub mod macho;
 pub mod pe;
 
-/// One resolved imported symbol: the address a CALL to this import resolves to
-/// (a code stub the disassembler sees, or a data slot the engine constant-folds)
-/// and the clean imported name.
+/// Provenance for a symbol emitted by the format resolver.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ImportSymKind {
+    /// A genuine imported call target: slot, stub, or veneer.
+    Import,
+    /// A function exported by the image itself.
+    Export,
+}
+
+/// One resolved library-facing symbol: the address a CALL resolves to and its
+/// clean name. [`ImportSymKind`] distinguishes genuine imported call targets
+/// from the defined exports PE and Mach-O append to the same loader stream.
 ///
 /// Structurally identical to today's [`elf::PltSymCompat`] /
 /// `elf_plt::PltSym` — the universal currency of the import/symbol boundary, so a
 /// PE IAT slot, a Mach-O `__stubs` entry, and an ELF PLT stub all flow through
 /// the same downstream commit path (`seen`-dedup → `FuncSym` → `FunctionSymbol`).
 pub struct ImportSym {
-    /// The address a CALL to this import resolves to (`FunctionSymbol` address).
+    /// Resolved function-symbol address.
     pub addr: u64,
-    /// Imported function name (raw object-string bytes, version-suffix stripped).
+    /// Resolved function name (raw object-string bytes, ABI decoration stripped).
     pub name: Vec<u8>,
+    /// Whether this address represents an imported target or a defined export.
+    pub kind: ImportSymKind,
 }
 
 /// The file-backed **header page** a format maps ahead of its first section:
@@ -105,7 +116,9 @@ pub trait ObjectFormat {
     ///
     /// ELF: PLT/GOT/`.dynamic`. PE: IAT/INT (PR-2+). Mach-O: `__stubs` /
     /// indirect-symbols (PR-2+). COFF object: none. Pure & total: never
-    /// panics/errors; an unknown layout yields an empty `Vec`.
+    /// panics/errors; an unknown layout yields an empty `Vec`. PE and Mach-O
+    /// also append image exports, marked distinctly with
+    /// [`ImportSymKind::Export`].
     ///
     /// `bytes` is the raw image (some formats — PE/Mach-O — need a typed
     /// re-parse the neutral `object::File` view does not expose); the ELF impl

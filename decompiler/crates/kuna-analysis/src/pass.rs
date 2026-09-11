@@ -346,8 +346,8 @@ pub struct AnalysisOutput {
     /// copies the callee signature and the argument constants get typed (e.g.
     /// `puts(char*)` types `0x400915` as `char*`, rendering the string literal).
     pub prototypes: Vec<kuna_decomp::fspec::PrototypePieces>,
-    /// (kuna `win32sigs`) Library-function prototypes keyed by ENTRY ADDRESS
-    /// instead of by name, parked with `set_function_prototype_pieces_at`.
+    /// Library-function prototypes keyed by ENTRY ADDRESS instead of by name,
+    /// parked with `set_function_prototype_pieces_at`.
     ///
     /// The by-name park above resolves through the global scope, and on a PE
     /// import that is the wrong symbol: `pe_iat` registers both the size-0 IAT
@@ -355,7 +355,8 @@ pub struct AnalysisOutput {
     /// direct `call` targets, the by-name query answers with the slot, and
     /// `ActionDefaultParams` asks `callee_proto_pieces(entry)` at the thunk — so
     /// the signature is silently dropped. A pass that already knows the addresses
-    /// emits them here instead. See [`crate::protos::kuna_win32sigs`].
+    /// emits them here instead. The libc and Win32 signature passes all use this
+    /// stream for concrete resolver entries. See [`crate::protos`].
     pub prototypes_at: Vec<(u64, kuna_decomp::fspec::PrototypePieces)>,
     /// Processor-context decode-mode paints (the kuna analog of ARM's
     /// `ARM_ElfExtension`/`ArmSymbolAnalyzer` `programContext.setValue(TMode,…)`).
