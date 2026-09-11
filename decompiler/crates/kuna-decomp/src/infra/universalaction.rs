@@ -423,6 +423,7 @@ pub fn universal_sched(
         rrow!("leftright", "analysis", crate::ruleaction_2::RuleLeftRight),
         rrow!("boolsignshift", "analysis", crate::kuna_booleanmask::RuleBoolSignShift::with_group(false, "analysis")),
         rrow!("simdshufflelane", "analysis", crate::kuna_simdlane::RuleSimdShuffleLane::with_group(false, "analysis")),
+        rrow!("constspaceload", "analysis", crate::kuna_constspaceload::RuleConstSpaceLoad::with_group(false, "analysis")),
         rrow!("boolsignless", "analysis", crate::kuna_flagcompare::RuleBoolSignLess::with_group(false, "analysis")),
         rrow!("sborrowge", "analysis", crate::kuna_flagcompare::RuleSborrowGe::with_group(false, "analysis")),
         rrow!("shiftcompare", "analysis", crate::ruleaction_2::RuleShiftCompare),

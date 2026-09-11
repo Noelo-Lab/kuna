@@ -1832,7 +1832,7 @@ mod tests {
         // two 8-byte stores overlap keeps them (option off = the head store and
         // the tail store with the fifteen bytes between them gone) (repipe r12)
         // and kuna-entrythumbflow / bounded Thumb context from a TE entry
-        assert_eq!(count, 268, "corpus file count drifted");
+        assert_eq!(count, 269, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

@@ -30,4 +30,5 @@ pub mod kuna_indexaliasguard;
 pub mod kuna_tiedstorekeep;
 pub mod kuna_loopcounterstore;
 pub mod kuna_splitstorekeep;
+pub mod kuna_constspaceload;
 pub mod kuna_simdlane;

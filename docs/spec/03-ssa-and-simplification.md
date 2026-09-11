@@ -946,6 +946,33 @@ value and every lane byte is provably zero — the broadcast mask, and the only
 wide constant mask the engine constructs. Settable `simdlane`, shipped default
 **on**.
 
+**constspaceload** (repipe `arm-neon-zero-initialization`) —
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_constspaceload.rs
+(RuleConstSpaceLoad)`, oppool1, fires on LOAD. *Pattern:* a LOAD whose space
+operand names the **constant** space and whose pointer is a defined Varnode
+rather than a constant. That shape is what a SLEIGH constructor ending in
+`export *[const]:N v` — a *dynamic* constant-space export — lowers to. The
+defining property of the constant space is that an address IS its own value,
+which is the identity `RuleLoadVarnode` applies when the pointer is already a
+constant; it does not stop holding for a temporary, but nothing applied it
+there. `RuleCollapseConstants` cannot supply the missing constant either,
+because `PcodeOp::isCollapsible` declines any op wider than a `uintb`, so a
+16-byte SIMD immediate (ARM `vmov.i32 q8,#0` is `ARMneon.sinc:549
+simdExpImm_16`, whose body is `tmp:16 = 0; export *[const]:16 tmp`) survives as
+a LOAD through a pointer. `ActionLaneDivide` then splits it into one lane LOAD
+per word at `v`, `v+4`, `v+8`, `v+0xc` — invalid in the constant space, where
+offsetting an address changes the value rather than selecting a word of it, so
+lane 0 folds correctly and the rest read near-null memory. *Rewrite:*
+`out:N = LOAD(const, p:S)` becomes `COPY p` when `N == S`, `SUBPIECE(p, 0)` when
+`N < S` and `INT_ZEXT p` when `N > S`. The truncating arm takes the low bytes in
+either endianness, because the constant a const-space address denotes is that
+address masked to the output size. Applied in oppool1 it lands before
+`ActionLaneDivide`, so each lane is split off the *value*. *Bounds/failure:*
+only the constant space is matched; a constant pointer is left to
+`RuleLoadVarnode`, which also resolves the spacebase-placeholder tail that a
+bare COPY would drop; a free pointer is declined. Settable `constspaceload`,
+shipped default **on** (DIV-158).
+
 **flagcompare** (GH-1276 / GH-8777) —
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_flagcompare.rs`, two rules
 under one gate, for architectures that model condition flags as explicit bits.

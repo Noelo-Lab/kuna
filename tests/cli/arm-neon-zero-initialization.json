@@ -1,0 +1,42 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "a-ad2e0f606629",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "0x10004",
+    "--addr"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/neonimm_arm_le32",
+    "binary_sha256": "b85b409fa3373c7d9bd9cd6e2191c7d94e20252b2ede4daed30ad3a6e4b1d2cc",
+    "binary_size": 273,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/neonimm_arm_le32",
+    "selector": "0x10004",
+    "selector_kind": "addr"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      " = 1;",
+      " = 0;"
+    ],
+    "stdout_absent": [
+      "\\*\\([^\\n]*\\*\\)\\(0 \\+ (?:4|8|0xc)\\)",
+      "_0_16_"
+    ]
+  },
+  "notes": "Promoted acceptance of arm-neon-zero-initialization, re-pointed from the dataset witness (trap _start_main) at the vendored neonimm_arm_le32 fixture -- CI has no dataset. Same shape, plus the case the witness cannot see: vmov.i32 q8,#1 must fold to four 1s, which a fold that widened RuleLoadVarnode would truncate. _0_16_ is the unfolded rendering."
+}

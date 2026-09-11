@@ -478,6 +478,10 @@ pub struct Architecture {
     /// to the source lane it selects (option `simdlane`).  See
     /// [`crate::p3_dataflow::kuna_simdlane`].
     pub simd_lane_fold: bool,
+    /// (kuna) Resolve a SLEIGH dynamic constant-space export (`LOAD(const, p)`)
+    /// to the value of `p` (option `constspaceload`).  See
+    /// [`crate::p3_dataflow::kuna_constspaceload`].
+    pub const_space_load_fold: bool,
     /// (kuna GH-9218) Absorb overlapping input Varnodes above a justified
     /// container (C++ `input_varnode_adjust`).
     pub input_varnode_adjust: bool,
@@ -1997,6 +2001,7 @@ impl Architecture {
             ov_less_simplify: false,
             fold_boolean_mask: false,
             simd_lane_fold: false,
+            const_space_load_fold: false,
             ret_split_global: false,
             input_varnode_adjust: false,
             ret_input_half: false, // (kuna) option retinputhalf; reset_defaults sets the shipped default
@@ -2244,6 +2249,7 @@ impl Architecture {
         self.fold_boolean_mask = true; // (kuna) DIV-2 default-on (GH-1282)
         self.ret_split_global = true; // (kuna) DIV-PENDING default-on: a shared RETURN block that stores to GLOBALS is not the bare epilogue `ActionReturnSplit::isSplittable` assumes, so it is no longer cloned into every predecessor. One-directional (it can only decline a split) and byte-identical (0/675) on the datatest corpus; restore the upstream predicate with `option retsplitglobal off`
         self.simd_lane_fold = true; // (kuna) DIV-PENDING default-on: an exact identity (pshufb with a constant mask IS a byte permutation), so a lane read resolves to the source lane instead of an opaque CALLOTHER temporary. Byte-identical (0/675) on the datatest corpus; restore the opaque rendering with `option simdlane off`
+        self.const_space_load_fold = true; // (kuna) DIV-PENDING default-on: a LOAD from the CONSTANT space is the address-is-value identity `RuleLoadVarnode` already applies to a constant pointer, and it does not stop holding for a temporary, so a SLEIGH dynamic const export is no longer left as a pointer-shaped LOAD for `ActionLaneDivide` to slice into near-null lane reads. Byte-identical (0/675) on the datatest corpus; restore the upstream rendering with `option constspaceload off`
         self.input_varnode_adjust = true; // (kuna) DIV-3 default-on (GH-9218)
         self.ret_input_half = true; // (kuna) DIV-85 default-on: a returned register half whose value is an input parameter the function MOVED into the return register is a real return, not leftover; keeping it also keeps the parameter it came from in the recovered signature. 0/675 byte-identical; an untouched return register is still dropped (the GH-6990 SPARC pass-through), restore the strict rule with `option retinputhalf off`
         self.ret_pushed_half = true; // (kuna) DIV-156 default-on: a register the function only ever PUSHED is stack maintenance, not a value it placed in a return register, so the alignment `push %r8` / `pop %rdx` idiom no longer invents a fifth argument and a 128-bit return. Narrows `retinputhalf` only; 0/675 byte-identical on the datatest corpus. Restore the address-only placement test with `option retpushedhalf off`
@@ -2518,6 +2524,12 @@ impl Architecture {
             "simdlane" => {
                 let (val, msg) = crate::p3_dataflow::kuna_simdlane::OptionSimdLane.apply(p1)?;
                 self.simd_lane_fold = val;
+                Ok(msg)
+            }
+            "constspaceload" => {
+                let (val, msg) =
+                    crate::p3_dataflow::kuna_constspaceload::OptionConstSpaceLoad.apply(p1)?;
+                self.const_space_load_fold = val;
                 Ok(msg)
             }
             "flagcompare" => on_off!(fold_flag_compare, "Flag-modelled comparison folding"),
@@ -3591,6 +3603,7 @@ impl Architecture {
         // so the live flag drives both the DIV default and the toggle).
         ctx.fold_boolean_mask = self.fold_boolean_mask; // GH-1282 booleanmask
         ctx.simd_lane_fold = self.simd_lane_fold; // simdlane
+        ctx.const_space_load_fold = self.const_space_load_fold; // constspaceload
         ctx.ret_split_global = self.ret_split_global; // retsplitglobal
         // (kuna) resolve the byte-shuffle user-op ids ONCE per program, so the
         // rule can name a CALLOTHER through the ArchSeam (the boundary
