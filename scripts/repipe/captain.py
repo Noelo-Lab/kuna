@@ -2,7 +2,7 @@
 
 Three cooperating machines — Supervisor, TestTrack, BuildTrack — whose transitions are
 guarded here and appended to `<state>/rounds/<n>/transitions.jsonl`. **An illegal transition
-raises and exits 2.** That split is the whole point: the captain is a Claude Code session
+raises and exits 2.** That split is the whole point: the captain is an agent session
 doing the judgment work (clustering residue, scope calls, proposal approval, deciding a
 round is finished), but it cannot talk the machine into skipping a gate, because the machine
 is not made of prose.
@@ -166,9 +166,13 @@ def preflight():
     """Hard preconditions. A missing one is a HALT, not a warning — the loop would otherwise
     fail slowly, hours in, having spent real money."""
     bad, warn = [], []
-    for tool in ("git", "gh", "codex", "claude", "python3"):
+    tools = ["git", "gh", "codex", "python3"]
+    if config.CAPTAIN_BACKEND == "claude":
+        tools.append("claude")
+    for tool in tools:
         if not shutil.which(tool):
             bad.append("missing tool: %s" % tool)
+    bad.extend(config.role_policy_problems())
     if not config.kuna_bin().exists():
         bad.append("no kuna binary at %s (run `make binaries`)" % config.kuna_bin())
     if not config.dataset_root().exists():
@@ -210,6 +214,8 @@ def set_caps(split):
 
 def spawn_tester(round_n, hexid):
     env = dict(os.environ, ROUND=str(round_n), HEXID=hexid,
+               REPIPE_TESTER_MODEL=config.TESTER_MODEL,
+               REPIPE_TESTER_REASONING=config.TESTER_REASONING,
                KUNA_PIPELINE_STATE_DIR=str(config.state_dir()),
                PYTHONPATH=str(config.repo_root()))
     log = config.logs_dir() / ("spawn-t-%s.log" % hexid[:8])
@@ -256,7 +262,9 @@ def spawn_builder(round_n, need, resources):
         WORKER_EXTRA_PROMPT=str(contracts),
         WORKER_BUDGET_USD=str(config.BUILDER_USD),
         WORKER_TIMEOUT=str(config.BUILDER_TIMEOUT),
+        WORKER_BACKEND=config.BUILDER_BACKEND,
         WORKER_MODEL=config.BUILDER_MODEL,
+        WORKER_REASONING=config.BUILDER_REASONING,
         PIPELINE_STATE_DIRNAME=config.STATE_DIRNAME,
         KUNA_PIPELINE_STATE_DIR=str(config.state_dir()),
         PYTHONPATH=str(config.repo_root()),

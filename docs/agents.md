@@ -23,7 +23,7 @@ is not needed for day-to-day work.
 | `tests/golden/` | Differential golden vectors for the workspace suite (`make rust-test`). |
 | `specs/Ghidra/Processors/` | Vendored SLEIGH specs. `.sla` files are built artifacts (gitignored), produced by `slacomp`. |
 | `scripts/` + `tools/pipeline/` | Python helpers (`decompile.py` library shim, `paths.py`, `pipeline/`, `decbench/`) + driver for the improvement pipeline (`docs/improvement-pipeline.md`) and the decbench campaign (`docs/decbench-loop.md`). |
-| `scripts/repipe/` + `tools/repipe/` | The RE-friction loop (`docs/re-pipeline.md`): codex testers reverse-engineer crackmes with kuna and record where it fails them; claude builders close those gaps and self-merge. Durable backlog in `docs/re-needs/`; promoted regression probes in `tests/cli/`. |
+| `scripts/repipe/` + `tools/repipe/` | The RE-friction loop (`docs/re-pipeline.md`): Codex Sol-low testers reverse-engineer crackmes with kuna and record where it fails them; Codex Sol-high-or-above builders close those gaps and self-merge. Durable backlog in `docs/re-needs/`; promoted regression probes in `tests/cli/`. |
 | `integrations/` | Front-ends embedding the engine: `ghidra/` (kuna as stock Ghidra's decompiler core), `web/` (the project site + in-browser decompiler at `kuna.noelo.org`). |
 
 ## Build & test

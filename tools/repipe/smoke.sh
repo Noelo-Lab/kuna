@@ -49,6 +49,40 @@ SPLIT="$("$PY" -c 'from scripts.repipe import config; import json; print(json.du
 echo "$SPLIT" | grep -q '"7": {"captain": 1, "testers": 3, "builders": 3' \
   && ok "max-agents 7 -> 1 captain + 3 testers + 3 builders" \
   || bad "7 does not split 1/3/3" "$SPLIT"
+ROLES="$("$PY" -c 'from scripts.repipe import config as c; print(":".join((c.TESTER_MODEL,c.TESTER_REASONING,c.BUILDER_BACKEND,c.BUILDER_MODEL,c.BUILDER_REASONING)))')"
+[ "$ROLES" = "gpt-5.6-sol:low:codex:gpt-5.6-sol:high" ] \
+  && ok "role defaults are Sol-low reversers and Sol-high builders" \
+  || bad "role defaults weakened" "$ROLES"
+POLICY="$(REPIPE_TESTER_REASONING=medium REPIPE_BUILDER_MODEL=other \
+  REPIPE_BUILDER_REASONING=medium REPIPE_CAPTAIN_BACKEND=other \
+  "$PY" -c 'from scripts.repipe import config as c; print("\n".join(c.role_policy_problems()))')"
+for expected in "reversers require" "implementation requires" \
+                "implementation reasoning must" "CAPTAIN_BACKEND must"; do
+  echo "$POLICY" | grep -q "$expected" \
+    && ok "preflight role policy rejects: $expected" \
+    || bad "preflight role policy missed: $expected" "$POLICY"
+done
+TESTER_REFUSAL="$(REPIPE_TESTER_MODEL=other bash "$REPO/tools/repipe/tester.sh" 2>&1)"
+if [ "$?" -eq 2 ] && echo "$TESTER_REFUSAL" | grep -q 'reversers require'; then
+  ok "standalone reverser refuses a weak model before launch"
+else
+  bad "standalone reverser accepted a weak model" "$TESTER_REFUSAL"
+fi
+grep -q -- '--disable multi_agent' "$REPO/tools/repipe/tester.sh" \
+  && grep -q -- '--disable multi_agent_v2' "$REPO/tools/repipe/tester.sh" \
+  && ok "reversers cannot bypass pipeline slots with Codex sub-agents" \
+  || bad "reverser launch does not disable Codex multi-agent features"
+KUNA_PIPELINE_STATE_DIR="$SMOKE_STATE/spawn-policy" "$PY" - <<'PY' >/dev/null 2>&1 \
+  && ok "captain exports the validated Sol-low policy to reversers" \
+  || bad "captain does not pin the reverser subprocess environment"
+from scripts.repipe import captain
+
+seen = {}
+captain.subprocess.Popen = lambda *args, **kwargs: seen.update(kwargs) or object()
+captain.spawn_tester(1, "0123456789abcdef")
+assert seen["env"]["REPIPE_TESTER_MODEL"] == "gpt-5.6-sol"
+assert seen["env"]["REPIPE_TESTER_REASONING"] == "low"
+PY
 
 head_ "L0  state machine refuses an illegal transition"
 "$PY" -m scripts.repipe.captain --transition test T_PLAN --note smoke >/dev/null 2>&1
@@ -95,7 +129,9 @@ git init -q -b main "$LAUNCH_REPO"
 git -C "$LAUNCH_REPO" config user.email smoke@example.invalid
 git -C "$LAUNCH_REPO" config user.name smoke
 printf 'base\n' > "$LAUNCH_REPO/tracked"
+printf 'binaries:\n\t@:\n' > "$LAUNCH_REPO/Makefile"
 git -C "$LAUNCH_REPO" add tracked
+git -C "$LAUNCH_REPO" add Makefile
 git -C "$LAUNCH_REPO" commit -qm base
 run_prepare() {
   KUNA_REPO="$LAUNCH_REPO" KUNA_PY="$PY" PIPELINE_STATE_DIRNAME=.state \
@@ -104,6 +140,24 @@ run_prepare() {
     IMPL_PROPOSAL="${3:-0}" RESUME_BRANCH="${4:-}" \
     bash "$REPO/tools/pipeline/worker.sh" >/dev/null 2>&1
 }
+if WORKER_BACKEND=codex WORKER_MODEL=gpt-5.6-sol WORKER_REASONING=low \
+   run_prepare weak-model feat/re-weak-model; then
+  bad "Codex builder accepted reasoning below high"
+elif [ ! -e "$LAUNCH_REPO/.state/worktrees/weak-model" ] \
+     && ! git -C "$LAUNCH_REPO" show-ref --verify --quiet refs/heads/feat/re-weak-model; then
+  ok "Codex builder refuses reasoning below high before touching Git state"
+else
+  bad "weak-model refusal touched Git state"
+fi
+if WORKER_BACKEND=codex WORKER_MODEL=other WORKER_REASONING=high \
+   run_prepare wrong-sol feat/re-wrong-sol; then
+  bad "Codex builder accepted a non-Sol model"
+elif [ ! -e "$LAUNCH_REPO/.state/worktrees/wrong-sol" ] \
+     && ! git -C "$LAUNCH_REPO" show-ref --verify --quiet refs/heads/feat/re-wrong-sol; then
+  ok "Codex builder refuses a non-Sol model before touching Git state"
+else
+  bad "non-Sol refusal touched Git state"
+fi
 if run_prepare fresh feat/re-collision-r7 \
    && [ "$(git -C "$LAUNCH_REPO/.state/worktrees/fresh" branch --show-current)" = feat/re-collision-r7 ]; then
   ok "explicit WORKER_BRANCH creates an attached fresh worktree"
@@ -111,8 +165,34 @@ else
   bad "explicit WORKER_BRANCH did not create the requested branch"
 fi
 run_prepare fresh feat/re-collision-r7 \
-  && ok "an exact path+branch worktree is reusable" \
   || bad "exact path+branch reuse was refused"
+FRESH_BASE="$(cat "$LAUNCH_REPO/.state/logs/fresh.base" 2>/dev/null)"
+printf 'preserved work\n' > "$LAUNCH_REPO/.state/worktrees/fresh/wip"
+git -C "$LAUNCH_REPO/.state/worktrees/fresh" add wip
+git -C "$LAUNCH_REPO/.state/worktrees/fresh" commit -qm \
+  '[AUTOMATED] WIP UNFINISHED, DO NOT MERGE: smoke'
+FRESH_WIP="$(git -C "$LAUNCH_REPO/.state/worktrees/fresh" rev-parse HEAD)"
+if run_prepare fresh feat/re-collision-r7 \
+   && [ "$(cat "$LAUNCH_REPO/.state/logs/fresh.base")" = "$FRESH_BASE" ] \
+   && [ "$FRESH_BASE" != "$FRESH_WIP" ]; then
+  ok "an exact WIP worktree retry preserves its original base marker"
+else
+  bad "exact WIP worktree retry replaced its base with the WIP commit"
+fi
+printf 'not-a-commit\n' > "$LAUNCH_REPO/.state/logs/fresh.base"
+if run_prepare fresh feat/re-collision-r7 \
+   && [ "$(cat "$LAUNCH_REPO/.state/logs/fresh.base")" = "$FRESH_BASE" ]; then
+  ok "a stale base marker is repaired from the branch point, not WIP HEAD"
+else
+  bad "stale base marker was repaired to the WIP commit"
+fi
+rm -f "$LAUNCH_REPO/.state/logs/fresh.base"
+if run_prepare fresh feat/re-collision-r7 \
+   && [ "$(cat "$LAUNCH_REPO/.state/logs/fresh.base")" = "$FRESH_BASE" ]; then
+  ok "a missing base marker is restored from the branch point, not WIP HEAD"
+else
+  bad "missing base marker was initialized to the WIP commit"
+fi
 
 git -C "$LAUNCH_REPO" branch feat/re-stale main
 STALE_BEFORE="$(git -C "$LAUNCH_REPO" rev-parse feat/re-stale)"
@@ -169,6 +249,85 @@ if run_prepare resume ignored 1 feat/re-resume \
   ok "IMPL_PROPOSAL and RESUME_BRANCH still attach the approved branch"
 else
   bad "explicit proposal resume no longer works"
+fi
+
+# Exercise the real Codex branch without spending tokens. The shim emits the two artifacts
+# Codex promises: JSONL on stdout and the final response at -o/--output-last-message.
+FAKE_BIN="$SMOKE_STATE/fake-bin"
+mkdir -p "$FAKE_BIN"
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'set -u' \
+  'out=' \
+  'while [ "$#" -gt 0 ]; do' \
+  '  case "$1" in -o|--output-last-message) shift; out="$1";; esac' \
+  '  shift' \
+  'done' \
+  'printf "mock final response\\n" > "$out"' \
+  'printf "%s\\n" '\''{"type":"thread.started","thread_id":"thread-smoke"}'\''' \
+  'printf "%s\\n" '\''{"type":"item.completed","item":{"type":"agent_message","text":"event fallback"}}'\''' \
+  > "$FAKE_BIN/codex"
+chmod +x "$FAKE_BIN/codex"
+if PATH="$FAKE_BIN:$PATH" PYTHONPATH="$REPO" KUNA_REPO="$LAUNCH_REPO" KUNA_PY="$PY" \
+   PIPELINE_STATE_DIRNAME=.state WORKER_ID=codex-launch OPP_ID='odd&|path\name' TEST_NAME=smoke \
+   SELECTOR=- BINARY=- SLUG=codex-launch ARCH= \
+   WORKER_BRANCH=feat/re-codex-launch WORKER_BACKEND=codex WORKER_MODEL=gpt-5.6-sol \
+   WORKER_REASONING=high WORKER_PROMPT="$REPO/tools/repipe/builder_prompt.md" \
+   bash "$REPO/tools/pipeline/worker.sh" >/dev/null 2>&1; then
+  CODEX_RESULT="$LAUNCH_REPO/.state/logs/codex-launch.result.json"
+  CODEX_EVENTS="$LAUNCH_REPO/.state/logs/codex-launch.events.jsonl"
+  CODEX_PROMPT="$LAUNCH_REPO/.state/logs/codex-launch.prompt.md"
+  if "$PY" - "$CODEX_RESULT" "$CODEX_EVENTS" "$CODEX_PROMPT" <<'PY' >/dev/null 2>&1
+import json, pathlib, sys
+result = json.load(open(sys.argv[1]))
+assert result["backend"] == "codex"
+assert result["session_id"] == "thread-smoke"
+assert result["result"] == "mock final response\n"
+assert result["return_code"] == 0
+assert pathlib.Path(sys.argv[2]).read_text().count("\n") == 2
+prompt = pathlib.Path(sys.argv[3]).read_text()
+assert "odd&|path\\name" in prompt
+assert "Codex implementation worker using gpt-5.6-sol with high reasoning" in prompt
+assert "/.state/logs/codex-launch.base" in prompt
+assert "{{WORKER_" not in prompt
+PY
+  then
+    ok "Codex worker preserves JSONL/result metadata and renders provider-safe prompts"
+  else
+    bad "Codex worker artifacts or rendered prompt are incorrect"
+  fi
+else
+  bad "mocked Codex worker launch failed" "$(tail -8 "$LAUNCH_REPO/.state/logs/codex-launch.log" 2>/dev/null)"
+fi
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'printf "%s\\n" '\''{"session_id":"claude-smoke","result":"mock final response"}'\''' \
+  > "$FAKE_BIN/claude"
+chmod +x "$FAKE_BIN/claude"
+if PATH="$FAKE_BIN:$PATH" PYTHONPATH="$REPO" KUNA_REPO="$LAUNCH_REPO" KUNA_PY="$PY" \
+   PIPELINE_STATE_DIRNAME=.state WORKER_ID=claude-launch OPP_ID=smoke TEST_NAME=smoke \
+   SELECTOR=- BINARY=- SLUG=claude-launch ARCH= WORKER_BRANCH=feat/re-claude-launch \
+   WORKER_BACKEND=claude WORKER_MODEL=opus \
+   WORKER_PROMPT="$REPO/tools/pipeline/worker_prompt.md" \
+   bash "$REPO/tools/pipeline/worker.sh" >/dev/null 2>&1; then
+  CLAUDE_RESULT="$LAUNCH_REPO/.state/logs/claude-launch.result.json"
+  CLAUDE_PROMPT="$LAUNCH_REPO/.state/logs/claude-launch.prompt.md"
+  if "$PY" - "$CLAUDE_RESULT" "$CLAUDE_PROMPT" <<'PY' >/dev/null 2>&1
+import json, pathlib, sys
+assert json.load(open(sys.argv[1]))["session_id"] == "claude-smoke"
+prompt = pathlib.Path(sys.argv[2]).read_text()
+assert "Claude Code worker using opus" in prompt
+assert "spawn a **decider subagent**" in prompt
+assert "Co-Authored-By: Claude Opus 5" in prompt
+assert "{{WORKER_" not in prompt
+PY
+  then
+    ok "shared worker retains its Claude launch and provider-specific prompt"
+  else
+    bad "Claude worker result or rendered prompt is incorrect"
+  fi
+else
+  bad "mocked Claude worker launch failed" "$(tail -8 "$LAUNCH_REPO/.state/logs/claude-launch.log" 2>/dev/null)"
 fi
 
 CAP_BRANCH="$($PY -c 'from scripts.repipe.captain import _builder_branch; print(_builder_branch(12, "need-name"))')"

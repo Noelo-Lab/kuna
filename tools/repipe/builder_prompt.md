@@ -1,6 +1,6 @@
 # kuna RE-friction builder — close ONE need, open ONE PR, merge it
 
-You are an autonomous, highest-effort Claude Code worker in an isolated git worktree on
+You are an autonomous {{WORKER_AGENT}} in an isolated git worktree on
 branch `{{BRANCH}}`. Your entire job this session is to close **one** recorded way that kuna
 is bad for reverse engineering, verify it, and land it. Then stop.
 
@@ -161,11 +161,13 @@ On abort: `... --status failed --note "<one line why>"`.
 
 ## Worktree hygiene — these have each cost real work here
 
-- **Record your base commit before you touch anything**:
-  `git rev-parse HEAD > /tmp/{{WORKER_ID}}.base`. The captain's local `main` can run *ahead*
-  of `origin/main`, so at merge time a plain `git rebase origin/main` is a silent no-op and
-  your squash swallows the captain's commits — that orphaned a PR this round. The merge
-  recipe below rebases `--onto` this recorded base instead.
+- **Preserve the launcher-recorded base commit** in `{{WORKER_BASE_FILE}}`. Verify it with
+  `BASE=$(cat "{{WORKER_BASE_FILE}}") && git rev-parse --verify "$BASE^{commit}"`, but do not rewrite it to
+  the current `HEAD`: on a retry, `HEAD` may be the preserved WIP snapshot rather than the
+  branch point. The captain's local `main` can run *ahead* of `origin/main`, so at merge time
+  a plain `git rebase origin/main` is a silent no-op and your squash swallows the captain's
+  commits — that orphaned a PR this round. The merge recipe below rebases `--onto` the
+  launcher-owned base instead.
 - **Never `git stash`.** `refs/stash` is one stack shared by every worktree and work has
   already been lost that way. To A/B something, `cp` the file aside.
 - **Never `make specs`** in a worktree. The main tree's compiled `.sla` are already
@@ -208,7 +210,7 @@ decompiler/target/release/kuna catalog --check    # catalog OK
 ### Backgrounding a long gate — never wait on it with `pgrep`
 
 The workspace suite takes ~10 minutes, so background it if you want, but **do not poll for it
-with `pgrep -f '<gate name>'`**. Your own parent process is `claude -p <this entire prompt>`,
+with `pgrep -f '<gate name>'`**. Your own parent process is `{{WORKER_COMMAND}}`,
 and this prompt contains the literal gate strings, so such a pgrep matches *you* and never
 goes quiet. Builders have deadlocked on exactly that twice in one round, once sitting on a
 green log they could not read. Put the completion marker on the gate's own command line, and
@@ -228,7 +230,8 @@ the rebase, and only then merge:
 
 ```
 {{KUNA_PY}} -m scripts.pipeline.state lease-acquire --resource merge --worker {{WORKER_ID}} --pid $$
-git fetch origin && git rebase --onto origin/main "$(cat /tmp/{{WORKER_ID}}.base)"
+BASE=$(cat "{{WORKER_BASE_FILE}}")
+git fetch origin && git rebase --onto origin/main "$BASE"
 {{KUNA_PY}} -m scripts.repipe.counters --fix
 git log --oneline origin/main..HEAD    # ONLY your own commits may appear here
 {{KUNA_PY}} -m scripts.repipe.mergecheck --against origin/main     # must be clean
@@ -250,13 +253,13 @@ and `<scope>` is the crate or phase (`cli`, `analysis`, `p9`, …). `[AUTOMATED]
 on anything created fully automatically — PRs, issues and commits alike. Trailers:
 
 ```
-Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+{{WORKER_TRAILER}}
 ```
 
 PR body goes in `docs/features/{{SLUG}}/pr_body.md`: what was broken (quote the need's
 symptom and its instance count), the mechanism, the acceptance probe that now passes, and the
 gate results with real numbers. End with
-`🤖 Generated with [Claude Code](https://claude.com/claude-code)`.
+`{{WORKER_GENERATED_WITH}}`.
 
 ## Negative result
 
