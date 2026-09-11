@@ -148,7 +148,7 @@ const QUIT_PREFIX: &str = "quit ";
 const ACK_PREFIX: &str = "done ";
 
 const SPEC_MAGIC: &[u8; 12] = b"KUNAJOBSPEC2";
-const RESULT_MAGIC: &[u8; 12] = b"KUNAJOBRES02";
+const RESULT_MAGIC: &[u8; 12] = b"KUNAJOBRES03";
 
 /// Result-stream frame kind.  One kind today; the envelope is what lets a
 /// truncated tail be dropped rather than guessed.
@@ -200,6 +200,9 @@ pub(crate) struct PoolConfig<'a> {
     /// `decompile-project` `.h` block, which is a whole-program artifact built
     /// after the loop from types the loop itself interns.
     pub(crate) want_types: bool,
+    /// Ask each worker for [`FuncResult::callee_hints`] — the `--stream`
+    /// scheduler's frontier, and the only reason a worker reports one.
+    pub(crate) want_callee_hints: bool,
     pub(crate) max_fn_seconds: u64,
     pub(crate) full_load: bool,
     /// How long the PARENT's own load took.  The stall watchdog cannot fire
@@ -487,6 +490,7 @@ impl ResultWriter {
             }
             put_u64s(&mut body, &v.addresses);
         }
+        put_u64s(&mut body, &r.callee_hints);
         self.frame(FRAME_RESULT, &body)
     }
 
@@ -579,6 +583,7 @@ fn decode_one(body: &[u8]) -> Option<FuncResult> {
             addresses,
         });
     }
+    let callee_hints = r.u64s()?;
     Some(FuncResult {
         name,
         address,
@@ -591,7 +596,7 @@ fn decode_one(body: &[u8]) -> Option<FuncResult> {
         line_mappings,
         aliases,
         object_location,
-        callee_hints: Vec::new(),
+        callee_hints,
     })
 }
 
@@ -602,6 +607,32 @@ fn decode_one(body: &[u8]) -> Option<FuncResult> {
 pub(crate) struct PoolOutput {
     pub(crate) results: Vec<FuncResult>,
     pub(crate) types: Option<String>,
+}
+
+/// Where a pool thread gets its next chunk.
+///
+/// The static plan a `--jobs N` run computes up front and the dynamic,
+/// result-steered frontier `--stream` schedules from are the same thing to the
+/// pool: a source of slot-index lists that eventually runs dry.  Each entry is a
+/// list of **slot indices** into the caller's target list, so output order
+/// travels independently of the order work is done in.
+pub(crate) trait ChunkSource: Sync {
+    /// The next chunk, or `None` once no work is left.  Called concurrently by
+    /// every pool thread.
+    fn next_chunk(&self) -> Option<Vec<usize>>;
+}
+
+/// The static `--jobs` plan, handed out through a shared cursor.
+struct PlannedChunks {
+    plan: Vec<Vec<usize>>,
+    cursor: AtomicUsize,
+}
+
+impl ChunkSource for PlannedChunks {
+    fn next_chunk(&self) -> Option<Vec<usize>> {
+        let idx = self.cursor.fetch_add(1, Ordering::SeqCst);
+        self.plan.get(idx).cloned()
+    }
 }
 
 /// Run `targets` across a pool of `cfg.jobs` worker processes.  `inventory` is
@@ -616,6 +647,86 @@ pub(crate) fn run_pool(
     if total == 0 {
         return Ok(PoolOutput { results: Vec::new(), types: None });
     }
+    let jobs = affordable_jobs(cfg);
+    // Dispatch order is NOT output order: work is planned longest-first into
+    // equal-work chunks, and every result is filed by its slot index, so the
+    // merged document does not depend on how the pool scheduled anything.
+    let plan = plan_chunks(targets, cfg.chunk, jobs);
+    let workers = jobs.min(plan.len());
+    let banner = format!(
+        "[kuna --jobs] {total} functions, {} chunk(s) of {}..{}, {workers} worker process(es)",
+        plan.len(),
+        plan.iter().map(Vec::len).min().unwrap_or(0),
+        plan.iter().map(Vec::len).max().unwrap_or(0)
+    );
+    let source = PlannedChunks { plan, cursor: AtomicUsize::new(0) };
+
+    let slots: Mutex<Vec<Option<FuncResult>>> = Mutex::new((0..total).map(|_| None).collect());
+    let types = run_pool_with(
+        cfg,
+        targets,
+        inventory,
+        &source,
+        workers,
+        &banner,
+        &|indices: &[usize], produced: Vec<FuncResult>| {
+            let mut slots = slots.lock().unwrap_or_else(|e| e.into_inner());
+            for (&slot, r) in indices.iter().zip(produced) {
+                slots[slot] = Some(r);
+            }
+        },
+    )?;
+
+    let slots = slots.into_inner().unwrap_or_else(|e| e.into_inner());
+    let results: Vec<FuncResult> = slots
+        .into_iter()
+        .zip(targets)
+        .map(|(slot, t)| slot.unwrap_or_else(|| lost_result(t, NO_RECORD)))
+        .collect();
+    warn_about_anomalies(&results, cfg.max_fn_seconds);
+    Ok(PoolOutput { results, types })
+}
+
+/// The `--stream` pool: the same workers over a caller-supplied dynamic
+/// [`ChunkSource`], with each finished chunk handed to `sink` as it lands
+/// instead of being filed into a slot table.  Returns the merged type block.
+///
+/// The caller owns the record keeping a streamed run needs (one record per
+/// target, the anomaly warnings, the end-of-run reconciliation), because it is
+/// the same bookkeeping its own in-process results go through.
+pub(crate) fn run_pool_streaming(
+    cfg: &PoolConfig,
+    targets: &[TargetSpec],
+    inventory: &[TargetSpec],
+    source: &dyn ChunkSource,
+    sink: &(dyn Fn(&[usize], Vec<FuncResult>) + Sync),
+) -> Result<Option<String>, String> {
+    let total = targets.len();
+    if total == 0 {
+        return Ok(None);
+    }
+    let workers = affordable_jobs(cfg).min(total);
+    let banner = format!(
+        "[kuna --stream] {total} functions, entry-point-first dynamic scheduling, \
+         {workers} worker process(es)"
+    );
+    run_pool_with(cfg, targets, inventory, source, workers, &banner, sink)
+}
+
+/// The pool itself: `workers` threads, each driving one worker process through
+/// chunk after chunk of `source` until it runs dry, with every finished chunk
+/// handed to `sink` as `(slot indices, results)`.  Returns the merged
+/// user-defined type block when `cfg.want_types` asked for one.
+fn run_pool_with(
+    cfg: &PoolConfig,
+    targets: &[TargetSpec],
+    inventory: &[TargetSpec],
+    source: &dyn ChunkSource,
+    workers: usize,
+    banner: &str,
+    sink: &(dyn Fn(&[usize], Vec<FuncResult>) + Sync),
+) -> Result<Option<String>, String> {
+    let total = targets.len();
     let exe = std::env::current_exe().map_err(|e| format!("cannot locate the kuna binary: {e}"))?;
     let scratch = ScratchDir::create()?;
     if !cfg.full_load {
@@ -623,25 +734,12 @@ pub(crate) fn run_pool(
         std::fs::write(&path, encode_spec(inventory))
             .map_err(|e| format!("cannot write the worker inventory {}: {e}", path.display()))?;
     }
-    let jobs = affordable_jobs(cfg);
-    // Dispatch order is NOT output order: work is planned longest-first into
-    // equal-work chunks, and every result is filed by its slot index, so the
-    // merged document does not depend on how the pool scheduled anything.
-    let plan = plan_chunks(targets, cfg.chunk, jobs);
-    let workers = jobs.min(plan.len());
+    eprintln!("{banner}");
 
-    eprintln!(
-        "[kuna --jobs] {total} functions, {} chunk(s) of {}..{}, {workers} worker process(es)",
-        plan.len(),
-        plan.iter().map(Vec::len).min().unwrap_or(0),
-        plan.iter().map(Vec::len).max().unwrap_or(0)
-    );
-
-    let cursor = AtomicUsize::new(0);
+    let chunk_ids = AtomicUsize::new(0);
     let completed = AtomicUsize::new(0);
     let retired = AtomicUsize::new(0);
     let worker_ids = AtomicUsize::new(0);
-    let slots: Mutex<Vec<Option<FuncResult>>> = Mutex::new((0..total).map(|_| None).collect());
     let type_blocks: Mutex<Vec<String>> = Mutex::new(Vec::new());
     let progress = Progress::new(total, workers);
     let start = Instant::now();
@@ -660,18 +758,13 @@ pub(crate) fn run_pool(
                     }
                 };
                 loop {
-                    let idx = cursor.fetch_add(1, Ordering::SeqCst);
-                    let Some(indices) = plan.get(idx) else { break };
+                    let Some(indices) = source.next_chunk() else { break };
+                    let idx = chunk_ids.fetch_add(1, Ordering::SeqCst);
                     let chunk: Vec<TargetSpec> =
                         indices.iter().map(|&i| targets[i].clone()).collect();
                     let produced =
                         serve_chunk(&mut worker, cfg, &exe, scratch.path(), idx, &chunk);
-                    {
-                        let mut slots = slots.lock().unwrap_or_else(|e| e.into_inner());
-                        for (&slot, r) in indices.iter().zip(produced) {
-                            slots[slot] = Some(r);
-                        }
-                    }
+                    sink(&indices, produced);
                     // Recycling returns a worker to the memory floor a process
                     // cannot reach on its own; it costs a whole program load, so
                     // it is a ceiling rather than a rhythm.
@@ -692,18 +785,10 @@ pub(crate) fn run_pool(
 
     progress.finish(total, start);
 
-    let slots = slots.into_inner().unwrap_or_else(|e| e.into_inner());
-    let results: Vec<FuncResult> = slots
-        .into_iter()
-        .zip(targets)
-        .map(|(slot, t)| slot.unwrap_or_else(|| lost_result(t, NO_RECORD)))
-        .collect();
-    warn_about_anomalies(&results, cfg.max_fn_seconds);
     // No block at all means no worker retired cleanly, which is a failed run, not
     // a program with no types: leave the caller its own factory to fall back on.
     let blocks = type_blocks.into_inner().unwrap_or_else(|e| e.into_inner());
-    let types = (cfg.want_types && !blocks.is_empty()).then(|| merge_type_definitions(&blocks));
-    Ok(PoolOutput { results, types })
+    Ok((cfg.want_types && !blocks.is_empty()).then(|| merge_type_definitions(&blocks)))
 }
 
 /// Hand one chunk to this thread's worker, starting one first if the thread has
@@ -779,6 +864,9 @@ impl Worker {
         }
         if cfg.want_types {
             cmd.arg("--jobs-types");
+        }
+        if cfg.want_callee_hints {
+            cmd.arg("--jobs-callees");
         }
         if cfg.full_load {
             cmd.arg("--jobs-full-load");
@@ -1023,9 +1111,13 @@ const STALLED: &str = "worker stalled past the per-function watchdog";
 
 /// `(watchdog trips, functions lost to a failed worker)`.
 fn count_anomalies(results: &[FuncResult]) -> (usize, usize) {
+    count_error_anomalies(results.iter().filter_map(|r| r.error.as_deref()))
+}
+
+fn count_error_anomalies<'a>(errors: impl Iterator<Item = &'a str>) -> (usize, usize) {
     let mut tripped = 0;
     let mut lost = 0;
-    for e in results.iter().filter_map(|r| r.error.as_deref()) {
+    for e in errors {
         if e.contains("budget exceeded") {
             tripped += 1;
         }
@@ -1054,7 +1146,16 @@ fn count_anomalies(results: &[FuncResult]) -> (usize, usize) {
 /// bad function must not kill a 33,000-function export — but exiting 0 without a
 /// word about it is not reporting.
 fn warn_about_anomalies(results: &[FuncResult], max_fn_seconds: u64) {
-    let (tripped, lost) = count_anomalies(results);
+    warn_about_counts(count_anomalies(results), max_fn_seconds);
+}
+
+/// The same two warnings for a run whose results were consumed as they landed
+/// (`--stream`), which keeps only the error strings.
+pub(crate) fn warn_about_streamed_anomalies(errors: &[String], max_fn_seconds: u64) {
+    warn_about_counts(count_error_anomalies(errors.iter().map(String::as_str)), max_fn_seconds);
+}
+
+fn warn_about_counts((tripped, lost): (usize, usize), max_fn_seconds: u64) {
     if tripped > 0 && max_fn_seconds > 0 {
         eprintln!(
             "[kuna --jobs] warning: {tripped} function(s) hit the {max_fn_seconds}s per-function \
@@ -1206,6 +1307,13 @@ fn merge_chunk(chunk: &[TargetSpec], produced: Vec<FuncResult>, reason: &str) ->
         .iter()
         .map(|t| by_addr.remove(&t.addr).unwrap_or_else(|| lost_result(t, reason)))
         .collect()
+}
+
+/// The `error` record a target gets when nothing produced one for it — the
+/// `--stream` reconciliation's filler, classified as a lost function by
+/// [`warn_about_streamed_anomalies`] exactly as the pool's own gap is.
+pub(crate) fn missing_result(t: &TargetSpec) -> FuncResult {
+    lost_result(t, NO_RECORD)
 }
 
 fn lost_chunk(chunk: &[TargetSpec], reason: &str) -> Vec<FuncResult> {
@@ -1572,7 +1680,7 @@ mod tests {
                 section: ".text".into(),
                 offset: 0x40,
             }),
-            callee_hints: Vec::new(),
+            callee_hints: vec![0x401200, 0x401340, 0xffff_ffff_ffff_fff0],
         }
     }
 
@@ -1586,6 +1694,7 @@ mod tests {
             && a.proto == b.proto
             && a.aliases == b.aliases
             && a.object_location == b.object_location
+            && a.callee_hints == b.callee_hints
             && a.line_mappings == b.line_mappings
             && a.variables.len() == b.variables.len()
             && a.variables.iter().zip(&b.variables).all(|(x, y)| {
@@ -1645,6 +1754,29 @@ mod tests {
         assert_eq!(decoded.len(), 2);
         assert!(same(&decoded[0], &a));
         assert!(same(&decoded[1], &b));
+        assert_eq!(
+            decoded[0].callee_hints,
+            vec![0x401200, 0x401340, 0xffff_ffff_ffff_fff0],
+            "the --stream scheduler's frontier has to survive the wire"
+        );
+        assert!(decoded[1].callee_hints.is_empty());
+    }
+
+    /// The dynamic source is the only thing `--stream` changes about the pool:
+    /// every chunk it hands out is served once, and a drained source ends the
+    /// thread's loop.
+    #[test]
+    fn a_chunk_source_is_drained_exactly_once() {
+        let source = PlannedChunks {
+            plan: vec![vec![0, 1], vec![2], vec![3, 4, 5]],
+            cursor: AtomicUsize::new(0),
+        };
+        let mut seen: Vec<usize> = Vec::new();
+        while let Some(chunk) = source.next_chunk() {
+            seen.extend(chunk);
+        }
+        assert_eq!(seen, (0..6).collect::<Vec<_>>());
+        assert!(source.next_chunk().is_none(), "a drained source stays drained");
     }
 
     #[test]
@@ -1862,6 +1994,7 @@ mod tests {
             want_proto: false,
             want_provenance: false,
             want_types: false,
+            want_callee_hints: false,
             max_fn_seconds,
             full_load: false,
             load_seconds,

@@ -2,7 +2,7 @@
 //!
 //! ```text
 //!   kuna decompile-project <binary> [-o|--output DIR] [--functions a,b,..]
-//!                          [--addr 0xVMA].. [--max-fn-seconds N]
+//!                          [--addr 0xVMA].. [--max-fn-seconds N] [--stream]
 //!                          [--mode auto|reliable|aggressive|fast] [--option N V]..
 //!                          [--jobs N|auto] [--jobs-chunk N] [--jobs-full-load]
 //!                          [--isa auto|arm|thumb] [--slice ARCH] [--target T]
@@ -29,6 +29,12 @@
 //! * `README.md`  — binary metadata (size, arch, entry point, sections,
 //!   function counts) and the artifact/labeling conventions.
 //!
+//! `--stream` writes the same folder INCREMENTALLY — the artifacts appear
+//! before the run finishes, entry-point-first, with an `index.jsonl` per-function
+//! feed and a `.streaming` status file — at the cost of a decompile-ordered
+//! `.c` and an `.asm` whose variable comments move to their own section
+//! ([`crate::project_stream`]).
+//!
 //! Exit code 0 on success **even if individual functions failed** (matching
 //! `decompile-all` — failures are recorded in the artifacts); nonzero on load
 //! errors, an empty target set, or I/O errors.
@@ -53,10 +59,12 @@ pub fn run(argv: &[String]) -> i32 {
     // Wrapper parse: extract `-o/--output`, intercept help, reject the
     // decompile-all-only flags, and hand the remainder to the shared parser.
     let mut output: Option<String> = None;
+    let mut stream = false;
     let mut rest: Vec<String> = Vec::new();
     let mut i = 0;
     while i < argv.len() {
         match argv[i].as_str() {
+            "--stream" => stream = true,
             "-o" | "--output" => {
                 if i + 1 >= argv.len() {
                     eprintln!("error: {} requires a value", argv[i]);
@@ -87,7 +95,23 @@ pub fn run(argv: &[String]) -> i32 {
             return 2;
         }
     };
-    match decompile_project(&args, output.as_deref()) {
+    // An unqualified `--assert` directive binds to "the function under
+    // decompile", which a whole-binary streamed run would apply to every one of
+    // them in turn.
+    if stream && !args.assertions.is_empty() {
+        eprintln!(
+            "error: --assert and --stream are exclusive: a streamed export decompiles every \
+             function in turn, so an unqualified directive would bind to all of them. Re-run \
+             without --stream."
+        );
+        return 2;
+    }
+    let run = if stream {
+        crate::project_stream::run(&args, output.as_deref())
+    } else {
+        decompile_project(&args, output.as_deref())
+    };
+    match run {
         Ok(summary) => crate::output::emit_with_status(&summary, 0),
         Err(e) => {
             eprintln!("error: {e}");
@@ -100,7 +124,7 @@ fn usage() {
     eprintln!(
         "usage: kuna decompile-project <binary> [-o|--output DIR] [--functions a,b,..] \\\n\
          \x20                   [--addr 0xVMA].. [--max-fn-seconds N] [--mode auto|reliable|aggressive|fast] \\\n\
-         \x20                   [--jobs N|auto] [--jobs-chunk N] [--jobs-full-load] \\\n\
+         \x20                   [--jobs N|auto] [--jobs-chunk N] [--jobs-full-load] [--stream] \\\n\
          \x20                   [--define-function S[-E][=N]|@FILE].. \\\n\
          \x20                   [--option N V].. [--isa auto|arm|thumb] [--slice ARCH] [--target T] [--sleighpath D]\n\
          \x20                   [--raw-image --target T --base VMA (--entry|--addr VMA)..]\n\
@@ -118,6 +142,11 @@ fn usage() {
          (auto = this machine's parallelism, capped at 16; 1, the default, is\n\
          serial). The artifacts are identical to --jobs 1; progress goes to\n\
          stderr, and peak memory is roughly N times one worker's RSS.\n\
+         --stream writes the folder as the run goes instead of at the end: the\n\
+         artifacts exist before the binary is decompiled, the entry point and what\n\
+         it calls are written first, index.jsonl announces each finished function\n\
+         and .streaming reports progress until the export completes. The .c is then\n\
+         in decompile order, not address order. Not available with --assert.\n\
          Individual function failures are recorded in the artifacts; the run still\n\
          exits 0 (load errors / an empty target set / I/O errors exit nonzero)."
     );
