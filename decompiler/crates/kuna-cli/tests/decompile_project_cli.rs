@@ -660,10 +660,9 @@ fn json_field<'a>(line: &'a str, key: &str) -> &'a str {
         .unwrap_or_else(|| panic!("index line has no {key}: {line}"))
         + needle.len();
     let rest = &line[at..];
-    let end = if rest.starts_with('"') {
-        rest[1..].find('"').expect("unterminated string") + 2
-    } else {
-        rest.find([',', '}']).expect("unterminated value")
+    let end = match rest.strip_prefix('"') {
+        Some(body) => body.find('"').expect("unterminated string") + 2,
+        None => rest.find([',', '}']).expect("unterminated value"),
     };
     &rest[..end]
 }
@@ -793,6 +792,9 @@ fn streamed_artifacts_match_the_non_stream_export() {
     let Some(pooled) =
         stream_project("dwarfstructs_x86_64", "stream_j3", &["--jobs", "3", "--jobs-chunk", "1"])
     else {
+        for dir in [stream, serial] {
+            let _ = std::fs::remove_dir_all(dir);
+        }
         return;
     };
     assert_stream_matches_serial(&pooled, &serial, "dwarfstructs_x86_64", false);
@@ -935,6 +937,239 @@ fn a_failed_load_reports_itself_and_spares_a_previous_export() {
     let after: Vec<Vec<u8>> =
         [&c, &h, &asm, &readme].iter().map(|f| std::fs::read(f).unwrap()).collect();
     assert_eq!(before, after, "a failed load overwrote a previous export's artifacts");
+    for dir in [dir, junk_dir] {
+        let _ = std::fs::remove_dir_all(dir);
+    }
+}
+
+/// With no previous export in the folder there is nothing to put back, so the
+/// failure is reported in the README instead — and a failed export does not
+/// claim to be still streaming.
+#[test]
+fn a_failed_load_into_an_empty_folder_leaves_a_failed_readme() {
+    let junk_dir = out_dir("stream_failed_fresh_input");
+    std::fs::create_dir_all(&junk_dir).unwrap();
+    let junk = junk_dir.join("notabinary");
+    std::fs::write(&junk, b"this is not an object file\n").unwrap();
+    let dir = out_dir("stream_failed_fresh");
+    let (_, stderr, ok) = run_kuna(&[
+        "decompile-project",
+        junk.to_str().unwrap(),
+        "-o",
+        dir.to_str().unwrap(),
+        "--stream",
+        "--sleighpath",
+        &specs(),
+    ]);
+    assert!(!ok, "a load failure must exit nonzero: {stderr}");
+    let readme = std::fs::read_to_string(dir.join("README.md")).unwrap();
+    assert!(readme.contains("| Phase | failed |"), "the README must report the failure: {readme}");
+    assert!(!readme.contains("still streaming"), "a failed export is not streaming: {readme}");
+    assert!(!dir.join("notabinary.c").exists(), "a failed load must write no .c");
+    for dir in [dir, junk_dir] {
+        let _ = std::fs::remove_dir_all(dir);
+    }
+}
+
+/// A path that does not exist is refused before anything is created, the way
+/// the non-stream export refuses it — an explicit `--mode` skips the file stat
+/// the argument parser would otherwise do.
+#[test]
+fn a_missing_binary_creates_no_folder() {
+    let dir = out_dir("stream_missing");
+    let missing = dir.join("nope.bin");
+    let specs = specs();
+    for extra in [vec![], vec!["-o", dir.to_str().unwrap()]] {
+        let mut args = vec![
+            "decompile-project",
+            missing.to_str().unwrap(),
+            "--stream",
+            "--mode",
+            "fast",
+            "--sleighpath",
+            &specs,
+        ];
+        args.extend(extra);
+        let (_, stderr, ok) = run_kuna(&args);
+        assert!(!ok, "a missing binary must fail: {stderr}");
+        assert!(stderr.contains("binary not found"), "unexpected error: {stderr}");
+        assert!(!dir.exists(), "a missing binary must not create a folder: {stderr}");
+        assert!(
+            !PathBuf::from("nope.bin.kuna").exists(),
+            "a missing binary must not create a folder in the cwd"
+        );
+    }
+}
+
+/// The writer owns every artifact a reader polls, so when it cannot write one
+/// the run stops there and reports ITS error — rather than decompiling the rest
+/// of the binary into a channel nobody is reading.
+#[test]
+fn a_dead_writer_stops_the_run_and_reports_its_own_error() {
+    let bin = fixture("mcount_x86_64");
+    let dir = out_dir("stream_writer_death");
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .args([
+            "decompile-project",
+            &bin,
+            "-o",
+            dir.to_str().unwrap(),
+            "--stream",
+            "--max-fn-seconds",
+            "0",
+            "--sleighpath",
+            &specs(),
+        ])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("failed to spawn the kuna binary");
+
+    // One index line proves the artifacts exist and the writer is running.  Then
+    // the `.h` it rewrites on its clock becomes a directory, so its next atomic
+    // replace fails the way a full disk or a lost mount would.
+    let header = dir.join("mcount_x86_64.h");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(180);
+    let mut injected = None;
+    while std::time::Instant::now() < deadline {
+        let lines =
+            std::fs::read_to_string(dir.join("index.jsonl")).map_or(0, |t| t.lines().count());
+        if lines >= 1 {
+            std::fs::remove_file(&header).unwrap();
+            std::fs::create_dir(&header).unwrap();
+            injected = Some(std::time::Instant::now());
+            break;
+        }
+        if child.try_wait().unwrap().is_some() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    let Some(injected) = injected else {
+        let out = child.wait_with_output().unwrap();
+        let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+        if is_specs_skip(&stderr) {
+            eprintln!("a_dead_writer_stops_the_run: skipping (no `.sla`): {stderr}");
+            let _ = std::fs::remove_dir_all(&dir);
+            return;
+        }
+        panic!("the export never wrote an index line: {stderr}");
+    };
+
+    let out = child.wait_with_output().unwrap();
+    let stopped_after = injected.elapsed();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success(), "a dead writer must fail the run: {stderr}");
+    assert!(
+        stderr.contains("mcount_x86_64.h") && stderr.contains("Is a directory"),
+        "the run must report the writer's own error, not a sentinel: {stderr}"
+    );
+
+    let status = std::fs::read_to_string(dir.join(".streaming")).unwrap();
+    assert!(status.contains("\"phase\":\"failed\""), "no failed phase: {status}");
+    assert!(
+        status.contains("mcount_x86_64.h") && status.contains("Is a directory"),
+        ".streaming must carry the real path and errno: {status}"
+    );
+    let done: usize = json_field(&status, "functions_done").parse().unwrap();
+    let total: usize = json_field(&status, "functions_total").parse().unwrap();
+    assert!(done < total, "the run wrote {done} of {total} and must not have finished");
+    // The whole export is ~97 s serially; stopping is the point of the signal.
+    assert!(
+        stopped_after < std::time::Duration::from_secs(60),
+        "the run took {stopped_after:?} to stop after its writer died"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Strip an ELF's section headers (`e_shoff`/`e_shnum`/`e_shstrndx`), which
+/// kuna loads through its segment fallback.  Such an image publishes no CODE
+/// section, so there is nothing to sweep.
+fn section_header_stripped(fixture_name: &str, tag: &str) -> (PathBuf, PathBuf) {
+    let dir = out_dir(tag);
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut bytes = std::fs::read(fixture(fixture_name)).unwrap();
+    assert_eq!(&bytes[..4], b"\x7fELF", "{fixture_name} is not an ELF");
+    assert_eq!(bytes[4], 2, "{fixture_name} is not ELF64");
+    bytes[0x28..0x30].fill(0); // e_shoff
+    bytes[0x3c..0x40].fill(0); // e_shnum, e_shstrndx
+    let path = dir.join(fixture_name);
+    std::fs::write(&path, &bytes).unwrap();
+    (dir, path)
+}
+
+/// An image with no CODE section has nothing to sweep, so its `.asm` is final
+/// before the first function is decompiled — and `.streaming` has to say
+/// `complete` rather than `sweeping` for the whole run, because an agent that
+/// waits for `complete` before reading the `.asm` would otherwise wait for the
+/// export it did not need.
+#[test]
+fn a_sectionless_image_never_reports_a_sweeping_asm_at_jobs_1() {
+    let (junk_dir, bin) = section_header_stripped("fauxware", "stream_sectionless_input");
+    let dir = out_dir("stream_sectionless");
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .args([
+            "decompile-project",
+            bin.to_str().unwrap(),
+            "-o",
+            dir.to_str().unwrap(),
+            "--stream",
+            "--jobs",
+            "1",
+            "--max-fn-seconds",
+            "0",
+            "--sleighpath",
+            &specs(),
+        ])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("failed to spawn the kuna binary");
+
+    let mut seen: Vec<String> = Vec::new();
+    while child.try_wait().unwrap().is_none() {
+        if let Ok(status) = std::fs::read_to_string(dir.join(".streaming")) {
+            if seen.last().map(String::as_str) != Some(status.trim()) {
+                seen.push(status.trim().to_string());
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    let out = child.wait_with_output().unwrap();
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    if !out.status.success() {
+        if is_specs_skip(&stderr) {
+            eprintln!("a_sectionless_image: skipping (no `.sla`): {stderr}");
+            for dir in [dir, junk_dir] {
+                let _ = std::fs::remove_dir_all(dir);
+            }
+            return;
+        }
+        panic!("the sectionless streamed export failed: {stderr}");
+    }
+    assert!(!seen.is_empty(), "the status file was never observed");
+    for status in &seen {
+        assert!(
+            !status.contains("\"asm\":\"sweeping\""),
+            "there is no CODE section to sweep: {status}"
+        );
+        if status.contains("\"phase\":\"decompiling\"") || status.contains("\"phase\":\"finalizing\"")
+        {
+            assert!(
+                status.contains("\"asm\":\"complete\""),
+                "the .asm was final before the first function: {status}"
+            );
+        }
+    }
+    assert!(!dir.join(".streaming").exists(), ".streaming outlived a successful export");
+    let asm = std::fs::read_to_string(dir.join("fauxware.asm")).unwrap();
+    assert!(asm.contains("\n; --- variables ---\n"), "the .asm is missing its variables tail");
+    assert!(
+        std::fs::read_to_string(dir.join("index.jsonl")).unwrap().lines().count() > 0,
+        "the export decompiled nothing"
+    );
     for dir in [dir, junk_dir] {
         let _ = std::fs::remove_dir_all(dir);
     }
