@@ -154,7 +154,7 @@ def agent_split(max_agents=None, testers=None, builders=None):
 ROUND_CHALLENGES = int(os.environ.get("REPIPE_ROUND_CHALLENGES", "9"))
 TESTER_TIMEOUT = int(os.environ.get("REPIPE_TESTER_TIMEOUT", "3600"))
 BUILDER_TIMEOUT = int(os.environ.get("REPIPE_BUILDER_TIMEOUT", "7200"))
-CAPTAIN_TIMEOUT = int(os.environ.get("REPIPE_CAPTAIN_TIMEOUT", "1200"))
+CAPTAIN_TIMEOUT = int(os.environ.get("REPIPE_CAPTAIN_TIMEOUT", "3600"))
 BUILDER_USD = float(os.environ.get("REPIPE_BUILDER_USD", "25"))
 ROUND_USD = float(os.environ.get("REPIPE_ROUND_USD", "150"))
 RUN_USD = float(os.environ.get("REPIPE_RUN_USD", "1500"))

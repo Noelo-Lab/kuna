@@ -21,7 +21,7 @@ STATE_DIR="$REPO/${REPIPE_STATE_DIRNAME:-.kuna-repipe}"
 POLL="${REPIPE_POLL:-15}"
 ROUNDS="${REPIPE_ROUNDS:-3}"
 HOURS="${REPIPE_HOURS:-0}"
-CAPTAIN_TIMEOUT="${REPIPE_CAPTAIN_TIMEOUT:-1200}"
+CAPTAIN_TIMEOUT="${REPIPE_CAPTAIN_TIMEOUT:-3600}"
 ONCE=0
 
 for a in "$@"; do
@@ -37,7 +37,6 @@ export PYTHONPATH="$REPO${PYTHONPATH:+:$PYTHONPATH}"
 export KUNA_PIPELINE_STATE_DIR="$STATE_DIR"
 export REPIPE_STATE_DIRNAME="${REPIPE_STATE_DIRNAME:-.kuna-repipe}"
 mkdir -p "$STATE_DIR/logs" "$STATE_DIR/rounds" "$STATE_DIR/arena" "$STATE_DIR/runs" "$STATE_DIR/worktrees"
-rm -f "$STATE_DIR/STOP" "$STATE_DIR/ABORT"
 
 log() { echo "[$(date +%H:%M:%S)] supervisor: $*" | tee -a "$STATE_DIR/logs/supervisor.log"; }
 
@@ -46,6 +45,28 @@ if ! "$KUNA_PY" -m scripts.repipe.captain --preflight; then
   exit 1
 fi
 [ "${PREFLIGHT_ONLY:-0}" = 1 ] && exit 0
+
+START_STATE="$("$KUNA_PY" -m scripts.repipe.captain --status 2>/dev/null \
+  | "$KUNA_PY" -c 'import json,sys; print(json.load(sys.stdin)["states"]["supervisor"])' 2>/dev/null)"
+if [ -z "$START_STATE" ]; then
+  log "could not read supervisor state; refusing to start"
+  exit 1
+fi
+if [ -f "$STATE_DIR/ABORT" ]; then
+  log "ABORT present; remove it explicitly before starting"
+  exit 1
+fi
+if [ "$START_STATE" = "STOPPED" ]; then
+  HAD_STOP=0
+  [ -f "$STATE_DIR/STOP" ] && HAD_STOP=1
+  rm -f "$STATE_DIR/STOP"
+  if ! "$KUNA_PY" -m scripts.repipe.captain --restart-stopped >>"$STATE_DIR/logs/captain.log" 2>&1; then
+    [ "$HAD_STOP" = 1 ] && touch "$STATE_DIR/STOP"
+    log "STOPPED restart refused; see $STATE_DIR/logs/captain.log"
+    exit 1
+  fi
+  log "restarted STOPPED supervisor after guarded recovery"
+fi
 
 trap 'log "signal received -> graceful stop"; touch "$STATE_DIR/STOP"' INT TERM
 

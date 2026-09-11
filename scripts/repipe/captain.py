@@ -373,8 +373,8 @@ def recover():
     return {"round": n, "reaped": reaped, "resumed_at": {k: doc[k] for k in MACHINES}}
 
 
-def resume_halted():
-    """Operator-only recovery from HALTED after the machine is safe again."""
+def _operator_resume(expected, note, consume_halt_reason=False):
+    """Guard and audit an operator-only terminal supervisor recovery."""
     reaped = pstate.reap(stale_seconds=0)
     n = current_round()
     controls = [name for name, present in (("STOP", stop_requested()), ("ABORT", abort_requested()))
@@ -390,12 +390,11 @@ def resume_halted():
     if problems:
         return {"ok": False, "round": n, "reaped": reaped, "problems": problems, "live": live}
 
-    note = "operator resume after reap, empty agent slots, and preflight OK"
     with _round_lock(n):
         doc = load_round(n)
-        if doc["supervisor"] != "HALTED":
+        if doc["supervisor"] != expected:
             return {"ok": False, "round": n, "reaped": reaped,
-                    "problems": ["supervisor is %s, not HALTED" % doc["supervisor"]],
+                    "problems": ["supervisor is %s, not %s" % (doc["supervisor"], expected)],
                     "live": live}
         controls = [name for name, present in (("STOP", stop_requested()),
                                                 ("ABORT", abort_requested())) if present]
@@ -409,16 +408,17 @@ def resume_halted():
         if any(live.values()):
             return {"ok": False, "round": n, "reaped": reaped,
                     "problems": ["live agent slots appeared during recovery"], "live": live}
-        # Consume the reason for this halt before publishing RUNNING. A later halt may write a
-        # new reason after save_round(); there must be no post-publication unlink that erases it.
-        halt_reason = config.state_dir() / "HALT_REASON"
-        try:
-            halt_reason.unlink()
-        except FileNotFoundError:
-            pass
+        # HALTED recovery consumes its reason before publishing RUNNING. A later halt may write
+        # a new reason after save_round(); there must be no post-publication unlink that erases it.
+        if consume_halt_reason:
+            halt_reason = config.state_dir() / "HALT_REASON"
+            try:
+                halt_reason.unlink()
+            except FileNotFoundError:
+                pass
         doc["supervisor"] = "RUNNING"
         doc.setdefault("notes", []).append(note)
-        rec = {"ts": time.time(), "machine": "supervisor", "from": "HALTED",
+        rec = {"ts": time.time(), "machine": "supervisor", "from": expected,
                "to": "RUNNING", "note": note, "pid": os.getpid(), "operator_resume": True}
         with open(_round_dir(n) / "transitions.jsonl", "a") as fh:
             fh.write(json.dumps(rec) + "\n")
@@ -428,11 +428,25 @@ def resume_halted():
             "resumed_at": {k: doc[k] for k in MACHINES}, "live": live}
 
 
+def resume_halted():
+    """Operator-only recovery from HALTED after the machine is safe again."""
+    return _operator_resume(
+        "HALTED", "operator resume after reap, empty agent slots, and preflight OK",
+        consume_halt_reason=True)
+
+
+def restart_stopped():
+    """Operator-only restart of a cleanly stopped round after the machine is safe again."""
+    return _operator_resume(
+        "STOPPED", "operator restart after reap, empty agent slots, and preflight OK")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="python -m scripts.repipe.captain")
     ap.add_argument("--tick", action="store_true")
     ap.add_argument("--recover", action="store_true")
     ap.add_argument("--resume-halted", action="store_true")
+    ap.add_argument("--restart-stopped", action="store_true")
     ap.add_argument("--preflight", action="store_true")
     ap.add_argument("--status", action="store_true")
     ap.add_argument("--round", type=int, default=None)
@@ -458,6 +472,11 @@ def main(argv=None):
 
     if args.resume_halted:
         out = resume_halted()
+        print(json.dumps(out, indent=2, default=str))
+        return 0 if out["ok"] else 1
+
+    if args.restart_stopped:
+        out = restart_stopped()
         print(json.dumps(out, indent=2, default=str))
         return 0 if out["ok"] else 1
 

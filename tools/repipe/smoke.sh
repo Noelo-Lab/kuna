@@ -113,6 +113,13 @@ ROLES="$("$PY" -c 'from scripts.repipe import config as c; print(":".join((c.TES
 [ "$ROLES" = "gpt-5.6-sol:low:codex:gpt-5.6-sol:high" ] \
   && ok "role defaults are Sol-low reversers and Sol-high builders" \
   || bad "role defaults weakened" "$ROLES"
+CAPTAIN_TIMEOUT="$(env -u REPIPE_CAPTAIN_TIMEOUT "$PY" -c \
+  'from scripts.repipe import config; print(config.CAPTAIN_TIMEOUT)')"
+[ "$CAPTAIN_TIMEOUT" = 3600 ] \
+  && grep -q 'REPIPE_CAPTAIN_TIMEOUT:-3600' "$REPO/tools/repipe/captain.sh" \
+  && grep -q 'REPIPE_CAPTAIN_TIMEOUT:-3600' "$REPO/tools/repipe/run.sh" \
+  && ok "captain timeout defaults agree at 3600s" \
+  || bad "captain timeout defaults disagree" "$CAPTAIN_TIMEOUT"
 POLICY="$(REPIPE_TESTER_REASONING=medium REPIPE_BUILDER_MODEL=other \
   REPIPE_BUILDER_REASONING=medium REPIPE_CAPTAIN_BACKEND=other \
   "$PY" -c 'from scripts.repipe import config as c; print("\n".join(c.role_policy_problems()))')"
@@ -456,6 +463,89 @@ assert out["ok"], out
 assert captain.load_round(9)["supervisor"] == "RUNNING"
 assert reason.read_text() == "later halt\n"
 PY
+
+KUNA_PIPELINE_STATE_DIR="$SMOKE_STATE/restart-test" "$PY" - <<'PY' >/dev/null 2>&1 \
+  && ok "STOPPED restart is guarded and records the operator edge" \
+  || bad "operator STOPPED restart guard failed"
+import json
+from scripts.repipe import captain, config
+
+doc = captain.load_round(10)
+doc["supervisor"] = "STOPPED"
+captain.save_round(doc)
+captain.current_round = lambda: 10
+captain.pstate.reap = lambda stale_seconds=0: []
+captain.preflight = lambda: []
+captain.live_agents = lambda pool: []
+out = captain.restart_stopped()
+assert out["ok"], out
+restarted = captain.load_round(10)
+assert restarted["supervisor"] == "RUNNING", restarted
+assert restarted["notes"][-1].startswith("operator restart after reap"), restarted
+rec = json.loads((config.rounds_dir() / "10" / "transitions.jsonl").read_text().splitlines()[-1])
+assert rec["from"] == "STOPPED" and rec["to"] == "RUNNING", rec
+assert rec["operator_resume"] is True, rec
+
+restarted["supervisor"] = "STOPPED"
+captain.save_round(restarted)
+captain.live_agents = lambda pool: ["busy"] if pool == "tester" else []
+out = captain.restart_stopped()
+assert not out["ok"] and out["problems"] == ["live agent slots remain"], out
+assert captain.load_round(10)["supervisor"] == "STOPPED"
+
+captain.live_agents = lambda pool: []
+(config.state_dir() / "STOP").write_text("")
+out = captain.restart_stopped()
+assert not out["ok"] and "STOP" in out["problems"][0], out
+assert captain.load_round(10)["supervisor"] == "STOPPED"
+(config.state_dir() / "STOP").unlink()
+
+def controls_during_preflight():
+    (config.state_dir() / "ABORT").write_text("")
+    return []
+captain.preflight = controls_during_preflight
+out = captain.restart_stopped()
+assert not out["ok"] and "ABORT" in out["problems"][0], out
+assert captain.load_round(10)["supervisor"] == "STOPPED"
+PY
+
+RUN_REPO="$SMOKE_STATE/run-repo"
+RUN_PY="$SMOKE_STATE/fake-run-python"
+mkdir -p "$RUN_REPO/tools/repipe" "$RUN_REPO/.state"
+printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "$RUN_REPO/tools/repipe/captain.sh"
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'case "$*" in' \
+  '  *"--preflight"*) exit 0;;' \
+  '  *"--restart-stopped"*)' \
+  '    [ ! -e "$KUNA_PIPELINE_STATE_DIR/STOP" ] || exit 1' \
+  '    [ ! -e "$KUNA_PIPELINE_STATE_DIR/ABORT" ] || exit 1' \
+  '    touch "$KUNA_PIPELINE_STATE_DIR/restarted";;' \
+  '  *"--status"*) printf '\''{"states":{"supervisor":"STOPPED"},"round":1}\n'\'';;' \
+  '  *'\''["states"]["supervisor"]'\''*) printf '\''STOPPED\n'\'';;' \
+  '  *'\''["round"]'\''*) printf '\''1\n'\'';;' \
+  '  *"-c"*) printf '\''0\n'\'';;' \
+  'esac' > "$RUN_PY"
+chmod +x "$RUN_REPO/tools/repipe/captain.sh" "$RUN_PY"
+touch "$RUN_REPO/.state/STOP"
+if KUNA_REPO="$RUN_REPO" KUNA_PY="$RUN_PY" REPIPE_STATE_DIRNAME=.state \
+   bash "$REPO/tools/repipe/run.sh" >/dev/null 2>&1 \
+   && [ -e "$RUN_REPO/.state/restarted" ] && [ ! -e "$RUN_REPO/.state/STOP" ]; then
+  ok "run.sh consumes a completed STOP and invokes guarded restart"
+else
+  bad "run.sh did not restart a STOPPED supervisor"
+fi
+rm -f "$RUN_REPO/.state/restarted"
+touch "$RUN_REPO/.state/STOP" "$RUN_REPO/.state/ABORT"
+if KUNA_REPO="$RUN_REPO" KUNA_PY="$RUN_PY" REPIPE_STATE_DIRNAME=.state \
+   bash "$REPO/tools/repipe/run.sh" >/dev/null 2>&1; then
+  bad "run.sh accepted an uncleared ABORT"
+elif [ -e "$RUN_REPO/.state/STOP" ] && [ -e "$RUN_REPO/.state/ABORT" ] \
+     && [ ! -e "$RUN_REPO/.state/restarted" ]; then
+  ok "run.sh refuses ABORT without consuming control files"
+else
+  bad "run.sh mutated control files while refusing ABORT"
+fi
 
 [ "$LEVEL" = "0" ] && { printf '\nL0 only: %d passed, %d failed\n' "$PASS" "$FAIL"; exit $((FAIL>0)); }
 
