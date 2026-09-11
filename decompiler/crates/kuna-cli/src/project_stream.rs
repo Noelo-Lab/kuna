@@ -394,6 +394,7 @@ struct ProjectWriter {
     dat: BTreeSet<u64>,
     protos: usize,
     protos_at_last_header: usize,
+    last_status: Instant,
     last_header: Instant,
     last_readme: Instant,
     last_readme_done: usize,
@@ -425,6 +426,7 @@ impl ProjectWriter {
             dat: BTreeSet::new(),
             protos: 0,
             protos_at_last_header: 0,
+            last_status: now,
             last_header: now,
             last_readme: now,
             last_readme_done: 0,
@@ -471,10 +473,16 @@ impl ProjectWriter {
         Ok(())
     }
 
-    /// The clock-driven half: the status file every tick, the README when the
-    /// counts have moved, the `.h` on a doubling back-off.
+    /// The clock-driven half — driven by TIME, not by results, so a run whose
+    /// functions land in bursts still reports at a steady rate: the status file
+    /// every tick, the README when the counts have moved, the `.h` on a doubling
+    /// back-off.
     fn tick(&mut self, shared: &Mutex<Shared>) -> Result<(), String> {
+        if self.last_status.elapsed() < TICK {
+            return Ok(());
+        }
         publish_status(&self.dir, shared)?;
+        self.last_status = Instant::now();
         let done = shared.lock().unwrap_or_else(|e| e.into_inner()).status.done;
         if done != self.last_readme_done && self.last_readme.elapsed() >= README_EVERY {
             publish_running_readme(&self.dir, shared)?;
@@ -737,7 +745,7 @@ fn writer_loop(
         }
         writer.tick(shared)?;
     }
-    writer.tick(shared)?;
+    publish_status(&writer.dir, shared)?;
     Ok(writer)
 }
 
@@ -1040,13 +1048,15 @@ mod tests {
     fn an_index_line_slices_the_c_to_its_block() {
         let ok = result(0x401000, Vec::new());
         let block = render_c(std::slice::from_ref(&ok));
-        let c = format!("#include \"x.h\"\n\n{block}");
-        let line = index_line(0, &ok, 17, block.len());
+        let prelude = "#include \"x.h\"\n\n";
+        let c = format!("{prelude}{block}");
+        let offset = prelude.len();
+        let line = index_line(0, &ok, offset as u64, block.len());
         assert!(line.ends_with('\n'));
         assert!(line.contains("\"seq\":0"));
         assert!(line.contains("\"addr\":\"0x401000\""));
         assert!(line.contains("\"error\":null"));
-        let offset: usize = 17;
+        assert!(line.contains(&format!("\"c_offset\":{offset}")));
         assert_eq!(&c[offset..offset + block.len()], block);
 
         let mut bad = ok;
