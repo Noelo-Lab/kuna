@@ -1088,6 +1088,12 @@ impl Funcdata {
     /// ops in the target block (C++ `Funcdata::branchRemoveInternal`,
     /// `funcdata_block.cc:213`).
     ///
+    /// Every MULTIEQUAL in the target is patched, not just the leading run: an
+    /// op converted away from MULTIEQUAL in place (`op_zero_multi`,
+    /// `analyze_extra_pop`) leaves live phis behind a non-phi op, and skipping
+    /// those desyncs phi arity from the block's in-degree.  This matches the
+    /// scan [`block_remove_internal`](Self::block_remove_internal) already does.
+    ///
     /// \param bb is the given basic block
     /// \param num is the index of the outgoing edge to remove
     pub fn branch_remove_internal(&mut self, bb: BlockId, num: int4) -> KunaResult<()> {
@@ -1103,7 +1109,7 @@ impl Funcdata {
         self.bblocks_mut().remove_edge(bb, bbout);
         for op in self.bb_ops(bbout) {
             if self.obank().get(op).expect("branchRemoveInternal: stale op").code() != OpCode::CPUI_MULTIEQUAL {
-                break;
+                continue;
             }
             self.op_remove_input(op, blocknum);
             self.op_zero_multi(op)?;
@@ -4967,5 +4973,69 @@ mod tests {
             op = fd.obank().get(o).unwrap().basic_neighbours().1;
         }
         assert!(found_add, "the generic INT_ADD was cloned into the duplicate block");
+    }
+
+    /// A MULTIEQUAL that sits behind a non-MULTIEQUAL op still has its input
+    /// removed when an in-edge is severed.  A phi converted in place
+    /// (`op_zero_multi`, `analyze_extra_pop`) splits the marker run, and a
+    /// resync that stopped at the first non-phi left the trailing phis with an
+    /// arity the block's in-degree no longer matches.
+    #[test]
+    fn branch_remove_internal_patches_multiequals_behind_a_converted_op() {
+        let mut fd = build_fd();
+        let rs = ramspace(&fd);
+        let root = fd.bblocks_root_pub();
+        let p0 = fd.bblocks_mut().new_block_basic(root);
+        let p1 = fd.bblocks_mut().new_block_basic(root);
+        let tgt = fd.bblocks_mut().new_block_basic(root);
+        fd.bblocks_mut().add_edge(p0, tgt);
+        fd.bblocks_mut().add_edge(p1, tgt);
+        fd.set_basic_block_range(tgt, &addr(&rs, 0x8000), &addr(&rs, 0x8010));
+
+        let c0 = copy_with_dead_out(&mut fd, p0, addr(&rs, 0x7f00), 0x40);
+        let v0 = fd.obank().get(c0).unwrap().get_out().unwrap();
+        let c1 = copy_with_dead_out(&mut fd, p1, addr(&rs, 0x7f04), 0x48);
+        let v1 = fd.obank().get(c1).unwrap().get_out().unwrap();
+        let in0 = fd.bblocks_ref().block(tgt).get_in_index(p0);
+        let in1 = fd.bblocks_ref().block(tgt).get_in_index(p1);
+
+        let mut make_phi = |fd: &mut Funcdata, out_off: u64| {
+            let mq = fd.new_op(2, addr(&rs, 0x8000));
+            fd.op_set_opcode(mq, crate::typeop::type_op_for(OpCode::CPUI_MULTIEQUAL));
+            let out = fd.new_varnode(4, &addr(&rs, out_off), None);
+            fd.op_set_output(mq, out).unwrap();
+            fd.op_set_input(mq, v0, in0).unwrap();
+            fd.op_set_input(mq, v1, in1).unwrap();
+            fd.obank_mut().mark_alive(mq);
+            fd.bb_insert_op(mq, tgt, None);
+            mq
+        };
+        // Op list: [phi_head, INT_ADD, phi_tail] -- the shape left behind when
+        // ActionStackPtrFlow rewrites a solved phi into an INT_ADD in place.
+        let phi_head = make_phi(&mut fd, 0x50);
+        let add = fd.new_op(2, addr(&rs, 0x8000));
+        fd.op_set_opcode(add, crate::typeop::type_op_for(OpCode::CPUI_INT_ADD));
+        let add_out = fd.new_varnode(4, &addr(&rs, 0x58), None);
+        fd.op_set_output(add, add_out).unwrap();
+        fd.op_set_input(add, v0, 0).unwrap();
+        let k = fd.new_constant(4, 4);
+        fd.op_set_input(add, k, 1).unwrap();
+        fd.obank_mut().mark_alive(add);
+        fd.bb_insert_op(add, tgt, None);
+        let phi_tail = make_phi(&mut fd, 0x60);
+
+        fd.branch_remove_internal(p0, 0).expect("branch_remove_internal");
+
+        assert_eq!(fd.bblocks_ref().block(tgt).size_in(), 1, "the p0 edge is gone");
+        for (name, mq) in [("leading", phi_head), ("trailing", phi_tail)] {
+            let o = fd.obank().get(mq).unwrap();
+            assert_eq!(
+                o.num_input(),
+                1,
+                "{name} MULTIEQUAL must drop the severed edge's slot"
+            );
+            assert_eq!(o.code(), OpCode::CPUI_COPY, "{name} 1-input phi collapses to COPY");
+            assert_eq!(o.get_in(0), Some(v1), "{name} keeps the surviving edge's value");
+        }
     }
 }
