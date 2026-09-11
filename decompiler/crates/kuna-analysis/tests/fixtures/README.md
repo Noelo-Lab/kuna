@@ -144,6 +144,13 @@ entry points carry an explicit `visibility("default")` attribute), and
 `--strip-all` so nothing else survives. Addresses are NOT pinned: the tests
 assert on recovered NAMES, which is what the feature produces.
 
+`rdtsc_zero_extend_x86_64` (4664 bytes, source vendored alongside as
+`rdtsc_zero_extend_x86_64.s`): `as -o rdtsc_zero_extend_x86_64.o
+rdtsc_zero_extend_x86_64.s && ld -o rdtsc_zero_extend_x86_64
+rdtsc_zero_extend_x86_64.o`. The one function seeds nonzero upper halves in
+RAX/RDX, executes `RDTSC`, and recombines EDX:EAX, so correct x86-64 lifting
+reduces its return value to exactly `rdtsc()`.
+
 `eh_lsda_x86_64` (14744 bytes, source vendored alongside as
 `eh_lsda_x86_64.cpp`): `g++ -O1 -no-pie -fno-pic -fexceptions -o eh_lsda_x86_64
 eh_lsda_x86_64.cpp` then `strip eh_lsda_x86_64` (drops `.symtab`; keeps
