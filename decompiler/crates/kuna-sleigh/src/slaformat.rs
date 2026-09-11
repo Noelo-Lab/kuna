@@ -13,11 +13,11 @@
 //!   `slghsymbol::sla` / `semantics::sla` so a single `register_sla_ids` call
 //!   covers the whole table without duplicate `ElementId` objects.
 //! - [`FormatDecode`] is the C++ `FormatDecode : PackedDecode`: it verifies
-//!   the `sla\x04` header, decompresses the zlib stream, and feeds the
-//!   decompressed bytes into a [`PackedDecode`].  Inheritance becomes
+//!   the `sla\x04` header, decompresses the zlib stream, and hands the
+//!   decompressed buffer to a [`PackedDecode`].  Inheritance becomes
 //!   composition: [`FormatDecode`] *owns* a [`PackedDecode`] and forwards the
 //!   whole [`Decoder`] surface to it (every packed byte has a high-bit
-//!   pattern set, so the inner `ingest_stream`'s NUL-terminator scan never
+//!   pattern set, so the inner `ingest_owned`'s NUL-terminator scan never
 //!   trips on valid data).
 //! - [`FormatEncode`]/[`write_sla_header`]/`isSlaFormat` are the writer side
 //!   (used by the unported compiler); [`FormatEncode`] wraps a
@@ -338,7 +338,13 @@ impl<'a> FormatDecode<'a> {
         FormatDecode { inner: PackedDecode::new(spc_manager) }
     }
 
-    /// Verify and decompress the SLA stream, then transfer its buffer to the packed decoder.
+    /// C++ `FormatDecode::ingestStream(istream &)`: verify the header,
+    /// decompress the whole stream, then hand the decompressed buffer to the
+    /// inner [`PackedDecode`].  The C++ decompresses directly into the
+    /// PackedDecode chunk buffers; the Rust decompresses into one `Vec<u8>`
+    /// and transfers it with `ingest_owned`, which copies only the trailing
+    /// partial chunk so `endIngest` has one to pad — every packed byte has its
+    /// high bit set, so the NUL-terminator scan never trips.
     pub fn ingest_stream(&mut self, s: &[u8]) -> KunaResult<()> {
         let (ok, compressed) = is_sla_format(s);
         if !ok {

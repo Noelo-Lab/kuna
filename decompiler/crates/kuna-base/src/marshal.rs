@@ -1452,7 +1452,11 @@ impl<'a> PackedDecode<'a> {
         }
     }
 
-    /// Ingest an owned buffer, copying only the final partial chunk for padding.
+    /// Ingest an owned buffer, keeping it as the leading chunk instead of
+    /// copying it into `BUFFER_SIZE` chunks.  Only the trailing partial chunk
+    /// is copied, so that `end_ingest` has a chunk to pad.  The chunk
+    /// *boundaries* move; the ingested bytes, the NUL termination and the byte
+    /// at which the stream ends do not, so decoding matches `ingest_stream`.
     pub fn ingest_owned(&mut self, mut data: Vec<u8>) -> KunaResult<()> {
         let length = data.iter().position(|&byte| byte == 0).unwrap_or(data.len());
         let remainder = length % Self::BUFFER_SIZE as usize;
@@ -1462,12 +1466,12 @@ impl<'a> PackedDecode<'a> {
         }
         data.truncate(length);
         let mut tail = data.split_off(full_length);
+        // A tail of exactly zero bytes is the one-byte chunk end_ingest would
+        // have pushed for a full last buffer, not a 1024-byte one.
         tail.resize(if remainder == 0 { 1 } else { Self::BUFFER_SIZE as usize }, 0);
-        tail[remainder] = pf::ELEMENT_END;
         self.in_stream.push(data);
         self.in_stream.push(tail);
-        self.end_pos = Position { seq: 0, current: 0, end: self.in_stream[0].len() };
-        Ok(())
+        self.end_ingest(remainder as i32)
     }
 
     /// Get the byte at the current position, do not advance
@@ -1534,6 +1538,11 @@ impl<'a> PackedDecode<'a> {
     /// bytes.  The integer is encoded, 7-bits per byte, starting with the
     /// most significant 7-bits.  The integer is decoded from the \e current
     /// position, and the position is advanced.
+    ///
+    /// A read that ends strictly inside the current chunk is taken from that
+    /// chunk's slice and advances the position once; a read that reaches the
+    /// chunk's end stays on the byte cursor, which is where end-of-stream is
+    /// detected.
     #[inline]
     fn read_integer(&mut self, mut len: i32) -> KunaResult<u64> {
         let mut res: u64 = 0;
