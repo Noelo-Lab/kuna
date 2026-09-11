@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    776,
-    776
+    779,
+    779
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -524,6 +524,9 @@
     "data:calleedeadarg #1: option off passes the previous call's return value to a callee that never reads it (bug reproduced)",
     "data:calleedeadarg #2: option on drops the argument the callee's own body proves it never reads",
     "data:calleedeadarg #3: with the argument gone the producer call stands on its own (only the fixed pass)",
+    "data:callretmulti #1: one helper assignment in each pass",
+    "data:callretmulti #2: helper is never duplicated into the low-word sinks",
+    "data:callretmulti #3: same-block fan-out evaluates helper2 once per pass",
     "data:callsitestackargs #1: option off truncates the call at the six register arguments (bug reproduced)",
     "data:callsitestackargs #2: option on recovers both stack-passed arguments",
     "data:codescalar #1: with the option off the dereferenced byte is typed by the size-1 code pointee -- the bug",

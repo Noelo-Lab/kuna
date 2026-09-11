@@ -62,6 +62,12 @@
 //! the printer's pre-existing single-use inlining with a same-block,
 //! side-effect-free guard, preferring false negatives (stay explicit) over
 //! reordering bugs.
+//!
+//! The direct call output can still have one descendant while a derived
+//! truncation or arithmetic result fans out later. If that derived expression
+//! has multiple uses, [`expression_contains_foldable_call`] makes it explicit
+//! before multiplier analysis can duplicate the implied call expression at
+//! each sink.
 
 use kuna_base::error::KunaResult;
 use kuna_num::opcodes::OpCode;
@@ -89,6 +95,13 @@ pub fn call_output_foldable(data: &Funcdata, vn: VarnodeId) -> bool {
         Some(d) => d,
         None => return false,
     };
+    let def_op = match data.obank().get(def) {
+        Some(op) => op,
+        None => return false,
+    };
+    if !def_op.is_call() || (def_op.code() == OpCode::CPUI_NEW && def_op.num_input() == 1) {
+        return false;
+    }
 
     // (2) same basic block, use ordered after the call.
     let def_blk = match op_parent(data, def) {
@@ -124,6 +137,48 @@ pub fn call_output_foldable(data: &Funcdata, vn: VarnodeId) -> bool {
         }
     }
     true
+}
+
+/// Does a derived value's printable implied expression contain a foldable call?
+///
+/// Explicit inputs stop the walk because they already provide one textual
+/// evaluation point. A match means `root` must become that evaluation point.
+pub fn expression_contains_foldable_call(data: &Funcdata, root: VarnodeId) -> bool {
+    fn walk(data: &Funcdata, vn: VarnodeId, root: VarnodeId, seen: &mut Vec<VarnodeId>) -> bool {
+        if seen.contains(&vn) {
+            return false;
+        }
+        seen.push(vn);
+        let Some(varnode) = data.vbank().get(vn) else {
+            return false;
+        };
+        if vn != root && varnode.is_explicit() {
+            return false;
+        }
+        let Some(def) = varnode.get_def() else {
+            return false;
+        };
+        let Some(op) = data.obank().get(def) else {
+            return false;
+        };
+        if op.is_call() {
+            return call_output_foldable(data, vn);
+        }
+
+        let (slot, slotback) = match op.code() {
+            OpCode::CPUI_LOAD => (1, 2),
+            OpCode::CPUI_PTRADD => (0, 1),
+            OpCode::CPUI_SEGMENTOP => (2, 3),
+            _ => (0, op.num_input()),
+        };
+        (slot..slotback).any(|slot| {
+            op.get_in(slot)
+                .map(|input| walk(data, input, root, seen))
+                .unwrap_or(false)
+        })
+    }
+
+    walk(data, root, root, &mut Vec::new())
 }
 
 /// Does `op` read a varnode defined by a `CPUI_INDIRECT` attached to `call`
