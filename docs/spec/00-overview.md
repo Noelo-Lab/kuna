@@ -1479,6 +1479,22 @@ C++ splits between `Funcdata` and `BlockBasic` are all `Funcdata` methods here
 (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs (bb_insert_op,
 bb_remove_op)`).
 
+**Phi arity tracks in-degree, and the marker run is not a place to look it up.**
+A basic block's MULTIEQUALs carry one input per in-edge, in edge order, so CFG
+surgery that severs an edge must drop the matching slot from every phi in the
+target — `decompiler/crates/kuna-decomp/src/substrate/funcdata_block.rs
+(branch_remove_internal, block_remove_internal)`. Both scan the target's whole op
+list for the opcode rather than walking the leading run of markers and stopping at
+the first op that is not one, because that run is not stable: a phi can be
+rewritten into an ordinary op **in place**, keeping its position among the markers
+— `op_zero_multi` turns a 1-input MULTIEQUAL into a COPY, and the stack-pointer
+solve rewrites a solved phi into an `INT_ADD`
+(`decompiler/crates/kuna-decomp/src/p6_variables/coreaction_stackptr.rs
+(analyze_extra_pop)`). A resync that stopped there would leave the phis behind it
+claiming an edge the block no longer has, and the next pass to index a phi slot as
+an in-edge — `descend2_undef`, reached from the unreachable-block sweep — would
+read past the end of the edge list.
+
 **The impl map.** `Funcdata` is one struct whose `impl` blocks are split by the
 phase that owns the mutation — the split is itself the documentation of which
 phase mutates what (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs`,

@@ -1,0 +1,77 @@
+{
+  "need_id": "block-processing-panics-out",
+  "slug": "block-processing-panics-out",
+  "track": "quality",
+  "scope": "small",
+  "option": null,
+  "default": "strict fix, unflagged",
+  "div": "DIV-159",
+  "phase": "P3",
+  "subphase": "unreachable-block removal (substrate CFG surgery)",
+  "module": "decompiler/crates/kuna-decomp/src/substrate/funcdata_block.rs (branch_remove_internal)",
+  "symptom": "Block processing panics with an out-of-bounds index (major, 1 instance, crackmes.one 629a286b33c5d45b75903c7a MSVC i386 PE thief_crackme.exe, sub_41cd08 @0x41cd08)",
+  "witness": {
+    "binary": "crackmes.one 629a286b33c5d45b75903c7a bin/thief_crackme.exe",
+    "function": "sub_41cd08 @ 0x41cd08",
+    "before": "exit 1; substrate/block.rs:648 panicked 'index out of bounds: the len is 1 but the index is 1'; decompile-all recorded a WARNING stub",
+    "after": "exit 0; 21 lines of C (the three xchg-decodes, the swi(4) and the ret-8 tail)"
+  },
+  "decisions": [
+    "The filed hypothesis ('an unchecked block invariant fails on the protected instruction stream') and the round-3 refutation are both UPHELD, and the invariant is now named: a basic block's MULTIEQUALs carry one input per in-edge in edge order, and the resync that keeps that true is Funcdata::branchRemoveInternal.",
+    "The refuter's correction (1) is confirmed: nothing about this is specific to a protected instruction stream. The path is generic unreachable-block removal and the packer only supplies the dead-block shape. It is measured on 17 unrelated challenge images.",
+    "The refuter looked at the unreachable arm of block_remove_internal, which skips the push_multiequals + per-out-edge resync the !unreachable arm does. That arm is innocent. Measured with a per-action scan for 'a MULTIEQUAL preceded by a non-MULTIEQUAL in the same block': the layout is already broken immediately after the `stackptrflow` action, long before remove_unreachable_blocks runs, and a scan at the top of remove_unreachable_blocks reports it clean while a scan after the edge-sever loop reports blk 2 with size_in=1 and two phis of arity 2.",
+    "The creator is ActionStackPtrFlow::analyzeExtraPop (coreaction.cc:303-320, kuna p6_variables/coreaction_stackptr.rs:763), which rewrites a solved MULTIEQUAL into an INT_ADD **in place** -- it does not move the op out of the marker run. op_zero_multi does the same MULTIEQUAL->COPY. So the 'MULTIEQUALs are one contiguous leading run' invariant that branchRemoveInternal's `break` depends on is not one. On the witness the block's op list is [MULTIEQUAL, INT_ADD@41cd57, MULTIEQUAL, MULTIEQUAL, INT_ADD, ...] and the sweep patched 1 phi of 3.",
+    "Fixed by scanning the target's whole op list for the opcode instead of breaking at the first non-marker -- which is exactly what block_remove_internal already does, in kuna AND in upstream C++ (funcdata_block.cc:272 uses `continue` where :213 uses `break`). On a well-formed block the two spellings visit the identical set of phis, so the change is a no-op wherever the invariant holds; that is why the datatest and decbench corpora do not move.",
+    "The refuter's correction (2) -- that the acceptance probe cannot tell a fix from a cover-up, because a bounds guard or a clamp at block.rs:648 would also make it exit 0 while emitting a phi with a dropped or mis-wired input -- drove the shape of the fix and the evidence. This is NOT a guard: the stale slot is removed, the phi collapses to a COPY of the value the surviving edge carries, and descend2_undef never sees the phi at all, so no 0xBADDEF is interposed. Evidence is a whole-corpus before/after diff of the emitted C, classified per function, not the absence probe.",
+    "Not gated behind a phases.toml option, per the captain's T_TRIAGE instruction and docs/agents.md: a panic that yields a WARNING stub instead of C is not a judgement call. DIV-159 records the divergence from upstream's `break`.",
+    "The alternative fix -- relocating an op out of the marker run when it is converted away from MULTIEQUAL, restoring the invariant at its source -- was rejected for this PR. It would move ops in every function where op_zero_multi fires (which is most of them), so it is a corpus-wide reordering with no witness demanding it; the consumer-side scan is provably zero-diff wherever the invariant already holds."
+  ],
+  "tests": {
+    "unit": "decompiler/crates/kuna-decomp/src/substrate/funcdata_block.rs::tests::branch_remove_internal_patches_multiequals_behind_a_converted_op (fails on the unpatched tree: 'trailing MULTIEQUAL must drop the severed edge's slot')",
+    "stage": "none -- there is no option, so a two-pass stages XML is not expressible; the invariant is asserted directly by the unit test",
+    "fixture": "decompiler/crates/kuna-analysis/tests/fixtures/phimarkerrun_pe_i386.exe (+ .py generator): a 5 KiB PE32 mapping the 760-byte protected run at its original address 0x41cd08 into an RWX section",
+    "promoted_probe": {
+      "path": "tests/cli/block-processing-panics-out.json",
+      "retargeted_from": "crackmes.one 629a286b33c5d45b75903c7a bin/thief_crackme.exe, kuna decompile 0x41cd08 --addr",
+      "retargeted_to": "decompiler/crates/kuna-analysis/tests/fixtures/phimarkerrun_pe_i386.exe, kuna decompile-all",
+      "why": "the need's target is binary_source dataset and CI has no dataset. The vendored stub reproduces the identical panic, but only through decompile-all (the whole-binary load is what gives the stub its caller and the stack-solver equation that converts the phi); decompile-all reports the seam on stdout, so the clause moved from stderr_absent to stdout_absent. The need record keeps the dataset acceptance and the --addr spelling so every later B_VERIFY runs the real witness.",
+      "verified_on_witness": true
+    }
+  },
+  "ablation": {
+    "method": "two stage. (1) reachability prefilter: an instrumented build reports when the new scan patches a phi the old break would have skipped, run over every image. (2) full before/after `decompile-all` on the survivors plus a random decbench control, unified diff of the emitted C classified per function.",
+    "targets": "975 images -- 803 decbench-dataset binaries (O0/O2/inlined/large/sample-set) + 169 RE-dataset challenge images + 3 others",
+    "reached_the_changed_branch": 17,
+    "decbench_reached": 0,
+    "decbench_control_ab": "60 random decbench binaries re-run under a full before/after decompile-all: 60/60 byte-identical",
+    "changed_binaries": 17,
+    "functions_stub_to_code": 30,
+    "functions_code_to_stub": 0,
+    "functions_lost": 0,
+    "functions_body_changed_without_a_crash_either_side": 0,
+    "error_stubs": "39 -> 9 across the 17; the 9 survivors fail on a different seam (rename_recurse: set_input_varnode (empty stack)), which is the sibling need ssa-renaming-panics-protected",
+    "datatests": "0/675, byte-identical"
+  },
+  "speed": {
+    "method": "paired A/B, alternating before/after runs of `kuna decompile-all` on decbench O2 gzip (332 KB, warm), 5 repeats each, median.",
+    "before_ms": 5821,
+    "after_ms": 5780,
+    "delta": "-0.7% (noise; the run-to-run spread is +/-10% under load). No work is added on a well-formed block: `bb_ops` already materialises the target's entire op list, so the only delta is one opcode lookup per op past the marker run.",
+    "reached_targets": "0 of 803 decbench binaries reach the changed branch at all, so there is no target on which a timing claim could be made."
+  },
+  "gates": {
+    "make test": "PARITY OK 675/675",
+    "make test-stages": "PARITY OK 763/763",
+    "make test-cli": "123/123",
+    "make rust-test": "green (6451 passed, 0 failed, 0 FAILED suites)",
+    "make check-spec": "check-spec OK",
+    "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
+    "acceptance probe": "PASS on the dataset witness",
+    "repipe.counters --fix": "no drift; nothing to fix (186 settables, tiers 58/69/59, 269 corpus files)",
+    "repipe.mergecheck --against origin/main": "merge guards clean, 0 rejects; DIV-159 still free on origin/main"
+  },
+  "docs": {
+    "spec": "docs/spec/00-overview.md 0.3 -- 'Phi arity tracks in-degree, and the marker run is not a place to look it up'",
+    "history": "docs/history.md DIV-159"
+  }
+}
