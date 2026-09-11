@@ -123,7 +123,13 @@ fn the_producer_keeps_the_whole_pair() {
 /// definition anywhere in the function.
 #[test]
 fn by_default_the_consumer_reads_an_unassigned_payload() {
-    let Some(code) = decompile("rust_scalarpair_x86_64", "cons", &[]) else { return };
+    // `option callretpair` (DIV-162) reaches the same call-output arm with the
+    // language test dropped and ships ON, so the pre-fix rendering this test
+    // describes is only visible with it held off.
+    let Some(code) = decompile("rust_scalarpair_x86_64", "cons", &["option callretpair off"])
+    else {
+        return;
+    };
     assert!(
         code.contains("// edx"),
         "the payload register must show up as a bare register-commented local; got:\n{code}",

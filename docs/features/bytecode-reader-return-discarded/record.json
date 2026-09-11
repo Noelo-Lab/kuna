@@ -30,7 +30,8 @@
     "make_test_stages": "PARITY OK 774/774 (768 -> 774, six new assertions)",
     "make_test_cli": "126/126",
     "make_check_spec": "OK (strict)",
-    "kuna_catalog_check": "catalog OK"
+    "kuna_catalog_check": "catalog OK",
+    "make_rust_test": "6476 passed, 0 failed (verify_rustabi_pair's consumer test now holds `option callretpair off`, since it describes the pre-fix rendering; verify_w10_proto_unlock's oracle check needs `env -u KUNA_DECOMP_TEST` in a worktree)"
   },
   "datatest_delta": "0/675 assertions changed",
   "sweep": {
