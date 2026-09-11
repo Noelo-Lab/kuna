@@ -25,6 +25,7 @@ pub mod kuna_funcboundflow; // (kuna) bound fall-through at a known function ent
 pub mod kuna_tailcallframe; // (kuna) recover a frame-teardown tail jump whose callee was never discovered
 pub mod kuna_tailcallsaved; // (kuna) a teardown that restores nothing the entry block saved is argument cleanup
 pub mod kuna_calltrampoline; // (kuna) flow a call through a callee that discards the pushed return address
+pub mod kuna_callpopret; // (kuna) flow a call through a callee that pops the return address and rets to the grandparent
 pub mod kuna_overlapbranch; // (kuna) a conditional branch target inside its own fall-through instruction (anti-disassembly overlap)
 pub mod kuna_msvcftol; // (kuna) MSVC __ftol family call-fixup: recover the x87 (ST0) argument
 pub mod kuna_cortexmpriv; // (kuna) fold the Cortex-M isCurrentModePrivileged() guard around MRS/MSR

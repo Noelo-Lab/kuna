@@ -64,13 +64,12 @@ use kuna_sleigh::translate::Translate;
 /// drives `resolve_typeop` so the built ops carry the correct
 /// branch/call/coderef/marker property flags.
 struct ArchFlowEnv {
-    /// (kuna `calltrampoline`) Memo of the trampoline probe, keyed by the
-    /// direct-call target.  The verdict depends only on the callee's bytes and
-    /// the symbol table, and a protector calls one fragment from every protected
-    /// function, so without this the same handful of addresses are re-decoded at
-    /// every call site.  In ghidra mode each of those decodes is a `getPcode`
-    /// round trip to the host.
-    tramp_memo: std::cell::RefCell<std::collections::HashMap<(i32, u64), bool>>,
+    /// (kuna `calltrampoline` / `callpopret`) Memo of both return-address-
+    /// discarding probes, keyed by direct-call target.  Both inspect the same
+    /// bounded raw decode, so sharing the verdict also keeps the second option
+    /// from doubling `getPcode` traffic in ghidra mode.
+    return_discard_memo:
+        std::cell::RefCell<std::collections::HashMap<(i32, u64), (bool, bool)>>,
     /// Raw pointer to the architecture (read-only use: `translate` / `resolve_
     /// typeop` / `query_call`).  A raw pointer (rather than `&Architecture`) lets
     /// the jump-table recovery hold `&mut Architecture` for the action sub-
@@ -486,19 +485,16 @@ impl FlowEnvironment for ArchFlowEnv {
         if !self.arch().call_trampoline {
             return false;
         }
-        // The verdict is a function of the callee's bytes and the symbol table,
-        // both fixed for the run, so probe each target at most once.
-        let key = dest.get_space().map(|sp| (sp.get_index(), dest.get_offset()));
-        if let Some(k) = key {
-            if let Some(hit) = self.tramp_memo.borrow().get(&k) {
-                return *hit;
-            }
+        self.return_discard_verdicts(dest).1
+    }
+
+    fn pops_return_address(&self, dest: &Address) -> bool {
+        // (kuna `callpopret`) Fast-path the gate: this runs at every direct CALL
+        // site, and off it must not touch the decoder.
+        if !self.arch().call_pop_ret {
+            return false;
         }
-        let verdict = self.probe_return_discarding_trampoline(dest);
-        if let Some(k) = key {
-            self.tramp_memo.borrow_mut().insert(k, verdict);
-        }
-        verdict
+        self.return_discard_verdicts(dest).0
     }
 
     fn is_frame_teardown_tail_call(
@@ -534,27 +530,47 @@ impl FlowEnvironment for ArchFlowEnv {
 }
 
 impl ArchFlowEnv {
-    /// (kuna `calltrampoline`) The uncached probe behind
-    /// [`is_return_discarding_trampoline`](FlowEnvironment::is_return_discarding_trampoline).
-    fn probe_return_discarding_trampoline(&self, dest: &Address) -> bool {
+    /// (kuna `calltrampoline` / `callpopret`) Classify both shapes from one
+    /// bounded decode.  Tuple order is `(callpopret, calltrampoline)`.
+    fn return_discard_verdicts(&self, dest: &Address) -> (bool, bool) {
+        let key = dest.get_space().map(|sp| (sp.get_index(), dest.get_offset()));
+        if let Some(k) = key {
+            if let Some(hit) = self.return_discard_memo.borrow().get(&k) {
+                return *hit;
+            }
+        }
         let arch = self.arch();
         let Some(sp) =
             arch.manage().get_stack_space().and_then(|spc| spc.get_spacebase_full(0).ok())
         else {
-            return false;
+            return (false, false);
         };
-        let Some(ops) = decode_raw_run(arch, dest) else { return false };
-        let Some(target) = crate::kuna_calltrampoline::kuna_trampoline_branch_target(&ops, &sp)
-        else {
-            return false;
+        let Some(ops) = decode_raw_run(
+            arch,
+            dest,
+            crate::kuna_calltrampoline::KUNA_TRAMPOLINE_MAX_INSTRS,
+            crate::kuna_calltrampoline::KUNA_TRAMPOLINE_MAX_OPS,
+        ) else {
+            return (false, false);
         };
-        // The fragment re-enters an instruction stream, not a function.  A
-        // callee the symbol table knows makes this an ordinary tail-call thunk
-        // (`add esp,4; jmp printf`), and flowing through it would decode that
-        // callee into the caller and abandon everything after the call site.
-        let Some(space) = target.space.as_ref() else { return false };
-        let re_entry = Address::new(std::rc::Rc::clone(space), target.offset);
-        self.query_call(&re_entry).is_none()
+        let popret = arch.call_pop_ret
+            && crate::kuna_callpopret::kuna_call_pops_return_address(&ops, &sp);
+        let trampoline = if arch.call_trampoline {
+            crate::kuna_calltrampoline::kuna_trampoline_branch_target(&ops, &sp)
+                .and_then(|target| {
+                    let space = target.space.as_ref()?;
+                    let re_entry = Address::new(std::rc::Rc::clone(space), target.offset);
+                    Some(self.query_call(&re_entry).is_none())
+                })
+                .unwrap_or(false)
+        } else {
+            false
+        };
+        let verdict = (popret, trampoline);
+        if let Some(k) = key {
+            self.return_discard_memo.borrow_mut().insert(k, verdict);
+        }
+        verdict
     }
 }
 
@@ -608,14 +624,15 @@ impl kuna_sleigh::translate::PcodeEmit for RawOpCollector {
 fn decode_raw_run(
     arch: &Architecture,
     entry: &Address,
+    max_instrs: usize,
+    max_ops: usize,
 ) -> Option<Vec<crate::kuna_calltrampoline::RawOp>> {
-    use crate::kuna_calltrampoline::{KUNA_TRAMPOLINE_MAX_INSTRS, KUNA_TRAMPOLINE_MAX_OPS};
     let translate = arch.translate();
     let mut collector = RawOpCollector { ops: Vec::new(), ended: false };
     let mut at = entry.clone();
-    for _ in 0..KUNA_TRAMPOLINE_MAX_INSTRS {
+    for _ in 0..max_instrs {
         let step = translate.one_instruction(&mut collector, &at).ok()?;
-        if collector.ended || collector.ops.len() > KUNA_TRAMPOLINE_MAX_OPS {
+        if collector.ended || collector.ops.len() > max_ops {
             break;
         }
         if step <= 0 {
@@ -721,7 +738,10 @@ fn follow_flow_on_fd(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcda
         let space = Rc::clone(start.get_space()?);
         Some((start.clone(), Address::new(space, last)))
     });
-    let env = ArchFlowEnv { arch: arch as *const Architecture, tramp_memo: Default::default() };
+    let env = ArchFlowEnv {
+        arch: arch as *const Architecture,
+        return_discard_memo: Default::default(),
+    };
     let mut flow = FlowInfo::new(fd, &env);
     if let Some((baddr, eaddr)) = range {
         flow.set_range(baddr, eaddr);
@@ -803,7 +823,10 @@ fn run_jumptable_pipeline(
     visited: &crate::flow::VisitedMap,
 ) -> KunaResult<()> {
     // Build the partial's basic blocks (partialflow.generateBlocks).
-    let env = ArchFlowEnv { arch: arch as *const Architecture, tramp_memo: Default::default() };
+    let env = ArchFlowEnv {
+        arch: arch as *const Architecture,
+        return_discard_memo: Default::default(),
+    };
     crate::flow::build_partial_blocks(partial, &env, visited)?;
     // startProcessing prerequisites for heritage (forward dominators + RPO).
     partial.structure_reset();

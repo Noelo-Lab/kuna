@@ -1,0 +1,16 @@
+Reference decompilation unavailable: the IDA reference server exited before
+registering and no angr rendering was recorded for this packed PE.
+
+Bytes at the witness:
+  0x4f7036  e8 52 00 00 00    call 0x4f708d
+  0x4f703b  90                nop (unreachable return address)
+  0x4f703c  "kernel32.dll\0GetProcAddress\0..."
+  0x4f708d  58 40 c3          pop eax; inc eax; ret
+
+callpopret off:
+  getptr();
+  ... = in(...);
+  ... arbitrary memory writes through undefined registers ...
+
+callpopret on:
+  return s_4f703c;

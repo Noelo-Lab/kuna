@@ -272,6 +272,11 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // Default ON.
     "tailcallsaved",
     "calltrampoline",
+    // (kuna) DIV-163: a callee that pops the pushed return address and `ret`s
+    // through the word above it never comes back to the call site, so the
+    // `call` is a transfer -- the RET flavour of `calltrampoline`'s idiom.
+    // Default ON.
+    "callpopret",
     "funcboundflow",
     "overlapbranch",
     "cleanupcode",

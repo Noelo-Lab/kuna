@@ -270,6 +270,23 @@ def _norm(line: str) -> str:
     return line.strip().rstrip(",")
 
 
+def _toml_array_blocks(text: str):
+    """Canonical ``[[table]]`` blocks for files whose field names repeat by design."""
+    blocks = []
+    current = []
+    for raw in text.splitlines():
+        line = _norm(raw)
+        if line.startswith("[[") and line.endswith("]]"):
+            if current:
+                blocks.append("\n".join(current))
+            current = [line]
+        elif current and _significant(raw):
+            current.append(line)
+    if current:
+        blocks.append("\n".join(current))
+    return blocks
+
+
 def _footer_findings(path, rel, text, check):
     """A `[passing, total]` footer must equal the key count it summarises.
 
@@ -346,11 +363,20 @@ def assert_keepboth(path, base_ref="origin/main", repo=None):
         out.append(Finding("C", "assert-keepboth", REJECT, "line-removed", rel, 0,
                            "... and {} more removed lines".format(len(removed) - 20)))
 
-    twice = [(l, n) for l, n in head_c.items() if n >= 2 and n > base_c.get(l, 0)]
+    if rel == "decompiler/crates/kuna-decomp/phases.toml":
+        base_rows = collections.Counter(_toml_array_blocks(base_text))
+        head_rows = collections.Counter(_toml_array_blocks(head_text))
+        twice = [(row, n) for row, n in head_rows.items()
+                 if n >= 2 and n > base_rows.get(row, 0)]
+    else:
+        twice = [(l, n) for l, n in head_c.items() if n >= 2 and n > base_c.get(l, 0)]
     for line, n in sorted(twice)[:20]:
+        was = (base_rows.get(line, 0)
+               if rel == "decompiler/crates/kuna-decomp/phases.toml"
+               else base_c.get(line, 0))
         out.append(Finding("C", "assert-keepboth", REJECT, "line-added-twice", rel, 0,
                            "line appears {}x (was {}x on {})".format(
-                               n, base_c.get(line, 0), base_ref),
+                               n, was, base_ref),
                            line[:200]))
     if len(twice) > 20:
         out.append(Finding("C", "assert-keepboth", REJECT, "line-added-twice", rel, 0,

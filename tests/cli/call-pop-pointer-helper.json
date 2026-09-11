@@ -1,0 +1,29 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "timeout_s": 60,
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "dllname"
+  ],
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_absent": [
+      "\\bin\\("
+    ],
+    "stdout_matches": [
+      "return\\s+\"kernel32\\.dll\"\\s*;"
+    ]
+  },
+  "target": {
+    "binary_rel": "callpopret_i386",
+    "binary_sha256": "f7e5bd8677a8bf0591999f9aa44da8bf6a2cc575f97f8b91e9bd13f3311b6196",
+    "binary_size": 4896,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/callpopret_i386"
+  }
+}

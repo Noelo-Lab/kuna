@@ -452,6 +452,16 @@ pub trait FlowEnvironment {
         false
     }
 
+    /// (kuna `callpopret`) Is the direct-call target `dest` a fragment that pops
+    /// the pushed return address off the stack and `ret`s through the word above
+    /// it — returning to the caller's own caller, so control never reaches the
+    /// return address?  See [`kuna_callpopret`](crate::kuna_callpopret).  The
+    /// default shell reports `false` (upstream behavior: every `CALL` falls
+    /// through).
+    fn pops_return_address(&self, _dest: &Address) -> bool {
+        false
+    }
+
     /// Is the function at the direct-call `entry` address marked \e inline? (C++
     /// `FlowInfo::queryCall` → `fspecs.copyFlowEffects(otherfunc->getFuncProto())`
     /// → `FuncProto::isInline()`).
@@ -1328,11 +1338,14 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                 }
                 OpCode::CPUI_CALL => {
                     let destaddr = self.branch_in0_addr(curop);
+                    let popret = !destaddr.is_constant()
+                        && self.env.pops_return_address(&destaddr);
                     if !destaddr.is_constant()
-                        && self.env.is_return_discarding_trampoline(&destaddr)
+                        && (popret || self.env.is_return_discarding_trampoline(&destaddr))
                     {
-                        // (kuna calltrampoline) The callee throws the return
-                        // address away and jumps back into the stream, so
+                        // (kuna calltrampoline / callpopret) The callee throws
+                        // the return address away -- jumping back into the
+                        // stream, or `ret`ing through the word above it -- so
                         // control never reaches the return address and the
                         // fall-through decode there is junk.  Rewrite CALL ->
                         // BRANCH and follow the target, the same rewrite
@@ -1347,14 +1360,15 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                             .data
                             .obank()
                             .get(curop)
-                            .expect("calltrampoline: stale call op")
+                            .expect("call-transfer: stale call op")
                             .get_addr()
                             .clone();
                         let mut destbuf = String::new();
                         let _ = destaddr.print_raw(&mut destbuf);
+                        let kind = if popret { "callpopret" } else { "calltrampoline" };
                         self.data.warning(
                             &format!(
-                                "calltrampoline: {destbuf} discards the return address -- \
+                                "{kind}: {destbuf} discards the return address -- \
 following this call as a branch"
                             ),
                             &site,

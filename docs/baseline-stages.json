@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    774,
-    774
+    776,
+    776
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -48,6 +48,8 @@
     "data:CALLOVERLAP #4: full, guardCallOverlappingInput recovers the truncated XMM0 argument and tryOutputOverlapGuard the return value",
     "data:CALLOVERLAP #5: full, f regains its own parameter",
     "data:CALLOVERLAP #6: full, the epilogue adds 1.0 to the recovered call result, not to a stale pre-call read",
+    "data:CALLPOPRET #1: the default pass follows the call as a branch and recovers the pointer to the inline data",
+    "data:CALLPOPRET #2: the two port reads decoded at the unreachable return address appear only in the callpopret-off pass",
     "data:CALLRETPAIR #1: off, the call is a bare statement and its JSValue is discarded",
     "data:CALLRETPAIR #2: on, the call gains the 16-byte join output the cspec output rule asked for",
     "data:CALLRETPAIR #3: on, both halves are SUBPIECEs of the call output instead of locals with no definition",
