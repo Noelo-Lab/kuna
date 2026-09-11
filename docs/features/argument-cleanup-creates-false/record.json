@@ -19,11 +19,32 @@
     "Known residual, not papered over: a frame built purely by `sub esp,N` whose N happens to equal a cdecl argument cleanup in front of the branch still matches, because with no register saved there is nothing to ask for. Closing that needs the flow-ordering change tailcallframe's own module header already names as the sound fix."
   ],
   "sweep": {
-    "method": "whole-binary `kuna decompile-all` A/B, `--option tailcallsaved off` (byte-identical to the pre-change tree, since the gate is the only behavioural difference) vs default, over every binary in the decbench corpus",
-    "binaries": 803,
-    "changed_binaries": 0,
-    "changed_lines": 0,
-    "errors_or_timeouts": 0
+    "decbench": {
+      "method": "whole-binary `kuna decompile-all` A/B, `--option tailcallsaved off` (byte-identical to the pre-change tree, since the gate is the only behavioural difference) vs default",
+      "binaries": 803,
+      "changed_binaries": 0,
+      "changed_lines": 0,
+      "errors_or_timeouts": 0,
+      "note": "Every decbench binary is a gcc-built ELF, almost all x86-64 SysV, where there is no cdecl argument cleanup to misread. This arm proves no collateral; it does not exercise the rule."
+    },
+    "crackme_pe": {
+      "method": "same A/B over the RE-friction dataset and the repipe probe corpus, where the shape actually occurs (32-bit cdecl PE). Stopped early for time at 371 of 609 inputs; 228 of those fail to load on BOTH arms (rc equal, so not caused by this change).",
+      "binaries_completed": 143,
+      "changed_binaries": 19,
+      "unchanged_binaries": 124,
+      "changed_functions": 36,
+      "hunks_classified": {
+        "declined tail calls all INTERNAL to the function that made them": 33,
+        "function had no body before, so it gained the tail calls its own body contains": 1,
+        "declined a tail call to an address outside the function": 2
+      },
+      "hunk_notes": [
+        "All 33 internal cases are the defect: a `jmp` after `call f; add esp,N` was recovered as a call to a block of the same function, truncating it. Read in full: Silvers-CrackMe-1 sub_44a2d0 (two false calls to 0x44a3a5 and 0x44a3c3, now one coherent function) and sub_44eb61 (two false calls to 0x44ed30/0x44ed32; the fixed version has real `return 0;` / `return 0xffffffff;` paths).",
+        "The one 'gained' case is the largest win in the sweep: crkme.exe sub_4047e4 was the single line `sub_4047f6();` -- a call to its own second instruction -- and is now the whole 313-line polymorphic decryptor. The three tail calls it 'gained' are inside that body, which did not exist before.",
+        "pcme0 sub_8048ace: the declined target 0x8048d03 is a duplicated `mov eax,1; int 0x80` exit stub a few bytes further into the same routine (the classifier called it external only because the next LISTED entry sorts lower). One line moves, from `sub_8048d03();` to `(*(void *)swi(0x80))();`. Neutral.",
+        "The one observed non-improvement: illusion.exe sub_40be3d, an anti-analysis binary whose function is garbage on both arms (`Control flow encountered bad instruction data`, a 14 KB stack array, `Stackfffffff8`). The declined target 0x8850147d is outside the image entirely, so `tailcallframe` had been ending the decode on a garbage jump; without it kuna follows the jump and reports `Function flows into unmapped memory`. Both renderings are junk; the change swaps which failure is reported. Declining an unmapped destination is `tailcallframe`'s question, not this predicate's, and is left alone."
+      ]
+    }
   },
   "gates": {
     "datatests": "675/675 PARITY OK",

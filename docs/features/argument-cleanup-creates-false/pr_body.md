@@ -74,8 +74,17 @@ in-repo fixture. 10 unit cases for the accounting, 3 more on the predicate
 itself; the two existing `tailcallframe` witnesses still recover their tail calls.
 
 Gates: datatests 675/675, stages 758/758, `tests/cli` 121/121, `check-spec` OK,
-`catalog --check` OK. Collateral: `decompile-all` off-vs-on over all 803 decbench
-binaries — 0 changed lines. Speed on `openssh-portable/sftp`, medians of 5
-interleaved rounds: 9.319 s off vs 9.240 s on (−0.84%, byte-identical output).
+`catalog --check` OK.
+
+Collateral, `decompile-all` off-vs-on: 0 changed lines across all 803 decbench
+binaries (all gcc ELFs, so the shape does not occur there), and 19 of 143 32-bit
+PE crackmes changed — 36 functions, 33 of them declining a tail call to a block
+of their own body. The largest is `crkme.exe sub_4047e4`, which was the single
+line `sub_4047f6();` and is now the whole 313-line decryptor. One function gets
+no better: `illusion.exe sub_40be3d` is garbage on both arms and swaps one
+failure warning for another.
+
+Speed on `openssh-portable/sftp`, medians of 5 interleaved rounds: 9.319 s off vs
+9.240 s on (−0.84%, byte-identical output).
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
