@@ -109,6 +109,19 @@ def _round_lock(n):
         fh.close()
 
 
+@contextlib.contextmanager
+def _startup_lock():
+    """Serialize operator recovery and launcher startup decisions."""
+    os.makedirs(config.state_dir(), exist_ok=True)
+    fh = open(config.state_dir() / ".supervisor-start.lock", "w")
+    try:
+        fcntl.flock(fh, fcntl.LOCK_EX)
+        yield
+    finally:
+        fcntl.flock(fh, fcntl.LOCK_UN)
+        fh.close()
+
+
 def save_round(doc):
     p = _round_path(doc["round"])
     # A per-process temp name: a shared "<path>.tmp" lets two writers interleave into the same
@@ -373,12 +386,12 @@ def recover():
     return {"round": n, "reaped": reaped, "resumed_at": {k: doc[k] for k in MACHINES}}
 
 
-def _operator_resume(expected, note, consume_halt_reason=False):
+def _operator_resume(expected, note, consume_halt_reason=False, consume_stop=False):
     """Guard and audit an operator-only terminal supervisor recovery."""
     reaped = pstate.reap(stale_seconds=0)
     n = current_round()
-    controls = [name for name, present in (("STOP", stop_requested()), ("ABORT", abort_requested()))
-                if present]
+    controls = (["STOP"] if stop_requested() and not consume_stop else [])
+    controls.extend(["ABORT"] if abort_requested() else [])
     if controls:
         return {"ok": False, "round": n, "reaped": reaped,
                 "problems": ["%s control file present" % ", ".join(controls)]}
@@ -396,8 +409,8 @@ def _operator_resume(expected, note, consume_halt_reason=False):
             return {"ok": False, "round": n, "reaped": reaped,
                     "problems": ["supervisor is %s, not %s" % (doc["supervisor"], expected)],
                     "live": live}
-        controls = [name for name, present in (("STOP", stop_requested()),
-                                                ("ABORT", abort_requested())) if present]
+        controls = (["STOP"] if stop_requested() and not consume_stop else [])
+        controls.extend(["ABORT"] if abort_requested() else [])
         if controls:
             return {"ok": False, "round": n, "reaped": reaped,
                     "problems": ["%s control file appeared during recovery"
@@ -408,6 +421,9 @@ def _operator_resume(expected, note, consume_halt_reason=False):
         if any(live.values()):
             return {"ok": False, "round": n, "reaped": reaped,
                     "problems": ["live agent slots appeared during recovery"], "live": live}
+        consumed_stop = consume_stop and stop_requested()
+        if consumed_stop:
+            (config.state_dir() / "STOP").unlink()
         # HALTED recovery consumes its reason before publishing RUNNING. A later halt may write
         # a new reason after save_round(); there must be no post-publication unlink that erases it.
         if consume_halt_reason:
@@ -416,29 +432,39 @@ def _operator_resume(expected, note, consume_halt_reason=False):
                 halt_reason.unlink()
             except FileNotFoundError:
                 pass
-        doc["supervisor"] = "RUNNING"
-        doc.setdefault("notes", []).append(note)
-        rec = {"ts": time.time(), "machine": "supervisor", "from": expected,
-               "to": "RUNNING", "note": note, "pid": os.getpid(), "operator_resume": True}
-        with open(_round_dir(n) / "transitions.jsonl", "a") as fh:
-            fh.write(json.dumps(rec) + "\n")
-        save_round(doc)
+        try:
+            doc["supervisor"] = "RUNNING"
+            doc.setdefault("notes", []).append(note)
+            rec = {"ts": time.time(), "machine": "supervisor", "from": expected,
+                   "to": "RUNNING", "note": note, "pid": os.getpid(),
+                   "operator_resume": True}
+            with open(_round_dir(n) / "transitions.jsonl", "a") as fh:
+                fh.write(json.dumps(rec) + "\n")
+            save_round(doc)
+        except BaseException:
+            if consumed_stop:
+                (config.state_dir() / "STOP").touch()
+            raise
 
     return {"ok": True, "round": n, "reaped": reaped,
-            "resumed_at": {k: doc[k] for k in MACHINES}, "live": live}
+            "resumed_at": {k: doc[k] for k in MACHINES}, "live": live,
+            "consumed_stop": consumed_stop}
 
 
 def resume_halted():
     """Operator-only recovery from HALTED after the machine is safe again."""
-    return _operator_resume(
-        "HALTED", "operator resume after reap, empty agent slots, and preflight OK",
-        consume_halt_reason=True)
+    with _startup_lock():
+        return _operator_resume(
+            "HALTED", "operator resume after reap, empty agent slots, and preflight OK",
+            consume_halt_reason=True)
 
 
-def restart_stopped():
+def restart_stopped(consume_stop=False):
     """Operator-only restart of a cleanly stopped round after the machine is safe again."""
-    return _operator_resume(
-        "STOPPED", "operator restart after reap, empty agent slots, and preflight OK")
+    with _startup_lock():
+        return _operator_resume(
+            "STOPPED", "operator restart after reap, empty agent slots, and preflight OK",
+            consume_stop=consume_stop)
 
 
 def main(argv=None):
@@ -447,6 +473,7 @@ def main(argv=None):
     ap.add_argument("--recover", action="store_true")
     ap.add_argument("--resume-halted", action="store_true")
     ap.add_argument("--restart-stopped", action="store_true")
+    ap.add_argument("--consume-stop", action="store_true")
     ap.add_argument("--preflight", action="store_true")
     ap.add_argument("--status", action="store_true")
     ap.add_argument("--round", type=int, default=None)
@@ -456,6 +483,10 @@ def main(argv=None):
                     help="how many of the round's most recent notes --status carries (0 = none)")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args(argv)
+
+    if args.consume_stop and not args.restart_stopped:
+        print("--consume-stop requires --restart-stopped", file=sys.stderr)
+        return 2
 
     if args.preflight:
         problems = preflight()
@@ -476,7 +507,7 @@ def main(argv=None):
         return 0 if out["ok"] else 1
 
     if args.restart_stopped:
-        out = restart_stopped()
+        out = restart_stopped(consume_stop=args.consume_stop)
         print(json.dumps(out, indent=2, default=str))
         return 0 if out["ok"] else 1
 

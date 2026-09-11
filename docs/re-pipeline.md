@@ -357,8 +357,9 @@ come from a slot.
   reason written by a later halt is therefore never removed after `RUNNING` is published.
   A fresh `run.sh` invocation similarly consumes the completed round's `STOP` and uses
   `captain.py --restart-stopped` to leave `STOPPED`; the same empty-pool, control-file, and
-  preflight guards apply, and the `STOPPED -> RUNNING` operator edge is appended to the
-  transition audit. `ABORT` is never consumed implicitly.
+  preflight guards apply. Startup recovery is serialized, `STOP` is consumed under the round
+  lock, and the `STOPPED -> RUNNING` operator edge is appended to the transition audit.
+  `ABORT` is never consumed implicitly.
 - **Builder branches fail closed.** `tools/pipeline/worker.sh` accepts `WORKER_BRANCH` as an
   explicit fresh-branch seam. Normal RE builders use the stable round-specific name
   `feat/re-<need>-r<round>`, avoiding old canonical refs from earlier rounds. Only an exact

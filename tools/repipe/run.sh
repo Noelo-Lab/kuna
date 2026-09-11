@@ -57,11 +57,8 @@ if [ -f "$STATE_DIR/ABORT" ]; then
   exit 1
 fi
 if [ "$START_STATE" = "STOPPED" ]; then
-  HAD_STOP=0
-  [ -f "$STATE_DIR/STOP" ] && HAD_STOP=1
-  rm -f "$STATE_DIR/STOP"
-  if ! "$KUNA_PY" -m scripts.repipe.captain --restart-stopped >>"$STATE_DIR/logs/captain.log" 2>&1; then
-    [ "$HAD_STOP" = 1 ] && touch "$STATE_DIR/STOP"
+  if ! "$KUNA_PY" -m scripts.repipe.captain --restart-stopped --consume-stop \
+      >>"$STATE_DIR/logs/captain.log" 2>&1; then
     log "STOPPED restart refused; see $STATE_DIR/logs/captain.log"
     exit 1
   fi

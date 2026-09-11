@@ -498,7 +498,14 @@ captain.live_agents = lambda pool: []
 out = captain.restart_stopped()
 assert not out["ok"] and "STOP" in out["problems"][0], out
 assert captain.load_round(10)["supervisor"] == "STOPPED"
-(config.state_dir() / "STOP").unlink()
+out = captain.restart_stopped(consume_stop=True)
+assert out["ok"] and out["consumed_stop"], out
+assert captain.load_round(10)["supervisor"] == "RUNNING"
+assert not (config.state_dir() / "STOP").exists()
+
+restarted = captain.load_round(10)
+restarted["supervisor"] = "STOPPED"
+captain.save_round(restarted)
 
 def controls_during_preflight():
     (config.state_dir() / "ABORT").write_text("")
@@ -507,6 +514,47 @@ captain.preflight = controls_during_preflight
 out = captain.restart_stopped()
 assert not out["ok"] and "ABORT" in out["problems"][0], out
 assert captain.load_round(10)["supervisor"] == "STOPPED"
+PY
+
+KUNA_PIPELINE_STATE_DIR="$SMOKE_STATE/restart-concurrent" "$PY" - <<'PY' >/dev/null 2>&1 \
+  && ok "concurrent launchers produce one restart without a stale STOP" \
+  || bad "concurrent STOPPED launchers can still drain the winner"
+import json
+import multiprocessing
+from scripts.repipe import captain, config
+
+doc = captain.load_round(11)
+doc["supervisor"] = "STOPPED"
+captain.save_round(doc)
+(config.state_dir() / "STOP").write_text("")
+captain.current_round = lambda: 11
+captain.pstate.reap = lambda stale_seconds=0: []
+captain.preflight = lambda: []
+captain.live_agents = lambda pool: []
+
+ctx = multiprocessing.get_context("fork")
+start = ctx.Event()
+results = ctx.Queue()
+def launch():
+    start.wait()
+    results.put(captain.restart_stopped(consume_stop=True))
+
+workers = [ctx.Process(target=launch) for _ in range(2)]
+for worker in workers:
+    worker.start()
+start.set()
+for worker in workers:
+    worker.join(10)
+    assert worker.exitcode == 0, worker.exitcode
+out = [results.get(timeout=1) for _ in workers]
+assert sorted(row["ok"] for row in out) == [False, True], out
+assert captain.load_round(11)["supervisor"] == "RUNNING"
+assert not (config.state_dir() / "STOP").exists()
+records = [json.loads(line) for line in
+           (config.rounds_dir() / "11" / "transitions.jsonl").read_text().splitlines()]
+operator_edges = [row for row in records if row.get("operator_resume")]
+assert len(operator_edges) == 1, records
+assert operator_edges[0]["from"] == "STOPPED" and operator_edges[0]["to"] == "RUNNING"
 PY
 
 RUN_REPO="$SMOKE_STATE/run-repo"
@@ -518,6 +566,7 @@ printf '%s\n' \
   'case "$*" in' \
   '  *"--preflight"*) exit 0;;' \
   '  *"--restart-stopped"*)' \
+  '    case "$*" in *"--consume-stop"*) rm -f "$KUNA_PIPELINE_STATE_DIR/STOP";; esac' \
   '    [ ! -e "$KUNA_PIPELINE_STATE_DIR/STOP" ] || exit 1' \
   '    [ ! -e "$KUNA_PIPELINE_STATE_DIR/ABORT" ] || exit 1' \
   '    touch "$KUNA_PIPELINE_STATE_DIR/restarted";;' \
@@ -545,6 +594,32 @@ elif [ -e "$RUN_REPO/.state/STOP" ] && [ -e "$RUN_REPO/.state/ABORT" ] \
   ok "run.sh refuses ABORT without consuming control files"
 else
   bad "run.sh mutated control files while refusing ABORT"
+fi
+
+CONCURRENT_REPO="$SMOKE_STATE/concurrent-run-repo"
+mkdir -p "$CONCURRENT_REPO/tools/repipe" "$CONCURRENT_REPO/.state"
+printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "$CONCURRENT_REPO/tools/repipe/captain.sh"
+chmod +x "$CONCURRENT_REPO/tools/repipe/captain.sh"
+printf 'STOPPED\n' > "$CONCURRENT_REPO/.state/fake-state"
+touch "$CONCURRENT_REPO/.state/STOP"
+KUNA_REPO="$CONCURRENT_REPO" KUNA_PY="$FIX/concurrent_launcher_python.py" \
+  REPIPE_STATE_DIRNAME=.state timeout 15 bash "$REPO/tools/repipe/run.sh" \
+  >"$SMOKE_STATE/concurrent-run-1.log" 2>&1 &
+RUN1=$!
+KUNA_REPO="$CONCURRENT_REPO" KUNA_PY="$FIX/concurrent_launcher_python.py" \
+  REPIPE_STATE_DIRNAME=.state timeout 15 bash "$REPO/tools/repipe/run.sh" \
+  >"$SMOKE_STATE/concurrent-run-2.log" 2>&1 &
+RUN2=$!
+wait "$RUN1"; RC1=$?
+wait "$RUN2"; RC2=$?
+RESTARTS="$(wc -l < "$CONCURRENT_REPO/.state/fake-restarts" 2>/dev/null || echo 0)"
+if [ $((RC1 + RC2)) -eq 1 ] && [ "$RESTARTS" -eq 1 ] \
+   && [ "$(cat "$CONCURRENT_REPO/.state/fake-state")" = RUNNING ] \
+   && [ ! -e "$CONCURRENT_REPO/.state/STOP" ]; then
+  ok "two concurrent run.sh launchers cannot restore a stale STOP"
+else
+  bad "concurrent run.sh restart was not serialized" \
+    "rc=$RC1/$RC2 restarts=$RESTARTS state=$(cat "$CONCURRENT_REPO/.state/fake-state") stop=$([ -e "$CONCURRENT_REPO/.state/STOP" ] && echo yes || echo no)"
 fi
 
 [ "$LEVEL" = "0" ] && { printf '\nL0 only: %d passed, %d failed\n' "$PASS" "$FAIL"; exit $((FAIL>0)); }
