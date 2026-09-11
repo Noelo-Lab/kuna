@@ -1,0 +1,38 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "stack_aggregate"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/checker_stack_aggregate_x86_64",
+    "binary_sha256": "92968f535eaaa3dbf064699e5fcbe1e65ddd6456aa7c46495b26e1d63b9a9160",
+    "binary_size": 10808,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/checker_stack_aggregate_x86_64",
+    "selector": "stack_aggregate",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "unsigned int v12; // stack - 0x10",
+      "v12\\._0_4_ = a;",
+      "v12\\._4_4_ = b;",
+      "sink\\(&v12\\);"
+    ]
+  },
+  "notes": "Reduced from RE-friction need checker-uses-stack-aggregate. DWARF maps one 8-byte local named `v12` whose two 4-byte pieces and address reference share that name. The constant-only `&v12` reference is not a whole storage high and cannot justify suppressing both piece declarations."
+}

@@ -5,8 +5,8 @@
   "rejected_count": 1,
   "by_status": {
     "blocked": 1,
-    "closed": 124,
-    "open": 72
+    "closed": 125,
+    "open": 71
   },
   "by_track": {
     "loader": 10,
@@ -2402,10 +2402,10 @@
       "need_id": "checker-uses-stack-aggregate",
       "title": "Checker uses a stack aggregate without declaring it",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
-      "probe_id": "p-47dac9af35a2",
-      "acceptance_id": "a-6378ef033735",
+      "probe_id": "p-0aa9ec21399b",
+      "acceptance_id": "a-2c0a327051af",
       "hypothesis_status": "upheld",
       "credibility": 0.7,
       "instances": 1,
@@ -2423,9 +2423,9 @@
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": "https://github.com/Noelo-Lab/kuna/pull/573",
+      "closed_in_round": 12,
+      "closing_pr": 573,
       "reject_reason": null,
       "score": 13.862944,
       "path": "docs/re-needs/checker-uses-stack-aggregate.md"

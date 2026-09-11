@@ -9104,7 +9104,7 @@ fn high_name_has_whole_sibling(
 }
 
 /// Does another HighVariable share `name` and represent the WHOLE scalar Symbol —
-/// a storage rep at offset 0 whose size equals the mapped scalar symbol type's size
+/// a non-constant storage rep at offset 0 whose size equals the mapped scalar symbol type's size
 /// (the C++ `getFirstWholeMap()` entry that emits the single declaration)?  Used by
 /// the decl walk to suppress the per-partial declarations of a tied scalar local
 /// (LOSS-245: `int8 local` accessed as int4/int2 sub-fields) without affecting a
@@ -9130,7 +9130,7 @@ fn high_name_has_scalar_whole_sibling(
         }
         fd.vbank()
             .get(h.get_instance(0))
-            .map(|v| v.get_size() == sym_size)
+            .map(|v| !v.is_constant() && v.get_size() == sym_size)
             .unwrap_or(false)
     })
 }

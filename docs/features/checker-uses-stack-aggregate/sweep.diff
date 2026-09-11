@@ -1,0 +1,23 @@
+--- stage/re-checker-stack-aggregate/old
++++ stage/re-checker-stack-aggregate/new
+@@
+ unsigned int stack_aggregate(unsigned int a0,unsigned int a1)
+ {
++  unsigned int local; // stack - 0x10
++
+   local._0_4_ = a0;
+   local._4_4_ = a1;
+--- phantomgate.exe/sub_140001740/old
++++ phantomgate.exe/sub_140001740/new
+@@
+   char v10 [16]; // stack - 0x528
+   long long v11; // stack - 0x508
++  unsigned int v12; // stack - 0x4e8
+   char v13; // stack - 0x53c
+--- phantomgate.exe/sub_1400271c0/old
++++ phantomgate.exe/sub_1400271c0/new
+@@
+   unsigned char *v7;
+   long long v8;
++  unsigned long long v9; // stack - 0x58
+   v18 = *dat_140030d80;
