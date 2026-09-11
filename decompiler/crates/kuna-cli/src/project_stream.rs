@@ -812,13 +812,17 @@ fn run_serial(
     set_asm_phase(shared, AsmPhase::Sweeping);
     let mut batch = 1usize;
     loop {
+        // The callee-hint context is built once per `decompile_pulled` call, so
+        // the interleave is batched rather than per function, and once the sweep
+        // is out of the way the rest of the run is ONE call.
+        let limit = if sweep.is_done() { usize::MAX } else { batch };
         let mut taken = 0usize;
         let mut send_failed = false;
         decompile_pulled(
             prog,
             opts,
             &mut || {
-                if taken >= batch {
+                if taken >= limit {
                     return None;
                 }
                 scheduler.claim_one().map(|i| {
