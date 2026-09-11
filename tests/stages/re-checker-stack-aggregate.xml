@@ -1,0 +1,34 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    RE-friction need checker-uses-stack-aggregate.
+
+    P9 emission, local declaration selection. A mapped 8-byte scalar is written
+    as two 4-byte pieces and then passed by address. The PTRSUB address expression
+    produces a constant-only HighVariable carrying the same symbol name and full
+    width. It is a reference, not the whole storage representative: accepting it
+    as the whole sibling suppresses both real piece declarations, leaving `local`
+    used throughout the body but undeclared.
+
+    This is an unconditional correctness fix to the existing scalar-piece
+    declaration collapse, so there is no new option. The assertion requires one
+    declaration and pins every part of the triggering shape.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+4883ec18897c24088974240c488d7c2408e8090000008b4424084883c418c3c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="stack_aggregate"/>
+<symbol space="ram" offset="0x10001f" name="sink"/>
+</binaryimage>
+<script>
+  <com>lo fu stack_aggregate</com>
+  <com>map addr s0xfffffffffffffff0 int8 local</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="checker-stack-aggregate #1: the partial-backed scalar is declared exactly once" min="1" max="1">^  [A-Za-z0-9_ ]+ local;</stringmatch>
+<stringmatch name="checker-stack-aggregate #2: the low piece keeps the shared name" min="1" max="1">local\._0_4_ = a0;</stringmatch>
+<stringmatch name="checker-stack-aggregate #3: the high piece keeps the shared name" min="1" max="1">local\._4_4_ = a1;</stringmatch>
+<stringmatch name="checker-stack-aggregate #4: the address reference that triggered the false sibling remains" min="1" max="1">sink\(&amp;local\);</stringmatch>
+</decompilertest>
