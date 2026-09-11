@@ -61,12 +61,14 @@
   },
   "gates": {
     "make test": "PARITY OK 675/675",
-    "make test-stages": "PARITY OK",
+    "make test-stages": "PARITY OK 763/763",
     "make test-cli": "123/123",
-    "make rust-test": "pending-at-write-time (recorded in the PR body)",
+    "make rust-test": "green (6451 passed, 0 failed, 0 FAILED suites)",
     "make check-spec": "check-spec OK",
-    "kuna catalog --check": "pending-at-write-time (recorded in the PR body)",
-    "acceptance probe": "PASS on the dataset witness"
+    "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
+    "acceptance probe": "PASS on the dataset witness",
+    "repipe.counters --fix": "no drift; nothing to fix (186 settables, tiers 58/69/59, 269 corpus files)",
+    "repipe.mergecheck --against origin/main": "merge guards clean, 0 rejects; DIV-159 still free on origin/main"
   },
   "docs": {
     "spec": "docs/spec/00-overview.md 0.3 -- 'Phi arity tracks in-degree, and the marker run is not a place to look it up'",
