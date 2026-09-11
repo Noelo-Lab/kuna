@@ -56,7 +56,9 @@
     that its callee at 0x1500 is "endbr64; ret" - a stub, which is also what a
     placeholder and an entry decoded at the wrong address look like.  It writes
     no memory, so its silence about RAX is not evidence and g must render
-    identically in both passes.
+    identically in both passes. The derived stack offset has two consumers, so
+    foldcallret must materialize it once rather than print either probe call at
+    both the store and the load.
 
     Stage: P3 heritage call guarding, option calleescratchbody off|on.  Pass 1
     (off) pins the bug, pass 2 (on, the default) pins the fix.
@@ -93,9 +95,13 @@ f30f1efac3
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="CALLEESCRATCHBODY #1: off, the whole frame is indexed off the value __chkstk supposedly returns" min="1" max="1">Stack0000000000000008\)\[-sub_1100\(\)\] = a0;$</stringmatch>
+<stringmatch name="CALLEESCRATCHBODY #1: off, the whole frame is indexed off the value __chkstk supposedly returns" min="1" max="1">^  v[0-9]+ = -sub_1100\(\);$
+^  \*\(unsigned long long \*\)&amp;\(&amp;Stack0000000000000008\)\[v[0-9]+\] = a0;$
+^  return \*\(unsigned long long \*\)&amp;\(&amp;Stack0000000000000008\)\[v[0-9]+\];$</stringmatch>
 <stringmatch name="CALLEESCRATCHBODY #2: on, the probe is called for its side effect and the frame slot is a fixed offset" min="1" max="1">^  sub_1100\(\);$</stringmatch>
 <stringmatch name="CALLEESCRATCHBODY #3: on, the slot written and read back at that offset is the argument" min="1" max="1">^  return a0;$</stringmatch>
-<stringmatch name="CALLEESCRATCHBODY #4: both passes, an endbr64/ret stub writes no memory and proves nothing" min="2" max="2">Stack0000000000000008\)\[-sub_1500\(\)\] = a0;$</stringmatch>
+<stringmatch name="CALLEESCRATCHBODY #4: both passes, an endbr64/ret stub writes no memory and proves nothing" min="2" max="2">^  v[0-9]+ = -sub_1500\(\);$
+^  \*\(unsigned long long \*\)&amp;\(&amp;Stack0000000000000008\)\[v[0-9]+\] = a0;$
+^  return \*\(unsigned long long \*\)&amp;\(&amp;Stack0000000000000008\)\[v[0-9]+\];$</stringmatch>
 <stringmatch name="CALLEESCRATCHBODY #5: both passes, so g keeps the convention's answer unchanged" min="2" max="2">^unsigned long long g\(unsigned long long a0\)$</stringmatch>
 </decompilertest>

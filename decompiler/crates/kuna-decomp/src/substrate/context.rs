@@ -1045,7 +1045,7 @@ pub struct ArchContext {
     /// [`crate::kuna_loopbreak_recovery::kuna_scope_break`].
     pub recover_loop_break: bool,
     /// (kuna) fold an order-safe single-use call return into its use site
-    /// (`fold_call_returns`, opt-in default-off).  Read by `base_explicit`
+    /// (`fold_call_returns`, DIV-14 default-on).  Read by `base_explicit`
     /// (`ActionMarkExplicit`) via [`crate::kuna_callretfold::call_output_foldable`].
     pub fold_call_returns: bool,
     /// (kuna) strip the glibc -fstack-protector canary epilogue (C++
@@ -1425,7 +1425,7 @@ impl ArchContext {
             early_return: false, // earlyreturn (opt-in default-off)
             switch_return: false, // switchreturn (opt-in default-off)
             recover_loop_break: false,   // loopbreak_recovery (opt-in default-off)
-            fold_call_returns: false, // foldcallret (opt-in default-off)
+            fold_call_returns: false, // foldcallret (Architecture::reset_defaults sets the shipped default: on)
             strip_stack_guard: false,    // stackguard (opt-in default-off)
             strip_msvc_stack_guard: false, // msvcstackguard (fixture default-off; the live gate rides build_arch_handle)
             strip_security_check: false, // securitycheck (fixture default-off; the live gate rides build_arch_handle)

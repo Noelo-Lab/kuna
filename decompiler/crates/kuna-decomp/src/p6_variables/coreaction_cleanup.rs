@@ -731,7 +731,7 @@ fn base_explicit(data: &Funcdata, vn: crate::context::VarnodeId, mut maxref: int
             // (kuna) foldcallret: when on, let an order-safe single-use call
             // output fall through to the implied path so the printer inlines the
             // call expression at its use (angr "call return variable folding").
-            // Off (default) => byte-identical upstream (always explicit).
+            // Option off => byte-identical upstream (always explicit).
             if !(data.get_arch().fold_call_returns
                 && crate::kuna_callretfold::call_output_foldable(data, vn))
             {
@@ -880,8 +880,18 @@ impl OpStackElement {
 
 /// For a given multi-descendant Varnode, decide if it should be explicit by
 /// counting the terminal terms duplicated through its expression (C++
-/// `ActionMarkExplicit::processMultiplier`, `coreaction.cc:3211`).
+/// `ActionMarkExplicit::processMultiplier`, `coreaction.cc:3211`). A derived
+/// value stays explicit when its duplicated expression contains a foldable
+/// call, so the call is evaluated once rather than at every sink.
 fn process_multiplier(data: &mut Funcdata, vn: crate::context::VarnodeId, max: int4) {
+    if data.get_arch().fold_call_returns
+        && crate::kuna_callretfold::expression_contains_foldable_call(data, vn)
+    {
+        let m = data.vbank_mut().get_mut(vn).expect("processMultiplier: stale vn");
+        m.set_explicit();
+        m.clear_implied();
+        return;
+    }
     let mut opstack: Vec<OpStackElement> = vec![OpStackElement::new(data, vn)];
     let mut finalcount = 0;
     while let Some(top) = opstack.last_mut() {

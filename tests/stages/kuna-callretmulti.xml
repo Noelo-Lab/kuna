@@ -1,0 +1,53 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    A call result is narrowed to its low word, then that derived value feeds a
+    comparison inside an inner loop and a store after the loop. The machine
+    calls helper once per outer iteration. Marking the call output implied is
+    only safe if its whole expression chain reaches one textual sink.
+
+    Pass 1 uses the upstream-faithful option-off form. Pass 2 turns the shipped
+    option on explicitly. Both must retain one helper assignment, while the
+    existing ghangr-call-return-variable-folding test proves a true single-sink
+    call still folds when the option is on. Before the fix pass 2 printed
+    helper() at both downstream sinks, so assertion #1 counted only one call
+    assignment and assertion #2 counted two duplicated expressions.
+
+    same_block_two_sink covers the cheap same-block case: the masked return
+    feeds one store directly and a second store through an add. Its expression
+    has only two terminal terms, so the default multiplier budget otherwise
+    permits the same call to be printed twice even without a CFG edge.
+-->
+<bytechunk space="ram" offset="0x1000">
+534883ec2031dbe83400000025ffff00807d09ffc80d0000ffffffffc031c96639044c74e348ffc14883f9107cf16689045c48ffc34883fb107ccd4883c4205bc3b807000000c3
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="sub_140002930"/>
+<symbol space="ram" offset="0x1040" name="helper"/>
+<bytechunk space="ram" offset="0x1100">
+e81b00000025ffff00008d480183c002890dea0e00008905e80e0000c3909090b807000000c3
+</bytechunk>
+<bytechunk space="ram" offset="0x2000">0000000000000000</bytechunk>
+<symbol space="ram" offset="0x1100" name="same_block_two_sink"/>
+<symbol space="ram" offset="0x1120" name="helper2"/>
+</binaryimage>
+<script>
+  <com>option foldcallret off</com>
+  <com>lo fu sub_140002930</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu same_block_two_sink</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option foldcallret on</com>
+  <com>lo fu sub_140002930</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu same_block_two_sink</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="callretmulti #1: one helper assignment in each pass" min="2" max="2">= helper\(\)</stringmatch>
+<stringmatch name="callretmulti #2: helper is never duplicated into the low-word sinks" min="0" max="0">\(unsigned short\)helper\(\)</stringmatch>
+<stringmatch name="callretmulti #3: same-block fan-out evaluates helper2 once per pass" min="2" max="2">helper2\(\)</stringmatch>
+</decompilertest>
