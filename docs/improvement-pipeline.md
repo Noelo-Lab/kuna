@@ -322,8 +322,11 @@ re-queues violations.
 ## The headless fleet (optional automation)
 
 The same loop, driven autonomously: `run.sh` keeps N workers alive, each an isolated
-git-worktree `claude -p` session executing `tools/pipeline/worker_prompt.md` (the
-templated per-feature version of §§2–4, with heartbeats and the state protocol).
+git-worktree agent session executing `tools/pipeline/worker_prompt.md` (the templated
+per-feature version of §§2–4, with heartbeats and the state protocol). Claude remains the
+default. Set `WORKER_BACKEND=codex`, `WORKER_MODEL=gpt-5.6-sol`, and
+`WORKER_REASONING=high` (or `xhigh`/`max`) to use Codex; its multi-agent features are disabled
+so every concurrent implementation session remains visible to the driver.
 
 ```bash
 tools/pipeline/install_gh.sh                       # one-time PR tooling (Linux host)
@@ -337,8 +340,9 @@ Mechanics an operator should know: workers claim opportunities atomically
 (`state claim`, exit code 0/1); state always lives in the **main** tree
 (`KUNA_PIPELINE_STATE_DIR`) so `status` sees worktree workers; worktrees reuse the main
 tree's compiled specs (`KUNA_SPECS` — never `make specs` in a worktree); session ids are
-recorded for `claude --resume` review; merged/closed-PR worktrees are GC'd, open ones
-kept. Proposals: `status --proposals` lists parked drafts;
+recorded for review (`claude --resume` for Claude, `codex exec resume` for Codex), and Codex
+JSONL plus final output are retained beside the worker log; merged/closed-PR worktrees are
+GC'd, open ones kept. Proposals: `status --proposals` lists parked drafts;
 `state approve --opportunity <id>` green-lights one.
 
 ## Machinery reference

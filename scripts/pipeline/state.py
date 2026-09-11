@@ -1,6 +1,6 @@
 """Shared, file-backed pipeline state: the worker inventory + opportunity claims.
 
-Workers run as independent processes (headless `claude -p` sessions in worktrees) and the
+Workers run as independent processes (headless agent sessions in worktrees) and the
 driver loop is a separate process again, so live state lives in flock-guarded JSON under
 ``.kuna-pipeline/`` (gitignored), not in memory. This is the single place ``status.py``
 reads to answer "how many workers are running and what is each doing", and the place the

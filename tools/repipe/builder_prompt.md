@@ -1,6 +1,6 @@
 # kuna RE-friction builder — close ONE need, open ONE PR, merge it
 
-You are an autonomous, highest-effort Claude Code worker in an isolated git worktree on
+You are an autonomous {{WORKER_AGENT}} in an isolated git worktree on
 branch `{{BRANCH}}`. Your entire job this session is to close **one** recorded way that kuna
 is bad for reverse engineering, verify it, and land it. Then stop.
 
@@ -208,7 +208,7 @@ decompiler/target/release/kuna catalog --check    # catalog OK
 ### Backgrounding a long gate — never wait on it with `pgrep`
 
 The workspace suite takes ~10 minutes, so background it if you want, but **do not poll for it
-with `pgrep -f '<gate name>'`**. Your own parent process is `claude -p <this entire prompt>`,
+with `pgrep -f '<gate name>'`**. Your own parent process is `{{WORKER_COMMAND}}`,
 and this prompt contains the literal gate strings, so such a pgrep matches *you* and never
 goes quiet. Builders have deadlocked on exactly that twice in one round, once sitting on a
 green log they could not read. Put the completion marker on the gate's own command line, and
@@ -250,13 +250,13 @@ and `<scope>` is the crate or phase (`cli`, `analysis`, `p9`, …). `[AUTOMATED]
 on anything created fully automatically — PRs, issues and commits alike. Trailers:
 
 ```
-Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+{{WORKER_TRAILER}}
 ```
 
 PR body goes in `docs/features/{{SLUG}}/pr_body.md`: what was broken (quote the need's
 symptom and its instance count), the mechanism, the acceptance probe that now passes, and the
 gate results with real numbers. End with
-`🤖 Generated with [Claude Code](https://claude.com/claude-code)`.
+`{{WORKER_GENERATED_WITH}}`.
 
 ## Negative result
 

@@ -1,21 +1,67 @@
 #!/usr/bin/env bash
-# Launch ONE feature worker: an isolated git worktree + a headless `claude -p` session
+# Launch ONE feature worker: an isolated git worktree + a headless agent session
 # that implements one angr-inspired kuna feature end-to-end and opens a PR.
 #
 # Invoked by tools/pipeline/run.sh, but runnable standalone for a single iteration:
 #   WORKER_ID=w1 OPP_ID='test_x::main' TEST_NAME=test_x SELECTOR=main \
 #   BINARY=/path/bin SLUG=myfeat-ab12cd ARCH= tools/pipeline/worker.sh
 #
-# The worktree and the Claude session transcript are PRESERVED after the run so a human
-# reviewer can resume the session on the PR (`claude --resume <session_id>` in the worktree).
+# The worktree and the agent transcript are PRESERVED after the run. Claude sessions can be
+# resumed directly; Codex runs also retain their JSONL event stream and thread id.
 # tools/pipeline/run.sh garbage-collects a worktree only once its PR is merged/closed.
 set -uo pipefail
 
 REPO="${KUNA_REPO:-$(git -C "$(dirname "$0")" rev-parse --show-toplevel)}"
 KUNA_PY="${KUNA_PY:-$HOME/.virtualenvs/kuna/bin/python}"
-MODEL="${WORKER_MODEL:-opus}"
+BACKEND="${WORKER_BACKEND:-claude}"
+if [ "$BACKEND" = codex ]; then
+  MODEL="${WORKER_MODEL:-gpt-5.6-sol}"
+  REASONING="${WORKER_REASONING:-high}"
+else
+  MODEL="${WORKER_MODEL:-opus}"
+  REASONING="${WORKER_REASONING:-}"
+fi
 WORKER_TIMEOUT="${WORKER_TIMEOUT:-7200}"   # seconds; hard cap per feature
 BASE_BRANCH="${BASE_BRANCH:-main}"
+
+: "${WORKER_ID:?need WORKER_ID}"
+: "${OPP_ID:?need OPP_ID}"
+: "${TEST_NAME:?need TEST_NAME}"
+: "${SELECTOR:?need SELECTOR}"
+: "${BINARY:?need BINARY}"
+: "${SLUG:?need SLUG}"
+ARCH="${ARCH:-}"
+
+case "$BACKEND" in
+  claude)
+    WORKER_AGENT="Claude Code worker using $MODEL"
+    WORKER_COMMAND="claude -p <this entire prompt>"
+    WORKER_DECIDER_INSTRUCTIONS='For any genuine judgment call (which stage to hook, whether the construct generalizes, scope), spawn a **decider subagent** (use the Task/Agent tool) to make and justify the call, and record its decision verbatim in `docs/features/'"$SLUG"'/record.json` under `"decisions"`. Write `docs/features/'"$SLUG"'/plan.md`.
+- **Scope check (the proposal gate, Hard rule 7).** Ask the decider to return `scope: small|large`.'
+    WORKER_TRAILER="Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
+    WORKER_GENERATED_WITH='🤖 Generated with [Claude Code](https://claude.com/claude-code)'
+    ;;
+  codex)
+    if [ "$MODEL" != "gpt-5.6-sol" ]; then
+      echo "worker $WORKER_ID: Codex implementation requires model gpt-5.6-sol (got '$MODEL')" >&2
+      exit 2
+    fi
+    case "$REASONING" in
+      high|xhigh|max) ;;
+      *) echo "worker $WORKER_ID: Codex implementation requires high, xhigh, or max reasoning (got '$REASONING')" >&2; exit 2 ;;
+    esac
+    WORKER_AGENT="Codex implementation worker using $MODEL with $REASONING reasoning"
+    WORKER_COMMAND="codex exec <this entire prompt>"
+    WORKER_DECIDER_INSTRUCTIONS='Codex multi-agent features are disabled so every agent process remains accounted for by a pipeline slot. Make and justify each judgment call yourself, record the decision verbatim in `docs/features/'"$SLUG"'/record.json` under `"decisions"`, and write `docs/features/'"$SLUG"'/plan.md`.
+- **Scope check (the proposal gate, Hard rule 7).** Return your own explicit `scope: small|large` decision.'
+    WORKER_TRAILER="Co-Authored-By: OpenAI Codex <noreply@openai.com>"
+    WORKER_GENERATED_WITH='🤖 Generated with [OpenAI Codex](https://openai.com/codex/)'
+    ;;
+  *)
+    echo "worker $WORKER_ID: unknown WORKER_BACKEND '$BACKEND' (expected claude or codex)" >&2
+    exit 2
+    ;;
+esac
 
 # Seams so a second pipeline reuses this driver without a fork (docs/re-pipeline.md).
 # Unset == the angr fleet's behaviour, byte for byte.
@@ -27,14 +73,6 @@ WORKER_SESSION_ID="${WORKER_SESSION_ID:-}"      # empty = let claude allocate on
 WORKER_EXTRA_PROMPT="${WORKER_EXTRA_PROMPT:-}"  # file spliced in at {{SIBLINGS}}
 WORKER_BRANCH="${WORKER_BRANCH:-}"              # empty = BRANCH_PREFIX + SLUG
 WORKER_PREPARE_ONLY="${WORKER_PREPARE_ONLY:-0}" # test seam: stop after worktree setup
-
-: "${WORKER_ID:?need WORKER_ID}"
-: "${OPP_ID:?need OPP_ID}"
-: "${TEST_NAME:?need TEST_NAME}"
-: "${SELECTOR:?need SELECTOR}"
-: "${BINARY:?need BINARY}"
-: "${SLUG:?need SLUG}"
-ARCH="${ARCH:-}"
 
 # Run the Python pipeline (scripts.pipeline.*) from the main tree so the `scripts`
 # package is importable without an install (no pyproject/pip install -e).
@@ -175,49 +213,118 @@ else
   RESUME_PROPOSAL_LINE=""
 fi
 PROMPT_FILE="$LOG_DIR/$WORKER_ID.prompt.md"
-sed \
-  -e "s|{{WORKER_ID}}|$WORKER_ID|g" \
-  -e "s|{{OPPORTUNITY_ID}}|$OPP_ID|g" \
-  -e "s|{{TEST_NAME}}|$TEST_NAME|g" \
-  -e "s|{{SELECTOR}}|$SELECTOR|g" \
-  -e "s|{{BINARY}}|$BINARY|g" \
-  -e "s|{{ARCH}}|${ARCH:-none}|g" \
-  -e "s|{{SLUG}}|$SLUG|g" \
-  -e "s|{{BRANCH}}|$BRANCH|g" \
-  -e "s|{{WORKTREE}}|$WT|g" \
-  -e "s|{{KUNA_PY}}|$KUNA_PY|g" \
-  -e "s|{{DATE}}|$DATE|g" \
-  -e "s|{{RESUME_PROPOSAL}}|$RESUME_PROPOSAL_LINE|g" \
-  "$PROMPT_TMPL" > "$PROMPT_FILE"
+"$KUNA_PY" - "$PROMPT_TMPL" "$PROMPT_FILE" "$WORKER_EXTRA_PROMPT" \
+  "$WORKER_ID" "$OPP_ID" "$TEST_NAME" "$SELECTOR" "$BINARY" "${ARCH:-none}" \
+  "$SLUG" "$BRANCH" "$WT" "$KUNA_PY" "$DATE" "$WORKER_AGENT" "$WORKER_COMMAND" \
+  "$WORKER_DECIDER_INSTRUCTIONS" "$WORKER_TRAILER" "$WORKER_GENERATED_WITH" \
+  "$RESUME_PROPOSAL_LINE" <<'PY' || {
+import pathlib, re, sys
 
-# {{SIBLINGS}} is a whole FILE, not a line, so it is spliced after the sed pass: the captain
-# writes what the other in-flight builders are doing so they stay off each other's files.
-if [ -n "$WORKER_EXTRA_PROMPT" ] && [ -f "$WORKER_EXTRA_PROMPT" ]; then
-  "$KUNA_PY" -c 'import sys; t,e=sys.argv[1],sys.argv[2]; b=open(t).read(); open(t,"w").write(b.replace("{{SIBLINGS}}", open(e).read()))' "$PROMPT_FILE" "$WORKER_EXTRA_PROMPT"
-else
-  sed -i 's|{{SIBLINGS}}||g' "$PROMPT_FILE"
-fi
+template_path, output_path, extra_path = sys.argv[1:4]
+names = (
+    "WORKER_ID", "OPPORTUNITY_ID", "TEST_NAME", "SELECTOR", "BINARY", "ARCH",
+    "SLUG", "BRANCH", "WORKTREE", "KUNA_PY", "DATE", "WORKER_AGENT",
+    "WORKER_COMMAND", "WORKER_DECIDER_INSTRUCTIONS", "WORKER_TRAILER",
+    "WORKER_GENERATED_WITH", "RESUME_PROPOSAL",
+)
+values = dict(zip(names, sys.argv[4:]))
+values["SIBLINGS"] = (pathlib.Path(extra_path).read_text(errors="replace")
+                      if extra_path and pathlib.Path(extra_path).is_file() else "")
+template = pathlib.Path(template_path).read_text(errors="strict")
+token = re.compile(r"\{\{([A-Z0-9_]+)\}\}")
+missing = sorted(set(token.findall(template)) - set(values))
+if missing:
+    raise SystemExit("unknown worker prompt placeholder(s): " + ", ".join(missing))
+pathlib.Path(output_path).write_text(token.sub(lambda match: values[match.group(1)], template))
+PY
+  log "prompt render failed"
+  "$KUNA_PY" -m scripts.pipeline.state update --worker "$WORKER_ID" --status failed --note "prompt render failed" >>"$LOG" 2>&1
+  exit 1
+}
 
-# --- 5. headless Claude session (highest-effort model), in the worktree -----
-log "launching claude -p (model $MODEL, timeout ${WORKER_TIMEOUT}s)"
+# --- 5. headless implementation session, in the worktree -------------------
+log "launching $BACKEND (model $MODEL${REASONING:+, reasoning $REASONING}, timeout ${WORKER_TIMEOUT}s)"
 "$KUNA_PY" -m scripts.pipeline.state update --worker "$WORKER_ID" --phase analyze >>"$LOG" 2>&1
 
 RESULT_JSON="$LOG_DIR/$WORKER_ID.result.json"
-CLAUDE_EXTRA=()
-# A caller-supplied session id makes the transcript path deterministic BEFORE the run, which
-# is what lets a harness tail a live builder. codex has no equivalent.
-[ -n "$WORKER_SESSION_ID" ] && CLAUDE_EXTRA+=(--session-id "$WORKER_SESSION_ID")
-[ -n "$WORKER_BUDGET_USD" ] && CLAUDE_EXTRA+=(--max-budget-usd "$WORKER_BUDGET_USD")
-# env -u ANTHROPIC_API_KEY: a stale/invalid ANTHROPIC_API_KEY in the environment makes
-# headless `claude -p` fail with "Invalid API key"; unsetting it falls back to the working
-# session auth. </dev/null so claude does not wait on stdin.
-( cd "$WT" && env -u ANTHROPIC_API_KEY timeout "$WORKER_TIMEOUT" claude -p "$(cat "$PROMPT_FILE")" \
-    --model "$MODEL" \
-    --output-format json \
-    --dangerously-skip-permissions \
-    "${CLAUDE_EXTRA[@]+"${CLAUDE_EXTRA[@]}"}" \
-    < /dev/null > "$RESULT_JSON" 2>>"$LOG" )
-RC=$?
+if ! : > "$RESULT_JSON"; then
+  log "cannot initialize result file $RESULT_JSON"
+  "$KUNA_PY" -m scripts.pipeline.state update --worker "$WORKER_ID" --status failed --note "result file initialization failed" >>"$LOG" 2>&1
+  exit 1
+fi
+case "$BACKEND" in
+  claude)
+    CLAUDE_EXTRA=()
+    # A caller-supplied session id makes the transcript path deterministic BEFORE the run,
+    # which is what lets a harness tail a live builder. Codex has no equivalent.
+    [ -n "$WORKER_SESSION_ID" ] && CLAUDE_EXTRA+=(--session-id "$WORKER_SESSION_ID")
+    [ -n "$WORKER_BUDGET_USD" ] && CLAUDE_EXTRA+=(--max-budget-usd "$WORKER_BUDGET_USD")
+    # A stale ANTHROPIC_API_KEY makes headless Claude fail instead of using session auth.
+    ( cd "$WT" && env -u ANTHROPIC_API_KEY timeout "$WORKER_TIMEOUT" claude -p "$(cat "$PROMPT_FILE")" \
+        --model "$MODEL" \
+        --output-format json \
+        --dangerously-skip-permissions \
+        "${CLAUDE_EXTRA[@]+"${CLAUDE_EXTRA[@]}"}" \
+        < /dev/null > "$RESULT_JSON" 2>>"$LOG" )
+    RC=$?
+    ;;
+  codex)
+    EVENTS_JSONL="$LOG_DIR/$WORKER_ID.events.jsonl"
+    FINAL_TEXT="$LOG_DIR/$WORKER_ID.final.txt"
+    if ! : > "$EVENTS_JSONL" || ! : > "$FINAL_TEXT"; then
+      log "cannot initialize Codex transcript files under $LOG_DIR"
+      "$KUNA_PY" -m scripts.pipeline.state update --worker "$WORKER_ID" --status failed --note "transcript initialization failed" >>"$LOG" 2>&1
+      exit 1
+    fi
+    # Disable Codex's own multi-agent feature: every concurrent worker must hold a pipeline
+    # slot. The builder needs full worktree and network access to build, test, push, and merge.
+    ( cd "$WT" && timeout -k 60 "$WORKER_TIMEOUT" codex exec \
+        --cd "$WT" \
+        --sandbox danger-full-access \
+        -c approval_policy=never \
+        -c "model_reasoning_effort=$REASONING" \
+        --model "$MODEL" \
+        --disable multi_agent \
+        --disable multi_agent_v2 \
+        --json \
+        -o "$FINAL_TEXT" \
+        "$(cat "$PROMPT_FILE")" \
+        < /dev/null > "$EVENTS_JSONL" 2>>"$LOG" )
+    RC=$?
+    # Preserve the same result.json contract used by the captain and recovery notes while
+    # retaining Codex's full JSONL stream separately.
+    if ! "$KUNA_PY" - "$EVENTS_JSONL" "$FINAL_TEXT" "$RESULT_JSON" "$RC" <<'PY'
+import json, pathlib, sys
+events_path, final_path, result_path, rc = sys.argv[1:]
+thread_id = ""
+errors = []
+last_message = ""
+for line in pathlib.Path(events_path).read_text(errors="replace").splitlines():
+    try:
+        event = json.loads(line)
+    except json.JSONDecodeError:
+        continue
+    if event.get("type") == "thread.started":
+        thread_id = event.get("thread_id") or event.get("threadId") or ""
+    if event.get("type") == "error":
+        errors.append(str(event.get("message") or event.get("error") or event))
+    item = event.get("item") or {}
+    if event.get("type") == "item.completed" and item.get("type") == "agent_message":
+        last_message = str(item.get("text") or "")
+final = pathlib.Path(final_path).read_text(errors="replace") if pathlib.Path(final_path).exists() else ""
+result = final or last_message or "\n".join(errors)
+pathlib.Path(result_path).write_text(json.dumps({
+    "backend": "codex", "session_id": thread_id, "result": result,
+    "return_code": int(rc), "events": events_path, "final_output": final_path,
+    "errors": errors,
+}) + "\n")
+PY
+    then
+      log "could not preserve Codex result metadata; raw JSONL remains at $EVENTS_JSONL"
+      [ "$RC" -ne 0 ] || RC=1
+    fi
+    ;;
+esac
 
 # capture the session id so a reviewer can resume the exact session on the PR
 SID="$("$KUNA_PY" - "$RESULT_JSON" <<'PY' 2>/dev/null
@@ -232,7 +339,7 @@ PY
 [ -n "$SID" ] && "$KUNA_PY" -m scripts.pipeline.state update --worker "$WORKER_ID" --note "session=$SID" >>"$LOG" 2>&1
 
 if [ $RC -ne 0 ]; then
-  # An account quota kill is indistinguishable from a crash by exit code alone: claude exits a
+  # An account quota kill is indistinguishable from a crash by exit code alone: Claude exits a
   # bare 1 and the result JSON reads `"subtype": "success"` with `"is_error": true`. The only
   # discriminator is the `result` string, and both of round 2's builders died this way
   # ("You've hit your session limit"). Read it ONLY on the failure path: a finished session can
@@ -265,9 +372,9 @@ QEOF
 )"
   if [ -n "$QUOTA" ]; then
     log "STOPPED BY A CAP, not a build failure: $QUOTA"
-    NOTE="capped: $QUOTA (claude rc=$RC)"
+    NOTE="capped: $QUOTA ($BACKEND rc=$RC)"
   else
-    NOTE="claude rc=$RC"
+    NOTE="$BACKEND rc=$RC"
   fi
 
   # Preserve what the session had written. Round 2 lost 618 insertions across 19 files -- a new
@@ -277,7 +384,7 @@ QEOF
   # Guarded, because committing blind is worse than not committing: `git commit` lands on
   # whatever HEAD is, so a session that died mid-rebase or on a detached HEAD would put the
   # commit somewhere the branch cannot reach while the log claimed otherwise. Deliberately not
-  # a trap -- an EXIT trap fires on SIGTERM without waiting for the claude subshell, and would
+  # a trap -- an EXIT trap fires on SIGTERM without waiting for the agent subshell, and would
   # stage a tree still being written.
   WT_HEAD="$(git -C "$WT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '')"
   WT_GITDIR="$(git -C "$WT" rev-parse --git-dir 2>/dev/null || echo '')"
@@ -307,11 +414,11 @@ print(w.get("phase") or "unknown")' 2>/dev/null || echo unknown)"
     fi
   fi
 
-  log "claude session exited rc=$RC (timeout=124); leaving worktree for inspection"
+  log "$BACKEND session exited rc=$RC (timeout=124); leaving worktree for inspection"
   "$KUNA_PY" -m scripts.pipeline.state update --worker "$WORKER_ID" --status failed --note "$NOTE" >>"$LOG" 2>&1
   exit $RC
 fi
 
-log "session complete (rc=0). worktree $WT and session $SID preserved for PR review."
+log "$BACKEND session complete (rc=0). worktree $WT and session $SID preserved for PR review."
 # the worker itself records `state done --pr <url>` when it opens the PR
 exit 0

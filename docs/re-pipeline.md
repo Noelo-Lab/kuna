@@ -17,7 +17,8 @@ One iteration:
 2. **Gate** — every recorded observation is replayed by machine. Two executable predicates
    decide whether it is real (§3).
 3. **Cluster** — surviving observations collapse into needs in `docs/re-needs/` (§4).
-4. **Build** — claude agents close one need each, on one of three tracks, and self-merge (§5).
+4. **Build** — Codex implementation agents close one need each, on one of three tracks, and
+   self-merge (§5).
 5. **Verify** — the acceptance probe is re-run on merged `main`. Needs that flipped are
    closed; the next round's testers are pointed at the new surface and asked to break it (§6).
 
@@ -28,13 +29,15 @@ make binaries && make specs
 tools/repipe/run.sh --preflight        # hard-fails on anything missing
 ```
 
-Preflight requires: `git`, `gh` (authed, `repo` scope), `codex`, `claude`, `python3`, a built
-`kuna`, compiled `.sla`, the dataset, and `REPIPE_MIN_FREE_GB` free. It also **fails if
+Preflight requires: `git`, `gh` (authed, `repo` scope), `codex`, `python3`, a built `kuna`,
+compiled `.sla`, the dataset, and `REPIPE_MIN_FREE_GB` free. It also **fails if
 `bwrap` is unavailable** — see §2, containment is not optional by default.
 
 The default captain remains Claude for compatibility. Set `REPIPE_CAPTAIN_BACKEND=codex` to
-run bounded captain ticks with Codex instead; the preflight still requires both binaries
-because builders use Claude and testers use Codex.
+run bounded captain ticks with Codex instead. Reversers are fixed to GPT-5.6 Sol at low
+reasoning; implementation builders are fixed to GPT-5.6 Sol at high reasoning or above.
+Preflight rejects a role/model configuration that weakens either boundary. Claude is only
+required when explicitly selected as the captain backend.
 
 Everything is stdlib Python run as `PYTHONPATH=$REPO python3 -m scripts.repipe.<mod>`; there is
 no install step and no third-party dependency, matching `scripts/pipeline/`.
@@ -61,7 +64,9 @@ touch .kuna-repipe/ABORT                # hard stop; worktrees and arenas left i
 | `REPIPE_SANDBOX` | `auto` \| `bwrap` \| `none` — `none` is prompt-only containment |
 | `REPIPE_ENABLE_IDA` | let testers reach IDA as a logged last resort (1) |
 | `REPIPE_REFUTE_MODE` | `absence-skip` — do not spend refuters on "the subcommand does not exist" |
-| `REPIPE_TESTER_MODEL` / `REPIPE_TESTER_REASONING` | optional Codex tester model and reasoning effort overrides |
+| `REPIPE_TESTER_MODEL` / `REPIPE_TESTER_REASONING` | reverser model and effort; required `gpt-5.6-sol` / `low` |
+| `REPIPE_BUILDER_BACKEND` | implementation backend; required `codex` |
+| `REPIPE_BUILDER_MODEL` / `REPIPE_BUILDER_REASONING` | implementation model and effort; required `gpt-5.6-sol` / `high`, `xhigh`, or `max` |
 | `REPIPE_CAPTAIN_BACKEND` | `claude` \| `codex` (default `claude`) |
 | `REPIPE_CAPTAIN_MODEL` / `REPIPE_CAPTAIN_REASONING` | captain model; Codex defaults to `gpt-5.6-sol` / `low` |
 | `REPIPE_CAPTAIN_USD` | Claude-only dollar cap; Codex ticks are bounded by timeout, model, and reasoning effort |
@@ -350,7 +355,7 @@ come from a slot.
   `RESUME_BRANCH`. The launcher never deletes, resets, renames, stashes, or falls back to a
   detached/base-branch checkout when setup is ambiguous.
 - **The genuinely unsafe part, stated plainly.** Builders run
-  `claude -p --dangerously-skip-permissions` with the network on, inside a worktree, confined
+  `codex exec --sandbox danger-full-access` with the network on, inside a worktree, confined
   only by convention and post-hoc checks. There is no sandbox around a builder, and that is
   inherent to "implement in the kuna repo and self-merge". What *is* contained: `main` only
   ever advances through the serialized merge step, `docs/baseline.json` is a hard reject, and

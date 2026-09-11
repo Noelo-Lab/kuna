@@ -179,13 +179,31 @@ ENABLE_IDA = os.environ.get("REPIPE_ENABLE_IDA", "1") not in ("0", "false", "no"
 
 # --- models -----------------------------------------------------------------
 
-TESTER_MODEL = os.environ.get("REPIPE_TESTER_MODEL", "")     # "" -> codex config default
-TESTER_REASONING = os.environ.get("REPIPE_TESTER_REASONING", "")
-BUILDER_MODEL = os.environ.get("REPIPE_BUILDER_MODEL", "opus")
+TESTER_MODEL = os.environ.get("REPIPE_TESTER_MODEL", "gpt-5.6-sol")
+TESTER_REASONING = os.environ.get("REPIPE_TESTER_REASONING", "low")
+BUILDER_BACKEND = os.environ.get("REPIPE_BUILDER_BACKEND", "codex")
+BUILDER_MODEL = os.environ.get("REPIPE_BUILDER_MODEL", "gpt-5.6-sol")
+BUILDER_REASONING = os.environ.get("REPIPE_BUILDER_REASONING", "high")
 CAPTAIN_BACKEND = os.environ.get("REPIPE_CAPTAIN_BACKEND", "claude")
 CAPTAIN_MODEL = os.environ.get(
     "REPIPE_CAPTAIN_MODEL", "gpt-5.6-sol" if CAPTAIN_BACKEND == "codex" else "opus"
 )
 CAPTAIN_REASONING = os.environ.get("REPIPE_CAPTAIN_REASONING", "low")
+
+
+def role_policy_problems():
+    """Return configuration errors that would weaken the RE-pipeline role split."""
+    problems = []
+    if TESTER_MODEL != "gpt-5.6-sol" or TESTER_REASONING != "low":
+        problems.append("reversers require REPIPE_TESTER_MODEL=gpt-5.6-sol and "
+                        "REPIPE_TESTER_REASONING=low")
+    if BUILDER_BACKEND != "codex" or BUILDER_MODEL != "gpt-5.6-sol":
+        problems.append("implementation requires REPIPE_BUILDER_BACKEND=codex and "
+                        "REPIPE_BUILDER_MODEL=gpt-5.6-sol")
+    if BUILDER_REASONING not in ("high", "xhigh", "max"):
+        problems.append("implementation reasoning must be high, xhigh, or max")
+    if CAPTAIN_BACKEND not in ("claude", "codex"):
+        problems.append("REPIPE_CAPTAIN_BACKEND must be claude or codex")
+    return problems
 
 GH_REPO = os.environ.get("REPIPE_GH_REPO", "Noelo-Lab/kuna")

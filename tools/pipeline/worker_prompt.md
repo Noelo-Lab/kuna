@@ -1,6 +1,6 @@
 # kuna feature worker — implement ONE angr-inspired feature, open ONE PR
 
-You are an autonomous, highest-effort Claude Code worker running **inside an isolated git
+You are an autonomous {{WORKER_AGENT}} running **inside an isolated git
 worktree** on branch `{{BRANCH}}`. Your entire job this session is to close **one** specific
 gap where the angr decompiler is better than kuna, by adding **one** option-gated kuna
 feature to the **Rust** engine, verifying it, and opening a PR — then stop. A human reviewer
@@ -88,11 +88,9 @@ where `<PHASE>` ∈ analyze, design, code, build, test, docs, commit, pr. If you
 
 ### 2. design — decide the minimal feature (use a decider for judgment calls)
 - Design the smallest pass/rule that produces angr-like output, gated by your new option (default-OFF while
-  developing). For any genuine judgment call (which stage to hook, whether the construct generalizes, scope),
-  spawn a **decider subagent** (use the Task/Agent tool) to make and justify the call, and record its decision
-  verbatim in `docs/features/{{SLUG}}/record.json` under `"decisions"`. Write `docs/features/{{SLUG}}/plan.md`.
-- **Scope check (the proposal gate, Hard rule 7).** Ask the decider to return `scope: small|large`.
-  Treat as **large** if: the decider says `large`; OR it needs a new pass *type*/infrastructure (not one
+  developing).
+{{WORKER_DECIDER_INSTRUCTIONS}}
+  Treat as **large** if: the scope decision says `large`; OR it needs a new pass *type*/infrastructure (not one
   Action/Rule like `kuna_loweredswitch.rs`); OR it must touch S7 structuring/region code beyond a single
   gated early-return; OR it needs >3 ported-core anchor files / >1 new module.
   - **If large — STOP. Do NOT implement.** Write `docs/features/{{SLUG}}/proposal.md` (the problem; the angr
@@ -163,10 +161,10 @@ where `<PHASE>` ∈ analyze, design, code, build, test, docs, commit, pr. If you
 
 ### 8. commit + PR
 - `git add -A && git commit` with a descriptive subject `{{SLUG}}: <one line>` and the trailer
-  `Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>`.
+  `{{WORKER_TRAILER}}`.
 - Write the PR body to `docs/features/{{SLUG}}/pr_body.md`: a short summary, a link to
   `docs/features/{{SLUG}}/analysis.md`, the mechanism, the option name + how to flip it, and the
-  ablation/parity result, ending with `🤖 Generated with [Claude Code](https://claude.com/claude-code)`.
+  ablation/parity result, ending with `{{WORKER_GENERATED_WITH}}`.
   Do NOT hand-write the before/after decompilation — `open_pr.sh` auto-appends a REAL captured
   before/after (kuna with the option off vs on, on the feature's target function) + the reference
   rendering, generated from `record.json`. So make sure `record.json` has correct `option`, `binary`,

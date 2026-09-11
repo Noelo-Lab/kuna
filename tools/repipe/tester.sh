@@ -25,10 +25,15 @@ KUNA_PY="${KUNA_PY:-$HOME/.virtualenvs/kuna/bin/python}"
 STATE_DIR="${KUNA_PIPELINE_STATE_DIR:-$REPO/.kuna-repipe}"
 DATASET="${REPIPE_DATASET:-$HOME/github/kuna-re-dataset}"
 TIMEOUT="${REPIPE_TESTER_TIMEOUT:-3600}"
-MODEL="${REPIPE_TESTER_MODEL:-}"
-REASONING="${REPIPE_TESTER_REASONING:-}"
+MODEL="${REPIPE_TESTER_MODEL:-gpt-5.6-sol}"
+REASONING="${REPIPE_TESTER_REASONING:-low}"
 SANDBOX="${REPIPE_SANDBOX:-auto}"
 ENABLE_IDA="${REPIPE_ENABLE_IDA:-1}"
+
+if [ "$MODEL" != "gpt-5.6-sol" ] || [ "$REASONING" != "low" ]; then
+  echo "reversers require REPIPE_TESTER_MODEL=gpt-5.6-sol and REPIPE_TESTER_REASONING=low" >&2
+  exit 2
+fi
 
 : "${ROUND:?need ROUND}"
 : "${HEXID:?need HEXID}"
@@ -129,6 +134,8 @@ CODEX_ARGS=(exec
   -s workspace-write
   -c approval_policy=never
   -c sandbox_workspace_write.network_access=false
+  --disable multi_agent
+  --disable multi_agent_v2
   --json
   --output-schema "$REPO/tools/repipe/schema/report.schema.json"
   -o "$ARENA/report.json")
