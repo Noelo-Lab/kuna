@@ -1,0 +1,76 @@
+{
+  "need_id": "bytecode-append-call-loses",
+  "slug": "exclusivearguse",
+  "track": "quality",
+  "scope": "small",
+  "option": "exclusivearguse",
+  "default": "on",
+  "div": "DIV-161",
+  "phase": "P4",
+  "subphase": "active-input-trial-scoring",
+  "module": "decompiler/crates/kuna-decomp/src/p4_calls/kuna_exclusivearguse.rs",
+  "symptom": "Bytecode append call loses two live register arguments (major, 1 instance, challenge 69b7492049fa49a2a260218f vm.exe sub_140004540 -> sub_140007be0 @0x1400046cc)",
+  "decisions": [
+    "The round-12 refuter's redirect is UPHELD and was confirmed by instrumenting only_op_use: the two lost trials are rejected at funcdata_varnode.rs by exactly the two accesses it named, `OOU-REJECT STORE use@1400046c1 opmatch@1400046cc trial=0x10` (RDX) and `OOU-REJECT CPUI_LOAD use@1400046bd opmatch@1400046cc trial=0x80` (R8). The need's own diagnostic elements (calleearity, varargstackargs) are dead, as the refutation said: both are default-ON and both arms are byte-identical.",
+    "Not covered by an existing option. All 187 catalog options were swept at their non-default values against the acceptance regex; the two apparent hits are cosmetic false positives (`returndup off` changes the tail structure, `namestyle ghidra` renames the callee) and neither recovers an argument.",
+    "The calleearity family cannot reach this shape and its own design notes say relaxing only_op_use is the wrong fix -- but all three members were written against a CBRANCH use in a block that DOMINATES the call (`test rcx,rcx; jz; call`). A dominating block always co-executes with the call, so this rule declines it, and this rule only relaxes LOAD/STORE. The two mechanisms are disjoint in both directions. calleearitybody in particular declines here because the callee leaves R9 untouched, so no argument register after R8 is proven dead.",
+    "The soundness argument is mutual unreachability, not sibling-ness: an execution path is one walk from the entry block, so a path holding both blocks would make the later reachable from the earlier. That is also what makes it conservative around loops, and the loop case is pinned in both the unit tests and the stage test's control function.",
+    "REFUTED AGAINST WRONGNESS, and the refutation found a real false positive. The first draft (mutual unreachability + address operand, no definition test) was swept over 43 images and changed 10 of them; reading the hunks, phantomgate.exe's random_device constructor opens `mov r8,rcx` and dereferences r8 on the arms that succeed, so four `throw` calls on failing arms gained a third argument the disassembly does not pass (verified against the disassembly at 0x1400257a3: only RCX and RDX are set).",
+    "The fix for that is the definition test: the trial Varnode must be DEFINED in a block that both the access's block and the call's block are immediate successors of. It says the value was set up FOR this branch rather than merely still live when it was taken, which is exactly the difference between the witness (`mov rdx,[rbx+8]; lea r8,[rsi+rdi]` two instructions before the test) and the scratch copy. With it the sweep drops from 10 changed images to 3, the phantomgate spurious arguments are gone, and the phantomgate memcpy recoveries survive.",
+    "A function input has no defining op and is therefore declined. That is not a gap: the positional fill-in in ParamListStandard::fillinMap supplies the leading arguments behind a promoted one, which is how `memcpy()` becomes `memcpy(a1,v1)` although `a1` itself is never promoted by this rule.",
+    "Restricted to the access's ADDRESS operand so the STORE value slot stays spillargtrial's, and to a CALL/CALLIND match so the function's own output trial stays noreturnretuse's. BRANCH/CBRANCH/BRANCHIND keep the upstream rejection outright."
+  ],
+  "witness": {
+    "binary": "kuna-re-dataset challenge 69b7492049fa49a2a260218f bin/vm.exe (stripped MSVC x86-64 PE)",
+    "function": "sub_140004540, call at 0x1400046cc",
+    "before": "sub_140007be0(a0);",
+    "after": "sub_140007be0(a0,v5,v3);  with v5 = *(char **)(a0 + 8) and v3 = (char *)((a1 & 0xff) + 0x14000b290) hoisted above the branch",
+    "callee_self_recovery": "char *sub_140007be0(long long *a0,long long a1,char *a2) -- kuna already recovered three parameters for the callee"
+  },
+  "ablation": {
+    "method": "whole-binary `kuna decompile-all`, option off vs default, unified diff of the emitted C with local names normalised (v<N> -> V) so declaration renumbering does not count as change",
+    "images": "46 selected (22 RE-dataset PE crackmes, 14 RE-dataset ELF crackmes, 10 Linux system ELFs); 43 compared under both arms, 3 failed to load under BOTH arms and were skipped",
+    "changed": "3 of 43 images; 49 lines removed / 59 added",
+    "recoveries": "phantomgate.exe (libstdc++): `memcpy()` -> `memcpy(a1,v1)` twice and `memmove()` -> `memmove(v1,v2)` in the basic_string one-byte-fast-path/bulk-copy shape, which is the witness shape in another compiler's output; cursed_ : a glibc-style memmove tail jump `(*v1)()` -> `(*v1)(v2,v3,0,v4)`; CrackMe.obf.exe : one `swi(1)()` pseudo-call in an already-undecodable obfuscated region gains one argument",
+    "no_statement_lost": "every removed line is either a local declaration or the same statement respelled with a hoisted name; no function loses a statement and no call loses an argument",
+    "false_positive_found_and_closed": "the pre-narrowing draft changed 10 of 43 images and invented arguments at phantomgate.exe's random_device throw calls; the definition test removes them",
+    "datatests": "0/675, byte-identical"
+  },
+  "probe_flip": {
+    "probe_still_passes": false,
+    "acceptance_passes": true,
+    "acceptance_clause": "stdout_absent \\n  sub_[0-9a-f]+\\(a[0-9]+\\);\\n\\}",
+    "acceptance_actual_before": "sub_140007be0(a0);",
+    "acceptance_actual_after": "sub_140007be0(a0,v5,v3);"
+  },
+  "promoted_probe": {
+    "path": "tests/cli/bytecode-append-call-loses.json",
+    "retargeted_from": "dataset vm.exe sub_140004540",
+    "retargeted_to": "decompiler/crates/kuna-analysis/tests/fixtures/exclusivearguse_x86_64 (function `append`)",
+    "why": "CI has no dataset; exclusivearguse_x86_64 is a project-authored reduction of the witness branch re-spelled in the SysV ABI, and it reproduces the identical loss with the option off",
+    "strengthened": "stdout_absent alone is satisfiable by emitting nothing, so the promoted probe also pins the recovered three-argument call AND the fast path's own store"
+  },
+  "gates": {
+    "make test": "PARITY OK 675/675 (no re-pin)",
+    "make test-stages": "PARITY OK 768/768 (763 -> 768, baseline re-recorded for the 5 new assertions, none moved)",
+    "make rust-test": "green, 6469 tests passed / 0 failed",
+    "make check-spec": "OK (lenient and strict)",
+    "make test-cli": "125/125",
+    "kuna catalog --check": "catalog OK"
+  },
+  "counters": {
+    "settables": "187 -> 188",
+    "tiers": "(59,69,59) -> (60,69,59) core/transform/analysis",
+    "stage_corpus_files": "269 -> 270",
+    "with_live": "70 -> 71"
+  },
+  "speed_method": "scripts.pipeline.timeit, median of 7, on the witness function (kuna decompile vm.exe sub_140004540)",
+  "speed_target": "kuna decompile vm.exe sub_140004540",
+  "speed_off_ms": 164.61,
+  "speed_on_ms": 161.29,
+  "speed_delta_pct": -2.02,
+  "speed_samples": 7,
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": true,
+  "speed_note": "-2.02% is inside the noise floor in the favourable direction; the mechanism is two predecessor-list scans and at most two bounded CFG walks, and only on a descendant that was about to reject the trial anyway"
+}
