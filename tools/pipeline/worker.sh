@@ -152,6 +152,31 @@ else
   }
 fi
 
+# The base is the branch point, not necessarily HEAD: a retry may start on the WIP snapshot
+# that the failure path committed. Keep the marker in durable pipeline state rather than /tmp,
+# validate it against the current branch point, and only rewrite it when missing or stale.
+BASE_MARKER="$LOG_DIR/$WORKER_ID.base"
+EXPECTED_BASE="$(git -C "$WT" merge-base HEAD "$BASE_BRANCH" 2>/dev/null)" || {
+  log "cannot determine the branch point between $BRANCH and $BASE_BRANCH"
+  "$KUNA_PY" -m scripts.pipeline.state update --worker "$WORKER_ID" --status failed --note "base commit resolution failed" >>"$LOG" 2>&1
+  exit 1
+}
+MARKED_BASE="$(cat "$BASE_MARKER" 2>/dev/null || true)"
+if [ "$MARKED_BASE" = "$EXPECTED_BASE" ] \
+   && git -C "$WT" rev-parse --verify --quiet "$MARKED_BASE^{commit}" >/dev/null; then
+  log "preserving base marker $BASE_MARKER at $MARKED_BASE"
+else
+  BASE_MARKER_TMP="$BASE_MARKER.tmp.$$"
+  if ! printf '%s\n' "$EXPECTED_BASE" > "$BASE_MARKER_TMP" \
+     || ! mv -f "$BASE_MARKER_TMP" "$BASE_MARKER"; then
+    rm -f "$BASE_MARKER_TMP"
+    log "cannot initialize base marker $BASE_MARKER"
+    "$KUNA_PY" -m scripts.pipeline.state update --worker "$WORKER_ID" --status failed --note "base marker initialization failed" >>"$LOG" 2>&1
+    exit 1
+  fi
+  log "initialized base marker $BASE_MARKER at $EXPECTED_BASE"
+fi
+
 [ "$WORKER_PREPARE_ONLY" = 1 ] && { log "prepare-only: worktree ready"; exit 0; }
 
 # --pid $$ is THIS driver's pid, which lives as long as the worker does. Without it the
@@ -217,7 +242,7 @@ PROMPT_FILE="$LOG_DIR/$WORKER_ID.prompt.md"
   "$WORKER_ID" "$OPP_ID" "$TEST_NAME" "$SELECTOR" "$BINARY" "${ARCH:-none}" \
   "$SLUG" "$BRANCH" "$WT" "$KUNA_PY" "$DATE" "$WORKER_AGENT" "$WORKER_COMMAND" \
   "$WORKER_DECIDER_INSTRUCTIONS" "$WORKER_TRAILER" "$WORKER_GENERATED_WITH" \
-  "$RESUME_PROPOSAL_LINE" <<'PY' || {
+  "$RESUME_PROPOSAL_LINE" "$BASE_MARKER" <<'PY' || {
 import pathlib, re, sys
 
 template_path, output_path, extra_path = sys.argv[1:4]
@@ -225,7 +250,7 @@ names = (
     "WORKER_ID", "OPPORTUNITY_ID", "TEST_NAME", "SELECTOR", "BINARY", "ARCH",
     "SLUG", "BRANCH", "WORKTREE", "KUNA_PY", "DATE", "WORKER_AGENT",
     "WORKER_COMMAND", "WORKER_DECIDER_INSTRUCTIONS", "WORKER_TRAILER",
-    "WORKER_GENERATED_WITH", "RESUME_PROPOSAL",
+    "WORKER_GENERATED_WITH", "RESUME_PROPOSAL", "WORKER_BASE_FILE",
 )
 values = dict(zip(names, sys.argv[4:]))
 values["SIBLINGS"] = (pathlib.Path(extra_path).read_text(errors="replace")

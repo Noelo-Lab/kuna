@@ -165,8 +165,34 @@ else
   bad "explicit WORKER_BRANCH did not create the requested branch"
 fi
 run_prepare fresh feat/re-collision-r7 \
-  && ok "an exact path+branch worktree is reusable" \
   || bad "exact path+branch reuse was refused"
+FRESH_BASE="$(cat "$LAUNCH_REPO/.state/logs/fresh.base" 2>/dev/null)"
+printf 'preserved work\n' > "$LAUNCH_REPO/.state/worktrees/fresh/wip"
+git -C "$LAUNCH_REPO/.state/worktrees/fresh" add wip
+git -C "$LAUNCH_REPO/.state/worktrees/fresh" commit -qm \
+  '[AUTOMATED] WIP UNFINISHED, DO NOT MERGE: smoke'
+FRESH_WIP="$(git -C "$LAUNCH_REPO/.state/worktrees/fresh" rev-parse HEAD)"
+if run_prepare fresh feat/re-collision-r7 \
+   && [ "$(cat "$LAUNCH_REPO/.state/logs/fresh.base")" = "$FRESH_BASE" ] \
+   && [ "$FRESH_BASE" != "$FRESH_WIP" ]; then
+  ok "an exact WIP worktree retry preserves its original base marker"
+else
+  bad "exact WIP worktree retry replaced its base with the WIP commit"
+fi
+printf 'not-a-commit\n' > "$LAUNCH_REPO/.state/logs/fresh.base"
+if run_prepare fresh feat/re-collision-r7 \
+   && [ "$(cat "$LAUNCH_REPO/.state/logs/fresh.base")" = "$FRESH_BASE" ]; then
+  ok "a stale base marker is repaired from the branch point, not WIP HEAD"
+else
+  bad "stale base marker was repaired to the WIP commit"
+fi
+rm -f "$LAUNCH_REPO/.state/logs/fresh.base"
+if run_prepare fresh feat/re-collision-r7 \
+   && [ "$(cat "$LAUNCH_REPO/.state/logs/fresh.base")" = "$FRESH_BASE" ]; then
+  ok "a missing base marker is restored from the branch point, not WIP HEAD"
+else
+  bad "missing base marker was initialized to the WIP commit"
+fi
 
 git -C "$LAUNCH_REPO" branch feat/re-stale main
 STALE_BEFORE="$(git -C "$LAUNCH_REPO" rev-parse feat/re-stale)"
@@ -243,10 +269,10 @@ printf '%s\n' \
   > "$FAKE_BIN/codex"
 chmod +x "$FAKE_BIN/codex"
 if PATH="$FAKE_BIN:$PATH" PYTHONPATH="$REPO" KUNA_REPO="$LAUNCH_REPO" KUNA_PY="$PY" \
-   PIPELINE_STATE_DIRNAME=.state WORKER_ID=codex-launch OPP_ID=smoke TEST_NAME=smoke \
-   SELECTOR=- BINARY='odd&|path\name' SLUG=codex-launch ARCH= \
+   PIPELINE_STATE_DIRNAME=.state WORKER_ID=codex-launch OPP_ID='odd&|path\name' TEST_NAME=smoke \
+   SELECTOR=- BINARY=- SLUG=codex-launch ARCH= \
    WORKER_BRANCH=feat/re-codex-launch WORKER_BACKEND=codex WORKER_MODEL=gpt-5.6-sol \
-   WORKER_REASONING=high WORKER_PROMPT="$REPO/tools/pipeline/worker_prompt.md" \
+   WORKER_REASONING=high WORKER_PROMPT="$REPO/tools/repipe/builder_prompt.md" \
    bash "$REPO/tools/pipeline/worker.sh" >/dev/null 2>&1; then
   CODEX_RESULT="$LAUNCH_REPO/.state/logs/codex-launch.result.json"
   CODEX_EVENTS="$LAUNCH_REPO/.state/logs/codex-launch.events.jsonl"
@@ -262,6 +288,7 @@ assert pathlib.Path(sys.argv[2]).read_text().count("\n") == 2
 prompt = pathlib.Path(sys.argv[3]).read_text()
 assert "odd&|path\\name" in prompt
 assert "Codex implementation worker using gpt-5.6-sol with high reasoning" in prompt
+assert "/.state/logs/codex-launch.base" in prompt
 assert "{{WORKER_" not in prompt
 PY
   then

@@ -161,11 +161,13 @@ On abort: `... --status failed --note "<one line why>"`.
 
 ## Worktree hygiene — these have each cost real work here
 
-- **Record your base commit before you touch anything**:
-  `git rev-parse HEAD > /tmp/{{WORKER_ID}}.base`. The captain's local `main` can run *ahead*
-  of `origin/main`, so at merge time a plain `git rebase origin/main` is a silent no-op and
-  your squash swallows the captain's commits — that orphaned a PR this round. The merge
-  recipe below rebases `--onto` this recorded base instead.
+- **Preserve the launcher-recorded base commit** in `{{WORKER_BASE_FILE}}`. Verify it with
+  `BASE=$(cat "{{WORKER_BASE_FILE}}") && git rev-parse --verify "$BASE^{commit}"`, but do not rewrite it to
+  the current `HEAD`: on a retry, `HEAD` may be the preserved WIP snapshot rather than the
+  branch point. The captain's local `main` can run *ahead* of `origin/main`, so at merge time
+  a plain `git rebase origin/main` is a silent no-op and your squash swallows the captain's
+  commits — that orphaned a PR this round. The merge recipe below rebases `--onto` the
+  launcher-owned base instead.
 - **Never `git stash`.** `refs/stash` is one stack shared by every worktree and work has
   already been lost that way. To A/B something, `cp` the file aside.
 - **Never `make specs`** in a worktree. The main tree's compiled `.sla` are already
@@ -228,7 +230,8 @@ the rebase, and only then merge:
 
 ```
 {{KUNA_PY}} -m scripts.pipeline.state lease-acquire --resource merge --worker {{WORKER_ID}} --pid $$
-git fetch origin && git rebase --onto origin/main "$(cat /tmp/{{WORKER_ID}}.base)"
+BASE=$(cat "{{WORKER_BASE_FILE}}")
+git fetch origin && git rebase --onto origin/main "$BASE"
 {{KUNA_PY}} -m scripts.repipe.counters --fix
 git log --oneline origin/main..HEAD    # ONLY your own commits may appear here
 {{KUNA_PY}} -m scripts.repipe.mergecheck --against origin/main     # must be clean
