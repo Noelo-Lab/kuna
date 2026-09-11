@@ -426,6 +426,40 @@ and none of them fire). Deferring the decision until the flow work-stack drains,
 and then asking whether the function decoded `dest` by another path, is the sound
 fix; it is a change to the walk's ordering rather than to this predicate.
 
+**(kuna) A teardown has to give back what the entry block saved — `option
+tailcallsaved`, default on (DIV-157),
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_tailcallsaved.rs
+(kuna_stack_saved_bytes / kuna_stack_restored_bytes /
+kuna_teardown_restores_saves)`.** Cancelling deltas are necessary but not
+sufficient. Because both of `tailcallframe`'s scans stop at the first
+control-flow op, the backward one cannot see past a `call`, and on a cdecl caller
+what sits immediately in front of the branch is the argument cleanup for that
+call rather than the frame teardown: on the round-8 RE-friction witness
+(crackmes.one `5ab77f5f33c5d40ad448c820`, a character classifier at `0x4010b0`)
+the entry block is `push ebx; push esi` for a `-8` frame, and the run ending at
+the `jmp 0x401102` is the `add esp,8` that discards the two arguments of the
+`call 0x40167d` above it. The deltas cancel, but `ebx` and `esi` are still on the
+stack, the stack pointer is still 8 bytes below its entry value, and `0x401102`
+is the `TEST EAX,EAX` both sides of the branch at `0x4010e2` reach — so the
+recovered call truncated the function at an internal join and emitted the rest of
+its body as a callee. Decision rule: a tail jump runs with the stack as `ret`
+would find it, so every callee-saved register the entry block pushed must have
+been popped back before the branch, and each scan is asked for a second number
+beside its delta — the bytes it moved *through* the stack pointer. An instruction
+that lowers the stack pointer and stores through it is saving (`push`); one that
+raises the stack pointer and loads through it is restoring (`pop`); a `LOAD` or
+`STORE` whose pointer operand is not exactly the stack-pointer register (`mov
+eax,[esp+8]`) is neither, and each instruction's transfer is capped at its own
+stack-pointer motion, so a multi-register `push`/`pop` can never account for more
+than it moved. The branch is a tail call only when `restored >= saved`. A frame
+built purely by `sub rsp,N` saves nothing and so demands nothing, which is what
+keeps the `sub rsp,8; call f; add rsp,8; jmp g` alignment shape gcc emits at
+`-O2`; the under-count on an architecture whose multi-register push writes only
+its first word through the stack pointer is symmetric, because its pop reads only
+the first word back. One-directional: the rule can only decline a recovery
+`tailcallframe` would have made, never introduce one. Byte-identical on both
+parity corpora and across 803 `decompile-all` runs of the decbench corpus.
+
 **(kuna) Fall-through function bound — `option funcboundflow`, default on
 (DIV-67), `decompiler/crates/kuna-decomp/src/p2_lift/kuna_funcboundflow.rs
 (kuna_should_bound_at_entry)`.** A kuna `FunctionSymbol` is an entry address with

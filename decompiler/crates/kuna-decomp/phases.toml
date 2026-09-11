@@ -1008,6 +1008,12 @@ subphase = "flow-classification"
 note = "(kuna) recover a direct jmp whose target no discovery oracle found as a tail call, from the frame teardown that precedes it, instead of decoding the callee into the caller"
 
 [[surface]]
+surface = "option tailcallsaved"
+phase = "P2"
+subphase = "flow-classification"
+note = "(kuna) require a frame teardown to give back what the entry block saved, so cdecl argument cleanup after a call is not read as a teardown"
+
+[[surface]]
 surface = "option calltrampoline"
 phase = "P2"
 subphase = "flow-classification"
@@ -1836,6 +1842,28 @@ change_kind = "correctness-fix"
 tier = "transform"
 symptoms = "a function decompiled by address continues into an unrelated function's body|an event/listener callback emits a second routine's UI strings and callees|the same callee is emitted twice in one function, once as a named call and once inlined|an unconditional jmp after add rsp,N; pop reg is followed instead of ending the function|kuna emits thousands of lines for a function the disassembly shows is a few hundred bytes"
 live_field = "tail_call_frame"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
+option = "tailcallsaved"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P2"
+subphase = "flow-classification"
+strength = "HARD"
+rewind = "P2"
+issue = "argument-cleanup-creates-false"
+summary = "PRESERVES CODE: narrow `tailcallframe` so a stack-pointer run that gives back nothing the entry block saved is read as argument cleanup rather than as a frame teardown. `tailcallframe` fires when the straight-line run ending at a direct `jmp` raises the stack pointer by exactly what the run leaving the entry address lowered it by; the backward scan stops at the first control-flow op, so on a cdecl caller (`push ebx; push esi; ...; push arg; push arg; call f; add esp,8; jmp L`) it measures the `add esp,8` that discards the call's two arguments and never sees the two pushes that put them there. The saved registers are still on the stack and the jump target is an ordinary block of the same function, so the recovered call truncates the function at an internal join and the rest of its body is emitted as a separate callee. A tail jump runs with the stack as `ret` would find it, so every callee-saved register the entry block pushed must have been popped back before the branch. This asks each scan for a second number beside its delta: the bytes it moved THROUGH the stack pointer -- an instruction that lowers the stack pointer and stores through it is saving, one that raises it and loads through it is restoring, each capped at that instruction's own stack-pointer motion -- and requires `restored >= saved`. A frame built purely by `sub rsp,N` saves nothing and demands nothing, so the `sub rsp,8; call f; add rsp,8; jmp g` alignment shape gcc emits at -O2 is decided exactly as before. One-directional: it can only decline a recovery `tailcallframe` would have made."
+use_when = "A function decompiled by address ends in a `sub_X()` tail call to an address the disassembly shows is a block INSIDE the same function -- typically the join both sides of an if/else reach -- with a `tailcallframe: recovered tail call` warning on it, and the code after that block is missing from the output. Look for `add esp,N` immediately after a `call` in front of the `jmp`: that is cdecl argument cleanup, not a teardown. On by default; flip OFF to restore the delta-only test."
+example = "option tailcallsaved off"
+source_decompiler = "ida"
+inspiration = "round-8 RE-friction crackme sddecoder: the character classifier at 0x4010b0 pushes EBX and ESI, then `call 0x40167d; add esp,8; jmp 0x401102`, and the jump target is the TEST EAX,EAX both sides of the branch at 0x4010e2 reach. IDA ends neither function there."
+change_kind = "correctness-fix"
+tier = "transform"
+symptoms = "a recovered tail call whose target is an internal block of the same function|`tailcallframe: recovered tail call` on a `jmp` that follows `call f; add esp,N`|the tail of a cdecl function is emitted as a separate callee instead of inline|a function decompiled by address stops at an if/else join and calls sub_<join address>"
+live_field = "tail_call_saved"
 live_true = "on"
 live_false = "off"
 

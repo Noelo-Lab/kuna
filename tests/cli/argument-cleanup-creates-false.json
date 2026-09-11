@@ -1,0 +1,38 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "classify"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/tailcallsaved_i386",
+    "binary_sha256": "bfe31e8be755cd52b171c9b70233d1c859766224b4b1643420d659f6ca8f0585",
+    "binary_size": 4552,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/tailcallsaved_i386",
+    "selector": "classify",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "\\| 7"
+    ],
+    "stdout_absent": [
+      "tailcallframe: recovered tail call"
+    ]
+  },
+  "notes": "In-repo twin of dataset acceptance a-d6135fbc9bd1 (sddecoder sub_4010b0), which verify --promote refuses because CI has no dataset. classify pushes ebx and esi for a -8 frame, and the run ending at its tail jmp is the `addl $8,%esp` that discards the two arguments of the `call helper` above it. `--option tailcallsaved off` restores the bug."
+}

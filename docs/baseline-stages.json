@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    754,
-    754
+    758,
+    758
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -443,6 +443,10 @@
     "data:TAILCALLFRAME #2: only the default pass recovers the tail jump as a call to the undiscovered callee",
     "data:TAILCALLFRAME #3: both passes keep the caller's own return-42 path, so the sole difference is the tail-call boundary",
     "data:TAILCALLFRAME #4: the introduced call is attributed to the option that introduced it",
+    "data:TAILCALLSAVED #1: only the tailcallsaved-off pass turns the jump into a call to the function's own join block",
+    "data:TAILCALLSAVED #2: the false call is attributed to the rule that made it, in that pass only",
+    "data:TAILCALLSAVED #3: only the default pass keeps the join block's own arithmetic inside the function",
+    "data:TAILCALLSAVED #4: both passes keep the cdecl call whose arguments the add esp,8 discards, so the sole difference is the tail-call boundary",
     "data:VOIDTAILRETURN #1: the bare trailing return; is printed by EXACTLY ONE of the two passes - the shipped default keeps it, `option voidtailreturn on` elides it (2 would mean the option did nothing)",
     "data:VOIDTAILRETURN #2: both passes really emitted the function, so #1 cannot pass vacuously on a pass that produced no C",
     "data:ZEROIDIOMUSE #1: off, the watchdog call inside the loop has an empty argument list",

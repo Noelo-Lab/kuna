@@ -411,6 +411,11 @@ pub struct Architecture {
     /// discovery oracle reaches (`option tailcallframe`).  See
     /// [`crate::p2_lift::kuna_tailcallframe`].
     pub tail_call_frame: bool,
+    /// (kuna) `option tailcallsaved`: narrow `tailcallframe` to a teardown that
+    /// gives back what the entry block saved, so cdecl argument cleanup after a
+    /// `call` is not read as a frame teardown (`option tailcallsaved`).  See
+    /// [`crate::p2_lift::kuna_tailcallsaved`].
+    pub tail_call_saved: bool,
     /// (kuna `calltrampoline`) Flow a direct `call` through a callee that
     /// discards the pushed return address and jumps back into the instruction
     /// stream, instead of decoding a fall-through at the return address
@@ -1980,6 +1985,7 @@ impl Architecture {
             msvc_ftol: false, // (kuna) option msvcftol; reset_defaults sets the shipped default
             tail_call_jumps: false,
             tail_call_frame: false, // (kuna) option tailcallframe; reset_defaults sets the shipped default
+            tail_call_saved: false, // (kuna) option tailcallsaved; reset_defaults sets the shipped default
             call_trampoline: false, // (kuna) option calltrampoline; reset_defaults sets the shipped default
             funcbound_flow: false, // (kuna) option funcboundflow; reset_defaults sets the shipped default
             overlap_branch: false, // (kuna) option overlapbranch; reset_defaults sets the shipped default
@@ -2225,6 +2231,7 @@ impl Architecture {
         self.msvc_ftol = true; // (kuna) DIV-74 default-on: x86-32-only, and inert unless the binary imports an `__ftol`/`__ftol2`/`__ftol2_sse` symbol. Byte-identical (0/675) — no corpus function carries one of those names. Restore the un-fixed `__ftol()` rendering with `option msvcftol off`
         self.tail_call_jumps = true; // (kuna) DIV-13 default-on (angr tail-call recovery; per-test opt-out on Long double #1/#2)
         self.tail_call_frame = true; // (kuna) DIV-109 default-on: REMOVES CODE. A direct jmp preceded by a teardown of exactly the entry block's frame is a tail call even when the callee was never discovered. Byte-identical (0/675) on the datatest corpus; restore the flow-into-the-callee decode with `option tailcallframe off`
+        self.tail_call_saved = true; // (kuna) DIV-157 default-on: a run that raises the stack pointer without loading a single byte back through it is cdecl argument cleanup, not a frame teardown, so `push ebx; push esi; ...; call f; add esp,8; jmp L` no longer truncates the function at an internal join. Narrows `tailcallframe` only; 0/675 byte-identical on the datatest corpus. Restore the delta-only test with `option tailcallsaved off`
         self.call_trampoline = true; // (kuna) DIV-144 default-on: RESTORES CODE. Flows a `call` whose callee discards the pushed return address and jumps back into the stream (the Beria-family protector fragment) through as a branch, instead of decoding a fall-through at a return address control never reaches -- which on the witness lifts a junk byte into a store to a global that does not exist and puts the rest of the body one byte out of phase. Requires the callee's raw p-code to pass through `entrySP + ptrsize` and end in a direct branch to an address the symbol table does NOT know as a function entry, so an ordinary tail-call thunk (`add esp,4; jmp printf`) never matches; byte-identical (0/675) on the datatest corpus. Restore the fall-through decode with `option calltrampoline off`
         self.funcbound_flow = true; // (kuna) DIV-67 default-on: REMOVES CODE. Truncates a fall-through that reaches another known function's entry (a function ending in an unnamed static no-return `exit`/`abort`/`die()` wrapper) instead of decoding the next function's body into it. Byte-identical (0/675) on the datatest corpus; restore upstream flow-into-callee with `option funcboundflow off`
         self.overlap_branch = true; // (kuna) DIV-106 default-on: REMOVES CODE. Ends a conditional branch's fall-through in a halt when the branch's own target lies strictly inside that fall-through instruction's encoding (the anti-disassembly junk-lead-byte overlap), instead of letting the bogus decode swallow the target and desynchronise the stream. Two real instruction starts cannot sit at `next` and strictly inside `next`, so the trigger never matches well-formed code and is byte-identical (0/675) on the datatest corpus; restore the fall-through-wins decode with `option overlapbranch off`
@@ -2530,6 +2537,9 @@ impl Architecture {
             "msvcftol" => on_off!(msvc_ftol, "MSVC __ftol-family call-fixup"),
             "tailcalljump" => on_off!(tail_call_jumps, "Tail-call jump recovery"),
             "tailcallframe" => on_off!(tail_call_frame, "Frame-teardown tail-call recovery"),
+            "tailcallsaved" => {
+                on_off!(tail_call_saved, "Saved-register restore test for a frame teardown")
+            }
             "calltrampoline" => on_off!(call_trampoline, "Return-address-discarding call trampoline flow-through"),
             "funcboundflow" => on_off!(funcbound_flow, "Fall-through bound at function entries"),
             "overlapbranch" => on_off!(overlap_branch, "Overlapping-branch fall-through truncation"),
