@@ -58,7 +58,7 @@ touch .kuna-repipe/ABORT                # hard stop; worktrees and arenas left i
 | `REPIPE_MAX_AGENTS` | total concurrent LLM processes (**7** = 1 captain + 3 testers + 3 builders) |
 | `REPIPE_TESTER_SHARE` | tester fraction of the non-captain slots (0.5) |
 | `REPIPE_ROUND_CHALLENGES` | challenges per round (9) |
-| `REPIPE_TESTER_TIMEOUT` / `REPIPE_BUILDER_TIMEOUT` / `REPIPE_CAPTAIN_TIMEOUT` | 3600 / 7200 / 1200 s |
+| `REPIPE_TESTER_TIMEOUT` / `REPIPE_BUILDER_TIMEOUT` / `REPIPE_CAPTAIN_TIMEOUT` | 3600 / 7200 / 3600 s |
 | `REPIPE_BUILDER_USD` / `REPIPE_ROUND_USD` / `REPIPE_RUN_USD` | 25 / 150 / 1500 |
 | `REPIPE_MIN_FREE_GB` / `REPIPE_HALT_FREE_GB` | stop dispatching / halt outright (250 / 60) |
 | `REPIPE_SANDBOX` | `auto` \| `bwrap` \| `none` — `none` is prompt-only containment |
@@ -72,6 +72,9 @@ touch .kuna-repipe/ABORT                # hard stop; worktrees and arenas left i
 | `REPIPE_CAPTAIN_USD` | Claude-only dollar cap; Codex ticks are bounded by timeout, model, and reasoning effort |
 | `REPIPE_DATASET` | the crackme corpus (`~/github/kuna-re-dataset`) |
 | `KUNA_PIPELINE_STATE_DIR` | live state (`.kuna-repipe/`, gitignored) |
+
+The captain timeout is one hour because a cold `B_VERIFY` tick owns the release build, all
+four repository gates, and the acceptance suite; that supported path can exceed 20 minutes.
 
 The agent split at other values: 2→1/1/1, 4→1/2/1, 5→1/2/2, 6→1/3/2, **7→1/3/3**, 9→1/4/4.
 Below 5 the two tracks cannot overlap, so the live process count is
@@ -352,6 +355,16 @@ come from a slot.
   That command reaps again, requires empty tester/builder pools, refuses `STOP` or `ABORT`,
   reruns preflight, consumes the old `HALT_REASON`, and then records the operator restart. A
   reason written by a later halt is therefore never removed after `RUNNING` is published.
+  A fresh `run.sh` invocation similarly consumes the completed round's `STOP` and uses
+  `captain.py --restart-stopped` to leave `STOPPED`; the same empty-pool, control-file, and
+  preflight guards apply. Startup recovery is serialized, `STOP` is consumed under the round
+  lock, and the `STOPPED -> RUNNING` operator edge is appended to the transition audit. A
+  separate process-lifetime ownership lock admits only one `run.sh` loop, including when a
+  second launcher arrives after the first has already published `RUNNING`. The actual supervisor
+  owns and verifies an inherited, PID-bound lock descriptor; foreground descendants inherit it,
+  so a killed supervisor cannot admit a replacement while an orphan captain is still alive. The
+  kernel releases the lock after the owner and its inheriting descendants exit, allowing crash
+  recovery. `ABORT` is never consumed implicitly.
 - **Builder branches fail closed.** `tools/pipeline/worker.sh` accepts `WORKER_BRANCH` as an
   explicit fresh-branch seam. Normal RE builders use the stable round-specific name
   `feat/re-<need>-r<round>`, avoiding old canonical refs from earlier rounds. Only an exact
@@ -722,6 +735,13 @@ file is **shared state**: every supervisor sharing the state dir sees it, transi
 round to `DRAINING`, and stops dispatching. Removing the file does not undo it —
 `DRAINING → RUNNING` is deliberately not a legal edge, so the round can only go on to
 `STOPPED`.
+
+Once it is `STOPPED`, invoking `tools/repipe/run.sh` again is the explicit operator restart.
+The launcher consumes the completed drain's `STOP`, reaps dead workers, requires no live
+tester or builder slots, reruns preflight, and records `STOPPED → RUNNING` before dispatching.
+It refuses an `ABORT`; remove that file manually only after resolving why the hard stop was
+requested. The lower-level equivalent is `rm .kuna-repipe/STOP` followed by
+`python3 -m scripts.repipe.captain --restart-stopped`.
 
 So `kill <supervisor>` is not "stop this process". It is "end this round". To remove a
 duplicate or stuck supervisor without ending the round, use `kill -9`, which skips the trap.
