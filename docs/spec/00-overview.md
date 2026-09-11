@@ -686,6 +686,24 @@ to is not an answer on a machine that has no checkout, and a missing SLEIGH tree
 is reported where it is resolved rather than as the engine's downstream
 `No sleigh specification` — which reads as a problem with the binary.
 
+(kuna) **Loading a spec.** A `.sla` is a zlib stream behind a `sla\x04` header,
+inflated and checksum-verified in full before a single element is decoded
+(`decompiler/crates/kuna-sleigh/src/slaformat.rs (FormatDecode::ingest_stream)`).
+The decompressed buffer is then *handed* to the packed decoder rather than
+copied into it (`decompiler/crates/kuna-base/src/marshal.rs
+(PackedDecode::ingest_owned)`): the inflate buffer becomes the decoder's leading
+byte chunk as it stands, and only the trailing partial chunk is copied, to carry
+the `ELEMENT_END` pad that ends the input one byte past its last. Where the
+chunk boundaries fall is not observable — a Position carries its chunk index and
+that chunk's own end offset, so a boundary decides only how often the cursor
+crosses one — and nothing else about ingestion moves: the first NUL byte still
+ends the input (no valid packed byte is zero), and reading past the pad is still
+`Unexpected end of stream`. Decoding rests on the same distinction: an encoded
+integer lying wholly inside the current chunk is read from that chunk's slice in
+one step, while a read that reaches the chunk's end stays on the byte cursor,
+which is where end-of-stream is detected (`marshal.rs
+(PackedDecode::read_integer)`).
+
 (kuna) **The option-name contract.** Every `kuna` surface that takes
 `--option NAME VALUE` checks the NAME in its own parser, before a binary is
 opened or a `decomp_dbg` spawned

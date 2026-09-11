@@ -13,11 +13,11 @@
 //!   `slghsymbol::sla` / `semantics::sla` so a single `register_sla_ids` call
 //!   covers the whole table without duplicate `ElementId` objects.
 //! - [`FormatDecode`] is the C++ `FormatDecode : PackedDecode`: it verifies
-//!   the `sla\x04` header, decompresses the zlib stream, and feeds the
-//!   decompressed bytes into a [`PackedDecode`].  Inheritance becomes
+//!   the `sla\x04` header, decompresses the zlib stream, and hands the
+//!   decompressed buffer to a [`PackedDecode`].  Inheritance becomes
 //!   composition: [`FormatDecode`] *owns* a [`PackedDecode`] and forwards the
 //!   whole [`Decoder`] surface to it (every packed byte has a high-bit
-//!   pattern set, so the inner `ingest_stream`'s NUL-terminator scan never
+//!   pattern set, so the inner `ingest_owned`'s NUL-terminator scan never
 //!   trips on valid data).
 //! - [`FormatEncode`]/[`write_sla_header`]/`isSlaFormat` are the writer side
 //!   (used by the unported compiler); [`FormatEncode`] wraps a
@@ -339,12 +339,12 @@ impl<'a> FormatDecode<'a> {
     }
 
     /// C++ `FormatDecode::ingestStream(istream &)`: verify the header,
-    /// decompress the whole stream, then ingest the decompressed bytes into
-    /// the inner [`PackedDecode`].  The C++ decompresses directly into the
+    /// decompress the whole stream, then hand the decompressed buffer to the
+    /// inner [`PackedDecode`].  The C++ decompresses directly into the
     /// PackedDecode chunk buffers; the Rust decompresses into one `Vec<u8>`
-    /// and delegates to `PackedDecode::ingest_stream` (identical chunking and
-    /// `endIngest` padding — every packed byte has its high bit set, so the
-    /// inner NUL-terminator scan never trips).
+    /// and transfers it with `ingest_owned`, which copies only the trailing
+    /// partial chunk so `endIngest` has one to pad — every packed byte has its
+    /// high bit set, so the NUL-terminator scan never trips.
     pub fn ingest_stream(&mut self, s: &[u8]) -> KunaResult<()> {
         let (ok, compressed) = is_sla_format(s);
         if !ok {
@@ -375,7 +375,7 @@ impl<'a> FormatDecode<'a> {
                 return Err(KunaError::lowlevel("Truncated SLA compressed stream"));
             }
         }
-        self.inner.ingest_stream(&out)
+        self.inner.ingest_owned(out)
     }
 
     /// Borrow the inner [`PackedDecode`] as a `&mut dyn Decoder`.
@@ -467,6 +467,71 @@ impl Decoder for FormatDecode<'_> {
         attrib_id: &AttributeId,
     ) -> KunaResult<Rc<kuna_base::space::AddrSpace>> {
         self.inner.read_space_id(attrib_id)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use kuna_base::marshal::{Encoder, ATTRIB_CONTENT, ELEM_DATA};
+
+    fn compressed(payload: &[u8]) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        write_sla_header(&mut bytes).unwrap();
+        let mut compressor = CompressBuffer::new(&mut bytes, -1).unwrap();
+        compressor.write_all(payload).unwrap();
+        compressor.flush().unwrap();
+        bytes
+    }
+
+    #[test]
+    fn owned_sla_buffer_decodes_across_inflate_and_packed_boundaries() {
+        let manager = AddrSpaceManager::new();
+        for length in [1018, 1019, 1020, 4090, 4091, 4092, 8192, 20000] {
+            let payload: Vec<_> = (0..length).map(|i| (i % 255 + 1) as u8).collect();
+            let mut packed = Vec::new();
+            let mut enc = PackedEncode::new(&mut packed);
+            enc.open_element(&ELEM_DATA);
+            enc.write_string(&ATTRIB_CONTENT, &payload);
+            enc.close_element(&ELEM_DATA);
+            let bytes = compressed(&packed);
+            let mut dec = FormatDecode::new(&manager);
+            dec.ingest_stream(&bytes).unwrap();
+            let el = dec.open_element_id(&ELEM_DATA).unwrap();
+            assert_eq!(dec.read_string_id(&ATTRIB_CONTENT).unwrap(), payload);
+            dec.close_element(el).unwrap();
+            assert_eq!(dec.peek_element().unwrap(), 0);
+        }
+    }
+
+    #[test]
+    fn owned_sla_buffer_keeps_header_truncation_and_checksum_checks() {
+        let manager = AddrSpaceManager::new();
+        let bytes = compressed(&[0x41, 0x81]);
+        for end in 0..bytes.len() {
+            let mut dec = FormatDecode::new(&manager);
+            assert!(dec.ingest_stream(&bytes[..end]).is_err(), "truncation at {end}");
+        }
+        let mut corrupt = bytes.clone();
+        *corrupt.last_mut().unwrap() ^= 1;
+        assert!(FormatDecode::new(&manager).ingest_stream(&corrupt).is_err());
+        let mut wrong_header = bytes;
+        wrong_header[3] = 0;
+        assert!(FormatDecode::new(&manager).ingest_stream(&wrong_header).is_err());
+        assert!(FormatDecode::new(&manager).ingest_stream(&compressed(&[])).is_err());
+    }
+
+    #[test]
+    fn nul_termination_does_not_skip_the_compressed_checksum() {
+        let manager = AddrSpaceManager::new();
+        let mut bytes = compressed(&[0x41, 0x81, 0, 0x41, 0x81]);
+        let mut dec = FormatDecode::new(&manager);
+        dec.ingest_stream(&bytes).unwrap();
+        let el = dec.open_element().unwrap();
+        dec.close_element(el).unwrap();
+        assert_eq!(dec.peek_element().unwrap(), 0);
+        *bytes.last_mut().unwrap() ^= 1;
+        assert!(FormatDecode::new(&manager).ingest_stream(&bytes).is_err());
     }
 }
 
