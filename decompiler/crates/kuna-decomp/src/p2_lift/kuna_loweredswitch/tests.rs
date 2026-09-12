@@ -29,7 +29,8 @@ use crate::context::{ArchContext, BlockId, TypeOp, VarnodeId};
 fn build_manager() -> AddrSpaceManager {
     let mut m = AddrSpaceManager::new();
     m.insert_space(Rc::new(ConstantSpace::new())).unwrap();
-    m.insert_space(Rc::new(UniqueSpace::new(1, 0, false))).unwrap();
+    m.insert_space(Rc::new(UniqueSpace::new(1, 0, false)))
+        .unwrap();
     m.insert_space(Rc::new(AddrSpace::new(
         spacetype::IPTR_PROCESSOR,
         "ram",
@@ -46,8 +47,14 @@ fn build_manager() -> AddrSpaceManager {
 }
 
 fn build_fd() -> Funcdata {
+    build_fd_with_label_signedness(true)
+}
+
+fn build_fd_with_label_signedness(enabled: bool) -> Funcdata {
     let manage = build_manager();
-    let glb = Rc::new(ArchContext::new(manage));
+    let mut context = ArchContext::new(manage);
+    context.lowered_switch_labels = enabled;
+    let glb = Rc::new(context);
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let addr = Address::new(ram, 0x1000);
     Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()
@@ -120,8 +127,12 @@ fn vn_size_pub(fd: &Funcdata, vn: VarnodeId) -> int4 {
 /// same `V` id).  The defining op lives in its own predecessor block so it does
 /// not contaminate the pure-compare spine blocks.
 fn switch_var(fd: &mut Funcdata) -> VarnodeId {
+    switch_var_sized(fd, 4)
+}
+
+fn switch_var_sized(fd: &mut Funcdata, size: int4) -> VarnodeId {
     let def_bl = new_block(fd, 0x0F00);
-    // V = LOAD(ram, ptr)   — a written 4-byte value at register 0x4000.
+    // V = LOAD(ram, ptr)   — a written value at register 0x4000.
     let load = fd.new_op(2, ram_addr(fd, 0x0F00));
     fd.op_set_opcode(load, TypeOp::new(OpCode::CPUI_LOAD, 0, "LOAD"));
     let spaceid = fd.new_constant(4, 0);
@@ -129,9 +140,122 @@ fn switch_var(fd: &mut Funcdata) -> VarnodeId {
     fd.op_set_input(load, spaceid, 0).unwrap();
     fd.op_set_input(load, ptr, 1).unwrap();
     let vaddr = ram_addr(fd, 0x4000);
-    let v = fd.new_varnode_out(4, &vaddr, load).unwrap();
+    let v = fd.new_varnode_out(size, &vaddr, load).unwrap();
     fd.op_insert_end(load, def_bl);
     v
+}
+
+fn extend_switch_var(
+    fd: &mut Funcdata,
+    v: VarnodeId,
+    code: OpCode,
+    out_size: int4,
+    off: u64,
+) -> VarnodeId {
+    assert!(code == OpCode::CPUI_INT_ZEXT || code == OpCode::CPUI_INT_SEXT);
+    let def_bl = new_block(fd, off);
+    let ext = fd.new_op(1, ram_addr(fd, off));
+    fd.op_set_opcode(ext, TypeOp::new(code, 0, "extension"));
+    fd.op_set_input(ext, v, 0).unwrap();
+    let out = fd.new_unique_out(out_size, ext).unwrap();
+    fd.op_insert_end(ext, def_bl);
+    out
+}
+
+fn truncate_switch_var(fd: &mut Funcdata, v: VarnodeId, out_size: int4, off: u64) -> VarnodeId {
+    assert!(out_size > 0 && out_size < vn_size_pub(fd, v));
+    let def_bl = new_block(fd, off);
+    let subpiece = fd.new_op(2, ram_addr(fd, off));
+    fd.op_set_opcode(subpiece, TypeOp::new(OpCode::CPUI_SUBPIECE, 0, "SUBPIECE"));
+    fd.op_set_input(subpiece, v, 0).unwrap();
+    let zero = fd.new_constant(4, 0);
+    fd.op_set_input(subpiece, zero, 1).unwrap();
+    let out = fd.new_unique_out(out_size, subpiece).unwrap();
+    fd.op_insert_end(subpiece, def_bl);
+    out
+}
+
+fn build_signedness_cascade_for_vars(
+    fd: &mut Funcdata,
+    range_v: VarnodeId,
+    equality_vars: [VarnodeId; 3],
+    range_code: OpCode,
+    cases: [u64; 3],
+) -> BlockId {
+    let b0 = new_block(fd, 0x1000);
+    let b1 = new_block(fd, 0x1100);
+    let b2 = new_block(fd, 0x1200);
+    let b3 = new_block(fd, 0x1300);
+    let case_a = new_block(fd, 0x2000);
+    let case_b = new_block(fd, 0x2100);
+    let default = new_block(fd, 0x3000);
+
+    append_cmp_cbranch(fd, b0, 0x1000, range_code, range_v, cases[1]);
+    fd.bblocks_mut().add_edge(b0, b2);
+    fd.bblocks_mut().add_edge(b0, b1);
+    append_cmp_cbranch(
+        fd,
+        b1,
+        0x1100,
+        OpCode::CPUI_INT_EQUAL,
+        equality_vars[0],
+        cases[0],
+    );
+    fd.bblocks_mut().add_edge(b1, default);
+    fd.bblocks_mut().add_edge(b1, case_a);
+    append_cmp_cbranch(
+        fd,
+        b2,
+        0x1200,
+        OpCode::CPUI_INT_EQUAL,
+        equality_vars[1],
+        cases[1],
+    );
+    fd.bblocks_mut().add_edge(b2, b3);
+    fd.bblocks_mut().add_edge(b2, case_b);
+    append_cmp_cbranch(
+        fd,
+        b3,
+        0x1300,
+        OpCode::CPUI_INT_EQUAL,
+        equality_vars[2],
+        cases[2],
+    );
+    fd.bblocks_mut().add_edge(b3, default);
+    fd.bblocks_mut().add_edge(b3, case_a);
+    b0
+}
+
+fn build_signedness_cascade(fd: &mut Funcdata, size: int4, range_code: OpCode, cases: [u64; 3]) {
+    let v = switch_var_sized(fd, size);
+    let _ = build_signedness_cascade_for_vars(fd, v, [v; 3], range_code, cases);
+}
+
+/// Put an ambiguous byte projection in front of an otherwise-valid wide-value
+/// range cascade. If detection were to discard the outer node instead of keeping
+/// it in the structural map, the inner three-case subtree could recover alone.
+fn build_shrinking_subpiece_outer_with_inner_cascade(
+    fd: &mut Funcdata,
+) -> (VarnodeId, BlockId, BlockId) {
+    // The LOAD leaves all upper 24 bits capable of being nonzero. Replacing the
+    // byte projection with this four-byte storage would therefore let those bits
+    // select a different BRANCHIND target than the outer comparison.
+    let wide = switch_var_sized(fd, 4);
+    let low_byte = truncate_switch_var(fd, wide, 1, 0x0F10);
+    let inner = build_signedness_cascade_for_vars(
+        fd,
+        wide,
+        [wide; 3],
+        OpCode::CPUI_INT_LESS,
+        [0x1e, 0x7c, 0x8b],
+    );
+
+    let outer = new_block(fd, 0x0FF0);
+    let projected_case = new_block(fd, 0x3100);
+    append_cmp_cbranch(fd, outer, 0x0FF0, OpCode::CPUI_INT_EQUAL, low_byte, 0xfe);
+    fd.bblocks_mut().add_edge(outer, inner);
+    fd.bblocks_mut().add_edge(outer, projected_case);
+    (wide, outer, inner)
 }
 
 /// Build a 4-block GCC-lowered binary-search cascade dispatching on `V`:
@@ -203,7 +327,10 @@ fn detect_recovers_lowered_switch() {
     assert_eq!(added, 1, "one cascade should be recorded");
 
     // The restart was requested (mechanism-c restart idiom).
-    assert!(fd.has_restart_pending(), "detect should set restart-pending");
+    assert!(
+        fd.has_restart_pending(),
+        "detect should set restart-pending"
+    );
 
     // The sticky side table now reports a record (kunaLoweredSwitchHasRecord).
     assert!(act.store().borrow().has_record(&fd));
@@ -218,13 +345,325 @@ fn detect_recovers_lowered_switch() {
     assert_eq!(off(&rec.case_targets[0]), 0x2000); // case 0 -> A
     assert_eq!(off(&rec.case_targets[1]), 0x2100); // case 2 -> B
     assert_eq!(off(&rec.case_targets[2]), 0x2000); // case 3 -> A
-    // Default is the most-voted common sink (DEFAULT, voted by B1 and B3).
+                                                   // Default is the most-voted common sink (DEFAULT, voted by B1 and B3).
     assert_eq!(off(&rec.default_target), 0x3000);
     // The synthetic BRANCHIND will host at the head's CBRANCH address (0x1001).
     assert_eq!(off(&rec.branch_addr), 0x1001);
     // The switch variable storage (the 4-byte register at 0x4000).
     assert_eq!(off(&rec.var_addr), 0x4000);
     assert_eq!(rec.var_size, 4);
+    assert!(!rec.signed_labels);
+}
+
+#[test]
+fn signed_byte_high_case_keeps_signed_labels() {
+    let mut fd = build_fd();
+    build_signedness_cascade(&mut fd, 1, OpCode::CPUI_INT_SLESS, [0x1e, 0x7c, 0x8b]);
+
+    let mut act = ActionLowerSwitchDetect::new(true, "base");
+    assert_eq!(act.detect(&mut fd), 1);
+    let recs = act.store().borrow().records(&fd).to_vec();
+    assert_eq!(recs[0].case_vals, vec![0x1e, 0x7c, 0x8b]);
+    assert!(
+        recs[0].signed_labels,
+        "0x8b is -117 under signed byte comparisons"
+    );
+}
+
+#[test]
+fn signed_int_minus_one_keeps_signed_labels() {
+    let mut fd = build_fd();
+    build_signedness_cascade(
+        &mut fd,
+        4,
+        OpCode::CPUI_INT_SLESS,
+        [0x7c, 0x8000_0000, 0xffff_ffff],
+    );
+
+    let mut act = ActionLowerSwitchDetect::new(true, "base");
+    assert_eq!(act.detect(&mut fd), 1);
+    let recs = act.store().borrow().records(&fd).to_vec();
+    assert_eq!(recs[0].case_vals, vec![0x7c, 0x8000_0000, 0xffff_ffff]);
+    assert!(
+        recs[0].signed_labels,
+        "0xffffffff is -1 for a signed int selector"
+    );
+}
+
+#[test]
+fn unsigned_u32_high_case_keeps_unsigned_labels() {
+    let mut fd = build_fd();
+    build_signedness_cascade(
+        &mut fd,
+        4,
+        OpCode::CPUI_INT_LESS,
+        [1, 0x8000_0000, 0xffff_ffff],
+    );
+
+    let mut act = ActionLowerSwitchDetect::new(true, "base");
+    assert_eq!(act.detect(&mut fd), 1);
+    let recs = act.store().borrow().records(&fd).to_vec();
+    assert_eq!(recs[0].case_vals, vec![1, 0x8000_0000, 0xffff_ffff]);
+    assert!(!recs[0].signed_labels, "0xffffffff remains unsigned");
+}
+
+#[test]
+fn zext_selector_with_signed_range_declines_recovery() {
+    let mut fd = build_fd();
+    let v = switch_var_sized(&mut fd, 1);
+    let zext = extend_switch_var(&mut fd, v, OpCode::CPUI_INT_ZEXT, 4, 0x0F10);
+    let head = build_signedness_cascade_for_vars(
+        &mut fd,
+        zext,
+        [zext; 3],
+        OpCode::CPUI_INT_SLESS,
+        [0x1e, 200, 0x8b],
+    );
+
+    let head_cmp = analyze_cmp(&fd, head);
+    assert!(
+        head_cmp.valid,
+        "ambiguous head must remain in the structural map"
+    );
+    assert!(head_cmp.evidence_ambiguous);
+
+    let mut act = ActionLowerSwitchDetect::new(true, "base");
+    assert_eq!(
+        act.detect(&mut fd),
+        0,
+        "ZEXT and SLESS give conflicting evidence"
+    );
+    assert!(!act.store().borrow().has_record(&fd));
+}
+
+#[test]
+fn option_off_zext_signed_range_retains_legacy_recovery() {
+    let mut fd = build_fd_with_label_signedness(false);
+    let v = switch_var_sized(&mut fd, 1);
+    let zext = extend_switch_var(&mut fd, v, OpCode::CPUI_INT_ZEXT, 4, 0x0F10);
+    build_signedness_cascade_for_vars(
+        &mut fd,
+        zext,
+        [zext; 3],
+        OpCode::CPUI_INT_SLESS,
+        [0x1e, 200, 0x8b],
+    );
+
+    let mut act = ActionLowerSwitchDetect::new(true, "base");
+    assert_eq!(
+        act.detect(&mut fd),
+        1,
+        "option off must ignore extension conflicts"
+    );
+    let recs = act.store().borrow().records(&fd).to_vec();
+    assert_eq!(recs[0].case_vals, vec![0x1e, 0x8b, 0xc8]);
+    assert!(
+        recs[0].signed_labels,
+        "legacy high-bit heuristic remains authoritative"
+    );
+}
+
+#[test]
+fn sext_selector_with_unsigned_range_declines_recovery() {
+    let mut fd = build_fd();
+    let v = switch_var_sized(&mut fd, 1);
+    let sext = extend_switch_var(&mut fd, v, OpCode::CPUI_INT_SEXT, 4, 0x0F10);
+    build_signedness_cascade_for_vars(
+        &mut fd,
+        sext,
+        [sext; 3],
+        OpCode::CPUI_INT_LESS,
+        [0x1e, 0x7c, 0xffff_ff8b],
+    );
+
+    let mut act = ActionLowerSwitchDetect::new(true, "base");
+    assert_eq!(
+        act.detect(&mut fd),
+        0,
+        "SEXT and LESS give conflicting evidence"
+    );
+    assert!(!act.store().borrow().has_record(&fd));
+}
+
+#[test]
+fn zext_selector_with_unsigned_range_recovers_unsigned_labels() {
+    let mut fd = build_fd();
+    let v = switch_var_sized(&mut fd, 1);
+    let zext = extend_switch_var(&mut fd, v, OpCode::CPUI_INT_ZEXT, 4, 0x0F10);
+    build_signedness_cascade_for_vars(
+        &mut fd,
+        zext,
+        [zext; 3],
+        OpCode::CPUI_INT_LESS,
+        [0x1e, 0x7c, 0x8b],
+    );
+
+    let mut act = ActionLowerSwitchDetect::new(true, "base");
+    assert_eq!(act.detect(&mut fd), 1);
+    let recs = act.store().borrow().records(&fd).to_vec();
+    assert_eq!(recs[0].case_vals, vec![0x1e, 0x7c, 0x8b]);
+    assert_eq!(recs[0].var_size, 1);
+    assert!(!recs[0].signed_labels);
+}
+
+#[test]
+fn sext_selector_with_signed_range_recovers_signed_labels() {
+    let mut fd = build_fd();
+    let v = switch_var_sized(&mut fd, 1);
+    let sext = extend_switch_var(&mut fd, v, OpCode::CPUI_INT_SEXT, 4, 0x0F10);
+    build_signedness_cascade_for_vars(
+        &mut fd,
+        sext,
+        [sext; 3],
+        OpCode::CPUI_INT_SLESS,
+        [0x1e, 0x7c, 0xffff_ff8b],
+    );
+
+    let mut act = ActionLowerSwitchDetect::new(true, "base");
+    assert_eq!(act.detect(&mut fd), 1);
+    let recs = act.store().borrow().records(&fd).to_vec();
+    assert_eq!(recs[0].case_vals, vec![0x1e, 0x7c, 0x8b]);
+    assert_eq!(recs[0].var_size, 1);
+    assert!(recs[0].signed_labels);
+}
+
+#[test]
+fn mixed_extension_paths_decline_recovery() {
+    let mut fd = build_fd();
+    let v = switch_var_sized(&mut fd, 1);
+    let zext = extend_switch_var(&mut fd, v, OpCode::CPUI_INT_ZEXT, 4, 0x0F10);
+    let sext = extend_switch_var(&mut fd, v, OpCode::CPUI_INT_SEXT, 4, 0x0F20);
+    build_signedness_cascade_for_vars(
+        &mut fd,
+        zext,
+        [zext, zext, sext],
+        OpCode::CPUI_INT_LESS,
+        [0x1e, 0x3c, 0x6b],
+    );
+
+    let mut act = ActionLowerSwitchDetect::new(true, "base");
+    assert_eq!(
+        act.detect(&mut fd),
+        0,
+        "ZEXT and SEXT paths must not be merged"
+    );
+    assert!(!act.store().borrow().has_record(&fd));
+}
+
+#[test]
+fn shrinking_subpiece_declines_without_recovering_inner_cascade() {
+    let mut fd = build_fd();
+    let (wide, outer, inner) = build_shrinking_subpiece_outer_with_inner_cascade(&mut fd);
+
+    let head_cmp = analyze_cmp(&fd, outer);
+    assert!(
+        head_cmp.valid,
+        "ambiguous outer head must keep ownership of the inner subtree"
+    );
+    assert_eq!(head_cmp.var, Some(wide));
+    assert_eq!(head_cmp.effective_size, 1);
+    assert!(head_cmp.evidence_ambiguous);
+    let inner_cmp = analyze_cmp(&fd, inner);
+    assert!(inner_cmp.valid);
+    assert_eq!(inner_cmp.var, Some(wide));
+    assert!(!inner_cmp.evidence_ambiguous);
+
+    let mut act = ActionLowerSwitchDetect::new(true, "base");
+    assert_eq!(
+        act.detect(&mut fd),
+        0,
+        "strict mode cannot install a wide selector for a byte projection"
+    );
+    assert!(
+        !act.store().borrow().has_record(&fd),
+        "neither the outer head nor its inner three-case/range subtree may recover"
+    );
+}
+
+#[test]
+fn option_off_shrinking_subpiece_retains_legacy_wide_selector_peel() {
+    let mut fd = build_fd_with_label_signedness(false);
+    let (_wide, _outer, _inner) = build_shrinking_subpiece_outer_with_inner_cascade(&mut fd);
+
+    let mut act = ActionLowerSwitchDetect::new(true, "base");
+    assert_eq!(
+        act.detect(&mut fd),
+        1,
+        "option off must retain the historical shrinking-SUBPIECE peel"
+    );
+    let recs = act.store().borrow().records(&fd).to_vec();
+    assert_eq!(recs[0].var_size, 4);
+    assert_eq!(recs[0].case_vals, vec![0x1e, 0x7c, 0x8b, 0xfe]);
+    assert!(!recs[0].signed_labels);
+}
+
+#[test]
+fn explicit_ablation_retains_legacy_case_bit_guess() {
+    let mut fd = build_fd_with_label_signedness(false);
+    build_signedness_cascade(&mut fd, 1, OpCode::CPUI_INT_LESS, [0x1e, 0x7c, 0x8b]);
+
+    let mut act = ActionLowerSwitchDetect::new(true, "base");
+    assert_eq!(act.detect(&mut fd), 1);
+    assert!(act.store().borrow().records(&fd)[0].signed_labels);
+}
+
+#[test]
+fn mixed_signed_and_unsigned_range_comparisons_decline_recovery() {
+    let mut fd = build_fd();
+    build_mixed_range_cascade(&mut fd);
+
+    let mut act = ActionLowerSwitchDetect::new(true, "base");
+    assert_eq!(act.detect(&mut fd), 0);
+    assert!(!act.store().borrow().has_record(&fd));
+}
+
+#[test]
+fn option_off_mixed_range_cascade_retains_legacy_recovery() {
+    let mut fd = build_fd_with_label_signedness(false);
+    build_mixed_range_cascade(&mut fd);
+
+    let mut act = ActionLowerSwitchDetect::new(true, "base");
+    assert_eq!(
+        act.detect(&mut fd),
+        1,
+        "option off must not apply new conflict checks"
+    );
+    let recs = act.store().borrow().records(&fd).to_vec();
+    assert_eq!(recs[0].case_vals, vec![2, 7, 12]);
+    assert!(
+        !recs[0].signed_labels,
+        "legacy high-bit heuristic remains authoritative"
+    );
+}
+
+fn build_mixed_range_cascade(fd: &mut Funcdata) {
+    let v = switch_var_sized(fd, 1);
+    let b0 = new_block(fd, 0x1000);
+    let b1 = new_block(fd, 0x1100);
+    let b2 = new_block(fd, 0x1200);
+    let b3 = new_block(fd, 0x1300);
+    let b4 = new_block(fd, 0x1400);
+    let case_a = new_block(fd, 0x2000);
+    let case_b = new_block(fd, 0x2100);
+    let case_c = new_block(fd, 0x2200);
+    let default = new_block(fd, 0x3000);
+
+    append_cmp_cbranch(fd, b0, 0x1000, OpCode::CPUI_INT_LESS, v, 10);
+    fd.bblocks_mut().add_edge(b0, b2);
+    fd.bblocks_mut().add_edge(b0, b1);
+    append_cmp_cbranch(fd, b1, 0x1100, OpCode::CPUI_INT_SLESS, v, 5);
+    fd.bblocks_mut().add_edge(b1, b4);
+    fd.bblocks_mut().add_edge(b1, b3);
+
+    for (block, off, value, target) in [
+        (b2, 0x1200, 12, case_a),
+        (b3, 0x1300, 2, case_b),
+        (b4, 0x1400, 7, case_c),
+    ] {
+        append_cmp_cbranch(fd, block, off, OpCode::CPUI_INT_EQUAL, v, value);
+        fd.bblocks_mut().add_edge(block, default);
+        fd.bblocks_mut().add_edge(block, target);
+    }
 }
 
 // (restart-pending is read via `has_restart_pending`).
@@ -293,7 +732,7 @@ fn linear_equality_chain_is_not_a_switch() {
     append_cmp_cbranch(&mut fd, b0, 0x1000, OpCode::CPUI_INT_EQUAL, v, 0);
     fd.bblocks_mut().add_edge(b0, b1); // false = cont
     fd.bblocks_mut().add_edge(b0, case_a); // true = match
-    // B1: if (V == 1) -> B else B2
+                                           // B1: if (V == 1) -> B else B2
     append_cmp_cbranch(&mut fd, b1, 0x1100, OpCode::CPUI_INT_EQUAL, v, 1);
     fd.bblocks_mut().add_edge(b1, b2);
     fd.bblocks_mut().add_edge(b1, case_b);
@@ -303,7 +742,11 @@ fn linear_equality_chain_is_not_a_switch() {
     fd.bblocks_mut().add_edge(b2, case_c);
 
     let mut act = ActionLowerSwitchDetect::new(true, "base");
-    assert_eq!(act.detect(&mut fd), 0, "linear equality chain rejected (no range node)");
+    assert_eq!(
+        act.detect(&mut fd),
+        0,
+        "linear equality chain rejected (no range node)"
+    );
     assert!(!act.store().borrow().has_record(&fd));
 }
 
@@ -323,7 +766,7 @@ fn too_few_cases_rejected() {
     append_cmp_cbranch(&mut fd, b0, 0x1000, OpCode::CPUI_INT_LESS, v, 1);
     fd.bblocks_mut().add_edge(b0, b1); // false = contB
     fd.bblocks_mut().add_edge(b0, case_a); // true  = contA (a non-cascade sink)
-    // B1: equal  if (V == 2)  -> false: DEFAULT, true: B
+                                           // B1: equal  if (V == 2)  -> false: DEFAULT, true: B
     append_cmp_cbranch(&mut fd, b1, 0x1100, OpCode::CPUI_INT_EQUAL, v, 2);
     fd.bblocks_mut().add_edge(b1, default);
     fd.bblocks_mut().add_edge(b1, case_b);
@@ -350,10 +793,50 @@ fn canon_switch_var_peels_transparent_ops() {
     let w = fd.new_unique_out(8, zext).unwrap();
     fd.op_insert_end(zext, bl);
 
-    // canonSwitchVar(w) peels the ZEXT back to V.
-    assert_eq!(canon_switch_var(&fd, w), v);
+    // A same-width zero-offset SUBPIECE is still transparent and must not hide
+    // the widening evidence below it.
+    let subpiece = fd.new_op(2, ram_addr(&fd, 0x1001));
+    fd.op_set_opcode(subpiece, TypeOp::new(OpCode::CPUI_SUBPIECE, 0, "SUBPIECE"));
+    fd.op_set_input(subpiece, w, 0).unwrap();
+    let zero = fd.new_constant(4, 0);
+    fd.op_set_input(subpiece, zero, 1).unwrap();
+    let same_width = fd.new_unique_out(8, subpiece).unwrap();
+    fd.op_insert_end(subpiece, bl);
+
+    // canonSwitchVar(w) peels the ZEXT back to V without discarding its
+    // unsigned interpretation or the byte selector's effective width.
+    assert_eq!(
+        canon_switch_var(&fd, w),
+        CanonSwitchVar {
+            var: v,
+            effective_size: 4,
+            extension_signedness: Some(LoweredSwitchSignedness::Unsigned),
+            evidence_ambiguous: false,
+        }
+    );
+    assert_eq!(canon_switch_var(&fd, same_width), canon_switch_var(&fd, w));
     // A leaf (unwritten) varnode is returned as-is.
-    assert_eq!(canon_switch_var(&fd, v), v);
+    assert_eq!(
+        canon_switch_var(&fd, v),
+        CanonSwitchVar {
+            var: v,
+            effective_size: 4,
+            extension_signedness: None,
+            evidence_ambiguous: false,
+        }
+    );
+}
+
+#[test]
+fn canon_switch_var_rejects_conflicting_extension_chain() {
+    let mut fd = build_fd();
+    let v = switch_var_sized(&mut fd, 1);
+    let zext = extend_switch_var(&mut fd, v, OpCode::CPUI_INT_ZEXT, 2, 0x0F10);
+    let sext = extend_switch_var(&mut fd, zext, OpCode::CPUI_INT_SEXT, 4, 0x0F20);
+
+    let canon = canon_switch_var(&fd, sext);
+    assert_eq!(canon.var, v);
+    assert!(canon.evidence_ambiguous);
 }
 
 // -----------------------------------------------------------------------------
@@ -407,7 +890,6 @@ fn empty_store_has_no_record() {
     assert!(store.records(&fd).is_empty());
 }
 
-
 // -----------------------------------------------------------------------------
 // ActionLowerSwitchInstall (the install half).
 //
@@ -428,6 +910,7 @@ fn sample_record(fd: &Funcdata) -> KunaLoweredSwitchRecord {
         case_vals: vec![0, 2, 3],
         case_targets: vec![a(0x2000), a(0x2100), a(0x2000)],
         default_target: a(0x3000),
+        signed_labels: false,
     }
 }
 
@@ -455,7 +938,10 @@ fn install_with_record_declines_when_cfg_does_not_match() {
     let mut act = ActionLowerSwitchInstall::new(true, "base");
     let rec = sample_record(&fd);
     act.store_mut().borrow_mut().push(&fd, rec);
-    assert!(act.store().borrow().has_record(&fd), "the record is present");
+    assert!(
+        act.store().borrow().has_record(&fd),
+        "the record is present"
+    );
     // The store lookup succeeds, but the empty test `fd` has no block whose
     // terminator is at the recorded branch address, so the surgery declines
     // gracefully (Ok(None)) rather than corrupting the CFG.

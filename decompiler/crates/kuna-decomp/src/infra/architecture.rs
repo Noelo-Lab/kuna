@@ -622,6 +622,9 @@ pub struct Architecture {
     /// (kuna) Reconstruct a compiler-lowered comparison cascade into a switch
     /// (C++ `recover_lowered_switch`).
     pub recover_lowered_switch: bool,
+    /// (kuna `loweredswitchlabels`) Preserve range-comparison signedness across
+    /// lowered-switch restart and installation.
+    pub lowered_switch_labels: bool,
     /// (kuna) Recover stack-passed call arguments at call sites with an unlocked
     /// callee prototype (default-on; restores upstream `fspec.cc:5618`).
     pub callsite_stack_args: bool,
@@ -2107,6 +2110,7 @@ impl Architecture {
             stack_alias_deadstore: false,
             recover_array_stride: false,
             recover_lowered_switch: false,
+            lowered_switch_labels: false,
             callsite_stack_args: true,
             cookie_scramble: true,
             callee_pop: true,
@@ -2357,6 +2361,7 @@ impl Architecture {
         self.stack_alias_deadstore = false; // (kuna) default: upstream byte-identical (GH-8500)
         self.recover_array_stride = true; // (kuna) DIV-3 default-on (GH-8724)
         self.recover_lowered_switch = true; // (kuna) default-on (angr port)
+        self.lowered_switch_labels = true; // (kuna) default-on correctness fix: the cascade's range opcode, not a case's sign bit, determines label interpretation
         self.callsite_stack_args = true; // (kuna) default-on: restores upstream fspec.cc:5618 (0/675 ablation)
         self.cookie_scramble = true; // (kuna) DIV-126 default-on: an `xor rax,rsp` cookie mix no longer collapses the local-alias boundary to the bottom of the frame (0/675 ablation)
         self.callee_proto_stack = true; // (kuna) default-on (0/675 ablation): a locked callee prototype states how much it pops and how much of the caller's stack it can reach
@@ -2694,6 +2699,11 @@ impl Architecture {
             "loweredswitch" => {
                 let (val, msg) = crate::kuna_loweredswitch::OptionLowerSwitch.apply(p1)?;
                 self.recover_lowered_switch = val;
+                Ok(msg)
+            }
+            "loweredswitchlabels" => {
+                let (val, msg) = crate::kuna_loweredswitchlabels::OptionLowerSwitchLabels.apply(p1)?;
+                self.lowered_switch_labels = val;
                 Ok(msg)
             }
             "callsitestackargs" => {
@@ -3730,6 +3740,7 @@ impl Architecture {
         ctx.codescalar = self.codescalar; // (kuna) codescalar
         ctx.model_stack_probe_loop = self.model_stack_probe_loop; // GH-8017 stackprobeloop
         ctx.recover_lowered_switch = self.recover_lowered_switch; // loweredswitch
+        ctx.lowered_switch_labels = self.lowered_switch_labels; // loweredswitchlabels
         ctx.callsite_stack_args = self.callsite_stack_args; // callsitestackargs
         ctx.cookie_scramble = self.cookie_scramble; // cookiescramble
         ctx.callee_pop = self.callee_pop; // calleepop

@@ -326,6 +326,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "jtsharepartial",
     "noreturn_externmatch",
     "loweredswitch",
+    "loweredswitchlabels",
     "callsitestackargs",
     "cookiescramble",
     "calleepop",

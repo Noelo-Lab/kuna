@@ -93,6 +93,7 @@ writeup, not here.
 | `kuna-entryretdispatch.xml` | RE-friction need `entry-point-ret-dispatch` | S2 flow classification (proven entry `push continuation; push target; ret` links become calls) | `option entryretdispatch on\|off` |
 | `kuna-pushimmediateret.xml` | RE-friction duplicate needs `entry-point-push-return` + `push-immediate-ret-transfer` | S2 flow classification (a proven one-store `push immediate; ret` becomes a terminal branch; no target function is synthesized) | `option pushimmediateret on\|off` |
 | `re-checker-stack-aggregate.xml` | RE-friction need `checker-uses-stack-aggregate` | P9 declaration emission (constant address-reference highs are not whole storage representatives) | default correctness fix (no option) |
+| `ghdec-unsigned-byte-vm-selector.xml` | RE-friction need `unsigned-byte-vm-selector` | P2 switch model (range-comparison signedness carried through lowered-switch recovery) | `option loweredswitchlabels on\|off` |
 
 | `gh8017-stackprobeloop.xml` | [GH-8017](https://github.com/NationalSecurityAgency/ghidra/issues/8017) | S2 stack-pointer normalization (stack-probe loop) | `option stackprobeloop on\|off` |
 

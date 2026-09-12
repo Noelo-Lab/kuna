@@ -1965,6 +1965,7 @@ impl Funcdata {
         case_vals: &[kuna_base::types::uintb],
         case_targets: &[Address],
         default_target: &Address,
+        signed_labels: bool,
     ) -> KunaResult<Option<usize>> {
         use kuna_base::types::uintb;
 
@@ -2144,17 +2145,7 @@ impl Funcdata {
         jt.kuna_finalize(default_out_index);
         jt.mark_complete();
 
-        // Render case labels signed when any recovered case constant is negative
-        // in the switch-variable width (the cascade used signed comparisons over a
-        // signed `int` switch value — the getopt-return idiom; the C++ derives this
-        // from `getSwitchType()`).
-        let signbit = if var_size >= 8 {
-            1u64 << 63
-        } else {
-            1u64 << (var_size * 8 - 1)
-        };
-        let signed = case_vals.iter().any(|&v| (v & signbit) != 0);
-        jt.kuna_set_signed_labels(signed);
+        jt.kuna_set_signed_labels(signed_labels);
         // Record the recovered switch-variable storage so the post-heritage
         // repair (`kuna_repair_lowered_switch_inputs`) can re-point the
         // synthesized BRANCHIND at the live SSA value if heritage normalized the

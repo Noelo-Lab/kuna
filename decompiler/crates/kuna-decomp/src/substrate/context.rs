@@ -857,6 +857,9 @@ pub struct ArchContext {
     /// (C++ `recover_lowered_switch`, default-on).  Read by the
     /// [`crate::kuna_loweredswitch`] detect/install actions.
     pub recover_lowered_switch: bool,
+    /// (kuna) Derive lowered-switch case-label signedness from its required range
+    /// comparisons instead of from case-value bits.
+    pub lowered_switch_labels: bool,
     /// (kuna) recover stack-passed call arguments (default-on; upstream-faithful).
     /// Read by [`check_input_trial_use`](crate::funcdata_callsite::check_input_trial_use)
     /// through [`crate::p4_calls::kuna_callsitestackargs::outside_caller_local_range`].
@@ -1476,6 +1479,7 @@ impl ArchContext {
             codescalar: false,           // (kuna) option codescalar
             model_stack_probe_loop: false, // GH-8017 stackprobeloop
             recover_lowered_switch: false, // loweredswitch
+            lowered_switch_labels: true, // loweredswitchlabels
             // callsitestackargs is a correctness fix, not an opt-in transform, so the
             // hand-built-fixture seam carries the same default the real path does.
             callsite_stack_args: true,

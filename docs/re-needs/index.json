@@ -4484,8 +4484,8 @@
       "track": "quality",
       "status": "open",
       "severity": "major",
-      "probe_id": "p-ada30c2012ba",
-      "acceptance_id": "a-08dc77c2147e",
+      "probe_id": "p-541ad2bd1eb0",
+      "acceptance_id": "a-813d10d96aa3",
       "hypothesis_status": "upheld",
       "credibility": 0.7,
       "instances": 1,
@@ -4497,9 +4497,10 @@
       ],
       "first_seen_round": 4,
       "attempts": 0,
-      "covered_by_option": null,
+      "covered_by_option": "loweredswitchlabels",
       "touches": [
-        "decompiler/crates/kuna-decomp/src/p9_emit/printc.rs",
+        "decompiler/crates/kuna-decomp/src/p2_lift/kuna_loweredswitch.rs",
+        "decompiler/crates/kuna-decomp/src/p2_lift/kuna_loweredswitchlabels.rs",
         "decompiler/crates/kuna-decomp/src/substrate/funcdata_block.rs"
       ],
       "scope": "small",

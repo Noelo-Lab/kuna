@@ -1,0 +1,61 @@
+{
+  "opportunity": "unsigned-byte-vm-selector::sub_12d0",
+  "test_name": "RE-friction unsigned-byte-vm-selector exact fixture, acceptance, and two-pass stage control",
+  "binary": "decompiler/crates/kuna-analysis/tests/fixtures/katavm_level1_x86_64",
+  "selector": "0x12d0",
+  "func_addr": "0x12d0",
+  "angr_version": null,
+  "option": "loweredswitchlabels",
+  "flag": "lowered_switch_labels",
+  "element_id": 4093,
+  "change_kind": "correctness-fix",
+  "tier": "core",
+  "source_decompiler": "ghidra-upstream",
+  "inspiration": "upstream JumpTable signed-label contract; RE-friction need unsigned-byte-vm-selector on KataVM_L1 0x12d0",
+  "default_on": true,
+  "ablation_changed": 0,
+  "parity": "OK",
+  "decisions": [
+    "Required range opcodes prove signedness, and transparent ZEXT/SEXT paths independently prove the underlying selector unsigned/signed; all evidence must agree.",
+    "Equality constants never vote, but widened constants are safely projected to the canonical selector width and conflicting or ambiguous paths decline recovery.",
+    "A shrinking zero-offset SUBPIECE declines strict recovery because the address-only restart record cannot preserve the projection; same-width SUBPIECE remains transparent, while option off retains the historical peel to the wider input.",
+    "The proven bit is stored in the restart-surviving lowered-switch record and installed directly on the synthetic JumpTable.",
+    "The generic numeric printer is unchanged; explicit option-off ablation bypasses all new proof/decline semantics and retains legacy structural recovery plus the historical case-bit guess.",
+    "Default-on remains contingent on zero inherited parity movement and a speed delta within 5%."
+  ],
+  "controls": {
+    "positive": "exact unsigned-byte 0x8b fixture, signed byte -117, signed int -1, unsigned u32 0xffffffff, matching ZEXT/unsigned and SEXT/signed widened selectors, and widened-constant normalization",
+    "negative": "ZEXT/signed and SEXT/unsigned range conflicts, mixed ZEXT/SEXT paths, mixed signed/unsigned range cascades, and a live four-byte source projected through a low-byte SUBPIECE decline recovery; the truncation control keeps the ambiguous outer head in the map so no inner subtree recovers, while option-off controls recover the conflicting structures and legacy wide-selector peel",
+    "policy": "loweredswitchlabels off restores legacy labels; loweredswitch off retains the original comparison chain"
+  },
+  "gates": {
+    "base": "rebased onto serialized main 510f90b32e35f6802309d1a8768540dbbe01821b (#610, containing #609, #607, and #608)",
+    "make test": "PRE-REBASE candidate: 675/675 PARITY OK with docs/baseline.json unchanged; not repeated in the post-#608 worker gate set",
+    "make test-stages": "824/824 PARITY OK; exact regeneration from inherited 819 plus the five new exact-fixture assertions",
+    "make rust-test": "POST-REPAIR PRE-#609 CODE HEAD: the sole fresh full run on frozen ee57e72c passed 6719 / failed 0 / ignored 38 across 400 result blocks; workspace.log SHA-256 235d63c5fff3ef72c596e7833400c3f3519dae9a39d4f1860b1402067c6a8f45; archive SHA-256 dc7a4766f5858729e27a533be3265dc13827b259111296a1398c06fb5f3d3bc0. #609 adds only reviewed Objective-C test/CLI/need metadata and fixture changes, while #610 adds only RE-needs ledger composition; all feature and engine blobs remain byte-identical after rebase, so this transfers as code-head evidence. Hosted full CI is still required on the exact final head before merge.",
+    "make test-cli": "157/157 passed on the post-#609 composition",
+    "focused loweredswitch": "37/37 passed (prior 35 plus strict and option-off shrinking-SUBPIECE adversarial controls)",
+    "make check-spec": "OK in lenient and strict modes",
+    "kuna catalog --check": "catalog OK",
+    "counters": "no drift: 193 settables, tiers 62/72/59, 281 corpus files, next ElementId 4166",
+    "acceptance": "1/1 pass; transition closed, regressed 0",
+    "exact fixture": "SHA-256 95c300aedc728b643bf97c39b5e8db88e9ddc40bf4cf337cd6c777929684a5f9, 28682 bytes",
+    "loweredswitch off": "no switch; unsigned char v17 and if (v17 != 0x8b) retained",
+    "unsafe audit": "no unsafe added; generic P9 numeric printer untouched"
+  },
+  "speed_off_ms": 1239.06,
+  "speed_on_ms": 1052.72,
+  "speed_delta_pct": -15.04,
+  "speed_samples": 15,
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": true,
+  "speed_forced_off": false,
+  "speed_note": "The canonical helper's 15-sample run pinned to one allowed CPU reported -15.04%, within budget. Two unpinned runs on the shared 80-CPU host reported +11.44% and +18.0% because the helper batches all off samples before all on samples; the sign reversal is scheduling noise, so no speedup is claimed. The work is bounded to comparison-cascade canonicalization, evidence reconciliation, and constant normalization during already-enabled lowered-switch recovery.",
+  "sweep": {
+    "method": "whole exact fixture decompile-all --json, loweredswitchlabels off versus on",
+    "functions": 14,
+    "functions_changed": 1,
+    "regressions_found": 0,
+    "classification": "Only sub_12d0 changes, and only the recovered case label changes from -0x75 to 0x8b. The other 13 functions are byte-identical."
+  }
+}
