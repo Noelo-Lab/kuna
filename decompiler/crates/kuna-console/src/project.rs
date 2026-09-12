@@ -1206,7 +1206,8 @@ impl AsmPhase {
 #[derive(Debug, Clone, Default)]
 pub struct StreamProgress {
     pub phase: StreamPhase,
-    /// Worker processes actually in use (1 when the run is serial).
+    /// Worker processes actually in use (1 when the run is serial); the number
+    /// requested until the pool that answers opens.
     pub jobs: usize,
     /// Targets selected; `None` until the load resolves them.
     pub total: Option<usize>,
@@ -1217,6 +1218,10 @@ pub struct StreamProgress {
     pub asm: AsmPhase,
     pub error: Option<String>,
     pub elapsed_s: u64,
+    /// Have the `.c` / `.h` / `.asm` / `index.jsonl` been created yet?  A run
+    /// that failed before they were has no inventory to describe: the folder
+    /// holds this README and the status file, and nothing else.
+    pub artifacts: bool,
 }
 
 impl StreamProgress {
@@ -1259,6 +1264,12 @@ pub fn render_readme(
 /// The README of an export that is still running: [`render_readme`] with a
 /// banner and a streaming-status section around it.
 pub fn render_readme_streaming(facts: &ReadmeFacts, progress: &StreamProgress) -> String {
+    // Nothing was created, so there is nothing to inventory: a file list naming
+    // a `.c` that does not exist, and a guide to reading artifacts that were
+    // never written, is worse than no README at all.
+    if progress.phase == StreamPhase::Failed && !progress.artifacts {
+        return render_readme_stillborn(facts, progress);
+    }
     // A failed export is not still streaming: the banner would contradict the
     // `| Phase | failed |` row two lines under it.
     let banner = (progress.phase != StreamPhase::Failed).then_some(
@@ -1266,7 +1277,28 @@ pub fn render_readme_streaming(facts: &ReadmeFacts, progress: &StreamProgress) -
          final; files are appended / rewritten while it does.",
     );
     let mut out = render_readme_inner(facts, progress.counts(), ReadmeLayout::Streamed, banner);
-    out.push_str(&render_streaming_status(facts, progress));
+    out.push_str(&render_streaming_status(progress));
+    out.push_str(&render_streaming_caveats(facts));
+    out
+}
+
+/// The README of an export that failed before it created anything: what the
+/// binary was, what is actually in the folder, and why the run stopped.
+fn render_readme_stillborn(facts: &ReadmeFacts, progress: &StreamProgress) -> String {
+    let mut out = format!("# {} — kuna project export\n\n", facts.file_name);
+    out.push_str(
+        "**This export failed before it wrote anything.** The folder holds this file and \
+         `.streaming`, which records the error; no `.c`, `.h`, `.asm` or `index.jsonl` was \
+         created. Fix the cause and re-run `kuna decompile-project --stream`.\n\n",
+    );
+    out.push_str("## Binary\n\n");
+    out.push_str("| Field | Value |\n|---|---|\n");
+    out.push_str(&format!("| Path | `{}` |\n", facts.path_label));
+    out.push_str(&format!(
+        "| File size | {} bytes |\n",
+        facts.file_size.map_or_else(|| "?".to_string(), |size| size.to_string())
+    ));
+    out.push_str(&render_streaming_status(progress));
     out
 }
 
@@ -1396,8 +1428,7 @@ fn render_readme_inner(
     out
 }
 
-fn render_streaming_status(facts: &ReadmeFacts, progress: &StreamProgress) -> String {
-    let file_name = &facts.file_name;
+fn render_streaming_status(progress: &StreamProgress) -> String {
     let mut out = String::from("\n## Streaming status\n\n| Field | Value |\n|---|---|\n");
     out.push_str(&format!("| Phase | {} |\n", progress.phase.as_str()));
     out.push_str(&format!("| Elapsed | {}s |\n", progress.elapsed_s));
@@ -1413,6 +1444,14 @@ fn render_streaming_status(facts: &ReadmeFacts, progress: &StreamProgress) -> St
     if let Some(error) = &progress.error {
         out.push_str(&format!("| Error | {error} |\n"));
     }
+    out
+}
+
+/// How to read artifacts that are still being written — printed only when there
+/// are artifacts to read.
+fn render_streaming_caveats(facts: &ReadmeFacts) -> String {
+    let file_name = &facts.file_name;
+    let mut out = String::new();
     out.push_str(&format!(
         "\nWhile `.streaming` exists the export is incomplete:\n\n\
          - `{file_name}.c` and `{file_name}.asm` are append-only and may end mid-block; a\n\

@@ -645,6 +645,9 @@ fn stream_project(fixture_name: &str, tag: &str, extra: &[&str]) -> Option<PathB
     if !ok {
         if is_specs_skip(&stderr) {
             eprintln!("stream project: skipping (no `.sla`; run `make specs`): {stderr}");
+            // A streamed run creates the folder BEFORE the load can fail, so a
+            // skip has one to clean up where the non-stream helper has none.
+            let _ = std::fs::remove_dir_all(&dir);
             return None;
         }
         panic!("streamed project export failed on {fixture_name}: {stderr}");
@@ -999,15 +1002,57 @@ fn a_missing_binary_creates_no_folder() {
             "a missing binary must not create a folder in the cwd"
         );
     }
+
+    // The default `--mode auto` stats the file to size the mode before the
+    // streamed timeline is reached, so it refuses earlier and differently: the
+    // two are documented as two, and neither leaves a folder.
+    let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .args([
+            "decompile-project",
+            missing.to_str().unwrap(),
+            "--stream",
+            "-o",
+            dir.to_str().unwrap(),
+            "--sleighpath",
+            &specs,
+        ])
+        .output()
+        .expect("failed to spawn the kuna binary");
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    assert_eq!(out.status.code(), Some(2), "the parser refuses it as a usage error: {stderr}");
+    assert!(
+        stderr.contains("cannot read input binary metadata for mode auto"),
+        "unexpected error: {stderr}"
+    );
+    assert!(!dir.exists(), "a missing binary must not create a folder: {stderr}");
 }
 
 /// The writer owns every artifact a reader polls, so when it cannot write one
 /// the run stops there and reports ITS error — rather than decompiling the rest
 /// of the binary into a channel nobody is reading.
+///
+/// Both producers are covered: the serial loop's own pull and, at `--jobs 2`,
+/// the scheduler's `next_chunk`, which is what a worker thread asks.
 #[test]
 fn a_dead_writer_stops_the_run_and_reports_its_own_error() {
+    for jobs in ["1", "2"] {
+        if !a_dead_writer_stops_a_run_at_jobs(jobs) {
+            return;
+        }
+    }
+}
+
+/// One arm of the test above; `false` means the specs were missing and the run
+/// never started.
+///
+/// The fault waits for `asm: complete`, so the producer is past the sweep
+/// interleave and doing nothing but pulling targets — which is where ignoring
+/// the stop signal costs the whole binary: the fixture's 1,073 functions take
+/// ~95 s serially and ~50 s at `--jobs 2`, against the few dozen written by the
+/// time a stopping run notices.
+fn a_dead_writer_stops_a_run_at_jobs(jobs: &str) -> bool {
     let bin = fixture("mcount_x86_64");
-    let dir = out_dir("stream_writer_death");
+    let dir = out_dir(&format!("stream_writer_death_j{jobs}"));
     std::fs::create_dir_all(&dir).unwrap();
     let mut child = Command::new(env!("CARGO_BIN_EXE_kuna"))
         .args([
@@ -1016,6 +1061,8 @@ fn a_dead_writer_stops_the_run_and_reports_its_own_error() {
             "-o",
             dir.to_str().unwrap(),
             "--stream",
+            "--jobs",
+            jobs,
             "--max-fn-seconds",
             "0",
             "--sleighpath",
@@ -1026,18 +1073,18 @@ fn a_dead_writer_stops_the_run_and_reports_its_own_error() {
         .spawn()
         .expect("failed to spawn the kuna binary");
 
-    // One index line proves the artifacts exist and the writer is running.  Then
-    // the `.h` it rewrites on its clock becomes a directory, so its next atomic
-    // replace fails the way a full disk or a lost mount would.
+    // Wait until the sweep is finished and functions are the only work left,
+    // then turn the `.h` the writer rewrites on its clock into a directory, so
+    // its next atomic replace fails the way a full disk or a lost mount would.
     let header = dir.join("mcount_x86_64.h");
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(180);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(300);
     let mut injected = None;
+    let mut done_at_fault = 0usize;
     while std::time::Instant::now() < deadline {
-        let lines =
-            std::fs::read_to_string(dir.join("index.jsonl")).map_or(0, |t| t.lines().count());
-        if lines >= 1 {
-            std::fs::remove_file(&header).unwrap();
-            std::fs::create_dir(&header).unwrap();
+        let status = std::fs::read_to_string(dir.join(".streaming")).unwrap_or_default();
+        if status.contains("\"phase\":\"decompiling\"") && status.contains("\"asm\":\"complete\"") {
+            done_at_fault = json_field(&status, "functions_done").parse().unwrap();
+            block_with_a_directory(&header);
             injected = Some(std::time::Instant::now());
             break;
         }
@@ -1052,15 +1099,15 @@ fn a_dead_writer_stops_the_run_and_reports_its_own_error() {
         if is_specs_skip(&stderr) {
             eprintln!("a_dead_writer_stops_the_run: skipping (no `.sla`): {stderr}");
             let _ = std::fs::remove_dir_all(&dir);
-            return;
+            return false;
         }
-        panic!("the export never wrote an index line: {stderr}");
+        panic!("the export never finished its sweep: {stderr}");
     };
 
     let out = child.wait_with_output().unwrap();
     let stopped_after = injected.elapsed();
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(!out.status.success(), "a dead writer must fail the run: {stderr}");
+    assert!(!out.status.success(), "a dead writer must fail the run at --jobs {jobs}: {stderr}");
     assert!(
         stderr.contains("mcount_x86_64.h") && stderr.contains("Is a directory"),
         "the run must report the writer's own error, not a sentinel: {stderr}"
@@ -1074,13 +1121,55 @@ fn a_dead_writer_stops_the_run_and_reports_its_own_error() {
     );
     let done: usize = json_field(&status, "functions_done").parse().unwrap();
     let total: usize = json_field(&status, "functions_total").parse().unwrap();
-    assert!(done < total, "the run wrote {done} of {total} and must not have finished");
-    // The whole export is ~97 s serially; stopping is the point of the signal.
     assert!(
-        stopped_after < std::time::Duration::from_secs(60),
-        "the run took {stopped_after:?} to stop after its writer died"
+        done <= total / 2,
+        "--jobs {jobs}: the fault landed at {done_at_fault} of {total} and the run wrote {done} \
+         before stopping — it decompiled the binary into a dead writer"
     );
+    if jobs == "1" {
+        // The serial producer pulls one target at a time, so it stops at the
+        // next one: measured ~2 s, against the ~90 s it takes to decompile the
+        // rest of the fixture into a channel nobody is reading.
+        assert!(
+            stopped_after < std::time::Duration::from_secs(30),
+            "the serial run took {stopped_after:?} to stop after its writer died"
+        );
+    } else {
+        // A worker finishes the chunk it is on, so the wall time depends on the
+        // chunk and the load. What must not depend on either is how much the
+        // pool produced: the closing line counts what it actually delivered.
+        let delivered: usize = stderr
+            .rsplit_once("] done: ")
+            .and_then(|(_, tail)| tail.split_once(" functions"))
+            .unwrap_or_else(|| panic!("the pool printed no closing line: {stderr}"))
+            .0
+            .parse()
+            .unwrap();
+        assert!(
+            delivered <= total / 2,
+            "the pool delivered {delivered} of {total} after its writer died at \
+             {done_at_fault}: it served the whole target set into a dead writer"
+        );
+        assert!(
+            stopped_after < std::time::Duration::from_secs(120),
+            "--jobs {jobs}: the run took {stopped_after:?} to stop after its writer died"
+        );
+    }
     let _ = std::fs::remove_dir_all(&dir);
+    true
+}
+
+/// Replace `path` with a directory, retrying against the writer's own atomic
+/// rename onto it.
+fn block_with_a_directory(path: &std::path::Path) {
+    for _ in 0..100 {
+        let _ = std::fs::remove_file(path);
+        if std::fs::create_dir(path).is_ok() {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    panic!("could not replace {} with a directory", path.display());
 }
 
 /// Strip an ELF's section headers (`e_shoff`/`e_shnum`/`e_shstrndx`), which
@@ -1165,7 +1254,18 @@ fn a_sectionless_image_never_reports_a_sweeping_asm_at_jobs_1() {
     }
     assert!(!dir.join(".streaming").exists(), ".streaming outlived a successful export");
     let asm = std::fs::read_to_string(dir.join("fauxware.asm")).unwrap();
-    assert!(asm.contains("\n; --- variables ---\n"), "the .asm is missing its variables tail");
+    let (sweep, tails) =
+        asm.split_once("\n; --- variables ---\n").expect("the .asm is missing its variables tail");
+    assert!(tails.contains("\n; --- data ---\n"), "the .asm is missing its data tail: {tails}");
+    // The premise: this image publishes no CODE section, so the sweep between
+    // the two header lines and the tails is empty — every line of it is a
+    // comment, where a swept .asm carries labels and instructions.
+    let swept: Vec<&str> =
+        sweep.lines().filter(|l| !l.is_empty() && !l.starts_with("; ")).collect();
+    assert!(
+        swept.is_empty(),
+        "a sectionless image has nothing to sweep, but the .asm disassembled {swept:?}"
+    );
     assert!(
         std::fs::read_to_string(dir.join("index.jsonl")).unwrap().lines().count() > 0,
         "the export decompiled nothing"

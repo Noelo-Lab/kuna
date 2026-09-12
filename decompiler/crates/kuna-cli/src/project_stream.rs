@@ -141,6 +141,10 @@ struct StreamStatus {
     c_bytes: u64,
     asm: AsmPhase,
     error: Option<String>,
+    /// Whether this run has created the artifacts yet — not a `.streaming`
+    /// field, only what the README needs to know before it inventories files
+    /// that may not exist.
+    artifacts: bool,
 }
 
 impl StreamStatus {
@@ -160,6 +164,7 @@ impl StreamStatus {
             c_bytes: 0,
             asm: AsmPhase::Pending,
             error: None,
+            artifacts: false,
         }
     }
 
@@ -173,6 +178,7 @@ impl StreamStatus {
             asm: self.asm,
             error: self.error.clone(),
             elapsed_s: self.started.elapsed().as_secs(),
+            artifacts: self.artifacts,
         }
     }
 
@@ -256,11 +262,15 @@ struct StreamRun {
     /// Shared with the scheduler, so a pool thread stops pulling chunks.
     abort: Arc<Abort>,
     /// Workers the pool actually spawned: `--jobs` asks, the memory trim
-    /// answers, and `.streaming` reports what is running.
+    /// answers, and `.streaming` reports what is running once the pool opens.
+    /// Until then it is the request, which is all there is to report.
     workers: AtomicUsize,
-    /// Has a failed status/README publish already been reported?  One line per
-    /// outage, not one per tick.
-    publish_warned: AtomicBool,
+    /// Has a failed publish of `.streaming` / of the README already been
+    /// reported?  One line per FILE per outage: the two are written on
+    /// different clocks, so one flag would let a README-only outage re-warn
+    /// every time the status file went out fine.
+    status_warned: AtomicBool,
+    readme_warned: AtomicBool,
     /// Has this run truncated an artifact of its own yet?  Until it has, a
     /// failure must leave the folder as it found it.
     artifacts: AtomicBool,
@@ -273,7 +283,8 @@ impl StreamRun {
             state: Mutex::new(Shared { facts, status: StreamStatus::new(jobs) }),
             abort: Arc::new(Abort::default()),
             workers: AtomicUsize::new(jobs),
-            publish_warned: AtomicBool::new(false),
+            status_warned: AtomicBool::new(false),
+            readme_warned: AtomicBool::new(false),
             artifacts: AtomicBool::new(false),
         }
     }
@@ -283,11 +294,13 @@ impl StreamRun {
     }
 
     /// The facts and the status as a reader sees them — `jobs` reporting the
-    /// workers the pool really spawned rather than the number asked for.
+    /// workers the pool really spawned, or, until it opens, the number asked
+    /// for.
     fn snapshot(&self) -> (ReadmeFacts, StreamStatus) {
         let shared = self.lock();
         let mut status = shared.status.clone();
         status.jobs = self.workers.load(Ordering::SeqCst);
+        status.artifacts = self.artifacts.load(Ordering::SeqCst);
         (shared.facts.clone(), status)
     }
 
@@ -309,16 +322,9 @@ impl StreamRun {
     /// the next tick instead of ending an otherwise healthy run — the `.c`, the
     /// `index.jsonl` and the `.h` are the export, and those stay fatal.
     fn publish_progress(&self, readme: bool) {
-        let published = self
-            .publish_status()
-            .and_then(|()| if readme { self.publish_readme() } else { Ok(()) });
-        match published {
-            Ok(()) => self.publish_warned.store(false, Ordering::SeqCst),
-            Err(e) => {
-                if !self.publish_warned.swap(true, Ordering::SeqCst) {
-                    eprintln!("[kuna --stream] warning: {e}; retrying on the next tick");
-                }
-            }
+        warn_once(&self.status_warned, self.publish_status());
+        if readme {
+            warn_once(&self.readme_warned, self.publish_readme());
         }
     }
 
@@ -337,15 +343,38 @@ fn unix_now() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
 
-/// Replace `path` in one step: a reader polling the status file or the README
-/// must never see a half-written one.  The temp name carries this process's pid
-/// so two exports into one folder cannot fight over it.
-fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
+/// Report one file's publish failure the first time it happens, and again only
+/// once THAT file has been written successfully since — an outage that lasts an
+/// hour is one line, not one line per tick of it.
+fn warn_once(warned: &AtomicBool, published: Result<(), String>) {
+    match published {
+        Ok(()) => warned.store(false, Ordering::SeqCst),
+        Err(e) => {
+            if !warned.swap(true, Ordering::SeqCst) {
+                eprintln!("[kuna --stream] warning: {e}; retrying on the next tick");
+            }
+        }
+    }
+}
+
+/// Where [`write_atomic`] stages `path`: beside it, so the rename is within one
+/// filesystem, and carrying this process's pid so two exports into one folder
+/// cannot fight over the same temp name.
+fn temp_path(path: &Path) -> PathBuf {
     let name = path.file_name().map_or_else(String::new, |n| n.to_string_lossy().into_owned());
-    let temp = path.with_file_name(format!("{name}.kuna-tmp.{}", std::process::id()));
+    path.with_file_name(format!("{name}.kuna-tmp.{}", std::process::id()))
+}
+
+/// Replace `path` in one step: a reader polling the status file or the README
+/// must never see a half-written one.  A failed rename takes the staged file
+/// with it — the folder an agent reads is no place to leave debris.
+fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    let temp = temp_path(path);
     std::fs::write(&temp, bytes).map_err(|e| format!("cannot write {}: {e}", temp.display()))?;
-    std::fs::rename(&temp, path)
-        .map_err(|e| format!("cannot replace {}: {e}", path.display()))
+    std::fs::rename(&temp, path).map_err(|e| {
+        let _ = std::fs::remove_file(&temp);
+        format!("cannot replace {}: {e}", path.display())
+    })
 }
 
 /// Refuse to stream into a folder another live export is streaming into: the
@@ -363,9 +392,10 @@ fn refuse_a_live_export(dir: &Path) -> Result<(), String> {
         return Ok(());
     }
     Err(format!(
-        "a streamed export (pid {pid}) is already writing {}: two exports into one folder \
-         truncate each other's .c. Wait for it, or pass -o to export somewhere else.",
-        dir.display()
+        "a streamed export (pid {pid}) is already writing {dir}: two exports into one folder \
+         truncate each other's .c. Wait for it, or pass -o to export somewhere else — or \
+         delete {dir}/{STATUS_FILE} if that process is gone.",
+        dir = dir.display()
     ))
 }
 
@@ -1338,8 +1368,8 @@ mod tests {
         let specs = specs(8);
         let sched = scheduler(&specs, 1, Some(1));
         let callee = specs[5].addr;
-        for caller in 0..4 {
-            sched.on_results(&[result(specs[caller].addr, vec![callee, callee])]);
+        for caller in &specs[..4] {
+            sched.on_results(&[result(caller.addr, vec![callee, callee])]);
         }
         assert_eq!(sched.frontier_len(), 1, "one entry per queued target");
         assert_eq!(sched.claim_one(), Some(5));
@@ -1391,6 +1421,11 @@ mod tests {
         let refused = refuse_a_live_export(&dir).unwrap_err();
         assert!(refused.contains("pid 1"), "{refused}");
         assert!(refused.contains("-o"), "the refusal has to say what to do instead: {refused}");
+        assert!(
+            refused.contains(STATUS_FILE),
+            "a recycled pid is the case the folder is not really busy, so the refusal has to \
+             name the file to delete: {refused}"
+        );
 
         std::fs::write(
             dir.join(STATUS_FILE),
@@ -1422,25 +1457,48 @@ mod tests {
         assert_eq!(json_number(&line, "nope"), None);
     }
 
-    /// Two exports into one folder must not fight over one temp path.
+    /// Two exports into one folder must not fight over one temp path, and
+    /// neither may leave one behind in a folder an agent is reading.
     #[test]
     fn an_atomic_write_names_its_temp_after_the_process() {
         let dir = std::env::temp_dir().join(format!("kuna_stream_atomic_{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("x.h");
+        let temp = temp_path(&path);
+        assert_eq!(temp.parent(), path.parent(), "the temp is staged beside its target");
+        let name = temp.file_name().unwrap().to_string_lossy().into_owned();
+        assert!(
+            name.ends_with(&format!(".kuna-tmp.{}", std::process::id())),
+            "the temp name has to carry this process's pid, or two exports collide: {name}"
+        );
+
         write_atomic(&path, b"one").unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), b"one");
-        let leftovers: Vec<String> = std::fs::read_dir(&dir)
-            .unwrap()
-            .filter_map(|e| Some(e.ok()?.file_name().to_string_lossy().into_owned()))
-            .filter(|n| n.contains("kuna-tmp"))
-            .collect();
-        assert!(leftovers.is_empty(), "the temp file is renamed away: {leftovers:?}");
+        assert!(leftover_temps(&dir).is_empty(), "the temp file is renamed away");
         assert!(
             write_atomic(&dir.join("nested/x.h"), b"two").is_err(),
             "a path that cannot be written is an error, not a panic"
         );
+
+        // The rename is what fails when the target is a directory, which is the
+        // one path that used to leave its staged file in the folder.
+        let blocked = dir.join("y.h");
+        std::fs::create_dir(&blocked).unwrap();
+        assert!(write_atomic(&blocked, b"three").is_err(), "a directory cannot be replaced");
+        assert!(
+            leftover_temps(&dir).is_empty(),
+            "a failed rename left its temp behind: {:?}",
+            leftover_temps(&dir)
+        );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn leftover_temps(dir: &Path) -> Vec<String> {
+        std::fs::read_dir(dir)
+            .unwrap()
+            .filter_map(|e| Some(e.ok()?.file_name().to_string_lossy().into_owned()))
+            .filter(|n| n.contains("kuna-tmp"))
+            .collect()
     }
 
     /// The status file is the run's only contract with a polling reader.

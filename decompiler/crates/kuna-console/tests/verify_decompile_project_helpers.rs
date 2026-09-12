@@ -370,6 +370,8 @@ fn streaming_readme_renders_pending_facts_then_the_streamed_layout() {
     assert!(loading.contains("`.streaming`"));
     assert!(!loading.contains("| Error |"));
 
+    // Nothing was created, so the README describes the folder as it is: the
+    // status file and itself, with no inventory of artifacts that do not exist.
     let failed = render_readme_streaming(
         &facts,
         &StreamProgress {
@@ -384,6 +386,32 @@ fn streaming_readme_renders_pending_facts_then_the_streamed_layout() {
         !failed.contains("still streaming"),
         "a failed export is not still streaming:\n{failed}"
     );
+    assert!(failed.contains("failed before it wrote anything"), "{failed}");
+    assert!(failed.contains("`.streaming`"), "it has to say what IS there:\n{failed}");
+    assert!(!failed.contains("## Files"), "nothing was written to inventory:\n{failed}");
+    assert!(!failed.contains("fauxware.c"), "no .c was created:\n{failed}");
+    assert!(
+        !failed.contains("While `.streaming` exists the export is incomplete"),
+        "the guide to reading a running export does not apply:\n{failed}"
+    );
+    assert!(failed.contains("| Path | `/tmp/fauxware` |\n"), "{failed}");
+
+    // Once the artifacts exist a failure still inventories them: they are what
+    // the folder holds, however far the run got.
+    let failed_late = render_readme_streaming(
+        &facts,
+        &StreamProgress {
+            phase: StreamPhase::Failed,
+            error: Some("cannot append to fauxware.c: No space left on device".into()),
+            artifacts: true,
+            total: Some(10),
+            done: 4,
+            ..StreamProgress::default()
+        },
+    );
+    assert!(failed_late.contains("## Files"), "{failed_late}");
+    assert!(failed_late.contains("| Functions written | 4 of 10 (0 failed) |\n"));
+    assert!(failed_late.contains("While `.streaming` exists the export is incomplete"));
 
     let Some(prog) = loaded_fauxware() else { return };
     let facts = ReadmeFacts::snapshot(&fauxware(), "/tmp/fauxware", "fauxware", &prog);
@@ -401,6 +429,7 @@ fn streaming_readme_renders_pending_facts_then_the_streamed_layout() {
             asm: AsmPhase::Sweeping,
             error: None,
             elapsed_s: 7,
+            artifacts: true,
         },
     );
     assert!(running.contains("| Functions | 10 total, 3 decompiled, 1 failed |\n"));

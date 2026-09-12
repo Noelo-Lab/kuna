@@ -672,7 +672,7 @@ pub(crate) fn run_pool(
         targets,
         inventory,
         &source,
-        &PoolReport { tag: JOBS_TAG, banner, workers, done_base: 0 },
+        &PoolReport { tag: JOBS_TAG, banner, workers, done_base: 0, finish_delivered: false },
         &|indices: &[usize], produced: Vec<FuncResult>| {
             let mut slots = slots.lock().unwrap_or_else(|e| e.into_inner());
             for (&slot, r) in indices.iter().zip(produced) {
@@ -732,7 +732,7 @@ pub(crate) fn run_pool_streaming(
         targets,
         inventory,
         source,
-        &PoolReport { tag: STREAM_TAG, banner, workers, done_base },
+        &PoolReport { tag: STREAM_TAG, banner, workers, done_base, finish_delivered: true },
         sink,
     )
 }
@@ -744,6 +744,11 @@ struct PoolReport {
     banner: String,
     workers: usize,
     done_base: usize,
+    /// Does the closing line count the targets asked for, or the results that
+    /// came back?  A `--jobs` run serves every chunk it planned, so the two are
+    /// the same; a streamed one stops where its writer died, and `done: <every
+    /// target>` above the error that stopped it reads as a finished export.
+    finish_delivered: bool,
 }
 
 /// The pool itself: `report.workers` threads, each driving one worker process
@@ -817,7 +822,8 @@ fn run_pool_with(
         }
     });
 
-    progress.finish(total, start);
+    let delivered = completed.load(Ordering::SeqCst);
+    progress.finish(if report.finish_delivered { delivered } else { total }, start);
 
     // No block at all means no worker retired cleanly, which is a failed run, not
     // a program with no types: leave the caller its own factory to fall back on.
@@ -1645,9 +1651,12 @@ impl Progress {
         );
     }
 
-    fn finish(&self, total: usize, start: Instant) {
+    /// The closing line.  `count` is the run's own answer to "how many": every
+    /// target for a plan that was served in full, and the results that actually
+    /// came back for a run that stopped early.
+    fn finish(&self, count: usize, start: Instant) {
         eprintln!(
-            "[kuna {}] done: {total} functions in {}",
+            "[kuna {}] done: {count} functions in {}",
             self.tag,
             hms(start.elapsed().as_secs_f64())
         );
