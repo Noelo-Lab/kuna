@@ -56,7 +56,7 @@
     "promoted_probe": "tests/cli/push-immediate-ret-transfer.json; shared acceptance a-d88748a4d135 for both duplicate needs"
   },
   "gates": {
-    "base": "rebased onto exact origin/main bf22331158be444ebfbabf937ce8141826490fa9",
+    "base": "rebased onto exact origin/main 71abd44e8dfd1ccdcfc0fff3ef8b7f64bcb5baab",
     "make test": "675/675 PARITY OK; docs/baseline.json unchanged",
     "make test-stages": "813/813 PARITY OK",
     "make rust-test": "cargo test --workspace --no-fail-fast green with KUNA_DECOMP_TEST unset; 0 failures",

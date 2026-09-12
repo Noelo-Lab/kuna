@@ -2,7 +2,7 @@
 need_id: entry-point-push-return
 title: Entry-point push/return transfer disappears from C
 track: quality
-status: open
+status: closed
 severity: major
 probe_id: p-b18b63fe0527
 acceptance_id: a-d88748a4d135
@@ -10,16 +10,16 @@ hypothesis_status: inconclusive
 credibility: 0.85
 instances: 1
 challenges: [5ab77f5433c5d40ad448c1c1]
-rounds: [8]
+rounds: [8, 12]
 first_seen_round: 8
-attempts: 0
+attempts: 1
 covered_by_option: pushimmediateret
 touches: [decompiler/crates/kuna-decomp]
 scope: small
 regression_of: null
-pr: null
-closed_in_round: null
-closing_pr: null
+pr: 603
+closed_in_round: 12
+closing_pr: "603"
 reject_reason: null
 ---
 
@@ -149,3 +149,4 @@ _not yet refuted_
 - filed by cluster.py from 1 observation(s)
 - implementation candidate: `pushimmediateret` uses bounded raw-p-code stack provenance and seeds BRANCH, not CALL, for the proven one-store form. The two-store form remains owned by `entryretdispatch`; ordinary, argument-push, adjusted, overwritten, computed, conditional, and opaque cases decline; explicit flow facts win; no target function is synthesized.
 - acceptance_id changed to `a-d88748a4d135` and the acceptance was reduced to the vendored CryptoME-shaped PE fixture. It requires the unpacker call followed by the full `switch(0x401000) { case 0x401000:` control-flow construct inside `functions[0].code`, so destination digits appearing only in a warning cannot pass. The encrypted target section has no function symbol.
+- closed: acceptance a-d88748a4d135 now PASSES at ae980f25ccff

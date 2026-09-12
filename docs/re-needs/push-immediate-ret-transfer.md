@@ -2,7 +2,7 @@
 need_id: push-immediate-ret-transfer
 title: PUSH immediate / RET transfer to the original entry disappears
 track: quality
-status: open
+status: closed
 severity: major
 probe_id: p-8dae1261fd45
 acceptance_id: a-d88748a4d135
@@ -12,14 +12,14 @@ instances: 1
 challenges: [5ab77f5433c5d40ad448c1c1]
 rounds: [12]
 first_seen_round: 12
-attempts: 0
+attempts: 1
 covered_by_option: pushimmediateret
 touches: [decompiler/crates/kuna-decomp]
 scope: small
 regression_of: null
-pr: null
-closed_in_round: null
-closing_pr: null
+pr: 603
+closed_in_round: 12
+closing_pr: "603"
 reject_reason: null
 ---
 
@@ -187,3 +187,4 @@ THE ACCEPTANCE IS STRUCTURALLY SOUND BUT WEAK, AND IT CAN BE PASSED BY A WARNING
 RISK OF THE INDICATED FIX: low, and lower than the sibling's. The detection is local and syntactic -- an immediate PUSH reaching a RET in the same basic block with no intervening stack adjustment -- and the semantics are exact rather than heuristic: that RET provably transfers to the pushed constant. The guard to keep is the ordinary case where a pushed constant is an ARGUMENT and the RET belongs to a later frame; requiring the PUSH and the RET to be adjacent in one block, with the PUSH being the last write to the slot the RET reads, excludes it.
 - implementation candidate: `pushimmediateret` uses bounded raw-p-code stack provenance and seeds BRANCH, not CALL, for the proven one-store form. The two-store form remains owned by `entryretdispatch`; ordinary, argument-push, adjusted, overwritten, computed, conditional, and opaque cases decline; explicit flow facts win; no target function is synthesized.
 - acceptance_id changed to `a-d88748a4d135` and the acceptance was reduced to the vendored CryptoME-shaped PE fixture. It requires the unpacker call followed by the full `switch(0x401000) { case 0x401000:` control-flow construct inside `functions[0].code`, so destination digits appearing only in a warning cannot pass. The encrypted target section has no function symbol.
+- closed: acceptance a-d88748a4d135 now PASSES at ae980f25ccff
