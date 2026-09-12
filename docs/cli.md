@@ -2042,11 +2042,12 @@ kuna decompile-project ./big.bin --stream --jobs 14
 ```
 
 An ordinary export writes its folder at the end, so the whole run is dead time for
-whoever is waiting on it: on a 147 MB image with 392,814 functions that is half an
-hour at `--jobs 14` before the first line of C exists, and hours serially. `--stream`
-writes the same folder as the run goes and starts at the entry point, so the part of
-the program a reader asked about first is the part that is there first. It is
-driver policy — a flag, not a phase-model option — and it is off by default.
+whoever is waiting on it: on a 147 MB image with 392,814 functions that is about
+twenty-one minutes (1,248 s) at `--jobs 14` on this box before the first line of C
+exists, and hours serially. `--stream` writes the same folder as the run goes and
+starts at the entry point, so the part of the program a reader asked about first is
+the part that is there first. It is driver policy — a flag, not a phase-model option —
+and it is off by default.
 
 **What appears when.** Before the load, which on a large image is the longest single
 wait in the run, the folder is created and two files are written into it: `README.md`,
@@ -2145,14 +2146,14 @@ the export runs.
 | `pid` | The exporting process, so a reader can tell a live export from an abandoned one. |
 | `started_at` / `updated_at` | Unix seconds: when the export started, and when this file was last written. |
 | `elapsed_s` | Seconds since `started_at`. |
-| `jobs` | Workers actually spawned — `--jobs N` asks, the pool's memory trim answers, and this is what is running. `1` is the serial run. |
+| `jobs` | The `--jobs` request while `phase` is `loading`, and the workers actually spawned once the pool opens — `--jobs N` asks, the pool's memory trim answers. On a large image the load is most of the run, so a poller reading this during it is reading the request. `1` is the serial run. |
 | `seeds` | How many seeds the order started from. `0` means neither the entry point nor `main` was a target, so the order is address order. |
 | `functions_total` | Targets for this run. `null` while `phase` is `loading`. |
 | `functions_done` | Results written so far, failures included. |
 | `functions_failed` | How many of `functions_done` are error records. |
 | `seconds_since_last_result` | How long the decompile has been quiet — the staleness signal. |
 | `c_bytes` | Size of the `.c` as of this write. |
-| `asm` | `pending` (the sweep has not started), `sweeping`, or `complete`. An image with no CODE section has nothing to sweep and reports `complete` from the first tick. |
+| `asm` | `pending` (the sweep has not started), `sweeping`, or `complete`. An image with no CODE section has nothing to sweep and reports `complete` from the first `decompiling` write — it is `pending` for as long as the phase is `loading`, since the target set that decides there is nothing to sweep is not resolved yet. |
 | `error` | `null`, or why the run stopped. Non-null only with `phase: failed`. |
 
 It is written on the writer's own 500 ms clock rather than per result, so it can trail
@@ -2162,26 +2163,49 @@ summary.
 **Failure is reported in the folder.** Any error after the folder exists — an
 unloadable image, a non-C output language, an empty target set, an I/O error on the
 `.c`, the `.h` or `index.jsonl` — rewrites `.streaming` with `phase: failed` and the
-message, puts the same message in the README's status table, and exits `1`. A failure
-before the run has truncated anything of its own leaves the folder as it found it: a
-previous export's `.c`/`.h`/`.asm` are untouched and its `README.md` is restored byte
-for byte, so `.streaming` is the only trace of the attempt. A `.streaming` left behind
-whose `pid` is dead and whose phase is not `failed` means the run was killed.
+message, and exits `1`. `.streaming` always carries the message; the README carries it
+too, in its `## Streaming status` table, except in the one case where a previous
+export's README is put back instead. That case is a failure before the run has
+truncated anything of its own, which leaves the folder as it found it: a previous
+export's `.c`/`.h`/`.asm` are untouched and its `README.md` is restored byte for byte,
+so `.streaming` is the only trace of the attempt. With no previous README to put back,
+a run that failed that early writes one that says so and inventories nothing, because
+nothing was created. A `.streaming` left behind whose `pid`
+is dead and whose phase is not `failed` means the run was killed.
+
+One case reports nothing in the folder: if whatever killed the writer also makes
+`.streaming` unwritable — a full disk is both — the status file keeps its last good
+contents and only stderr and the exit code say the run failed.
+
+**Stopping takes a chunk.** When the writer dies the producers stop rather than
+decompile the rest of the binary into a channel nobody reads, but they stop at a
+boundary: `.streaming` flips to `failed` within a tick, while each worker first
+finishes the chunk it is holding — up to 64 functions apiece, so a `--jobs N` run
+ends within one chunk rather than instantly, and `--jobs-chunk K` bounds that
+directly. At `--jobs 1` the producer pulls one function at a time and stops at the
+next one. The pool's closing `done: N functions` line counts what it actually
+delivered, which on a run that stopped early is less than `functions_total`.
 
 Two things are deliberately not run failures. Per-function failures — including a
 worker process that cannot be spawned, which degrades that whole chunk to error
 records — are `error` records in the `.c` and in `index.jsonl`, and the run exits `0`
 with `functions_failed` counting them, so a poller that sees no `failed` phase still
 has to read that field. And a `.streaming` or `README.md` rewrite that fails mid-run,
-since those report on the export rather than being it, warns once on stderr and is
-retried on the next tick — only the first pair, written at t=0 as the proof the folder
-can be written at all, fails the run.
+since those report on the export rather than being it, warns once on stderr per file
+per outage and is retried on the next tick — only the first pair, written at t=0 as the
+proof the folder can be written at all, fails the run.
 
-A binary that does not exist is refused before anything is created: exit `1`,
-`error: binary not found: …`, and no folder. So is a folder another live export is
-already streaming into (`.streaming` carrying the pid of a running process) — the
-second run would truncate the first's `.c` and invalidate every offset a reader had
-taken from it.
+A binary that does not exist is refused before anything is created, and never leaves a
+folder behind. Which refusal you get depends on the mode: the default `--mode auto`
+stats the file to size the mode while arguments are parsed, so it exits `2` with the
+usage block and `error: cannot read input binary metadata for mode auto: …` (this is
+`decompile-project`'s own behaviour, with or without `--stream`); an explicit
+`--mode fast|reliable|aggressive` skips that stat, and the streamed export's own check
+exits `1` with `error: binary not found: …`. A folder another live export is already
+streaming into is refused too (`.streaming` carrying the pid of a running process) —
+the second run would truncate the first's `.c` and invalidate every offset a reader had
+taken from it. That refusal names the way out: wait, pass `-o`, or delete the
+`.streaming` if the process it names is gone.
 
 **Refused.** `--stream` with `--assert` exits `2` without creating the folder: a
 streamed export decompiles every function in turn, so an unqualified directive would

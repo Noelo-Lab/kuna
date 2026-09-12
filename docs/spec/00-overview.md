@@ -978,10 +978,10 @@ same per-function loop with the opposite contract. It is driver policy too — a
 flag rather than a `phases.toml` row, and off by default — and it exists
 because the non-stream contract has a cost the pool cannot pay down: a document
 that only exists when it is complete makes the whole run dead time for whoever
-is waiting on it, which on a 147 MB image is half an hour at `--jobs 14` before
-the first line of C. A streamed run writes the folder as it goes and starts from
-the entry point, so availability rather than a reproducible file order is what
-it optimizes.
+is waiting on it, which on a 147 MB image is about twenty-one minutes (1,248 s)
+at `--jobs 14` before the first line of C. A streamed run writes the folder as it
+goes and starts from the entry point, so availability rather than a reproducible
+file order is what it optimizes.
 
 That inverts the two things the pool paragraph above rests on. First, the static
 plan is replaced by a **dynamic, result-steered scheduler**
