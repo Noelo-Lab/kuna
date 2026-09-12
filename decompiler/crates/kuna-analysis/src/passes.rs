@@ -12,6 +12,7 @@
 use kuna_decomp::architecture::Architecture;
 use kuna_decomp::kuna_symbolnamechars::symbolnamechars_mode;
 use kuna_sleigh::translate::Translate;
+use object::Object;
 
 use crate::loadimage_object::ObjectLoadImage;
 use crate::pass::{run_analyses, AnalysisCtx, AnalysisOutput, AnalysisPass};
@@ -661,6 +662,61 @@ pub fn run_listing_consumers(
         &seed_names,
         detail,
     );
+    if arch.analysis_fast_funcdisc
+        && matches!(file.architecture(), object::Architecture::I386 | object::Architecture::X86_64)
+    {
+        // One initial walk plus at most four accepted callback generations. The
+        // witness needs two; four retains nested-registration headroom without
+        // allowing the old nine-full-walk worst case.
+        const MAX_CALLBACK_ROUNDS: usize = 4;
+        const MAX_CALLBACK_ROOTS: usize = 1024;
+        let mut callback_roots = 0usize;
+        let mut examined = std::collections::BTreeSet::new();
+        for _ in 0..MAX_CALLBACK_ROUNDS {
+            let Some(code_space) = arch.manage().get_default_code_space() else { break };
+            let candidates: Vec<u64> =
+                crate::listing::kuna_callbackentry::stack_callback_candidates(&listing)
+                    .into_iter()
+                    .filter(|target| examined.insert(*target))
+                    .collect();
+            if candidates.is_empty() {
+                break;
+            }
+            let accepted = crate::aif::validate_referenced_targets(
+                &listing,
+                translate,
+                std::rc::Rc::clone(code_space),
+                listing.exec_ranges(),
+                candidates,
+            );
+            if accepted.is_empty() {
+                break;
+            }
+            let remaining = MAX_CALLBACK_ROOTS.saturating_sub(callback_roots);
+            if remaining == 0 {
+                break;
+            }
+            let before = seeds.len();
+            seeds.extend(accepted.into_iter().take(remaining));
+            seeds.sort_unstable();
+            seeds.dedup();
+            let added = seeds.len() - before;
+            if added == 0 {
+                break;
+            }
+            callback_roots += added;
+            listing = crate::listing::Listing::build_with_meta(
+                &file,
+                image,
+                arch,
+                translate,
+                &seeds,
+                &funcsym_seeds,
+                &seed_names,
+                detail,
+            );
+        }
+    }
     // (kuna, Stage-2 ARM discovery) Raw, UNPAIRED Thumb-prologue gap seeding — the
     // angr `CFGFast._func_addrs_from_prologues()` mirror. After the first walk, scan
     // for canonical LR-saving Thumb prologues (`PUSH {..,lr}` / `PUSH.W {..,lr}`)

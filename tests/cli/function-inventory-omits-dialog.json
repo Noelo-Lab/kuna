@@ -1,0 +1,38 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "a-5a48b22e4076",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "functions",
+    "{{BIN}}",
+    "--json"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/stdcallpop_pe_i386.exe",
+    "binary_sha256": "78d28ec6d13b9c1634101e86b2042ed61560db31ba63705adfb2b75f5757b7b4",
+    "binary_size": 40960,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/stdcallpop_pe_i386.exe",
+    "selector": null,
+    "selector_kind": "none"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "\"address_hex\":\\s*\"0x401000\"[\\s\\S]{0,240}\"size\":\\s*[1-9][0-9]*",
+      "\"address_hex\":\\s*\"0x4013e0\"[\\s\\S]{0,240}\"size\":\\s*4[1-8]",
+      "\"address_hex\":\\s*\"0x401410\"[\\s\\S]{0,240}\"size\":\\s*[1-9][0-9]*"
+    ]
+  },
+  "notes": "Promoted acceptance of function-inventory-omits-dialog on its byte-identical vendored PE. It requires both nested DialogBoxParamA callbacks and positive extents, while the parent 0x4013e0 must end before 0x401410. The Rust CLI test separately proves unfiltered decompile-all emits both callback bodies."
+}

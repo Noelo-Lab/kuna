@@ -199,7 +199,7 @@ fn walk_from_entry(
             return (painted, true);
         }
         visited.insert(addr);
-        let Ok(decoded) = decode_one(translate, addr, code_space, false) else {
+        let Ok(decoded) = decode_one(translate, addr, code_space, false, false) else {
             continue;
         };
         let Some(instruction_end) = addr.checked_add(u64::from(decoded.len)) else {
