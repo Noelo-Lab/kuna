@@ -89,12 +89,55 @@
 
 use std::rc::Rc;
 
+use kuna_base::address::Address;
 use kuna_base::types::{int4, uintb};
 
 use kuna_num::opcodes::OpCode;
 
 use crate::action::{ruleflags, Action, ActionBase, ActionContext, ActionGroupList, ApplyResult};
 use crate::funcdata::Funcdata;
+
+/// Resolve only a literal memory slot feeding `CALLIND`.
+///
+/// SLEIGH may spell the dereference either as `LOAD(slot) -> CALLIND` or as an
+/// unwritten memory Varnode directly in input 0.  No COPY chasing or pointer
+/// arithmetic is accepted here: those shapes need type recovery and the later
+/// de-indirection restart contract.  This early query exists for import veneers
+/// whose complete body is one exact load+jump.
+fn exact_indirect_target_slot(
+    data: &Funcdata,
+    call_op: crate::context::OpId,
+) -> Option<(Address, int4)> {
+    let call = data.obank().get(call_op)?;
+    if call.code() != OpCode::CPUI_CALLIND {
+        return None;
+    }
+    let target = call.get_in(0)?;
+    let target_vn = data.vbank().get(target)?;
+    let Some(load_id) = target_vn.get_def() else {
+        if target_vn.is_constant() || target_vn.is_written() {
+            return None;
+        }
+        return Some((target_vn.get_addr().clone(), target_vn.get_size()));
+    };
+    let load = data.obank().get(load_id)?;
+    if load.code() != OpCode::CPUI_LOAD || load.get_out() != Some(target) {
+        return None;
+    }
+    let space_id = data.vbank().get(load.get_in(0)?)?;
+    let pointer = data.vbank().get(load.get_in(1)?)?;
+    if !space_id.is_constant() || !pointer.is_constant() {
+        return None;
+    }
+    let index = space_id.get_offset();
+    let manager = data.get_arch().manage();
+    if index >= manager.num_spaces() as u64 {
+        return None;
+    }
+    let space = Rc::clone(manager.get_space(index as int4)?);
+    let offset = space.wrap_offset(pointer.get_offset());
+    Some((Address::new(space, offset), target_vn.get_size()))
+}
 
 // =============================================================================
 // ActionPrototypeTypes (coreaction.hh:658, coreaction.cc:4843)
@@ -404,8 +447,37 @@ impl Action for ActionDefaultParams {
                 // `Architecture::set_function_prototype_pieces` (the kuna stand-in for
                 // the C++ callee `Funcdata`'s lazily-built `FuncProto`).
                 let has_funcdata = data.get_call_specs(i).has_funcdata();
-                let (callee_pieces, callee_model) = if has_funcdata {
-                    let entry = data.get_call_specs(i).get_entry_address().clone();
+                let indirect_slot = if has_funcdata {
+                    None
+                } else {
+                    let op = data.get_call_specs(i).get_op();
+                    exact_indirect_target_slot(data, op).and_then(|(slot, size)| {
+                        let usepoint = data
+                            .obank()
+                            .get(op)
+                            .map(|call| call.get_addr().clone())
+                            .unwrap_or_default();
+                        arch.query_indirect_slot_type(&slot, size, &usepoint)
+                            .map(|slot_type| (slot, slot_type))
+                    })
+                };
+                let slot_proto = match &indirect_slot {
+                    Some((_, crate::context::IndirectSlotType::Prototype(proto))) => {
+                        Some(Rc::clone(proto))
+                    }
+                    _ => None,
+                };
+                let pieces_entry = if has_funcdata {
+                    Some(data.get_call_specs(i).get_entry_address().clone())
+                } else {
+                    match &indirect_slot {
+                        Some((slot, crate::context::IndirectSlotType::FunctionCode)) => {
+                            Some(slot.clone())
+                        }
+                        _ => None,
+                    }
+                };
+                let (callee_pieces, callee_model) = if let Some(entry) = pieces_entry {
                     // (kuna, Phase 3) A host-declared prototype model rides the
                     // locked pieces (ghidra-mode `<prototype model=…>`); `None`
                     // on the standalone path, keeping the default-model seed.
@@ -432,7 +504,9 @@ impl Action for ActionDefaultParams {
                     }
                     None => None,
                 };
-                let callee_proto = if custom_output_only.is_some() {
+                let callee_proto = if slot_proto.is_some() {
+                    slot_proto
+                } else if custom_output_only.is_some() {
                     None
                 } else {
                     match (callee_pieces, default_fp.clone(), arch.types()) {
@@ -457,7 +531,7 @@ impl Action for ActionDefaultParams {
                                         arch.callee_proto_stack,
                                         &mut fp,
                                     );
-                                    Some(fp)
+                                    Some(Rc::new(fp))
                                 }
                                 // The callee storage assignment hit an un-ported boundary: fall
                                 // back to the default-model recovery for this call site.
@@ -2035,6 +2109,7 @@ mod tests {
     use super::*;
     use crate::action::ruleflags;
     use crate::context::ArchContext;
+    use crate::dtype::{type_metatype, Datatype};
 
     // Mirrors the coreaction_early.rs test harness (funcdata_block fixtures).
     fn build_manager() -> AddrSpaceManager {
@@ -2067,6 +2142,55 @@ mod tests {
     /// Build a `(name, flags)` pair from a boxed action's base.
     fn name_flags(a: &dyn Action) -> (String, u32) {
         (a.get_name().to_string(), a.base().flags)
+    }
+
+    fn callind(fd: &mut Funcdata, target: crate::context::VarnodeId) -> crate::context::OpId {
+        let ram = Rc::clone(fd.get_arch().manage().get_space_by_name("ram").unwrap());
+        let op = fd.new_op(1, Address::new(ram, 0x1010));
+        fd.op_set_opcode_code(op, OpCode::CPUI_CALLIND);
+        fd.op_set_input(op, target, 0).unwrap();
+        op
+    }
+
+    #[test]
+    fn exact_indirect_slot_accepts_direct_unwritten_memory_varnode() {
+        let mut fd = build_fd();
+        let ram = Rc::clone(fd.get_arch().manage().get_space_by_name("ram").unwrap());
+        let target = fd.vbank_mut().create(
+            8,
+            Address::new(Rc::clone(&ram), 0x3000),
+            Rc::new(Datatype::new(8, type_metatype::TYPE_UNKNOWN)),
+        );
+        let call = callind(&mut fd, target);
+
+        let (slot, size) = exact_indirect_target_slot(&fd, call).expect("exact RAM target");
+        assert_eq!(slot.get_offset(), 0x3000);
+        assert_eq!(size, 8);
+    }
+
+    #[test]
+    fn exact_indirect_slot_accepts_only_literal_load_definition() {
+        let mut fd = build_fd();
+        let ram = Rc::clone(fd.get_arch().manage().get_space_by_name("ram").unwrap());
+        let load = fd.new_op(2, Address::new(Rc::clone(&ram), 0x1008));
+        fd.op_set_opcode_code(load, OpCode::CPUI_LOAD);
+        let space_id = fd.new_constant(4, ram.get_index() as u64);
+        let pointer = fd.new_constant(8, 0x3000);
+        fd.op_set_input(load, space_id, 0).unwrap();
+        fd.op_set_input(load, pointer, 1).unwrap();
+        let loaded = fd.new_unique_out(8, load).unwrap();
+        let call = callind(&mut fd, loaded);
+
+        let (slot, size) = exact_indirect_target_slot(&fd, call).expect("literal LOAD target");
+        assert_eq!(slot.get_offset(), 0x3000);
+        assert_eq!(size, 8);
+
+        let copy = fd.new_op(1, Address::new(ram, 0x100c));
+        fd.op_set_opcode_code(copy, OpCode::CPUI_COPY);
+        fd.op_set_input(copy, pointer, 0).unwrap();
+        let copied = fd.new_unique_out(8, copy).unwrap();
+        let copied_call = callind(&mut fd, copied);
+        assert!(exact_indirect_target_slot(&fd, copied_call).is_none());
     }
 
     #[test]

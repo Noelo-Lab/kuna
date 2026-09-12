@@ -4436,7 +4436,7 @@
       "status": "open",
       "severity": "major",
       "probe_id": "p-4d8cc41166db",
-      "acceptance_id": "a-907ef770cc72",
+      "acceptance_id": "a-0f1c487a5eb9",
       "hypothesis_status": "upheld",
       "credibility": 0.85,
       "instances": 1,

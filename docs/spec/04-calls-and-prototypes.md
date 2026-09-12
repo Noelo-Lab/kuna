@@ -646,7 +646,22 @@ that machinery.
   param <func>::<i> <storage> <decl>` and `map return <func>::<storage>
   <decl>`, reached from the CLI as `--assert 'param <func>::<i> …'`. A slot no
   directive named is `undefined` of pointer width, so slots may be declared in
-  any order.
+  any order. A CALLIND through a literal global slot has one additional early
+  source: when input 0 is either the unwritten memory Varnode at that exact
+  address or the result of exactly `LOAD(constant-space, constant-address)`,
+  the slot is queried before generic recovery. An exact data symbol contributes
+  a prototype only when its full storage is a pointer to a prototype-bearing
+  code type. Otherwise a loader FunctionSymbol at that exact address may supply
+  its address-keyed parked pieces (its synthetic code-symbol size is one byte,
+  so the LOAD is instead checked against the address-space pointer width).
+  Scalars, pointers to data, code/code pointers without a prototype, interior
+  aggregate addresses, truncated/wide loads, COPY chains, and computed addresses
+  all stay generic. A later exact data declaration shadows loader metadata even
+  when it is non-callable. The priority is call-site override, explicit typed
+  data slot, loader FunctionSymbol prototype, then generic recovery; copying the
+  current function's own prototype is never a fallback. A `FuncProto` taken
+  from a typed data slot is copied intact, including its calling-convention
+  model.
 - **`ActionExtraPopSetup`** (`coreaction_protos.rs (ActionExtraPopSetup)`)
   models the stack pointer across each call: a known extrapop becomes an
   explicit `INT_ADD sp, #extrapop` after the call; an unknown one becomes an
@@ -1040,7 +1055,10 @@ inline/no-return flow effects — inline queues the site for body injection, and
 no-return plants an artificial halt after the call plus the "Subroutine does
 not return" warning (`decompiler/crates/kuna-decomp/src/p2_lift/flow.rs
 (FlowInfo::check_for_flow_modification)`; the fact-producing analyses are
-chapter 01 §1.7, the lift-time behavior chapter 02 §2.4).
+chapter 01 §1.7, the lift-time behavior chapter 02 §2.4). Because that override
+already gives the call spec a model, the later exact-slot query in
+`ActionDefaultParams` declines, preserving the per-call-site priority for both
+direct and indirect calls.
 
 ### Effect lists
 
@@ -1139,7 +1157,9 @@ restart contract ((kuna) reason `ProtoForced`) and input-lock tail, but its
 override-persist and success-commit halves are documented port seams, and the
 `ActionDeindirect` arm that would invoke it (a typed function-pointer reaching
 the CALLIND after type recovery starts) is not wired; such a site today keeps
-its model-recovered argument list. Restarts triggered here are refused during
+its model-recovered argument list. This does not include the literal import-slot
+case above: `ActionDefaultParams` consumes that already-present global type
+before input trials start and needs no target rewrite or restart. Restarts triggered here are refused during
 jump-table sub-decompilation like every other feedback edge (00 §0.7).
 
 **The prototype wire encode.** The recovered prototype marshals out for the
