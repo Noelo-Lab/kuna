@@ -5,8 +5,8 @@
   "rejected_count": 1,
   "by_status": {
     "blocked": 1,
-    "closed": 140,
-    "open": 56
+    "closed": 141,
+    "open": 55
   },
   "by_track": {
     "loader": 10,
@@ -2209,7 +2209,7 @@
       "need_id": "bytecode-append-call-loses",
       "title": "Bytecode append call loses two live register arguments",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
       "probe_id": "p-c3f3fe8f19b5",
       "acceptance_id": "a-827297af3fce",
@@ -2224,15 +2224,15 @@
       ],
       "first_seen_round": 12,
       "attempts": 0,
-      "covered_by_option": null,
+      "covered_by_option": "exclusivearguse",
       "touches": [
         "decompiler/crates/kuna-decomp"
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": "https://github.com/Noelo-Lab/kuna/pull/564",
+      "closed_in_round": 12,
+      "closing_pr": "564",
       "reject_reason": null,
       "score": 13.862944,
       "path": "docs/re-needs/bytecode-append-call-loses.md"
