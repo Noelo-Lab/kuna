@@ -37,7 +37,8 @@ use crate::semantics::ConstructTpl;
 use crate::slaformat as sla;
 use crate::slghpatexpress::PatternValue;
 use crate::slghsymbol::{
-    ConstructTplHandle, SleighBaseTrans, SleighSymbol, SymbolKind, SymbolTable, SymbolType,
+    ConstructTplHandle, ContextChange, SleighBaseTrans, SleighSymbol, SymbolKind, SymbolTable,
+    SymbolType,
 };
 use crate::translate::{storage_from_varnode_data, TranslateBase};
 
@@ -1067,6 +1068,55 @@ impl SleighBase {
     /// C++ `numSections`.
     pub fn get_num_sections(&self) -> u32 {
         self.num_sections
+    }
+
+    /// C++ `maxdelayslotbytes`: the largest number of bytes any constructor's
+    /// delay slots add to an instruction, `0` for a language with none.
+    ///
+    /// A decode on a delay-slot language reaches past the instruction it was
+    /// asked for -- `one_instruction` decodes the slot too, inside the same call
+    /// -- so an address-range partition of the program is not a clean cut there.
+    pub fn max_delay_slot_bytes(&self) -> u32 {
+        self.maxdelayslotbytes
+    }
+
+    /// (kuna) Does the loaded language contain a SLEIGH `globalset`?
+    ///
+    /// A `globalset` compiles to a [`ContextChange::Commit`] on the constructor
+    /// that carries it, and `Sleigh::apply_commits` turns it into a WRITE of the
+    /// engine's `ContextDatabase` at an address other than the one being decoded
+    /// -- the ARM `TMode` / MIPS `ISA_MODE` mechanism that makes a branch target
+    /// decode as Thumb or MIPS16. It is the one thing that makes a decode depend
+    /// on which addresses were decoded before it, and so on the visit order of
+    /// the walk that issued them.
+    ///
+    /// `false` therefore means `decode_one` is a pure function of (address,
+    /// image bytes, context values) for this language. It is a property of the
+    /// spec, decided here from what was actually decoded, not an architecture
+    /// allow-list: x86, x86-64, AARCH64, RISCV, Sparc, SuperH and Z80 answer
+    /// `false`; ARM, MIPS, PowerPC, PA-RISC, PIC and M16C answer `true`.
+    pub fn has_context_commits(&self) -> bool {
+        for id in 0..self.symtab.num_symbols() {
+            let Some(sym) = self.symtab.find_symbol_by_id(id as u32) else {
+                continue; // cast: symbol id, `symbollist` is indexed by uintm
+            };
+            let Some(sub) = sym.as_subtable() else {
+                continue;
+            };
+            for i in 0..sub.get_num_constructors() {
+                let Ok(ct) = sub.get_constructor(i as u32) else {
+                    continue; // cast: constructor id, C++ `uintm`
+                };
+                if ct
+                    .get_context_changes()
+                    .iter()
+                    .any(|c| matches!(c, ContextChange::Commit(_)))
+                {
+                    return true;
+                }
+            }
+        }
+        false
     }
 
     /// Bump the maximum delay-slot byte count (C++ `maxdelayslotbytes`).
