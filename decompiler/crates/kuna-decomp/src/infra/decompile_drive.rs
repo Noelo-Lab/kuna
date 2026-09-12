@@ -196,6 +196,22 @@ impl FlowEnvironment for ArchFlowEnv {
         // entry (via `query_call`) so the next function is not decoded into this one.
         self.arch().funcbound_flow
     }
+    fn funcbound_entry_is_unconditional_return(&self, entry: &Address) -> bool {
+        // Decode exactly the candidate entry instruction out of band.  The
+        // probe builds no Funcdata IR and a failure is conservative (the caller
+        // keeps the boundary).  Match the flow follower's own fall-through
+        // classification: the last p-code op must be RETURN and no other
+        // control-transfer op may precede it.  BRANCH/BRANCHIND and conditional
+        // returns are deliberately excluded because they can still reach more
+        // code and consume a neighbouring function.
+        decode_raw_run(self.arch(), entry, 1, usize::MAX)
+            .map(|ops| {
+                crate::kuna_funcboundflow::kuna_is_unconditional_return(
+                    ops.into_iter().map(|op| op.code),
+                )
+            })
+            .unwrap_or(false)
+    }
     fn overlap_branch_enabled(&self) -> bool {
         // (kuna overlapbranch) the Architecture-owned gate (`option overlapbranch`).
         // When on, `flow.rs` truncates a conditional branch's fall-through whose

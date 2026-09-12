@@ -5,8 +5,8 @@
   "rejected_count": 1,
   "by_status": {
     "blocked": 1,
-    "closed": 134,
-    "open": 62
+    "closed": 135,
+    "open": 61
   },
   "by_track": {
     "loader": 10,
@@ -2790,10 +2790,10 @@
       "need_id": "default-function-boundary-truncates",
       "title": "Default function boundary truncates the shared syscall return",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
       "probe_id": "p-3f3a4aa63b91",
-      "acceptance_id": "a-5df3fa77b4ec",
+      "acceptance_id": "a-9d9a83349539",
       "hypothesis_status": "upheld",
       "credibility": 0.7,
       "instances": 1,
@@ -2801,21 +2801,22 @@
         "5ab77f5c33c5d40ad448c615"
       ],
       "rounds": [
-        10
+        10,
+        12
       ],
       "first_seen_round": 10,
-      "attempts": 0,
+      "attempts": 1,
       "covered_by_option": null,
       "touches": [
         "decompiler/crates/kuna-decomp"
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": "589",
+      "closed_in_round": 12,
+      "closing_pr": "589",
       "reject_reason": null,
-      "score": 13.862944,
+      "score": 9.241962,
       "path": "docs/re-needs/default-function-boundary-truncates.md"
     },
     {
