@@ -15,7 +15,9 @@
 //     read output all fail closed.
 //   - the first enabled action pass seeds the exact call site and requests a
 //     restart; the replay removes it.
-//   - `ActionStripMsvcStackGuard::apply` is inert when the gate is off.
+//   - with removal off, every locked-void checker is marked in one pass for
+//     `calleeretpreserves` but remains in the function.
+//   - `ActionStripMsvcStackGuard::apply` is inert when both uses are off.
 
 use super::*;
 
@@ -31,7 +33,7 @@ use kuna_base::types::int4;
 use crate::action::{Action, ActionContext};
 use crate::context::{ArchContext, BlockId, TypeOp};
 use crate::dtype::{type_metatype, Datatype};
-use crate::fspec::FuncCallSpecs;
+use crate::fspec::{FuncCallSpecs, ProtoModel};
 
 const SP_OFF: u64 = 0x20;
 const SP_SIZE: int4 = 8;
@@ -77,6 +79,21 @@ fn build_fd_with_option(on: bool) -> Funcdata {
     manage.add_spacebase_pointer(&stackspc, &sp_data, SP_SIZE, true).unwrap();
     let mut ctx = ArchContext::new(manage);
     ctx.strip_msvc_stack_guard = on;
+    let glb = Rc::new(ctx);
+    let code = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
+    let entry = Address::new(code, 0x1000);
+    Funcdata::new("func", "func", glb, entry, 0x1000_0000, 0x40).unwrap()
+}
+
+fn build_fd_with_both_options(strip: bool, preserve: bool) -> Funcdata {
+    let manage = build_manager();
+    let regspc = Rc::clone(manage.get_space_by_name("register").unwrap());
+    let stackspc = Rc::clone(manage.get_stack_space().unwrap());
+    let sp_data = VarnodeStorage { space: Some(regspc), offset: SP_OFF, size: SP_SIZE as u32 };
+    manage.add_spacebase_pointer(&stackspc, &sp_data, SP_SIZE, true).unwrap();
+    let mut ctx = ArchContext::new(manage);
+    ctx.strip_msvc_stack_guard = strip;
+    ctx.callee_ret_preserves = preserve;
     let glb = Rc::new(ctx);
     let code = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let entry = Address::new(code, 0x1000);
@@ -242,6 +259,15 @@ fn build_cancel(fd: &mut Funcdata, scramble_off: i64, cancel_off: i64) -> (Varno
 
 /// Append a call using `args`, returning the op and its containing block.
 fn checker_call(fd: &mut Funcdata, args: &[VarnodeId], opc: OpCode) -> (OpId, BlockId) {
+    checker_call_at(fd, args, opc, 0x30)
+}
+
+fn checker_call_at(
+    fd: &mut Funcdata,
+    args: &[VarnodeId],
+    opc: OpCode,
+    at: u64,
+) -> (OpId, BlockId) {
     let bl = args
         .first()
         .and_then(|vn| fd.vbank().get(*vn))
@@ -249,7 +275,7 @@ fn checker_call(fd: &mut Funcdata, args: &[VarnodeId], opc: OpCode) -> (OpId, Bl
         .and_then(|op| fd.obank().get(op))
         .and_then(|op| op.get_parent())
         .expect("argument definition has a parent block");
-    let call = mk_op(fd, 1 + args.len() as int4, 0x30, opc);
+    let call = mk_op(fd, 1 + args.len() as int4, at, opc);
     let target = if opc == OpCode::CPUI_CALL {
         let entry = ram_addr(fd, 0x2000);
         fd.new_code_ref(&entry)
@@ -265,12 +291,71 @@ fn checker_call(fd: &mut Funcdata, args: &[VarnodeId], opc: OpCode) -> (OpId, Bl
     (call, bl)
 }
 
+fn push_locked_void_call(fd: &mut Funcdata, call: OpId, entry_off: u64) {
+    let entry = ram_addr(fd, entry_off);
+    let mut fc = FuncCallSpecs::new(call, entry);
+    fc.proto_mut().set_internal(
+        Rc::new(ProtoModel::new(fd.get_arch().manage())),
+        Rc::new(Datatype::new(0, type_metatype::TYPE_VOID)),
+    );
+    fc.proto_mut().set_output_lock(true);
+    fd.push_call_specs(fc);
+}
+
 #[test]
 fn cancel_at_the_same_frame_offset_matches() {
     let mut fd = build_fd();
     let (out, init) = build_cancel(&mut fd, -0x48, -0x48);
     let sp = sp(&fd);
     assert_eq!(cookie_cancel(out, &fd, &sp), Some(vec![init]));
+}
+
+#[test]
+fn a_cookie_carried_across_many_calls_still_matches() {
+    let mut fd = build_fd();
+    let bl = mk_block(&mut fd);
+    let spin = sp_input(&mut fd);
+    let k = cookie_read(&mut fd, bl, 0x10, 0x100);
+    let f1 = frame_ptr(&mut fd, bl, 0x14, spin, (-0x48i64) as u64, 0x108);
+    let mut saved = binop(&mut fd, bl, 0x18, OpCode::CPUI_INT_XOR, k, f1, 0x110);
+    let init = fd.vbank().get(saved).unwrap().get_def().unwrap();
+    for i in 0..64u64 {
+        let op = mk_op(&mut fd, 2, 0x40 + i, OpCode::CPUI_INDIRECT);
+        fd.op_set_input(op, saved, 0).unwrap();
+        let blocker = fd.new_constant(8, i);
+        fd.op_set_input(op, blocker, 1).unwrap();
+        let out_addr = reg(&fd, 0x200 + i * 8);
+        let out = fd.vbank_mut().create(8, out_addr, unk(8));
+        fd.op_set_output(op, out).unwrap();
+        fd.op_insert_end(op, bl);
+        saved = out;
+    }
+    let f2 = frame_ptr(&mut fd, bl, 0x90, spin, (-0x48i64) as u64, 0x500);
+    let out = binop(&mut fd, bl, 0x94, OpCode::CPUI_INT_XOR, saved, f2, 0x508);
+    assert_eq!(cookie_cancel(out, &fd, &sp(&fd)), Some(vec![init]));
+}
+
+#[test]
+fn a_loop_carried_cookie_phi_uses_its_entry_scramble() {
+    let mut fd = build_fd();
+    let bl = mk_block(&mut fd);
+    let spin = sp_input(&mut fd);
+    let k = cookie_read(&mut fd, bl, 0x10, 0x100);
+    let f1 = frame_ptr(&mut fd, bl, 0x14, spin, (-0x48i64) as u64, 0x108);
+    let saved = binop(&mut fd, bl, 0x18, OpCode::CPUI_INT_XOR, k, f1, 0x110);
+    let init = fd.vbank().get(saved).unwrap().get_def().unwrap();
+
+    let phi_op = mk_op(&mut fd, 2, 0x1c, OpCode::CPUI_MULTIEQUAL);
+    let phi_addr = reg(&fd, 0x118);
+    let carried = fd.vbank_mut().create(8, phi_addr, unk(8));
+    fd.op_set_output(phi_op, carried).unwrap();
+    fd.op_set_input(phi_op, saved, 0).unwrap();
+    fd.op_set_input(phi_op, carried, 1).unwrap();
+    fd.op_insert_begin(phi_op, bl);
+
+    let f2 = frame_ptr(&mut fd, bl, 0x20, spin, (-0x48i64) as u64, 0x120);
+    let out = binop(&mut fd, bl, 0x24, OpCode::CPUI_INT_XOR, carried, f2, 0x128);
+    assert_eq!(cookie_cancel(out, &fd, &sp(&fd)), Some(vec![init]));
 }
 
 #[test]
@@ -428,8 +513,63 @@ fn enabled_action_seeds_then_removes_the_exact_call() {
 }
 
 #[test]
-fn action_is_inert_when_the_option_is_off() {
+fn locked_void_checker_is_marked_but_not_removed_when_stripping_is_off() {
     let mut fd = build_fd();
+    let (arg, _) = build_cancel(&mut fd, -0x48, -0x48);
+    let (call, _) = checker_call(&mut fd, &[arg], OpCode::CPUI_CALL);
+    let entry = ram_addr(&fd, 0x2000);
+    let mut fc = FuncCallSpecs::new(call, entry);
+    fc.proto_mut().set_internal(
+        Rc::new(ProtoModel::new(fd.get_arch().manage())),
+        Rc::new(Datatype::new(0, type_metatype::TYPE_VOID)),
+    );
+    fc.proto_mut().set_output_lock(true);
+    fd.push_call_specs(fc);
+    let site = fd.obank().get(call).unwrap().get_addr().clone();
+    assert!(call_has_locked_void_output(&fd, call));
+
+    let mut act = ActionStripMsvcStackGuard::new(false, "returnsplit");
+    let mut ctx = ActionContext::default();
+    assert_eq!(act.apply(&mut fd, &mut ctx), 0);
+    assert!(fd.has_restart_pending());
+    assert!(fd.get_override().is_msvc_cookie_call(&site));
+
+    fd.set_restart_pending(false);
+    assert_eq!(act.apply(&mut fd, &mut ctx), 0);
+    assert!(fd.obank().get(call).is_some(), "preservation does not opt in to deletion");
+    assert_eq!(fd.num_calls(), 1);
+}
+
+#[test]
+fn preserve_only_marks_more_than_the_reflow_limit_in_one_restart() {
+    let mut fd = build_fd();
+    let mut calls = Vec::new();
+    let mut sites = Vec::new();
+    for i in 0..9u64 {
+        let frame_off = -0x48 - (i as i64) * 8;
+        let (arg, _) = build_cancel(&mut fd, frame_off, frame_off);
+        let (call, _) = checker_call_at(&mut fd, &[arg], OpCode::CPUI_CALL, 0x30 + i * 0x100);
+        push_locked_void_call(&mut fd, call, 0x2000 + i * 0x100);
+        sites.push(fd.obank().get(call).unwrap().get_addr().clone());
+        calls.push(call);
+    }
+    let mut act = ActionStripMsvcStackGuard::new(false, "returnsplit");
+    let mut ctx = ActionContext::default();
+
+    assert_eq!(act.apply(&mut fd, &mut ctx), 0);
+    assert!(fd.has_restart_pending());
+    assert!(sites.iter().all(|site| fd.get_override().is_msvc_cookie_call(site)));
+
+    fd.set_restart_pending(false);
+    assert_eq!(act.apply(&mut fd, &mut ctx), 0);
+    assert!(!fd.has_restart_pending());
+    assert!(calls.iter().all(|call| fd.obank().get(*call).is_some()));
+    assert_eq!(fd.num_calls(), 9);
+}
+
+#[test]
+fn action_is_inert_when_the_option_is_off() {
+    let mut fd = build_fd_with_both_options(false, false);
     let (_out, _init) = build_cancel(&mut fd, -0x48, -0x48);
     let mut act = ActionStripMsvcStackGuard::new(false, "returnsplit");
     let mut ctx = ActionContext::default();

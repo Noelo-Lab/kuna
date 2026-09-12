@@ -40,6 +40,11 @@
 //! normalization leaves behind, so a `/Od` frame (`xor rcx,rsp` after
 //! `sub rsp,N`) and an `/O2` frame agree.
 //!
+//! A cookie slot may be carried through many call guards or around a loop. The
+//! value peel therefore has its own finite 256-link budget, and a
+//! `MULTIEQUAL` is accepted by a cycle-aware fixed point only when every
+//! non-backedge input proves the same scramble and at least one seed exists.
+//!
 //! The cost of a false positive is a deleted call and a deleted argument
 //! computation, which is why the envelope is narrow and the option ships OFF.
 //! The shape is not reachable by accident: `(K ^ SP) ^ SP` cancels to `K`, so
@@ -70,9 +75,13 @@
 //! On the first exact match this action records the call's instruction address
 //! in the function's P0 override store and requests a pipeline restart.  During
 //! replay, `Heritage::guard_calls` treats only ABI output storage at that exact
-//! call as unaffected (only while this option is on, only for an actual
-//! `KILLEDBYCALL`, and never across an explicit effect override).  The normal
-//! SSA construction can then retain every reaching caller definition.
+//! call as unaffected (only for an actual `KILLEDBYCALL`, and never across an
+//! explicit effect override). The same non-destructive marker handoff also runs
+//! when `calleeretpreserves` is on and the exact checker is declared and locked
+//! `void`: it retains ABI output but leaves the checker and all cookie algebra
+//! visible. No generic callee-body claim is made, so a failure tail containing
+//! nested calls remains conservative. The normal SSA construction can then
+//! retain every reaching caller definition.
 //!
 //! The stock pair `Funcdata::block_remove_internal` uses for a CALL inside a
 //! deleted block, and the pair `cleanupcode` uses for a Rust drop call:
@@ -114,8 +123,13 @@ use crate::context::{OpId, VarnodeId};
 use crate::funcdata::Funcdata;
 use crate::kuna_stackguard::release_canary_slots;
 
-/// How far the derivation walks follow a chain before giving up.
+/// How far the structural derivation recurses before giving up.
 const WALK_DEPTH: int4 = 32;
+
+/// How many value-preserving copies/INDIRECTs a long function may carry the
+/// cookie through. One INDIRECT can be introduced at every call, so this bound
+/// is intentionally larger than the algebra walk while remaining finite.
+const PEEL_DEPTH: int4 = 256;
 
 /// The storage of the stack space's base register (`getStackSpace()->
 /// getSpacebase(0)`), or `None` when the architecture has no stack space.
@@ -130,7 +144,7 @@ fn stack_pointer_storage(data: &Funcdata) -> Option<(Rc<AddrSpace>, uintb, int4)
 /// produced it: `COPY`, `CAST`, and the `INDIRECT` that carries a value across a
 /// call.  Returns the deepest Varnode reached.
 fn peel(mut vn: VarnodeId, data: &Funcdata) -> VarnodeId {
-    for _ in 0..WALK_DEPTH {
+    for _ in 0..PEEL_DEPTH {
         let Some(v) = data.vbank().get(vn) else { return vn };
         if !v.is_written() {
             return vn;
@@ -234,28 +248,61 @@ fn sign_extend(data: &Funcdata, vn: VarnodeId) -> Option<i64> {
 /// when EVERY input is a scramble at that same offset — one non-cookie input
 /// and the whole match is declined.
 ///
-/// `memo` carries both the answer cache (a phi whose in-edges carry the same
-/// SSA version must not decline the second time it is reached) and the
-/// in-progress marker that breaks a cycle: an entry present but `None` is a
-/// varnode still on the stack, and a loop-carried phi therefore declines.
+/// `memo` caches completed answers. `active` distinguishes a loop back-edge
+/// from a failed derivation: a loop-carried phi is valid when every non-cyclic
+/// incoming value is the same scramble and at least one such seed exists.
+#[derive(Clone, Copy)]
+enum ScrambleWalk {
+    Found(i64),
+    Backedge,
+    No,
+}
+
 fn cookie_scramble(
     vn: VarnodeId,
     depth: int4,
     data: &Funcdata,
     sp: &(Rc<AddrSpace>, uintb, int4),
-    memo: &mut BTreeMap<VarnodeId, Option<i64>>,
     inits: &mut Vec<OpId>,
 ) -> Option<i64> {
+    let mut memo: BTreeMap<VarnodeId, Option<i64>> = BTreeMap::new();
+    let mut active: BTreeSet<VarnodeId> = BTreeSet::new();
+    match cookie_scramble_walk(vn, depth, data, sp, &mut memo, &mut active, inits) {
+        ScrambleWalk::Found(off) => Some(off),
+        ScrambleWalk::Backedge | ScrambleWalk::No => None,
+    }
+}
+
+fn cookie_scramble_walk(
+    vn: VarnodeId,
+    depth: int4,
+    data: &Funcdata,
+    sp: &(Rc<AddrSpace>, uintb, int4),
+    memo: &mut BTreeMap<VarnodeId, Option<i64>>,
+    active: &mut BTreeSet<VarnodeId>,
+    inits: &mut Vec<OpId>,
+) -> ScrambleWalk {
     if depth <= 0 {
-        return None;
+        return ScrambleWalk::No;
     }
     let vn = peel(vn, data);
     if let Some(cached) = memo.get(&vn) {
-        return *cached;
+        return cached.map(ScrambleWalk::Found).unwrap_or(ScrambleWalk::No);
     }
-    memo.insert(vn, None);
-    let answer = cookie_scramble_uncached(vn, depth, data, sp, memo, inits);
-    memo.insert(vn, answer);
+    if !active.insert(vn) {
+        return ScrambleWalk::Backedge;
+    }
+    let answer = cookie_scramble_uncached(vn, depth, data, sp, memo, active, inits);
+    active.remove(&vn);
+    match answer {
+        ScrambleWalk::Found(off) => {
+            memo.insert(vn, Some(off));
+        }
+        ScrambleWalk::No => {
+            memo.insert(vn, None);
+        }
+        ScrambleWalk::Backedge => {}
+    }
     answer
 }
 
@@ -266,50 +313,69 @@ fn cookie_scramble_uncached(
     data: &Funcdata,
     sp: &(Rc<AddrSpace>, uintb, int4),
     memo: &mut BTreeMap<VarnodeId, Option<i64>>,
+    active: &mut BTreeSet<VarnodeId>,
     inits: &mut Vec<OpId>,
-) -> Option<i64> {
-    let v = data.vbank().get(vn)?;
+) -> ScrambleWalk {
+    let Some(v) = data.vbank().get(vn) else { return ScrambleWalk::No };
     if !v.is_written() {
-        return None;
+        return ScrambleWalk::No;
     }
-    let def = v.get_def()?;
-    let dop = data.obank().get(def)?;
+    let Some(def) = v.get_def() else { return ScrambleWalk::No };
+    let Some(dop) = data.obank().get(def) else { return ScrambleWalk::No };
     match dop.code() {
         OpCode::CPUI_INT_XOR => {
-            let a = dop.get_in(0)?;
-            let b = dop.get_in(1)?;
+            let Some(a) = dop.get_in(0) else { return ScrambleWalk::No };
+            let Some(b) = dop.get_in(1) else { return ScrambleWalk::No };
             let (cookie, off) = match stack_pointer_offset(b, WALK_DEPTH, data, sp) {
                 Some(o) => (a, o),
-                None => (b, stack_pointer_offset(a, WALK_DEPTH, data, sp)?),
+                None => {
+                    let Some(off) = stack_pointer_offset(a, WALK_DEPTH, data, sp) else {
+                        return ScrambleWalk::No;
+                    };
+                    (b, off)
+                }
             };
             // The cookie operand must be a real loaded value: a constant would
             // make the whole `(K ^ SP) ^ SP` fold to a constant, and a second
             // stack-pointer reference is not a cookie at all.
-            let c = data.vbank().get(peel(cookie, data))?;
+            let Some(c) = data.vbank().get(peel(cookie, data)) else {
+                return ScrambleWalk::No;
+            };
             if c.is_constant() {
-                return None;
+                return ScrambleWalk::No;
             }
             if stack_pointer_offset(cookie, WALK_DEPTH, data, sp).is_some() {
-                return None;
+                return ScrambleWalk::No;
             }
             inits.push(def);
-            Some(off)
+            ScrambleWalk::Found(off)
         }
         OpCode::CPUI_MULTIEQUAL => {
             let n = dop.num_input();
             let mut off: Option<i64> = None;
             for i in 0..n {
-                let ini = data.obank().get(def)?.get_in(i)?;
-                let o = cookie_scramble(ini, depth - 1, data, sp, memo, inits)?;
-                match off {
-                    None => off = Some(o),
-                    Some(prev) if prev == o => {}
-                    Some(_) => return None,
+                let Some(ini) = dop.get_in(i) else { return ScrambleWalk::No };
+                match cookie_scramble_walk(
+                    ini,
+                    depth - 1,
+                    data,
+                    sp,
+                    memo,
+                    active,
+                    inits,
+                ) {
+                    ScrambleWalk::Found(o) => match off {
+                        None => off = Some(o),
+                        Some(prev) if prev == o => {}
+                        Some(_) => return ScrambleWalk::No,
+                    },
+                    ScrambleWalk::Backedge => {}
+                    ScrambleWalk::No => return ScrambleWalk::No,
                 }
             }
-            off
+            off.map(ScrambleWalk::Found).unwrap_or(ScrambleWalk::No)
         }
-        _ => None,
+        _ => ScrambleWalk::No,
     }
 }
 
@@ -342,8 +408,7 @@ fn cookie_cancel(
         None => (b, stack_pointer_offset(a, WALK_DEPTH, data, sp)?),
     };
     let mut inits: Vec<OpId> = Vec::new();
-    let mut memo: BTreeMap<VarnodeId, Option<i64>> = BTreeMap::new();
-    let scramble_off = cookie_scramble(saved, WALK_DEPTH, data, sp, &mut memo, &mut inits)?;
+    let scramble_off = cookie_scramble(saved, WALK_DEPTH, data, sp, &mut inits)?;
     if scramble_off != unscramble_off || inits.is_empty() {
         return None;
     }
@@ -437,17 +502,38 @@ fn cookie_check_op(
 }
 
 /// The CALL op to strip, with the entry-side scramble ops feeding it.
-fn cookie_check_call(
+fn call_has_locked_void_output(data: &Funcdata, op: OpId) -> bool {
+    let Some(index) = data.get_call_specs_index(op) else { return false };
+    let proto = data.get_call_specs(index).proto();
+    proto.is_output_locked()
+        && proto.get_output_type().map(|ty| ty.get_metatype())
+            == Some(crate::dtype::type_metatype::TYPE_VOID)
+}
+
+fn cookie_check_calls(
     data: &Funcdata,
     sp: &(Rc<AddrSpace>, uintb, int4),
-) -> Option<(OpId, Vec<OpId>)> {
+    require_locked_void: bool,
+    skip_marked: bool,
+) -> Vec<(OpId, Vec<OpId>)> {
+    let mut found = Vec::new();
     for i in 0..data.num_calls() {
         let op = data.get_call_specs(i).get_op();
+        if require_locked_void && !call_has_locked_void_output(data, op) {
+            continue;
+        }
+        if skip_marked {
+            let Some(callop) = data.obank().get(op) else { continue };
+            let site = callop.get_addr();
+            if data.get_override().is_msvc_cookie_call(site) {
+                continue;
+            }
+        }
         if let Some(inits) = cookie_check_op(data, op, sp) {
-            return Some((op, inits));
+            found.push((op, inits));
         }
     }
-    None
+    found
 }
 
 /// (kuna) Strip the MSVC `/GS` frame-cookie check and its entry-side init
@@ -484,18 +570,37 @@ impl Action for ActionStripMsvcStackGuard {
     }
 
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        if !self.enabled && !data.get_arch().strip_msvc_stack_guard {
-            return 0; // P0 assertion not set
+        let strip = self.enabled || data.get_arch().strip_msvc_stack_guard;
+        // `calleeretpreserves` also consumes the exact cookie mark for a locked
+        // void declaration. It preserves the caller's ABI return storage but
+        // leaves the check and all cookie algebra intact.
+        if !strip && !data.get_arch().callee_ret_preserves {
+            return 0;
         }
         if data.num_calls() == 0 {
             return 0;
         }
         let Some(sp) = stack_pointer_storage(data) else { return 0 };
-        let Some((op, inits)) = cookie_check_call(data, &sp) else { return 0 };
+        let calls = cookie_check_calls(data, &sp, !strip, !strip);
+        if !strip {
+            if calls.is_empty() {
+                return 0;
+            }
+            for (op, _) in calls {
+                let site = data.obank().get(op).expect("cookie checker op").get_addr().clone();
+                data.get_override_mut().insert_msvc_cookie_call(site);
+            }
+            data.set_restart_pending(true);
+            return 0;
+        }
+        let Some((op, inits)) = calls.into_iter().next() else { return 0 };
         let site = data.obank().get(op).expect("cookie checker op").get_addr().clone();
         if !data.get_override().is_msvc_cookie_call(&site) {
             data.get_override_mut().insert_msvc_cookie_call(site);
             data.set_restart_pending(true);
+            return 0;
+        }
+        if !strip {
             return 0;
         }
         let mut slots: Vec<(Address, int4)> = Vec::new();

@@ -275,12 +275,22 @@ scratch register, and `option calleeretpreserves` asks for that instead: a calle
 that returns a value in `RAX` must *write* `RAX`, so a complete walk that records
 no write to the return storage proves the call has no return value at all
 (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleeretpreserves.rs
-(callee_preserves_return_storage)`). The effect is downgraded to *unaffected*,
-the output-active arm is skipped, and the caller's own definition flows across
-the call.
+(callee_preserves_return_storage)`). For an exact range the effect is downgraded
+to *unaffected*, the output-active arm is skipped, and the caller's own
+definition flows across the call.
 
-Three conditions bound it. The range must characterize as the call's *output*,
-so every other killed range stays where the paragraph above left it. The body
+Three conditions bound it. The range must characterize as the call's *output*.
+For a locked `void` declaration, which intentionally has no concrete output
+entry, `kuna_calleeretpreserves.rs (characterize_preserved_output)` consults the
+prototype model's ABI output list solely to identify eligible return storage;
+a locked non-void output remains authoritative, and scratch XMM registers never
+become eligible through this fallback. Eligibility is exact even when heritage
+tracks a wider register: Win64's 8-byte `XMM0_Qa` output inside a 16-byte `XMM0`
+range is extracted from the reaching pre-call value, while killed INDIRECT
+creations supply the flanking bytes before a post-call PIECE rejoins the range.
+The upper `XMM0_Qb` scratch lane is therefore not preserved by a whole-range
+`unaffected` downgrade. Every other killed range stays where the paragraph above
+left it. The body
 must write **no** part of the return storage: a callee that writes `RAX` and
 leaves `RDX` alone is a scalar-returning function whose second return register is
 merely dead, and the convention is still the better answer for the whole call.
@@ -301,14 +311,31 @@ compiler-spec id — a Windows `int 0x29` ends the path instead
 (`kuna_rustabi.rs (ProbeEmit::note_fastfail_swi)`), which is the same statement
 the flow builder makes about the same two ops.
 
-`msvcstackguard` has a narrower option-owned answer when the late P7 algebraic
-recognizer is going to remove the checker. Its first exact direct,
-unread-output, one-cookie-cancel match records that instruction address and
-requests a restart. On replay `Heritage::guard_calls` downgrades only an actual
-`KILLEDBYCALL` effect on the call prototype's output storage at that seeded
-site. The `/GS` option must still be on, and a prototype effect override vetoes
-the downgrade. No callee-body completeness or no-return inference participates;
-all unseeded calls continue through the generic rules above unchanged.
+`msvcstackguard` has a narrower algebraic answer for the late P7 cookie shape.
+In its destructive arm the first exact direct, unread-output,
+one-cookie-cancel match records that instruction address and requests a restart.
+Independently, `calleeretpreserves on` collects every exact locked-`void` match,
+records the full set, and requests one restart; marking the whole set at once
+keeps duplicated epilogues from exhausting the outer eight-reflow limit. On
+replay `Heritage::guard_calls` downgrades only an actual `KILLEDBYCALL` effect on
+ABI output storage at a seeded site. An explicit prototype effect and every ABI
+return-storage write recovered from the callee body veto the downgrade, even
+when an ordinary nested call leaves that summary incomplete. The write probe
+retains positive register writes and STORE spaces recovered before that
+unresolved edge. A STORE into a processor space used by an ABI output entry is
+a possible write to every output in that space and vetoes the downgrade even
+when no direct written range was recovered; incompleteness disables only
+conclusions from an absent write.
+With
+`msvcstackguard on`, replay is followed by deletion as before; preservation
+alone leaves every call and all cookie algebra in the output. This caller-side
+proof is deliberately narrower than relaxing the body walk. All unseeded calls
+and all non-output scratch registers remain unchanged. The production stage
+control makes the checker write XMM0 before its nested call, and separately
+consumes the upper half of a 16-byte XMM0 range after an exact cookie call, so
+both the positive-write veto and the killed scratch flank are observable. A
+focused predicate control supplies the other retained production-summary
+shape: incomplete, no direct ranges, and an output-processor-space STORE.
 
 **Partial-range call overlap.** A heritaged range can be strictly *larger* than
 the ABI storage it contains — the characterization is `ContainedBy` rather than

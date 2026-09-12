@@ -1618,15 +1618,23 @@ impl Heritage {
             // convention promises is preserved) declines a helper that clobbers
             // only what it is allowed to.  See
             // [`crate::p4_calls::kuna_calleeretpreserves`].
-            let msvc_cookie_return = effecttype == effect_type::KILLEDBYCALL
-                && fd.get_arch().strip_msvc_stack_guard
-                && !fc.proto().has_effect_override()
-                && fc.proto().characterize_as_output(&trans_addr, size)
-                    != Containment::NoContainment
+            let exact_cookie_site = (fd.get_arch().callee_ret_preserves
+                || fd.get_arch().strip_msvc_stack_guard)
                 && fd.get_override().is_msvc_cookie_call(
-                    fd.obank().get(op).expect("guardCalls: stale call").get_addr(),
+                    fd.obank()
+                        .get(op)
+                        .expect("guardCalls: stale call")
+                        .get_addr(),
                 );
-            let preserved = effecttype == effect_type::KILLEDBYCALL
+            let msvc_cookie_return = effecttype == effect_type::KILLEDBYCALL
+                && exact_cookie_site
+                && crate::p4_calls::kuna_calleeretpreserves::exact_cookie_preserves_return_storage(
+                    fd,
+                    fc,
+                    &trans_addr,
+                    size,
+                );
+            let mut preserved = effecttype == effect_type::KILLEDBYCALL
                 && (crate::p4_calls::kuna_calleepreserves::callee_preserves_range(
                     fd,
                     fc,
@@ -1638,6 +1646,48 @@ impl Heritage {
                     &trans_addr,
                     size,
                 ) || msvc_cookie_return);
+            // A locked-void prototype has no concrete output, so its model may
+            // identify an 8-byte logical return inside a 16-byte heritaged XMM
+            // range. Preserve only that exact slice. The flanking bytes remain
+            // INDIRECT creations tied to the call and are PIECEd back around the
+            // caller's retained slice; downgrading the whole 16-byte effect would
+            // incorrectly preserve ABI scratch state.
+            if effecttype == effect_type::KILLEDBYCALL && !preserved {
+                let contained =
+                    crate::p4_calls::kuna_calleeretpreserves::callee_preserved_output_within(
+                        fd,
+                        fc,
+                        &trans_addr,
+                        size,
+                    )
+                    .or_else(|| {
+                        if exact_cookie_site {
+                            crate::p4_calls::kuna_calleeretpreserves::exact_cookie_preserved_output_within(
+                                fd,
+                                fc,
+                                &trans_addr,
+                                size,
+                            )
+                        } else {
+                            None
+                        }
+                    });
+                if let Some(output) = contained {
+                    let diff = output.offset.wrapping_sub(trans_addr.get_offset());
+                    let output_addr = addr + diff as i64;
+                    if self.guard_preserved_output_overlap(
+                        fd,
+                        op,
+                        addr,
+                        size,
+                        &output_addr,
+                        output.size as int4,
+                        write,
+                    ) {
+                        preserved = true;
+                    }
+                }
+            }
             if preserved {
                 effecttype = effect_type::UNAFFECTED;
             }
@@ -1945,6 +1995,116 @@ impl Heritage {
             v.set_active_heritage();
         }
         write.push(vn_collect);
+    }
+
+    /// Preserve a call's exact logical output slice inside a wider killed
+    /// register range, while leaving every flanking byte killed by the call.
+    ///
+    /// This is the inverse of [`Self::guard_output_overlap`]: that helper makes
+    /// the return slice a creation and kills both flanks; this one extracts the
+    /// return slice from the reaching pre-call value and creates only the
+    /// flanks. The pieces are reassembled after the call so ordinary heritage
+    /// can rename the whole machine-register range without widening the
+    /// preservation claim.
+    #[allow(clippy::too_many_arguments)]
+    fn guard_preserved_output_overlap(
+        &mut self,
+        fd: &mut crate::funcdata::Funcdata,
+        call_op: crate::context::OpId,
+        addr: &Address,
+        size: int4,
+        ret_addr: &Address,
+        ret_size: int4,
+        write: &mut Vec<crate::context::VarnodeId>,
+    ) -> bool {
+        use kuna_num::opcodes::OpCode;
+
+        if size <= 0 || ret_size <= 0 || ret_size >= size {
+            return false;
+        }
+        let truncate_amount = addr.justified_contain(size, ret_addr, ret_size, false);
+        if truncate_amount < 0 {
+            return false;
+        }
+        let Some(size_front_u64) = ret_addr.get_offset().checked_sub(addr.get_offset()) else {
+            return false;
+        };
+        let Ok(size_front) = int4::try_from(size_front_u64) else {
+            return false;
+        };
+        let Some(size_back) = size
+            .checked_sub(ret_size)
+            .and_then(|v| v.checked_sub(size_front))
+        else {
+            return false;
+        };
+        if size_front == 0 && size_back == 0 {
+            return false;
+        }
+
+        let call_addr = fd
+            .obank()
+            .get(call_op)
+            .expect("guardPreservedOutputOverlap: stale call")
+            .get_addr()
+            .clone();
+        let whole_vn = fd.new_varnode(size, addr, None);
+        fd.vbank_mut()
+            .get_mut(whole_vn)
+            .expect("guardPreservedOutputOverlap: whole input")
+            .set_active_heritage();
+        let subpiece = fd.new_op(2, call_addr.clone());
+        fd.op_set_opcode(subpiece, typeop_skeleton(OpCode::CPUI_SUBPIECE));
+        let _ = fd.op_set_input(subpiece, whole_vn, 0);
+        let c = fd.new_constant(4, truncate_amount as u64);
+        let _ = fd.op_set_input(subpiece, c, 1);
+        let mut vn_collect = fd
+            .new_varnode_out(ret_size, ret_addr, subpiece)
+            .expect("guardPreservedOutputOverlap: retained slice");
+        fd.op_insert_before(subpiece, call_op);
+
+        let mut insert_point = call_op;
+        if size_front != 0 {
+            let ind_front = fd.new_indirect_creation(call_op, addr, size_front, false);
+            let new_front = fd
+                .obank()
+                .get(ind_front)
+                .and_then(|o| o.get_out())
+                .expect("guardPreservedOutputOverlap: front out");
+            let concat_front = fd.new_op(2, call_addr.clone());
+            let slot_new: int4 = if ret_addr.is_big_endian() { 0 } else { 1 };
+            fd.op_set_opcode(concat_front, typeop_skeleton(OpCode::CPUI_PIECE));
+            let _ = fd.op_set_input(concat_front, new_front, slot_new);
+            let _ = fd.op_set_input(concat_front, vn_collect, 1 - slot_new);
+            vn_collect = fd
+                .new_varnode_out(size_front + ret_size, addr, concat_front)
+                .expect("guardPreservedOutputOverlap: front concat out");
+            fd.op_insert_after(concat_front, insert_point);
+            insert_point = concat_front;
+        }
+        if size_back != 0 {
+            let addr_back = ret_addr + ret_size as i64;
+            let ind_back = fd.new_indirect_creation(call_op, &addr_back, size_back, false);
+            let new_back = fd
+                .obank()
+                .get(ind_back)
+                .and_then(|o| o.get_out())
+                .expect("guardPreservedOutputOverlap: back out");
+            let concat_back = fd.new_op(2, call_addr);
+            let slot_new: int4 = if ret_addr.is_big_endian() { 1 } else { 0 };
+            fd.op_set_opcode(concat_back, typeop_skeleton(OpCode::CPUI_PIECE));
+            let _ = fd.op_set_input(concat_back, new_back, slot_new);
+            let _ = fd.op_set_input(concat_back, vn_collect, 1 - slot_new);
+            vn_collect = fd
+                .new_varnode_out(size, addr, concat_back)
+                .expect("guardPreservedOutputOverlap: back concat out");
+            fd.op_insert_after(concat_back, insert_point);
+        }
+        if let Some(v) = fd.vbank_mut().get_mut(vn_collect) {
+            v.set_active_heritage();
+        }
+        write.push(vn_collect);
+        true
     }
 
     /// Attempt to guard a stack range against a call whose return value overlaps

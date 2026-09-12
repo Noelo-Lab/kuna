@@ -20,7 +20,8 @@ use kuna_base::space::{
 };
 
 use crate::context::{ArchContext, TypeOp};
-use crate::fspec::{effect_type, EffectRecord, ProtoModel};
+use crate::dtype::{type_class, type_metatype, Datatype};
+use crate::fspec::{effect_type, EffectRecord, ParamEntry, ProtoModel};
 use crate::kuna_rustabi::CalleeReturnWrites;
 use kuna_num::opcodes::OpCode;
 
@@ -29,14 +30,54 @@ use kuna_num::opcodes::OpCode;
 fn with_convention(fd: &Funcdata, fc: &mut FuncCallSpecs) {
     let ram = space(fd, "ram");
     let mut model = ProtoModel::new(fd.get_arch().manage());
-    for (off, ty) in [(0x00u64, effect_type::KILLEDBYCALL), (0x10, effect_type::UNAFFECTED)] {
+    model.build_param_list("standard").unwrap();
+    let input = ParamEntry::seed(
+        0,
+        type_class::TYPECLASS_GENERAL,
+        Rc::clone(&ram),
+        0x20,
+        8,
+        1,
+        0,
+        0,
+        true,
+        false,
+        &[],
+        fd.get_arch().manage(),
+    )
+    .unwrap();
+    model.input_mut().push_entry(input);
+    model.input_mut().finish_decode();
+    let output = ParamEntry::seed(
+        0,
+        type_class::TYPECLASS_GENERAL,
+        Rc::clone(&ram),
+        0x00,
+        8,
+        1,
+        0,
+        0,
+        true,
+        false,
+        &[],
+        fd.get_arch().manage(),
+    )
+    .unwrap();
+    model.output_mut().push_entry(output);
+    model.output_mut().finish_decode();
+    for (off, ty) in [
+        (0x00u64, effect_type::KILLEDBYCALL),
+        (0x08, effect_type::KILLEDBYCALL),
+        (0x10, effect_type::UNAFFECTED),
+    ] {
         let mut vd = kuna_num::pcoderaw::VarnodeData::default();
         vd.space = Some(Rc::clone(&ram));
         vd.offset = off;
         vd.size = 8;
         model.push_effect(EffectRecord::from_varnode(vd, ty));
     }
-    fc.proto_mut().set_model(Some(Rc::new(model)));
+    let void_ty = Rc::new(Datatype::new(0, type_metatype::TYPE_VOID));
+    fc.proto_mut().set_internal(Rc::new(model), void_ty);
 }
 
 /// A minimal fixture: a `register` (processor) space, a `stack` spacebase, and
@@ -125,6 +166,164 @@ fn an_incomplete_or_missing_probe_narrows_nothing() {
     assert!(!callee_never_writes(&fd, &fc, &rax, 8), "an incomplete walk proves nothing");
 }
 
+#[test]
+fn a_locked_void_declaration_keeps_the_abi_return_storage_available_to_the_body_proof() {
+    let mut fd = build_fd(true);
+    let (mut fc, entry) = build_call(&mut fd, 0x2000);
+    fc.proto_mut().set_output_lock(true);
+    fd.kuna_set_callee_ret_writes(&entry, cookie_checker(&fd));
+    let rax = Address::new(space(&fd, "ram"), 0x00);
+    assert!(callee_preserves_return_storage(&fd, &fc, &rax, 8));
+}
+
+#[test]
+fn a_scratch_register_outside_the_abi_output_is_not_globally_preserved() {
+    let mut fd = build_fd(true);
+    let (mut fc, entry) = build_call(&mut fd, 0x2000);
+    fc.proto_mut().set_output_lock(true);
+    fd.kuna_set_callee_ret_writes(&entry, cookie_checker(&fd));
+    let scratch = Address::new(space(&fd, "ram"), 0x08);
+    assert!(!callee_preserves_return_storage(&fd, &fc, &scratch, 8));
+}
+
+#[test]
+fn a_wide_killed_range_resolves_only_the_exact_locked_void_output_slice() {
+    let mut fd = build_fd(true);
+    let (mut fc, entry) = build_call(&mut fd, 0x2000);
+    fc.proto_mut().set_output_lock(true);
+    fd.kuna_set_callee_ret_writes(&entry, cookie_checker(&fd));
+
+    let whole_xmm = Address::new(space(&fd, "ram"), 0x00);
+    let upper_scratch = Address::new(space(&fd, "ram"), 0x08);
+    assert_eq!(
+        characterize_preserved_output(&fc, &whole_xmm, 16),
+        Containment::ContainedBy
+    );
+    assert!(callee_preserves_return_storage(&fd, &fc, &whole_xmm, 8));
+    assert!(!callee_preserves_return_storage(&fd, &fc, &whole_xmm, 16));
+    assert!(exact_cookie_preserves_return_storage(&fd, &fc, &whole_xmm, 8));
+    assert!(!exact_cookie_preserves_return_storage(&fd, &fc, &whole_xmm, 16));
+    assert!(!exact_cookie_preserves_return_storage(&fd, &fc, &upper_scratch, 8));
+
+    let generic = callee_preserved_output_within(&fd, &fc, &whole_xmm, 16)
+        .expect("the complete body proof resolves the exact output slice");
+    assert_eq!(generic.offset, 0x00);
+    assert_eq!(generic.size, 8);
+    let exact = exact_cookie_preserved_output_within(&fd, &fc, &whole_xmm, 16)
+        .expect("the 8-byte ABI output inside the 16-byte machine register");
+    assert_eq!(exact.offset, 0x00);
+    assert_eq!(exact.size, 8);
+}
+
+#[test]
+fn a_body_write_to_the_abi_return_storage_wins() {
+    let mut fd = build_fd(true);
+    let (mut fc, entry) = build_call(&mut fd, 0x2000);
+    fc.proto_mut().set_output_lock(true);
+    let ram = space(&fd, "ram").get_index();
+    fd.kuna_set_callee_ret_writes(
+        &entry,
+        Rc::new(CalleeReturnWrites::from_parts(
+            vec![(ram, 0x00, 8), (ram, 0x20, 8)],
+            Vec::new(),
+            true,
+        )),
+    );
+    let rax = Address::new(space(&fd, "ram"), 0x00);
+    assert!(!callee_preserves_return_storage(&fd, &fc, &rax, 8));
+}
+
+#[test]
+fn an_exact_cookie_marker_does_not_override_a_known_return_storage_write() {
+    let mut fd = build_fd(true);
+    let (mut fc, entry) = build_call(&mut fd, 0x2000);
+    fc.proto_mut().set_output_lock(true);
+    let ram = space(&fd, "ram").get_index();
+    fd.kuna_set_callee_ret_writes(
+        &entry,
+        Rc::new(CalleeReturnWrites::from_parts(
+            vec![(ram, 0x00, 8), (ram, 0x20, 8)],
+            Vec::new(),
+            false,
+        )),
+    );
+    let rax = Address::new(space(&fd, "ram"), 0x00);
+    assert!(!exact_cookie_preserves_return_storage(&fd, &fc, &rax, 8));
+}
+
+#[test]
+fn an_exact_cookie_marker_yields_to_an_incomplete_output_space_store() {
+    let mut fd = build_fd(true);
+    let (mut fc, entry) = build_call(&mut fd, 0x2000);
+    fc.proto_mut().set_output_lock(true);
+    let ram = space(&fd, "ram");
+    let summary = Rc::new(CalleeReturnWrites::from_parts(
+        Vec::new(),
+        vec![ram.get_index()],
+        false,
+    ));
+    assert!(summary.written_ranges().is_empty());
+    assert_eq!(summary.store_spaces(), &[ram.get_index()]);
+    assert!(!summary.is_complete());
+    fd.kuna_set_callee_ret_writes(&entry, summary);
+
+    let rax = Address::new(ram, 0x00);
+    assert!(!exact_cookie_preserves_return_storage(&fd, &fc, &rax, 8));
+}
+
+#[test]
+fn an_incomplete_store_outside_the_output_processor_space_is_not_a_write_veto() {
+    let mut fd = build_fd(true);
+    let (mut fc, entry) = build_call(&mut fd, 0x2000);
+    fc.proto_mut().set_output_lock(true);
+    let stack = space(&fd, "stack");
+    fd.kuna_set_callee_ret_writes(
+        &entry,
+        Rc::new(CalleeReturnWrites::from_parts(
+            Vec::new(),
+            vec![stack.get_index()],
+            false,
+        )),
+    );
+
+    let rax = Address::new(space(&fd, "ram"), 0x00);
+    assert!(exact_cookie_preserves_return_storage(&fd, &fc, &rax, 8));
+}
+
+/// A prototype carrying its own effect override has had a deliberate statement
+/// made about the call, so the inferred body proof cannot replace it.
+#[test]
+fn an_explicit_effect_override_wins_over_the_body_proof() {
+    let mut fd = build_fd(true);
+    let (mut fc, entry) = build_call(&mut fd, 0x2000);
+    fc.proto_mut().set_output_lock(true);
+    fd.kuna_set_callee_ret_writes(&entry, cookie_checker(&fd));
+    let mut vd = kuna_num::pcoderaw::VarnodeData::default();
+    vd.space = Some(space(&fd, "ram"));
+    vd.offset = 0x00;
+    vd.size = 8;
+    fc.proto_mut()
+        .push_effect_override(EffectRecord::from_varnode(vd, effect_type::KILLEDBYCALL));
+    let rax = Address::new(space(&fd, "ram"), 0x00);
+    assert!(!callee_preserves_return_storage(&fd, &fc, &rax, 8));
+}
+
+#[test]
+fn an_exact_cookie_marker_does_not_override_an_explicit_effect() {
+    let mut fd = build_fd(true);
+    let (mut fc, entry) = build_call(&mut fd, 0x2000);
+    fc.proto_mut().set_output_lock(true);
+    fd.kuna_set_callee_ret_writes(&entry, cookie_checker(&fd));
+    let mut vd = kuna_num::pcoderaw::VarnodeData::default();
+    vd.space = Some(space(&fd, "ram"));
+    vd.offset = 0x00;
+    vd.size = 8;
+    fc.proto_mut()
+        .push_effect_override(EffectRecord::from_varnode(vd, effect_type::KILLEDBYCALL));
+    let rax = Address::new(space(&fd, "ram"), 0x00);
+    assert!(!exact_cookie_preserves_return_storage(&fd, &fc, &rax, 8));
+}
+
 /// The load-bearing half. A body that writes only the stack pointer is what a
 /// stub, a placeholder and an entry decoded at the wrong address all look like,
 #[test]
@@ -137,7 +336,7 @@ fn a_stack_range_is_never_narrowed() {
     assert!(!callee_never_writes(&fd, &fc, &slot, 8));
 }
 
-/// A prototype carrying its own effect override has had a deliberate statement
+/// The option gate remains the outermost prerequisite.
 #[test]
 fn the_option_gates_the_whole_predicate() {
     let mut fd = build_fd(false);

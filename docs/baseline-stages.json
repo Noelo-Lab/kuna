@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    803,
-    803
+    811,
+    811
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -101,6 +101,14 @@
     "data:CTYPES #4: on, LP64 spells an 8-byte unsigned `unsigned long`, not `unsigned long long`",
     "data:CTYPES #5: on, the 4-byte parameter is `unsigned int`",
     "data:CTYPES #6: off, that parameter carries the core-type name",
+    "data:DECLARING-DOUBLE-SCORE #1: option off discards the log result",
+    "data:DECLARING-DOUBLE-SCORE #2: default assigns the log result",
+    "data:DECLARING-DOUBLE-SCORE #3: default returns both additive doubles",
+    "data:DECLARING-DOUBLE-SCORE #4: preserving XMM0 does not remove any cookie call",
+    "data:DECLARING-DOUBLE-SCORE #5: a body write vetoes preservation of the pre-call XMM0 value",
+    "data:DECLARING-DOUBLE-SCORE #6: an exact cookie marker yields to a recovered XMM0 body write",
+    "data:DECLARING-DOUBLE-SCORE #7: a wide XMM0 range retains the exact low double",
+    "data:DECLARING-DOUBLE-SCORE #8: the overlapping upper XMM0 scratch lane remains killed",
     "data:DECODEHALT #1: off, the undecodable path leaves no statement at all and the prototype says nothing",
     "data:DECODEHALT #2: on, the halt names the decode failure and carries the truncation warning",
     "data:DECODEHALT #3: on, the function header says the body is incomplete",
