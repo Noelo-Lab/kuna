@@ -2639,6 +2639,10 @@ fn build_engine_and_init(sleigh: &mut SleighArchitecture, db: &LanguageDatabase)
             .base_mut()
             .ok_or_else(|| KunaError::lowlevel("no Architecture base after build_translator"))?;
         db.modify_spaces(langindex, arch.manage())?;
+        // (kuna) The same records, kept as data: rebuilding a decode-equivalent
+        // engine elsewhere means applying them there too
+        // (`kuna_decodekit::EngineRecipe`).
+        arch.set_decode_truncations(db.truncations(langindex));
     }
 
     // Hand the resolved compiler-spec (`.cspec`) XML to the architecture so
