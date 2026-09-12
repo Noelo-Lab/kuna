@@ -147,34 +147,50 @@ fn is_stack_pointer(data: &Funcdata, vn: VarnodeId, sp: &VarnodeStorage) -> bool
 /// Resolve a LOAD/STORE pointer Varnode to a caller-frame slot, as the pair
 /// `(base stack-pointer Varnode, byte offset from it)`.
 ///
-/// Accepts the stack pointer itself (offset 0) and `INT_ADD(sp, #const)` in
-/// either operand order — the raw pre-`ActionStackPtrFlow` form.
-fn frame_slot(data: &Funcdata, ptr: VarnodeId, sp: &VarnodeStorage) -> Option<(VarnodeId, uintb)> {
-    if is_stack_pointer(data, ptr, sp) {
-        return Some((ptr, 0));
-    }
-    let v = data.vbank().get(ptr)?;
-    if !v.is_written() {
-        return None;
-    }
-    let def = v.get_def()?;
-    let d = data.obank().get(def)?;
-    if d.code() != OpCode::CPUI_INT_ADD {
-        return None;
-    }
-    let in0 = d.get_in(0)?;
-    let in1 = d.get_in(1)?;
-    let const_of = |c: VarnodeId| -> Option<uintb> {
-        let cv = data.vbank().get(c)?;
-        cv.is_constant().then(|| cv.get_offset())
+/// Walks same-width copies and constant displacements back to a particular SP
+/// value. Unknown frame registers, phi nodes, and unbounded chains are declined.
+pub(crate) fn frame_slot(data: &Funcdata, ptr: VarnodeId, sp: &VarnodeStorage) -> Option<(VarnodeId, uintb)> {
+    let mask = pointer_mask(sp.size as int4)?;
+    let mut base = ptr;
+    let mut offset: uintb = 0;
+    let constant = |vn| {
+        let v = data.vbank().get(vn)?;
+        v.is_constant().then(|| v.get_offset())
     };
-    if is_stack_pointer(data, in0, sp) {
-        return const_of(in1).map(|k| (in0, k));
-    }
-    if is_stack_pointer(data, in1, sp) {
-        return const_of(in0).map(|k| (in1, k));
+    for _ in 0..64 {
+        if is_stack_pointer(data, base, sp) { return Some((base, offset)); }
+        let v = data.vbank().get(base)?;
+        if v.get_size() != sp.size as int4 { return None; }
+        let op = data.obank().get(v.get_def()?)?;
+        let a = op.get_in(0)?;
+        match op.code() {
+            OpCode::CPUI_COPY => base = a,
+            OpCode::CPUI_INT_ADD => {
+                let b = op.get_in(1)?;
+                if let Some(k) = constant(b) {
+                    base = a;
+                    offset = offset.wrapping_add(k) & mask;
+                } else {
+                    offset = offset.wrapping_add(constant(a)?) & mask;
+                    base = b;
+                }
+            }
+            OpCode::CPUI_INT_SUB => {
+                offset = offset.wrapping_sub(constant(op.get_in(1)?)?) & mask;
+                base = a;
+            }
+            _ => return None,
+        }
     }
     None
+}
+
+fn pointer_mask(size: int4) -> Option<uintb> {
+    match size {
+        1..=7 => Some((1u64 << (size * 8)) - 1),
+        8 => Some(uintb::MAX),
+        _ => None,
+    }
 }
 
 /// Does a later `CPUI_LOAD` read the same frame slot at `size` bytes?
@@ -200,6 +216,8 @@ fn has_later_reload(
     store_addr: uintb,
 ) -> bool {
     const CAP: usize = 64;
+    let Some(width) = data.vbank().get(base).map(|v| v.get_size()) else { return false };
+    let Some(mask) = pointer_mask(width) else { return false };
     let is_reload = |ptr: VarnodeId, load: OpId| -> bool {
         let Some(l) = data.obank().get(load) else { return false };
         if l.code() != OpCode::CPUI_LOAD || l.get_in(1) != Some(ptr) {
@@ -244,8 +262,9 @@ fn has_later_reload(
                 _ => None,
             };
             let (Some(d), Some(out)) = (next, o.get_out()) else { continue };
+            if data.vbank().get(out).is_none_or(|v| v.get_size() != width) { continue; }
             if !work.iter().any(|(w, _)| *w == out) && work.len() < CAP {
-                work.push((out, d));
+                work.push((out, d & mask));
             }
         }
     }
@@ -276,6 +295,9 @@ pub fn store_is_caller_save_spill(data: &Funcdata, store_op: OpId, vn: VarnodeId
     let Some(size) = data.vbank().get(vn).map(|v| v.get_size()) else { return false };
     has_later_reload(data, base, offset, size, store_addr)
 }
+
+#[cfg(test)]
+mod frame_tests;
 
 #[cfg(test)]
 mod tests {
