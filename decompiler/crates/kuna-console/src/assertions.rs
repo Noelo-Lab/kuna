@@ -87,7 +87,7 @@ use kuna_decomp::dtype::Datatype;
 use kuna_decomp::fspec::{ParameterPieces, ProtoModel, PrototypePieces};
 use kuna_decomp::funcdata::Funcdata;
 
-use crate::engine::ConsoleProgram;
+use crate::engine::{ConsoleProgram, EntryLookupError, EntrySelector};
 use crate::grammar::DataOrg;
 
 /// One parsed assertion.  `raw` is the caller's own text, echoed back in the
@@ -544,11 +544,18 @@ fn with_semicolon(decl: &str) -> String {
 /// has been consulted.
 ///
 /// `<func>` is a NAME first — that is what every existing directive meant — and
-/// an ENTRY ADDRESS second.  An agent working on a stripped or import-heavy
-/// binary has the address long before it has a name it trusts, and the address
-/// form used to be accepted and then discarded: nothing is called
-/// `0x140003ddf`, so the by-name park landed on no symbol at all and the call
-/// site kept its recovered signature
+/// an ENTRY ADDRESS second.  A name which already resolves is canonicalized to
+/// its entry address before parking.  That is observable on an imported PE
+/// function: the IAT slot and the executable thunk carry the same name, but a
+/// direct call reaches only the thunk.  The shared entry resolver chooses that
+/// lone executable candidate and rejects genuinely ambiguous executable
+/// definitions.  A name which does not resolve stays pending by name, preserving
+/// the console's ability to state a prototype before symbols are loaded.
+///
+/// An agent working on a stripped or import-heavy binary has an address long
+/// before it has a name it trusts, and the address form used to be accepted and
+/// then discarded: nothing is called `0x140003ddf`, so the by-name park landed
+/// on no symbol at all and the call site kept its recovered signature
 /// (`docs/re-needs/accepted-sqrt-prototype-still.md`).
 ///
 /// Address is also the key the READ side already uses
@@ -592,12 +599,16 @@ pub(crate) fn resolve_proto_target(
     prog: &ConsoleProgram,
     func: &str,
 ) -> Result<ProtoTarget, String> {
-    let named = match prog.arch().symboltab.get_global_scope() {
-        Some(g) => prog.arch().symboltab.query_function_by_name(g, func).is_some(),
-        None => false,
-    };
-    if named {
-        return Ok(ProtoTarget::Named(func.to_string()));
+    match prog.resolve_entry(&EntrySelector::Name(func.to_string())) {
+        Ok(entry) => return Ok(ProtoTarget::At(entry.addr, entry.name)),
+        // An unresolved name is deliberately legal: it parks in the pending
+        // store for a symbol that may be loaded later. Keep going because a
+        // hexadecimal operand can still be the address form below.
+        Err(EntryLookupError::NotFound { .. }) => {}
+        // In particular, do not turn two executable definitions with the same
+        // name into an arbitrary global-scope choice. The public selector
+        // reports every candidate, which lets an agent retry with an address.
+        Err(err) => return Err(err.to_string()),
     }
     let hex = func.strip_prefix("0x").or_else(|| func.strip_prefix("0X"));
     let explicit = hex.is_some();
