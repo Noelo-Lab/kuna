@@ -45,6 +45,7 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use kuna_base::address::Address;
 use kuna_base::error::{KunaError, KunaResult};
@@ -1895,6 +1896,49 @@ pub struct Architecture {
     /// inside the engine, reached through the trait's `manager*` accessors.
     /// Only `Sleigh` implements the trait today.
     translate: Box<dyn EngineTranslate>,
+
+    /// (kuna) The `.sla` bytes [`crate::sleigh_arch::SleighArchitecture::build_translator`]
+    /// decoded this engine from, kept so a decode-equivalent engine can be
+    /// rebuilt elsewhere (see [`crate::kuna_decodekit::EngineRecipe`]). `None`
+    /// for an `Architecture` whose engine was not built from local `.sla` bytes
+    /// -- the ghidra-mode bridge, where there is nothing to rebuild from.
+    decode_sla: Option<Arc<[u8]>>,
+    /// (kuna) The active language's `.ldefs` `<truncate_space>` records, in
+    /// ldefs order -- the second half of the rebuild instructions, recorded
+    /// where `modify_spaces` applies them. Empty until then.
+    decode_truncations: Arc<[(String, u32)]>,
+}
+
+impl Architecture {
+    /// (kuna) Record the `.sla` bytes this engine was decoded from.
+    ///
+    /// Called by the one construction path that has them
+    /// ([`crate::sleigh_arch::SleighArchitecture::build_translator`]).
+    pub fn set_decode_sla(&mut self, sla: Arc<[u8]>) {
+        self.decode_sla = Some(sla);
+    }
+
+    /// (kuna) Record the active language's `.ldefs` space truncations, where
+    /// `modify_spaces` applies them.
+    pub fn set_decode_truncations(&mut self, truncations: Vec<(String, u32)>) {
+        self.decode_truncations = Arc::from(truncations);
+    }
+
+    /// (kuna) The instructions for rebuilding a decode-equivalent engine on
+    /// another thread, or `None` when this architecture cannot supply them.
+    ///
+    /// `None` for an engine that is not a local `Sleigh` over decoded `.sla`
+    /// bytes -- the ghidra-mode bridge decodes through an RPC, and there is no
+    /// recipe that reproduces it.
+    pub fn decode_recipe(&self) -> Option<crate::kuna_decodekit::EngineRecipe> {
+        let sla = self.decode_sla.clone()?;
+        self.translate.as_sleigh()?;
+        Some(crate::kuna_decodekit::EngineRecipe {
+            archid: Arc::from(self.archid.as_str()),
+            sla,
+            truncations: Arc::clone(&self.decode_truncations),
+        })
+    }
 }
 
 /// The memoized whole-`symboltab` derivations [`Architecture::build_arch_handle`]
@@ -1972,6 +2016,9 @@ impl Architecture {
 
             symbol_snapshots: RefCell::new(SymbolSnapshots::default()),
             kuna_snapshot_cache: std::env::var_os("KUNA_NO_SYMBOL_SNAPSHOT_CACHE").is_none(),
+
+            decode_sla: None,
+            decode_truncations: Arc::from(Vec::new()),
 
             trim_recurse_max: 0,
             max_implied_ref: 0,

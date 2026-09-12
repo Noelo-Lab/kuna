@@ -605,6 +605,20 @@ impl LanguageDatabase {
         }
         Ok(())
     }
+
+    /// (kuna) The same `<truncate_space>` records [`Self::modify_spaces`]
+    /// applies, as plain data — the half of a decode engine's rebuild
+    /// instructions that lives in the `.ldefs` rather than the `.sla`
+    /// ([`crate::kuna_decodekit::EngineRecipe`]).
+    pub fn truncations(&self, languageindex: int4) -> Vec<(String, u32)> {
+        let language = &self.description[languageindex as usize];
+        (0..language.num_truncations())
+            .map(|i| {
+                let tag = language.get_truncation(i);
+                (tag.get_name().to_string(), tag.get_size())
+            })
+            .collect()
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -840,7 +854,12 @@ impl SleighArchitecture {
         let mut sleigh = Sleigh::new(loader, context);
         sleigh.initialize_from_sla(sla_bytes)?;
         let archid = self.archid.clone();
-        self.base = Some(Architecture::new(&archid, sleigh));
+        let mut base = Architecture::new(&archid, sleigh);
+        // (kuna) Keep the bytes: they are the only thing a decode-equivalent
+        // engine can be rebuilt from away from this one
+        // (`kuna_decodekit::EngineRecipe`).
+        base.set_decode_sla(std::sync::Arc::from(sla_bytes));
+        self.base = Some(base);
         Ok(())
     }
 
