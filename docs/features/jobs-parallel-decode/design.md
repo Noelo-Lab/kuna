@@ -97,7 +97,7 @@ Lane panic → `catch_unwind` per lane, a poisoned (cancellable) barrier built o
 one stderr line. Kit build failure / context mismatch / sampled-decode mismatch → decline
 before walking. Merge collision → discard + serial. Memory: +48 MB per lane + measured
 +0.28 GB shard fragmentation; ~7.1 GB at 16 lanes on the target. (Measured as built:
-8.67 GB at 16 lanes — see "As built".)
+8.67 GiB at 16 lanes — see "As built".)
 
 ## Staging
 * **PR-A (byte-identical refactor, no flag):** `walk::step`/`Successors`/`WalkPolicy`;
@@ -185,6 +185,14 @@ listed landed as written.
   It costs nothing today: every x86-64 load runs exactly one laned walk (one
   `decode stats` line on fauxware, gdb, libLLVM and the 147 MB target), and the
   callback/ARM re-walk sites that would rebuild refuse on their own language gate.
+* **A lane fault's panic block is suppressed, process-wide, for the duration of
+  the parallel walk.** A scoped `panic::set_hook` is installed before the spawn
+  and restored after the scope, so a fault prints exactly the two documented
+  lines instead of those plus a runtime panic report. Two consequences worth
+  naming: it swallows a panic on any other thread of the process during that
+  window (none exist on this path today — the pool opens after the load), and a
+  genuine lane bug would otherwise be unreportable, so the hook is NOT installed
+  when `KUNA_DECODE_STATS`, `KUNA_DECODE_SELFCHECK` or `RUST_BACKTRACE` is set.
 * **A refused lane spawn is a refusal, not a panic.** `thread::scope`'s `spawn`
   panics on `EAGAIN`/`ENOMEM` and joins the lanes already parked at the first
   barrier before resuming it — a deadlock with no output. The spawner uses
@@ -193,13 +201,20 @@ listed landed as written.
   on `/usr/bin/gdb` now exits 0 with the serial document.
 * **Memory, as measured, not as projected.** The design's "+0.28 GB shard
   fragmentation; ~7.1 GB at 16 lanes" is wrong. Peak resident on the 147 MB target
-  is 5.74 GB serial against 8.67 GB at 16 lanes and 9.55 GB at 32, and the
-  overhead grows with the lane count while the total shard bytes do not (+0.47 GB
+  is 5.74 GiB serial against 8.67 GiB at 16 lanes and 9.55 GiB at 32, and the
+  overhead grows with the lane count while the total shard bytes do not (+0.47 GiB
   at 2 lanes, +0.86 at 4, +2.16 at 8, +2.92 at 16, +3.80 at 32) — the glibc
   per-thread-arena signature: shards are allocated on the lane arenas and the
   final `BTreeMap` fresh on the main thread, so both are resident across the
   merge rather than one replacing the other. `MALLOC_ARENA_MAX`, or dropping each
   shard on its producing lane, is the follow-up. Because that peak is what the
   worker pool sizes itself from, `kuna_pdecode::run` records the lane-induced
-  excess in a process-wide counter (`lane_peak_excess_bytes()`, also reported by
-  `KUNA_DECODE_STATS=1`) and `jobs::worker_estimate` subtracts it.
+  excess in a process-wide counter (`lane_peak_excess_bytes()`; `KUNA_DECODE_STATS=1`
+  reports the current walk's figure) and `jobs::worker_estimate` subtracts it.
+  That excess is **capped at the lanes' own footprint** — `lanes x 48 MB` of
+  rebuilt engine plus the shard bytes the merge counts as it consumes them.
+  The uncapped form subtracts a per-instruction map price calibrated on the
+  `listing off` walk (298 B), and a `listing on` walk's map costs ~713 B, so on
+  `--mode aggressive|reliable` it booked GB of genuinely serial map as lane cost
+  and priced a worker ~2x too LOW — an OOM kill rather than a narrow pool. The
+  cap is the direction-safe form: under-reporting only costs pool width.

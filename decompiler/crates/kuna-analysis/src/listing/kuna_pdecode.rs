@@ -104,11 +104,24 @@ const MAX_ROUNDS: usize = 1024;
 const SELFCHECK_REPORT: usize = 20;
 
 /// Resident bytes one instruction costs in the serial `BTreeMap<u64, Insn>`,
-/// measured on the fast (no-assembly) path of a 20.2 M instruction x86-64 image:
-/// 6.02 GB of VmHWM against 20,218,436 instructions, the map dominating. Used to
-/// price the reconciled map out of [`lane_peak_excess_bytes`], which is meant to
-/// report what the LANES added and not what the walk would have held anyway.
+/// measured on the fast (no-assembly, no-refs) path of a 20.2 M instruction
+/// x86-64 image: 6.02 GB of VmHWM against 20,218,436 instructions, the map
+/// dominating. Used to price the reconciled map out of
+/// [`lane_peak_excess_bytes`], which is meant to report what the LANES added and
+/// not what the walk would have held anyway.
+///
+/// It is the density of ONE walk shape. A `listing on` walk (`--mode
+/// aggressive|reliable`, `--option listing on`) carries disassembly text and the
+/// reference model, and its map measures ~713 B an instruction — so subtracting
+/// this price there books several GB of genuinely serial map as lane cost. That
+/// is why the subtraction is capped at [`lane_footprint`]: the lanes cannot have
+/// added more than the lanes hold.
 const SERIAL_MAP_BYTES_PER_INSN: u64 = 298;
+
+/// Resident bytes one lane's rebuilt SLEIGH engine holds (~48 MB for x86-64's
+/// `.sla`; the design's per-lane figure, confirmed by the serial-to-2-lane
+/// delta). Part of the ceiling in [`lane_footprint`].
+const LANE_ENGINE_BYTES: u64 = 48 * 1024 * 1024;
 
 /// Peak resident bytes the decode lanes added to this process, over every laned
 /// walk it has run. Zero when nothing ran on lanes, or where the peak cannot be
@@ -126,11 +139,26 @@ pub fn lane_peak_excess_bytes() -> u64 {
 }
 
 /// What the lanes added: the growth in peak resident size across the parallel
-/// walk, less the reconciled map the serial walk would have paid for anyway.
-fn lane_excess(before: u64, after: u64, insns: usize) -> u64 {
+/// walk, less the reconciled map the serial walk would have paid for anyway, and
+/// never more than the lanes themselves hold.
+///
+/// The cap is what makes this safe on a walk shape
+/// [`SERIAL_MAP_BYTES_PER_INSN`] is not calibrated for. Under-reporting only
+/// prices a worker high, which costs pool width; over-reporting prices it low,
+/// which is an OOM kill.
+fn lane_excess(before: u64, after: u64, insns: usize, footprint: u64) -> u64 {
     after
         .saturating_sub(before)
         .saturating_sub((insns as u64).saturating_mul(SERIAL_MAP_BYTES_PER_INSN))
+        .min(footprint)
+}
+
+/// Everything the lanes hold that the serial walk does not: one rebuilt engine
+/// per lane, plus the shards, which duplicate the records until the merge is
+/// done with them. An upper bound on the lane cost, computed from the shards
+/// themselves rather than inferred from a density.
+fn lane_footprint(lanes: usize, shard_bytes: u64) -> u64 {
+    (lanes as u64).saturating_mul(LANE_ENGINE_BYTES).saturating_add(shard_bytes)
 }
 
 /// This process's peak resident size (Linux `VmHWM`), or `None` elsewhere.
@@ -186,7 +214,10 @@ pub enum Refusal {
 impl Refusal {
     /// Every variant, so a new one cannot be added without a stderr spelling and
     /// a line in `docs/cli.md` (both are asserted against this list).
-    pub const ALL: [Refusal; 17] = [
+    ///
+    /// Tied to the enum by [`Refusal::index`], whose exhaustive match an 18th
+    /// variant does not compile past.
+    pub const ALL: [Refusal; Refusal::COUNT] = [
         Refusal::NoThreads,
         Refusal::NoEngine,
         Refusal::ContextCommits,
@@ -205,6 +236,37 @@ impl Refusal {
         Refusal::RoundLimit,
         Refusal::ContextMoved,
     ];
+
+    /// How many variants there are. Bumping it without extending [`Refusal::ALL`]
+    /// does not compile, and extending `ALL` without bumping it does not either.
+    pub const COUNT: usize = 17;
+
+    /// This variant's place in [`Refusal::ALL`].
+    ///
+    /// The match is exhaustive, so a new variant stops the build here; the
+    /// round-trip in `every_refusal_is_in_the_all_list` then forces it into
+    /// `ALL`, which is what the spelling and documentation tests iterate.
+    const fn index(self) -> usize {
+        match self {
+            Refusal::NoThreads => 0,
+            Refusal::NoEngine => 1,
+            Refusal::ContextCommits => 2,
+            Refusal::DelaySlots => 3,
+            Refusal::NoSharedBytes => 4,
+            Refusal::ContextPaint => 5,
+            Refusal::NoSeeds => 6,
+            Refusal::UnmappedExec => 7,
+            Refusal::TooSmall => 8,
+            Refusal::KitFailed => 9,
+            Refusal::KitDisagrees => 10,
+            Refusal::SpawnFailed => 11,
+            Refusal::LaneFault => 12,
+            Refusal::UnmappedFetch => 13,
+            Refusal::Collision => 14,
+            Refusal::RoundLimit => 15,
+            Refusal::ContextMoved => 16,
+        }
+    }
 
     /// The stderr spelling, stable across releases.
     pub fn reason(self) -> &'static str {
@@ -303,6 +365,7 @@ impl WalkPlan {
     ) -> WalkPlan {
         let mut plan = WalkPlan::serial();
         plan.min_exec_bytes = min_exec_bytes;
+        let lanes = lanes.min(MAX_DECODE_LANES);
         if lanes < 2 {
             return plan;
         }
@@ -361,8 +424,16 @@ impl WalkPlan {
     /// Was this plan's kit captured from `arch`'s engine? Nothing else checks
     /// that [`super::Listing::build_with_meta_planned`]'s `plan` and `arch`
     /// belong together, and a mismatched recipe decodes a different language.
+    ///
+    /// Identity, not equality: the `.sla` bytes and the truncation records are
+    /// the very `Arc`s `arch` handed out, so a plan captured from a DIFFERENT
+    /// load of the same `archid` fails too.
     pub(super) fn built_from(&self, arch: &Architecture) -> bool {
-        self.kit.as_ref().is_none_or(|k| &*k.recipe.archid == arch.archid.as_str())
+        let Some(kit) = self.kit.as_ref() else { return true };
+        let Some(live) = arch.decode_recipe() else { return false };
+        *kit.recipe.archid == *live.archid
+            && Arc::ptr_eq(&kit.recipe.sla, &live.sla)
+            && Arc::ptr_eq(&kit.recipe.truncations, &live.truncations)
     }
 
     /// Print `line` unless it is the one this plan printed last.
@@ -696,10 +767,7 @@ fn admit<'a>(plan: &'a WalkPlan, inputs: &ParallelInputs<'_>) -> Result<Admitted
     if exec_bytes(inputs.exec_ranges) < plan.min_exec_bytes {
         return Err(Refusal::TooSmall);
     }
-    // The image precondition (module header, docs/spec/01-program-prep.md): the
-    // loader's staging window is history-dependent only for a fetch whose FIRST
-    // byte is unmapped, and no fetch the walk makes starts outside an executable
-    // range.
+    // The image precondition (module header, docs/spec/01-program-prep.md).
     for &(lo, hi) in inputs.exec_ranges {
         if hi > lo && !seed.bytes.mapped_covers(lo, hi) {
             return Err(Refusal::UnmappedExec);
@@ -844,12 +912,23 @@ fn fault_from_env() -> Option<Fault> {
 /// A lane fault is already reported, once, as `decode: serial (lane fault)`, and
 /// the fallback makes it a cost rather than a failure; the runtime's `thread
 /// '<unnamed>' panicked at ...` block underneath it says the run broke when it
-/// did not. The hook is process-wide, so this is installed around the parallel
-/// walk only.
+/// did not. The hook is process-wide, so it is installed around the parallel
+/// walk only -- and for that window it swallows a panic on any other thread of
+/// the process too.
+///
+/// Not installed at all when [`DECODE_STATS_ENV`], [`DECODE_SELFCHECK_ENV`] or
+/// `RUST_BACKTRACE` is set: a genuine bug in the lanes has to stay reportable,
+/// and anyone who set one of those is debugging.
 struct PanicHush(Option<Box<dyn Fn(&std::panic::PanicHookInfo<'_>) + Sync + Send + 'static>>);
 
 impl PanicHush {
     fn install() -> PanicHush {
+        let debugging = [DECODE_STATS_ENV, DECODE_SELFCHECK_ENV, "RUST_BACKTRACE"]
+            .iter()
+            .any(|name| std::env::var_os(name).is_some());
+        if debugging {
+            return PanicHush(None);
+        }
         let previous = std::panic::take_hook();
         std::panic::set_hook(Box::new(|_| {}));
         PanicHush(Some(previous))
@@ -1103,18 +1182,19 @@ fn run(
     let merge_started = std::time::Instant::now();
     let shards: Vec<IntervalState> =
         states.into_iter().map(|m| m.into_inner().unwrap_or_else(|e| e.into_inner())).collect();
-    let state = reconcile(shards, inputs.seeds, inputs.seed_funcs)?;
+    let (state, shard_bytes) = reconcile(shards, inputs.seeds, inputs.seed_funcs)?;
 
     // What the lanes cost the process, for the worker pool's memory model.
+    let mut excess = 0u64;
     if let (Some(before), Some(after)) = (peak_before, peak_rss_bytes()) {
-        LANE_PEAK_EXCESS
-            .fetch_max(lane_excess(before, after, state.insns.len()), Ordering::Relaxed);
+        excess = lane_excess(before, after, state.insns.len(), lane_footprint(lanes, shard_bytes));
+        LANE_PEAK_EXCESS.fetch_max(excess, Ordering::Relaxed);
     }
 
     if env_usize(DECODE_STATS_ENV).is_some_and(|n| n > 0) {
         eprintln!(
             "[kuna --jobs] decode stats: lanes={} intervals={} rounds={} crossings={} \
-             decodes={} walk={:.2}s merge={:.2}s lane_peak_excess={:.2}GB",
+             decodes={} walk={:.2}s merge={:.2}s lane_excess={:.2}GB",
             lanes,
             ivs.len(),
             rounds.load(Ordering::Relaxed),
@@ -1122,7 +1202,7 @@ fn run(
             total_decodes.load(Ordering::Relaxed),
             walk_time.as_secs_f64(),
             merge_started.elapsed().as_secs_f64(),
-            lane_peak_excess_bytes() as f64 / (1024.0 * 1024.0 * 1024.0),
+            excess as f64 / (1024.0 * 1024.0 * 1024.0),
         );
     }
     Ok(state)
@@ -1178,15 +1258,18 @@ fn probe(kit: &Kit, inputs: &ParallelInputs<'_>) -> Result<(), Refusal> {
 
 // --- the merge ---------------------------------------------------------------
 
-/// Union the shards back into one [`WalkState`].
+/// Union the shards back into one [`WalkState`], and report how many bytes of
+/// shard the union consumed (see [`lane_footprint`]).
 ///
 /// Every step consumes ascending keys of disjoint domains, so the result does
-/// not depend on the order the lanes ran in.
+/// not depend on the order the lanes ran in. The byte count is taken here
+/// because this is the last place the shards exist, and it rides the pass the
+/// merge already makes over every record.
 fn reconcile(
     shards: Vec<IntervalState>,
     seeds: &[u64],
     seed_funcs: &BTreeMap<u64, DiscoveredFunction>,
-) -> Result<WalkState, Refusal> {
+) -> Result<(WalkState, u64), Refusal> {
     let mut insns: BTreeMap<u64, Insn> = BTreeMap::new();
     let mut funcs: BTreeMap<u64, DiscoveredFunction> = BTreeMap::new();
     let mut refs_to: BTreeMap<u64, Vec<Reference>> = BTreeMap::new();
@@ -1200,8 +1283,15 @@ fn reconcile(
         funcs.entry(entry).or_insert(df);
     }
 
+    let mut shard_bytes = 0u64;
     let mut previous: Option<u64> = None;
     for shard in shards {
+        shard_bytes = shard_bytes
+            .saturating_add(bytes_of(shard.insns.out.len(), size_of::<(u64, InsnLite)>()))
+            .saturating_add(bytes_of(shard.insns.seen.len(), size_of::<u64>()))
+            .saturating_add(bytes_of(shard.funcs.len(), size_of::<(u64, DiscoveredFunction)>()))
+            .saturating_add(bytes_of(shard.visited.len(), size_of::<u64>()))
+            .saturating_add(bytes_of(shard.callbacks.refs.len(), 2 * size_of::<u64>()));
         for (vma, lite) in shard.insns.out {
             // The shards are disjoint by construction, so this can only fire on
             // a router or owner() bug -- in which case the parallel result is
@@ -1217,9 +1307,13 @@ fn reconcile(
         }
         let (to, from) = shard.refs.into_parts();
         for (key, bucket) in to {
+            shard_bytes =
+                shard_bytes.saturating_add(bytes_of(bucket.len(), size_of::<Reference>()));
             refs_to.entry(key).or_default().extend(bucket);
         }
         for (key, bucket) in from {
+            shard_bytes =
+                shard_bytes.saturating_add(bytes_of(bucket.len(), size_of::<Reference>()));
             refs_from.entry(key).or_default().extend(bucket);
         }
         for (target, source) in shard.callbacks.refs {
@@ -1233,13 +1327,14 @@ fn reconcile(
         evidence.file(source, target);
     }
 
-    Ok(WalkState {
-        insns,
-        refs_to,
-        refs_from,
-        funcs,
-        stack_callback_refs: evidence.into_refs(),
-    })
+    Ok((
+        WalkState { insns, refs_to, refs_from, funcs, stack_callback_refs: evidence.into_refs() },
+        shard_bytes,
+    ))
+}
+
+fn bytes_of(count: usize, each: usize) -> u64 {
+    (count as u64).saturating_mul(each as u64)
 }
 
 // --- the self-check ----------------------------------------------------------
@@ -1447,7 +1542,7 @@ mod tests {
         let mut seed_funcs = BTreeMap::new();
         seed_funcs.insert(0x1000, seed_record(0x1000, "main"));
 
-        let st = reconcile(vec![a, b], &seeds, &seed_funcs).expect("no collision");
+        let (st, _) = reconcile(vec![a, b], &seeds, &seed_funcs).expect("no collision");
         assert_eq!(st.funcs.len(), 3);
         assert_eq!(
             st.funcs[&0x1000].name.as_deref(),
@@ -1496,7 +1591,7 @@ mod tests {
         for (i, &(from, to, kind)) in edges.iter().enumerate() {
             shards[i % 3].refs.file(from, to, kind);
         }
-        let st = reconcile(shards, &[], &BTreeMap::new()).expect("no collision");
+        let (st, _) = reconcile(shards, &[], &BTreeMap::new()).expect("no collision");
         let (mut got_to, mut got_from) = (st.refs_to, st.refs_from);
         super::super::finalize_refs(&mut got_to, true);
         super::super::finalize_refs(&mut got_from, false);
@@ -1527,7 +1622,7 @@ mod tests {
             shards[(i % 4) as usize].callbacks.file(0x9000 + i, 0x1000 + i);
             shards[((i + 1) % 4) as usize].callbacks.file(0x8000 + i, 0x1000 + i);
         }
-        let st = reconcile(shards, &[], &BTreeMap::new()).expect("no collision");
+        let (st, _) = reconcile(shards, &[], &BTreeMap::new()).expect("no collision");
         assert_eq!(st.stack_callback_refs.len(), cap, "the union is capped once");
         assert_eq!(st.stack_callback_refs, want.into_refs());
     }
@@ -1556,6 +1651,19 @@ mod tests {
         }
         assert_eq!(woke.load(Ordering::SeqCst), 2);
         assert!(!gate.wait(), "a poisoned gate refuses every later arrival");
+    }
+
+    /// `ALL` is hand-written, so something has to tie it to the enum: `index()`
+    /// is exhaustive (a new variant stops the build), and this pins that every
+    /// index really addresses its own variant, so `ALL` cannot be short.
+    #[test]
+    fn every_refusal_is_in_the_all_list() {
+        assert_eq!(Refusal::ALL.len(), Refusal::COUNT);
+        for (at, refusal) in Refusal::ALL.iter().enumerate() {
+            assert_eq!(refusal.index(), at, "{refusal:?} is not at its own index in ALL");
+        }
+        let distinct: BTreeSet<usize> = Refusal::ALL.iter().map(|r| r.index()).collect();
+        assert_eq!(distinct.len(), Refusal::COUNT, "two variants share an index");
     }
 
     #[test]
@@ -1603,10 +1711,49 @@ mod tests {
         // ~1.19 GB of that is the reconciled map, and only the rest is the lanes'.
         let insns = 4_000_000usize;
         let map = insns as u64 * SERIAL_MAP_BYTES_PER_INSN;
-        assert_eq!(lane_excess(mb(6000), mb(6000) + mb(3000) + map, insns), mb(3000));
+        let roomy = mb(100_000);
+        assert_eq!(lane_excess(mb(6000), mb(6000) + mb(3000) + map, insns, roomy), mb(3000));
         // A serial-shaped growth is no excess at all, and nothing underflows.
-        assert_eq!(lane_excess(mb(6000), mb(6000) + map, insns), 0);
-        assert_eq!(lane_excess(mb(6000), mb(5000), insns), 0);
-        assert_eq!(lane_excess(0, u64::MAX, usize::MAX), 0);
+        assert_eq!(lane_excess(mb(6000), mb(6000) + map, insns, roomy), 0);
+        assert_eq!(lane_excess(mb(6000), mb(5000), insns, roomy), 0);
+        assert_eq!(lane_excess(0, u64::MAX, usize::MAX, roomy), 0);
+    }
+
+    /// The density above is the assembly-off walk's. On a `listing on` walk the
+    /// map costs ~713 B an instruction, so subtracting 298 books GB of serial
+    /// map as lane cost -- which prices a pool worker LOW, i.e. an OOM kill
+    /// rather than a narrow pool. The cap is what stops it: the lanes cannot
+    /// have added more than the lanes hold.
+    #[test]
+    fn the_lane_excess_is_never_larger_than_the_lanes_themselves() {
+        let kb = |n: u64| n * 1024;
+        // Measured, 147 MB x86-64 target, `--option listing on`, 16 lanes:
+        // VmHWM 14,079,200 KB serial -> 17,727,772 KB, so the lanes really added
+        // 3.48 GiB while the naive subtraction claims 10.48 GiB.
+        let insns = 20_218_436usize;
+        let before = kb(1_000_000);
+        let after = before + kb(17_727_772 - 14_079_200) + insns as u64 * 713;
+        let naive = lane_excess(before, after, insns, u64::MAX);
+        assert!(naive > 10 * 1024 * 1024 * 1024, "the uncapped subtraction over-reports: {naive}");
+        // The shards for that walk: one record and one `seen` key per
+        // instruction, plus a reference in each map.
+        let shards = bytes_of(insns, size_of::<(u64, InsnLite)>())
+            + bytes_of(insns, size_of::<u64>())
+            + 2 * bytes_of(insns, size_of::<Reference>());
+        let capped = lane_excess(before, after, insns, lane_footprint(16, shards));
+        assert_eq!(capped, lane_footprint(16, shards), "the cap must bind here");
+        assert!(
+            capped < kb(17_727_772 - 14_079_200) + kb(1_000_000),
+            "and must stay under what the walk actually grew by: {capped}"
+        );
+        // The fast path is unchanged: there the subtraction is already under the
+        // lanes' footprint, so the cap does not bind.
+        let fast_after = before + kb(9_077_700 - 6_024_820) + insns as u64 * 298;
+        let fast_shards = bytes_of(insns, size_of::<(u64, InsnLite)>());
+        assert_eq!(
+            lane_excess(before, fast_after, insns, lane_footprint(16, fast_shards)),
+            kb(9_077_700 - 6_024_820),
+            "the measured fast-path excess must survive the cap untouched"
+        );
     }
 }

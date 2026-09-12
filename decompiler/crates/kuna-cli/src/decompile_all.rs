@@ -1587,6 +1587,13 @@ pub(crate) fn load_program(
     let spec_roots = spec_roots(args.sleighpath.as_deref());
     let target = args.target.as_deref().unwrap_or("");
     let mut prog = if args.raw_image {
+        // (kuna `--jobs`) A raw image has no whole-binary discovery walk for the
+        // decode lanes to run: its entry seeds ARE the load. Say so, rather than
+        // accept the flag and do nothing with it -- every other surface prints
+        // one line saying which walk it took.
+        if jobs::decode_lanes(args) > 1 {
+            eprintln!("[kuna --jobs] decode: serial (raw image runs no discovery walk)");
+        }
         let entries: Vec<u64> = args
             .addrs
             .iter()

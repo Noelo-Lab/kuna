@@ -2255,4 +2255,29 @@ mod tests {
         assert_eq!(worker_estimate_from(gb(1), gb(4), false), 256 * 1024 * 1024);
         assert_eq!(worker_estimate_from(gb(4), 0, false), gb(1));
     }
+
+    /// ...and it must not price them LOW either, which is the direction that
+    /// ends in an OOM kill rather than a narrow pool. Measured on the same
+    /// binary under `--option listing on` (what `--mode aggressive|reliable`
+    /// injects), where the walk's map costs ~713 B an instruction instead of the
+    /// 298 the excess subtraction is calibrated on: VmHWM 14.08 GB serial
+    /// against 17.73 GB at 16 lanes, so the lanes added 3.65 GB -- but an
+    /// unbounded subtraction reported 11.19 GB and priced a worker at 1.6 GB
+    /// where the honest number is 3.4 GB.
+    #[test]
+    fn the_worker_estimate_is_not_priced_low_by_an_over_reported_lane_excess() {
+        let kb = |n: u64| n * 1024;
+        let serial = worker_estimate_from(kb(14_079_200), 0, false);
+        let over_reported = worker_estimate_from(kb(17_727_772), kb(11_730_186), false);
+        assert!(
+            over_reported * 2 < serial,
+            "this is the defect: {over_reported} against {serial}"
+        );
+        // Bounded by the lanes' own footprint (`kuna_pdecode::lane_footprint`),
+        // the same load reports what the lanes hold and the estimate lands
+        // within a tenth of the serial one.
+        let bounded = worker_estimate_from(kb(17_727_772), kb(4_257_000), false);
+        let ratio = bounded as f64 / serial as f64;
+        assert!(ratio > 0.85 && ratio < 1.15, "bounded estimate is {ratio:.2}x the serial one");
+    }
 }

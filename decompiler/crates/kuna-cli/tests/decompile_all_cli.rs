@@ -221,6 +221,10 @@ const DECODE_ENV: [&str; 6] = [
 fn kuna_command(env: &[(&str, &str)]) -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_kuna"));
     cmd.env_remove("KUNA_DECOMP_DBG").env_remove("KUNA_DECOMP_TEST").env_remove("KUNA_SLACOMP");
+    // A lane fault reports itself in one line; `RUST_BACKTRACE` deliberately
+    // turns the runtime's panic block back on, so it must not reach a child
+    // whose whole assertion is that the block is absent.
+    cmd.env_remove("RUST_BACKTRACE");
     for name in DECODE_ENV {
         cmd.env_remove(name);
     }
@@ -2711,8 +2715,9 @@ fn functions_takes_jobs_with_a_raw_image() {
         "the pool's raw-image refusal must not fire on a surface with no pool:\n{stderr}"
     );
     assert!(
-        !stderr.contains("[kuna --jobs]"),
-        "a raw image runs no discovery walk, so there is no lane decision to report:\n{stderr}"
+        stderr.contains("[kuna --jobs] decode: serial (raw image runs no discovery walk)"),
+        "a raw image runs no discovery walk, and must say so rather than accept the flag \
+         and do nothing:\n{stderr}"
     );
 
     // The pool surface keeps the refusal: there a raw image really is a policy

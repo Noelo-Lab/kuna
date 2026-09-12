@@ -328,5 +328,5 @@ fn every_refusal_reason_is_documented_in_the_cli_reference() {
             refusal.reason()
         );
     }
-    assert_eq!(Refusal::ALL.len(), 17, "a new refusal needs a docs/cli.md line and this count");
+    assert_eq!(Refusal::ALL.len(), Refusal::COUNT, "every variant must be in ALL");
 }
