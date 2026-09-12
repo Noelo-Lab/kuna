@@ -5,8 +5,8 @@
   "rejected_count": 1,
   "by_status": {
     "blocked": 1,
-    "closed": 155,
-    "open": 41
+    "closed": 156,
+    "open": 40
   },
   "by_track": {
     "loader": 10,
@@ -4380,7 +4380,7 @@
       "need_id": "success-report-callback-fails",
       "title": "Success-report callback fails with an internal missing-op error",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
       "probe_id": "p-4bf0b7ef2c26",
       "acceptance_id": "a-13a141bf0db7",
@@ -4391,21 +4391,22 @@
         "5ab77f5c33c5d40ad448c615"
       ],
       "rounds": [
-        10
+        10,
+        12
       ],
       "first_seen_round": 10,
-      "attempts": 0,
-      "covered_by_option": null,
+      "attempts": 1,
+      "covered_by_option": "funcboundflow",
       "touches": [
         "decompiler/crates/kuna-decomp"
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": 605,
+      "closed_in_round": 12,
+      "closing_pr": "605",
       "reject_reason": null,
-      "score": 13.862944,
+      "score": 9.241962,
       "path": "docs/re-needs/success-report-callback-fails.md"
     },
     {

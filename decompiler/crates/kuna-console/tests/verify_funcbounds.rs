@@ -49,6 +49,9 @@ const BRANCH_END: u64 = 0x1098;
 /// witness that declaring a CORRECT extent must not drop the closing instruction.
 const LEAF_ENTRY: u64 = 0x1129;
 const LEAF_END: u64 = 0x1141;
+/// Sectionless i386 callback whose junk-code branch enters p-code-free bytes
+/// immediately before a discovered foreign-entry cutoff.
+const CALLBACK_ENTRY: u64 = 0x8048820;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
@@ -257,8 +260,9 @@ fn an_unnamed_declaration_does_not_overwrite_an_existing_name() {
         .any(|e| e.addr.get_offset() == named && e.name == "_DT_FINI"));
 }
 
-/// Bootstrap an arbitrary fixture. `None` ⇒ specs-less skip.
-fn load_fixture(rel: &str) -> Option<ConsoleProgram> {
+/// Bootstrap an arbitrary fixture with analysis options set before the deferred
+/// analysis commit. `None` ⇒ specs-less skip.
+fn load_fixture_with_options(rel: &str, options: &[(&str, &str)]) -> Option<ConsoleProgram> {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let bin = root.join("decompiler/crates/kuna-analysis/tests/fixtures").join(rel);
@@ -269,8 +273,18 @@ fn load_fixture(rel: &str) -> Option<ConsoleProgram> {
             return None;
         }
     };
+    for (name, value) in options {
+        prog.arch_mut()
+            .set_kuna_option(name, value)
+            .unwrap_or_else(|e| panic!("option {name}={value} applies: {}", e.explain()));
+    }
     prog.commit_pending_analysis().expect("analysis commit succeeds");
     Some(prog)
+}
+
+/// Bootstrap an arbitrary fixture with the default analysis options.
+fn load_fixture(rel: &str) -> Option<ConsoleProgram> {
+    load_fixture_with_options(rel, &[])
 }
 
 /// Declaring an entry keeps WHY that entry exists: an import's synthetic address
@@ -324,4 +338,42 @@ fn a_thumb_declaration_folds_the_mode_bit() {
     prog.declare_function(addr, None, 0x10).expect("declared");
     assert_eq!(prog.declared_extent(even), 0x10, "the extent missed the real entry");
     assert_eq!(prog.declared_extent(even | 1), 0, "an odd shadow entry was declared");
+}
+
+/// `funcboundflow` establishes an effective upper cutoff even though the
+/// undeclared function still has the whole address space as its formal range.
+/// A junk-code branch to already-decoded p-code-free bytes must be able to walk
+/// to that cutoff's halt rather than aborting the otherwise valid function.
+#[test]
+fn a_pcode_free_branch_resolves_at_a_discovered_funcbound_cutoff() {
+    let Some(mut prog) = load_fixture_with_options(
+        "funcbound_cutoff_i386",
+        &[
+            ("listing", "on"),
+            ("funcstart_patterns", "on"),
+            ("aif", "on"),
+            ("aifstrict", "on"),
+        ],
+    ) else { return };
+    assert!(
+        prog.function_entries_canonical()
+            .iter()
+            .any(|entry| entry.addr.get_offset() == 0x80488e0),
+        "analysis must discover the foreign entry that establishes the cutoff"
+    );
+    let addr = code_addr(&prog, CALLBACK_ENTRY);
+    let step = decompile_one(
+        prog.arch_mut(),
+        "sub_8048820",
+        addr,
+        0,
+        &DecompileSeed::plain(&[], &[]),
+        &[],
+    );
+    let fd = step.result.expect("the funcboundflow-clipped callback decompiles");
+    let body = kuna_decomp::decompile_drive::print_c(prog.arch_mut(), &fd);
+    assert!(
+        body.contains("0x80492e3") && body.contains("0x8049301"),
+        "both accepted and rejected report arms survive, got:\n{body}"
+    );
 }

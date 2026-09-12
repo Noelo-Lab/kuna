@@ -1,0 +1,34 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "a-13a141bf0db7",
+  "kind": "cli",
+  "timeout_s": 60,
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "0x8048820",
+    "--addr"
+  ],
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stderr_absent": [
+      "Could not find op at target address"
+    ],
+    "stdout_bytes": {
+      "gt": 0
+    }
+  },
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/funcbound_cutoff_i386",
+    "binary_sha256": "7b8a32c3cc0e9816bfe03d2e7c4aa5a596a21e43a6e35dc43cb17fa5867138ec",
+    "binary_size": 5208,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/funcbound_cutoff_i386",
+    "selector": "0x8048820",
+    "selector_kind": "addr"
+  },
+  "notes": "Promoted acceptance a-13a141bf0db7 on the exact round-10 witness, vendored because CI has no dataset. The binary, command, and acceptance clauses are unchanged; only the target source is repointed in-repo."
+}
