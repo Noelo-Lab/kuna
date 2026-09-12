@@ -3,37 +3,37 @@
 //! Stage-aligned module group; declared flatly at the crate root via re-export in
 //! `lib.rs` so public paths (`kuna_decomp::<module>`) are unchanged.
 
-pub mod flow;
 pub mod funcdata_resolveflow;
-pub mod inject_sleigh;
+pub mod flow;
 pub mod jumptable;
-pub mod kuna_callpopret; // (kuna) flow a call through a callee that pops the return address and rets to the grandparent
-pub mod kuna_calltrampoline; // (kuna) flow a call through a callee that discards the pushed return address
-pub mod kuna_cleanupcode; // (kuna) oxidizer CleanupCodeRemover: delete rust drop/dealloc call sites
-pub mod kuna_constselectjump; // (kuna) recover a BRANCHIND whose destination is selected between constants
-pub mod kuna_cortexmpriv; // (kuna) fold the Cortex-M isCurrentModePrivileged() guard around MRS/MSR
-pub mod kuna_decodehalt;
 pub mod kuna_emulatefunction;
-pub mod kuna_entryretdispatch; // (kuna) recover an entry-point push/push/ret dispatch chain as calls
-pub mod kuna_fastfailnoreturn; // (kuna) a Windows `int 0x29` (__fastfail) ends the flow instead of unbalancing the stack
-pub mod kuna_funcboundflow; // (kuna) bound fall-through at a known function entry (no cross-function merge)
-pub mod kuna_int3pad; // (kuna) name the int3 pad control ran into instead of printing it as a call through swi()
-pub mod kuna_linuxsyscall; // (kuna) name the 32-bit Linux int 0x80 sites instead of calling through swi()
-pub mod kuna_loweredswitch;
-pub mod kuna_msvcftol; // (kuna) MSVC __ftol family call-fixup: recover the x87 (ST0) argument
-pub mod kuna_noreturn_externmatch; // (kuna) angr incorrect-duplication-chcon: name-matched extern no-return
-pub mod kuna_noreturnextern; // (kuna) angr tail-tail-bytes-ret-dup: undefined-extern name-based no-return
-pub mod kuna_overlapbranch; // (kuna) a conditional branch target inside its own fall-through instruction (anti-disassembly overlap)
-pub mod kuna_pushimmediateret; // (kuna) recover a one-store push-immediate/ret tail transfer as a branch
+pub mod userop;
+pub mod pcodeinject;
+pub mod inject_sleigh;
+pub mod kuna_v850indbranch;
+pub mod kuna_switchmodbound;
+pub mod kuna_switchguardbound;
+pub mod kuna_switchsharedcase;
+pub mod kuna_constselectjump; // (kuna) recover a BRANCHIND whose destination is selected between constants
 pub mod kuna_sparcstructret;
 pub mod kuna_stackprobeloop;
-pub mod kuna_switchguardbound;
-pub mod kuna_switchmodbound;
-pub mod kuna_switchsharedcase;
-pub mod kuna_tailcallframe; // (kuna) recover a frame-teardown tail jump whose callee was never discovered
+pub mod kuna_loweredswitch;
+pub mod kuna_noreturn_externmatch; // (kuna) angr incorrect-duplication-chcon: name-matched extern no-return
+pub mod kuna_noreturnextern; // (kuna) angr tail-tail-bytes-ret-dup: undefined-extern name-based no-return
 pub mod kuna_tailcalljump;
+pub mod kuna_funcboundflow; // (kuna) bound fall-through at a known function entry (no cross-function merge)
+pub mod kuna_tailcallframe; // (kuna) recover a frame-teardown tail jump whose callee was never discovered
 pub mod kuna_tailcallsaved; // (kuna) a teardown that restores nothing the entry block saved is argument cleanup
-pub mod kuna_v850indbranch;
+pub mod kuna_calltrampoline; // (kuna) flow a call through a callee that discards the pushed return address
+pub mod kuna_callpopret; // (kuna) flow a call through a callee that pops the return address and rets to the grandparent
+pub mod kuna_entryretdispatch; // (kuna) recover an entry-point push/push/ret dispatch chain as calls
+pub mod kuna_pushimmediateret; // (kuna) recover a one-store push-immediate/ret tail transfer as a branch
+pub mod kuna_overlapbranch; // (kuna) a conditional branch target inside its own fall-through instruction (anti-disassembly overlap)
+pub mod kuna_msvcftol; // (kuna) MSVC __ftol family call-fixup: recover the x87 (ST0) argument
+pub mod kuna_cortexmpriv; // (kuna) fold the Cortex-M isCurrentModePrivileged() guard around MRS/MSR
+pub mod kuna_cleanupcode; // (kuna) oxidizer CleanupCodeRemover: delete rust drop/dealloc call sites
+pub mod kuna_linuxsyscall; // (kuna) name the 32-bit Linux int 0x80 sites instead of calling through swi()
 pub mod kuna_x64syscall; // (kuna) give the x86-64 SYSCALL user-op the Linux ABI register effects
-pub mod pcodeinject;
-pub mod userop; // (kuna) a halt planted where the decode failed says so instead of printing as an ordinary return
+pub mod kuna_fastfailnoreturn; // (kuna) a Windows `int 0x29` (__fastfail) ends the flow instead of unbalancing the stack
+pub mod kuna_int3pad; // (kuna) name the int3 pad control ran into instead of printing it as a call through swi()
+pub mod kuna_decodehalt; // (kuna) a halt planted where the decode failed says so instead of printing as an ordinary return

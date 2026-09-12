@@ -113,7 +113,15 @@ fn unrelated_computed_returns_are_not_calls() {
         "conditional_bypass_ret",
         "partial_sp_ret",
     ] {
-        let Some(code) = decompile(function) else {
+        // `constant_ret` is a one-store push-immediate/RET tail transfer, now
+        // owned by `pushimmediateret`. Disable that independent classifier so
+        // this PR595 regression remains scoped to entry-return dispatch.
+        let extra = if function == "constant_ret" {
+            &["--option", "pushimmediateret", "off"][..]
+        } else {
+            &[]
+        };
+        let Some(code) = decompile_with(function, extra) else {
             return;
         };
         assert!(

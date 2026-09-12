@@ -200,24 +200,23 @@ pub fn decompile_one_prefollowed(
     // Rebuild only this uncommon shape; every ordinary function still adopts
     // the already-followed IR.
     let prefollowed = if has_derived_flow { None } else { prefollowed };
-    let mut result =
-        kuna_decomp::decompile_drive::decompile_func_full_with_override_dyn_prefollowed(
-            arch,
-            name,
-            // Cloned so `entry` survives for the conditional re-decompile below
-            // (`formatstring` off => the clone is the only change and the second
-            // call never runs).
-            entry.clone(),
-            size,
-            seed.mapped_symbols,
-            seed.usepoint_symbols,
-            seed.dynamic_symbols,
-            seed.pending_proto,
-            &flow_overrides,
-            proto_overrides,
-            seed.mapped_params,
-            prefollowed,
-        );
+    let mut result = kuna_decomp::decompile_drive::decompile_func_full_with_override_dyn_prefollowed(
+        arch,
+        name,
+        // Cloned so `entry` survives for the conditional re-decompile below
+        // (`formatstring` off => the clone is the only change and the second
+        // call never runs).
+        entry.clone(),
+        size,
+        seed.mapped_symbols,
+        seed.usepoint_symbols,
+        seed.dynamic_symbols,
+        seed.pending_proto,
+        &flow_overrides,
+        proto_overrides,
+        seed.mapped_params,
+        prefollowed,
+    );
     let mut discovered: Vec<(Address, PrototypePieces)> = Vec::new();
     if formatstring_enabled {
         if let Ok(fd) = &result {
@@ -415,14 +414,11 @@ pub(crate) fn extract_format_string_overrides(
         // Collect the callee's recovered *fixed* param types (the analog of
         // Ghidra `namesToParameters.get(callFunctionName)` = the declared params
         // minus the trailing "...").
-        let mut fixed: Vec<Rc<Datatype>> = Vec::with_capacity(num_params as usize);
+        let mut fixed: Vec<Rc<Datatype>> =
+            Vec::with_capacity(num_params as usize);
         let mut ok = true;
         for p in 0..num_params {
-            match spec
-                .proto()
-                .get_param(p)
-                .and_then(|pp| pp.get_type().cloned())
-            {
+            match spec.proto().get_param(p).and_then(|pp| pp.get_type().cloned()) {
                 Some(ty) => fixed.push(ty),
                 None => {
                     ok = false;

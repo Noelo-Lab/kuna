@@ -57,6 +57,10 @@ Three tiers:
 | only the first helper in a stack-built RET dispatcher appears after one manual flow override | [`entryretdispatch`](#entryretdispatch) |
 | multiple flow <address> call assertions are required to recover one entry routine | [`entryretdispatch`](#entryretdispatch) |
 | a packer or crackme dispatch chain is truncated at its first ret | [`entryretdispatch`](#entryretdispatch) |
+| a push immediate followed by ret disappears from emitted C | [`pushimmediateret`](#pushimmediateret) |
+| an unpacker call remains but the original-entry transfer after it is missing | [`pushimmediateret`](#pushimmediateret) |
+| a manual flow branch assertion on a RET restores an indirect transfer to a constant address | [`pushimmediateret`](#pushimmediateret) |
+| a packed entry stub ends at ret even though it pushed a destination first | [`pushimmediateret`](#pushimmediateret) |
 | a function's tail is really the body of the NEXT function | [`funcboundflow`](#funcboundflow) |
 | dead/garbage code after a call to a die()/fatal()/throw wrapper that never returns | [`funcboundflow`](#funcboundflow) |
 | two adjacent functions merged into one, the second also decompiled on its own | [`funcboundflow`](#funcboundflow) |
@@ -819,6 +823,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** A function entry is a stack-built dispatcher and decompiles as an empty `return;`: disassembly shows `push` of the instruction after a RET, then `push` of a callee address, then `ret`, repeated after each callee returns. On by default; flip OFF to restore the first-RET termination while keeping explicit `flow <address> call` assertions available.
 - **Where / provenance:** P2/flow-classification · kuna · correctness-fix · entry-point-ret-dispatch
 - **Example:** `option entryretdispatch off`
+
+### `pushimmediateret` -- on | off, default `on`
+
+- **Symptoms:** a push immediate followed by ret disappears from emitted C; an unpacker call remains but the original-entry transfer after it is missing; a manual flow branch assertion on a RET restores an indirect transfer to a constant address; a packed entry stub ends at ret even though it pushed a destination first.
+- **What it does:** RESTORES A TERMINAL TRANSFER: recognize a function run ending in `push <immediate>; ret` and classify the proven RET as a branch before flow following. Without this fact, the RETURN ends the function and dead-store removal erases the pushed destination, so an unpacking stub emits its unpacker call but not the transfer to the original entry point. The bounded straight-line scanner uses raw-p-code affine stack provenance: RETURN must load a current-run stack slot, the last exact store to that slot must be a constant, and RET must advance the same stack base by the loaded width. Any adjacent in-run stack store declines, keeping `push continuation; push target; ret` call emulation under `entryretdispatch`. Ordinary returns, calls after argument pushes, stack adjustments or overwrites, computed targets, conditional/indirect flow, opaque writes, and unsupported userops decline. The derived fact is BRANCH, never CALL, so there is no fall-through; caller-supplied flow assertions always take precedence. No target function is synthesized or decoded.
+- **When to flip:** On by default (DIV-170). A packer/unpacker entry calls a decoder and then disassembly ends `push <original-entry-address>; ret`, but emitted C contains only the decoder call and silently loses the final transfer. The default preserves the address as a terminal indirect transfer without treating encrypted on-disk target bytes as a function; use `option pushimmediateret off` to restore the bare RETURN.
+- **Where / provenance:** P2/flow-classification · kuna · correctness-fix · push-immediate-ret-transfer
+- **Example:** `option pushimmediateret off`
 
 ### `funcboundflow` -- on | off, default `on`
 

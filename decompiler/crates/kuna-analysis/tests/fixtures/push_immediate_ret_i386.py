@@ -3,7 +3,7 @@
 
 The entry executes ``call unpacker; push 0x401000; ret``.  The target section
 contains CryptoME's encrypted on-disk bytes and has no function/export symbol.
-is below the entry at ``0x402000``. Additional fixed-address routines are
+It is below the entry at ``0x402000``. Additional fixed-address routines are
 conservative negative controls.
 """
 

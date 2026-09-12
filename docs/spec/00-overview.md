@@ -1534,6 +1534,16 @@ available. The site and instruction caps, continuation clearing, opaque-flow
 stops, and multi-link behavior are the same code as the explicit override path
 rather than a second recognizer.
 
+The same provenance has a separate one-store classification under
+`pushimmediateret` (default on, DIV-170). When RETURN pops the sole current-run
+stack store and that exact store is an immediate, the shared decompile step
+seeds BRANCH rather than CALL, with no fall-through and without registering the
+target as a function. A second same-stack store declines so the adjacent-pair
+form above cannot be stolen. As with `entryretdispatch`, any caller-supplied
+flow fact at the RET wins; explicit RETURN is a clean veto. The complete P2
+proof and negative boundary are specified in chapter
+[02 — Lift & flow recovery](02-lift-and-flow.md).
+
 A `readonly` range is the one directive whose effect depends on a second switch:
 folding a read-only load into the value behind it is
 `ActionVarnodeProps`/`Funcdata::fillin_read_only`, gated on the program-wide

@@ -1,0 +1,53 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/push_immediate_ret_i386.exe",
+    "binary_sha256": "12a564ed5035a19b27958597f26a51694deb9428d89ee61320c18500c4ec0d90",
+    "binary_size": 1536,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/push_immediate_ret_i386.exe",
+    "selector": "0x402000",
+    "selector_kind": "addr"
+  },
+  "timeout_s": 60,
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "0x402000",
+    "--addr",
+    "--define-function",
+    "0x402000-0x40200b=push_immediate_ret",
+    "--json"
+  ],
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "json": [
+      {
+        "path": "count",
+        "op": "eq",
+        "value": 1
+      },
+      {
+        "path": "functions[0].error",
+        "op": "eq",
+        "value": null
+      },
+      {
+        "path": "functions[0].code",
+        "op": "matches",
+        "value": "(?s)sub_402010\\(\\);\\s*switch\\(0x401000\\) \\{\\s*case 0x401000:"
+      },
+      {
+        "path": "functions[0].code",
+        "op": "not_contains",
+        "value": "sub_401000"
+      }
+    ]
+  },
+  "notes": "Vendored CryptoME-shaped PE: require the unpacker call followed by the full recovered tail-transfer construct. Destination digits in a warning cannot satisfy this predicate; the encrypted target has no function symbol."
+}

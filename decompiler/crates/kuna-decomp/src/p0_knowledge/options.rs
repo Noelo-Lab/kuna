@@ -890,7 +890,9 @@ fn parse_int_auto<T: IntParse>(s: &str) -> Option<T> {
     let bytes = s.as_bytes();
     let mut i = 0usize;
     // Leading whitespace (C locale isspace): operator>> skips it.
-    while i < bytes.len() && matches!(bytes[i], b' ' | b'\t' | b'\n' | b'\x0b' | b'\x0c' | b'\r') {
+    while i < bytes.len()
+        && matches!(bytes[i], b' ' | b'\t' | b'\n' | b'\x0b' | b'\x0c' | b'\r')
+    {
         i += 1;
     }
     // C++11 `num_get` distinguishes a truly-empty field (input was empty or
@@ -1795,11 +1797,7 @@ impl ArchOption for OptionBraceFormat {
             "ifelse" => BraceCategory::IfElse,
             "loop" => BraceCategory::Loop,
             "switch" => BraceCategory::Switch,
-            _ => {
-                return Err(KunaError::parse(format!(
-                    "Unknown brace format category: {p1}"
-                )))
-            }
+            _ => return Err(KunaError::parse(format!("Unknown brace format category: {p1}"))),
         };
         glb.set_brace_format(category, style);
         Ok(format!("Brace formatting for {p1} set to {p2}"))
@@ -2104,10 +2102,7 @@ impl ArchOption for OptionJumpLoad {
         if val {
             flags |= flow_flags::record_jumploads;
             glb.set_flow_options(flags);
-            Ok(
-                "Jumptable analysis will record loads required to calculate jump address"
-                    .to_string(),
-            )
+            Ok("Jumptable analysis will record loads required to calculate jump address".to_string())
         } else {
             flags &= !flow_flags::record_jumploads;
             glb.set_flow_options(flags);
@@ -2347,18 +2342,15 @@ impl ArchOption for OptionNanIgnore {
                 glb.set_nan_ignore_all(true);
                 glb.set_nan_ignore_compare(true);
             }
-            _ => {
-                return Err(KunaError::lowlevel(format!(
-                    "Unknown nanignore option: {p1}"
-                )))
-            }
+            _ => return Err(KunaError::lowlevel(format!("Unknown nanignore option: {p1}"))),
         }
         if !glb.nan_ignore_all() && !glb.nan_ignore_compare() {
             glb.disable_rule("ignorenan");
         } else {
             glb.enable_rule("ignorenan");
         }
-        if old_ignore_all == glb.nan_ignore_all() && old_ignore_compare == glb.nan_ignore_compare()
+        if old_ignore_all == glb.nan_ignore_all()
+            && old_ignore_compare == glb.nan_ignore_compare()
         {
             return Ok("NaN ignore configuration unchanged".to_string());
         }
@@ -2404,16 +2396,11 @@ impl OptionDatabase {
     /// `w4-kuna-p0-pack` wiring, which owns their `ArchOption` impls and element
     /// ids; call [`register_option`](OptionDatabase::register_option) for each.
     pub fn new() -> Self {
-        let mut db = OptionDatabase {
-            optionmap: BTreeMap::new(),
-        };
+        let mut db = OptionDatabase { optionmap: BTreeMap::new() };
         // Registration order mirrors options.cc:119-155 exactly.
         db.register_option(ELEM_EXTRAPOP, Box::new(OptionExtraPop));
         db.register_option(ELEM_READONLY, Box::new(OptionReadOnly));
-        db.register_option(
-            ELEM_IGNOREUNIMPLEMENTED,
-            Box::new(OptionIgnoreUnimplemented),
-        );
+        db.register_option(ELEM_IGNOREUNIMPLEMENTED, Box::new(OptionIgnoreUnimplemented));
         db.register_option(ELEM_ERRORUNIMPLEMENTED, Box::new(OptionErrorUnimplemented));
         db.register_option(ELEM_ERRORREINTERPRETED, Box::new(OptionErrorReinterpreted));
         db.register_option(

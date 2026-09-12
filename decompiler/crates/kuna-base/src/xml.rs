@@ -1843,7 +1843,7 @@ mod tests {
         // recovered while its ordinary-return control remains unchanged
         // and kuna-declaring-double-score-return / a locked-void checker keeps
         // only ABI floating return storage without deleting the call (repipe r5)
-        assert_eq!(count, 279, "corpus file count drifted");
+        assert_eq!(count, 280, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

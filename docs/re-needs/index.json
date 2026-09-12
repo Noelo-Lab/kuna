@@ -2925,7 +2925,7 @@
       "status": "open",
       "severity": "major",
       "probe_id": "p-b18b63fe0527",
-      "acceptance_id": "a-f4c47ea2eb8a",
+      "acceptance_id": "a-d88748a4d135",
       "hypothesis_status": "inconclusive",
       "credibility": 0.85,
       "instances": 1,
@@ -2937,7 +2937,7 @@
       ],
       "first_seen_round": 8,
       "attempts": 0,
-      "covered_by_option": null,
+      "covered_by_option": "pushimmediateret",
       "touches": [
         "decompiler/crates/kuna-decomp"
       ],
@@ -3834,7 +3834,7 @@
       "status": "open",
       "severity": "major",
       "probe_id": "p-8dae1261fd45",
-      "acceptance_id": "a-db386755c0ad",
+      "acceptance_id": "a-d88748a4d135",
       "hypothesis_status": "upheld",
       "credibility": 0.7,
       "instances": 1,
@@ -3846,7 +3846,7 @@
       ],
       "first_seen_round": 12,
       "attempts": 0,
-      "covered_by_option": null,
+      "covered_by_option": "pushimmediateret",
       "touches": [
         "decompiler/crates/kuna-decomp"
       ],

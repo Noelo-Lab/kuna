@@ -38,19 +38,14 @@ const FIRST_LINK: u64 = 0x0804_a000;
 const CALLS: [&str; 3] = ["(*dat_804a000)()", "(*dat_804a004)()", "(*dat_804a008)()"];
 
 fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../..")
-        .canonicalize()
-        .unwrap()
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
 
 /// Bootstrap the fixture and run the analysis commit.  `None` ⇒ specs-less skip.
 fn load_fixture(fixture: &str) -> Option<ConsoleProgram> {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
-    let bin = root
-        .join("decompiler/crates/kuna-analysis/tests/fixtures")
-        .join(fixture);
+    let bin = root.join("decompiler/crates/kuna-analysis/tests/fixtures").join(fixture);
     let mut prog = match bootstrap_from_object(bin.to_str()?, "", &spec_roots) {
         Ok(p) => p,
         Err(e) => {
@@ -73,11 +68,7 @@ fn load() -> Option<ConsoleProgram> {
 fn flow(addr: u64, kind: &str) -> Directive {
     Directive {
         raw: format!("flow {addr:#x} {kind}"),
-        body: Body::Flow {
-            func: None,
-            addr,
-            kind: kind.to_string(),
-        },
+        body: Body::Flow { func: None, addr, kind: kind.to_string() },
     }
 }
 
@@ -99,49 +90,28 @@ fn decompile_with(directives: Vec<Directive>) -> Option<String> {
 
 /// The sites the walk reports for an override at `at`.
 fn sites(prog: &ConsoleProgram, at: u64) -> Vec<u64> {
-    let space = prog
-        .arch()
-        .manage()
-        .get_default_code_space()
-        .cloned()
-        .expect("code space");
+    let space = prog.arch().manage().get_default_code_space().cloned().expect("code space");
     let entry = Address::new(space.clone(), CHAIN_ENTRY);
     let at = Address::new(space, at);
-    kuna_chain_sites(
-        prog.arch().translate(),
-        &entry,
-        &at,
-        CHAIN_MAX_SITES,
-        CHAIN_MAX_INSNS,
-    )
-    .iter()
-    .map(|a| a.get_offset())
-    .collect()
+    kuna_chain_sites(prog.arch().translate(), &entry, &at, CHAIN_MAX_SITES, CHAIN_MAX_INSNS)
+        .iter()
+        .map(|a| a.get_offset())
+        .collect()
 }
 
 /// Unasserted entry chains are recovered by the same strict detector.
 #[test]
 fn the_default_recovers_the_whole_entry_chain() {
-    let Some(code) = decompile_with(Vec::new()) else {
-        return;
-    };
+    let Some(code) = decompile_with(Vec::new()) else { return };
     for call in CALLS {
-        assert!(
-            code.contains(call),
-            "the default chain stopped before {call}:\n{code}"
-        );
+        assert!(code.contains(call), "the default chain stopped before {call}:\n{code}");
     }
 }
 
 #[test]
 fn entry_recognition_reports_the_complete_chain() {
     let Some(prog) = load() else { return };
-    let space = prog
-        .arch()
-        .manage()
-        .get_default_code_space()
-        .cloned()
-        .expect("code space");
+    let space = prog.arch().manage().get_default_code_space().cloned().expect("code space");
     let entry = Address::new(space, CHAIN_ENTRY);
     let sites = kuna_entry_chain_sites(
         prog.arch().translate(),
@@ -157,15 +127,8 @@ fn entry_recognition_reports_the_complete_chain() {
 
 #[test]
 fn immediate_ret_recognition_reports_only_the_one_store_tail() {
-    let Some(prog) = load_fixture("push_immediate_ret_i386") else {
-        return;
-    };
-    let space = prog
-        .arch()
-        .manage()
-        .get_default_code_space()
-        .cloned()
-        .expect("code space");
+    let Some(prog) = load_fixture("push_immediate_ret_i386") else { return };
+    let space = prog.arch().manage().get_default_code_space().cloned().expect("code space");
     let entry = Address::new(space.clone(), 0x0804_9000);
     let matched = kuna_push_immediate_ret(prog.arch().translate(), &entry, CHAIN_MAX_INSNS)
         .expect("one-store immediate RET tail");
@@ -190,17 +153,37 @@ fn immediate_ret_recognition_reports_only_the_one_store_tail() {
     }
 }
 
+#[test]
+fn immediate_ret_transfer_never_registers_the_encrypted_target_as_a_function() {
+    let Some(mut prog) = load_fixture("push_immediate_ret_i386.exe") else { return };
+    prog.arch_mut()
+        .set_kuna_option("pushimmediateret", "on")
+        .expect("pushimmediateret flips on");
+    assert!(
+        prog.function_entries_canonical()
+            .iter()
+            .all(|entry| entry.addr.get_offset() != 0x0040_1000),
+        "encrypted target was already classified as a function"
+    );
+
+    let target = prog
+        .resolve_entry(&EntrySelector::Numeric(0x0040_2000))
+        .expect("the PE entry is a function");
+    let _ = decompile_targets(&mut prog, vec![target], false, false, false);
+    assert!(
+        prog.function_entries_canonical()
+            .iter()
+            .all(|entry| entry.addr.get_offset() != 0x0040_1000),
+        "tail-transfer recovery synthesized the encrypted target function"
+    );
+}
+
 /// The need's own case: one override on the first link recovers all three calls.
 #[test]
 fn overriding_the_first_link_recovers_the_whole_chain() {
-    let Some(code) = decompile_with(vec![flow(LINK_RETS[0], "call")]) else {
-        return;
-    };
+    let Some(code) = decompile_with(vec![flow(LINK_RETS[0], "call")]) else { return };
     for call in CALLS {
-        assert!(
-            code.contains(call),
-            "the chain stopped before {call}:\n{code}"
-        );
+        assert!(code.contains(call), "the chain stopped before {call}:\n{code}");
     }
 }
 
@@ -209,7 +192,8 @@ fn overriding_the_first_link_recovers_the_whole_chain() {
 fn each_link_reports_the_others() {
     let Some(prog) = load() else { return };
     for (i, at) in LINK_RETS.iter().enumerate() {
-        let want: Vec<u64> = LINK_RETS.iter().copied().filter(|a| a != at).collect();
+        let want: Vec<u64> =
+            LINK_RETS.iter().copied().filter(|a| a != at).collect();
         assert_eq!(sites(&prog, *at), want, "link {i} at {at:#x}");
     }
 }
@@ -219,14 +203,8 @@ fn each_link_reports_the_others() {
 #[test]
 fn an_ordinary_return_extends_to_nothing() {
     let Some(prog) = load() else { return };
-    assert!(
-        sites(&prog, EPILOGUE_RET).is_empty(),
-        "the epilogue was read as a link"
-    );
-    assert!(
-        sites(&prog, FIRST_LINK).is_empty(),
-        "an address outside the walk was read as a link"
-    );
+    assert!(sites(&prog, EPILOGUE_RET).is_empty(), "the epilogue was read as a link");
+    assert!(sites(&prog, FIRST_LINK).is_empty(), "an address outside the walk was read as a link");
 }
 
 /// A matching fall-through literal is not sufficient: RETURN must load a slot
@@ -235,15 +213,8 @@ fn an_ordinary_return_extends_to_nothing() {
 /// partial register-alias writes must also invalidate the supposed proof.
 #[test]
 fn fallthrough_decoys_are_not_entry_chains() {
-    let Some(prog) = load_fixture("entry_ret_dispatch_i386") else {
-        return;
-    };
-    let space = prog
-        .arch()
-        .manage()
-        .get_default_code_space()
-        .cloned()
-        .expect("code space");
+    let Some(prog) = load_fixture("entry_ret_dispatch_i386") else { return };
+    let space = prog.arch().manage().get_default_code_space().cloned().expect("code space");
     for entry in [
         0x0804_9043,
         0x0804_904d,
@@ -269,26 +240,15 @@ fn fallthrough_decoys_are_not_entry_chains() {
 #[test]
 fn the_site_cap_bounds_what_is_reported() {
     let Some(prog) = load() else { return };
-    let space = prog
-        .arch()
-        .manage()
-        .get_default_code_space()
-        .cloned()
-        .expect("code space");
+    let space = prog.arch().manage().get_default_code_space().cloned().expect("code space");
     let entry = Address::new(space.clone(), CHAIN_ENTRY);
     let at = Address::new(space, LINK_RETS[0]);
     let capped = kuna_chain_sites(prog.arch().translate(), &entry, &at, 1, CHAIN_MAX_INSNS);
     // Only the first link fits under the cap, and it is the override's own site,
     // so there is nothing left to report.
-    assert!(
-        capped.is_empty(),
-        "the cap did not bound the walk: {capped:?}"
-    );
+    assert!(capped.is_empty(), "the cap did not bound the walk: {capped:?}");
 
-    let entry_capped = kuna_entry_chain_sites(prog.arch().translate(), &entry, 1, CHAIN_MAX_INSNS);
-    assert_eq!(
-        entry_capped.len(),
-        1,
-        "the entry cap did not stop at one link"
-    );
+    let entry_capped =
+        kuna_entry_chain_sites(prog.arch().translate(), &entry, 1, CHAIN_MAX_INSNS);
+    assert_eq!(entry_capped.len(), 1, "the entry cap did not stop at one link");
 }
