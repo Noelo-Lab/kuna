@@ -429,6 +429,37 @@ fn only_an_out_of_range_stub_becomes_a_resolvable_target() {
     );
 }
 
+/// A discovered function boundary is an effective cutoff even though it does
+/// not narrow `baddr`/`eaddr`. Only missing targets in the cutoff's address
+/// space, at or beyond the boundary, may resolve to truncation stubs.
+#[test]
+fn funcbound_cutoff_resolves_only_same_space_targets_at_or_beyond_it() {
+    let fd = build_fd();
+    let ram = ram_space(&fd);
+    let unique = Rc::clone(fd.get_arch().manage().get_space_by_name("unique").unwrap());
+    let env = TableEnv;
+    let mut flow = FlowInfo::new(fd, &env);
+
+    flow.push_funcbound_cutoff_for_test(Address::new(Rc::clone(&ram), 0x1010));
+    flow.push_unprocessed(Address::new(Rc::clone(&ram), 0x1008));
+    flow.push_unprocessed(Address::new(Rc::clone(&ram), 0x1010));
+    flow.push_unprocessed(Address::new(Rc::clone(&ram), 0x1020));
+    flow.push_unprocessed(Address::new(Rc::clone(&unique), 0x2000));
+
+    flow.fillin_branch_stubs_for_test().unwrap();
+
+    assert!(flow.visited_contains(&Address::new(Rc::clone(&ram), 0x1010)));
+    assert!(flow.visited_contains(&Address::new(Rc::clone(&ram), 0x1020)));
+    assert!(
+        !flow.visited_contains(&Address::new(Rc::clone(&ram), 0x1008)),
+        "an in-extent missing op before the proven cutoff must still fail"
+    );
+    assert!(
+        !flow.visited_contains(&Address::new(unique, 0x2000)),
+        "an offset beyond the cutoff in another space is not clipped"
+    );
+}
+
 /// `dedup_unprocessed` sorts and removes duplicate addresses (C++ `flow.cc:868`).
 #[test]
 fn dedup_unprocessed_sorts_and_dedups() {

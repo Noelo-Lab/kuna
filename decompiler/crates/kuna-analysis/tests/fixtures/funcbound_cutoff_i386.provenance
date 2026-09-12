@@ -1,0 +1,27 @@
+funcbound_cutoff_i386 -- the exact sectionless i386 witness for the
+`funcboundflow` effective-cutoff branch-stub regression.
+
+What it is
+  A 5,208-byte statically linked, stripped ELF32 executable with no section
+  table. The callback at 0x8048820 skips an embedded report string on its real
+  path. Decoding the string as the conditional branch's other path produces a
+  branch at 0x8048845 to 0x80488bc, the middle of the real instruction at
+  0x80488bb; that reinterpretation branches again to the p-code-free bytes at
+  0x80488de. Aggressive analysis discovers foreign entries in this region; the
+  current default flow admits the shared return at 0x80488a5 and establishes a
+  `funcboundflow` cutoff at 0x80488e0.
+
+Why it is vendored rather than rebuilt
+  The absence of a section table and the exact overlapping instruction streams
+  are both load-bearing. Keeping the 5 KB witness byte-identical makes the
+  promoted CLI acceptance exercise the same loader, discovery, and flow paths
+  as the filed failure without requiring the external RE dataset in CI.
+
+Where it came from
+  The RE-friction loop's round-10 witness: challenge
+  5ab77f5c33c5d40ad448c615 in the kuna-re-dataset crackme corpus ("trace_p by
+  taviso", https://crackmes.one/crackme/5ab77f5c33c5d40ad448c615),
+  `bin/trace-p.zip.__x/crackme`, byte-identical.
+
+  sha256 7b8a32c3cc0e9816bfe03d2e7c4aa5a596a21e43a6e35dc43cb17fa5867138ec
+  It is a third-party CTF-style crackme, included unmodified as test data only.

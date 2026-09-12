@@ -505,6 +505,19 @@ Ghidra both bound decompilation to the function body. The `longdouble` datatest
 functions) and the `ghangr-noreturn_extern` test (which isolates the
 `noreturn_extern` toggle) opt out per-test.
 
+The foreign entry is also retained as an effective flow cutoff. A branch target
+can have been queued but left unprocessed when another path discovers that
+boundary; `fillin_branch_stubs` may register its artificial halt only when the
+target is in the cutoff's address space and at or beyond the cutoff. This gives a
+deliberately clipped edge a resolvable head without weakening the missing-op
+invariant: an unprocessed address before the cutoff, or in another space, still
+raises `Could not find op at target address`.
+
+The cutoff address itself maps to the no-return halt inserted by the truncating
+fall-through. This lets `target` walk across already-decoded instructions that
+generated no p-code and terminate at the proven boundary. It does not mark the
+foreign entry as decoded and does not mask a missing op before the cutoff.
+
 **(kuna) Return-address-discarding call trampolines — `option calltrampoline`,
 default on (DIV-144),
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_calltrampoline.rs

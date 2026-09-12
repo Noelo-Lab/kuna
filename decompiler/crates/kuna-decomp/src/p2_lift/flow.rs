@@ -547,12 +547,14 @@ pub struct FlowInfo<'a, E: FlowEnvironment> {
     unprocessed: Vec<Address>,
     /// (kuna) The subset of [`Self::unprocessed`] that flow reached by leaving the
     /// declared extent, i.e. every address [`Self::handle_out_of_bounds`] warned
-    /// about.  [`Self::fillin_branch_stubs`] registers only these in
-    /// [`Self::visited`], so a branch to one resolves to its stub instead of
-    /// aborting the function; an unprocessed address that is IN the extent keeps
-    /// upstream's throw, because there the missing op is a real defect and
-    /// clipping it would silently truncate a body.
+    /// about.  [`Self::fillin_branch_stubs`] registers these in [`Self::visited`]
+    /// so a branch to one resolves to its stub instead of aborting the function.
     outofbounds: std::collections::BTreeSet<Address>,
+    /// (kuna `funcboundflow`) Foreign function entries that stopped a
+    /// fall-through walk. An unprocessed target at or beyond one of these
+    /// same-space cutoffs was deliberately clipped just like an out-of-range
+    /// target; an address before the cutoff remains a genuine missing-op error.
+    funcbound_cutoffs: std::collections::BTreeSet<Address>,
     /// Addresses to which there is flow — the work stack (C++ `addrlist`).
     addrlist: Vec<Address>,
     /// List of BRANCHIND ops (preparing for jump table recovery) (C++ `tablelist`).
@@ -645,6 +647,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             env,
             unprocessed: Vec::new(),
             outofbounds: std::collections::BTreeSet::new(),
+            funcbound_cutoffs: std::collections::BTreeSet::new(),
             addrlist: Vec::new(),
             tablelist: Vec::new(),
             injectlist: Vec::new(),
@@ -1692,8 +1695,32 @@ truncating the fall-through here"
                 // boundary that edge is a self-loop on the branch's own block.  It
                 // is NOT marked an instruction start: `fallthru_op` can only reach
                 // it as a same-instruction op, the next address being undecoded.
+                // The boundary address still maps to that halt. This gives a
+                // processed p-code-free chain a valid endpoint when it walks to
+                // `next`, without claiming the foreign entry was decoded or
+                // weakening errors for any address before the proven cutoff.
                 let halt = self.artificial_halt(curaddr, pcodeop_flags::noreturn)?;
                 self.op_mark_start_basic(halt);
+                let seq = self
+                    .data
+                    .obank()
+                    .get(halt)
+                    .expect("funcboundflow: stale halt")
+                    .get_seq_num()
+                    .clone();
+                // Discovery can have visited the boundary through another path
+                // and recorded a p-code-free instruction there. Replace only
+                // that invalid sentinel (or a vacant entry); never hide a real
+                // decoded op at the foreign entry.
+                let needs_halt = self
+                    .visited
+                    .get(&next)
+                    .map(|stat| stat.seqnum.get_addr().is_invalid())
+                    .unwrap_or(true);
+                if needs_halt {
+                    self.visited.insert(next.clone(), VisitStat { seqnum: seq, size: 1 });
+                }
+                self.funcbound_cutoffs.insert(next);
                 self.data.warning(
                     "funcboundflow: fall-through reached the next function entry; truncating flow here",
                     curaddr,
@@ -1956,6 +1983,21 @@ truncating the fall-through here"
         self.unprocessed.dedup();
     }
 
+    /// Was `addr` deliberately excluded by a `funcboundflow` cutoff in the same
+    /// address space?
+    fn funcbound_clips(&self, addr: &Address) -> bool {
+        let Some(space) = addr.get_space() else {
+            return false;
+        };
+        self.funcbound_cutoffs.iter().any(|cutoff| {
+            cutoff
+                .get_space()
+                .map(|candidate| candidate.get_index() == space.get_index())
+                .unwrap_or(false)
+                && cutoff.get_offset() <= addr.get_offset()
+        })
+    }
+
     /// Fill-in artificial HALT p-code for `unprocessed` addresses (C++
     /// `fillinBranchStubs`, `flow.cc:891`).
     fn fillin_branch_stubs(&mut self) -> KunaResult<()> {
@@ -1974,11 +2016,11 @@ truncating the fall-through here"
             // edge produced no C at all.  Register the stub as the instruction at
             // that address and the edge lands on it -- the clipped body plus the
             // `Function flows out of bounds` header the warning path already emits.
-            // Restricted to the out-of-extent set on purpose: an unprocessed address
-            // INSIDE the extent means an op that should exist does not, and
-            // resolving that to a halt would truncate a function instead of
-            // reporting the defect.
-            if self.outofbounds.contains(&addr) {
+            // Restricted to a proven declared or discovered cutoff on purpose:
+            // an unprocessed address before every cutoff means an op that should
+            // exist does not, and resolving it to a halt would truncate a function
+            // instead of reporting the defect.
+            if self.outofbounds.contains(&addr) || self.funcbound_clips(&addr) {
                 let seq = self
                     .data
                     .obank()
@@ -2905,6 +2947,8 @@ truncating the fall-through here"
         // Copy in the cross-referencing.
         self.unprocessed.extend(inlineflow.unprocessed.iter().cloned());
         self.outofbounds.extend(inlineflow.outofbounds.iter().cloned());
+        self.funcbound_cutoffs
+            .extend(inlineflow.funcbound_cutoffs.iter().cloned());
         self.addrlist.extend(inlineflow.addrlist.iter().cloned());
         for (addr, stat) in inlineflow.visited.iter() {
             // std::map::insert does NOT overwrite an existing key — match it.
@@ -3365,6 +3409,11 @@ truncating the fall-through here"
     /// Push an address onto the unprocessed list (verification support).
     pub fn push_unprocessed(&mut self, addr: Address) {
         self.unprocessed.push(addr);
+    }
+
+    /// Record a `funcboundflow` cutoff (verification support).
+    pub fn push_funcbound_cutoff_for_test(&mut self, addr: Address) {
+        self.funcbound_cutoffs.insert(addr);
     }
 
     /// The offsets currently in the unprocessed list, in order.
