@@ -13,6 +13,44 @@
 use super::*;
 use crate::printlanguage::{parentheses, ReversePolish};
 
+#[test]
+fn case_labels_without_ops_keep_their_numeric_value() {
+    let mut print = PrintC::new();
+    print.set_output_stream();
+
+    print.emit_numeric_case_label(0xff, 1, false, None);
+    print.emit_numeric_case_label(0xff, 1, true, None);
+
+    let output = print.emit_mut().output_str();
+    assert_eq!(output, "\ncase 0xff:\ncase -1:");
+    assert!(!output.contains("case :"));
+}
+
+#[test]
+fn ordinary_and_default_case_labels_are_unchanged() {
+    let mut print = PrintC::new();
+    print.set_output_stream();
+
+    print.emit_numeric_case_label(0xff, 1, false, Some(OpId::default()));
+    print.emit_default_case_label(0, &MarkupRef::none());
+
+    assert_eq!(print.emit_mut().output_str(), "\ncase 0xff:\ndefault:");
+}
+
+#[test]
+fn case_label_without_an_op_survives_markup_without_fabricated_provenance() {
+    let mut print = PrintC::new();
+    print.set_markup(true);
+
+    print.emit_numeric_case_label(0xff, 1, false, None);
+
+    let bytes = print.emit_mut().take_markup_bytes();
+    for token in [b"case".as_slice(), b"0xff".as_slice(), b":".as_slice()] {
+        assert!(bytes.windows(token.len()).any(|window| window == token));
+    }
+    assert!(print.emit_mut().take_markup_provenance().associations.is_empty());
+}
+
 mod stack_pointer_high_leaf {
     use super::*;
     use crate::context::ArchContext;

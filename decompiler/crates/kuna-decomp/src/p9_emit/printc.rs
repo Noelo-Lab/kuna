@@ -4376,14 +4376,7 @@ impl PrintC {
                 Some(o) => self.op_markup(fd, o),
                 None => MarkupRef::none(),
             };
-            self.emit.tag_line();
-            self.emit.tag_case_label(
-                self.lang().kw_default,
-                SyntaxHighlight::KeywordColor,
-                &case_markup,
-                case.label,
-            );
-            self.emit.print(self.lang().kw_colon, SyntaxHighlight::NoColor);
+            self.emit_default_case_label(case.label, &case_markup);
         } else {
             // case <label>: — one line per index targeting this case.
             let jt_index = fd.sblocks_ref().block(blk).switch_jt_index();
@@ -4404,9 +4397,6 @@ impl PrintC {
                     }
                     _ => case.label,
                 };
-                self.emit.tag_line();
-                self.emit.print(self.lang().kw_case, SyntaxHighlight::KeywordColor);
-                self.emit.spaces(1, 0);
                 let sz = self.switch_var_size(fd, blk);
                 // (kuna) Render the label signed when the recovered switch variable
                 // is signed (the lowered-switch install records this on the table;
@@ -4414,18 +4404,66 @@ impl PrintC {
                 let signed = jt_index
                     .map(|j| fd.get_jump_table(j as int4).kuna_has_signed_labels())
                     .unwrap_or(false);
-                if let Some(op) = firstop.or_else(|| self.any_op(fd, case.block)) {
-                    if signed {
-                        self.push_constant_ir_fmt_sign(val, sz, op, display_format::NONE, true);
-                    } else {
-                        self.push_constant_ir(val, sz, op);
-                    }
-                }
-                self.recurse();
-                self.emit.print(self.lang().kw_colon, SyntaxHighlight::NoColor);
+                self.emit_numeric_case_label(
+                    val,
+                    sz,
+                    signed,
+                    firstop.or_else(|| self.any_op(fd, case.block)),
+                );
             }
         }
         let _ = arch;
+    }
+
+    fn emit_default_case_label(&mut self, value: uintb, markup: &MarkupRef) {
+        self.emit.tag_line();
+        self.emit.tag_case_label(
+            self.lang().kw_default,
+            SyntaxHighlight::KeywordColor,
+            markup,
+            value,
+        );
+        self.emit.print(self.lang().kw_colon, SyntaxHighlight::NoColor);
+    }
+
+    fn emit_numeric_case_label(&mut self, value: uintb, size: int4, signed: bool, op: Option<OpId>) {
+        self.emit.tag_line();
+        self.emit.print(self.lang().kw_case, SyntaxHighlight::KeywordColor);
+        self.emit.spaces(1, 0);
+        match op {
+            Some(op) => {
+                if signed {
+                    self.push_constant_ir_fmt_sign(value, size, op, display_format::NONE, true);
+                } else {
+                    self.push_constant_ir(value, size, op);
+                }
+                self.recurse();
+            }
+            None => {
+                let force_dec = self.context.is_set(modifiers::FORCE_DEC);
+                let force_hex = self.context.is_set(modifiers::FORCE_HEX);
+                let (print_negsign, value, display_fmt) = resolve_integer_format(
+                    value,
+                    size,
+                    signed,
+                    display_format::NONE,
+                    force_hex,
+                    force_dec,
+                );
+                let token = format_integer_token(
+                    print_negsign,
+                    value,
+                    display_fmt,
+                    size,
+                    false,
+                    false,
+                    true,
+                    "",
+                );
+                self.emit.print(&token, SyntaxHighlight::ConstColor);
+            }
+        }
+        self.emit.print(self.lang().kw_colon, SyntaxHighlight::NoColor);
     }
 
     /// First op of a case block (C++ `FlowBlock::firstOp` → front-leaf basic

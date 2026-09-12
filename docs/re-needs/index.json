@@ -5,8 +5,8 @@
   "rejected_count": 1,
   "by_status": {
     "blocked": 1,
-    "closed": 142,
-    "open": 54
+    "closed": 143,
+    "open": 53
   },
   "by_track": {
     "loader": 10,
@@ -4606,7 +4606,7 @@
       "need_id": "vm-terminal-opcode-emitted",
       "title": "VM terminal opcode is emitted as an empty case label",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
       "probe_id": "p-b0dfb36b575d",
       "acceptance_id": "a-c051e63bb8de",
@@ -4617,21 +4617,22 @@
         "6a17264017539b5175d123a9"
       ],
       "rounds": [
-        6
+        6,
+        12
       ],
       "first_seen_round": 6,
-      "attempts": 0,
+      "attempts": 1,
       "covered_by_option": null,
       "touches": [
         "decompiler/crates/kuna-decomp"
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": 598,
+      "closed_in_round": 12,
+      "closing_pr": "598",
       "reject_reason": null,
-      "score": 13.862944,
+      "score": 9.241962,
       "path": "docs/re-needs/vm-terminal-opcode-emitted.md"
     },
     {

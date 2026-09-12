@@ -272,6 +272,12 @@ addl-flag on the condition's `CBRANCH` and emit the condition through the same
 parenthesization, short-circuiting and any comma-expression side effects are
 identical to the `if` form they replace.
 
+Every non-default switch arm emits its recovered numeric label even when the
+arm has no p-code op available as a token-markup anchor. Such labels use the
+same switch-width, signedness, and integer-format rules as op-backed labels,
+but are emitted as plain syntax with no fabricated `opref`; `default:` remains
+an unvalued label.
+
 **Pending-brace ownership.** The `else if` collapse is a *lazy* brace. An
 if-node that is itself the else-clause of its parent registers a brace with the
 emitter (`printc.rs (PrintC::emit_block_if)`); the brace opens only if
