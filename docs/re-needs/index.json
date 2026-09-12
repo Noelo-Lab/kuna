@@ -5,8 +5,8 @@
   "rejected_count": 1,
   "by_status": {
     "blocked": 1,
-    "closed": 132,
-    "open": 64
+    "closed": 133,
+    "open": 63
   },
   "by_track": {
     "loader": 10,
@@ -3531,7 +3531,7 @@
       "need_id": "msvc-cookie-removal-changes",
       "title": "MSVC cookie removal changes failure return from 1 to 0",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
       "probe_id": "p-edd7d1f331d9",
       "acceptance_id": "a-7c038829dc65",
@@ -3542,21 +3542,22 @@
         "68bffbe9224c0ec5dcedbe7a"
       ],
       "rounds": [
-        6
+        6,
+        12
       ],
       "first_seen_round": 6,
-      "attempts": 0,
-      "covered_by_option": null,
+      "attempts": 1,
+      "covered_by_option": "msvcstackguard",
       "touches": [
         "decompiler/crates/kuna-decomp"
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": 587,
+      "closed_in_round": 12,
+      "closing_pr": "587",
       "reject_reason": null,
-      "score": 13.862944,
+      "score": 9.241962,
       "path": "docs/re-needs/msvc-cookie-removal-changes.md"
     },
     {

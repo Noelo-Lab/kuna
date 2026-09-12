@@ -1,0 +1,85 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:windows">
+<!--
+    Return-flow regression for `option msvcstackguard`.  The caller has two
+    semantic return values which join at one `/GS` epilogue:
+
+        2000  sub  rsp,0x48
+              mov  rax,[cookie]
+              xor  rax,rsp
+              mov  [rsp+0x38],rax
+              test ecx,ecx
+              jne  failure
+              call success_side_effect
+              xor  eax,eax              ; success: EAX = 0
+              jmp  shared
+        failure:
+              call failure_side_effect
+              mov  eax,1                ; failure: EAX = 1
+        shared:
+              mov  rcx,[rsp+0x38]
+              xor  rcx,rsp              ; (K ^ SP) ^ SP
+        2032  call 2100                 ; checker
+              add  rsp,0x48
+              ret
+
+    The checker is deliberately unnamed.  Its failure tail enters 0x2130,
+    whose ordinary returning CALL at 0x2134 precedes INT 0x29.  That nested
+    call makes the generic callee-body write probe incomplete; the option must
+    rely only on its exact `(K ^ SP) ^ SP`, one-direct-call recognition seed.
+
+    Four passes cross `msvcstackguard` with `calleeretpreserves`.  With the
+    former OFF, both latter settings retain exactly the raw checker call and
+    cookie algebra.  With it ON, both settings remove the boilerplate and keep
+    the two machine return values (canonically rendered as `a0 != 0`).  The two
+    arm-specific calls keep the control-flow split observable.  This pins the
+    option-owned P7-to-P3 restart handoff independently of the generic
+    return-preservation heuristic.
+-->
+<bytechunk space="ram" offset="0x2000" readonly="true">
+4883ec48488b05f50100004831e0488944243885c97509e86401000031c0eb0a
+e86b010000b801000000488b4c24384831e1e8c90000004883c448c3
+</bytechunk>
+<bytechunk space="ram" offset="0x2100" readonly="true">
+483b0df90000007501c3eb24
+</bytechunk>
+<bytechunk space="ram" offset="0x2130" readonly="true">
+4883ec28e827000000b902000000cd294883c428c3
+</bytechunk>
+<bytechunk space="ram" offset="0x2160" readonly="true">
+31d2c3
+</bytechunk>
+<bytechunk space="ram" offset="0x2180" readonly="true">
+c7057e00000055000000c3
+</bytechunk>
+<bytechunk space="ram" offset="0x2190" readonly="true">
+c7056e000000aa000000c3
+</bytechunk>
+<bytechunk space="ram" offset="0x2200">
+efcdab896745230100000000
+</bytechunk>
+<symbol space="ram" offset="0x2000" name="guarded_returns"/>
+</binaryimage>
+<script>
+  <com>option msvcstackguard off</com>
+  <com>option calleeretpreserves off</com>
+  <com>lo fu guarded_returns</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option calleeretpreserves on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option msvcstackguard on</com>
+  <com>option calleeretpreserves off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option calleeretpreserves on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="MSVCSTACKGUARD-RETURN #1: option off retains the raw checker call in both generic-policy passes" min="2" max="2">sub_2100\(</stringmatch>
+<stringmatch name="MSVCSTACKGUARD-RETURN #2: option off retains the cookie read in both generic-policy passes" min="2" max="2">dat_2200 \^</stringmatch>
+<stringmatch name="MSVCSTACKGUARD-RETURN #3: option on keeps failure one and success zero with generic preservation off and on" min="2" max="2">return a0 != 0;</stringmatch>
+<stringmatch name="MSVCSTACKGUARD-RETURN #4: all passes retain both arm-specific side effects" min="8" max="8">sub_21[89]0\(\);</stringmatch>
+</decompilertest>

@@ -1835,7 +1835,9 @@ mod tests {
         // and kuna-callretpair / a call whose cspec output rule asked for a
         // register pair gets that pair (option off = a bare call statement and
         // a tag local the function never assigns) (repipe r12)
-        assert_eq!(count, 275, "corpus file count drifted");
+        // and kuna-msvcstackguard-return / an exact `/GS` checker restart keeps
+        // both caller return definitions across a shared epilogue (repipe r6)
+        assert_eq!(count, 276, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

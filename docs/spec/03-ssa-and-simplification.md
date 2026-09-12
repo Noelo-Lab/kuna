@@ -301,6 +301,15 @@ compiler-spec id — a Windows `int 0x29` ends the path instead
 (`kuna_rustabi.rs (ProbeEmit::note_fastfail_swi)`), which is the same statement
 the flow builder makes about the same two ops.
 
+`msvcstackguard` has a narrower option-owned answer when the late P7 algebraic
+recognizer is going to remove the checker. Its first exact direct,
+unread-output, one-cookie-cancel match records that instruction address and
+requests a restart. On replay `Heritage::guard_calls` downgrades only an actual
+`KILLEDBYCALL` effect on the call prototype's output storage at that seeded
+site. The `/GS` option must still be on, and a prototype effect override vetoes
+the downgrade. No callee-body completeness or no-return inference participates;
+all unseeded calls continue through the generic rules above unchanged.
+
 **Partial-range call overlap.** A heritaged range can be strictly *larger* than
 the ABI storage it contains — the characterization is `ContainedBy` rather than
 `ContainsJustified`, so none of the whole-range arms above apply. This is

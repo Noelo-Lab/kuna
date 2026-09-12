@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    788,
-    788
+    794,
+    794
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -37,6 +37,8 @@
     "data:CALLEERETPRESERVES #4: both passes, the checker is still called with the same argument",
     "data:CALLEERETPRESERVES #5: both passes, an endbr64/ret stub proves nothing and g is unchanged",
     "data:CALLEERETPRESERVES #6: both passes, the stub call keeps the convention's answer",
+    "data:CALLEERETPRESERVES #7: a tailcallee RAX write never preserves the caller's seven",
+    "data:CALLEERETPRESERVES #8: both direct- and tailcallee RAX writers keep the call in both passes",
     "data:CALLEESCRATCHBODY #1: off, the whole frame is indexed off the value __chkstk supposedly returns",
     "data:CALLEESCRATCHBODY #2: on, the probe is called for its side effect and the frame slot is a fixed offset",
     "data:CALLEESCRATCHBODY #3: on, the slot written and read back at that offset is the argument",
@@ -374,6 +376,10 @@
     "data:MSVCFTOL #3: on, the second conversion casts the field it actually reads",
     "data:MSVCFTOL #4: on, both conversions truncate at the helper's real 64-bit width",
     "data:MSVCFTOL #5: on, the call is replaced by an injection",
+    "data:MSVCSTACKGUARD-RETURN #1: option off retains the raw checker call in both generic-policy passes",
+    "data:MSVCSTACKGUARD-RETURN #2: option off retains the cookie read in both generic-policy passes",
+    "data:MSVCSTACKGUARD-RETURN #3: option on keeps failure one and success zero with generic preservation off and on",
+    "data:MSVCSTACKGUARD-RETURN #4: all passes retain both arm-specific side effects",
     "data:OVERLAPBRANCH #1: the branch target wins, so the real add-chain stream is recovered in the default pass only",
     "data:OVERLAPBRANCH #2: the out-of-image call the swallowed decode invents survives only in the overlapbranch-off pass",
     "data:OVERLAPBRANCH #3: the bogus global the swallowed decode invents survives only in the overlapbranch-off pass",

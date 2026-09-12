@@ -1618,6 +1618,14 @@ impl Heritage {
             // convention promises is preserved) declines a helper that clobbers
             // only what it is allowed to.  See
             // [`crate::p4_calls::kuna_calleeretpreserves`].
+            let msvc_cookie_return = effecttype == effect_type::KILLEDBYCALL
+                && fd.get_arch().strip_msvc_stack_guard
+                && !fc.proto().has_effect_override()
+                && fc.proto().characterize_as_output(&trans_addr, size)
+                    != Containment::NoContainment
+                && fd.get_override().is_msvc_cookie_call(
+                    fd.obank().get(op).expect("guardCalls: stale call").get_addr(),
+                );
             let preserved = effecttype == effect_type::KILLEDBYCALL
                 && (crate::p4_calls::kuna_calleepreserves::callee_preserves_range(
                     fd,
@@ -1629,7 +1637,7 @@ impl Heritage {
                     fc,
                     &trans_addr,
                     size,
-                ));
+                ) || msvc_cookie_return);
             if preserved {
                 effecttype = effect_type::UNAFFECTED;
             }
