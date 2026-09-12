@@ -131,7 +131,7 @@ _not yet refuted_
   `pr: null` until review/merge assigns the durable closing reference.
 - closure gate for PR #587: acceptance a-7c038829dc65 PASSES at
   7af54b0b14e1. On the pinned dataset artifact, `msvcstackguard on` returns
-  success 0 / failure 1 with both the default and `calleetpreserves off`;
+  success 0 / failure 1 with both the default and `calleeretpreserves off`;
   `msvcstackguard off` retains the raw checker-call return under both callee
   settings. Focused units pass 18/18, the focused stage pair passes 12/12,
   full stage parity passes 794/794, and the final serial CLI suite passes
