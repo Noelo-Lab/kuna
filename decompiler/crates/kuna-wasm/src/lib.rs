@@ -677,6 +677,44 @@ mod tests {
         );
     }
 
+    /// Direct browser decompilation uses body-bearing selection too; inventory
+    /// remains free to retain this same import symbol for call binding.
+    #[test]
+    fn wasm_direct_decompile_refuses_an_executable_section_iat_slot() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../..")
+            .canonicalize()
+            .unwrap();
+        let binary =
+            root.join("decompiler/crates/kuna-analysis/tests/fixtures/pe_iatincode_i386.exe");
+        let specs = root.join("specs");
+        let expected = "identifies import VirtualAlloc at 0x401000; \
+                        the IAT slot contains a loader-written pointer, not a function body";
+        for selector in ["VirtualAlloc", "0x401000"] {
+            match super::run_with_mode(
+                binary.to_str().unwrap(),
+                specs.to_str().unwrap(),
+                "decompile",
+                Some(selector),
+                Some("reliable"),
+            ) {
+                Err(error)
+                    if error.contains("could not build an architecture")
+                        || error.contains("SLEIGH")
+                        || error.contains("Could not discover") =>
+                {
+                    eprintln!("wasm_direct_decompile_iat: skipping: {error}");
+                    return;
+                }
+                Err(error) => {
+                    assert!(error.contains(expected), "{selector}: {error}");
+                    assert!(!error.contains("CARRY1("), "{selector}: {error}");
+                }
+                Ok(json) => panic!("{selector} unexpectedly emitted a WASM result: {json}"),
+            }
+        }
+    }
+
     /// The browser sidebar is built from `list`, so anything `project` exports
     /// but `list` omits is unreachable in the UI. `list` used to skip the
     /// discovery injections (`kuna functions`' cheap-enumeration trade), which

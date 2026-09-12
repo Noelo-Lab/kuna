@@ -89,6 +89,36 @@ fn project(fixture_name: &str, tag: &str) -> Option<PathBuf> {
     Some(dir)
 }
 
+/// A selected project begins with the same body-bearing target resolution as
+/// decompile-all. Refusal happens before an output folder is created.
+#[test]
+fn selected_project_refuses_an_executable_section_iat_slot() {
+    let bin = fixture("pe_iatincode_i386.exe");
+    let dir = out_dir("iat_slot");
+    let (stdout, stderr, ok) = run_kuna(&[
+        "decompile-project",
+        &bin,
+        "-o",
+        dir.to_str().unwrap(),
+        "--addr",
+        "0x401000",
+        "--sleighpath",
+        &specs(),
+    ]);
+    if is_specs_skip(&stderr) {
+        eprintln!("decompile_project_iat: skipping (no `.sla`; run `make specs`): {stderr}");
+        return;
+    }
+    assert!(!ok, "an IAT slot unexpectedly exported: {stdout}");
+    assert!(stdout.trim().is_empty(), "an IAT project summary escaped: {stdout}");
+    assert_eq!(
+        stderr,
+        "error: selector \"0x401000\" identifies import VirtualAlloc at 0x401000; \
+         the IAT slot contains a loader-written pointer, not a function body\n"
+    );
+    assert!(!dir.exists(), "refusal left a project folder at {}", dir.display());
+}
+
 /// The four artifact paths for a `<file_name>` project export.
 fn artifacts(dir: &std::path::Path, file_name: &str) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
     (

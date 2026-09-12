@@ -2661,7 +2661,7 @@
       "status": "open",
       "severity": "major",
       "probe_id": "p-b0ded31a46b9",
-      "acceptance_id": "a-adefc9329f47",
+      "acceptance_id": "a-fffdb4ce0518",
       "hypothesis_status": "overturned",
       "credibility": 0.85,
       "instances": 1,
@@ -2672,7 +2672,7 @@
         12
       ],
       "first_seen_round": 12,
-      "attempts": 0,
+      "attempts": 1,
       "covered_by_option": null,
       "touches": [
         "decompiler/crates/kuna-decomp"
@@ -2683,7 +2683,7 @@
       "closed_in_round": null,
       "closing_pr": null,
       "reject_reason": null,
-      "score": 13.862944,
+      "score": 9.241962,
       "path": "docs/re-needs/decompiling-executable-section-iat.md"
     },
     {
