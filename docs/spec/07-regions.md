@@ -429,13 +429,19 @@ takes the pattern twice is not the one-argument checker.
 
 **What it REMOVES.** The check call, with the stock pair
 `Funcdata::block_remove_internal` uses for a CALL inside a deleted block and
-`cleanupcode` (chapter 02) uses for a Rust drop call: `delete_call_specs` to
+`cleanupcode` (chapter 02) uses for a Rust drop call. Because this exact
+recognition happens after chapter 03 has already guarded the checker call, the
+first match records the call's instruction address in the function's P0
+override store and requests a full pipeline restart. On replay,
+`Heritage::guard_calls` preserves only prototype-output storage at that seeded
+call, only when the effect is actually `KILLEDBYCALL`, the option remains on,
+and the call has no explicit effect override. That retains the caller's
+pre-check return definitions without making a claim about any other call or
+register. P7 then uses `delete_call_specs` to
 drop the `FuncCallSpecs` record, then `op_destroy`. Nothing else is deleted by
 hand. The epilogue `INT_XOR` loses its last reader and dies in the following
-dead-code pass; the INDIRECTs that carried values across the call collapse in
-`RuleIndirectCollapse`'s "the indirect effect is gone" arm, which is exactly
-the destroyed-source case; and the repeating fullloop re-runs mainloop over
-the reduced function before chapter 08 structures it. The entry-side scramble
+dead-code pass, and the repeating fullloop re-runs mainloop over the reduced
+function before chapter 08 structures it. The entry-side scramble
 is released the same way §7.3 releases the glibc canary init:
 `kuna_msvcstackguard.rs (collect_cookie_slots)` runs a forward fixpoint from
 each scramble's output over the value-preserving readers — COPY/CAST (the
@@ -467,6 +473,10 @@ collected too. That is the same defect the `cookiescramble` alias exemption
 addresses on the same instruction, from the other side; the two compose.
 `tests/stages/kuna-msvcstackguard.xml` pins both directions, with the callee
 deliberately unnamed so the shape-only claim is what is tested.
+`tests/stages/kuna-msvcstackguard-return.xml` pins the restart handoff with a
+two-arm shared epilogue and crosses `calleeretpreserves on|off`; its checker
+failure tail enters a helper with an ordinary returning call before fast-fail,
+so generic callee-body inference is deliberately unavailable.
 
 ## 7.6 Observability (kuna)
 

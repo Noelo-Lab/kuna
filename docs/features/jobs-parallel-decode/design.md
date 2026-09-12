@@ -171,8 +171,8 @@ listed landed as written.
   `KUNA_DECODE_MIN_BYTES` (the size floor; tests set `0`), `KUNA_DECODE_INTERVALS`
   (intervals per lane), `KUNA_DECODE_SELFCHECK=1|abort`, `KUNA_DECODE_STATS=1`, and
   the test-only `KUNA_DECODE_FAULT=<lane>`.
-* **The DIV row is DIV-167**, not DIV-164: three rows landed between the design and
-  the implementation.
+* **The DIV row is DIV-168**, not DIV-164: four rows landed between the design and
+  the implementation, the last of them while this branch was in review.
 * **A `MAX_ROUNDS = 1024` runaway guard** exists, which the design body deliberately
   did not adopt as policy (a seed-starved image is still correct at 8 rounds).
   Tripping it is a `round limit` refusal, i.e. a serial re-walk.

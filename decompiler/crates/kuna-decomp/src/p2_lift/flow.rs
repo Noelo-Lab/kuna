@@ -419,6 +419,19 @@ pub trait FlowEnvironment {
         false
     }
 
+    /// (kuna `funcboundflow`) Does the complete instruction at a distinct known
+    /// function entry describe an unconditional `CPUI_RETURN`?
+    ///
+    /// A true answer lets the current flow admit exactly that instruction as a
+    /// shared epilogue.  No broader "terminal" class is accepted here: a direct
+    /// or computed branch and a conditional return can lead into more code,
+    /// while an unconditional `RETURN` has no successor for this flow to
+    /// consume.  Environments without a safe raw one-instruction probe
+    /// conservatively report false and retain the bound.
+    fn funcbound_entry_is_unconditional_return(&self, _entry: &Address) -> bool {
+        false
+    }
+
     /// (kuna `overlapbranch`) Is the overlapping-branch truncation enabled
     /// (`option overlapbranch`, `Architecture::overlap_branch`)?  When on,
     /// `process_instruction` truncates a conditional branch's fall-through
@@ -1725,16 +1738,28 @@ truncating the fall-through here"
     /// of the current function)?  Gated by `option funcboundflow`
     /// (`funcbound_flow_enabled`); when on, resolves `next` against the symbol
     /// table via [`query_call`](FlowEnvironment::query_call) and excludes the
-    /// current function's own entry.  See [`kuna_funcboundflow`].
+    /// current function's own entry.  A foreign entry whose instruction is a
+    /// real `RETURN` is admitted; processing that one instruction terminates the
+    /// walk naturally and cannot consume anything beyond it.  See
+    /// [`kuna_funcboundflow`].
     fn is_funcbound_fallthru(&self, next: &Address) -> bool {
         // Fast-path the default-off gate: no symbol-table lookup per instruction.
         if !self.env.funcbound_flow_enabled() {
             return false;
         }
+        let next_is_known_function = self.env.query_call(next).is_some();
+        let next_is_self = next == self.data.get_address();
+        // Probe only the rare candidate that the old rule would have bounded.
+        // A decode failure (or an environment without the probe) returns false
+        // and therefore preserves the conservative boundary.
+        let next_is_unconditional_return = next_is_known_function
+            && !next_is_self
+            && self.env.funcbound_entry_is_unconditional_return(next);
         crate::kuna_funcboundflow::kuna_should_bound_at_entry(
             true,
-            self.env.query_call(next).is_some(),
-            next == self.data.get_address(),
+            next_is_known_function,
+            next_is_self,
+            next_is_unconditional_return,
         )
     }
 

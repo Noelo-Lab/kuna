@@ -397,11 +397,11 @@ fn resolve_targets(
         // An ALIAS resolves too — collapsing the enumeration must not make a
         // name that used to select a function stop working.
         Cmd::DecompileName(want) => prog
-            .resolve_entry(&EntrySelector::parse(want))
+            .resolve_body_entry(&EntrySelector::parse(want))
             .map(|entry| vec![entry])
             .map_err(|error| error.to_string()),
         Cmd::DecompileAddr(vma) => prog
-            .resolve_entry(&EntrySelector::Numeric(*vma))
+            .resolve_body_entry(&EntrySelector::Numeric(*vma))
             .map(|entry| vec![entry])
             .map_err(|error| error.to_string()),
         Cmd::List | Cmd::Project(_) => unreachable!("List/Project handled by caller"),
@@ -675,6 +675,44 @@ mod tests {
             json.contains("return a1 * 7 + a0 * 3;"),
             "hidden direct callee has no real body: {json}"
         );
+    }
+
+    /// Direct browser decompilation uses body-bearing selection too; inventory
+    /// remains free to retain this same import symbol for call binding.
+    #[test]
+    fn wasm_direct_decompile_refuses_an_executable_section_iat_slot() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../..")
+            .canonicalize()
+            .unwrap();
+        let binary =
+            root.join("decompiler/crates/kuna-analysis/tests/fixtures/pe_iatincode_i386.exe");
+        let specs = root.join("specs");
+        let expected = "identifies import VirtualAlloc at 0x401000; \
+                        the IAT slot contains a loader-written pointer, not a function body";
+        for selector in ["VirtualAlloc", "0x401000"] {
+            match super::run_with_mode(
+                binary.to_str().unwrap(),
+                specs.to_str().unwrap(),
+                "decompile",
+                Some(selector),
+                Some("reliable"),
+            ) {
+                Err(error)
+                    if error.contains("could not build an architecture")
+                        || error.contains("SLEIGH")
+                        || error.contains("Could not discover") =>
+                {
+                    eprintln!("wasm_direct_decompile_iat: skipping: {error}");
+                    return;
+                }
+                Err(error) => {
+                    assert!(error.contains(expected), "{selector}: {error}");
+                    assert!(!error.contains("CARRY1("), "{selector}: {error}");
+                }
+                Ok(json) => panic!("{selector} unexpectedly emitted a WASM result: {json}"),
+            }
+        }
     }
 
     /// The browser sidebar is built from `list`, so anything `project` exports

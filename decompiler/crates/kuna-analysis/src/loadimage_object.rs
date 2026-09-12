@@ -2424,6 +2424,35 @@ mod tests {
         }
     }
 
+    /// PE import slots retain their loader identity independently of section
+    /// permissions. The side table, not CODE versus DATA, is what body
+    /// selection can rely on while keeping the slot's function symbol.
+    #[test]
+    fn pe_import_slots_are_reported_in_code_and_data_sections() {
+        for (fixture, slot, name, executable) in [
+            ("pe_imports.exe", 0x1_4000_d1ecu64, "GetLastError", false),
+            ("pe_iatincode_i386.exe", 0x40_1000u64, "VirtualAlloc", true),
+        ] {
+            let path = format!("{}/tests/fixtures/{fixture}", env!("CARGO_MANIFEST_DIR"));
+            let bytes = std::fs::read(&path).expect("fixture");
+            let img = ObjectLoadImage::from_bytes(&path, &bytes).expect("load the PE");
+            assert!(
+                img.import_slot_ranges().iter().any(|&(lo, hi)| slot >= lo && slot < hi),
+                "{fixture}: missing import slot at {slot:#x}"
+            );
+            assert!(
+                img.func_symbols().iter().any(|(addr, found)| *addr == slot && found == name),
+                "{fixture}: the slot FunctionSymbol must remain installed"
+            );
+            let section_is_code = img
+                .section_snapshot()
+                .iter()
+                .find(|&&(start, size, _)| slot >= start && slot - start < size)
+                .is_some_and(|&(_, _, flags)| flags & section_flags::CODE != 0);
+            assert_eq!(section_is_code, executable, "{fixture}: wrong section control");
+        }
+    }
+
     /// (kuna, `pe-zero-filled-data`) A PE section that declares more RAM than
     /// the file backs maps its whole `VirtualSize`: the file extent reads back
     /// its own bytes, the tail past `SizeOfRawData` reads back zeroes, and the

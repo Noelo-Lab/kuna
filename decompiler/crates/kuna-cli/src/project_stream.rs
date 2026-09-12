@@ -40,8 +40,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use kuna_console::engine::{ConsoleProgram, EntrySelector, FunctionEntry};
 use kuna_console::project::{
     build_header, collect_dat_addrs, decompile_pulled, render_c, render_readme,
-    render_readme_streaming, AsmPhase, DecompileOptions, FuncResult, ReadmeCounts, ReadmeFacts,
-    ReadmeLayout, StreamPhase, StreamProgress,
+    render_readme_streaming, AsmPhase, BatchOutcome, DecompileOptions, FuncResult, ReadmeCounts,
+    ReadmeFacts, ReadmeLayout, StreamPhase, StreamProgress,
 };
 use kuna_console::project_stream::{
     asm_labels_from_entries, render_data_tail, render_variables_section, AsmSweep,
@@ -597,6 +597,7 @@ struct ProjectWriter {
     /// One per finished target, with the code dropped — what the `.h`, the
     /// `.asm` variables section and the final README are built from.
     records: Vec<FuncResult>,
+    bodies: usize,
     errors: Vec<String>,
     dat: BTreeSet<u64>,
     protos: usize,
@@ -629,6 +630,7 @@ impl ProjectWriter {
             c_bytes,
             seq: 0,
             records: Vec::new(),
+            bodies: 0,
             errors: Vec::new(),
             dat: BTreeSet::new(),
             protos: 0,
@@ -665,6 +667,7 @@ impl ProjectWriter {
             self.protos += 1;
         }
         let failed = r.error.is_some();
+        self.bodies += usize::from(r.code.is_some());
         r.code = None;
         r.line_mappings.clear();
         r.aliases.clear();
@@ -740,7 +743,10 @@ fn index_line(seq: usize, r: &FuncResult, offset: u64, len: usize) -> String {
 // --- the export --------------------------------------------------------------
 
 /// `kuna decompile-project --stream`: the whole timeline.
-pub(crate) fn run(args: &Args, output: Option<&str>) -> Result<String, String> {
+pub(crate) fn run(
+    args: &Args,
+    output: Option<&str>,
+) -> Result<crate::decompile_project::ProjectCompletion, String> {
     let layout = Layout::resolve(args, output)?;
     refuse_a_live_export(&layout.out_dir)?;
     // A previous export's README is the only file in the folder that says which
@@ -776,7 +782,11 @@ pub(crate) fn run(args: &Args, output: Option<&str>) -> Result<String, String> {
     }
 }
 
-fn export(args: &Args, layout: &Layout, run: &StreamRun) -> Result<String, String> {
+fn export(
+    args: &Args,
+    layout: &Layout,
+    run: &StreamRun,
+) -> Result<crate::decompile_project::ProjectCompletion, String> {
     let load_started = Instant::now();
     let mut prog = load_with_heartbeat(args, run)?;
     let load_seconds = load_started.elapsed().as_secs_f64();
@@ -934,12 +944,15 @@ fn export(args: &Args, layout: &Layout, run: &StreamRun) -> Result<String, Strin
     })
     .collect::<Vec<_>>()
     .join(", ");
-    Ok(format!(
-        "wrote {}: {files}; functions: {} ok, {} failed\n",
-        layout.out_dir.display(),
-        counts.ok,
-        counts.failed
-    ))
+    Ok(crate::decompile_project::ProjectCompletion {
+        summary: format!(
+            "wrote {}: {files}; functions: {} ok, {} failed\n",
+            layout.out_dir.display(),
+            counts.ok,
+            counts.failed
+        ),
+        error: BatchOutcome::new(counts.total, writer.bodies).all_failed_error(&args.binary),
+    })
 }
 
 /// Load the program while the status file keeps ticking.

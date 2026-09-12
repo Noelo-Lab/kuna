@@ -65,15 +65,22 @@
 //!
 //! # The edit
 //!
+//! The recognizer runs after SSA, but call guarding has already replaced the
+//! caller's pre-check return register with a `KILLEDBYCALL` INDIRECT by then.
+//! On the first exact match this action records the call's instruction address
+//! in the function's P0 override store and requests a pipeline restart.  During
+//! replay, `Heritage::guard_calls` treats only ABI output storage at that exact
+//! call as unaffected (only while this option is on, only for an actual
+//! `KILLEDBYCALL`, and never across an explicit effect override).  The normal
+//! SSA construction can then retain every reaching caller definition.
+//!
 //! The stock pair `Funcdata::block_remove_internal` uses for a CALL inside a
 //! deleted block, and the pair `cleanupcode` uses for a Rust drop call:
 //! [`Funcdata::delete_call_specs`] to drop the `FuncCallSpecs` record, then
 //! [`Funcdata::op_destroy`].  Nothing else is deleted by hand.  The epilogue
 //! `INT_XOR` loses its last reader and dies in the following `ActionDeadCode`;
-//! the INDIRECTs that carried values across the call collapse in
-//! `RuleIndirectCollapse` (its "the indirect effect is gone" arm, which is
-//! exactly the destroyed-source case); and the repeating `fullloop` re-runs
-//! `mainloop` over the reduced function before P8 structures it.
+//! and the repeating `fullloop` re-runs `mainloop` over the reduced function
+//! before P8 structures it.
 //!
 //! The prologue init is released the same way `stackguard` releases the glibc
 //! canary init: [`collect_cookie_slots`] resolves the addrtied stack storage the
@@ -402,41 +409,41 @@ fn collect_cookie_slots(
     }
 }
 
+/// Classify the exact direct, unread-output, one-cookie-cancel call this pass strips.
+fn cookie_check_op(
+    data: &Funcdata,
+    op: OpId,
+    sp: &(Rc<AddrSpace>, uintb, int4),
+) -> Option<Vec<OpId>> {
+    let o = data.obank().get(op)?;
+    if o.code() != OpCode::CPUI_CALL || o.get_parent().is_none() {
+        return None;
+    }
+    if let Some(out) = o.get_out() {
+        if data.vbank().get(out).map(|v| !v.has_no_descend()).unwrap_or(true) {
+            return None;
+        }
+    }
+    let mut found: Option<Vec<OpId>> = None;
+    for j in 1..o.num_input() {
+        let arg = data.obank().get(op)?.get_in(j)?;
+        let Some(inits) = cookie_cancel(arg, data, sp) else { continue };
+        if found.is_some() {
+            return None;
+        }
+        found = Some(inits);
+    }
+    found
+}
+
 /// The CALL op to strip, with the entry-side scramble ops feeding it.
-///
-/// Scans the call-spec registry (the same enumeration `cleanupcode` uses) for a
-/// direct `CPUI_CALL` whose output nobody reads and exactly one of whose
-/// arguments is a cookie cancel.
 fn cookie_check_call(
     data: &Funcdata,
     sp: &(Rc<AddrSpace>, uintb, int4),
 ) -> Option<(OpId, Vec<OpId>)> {
     for i in 0..data.num_calls() {
         let op = data.get_call_specs(i).get_op();
-        let Some(o) = data.obank().get(op) else { continue };
-        if o.code() != OpCode::CPUI_CALL || o.get_parent().is_none() {
-            continue;
-        }
-        // A read output would be left dangling by destroyVarnode; the checker
-        // returns void, so declining here costs nothing.
-        if let Some(out) = o.get_out() {
-            if data.vbank().get(out).map(|v| !v.has_no_descend()).unwrap_or(true) {
-                continue;
-            }
-        }
-        let nin = o.num_input();
-        let mut found: Option<Vec<OpId>> = None;
-        for j in 1..nin {
-            let Some(arg) = data.obank().get(op).and_then(|o| o.get_in(j)) else { continue };
-            let Some(inits) = cookie_cancel(arg, data, sp) else { continue };
-            if found.is_some() {
-                // Two cookie cancels: not the one-argument checker.
-                found = None;
-                break;
-            }
-            found = Some(inits);
-        }
-        if let Some(inits) = found {
+        if let Some(inits) = cookie_check_op(data, op, sp) {
             return Some((op, inits));
         }
     }
@@ -485,6 +492,12 @@ impl Action for ActionStripMsvcStackGuard {
         }
         let Some(sp) = stack_pointer_storage(data) else { return 0 };
         let Some((op, inits)) = cookie_check_call(data, &sp) else { return 0 };
+        let site = data.obank().get(op).expect("cookie checker op").get_addr().clone();
+        if !data.get_override().is_msvc_cookie_call(&site) {
+            data.get_override_mut().insert_msvc_cookie_call(site);
+            data.set_restart_pending(true);
+            return 0;
+        }
         let mut slots: Vec<(Address, int4)> = Vec::new();
         collect_cookie_slots(&inits, data, &mut slots);
         data.delete_call_specs(op);

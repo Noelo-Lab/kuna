@@ -1,0 +1,34 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "timeout_s": 60,
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "shared_wrapper"
+  ],
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_absent": [
+      "funcboundflow:",
+      "return\\s+0x21;"
+    ],
+    "stdout_matches": [
+      "return\\s+7;",
+      "return\\s+0xffffffff;"
+    ]
+  },
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/function_boundary_return_x86_64",
+    "binary_sha256": "6aac76982527b9e550ef1a70bbe0ab8dd7d59fc67c42cf21a33991e03e40ff01",
+    "binary_size": 5080,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/function_boundary_return_x86_64",
+    "selector": "shared_wrapper",
+    "selector_kind": "name"
+  },
+  "notes": "Synthetic x86-64 twin: shared_wrapper falls through to callable_ret, a genuine STT_FUNC RET which ret_caller also calls. Before, funcboundflow replaced the RET with a no-return halt and lost both returns. The absent 0x21 clause proves flow stops at the admitted RET. The i386 dataset image remains the exact witness."
+}

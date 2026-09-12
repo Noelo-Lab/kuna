@@ -104,6 +104,41 @@ pub struct FuncResult {
     pub callee_hints: Vec<u64>,
 }
 
+/// The run-level verdict of a non-empty decompile batch.
+///
+/// Per-function failures stay isolated records while at least one body was
+/// produced. A selected batch that produced no body at all is different: there
+/// is no decompilation for the caller to consume, so every CLI whole-binary
+/// surface reports one run-level error after preserving its records/artifacts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BatchOutcome {
+    selected: usize,
+    bodies: usize,
+}
+
+impl BatchOutcome {
+    pub fn of(results: &[FuncResult]) -> Self {
+        Self::new(results.len(), results.iter().filter(|r| r.code.is_some()).count())
+    }
+
+    pub fn new(selected: usize, bodies: usize) -> Self {
+        debug_assert!(bodies <= selected);
+        Self { selected, bodies }
+    }
+
+    pub fn all_failed_error(self, binary: &str) -> Option<String> {
+        (self.selected > 0 && self.bodies == 0).then(|| {
+            let function = if self.selected == 1 { "function" } else { "functions" };
+            let record = if self.selected == 1 { "record" } else { "records" };
+            format!(
+                "decompilation produced zero function bodies for {} selected {function} in \
+                 {binary}; see the per-function error {record}",
+                self.selected
+            )
+        })
+    }
+}
+
 /// What a decompile batch captures beyond the C itself.
 ///
 /// `single_target` is an explicit input rather than a count: it gates the
@@ -198,9 +233,32 @@ pub fn decompile_pulled(
         }
         let byte_address = entry.get_offset();
         let address = prog.output_code_offset(byte_address);
+        if !prog.is_body_entry(byte_address) {
+            let error = crate::engine::EntryLookupError::BodylessImport {
+                selector: name.clone(),
+                name: name.clone(),
+                address: byte_address,
+            }
+            .to_string();
+            sink(FuncResult {
+                code: None,
+                name,
+                address,
+                byte_address,
+                size: size as i64,
+                error: Some(error),
+                proto: None,
+                variables: Vec::new(),
+                line_mappings: Vec::new(),
+                aliases,
+                object_location,
+                callee_hints: Vec::new(),
+            });
+            continue;
+        }
         // (kuna) An entry with no mapped bytes is an EXTERNAL, not a decompile
-        // failure: a relocatable object's undefined symbols (and a PE import
-        // slot) carry an address only so a call to one renders by name, and the
+        // failure: a relocatable object's undefined symbols carry an address
+        // only so a call to one renders by name, and the
         // definition lives in another module. The whole-binary surfaces never
         // reach one (`function_entries_executable` drops them), but selecting one
         // by name or address — clicking its row in the browser inventory — used to

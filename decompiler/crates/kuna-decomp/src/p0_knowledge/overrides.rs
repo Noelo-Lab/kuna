@@ -53,7 +53,7 @@
 //!   [`Override::force_gotos`]) so the apply logic can live at the W4/W5 call
 //!   site without this module depending on the unported subsystems.  // STUB(W4)
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use kuna_base::address::Address;
 use kuna_base::error::{KunaError, KunaResult};
@@ -221,6 +221,8 @@ pub struct Override {
     multistagejump: Vec<Address>,
     /// Override the CALL <-> BRANCH interpretation of a branch instruction.
     flowoverride: BTreeMap<Address, uint4>,
+    /// `/GS` checker call sites recognized after SSA and replayed on restart.
+    msvc_cookie_calls: BTreeSet<Address>,
 }
 
 impl Override {
@@ -239,6 +241,7 @@ impl Override {
         self.protoover.clear();
         self.multistagejump.clear();
         self.flowoverride.clear();
+        self.msvc_cookie_calls.clear();
     }
 
     /// Generate the \e warning message related to a dead-code delay
@@ -321,6 +324,16 @@ impl Override {
     /// (C++ `Override::insertFlowOverride`).
     pub fn insert_flow_override(&mut self, addr: Address, type_: uint4) {
         self.flowoverride.insert(addr, type_);
+    }
+
+    /// Record an exact `/GS` checker call site for the restart re-flow.
+    pub fn insert_msvc_cookie_call(&mut self, addr: Address) {
+        self.msvc_cookie_calls.insert(addr);
+    }
+
+    /// Has the late `/GS` recognizer seeded this exact call site?
+    pub fn is_msvc_cookie_call(&self, addr: &Address) -> bool {
+        self.msvc_cookie_calls.contains(addr)
     }
 
     /// Look up a function-prototype override at a call point (C++

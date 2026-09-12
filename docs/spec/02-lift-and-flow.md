@@ -474,11 +474,19 @@ body into the current one (the following function is then emitted twice: once
 correctly, once as a garbage tail of its predecessor). Decision rule: a
 fall-through whose target is the entry of another *known* function
 (`query_call(next).is_some()`), and is not the current function's own entry, has
-run off the end of the current function. The truncation lives at the fall-through
-push of `flow.rs (FlowInfo::process_instruction)`: instead of pushing the target,
-a no-return artificial RETURN is planted (mirroring the `check_for_flow_modification`
-no-return-call halt) and a `funcboundflow` warning makes the truncation
-attributable. The halt also *starts a basic block*: `flow.rs (FlowInfo::collect_edges)`
+run off the end of the current function, **except when the complete instruction
+at that foreign entry describes an unconditional `CPUI_RETURN` with no other
+control-transfer op**. Such a return is admitted as a shared epilogue: it has no
+successor, so decoding it cannot consume any instruction beyond the separately
+callable function. Direct and computed branches, and conditional returns, are
+not part of the exception because they can still reach more code and cross a
+boundary; if the one-instruction probe cannot decode the entry, the conservative
+bound remains. The truncation lives at the fall-through push
+of `flow.rs (FlowInfo::process_instruction)`: instead of pushing a non-return
+target, a no-return artificial RETURN is planted (mirroring the
+`check_for_flow_modification` no-return-call halt) and a `funcboundflow` warning
+makes the truncation attributable. The halt also *starts a basic block*:
+`flow.rs (FlowInfo::collect_edges)`
 emits a fall-through edge for every CBRANCH whatever else the walk decided, so when
 the truncated instruction is a conditional branch the edge otherwise resolves back
 to the branch's own block. That self-edge is what the structurer renders as the

@@ -42,8 +42,9 @@
     (`lea 0x8(%ebp),%eax`) and never reads that slot as a value, so `&amp;a0` is the
     parameter's only appearance.
 
-    Pass 1 (`option paramrefdecl off`) reproduces the BUG: the parameter is
-    declared a second time in the body.
+    Pass 1 (`option paramrefdecl off`) retains the distinct body object, but the
+    unconditional function-scope name allocator suffixes it and its reference so
+    the output remains valid C.
     Pass 2 (`option paramrefdecl on`) is the FIX: the body declares nothing and
     the `&amp;a0` argument resolves to the signature's own parameter.
 -->
@@ -64,7 +65,8 @@
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="paramrefdecl #1: option off re-declares the signature parameter as a body local (bug reproduced)" min="1" max="1">^ *[a-z0-9_]+ a0;$</stringmatch>
-<stringmatch name="paramrefdecl #2: the address-taken parameter is passed by address in both passes" min="2" max="2">consume\(&amp;a0,a1\);</stringmatch>
+<stringmatch name="paramrefdecl #1: option off keeps the distinct body local under a collision-free suffix" min="1" max="1">^ *int4 a0_1;$</stringmatch>
+<stringmatch name="paramrefdecl #2: each pass references the identifier selected for its address-taken object" min="1" max="1">consume\(&amp;a0_1,a1\);</stringmatch>
+<stringmatch name="paramrefdecl #2b: the guarded pass resolves the address to the signature parameter" min="1" max="1">consume\(&amp;a0,a1\);</stringmatch>
 <stringmatch name="paramrefdecl #3: the parameter keeps its place in the signature in both passes" min="2" max="2">^void derive_key\(unsigned int a0,unsigned int a1\)$</stringmatch>
 </decompilertest>

@@ -5,8 +5,8 @@
   "rejected_count": 1,
   "by_status": {
     "blocked": 1,
-    "closed": 131,
-    "open": 65
+    "closed": 138,
+    "open": 58
   },
   "by_track": {
     "loader": 10,
@@ -1591,7 +1591,7 @@
       "need_id": "x86-64-syscall-wrapper",
       "title": "x86-64 syscall wrapper returns the incoming syscall number",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "blocker",
       "probe_id": "p-babb09aa99a6",
       "acceptance_id": "a-266d44a4acaf",
@@ -1606,15 +1606,15 @@
       ],
       "first_seen_round": 7,
       "attempts": 0,
-      "covered_by_option": null,
+      "covered_by_option": "x64syscall",
       "touches": [
         "decompiler/crates/kuna-decomp"
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": "https://github.com/Noelo-Lab/kuna/pull/552",
+      "closed_in_round": 12,
+      "closing_pr": "552",
       "reject_reason": null,
       "score": 20.794415,
       "path": "docs/re-needs/x86-64-syscall-wrapper.md"
@@ -2658,10 +2658,10 @@
       "need_id": "decompiling-executable-section-iat",
       "title": "Decompiling an executable-section IAT slot invents an arithmetic function",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
       "probe_id": "p-b0ded31a46b9",
-      "acceptance_id": "a-adefc9329f47",
+      "acceptance_id": "a-fffdb4ce0518",
       "hypothesis_status": "overturned",
       "credibility": 0.85,
       "instances": 1,
@@ -2672,18 +2672,21 @@
         12
       ],
       "first_seen_round": 12,
-      "attempts": 0,
+      "attempts": 1,
       "covered_by_option": null,
       "touches": [
-        "decompiler/crates/kuna-decomp"
+        "decompiler/crates/kuna-analysis",
+        "decompiler/crates/kuna-console",
+        "decompiler/crates/kuna-cli",
+        "decompiler/crates/kuna-wasm"
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": "588",
+      "closed_in_round": 12,
+      "closing_pr": "588",
       "reject_reason": null,
-      "score": 13.862944,
+      "score": 9.241962,
       "path": "docs/re-needs/decompiling-executable-section-iat.md"
     },
     {
@@ -2787,10 +2790,10 @@
       "need_id": "default-function-boundary-truncates",
       "title": "Default function boundary truncates the shared syscall return",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
       "probe_id": "p-3f3a4aa63b91",
-      "acceptance_id": "a-5df3fa77b4ec",
+      "acceptance_id": "a-9d9a83349539",
       "hypothesis_status": "upheld",
       "credibility": 0.7,
       "instances": 1,
@@ -2798,21 +2801,22 @@
         "5ab77f5c33c5d40ad448c615"
       ],
       "rounds": [
-        10
+        10,
+        12
       ],
       "first_seen_round": 10,
-      "attempts": 0,
+      "attempts": 1,
       "covered_by_option": null,
       "touches": [
         "decompiler/crates/kuna-decomp"
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": "589",
+      "closed_in_round": 12,
+      "closing_pr": "589",
       "reject_reason": null,
-      "score": 13.862944,
+      "score": 9.241962,
       "path": "docs/re-needs/default-function-boundary-truncates.md"
     },
     {
@@ -3531,7 +3535,7 @@
       "need_id": "msvc-cookie-removal-changes",
       "title": "MSVC cookie removal changes failure return from 1 to 0",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
       "probe_id": "p-edd7d1f331d9",
       "acceptance_id": "a-7c038829dc65",
@@ -3542,21 +3546,22 @@
         "68bffbe9224c0ec5dcedbe7a"
       ],
       "rounds": [
-        6
+        6,
+        12
       ],
       "first_seen_round": 6,
-      "attempts": 0,
-      "covered_by_option": null,
+      "attempts": 1,
+      "covered_by_option": "msvcstackguard",
       "touches": [
         "decompiler/crates/kuna-decomp"
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": 587,
+      "closed_in_round": 12,
+      "closing_pr": "587",
       "reject_reason": null,
-      "score": 13.862944,
+      "score": 9.241962,
       "path": "docs/re-needs/msvc-cookie-removal-changes.md"
     },
     {
@@ -3692,10 +3697,10 @@
       "need_id": "overlapping-subregister-temporaries-receive",
       "title": "Overlapping subregister temporaries receive duplicate local names",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
       "probe_id": "p-e2e8e9ceb38a",
-      "acceptance_id": "a-923bd9e40d90",
+      "acceptance_id": "a-c6276af322b1",
       "hypothesis_status": "upheld",
       "credibility": 0.7,
       "instances": 1,
@@ -3703,21 +3708,22 @@
         "603a9d7833c5d42c3d016c55"
       ],
       "rounds": [
-        11
+        11,
+        12
       ],
       "first_seen_round": 11,
-      "attempts": 0,
+      "attempts": 1,
       "covered_by_option": null,
       "touches": [
         "decompiler/crates/kuna-decomp"
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": 590,
+      "closed_in_round": 12,
+      "closing_pr": "590",
       "reject_reason": null,
-      "score": 13.862944,
+      "score": 9.241962,
       "path": "docs/re-needs/overlapping-subregister-temporaries-receive.md"
     },
     {
@@ -4433,10 +4439,10 @@
       "need_id": "typed-mach-o-tail",
       "title": "Typed Mach-O tail stub drops both forwarded arguments",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
       "probe_id": "p-4d8cc41166db",
-      "acceptance_id": "a-907ef770cc72",
+      "acceptance_id": "a-0f1c487a5eb9",
       "hypothesis_status": "upheld",
       "credibility": 0.85,
       "instances": 1,
@@ -4447,18 +4453,18 @@
         12
       ],
       "first_seen_round": 12,
-      "attempts": 0,
+      "attempts": 1,
       "covered_by_option": null,
       "touches": [
         "decompiler/crates/kuna-decomp"
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": "https://github.com/Noelo-Lab/kuna/pull/585",
+      "closed_in_round": 12,
+      "closing_pr": 585,
       "reject_reason": null,
-      "score": 13.862944,
+      "score": 9.241962,
       "path": "docs/re-needs/typed-mach-o-tail.md"
     },
     {
@@ -4660,10 +4666,10 @@
       "need_id": "whole-binary-decompilation-exits",
       "title": "Whole-binary decompilation exits zero when every function fails",
       "track": "tooling",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
-      "probe_id": "p-60e3bcd5f937",
-      "acceptance_id": "a-b1806ca4663e",
+      "probe_id": "p-6b7d31fb2398",
+      "acceptance_id": "a-ca0acbabc161",
       "hypothesis_status": "inconclusive",
       "credibility": 0.7,
       "instances": 1,
@@ -4678,13 +4684,16 @@
       "covered_by_option": null,
       "touches": [
         "decompiler/crates/kuna-cli",
+        "decompiler/crates/kuna-console/src/project.rs",
+        "docs/cli.md",
+        "docs/spec/00-overview.md",
         "docs/history.md"
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": "https://github.com/Noelo-Lab/kuna/pull/592",
+      "closed_in_round": 12,
+      "closing_pr": "592",
       "reject_reason": null,
       "score": 13.862944,
       "path": "docs/re-needs/whole-binary-decompilation-exits.md"

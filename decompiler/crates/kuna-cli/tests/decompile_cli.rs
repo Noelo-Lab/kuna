@@ -299,6 +299,141 @@ fn specs() -> String {
     repo_root().join("specs").to_str().unwrap().to_string()
 }
 
+fn pe_fixture(name: &str) -> String {
+    repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures")
+        .join(name)
+        .to_str()
+        .unwrap()
+        .to_string()
+}
+
+fn run_pe_decompile(binary: &str, target: &str, extra: &[&str]) -> std::process::Output {
+    let specs = specs();
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_kuna"));
+    cmd.args(["decompile", binary, target, "--sleighpath", specs.as_str()]);
+    cmd.args(extra);
+    cmd
+        .output()
+        .expect("run kuna decompile on PE fixture")
+}
+
+/// An IAT word is a call-binding address, not a body, regardless of section
+/// permissions. Name and address selection report the same stable refusal, and
+/// refusing one slot never advances into either adjacent slot.
+#[test]
+fn pe_iat_body_selection_refuses_name_address_and_adjacent_slots() {
+    let executable = pe_fixture("pe_iatincode_i386.exe");
+    let data = pe_fixture("pe_imports.exe");
+    let cases = [
+        (
+            executable.as_str(),
+            "VirtualAlloc",
+            vec![],
+            "selector \"VirtualAlloc\" identifies import VirtualAlloc at 0x401000; \
+             the IAT slot contains a loader-written pointer, not a function body",
+        ),
+        (
+            executable.as_str(),
+            "0x401000",
+            vec!["--addr"],
+            "selector \"0x401000\" identifies import VirtualAlloc at 0x401000; \
+             the IAT slot contains a loader-written pointer, not a function body",
+        ),
+        (
+            executable.as_str(),
+            "0x401004",
+            vec!["--addr"],
+            "selector \"0x401004\" identifies import GetModuleHandleA at 0x401004; \
+             the IAT slot contains a loader-written pointer, not a function body",
+        ),
+        (
+            executable.as_str(),
+            "0x401008",
+            vec!["--addr"],
+            "selector \"0x401008\" identifies import ExitProcess at 0x401008; \
+             the IAT slot contains a loader-written pointer, not a function body",
+        ),
+        (
+            data.as_str(),
+            "0x14000d1ec",
+            vec!["--addr"],
+            "selector \"0x14000d1ec\" identifies import GetLastError at 0x14000d1ec; \
+             the IAT slot contains a loader-written pointer, not a function body",
+        ),
+    ];
+
+    for (binary, target, extra, expected) in cases {
+        let out = run_pe_decompile(binary, target, &extra);
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        if is_specs_skip(&stderr) {
+            eprintln!("skipping: specs-less environment: {stderr}");
+            return;
+        }
+        assert_eq!(out.status.code(), Some(1), "{target} must be refused: {stderr}");
+        assert!(stdout.trim().is_empty(), "{target} emitted a body:\n{stdout}");
+        assert_eq!(stderr, format!("error: {expected}\n"), "unstable diagnostic for {target}");
+        assert!(!stderr.contains("CARRY1(") && !stderr.contains("*v"));
+    }
+}
+
+/// The guard must not disturb the two uses the IAT symbol exists for: selecting
+/// the executable thunk keeps its imported prototype, and calls from an
+/// ordinary function still deindirect through the slots by name.
+#[test]
+fn pe_import_thunk_and_real_function_still_decompile_with_named_prototypes() {
+    let data = pe_fixture("pe_imports.exe");
+    let thunk = run_pe_decompile(&data, "GetLastError", &[]);
+    let thunk_stderr = String::from_utf8_lossy(&thunk.stderr);
+    if is_specs_skip(&thunk_stderr) {
+        eprintln!("skipping: specs-less environment: {thunk_stderr}");
+        return;
+    }
+    let thunk_stdout = String::from_utf8_lossy(&thunk.stdout);
+    assert_eq!(thunk.status.code(), Some(0), "thunk failed: {thunk_stderr}");
+    assert!(
+        thunk_stdout.contains("unsigned int GetLastError(void)")
+            && thunk_stdout.contains("return GetLastError()"),
+        "the thunk lost its import prototype or identity:\n{thunk_stdout}"
+    );
+
+    let executable = pe_fixture("pe_iatincode_i386.exe");
+    let caller = run_pe_decompile(&executable, "0x401010", &["--addr"]);
+    let caller_stderr = String::from_utf8_lossy(&caller.stderr);
+    let caller_stdout = String::from_utf8_lossy(&caller.stdout);
+    assert_eq!(caller.status.code(), Some(0), "real entry failed: {caller_stderr}");
+    assert!(
+        caller_stdout.contains("VirtualAlloc(") && caller_stdout.contains("GetModuleHandleA("),
+        "the import calls no longer deindirect by name:\n{caller_stdout}"
+    );
+}
+
+/// The in-process JSON path uses the same body selection policy and preserves
+/// its machine-readable error document while returning a failed verdict.
+#[test]
+fn pe_iat_json_selection_is_a_non_success_without_code() {
+    let binary = pe_fixture("pe_iatincode_i386.exe");
+    let out = run_pe_decompile(&binary, "0x401000", &["--addr", "--json"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    if is_specs_skip(&stderr) {
+        eprintln!("skipping: specs-less environment: {stderr}");
+        return;
+    }
+    let expected = "selector \"0x401000\" identifies import VirtualAlloc at 0x401000; \
+                    the IAT slot contains a loader-written pointer, not a function body";
+    assert_eq!(out.status.code(), Some(1), "JSON selection must fail: {stderr}");
+    assert_eq!(stderr, format!("error: {expected}\n"));
+    assert!(stdout.contains("\"functions\": []"), "a code record escaped:\n{stdout}");
+    let json_expected = expected.replace('"', "\\\"");
+    assert!(
+        stdout.contains(&json_expected),
+        "the JSON error lost the reason:\n{stdout}"
+    );
+    assert!(!stdout.contains("CARRY1(") && !stdout.contains("*v"));
+}
+
 /// The DIV-88 fixture: an ELF whose `.symtab` carries `::b`, a qualified name
 /// with an empty scope component.  `symbolnamerepair` (default-ON) skips the
 /// degenerate component; `off` restores the hard load failure this test needs.

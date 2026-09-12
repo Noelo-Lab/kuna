@@ -10,6 +10,11 @@
 //     scramble op; the same shape with the two stack-pointer references at
 //     DIFFERENT frame offsets does not (the XORs would not cancel); a scramble
 //     of a constant does not; a single XOR does not.
+//   - `cookie_check_op`: only a direct call with one exact cancel and no live
+//     output is classified; indirect calls, mismatched SPs, two cancels, and a
+//     read output all fail closed.
+//   - the first enabled action pass seeds the exact call site and requests a
+//     restart; the replay removes it.
 //   - `ActionStripMsvcStackGuard::apply` is inert when the gate is off.
 
 use super::*;
@@ -26,6 +31,7 @@ use kuna_base::types::int4;
 use crate::action::{Action, ActionContext};
 use crate::context::{ArchContext, BlockId, TypeOp};
 use crate::dtype::{type_metatype, Datatype};
+use crate::fspec::FuncCallSpecs;
 
 const SP_OFF: u64 = 0x20;
 const SP_SIZE: int4 = 8;
@@ -63,16 +69,22 @@ fn build_manager() -> AddrSpaceManager {
     m
 }
 
-fn build_fd() -> Funcdata {
+fn build_fd_with_option(on: bool) -> Funcdata {
     let manage = build_manager();
     let regspc = Rc::clone(manage.get_space_by_name("register").unwrap());
     let stackspc = Rc::clone(manage.get_stack_space().unwrap());
     let sp_data = VarnodeStorage { space: Some(regspc), offset: SP_OFF, size: SP_SIZE as u32 };
     manage.add_spacebase_pointer(&stackspc, &sp_data, SP_SIZE, true).unwrap();
-    let glb = Rc::new(ArchContext::new(manage));
+    let mut ctx = ArchContext::new(manage);
+    ctx.strip_msvc_stack_guard = on;
+    let glb = Rc::new(ctx);
     let code = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let entry = Address::new(code, 0x1000);
     Funcdata::new("func", "func", glb, entry, 0x1000_0000, 0x40).unwrap()
+}
+
+fn build_fd() -> Funcdata {
+    build_fd_with_option(false)
 }
 
 fn sp(fd: &Funcdata) -> (Rc<AddrSpace>, uintb, int4) {
@@ -228,6 +240,31 @@ fn build_cancel(fd: &mut Funcdata, scramble_off: i64, cancel_off: i64) -> (Varno
     (out, init)
 }
 
+/// Append a call using `args`, returning the op and its containing block.
+fn checker_call(fd: &mut Funcdata, args: &[VarnodeId], opc: OpCode) -> (OpId, BlockId) {
+    let bl = args
+        .first()
+        .and_then(|vn| fd.vbank().get(*vn))
+        .and_then(|vn| vn.get_def())
+        .and_then(|op| fd.obank().get(op))
+        .and_then(|op| op.get_parent())
+        .expect("argument definition has a parent block");
+    let call = mk_op(fd, 1 + args.len() as int4, 0x30, opc);
+    let target = if opc == OpCode::CPUI_CALL {
+        let entry = ram_addr(fd, 0x2000);
+        fd.new_code_ref(&entry)
+    } else {
+        let addr = reg(fd, 0x180);
+        fd.vbank_mut().create(8, addr, unk(8))
+    };
+    fd.op_set_input(call, target, 0).unwrap();
+    for (slot, arg) in args.iter().enumerate() {
+        fd.op_set_input(call, *arg, slot as int4 + 1).unwrap();
+    }
+    fd.op_insert_end(call, bl);
+    (call, bl)
+}
+
 #[test]
 fn cancel_at_the_same_frame_offset_matches() {
     let mut fd = build_fd();
@@ -315,7 +352,80 @@ fn a_join_with_one_scramble_at_another_offset_declines() {
     assert_eq!(cookie_cancel(out, &fd, &sp), None);
 }
 
+// --- cookie_check_op ---------------------------------------------------------
+
+#[test]
+fn direct_call_with_one_exact_cancel_matches() {
+    let mut fd = build_fd();
+    let (arg, inits) = build_cancel(&mut fd, -0x48, -0x48);
+    let (call, _) = checker_call(&mut fd, &[arg], OpCode::CPUI_CALL);
+    assert_eq!(cookie_check_op(&fd, call, &sp(&fd)), Some(vec![inits]));
+}
+
+#[test]
+fn indirect_call_declines_even_with_exact_algebra() {
+    let mut fd = build_fd();
+    let (arg, _) = build_cancel(&mut fd, -0x48, -0x48);
+    let (call, _) = checker_call(&mut fd, &[arg], OpCode::CPUI_CALLIND);
+    assert_eq!(cookie_check_op(&fd, call, &sp(&fd)), None);
+}
+
+#[test]
+fn direct_call_with_mismatched_stack_pointers_declines() {
+    let mut fd = build_fd();
+    let (arg, _) = build_cancel(&mut fd, -0x48, -0x40);
+    let (call, _) = checker_call(&mut fd, &[arg], OpCode::CPUI_CALL);
+    assert_eq!(cookie_check_op(&fd, call, &sp(&fd)), None);
+}
+
+#[test]
+fn direct_call_with_two_cookie_cancels_declines() {
+    let mut fd = build_fd();
+    let (arg1, _) = build_cancel(&mut fd, -0x48, -0x48);
+    let (call, _) = checker_call(&mut fd, &[arg1, arg1], OpCode::CPUI_CALL);
+    assert_eq!(cookie_check_op(&fd, call, &sp(&fd)), None);
+}
+
+#[test]
+fn direct_call_with_a_read_output_declines() {
+    let mut fd = build_fd();
+    let (arg, _) = build_cancel(&mut fd, -0x48, -0x48);
+    let (call, bl) = checker_call(&mut fd, &[arg], OpCode::CPUI_CALL);
+    let out_addr = reg(&fd, 0x188);
+    let out = fd.vbank_mut().create(8, out_addr, unk(8));
+    fd.op_set_output(call, out).unwrap();
+    let read = mk_op(&mut fd, 1, 0x34, OpCode::CPUI_COPY);
+    fd.op_set_input(read, out, 0).unwrap();
+    let read_addr = reg(&fd, 0x190);
+    let read_out = fd.vbank_mut().create(8, read_addr, unk(8));
+    fd.op_set_output(read, read_out).unwrap();
+    fd.op_insert_end(read, bl);
+    assert_eq!(cookie_check_op(&fd, call, &sp(&fd)), None);
+}
+
 // --- the Action gate ----------------------------------------------------------
+
+#[test]
+fn enabled_action_seeds_then_removes_the_exact_call() {
+    let mut fd = build_fd_with_option(true);
+    let (arg, _) = build_cancel(&mut fd, -0x48, -0x48);
+    let (call, _) = checker_call(&mut fd, &[arg], OpCode::CPUI_CALL);
+    let entry = ram_addr(&fd, 0x2000);
+    fd.push_call_specs(FuncCallSpecs::new(call, entry));
+    let site = fd.obank().get(call).unwrap().get_addr().clone();
+    let mut act = ActionStripMsvcStackGuard::new(false, "returnsplit");
+    let mut ctx = ActionContext::default();
+
+    assert_eq!(act.apply(&mut fd, &mut ctx), 0);
+    assert!(fd.has_restart_pending());
+    assert!(fd.get_override().is_msvc_cookie_call(&site));
+    assert!(fd.obank().get(call).is_some());
+
+    fd.set_restart_pending(false);
+    assert_eq!(act.apply(&mut fd, &mut ctx), 1);
+    assert!(fd.obank().get(call).unwrap().is_dead());
+    assert_eq!(fd.num_calls(), 0);
+}
 
 #[test]
 fn action_is_inert_when_the_option_is_off() {

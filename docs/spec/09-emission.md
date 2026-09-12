@@ -679,8 +679,9 @@ and so reported an address-taken parameter as unused while the emitted C showed
 the reference; the reference is attributed to the parameter only when no
 storage-backed or name-backed evidence was found
 (`decompiler/crates/kuna-decomp/src/p9_emit/kuna_paramrefdecl.rs
-(parameter_reference_varrefs)`). `option paramrefdecl off` restores the duplicate
-declaration.
+(parameter_reference_varrefs)`). `option paramrefdecl off` restores the distinct
+body object, but the function-scope uniqueness invariant gives it a suffix
+instead of re-declaring the parameter's identifier.
 
 **(angr) dedupvardecls — collapsing duplicate declarations.** kuna's
 declaration emitter walks HighVariables, not the upstream symbol table (which
@@ -719,6 +720,29 @@ naming) the storage comment — is byte-identical to one already emitted
 two same-named locals at different slots or types differ in signature and both
 survive.
 
+*By overlap group.* Register aliases can form a `VariableGroup` without any
+mapped `ScopeLocal` Symbol: for example, separate AL and AH highs plus the AX
+high that covers both. When exactly one declared piece contains every other
+piece and all carry the same recovered name, only that whole-value high is
+declared. References to the suppressed subpieces resolve through the whole
+owner, so the byte writes render as `v4._0_1_` / `v4._1_1_` against one
+`undefined2 v4` declaration. An absent or ambiguous whole cover does not trigger
+this collapse, and differing user/debug names are never merged. If such grouped
+pieces still collide after every semantic collapse, each is instead suffixed and
+its access is rendered relative to its own piece-sized declaration (never, for
+example, `byte_2._1_1_` against a one-byte object).
+
+After the semantic and rendered-line collapses, declaration identifiers are
+made unconditionally unique within the C function scope. The allocator reserves
+parameter names, every original local spelling, every snapshotted global-symbol
+name, and every rendered direct-callee name; it keeps the first available
+spelling and gives any genuinely distinct collision a deterministic `_N`
+suffix. Reserving the non-locals prevents a generated `value_1` declaration from
+capturing an existing `value_1` global access or direct call. The chosen spelling
+is keyed by HighVariable and used by every body reference path as well as its
+declaration; existing parameter, user/debug, Ghidra-style, global, and callee
+names remain authoritative.
+
 Partial covers of a mapped scalar are suppressed only when another
 HighVariable with the same name actually represents the whole storage: its
 first member is non-constant, starts at symbol offset zero, and has the symbol's
@@ -734,10 +758,13 @@ The symbol step is what makes the collapse total for a *mapped* slot. The line
 step alone left one stack slot declared twice under one name with two types
 whenever two of its live ranges did not merge and recovered different types
 (DIV-52), which is not compilable C and which no rendered-line key can catch.
-Neither step can remove the last declaration of a referenced name: the symbol
-step requires the identifier to match before it collapses anything, and the line
-step requires the whole line to match. `option dedupvardecls off` restores the
-one-line-per-HighVariable rendering.
+No collapse can remove the last declaration of a referenced name: the symbol
+step requires the identifier to match, the line step requires the whole line to
+match, and the overlap step requires a declared unique whole owner. `option
+dedupvardecls off` restores the one-line-per-HighVariable behavior for the two
+option-controlled collapses; overlap-owner collapsing and collision suffixing
+remain active because unique, correctly bound C identifiers are an output
+validity invariant rather than a presentation choice.
 
 ## 9.4 Strings & comments
 

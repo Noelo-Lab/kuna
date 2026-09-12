@@ -728,6 +728,23 @@ through the packed image's import data directory, because retargeting the direct
 at a decoy is the first thing a repacker does to a UPX image, and the witness in
 `tests/fixtures/upx_packed_pe_i386.exe` is exactly that.
 
+The agreement is over the *set* of DLL names, not a position-by-position walk. The
+loader table holds one descriptor per distinct DLL, while the original image may
+import a single DLL across several descriptors -- a 32-bit MSVC witness names seven
+DLLs from thirteen, `KERNEL32.DLL` four times -- so the two lists differ in length
+whenever a binary does that, and a positional comparison can never agree on one. It
+did not merely lose the table: it reported the image as corrupt.
+
+Base relocations are refused only when the packer kept them. UPX strips an EXE's
+relocations by default, marking the packed header `RELOCS_STRIPPED`, and its own
+unpacker then zeroes the recovered header's relocation directory rather than
+rebuilding anything; `kuna unpack` does the same, so the recovered file is the one
+`upx -d` writes. The relocations UPX keeps -- every DLL's, and every ASLR image's --
+travel as an optimized stream plus a five-byte trailer record that this tier does not
+replay, and such an image is refused by name before the resource rebuild could read
+that record as its icon count. A TLS directory needs no step at all: UPX's own
+`rebuildTls` is empty, so the directory comes back with the image it was packed in.
+
 (kuna) **NEOLite.** A second packer, recognized before UPX is asked and on evidence
 of its own, so nothing about the UPX arm -- including what it answers for a file that
 is not packed at all -- depends on this. `decompiler/crates/kuna-analysis/src/neolite.rs`
@@ -1004,10 +1021,11 @@ calls resolve to a name and library prototype. They are not function bodies.
 The complete canonical inventory retains both, while automatic whole-binary
 decompilation selects only entries contained by a loader `CODE` section
 (`decompiler/crates/kuna-console/src/engine.rs
-(ConsoleProgram::function_entries_executable)`). Explicit address selection
-remains unrestricted; name selection keeps its normal first-match behavior when
-a stub and slot share a name. Loaders without section metadata keep the complete
-inventory.
+(ConsoleProgram::function_entries_executable)`). Explicit decompiling selection
+uses the same body distinction: a lone IAT slot is refused with its import name
+and address, while a name shared by a stub and slot selects the sole body-bearing
+stub. Generic lookup still resolves the slot for call binding and inventory
+consumers. Loaders without section metadata keep the complete inventory.
 
 (kuna) "In a data section" is the usual place for a slot and not a property of
 one, so the section flags cannot carry that filter alone. A PE is free to put its
@@ -1024,8 +1042,9 @@ empty everywhere else) beside the names themselves, and the engine carries them
 as `[lo, hi)` ranges (`ObjectLoadImage::import_slot_ranges` →
 `ConsoleProgram::is_import_slot`). An entry inside one is excluded from the
 batch set whatever the section says. Nothing else moves: the canonical
-inventory, `kuna functions`, `--addr`/`--functions` selection and the call
-naming the slot exists for are all unchanged — on the crypter the batch goes
+inventory, `kuna functions`, generic symbol resolution and the call naming the
+slot exists for are unchanged. Decompiling `--addr`/`--functions` selection
+refuses a slot before decode — on the crypter the batch goes
 from 56 entries to its 6 real ones while the surviving body still renders
 `ExitProcess(0)`. A caller-declared entry (`--define-function`) outranks this
 test as it outranks the section-flag one, so an analyst who asserts a function
@@ -2601,7 +2620,7 @@ by field, returning the serial result; the size floor is a parameter of the plan
 which `KUNA_DECODE_MIN_BYTES` sets on the CLI path and the equivalence tests pass
 directly, so they are not vacuous on small fixtures. This is a driver-tier resource setting with no output
 effect, so it is a CLI flag and an environment bridge rather than a settable
-option (DIV-167).
+option (DIV-168).
 
 (kuna) The seed set carries one more source, under the same `funcstart_patterns`
 gate as the prologue starts: **the entries the load-time passes have already

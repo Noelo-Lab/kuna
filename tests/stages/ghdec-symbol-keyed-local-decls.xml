@@ -56,9 +56,11 @@
     type is too narrow to arbitrate.  The widest cover therefore wins.
 
     Pass 1 (default) asserts the fix: the slot is declared exactly once, at the
-    width the body uses.  Pass 2 (`option dedupvardecls off`) pins the
-    un-collapsed one-line-per-high rendering, which is the bug.  Assertion
-    counts span both passes.
+    width the body uses. Pass 2 (`option dedupvardecls off`) also keeps one
+    declaration because these highs are an overlap group with one unambiguous
+    whole owner. That validity-preserving collapse is unconditional; the option
+    only disables the separate Symbol-keyed and identical-line collapses. Pass 3
+    switches to Ghidra names and pins the same single-owner result there.
 
     (kuna GH-181: foldcallret no longer sinks a call past a read of its own
     INDIRECT output, so the checksum call is an explicit statement sequenced
@@ -86,13 +88,20 @@
   <com>lo fu build_frame</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>option namestyle ghidra</com>
+  <com>lo fu build_frame</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="symbol-keyed-local-decls #1: the slot is declared three times over the two passes, so exactly once by default" min="3" max="3">v2; // stack - 0x18</stringmatch>
+<stringmatch name="symbol-keyed-local-decls #1: the overlap group has one whole declaration in each pass" min="2" max="2">v2; // stack - 0x18</stringmatch>
 <stringmatch name="symbol-keyed-local-decls #2: the surviving declaration is as wide as the widest access, in both passes" min="2" max="2">unsigned int v2; // stack - 0x18</stringmatch>
-<stringmatch name="symbol-keyed-local-decls #3: only the off path keeps the narrow shadow declaration" min="1" max="1">undefined3 v2; // stack - 0x18</stringmatch>
+<stringmatch name="symbol-keyed-local-decls #3: even the off path cannot emit a narrow same-name shadow" min="0" max="0">undefined3 v2; // stack - 0x18</stringmatch>
 <stringmatch name="symbol-keyed-local-decls #4: the adjacent slot is untouched in both passes" min="2" max="2">char v3; // stack - 0x14</stringmatch>
 <stringmatch name="symbol-keyed-local-decls #5: the body still reads the collapsed name in both passes" min="2" max="2">send_bytes\(\*a0,&amp;v2,5\);</stringmatch>
 <stringmatch name="symbol-keyed-local-decls #6: the 4-byte use that outgrows the 2-byte ScopeLocal symbol, checksum call sequenced before it (GH-181)" min="2" max="2">v1 = slot_checksum\(&amp;v2,4\);
 v2 = CONCAT13\(v1,v2\);</stringmatch>
+<stringmatch name="symbol-keyed-local-decls #7: Ghidra style keeps the same single whole declaration" min="1" max="1">^  unsigned int v2;$</stringmatch>
+<stringmatch name="symbol-keyed-local-decls #8: Ghidra-style body references bind to that whole" min="1" max="1">xVar1 = slot_checksum\(&amp;v2,4\);
+    v2 = CONCAT13\(xVar1,v2\);</stringmatch>
 </decompilertest>

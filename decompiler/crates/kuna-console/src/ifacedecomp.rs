@@ -1308,7 +1308,7 @@ decomp_command!(
             .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
         let selector = crate::engine::EntrySelector::parse(&funcname);
         let selected = prog
-            .resolve_entry(&selector)
+            .resolve_body_entry(&selector)
             .map_err(|error| IfaceError::execution(error.to_string()))?;
         let entry = selected.addr;
         let resolved_name = if matches!(selector, crate::engine::EntrySelector::Name(_)) {
@@ -1382,7 +1382,7 @@ decomp_command!(
             .zip(prog.arch().manage().get_default_code_space())
             .is_some_and(|(requested, default)| std::rc::Rc::ptr_eq(requested, default));
         let selected = if in_default_space {
-            prog.resolve_entry(&crate::engine::EntrySelector::Numeric(requested.get_offset()))
+            prog.resolve_body_entry(&crate::engine::EntrySelector::Numeric(requested.get_offset()))
         } else {
             prog.resolve_address(&requested)
         }

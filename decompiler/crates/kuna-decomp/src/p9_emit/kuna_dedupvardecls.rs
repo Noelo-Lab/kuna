@@ -97,6 +97,50 @@ pub struct DeclDedup {
     seen: std::collections::HashSet<DeclSignature>,
 }
 
+/// Allocates declaration identifiers that are unique in one function scope.
+///
+/// `reserved` contains every as-yet unassigned local name, so a generated suffix
+/// cannot take the spelling of a later declaration. `used` starts with names
+/// already owned by the function signature and grows in declaration order.
+#[derive(Debug, Default)]
+pub struct DeclNameUniquifier {
+    reserved: std::collections::HashSet<String>,
+    used: std::collections::HashSet<String>,
+    next_suffix: std::collections::HashMap<String, u32>,
+}
+
+impl DeclNameUniquifier {
+    /// Construct an allocator for `locals`, reserving `occupied` identifiers such
+    /// as parameter names which body declarations may not redeclare.
+    pub fn new<'a>(
+        locals: impl IntoIterator<Item = &'a str>,
+        occupied: impl IntoIterator<Item = &'a str>,
+    ) -> Self {
+        let mut reserved: std::collections::HashSet<String> =
+            locals.into_iter().map(str::to_string).collect();
+        let used: std::collections::HashSet<String> =
+            occupied.into_iter().map(str::to_string).collect();
+        reserved.extend(used.iter().cloned());
+        Self { reserved, used, next_suffix: std::collections::HashMap::new() }
+    }
+
+    /// Return `base` when it is free, otherwise the first free `<base>_<n>`.
+    pub fn unique(&mut self, base: &str) -> String {
+        if self.used.insert(base.to_string()) {
+            return base.to_string();
+        }
+        let next = self.next_suffix.entry(base.to_string()).or_insert(1);
+        loop {
+            let candidate = format!("{base}_{next}");
+            *next += 1;
+            if !self.reserved.contains(&candidate) && self.used.insert(candidate.clone()) {
+                self.reserved.insert(candidate.clone());
+                return candidate;
+            }
+        }
+    }
+}
+
 impl DeclDedup {
     /// A fresh deduper (nothing seen yet).
     pub fn new() -> Self {

@@ -253,8 +253,11 @@ Four front-ends drive one engine assembly:
   default target set through
   `decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::function_entries_executable)`:
   only entries inside a loader section carrying `CODE` are treated as function
-  bodies. Import slots remain installed for call naming, prototypes, and
-  unrestricted explicit address selection. A
+  bodies. Import slots remain installed for call naming, prototypes, and generic
+  symbol/address lookup. A decompiling selection adds a body check: a known IAT
+  slot is refused instead of lifting its pointer bytes, even when its section is
+  executable. A caller declaration overrides that classification when the image
+  metadata is wrong. A
   loader that publishes no section metadata retains the complete canonical set.
 
   When a stub and its slot share a name, that same executability test settles the
@@ -307,12 +310,28 @@ Four front-ends drive one engine assembly:
   listing beside the error, because a name the packed stub is going to call is
   the answer for that file. A declaration is still what clears the verdict: one
   declared body makes the run a run.
-  Explicit selection of an entry with **no mapped bytes** — an import slot, or a
-  relocatable object's undefined symbol bound to a synthetic extern-area address
+
+  (kuna) **The native decompile verdict is also read after the selected functions
+  run.** Selection succeeded and individual failures were isolated, but a non-empty
+  result set with no `FuncResult::code` body is not a usable decompilation. The shared
+  `decompiler/crates/kuna-console/src/project.rs (BatchOutcome)` classifier makes
+  `decompile-all` and both `decompile-project` writers report that state as a
+  run-level error. This is an aggregate verdict, not fail-fast: all text/JSON records
+  and all project artifacts are finished first; one body keeps a mixed batch at exit
+  zero and every failed function remains its own error record. A streamed all-failed
+  export is complete rather than interrupted, so it finalizes the README and
+  `index.jsonl`, removes `.streaming`, then returns exit one. An empty narrowed
+  selection has no result set and remains an ordinary filter answer.
+
+  Explicit selection of an entry with **no mapped bytes** — a relocatable
+  object's undefined symbol bound to a synthetic extern-area address
   so that calls to it render by name — answers with the entry's nature rather
   than with the lifter's byte-load failure: the shared decompile step probes
   `decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::entry_bytes_mapped)`
-  first and emits a one-line external-symbol body. The probe is a one-byte read
+  first and emits a one-line external-symbol body. A PE IAT slot is different:
+  its pointer bytes are mapped, so body selection consults the loader's import
+  ranges and returns a non-success diagnostic naming the import and slot before
+  flow following starts. The mapped-byte probe remains a one-byte read
   rather than a section-flag test, so an address that is mapped but outside any
   `CODE` section (packed code in `.data`, a hand-picked `--addr`) decompiles
   exactly as before. The browser inventory sorts the same entries into its
@@ -1272,7 +1291,7 @@ path only when it resolves and nothing of that name exists, and never errors.
 The same resolution serves the cross-function `param <func>::<i>` /
 `return <func>::<storage>` qualifier.
 
-(kuna) **A by-address selection DECLARES its own entry, so a directive can name
+(kuna) **A by-address selection installs its own symbol, so a directive can name
 it.** `load addr <vma>` builds the `Funcdata` and follows flow from an address
 without installing a `FunctionSymbol` there (the symbol-table `addFunction` is a
 later boundary), which is fine for printing C and fatal for the assertion plane:
@@ -1280,18 +1299,21 @@ the resolution above reads the symbol table, so `kuna decompile <bin> 0x401571
 --assert 'prototype 0x401571 …'` emitted the function in full and answered
 `rejected: no function starts at 0x401571` — the address it had just decompiled —
 while the identical directive bound the moment the same run selected the function
-BY NAME. Pointing `--addr` at an address is itself the claim that a function
-starts there, so the generated script declares that entry
+BY NAME. Pointing `--addr` at an address claims a lift entry, but does not
+override loader knowledge that the address is an import pointer. The generated
+script ensures a symbol exists
 (`decompiler/crates/kuna-cli/src/decompile.rs (build_script, selected_vma)` ->
-`function bounds <vma>` -> `ConsoleProgram::declare_function`) between the
+`function symbol <vma>` -> `ConsoleProgram::ensure_function_symbol`) between the
 caller's own `--define-function` declarations and the program-scoped directives.
-It is the same install `--define-function <start>` performs, and it is skipped
+It is the symbol-table half of `--define-function <start>`, and it is skipped
 when the caller declared that start themselves, whose extent a second bare
-declaration would clear back to unbounded. The declaration is the SELECTION's
-alone: an operand naming some other address that starts no function is still
+declaration would clear back to unbounded. Only an explicit declaration records
+body provenance; the implicit symbol cannot turn an IAT word into code. The
+symbol is the SELECTION's alone: an operand naming some other address that starts
+no function is still
 rejected, which is the only signal an agent gets that a directive is inert
-(`docs/re-needs/prototype-assertion-rejects-explicit.md`). Declaring an entry
-preserves why that entry exists — an import's synthetic address stays an
+(`docs/re-needs/prototype-assertion-rejects-explicit.md`). Installing the symbol
+preserves why that address exists — an import's synthetic address stays an
 `UndefinedExternal`, so an addressed import keeps answering with its
 external-symbol note rather than `not mapped in this input` — and folds the
 ARM/Thumb mode bit out of the address, so the declaration lands where every later
