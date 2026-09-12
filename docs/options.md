@@ -233,8 +233,8 @@ Three tiers:
 | call to a known no-return libc function still shows a fall-through path | [`noreturn_known`](#noreturn_known) |
 | unreachable epilogue after std::terminate or a rust panic call | [`noreturn_known`](#noreturn_known) |
 | windows api calls render as (*dat_411324)() with no name | [`peimportcall`](#peimportcall) |
+| a Mach-O objc_msgSend import renders as (*dat_100004038)() through __got | [`peimportcall`](#peimportcall) |
 | a PE function runs past ExitProcess or ExitThread and absorbs the next function's body | [`peimportcall`](#peimportcall) |
-| the same loop is emitted twice, once inside a caller and once as its own sub_ function | [`peimportcall`](#peimportcall) |
 | no Win32 API names anywhere in a decompiled PE | [`peimportcall`](#peimportcall) |
 | heavily-called custom die()/fatal() wrapper still treated as returning | [`noreturn_disc`](#noreturn_disc) |
 | dead code after a stripped sub_ wrapper that never falls through at 3+ call sites | [`noreturn_disc`](#noreturn_disc) |
@@ -1242,9 +1242,9 @@ The control surface: each of these can make output worse on the wrong source sha
 
 ### `peimportcall` -- on | off, default `on`
 
-- **Symptoms:** windows api calls render as (*dat_411324)() with no name; a PE function runs past ExitProcess or ExitThread and absorbs the next function's body; the same loop is emitted twice, once inside a caller and once as its own sub_ function; no Win32 API names anywhere in a decompiled PE.
-- **What it does:** Bind a Windows `call dword ptr [IAT slot]` to the import the loader already resolved at that slot. The PE loader names every Import Address Table slot, but the call lifts to a CALLIND through a global and the only pass that resolves such a target (ActionDeindirect) requires `Varnode::externref`, which upstream sets from an ExternRefSymbol kuna never creates - so every Windows API call stayed an unnamed `(*dat_4112c4)(0)` with no prototype and no no-return flow effect. On: paint `externref` over the IAT slot ranges so the call deindirects to the import FunctionSymbol, carry the callee's no-return flag onto the prototype ActionDeindirect merges, and match upstream's PE-only no-return API list (ExitProcess/ExitThread/FreeLibraryAndExitThread/KeBugCheck/longjmp/...) that kuna's merged PE/Mach-O list never named. PE/COFF only; a no-op on every other object format.
-- **When to flip:** On by default (DIV-57). On, a Windows PE/DLL renders its Win32 calls by name (`ExitThread(0)`, `HeapFree(...)`) instead of `(*dat_411324)()`, and a function ending in a no-return API stops there instead of running past it and swallowing the next function's whole body (mydoom.exe `mmsender_th` drops a `while` loop it never had: 50 lines/4 ifs/1 loop -> 13 lines/2 ifs/0 loops, matching IDA and Ghidra). Flip OFF to restore the unnamed indirect-call rendering byte for byte (every non-PE target is byte-identical either way).
+- **Symptoms:** windows api calls render as (*dat_411324)() with no name; a Mach-O objc_msgSend import renders as (*dat_100004038)() through __got; a PE function runs past ExitProcess or ExitThread and absorbs the next function's body; no Win32 API names anywhere in a decompiled PE.
+- **What it does:** Bind a call through a PE IAT slot or a typed Mach-O lazy/non-lazy symbol-pointer entry to the import the loader already resolved at that slot. Such a call lifts to a CALLIND through a global and the only pass that resolves it (ActionDeindirect) requires `Varnode::externref`, which upstream sets from an ExternRefSymbol kuna never creates. On: paint `externref` over the exact pointer-width typed import slots so the call deindirects to the existing FunctionSymbol and carry its no-return flag onto the merged prototype. Mach-O stubs, exports, LOCAL/ABS indirect entries and arbitrary data such as `__objc_msgrefs` are excluded. The upstream Win32 no-return API list (ExitProcess/ExitThread/FreeLibraryAndExitThread/KeBugCheck/longjmp/...) remains strictly PE/COFF-only.
+- **When to flip:** On by default (DIV-57; Mach-O scope extension DIV-171). On, a Windows PE/DLL renders Win32 calls by name (`ExitThread(0)`, `HeapFree(...)`) instead of `(*dat_411324)()`, and a Mach-O direct call through `__got` renders `objc_msgSend(...)` instead of `(*dat_100004038)(...)`. Flip OFF to restore the anonymous import-slot rendering byte for byte on either format; ELF and other formats are byte-identical either way.
 - **Where / provenance:** P1/external-refinement · kuna · correctness-fix · decbench-O0-mydoom-mmsender_th
 - **Example:** `option peimportcall on`
 

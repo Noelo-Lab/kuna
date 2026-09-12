@@ -63,8 +63,8 @@ pub mod kuna_dynrelocs;
 // synthetic extern slot, and mark both halves foldable.
 pub mod kuna_msvcfpconst;
 pub mod format;
-// (kuna) PE import-call binding (`peimportcall`): `externref` over the IAT slots
-// + upstream's PE-only no-return API names.
+// (kuna) PE/Mach-O import-slot call binding (`peimportcall`): `externref` over
+// typed import-pointer slots + upstream's strictly PE-only no-return API names.
 pub mod kuna_peimportcall;
 pub mod macho_fat;
 pub mod macho_stubs;

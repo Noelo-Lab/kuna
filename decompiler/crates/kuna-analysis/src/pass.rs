@@ -325,11 +325,12 @@ pub struct AnalysisOutput {
     pub readonly: Vec<(u64, u64)>,
     /// (kuna) Address ranges holding an **external reference** — an import slot
     /// whose contents the dynamic loader fills in with the address of a function
-    /// living in another image (a PE Import Address Table entry). Committed as
+    /// living in another image (a PE IAT entry or a typed Mach-O lazy/non-lazy
+    /// symbol-pointer indirect entry). Committed as
     /// `Varnode::externref` in the symbol-table property map, which is the one
     /// flag `ActionDeindirect` requires before it will resolve a `CALLIND` through
     /// a global to the FunctionSymbol registered at that address. Produced by the
-    /// `peimportcall` pass; empty for every other format. See
+    /// `peimportcall` pass; empty for formats without such typed slots. See
     /// [`crate::loader::kuna_peimportcall`].
     pub externref: Vec<(u64, u64)>,
     /// Detected NUL-terminated string literals (a typed `char[N]` per address).

@@ -1038,8 +1038,8 @@ body dereferencing an uninitialized pointer — the pointer word read as
 instructions, truncated by `funcboundflow` at the next slot. What tells a
 pointer word from a function entry is not where it lives but who put the name
 there, and the loader knows: each format reports the slot addresses it resolved
-names at (`ObjectFormat::import_slots`, the PE Import Address Table today and
-empty everywhere else) beside the names themselves, and the engine carries them
+names at (`ObjectFormat::import_slots`, PE Import Address Table entries and typed
+Mach-O lazy/non-lazy symbol-pointer entries) beside the names themselves, and the engine carries them
 as `[lo, hi)` ranges (`ObjectLoadImage::import_slot_ranges` →
 `ConsoleProgram::is_import_slot`). An entry inside one is excluded from the
 batch set whatever the section says. Nothing else moves: the canonical
@@ -1100,18 +1100,25 @@ discovery, which is where the shape comes from.
 
 Naming a pointer slot is not by itself enough to bind a call *through* it. An ELF
 PLT stub and a Mach-O `__stubs` entry are code, so the call is direct and the name
-resolves at flow time; a PE Import Address Table slot is data, so `call dword ptr
-[slot]` lifts to a `CALLIND` whose target is the contents of a global. The only pass
-that resolves such a target is `ActionDeindirect`, and its external-reference arm
-requires the target Varnode to carry `Varnode::externref` — a flag Ghidra sets from
-an `ExternRefSymbol` (`Scope::addExternalRef`) that kuna's port never carried, so on
-a PE the flag was set nowhere and every Windows API call stayed an unnamed
-`(*dat_4112c4)(0)`: no name, no prototype, and no no-return flow effect.
+resolves at flow time. A PE Import Address Table slot and a Mach-O symbol-pointer
+slot are data, so `call [slot]` lifts to a `CALLIND` whose target is the contents
+of a global. The only pass that resolves such a target is `ActionDeindirect`, and
+its external-reference arm requires the target Varnode to carry
+`Varnode::externref` — a flag Ghidra sets from an `ExternRefSymbol`
+(`Scope::addExternalRef`) that kuna's port never carried. Without it a Windows API
+call stays `(*dat_4112c4)(0)` and a direct Mach-O `__got` call to `objc_msgSend`
+stays `(*dat_100004038)(...)`: no name, prototype, or no-return flow effect.
 `decompiler/crates/kuna-analysis/src/loader/kuna_peimportcall.rs (PeImportCallPass)`
-(`peimportcall`, PE/COFF-only, default-on per DIV-57) closes that with the property
-map rather than a second symbol: it reports one `[slot, slot+ptr)` range per import
-descriptor entry and the commit ORs `Varnode::externref` over each, the same
-`Database::setPropertyRange` the loader's read-only section ranges use.
+(`peimportcall`, PE/COFF/Mach-O, default-on per DIV-57 and extended by DIV-171)
+closes that with the
+property map rather than a second symbol: `ObjectFormat::import_slots` reports one
+exact pointer-width range per PE import-descriptor entry or Mach-O
+`S_LAZY_SYMBOL_POINTERS`/`S_NON_LAZY_SYMBOL_POINTERS` indirect-symbol entry, and
+the commit ORs `Varnode::externref` over each, the same
+`Database::setPropertyRange` the loader's read-only section ranges use. The Mach-O
+walk validates the typed section and indirect-symbol entry together, excluding
+stub/export addresses, LOCAL/ABS entries, other pointer-section types, and
+ordinary Objective-C data such as `__objc_msgrefs`.
 `Scope::queryProperties` folds the property map into every global Varnode covering
 the range, so the slot read now carries `persist|externref` and `ActionDeindirect`
 resolves it against the `FunctionSymbol` the IAT walk already registered at that
@@ -1122,8 +1129,10 @@ the resolved callee's no-return flag onto the prototype it hands `ActionDeindire
 (the snapshot in
 `decompiler/crates/kuna-decomp/src/p0_knowledge/database.rs (Database::build_global_query)`
 dropped it, where upstream returns the callee's live `Funcdata`), which is what makes
-the deindirect schedule the restart whose re-flow plants the artificial halt. Off,
-a PE renders byte for byte as before; every non-PE target is unaffected either way.
+the deindirect schedule the restart whose re-flow plants the artificial halt. The
+extra upstream Win32 no-return-name list remains on the PE/COFF arm only. Off, PE
+and Mach-O import-slot calls render byte for byte as before; other formats are
+unaffected either way.
 The `externref` mark also protects the slot until that resolution: P3 read-only
 folding cannot replace it with an on-disk thunk/name RVA, even if a hostile or
 single-section PE mapped the IAT executable and non-writable.

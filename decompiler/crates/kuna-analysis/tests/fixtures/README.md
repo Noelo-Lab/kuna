@@ -723,6 +723,22 @@ Pinned VMAs (x86-64): `_compute`@`0x1000005a0`, `_main`@`0x1000005b0`, the
 from the `file.symbols()` funcsym source, not the stub resolver). **Pin the VMAs
 as test consts** (`llvm-objdump --macho -d` / `llvm-otool -Iv`).
 
+`macho_import_slots` (x86-64, 13 KB) isolates the direct import-pointer call
+shape for `peimportcall`. `_call_slots`@`0x1000003c0` first calls
+`_objc_msgSend` through the typed `__DATA_CONST,__got` non-lazy symbol-pointer
+entry at `0x100001000`, then calls through an ordinary 16-byte
+`__DATA,__objc_msgrefs` record at `0x100002000`. Both pointers name the same
+undefined symbol at link time, but only the first appears in `LC_DYSYMTAB`'s
+typed indirect-symbol table. The fixture therefore proves both the binding and
+the exclusion of arbitrary Objective-C message-reference data. Rebuild with:
+
+```bash
+clang -target x86_64-apple-macos11 -c macho_import_slots.s -o m.o
+LLD=$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin/gcc-ld/ld64.lld
+"$LLD" -arch x86_64 -platform_version macos 11.0 11.0 \
+       -undefined dynamic_lookup -e _call_slots -o macho_import_slots m.o
+```
+
 ## Mach-O fat/universal + arm64e (PR-8)
 
 The fat/universal + arm64e gate (`kuna-console/tests/verify_macho_fat.rs`, design
