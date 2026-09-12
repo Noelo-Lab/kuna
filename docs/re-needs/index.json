@@ -5,8 +5,8 @@
   "rejected_count": 1,
   "by_status": {
     "blocked": 1,
-    "closed": 144,
-    "open": 52
+    "closed": 145,
+    "open": 51
   },
   "by_track": {
     "loader": 10,
@@ -4575,7 +4575,7 @@
       "need_id": "vm-temporary-declared-as",
       "title": "VM temporary is declared as an integer but dereferenced as a pointer",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
       "probe_id": "p-24314022cb06",
       "acceptance_id": "a-70bd6c755858",
@@ -4590,15 +4590,15 @@
       ],
       "first_seen_round": 12,
       "attempts": 0,
-      "covered_by_option": null,
+      "covered_by_option": "declhightype",
       "touches": [
         "decompiler/crates/kuna-decomp"
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": "https://github.com/Noelo-Lab/kuna/pull/563",
+      "closed_in_round": 12,
+      "closing_pr": "563",
       "reject_reason": null,
       "score": 13.862944,
       "path": "docs/re-needs/vm-temporary-declared-as.md"
