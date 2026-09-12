@@ -5,8 +5,8 @@
   "rejected_count": 1,
   "by_status": {
     "blocked": 1,
-    "closed": 125,
-    "open": 71
+    "closed": 126,
+    "open": 70
   },
   "by_track": {
     "loader": 10,
@@ -2464,14 +2464,14 @@
     },
     {
       "need_id": "comparison-calls-lose-live",
-      "title": "Comparison calls lose live arguments with both recovery options enabled",
+      "title": "Duplicate-name memcmp veneer loses two live arguments",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
-      "probe_id": "p-1173aba8ac14",
-      "acceptance_id": "a-b01976708477",
+      "probe_id": "p-63355bb7f652",
+      "acceptance_id": "a-bd4d2e88aeb8",
       "hypothesis_status": "overturned",
-      "credibility": 0.85,
+      "credibility": 1.0,
       "instances": 1,
       "challenges": [
         "6869d705aadb6eeafb399027"
@@ -2481,15 +2481,15 @@
       ],
       "first_seen_round": 10,
       "attempts": 0,
-      "covered_by_option": null,
+      "covered_by_option": "libcsigs",
       "touches": [
-        "decompiler/crates/kuna-decomp"
+        "decompiler/crates/kuna-analysis"
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": 575,
+      "closed_in_round": 12,
+      "closing_pr": 575,
       "reject_reason": null,
       "score": 13.862944,
       "path": "docs/re-needs/comparison-calls-lose-live.md"

@@ -19,14 +19,14 @@
 //! separately and named as such — it is the family the RE need was filed
 //! against, and a resource loader is what a Windows reverser reads first.
 //!
-//! **The address key.** The by-name park ([`super::LibProtoPass`] via
-//! `Architecture::set_function_prototype_pieces`) is a silent no-op on a PE
+//! **The address key.** A by-name park is a silent no-op on one half of a PE
 //! import: `pe_iat` registers TWO FunctionSymbols per import — the size-0 IAT
 //! slot the engine constant-folds through, and the `FF 25` thunk veneer a direct
 //! `call` targets — and the global by-name query answers with the slot, while
-//! `ActionDefaultParams` reads `callee_proto_pieces(entry)` at the thunk. So this
-//! pass emits into [`crate::pass::AnalysisOutput::prototypes_at`], keyed by every
-//! address the import resolver names, and lands on both.
+//! `ActionDefaultParams` reads `callee_proto_pieces(entry)` at the thunk. Like
+//! the libc passes, this pass emits into
+//! [`crate::pass::AnalysisOutput::prototypes_at`], keyed by every address the
+//! import resolver names, and lands on both.
 //!
 //! ## Where the signatures come from, and the wrongness axis
 //!
@@ -47,14 +47,11 @@
 //! name is admitted, `__cdecl` msvcrt spellings included, because those already
 //! belong to the libc tables and would get the wrong cleanup here.
 //!
-//! Applied only to a name the image IMPORTS and does not itself define — the same
-//! restriction, for the same reason, as [`super::kuna_libcsigs`].
+//! Applied only at addresses the resolver identifies as genuine imports. Exact
+//! import provenance remains safe even if the image exports the same spelling;
+//! this pass emits no ambiguous global by-name stream.
 
-use object::read::{Object, ObjectSymbol};
-use object::SymbolKind;
-use std::collections::HashSet;
-
-use super::{build_pieces, Sig, Ty};
+use super::{resolved_import_addrs, seed_resolved_prototypes, Sig, Ty};
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
 
 /// Seed the built-in Win32 API signatures onto a PE's imported API names.
@@ -207,31 +204,14 @@ pub(super) const WIN32: &[(&str, Sig)] = &[
     ("MessageBoxW", Sig { ret: Ty::Int, params: &[Ty::VoidPtr, Ty::WCharPtr, Ty::WCharPtr, Ty::UInt], vararg: -1 }),
 ];
 
-/// Every address the import resolver names, for each name the image IMPORTS and
-/// does not itself define.
+/// Every address the import resolver names as a genuine import.
 ///
 /// One name yields SEVERAL addresses on a PE — the IAT slot and the `FF 25`
 /// thunk veneer that jumps through it — and the prototype belongs on all of them:
 /// a direct `call thunk` and a `call [slot]` are the same callee, and which one
 /// `ActionDefaultParams` asks about depends on how the image spells the call.
 fn imported_addrs_by_name(file: &object::File, bytes: &[u8]) -> Vec<(String, u64)> {
-    let mut defined = HashSet::new();
-    for sym in file.symbols().chain(file.dynamic_symbols()) {
-        if sym.kind() == SymbolKind::Text && !sym.is_undefined() {
-            if let Ok(n) = sym.name() {
-                defined.insert(n.to_string());
-            }
-        }
-    }
-    let mut out = Vec::new();
-    for imp in crate::loader::format::resolve_imports(file, bytes) {
-        let Ok(name) = String::from_utf8(imp.name) else { continue };
-        if defined.contains(&name) {
-            continue;
-        }
-        out.push((name, imp.addr));
-    }
-    out
+    resolved_import_addrs(file, bytes)
 }
 
 impl AnalysisPass for Win32SigsPass {
@@ -250,12 +230,8 @@ impl AnalysisPass for Win32SigsPass {
         }
         let types = ctx.arch.types();
         let (_addr_size, word_size) = ctx.arch.data_org();
-        for (name, addr) in imported_addrs_by_name(ctx.file, ctx.bytes) {
-            let Some((_, sig)) = WIN32.iter().find(|(n, _)| *n == name) else { continue };
-            if let Ok(pieces) = build_pieces(&name, sig, types, word_size) {
-                out.prototypes_at.push((addr, pieces));
-            }
-        }
+        let imports = imported_addrs_by_name(ctx.file, ctx.bytes);
+        seed_resolved_prototypes(&mut out, &imports, WIN32, types, word_size);
         out
     }
 }
@@ -263,6 +239,7 @@ impl AnalysisPass for Win32SigsPass {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
 
     #[test]
     fn table_is_disjoint_from_libc() {

@@ -18,10 +18,14 @@
 //! Matching is by name against functions actually present in the object (same as
 //! `ApplyDataArchiveAnalyzer` matching archive entries to program symbols); a
 //! table entry with no matching function is simply not emitted. The commit seam
-//! (`engine.rs::commit_analysis_output`) parks each prototype on its callee via
-//! `Architecture::set_function_prototype_pieces`, which `ActionDefaultParams`
-//! reads back when typing the caller's arguments.
+//! (`engine.rs::commit_analysis_output`) keeps the compatible by-name park and
+//! also parks imports at every concrete address reported by the format resolver.
+//! The latter is required when an IAT slot and its code veneer share a name:
+//! `ActionDefaultParams` reads the prototype back by the resolved entry address.
+//! If an image both imports and defines/exports the same spelling, the ambiguous
+//! by-name park is suppressed while the genuine import addresses remain typed.
 
+use std::collections::HashSet;
 use std::rc::Rc;
 
 use object::read::{Object, ObjectSymbol};
@@ -189,6 +193,55 @@ fn build_pieces(
     })
 }
 
+/// Imported function names paired with every concrete address the format
+/// resolver associates with them. A PE import normally contributes both its IAT
+/// slot and its `FF 25` veneer.
+fn resolved_import_addrs(file: &object::File, bytes: &[u8]) -> Vec<(String, u64)> {
+    crate::loader::format::resolve_imports(file, bytes)
+        .into_iter()
+        .filter(|sym| sym.kind == crate::loader::format::ImportSymKind::Import)
+        .filter_map(|imp| String::from_utf8(imp.name).ok().map(|name| (name, imp.addr)))
+        .collect()
+}
+
+/// Add address-keyed prototypes for the resolver entries whose names occur in
+/// `table`. The compatible by-name streams are emitted separately by each pass.
+fn seed_resolved_prototypes(
+    out: &mut AnalysisOutput,
+    imports: &[(String, u64)],
+    table: &[(&str, Sig)],
+    types: &dyn TypeFactory,
+    word_size: uint4,
+) {
+    for (name, addr) in imports {
+        let Some((_, sig)) = table.iter().find(|(candidate, _)| *candidate == name) else {
+            continue;
+        };
+        if let Ok(pieces) = build_pieces(name, sig, types, word_size) {
+            out.prototypes_at.push((*addr, pieces));
+        }
+    }
+}
+
+/// Add compatible by-name prototypes for names which may be resolved without
+/// ambiguity. Address-keyed prototypes are emitted separately.
+fn seed_named_prototypes(
+    out: &mut AnalysisOutput,
+    names: &HashSet<String>,
+    table: &[(&str, Sig)],
+    types: &dyn TypeFactory,
+    word_size: uint4,
+) {
+    for (name, sig) in table {
+        if !names.contains(*name) {
+            continue;
+        }
+        if let Ok(pieces) = build_pieces(name, sig, types, word_size) {
+            out.prototypes.push(pieces);
+        }
+    }
+}
+
 /// (kuna `declaredlibcproto`) The built-in signature for a function name the
 /// OPERATOR declared, or `None` when neither table knows the name.
 ///
@@ -229,8 +282,8 @@ pub fn declared_libc_prototype(
 ///    resolved imports.
 ///
 /// libc/msvcrt names are unmangled, so demangling is a no-op here.
-fn present_function_names(file: &object::File, bytes: &[u8]) -> std::collections::HashSet<String> {
-    let mut present = std::collections::HashSet::new();
+fn present_function_names(file: &object::File, bytes: &[u8]) -> HashSet<String> {
+    let mut present = HashSet::new();
     for sym in file.symbols().chain(file.dynamic_symbols()) {
         if sym.kind() != SymbolKind::Text {
             continue;
@@ -242,15 +295,93 @@ fn present_function_names(file: &object::File, bytes: &[u8]) -> std::collections
             }
         }
     }
-    // The resolved imports (PE IAT, Mach-O __stubs). On ELF this overlaps the
-    // `.dynsym` set already collected (`elf_plt` names the PLT stub by the same
-    // `.dynstr` name), so the union is a no-op there — ELF behavior unchanged.
-    for imp in crate::loader::format::resolve_imports(file, bytes) {
-        if let Ok(n) = String::from_utf8(imp.name) {
-            present.insert(n);
+    // The resolved format symbols (PE IAT/exports, Mach-O stubs/exports). On
+    // ELF this overlaps the `.dynsym` set already collected (`elf_plt` names the
+    // PLT stub by the same `.dynstr` name), so the union is a no-op there — ELF
+    // behavior unchanged. Exports make a name present but are also definition
+    // evidence: a same-named import/definition collision is removed later from
+    // the otherwise-compatible by-name stream. `resolved_import_addrs` rejects
+    // exports from exact address locking.
+    for sym in crate::loader::format::resolve_imports(file, bytes) {
+        if let Ok(name) = String::from_utf8(sym.name) {
+            present.insert(name);
         }
     }
     present
+}
+
+/// Collect every function spelling for which the image supplies its own
+/// definition. Resolver exports matter here because stripped PE and Mach-O
+/// images need not carry an ordinary text symbol for the exported function.
+fn defined_function_names(file: &object::File, bytes: &[u8]) -> HashSet<String> {
+    let mut defined = HashSet::new();
+    for sym in file.symbols().chain(file.dynamic_symbols()) {
+        if sym.kind() != SymbolKind::Text || sym.is_undefined() {
+            continue;
+        }
+        if let Ok(n) = sym.name() {
+            if let Ok(n) = String::from_utf8(crate::loader::elf_plt::strip_version(n.as_bytes()))
+            {
+                defined.insert(n);
+            }
+        }
+    }
+    for sym in crate::loader::format::resolve_imports(file, bytes) {
+        if sym.kind != crate::loader::format::ImportSymKind::Export {
+            continue;
+        }
+        if let Ok(name) = String::from_utf8(sym.name) {
+            defined.insert(name);
+        }
+    }
+    defined
+}
+
+/// Collect imported function spellings from ordinary undefined symbols and the
+/// format resolver. This is intentionally the broad evidence set, before any
+/// same-spelled definition is used to suppress ambiguous by-name parking.
+fn imported_function_names(file: &object::File, bytes: &[u8]) -> HashSet<String> {
+    let mut imported = HashSet::new();
+    for sym in file.symbols().chain(file.dynamic_symbols()) {
+        if sym.kind() != SymbolKind::Text || !sym.is_undefined() {
+            continue;
+        }
+        if let Ok(n) = sym.name() {
+            if let Ok(n) = String::from_utf8(crate::loader::elf_plt::strip_version(n.as_bytes()))
+            {
+                imported.insert(n);
+            }
+        }
+    }
+    imported.extend(resolved_import_addrs(file, bytes).into_iter().map(|(name, _)| name));
+    imported
+}
+
+/// Remove only names which are simultaneously imported and defined. A global
+/// by-name prototype cannot distinguish those functions, while an address-keyed
+/// prototype can and remains safe on each genuine import resolver address.
+fn retain_unambiguous_names(
+    candidates: &mut HashSet<String>,
+    imported: &HashSet<String>,
+    defined: &HashSet<String>,
+) {
+    candidates.retain(|name| !(imported.contains(name) && defined.contains(name)));
+}
+
+fn unambiguous_present_function_names(file: &object::File, bytes: &[u8]) -> HashSet<String> {
+    let mut present = present_function_names(file, bytes);
+    let imported = imported_function_names(file, bytes);
+    let defined = defined_function_names(file, bytes);
+    retain_unambiguous_names(&mut present, &imported, &defined);
+    present
+}
+
+fn unambiguous_imported_function_names(file: &object::File, bytes: &[u8]) -> HashSet<String> {
+    let mut imported = imported_function_names(file, bytes);
+    let defined = defined_function_names(file, bytes);
+    let imported_evidence = imported.clone();
+    retain_unambiguous_names(&mut imported, &imported_evidence, &defined);
+    imported
 }
 
 impl AnalysisPass for LibProtoPass {
@@ -269,18 +400,12 @@ impl AnalysisPass for LibProtoPass {
         // branch. On a PE a `printf` import then types its first arg `char *`, so
         // `printf("%d\n", …)` renders the literal instead of `printf(0x…, …)`.
         let mut out = AnalysisOutput::default();
-        let present = present_function_names(ctx.file, ctx.bytes);
+        let present = unambiguous_present_function_names(ctx.file, ctx.bytes);
+        let imports = resolved_import_addrs(ctx.file, ctx.bytes);
         let types = ctx.arch.types();
         let (_addr_size, word_size) = ctx.arch.data_org();
-        for (name, sig) in LIBC {
-            if !present.contains(*name) {
-                continue;
-            }
-            // Never fail the analysis: skip an entry whose types can't be built.
-            if let Ok(pieces) = build_pieces(name, sig, types, word_size) {
-                out.prototypes.push(pieces);
-            }
-        }
+        seed_named_prototypes(&mut out, &present, LIBC, types, word_size);
+        seed_resolved_prototypes(&mut out, &imports, LIBC, types, word_size);
         out
     }
 }
@@ -401,6 +526,150 @@ mod tests {
         let file = object::File::parse(bytes.as_slice()).expect("parse stripped PE");
         let present = present_function_names(&file, &bytes);
         assert!(present.contains("puts"), "stripped PE must name `puts` via the IAT: {present:?}");
+    }
+
+    #[test]
+    fn pe_import_prototype_is_seeded_at_iat_and_veneer_but_not_export() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/libcsigs_pe_x86_64.exe");
+        let bytes = std::fs::read(path).expect("read duplicate-name PE fixture");
+        let file = object::File::parse(bytes.as_slice()).expect("parse duplicate-name PE fixture");
+        let all = crate::loader::format::resolve_imports(&file, &bytes);
+        let memcmp_all: Vec<(u64, crate::loader::format::ImportSymKind)> = all
+            .iter()
+            .filter(|sym| sym.name == b"memcmp")
+            .map(|sym| (sym.addr, sym.kind))
+            .collect();
+        assert_eq!(
+            memcmp_all,
+            vec![
+                (0x140002050, crate::loader::format::ImportSymKind::Import),
+                (0x140001080, crate::loader::format::ImportSymKind::Import),
+                (0x140001060, crate::loader::format::ImportSymKind::Export),
+            ],
+            "the format resolver must preserve import/export provenance"
+        );
+
+        let imports = resolved_import_addrs(&file, &bytes);
+        let memcmp: Vec<u64> =
+            imports.iter().filter(|(name, _)| name == "memcmp").map(|(_, addr)| *addr).collect();
+        assert_eq!(
+            memcmp,
+            vec![0x140002050, 0x140001080],
+            "only the imported IAT and veneer are eligible for address locking"
+        );
+
+        let types = kuna_decomp::dtype::TypeFactoryImpl::new();
+        types.set_default_alignment_map();
+        types.set_max_basetype_size(8);
+        types.setup_sizes(Some(8), 8, 4);
+        types
+            .set_core_type("char", 1, type_metatype::TYPE_INT, true)
+            .expect("install char core type");
+        types.cache_core_types().expect("cache core types");
+        let mut out = AnalysisOutput::default();
+        let imported = unambiguous_imported_function_names(&file, &bytes);
+        assert!(
+            !imported.contains("memcmp"),
+            "a same-named resolver export makes global by-name parking ambiguous"
+        );
+        seed_named_prototypes(
+            &mut out,
+            &imported,
+            kuna_libcsigs::LIBC_EXT,
+            &types,
+            1,
+        );
+        seed_resolved_prototypes(
+            &mut out,
+            &imports,
+            kuna_libcsigs::LIBC_EXT,
+            &types,
+            1,
+        );
+        let seeded: Vec<(u64, usize)> = out
+            .prototypes_at
+            .iter()
+            .filter(|(_, pieces)| pieces.name == "memcmp")
+            .map(|(addr, pieces)| (*addr, pieces.intypes.len()))
+            .collect();
+        assert_eq!(
+            seeded,
+            vec![(0x140002050, 3), (0x140001080, 3)],
+            "the signature belongs on both import targets and not the same-named export"
+        );
+        assert!(
+            out.prototypes.iter().all(|pieces| pieces.name != "memcmp"),
+            "no global memcmp prototype may be parked where it could type the export"
+        );
+    }
+
+    #[test]
+    fn base_by_name_matching_suppresses_only_import_definition_collisions() {
+        let mut candidates = HashSet::from([
+            "puts".to_string(),
+            "printf".to_string(),
+            "strcmp".to_string(),
+        ]);
+        let imported = HashSet::from(["puts".to_string(), "printf".to_string()]);
+        let defined = HashSet::from(["puts".to_string(), "strcmp".to_string()]);
+        retain_unambiguous_names(&mut candidates, &imported, &defined);
+
+        let types = kuna_decomp::dtype::TypeFactoryImpl::new();
+        types.set_default_alignment_map();
+        types.set_max_basetype_size(8);
+        types.setup_sizes(Some(8), 8, 4);
+        types
+            .set_core_type("char", 1, type_metatype::TYPE_INT, true)
+            .expect("install char core type");
+        types.cache_core_types().expect("cache core types");
+        let mut out = AnalysisOutput::default();
+        seed_named_prototypes(&mut out, &candidates, LIBC, &types, 1);
+        let names: HashSet<&str> =
+            out.prototypes.iter().map(|pieces| pieces.name.as_str()).collect();
+
+        assert!(
+            !candidates.contains("puts"),
+            "same-named import and definition cannot safely share a global prototype"
+        );
+        assert!(
+            !names.contains("puts"),
+            "the base pass must not park the conflicting name"
+        );
+        assert!(names.contains("printf"), "import-only compatibility is preserved");
+        assert!(names.contains("strcmp"), "defined-only base matching is preserved");
+    }
+
+    #[test]
+    fn base_table_imports_keep_name_matching_and_gain_address_keys() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/pe_imports_stripped.exe");
+        let bytes = std::fs::read(path).expect("read stripped PE fixture");
+        let file = object::File::parse(bytes.as_slice()).expect("parse stripped PE fixture");
+        let present = unambiguous_present_function_names(&file, &bytes);
+        assert!(present.contains("puts"), "the compatible by-name match remains available");
+
+        let imports = resolved_import_addrs(&file, &bytes);
+        let types = kuna_decomp::dtype::TypeFactoryImpl::new();
+        types.set_default_alignment_map();
+        types.set_max_basetype_size(8);
+        types.setup_sizes(Some(8), 8, 4);
+        types
+            .set_core_type("char", 1, type_metatype::TYPE_INT, true)
+            .expect("install char core type");
+        types.cache_core_types().expect("cache core types");
+        let mut out = AnalysisOutput::default();
+        seed_resolved_prototypes(&mut out, &imports, LIBC, &types, 1);
+        let mut seeded: Vec<u64> = out
+            .prototypes_at
+            .iter()
+            .filter(|(_, pieces)| pieces.name == "puts")
+            .map(|(addr, _)| *addr)
+            .collect();
+        seeded.sort_unstable();
+        assert_eq!(
+            seeded,
+            vec![0x140007240, 0x14000d33c],
+            "the base-table signature must reach both the puts veneer and IAT slot"
+        );
     }
 
     #[test]
