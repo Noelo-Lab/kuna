@@ -2060,11 +2060,68 @@ fn instruction_budget_overrun_truncates_instead_of_failing() {
     let mut fatal = budget.to_vec();
     fatal.extend_from_slice(&["--option", "errortoomanyinstructions", "on"]);
     let (failed, stderr, ok) = run_kuna(&fatal);
-    assert!(ok, "kuna decompile-all failed: {stderr}");
+    assert!(!ok, "an all-failed batch must exit nonzero: {failed}");
     assert!(
         failed.contains("Flow exceeded maximum allowable instructions")
-            && failed.contains("\"code\": null"),
+            && failed.contains("\"code\": null")
+            && failed.contains("\"error\": \"decompilation produced zero function bodies"),
         "`--option errortoomanyinstructions on` must restore the hard failure:\n{failed}"
+    );
+    assert!(
+        stderr.contains("decompilation produced zero function bodies")
+            && stderr.contains("per-function error record"),
+        "the run-level failure was not reported on stderr: {stderr}"
+    );
+}
+
+/// A selected set with no body is a failed RUN, after its complete per-function
+/// records have been emitted. One usable body keeps the batch recoverable even
+/// when another function failed.
+#[test]
+fn aggregate_exit_distinguishes_all_failed_from_partial_success() {
+    let bin = fauxware();
+    let sp = specs();
+    let fatal = [
+        "--option",
+        "maxinstruction",
+        "5",
+        "--option",
+        "errortoomanyinstructions",
+        "on",
+        "--sleighpath",
+        &sp,
+    ];
+
+    let mut text_args = vec!["decompile-all", &bin, "--functions", "main"];
+    text_args.extend_from_slice(&fatal);
+    let (stdout, stderr, ok) = run_kuna(&text_args);
+    if is_specs_skip(&stderr) {
+        eprintln!("aggregate_exit_distinguishes_all_failed_from_partial_success: skipping: {stderr}");
+        return;
+    }
+    assert!(!ok, "an all-failed text batch exited zero");
+    assert!(
+        stdout.contains("// Function: main @ 0x40071d")
+            && stdout.contains("Flow exceeded maximum allowable instructions"),
+        "the failed function record was not preserved: {stdout}"
+    );
+    assert!(stderr.contains("zero function bodies"), "no run-level diagnostic: {stderr}");
+
+    let mut mixed_args = vec![
+        "decompile-all",
+        &bin,
+        "--functions",
+        "main,__libc_csu_fini",
+        "--json",
+    ];
+    mixed_args.extend_from_slice(&fatal);
+    let (stdout, stderr, ok) = run_kuna(&mixed_args);
+    assert!(ok, "a partial-success batch must remain recoverable: {stderr}");
+    assert!(stdout.contains("\"error\": null"), "partial run gained a top-level error: {stdout}");
+    assert!(
+        stdout.contains("Flow exceeded maximum allowable instructions")
+            && stdout.contains("void __libc_csu_fini(void)"),
+        "the mixed control needs one error and one body: {stdout}"
     );
 }
 

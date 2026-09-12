@@ -1,0 +1,68 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "a-ca0acbabc161",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--functions",
+    "main",
+    "--option",
+    "maxinstruction",
+    "5",
+    "--option",
+    "errortoomanyinstructions",
+    "on",
+    "--json"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/fauxware",
+    "binary_sha256": "c2d90645a45e99221593547e55c601a901b80f807ae96f94c60a7661df0b3e0b",
+    "binary_size": 8776,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/fauxware",
+    "selector": "main",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 1
+    },
+    "stdout_is_json": true,
+    "stderr_matches": [
+      "decompilation produced zero function bodies for 1 selected function",
+      "see the per-function error record"
+    ],
+    "json": [
+      {
+        "path": "count",
+        "op": "eq",
+        "value": 1
+      },
+      {
+        "path": "error",
+        "op": "contains",
+        "value": "decompilation produced zero function bodies"
+      },
+      {
+        "path": "functions[0].code",
+        "op": "eq",
+        "value": null
+      },
+      {
+        "path": "functions[0].error",
+        "op": "contains",
+        "value": "Flow exceeded maximum allowable instructions"
+      }
+    ]
+  },
+  "notes": "Retargeted from the now-stale EndOfWorld witness to vendored fauxware. A fatal 5-instruction budget puts main in the same durable state: one selected function, zero bodies, one error record. The cargo gates separately pin text output, both project modes, completed streamed artifacts, and mixed batches remaining exit 0."
+}
