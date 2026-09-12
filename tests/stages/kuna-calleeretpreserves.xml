@@ -46,6 +46,11 @@
     placeholder and an entry decoded at the wrong address look like.  Its silence
     about RAX is not evidence, so g must render identically in both passes.
 
+    h (0x1500) and i (0x1600) are the value-writing controls.  Both place 7 in
+    EAX before a call.  h's callee tail-jumps to `mov eax,9; ret`; i's direct
+    callee executes the same write itself.  Neither call may preserve the
+    caller's 7 in either option pass.
+
     Stage: P3 heritage call guarding, option calleeretpreserves off|on.  Pass 1
     (off) pins the bug, pass 2 (on, the default) pins the fix.
 -->
@@ -67,8 +72,25 @@ efcdab8967452301
 <bytechunk space="ram" offset="0x1410">
 f30f1efac3
 </bytechunk>
+<bytechunk space="ram" offset="0x1500">
+4883ec28b807000000e8320000004883c428c3
+</bytechunk>
+<bytechunk space="ram" offset="0x1540">
+eb0e
+</bytechunk>
+<bytechunk space="ram" offset="0x1550">
+b809000000c3
+</bytechunk>
+<bytechunk space="ram" offset="0x1600">
+4883ec28b807000000e8320000004883c428c3
+</bytechunk>
+<bytechunk space="ram" offset="0x1640">
+b809000000c3
+</bytechunk>
 <symbol space="ram" offset="0x1000" name="f"/>
 <symbol space="ram" offset="0x1400" name="g"/>
+<symbol space="ram" offset="0x1500" name="h"/>
+<symbol space="ram" offset="0x1600" name="i"/>
 </binaryimage>
 <script>
   <com>option calleeretpreserves off</com>
@@ -78,11 +100,23 @@ f30f1efac3
   <com>lo fu g</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu h</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu i</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>option calleeretpreserves on</com>
   <com>lo fu f</com>
   <com>decompile</com>
   <com>print C</com>
   <com>lo fu g</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu h</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu i</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
@@ -93,4 +127,6 @@ f30f1efac3
 <stringmatch name="CALLEERETPRESERVES #4: both passes, the checker is still called with the same argument" min="2" max="2">^  sub_1100\(a0 \+ 1\);$</stringmatch>
 <stringmatch name="CALLEERETPRESERVES #5: both passes, an endbr64/ret stub proves nothing and g is unchanged" min="2" max="2">^void g\(void\)$</stringmatch>
 <stringmatch name="CALLEERETPRESERVES #6: both passes, the stub call keeps the convention's answer" min="2" max="2">^  sub_1410\(\);$</stringmatch>
+<stringmatch name="CALLEERETPRESERVES #7: a tailcallee RAX write never preserves the caller's seven" min="0" max="0">^  return 7;$</stringmatch>
+<stringmatch name="CALLEERETPRESERVES #8: both direct- and tailcallee RAX writers keep the call in both passes" min="4" max="4">^  sub_1[56]40\(\);$</stringmatch>
 </decompilertest>
