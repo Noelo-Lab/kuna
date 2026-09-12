@@ -1677,6 +1677,24 @@ pub(crate) fn resolve_targets(
     prog: &ConsoleProgram,
     args: &Args,
 ) -> Result<Vec<FunctionEntry>, String> {
+    resolve_targets_with_policy(prog, args, true)
+}
+
+/// Resolve graph selections while retaining bodyless import rows. The graph
+/// labels these addresses and omits their code; it never passes them to the
+/// lifter. Decompilation surfaces use [`resolve_targets`] and refuse them.
+pub(crate) fn resolve_targets_allow_bodyless(
+    prog: &ConsoleProgram,
+    args: &Args,
+) -> Result<Vec<FunctionEntry>, String> {
+    resolve_targets_with_policy(prog, args, false)
+}
+
+fn resolve_targets_with_policy(
+    prog: &ConsoleProgram,
+    args: &Args,
+    require_body: bool,
+) -> Result<Vec<FunctionEntry>, String> {
     let mut targets: Vec<FunctionEntry> = Vec::new();
 
     // Resolve every address form through the program's shared selector model.
@@ -1689,7 +1707,12 @@ pub(crate) fn resolve_targets(
             (true, _) => unreachable!("raw parser requires numeric entries"),
             (false, selector) => selector.clone(),
         };
-        targets.push(prog.resolve_entry(&selector).map_err(|error| error.to_string())?);
+        let entry = if require_body {
+            prog.resolve_body_entry(&selector)
+        } else {
+            prog.resolve_entry(&selector)
+        };
+        targets.push(entry.map_err(|error| error.to_string())?);
     }
 
     // `--functions a,b,c`: intersect names with the enumerated set.  An ALIAS
@@ -1698,7 +1721,13 @@ pub(crate) fn resolve_targets(
     // generated `sub_<addr>` names).
     if let Some(names) = &args.names {
         for want in names {
-            match prog.resolve_entry(&EntrySelector::Name(want.clone())) {
+            let selector = EntrySelector::Name(want.clone());
+            let entry = if require_body {
+                prog.resolve_body_entry(&selector)
+            } else {
+                prog.resolve_entry(&selector)
+            };
+            match entry {
                 Ok(entry) => targets.push(entry),
                 Err(EntryLookupError::NotFound { .. }) => {
                     eprintln!("warning: no function named {want:?} in {}", args.binary)
@@ -1714,9 +1743,7 @@ pub(crate) fn resolve_targets(
     let mut seen = std::collections::HashSet::new();
     targets.retain(|e| seen.insert(e.addr.get_offset()));
 
-    // No filter at all ⇒ every executable function, exactly once. Import pointer
-    // slots remain explicitly selectable, but are data rather than function
-    // bodies.
+    // No filter at all ⇒ every executable function, exactly once.
     if args.addrs.is_empty() && args.names.is_none() {
         targets = prog.function_entries_executable();
     }

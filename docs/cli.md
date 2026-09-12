@@ -176,6 +176,15 @@ resolves it to the same veneer. The narrowing needs **exactly one** executable
 candidate, so two same-named definitions in different code sections of a
 relocatable object still report the ambiguity with every candidate listed.
 
+When an import has no body-bearing veneer, `decompile` and explicitly filtered
+whole-binary decompilation refuse its IAT slot with exit code 1. The diagnostic
+names the import and slot and explains that the bytes are a loader-written
+pointer, so neither an executable section flag nor direct `--addr` turns
+adjacent IAT words into instructions. Inventory, graph, disassembly/read, and
+xref consumers still resolve the slot because they do not lift a body. An
+explicit `--define-function` or `--assert function` declaration overrides the
+loader classification when the image's import directory is known to be false.
+
 **The instruction budget.** Flow following decodes at most `maxinstruction`
 instructions per function — 100000 by default, which no ordinary function comes
 near and an obfuscated one blows through. Past the budget the decompiling

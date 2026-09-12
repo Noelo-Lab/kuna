@@ -46,7 +46,7 @@
 use std::path::PathBuf;
 
 use kuna_base::address::Address;
-use kuna_console::engine::{bootstrap_from_object, ConsoleProgram};
+use kuna_console::engine::{bootstrap_from_object, ConsoleProgram, EntrySelector};
 use kuna_console::ifacedecomp::{
     execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE,
 };
@@ -73,6 +73,8 @@ fn fixtures() -> PathBuf {
 const MAIN_VMA: u64 = 0x140001592;
 const PUTS_THUNK_VMA: u64 = 0x140007240;
 const PUTS_IAT_VMA: u64 = 0x14000d33c;
+const GETLASTERROR_THUNK_VMA: u64 = 0x1400079f8;
+const GETLASTERROR_IAT_VMA: u64 = 0x14000d1ec;
 
 /// Bootstrap, run `load function`/`load addr`-driven `decompile` → `print C`, and
 /// return the captured C. `func_cmd` is the `load function …`/`load addr …`
@@ -216,6 +218,36 @@ fn pe_batch_targets_exclude_iat_data_slots() {
     );
 }
 
+/// A non-executable `.idata` slot is still resolvable for call binding but is
+/// refused when the consumer asks for a body. The same-named executable thunk
+/// remains the preferred body-bearing name selection and keeps its prototype.
+#[test]
+fn pe_data_iat_slot_is_not_a_body_target() {
+    let Some(mut prog) = boot("pe_imports.exe") else { return };
+    prog.commit_pending_analysis().expect("PE analysis commit must succeed");
+
+    let slot = EntrySelector::Numeric(GETLASTERROR_IAT_VMA);
+    assert_eq!(
+        prog.resolve_entry(&slot).expect("the slot stays resolvable").name,
+        "GetLastError"
+    );
+    assert_eq!(
+        prog.resolve_body_entry(&slot).unwrap_err().to_string(),
+        "selector \"0x14000d1ec\" identifies import GetLastError at 0x14000d1ec; \
+         the IAT slot contains a loader-written pointer, not a function body"
+    );
+
+    let by_name = prog
+        .resolve_body_entry(&EntrySelector::Name("GetLastError".into()))
+        .expect("the executable thunk is the body-bearing candidate");
+    assert_eq!(by_name.addr.get_offset(), GETLASTERROR_THUNK_VMA);
+    let out = decompile_func(prog, "load function GetLastError");
+    assert!(
+        out.contains("uint4 GetLastError(void)") && out.contains("return GetLastError()"),
+        "the thunk must keep the imported prototype and identity:\n{out}"
+    );
+}
+
 // ---- The IAT inside a CODE section (RE-need `bulk-decompilation-decodes-pe`) --
 //
 // `pe_iatincode_i386.exe` (synthesized; see the sibling `.py`) reproduces a
@@ -264,7 +296,23 @@ fn pe_batch_excludes_iat_slots_inside_a_code_section() {
             prog.find_entry_at(slot).is_some(),
             "PE: explicit lookup must retain the slot at {slot:#x}"
         );
+        let selector = EntrySelector::Numeric(slot);
+        assert!(
+            prog.resolve_entry(&selector).is_ok(),
+            "PE: generic call-target resolution must retain {slot:#x}"
+        );
+        assert!(
+            prog.resolve_body_entry(&selector).is_err(),
+            "PE: executable section flags must not make {slot:#x} a body"
+        );
     }
+    assert_eq!(
+        prog.resolve_body_entry(&EntrySelector::Name("VirtualAlloc".into()))
+            .unwrap_err()
+            .to_string(),
+        "selector \"VirtualAlloc\" identifies import VirtualAlloc at 0x401000; \
+         the IAT slot contains a loader-written pointer, not a function body"
+    );
     assert_eq!(executable, vec![IATINCODE_ENTRY_VMA]);
 }
 
@@ -299,5 +347,9 @@ fn pe_declared_entry_outranks_the_import_slot_test() {
     assert!(
         executable.contains(&IATINCODE_SLOTS[0]),
         "PE: a declared entry must survive the slot test, got {executable:x?}"
+    );
+    assert!(
+        prog.resolve_body_entry(&EntrySelector::Numeric(IATINCODE_SLOTS[0])).is_ok(),
+        "an explicit function declaration must make the slot a body target"
     );
 }

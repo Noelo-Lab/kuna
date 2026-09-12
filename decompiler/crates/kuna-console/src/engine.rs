@@ -830,7 +830,7 @@ impl ConsoleProgram {
     /// The canonical entries eligible for automatic whole-binary decompilation.
     ///
     /// Import pointer slots remain in the canonical inventory for call naming
-    /// and explicit address selection, but data addresses are not function bodies.
+    /// and generic address lookup, but pointer words are not function bodies.
     /// Loaders without section metadata retain the complete inventory.
     ///
     /// Two things disqualify an entry, and the second is not a section-flag
@@ -880,11 +880,11 @@ impl ConsoleProgram {
     /// The per-entry half of [`Self::function_entries_executable`], with the
     /// section table hoisted out so a whole inventory costs one loader walk.
     fn entry_is_executable(&self, vma: u64, sections: &[(u64, u64, u32)]) -> bool {
+        if !self.is_body_entry(vma) {
+            return false;
+        }
         if self.is_declared_entry(vma) {
             return true;
-        }
-        if self.is_import_slot(vma) {
-            return false;
         }
         sections.is_empty()
             || sections.iter().any(|&(start, size, flags)| {
@@ -900,6 +900,15 @@ impl ConsoleProgram {
     /// path, for a raw image, and for every non-PE object.
     pub fn is_import_slot(&self, vma: u64) -> bool {
         self.import_slots.iter().any(|&(lo, hi)| vma >= lo && vma < hi)
+    }
+
+    /// Whether `vma` may be treated as the start of a function body.
+    ///
+    /// An import slot remains a `FunctionSymbol` so calls through its address
+    /// bind to the import name and prototype, but the word itself is not code.
+    /// A caller declaration deliberately outranks the loader classification.
+    pub fn is_body_entry(&self, vma: u64) -> bool {
+        self.is_declared_entry(vma) || !self.is_import_slot(vma)
     }
 
     /// (kuna, issue #197) Resolve a canonical entry by ANY of its names — the
@@ -1052,6 +1061,26 @@ impl ConsoleProgram {
                 })
             }
         }
+    }
+
+    /// Resolve a selector specifically for an operation that will lift a body.
+    ///
+    /// Generic symbol resolution intentionally accepts import slots: their
+    /// addresses are load-bearing call targets. Body selection adds the one
+    /// semantic check that resolution alone cannot make.
+    pub fn resolve_body_entry(
+        &self,
+        selector: &EntrySelector,
+    ) -> Result<FunctionEntry, EntryLookupError> {
+        let entry = self.resolve_entry(selector)?;
+        if self.is_body_entry(entry.addr.get_offset()) {
+            return Ok(entry);
+        }
+        Err(EntryLookupError::BodylessImport {
+            selector: selector.display(),
+            name: entry.name,
+            address: entry.addr.get_offset(),
+        })
     }
 
     /// Resolve an already-parsed machine address without discarding its address
@@ -1942,6 +1971,37 @@ impl ConsoleProgram {
         if explicit.is_some() {
             self.seed_declared_libc_prototype(&name, &addr);
         }
+        Ok(name)
+    }
+
+    /// Ensure a `FunctionSymbol` exists at `addr` without asserting that the
+    /// address has a body. Used by an addressed CLI run that needs a symbol for
+    /// prototype directives before selection.
+    pub fn ensure_function_symbol(&mut self, addr: Address) -> KunaResult<String> {
+        let addr = match addr.get_space() {
+            Some(space) => Address::new(
+                std::rc::Rc::clone(space),
+                self.thumb_normalized(addr.get_offset()),
+            ),
+            None => addr,
+        };
+        let name = match self.arch().symboltab.find_function_across_scopes(&addr) {
+            Some((sym, _)) => self.arch().symboltab.symbol(sym).get_display_name().to_string(),
+            None => {
+                let name = self.arch().name_function(&addr);
+                let type_code = self.arch().types().get_type_code()?;
+                let min_size = self.arch().min_funcsymbol_size;
+                let num_spaces = self.arch().manage().num_spaces() as int4;
+                let arch = self.arch_mut();
+                let (scope, basename) = arch
+                    .symboltab
+                    .find_create_scope_from_symbol_name(&name, "::", None, num_spaces)?;
+                arch.symboltab
+                    .add_function(scope, &addr, &basename, min_size, type_code)?;
+                name
+            }
+        };
+        self.register_symbol(&name, addr);
         Ok(name)
     }
 

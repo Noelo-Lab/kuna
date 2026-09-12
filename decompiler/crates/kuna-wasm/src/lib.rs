@@ -397,11 +397,11 @@ fn resolve_targets(
         // An ALIAS resolves too — collapsing the enumeration must not make a
         // name that used to select a function stop working.
         Cmd::DecompileName(want) => prog
-            .resolve_entry(&EntrySelector::parse(want))
+            .resolve_body_entry(&EntrySelector::parse(want))
             .map(|entry| vec![entry])
             .map_err(|error| error.to_string()),
         Cmd::DecompileAddr(vma) => prog
-            .resolve_entry(&EntrySelector::Numeric(*vma))
+            .resolve_body_entry(&EntrySelector::Numeric(*vma))
             .map(|entry| vec![entry])
             .map_err(|error| error.to_string()),
         Cmd::List | Cmd::Project(_) => unreachable!("List/Project handled by caller"),

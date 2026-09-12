@@ -234,7 +234,7 @@ fn build_script_for_input(
         lines.push(decl.console_line());
     }
     // (kuna, RE-need `prototype-assertion-rejects-explicit`) A by-address run
-    // DECLARES that a function starts where it points: `load addr` follows flow
+    // ensures that a function symbol exists where it points: `load addr` follows flow
     // from the address without installing a `FunctionSymbol`, so a directive
     // naming the very address this run decompiles was answered `no function
     // starts at 0x…` while the body was emitted in full.  This is the same
@@ -243,7 +243,7 @@ fn build_script_for_input(
     // clear.
     if let Some(vma) = selected_vma(target, by_address) {
         if !func_decls.iter().any(|decl| decl.start == vma) {
-            lines.push(format!("function bounds {vma:#x}"));
+            lines.push(format!("function symbol {vma:#x}"));
         }
     }
     // (kuna `--assert`) The PROGRAM-scoped directives -- a parsed type, a
@@ -1040,7 +1040,7 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
         if c_text.trim().is_empty() {
             // An EXTERNAL, not a failure: the selected entry has no mapped bytes
             // because its definition lives in another module (a relocatable
-            // object's undefined symbol, a PE import slot). Those carry an
+            // object's undefined symbol). Those carry an
             // address only so a call to one renders by name. Say so, rather than
             // dumping a console transcript whose "Unable to load N bytes" reads
             // like a decompiler defect. The whole-binary surfaces answer the same
@@ -1985,11 +1985,11 @@ Decompilation complete
         );
     }
 
-    /// A by-address run DECLARES the entry it points at, before the directives
-    /// that name it: `load addr` alone installs no `FunctionSymbol`, so
+    /// A by-address run installs a symbol at the entry it points at, before the
+    /// directives that name it: `load addr` alone installs no `FunctionSymbol`, so
     /// `prototype 0x…` for the very address being decompiled was rejected.
     #[test]
-    fn build_script_declares_the_entry_a_by_address_run_selected() {
+    fn build_script_symbols_the_entry_a_by_address_run_selected() {
         let directives = vec![crate::assertdecl::parse_one(
             "prototype 0x401571 void decrypt(unsigned int key)",
         )
@@ -2015,18 +2015,18 @@ Decompilation complete
                 .unwrap_or_else(|| panic!("{needle:?} missing from:\n{script}"))
         };
         assert!(
-            line("read symbols") < line("function bounds 0x401571")
-                && line("function bounds 0x401571")
+            line("read symbols") < line("function symbol 0x401571")
+                && line("function symbol 0x401571")
                     < line("map prototype 0x401571 void decrypt(unsigned int key);"),
             "wrong order in:\n{script}"
         );
     }
 
-    /// A bare hex target under `--addr` takes the same declaration, and a NAMED
+    /// A bare hex target under `--addr` takes the same symbol install, and a NAMED
     /// selection takes none — the name path resolves through the symbol table
     /// that already has the entry.
     #[test]
-    fn only_an_addressed_selection_is_declared() {
+    fn only_an_addressed_selection_gets_an_implicit_symbol() {
         let script = |target: &str, by_address: bool| {
             build_script(
                 "/tmp/a.out",
@@ -2043,10 +2043,10 @@ Decompilation complete
                 None,
             )
         };
-        assert!(script("401571", true).contains("\nfunction bounds 0x401571\n"));
-        assert!(!script("authenticate", false).contains("function bounds"));
+        assert!(script("401571", true).contains("\nfunction symbol 0x401571\n"));
+        assert!(!script("authenticate", false).contains("function symbol"));
         // An object-file coordinate is not a VMA, so there is nothing to declare.
-        assert!(!script(".text+0x10", true).contains("function bounds"));
+        assert!(!script(".text+0x10", true).contains("function symbol"));
     }
 
     /// A caller who declared the same start keeps the extent they declared: a
