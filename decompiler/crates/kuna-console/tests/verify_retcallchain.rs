@@ -22,7 +22,8 @@ use kuna_base::address::Address;
 use kuna_console::assertions::{self, Body, Directive};
 use kuna_console::engine::{bootstrap_from_object, ConsoleProgram, EntrySelector};
 use kuna_console::kuna_retcallchain::{
-    kuna_chain_sites, kuna_entry_chain_sites, CHAIN_MAX_INSNS, CHAIN_MAX_SITES,
+    kuna_chain_sites, kuna_entry_chain_sites, kuna_push_immediate_ret, CHAIN_MAX_INSNS,
+    CHAIN_MAX_SITES,
 };
 use kuna_console::project::decompile_targets;
 
@@ -122,6 +123,59 @@ fn entry_recognition_reports_the_complete_chain() {
     .map(|a| a.get_offset())
     .collect::<Vec<_>>();
     assert_eq!(sites, LINK_RETS);
+}
+
+#[test]
+fn immediate_ret_recognition_reports_only_the_one_store_tail() {
+    let Some(prog) = load_fixture("push_immediate_ret_i386") else { return };
+    let space = prog.arch().manage().get_default_code_space().cloned().expect("code space");
+    let entry = Address::new(space.clone(), 0x0804_9000);
+    let matched = kuna_push_immediate_ret(prog.arch().translate(), &entry, CHAIN_MAX_INSNS)
+        .expect("one-store immediate RET tail");
+    assert_eq!(matched.0.get_offset(), 0x0804_900a);
+    assert_eq!(matched.1, 0x0804_b000);
+
+    for entry in [
+        0x0804_9011,
+        0x0804_9012,
+        0x0804_9025,
+        0x0804_902e,
+        0x0804_9037,
+        0x0804_9039,
+        0x0804_9043,
+    ] {
+        let entry = Address::new(space.clone(), entry);
+        assert_eq!(
+            kuna_push_immediate_ret(prog.arch().translate(), &entry, CHAIN_MAX_INSNS),
+            None,
+            "negative at {entry:?} became an immediate RET tail"
+        );
+    }
+}
+
+#[test]
+fn immediate_ret_transfer_never_registers_the_encrypted_target_as_a_function() {
+    let Some(mut prog) = load_fixture("push_immediate_ret_i386.exe") else { return };
+    prog.arch_mut()
+        .set_kuna_option("pushimmediateret", "on")
+        .expect("pushimmediateret flips on");
+    assert!(
+        prog.function_entries_canonical()
+            .iter()
+            .all(|entry| entry.addr.get_offset() != 0x0040_1000),
+        "encrypted target was already classified as a function"
+    );
+
+    let target = prog
+        .resolve_entry(&EntrySelector::Numeric(0x0040_2000))
+        .expect("the PE entry is a function");
+    let _ = decompile_targets(&mut prog, vec![target], false, false, false);
+    assert!(
+        prog.function_entries_canonical()
+            .iter()
+            .all(|entry| entry.addr.get_offset() != 0x0040_1000),
+        "tail-transfer recovery synthesized the encrypted target function"
+    );
 }
 
 /// The need's own case: one override on the first link recovers all three calls.

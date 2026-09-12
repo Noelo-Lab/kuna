@@ -1962,6 +1962,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "pushimmediateret"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P2"
+subphase = "flow-classification"
+strength = "HARD"
+rewind = "P2"
+issue = "push-immediate-ret-transfer"
+summary = "RESTORES A TERMINAL TRANSFER: recognize a function run ending in `push <immediate>; ret` and classify the proven RET as a branch before flow following. Without this fact, the RETURN ends the function and dead-store removal erases the pushed destination, so an unpacking stub emits its unpacker call but not the transfer to the original entry point. The bounded straight-line scanner uses raw-p-code affine stack provenance: RETURN must load a current-run stack slot, the last exact store to that slot must be a constant, and RET must advance the same stack base by the loaded width. Any adjacent in-run stack store declines, keeping `push continuation; push target; ret` call emulation under `entryretdispatch`. Ordinary returns, calls after argument pushes, stack adjustments or overwrites, computed targets, conditional/indirect flow, opaque writes, and unsupported userops decline. The derived fact is BRANCH, never CALL, so there is no fall-through; caller-supplied flow assertions always take precedence. No target function is synthesized or decoded."
+use_when = "On by default (DIV-170). A packer/unpacker entry calls a decoder and then disassembly ends `push <original-entry-address>; ret`, but emitted C contains only the decoder call and silently loses the final transfer. The default preserves the address as a terminal indirect transfer without treating encrypted on-disk target bytes as a function; use `option pushimmediateret off` to restore the bare RETURN."
+example = "option pushimmediateret off"
+source_decompiler = "kuna"
+inspiration = "RE-friction duplicate needs entry-point-push-return and push-immediate-ret-transfer: CryptoME.exe 0x4f7001 executes call 0x4f7990; push 0x40365a; ret, while default C omitted 0x40365a"
+change_kind = "correctness-fix"
+tier = "transform"
+symptoms = "a push immediate followed by ret disappears from emitted C|an unpacker call remains but the original-entry transfer after it is missing|a manual flow branch assertion on a RET restores an indirect transfer to a constant address|a packed entry stub ends at ret even though it pushed a destination first"
+live_field = "push_immediate_ret"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "funcboundflow"
 values = "on|off"
 default = "on"

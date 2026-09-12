@@ -159,7 +159,16 @@ pub fn decompile_one_prefollowed(
     } else {
         Vec::new()
     };
-    let has_entry_chain = !entry_chain.is_empty();
+    let push_immediate_ret = if arch.push_immediate_ret {
+        crate::kuna_retcallchain::kuna_push_immediate_ret(
+            arch.translate(),
+            &entry,
+            crate::kuna_retcallchain::CHAIN_MAX_INSNS,
+        )
+    } else {
+        None
+    };
+    let has_derived_flow = !entry_chain.is_empty() || push_immediate_ret.is_some();
     let mut flow_overrides = entry_chain
         .iter()
         // An explicit fact at this address owns the classification. In
@@ -168,11 +177,19 @@ pub fn decompile_one_prefollowed(
         .cloned()
         .map(|site| (site, kuna_decomp::overrides::flow_type::CALL))
         .collect::<Vec<_>>();
+    if let Some((site, _target)) = push_immediate_ret.as_ref() {
+        if !seed.flow_overrides.iter().any(|(at, _)| at == site) {
+            flow_overrides.push((site.clone(), kuna_decomp::overrides::flow_type::BRANCH));
+        }
+    }
     flow_overrides.extend(seed.flow_overrides.iter().filter_map(|(site, kind)| {
         // RETURN on a raw RETURN link is the original instruction semantics,
         // not an override the engine can apply. Treat it as a clean veto.
         if *kind == kuna_decomp::overrides::flow_type::RETURN
-            && entry_chain.iter().any(|derived| derived == site)
+            && (entry_chain.iter().any(|derived| derived == site)
+                || push_immediate_ret
+                    .as_ref()
+                    .is_some_and(|(derived, _)| derived == site))
         {
             None
         } else {
@@ -182,7 +199,7 @@ pub fn decompile_one_prefollowed(
     // `load function` followed the entry before automatic recognition ran.
     // Rebuild only this uncommon shape; every ordinary function still adopts
     // the already-followed IR.
-    let prefollowed = if has_entry_chain { None } else { prefollowed };
+    let prefollowed = if has_derived_flow { None } else { prefollowed };
     let mut result = kuna_decomp::decompile_drive::decompile_func_full_with_override_dyn_prefollowed(
         arch,
         name,

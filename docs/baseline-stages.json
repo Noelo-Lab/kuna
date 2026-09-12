@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    811,
-    811
+    813,
+    813
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -411,6 +411,8 @@
     "data:PEIMPORTCALL #3: on gives the bound call its no-return flow effect",
     "data:PEIMPORTCALL #4: off leaves bail calling the raw slot pointer",
     "data:PEIMPORTCALL #5: on ends bail at the bound no-return import",
+    "data:PUSHIMMEDIATERET #1: both arms preserve the unpacker call",
+    "data:PUSHIMMEDIATERET #2: only option on emits the complete tail-transfer statement",
     "data:REALTYPES #1: signature uses real C types, not xunknown8",
     "data:REALTYPES #2: 1-byte stack buffer is char[8], not xunknown1[8]",
     "data:REALTYPES #3: 4-byte temp is unsigned int, not xunknown4",

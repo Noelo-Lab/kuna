@@ -1,0 +1,37 @@
+Reference status
+================
+
+The RE-friction runs attempted IDA on the original CryptoME.exe witness, but
+the backend failed before producing pseudocode. No claim about IDA or angr is
+used to justify this change.
+
+The decisive reference is the existing P2 assertion on the exact instruction:
+`flow 0x4f700b branch` makes the current engine preserve the destination. This
+proves that lift, constant propagation and C emission already carry the
+transfer; only automatic RETURN classification was missing.
+
+kuna with `option pushimmediateret off`
+----------------------------------------
+
+void sub_4f7001(void)
+{
+  sub_4f7990();
+}
+
+kuna with the shipped default
+------------------------------
+
+void sub_4f7001(void)
+{
+  sub_4f7990();
+  (*(void *)0x40365a)();
+}
+
+Hermetic acceptance
+-------------------
+
+`push_immediate_ret_i386.exe` carries the same `call unpacker; push encrypted
+target; ret` entry, with CryptoME's exact sixteen encrypted target bytes in a
+non-executable `.packed` section and no target function symbol. The promoted
+JSON probe requires the unpacker call followed by a complete switch/case
+control-flow construct. A warning that merely contains `401000` cannot pass.

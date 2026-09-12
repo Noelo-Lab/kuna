@@ -5,8 +5,8 @@
   "rejected_count": 1,
   "by_status": {
     "blocked": 1,
-    "closed": 152,
-    "open": 44
+    "closed": 154,
+    "open": 42
   },
   "by_track": {
     "loader": 10,
@@ -2922,10 +2922,10 @@
       "need_id": "entry-point-push-return",
       "title": "Entry-point push/return transfer disappears from C",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
       "probe_id": "p-b18b63fe0527",
-      "acceptance_id": "a-f4c47ea2eb8a",
+      "acceptance_id": "a-d88748a4d135",
       "hypothesis_status": "inconclusive",
       "credibility": 0.85,
       "instances": 1,
@@ -2933,21 +2933,22 @@
         "5ab77f5433c5d40ad448c1c1"
       ],
       "rounds": [
-        8
+        8,
+        12
       ],
       "first_seen_round": 8,
-      "attempts": 0,
-      "covered_by_option": null,
+      "attempts": 1,
+      "covered_by_option": "pushimmediateret",
       "touches": [
         "decompiler/crates/kuna-decomp"
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": 603,
+      "closed_in_round": 12,
+      "closing_pr": "603",
       "reject_reason": null,
-      "score": 13.862944,
+      "score": 9.241962,
       "path": "docs/re-needs/entry-point-push-return.md"
     },
     {
@@ -3831,10 +3832,10 @@
       "need_id": "push-immediate-ret-transfer",
       "title": "PUSH immediate / RET transfer to the original entry disappears",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
       "probe_id": "p-8dae1261fd45",
-      "acceptance_id": "a-db386755c0ad",
+      "acceptance_id": "a-d88748a4d135",
       "hypothesis_status": "upheld",
       "credibility": 0.7,
       "instances": 1,
@@ -3845,18 +3846,18 @@
         12
       ],
       "first_seen_round": 12,
-      "attempts": 0,
-      "covered_by_option": null,
+      "attempts": 1,
+      "covered_by_option": "pushimmediateret",
       "touches": [
         "decompiler/crates/kuna-decomp"
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": 603,
+      "closed_in_round": 12,
+      "closing_pr": "603",
       "reject_reason": null,
-      "score": 13.862944,
+      "score": 9.241962,
       "path": "docs/re-needs/push-immediate-ret-transfer.md"
     },
     {

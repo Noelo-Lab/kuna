@@ -280,6 +280,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // (kuna) DIV-168: prove entry-point `push continuation; push target; ret`
     // chains and seed each link as a call. Default ON.
     "entryretdispatch",
+    "pushimmediateret",
     "funcboundflow",
     "overlapbranch",
     "cleanupcode",

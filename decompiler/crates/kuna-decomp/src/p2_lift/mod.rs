@@ -27,6 +27,7 @@ pub mod kuna_tailcallsaved; // (kuna) a teardown that restores nothing the entry
 pub mod kuna_calltrampoline; // (kuna) flow a call through a callee that discards the pushed return address
 pub mod kuna_callpopret; // (kuna) flow a call through a callee that pops the return address and rets to the grandparent
 pub mod kuna_entryretdispatch; // (kuna) recover an entry-point push/push/ret dispatch chain as calls
+pub mod kuna_pushimmediateret; // (kuna) recover a one-store push-immediate/ret tail transfer as a branch
 pub mod kuna_overlapbranch; // (kuna) a conditional branch target inside its own fall-through instruction (anti-disassembly overlap)
 pub mod kuna_msvcftol; // (kuna) MSVC __ftol family call-fixup: recover the x87 (ST0) argument
 pub mod kuna_cortexmpriv; // (kuna) fold the Cortex-M isCurrentModePrivileged() guard around MRS/MSR

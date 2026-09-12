@@ -1,0 +1,76 @@
+{
+  "need_id": "push-immediate-ret-transfer",
+  "duplicate_need_ids": [
+    "entry-point-push-return"
+  ],
+  "slug": "pushimmediateret",
+  "track": "quality",
+  "scope": "small",
+  "opportunity": "push-immediate-ret-transfer::0x4f7001",
+  "test_name": "RE-friction duplicate PUSH-immediate/RET transfer needs",
+  "binary": "/home/mahaloz/github/kuna-re-dataset/challenges/5ab77f5433c5d40ad448c1c1/bin/CryptoME.zip.__x/CryptoME.exe",
+  "selector": "0x4f7001",
+  "func_addr": "0x4f7001",
+  "angr_version": null,
+  "option": "pushimmediateret",
+  "flag": "push_immediate_ret",
+  "element_id": 4165,
+  "default_on": true,
+  "div": "DIV-170",
+  "phase": "P2",
+  "subphase": "flow-classification",
+  "change_kind": "correctness-fix",
+  "tier": "transform",
+  "source_decompiler": "kuna",
+  "inspiration": "RE-friction duplicate needs on CryptoME.exe: an existing flow 0x4f700b branch assertion restores the proven stack-built transfer without defining encrypted target bytes",
+  "ablation_changed": 0,
+  "parity": "OK",
+  "decisions": [
+    "Reuse entryretdispatch's bounded raw-p-code affine stack provenance instead of adding an instruction-text matcher or a second flow engine.",
+    "Accept only the one-store form whose RETURN loads that exact current-run slot, whose store value is constant, and whose RET advances the same stack base by the loaded width.",
+    "Decline any second live same-stack store, leaving push continuation; push target; ret exclusively under entryretdispatch's call-emulation classifier.",
+    "Seed BRANCH, never CALL: the original function has no fall-through after push immediate; ret. The C printer may spell the terminal branch as an indirect tail-call statement.",
+    "Caller-supplied flow facts own their sites. Explicit RETURN is a clean veto and is not redundantly applied to an already-RETURN instruction.",
+    "Never create a function at the constant destination because the CryptoME target bytes are ciphertext until the unpacker runs.",
+    "Replace both weak dataset acceptances with one vendored PE acceptance matching the full unpacker-call plus switch/case control-flow sequence inside JSON code, so warning text alone cannot pass.",
+    "Ship default on because the default-on ablation changes 0 of 675 assertions and the exact CryptoME entry is within the 5% speed-regression budget."
+  ],
+  "controls": {
+    "positive": "CryptoME.exe 0x4f7001 and vendored i386 ELF/PE twins: call unpacker; push immediate encrypted entry; ret",
+    "negative": "ordinary RET, argument push before a later call/RET, stack adjustment, exact-slot overwrite, computed pushed target, conditional bypass, and the adjacent two-push entryretdispatch form",
+    "precedence": "any explicit flow fact at the derived RET wins; explicit RETURN restores ordinary RETURN",
+    "target_discovery": "function inventory remains without the encrypted 0x401000 PE destination before and after decompilation"
+  },
+  "sweep": {
+    "method": "decompile every named fixture function with pushimmediateret off versus on",
+    "negative_functions": 7,
+    "negative_functions_changed": 0,
+    "entryretdispatch_two_push_changed": false,
+    "regressions_found": 0
+  },
+  "tests": {
+    "stage": "tests/stages/kuna-pushimmediateret.xml (two passes, two assertions)",
+    "cli": "decompiler/crates/kuna-cli/tests/push_immediate_ret_cli.rs (positive/off/negative/two-push/explicit-precedence)",
+    "provenance": "kuna_retcallchain raw-op units plus verify_retcallchain fixture recognition and no-target-function check",
+    "fixture": "push_immediate_ret_i386 (+ .s) and push_immediate_ret_i386.exe (+ deterministic .py generator)",
+    "promoted_probe": "tests/cli/push-immediate-ret-transfer.json; shared acceptance a-d88748a4d135 for both duplicate needs"
+  },
+  "gates": {
+    "base": "rebased onto exact origin/main 71abd44e8dfd1ccdcfc0fff3ef8b7f64bcb5baab",
+    "make test": "675/675 PARITY OK; docs/baseline.json unchanged",
+    "make test-stages": "813/813 PARITY OK",
+    "make rust-test": "cargo test --workspace --no-fail-fast green with KUNA_DECOMP_TEST unset; 0 failures",
+    "make test-cli": "151/151 promoted CLI probes passed",
+    "check-spec": "lenient and strict modes green",
+    "catalog and counters": "catalog OK; 192 settables, tiers 61/72/59, 280 corpus files, next ElementId 4166",
+    "acceptance": "2/2 needs pass, three repetitions each; both remain open pending PR closure attribution"
+  },
+  "speed_off_ms": 121.24,
+  "speed_on_ms": 110.71,
+  "speed_delta_pct": -8.69,
+  "speed_samples": 11,
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": true,
+  "speed_forced_off": false,
+  "speed_note": "Prescribed warmup plus median measurement on the exact CryptoME 0x4f7001 witness. The vendored PE is an acceptance-boundary fixture, not the speed target: its deliberately clipped encrypted target makes out-of-bounds handling dominate option-on timing."
+}

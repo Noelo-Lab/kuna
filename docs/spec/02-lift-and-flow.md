@@ -592,6 +592,32 @@ attributable. Section executability is deliberately irrelevant: the witness's
 whole packer stub, both code and inline data, occupies a section without the
 executable flag.
 
+**(kuna) Immediate-stack RET tail transfers — `option pushimmediateret`,
+default on (DIV-170).** A packer can spell an unconditional terminal transfer
+as `push <immediate>; ret`. Left as RETURN, flow ends correctly but dead-store
+elimination erases the pushed destination, so emitted C loses the transfer.
+Before following the function, the shared console decompile step runs the
+bounded raw-p-code provenance walk in
+`decompiler/crates/kuna-console/src/kuna_retcallchain.rs
+(kuna_push_immediate_ret)`. RETURN must load a stack slot written in the
+current straight-line run, the exact last store must carry a constant, and RET
+must advance the same affine stack base by the loaded width. The result seeds
+the existing P2 BRANCH flow override at that RET. BRANCH has no call-return
+fall-through; the C printer may nevertheless spell a terminal branch to an
+untyped destination as an indirect tail-call statement.
+
+The proof intentionally declines any second live store through the same stack
+base. That keeps `push continuation; push target; ret` exclusively under
+`entryretdispatch`, whose two-store proof models a call. A real call clears
+provenance, so a pushed argument before a later call/RET cannot match; stack
+adjustments, overwritten slots, computed stored values, conditional or
+indirect control flow, decode failure, and opaque userops also decline. An
+explicit flow fact at the RET owns the site, including an explicit RETURN veto.
+The flow override changes only the current function's graph: it never registers
+or decodes the constant target as a function, because an unpacker destination
+can still be encrypted in the static image. `option pushimmediateret off`
+restores ordinary RETURN classification.
+
 **(kuna) `__fastfail` is a no-return — `option fastfailnoreturn`, default on
 (DIV-120), `decompiler/crates/kuna-decomp/src/p2_lift/kuna_fastfailnoreturn.rs
 (is_fastfail_callind)`.** x86 SLEIGH lifts `INT imm8` to `intloc = swi(imm8);

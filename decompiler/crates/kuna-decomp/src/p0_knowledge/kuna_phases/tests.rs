@@ -73,7 +73,7 @@ fn surface_count_is_116() {
 }
 
 #[test]
-fn settable_count_is_191() {
+fn settable_count_is_192() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -132,12 +132,12 @@ fn settable_count_is_191() {
     // +1 for `entrythumbflow` (P1 entry-reachable Thumb context walk, DIV-154).
     // +1 for `pdatainterior` (P1 `.pdata` RUNTIME_FUNCTION-interior entry suppression).
     // +1 for `callretpair` (P4 two-register CALL output completion, DIV-162).
-    assert_eq!(kuna_num_settables(), 191);
-    assert_eq!(SETTABLE_TABLE.len(), 191);
+    assert_eq!(kuna_num_settables(), 192);
+    assert_eq!(SETTABLE_TABLE.len(), 192);
 }
 
 #[test]
-fn tier_counts_are_61_core_71_transform_59_analysis() {
+fn tier_counts_are_61_core_72_transform_59_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -241,7 +241,7 @@ fn tier_counts_are_61_core_71_transform_59_analysis() {
     // RUNTIME_FUNCTION-interior entry suppression).
     // core 60 -> 61: +1 for `callretpair` (P4 two-register CALL output
     // completion, DIV-162).
-    assert_eq!((core, transform, analysis), (61, 71, 59));
+    assert_eq!((core, transform, analysis), (61, 72, 59));
 }
 
 #[test]
@@ -431,7 +431,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_73() {
+fn option_values_live_value_present_for_75() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -776,7 +776,9 @@ fn option_values_live_value_present_for_73() {
     // 72 -> 73: +1 for `callpopret` (live_field = call_pop_ret, DIV-163).
     // 73 -> 74: +1 for `entryretdispatch` (live_field = entry_ret_dispatch,
     // DIV-168).
-    assert_eq!(with_live, 74);
+    // 74 -> 75: +1 for `pushimmediateret` (live_field = push_immediate_ret,
+    // DIV-170).
+    assert_eq!(with_live, 75);
 }
 
 #[test]
@@ -914,7 +916,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // beside `securitycheck`, so the tail does not move.
     // 180 -> 181: +1 for `entrythumbflow` (DIV-154); its P1 row sits mid-table
     // beside `tailcallentry`, so the tail does not move.
-    assert_eq!(json.matches("},\n").count(), 190);
+    assert_eq!(json.matches("},\n").count(), 191);
 }
 
 #[test]
