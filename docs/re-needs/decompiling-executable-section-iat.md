@@ -2,7 +2,7 @@
 need_id: decompiling-executable-section-iat
 title: Decompiling an executable-section IAT slot invents an arithmetic function
 track: quality
-status: open
+status: closed
 severity: major
 probe_id: p-b0ded31a46b9
 acceptance_id: a-fffdb4ce0518
@@ -17,9 +17,9 @@ covered_by_option: null
 touches: [decompiler/crates/kuna-decomp]
 scope: small
 regression_of: null
-pr: null
-closed_in_round: null
-closing_pr: null
+pr: "588"
+closed_in_round: 12
+closing_pr: "588"
 reject_reason: null
 ---
 
@@ -156,3 +156,14 @@ DISPATCH CONSEQUENCE: the T_DEDUP note's stated shared root condition, "IAT data
   `a-adefc9329f47` to `a-fffdb4ce0518`; the original dataset reproduction and
   `p-b0ded31a46b9` remain unchanged. Implementation is pending review and merge, so status
   remains `open` with `pr: null`.
+- closed: acceptance `a-fffdb4ce0518` now PASSES at exact implementation head
+  `46075ebcf48df2aff29a6ee2701bf283c1b3e7a2`. Measured surfaces: the dataset
+  witness `GetDlgItemTextA` at `0x401078` exits 1 with the stable import-slot
+  diagnostic and no `CARRY1`/invented pointer arithmetic; the executable-IAT
+  fixture's `VirtualAlloc` at `0x401000` and the non-executable-IAT fixture's
+  `GetLastError` at `0x14000d1ec` are likewise refused; an ordinary real body at
+  `0x401010` still decompiles with named `VirtualAlloc`/`GetModuleHandleA` calls;
+  and the executable thunk for `GetLastError` still decompiles with its imported
+  `unsigned int` prototype. Filtered decompile-all/project and direct WASM
+  name/address paths also pass. Closure metadata is durable only when PR #588
+  merges.
