@@ -9,12 +9,18 @@ fn put64(b: &mut [u8], p: usize, n: u64) { b[p..p+8].copy_from_slice(&n.to_be_by
 
 /// Synthetic linked ELFv1: two descriptors, two TOCs, and a code alias.
 fn image(abi: u32) -> Vec<u8> {
+    image_with_code(abi, &[0x88,0x62,0,0,0x4e,0x80,0,0x20])
+}
+
+fn image_with_code(abi: u32, first: &[u8]) -> Vec<u8> {
     let mut o = Object::new(BinaryFormat::Elf, Architecture::PowerPc64, Endianness::Big);
     let text = o.add_section(Vec::new(), b".text".to_vec(), SectionKind::Text);
-    o.append_section_data(text, &([0x88,0x62,0,0,0x4e,0x80,0,0x20].repeat(2)), 4);
+    let mut code = first.to_vec();
+    code.extend([0x88,0x62,0,0,0x4e,0x80,0,0x20]);
+    o.append_section_data(text, &code, 4);
     let opd = o.add_section(Vec::new(), b".opd".to_vec(), SectionKind::Data);
     let mut descriptors = Vec::new();
-    for n in [0x1000u64,0x3000,0,0x1008,0x3001,0] { descriptors.extend(n.to_be_bytes()); }
+    for n in [0x1000u64,0x3000,0,0x1000 + first.len() as u64,0x3001,0] { descriptors.extend(n.to_be_bytes()); }
     o.append_section_data(opd, &descriptors, 8);
     let data = o.add_section(Vec::new(), b".rodata".to_vec(), SectionKind::ReadOnlyData);
     o.append_section_data(data, &[7,9], 1);
@@ -49,6 +55,35 @@ fn image(abi: u32) -> Vec<u8> {
         for n in [offset,i as u64*0x1000,i as u64*0x1000,size,size,1] { b.extend(n.to_be_bytes()); }
     }
     b
+}
+
+#[test]
+fn entry_tocs_preserve_live_register_defaults_and_user_overrides() {
+    use kuna_console::engine::bootstrap_from_file;
+    use kuna_console::ifacedecomp::{execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE};
+    use kuna_console::ifaceterm::ConsoleCommands;
+    let specs = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../specs");
+    let path = common::scratch_file("elfv1-live-tracking", "elf");
+    // lbz r4,0(r2); add r3,r3,r4; blr.
+    std::fs::write(&path, image_with_code(1, &[0x88,0x82,0,0,0x7c,0x63,0x22,0x14,0x4e,0x80,0,0x20])).unwrap();
+    for (tracking, value) in [
+        (vec!["set track r3 5"], "0xc"),
+        (vec!["set track r3 5", "set track r2 0x3001"], "0xe"),
+        (vec!["set track r3 5 0x1000 0x1001"], "0xc"),
+        (vec!["set track r3 5", "set track r2 0x3001 0x1000 0x1001"], "0xe"),
+    ] {
+        let prog = bootstrap_from_file(path.to_str().unwrap(), "", &[specs.to_str().unwrap().into()]).unwrap();
+        let mut commands: Vec<String> = tracking.into_iter().map(str::to_string).collect();
+        commands.extend(["option readonly on", "load function answer", "decompile", "print C"].map(str::to_string));
+        let count = commands.len();
+        let mut status = ConsoleCommands::into_status(commands);
+        register_decomp_commands(&mut status);
+        status.get_data_mut(DECOMPILE_MODULE).unwrap().as_any_mut()
+            .downcast_mut::<IfaceDecompData>().unwrap().conf = Some(prog);
+        for _ in 0..count { execute(&mut status); }
+        assert!(status.optr.contains(&format!("return {value};")), "{}", status.optr);
+    }
+    std::fs::remove_file(path).unwrap();
 }
 
 #[test]
@@ -98,4 +133,24 @@ fn invalid_descriptors_and_other_abis_keep_literal_addresses() {
     put64(&mut bytes,shoff+2*64+32,16);
     let file=object::File::parse(&*bytes).unwrap();
     assert!(Descriptors::read(&file).0.is_empty());
+}
+
+#[test]
+fn function_summaries_use_the_normalized_entry_and_its_reachability() {
+    for abi in [0, 1] {
+        let path = common::scratch_file("elfv1-entry-summary", "elf");
+        // bl 0x1008; blr. The entry reaches the second function.
+        std::fs::write(&path, image_with_code(abi, &[0x48,0,0,9,0x4e,0x80,0,0x20])).unwrap();
+        let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
+            .args(["functions", path.to_str().unwrap(), "--summary", "--json"])
+            .output().unwrap();
+        let text = String::from_utf8_lossy(&out.stdout);
+        assert!(out.status.success(), "{text}\n{}", String::from_utf8_lossy(&out.stderr));
+        let entry = text.split("\"entry\": {").nth(1).unwrap().split('}').next().unwrap();
+        assert!(entry.contains("\"address_hex\": \"0x1000\""), "{text}");
+        assert!(["answer", "alias", ".answer"].iter()
+            .any(|name| entry.contains(&format!("\"name\": \"{name}\""))), "{text}");
+        assert!(text.contains("\"reachable_from_entry\": 2"), "{text}");
+        std::fs::remove_file(path).unwrap();
+    }
 }

@@ -701,14 +701,12 @@ struct Summary {
 /// `selected` (what the triage filters kept — the same list when there are none).
 fn summarize(
     prog: &ConsoleProgram,
-    binary: &str,
-    pref: SlicePref,
     filters: &Filters,
     graph: &CallGraph,
     all: &[FunctionEntry],
     selected: &[FunctionEntry],
 ) -> Summary {
-    let entry = image_entry(prog, binary, pref);
+    let entry = image_entry(prog);
     let reachable_from_entry = entry.as_ref().and_then(|(vma, _)| {
         let reached = graph.reachable_from(prog, &format!("0x{vma:x}")).ok()?;
         Some(all.iter().filter(|e| reached.contains(&e.addr.get_offset())).count())
@@ -746,13 +744,10 @@ fn summarize(
 ///
 /// This is the FORMAT's entry (a PE `AddressOfEntryPoint` is the CRT startup,
 /// not `main`) — the one address every image agrees on, and the honest root for
-/// "what does this program actually reach". Taken through
-/// [`kuna_analysis::analyzers::entry::image_entry_vma`], because a Mach-O
-/// `LC_MAIN` states its entry as a `__TEXT`-relative file offset, not a VMA.
-fn image_entry(prog: &ConsoleProgram, binary: &str, pref: SlicePref) -> Option<(u64, String)> {
-    let bytes = image_bytes(binary, pref).ok()?;
-    let file = kuna_analysis::loadimage_object::parse_object(&*bytes).ok()?;
-    let vma = kuna_analysis::analyzers::entry::image_entry_vma(&file, &bytes)?;
+/// "what does this program actually reach". The loaded image metadata already
+/// accounts for Mach-O file offsets and ELFv1 function descriptors.
+fn image_entry(prog: &ConsoleProgram) -> Option<(u64, String)> {
+    let vma = prog.image_metadata()?.entry?;
     // Reported THROUGH the inventory, so an ARM `e_entry` carrying the Thumb mode
     // bit is answered at the even entry the rest of the document uses.
     match prog.find_entry_at(vma) {
@@ -1300,7 +1295,7 @@ fn run_summary(args: &Args, filters: &Filters) -> i32 {
         eprintln!("error: --summary could not build the program call graph");
         return 1;
     };
-    let summary = summarize(&prog, &args.binary, args.slice_pref(), filters, &graph, &all, &selected);
+    let summary = summarize(&prog, filters, &graph, &all, &selected);
     let text = if args.json {
         summary_json(
             &args.binary,

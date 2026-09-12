@@ -3640,15 +3640,9 @@ pub fn bootstrap_from_object_with_isa(
     if let Ok(loc) = prog.arch().get_register_varnode(b"r2") {
         if loc.size == 8 {
             for (entry, val) in elfv1_tocs {
-                let Some(stop) = entry.checked_add(1) else { continue; };
                 let begin = Address::new(Rc::clone(&code_space), entry);
-                let end = Address::new(Rc::clone(&code_space), stop);
-                prog.arch().with_context_db_mut(|db| {
-                    let defaults = db.get_tracked_default().clone();
-                    let track = db.create_set(&begin, &end);
-                    *track = defaults;
-                    track.push(kuna_sleigh::globalcontext::TrackedContext { loc: loc.clone(), val });
-                });
+                prog.arch_mut().loader_entry_tracks.entry(begin).or_default()
+                    .push(kuna_sleigh::globalcontext::TrackedContext { loc: loc.clone(), val });
             }
         }
     }
