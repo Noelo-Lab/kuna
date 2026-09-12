@@ -112,6 +112,19 @@ The XML `<binaryimage>` datatest path never constructs an `ObjectLoadImage` and 
 stashes an output, so the entire tier is structurally inert on the 675-assertion
 parity oracle; only real binaries feel it.
 
+(kuna) The load image is two halves, and only one of them is single-threaded.
+The bytes — the vma-sorted segment list and the containing-segment-else-
+closest-greater walk over it — are `SegmentBytes`, held behind an `Arc` and
+published through `LoadImage::shared_bytes`
+(`decompiler/crates/kuna-sleigh/src/loadimage.rs (ImageBytes)`); the reader is
+the 512-byte window and the `Rc<AddrSpace>` an incoming address is checked
+against, which is per-reader because space identity is pointer identity. A
+second reader over the same bytes is `SharedBytesImage`, and both it and
+`ObjectLoadImage` serve reads through the one `windowed_load_fill`, so there is
+no second copy of the read semantics to drift. Every site that writes the bytes
+— the dynamic-relocation patch at construction, an `--assert bytes` overlay,
+`adjustVma` — runs at load time and asserts sole ownership of the `Arc`.
+
 ## 1.2 Load image
 
 `decompiler/crates/kuna-analysis/src/loadimage_object.rs (ObjectLoadImage)` is the
@@ -131,7 +144,8 @@ classification of §0.2) walks straight into it.
 
 (kuna, GH-510) The second: **a read longer than the buffer is served straight
 into the caller's slice**, bypassing the buffer entirely
-(`decompiler/crates/kuna-analysis/src/loadimage_object.rs (fill_span)`).
+(`decompiler/crates/kuna-sleigh/src/kuna_sharedbytes.rs (windowed_load_fill)`,
+over `decompiler/crates/kuna-analysis/src/loadimage_object.rs (fill_span)`).
 Upstream stages every read through the 512-byte window and copies the answer
 back out of it with `memcpy(ptr,buffer,size)`, which for a longer request reads
 past the end of the buffer — a silent heap over-read kept out of reach only by
@@ -2508,7 +2522,11 @@ worklist mirroring the S2 flow-follower's design without its weight: an outer
 function worklist (every direct CALL target becomes a new function entry — the
 program-wide recursion `FlowInfo` deliberately never does) and an inner
 per-function instruction worklist over branch and fall-through successors, bounded
-by the executable ranges and monotonic visit sets. Indirect targets are recorded
+by the executable ranges and monotonic visit sets. The per-instruction body is
+`walk.rs (step)` and exists exactly once: it files its record and its references
+through sinks, and offers the successors it found to a `Successors` sink rather
+than pushing them onto a worklist itself, so a driver that routes successors
+somewhere else still runs the identical decode-and-claim policy. Indirect targets are recorded
 with their computed/indirect predicates but contribute no static successor.
 
 (kuna) The seed set carries one more source, under the same `funcstart_patterns`
