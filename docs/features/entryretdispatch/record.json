@@ -1,0 +1,86 @@
+{
+  "opportunity": "entry-point-ret-dispatch::entry_dispatch",
+  "test_name": "RE-friction entry-point-ret-dispatch; CLI and two-pass stage controls",
+  "binary": "decompiler/crates/kuna-analysis/tests/fixtures/entry_ret_dispatch_i386",
+  "selector": "entry_dispatch",
+  "func_addr": "0x8049000",
+  "angr_version": null,
+  "option": "entryretdispatch",
+  "flag": "entry_ret_dispatch",
+  "element_id": 4164,
+  "change_kind": "correctness-fix",
+  "tier": "transform",
+  "source_decompiler": "kuna",
+  "inspiration": "RE-friction need entry-point-ret-dispatch on bm3.exe; explicit flow-call override and #504 continuation propagation provide the reference behavior",
+  "default_on": true,
+  "ablation_changed": 0,
+  "parity": "OK",
+  "decisions": [
+    "Automatic recognition shares the explicit RET-chain recognizer and its existing instruction/site caps; there is no second pattern matcher.",
+    "The proof requires an in-run target store plus the adjacent exact fall-through store, and declines at conditional control flow because dominance is unproven.",
+    "P-code affine constants are sign-extended by operand width, and overlapping register writes/stores invalidate provenance.",
+    "LOAD/STORE facts retain their exact p-code memory-space ID; unsupported CALLOTHER userops clear all provenance.",
+    "Explicit flow facts own their sites. Explicit RETURN vetoes a derived CALL without asking the engine to apply RETURN to an instruction already classified as RETURN.",
+    "The default-on choice is allowed by 0/675 datatest movement and remains contingent on the recorded speed gate being within 5%."
+  ],
+  "controls": {
+    "positive": "three-link entry_dispatch plus a one-link two-pass stage bytechunk",
+    "negative": "ordinary RET, RET-immediate, incoming-address copy, computed/constant RET, discarded continuation, unrelated store, signed negative-displacement overwrite/helper-twice, conditional bypass, partial-SP alias write, cross-space LOAD/STORE pairing, unsupported CALLOTHER between setup and RET",
+    "policy": "entryretdispatch off restores the old return; explicit flow RETURN cleanly vetoes automatic CALL"
+  },
+  "gates": {
+    "base": "rebased onto exact main b612f48b705c2fe7be08c76f4588b9e08af33320 (PR #593)",
+    "make test": "675/675 PARITY OK; docs/baseline.json unchanged",
+    "make test-stages": "803/803 PARITY OK",
+    "make rust-test": "full workspace and doc-test suite green on the pre-rebase candidate; not repeated because the PR #593 rebase had no implementation conflict",
+    "make test-cli": "147/147 passed",
+    "focused recognizer": "7/7 passed",
+    "architecture-generic provenance units": "2/2 passed: cross-space mismatch and CALLOTHER barrier",
+    "kuna-console package": "all unit, integration and doc tests green after the final provenance hardening",
+    "focused CLI": "6/6 passed",
+    "make check-spec": "OK in lenient and strict modes",
+    "kuna catalog --check": "catalog OK",
+    "counters": "no drift: 191 settables, tiers 61/71/59, 278 stage-corpus files, next ElementId 4165",
+    "acceptance": "1/1 pass; transition closed, regressed 0",
+    "bm3 dataset witness": "default recovers GetProcAddress(LoadLibraryA(...), ...); entryretdispatch off restores bare return",
+    "mergecheck": "0 rejects against exact base b612f48b705c2fe7be08c76f4588b9e08af33320; DIV-168 confirmed free, counters agree"
+  },
+  "speed_off_ms": 856.78,
+  "speed_on_ms": 510.64,
+  "speed_delta_pct": -40.4,
+  "speed_samples": 5,
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": true,
+  "speed_forced_off": false,
+  "speed_note": "The mandated option-off/on helper reported a large negative delta on this tiny witness; the result is comfortably within budget but dominated by single-process startup noise. The 25-sample exact-base comparison below is the more useful control.",
+  "exact_base_performance": {
+    "base": "6375ff83729967a9a26429622228a07c3de11960",
+    "method": "one warmup per executable, then 25 post-warmup samples per arm in alternating order; median wall-clock",
+    "ordinary_ret": {
+      "base_ms": 527.281,
+      "candidate_ms": 461.580,
+      "delta_pct": -12.46,
+      "outputs_byte_identical": true
+    },
+    "fauxware_main": {
+      "base_ms": 146.608,
+      "candidate_ms": 147.305,
+      "delta_pct": 0.48,
+      "outputs_byte_identical": true
+    },
+    "entry_dispatch": {
+      "base_ms": 445.551,
+      "candidate_ms": 420.989,
+      "delta_pct": -5.51,
+      "outputs_byte_identical": false
+    },
+    "interpretation": "The unchanged fauxware control is +0.48%, inside the 5% budget. The two tiny i386 functions show large favorable deltas from process-startup noise; neither indicates a regression."
+  },
+  "sweep": {
+    "method": "whole-fixture decompile-all --json, entryretdispatch off versus on",
+    "functions": 14,
+    "functions_changed": 1,
+    "regressions_found": 0,
+    "classification": "Only entry_dispatch changes: bare return becomes the three intended calls. Every positive and adversarial negative control is byte-identical."
+  }
+}

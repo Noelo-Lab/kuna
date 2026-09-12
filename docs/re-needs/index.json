@@ -5,8 +5,8 @@
   "rejected_count": 1,
   "by_status": {
     "blocked": 1,
-    "closed": 139,
-    "open": 57
+    "closed": 140,
+    "open": 56
   },
   "by_track": {
     "loader": 10,
@@ -2953,10 +2953,10 @@
       "need_id": "entry-point-ret-dispatch",
       "title": "Entry-point RET dispatch disappears into an empty return",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
       "probe_id": "p-9c278d6e9d91",
-      "acceptance_id": "a-3ace3fde0ba4",
+      "acceptance_id": "a-96dd05b48b4a",
       "hypothesis_status": "upheld",
       "credibility": 0.85,
       "instances": 1,
@@ -2964,22 +2964,24 @@
         "5ab77f5c33c5d40ad448c681"
       ],
       "rounds": [
-        9
+        9,
+        12
       ],
       "first_seen_round": 9,
-      "attempts": 0,
-      "covered_by_option": null,
+      "attempts": 1,
+      "covered_by_option": "entryretdispatch",
       "touches": [
-        "decompiler/crates/kuna-decomp",
-        "decompiler/crates/kuna-console"
+        "decompiler/crates/kuna-console",
+        "decompiler/crates/kuna-cli",
+        "decompiler/crates/kuna-analysis"
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": 595,
+      "closed_in_round": 12,
+      "closing_pr": "595",
       "reject_reason": null,
-      "score": 13.862944,
+      "score": 9.241962,
       "path": "docs/re-needs/entry-point-ret-dispatch.md"
     },
     {

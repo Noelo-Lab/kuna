@@ -1839,7 +1839,9 @@ mod tests {
         // both caller return definitions across a shared epilogue (repipe r6)
         // and kuna-short-utf16-window / caller data replaces an exact-address
         // analysis mapping while adjacent wide and ASCII literals stay stable
-        assert_eq!(count, 277, "corpus file count drifted");
+        // and kuna-entryretdispatch / an entry stack-directed RET chain is
+        // recovered while its ordinary-return control remains unchanged
+        assert_eq!(count, 278, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

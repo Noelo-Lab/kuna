@@ -1,0 +1,36 @@
+Reference status
+================
+
+The RE-friction run attempted IDA for the original bm3.exe witness, but the
+server exited before registering and produced no pseudocode. No claim about
+IDA or angr recovering this idiom is used to justify the change.
+
+The decisive in-pipeline reference is an explicit P2 flow assertion on the
+same binary and address. It changes only the RET classification and therefore
+demonstrates that target resolution, argument recovery, and continuation
+following already work.
+
+kuna default before
+-------------------
+
+void sub_401757(void)
+{
+  return;
+}
+
+kuna with `--assert 'flow 0x40176f call'`
+------------------------------------------------
+
+The complete 105-byte entry dispatcher is recovered, including calls to
+LoadLibraryA and GetProcAddress and the later continuation links. Before #504,
+the same assertion recovered only the first call; after #504 it is the exact
+manual form of the behavior `entryretdispatch` automates.
+
+Hermetic reduction
+------------------
+
+`entry_ret_dispatch_i386::entry_dispatch` has three consecutive
+`push continuation; push [target-slot]; ret` links. With
+`entryretdispatch off` it emits `return;`; with the default it emits all three
+indirect calls. The stage bytechunk carries the one-link form and tests both
+option arms through the full binary-to-decompile path.

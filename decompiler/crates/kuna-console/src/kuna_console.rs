@@ -219,6 +219,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
             1 => "in",
             _ => "full",
         },
+        "entryretdispatch" => on_off(conf.entry_ret_dispatch),
         // (kuna) Analysis-pass gates: the live `current` field reflects each pass's
         // per-run enable flag (set by `--option <id> on|off`). Real-ELF path only;
         // with no program loaded these never reach (kuna_live_value's caller passes

@@ -1,0 +1,46 @@
+<decompilertest>
+<!--
+    entryretdispatch: recover a function entry built from a stack-directed RET
+    call instead of stopping at its first RET.
+
+    Layout (linked flat, x86-32):
+      entry_dispatch @ 0x100000:
+        push 0x10000b              ; continuation, exactly after RET
+        push 0x100020              ; helper target
+        ret                        ; semantically helper()
+      continuation @ 0x10000b:
+        ret                        ; ordinary function return
+      helper @ 0x100020:
+        mov eax,0x3333
+        ret
+
+    The bounded P2 recognizer proves the RET destination came from this run's
+    target store and the adjacent slot contains the RET's own fall-through.
+
+    Pass 1 (entryretdispatch off, the bug): flow stops at 0x10000a and emits a
+    bare return, so helper is absent.
+    Pass 2 (entryretdispatch on, the default): the RET is classified as CALL,
+    flow resumes at 0x10000b, and helper appears exactly once.
+
+    Both assertions count across both prints: helper appears only in the fixed
+    pass, while each rendering still reaches one ordinary function return.
+-->
+<binaryimage arch="x86:LE:32:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">680b0010006820001000c3c3</bytechunk>
+<bytechunk space="ram" offset="0x100020" readonly="true">b833330000c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="entry_dispatch"/>
+<symbol space="ram" offset="0x100020" name="helper"/>
+</binaryimage>
+<script>
+  <com>option entryretdispatch off</com>
+  <com>lo fu entry_dispatch</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option entryretdispatch on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="ENTRYRETDISPATCH #1: the default pass recovers the helper call while option off does not" min="1" max="1">helper\(\);</stringmatch>
+<stringmatch name="ENTRYRETDISPATCH #2: both passes retain one ordinary function return" min="2" max="2">return;</stringmatch>
+</decompilertest>
