@@ -1,0 +1,98 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:windows">
+<!--
+  A double accumulator is copied from nonvolatile XMM6 to return register XMM0
+  before a locked-void MSVC cookie checker. The cookie slot is carried through a
+  loop, and the checker's failure tail contains a nested call before int 0x29,
+  so the generic body probe cannot justify preservation. The exact
+  `(cookie ^ SP) ^ SP` marker can. The final function is a negative control: its
+  void callee writes XMM0 and then reaches a nested call, so the incomplete
+  production probe must retain that recovered write and veto preservation.
+
+  wide_exact_caller loads both lanes of XMM0 before a proven cookie call. Its
+  low 8-byte lane is the Win64 logical return storage and survives; the upper
+  lane is scratch and must remain killed. Reading the upper lane after the call
+  makes a whole-register downgrade observable as the wrong constant 3.5.
+-->
+<bytechunk space="ram" offset="0x1000" readonly="true">
+4883ec38488b05bd1000004833c448894424280f2974241048895c2420bb0200
+0000e8b9000000ffcb75f7f20f10359d100000f20f10059d100000e8300000
+00f20f58f00f28c6488b4c24284833cce82c0000000f28742410488b5c2420
+4883c438c3
+</bytechunk>
+<bytechunk space="ram" offset="0x1070" readonly="true">f20f58c0c3</bytechunk>
+<bytechunk space="ram" offset="0x1080" readonly="true">
+483b0d41100000751048c1c11066f7c1ffff7501c348c1c910e9220000
+</bytechunk>
+<bytechunk space="ram" offset="0x10c0" readonly="true">
+4883ec28e817000000b902000000cd294883c428c3
+</bytechunk>
+<bytechunk space="ram" offset="0x10e0" readonly="true">31c0c300660fefc0c3</bytechunk>
+<bytechunk space="ram" offset="0x10f0" readonly="true">f20f1005d80f0000e8e7ffffffc3</bytechunk>
+<bytechunk space="ram" offset="0x1100" readonly="true">660fefc0e8d7ffffffc3</bytechunk>
+<bytechunk space="ram" offset="0x1120" readonly="true">
+4883ec28488b059d0f00004833c44889442420f20f1005950f0000488b4c2420
+4833cce8b8ffffff4883c428c3
+</bytechunk>
+<bytechunk space="ram" offset="0x1150" readonly="true">
+4883ec28488b056d0f00004833c44889442420660f1005650f0000488b4c2420
+4833cce808ffffff0f12c8f20f58c14883c428c3
+</bytechunk>
+<bytechunk space="ram" offset="0x20c8">
+efcdab8967452301000000000000f83f0000000000000040
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="score"/>
+<symbol space="ram" offset="0x1070" name="log_helper"/>
+<symbol space="ram" offset="0x1080" name="cookie"/>
+<symbol space="ram" offset="0x10c0" name="cookie_failure"/>
+<symbol space="ram" offset="0x10e0" name="nested"/>
+<symbol space="ram" offset="0x10e4" name="clobber"/>
+<symbol space="ram" offset="0x10f0" name="clobber_caller"/>
+<symbol space="ram" offset="0x1100" name="cookie_clobber"/>
+<symbol space="ram" offset="0x1120" name="exact_clobber_caller"/>
+<symbol space="ram" offset="0x1150" name="wide_exact_caller"/>
+</binaryimage>
+<script>
+  <com>read symbols</com>
+  <com>lo fu log_helper</com>
+  <com>parse line extern float8 log_helper(float8 x);</com>
+  <com>lo fu cookie</com>
+  <com>parse line extern void cookie(uint8 c);</com>
+  <com>lo fu clobber</com>
+  <com>parse line extern void clobber(void);</com>
+  <com>lo fu score</com>
+  <com>parse line extern float8 score(void);</com>
+  <com>option calleeretpreserves off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option calleeretpreserves on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu clobber_caller</com>
+  <com>parse line extern float8 clobber_caller(void);</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cookie_clobber</com>
+  <com>parse line extern void cookie_clobber(uint8 c);</com>
+  <com>lo fu exact_clobber_caller</com>
+  <com>parse line extern float8 exact_clobber_caller(void);</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu wide_exact_caller</com>
+  <com>parse line extern float8 wide_exact_caller(void);</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="DECLARING-DOUBLE-SCORE #1: option off discards the log result" min="1" max="1">^  log_helper\(dat_20d8\);$</stringmatch>
+<stringmatch name="DECLARING-DOUBLE-SCORE #2: default assigns the log result" min="1" max="1">= log_helper\(dat_20d8\);</stringmatch>
+<stringmatch name="DECLARING-DOUBLE-SCORE #3: default returns both additive doubles" min="2" max="2">return .* \+ .*;</stringmatch>
+<stringmatch name="DECLARING-DOUBLE-SCORE #4: preserving XMM0 does not remove any cookie call" min="3" max="3">cookie\(.*\^</stringmatch>
+<stringmatch name="DECLARING-DOUBLE-SCORE #5: a body write vetoes preservation of the pre-call XMM0 value" min="1" max="1">^  return v1;$</stringmatch>
+<stringmatch name="DECLARING-DOUBLE-SCORE #6: an exact cookie marker yields to a recovered XMM0 body write" min="1" max="1">
+^  cookie_clobber\(.*\);$
+^  return v[0-9]+;$
+</stringmatch>
+<stringmatch name="DECLARING-DOUBLE-SCORE #7: a wide XMM0 range retains the exact low double" min="1" max="1">^  return v1 \+ v3;$</stringmatch>
+<stringmatch name="DECLARING-DOUBLE-SCORE #8: the overlapping upper XMM0 scratch lane remains killed" min="1" max="1">^  float8 v3; // xmm0_qb$</stringmatch>
+</decompilertest>

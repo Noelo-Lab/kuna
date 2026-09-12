@@ -371,8 +371,10 @@ fn pair_pieces(data: &Funcdata, vn: VarnodeId, depth: u32) -> Option<(VarnodeId,
 /// reached a `RETURN` on every path it followed, inside the instruction budget,
 /// without meeting anything that could write an arbitrary register (a nested
 /// call, an unresolved indirect branch, an undecodable byte). Only then does an
-/// *absent* write mean the callee never performs it; otherwise the summary
-/// proves nothing and every query answers "may write".
+/// *absent* write mean the callee never performs it. An incomplete walk still
+/// retains positive writes and STORE spaces recovered before the unresolved
+/// edge; those facts remain valid even though absence no longer proves
+/// anything.
 #[derive(Clone, Debug, Default)]
 pub struct CalleeReturnWrites {
     /// Processor-space ranges the decoded body writes, as `(space index,
@@ -410,15 +412,16 @@ impl CalleeReturnWrites {
             .any(|&(widx, woff, wsz)| widx == idx && woff < end && off < woff + wsz as u64)
     }
 
-    /// The processor-space ranges the walk recorded, as `(space index, offset,
-    /// size)`.  Empty for an incomplete summary, which records nothing.
+    /// The processor-space ranges the walk recorded before it stopped, as
+    /// `(space index, offset, size)`. An incomplete summary cannot prove an
+    /// absent write, but its positive write records remain authoritative.
     pub fn written_ranges(&self) -> &[(int4, u64, int4)] {
         &self.writes
     }
 
-    /// The space indices the walk saw a `STORE` into.  Empty for an incomplete
-    /// summary, and empty for a body that writes no memory at all -- which is
-    /// what every stub, placeholder and wrong-address decode looks like.
+    /// The space indices the walk saw a `STORE` into before it stopped. Empty
+    /// for a body that writes no memory at all -- which is what every stub,
+    /// placeholder and wrong-address decode looks like.
     pub fn store_spaces(&self) -> &[int4] {
         &self.store_spaces
     }
@@ -626,7 +629,9 @@ impl kuna_sleigh::translate::PcodeEmit for ProbeEmit {
 /// targets, and stops a path at a `RETURN`. It declares itself **incomplete**
 /// -- proving nothing -- on a nested call, an unresolved indirect branch, an
 /// undecodable instruction, or the instruction budget, because past any of those
-/// the callee could write any register.
+/// the callee could write any register. Positive register writes and STORE
+/// spaces recovered before that point are retained; only conclusions from their
+/// absence require completeness.
 pub fn probe_callee_return_writes<T: kuna_sleigh::translate::Translate + ?Sized>(
     tr: &T,
     entry: &Address,
@@ -685,10 +690,6 @@ pub fn probe_callee_return_writes<T: kuna_sleigh::translate::Translate + ?Sized>
         if !emit.ends_flow {
             todo.push(&at + len as i64);
         }
-    }
-    if !res.complete {
-        res.writes.clear();
-        res.store_spaces.clear();
     }
     res
 }

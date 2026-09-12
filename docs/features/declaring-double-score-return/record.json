@@ -1,0 +1,51 @@
+{
+  "need_id": "declaring-double-score-return",
+  "challenge": "69a54bd70f5b9757a6a5f72f",
+  "binary": "bin/Release.zip.__x/PolyMLP.exe",
+  "binary_sha256": "01652e8b03e2bec127f5726320db4c9925d495d75583a8bb4534ac640f6ec230",
+  "binary_size": 54272,
+  "selector": "0x140003150",
+  "func_addr": "0x140003150",
+  "option": "calleeretpreserves",
+  "default_on": true,
+  "change_kind": "correctness-fix",
+  "source_decompiler": "kuna",
+  "scope": "existing-option-extension",
+  "parity": "675/675",
+  "stage_parity": "811/811",
+  "cli_parity": "150/150",
+  "rust_test": "green",
+  "check_spec": "OK",
+  "catalog_check": "OK",
+  "acceptance_id": "a-cc4fdb4b53b3",
+  "acceptance_passed": true,
+  "ablation_changed": 0,
+  "speed_off_ms": 130.35,
+  "speed_on_ms": 128.54,
+  "speed_delta_pct": -1.39,
+  "speed_samples": 9,
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": true,
+  "speed_forced_off": false,
+  "mergecheck": {
+    "base": "342eaa03f0b71f7c312de004017eb8262fe0f63c",
+    "counters_agree": true,
+    "baseline_untouched": true,
+    "rejects": 7,
+    "classification": "Intentional shape-C text replacements only: summary, use_when, inspiration, and symptoms in the existing calleeretpreserves phases.toml row, plus the three generated docs/options.md mirror lines. All prior catalog detail remains in the extended fields; the extensions document retained positive direct writes and output-space STOREs from incomplete probes, plus exact-slice preservation with killed XMM flanks. The msvcstackguard surface note is unchanged from the base. Replay onto 342eaa03 had two semantic generated/counter conflicts: the corpus count preserves current-main's entry-return-dispatch fixture and adds this fixture (279 files), while the regenerated stages baseline unions current-main's two assertions with this feature's eight (811/811). There are no source-code or catalog-counter rejects, and docs/baseline.json is byte-identical.",
+    "details": "docs/features/declaring-double-score-return/mergecheck.md"
+  },
+  "fixture": {
+    "path": "decompiler/crates/kuna-analysis/tests/fixtures/pe_double_score_return_x86_64.exe",
+    "sha256": "3cf5307ef9c572400d67db3556f5f4bfc5e9483d2ae1b787f4f34ed494eaed19",
+    "size": 3584
+  },
+  "decisions": [
+    "The locked enclosing double return is not the trigger; the later locked-void checker is.",
+    "Use exact caller-side cookie algebra for a checker whose generic decoded-body summary remains incomplete at nested calls.",
+    "Fall back to model ABI output only for locked void; preserve its exact logical slice and leave overlapping scratch XMM flanks killed.",
+    "The generic arm requires a complete body; the exact-cookie arm may accept an incomplete summary, whose positive pre-edge direct writes and STORE spaces remain retained. Every recovered ABI-return write and every STORE into an ABI output processor space veto preservation.",
+    "Explicit effect overrides remain authoritative in both proof arms.",
+    "Preserve-only discovery marks every exact checker before one restart, even beyond the outer reflow cap, without deletion; msvcstackguard retains sole ownership of deletion."
+  ]
+}

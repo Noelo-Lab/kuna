@@ -1,0 +1,45 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "a-cc4fdb4b53b3",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "0x140003150",
+    "--addr",
+    "--assert",
+    "prototype 0x14000904f double log(double x)",
+    "--assert",
+    "prototype 0x140008140 void cookie(unsigned long long c)"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/pe_double_score_return_x86_64.exe",
+    "binary_sha256": "3cf5307ef9c572400d67db3556f5f4bfc5e9483d2ae1b787f4f34ed494eaed19",
+    "binary_size": 3584,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/pe_double_score_return_x86_64.exe",
+    "selector": "0x140003150",
+    "selector_kind": "addr"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_absent": [
+      "(?m)^\\s*log\\s*\\("
+    ],
+    "stdout_matches": [
+      "(?m)^\\s*\\w+\\s*=\\s*[^;\\n]*\\blog\\s*\\(",
+      "\\+\\s*log\\s*\\(|\\blog\\s*\\([^;\\n]*\\)\\s*\\+"
+    ]
+  },
+  "notes": "The authoritative a-cc4fdb4b53b3 two-assert acceptance, retargeted without changing cmd+expect identity to an in-repo PE twin. Like PolyMLP.exe, the twin carries a loop-fed XMM6 sum through post-log calls, divides it, copies it into ABI output XMM0, and then invokes a declared-void MSVC cookie checker."
+}

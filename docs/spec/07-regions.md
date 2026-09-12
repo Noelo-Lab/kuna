@@ -418,9 +418,13 @@ pointer by `kuna_msvcstackguard.rs (stack_pointer_offset)`, which recognizes
 the stack space's base-register storage (or the `spacebase`-flagged input) and
 walks the `PTRSUB`/`PTRADD`/`INT_ADD`-of-a-constant chain the stack-pointer
 normalization of chapter 06 leaves behind, so an `/Od` frame and an `/O2`
-frame agree. The saved value may reach the epilogue through a MULTIEQUAL join,
-in which case `kuna_msvcstackguard.rs (cookie_scramble)` requires *every*
-input to be a scramble at that same offset. Three further gates keep the edit
+frame agree. The saved value may reach the epilogue through a MULTIEQUAL join
+or a loop-carried phi. `kuna_msvcstackguard.rs (cookie_scramble_walk)` uses a
+cycle-aware fixed point: every non-backedge input must prove a scramble at the
+same offset and at least one seed must exist; a recursive backedge is neutral,
+not evidence. Value-preserving COPY/CAST/INDIRECT chains have a separate finite
+256-link peel budget because one INDIRECT can be introduced per intervening
+call. Three further gates keep the edit
 honest: the victim must be a direct `CPUI_CALL` (the checker is statically
 linked into the image, never an import thunk); the call's output must have no
 reader (the checker returns `void`, and destroying a read Varnode is not
@@ -431,13 +435,25 @@ takes the pattern twice is not the one-argument checker.
 `Funcdata::block_remove_internal` uses for a CALL inside a deleted block and
 `cleanupcode` (chapter 02) uses for a Rust drop call. Because this exact
 recognition happens after chapter 03 has already guarded the checker call, the
-first match records the call's instruction address in the function's P0
-override store and requests a full pipeline restart. On replay,
-`Heritage::guard_calls` preserves only prototype-output storage at that seeded
-call, only when the effect is actually `KILLEDBYCALL`, the option remains on,
-and the call has no explicit effect override. That retains the caller's
-pre-check return definitions without making a claim about any other call or
-register. P7 then uses `delete_call_specs` to
+destructive arm records the first match's instruction address in the function's
+P0 override store and requests a full pipeline restart. When `msvcstackguard`
+is off but `calleeretpreserves` is on, the recognizer instead collects every
+exact checker whose output is locked `void`, records the full set, and requests
+one restart; this remains complete beyond the driver's eight-reflow limit. On
+replay, `Heritage::guard_calls` preserves only the exact logical ABI output
+slice at seeded calls and only when the effect is actually `KILLEDBYCALL`. If
+the slice is contained by a wider heritaged XMM range, killed INDIRECT creations
+remain on its flanks and a PIECE rejoins them after the call; the wider range is
+never globally downgraded. An explicit effect override and every ABI-return
+write recovered from the checker body veto preservation, even when an ordinary
+nested call makes the summary incomplete. The production probe retains those
+positive facts before the unresolved edge. A STORE into a processor space used
+by an ABI output entry is a possible return write even when its runtime address
+cannot be resolved, and therefore vetoes preservation too; only an absence
+conclusion requires completeness. That retains caller definitions without
+making a claim about any other call or register. Preservation alone leaves all calls and cookie algebra intact; it is
+caller-side algebraic evidence, not a relaxation of the generic body probe. In
+the destructive arm, P7 then uses `delete_call_specs` to
 drop the `FuncCallSpecs` record, then `op_destroy`. Nothing else is deleted by
 hand. The epilogue `INT_XOR` loses its last reader and dies in the following
 dead-code pass, and the repeating fullloop re-runs mainloop over the reduced
@@ -477,6 +493,12 @@ deliberately unnamed so the shape-only claim is what is tested.
 two-arm shared epilogue and crosses `calleeretpreserves on|off`; its checker
 failure tail enters a helper with an ordinary returning call before fast-fail,
 so generic callee-body inference is deliberately unavailable.
+`tests/stages/kuna-declaring-double-score-return.xml` pins the non-destructive
+locked-void handoff, including a loop-carried cookie, a double XMM0 return, an
+exact-cookie callee that writes XMM0 before an unresolved nested call, and a
+16-byte XMM0 overlap whose low ABI-output lane survives while its upper scratch
+lane remains killed. Unit coverage adds nine exact checker sites marked before
+one restart.
 
 ## 7.6 Observability (kuna)
 

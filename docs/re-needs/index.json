@@ -5,8 +5,8 @@
   "rejected_count": 1,
   "by_status": {
     "blocked": 1,
-    "closed": 143,
-    "open": 53
+    "closed": 144,
+    "open": 52
   },
   "by_track": {
     "loader": 10,
@@ -2626,7 +2626,7 @@
       "need_id": "declaring-double-score-return",
       "title": "Declaring a double score return disconnects the log result from its accumulator",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
       "probe_id": "p-ce0e609fb71c",
       "acceptance_id": "a-cc4fdb4b53b3",
@@ -2637,19 +2637,20 @@
         "69a54bd70f5b9757a6a5f72f"
       ],
       "rounds": [
-        5
+        5,
+        12
       ],
       "first_seen_round": 5,
-      "attempts": 0,
-      "covered_by_option": null,
+      "attempts": 1,
+      "covered_by_option": "calleeretpreserves",
       "touches": [
         "decompiler/crates/kuna-decomp/src/p4_calls"
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": 599,
+      "closed_in_round": 12,
+      "closing_pr": "599",
       "reject_reason": null,
       "score": 13.862944,
       "path": "docs/re-needs/declaring-double-score-return.md"
