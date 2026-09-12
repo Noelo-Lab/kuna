@@ -1,0 +1,47 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:windows">
+<!--
+    short-utf-16-window: caller-declared data must replace an exact-address
+    string mapping discovered earlier in the analysis commit.
+
+    The first map models operand_refs reading the low byte of UTF-16 "ID" and
+    planting char[2].  The second is the strict `data` assertion's console form.
+    Before the fix both symbols coexisted, smallest-container lookup selected
+    char[2], and the local rendered as "I" despite the explicit wchar_t[3].
+
+    The other two calls are width controls: an adjacent UTF-16 literal and an
+    ordinary ASCII literal must retain their existing spelling.
+-->
+<bytechunk space="ram" offset="0x401000">
+4883ec2848c7c0002040004889442420
+488b4c242031d2e82400000048c7c108
+20400031d2e81600000048c7c1182040
+00e80d0000004883c428c30f1f440000
+31c0c3c3
+</bytechunk>
+<bytechunk space="ram" offset="0x402000" readonly="true">
+490044000000ffff4f004c004c005900
+44004200470000004153434949000000
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="entry"/>
+<symbol space="ram" offset="0x401040" name="find_window"/>
+<symbol space="ram" offset="0x401043" name="use_ascii"/>
+</binaryimage>
+<script>
+  <com>map address r0x402000 char automatic_short_string[2]</com>
+  <com>map address r0x402000 wchar_t window_class[3]</com>
+  <com>map address r0x402008 wchar_t adjacent_wide[8]</com>
+  <com>map address r0x402018 char ascii_text[6]</com>
+  <com>parse line extern void entry(void);</com>
+  <com>parse line extern void find_window(wchar_t *,wchar_t *);</com>
+  <com>parse line extern void use_ascii(char *);</com>
+  <com>lo fu entry</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="short UTF-16 #1: explicit wchar_t mapping replaces narrow exact-address data" min="1" max="1">L"ID"</stringmatch>
+<stringmatch name="short UTF-16 #2: the one-byte rendering is gone" min="0" max="0">"I"</stringmatch>
+<stringmatch name="short UTF-16 #3: adjacent wide literal is preserved" min="1" max="1">L"OLLYDBG"</stringmatch>
+<stringmatch name="short UTF-16 #4: ordinary ASCII literal is preserved" min="1" max="1">"ASCII"</stringmatch>
+</decompilertest>

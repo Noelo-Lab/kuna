@@ -117,7 +117,7 @@ fn demangle_funcsym_name(name: Vec<u8>, mode: NameChars) -> Vec<u8> {
 }
 
 /// One loadable region of the image (the analog of a BFD `asection` for the
-/// purpose of [`ObjectLoadImage::find_section`]/`loadFill`): a vma, the bytes
+/// purpose of [`SegmentBytes::find_section`]/`loadFill`): a vma, the bytes
 /// that live there, and BFD-style section flags.
 #[derive(Debug, Clone)]
 struct Segment {
@@ -176,9 +176,9 @@ fn clamp_virtual_tails(segments: &mut [Segment]) {
 /// a second reader cannot drift from the first.
 ///
 /// Written only at load time, before any share exists; [`ObjectLoadImage`] holds
-/// it behind an `Arc` and asserts sole ownership at each write site.
+/// it behind an `Arc` and requires sole ownership at each write site.
 #[derive(Debug)]
-pub struct SegmentBytes {
+struct SegmentBytes {
     segments: Vec<Segment>,
 }
 
@@ -412,7 +412,7 @@ pub struct ObjectLoadImage {
     fallback_archtype: Option<Vec<u8>>,
     /// Loadable regions, in *ascending vma order* (the BFD section list, used by
     /// `find_section`/`loadFill`), behind an `Arc` so a decoder on another thread
-    /// can read the same bytes. Every write site asserts sole ownership: the
+    /// can read the same bytes. Every write site requires sole ownership: the
     /// image is fully built -- relocations patched, overlays applied, vmas
     /// adjusted -- before anything shares it.
     bytes: Arc<SegmentBytes>,
@@ -1171,15 +1171,16 @@ impl ObjectLoadImage {
     }
 
     /// Write `data` over the mapped bytes at `vma` (the write twin of
-    /// [`Self::fill_span`], and the loader half of `--assert bytes`).
+    /// [`SegmentBytes::fill_span`], and the loader half of `--assert bytes`).
     ///
-    /// Resolved through [`Self::find_section`] so an overlay lands in exactly the
-    /// segment a read at the same address would come from, and refused unless
-    /// that segment maps the whole span: a partial write would leave half a
-    /// stated instruction stream in place, which is worse than not taking the
-    /// statement at all.  A span reaching into the segment's zero-filled RAM tail
-    /// materialises that tail first — the caller is stating what the running
-    /// program put there, which is precisely a `.bss`-style region's content.
+    /// Resolved through [`SegmentBytes::find_section`] so an overlay lands in
+    /// exactly the segment a read at the same address would come from, and
+    /// refused unless that segment maps the whole span: a partial write would
+    /// leave half a stated instruction stream in place, which is worse than not
+    /// taking the statement at all.  A span reaching into the segment's
+    /// zero-filled RAM tail materialises that tail first — the caller is stating
+    /// what the running program put there, which is precisely a `.bss`-style
+    /// region's content.
     fn overlay_span(&mut self, vma: u64, data: &[u8]) -> Result<(), String> {
         if data.is_empty() {
             return Err("an overlay needs at least one byte".into());
@@ -1187,7 +1188,9 @@ impl ObjectLoadImage {
         let end = vma
             .checked_add(data.len() as u64) // cast: overlay byte count
             .ok_or_else(|| "the overlay wraps past the end of the address space".to_string())?;
-        let bytes = Arc::get_mut(&mut self.bytes).expect("image bytes already shared");
+        let bytes = Arc::get_mut(&mut self.bytes).ok_or_else(|| {
+            "cannot overlay image bytes while a shared decode view is active".to_string()
+        })?;
         let idx = bytes
             .find_section(vma)
             .filter(|(idx, secsize)| {
@@ -1815,6 +1818,40 @@ mod tests {
         .unwrap();
         m.set_default_code_space(1).unwrap();
         m
+    }
+
+    #[test]
+    fn shared_reader_matches_owner_and_blocks_late_overlays() {
+        let payload: Vec<u8> = (0..700).map(|i| (i % 251) as u8).collect();
+        let object = build_elf64(0x1000, &payload, None);
+        let mut owner = ObjectLoadImage::from_bytes("synthetic", &object).unwrap();
+        let ram = Rc::clone(manager().get_default_code_space().unwrap());
+        owner.attach_to_space(Rc::clone(&ram));
+
+        let shared = owner
+            .shared_bytes()
+            .expect("object images publish immutable bytes");
+        assert!(shared.mapped_covers(0x1000, 0x1000 + payload.len() as u64));
+        assert!(!shared.mapped_covers(0x0fff, 0x1001));
+        let mut reader = kuna_sleigh::kuna_sharedbytes::SharedBytesImage::new("synthetic", shared);
+        reader.attach_to_space(Rc::clone(&ram));
+
+        for (off, len) in [(0x1000, 8), (0x1004, 17), (0x11f8, 40), (0x1000, 600)] {
+            let addr = Address::new(Rc::clone(&ram), off);
+            let mut want = vec![0; len];
+            let mut got = vec![0; len];
+            owner.load_fill(&mut want, &addr).unwrap();
+            reader.load_fill(&mut got, &addr).unwrap();
+            assert_eq!(
+                got, want,
+                "shared read differs at {off:#x} for {len} bytes"
+            );
+        }
+
+        let err = owner
+            .overlay_span(0x1000, &[0xcc])
+            .expect_err("published bytes must stay immutable");
+        assert!(err.contains("shared decode view"));
     }
 
     /// Build a minimal little-endian ELF64 x86-64 image with one PT_LOAD

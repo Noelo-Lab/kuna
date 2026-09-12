@@ -73,7 +73,7 @@ fn surface_count_is_116() {
 }
 
 #[test]
-fn settable_count_is_190() {
+fn settable_count_is_191() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -132,12 +132,12 @@ fn settable_count_is_190() {
     // +1 for `entrythumbflow` (P1 entry-reachable Thumb context walk, DIV-154).
     // +1 for `pdatainterior` (P1 `.pdata` RUNTIME_FUNCTION-interior entry suppression).
     // +1 for `callretpair` (P4 two-register CALL output completion, DIV-162).
-    assert_eq!(kuna_num_settables(), 190);
-    assert_eq!(SETTABLE_TABLE.len(), 190);
+    assert_eq!(kuna_num_settables(), 191);
+    assert_eq!(SETTABLE_TABLE.len(), 191);
 }
 
 #[test]
-fn tier_counts_are_61_core_70_transform_59_analysis() {
+fn tier_counts_are_61_core_71_transform_59_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -241,7 +241,7 @@ fn tier_counts_are_61_core_70_transform_59_analysis() {
     // RUNTIME_FUNCTION-interior entry suppression).
     // core 60 -> 61: +1 for `callretpair` (P4 two-register CALL output
     // completion, DIV-162).
-    assert_eq!((core, transform, analysis), (61, 70, 59));
+    assert_eq!((core, transform, analysis), (61, 71, 59));
 }
 
 #[test]
@@ -774,7 +774,9 @@ fn option_values_live_value_present_for_73() {
     // DIV-161).
     // 71 -> 72: +1 for `callretpair` (live_field = call_ret_pair, DIV-162).
     // 72 -> 73: +1 for `callpopret` (live_field = call_pop_ret, DIV-163).
-    assert_eq!(with_live, 73);
+    // 73 -> 74: +1 for `entryretdispatch` (live_field = entry_ret_dispatch,
+    // DIV-168).
+    assert_eq!(with_live, 74);
 }
 
 #[test]
@@ -912,7 +914,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // beside `securitycheck`, so the tail does not move.
     // 180 -> 181: +1 for `entrythumbflow` (DIV-154); its P1 row sits mid-table
     // beside `tailcallentry`, so the tail does not move.
-    assert_eq!(json.matches("},\n").count(), 189);
+    assert_eq!(json.matches("},\n").count(), 190);
 }
 
 #[test]

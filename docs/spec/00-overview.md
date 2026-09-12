@@ -1483,26 +1483,56 @@ recovered call is dead and prints as `return;`. The caller gets one call and no
 evidence the chain exists. So both surfaces extend the directive before they seed
 it (`decompiler/crates/kuna-console/src/kuna_retcallchain.rs
 (kuna_chain_sites)`): a straight-line walk from the function's entry decodes each
-instruction through a `PcodeEmit` that records the literals it stores to memory
-and how it leaves, follows an unconditional direct branch, falls through
-everything else (a conditional branch and a real `call` both reach their
-fall-through), and at each `CPUI_RETURN` asks whether the run that reached it
-stored that `ret`'s OWN fall-through address. That is the whole test, and it is
-what makes the extension safe to do unasked: an ordinary epilogue never pushes the
-address of the instruction after itself, and a real `call` does push its own
-fall-through but is not a `ret` — its literals are dropped for that reason. The
-walk clears the collected literals at every link, stops at the first `ret` that
-fails the test, at an indirect branch, at a decode failure, at an address it has
-already decoded, and at the site/instruction caps; and it reports nothing at all
+instruction through a `PcodeEmit` that records each raw op and how the
+instruction leaves, follows an unconditional direct branch, falls through
+ordinary instructions, and stops at conditional or indirect control flow. A
+single scanned path cannot prove that stores after a conditional dominate a
+later RETURN. At each `CPUI_RETURN`, a deliberately small affine provenance
+walk must prove that RETURN's destination came from a LOAD of a slot written in
+the current straight-line run, and that the immediately adjacent continuation
+slot contains this `ret`'s OWN fall-through address. Address equality alone is
+not evidence: `push $next; add $word,sp; ret` discarded the matching slot, and a
+store of `$next` to unrelated memory does not feed RETURN. An ordinary epilogue
+has no in-run store feeding its popped value. A real `call` clears all
+provenance because its callee may mutate the stack and volatile registers. The
+walk clears provenance at every accepted link,
+stops at the first `ret` that fails the test, at an indirect branch, at a decode
+failure, at an address it has already decoded, and at the site/instruction caps;
+and it reports nothing at all
 unless the overridden address is itself one of the links it found, so a `flow
-<addr> call` anywhere in ordinary code extends to nothing. The literals come
-through two `COPY`s (SLEIGH's `push` macros hand the immediate to a unique before
-the `STORE`), so the scan tracks a constant per varnode within the instruction
-rather than reading the `STORE` value operand directly. Both the ported console
-command and the in-process seed run it, so the script and `--json` surfaces render
-the same C. Measured on the round-9 witness (`docs/re-needs/
+<addr> call` anywhere in ordinary code extends to nothing. The affine state
+tracks COPY and constant INT_ADD/INT_SUB through the stack register, exact
+STORE/LOAD slot identity including the p-code input-0 memory-space ID, overlap
+invalidation, and the final RETURN input.
+Constants used in affine arithmetic are sign-extended from their p-code
+varnode width, so `[eax-4]` aliases the continuation at `entrySP-4` instead of
+becoming a distant positive address. Register invalidation is byte-overlap
+aware: a partial write to SP invalidates ESP-derived values and store facts.
+An unknown pointer store clears remembered store facts; an unsupported
+`CALLOTHER` clears all remembered provenance. Both the
+ported console command and the in-process seed run it, so the script and
+`--json` surfaces render the same C. Measured on the round-9 witness (`docs/re-needs/
 flow-call-override-retain.md`): one directive against a 22-link body, which went
 from `LoadLibraryA(s_40151e);` to the whole self-unpacking sequence.
+
+The same bounded walk recognizes a chain reached from the function entry
+without a directive (`kuna_entry_chain_sites`) when the P2
+`entryretdispatch` option is on (default on, DIV-168). Before the shared
+decompile step follows flow, every recognized link without an explicit caller
+fact is seeded as `call`. Caller-stated flow classifications own their sites;
+in particular, explicit `flow <site> return` vetoes an automatic CALL and is
+not redundantly sent to the engine as a RETURN override on a raw RETURN. This
+is deliberately not a general computed-RETURN conversion. A plain `ret`, a `ret N`, a return
+through the incoming return-address word, a discarded exact-fall-through push,
+an unrelated exact-fall-through store, and a computed return whose source lacks
+the adjacent in-run store pair produce no sites and keep RETURN semantics. The
+console's prefollowed-IR fast path is declined only when
+the enabled entry scan finds a link, because that IR was followed before the
+derived calls were known. `option entryretdispatch off` restores the first-RET
+termination while leaving explicit `flow <site> call` chain propagation
+available. The site and instruction caps, continuation clearing, opaque-flow
+stops, and multi-link behavior are the same code as the explicit override path
+rather than a second recognizer.
 
 A `readonly` range is the one directive whose effect depends on a second switch:
 folding a read-only load into the value behind it is

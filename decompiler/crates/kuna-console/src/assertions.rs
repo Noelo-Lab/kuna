@@ -880,9 +880,9 @@ fn apply_data(prog: &mut ConsoleProgram, vma: u64, decl: &str) -> Result<(), Str
         .find_create_scope_from_symbol_name(&name, "::", None, num_spaces)
         .map_err(|e| e.explain().to_string())?;
     let invalid = Address::new_invalid();
-    let (sym, _entry) = arch
+    let (sym, _) = arch
         .symboltab
-        .add_symbol_mapped(scope, &basename, ct, &addr, &invalid)
+        .upsert_data_mapped(scope, &basename, ct, &addr, &invalid)
         .map_err(|e| e.explain().to_string())?;
     arch.symboltab.set_attribute(sym, flags);
     Ok(())

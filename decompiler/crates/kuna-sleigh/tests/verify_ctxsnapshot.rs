@@ -39,7 +39,10 @@ impl LoadImage for DummyImg {
 }
 
 fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../..")
+        .canonicalize()
+        .unwrap()
 }
 
 fn engine(rel: &str) -> Option<(Sleigh, Rc<AddrSpace>)> {
@@ -56,23 +59,41 @@ fn probe(sleigh: &Sleigh, space: &Rc<AddrSpace>, at: &[u64]) -> Vec<Vec<u32>> {
     at.iter()
         .map(|&off| {
             sleigh.with_context_db_mut(|db| {
-                db.get_context(&Address::new(Rc::clone(space), off)).to_vec()
+                db.get_context(&Address::new(Rc::clone(space), off))
+                    .to_vec()
             })
         })
         .collect()
 }
 
-fn round_trip(sleigh: &Sleigh, space: &Rc<AddrSpace>, rel: &str, probes: &[u64]) -> ContextValueSnapshot {
+fn round_trip(
+    sleigh: &Sleigh,
+    space: &Rc<AddrSpace>,
+    rel: &str,
+    probes: &[u64],
+) -> ContextValueSnapshot {
     let snap = sleigh.with_context_db_mut(|db| snapshot_context(db, space));
     let want = probe(sleigh, space, probes);
 
     let (other, other_space) = engine(rel).expect("second engine");
-    other.with_context_db_mut(|db| restore_context(db, &snap, &other_space));
+    other
+        .with_context_db_mut(|db| restore_context(db, &snap, &other_space))
+        .expect("restore a valid snapshot");
 
     let again = other.with_context_db_mut(|db| snapshot_context(db, &other_space));
-    assert_eq!(snap.default_blob, again.default_blob, "the default blob must survive the copy");
-    assert_eq!(snap.points, again.points, "the split points must survive the copy");
-    assert_eq!(want, probe(&other, &other_space, probes), "every probed address must read the same");
+    assert_eq!(
+        snap.default_blob, again.default_blob,
+        "the default blob must survive the copy"
+    );
+    assert_eq!(
+        snap.points, again.points,
+        "the split points must survive the copy"
+    );
+    assert_eq!(
+        want,
+        probe(&other, &other_space, probes),
+        "every probed address must read the same"
+    );
     snap
 }
 
@@ -91,13 +112,30 @@ fn x86_64_context_values_survive_a_copy() {
     // Two paints, which is what a pspec `<context_data>` amounts to on x86-64.
     let invalid = Address::new_invalid();
     sleigh.with_context_db_mut(|db| {
-        db.set_context_region(&Address::new(Rc::clone(&space), 0x1000), &invalid, 0, 0xf, 0x5);
-        db.set_context_region(&Address::new(Rc::clone(&space), 0x2000), &invalid, 0, 0xf, 0xa);
+        db.set_context_region(
+            &Address::new(Rc::clone(&space), 0x1000),
+            &invalid,
+            0,
+            0xf,
+            0x5,
+        );
+        db.set_context_region(
+            &Address::new(Rc::clone(&space), 0x2000),
+            &invalid,
+            0,
+            0xf,
+            0xa,
+        );
     });
 
     let probes = [0x0, 0xfff, 0x1000, 0x1fff, 0x2000, 0x8000_0000];
     let snap = round_trip(&sleigh, &space, rel, &probes);
-    assert_eq!(snap.points.len(), 3, "two paints split the map in three: {:x?}", snap.points);
+    assert_eq!(
+        snap.points.len(),
+        3,
+        "two paints split the map in three: {:x?}",
+        snap.points
+    );
     assert_eq!(snap.points[1].1[0] & 0xf, 0x5);
     assert_eq!(snap.points[2].1[0] & 0xf, 0xa);
 }
@@ -137,5 +175,27 @@ fn arm_tmode_paints_survive_a_copy() {
         "each paint is its own region: {} points for {} marks",
         snap.points.len(),
         marks.len()
+    );
+}
+
+#[test]
+fn malformed_snapshots_are_rejected_before_mutation() {
+    let rel = "x86/data/languages/x86-64.sla";
+    let Some((sleigh, space)) = engine(rel) else {
+        eprintln!("verify_ctxsnapshot: skipping (no x86-64.sla; `make specs`)");
+        return;
+    };
+    let before = sleigh.with_context_db_mut(|db| snapshot_context(db, &space));
+    let mut malformed = before.clone();
+    malformed.words += 1;
+
+    let err = sleigh
+        .with_context_db_mut(|db| restore_context(db, &malformed, &space))
+        .expect_err("an inconsistent word count must fail closed");
+    assert!(format!("{err}").contains("word count"));
+    let after = sleigh.with_context_db_mut(|db| snapshot_context(db, &space));
+    assert_eq!(
+        before, after,
+        "validation must finish before the target is changed"
     );
 }

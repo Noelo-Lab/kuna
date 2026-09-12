@@ -98,6 +98,11 @@ pub fn build_decode_engine_traced(
 ) -> KunaResult<(Sleigh, Rc<AddrSpace>, UnmappedTripwire)> {
     let mut sleigh = Sleigh::new(Box::new(UnattachedImage), Box::new(ContextInternal::new()));
     sleigh.initialize_from_sla(&recipe.sla)?;
+    if sleigh.base().has_context_commits() {
+        return Err(KunaError::lowlevel(
+            "decode engine: the language commits context during decode",
+        ));
+    }
 
     // The `.ldefs` `<truncate_space>` records, as `modify_spaces` applies them
     // to the parent: the address size a space reports is part of how it decodes.
@@ -119,7 +124,7 @@ pub fn build_decode_engine_traced(
     let tripwire = image.tripwire();
     sleigh.set_loader(Box::new(image));
 
-    sleigh.with_context_db_mut(|db| restore_context(db, ctx, &code_space));
+    sleigh.with_context_db_mut(|db| restore_context(db, ctx, &code_space))?;
     sleigh.allow_context_set(false);
 
     Ok((sleigh, code_space, tripwire))

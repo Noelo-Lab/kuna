@@ -206,7 +206,7 @@ fn noreturn_error_fixture() -> String {
 
 /// The decode-lane knobs (`kuna_pdecode`). Cleared from every child here so a
 /// suite run under `KUNA_DECODE_JOBS=8 KUNA_DECODE_MIN_BYTES=0` -- which is how
-/// DIV-168 says to exercise the gates -- cannot move a baseline these tests take
+/// DIV-169 says to exercise the gates -- cannot move a baseline these tests take
 /// for granted; each test then sets only what it means to.
 const DECODE_ENV: [&str; 6] = [
     "KUNA_DECODE_JOBS",

@@ -2,7 +2,7 @@
 need_id: bytecode-append-call-loses
 title: Bytecode append call loses two live register arguments
 track: quality
-status: open
+status: closed
 severity: major
 probe_id: p-c3f3fe8f19b5
 acceptance_id: a-827297af3fce
@@ -13,13 +13,13 @@ challenges: [69b7492049fa49a2a260218f]
 rounds: [12]
 first_seen_round: 12
 attempts: 0
-covered_by_option: null
+covered_by_option: exclusivearguse
 touches: [decompiler/crates/kuna-decomp]
 scope: small
 regression_of: null
-pr: null
-closed_in_round: null
-closing_pr: null
+pr: https://github.com/Noelo-Lab/kuna/pull/564
+closed_in_round: 12
+closing_pr: "564"
 reject_reason: null
 ---
 
@@ -138,3 +138,7 @@ REDIRECT (offered as a redirect, NOT a proven line) -- AND THIS NEED IS A CLEANE
 ACCEPTANCE IS SOUND, unlike the sibling's: stdout_absent on `\n  sub_[0-9a-f]+\(a[0-9]+\);\n\}` only demands the one-argument tail-call form disappear, so a fix recovering both arguments passes and a fix inventing extra ones is not rewarded. No trap here.
 
 FOR T_TRIAGE: this pairs with argument-recovery-drops-both under one mechanism in two ABIs (MS x64 here, SysV there). Giving the pair a shared `cluster:` so ONE builder takes both is the cheap lever; the ablations transfer wholesale.
+- closed: acceptance a-827297af3fce now PASSES at 39d87cfe07fb
+- round 12 reconciliation: PR #564 (squash `7e151cfaade7e5dc39b59d734200c959a4d7c60d`) implemented `exclusivearguse` for this need and passed the fresh-main acceptance gate. Its squash introduced this record with the pre-closure `open` front matter, while the later acceptance-state write remained outside the merged commit; that stale snapshot is why the shipped option and durable status disagreed.
+- current controls at `39d87cfe07fb3b3048a7755505c288abd12152be`: the exact dataset acceptance passes with `exclusivearguse on`, emitting `sub_140007be0(a0,v5,v3);`; adding `--option exclusivearguse off` restores the filed `sub_140007be0(a0);` witness. The promoted in-repo acceptance at `tests/cli/bytecode-append-call-loses.json` also passes against `exclusivearguse_x86_64`.
+- index reconciliation constraint: at `39d87cfe07fb3b3048a7755505c288abd12152be`, the authoritative committed index contains 197 active and 1 rejected records, but the clean commit exposes only 139 active Markdown sources and no rejected source directory to `needs reindex`. A sparse-source regeneration would destructively discard 58 active rows and the rejected ledger row, so this closure preserves the authoritative index byte-for-byte except for its `closed`/`open` totals and this need's object. Regenerate only after the missing sources have landed.

@@ -53,6 +53,10 @@ Three tiers:
 | the body after a call is ASCII decoded as instructions | [`callpopret`](#callpopret) |
 | a one-line pointer helper decompiles to dozens of statements over undefined registers | [`callpopret`](#callpopret) |
 | the callee of a call is `pop reg; ret` or `add esp,4; ret` and the bytes after the call are a string table | [`callpopret`](#callpopret) |
+| a function entry containing push continuation; push target; ret decompiles to only return | [`entryretdispatch`](#entryretdispatch) |
+| only the first helper in a stack-built RET dispatcher appears after one manual flow override | [`entryretdispatch`](#entryretdispatch) |
+| multiple flow <address> call assertions are required to recover one entry routine | [`entryretdispatch`](#entryretdispatch) |
+| a packer or crackme dispatch chain is truncated at its first ret | [`entryretdispatch`](#entryretdispatch) |
 | a function's tail is really the body of the NEXT function | [`funcboundflow`](#funcboundflow) |
 | dead/garbage code after a call to a die()/fatal()/throw wrapper that never returns | [`funcboundflow`](#funcboundflow) |
 | two adjacent functions merged into one, the second also decompiled on its own | [`funcboundflow`](#funcboundflow) |
@@ -805,6 +809,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** A function decompiled by address emits port-input operations (`in(...)`), stores through registers that were never assigned, or arithmetic on undefined locals, and the disassembly shows the body is a single `call` followed by ASCII -- library names, a format string, a key table. Check the callee: `pop reg; ret` or `add esp,4; ret` means it never returns to the call site, and everything after the call is data. On by default; flip OFF to restore the fall-through decode at the return address.
 - **Where / provenance:** P2/flow-classification · kuna · correctness-fix · call-pop-pointer-helper
 - **Example:** `option callpopret off`
+
+### `entryretdispatch` -- on | off, default `on`
+
+- **Symptoms:** a function entry containing push continuation; push target; ret decompiles to only return; only the first helper in a stack-built RET dispatcher appears after one manual flow override; multiple flow <address> call assertions are required to recover one entry routine; a packer or crackme dispatch chain is truncated at its first ret.
+- **What it does:** RESTORES CODE: recognize a function-entry chain encoded as repeated `push <continuation>; push <callee>; ret` links and classify each proven RET site as a call before flow following. Without the derived flow overrides, the first RET is treated as the function return and every later link is dead, so an entire dispatcher entry decompiles to `return;`. The recognizer follows a bounded straight-line raw-p-code walk and accepts a link only when the RET destination was loaded from a slot written during that run and the adjacent slot contains that RET instruction's exact fall-through. Affine addresses sign-extend p-code constants by operand width; overlapping register writes and overlapping stores invalidate facts; conditional control flow, real calls, indirect control flow, opaque stack writes and unproven destinations decline. Explicit caller flow assertions always take precedence, and an explicit `flow <site> return` cleanly vetoes the automatic call at that site. Logs no extra output: the recovered calls appear through the normal decompile pipeline.
+- **When to flip:** A function entry is a stack-built dispatcher and decompiles as an empty `return;`: disassembly shows `push` of the instruction after a RET, then `push` of a callee address, then `ret`, repeated after each callee returns. On by default; flip OFF to restore the first-RET termination while keeping explicit `flow <address> call` assertions available.
+- **Where / provenance:** P2/flow-classification · kuna · correctness-fix · entry-point-ret-dispatch
+- **Example:** `option entryretdispatch off`
 
 ### `funcboundflow` -- on | off, default `on`
 

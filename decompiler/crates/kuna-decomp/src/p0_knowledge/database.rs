@@ -2147,6 +2147,32 @@ impl Database {
         Ok((sym, eref))
     }
 
+    /// Map caller-declared data, replacing analysis-derived data at the same
+    /// address so the declaration's name, extent, and type are authoritative.
+    pub fn upsert_data_mapped(
+        &mut self,
+        scope: ScopeId,
+        nm: &str,
+        ct: Rc<Datatype>,
+        addr: &Address,
+        usepoint: &Address,
+    ) -> KunaResult<(SymbolId, EntryRef)> {
+        self.kuna_gen += 1;
+        let existing = self
+            .find_addr(scope, addr, usepoint)
+            .map(|entry| self.entry(scope, entry).symbol)
+            .filter(|&sym| !matches!(self.symbols[sym].kind, SymbolKind::Function { .. }));
+        let Some(sym) = existing else {
+            return self.add_symbol_mapped(scope, nm, ct, addr, usepoint);
+        };
+        self.retype_symbol(sym, ct)?;
+        self.rename_symbol(sym, nm)?;
+        let entry = self
+            .find_addr(scope, addr, usepoint)
+            .ok_or_else(|| KunaError::lowlevel("retyped data symbol lost its mapping"))?;
+        Ok((sym, entry))
+    }
+
     /// C++ `Scope::addFunction` (`database.cc:1620-1637`): create a FunctionSymbol
     /// at `addr`.  `min_funcsymbol_size` comes from the architecture access.
     pub fn add_function(
@@ -4852,6 +4878,36 @@ mod tests {
         assert!(db
             .find_overlap(g, &Address::new(Rc::clone(&ram), 0x1004), 4)
             .is_none());
+    }
+
+    #[test]
+    fn caller_data_replaces_exact_analysis_mapping_without_touching_adjacent_data() {
+        let m = build_manager();
+        let ram = space(&m, 2);
+        let (mut db, g) = db_with_global(m.num_spaces());
+        let invalid = Address::new_invalid();
+        let target = Address::new(Rc::clone(&ram), 0x1000);
+        let adjacent = Address::new(Rc::clone(&ram), 0x1008);
+        let (automatic, _) = db
+            .add_symbol_mapped(g, "automatic_short_string", dt(2), &target, &invalid)
+            .unwrap();
+        let (neighbor, _) = db
+            .add_symbol_mapped(g, "adjacent_wide", dt(16), &adjacent, &invalid)
+            .unwrap();
+
+        let (asserted, _) = db
+            .upsert_data_mapped(g, "window_class", dt(6), &target, &invalid)
+            .unwrap();
+
+        assert_eq!(asserted, automatic, "the assertion should replace, not shadow");
+        assert_eq!(db.symbol(asserted).get_name(), "window_class");
+        assert_eq!(db.symbol(asserted).dtype.as_ref().unwrap().get_size(), 6);
+        let target_entry = db.find_container(g, &target, 1, &invalid).unwrap();
+        assert_eq!(db.entry(g, target_entry).symbol, asserted);
+        let adjacent_entry = db.find_container(g, &adjacent, 1, &invalid).unwrap();
+        assert_eq!(db.entry(g, adjacent_entry).symbol, neighbor);
+        assert_eq!(db.symbol(neighbor).get_name(), "adjacent_wide");
+        assert_eq!(db.symbol(neighbor).dtype.as_ref().unwrap().get_size(), 16);
     }
 
     #[test]

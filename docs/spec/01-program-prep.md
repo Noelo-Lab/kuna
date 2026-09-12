@@ -123,7 +123,8 @@ second reader over the same bytes is `SharedBytesImage`, and both it and
 `ObjectLoadImage` serve reads through the one `windowed_load_fill`, so there is
 no second copy of the read semantics to drift. Every site that writes the bytes
 — the dynamic-relocation patch at construction, an `--assert bytes` overlay,
-`adjustVma` — runs at load time and asserts sole ownership of the `Arc`.
+`adjustVma` — runs at load time and requires sole ownership of the `Arc`; an
+overlay requested after publication fails closed.
 
 ## 1.2 Load image
 
@@ -2620,7 +2621,7 @@ by field, returning the serial result; the size floor is a parameter of the plan
 which `KUNA_DECODE_MIN_BYTES` sets on the CLI path and the equivalence tests pass
 directly, so they are not vacuous on small fixtures. This is a driver-tier resource setting with no output
 effect, so it is a CLI flag and an environment bridge rather than a settable
-option (DIV-168).
+option (DIV-169).
 
 (kuna) The seed set carries one more source, under the same `funcstart_patterns`
 gate as the prologue starts: **the entries the load-time passes have already

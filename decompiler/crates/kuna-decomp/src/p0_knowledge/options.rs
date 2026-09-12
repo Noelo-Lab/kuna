@@ -277,6 +277,9 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // `call` is a transfer -- the RET flavour of `calltrampoline`'s idiom.
     // Default ON.
     "callpopret",
+    // (kuna) DIV-168: prove entry-point `push continuation; push target; ret`
+    // chains and seed each link as a call. Default ON.
+    "entryretdispatch",
     "funcboundflow",
     "overlapbranch",
     "cleanupcode",

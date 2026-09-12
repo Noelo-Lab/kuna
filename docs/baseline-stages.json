@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    797,
-    797
+    803,
+    803
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -125,6 +125,8 @@
     "data:EMPTYSTRCONST #2: an ordinary short literal beside it is untouched, in both passes",
     "data:EMPTYSTRCONST #3: a GENUINE empty literal, one that sits inside a run of string data, keeps its quotes in both passes",
     "data:EMPTYSTRCONST #4: emptystrconst off restores the empty-literal form for the blob (the filed bug), exactly once",
+    "data:ENTRYRETDISPATCH #1: the default pass recovers the helper call while option off does not",
+    "data:ENTRYRETDISPATCH #2: both passes retain one ordinary function return",
     "data:ENTRYTHUMBFLOW #1: off, the Thumb entry decodes as A32 and returns nothing",
     "data:ENTRYTHUMBFLOW #2: default, the entry is walked as Thumb and returns its constant",
     "data:ENTRYTHUMBFLOW #3: the constant the Thumb body returns appears exactly once, in the default pass",
@@ -727,6 +729,10 @@
     "data:returncopysplit #6: every reference to the literal in the transcript is a read (16 in pass 1, 2 in pass 2)",
     "data:rodatastring #1: default pipeline recovers the read-only block copy as one builtin_strncpy",
     "data:rodatastring #2: rodatastring off restores the invalid array-typed cast (the filed bug)",
+    "data:short UTF-16 #1: explicit wchar_t mapping replaces narrow exact-address data",
+    "data:short UTF-16 #2: the one-byte rendering is gone",
+    "data:short UTF-16 #3: adjacent wide literal is preserved",
+    "data:short UTF-16 #4: ordinary ASCII literal is preserved",
     "data:simdlane #1: the option-off pass keeps all 32 opaque lane extractions (and the option-on pass has none)",
     "data:simdlane #2: the option-off pass declares the 16-byte shuffle result as an array temporary",
     "data:simdlane #3: the option-off pass declares the last byte-lane temporary of the second register",
