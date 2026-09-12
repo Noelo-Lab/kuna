@@ -230,6 +230,48 @@ pub fn dumps_indent2_sorted(v: &Json) -> String {
     out
 }
 
+/// Render `v` on ONE line, with no spaces — the `index.jsonl` / `.streaming`
+/// form, where a record has to be a single line a reader can consume as it
+/// lands.  String escaping is the same `ensure_ascii` rendering the pretty
+/// printers use.
+pub fn dumps_compact(v: &Json) -> String {
+    let mut out = String::new();
+    write_compact(&mut out, v);
+    out
+}
+
+fn write_compact(out: &mut String, v: &Json) {
+    match v {
+        Json::Null => out.push_str("null"),
+        Json::Bool(true) => out.push_str("true"),
+        Json::Bool(false) => out.push_str("false"),
+        Json::Number(n) => out.push_str(n),
+        Json::Str(s) => write_string(out, s),
+        Json::Array(items) => {
+            out.push('[');
+            for (i, item) in items.iter().enumerate() {
+                if i > 0 {
+                    out.push(',');
+                }
+                write_compact(out, item);
+            }
+            out.push(']');
+        }
+        Json::Object(pairs) => {
+            out.push('{');
+            for (i, (k, val)) in pairs.iter().enumerate() {
+                if i > 0 {
+                    out.push(',');
+                }
+                write_string(out, k);
+                out.push(':');
+                write_compact(out, val);
+            }
+            out.push('}');
+        }
+    }
+}
+
 fn write_value_opts(out: &mut String, v: &Json, indent: usize, sort_keys: bool) {
     match v {
         Json::Null => out.push_str("null"),

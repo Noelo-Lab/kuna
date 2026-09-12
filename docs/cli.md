@@ -1163,12 +1163,18 @@ Behaviors specific to `decompile-all`:
   `decompile-graph`; `--jobs-chunk N` fixes the functions per scheduling unit and
   `--jobs-full-load` makes each worker run its own whole-binary discovery instead
   of taking the parent's inventory.
-  - **The output does not depend on how the pool scheduled it.** Work is handed
-    out in a longest-first order that is deliberately not output order, but every
-    target owns a slot and results are merged positionally, so the document is
-    identical to `--jobs 1` whatever order the workers finish in. The concrete
-    `--mode`, every resolved `--option` and the watchdog budget are settled once
-    by the parent and passed to every worker.
+  - **The output of a non-stream run does not depend on how the pool scheduled
+    it.** Work is handed out in a longest-first order that is deliberately not
+    output order, but every target owns a slot and results are merged
+    positionally, so the document is identical to `--jobs 1` whatever order the
+    workers finish in. The concrete `--mode`, every resolved `--option` and the
+    watchdog budget are settled once by the parent and passed to every worker.
+    `decompile-project --stream` is the one surface where the schedule *is*
+    observable, and only in the order of the `.c`: a streamed export writes each
+    function as it finishes, so under `--jobs N` the interleaving is worker
+    completion order and is not reproducible run to run. The set of functions,
+    the prototypes and the disassembly are what the same selection produces
+    serially; `index.jsonl` indexes the order the run happened to take.
   - **It can depend on how the work was divided, wherever the engine's own output
     already does.** A few emission decisions are first-toucher-wins in the
     per-process type and symbol database, so they are a function of which *other*
@@ -1959,6 +1965,7 @@ decodes to a wrong image of exactly the right length; only the checksum catches 
 kuna decompile-project ./a.out                         # writes ./a.out.kuna/
 kuna decompile-project ./a.out -o proj --functions main,parse
 kuna decompile-project ./a.out --jobs 12               # the same folder, 12 processes
+kuna decompile-project ./a.out --stream --jobs 12      # readable while it fills
 ```
 
 The project-export face of the same in-process core
@@ -1967,10 +1974,10 @@ The project-export face of the same in-process core
 web UI's Download-Binary-Source zip and `kuna_wasm project`). Identical
 load-once/decompile-many path and flags —
 `--functions`/`--addr`/`--max-fn-seconds`/`--mode`/`--option`/`--isa`/`--slice`/
-`--target`/`--sleighpath`/`--jobs`; no `--json`. Omitted mode is the same size-based `auto` policy
-as the other file front-ends. In particular, a project input at least 2 MiB
-automatically suppresses the exhaustive Listing consumers, prologue scan, and
-AIF gap walk through the `fast` preset, while substituting rooted direct-call
+`--target`/`--sleighpath`/`--jobs`/`--stream`; no `--json`. Omitted mode is the same
+size-based `auto` policy as the other file front-ends. In particular, a project input
+at least 2 MiB automatically suppresses the exhaustive Listing consumers, prologue
+scan, and AIF gap walk through the `fast` preset, while substituting rooted direct-call
 and bounded pointer-table discovery. Its unfiltered per-function watchdog also
 defaults to 10 seconds instead of 120; `--max-fn-seconds` overrides it,
 including `0` to disable. Explicit `--addr` selections remain exact and
@@ -1983,8 +1990,9 @@ Writes a project folder — default `<binary-filename>.kuna/` next to the binary
 `-o/--output DIR` overrides — of four artifacts designed so a human or LLM can study the
 binary and attempt recompilation:
 
-- `<name>.c` — every decompiled function, address-ordered, under
-  `// Function: <name> @ <addr>` headers, failures as comments, `#include "<name>.h"`.
+- `<name>.c` — every decompiled function, address-ordered (decompile order under
+  `--stream`), under `// Function: <name> @ <addr>` headers, failures as comments,
+  `#include "<name>.h"`.
   One definition per loader- or analysis-discovered executable entry address:
   the export shares
   `decompile-all`'s CODE-backed target policy and one-record-per-entry
@@ -2026,6 +2034,222 @@ they agree — which is what a shard that interned nothing renderable looks like
 and what every fixture measured here does — that block is the serial answer and is
 emitted as is. When they disagree the parent says so on stderr and emits their
 ordered union, so the `.h` still declares everything the `.c` uses.
+
+### `--stream` — the folder is readable while it fills
+
+```bash
+kuna decompile-project ./big.bin --stream --jobs 14
+```
+
+An ordinary export writes its folder at the end, so the whole run is dead time for
+whoever is waiting on it: on a 147 MB image with 392,814 functions that is about
+twenty-one minutes (1,248 s) at `--jobs 14` on this box before the first line of C
+exists, and hours serially. `--stream` writes the same folder as the run goes and
+starts at the entry point, so the part of the program a reader asked about first is
+the part that is there first. It is driver policy — a flag, not a phase-model option —
+and it is off by default.
+
+**What appears when.** Before the load, which on a large image is the longest single
+wait in the run, the folder is created and two files are written into it: `README.md`,
+carrying the binary's path and size with `pending` in every cell the load has not
+answered yet, and `.streaming`, phase `loading`, which keeps ticking on its own clock
+for as long as the load runs so `updated_at` and `elapsed_s` separate a live load from
+a dead process. Nothing else is touched, so a previous export of the same binary keeps
+its `.c`/`.h`/`.asm` — and, if this run fails while loading, its `README.md` — while a
+new one loads. Once the program is loaded, the C-only check passes and the target set
+is non-empty,
+the four artifacts plus `index.jsonl` are truncated and created — the `.c` with its
+`#include`, the `.h` with the prelude and a pending type block, the `.asm` with its
+two header lines, `index.jsonl` empty — and `.streaming` moves to phase `decompiling`
+carrying `functions_total`. From there the decompile, the disassembly sweep and the
+writer run at once: the `.asm` completes early, and each function is appended to the
+`.c` and then announced in `index.jsonl`. Finalisation puts the real type block in
+the `.h`, appends the `.asm` tails, rewrites the README and removes `.streaming`.
+
+**The order.** Two seeds start it: the image entry point (resolved through the
+inventory, so an ARM entry carrying the Thumb bit lands on its even address) and
+`main` by name, each taken only when it is one of this run's targets. Every finished
+function reports the entries it reaches — direct `CALL` destinations, plus constants
+that are known function entries inside a code section, which is the edge that reaches
+`main` from `_start` through `__libc_start_main`. Intersected with this run's own
+target set, those are the frontier the scheduler works breadth-first; when it empties, the
+remaining targets follow in address order. The hints are a scheduling input and
+nothing else: they enter no artifact, and an `--addr`/`--functions` export does not
+grow a callee it was not asked for. When neither seed is a target the run says so on
+stderr and the order is address order throughout. Under `--jobs N` the frontier is
+served to N workers and the `.c` interleaves in completion order, which is not
+reproducible run to run — and a frontier only leads while it is deep enough to feed
+the pool. The 147 MB image's entry point calls three functions, which fills one chunk,
+so at `--jobs 14` the other workers start on the address cursor at once and the seed
+neighbourhood is a short prefix of the `.c` rather than its whole first wave. At
+`--jobs 1` the order is the plain breadth-first walk.
+
+**How the artifacts differ.** The function set is identical to a non-stream export of
+the same selection; the layout differences below are what append-only costs, and they
+are the contract:
+
+- `<name>.c` — decompile order, not address order. A block is appended with one write
+  and is never rewritten, so an offset a reader took stays valid; `index.jsonl` is the
+  address-to-offset index that replaces the address ordering.
+- `<name>.asm` — the sweep is byte-identical to a non-stream `.asm` with its
+  `; arg:`/`; stack:` comment blocks removed from under the labels. Those blocks are
+  appended afterwards in a `; --- variables ---` section, ahead of the unchanged
+  `; --- data ---` tail, because the sweep finishes long before the variables exist
+  and an append-only file cannot go back under a label. The `; --- variables ---`
+  marker is written whether or not any function has variables — it is where a reader
+  splits the sweep from the tails.
+- `<name>.h` — the same prototype set, in the `.c`'s order. It is rewritten whole and
+  atomically as prototypes accumulate, so it is always readable, but it carries no
+  type definitions until the export completes and does not compile against the `.c`
+  until then. At `--jobs N` its final type block is the worker-shard merge described
+  above.
+- `index.jsonl` — new, and kept after the run.
+- `.streaming` — new, and removed when the run succeeds.
+- `README.md` — rewritten whole at most every five seconds. While the export runs it
+  opens with a streaming banner and a `## Streaming status` table; its file inventory
+  describes the streamed layout, not the address-ordered one.
+
+**`index.jsonl`** is append-only: one compact JSON object per line, written *after*
+that function's `.c` block.
+
+```
+{"seq":0,"name":"_start","addr":"0x400580","size":44,"c_offset":23,"c_len":270,"error":null}
+```
+
+| Field | Meaning |
+|---|---|
+| `seq` | Zero-based, in write order. |
+| `name` / `addr` | The function and its display address as a `0x…` string — the two the block's `// Function:` header prints. |
+| `size` | The inventory extent in bytes, as a number; `0` when the extent is unknown. |
+| `c_offset` / `c_len` | The block's byte span in the `.c`: `c[c_offset..c_offset+c_len]` is exactly `// Function: …` through the block's trailing blank line. |
+| `error` | `null`, or this function's error string — the block is then the one-line `// Function: … (error: …)` comment form. |
+
+A line exists only once its block is whole, which makes it the torn-read oracle for a
+reader following the `.c`, the per-function progress feed, and the index a
+decompile-ordered `.c` needs. The line itself is one write, but nothing promises a
+write is atomic: a reader polling a running export ignores a final line that does not
+end in a newline and picks it up on the next read.
+
+**`.streaming`** is one line of compact JSON, replaced atomically, present only while
+the export runs.
+
+```
+{"schema":1,"phase":"decompiling","pid":2927817,"started_at":1789162729,"updated_at":1789162747,
+ "elapsed_s":17,"jobs":4,"seeds":1,"functions_total":3153,"functions_done":1570,
+ "functions_failed":1,"seconds_since_last_result":0,"c_bytes":2316041,"asm":"complete","error":null}
+```
+
+| Field | Meaning |
+|---|---|
+| `schema` | `1`. Bumped whenever a field is added, removed or changes meaning. |
+| `phase` | `loading`, `decompiling`, `finalizing` or `failed`. |
+| `pid` | The exporting process, so a reader can tell a live export from an abandoned one. |
+| `started_at` / `updated_at` | Unix seconds: when the export started, and when this file was last written. |
+| `elapsed_s` | Seconds since `started_at`. |
+| `jobs` | The `--jobs` request while `phase` is `loading`, and the workers actually spawned once the pool opens — `--jobs N` asks, the pool's memory trim answers. On a large image the load is most of the run, so a poller reading this during it is reading the request. `1` is the serial run. |
+| `seeds` | How many seeds the order started from. `0` means neither the entry point nor `main` was a target, so the order is address order. |
+| `functions_total` | Targets for this run. `null` while `phase` is `loading`. |
+| `functions_done` | Results written so far, failures included. |
+| `functions_failed` | How many of `functions_done` are error records. |
+| `seconds_since_last_result` | How long the decompile has been quiet — the staleness signal. |
+| `c_bytes` | Size of the `.c` as of this write. |
+| `asm` | `pending` (the sweep has not started), `sweeping`, or `complete`. An image with no CODE section has nothing to sweep and reports `complete` from the first `decompiling` write — it is `pending` for as long as the phase is `loading`, since the target set that decides there is nothing to sweep is not resolved yet. |
+| `error` | `null`, or why the run stopped. Non-null only with `phase: failed`. |
+
+It is written on the writer's own 500 ms clock rather than per result, so it can trail
+`index.jsonl` by up to one tick; the index is the live feed and the status file is the
+summary.
+
+**Failure is reported in the folder.** Any error after the folder exists — an
+unloadable image, a non-C output language, an empty target set, an I/O error on the
+`.c`, the `.h` or `index.jsonl` — rewrites `.streaming` with `phase: failed` and the
+message, and exits `1`. `.streaming` always carries the message; the README carries it
+too, in its `## Streaming status` table, except in the one case where a previous
+export's README is put back instead. That case is a failure before the run has
+truncated anything of its own, which leaves the folder as it found it: a previous
+export's `.c`/`.h`/`.asm` are untouched and its `README.md` is restored byte for byte,
+so `.streaming` is the only trace of the attempt. With no previous README to put back,
+a run that failed that early writes one that says so and inventories nothing, because
+nothing was created. A `.streaming` left behind whose `pid`
+is dead and whose phase is not `failed` means the run was killed.
+
+One case reports nothing in the folder: if whatever killed the writer also makes
+`.streaming` unwritable — a full disk is both — the status file keeps its last good
+contents and only stderr and the exit code say the run failed.
+
+**Stopping takes a chunk.** When the writer dies the producers stop rather than
+decompile the rest of the binary into a channel nobody reads, but they stop at a
+boundary: `.streaming` flips to `failed` within a tick, while each worker first
+finishes the chunk it is holding — up to 64 functions apiece, so a `--jobs N` run
+ends within one chunk rather than instantly, and `--jobs-chunk K` bounds that
+directly. At `--jobs 1` the producer pulls one function at a time and stops at the
+next one. The pool's closing `done: N functions` line counts what it actually
+delivered, which on a run that stopped early is less than `functions_total`.
+
+Two things are deliberately not run failures. Per-function failures — including a
+worker process that cannot be spawned, which degrades that whole chunk to error
+records — are `error` records in the `.c` and in `index.jsonl`, and the run exits `0`
+with `functions_failed` counting them, so a poller that sees no `failed` phase still
+has to read that field. And a `.streaming` or `README.md` rewrite that fails mid-run,
+since those report on the export rather than being it, warns once on stderr per file
+per outage and is retried on the next tick — only the first pair, written at t=0 as the
+proof the folder can be written at all, fails the run.
+
+A binary that does not exist is refused before anything is created, and never leaves a
+folder behind. Which refusal you get depends on the mode: the default `--mode auto`
+stats the file to size the mode while arguments are parsed, so it exits `2` with the
+usage block and `error: cannot read input binary metadata for mode auto: …` (this is
+`decompile-project`'s own behaviour, with or without `--stream`); an explicit
+`--mode fast|reliable|aggressive` skips that stat, and the streamed export's own check
+exits `1` with `error: binary not found: …`. A folder another live export is already
+streaming into is refused too (`.streaming` carrying the pid of a running process) —
+the second run would truncate the first's `.c` and invalidate every offset a reader had
+taken from it. That refusal names the way out: wait, pass `-o`, or delete the
+`.streaming` if the process it names is gone.
+
+**Refused.** `--stream` with `--assert` exits `2` without creating the folder: a
+streamed export decompiles every function in turn, so an unqualified directive would
+bind to all of them. `--stream` is a `decompile-project` flag only — `decompile-all` and
+`decompile-graph` reject it as an unknown option, because each produces one document
+that does not exist until it is complete. `--jobs`'s own refusals (`--assert`,
+`--raw-image` with a pool) are unchanged.
+
+**`--jobs 1` streams too.** A serial run of more than a few dozen functions prints one
+line on stderr (`[kuna --stream] serial run; --jobs auto uses every core`) and then
+interleaves: the
+sweep is cut into sixteen steps alternating with decompile batches that grow from one
+function to sixty-four, so the first `.c` block lands after the first function and the
+`.asm` is complete within the first few hundred, after which the rest of the run is one
+uninterrupted loop. The interleave is not what makes a serial run slow — on a 3.4 MB
+PE with 3,153 functions it measured 1m50.8s streamed against 1m52.4s non-stream.
+
+**The engine caveat `--jobs` carries applies here at every job count.** A handful of
+type and string decisions are first-toucher-wins inside one process's database, so they
+follow the *set* of functions that process decompiled and the order it saw them in.
+`--stream` changes that order deliberately, including at `--jobs 1`, so a few bodies —
+and with them their variable comments and the `dat_` tail they drive — can differ from a
+non-stream export of the same binary. A non-stream `--jobs 1` run remains the definition
+of the answer.
+
+**What it buys, and what it costs.** The 147 MB stripped PIE x86-64 image the flag
+was built for — 392,814 functions — at `--jobs 14`, against a non-stream run of the
+same command on the same machine:
+
+| Step | `--stream` | non-stream |
+|---|---|---|
+| output folder exists | 0.04 s | 1,237.6 s |
+| first `.c` block readable (first `index.jsonl` line) | ~95 s | 1,237.6 s |
+| `.asm` sweep complete (1.55 GB) | ~143 s | 1,237.6 s |
+| export complete | 1,294.7 s | 1,238.3 s |
+| parent peak RSS (with its 14 workers) | 12.8 GiB (33.8 GB) | 13.0 GiB (33.9 GB) |
+
+Availability is what it buys and the tail is what it costs. The folder is worth
+reading nineteen minutes before the non-stream one exists — everything before ~95 s
+is the load, which is the same wait either way — and it finishes about 5% later
+(56 s, with the streamed arm on the busier half of a shared machine), because the
+static longest-first plan a non-stream `--jobs N` run uses is close to the best
+makespan available and entry-point-first order is not. At this size that is under a
+minute of tail for twenty minutes of head start.
 
 ## `kuna decompile-graph` — the whole program as one JSON graph
 

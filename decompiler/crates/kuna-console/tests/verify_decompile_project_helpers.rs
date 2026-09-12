@@ -21,7 +21,17 @@
 
 use std::path::PathBuf;
 
-use kuna_console::engine::bootstrap_from_object;
+use kuna_console::engine::{bootstrap_from_object, FunctionEntry};
+use kuna_console::project::{
+    build_asm, build_readme, collect_dat_addrs, decompile_entry, decompile_pulled,
+    decompile_targets, render_readme,
+    AsmPhase, DecompileOptions, FuncResult, ReadmeCounts, ReadmeFacts, ReadmeLayout,
+    StreamPhase, StreamProgress, render_readme_streaming,
+};
+use kuna_console::project_stream::{
+    asm_labels_from_entries, asm_labels_from_results, render_data_tail, render_variables_section,
+    AsmSweep,
+};
 use kuna_sleigh::loadimage::section_flags;
 
 fn repo_root() -> PathBuf {
@@ -150,4 +160,297 @@ fn export_helpers_report_sections_disasm_bytes_and_globals() {
     // honest).
     assert!(!globals.is_empty(), "expected named global data on non-stripped fauxware");
     eprintln!("global_data_symbols on fauxware ({}): {:?}", globals.len(), globals);
+}
+
+/// The entry named `name`, from the canonical inventory.
+fn entry_named(prog: &kuna_console::engine::ConsoleProgram, name: &str) -> FunctionEntry {
+    prog.function_entries_canonical()
+        .into_iter()
+        .find(|e| e.name == name)
+        .unwrap_or_else(|| panic!("{name} is not in the fauxware inventory"))
+}
+
+fn loaded_fauxware() -> Option<kuna_console::engine::ConsoleProgram> {
+    let root = repo_root();
+    let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
+    let bin = fauxware().to_str()?.to_string();
+    let mut prog = match bootstrap_from_object(&bin, "", &spec_roots) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!(
+                "verify_decompile_project_helpers: skipping (bootstrap failed, build `.sla` \
+                 with `make specs`): {}",
+                e.explain()
+            );
+            return None;
+        }
+    };
+    prog.commit_pending_analysis().expect("read symbols (analysis commit) must succeed");
+    Some(prog)
+}
+
+/// `--stream`'s scheduling frontier: the entry point reaches `main` (which it
+/// only ever names as a pointer argument to `__libc_start_main`), and `main`
+/// reaches the function it calls.
+#[test]
+fn callee_hints_carry_direct_calls_and_address_taken_callees() {
+    let Some(mut prog) = loaded_fauxware() else { return };
+
+    let start = entry_named(&prog, "_start");
+    let main = entry_named(&prog, "main");
+    let authenticate = entry_named(&prog, "authenticate");
+    let (start_vma, main_vma, auth_vma) = (
+        start.addr.get_offset(),
+        main.addr.get_offset(),
+        authenticate.addr.get_offset(),
+    );
+
+    let opts = DecompileOptions {
+        no_vars: true,
+        want_callee_hints: true,
+        ..DecompileOptions::default()
+    };
+    let mut pending = vec![start, main].into_iter();
+    let mut results: Vec<FuncResult> = Vec::new();
+    decompile_pulled(&mut prog, &opts, &mut || pending.next(), &mut |r| results.push(r));
+
+    assert_eq!(results.len(), 2, "one result per target, in pull order");
+    assert_eq!((results[0].byte_address, results[1].byte_address), (start_vma, main_vma));
+    for r in &results {
+        eprintln!("{} @ {:#x} hints: {:x?}", r.name, r.byte_address, r.callee_hints);
+        assert!(r.error.is_none(), "{} failed: {:?}", r.name, r.error);
+        let mut sorted = r.callee_hints.clone();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(sorted, r.callee_hints, "{}: hints must be sorted and deduped", r.name);
+        assert!(
+            !r.callee_hints.contains(&r.byte_address),
+            "{}: a function is never its own hint",
+            r.name
+        );
+    }
+    assert!(
+        results[0].callee_hints.contains(&main_vma),
+        "_start must reach main ({main_vma:#x}) through the __libc_start_main pointer: {:x?}",
+        results[0].callee_hints
+    );
+    assert!(
+        results[1].callee_hints.contains(&auth_vma),
+        "main must reach its direct callee authenticate ({auth_vma:#x}): {:x?}",
+        results[1].callee_hints
+    );
+
+    // Not asked for means not paid for.
+    let again = entry_named(&prog, "main");
+    let quiet = decompile_targets(&mut prog, vec![again], true, false, false);
+    assert!(quiet[0].callee_hints.is_empty(), "hints are opt-in");
+}
+
+/// The resumable sweep is the one-shot sweep: the same bytes however the budget
+/// chops it up, and the same bytes `build_asm` writes before its data tail.
+#[test]
+fn resumable_asm_sweep_matches_the_one_shot_sweep() {
+    let Some(mut prog) = loaded_fauxware() else { return };
+
+    let targets: Vec<FunctionEntry> = prog
+        .function_entries_executable()
+        .into_iter()
+        .filter(|e| ["main", "authenticate", "accepted", "rejected"].contains(&e.name.as_str()))
+        .collect();
+    assert!(!targets.is_empty(), "expected named fauxware functions");
+    let results = decompile_targets(&mut prog, targets.clone(), false, true, false);
+
+    let labels = asm_labels_from_results(&results);
+    let mut one_shot: Vec<u8> = Vec::new();
+    let mut sweep = AsmSweep::new(&prog, "fauxware", labels.clone());
+    one_shot.extend_from_slice(sweep.header_lines().as_bytes());
+    while !sweep.step(&prog, u64::MAX, &mut one_shot).unwrap() {}
+    assert!(sweep.is_done());
+
+    for budget in [1u64, 3, 64, 4096] {
+        let mut stepped: Vec<u8> = Vec::new();
+        let mut sweep = AsmSweep::new(&prog, "fauxware", labels.clone());
+        stepped.extend_from_slice(sweep.header_lines().as_bytes());
+        let mut steps = 0;
+        while !sweep.step(&prog, budget, &mut stepped).unwrap() {
+            steps += 1;
+            assert!(steps < 1_000_000, "sweep made no progress at budget {budget}");
+        }
+        assert_eq!(
+            String::from_utf8(stepped).unwrap(),
+            String::from_utf8(one_shot.clone()).unwrap(),
+            "budget {budget} changed the sweep bytes"
+        );
+        assert!(budget > 64 || steps > 1, "budget {budget} should need several steps");
+    }
+
+    // The sweep holds no borrow of the program between steps, so a serial
+    // streamed export can interleave sweeping with decompiling.
+    let mut interleaved: Vec<u8> = Vec::new();
+    let mut sweep = AsmSweep::new(&prog, "fauxware", labels.clone());
+    interleaved.extend_from_slice(sweep.header_lines().as_bytes());
+    while !sweep.step(&prog, 512, &mut interleaved).unwrap() {
+        let again = entry_named(&prog, "main");
+        let opts = DecompileOptions { no_vars: true, ..DecompileOptions::default() };
+        assert!(decompile_entry(&mut prog, again, &opts).error.is_none());
+    }
+    assert_eq!(
+        String::from_utf8(interleaved).unwrap(),
+        String::from_utf8(one_shot.clone()).unwrap(),
+        "interleaving decompiles with sweep steps changed the sweep bytes"
+    );
+
+    // `build_asm` is the same sweep plus the data tail.
+    let dat = collect_dat_addrs(&results);
+    let full = build_asm(&prog, &results, &dat, "fauxware");
+    let tail = render_data_tail(&prog, &dat);
+    assert_eq!(full, format!("{}{tail}", String::from_utf8(one_shot).unwrap()));
+
+    // Target-derived labels carry no variable comments and are address-ordered.
+    let entry_labels = asm_labels_from_entries(&prog, &targets);
+    assert!(entry_labels.iter().all(|l| l.header.is_empty()));
+    assert!(entry_labels.windows(2).all(|w| w[0].byte_address <= w[1].byte_address));
+    let mut streamed: Vec<u8> = Vec::new();
+    let mut sweep = AsmSweep::new(&prog, "fauxware", entry_labels);
+    streamed.extend_from_slice(sweep.header_lines().as_bytes());
+    while !sweep.step(&prog, 4096, &mut streamed).unwrap() {}
+    let streamed = String::from_utf8(streamed).unwrap();
+    let stripped: String = full[..full.len() - tail.len()]
+        .lines()
+        .filter(|l| !l.starts_with("; arg:") && !l.starts_with("; stack:"))
+        .map(|l| format!("{l}\n"))
+        .collect();
+    assert_eq!(
+        streamed, stripped,
+        "a header-less sweep is the export sweep with its variable comments removed"
+    );
+
+    // Those removed lines are exactly what the variables section carries.
+    let variables = render_variables_section(&results);
+    assert!(variables.starts_with("\n; --- variables ---\n"));
+    for r in &results {
+        if r.variables.is_empty() {
+            continue;
+        }
+        assert!(
+            variables.contains(&format!("; {}:  ; 0x{:x}\n", r.name, r.address)),
+            "{} missing from the variables section",
+            r.name
+        );
+    }
+    let moved: Vec<&str> = variables
+        .lines()
+        .filter(|l| l.starts_with("; arg:") || l.starts_with("; stack:"))
+        .collect();
+    let original: Vec<&str> = full[..full.len() - tail.len()]
+        .lines()
+        .filter(|l| l.starts_with("; arg:") || l.starts_with("; stack:"))
+        .collect();
+    assert_eq!(moved.len(), original.len(), "no variable comment is lost or invented");
+}
+
+/// The README a streamed export writes before its program is loaded says so,
+/// and the final one is the standard render with the streamed file list.
+#[test]
+fn streaming_readme_renders_pending_facts_then_the_streamed_layout() {
+    let facts = ReadmeFacts::pending(&fauxware(), "/tmp/fauxware", "fauxware");
+    let progress = StreamProgress {
+        phase: StreamPhase::Loading,
+        jobs: 4,
+        ..StreamProgress::default()
+    };
+    let loading = render_readme_streaming(&facts, &progress);
+    assert!(loading.starts_with("# fauxware — kuna project export\n\n**This export is still streaming**"));
+    assert!(loading.contains("| Architecture | pending |\n"));
+    assert!(loading.contains("| Entry point | pending |\n"));
+    assert!(loading.contains("| Functions | pending |\n"));
+    assert!(loading.contains("| Phase | loading |\n"));
+    assert!(loading.contains("| Disassembly | pending |\n"));
+    assert!(loading.contains("`index.jsonl`"));
+    assert!(loading.contains("`.streaming`"));
+    assert!(!loading.contains("| Error |"));
+
+    // Nothing was created, so the README describes the folder as it is: the
+    // status file and itself, with no inventory of artifacts that do not exist.
+    let failed = render_readme_streaming(
+        &facts,
+        &StreamProgress {
+            phase: StreamPhase::Failed,
+            error: Some("cannot load the binary".into()),
+            ..StreamProgress::default()
+        },
+    );
+    assert!(failed.contains("| Phase | failed |\n"));
+    assert!(failed.contains("| Error | cannot load the binary |\n"));
+    assert!(
+        !failed.contains("still streaming"),
+        "a failed export is not still streaming:\n{failed}"
+    );
+    assert!(failed.contains("failed before it wrote anything"), "{failed}");
+    assert!(failed.contains("`.streaming`"), "it has to say what IS there:\n{failed}");
+    assert!(!failed.contains("## Files"), "nothing was written to inventory:\n{failed}");
+    assert!(!failed.contains("fauxware.c"), "no .c was created:\n{failed}");
+    assert!(
+        !failed.contains("While `.streaming` exists the export is incomplete"),
+        "the guide to reading a running export does not apply:\n{failed}"
+    );
+    assert!(failed.contains("| Path | `/tmp/fauxware` |\n"), "{failed}");
+
+    // Once the artifacts exist a failure still inventories them: they are what
+    // the folder holds, however far the run got.
+    let failed_late = render_readme_streaming(
+        &facts,
+        &StreamProgress {
+            phase: StreamPhase::Failed,
+            error: Some("cannot append to fauxware.c: No space left on device".into()),
+            artifacts: true,
+            total: Some(10),
+            done: 4,
+            ..StreamProgress::default()
+        },
+    );
+    assert!(failed_late.contains("## Files"), "{failed_late}");
+    assert!(failed_late.contains("| Functions written | 4 of 10 (0 failed) |\n"));
+    assert!(failed_late.contains("While `.streaming` exists the export is incomplete"));
+
+    let Some(prog) = loaded_fauxware() else { return };
+    let facts = ReadmeFacts::snapshot(&fauxware(), "/tmp/fauxware", "fauxware", &prog);
+    assert!(facts.description.is_some());
+    assert!(facts.entry.is_some());
+    assert!(!facts.sections.is_empty());
+    let running = render_readme_streaming(
+        &facts,
+        &StreamProgress {
+            phase: StreamPhase::Decompiling,
+            jobs: 1,
+            total: Some(10),
+            done: 4,
+            failed: 1,
+            asm: AsmPhase::Sweeping,
+            error: None,
+            elapsed_s: 7,
+            artifacts: true,
+        },
+    );
+    assert!(running.contains("| Functions | 10 total, 3 decompiled, 1 failed |\n"));
+    assert!(running.contains("| Functions written | 4 of 10 (1 failed) |\n"));
+    assert!(running.contains("| Disassembly | sweeping |\n"));
+    assert!(running.contains("| Elapsed | 7s |\n"));
+
+    // The finished streamed README drops the banner and the status section; only
+    // the file list differs from a non-stream export's.
+    let results: Vec<FuncResult> = Vec::new();
+    let counts = ReadmeCounts::of(&results);
+    let streamed = render_readme(&facts, Some(counts), ReadmeLayout::Streamed);
+    let standard = render_readme(&facts, Some(counts), ReadmeLayout::Standard);
+    assert!(!streamed.contains("still streaming"));
+    assert!(!streamed.contains("## Streaming status"));
+    assert!(streamed.contains("`index.jsonl`"));
+    assert!(!standard.contains("`index.jsonl`"));
+    assert!(streamed.contains("; --- variables ---"));
+    assert_eq!(
+        standard,
+        build_readme(&fauxware(), "/tmp/fauxware", "fauxware", &prog, &results),
+        "the Standard layout is what build_readme has always written"
+    );
 }

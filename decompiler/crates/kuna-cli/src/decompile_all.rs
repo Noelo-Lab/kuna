@@ -99,7 +99,8 @@ use kuna_console::engine::{
 // The decompile loop + result shape live in the shared decompile-project core
 // (`kuna_console::project` — also reused by the `kuna_wasm` front-end).
 use kuna_console::project::{
-    decompile_targets, default_fn_budget_seconds, render_c, FuncResult,
+    decompile_pulled, decompile_targets, default_fn_budget_seconds, render_c, DecompileOptions,
+    FuncResult,
 };
 // `File::architecture()` (the ARM-discovery default, decbench) plus the
 // section/segment walks the zero-discovery diagnosis reads.
@@ -183,6 +184,9 @@ pub(crate) struct Args {
     pub(crate) jobs_proto: bool,
     pub(crate) jobs_provenance: bool,
     pub(crate) jobs_types: bool,
+    /// Report each function's callee hints — the `--stream` scheduler's
+    /// frontier, asked for by `--jobs-callees`.
+    pub(crate) jobs_callees: bool,
 }
 
 impl Args {
@@ -218,6 +222,7 @@ impl Args {
             jobs_proto: false,
             jobs_provenance: false,
             jobs_types: false,
+            jobs_callees: false,
         }
     }
 
@@ -964,17 +969,43 @@ fn run_jobs_worker(args: &Args) -> Result<(), String> {
         {
             let mut out =
                 jobs::ResultWriter::create(&dir.join(jobs::result_name(idx)).to_string_lossy())?;
-            for entry in entries {
-                let produced = decompile_targets(
-                    &mut prog,
-                    vec![entry],
-                    args.no_vars,
-                    args.jobs_proto,
-                    args.jobs_provenance,
-                );
-                for r in &produced {
-                    out.push(r)?;
-                }
+            // One pulled batch for the whole chunk, not one call per function:
+            // the callee-hint context is built once per call, and rebuilding the
+            // program's entry set per function is unaffordable on a large image.
+            // `single_target` is false because a worker never carries assertions
+            // (`--assert` and `--jobs` are exclusive), so nothing binds to it.
+            let opts = DecompileOptions {
+                no_vars: args.no_vars,
+                want_proto: args.jobs_proto,
+                want_provenance: args.jobs_provenance,
+                want_callee_hints: args.jobs_callees,
+                single_target: false,
+            };
+            let mut pending = entries.into_iter();
+            // A result file this worker cannot write is the whole chunk lost, so
+            // the pull stops at the current function rather than decompiling the
+            // rest of it into a dead file.
+            let write_error: std::cell::RefCell<Option<String>> = std::cell::RefCell::new(None);
+            decompile_pulled(
+                &mut prog,
+                &opts,
+                &mut || {
+                    if write_error.borrow().is_some() {
+                        return None;
+                    }
+                    pending.next()
+                },
+                &mut |r| {
+                    let mut slot = write_error.borrow_mut();
+                    if slot.is_none() {
+                        if let Err(e) = out.push(&r) {
+                            *slot = Some(e);
+                        }
+                    }
+                },
+            );
+            if let Some(e) = write_error.into_inner() {
+                return Err(e);
             }
         }
         jobs::ack_chunk(idx);
@@ -1052,47 +1083,71 @@ pub(crate) fn decompile_targets_pooled(
     want_types: bool,
     load_seconds: f64,
 ) -> Result<jobs::PoolOutput, String> {
-    let flatten = |entries: &[FunctionEntry]| -> Vec<jobs::TargetSpec> {
-        entries
-            .iter()
-            .map(|e| jobs::TargetSpec {
-                addr: e.addr.get_offset(),
-                space: e.addr.get_space().map(|s| s.get_name().to_string()).unwrap_or_default(),
-                name: e.name.clone(),
-                aliases: e.aliases.clone(),
-                size: e.size,
-                object_location: e.object_location.clone(),
-                provenance: e.provenance,
-                binding: e.binding.clone(),
-            })
-            .collect()
-    };
-    let specs = flatten(targets);
-    let inventory = flatten(inventory);
+    let specs = flatten_targets(targets);
+    let inventory = flatten_targets(inventory);
     jobs::run_pool(
-        &jobs::PoolConfig {
-            jobs: args.jobs,
-            jobs_auto: args.jobs_auto,
-            chunk: args.jobs_chunk,
-            binary: &args.binary,
-            mode: args.mode,
-            options: &args.options,
-            func_decls: args.func_decls.iter().map(crate::funcdecl::FuncDecl::flag_value).collect(),
-            no_vars: args.no_vars,
+        &pool_config(
+            args,
             want_proto,
             want_provenance,
             want_types,
-            max_fn_seconds: args.max_fn_seconds,
-            full_load: args.jobs_full_load,
+            /* want_callee_hints= */ false,
             load_seconds,
-            isa: args.isa.map(ArmIsa::as_str),
-            slice: args.slice.as_deref(),
-            target: args.target.as_deref(),
-            sleighpath: args.sleighpath.as_deref(),
-        },
+        ),
         &specs,
         &inventory,
     )
+}
+
+/// Flatten resolved entries into the thread- and process-crossing form
+/// (a [`FunctionEntry`]'s `Address` holds an `Rc`).
+pub(crate) fn flatten_targets(entries: &[FunctionEntry]) -> Vec<jobs::TargetSpec> {
+    entries
+        .iter()
+        .map(|e| jobs::TargetSpec {
+            addr: e.addr.get_offset(),
+            space: e.addr.get_space().map(|s| s.get_name().to_string()).unwrap_or_default(),
+            name: e.name.clone(),
+            aliases: e.aliases.clone(),
+            size: e.size,
+            object_location: e.object_location.clone(),
+            provenance: e.provenance,
+            binding: e.binding.clone(),
+        })
+        .collect()
+}
+
+/// The worker command line this run implies, resolved once so every pool —
+/// the static `--jobs` one and the `--stream` one — spawns identical workers.
+pub(crate) fn pool_config<'a>(
+    args: &'a Args,
+    want_proto: bool,
+    want_provenance: bool,
+    want_types: bool,
+    want_callee_hints: bool,
+    load_seconds: f64,
+) -> jobs::PoolConfig<'a> {
+    jobs::PoolConfig {
+        jobs: args.jobs,
+        jobs_auto: args.jobs_auto,
+        chunk: args.jobs_chunk,
+        binary: &args.binary,
+        mode: args.mode,
+        options: &args.options,
+        func_decls: args.func_decls.iter().map(crate::funcdecl::FuncDecl::flag_value).collect(),
+        no_vars: args.no_vars,
+        want_proto,
+        want_provenance,
+        want_types,
+        want_callee_hints,
+        max_fn_seconds: args.max_fn_seconds,
+        full_load: args.jobs_full_load,
+        load_seconds,
+        isa: args.isa.map(ArmIsa::as_str),
+        slice: args.slice.as_deref(),
+        target: args.target.as_deref(),
+        sleighpath: args.sleighpath.as_deref(),
+    }
 }
 
 /// Emit `text`, then report a discovery failure (stdout before stderr, as
@@ -2411,6 +2466,7 @@ mod provenance_json_tests {
             }],
             aliases: Vec::new(),
             object_location: None,
+            callee_hints: Vec::new(),
         };
 
         let rendered = dumps_indent2(&result_json("fixture", &[function], "c-language", None, None, &[]));
@@ -2546,6 +2602,7 @@ pub(crate) fn parse_args_with_filters(
     let mut jobs_proto = false;
     let mut jobs_provenance = false;
     let mut jobs_types = false;
+    let mut jobs_callees = false;
     // The three whole-binary surfaces; `functions` enumerates and never
     // decompiles, so there is nothing for a pool to do there.
     let batch = matches!(cmd, "decompile-all" | "decompile-project" | "decompile-graph");
@@ -2596,6 +2653,7 @@ pub(crate) fn parse_args_with_filters(
             "--jobs-proto" if cmd == "decompile-all" => jobs_proto = true,
             "--jobs-provenance" if cmd == "decompile-all" => jobs_provenance = true,
             "--jobs-types" if cmd == "decompile-all" => jobs_types = true,
+            "--jobs-callees" if cmd == "decompile-all" => jobs_callees = true,
             "--max-fn-seconds"
                 if cmd == "decompile-all"
                     || cmd == "decompile-project"
@@ -2803,6 +2861,7 @@ pub(crate) fn parse_args_with_filters(
             jobs_proto,
             jobs_provenance,
             jobs_types,
+            jobs_callees,
         },
         filters,
     ))

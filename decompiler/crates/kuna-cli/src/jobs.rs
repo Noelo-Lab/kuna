@@ -148,7 +148,7 @@ const QUIT_PREFIX: &str = "quit ";
 const ACK_PREFIX: &str = "done ";
 
 const SPEC_MAGIC: &[u8; 12] = b"KUNAJOBSPEC2";
-const RESULT_MAGIC: &[u8; 12] = b"KUNAJOBRES02";
+const RESULT_MAGIC: &[u8; 12] = b"KUNAJOBRES03";
 
 /// Result-stream frame kind.  One kind today; the envelope is what lets a
 /// truncated tail be dropped rather than guessed.
@@ -200,6 +200,9 @@ pub(crate) struct PoolConfig<'a> {
     /// `decompile-project` `.h` block, which is a whole-program artifact built
     /// after the loop from types the loop itself interns.
     pub(crate) want_types: bool,
+    /// Ask each worker for [`FuncResult::callee_hints`] — the `--stream`
+    /// scheduler's frontier, and the only reason a worker reports one.
+    pub(crate) want_callee_hints: bool,
     pub(crate) max_fn_seconds: u64,
     pub(crate) full_load: bool,
     /// How long the PARENT's own load took.  The stall watchdog cannot fire
@@ -487,6 +490,7 @@ impl ResultWriter {
             }
             put_u64s(&mut body, &v.addresses);
         }
+        put_u64s(&mut body, &r.callee_hints);
         self.frame(FRAME_RESULT, &body)
     }
 
@@ -579,6 +583,7 @@ fn decode_one(body: &[u8]) -> Option<FuncResult> {
             addresses,
         });
     }
+    let callee_hints = r.u64s()?;
     Some(FuncResult {
         name,
         address,
@@ -591,6 +596,7 @@ fn decode_one(body: &[u8]) -> Option<FuncResult> {
         line_mappings,
         aliases,
         object_location,
+        callee_hints,
     })
 }
 
@@ -601,6 +607,37 @@ fn decode_one(body: &[u8]) -> Option<FuncResult> {
 pub(crate) struct PoolOutput {
     pub(crate) results: Vec<FuncResult>,
     pub(crate) types: Option<String>,
+}
+
+/// How a pool run brands its stderr: `--jobs` for the static plan, `--stream`
+/// for the dynamic frontier, so every line of one run reads as one run.
+pub(crate) const JOBS_TAG: &str = "--jobs";
+pub(crate) const STREAM_TAG: &str = "--stream";
+
+/// Where a pool thread gets its next chunk.
+///
+/// The static plan a `--jobs N` run computes up front and the dynamic,
+/// result-steered frontier `--stream` schedules from are the same thing to the
+/// pool: a source of slot-index lists that eventually runs dry.  Each entry is a
+/// list of **slot indices** into the caller's target list, so output order
+/// travels independently of the order work is done in.
+pub(crate) trait ChunkSource: Sync {
+    /// The next chunk, or `None` once no work is left.  Called concurrently by
+    /// every pool thread.
+    fn next_chunk(&self) -> Option<Vec<usize>>;
+}
+
+/// The static `--jobs` plan, handed out through a shared cursor.
+struct PlannedChunks {
+    plan: Vec<Vec<usize>>,
+    cursor: AtomicUsize,
+}
+
+impl ChunkSource for PlannedChunks {
+    fn next_chunk(&self) -> Option<Vec<usize>> {
+        let idx = self.cursor.fetch_add(1, Ordering::SeqCst);
+        self.plan.get(idx).cloned()
+    }
 }
 
 /// Run `targets` across a pool of `cfg.jobs` worker processes.  `inventory` is
@@ -615,6 +652,120 @@ pub(crate) fn run_pool(
     if total == 0 {
         return Ok(PoolOutput { results: Vec::new(), types: None });
     }
+    let jobs = affordable_jobs(cfg, JOBS_TAG);
+    // Dispatch order is NOT output order: work is planned longest-first into
+    // equal-work chunks, and every result is filed by its slot index, so the
+    // merged document does not depend on how the pool scheduled anything.
+    let plan = plan_chunks(targets, cfg.chunk, jobs);
+    let workers = jobs.min(plan.len());
+    let banner = format!(
+        "[kuna --jobs] {total} functions, {} chunk(s) of {}..{}, {workers} worker process(es)",
+        plan.len(),
+        plan.iter().map(Vec::len).min().unwrap_or(0),
+        plan.iter().map(Vec::len).max().unwrap_or(0)
+    );
+    let source = PlannedChunks { plan, cursor: AtomicUsize::new(0) };
+
+    let slots: Mutex<Vec<Option<FuncResult>>> = Mutex::new((0..total).map(|_| None).collect());
+    let blocks = run_pool_with(
+        cfg,
+        targets,
+        inventory,
+        &source,
+        &PoolReport { tag: JOBS_TAG, banner, workers, done_base: 0, finish_delivered: false },
+        &|indices: &[usize], produced: Vec<FuncResult>| {
+            let mut slots = slots.lock().unwrap_or_else(|e| e.into_inner());
+            for (&slot, r) in indices.iter().zip(produced) {
+                slots[slot] = Some(r);
+            }
+        },
+    )?;
+
+    let slots = slots.into_inner().unwrap_or_else(|e| e.into_inner());
+    let results: Vec<FuncResult> = slots
+        .into_iter()
+        .zip(targets)
+        .map(|(slot, t)| slot.unwrap_or_else(|| lost_result(t, NO_RECORD)))
+        .collect();
+    warn_about_anomalies(&results, cfg.max_fn_seconds);
+    // After the anomaly warnings, which report the run itself: the type-shard
+    // disagreement is a note about one artifact.
+    let types =
+        (cfg.want_types && !blocks.is_empty()).then(|| merge_type_definitions(&blocks, JOBS_TAG));
+    Ok(PoolOutput { results, types })
+}
+
+/// The `--stream` pool: the same workers over a caller-supplied dynamic
+/// [`ChunkSource`], with each finished chunk handed to `sink` as it lands
+/// instead of being filed into a slot table.  Returns each retired worker's
+/// type block, unmerged — the streamed caller decompiles the seeds itself and
+/// merges its own factory in as one more shard.
+///
+/// `done_base` is how many targets the caller already decompiled in-process, so
+/// the progress line counts them; `workers_out` reports how many workers the
+/// memory trim actually left, which is what `.streaming` publishes.
+///
+/// The caller owns the record keeping a streamed run needs (one record per
+/// target, the anomaly warnings, the end-of-run reconciliation), because it is
+/// the same bookkeeping its own in-process results go through.
+pub(crate) fn run_pool_streaming(
+    cfg: &PoolConfig,
+    targets: &[TargetSpec],
+    inventory: &[TargetSpec],
+    source: &dyn ChunkSource,
+    done_base: usize,
+    workers_out: &AtomicUsize,
+    sink: &(dyn Fn(&[usize], Vec<FuncResult>) + Sync),
+) -> Result<Vec<String>, String> {
+    let total = targets.len();
+    if total == 0 {
+        return Ok(Vec::new());
+    }
+    let workers = affordable_jobs(cfg, STREAM_TAG).min(total);
+    workers_out.store(workers, Ordering::SeqCst);
+    let banner = format!(
+        "[kuna --stream] {total} functions, entry-point-first dynamic scheduling, \
+         {workers} worker process(es)"
+    );
+    run_pool_with(
+        cfg,
+        targets,
+        inventory,
+        source,
+        &PoolReport { tag: STREAM_TAG, banner, workers, done_base, finish_delivered: true },
+        sink,
+    )
+}
+
+/// The stderr brand of a pool run, and where its progress line starts counting.
+struct PoolReport {
+    /// `--jobs` or `--stream`: every line this run prints is `[kuna <tag>]`.
+    tag: &'static str,
+    banner: String,
+    workers: usize,
+    done_base: usize,
+    /// Does the closing line count the targets asked for, or the results that
+    /// came back?  A `--jobs` run serves every chunk it planned, so the two are
+    /// the same; a streamed one stops where its writer died, and `done: <every
+    /// target>` above the error that stopped it reads as a finished export.
+    finish_delivered: bool,
+}
+
+/// The pool itself: `report.workers` threads, each driving one worker process
+/// through chunk after chunk of `source` until it runs dry, with every finished
+/// chunk handed to `sink` as `(slot indices, results)`.  Returns one rendered
+/// user-defined type block per retired worker when `cfg.want_types` asked for
+/// them.
+fn run_pool_with(
+    cfg: &PoolConfig,
+    targets: &[TargetSpec],
+    inventory: &[TargetSpec],
+    source: &dyn ChunkSource,
+    report: &PoolReport,
+    sink: &(dyn Fn(&[usize], Vec<FuncResult>) + Sync),
+) -> Result<Vec<String>, String> {
+    let workers = report.workers;
+    let total = targets.len();
     let exe = std::env::current_exe().map_err(|e| format!("cannot locate the kuna binary: {e}"))?;
     let scratch = ScratchDir::create()?;
     if !cfg.full_load {
@@ -622,27 +773,14 @@ pub(crate) fn run_pool(
         std::fs::write(&path, encode_spec(inventory))
             .map_err(|e| format!("cannot write the worker inventory {}: {e}", path.display()))?;
     }
-    let jobs = affordable_jobs(cfg);
-    // Dispatch order is NOT output order: work is planned longest-first into
-    // equal-work chunks, and every result is filed by its slot index, so the
-    // merged document does not depend on how the pool scheduled anything.
-    let plan = plan_chunks(targets, cfg.chunk, jobs);
-    let workers = jobs.min(plan.len());
+    eprintln!("{}", report.banner);
 
-    eprintln!(
-        "[kuna --jobs] {total} functions, {} chunk(s) of {}..{}, {workers} worker process(es)",
-        plan.len(),
-        plan.iter().map(Vec::len).min().unwrap_or(0),
-        plan.iter().map(Vec::len).max().unwrap_or(0)
-    );
-
-    let cursor = AtomicUsize::new(0);
-    let completed = AtomicUsize::new(0);
+    let chunk_ids = AtomicUsize::new(0);
+    let completed = AtomicUsize::new(report.done_base);
     let retired = AtomicUsize::new(0);
     let worker_ids = AtomicUsize::new(0);
-    let slots: Mutex<Vec<Option<FuncResult>>> = Mutex::new((0..total).map(|_| None).collect());
     let type_blocks: Mutex<Vec<String>> = Mutex::new(Vec::new());
-    let progress = Progress::new(total, workers);
+    let progress = Progress::new(total, workers, report.tag);
     let start = Instant::now();
 
     std::thread::scope(|scope| {
@@ -659,18 +797,13 @@ pub(crate) fn run_pool(
                     }
                 };
                 loop {
-                    let idx = cursor.fetch_add(1, Ordering::SeqCst);
-                    let Some(indices) = plan.get(idx) else { break };
+                    let Some(indices) = source.next_chunk() else { break };
+                    let idx = chunk_ids.fetch_add(1, Ordering::SeqCst);
                     let chunk: Vec<TargetSpec> =
                         indices.iter().map(|&i| targets[i].clone()).collect();
                     let produced =
                         serve_chunk(&mut worker, cfg, &exe, scratch.path(), idx, &chunk);
-                    {
-                        let mut slots = slots.lock().unwrap_or_else(|e| e.into_inner());
-                        for (&slot, r) in indices.iter().zip(produced) {
-                            slots[slot] = Some(r);
-                        }
-                    }
+                    sink(&indices, produced);
                     // Recycling returns a worker to the memory floor a process
                     // cannot reach on its own; it costs a whole program load, so
                     // it is a ceiling rather than a rhythm.
@@ -689,20 +822,12 @@ pub(crate) fn run_pool(
         }
     });
 
-    progress.finish(total, start);
+    let delivered = completed.load(Ordering::SeqCst);
+    progress.finish(if report.finish_delivered { delivered } else { total }, start);
 
-    let slots = slots.into_inner().unwrap_or_else(|e| e.into_inner());
-    let results: Vec<FuncResult> = slots
-        .into_iter()
-        .zip(targets)
-        .map(|(slot, t)| slot.unwrap_or_else(|| lost_result(t, NO_RECORD)))
-        .collect();
-    warn_about_anomalies(&results, cfg.max_fn_seconds);
     // No block at all means no worker retired cleanly, which is a failed run, not
     // a program with no types: leave the caller its own factory to fall back on.
-    let blocks = type_blocks.into_inner().unwrap_or_else(|e| e.into_inner());
-    let types = (cfg.want_types && !blocks.is_empty()).then(|| merge_type_definitions(&blocks));
-    Ok(PoolOutput { results, types })
+    Ok(type_blocks.into_inner().unwrap_or_else(|e| e.into_inner()))
 }
 
 /// Hand one chunk to this thread's worker, starting one first if the thread has
@@ -778,6 +903,9 @@ impl Worker {
         }
         if cfg.want_types {
             cmd.arg("--jobs-types");
+        }
+        if cfg.want_callee_hints {
+            cmd.arg("--jobs-callees");
         }
         if cfg.full_load {
             cmd.arg("--jobs-full-load");
@@ -988,13 +1116,13 @@ fn stall_deadline(cfg: &PoolConfig, warm: bool) -> Option<Duration> {
 /// answer.  When they differ the parent says so and emits the ordered union,
 /// deduplicated by definition line, so the `.h` still declares everything the
 /// `.c` uses; the exact serial ordering is what `--jobs 1` is for.
-fn merge_type_definitions(blocks: &[String]) -> String {
+pub(crate) fn merge_type_definitions(blocks: &[String], tag: &str) -> String {
     let Some(first) = blocks.first() else { return String::new() };
     if blocks.iter().all(|b| b == first) {
         return first.clone();
     }
     eprintln!(
-        "[kuna --jobs] warning: worker shards recovered different user-defined types, so the .h \
+        "[kuna {tag}] warning: worker shards recovered different user-defined types, so the .h \
          type block is their union rather than the exact --jobs 1 rendering. Re-run with \
          --jobs 1 if the ordering matters."
     );
@@ -1022,9 +1150,13 @@ const STALLED: &str = "worker stalled past the per-function watchdog";
 
 /// `(watchdog trips, functions lost to a failed worker)`.
 fn count_anomalies(results: &[FuncResult]) -> (usize, usize) {
+    count_error_anomalies(results.iter().filter_map(|r| r.error.as_deref()))
+}
+
+fn count_error_anomalies<'a>(errors: impl Iterator<Item = &'a str>) -> (usize, usize) {
     let mut tripped = 0;
     let mut lost = 0;
-    for e in results.iter().filter_map(|r| r.error.as_deref()) {
+    for e in errors {
         if e.contains("budget exceeded") {
             tripped += 1;
         }
@@ -1053,17 +1185,30 @@ fn count_anomalies(results: &[FuncResult]) -> (usize, usize) {
 /// bad function must not kill a 33,000-function export — but exiting 0 without a
 /// word about it is not reporting.
 fn warn_about_anomalies(results: &[FuncResult], max_fn_seconds: u64) {
-    let (tripped, lost) = count_anomalies(results);
+    warn_about_counts(count_anomalies(results), max_fn_seconds, JOBS_TAG);
+}
+
+/// The same two warnings for a run whose results were consumed as they landed
+/// (`--stream`), which keeps only the error strings.
+pub(crate) fn warn_about_streamed_anomalies(errors: &[String], max_fn_seconds: u64) {
+    warn_about_counts(
+        count_error_anomalies(errors.iter().map(String::as_str)),
+        max_fn_seconds,
+        STREAM_TAG,
+    );
+}
+
+fn warn_about_counts((tripped, lost): (usize, usize), max_fn_seconds: u64, tag: &str) {
     if tripped > 0 && max_fn_seconds > 0 {
         eprintln!(
-            "[kuna --jobs] warning: {tripped} function(s) hit the {max_fn_seconds}s per-function \
+            "[kuna {tag}] warning: {tripped} function(s) hit the {max_fn_seconds}s per-function \
              watchdog. It is wall-clock, so heavy functions can trip it under parallel load that \
              would pass serially — re-run with a larger --max-fn-seconds (or 0) if you need them."
         );
     }
     if lost > 0 {
         eprintln!(
-            "[kuna --jobs] warning: {lost} function(s) have no result because their worker process \
+            "[kuna {tag}] warning: {lost} function(s) have no result because their worker process \
              failed (crash, OOM kill, an external signal, or the stall watchdog); they are `error` \
              records in the output. Re-run those functions, with fewer --jobs if the machine ran \
              out of memory."
@@ -1078,7 +1223,7 @@ fn warn_about_anomalies(results: &[FuncResult], max_fn_seconds: u64) {
 ///
 /// `auto` is a promise not to wreck the machine, so it yields; an explicit
 /// number is an instruction, so it is obeyed with a warning.
-fn affordable_jobs(cfg: &PoolConfig) -> usize {
+fn affordable_jobs(cfg: &PoolConfig, tag: &str) -> usize {
     let (Some(per_worker), Some(available)) =
         (worker_estimate(cfg.full_load), available_memory_bytes())
     else {
@@ -1093,7 +1238,7 @@ fn affordable_jobs(cfg: &PoolConfig) -> usize {
     let gb = |b: u64| b as f64 / (1024.0 * 1024.0 * 1024.0);
     if cfg.jobs_auto {
         eprintln!(
-            "[kuna --jobs] auto: {affordable} worker(s), not {} — one worker needs about {:.1} GB \
+            "[kuna {tag}] auto: {affordable} worker(s), not {} — one worker needs about {:.1} GB \
              here and {:.1} GB is free. Pass --jobs N to override.",
             cfg.jobs,
             gb(per_worker),
@@ -1102,7 +1247,7 @@ fn affordable_jobs(cfg: &PoolConfig) -> usize {
         return affordable;
     }
     eprintln!(
-        "[kuna --jobs] warning: {} workers at about {:.1} GB each is more than the {:.1} GB free \
+        "[kuna {tag}] warning: {} workers at about {:.1} GB each is more than the {:.1} GB free \
          on this machine; expect swapping or an OOM kill. {affordable} would fit.",
         cfg.jobs,
         gb(per_worker),
@@ -1207,6 +1352,13 @@ fn merge_chunk(chunk: &[TargetSpec], produced: Vec<FuncResult>, reason: &str) ->
         .collect()
 }
 
+/// The `error` record a target gets when nothing produced one for it — the
+/// `--stream` reconciliation's filler, classified as a lost function by
+/// [`warn_about_streamed_anomalies`] exactly as the pool's own gap is.
+pub(crate) fn missing_result(t: &TargetSpec) -> FuncResult {
+    lost_result(t, NO_RECORD)
+}
+
 fn lost_chunk(chunk: &[TargetSpec], reason: &str) -> Vec<FuncResult> {
     chunk.iter().map(|t| lost_result(t, reason)).collect()
 }
@@ -1224,6 +1376,7 @@ fn lost_result(t: &TargetSpec, reason: &str) -> FuncResult {
         line_mappings: Vec::new(),
         aliases: t.aliases.clone(),
         object_location: t.object_location.clone(),
+        callee_hints: Vec::new(),
     }
 }
 
@@ -1418,6 +1571,7 @@ pub(crate) fn ack_chunk(idx: usize) {
 struct Progress {
     state: Mutex<ProgressState>,
     total: usize,
+    tag: &'static str,
 }
 
 struct ProgressState {
@@ -1464,10 +1618,11 @@ impl ProgressState {
 }
 
 impl Progress {
-    fn new(total: usize, workers: usize) -> Self {
+    fn new(total: usize, workers: usize, tag: &'static str) -> Self {
         Self {
             state: Mutex::new(ProgressState::new(workers, Instant::now())),
             total,
+            tag,
         }
     }
 
@@ -1488,16 +1643,21 @@ impl Progress {
             .map(|seconds| format!(", ETA {}", hms(seconds)))
             .unwrap_or_default();
         eprintln!(
-            "[kuna --jobs] {done}/{} functions ({:.1}%), {} elapsed{eta}",
+            "[kuna {}] {done}/{} functions ({:.1}%), {} elapsed{eta}",
+            self.tag,
             self.total,
             frac * 100.0,
             hms(elapsed)
         );
     }
 
-    fn finish(&self, total: usize, start: Instant) {
+    /// The closing line.  `count` is the run's own answer to "how many": every
+    /// target for a plan that was served in full, and the results that actually
+    /// came back for a run that stopped early.
+    fn finish(&self, count: usize, start: Instant) {
         eprintln!(
-            "[kuna --jobs] done: {total} functions in {}",
+            "[kuna {}] done: {count} functions in {}",
+            self.tag,
             hms(start.elapsed().as_secs_f64())
         );
     }
@@ -1570,6 +1730,7 @@ mod tests {
                 section: ".text".into(),
                 offset: 0x40,
             }),
+            callee_hints: vec![0x401200, 0x401340, 0xffff_ffff_ffff_fff0],
         }
     }
 
@@ -1583,6 +1744,7 @@ mod tests {
             && a.proto == b.proto
             && a.aliases == b.aliases
             && a.object_location == b.object_location
+            && a.callee_hints == b.callee_hints
             && a.line_mappings == b.line_mappings
             && a.variables.len() == b.variables.len()
             && a.variables.iter().zip(&b.variables).all(|(x, y)| {
@@ -1631,6 +1793,7 @@ mod tests {
             line_mappings: Vec::new(),
             aliases: Vec::new(),
             object_location: None,
+            callee_hints: Vec::new(),
         };
         {
             let mut w = ResultWriter::create(&path).unwrap();
@@ -1641,6 +1804,29 @@ mod tests {
         assert_eq!(decoded.len(), 2);
         assert!(same(&decoded[0], &a));
         assert!(same(&decoded[1], &b));
+        assert_eq!(
+            decoded[0].callee_hints,
+            vec![0x401200, 0x401340, 0xffff_ffff_ffff_fff0],
+            "the --stream scheduler's frontier has to survive the wire"
+        );
+        assert!(decoded[1].callee_hints.is_empty());
+    }
+
+    /// The dynamic source is the only thing `--stream` changes about the pool:
+    /// every chunk it hands out is served once, and a drained source ends the
+    /// thread's loop.
+    #[test]
+    fn a_chunk_source_is_drained_exactly_once() {
+        let source = PlannedChunks {
+            plan: vec![vec![0, 1], vec![2], vec![3, 4, 5]],
+            cursor: AtomicUsize::new(0),
+        };
+        let mut seen: Vec<usize> = Vec::new();
+        while let Some(chunk) = source.next_chunk() {
+            seen.extend(chunk);
+        }
+        assert_eq!(seen, (0..6).collect::<Vec<_>>());
+        assert!(source.next_chunk().is_none(), "a drained source stays drained");
     }
 
     #[test]
@@ -1829,6 +2015,7 @@ mod tests {
             line_mappings: Vec::new(),
             aliases: Vec::new(),
             object_location: None,
+            callee_hints: Vec::new(),
         };
         let results = vec![
             err("budget exceeded (30s)"),
@@ -1857,6 +2044,7 @@ mod tests {
             want_proto: false,
             want_provenance: false,
             want_types: false,
+            want_callee_hints: false,
             max_fn_seconds,
             full_load: false,
             load_seconds,
@@ -1916,18 +2104,22 @@ mod tests {
     fn auto_yields_to_free_memory_and_an_explicit_count_does_not() {
         let mut c = cfg(0, 0.0);
         c.jobs = 1;
-        assert_eq!(affordable_jobs(&c), 1, "one worker fits on any machine that can run this");
+        assert_eq!(affordable_jobs(&c, JOBS_TAG), 1, "one worker fits on any machine that can run this");
 
         // Far past what any machine holds, so the trim is reached wherever this
         // runs rather than only on a loaded box.
         c.jobs = 1_000_000;
         c.jobs_auto = true;
-        let trimmed = affordable_jobs(&c);
+        let trimmed = affordable_jobs(&c, JOBS_TAG);
         assert!(trimmed >= 1, "the trim must still leave a pool: {trimmed}");
         assert!(trimmed < c.jobs, "`auto` must come down to what fits: {trimmed}");
 
         c.jobs_auto = false;
-        assert_eq!(affordable_jobs(&c), 1_000_000, "an explicit --jobs N is obeyed, not lowered");
+        assert_eq!(
+            affordable_jobs(&c, JOBS_TAG),
+            1_000_000,
+            "an explicit --jobs N is obeyed, not lowered"
+        );
     }
 
     /// Whatever the planning policy, the plan must cover every slot exactly once
@@ -1995,12 +2187,12 @@ mod tests {
     #[test]
     fn the_type_block_is_the_shards_agreement_or_their_union() {
         let a = "typedef struct s s;\nstruct s { int x; };\n".to_string();
-        assert_eq!(merge_type_definitions(&[a.clone(), a.clone()]), a);
-        assert_eq!(merge_type_definitions(&[]), "");
-        assert_eq!(merge_type_definitions(std::slice::from_ref(&a)), a);
+        assert_eq!(merge_type_definitions(&[a.clone(), a.clone()], JOBS_TAG), a);
+        assert_eq!(merge_type_definitions(&[], JOBS_TAG), "");
+        assert_eq!(merge_type_definitions(std::slice::from_ref(&a), JOBS_TAG), a);
 
         let b = "typedef struct s s;\nstruct s { int x; };\ntypedef struct t t;\n".to_string();
-        let merged = merge_type_definitions(&[a, b]);
+        let merged = merge_type_definitions(&[a, b], JOBS_TAG);
         for line in ["typedef struct s s;", "struct s { int x; };", "typedef struct t t;"] {
             assert_eq!(merged.matches(line).count(), 1, "{line} must appear exactly once");
         }

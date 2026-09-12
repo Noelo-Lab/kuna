@@ -33,6 +33,7 @@ mod litpool;
 mod optname;
 mod output;
 mod paths;
+mod project_stream;
 mod specs;
 mod strings;
 mod test;

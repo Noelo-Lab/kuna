@@ -972,6 +972,77 @@ write end its parent holds, so end of pipe means the parent is gone by any route
 including SIGKILL, and the worker removes the pool's scratch directory and exits
 rather than running on reparented to init.
 
+(kuna) **The streamed export.** `decompile-project --stream`
+(`decompiler/crates/kuna-cli/src/project_stream.rs`) is the same pool and the
+same per-function loop with the opposite contract. It is driver policy too — a
+flag rather than a `phases.toml` row, and off by default — and it exists
+because the non-stream contract has a cost the pool cannot pay down: a document
+that only exists when it is complete makes the whole run dead time for whoever
+is waiting on it, which on a 147 MB image is about twenty-one minutes (1,248 s)
+at `--jobs 14` before the first line of C. A streamed run writes the folder as it
+goes and starts from the entry point, so availability rather than a reproducible
+file order is what it optimizes.
+
+That inverts the two things the pool paragraph above rests on. First, the static
+plan is replaced by a **dynamic, result-steered scheduler**
+(`decompiler/crates/kuna-cli/src/project_stream.rs (Scheduler)`), handed to the
+same worker threads through the chunk-source seam
+(`decompiler/crates/kuna-cli/src/jobs.rs (ChunkSource, run_pool_streaming)`)
+that `run_pool`'s longest-first plan now also goes through: seeds (the image
+entry point and `main`) first, then the frontier their results open up, then the
+remaining targets in address order. The steering comes from the results
+themselves because the alternative does not fit the budget — building the static
+call graph on that image costs ~85 s, which is the wait the flag exists to
+remove — so each finished function reports the entries it reaches
+(`decompiler/crates/kuna-console/src/project.rs (FuncResult::callee_hints)`) and
+the scheduler intersects them with the resolved target set. Those hints are a
+**scheduling hint and not an edge model**: they are never serialized into any
+artifact, they are not what `kuna decompile-graph` or `--reachable-from`
+traverse — that is `decompiler/crates/kuna-cli/src/decompile_all.rs
+(CallGraph::callees_of)`, built from the reference index — and intersecting
+rather than unioning is what keeps an `--addr`/`--functions` export from growing
+callees it was not asked for. Second, the contract is **deliberately
+observable**: the `.c` is in decompile order, and under `--jobs N` its
+interleaving is worker completion order and is not reproducible. That is the
+feature, not a leak — a reader gets the entry point's neighbourhood in seconds —
+and it is paid for by `index.jsonl`, the append-only address-to-offset index
+written after each block, which gives back the random access the address
+ordering used to provide. The function set, the prototypes and the disassembly
+are still what the same selection produces serially. The engine's own
+first-toucher dependence rides along with the order, so a streamed run can
+differ from a non-stream one in the same handful of bodies the pool already can,
+at every job count including `--jobs 1`.
+
+The arrangement is forced by the same `!Send` reality the pool works around, one
+level in. Nothing derived from the program crosses a thread: the targets are
+flattened to plain specs and the README's program facts snapshotted on the main
+thread before the scope opens (`decompiler/crates/kuna-console/src/project.rs
+(ReadmeFacts::snapshot)`), so what the pool thread sees is data. The **main
+thread keeps the program** and runs the disassembly sweep on it, one resumable
+step at a time (`decompiler/crates/kuna-console/src/project_stream.rs
+(AsmSweep)`), which is also why the variable comments a non-stream `.asm` prints
+under each label move to their own appended section: the sweep completes long
+before the variables exist. A separate **writer thread owns every text
+artifact** the results feed — the `.c`, the `.h`, `index.jsonl`, `README.md` and
+the `.streaming` status file — and drives them off its own clock rather than off
+the result stream, so a run whose functions land in bursts still reports at a
+steady rate. At `--jobs 1` there is no pool thread and the main thread
+alternates decompile batches with sweep steps instead, so a serial streamed run
+starts producing C after its first function and still finishes its `.asm` early.
+
+Owning every artifact also makes the writer the run's failure oracle. A write it
+cannot complete means nothing a reader polls is advancing, so it records its own
+error, publishes the `failed` status itself and raises a stop flag that the
+serial pull closure and the scheduler both read: each producer finishes the
+function or chunk it is on and stops, and the run reports the writer's error
+rather than the closed channel its producers saw. What a failed run leaves behind
+follows the same rule from the other end — until this run has truncated an
+artifact of its own, the folder still describes the previous export, so a
+failure before that point restores its `README.md` and leaves the status file as
+the only trace. Progress writes are the exception in both directions: the status
+file and the running README report on the export rather than being it, so a
+failed rewrite of either warns and is retried on the next tick.
+
 (kuna) **Declared function boundaries.** Every function boundary the engine knows
 is derived: discovery supplies the entries, and the extent is the
 address-contiguous clip `[entry, next_entry)` over an unbounded flow follow
