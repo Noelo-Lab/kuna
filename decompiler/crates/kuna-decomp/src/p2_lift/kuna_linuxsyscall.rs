@@ -1,5 +1,6 @@
-//! **linuxsyscall** — render a 32-bit Linux `int 0x80` as the syscall it is,
-//! instead of an indirect call through the `swi` userop.
+//! **linuxsyscall** — render a Linux i386-ABI `int 0x80` as the syscall it is,
+//! instead of an indirect call through the `swi` userop. This includes the
+//! compatibility entry path from an x86-64 image.
 //!
 //! ```text
 //!   v364 = 0x16b;                          v364 = 0x16b;
@@ -18,10 +19,11 @@
 //! ```
 //!
 //! That is the honest lifting of a *general* software interrupt — SLEIGH has no
-//! way to know which operating system is behind the vector. On 32-bit Linux the
-//! vector is fixed (`0x80`) and the ABI is fixed too: the syscall number is in
-//! `EAX` and the arguments are `EBX, ECX, EDX, ESI, EDI, EBP` in that order, with
-//! the result back in `EAX`. Left alone, every syscall in the binary renders as
+//! way to know which operating system is behind the vector. Linux fixes both
+//! the vector (`0x80`) and the i386 ABI, including for the compatibility entry
+//! from long mode: the syscall number is in `EAX` and the arguments are `EBX`,
+//! `ECX`, `EDX`, `ESI`, `EDI`, `EBP` in that order, with the result back in
+//! `EAX`. Left alone, every such syscall in the binary renders as
 //! `(*(void *)swi(0x80))();` — a call through a pointer nothing assigns, with the
 //! number and the arguments erased: the register writes that set them up have no
 //! reader left, so the dead-code fixpoint collects them. On a hand-written
@@ -61,18 +63,21 @@
 //!
 //!   1. **The number must be a constant reaching the call locally.** The backward
 //!      scan starts at the `CALLOTHER` and walks its basic block; it accepts only
-//!      a full-width `EAX = <constant>` and stops at the first op that writes any
-//!      part of `EAX`, at any call or branch, and at the top of the block. A
+//!      a constant write to the whole storage supplying `EAX` (including the
+//!      zero-extending full-`RAX` form SLEIGH emits in long mode) and stops at
+//!      the first other write to any part of `EAX`, at any call or branch, and
+//!      at the top of the block. A
 //!      syscall number computed at run time, or set before a loop, is declined.
 //!   2. **The number must be in [`SYSCALL_TABLE`].** The table is derived from the
 //!      installed `asm/unistd_32.h` and the section-2 man pages (see below); a
 //!      number with no vetted entry — an out-of-range number, a private vendor
 //!      call, a syscall whose i386 entry point takes a different register set
 //!      than its documented wrapper — is declined.
-//!   3. **The language must be x86-32.** Every ABI register must resolve and the
-//!      default code space must be 4 bytes wide, so an x86-64 image (where `EAX`
-//!      resolves as a sub-register but `int 0x80` is not the syscall path) and
-//!      every non-x86 language are excluded.
+//!   3. **The language must be x86-32 or x86-64.** Every ABI register must
+//!      resolve at the language's full register width. In long mode `int 0x80`
+//!      enters Linux's i386 compatibility path, so the low four-byte storages
+//!      of `RAX, RBX, RCX, RDX, RSI, RDI, RBP` retain the i386 numbering and
+//!      argument order. Every non-x86 language is excluded.
 //!
 //! # The table
 //!
@@ -114,15 +119,20 @@ use crate::funcdata::Funcdata;
 /// range; 4131 was the previous max.
 pub const ELEM_LINUXSYSCALL: ElementId = ElementId::new("linuxsyscall", 4134);
 
-/// The interrupt vector 32-bit Linux reserves for the syscall entry point.
+/// The interrupt vector Linux reserves for the i386 syscall entry point.
 pub const LINUX_SYSCALL_VECTOR: u64 = 0x80;
 
 /// The i386 syscall argument registers, in ABI order; the number arrives in
 /// `EAX` and the result comes back in it.
 pub const ARG_REGISTERS: [&str; 6] = ["EBX", "ECX", "EDX", "ESI", "EDI", "EBP"];
+/// Full x86-64 registers whose low four-byte storage carries the compatibility
+/// syscall arguments. Resolving the full registers keeps the language probe
+/// honest even when sub-register names are not present in a lazy cache.
+const X64_ARG_REGISTERS: [&str; 6] = ["RBX", "RCX", "RDX", "RSI", "RDI", "RBP"];
 /// The register carrying the syscall number on the way in and the result on the
 /// way out.
 pub const NUM_REGISTER: &str = "EAX";
+const X64_NUM_REGISTER: &str = "RAX";
 
 /// The name prefix the synthesized call carries.
 ///
@@ -132,7 +142,7 @@ pub const NUM_REGISTER: &str = "EAX";
 /// not being made.
 pub const SYSCALL_NAME_PREFIX: &str = "sys_";
 
-/// `(number, name, argument count)` for the 32-bit Linux syscall entry point,
+/// `(number, name, argument count)` for the Linux i386 syscall entry point,
 /// sorted by number.  Provenance and the vetting rules are in the module header;
 /// the table is deliberately a subset of the syscall space, and a number that is
 /// not in it is declined rather than guessed.
@@ -480,22 +490,26 @@ pub fn syscall_entry(num: u32) -> Option<(&'static str, usize)> {
         .map(|i| (SYSCALL_TABLE[i].1, SYSCALL_TABLE[i].2 as usize))
 }
 
-/// The storage the i386 syscall ABI uses: the number/result register and the six
-/// argument registers, in ABI order.
+/// The low four-byte storage the i386 syscall ABI uses: the number/result
+/// register and the six argument registers, in ABI order.
 pub struct SyscallAbi {
     /// `EAX` — the syscall number on the way in, the result on the way out.
     pub num: Address,
     /// `EBX, ECX, EDX, ESI, EDI, EBP`.
     pub args: Vec<Address>,
+    /// Width of the language's containing general-purpose registers. In long
+    /// mode a 32-bit write is normalized into an 8-byte zero-extending write.
+    full_register_size: int4,
 }
 
 /// Resolve the i386 syscall ABI against this language, or `None` when the
-/// language is not x86-32.
+/// language is not x86-32/x86-64.
 ///
-/// Every ABI register must resolve at its full 32-bit width and the default code
-/// space must be 4 bytes wide.  x86-64 resolves `EAX`..`EBP` as sub-registers,
-/// so the address-size test is what excludes it — there `int 0x80` is a
-/// compatibility path, not the syscall ABI this models.
+/// On x86-32 every ABI register must resolve at its full 32-bit width. On
+/// x86-64 the full `RAX`..`RBP` registers must resolve at eight bytes, then this
+/// returns their low four-byte storages at the same offsets. Linux `int 0x80`
+/// in long mode enters the i386 compatibility path: it uses the i386 table and
+/// low 32-bit register lanes, not the native x86-64 `SYSCALL` ABI.
 ///
 /// The lookup is the speculative probe, so in ghidra mode it sees only names
 /// the register cache already holds; these seven are there because every
@@ -504,23 +518,26 @@ pub struct SyscallAbi {
 /// `kuna-ghidra/tests/register_probe_e2e.rs`).
 pub fn resolve_abi(data: &Funcdata) -> Option<SyscallAbi> {
     let manage = data.get_arch().manage();
-    if manage.get_default_code_space()?.get_addr_size() != 4 {
-        return None;
-    }
+    let (num_name, arg_names, register_size) =
+        match manage.get_default_code_space()?.get_addr_size() {
+            4 => (NUM_REGISTER, &ARG_REGISTERS, 4),
+            8 => (X64_NUM_REGISTER, &X64_ARG_REGISTERS, 8),
+            _ => return None,
+        };
     let lookup = manage.register_lookup()?;
     let reg = |nm: &str| -> Option<Address> {
         let st = lookup.probe_register(nm)?;
-        if st.size != 4 {
+        if st.size != register_size {
             return None;
         }
         Some(Address::new(st.space.clone()?, st.offset))
     };
-    let num = reg(NUM_REGISTER)?;
-    let mut args = Vec::with_capacity(ARG_REGISTERS.len());
-    for nm in ARG_REGISTERS {
+    let num = reg(num_name)?;
+    let mut args = Vec::with_capacity(arg_names.len());
+    for nm in arg_names {
         args.push(reg(nm)?);
     }
-    Some(SyscallAbi { num, args })
+    Some(SyscallAbi { num, args, full_register_size: register_size as int4 })
 }
 
 /// One recognized `int 0x80` site.
@@ -546,14 +563,41 @@ fn overlaps(a: &Address, asz: int4, b: &Address, bsz: int4) -> bool {
     }
 }
 
+/// Decode the constant written to the syscall-number storage.
+///
+/// A four-byte write must fit exactly in the i386 lane.  Long mode additionally
+/// permits the eight-byte zero-extending `RAX` COPY produced by SLEIGH and takes
+/// only its low lane.  Mismatched COPY widths and every other register slice are
+/// rejected.
+fn constant_syscall_number(
+    value: u64,
+    source_size: int4,
+    output_size: int4,
+    full_register_size: int4,
+) -> Option<u32> {
+    if source_size != output_size {
+        return None;
+    }
+    if output_size == 4 {
+        return u32::try_from(value).ok();
+    }
+    if full_register_size == 8 && output_size == 8 {
+        return Some(value as u32);
+    }
+    None
+}
+
 /// The constant `EAX` carries at `from`, by a backward walk of `from`'s basic
 /// block.
 ///
 /// Stops — declining — at the first op that writes any part of `EAX` unless that
-/// op is a full-width `EAX = <constant>`, at any call or branch (whose effect on
-/// `EAX` is not visible here), and at the top of the block.  Pre-SSA there is no
-/// def-use edge to follow, which is the point: this is a local, syntactic read of
-/// the instruction sequence the assembler wrote, not a dataflow query.
+/// op is a full-width `EAX = <constant>` COPY. In long mode SLEIGH normalizes a
+/// 32-bit write into a zero-extending full-`RAX` COPY, so that exact constant
+/// form is accepted too and truncated to the low lane the compatibility ABI
+/// reads. The walk also stops at any call or branch (whose effect on `EAX` is
+/// not visible here), and at the top of the block. Pre-SSA there is no def-use
+/// edge to follow, which is the point: this is a local, syntactic read of the
+/// instruction sequence the assembler wrote, not a dataflow query.
 fn syscall_number_before(data: &Funcdata, from: OpId, abi: &SyscallAbi) -> Option<u32> {
     let mut cur = data.op_previous_op(from)?;
     loop {
@@ -573,7 +617,7 @@ fn syscall_number_before(data: &Funcdata, from: OpId, abi: &SyscallAbi) -> Optio
             if overlaps(out.get_addr(), out.get_size(), &abi.num, 4) {
                 if op.code() != OpCode::CPUI_COPY
                     || out.get_addr() != &abi.num
-                    || out.get_size() != 4
+                    || (out.get_size() != 4 && out.get_size() != abi.full_register_size)
                 {
                     return None;
                 }
@@ -581,7 +625,12 @@ fn syscall_number_before(data: &Funcdata, from: OpId, abi: &SyscallAbi) -> Optio
                 if !src.is_constant() {
                     return None;
                 }
-                return u32::try_from(src.get_offset()).ok();
+                return constant_syscall_number(
+                    src.get_offset(),
+                    src.get_size(),
+                    out.get_size(),
+                    abi.full_register_size,
+                );
             }
         }
         cur = data.op_previous_op(cur)?;
@@ -689,8 +738,8 @@ fn rewrite(data: &mut Funcdata, site: &Site, abi: &SyscallAbi) -> bool {
     true
 }
 
-/// (kuna) `ActionLinuxSyscall` — name the 32-bit Linux `int 0x80` sites
-/// (option `linuxsyscall`).
+/// (kuna) `ActionLinuxSyscall` — name Linux i386-ABI `int 0x80` sites, including
+/// the x86-64 compatibility path (option `linuxsyscall`).
 pub struct ActionLinuxSyscall {
     base: ActionBase,
 }

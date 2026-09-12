@@ -656,10 +656,11 @@ loaded from its own `number` parameter, and the whole body comes out as
 `syscall(); return number;`. The return value is not invented: it is correct copy
 propagation over an operation kuna has been told writes nothing, which is what
 makes the emitted C a false statement about the program rather than an incomplete
-one. `linuxsyscall` above cannot be extended to cover it — there is no `CALLIND`
-to retarget, the number is a runtime value rather than a constant to look up in
-the syscall table, and it is gated to x86-32 — so the fix has to be
-number-independent. Decision rule: a `CALLOTHER` whose only input is the user-op
+one. `linuxsyscall` above cannot cover the native instruction — there is no
+`CALLIND` to retarget and the number is a runtime value rather than a constant
+to look up in the syscall table. Its x86-64 support is only for the distinct
+`INT 0x80` compatibility path, so this fix has to be number-independent.
+Decision rule: a `CALLOTHER` whose only input is the user-op
 index, with no output, whose index is one the architecture resolved for the name
 `syscall` into the ArchSeam (`architecture.rs`, alongside `simd_shuffle_userops`,
 because the boundary `ArchContext` carries no userop table), is the instruction.
@@ -1288,10 +1289,11 @@ system is behind the vector. Left alone it renders as
 is not only the missing name. The call has no recovered parameters, so the
 register writes that set the syscall up have no reader, and the ordinary
 dead-code fixpoint collects them: on a hand-written `int 0x80` program the
-number *and* every argument leave the output together. On 32-bit Linux both the
-vector and the ABI are fixed — the number is in `EAX`, the arguments are `EBX`,
-`ECX`, `EDX`, `ESI`, `EDI`, `EBP` in that order, the result comes back in `EAX`
-— so the information is recoverable, and this pass recovers it.
+number *and* every argument leave the output together. The Linux i386 ABI is
+fixed both in a 32-bit image and through the compatibility entry from long mode:
+the number is in `EAX`, the arguments are `EBX`, `ECX`, `EDX`, `ESI`, `EDI`,
+`EBP` in that order, and the result comes back in `EAX`. In particular syscall
+number 1 remains i386 `exit`, not native x86-64 `write`.
 
 **Recognition is structural, not dataflow.** The Action runs in the pre-SSA
 window (registered in `infra/universalaction.rs (universal_sched)` immediately
@@ -1304,10 +1306,13 @@ that CALLIND's target. Nothing else in the x86 lifting has that shape.
 
 **The number comes from a bounded backward walk.**
 `kuna_linuxsyscall.rs (syscall_number_before)` walks the CALLOTHER's basic block
-backwards and accepts exactly one thing: a full-width `EAX = <constant>` COPY.
-It stops — declining — at the first op that writes any part of `EAX` by any
-other means, at any call or branch (whose effect on `EAX` it cannot see), and at
-the top of the block. `xor %eax,%eax; inc %eax; int $0x80` is therefore
+backwards and accepts exactly one thing: a constant COPY into the whole storage
+that supplies `EAX`. In x86-32 that is the four-byte `EAX` storage. In long mode
+SLEIGH normalizes `MOV EAX,imm32` into an eight-byte, zero-extending constant
+COPY to `RAX`; the scan accepts that exact form and takes its known low four
+bytes. It stops — declining — at the first op that writes any part of `EAX` by
+any other means, at any call or branch (whose effect on `EAX` it cannot see),
+and at the top of the block. `xor %eax,%eax; inc %eax; int $0x80` is therefore
 *declined*, not folded: the fold would need the constant propagation that only
 exists after SSA, and by then the argument setup this pass exists to save has
 already been collected.
@@ -1352,19 +1357,22 @@ Two properties of the synthesized prototype are load-bearing:
   every syscall and shifts every later `ESP`-relative reference in the function.
   With `extrapop == 0` `ActionExtraPopSetup` emits no adjustment at all.
 
-**The language gate** is `kuna_linuxsyscall.rs (resolve_abi)`: every ABI
-register must resolve at its full 32-bit width and the default code space must
-be 4 bytes wide. x86-64 resolves `EAX`..`EBP` as sub-registers, so the
-address-size test is what excludes it — there `int 0x80` is a compatibility
-path, not the syscall ABI this models — and every non-x86 language is excluded
-because the register names do not resolve. That resolution is the speculative
-probe of §0, not the exact lookup, so in ghidra mode the gate sees only names
-the register cache already holds; the seven it needs are there because the
-compiler spec's `<prototype>` elements — which name all of them — are decoded
-during `registerProgram`, before the first function is lifted.
+**The language gate** is `kuna_linuxsyscall.rs (resolve_abi)`. A four-byte code
+space must expose the full `EAX`..`EBP` registers at four bytes. An eight-byte
+code space must expose the full `RAX`..`RBP` registers at eight bytes; the pass
+then uses the low four-byte storage at each same offset, which is the i386
+compatibility ABI the kernel reads. This is deliberately not the native
+x86-64 `SYSCALL` ABI (`RAX`, then `RDI`, `RSI`, `RDX`, `R10`, `R8`, `R9`) and
+does not match that instruction's different CALLOTHER-only lift. Every non-x86
+language is excluded because the register set does not resolve. Resolution is
+the speculative probe of §0, not the exact lookup, so in ghidra mode the gate
+sees only names the register cache already holds; the seven it needs are there
+because the compiler spec's `<prototype>` elements are decoded during
+`registerProgram`, before the first function is lifted.
 
 **Why it ships off.** Naming the call asserts that the operating system behind
-vector `0x80` is Linux. That is true of essentially every 32-bit x86 ELF, but
+vector `0x80` is Linux. That is true of essentially every x86 Linux ELF that
+uses this entry, but
 the vector alone does not prove it (on the original IBM PC the `0x80`–`0xF0`
 range was reserved for BASIC) and the engine has no OS/ABI channel it could
 consult at this seam. So the assertion is left to the operator, and

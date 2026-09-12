@@ -5,7 +5,24 @@
 //! pinning here is the table the rewrite trusts, since a wrong arity is the one
 //! way this feature can state something false.
 
-use super::{syscall_entry, ARG_REGISTERS, SYSCALL_TABLE};
+use super::{constant_syscall_number, syscall_entry, ARG_REGISTERS, SYSCALL_TABLE};
+
+#[test]
+fn syscall_number_widths_are_exact_and_the_compat_lane_is_low_32_bits() {
+    assert_eq!(constant_syscall_number(1, 4, 4, 4), Some(1));
+    assert_eq!(constant_syscall_number(u32::MAX as u64, 4, 4, 4), Some(u32::MAX));
+    assert_eq!(constant_syscall_number(u32::MAX as u64 + 1, 4, 4, 4), None);
+
+    assert_eq!(constant_syscall_number(0x1234_5678_0000_0001, 8, 8, 8), Some(1));
+    assert_eq!(constant_syscall_number(u64::MAX, 8, 8, 8), Some(u32::MAX));
+
+    // A malformed COPY, an arbitrary slice, and an eight-byte i386 write are
+    // all refusals rather than implicit truncations.
+    assert_eq!(constant_syscall_number(1, 4, 8, 8), None);
+    assert_eq!(constant_syscall_number(1, 8, 4, 8), None);
+    assert_eq!(constant_syscall_number(1, 2, 2, 8), None);
+    assert_eq!(constant_syscall_number(1, 8, 8, 4), None);
+}
 
 #[test]
 fn table_is_sorted_and_within_the_abi_register_budget() {
