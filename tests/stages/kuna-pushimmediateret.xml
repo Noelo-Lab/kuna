@@ -1,0 +1,42 @@
+<decompilertest>
+<!--
+    pushimmediateret: recover a one-store PUSH-immediate/RET as a terminal
+    branch, without defining the encrypted target as a function.
+
+    Layout (x86-32):
+      push_immediate_ret @ 0x100000:
+        call unpacker
+        push 0x200000
+        ret
+      unpacker @ 0x100020:
+        mov eax,0x1111
+        ret
+      0x200000:
+        deliberately unmapped, like an encrypted runtime target the static
+        flow follower must not decode as a function
+
+    Pass 1 (off) pins the bug: the unpacker call remains and the pushed target
+    dies with RETURN. Pass 2 (on) proves the target appears as an indirect tail
+    transfer. The target match includes the complete C statement, so a warning
+    containing only the address cannot satisfy it. The C printer spells a
+    terminal branch to an untyped destination as an indirect tail call.
+-->
+<binaryimage arch="x86:LE:32:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">e81b0000006800002000c3</bytechunk>
+<bytechunk space="ram" offset="0x100020" readonly="true">b811110000c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="push_immediate_ret"/>
+<symbol space="ram" offset="0x100020" name="unpacker"/>
+</binaryimage>
+<script>
+  <com>option pushimmediateret off</com>
+  <com>lo fu push_immediate_ret</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option pushimmediateret on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="PUSHIMMEDIATERET #1: both arms preserve the unpacker call" min="2" max="2">unpacker\(\);</stringmatch>
+<stringmatch name="PUSHIMMEDIATERET #2: only option on emits the complete tail-transfer statement" min="1" max="1">\(\*\(code \*\)0x200000\)\(\);</stringmatch>
+</decompilertest>

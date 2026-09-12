@@ -23,6 +23,12 @@
 //! fall-through push, and an unrelated-memory store cannot satisfy that pair; a
 //! LOAD/STORE pair must also name the same p-code memory space. A real `call` or
 //! unsupported `CALLOTHER` clears provenance before the walk continues.
+//!
+//! [`kuna_push_immediate_ret`] recognizes the distinct one-store tail-transfer
+//! shape: RETURN pops an immediate written by this run, with no adjacent in-run
+//! stack store. The exclusion keeps `push continuation; push target; ret` under
+//! `entryretdispatch`; a one-store match is seeded as BRANCH and has no
+//! fall-through.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -193,6 +199,12 @@ struct StoreFact {
     location: MemoryLocation,
     size: u32,
     value: Option<TrackedValue>,
+}
+
+#[derive(Default)]
+struct ReturnMatch {
+    own_fallthrough: bool,
+    immediate_tail: Option<uintb>,
 }
 
 /// Minimal, conservative raw-p-code provenance for the stack-directed idiom.
@@ -403,40 +415,73 @@ impl ReturnProvenance {
             .map(|_| TrackedValue::FromStore(location, size))
     }
 
-    fn is_own_fallthrough_pair(&self, returned: &VarnodeData, fallthrough: uintb) -> bool {
+    fn popped_store(&self, returned: &VarnodeData) -> Option<&StoreFact> {
         let Some(TrackedValue::FromStore(popped, size)) = self.value(returned) else {
-            return false;
+            return None;
         };
-        let Some(continuation_offset) = popped.address.offset.checked_add(i128::from(size)) else {
-            return false;
-        };
+        let popped_offset = popped.address.offset.checked_add(i128::from(size))?;
         // RETURN must have popped this slot: x86 RET advances the same register
         // that addressed its LOAD by exactly the loaded word before emitting
         // CPUI_RETURN. This rules out a coincidental load through another base.
         let popped_stack = TrackedValue::Relative(RelativeAddress {
             base: popped.address.base,
-            offset: continuation_offset,
+            offset: popped_offset,
         });
         if self.values.get(&popped.address.base) != Some(&popped_stack) {
-            return false;
+            return None;
         }
+        self.stores
+            .iter()
+            .rev()
+            .find(|fact| fact.location == popped && fact.size == size)
+    }
+
+    fn is_own_fallthrough_pair(&self, returned: &VarnodeData, fallthrough: uintb) -> bool {
+        let Some(popped_fact) = self.popped_store(returned) else {
+            return false;
+        };
+        let Some(continuation_offset) = popped_fact
+            .location
+            .address
+            .offset
+            .checked_add(i128::from(popped_fact.size))
+        else {
+            return false;
+        };
         self.stores.iter().any(|fact| {
-            fact.location.space == popped.space
-                && fact.location.address.base == popped.address.base
+            fact.location.space == popped_fact.location.space
+                && fact.location.address.base == popped_fact.location.address.base
                 && fact.location.address.offset == continuation_offset
-                && fact.size == size
+                && fact.size == popped_fact.size
                 && fact.value == Some(TrackedValue::Constant(fallthrough))
         })
     }
 
-    /// Apply one instruction's p-code and return whether its RETURN consumes a
-    /// store paired with its own fall-through continuation.
-    fn apply(&mut self, ops: &[RawOp], fallthrough: uintb) -> bool {
+    fn immediate_tail_target(&self, returned: &VarnodeData) -> Option<uintb> {
+        let popped = self.popped_store(returned)?;
+        // One pushed word is a tail transfer. Any other live store through the
+        // same affine stack base could be a continuation or argument frame and
+        // belongs to a different classifier.
+        if self.stores.iter().any(|fact| {
+            fact.location.space == popped.location.space
+                && fact.location.address.base == popped.location.address.base
+                && (fact.location != popped.location || fact.size != popped.size)
+        }) {
+            return None;
+        }
+        match popped.value {
+            Some(TrackedValue::Constant(target)) => Some(target),
+            _ => None,
+        }
+    }
+
+    /// Apply one instruction's p-code and classify any RETURN it contains.
+    fn apply(&mut self, ops: &[RawOp], fallthrough: uintb) -> ReturnMatch {
         // A RETURN source must be loaded by this instruction, not be a stale
         // value retained from an earlier load in the straight-line run.
         self.values
             .retain(|_, value| !matches!(value, TrackedValue::FromStore(_, _)));
-        let mut matched = false;
+        let mut returned = None;
         for op in ops {
             match op.opcode {
                 OpCode::CPUI_COPY => {
@@ -469,14 +514,21 @@ impl ReturnProvenance {
                 // when it has no output. Treat it as a full provenance barrier.
                 OpCode::CPUI_CALLOTHER => self.clear(),
                 OpCode::CPUI_RETURN => {
-                    matched = op.ins.first().is_some_and(|returned| {
-                        self.is_own_fallthrough_pair(returned, fallthrough)
-                    });
+                    returned = op.ins.first().cloned();
                 }
                 _ => self.set(op.out.as_ref(), None),
             }
         }
-        matched
+        let own_fallthrough = returned
+            .as_ref()
+            .is_some_and(|returned| self.is_own_fallthrough_pair(returned, fallthrough));
+        let immediate_tail = returned
+            .as_ref()
+            .and_then(|returned| self.immediate_tail_target(returned));
+        ReturnMatch {
+            own_fallthrough,
+            immediate_tail,
+        }
     }
 
     fn clear(&mut self) {
@@ -520,7 +572,7 @@ fn chain_of(
             provenance.clear();
             false
         } else {
-            provenance.apply(&d.ops, next.get_offset())
+            provenance.apply(&d.ops, next.get_offset()).own_fallthrough
         };
         match d.leave {
             Leave::Return => {
@@ -559,6 +611,48 @@ pub fn kuna_entry_chain_sites(
         return Vec::new();
     }
     chain_of(trans, entry, max_sites, max_insns)
+}
+
+/// A proven one-immediate `push; ret` tail transfer reached from `entry`.
+///
+/// The destination is returned for diagnostics/tests, but the decompile drive
+/// reclassifies the existing RETURN op as BRANCH and lets its own input carry
+/// the target. This never creates or decodes a target function.
+pub fn kuna_push_immediate_ret(
+    trans: &dyn Translate,
+    entry: &Address,
+    max_insns: usize,
+) -> Option<(Address, uintb)> {
+    let mut provenance = ReturnProvenance::default();
+    let mut seen: BTreeSet<uintb> = BTreeSet::new();
+    let mut cur = entry.clone();
+    for _ in 0..max_insns {
+        if !seen.insert(cur.get_offset()) {
+            return None;
+        }
+        let d = decode_one(trans, &cur)?;
+        let next = &cur + d.len as i64;
+        let matched = if d.call {
+            provenance.clear();
+            ReturnMatch::default()
+        } else {
+            provenance.apply(&d.ops, next.get_offset())
+        };
+        match d.leave {
+            Leave::Return => {
+                // The adjacent-store call form is owned by entryretdispatch,
+                // even when its target store happens to be immediate.
+                if matched.own_fallthrough {
+                    return None;
+                }
+                return matched.immediate_tail.map(|target| (cur, target));
+            }
+            Leave::Jump(target) => cur = target,
+            Leave::FallThru => cur = next,
+            Leave::Opaque => return None,
+        }
+    }
+    None
 }
 
 /// The OTHER links of the RET-call chain the override at `at` names, in flow
@@ -717,17 +811,63 @@ mod tests {
     fn load_and_continuation_must_share_the_exact_memory_space() {
         let fallthrough = 0x804_900c;
         let (mut same, same_ops) = prepared(3, 3, fallthrough);
-        assert!(same.apply(&ret_ops(&same_ops, false), fallthrough));
+        assert!(
+            same.apply(&ret_ops(&same_ops, false), fallthrough)
+                .own_fallthrough
+        );
 
         let (mut crossed, crossed_ops) = prepared(3, 4, fallthrough);
-        assert!(!crossed.apply(&ret_ops(&crossed_ops, false), fallthrough));
+        assert!(
+            !crossed
+                .apply(&ret_ops(&crossed_ops, false), fallthrough)
+                .own_fallthrough
+        );
     }
 
     #[test]
     fn callother_between_setup_and_return_clears_all_provenance() {
         let fallthrough = 0x804_900c;
         let (mut provenance, parts) = prepared(3, 3, fallthrough);
-        assert!(!provenance.apply(&ret_ops(&parts, true), fallthrough));
+        let matched = provenance.apply(&ret_ops(&parts, true), fallthrough);
+        assert!(!matched.own_fallthrough);
+        assert_eq!(matched.immediate_tail, None);
         assert!(provenance.stores.is_empty());
+    }
+
+    #[test]
+    fn one_immediate_stack_store_is_a_tail_target() {
+        let fallthrough = 0x804_900c;
+        let (mut provenance, parts) = prepared(3, 3, fallthrough);
+        provenance
+            .stores
+            .retain(|fact| fact.location.address.offset == -8);
+        let matched = provenance.apply(&ret_ops(&parts, false), fallthrough);
+        assert!(!matched.own_fallthrough);
+        assert_eq!(matched.immediate_tail, Some(0x1122_3344));
+    }
+
+    #[test]
+    fn adjacent_store_pair_is_not_an_immediate_tail() {
+        let fallthrough = 0x804_900c;
+        let (mut provenance, parts) = prepared(3, 3, fallthrough);
+        let matched = provenance.apply(&ret_ops(&parts, false), fallthrough);
+        assert!(matched.own_fallthrough);
+        assert_eq!(matched.immediate_tail, None);
+    }
+
+    #[test]
+    fn computed_stack_store_is_not_an_immediate_tail() {
+        let fallthrough = 0x804_900c;
+        let (mut provenance, parts) = prepared(3, 3, fallthrough);
+        provenance
+            .stores
+            .retain(|fact| fact.location.address.offset == -8);
+        provenance.stores[0].value = Some(TrackedValue::Relative(RelativeAddress {
+            base: ReturnProvenance::key(&parts.pointer).unwrap(),
+            offset: 0,
+        }));
+        let matched = provenance.apply(&ret_ops(&parts, false), fallthrough);
+        assert!(!matched.own_fallthrough);
+        assert_eq!(matched.immediate_tail, None);
     }
 }

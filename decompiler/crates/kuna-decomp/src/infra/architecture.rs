@@ -56,9 +56,10 @@ use kuna_sleigh::sleigh::Sleigh;
 use kuna_sleigh::translate::UniqueLayout;
 
 use crate::action::ActionDatabase;
-use crate::engine_translate::EngineTranslate;
+use crate::context::{ArchContext, ArchHandle};
 use crate::database::Database;
 use crate::dtype::{type_metatype, TypeFactory, TypeFactoryImpl};
+use crate::engine_translate::EngineTranslate;
 use crate::flow::flow_flags;
 use crate::fspec::ProtoModel;
 use crate::funcdata::Funcdata;
@@ -67,7 +68,6 @@ use crate::options::{
     split_datatype, ArchOptionContext, BraceCategory, NamespaceStrategy, OptionDatabase,
 };
 use crate::printc::PrintC;
-use crate::context::{ArchHandle, ArchContext};
 use crate::userop::UserOpManage;
 
 // ---------------------------------------------------------------------------
@@ -78,12 +78,17 @@ use crate::userop::UserOpManage;
 
 /// First direct child element named `nm`, or `None`.
 fn find_child(el: &Rc<kuna_base::xml::Element>, nm: &str) -> Option<Rc<kuna_base::xml::Element>> {
-    el.get_children().iter().find(|c| c.get_name() == nm).map(Rc::clone)
+    el.get_children()
+        .iter()
+        .find(|c| c.get_name() == nm)
+        .map(Rc::clone)
 }
 
 /// String value of attribute `nm` on `el`, or `None` if absent.
 fn attr_str(el: &Rc<kuna_base::xml::Element>, nm: &str) -> Option<String> {
-    el.get_attribute_value(nm).ok().map(|b| String::from_utf8_lossy(b).into_owned())
+    el.get_attribute_value(nm)
+        .ok()
+        .map(|b| String::from_utf8_lossy(b).into_owned())
 }
 
 /// Value of a boolean spec attribute (C++ `Decoder::readBool`, which accepts
@@ -433,6 +438,10 @@ pub struct Architecture {
     /// bounded raw-p-code provenance proves each RET destination and its own
     /// fall-through slot. Explicit flow assertions retain precedence.
     pub entry_ret_dispatch: bool,
+    /// (kuna `pushimmediateret`) Recover a proven one-store
+    /// `push <immediate>; ret` as a tail branch. The two-store call-emulation
+    /// shape remains owned by `entryretdispatch`; explicit flow assertions win.
+    pub push_immediate_ret: bool,
     /// (kuna `cleanupcode`) Delete the Rust drop/deallocate call sites (the
     /// `core::ptr::drop_in_place` / `Drop::drop` / `RawVecInner::deallocate` /
     /// `__rust_dealloc` family) from the pre-SSA op graph, so the drop glue and
@@ -1782,8 +1791,7 @@ pub struct Architecture {
     /// (driven through the ArchContext during `RuleStringStore`/`RuleStringCopy`) must
     /// `registerInternalStringData` into the very map the printer later reads back
     /// via `getStringData` on this real `Architecture`.
-    pub string_manager:
-        Rc<std::cell::RefCell<crate::stringmanage::StringManagerUnicode>>,
+    pub string_manager: Rc<std::cell::RefCell<crate::stringmanage::StringManagerUnicode>>,
     /// P-code injection manager (C++ `pcodeinjectlib`).  SLEIGH-backed.
     pub pcodeinjectlib: PcodeInjectLibrarySleigh,
     /// Comments for this architecture (C++ `commentdb`).  // STUB(comment.cc)
@@ -2055,20 +2063,21 @@ impl Architecture {
             memset_recover: false,
             rodata_string: false, // (kuna) option rodatastring; reset_defaults sets the shipped default
             ptrdepthcap: false, // (kuna) option ptrdepthcap; reset_defaults sets the shipped default
-            codescalar: false, // (kuna) option codescalar; reset_defaults sets the shipped default
+            codescalar: false,  // (kuna) option codescalar; reset_defaults sets the shipped default
             add_carry_chain: false,
             v850_indirect_branch: false,
             fastfail_noreturn: false, // (kuna) option fastfailnoreturn; reset_defaults sets the shipped default
             int3_pad: crate::kuna_int3pad::Int3PadMode::Off, // (kuna) option int3pad; reset_defaults sets the shipped default
             x64_syscall: crate::kuna_x64syscall::X64SyscallMode::Off, // (kuna) option x64syscall; reset_defaults sets the shipped default
             decode_halt: false, // (kuna) option decodehalt; reset_defaults sets the shipped default
-            msvc_ftol: false, // (kuna) option msvcftol; reset_defaults sets the shipped default
+            msvc_ftol: false,   // (kuna) option msvcftol; reset_defaults sets the shipped default
             tail_call_jumps: false,
             tail_call_frame: false, // (kuna) option tailcallframe; reset_defaults sets the shipped default
             tail_call_saved: false, // (kuna) option tailcallsaved; reset_defaults sets the shipped default
             call_trampoline: false, // (kuna) option calltrampoline; reset_defaults sets the shipped default
             call_pop_ret: false, // (kuna) option callpopret; reset_defaults sets the shipped default
             entry_ret_dispatch: false, // (kuna) option entryretdispatch; reset_defaults sets the shipped default
+            push_immediate_ret: false, // (kuna) option pushimmediateret; reset_defaults sets the shipped default
             funcbound_flow: false, // (kuna) option funcboundflow; reset_defaults sets the shipped default
             overlap_branch: false, // (kuna) option overlapbranch; reset_defaults sets the shipped default
             remove_cleanup_code: false, // (kuna) option cleanupcode; reset_defaults sets the shipped default
@@ -2088,7 +2097,7 @@ impl Architecture {
             zero_idiom_use: false, // (kuna) option zeroidiomuse; reset_defaults sets the shipped default
             exclusive_arg_use: false, // (kuna) option exclusivearguse; reset_defaults sets the shipped default
             call_ret_pair: false, // (kuna) option callretpair; reset_defaults sets the shipped default
-            rust_abi: 0,        // (kuna) option rustabi; reset_defaults sets the shipped default
+            rust_abi: 0,          // (kuna) option rustabi; reset_defaults sets the shipped default
             source_is_rust: false, // (kuna) a load-time fact; set by the console's `load file`
             condexe_block_placement: false,
             dynamic_hash_maxdup_high: false,
@@ -2170,7 +2179,7 @@ impl Architecture {
             cortexmpriv_inject: None, // (kuna) set by init_userops_and_fixups when the language declares the user-op
             present_lessequal: false,
             preserve_thumb_funcptr: false,
-            kuna_fn_budget: None,   // (kuna) decompile-all watchdog: no budget by default
+            kuna_fn_budget: None, // (kuna) decompile-all watchdog: no budget by default
             kuna_fn_deadline: None, // (kuna) set per drive from kuna_fn_budget
             kuna_callee_write_cache: std::collections::HashMap::new(),
             kuna_callee_dead_cache: std::collections::HashMap::new(),
@@ -2321,6 +2330,7 @@ impl Architecture {
         self.call_trampoline = true; // (kuna) DIV-144 default-on: RESTORES CODE. Flows a `call` whose callee discards the pushed return address and jumps back into the stream (the Beria-family protector fragment) through as a branch, instead of decoding a fall-through at a return address control never reaches -- which on the witness lifts a junk byte into a store to a global that does not exist and puts the rest of the body one byte out of phase. Requires the callee's raw p-code to pass through `entrySP + ptrsize` and end in a direct branch to an address the symbol table does NOT know as a function entry, so an ordinary tail-call thunk (`add esp,4; jmp printf`) never matches; byte-identical (0/675) on the datatest corpus. Restore the fall-through decode with `option calltrampoline off`
         self.call_pop_ret = true; // (kuna) DIV-163 default-on: RESTORES CODE. Flows a `call` whose callee pops the pushed return address and `ret`s through the word above it -- the call-over-inline-data idiom -- through as a branch, instead of decoding a fall-through at a return address control never reaches. On the witness (a packed PE) the bytes after the call are an embedded "kernel32.dll\0GetProcAddress\0..." table, and the fall-through lifts them as port-input operations and stores through never-set registers; flowed through, the caller prints as the one-line `return s_4f703c;` it is. The callee's raw p-code must pass through `entrySP + ptrsize` AND end in a `RETURN` through the untouched word at `entrySP + ptrsize`, so `mov ebx,[esp]; ret` (the `__x86.get_pc_thunk` family, which does return to the call site) never matches; byte-identical (0/675) on the datatest corpus. Restore the fall-through decode with `option callpopret off`
         self.entry_ret_dispatch = true; // (kuna) DIV-168 default-on: restores an entry-point `push continuation; push callee; ret` chain as calls only when bounded, straight-line raw-p-code provenance proves the RET destination came from this run's adjacent store pair. Conditional flow, calls, aliasing writes and overwritten slots conservatively decline; explicit flow assertions win. Byte-identical (0/675) on the datatest corpus. Restore the bare-return rendering with `option entryretdispatch off`
+        self.push_immediate_ret = false; // (kuna) option pushimmediateret; default-off during development, ablation decides the shipped default
         self.funcbound_flow = true; // (kuna) DIV-67 default-on: REMOVES CODE. Truncates a fall-through that reaches another known function's entry (a function ending in an unnamed static no-return `exit`/`abort`/`die()` wrapper) instead of decoding the next function's body into it. Byte-identical (0/675) on the datatest corpus; restore upstream flow-into-callee with `option funcboundflow off`
         self.overlap_branch = true; // (kuna) DIV-106 default-on: REMOVES CODE. Ends a conditional branch's fall-through in a halt when the branch's own target lies strictly inside that fall-through instruction's encoding (the anti-disassembly junk-lead-byte overlap), instead of letting the bogus decode swallow the target and desynchronise the stream. Two real instruction starts cannot sit at `next` and strictly inside `next`, so the trigger never matches well-formed code and is byte-identical (0/675) on the datatest corpus; restore the fall-through-wins decode with `option overlapbranch off`
         self.remove_cleanup_code = true; // (kuna) DIV-81 default-on: REMOVES CODE. Deletes the Rust drop/deallocate call sites (`core::ptr::drop_in_place`, `Drop::drop`, `alloc::raw_vec::RawVecInner::deallocate`, `__rust_dealloc`) and the argument setup that only feeds them. Structurally inert outside a Rust binary (no C ELF resolves a call to one of those names), so byte-identical (0/675) on the datatest corpus; keep the drop glue with `option cleanupcode off`
@@ -2424,8 +2434,9 @@ impl Architecture {
         self.nan_ignore_all = false;
         self.nan_ignore_compare = true; // Ignore NaN ops associated with FP comparisons by default
         self.alias_block_level = 2; // Block structs and arrays by default
-        self.split_datatype_config =
-            split_datatype::OPTION_STRUCT | split_datatype::OPTION_ARRAY | split_datatype::OPTION_POINTER;
+        self.split_datatype_config = split_datatype::OPTION_STRUCT
+            | split_datatype::OPTION_ARRAY
+            | split_datatype::OPTION_POINTER;
         self.max_jumptable_size = 1024;
 
         // (kuna) Analysis-pass gates — default-on (matching Ghidra's default-on
@@ -2490,10 +2501,10 @@ impl Architecture {
         self.analysis_dwarfstructs = true; // (kuna) DIV: DWARF aggregate-layout import default-ON (a zero-size aggregate is not conservative -- the ABI classifier acts on it; real-ELF DWARF path only, so every parity gate is byte-identical)
         self.analysis_dwarfvariants = true; // (kuna) DIV-87: DWARF variant-part import default-ON (the compiler states the discriminant; real-ELF DWARF path only, so every parity gate is byte-identical)
         self.analysis_cppproto = true; // (kuna) DIV: DWARF C++ prototype arm default-ON (recovers ground truth the name-only walk drops; real-ELF DWARF path only, so every parity gate is byte-identical)
-        // (kuna) DIV: demangled C++ signatures default to the PROVEN tier — only
-        // the prototypes the mangling entails (ctor/dtor/cv-qualified member/
-        // unqualified global), measured at precision 1.0000 on google/leveldb.
-        // Real-object path only, so every parity gate is byte-identical.
+                                       // (kuna) DIV: demangled C++ signatures default to the PROVEN tier — only
+                                       // the prototypes the mangling entails (ctor/dtor/cv-qualified member/
+                                       // unqualified global), measured at precision 1.0000 on google/leveldb.
+                                       // Real-object path only, so every parity gate is byte-identical.
         self.analysis_cppsig = crate::kuna_cppsig::CppSigMode::Proven;
         self.analysis_callfixup = true;
         self.analysis_addrtable = false; // Ghidra AddressTableAnalyzer default-off
@@ -2510,8 +2521,8 @@ impl Architecture {
         self.analysis_rtti = false; // MSVC RTTI / vftable recovery default-off (PE-only, output-changing)
         self.analysis_itaniumrtti = false; // (kuna, NOVEL) Itanium RTTI / vtable recovery default-off (ELF-only, output-changing)
         self.analysis_aif = false; // Aggressive Instruction Finder gap-walk default-off
-        // (kuna, GH-299) AIF gap-cursor aligned slide — default-OFF (it REMOVES
-        // entries), carried by the `aggressive` preset.
+                                   // (kuna, GH-299) AIF gap-cursor aligned slide — default-OFF (it REMOVES
+                                   // entries), carried by the `aggressive` preset.
         self.analysis_aifstrict = false;
         // (kuna, GH-313) AIF corroboration test — default-OFF (it REMOVES entries),
         // carried by the `aggressive` preset.
@@ -2641,6 +2652,7 @@ impl Architecture {
             "calltrampoline" => on_off!(call_trampoline, "Return-address-discarding call trampoline flow-through"),
             "callpopret" => on_off!(call_pop_ret, "Return-address-popping call transfer flow-through"),
             "entryretdispatch" => on_off!(entry_ret_dispatch, "Entry-point RET-dispatch call-chain recovery"),
+            "pushimmediateret" => on_off!(push_immediate_ret, "Push-immediate RET tail-transfer recovery"),
             "funcboundflow" => on_off!(funcbound_flow, "Fall-through bound at function entries"),
             "overlapbranch" => on_off!(overlap_branch, "Overlapping-branch fall-through truncation"),
             "cleanupcode" => on_off!(remove_cleanup_code, "Rust drop/deallocate call removal"),
@@ -3651,7 +3663,9 @@ impl Architecture {
         // neither, the handle's own accessor falls back to `defaultfp`, exactly as
         // before the option existed.
         ctx.evalfp_current = self.evalfp_current.clone().or_else(|| {
-            self.evalcurrentproto.then(|| self.evalfp_current_spec.clone()).flatten()
+            self.evalcurrentproto
+                .then(|| self.evalfp_current_spec.clone())
+                .flatten()
         });
         // Carry the cspec's return-address storage (C++ `glb->defaultReturnAddr`)
         // so the per-function `Funcdata::testForReturnAddress` can detect a
@@ -3709,12 +3723,16 @@ impl Architecture {
         ctx.simd_lane_fold = self.simd_lane_fold; // simdlane
         ctx.const_space_load_fold = self.const_space_load_fold; // constspaceload
         ctx.ret_split_global = self.ret_split_global; // retsplitglobal
-        // (kuna) resolve the byte-shuffle user-op ids ONCE per program, so the
-        // rule can name a CALLOTHER through the ArchSeam (the boundary
-        // ArchContext carries no userop table).
+                                                      // (kuna) resolve the byte-shuffle user-op ids ONCE per program, so the
+                                                      // rule can name a CALLOTHER through the ArchSeam (the boundary
+                                                      // ArchContext carries no userop table).
         ctx.simd_shuffle_userops = crate::p3_dataflow::kuna_simdlane::SHUFFLE_USEROP_NAMES
             .iter()
-            .filter_map(|nm| self.userops.get_op_by_name(nm).map(|u| u.get_index() as kuna_base::types::uint4))
+            .filter_map(|nm| {
+                self.userops
+                    .get_op_by_name(nm)
+                    .map(|u| u.get_index() as kuna_base::types::uint4)
+            })
             .collect();
         ctx.fold_flag_compare = self.fold_flag_compare; // GH-1276/8777 flagcompare
         ctx.add_carry_chain = self.add_carry_chain; // GH-8913 addcarrychain
@@ -3760,11 +3778,11 @@ impl Architecture {
         ctx.remove_cleanup_code = self.remove_cleanup_code; // cleanupcode
         ctx.linux_syscall = self.linux_syscall; // linuxsyscall
         ctx.x64_syscall = self.x64_syscall; // (kuna) x64syscall
-        // (kuna) resolve the `SYSCALL` user-op ids ONCE per program, for the same
-        // reason `simd_shuffle_userops` above is resolved here: the boundary
-        // ArchContext carries no userop table.  An op a compiler spec has
-        // specialized with its own `<callotherfixup>` carries an injection id and
-        // is left out, so the spec's model wins.
+                                            // (kuna) resolve the `SYSCALL` user-op ids ONCE per program, for the same
+                                            // reason `simd_shuffle_userops` above is resolved here: the boundary
+                                            // ArchContext carries no userop table.  An op a compiler spec has
+                                            // specialized with its own `<callotherfixup>` carries an injection id and
+                                            // is left out, so the spec's model wins.
         ctx.x64_syscall_userops = self
             .userops
             .get_op_by_name(crate::kuna_x64syscall::USEROP_NAME)
@@ -3793,8 +3811,8 @@ impl Architecture {
         ctx.strip_msvc_stack_guard = self.strip_msvc_stack_guard; // msvcstackguard
         ctx.strip_security_check = self.strip_security_check; // securitycheck
         ctx.branch_flip = self.branch_flip; // branchflip (negated-guard branch flipping)
-        // (kuna) GH-9203 DIV-3: carry the loop-block COPY-placement gate so the
-        // `condexeplace off` option reaches `ActionConditionalConst` via `glb`.
+                                            // (kuna) GH-9203 DIV-3: carry the loop-block COPY-placement gate so the
+                                            // `condexeplace off` option reaches `ActionConditionalConst` via `glb`.
         ctx.condexe_block_placement = self.condexe_block_placement;
         // (kuna) carry the whiledo->for reroll gate (C++ `glb->analyze_for_loops`)
         // so `ActionStructureTransform` reaches it for
@@ -3864,8 +3882,8 @@ impl Architecture {
         ctx.dynreloc_const = Rc::clone(&self.dynreloc_const);
         ctx.litpool_const = Rc::clone(&self.litpool_const);
         ctx.litpoolconst = self.litpoolconst; // litpoolconst (in-code literal-pool folding)
-        // Carry the data-type-splitting toggle bits (C++ `glb->split_datatype_config`)
-        // so `SplitDatatype` / `RuleSplit{Copy,Load,Store}` reach them per function.
+                                              // Carry the data-type-splitting toggle bits (C++ `glb->split_datatype_config`)
+                                              // so `SplitDatatype` / `RuleSplit{Copy,Load,Store}` reach them per function.
         ctx.split_datatype_config = self.split_datatype_config;
         // Snapshot the global symbol table onto `glb` so the per-function
         // `setVarnodeProperties` can run `localmap->queryProperties`'s walk into
@@ -3930,7 +3948,10 @@ impl Architecture {
         let mut slot = self.symbol_snapshots.borrow_mut();
         let generation = self.symboltab.kuna_generation();
         if slot.generation != Some(generation) {
-            *slot = SymbolSnapshots { generation: Some(generation), ..SymbolSnapshots::default() };
+            *slot = SymbolSnapshots {
+                generation: Some(generation),
+                ..SymbolSnapshots::default()
+            };
         }
         (
             Rc::clone(
@@ -4009,9 +4030,9 @@ impl Architecture {
         // C++: `int4 ind = numSpaces();` then `new SpacebaseSpace(this, translate,
         // nm, ind, truncSize, basespace, ptrdata.space->getDelay()+1, isFormal)`.
         let big_end = basespace.is_big_endian(); // C++ `t->isBigEndian()`
-        // C++ `ptrdata.space->getDelay()+1`: the heritage delay is one past the
-        // delay of the space the base register lives in (dereferencing a null
-        // ptrdata.space is C++ UB -> panic).
+                                                 // C++ `ptrdata.space->getDelay()+1`: the heritage delay is one past the
+                                                 // delay of the space the base register lives in (dereferencing a null
+                                                 // ptrdata.space is C++ UB -> panic).
         let dl = ptrdata
             .space
             .as_ref()
@@ -4073,10 +4094,12 @@ impl Architecture {
         // false.
         let register_name = attr_str(&sp, "register").unwrap_or_default();
         // C++ `stackGrowth = decoder.readString() == "negative"`.
-        let stack_growth =
-            attr_str(&sp, "growth").map(|g| g == "negative").unwrap_or(true);
-        let isreversejustify =
-            attr_str(&sp, "reversejustify").map(|s| s == "true").unwrap_or(false);
+        let stack_growth = attr_str(&sp, "growth")
+            .map(|g| g == "negative")
+            .unwrap_or(true);
+        let isreversejustify = attr_str(&sp, "reversejustify")
+            .map(|s| s == "true")
+            .unwrap_or(false);
         let space_name = attr_str(&sp, "space");
 
         // C++: `if (basespace == 0) throw "missing space attribute"`.
@@ -4178,7 +4201,8 @@ impl Architecture {
         point: &Address,
         full_encoding: &mut uintb,
     ) -> KunaResult<Address> {
-        self.manage().resolve_constant(spc, val, sz, point, full_encoding)
+        self.manage()
+            .resolve_constant(spc, val, sz, point, full_encoding)
     }
 
     /// Determine the minimum pointer size for each space and set up the ordered,
@@ -4765,17 +4789,16 @@ impl Architecture {
         let mut f = Some(f);
         let mut result: Option<R> = None;
         self.translate.with_context_db_dyn(&mut |db| {
-            result = Some((f.take().expect("with_context_db_mut: closure runs once"))(db));
+            result = Some((f.take().expect("with_context_db_mut: closure runs once"))(
+                db,
+            ));
         });
         result.expect("with_context_db_mut: closure ran")
     }
 
     /// Resolve a register by name to its storage (C++
     /// `glb->translate->getRegister(name)`); used by `set track`.
-    pub fn get_register_varnode(
-        &self,
-        nm: &[u8],
-    ) -> KunaResult<kuna_num::pcoderaw::VarnodeData> {
+    pub fn get_register_varnode(&self, nm: &[u8]) -> KunaResult<kuna_num::pcoderaw::VarnodeData> {
         self.translate.get_register_varnode(nm)
     }
 
@@ -4845,7 +4868,8 @@ impl Architecture {
 
     /// Register a prototype model under its name (C++ `protoModels[name] =`).
     pub fn register_model(&mut self, model: Rc<ProtoModel>) {
-        self.proto_models.insert(model.get_name().to_string(), model);
+        self.proto_models
+            .insert(model.get_name().to_string(), model);
     }
 
     /// Set the default prototype model (C++ `Architecture::setDefaultModel`,
@@ -4933,8 +4957,11 @@ impl Architecture {
         };
         let mut store = DocumentStorage::new();
         let root = store.parse_document(&xml)?.get_root().clone();
-        let Some(dorg) =
-            root.get_children().iter().find(|c| c.get_name() == "data_organization").cloned()
+        let Some(dorg) = root
+            .get_children()
+            .iter()
+            .find(|c| c.get_name() == "data_organization")
+            .cloned()
         else {
             return Ok(());
         };
@@ -5008,12 +5035,13 @@ impl Architecture {
                     // `<entry size=N alignment=M/>` child contributes a pair; the
                     // map drives `getAlignment(size)` and so the over-aligned
                     // primitive layout (e.g. x86-64 gcc float10 align=16).
-                    let read_attr = |el: &Rc<kuna_base::xml::Element>, attr: &str| -> Option<int4> {
-                        el.get_attribute_value(attr)
-                            .ok()
-                            .and_then(|b| std::str::from_utf8(b).ok())
-                            .and_then(|s| s.trim().parse::<int4>().ok())
-                    };
+                    let read_attr =
+                        |el: &Rc<kuna_base::xml::Element>, attr: &str| -> Option<int4> {
+                            el.get_attribute_value(attr)
+                                .ok()
+                                .and_then(|b| std::str::from_utf8(b).ok())
+                                .and_then(|s| s.trim().parse::<int4>().ok())
+                        };
                     let mut pairs: Vec<(int4, int4)> = Vec::new();
                     for entry in child.get_children().iter() {
                         if entry.get_name() != "entry" {
@@ -5051,8 +5079,7 @@ impl Architecture {
             .get_default_data_space()
             .map(|s| s.get_addr_size() as int4)
             .unwrap_or(default_size);
-        let stack_pointer_size =
-            manage.get_stack_space().map(|s| s.get_addr_size() as int4);
+        let stack_pointer_size = manage.get_stack_space().map(|s| s.get_addr_size() as int4);
         // C++ `TypeFactory` reads `getArch()->getDefaultDataSpace()->isBigEndian()`
         // for bitfield layout (TypeBitField ctor, type.cc:873; struct parse,
         // grammar.cc:2626) and pointer truncation (TypePointer::calcTruncate,
@@ -5072,7 +5099,8 @@ impl Architecture {
         if self.types.alignment_map_is_empty() {
             self.types.set_default_alignment_map();
         }
-        self.types.setup_sizes(stack_pointer_size, default_data_addr_size, default_size);
+        self.types
+            .setup_sizes(stack_pointer_size, default_data_addr_size, default_size);
     }
 
     /// Seed a single default prototype model when the cspec proto decode is not
@@ -5361,10 +5389,7 @@ impl Architecture {
     /// outputop="write_volatile" inputop="read_volatile">`.  This method ports the
     /// range-painting half: for each `<range>` child,
     /// `symboltab->setPropertyRange(Varnode::volatil, range)`.
-    fn decode_volatile(
-        &mut self,
-        volatile_el: &Rc<kuna_base::xml::Element>,
-    ) -> KunaResult<()> {
+    fn decode_volatile(&mut self, volatile_el: &Rc<kuna_base::xml::Element>) -> KunaResult<()> {
         use crate::varnode::varnode_flags;
         use kuna_base::address::{Range, RangeProperties};
         use kuna_base::marshal::{IdRegistry, XmlDecode};
@@ -5438,9 +5463,11 @@ impl Architecture {
             }
             let name = match attr_str(child, "name") {
                 Some(n) if !n.is_empty() => n,
-                _ => return Err(KunaError::lowlevel(
-                    "Missing name attribute in <symbol> element",
-                )),
+                _ => {
+                    return Err(KunaError::lowlevel(
+                        "Missing name attribute in <symbol> element",
+                    ))
+                }
             };
             let addr_str = attr_str(child, "address").unwrap_or_default();
             let addr = if addr_str == "next" && last_size != -1 {
@@ -5458,20 +5485,28 @@ impl Architecture {
                 .and_then(|s| s.parse::<int4>().ok())
                 .unwrap_or(0);
             if size == 0 {
-                size = addr.get_space().map(|s| s.get_word_size() as int4).unwrap_or(1);
+                size = addr
+                    .get_space()
+                    .map(|s| s.get_word_size() as int4)
+                    .unwrap_or(1);
             }
             // Optional <symbol volatile="true|false"> re-paints the volatil property.
             if let Some(volstr) = attr_str(child, "volatile") {
                 let volatile_state = matches!(volstr.as_str(), "true" | "1" | "yes");
                 if let Some(spc) = addr.get_space() {
-                    let range =
-                        Range::new(Rc::clone(spc), addr.get_offset(), addr.get_offset() + (size as u64 - 1));
+                    let range = Range::new(
+                        Rc::clone(spc),
+                        addr.get_offset(),
+                        addr.get_offset() + (size as u64 - 1),
+                    );
                     let a1 = range.get_first_addr();
                     let a2 = range.get_last_addr_open(self.manage());
                     if volatile_state {
-                        self.symboltab.set_property_range(varnode_flags::volatil, &a1, &a2);
+                        self.symboltab
+                            .set_property_range(varnode_flags::volatil, &a1, &a2);
                     } else {
-                        self.symboltab.clear_property_range(varnode_flags::volatil, &a1, &a2);
+                        self.symboltab
+                            .clear_property_range(varnode_flags::volatil, &a1, &a2);
                     }
                 }
             }
@@ -5539,7 +5574,8 @@ impl Architecture {
             if mask == 0 {
                 continue;
             }
-            self.lanerecords.push(LanedRegister::with_mask(i as int4, mask));
+            self.lanerecords
+                .push(LanedRegister::with_mask(i as int4, mask));
         }
         Ok(())
     }
@@ -5565,10 +5601,12 @@ impl Architecture {
                 "varnode" | "addr" => {
                     let spname = attr_str(child, "space")?;
                     let space = self.manage().get_space_by_name(&spname)?.clone();
-                    let offset =
-                        attr_str(child, "offset").and_then(|s| parse_int(&s)).unwrap_or(0);
-                    let size =
-                        attr_str(child, "size").and_then(|s| s.parse::<u32>().ok()).unwrap_or(0);
+                    let offset = attr_str(child, "offset")
+                        .and_then(|s| parse_int(&s))
+                        .unwrap_or(0);
+                    let size = attr_str(child, "size")
+                        .and_then(|s| s.parse::<u32>().ok())
+                        .unwrap_or(0);
                     return Some(kuna_num::pcoderaw::VarnodeData {
                         space: Some(space),
                         offset,
@@ -5650,15 +5688,27 @@ impl Architecture {
                 "output" => self.decode_pentry_list(child, &mut model, false)?,
                 // else if (subId == ELEM_UNAFFECTED) { ... effectlist.back().decode(unaffected) }
                 "unaffected" => {
-                    self.decode_effect_block(child, &mut model, crate::fspec::effect_type::UNAFFECTED)?;
+                    self.decode_effect_block(
+                        child,
+                        &mut model,
+                        crate::fspec::effect_type::UNAFFECTED,
+                    )?;
                 }
                 // else if (subId == ELEM_KILLEDBYCALL) { ... decode(killedbycall) }
                 "killedbycall" => {
-                    self.decode_effect_block(child, &mut model, crate::fspec::effect_type::KILLEDBYCALL)?;
+                    self.decode_effect_block(
+                        child,
+                        &mut model,
+                        crate::fspec::effect_type::KILLEDBYCALL,
+                    )?;
                 }
                 // else if (subId == ELEM_RETURNADDRESS) { ... decode(return_address); sawretaddr=true }
                 "returnaddress" => {
-                    self.decode_effect_block(child, &mut model, crate::fspec::effect_type::RETURN_ADDRESS)?;
+                    self.decode_effect_block(
+                        child,
+                        &mut model,
+                        crate::fspec::effect_type::RETURN_ADDRESS,
+                    )?;
                     saw_retaddr = true;
                 }
                 // else if (subId == ELEM_INTERNAL_STORAGE) { while peekElement: internalstorage.back().decode() }
@@ -5730,9 +5780,9 @@ impl Architecture {
                 "prototype" => self.decode_proto_model(child, root).ok(),
                 "resolveprototype" => self.decode_resolve_proto(child, &byname).ok(),
                 "modelalias" => match (attr_str(child, "name"), attr_str(child, "parent")) {
-                    (Some(nm), Some(parent)) => {
-                        byname.get(&parent).and_then(|p| create_model_alias(&nm, p).ok())
-                    }
+                    (Some(nm), Some(parent)) => byname
+                        .get(&parent)
+                        .and_then(|p| create_model_alias(&nm, p).ok()),
                     _ => None,
                 },
                 _ => continue,
@@ -5819,12 +5869,17 @@ impl Architecture {
                         .get_space_by_name(&spname)
                         .ok_or_else(|| KunaError::lowlevel("<varnode> effect unknown space"))?
                         .clone();
-                    let offset =
-                        attr_str(child, "offset").and_then(|s| parse_int(&s)).unwrap_or(0);
+                    let offset = attr_str(child, "offset")
+                        .and_then(|s| parse_int(&s))
+                        .unwrap_or(0);
                     let size = attr_str(child, "size")
                         .and_then(|s| s.parse::<u32>().ok())
                         .unwrap_or(0);
-                    kuna_num::pcoderaw::VarnodeData { space: Some(space), offset, size }
+                    kuna_num::pcoderaw::VarnodeData {
+                        space: Some(space),
+                        offset,
+                        size,
+                    }
                 }
                 _ => continue,
             };
@@ -5850,19 +5905,27 @@ impl Architecture {
                     self.translate.get_register_varnode(nm.as_bytes())?
                 }
                 "varnode" | "addr" => {
-                    let spname = attr_str(child, "space")
-                        .ok_or_else(|| KunaError::lowlevel("<varnode> internal_storage has no space"))?;
+                    let spname = attr_str(child, "space").ok_or_else(|| {
+                        KunaError::lowlevel("<varnode> internal_storage has no space")
+                    })?;
                     let space = self
                         .manage()
                         .get_space_by_name(&spname)
-                        .ok_or_else(|| KunaError::lowlevel("<varnode> internal_storage unknown space"))?
+                        .ok_or_else(|| {
+                            KunaError::lowlevel("<varnode> internal_storage unknown space")
+                        })?
                         .clone();
-                    let offset =
-                        attr_str(child, "offset").and_then(|s| parse_int(&s)).unwrap_or(0);
+                    let offset = attr_str(child, "offset")
+                        .and_then(|s| parse_int(&s))
+                        .unwrap_or(0);
                     let size = attr_str(child, "size")
                         .and_then(|s| s.parse::<u32>().ok())
                         .unwrap_or(0);
-                    kuna_num::pcoderaw::VarnodeData { space: Some(space), offset, size }
+                    kuna_num::pcoderaw::VarnodeData {
+                        space: Some(space),
+                        offset,
+                        size,
+                    }
                 }
                 _ => continue,
             };
@@ -5898,7 +5961,8 @@ impl Architecture {
                 // C++ fspec.cc:1482-1484: a bare <pentry> is parsed at the current
                 // numgroup with grouped == false.
                 "pentry" => {
-                    let entry = self.decode_pentry(child, numgroup, normalstack, false, &pentries)?;
+                    let entry =
+                        self.decode_pentry(child, numgroup, normalstack, false, &pentries)?;
                     // C++ parsePentry tail (fspec.cc:1251): numgroup advances past
                     // the entry's highest group (1 past for an exclusion entry).
                     let maxgroup = entry.get_all_groups().last().copied().unwrap_or(numgroup) + 1;
@@ -5938,7 +6002,10 @@ impl Architecture {
                         pentries.push(entry);
                         // orderWithinGroup(previous1, cur) and (previous2, cur).
                         if let Some(p1) = prev1 {
-                            crate::fspec::ParamEntry::order_within_group(&pentries[p1], &pentries[cur])?;
+                            crate::fspec::ParamEntry::order_within_group(
+                                &pentries[p1],
+                                &pentries[cur],
+                            )?;
                             if let Some(p2) = prev2 {
                                 crate::fspec::ParamEntry::order_within_group(
                                     &pentries[p2],
@@ -5961,7 +6028,11 @@ impl Architecture {
         // `<rule>` subtrees are then decoded against the live resource via an
         // `XmlDecode` rooted on each `<rule>` element (the modelrules ids are
         // registered on a fresh registry).
-        let plist = if is_input { model.input_mut() } else { model.output_mut() };
+        let plist = if is_input {
+            model.input_mut()
+        } else {
+            model.output_mut()
+        };
         for e in pentries {
             plist.push_entry(e);
         }
@@ -6018,17 +6089,25 @@ impl Architecture {
         let mut type_ = type_class::TYPECLASS_GENERAL;
         let mut flags: uint4 = 0;
         if let Some(v) = attr_str(pentry, "minsize") {
-            minsize = v.parse().map_err(|_| KunaError::lowlevel("bad <pentry> minsize"))?;
+            minsize = v
+                .parse()
+                .map_err(|_| KunaError::lowlevel("bad <pentry> minsize"))?;
         }
         if let Some(v) = attr_str(pentry, "maxsize") {
-            size = v.parse().map_err(|_| KunaError::lowlevel("bad <pentry> maxsize"))?;
+            size = v
+                .parse()
+                .map_err(|_| KunaError::lowlevel("bad <pentry> maxsize"))?;
         }
         // size="..." (old) and align="..." (new) both set alignment.
         if let Some(v) = attr_str(pentry, "size") {
-            alignment = v.parse().map_err(|_| KunaError::lowlevel("bad <pentry> size"))?;
+            alignment = v
+                .parse()
+                .map_err(|_| KunaError::lowlevel("bad <pentry> size"))?;
         }
         if let Some(v) = attr_str(pentry, "align") {
-            alignment = v.parse().map_err(|_| KunaError::lowlevel("bad <pentry> align"))?;
+            alignment = v
+                .parse()
+                .map_err(|_| KunaError::lowlevel("bad <pentry> align"))?;
         }
         if let Some(v) = attr_str(pentry, "storage").or_else(|| attr_str(pentry, "metatype")) {
             type_ = string2typeclass(&v)?;
@@ -6052,8 +6131,18 @@ impl Architecture {
         // Storage address: <register name=".."/> or <addr space=".." offset=".."/>.
         let (space, addressbase) = self.decode_pentry_storage(pentry)?;
         crate::fspec::ParamEntry::seed(
-            group, type_, space, addressbase, size, minsize, alignment, flags, normalstack,
-            grouped, prev, self.manage(),
+            group,
+            type_,
+            space,
+            addressbase,
+            size,
+            minsize,
+            alignment,
+            flags,
+            normalstack,
+            grouped,
+            prev,
+            self.manage(),
         )
     }
 
@@ -6102,7 +6191,9 @@ impl Architecture {
                 _ => {}
             }
         }
-        Err(KunaError::lowlevel("<pentry> has no <register>/<addr> storage"))
+        Err(KunaError::lowlevel(
+            "<pentry> has no <register>/<addr> storage",
+        ))
     }
 
     /// Resolve a `<addr space="join" piece1=".." piece2=".."/>` element to the
@@ -6162,13 +6253,17 @@ impl Architecture {
                 None => {
                     // Register-name piece: C++ `getTrans()->getRegister(attrVal)`.
                     let vd = self.translate.get_register_varnode(attr_val.as_bytes())?;
-                    VarnodeStorage { space: vd.space, offset: vd.offset, size: vd.size }
+                    VarnodeStorage {
+                        space: vd.space,
+                        offset: vd.offset,
+                        size: vd.size,
+                    }
                 }
                 Some(offpos) => {
                     let rest = &attr_val[offpos + 1..];
-                    let szrel = rest
-                        .find(':')
-                        .ok_or_else(|| KunaError::lowlevel("join address piece attribute is malformed"))?;
+                    let szrel = rest.find(':').ok_or_else(|| {
+                        KunaError::lowlevel("join address piece attribute is malformed")
+                    })?;
                     let szpos = offpos + 1 + szrel;
                     let spcname = &attr_val[..offpos];
                     let space = self.manage().get_space_by_name(spcname).cloned();
@@ -6180,7 +6275,11 @@ impl Architecture {
                     } else {
                         size64 as u32 // cast: checked above (uintb -> uint4)
                     };
-                    VarnodeStorage { space, offset, size }
+                    VarnodeStorage {
+                        space,
+                        offset,
+                        size,
+                    }
                 }
             };
             _sizesum = _sizesum.wrapping_add(vdat.size);
@@ -6306,7 +6405,9 @@ impl Architecture {
         // 8-byte defaults so `getFloatFormat(4)`/`getFloatFormat(8)` resolve.
         // Without this the `PrintC::push_float` path (a `float8` constant literal)
         // has no FloatFormat and renders `FLOAT_UNKNOWN` instead of `1.123…`.
-        self.translate.translate_base_mut().set_default_float_formats();
+        self.translate
+            .translate_base_mut()
+            .set_default_float_formats();
         // C++ `Architecture::restoreFromSpec` runs `parseCompilerConfig`
         // (architecture.cc:647) after `parseProcessorConfig`; the cspec
         // `<stackpointer>` element (parseCompilerConfig -> ELEM_STACKPOINTER ->
@@ -6504,7 +6605,9 @@ impl ArchOptionContext for Architecture {
                 self.defaultfp = Some(model);
                 Ok(())
             }
-            None => Err(KunaError::lowlevel(format!("Unknown prototype model :{name}"))),
+            None => Err(KunaError::lowlevel(format!(
+                "Unknown prototype model :{name}"
+            ))),
         }
     }
     fn set_eval_current_model(&mut self, name: &str) -> KunaResult<()> {
@@ -6658,7 +6761,11 @@ impl ArchOptionContext for Architecture {
 impl crate::pcodeinject::InjectArchitecture for Architecture {
     fn get_default_code_space(&self) -> Rc<AddrSpace> {
         // C++ `glb->getDefaultCodeSpace()`.
-        Rc::clone(self.manage().get_default_code_space().expect("no default code space"))
+        Rc::clone(
+            self.manage()
+                .get_default_code_space()
+                .expect("no default code space"),
+        )
     }
     fn get_unique_space(&self) -> Rc<AddrSpace> {
         // C++ `glb->getUniqueSpace()`.
@@ -6699,8 +6806,16 @@ impl crate::userop::UseropArchitecture for Architecture {
         let size_input = core.size_input();
         // get_size() is a uint4 (the InjectParameter size); narrow to int4 the
         // same way the C++ reads `getInput(k).getSize()` into an int4.
-        let in0 = if size_input > 0 { core.get_input(0).get_size() as int4 } else { 0 };
-        let in1 = if size_input > 1 { core.get_input(1).get_size() as int4 } else { 0 };
+        let in0 = if size_input > 0 {
+            core.get_input(0).get_size() as int4
+        } else {
+            0
+        };
+        let in1 = if size_input > 1 {
+            core.get_input(1).get_size() as int4
+        } else {
+            0
+        };
         Ok((size_output, size_input, in0, in1))
     }
 }
@@ -6769,7 +6884,9 @@ impl crate::userop::UseropTypeArchitecture for BuiltinTypeArch {
             .expect("builtin: getTypePointer")
     }
     fn get_base_int(&self, size: int4) -> Rc<crate::dtype::Datatype> {
-        self.types.get_base(size, type_metatype::TYPE_INT).expect("builtin: getBase(INT)")
+        self.types
+            .get_base(size, type_metatype::TYPE_INT)
+            .expect("builtin: getBase(INT)")
     }
     fn get_type_char(&self) -> Rc<crate::dtype::Datatype> {
         self.types
