@@ -5,8 +5,8 @@
   "rejected_count": 1,
   "by_status": {
     "blocked": 1,
-    "closed": 154,
-    "open": 42
+    "closed": 155,
+    "open": 41
   },
   "by_track": {
     "loader": 10,
@@ -3929,7 +3929,7 @@
       "need_id": "rdtsc-timestamp-incorporates-stale",
       "title": "RDTSC timestamp incorporates stale upper bits from the preceding computation",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
       "probe_id": "p-cc77a0a0be92",
       "acceptance_id": "a-50993426267c",
@@ -3950,8 +3950,8 @@
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": "574",
-      "closed_in_round": null,
+      "pr": "https://github.com/Noelo-Lab/kuna/pull/574",
+      "closed_in_round": 12,
       "closing_pr": "574",
       "reject_reason": null,
       "score": 13.862944,
