@@ -232,7 +232,7 @@ impl<'a> GapDecoder<'a> {
         }
         // `want_assembly = true`: the prologue fingerprint below is built from the
         // mnemonic text.
-        let decoded = decode_one(self.translate, vma, &self.code_space, true).ok()?;
+        let decoded = decode_one(self.translate, vma, &self.code_space, true, false).ok()?;
         if decoded.len == 0 {
             return None;
         }
@@ -391,6 +391,38 @@ fn check_valid_subroutine_strict(
         .map(|(body, _adds_info)| body)
 }
 
+/// A strict speculative instruction must fit wholly before the next known
+/// instruction start. Checking only `vma < gap_hi` lets a multi-byte decode
+/// overlap bytes the Listing already assigned to another instruction.
+fn strict_instruction_fits_gap(vma: u64, len: u32, gap_hi: u64) -> bool {
+    vma.checked_add(u64::from(len)).is_some_and(|end| end <= gap_hi)
+}
+
+pub(crate) fn validate_referenced_targets(
+    listing: &Listing,
+    translate: &dyn Translate,
+    code_space: Rc<AddrSpace>,
+    exec_ranges: &[(u64, u64)],
+    candidates: impl IntoIterator<Item = u64>,
+) -> Vec<u64> {
+    let mut decoder = GapDecoder::new(translate, code_space, exec_ranges);
+    let mut accepted = BTreeSet::new();
+    let mut claimed = BTreeSet::new();
+    for target in candidates {
+        if !listing.is_undefined(target) || claimed.contains(&target) {
+            continue;
+        }
+        let gap_hi = listing.next_instruction_start_after(target).unwrap_or(u64::MAX);
+        if let Some(body) =
+            check_valid_subroutine_strict(&mut decoder, listing, target, target, gap_hi)
+        {
+            accepted.insert(target);
+            claimed.extend(body);
+        }
+    }
+    accepted.into_iter().collect()
+}
+
 /// Returns `Some((body, corroborated))`. `corroborated` is Ghidra's `addsInfo`
 /// computed the upstream way — set by a CALL, or by a jump whose target is already a
 /// decoded instruction, and by nothing else. It is deliberately NOT the local
@@ -453,6 +485,9 @@ fn check_valid_subroutine_with_policy(
         let Some(insn) = decoder.probe(vma) else {
             return None;
         };
+        if strict && !strict_instruction_fits_gap(vma, insn.len, gap_hi) {
+            return None;
+        }
         body.insert(vma);
 
         if insn.is_terminal {
@@ -989,6 +1024,13 @@ mod tests {
         assert_eq!(FINGERPRINT_THRESHOLD, 4);
         assert_eq!(MIN_SUBROUTINE_INSNS, 3);
         assert_eq!(FINGERPRINT_INSNS, 2);
+    }
+
+    #[test]
+    fn strict_candidate_instruction_cannot_cross_into_known_code() {
+        assert!(strict_instruction_fits_gap(0x1000, 5, 0x1005));
+        assert!(!strict_instruction_fits_gap(0x1000, 6, 0x1005));
+        assert!(!strict_instruction_fits_gap(u64::MAX - 1, 4, u64::MAX));
     }
 
     #[test]

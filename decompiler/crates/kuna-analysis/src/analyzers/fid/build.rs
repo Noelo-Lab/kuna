@@ -228,7 +228,7 @@ fn decode_extent(
         guard -= 1;
 
         // `want_assembly = false`: the extent clip reads only `len` and `ops`.
-        let Ok(dec) = decode_one(translate, vma, code_space, false) else {
+        let Ok(dec) = decode_one(translate, vma, code_space, false, false) else {
             break; // an undecodable byte ends the clip
         };
         let len = dec.len.max(1); // never advance by 0 (avoid an infinite loop)

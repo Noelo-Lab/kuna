@@ -3209,7 +3209,7 @@
       "status": "open",
       "severity": "major",
       "probe_id": "p-5e71731ba9ec",
-      "acceptance_id": "a-3cebdc5e1843",
+      "acceptance_id": "a-5a48b22e4076",
       "hypothesis_status": "upheld",
       "credibility": 0.7,
       "instances": 1,
@@ -3221,9 +3221,9 @@
       ],
       "first_seen_round": 10,
       "attempts": 0,
-      "covered_by_option": null,
+      "covered_by_option": "fast_funcdisc",
       "touches": [
-        "decompiler/crates/kuna-decomp"
+        "decompiler/crates/kuna-analysis"
       ],
       "scope": "small",
       "regression_of": null,

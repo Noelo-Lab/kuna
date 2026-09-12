@@ -807,6 +807,33 @@ fn streamed_artifacts_match_the_non_stream_export() {
     }
 }
 
+/// Streamed project selection reads the same discovered inventory as
+/// `functions` and `decompile-all`, including callbacks found by a later
+/// discovery round.
+#[test]
+fn streamed_project_can_select_nested_dialog_callbacks() {
+    let Some(dir) = stream_project(
+        "stdcallpop_pe_i386.exe",
+        "stream_dialog_callbacks",
+        &["--functions", "sub_401000,sub_401410"],
+    ) else {
+        return;
+    };
+    let c = std::fs::read_to_string(dir.join("stdcallpop_pe_i386.exe.c")).unwrap();
+    for (address, name) in [("0x401000", "sub_401000"), ("0x401410", "sub_401410")] {
+        assert!(
+            c.contains(&format!("// Function: {name} @ {address}")),
+            "streamed project omitted discovered callback {address}:\n{c}"
+        );
+    }
+    assert_eq!(
+        std::fs::read_to_string(dir.join("index.jsonl")).unwrap().lines().count(),
+        2,
+        "selected callbacks must produce exactly two stream records"
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
 /// The point of the feature: the entry point and what it reaches are written
 /// first, ahead of functions that come earlier in address order.
 #[test]
