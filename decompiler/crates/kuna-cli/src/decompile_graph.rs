@@ -15,7 +15,7 @@
 //! same policies, read from the same helpers rather than restated here:
 //!
 //! * which entries exist, and which of them have bodies worth decompiling
-//!   ([`resolve_targets`], i.e. `function_entries_executable`);
+//!   ([`resolve_targets_allow_bodyless`], i.e. `function_entries_executable`);
 //! * what a function *is* ([`Classifier`], the per-function `kind` the browser
 //!   inventory already labels with);
 //! * what calls what ([`CallGraph`], the edge model `--reachable-from` walks and
@@ -38,8 +38,8 @@ use kuna_console::project::{decompile_targets, FuncResult};
 use object::{Object, ObjectSegment};
 
 use crate::decompile_all::{
-    decompile_targets_pooled, load_program, parse_args, resolve_targets, Args, CallGraph,
-    DriverDefaults,
+    decompile_targets_pooled, load_program, parse_args, resolve_targets_allow_bodyless, Args,
+    CallGraph, DriverDefaults,
 };
 use crate::jsonfmt::{dumps_indent2, Json};
 
@@ -153,7 +153,7 @@ fn export(args: &Args, label: &str) -> Result<String, String> {
     // the executable set comes from the policy, not from the results.
     let executable: BTreeSet<u64> =
         prog.function_entries_executable().iter().map(|e| e.addr.get_offset()).collect();
-    let mut targets = resolve_targets(&prog, args)?;
+    let mut targets = resolve_targets_allow_bodyless(&prog, args)?;
     targets.retain(|entry| {
         let selected = executable.contains(&entry.addr.get_offset());
         if !selected {

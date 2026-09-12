@@ -5,8 +5,8 @@
   "rejected_count": 1,
   "by_status": {
     "blocked": 1,
-    "closed": 133,
-    "open": 63
+    "closed": 134,
+    "open": 62
   },
   "by_track": {
     "loader": 10,
@@ -2658,10 +2658,10 @@
       "need_id": "decompiling-executable-section-iat",
       "title": "Decompiling an executable-section IAT slot invents an arithmetic function",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
       "probe_id": "p-b0ded31a46b9",
-      "acceptance_id": "a-adefc9329f47",
+      "acceptance_id": "a-fffdb4ce0518",
       "hypothesis_status": "overturned",
       "credibility": 0.85,
       "instances": 1,
@@ -2672,18 +2672,21 @@
         12
       ],
       "first_seen_round": 12,
-      "attempts": 0,
+      "attempts": 1,
       "covered_by_option": null,
       "touches": [
-        "decompiler/crates/kuna-decomp"
+        "decompiler/crates/kuna-analysis",
+        "decompiler/crates/kuna-console",
+        "decompiler/crates/kuna-cli",
+        "decompiler/crates/kuna-wasm"
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": "588",
+      "closed_in_round": 12,
+      "closing_pr": "588",
       "reject_reason": null,
-      "score": 13.862944,
+      "score": 9.241962,
       "path": "docs/re-needs/decompiling-executable-section-iat.md"
     },
     {

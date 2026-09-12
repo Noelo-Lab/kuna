@@ -105,6 +105,11 @@ pub enum EntryLookupError {
         selector: String,
         candidates: Vec<FunctionEntry>,
     },
+    BodylessImport {
+        selector: String,
+        name: String,
+        address: u64,
+    },
 }
 
 impl fmt::Display for EntryLookupError {
@@ -154,6 +159,15 @@ impl fmt::Display for EntryLookupError {
                     "use a section-qualified selector to choose one candidate"
                 )
             }
+            Self::BodylessImport {
+                selector,
+                name,
+                address,
+            } => write!(
+                f,
+                "selector {selector:?} identifies import {name} at 0x{address:x}; \
+                 the IAT slot contains a loader-written pointer, not a function body"
+            ),
         }
     }
 }

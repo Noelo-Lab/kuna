@@ -1007,10 +1007,11 @@ calls resolve to a name and library prototype. They are not function bodies.
 The complete canonical inventory retains both, while automatic whole-binary
 decompilation selects only entries contained by a loader `CODE` section
 (`decompiler/crates/kuna-console/src/engine.rs
-(ConsoleProgram::function_entries_executable)`). Explicit address selection
-remains unrestricted; name selection keeps its normal first-match behavior when
-a stub and slot share a name. Loaders without section metadata keep the complete
-inventory.
+(ConsoleProgram::function_entries_executable)`). Explicit decompiling selection
+uses the same body distinction: a lone IAT slot is refused with its import name
+and address, while a name shared by a stub and slot selects the sole body-bearing
+stub. Generic lookup still resolves the slot for call binding and inventory
+consumers. Loaders without section metadata keep the complete inventory.
 
 (kuna) "In a data section" is the usual place for a slot and not a property of
 one, so the section flags cannot carry that filter alone. A PE is free to put its
@@ -1027,8 +1028,9 @@ empty everywhere else) beside the names themselves, and the engine carries them
 as `[lo, hi)` ranges (`ObjectLoadImage::import_slot_ranges` →
 `ConsoleProgram::is_import_slot`). An entry inside one is excluded from the
 batch set whatever the section says. Nothing else moves: the canonical
-inventory, `kuna functions`, `--addr`/`--functions` selection and the call
-naming the slot exists for are all unchanged — on the crypter the batch goes
+inventory, `kuna functions`, generic symbol resolution and the call naming the
+slot exists for are unchanged. Decompiling `--addr`/`--functions` selection
+refuses a slot before decode — on the crypter the batch goes
 from 56 entries to its 6 real ones while the surviving body still renders
 `ExitProcess(0)`. A caller-declared entry (`--define-function`) outranks this
 test as it outranks the section-flag one, so an analyst who asserts a function

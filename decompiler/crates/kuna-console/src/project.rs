@@ -198,9 +198,32 @@ pub fn decompile_pulled(
         }
         let byte_address = entry.get_offset();
         let address = prog.output_code_offset(byte_address);
+        if !prog.is_body_entry(byte_address) {
+            let error = crate::engine::EntryLookupError::BodylessImport {
+                selector: name.clone(),
+                name: name.clone(),
+                address: byte_address,
+            }
+            .to_string();
+            sink(FuncResult {
+                code: None,
+                name,
+                address,
+                byte_address,
+                size: size as i64,
+                error: Some(error),
+                proto: None,
+                variables: Vec::new(),
+                line_mappings: Vec::new(),
+                aliases,
+                object_location,
+                callee_hints: Vec::new(),
+            });
+            continue;
+        }
         // (kuna) An entry with no mapped bytes is an EXTERNAL, not a decompile
-        // failure: a relocatable object's undefined symbols (and a PE import
-        // slot) carry an address only so a call to one renders by name, and the
+        // failure: a relocatable object's undefined symbols carry an address
+        // only so a call to one renders by name, and the
         // definition lives in another module. The whole-binary surfaces never
         // reach one (`function_entries_executable` drops them), but selecting one
         // by name or address — clicking its row in the browser inventory — used to

@@ -274,6 +274,37 @@ fn is_specs_skip(stderr: &str) -> bool {
         || stderr.contains("Could not discover")
 }
 
+/// A filtered whole-binary run is still a body-lifting surface. Selecting a
+/// mapped IAT word must fail before it can become a result row.
+#[test]
+fn decompile_all_refuses_an_executable_section_iat_slot() {
+    let bin = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/pe_iatincode_i386.exe")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let (stdout, stderr, ok) = run_kuna(&[
+        "decompile-all",
+        &bin,
+        "--addr",
+        "0x401000",
+        "--json",
+        "--sleighpath",
+        &specs(),
+    ]);
+    if is_specs_skip(&stderr) {
+        eprintln!("decompile_all_iat: skipping (no `.sla`; run `make specs`): {stderr}");
+        return;
+    }
+    assert!(!ok, "an IAT slot unexpectedly decompiled: {stdout}");
+    assert!(stdout.trim().is_empty(), "an IAT result row escaped: {stdout}");
+    assert_eq!(
+        stderr,
+        "error: selector \"0x401000\" identifies import VirtualAlloc at 0x401000; \
+         the IAT slot contains a loader-written pointer, not a function body\n"
+    );
+}
+
 #[test]
 fn decompile_all_emits_json_for_main() {
     let bin = fauxware();
