@@ -5,8 +5,8 @@
   "rejected_count": 1,
   "by_status": {
     "blocked": 1,
-    "closed": 129,
-    "open": 67
+    "closed": 130,
+    "open": 66
   },
   "by_track": {
     "loader": 10,
@@ -3594,10 +3594,10 @@
       "need_id": "named-log-prototype-repair",
       "title": "Named log prototype does not repair the call through its PE thunk",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
       "probe_id": "p-eaee43130b01",
-      "acceptance_id": "a-ef3b3cdc4ea5",
+      "acceptance_id": "a-43296fdf37fe",
       "hypothesis_status": "upheld",
       "credibility": 0.85,
       "instances": 1,
@@ -3605,21 +3605,22 @@
         "69a54bd70f5b9757a6a5f72f"
       ],
       "rounds": [
-        9
+        9,
+        12
       ],
       "first_seen_round": 9,
-      "attempts": 0,
+      "attempts": 1,
       "covered_by_option": null,
       "touches": [
-        "decompiler/crates/kuna-decomp"
+        "decompiler/crates/kuna-console"
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": "https://github.com/Noelo-Lab/kuna/pull/581",
+      "closed_in_round": 12,
+      "closing_pr": 581,
       "reject_reason": null,
-      "score": 13.862944,
+      "score": 9.241962,
       "path": "docs/re-needs/named-log-prototype-repair.md"
     },
     {

@@ -1244,18 +1244,22 @@ parks the pieces under it; `parse line extern` keeps its upstream meaning.
 
 (kuna) **`<func>` is a name first and an ENTRY ADDRESS second.** Both surfaces
 resolve the operand through
-`decompiler/crates/kuna-console/src/assertions.rs (resolve_proto_target)`: a
-`FunctionSymbol` of that name wins, and failing that a hexadecimal operand that a
-function starts at binds by address. The address form exists because parking by
-name is not always expressible. The park is the callee's `FunctionSymbol`, and
-the READ side — `ArchContext::callee_proto_pieces`, which `ActionDefaultParams`
-consults per call site — is keyed by the callee's ENTRY ADDRESS, so a by-name
-park has to resolve to the same symbol the call reaches. A PE import thunk and
-the IAT slot it jumps to are two FunctionSymbols with the same name; the global
-by-name query answers with one of them while every call in the program targets
-the other, and the directive was accepted, reported `applied`, and read back as
-nothing (`docs/re-needs/accepted-sqrt-prototype-still.md`). Stating the address
-removes the ambiguity, and the park goes through
+`decompiler/crates/kuna-console/src/assertions.rs (resolve_proto_target)`. An
+existing name first goes through the same public `ConsoleProgram::resolve_entry`
+contract as decompilation: aliases canonicalize to their entry, a PE import
+slot/thunk pair narrows to its lone executable thunk, and two executable
+definitions are rejected as ambiguous rather than chosen by symbol-table order.
+The result parks by that entry address. An unresolved name stays pending by name,
+which preserves the console workflow where `map prototype main …` precedes the
+symbols it describes; failing that, a hexadecimal operand that a function starts
+at binds by address. The address form exists because parking by name is not
+always expressible. The park is the callee's `FunctionSymbol`, and the READ side
+— `ArchContext::callee_proto_pieces`, which `ActionDefaultParams` consults per
+call site — is keyed by the callee's ENTRY ADDRESS. Before this canonicalization,
+a PE import thunk and the IAT slot it jumps to were two FunctionSymbols with the
+same name, the global by-name query answered with the slot while every direct
+call targeted the thunk, and the directive was accepted, reported `applied`, and
+read back as nothing. An explicit address also goes through
 `Architecture::set_function_prototype_pieces_at`, the same address-keyed door the
 DWARF and demangled-signature passes use. `pieces.name` is set to the resolved
 function's own display name, so an address operand states a signature without

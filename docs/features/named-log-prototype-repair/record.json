@@ -1,0 +1,60 @@
+{
+  "slug": "named-log-prototype-repair",
+  "need_id": "named-log-prototype-repair",
+  "track": "quality",
+  "scope": "small",
+  "round": 12,
+  "branch": "fix/named-log-prototype-repair",
+  "rebased_onto": "origin/main 7b9948f07af3fdf99b0ae88e6522d33069a9ff05 (#577, #579, and #580 preserved; #577's streamed-export changes are disjoint from assertion resolution)",
+  "summary": "Named prototype assertions now use ConsoleProgram's public entry resolver before being parked. When an import name denotes both a non-executable IAT slot and one executable veneer, the assertion is canonicalized to the veneer address and name; multiple executable definitions reject as ambiguous, while a genuinely unresolved name remains pending for later discovery. Numeric targets retain their existing address semantics.",
+  "decisions": [
+    {
+      "what": "reuse the public entry-selection contract",
+      "detail": "resolve_proto_target calls ConsoleProgram::resolve_entry with EntrySelector::Name. This keeps prototype assertions aligned with the CLI's alias, placeholder, executability, and ambiguity rules instead of growing a second symbol-ranking policy in the assertion plane."
+    },
+    {
+      "what": "canonicalize a resolved name to ProtoTarget::At",
+      "detail": "The resolved entry's address and canonical name are stored together. This prevents a same-named IAT slot from accepting the assertion while the actual call targets the executable import veneer. The win32sigs fixture proves that a named three-argument LoadLibraryExW assertion now emits byte-identical C to an explicit 0x401010 assertion."
+    },
+    {
+      "what": "fail closed on ambiguous executable definitions",
+      "detail": "Errors other than NotFound are returned to the assertion ledger. The libcsigs PE fixture contains a same-named export and import veneer; its named assertion is rejected and reports both executable candidates rather than choosing by accident."
+    },
+    {
+      "what": "preserve forward declarations",
+      "detail": "Only EntryLookupError::NotFound falls through to ProtoTarget::Named. Assertions for symbols that discovery has not created yet therefore remain legal and pending exactly as before. Existing numeric parsing is left below this lookup unchanged."
+    },
+    {
+      "what": "no phase, option, database, or baseline expansion",
+      "detail": "This is assertion-target routing in the existing P4 prototype source. It adds no option, catalog element, fixture, phase, database mutation, P6/P9 behavior, stage baseline, or history entry."
+    }
+  ],
+  "acceptance": {
+    "dataset_acceptance_id_after_hardening": "a-43296fdf37fe",
+    "dataset_status": "PASS on the original PolyMLP.exe dataset witness: scripts.repipe.verify reports 1 pass, 0 fail, with `v3 = v5 + log(v3 + v6);` satisfying the rename-tolerant full-assignment guard and `log(SUB84(` absent.",
+    "promoted_probe": "tests/cli/named-log-prototype-repair.json",
+    "promoted_probe_id": "a-20918fc99877",
+    "fixed_result": "PASS: JSON reports one applied assertion and the emitted call has three arguments.",
+    "negative_control": "The same promoted probe fails its stdout_matches clause against an unpatched build from the same pre-fix lineage, which emits the old under-parameterized call."
+  },
+  "tests": {
+    "focused": "cargo test -p kuna-console --test verify_assertplane -- --nocapture: 29 passed",
+    "promoted": "scripts.repipe.clitests --name named-log-prototype-repair --json: 1/1 passed",
+    "workspace": "cargo test --workspace --no-fail-fast on the immediately prior 7c890180 main: exit 0; all workspace and doc-test targets passed, with only their declared ignored tests. After the final 7b9948f rebase (#577 streamed project export), the touched code paths were audited as disjoint and the focused suite, release build, promoted probe, dataset acceptance, both spec modes, catalog, counters, and mergecheck were rerun and passed.",
+    "cli_sweep": "The debug-binary sweep passed 131/134 probes. The new probe passed. Two unrelated wall-time budgets were expectedly unsuitable for a debug binary; one unrelated 60-second probe timed out under concurrent load.",
+    "spec": "make check-spec and python3 tools/check_spec.py --strict: OK",
+    "catalog": "decompiler/target/debug/kuna catalog --check: OK",
+    "counters": "190 settables; tiers 61/70/59; stage corpus 275 (83 core + 192 stage); next ElementId 4164; no drift",
+    "mergecheck": "scripts.repipe.mergecheck against origin/main: ok=true, rejects=0; only pre-existing DIV-76/DIV-77 duplicate warnings"
+  },
+  "files": [
+    "decompiler/crates/kuna-console/src/assertions.rs",
+    "decompiler/crates/kuna-console/tests/verify_assertplane.rs",
+    "tests/cli/named-log-prototype-repair.json",
+    "docs/spec/00-overview.md",
+    "docs/features/named-log-prototype-repair/record.json",
+    "docs/features/named-log-prototype-repair/pr_body.md",
+    "docs/re-needs/named-log-prototype-repair.md",
+    "docs/re-needs/index.json"
+  ]
+}

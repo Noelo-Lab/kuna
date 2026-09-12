@@ -1,0 +1,54 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "a-20918fc99877",
+  "kind": "cli",
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/win32sigs_pe_i386.exe",
+    "binary_sha256": "5ee4b01f7352ab14e6c5a54010bd67206f355412421288d737f1a818dfe566d0",
+    "binary_size": 4608,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/win32sigs_pe_i386.exe",
+    "selector": "0x401020",
+    "selector_kind": "addr"
+  },
+  "timeout_s": 120,
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "0x401020",
+    "--json",
+    "--option",
+    "win32sigs",
+    "off",
+    "--assert",
+    "prototype LoadLibraryExW void *LoadLibraryExW(wchar_t *name,void *file,unsigned int flags)"
+  ],
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "stdout_matches": [
+      "LoadLibraryExW\\([^,\\n]+,[^,\\n]+,[^,\\n]+\\);"
+    ],
+    "json": [
+      {
+        "path": "assertions",
+        "op": "len_eq",
+        "value": 1
+      },
+      {
+        "path": "assertions[0].status",
+        "op": "eq",
+        "value": "applied"
+      },
+      {
+        "path": "functions[0].code",
+        "op": "not_contains",
+        "value": "LoadLibraryExW()"
+      }
+    ]
+  },
+  "notes": "With win32sigs disabled, the named assertion is the only source of the three-argument prototype. The fixture has an executable veneer at 0x401010 and a same-named IAT slot; before this fix the assertion reported applied on the slot and retained one guessed argument. The console test also requires equality with the explicit 0x401010 assertion."
+}
