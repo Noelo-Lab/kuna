@@ -29,6 +29,7 @@ pub mod sleigh;
 pub mod sleighbase;
 pub mod slaformat;
 pub mod loadimage;
+pub mod kuna_ctxsnapshot;
 pub mod kuna_sharedbytes;
 pub mod loadimage_xml;
 pub mod memstate;
