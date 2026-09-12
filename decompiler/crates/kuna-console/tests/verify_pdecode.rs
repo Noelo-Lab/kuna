@@ -29,7 +29,7 @@ use std::path::PathBuf;
 
 use kuna_analysis::listing::model::{DiscoveredFunction, FlowType, RefKind};
 use kuna_analysis::listing::{Listing, ListingDetail, WalkPlan};
-use kuna_analysis::listing::kuna_pdecode::{Refusal, DECODE_MIN_BYTES_ENV};
+use kuna_analysis::listing::kuna_pdecode::Refusal;
 use kuna_console::engine::bootstrap_from_object;
 use object::{Object, ObjectSymbol};
 
@@ -45,11 +45,12 @@ fn spec_roots() -> Vec<String> {
     vec![repo_root().join("specs").to_str().unwrap().to_string()]
 }
 
-/// Every in-repo fixture is far under the 8 MiB floor, so without this the
-/// lanes never run and the comparison is between two serial walks.
-fn lower_the_size_floor() {
-    std::env::set_var(DECODE_MIN_BYTES_ENV, "0");
-}
+/// Every in-repo fixture is far under the 8 MiB floor, so a plan built here
+/// passes a floor of zero and the lanes really run. A parameter rather than
+/// `KUNA_DECODE_MIN_BYTES`: cargo runs these tests as threads of one process,
+/// and writing the environment out from under a sibling's `getenv` is a data
+/// race, not a fixture.
+const NO_SIZE_FLOOR: u64 = 0;
 
 /// Everything the walk produced, in one comparable value.
 type Partition = (
@@ -136,7 +137,6 @@ fn load(name: &str) -> Option<Loaded> {
 /// instructions the serial walk decoded.
 fn lanes_agree_everywhere(name: &str) -> usize {
     let Some(loaded) = load(name) else { return 0 };
-    lower_the_size_floor();
     let file = object::File::parse(&*loaded.bytes).expect("parse fixture");
     let image =
         kuna_analysis::loadimage_object::ObjectLoadImage::from_bytes(&loaded.path, &loaded.bytes)
@@ -168,7 +168,7 @@ fn lanes_agree_everywhere(name: &str) -> usize {
 
         for lanes in [2usize, 3, 4, 8] {
             for per_lane in [1usize, 4, 32] {
-                let plan = WalkPlan::for_lanes(arch, lanes, per_lane);
+                let plan = WalkPlan::for_lanes(arch, lanes, per_lane, NO_SIZE_FLOOR);
                 assert_eq!(
                     plan.declined(),
                     None,
@@ -229,7 +229,7 @@ fn decode_lanes_produce_the_serial_listing() {
 fn a_context_committing_language_is_refused() {
     for name in ["arm_thumb_linked_le32", "plt_mips32", "plt_ppc64le"] {
         let Some(loaded) = load(name) else { continue };
-        let plan = WalkPlan::for_lanes(loaded.prog.arch(), 8, 32);
+        let plan = WalkPlan::for_lanes(loaded.prog.arch(), 8, 32, NO_SIZE_FLOOR);
         assert_eq!(
             plan.declined(),
             Some(Refusal::ContextCommits),
@@ -244,13 +244,12 @@ fn a_context_committing_language_is_refused() {
 #[test]
 fn repeated_lane_runs_are_identical() {
     let Some(loaded) = load("mcount_x86_64") else { return };
-    lower_the_size_floor();
     let file = object::File::parse(&*loaded.bytes).expect("parse fixture");
     let image =
         kuna_analysis::loadimage_object::ObjectLoadImage::from_bytes(&loaded.path, &loaded.bytes)
             .expect("open throwaway loadimage");
     let arch = loaded.prog.arch();
-    let plan = WalkPlan::for_lanes(arch, 8, 32);
+    let plan = WalkPlan::for_lanes(arch, 8, 32, NO_SIZE_FLOOR);
     let build = || {
         Listing::build_with_meta_planned(
             &file,
@@ -280,7 +279,6 @@ fn repeated_lane_runs_are_identical() {
 #[test]
 fn seed_names_survive_the_merge() {
     let Some(loaded) = load("fauxware") else { return };
-    lower_the_size_floor();
     let file = object::File::parse(&*loaded.bytes).expect("parse fixture");
     let image =
         kuna_analysis::loadimage_object::ObjectLoadImage::from_bytes(&loaded.path, &loaded.bytes)
@@ -303,7 +301,7 @@ fn seed_names_survive_the_merge() {
     };
     let want: BTreeMap<u64, DiscoveredFunction> =
         build(&WalkPlan::serial()).functions().map(|(&a, f)| (a, f.clone())).collect();
-    let plan = WalkPlan::for_lanes(arch, 4, 32);
+    let plan = WalkPlan::for_lanes(arch, 4, 32, NO_SIZE_FLOOR);
     let got: BTreeMap<u64, DiscoveredFunction> =
         build(&plan).functions().map(|(&a, f)| (a, f.clone())).collect();
     assert_eq!(plan.engaged(), 1, "the lanes must have run at all");
@@ -312,4 +310,23 @@ fn seed_names_survive_the_merge() {
         "the fixture must carry named seeds or this pins nothing"
     );
     assert_eq!(got, want, "the lanes changed a function record");
+}
+
+/// The refusal reasons are the feature's whole user interface when it declines,
+/// so every spelling must be in the reference an agent reads. A 17th variant
+/// with no line in `docs/cli.md` fails here rather than shipping undocumented.
+#[test]
+fn every_refusal_reason_is_documented_in_the_cli_reference() {
+    let path = repo_root().join("docs/cli.md");
+    let doc = std::fs::read_to_string(&path).expect("read docs/cli.md");
+    // The reference wraps, so a spelling can be split across two lines.
+    let flat = doc.split_whitespace().collect::<Vec<_>>().join(" ");
+    for refusal in Refusal::ALL {
+        assert!(
+            flat.contains(refusal.reason()),
+            "docs/cli.md does not spell out `{}` ({refusal:?})",
+            refusal.reason()
+        );
+    }
+    assert_eq!(Refusal::ALL.len(), 17, "a new refusal needs a docs/cli.md line and this count");
 }

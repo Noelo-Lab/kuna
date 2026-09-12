@@ -35,7 +35,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::panic::AssertUnwindSafe;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 
 use kuna_base::space::AddrSpace;
@@ -68,7 +68,8 @@ pub const DECODE_INTERVALS_ENV: &str = "KUNA_DECODE_INTERVALS";
 pub const DECODE_SELFCHECK_ENV: &str = "KUNA_DECODE_SELFCHECK";
 /// `1` prints the lane/interval/round/crossing/decode counts.
 pub const DECODE_STATS_ENV: &str = "KUNA_DECODE_STATS";
-/// Test-only: panic once inside the numbered lane, to exercise the fallback.
+/// Test-only: `<n>` panics once inside lane `n`, `spawn:<n>` makes lane `n`'s
+/// spawn fail, to exercise the two fallbacks.
 pub const DECODE_FAULT_ENV: &str = "KUNA_DECODE_FAULT";
 
 /// The lane cap. Measured throughput knee on a 40-core box; deliberately
@@ -80,6 +81,12 @@ pub const MAX_DECODE_LANES: usize = 32;
 /// instruction program, so the dynamic-claim makespan tail is under a second;
 /// `128` bought 0.2 points more.
 const INTERVALS_PER_LANE: usize = 32;
+
+/// The most intervals a lane may be cut into. The cut is a measurement knob, and
+/// the count sizes a `Vec<Mutex<IntervalState>>`: unclamped it is an allocation
+/// the gate cannot refuse (`usize::MAX` is a capacity-overflow panic on the
+/// calling thread, outside the `Refusal` machinery entirely).
+const MAX_INTERVALS_PER_LANE: usize = 4096;
 
 /// Executable bytes below which two engine builds would dominate the walk.
 const MIN_EXEC_BYTES: u64 = 8 * 1024 * 1024;
@@ -95,6 +102,43 @@ const MAX_ROUNDS: usize = 1024;
 
 /// Differences the self-check prints before it stops listing them.
 const SELFCHECK_REPORT: usize = 20;
+
+/// Resident bytes one instruction costs in the serial `BTreeMap<u64, Insn>`,
+/// measured on the fast (no-assembly) path of a 20.2 M instruction x86-64 image:
+/// 6.02 GB of VmHWM against 20,218,436 instructions, the map dominating. Used to
+/// price the reconciled map out of [`lane_peak_excess_bytes`], which is meant to
+/// report what the LANES added and not what the walk would have held anyway.
+const SERIAL_MAP_BYTES_PER_INSN: u64 = 298;
+
+/// Peak resident bytes the decode lanes added to this process, over every laned
+/// walk it has run. Zero when nothing ran on lanes, or where the peak cannot be
+/// read (anything but Linux).
+///
+/// The worker pool sizes itself from this process's own peak
+/// (`kuna-cli/src/jobs.rs`, `worker_estimate`), and a pool worker is forced back
+/// to one lane — so without subtracting this a laned parent prices every worker
+/// 1.5x too high and shrinks its own pool.
+static LANE_PEAK_EXCESS: AtomicU64 = AtomicU64::new(0);
+
+/// See [`LANE_PEAK_EXCESS`].
+pub fn lane_peak_excess_bytes() -> u64 {
+    LANE_PEAK_EXCESS.load(Ordering::Relaxed)
+}
+
+/// What the lanes added: the growth in peak resident size across the parallel
+/// walk, less the reconciled map the serial walk would have paid for anyway.
+fn lane_excess(before: u64, after: u64, insns: usize) -> u64 {
+    after
+        .saturating_sub(before)
+        .saturating_sub((insns as u64).saturating_mul(SERIAL_MAP_BYTES_PER_INSN))
+}
+
+/// This process's peak resident size (Linux `VmHWM`), or `None` elsewhere.
+fn peak_rss_bytes() -> Option<u64> {
+    let text = std::fs::read_to_string("/proc/self/status").ok()?;
+    let line = text.lines().find(|l| l.starts_with("VmHWM:"))?;
+    Some(line.split_whitespace().nth(1)?.parse::<u64>().ok()? * 1024)
+}
 
 /// Why the walk ran serially. Every variant has a stable stderr spelling; the
 /// first group is the gate, the second is a fault after the lanes started.
@@ -124,6 +168,9 @@ pub enum Refusal {
     KitFailed,
     /// A rebuilt engine disagreed with the parent on a sampled decode.
     KitDisagrees,
+    /// The OS refused a lane thread (`RLIMIT_NPROC`, a container `pids.max`, or
+    /// no memory for a stack).
+    SpawnFailed,
     /// A lane panicked.
     LaneFault,
     /// A lane fetched bytes at an unmapped address.
@@ -137,6 +184,28 @@ pub enum Refusal {
 }
 
 impl Refusal {
+    /// Every variant, so a new one cannot be added without a stderr spelling and
+    /// a line in `docs/cli.md` (both are asserted against this list).
+    pub const ALL: [Refusal; 17] = [
+        Refusal::NoThreads,
+        Refusal::NoEngine,
+        Refusal::ContextCommits,
+        Refusal::DelaySlots,
+        Refusal::NoSharedBytes,
+        Refusal::ContextPaint,
+        Refusal::NoSeeds,
+        Refusal::UnmappedExec,
+        Refusal::TooSmall,
+        Refusal::KitFailed,
+        Refusal::KitDisagrees,
+        Refusal::SpawnFailed,
+        Refusal::LaneFault,
+        Refusal::UnmappedFetch,
+        Refusal::Collision,
+        Refusal::RoundLimit,
+        Refusal::ContextMoved,
+    ];
+
     /// The stderr spelling, stable across releases.
     pub fn reason(self) -> &'static str {
         match self {
@@ -151,6 +220,7 @@ impl Refusal {
             Refusal::TooSmall => "executable image too small",
             Refusal::KitFailed => "engine rebuild failed",
             Refusal::KitDisagrees => "rebuilt engine disagrees",
+            Refusal::SpawnFailed => "thread spawn failed",
             Refusal::LaneFault => "lane fault",
             Refusal::UnmappedFetch => "unmapped fetch",
             Refusal::Collision => "merge collision",
@@ -179,6 +249,10 @@ struct DecodeSeed {
 pub struct WalkPlan {
     lanes: usize,
     intervals_per_lane: usize,
+    /// The [`Refusal::TooSmall`] floor, a parameter rather than an env read so a
+    /// test can lower it without writing the process environment out from under
+    /// a sibling thread's `getenv`.
+    min_exec_bytes: u64,
     kit: Option<DecodeSeed>,
     declined: Option<Refusal>,
     /// The last line announced, so a plan that drives several rebuilds says it
@@ -196,6 +270,7 @@ impl WalkPlan {
         WalkPlan {
             lanes: 1,
             intervals_per_lane: INTERVALS_PER_LANE,
+            min_exec_bytes: MIN_EXEC_BYTES,
             kit: None,
             declined: None,
             announced: Mutex::new(None),
@@ -203,27 +278,36 @@ impl WalkPlan {
         }
     }
 
-    /// The plan [`DECODE_JOBS_ENV`] asks for.
+    /// The plan [`DECODE_JOBS_ENV`] asks for. The only place the decode-lane
+    /// environment is read.
     pub fn from_env(arch: &Architecture) -> WalkPlan {
         let lanes = env_usize(DECODE_JOBS_ENV).unwrap_or(1).min(MAX_DECODE_LANES);
         let per_lane = env_usize(DECODE_INTERVALS_ENV)
             .filter(|&n| n > 0)
             .unwrap_or(INTERVALS_PER_LANE);
-        WalkPlan::for_lanes(arch, lanes, per_lane)
+        let floor = env_usize(DECODE_MIN_BYTES_ENV).map(|n| n as u64).unwrap_or(MIN_EXEC_BYTES);
+        WalkPlan::for_lanes(arch, lanes, per_lane, floor)
     }
 
-    /// A plan for exactly `lanes` lanes and `intervals_per_lane` intervals each.
+    /// A plan for exactly `lanes` lanes and `intervals_per_lane` intervals each,
+    /// refusing an image with under `min_exec_bytes` of executable bytes.
     ///
     /// Everything that can be decided without the walk's own inputs is decided
     /// here: whether the engine can be rebuilt at all, whether the language's
     /// decode can write context, and the image share the lanes read through.
-    pub fn for_lanes(arch: &Architecture, lanes: usize, intervals_per_lane: usize) -> WalkPlan {
+    pub fn for_lanes(
+        arch: &Architecture,
+        lanes: usize,
+        intervals_per_lane: usize,
+        min_exec_bytes: u64,
+    ) -> WalkPlan {
         let mut plan = WalkPlan::serial();
+        plan.min_exec_bytes = min_exec_bytes;
         if lanes < 2 {
             return plan;
         }
         plan.lanes = lanes;
-        plan.intervals_per_lane = intervals_per_lane.max(1);
+        plan.intervals_per_lane = intervals_per_lane.clamp(1, MAX_INTERVALS_PER_LANE);
         if cfg!(target_family = "wasm") {
             plan.declined = Some(Refusal::NoThreads);
             return plan;
@@ -272,6 +356,13 @@ impl WalkPlan {
     /// executable ranges, the painter and the seeds).
     pub fn declined(&self) -> Option<Refusal> {
         self.declined
+    }
+
+    /// Was this plan's kit captured from `arch`'s engine? Nothing else checks
+    /// that [`super::Listing::build_with_meta_planned`]'s `plan` and `arch`
+    /// belong together, and a mismatched recipe decodes a different language.
+    pub(super) fn built_from(&self, arch: &Architecture) -> bool {
+        self.kit.as_ref().is_none_or(|k| &*k.recipe.archid == arch.archid.as_str())
     }
 
     /// Print `line` unless it is the one this plan printed last.
@@ -360,12 +451,16 @@ impl Intervals {
     /// The cut points are seed addresses, so the seeds -- and with them the bulk
     /// of the program -- spread evenly over the intervals whatever the image
     /// layout is. Duplicate cut points collapse, so the result is strictly
-    /// ascending and may be shorter than `k`.
+    /// ascending and may be shorter than `k`. More cut points than seeds buys
+    /// nothing, so `k` is capped at the seed count: the cut cannot be asked to
+    /// allocate more than the program can fill.
     fn new(seeds: &[u64], k: usize) -> Intervals {
         let m = seeds.len();
+        debug_assert!(!seeds.is_empty(), "the gate refuses an empty seed list before the cut");
+        let k = k.max(1).min(m.max(1));
         let mut bounds: Vec<u64> = Vec::with_capacity(k + 1);
         bounds.push(0);
-        for i in 1..k.max(1) {
+        for i in 1..k {
             let at = seeds[i * m / k];
             if at > *bounds.last().expect("bounds starts non-empty") {
                 bounds.push(at);
@@ -390,6 +485,10 @@ impl Intervals {
         i.min(self.len() - 1)
     }
 }
+
+// A [`Crossing`] carries its owner as a `u32`, and both caps are enforced before
+// the cut, so the narrowing at the two `Router` sites cannot wrap.
+const _: () = assert!(MAX_DECODE_LANES * MAX_INTERVALS_PER_LANE <= u32::MAX as usize);
 
 /// A successor handed to the interval that owns it.
 #[derive(Debug, Clone, Copy)]
@@ -435,7 +534,10 @@ impl InsnSink for LaneInsns {
 /// Uncapped deliberately: [`super::walk::CallbackEvidence`]'s cap is
 /// order-independent over one evidence set, but capping each shard and merging
 /// the survivors is not the same as capping the union once. The reconcile feeds
-/// the union through a single `CallbackEvidence`, which is.
+/// the union through a single `CallbackEvidence`, which is. The price is that
+/// the transient is bounded by the number of distinct in-exec `PUSH imm` targets
+/// rather than by `MAX_CALLBACK_EVIDENCE` -- ~20 bytes an entry, and only on the
+/// x86 stack-callback path.
 #[derive(Default)]
 struct LaneCallbacks {
     refs: BTreeMap<u64, u64>,
@@ -591,25 +693,21 @@ fn admit<'a>(plan: &'a WalkPlan, inputs: &ParallelInputs<'_>) -> Result<Admitted
     if inputs.seeds.is_empty() {
         return Err(Refusal::NoSeeds);
     }
-    let exec_bytes: u64 = inputs.exec_ranges.iter().map(|&(lo, hi)| hi.saturating_sub(lo)).sum();
-    let floor = env_usize(DECODE_MIN_BYTES_ENV).map(|n| n as u64).unwrap_or(MIN_EXEC_BYTES);
-    if exec_bytes < floor {
+    if exec_bytes(inputs.exec_ranges) < plan.min_exec_bytes {
         return Err(Refusal::TooSmall);
     }
-    // The image precondition. `fill_span` reports failure only when the FIRST
-    // byte of a span is unmapped, and that is the one case in which a lane's own
-    // staging window can answer differently from the parent's: a window that
-    // happens to cover the address serves zeroes where a fresh fill errors, and
-    // on x86 `00 00` is a valid instruction. Every fetch the walk makes starts
-    // at an `in_exec` address, so with every executable address mapped the
-    // window is unobservable.
+    // The image precondition (module header, docs/spec/01-program-prep.md): the
+    // loader's staging window is history-dependent only for a fetch whose FIRST
+    // byte is unmapped, and no fetch the walk makes starts outside an executable
+    // range.
     for &(lo, hi) in inputs.exec_ranges {
         if hi > lo && !seed.bytes.mapped_covers(lo, hi) {
             return Err(Refusal::UnmappedExec);
         }
     }
 
-    let intervals = Intervals::new(inputs.seeds, plan.lanes * plan.intervals_per_lane);
+    let intervals =
+        Intervals::new(inputs.seeds, plan.lanes.saturating_mul(plan.intervals_per_lane));
     let mut counts = vec![0usize; intervals.len()];
     for &s in inputs.seeds {
         counts[intervals.owner(s)] += 1;
@@ -618,6 +716,30 @@ fn admit<'a>(plan: &'a WalkPlan, inputs: &ParallelInputs<'_>) -> Result<Admitted
     order.sort_by(|&a, &b| counts[b].cmp(&counts[a]).then(a.cmp(&b)));
 
     Ok(Admitted { lanes: plan.lanes, seed, intervals, order })
+}
+
+/// Executable bytes, counting an address once. The section-less fallback takes
+/// PT_LOAD segments, which nest, and a doubly-counted image would clear the size
+/// floor on half the real bytes.
+fn exec_bytes(ranges: &[(u64, u64)]) -> u64 {
+    let mut spans: Vec<(u64, u64)> = ranges.iter().copied().filter(|&(lo, hi)| hi > lo).collect();
+    spans.sort_unstable();
+    let mut total = 0u64;
+    let mut covered: Option<(u64, u64)> = None;
+    for (lo, hi) in spans {
+        match covered {
+            Some((clo, chi)) if lo <= chi => covered = Some((clo, chi.max(hi))),
+            Some((clo, chi)) => {
+                total = total.saturating_add(chi - clo);
+                covered = Some((lo, hi));
+            }
+            None => covered = Some((lo, hi)),
+        }
+    }
+    if let Some((clo, chi)) = covered {
+        total = total.saturating_add(chi - clo);
+    }
+    total
 }
 
 // --- the lanes ---------------------------------------------------------------
@@ -700,6 +822,48 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+/// What [`DECODE_FAULT_ENV`] injects: `<n>` panics lane `n` once, `spawn:<n>`
+/// makes lane `n`'s spawn fail. Test-only; absent in every real run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Fault {
+    Lane(usize),
+    Spawn(usize),
+}
+
+fn fault_from_env() -> Option<Fault> {
+    let raw = std::env::var(DECODE_FAULT_ENV).ok()?;
+    let raw = raw.trim();
+    match raw.strip_prefix("spawn:") {
+        Some(n) => n.trim().parse().ok().map(Fault::Spawn),
+        None => raw.parse().ok().map(Fault::Lane),
+    }
+}
+
+/// Silence the default panic hook for as long as it is held.
+///
+/// A lane fault is already reported, once, as `decode: serial (lane fault)`, and
+/// the fallback makes it a cost rather than a failure; the runtime's `thread
+/// '<unnamed>' panicked at ...` block underneath it says the run broke when it
+/// did not. The hook is process-wide, so this is installed around the parallel
+/// walk only.
+struct PanicHush(Option<Box<dyn Fn(&std::panic::PanicHookInfo<'_>) + Sync + Send + 'static>>);
+
+impl PanicHush {
+    fn install() -> PanicHush {
+        let previous = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        PanicHush(Some(previous))
+    }
+}
+
+impl Drop for PanicHush {
+    fn drop(&mut self) {
+        if let Some(previous) = self.0.take() {
+            std::panic::set_hook(previous);
+        }
+    }
+}
+
 /// Build the lanes, run the rounds, and reconcile the shards.
 fn run(
     admitted: &Admitted<'_>,
@@ -708,10 +872,9 @@ fn run(
 ) -> Result<WalkState, Refusal> {
     let ivs = &admitted.intervals;
     let lanes = admitted.lanes;
+    let peak_before = peak_rss_bytes();
 
-    // One kit on this thread first: if the rebuilt engine disagrees with the
-    // parent anywhere in a 1,024-address sample, decline before any thread is
-    // spawned. The probe's kit becomes lane 0's, so the check is free.
+    // The pre-spawn probe (see `probe`); its kit becomes lane 0's.
     let kit0 = build_kit(admitted.seed)?;
     probe(&kit0, inputs)?;
 
@@ -729,7 +892,11 @@ fn run(
     let rounds = AtomicUsize::new(0);
     let total_decodes = AtomicUsize::new(0);
     let total_crossings = AtomicUsize::new(0);
-    let fault_lane = env_usize(DECODE_FAULT_ENV);
+    let fault = fault_from_env();
+    let fault_lane = match fault {
+        Some(Fault::Lane(n)) => Some(n),
+        _ => None,
+    };
     let fault_armed = AtomicBool::new(fault_lane.is_some());
 
     // The lane closure may capture only what can cross a thread boundary: the
@@ -870,18 +1037,43 @@ fn run(
         }
     };
 
+    let hush = PanicHush::install();
     let outcome = std::thread::scope(|scope| {
         let guarded = &guarded;
         let mut handles = Vec::with_capacity(lanes - 1);
+        // A spawn the OS refuses is the one lane failure that cannot report
+        // itself: `ScopedSpawn::spawn` panics, and `thread::scope` joins the
+        // lanes already parked at the first barrier before it resumes that panic
+        // -- a deadlock. Poisoning the gate here is what releases them.
+        let mut spawn_failed = false;
         for me in 1..lanes {
-            handles.push(scope.spawn(move || guarded(me, None)));
+            let refused = fault == Some(Fault::Spawn(me));
+            let spawned = if refused {
+                None
+            } else {
+                std::thread::Builder::new().spawn_scoped(scope, move || guarded(me, None)).ok()
+            };
+            match spawned {
+                Some(handle) => handles.push(handle),
+                None => {
+                    gate.poison();
+                    spawn_failed = true;
+                    break;
+                }
+            }
         }
-        // This thread is lane 0, and already holds the probe's kit.
+        // This thread is lane 0, and already holds the probe's kit -- but a walk
+        // that has already lost a lane must not start one.
         let mut tripped = false;
         let mut failure: Option<Refusal> = None;
-        match guarded(0, Some(kit0)) {
-            Ok(t) => tripped |= t,
-            Err(why) => failure = Some(why),
+        if spawn_failed {
+            failure = Some(Refusal::SpawnFailed);
+            drop(kit0);
+        } else {
+            match guarded(0, Some(kit0)) {
+                Ok(t) => tripped |= t,
+                Err(why) => failure = Some(why),
+            }
         }
         for handle in handles {
             match handle.join() {
@@ -898,6 +1090,7 @@ fn run(
             Ok(())
         }
     });
+    drop(hush);
     outcome?;
 
     // Nothing under the gate may write the parent's context database.
@@ -912,10 +1105,16 @@ fn run(
         states.into_iter().map(|m| m.into_inner().unwrap_or_else(|e| e.into_inner())).collect();
     let state = reconcile(shards, inputs.seeds, inputs.seed_funcs)?;
 
+    // What the lanes cost the process, for the worker pool's memory model.
+    if let (Some(before), Some(after)) = (peak_before, peak_rss_bytes()) {
+        LANE_PEAK_EXCESS
+            .fetch_max(lane_excess(before, after, state.insns.len()), Ordering::Relaxed);
+    }
+
     if env_usize(DECODE_STATS_ENV).is_some_and(|n| n > 0) {
         eprintln!(
             "[kuna --jobs] decode stats: lanes={} intervals={} rounds={} crossings={} \
-             decodes={} walk={:.2}s merge={:.2}s",
+             decodes={} walk={:.2}s merge={:.2}s lane_peak_excess={:.2}GB",
             lanes,
             ivs.len(),
             rounds.load(Ordering::Relaxed),
@@ -923,6 +1122,7 @@ fn run(
             total_decodes.load(Ordering::Relaxed),
             walk_time.as_secs_f64(),
             merge_started.elapsed().as_secs_f64(),
+            lane_peak_excess_bytes() as f64 / (1024.0 * 1024.0 * 1024.0),
         );
     }
     Ok(state)
@@ -938,25 +1138,16 @@ fn build_kit(seed: &DecodeSeed) -> Result<Kit, Refusal> {
 /// Re-decode a sample of the seeds on `kit` and compare against the parent.
 ///
 /// A rebuilt engine that is not decode-equivalent produces silently different
-/// bytes, not an error, so this runs before anything is spawned.
+/// bytes, not an error, so this runs before anything is spawned. The sample
+/// always asks for assembly text, whatever the walk wants, so a
+/// `PARTITION_ONLY` build compares the operands too.
 fn probe(kit: &Kit, inputs: &ParallelInputs<'_>) -> Result<(), Refusal> {
     let seeds = inputs.seeds;
     let stride = (seeds.len() / PROBE_DECODES).max(1);
     for &vma in seeds.iter().step_by(stride).take(PROBE_DECODES) {
-        let want = decode_one(
-            inputs.translate,
-            vma,
-            inputs.code_space,
-            inputs.detail.assembly,
-            inputs.policy.stack_callbacks,
-        );
-        let got = decode_one(
-            &kit.engine,
-            vma,
-            &kit.space,
-            inputs.detail.assembly,
-            inputs.policy.stack_callbacks,
-        );
+        let stacks = inputs.policy.stack_callbacks;
+        let want = decode_one(inputs.translate, vma, inputs.code_space, true, stacks);
+        let got = decode_one(&kit.engine, vma, &kit.space, true, stacks);
         match (want, got) {
             (Err(_), Err(_)) => {}
             (Ok(a), Ok(b)) => {
@@ -1174,13 +1365,16 @@ mod tests {
 
     #[test]
     fn more_intervals_than_seeds_collapses_instead_of_splitting_nothing() {
+        // Two seeds cannot fill more than two intervals, so the cut caps there
+        // whatever is asked for; every address still has exactly one owner.
         let iv = ivs(&[0x400u64, 0x800], 64);
-        assert_eq!(iv.bounds, vec![0, 0x400, 0x800, u64::MAX]);
+        assert_eq!(iv.bounds, vec![0, 0x800, u64::MAX]);
         assert_eq!(iv.owner(0), 0);
         assert_eq!(iv.owner(0x3ff), 0);
-        assert_eq!(iv.owner(0x400), 1);
-        assert_eq!(iv.owner(0x800), 2);
-        assert_eq!(iv.owner(u64::MAX), 2);
+        assert_eq!(iv.owner(0x400), 0);
+        assert_eq!(iv.owner(0x7ff), 0);
+        assert_eq!(iv.owner(0x800), 1);
+        assert_eq!(iv.owner(u64::MAX), 1);
     }
 
     #[test]
@@ -1366,25 +1560,53 @@ mod tests {
 
     #[test]
     fn every_refusal_has_a_distinct_spelling() {
-        let all = [
-            Refusal::NoThreads,
-            Refusal::NoEngine,
-            Refusal::ContextCommits,
-            Refusal::DelaySlots,
-            Refusal::NoSharedBytes,
-            Refusal::ContextPaint,
-            Refusal::NoSeeds,
-            Refusal::UnmappedExec,
-            Refusal::TooSmall,
-            Refusal::KitFailed,
-            Refusal::KitDisagrees,
-            Refusal::LaneFault,
-            Refusal::UnmappedFetch,
-            Refusal::Collision,
-            Refusal::RoundLimit,
-            Refusal::ContextMoved,
-        ];
-        let spellings: BTreeSet<&str> = all.iter().map(|r| r.reason()).collect();
-        assert_eq!(spellings.len(), all.len(), "a reason must name exactly one refusal");
+        let spellings: BTreeSet<&str> = Refusal::ALL.iter().map(|r| r.reason()).collect();
+        assert_eq!(spellings.len(), Refusal::ALL.len(), "a reason must name exactly one refusal");
+    }
+
+    /// `KUNA_DECODE_INTERVALS` is a knob this ships, and the gate's contract is
+    /// that anything it cannot do falls back to the serial walk -- so a cut it
+    /// cannot allocate has to collapse, not panic on the calling thread.
+    #[test]
+    fn an_absurd_interval_count_collapses_instead_of_overflowing() {
+        let seeds = [0x1000u64, 0x2000, 0x3000];
+        for k in [usize::MAX, usize::MAX / 2, 1 << 40, 4096] {
+            let iv = ivs(&seeds, k);
+            assert!(iv.len() <= seeds.len(), "k={k}: the cut cannot exceed the seed count");
+            assert_eq!(iv.bounds[0], 0);
+            assert_eq!(*iv.bounds.last().unwrap(), u64::MAX);
+            assert_eq!(iv.owner(u64::MAX), iv.len() - 1);
+        }
+        // The product the gate feeds it saturates rather than wrapping to zero.
+        assert_eq!(MAX_DECODE_LANES.saturating_mul(usize::MAX), usize::MAX);
+        assert_eq!(
+            usize::MAX.clamp(1, MAX_INTERVALS_PER_LANE),
+            MAX_INTERVALS_PER_LANE,
+            "the per-lane cut is clamped before it is multiplied"
+        );
+    }
+
+    #[test]
+    fn overlapping_executable_ranges_are_counted_once() {
+        // The section-less fallback's PT_LOAD segments: one nested, one
+        // overlapping, one disjoint, one empty, and the list out of order.
+        let ranges = [(0x1000u64, 0x5000u64), (0x2000, 0x3000), (0x4000, 0x6000), (0x9000, 0x9000)];
+        assert_eq!(exec_bytes(&ranges), 0x5000, "a doubly-counted image must not clear the floor");
+        assert_eq!(exec_bytes(&[(0x8000, 0x9000), (0x1000, 0x2000)]), 0x2000);
+        assert_eq!(exec_bytes(&[]), 0);
+    }
+
+    #[test]
+    fn the_lane_excess_prices_out_the_map_the_serial_walk_would_hold() {
+        let mb = |n: u64| n * 1024 * 1024;
+        // A walk that grew the peak by 3 GB while decoding 4 M instructions:
+        // ~1.19 GB of that is the reconciled map, and only the rest is the lanes'.
+        let insns = 4_000_000usize;
+        let map = insns as u64 * SERIAL_MAP_BYTES_PER_INSN;
+        assert_eq!(lane_excess(mb(6000), mb(6000) + mb(3000) + map, insns), mb(3000));
+        // A serial-shaped growth is no excess at all, and nothing underflows.
+        assert_eq!(lane_excess(mb(6000), mb(6000) + map, insns), 0);
+        assert_eq!(lane_excess(mb(6000), mb(5000), insns), 0);
+        assert_eq!(lane_excess(0, u64::MAX, usize::MAX), 0);
     }
 }

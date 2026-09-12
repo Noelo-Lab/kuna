@@ -220,6 +220,11 @@ impl Listing {
         detail: ListingDetail,
         plan: &WalkPlan,
     ) -> Listing {
+        debug_assert!(
+            plan.built_from(arch),
+            "the plan's decode recipe was captured from another architecture than {}",
+            arch.archid
+        );
         // The executable-range universe (design §2.4 / §3.4 out-of-bounds gate),
         // sorted by low VMA so the partition / gap queries can binary-search it.
         let mut exec_ranges: Vec<(u64, u64)> = crate::entry::executable_sections(file)
