@@ -1,0 +1,26 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "timeout_s": 60,
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "sub_140002930"
+  ],
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_absent": [
+      "if \\([^\\n]*== \\(unsigned short\\)([A-Za-z_][A-Za-z_0-9]*)\\(\\)\\)[\\s\\S]*?\\]\\s*=\\s*\\(unsigned short\\)\\1\\(\\);"
+    ]
+  },
+  "target": {
+    "binary_rel": "callretmulti_x86_64",
+    "binary_sha256": "8c9139dd5b2083a6bc27bcffa08d3ad4da3d4688710292c5f9e4dba823707a26",
+    "binary_size": 9040,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/callretmulti_x86_64"
+  }
+}

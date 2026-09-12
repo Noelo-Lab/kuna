@@ -1209,7 +1209,12 @@ moves.
   constants — this typing, plus the read-only markup, is what turns `puts(0x400915)`
   into `puts("Username: ")`. LOSS: the built-in table is not a header archive, so
   it covers only the names it lists; every other libc callee leaves its caller's
-  argument an inferred integer.
+  argument an inferred integer. The compatible name-keyed prototype stream is
+  retained for ordinary symbols. For an imported table name the pass additionally
+  emits the same signature at every concrete address the format resolver reports.
+  This is required on PE, where the IAT slot and its `FF 25` veneer are separate
+  `FunctionSymbol`s with the same name and a direct call reads the veneer's
+  prototype by entry address.
 - **(kuna) Measured libc signatures** (`libcsigs`,
   `decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_libcsigs.rs (LibcSigsPass)`):
   the second, larger half of the same table, closing most of the LOSS above. Which
@@ -1224,16 +1229,22 @@ moves.
   ILP32/LP64 — `off_t`, `time_t`, `long long`, a `char` parameter — is **rejected
   rather than approximated**, because a wrong prototype is worse than a missing one:
   it asserts a false type where the inferred integer was merely uninformative.
-  Two consequences follow from that same principle. A signature is applied only to
-  a name the image **imports** and does not itself define — a PLT/IAT import named
-  `error` is the platform's `error(int, int, const char *, …)`, but a *defined*
-  `error` is the program's own function that happens to share the spelling (zlib's
-  `minigzip` declares `void error(const char *)`), and the base table's
-  defined-or-imported matching is left untouched. And the FORTIFY entry points are
+  Two consequences follow from that same principle. A global by-name signature
+  is applied only to a name the image **imports** and does not itself define — a
+  PLT/IAT import named `error` is the platform's
+  `error(int, int, const char *, …)`, but a *defined* `error` is the program's own
+  function that happens to share the spelling (zlib's `minigzip` declares
+  `void error(const char *)`). The base table continues to
+  match imported-only and defined-only names, but uses the same collision guard.
+  And the FORTIFY entry points are
   modeled as the distinct functions they are, not as aliases: `__printf_chk` takes
   a leading `int flag` before the format string, `__fprintf_chk` a `FILE *` and a
   flag, so treating either as its plain namesake would shift every argument of the
-  most frequent call in the corpus.
+  most frequent call in the corpus. Unambiguous imports keep the historical by-name
+  prototype. Independently, every provenance-confirmed import receives an
+  address-keyed copy at each resolver address. Thus an IAT slot and veneer remain
+  typed even when a same-spelled export suppresses the global key; the export
+  itself remains untouched.
 - **(kuna) Win32 API signatures** (`win32sigs`,
   `decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_win32sigs.rs (Win32SigsPass)`):
   the Windows half of the same `.gdt` stand-in, which the tree did not carry at all.
@@ -1256,15 +1267,15 @@ moves.
   typing: the x86 PE default prototype model is `__stdcall` with an unknown
   `extrapop`, so a locked N-parameter prototype also states that the callee pops
   `4 + 4N` bytes, which is why the table admits only callee-cleans `WINAPI` exports
-  and no `__cdecl` CRT spelling. And the prototypes are parked by **entry address**,
-  not by name: a PE import is registered as two `FunctionSymbol`s — the size-0 IAT
+  and no `__cdecl` CRT spelling. Like the libc passes, the prototypes are parked by
+  **entry address**: a PE import is registered as two `FunctionSymbol`s — the size-0 IAT
   slot the engine constant-folds through and the `FF 25` thunk veneer a direct
   `call` targets — the global by-name query answers with the slot, and
   `ActionDefaultParams` asks about whichever one the call resolved to, so a by-name
   park is a silent no-op on exactly the calls that need it. The pass emits one
-  address-keyed prototype per name the import resolver reports, which lands on both.
-  PE/COFF only, and imported names only, so an image that defines its own function
-  under a Win32 spelling is never retyped.
+  address-keyed prototype per genuine import the resolver reports, which lands on
+  both. PE/COFF only; a same-named definition/export is never retyped because this
+  pass emits no global by-name prototype.
 - **(kuna) Declared names** (`declaredlibcproto`,
   `decompiler/crates/kuna-analysis/src/analyzers/protos/mod.rs (declared_libc_prototype)`,
   consulted from `decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::declare_function)`):

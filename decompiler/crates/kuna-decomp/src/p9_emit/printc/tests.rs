@@ -160,6 +160,49 @@ mod stack_pointer_high_leaf {
         assert_eq!(render_leaf(&fd, scratch_unique, op), unique_name);
         assert!(unique_name.starts_with("Unique"));
     }
+
+    #[test]
+    fn constant_symbol_reference_is_not_a_scalar_whole_storage_sibling() {
+        let (mut fd, register) = build_fd();
+        let partial = fd.new_varnode(
+            4,
+            &Address::new(Rc::clone(&register), 0x20),
+            Some(Rc::new(Datatype::new(4, type_metatype::TYPE_UNKNOWN))),
+        );
+        let reference = fd.new_constant(8, 0xffff_ffff_ffff_fff0);
+        let whole = fd.new_varnode(
+            8,
+            &Address::new(register, 0x28),
+            Some(unknown8()),
+        );
+        fd.set_high_level();
+
+        let partial_high = fd.vbank().get(partial).unwrap().get_high().unwrap();
+        let reference_high = fd.vbank().get(reference).unwrap().get_high().unwrap();
+        let whole_high = fd.vbank().get(whole).unwrap().get_high().unwrap();
+        for high in [partial_high, reference_high] {
+            let h = fd.high_bank_mut().get_mut(high).unwrap();
+            h.set_kuna_name("local");
+            h.set_symbol_type(unknown8());
+            h.set_symbol_offset(0);
+        }
+
+        assert!(!high_name_has_scalar_whole_sibling(
+            &fd,
+            partial_high,
+            "local"
+        ));
+
+        let h = fd.high_bank_mut().get_mut(whole_high).unwrap();
+        h.set_kuna_name("local");
+        h.set_symbol_type(unknown8());
+        h.set_symbol_offset(0);
+        assert!(high_name_has_scalar_whole_sibling(
+            &fd,
+            partial_high,
+            "local"
+        ));
+    }
 }
 
 fn rpn(tok: &'static OpToken, visited: int4) -> ReversePolish {

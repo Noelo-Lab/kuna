@@ -54,6 +54,7 @@ pub mod methods;
 pub mod sections;
 
 use kuna_decomp::dtype::TypeFactory;
+use object::read::Object;
 
 use crate::pass::{
     AnalysisCtx, AnalysisOutput, AnalysisPass, FidMatch, Phase, SymFact, SymKind,
@@ -117,7 +118,7 @@ impl AnalysisPass for ObjcMetadataPass {
             if class_ptr == 0 {
                 continue;
             }
-            self.walk_class(&img, &tctx, class_ptr, &mut out);
+            self.walk_class(&img, &tctx, ctx.file.architecture(), class_ptr, &mut out);
         }
         out
     }
@@ -129,6 +130,7 @@ impl ObjcMetadataPass {
         &self,
         img: &MachoImage,
         tctx: &TypeCtx,
+        architecture: object::Architecture,
         class_ptr: u64,
         out: &mut AnalysisOutput,
     ) {
@@ -148,12 +150,12 @@ impl ObjcMetadataPass {
 
         // Instance (`-`) methods: class_ro_t.baseMethods.
         if let Some(list) = classt::base_methods(img, class.ro) {
-            self.emit_methods(img, tctx, &name, '-', list, out);
+            self.emit_methods(img, tctx, architecture, &name, '-', list, out);
         }
         // Class (`+`) methods: metaclass (isa) class_ro_t.baseMethods.
         if let Some(meta_ro) = classt::metaclass_ro(img, class.isa) {
             if let Some(list) = classt::base_methods(img, meta_ro) {
-                self.emit_methods(img, tctx, &name, '+', list, out);
+                self.emit_methods(img, tctx, architecture, &name, '+', list, out);
             }
         }
         // Instance variables: `<Class>::ivar` Data labels (PR-O2).
@@ -168,12 +170,13 @@ impl ObjcMetadataPass {
         &self,
         img: &MachoImage,
         tctx: &TypeCtx,
+        architecture: object::Architecture,
         class: &str,
         kind: char,
         list_va: u64,
         out: &mut AnalysisOutput,
     ) {
-        for m in methods::walk_method_list(img, list_va) {
+        for m in methods::walk_method_list(img, list_va, architecture) {
             // `-[Greeter greet:]` / `+[Greeter classMethod]` — the ObjC method name
             // the printer renders. Selectors are ASCII, so no demangling.
             let label = format!("{kind}[{class} {sel}]", sel = m.selector);
@@ -304,7 +307,7 @@ mod tests {
 
         // Instance method list: the single `-(int)greet:` method.
         let list = classt::base_methods(&img, class.ro).expect("baseMethods present");
-        let methods = methods::walk_method_list(&img, list);
+        let methods = methods::walk_method_list(&img, list, file.architecture());
         assert_eq!(methods.len(), 1, "exactly one instance method");
         let m = &methods[0];
         assert_eq!(m.selector, "greet:");
@@ -317,6 +320,28 @@ mod tests {
 
         // The classlist holds exactly one class_t* entry (8 bytes).
         assert_eq!(cl_data.len(), ps, "one class in the classlist");
+    }
+
+    #[test]
+    fn preserves_odd_x86_64_imp_from_metadata() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/macho_objc_odd_imp"
+        );
+        let bytes = std::fs::read(path).expect("read odd-IMP fixture");
+        let file = object::File::parse(bytes.as_slice()).expect("parse Mach-O");
+        assert_eq!(file.architecture(), object::Architecture::X86_64);
+
+        let img = MachoImage::new(&file);
+        let (cl_addr, _) = img.classlist(&file).expect("__objc_classlist present");
+        let class_ptr = img.read_ptr(cl_addr).expect("class_t pointer");
+        let class = classt::read_class_t(&img, class_ptr).expect("class_t reads");
+        let list = classt::base_methods(&img, class.ro).expect("baseMethods present");
+        let methods = methods::walk_method_list(&img, list, file.architecture());
+
+        assert_eq!(methods.len(), 1);
+        assert_eq!(methods[0].selector, "greet:");
+        assert_eq!(methods[0].imp, 0x1_0000_0641);
     }
 
     /// The arm64 chained-fixup path (design §5 PR-O0 + PR-O2): the vendored
@@ -371,7 +396,7 @@ mod tests {
         assert_eq!(classt::class_name(&img, class.ro).as_deref(), Some("Greeter"));
 
         let list = classt::base_methods(&img, class.ro).expect("baseMethods present");
-        let methods = methods::walk_method_list(&img, list);
+        let methods = methods::walk_method_list(&img, list, file.architecture());
         assert_eq!(methods.len(), 1, "exactly one instance method");
         let m = &methods[0];
         assert_eq!(m.selector, "greet:");

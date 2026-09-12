@@ -28,6 +28,7 @@ real ELF parser.
 | `pe_chainedunwind_x86_64.exe`, `pe_chainedunwind_loop_x86_64.exe`, `pe_chainedunwind_plainft_x86_64.exe` | hand-assembled PE32+/x86-64 (2 KB each; generators `pe_chainedunwind*.py`, regenerate with `python3 <name>.py`) whose `.pdata` splits ONE logical function across two `RUNTIME_FUNCTION` records, the second carrying `UNWIND_INFO` with `UNW_FLAG_CHAININFO` | The chained-record entry skip (`pdatachained`, default-on, GH-403; `--option pdatachained off` restores the defect). The three differ only in what the primary's last instruction is, which is what decides the shape of the damage the bogus entry causes: a conditional branch (`} while ;`, invalid C), a loop latch (the decompile fails outright), and an ordinary fall-through (the second half of the function silently disappears). `kuna-console/tests/verify_pdatachained.rs` is the two-pass e2e over all three; `tests/cli/pe-chained-unwind-truncates-function.json` is the CLI probe. No Windows toolchain on this host, hence the byte-by-byte generators (same pattern as `crtmain_x86_64.py`) |
 | `arraycoverwidth_x86_64` | project-authored non-PIE x86-64 ELF from `arraycoverwidth_x86_64.s` (`-nostdlib -Ttext=0x100000 -e vm`, 5 KB): two 16-byte stack banks zeroed with `movaps`, escaped to `sink` so nothing is dead, then swapped with the `movdqa/movdqa/movaps/movaps` quartet | the array-cover width render (`arraycoverwidth`, default-on; `--option arraycoverwidth off` restores the defect). It is the reduction of the crackmes.one `KataVM_L1` VM-interpreter witness whose sixteen-byte bank swap printed `v30[0] = v32[0];`, a one-byte lvalue for a sixteen-byte copy. `vm`@`0x100000`, `sink`@`0x100049`; the trailing `movzbl 0x3(%rsp)` is the genuine one-byte in-element read that must KEEP its `[3]` subscript. `tests/cli/16-byte-vm-state.json` is the CLI probe, `tests/stages/kuna-arraycoverwidth.xml` the two-pass stage test |
 | `splitstorekeep_x86_64` | project-authored non-PIE x86-64 ELF from `splitstorekeep_x86_64.s` (`-nostdlib -no-pie -Wl,--build-id=none -Wl,-Ttext=0x100000 -e copy31`, 4.8 KB): `copy31`@`0x100000` copies 31 bytes of stack with four 8-byte moves at offsets 0, 8, 15 and 23, so the middle two overlap on byte 15; `copy32`@`0x100042` is the same shape at 32 bytes, where the four moves tile `[0,32)` and none of them overlaps; `sink`@`0x100084` | the refinement-split store mark (`splitstorekeep`, default-on, DIV-153; `--option splitstorekeep off` restores the defect, `copy31` emitting only the head store and the tail store with the fifteen bytes between them never written). It is the reduction of the crackmes.one `0xJam3z-Medium` witness whose `sub_15dc` copied a 31-byte password buffer and lost bytes 8..22. `copy32` is the control: refinement never fires on it, so its C is identical in both passes. `tests/cli/31-byte-buffer-copy.json` is the CLI probe, `tests/stages/kuna-splitstorekeep.xml` the two-pass stage test |
+| `checker_stack_aggregate_x86_64` | project-authored non-PIE x86-64 ELF with DWARF from `checker_stack_aggregate_x86_64.c` (`cc -g -O0 -nostdlib -no-pie -fno-stack-protector -Wl,--build-id=none -Wl,-e,_start ...`, 11 KB): `stack_aggregate` writes the two 4-byte halves of one declared 8-byte local, passes its address to `sink`, then reads the low half | the P9 scalar-piece declaration fallback. The address expression creates a constant-only HighVariable with the symbol's full width; it must not masquerade as the whole storage sibling that will declare the local. Before the fix both real halves were suppressed and the body used undeclared `local`; `tests/cli/checker-uses-stack-aggregate.json` and `tests/stages/re-checker-stack-aggregate.xml` cover the reduced RE-friction witness |
 | `constselectjump_x86_64` | project-authored non-PIE x86-64 ELF from `constselectjump_x86_64.s` (`-nostdlib -no-pie -Ttext=0x100000 -e csjmp`, 5 KB): `csjmp`@`0x100000` selects between two code addresses with `movabs`/`movabs`/`cmovz` and jumps through the register (`jmp *%r9`), the two arms at `0x100020` and `0x100030` returning `a1 + 1` and `a1 - 1` | the constant-select indirect-branch recovery (`constselectjump`, default off, carried by `--mode aggressive`; `--option constselectjump off` restores the defect, where the whole function is `(*v1)(); // jump-as-call` and neither arm is decoded). It is the reduction of the crackmes.one `5b52f6eb33c5d41c0b8ae55f` Mach-O `LOL` decoder at `0x10003c9e0`, whose entire nine-line body was the computed call over the two already-constant targets `0x10003ca26` / `0x10003cb26`. `tests/cli/conditional-indirect-branches-hide.json` is the CLI probe, `tests/stages/re-constselectjump.xml` the two-pass stage test |
 | `segmentgap_i386` | hand-assembled i386 ELF (4.3 KB; generator `segmentgap_i386.py`, regenerate with `python3 segmentgap_i386.py`): one `R E` `PT_LOAD` `[0x8048000,0x8048014)` ending mid-page, an unmapped hole, then a `RW` `PT_LOAD` at `0x804a000` | the listing's end-of-mapped-memory clip (ungated -- a query, not a decode). It is the reduction of the crackmes.one `5ee1f28c33c5d449d91ae7c0` `keygenme` witness, whose `R E` segment stops at `0x80d1904`. Unfixed, `kuna disassemble 0x8048000 --addr --count 30` runs to `0x804803f` with twenty-two `ADD byte ptr [EAX],AL` rows read out of the loader's zero fill. The last mapped byte is a lone `0x00` on purpose: the `add [eax],al` the translator reads there STRADDLES the boundary and must list as `.byte`. `tests/cli/disassembly-fabricates-zero-byte.json` is the CLI probe, `kuna-cli/tests/disassemble_cli.rs` the e2e |
 | `utf8prompt_x86_64` | project-authored non-PIE x86-64 ELF from `utf8prompt_x86_64.s` (`-nostdlib -no-pie -Wl,-Ttext=0x100000 -e prompt_user`, 9 KB): `prompt_user`@`0x100000` loads `prompt`@`0x101000` — `＿φ( °-°)/ so what was the magical keycombination? `, opening with U+FF3F, U+03C6 and two U+00B0 — then the ASCII-only control `plain`@`0x101038` | the UTF-8 reading of the string inventory's 1-byte width (`kuna strings --encoding utf8|all`, ungated — a report, not a decode). It is the reduction of the crackmes.one `6736b3a09b533b4c22bd2b9f` `no-standards` witness, whose prompt at `0x2000` was reported at `0x200c` with 43 of its 50 characters, `xrefs_count 0` and no functions, although `kuna xrefs --to 0x2000` found the entry routine's `LEA` all along. `plain` is the control: pure ASCII, so it must read identically under both. `tests/cli/utf-8-prompt-loses.json` is the CLI probe, `kuna-cli/tests/strings_cli.rs` the e2e |
@@ -142,6 +143,13 @@ itaniumrtti_x86_64.so`. A SHARED library so `.rela.dyn` keeps the undefined
 entry points carry an explicit `visibility("default")` attribute), and
 `--strip-all` so nothing else survives. Addresses are NOT pinned: the tests
 assert on recovered NAMES, which is what the feature produces.
+
+`rdtsc_zero_extend_x86_64` (4664 bytes, source vendored alongside as
+`rdtsc_zero_extend_x86_64.s`): `as -o rdtsc_zero_extend_x86_64.o
+rdtsc_zero_extend_x86_64.s && ld -o rdtsc_zero_extend_x86_64
+rdtsc_zero_extend_x86_64.o`. The one function seeds nonzero upper halves in
+RAX/RDX, executes `RDTSC`, and recombines EDX:EAX, so correct x86-64 lifting
+reduces its return value to exactly `rdtsc()`.
 
 `eh_lsda_x86_64` (14744 bytes, source vendored alongside as
 `eh_lsda_x86_64.cpp`): `g++ -O1 -no-pie -fno-pic -fexceptions -o eh_lsda_x86_64
@@ -555,6 +563,22 @@ docker run --rm -v "$PWD":/w -w /w kuna-dev bash -lc \
      -o decompiler/crates/kuna-analysis/tests/fixtures/pe_noreturn_import.exe -lkernel32'
 ```
 
+`libcsigs_pe_x86_64.exe` (1536 B, generated by the adjacent Python script) is
+the duplicate-name libc-prototype fixture. Its caller at `0x140001000` reaches
+`memcmp` through the `FF 25` veneer at `0x140001080`; the import resolver also
+names the IAT slot at `0x140002050` as imported `memcmp`, while reporting a
+same-named defined export at `0x140001060` with distinct provenance. The caller
+keeps RDX and R8 live through a length comparison, then calls the veneer with
+RCX set last. Previously, a by-name prototype park reached only one of the
+symbols and rendered `memcmp(0x140002100)`; the import/export spelling collision
+now suppresses that unsafe global park. Parking the three-argument `libcsigs`
+prototype on both provenance-confirmed import addresses—but not on the defined export—
+renders `memcmp((void *)0x140002100,(void *)0x140002110,3)`. Regenerate with:
+
+```bash
+python3 decompiler/crates/kuna-analysis/tests/fixtures/libcsigs_pe_x86_64.py
+```
+
 `coff_obj.obj` (Intel amd64 COFF object, <1 KB) is a **pre-link COFF object** for
 the PR-5 object-loader gate (`kuna-console/tests/verify_coff_object.rs`,
 design §3.6). Built (no new packages — `clang` ships in `kuna-dev`):
@@ -762,6 +786,19 @@ ImageBase `0x100000000` (PIE). The metadata chain the pass walks:
 like `macho_imports`) — so this slice is also the **no-op proof** for the
 chained-fixup resolver (the resolver yields an empty overlay here, and `read_ptr`
 reads raw section words exactly as before).
+
+`macho_objc_odd_imp` is the x86-64 low-bit regression twin. Its assembly source
+is the same root-class metadata shape with one byte before the method label, so
+the absolute `method_t.imp` is the valid odd address `0x100000641`. The byte at
+`0x100000640` is padding; decompiling there demonstrates the incorrect rounding,
+while the odd entry returns `n * 3 + 7`. Rebuild it without an Apple SDK:
+
+```bash
+clang -target x86_64-apple-macos11 -c macho_objc_odd_imp.s -o m.o
+LLD=$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin/gcc-ld/ld64.lld
+"$LLD" -arch x86_64 -platform_version macos 11.0 11.0 \
+       -undefined dynamic_lookup -x -e _main -o macho_objc_odd_imp m.o
+```
 
 ### `macho_objc_arm64` — the chained-fixup + arm64 slice (PR-O0 + PR-O2)
 

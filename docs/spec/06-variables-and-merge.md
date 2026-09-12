@@ -682,7 +682,21 @@ out-parameter COPY `Merge::snip_reads` places right after the call would
 otherwise have the call text sunk past it, handing it the pre-call value;
 marker ops are skipped since a later call's own INDIRECTs chain the earlier
 call's versions without any textual evaluation point). Anything else stays
-explicit: false negatives over reordering bugs. When the predicate passes, the output falls
+explicit: false negatives over reordering bugs.
+
+The direct call output may have one descendant even though a derived value
+later fans out. For example, `u = (ushort)f()` gives the call one `SUBPIECE`
+descendant, while `u` can feed a loop comparison and a post-loop store. If the
+ordinary multiplier analysis made `u` implied, the printer would recursively
+emit `f()` at both sinks. Before multiplier analysis, kuna therefore walks an
+implied expression at each multi-use root back through its defining ops. If it
+reaches a call that passed the fold predicate, the derived root remains explicit
+and becomes the single textual evaluation point. Already-explicit inputs stop
+the walk. The traversal follows only operands that the ordinary multiplier
+analysis can print as part of the expression: it skips a LOAD's space input, a
+PTRADD's multiplier, and SEGMENTOP metadata.
+
+When the predicate passes, the output falls
 through to the ordinary implied machinery of §6.1 — the fold itself is just
 `if (timespec_cmp(...) <= -1)` emerging from the printer's normal recursion.
 `off` restores the upstream always-spill form byte-for-byte; four datatest

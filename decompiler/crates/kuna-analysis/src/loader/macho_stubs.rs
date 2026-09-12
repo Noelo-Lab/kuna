@@ -59,7 +59,7 @@ use object::FileKind;
 
 use super::macho_fat::{select_fat_slice, SlicePref};
 
-use super::format::ImportSym;
+use super::format::{ImportSym, ImportSymKind};
 
 /// Resolve a Mach-O image's `__stubs` entries and symbol-pointer slots to their
 /// imported function names.
@@ -216,7 +216,11 @@ where
                 continue;
             }
             let addr = base.wrapping_add((i as u64).wrapping_mul(stride));
-            out.push(ImportSym { addr, name });
+            out.push(ImportSym {
+                addr,
+                name,
+                kind: ImportSymKind::Import,
+            });
         }
     }
 
@@ -236,6 +240,7 @@ fn finish_with_exports(neutral: &object::File, mut out: Vec<ImportSym>) -> Vec<I
                 out.push(ImportSym {
                     addr: e.address(),
                     name: strip_leading_underscore(name),
+                    kind: ImportSymKind::Export,
                 });
             }
         }
@@ -312,7 +317,11 @@ mod tests {
             let Some(raw_name) = symbol_name(raw) else { continue };
             let name = strip_leading_underscore(raw_name);
             let addr = stub_base + (i as u64) * stride;
-            out.push(ImportSym { addr, name });
+            out.push(ImportSym {
+                addr,
+                name,
+                kind: ImportSymKind::Import,
+            });
         }
 
         assert_eq!(out.len(), 1, "only the real import is named, the LOCAL is skipped");
@@ -333,7 +342,11 @@ mod tests {
                 continue;
             }
             let name = strip_leading_underscore(b"_printf");
-            out.push(ImportSym { addr: slot_base + (i as u64) * ptr, name });
+            out.push(ImportSym {
+                addr: slot_base + (i as u64) * ptr,
+                name,
+                kind: ImportSymKind::Import,
+            });
             let _ = raw;
         }
         assert_eq!(out.len(), 1);

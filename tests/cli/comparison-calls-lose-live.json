@@ -1,0 +1,36 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "timeout_s": 60,
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "0x140001000",
+    "--addr",
+    "--option",
+    "calleearity",
+    "on",
+    "--option",
+    "varargstackargs",
+    "on"
+  ],
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "\\bmemcmp\\([^,\\n]+,[^,\\n]+,[^,\\n]+\\)"
+    ]
+  },
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/libcsigs_pe_x86_64.exe",
+    "binary_sha256": "9334121f1d2710f13b313d0ebcdce71c568b4bf501862b0cb7e87e18e5c63117",
+    "binary_size": 1536,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/libcsigs_pe_x86_64.exe",
+    "selector": "0x140001000",
+    "selector_kind": "addr"
+  },
+  "notes": "Positive three-argument assertion: deleting or renaming the call cannot satisfy this acceptance."
+}

@@ -712,6 +712,17 @@ naming) the storage comment — is byte-identical to one already emitted
 two same-named locals at different slots or types differ in signature and both
 survive.
 
+Partial covers of a mapped scalar are suppressed only when another
+HighVariable with the same name actually represents the whole storage: its
+first member is non-constant, starts at symbol offset zero, and has the symbol's
+full width (`printc.rs (high_name_has_scalar_whole_sibling)`). A constant
+`PTRSUB` offset bound to `&local` also carries the symbol's name and full width,
+but its declaration is filtered as an address reference; treating that constant
+as the whole sibling would suppress every real partial and leave `local` used
+without any declaration. When no whole storage high exists, the partials reach
+the symbol-keyed collapse above, which retains one declaration for the shared
+name.
+
 The symbol step is what makes the collapse total for a *mapped* slot. The line
 step alone left one stack slot declared twice under one name with two types
 whenever two of its live ranges did not merge and recovered different types

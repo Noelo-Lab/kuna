@@ -8,7 +8,7 @@ set -uo pipefail
 REPO="${KUNA_REPO:-$(git -C "$(dirname "$0")" rev-parse --show-toplevel)}"
 KUNA_PY="${KUNA_PY:-$HOME/.virtualenvs/kuna/bin/python}"
 STATE_DIR="${KUNA_PIPELINE_STATE_DIR:-$REPO/.kuna-repipe}"
-TIMEOUT="${REPIPE_CAPTAIN_TIMEOUT:-1200}"
+TIMEOUT="${REPIPE_CAPTAIN_TIMEOUT:-3600}"
 BACKEND="${REPIPE_CAPTAIN_BACKEND:-claude}"
 if [ "$BACKEND" = codex ]; then
   MODEL="${REPIPE_CAPTAIN_MODEL:-gpt-5.6-sol}"

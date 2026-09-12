@@ -34,20 +34,23 @@
 //!
 //! ## Imports only
 //!
-//! Unlike the 27-entry base table, an entry here is applied **only to a name the
-//! image imports** and does not itself define. That is the whole wrongness axis:
+//! Unlike the 27-entry base table, the compatible by-name entry here is applied
+//! **only to an unambiguous imported name** which the image does not also define.
+//! That is the whole wrongness axis:
 //! a PLT/IAT import named `error` is definitively the platform's
 //! `error(int, int, const char *, ...)`, but a *defined* `error` is the image's own
 //! function and may only share the spelling — zlib's `minigzip` defines
 //! `void error(const char *msg)`, and typing that call `error(0, 0, …)` would be
-//! strictly worse than the `unsigned long` it replaces. The base table keeps its
-//! defined-or-imported matching untouched.
+//! strictly worse than the `unsigned long` it replaces. The base table continues
+//! to match defined-only and imported-only names, but applies the same collision
+//! guard to its global by-name stream. Every genuine resolver import still
+//! receives an exact address-keyed prototype, including when a same-named export
+//! exists, so an IAT slot and its veneer remain typed without retyping the export.
 
-use object::read::{Object, ObjectSymbol};
-use object::SymbolKind;
-use std::collections::HashSet;
-
-use super::{build_pieces, Sig, Ty};
+use super::{
+    resolved_import_addrs, seed_named_prototypes, seed_resolved_prototypes,
+    unambiguous_imported_function_names, Sig, Ty,
+};
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
 
 /// Seed the measured libc signature extension onto imported functions.
@@ -275,39 +278,6 @@ pub(super) const LIBC_EXT: &[(&str, Sig)] = &[
     ("warnx", Sig { ret: Ty::Void, params: &[Ty::CharPtr], vararg: 1 }),
 ];
 
-/// The names the image **imports** and does not itself define.
-///
-/// The undefined FUNC symbols (ELF `.dynsym`/`.symtab`, the COFF symtab, Mach-O
-/// `LC_SYMTAB`) unioned with the §3 import resolver's names (PE IAT/INT, Mach-O
-/// `__stubs`), minus every name the image defines. A binary that both defines and
-/// imports a spelling is answering the question itself: the calls go to its own
-/// definition, so nothing is asserted.
-fn imported_function_names(file: &object::File, bytes: &[u8]) -> HashSet<String> {
-    let mut imported = HashSet::new();
-    let mut defined = HashSet::new();
-    for sym in file.symbols().chain(file.dynamic_symbols()) {
-        if sym.kind() != SymbolKind::Text {
-            continue;
-        }
-        let Ok(n) = sym.name() else { continue };
-        let Ok(n) = String::from_utf8(crate::loader::elf_plt::strip_version(n.as_bytes())) else {
-            continue;
-        };
-        if sym.is_undefined() {
-            imported.insert(n);
-        } else {
-            defined.insert(n);
-        }
-    }
-    for imp in crate::loader::format::resolve_imports(file, bytes) {
-        if let Ok(n) = String::from_utf8(imp.name) {
-            imported.insert(n);
-        }
-    }
-    imported.retain(|n| !defined.contains(n));
-    imported
-}
-
 impl AnalysisPass for LibcSigsPass {
     fn phase(&self) -> Phase {
         Phase::P1
@@ -319,20 +289,12 @@ impl AnalysisPass for LibcSigsPass {
 
     fn run(&self, ctx: &AnalysisCtx) -> AnalysisOutput {
         let mut out = AnalysisOutput::default();
-        let imported = imported_function_names(ctx.file, ctx.bytes);
-        if imported.is_empty() {
-            return out;
-        }
+        let imported = unambiguous_imported_function_names(ctx.file, ctx.bytes);
+        let resolved = resolved_import_addrs(ctx.file, ctx.bytes);
         let types = ctx.arch.types();
         let (_addr_size, word_size) = ctx.arch.data_org();
-        for (name, sig) in LIBC_EXT {
-            if !imported.contains(*name) {
-                continue;
-            }
-            if let Ok(pieces) = build_pieces(name, sig, types, word_size) {
-                out.prototypes.push(pieces);
-            }
-        }
+        seed_named_prototypes(&mut out, &imported, LIBC_EXT, types, word_size);
+        seed_resolved_prototypes(&mut out, &resolved, LIBC_EXT, types, word_size);
         out
     }
 }
@@ -340,6 +302,7 @@ impl AnalysisPass for LibcSigsPass {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
 
     #[test]
     fn table_is_disjoint_from_base() {
@@ -398,7 +361,7 @@ mod tests {
         let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fauxware");
         let bytes = std::fs::read(path).expect("read fauxware fixture");
         let file = object::File::parse(bytes.as_slice()).expect("parse fauxware");
-        let imported = imported_function_names(&file, &bytes);
+        let imported = unambiguous_imported_function_names(&file, &bytes);
         for want in ["read", "open", "exit"] {
             assert!(imported.contains(want), "fauxware imports {want}: {imported:?}");
             assert!(LIBC_EXT.iter().any(|(n, _)| n == &want), "table should know {want}");

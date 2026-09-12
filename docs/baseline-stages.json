@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    776,
-    776
+    783,
+    783
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -524,8 +524,15 @@
     "data:calleedeadarg #1: option off passes the previous call's return value to a callee that never reads it (bug reproduced)",
     "data:calleedeadarg #2: option on drops the argument the callee's own body proves it never reads",
     "data:calleedeadarg #3: with the argument gone the producer call stands on its own (only the fixed pass)",
+    "data:callretmulti #1: one helper assignment in each pass",
+    "data:callretmulti #2: helper is never duplicated into the low-word sinks",
+    "data:callretmulti #3: same-block fan-out evaluates helper2 once per pass",
     "data:callsitestackargs #1: option off truncates the call at the six register arguments (bug reproduced)",
     "data:callsitestackargs #2: option on recovers both stack-passed arguments",
+    "data:checker-stack-aggregate #1: the partial-backed scalar is declared exactly once",
+    "data:checker-stack-aggregate #2: the low piece keeps the shared name",
+    "data:checker-stack-aggregate #3: the high piece keeps the shared name",
+    "data:checker-stack-aggregate #4: the address reference that triggered the false sibling remains",
     "data:codescalar #1: with the option off the dereferenced byte is typed by the size-1 code pointee -- the bug",
     "data:codescalar #2: and the value stored back through the function pointer is cast to that widthless type",
     "data:codescalar #3: with the option on the byte carries the width the access has, in the witness and in the control",

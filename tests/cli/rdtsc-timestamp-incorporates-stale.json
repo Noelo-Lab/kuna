@@ -1,0 +1,32 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "timeout_s": 60,
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "timestamp"
+  ],
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "return rdtsc\\(\\);"
+    ],
+    "stdout_absent": [
+      "CONCAT44"
+    ]
+  },
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/rdtsc_zero_extend_x86_64",
+    "binary_sha256": "f7f1219e46801562b2ec5871cbcb29c9ec64294b3d80849ea989e96c3776774d",
+    "binary_size": 4664,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/rdtsc_zero_extend_x86_64",
+    "selector": "timestamp",
+    "selector_kind": "name"
+  },
+  "notes": "Promoted acceptance of rdtsc-timestamp-incorporates-stale, re-pointed from the dataset witness at a vendored x86-64 fixture. The fixture seeds nonzero upper halves in RAX/RDX before RDTSC and recombines EDX:EAX; the positive return assertion proves the result is exactly the timestamp, while the CONCAT44 absence rejects stale upper bits."
+}

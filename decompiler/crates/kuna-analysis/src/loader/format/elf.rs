@@ -88,7 +88,11 @@ impl ObjectFormat for ElfFormat {
         // `elf_plt`'s internals are unchanged; just re-wrap each PltSym.
         crate::loader::elf_plt::resolve_plt_imports(file, bytes)
             .into_iter()
-            .map(|p| ImportSym { addr: p.addr, name: p.name })
+            .map(|p| ImportSym {
+                addr: p.addr,
+                name: p.name,
+                kind: super::ImportSymKind::Import,
+            })
             .collect()
     }
 

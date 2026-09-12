@@ -1,0 +1,50 @@
+{
+  "slug": "x86-64-objective-c",
+  "need_id": "x86-64-objective-c",
+  "track": "quality",
+  "scope": "small",
+  "branch": "feat/re-x86-64-objective-c-captain",
+  "pr": "https://github.com/Noelo-Lab/kuna/pull/571",
+  "summary": "Objective-C method parsing now treats the low IMP bit as Thumb state only for object::Architecture::Arm. Odd x86-64 method addresses survive both absolute and relative method-list decoding, while 32-bit ARM IMPs remain normalized to their even instruction address.",
+  "decisions": [
+    {
+      "what": "the filed hypothesis was upheld",
+      "detail": "The dataset method_t stores 0x100001d2b, while the unconditional imp & !1 in methods.rs changed it to 0x100001d2a. The unpatched command returned a one-byte function containing only return; the patched command returns the metadata address 0x100001d2b and a 290-byte body."
+    },
+    {
+      "what": "architecture comes from the parsed target, not the path",
+      "detail": "ObjcMetadataPass::run reads object::File::architecture() after the Mach-O/fat-slice loader has selected the object and threads that value through both large and small method-list readers. object::Architecture::Arm denotes 32-bit ARM; Aarch64 and X86_64 are distinct variants, so only the ABI that uses bit zero as Thumb state is normalized."
+    },
+    {
+      "what": "both sides of the low-bit rule are regression-tested",
+      "detail": "The vendored x86-64 Mach-O uses an absolute method_t whose IMP is the valid odd entry 0x100000641 and whose preceding even byte is padding. The metadata walk must preserve it. A paired unit test asserts an odd object::Architecture::Arm IMP is still stripped, so deleting normalization to fix x86 would fail. Existing even x86-64 and arm64 fixtures remain covered."
+    },
+    {
+      "what": "no phase option or stage-model fixture",
+      "detail": "This is a strict kuna-analysis metadata-decoding correction: the object format already determines whether bit zero is address or Thumb state. There is no user judgment to expose, and no kuna-decomp phase behavior, option metadata, catalog counter, DIV entry, or stages baseline is involved."
+    }
+  ],
+  "inertness": {
+    "rule": "The result changes only when Objective-C metadata contains an odd IMP and the parsed object architecture is not 32-bit ARM. Even IMPs on every architecture are byte-identical; every non-ObjC analysis is outside this pass; ARM32 retains the previous normalization.",
+    "evidence": "The full kuna-analysis crate suite passed 748 unit tests plus 3 integration tests, and the unchanged datatest and stages baselines passed 675/675 and 779/779. The full Rust workspace suite also passed with KUNA_DECOMP_TEST unset."
+  },
+  "acceptance": {
+    "acceptance_id": "a-78b86f730467",
+    "result": "PASS",
+    "dataset_witness": "-[CrackMeManager checkCode:] moved from the incorrect 0x100001d2a, size 1 body to the metadata IMP 0x100001d2b, size 290 with no function error.",
+    "vendored_twin": "macho_objc_odd_imp moved from 0x100000640, size 1 to 0x100000641, size 15 and returns arg1 * 3 + 7.",
+    "promoted_to": "tests/cli/x86-64-objective-c.json"
+  },
+  "gates": {
+    "cargo test -p kuna-analysis analyzers::objc --lib": "13/13 passed",
+    "cargo test -p kuna-analysis": "748 unit tests and 3 integration tests passed",
+    "make test": "PARITY OK 675/675",
+    "kuna test --datatests --datatests-dir tests/stages": "PARITY OK 779/779",
+    "make test-cli": "129/129 passed, including the promoted x86-64-objective-c probe",
+    "make check-spec": "check-spec OK",
+    "kuna catalog --check": "catalog OK",
+    "scripts.repipe.verify --need x86-64-objective-c": "PASS; counts pass 1, fail 0",
+    "rustfmt": "methods.rs check clean; mod.rs retains origin/main's pre-existing rustfmt differences to avoid an unrelated whole-module rewrite",
+    "make rust-test": "full cargo workspace suite passed with KUNA_DECOMP_TEST explicitly unset"
+  }
+}
