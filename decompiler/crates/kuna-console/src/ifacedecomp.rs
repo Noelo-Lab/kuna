@@ -1549,7 +1549,7 @@ decomp_command!(
         let invalid = kuna_base::address::Address::new_invalid();
         let (sym, eref) = arch
             .symboltab
-            .add_symbol_mapped(scope, &basename, ct, &addr, &invalid)
+            .upsert_data_mapped(scope, &basename, ct, &addr, &invalid)
             .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
         arch.symboltab.set_attribute(sym, flags);
         // C++ ifacedecomp.cc:573-576: if this is a (global) namespace scope (it has

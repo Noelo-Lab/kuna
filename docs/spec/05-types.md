@@ -343,6 +343,21 @@ into a pointer corrupts every function that uses it as a bit. On acceptance
 the symbol lookup requires an exact hit unless the target is a character
 array (string constants may point mid-string).
 
+An explicit global data declaration is authoritative at an exact address.
+Both `--assert 'data …'` surfaces — the in-process assertion plane and its
+`map address` console lowering — route through
+`decompiler/crates/kuna-decomp/src/p0_knowledge/database.rs
+(upsert_data_mapped)`. If analysis already planted non-function data there,
+the declaration retypes, resizes, and renames that mapping in place before
+setting its type/name locks; it does not add a second overlapping symbol.
+This ordering matters to phase 5 because ordinary container lookup selects the
+smallest covering symbol. For example, operand-reference analysis can read the
+low byte and high-byte NUL of a short UTF-16 literal as `char[2]`; a later
+`wchar_t[3]` assertion must replace that object so constant-pointer recovery
+and COPY propagation see the declared two-byte character type. Neighboring
+data mappings and function symbols are never replaced, and no global string
+length or encoding heuristic is changed.
+
 Two (kuna) escapes hook exactly here, both shipped default-on (DIV-2,
 `decompiler/crates/kuna-decomp/phases.toml`):
 

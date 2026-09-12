@@ -1837,7 +1837,9 @@ mod tests {
         // a tag local the function never assigns) (repipe r12)
         // and kuna-msvcstackguard-return / an exact `/GS` checker restart keeps
         // both caller return definitions across a shared epilogue (repipe r6)
-        assert_eq!(count, 276, "corpus file count drifted");
+        // and kuna-short-utf16-window / caller data replaces an exact-address
+        // analysis mapping while adjacent wide and ASCII literals stay stable
+        assert_eq!(count, 277, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
