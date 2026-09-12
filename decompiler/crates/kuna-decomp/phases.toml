@@ -1940,6 +1940,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "entryretdispatch"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P2"
+subphase = "flow-classification"
+strength = "HARD"
+rewind = "P2"
+issue = "entry-point-ret-dispatch"
+summary = "RESTORES CODE: recognize a function-entry chain encoded as repeated `push <continuation>; push <callee>; ret` links and classify each proven RET site as a call before flow following. Without the derived flow overrides, the first RET is treated as the function return and every later link is dead, so an entire dispatcher entry decompiles to `return;`. The recognizer follows a bounded straight-line raw-p-code walk and accepts a link only when the RET destination was loaded from a slot written during that run and the adjacent slot contains that RET instruction's exact fall-through. Affine addresses sign-extend p-code constants by operand width; overlapping register writes and overlapping stores invalidate facts; conditional control flow, real calls, indirect control flow, opaque stack writes and unproven destinations decline. Explicit caller flow assertions always take precedence, and an explicit `flow <site> return` cleanly vetoes the automatic call at that site. Logs no extra output: the recovered calls appear through the normal decompile pipeline."
+use_when = "A function entry is a stack-built dispatcher and decompiles as an empty `return;`: disassembly shows `push` of the instruction after a RET, then `push` of a callee address, then `ret`, repeated after each callee returns. On by default; flip OFF to restore the first-RET termination while keeping explicit `flow <address> call` assertions available."
+example = "option entryretdispatch off"
+source_decompiler = "kuna"
+inspiration = "entry-point-ret-dispatch RE need: an i386 entry routine has three consecutive push/push/ret links, but the CLI previously needed one manual flow assertion per RET and otherwise emitted only `return;`"
+change_kind = "correctness-fix"
+tier = "transform"
+symptoms = "a function entry containing push continuation; push target; ret decompiles to only return|only the first helper in a stack-built RET dispatcher appears after one manual flow override|multiple flow <address> call assertions are required to recover one entry routine|a packer or crackme dispatch chain is truncated at its first ret"
+live_field = "entry_ret_dispatch"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "funcboundflow"
 values = "on|off"
 default = "on"

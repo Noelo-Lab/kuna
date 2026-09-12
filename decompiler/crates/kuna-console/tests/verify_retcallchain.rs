@@ -3,9 +3,8 @@
 //!
 //! A `push <continuation>; push <target>; ret` run is a call written without a
 //! `call` instruction, and a body built out of them is one such `ret` per
-//! callee.  Reclassifying ONE of them recovers one call and leaves every later
-//! link a return, so the rest of the body is dead and prints as `return;` — the
-//! caller cannot even see that the chain continues.
+//! callee.  The entry detector reclassifies the chain by default; an explicit
+//! override on any one link still extends to the others as #504 specified.
 //!
 //! Fixture: `kuna-analysis/tests/fixtures/retcallchain_i386` (source
 //! `retcallchain_i386.s`), whose `chain_entry` is three links followed by a
@@ -23,7 +22,7 @@ use kuna_base::address::Address;
 use kuna_console::assertions::{self, Body, Directive};
 use kuna_console::engine::{bootstrap_from_object, ConsoleProgram, EntrySelector};
 use kuna_console::kuna_retcallchain::{
-    kuna_chain_sites, CHAIN_MAX_INSNS, CHAIN_MAX_SITES,
+    kuna_chain_sites, kuna_entry_chain_sites, CHAIN_MAX_INSNS, CHAIN_MAX_SITES,
 };
 use kuna_console::project::decompile_targets;
 
@@ -42,10 +41,10 @@ fn repo_root() -> PathBuf {
 }
 
 /// Bootstrap the fixture and run the analysis commit.  `None` ⇒ specs-less skip.
-fn load() -> Option<ConsoleProgram> {
+fn load_fixture(fixture: &str) -> Option<ConsoleProgram> {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
-    let bin = root.join("decompiler/crates/kuna-analysis/tests/fixtures/retcallchain_i386");
+    let bin = root.join("decompiler/crates/kuna-analysis/tests/fixtures").join(fixture);
     let mut prog = match bootstrap_from_object(bin.to_str()?, "", &spec_roots) {
         Ok(p) => p,
         Err(e) => {
@@ -59,6 +58,10 @@ fn load() -> Option<ConsoleProgram> {
     };
     prog.commit_pending_analysis().expect("analysis commit");
     Some(prog)
+}
+
+fn load() -> Option<ConsoleProgram> {
+    load_fixture("retcallchain_i386")
 }
 
 fn flow(addr: u64, kind: &str) -> Directive {
@@ -95,13 +98,30 @@ fn sites(prog: &ConsoleProgram, at: u64) -> Vec<u64> {
         .collect()
 }
 
-/// Un-asserted, every `ret` is a return and the body is empty.
+/// Unasserted entry chains are recovered by the same strict detector.
 #[test]
-fn the_baseline_reads_the_whole_chain_as_one_return() {
+fn the_default_recovers_the_whole_entry_chain() {
     let Some(code) = decompile_with(Vec::new()) else { return };
     for call in CALLS {
-        assert!(!code.contains(call), "baseline already recovered {call}:\n{code}");
+        assert!(code.contains(call), "the default chain stopped before {call}:\n{code}");
     }
+}
+
+#[test]
+fn entry_recognition_reports_the_complete_chain() {
+    let Some(prog) = load() else { return };
+    let space = prog.arch().manage().get_default_code_space().cloned().expect("code space");
+    let entry = Address::new(space, CHAIN_ENTRY);
+    let sites = kuna_entry_chain_sites(
+        prog.arch().translate(),
+        &entry,
+        CHAIN_MAX_SITES,
+        CHAIN_MAX_INSNS,
+    )
+    .iter()
+    .map(|a| a.get_offset())
+    .collect::<Vec<_>>();
+    assert_eq!(sites, LINK_RETS);
 }
 
 /// The need's own case: one override on the first link recovers all three calls.
@@ -133,6 +153,35 @@ fn an_ordinary_return_extends_to_nothing() {
     assert!(sites(&prog, FIRST_LINK).is_empty(), "an address outside the walk was read as a link");
 }
 
+/// A matching fall-through literal is not sufficient: RETURN must load a slot
+/// written by this run, and the literal must be in its adjacent continuation
+/// slot. Stores through signed displacements, bypassing conditional paths, and
+/// partial register-alias writes must also invalidate the supposed proof.
+#[test]
+fn fallthrough_decoys_are_not_entry_chains() {
+    let Some(prog) = load_fixture("entry_ret_dispatch_i386") else { return };
+    let space = prog.arch().manage().get_default_code_space().cloned().expect("code space");
+    for entry in [
+        0x0804_9043,
+        0x0804_904d,
+        0x0804_9059,
+        0x0804_906f,
+        0x0804_9080,
+    ] {
+        let entry = Address::new(space.clone(), entry);
+        let sites = kuna_entry_chain_sites(
+            prog.arch().translate(),
+            &entry,
+            CHAIN_MAX_SITES,
+            CHAIN_MAX_INSNS,
+        );
+        assert!(
+            sites.is_empty(),
+            "fall-through decoy at {entry:?} was accepted: {sites:?}"
+        );
+    }
+}
+
 /// The site cap is a hard stop, not an advisory one.
 #[test]
 fn the_site_cap_bounds_what_is_reported() {
@@ -144,4 +193,8 @@ fn the_site_cap_bounds_what_is_reported() {
     // Only the first link fits under the cap, and it is the override's own site,
     // so there is nothing left to report.
     assert!(capped.is_empty(), "the cap did not bound the walk: {capped:?}");
+
+    let entry_capped =
+        kuna_entry_chain_sites(prog.arch().translate(), &entry, 1, CHAIN_MAX_INSNS);
+    assert_eq!(entry_capped.len(), 1, "the entry cap did not stop at one link");
 }

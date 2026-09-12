@@ -7,10 +7,9 @@
 //! self-unpacking body out of, 22 links deep.
 //!
 //! This case is the promoted acceptance probe of that need (`tests/cli/`)
-//! executed by `make rust-test`: overriding the FIRST link recovers all three
-//! calls.  The `flow <the last ret> call` pass proves the clauses discriminate —
-//! the plain epilogue is not a link, so nothing is extended and the body stays
-//! empty.
+//! executed by `make rust-test`: the entry-chain detector recovers all three
+//! calls by default, and overriding the FIRST link keeps #504's continuation
+//! behavior intact.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -64,12 +63,12 @@ fn decompile(assertion: Option<&str>) -> Option<String> {
 /// The three callees the chain reaches, by the global each `ret` pops.
 const CALLS: [&str; 3] = ["(*dat_804a000)()", "(*dat_804a004)()", "(*dat_804a008)()"];
 
-/// Un-asserted, every `ret` is a return, so the body is empty.
+/// Unasserted entry chains are recovered by the same strict detector.
 #[test]
-fn the_baseline_reads_the_whole_chain_as_one_return() {
+fn the_default_recovers_the_whole_entry_chain() {
     let Some(code) = decompile(None) else { return };
     for call in CALLS {
-        assert!(!code.contains(call), "baseline already recovered {call}:\n{code}");
+        assert!(code.contains(call), "the default chain stopped before {call}:\n{code}");
     }
 }
 
@@ -82,12 +81,13 @@ fn overriding_the_first_link_recovers_the_whole_chain() {
     }
 }
 
-/// The clauses discriminate: the plain epilogue pushes no continuation, so the
-/// override applies to it alone and extends to nothing.
+/// A caller can still override the plain epilogue independently; it does not
+/// disturb the automatically recovered links before it.
 #[test]
 fn overriding_the_plain_epilogue_extends_to_nothing() {
     let Some(code) = decompile(Some(&format!("flow {EPILOGUE_RET} call"))) else { return };
     for call in CALLS {
-        assert!(!code.contains(call), "a non-link override recovered {call}:\n{code}");
+        assert!(code.contains(call), "the default chain stopped before {call}:\n{code}");
     }
+    assert!(code.contains("funcboundflow:"), "the epilogue override did not stay local:\n{code}");
 }

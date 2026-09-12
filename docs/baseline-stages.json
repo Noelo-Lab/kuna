@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    801,
-    801
+    803,
+    803
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -125,6 +125,8 @@
     "data:EMPTYSTRCONST #2: an ordinary short literal beside it is untouched, in both passes",
     "data:EMPTYSTRCONST #3: a GENUINE empty literal, one that sits inside a run of string data, keeps its quotes in both passes",
     "data:EMPTYSTRCONST #4: emptystrconst off restores the empty-literal form for the blob (the filed bug), exactly once",
+    "data:ENTRYRETDISPATCH #1: the default pass recovers the helper call while option off does not",
+    "data:ENTRYRETDISPATCH #2: both passes retain one ordinary function return",
     "data:ENTRYTHUMBFLOW #1: off, the Thumb entry decodes as A32 and returns nothing",
     "data:ENTRYTHUMBFLOW #2: default, the entry is walked as Thumb and returns its constant",
     "data:ENTRYTHUMBFLOW #3: the constant the Thumb body returns appears exactly once, in the default pass",
