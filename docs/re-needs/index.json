@@ -2793,7 +2793,7 @@
       "status": "open",
       "severity": "major",
       "probe_id": "p-3f3a4aa63b91",
-      "acceptance_id": "a-5df3fa77b4ec",
+      "acceptance_id": "a-9d9a83349539",
       "hypothesis_status": "upheld",
       "credibility": 0.7,
       "instances": 1,
@@ -2804,7 +2804,7 @@
         10
       ],
       "first_seen_round": 10,
-      "attempts": 0,
+      "attempts": 1,
       "covered_by_option": null,
       "touches": [
         "decompiler/crates/kuna-decomp"
@@ -2815,7 +2815,7 @@
       "closed_in_round": null,
       "closing_pr": null,
       "reject_reason": null,
-      "score": 13.862944,
+      "score": 9.241962,
       "path": "docs/re-needs/default-function-boundary-truncates.md"
     },
     {
