@@ -140,6 +140,9 @@ const RECYCLE_AFTER: usize = 4096;
 /// [`affordable_jobs`] trims it further to what the machine's free memory holds.
 const MAX_AUTO_JOBS: usize = 16;
 
+/// The decode-lane cap, which is the engine's, not the pool's.
+const MAX_DECODE_LANES: usize = kuna_analysis::listing::kuna_pdecode::MAX_DECODE_LANES;
+
 /// The parent's word for "no more chunks", and the worker's for "chunk done".
 /// Both travel as whole lines over the pipes the pool already needs for
 /// liveness, so neither costs a file descriptor or a dependency.  `quit` carries
@@ -220,6 +223,21 @@ pub(crate) struct PoolConfig<'a> {
 /// again by [`affordable_jobs`] once the load has shown what one worker costs.
 /// The flag is returned alongside the count because it decides whether that
 /// later trim may lower the number or must only warn.
+/// How many decode lanes `--jobs` asks the discovery walk for.
+///
+/// Deliberately NOT the pool count: a pool worker pays a whole program load, so
+/// `auto` caps it at [`MAX_AUTO_JOBS`]; a decode lane costs one SLEIGH engine
+/// (~48 MB) and saturates much later, so `auto` there is this machine's
+/// parallelism capped at [`MAX_DECODE_LANES`]. An explicit `--jobs N` is honoured
+/// up to the same cap.
+pub(crate) fn decode_lanes(args: &crate::decompile_all::Args) -> usize {
+    if args.jobs_auto {
+        let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
+        return cores.clamp(1, MAX_DECODE_LANES);
+    }
+    args.jobs.min(MAX_DECODE_LANES)
+}
+
 pub(crate) fn parse_jobs(value: &str) -> Result<(usize, bool), String> {
     let v = value.trim();
     if v.eq_ignore_ascii_case("auto") {
@@ -939,6 +957,12 @@ impl Worker {
         if !cfg.full_load {
             cmd.arg("--option").arg("fast_funcdisc").arg("off");
         }
+        // Same reasoning one flag further in: the parent's own load ran the
+        // discovery walk on N decode lanes and is handing the inventory over, so
+        // a worker must not run N more of them. Forced rather than merely left
+        // unset, because the variable can also reach a worker from the user's
+        // environment or through `--jobs-full-load`.
+        cmd.env(kuna_analysis::listing::kuna_pdecode::DECODE_JOBS_ENV, "1");
         // stdin carries the assignments AND the liveness signal; stdout carries
         // the acknowledgements; stderr is the user's, shared with the parent.
         cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::inherit());

@@ -2406,3 +2406,178 @@ fn killing_the_parent_takes_the_workers_and_the_scratch_dir_with_it() {
         std::thread::sleep(Duration::from_millis(200));
     }
 }
+
+// --- `--jobs N`: the decode lanes --------------------------------------------
+
+/// Run `kuna` with extra environment, for the decode-lane knobs.
+fn run_kuna_env(args: &[&str], env: &[(&str, &str)]) -> (String, String, bool) {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_kuna"));
+    cmd.env_remove("KUNA_DECOMP_DBG").env_remove("KUNA_DECOMP_TEST").env_remove("KUNA_SLACOMP");
+    for (name, value) in env {
+        cmd.env(name, value);
+    }
+    let out = cmd.args(args).output().expect("failed to spawn the kuna binary");
+    (
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+        out.status.success(),
+    )
+}
+
+/// Everything the walk's plan line says, removed, so the rest of stderr can be
+/// compared byte for byte against a serial run's.
+fn without_the_plan_line(stderr: &str) -> String {
+    stderr
+        .lines()
+        .filter(|l| !l.starts_with("[kuna --jobs] decode:"))
+        .map(|l| format!("{l}\n"))
+        .collect()
+}
+
+/// The decode lanes' whole contract: the inventory must not depend on how many
+/// threads decoded it.  The size floor is lowered so the lanes really run on an
+/// in-repo fixture -- without it every assertion here would be a serial run
+/// agreeing with a serial run -- and the plan line is asserted, so a silent
+/// refusal cannot read as a pass.
+#[test]
+fn jobs_decode_lanes_are_byte_identical_to_serial() {
+    let bin = fauxware();
+    let sp = specs();
+    let lanes_on = [("KUNA_DECODE_MIN_BYTES", "0")];
+    let (want, want_err, ok) = run_kuna(&["functions", &bin, "--json", "--sleighpath", &sp]);
+    if !ok {
+        if is_specs_skip(&want_err) {
+            eprintln!("jobs decode: skipping (no `.sla`; run `make specs`): {want_err}");
+            return;
+        }
+        panic!("kuna functions failed: {want_err}");
+    }
+    assert!(want.contains("\"name\""), "the serial run enumerated nothing:\n{want}");
+    assert!(
+        !want_err.contains("[kuna --jobs]"),
+        "`--jobs` absent must print no plan line at all:\n{want_err}"
+    );
+
+    for jobs in ["1", "2", "3", "4", "8", "auto"] {
+        let args = ["functions", &bin, "--json", "--sleighpath", &sp, "--jobs", jobs];
+        let (got, stderr, ok) = run_kuna_env(&args, &lanes_on);
+        assert!(ok, "kuna functions --jobs {jobs} failed: {stderr}");
+        assert_eq!(got, want, "--jobs {jobs} moved the inventory");
+        assert_eq!(
+            without_the_plan_line(&stderr),
+            without_the_plan_line(&want_err),
+            "--jobs {jobs} moved stderr beyond its own plan line"
+        );
+        if jobs == "1" {
+            assert!(
+                !stderr.contains("[kuna --jobs]"),
+                "`--jobs 1` is the serial path and says nothing:\n{stderr}"
+            );
+        } else {
+            assert!(
+                stderr.contains("[kuna --jobs] decode:") && stderr.contains(" lanes, "),
+                "--jobs {jobs} never reached the lanes:\n{stderr}"
+            );
+        }
+    }
+
+    // The floor itself: without the override the same flag declines, and still
+    // produces the same document.
+    let (got, stderr, ok) =
+        run_kuna(&["functions", &bin, "--json", "--sleighpath", &sp, "--jobs", "8"]);
+    assert!(ok, "kuna functions --jobs 8 failed: {stderr}");
+    assert_eq!(got, want, "the refused path moved the inventory");
+    assert!(
+        stderr.contains("[kuna --jobs] decode: serial (executable image too small)"),
+        "a fixture under the size floor must say why it declined:\n{stderr}"
+    );
+}
+
+/// A language whose constructors carry `globalset` must decline: a decode there
+/// writes the shared context database at another address.  Byte-identity on ARM
+/// rests entirely on this, so the decline is asserted, not assumed.
+#[test]
+fn jobs_decode_lanes_decline_on_a_context_committing_language() {
+    let bin = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/arm_thumb_linked_le32")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let sp = specs();
+    let args = ["functions", &bin, "--json", "--sleighpath", &sp];
+    let (want, stderr, ok) = run_kuna(&args);
+    if !ok {
+        if is_specs_skip(&stderr) {
+            eprintln!("jobs decode arm: skipping (no `.sla`; run `make specs`)");
+            return;
+        }
+        panic!("kuna functions failed: {stderr}");
+    }
+    let mut with_jobs = args.to_vec();
+    with_jobs.extend_from_slice(&["--jobs", "8"]);
+    let (got, stderr, ok) = run_kuna_env(&with_jobs, &[("KUNA_DECODE_MIN_BYTES", "0")]);
+    assert!(ok, "kuna functions --jobs 8 failed on ARM: {stderr}");
+    assert_eq!(got, want, "the ARM decline moved the inventory");
+    assert!(
+        stderr.contains("[kuna --jobs] decode: serial (language commits context)"),
+        "ARM must decline with the language reason:\n{stderr}"
+    );
+}
+
+/// A lane that dies must cost speed, not correctness: the fallback re-walks
+/// serially and says so.
+#[test]
+fn a_dead_lane_falls_back_to_the_serial_walk() {
+    let bin = fauxware();
+    let sp = specs();
+    let args = ["functions", &bin, "--json", "--sleighpath", &sp];
+    let (want, stderr, ok) = run_kuna(&args);
+    if !ok {
+        if is_specs_skip(&stderr) {
+            eprintln!("jobs decode fault: skipping (no `.sla`; run `make specs`)");
+            return;
+        }
+        panic!("kuna functions failed: {stderr}");
+    }
+    let mut with_jobs = args.to_vec();
+    with_jobs.extend_from_slice(&["--jobs", "4"]);
+    for lane in ["0", "2"] {
+        let (got, stderr, ok) = run_kuna_env(
+            &with_jobs,
+            &[("KUNA_DECODE_MIN_BYTES", "0"), ("KUNA_DECODE_FAULT", lane)],
+        );
+        assert!(ok, "a lane panic must not fail the run (lane {lane}): {stderr}");
+        assert_eq!(got, want, "the serial fallback moved the inventory (lane {lane})");
+        assert!(
+            stderr.contains("[kuna --jobs] decode: serial (lane fault)"),
+            "lane {lane}'s panic must be reported as a fallback:\n{stderr}"
+        );
+    }
+}
+
+/// `decompile-all --jobs N` sizes both the decode lanes (in the parent's load)
+/// and the worker pool (afterwards).  The document must survive both.
+#[test]
+fn jobs_decode_lanes_agree_with_serial_on_decompile_all() {
+    let bin = fauxware();
+    let sp = specs();
+    let base =
+        ["decompile-all", bin.as_str(), "--json", "--max-fn-seconds", "0", "--sleighpath", &sp];
+    let (want, stderr, ok) = run_kuna(&base);
+    if !ok {
+        if is_specs_skip(&stderr) {
+            eprintln!("jobs decode all: skipping (no `.sla`; run `make specs`)");
+            return;
+        }
+        panic!("kuna decompile-all failed: {stderr}");
+    }
+    let mut args = base.to_vec();
+    args.extend_from_slice(&["--jobs", "4"]);
+    let (got, stderr, ok) = run_kuna_env(&args, &[("KUNA_DECODE_MIN_BYTES", "0")]);
+    assert!(ok, "kuna decompile-all --jobs 4 failed: {stderr}");
+    assert_eq!(got, want, "--jobs 4 moved the document");
+    assert!(
+        stderr.contains("[kuna --jobs] decode:") && stderr.contains(" lanes, "),
+        "the parent's load must have run on lanes:\n{stderr}"
+    );
+}

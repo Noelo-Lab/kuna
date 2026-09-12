@@ -1581,7 +1581,8 @@ pub(crate) fn load_program(
     // option recording too: `relocobjects`, `i386_pie_plt`, `relocrebase`,
     // `typedepth` and `dwarfstructs` update their env bridges again inside
     // `set_kuna_option` and must not leak into a later load.
-    let _loadtime_env = apply_loadtime_env(&args.options, args.slice.as_deref());
+    let _loadtime_env =
+        apply_loadtime_env(&args.options, args.slice.as_deref(), jobs::decode_lanes(args));
 
     let spec_roots = spec_roots(args.sleighpath.as_deref());
     let target = args.target.as_deref().unwrap_or("");
@@ -1788,10 +1789,23 @@ impl Drop for LoadtimeEnv {
 /// Export the load-time loader gates (and the Mach-O slice) onto this process's
 /// environment before `bootstrap_from_object` reads them — the in-process analog
 /// of the `Command::env(...)` calls in `decompile.rs`.
-fn apply_loadtime_env(options: &[(String, String)], slice: Option<&str>) -> LoadtimeEnv {
+fn apply_loadtime_env(
+    options: &[(String, String)],
+    slice: Option<&str>,
+    decode_lanes: usize,
+) -> LoadtimeEnv {
     let mut env = LoadtimeEnv::default();
     if let Some(slice) = slice.filter(|s| !s.trim().is_empty()) {
         env.set("KUNA_MACHO_SLICE", slice);
+    }
+    // (kuna `--jobs`) The discovery walk runs inside `load file`, so its lane
+    // count is exported before the bootstrap and restored by the guard well
+    // before the worker pool is spawned.
+    if decode_lanes > 1 {
+        env.set(
+            kuna_analysis::listing::kuna_pdecode::DECODE_JOBS_ENV,
+            decode_lanes.to_string(),
+        );
     }
 
     if let Some(value) = last_option_value(options, "relocobjects") {
@@ -2603,9 +2617,14 @@ pub(crate) fn parse_args_with_filters(
     let mut jobs_provenance = false;
     let mut jobs_types = false;
     let mut jobs_callees = false;
-    // The three whole-binary surfaces; `functions` enumerates and never
-    // decompiles, so there is nothing for a pool to do there.
+    // The three whole-binary surfaces the worker POOL serves; `functions`
+    // enumerates and never decompiles, so there is nothing for a pool to do
+    // there. `--jobs` reaches further than the pool does: it also sizes the
+    // discovery walk's decode lanes, which `functions` very much does run, so
+    // that one flag is accepted there too while `--jobs-chunk` /
+    // `--jobs-full-load` / `--jobs-worker` stay pool-only.
     let batch = matches!(cmd, "decompile-all" | "decompile-project" | "decompile-graph");
+    let jobs_flag = batch || cmd == "functions";
 
     let mut i = 0;
     while i < argv.len() {
@@ -2632,7 +2651,7 @@ pub(crate) fn parse_args_with_filters(
                 assertions.extend(crate::assertdecl::parse_flag(&v)?);
             }
             "--assert-strict" => assert_strict = true,
-            "--jobs" if batch => {
+            "--jobs" if jobs_flag => {
                 let v = take(argv, &mut i, "--jobs")?;
                 (jobs, jobs_auto) = jobs::parse_jobs(&v)?;
             }

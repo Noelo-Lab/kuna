@@ -184,6 +184,10 @@ pub struct WalkPlan {
     /// The last line announced, so a plan that drives several rebuilds says it
     /// once.
     announced: Mutex<Option<String>>,
+    /// Walks this plan actually carried on lanes. A differential test that
+    /// compares a parallel walk against a serial one has to be able to prove it
+    /// compared two different things.
+    engaged: AtomicUsize,
 }
 
 impl WalkPlan {
@@ -195,6 +199,7 @@ impl WalkPlan {
             kit: None,
             declined: None,
             announced: Mutex::new(None),
+            engaged: AtomicUsize::new(0),
         }
     }
 
@@ -257,6 +262,18 @@ impl WalkPlan {
         self.lanes
     }
 
+    /// How many walks this plan has carried on decode lanes.
+    pub fn engaged(&self) -> usize {
+        self.engaged.load(Ordering::Relaxed)
+    }
+
+    /// Why the lanes were refused before the walk ever saw its inputs, if they
+    /// were. The rest of the gate is evaluated at the walk (it needs the
+    /// executable ranges, the painter and the seeds).
+    pub fn declined(&self) -> Option<Refusal> {
+        self.declined
+    }
+
     /// Print `line` unless it is the one this plan printed last.
     fn announce(&self, line: String) {
         let mut last = self.announced.lock().unwrap_or_else(|e| e.into_inner());
@@ -297,7 +314,10 @@ pub(super) fn try_parallel(plan: &WalkPlan, inputs: &ParallelInputs<'_>) -> Opti
                 admitted.intervals.len()
             ));
             match run(&admitted, inputs, started) {
-                Ok(state) => Some(state),
+                Ok(state) => {
+                    plan.engaged.fetch_add(1, Ordering::Relaxed);
+                    Some(state)
+                }
                 Err(why) => {
                     plan.announce(format!("[kuna --jobs] decode: serial ({})", why.reason()));
                     None
