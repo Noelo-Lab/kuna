@@ -951,6 +951,16 @@ funcsym stream:
   loader reports neither sections nor segments — the XML `<binaryimage>` corpus,
   the raw-bytes loader — contributes no ranges, so the option is structurally
   inert for the datatest oracle and the whole feature is a no-op there.
+
+  One property outranks the mapping warrant: an **external reference** is a slot
+  the loader resolves, not a constant stored by the program. A PE is allowed to
+  place its Import Address Table inside the same RX section as its code and import
+  directory. Such a slot contains a hint/name RVA in the file, but the Windows
+  loader overwrites it with the imported function address before execution.
+  `ActionVarnodeProps` therefore never fills an `externref` Varnode from image
+  bytes, under either `litpoolconst` or program-wide `readonly`; subtracting PE
+  ranges here would wrongly couple this general invariant to one loader and would
+  make `peimportcall off` lose its raw behavior.
 - **i386-PIE stubs** (angr, `i386_pie_plt`, default-on, env-bridged): a PIE i386
   PLT entry is GOT-relative (`jmp *disp(%ebx)`, bytes `FF A3 <disp32>`), so naming
   it needs the GOT base `%ebx` holds at run time; `elf_plt.rs (i386_got_base)`
@@ -1080,6 +1090,9 @@ the resolved callee's no-return flag onto the prototype it hands `ActionDeindire
 dropped it, where upstream returns the callee's live `Funcdata`), which is what makes
 the deindirect schedule the restart whose re-flow plants the artificial halt. Off,
 a PE renders byte for byte as before; every non-PE target is unaffected either way.
+The `externref` mark also protects the slot until that resolution: P3 read-only
+folding cannot replace it with an on-disk thunk/name RVA, even if a hostile or
+single-section PE mapped the IAT executable and non-writable.
 
 Two arch-marker passes paint **decode context** rather than names, because a wrong
 decode mode is unrecoverable downstream. `decompiler/crates/kuna-analysis/src/loader/arm_markers.rs

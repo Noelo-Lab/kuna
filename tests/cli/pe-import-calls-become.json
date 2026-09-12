@@ -1,0 +1,45 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "a-983e58b7c36b",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "0x401028",
+    "--addr",
+    "--option",
+    "peimportcall",
+    "on"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/pe_iatincode_readonly_i386.exe",
+    "binary_sha256": "9cd4f3d091d647eeb36df883e2f3f063d34ac7a508c71c9f28f26683f05ac6f6",
+    "binary_size": 1024,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/pe_iatincode_readonly_i386.exe",
+    "selector": "0x401028",
+    "selector_kind": "addr"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_absent": [
+      "0x173dc",
+      "0x10c4"
+    ],
+    "stdout_matches": [
+      "GetDlgItemTextA\\(a0,0x68,0x404000,0x20\\);",
+      "GetDlgItemTextA\\(a0,0x69,0x404020,0x20\\);"
+    ]
+  },
+  "notes": "Promoted acceptance of pe-import-calls-become, reduced from crypto4.exe at 0x40341c to the deterministic PE32 fixture. The original IAT name RVA 0x173dc is absent broadly, the fixture's corresponding 0x10c4 is absent too, and both distinct GetDlgItemTextA calls with all arguments must remain; deleting one call or cosmetically replacing a raw target cannot pass."
+}

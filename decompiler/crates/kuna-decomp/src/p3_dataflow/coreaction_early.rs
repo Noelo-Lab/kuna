@@ -481,6 +481,7 @@ impl Action for ActionVarnodeProps {
                     v.is_written(),
                     v.has_action_property(),
                     v.is_read_only(),
+                    v.is_external_ref(),
                     v.is_volatile(),
                     v.get_nz_mask(),
                     v.get_consume(),
@@ -497,6 +498,7 @@ impl Action for ActionVarnodeProps {
                 is_written,
                 has_action_property,
                 is_read_only,
+                is_external_ref,
                 is_volatile,
                 nz_mask,
                 consume,
@@ -584,7 +586,12 @@ impl Action for ActionVarnodeProps {
                         .is_some_and(|v| {
                             data.get_arch().litpool_const_contains(v.get_offset(), vn_size as u32)
                         });
-                if (cachereadonly || dynreloc_fold || litpool_fold) && is_read_only {
+                // A loader-resolved external reference's symbolic identity
+                // outranks every policy for folding its on-disk bytes.
+                if !is_external_ref
+                    && (cachereadonly || dynreloc_fold || litpool_fold)
+                    && is_read_only
+                {
                     if data.fillin_read_only(vn).unwrap_or(false) {
                         self.base.count += 1;
                     }
