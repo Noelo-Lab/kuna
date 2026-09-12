@@ -2,7 +2,7 @@
 need_id: default-function-boundary-truncates
 title: Default function boundary truncates the shared syscall return
 track: quality
-status: open
+status: closed
 severity: major
 probe_id: p-3f3a4aa63b91
 acceptance_id: a-9d9a83349539
@@ -10,16 +10,16 @@ hypothesis_status: upheld
 credibility: 0.7
 instances: 1
 challenges: [5ab77f5c33c5d40ad448c615]
-rounds: [10]
+rounds: [10, 12]
 first_seen_round: 10
 attempts: 1
 covered_by_option: null
 touches: [decompiler/crates/kuna-decomp]
 scope: small
 regression_of: null
-pr: null
-closed_in_round: null
-closing_pr: null
+pr: "589"
+closed_in_round: 12
+closing_pr: "589"
 reject_reason: null
 ---
 
@@ -138,3 +138,5 @@ THE SAFE FIX, and why the obvious one is a mass regression. Simply relaxing 'fal
 - round 10 CAPTAIN (18:35Z tick, B_DRAIN off-critical-path repair): PROBE TARGET BOUND -- this need was STRUCTURALLY UNCLOSABLE as filed. Both arms carried no `target` block, so `verify --acceptance-suite` returned `ProbeError: {{BIN}} used but the context supplies no bin` with unrunnable=true / transition=indeterminate: a builder could have done the work and still not closed it. Bound both arms to the single ELF/PE candidate under ds/challenges/<hexid>/ (sha256 + size captured from the dataset copy, binary_source=dataset). Verified post-fix: unrunnable=false, passed=false, transition=unchanged -- i.e. the acceptance now FAILS honestly and can be seen to flip. NOTE probe ids did NOT move: probe_id_of() is keyed on cmd+expect only (needs.py:269), so binding a target is id-stable and breaks no historical reference. PROMOTION CAVEAT: binary_source is `dataset` and `verify --promote` refuses that verbatim (CI has no dataset, --force does not help) -- vendor an in-repo fixture in the SAME PR or B_DONE cannot promote this probe into tests/cli/.
 - builder attempt 1 (2026-09-12): commit `b6f20b414a3f85abe5946e2fb89b4c6460713117` vendors the byte-reproducible x86-64 shared-RET fixture and promotes its robust acceptance as `a-9d9a83349539`. The original dataset reproduction remains `p-3f3a4aa63b91`; only the acceptance moved because CI cannot replay dataset binaries. Status remains open with `pr: null` pending semantic review, merge, and acceptance application on the landed commit.
 - semantic review (2026-09-12): SAFE on `b6f20b414a3f85abe5946e2fb89b4c6460713117`, with no findings. The reviewer independently validated the synthetic controls and the conservative return predicate. The need remains open pending merge and acceptance application.
+- closed: acceptance a-9d9a83349539 now PASSES at 3900ab8b0deb
+- round 12 landing acceptance (2026-09-12): canonical acceptance `a-9d9a83349539` passed at the exact pre-closure head `3900ab8b0deb0b7444b0ce7b620302c5e1820f7d`. The dataset witness remained sha256 `7b8a32...` / 5208 bytes and recovered both the unsigned `return v1` and `return 0xffffffff` with exactly one xref at `0x804893e`; the synthetic fixture remained sha256 `6aac769...` / 5080 bytes and rebuilt byte-identically. Validation passed 675 default parity tests, 794 stage parity tests, 140 CLI tests, 5 focused function-boundary tests, and 4 release CLI integration tests; both exact-head semantic reviewers reported SAFE. This closed metadata is carried on PR #589 and becomes durable only when that PR merges; the PR remains unmerged here.
