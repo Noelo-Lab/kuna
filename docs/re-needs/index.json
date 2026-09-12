@@ -5,8 +5,8 @@
   "rejected_count": 1,
   "by_status": {
     "blocked": 1,
-    "closed": 136,
-    "open": 60
+    "closed": 137,
+    "open": 59
   },
   "by_track": {
     "loader": 10,
@@ -1591,7 +1591,7 @@
       "need_id": "x86-64-syscall-wrapper",
       "title": "x86-64 syscall wrapper returns the incoming syscall number",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "blocker",
       "probe_id": "p-babb09aa99a6",
       "acceptance_id": "a-266d44a4acaf",
@@ -1606,15 +1606,15 @@
       ],
       "first_seen_round": 7,
       "attempts": 0,
-      "covered_by_option": null,
+      "covered_by_option": "x64syscall",
       "touches": [
         "decompiler/crates/kuna-decomp"
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": "https://github.com/Noelo-Lab/kuna/pull/552",
+      "closed_in_round": 12,
+      "closing_pr": "552",
       "reject_reason": null,
       "score": 20.794415,
       "path": "docs/re-needs/x86-64-syscall-wrapper.md"

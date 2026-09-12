@@ -2,7 +2,7 @@
 need_id: x86-64-syscall-wrapper
 title: x86-64 syscall wrapper returns the incoming syscall number
 track: quality
-status: open
+status: closed
 severity: blocker
 probe_id: p-babb09aa99a6
 acceptance_id: a-266d44a4acaf
@@ -13,13 +13,13 @@ challenges: [652e6f896e7e520ff1c3db3c]
 rounds: [7]
 first_seen_round: 7
 attempts: 0
-covered_by_option: null
+covered_by_option: x64syscall
 touches: [decompiler/crates/kuna-decomp]
 scope: small
 regression_of: null
-pr: null
-closed_in_round: null
-closing_pr: null
+pr: https://github.com/Noelo-Lab/kuna/pull/552
+closed_in_round: 12
+closing_pr: "552"
 reject_reason: null
 ---
 
@@ -166,3 +166,7 @@ THE PRECEDENT TO BUILD ON, not to re-invent: p2_lift/kuna_cortexmpriv.rs registe
 ACCEPTANCE TRAP CHECK (a-266d44a4acaf), done against the fix shape above: the probe forbids /syscall\(\s*\)/ and /return\s+number\s*;/. Both clauses DO flip under the ABI-effects fix -- note the first regex requires EMPTY parens, so an emitted 'syscall(number,address,length)' passes it, and the second dies as soon as RAX is redefined. So the builder does NOT have to name the call. But a fix that only adds a WARNING, or that only names the op, flips neither. Also: this binary has no section header, so anything that reaches for the section table will not see this function at all (cf. the sectionless-ELF need family).
 
 SCOPE unchanged (small) and severity stands: the fix is one userop effect model plus an option, and the emitted C is currently a FALSE STATEMENT about the program (it claims the return value is the syscall number), which is the worst class of wrong output.
+- closed: acceptance a-266d44a4acaf now PASSES at 31b96e103e6d
+- round 12 reconciliation: PR #552 (squash `42d59db67f9549386cb89b48db7a285e6423c932`) implemented `x64syscall` for this need and passed the fresh-main acceptance gate. Its squash also introduced this record with the pre-closure `open` front matter, while the later `apply-acceptance` write remained outside the merged commit; that stale snapshot is why the shipped option and durable status disagreed.
+- current controls at `d7734811401707530e79bfd651e299d1780b3a30`: the exact dataset acceptance passes with default `auto` selecting `aggressive`/`x64syscall on`, emitting `return syscall(number,address,length,address);`; adding `--option x64syscall off` restores the filed `syscall(); return number;` witness. PR #564 is unrelated (`exclusivearguse` for `bytecode-append-call-loses`) and must not be recorded as this need's closing PR.
+- index reconciliation constraint: at `d7734811401707530e79bfd651e299d1780b3a30`, the authoritative committed index contains 197 active and 1 rejected records, but the clean commit exposes only 136 active Markdown sources and no rejected source directory to `needs reindex`. A sparse-source regeneration would destructively discard 61 active rows and the rejected ledger row, so this closure preserves the authoritative index byte-for-byte except for its `closed`/`open` totals and this need's object. Regenerate only after the missing sources have landed.
