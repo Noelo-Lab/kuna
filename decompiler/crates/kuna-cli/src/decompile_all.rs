@@ -2965,7 +2965,7 @@ fn usage_functions() {
         "usage: kuna functions <binary> [--json] [--summary] \\\n\
          \x20               [--filter REGEX] [--min-size N] [--max-size N] \\\n\
          \x20               [--reachable-from <name|0xaddr>] [--sort addr|size|name] [--limit N] \\\n\
-         \x20               [--define-function S[-E][=N]|@FILE].. \\\n\
+         \x20               [--define-function S[-E][=N]|@FILE].. [--jobs N|auto] \\\n\
          \x20               [--mode auto|reliable|aggressive|fast] [--isa auto|arm|thumb] [--slice ARCH] [--target T] [--sleighpath D]\n\
          \x20               [--raw-image --target T --base VMA (--entry|--addr VMA)..]\n\
          \n\
@@ -2986,6 +2986,10 @@ fn usage_functions() {
          that means a full prologue-pattern + gap-walk discovery pass.\n\
          --define-function <start[-end][=name] | @file> (repeatable) declares an entry\n\
          discovery missed and its exclusive extent; it enumerates like any other.\n\
+         --jobs N|auto runs the discovery walk on N decode lanes inside this process\n\
+         (`auto` = this machine's parallelism, capped at 32). The inventory is the\n\
+         serial one byte for byte; one stderr line says how many lanes ran, or why\n\
+         it declined. There is no worker pool here -- nothing is decompiled.\n\
          Discovering no function at all exits 1 with the reason on stderr and in\n\
          the document's `error` field (a packed image is named as such)."
     );

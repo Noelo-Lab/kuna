@@ -2529,6 +2529,76 @@ than pushing them onto a worklist itself, so a driver that routes successors
 somewhere else still runs the identical decode-and-claim policy. Indirect targets are recorded
 with their computed/indirect predicates but contribute no static successor.
 
+(kuna) That `Successors` seam is what lets the same walk run on **N decode
+lanes** under `kuna --jobs N`
+(`decompiler/crates/kuna-analysis/src/listing/kuna_pdecode.rs`). On a 147 MB
+x86-64 binary the walk is 71 seconds of an 80 second load, essentially all of it
+SLEIGH decode, and the decompiler proper cannot thread — but this walk is not the
+decompiler. The partition rule is a single sentence: **the sorted seed list is cut
+into `32 x N` address intervals, and a lane decodes only the addresses it owns.**
+A successor that falls outside a lane's interval — a branch target, a
+fall-through, or an admitted CALL target — is routed to the interval that owns it
+instead of being decoded locally, so exactly-once decode holds by construction,
+with no shared visited map and no per-address atomic. The lanes run
+bulk-synchronously: each claims intervals from an atomic cursor, runs them to
+local quiescence, delivers its crossings into the owners' inboxes at a barrier,
+and repeats until a round delivers nothing. Two rounds on that binary, eight on a
+seed-starved image; the worst case is the longest chain of interval-crossing
+discovered-function edges. The shards are then unioned in address order: the
+seeds are pre-inserted exactly as the serial walk pre-inserts them, so a seeded
+entry keeps its name, and each shard's discovered records fold in behind them.
+
+The lanes produce the serial walk's Listing, byte for byte, and the argument has
+two halves. First, under the gate below, `decode_one(a)` is a pure function of
+(address, image bytes, context values): a language with no `ContextCommit`
+constructor cannot write the context database from a decode, and the loader's
+512-byte staging window is unobservable when every executable address is mapped
+(the window only ever changes an answer for a fetch whose *first* byte is
+unmapped, and every fetch the walk makes starts inside an executable range).
+Second, the serial walk's output is the least fixpoint of a monotone system over
+a finite address lattice — seeds and admitted CALL targets are functions,
+functions and successors are instructions — and the lanes evaluate those same
+equations, each address assigned to exactly one lane, with every cross-lane fact
+delivered at the next barrier. Chaotic iteration over a monotone system converges
+to the same least fixpoint whatever the schedule. The two first-writer-wins lines
+in `walk.rs` are neutralised rather than avoided: the already-decoded test cannot
+race because ownership is total, and the function claim inserts a record that is a
+constant function of its address. Nothing downstream can see the schedule either —
+every consumer iterates address-ordered maps, and `fast_funcdisc` sorts and dedups
+again.
+
+The gate is all-or-nothing and is evaluated once, before any thread is spawned;
+whatever it refuses runs the serial walk, which is byte-identical by definition.
+It asks for: at least two lanes; a standalone SLEIGH engine that can be rebuilt
+from its `.sla` bytes (the Ghidra bridge translator is an RPC, not an engine);
+**no `ContextCommit` in the loaded language**, which is the correctness
+predicate and a property of the `.sla` rather than an architecture list (x86,
+x86-64, AARCH64, RISC-V, SPARC, SuperH and Z80 pass; ARM, MIPS, PowerPC, PA-RISC,
+PIC and M16C are refused); no delay slots, whose second fetch reaches past the
+instruction; a loader that can share its **live, patched** bytes, so a lane reads
+the dynamic relocations and `--assert bytes` overlays the parent applied rather
+than a second parse of the file; an empty `ContextPainter`, since a per-address
+decode mode is not carried by a context snapshot; every address of every
+executable range mapped by some segment; and enough executable bytes (8 MiB) to
+pay for the engine builds. Each lane then builds its own bare `Sleigh` from an
+`EngineRecipe` (`decompiler/crates/kuna-decomp/src/infra/kuna_decodekit.rs`) over
+the shared bytes, with the parent's context values copied in by value
+(`decompiler/crates/kuna-sleigh/src/kuna_ctxsnapshot.rs`) and `allow_context_set`
+off. Before anything is spawned, one such engine re-decodes 1,024 sampled seeds
+and compares them against the parent's, because an engine that is not
+decode-equivalent produces silently different bytes rather than an error.
+
+Failure is a fallback, never a wrong answer: every lane body is caught, a lane
+that dies poisons a cancellable barrier so the others wake instead of blocking
+forever, and a lane fault, an unmapped fetch on the tripwire each lane carries, a
+collision at the merge, a non-converging round loop or a parent context database
+that moved all discard the shards and re-walk serially. `KUNA_DECODE_SELFCHECK=1`
+runs both walks and compares them field by field, returning the serial result;
+`KUNA_DECODE_MIN_BYTES` lowers the size floor so the equivalence tests are not
+vacuous on small fixtures. This is a driver-tier resource setting with no output
+effect, so it is a CLI flag and an environment bridge rather than a settable
+option (DIV-164).
+
 (kuna) The seed set carries one more source, under the same `funcstart_patterns`
 gate as the prologue starts: **the entries the load-time passes have already
 committed**, handed down from `engine.rs (commit_pending_analysis)` rather than

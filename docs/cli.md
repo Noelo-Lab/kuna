@@ -885,6 +885,7 @@ kuna decompile-all ./a.out --functions main,parse --json
 kuna decompile-all ./module.o --addr .text+0x660 --json
 kuna functions ./a.out --json                          # full callable-symbol inventory
 kuna functions ./a.out --sort size --limit 10          # the ten biggest functions
+kuna functions ./big.bin --json --jobs 16              # the same answer, 16 decode lanes
 kuna decompile-all ./a.out --reachable-from main --json    # only what main touches
 kuna decompile-all ./a.out --json --jobs 12            # the same answer, 12 processes
 kuna decompile-all ./a.out --functions main,parse --json
@@ -1156,13 +1157,17 @@ Behaviors specific to `decompile-all`:
   drive completes before expiry; the console / `decomp_dbg` parity path never
   arms it.
 
-- **`--jobs N|auto` — the worker pool.** The per-function loop is ~96% of a
-  whole-binary run's wall clock and the engine is single-threaded, so `--jobs N`
-  spreads it over `N` copies of the `kuna` binary. `--jobs 1` is the default and
-  is today's in-process path, byte for byte. Also on `decompile-project` and
-  `decompile-graph`; `--jobs-chunk N` fixes the functions per scheduling unit and
-  `--jobs-full-load` makes each worker run its own whole-binary discovery instead
-  of taking the parent's inventory.
+- **`--jobs N|auto` — the worker pool, and the decode lanes.** The per-function
+  loop is ~96% of a whole-binary run's wall clock and the engine is
+  single-threaded, so `--jobs N` spreads it over `N` copies of the `kuna` binary.
+  `--jobs 1` is the default and is today's in-process path, byte for byte. Also
+  on `decompile-project` and `decompile-graph`; `--jobs-chunk N` fixes the
+  functions per scheduling unit and `--jobs-full-load` makes each worker run its
+  own whole-binary discovery instead of taking the parent's inventory.
+
+  The same flag also sizes the **discovery decode**, which is the other half of a
+  big run's wall clock and happens before any worker is spawned — so `--jobs` is
+  accepted by `kuna functions` too, which never spawns a pool at all.
   - **The output of a non-stream run does not depend on how the pool scheduled
     it.** Work is handed out in a longest-first order that is deliberately not
     output order, but every target owns a slot and results are merged
@@ -1214,6 +1219,51 @@ Behaviors specific to `decompile-all`:
   - `--assert` and `--raw-image` are refused with `--jobs > 1`: assertion outcomes
     are per-load state a pool cannot merge, and a raw image's entry seeds are its
     load.
+  - **`--jobs N` also runs the discovery walk on N decode lanes.** The
+    recursive-descent walk that finds and disassembles every function is the
+    dominant cost of loading a large image (71 s of an 80 s load on a 147 MB
+    x86-64 binary). Under `--jobs N` it runs on N threads inside the one process:
+    the seed list is cut into `32 × N` address intervals, each lane decodes only
+    the addresses it owns, and a successor outside its interval is handed to the
+    interval that owns it. Nothing is shared but the image bytes, each lane has
+    its own SLEIGH engine, and the result is the serial walk's, byte for byte —
+    the same inventory, the same disassembly, the same references. Measured on
+    that binary: `kuna functions --json` 78.8 s serial against 20.9 s at
+    `--jobs 16`, identical stdout.
+  - **Where the lanes will not run.** All-or-nothing, decided once before any
+    thread, with the serial walk — which is byte-identical by definition — as the
+    fallback. With `--jobs > 1` the walk prints exactly one line saying which it
+    took:
+
+    ```text
+    [kuna --jobs] decode: 16 lanes, 512 intervals
+    [kuna --jobs] decode: serial (language commits context)
+    ```
+
+    The reasons are `language commits context` (the loaded `.sla` has a
+    `globalset`, so a decode at one address changes how another decodes — ARM,
+    MIPS, PowerPC, PA-RISC, PIC and friends, while x86, x86-64, AARCH64, RISC-V,
+    SPARC, SuperH and Z80 pass), `language has delay slots`, `no rebuildable
+    decode engine`, `loader cannot share its bytes`, `per-address decode context`,
+    `executable range not fully mapped`, `executable image too small` (under
+    8 MiB of executable bytes the engine builds cost more than they save),
+    `no seeds`, and `no threads on this target`. After the lanes start, `lane
+    fault`, `unmapped fetch`, `merge collision`, `round limit`, `engine rebuild
+    failed`, `rebuilt engine disagrees` and `context moved` each discard the
+    parallel result and re-walk serially. Nothing is printed when `--jobs` is
+    absent.
+  - **The two caps are different numbers.** `--jobs auto` gives the pool this
+    machine's parallelism capped at 16 (a worker pays a whole program load) and
+    the decode lanes the same parallelism capped at 32 (a lane pays one SLEIGH
+    engine, ~48 MB). An explicit `--jobs N` is taken up to each cap. On
+    `decompile-all --jobs N` the two never contend: the parent's walk finishes
+    before the pool opens, and a worker is forced back to one lane.
+  - **`kuna xrefs` and `kuna strings` are out of scope.** They run a different,
+    order-dependent walk of their own, which this does not touch.
+  - **Comparing runs.** On a decompiling surface pass `--max-fn-seconds 0` to both
+    sides of an A/B, or a function that finishes just inside the budget on one
+    side and misses it on the other will move the document for reasons that have
+    nothing to do with the lanes.
 
 The decbench backend (`decbench/decompilers/raw/kuna_raw.py`) shells out to
 `kuna decompile-all --json`.

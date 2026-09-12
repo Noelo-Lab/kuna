@@ -1,4 +1,4 @@
-# `kuna --jobs N` parallel discovery decode — final design (2026-09-12)
+# `kuna --jobs N` parallel discovery decode — final design (2026-09-12), annotated as built
 
 Synthesis of a three-design panel (partition / shared-claim / prefetch) and three judges. The
 winner is **address-interval ownership with bulk-synchronous reconciliation** ("decode
@@ -118,3 +118,51 @@ before walking. Merge collision → discard + serial. Memory: +48 MB per lane + 
 * **PR-C / PR-D (follow-ups):** sharded `Listing.insns` (deletes the merge); the serial floor
   (three ~94 MB `executable_sections` copies, the unused `_image` second loader, seed-name
   clones).
+
+---
+
+## As built (PR-B)
+
+Where the shipped code differs from the design above, it is here. Everything not
+listed landed as written.
+
+* **The gate is split across two moments, not one.** What can be decided from the
+  `Architecture` alone — a rebuildable `Sleigh`, `has_context_commits()`,
+  `max_delay_slot_bytes()`, `shared_bytes()`, the context snapshot — is decided
+  where the engine is (`WalkPlan::from_env`, called once in
+  `engine.rs (commit_pending_analysis)`); what needs the walk's own inputs — the
+  painter, the seeds, the executable ranges, the size floor — is decided at
+  `walk()` (`kuna_pdecode::admit`). The observable contract is unchanged: one
+  all-or-nothing decision, one stderr line, the serial walk on refusal.
+* **`WalkPlan` carries the kit seed, not a `DecodeKitFactory` trait object.** The
+  recipe, the `Arc<dyn ImageBytes>` and the `ContextValueSnapshot` are plain data,
+  so there was no need for a trait or for kuna-analysis to reach into kuna-console;
+  the plan is built once per `run_listing_consumers` and reused across all four
+  rebuild sites.
+* **Lane 0 is the calling thread.** The pre-spawn probe has to build a kit on this
+  thread anyway, and a `Sleigh` cannot cross a thread boundary, so that kit becomes
+  lane 0's and only `lanes - 1` threads are spawned. The probe is free.
+* **Shards are a flat `Vec<(u64, InsnLite)>` plus a `HashSet<u64>`**, not a
+  `BTreeMap` (judge 0's must-fix): ~130 bytes a record against ~298, and the
+  per-shard sort runs on the lanes, before they join, so the merge is a linear
+  ascending insert.
+* **Callback evidence is collected uncapped per lane** (a `BTreeMap<u64, u64>` of
+  target to lowest source) and the union is fed through ONE `CallbackEvidence` at
+  the merge. Capping each shard and merging the survivors is not the same function
+  as capping the union once; feeding the union is, because a target the cap evicts
+  can never be retained again (the set's maximum rank is non-increasing), so the
+  result depends on the evidence set and not on its order.
+* **Round bookkeeping takes three barriers**, not two: production, delivery, then
+  one lane computing the next active interval list and resetting the cursor. The
+  barrier is a Mutex+Condvar generation counter with a `poisoned` flag, and every
+  lane body is wrapped in `catch_unwind`, so a lane that dies wakes the others
+  instead of leaving them at a barrier nobody will reach.
+* **`--jobs auto` resolves twice.** `jobs::parse_jobs` still caps the pool at 16;
+  `jobs::decode_lanes` caps the lanes at 32. A worker child is given
+  `KUNA_DECODE_JOBS=1` explicitly rather than relying on the parent's RAII guard.
+* **Env surface as shipped:** `KUNA_DECODE_JOBS` (the bridge `--jobs` sets),
+  `KUNA_DECODE_MIN_BYTES` (the size floor; tests set `0`), `KUNA_DECODE_INTERVALS`
+  (intervals per lane), `KUNA_DECODE_SELFCHECK=1|abort`, `KUNA_DECODE_STATS=1`, and
+  the test-only `KUNA_DECODE_FAULT=<lane>`.
+* **The DIV row is DIV-167**, not DIV-164: three rows landed between the design and
+  the implementation.
