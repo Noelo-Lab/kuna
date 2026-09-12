@@ -5,8 +5,8 @@
   "rejected_count": 1,
   "by_status": {
     "blocked": 1,
-    "closed": 149,
-    "open": 47
+    "closed": 152,
+    "open": 44
   },
   "by_track": {
     "loader": 10,
@@ -1985,7 +1985,7 @@
       "need_id": "arm-neon-zero-initialization",
       "title": "ARM NEON zero initialization becomes near-null memory reads",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
       "probe_id": "p-7d8042bf74cc",
       "acceptance_id": "a-663f9d6c4a03",
@@ -2000,15 +2000,15 @@
       ],
       "first_seen_round": 11,
       "attempts": 0,
-      "covered_by_option": null,
+      "covered_by_option": "constspaceload",
       "touches": [
         "decompiler/crates/kuna-decomp"
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": "https://github.com/Noelo-Lab/kuna/pull/561",
+      "closed_in_round": 12,
+      "closing_pr": "561",
       "reject_reason": null,
       "score": 13.862944,
       "path": "docs/re-needs/arm-neon-zero-initialization.md"
@@ -2049,7 +2049,7 @@
       "need_id": "block-processing-panics-out",
       "title": "Block processing panics with an out-of-bounds index",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
       "probe_id": "p-84fba836c289",
       "acceptance_id": "a-5d5e1d9200d1",
@@ -2070,9 +2070,9 @@
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": "https://github.com/Noelo-Lab/kuna/pull/562",
+      "closed_in_round": 12,
+      "closing_pr": "562",
       "reject_reason": null,
       "score": 13.862944,
       "path": "docs/re-needs/block-processing-panics-out.md"
@@ -2145,7 +2145,7 @@
       "need_id": "byte-comparisons-incorrectly-dereference",
       "title": "Byte comparisons incorrectly dereference an eight-byte pointer",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
       "probe_id": "p-a6d39efa3b1d",
       "acceptance_id": "a-f6c5440be709",
@@ -2160,15 +2160,15 @@
       ],
       "first_seen_round": 12,
       "attempts": 0,
-      "covered_by_option": null,
+      "covered_by_option": "declhightype",
       "touches": [
         "decompiler/crates/kuna-decomp"
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": "https://github.com/Noelo-Lab/kuna/pull/563",
+      "closed_in_round": 12,
+      "closing_pr": "563",
       "reject_reason": null,
       "score": 13.862944,
       "path": "docs/re-needs/byte-comparisons-incorrectly-dereference.md"
