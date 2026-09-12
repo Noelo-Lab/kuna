@@ -1572,6 +1572,36 @@ impl HighVariableBank {
         }
     }
 
+    /// Return the unique HighVariable whose piece covers every byte of `id`'s
+    /// overlap group. A group with no piece, one piece, or multiple equal-sized
+    /// covering pieces has no unambiguous whole-value owner.
+    pub fn unique_group_covering_high(&self, id: HighVariableId) -> Option<HighVariableId> {
+        let piece = self.highs.get(&id)?.piece?;
+        let group = self.pieces.get(&piece)?.group;
+        let members: Vec<&VariablePiece> = self
+            .groups
+            .get(&group)?
+            .piece_set
+            .iter()
+            .filter_map(|key| self.pieces.get(&key.id))
+            .collect();
+        if members.len() < 2 {
+            return None;
+        }
+        let mut covering = members.iter().filter(|candidate| {
+            let lo = candidate.group_offset;
+            let hi = lo + candidate.size;
+            members.iter().all(|member| {
+                lo <= member.group_offset && member.group_offset + member.size <= hi
+            })
+        });
+        let owner = covering.next()?;
+        if covering.next().is_some() {
+            return None;
+        }
+        Some(owner.high)
+    }
+
     /// C++ `HighVariable::establishGroupSymbolOffset` (`variable.cc:623`): if `id`
     /// is part of a larger group and has had its `symboloffset` set, use it to
     /// compute the group's `symbolOffset` so every other HighVariable in the group
@@ -2282,6 +2312,28 @@ mod tests {
         assert_ne!(h.highflags & high_flags::flagsdirty, 0);
         assert_ne!(h.highflags & high_flags::namerepdirty, 0);
         assert_ne!(h.highflags & high_flags::typedirty, 0);
+    }
+
+    #[test]
+    fn overlap_group_identifies_only_an_unambiguous_whole_owner() {
+        let mut bank = HighVariableBank::new();
+        let ax = bank.new_high(vid(1));
+        let al = bank.new_high(vid(2));
+        let ah = bank.new_high(vid(3));
+        bank.group_with(al, 0, ax, 1, 2).unwrap();
+        bank.group_with(ah, 1, ax, 1, 2).unwrap();
+        assert_eq!(bank.unique_group_covering_high(ax), Some(ax));
+        assert_eq!(bank.unique_group_covering_high(al), Some(ax));
+        assert_eq!(bank.unique_group_covering_high(ah), Some(ax));
+
+        let left = bank.new_high(vid(4));
+        let right = bank.new_high(vid(5));
+        bank.group_with(left, 0, right, 2, 2).unwrap();
+        assert_eq!(bank.unique_group_covering_high(left), None);
+        assert_eq!(bank.unique_group_covering_high(right), None);
+
+        let lone = bank.new_high(vid(6));
+        assert_eq!(bank.unique_group_covering_high(lone), None);
     }
 
     #[test]
