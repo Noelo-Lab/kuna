@@ -2,7 +2,7 @@
 need_id: rdtsc-timestamp-incorporates-stale
 title: RDTSC timestamp incorporates stale upper bits from the preceding computation
 track: quality
-status: open
+status: closed
 severity: major
 probe_id: p-cc77a0a0be92
 acceptance_id: a-50993426267c
@@ -17,8 +17,8 @@ covered_by_option: null
 touches: [specs/Ghidra/Processors/x86/data/languages/ia.sinc]
 scope: small
 regression_of: null
-pr: "574"
-closed_in_round: null
+pr: https://github.com/Noelo-Lab/kuna/pull/574
+closed_in_round: 12
 closing_pr: "574"
 reject_reason: null
 ---
@@ -128,3 +128,4 @@ performs the required writes and builds in the correct order.
   `check_EDX_dest` / `check_EAX_dest` builders used by RDMSR.
 - builder: acceptance re-pointed to the vendored `rdtsc_zero_extend_x86_64` fixture and
   strengthened from merely matching `rdtsc` to positively requiring `return rdtsc();`.
+- round 12 reconciliation: PR #574 (squash `8d69071f3cf55bcd527913729beb38cd5cf9c5da`) shipped the unflagged RDTSC destination fix, so `covered_by_option` remains null. On `38f5298dcb064d64c7f630346a3dd73e3ab39d7c`, the exact in-repo acceptance exits 0, returns `rdtsc()`, and emits no `CONCAT44`.
