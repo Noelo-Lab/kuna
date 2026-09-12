@@ -5,8 +5,8 @@
   "rejected_count": 1,
   "by_status": {
     "blocked": 1,
-    "closed": 128,
-    "open": 68
+    "closed": 129,
+    "open": 67
   },
   "by_track": {
     "loader": 10,
@@ -3238,10 +3238,10 @@
       "need_id": "ghidra-naming-style-disconnects",
       "title": "Ghidra naming style disconnects the VM body from its parameters",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
-      "probe_id": "p-636c04ae8637",
-      "acceptance_id": "a-8e7b5ee3ee62",
+      "probe_id": "p-1aad63758f5d",
+      "acceptance_id": "a-76fef1f16a2f",
       "hypothesis_status": "upheld",
       "credibility": 0.7,
       "instances": 1,
@@ -3252,18 +3252,18 @@
         12
       ],
       "first_seen_round": 12,
-      "attempts": 0,
+      "attempts": 1,
       "covered_by_option": null,
       "touches": [
         "decompiler/crates/kuna-decomp"
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": "https://github.com/Noelo-Lab/kuna/pull/580",
+      "closed_in_round": 12,
+      "closing_pr": 580,
       "reject_reason": null,
-      "score": 13.862944,
+      "score": 9.241962,
       "path": "docs/re-needs/ghidra-naming-style-disconnects.md"
     },
     {
