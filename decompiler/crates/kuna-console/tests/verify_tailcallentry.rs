@@ -40,6 +40,8 @@
 
 use std::path::PathBuf;
 
+use kuna_analysis::listing::kuna_tailcallentry::tail_call_entries;
+use kuna_analysis::listing::{Listing, ListingDetail};
 use kuna_console::engine::bootstrap_from_object;
 use kuna_console::ifacedecomp::{execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE};
 use kuna_console::ifaceterm::ConsoleCommands;
@@ -67,6 +69,8 @@ const IN_REGION: &str = "sub_8008038";
 const EPILOGUE: &str = "sub_8008058";
 /// An unconditional-branch target whose flow region never terminates.
 const NON_TERMINATING: &str = "sub_8008060";
+/// [`TAIL`]'s VMA — the one entry the pass is expected to accept here.
+const TAIL_VMA: u64 = 0x0800_8020;
 
 /// Bootstrap the fixture with the Listing tier on, optionally flipping
 /// `tailcallentry` on before the deferred commit (the live-CLI ordering).
@@ -202,4 +206,68 @@ fn tailcallentry_only_adds_entries() {
         );
     }
     assert!(off.lookup_symbol(TAIL).is_none() && on.lookup_symbol(TAIL).is_some());
+}
+
+/// The pass refuses a Listing that was not asked for the models it reads, rather
+/// than answering from their absence. Two of the four guards are satisfied by an
+/// empty model rather than by evidence — `predecessors_are_branches` is
+/// vacuously true over an empty `refs_to` bucket, and the epilogue guard reads a
+/// mnemonic a text-free walk leaves `""` — so judged off a
+/// [`ListingDetail::PARTITION_ONLY`] build the acceptance predicate decays into
+/// the naive rule the containment model exists to replace, and would ADD entries
+/// (the near misses above) that the full build correctly rejects. `passes.rs`
+/// pins the pass behind `--option listing on`, which is also what turns those
+/// models on; this keeps the two from drifting apart.
+#[test]
+fn a_partition_only_listing_yields_no_tail_call_entries() {
+    let root = repo_root();
+    let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
+    let bin = match fixture().to_str() {
+        Some(s) => s.to_string(),
+        None => return,
+    };
+    let prog = match bootstrap_from_object(&bin, "", &spec_roots) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!(
+                "verify_tailcallentry: skipping (bootstrap failed, build `.sla` \
+                 with `make specs`): {}",
+                e.explain()
+            );
+            return; // specs-less skip
+        }
+    };
+
+    let bytes = std::fs::read(&bin).expect("read fixture bytes");
+    let file = object::File::parse(&*bytes).expect("parse fixture ELF");
+    let image = kuna_analysis::loadimage_object::ObjectLoadImage::from_bytes(&bin, &bytes)
+        .expect("open throwaway loadimage");
+    let arch = prog.arch();
+    let translate = arch.translate();
+    let seeds = kuna_analysis::entry::collect_entries(&file, &bytes);
+
+    let build = |detail| {
+        Listing::build_with_meta(&file, &image, arch, translate, &seeds, &seeds, &[], detail)
+    };
+    let full = build(ListingDetail::FULL);
+    let lean = build(ListingDetail::PARTITION_ONLY);
+
+    let accepted = tail_call_entries(&file, &full);
+    assert!(
+        accepted.contains(&TAIL_VMA),
+        "the full build must accept {TAIL_VMA:#x} or the comparison is vacuous \
+         (accepted {accepted:x?})"
+    );
+    assert_eq!(
+        full.num_instructions(),
+        lean.num_instructions(),
+        "the two builds must be the same walk ({} vs {} instructions)",
+        full.num_instructions(),
+        lean.num_instructions()
+    );
+    assert!(
+        tail_call_entries(&file, &lean).is_empty(),
+        "a partition-only Listing carries neither model the guards read, so the \
+         pass must yield nothing rather than accept on vacuous evidence"
+    );
 }

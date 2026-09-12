@@ -2519,11 +2519,11 @@ impl PrintC {
                 let default_name;
                 let mut name = param.get_name();
                 if name.is_empty() {
-                    default_name = if arch.name_style_angr {
-                        crate::database::kuna_arg_name(i)
-                    } else {
-                        format!("param_{}", i + 1)
-                    };
+                    default_name = crate::database::kuna_materialized_param_name(
+                        arch.name_style_angr,
+                        i,
+                        "",
+                    );
                     name = default_name.as_str();
                 }
                 match param.get_type() {
@@ -2593,11 +2593,11 @@ impl PrintC {
                     if let Some(p) = proto.get_param(i) {
                         let n = p.get_name();
                         let nm = if n.is_empty() {
-                            if arch.name_style_angr {
-                                crate::database::kuna_arg_name(i)
-                            } else {
-                                format!("param_{}", i + 1)
-                            }
+                            crate::database::kuna_materialized_param_name(
+                                arch.name_style_angr,
+                                i,
+                                "",
+                            )
                         } else {
                             n.to_string()
                         };

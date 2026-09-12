@@ -1,0 +1,47 @@
+<decompilertest>
+<!--
+    linuxsyscall on x86-64: INT 0x80 still enters Linux's i386 compatibility
+    ABI. The number is therefore EAX=1 (i386 SYS_exit), not native x86-64
+    syscall 1 (write), and the argument is the low 32 bits of RBX.
+
+    Layout (x86:LE:64, flat at 0x100000):
+      compat_exit @ 0x100000: ENDBR64; mov eax,1; mov ebx,0; int 0x80; ret
+      native_call @ 0x100020: mov eax,60; xor edi,edi; syscall; ret
+
+    The first pass leaves linuxsyscall off. The second enables it. Both passes
+    decompile the native SYSCALL control with x64syscall still off: its output
+    must stay byte-for-byte represented by the same `syscall()` statement, so
+    broadening linuxsyscall cannot accidentally claim native entry sites.
+-->
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">
+f30f1efab801000000bb00000000cd80c3
+</bytechunk>
+<bytechunk space="ram" offset="0x100020" readonly="true">
+b83c00000031ff0f05c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="compat_exit"/>
+<symbol space="ram" offset="0x100020" name="native_call"/>
+</binaryimage>
+<script>
+  <com>lo fu compat_exit</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu native_call</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option linuxsyscall on</com>
+  <com>lo fu compat_exit</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu native_call</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="LINUXSYSCALL-X64 #1: option off retains exactly the one compatibility interrupt as a raw swi call" min="1" max="1">\*\)swi\(0x80\)\)\(\)</stringmatch>
+<stringmatch name="LINUXSYSCALL-X64 #2: option on uses i386 numbering and the low RBX lane to emit standalone compat exit" min="1" max="1">sys_exit\(0\);</stringmatch>
+<stringmatch name="LINUXSYSCALL-X64 #3: compat syscall 1 must never be interpreted as native x86-64 write" min="0" max="0">sys_write\(</stringmatch>
+<stringmatch name="LINUXSYSCALL-X64 #4: i386 exit arity remains one" min="0" max="0">sys_exit\(0,</stringmatch>
+<stringmatch name="LINUXSYSCALL-X64 #5: the native SYSCALL control is unchanged across both linuxsyscall passes" min="2" max="2">syscall\(\);</stringmatch>
+</decompilertest>

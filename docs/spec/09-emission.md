@@ -598,7 +598,14 @@ mapped/global symbol exists, e.g. the DIV-24 DWARF data-global names; the
 sequential default otherwise) — and P9 only *consumes* the binding: the leaf
 push of §9.2 renders every member of a HighVariable through the one bound
 name, which is also what keeps a register/global copy-shadow merge reading as
-a single variable. The angr scheme's second visible artifact is P9-owned: each
+a single variable. Recovered prototype inputs cross that boundary through
+`Funcdata::link_proto_params`: an unnamed input is materialized as `aN` exactly
+when `name_style_angr` is set, and otherwise as `param_N`, using the same
+`kuna_materialized_param_name` helper as the signature and declaration
+suppression paths. The test is deliberately the local-style flag rather than
+`kuna_name_style`: GUI Ghidra mode sets its address-style override while leaving
+`name_style_angr` on, so its parameters remain `aN`. An explicit nonempty
+prototype name always wins. The angr scheme's second visible artifact is P9-owned: each
 local declaration gains a trailing storage comment — `// rax` (register,
 lowercased), `// stack - 0x10` (frame-relative signed offset), `// rdx:rax` (a
 join value's register pieces), `// tmp` (an SSA temporary with no machine

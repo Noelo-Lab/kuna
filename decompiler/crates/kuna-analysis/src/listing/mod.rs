@@ -58,6 +58,34 @@ pub use model::{
     CodeUnit, DiscoveredFunction, FlowKind, FlowType, Insn, RawOp, RefKind, Reference,
 };
 
+/// What a Listing build captures beyond the instruction partition.
+///
+/// The partition (which bytes are instructions, and which addresses are
+/// functions) is what the walk exists for; the disassembly TEXT and the
+/// cross-reference MODEL are each an extra, and each costs per instruction —
+/// the text a second full SLEIGH parse plus two heap `String`s, the references
+/// two B-tree inserts plus a `Vec` allocation per control-flow edge. Neither is
+/// free to build and discard: on a 94 MB `.text` the reference model alone is
+/// 23 million edges across two maps.
+///
+/// Every consumer of either is gated on `--option listing on`, so a build that
+/// only wants the partition ([`ListingDetail::PARTITION_ONLY`]) is asking for
+/// the exact model it will read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ListingDetail {
+    /// Capture each instruction's disassembly text (`mnemonic` / `operands`).
+    pub assembly: bool,
+    /// Build the cross-reference model (`refs_to` / `refs_from`).
+    pub refs: bool,
+}
+
+impl ListingDetail {
+    /// Everything: the partition, the disassembly text and the references.
+    pub const FULL: ListingDetail = ListingDetail { assembly: true, refs: true };
+    /// The instruction/function partition alone.
+    pub const PARTITION_ONLY: ListingDetail = ListingDetail { assembly: false, refs: false };
+}
+
 /// The Listing facade: three sub-models sharing one decode pass (design §2.5).
 pub struct Listing {
     /// Instruction model, keyed by VMA.
@@ -72,6 +100,8 @@ pub struct Listing {
     exec_ranges: Vec<(u64, u64)>,
     /// Whether the instruction model carries disassembly text.
     has_assembly: bool,
+    /// Whether the reference model was built (vs. deliberately skipped).
+    has_refs: bool,
 }
 
 impl Listing {
@@ -93,7 +123,7 @@ impl Listing {
         translate: &dyn Translate,
         seeds: &[u64],
     ) -> Listing {
-        Self::build_with_meta(file, _image, arch, translate, seeds, &[], &[], true)
+        Self::build_with_meta(file, _image, arch, translate, seeds, &[], &[], ListingDetail::FULL)
     }
 
     /// A Listing assembled from a partition someone else already decoded.
@@ -117,6 +147,7 @@ impl Listing {
             funcs,
             exec_ranges,
             has_assembly: true,
+            has_refs: false,
         }
     }
 
@@ -124,11 +155,21 @@ impl Listing {
     /// subset of `seeds` that came from a real funcsym (sets `from_symbol`), and
     /// `seed_names` is an `(addr, name)` overlay for naming seed functions.
     ///
-    /// `want_assembly` selects whether each [`Insn`] carries its disassembly text.
-    /// Every consumer that reads it runs behind `--option listing on`, except AIF's
-    /// prologue fingerprint, which re-decodes the two addresses it needs; the
-    /// `fast_funcdisc`-only path therefore passes `false` and skips a second full
-    /// SLEIGH parse per instruction (see [`decode::decode_one`]).
+    /// `detail` selects what is captured beyond the instruction/function
+    /// partition (see [`ListingDetail`]).
+    ///
+    /// `detail.assembly` selects whether each [`Insn`] carries its disassembly
+    /// text. Every consumer that reads it runs behind `--option listing on`,
+    /// except AIF's prologue fingerprint, which re-decodes the two addresses it
+    /// needs; the `fast_funcdisc`-only path therefore passes `false` and skips a
+    /// second full SLEIGH parse per instruction (see [`decode::decode_one`]).
+    ///
+    /// `detail.refs` selects whether the reference model is built at all. Its
+    /// only two consumers — the `noreturn_disc` Listing pass and
+    /// `tailcallentry` — are both gated on `--option listing on`, so the
+    /// `fast_funcdisc`-only path passes `false` and skips filing (and then
+    /// sorting, and then dropping) one edge per control-flow successor of every
+    /// instruction in the program.
     #[allow(clippy::too_many_arguments)]
     pub fn build_with_meta(
         file: &object::File,
@@ -138,7 +179,7 @@ impl Listing {
         seeds: &[u64],
         funcsym_seeds: &[u64],
         seed_names: &[(u64, String)],
-        want_assembly: bool,
+        detail: ListingDetail,
     ) -> Listing {
         // The executable-range universe (design §2.4 / §3.4 out-of-bounds gate),
         // sorted by low VMA so the partition / gap queries can binary-search it.
@@ -153,13 +194,17 @@ impl Listing {
             Some(s) => Rc::clone(s),
             None => {
                 // No code space ⇒ nothing decodable; return an empty Listing.
+                // There was no walk, so there is no reference model whatever the
+                // caller asked for: `has_refs` reports what was built, not what
+                // was requested.
                 return Listing {
                     insns: BTreeMap::new(),
                     refs_to: BTreeMap::new(),
                     refs_from: BTreeMap::new(),
                     funcs: BTreeMap::new(),
                     exec_ranges,
-                    has_assembly: want_assembly,
+                    has_assembly: detail.assembly,
+                    has_refs: false,
                 };
             }
         };
@@ -207,7 +252,7 @@ impl Listing {
             &seed_funcs,
             &painter,
             &local_entries,
-            want_assembly,
+            detail,
         );
 
         let mut refs_to = st.refs_to;
@@ -217,6 +262,7 @@ impl Listing {
         // VMA then kind) and de-duplicated on `(from, to, kind)`, so a target
         // referenced twice from the same call site contributes one edge and
         // `ref_count_to` equals the number of distinct referencing sites.
+        // Both maps are empty when the walk was told not to build them.
         finalize_refs(&mut refs_to, /* by_source = */ true);
         finalize_refs(&mut refs_from, /* by_source = */ false);
 
@@ -226,7 +272,8 @@ impl Listing {
             refs_from,
             funcs: st.funcs,
             exec_ranges,
-            has_assembly: want_assembly,
+            has_assembly: detail.assembly,
+            has_refs: detail.refs,
         }
     }
 
@@ -243,6 +290,7 @@ impl Listing {
             funcs: BTreeMap::new(),
             exec_ranges: vec![(0, u64::MAX)],
             has_assembly,
+            has_refs: false,
         }
     }
 
@@ -325,9 +373,20 @@ impl Listing {
         &self.exec_ranges
     }
 
+    /// Whether a reference model was built. False for a Listing built with
+    /// [`ListingDetail::refs`] off — and for one with nothing to walk — where
+    /// every reference query answers "none" because none were ever filed.
+    ///
+    /// A consumer whose result depends on the *absence* of a reference (the
+    /// `tailcallentry` guards do) has to check this first: an empty bucket is
+    /// otherwise indistinguishable from an unbuilt model.
+    pub fn has_refs(&self) -> bool {
+        self.has_refs
+    }
+
     /// Whether [`Insn::mnemonic`]/[`Insn::operands`] carry disassembly text. False
-    /// for a Listing built with `want_assembly = false`, whose only text reader
-    /// (AIF's prologue fingerprint) re-decodes the addresses it needs.
+    /// for a Listing built with [`ListingDetail::assembly`] off, whose only text
+    /// reader (AIF's prologue fingerprint) re-decodes the addresses it needs.
     pub fn has_assembly(&self) -> bool {
         self.has_assembly
     }
@@ -419,6 +478,12 @@ impl Listing {
     }
 
     // ---- xref model (read-only, design §6 / PR4) ----
+    //
+    // Every reader below answers over the model that was actually built, so each
+    // reports "none" on a PARTITION_ONLY Listing; `has_refs` is what tells that
+    // apart from a genuinely unreferenced address. They stay callable there on
+    // purpose — the walk-equivalence test reads them to pin that a
+    // partition-only build files nothing.
 
     /// Incoming references to `to` (callers / branch sources), sorted by source
     /// VMA then kind, de-duplicated on `(from, to, kind)`.
@@ -540,6 +605,7 @@ mod tests {
             funcs: BTreeMap::new(),
             exec_ranges: Vec::new(),
             has_assembly: true,
+            has_refs: true,
         };
         let addrs = |start, end| {
             listing

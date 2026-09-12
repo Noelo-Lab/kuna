@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    783,
-    783
+    788,
+    788
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -340,6 +340,11 @@
     "data:LINUXSYSCALL #3: the second site resolves independently of the first (EAX reloaded between them)",
     "data:LINUXSYSCALL #4: the pre-SSA seam is what keeps the argument setup alive - 0x1234 exists only in the on pass",
     "data:LINUXSYSCALL #5: arity comes from the syscall table, so exit's one argument does not absorb the stale ecx/edx",
+    "data:LINUXSYSCALL-X64 #1: option off retains exactly the one compatibility interrupt as a raw swi call",
+    "data:LINUXSYSCALL-X64 #2: option on uses i386 numbering and the low RBX lane to emit standalone compat exit",
+    "data:LINUXSYSCALL-X64 #3: compat syscall 1 must never be interpreted as native x86-64 write",
+    "data:LINUXSYSCALL-X64 #4: i386 exit arity remains one",
+    "data:LINUXSYSCALL-X64 #5: the native SYSCALL control is unchanged across both linuxsyscall passes",
     "data:LOADGUARDRANGE #1: by default the guard bound sizes the array over all six real elements (filled to the next mapped local, like Ghidra)",
     "data:LOADGUARDRANGE #2: only the off pass caps the array at the min_items fallback, two short of the real extent",
     "data:LOADGUARDRANGE #3: only the off pass splits element 4 off as a separate never-assigned scalar",

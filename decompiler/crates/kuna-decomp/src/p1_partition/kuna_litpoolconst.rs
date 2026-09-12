@@ -36,6 +36,11 @@
 //! permission, not the section name, and a corpus of packers and protectors is
 //! exactly where a data section's flags are least trustworthy.
 //!
+//! An external-reference Varnode is excluded even when it lies in one of these
+//! ranges. Its bytes are loader metadata rather than a run-time value: a PE IAT
+//! slot in an RX section contains a hint/name RVA on disk and an imported
+//! function address after the Windows loader binds it.
+//!
 //! Ranges come from the loader's section table, or from the `PF_X` load segments
 //! when the image carries no sections. An image whose loader reports neither —
 //! the XML datatest corpus, the raw-bytes loader — contributes no ranges and the

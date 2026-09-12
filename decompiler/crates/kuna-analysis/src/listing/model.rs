@@ -139,7 +139,7 @@ pub struct Reference {
 }
 
 /// A function entry discovered (or seeded) by the walk.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiscoveredFunction {
     /// The function entry VMA.
     pub entry: u64,

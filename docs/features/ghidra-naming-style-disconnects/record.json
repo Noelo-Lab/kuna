@@ -1,0 +1,49 @@
+{
+  "need_id": "ghidra-naming-style-disconnects",
+  "opportunity": "ghidra-naming-style-disconnects",
+  "test_name": "ghidra-naming-style-disconnects",
+  "binary": "decompiler/crates/kuna-analysis/tests/fixtures/assertranges_x86_64",
+  "selector": "sample",
+  "func_addr": "0x401140",
+  "option": "namestyle ghidra",
+  "flag": "name_style_angr",
+  "phase": "P6/P9",
+  "subphase": "parameter symbol binding and emission",
+  "change_kind": "correctness-fix",
+  "source_decompiler": "kuna",
+  "inspiration": "RE-friction challenge 69761b7a39e9c4d85c2f9fc1; existing namestyle contract",
+  "default_on": true,
+  "parity": "make test 675/675 and make test-stages 788/788: PARITY OK",
+  "rebased_onto": "origin/main 31b2d77f026ecbd736a4c58b05833fdd961cb13d (includes Linux #579)",
+  "pr": "https://github.com/Noelo-Lab/kuna/pull/580",
+  "closed_in_round": 12,
+  "decisions": [
+    "The filed hypothesis is upheld: prototype recovery and data flow are correct; link_proto_params alone hardcoded aN while both P9 parameter sites selected param_N under standalone Ghidra style.",
+    "The shared helper keys only on name_style_angr. It does not use kuna_name_style(), because GUI Ghidra mode deliberately sets both the address-style override and name_style_angr and must retain aN locals and parameters.",
+    "Every nonempty prototype name is returned unchanged, preserving explicit and recovered names under both styles.",
+    "This is a strict correction to the existing namestyle option and adds no option, catalog row, stage fixture, baseline update, or counter change.",
+    "The need's separately observed incomplete type-prefixed naming of ordinary Ghidra-style locals is not part of the parameter disconnect and remains out of scope."
+  ],
+  "before_after": {
+    "before": "int sample(int param_1) { int a0; return scale * a0 + bias + dat_50000000 * 2; }",
+    "after": "int sample(int param_1) { return scale * param_1 + bias + dat_50000000 * 2; }",
+    "default_angr_control": "int sample(int a0) { return scale * a0 + bias + dat_50000000 * 2; }"
+  },
+  "tests": {
+    "unit": "kuna_naming: unnamed one- and multi-slot names in both styles, explicit-name preservation, and GUI Ghidra address style with angr local naming",
+    "promoted_probe": "tests/cli/ghidra-naming-style-disconnects.json",
+    "fixture": "existing assertranges_x86_64 sample(int n)"
+  },
+  "gates": {
+    "focused unit tests": "3/3 passed",
+    "focused CLI acceptance": "1/1 passed",
+    "make test": "675/675 passed; PARITY OK",
+    "make test-stages": "788/788 passed; PARITY OK",
+    "full CLI suite": "134/134 passed",
+    "make rust-test": "full workspace and doctests passed",
+    "make check-spec": "lenient and strict passed",
+    "kuna catalog --check": "passed",
+    "scripts.repipe.counters": "passed without drift: 190 settables, tiers 61/70/59, 275 corpus files, next ElementId 4164",
+    "scripts.repipe.mergecheck": "passed against origin/main with 0 rejects"
+  }
+}

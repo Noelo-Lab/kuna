@@ -5,8 +5,8 @@
   "rejected_count": 1,
   "by_status": {
     "blocked": 1,
-    "closed": 126,
-    "open": 70
+    "closed": 129,
+    "open": 67
   },
   "by_track": {
     "loader": 10,
@@ -3238,10 +3238,10 @@
       "need_id": "ghidra-naming-style-disconnects",
       "title": "Ghidra naming style disconnects the VM body from its parameters",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
-      "probe_id": "p-636c04ae8637",
-      "acceptance_id": "a-8e7b5ee3ee62",
+      "probe_id": "p-1aad63758f5d",
+      "acceptance_id": "a-76fef1f16a2f",
       "hypothesis_status": "upheld",
       "credibility": 0.7,
       "instances": 1,
@@ -3252,18 +3252,18 @@
         12
       ],
       "first_seen_round": 12,
-      "attempts": 0,
+      "attempts": 1,
       "covered_by_option": null,
       "touches": [
         "decompiler/crates/kuna-decomp"
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": "https://github.com/Noelo-Lab/kuna/pull/580",
+      "closed_in_round": 12,
+      "closing_pr": 580,
       "reject_reason": null,
-      "score": 13.862944,
+      "score": 9.241962,
       "path": "docs/re-needs/ghidra-naming-style-disconnects.md"
     },
     {
@@ -3335,10 +3335,10 @@
       "need_id": "linux-compatibility-int-0x80",
       "title": "Linux compatibility int 0x80 stays opaque in an x86-64 image",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
       "probe_id": "p-99117a0902de",
-      "acceptance_id": "a-2a30541448f4",
+      "acceptance_id": "a-a3dee50cabfd",
       "hypothesis_status": "upheld",
       "credibility": 0.85,
       "instances": 1,
@@ -3346,21 +3346,22 @@
         "6736b3a09b533b4c22bd2b9f"
       ],
       "rounds": [
-        10
+        10,
+        12
       ],
       "first_seen_round": 10,
-      "attempts": 0,
+      "attempts": 1,
       "covered_by_option": null,
       "touches": [
         "decompiler/crates/kuna-decomp"
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": "https://github.com/Noelo-Lab/kuna/pull/579",
+      "closed_in_round": 12,
+      "closing_pr": 579,
       "reject_reason": null,
-      "score": 13.862944,
+      "score": 9.241962,
       "path": "docs/re-needs/linux-compatibility-int-0x80.md"
     },
     {
@@ -3754,10 +3755,10 @@
       "need_id": "pe-import-calls-become",
       "title": "PE import calls become calls to raw hint/name RVAs",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
       "probe_id": "p-ba994cd01240",
-      "acceptance_id": "a-69fc381a0afc",
+      "acceptance_id": "a-983e58b7c36b",
       "hypothesis_status": "upheld",
       "credibility": 0.85,
       "instances": 1,
@@ -3768,16 +3769,17 @@
         12
       ],
       "first_seen_round": 12,
-      "attempts": 0,
+      "attempts": 1,
       "covered_by_option": null,
       "touches": [
-        "decompiler/crates/kuna-decomp"
+        "decompiler/crates/kuna-decomp",
+        "decompiler/crates/kuna-console"
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": "https://github.com/Noelo-Lab/kuna/pull/576",
+      "closed_in_round": 12,
+      "closing_pr": 576,
       "reject_reason": null,
       "score": 13.862944,
       "path": "docs/re-needs/pe-import-calls-become.md"
