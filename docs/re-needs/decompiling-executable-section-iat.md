@@ -14,7 +14,7 @@ rounds: [12]
 first_seen_round: 12
 attempts: 1
 covered_by_option: null
-touches: [decompiler/crates/kuna-decomp]
+touches: [decompiler/crates/kuna-analysis, decompiler/crates/kuna-console, decompiler/crates/kuna-cli, decompiler/crates/kuna-wasm]
 scope: small
 regression_of: null
 pr: "588"
@@ -167,3 +167,8 @@ DISPATCH CONSEQUENCE: the T_DEDUP note's stated shared root condition, "IAT data
   `unsigned int` prototype. Filtered decompile-all/project and direct WASM
   name/address paths also pass. Closure metadata is durable only when PR #588
   merges.
+- final review: corrected `touches` to the four crates changed by the implementation:
+  `kuna-analysis`, `kuna-console`, `kuna-cli`, and `kuna-wasm`; `kuna-decomp` is
+  not changed. Scope remains `small` because it classifies implementation
+  complexity: the body-eligibility policy is narrow and centralized, while the
+  CLI and WASM changes are surface adapters for that same policy.

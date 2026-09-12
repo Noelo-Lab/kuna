@@ -2675,7 +2675,10 @@
       "attempts": 1,
       "covered_by_option": null,
       "touches": [
-        "decompiler/crates/kuna-decomp"
+        "decompiler/crates/kuna-analysis",
+        "decompiler/crates/kuna-console",
+        "decompiler/crates/kuna-cli",
+        "decompiler/crates/kuna-wasm"
       ],
       "scope": "small",
       "regression_of": null,
