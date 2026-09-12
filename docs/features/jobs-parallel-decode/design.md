@@ -96,7 +96,8 @@ Lane panic → `catch_unwind` per lane, a poisoned (cancellable) barrier built o
 (NOT `std::sync::Barrier`, which would hang the other lanes), discard shards, serial re-walk,
 one stderr line. Kit build failure / context mismatch / sampled-decode mismatch → decline
 before walking. Merge collision → discard + serial. Memory: +48 MB per lane + measured
-+0.28 GB shard fragmentation; ~7.1 GB at 16 lanes on the target.
++0.28 GB shard fragmentation; ~7.1 GB at 16 lanes on the target. (Measured as built:
+8.67 GB at 16 lanes — see "As built".)
 
 ## Staging
 * **PR-A (byte-identical refactor, no flag):** `walk::step`/`Successors`/`WalkPolicy`;
@@ -151,7 +152,13 @@ listed landed as written.
   the merge. Capping each shard and merging the survivors is not the same function
   as capping the union once; feeding the union is, because a target the cap evicts
   can never be retained again (the set's maximum rank is non-increasing), so the
-  result depends on the evidence set and not on its order.
+  result depends on the evidence set and not on its order. The price is that the
+  *intermediate* is not bounded by `MAX_CALLBACK_EVIDENCE = 4096` the way the
+  walk's own side model is: a lane holds one entry per distinct in-exec `PUSH imm`
+  target it saw, ~20 bytes apiece, on the x86 stack-callback path only. It is left
+  uncapped deliberately — a per-shard cap can only be sound if it provably evicts
+  nothing the union would have retained, which is a stronger claim than anything
+  measured here buys.
 * **Round bookkeeping takes three barriers**, not two: production, delivery, then
   one lane computing the next active interval list and resetting the cursor. The
   barrier is a Mutex+Condvar generation counter with a `poisoned` flag, and every
@@ -166,3 +173,33 @@ listed landed as written.
   the test-only `KUNA_DECODE_FAULT=<lane>`.
 * **The DIV row is DIV-167**, not DIV-164: three rows landed between the design and
   the implementation.
+* **A `MAX_ROUNDS = 1024` runaway guard** exists, which the design body deliberately
+  did not adopt as policy (a seed-starved image is still correct at 8 rounds).
+  Tripping it is a `round limit` refusal, i.e. a serial re-walk.
+* **The tripwire hook the design assumed** is added here rather than in PR-A:
+  `SharedBytesImage::tripwire()` plus `build_decode_engine_traced`, leaving PR-A's
+  `build_decode_engine` signature untouched.
+* **Per-lane kits are rebuilt per `walk()` call**, not hoisted to
+  `run_listing_consumers`. Only the *recipe* (`DecodeSeed`) is hoisted onto the
+  plan; a `Sleigh` is `!Send`, so lanes 1..N cannot be handed one built elsewhere.
+  It costs nothing today: every x86-64 load runs exactly one laned walk (one
+  `decode stats` line on fauxware, gdb, libLLVM and the 147 MB target), and the
+  callback/ARM re-walk sites that would rebuild refuse on their own language gate.
+* **A refused lane spawn is a refusal, not a panic.** `thread::scope`'s `spawn`
+  panics on `EAGAIN`/`ENOMEM` and joins the lanes already parked at the first
+  barrier before resuming it — a deadlock with no output. The spawner uses
+  `Builder::spawn_scoped`, poisons the gate on `Err`, skips lane 0's body and
+  refuses with `thread spawn failed`. Reproduced under `ulimit -u`: `--jobs 32`
+  on `/usr/bin/gdb` now exits 0 with the serial document.
+* **Memory, as measured, not as projected.** The design's "+0.28 GB shard
+  fragmentation; ~7.1 GB at 16 lanes" is wrong. Peak resident on the 147 MB target
+  is 5.74 GB serial against 8.67 GB at 16 lanes and 9.55 GB at 32, and the
+  overhead grows with the lane count while the total shard bytes do not (+0.47 GB
+  at 2 lanes, +0.86 at 4, +2.16 at 8, +2.92 at 16, +3.80 at 32) — the glibc
+  per-thread-arena signature: shards are allocated on the lane arenas and the
+  final `BTreeMap` fresh on the main thread, so both are resident across the
+  merge rather than one replacing the other. `MALLOC_ARENA_MAX`, or dropping each
+  shard on its producing lane, is the follow-up. Because that peak is what the
+  worker pool sizes itself from, `kuna_pdecode::run` records the lane-induced
+  excess in a process-wide counter (`lane_peak_excess_bytes()`, also reported by
+  `KUNA_DECODE_STATS=1`) and `jobs::worker_estimate` subtracts it.

@@ -2592,12 +2592,16 @@ Failure is a fallback, never a wrong answer: every lane body is caught, a lane
 that dies poisons a cancellable barrier so the others wake instead of blocking
 forever, and a lane fault, an unmapped fetch on the tripwire each lane carries, a
 collision at the merge, a non-converging round loop or a parent context database
-that moved all discard the shards and re-walk serially. `KUNA_DECODE_SELFCHECK=1`
-runs both walks and compares them field by field, returning the serial result;
-`KUNA_DECODE_MIN_BYTES` lowers the size floor so the equivalence tests are not
-vacuous on small fixtures. This is a driver-tier resource setting with no output
+that moved all discard the shards and re-walk serially. A lane thread the OS
+refuses is the one failure a lane cannot report for itself — the lanes already
+parked at the first barrier are joined before the failure propagates — so the
+spawner poisons the barrier, declines lane 0's own body and refuses with `thread
+spawn failed`. `KUNA_DECODE_SELFCHECK=1` runs both walks and compares them field
+by field, returning the serial result; the size floor is a parameter of the plan,
+which `KUNA_DECODE_MIN_BYTES` sets on the CLI path and the equivalence tests pass
+directly, so they are not vacuous on small fixtures. This is a driver-tier resource setting with no output
 effect, so it is a CLI flag and an environment bridge rather than a settable
-option (DIV-164).
+option (DIV-167).
 
 (kuna) The seed set carries one more source, under the same `funcstart_patterns`
 gate as the prologue starts: **the entries the load-time passes have already
