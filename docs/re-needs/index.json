@@ -5,8 +5,8 @@
   "rejected_count": 1,
   "by_status": {
     "blocked": 1,
-    "closed": 131,
-    "open": 65
+    "closed": 132,
+    "open": 64
   },
   "by_track": {
     "loader": 10,
@@ -4433,7 +4433,7 @@
       "need_id": "typed-mach-o-tail",
       "title": "Typed Mach-O tail stub drops both forwarded arguments",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
       "probe_id": "p-4d8cc41166db",
       "acceptance_id": "a-0f1c487a5eb9",
@@ -4447,18 +4447,18 @@
         12
       ],
       "first_seen_round": 12,
-      "attempts": 0,
+      "attempts": 1,
       "covered_by_option": null,
       "touches": [
         "decompiler/crates/kuna-decomp"
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": "https://github.com/Noelo-Lab/kuna/pull/585",
+      "closed_in_round": 12,
+      "closing_pr": 585,
       "reject_reason": null,
-      "score": 13.862944,
+      "score": 9.241962,
       "path": "docs/re-needs/typed-mach-o-tail.md"
     },
     {

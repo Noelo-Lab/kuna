@@ -2,7 +2,7 @@
 need_id: typed-mach-o-tail
 title: Typed Mach-O tail stub drops both forwarded arguments
 track: quality
-status: open
+status: closed
 severity: major
 probe_id: p-4d8cc41166db
 acceptance_id: a-0f1c487a5eb9
@@ -12,14 +12,14 @@ instances: 1
 challenges: [64c8b272b25df8732eebc2a6]
 rounds: [12]
 first_seen_round: 12
-attempts: 0
+attempts: 1
 covered_by_option: null
 touches: [decompiler/crates/kuna-decomp]
 scope: small
 regression_of: null
-pr: null
-closed_in_round: null
-closing_pr: null
+pr: https://github.com/Noelo-Lab/kuna/pull/585
+closed_in_round: 12
+closing_pr: 585
 reject_reason: null
 ---
 
@@ -154,3 +154,16 @@ form.
   It could pass if the asserted name disappeared while the empty call remained,
   so the promoted acceptance pins both the declared parameters and the positive
   `(*printf_ptr)(fmt,value)` call.
+- Round 12 builder: indirect call recovery now accepts only an exact unwritten
+  memory target or its exact direct LOAD, then prefers an existing call-site
+  override, an exact explicit function-pointer data type, loader metadata at the
+  same pointer-width slot, and finally the generic prototype. Usepoint-scoped
+  declarations, malformed widths, interior addresses, scalars, pointers to data,
+  bare code, and copied or computed targets remain generic. Complete explicit
+  prototypes retain their calling-convention model.
+- Round 12 closure: PR #585 was opened from the exact twice-reviewed implementation
+  head `ca9cc21bcf075d4e40f8b14fe7dc8532e2c455fa`. The promoted acceptance passed,
+  explicit typing rendered `(*printf_ptr)(fmt,value)`, loader metadata rendered
+  `(*dat_100003000)(a0)` in decompile, decompile-all, and project export, and all
+  focused, parity, staged, spec, workspace, and doc-test gates passed. Final merge
+  remains gated on exact-head metadata review and the `full-ci` workflow.
