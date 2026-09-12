@@ -2,7 +2,7 @@
 need_id: arm-neon-zero-initialization
 title: ARM NEON zero initialization becomes near-null memory reads
 track: quality
-status: open
+status: closed
 severity: major
 probe_id: p-7d8042bf74cc
 acceptance_id: a-663f9d6c4a03
@@ -13,13 +13,13 @@ challenges: [68d40081224c0ec5dcedc2d2]
 rounds: [11]
 first_seen_round: 11
 attempts: 0
-covered_by_option: null
+covered_by_option: constspaceload
 touches: [decompiler/crates/kuna-decomp]
 scope: small
 regression_of: null
-pr: null
-closed_in_round: null
-closing_pr: null
+pr: https://github.com/Noelo-Lab/kuna/pull/561
+closed_in_round: 12
+closing_pr: "561"
 reject_reason: null
 ---
 
@@ -130,3 +130,4 @@ METHOD (cheap, reusable): bare-default run first (killed the "dynrelocs" framing
   Shipped narrowed to the equal-width identity only (`out:N = LOAD(const, p:N)` -> `COPY p`). Principled as well as convenient: a dynamic `export *[const]:N tmp` gives the exported operand and `tmp` the same size, so N != S is a different shape and resizing it invents a truncation rather than applying an identity. Re-measured after the narrowing, all 5 of those binaries are byte-identical, and the shipped rule changes exactly 1 of 122 compared binaries in the 137-target sweep: the witness.
 
   Method note for whoever reads this next: the acceptance probe, the datatests and the stage test were ALL green on the wrong version. Only the whole-corpus before/after with per-hunk classification found it, and only because a `return`-count drop of 1 in two binaries was chased instead of waved through as a rendering difference.
+- round 12 reconciliation: PR #561 (squash `546678de1816733cfe29f326d9656ba7d0349db4`) implemented the default-on `constspaceload` option for this need. On `bf22331158be444ebfbabf937ce8141826490fa9`, the exact dataset acceptance passes; adding `--option constspaceload off` restores the filed `*(unsigned int *)(0 + 4)` near-null read. This closure is limited to the acceptance contract and the equal-width constant-space LOAD behavior recorded above.

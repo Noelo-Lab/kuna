@@ -2,7 +2,7 @@
 need_id: block-processing-panics-out
 title: Block processing panics with an out-of-bounds index
 track: quality
-status: open
+status: closed
 severity: major
 probe_id: p-84fba836c289
 acceptance_id: a-5d5e1d9200d1
@@ -17,9 +17,9 @@ covered_by_option: null
 touches: [decompiler/crates/kuna-decomp/src/substrate/block.rs]
 scope: small
 regression_of: null
-pr: null
-closed_in_round: null
-closing_pr: null
+pr: https://github.com/Noelo-Lab/kuna/pull/562
+closed_in_round: 12
+closing_pr: "562"
 reject_reason: null
 ---
 
@@ -122,3 +122,4 @@ captain T_TRIAGE r3: track CORRECTED tooling -> quality, touches CORRECTED kuna-
 captain T_TRIAGE r3: repaired the missing probe/acceptance `target` block (binary_rel + sha256 + size, source dataset) -- without it {{BIN}} could not resolve and the need was unclosable by B_DONE and invisible to regression detection. Verified: acceptance now RUNS and FAILS on cf5234ac, which is the state a filed need must be in.
 - round 3 REFUTER: hypothesis **upheld** (was inconclusive). Captain refuted BY MEASUREMENT in-tick (main-tree kuna, 20:01 build). The filed guess -- 'an unchecked block invariant fails' -- is UPHELD, and the invariant is now named: RUST_BACKTRACE puts the panic at substrate/block.rs:648 inside FlowBlock::get_in, called from funcdata_block.rs:1334 'let inbl = self.bblocks_ref().block(parent).get_in(i)' in descend2_undef, reached via block_remove_internal(unreachable=true) <- remove_unreachable_blocks. i is the MULTIEQUAL's slot for the dead varnode (get_slot, line 1327), so 'len is 1 but the index is 1' means the phi still has 2 inputs while its parent block has 1 in-edge: MULTIEQUAL arity and parent in-degree are already desynced BEFORE descend2_undef runs. Note the unreachable arm SKIPS the whole push_multiequals + per-out-edge op_remove_input resync that the !unreachable arm does (funcdata_block.rs:1397-1419), which is where the ordering has to be looked at. TWO CORRECTIONS FOR THE BUILDER. (1) Nothing measured here is specific to the 'protected instruction stream' -- the path is generic unreachable-block removal; the packer only supplies the dead-block shape. Do not scope the fix to obfuscated input. (2) THE ACCEPTANCE PROBE CANNOT TELL A FIX FROM A COVER-UP: it only asks for exit 0 with 'panicked' absent from stderr, so a bounds guard (or a clamp/skip at block.rs:648) closes this need while emitting a phi with a dropped or mis-wired input -- silently WRONG C instead of a crash. The fix must restore the arity invariant, and the builder should diff the emitted C for sub_41cd08 against the surrounding call graph rather than trusting the absence probe.
 - round 12 BUILDER: hypothesis and refutation both UPHELD and the invariant is now named. The desync is created by `ActionStackPtrFlow::analyzeExtraPop`, which rewrites a solved MULTIEQUAL into an `INT_ADD` **in place** (measured: a per-action scan first reports the broken layout immediately after `stackptrflow`, and the block's op list is `[MULTIEQUAL, INT_ADD, MULTIEQUAL, MULTIEQUAL, ...]`). `branch_remove_internal` then resyncs phi arity by walking the leading marker run and breaking at the first non-MULTIEQUAL, so it patched 1 phi of 3. Fixed by scanning the whole op list, which is what `block_remove_internal` already does on both sides of the port -- NOT by guarding the index, so no phi is left mis-wired or fed `0xBADDEF`. Unflagged strict fix, DIV-159. Whole-corpus sweep (975 images, reachability-prefiltered): 0 of 803 decbench ELFs reach the changed branch, 17 challenge images do, and across those 30 of 39 crash-stub functions become real C with 0 regressions. CI twin is `tests/cli/block-processing-panics-out.json` against a vendored 5 KiB PE32 (`decompiler/crates/kuna-analysis/tests/fixtures/phimarkerrun_pe_i386.exe`) carrying the stub at its original address; the need's own acceptance stays on the dataset witness.
+- round 12 reconciliation: PR #562 (squash `20132af6f71461aa9a769abe0b63c22292de8d46`) shipped the unflagged strict fix, so `covered_by_option` remains null. A clean build of its parent `546678de1816733cfe29f326d9656ba7d0349db4` reproduces the exact exit-1 `index out of bounds` failure; on `bf22331158be444ebfbabf937ce8141826490fa9`, the exact dataset acceptance exits 0 without a panic or decompilation-failed stub.

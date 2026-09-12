@@ -2,7 +2,7 @@
 need_id: byte-comparisons-incorrectly-dereference
 title: Byte comparisons incorrectly dereference an eight-byte pointer
 track: quality
-status: open
+status: closed
 severity: major
 probe_id: p-a6d39efa3b1d
 acceptance_id: a-f6c5440be709
@@ -13,13 +13,13 @@ challenges: [68a915938fac2855fe6fb805]
 rounds: [12]
 first_seen_round: 12
 attempts: 0
-covered_by_option: null
+covered_by_option: declhightype
 touches: [decompiler/crates/kuna-decomp]
 scope: small
 regression_of: null
-pr: null
-closed_in_round: null
-closing_pr: null
+pr: https://github.com/Noelo-Lab/kuna/pull/563
+closed_in_round: 12
+closing_pr: "563"
 reject_reason: null
 ---
 
@@ -155,3 +155,4 @@ CROSS-LINK WORTH RECORDING: the escape hatch is closed here. v9 is a REGISTER te
 ACCEPTANCE, WITH ONE CAUTION. It is stdout_absent of the same regex, anchored on the backreference to the declared name, so a genuine fix (declaration becomes char *) passes cleanly. But note the clause keys on the LITERAL text "unsigned long long *": any unrelated change that merely renames the variable or picks a different wrong pointer type would also pass it. Whoever closes this should confirm the emitted dereference is a one-byte signed load, not merely that the regex went quiet.
 
 REFERENCE STATUS, unchanged and worth not re-attempting blindly: the tester's IDA comparison never happened (declib backend exited 1 before registering), so there is no reference pseudocode on either this need or its sibling.
+- round 12 reconciliation: PR #563 (squash `29254c22e8fe5ce175f662f50587d85db3186d97`) implemented the default-on `declhightype` option for this need. On `bf22331158be444ebfbabf937ce8141826490fa9`, the exact dataset acceptance passes with `char *v9`; adding `--option declhightype off` restores the filed `unsigned long long *v9` declaration followed by `(uint4)*v9`. This records a declaration/emitted-C correction only: it does not claim that `declhightype` changed the lifted IR or p-code, or that it repairs every pointer/integer typing issue in the function.
