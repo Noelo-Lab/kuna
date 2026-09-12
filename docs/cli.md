@@ -1054,6 +1054,14 @@ x86-64 (elsewhere, see the injected defaults below), `error` isolates a single f
 function, and `variables` (params in ABI order + DWARF/stack locals) feed type-recovery
 scoring. `--no-vars` leaves `variables` empty but still emits function line mappings.
 
+The run-level verdict is aggregate, not fail-fast. If the selected set is non-empty
+and every record has `code: null`, `decompile-all` first emits the complete JSON or
+text result, then reports `decompilation produced zero function bodies ...` on stderr
+and exits `1`; JSON also carries that message in its top-level `error`. If even one
+record has a body, the run remains exit `0` with top-level `error: null`, and every
+failed function stays visible in its own record. An empty narrowed selection remains
+the filter answer described above rather than an all-failed run.
+
 Behaviors specific to `decompile-all`:
 
 - **Executable default targets** — an unfiltered run decompiles canonical entries
@@ -1995,6 +2003,13 @@ generated names can resolve. Explicit `--option fast_funcdisc on` can restore
 its program facts for an address-selected run, but does not add definitions
 outside the selection.
 
+Project exports use the same aggregate verdict as `decompile-all`. Individual failures
+remain comments/prototype tombstones and count in the final README. A mixed export with
+at least one body exits `0`; a non-empty selection that produces zero bodies exits `1`
+with the completed-file summary on stdout and a run-level diagnostic on stderr. The
+verdict is taken only after the `.c`, `.h`, `.asm`, README and, under `--stream`,
+`index.jsonl` have been finalized.
+
 Writes a project folder — default `<binary-filename>.kuna/` next to the binary,
 `-o/--output DIR` overrides — of four artifacts designed so a human or LLM can study the
 binary and attempt recompilation:
@@ -2169,7 +2184,7 @@ It is written on the writer's own 500 ms clock rather than per result, so it can
 `index.jsonl` by up to one tick; the index is the live feed and the status file is the
 summary.
 
-**Failure is reported in the folder.** Any error after the folder exists — an
+**Failure is reported in the folder.** Any operational error after the folder exists — an
 unloadable image, a non-C output language, an empty target set, an I/O error on the
 `.c`, the `.h` or `index.jsonl` — rewrites `.streaming` with `phase: failed` and the
 message, and exits `1`. `.streaming` always carries the message; the README carries it
@@ -2181,6 +2196,13 @@ so `.streaming` is the only trace of the attempt. With no previous README to put
 a run that failed that early writes one that says so and inventories nothing, because
 nothing was created. A `.streaming` left behind whose `pid`
 is dead and whose phase is not `failed` means the run was killed.
+
+An all-failed function set is deliberately different from an operationally failed
+export. Every selected function finished and its error record is useful, so the exporter
+finalizes every artifact, writes the `0 decompiled, N failed` README and complete
+`index.jsonl`, removes `.streaming`, prints the completed-file summary, and only then
+exits `1` with the aggregate diagnostic on stderr. A missing `.streaming` marker therefore
+means the artifacts are complete, not that the process necessarily returned zero.
 
 One case reports nothing in the folder: if whatever killed the writer also makes
 `.streaming` unwritable — a full disk is both — the status file keeps its last good
@@ -2195,11 +2217,12 @@ directly. At `--jobs 1` the producer pulls one function at a time and stops at t
 next one. The pool's closing `done: N functions` line counts what it actually
 delivered, which on a run that stopped early is less than `functions_total`.
 
-Two things are deliberately not run failures. Per-function failures — including a
+Two things are deliberately not immediate run failures. Per-function failures — including a
 worker process that cannot be spawned, which degrades that whole chunk to error
-records — are `error` records in the `.c` and in `index.jsonl`, and the run exits `0`
-with `functions_failed` counting them, so a poller that sees no `failed` phase still
-has to read that field. And a `.streaming` or `README.md` rewrite that fails mid-run,
+records — are `error` records in the `.c` and in `index.jsonl`; the run exits `0` if at
+least one body lands and exits `1` after finalization if none does. A poller that sees
+no `failed` phase still has to read the final README or process status. And a
+`.streaming` or `README.md` rewrite that fails mid-run,
 since those report on the export rather than being it, warns once on stderr per file
 per outage and is retried on the next tick — only the first pair, written at t=0 as the
 proof the folder can be written at all, fails the run.

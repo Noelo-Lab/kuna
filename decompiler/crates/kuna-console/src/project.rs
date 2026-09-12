@@ -104,6 +104,41 @@ pub struct FuncResult {
     pub callee_hints: Vec<u64>,
 }
 
+/// The run-level verdict of a non-empty decompile batch.
+///
+/// Per-function failures stay isolated records while at least one body was
+/// produced. A selected batch that produced no body at all is different: there
+/// is no decompilation for the caller to consume, so every CLI whole-binary
+/// surface reports one run-level error after preserving its records/artifacts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BatchOutcome {
+    selected: usize,
+    bodies: usize,
+}
+
+impl BatchOutcome {
+    pub fn of(results: &[FuncResult]) -> Self {
+        Self::new(results.len(), results.iter().filter(|r| r.code.is_some()).count())
+    }
+
+    pub fn new(selected: usize, bodies: usize) -> Self {
+        debug_assert!(bodies <= selected);
+        Self { selected, bodies }
+    }
+
+    pub fn all_failed_error(self, binary: &str) -> Option<String> {
+        (self.selected > 0 && self.bodies == 0).then(|| {
+            let function = if self.selected == 1 { "function" } else { "functions" };
+            let record = if self.selected == 1 { "record" } else { "records" };
+            format!(
+                "decompilation produced zero function bodies for {} selected {function} in \
+                 {binary}; see the per-function error {record}",
+                self.selected
+            )
+        })
+    }
+}
+
 /// What a decompile batch captures beyond the C itself.
 ///
 /// `single_target` is an explicit input rather than a count: it gates the

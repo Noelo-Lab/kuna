@@ -652,6 +652,111 @@ fn jobs_project_artifacts_are_byte_identical_to_serial() {
     let _ = std::fs::remove_dir_all(&serial);
 }
 
+/// Both project writers finish every artifact before reporting that no selected
+/// function produced a body. A mixed project remains a successful export.
+#[test]
+fn project_exit_distinguishes_all_failed_from_partial_success() {
+    let bin = fixture("fauxware");
+    let sp = specs();
+    for stream in [false, true] {
+        let mode = if stream { "stream" } else { "standard" };
+        let failed_dir = out_dir(&format!("all_failed_{mode}"));
+        let failed_path = failed_dir.to_str().unwrap().to_string();
+        let mut args = vec![
+            "decompile-project",
+            &bin,
+            "-o",
+            &failed_path,
+            "--functions",
+            "main",
+            "--option",
+            "maxinstruction",
+            "5",
+            "--option",
+            "errortoomanyinstructions",
+            "on",
+            "--sleighpath",
+            &sp,
+        ];
+        if stream {
+            args.push("--stream");
+        }
+        let (stdout, stderr, ok) = run_kuna(&args);
+        if is_specs_skip(&stderr) {
+            eprintln!("project_exit_distinguishes_all_failed_from_partial_success: skipping: {stderr}");
+            let _ = std::fs::remove_dir_all(failed_dir);
+            return;
+        }
+        assert!(!ok, "the all-failed {mode} project exited zero: {stdout}");
+        assert!(stdout.contains("functions: 0 ok, 1 failed"), "summary was lost: {stdout}");
+        assert!(
+            stderr.contains("decompilation produced zero function bodies")
+                && stderr.contains("per-function error record"),
+            "the all-failed {mode} project has no run diagnostic: {stderr}"
+        );
+        let (c, h, asm, readme) = artifacts(&failed_dir, "fauxware");
+        for path in [&c, &h, &asm, &readme] {
+            assert!(path.is_file(), "{mode} project did not finish {}", path.display());
+        }
+        assert!(
+            std::fs::read_to_string(&c)
+                .unwrap()
+                .contains("Flow exceeded maximum allowable instructions"),
+            "the per-function failure is absent from {}",
+            c.display()
+        );
+        assert!(
+            std::fs::read_to_string(&readme)
+                .unwrap()
+                .contains("1 total, 0 decompiled, 1 failed"),
+            "the final README lost the all-failed tally"
+        );
+        assert!(
+            !failed_dir.join(".streaming").exists(),
+            "a completed all-failed export left a stale streaming marker"
+        );
+        if stream {
+            assert!(failed_dir.join("index.jsonl").is_file(), "stream index was not completed");
+        }
+
+        let mixed_dir = out_dir(&format!("partial_{mode}"));
+        let mixed_path = mixed_dir.to_str().unwrap().to_string();
+        let mut args = vec![
+            "decompile-project",
+            &bin,
+            "-o",
+            &mixed_path,
+            "--functions",
+            "main,__libc_csu_fini",
+            "--option",
+            "maxinstruction",
+            "5",
+            "--option",
+            "errortoomanyinstructions",
+            "on",
+            "--sleighpath",
+            &sp,
+        ];
+        if stream {
+            args.push("--stream");
+        }
+        let (stdout, stderr, ok) = run_kuna(&args);
+        assert!(ok, "a partial-success {mode} project failed: {stderr}");
+        assert!(stdout.contains("functions: 1 ok, 1 failed"), "bad mixed summary: {stdout}");
+        let c = std::fs::read_to_string(mixed_dir.join("fauxware.c")).unwrap();
+        assert!(
+            c.contains("Flow exceeded maximum allowable instructions")
+                && c.contains("void __libc_csu_fini(void)"),
+            "the mixed {mode} project needs one error and one body: {c}"
+        );
+        assert!(!mixed_dir.join(".streaming").exists());
+
+        for dir in [failed_dir, mixed_dir] {
+            let _ = std::fs::remove_dir_all(dir);
+        }
+    }
+}
+
 // --- `--stream` ---------------------------------------------------------------
 
 /// Run a streamed export into a fresh temp dir; `None` on a specs-less skip.

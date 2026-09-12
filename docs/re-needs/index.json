@@ -5,8 +5,8 @@
   "rejected_count": 1,
   "by_status": {
     "blocked": 1,
-    "closed": 137,
-    "open": 59
+    "closed": 138,
+    "open": 58
   },
   "by_track": {
     "loader": 10,
@@ -4666,10 +4666,10 @@
       "need_id": "whole-binary-decompilation-exits",
       "title": "Whole-binary decompilation exits zero when every function fails",
       "track": "tooling",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
-      "probe_id": "p-60e3bcd5f937",
-      "acceptance_id": "a-b1806ca4663e",
+      "probe_id": "p-6b7d31fb2398",
+      "acceptance_id": "a-ca0acbabc161",
       "hypothesis_status": "inconclusive",
       "credibility": 0.7,
       "instances": 1,
@@ -4684,13 +4684,16 @@
       "covered_by_option": null,
       "touches": [
         "decompiler/crates/kuna-cli",
+        "decompiler/crates/kuna-console/src/project.rs",
+        "docs/cli.md",
+        "docs/spec/00-overview.md",
         "docs/history.md"
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": "https://github.com/Noelo-Lab/kuna/pull/592",
+      "closed_in_round": 12,
+      "closing_pr": "592",
       "reject_reason": null,
       "score": 13.862944,
       "path": "docs/re-needs/whole-binary-decompilation-exits.md"

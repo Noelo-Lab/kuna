@@ -35,9 +35,11 @@
 //! `.c` and an `.asm` whose variable comments move to their own section
 //! ([`crate::project_stream`]).
 //!
-//! Exit code 0 on success **even if individual functions failed** (matching
-//! `decompile-all` — failures are recorded in the artifacts); nonzero on load
-//! errors, an empty target set, or I/O errors.
+//! Individual failures remain records and exit 0 while at least one body was
+//! produced. A non-empty selection that produced zero bodies exits nonzero only
+//! after every artifact is complete (and a streamed export has removed its
+//! `.streaming` marker), with the summary on stdout and a run-level diagnostic
+//! on stderr. Load errors, an empty target set, and I/O errors also exit nonzero.
 //!
 //! The decompile loop and the four artifact builders live in the shared
 //! decompile-project core (`kuna_console::project` — also reused by the
@@ -47,6 +49,7 @@ use std::path::PathBuf;
 
 use kuna_console::project::{
     build_asm, build_c, build_header, build_readme, collect_dat_addrs, decompile_targets,
+    BatchOutcome,
 };
 use kuna_decomp::decompile_drive::{print_c_recompile_prelude, print_c_types};
 
@@ -112,12 +115,28 @@ pub fn run(argv: &[String]) -> i32 {
         decompile_project(&args, output.as_deref())
     };
     match run {
-        Ok(summary) => crate::output::emit_with_status(&summary, 0),
+        Ok(completion) => emit_completion(completion),
         Err(e) => {
             eprintln!("error: {e}");
             1
         }
     }
+}
+
+pub(crate) struct ProjectCompletion {
+    pub(crate) summary: String,
+    pub(crate) error: Option<String>,
+}
+
+pub(crate) fn emit_completion(completion: ProjectCompletion) -> i32 {
+    let status = crate::output::emit_with_status(
+        &completion.summary,
+        i32::from(completion.error.is_some()),
+    );
+    if let Some(error) = completion.error {
+        eprintln!("error: {error}");
+    }
+    status
 }
 
 fn usage() {
@@ -146,14 +165,16 @@ fn usage() {
          point and what it calls are written first, index.jsonl announces each\n\
          finished function and .streaming reports progress until the export\n\
          completes. The .c is then in decompile order. Not available with --assert.\n\
-         Individual function failures are recorded in the artifacts; the run still\n\
-         exits 0 (load errors / an empty target set / I/O errors exit nonzero)."
+         Individual function failures are recorded in the artifacts. A mixed run\n\
+         exits 0; a selected set that produced no body exits 1 only after all\n\
+         artifacts are complete. Load errors / an empty target set / I/O errors\n\
+         also exit nonzero."
     );
 }
 
 /// The whole flow: load once → decompile every target (with prototypes) →
 /// build the four artifacts → write them all at the end.
-fn decompile_project(args: &Args, output: Option<&str>) -> Result<String, String> {
+fn decompile_project(args: &Args, output: Option<&str>) -> Result<ProjectCompletion, String> {
     let binary_path = std::fs::canonicalize(&args.binary)
         .map_err(|_| format!("binary not found: {}", args.binary))?;
     let file_name = binary_path
@@ -260,13 +281,17 @@ fn decompile_project(args: &Args, output: Option<&str>) -> Result<String, String
 
     let ok = results.iter().filter(|r| r.error.is_none()).count();
     let failed = results.len() - ok;
+    let error = BatchOutcome::of(&results).all_failed_error(&args.binary);
     let files = sizes
         .iter()
         .map(|(n, s)| format!("{n} ({s} bytes)"))
         .collect::<Vec<_>>()
         .join(", ");
-    Ok(format!(
-        "wrote {}: {files}; functions: {ok} ok, {failed} failed\n",
-        out_dir.display()
-    ))
+    Ok(ProjectCompletion {
+        summary: format!(
+            "wrote {}: {files}; functions: {ok} ok, {failed} failed\n",
+            out_dir.display()
+        ),
+        error,
+    })
 }
