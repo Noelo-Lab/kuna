@@ -32,6 +32,12 @@
     `ExitProcess(0xc)` and carries the no-return flow effect, so the dead
     fall-through after it is gone.
 
+    The Mach-O pair uses the linked `macho_import_slots` fixture. Its first call
+    reads the typed `__got` non-lazy symbol-pointer entry for objc_msgSend; its
+    second reads ordinary `__objc_msgrefs` data. Off leaves both anonymous. On
+    binds only the typed import slot, proving that arbitrary Objective-C
+    metadata is not painted.
+
     `bail` prints `ExitProcess(a0)`, not `ExitProcess()`: `win32sigs` (DIV-141)
     supplies the import's one-UINT prototype, which is what the source declares.
     The empty-parens spelling this assertion carried before that option existed
@@ -63,6 +69,20 @@ c3
   <com>load function bail</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_import_slots</com>
+  <com>option peimportcall off</com>
+  <com>read symbols</com>
+  <com>load function _call_slots</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_import_slots</com>
+  <com>option peimportcall on</com>
+  <com>read symbols</com>
+  <com>load function _call_slots</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="PEIMPORTCALL #1: off leaves the IAT-slot call unnamed" min="1" max="1">\(\*dat_140005038\)\(0xc\);</stringmatch>
@@ -70,4 +90,7 @@ c3
 <stringmatch name="PEIMPORTCALL #3: on gives the bound call its no-return flow effect" min="2" max="2">// no-return</stringmatch>
 <stringmatch name="PEIMPORTCALL #4: off leaves bail calling the raw slot pointer" min="1" max="1">\(\*dat_140005038\)\(\);</stringmatch>
 <stringmatch name="PEIMPORTCALL #5: on ends bail at the bound no-return import" min="1" max="1">ExitProcess\(a0\); // no-return</stringmatch>
+<stringmatch name="PEIMPORTCALL #6: off leaves a Mach-O non-lazy import slot anonymous" min="1" max="1">\(\*dat_100001000\)\(\);</stringmatch>
+<stringmatch name="PEIMPORTCALL #7: on binds the Mach-O import slot to objc_msgSend" min="1" max="1">objc_msgSend\(\);</stringmatch>
+<stringmatch name="PEIMPORTCALL #8: ordinary ObjC message-reference data stays anonymous in both arms" min="2" max="2">\(\*dat_100002000\)\(\);</stringmatch>
 </decompilertest>

@@ -1,6 +1,6 @@
 {
   "schema": "re-probe/1",
-  "probe_id": "a-0f1c487a5eb9",
+  "probe_id": "a-783844207e76",
   "kind": "cli",
   "cmd": [
     "{{KUNA}}",
@@ -35,11 +35,12 @@
     },
     "stdout_matches": [
       "int printf\\(char \\*fmt,int value\\)",
-      "\\(\\*printf_ptr\\)\\(fmt,value\\)"
+      "printf\\(fmt,value\\)"
     ],
     "stdout_absent": [
-      "\\(\\*printf_ptr\\)\\(\\s*\\)"
+      "printf\\(\\s*\\)",
+      "\\(\\*printf_ptr\\)"
     ]
   },
-  "notes": "Promoted acceptance for typed-mach-o-tail on the vendored one-instruction x86-64 Mach-O import veneer. The positive call match closes the historical false-pass hole where merely losing the asserted pointer name satisfied the absent-only clause."
+  "notes": "Promoted acceptance for typed-mach-o-tail on the vendored one-instruction x86-64 Mach-O import veneer. DIV-171 binds the typed lazy slot to its loader import name, so the positive call match now pins printf(fmt,value): both asserted arguments must survive even though the raw printf_ptr spelling is deliberately gone."
 }

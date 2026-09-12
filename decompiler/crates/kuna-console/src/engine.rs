@@ -2378,9 +2378,8 @@ impl ConsoleProgram {
 fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
     match pass_id {
         "noreturn_known" => arch.analysis_noreturn_known,
-        // (kuna) PE import-call binding — the IAT-slot `externref` paint + the
-        // Win32 no-return API names, both computed at LOAD and COMMITTED only when
-        // this gate is on. Off ⇒ a PE renders exactly as before.
+        // (kuna) PE/Mach-O import-slot call binding — typed-slot `externref`
+        // paint plus PE-only Win32 no-return names, committed only when enabled.
         "peimportcall" => arch.analysis_peimportcall,
         "libproto" => arch.analysis_libproto,
         // (kuna) The measured libc signature extension — the ~200 prototypes the
@@ -3824,16 +3823,15 @@ fn commit_analysis_output(
         );
     }
 
-    // 1c. (kuna) External-reference address ranges (`out.externref`) — the PE Import
-    //     Address Table slots the `peimportcall` pass reports. OR `Varnode::externref`
+    // 1c. (kuna) External-reference address ranges (`out.externref`) — the PE IAT
+    //     or typed Mach-O symbol-pointer slots `peimportcall` reports. OR `Varnode::externref`
     //     over each `[first, last_open)` range in the same symbol-table property map,
     //     which `Scope::queryProperties` folds into every global Varnode covering the
     //     range. That one flag is what `ActionDeindirect`'s `queryExternalRefFunction`
     //     arm requires (`isPersist() && isExternalRef()`) before it will resolve a
     //     CALLIND through the slot to the import FunctionSymbol registered there — the
     //     kuna stand-in for Ghidra's `ExternRefSymbol` (`Scope::addExternalRef`), which
-    //     the port never carried. Empty on every non-PE target and whenever the gate is
-    //     off.
+    //     the port never carried. Empty on other formats and whenever the gate is off.
     for &(first, last_open) in &out.externref {
         let begin = Address::new(Rc::clone(code_space), first);
         let end = Address::new(Rc::clone(code_space), last_open);

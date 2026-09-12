@@ -1218,7 +1218,7 @@ pub struct ArchContext {
     /// by `JumpBasic::buildAddresses` to align recovered targets.  `0` (no
     /// alignment) for hand-built fixtures.
     pub funcptr_align: int4,
-    /// (kuna) PE import-call binding (`option peimportcall`), shared from the real
+    /// (kuna) PE/Mach-O import-slot call binding (`option peimportcall`), shared from the real
     /// architecture.  Read by [`Self::query_function`]: with the gate on, a resolved
     /// callee's no-return flag rides the prototype handed to `ActionDeindirect`, so a
     /// deindirected `call [IAT slot]` to `ExitThread` restarts and re-flows with the

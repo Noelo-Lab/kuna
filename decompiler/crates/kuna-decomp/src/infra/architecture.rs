@@ -1129,14 +1129,11 @@ pub struct Architecture {
     // which Ghidra ships off (`AddressTableAnalyzer.setDefaultEnablement(false)`).
     /// (kuna) Gate the no-return-known pass (`noreturn_known`); default on.
     pub analysis_noreturn_known: bool,
-    /// (kuna) Gate PE import-call binding (`peimportcall`): paint
-    /// `Varnode::externref` over the Import Address Table slots — the one flag
-    /// `ActionDeindirect`'s external-reference arm requires — so a
-    /// `call dword ptr [IAT slot]` binds to the import symbol the loader already
-    /// resolved there (name, prototype and no-return flow effect), and match
-    /// upstream's PE-only no-return API list (`ExitProcess`/`ExitThread`/…) that
-    /// kuna's merged PE/Mach-O list never carried.  PE/COFF-only; a no-op on every
-    /// other object format.  Also read (through the ArchSeam) by
+    /// (kuna) Gate PE/Mach-O import-slot call binding (`peimportcall`): paint
+    /// `Varnode::externref` over PE IAT slots and typed Mach-O lazy/non-lazy
+    /// symbol-pointer entries so `ActionDeindirect` can bind `call [slot]` to
+    /// the import already resolved there. The upstream Win32 no-return list
+    /// remains PE/COFF-only. Also read (through the ArchSeam) by
     /// `Architecture::query_function`, whose no-return carry is the flow half of
     /// the same binding.
     pub analysis_peimportcall: bool,
@@ -2438,7 +2435,7 @@ impl Architecture {
         // analyzers), except addrtable which Ghidra ships off. Bound to the
         // real-ELF analysis tier; inert on the XML datatest path.
         self.analysis_noreturn_known = true;
-        self.analysis_peimportcall = true; // (kuna) DIV-57 PE import-call binding default-on
+        self.analysis_peimportcall = true; // (kuna) DIV-57/DIV-171 import-slot binding default-on
         self.analysis_libproto = true;
         // (kuna) DIV-65 measured libc signature extension — default-ON.
         self.analysis_libcsigs = true;
@@ -3006,7 +3003,7 @@ impl Architecture {
             // matching flag and skips a disabled pass's facts. The option id IS
             // the pass's `AnalysisPass::id()` string. Real-ELF path only.
             "noreturn_known" => on_off!(analysis_noreturn_known, "No-return-known analysis pass"),
-            "peimportcall" => on_off!(analysis_peimportcall, "PE import-call binding"),
+            "peimportcall" => on_off!(analysis_peimportcall, "PE/Mach-O import-slot call binding"),
             "libproto" => on_off!(analysis_libproto, "Library-prototype analysis pass"),
             "libcsigs" => on_off!(analysis_libcsigs, "Measured libc signature extension"),
             "win32sigs" => on_off!(analysis_win32sigs, "Built-in Win32 API signature table"),

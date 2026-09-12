@@ -166,6 +166,10 @@ impl ObjectFormat for MachOFormat {
         // an empty `Vec`.
         crate::loader::macho_stubs::resolve_macho_imports(file, bytes)
     }
+
+    fn import_slots(&self, file: &object::File, bytes: &[u8]) -> Vec<(u64, u64)> {
+        crate::loader::macho_stubs::resolve_macho_import_slots(file, bytes)
+    }
 }
 
 #[cfg(test)]

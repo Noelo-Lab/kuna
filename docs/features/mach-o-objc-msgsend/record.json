@@ -1,0 +1,66 @@
+{
+  "need_id": "mach-o-objc-msgsend",
+  "track": "quality",
+  "scope": "small",
+  "opportunity": "mach-o-objc-msgsend::_call_slots",
+  "test_name": "RE-friction round 11 mach-o-objc-msgsend",
+  "option": "peimportcall",
+  "flag": "analysis_peimportcall",
+  "default_on": true,
+  "div": "DIV-171",
+  "phase": "P1",
+  "subphase": "external-refinement",
+  "module": "decompiler/crates/kuna-analysis/src/loader/kuna_peimportcall.rs",
+  "binary": "decompiler/crates/kuna-analysis/tests/fixtures/macho_import_slots",
+  "selector": "_call_slots",
+  "func_addr": "0x1000003c0",
+  "angr_version": null,
+  "element_id": null,
+  "change_kind": "correctness-fix",
+  "source_decompiler": "kuna",
+  "inspiration": "RE-friction need mach-o-objc-msgsend; Ghidra Mach-O external-reference import-slot modelling",
+  "ablation_changed": 0,
+  "parity": "OK",
+  "decisions": [
+    "Extend the existing peimportcall compatibility gate rather than add a sibling option: PE IAT and Mach-O typed import-pointer calls reach the same ActionDeindirect external-reference decision, and option off restores the anonymous rendering on either format.",
+    "Preserve the complete Mach-O import inventory. The common indirect-symbol walk returns a second product containing only exact pointer-width S_LAZY_SYMBOL_POINTERS and S_NON_LAZY_SYMBOL_POINTERS ranges; stubs and exports stay named but are never painted.",
+    "Reject LOCAL/ABS indirect entries, invalid symbols, empty names and address overflow before adding a range. Lazy-dylib/TLS pointer classes and ordinary data such as __objc_msgrefs remain naming-only or unvisited.",
+    "Keep the upstream Win32 no-return list structurally inside the PE/COFF arm. Mach-O receives only externref ranges, so Windows-specific names cannot cross formats.",
+    "Update typed-mach-o-tail's regression pins from the deliberately superseded raw-slot spelling to the same argument-preservation contract under the imported name; the fixture still proves fmt and value survive, while the new two-pass tests pin the raw off arm."
+  ],
+  "acceptance": {
+    "target": "kuna-re-dataset challenge 5ab77f5633c5d40ad448c29b, CrackMe.app, 0x100001d2b",
+    "replays": 3,
+    "result": "PASS: 7 raw dat_100004038 calls become 7 objc_msgSend calls; dat_100004038 absent",
+    "negative_control": "both calls through __objc_msgrefs word dat_100004d60 remain raw"
+  },
+  "regression_sweep": {
+    "dataset_witness": "50 functions in both arms, 0 errors, 27 changed bodies: 20 application functions with 40 exact dat_100004038-to-objc_msgSend bindings plus 7 named import veneers; dat_100004d60 occurrences 4 -> 4",
+    "vendored_macho": "12 images across x86-64, arm64, fat, arm64e and object files; identical function/error sets; 5 byte-identical, 7 changing one import-veneer body each (or the new _call_slots body), every hunk an imported name binding",
+    "wrongness_refutation": "macho_objc, macho_objc_odd_imp and macho_objc_arm64 are byte-identical; the synthetic ordinary __objc_msgrefs call is byte-identical; unit eligibility pins only lazy/non-lazy pointer section classes and rejects stubs/lazy-dylib/TLS/regular plus LOCAL/ABS indices"
+  },
+  "tests": {
+    "unit": "macho_stubs::external_import_slot_eligibility_is_exact; macho_stubs::import_slot_ranges_exclude_objc_message_refs; passes::peimportcall_pass_is_pe_coff_macho_gated",
+    "end_to_end": "kuna-console/tests/verify_macho_import_slots.rs (default/off, typed slot plus ordinary-data control)",
+    "stage": "tests/stages/ghdec-peimportcall.xml assertions #6-#8 (off/on plus negative control)",
+    "promoted_cli": "tests/cli/mach-o-objc-msgsend.json",
+    "compatibility": "kuna-cli/tests/typed_macho_tail_cli.rs and tests/cli/typed-mach-o-tail.json preserve typed import arguments under the new bound name"
+  },
+  "gates": {
+    "make test": "675/675 PARITY OK",
+    "make test-stages": "816/816 PARITY OK",
+    "make test-cli": "152/153 full; sole cold-load timing threshold rerun green; all functional probes 153/153",
+    "make rust-test": "green (6691 passed, 0 failed; 38 ignored)",
+    "make check-spec": "strict OK",
+    "kuna catalog --check": "catalog OK",
+    "acceptance probe": "PASS 3/3"
+  },
+  "speed_off_ms": 124.7,
+  "speed_on_ms": 127.17,
+  "speed_delta_pct": 1.98,
+  "speed_samples": 31,
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": true,
+  "speed_forced_off": false,
+  "rebased_onto": "origin/main c929c87e"
+}

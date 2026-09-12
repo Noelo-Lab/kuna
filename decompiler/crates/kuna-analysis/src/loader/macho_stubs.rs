@@ -70,6 +70,29 @@ use super::format::{ImportSym, ImportSymKind};
 /// exports. Empty when the input is not a Mach-O, has no `LC_DYSYMTAB`, selects
 /// no fat slice, or the layout is unparsable — never an error.
 pub(crate) fn resolve_macho_imports(file: &object::File, bytes: &[u8]) -> Vec<ImportSym> {
+    resolve_macho_indirect_symbols(file, bytes).imports
+}
+
+/// Resolve the exact pointer-width ranges occupied by imported Mach-O lazy and
+/// non-lazy symbol-pointer entries. Stub entries, exports, indirect LOCAL/ABS
+/// entries, and ordinary data sections are excluded.
+pub(crate) fn resolve_macho_import_slots(
+    file: &object::File,
+    bytes: &[u8],
+) -> Vec<(u64, u64)> {
+    resolve_macho_indirect_symbols(file, bytes).import_slots
+}
+
+#[derive(Default)]
+struct MachOIndirectSymbols {
+    imports: Vec<ImportSym>,
+    import_slots: Vec<(u64, u64)>,
+}
+
+fn resolve_macho_indirect_symbols(
+    file: &object::File,
+    bytes: &[u8],
+) -> MachOIndirectSymbols {
     match FileKind::parse(bytes) {
         // A thin Mach-O: parse with the matching-width typed header.
         Ok(FileKind::MachO64) => {
@@ -88,11 +111,11 @@ pub(crate) fn resolve_macho_imports(file: &object::File, bytes: &[u8]) -> Vec<Im
         // engine's `--slice`/`--target` override applies at the dispatch peel).
         Ok(FileKind::MachOFat32 | FileKind::MachOFat64) => {
             match select_fat_slice(bytes, SlicePref::default()) {
-                Some(slice) => resolve_macho_imports(file, slice),
-                None => Vec::new(),
+                Some(slice) => resolve_macho_indirect_symbols(file, slice),
+                None => MachOIndirectSymbols::default(),
             }
         }
-        _ => Vec::new(),
+        _ => MachOIndirectSymbols::default(),
     }
 }
 
@@ -105,11 +128,11 @@ type Endianness = object::Endianness;
 /// naming each `S_SYMBOL_STUBS` entry + each symbol-pointer slot, then append
 /// the exports. Generic over the header width so x86-64 (64) and i386 (32)
 /// share one body.
-fn collect<Mach>(neutral: &object::File, bytes: &[u8]) -> Vec<ImportSym>
+fn collect<Mach>(neutral: &object::File, bytes: &[u8]) -> MachOIndirectSymbols
 where
     Mach: MachHeader<Endian = Endianness>,
 {
-    let mut out: Vec<ImportSym> = Vec::new();
+    let mut out = MachOIndirectSymbols::default();
 
     // The typed file view exposes the load commands + symbol table the neutral
     // `object::File` does not surface in the shape we need (the raw section
@@ -180,13 +203,19 @@ where
         // The per-entry stride: `reserved2` for stub sections, the pointer width
         // for symbol-pointer sections. Mirrors `Section::indirect_symbols`'s own
         // `entry_size`, recomputed here because we need it for the address.
-        let stride = match sec.section_type(endian) {
-            object::macho::S_SYMBOL_STUBS => sec.reserved2(endian) as u64,
+        let section_type = sec.section_type(endian);
+        let (stride, import_slot) = match section_type {
+            object::macho::S_SYMBOL_STUBS => (sec.reserved2(endian) as u64, false),
             object::macho::S_LAZY_SYMBOL_POINTERS
-            | object::macho::S_NON_LAZY_SYMBOL_POINTERS
-            | object::macho::S_LAZY_DYLIB_SYMBOL_POINTERS
+            | object::macho::S_NON_LAZY_SYMBOL_POINTERS => {
+                (
+                    std::mem::size_of::<Mach::Word>() as u64,
+                    is_external_import_slot_section(section_type),
+                )
+            }
+            object::macho::S_LAZY_DYLIB_SYMBOL_POINTERS
             | object::macho::S_THREAD_LOCAL_VARIABLE_POINTERS => {
-                std::mem::size_of::<Mach::Word>() as u64
+                (std::mem::size_of::<Mach::Word>() as u64, false)
             }
             _ => continue,
         };
@@ -198,7 +227,7 @@ where
         for (i, raw_idx) in entries.iter().enumerate() {
             let raw = raw_idx.get(endian);
             // A relocated-away local / absolute symbol is not an import.
-            if raw & (INDIRECT_SYMBOL_LOCAL | INDIRECT_SYMBOL_ABS) != 0 {
+            if !is_imported_indirect_symbol(raw) {
                 continue;
             }
             let nlist = match symtab.symbol(object::read::SymbolIndex(raw as usize)) {
@@ -215,29 +244,58 @@ where
             if name.is_empty() {
                 continue;
             }
-            let addr = base.wrapping_add((i as u64).wrapping_mul(stride));
-            out.push(ImportSym {
+            let Some(offset) = (i as u64).checked_mul(stride) else {
+                continue;
+            };
+            let Some(addr) = base.checked_add(offset) else {
+                continue;
+            };
+            out.imports.push(ImportSym {
                 addr,
                 name,
                 kind: ImportSymKind::Import,
             });
+            if import_slot {
+                if let Some(last_open) = addr.checked_add(stride) {
+                    out.import_slots.push((addr, last_open));
+                }
+            }
         }
     }
 
     finish_with_exports(neutral, out)
 }
 
+/// True only for the two typed Mach-O section classes whose entries the dynamic
+/// loader fills with imported symbol addresses. Other indirect-symbol section
+/// classes remain useful for naming, but are not external-reference slots.
+fn is_external_import_slot_section(section_type: u32) -> bool {
+    matches!(
+        section_type,
+        object::macho::S_LAZY_SYMBOL_POINTERS | object::macho::S_NON_LAZY_SYMBOL_POINTERS
+    )
+}
+
+/// LOCAL and ABS indirect-table sentinels do not name a symbol imported from
+/// another image, even when they occur in a symbol-pointer section.
+fn is_imported_indirect_symbol(raw: u32) -> bool {
+    raw & (INDIRECT_SYMBOL_LOCAL | INDIRECT_SYMBOL_ABS) == 0
+}
+
 /// Append the Mach-O exports (name + address) as additive funcsyms, so a call to
 /// an exported function of this image resolves. Shared tail of every `collect`
 /// exit path (including the early-return error arms), mirroring `pe_iat`'s
 /// export append.
-fn finish_with_exports(neutral: &object::File, mut out: Vec<ImportSym>) -> Vec<ImportSym> {
+fn finish_with_exports(
+    neutral: &object::File,
+    mut out: MachOIndirectSymbols,
+) -> MachOIndirectSymbols {
     use object::read::Object;
     if let Ok(exports) = neutral.exports() {
         for e in exports {
             let name = e.name();
             if !name.is_empty() {
-                out.push(ImportSym {
+                out.imports.push(ImportSym {
                     addr: e.address(),
                     name: strip_leading_underscore(name),
                     kind: ImportSymKind::Export,
@@ -352,5 +410,54 @@ mod tests {
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].addr, 0x100003000);
         assert_eq!(out[0].name, b"printf".to_vec());
+    }
+
+    /// External-reference painting has a narrower eligibility rule than import
+    /// naming: only lazy/non-lazy pointers with real imported symbol indices.
+    #[test]
+    fn external_import_slot_eligibility_is_exact() {
+        assert!(is_external_import_slot_section(
+            object::macho::S_LAZY_SYMBOL_POINTERS
+        ));
+        assert!(is_external_import_slot_section(
+            object::macho::S_NON_LAZY_SYMBOL_POINTERS
+        ));
+        for section_type in [
+            object::macho::S_SYMBOL_STUBS,
+            object::macho::S_LAZY_DYLIB_SYMBOL_POINTERS,
+            object::macho::S_THREAD_LOCAL_VARIABLE_POINTERS,
+            object::macho::S_REGULAR,
+        ] {
+            assert!(!is_external_import_slot_section(section_type));
+        }
+
+        assert!(is_imported_indirect_symbol(4));
+        assert!(!is_imported_indirect_symbol(INDIRECT_SYMBOL_LOCAL));
+        assert!(!is_imported_indirect_symbol(INDIRECT_SYMBOL_ABS));
+        assert!(!is_imported_indirect_symbol(
+            INDIRECT_SYMBOL_LOCAL | INDIRECT_SYMBOL_ABS
+        ));
+    }
+
+    /// Only the typed `__got` indirect-symbol entry is an external-reference
+    /// slot. The adjacent `__objc_msgrefs` pointer has the same width and names
+    /// the same undefined function, but is ordinary Objective-C metadata.
+    #[test]
+    fn import_slot_ranges_exclude_objc_message_refs() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/macho_import_slots"
+        );
+        let bytes = std::fs::read(path).expect("read macho_import_slots");
+        let file = object::File::parse(bytes.as_slice()).expect("parse macho_import_slots");
+
+        let slots = resolve_macho_import_slots(&file, &bytes);
+        assert_eq!(slots, vec![(0x100001000, 0x100001008)]);
+        assert!(
+            !slots
+                .iter()
+                .any(|&(first, last)| first < 0x100002010 && last > 0x100002000),
+            "__objc_msgrefs must not be painted externref: {slots:?}"
+        );
     }
 }

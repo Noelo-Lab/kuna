@@ -5,8 +5,8 @@
   "rejected_count": 1,
   "by_status": {
     "blocked": 1,
-    "closed": 156,
-    "open": 40
+    "closed": 157,
+    "open": 39
   },
   "by_track": {
     "loader": 10,
@@ -5706,7 +5706,7 @@
       "need_id": "mach-o-objc-msgsend",
       "title": "Mach-O objc_msgSend import remains an anonymous pointer call",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "minor",
       "probe_id": "p-909191fe1944",
       "acceptance_id": "a-38de212485a2",
@@ -5717,21 +5717,22 @@
         "5ab77f5633c5d40ad448c29b"
       ],
       "rounds": [
-        11
+        11,
+        12
       ],
       "first_seen_round": 11,
-      "attempts": 0,
-      "covered_by_option": null,
+      "attempts": 1,
+      "covered_by_option": "peimportcall",
       "touches": [
         "decompiler/crates/kuna-decomp"
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": 606,
+      "closed_in_round": 12,
+      "closing_pr": "606",
       "reject_reason": null,
-      "score": 6.931472,
+      "score": 4.620981,
       "path": "docs/re-needs/mach-o-objc-msgsend.md"
     },
     {

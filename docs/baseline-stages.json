@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    813,
-    813
+    816,
+    816
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -411,6 +411,9 @@
     "data:PEIMPORTCALL #3: on gives the bound call its no-return flow effect",
     "data:PEIMPORTCALL #4: off leaves bail calling the raw slot pointer",
     "data:PEIMPORTCALL #5: on ends bail at the bound no-return import",
+    "data:PEIMPORTCALL #6: off leaves a Mach-O non-lazy import slot anonymous",
+    "data:PEIMPORTCALL #7: on binds the Mach-O import slot to objc_msgSend",
+    "data:PEIMPORTCALL #8: ordinary ObjC message-reference data stays anonymous in both arms",
     "data:PUSHIMMEDIATERET #1: both arms preserve the unpacker call",
     "data:PUSHIMMEDIATERET #2: only option on emits the complete tail-transfer statement",
     "data:REALTYPES #1: signature uses real C types, not xunknown8",

@@ -347,16 +347,15 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         passes.push(Box::new(crate::pclntab::GoPclntabPass));
     }
 
-    // S1 PE import-call binding (PeImportCallPass): paint `Varnode::externref` over
-    // the Import Address Table slots so `ActionDeindirect` resolves a
-    // `call dword ptr [slot]` to the import FunctionSymbol `pe_iat` registered at
-    // that slot VA, and match upstream's PE-only no-return API list
-    // (`ExitProcess`/`ExitThread`/…) that kuna's merged PE/Mach-O list never named.
-    // PE/COFF-only: registered ONLY for those formats, so every other target's pass
-    // set is byte-identical (the pass ALSO self-gates on the format in `run`). Its
-    // facts are committed only when the `peimportcall` gate is on
-    // (`engine.rs::analysis_pass_enabled`).
-    if format == object::BinaryFormat::Pe || format == object::BinaryFormat::Coff {
+    // S1 PE/Mach-O import-slot call binding (PeImportCallPass): paint
+    // `Varnode::externref` over PE IAT slots and typed Mach-O lazy/non-lazy
+    // symbol-pointer entries so `ActionDeindirect` resolves `call [slot]` to the
+    // FunctionSymbol already registered at that VA. The Win32 no-return API list
+    // remains strictly PE/COFF. Facts are committed only when `peimportcall` is on.
+    if matches!(
+        format,
+        object::BinaryFormat::Pe | object::BinaryFormat::Coff | object::BinaryFormat::MachO
+    ) {
         passes.push(Box::new(crate::loader::kuna_peimportcall::PeImportCallPass));
     }
 
@@ -1383,19 +1382,22 @@ mod tests {
         assert_eq!(go.last(), Some(&"gopclntab"));
     }
 
-    /// The PE import-call binding pass (`peimportcall`) is registered ONLY on a
-    /// PE/COFF image, so every other format's pass set is byte-identical to before
-    /// it existed (the parity-safety contract the rtti/objc/pdb passes also hold).
+    /// The import-slot binding pass (`peimportcall`) is registered only where a
+    /// loader exposes typed import-pointer slots: PE/COFF and Mach-O.
     #[test]
-    fn peimportcall_pass_is_pe_coff_gated() {
+    fn peimportcall_pass_is_pe_coff_macho_gated() {
         for c in [Compiler::Gcc, Compiler::Clang, Compiler::Go, Compiler::Unknown] {
-            for fmt in [object::BinaryFormat::Pe, object::BinaryFormat::Coff] {
+            for fmt in [
+                object::BinaryFormat::Pe,
+                object::BinaryFormat::Coff,
+                object::BinaryFormat::MachO,
+            ] {
                 assert!(
                     ids(&passes_for(c, fmt)).contains(&"peimportcall"),
                     "{c:?}/{fmt:?} must carry peimportcall"
                 );
             }
-            for fmt in [object::BinaryFormat::Elf, object::BinaryFormat::MachO] {
+            for fmt in [object::BinaryFormat::Elf, object::BinaryFormat::Wasm] {
                 assert!(
                     !ids(&passes_for(c, fmt)).contains(&"peimportcall"),
                     "{c:?}/{fmt:?} must not carry peimportcall"
@@ -1429,24 +1431,28 @@ mod tests {
     }
 
     /// The `objc` pass is registered ONLY for a Mach-O binary (the Mach-O-format
-    /// gate, like `gopclntab`'s Go gate): a Mach-O target carries it, every other
-    /// format's pass set is byte-identical to before.
+    /// gate, like `gopclntab`'s Go gate): a Mach-O target carries it and every
+    /// other format omits it.
     #[test]
     fn objc_pass_registered_only_for_macho() {
         let elf = ids(&passes_for(Compiler::Clang, object::BinaryFormat::Elf));
         let macho = ids(&passes_for(Compiler::Clang, object::BinaryFormat::MachO));
         assert!(!elf.contains(&"objc"), "ELF must not carry the objc pass");
         assert!(macho.contains(&"objc"), "Mach-O must carry the objc pass");
-        // Mach-O adds exactly the one objc pass over the FORMAT-NEUTRAL base. The
-        // ELF set is no longer that base: `itaniumrtti` is ELF-gated the way `objc`
-        // is Mach-O-gated, so the comparison drops it from the ELF side.
+        // Compare the format-neutral base after dropping each format's gated
+        // additions: `itaniumrtti` for ELF and `peimportcall` plus `objc` for
+        // Mach-O.
         let elf_neutral: Vec<&str> =
             elf.iter().copied().filter(|&p| p != "itaniumrtti").collect();
+        let macho_neutral: Vec<&str> = macho
+            .iter()
+            .copied()
+            .filter(|&p| !matches!(p, "peimportcall" | "objc"))
+            .collect();
         assert!(!elf_neutral.contains(&"itaniumrtti"));
         assert_eq!(
-            macho.len(),
-            elf_neutral.len() + 1,
-            "Mach-O adds exactly the objc pass over the format-neutral base"
+            macho_neutral, elf_neutral,
+            "Mach-O and ELF must share the same format-neutral pass base"
         );
         assert_eq!(macho.last(), Some(&"objc"), "objc is appended last");
         // No non-Mach-O format carries it.

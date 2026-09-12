@@ -1,0 +1,35 @@
+MACH-O x86-64, direct call through a non-lazy symbol pointer
+============================================================
+
+Machine construct
+-----------------
+    ff 15 e8 22 00 00       callq *0x100004038(%rip)
+
+    __DATA,__got
+      section type: S_NON_LAZY_SYMBOL_POINTERS
+      slot:         0x100004038..0x100004040
+      indirect:     _objc_msgSend
+
+    __DATA,__objc_msgrefs negative control
+      word:         0x100004d60
+      section type: ordinary Objective-C metadata
+      indirect:     none
+
+kuna before / option peimportcall off
+-------------------------------------
+    v1 = (*dat_100004038)(receiver,selector);
+    v2 = (*dat_100004d60)(v1,0x100004d60);
+
+kuna after / option peimportcall on
+-----------------------------------
+    v1 = objc_msgSend(receiver,selector);
+    v2 = (*dat_100004d60)(v1,0x100004d60);
+
+Reference decision
+------------------
+Ghidra's deindirection path distinguishes an external-reference pointer from an
+ordinary data pointer. kuna already ports that consumer and already paints the
+same property for PE IAT ranges. This change supplies the missing Mach-O loader
+fact only for typed lazy/non-lazy indirect-symbol pointer entries. No angr output
+claim is needed for this loader-specific correction; the filename is retained as
+the feature-bundle comparison artifact expected by the pipeline.

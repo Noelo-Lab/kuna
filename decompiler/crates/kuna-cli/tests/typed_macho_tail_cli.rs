@@ -73,11 +73,11 @@ fn explicit_function_pointer_prototype_types_the_tail_call() {
     assert!(ok, "explicit typed decompile failed: {stderr}");
     assert!(
         stdout.contains("int printf(char *fmt,int value)")
-            && stdout.contains("(*printf_ptr)(fmt,value)"),
+            && stdout.contains("printf(fmt,value)"),
         "the function-pointer prototype did not reach the CALLIND:\n{stdout}"
     );
     assert!(
-        !stdout.contains("(*printf_ptr)()"),
+        !stdout.contains("printf()"),
         "the typed call stayed empty:\n{stdout}"
     );
 }
@@ -115,7 +115,7 @@ fn non_callable_slot_declarations_do_not_clone_the_current_function_prototype() 
             "the current prototype was not installed:\n{stdout}"
         );
         assert!(
-            stdout.contains(")(); // jump-as-call"),
+            stdout.contains("printf(); // jump-as-call"),
             "a non-callable slot declaration supplied arguments ({declaration:?}):\n{stdout}"
         );
         assert!(
@@ -137,7 +137,7 @@ fn default_single_batch_and_project_surfaces_keep_the_import_argument() {
     }
     assert!(ok, "single decompile failed: {stderr}");
     assert!(
-        single.contains("(*dat_100003000)(a0)"),
+        single.contains("printf(a0)"),
         "single call lost a0:\n{single}"
     );
 
@@ -151,7 +151,7 @@ fn default_single_batch_and_project_surfaces_keep_the_import_argument() {
     ]);
     assert!(ok, "batch decompile failed: {stderr}");
     assert!(
-        batch.contains("(*dat_100003000)(a0)"),
+        batch.contains("printf(a0)"),
         "batch call lost a0:\n{batch}"
     );
 
@@ -177,7 +177,7 @@ fn default_single_batch_and_project_surfaces_keep_the_import_argument() {
     let c = std::fs::read_to_string(out_dir.join("macho_imports.c")).expect("project C artifact");
     let _ = std::fs::remove_dir_all(&out_dir);
     assert!(
-        c.contains("(*dat_100003000)(a0)"),
+        c.contains("printf(a0)"),
         "project call lost a0:\n{c}"
     );
 }
