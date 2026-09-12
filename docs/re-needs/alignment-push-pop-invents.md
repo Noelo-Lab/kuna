@@ -2,7 +2,7 @@
 need_id: alignment-push-pop-invents
 title: Alignment push/pop invents a fifth decryptor argument and 128-bit return
 track: quality
-status: open
+status: closed
 severity: major
 probe_id: p-657d96ac25e7
 acceptance_id: a-52c7f7e4dcd5
@@ -13,13 +13,13 @@ challenges: [67f9bdc38f555589f3530a85]
 rounds: [12]
 first_seen_round: 12
 attempts: 0
-covered_by_option: null
+covered_by_option: retpushedhalf
 touches: [decompiler/crates/kuna-decomp]
 scope: small
 regression_of: null
-pr: null
-closed_in_round: null
-closing_pr: null
+pr: https://github.com/Noelo-Lab/kuna/pull/559
+closed_in_round: 12
+closing_pr: "559"
 reject_reason: null
 ---
 
@@ -159,3 +159,7 @@ undefined16 is kuna's NORMAL, CORRECT rendering of a genuine 128-bit return -- t
 REDIRECT FOR THE BUILDER, the discriminator that separates every case measured here: a pop from a stack slot whose matching push sourced a DIFFERENT register is stack maintenance, not a value placement, so it must not satisfy retinputhalf's 'the function placed it there' -- equivalently, a candidate input register whose only use is a push later popped into another register is not a parameter. That rule fixes the target and cross_reg_restore, leaves same_reg_restore untouched, and cannot reach wide_ret/two_ret (no push/pop involved). dead_rdx_write is genuinely ambiguous (indistinguishable from a struct{long,long} return) and should be left alone. Caller-side RDX liveness is NOT available as a discriminator on this binary: kuna xrefs --to 0x10e27 returns 0 callers (VM/indirect dispatch).
 
 CONTROL PROVING THIS IS NOT THE SOURCE SHAPE: the same four-arg XOR decryptor compiled by plain gcc -O2 (ctl.c xordec) decompiles CORRECTLY today as void *xordec(long,int,long,int). Only the push-R8/pop-RDX prologue idiom in the target triggers it.
+- closed: acceptance a-52c7f7e4dcd5 now PASSES at 198f2b7877da.
+- round 12 reconciliation: PR #559 (squash `198f2b7877daf752ce1d62e9558d8146756e2690`) implemented default-on `retpushedhalf` for this need, but the authoritative index and front matter retained their pre-closure `open` snapshot.
+- current controls at `bf22331158be444ebfbabf937ce8141826490fa9`: the exact decryptor acceptance passes with `retpushedhalf on`, emitting a four-argument pointer return; adding `--option retpushedhalf off` restores the fifth argument and `undefined16` high-half assignment. This closure is specific to the cross-register push/pop witness and makes no broader claim about genuine 128-bit returns.
+- index reconciliation constraint: the authoritative index contains 197 active records and 1 rejected record. This closure preserves every non-target row and changes only the four reconciled rows plus `by_status`; no sparse reindex was run.
