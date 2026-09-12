@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    824,
-    824
+    828,
+    828
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -454,6 +454,10 @@
     "data:SPLITSTOREKEEP #4: copy31 is five assignments at the default and one with the mark off, while the non-overlapping control copy32 is four in each pass",
     "data:SPLITSTOREKEEP #5: splitstorekeep off restores the filed bug, the head store with the middle fifteen bytes gone",
     "data:SPLITSTOREKEEP #6: the control's word at dst+0x18 is a plain eight-byte local in BOTH passes, so refinement never touched it",
+    "data:CANCELBYTEARITHMETIC #1: off keeps the computed byte between the two copies",
+    "data:CANCELBYTEARITHMETIC #2: off keeps the fifteen-byte prefix copy",
+    "data:CANCELBYTEARITHMETIC #3: off keeps the following five-byte suffix copy",
+    "data:CANCELBYTEARITHMETIC #4: on preserves every byte as one complete copy",
     "data:SWITCHSELECTOR #1: the re-rolled switch dispatches on the message parameter, and only the off pass re-rolls",
     "data:SWITCHSELECTOR #2: the case labels exist only in the pass that re-rolled",
     "data:SWITCHSELECTOR #3: with the option on the cascade survives as the compiler lowered it, over the same parameter",

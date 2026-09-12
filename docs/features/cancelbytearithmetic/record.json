@@ -1,0 +1,91 @@
+{
+  "need_id": "cancelling-byte-arithmetic-splits",
+  "slug": "cancelbytearithmetic",
+  "track": "quality",
+  "scope": "small",
+  "opportunity": "cancelling-byte-arithmetic-splits::0x1406fa160",
+  "test_name": "RE-friction round 11 cancelling-byte-arithmetic-splits",
+  "binary": "decompiler/crates/kuna-analysis/tests/fixtures/pe_subcommuteshift_x86_64.exe",
+  "selector": "0x1406fa160",
+  "func_addr": "0x1406fa160",
+  "angr_version": null,
+  "option": "cancelbytearithmetic",
+  "flag": "cancel_byte_arithmetic",
+  "element_id": 4166,
+  "default_on": true,
+  "pr": 621,
+  "div": "DIV-174",
+  "phase": "P3",
+  "subphase": "simplification-quiescence",
+  "change_kind": "correctness-fix",
+  "tier": "core",
+  "source_decompiler": "kuna",
+  "inspiration": "RE-friction need cancelling-byte-arithmetic-splits; upstream RuleSubCommute's conservative INT_LEFT input gate",
+  "ablation_changed": 0,
+  "parity": "90097/90097 bodies byte-identical across 795 O0/O2/O2-noinline slices (1590 arms)",
+  "decisions": [
+    "Match the complete byte cancellation tree instead of broadening RuleSubCommute's shift commute; preserve the legacy INT_ZEXT/PIECE route and every later upstream guard.",
+    "Require one-byte offset-zero SUBPIECEs of the same source, a constant shift from one through seven, and the exact -2^s modulo 256 coefficient.",
+    "Require a sole-consumer chain for the shifted low byte, plain low byte, multiply, inner add and root; rewrite only the root to COPY the independent addend.",
+    "Require the filed witness source to be INT_AND of two nonconstant values; constant masks and direct CALL/LOAD producers decline.",
+    "Never create a narrow left shift. The earlier broad commute was rejected after corpus classification found signed-char shift UB, readability regressions and stale-value output.",
+    "Keep INT_DIV and INT_REM structurally outside the new predicate and compare their behavior with the gate off and on.",
+    "Require the complete 21-byte copy in acceptance so deleting the computed store or five-byte suffix cannot false-close the need.",
+    "Repoint the promoted acceptance to a minimal in-repo PE containing the exact 9,024 witness bytes at their original VMA; keep the acceptance command unchanged so it independently re-derives to a-88e307f76db7.",
+    "Close the need under #621 only after the exact-base sweep, target acceptance and serialized registry rebase are complete."
+  ],
+  "acceptance": {
+    "id": "a-88e307f76db7",
+    "promoted_probe": "tests/cli/cancelling-byte-arithmetic-splits.json",
+    "option_off_control": "tests/cli/cancelling-byte-arithmetic-splits-option-off.json",
+    "positive": "builtin_strncpy(usage,\"Usage: %s <password>\\n\",0x15);",
+    "negative": "no usage[0xf] assignment containing dat_<address>",
+    "status": "passed 2/2, nonflaky, against the rebuilt immutable CLI"
+  },
+  "fixture": {
+    "path": "decompiler/crates/kuna-analysis/tests/fixtures/pe_subcommuteshift_x86_64.exe",
+    "generator": "decompiler/crates/kuna-analysis/tests/fixtures/pe_subcommuteshift_x86_64.py",
+    "sha256": "a39bf9ded430fe75b3a84edebf55dec3ac299bc4428b838a041112a1f8c550fb",
+    "size": 10240,
+    "source_bytes": "tests/stages/kuna-subcommuteshift.xml exact 9024-byte bytechunk"
+  },
+  "tests": {
+    "unit": "ruleaction_4::tests::cancelbytearithmetic_*: shifts 1-7 and operand permutations; option-off; exact coefficient/source/offset/width; precision and every sole-consumer guard; CALL/LOAD/constant-mask preservation; legacy ZEXT/PIECE; unsigned DIV/REM; fixed point",
+    "stage": "tests/stages/kuna-subcommuteshift.xml (four exact two-pass assertions over the complete function)",
+    "promoted_cli": "tests/cli/cancelling-byte-arithmetic-splits.json",
+    "option_off_cli": "tests/cli/cancelling-byte-arithmetic-splits-option-off.json",
+    "catalog": "catalog_bytecompat and options_md_fresh"
+  },
+  "gates": {
+    "base": "origin/main 8def9ad6651cf3e2ac071d819c730b8ac023ed1f",
+    "focused unit": "11/11 green; phase/catalog freshness 25/25 green",
+    "1590-arm on/off sweep": "1590/1590 arms OK; 90097/90097 bodies; 0 changes; 0 inventory asymmetries",
+    "make test": "focused affected suites passed; full workspace intentionally deferred to hosted CI",
+    "make test-stages": "828/828 assertions passed; baseline parity OK",
+    "make rust-test": "not run locally; serialized full-workspace slot deferred to hosted CI",
+    "make test-cli": "160/160 promoted cases passed; target pair also passed two repetitions each after rebase",
+    "make check-spec": "lenient OK after rebase",
+    "catalog": "registered-option check and shared-counter check OK after rebase"
+  },
+  "speed_target": "dataset crackme_shroud.exe sub_1406fa160",
+  "speed_off_ms": 1233.3,
+  "speed_on_ms": 1162.0,
+  "speed_delta_pct": -5.78,
+  "speed_samples": 15,
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": true,
+  "speed_forced_off": false,
+  "immutable": {
+    "directory": "/home/mahaloz/github/kuna-cancelbytearithmetic-immutable.5ecbb7d9",
+    "kuna_sha256": "5ecbb7d9b4ca054814e4b9ab820d277db71070a9e0be24bb4a552dffc0d79cc5",
+    "decomp_dbg_sha256": "e2a0d43ad88ff96de75d0b3cf3439895bad839d3ee56a416924721a978e87e96",
+    "decomp_test_dbg_sha256": "6e9e08b8a39d3337f8bf19663c0cb1686c2fc2b676ace4a72d569fb886f19bce"
+  },
+  "evidence": {
+    "body_diff_manifest_sha256": "adb9c53254de51e8fd48bc979b07f57f144a16ab63224c2b9407f12662578766",
+    "target_cli_sha256": "663a3c0b3df011cb0eb69b8fdcabf1eb5f91c7df6fc3b97ef6eeb6b83714be48",
+    "target_proof_sha256": "ad0d6afbedbccfc3c1cd124127c3b9becf19afbccf26fb91e9529fdfcc8fc7db",
+    "speed_sha256": "7c2ac9db143eb5314e3a95e1f90ce210b956355f7f87e82de5d5194ed41b6aa3"
+  },
+  "rebased_onto": "origin/main 8def9ad6651cf3e2ac071d819c730b8ac023ed1f"
+}

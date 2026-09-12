@@ -1,0 +1,17 @@
+Reference for this correctness fix is the modular identity and the recovered
+complete literal; no angr output is used.
+
+cancelbytearithmetic off (upstream RuleSubCommute gate):
+
+  builtin_strncpy(usage,"Usage: %s <pass",0xf);
+  usage[0xf] = (char)(dat_1408f1008 & dat_1408f100c) * '\xfe' + 'w' +
+               (char)((dat_1408f1008 & dat_1408f100c) << 1);
+  builtin_strncpy(&usage[0x10],"ord>\n",5);
+
+cancelbytearithmetic on:
+
+  builtin_strncpy(usage,"Usage: %s <password>\n",0x15);
+
+Proof: for x = dat_1408f1008 & dat_1408f100c, the middle byte is
+(-2*x + 0x77 + 2*x) mod 256 = 0x77. The prefix and suffix independently spell
+"Usage: %s <pass" and "ord>\n".

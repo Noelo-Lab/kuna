@@ -5,8 +5,8 @@
   "rejected_count": 2,
   "by_status": {
     "blocked": 1,
-    "closed": 165,
-    "open": 30
+    "closed": 166,
+    "open": 29
   },
   "by_track": {
     "loader": 10,
@@ -5483,10 +5483,10 @@
       "need_id": "cancelling-byte-arithmetic-splits",
       "title": "Cancelling byte arithmetic splits a declared string buffer",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "minor",
       "probe_id": "p-6e4b95aaf73b",
-      "acceptance_id": "a-e9bac45bb85d",
+      "acceptance_id": "a-88e307f76db7",
       "hypothesis_status": "upheld",
       "credibility": 0.7,
       "instances": 1,
@@ -5497,16 +5497,16 @@
         11
       ],
       "first_seen_round": 11,
-      "attempts": 0,
-      "covered_by_option": null,
+      "attempts": 1,
+      "covered_by_option": "cancelbytearithmetic",
       "touches": [
         "decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_4.rs"
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": 621,
+      "closed_in_round": 12,
+      "closing_pr": "621",
       "reject_reason": null,
       "score": 6.931472,
       "path": "docs/re-needs/cancelling-byte-arithmetic-splits.md"

@@ -1845,7 +1845,8 @@ mod tests {
         // only ABI floating return storage without deleting the call (repipe r5)
         // and ghdec-unsigned-byte-vm-selector / lowered-switch labels retain the
         // signedness proved by the comparison cascade across restart/install
-        assert_eq!(count, 281, "corpus file count drifted");
+        // and kuna-cancelbytearithmetic / exact low-byte cancellation
+        assert_eq!(count, 282, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

@@ -509,6 +509,9 @@ Three tiers:
 | hex literal at a single-bit image base unexpectedly named as a function (flip off for the raw constant) | [`inferfuncentry`](#inferfuncentry) |
 | want the raw (b<<k) s>> k sign-extension shift idiom visible instead of the folded comparison | [`booleanmask`](#booleanmask) |
 | flag-as-high-bit lowering (8051 style) hidden by the cleaned boolean compare | [`booleanmask`](#booleanmask) |
+| byte arithmetic retains -2*x + (x << 1) instead of cancelling modulo 256 | [`cancelbytearithmetic`](#cancelbytearithmetic) |
+| a string initializer is split by one computed byte even though its coefficients sum to zero | [`cancelbytearithmetic`](#cancelbytearithmetic) |
+| an exact low-byte multiply/left-shift cancellation remains unsimplified | [`cancelbytearithmetic`](#cancelbytearithmetic) |
 | a wall of SUB161( lane temporaries read off one pshufb( result | [`simdlane`](#simdlane) |
 | dozens of char vN; declarations each assigned once from a consecutive SIMD byte lane | [`simdlane`](#simdlane) |
 | a vectorised byte loop needs SSE lanes simulated by hand to see that every lane holds the same broadcast byte | [`simdlane`](#simdlane) |
@@ -1866,6 +1869,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** Flip off only to see the raw shift idiom; on (default) cleans flag-modelled comparisons (8051 etc.).
 - **Where / provenance:** P3/simplification-quiescence · ghidra-upstream · correctness-fix · GH-1282
 - **Example:** `option booleanmask off`
+
+### `cancelbytearithmetic` -- on | off, default `on`
+
+- **Symptoms:** byte arithmetic retains -2*x + (x << 1) instead of cancelling modulo 256; a string initializer is split by one computed byte even though its coefficients sum to zero; an exact low-byte multiply/left-shift cancellation remains unsimplified.
+- **What it does:** Fold an exact one-byte multiply/left-shift pair whose coefficients cancel modulo 256.
+- **When to flip:** On by default (DIV-174). Keep it on when byte arithmetic retains matching multiply and left-shift terms that provably cancel modulo 256. Flip off to retain the unsimplified arithmetic.
+- **Where / provenance:** P3/simplification-quiescence · kuna · correctness-fix · repipe-cancelling-byte-arithmetic-splits
+- **Example:** `option cancelbytearithmetic off`
 
 ### `simdlane` -- on | off, default `on`
 
