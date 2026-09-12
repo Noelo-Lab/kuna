@@ -1233,6 +1233,15 @@ action emits as `COPY #toc -> r2`, and a TOC-relative load resolves to the globa
 it names. A code entry whose descriptors disagree about the TOC, or where any of
 them has an unresolved TOC word, gets no seed.
 
+ELFv1 import markup recognizes complete descriptor-call stubs that save the
+caller's TOC at SP+40, load the entry and TOC, and transfer through CTR.
+A stub is named only when its decoded displacement and a validated function TOC
+identify an `R_PPC64_JMP_SLOT` import. Conflicting names across possible TOCs are
+declined. Both full environment-word and lazy-resolution forms are supported.
+The existing known-no-return pass consumes these names, so a guard failure
+import no longer introduces false fall-through or consumes the normal return.
+ELFv2 decoding and ordinary returning imports retain their existing behavior.
+
 The file front-ends also accept `--isa auto|arm|thumb`. An explicit ARM/Thumb
 choice paints `TMode` across mapped CODE sections before decoding. If an ELF has
 no section headers, it uses executable `PT_LOAD` memory extents, including their
