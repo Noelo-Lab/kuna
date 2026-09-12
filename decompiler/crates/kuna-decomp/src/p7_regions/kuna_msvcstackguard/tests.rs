@@ -358,6 +358,118 @@ fn a_loop_carried_cookie_phi_uses_its_entry_scramble() {
     assert_eq!(cookie_cancel(out, &fd, &sp(&fd)), Some(vec![init]));
 }
 
+enum CycleExternal {
+    Backedge,
+    Unknown,
+    Scramble(i64),
+}
+
+fn build_multi_phi_cycle_cancel(fd: &mut Funcdata, mode: CycleExternal) -> (VarnodeId, OpId) {
+    let bl = mk_block(fd);
+    let spin = sp_input(fd);
+    let k = cookie_read(fd, bl, 0x10, 0x100);
+    let f1 = frame_ptr(fd, bl, 0x14, spin, (-0x48i64) as u64, 0x108);
+    let saved = binop(fd, bl, 0x18, OpCode::CPUI_INT_XOR, k, f1, 0x110);
+    let init = fd.vbank().get(saved).unwrap().get_def().unwrap();
+    let cycle_external = match mode {
+        CycleExternal::Backedge => None,
+        CycleExternal::Unknown => {
+            let unknown_addr = reg(fd, 0x500);
+            Some(fd.vbank_mut().create(8, unknown_addr, unk(8)))
+        }
+        CycleExternal::Scramble(off) => {
+            let other_cookie = cookie_read(fd, bl, 0x100, 0x500);
+            let other_frame = frame_ptr(fd, bl, 0x104, spin, off as u64, 0x508);
+            Some(binop(
+                fd,
+                bl,
+                0x108,
+                OpCode::CPUI_INT_XOR,
+                other_cookie,
+                other_frame,
+                0x510,
+            ))
+        }
+    };
+
+    let phi_a_op = mk_op(fd, 2, 0x1c, OpCode::CPUI_MULTIEQUAL);
+    let phi_a_addr = reg(fd, 0x118);
+    let phi_a = fd.vbank_mut().create(8, phi_a_addr, unk(8));
+    fd.op_set_output(phi_a_op, phi_a).unwrap();
+    fd.op_insert_begin(phi_a_op, bl);
+
+    let phi_b_op = mk_op(fd, 2, 0x20, OpCode::CPUI_MULTIEQUAL);
+    let phi_b_addr = reg(fd, 0x120);
+    let phi_b = fd.vbank_mut().create(8, phi_b_addr, unk(8));
+    fd.op_set_output(phi_b_op, phi_b).unwrap();
+    fd.op_insert_begin(phi_b_op, bl);
+
+    let copy_op = mk_op(fd, 1, 0x24, OpCode::CPUI_COPY);
+    let copy_addr = reg(fd, 0x128);
+    let carried = fd.vbank_mut().create(8, copy_addr, unk(8));
+    fd.op_set_output(copy_op, carried).unwrap();
+    fd.op_insert_end(copy_op, bl);
+
+    fd.op_set_input(phi_a_op, saved, 0).unwrap();
+    fd.op_set_input(phi_a_op, phi_b, 1).unwrap();
+    fd.op_set_input(phi_b_op, carried, 0).unwrap();
+    fd.op_set_input(phi_b_op, cycle_external.unwrap_or(carried), 1).unwrap();
+    fd.op_set_input(copy_op, phi_a, 0).unwrap();
+
+    let f2 = frame_ptr(fd, bl, 0x28, spin, (-0x48i64) as u64, 0x130);
+    let out = binop(fd, bl, 0x2c, OpCode::CPUI_INT_XOR, carried, f2, 0x138);
+    (out, init)
+}
+
+#[test]
+fn a_cookie_cycle_spanning_multiple_phis_reaches_its_entry_scramble() {
+    let mut fd = build_fd();
+    let (out, init) = build_multi_phi_cycle_cancel(&mut fd, CycleExternal::Backedge);
+    assert_eq!(cookie_cancel(out, &fd, &sp(&fd)), Some(vec![init]));
+}
+
+#[test]
+fn a_seedless_multi_phi_cycle_declines() {
+    let mut fd = build_fd();
+    let bl = mk_block(&mut fd);
+    let spin = sp_input(&mut fd);
+
+    let phi_a_op = mk_op(&mut fd, 2, 0x10, OpCode::CPUI_MULTIEQUAL);
+    let phi_a_addr = reg(&fd, 0x100);
+    let phi_a = fd.vbank_mut().create(8, phi_a_addr, unk(8));
+    fd.op_set_output(phi_a_op, phi_a).unwrap();
+    fd.op_insert_begin(phi_a_op, bl);
+
+    let phi_b_op = mk_op(&mut fd, 2, 0x14, OpCode::CPUI_MULTIEQUAL);
+    let phi_b_addr = reg(&fd, 0x108);
+    let phi_b = fd.vbank_mut().create(8, phi_b_addr, unk(8));
+    fd.op_set_output(phi_b_op, phi_b).unwrap();
+    fd.op_insert_begin(phi_b_op, bl);
+
+    fd.op_set_input(phi_a_op, phi_b, 0).unwrap();
+    fd.op_set_input(phi_a_op, phi_b, 1).unwrap();
+    fd.op_set_input(phi_b_op, phi_a, 0).unwrap();
+    fd.op_set_input(phi_b_op, phi_a, 1).unwrap();
+
+    let frame = frame_ptr(&mut fd, bl, 0x18, spin, (-0x48i64) as u64, 0x110);
+    let out = binop(&mut fd, bl, 0x1c, OpCode::CPUI_INT_XOR, phi_a, frame, 0x118);
+    assert_eq!(cookie_cancel(out, &fd, &sp(&fd)), None);
+}
+
+#[test]
+fn a_multi_phi_cycle_with_an_unproven_entry_declines() {
+    let mut fd = build_fd();
+    let (out, _) = build_multi_phi_cycle_cancel(&mut fd, CycleExternal::Unknown);
+    assert_eq!(cookie_cancel(out, &fd, &sp(&fd)), None);
+}
+
+#[test]
+fn a_multi_phi_cycle_with_a_different_frame_offset_declines() {
+    let mut fd = build_fd();
+    let (out, _) = build_multi_phi_cycle_cancel(&mut fd, CycleExternal::Scramble(-0x40));
+    assert_eq!(cookie_cancel(out, &fd, &sp(&fd)), None);
+}
+
 #[test]
 fn cancel_at_a_different_frame_offset_declines() {
     let mut fd = build_fd();

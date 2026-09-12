@@ -5,8 +5,8 @@
   "rejected_count": 1,
   "by_status": {
     "blocked": 1,
-    "closed": 157,
-    "open": 39
+    "closed": 158,
+    "open": 38
   },
   "by_track": {
     "loader": 10,
@@ -4642,10 +4642,10 @@
       "need_id": "void-cookie-check-prototype",
       "title": "Void cookie-check prototype leaves main returning an undefined EAX local",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
       "probe_id": "p-ec5e7370c859",
-      "acceptance_id": "a-b34ccddd9316",
+      "acceptance_id": "a-f15210e51172",
       "hypothesis_status": "inconclusive",
       "credibility": 0.85,
       "instances": 1,
@@ -4653,19 +4653,20 @@
         "68b94ba38fac2855fe6fbada"
       ],
       "rounds": [
-        11
+        11,
+        12
       ],
       "first_seen_round": 11,
-      "attempts": 0,
-      "covered_by_option": null,
+      "attempts": 1,
+      "covered_by_option": "calleeretpreserves",
       "touches": [
         "decompiler/crates/kuna-decomp"
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": 607,
+      "closed_in_round": 12,
+      "closing_pr": "607",
       "reject_reason": null,
       "score": 13.862944,
       "path": "docs/re-needs/void-cookie-check-prototype.md"

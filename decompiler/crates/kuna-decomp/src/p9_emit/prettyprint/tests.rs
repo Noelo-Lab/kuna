@@ -238,6 +238,27 @@ mod nomarkup {
     }
 
     #[test]
+    fn statement_sidecar_tracks_exact_opref_without_markup_rendering() {
+        let mut e = EmitNoMarkup::new();
+        e.set_capture_statement_provenance(true);
+        e.tag_line();
+        e.begin_statement(&MarkupRef::op(Some(7)));
+        e.print("call();", SyntaxHighlight::NoColor);
+        e.tag_line();
+        e.begin_statement(&MarkupRef::op(Some(9)));
+
+        assert_eq!(
+            e.take_statement_provenance().associations,
+            vec![
+                MarkupAssociation { line_number: 1, opref: Some(7), varref: None },
+                MarkupAssociation { line_number: 2, opref: Some(9), varref: None },
+            ]
+        );
+        e.set_output_stream();
+        assert!(e.take_statement_provenance().associations.is_empty());
+    }
+
+    #[test]
     fn paren_tracks_level() {
         let mut e = EmitNoMarkup::new();
         assert_eq!(e.get_paren_level(), 0);
