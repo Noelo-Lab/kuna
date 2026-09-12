@@ -194,6 +194,7 @@ fn a_wide_killed_range_resolves_only_the_exact_locked_void_output_slice() {
     fd.kuna_set_callee_ret_writes(&entry, cookie_checker(&fd));
 
     let whole_xmm = Address::new(space(&fd, "ram"), 0x00);
+    let refined_high_half = Address::new(space(&fd, "ram"), 0x04);
     let upper_scratch = Address::new(space(&fd, "ram"), 0x08);
     assert_eq!(
         characterize_preserved_output(&fc, &whole_xmm, 16),
@@ -203,7 +204,27 @@ fn a_wide_killed_range_resolves_only_the_exact_locked_void_output_slice() {
     assert!(!callee_preserves_return_storage(&fd, &fc, &whole_xmm, 16));
     assert!(exact_cookie_preserves_return_storage(&fd, &fc, &whole_xmm, 8));
     assert!(!exact_cookie_preserves_return_storage(&fd, &fc, &whole_xmm, 16));
+    assert_eq!(
+        characterize_preserved_output(&fc, &refined_high_half, 4),
+        Containment::ContainsUnjustified
+    );
+    assert!(
+        !callee_preserves_return_storage(&fd, &fc, &refined_high_half, 4),
+        "the generic complete-body proof remains justified-storage only"
+    );
+    assert!(exact_cookie_preserves_unjustified_return_slice(
+        &fd,
+        &fc,
+        &refined_high_half,
+        4,
+    ));
     assert!(!exact_cookie_preserves_return_storage(&fd, &fc, &upper_scratch, 8));
+    assert!(!exact_cookie_preserves_unjustified_return_slice(
+        &fd,
+        &fc,
+        &upper_scratch,
+        8,
+    ));
 
     let generic = callee_preserved_output_within(&fd, &fc, &whole_xmm, 16)
         .expect("the complete body proof resolves the exact output slice");
@@ -249,6 +270,13 @@ fn an_exact_cookie_marker_does_not_override_a_known_return_storage_write() {
     );
     let rax = Address::new(space(&fd, "ram"), 0x00);
     assert!(!exact_cookie_preserves_return_storage(&fd, &fc, &rax, 8));
+    let refined_high_half = Address::new(space(&fd, "ram"), 0x04);
+    assert!(!exact_cookie_preserves_unjustified_return_slice(
+        &fd,
+        &fc,
+        &refined_high_half,
+        4,
+    ));
 }
 
 #[test]
@@ -322,6 +350,13 @@ fn an_exact_cookie_marker_does_not_override_an_explicit_effect() {
         .push_effect_override(EffectRecord::from_varnode(vd, effect_type::KILLEDBYCALL));
     let rax = Address::new(space(&fd, "ram"), 0x00);
     assert!(!exact_cookie_preserves_return_storage(&fd, &fc, &rax, 8));
+    let refined_high_half = Address::new(space(&fd, "ram"), 0x04);
+    assert!(!exact_cookie_preserves_unjustified_return_slice(
+        &fd,
+        &fc,
+        &refined_high_half,
+        4,
+    ));
 }
 
 /// The load-bearing half. A body that writes only the stack pointer is what a

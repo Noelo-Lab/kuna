@@ -46,7 +46,7 @@ def rel32(here, size, target):
     return struct.pack("<i", target - (here + size))
 
 
-def build_text(cookie_rva, log_iat_rva, loop_barrier_iat_rva):
+def build_text(cookie_rva, log_iat_rva, loop_barrier_iat_rva, refined=False):
     text = bytearray(LOG_SECTION_RVA + 0x200 - SCORE_SECTION_RVA)
     text[ENTRY - SCORE_SECTION_RVA] = 0xC3
     body = bytearray()
@@ -74,8 +74,19 @@ def build_text(cookie_rva, log_iat_rva, loop_barrier_iat_rva):
     body += b"\x75" + struct.pack("b", loop - (SCORE + len(body) + 2))
     body += b"\xf2\x0f\x10\x05" + rel32(SCORE + len(body), 8, two)
     body += b"\xf2\x0f\x5e\xf0"                              # divsd xmm6,xmm0
+    if refined:
+        # Keep a real 4-byte read of the final accumulator live at a volatile
+        # call, matching the scalar-XMM traffic in the authoritative target.
+        body += b"\x66\x0f\x7e\xf1"                          # movd ecx,xmm6
     body += b"\xe8" + rel32(SCORE + len(body), 5, LOOP_BARRIER)  # destructor/free
     body += b"\x0f\x28\xc6"                                  # movaps xmm0,xmm6
+    if refined:
+        # Round-trip only the low dword through XMM1, then copy it back with
+        # register MOVSS, which preserves XMM0's upper 96 bits. This forces the
+        # observed XMM0_Da/XMM0_Db partition without changing the double.
+        body += b"\x66\x0f\x7e\x44\x24\x08"                # movd [rsp+8],xmm0
+        body += b"\xf3\x0f\x10\x4c\x24\x08"                # movss xmm1,[rsp+8]
+        body += b"\xf3\x0f\x10\xc1"                          # movss xmm0,xmm1
     body += b"\x48\x8b\x4c\x24\x28\x48\x33\xcc"            # cookie ^ rsp
     body += b"\xe8" + rel32(SCORE + len(body), 5, COOKIE)
     body += b"\x0f\x28\x74\x24\x10"                          # restore xmm6
@@ -153,10 +164,12 @@ def build_text(cookie_rva, log_iat_rva, loop_barrier_iat_rva):
     return text
 
 
-def append_exports(rdata):
+def append_exports(rdata, export_score=False):
     """Append exports so the promoted probe prints `log` and `cookie`."""
     export_rva = pe.RDATA_RVA + len(rdata)
     names_and_rvas = [("cookie", COOKIE), ("log", LOG_HELPER)]
+    if export_score:
+        names_and_rvas.append(("score", SCORE))
     funcs_off = 40
     names_off = funcs_off + 4 * len(names_and_rvas)
     ordinals_off = names_off + 4 * len(names_and_rvas)
@@ -185,7 +198,7 @@ def append_exports(rdata):
     return export_rva, len(exports)
 
 
-def build():
+def build(refined=False):
     original_imports = pe.IMPORTS
     try:
         pe.IMPORTS = [*original_imports, "free"]
@@ -194,8 +207,8 @@ def build():
         pe.IMPORTS = original_imports
     rdata = bytearray(rdata)
     rdata += struct.pack("<dd", 1.5, 2.0)
-    export_rva, export_size = append_exports(rdata)
-    text = build_text(cookie_rva, cookie_rva + 24, iat_rvas[-1])
+    export_rva, export_size = append_exports(rdata, export_score=refined)
+    text = build_text(cookie_rva, cookie_rva + 24, iat_rvas[-1], refined=refined)
     sections_data = [
         (".rdata", bytes(rdata), pe.RDATA_RVA, 0x40000040),
         (".score", bytes(text[:0x500]), SCORE_SECTION_RVA, 0x60000020),

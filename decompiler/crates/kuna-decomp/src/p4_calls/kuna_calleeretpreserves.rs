@@ -187,6 +187,27 @@ pub(crate) fn exact_cookie_preserves_return_storage(
     exact_cookie_evidence(data, fc, addr)
 }
 
+/// May an exact cookie proof preserve a refinement cell strictly inside its
+/// ABI return storage?
+///
+/// Heritage can partition an 8-byte floating output into two 4-byte cells. The
+/// least-significant cell is justified, while the adjacent cell is classified
+/// as `ContainsUnjustified`; both still belong to the same exact ABI output.
+/// The caller additionally requires this cell to be part of its own declared
+/// output, so this does not widen the generic complete-body proof or retain an
+/// unrelated scratch-register slice.
+pub(crate) fn exact_cookie_preserves_unjustified_return_slice(
+    data: &Funcdata,
+    fc: &FuncCallSpecs,
+    addr: &Address,
+    size: int4,
+) -> bool {
+    if characterize_preserved_output(fc, addr, size) != Containment::ContainsUnjustified {
+        return false;
+    }
+    exact_cookie_evidence(data, fc, addr)
+}
+
 /// Return the exact ABI-output slice contained by a wider killed range when the
 /// generic complete-body proof permits preserving that slice.
 pub(crate) fn callee_preserved_output_within(

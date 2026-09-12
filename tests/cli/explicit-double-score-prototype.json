@@ -1,0 +1,36 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/pe_explicit_double_score_return_x86_64.exe",
+    "binary_sha256": "9454da07fedd100366e7a5955a29d218eb7f05bbb5bf5c3aa96f7d50f1c7deb9",
+    "binary_size": 3584,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/pe_explicit_double_score_return_x86_64.exe"
+  },
+  "timeout_s": 60,
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "score",
+    "--assert",
+    "prototype 0x14000904f double log(double x)",
+    "--assert",
+    "prototype 0x140008140 void cookie(unsigned long long value)",
+    "--assert",
+    "prototype 0x140003150 double score(void *model,void *password)"
+  ],
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "(?ms)^\\s*(v[0-9]+)\\s*=\\s*\\1\\s*/[^;]+;.*^\\s*return\\s+\\1;"
+    ],
+    "stdout_absent": [
+      "return\\s+\\(double\\)CONCAT44",
+      "return\\s+[^;]*SUB84"
+    ]
+  }
+}

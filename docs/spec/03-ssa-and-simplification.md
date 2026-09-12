@@ -337,6 +337,18 @@ both the positive-write veto and the killed scratch flank are observable. A
 focused predicate control supplies the other retained production-summary
 shape: incomplete, no direct ranges, and an output-processor-space STORE.
 
+Heritage can also refine the logical 8-byte floating output itself into two
+adjacent 4-byte cells. The low cell characterizes as `ContainsJustified`, while
+the high cell characterizes as `ContainsUnjustified` even though both bytes are
+inside the same ABI `float8` output. At an exact seeded cookie site only, the
+second cell may use the same caller-side proof when the *caller* has a locked
+output whose storage contains that cell. This is not added to the generic body
+proof: an inferred caller output cannot gain the cell, the XMM bytes above the
+locked output still characterize as scratch and remain killed, and every
+direct-write, output-space STORE, and explicit-effect veto above still wins.
+Thus a declared `double score(...)` keeps both halves of its division across
+the checker without treating an entire XMM register as preserved.
+
 **Partial-range call overlap.** A heritaged range can be strictly *larger* than
 the ABI storage it contains — the characterization is `ContainedBy` rather than
 `ContainsJustified`, so none of the whole-range arms above apply. This is
