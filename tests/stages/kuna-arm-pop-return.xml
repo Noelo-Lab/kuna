@@ -1,0 +1,18 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v7">
+<!--
+  Synthetic A32 return: push {lr}; mov r0,#7; ldr pc,[sp],#4.
+  P2 instruction lifting, correctness repair without an option. The single
+  register POP alias must return r0 rather than turn the restored LR into a call.
+-->
+<bytechunk space="ram" offset="0x1000">04e02de50700a0e304f09de4</bytechunk>
+<symbol space="ram" offset="0x1000" name="stack_pop_return"/>
+</binaryimage>
+<script>
+  <com>load function stack_pop_return</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="ARM POP #1: returns the value in r0" min="1" max="1">return 7;</stringmatch>
+<stringmatch name="ARM POP #2: no jump-as-call return" min="0" max="0">jump-as-call</stringmatch>
+</decompilertest>

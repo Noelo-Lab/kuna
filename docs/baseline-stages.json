@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1254,
-    1254
+    1256,
+    1256
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -12,6 +12,8 @@
     "data:ALIASOVERLAP #6: splitother reads s+7 whole before the store through t",
     "data:ALIASOVERLAP #7: splitcall reads s+7 whole before the call",
     "data:ALIASOVERLAP #8: with nothing in between, splitplain still splits into the return register",
+    "data:ARM POP #1: returns the value in r0",
+    "data:ARM POP #2: no jump-as-call return",
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
     "data:ARRAYCOVERWIDTH #2: and so does bank B's",
     "data:ARRAYCOVERWIDTH #3: the swap's first leg carries the transfer width on both sides",
