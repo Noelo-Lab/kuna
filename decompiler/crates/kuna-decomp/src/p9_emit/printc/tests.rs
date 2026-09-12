@@ -113,6 +113,26 @@ mod stack_pointer_high_leaf {
     }
 
     #[test]
+    fn direct_callee_name_is_reserved_before_local_suffix_allocation() {
+        let (mut fd, register) = build_fd();
+        let op = fd.new_op(1, Address::new(Rc::clone(&register), 0x1000));
+        let entry = Address::new(register, 0x2000);
+        let mut call = crate::fspec::FuncCallSpecs::new(op, entry.clone());
+        call.set_funcdata(entry, "callee_1").unwrap();
+        fd.push_call_specs(call);
+
+        let occupied = declaration_occupied_names(&fd, vec!["param_1".to_string()]);
+        assert!(occupied.iter().any(|name| name == "callee_1"));
+
+        let mut allocator = crate::kuna_dedupvardecls::DeclNameUniquifier::new(
+            ["callee", "callee"],
+            occupied.iter().map(String::as_str),
+        );
+        assert_eq!(allocator.unique("callee"), "callee");
+        assert_eq!(allocator.unique("callee"), "callee_2");
+    }
+
+    #[test]
     fn merged_unaffected_input_stack_pointer_canonicalizes_every_member() {
         let (mut fd, register) = build_fd();
         let sp = fd.new_varnode(8, &Address::new(Rc::clone(&register), 0), Some(unknown8()));

@@ -5,8 +5,8 @@
   "rejected_count": 1,
   "by_status": {
     "blocked": 1,
-    "closed": 135,
-    "open": 61
+    "closed": 136,
+    "open": 60
   },
   "by_track": {
     "loader": 10,
@@ -3697,10 +3697,10 @@
       "need_id": "overlapping-subregister-temporaries-receive",
       "title": "Overlapping subregister temporaries receive duplicate local names",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
       "probe_id": "p-e2e8e9ceb38a",
-      "acceptance_id": "a-923bd9e40d90",
+      "acceptance_id": "a-c6276af322b1",
       "hypothesis_status": "upheld",
       "credibility": 0.7,
       "instances": 1,
@@ -3708,21 +3708,22 @@
         "603a9d7833c5d42c3d016c55"
       ],
       "rounds": [
-        11
+        11,
+        12
       ],
       "first_seen_round": 11,
-      "attempts": 0,
+      "attempts": 1,
       "covered_by_option": null,
       "touches": [
         "decompiler/crates/kuna-decomp"
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": 590,
+      "closed_in_round": 12,
+      "closing_pr": "590",
       "reject_reason": null,
-      "score": 13.862944,
+      "score": 9.241962,
       "path": "docs/re-needs/overlapping-subregister-temporaries-receive.md"
     },
     {

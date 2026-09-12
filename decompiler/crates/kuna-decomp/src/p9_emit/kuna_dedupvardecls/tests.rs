@@ -54,3 +54,57 @@ fn dedup_handles_array_adornment() {
     assert!(d.is_duplicate(s2)); // identical array -> suppress
     assert!(!d.is_duplicate(s3)); // different count -> keep
 }
+
+#[test]
+fn declaration_names_are_unique_without_stealing_later_names() {
+    let locals = ["word", "word", "word_1", "word"];
+    let mut names = DeclNameUniquifier::new(locals, std::iter::empty());
+    assert_eq!(names.unique("word"), "word");
+    assert_eq!(names.unique("word"), "word_2");
+    assert_eq!(names.unique("word_1"), "word_1");
+    assert_eq!(names.unique("word"), "word_3");
+}
+
+#[test]
+fn parameter_and_user_name_collisions_preserve_the_existing_owner() {
+    let locals = ["value", "value", "debug_name", "debug_name"];
+    let mut names = DeclNameUniquifier::new(locals, ["value"]);
+    assert_eq!(names.unique("value"), "value_1");
+    assert_eq!(names.unique("value"), "value_2");
+    assert_eq!(names.unique("debug_name"), "debug_name");
+    assert_eq!(names.unique("debug_name"), "debug_name_1");
+}
+
+#[test]
+fn global_and_direct_callee_suffixes_remain_owned_by_their_references() {
+    // `value_1` models a referenced global and `callee_1` a named direct call.
+    // The second local of each repeated spelling must skip those identifiers,
+    // leaving the printed references bound to their original non-local owners.
+    let locals = ["value", "value", "callee", "callee"];
+    let mut names = DeclNameUniquifier::new(locals, ["value_1", "callee_1"]);
+    assert_eq!(names.unique("value"), "value");
+    assert_eq!(names.unique("value"), "value_2");
+    assert_eq!(names.unique("callee"), "callee");
+    assert_eq!(names.unique("callee"), "callee_2");
+}
+
+#[test]
+fn same_sequence_is_deterministic() {
+    fn allocate() -> Vec<String> {
+        let locals = ["v2", "v2", "v2", "v2_1"];
+        let mut names = DeclNameUniquifier::new(locals, ["a0"]);
+        locals.into_iter().map(|name| names.unique(name)).collect()
+    }
+    assert_eq!(allocate(), allocate());
+    assert_eq!(allocate(), ["v2", "v2_2", "v2_3", "v2_1"]);
+}
+
+#[test]
+fn ghidra_style_prefixes_are_preserved_when_suffixing() {
+    let locals = ["uVar1", "uVar1", "Var2", "Var2"];
+    let mut names = DeclNameUniquifier::new(locals, std::iter::empty());
+    assert_eq!(names.unique("uVar1"), "uVar1");
+    assert_eq!(names.unique("uVar1"), "uVar1_1");
+    assert_eq!(names.unique("Var2"), "Var2");
+    assert_eq!(names.unique("Var2"), "Var2_1");
+}

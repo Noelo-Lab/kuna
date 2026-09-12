@@ -58,6 +58,16 @@ fn query(entries: Vec<GlobalEntry>) -> GlobalQuery {
     GlobalQuery::new(entries, RangeList::new(), PartMap::new(0))
 }
 
+#[test]
+fn global_symbol_name_snapshot_exposes_names_reserved_from_local_suffixes() {
+    let ram = space(2);
+    let globals = query(vec![
+        entry(&ram, 0x1000, 4, 0, "value_1", true, RangeList::new()),
+        entry(&ram, 0x2000, 1, 0, "callee_1", true, RangeList::new()),
+    ]);
+    assert_eq!(globals.symbol_names().collect::<Vec<_>>(), ["value_1", "callee_1"]);
+}
+
 fn typed_entry(
     space: &Rc<AddrSpace>,
     first: u64,
