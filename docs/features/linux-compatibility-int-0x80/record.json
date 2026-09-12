@@ -1,0 +1,49 @@
+{
+  "need_id": "linux-compatibility-int-0x80",
+  "track": "quality",
+  "change_kind": "correctness-fix",
+  "phase": "P2",
+  "subphase": "pre-SSA lift repair",
+  "module": "decompiler/crates/kuna-decomp/src/p2_lift/kuna_linuxsyscall.rs",
+  "option": "linuxsyscall",
+  "default_on": false,
+  "div": "DIV-165",
+  "symptom": "In an x86-64 image, the Linux i386 compatibility sequence `mov eax,1; mov ebx,0; int 0x80` remained `(*(code *)swi(0x80))();` even with `linuxsyscall on`, erasing the syscall number and status.",
+  "root_cause": "The pass rejected every language whose default code address size was not four. Long-mode SLEIGH also normalizes `mov eax,imm32` into an eight-byte zero-extending COPY to RAX before this pre-SSA pass, so resolving only EAX would still fail to find the number.",
+  "decisions": [
+    "Treat `int 0x80` in a 64-bit x86 language as Linux's i386 compatibility entry: i386 syscall numbers and EBX/ECX/EDX/ESI/EDI/EBP argument order, each represented by the low four-byte storage of the containing 64-bit register.",
+    "Resolve the complete RAX/RBX/RCX/RDX/RSI/RDI/RBP register records at their declared eight-byte widths, then retain their offsets with four-byte parameter and result types. This is a bounded language probe, not permissive sub-register lookup.",
+    "Accept only an exact constant COPY to the four-byte number storage or, in long mode only, the exact eight-byte RAX storage emitted by SLEIGH. Source and destination widths must match; partial, mismatched, computed, overlapping, and non-x86 writes remain refusals.",
+    "Keep the structural `swi(0x80)` matcher and rewrite unchanged. Native x86-64 `SYSCALL` remains owned by `x64syscall`, so linuxsyscall cannot reinterpret native syscall number 1 as i386 exit.",
+    "The `kuna-base/src/xml.rs` delta is only the generated corpus guard changing from 274 to 275 because one stage file was added; it contains no production or register-resolution logic."
+  ],
+  "fixture": {
+    "path": "decompiler/crates/kuna-analysis/tests/fixtures/raw_compat_int80_x86_64",
+    "generator": "decompiler/crates/kuna-analysis/tests/fixtures/raw_compat_int80_x86_64.py",
+    "size": 17,
+    "sha256": "2724e20a8bd5db91b218fc4e67b622d010749ba749ac7253b92c7e44ad74348f"
+  },
+  "tests": {
+    "unit": "4 linuxsyscall unit tests, including exact/malformed/out-of-range width cases and low-32-bit compatibility truncation",
+    "stage": "tests/stages/kuna-linuxsyscall-x64-compat.xml: option-off raw swi, option-on standalone sys_exit(0), negative native-write/extra-arity guards, and a native SYSCALL control unchanged across both passes",
+    "cli": "tests/cli/linux-compatibility-int-0x80.json: standalone sys_exit(0) and absence of swi, generic syscall(), sys_write, and extra exit arguments"
+  },
+  "baselines": {
+    "datatests": "unchanged",
+    "stages": "783 -> 788, exactly the five new compatibility assertions",
+    "corpus_files": "274 -> 275"
+  },
+  "gates": {
+    "focused unit": "4/4",
+    "relevant stages": "16/16",
+    "promoted CLI": "1/1",
+    "datatest parity": "675/675 PARITY OK",
+    "cargo test --workspace --no-fail-fast": "green",
+    "make test-stages": "788/788 PARITY OK (including the GH1537 control at 2/2)",
+    "make check-spec": "OK (lenient + strict)",
+    "kuna catalog --check": "catalog OK",
+    "counters": "190 settables; tiers 61/70/59; 275 corpus files; next ElementId 4164",
+    "mergecheck": "0 rejects after preserving every pre-existing phases.toml option-catalog line byte-for-byte; shape A confirms DIV-165 was free on the rebased parent, shape B confirms every counter, and docs/baseline.json is untouched"
+  },
+  "rebased_onto": "origin/main 29d079f2097c3e515fedc2d8ec6dc58245910c4f (#576 merged; its need closure and index state preserved)"
+}
