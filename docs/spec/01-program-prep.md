@@ -1,5 +1,15 @@
 # 01 — Program preparation (kuna-analysis)
 
+PowerPC64 ELFv1 linked images may name a 24-byte `.opd` descriptor instead of
+code. The loader normalizes validated function symbols and the image entry to
+the descriptor's aligned, file-backed executable address, preserves aliases,
+and supplies its TOC as the function's initial `r2` value. Different entries may
+have different TOCs; conflicting descriptors for one code entry leave `r2`
+unknown. Explicit addresses remain literal. ELFv2, relocatable objects, truncated
+descriptors and non-executable targets do not receive this normalization.
+This ABI metadata is installed before user context overrides.
+
+
 ```yaml
 Anchors:
   - decompiler/crates/kuna-analysis/src
