@@ -5,8 +5,8 @@
   "rejected_count": 1,
   "by_status": {
     "blocked": 1,
-    "closed": 138,
-    "open": 58
+    "closed": 139,
+    "open": 57
   },
   "by_track": {
     "loader": 10,
@@ -4053,10 +4053,10 @@
       "need_id": "short-utf-16-window",
       "title": "Short UTF-16 window class becomes a narrow string despite explicit type assertions",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
       "probe_id": "p-47b3ce664b23",
-      "acceptance_id": "a-00e75f284ec6",
+      "acceptance_id": "a-abec8c6e76cf",
       "hypothesis_status": "upheld",
       "credibility": 0.85,
       "instances": 1,
@@ -4064,21 +4064,23 @@
         "65acadf3eef082e477ff5ede"
       ],
       "rounds": [
-        10
+        10,
+        12
       ],
       "first_seen_round": 10,
-      "attempts": 0,
+      "attempts": 1,
       "covered_by_option": null,
       "touches": [
+        "decompiler/crates/kuna-console",
         "decompiler/crates/kuna-decomp"
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": 593,
+      "closed_in_round": 12,
+      "closing_pr": "593",
       "reject_reason": null,
-      "score": 13.862944,
+      "score": 9.241962,
       "path": "docs/re-needs/short-utf-16-window.md"
     },
     {

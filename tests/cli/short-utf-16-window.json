@@ -1,0 +1,48 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "0x401000",
+    "--mode",
+    "aggressive",
+    "--assert",
+    "data 0x402000 wchar_t window_class[3]",
+    "--assert",
+    "prototype find_window void *find_window(wchar_t *class_name,wchar_t *window_name)",
+    "--assert-strict"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/short_utf16_window_pe_x86_64.exe",
+    "binary_sha256": "4d2b992f86052a3f28b7a1d3d4aa52c2ad4076136d4251a0aece1a2954e5bacc",
+    "binary_size": 5038,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/short_utf16_window_pe_x86_64.exe",
+    "selector": "0x401000",
+    "selector_kind": "addr"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "L\"ID\"",
+      "L\"OLLYDBG\"",
+      "\"ASCII\""
+    ],
+    "stdout_absent": [
+      "sub_401040\\(\"I\",0\\)",
+      "\\(wchar_t \\*\\)"
+    ]
+  },
+  "notes": "In-repo PE twin of ObfuscationFiesta.exe 0x140002530: operand_refs first maps the low byte of UTF-16 ID as char[2], then the strict data assertion declares wchar_t[3] at the same address. The neighboring UTF-16 OLLYDBG and ASCII literals are controls. Before the fix the first call renders narrow \"I\"; the dataset witness also casts that local to wchar_t * for FindWindowW."
+}
