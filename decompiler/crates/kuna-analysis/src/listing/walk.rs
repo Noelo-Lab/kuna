@@ -26,6 +26,7 @@ use super::classify::classify;
 use super::context::ContextPainter;
 use super::decode::decode_one;
 use super::model::{DiscoveredFunction, Insn, Reference, RefKind};
+use super::ListingDetail;
 
 /// The accumulating maps the walk fills. Lifted into [`super::Listing`] by
 /// [`super::Listing::build`].
@@ -38,20 +39,29 @@ pub(super) struct WalkState {
     pub refs_from: BTreeMap<u64, Vec<Reference>>,
     /// Discovered/seeded functions, keyed by entry VMA (ordered).
     pub funcs: BTreeMap<u64, DiscoveredFunction>,
+    /// Whether [`WalkState::file_ref`] records anything at all.
+    want_refs: bool,
 }
 
 impl WalkState {
-    fn new() -> Self {
+    fn new(want_refs: bool) -> Self {
         WalkState {
             insns: BTreeMap::new(),
             refs_to: BTreeMap::new(),
             refs_from: BTreeMap::new(),
             funcs: BTreeMap::new(),
+            want_refs,
         }
     }
 
     /// File a reference into both directions (`refs_to[to]` and `refs_from[from]`).
+    ///
+    /// A no-op when the caller asked for no reference model, so the walk's edge
+    /// sites read the same either way and a new one cannot miss the gate.
     fn file_ref(&mut self, from: u64, to: u64, kind: RefKind) {
+        if !self.want_refs {
+            return;
+        }
         let r = Reference { from, to, kind, op_index: None };
         self.refs_to.entry(to).or_default().push(r.clone());
         self.refs_from.entry(from).or_default().push(r);
@@ -81,9 +91,15 @@ pub(super) fn in_exec(exec_ranges: &[(u64, u64)], vma: u64) -> bool {
 /// INTERIOR of the function at its value, so no function is claimed there. Empty
 /// on every other architecture and whenever the option is off.
 ///
-/// `want_assembly` is forwarded to [`decode_one`]: `false` leaves every
+/// `detail.assembly` is forwarded to [`decode_one`]: `false` leaves every
 /// [`Insn::mnemonic`]/[`Insn::operands`] empty and skips the second SLEIGH parse
 /// that produces them (see [`decode_one`] for the cost).
+///
+/// `detail.refs` selects whether the reference model is filed at all
+/// ([`WalkState::file_ref`] becomes a no-op). Every instruction contributes an
+/// edge per successor, a fall-through included, so on a large program this is
+/// the same order of magnitude as the instruction model itself; `false` leaves
+/// both maps empty for a caller that reads neither.
 pub(super) fn walk(
     translate: &dyn Translate,
     arch: &Architecture,
@@ -93,7 +109,7 @@ pub(super) fn walk(
     seed_funcs: &BTreeMap<u64, DiscoveredFunction>,
     painter: &ContextPainter,
     local_entries: &BTreeMap<u64, u64>,
-    want_assembly: bool,
+    detail: ListingDetail,
 ) -> WalkState {
     // Paint the decode-mode context (ARM TMode / MIPS ISA_MODE) into the engine's
     // ContextDatabase BEFORE we decode a single instruction — the timing the
@@ -105,7 +121,7 @@ pub(super) fn walk(
         painter.paint_all(arch, code_space);
     }
 
-    let mut st = WalkState::new();
+    let mut st = WalkState::new(detail.refs);
 
     // Function-entry worklist, seeded from the root set.
     let mut func_worklist: Vec<u64> = seeds.to_vec();
@@ -133,7 +149,7 @@ pub(super) fn walk(
                 continue; // out-of-bounds gate (flow.rs:891 analog)
             }
 
-            let decoded = match decode_one(translate, vma, code_space, want_assembly) {
+            let decoded = match decode_one(translate, vma, code_space, detail.assembly) {
                 Ok(d) => d,
                 Err(_) => continue, // decode error: stop this path (mark gap)
             };
@@ -165,7 +181,8 @@ pub(super) fn walk(
                     // (`unmappedentry`) and where the target is not the callee's own
                     // PPC64 ELFv2 local entry (`ppclocalentry` — a point inside a
                     // function whose global entry is already a seed, so the bytes
-                    // here are walked either way). The reference is always filed;
+                    // here are walked either way). The reference is filed whatever
+                    // the claim decides (where there is a reference model at all);
                     // only the function claim is withheld.
                     if !local_entries.contains_key(&t)
                         && super::kuna_unmappedentry::admits_call_entry(arch, exec_ranges, t)

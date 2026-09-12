@@ -78,10 +78,16 @@ pub enum Guard {
 /// The accepted tail-call function entries, address-sorted.
 ///
 /// ARM-only (the corpus the containment model was measured on); a strict no-op
-/// on every other architecture.
+/// on every other architecture, and on a Listing built without the reference
+/// model or the disassembly text — [`predecessors_are_branches`] and
+/// [`restores_frame`] are satisfied by an absent model rather than by evidence,
+/// so the precondition is structural and not left to the caller's gate.
 pub fn tail_call_entries(file: &object::File, listing: &Listing) -> Vec<u64> {
     use object::read::Object;
     if file.architecture() != object::Architecture::Arm {
+        return Vec::new();
+    }
+    if !listing.has_refs() || !listing.has_assembly() {
         return Vec::new();
     }
     let entries: Vec<u64> = listing.functions().map(|(&a, _)| a).collect();

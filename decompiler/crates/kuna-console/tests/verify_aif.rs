@@ -61,7 +61,7 @@
 
 use std::path::PathBuf;
 
-use kuna_analysis::listing::Listing;
+use kuna_analysis::listing::{Listing, ListingDetail};
 use kuna_console::engine::bootstrap_from_object;
 use kuna_console::ifacedecomp::{execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE};
 use kuna_console::ifaceterm::ConsoleCommands;
@@ -194,6 +194,15 @@ fn aif_recovers_function_reachable_only_via_data_path() {
 /// mixing two instructions. This fixture is x86-64, which has no decode mode: what
 /// it proves is that the substitution is exact where the re-decode agrees, and that
 /// the guard rejects nothing it should not.
+///
+/// Text is the only thing that varies here: the lean run asks for
+/// `ListingDetail { assembly: false, refs: true }` rather than
+/// [`ListingDetail::PARTITION_ONLY`], so a difference cannot be laid at the
+/// reference model's door. That is also the one place the mixed `ListingDetail`
+/// combination is exercised — production only ever asks for the two named
+/// constants — and the refs axis has its own single-variable gate,
+/// `a_partition_only_listing_walks_identically_and_files_no_references` in
+/// `verify_listing_queries.rs`.
 #[test]
 fn a_text_free_listing_fingerprints_exactly_like_a_text_carrying_one() {
     let bin = fixture();
@@ -218,7 +227,7 @@ fn a_text_free_listing_fingerprints_exactly_like_a_text_carrying_one() {
     let code_space =
         std::rc::Rc::clone(arch.manage().get_default_code_space().expect("code space"));
 
-    let run = |want_assembly: bool| {
+    let run = |detail: ListingDetail| {
         let listing = Listing::build_with_meta(
             &file,
             &image,
@@ -227,9 +236,10 @@ fn a_text_free_listing_fingerprints_exactly_like_a_text_carrying_one() {
             &seeds,
             &seeds,
             &[],
-            want_assembly,
+            detail,
         );
         let count = listing.function_count();
+        let insns = listing.num_instructions();
         let exec = listing.exec_ranges().to_vec();
         let entries = kuna_analysis::aif::run_aif(
             &listing,
@@ -239,13 +249,19 @@ fn a_text_free_listing_fingerprints_exactly_like_a_text_carrying_one() {
             false,
             false,
         );
-        (count, entries)
+        (count, insns, entries)
     };
 
-    let (with_text, texted_entries) = run(true);
-    let (without_text, textless_entries) = run(false);
+    let (with_text, texted_insns, texted_entries) = run(ListingDetail::FULL);
+    let (without_text, textless_insns, textless_entries) =
+        run(ListingDetail { assembly: false, refs: true });
 
     assert_eq!(with_text, without_text, "the walk itself must not depend on text capture");
+    assert_eq!(
+        texted_insns, textless_insns,
+        "the instruction partition must not depend on text capture: \
+         {texted_insns} instructions with text, {textless_insns} without"
+    );
     assert!(
         with_text >= 20,
         "the fixture must clear MINIMUM_FUNCTION_COUNT or the comparison is vacuous \
