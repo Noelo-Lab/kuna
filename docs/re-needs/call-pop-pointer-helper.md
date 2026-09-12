@@ -13,11 +13,11 @@ challenges: [5ab77f5433c5d40ad448c1c1]
 rounds: [12]
 first_seen_round: 12
 attempts: 0
-covered_by_option: null
+covered_by_option: callpopret
 touches: [decompiler/crates/kuna-decomp]
 scope: small
 regression_of: null
-pr: "568"
+pr: https://github.com/Noelo-Lab/kuna/pull/568
 closed_in_round: 12
 closing_pr: "568"
 reject_reason: null
@@ -137,3 +137,7 @@ TWO THINGS THAT WILL COST A BUILDER A DAY IF NOT SAID HERE.
 RISK OF THE INDICATED FIX: low. Treating a call whose callee provably discards the pushed return address as not-falling-through is the true semantics, not a heuristic, and the detection is a bounded decode of the callee (the same shape calleepreserves and calleeretpreserves already use). The failure mode to guard is the opposite one -- a callee that pops and then jumps back, which is calltrampoline's case and must keep its existing handling.
 - round 12 captain: acceptance_id corrected a-e02886c9bd81 -> a-27130cef0fa8. The id is derived from cmd+expect; an earlier tightening rewrote the assertion without recomputing it, so the front-matter label no longer named the assertion that runs. Body unchanged -- this is a relabel only. It matters at promotion (the opportunity selector is the acceptance_id) and at dedup (cluster.py trusts a stored id over recomputing, so a re-filing of the same probe would have opened a duplicate need instead of adding an instance).
 - round 12 builder: acceptance_id changed a-27130cef0fa8 -> a-ed5e35be957a when the dataset-only CryptoME.exe probe was reduced to the vendored `callpopret_i386` fixture for permanent CI promotion. The assertion is stronger at the task boundary: it requires `return "kernel32.dll";`, not merely the absence of the decoded `in(...)` operations. The original witness remains the stage-independent reproduction and still emits `return s_4f703c;` under the fix.
+- closed: acceptance a-ed5e35be957a now PASSES at 50bba8f3906b.
+- round 12 reconciliation: PR #568 (squash `50bba8f3906ba039a0fff6415107d6f72b75f68d`) implemented default-on `callpopret` for this need. The Markdown had already recorded the strengthened acceptance and closure, while the authoritative index retained the older acceptance ID and pre-closure `open` snapshot.
+- current controls at `bf22331158be444ebfbabf937ce8141826490fa9`: the exact vendored-fixture acceptance passes with `callpopret on`, returning `"kernel32.dll"`; adding `--option callpopret off` restores instruction decoding and `in(...)` operations. This closure is limited to the proven CALL/POP/RET pointer-helper shape and does not claim broader call-trampoline behavior.
+- index reconciliation constraint: the authoritative index contains 197 active records and 1 rejected record. This closure preserves every non-target row and changes only the four reconciled rows plus `by_status`; no sparse reindex was run.

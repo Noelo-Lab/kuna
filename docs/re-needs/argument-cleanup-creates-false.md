@@ -2,7 +2,7 @@
 need_id: argument-cleanup-creates-false
 title: Argument cleanup creates a false internal tail call
 track: quality
-status: open
+status: closed
 severity: major
 probe_id: p-2bc2afad11b1
 acceptance_id: a-d6135fbc9bd1
@@ -13,13 +13,13 @@ challenges: [5ab77f5f33c5d40ad448c820]
 rounds: [8]
 first_seen_round: 8
 attempts: 0
-covered_by_option: null
+covered_by_option: tailcallsaved
 touches: [decompiler/crates/kuna-decomp]
 scope: small
 regression_of: null
-pr: null
-closed_in_round: null
-closing_pr: null
+pr: https://github.com/Noelo-Lab/kuna/pull/560
+closed_in_round: 12
+closing_pr: "560"
 reject_reason: null
 ---
 
@@ -130,3 +130,7 @@ _none recorded_
   now reports the bytes it moved *through* the stack pointer beside its delta, and the branch
   is a tail call only when `restored >= saved`.
 - captain T_DEDUP (r8): SPLIT out of a 4-member deterministic bucket. cluster.py's key is `kind|subcommand|acceptance-clause-shape`, so four unrelated `wrong-output`+`decompile`+`exit_code,stdout_absent` defects collapsed into one need and only the witness's probe would have survived. This one is the tail-call/frame-matching defect and is unrelated to the other three.
+- closed: acceptance a-d6135fbc9bd1 now PASSES at d23e5a3e69c3.
+- round 12 reconciliation: PR #560 (squash `d23e5a3e69c335e9c9a818f5f33c79de61d189ed`) implemented default-on `tailcallsaved` for this need, but the authoritative index and front matter retained their pre-closure `open` snapshot.
+- current controls at `bf22331158be444ebfbabf937ce8141826490fa9`: the exact acceptance passes with `tailcallsaved on`; adding `--option tailcallsaved off` restores the false `tailcallframe: recovered tail call` witness. This closure distinguishes this saved-register/argument-cleanup case and does not claim to resolve broader tail-call ambiguity.
+- index reconciliation constraint: the authoritative index contains 197 active records and 1 rejected record. This closure preserves every non-target row and changes only the four reconciled rows plus `by_status`; no sparse reindex was run.

@@ -2,7 +2,7 @@
 need_id: 31-byte-buffer-copy
 title: 31-byte buffer copy loses its middle fifteen bytes
 track: quality
-status: open
+status: closed
 severity: major
 probe_id: p-b341a757d974
 acceptance_id: a-7790b11de793
@@ -13,13 +13,13 @@ challenges: [6927c8d12d267f28f69b8131]
 rounds: [11]
 first_seen_round: 11
 attempts: 0
-covered_by_option: null
+covered_by_option: splitstorekeep
 touches: [decompiler/crates/kuna-decomp]
 scope: small
 regression_of: null
-pr: null
-closed_in_round: null
-closing_pr: null
+pr: https://github.com/Noelo-Lab/kuna/pull/554
+closed_in_round: 12
+closing_pr: "554"
 reject_reason: null
 ---
 
@@ -153,3 +153,7 @@ hypothesis and the round-11 triage note are overturned.
 
 - filed by cluster.py from 1 observation(s)
 - round 11 TRIAGE (captain): filed by splitting instance 2 out of live-simd-string-copies, which had merged it on a shared clause shape. Bound its probe target to the dataset binary like the round's other 14. NOT the same gap as its former parent: measured on main, all four qword stores are emitted correctly at the default (offsets 0..7, 8..15, 15..22, 23..30) from four plain `48 89` movs at 0x17da..0x1812, with no SIMD in the function. The sparse element-wise copy appears ONLY under `--assert type v6 char[31] --assert type v7 char[31]`, so this is a type-assertion / array-cover rendering defect. A builder should develop against that assertion pair, not against the store path. Hypothesis not yet refuted -- it was filed after T_REFUTE closed.
+- closed: acceptance a-7790b11de793 now PASSES at 2f6d6f48eaf0.
+- round 12 reconciliation: PR #554 (squash `2f6d6f48eaf0d8752e6d0d101f4c71f61d979fb3`) implemented default-on `splitstorekeep` for this need, but the authoritative index and front matter retained their pre-closure `open` snapshot.
+- current controls at `bf22331158be444ebfbabf937ce8141826490fa9`: the exact 31-byte acceptance passes with `splitstorekeep on`; adding `--option splitstorekeep off` restores the filed sparse copy pattern. This closure is limited to that acceptance and does not claim broader type-assertion behavior.
+- index reconciliation constraint: the authoritative index contains 197 active records and 1 rejected record. This closure preserves every non-target row and changes only the four reconciled rows plus `by_status`; no sparse reindex was run.
