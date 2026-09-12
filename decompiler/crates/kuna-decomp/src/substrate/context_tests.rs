@@ -4,7 +4,9 @@ use kuna_base::address::{Address, RangeList};
 use kuna_base::partmap::PartMap;
 use kuna_base::space::{spacetype, AddrSpace};
 
-use super::{GlobalEntry, GlobalQuery};
+use crate::dtype::{type_metatype, Datatype, DatatypeKind};
+
+use super::{GlobalEntry, GlobalQuery, IndirectSlotType};
 
 fn space(index: i32) -> Rc<AddrSpace> {
     Rc::new(AddrSpace::new(
@@ -54,6 +56,202 @@ fn entry(
 
 fn query(entries: Vec<GlobalEntry>) -> GlobalQuery {
     GlobalQuery::new(entries, RangeList::new(), PartMap::new(0))
+}
+
+fn typed_entry(
+    space: &Rc<AddrSpace>,
+    first: u64,
+    size: i32,
+    name: &str,
+    ty: Rc<Datatype>,
+    is_function: bool,
+) -> GlobalEntry {
+    let mut result = entry(space, first, size, 0, name, true, RangeList::new());
+    result.symbol_type = Some(ty);
+    result.is_function = is_function;
+    result
+}
+
+fn code_noproto() -> Rc<Datatype> {
+    let mut ty = Datatype::new(1, type_metatype::TYPE_CODE);
+    ty.kind = DatatypeKind::Code { proto: None };
+    Rc::new(ty)
+}
+
+fn code_proto(proto: Rc<crate::fspec::FuncProto>) -> Rc<Datatype> {
+    let mut ty = Datatype::new(1, type_metatype::TYPE_CODE);
+    ty.kind = DatatypeKind::Code { proto: Some(proto) };
+    Rc::new(ty)
+}
+
+fn ptr_to(ty: Rc<Datatype>) -> Rc<Datatype> {
+    let mut ptr = Datatype::new(8, type_metatype::TYPE_PTR);
+    ptr.kind = DatatypeKind::Pointer {
+        ptrto: ty,
+        spaceid: None,
+        truncate: None,
+        wordsize: 1,
+    };
+    Rc::new(ptr)
+}
+
+#[test]
+fn indirect_slot_accepts_only_an_exact_function_or_prototyped_function_pointer() {
+    let data = space(3);
+    let at = addr(&data, 0x100);
+    let usepoint = Address::new_invalid();
+
+    let function = query(vec![typed_entry(
+        &data,
+        0x100,
+        1,
+        "target",
+        code_noproto(),
+        true,
+    )]);
+    assert!(matches!(
+        function.indirect_slot_type(&at, 8, &usepoint),
+        Some(IndirectSlotType::FunctionCode)
+    ));
+    for malformed_width in [4, 16] {
+        assert!(matches!(
+            function.indirect_slot_type(&at, malformed_width, &usepoint),
+            Some(IndirectSlotType::Untyped)
+        ));
+    }
+
+    let non_pointer = query(vec![typed_entry(
+        &data,
+        0x100,
+        8,
+        "scalar",
+        Rc::new(Datatype::new(8, type_metatype::TYPE_INT)),
+        false,
+    )]);
+    assert!(matches!(
+        non_pointer.indirect_slot_type(&at, 8, &usepoint),
+        Some(IndirectSlotType::Untyped)
+    ));
+
+    let pointer_to_data = query(vec![typed_entry(
+        &data,
+        0x100,
+        8,
+        "data_ptr",
+        ptr_to(Rc::new(Datatype::new(4, type_metatype::TYPE_INT))),
+        false,
+    )]);
+    assert!(matches!(
+        pointer_to_data.indirect_slot_type(&at, 8, &usepoint),
+        Some(IndirectSlotType::Untyped)
+    ));
+
+    let unprototyped_code_pointer = query(vec![typed_entry(
+        &data,
+        0x100,
+        8,
+        "code_ptr",
+        ptr_to(code_noproto()),
+        false,
+    )]);
+    assert!(matches!(
+        unprototyped_code_pointer.indirect_slot_type(&at, 8, &usepoint),
+        Some(IndirectSlotType::Untyped)
+    ));
+
+    let proto = Rc::new(crate::fspec::FuncProto::new());
+    let function_pointer = query(vec![typed_entry(
+        &data,
+        0x100,
+        8,
+        "function_ptr",
+        ptr_to(code_proto(Rc::clone(&proto))),
+        false,
+    )]);
+    match function_pointer.indirect_slot_type(&at, 8, &usepoint) {
+        Some(IndirectSlotType::Prototype(resolved)) => assert!(
+            Rc::ptr_eq(&resolved, &proto),
+            "the exact FuncProto, including its model, must survive classification"
+        ),
+        other => panic!("function pointer was not classified as callable: {other:?}"),
+    }
+    assert!(matches!(
+        function_pointer.indirect_slot_type(&at, 4, &usepoint),
+        Some(IndirectSlotType::Untyped)
+    ));
+}
+
+#[test]
+fn explicit_data_at_slot_shadows_loader_function_metadata() {
+    let data = space(3);
+    let at = addr(&data, 0x100);
+    let query = query(vec![
+        typed_entry(&data, 0x100, 1, "target", code_noproto(), true),
+        typed_entry(
+            &data,
+            0x100,
+            8,
+            "operator_data",
+            Rc::new(Datatype::new(8, type_metatype::TYPE_INT)),
+            false,
+        ),
+    ]);
+
+    assert!(matches!(
+        query.indirect_slot_type(&at, 8, &Address::new_invalid()),
+        Some(IndirectSlotType::Untyped)
+    ));
+}
+
+#[test]
+fn usepoint_limited_data_shadows_only_where_it_is_active() {
+    let data = space(3);
+    let code = space(4);
+    let at = addr(&data, 0x100);
+    let mut limited = typed_entry(
+        &data,
+        0x100,
+        8,
+        "local_view",
+        Rc::new(Datatype::new(8, type_metatype::TYPE_INT)),
+        false,
+    );
+    limited.addrtied = false;
+    limited.uselimit.insert_range(Rc::clone(&code), 0x400, 0x4ff);
+    let query = query(vec![
+        typed_entry(&data, 0x100, 1, "target", code_noproto(), true),
+        limited,
+    ]);
+
+    assert!(matches!(
+        query.indirect_slot_type(&at, 8, &addr(&code, 0x440)),
+        Some(IndirectSlotType::Untyped)
+    ));
+    assert!(matches!(
+        query.indirect_slot_type(&at, 8, &addr(&code, 0x540)),
+        Some(IndirectSlotType::FunctionCode)
+    ));
+}
+
+#[test]
+fn indirect_slot_does_not_reinterpret_an_interior_aggregate_address() {
+    let data = space(3);
+    let query = query(vec![typed_entry(
+        &data,
+        0x100,
+        16,
+        "aggregate",
+        Rc::new(Datatype::new(16, type_metatype::TYPE_STRUCT)),
+        false,
+    )]);
+
+    assert!(matches!(
+        query.indirect_slot_type(&addr(&data, 0x108), 8, &Address::new_invalid()),
+        Some(IndirectSlotType::Untyped)
+    ));
+    assert!(query
+        .indirect_slot_type(&addr(&data, 0x200), 8, &Address::new_invalid())
+        .is_none());
 }
 
 fn linear_container_flags(

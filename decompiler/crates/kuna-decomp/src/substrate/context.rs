@@ -206,6 +206,24 @@ pub struct GlobalQuery {
     pub flagbase: kuna_base::partmap::PartMap<Address, uint4>,
 }
 
+/// Prototype evidence attached to an exact memory slot feeding a `CALLIND`.
+///
+/// A loader models an import pointer slot as a `FunctionSymbol` whose code type
+/// receives separately parked prototype pieces.  An explicit data declaration
+/// instead models the slot as a pointer to a prototype-bearing code type.  Keep
+/// the two cases distinct so a plain `code`, integer, or pointer-to-data symbol
+/// cannot borrow unrelated address-keyed function pieces.
+#[derive(Debug, Clone)]
+pub(crate) enum IndirectSlotType {
+    /// An exact function-symbol entry with a code type.  `ActionDefaultParams`
+    /// may consult the prototype pieces parked at this same address.
+    FunctionCode,
+    /// A pointer-to-code data symbol carrying its complete prototype.
+    Prototype(Rc<crate::fspec::FuncProto>),
+    /// An exact symbol exists, but its type does not prove a callable prototype.
+    Untyped,
+}
+
 #[derive(Debug, Clone)]
 struct GlobalSpaceIndex {
     space_index: int4,
@@ -416,6 +434,89 @@ impl GlobalQuery {
             _ => best,
         };
         selected.map(|entry_index| &self.entries[entry_index])
+    }
+
+    /// Classify an exact global slot read by a `CALLIND` target `LOAD`.
+    ///
+    /// The address is never adjusted: a containing aggregate or an interior
+    /// symbol piece is insufficient.  A later non-function symbol at the exact
+    /// address (the assertion/data-map ordering) shadows loader function
+    /// metadata even when its declared size is not the machine pointer width.
+    fn indirect_slot_type(
+        &self,
+        addr: &Address,
+        size: int4,
+        usepoint: &Address,
+    ) -> Option<IndirectSlotType> {
+        let space_index = addr.get_space()?.get_index();
+        let start = addr.get_offset();
+
+        let classify_data = |entry: &GlobalEntry| {
+            if entry.first != start || entry.symbol_offset != 0 || entry.size != size {
+                return IndirectSlotType::Untyped;
+            }
+            let Some(pointer) = entry.symbol_type.as_ref() else {
+                return IndirectSlotType::Untyped;
+            };
+            if pointer.get_metatype() != crate::dtype::type_metatype::TYPE_PTR {
+                return IndirectSlotType::Untyped;
+            }
+            let Some(code) = pointer.get_ptr_to() else {
+                return IndirectSlotType::Untyped;
+            };
+            if code.get_metatype() != crate::dtype::type_metatype::TYPE_CODE {
+                return IndirectSlotType::Untyped;
+            }
+            match code.get_code_prototype() {
+                Some(proto) => IndirectSlotType::Prototype(Rc::clone(proto)),
+                None => IndirectSlotType::Untyped,
+            }
+        };
+
+        if let Some(entry) = self.find_container_entry(addr, size, usepoint) {
+            if !entry.is_function {
+                return Some(classify_data(entry));
+            }
+            if entry.first != start || entry.symbol_offset != 0 {
+                return Some(IndirectSlotType::Untyped);
+            }
+        }
+
+        let entries = self.entries_for_space(space_index);
+        let active = |entry: &GlobalEntry| {
+            entry.addrtied
+                || (!usepoint.is_invalid() && entry.uselimit.in_range(usepoint, 1))
+        };
+        if let Some(entry) = entries
+            .iter()
+            .rev()
+            .find(|entry| entry.first == start && !entry.is_function && active(entry))
+        {
+            return Some(classify_data(entry));
+        }
+
+        // FunctionSymbols use the code type's one-byte storage convention even
+        // when they describe an import pointer slot.  Validate the LOAD itself
+        // against the address-space pointer width instead of comparing it with
+        // that synthetic symbol size.
+        if size != addr.get_space()?.get_addr_size() as int4 {
+            return Some(IndirectSlotType::Untyped);
+        }
+
+        let entry = entries.iter().find(|entry| {
+            entry.first == start
+                && entry.symbol_offset == 0
+                && entry.is_function
+                && active(entry)
+                && entry
+                    .symbol_type
+                    .as_ref()
+                    .is_some_and(|ty| ty.get_metatype() == crate::dtype::type_metatype::TYPE_CODE)
+        })?;
+        match entry.symbol_type.as_ref().and_then(|ty| ty.get_code_prototype()) {
+            Some(proto) => Some(IndirectSlotType::Prototype(Rc::clone(proto))),
+            None => Some(IndirectSlotType::FunctionCode),
+        }
     }
 
     /// Resolve the global Symbol covering a Varnode for the naming pass — the C++
@@ -1912,6 +2013,18 @@ impl ArchContext {
             }
         }
         None
+    }
+
+    /// Return the callable type attached to the exact global slot loaded as an
+    /// indirect-call target.  See [`GlobalQuery::indirect_slot_type`].
+    pub(crate) fn query_indirect_slot_type(
+        &self,
+        addr: &Address,
+        size: int4,
+        usepoint: &Address,
+    ) -> Option<IndirectSlotType> {
+        self.effective_global_query(addr)?
+            .indirect_slot_type(addr, size, usepoint)
     }
 
     /// C++ `Scope::queryFunction(addr)` (`database.cc:1292`) restricted to the
