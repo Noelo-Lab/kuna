@@ -463,15 +463,14 @@ fn selection_failure(out: &str) -> Option<String> {
 /// The architecture arm must stay ahead of the analysis-commit arm: a failed
 /// `load file` leaves no image, so every later command — `read symbols`
 /// included — answers `No load image present`, which is a consequence, not the
-/// reason. `unmapped_is_external` is false for raw images because their seeds
-/// are known to be mapped; a short or undecodable raw image can produce the
-/// same loader diagnostic while failing to decode a real entry.
+/// reason. `allow_external` is false for raw images because their entries must
+/// have mapped bytes.
 fn check_errors(
     out: &str,
     target: &str,
     binary: &str,
     by_address: bool,
-    unmapped_is_external: bool,
+    allow_external: bool,
 ) -> Option<String> {
     if out.contains("Could not discover root of Ghidra installation") {
         return Some(
@@ -508,11 +507,10 @@ fn check_errors(
     // An ambiguous or unmapped selector is answered by the selector model, whose
     // report names every candidate. Return it verbatim: the transcript dump the
     // caller falls back to is capped at its FIRST 2000 characters, which in the
-    // default mode is all option chatter, so the answer would be cut off. The
-    // For object inputs, the unmapped-entry probe stays ahead of it — an
-    // external is not a bad selector. Raw entries were range-validated at load,
-    // so the same text is a decode failure and must remain an error.
-    if !(unmapped_is_external && is_unmapped_entry(out)) {
+    // default mode is all option chatter, so the answer would be cut off.
+    // A proven undefined external is not a bad selector. Other entries with
+    // missing bytes remain selection failures.
+    if !(allow_external && is_undefined_external_entry(out)) {
         if let Some(reason) = selection_failure(out) {
             return Some(reason);
         }
@@ -532,17 +530,10 @@ fn is_unknown_function(out: &str) -> bool {
         || out.contains("Bad namespace:")
 }
 
-/// Whether the console transcript says the selected entry has no mapped bytes
-/// (`LoadImage::load_fill`'s "Unable to load N bytes at <addr>", raised the
-/// moment the flow-follower asks for the first instruction).
-///
-/// For an object-backed input, that is the signature of an **external**: an
-/// entry that carries an address for call naming but whose definition is in
-/// another module. A raw image can emit the same diagnostic when a mapped entry
-/// reaches EOF or undecodable trailing bytes, so callers must not apply this
-/// shortcut to raw inputs.
-fn is_unmapped_entry(out: &str) -> bool {
-    out.contains("Unable to load ") && out.contains(" bytes at ")
+/// The console identifies undefined externals from the selected entry's
+/// provenance. Missing bytes alone do not identify an external.
+fn is_undefined_external_entry(out: &str) -> bool {
+    selection_failure(out).as_deref() == Some("Selected entry is an undefined external symbol")
 }
 
 /// The console's per-function abort notice: `IfcDecompile` catches a
@@ -1046,8 +1037,9 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
             // like a decompiler defect. The whole-binary surfaces answer the same
             // way through `kuna_console::project::decompile_targets`, which asks
             // the engine directly (`ConsoleProgram::entry_bytes_mapped`); this
-            // path drives `decomp_dbg` as a subprocess and so reads its report.
-            if !args.raw_image && is_unmapped_entry(&combined) {
+            // path drives `decomp_dbg` as a subprocess and so reads its
+            // provenance-specific report.
+            if !args.raw_image && is_undefined_external_entry(&combined) {
                 return Ok(DecompileOutcome {
                     c: format!(
                         "// {}: external symbol -- no code at this address in this module",

@@ -328,7 +328,14 @@ Four front-ends drive one engine assembly:
   so that calls to it render by name — answers with the entry's nature rather
   than with the lifter's byte-load failure: the shared decompile step probes
   `decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::entry_bytes_mapped)`
-  first and emits a one-line external-symbol body. A PE IAT slot is different:
+  first and emits a one-line external-symbol body. The console performs the same
+  check before following flow and reports
+  `Selected entry is an undefined external symbol` only for entries with
+  `UndefinedExternal` provenance. The text CLI recognizes only that diagnostic
+  as an external. A named XML symbol outside its byte chunks still fails with
+  `Selected entry has no mapped bytes`; a later byte-load error while decoding
+  a mapped entry also remains a failure, as it does in JSON output. A PE IAT slot
+  is different:
   its pointer bytes are mapped, so body selection consults the loader's import
   ranges and returns a non-success diagnostic naming the import and slot before
   flow following starts. The mapped-byte probe remains a one-byte read
