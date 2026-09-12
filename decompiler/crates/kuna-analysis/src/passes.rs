@@ -571,6 +571,11 @@ fn dispatch_if_enabled<T>(enabled: bool, run: impl FnOnce() -> T) -> Option<T> {
 /// the walk is rooted only in what [`listing_seeds`] can recompute from the object,
 /// so every standalone entry oracle's finding is invisible to the recursive
 /// descent.
+///
+/// `plan` is the walk's thread plan (`kuna --jobs N`, see
+/// [`crate::listing::kuna_pdecode`]). It is built once, by the caller, and reused
+/// across every rebuild below, so the callback generations and the ARM re-seeds
+/// pay for the engine recipe, the image share and the context snapshot once.
 pub fn run_listing_consumers(
     bytes: &[u8],
     image: &ObjectLoadImage,
@@ -579,6 +584,7 @@ pub fn run_listing_consumers(
     noreturn_seeds: &[u64],
     callfixup_seeds: &[u64],
     committed_entries: &[u64],
+    plan: &crate::listing::WalkPlan,
 ) -> Vec<(&'static str, AnalysisOutput)> {
     let Ok(file) = crate::loadimage_object::parse_object(bytes) else {
         return Vec::new();
@@ -652,7 +658,7 @@ pub fn run_listing_consumers(
         assembly: arch.analysis_listing,
         refs: arch.analysis_listing,
     };
-    let mut listing = crate::listing::Listing::build_with_meta(
+    let mut listing = crate::listing::Listing::build_with_meta_planned(
         &file,
         image,
         arch,
@@ -661,6 +667,7 @@ pub fn run_listing_consumers(
         &funcsym_seeds,
         &seed_names,
         detail,
+        plan,
     );
     if arch.analysis_fast_funcdisc
         && matches!(file.architecture(), object::Architecture::I386 | object::Architecture::X86_64)
@@ -705,7 +712,7 @@ pub fn run_listing_consumers(
                 break;
             }
             callback_roots += added;
-            listing = crate::listing::Listing::build_with_meta(
+            listing = crate::listing::Listing::build_with_meta_planned(
                 &file,
                 image,
                 arch,
@@ -714,6 +721,7 @@ pub fn run_listing_consumers(
                 &funcsym_seeds,
                 &seed_names,
                 detail,
+                plan,
             );
         }
     }
@@ -746,7 +754,7 @@ pub fn run_listing_consumers(
                 seeds.dedup();
                 // Only re-walk when the scan genuinely added new seeds.
                 if seeds.len() != before {
-                    listing = crate::listing::Listing::build_with_meta(
+                    listing = crate::listing::Listing::build_with_meta_planned(
                         &file,
                         image,
                         arch,
@@ -755,6 +763,7 @@ pub fn run_listing_consumers(
                         &funcsym_seeds,
                         &seed_names,
                         detail,
+                        plan,
                     );
                 }
             }
@@ -791,7 +800,7 @@ pub fn run_listing_consumers(
                 seeds.sort_unstable();
                 seeds.dedup();
                 if seeds.len() != before {
-                    listing = crate::listing::Listing::build_with_meta(
+                    listing = crate::listing::Listing::build_with_meta_planned(
                         &file,
                         image,
                         arch,
@@ -800,6 +809,7 @@ pub fn run_listing_consumers(
                         &funcsym_seeds,
                         &seed_names,
                         detail,
+                        plan,
                     );
                 }
             }

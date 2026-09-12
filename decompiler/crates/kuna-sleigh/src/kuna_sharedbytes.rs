@@ -10,7 +10,7 @@
 //! another thread must build its `Address`es in, and check them against, its own
 //! engine's space.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -93,6 +93,17 @@ pub fn windowed_load_fill(
     Ok(())
 }
 
+/// (kuna) A reader's "a fetch started on an unmapped byte" flag.
+///
+/// [`ImageBytes::fill_span`] reports failure only when the very FIRST byte of a
+/// span is unmapped, and that is the one case in which the staging window in
+/// front of the bytes can change an answer: a window that happens to cover the
+/// address serves zeroes where a fresh fill reports an error. A reader that has
+/// checked [`ImageBytes::mapped_covers`] over everything it will visit can never
+/// reach it, so a set flag means the check was wrong and whatever the reader
+/// produced must be thrown away.
+pub type UnmappedTripwire = Rc<Cell<bool>>;
+
 /// \brief (kuna) A [`LoadImage`] over bytes another image owns.
 ///
 /// Everything that cannot be shared is its own: the staging window and the
@@ -112,6 +123,8 @@ pub struct SharedBytesImage {
     bufoffset: RefCell<u64>,
     /// Name of the loadimage (the `LoadImage` base-class `filename` member).
     filename: String,
+    /// Set the first time a fill starts on an unmapped byte.
+    unmapped: UnmappedTripwire,
 }
 
 impl SharedBytesImage {
@@ -123,7 +136,14 @@ impl SharedBytesImage {
             buffer: RefCell::new(vec![0u8; IMAGE_WINDOW_BYTES]),
             bufoffset: RefCell::new(!0u64),
             filename: filename.to_string(),
+            unmapped: Rc::new(Cell::new(false)),
         }
+    }
+
+    /// A handle on this reader's [`UnmappedTripwire`], readable after the image
+    /// has been moved into an engine.
+    pub fn tripwire(&self) -> UnmappedTripwire {
+        Rc::clone(&self.unmapped)
     }
 
     /// Attach to the space whose addresses these bytes answer (C++
@@ -151,7 +171,11 @@ impl LoadImage for SharedBytesImage {
                 )));
             }
         }
-        windowed_load_fill(&*self.bytes, &self.buffer, &self.bufoffset, ptr, addr)
+        let filled = windowed_load_fill(&*self.bytes, &self.buffer, &self.bufoffset, ptr, addr);
+        if filled.is_err() {
+            self.unmapped.set(true);
+        }
+        filled
     }
 
     fn get_arch_type(&self) -> Vec<u8> {

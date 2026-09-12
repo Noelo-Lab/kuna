@@ -109,8 +109,15 @@ pub(super) struct RefBuckets {
 }
 
 impl RefBuckets {
-    fn new(want: bool) -> RefBuckets {
+    pub(super) fn new(want: bool) -> RefBuckets {
         RefBuckets { want, to: BTreeMap::new(), from: BTreeMap::new() }
+    }
+
+    /// The two maps, for a caller that assembles them itself.
+    pub(super) fn into_parts(
+        self,
+    ) -> (BTreeMap<u64, Vec<Reference>>, BTreeMap<u64, Vec<Reference>>) {
+        (self.to, self.from)
     }
 }
 
@@ -145,6 +152,13 @@ pub(super) struct CallbackEvidence {
     refs: BTreeMap<u64, u64>,
     /// Stable sampling rank for each retained target.
     ranks: BTreeSet<(u64, u64)>,
+}
+
+impl CallbackEvidence {
+    /// The retained `(target, lowest source)` map.
+    pub(super) fn into_refs(self) -> BTreeMap<u64, u64> {
+        self.refs
+    }
 }
 
 impl CallbackSink for CallbackEvidence {
@@ -397,6 +411,7 @@ pub(super) fn walk(
     local_entries: &BTreeMap<u64, u64>,
     detail: ListingDetail,
     want_stack_callbacks: bool,
+    plan: &super::kuna_pdecode::WalkPlan,
 ) -> WalkState {
     // Paint the decode-mode context (ARM TMode / MIPS ISA_MODE) into the engine's
     // ContextDatabase BEFORE we decode a single instruction — the timing the
@@ -404,19 +419,53 @@ pub(super) fn walk(
     // `set_variable` fills each mode from its marker up to the next change point,
     // so painting once here covers every address the walk visits. A no-op when
     // `painter` is empty (x86-64 / any language with no decode-mode context).
+    // It must stay FIRST: a decode lane's context values are copied from this
+    // database, and the parallel gate refuses a painted one outright.
     if !painter.is_empty() {
         painter.paint_all(arch, code_space);
     }
 
-    let ctx = StepCtx {
-        translate,
-        code_space,
-        exec_ranges,
-        local_entries,
-        policy: WalkPolicy::from_arch(arch, want_stack_callbacks),
-        detail,
-    };
+    let policy = WalkPolicy::from_arch(arch, want_stack_callbacks);
+    let ctx = StepCtx { translate, code_space, exec_ranges, local_entries, policy, detail };
 
+    if plan.lanes() > 1 {
+        let inputs = super::kuna_pdecode::ParallelInputs {
+            arch,
+            translate,
+            code_space,
+            exec_ranges,
+            seeds,
+            seed_funcs,
+            painter,
+            local_entries,
+            policy,
+            detail,
+        };
+        if let Some(parallel) = super::kuna_pdecode::try_parallel(plan, &inputs) {
+            let Some(abort) = super::kuna_pdecode::selfcheck() else {
+                return parallel;
+            };
+            let serial = walk_serial(&ctx, seeds, seed_funcs, detail);
+            let differences = super::kuna_pdecode::compare(&parallel, &serial);
+            assert!(
+                differences == 0 || !abort,
+                "KUNA_DECODE_SELFCHECK=abort: {differences} differences against the serial walk"
+            );
+            return serial;
+        }
+    }
+
+    walk_serial(&ctx, seeds, seed_funcs, detail)
+}
+
+/// The serial walk: the two-level worklist over [`step`], and the only walk that
+/// runs where the parallel gate refuses.
+fn walk_serial(
+    ctx: &StepCtx<'_>,
+    seeds: &[u64],
+    seed_funcs: &BTreeMap<u64, DiscoveredFunction>,
+    detail: ListingDetail,
+) -> WalkState {
     let mut insns: BTreeMap<u64, Insn> = BTreeMap::new();
     let mut funcs: BTreeMap<u64, DiscoveredFunction> = BTreeMap::new();
     let mut refs = RefBuckets::new(detail.refs);
@@ -441,7 +490,7 @@ pub(super) fn walk(
         // Per-function instruction worklist.
         let mut work = Worklists { insns: vec![entry], funcs: &mut func_worklist };
         while let Some(vma) = work.insns.pop() {
-            step(&ctx, vma, &mut insns, &mut funcs, &mut refs, &mut callbacks, &mut work);
+            step(ctx, vma, &mut insns, &mut funcs, &mut refs, &mut callbacks, &mut work);
         }
     }
 
@@ -455,7 +504,7 @@ pub(super) fn walk(
 }
 
 /// A generic discovered (not symbol-seeded) function record at `entry`.
-fn discovered(entry: u64) -> DiscoveredFunction {
+pub(super) fn discovered(entry: u64) -> DiscoveredFunction {
     DiscoveredFunction {
         entry,
         name: None,
