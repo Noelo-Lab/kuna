@@ -5,8 +5,8 @@
   "rejected_count": 1,
   "by_status": {
     "blocked": 1,
-    "closed": 141,
-    "open": 55
+    "closed": 142,
+    "open": 54
   },
   "by_track": {
     "loader": 10,
@@ -2241,7 +2241,7 @@
       "need_id": "bytecode-reader-return-discarded",
       "title": "Bytecode-reader return is discarded despite immediate use of RAX and RDX",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
       "probe_id": "p-352a35192231",
       "acceptance_id": "a-675031196902",
@@ -2256,15 +2256,15 @@
       ],
       "first_seen_round": 8,
       "attempts": 0,
-      "covered_by_option": null,
+      "covered_by_option": "callretpair",
       "touches": [
         "decompiler/crates/kuna-decomp"
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": "https://github.com/Noelo-Lab/kuna/pull/565",
+      "closed_in_round": 12,
+      "closing_pr": "565",
       "reject_reason": null,
       "score": 13.862944,
       "path": "docs/re-needs/bytecode-reader-return-discarded.md"
