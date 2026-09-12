@@ -204,20 +204,39 @@ fn noreturn_error_fixture() -> String {
         .to_string()
 }
 
+/// The decode-lane knobs (`kuna_pdecode`). Cleared from every child here so a
+/// suite run under `KUNA_DECODE_JOBS=8 KUNA_DECODE_MIN_BYTES=0` -- which is how
+/// DIV-169 says to exercise the gates -- cannot move a baseline these tests take
+/// for granted; each test then sets only what it means to.
+const DECODE_ENV: [&str; 6] = [
+    "KUNA_DECODE_JOBS",
+    "KUNA_DECODE_MIN_BYTES",
+    "KUNA_DECODE_INTERVALS",
+    "KUNA_DECODE_SELFCHECK",
+    "KUNA_DECODE_STATS",
+    "KUNA_DECODE_FAULT",
+];
+
+/// A `kuna` invocation with this suite's environment hygiene, plus `env`.
+fn kuna_command(env: &[(&str, &str)]) -> Command {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_kuna"));
+    cmd.env_remove("KUNA_DECOMP_DBG").env_remove("KUNA_DECOMP_TEST").env_remove("KUNA_SLACOMP");
+    // A lane fault reports itself in one line; `RUST_BACKTRACE` deliberately
+    // turns the runtime's panic block back on, so it must not reach a child
+    // whose whole assertion is that the block is absent.
+    cmd.env_remove("RUST_BACKTRACE");
+    for name in DECODE_ENV {
+        cmd.env_remove(name);
+    }
+    for (name, value) in env {
+        cmd.env(name, value);
+    }
+    cmd
+}
+
 /// Run the built `kuna` binary, returning `(stdout, stderr, success)`.
 fn run_kuna(args: &[&str]) -> (String, String, bool) {
-    let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
-        .env_remove("KUNA_DECOMP_DBG")
-        .env_remove("KUNA_DECOMP_TEST")
-        .env_remove("KUNA_SLACOMP")
-        .args(args)
-        .output()
-        .expect("failed to spawn the kuna binary");
-    (
-        String::from_utf8_lossy(&out.stdout).into_owned(),
-        String::from_utf8_lossy(&out.stderr).into_owned(),
-        out.status.success(),
-    )
+    run_kuna_env(args, &[])
 }
 
 /// Run the built `kuna` binary with a hard outer wall-clock `cap`, returning
@@ -225,11 +244,19 @@ fn run_kuna(args: &[&str]) -> (String, String, bool) {
 /// be killed.  The outer cap is the regression guard for the watchdog itself:
 /// without `--max-fn-seconds` the hang-repro invocation would spin forever.
 fn run_kuna_with_timeout(args: &[&str], cap: Duration) -> Option<(String, String, bool)> {
+    run_kuna_env_with_timeout(args, &[], cap)
+}
+
+/// [`run_kuna_with_timeout`] with extra environment. Every fault-injecting
+/// invocation goes through this: the failure the fallback exists to prevent is a
+/// deadlock, and a wedged test binary reports nothing at all.
+fn run_kuna_env_with_timeout(
+    args: &[&str],
+    env: &[(&str, &str)],
+    cap: Duration,
+) -> Option<(String, String, bool)> {
     use std::io::Read;
-    let mut child = Command::new(env!("CARGO_BIN_EXE_kuna"))
-        .env_remove("KUNA_DECOMP_DBG")
-        .env_remove("KUNA_DECOMP_TEST")
-        .env_remove("KUNA_SLACOMP")
+    let mut child = kuna_command(env)
         .args(args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -2493,4 +2520,350 @@ fn killing_the_parent_takes_the_workers_and_the_scratch_dir_with_it() {
         );
         std::thread::sleep(Duration::from_millis(200));
     }
+}
+
+// --- `--jobs N`: the decode lanes --------------------------------------------
+
+/// Run `kuna` with extra environment, for the decode-lane knobs.
+fn run_kuna_env(args: &[&str], env: &[(&str, &str)]) -> (String, String, bool) {
+    let out = kuna_command(env).args(args).output().expect("failed to spawn the kuna binary");
+    (
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+        out.status.success(),
+    )
+}
+
+/// Everything the walk says about itself -- the plan line, the stats line, the
+/// self-check -- removed, so the rest of stderr can be compared byte for byte
+/// against a serial run's.
+fn without_the_plan_line(stderr: &str) -> String {
+    stderr
+        .lines()
+        .filter(|l| !l.starts_with("[kuna --jobs]"))
+        .map(|l| format!("{l}\n"))
+        .collect()
+}
+
+/// The plan line is printed BEFORE the walk and is not withdrawn when the lanes
+/// fall back, so on its own it proves only that the flag was parsed. What proves
+/// the document came off the lanes is the absence of a fallback line plus the
+/// stats line, which only a completed parallel walk reaches.
+fn assert_lanes_produced_it(stderr: &str, what: &str) {
+    assert!(
+        !stderr.contains("[kuna --jobs] decode: serial ("),
+        "{what} fell back to the serial walk, so the comparison above is vacuous:\n{stderr}"
+    );
+    let stats = stderr
+        .lines()
+        .find(|l| l.starts_with("[kuna --jobs] decode stats:"))
+        .unwrap_or_else(|| panic!("{what} printed no stats line:\n{stderr}"));
+    assert!(stats.contains(" rounds="), "{what}: no round count in `{stats}`");
+    let decodes: usize = stats
+        .split_whitespace()
+        .find_map(|f| f.strip_prefix("decodes="))
+        .and_then(|n| n.parse().ok())
+        .unwrap_or_else(|| panic!("{what}: no decode count in `{stats}`"));
+    assert!(decodes > 0, "{what}: the lanes decoded nothing -- `{stats}`");
+}
+
+/// The decode lanes' whole contract: the inventory must not depend on how many
+/// threads decoded it.  The size floor is lowered so the lanes really run on an
+/// in-repo fixture -- without it every assertion here would be a serial run
+/// agreeing with a serial run -- and the plan line is asserted, so a silent
+/// refusal cannot read as a pass.
+#[test]
+fn jobs_decode_lanes_are_byte_identical_to_serial() {
+    let bin = fauxware();
+    let sp = specs();
+    let lanes_on = [("KUNA_DECODE_MIN_BYTES", "0"), ("KUNA_DECODE_STATS", "1")];
+    let (want, want_err, ok) = run_kuna(&["functions", &bin, "--json", "--sleighpath", &sp]);
+    if !ok {
+        if is_specs_skip(&want_err) {
+            eprintln!("jobs decode: skipping (no `.sla`; run `make specs`): {want_err}");
+            return;
+        }
+        panic!("kuna functions failed: {want_err}");
+    }
+    assert!(want.contains("\"name\""), "the serial run enumerated nothing:\n{want}");
+    assert!(
+        !want_err.contains("[kuna --jobs]"),
+        "`--jobs` absent must print no plan line at all:\n{want_err}"
+    );
+
+    for jobs in ["1", "2", "3", "4", "8", "auto"] {
+        let args = ["functions", &bin, "--json", "--sleighpath", &sp, "--jobs", jobs];
+        let (got, stderr, ok) = run_kuna_env(&args, &lanes_on);
+        assert!(ok, "kuna functions --jobs {jobs} failed: {stderr}");
+        assert_eq!(got, want, "--jobs {jobs} moved the inventory");
+        assert_eq!(
+            without_the_plan_line(&stderr),
+            without_the_plan_line(&want_err),
+            "--jobs {jobs} moved stderr beyond its own plan line"
+        );
+        if jobs == "1" {
+            assert!(
+                !stderr.contains("[kuna --jobs]"),
+                "`--jobs 1` is the serial path and says nothing:\n{stderr}"
+            );
+        } else {
+            assert!(
+                stderr.contains("[kuna --jobs] decode:") && stderr.contains(" lanes, "),
+                "--jobs {jobs} never reached the lanes:\n{stderr}"
+            );
+            assert_lanes_produced_it(&stderr, &format!("--jobs {jobs}"));
+        }
+    }
+
+    // The floor itself: without the override the same flag declines, and still
+    // produces the same document.
+    let (got, stderr, ok) =
+        run_kuna(&["functions", &bin, "--json", "--sleighpath", &sp, "--jobs", "8"]);
+    assert!(ok, "kuna functions --jobs 8 failed: {stderr}");
+    assert_eq!(got, want, "the refused path moved the inventory");
+    assert!(
+        stderr.contains("[kuna --jobs] decode: serial (executable image too small)"),
+        "a fixture under the size floor must say why it declined:\n{stderr}"
+    );
+}
+
+/// A language whose constructors carry `globalset` must decline: a decode there
+/// writes the shared context database at another address.  Byte-identity on ARM
+/// rests entirely on this, so the decline is asserted, not assumed.
+#[test]
+fn jobs_decode_lanes_decline_on_a_context_committing_language() {
+    let bin = arm_thumb();
+    let sp = specs();
+    let args = ["functions", &bin, "--json", "--sleighpath", &sp];
+    let (want, stderr, ok) = run_kuna(&args);
+    if !ok {
+        if is_specs_skip(&stderr) {
+            eprintln!("jobs decode arm: skipping (no `.sla`; run `make specs`)");
+            return;
+        }
+        panic!("kuna functions failed: {stderr}");
+    }
+    let mut with_jobs = args.to_vec();
+    with_jobs.extend_from_slice(&["--jobs", "8"]);
+    let (got, stderr, ok) = run_kuna_env(&with_jobs, &[("KUNA_DECODE_MIN_BYTES", "0")]);
+    assert!(ok, "kuna functions --jobs 8 failed on ARM: {stderr}");
+    assert_eq!(got, want, "the ARM decline moved the inventory");
+    assert!(
+        stderr.contains("[kuna --jobs] decode: serial (language commits context)"),
+        "ARM must decline with the language reason:\n{stderr}"
+    );
+}
+
+/// How long a fault-injected run may take before it is a deadlock rather than a
+/// slow fixture. fauxware walks in well under a second either way.
+const FAULT_CAP: Duration = Duration::from_secs(180);
+
+/// A lane that dies must cost speed, not correctness: the fallback re-walks
+/// serially and says so.
+#[test]
+fn a_dead_lane_falls_back_to_the_serial_walk() {
+    let bin = fauxware();
+    let sp = specs();
+    let args = ["functions", &bin, "--json", "--sleighpath", &sp];
+    let (want, stderr, ok) = run_kuna(&args);
+    if !ok {
+        if is_specs_skip(&stderr) {
+            eprintln!("jobs decode fault: skipping (no `.sla`; run `make specs`)");
+            return;
+        }
+        panic!("kuna functions failed: {stderr}");
+    }
+    let mut with_jobs = args.to_vec();
+    with_jobs.extend_from_slice(&["--jobs", "4"]);
+    for lane in ["0", "2"] {
+        let (got, stderr, ok) = run_kuna_env_with_timeout(
+            &with_jobs,
+            &[("KUNA_DECODE_MIN_BYTES", "0"), ("KUNA_DECODE_FAULT", lane)],
+            FAULT_CAP,
+        )
+        .unwrap_or_else(|| panic!("lane {lane}'s fault deadlocked the run"));
+        assert!(ok, "a lane panic must not fail the run (lane {lane}): {stderr}");
+        assert_eq!(got, want, "the serial fallback moved the inventory (lane {lane})");
+        assert!(
+            stderr.contains("[kuna --jobs] decode: serial (lane fault)"),
+            "lane {lane}'s panic must be reported as a fallback:\n{stderr}"
+        );
+        assert!(
+            !stderr.contains("panicked at"),
+            "the fallback is the report; the runtime's panic block must not reach the user:\n\
+             {stderr}"
+        );
+    }
+}
+
+/// `decompile-all --jobs N` sizes both the decode lanes (in the parent's load)
+/// and the worker pool (afterwards).  The document must survive both.
+#[test]
+fn jobs_decode_lanes_agree_with_serial_on_decompile_all() {
+    let bin = fauxware();
+    let sp = specs();
+    let base =
+        ["decompile-all", bin.as_str(), "--json", "--max-fn-seconds", "0", "--sleighpath", &sp];
+    let (want, stderr, ok) = run_kuna(&base);
+    if !ok {
+        if is_specs_skip(&stderr) {
+            eprintln!("jobs decode all: skipping (no `.sla`; run `make specs`)");
+            return;
+        }
+        panic!("kuna decompile-all failed: {stderr}");
+    }
+    let mut args = base.to_vec();
+    args.extend_from_slice(&["--jobs", "4"]);
+    let (got, stderr, ok) =
+        run_kuna_env(&args, &[("KUNA_DECODE_MIN_BYTES", "0"), ("KUNA_DECODE_STATS", "1")]);
+    assert!(ok, "kuna decompile-all --jobs 4 failed: {stderr}");
+    assert_eq!(got, want, "--jobs 4 moved the document");
+    assert!(
+        stderr.contains("[kuna --jobs] decode:") && stderr.contains(" lanes, "),
+        "the parent's load must have run on lanes:\n{stderr}"
+    );
+    assert_lanes_produced_it(&stderr, "decompile-all --jobs 4");
+}
+
+
+/// A spawn the OS refuses is the one lane failure that cannot report itself: the
+/// lanes already parked at the first barrier are joined by `thread::scope`
+/// BEFORE the panic resumes, so an unguarded spawn hangs the process forever.
+/// It must instead be a refusal like any other.
+#[test]
+fn a_refused_lane_spawn_falls_back_to_the_serial_walk() {
+    let bin = fauxware();
+    let sp = specs();
+    let args = ["functions", &bin, "--json", "--sleighpath", &sp];
+    let (want, stderr, ok) = run_kuna(&args);
+    if !ok {
+        if is_specs_skip(&stderr) {
+            eprintln!("jobs decode spawn: skipping (no `.sla`; run `make specs`)");
+            return;
+        }
+        panic!("kuna functions failed: {stderr}");
+    }
+    let mut with_jobs = args.to_vec();
+    with_jobs.extend_from_slice(&["--jobs", "4"]);
+    // Lane 1 is the first spawn (lane 0 is the calling thread), lane 3 the last:
+    // the refusal has to release however many lanes are already at the barrier.
+    for lane in ["1", "3"] {
+        let (got, stderr, ok) = run_kuna_env_with_timeout(
+            &with_jobs,
+            &[("KUNA_DECODE_MIN_BYTES", "0"), ("KUNA_DECODE_FAULT", &format!("spawn:{lane}"))],
+            FAULT_CAP,
+        )
+        .unwrap_or_else(|| panic!("a refused spawn at lane {lane} deadlocked the run"));
+        assert!(ok, "a refused spawn must not fail the run (lane {lane}): {stderr}");
+        assert_eq!(got, want, "the serial fallback moved the inventory (lane {lane})");
+        assert!(
+            stderr.contains("[kuna --jobs] decode: 4 lanes, "),
+            "the plan was announced before the spawn failed:\n{stderr}"
+        );
+        assert!(
+            stderr.contains("[kuna --jobs] decode: serial (thread spawn failed)"),
+            "a refused spawn at lane {lane} must be reported as a fallback:\n{stderr}"
+        );
+    }
+}
+
+/// `--raw-image` and `--assert` are worker-POOL policy: `kuna functions` never
+/// spawns one, so `--jobs` there is only the decode lanes and neither
+/// combination may be refused. A raw image has no whole-binary discovery walk at
+/// all -- its entry seeds are the load -- so `--jobs` is simply inert.
+#[test]
+fn functions_takes_jobs_with_a_raw_image() {
+    let bin = fauxware();
+    let sp = specs();
+    let args = [
+        "functions",
+        &bin,
+        "--json",
+        "--sleighpath",
+        &sp,
+        "--raw-image",
+        "--target",
+        "x86:LE:64:default",
+        "--base",
+        "0x400000",
+        "--entry",
+        "0x400580",
+        "--jobs",
+        "4",
+    ];
+    let (got, stderr, ok) = run_kuna_env(&args, &[("KUNA_DECODE_MIN_BYTES", "0")]);
+    if !ok && is_specs_skip(&stderr) {
+        eprintln!("jobs decode raw: skipping (no `.sla`; run `make specs`)");
+        return;
+    }
+    assert!(ok, "functions --raw-image --jobs 4 must not be refused: {stderr}");
+    assert!(got.contains("\"functions\""), "the raw image enumerated nothing:\n{got}");
+    assert!(
+        !stderr.contains("does not apply to --raw-image"),
+        "the pool's raw-image refusal must not fire on a surface with no pool:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("[kuna --jobs] decode: serial (raw image runs no discovery walk)"),
+        "a raw image runs no discovery walk, and must say so rather than accept the flag \
+         and do nothing:\n{stderr}"
+    );
+
+    // The pool surface keeps the refusal: there a raw image really is a policy
+    // the workers cannot carry.
+    let (_, stderr, ok) = run_kuna(&[
+        "decompile-all",
+        &bin,
+        "--json",
+        "--sleighpath",
+        &sp,
+        "--raw-image",
+        "--target",
+        "x86:LE:64:default",
+        "--base",
+        "0x400000",
+        "--entry",
+        "0x400580",
+        "--jobs",
+        "4",
+    ]);
+    assert!(!ok && stderr.contains("does not apply to --raw-image"), "{stderr}");
+}
+
+/// `--assert bytes` patches the loader's own segment bytes before the plan takes
+/// its share of them, so the lanes read the overlay through the very `Arc` the
+/// parent patched -- which is what the shared-bytes gate exists to guarantee.
+/// The answer must match a serial run of the same overlaid load, and differ from
+/// the unpatched one.
+#[test]
+fn functions_takes_jobs_with_an_assert_overlay() {
+    let bin = fauxware();
+    let sp = specs();
+    // `main`'s `CALL authenticate` at 0x4007ae, re-pointed into the middle of
+    // `authenticate` -- so `authenticate` loses its only caller and the
+    // orientation document's `no callers` count moves.
+    let overlay = "bytes 0x4007af bdfeffff";
+    let args =
+        ["functions", &bin, "--summary", "--sleighpath", &sp, "--assert", overlay, "--jobs", "4"];
+    let (got, stderr, ok) =
+        run_kuna_env(&args, &[("KUNA_DECODE_MIN_BYTES", "0"), ("KUNA_DECODE_STATS", "1")]);
+    if !ok && is_specs_skip(&stderr) {
+        eprintln!("jobs decode assert: skipping (no `.sla`; run `make specs`)");
+        return;
+    }
+    assert!(ok, "functions --assert --jobs 4 must not be refused: {stderr}");
+    assert!(
+        stderr.contains("[kuna --jobs] decode: 4 lanes, "),
+        "the overlaid load must still reach the lanes:\n{stderr}"
+    );
+    assert_lanes_produced_it(&stderr, "functions --assert --jobs 4");
+
+    let serial = ["functions", &bin, "--summary", "--sleighpath", &sp, "--assert", overlay];
+    let (want, want_err, ok) = run_kuna(&serial);
+    assert!(ok, "the serial overlaid run failed: {want_err}");
+    assert_eq!(got, want, "--jobs 4 moved the overlaid answer");
+
+    // ...and the overlay really did something, or the equality above is empty.
+    let (plain, _, ok) = run_kuna(&["functions", &bin, "--summary", "--sleighpath", &sp]);
+    assert!(ok, "the unpatched serial run failed");
+    assert_ne!(got, plain, "the `{overlay}` overlay changed nothing, so it pins nothing");
 }

@@ -33,6 +33,7 @@ pub mod context;
 pub mod decode;
 pub mod kuna_callbackentry;
 pub mod kuna_entrythumbflow;
+pub mod kuna_pdecode;
 pub mod kuna_tailcallentry;
 mod kuna_picbase;
 mod kuna_picpool;
@@ -45,6 +46,8 @@ pub mod walk;
 // (kuna) The read-only cross-reference query behind `kuna xrefs` -- a consumer of
 // the same decode this tier performs, not a pass; nothing commits its output.
 pub mod xrefs;
+
+pub use kuna_pdecode::WalkPlan;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Bound;
@@ -186,6 +189,42 @@ impl Listing {
         seed_names: &[(u64, String)],
         detail: ListingDetail,
     ) -> Listing {
+        Self::build_with_meta_planned(
+            file,
+            _image,
+            arch,
+            translate,
+            seeds,
+            funcsym_seeds,
+            seed_names,
+            detail,
+            &WalkPlan::serial(),
+        )
+    }
+
+    /// [`Listing::build_with_meta`] with the walk's thread plan.
+    ///
+    /// `plan` decides whether the recursive descent runs on one thread or on N
+    /// decode lanes (`kuna --jobs N`, see [`kuna_pdecode`]); the lanes produce
+    /// the same Listing, so every caller that has no opinion keeps the serial
+    /// signature above.
+    #[allow(clippy::too_many_arguments)]
+    pub fn build_with_meta_planned(
+        file: &object::File,
+        _image: &ObjectLoadImage,
+        arch: &Architecture,
+        translate: &dyn Translate,
+        seeds: &[u64],
+        funcsym_seeds: &[u64],
+        seed_names: &[(u64, String)],
+        detail: ListingDetail,
+        plan: &WalkPlan,
+    ) -> Listing {
+        debug_assert!(
+            plan.built_from(arch),
+            "the plan's decode recipe was captured from another architecture than {}",
+            arch.archid
+        );
         // The executable-range universe (design §2.4 / §3.4 out-of-bounds gate),
         // sorted by low VMA so the partition / gap queries can binary-search it.
         let mut exec_ranges: Vec<(u64, u64)> = crate::entry::executable_sections(file)
@@ -262,6 +301,7 @@ impl Listing {
             &local_entries,
             detail,
             want_stack_callbacks,
+            plan,
         );
 
         let mut refs_to = st.refs_to;
@@ -602,7 +642,7 @@ fn ref_kind_ord(k: RefKind) -> u8 {
 /// direction, where the bucket key is the target); otherwise by target VMA (the
 /// `refs_from` direction, where the bucket key is the source). Kind is the
 /// secondary key. Dedup is on the full `(from, to, kind)` triple.
-fn finalize_refs(map: &mut BTreeMap<u64, Vec<Reference>>, by_source: bool) {
+pub(super) fn finalize_refs(map: &mut BTreeMap<u64, Vec<Reference>>, by_source: bool) {
     for refs in map.values_mut() {
         refs.sort_by(|a, b| {
             let pa = if by_source { a.from } else { a.to };

@@ -2311,6 +2311,12 @@ impl ConsoleProgram {
                         // already agreed on are handed over as extra walk roots. They
                         // are read off `merged` rather than recomputed, so a pass whose
                         // gate rejected it above never seeds the walk either.
+                        // The walk's thread plan (`kuna --jobs N`): built HERE,
+                        // once, because this is where the engine is and because
+                        // the Listing is rebuilt several times below. The image
+                        // share it takes is released with the plan, before any
+                        // later writer of the loader's bytes.
+                        let plan = kuna_analysis::listing::WalkPlan::from_env(arch);
                         let consumer_out = kuna_analysis::passes::run_listing_consumers(
                             &bytes,
                             &image,
@@ -2319,6 +2325,7 @@ impl ConsoleProgram {
                             &noreturn_seed_addrs,
                             &[],
                             &committed_entry_seeds,
+                            &plan,
                         );
                         for (id, out) in consumer_out {
                             if analysis_pass_enabled(self.arch(), id) {

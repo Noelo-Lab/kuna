@@ -1,0 +1,72 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "functions",
+    "{{BIN}}",
+    "--json",
+    "--jobs",
+    "4"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}",
+    "KUNA_DECODE_MIN_BYTES": "0",
+    "KUNA_DECODE_STATS": "1"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/fauxware",
+    "binary_sha256": "c2d90645a45e99221593547e55c601a901b80f807ae96f94c60a7661df0b3e0b",
+    "binary_size": 8776,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/fauxware",
+    "selector": null,
+    "selector_kind": "none"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "stderr_matches": [
+      "\\[kuna --jobs\\] decode: 4 lanes, [0-9]+ intervals",
+      "\\[kuna --jobs\\] decode stats: lanes=4 .* rounds=[0-9]+ .* decodes=[1-9][0-9]*"
+    ],
+    "stderr_absent": [
+      "\\[kuna --jobs\\] decode: serial \\(",
+      "panicked at"
+    ],
+    "json": [
+      {
+        "path": "count",
+        "op": "eq",
+        "value": 21
+      },
+      {
+        "path": "total",
+        "op": "eq",
+        "value": 21
+      },
+      {
+        "path": "functions[16].name",
+        "op": "eq",
+        "value": "main"
+      },
+      {
+        "path": "functions[16].address_hex",
+        "op": "eq",
+        "value": "0x40071d"
+      },
+      {
+        "path": "functions[16].size",
+        "op": "eq",
+        "value": 195
+      }
+    ]
+  },
+  "notes": "The decode lanes are CI-invisible otherwise: every other test for them lives in the workspace suite, which a branch PR skips. KUNA_DECODE_MIN_BYTES=0 is what makes this non-vacuous (fauxware is far under the 8 MiB floor), and the stats line is what a silent serial fallback cannot emit -- the plan line alone is printed before the walk and survives a fallback."
+}

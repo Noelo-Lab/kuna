@@ -140,6 +140,9 @@ const RECYCLE_AFTER: usize = 4096;
 /// [`affordable_jobs`] trims it further to what the machine's free memory holds.
 const MAX_AUTO_JOBS: usize = 16;
 
+/// The decode-lane cap, which is the engine's, not the pool's.
+const MAX_DECODE_LANES: usize = kuna_analysis::listing::kuna_pdecode::MAX_DECODE_LANES;
+
 /// The parent's word for "no more chunks", and the worker's for "chunk done".
 /// Both travel as whole lines over the pipes the pool already needs for
 /// liveness, so neither costs a file descriptor or a dependency.  `quit` carries
@@ -213,6 +216,21 @@ pub(crate) struct PoolConfig<'a> {
     pub(crate) slice: Option<&'a str>,
     pub(crate) target: Option<&'a str>,
     pub(crate) sleighpath: Option<&'a str>,
+}
+
+/// How many decode lanes `--jobs` asks the discovery walk for.
+///
+/// Deliberately NOT the pool count: a pool worker pays a whole program load, so
+/// `auto` caps it at [`MAX_AUTO_JOBS`]; a decode lane costs one SLEIGH engine
+/// (~48 MB) and saturates much later, so `auto` there is this machine's
+/// parallelism capped at [`MAX_DECODE_LANES`]. An explicit `--jobs N` is honoured
+/// up to the same cap.
+pub(crate) fn decode_lanes(args: &crate::decompile_all::Args) -> usize {
+    if args.jobs_auto {
+        let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
+        return cores.clamp(1, MAX_DECODE_LANES);
+    }
+    args.jobs.min(MAX_DECODE_LANES)
 }
 
 /// `--jobs N|auto`: `auto` is this machine's parallelism, capped at
@@ -939,6 +957,12 @@ impl Worker {
         if !cfg.full_load {
             cmd.arg("--option").arg("fast_funcdisc").arg("off");
         }
+        // Same reasoning one flag further in: the parent's own load ran the
+        // discovery walk on N decode lanes and is handing the inventory over, so
+        // a worker must not run N more of them. Forced rather than merely left
+        // unset, because the variable can also reach a worker from the user's
+        // environment or through `--jobs-full-load`.
+        cmd.env(kuna_analysis::listing::kuna_pdecode::DECODE_JOBS_ENV, "1");
         // stdin carries the assignments AND the liveness signal; stdout carries
         // the acknowledgements; stderr is the user's, shared with the parent.
         cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::inherit());
@@ -1266,9 +1290,26 @@ fn affordable_jobs(cfg: &PoolConfig, tag: &str) -> usize {
 /// rounds that ratio against us, with a floor for small programs where the
 /// constant costs dominate and the ratio means nothing.
 fn worker_estimate(full_load: bool) -> Option<u64> {
+    Some(worker_estimate_from(
+        peak_rss_bytes()?,
+        kuna_analysis::listing::kuna_pdecode::lane_peak_excess_bytes(),
+        full_load,
+    ))
+}
+
+/// The estimate's arithmetic. `lane_excess` is what the parent's own decode
+/// lanes added to its peak (`--jobs N` runs them during the load) — a cost no
+/// worker pays, because every worker is forced back to one lane, so leaving it
+/// in prices a worker ~1.5x too high and shrinks the pool that does 96% of the
+/// work.
+fn worker_estimate_from(parent_peak: u64, lane_excess: u64, full_load: bool) -> u64 {
     const FLOOR: u64 = 256 * 1024 * 1024;
-    let parent = peak_rss_bytes()?;
-    Some(if full_load { parent } else { (parent / 4).max(FLOOR) })
+    let parent = parent_peak.saturating_sub(lane_excess);
+    if full_load {
+        parent
+    } else {
+        (parent / 4).max(FLOOR)
+    }
 }
 
 /// This process's peak resident size (Linux `VmHWM`).
@@ -2196,5 +2237,47 @@ mod tests {
         for line in ["typedef struct s s;", "struct s { int x; };", "typedef struct t t;"] {
             assert_eq!(merged.matches(line).count(), 1, "{line} must appear exactly once");
         }
+    }
+
+    /// The parent's own decode lanes must not price its workers. Measured on a
+    /// 147 MB binary: 6.02 GB of peak serial against 9.09 GB at `--jobs 16`, of
+    /// which 3.07 GB is lanes -- a worker, forced back to one lane, pays none of
+    /// it and must be estimated at the serial number.
+    #[test]
+    fn the_worker_estimate_ignores_what_the_decode_lanes_added() {
+        let gb = |n: u64| n * 1024 * 1024 * 1024;
+        let serial = worker_estimate_from(6_167_417_856, 0, false);
+        let laned = worker_estimate_from(9_305_874_432, 3_138_456_576, false);
+        assert_eq!(laned, serial, "a laned load must estimate a worker as a serial one does");
+        assert_eq!(worker_estimate_from(gb(8), gb(2), true), gb(6), "--jobs-full-load too");
+        // The floor still holds, and nothing underflows when the excess is stale
+        // and larger than this load's peak.
+        assert_eq!(worker_estimate_from(gb(1), gb(4), false), 256 * 1024 * 1024);
+        assert_eq!(worker_estimate_from(gb(4), 0, false), gb(1));
+    }
+
+    /// ...and it must not price them LOW either, which is the direction that
+    /// ends in an OOM kill rather than a narrow pool. Measured on the same
+    /// binary under `--option listing on` (what `--mode aggressive|reliable`
+    /// injects), where the walk's map costs ~713 B an instruction instead of the
+    /// 298 the excess subtraction is calibrated on: VmHWM 14.08 GB serial
+    /// against 17.73 GB at 16 lanes, so the lanes added 3.65 GB -- but an
+    /// unbounded subtraction reported 11.19 GB and priced a worker at 1.6 GB
+    /// where the honest number is 3.4 GB.
+    #[test]
+    fn the_worker_estimate_is_not_priced_low_by_an_over_reported_lane_excess() {
+        let kb = |n: u64| n * 1024;
+        let serial = worker_estimate_from(kb(14_079_200), 0, false);
+        let over_reported = worker_estimate_from(kb(17_727_772), kb(11_730_186), false);
+        assert!(
+            over_reported * 2 < serial,
+            "this is the defect: {over_reported} against {serial}"
+        );
+        // Bounded by the lanes' own footprint (`kuna_pdecode::lane_footprint`),
+        // the same load reports what the lanes hold and the estimate lands
+        // within a tenth of the serial one.
+        let bounded = worker_estimate_from(kb(17_727_772), kb(4_257_000), false);
+        let ratio = bounded as f64 / serial as f64;
+        assert!(ratio > 0.85 && ratio < 1.15, "bounded estimate is {ratio:.2}x the serial one");
     }
 }

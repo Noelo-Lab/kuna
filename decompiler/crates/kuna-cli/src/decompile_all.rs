@@ -1589,11 +1589,19 @@ pub(crate) fn load_program(
     // option recording too: `relocobjects`, `i386_pie_plt`, `relocrebase`,
     // `typedepth` and `dwarfstructs` update their env bridges again inside
     // `set_kuna_option` and must not leak into a later load.
-    let _loadtime_env = apply_loadtime_env(&args.options, args.slice.as_deref());
+    let _loadtime_env =
+        apply_loadtime_env(&args.options, args.slice.as_deref(), jobs::decode_lanes(args));
 
     let spec_roots = spec_roots(args.sleighpath.as_deref());
     let target = args.target.as_deref().unwrap_or("");
     let mut prog = if args.raw_image {
+        // (kuna `--jobs`) A raw image has no whole-binary discovery walk for the
+        // decode lanes to run: its entry seeds ARE the load. Say so, rather than
+        // accept the flag and do nothing with it -- every other surface prints
+        // one line saying which walk it took.
+        if jobs::decode_lanes(args) > 1 {
+            eprintln!("[kuna --jobs] decode: serial (raw image runs no discovery walk)");
+        }
         let entries: Vec<u64> = args
             .addrs
             .iter()
@@ -1823,10 +1831,23 @@ impl Drop for LoadtimeEnv {
 /// Export the load-time loader gates (and the Mach-O slice) onto this process's
 /// environment before `bootstrap_from_object` reads them — the in-process analog
 /// of the `Command::env(...)` calls in `decompile.rs`.
-fn apply_loadtime_env(options: &[(String, String)], slice: Option<&str>) -> LoadtimeEnv {
+fn apply_loadtime_env(
+    options: &[(String, String)],
+    slice: Option<&str>,
+    decode_lanes: usize,
+) -> LoadtimeEnv {
     let mut env = LoadtimeEnv::default();
     if let Some(slice) = slice.filter(|s| !s.trim().is_empty()) {
         env.set("KUNA_MACHO_SLICE", slice);
+    }
+    // (kuna `--jobs`) The discovery walk runs inside `load file`, so its lane
+    // count is exported before the bootstrap and restored by the guard well
+    // before the worker pool is spawned.
+    if decode_lanes > 1 {
+        env.set(
+            kuna_analysis::listing::kuna_pdecode::DECODE_JOBS_ENV,
+            decode_lanes.to_string(),
+        );
     }
 
     if let Some(value) = last_option_value(options, "relocobjects") {
@@ -2639,9 +2660,14 @@ pub(crate) fn parse_args_with_filters(
     let mut jobs_provenance = false;
     let mut jobs_types = false;
     let mut jobs_callees = false;
-    // The three whole-binary surfaces; `functions` enumerates and never
-    // decompiles, so there is nothing for a pool to do there.
+    // The three whole-binary surfaces the worker POOL serves; `functions`
+    // enumerates and never decompiles, so there is nothing for a pool to do
+    // there. `--jobs` reaches further than the pool does: it also sizes the
+    // discovery walk's decode lanes, which `functions` very much does run, so
+    // that one flag is accepted there too while `--jobs-chunk` /
+    // `--jobs-full-load` / `--jobs-worker` stay pool-only.
     let batch = matches!(cmd, "decompile-all" | "decompile-project" | "decompile-graph");
+    let jobs_flag = batch || cmd == "functions";
 
     let mut i = 0;
     while i < argv.len() {
@@ -2668,7 +2694,7 @@ pub(crate) fn parse_args_with_filters(
                 assertions.extend(crate::assertdecl::parse_flag(&v)?);
             }
             "--assert-strict" => assert_strict = true,
-            "--jobs" if batch => {
+            "--jobs" if jobs_flag => {
                 let v = take(argv, &mut i, "--jobs")?;
                 (jobs, jobs_auto) = jobs::parse_jobs(&v)?;
             }
@@ -2847,8 +2873,12 @@ pub(crate) fn parse_args_with_filters(
     let max_fn_seconds = max_fn_seconds
         .unwrap_or_else(|| default_fn_budget_seconds(concrete_mode, whole_binary));
     // The pool re-execs this binary, so a policy it cannot express is one the
-    // shards would silently drop rather than honour.
-    if jobs > 1 {
+    // shards would silently drop rather than honour. Pool-only: on `functions`
+    // the same flag buys decode lanes and no process is re-exec'd, so a raw
+    // image (which the lane gate declines on its own) and an `--assert` overlay
+    // (which the lanes read through the parent's own patched bytes) are both
+    // fine there.
+    if batch && jobs > 1 {
         if raw_image {
             return Err(
                 "--jobs does not apply to --raw-image input (the entry seeds are the load)"
@@ -2982,7 +3012,7 @@ fn usage_functions() {
         "usage: kuna functions <binary> [--json] [--summary] \\\n\
          \x20               [--filter REGEX] [--min-size N] [--max-size N] \\\n\
          \x20               [--reachable-from <name|0xaddr>] [--sort addr|size|name] [--limit N] \\\n\
-         \x20               [--define-function S[-E][=N]|@FILE].. \\\n\
+         \x20               [--define-function S[-E][=N]|@FILE].. [--jobs N|auto] \\\n\
          \x20               [--mode auto|reliable|aggressive|fast] [--isa auto|arm|thumb] [--slice ARCH] [--target T] [--sleighpath D]\n\
          \x20               [--raw-image --target T --base VMA (--entry|--addr VMA)..]\n\
          \n\
@@ -3003,6 +3033,10 @@ fn usage_functions() {
          that means a full prologue-pattern + gap-walk discovery pass.\n\
          --define-function <start[-end][=name] | @file> (repeatable) declares an entry\n\
          discovery missed and its exclusive extent; it enumerates like any other.\n\
+         --jobs N|auto runs the discovery walk on N decode lanes inside this process\n\
+         (`auto` = this machine's parallelism, capped at 32). The inventory is the\n\
+         serial one byte for byte; one stderr line says how many lanes ran, or why\n\
+         it declined. There is no worker pool here -- nothing is decompiled.\n\
          Discovering no function at all exits 1 with the reason on stderr and in\n\
          the document's `error` field (a packed image is named as such)."
     );

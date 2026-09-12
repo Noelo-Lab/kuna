@@ -24,7 +24,7 @@ use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::space::AddrSpace;
 use kuna_sleigh::globalcontext::ContextInternal;
 use kuna_sleigh::kuna_ctxsnapshot::{restore_context, ContextValueSnapshot};
-use kuna_sleigh::kuna_sharedbytes::SharedBytesImage;
+use kuna_sleigh::kuna_sharedbytes::{SharedBytesImage, UnmappedTripwire};
 use kuna_sleigh::loadimage::{ImageBytes, LoadImage};
 use kuna_sleigh::sleigh::Sleigh;
 
@@ -81,6 +81,21 @@ pub fn build_decode_engine(
     bytes: Arc<dyn ImageBytes>,
     ctx: &ContextValueSnapshot,
 ) -> KunaResult<(Sleigh, Rc<AddrSpace>)> {
+    let (sleigh, space, _) = build_decode_engine_traced(recipe, bytes, ctx)?;
+    Ok((sleigh, space))
+}
+
+/// [`build_decode_engine`], keeping a handle on the image's
+/// [`UnmappedTripwire`].
+///
+/// The engine owns its loader, so the flag has to be taken before the image is
+/// handed over. A caller that has proved every address it will fetch is mapped
+/// reads it afterwards to confirm the proof held.
+pub fn build_decode_engine_traced(
+    recipe: &EngineRecipe,
+    bytes: Arc<dyn ImageBytes>,
+    ctx: &ContextValueSnapshot,
+) -> KunaResult<(Sleigh, Rc<AddrSpace>, UnmappedTripwire)> {
     let mut sleigh = Sleigh::new(Box::new(UnattachedImage), Box::new(ContextInternal::new()));
     sleigh.initialize_from_sla(&recipe.sla)?;
     if sleigh.base().has_context_commits() {
@@ -106,10 +121,11 @@ pub fn build_decode_engine(
 
     let mut image = SharedBytesImage::new(&recipe.archid, bytes);
     image.attach_to_space(Rc::clone(&code_space));
+    let tripwire = image.tripwire();
     sleigh.set_loader(Box::new(image));
 
     sleigh.with_context_db_mut(|db| restore_context(db, ctx, &code_space))?;
     sleigh.allow_context_set(false);
 
-    Ok((sleigh, code_space))
+    Ok((sleigh, code_space, tripwire))
 }
