@@ -37,6 +37,7 @@ use std::cell::Cell;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::rc::Rc;
+use std::sync::Arc;
 
 use kuna_base::address::{Address, RangeList};
 use kuna_base::error::{KunaError, KunaResult};
@@ -85,6 +86,38 @@ pub struct LoadImageSection {
     pub size: u64,
     /// Properties of the section ([`section_flags`])
     pub flags: u32,
+}
+
+/// (kuna) The number of bytes a [`LoadImage`] read window stages at a time (the
+/// C++ `LoadImageBfd::BUFSIZE`).
+pub const IMAGE_WINDOW_BYTES: usize = 512;
+
+/// \brief (kuna) The mapped bytes of a load image, readable from any thread.
+///
+/// A [`LoadImage`] is a single-threaded object: it owns an `Rc<AddrSpace>` and a
+/// moving read window behind `RefCell`s. The *bytes* underneath it are neither,
+/// so this is the half that can be shared -- one owner of the segment data, N
+/// readers, each with its own window and its own space handle
+/// ([`crate::kuna_sharedbytes::SharedBytesImage`]).
+///
+/// The read semantics are `ObjectLoadImage`'s exactly, and deliberately so: a
+/// span that runs off the end of a mapped segment is zero-filled, and the ONLY
+/// failure reported is a span whose FIRST byte no segment maps.
+pub trait ImageBytes: Send + Sync + std::fmt::Debug {
+    /// Fill `dst` with the mapped bytes starting at address `start`,
+    /// zero-filling any part of the span no segment maps.
+    ///
+    /// Returns the number of bytes it could not fill: `0` on success, and
+    /// `dst.len()` when the very first byte is unmapped.
+    fn fill_span(&self, dst: &mut [u8], start: u64) -> usize;
+
+    /// Is every address in `[lo, hi)` mapped by some segment?
+    ///
+    /// The precondition a reader needs before it may treat [`Self::fill_span`]
+    /// as history-free: a fill that starts on a mapped byte never reports a
+    /// failure, so with this true of every address a walk visits, the staging
+    /// window in front of the bytes cannot change an answer.
+    fn mapped_covers(&self, lo: u64, hi: u64) -> bool;
 }
 
 /// \brief An interface into a particular binary executable image
@@ -208,6 +241,16 @@ pub trait LoadImage {
     /// a loader that does not model segments keeps reporting nothing.
     fn get_segments(&self) -> Vec<(u64, u64, u32)> {
         Vec::new()
+    }
+
+    /// (kuna) A `Send + Sync` view of this image's mapped bytes, for a decoder
+    /// running on another thread.
+    ///
+    /// `None` -- the default -- means the bytes cannot be shared, which is the
+    /// honest answer for an image that reads them from a file handle or an
+    /// external process rather than owning them.
+    fn shared_bytes(&self) -> Option<Arc<dyn ImageBytes>> {
+        None
     }
 
     /// Return list of \e readonly address ranges.
