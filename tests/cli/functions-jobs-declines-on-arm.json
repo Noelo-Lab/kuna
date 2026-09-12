@@ -1,0 +1,49 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "functions",
+    "{{BIN}}",
+    "--json",
+    "--jobs",
+    "4"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}",
+    "KUNA_DECODE_MIN_BYTES": "0"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/arm_thumb_linked_le32",
+    "binary_sha256": "0867d4663647d736482fe0c68e158b3973ed7922c014ce07b909b381073a5242",
+    "binary_size": 1080,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/arm_thumb_linked_le32",
+    "selector": null,
+    "selector_kind": "none"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "stderr_matches": [
+      "\\[kuna --jobs\\] decode: serial \\(language commits context\\)"
+    ],
+    "stderr_absent": [
+      "\\[kuna --jobs\\] decode: [0-9]+ lanes"
+    ],
+    "json": [
+      {
+        "path": "count",
+        "op": "eq",
+        "value": 2
+      }
+    ]
+  },
+  "notes": "ARM's constructors carry globalset, so a decode at one address can change how another decodes and the lane gate must decline -- byte-identity on every context-committing language rests entirely on this refusal. The inventory is the serial one either way."
+}

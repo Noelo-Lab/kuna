@@ -218,11 +218,6 @@ pub(crate) struct PoolConfig<'a> {
     pub(crate) sleighpath: Option<&'a str>,
 }
 
-/// `--jobs N|auto`: `auto` is this machine's parallelism, capped at
-/// [`MAX_AUTO_JOBS`] because every worker pays a whole program load, and trimmed
-/// again by [`affordable_jobs`] once the load has shown what one worker costs.
-/// The flag is returned alongside the count because it decides whether that
-/// later trim may lower the number or must only warn.
 /// How many decode lanes `--jobs` asks the discovery walk for.
 ///
 /// Deliberately NOT the pool count: a pool worker pays a whole program load, so
@@ -238,6 +233,11 @@ pub(crate) fn decode_lanes(args: &crate::decompile_all::Args) -> usize {
     args.jobs.min(MAX_DECODE_LANES)
 }
 
+/// `--jobs N|auto`: `auto` is this machine's parallelism, capped at
+/// [`MAX_AUTO_JOBS`] because every worker pays a whole program load, and trimmed
+/// again by [`affordable_jobs`] once the load has shown what one worker costs.
+/// The flag is returned alongside the count because it decides whether that
+/// later trim may lower the number or must only warn.
 pub(crate) fn parse_jobs(value: &str) -> Result<(usize, bool), String> {
     let v = value.trim();
     if v.eq_ignore_ascii_case("auto") {
@@ -1290,9 +1290,26 @@ fn affordable_jobs(cfg: &PoolConfig, tag: &str) -> usize {
 /// rounds that ratio against us, with a floor for small programs where the
 /// constant costs dominate and the ratio means nothing.
 fn worker_estimate(full_load: bool) -> Option<u64> {
+    Some(worker_estimate_from(
+        peak_rss_bytes()?,
+        kuna_analysis::listing::kuna_pdecode::lane_peak_excess_bytes(),
+        full_load,
+    ))
+}
+
+/// The estimate's arithmetic. `lane_excess` is what the parent's own decode
+/// lanes added to its peak (`--jobs N` runs them during the load) — a cost no
+/// worker pays, because every worker is forced back to one lane, so leaving it
+/// in prices a worker ~1.5x too high and shrinks the pool that does 96% of the
+/// work.
+fn worker_estimate_from(parent_peak: u64, lane_excess: u64, full_load: bool) -> u64 {
     const FLOOR: u64 = 256 * 1024 * 1024;
-    let parent = peak_rss_bytes()?;
-    Some(if full_load { parent } else { (parent / 4).max(FLOOR) })
+    let parent = parent_peak.saturating_sub(lane_excess);
+    if full_load {
+        parent
+    } else {
+        (parent / 4).max(FLOOR)
+    }
 }
 
 /// This process's peak resident size (Linux `VmHWM`).
@@ -2220,5 +2237,22 @@ mod tests {
         for line in ["typedef struct s s;", "struct s { int x; };", "typedef struct t t;"] {
             assert_eq!(merged.matches(line).count(), 1, "{line} must appear exactly once");
         }
+    }
+
+    /// The parent's own decode lanes must not price its workers. Measured on a
+    /// 147 MB binary: 6.02 GB of peak serial against 9.09 GB at `--jobs 16`, of
+    /// which 3.07 GB is lanes -- a worker, forced back to one lane, pays none of
+    /// it and must be estimated at the serial number.
+    #[test]
+    fn the_worker_estimate_ignores_what_the_decode_lanes_added() {
+        let gb = |n: u64| n * 1024 * 1024 * 1024;
+        let serial = worker_estimate_from(6_167_417_856, 0, false);
+        let laned = worker_estimate_from(9_305_874_432, 3_138_456_576, false);
+        assert_eq!(laned, serial, "a laned load must estimate a worker as a serial one does");
+        assert_eq!(worker_estimate_from(gb(8), gb(2), true), gb(6), "--jobs-full-load too");
+        // The floor still holds, and nothing underflows when the excess is stale
+        // and larger than this load's peak.
+        assert_eq!(worker_estimate_from(gb(1), gb(4), false), 256 * 1024 * 1024);
+        assert_eq!(worker_estimate_from(gb(4), 0, false), gb(1));
     }
 }

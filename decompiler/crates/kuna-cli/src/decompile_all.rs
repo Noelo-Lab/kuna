@@ -2830,8 +2830,12 @@ pub(crate) fn parse_args_with_filters(
     let max_fn_seconds = max_fn_seconds
         .unwrap_or_else(|| default_fn_budget_seconds(concrete_mode, whole_binary));
     // The pool re-execs this binary, so a policy it cannot express is one the
-    // shards would silently drop rather than honour.
-    if jobs > 1 {
+    // shards would silently drop rather than honour. Pool-only: on `functions`
+    // the same flag buys decode lanes and no process is re-exec'd, so a raw
+    // image (which the lane gate declines on its own) and an `--assert` overlay
+    // (which the lanes read through the parent's own patched bytes) are both
+    // fine there.
+    if batch && jobs > 1 {
         if raw_image {
             return Err(
                 "--jobs does not apply to --raw-image input (the entry seeds are the load)"
