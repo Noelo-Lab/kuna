@@ -42,8 +42,61 @@ pub struct Insn {
     pub operands: String,
     /// Lazy: only `skipNOPS` / `isUsedForCalculation` need the raw ops, so the
     /// common case keeps this `None` (design §2.1 / §8).
+    ///
+    /// This field is the sole reason [`Insn`] is `!Send`: a [`RawOp`] carries a
+    /// [`VarnodeData`], whose `space` is an `Option<Rc<AddrSpace>>`
+    /// (`kuna-num/src/pcoderaw.rs`). `Send` is a property of the type, not of the
+    /// runtime value, so an `Insn` with `pcode: None` is still `!Send` — a walker
+    /// that wants to hand its instruction records to another thread must carry
+    /// [`InsnLite`] instead and convert on arrival.
     pub pcode: Option<Vec<RawOp>>,
 }
+
+/// The walk's actual per-instruction product: every [`Insn`] field except the
+/// lazily-populated raw ops, which the walk never fills.
+///
+/// Plain data throughout, so a record can cross a thread boundary (see the
+/// [`Insn::pcode`] note for why `Insn` itself cannot). `From<InsnLite>` is the
+/// one conversion back, and it is the only place `pcode: None` is spelled.
+#[derive(Debug, Clone)]
+pub struct InsnLite {
+    /// `getMinAddress` — the instruction's VMA.
+    pub addr: u64,
+    /// Bytes consumed incl. delay slots (the `one_instruction` return value).
+    pub len: u32,
+    /// `None` iff `!flow.has_fallthrough` (a terminal instruction).
+    pub fall_through: Option<u64>,
+    /// Flow class projected from the emitted p-code.
+    pub flow: FlowType,
+    /// Static control targets (`getFlows`): branch/call destination VMAs.
+    pub flows: Vec<u64>,
+    /// The decoded mnemonic (empty when the walk captured no assembly).
+    pub mnemonic: String,
+    /// The decoded operand body (empty when the walk captured no assembly).
+    pub operands: String,
+}
+
+impl From<InsnLite> for Insn {
+    fn from(lite: InsnLite) -> Insn {
+        Insn {
+            addr: lite.addr,
+            len: lite.len,
+            fall_through: lite.fall_through,
+            flow: lite.flow,
+            flows: lite.flows,
+            mnemonic: lite.mnemonic,
+            operands: lite.operands,
+            pcode: None,
+        }
+    }
+}
+
+// The `Send`-ness of `InsnLite` is the load-bearing property above, so assert it
+// at compile time rather than trusting the field list to stay plain data.
+const _: fn() = || {
+    fn send<T: Send>() {}
+    send::<InsnLite>();
+};
 
 /// Faithful projection of Ghidra's `FlowType` predicate set.
 ///

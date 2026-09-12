@@ -54,6 +54,7 @@
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use object::read::{Object, ObjectSection, ObjectSegment, ObjectSymbol};
 use object::{Architecture, SegmentFlags, SymbolKind};
@@ -63,12 +64,15 @@ use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::space::AddrSpace;
 use kuna_base::types::Wrap;
 
-use kuna_sleigh::loadimage::{section_flags, LoadImage, LoadImageFunc, LoadImageSection};
+use kuna_sleigh::kuna_sharedbytes::windowed_load_fill;
+use kuna_sleigh::loadimage::{
+    section_flags, ImageBytes, LoadImage, LoadImageFunc, LoadImageSection, IMAGE_WINDOW_BYTES,
+};
 
 use kuna_decomp::kuna_symbolnamechars::{sanitize_symbol_name_bytes, symbolnamechars_mode, NameChars};
 
 /// Default read-buffer size (C++ `LoadImageBfd::bufsize`, `loadimage_bfd.cc:36`).
-const BUFSIZE: usize = 512;
+const BUFSIZE: usize = IMAGE_WINDOW_BYTES;
 
 /// (kuna) Whether the ET_REL relocatable-object load path is enabled (the
 /// `relocobjects` option, default ON).  The loader runs at `load file`, upstream
@@ -113,7 +117,7 @@ fn demangle_funcsym_name(name: Vec<u8>, mode: NameChars) -> Vec<u8> {
 }
 
 /// One loadable region of the image (the analog of a BFD `asection` for the
-/// purpose of [`ObjectLoadImage::find_section`]/`loadFill`): a vma, the bytes
+/// purpose of [`SegmentBytes::find_section`]/`loadFill`): a vma, the bytes
 /// that live there, and BFD-style section flags.
 #[derive(Debug, Clone)]
 struct Segment {
@@ -160,6 +164,140 @@ fn clamp_virtual_tails(segments: &mut [Segment]) {
         let seg = &mut segments[i];
         let room = next.saturating_sub(seg.vma);
         seg.memsz = seg.memsz.min(room).max(seg.data.len() as u64); // cast: byte count
+    }
+}
+
+/// (kuna) The image's mapped bytes: the vma-sorted segment list and the
+/// byte-serving routines over it.
+///
+/// Split out of [`ObjectLoadImage`] so the bytes can outlive one reader and be
+/// read from another thread ([`ImageBytes`]). Every read of image bytes -- the
+/// loader's own `load_fill` included -- goes through this one implementation, so
+/// a second reader cannot drift from the first.
+///
+/// Written only at load time, before any share exists; [`ObjectLoadImage`] holds
+/// it behind an `Arc` and requires sole ownership at each write site.
+#[derive(Debug)]
+struct SegmentBytes {
+    segments: Vec<Segment>,
+}
+
+impl SegmentBytes {
+    /// Find the segment containing `offset`, or the closest segment above it
+    /// (C++ `LoadImageBfd::findSection`, `loadimage_bfd.cc:99`).  Returns the
+    /// index into [`Self::segments`] and the segment size, or `None` for "no
+    /// segment at or above `offset`" (the C++ null `champ`).
+    ///
+    /// The size is the segment's *mapped* extent ([`Segment::mapped_size`]), so
+    /// an address in a zero-filled RAM tail resolves to the segment that maps
+    /// it instead of falling through to the "closest above" scan.
+    fn find_section(&self, offset: u64) -> Option<(usize, u64)> {
+        // First pass: the segment that actually contains `offset`.
+        for (i, s) in self.segments.iter().enumerate() {
+            let start = s.vma;
+            let secsize = s.mapped_size();
+            let stop = start.wadd(secsize);
+            // C++ uses raw `<`/`>=`; a
+            // wrapped stop (segment at the top of the space) cannot occur for a
+            // real ELF, matching the BFD assumption.
+            if offset >= start && offset < stop {
+                return Some((i, secsize));
+            }
+        }
+        // Second pass: the closest segment strictly above `offset` (segments are
+        // vma-sorted, so the first such is the closest — the C++ `champ` scan).
+        for (i, s) in self.segments.iter().enumerate() {
+            if s.vma > offset {
+                return Some((i, s.mapped_size()));
+            }
+        }
+        None
+    }
+
+    /// Copy `len` bytes out of segment `idx` starting at file-relative
+    /// `seg_off` into `dst` (the C++ `bfd_get_section_contents`).  A read past
+    /// the segment's file data zero-fills the remainder (a `.bss`-style RAM tail
+    /// whose bytes BFD would report as zero).
+    fn copy_segment(&self, idx: usize, seg_off: u64, dst: &mut [u8]) {
+        let data = &self.segments[idx].data;
+        for (i, b) in dst.iter_mut().enumerate() {
+            let pos = seg_off.wadd(i as u64); // cast: small loop index
+            *b = data.get(pos as usize).copied().unwrap_or(0); // cast: pos within data here
+        }
+    }
+}
+
+impl ImageBytes for SegmentBytes {
+    /// Fill `dst` with the image bytes starting at address `start`, zero-filling
+    /// any part of the span no segment maps (a `.bss`-style RAM tail, or a hole
+    /// between two segments).  This is the body of the C++
+    /// `LoadImageBfd::loadFill` read loop, lifted out so it can fill either the
+    /// staging buffer or the caller's slice directly.
+    ///
+    /// Returns the number of bytes it could not fill: `0` on success, and
+    /// `dst.len()` when the very first byte is unmapped (the C++ `offset == 0`
+    /// break, which is the only failure the loop reports).  The loop counter is
+    /// a `usize` rather than the C++ `int4`, so a span longer than 2 GiB is
+    /// still counted correctly instead of wrapping negative.
+    fn fill_span(&self, dst: &mut [u8], start: u64) -> usize {
+        let mut offset: usize = 0;
+        let mut cursize: usize = dst.len();
+        let mut curaddr = start;
+
+        while cursize > 0 {
+            let Some((idx, secsize)) = self.find_section(curaddr) else {
+                if offset == 0 {
+                    break; // Initial address not mapped
+                }
+                // Fill the rest with zero.
+                dst[offset..].fill(0);
+                return 0;
+            };
+            let seg_vma = self.segments[idx].vma;
+            let readsize: usize;
+            if seg_vma > curaddr {
+                // No section matches at curaddr: zeroes to the next section.
+                if offset == 0 {
+                    break; // Initial address not mapped
+                }
+                readsize = (seg_vma - curaddr).min(cursize as u64) as usize;
+                dst[offset..offset + readsize].fill(0);
+            } else {
+                let avail = seg_vma.wadd(secsize).wsub(curaddr);
+                readsize = avail.min(cursize as u64) as usize;
+                let seg_off = curaddr - seg_vma; // file-relative read offset
+                self.copy_segment(idx, seg_off, &mut dst[offset..offset + readsize]);
+            }
+            offset += readsize;
+            cursize -= readsize;
+            curaddr = curaddr.wadd(readsize as u64);
+        }
+        cursize
+    }
+
+
+    fn mapped_covers(&self, lo: u64, hi: u64) -> bool {
+        let mut cur = lo;
+        while cur < hi {
+            // The furthest mapped extent of every segment that contains `cur`:
+            // segments may stack at one vma (a COFF object read through the
+            // linked path), so the first hit is not necessarily the best.
+            let mut reach: Option<u64> = None;
+            for s in &self.segments {
+                let stop = s.vma.wadd(s.mapped_size());
+                if cur >= s.vma && cur < stop {
+                    reach = Some(match reach {
+                        Some(r) => r.max(stop),
+                        None => stop,
+                    });
+                }
+            }
+            match reach {
+                Some(stop) if stop > cur => cur = stop,
+                _ => return false,
+            }
+        }
+        true
     }
 }
 
@@ -273,8 +411,11 @@ pub struct ObjectLoadImage {
     /// `None` when the fallback equals the primary (the common ELF case).
     fallback_archtype: Option<Vec<u8>>,
     /// Loadable regions, in *ascending vma order* (the BFD section list, used by
-    /// `find_section`/`loadFill`).
-    segments: Vec<Segment>,
+    /// `find_section`/`loadFill`), behind an `Arc` so a decoder on another thread
+    /// can read the same bytes. Every write site requires sole ownership: the
+    /// image is fully built -- relocations patched, overlays applied, vmas
+    /// adjusted -- before anything shares it.
+    bytes: Arc<SegmentBytes>,
     /// ELF sections, in file order (the BFD `asection` list for the info walks).
     sections: Vec<SectionInfo>,
     /// The named sections as export metadata, in file order; see
@@ -752,7 +893,7 @@ impl ObjectLoadImage {
             filename: filename.to_string(),
             archtype,
             fallback_archtype,
-            segments,
+            bytes: Arc::new(SegmentBytes { segments }),
             sections,
             section_metadata,
             image_entry,
@@ -866,7 +1007,7 @@ impl ObjectLoadImage {
             filename: filename.to_string(),
             archtype,
             fallback_archtype,
-            segments,
+            bytes: Arc::new(SegmentBytes { segments }),
             sections,
             section_metadata,
             // A pre-link object declares no entry.
@@ -1029,94 +1170,17 @@ impl ObjectLoadImage {
             .collect()
     }
 
-    /// Find the segment containing `offset`, or the closest segment above it
-    /// (C++ `LoadImageBfd::findSection`, `loadimage_bfd.cc:99`).  Returns the
-    /// index into [`Self::segments`] and the segment size, or `None` for "no
-    /// segment at or above `offset`" (the C++ null `champ`).
-    ///
-    /// The size is the segment's *mapped* extent ([`Segment::mapped_size`]), so
-    /// an address in a zero-filled RAM tail resolves to the segment that maps
-    /// it instead of falling through to the "closest above" scan.
-    fn find_section(&self, offset: u64) -> Option<(usize, u64)> {
-        // First pass: the segment that actually contains `offset`.
-        for (i, s) in self.segments.iter().enumerate() {
-            let start = s.vma;
-            let secsize = s.mapped_size();
-            let stop = start.wadd(secsize);
-            // C++ uses raw `<`/`>=`; a
-            // wrapped stop (segment at the top of the space) cannot occur for a
-            // real ELF, matching the BFD assumption.
-            if offset >= start && offset < stop {
-                return Some((i, secsize));
-            }
-        }
-        // Second pass: the closest segment strictly above `offset` (segments are
-        // vma-sorted, so the first such is the closest — the C++ `champ` scan).
-        for (i, s) in self.segments.iter().enumerate() {
-            if s.vma > offset {
-                return Some((i, s.mapped_size()));
-            }
-        }
-        None
-    }
-
-    /// Fill `dst` with the image bytes starting at address `start`, zero-filling
-    /// any part of the span no segment maps (a `.bss`-style RAM tail, or a hole
-    /// between two segments).  This is the body of the C++
-    /// `LoadImageBfd::loadFill` read loop, lifted out so it can fill either the
-    /// staging buffer or the caller's slice directly.
-    ///
-    /// Returns the number of bytes it could not fill: `0` on success, and
-    /// `dst.len()` when the very first byte is unmapped (the C++ `offset == 0`
-    /// break, which is the only failure the loop reports).  The loop counter is
-    /// a `usize` rather than the C++ `int4`, so a span longer than 2 GiB is
-    /// still counted correctly instead of wrapping negative.
-    fn fill_span(&self, dst: &mut [u8], start: u64) -> usize {
-        let mut offset: usize = 0;
-        let mut cursize: usize = dst.len();
-        let mut curaddr = start;
-
-        while cursize > 0 {
-            let Some((idx, secsize)) = self.find_section(curaddr) else {
-                if offset == 0 {
-                    break; // Initial address not mapped
-                }
-                // Fill the rest with zero.
-                dst[offset..].fill(0);
-                return 0;
-            };
-            let seg_vma = self.segments[idx].vma;
-            let readsize: usize;
-            if seg_vma > curaddr {
-                // No section matches at curaddr: zeroes to the next section.
-                if offset == 0 {
-                    break; // Initial address not mapped
-                }
-                readsize = (seg_vma - curaddr).min(cursize as u64) as usize;
-                dst[offset..offset + readsize].fill(0);
-            } else {
-                let avail = seg_vma.wadd(secsize).wsub(curaddr);
-                readsize = avail.min(cursize as u64) as usize;
-                let seg_off = curaddr - seg_vma; // file-relative read offset
-                self.copy_segment(idx, seg_off, &mut dst[offset..offset + readsize]);
-            }
-            offset += readsize;
-            cursize -= readsize;
-            curaddr = curaddr.wadd(readsize as u64);
-        }
-        cursize
-    }
-
     /// Write `data` over the mapped bytes at `vma` (the write twin of
-    /// [`Self::fill_span`], and the loader half of `--assert bytes`).
+    /// [`SegmentBytes::fill_span`], and the loader half of `--assert bytes`).
     ///
-    /// Resolved through [`Self::find_section`] so an overlay lands in exactly the
-    /// segment a read at the same address would come from, and refused unless
-    /// that segment maps the whole span: a partial write would leave half a
-    /// stated instruction stream in place, which is worse than not taking the
-    /// statement at all.  A span reaching into the segment's zero-filled RAM tail
-    /// materialises that tail first — the caller is stating what the running
-    /// program put there, which is precisely a `.bss`-style region's content.
+    /// Resolved through [`SegmentBytes::find_section`] so an overlay lands in
+    /// exactly the segment a read at the same address would come from, and
+    /// refused unless that segment maps the whole span: a partial write would
+    /// leave half a stated instruction stream in place, which is worse than not
+    /// taking the statement at all.  A span reaching into the segment's
+    /// zero-filled RAM tail materialises that tail first — the caller is stating
+    /// what the running program put there, which is precisely a `.bss`-style
+    /// region's content.
     fn overlay_span(&mut self, vma: u64, data: &[u8]) -> Result<(), String> {
         if data.is_empty() {
             return Err("an overlay needs at least one byte".into());
@@ -1124,15 +1188,18 @@ impl ObjectLoadImage {
         let end = vma
             .checked_add(data.len() as u64) // cast: overlay byte count
             .ok_or_else(|| "the overlay wraps past the end of the address space".to_string())?;
-        let idx = self
+        let bytes = Arc::get_mut(&mut self.bytes).ok_or_else(|| {
+            "cannot overlay image bytes while a shared decode view is active".to_string()
+        })?;
+        let idx = bytes
             .find_section(vma)
             .filter(|(idx, secsize)| {
-                let seg_vma = self.segments[*idx].vma;
+                let seg_vma = bytes.segments[*idx].vma;
                 vma >= seg_vma && end <= seg_vma.wadd(*secsize)
             })
             .map(|(idx, _)| idx)
             .ok_or_else(|| format!("no loaded segment maps {vma:#x}-{end:#x}"))?;
-        let seg = &mut self.segments[idx];
+        let seg = &mut bytes.segments[idx];
         let off = (vma - seg.vma) as usize; // cast: offset within a mapped segment
         let stop = off + data.len();
         if stop > seg.data.len() {
@@ -1144,17 +1211,6 @@ impl ObjectLoadImage {
         Ok(())
     }
 
-    /// Copy `len` bytes out of segment `idx` starting at file-relative
-    /// `seg_off` into `dst` (the C++ `bfd_get_section_contents`).  A read past
-    /// the segment's file data zero-fills the remainder (a `.bss`-style RAM tail
-    /// whose bytes BFD would report as zero).
-    fn copy_segment(&self, idx: usize, seg_off: u64, dst: &mut [u8]) {
-        let data = &self.segments[idx].data;
-        for (i, b) in dst.iter_mut().enumerate() {
-            let pos = seg_off.wadd(i as u64); // cast: small loop index
-            *b = data.get(pos as usize).copied().unwrap_or(0); // cast: pos within data here
-        }
-    }
 }
 
 impl LoadImage for ObjectLoadImage {
@@ -1175,71 +1231,11 @@ impl LoadImage for ObjectLoadImage {
                 )));
             }
         }
+        windowed_load_fill(&*self.bytes, &self.buffer, &self.bufoffset, ptr, addr)
+    }
 
-        let curaddr0: u64 = addr.get_offset();
-
-        // (kuna) A request larger than the staging buffer cannot be served out
-        // of it. Upstream copies the answer back with `memcpy(ptr,buffer,size)`
-        // and so reads past the end of a 512-byte buffer for any such request —
-        // a silent heap over-read that only upstream's own <= 16-byte callers
-        // keep out of reach. kuna reads whole objects (a typed global's
-        // datatype size), which routinely exceed 512 bytes, and the same copy
-        // spelled as a Rust slice panics instead. Fill the caller's slice
-        // directly and leave the buffer window untouched: a span this long can
-        // never be answered from a 512-byte window anyway, so nothing is lost
-        // by not caching it, and the window a neighbouring small read is being
-        // served from stays valid.
-        if ptr.len() > BUFSIZE {
-            let remaining = self.fill_span(ptr, curaddr0);
-            if remaining > 0 {
-                let mut errmsg =
-                    format!("Unable to load {} bytes at {}", remaining, addr.get_shortcut());
-                addr.print_raw(&mut errmsg)?;
-                return Err(KunaError::data_unavail(errmsg));
-            }
-            return Ok(());
-        }
-
-        let mut bufoffset = self.bufoffset.borrow_mut();
-        let mut buffer = self.buffer.borrow_mut();
-
-        // The C++ comparison is exact uintb arithmetic (BUFSIZE is 512, so the
-        // `+ size` cannot wrap for any real request).
-        if curaddr0 >= *bufoffset
-            && curaddr0.wadd(ptr.len() as u64) < (*bufoffset).wadd(BUFSIZE as u64)
-        {
-            let start = (curaddr0 - *bufoffset) as usize; // cast: in-buffer offset
-            ptr.copy_from_slice(&buffer[start..start + ptr.len()]);
-            return Ok(());
-        }
-
-        // Load the buffer with bytes from the new address.
-        *bufoffset = curaddr0;
-        let cursize = self.fill_span(&mut buffer[..], curaddr0);
-        if cursize > 0 {
-            // (offset==0 break path) Unable to load N bytes at <addr>.
-            //
-            // (kuna) Restore the "nothing buffered" sentinel first.  `bufoffset`
-            // was claimed at the top of the fill, before any byte was read, so
-            // leaving it set on the failure path makes the fast path above hand
-            // out the 512-byte window starting at an address that is NOT MAPPED —
-            // stale bytes, reported as a successful read, for every request
-            // within `BUFSIZE` of the one that just failed.  Upstream leaves it
-            // claimed (loadimage_bfd.cc throws with `bufoffset` already
-            // assigned), which is invisible there only because nothing reads
-            // again nearby; kuna's per-entry `entry_bytes_mapped` probe walks a
-            // relocatable object's extern slots in address order and so hits
-            // exactly that window — the first extern reported unmapped and the
-            // next forty "mapped", out of one poisoned buffer.
-            *bufoffset = !0u64;
-            let mut errmsg =
-                format!("Unable to load {} bytes at {}", cursize, addr.get_shortcut());
-            addr.print_raw(&mut errmsg)?;
-            return Err(KunaError::data_unavail(errmsg));
-        }
-        // Copy the requested bytes out.
-        ptr.copy_from_slice(&buffer[..ptr.len()]);
-        Ok(())
+    fn shared_bytes(&self) -> Option<Arc<dyn ImageBytes>> {
+        Some(Arc::clone(&self.bytes) as Arc<dyn ImageBytes>)
     }
 
     fn open_symbols(&self) {
@@ -1345,7 +1341,8 @@ impl LoadImage for ObjectLoadImage {
             .as_ref()
             .expect("ObjectLoadImage::adjustVma before attachToSpace (C++ null space deref)");
         let badjust = AddrSpace::address_to_byte(adjust as u64, spaceid.get_word_size());
-        for s in &mut self.segments {
+        let bytes = Arc::get_mut(&mut self.bytes).expect("image bytes already shared");
+        for s in &mut bytes.segments {
             s.vma = s.vma.wadd(badjust);
         }
         for s in &mut self.sections {
@@ -1821,6 +1818,40 @@ mod tests {
         .unwrap();
         m.set_default_code_space(1).unwrap();
         m
+    }
+
+    #[test]
+    fn shared_reader_matches_owner_and_blocks_late_overlays() {
+        let payload: Vec<u8> = (0..700).map(|i| (i % 251) as u8).collect();
+        let object = build_elf64(0x1000, &payload, None);
+        let mut owner = ObjectLoadImage::from_bytes("synthetic", &object).unwrap();
+        let ram = Rc::clone(manager().get_default_code_space().unwrap());
+        owner.attach_to_space(Rc::clone(&ram));
+
+        let shared = owner
+            .shared_bytes()
+            .expect("object images publish immutable bytes");
+        assert!(shared.mapped_covers(0x1000, 0x1000 + payload.len() as u64));
+        assert!(!shared.mapped_covers(0x0fff, 0x1001));
+        let mut reader = kuna_sleigh::kuna_sharedbytes::SharedBytesImage::new("synthetic", shared);
+        reader.attach_to_space(Rc::clone(&ram));
+
+        for (off, len) in [(0x1000, 8), (0x1004, 17), (0x11f8, 40), (0x1000, 600)] {
+            let addr = Address::new(Rc::clone(&ram), off);
+            let mut want = vec![0; len];
+            let mut got = vec![0; len];
+            owner.load_fill(&mut want, &addr).unwrap();
+            reader.load_fill(&mut got, &addr).unwrap();
+            assert_eq!(
+                got, want,
+                "shared read differs at {off:#x} for {len} bytes"
+            );
+        }
+
+        let err = owner
+            .overlay_span(0x1000, &[0xcc])
+            .expect_err("published bytes must stay immutable");
+        assert!(err.contains("shared decode view"));
     }
 
     /// Build a minimal little-endian ELF64 x86-64 image with one PT_LOAD
