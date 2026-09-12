@@ -338,6 +338,16 @@ impl GlobalQuery {
         self.entries.clone()
     }
 
+    /// Every identifier owned by the snapshotted global scope.
+    ///
+    /// Declaration-name allocation uses this conservative set to prevent a
+    /// generated local suffix from shadowing a global reference in the same C
+    /// function. Multiple mapped pieces of one Symbol may repeat a name; callers
+    /// that care about uniqueness can collect these into a set.
+    pub fn symbol_names(&self) -> impl Iterator<Item = &str> {
+        self.entries.iter().map(|entry| entry.symbol_name.as_str())
+    }
+
     fn index_for_space(&self, space_index: int4) -> Option<&GlobalSpaceIndex> {
         let position = self
             .space_indexes
@@ -1813,6 +1823,21 @@ impl ArchContext {
             Some(gq) => gq.query_properties(addr, size, usepoint),
             None => 0,
         }
+    }
+
+    /// Snapshot the identifiers visible from the global scope for local-name
+    /// allocation. In remote mode this reads the merged cache accumulated while
+    /// resolving the function; standalone mode reads the frozen per-function
+    /// Database snapshot.
+    pub fn global_symbol_names(&self) -> Vec<String> {
+        let query = self
+            .remote_scope
+            .as_ref()
+            .map(|remote| remote.snapshot())
+            .or_else(|| self.global_query.clone());
+        query
+            .map(|query| query.symbol_names().map(str::to_string).collect())
+            .unwrap_or_default()
     }
 
     /// The global-scope read source for one address: the ghidra-mode

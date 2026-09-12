@@ -80,6 +80,12 @@
 //! inventory, which also carries the import pointer slots that give a call its
 //! name.
 //!
+//! A non-empty selection that produces ZERO function bodies also fails, but
+//! only after its complete text/JSON records have been emitted. One body keeps
+//! a mixed batch successful and every failed function remains its own record.
+//! [`BatchOutcome`] owns that distinction for this command and both project
+//! writers.
+//!
 //! [`render_result_json`] and [`decompile_entries`] are also `kuna decompile
 //! --json`'s (`decompile.rs`) — one schema and one decompile policy across the
 //! single-function and whole-binary surfaces.
@@ -99,8 +105,8 @@ use kuna_console::engine::{
 // The decompile loop + result shape live in the shared decompile-project core
 // (`kuna_console::project` — also reused by the `kuna_wasm` front-end).
 use kuna_console::project::{
-    decompile_pulled, decompile_targets, default_fn_budget_seconds, render_c, DecompileOptions,
-    FuncResult,
+    decompile_pulled, decompile_targets, default_fn_budget_seconds, render_c, BatchOutcome,
+    DecompileOptions, FuncResult,
 };
 // `File::architecture()` (the ARM-discovery default, decbench) plus the
 // section/segment walks the zero-discovery diagnosis reads.
@@ -896,12 +902,14 @@ pub fn run(argv: &[String]) -> i32 {
             let discovery_error = (run.discovered == 0 && unfiltered)
                 .then(|| zero_discovery_error(&args.binary))
                 .flatten();
+            let run_error = discovery_error
+                .or_else(|| BatchOutcome::of(&run.funcs).all_failed_error(&args.binary));
             let text = if args.json {
                 render_selected_json(
                     &args.binary,
                     &run.funcs,
                     &args.options,
-                    discovery_error.as_deref(),
+                    run_error.as_deref(),
                     filters.narrows().then_some(run.discovered),
                     &run.assertions,
                 )
@@ -913,7 +921,7 @@ pub fn run(argv: &[String]) -> i32 {
             // all forty to one stale name); `--assert-strict` makes it fatal.
             let rejected = report_rejected_assertions(&run.assertions);
             let refused = any_refused_assertion(&run.assertions);
-            let status = emit_with_discovery_error(&text, discovery_error.as_deref());
+            let status = emit_with_run_error(&text, run_error.as_deref());
             if status == 0 && (refused || (args.assert_strict && rejected)) {
                 return 1;
             }
@@ -1187,9 +1195,9 @@ pub(crate) fn any_refused_assertion(outcomes: &[kuna_console::assertions::Outcom
     outcomes.iter().any(|o| o.fatal)
 }
 
-fn emit_with_discovery_error(text: &str, discovery_error: Option<&str>) -> i32 {
-    let status = crate::output::emit_with_status(text, i32::from(discovery_error.is_some()));
-    if let Some(message) = discovery_error {
+fn emit_with_run_error(text: &str, run_error: Option<&str>) -> i32 {
+    let status = crate::output::emit_with_status(text, i32::from(run_error.is_some()));
+    if let Some(message) = run_error {
         eprintln!("error: {message}");
     }
     status
@@ -1254,7 +1262,7 @@ pub fn run_functions(argv: &[String]) -> i32 {
                 }
                 text
             };
-            emit_with_discovery_error(&text, discovery_error.as_deref())
+            emit_with_run_error(&text, discovery_error.as_deref())
         }
         Err(e) => {
             eprintln!("error: {e}");
@@ -1309,7 +1317,7 @@ fn run_summary(args: &Args, filters: &Filters) -> i32 {
             &|address| prog.output_code_offset(address),
         )
     };
-    emit_with_discovery_error(&text, discovery_error.as_deref())
+    emit_with_run_error(&text, discovery_error.as_deref())
 }
 
 /// One `decompile-all` run: what it decompiled, and how many entries the
@@ -2342,9 +2350,10 @@ fn result_json(
     }
     fields.extend([(
         // The RUN-level error channel, set exactly when the command exits
-        // non-zero (a total discovery failure here; the aborted function on
-        // `kuna decompile --json`). A single function that failed inside a
-        // whole-binary run is that record's own `error`, not this one.
+        // non-zero (a total discovery failure, an all-failed selected batch,
+        // or the aborted function on `kuna decompile --json`). A failed
+        // function in a mixed whole-binary run is that record's own `error`,
+        // not this one.
         "error".to_string(),
         error_json(error),
     ), ("functions".to_string(), functions)]);

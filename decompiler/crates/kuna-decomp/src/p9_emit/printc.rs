@@ -1436,6 +1436,16 @@ pub struct PrintC {
     /// [`flush_eol_warnings`](PrintC::flush_eol_warnings) at the owning line's
     /// last token (statement `;`, `if (cond) {` header, prototype, ...).
     pub(crate) eol_warns: Vec<(String, std::rc::Rc<kuna_base::space::AddrSpace>, u64)>,
+    /// Per-document spelling for a local HighVariable whose recovered name
+    /// collides in the C function scope. Body references consume the same map.
+    local_name_overrides: std::collections::HashMap<crate::context::HighVariableId, String>,
+    /// Strict subpieces suppressed in favor of their overlap group's unique
+    /// whole-value declaration. References resolve through the whole owner.
+    local_name_aliases: std::collections::HashMap<crate::context::HighVariableId, crate::context::HighVariableId>,
+    /// Grouped pieces that must remain independent declarations because no
+    /// same-named unique whole owner exists. Their references are relative to
+    /// their own declared object, not the overlap group's synthetic symbol.
+    local_name_standalones: std::collections::HashSet<crate::context::HighVariableId>,
 }
 
 impl Default for PrintC {
@@ -1463,6 +1473,9 @@ impl PrintC {
             rt_ctx: RealTypeCtx::OFF,
             out_lang: crate::kuna_lang::OutLang::C,
             eol_warns: Vec::new(),
+            local_name_overrides: std::collections::HashMap::new(),
+            local_name_aliases: std::collections::HashMap::new(),
+            local_name_standalones: std::collections::HashSet::new(),
         }
     }
 
@@ -2254,6 +2267,9 @@ impl PrintC {
     /// differs.
     fn emit_function_document(&mut self, fd: &Funcdata, arch: &Architecture) {
         self.emit.set_output_stream();
+        self.local_name_overrides.clear();
+        self.local_name_aliases.clear();
+        self.local_name_standalones.clear();
         // (kuna) Publish the fd for the fd-free RPN leaf emitters (emit_atom /
         // emit_op) to resolve op/varnode arena keys to the <ast> ids while markup
         // is active.  SAFETY: `fd` outlives this call; it is only ever read
@@ -2859,15 +2875,85 @@ impl PrintC {
         } else {
             std::collections::HashMap::new()
         };
-        // (kuna) `option dedupvardecls`: collapse declarations whose fully-rendered
-        // line is identical (the scalar analogue of the composite-symbol collapse
-        // above).  Off (default) => no deduper => byte-identical output.  See
-        // `crate::kuna_dedupvardecls`.
-        let mut dedup = if arch.dedup_var_decls {
-            Some(crate::kuna_dedupvardecls::DeclDedup::new())
-        } else {
-            None
-        };
+        // Run the lossless rendered-line collapse before unique spellings make
+        // genuinely distinct declarations differ by construction.
+        if arch.dedup_var_decls {
+            let mut dedup = crate::kuna_dedupvardecls::DeclDedup::new();
+            decls.retain(|(high, name)| {
+                let (mut decl_type, mut array_count, comment) =
+                    self.rendered_local_decl(fd, arch, *high);
+                if let Some((t, a)) = symbol_decl_type.get(high) {
+                    decl_type = t.clone();
+                    array_count = a.clone();
+                }
+                let array_sig = array_count.as_ref().map(|(t, c)| (t.clone(), *c));
+                let comment_sig = if arch.name_style_angr {
+                    comment.as_ref().map(|(c, _, off)| (c.clone(), *off))
+                } else {
+                    None
+                };
+                !dedup.is_duplicate((decl_type, name.clone(), array_sig, comment_sig))
+            });
+        }
+        // A VariableGroup can describe AL/AH/AX-style overlap without a mapped
+        // ScopeLocal Symbol. After the ordinary Symbol/identity collapses have
+        // chosen their survivors, suppress a strict subpiece only when exactly
+        // one surviving same-named piece contains every piece in the group. The
+        // owner is guaranteed to remain declared, and references alias through it.
+        let declared_names: std::collections::HashMap<crate::context::HighVariableId, String> =
+            decls.iter().cloned().collect();
+        decls.retain(|(high, name)| {
+            let owner = fd.high_bank().unique_group_covering_high(*high);
+            match owner.filter(|owner| owner != high).and_then(|owner| {
+                declared_names
+                    .get(&owner)
+                    .filter(|owner_name| *owner_name == name)
+                    .map(|_| owner)
+            }) {
+                Some(owner) => {
+                    self.local_name_aliases.insert(*high, owner);
+                    false
+                }
+                None => true,
+            }
+        });
+        // If every semantic collapse declined, repeated grouped names are
+        // distinct declarations. Their accesses must be relative to their own
+        // piece-sized objects; retaining the group's offset/type decoration would
+        // produce forms such as `byte_2._1_1_` against a one-byte declaration.
+        let mut remaining_name_count = std::collections::HashMap::<String, usize>::new();
+        for (_, name) in &decls {
+            *remaining_name_count.entry(name.clone()).or_default() += 1;
+        }
+        for (high, name) in &decls {
+            if remaining_name_count.get(name).copied().unwrap_or(0) > 1
+                && fd.high_bank().high_piece_id(*high).is_some()
+            {
+                self.local_name_standalones.insert(*high);
+            }
+        }
+        // Existing collapses remove declarations proven to denote one Symbol.
+        // Repeated names left here are distinct HighVariables: suffix them in
+        // deterministic declaration order, reserving parameters, global/callee
+        // identifiers, and every original local spelling. Reserving non-locals is
+        // semantic: a generated `value_1` local must not capture an existing
+        // `value_1` global or direct call. The override is also read by all body
+        // render paths.
+        {
+            let original: Vec<String> = decls.iter().map(|(_, name)| name.clone()).collect();
+            let occupied = declaration_occupied_names(fd, param_names);
+            let mut names = crate::kuna_dedupvardecls::DeclNameUniquifier::new(
+                original.iter().map(String::as_str),
+                occupied.iter().map(String::as_str),
+            );
+            for (high, name) in &mut decls {
+                let unique = names.unique(name);
+                if unique != *name {
+                    self.local_name_overrides.insert(*high, unique.clone());
+                    *name = unique;
+                }
+            }
+        }
         for (high, name) in &decls {
             // C++ `emitVarDecl(sym)` always writes the declared symbol's id
             // (prettyprint.cc:154 `writeUnsignedInteger(ATTRIB_SYMREF, sym->getId())`),
@@ -2923,23 +3009,6 @@ impl PrintC {
                 decl_type = t.clone();
                 array_count = a.clone();
             }
-            // (kuna) dedupvardecls: skip a declaration whose fully-rendered signature
-            // (final declarator type, name, array adornment, storage comment) was
-            // already emitted — a duplicate line carries no information and is, strictly,
-            // an invalid C re-declaration.  The comment only renders under angr naming,
-            // so it joins the signature only then (otherwise two slots merge wrongly).
-            if let Some(dedup) = dedup.as_mut() {
-                let array_sig = array_count.as_ref().map(|(t, c)| (t.clone(), *c));
-                let comment_sig = if arch.name_style_angr {
-                    comment.as_ref().map(|(c, _, off)| (c.clone(), *off))
-                } else {
-                    None
-                };
-                let sig = (decl_type.clone(), name.clone(), array_sig, comment_sig);
-                if dedup.is_duplicate(sig) {
-                    continue;
-                }
-            }
             self.emit.tag_line();
             let id = self.emit.begin_var_decl(&markup);
             match self.lang().forms.decl {
@@ -2985,6 +3054,35 @@ impl PrintC {
         // last decl; the body's first statement then starts on its own line).
         self.emit.tag_line();
         true
+    }
+
+    /// Resolve the emitted spelling of a named HighVariable in this function.
+    fn emitted_high_name(
+        &self,
+        fd: &Funcdata,
+        high: crate::context::HighVariableId,
+    ) -> Option<String> {
+        let high = self.local_name_aliases.get(&high).copied().unwrap_or(high);
+        self.local_name_overrides
+            .get(&high)
+            .cloned()
+            .or_else(|| fd.high_bank().get(high)?.kuna_name().map(str::to_string))
+    }
+
+    /// Resolve the emitted name plus the symbol-relative geometry used to render
+    /// partial accesses. Independently declared fallback pieces deliberately have
+    /// no shared-symbol geometry: their declared identifier denotes the piece.
+    fn emitted_high_symbol(
+        &self,
+        fd: &Funcdata,
+        high: crate::context::HighVariableId,
+    ) -> Option<(String, int4, Option<std::rc::Rc<crate::dtype::Datatype>>)> {
+        let name = self.emitted_high_name(fd, high)?;
+        if self.local_name_standalones.contains(&high) {
+            return Some((name, -1, None));
+        }
+        let h = fd.high_bank().get(high)?;
+        Some((name, h.kuna_symbol_offset(), h.kuna_symbol_type().cloned()))
     }
 
     /// (kuna) The fully-rendered declaration of one local high: the final declarator
@@ -5850,11 +5948,7 @@ impl PrintC {
                         let high = fd.vbank().get(vn).and_then(|v| v.get_high());
                         let is_explicit =
                             fd.vbank().get(vn).map(|v| v.is_explicit()).unwrap_or(false);
-                        let sym = high.and_then(|h| fd.high_bank().get(h)).and_then(|h| {
-                            h.kuna_name().map(|n| {
-                                (n.to_string(), h.kuna_symbol_offset(), h.kuna_symbol_type().cloned())
-                            })
-                        });
+                        let sym = high.and_then(|high| self.emitted_high_symbol(fd, high));
                         if let (Some((name, sym_off, Some(sym_type))), true) = (sym, is_explicit) {
                             let mut boff = byte_off;
                             if sym_off > 0 {
@@ -6575,8 +6669,8 @@ impl PrintC {
             .vbank()
             .get(out)
             .and_then(|v| v.get_high())
-            .and_then(|h| fd.high_bank().get(h))
-            .and_then(|h| h.kuna_name().map(|n| (n.to_string(), h.kuna_symbol_type().cloned())));
+            .and_then(|high| self.emitted_high_symbol(fd, high))
+            .map(|(name, _, ty)| (name, ty));
         if let Some((name, Some(st))) = named {
             let mt = st.get_metatype();
             if (mt == crate::dtype::type_metatype::TYPE_STRUCT
@@ -7331,10 +7425,7 @@ impl PrintC {
         // named high renders its bound `vN` name here — for *every* member, which
         // is exactly how the C++ renders all instances of a merged local.
         if let Some(high) = v.get_high() {
-            let named = fd.high_bank().get(high).and_then(|h| h.kuna_name()).map(|n| {
-                let hb = fd.high_bank().get(high).unwrap();
-                (n.to_string(), hb.kuna_symbol_offset(), hb.kuna_symbol_type().cloned())
-            });
+            let named = self.emitted_high_symbol(fd, high);
             if let Some((name, sym_off, sym_type)) = named {
                 // Symbol-mapped struct/union member access (C++ `PrintC::
                 // pushSymbolDetail` -> `pushPartialSymbol`, printlanguage.cc:256-258
@@ -7883,12 +7974,8 @@ impl PrintC {
             // The kuna stand-in: read the reference triple off in1's high.
             let in1 = fd.obank().get(op).and_then(|o| o.get_in(1));
             let (sym_name, sym_off, sym_type) = match in1.and_then(|v| fd.vbank().get(v)).and_then(|v| v.get_high()) {
-                Some(high) => match fd.high_bank().get(high) {
-                    Some(h) => (
-                        h.kuna_name().map(|s| s.to_string()),
-                        h.kuna_symbol_offset(),
-                        h.kuna_symbol_type().cloned(),
-                    ),
+                Some(high) => match self.emitted_high_symbol(fd, high) {
+                    Some((name, off, ty)) => (Some(name), off, ty),
                     None => (None, -1, None),
                 },
                 None => (None, -1, None),
@@ -8489,6 +8576,29 @@ impl PrintC {
         }
         true
     }
+}
+
+/// Identifiers a generated local suffix must not capture.
+fn declaration_occupied_names(
+    fd: &Funcdata,
+    names: impl IntoIterator<Item = String>,
+) -> Vec<String> {
+    let mut names: Vec<String> = names.into_iter().collect();
+    names.extend(fd.get_arch().global_symbol_names());
+    let name_style = fd.get_arch().kuna_name_style();
+    names.extend((0..fd.num_calls()).filter_map(|index| {
+        let call = fd.get_call_specs(index);
+        if !call.get_name().is_empty() {
+            Some(call.get_name().to_string())
+        } else if !call.get_entry_address().is_invalid() {
+            Some(call.fspec_printed_name(name_style))
+        } else {
+            // An unnamed CALLIND has no identifier to capture and its synthetic
+            // call-spec address is deliberately invalid.
+            None
+        }
+    }));
+    names
 }
 
 /// Head op of an sblocks-arena basic block (when the structured node itself is

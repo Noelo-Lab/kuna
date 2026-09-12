@@ -310,6 +310,19 @@ Four front-ends drive one engine assembly:
   listing beside the error, because a name the packed stub is going to call is
   the answer for that file. A declaration is still what clears the verdict: one
   declared body makes the run a run.
+
+  (kuna) **The native decompile verdict is also read after the selected functions
+  run.** Selection succeeded and individual failures were isolated, but a non-empty
+  result set with no `FuncResult::code` body is not a usable decompilation. The shared
+  `decompiler/crates/kuna-console/src/project.rs (BatchOutcome)` classifier makes
+  `decompile-all` and both `decompile-project` writers report that state as a
+  run-level error. This is an aggregate verdict, not fail-fast: all text/JSON records
+  and all project artifacts are finished first; one body keeps a mixed batch at exit
+  zero and every failed function remains its own error record. A streamed all-failed
+  export is complete rather than interrupted, so it finalizes the README and
+  `index.jsonl`, removes `.streaming`, then returns exit one. An empty narrowed
+  selection has no result set and remains an ordinary filter answer.
+
   Explicit selection of an entry with **no mapped bytes** — a relocatable
   object's undefined symbol bound to a synthetic extern-area address
   so that calls to it render by name — answers with the entry's nature rather

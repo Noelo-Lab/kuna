@@ -5,8 +5,8 @@
   "rejected_count": 1,
   "by_status": {
     "blocked": 1,
-    "closed": 135,
-    "open": 61
+    "closed": 138,
+    "open": 58
   },
   "by_track": {
     "loader": 10,
@@ -1591,7 +1591,7 @@
       "need_id": "x86-64-syscall-wrapper",
       "title": "x86-64 syscall wrapper returns the incoming syscall number",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "blocker",
       "probe_id": "p-babb09aa99a6",
       "acceptance_id": "a-266d44a4acaf",
@@ -1606,15 +1606,15 @@
       ],
       "first_seen_round": 7,
       "attempts": 0,
-      "covered_by_option": null,
+      "covered_by_option": "x64syscall",
       "touches": [
         "decompiler/crates/kuna-decomp"
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": "https://github.com/Noelo-Lab/kuna/pull/552",
+      "closed_in_round": 12,
+      "closing_pr": "552",
       "reject_reason": null,
       "score": 20.794415,
       "path": "docs/re-needs/x86-64-syscall-wrapper.md"
@@ -3697,10 +3697,10 @@
       "need_id": "overlapping-subregister-temporaries-receive",
       "title": "Overlapping subregister temporaries receive duplicate local names",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
       "probe_id": "p-e2e8e9ceb38a",
-      "acceptance_id": "a-923bd9e40d90",
+      "acceptance_id": "a-c6276af322b1",
       "hypothesis_status": "upheld",
       "credibility": 0.7,
       "instances": 1,
@@ -3708,21 +3708,22 @@
         "603a9d7833c5d42c3d016c55"
       ],
       "rounds": [
-        11
+        11,
+        12
       ],
       "first_seen_round": 11,
-      "attempts": 0,
+      "attempts": 1,
       "covered_by_option": null,
       "touches": [
         "decompiler/crates/kuna-decomp"
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": 590,
+      "closed_in_round": 12,
+      "closing_pr": "590",
       "reject_reason": null,
-      "score": 13.862944,
+      "score": 9.241962,
       "path": "docs/re-needs/overlapping-subregister-temporaries-receive.md"
     },
     {
@@ -4665,10 +4666,10 @@
       "need_id": "whole-binary-decompilation-exits",
       "title": "Whole-binary decompilation exits zero when every function fails",
       "track": "tooling",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
-      "probe_id": "p-60e3bcd5f937",
-      "acceptance_id": "a-b1806ca4663e",
+      "probe_id": "p-6b7d31fb2398",
+      "acceptance_id": "a-ca0acbabc161",
       "hypothesis_status": "inconclusive",
       "credibility": 0.7,
       "instances": 1,
@@ -4683,13 +4684,16 @@
       "covered_by_option": null,
       "touches": [
         "decompiler/crates/kuna-cli",
+        "decompiler/crates/kuna-console/src/project.rs",
+        "docs/cli.md",
+        "docs/spec/00-overview.md",
         "docs/history.md"
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": "https://github.com/Noelo-Lab/kuna/pull/592",
+      "closed_in_round": 12,
+      "closing_pr": "592",
       "reject_reason": null,
       "score": 13.862944,
       "path": "docs/re-needs/whole-binary-decompilation-exits.md"

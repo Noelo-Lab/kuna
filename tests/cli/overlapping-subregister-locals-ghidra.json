@@ -1,0 +1,43 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "overlap_bytes",
+    "--option",
+    "namestyle",
+    "ghidra"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/overlaplocals_i386",
+    "binary_sha256": "d9a4c30516c60c55703f2822688837b723a4b9b3b8131af2b4f306233e5eebb3",
+    "binary_size": 8860,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/overlaplocals_i386",
+    "selector": "overlap_bytes",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "(?m)^  char v1 \\[2\\];$",
+      "(?m)^    v1\\[0\\] = s_804a000\\[8\\];$",
+      "(?m)^    v1\\[1\\] = s_804a000\\[9\\];$"
+    ],
+    "stdout_absent": [
+      "(?m)^  (?:char|undefined2) v1;"
+    ]
+  },
+  "notes": "Ghidra-name-style acceptance sibling for overlapping-subregister-temporaries-receive; it positively pins the same whole owner and its two byte-piece references."
+}
