@@ -714,6 +714,18 @@ through the packed image's import data directory, because retargeting the direct
 at a decoy is the first thing a repacker does to a UPX image, and the witness in
 `tests/fixtures/upx_packed_pe_i386.exe` is exactly that.
 
+The agreement is over the *set* of DLL names, not a position-by-position walk. The
+loader table holds one descriptor per distinct DLL, while the original image may
+import a single DLL across several descriptors -- a 32-bit MSVC witness names seven
+DLLs from thirteen, `KERNEL32.DLL` four times -- so the two lists differ in length
+whenever a binary does that, and a positional comparison can never agree on one. It
+did not merely lose the table: it reported the image as corrupt.
+
+Base relocations and a TLS directory need no rebuild step. Both are carried inside
+the compressed image rather than the trailer, so an image having them costs no
+trailer bytes; the trailer tally is what detects a directory this tier really cannot
+replay, and refusing these two up front turned away images that unpack correctly.
+
 (kuna) **NEOLite.** A second packer, recognized before UPX is asked and on evidence
 of its own, so nothing about the UPX arm -- including what it answers for a file that
 is not packed at all -- depends on this. `decompiler/crates/kuna-analysis/src/neolite.rs`

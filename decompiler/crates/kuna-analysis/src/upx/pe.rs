@@ -27,10 +27,15 @@
 //! data directories the *original* image had. A directory this module does not
 //! rebuild would silently desynchronize every later read, so the walk tallies
 //! its own consumption against the trailer's real length and refuses a
-//! mismatch -- on top of naming base relocations and TLS up front. Everything
+//! mismatch. That tally is the real guard: base relocations and a TLS
+//! directory are carried inside the compressed image rather than the trailer,
+//! so an image having them costs no trailer bytes and needs no rebuild step --
+//! refusing them up front turned working images away. Everything
 //! else is checked the way the ELF arm checks its stream: both Adler-32s, the
 //! rebuilt directories confined to the sections that own them, and a
 //! reconstructed file whose length must equal the original's to the byte.
+
+use std::collections::BTreeSet;
 
 use super::filter;
 use super::{adler32, Block, PackInfo, UpxError};
@@ -50,6 +55,10 @@ const DIR_BOUND_IMPORT: usize = 11;
 const DIR_DELAY_IMPORT: usize = 13;
 
 const RT_GROUP_ICON: u32 = 14;
+
+/// Upper bound on descriptors in a candidate loader import table, so a scan
+/// over a section of zeros cannot walk the whole image.
+const MAX_LOADER_DLLS: usize = 256;
 
 fn corrupt(what: impl Into<String>) -> UpxError {
     UpxError::Corrupt(what.into())
@@ -319,8 +328,6 @@ pub(super) fn unpack(img: &Image<'_>, info: &PackInfo) -> Result<(Vec<u8>, Vec<B
     }
 
     for (dir, what) in [
-        (DIR_BASERELOC, "base relocations"),
-        (DIR_TLS, "a TLS directory"),
         (DIR_BOUND_IMPORT, "bound imports"),
         (DIR_DELAY_IMPORT, "delay-loaded imports"),
     ] {
@@ -510,21 +517,50 @@ fn parse_import_block(obuf: &[u8], mut at: usize, rvamin: u32) -> Result<Vec<Imp
     }
 }
 
+/// Does a candidate loader table name exactly the DLLs the trailer asks for?
+///
+/// A set comparison. The loader table holds one descriptor per distinct DLL,
+/// while the original image may import one DLL across several descriptors, so
+/// the two lists differ in length whenever a binary does that.
+fn table_names_dlls(table: &[u32], base: u32, dlls: &[ImportDll]) -> bool {
+    if table.is_empty() {
+        return false;
+    }
+    let wanted: BTreeSet<u32> =
+        dlls.iter().filter_map(|d| base.checked_add(d.name_off)).collect();
+    table.iter().copied().collect::<BTreeSet<u32>>() == wanted
+}
+
 /// Find the packed loader's own import descriptor table, which is what the
 /// trailer's DLL-name offsets are relative to.
 ///
 /// UPX reaches it through the packed image's import data directory. That is
 /// exactly the field a repacker retargets when it bolts a decoy import table
 /// onto a UPX image, so the directory is a hint here and not the answer: the
-/// table is the one whose `k`-th descriptor names the DLL the trailer's `k`-th
-/// offset points at, and a candidate is accepted only if it is unique.
+/// table is the one naming exactly the DLLs the trailer's offsets point at,
+/// and a candidate is accepted only if it is unique.
+///
+/// Matched as a SET, not position-by-position. The loader table holds one
+/// descriptor per distinct DLL, while the original image may import the same
+/// DLL from several descriptors, so the two lists differ in length whenever a
+/// binary does that and a positional walk can never agree.
 fn loader_import_table(img: &Image<'_>, dlls: &[ImportDll]) -> Result<u32, UpxError> {
     let agrees = |base: u32| -> bool {
-        dlls.iter().enumerate().all(|(k, d)| {
-            let at = base + (k * IMPORT_DESC_SIZE) as u32 + 12;
-            img.at_rva(at, 4).map(|s| u32::from_le_bytes([s[0], s[1], s[2], s[3]]))
-                == base.checked_add(d.name_off)
-        })
+        let mut names = Vec::new();
+        for k in 0.. {
+            let at = base + (k * IMPORT_DESC_SIZE) as u32;
+            let Some(desc) = img.at_rva(at, IMPORT_DESC_SIZE) else {
+                return false;
+            };
+            if desc.iter().all(|&b| b == 0) {
+                break;
+            }
+            names.push(u32::from_le_bytes([desc[12], desc[13], desc[14], desc[15]]));
+            if names.len() > MAX_LOADER_DLLS {
+                return false;
+            }
+        }
+        table_names_dlls(&names, base, dlls)
     };
     let declared = img.hdr.dir(DIR_IMPORT).0;
     if declared != 0 && agrees(declared) {
@@ -759,4 +795,50 @@ fn assemble(
         ));
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn dlls(name_offs: &[u32]) -> Vec<ImportDll> {
+        name_offs
+            .iter()
+            .map(|&name_off| ImportDll { name_off, iat: 0, thunks: Vec::new() })
+            .collect()
+    }
+
+    /// The regression: a 32-bit MSVC crackme importing seven DLLs across
+    /// thirteen descriptors (KERNEL32 four times, three others twice). Its
+    /// loader table holds one descriptor per distinct DLL, so the two lists are
+    /// 7 and 13 long and a position-by-position walk could never agree -- the
+    /// unpack failed with "cannot find the loader import table".
+    #[test]
+    fn a_dll_imported_by_several_descriptors_still_matches_its_loader_table() {
+        let base = 0x73a0c;
+        let table: Vec<u32> = [224, 237, 250, 263, 273, 286, 297]
+            .iter()
+            .map(|o| base + o)
+            .collect();
+        let repeated = dlls(&[224, 224, 224, 224, 237, 237, 250, 263, 273, 273, 286, 286, 297]);
+        assert!(table_names_dlls(&table, base, &repeated));
+    }
+
+    #[test]
+    fn one_descriptor_per_dll_still_matches() {
+        let base = 0x1000;
+        let table: Vec<u32> = [16, 32, 48].iter().map(|o| base + o).collect();
+        assert!(table_names_dlls(&table, base, &dlls(&[16, 32, 48])));
+    }
+
+    /// Set equality both ways: a table naming a DLL the trailer never asks for
+    /// is the wrong table, and so is one missing a DLL the trailer wants.
+    #[test]
+    fn a_table_whose_names_differ_is_rejected() {
+        let base = 0x1000;
+        let table: Vec<u32> = [16, 32, 48].iter().map(|o| base + o).collect();
+        assert!(!table_names_dlls(&table, base, &dlls(&[16, 32])));
+        assert!(!table_names_dlls(&table, base, &dlls(&[16, 32, 48, 64])));
+        assert!(!table_names_dlls(&[], base, &dlls(&[16])));
+    }
 }
