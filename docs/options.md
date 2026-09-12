@@ -333,6 +333,8 @@ Three tiers:
 | an inlined callee body is spliced into the caller and should read as a call | [`outline`](#outline) |
 | want to pull a chosen region out of a function into a named pseudofunction | [`outline`](#outline) |
 | acting on an almostregion inline-candidate report by hand or with an llm | [`outline`](#outline) |
+| an unprototyped call loses a local output pointer | [`stackaddrargtrial`](#stackaddrargtrial) |
+| a post-call word or halfword output folds to its initializer | [`stackaddrargtrial`](#stackaddrargtrial) |
 | puts/printf arguments untyped so string literals render as bare constants or dat_ addresses | [`libproto`](#libproto) |
 | imports carry no signatures and call arguments stay untyped | [`libproto`](#libproto) |
 | a caller's parameter is unsigned long where it is only ever passed to a libc function that takes a char */int | [`libcsigs`](#libcsigs) |
@@ -1580,6 +1582,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** Off (default; inert, and inert also when a region is supplied for a different function). Supply a region to pull an inlined callee body back out into a named call - typically taking the head and exit from `--option almostregion report`.
 - **Where / provenance:** P8/goto-quality · kuna · opt-in-tool · kuna-inline-identification
 - **Example:** `--option outline 0x401000:0x40100a-0x401018`
+
+### `stackaddrargtrial` -- on | off, default `off`
+
+- **Symptoms:** an unprototyped call loses a local output pointer; a post-call word or halfword output folds to its initializer.
+- **What it does:** Retain an existing register argument trial when its value is a same-width copy or constant displacement of a particular stack-pointer value. The provenance walk is bounded to 64 steps and declines phi nodes, unknown bases, width changes, and call-clobbered values. Known dead callee inputs retain their veto. Keeping the pointer lets ordinary call alias handling preserve the local object's output value.
+- **When to flip:** Enable when an unprototyped call loses a local output pointer and subsequent loads incorrectly fold to the pre-call initializer. This is evidence of intent, not a declared prototype: a live stack address can also be incidental, so the option is off by default. Supply a prototype when the interface is known.
+- **Where / provenance:** P4/active-input-trial-scoring · kuna · opt-in-tool · kuna-stack-address-argument
+- **Example:** `option stackaddrargtrial on`
 
 ## Analysis & loader passes
 

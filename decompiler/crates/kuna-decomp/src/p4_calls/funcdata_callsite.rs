@@ -196,6 +196,12 @@ pub fn check_input_trial_use(idx: int4, data: &mut Funcdata, aliascheck: &mut Al
             )
         } {
             data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_no_use();
+        } else if crate::p4_calls::kuna_stackaddrargtrial::carries_stack_address(data, vn) {
+            let trial = data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i);
+            trial.set_ancestor_realistic();
+            trial.set_ancestor_solid();
+            trial.set_stack_address();
+            trial.mark_active();
         } else {
             let (trial_size, trial_cond, trial_killed) = {
                 let t = data.get_call_specs_mut(idx).get_active_input().get_trial(i);

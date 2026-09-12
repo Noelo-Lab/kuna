@@ -751,6 +751,8 @@ pub struct ArchContext {
     /// [`Funcdata::only_op_use`](crate::funcdata::Funcdata) through
     /// [`crate::p4_calls::kuna_exclusivearguse::access_cannot_reach_call`].
     pub exclusive_arg_use: bool,
+    /// Retain register trials carrying proven stack addresses.
+    pub stack_addr_arg_trial: bool,
     /// (kuna) `option callretpair`: whether the two-register CALL output arm of
     /// `FuncCallSpecs::buildOutputFromTrials` runs on any image rather than only
     /// a detected rustc one.  Read by
@@ -1528,6 +1530,7 @@ impl ArchContext {
             // from the engine Architecture in `build_arch_handle`.
             zero_idiom_use: true,
             exclusive_arg_use: true,
+            stack_addr_arg_trial: false,
             // (kuna) `option callretpair` default-on; the real value is copied
             // from the engine Architecture in `build_arch_handle`.
             call_ret_pair: true,

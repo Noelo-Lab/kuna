@@ -1,0 +1,18 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v7">
+<!-- Synthetic C shape: value=0; if (!out) return -1;
+     rc=read_word(a,b,c,&amp;value); if (!rc) { *out=65535; if (!value) *out=255; } -->
+<bytechunk space="ram" offset="0x1000">10482de900c0a0e3004053e208b08de20cd04de210c00be50b00000a10304be2f60300eb000050e30500001a10301be5ff2f0fe3002084e5000053e3ff30a0030030840508d04be21088bde80000e0e3fbffffea</bytechunk>
+<bytechunk space="ram" offset="0x2000">1eff2fe1</bytechunk>
+<symbol space="ram" offset="0x1000" name="conditional_word"/>
+<symbol space="ram" offset="0x2000" name="read_word"/>
+</binaryimage>
+<script>
+<com>load function conditional_word</com><com>decompile</com><com>print C</com>
+<com>option stackaddrargtrial on</com>
+<com>load function conditional_word</com><com>decompile</com><com>print C</com>
+</script>
+<stringmatch name="STACK WORD #1: default loses the pointer" min="1" max="1">read_word\(\)</stringmatch>
+<stringmatch name="STACK WORD #2: enabled retains all four arguments" min="1" max="1">read_word\(a0,a1,a2,v</stringmatch>
+<stringmatch name="STACK WORD #3: enabled preserves the output-dependent condition" min="1" max="1">!v2\[0\]</stringmatch>
+</decompilertest>

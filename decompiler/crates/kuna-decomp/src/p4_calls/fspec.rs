@@ -963,6 +963,7 @@ pub mod param_trial_flags {
     pub const ANCESTOR_REALISTIC: uint4 = 0x200;
     /// Solid movement into the Varnode.
     pub const ANCESTOR_SOLID: uint4 = 0x400;
+    pub const STACK_ADDRESS: uint4 = 0x800;
 }
 
 /// A register or memory location that may be used to pass a parameter or return
@@ -1125,7 +1126,11 @@ impl ParamTrial {
     pub fn set_ancestor_solid(&mut self) {
         self.flags |= param_trial_flags::ANCESTOR_SOLID;
     }
-    /// Does this show solid movement into the Varnode (C++ `hasAncestorSolid`).
+    /// Record opt-in evidence that this input carries a stack address.
+    pub fn set_stack_address(&mut self) { self.flags |= param_trial_flags::STACK_ADDRESS; }
+    pub fn has_stack_address(&self) -> bool { self.flags & param_trial_flags::STACK_ADDRESS != 0 }
+
+    /// Does this show solid movement into the Varnode (C++ `hasAncestorSolid`)?
     pub fn has_ancestor_solid(&self) -> bool {
         (self.flags & param_trial_flags::ANCESTOR_SOLID) != 0
     }
@@ -3060,7 +3065,7 @@ impl ParamListStandard {
                         active,
                         trial,
                         &self.entry,
-                    ),
+                    ) || crate::p4_calls::kuna_stackaddrargtrial::trial_is_protected(active, trial, &self.entry),
                 )
             };
             if defnouse {

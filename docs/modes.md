@@ -160,14 +160,13 @@ really returns a 16-byte value in `rax:rdx` and forwards the high half into the
 next call keeps its argument. Flip `--option argclobber off` to keep every
 argument the register model produced, phantom or not.
 
-Separately, five default-off options are **unevaluated** rather than excluded —
-`guardarm`, `loopcondhoist`, `paramcopyhoist`, `switchselector` and
-`msvcstackguard`. They are absent from the preset only because the sweep and
-speed measurement that would justify preset membership has not been run (for
-`msvcstackguard`, because no corpus here carries a real MSVC `/GS` cookie to run
-it against), and each is tracked in the `UNEVALUATED` list beside the invariant
-test. Being on that list is a to-do, not a verdict: DIV-93 emptied the four ARM
-entry options off it.
+Separately, six default-off options remain unevaluated for preset membership:
+`guardarm`, `loopcondhoist`, `paramcopyhoist`, `switchselector`, `msvcstackguard`
+and `stackaddrargtrial`. Each needs the sweep and speed evidence that would
+justify a preset change. The stack-address option has focused tests and a local
+speed measurement, but no broad sweep; the MSVC option still needs a corpus with
+real `/GS` cookies. The `UNEVALUATED` list beside the invariant test records this
+follow-up. DIV-93 previously removed the four ARM entry options from that list.
 
 ### Caveats
 

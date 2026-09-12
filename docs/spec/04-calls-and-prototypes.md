@@ -1,5 +1,17 @@
 # 04 — Calls & prototypes
 
+With `stackaddrargtrial on` (default off), an existing register input trial can
+use a bounded same-width copy/displacement chain to a specific stack-pointer
+value as argument evidence. This retains a passed local address despite other
+uses of the frame. The proven register trial also survives the inactive-prefix
+length heuristic; normal ABI hole filling supplies its earlier register slots.
+Known dead callee inputs, definitely-unused slots, non-register entries, unknown
+bases, phi merges, width changes and call-clobbered pointer chains keep their
+existing treatment. Ordinary call alias handling then preserves output loads
+and their dependent conditions. A stack address may be incidental, so a known
+interface should use a declared prototype instead of this inference.
+
+
 ```yaml
 Anchors:
   - decompiler/crates/kuna-decomp/src/p4_calls

@@ -124,7 +124,7 @@ impl OptionSpillArgTrial {
 
 /// The stack-pointer register storage this architecture's stack space is
 /// relative to (C++ `SpacebaseSpace::getSpacebase(0)`).
-fn stack_pointer_storage(data: &Funcdata) -> Option<VarnodeStorage> {
+pub(crate) fn stack_pointer_storage(data: &Funcdata) -> Option<VarnodeStorage> {
     let stackspc = data.get_arch().manage().get_stack_space()?;
     if stackspc.num_spacebase() < 1 {
         return None;
