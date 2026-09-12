@@ -532,17 +532,10 @@ fn is_unknown_function(out: &str) -> bool {
         || out.contains("Bad namespace:")
 }
 
-/// Whether the console transcript says the selected entry has no mapped bytes
-/// (`LoadImage::load_fill`'s "Unable to load N bytes at <addr>", raised the
-/// moment the flow-follower asks for the first instruction).
-///
-/// For an object-backed input, that is the signature of an **external**: an
-/// entry that carries an address for call naming but whose definition is in
-/// another module. A raw image can emit the same diagnostic when a mapped entry
-/// reaches EOF or undecodable trailing bytes, so callers must not apply this
-/// shortcut to raw inputs.
+/// The console's mapping check precedes flow following. A later byte-load
+/// failure can come from decoding mapped code and does not identify an external.
 fn is_unmapped_entry(out: &str) -> bool {
-    out.contains("Unable to load ") && out.contains(" bytes at ")
+    selection_failure(out).as_deref() == Some("Selected entry has no mapped bytes")
 }
 
 /// The console's per-function abort notice: `IfcDecompile` catches a

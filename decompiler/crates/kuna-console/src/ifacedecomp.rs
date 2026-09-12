@@ -1311,6 +1311,9 @@ decomp_command!(
             .resolve_body_entry(&selector)
             .map_err(|error| IfaceError::execution(error.to_string()))?;
         let entry = selected.addr;
+        if !prog.entry_bytes_mapped(&entry) {
+            return Err(IfaceError::execution("Selected entry has no mapped bytes"));
+        }
         let resolved_name = if matches!(selector, crate::engine::EntrySelector::Name(_)) {
             funcname
         } else {
@@ -1388,6 +1391,9 @@ decomp_command!(
         }
         .map_err(|error| IfaceError::execution(error.to_string()))?;
         let offset = selected.addr;
+        if !prog.entry_bytes_mapped(&offset) {
+            return Err(IfaceError::execution("Selected entry has no mapped bytes"));
+        }
         s.skip_ws();
         let name = s.read_token(); // optional
         // No explicit name: prefer the FunctionSymbol already installed here,
