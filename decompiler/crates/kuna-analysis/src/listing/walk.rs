@@ -382,7 +382,7 @@ impl Successors for Worklists<'_> {
 /// that produces them (see [`decode_one`] for the cost).
 ///
 /// `detail.refs` selects whether the reference model is filed at all
-/// ([`WalkState::file_ref`] becomes a no-op). Every instruction contributes an
+/// (the reference sink becomes a no-op). Every instruction contributes an
 /// edge per successor, a fall-through included, so on a large program this is
 /// the same order of magnitude as the instruction model itself; `false` leaves
 /// both maps empty for a caller that reads neither.

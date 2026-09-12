@@ -17,6 +17,7 @@
 use std::rc::Rc;
 
 use kuna_base::address::Address;
+use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::space::AddrSpace;
 
 use crate::globalcontext::ContextDatabase;
@@ -60,7 +61,11 @@ pub fn snapshot_context(db: &dyn ContextDatabase, space: &Rc<AddrSpace>) -> Cont
         off = last + 1;
     }
 
-    ContextValueSnapshot { words, default_blob, points }
+    ContextValueSnapshot {
+        words,
+        default_blob,
+        points,
+    }
 }
 
 /// Write `snap`'s value map into `db` over `space`.
@@ -74,15 +79,59 @@ pub fn restore_context(
     db: &mut dyn ContextDatabase,
     snap: &ContextValueSnapshot,
     space: &Rc<AddrSpace>,
-) {
-    let n = snap.default_blob.len().min(db.get_default_value().len());
-    db.get_default_value_mut()[..n].copy_from_slice(&snap.default_blob[..n]);
+) -> KunaResult<()> {
+    let target_words = usize::try_from(db.get_context_size())
+        .map_err(|_| KunaError::lowlevel("context snapshot: target has a negative word count"))?;
+    if snap.words != snap.default_blob.len() {
+        return Err(KunaError::lowlevel(format!(
+            "context snapshot: word count {} does not match default blob length {}",
+            snap.words,
+            snap.default_blob.len()
+        )));
+    }
+    if snap.words != target_words || target_words != db.get_default_value().len() {
+        return Err(KunaError::lowlevel(format!(
+            "context snapshot: source has {} words but target has {}",
+            snap.words, target_words
+        )));
+    }
+    if snap.points.first().map(|(off, _)| *off) != Some(0) {
+        return Err(KunaError::lowlevel(
+            "context snapshot: value map must start at offset 0",
+        ));
+    }
+    let highest = space.get_highest();
+    let mut previous = None;
+    for (off, blob) in &snap.points {
+        if *off > highest {
+            return Err(KunaError::lowlevel(format!(
+                "context snapshot: split point {off:#x} exceeds the address space"
+            )));
+        }
+        if previous.is_some_and(|prev| *off <= prev) {
+            return Err(KunaError::lowlevel(
+                "context snapshot: split points are not strictly ascending",
+            ));
+        }
+        if blob.len() != snap.words {
+            return Err(KunaError::lowlevel(format!(
+                "context snapshot: split point {off:#x} has {} words, expected {}",
+                blob.len(),
+                snap.words
+            )));
+        }
+        previous = Some(*off);
+    }
+
+    db.get_default_value_mut()
+        .copy_from_slice(&snap.default_blob);
 
     let to_end = Address::new_invalid();
     for (off, blob) in &snap.points {
         let addr = Address::new(Rc::clone(space), *off);
-        for (w, value) in blob.iter().enumerate().take(n) {
+        for (w, value) in blob.iter().enumerate() {
             db.set_context_region(&addr, &to_end, w as i32, u32::MAX, *value); // cast: word index
         }
     }
+    Ok(())
 }

@@ -123,7 +123,8 @@ second reader over the same bytes is `SharedBytesImage`, and both it and
 `ObjectLoadImage` serve reads through the one `windowed_load_fill`, so there is
 no second copy of the read semantics to drift. Every site that writes the bytes
 — the dynamic-relocation patch at construction, an `--assert bytes` overlay,
-`adjustVma` — runs at load time and asserts sole ownership of the `Arc`.
+`adjustVma` — runs at load time and requires sole ownership of the `Arc`; an
+overlay requested after publication fails closed.
 
 ## 1.2 Load image
 

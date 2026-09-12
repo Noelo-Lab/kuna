@@ -120,8 +120,8 @@ fn has_commits(sla: &Path) -> Option<bool> {
     Some(engine.base().has_context_commits())
 }
 
-/// Every `.sla` under these processors must answer `false` — the languages the
-/// parallel discovery decode is allowed to run on.
+/// Every `.sla` under these processors must answer `false` for the context-
+/// commit gate. Delay-slot admission is a separate predicate.
 const ALL_FALSE: &[&str] = &["x86", "AARCH64", "RISCV", "Sparc", "SuperH", "Z80"];
 /// Every `.sla` under these must answer `true`.
 const ALL_TRUE: &[&str] = &["ARM", "MIPS", "PowerPC", "PA-RISC"];
@@ -138,6 +138,7 @@ fn context_commits_agree_with_the_globalset_sources() {
         );
         return;
     }
+    assert_eq!(corpus.len(), 148, "the vendored language corpus changed");
 
     let mut answers: Vec<(String, String, bool, usize)> = Vec::new();
     for (processor, name, path) in &corpus {

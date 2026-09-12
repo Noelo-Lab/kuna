@@ -1905,8 +1905,9 @@ pub struct Architecture {
     decode_sla: Option<Arc<[u8]>>,
     /// (kuna) The active language's `.ldefs` `<truncate_space>` records, in
     /// ldefs order -- the second half of the rebuild instructions, recorded
-    /// where `modify_spaces` applies them. Empty until then.
-    decode_truncations: Arc<[(String, u32)]>,
+    /// where `modify_spaces` applies them. `None` until that bootstrap step has
+    /// run; an empty list is a valid, complete recipe for most languages.
+    decode_truncations: Option<Arc<[(String, u32)]>>,
 }
 
 impl Architecture {
@@ -1921,7 +1922,7 @@ impl Architecture {
     /// (kuna) Record the active language's `.ldefs` space truncations, where
     /// `modify_spaces` applies them.
     pub fn set_decode_truncations(&mut self, truncations: Vec<(String, u32)>) {
-        self.decode_truncations = Arc::from(truncations);
+        self.decode_truncations = Some(Arc::from(truncations));
     }
 
     /// (kuna) The instructions for rebuilding a decode-equivalent engine on
@@ -1932,11 +1933,12 @@ impl Architecture {
     /// recipe that reproduces it.
     pub fn decode_recipe(&self) -> Option<crate::kuna_decodekit::EngineRecipe> {
         let sla = self.decode_sla.clone()?;
+        let truncations = self.decode_truncations.clone()?;
         self.translate.as_sleigh()?;
         Some(crate::kuna_decodekit::EngineRecipe {
             archid: Arc::from(self.archid.as_str()),
             sla,
-            truncations: Arc::clone(&self.decode_truncations),
+            truncations,
         })
     }
 }
@@ -2018,7 +2020,7 @@ impl Architecture {
             kuna_snapshot_cache: std::env::var_os("KUNA_NO_SYMBOL_SNAPSHOT_CACHE").is_none(),
 
             decode_sla: None,
-            decode_truncations: Arc::from(Vec::new()),
+            decode_truncations: None,
 
             trim_recurse_max: 0,
             max_implied_ref: 0,

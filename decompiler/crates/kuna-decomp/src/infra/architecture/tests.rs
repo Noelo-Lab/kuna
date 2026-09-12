@@ -43,6 +43,28 @@ fn bare_sleigh() -> Sleigh {
     Sleigh::new(Box::new(DummyImg), Box::new(ContextInternal::new()))
 }
 
+#[test]
+fn decode_recipe_requires_both_bootstrap_inputs() {
+    let mut arch = Architecture::new("test:LE:32", bare_sleigh());
+    assert!(
+        arch.decode_recipe().is_none(),
+        "a bare engine has no recipe"
+    );
+
+    arch.set_decode_sla(std::sync::Arc::from(&b"sla"[..]));
+    assert!(
+        arch.decode_recipe().is_none(),
+        "the .sla alone omits the language's active space truncations"
+    );
+
+    arch.set_decode_truncations(Vec::new());
+    let recipe = arch
+        .decode_recipe()
+        .expect("both bootstrap inputs complete the recipe");
+    assert_eq!(&*recipe.sla, b"sla");
+    assert!(recipe.truncations.is_empty());
+}
+
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
