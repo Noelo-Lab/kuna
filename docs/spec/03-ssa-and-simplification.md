@@ -1060,8 +1060,13 @@ dynamic-relocation slots whose value the linker itself computed (§1.2), which i
 what turns a call through a relocated GOT slot back into a named call, or when the
 read lies entirely inside the image's executable read-only memory (`litpoolconst`,
 §1.2), which is what renders an ARM literal-pool constant as its value — expands
-*volatile* access into its user-op form,
-and folds to zero any varnode whose consumed bits and nonzero mask are
+*volatile* access into its user-op form. An external-reference Varnode skips the
+entire read-only fill branch, including program-wide `readonly`, `dynrelocs` and
+`litpoolconst`: the mark says a loader supplies the run-time target, so file bytes
+cannot replace its symbolic identity. This is load-bearing for a PE IAT placed in
+an RX section, whose file word is a hint/name RVA rather than the function address
+the Windows loader writes there. The action also folds to zero any varnode whose
+consumed bits and nonzero mask are
 disjoint (skipping constants and COPYs of nonzero constants, which would
 recurse).
 

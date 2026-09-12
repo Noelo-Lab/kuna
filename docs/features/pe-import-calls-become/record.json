@@ -1,0 +1,106 @@
+{
+  "need_id": "pe-import-calls-become",
+  "track": "quality",
+  "route": "RE-friction (docs/re-pipeline.md), round 12",
+  "opportunity": "pe-import-calls-become",
+  "test_name": "PE import identity survives read-only propagation",
+  "binary": "decompiler/crates/kuna-analysis/tests/fixtures/pe_iatincode_readonly_i386.exe",
+  "selector": "0x401028",
+  "func_addr": "0x401028",
+  "source_decompiler": "kuna",
+  "phase": "P3 (SSA and simplification, ActionVarnodeProps)",
+  "module": "decompiler/crates/kuna-decomp/src/p3_dataflow/coreaction_early.rs",
+  "change_kind": "correctness-fix",
+  "tier": "transform",
+  "option": "peimportcall",
+  "default_on": true,
+  "scope": "small",
+  "speed_method": "Interleaved whole-binary decompile-all --json --no-vars on crypto4.exe, exact rebased pre-fix versus fixed release binaries, one warmup and median of 5",
+  "speed_off_ms": 5480,
+  "speed_on_ms": 5330,
+  "speed_delta_pct": -2.74,
+  "speed_samples": 5,
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": true,
+  "speed_forced_off": false,
+  "rebased_onto": "origin/main bf8c0b95bfd2125ab6ef522866cfb466904f5545",
+  "decisions": [
+    "The filed hypothesis is upheld: ActionVarnodeProps observed an RX PE IAT slot as both readonly and externref, then fillin_read_only replaced the slot with its on-disk hint/name RVA before ActionDeindirect could consume the external-reference identity.",
+    "The fix snapshots Varnode::is_external_ref and excludes that Varnode from the entire readonly-fold branch. This is the narrow semantic invariant: loader-resolved identity outranks file-byte propagation under readonly, dynrelocs and litpoolconst alike.",
+    "Subtracting PE IAT ranges from executable literal-pool ranges was rejected. It would special-case one producer, duplicate the stronger externref fact, and leave program-wide readonly able to repeat the same corruption.",
+    "The existing option boundaries are preserved. peimportcall off does not paint externref and therefore retains the raw-call rendering; no PE import ranges, defaults, or command semantics changed.",
+    "The acceptance was strengthened during reduction: it requires two distinct GetDlgItemTextA calls with all four arguments and excludes both the original witness RVA 0x173dc and the fixture RVA 0x10c4, so deleting a call or cosmetically replacing one target cannot pass."
+  ],
+  "acceptance": {
+    "probe_id": "a-983e58b7c36b",
+    "repeat": 3,
+    "result": "pass 3/3; transition closed; all five clauses passed",
+    "expected_calls": [
+      "GetDlgItemTextA(a0,0x68,0x404000,0x20);",
+      "GetDlgItemTextA(a0,0x69,0x404020,0x20);"
+    ],
+    "forbidden": [
+      "0x173dc",
+      "0x10c4"
+    ],
+    "unpatched_result": "fails both required call matches and emits the raw 0x10c4 call target"
+  },
+  "fixture": {
+    "path": "decompiler/crates/kuna-analysis/tests/fixtures/pe_iatincode_readonly_i386.exe",
+    "generator": "decompiler/crates/kuna-analysis/tests/fixtures/pe_iatincode_readonly_i386.py",
+    "size": 1024,
+    "sha256": "9cd4f3d091d647eeb36df883e2f3f063d34ac7a508c71c9f28f26683f05ac6f6",
+    "shape": "PE32 i386; code, IAT and import metadata share one allocated executable read-only section",
+    "determinism": "generator output compared byte-for-byte with the committed fixture"
+  },
+  "tests": {
+    "console": "verify_pe_import_readonly.rs: peimportcall off remains raw; default and explicit on retain the exact nested VirtualAlloc/GetModuleHandleA call; peimportcall on plus readonly on remains named",
+    "arm_regression": "verify_litpoolconst.rs: 4/4 passed",
+    "cli": "tests/cli/pe-import-calls-become.json; make test-cli 133/133 after the final rebase",
+    "stage_test": null,
+    "stage_test_rationale": "The premise is loader-created PE externref metadata and section permissions, which the raw XML stage corpus cannot express; the object-loader console test is the two-arm integration gate."
+  },
+  "regression_sweep": {
+    "method": "Compared pre-fix and fixed release builds with kuna decompile-all --json --no-vars on the real crypto4.exe witness, then repeated the comparison on the ordinary writable-IAT pe_imports.exe control.",
+    "witness_functions": 93,
+    "witness_functions_added": 0,
+    "witness_functions_removed": 0,
+    "witness_errors_before": 0,
+    "witness_errors_after": 0,
+    "witness_functions_changed": 43,
+    "witness_changes_outside_raw_import_trigger": 0,
+    "raw_folded_calls_before": 115,
+    "raw_folded_calls_after": 0,
+    "distinct_import_names_newly_visible": 78,
+    "control": "pe_imports.exe: 150 functions, byte-identical full JSON before/after",
+    "original_selector": "crypto4.exe 0x40341c contains both GetDlgItemTextA calls and no 0x173dc"
+  },
+  "known_risk": {
+    "finding": "crypto4.exe sub_4039b2 still truncates after GlobalLock because an imported-call no-return attribute is misassociated; later imports are omitted.",
+    "classification": "pre-existing peimportcall/no-return defect exposed by restoring import identity, not caused by the externref guard",
+    "evidence": "The exact truncation is already present on unpatched main with option litpoolconst off, and fixed-default output is byte-identical to that pre-fix workaround for this function.",
+    "disposition": "Recorded for follow-up; deliberately not expanded into a second semantic fix in this small P3 change."
+  },
+  "speed": {
+    "method": "Interleaved exact pre-fix/fixed release binaries on the 93-function crypto4.exe witness; both arms used the same rebased source and runtime specs.",
+    "before_seconds": [5.48, 5.02, 4.93, 5.67, 5.94],
+    "after_seconds": [5.50, 5.26, 5.33, 5.30, 5.38],
+    "median_before_ms": 5480,
+    "median_after_ms": 5330,
+    "delta_pct": -2.74,
+    "samples": 5,
+    "budget_pct": 5.0,
+    "within_budget": true,
+    "note": "The small negative delta is treated as timing noise, not as evidence of a speedup. The evidence supports only that no regression above the 5% budget was observed; acceptance wall-clock samples are not used as performance evidence."
+  },
+  "gates": {
+    "make test": "675/675 PARITY OK",
+    "make test-stages": "783/783 PARITY OK",
+    "make test-cli": "133/133 after the final rebase",
+    "make rust-test": "green on the complete workspace with KUNA_DECOMP_TEST unset on 8d69071f; the only parent delta in the subsequent rebase to bf8c0b95 is the reviewed, disjoint prototype-routing change from PR #575, and the final tree was followed by focused, main, stage, CLI, spec, catalog, counters and mergecheck gates",
+    "make check-spec": "green (lenient and strict)",
+    "kuna catalog --check": "catalog OK",
+    "scripts.repipe.counters --check": "190 settables; tiers 61/70/59; 274 corpus files; no drift",
+    "scripts.repipe.mergecheck": "0 rejects against origin/main; merge guards clean"
+  }
+}

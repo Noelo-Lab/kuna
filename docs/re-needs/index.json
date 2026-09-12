@@ -5,8 +5,8 @@
   "rejected_count": 1,
   "by_status": {
     "blocked": 1,
-    "closed": 126,
-    "open": 70
+    "closed": 127,
+    "open": 69
   },
   "by_track": {
     "loader": 10,
@@ -3754,10 +3754,10 @@
       "need_id": "pe-import-calls-become",
       "title": "PE import calls become calls to raw hint/name RVAs",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
       "probe_id": "p-ba994cd01240",
-      "acceptance_id": "a-69fc381a0afc",
+      "acceptance_id": "a-983e58b7c36b",
       "hypothesis_status": "upheld",
       "credibility": 0.85,
       "instances": 1,
@@ -3768,16 +3768,17 @@
         12
       ],
       "first_seen_round": 12,
-      "attempts": 0,
+      "attempts": 1,
       "covered_by_option": null,
       "touches": [
-        "decompiler/crates/kuna-decomp"
+        "decompiler/crates/kuna-decomp",
+        "decompiler/crates/kuna-console"
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": "https://github.com/Noelo-Lab/kuna/pull/576",
+      "closed_in_round": 12,
+      "closing_pr": 576,
       "reject_reason": null,
       "score": 13.862944,
       "path": "docs/re-needs/pe-import-calls-become.md"
