@@ -26,6 +26,8 @@ The mechanism and proof boundary are recorded in
 
 - Default-on ablation: **675/675 PARITY OK**, no baseline re-pin.
 - Stage gate: **813/813 PARITY OK** after adding the two-pass witness.
+- Full Rust workspace suite: **green, 0 failures**; both spec checks are green.
+- Promoted CLI suite: **151/151 passed**; catalog and derived counters are clean.
 - Exact CryptoME speed: 121.24 ms off vs 110.71 ms on (11-sample medians,
   **-8.69%**, within the 5% regression budget).
 - All ordinary/adversarial negatives are byte-identical; the two-push form

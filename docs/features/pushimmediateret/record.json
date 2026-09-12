@@ -56,9 +56,12 @@
     "promoted_probe": "tests/cli/push-immediate-ret-transfer.json; shared acceptance a-d88748a4d135 for both duplicate needs"
   },
   "gates": {
-    "base": "rebased onto exact origin/main b5c0b4f8b2159e871f18a99baae9a333954d9d12",
+    "base": "rebased onto exact origin/main bf22331158be444ebfbabf937ce8141826490fa9",
     "make test": "675/675 PARITY OK; docs/baseline.json unchanged",
     "make test-stages": "813/813 PARITY OK",
+    "make rust-test": "cargo test --workspace --no-fail-fast green with KUNA_DECOMP_TEST unset; 0 failures",
+    "make test-cli": "151/151 promoted CLI probes passed",
+    "check-spec": "lenient and strict modes green",
     "catalog and counters": "catalog OK; 192 settables, tiers 61/72/59, 280 corpus files, next ElementId 4166",
     "acceptance": "2/2 needs pass, three repetitions each; both remain open pending PR closure attribution"
   },
