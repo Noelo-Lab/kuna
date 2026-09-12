@@ -63,8 +63,6 @@
 //! producing set exactly). It only ever removes entries the walk itself refused
 //! to decode, so it can never remove a function that had a body.
 
-use kuna_decomp::architecture::Architecture;
-
 use super::walk::in_exec;
 
 /// Should a direct CALL to `target` create a function entry?
@@ -73,10 +71,15 @@ use super::walk::in_exec;
 /// before it decodes ([`in_exec`]): the walk may only claim a function where it
 /// is willing to disassemble. With the gate off this is unconditionally `true`,
 /// which is the pre-fix behaviour byte for byte.
+///
+/// `unmappedentry` is the option bit as a plain `bool` rather than an
+/// `&Architecture` read, so a walk that captured the decision before it started
+/// (an `Architecture` cannot cross a thread) evaluates the same predicate. The
+/// single place that read is made is [`super::walk::WalkPolicy::from_arch`].
 pub(super) fn admits_call_entry(
-    arch: &Architecture,
+    unmappedentry: bool,
     exec_ranges: &[(u64, u64)],
     target: u64,
 ) -> bool {
-    !arch.analysis_unmappedentry || in_exec(exec_ranges, target)
+    !unmappedentry || in_exec(exec_ranges, target)
 }
