@@ -5,8 +5,8 @@
   "rejected_count": 1,
   "by_status": {
     "blocked": 1,
-    "closed": 130,
-    "open": 66
+    "closed": 131,
+    "open": 65
   },
   "by_track": {
     "loader": 10,
@@ -3206,7 +3206,7 @@
       "need_id": "function-inventory-omits-dialog",
       "title": "Function inventory omits the dialog callback that xrefs recognizes",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
       "probe_id": "p-5e71731ba9ec",
       "acceptance_id": "a-5a48b22e4076",
@@ -3217,21 +3217,22 @@
         "5ab77f5d33c5d40ad448c6f6"
       ],
       "rounds": [
-        10
+        10,
+        12
       ],
       "first_seen_round": 10,
-      "attempts": 0,
+      "attempts": 1,
       "covered_by_option": "fast_funcdisc",
       "touches": [
         "decompiler/crates/kuna-analysis"
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": "https://github.com/Noelo-Lab/kuna/pull/582",
+      "closed_in_round": 12,
+      "closing_pr": 582,
       "reject_reason": null,
-      "score": 13.862944,
+      "score": 9.241962,
       "path": "docs/re-needs/function-inventory-omits-dialog.md"
     },
     {

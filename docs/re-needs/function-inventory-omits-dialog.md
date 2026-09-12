@@ -2,7 +2,7 @@
 need_id: function-inventory-omits-dialog
 title: Function inventory omits the dialog callback that xrefs recognizes
 track: quality
-status: open
+status: closed
 severity: major
 probe_id: p-5e71731ba9ec
 acceptance_id: a-5a48b22e4076
@@ -10,16 +10,16 @@ hypothesis_status: upheld
 credibility: 0.7
 instances: 1
 challenges: [5ab77f5d33c5d40ad448c6f6]
-rounds: [10]
+rounds: [10, 12]
 first_seen_round: 10
-attempts: 0
+attempts: 1
 covered_by_option: fast_funcdisc
 touches: [decompiler/crates/kuna-analysis]
 scope: small
 regression_of: null
-pr: null
-closed_in_round: null
-closing_pr: null
+pr: https://github.com/Noelo-Lab/kuna/pull/582
+closed_in_round: 12
+closing_pr: 582
 reject_reason: null
 ---
 
@@ -118,3 +118,4 @@ Ghidra 11.4 also omits both callbacks on this stripped witness. Recovering the s
 - round 10 B_DRAIN: both probe arms were bound to the dataset witness; CI promotion remained impossible while the target was dataset-only.
 - implementation triage: instruction-level Listing inspection overturned the proposed extent mechanism. The Listing leaves 0x401410 undefined after the parent's return; the 144-byte extent is assigned later and is not what suppresses discovery. The existing xref walk observes the pointer, but the discovery walk had no guarded consumer for executable scalar arguments. The vendored `stdcallpop_pe_i386.exe` is byte-identical to the witness (same SHA-256 and size), so both arms now use the in-repo fixture. Acceptance also pins the parent extent to 41..48 bytes and requires positive callback extents; CLI coverage requires unfiltered `decompile-all --json` to emit both callback bodies and streamed project selection to resolve both callbacks from the shared inventory.
 - adversarial implementation review: narrowed evidence to the value stored by a real x86 `PUSH` (including COPY/sign-extension provenance), explicitly excluding absolute LOAD/STORE addresses; bounded and deduplicated the side model to 4,096 targets with a deterministic address-space sample; capped cascading discovery at four generations and 1,024 roots; and made strict validation reject an instruction whose bytes cross into already-known code. Live SLEIGH tests pin `push imm` positive and `push [absolute]` negative behavior.
+- round 12 closure: PR #582 was opened from exact reviewed implementation head `10bf38abaafccdd3c97bf92d463d41d9970a0802`. The promoted acceptance passed in the 137/137 CLI corpus, both nested callbacks passed the whole-binary and streamed-project Rust tests, the default 36-PE differential sweep changed only this witness, and seven interleaved optimized runs on `/usr/bin/python3.11` preserved median peak RSS while showing no latency regression. Final merge remains gated on exact-head delta review and the `full-ci` workflow.
