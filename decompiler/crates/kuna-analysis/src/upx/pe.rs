@@ -27,10 +27,17 @@
 //! data directories the *original* image had. A directory this module does not
 //! rebuild would silently desynchronize every later read, so the walk tallies
 //! its own consumption against the trailer's real length and refuses a
-//! mismatch -- on top of naming base relocations and TLS up front. Everything
-//! else is checked the way the ELF arm checks its stream: both Adler-32s, the
-//! rebuilt directories confined to the sections that own them, and a
-//! reconstructed file whose length must equal the original's to the byte.
+//! mismatch. Base relocations are named up front as well, but only the ones the
+//! packer kept: UPX strips an EXE's relocations by default and marks the header
+//! `RELOCS_STRIPPED`, which costs no trailer bytes and no rebuild, while the
+//! relocations it keeps -- every DLL's, every ASLR image's -- travel as an
+//! optimized stream plus a trailer record this module does not replay. A TLS
+//! directory needs nothing; UPX's own `rebuildTls` is empty. Everything else is
+//! checked the way the ELF arm checks its stream: both Adler-32s, the rebuilt
+//! directories confined to the sections that own them, and a reconstructed file
+//! whose length must equal the original's to the byte.
+
+use std::collections::BTreeSet;
 
 use super::filter;
 use super::{adler32, Block, PackInfo, UpxError};
@@ -50,6 +57,13 @@ const DIR_BOUND_IMPORT: usize = 11;
 const DIR_DELAY_IMPORT: usize = 13;
 
 const RT_GROUP_ICON: u32 = 14;
+
+/// `IMAGE_FILE_RELOCS_STRIPPED` in the COFF characteristics.
+const IMAGE_FILE_RELOCS_STRIPPED: u16 = 0x0001;
+
+/// Upper bound on descriptors in a candidate loader import table, so a table
+/// that repeats a wanted name forever cannot walk the whole image.
+const MAX_LOADER_DLLS: usize = 256;
 
 fn corrupt(what: impl Into<String>) -> UpxError {
     UpxError::Corrupt(what.into())
@@ -104,6 +118,8 @@ pub(super) struct PeHeader {
     /// Offset of the `PE\0\0` signature within its own buffer.
     pub at: usize,
     pub opt_size: usize,
+    /// COFF characteristics.
+    pub flags: u16,
     pub code_size: u32,
     pub code_base: u32,
     pub sections: Vec<Section>,
@@ -157,6 +173,7 @@ impl PeHeader {
         Ok(PeHeader {
             at,
             opt_size,
+            flags: le16(b, at + 22)?,
             code_size: le32(b, opt + 4)?,
             code_base: le32(b, opt + 20)?,
             sections,
@@ -295,7 +312,7 @@ pub(super) fn unpack(img: &Image<'_>, info: &PackInfo) -> Result<(Vec<u8>, Vec<B
         .checked_sub(4)
         .ok_or_else(|| corrupt("block is too short to carry a trailer"))?;
     let skip = le32(&obuf, trailer_end)? as usize;
-    let oh = PeHeader::parse(&obuf, skip)?;
+    let mut oh = PeHeader::parse(&obuf, skip)?;
     let rvamin = oh.sections[0].vaddr;
     let extra = oh.section_table_at() + oh.sections.len() * SECTION_HEADER_SIZE;
     if extra > trailer_end {
@@ -319,8 +336,6 @@ pub(super) fn unpack(img: &Image<'_>, info: &PackInfo) -> Result<(Vec<u8>, Vec<B
     }
 
     for (dir, what) in [
-        (DIR_BASERELOC, "base relocations"),
-        (DIR_TLS, "a TLS directory"),
         (DIR_BOUND_IMPORT, "bound imports"),
         (DIR_DELAY_IMPORT, "delay-loaded imports"),
     ] {
@@ -331,6 +346,7 @@ pub(super) fn unpack(img: &Image<'_>, info: &PackInfo) -> Result<(Vec<u8>, Vec<B
 
     let mut trailer = extra;
     rebuild_imports(img, &mut obuf, &oh, rvamin, &mut trailer)?;
+    rebuild_relocs(&mut obuf, &mut oh, img.hdr.flags, skip, rvamin)?;
     rebuild_resources(img, &mut obuf, &oh, rvamin, &mut trailer)?;
     // Every rebuild consumes a fixed number of trailer bytes, so a leftover is
     // proof that the original image needed a step this build did not run -- and
@@ -510,21 +526,55 @@ fn parse_import_block(obuf: &[u8], mut at: usize, rvamin: u32) -> Result<Vec<Imp
     }
 }
 
+/// Does a candidate loader table name exactly the DLLs the trailer asks for?
+///
+/// A set comparison. The loader table holds one descriptor per distinct DLL,
+/// while the original image may import one DLL across several descriptors, so
+/// the two lists differ in length whenever a binary does that.
+fn table_names_dlls(table: &[u32], base: u32, dlls: &[ImportDll]) -> bool {
+    if table.is_empty() {
+        return false;
+    }
+    let wanted: BTreeSet<u32> =
+        dlls.iter().filter_map(|d| base.checked_add(d.name_off)).collect();
+    table.iter().copied().collect::<BTreeSet<u32>>() == wanted
+}
+
 /// Find the packed loader's own import descriptor table, which is what the
 /// trailer's DLL-name offsets are relative to.
 ///
 /// UPX reaches it through the packed image's import data directory. That is
 /// exactly the field a repacker retargets when it bolts a decoy import table
 /// onto a UPX image, so the directory is a hint here and not the answer: the
-/// table is the one whose `k`-th descriptor names the DLL the trailer's `k`-th
-/// offset points at, and a candidate is accepted only if it is unique.
+/// table is the one naming exactly the DLLs the trailer's offsets point at,
+/// and a candidate is accepted only if it is unique.
+///
+/// Matched as a SET, not position-by-position. The loader table holds one
+/// descriptor per distinct DLL, while the original image may import the same
+/// DLL from several descriptors, so the two lists differ in length whenever a
+/// binary does that and a positional walk can never agree.
 fn loader_import_table(img: &Image<'_>, dlls: &[ImportDll]) -> Result<u32, UpxError> {
     let agrees = |base: u32| -> bool {
-        dlls.iter().enumerate().all(|(k, d)| {
-            let at = base + (k * IMPORT_DESC_SIZE) as u32 + 12;
-            img.at_rva(at, 4).map(|s| u32::from_le_bytes([s[0], s[1], s[2], s[3]]))
-                == base.checked_add(d.name_off)
-        })
+        let mut names = Vec::new();
+        for k in 0..=MAX_LOADER_DLLS {
+            let Some(at) = base.checked_add((k * IMPORT_DESC_SIZE) as u32) else {
+                return false;
+            };
+            let Some(desc) = img.at_rva(at, IMPORT_DESC_SIZE) else {
+                return false;
+            };
+            if desc.iter().all(|&b| b == 0) {
+                return table_names_dlls(&names, base, dlls);
+            }
+            let name = u32::from_le_bytes([desc[12], desc[13], desc[14], desc[15]]);
+            // Nearly every position a scan tries fails on its first descriptor;
+            // the set comparison alone would walk each one on to a terminator.
+            if !dlls.iter().any(|d| base.checked_add(d.name_off) == Some(name)) {
+                return false;
+            }
+            names.push(name);
+        }
+        false
     };
     let declared = img.hdr.dir(DIR_IMPORT).0;
     if declared != 0 && agrees(declared) {
@@ -547,6 +597,43 @@ fn loader_import_table(img: &Image<'_>, dlls: &[ImportDll]) -> Result<u32, UpxEr
         }
     }
     found.ok_or_else(|| corrupt("cannot find the loader import table the DLL names live in"))
+}
+
+/// `PeFile::rebuildRelocs`, reduced to the two branches that consume no trailer
+/// bytes. UPX strips an EXE's relocations by default and marks both headers
+/// `RELOCS_STRIPPED`; its unpacker then zeroes the recovered header's relocation
+/// directory instead of rebuilding anything, and so does this. An eight-byte
+/// directory is an empty block, written back in place of the zeros UPX packed.
+/// Relocations the packer kept -- every DLL's, every ASLR image's -- travel as
+/// an optimized stream plus a five-byte trailer record this build does not
+/// replay; they are refused here, before the resource rebuild would read that
+/// record as its icon count.
+fn rebuild_relocs(
+    obuf: &mut [u8],
+    oh: &mut PeHeader,
+    packed_flags: u16,
+    skip: usize,
+    rvamin: u32,
+) -> Result<(), UpxError> {
+    if packed_flags & IMAGE_FILE_RELOCS_STRIPPED != 0 {
+        oh.flags |= IMAGE_FILE_RELOCS_STRIPPED;
+        obuf[skip + 22..skip + 24].copy_from_slice(&oh.flags.to_le_bytes());
+        if let Some(dir) = oh.dirs.get_mut(DIR_BASERELOC) {
+            *dir = (0, 0);
+            let at = skip + 24 + 96 + 8 * DIR_BASERELOC;
+            obuf[at..at + 8].fill(0);
+        }
+    }
+    let (rva, size) = oh.dir(DIR_BASERELOC);
+    if rva == 0 || size == 0 || oh.flags & IMAGE_FILE_RELOCS_STRIPPED != 0 {
+        return Ok(());
+    }
+    if size == 8 {
+        return write_at(obuf, rvamin, rva, &[0, 0, 0, 0, 8, 0, 0, 0]);
+    }
+    Err(unsupported(
+        "original image keeps its base relocations, which UPX packs as an optimized stream this build does not rebuild",
+    ))
 }
 
 /// `PeFile::rebuildResources`: UPX keeps the resource *directory* uncompressed
@@ -759,4 +846,123 @@ fn assemble(
         ));
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn dlls(name_offs: &[u32]) -> Vec<ImportDll> {
+        name_offs
+            .iter()
+            .map(|&name_off| ImportDll { name_off, iat: 0, thunks: Vec::new() })
+            .collect()
+    }
+
+    /// The regression: a 32-bit MSVC crackme importing seven DLLs across
+    /// thirteen descriptors (KERNEL32 four times, three others twice). Its
+    /// loader table holds one descriptor per distinct DLL, so the two lists are
+    /// 7 and 13 long and a position-by-position walk could never agree -- the
+    /// unpack failed with "cannot find the loader import table".
+    #[test]
+    fn a_dll_imported_by_several_descriptors_still_matches_its_loader_table() {
+        let base = 0x73a0c;
+        let table: Vec<u32> = [224, 237, 250, 263, 273, 286, 297]
+            .iter()
+            .map(|o| base + o)
+            .collect();
+        let repeated = dlls(&[224, 224, 224, 224, 237, 237, 250, 263, 273, 273, 286, 286, 297]);
+        assert!(table_names_dlls(&table, base, &repeated));
+    }
+
+    #[test]
+    fn one_descriptor_per_dll_still_matches() {
+        let base = 0x1000;
+        let table: Vec<u32> = [16, 32, 48].iter().map(|o| base + o).collect();
+        assert!(table_names_dlls(&table, base, &dlls(&[16, 32, 48])));
+    }
+
+    /// Set equality both ways: a table naming a DLL the trailer never asks for
+    /// is the wrong table, and so is one missing a DLL the trailer wants.
+    #[test]
+    fn a_table_whose_names_differ_is_rejected() {
+        let base = 0x1000;
+        let table: Vec<u32> = [16, 32, 48].iter().map(|o| base + o).collect();
+        assert!(!table_names_dlls(&table, base, &dlls(&[16, 32])));
+        assert!(!table_names_dlls(&table, base, &dlls(&[16, 32, 48, 64])));
+        assert!(!table_names_dlls(&[], base, &dlls(&[16])));
+    }
+
+    /// A minimal PE header at `skip` inside a block: one section, sixteen data
+    /// directories, `flags` as the COFF characteristics and `reloc` in entry 5.
+    fn block_with_header(skip: usize, flags: u16, reloc: (u32, u32)) -> Vec<u8> {
+        let mut b = vec![0u8; skip + 24 + 224 + SECTION_HEADER_SIZE];
+        b[skip..skip + 4].copy_from_slice(b"PE\0\0");
+        b[skip + 6..skip + 8].copy_from_slice(&1u16.to_le_bytes());
+        b[skip + 20..skip + 22].copy_from_slice(&224u16.to_le_bytes());
+        b[skip + 22..skip + 24].copy_from_slice(&flags.to_le_bytes());
+        let opt = skip + 24;
+        b[opt..opt + 2].copy_from_slice(&0x10bu16.to_le_bytes());
+        b[opt + 92..opt + 96].copy_from_slice(&16u32.to_le_bytes());
+        let d = opt + 96 + 8 * DIR_BASERELOC;
+        b[d..d + 4].copy_from_slice(&reloc.0.to_le_bytes());
+        b[d + 4..d + 8].copy_from_slice(&reloc.1.to_le_bytes());
+        b
+    }
+
+    fn relocs(
+        flags: u16,
+        packed_flags: u16,
+        reloc: (u32, u32),
+    ) -> (Result<(), UpxError>, PeHeader, Vec<u8>) {
+        let skip = 0x100;
+        let mut b = block_with_header(skip, flags, reloc);
+        let mut oh = PeHeader::parse(&b, skip).unwrap();
+        let r = rebuild_relocs(&mut b, &mut oh, packed_flags, skip, 0x1000);
+        (r, oh, b)
+    }
+
+    /// The witness shape: an EXE whose relocations UPX stripped. The stored
+    /// header still names the directory and only the packed header carries the
+    /// flag; UPX's own unpacker zeroes the entry rather than rebuilding, so the
+    /// recovered header has to come out the way `upx -d` writes it.
+    #[test]
+    fn stripped_relocations_are_zeroed_not_refused() {
+        let (r, oh, b) = relocs(0, IMAGE_FILE_RELOCS_STRIPPED, (0x3b000, 0x5cc));
+        r.expect("a stripped image unpacks");
+        assert_eq!(oh.dir(DIR_BASERELOC), (0, 0));
+        assert_ne!(oh.flags & IMAGE_FILE_RELOCS_STRIPPED, 0);
+        let written = PeHeader::parse(&b, 0x100).unwrap();
+        assert_eq!(written.dir(DIR_BASERELOC), (0, 0));
+        assert_ne!(written.flags & IMAGE_FILE_RELOCS_STRIPPED, 0);
+    }
+
+    /// Relocations the packer kept travel as an optimized stream plus a trailer
+    /// record this build does not replay: with neither header flagged, the image
+    /// is refused by name rather than walked into a desynchronized trailer.
+    #[test]
+    fn kept_relocations_are_refused() {
+        let (r, _, _) = relocs(0, 0, (0x3b000, 0x5cc));
+        let err = r.expect_err("kept relocations need a rebuild this build lacks");
+        assert!(
+            matches!(&err, UpxError::Unsupported(m) if m.contains("base relocations")),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn an_image_without_relocations_needs_nothing() {
+        let (r, oh, _) = relocs(0, 0, (0, 0));
+        r.unwrap();
+        assert_eq!(oh.flags, 0);
+    }
+
+    /// An eight-byte directory is the empty block "some tricky dlls use", which
+    /// UPX writes back in place of the zeros it packed.
+    #[test]
+    fn an_empty_relocation_block_is_written_back() {
+        let (r, _, b) = relocs(0, 0, (0x1010, 8));
+        r.unwrap();
+        assert_eq!(&b[0x10..0x18], &[0, 0, 0, 0, 8, 0, 0, 0]);
+    }
 }
