@@ -4,7 +4,7 @@
 //! address-name helpers.
 
 use super::*;
-use kuna_base::space::{addrspace_flags, spacetype, AddrSpace};
+use kuna_base::space::{addrspace_flags, spacetype, AddrSpace, AddrSpaceManager};
 use std::rc::Rc;
 
 // --- kuna_is_generated_name ------------------------------------------------
@@ -58,6 +58,35 @@ fn address_name_helpers_roundtrip() {
     assert_eq!(kuna_arg_name(0), "a0");
     assert_eq!(kuna_arg_name(3), "a3");
     assert_eq!(kuna_arg_name(-5), "a0");
+}
+
+#[test]
+fn unnamed_parameter_names_follow_only_the_local_angr_policy() {
+    assert_eq!(kuna_materialized_param_name(true, 0, ""), "a0");
+    assert_eq!(kuna_materialized_param_name(true, 1, ""), "a1");
+    assert_eq!(kuna_materialized_param_name(false, 0, ""), "param_1");
+    assert_eq!(kuna_materialized_param_name(false, 1, ""), "param_2");
+}
+
+#[test]
+fn recovered_parameter_names_are_never_rewritten() {
+    assert_eq!(kuna_materialized_param_name(true, 0, "count"), "count");
+    assert_eq!(kuna_materialized_param_name(false, 0, "count"), "count");
+}
+
+#[test]
+fn gui_ghidra_address_style_keeps_angr_parameter_names() {
+    let mut arch = crate::context::ArchContext::new(AddrSpaceManager::new());
+    arch.name_style_ghidra = true;
+    arch.name_style_angr = true;
+    assert_eq!(
+        arch.kuna_name_style(),
+        crate::database::KunaNameStyle::Ghidra
+    );
+    assert_eq!(
+        kuna_materialized_param_name(arch.name_style_angr, 0, ""),
+        "a0"
+    );
 }
 
 // --- kuna_storage_comment --------------------------------------------------

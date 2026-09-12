@@ -48,6 +48,7 @@ use kuna_base::types::{int4, intb, uintb};
 // (kuna_naming.cc:55-89).  These are the canonical kuna implementations.
 pub use crate::database::{
     kuna_arg_name, kuna_function_name, kuna_global_data_name, kuna_label_name,
+    kuna_materialized_param_name,
 };
 
 /// Marshaling element `<namestyle>` (kuna, C++

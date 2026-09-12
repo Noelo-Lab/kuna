@@ -191,6 +191,21 @@ pub fn kuna_arg_name(mut catindex: int4) -> String {
     format!("a{catindex}")
 }
 
+/// Materialize a prototype parameter name under the local naming policy.
+pub fn kuna_materialized_param_name(
+    name_style_angr: bool,
+    catindex: int4,
+    recovered_name: &str,
+) -> String {
+    if !recovered_name.is_empty() {
+        recovered_name.to_string()
+    } else if name_style_angr {
+        kuna_arg_name(catindex)
+    } else {
+        format!("param_{}", catindex + 1)
+    }
+}
+
 // ===========================================================================
 // SymbolEntry  (database.hh:75-164)
 // ===========================================================================

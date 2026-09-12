@@ -179,18 +179,19 @@ impl Funcdata {
             // C++ `ProtoStoreSymbol::setInput` passes the parameter's name; an
             // unnamed (recovered, unlocked) parameter is an `addSymbol("",...)` with
             // an undefined name that `ActionNameVars`/`buildDefaultName` then routes
-            // to the `aN` (`function_parameter`) default.  The kuna proto store and
+            // through the active local parameter style. The kuna proto store and
             // the scope symbol are separate objects, so the default is materialized
-            // here (`kuna_arg_name(i)` == `buildDefaultName`'s `function_parameter`
-            // arm) instead of being deferred to `assignDefaultNames`, avoiding the
+            // here instead of being deferred to `assignDefaultNames`, avoiding the
             // `$$undef` placeholder that `addSymbol("",...)` would otherwise leak
-            // into the body.  A locked, named proto (`parse line extern`) carries
-            // the explicit `ptr`/`a`/`b`.
-            let name = if param.get_name().is_empty() {
-                crate::database::kuna_arg_name(i)
-            } else {
-                param.get_name().to_string()
-            };
+            // into the body. The standalone Ghidra convention uses `param_<i+1>`;
+            // the angr default and GUI Ghidra mode both keep `a<i>` because both
+            // leave `name_style_angr` on. A locked, named proto (`parse line
+            // extern`) carries the explicit `ptr`/`a`/`b`.
+            let name = crate::database::kuna_materialized_param_name(
+                self.get_arch().name_style_angr,
+                i,
+                param.get_name(),
+            );
             specs.push((i, name, ty, addr));
         }
         // C++ `funcp.setScope(localmap, baseaddr + -1)` (funcdata.cc:69): the
