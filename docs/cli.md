@@ -2237,19 +2237,19 @@ same command on the same machine:
 
 | Step | `--stream` | non-stream |
 |---|---|---|
-| output folder exists | 0.04 s | 1,248.3 s |
-| first `.c` block readable (first `index.jsonl` line) | ~91 s | 1,248.3 s |
-| `.asm` sweep complete (1.55 GB) | ~143 s | 1,248.3 s |
-| export complete | 1,400.4 s | 1,249.8 s |
-| parent peak RSS (with its 14 workers) | 12.8 GiB (34.7 GB) | 13.0 GiB (29.5 GB) |
+| output folder exists | 0.04 s | 1,237.6 s |
+| first `.c` block readable (first `index.jsonl` line) | ~95 s | 1,237.6 s |
+| `.asm` sweep complete (1.55 GB) | ~143 s | 1,237.6 s |
+| export complete | 1,294.7 s | 1,238.3 s |
+| parent peak RSS (with its 14 workers) | 12.8 GiB (33.8 GB) | 13.0 GiB (33.9 GB) |
 
 Availability is what it buys and the tail is what it costs. The folder is worth
-reading nineteen minutes before the non-stream one exists — everything before ~91 s
-is the load, which is the same wait either way — and it finishes 12% later, because
-the static longest-first plan a non-stream `--jobs N` run uses is close to the best
-makespan available and entry-point-first order is not. At this size that is about
-two and a half minutes of tail for twenty minutes of head start; on a small binary
-the sweep's overlap with the pool wins the end-to-end comparison back.
+reading nineteen minutes before the non-stream one exists — everything before ~95 s
+is the load, which is the same wait either way — and it finishes about 5% later
+(56 s, with the streamed arm on the busier half of a shared machine), because the
+static longest-first plan a non-stream `--jobs N` run uses is close to the best
+makespan available and entry-point-first order is not. At this size that is under a
+minute of tail for twenty minutes of head start.
 
 ## `kuna decompile-graph` — the whole program as one JSON graph
 
