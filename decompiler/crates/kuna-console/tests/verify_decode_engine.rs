@@ -110,9 +110,11 @@ fn agree_everywhere(name: &str) -> usize {
     );
 
     let mut compared = 0usize;
+    let mut callback_sites = 0usize;
     for (&vma, want) in listing.instructions() {
-        let got = decode_one(&engine, vma, &code_space, true)
-            .unwrap_or_else(|e| panic!("{name}: {vma:#x} decoded on the parent but not here: {}", e.explain()));
+        let got = decode_one(&engine, vma, &code_space, true, true).unwrap_or_else(|e| {
+            panic!("{name}: {vma:#x} decoded on the parent but not here: {}", e.explain())
+        });
         assert_eq!(got.len, want.len, "{name}: {vma:#x} length");
         let c = classify(&got.ops, vma, got.len);
         assert_eq!(c.fall_through, want.fall_through, "{name}: {vma:#x} fall-through");
@@ -120,8 +122,21 @@ fn agree_everywhere(name: &str) -> usize {
         assert_eq!(c.flows, want.flows, "{name}: {vma:#x} static targets");
         assert_eq!(got.mnemonic, want.mnemonic, "{name}: {vma:#x} mnemonic");
         assert_eq!(got.operands, want.operands, "{name}: {vma:#x} operands");
+        // The `PUSH imm` callback provenance is not on the Listing, so compare
+        // it against the parent engine directly -- only where this engine found
+        // some, which is a few dozen addresses in a whole program.
+        if !got.stored_scalar_values.is_empty() {
+            let parent = decode_one(arch.translate(), vma, &parent_space, true, true)
+                .expect("the parent decodes what it already decoded");
+            assert_eq!(
+                got.stored_scalar_values, parent.stored_scalar_values,
+                "{name}: {vma:#x} stored scalar values"
+            );
+            callback_sites += 1;
+        }
         compared += 1;
     }
+    eprintln!("verify_decode_engine: {name}: {callback_sites} PUSH-imm provenance sites agreed");
     compared
 }
 

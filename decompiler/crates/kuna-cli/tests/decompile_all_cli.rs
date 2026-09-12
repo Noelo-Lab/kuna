@@ -57,6 +57,67 @@ fn arm_thumb_pe() -> String {
         .to_string()
 }
 
+fn dialog_callbacks_pe() -> String {
+    repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/stdcallpop_pe_i386.exe")
+        .to_str()
+        .unwrap()
+        .to_string()
+}
+
+/// An executable callback pointer passed to DialogBoxParamA must seed the dialog
+/// procedure, and rebuilding from that procedure must discover its nested dialog
+/// callback in the same run.
+#[test]
+fn inventory_and_decompile_all_include_nested_dialog_callbacks() {
+    let bin = dialog_callbacks_pe();
+    let sp = specs();
+    let (inventory, stderr, ok) =
+        run_kuna(&["functions", &bin, "--json", "--sleighpath", &sp]);
+    assert!(ok, "kuna functions failed: {stderr}");
+    assert!(
+        inventory.contains("\"address_hex\": \"0x401000\"")
+            && inventory.contains("\"address_hex\": \"0x401410\""),
+        "nested dialog callbacks are absent from the inventory: {inventory}"
+    );
+    let parent = inventory
+        .find("\"address_hex\": \"0x4013e0\"")
+        .map(|start| &inventory[start..inventory.len().min(start + 240)])
+        .expect("parent function 0x4013e0 is absent");
+    assert!(
+        (41..=48).any(|size| parent.contains(&format!("\"size\": {size}"))),
+        "the parent extent still covers its callback: {parent}"
+    );
+
+    let (without, stderr, ok) = run_kuna(&[
+        "functions",
+        &bin,
+        "--json",
+        "--sleighpath",
+        &sp,
+        "--option",
+        "fast_funcdisc",
+        "off",
+    ]);
+    assert!(ok, "kuna functions with fast_funcdisc off failed: {stderr}");
+    assert!(
+        !without.contains("\"address_hex\": \"0x401000\"")
+            && !without.contains("\"address_hex\": \"0x401410\""),
+        "fast_funcdisc off no longer restores the prior inventory: {without}"
+    );
+
+    let (whole, stderr, ok) =
+        run_kuna(&["decompile-all", &bin, "--json", "--sleighpath", &sp]);
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    for (address, body) in [("0x401000", "sub_401000"), ("0x401410", "sub_401410")] {
+        assert!(
+            whole.contains(&format!("\"address_hex\": \"{address}\""))
+                && whole.contains(body),
+            "decompile-all omitted callback {address}: {whole}"
+        );
+    }
+}
+
 fn write_thumb_te() -> PathBuf {
     let bytes = kuna_analysis::loadimage_te::synthetic::TeImage::thumb(&[0x07, 0x20, 0x70, 0x47]).build();
     let path = common::scratch_file("cli-thumb", "te");

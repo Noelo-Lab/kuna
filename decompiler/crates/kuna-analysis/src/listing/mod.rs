@@ -31,6 +31,7 @@
 pub mod classify;
 pub mod context;
 pub mod decode;
+pub mod kuna_callbackentry;
 pub mod kuna_entrythumbflow;
 pub mod kuna_tailcallentry;
 mod kuna_picbase;
@@ -51,6 +52,7 @@ use std::rc::Rc;
 
 use kuna_decomp::architecture::Architecture;
 use kuna_sleigh::translate::Translate;
+use object::Object;
 
 use crate::loadimage_object::ObjectLoadImage;
 
@@ -102,6 +104,8 @@ pub struct Listing {
     has_assembly: bool,
     /// Whether the reference model was built (vs. deliberately skipped).
     has_refs: bool,
+    /// Bounded, deduplicated x86 `PUSH imm` candidates collected for fast discovery.
+    stack_callback_refs: Vec<(u64, u64)>,
 }
 
 impl Listing {
@@ -148,6 +152,7 @@ impl Listing {
             exec_ranges,
             has_assembly: true,
             has_refs: false,
+            stack_callback_refs: Vec::new(),
         }
     }
 
@@ -205,6 +210,7 @@ impl Listing {
                     exec_ranges,
                     has_assembly: detail.assembly,
                     has_refs: false,
+                    stack_callback_refs: Vec::new(),
                 };
             }
         };
@@ -242,6 +248,8 @@ impl Listing {
         // not a function of its own. Empty on every other architecture and
         // whenever the option is off (see `kuna_ppclocalentry`).
         let local_entries = kuna_ppclocalentry::fold_map(arch, file, seeds);
+        let want_stack_callbacks = arch.analysis_fast_funcdisc
+            && matches!(file.architecture(), object::Architecture::I386 | object::Architecture::X86_64);
 
         let st = walk::walk(
             translate,
@@ -253,6 +261,7 @@ impl Listing {
             &painter,
             &local_entries,
             detail,
+            want_stack_callbacks,
         );
 
         let mut refs_to = st.refs_to;
@@ -274,6 +283,11 @@ impl Listing {
             exec_ranges,
             has_assembly: detail.assembly,
             has_refs: detail.refs,
+            stack_callback_refs: st
+                .stack_callback_refs
+                .into_iter()
+                .map(|(target, source)| (source, target))
+                .collect(),
         }
     }
 
@@ -291,6 +305,26 @@ impl Listing {
             exec_ranges: vec![(0, u64::MAX)],
             has_assembly,
             has_refs: false,
+            stack_callback_refs: Vec::new(),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_model_for_test(
+        insns: Vec<Insn>,
+        funcs: Vec<DiscoveredFunction>,
+        stack_callback_refs: Vec<(u64, u64)>,
+        exec_ranges: Vec<(u64, u64)>,
+    ) -> Listing {
+        Listing {
+            insns: insns.into_iter().map(|i| (i.addr, i)).collect(),
+            refs_to: BTreeMap::new(),
+            refs_from: BTreeMap::new(),
+            funcs: funcs.into_iter().map(|f| (f.entry, f)).collect(),
+            exec_ranges,
+            has_assembly: true,
+            has_refs: false,
+            stack_callback_refs,
         }
     }
 
@@ -389,6 +423,10 @@ impl Listing {
     /// reader (AIF's prologue fingerprint) re-decodes the addresses it needs.
     pub fn has_assembly(&self) -> bool {
         self.has_assembly
+    }
+
+    pub(crate) fn stack_callback_refs(&self) -> &[(u64, u64)] {
+        &self.stack_callback_refs
     }
 
     /// The decoded instruction whose `[addr, addr+len)` byte span contains `vma`
@@ -606,6 +644,7 @@ mod tests {
             exec_ranges: Vec::new(),
             has_assembly: true,
             has_refs: true,
+            stack_callback_refs: Vec::new(),
         };
         let addrs = |start, end| {
             listing

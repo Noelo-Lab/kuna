@@ -39,6 +39,9 @@ pub(super) struct WalkState {
     pub refs_from: BTreeMap<u64, Vec<Reference>>,
     /// Discovered/seeded functions, keyed by entry VMA (ordered).
     pub funcs: BTreeMap<u64, DiscoveredFunction>,
+    /// Plausible x86 `PUSH imm` callback evidence, keyed by target and bounded
+    /// during the walk. The value is the lowest source address for that target.
+    pub stack_callback_refs: BTreeMap<u64, u64>,
 }
 
 /// Where [`step`] files a decoded instruction, and the visit dedup it asks.
@@ -122,6 +125,54 @@ impl RefSink for RefBuckets {
     }
 }
 
+/// Where [`step`] files evidence that a target address is a stack-passed
+/// callback -- an already-proven x86 `PUSH imm` of an in-range address.
+pub(super) trait CallbackSink {
+    /// Record one `PUSH imm` site.
+    fn file(&mut self, source: u64, target: u64);
+}
+
+/// The bounded, deduplicated callback-evidence model behind a [`CallbackSink`].
+///
+/// Keeping the lowest source per target deduplicates before storage. A stable
+/// hash rank samples across the address space instead of systematically starving
+/// high-address sections, and makes the cap deterministic regardless of the
+/// order the walk reached the sites in -- the same property the parallel walk
+/// needs, since a schedule that changes which site arrives first must not change
+/// which targets survive the cap.
+#[derive(Default)]
+pub(super) struct CallbackEvidence {
+    refs: BTreeMap<u64, u64>,
+    /// Stable sampling rank for each retained target.
+    ranks: BTreeSet<(u64, u64)>,
+}
+
+impl CallbackSink for CallbackEvidence {
+    fn file(&mut self, source: u64, target: u64) {
+        if let Some(prior) = self.refs.get_mut(&target) {
+            *prior = (*prior).min(source);
+            return;
+        }
+        let rank = callback_rank(target);
+        self.refs.insert(target, source);
+        self.ranks.insert((rank, target));
+        if self.refs.len() > super::kuna_callbackentry::MAX_CALLBACK_EVIDENCE {
+            if let Some(worst) = self.ranks.pop_last() {
+                self.refs.remove(&worst.1);
+            }
+        }
+    }
+}
+
+/// SplitMix64's finalizer gives every target a stable, inexpensive sampling
+/// rank. This is not randomness: the same evidence set always retains the same
+/// targets, independent of discovery order.
+fn callback_rank(mut target: u64) -> u64 {
+    target = (target ^ (target >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    target = (target ^ (target >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    target ^ (target >> 31)
+}
+
 /// Where [`step`] offers the successors of the instruction it just decoded.
 ///
 /// The serial walk pushes them onto its two worklists; a walk that partitions
@@ -140,12 +191,16 @@ pub(super) struct WalkPolicy {
     /// `analysis_unmappedentry`: refuse a function claim the walk would not
     /// decode (see [`super::kuna_unmappedentry`]).
     pub unmappedentry: bool,
+    /// Harvest x86 `PUSH imm` callback evidence (see
+    /// [`super::kuna_callbackentry`]). Decided by the caller, which alone sees
+    /// the parsed object's architecture.
+    pub stack_callbacks: bool,
 }
 
 impl WalkPolicy {
     /// The one place the walk reads a decision off the [`Architecture`].
-    pub(super) fn from_arch(arch: &Architecture) -> WalkPolicy {
-        WalkPolicy { unmappedentry: arch.analysis_unmappedentry }
+    pub(super) fn from_arch(arch: &Architecture, stack_callbacks: bool) -> WalkPolicy {
+        WalkPolicy { unmappedentry: arch.analysis_unmappedentry, stack_callbacks }
     }
 }
 
@@ -177,18 +232,20 @@ pub(super) fn in_exec(exec_ranges: &[(u64, u64)], vma: u64) -> bool {
 /// serial [`walk`] drives it through a sink that pushes onto its own worklists.
 /// Returns `false` when the path stopped here (already decoded, outside every
 /// executable range, undecodable, or zero-length) and nothing was recorded.
-pub(super) fn step<I, F, R, S>(
+pub(super) fn step<I, F, R, C, S>(
     ctx: &StepCtx<'_>,
     vma: u64,
     insns: &mut I,
     funcs: &mut F,
     refs: &mut R,
+    callbacks: &mut C,
     out: &mut S,
 ) -> bool
 where
     I: InsnSink + ?Sized,
     F: FuncSink + ?Sized,
     R: RefSink + ?Sized,
+    C: CallbackSink + ?Sized,
     S: Successors + ?Sized,
 {
     if insns.decoded(vma) {
@@ -198,7 +255,13 @@ where
         return false; // out-of-bounds gate (flow.rs:891 analog)
     }
 
-    let decoded = match decode_one(ctx.translate, vma, ctx.code_space, ctx.detail.assembly) {
+    let decoded = match decode_one(
+        ctx.translate,
+        vma,
+        ctx.code_space,
+        ctx.detail.assembly,
+        ctx.policy.stack_callbacks,
+    ) {
         Ok(d) => d,
         Err(_) => return false, // decode error: stop this path (mark gap)
     };
@@ -208,15 +271,43 @@ where
 
     let c = classify(&decoded.ops, vma, decoded.len);
 
+    let fall_through = vma.wrapping_add(u64::from(decoded.len));
+    let stack_values: Vec<u64> = if ctx.policy.stack_callbacks {
+        decoded
+            .stored_scalar_values
+            .iter()
+            .copied()
+            .filter(|&target| target != fall_through && in_exec(ctx.exec_ranges, target))
+            .collect()
+    } else {
+        Vec::new()
+    };
+    // A constant STORE value is the narrow p-code shape shared by
+    // `PUSH imm` and `MOV [mem],imm`. Only that shape earns the on-demand
+    // assembly parse; register immediates and absolute LOAD addresses do
+    // not trigger a second decode.
+    let mnemonic = if !stack_values.is_empty() && decoded.mnemonic.is_empty() {
+        super::decode::mnemonic_at(ctx.translate, vma, ctx.code_space)
+    } else {
+        decoded.mnemonic
+    };
+    let is_stack_callback_push = mnemonic.eq_ignore_ascii_case("PUSH");
+
     insns.record(InsnLite {
         addr: vma,
         len: decoded.len,
         fall_through: c.fall_through,
         flow: c.flow,
         flows: c.flows.clone(),
-        mnemonic: decoded.mnemonic,
+        mnemonic,
         operands: decoded.operands,
     });
+
+    if is_stack_callback_push {
+        for target in stack_values {
+            callbacks.file(vma, target);
+        }
+    }
 
     // Successor edges.
     for &t in &c.flows {
@@ -305,6 +396,7 @@ pub(super) fn walk(
     painter: &ContextPainter,
     local_entries: &BTreeMap<u64, u64>,
     detail: ListingDetail,
+    want_stack_callbacks: bool,
 ) -> WalkState {
     // Paint the decode-mode context (ARM TMode / MIPS ISA_MODE) into the engine's
     // ContextDatabase BEFORE we decode a single instruction — the timing the
@@ -321,13 +413,14 @@ pub(super) fn walk(
         code_space,
         exec_ranges,
         local_entries,
-        policy: WalkPolicy::from_arch(arch),
+        policy: WalkPolicy::from_arch(arch, want_stack_callbacks),
         detail,
     };
 
     let mut insns: BTreeMap<u64, Insn> = BTreeMap::new();
     let mut funcs: BTreeMap<u64, DiscoveredFunction> = BTreeMap::new();
     let mut refs = RefBuckets::new(detail.refs);
+    let mut callbacks = CallbackEvidence::default();
 
     // Function-entry worklist, seeded from the root set.
     let mut func_worklist: Vec<u64> = seeds.to_vec();
@@ -348,11 +441,17 @@ pub(super) fn walk(
         // Per-function instruction worklist.
         let mut work = Worklists { insns: vec![entry], funcs: &mut func_worklist };
         while let Some(vma) = work.insns.pop() {
-            step(&ctx, vma, &mut insns, &mut funcs, &mut refs, &mut work);
+            step(&ctx, vma, &mut insns, &mut funcs, &mut refs, &mut callbacks, &mut work);
         }
     }
 
-    WalkState { insns, refs_to: refs.to, refs_from: refs.from, funcs }
+    WalkState {
+        insns,
+        refs_to: refs.to,
+        refs_from: refs.from,
+        funcs,
+        stack_callback_refs: callbacks.refs,
+    }
 }
 
 /// A generic discovered (not symbol-seeded) function record at `entry`.
@@ -363,5 +462,35 @@ fn discovered(entry: u64) -> DiscoveredFunction {
         from_symbol: false,
         has_no_return: false,
         call_fixup: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn callback_evidence_cap_is_deduplicated_and_order_independent() {
+        let count = super::super::kuna_callbackentry::MAX_CALLBACK_EVIDENCE + 32;
+        let mut forward = CallbackEvidence::default();
+        let mut reverse = CallbackEvidence::default();
+        for target in 0..count as u64 {
+            forward.file(0x2000 + target, 0x1000 + target);
+        }
+        for target in (0..count as u64).rev() {
+            reverse.file(0x3000 + target, 0x1000 + target);
+        }
+        assert_eq!(
+            forward.refs.len(),
+            super::super::kuna_callbackentry::MAX_CALLBACK_EVIDENCE
+        );
+        assert_eq!(
+            forward.refs.keys().collect::<Vec<_>>(),
+            reverse.refs.keys().collect::<Vec<_>>()
+        );
+
+        let retained = *forward.refs.keys().next().unwrap();
+        forward.file(1, retained);
+        assert_eq!(forward.refs[&retained], 1);
     }
 }

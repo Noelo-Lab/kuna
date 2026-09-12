@@ -2707,12 +2707,33 @@ candidate cannot split them. ARM instead reuses the existing Thumb-pointer
 oracle: an aligned odd code pointer is accepted only at an undefined
 frame-establishing prologue that passes the same valid-subroutine probe.
 
-Pointer-derived roots are committed but are deliberately not fed through a
+Table-derived roots are committed but are deliberately not fed through a
 second recursive walk. Thus the bounded path obtains direct-call closure and
 high-confidence callback/vtable roots while avoiding the full prologue scan,
 the AIF cursor over every undefined code gap, and recursive expansion from
 disconnected pointer roots. Turning on `fast_funcdisc` alone does not run no-return, FID, AIF, or any
 other ordinary Listing consumer.
+
+Executable-section operands use a narrower rule because instruction immediates
+are not pointer tables. On x86, the walk records an address-like executable
+constant only when p-code stores that constant as the instruction's value (not
+as a LOAD/STORE address); it is promoted when the instruction is `PUSH`, a
+straight-line run of at most sixteen instructions reaches the next call, the
+target is not an existing instruction or an interior instruction byte, and the
+strict bounded subroutine probe reaches a valid termination. Accepted stack
+callback roots are added to the Listing seeds and the walk is rebuilt, up to
+four rounds and 1,024 roots, so a dialog callback that registers a second
+callback contributes both bodies to one project inventory. Other code-looking
+immediates, targets already claimed by a body, and targets that only happen to
+decode without a valid return path remain unpromoted.
+
+Candidate provenance is deduplicated by target before storage and bounded to
+4,096 target/source pairs per walk. Only a constant STORE value earns the
+on-demand mnemonic decode, preserving the reference-free Listing detail used by
+fast discovery. A stable hash rank samples the bounded set across the address
+space without traversal-order or low-address bias; the root budget and
+four-generation limit still prefer bounded load time over complete recovery of
+adversarially deep or unusually callback-dense registration graphs.
 
 The full Listing **consumers** run over the built model and are individually gated before
 invocation (with the commit gate retained defensively): the
