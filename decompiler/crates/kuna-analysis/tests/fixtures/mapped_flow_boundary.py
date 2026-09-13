@@ -4,6 +4,9 @@ from pathlib import Path
 import struct
 
 CODE = bytes.fromhex("85c07506b807000000c3bb05000000")
+# Zero padding after the last instruction: one mapped `add [eax],al`, then a
+# lone 00 whose ModRM byte lies past the mapped end.
+STRADDLE = CODE + bytes(3)
 
 
 def image(bits, code=CODE):
@@ -24,3 +27,5 @@ def image(bits, code=CODE):
 if __name__ == "__main__":
     for bits in (32, 64):
         Path(__file__).with_name(f"mapped_flow_boundary_{bits}.elf").write_bytes(image(bits))
+        Path(__file__).with_name(f"mapped_flow_straddle_{bits}.elf").write_bytes(
+            image(bits, STRADDLE))

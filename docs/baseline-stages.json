@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    833,
-    833
+    836,
+    836
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -383,10 +383,13 @@
     "data:LOWEREDSWITCH-SCRUTINEE #5: case 0x400b recovered",
     "data:LOWEREDSWITCH-SCRUTINEE #6: pass 1 keeps the compiler's chain over the same parameter",
     "data:LOWEREDSWITCH-SCRUTINEE #7: a case body is present in BOTH passes",
-    "data:MAPPED-FLOW #1: off loses the function to staged padding",
-    "data:MAPPED-FLOW #2: default retains the mapped return",
-    "data:MAPPED-FLOW #3: missing fall-through is explicit",
-    "data:MAPPED-FLOW #4: the recovered body warns about incomplete flow",
+    "data:MAPPED-FLOW #1: off loses both functions to staged padding",
+    "data:MAPPED-FLOW #2: default retains both mapped returns",
+    "data:MAPPED-FLOW #3: each missing fall-through is explicit",
+    "data:MAPPED-FLOW #4: both recovered bodies warn about incomplete flow",
+    "data:MAPPED-FLOW #5: the fall-through that ends exactly at the mapped end names its successor",
+    "data:MAPPED-FLOW #6: the zero padding that is mapped is still lifted",
+    "data:MAPPED-FLOW #7: the padding byte whose instruction runs past the mapped end is cut",
     "data:MSVCFPCONST #1: off, both operands of _scale are opaque -- the undefined x87 COMDAT and the defined IEEE-double one alike",
     "data:MSVCFPCONST #2: off, both operands of _fscale are opaque too",
     "data:MSVCFPCONST #3: on, _scale reads pi/4 from the undefined 20-hex x87 name and 0.1 from the defined 16-hex IEEE double",

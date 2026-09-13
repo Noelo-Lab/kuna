@@ -1075,11 +1075,33 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         let mut raw2 = String::new();
         let _ = toaddr.print_raw(&mut raw2);
         msg.push_str(&raw2);
-        self.data.warning(&msg, toaddr);
+        self.note_unmapped_flow(&msg, toaddr);
+    }
+
+    /// (kuna) Warn at `addr`, and once per function in the header, that flow reached unmapped memory.
+    fn note_unmapped_flow(&mut self, msg: &str, addr: &Address) {
+        self.data.warning(msg, addr);
         if !self.has_unmapped_target() {
             self.flags |= flow_flags::unmappedtarget_present;
             self.data.warning_header("Function flows into unmapped memory");
         }
+    }
+
+    /// (kuna `mappedflowboundary`) Is this checked-decode failure an instruction that flow
+    /// reached on a mapped byte but whose encoding runs past the mapped run? The flow's own
+    /// entry has no decoded path to retain, and an in-lined callee's missing halt would be
+    /// cloned into a normal return, so both keep the error.
+    fn kuna_truncated_mapped_instruction(&self, curaddr: &Address, err: &KunaError) -> bool {
+        matches!(err, KunaError::DataUnavail { .. })
+            && !self.is_flow_for_inline()
+            && curaddr != self.data.get_address()
+            && self.env.mapped_flow_image().is_some_and(|image| {
+                crate::kuna_mappedflowboundary::truncated_instruction(
+                    image,
+                    self.env.translate(),
+                    curaddr,
+                )
+            })
     }
 
     /// Build the C++ out-of-bounds error/warning string (`flow.cc:541-547`).
@@ -1591,6 +1613,12 @@ following this call as a branch"
                 };
                 step = match overlap_step {
                     Some(step) => step,
+                    None if self.kuna_truncated_mapped_instruction(curaddr, &err) => {
+                        self.artificial_halt(curaddr, pcodeop_flags::missing)?;
+                        let msg = crate::kuna_mappedflowboundary::truncated_warning(curaddr);
+                        self.note_unmapped_flow(&msg, curaddr);
+                        1
+                    }
                     None => self.handle_decode_error(curaddr, err)?,
                 };
             }
@@ -1756,6 +1784,7 @@ truncating the fall-through here"
                 isfallthru = false;
             } else if self.baddr <= next
                 && next <= self.eaddr
+                && !self.is_flow_for_inline()
                 && self.env.mapped_flow_image().is_some_and(|image| {
                     !crate::kuna_mappedflowboundary::mapped_start(image, &next)
                 })

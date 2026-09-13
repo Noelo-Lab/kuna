@@ -73,6 +73,29 @@ pub(crate) fn unmapped_overlap_step(
     Some(step)
 }
 
+/// A decode that starts on a mapped byte but whose instruction runs past the mapped run.
+pub(crate) fn truncated_instruction(
+    image: &dyn ImageBytes,
+    translate: &dyn Translate,
+    addr: &Address,
+) -> bool {
+    mapped_start(image, addr)
+        && translate
+            .instruction_length(addr)
+            .ok()
+            .and_then(|step| instruction_end(addr, step))
+            .is_some_and(|end| !image.mapped_covers(addr.get_offset(), end))
+}
+
+pub(crate) fn truncated_warning(addr: &Address) -> String {
+    let mut raw = String::new();
+    let _ = addr.print_raw(&mut raw);
+    format!(
+        "Function flow reaches unmapped memory: the instruction at {}{raw} runs past the mapped bytes",
+        addr.get_shortcut()
+    )
+}
+
 fn instruction_end(addr: &Address, step: i32) -> Option<u64> {
     let len = u64::try_from(step).ok().filter(|&len| len > 0)?;
     let end = addr.get_offset().checked_add(len)?;

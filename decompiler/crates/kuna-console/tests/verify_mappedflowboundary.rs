@@ -460,7 +460,7 @@ fn a_mapped_loader_failure_is_not_recovered_as_a_missing_edge() {
     use kuna_base::error::{KunaError, KunaResult};
     use kuna_sleigh::loadimage::{ImageBytes, LoadImage};
     use std::sync::Arc;
-    struct FailingImage(Arc<dyn ImageBytes>);
+    struct FailingImage(Arc<dyn ImageBytes>, u64);
     impl LoadImage for FailingImage {
         fn get_file_name(&self) -> &str {
             "synthetic.elf"
@@ -472,27 +472,100 @@ fn a_mapped_loader_failure_is_not_recovered_as_a_missing_edge() {
         fn shared_bytes(&self) -> Option<Arc<dyn ImageBytes>> {
             Some(Arc::clone(&self.0))
         }
-        fn load_fill(&mut self, _: &mut [u8], _: &Address) -> KunaResult<()> {
-            Err(KunaError::data_unavail("synthetic mapped read failure"))
+        fn load_fill(&mut self, buf: &mut [u8], addr: &Address) -> KunaResult<()> {
+            if addr.get_offset() >= self.1 {
+                return Err(KunaError::data_unavail("synthetic mapped read failure"));
+            }
+            self.0.fill_span(buf, addr.get_offset());
+            Ok(())
         }
     }
     let path = fixture(&[(0x10000, &[0xb8, 7, 0, 0, 0, 0xc3], 6)]);
-    let mut prog = load(&path);
-    let image = prog
-        .arch()
-        .translate()
-        .loader_rc()
-        .borrow()
-        .shared_bytes()
-        .unwrap();
-    *prog.arch().translate().loader_rc().borrow_mut() = Box::new(FailingImage(image));
-    let entry = address(&prog, 0x10000);
-    let err = build_and_follow_flow(prog.arch_mut(), "sample", entry, 0)
-        .err()
-        .expect("mapped read must fail");
-    assert!(
-        err.explain().contains("synthetic mapped read failure"),
-        "{err:?}"
-    );
+    for fail_from in [0x10000, 0x10005] {
+        let mut prog = load(&path);
+        let image = prog
+            .arch()
+            .translate()
+            .loader_rc()
+            .borrow()
+            .shared_bytes()
+            .unwrap();
+        *prog.arch().translate().loader_rc().borrow_mut() =
+            Box::new(FailingImage(image, fail_from));
+        let entry = address(&prog, 0x10000);
+        let err = build_and_follow_flow(prog.arch_mut(), "sample", entry, 0)
+            .err()
+            .expect("mapped read must fail");
+        assert!(
+            err.explain().contains("synthetic mapped read failure"),
+            "{err:?}"
+        );
+    }
     std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn a_straddling_instruction_contributes_only_its_missing_halt() {
+    for data in [
+        &[0x85, 0xc0, 0x75, 6, 0xb8, 7, 0, 0, 0, 0xc3, 0xbb, 5, 0, 0, 0, 0, 0, 0][..],
+        &[0x85, 0xc0, 0x75, 6, 0xb8, 7, 0, 0, 0, 0xc3, 0x8e, 0xc8, 0, 0, 0][..],
+    ] {
+        let path = fixture(&[(0x10000, data, data.len() as u32)]);
+        let mut prog = load(&path);
+        let entry = address(&prog, 0x10000);
+        let fd = build_and_follow_flow(prog.arch_mut(), "sample", entry, 0).unwrap();
+        let end = 0x10000 + data.len() as u64;
+        let straddle = end - 1;
+        let mut at_straddle = Vec::new();
+        for (seq, id) in fd.obank().iter_all() {
+            let offset = seq.get_addr().get_offset();
+            assert!(offset < end, "op past the mapped end at {offset:#x}");
+            if offset == straddle {
+                at_straddle.push(id);
+            }
+        }
+        assert_eq!(at_straddle.len(), 1);
+        let halt = fd.obank().get(at_straddle[0]).unwrap();
+        assert_eq!(halt.code(), OpCode::CPUI_RETURN);
+        assert_ne!(halt.get_halt_type() & pcodeop_flags::missing, 0);
+        assert!(
+            fd.obank()
+                .iter_all()
+                .any(|(seq, _)| seq.get_addr().get_offset() == straddle - 2),
+            "the mapped padding before the straddle is still decoded"
+        );
+        assert!(
+            prog.arch()
+                .commentdb
+                .comments()
+                .iter()
+                .any(|c| c.text.contains("runs past the mapped bytes"))
+        );
+        std::fs::remove_file(path).unwrap();
+    }
+}
+
+#[test]
+fn an_inlined_callee_that_leaves_mapped_memory_stays_an_error() {
+    for tail in [&[][..], &[0][..]] {
+        let mut data = vec![0xe8, 6, 0, 0, 0, 0xb8, 7, 0, 0, 0, 0xc3, 0xbb, 5, 0, 0, 0];
+        data.extend_from_slice(tail);
+        let path = fixture(&[(0x10000, &data, data.len() as u32)]);
+        let mut prog = load(&path);
+        let callee = address(&prog, 0x1000b);
+        prog.seed_function_inventory(&[("callee".to_string(), callee.clone())])
+            .unwrap();
+        let alone = build_and_follow_flow(prog.arch_mut(), "callee", callee, 0).unwrap();
+        assert!(alone.obank().iter_all().any(|(_, id)| {
+            alone.obank().get(id).unwrap().get_halt_type() & pcodeop_flags::missing != 0
+        }));
+        let sid = prog.arch().query_global_function("callee").unwrap();
+        prog.arch_mut().symboltab.set_function_inline(sid, true);
+        let entry = address(&prog, 0x10000);
+        let err = build_and_follow_flow(prog.arch_mut(), "caller", entry, 0)
+            .err()
+            .expect("an in-lined callee must not return past its missing bytes");
+        assert!(err.explain().contains("not mapped"), "{err:?}");
+        std::fs::remove_file(path).unwrap();
+    }
 }

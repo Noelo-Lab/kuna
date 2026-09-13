@@ -7,9 +7,13 @@ const EDGE: &[u8] = &[
 ];
 
 fn fixture(bits: u8) -> std::path::PathBuf {
+    named_fixture("boundary", bits)
+}
+
+fn named_fixture(kind: &str, bits: u8) -> std::path::PathBuf {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     root.join(format!(
-        "../kuna-analysis/tests/fixtures/mapped_flow_boundary_{bits}.elf"
+        "../kuna-analysis/tests/fixtures/mapped_flow_{kind}_{bits}.elf"
     ))
 }
 
@@ -23,25 +27,28 @@ fn decompile(path: &std::path::Path, extra: &[&str]) -> Output {
 
 #[test]
 fn mapped_return_survives_another_path_falling_off_the_image() {
-    for bits in [32, 64] {
-        let path = fixture(bits);
-        for extra in [vec![], vec!["--json"]] {
-            let out = decompile(&path, &extra);
-            let stdout = String::from_utf8_lossy(&out.stdout);
-            assert!(
-                out.status.success(),
-                "{stdout}\n{}",
-                String::from_utf8_lossy(&out.stderr)
-            );
-            assert!(stdout.contains("return 7;"), "{stdout}");
-            assert!(stdout.contains("halt_missing"), "{stdout}");
-            assert!(stdout.contains("unmapped memory"), "{stdout}");
-            assert!(!stdout.contains("external symbol"), "{stdout}");
+    for (kind, warning) in [("boundary", " flows to "), ("straddle", "runs past the mapped bytes")] {
+        for bits in [32, 64] {
+            let path = named_fixture(kind, bits);
+            for extra in [vec![], vec!["--json"]] {
+                let out = decompile(&path, &extra);
+                let stdout = String::from_utf8_lossy(&out.stdout);
+                assert!(
+                    out.status.success(),
+                    "{stdout}\n{}",
+                    String::from_utf8_lossy(&out.stderr)
+                );
+                assert!(stdout.contains("return 7;"), "{stdout}");
+                assert!(stdout.contains("halt_missing"), "{stdout}");
+                assert!(stdout.contains("unmapped memory"), "{stdout}");
+                assert!(stdout.contains(warning), "{stdout}");
+                assert!(!stdout.contains("external symbol"), "{stdout}");
+            }
+            let off = decompile(&path, &["--option", "mappedflowboundary", "off", "--json"]);
+            assert!(!off.status.success());
+            let json = String::from_utf8_lossy(&off.stdout);
+            assert!(json.contains("\"code\": null"), "{json}");
         }
-        let off = decompile(&path, &["--option", "mappedflowboundary", "off", "--json"]);
-        assert!(!off.status.success());
-        let json = String::from_utf8_lossy(&off.stdout);
-        assert!(json.contains("\"code\": null"), "{json}");
     }
 }
 
@@ -110,30 +117,71 @@ fn queued_paths_resolve_before_and_after_a_missing_edge_is_cut() {
 }
 
 #[test]
-fn truncated_instruction_keeps_a_failure_in_text_and_json() {
-    for (bytes, options) in [
-        (&[0xb8, 7, 0][..], &[][..]),
-        (&[0xb8, 7, 0, 0, 0, 0x85, 0xdb, 0x75, 1, 0xe8, 0xb8][..], &[][..]),
+fn a_truncated_entry_instruction_keeps_a_failure_in_text_and_json() {
+    let path = with_code(&[0xb8, 7, 0]);
+    for extra in [&[][..], &["--json"][..]] {
+        let out = decompile(&path, extra);
+        assert!(
+            !out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stdout)
+        );
+        assert!(String::from_utf8_lossy(&out.stderr).contains("not mapped"));
+        assert!(!String::from_utf8_lossy(&out.stdout).contains("external symbol"));
+    }
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn an_instruction_running_past_the_mapped_end_ends_only_its_own_path() {
+    let overlap_off = ["--option", "overlapbranch", "off"];
+    for (code, options, kept) in [
+        (
+            &[0x85, 0xc0, 0x75, 6, 0xb8, 7, 0, 0, 0, 0xc3, 0x8e, 0xc8, 0, 0, 0][..],
+            &[][..],
+            "return 7;",
+        ),
+        (
+            &[0x85, 0xc0, 0x75, 6, 0xb8, 7, 0, 0, 0, 0xc3, 0][..],
+            &[][..],
+            "return 7;",
+        ),
         (
             &[0xb8, 7, 0, 0, 0, 0x85, 0xdb, 0x75, 1, 0xe8, 0xc3][..],
-            &["--option", "overlapbranch", "off"][..],
+            &overlap_off[..],
+            "return 7;",
+        ),
+        (
+            &[0xb8, 7, 0, 0, 0, 0x85, 0xdb, 0x75, 1, 0xe8, 0xb8][..],
+            &[][..],
+            "if (",
         ),
     ] {
-        let path = with_code(bytes);
+        let path = with_code(code);
         for json in [false, true] {
             let mut extra = options.to_vec();
             if json {
                 extra.push("--json");
             }
             let out = decompile(&path, &extra);
+            let text = String::from_utf8_lossy(&out.stdout);
             assert!(
-                !out.status.success(),
-                "{}",
-                String::from_utf8_lossy(&out.stdout)
+                out.status.success(),
+                "{text}\n{}",
+                String::from_utf8_lossy(&out.stderr)
             );
-            assert!(String::from_utf8_lossy(&out.stderr).contains("not mapped"));
-            assert!(!String::from_utf8_lossy(&out.stdout).contains("external symbol"));
+            assert!(text.contains(kept), "{text}");
+            assert!(text.contains("halt_missing"), "{text}");
+            assert!(text.contains("runs past the mapped bytes"), "{text}");
         }
+        let mut off = options.to_vec();
+        off.extend(["--option", "mappedflowboundary", "off", "--json"]);
+        let out = decompile(&path, &off);
+        assert!(
+            !out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stdout)
+        );
         std::fs::remove_file(path).unwrap();
     }
 }
