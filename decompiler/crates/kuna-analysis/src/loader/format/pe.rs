@@ -138,9 +138,66 @@ impl ObjectFormat for PeFormat {
     }
 }
 
+/// Is `bytes` a PE image whose optional-header `Subsystem` is Windows GUI (2) or
+/// console (3)?
+///
+/// Those are the images whose code runs as a user-mode Windows thread, with the
+/// Thread Environment Block at the `GS` (x86-64) or `FS` (x86) segment base. A
+/// native-subsystem driver keeps its KPCR there instead, and an EFI image
+/// nothing, so every other value -- and anything that is not a well-formed PE --
+/// answers `false`. `Subsystem` sits 68 bytes into both the PE32 and the PE32+
+/// optional header.
+pub fn is_windows_user_mode_image(bytes: &[u8]) -> bool {
+    const SUBSYSTEM_OFFSET: usize = 68;
+    let read_u16 = |at: usize| bytes.get(at..at + 2).map(|b| u16::from_le_bytes([b[0], b[1]]));
+    let read_u32 = |at: usize| bytes.get(at..at + 4).map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]));
+    if bytes.get(0..2) != Some(&b"MZ"[..]) {
+        return false;
+    }
+    let Some(pe) = read_u32(0x3c).map(|v| v as usize) else { return false };
+    if bytes.get(pe..pe + 4) != Some(&b"PE\0\0"[..]) {
+        return false;
+    }
+    let optional = pe + 24;
+    let Some(opt_size) = read_u16(pe + 20) else { return false };
+    if (opt_size as usize) < SUBSYSTEM_OFFSET + 2 || !matches!(read_u16(optional), Some(0x10b | 0x20b)) {
+        return false;
+    }
+    matches!(
+        read_u16(optional + SUBSYSTEM_OFFSET),
+        Some(object::pe::IMAGE_SUBSYSTEM_WINDOWS_GUI | object::pe::IMAGE_SUBSYSTEM_WINDOWS_CUI)
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn pe_header(magic: u16, subsystem: u16) -> Vec<u8> {
+        let mut b = vec![0u8; 0x200];
+        b[0..2].copy_from_slice(b"MZ");
+        b[0x3c..0x40].copy_from_slice(&0x40u32.to_le_bytes());
+        b[0x40..0x44].copy_from_slice(b"PE\0\0");
+        b[0x54..0x56].copy_from_slice(&0xf0u16.to_le_bytes());
+        b[0x58..0x5a].copy_from_slice(&magic.to_le_bytes());
+        b[0x58 + 68..0x58 + 70].copy_from_slice(&subsystem.to_le_bytes());
+        b
+    }
+
+    /// GUI and console PE32/PE32+ images are user mode; a native driver, an EFI
+    /// application, a truncated header and a non-PE are not.
+    #[test]
+    fn user_mode_image_is_gui_or_console_pe_only() {
+        for magic in [0x10b, 0x20b] {
+            assert!(is_windows_user_mode_image(&pe_header(magic, 2)));
+            assert!(is_windows_user_mode_image(&pe_header(magic, 3)));
+            assert!(!is_windows_user_mode_image(&pe_header(magic, 1)), "native driver");
+            assert!(!is_windows_user_mode_image(&pe_header(magic, 10)), "EFI application");
+        }
+        assert!(!is_windows_user_mode_image(&pe_header(0x107, 3)), "ROM optional header");
+        assert!(!is_windows_user_mode_image(&pe_header(0x20b, 3)[..0x90]), "truncated");
+        assert!(!is_windows_user_mode_image(b"\x7fELF\x02\x01\x01"), "ELF");
+    }
     use object::pe::{IMAGE_SCN_CNT_CODE, IMAGE_SCN_MEM_EXECUTE, IMAGE_SCN_MEM_READ, IMAGE_SCN_MEM_WRITE};
 
     /// `PeFormat::compiler_model` returns `windows` for every arch (the PE ABI).

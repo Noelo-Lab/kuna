@@ -1082,6 +1082,10 @@ pub struct ArchContext {
     /// left out, so a spec-declared model always wins.  Read by
     /// [`ActionX64Syscall`](crate::p2_lift::kuna_x64syscall::ActionX64Syscall).
     pub x64_syscall_userops: Vec<kuna_base::types::uint4>,
+    /// (kuna) `option pebnames`, resolved against the compiler spec and the
+    /// loader's user-mode-PE fact: does
+    /// [`ActionPebNames`](crate::p5_types::kuna_pebnames::ActionPebNames) act?
+    pub peb_names: bool,
     /// (kuna) `option switchselector`: refuse a recovered lowered-switch record
     /// whose synthesized BRANCHIND would not get the switch value as its
     /// selector.  Read by
@@ -1527,6 +1531,7 @@ impl ArchContext {
             linux_syscall: false,        // linuxsyscall (opt-in default-off)
             x64_syscall: crate::p2_lift::kuna_x64syscall::X64SyscallMode::Off, // x64syscall (opt-in default-off)
             x64_syscall_userops: Vec::new(),
+            peb_names: false,
             switch_selector_guard: false, // switchselector (opt-in default-off)
             cond_fold: 0,                // condfold (opt-in default-off; 0 = off)
             reduce_return_gotos: false,  // gotoreduce (opt-in default-off)

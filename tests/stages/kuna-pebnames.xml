@@ -1,0 +1,126 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:windows">
+<!--
+    pebnames (GH-468 finding 6): a Windows anti-debug probe reads the PEB through
+    the GS segment base, and the C names none of it.
+
+    A Windows user-mode thread keeps its Thread Environment Block at the GS base
+    on x86-64. SLEIGH lowers GS:[disp] to GS_OFFSET + disp over a register input
+    nothing writes, so with no type on that register every read is a magic offset
+    and the only hint is the storage comment, which is just the lowercased
+    register name. Stage model: P5 type-propagation (a type-locked Symbol mapped
+    over the register input before heritage).
+
+    Layout (x86-64 Windows), the reporter's shape plus the IsDebuggerPresent-style
+    route through TEB.Self and one TEB offset the table does not name:
+      0x140001000  48 83 ec 28              sub   rsp,0x28
+      0x140001004  65 48 8b 04 25 60 00 ..  mov   rax,gs:[0x60]       ; TEB.ProcessEnvironmentBlock
+      0x14000100d  0f b6 48 02              movzx ecx,byte [rax+2]    ; PEB.BeingDebugged
+      0x140001011  85 c9 / 75 2f            test ecx,ecx ; jne dbg
+      0x140001015  8b 80 bc 00 00 00        mov   eax,[rax+0xbc]      ; PEB.NtGlobalFlag
+      0x14000101b  83 e0 70 / 83 f8 70      and eax,0x70 ; cmp eax,0x70
+      0x140001021  74 21                    je    dbg
+      0x140001023  65 48 8b 04 25 30 00 ..  mov   rax,gs:[0x30]       ; TEB.Self
+      0x14000102c  48 8b 40 60              mov   rax,[rax+0x60]      ; ->ProcessEnvironmentBlock
+      0x140001030  48 8b 40 30              mov   rax,[rax+0x30]      ; ->ProcessHeap
+      0x140001034  8b 40 70                 mov   eax,[rax+0x70]      ; a heap field, not modelled
+      0x140001037  65 03 04 25 00 01 00 00  add   eax,gs:[0x100]      ; a TEB offset with no entry
+      0x14000103f  48 83 c4 28 / c3         add rsp,0x28 ; ret
+      0x140001044  b8 01 00 00 00 / ...     dbg: mov eax,1 ; add rsp,0x28 ; ret
+
+    Pass 1 (pebnames off, the bug): long long v1 // gs_offset read through 0x60/+2
+    and 0x60/+0xbc.
+    Pass 2 (pebnames on, the fix): TEB *teb // gs_offset, and every read renders
+    through the named fields. GS:[0x100] is WOW32Reserved in the real TEB, which
+    this table does not carry; it sits between Win32ThreadInfo (0x78) and
+    CurrentLocale (0x108) and must print as the offset-named field_0x100, never as
+    either neighbour.
+    Pass 3 (pebnames auto, the shipped default): an XML bytechunk has no PE
+    container, so there is no user-mode-PE fact and auto is inert; the Symbol the
+    previous pass mapped is taken back and the render is pass 1's again.
+
+    Near misses, decompiled under pebnames on, none of which may gain a name:
+      0x140001100  mov rax,gs:[0x18d8]        ; 0x1878 + 0x60: past the largest TEB,
+                                              ; lined up with ProcessEnvironmentBlock
+      0x140001110  mov rax,gs:[0x60]
+                   mov rax,[rax+0x68]         ; ApiSetMap from Windows 7, FreeList or
+                                              ; SparePebPtr0 before it
+      0x140001120  mov rax,gs:[rcx]           ; a variable displacement through the base
+      0x140001130  mov rax,fs:[0x58]          ; FS is not the TEB in 64-bit mode
+      0x140001140  mov gs:[0x68],ecx          ; a write through the base (LastErrorValue)
+                   mov rax,gs:[0x60]
+                   movzx eax,byte [rax+2]     ; so the PEB probe beside it stays untyped
+
+    Re-running the pass must not map the segment base twice. The Symbol is
+    type-locked, so it survives a second decompile of the same function, and the
+    pass has to recognise it rather than map another (which rendered
+    TEB *v2 // gs_offset with every field read through the anonymous copy):
+      0x140001200  mov rax,gs:[0x60]          ; then a four-way jump table whose
+                   cmp ecx,3 / ja dflt        ; cases read BeingDebugged,
+                   lea rdx,[table] / ...      ; NtGlobalFlag, OSMajorVersion and
+                   jmp r8                     ; ImageBaseAddress; decompiled twice
+-->
+<bytechunk space="ram" offset="0x140001000" readonly="true">4883ec2865488b0425600000000fb6480285c9752f8b80bc00000083e07083f870742165488b042530000000488b4060488b40308b407065030425000100004883c428c3b8010000004883c428c3</bytechunk>
+<symbol space="ram" offset="0x140001000" name="anti_debug"/>
+<bytechunk space="ram" offset="0x140001100" readonly="true">65488b0425d8180000c3cccccccccccc65488b042560000000488b4068c3cccc65488b01c3cccccccccccccccccccccc64488b042558000000c3cccccccccccc65890c256800000065488b0425600000000fb64002c3cccccccccccccccccccc</bytechunk>
+<symbol space="ram" offset="0x140001100" name="past_end"/>
+<symbol space="ram" offset="0x140001110" name="version_hole"/>
+<symbol space="ram" offset="0x140001120" name="var_disp"/>
+<symbol space="ram" offset="0x140001130" name="fs_long_mode"/>
+<symbol space="ram" offset="0x140001140" name="store_then_probe"/>
+<bytechunk space="ram" offset="0x140001200" readonly="true">65488b04256000000083f903772b89c9488d15250000004c63048a4901d041ffe00fb64002c38b80bc000000c38b8018010000c3488b4010c331c0c3e5ffffffeafffffff1fffffff8ffffff</bytechunk>
+<symbol space="ram" offset="0x140001200" name="switch_probe"/>
+</binaryimage>
+<script>
+  <com>option pebnames off</com>
+  <com>lo fu anti_debug</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option pebnames on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option pebnames auto</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option pebnames on</com>
+  <com>lo fu past_end</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu version_hole</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu var_disp</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fs_long_mode</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu store_then_probe</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu switch_probe</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="PEBNAMES #1: BeingDebugged is read through the PEB the TEB points at (on pass only)" min="1" max="1">if \(\(!teb-&gt;ProcessEnvironmentBlock-&gt;BeingDebugged\)</stringmatch>
+<stringmatch name="PEBNAMES #2: the NtGlobalFlag heap-debug mask is read by name (on pass only)" min="1" max="1">\(teb-&gt;ProcessEnvironmentBlock-&gt;NtGlobalFlag &amp; 0x70\) != 0x70</stringmatch>
+<stringmatch name="PEBNAMES #3: GS:[0x30] is TEB.Self and chains on to the PEB and its ProcessHeap (on pass only)" min="1" max="1">teb-&gt;Self-&gt;ProcessEnvironmentBlock-&gt;ProcessHeap \+ 0x70</stringmatch>
+<stringmatch name="PEBNAMES #4: an offset the table does not name prints offset-named, not as a neighbouring field (on pass only)" min="1" max="1">&amp;teb-&gt;field_0x100</stringmatch>
+<stringmatch name="PEBNAMES #5: the segment base is declared as the TEB pointer and keeps its storage comment (every GS reader under on)" min="6" max="6">TEB \*teb; // gs_offset</stringmatch>
+<stringmatch name="PEBNAMES #6: the magic-offset read of BeingDebugged, in the off pass and in the container-less auto pass" min="2" max="2">!\*\(char \*\)\(\*\(int8 \*\)\(v[0-9]+ \+ 0x60\) \+ 2\)</stringmatch>
+<stringmatch name="PEBNAMES #7: the register storage comment survives in every pass" min="9" max="9">; // gs_offset</stringmatch>
+<stringmatch name="PEBNAMES #8: a read past the largest TEB stays an integer addition, not a field of a phantom neighbour" min="1" max="1">\*\(unsigned long long \*\)\(\(int8\)teb \+ 0x18d8\)</stringmatch>
+<stringmatch name="PEBNAMES #9: no read is split into an index of a neighbouring TEB or PEB" min="0" max="0">(teb|ProcessEnvironmentBlock|Self)\[</stringmatch>
+<stringmatch name="PEBNAMES #10: PEB+0x68 changed meaning between Windows releases and stays offset-named" min="1" max="1">\*\(unsigned long long \*\)&amp;teb-&gt;ProcessEnvironmentBlock-&gt;field_0x68;</stringmatch>
+<stringmatch name="PEBNAMES #11: no version-dependent PEB name is ever printed" min="0" max="0">ApiSetMap|CrossProcessFlags|FreeList</stringmatch>
+<stringmatch name="PEBNAMES #12: a variable displacement through the base is added as an integer, not as C pointer arithmetic" min="1" max="1">\*\(unsigned long long \*\)\(\(int8\)&amp;teb-&gt;ExceptionList \+ a0\)</stringmatch>
+<stringmatch name="PEBNAMES #13: FS is not the TEB in 64-bit mode, so fs:[0x58] stays an untyped register read under on" min="1" max="1">return \*\(unsigned long long \*\)\(v[0-9]+ \+ 0x58\);</stringmatch>
+<stringmatch name="PEBNAMES #14: the FS base keeps an untyped declaration in 64-bit mode" min="1" max="1">int8 v[0-9]+; // fs_offset</stringmatch>
+<stringmatch name="PEBNAMES #15: a function that writes through the base keeps its PEB probe untyped under on" min="1" max="1">return \*\(char \*\)\(\*\(int8 \*\)\(v[0-9]+ \+ 0x60\) \+ 2\);</stringmatch>
+<stringmatch name="PEBNAMES #17: a second decompile keeps the one named TEB Symbol instead of mapping an anonymous copy" min="2" max="2">v[0-9]+ = teb-&gt;ProcessEnvironmentBlock;</stringmatch>
+<stringmatch name="PEBNAMES #18: the jump-table cases read PEB fields by name in both decompiles" min="2" max="2">return \(uint8\)v[0-9]+-&gt;NtGlobalFlag;</stringmatch>
+<stringmatch name="PEBNAMES #16: the write itself stays a store through the untyped base" min="1" max="1">\*\(unsigned int \*\)\(v[0-9]+ \+ 0x68\) = a0;</stringmatch>
+</decompilertest>

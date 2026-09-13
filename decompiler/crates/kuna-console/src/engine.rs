@@ -3614,6 +3614,11 @@ pub fn bootstrap_from_object_with_isa(
     // why `option rustabi auto` is inert on the datatest corpus by construction.
     let source_is_rust = kuna_analysis::sourcelang::detect_compiler_bytes(&bytes).is_rust();
     sleigh.base_mut().unwrap().source_is_rust = source_is_rust;
+    // (kuna `pebnames`) The same kind of one-bit image fact: is this a Windows
+    // GUI/console PE, whose segment base holds a user-mode TEB?  `option pebnames
+    // auto` acts only when it is.
+    sleigh.base_mut().unwrap().image_windows_user =
+        kuna_analysis::loader::format::pe::is_windows_user_mode_image(&bytes);
 
     // Hand the loader to the engine (the C++ `loader` back-pointer the decode
     // reads on load_fill).

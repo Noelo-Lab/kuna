@@ -314,6 +314,104 @@ stored value and print `(void)` — and nowhere else: the *pointer* keeps its ow
 `code *` type, so the indirect call still renders `(*v1)()`, and a `code **`
 load, whose pointee is a pointer, is untouched.
 
+**The Windows segment base (`pebnames`).** A Windows user-mode thread keeps its
+Thread Environment Block at the base of `GS` on x86-64 and of `FS` on x86, and
+x86 SLEIGH lowers a segment-prefixed operand to `GS_OFFSET + disp` /
+`FS_OFFSET + disp` over a register input nothing in the function writes. No seed
+types that register, so inference leaves it an integer and every read through it
+is a magic offset — the anti-debug probe of the PEB's `BeingDebugged` byte prints
+`*(char *)(*(long long *)(v1 + 0x60) + 2)`, and on x86 the base degrades into an
+integer array whose elements are the TEB's fields. The fix is a type lock, placed
+where every other lock comes from: `decompiler/crates/kuna-decomp/src/p5_types/kuna_pebnames.rs
+(ActionPebNames)` runs once per function at the head of the universal schedule,
+before heritage, and when the raw p-code reads the segment-base register and never
+stores through it, it maps a type-locked, name-locked local Symbol `TEB *teb` over
+the register's input storage (use point one before the entry, so only the input
+version is covered).
+Heritage then creates the input Varnode carrying both locks, and ordinary
+pointer-arithmetic recovery and field rendering do the rest:
+`teb->ProcessEnvironmentBlock->BeingDebugged`, `teb->Self->ProcessEnvironmentBlock->NtGlobalFlag`,
+`teb->ExceptionList`. The structures come from
+`decompiler/crates/kuna-decomp/src/p5_types/kuna_pebnames.rs (teb_pointer_type)`:
+a `PEB` and a `TEB` (with the `NT_TIB` header and the `CLIENT_ID` pair flattened
+in). A field is named only when its offset, name and size agree in every
+PDB-derived layout the Vergilius Project publishes for the architecture — x64
+`_TEB`/`_PEB` from XP SP2 through Windows 11 25H2, and x86 `_TEB`/`_PEB` from XP
+SP3 through Windows 10 22H2 plus every x64 kernel's WOW64 `_TEB32`/`_PEB32` — so
+a name that changed between releases (`CrossProcessFlags` was
+`EnvironmentUpdateCount` on XP, `ApiSetMap` was `FreeList`/`SparePebPtr0` before
+Windows 7, the x86 `BitField` was `SpareBool` on XP) is left a hole, and a read in
+a hole prints the offset-named `field_0x<off>`. The structures have grown with
+nearly every release, so each is built as a variable-length type at the largest
+published size (TEB 0x1878 and PEB 0x7d0 on x64, 0x1038 and 0x488 on x86).
+Variable length is what keeps a phantom neighbour's name out:
+`decompiler/crates/kuna-decomp/src/substrate/addtreestate.rs (AddTreeState::calc_subtype)`
+takes a variable-length base as size 0, so a constant offset past the end of the
+modelled fields (`gs:[0x18d8]`, which a fixed-size TEB would wrap into the next
+TEB's `ProcessEnvironmentBlock`) — or a negative one — stays an integer addition
+on the cast base rather than an array index. A pointer
+whose target is not modelled (`StackBase`, `ProcessHeap`, `Ldr`, …) is typed
+`undefined<ptrsize>` rather than `void *`, so the field names a value without
+pushing a pointer type into the variables it merges with; only `Self` and
+`ProcessEnvironmentBlock` are typed pointers, because they are what the chain
+follows. Completing a structure mints a new `Rc`, so a field cannot point at the
+structure that holds it: `TEB.Self` points at an identical `_TEB` (the Windows
+structure tag) whose own `Self` is opaque, which resolves one hop through `Self`
+and leaves a second hop an untyped value.
+
+**A write through the base declines.** A store through a typed base gives the
+stored value the field's type, and on x86 nearly every such store is an exception
+frame linking its registration record into `ExceptionList`. That record's stack
+layout is recovered by the local-variable restructure from how the untyped base is
+used: the slot receiving `fs:[0]` takes the base's inferred element type, and the
+open range behind the stored record address pulls the handler and state slots in
+with it, which is how MSVC's `{Next, handler, state}` record becomes one `int4 [3]`.
+With the field opaque that record split into three unrelated scalars; modelling
+`_EXCEPTION_REGISTRATION_RECORD` instead put the record over the wrong slots and
+spread a record-pointer type onto whatever kuna's stack analysis believed was
+stored (a /GS cookie, a handler constant, a call result). So a function that
+stores through the base is left as upstream renders it. Raw p-code is not yet SSA,
+so `segment_use` in the same file finds such a store by storage within each
+instruction that reads the register: a segment override always lowers to
+`tmp = SEG_OFFSET + addr` feeding that instruction's `LOAD` or `STORE`, and any
+non-`LOAD` op consuming a derived address derives its output too.
+
+The gate is the resolved `peb_names` flag on the ArchSeam. Every mode requires a
+Windows compiler spec (`windows`/`clangwindows`), and the register is chosen by the
+code space's address size (`GS_OFFSET` on x86-64, `FS_OFFSET` on x86). The register
+choice is why the x86-64 ELF canary at `fs:0x28` and the x86 one at `gs:0x14` never
+reach the pass, and why an `fs:` read in 64-bit code or a `gs:` read in 32-bit code
+stays untyped; the compiler-spec requirement is what keeps a non-Windows image that
+does read the GS base (x86-64) or FS base (x86) untyped even under `on`. The segment base is a
+TEB only in user mode — a driver keeps its KPCR there and firmware nothing — so
+the shipped default `auto`
+additionally requires the loader's image fact `image_windows_user`, written at
+`load file` from the PE optional header (`Subsystem` 2 or 3) by
+`decompiler/crates/kuna-analysis/src/loader/format/pe.rs (is_windows_user_mode_image)`;
+the XML bootstrap never writes it, so `auto` is inert on the datatest corpus. `on`
+trusts the compiler spec alone, for shellcode or a stage bytechunk. A Symbol
+already mapped over the register (a user `type varnode`) wins, a `TEB`/`_TEB`/`PEB`
+type that is not this exact variable-length layout already in the program makes
+the pass decline, and when the gate is off the pass takes back the non-isolated
+Symbol it mapped on an earlier decompile of the same function. Because that Symbol
+is type-locked it also survives a second decompile under the gate, and the pass
+recognises it there instead of mapping another over the same storage, which would
+leave an anonymous `TEB *v2` carrying every field read.
+
+Three limits are known. A variable that holds `teb->Self` or
+`teb->ProcessEnvironmentBlock` on one path and an unrelated value on another takes
+the pointer type, so the unrelated value gains a cast (`(_TEB *)` on a call result in
+one obfuscated binary), and a parameter compared or merged with such a value can
+take it too. The store check sees only the instructions that read the segment
+register, so a store through a pointer loaded from the TEB
+(`mov eax,fs:[0x18]; mov [eax],esp`) is typed as `teb->Self->ExceptionList = ...`.
+And `auto` needs the loader fact, which only the object loader writes, so it never
+fires in the Ghidra front-end; `on` does. Exercised by
+`tests/stages/kuna-pebnames.xml`, `tests/stages/kuna-pebnames-x86.xml` (both
+with near misses that must not gain a name, and x86 SEH and MSVC C++ EH frames that
+must render exactly as with the option off) and
+`decompiler/crates/kuna-console/tests/verify_pebnames.rs`.
+
 **The casting boundary.** Inference annotates; it never converts. Where the
 final Varnode type disagrees with what an op requires, nothing in phase 5
 reconciles it — the disagreement survives to

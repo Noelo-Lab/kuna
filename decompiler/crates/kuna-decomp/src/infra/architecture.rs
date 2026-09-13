@@ -393,6 +393,15 @@ pub struct Architecture {
     /// argument registers unconditionally.  See
     /// [`kuna_x64syscall`](crate::kuna_x64syscall).
     pub x64_syscall: crate::kuna_x64syscall::X64SyscallMode,
+    /// (kuna `pebnames`) When the Windows thread-environment segment base (`GS`
+    /// on x86-64, `FS` on x86) is typed `TEB *`: `off`, `auto` (the default: only
+    /// on an image the loader proved is a Windows user-mode PE) or `on` (any image
+    /// with a Windows compiler spec).  See [`kuna_pebnames`](crate::kuna_pebnames).
+    pub peb_names: crate::kuna_pebnames::PebNamesMode,
+    /// (kuna) Did the loader identify the image as a Windows GUI/console PE?  A
+    /// FACT, not an option: written once at `load file` and the thing `option
+    /// pebnames auto` tests.  The XML `<binaryimage>` bootstrap never sets it.
+    pub image_windows_user: bool,
     /// (kuna `decodehalt`) Does an artificial halt planted because the DECODE
     /// failed report itself?  On (the default) renders the three decode-failure
     /// halt types as upstream's `halt_baddata()` / `halt_unimplemented()` /
@@ -2073,6 +2082,8 @@ impl Architecture {
             fastfail_noreturn: false, // (kuna) option fastfailnoreturn; reset_defaults sets the shipped default
             int3_pad: crate::kuna_int3pad::Int3PadMode::Off, // (kuna) option int3pad; reset_defaults sets the shipped default
             x64_syscall: crate::kuna_x64syscall::X64SyscallMode::Off, // (kuna) option x64syscall; reset_defaults sets the shipped default
+            peb_names: crate::kuna_pebnames::PebNamesMode::Off, // (kuna) option pebnames; reset_defaults sets the shipped default
+            image_windows_user: false, // (kuna) a load-time fact; set by the console's `load file`
             decode_halt: false, // (kuna) option decodehalt; reset_defaults sets the shipped default
             msvc_ftol: false, // (kuna) option msvcftol; reset_defaults sets the shipped default
             tail_call_jumps: false,
@@ -2327,6 +2338,7 @@ impl Architecture {
         self.v850_indirect_branch = false; // (kuna) default: upstream (GH-8817)
         self.int3_pad = crate::kuna_int3pad::Int3PadMode::Warn; // (kuna) DIV-128 default `warn`: ADDS A COMMENT ONLY. Names the `int3` pad control ran into, which x86 SLEIGH lifts to `intloc = swi(3); call [intloc]` and the printer renders as an ordinary indirect call. Shape-gated on a `swi` CALLOTHER with the 1-byte constant vector 3, so it is structurally inert wherever no `int3` is decoded and byte-identical on the datatest corpus (0/675); `option int3pad halt` also ends the flow at the pad, `option int3pad off` restores the unannotated rendering
         self.x64_syscall = crate::kuna_x64syscall::X64SyscallMode::Off; // (kuna) default-OFF: with a RUNTIME syscall number nothing can say how many argument registers the callee reads, so both answers the option offers are modelling judgements rather than facts; ON in the `aggressive` preset, which `auto` selects under 500 KiB
+        self.peb_names = crate::kuna_pebnames::PebNamesMode::Auto; // (kuna) DIV-175 default `auto`: TYPES ONLY. Types the Windows TEB segment base (`GS_OFFSET`/`FS_OFFSET`) as `TEB *teb` so PEB/TEB field reads render by name. Gated on a Windows compiler spec AND the loader's user-mode-PE fact, which the XML bootstrap never sets, so it is structurally inert on the datatest corpus (0/675); `option pebnames on` trusts the compiler spec alone, `off` restores the untyped register
         self.decode_halt = true; // (kuna) DIV-151 default-on: a `CPUI_RETURN` kuna planted because it could NOT decode the bytes renders as upstream `PrintC::opReturn`'s `halt_baddata()`/`halt_unimplemented()`/`halt_missing()` pseudo-call rather than a bare `return;`, and carries the upstream truncation + header warnings. Reachable only through the three decode-failure halt types, which no datatest function produces, so it is byte-identical there (0/675); `option decodehalt off` restores the silent `return;`
         self.fastfail_noreturn = true; // (kuna) DIV-119 default-on: REMOVES CODE. Ends the flow at a Windows `int 0x29` (`__fastfail`), whose SLEIGH lifting is a call with no matching push and so gains 8 bytes of stack pointer from the cspec's `extrapop` at every site. Windows-cspec-gated and shape-gated on `swi(0x29:1)`, so it is structurally inert on the datatest corpus and byte-identical there (0/675); restore the unbalanced fall-through with `option fastfailnoreturn off`
         self.msvc_ftol = true; // (kuna) DIV-74 default-on: x86-32-only, and inert unless the binary imports an `__ftol`/`__ftol2`/`__ftol2_sse` symbol. Byte-identical (0/675) — no corpus function carries one of those names. Restore the un-fixed `__ftol()` rendering with `option msvcftol off`
@@ -2654,6 +2666,11 @@ impl Architecture {
             "x64syscall" => {
                 let (mode, msg) = crate::kuna_x64syscall::OptionX64Syscall.apply(p1)?;
                 self.x64_syscall = mode;
+                Ok(msg)
+            }
+            "pebnames" => {
+                let (mode, msg) = crate::kuna_pebnames::OptionPebNames.apply(p1)?;
+                self.peb_names = mode;
                 Ok(msg)
             }
             "decodehalt" => on_off!(decode_halt, "Decode-failure halt reporting"),
@@ -3797,6 +3814,10 @@ impl Architecture {
         ctx.remove_cleanup_code = self.remove_cleanup_code; // cleanupcode
         ctx.linux_syscall = self.linux_syscall; // linuxsyscall
         ctx.x64_syscall = self.x64_syscall; // (kuna) x64syscall
+        ctx.peb_names = self.peb_names.fires(
+            crate::kuna_fastfailnoreturn::archid_is_windows(self.get_description()),
+            self.image_windows_user,
+        ); // (kuna) pebnames
         // (kuna) resolve the `SYSCALL` user-op ids ONCE per program, for the same
         // reason `simd_shuffle_userops` above is resolved here: the boundary
         // ArchContext carries no userop table.  An op a compiler spec has
