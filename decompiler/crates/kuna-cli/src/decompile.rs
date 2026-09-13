@@ -23,6 +23,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use kuna_console::engine::{ArmIsa, EntrySelector, ARM_ISA_ENV};
+use kuna_console::kuna_buildstamp;
 
 use crate::decompile_all::{self, Args as AllArgs, DriverDefaults};
 use crate::paths;
@@ -742,6 +743,10 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
     } else {
         paths::decomp_dbg()
     };
+    let pinned_by = match &args.decomp_dbg {
+        Some(_) => Some("--decomp-dbg"),
+        None => paths::pinned_by("KUNA_DECOMP_DBG"),
+    };
     if !bin_path.exists() {
         return Err(match &args.decomp_dbg {
             Some(d) => format!("decomp_dbg not found at {d} (--decomp-dbg)"),
@@ -836,6 +841,7 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
 
         let mut cmd = Command::new(&bin_path);
         cmd.arg("-s").arg(&specs).env("SLEIGHHOME", &specs);
+        cmd.env(kuna_buildstamp::PARENT_ENV, kuna_buildstamp::identity());
         match args.isa {
             Some(isa) => {
                 cmd.env(ARM_ISA_ENV, isa.as_str());
@@ -1020,7 +1026,12 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
             .map_err(|e| (format!("failed to run decomp_dbg: {e}"), false))?;
 
         let stdout_text = String::from_utf8_lossy(&output.stdout).into_owned();
-        let stderr_text = String::from_utf8_lossy(&output.stderr).into_owned();
+        let stderr_text = kuna_buildstamp::report(
+            String::from_utf8_lossy(&output.stderr).into_owned(),
+            "decomp_dbg",
+            &bin_path,
+            pinned_by,
+        );
         let combined = format!("{stdout_text}\n{stderr_text}");
         if let Some(msg) = check_errors(
             &combined,

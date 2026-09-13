@@ -34,6 +34,7 @@ use kuna_harness::testfunction::run_test_files_with_specs;
 use kuna_harness::unittest::{add_exit_code, UnitTestSuite};
 
 fn main() -> ExitCode {
+    kuna_console::kuna_buildstamp::answer_parent();
     let argv: Vec<String> = std::env::args().collect();
 
     let mut run_unit_tests = true;

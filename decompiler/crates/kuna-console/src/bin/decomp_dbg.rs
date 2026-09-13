@@ -28,6 +28,8 @@ use kuna_console::interface::IfaceStatus;
 use kuna_console::kuna_console::register_kuna_commands;
 
 fn main() -> ExitCode {
+    kuna_console::kuna_buildstamp::answer_parent();
+
     // --- argument parsing (consolemain.cc:183) ----------------------------
     // kuna also accepts the long `-sleighpath <dir>` the Python tooling may pass.
     let args: Vec<String> = std::env::args().collect();

@@ -228,6 +228,11 @@ pub fn missing_binary(name: &str, env_var: &str, cargo_package: &str) -> String 
     )
 }
 
+/// `env_var` itself when it is set, i.e. when it, not a probe, chose the binary.
+pub fn pinned_by(env_var: &'static str) -> Option<&'static str> {
+    env_path(env_var).map(|_| env_var)
+}
+
 pub fn decomp_dbg() -> PathBuf {
     binary("decomp_dbg", "KUNA_DECOMP_DBG")
 }
