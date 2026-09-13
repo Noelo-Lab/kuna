@@ -436,6 +436,27 @@ fn parse_type_abstract_pointer_to_array() {
     assert_eq!(ty.get_ptr_to().unwrap().get_metatype(), meta::TYPE_ARRAY);
 }
 
+/// The console parser and P9 C speller must agree on the two mirror types.  The
+/// round-11 declarator bug was printer-only; this catches either side drifting
+/// so a parsed `(*a)[N]` can never print back as `*a[N]` (or vice versa).
+#[test]
+fn pointer_array_types_round_trip_through_the_c_speller() {
+    use kuna_decomp::kuna_langc::C_SPELLER;
+    use kuna_decomp::kuna_langtypes::{SpellCtx, TypeSpeller};
+
+    let f = factory();
+    for (source, expected) in [
+        ("int4 (*a)[16]", ("int4 (*", ")[16]")),
+        ("int4 *a[16]", ("int4 *", "[16]")),
+    ] {
+        let (ty, name) = parse_type(source, &f, org()).expect("declarator parses");
+        assert_eq!(name, "a");
+        let (front, back) = C_SPELLER.declarator(&SpellCtx::OFF, &ty);
+        assert_eq!((front.as_str(), back.as_str()), expected, "{source}");
+        assert_eq!(format!("{front}{name}{back}"), source, "{source}");
+    }
+}
+
 #[test]
 fn parse_type_abstract_no_name() {
     // A bare type with no identifier (abstract declarator).
