@@ -600,6 +600,11 @@ Three tiers:
 | an unsigned char switch has a negative case label | [`loweredswitchlabels`](#loweredswitchlabels) |
 | an unsigned selector's high-bit case is printed as a negative number | [`loweredswitchlabels`](#loweredswitchlabels) |
 | a lowered switch's case labels disagree with the signedness of its range comparisons | [`loweredswitchlabels`](#loweredswitchlabels) |
+| a re-rolled switch dispatches on a variable assigned just before it that the cascade never compared | [`loweredswitchvalue`](#loweredswitchvalue) |
+| switch(v) where v was loaded as a call argument or holds an unrelated call result | [`loweredswitchvalue`](#loweredswitchvalue) |
+| a switch over a parameter renders over a local while option loweredswitch off shows the chain comparing the parameter | [`loweredswitchvalue`](#loweredswitchvalue) |
+| a re-rolled switch dispatches on a constant such as switch(6) | [`loweredswitchvalue`](#loweredswitchvalue) |
+| a parameter the compare tree tests disappears from the prototype when the switch re-rolls | [`loweredswitchvalue`](#loweredswitchvalue) |
 | an x86 Windows function renders as (void) though it takes arguments | [`evalcurrentproto`](#evalcurrentproto) |
 | a local carrying a // ecx or // edx storage comment is read before it is ever written | [`evalcurrentproto`](#evalcurrentproto) |
 | __fastcall/__thiscall arguments missing from the signature | [`evalcurrentproto`](#evalcurrentproto) |
@@ -2106,6 +2111,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default (DIV-173): a case label and installed selector must preserve the same signed or unsigned interpretation and projection as the comparison cascade. Set off to reproduce full historical behavior: the original structural recovery runs without the new evidence checks, including its shrinking-SUBPIECE peel, then any selector-width case with its sign bit set makes every label signed.
 - **Where / provenance:** P2/switch-model · ghidra-upstream · correctness-fix · re-unsigned-byte-vm-selector
 - **Example:** `option loweredswitchlabels off`
+
+### `loweredswitchvalue` -- on | off, default `on`
+
+- **Symptoms:** a re-rolled switch dispatches on a variable assigned just before it that the cascade never compared; switch(v) where v was loaded as a call argument or holds an unrelated call result; a switch over a parameter renders over a local while option loweredswitch off shows the chain comparing the parameter; a re-rolled switch dispatches on a constant such as switch(6); a parameter the compare tree tests disappears from the prototype when the switch re-rolls.
+- **What it does:** Keep a re-rolled lowered switch only when it dispatches on the value its comparison cascade compared. Detection sees the simplified SSA graph and records the storage of the value every compare reads; the install re-lifts raw p-code on the restart and has the new BRANCHIND read storage at the cascade head. That storage need not hold the value there: a parameter copied into another register before its own register is reused as a call argument, or a call result that a later call has overwritten, and the switch then dispatches on the argument or the later result (`v1 = (unsigned int)a1; switch(v1)` for a switch over the first parameter, or `switch(6)` where a guard pinned the overwriting value). With this on, detection gives the compared value a restart-stable name -- the function input at a storage, the effect of the call at an address, or the output of an op of one opcode at an address that is the only such definition -- and the install reads what the head's own compare instruction reads. On the restarted run the BRANCHIND input is named the same way, through copies, casts, extensions, zero-offset truncations and identity arithmetic that keep every byte. A switch reading the recorded value is verified for the read it was made over. A switch reading a provably different value -- another uniquely-defined value or a constant -- costs a restart: it is installed once more over the recorded storage, and if that also differs it is withdrawn and the cascade renders as `option loweredswitch off` renders it. A value SSA construction defines (a phi) or one with no unique definition has no name: its switch reads the recorded storage exactly as `loweredswitch` alone does and is never withdrawn, and an input that is only unnameable is never taken as evidence of a wrong dispatch.
+- **When to flip:** On by default (DIV-181). Turn off only to reproduce the unchecked rendering, where the synthesized switch reads the recorded storage at the cascade head whatever that storage holds by then.
+- **Where / provenance:** P2/switch-model · kuna · correctness-fix · GH-468
+- **Example:** `option loweredswitchvalue off`
 
 ### `evalcurrentproto` -- on | off, default `on`
 

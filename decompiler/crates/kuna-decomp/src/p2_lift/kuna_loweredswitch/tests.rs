@@ -911,6 +911,7 @@ fn sample_record(fd: &Funcdata) -> KunaLoweredSwitchRecord {
         case_targets: vec![a(0x2000), a(0x2100), a(0x2000)],
         default_target: a(0x3000),
         signed_labels: false,
+        value: crate::p2_lift::kuna_loweredswitchvalue::ValueCheck::default(),
     }
 }
 

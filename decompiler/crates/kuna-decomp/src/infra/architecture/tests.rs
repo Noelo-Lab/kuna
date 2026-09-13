@@ -114,6 +114,7 @@ fn kuna_anchor_flags_default_to_div_values() {
     assert!(arch.recover_array_stride);
     assert!(arch.recover_lowered_switch);
     assert!(arch.lowered_switch_labels);
+    assert!(arch.lowered_switch_value_check);
     assert!(arch.name_style_angr);
     assert!(arch.condexe_block_placement);
     assert!(arch.add_carry_chain);

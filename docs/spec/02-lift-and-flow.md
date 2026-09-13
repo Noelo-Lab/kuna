@@ -1203,6 +1203,70 @@ every cascade over a value the function computes still re-rolls, so this is the
 per-cascade form of the whole-pass escape hatch. Measured byte-identical on the
 675-assertion datatest corpus with the guard forced on.
 
+### The value the switch dispatches on — `option loweredswitchvalue`, default on (DIV-181)
+
+Detection sees the simplified SSA graph, where every compare in the cascade reads
+one value, and records that value's home storage; the install re-lifts raw p-code
+on the restart and points the synthetic `BRANCHIND` at storage at the head. The
+home storage need not hold the value there. A `gcc -O2` dispatcher compiles its
+first parameter once (`mov eax,edi`) and reuses `EDI` as a tail call's argument
+(`mov rdi,rsi`) before the compares run; an MSVC `/O2` caller copies `argc` from
+`ECX` into `EBX` and loads a byte into `ECX`; a function guards a CMOV whose
+result a later pass proves constant. In each case a switch reading the home
+storage dispatches on something the cascade never compared, and the parameter it
+did compare can drop out of the prototype.
+
+With the option on, the install reads what the head's own compare instruction
+reads.
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_loweredswitchvalue.rs (head_compare_operand)`
+walks the branch condition back through the raw p-code of the head block, and of
+its single predecessor. Raw reads are not linked to their writes before heritage,
+so each read is matched to the last op writing the same location on that path.
+Flags, temporaries and one-byte locations are followed to their integer or
+boolean writer; a read of a location of the value's size in the home storage's
+space that nothing writes before the branch is the operand, as is the output of a
+load of that size. A wider location whose low bytes were last written by a zero or
+sign extension is followed into what was extended, so gcc -O0's
+`movzwl -4(%rbp),%eax ; cmp $0xea60,%eax` over an `unsigned short` reads the
+two-byte load. Every path must reach the same operand, or the install reads the
+home storage.
+
+Whichever storage it reads, a named switch is then checked. Detection records a
+restart-stable *name* for the compared value
+(`kuna_loweredswitchvalue.rs (observe)`): the function input at a storage, the
+effect of a call or store at an address, or the output of an op of one opcode at
+an address — required to be the only such definition overlapping its low bytes,
+so a value written twice by one instruction is not named. A value SSA
+construction defines (a `MULTIEQUAL`) is not named either: a phi is placed by
+heritage, not by an instruction, so a spilled argument's phi on the detected
+graph is a raw argument read on the restart. On the restarted run
+`kuna_loweredswitchvalue.rs (verify_installed_switch_values)` names the
+`BRANCHIND` input the same way, through the copies, casts, extensions,
+zero-offset truncations and identity arithmetic (`x + 0`, a Thumb
+`adds r5,r2,#0`) that keep every byte, and classifies it
+(`kuna_loweredswitchvalue.rs (classify_input)`). The recorded name (or a wider
+value whose low bytes are that name) verifies the switch for the read it was made
+over; an install that later reads something else is checked again. A provably
+different value — another uniquely-defined value, or a constant — is a wrong
+dispatch: a switch that read the head compare's operand is installed once more
+over the home storage (simplification can fold an addend into the case
+constants, so the operand the instruction reads is not the value the labels are
+relative to), and one that still differs is withdrawn and renders as
+`option loweredswitch off` renders it. A phi input is classified through its
+inputs: it is the recorded value only when every input is (a loop's own back edge
+adds nothing), and one provably different input is a wrong dispatch on that path.
+That is the gcc -O0 shape `if (a & 1) hv(a); else hv(a + 1); switch (x)`, where
+the home register reaches the switch as a phi of what the two calls left in it. Detection can look at the same install
+again before the restart it requested; a fallback already pending there is not a
+second failure. An input that is merely unnameable is
+never taken as evidence against the switch. A record without a name reads the
+home storage exactly as `loweredswitch` alone does and is never withdrawn, so the
+check can only replace a switch over a provably wrong value, never lose one it
+cannot judge. A withdrawal or retry takes effect on the restart it requests, so a
+function that has already spent the pipeline's cross-flow restart budget
+(`run_pipeline`, eight re-flows) keeps the switch it last installed. Measured
+byte-identical on the 675-assertion datatest corpus with the value check off.
+
 ### Bound extensions: rescuing an unboundable table
 
 Four gated extensions run, in this order, only when JumpBasic's range exceeds

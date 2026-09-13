@@ -104,6 +104,7 @@ use crate::kuna_loweredswitchlabels::{
     legacy_signed_labels, reconcile_range_signedness, LoweredSwitchSignedness,
 };
 use crate::options::on_or_off;
+use crate::p2_lift::kuna_loweredswitchvalue::{verify_installed_switch_values, ValueCheck};
 
 use kuna_base::marshal::ElementId;
 
@@ -132,6 +133,9 @@ pub struct KunaLoweredSwitchRecord {
     pub default_target: Address,
     /// Case-label interpretation proved by the cascade's range comparisons.
     pub signed_labels: bool,
+    /// (kuna `loweredswitchvalue`) The compared value and whether the installed
+    /// switch has been shown to read it.
+    pub value: ValueCheck,
 }
 
 /// Side-table key: identifies a function without holding clearable handles
@@ -204,6 +208,11 @@ impl KunaLoweredSwitchStore {
     /// `loweredStore[keyForFunc(data)].push_back(rec)`.
     pub fn push(&mut self, fd: &Funcdata, rec: KunaLoweredSwitchRecord) {
         self.table.entry(key_for_func(fd)).or_default().push(rec);
+    }
+
+    /// The `idx`-th record of `fd`.
+    pub fn record_mut(&mut self, fd: &Funcdata, idx: usize) -> Option<&mut KunaLoweredSwitchRecord> {
+        self.table.get_mut(&key_for_func(fd)).and_then(|v| v.get_mut(idx))
     }
 }
 
@@ -1033,6 +1042,7 @@ fn recover_cascade(
         case_targets,
         default_target: def_addr,
         signed_labels,
+        value: ValueCheck::for_value(data, swvar),
     })
 }
 
@@ -1167,6 +1177,7 @@ impl ActionLowerSwitchDetect {
         }
         // already discovered (sticky)
         if self.store.borrow().has_record(data) {
+            verify_installed_switch_values(data, &self.store);
             return 0;
         }
 
@@ -1251,7 +1262,7 @@ impl ActionLowerSwitchDetect {
             None => return 0,
         };
 
-        self.store.borrow_mut().push(data, rec.clone());
+        self.store.borrow_mut().push(data, rec);
         data.set_restart_pending(true);
         // STUB(W7): no &mut RestartLog in the Action::apply signature yet (the
         //   heritage port threads it explicitly); the restart-pending flag is realized.
@@ -1408,8 +1419,28 @@ impl ActionLowerSwitchInstall {
         // re-iterates and ActionHeritage rebuilds SSA over the corrected CFG.
         let recs: Vec<KunaLoweredSwitchRecord> = store.records(data).to_vec();
         drop(store);
+        let check = data.get_arch().lowered_switch_value_check;
         let mut changed = 0;
-        for r in &recs {
+        for (i, r) in recs.iter().enumerate() {
+            let mut read_home = true;
+            if check {
+                let mut store = self.store.borrow_mut();
+                let rec = match store.record_mut(data, i) {
+                    Some(rec) => rec,
+                    None => continue,
+                };
+                rec.value.read_head_operand = false;
+                // A switch a prior restart proved dispatches on the wrong value is
+                // withdrawn; every other switch installs, reading the head operand
+                // unless a verification already fell back to the home storage.
+                if !rec.value.allows_install() {
+                    continue;
+                }
+                // Without a restart-stable name nothing can verify a head-operand
+                // read, so an unnamed switch reads the home storage exactly as
+                // `loweredswitch` alone does.
+                read_home = rec.value.reads_home();
+            }
             match data.kuna_install_lowered_switch(
                 &r.branch_addr,
                 &r.var_addr,
@@ -1418,8 +1449,19 @@ impl ActionLowerSwitchInstall {
                 &r.case_targets,
                 &r.default_target,
                 r.signed_labels,
+                !read_home,
             ) {
-                Ok(Some(_idx)) => changed += 1,
+                Ok(Some((_idx, read_head_operand))) => {
+                    if let Some(rec) = self.store.borrow_mut().record_mut(data, i) {
+                        rec.value.read_head_operand = read_head_operand;
+                        if rec.value.state == crate::p2_lift::kuna_loweredswitchvalue::ValueState::Verified
+                            && rec.value.verified_read != Some(read_head_operand)
+                        {
+                            rec.value.state = crate::p2_lift::kuna_loweredswitchvalue::ValueState::Unchecked;
+                        }
+                    }
+                    changed += 1
+                }
                 Ok(None) => {} // CFG no longer matches the record; decline
                 Err(_e) => {}  // surgery error: leave the CFG as-is
             }

@@ -331,6 +331,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "noreturn_externmatch",
     "loweredswitch",
     "loweredswitchlabels",
+    "loweredswitchvalue",
     "callsitestackargs",
     "cookiescramble",
     "nulterminator",

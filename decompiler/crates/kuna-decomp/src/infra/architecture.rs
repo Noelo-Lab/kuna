@@ -654,6 +654,9 @@ pub struct Architecture {
     /// (kuna `loweredswitchlabels`) Preserve range-comparison signedness across
     /// lowered-switch restart and installation.
     pub lowered_switch_labels: bool,
+    /// (kuna `loweredswitchvalue`) Withdraw a re-rolled lowered switch unless it is
+    /// shown to dispatch on the value its cascade compared.
+    pub lowered_switch_value_check: bool,
     /// (kuna) Recover stack-passed call arguments at call sites with an unlocked
     /// callee prototype (default-on; restores upstream `fspec.cc:5618`).
     pub callsite_stack_args: bool,
@@ -2175,6 +2178,7 @@ impl Architecture {
             recover_array_stride: false,
             recover_lowered_switch: false,
             lowered_switch_labels: false,
+            lowered_switch_value_check: false,
             callsite_stack_args: true,
             cookie_scramble: true,
             nul_terminator: false,
@@ -2434,6 +2438,7 @@ impl Architecture {
         self.recover_array_stride = true; // (kuna) DIV-3 default-on (GH-8724)
         self.recover_lowered_switch = true; // (kuna) default-on (angr port)
         self.lowered_switch_labels = true; // (kuna) default-on correctness fix: the cascade's range opcode, not a case's sign bit, determines label interpretation
+        self.lowered_switch_value_check = true; // (kuna) DIV-181 default-on correctness fix: a re-rolled lowered switch reads what its head compare reads and is withdrawn unless its BRANCHIND input is the value the cascade compared
         self.callsite_stack_args = true; // (kuna) default-on: restores upstream fspec.cc:5618 (0/675 ablation)
         self.end_ptr_bound = true; // (kuna) DIV-177 default-on: a pointer walk's end bound renders on its own buffer (0/675 ablation)
         self.cookie_scramble = true; // (kuna) DIV-126 default-on: an `xor rax,rsp` cookie mix no longer collapses the local-alias boundary to the bottom of the frame (0/675 ablation)
@@ -2796,6 +2801,7 @@ impl Architecture {
                 self.lowered_switch_labels = val;
                 Ok(msg)
             }
+            "loweredswitchvalue" => on_off!(lowered_switch_value_check, "Lowered-switch dispatch value check"),
             "callsitestackargs" => {
                 let (val, msg) =
                     crate::p4_calls::kuna_callsitestackargs::OptionCallsiteStackArgs.apply(p1)?;
@@ -3860,6 +3866,7 @@ impl Architecture {
         ctx.model_stack_probe_loop = self.model_stack_probe_loop; // GH-8017 stackprobeloop
         ctx.recover_lowered_switch = self.recover_lowered_switch; // loweredswitch
         ctx.lowered_switch_labels = self.lowered_switch_labels; // loweredswitchlabels
+        ctx.lowered_switch_value_check = self.lowered_switch_value_check; // loweredswitchvalue
         ctx.callsite_stack_args = self.callsite_stack_args; // callsitestackargs
         ctx.cookie_scramble = self.cookie_scramble; // cookiescramble
         ctx.nul_terminator = self.nul_terminator; // nulterminator

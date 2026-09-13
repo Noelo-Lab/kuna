@@ -1953,9 +1953,11 @@ impl Funcdata {
     ///      to the new BRANCHIND so the existing structurer + printer emit a
     ///      `switch`.
     ///
-    /// Returns `Ok(Some(jt_index))` on success, `Ok(None)` if the CFG no longer
-    /// matches the record (e.g. the head/targets were merged away — install
-    /// declines gracefully rather than corrupting the CFG).
+    /// Returns `Ok(Some((jt_index, read_head_operand)))` on success, `Ok(None)` if
+    /// the CFG no longer matches the record (e.g. the head/targets were merged
+    /// away — install declines gracefully rather than corrupting the CFG).
+    /// `read_head_operand` reports that `prefer_head_operand` found an operand of
+    /// the head compare other than `var_addr` and the switch reads it.
     #[allow(clippy::too_many_arguments)]
     pub fn kuna_install_lowered_switch(
         &mut self,
@@ -1966,7 +1968,8 @@ impl Funcdata {
         case_targets: &[Address],
         default_target: &Address,
         signed_labels: bool,
-    ) -> KunaResult<Option<usize>> {
+        prefer_head_operand: bool,
+    ) -> KunaResult<Option<(usize, bool)>> {
         use kuna_base::types::uintb;
 
         // Don't re-install if a table already exists for this branch address.
@@ -2041,7 +2044,24 @@ impl Funcdata {
         // non-constant operand is the switch variable.  Reusing that exact Varnode
         // (rather than a fresh free read of `var_addr`) keeps its full def-use chain
         // intact so heritage threads SSA through it and the printer names it.
-        let swvn = self.kuna_head_switch_var(cbranch, var_addr);
+        // (kuna `loweredswitchvalue`) Prefer what the head compare itself reads:
+        // `var_addr` need not hold the compared value at the head.
+        use crate::p2_lift::kuna_loweredswitchvalue::{head_compare_operand, HeadOperand};
+        let head_operand = if prefer_head_operand && self.get_arch().lowered_switch_value_check {
+            head_compare_operand(self, head, cbranch, var_addr, var_size)
+                .filter(|op| *op != HeadOperand::Storage(var_addr.clone()))
+        } else {
+            None
+        };
+        let read_head_operand = head_operand.is_some();
+        let swvn = match head_operand {
+            Some(_) => None,
+            None => self.kuna_head_switch_var(cbranch, var_addr),
+        };
+        let read_addr = match &head_operand {
+            Some(HeadOperand::Storage(a)) => a.clone(),
+            _ => var_addr.clone(),
+        };
         // The comparison op writing the CBRANCH boolean (destroyed below so the
         // switch variable is read only by the new BRANCHIND at heritage time —
         // heritage's `guard` requires a free read to have exactly one descendant).
@@ -2061,6 +2081,15 @@ impl Funcdata {
         while self.bblocks_ref().block(head).size_out() > 0 {
             self.branch_remove_internal(head, 0)?;
         }
+        // A load the head compare reads gets its reader before the compare chain
+        // is destroyed, so the recursive destroy keeps it.
+        let mut newop = None;
+        if let Some(HeadOperand::Value(v)) = head_operand {
+            let op = self.new_op(1, branch_addr.clone());
+            self.op_set_opcode_code(op, OpCode::CPUI_BRANCHIND);
+            self.op_set_input(op, v, 0)?;
+            newop = Some(op);
+        }
         // Destroy the now-dead head comparison chain (its boolean fed only the
         // destroyed CBRANCH) so the switch variable's sole remaining reader is the
         // BRANCHIND we add next.  op_destroy_recursive drops the comparison and any
@@ -2077,13 +2106,19 @@ impl Funcdata {
         // switch variable (falling back to a fresh free read of `var_addr` if the
         // head comparison did not yield a still-live Varnode — heritage then
         // renames it).
-        let swvn = match swvn {
-            Some(v) if self.vbank().get(v).is_some() => v,
-            _ => self.new_varnode(var_size, var_addr, None),
+        let newop = match newop {
+            Some(op) => op,
+            None => {
+                let swvn = match swvn {
+                    Some(v) if self.vbank().get(v).is_some() => v,
+                    _ => self.new_varnode(var_size, &read_addr, None),
+                };
+                let op = self.new_op(1, branch_addr.clone());
+                self.op_set_opcode_code(op, OpCode::CPUI_BRANCHIND);
+                self.op_set_input(op, swvn, 0)?;
+                op
+            }
         };
-        let newop = self.new_op(1, branch_addr.clone());
-        self.op_set_opcode_code(newop, OpCode::CPUI_BRANCHIND);
-        self.op_set_input(newop, swvn, 0)?;
         // Append the BRANCHIND as the head's terminator.  This must go through
         // `op_insert` (C++ `Funcdata::opInsert`), not the bare block splice: the
         // op is born on the dead list, and an op left there is invisible to every
@@ -2151,11 +2186,11 @@ impl Funcdata {
         // synthesized BRANCHIND at the live SSA value if heritage normalized the
         // too-small switch-var read up to the register range's width and then
         // swept the resulting undefined wide read (nulling the BRANCHIND input).
-        jt.kuna_set_lowered_var(var_addr.clone(), var_size);
+        jt.kuna_set_lowered_var(read_addr, var_size);
 
         self.jumpvec_mut().push(jt);
         let idx = self.num_jump_tables() as usize - 1;
-        Ok(Some(idx))
+        Ok(Some((idx, read_head_operand)))
     }
 
     /// (kuna) Would installing the lowered switch at `head` strand a genuine jump
