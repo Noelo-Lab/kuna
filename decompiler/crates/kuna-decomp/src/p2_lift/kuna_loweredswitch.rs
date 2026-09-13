@@ -98,9 +98,12 @@ use kuna_num::opcodes::OpCode;
 
 use crate::action::{Action, ActionBase, ActionContext, ActionGroupList, ApplyResult};
 use crate::block::{block_get_start, BlockType};
-use crate::funcdata::Funcdata;
-use crate::options::on_or_off;
 use crate::context::{BlockId, OpId, VarnodeId};
+use crate::funcdata::Funcdata;
+use crate::kuna_loweredswitchlabels::{
+    legacy_signed_labels, reconcile_range_signedness, LoweredSwitchSignedness,
+};
+use crate::options::on_or_off;
 
 use kuna_base::marshal::ElementId;
 
@@ -127,6 +130,8 @@ pub struct KunaLoweredSwitchRecord {
     pub case_targets: Vec<Address>,
     /// Default block start address.
     pub default_target: Address,
+    /// Case-label interpretation proved by the cascade's range comparisons.
+    pub signed_labels: bool,
 }
 
 /// Side-table key: identifies a function without holding clearable handles
@@ -153,7 +158,10 @@ pub fn key_for_func(fd: &Funcdata) -> KunaLsKey {
         Some(s) => s.get_index(),
         None => -1,
     };
-    KunaLsKey { space_index, offset: entry.get_offset() }
+    KunaLsKey {
+        space_index,
+        offset: entry.get_offset(),
+    }
 }
 
 /// The sticky lowered-switch side table (C++ file-static `loweredStore`).
@@ -220,34 +228,113 @@ pub fn new_shared_store() -> SharedLoweredSwitchStore {
 // Detection (read-only) on the simplified CFG
 //===========================================================================
 
-/// Peel transparent ops to a canonical switch-variable Varnode (C++ static
-/// `canonSwitchVar`).
+/// A comparison operand reduced to its canonical switch-variable storage.
 ///
-/// `COPY`/`CAST`/zero-extend/sign-extend/zero-offset `SUBPIECE` all preserve
-/// switch-variable identity (angr's `StableVarExprHasher` analog).  The cascade
-/// runs pre-merge, so the canonicalized [`VarnodeId`] is the identity key
-/// (the C++ pre-merge pointer-identity argument, exact here too).
-fn canon_switch_var(data: &Funcdata, mut vn: VarnodeId) -> VarnodeId {
+/// Widening is transparent for identity, but not for interpretation: `ZEXT`
+/// proves that the narrower selector is unsigned and `SEXT` proves that it is
+/// signed.  Keeping that fact beside the canonical id prevents a signed compare
+/// over a zero-extended byte (or the converse) from changing how case labels are
+/// rendered after the comparison tree is replaced by a switch.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct CanonSwitchVar {
+    var: VarnodeId,
+    effective_size: int4,
+    extension_signedness: Option<LoweredSwitchSignedness>,
+    evidence_ambiguous: bool,
+}
+
+/// Peel transparent ops to a canonical switch-variable Varnode (C++ static
+/// `canonSwitchVar`) while retaining widening semantics.
+///
+/// `COPY`/`CAST`/zero-extend/sign-extend/same-width zero-offset `SUBPIECE` all
+/// preserve switch-variable identity (angr's `StableVarExprHasher` analog). A
+/// shrinking `SUBPIECE` is still peeled for structural identity, but is marked
+/// ambiguous: the restart record cannot preserve that projection and must not
+/// install the wider input as the selector. The cascade runs pre-merge, so the
+/// canonicalized [`VarnodeId`] is the identity key (the C++ pre-merge
+/// pointer-identity argument, exact here too).
+fn canon_switch_var(data: &Funcdata, mut vn: VarnodeId) -> CanonSwitchVar {
+    let mut effective_size = vn_size(data, vn);
+    let mut extension_signedness: Option<LoweredSwitchSignedness> = None;
+    let mut evidence_ambiguous = false;
+    // A zero-offset SUBPIECE truncates away any widening beneath it.  Widening
+    // above the SUBPIECE still describes the compared selector and is retained.
+    let mut extension_barrier = false;
     for _guard in 0..8 {
         if vn_is_constant(data, vn) {
-            return vn;
+            evidence_ambiguous = true;
+            return CanonSwitchVar {
+                var: vn,
+                effective_size,
+                extension_signedness,
+                evidence_ambiguous,
+            };
         }
         if !vn_is_written(data, vn) {
-            return vn;
+            return CanonSwitchVar {
+                var: vn,
+                effective_size,
+                extension_signedness,
+                evidence_ambiguous,
+            };
         }
         let def = vn_def(data, vn).expect("canonSwitchVar: written vn has a def");
         let oc = op_code(data, def);
-        if oc == OpCode::CPUI_COPY
-            || oc == OpCode::CPUI_CAST
-            || oc == OpCode::CPUI_INT_ZEXT
-            || oc == OpCode::CPUI_INT_SEXT
-        {
+        if oc == OpCode::CPUI_COPY || oc == OpCode::CPUI_CAST {
             match op_in(data, def, 0) {
                 Some(v) => {
+                    // COPY/CAST are identity peels only at the same width.
+                    if vn_size(data, v) != vn_size(data, vn) {
+                        evidence_ambiguous = true;
+                    }
                     vn = v;
                     continue;
                 }
-                None => return vn,
+                None => {
+                    evidence_ambiguous = true;
+                    return CanonSwitchVar {
+                        var: vn,
+                        effective_size,
+                        extension_signedness,
+                        evidence_ambiguous,
+                    };
+                }
+            }
+        }
+        if oc == OpCode::CPUI_INT_ZEXT || oc == OpCode::CPUI_INT_SEXT {
+            match op_in(data, def, 0) {
+                Some(v) => {
+                    let input_size = vn_size(data, v);
+                    if input_size <= 0 || input_size >= vn_size(data, vn) {
+                        evidence_ambiguous = true;
+                    }
+                    if !extension_barrier {
+                        let next = if oc == OpCode::CPUI_INT_ZEXT {
+                            LoweredSwitchSignedness::Unsigned
+                        } else {
+                            LoweredSwitchSignedness::Signed
+                        };
+                        match extension_signedness {
+                            None => extension_signedness = Some(next),
+                            Some(cur) if cur == next => {}
+                            Some(_) => evidence_ambiguous = true,
+                        }
+                        if input_size > 0 && input_size < vn_size(data, vn) {
+                            effective_size = input_size;
+                        }
+                    }
+                    vn = v;
+                    continue;
+                }
+                None => {
+                    evidence_ambiguous = true;
+                    return CanonSwitchVar {
+                        var: vn,
+                        effective_size,
+                        extension_signedness,
+                        evidence_ambiguous,
+                    };
+                }
             }
         }
         if oc == OpCode::CPUI_SUBPIECE {
@@ -255,17 +342,105 @@ fn canon_switch_var(data: &Funcdata, mut vn: VarnodeId) -> VarnodeId {
                 if vn_is_constant(data, in1) && vn_offset(data, in1) == 0 {
                     match op_in(data, def, 0) {
                         Some(v) => {
+                            let input_size = vn_size(data, v);
+                            let output_size = vn_size(data, vn);
+                            if input_size < output_size {
+                                evidence_ambiguous = true;
+                            } else if input_size > output_size {
+                                // Keep peeling to the common source so this
+                                // comparison remains the structural cascade head,
+                                // but do not claim that a low-byte projection is
+                                // interchangeable with the wider value.  Strict
+                                // label recovery cannot encode the projection in
+                                // its address-only restart record and therefore
+                                // fails closed on this evidence.  Option-off
+                                // recovery deliberately ignores evidence flags and
+                                // retains the historical peel.
+                                evidence_ambiguous = true;
+                                extension_barrier = true;
+                            }
                             vn = v;
                             continue;
                         }
-                        None => return vn,
+                        None => {
+                            evidence_ambiguous = true;
+                            return CanonSwitchVar {
+                                var: vn,
+                                effective_size,
+                                extension_signedness,
+                                evidence_ambiguous,
+                            };
+                        }
                     }
                 }
             }
         }
-        return vn;
+        return CanonSwitchVar {
+            var: vn,
+            effective_size,
+            extension_signedness,
+            evidence_ambiguous,
+        };
     }
-    vn
+    // More than eight transparent definitions is outside the bounded identity
+    // proof.  Do not return a partially-canonicalized key.
+    CanonSwitchVar {
+        var: vn,
+        effective_size,
+        extension_signedness,
+        evidence_ambiguous: true,
+    }
+}
+
+/// Project a comparison-width constant back to the effective selector width.
+///
+/// For an explicit extension, only the corresponding extension of the narrow
+/// bit pattern is representable.  Rejecting any other constant keeps impossible
+/// comparisons out of the synthesized table and makes signed extended case
+/// values (for example `0xffff_ff8b`) become their selector-width pattern
+/// (`0x8b`).
+fn normalize_selector_constant(
+    cval: uintb,
+    compare_size: int4,
+    canon: CanonSwitchVar,
+) -> Option<uintb> {
+    if compare_size <= 0
+        || compare_size > 8
+        || canon.effective_size <= 0
+        || canon.effective_size > compare_size
+    {
+        return None;
+    }
+    let compare_mask = calc_mask(compare_size);
+    let effective_mask = calc_mask(canon.effective_size);
+    let raw = cval & compare_mask;
+    if compare_size == canon.effective_size {
+        return Some(raw);
+    }
+    let low = raw & effective_mask;
+    match canon.extension_signedness {
+        Some(LoweredSwitchSignedness::Unsigned) => {
+            if raw == low {
+                Some(low)
+            } else {
+                None
+            }
+        }
+        Some(LoweredSwitchSignedness::Signed) => {
+            let signbit = 1u64 << (canon.effective_size * 8 - 1);
+            let expected = if (low & signbit) != 0 {
+                low | (compare_mask & !effective_mask)
+            } else {
+                low
+            };
+            if raw == expected {
+                Some(low)
+            } else {
+                None
+            }
+        }
+        None => None,
+    }
 }
 
 /// Analysis of one comparison-on-constant block (C++ `struct CmpNode`).
@@ -281,6 +456,12 @@ struct CmpNode {
     is_equality: bool,
     /// The canonicalized variable operand (the identity key).
     var: Option<VarnodeId>,
+    /// Width of the selector before any widening used by this comparison.
+    effective_size: int4,
+    /// Signedness asserted by a ZEXT/SEXT path, if one exists.
+    extension_signedness: Option<LoweredSwitchSignedness>,
+    /// The path cannot safely prove selector interpretation/width.
+    evidence_ambiguous: bool,
     /// The constant operand value.
     cval: uintb,
     /// Successor taken when V == cval (equality only).
@@ -297,6 +478,8 @@ struct CmpNode {
     /// (range only) The normalized "gt-form" threshold: gt_out ⟺ `V > range_value`,
     /// le_out ⟺ `V <= range_value` (angr's post-adjustment `value` in type-c).
     range_value: uintb,
+    /// (range only) Signedness carried by the comparison opcode.
+    range_signedness: Option<LoweredSwitchSignedness>,
 }
 
 impl CmpNode {
@@ -306,6 +489,9 @@ impl CmpNode {
             valid: false,
             is_equality: false,
             var: None,
+            effective_size: 0,
+            extension_signedness: None,
+            evidence_ambiguous: false,
             cval: 0,
             match_out: None,
             cont_a: None,
@@ -313,6 +499,7 @@ impl CmpNode {
             gt_out: None,
             le_out: None,
             range_value: 0,
+            range_signedness: None,
         }
     }
 }
@@ -400,10 +587,35 @@ fn analyze_cmp(data: &Funcdata, bl: BlockId) -> CmpNode {
         };
 
     let flip = op_is_boolean_flip(data, cb);
-    let cond_true = if flip { block_false_out(data, bl) } else { block_true_out(data, bl) };
-    let cond_false = if flip { block_true_out(data, bl) } else { block_false_out(data, bl) };
+    let cond_true = if flip {
+        block_false_out(data, bl)
+    } else {
+        block_true_out(data, bl)
+    };
+    let cond_false = if flip {
+        block_true_out(data, bl)
+    } else {
+        block_false_out(data, bl)
+    };
 
-    res.var = Some(canon_switch_var(data, var));
+    let strict_labels = data.get_arch().lowered_switch_labels;
+    let canon = canon_switch_var(data, var);
+    let mut evidence_ambiguous = canon.evidence_ambiguous;
+    let cval = if strict_labels && !evidence_ambiguous {
+        match normalize_selector_constant(cval, vn_size(data, var), canon) {
+            Some(cval) => cval,
+            None => {
+                evidence_ambiguous = true;
+                cval
+            }
+        }
+    } else {
+        cval
+    };
+    res.var = Some(canon.var);
+    res.effective_size = canon.effective_size;
+    res.extension_signedness = canon.extension_signedness;
+    res.evidence_ambiguous = evidence_ambiguous;
 
     if oc == OpCode::CPUI_INT_EQUAL {
         res.valid = true;
@@ -425,6 +637,22 @@ fn analyze_cmp(data: &Funcdata, bl: BlockId) -> CmpNode {
         res.cval = cval;
         res.cont_a = Some(cond_true);
         res.cont_b = Some(cond_false);
+        let opcode_signedness = match LoweredSwitchSignedness::from_range_opcode(oc) {
+            Some(signedness) => signedness,
+            None => return CmpNode::new(),
+        };
+        // A widening operation is stronger evidence about the underlying
+        // selector than the post-extension compare spelling.  The two must agree:
+        // ZEXT+SLESS and SEXT+LESS are ambiguous once the tree is erased, so the
+        // detector fails closed instead of promoting a switch with wrong labels.
+        if strict_labels {
+            if let Some(extension_signedness) = canon.extension_signedness {
+                if extension_signedness != opcode_signedness {
+                    res.evidence_ambiguous = true;
+                }
+            }
+        }
+        res.range_signedness = Some(opcode_signedness);
 
         // Normalize to angr's "gt-form" so recover_cascade can classify a range
         // node's terminal edges as case-vs-default by the comparison VALUE — a
@@ -434,8 +662,7 @@ fn analyze_cmp(data: &Funcdata, bl: BlockId) -> CmpNode {
         // is emitted as `c < var` / `c <= var` (const on the left), so the
         // var-on-right orders below are the CmpGT/CmpGE cases.  In every case
         // gt_out ⟺ `V > range_value` and le_out ⟺ `V <= range_value`.
-        let is_le =
-            oc == OpCode::CPUI_INT_SLESSEQUAL || oc == OpCode::CPUI_INT_LESSEQUAL;
+        let is_le = oc == OpCode::CPUI_INT_SLESSEQUAL || oc == OpCode::CPUI_INT_LESSEQUAL;
         let (gt_out, le_out, tval): (BlockId, BlockId, uintb) = if var_on_left {
             if is_le {
                 // `var <= cval` — angr CmpLE (le=true_target, gt=false_target, value unchanged)
@@ -554,6 +781,10 @@ fn recover_cascade(
     let mut stack: Vec<(BlockId, uintb, uintb)> = Vec::new();
     stack.push((startbb, 0, 0xFFFF_FFFF_FFFF_FFFF));
     let mut saw_range = false; // true once a range (binary-search) node is seen
+    let mut range_signedness: Option<LoweredSwitchSignedness> = None;
+    let mut path_signedness: Option<LoweredSwitchSignedness> = None;
+    let mut effective_size: Option<int4> = None;
+    let strict_labels = data.get_arch().lowered_switch_labels;
 
     let is_cascade = |fb: Option<BlockId>| -> Option<BlockId> {
         let b = fb?;
@@ -583,7 +814,26 @@ fn recover_cascade(
             continue;
         }
         visited.insert(bb);
-        let cn = *cmpmap.get(&bb).expect("recoverCascade: stack block is in cmpmap");
+        let cn = *cmpmap
+            .get(&bb)
+            .expect("recoverCascade: stack block is in cmpmap");
+
+        if strict_labels {
+            if cn.evidence_ambiguous {
+                return None;
+            }
+            match effective_size {
+                None => effective_size = Some(cn.effective_size),
+                Some(size) if size == cn.effective_size => {}
+                Some(_) => return None,
+            }
+            if let Some(next) = cn.extension_signedness {
+                path_signedness = reconcile_range_signedness(path_signedness, Some(next));
+                if path_signedness.is_none() {
+                    return None;
+                }
+            }
+        }
 
         if cn.is_equality {
             // eq node: match edge is a case; the no-match edge continues with the
@@ -616,6 +866,13 @@ fn recover_cascade(
             // before); only a terminal edge spanning a RANGE is a true default
             // candidate — the distinction the convergence guard below relies on.
             saw_range = true;
+            if strict_labels {
+                range_signedness =
+                    reconcile_range_signedness(range_signedness, cn.range_signedness);
+                if range_signedness.is_none() {
+                    return None;
+                }
+            }
             let value = cn.range_value;
             let gt = cn.gt_out.expect("range node has gt_out");
             let le = cn.le_out.expect("range node has le_out");
@@ -707,6 +964,14 @@ fn recover_cascade(
     if !saw_range {
         return None;
     }
+    if strict_labels {
+        let proven_signedness = range_signedness?;
+        if let Some(path_signedness) = path_signedness {
+            if path_signedness != proven_signedness {
+                return None;
+            }
+        }
+    }
 
     // Default = most-voted common sink.
     let mut def_addr = Address::new_invalid();
@@ -742,7 +1007,9 @@ fn recover_cascade(
         return None;
     }
 
-    let last = data.bb_op_tail(startbb).expect("recoverCascade: head has a last op");
+    let last = data
+        .bb_op_tail(startbb)
+        .expect("recoverCascade: head has a last op");
     let branch_addr = op_addr(data, last);
     let var_addr = vn_addr(data, swvar);
     let var_size = vn_size(data, swvar);
@@ -752,6 +1019,11 @@ fn recover_cascade(
         case_vals.push(*val);
         case_targets.push(tgt.clone());
     }
+    let signed_labels = if strict_labels {
+        range_signedness?.signed_labels()
+    } else {
+        legacy_signed_labels(var_size, &case_vals)
+    };
 
     Some(KunaLoweredSwitchRecord {
         branch_addr,
@@ -760,6 +1032,7 @@ fn recover_cascade(
         case_vals,
         case_targets,
         default_target: def_addr,
+        signed_labels,
     })
 }
 
@@ -777,7 +1050,10 @@ fn recover_cascade(
 /// Detection runs on the fully simplified, SSA'd CFG, so "defined in this
 /// function" is exactly `Varnode::is_written`.
 fn selector_defined_in_function(data: &Funcdata, swvar: VarnodeId) -> bool {
-    data.vbank().get(swvar).map(|v| v.is_written()).unwrap_or(false)
+    data.vbank()
+        .get(swvar)
+        .map(|v| v.is_written())
+        .unwrap_or(false)
 }
 
 /// Find the cascade head, skipping leading sentinel guards (e.g. `V == -1`)
@@ -1141,6 +1417,7 @@ impl ActionLowerSwitchInstall {
                 &r.case_vals,
                 &r.case_targets,
                 &r.default_target,
+                r.signed_labels,
             ) {
                 Ok(Some(_idx)) => changed += 1,
                 Ok(None) => {} // CFG no longer matches the record; decline
@@ -1206,7 +1483,10 @@ impl OptionLowerSwitch {
         let val = on_or_off(p1)?;
         // glb->recover_lowered_switch = val;  -- left to the caller (STUB(W4/W9)).
         let prop = if val { "on" } else { "off" };
-        Ok((val, format!("Lowered comparison-cascade switch recovery turned {prop}")))
+        Ok((
+            val,
+            format!("Lowered comparison-cascade switch recovery turned {prop}"),
+        ))
     }
 }
 
@@ -1221,16 +1501,29 @@ fn op_code(data: &Funcdata, op: OpId) -> OpCode {
     data.obank().get(op).expect("op_code: stale op").code()
 }
 fn op_addr(data: &Funcdata, op: OpId) -> Address {
-    data.obank().get(op).expect("op_addr: stale op").get_addr().clone()
+    data.obank()
+        .get(op)
+        .expect("op_addr: stale op")
+        .get_addr()
+        .clone()
 }
 fn op_is_boolean_flip(data: &Funcdata, op: OpId) -> bool {
-    data.obank().get(op).expect("op_is_boolean_flip: stale op").is_boolean_flip()
+    data.obank()
+        .get(op)
+        .expect("op_is_boolean_flip: stale op")
+        .is_boolean_flip()
 }
 fn vn_is_constant(data: &Funcdata, vn: VarnodeId) -> bool {
-    data.vbank().get(vn).map(|v| v.is_constant()).unwrap_or(false)
+    data.vbank()
+        .get(vn)
+        .map(|v| v.is_constant())
+        .unwrap_or(false)
 }
 fn vn_is_written(data: &Funcdata, vn: VarnodeId) -> bool {
-    data.vbank().get(vn).map(|v| v.is_written()).unwrap_or(false)
+    data.vbank()
+        .get(vn)
+        .map(|v| v.is_written())
+        .unwrap_or(false)
 }
 fn vn_def(data: &Funcdata, vn: VarnodeId) -> Option<OpId> {
     data.vbank().get(vn).and_then(|v| v.get_def())
@@ -1242,10 +1535,16 @@ fn vn_size(data: &Funcdata, vn: VarnodeId) -> int4 {
     data.vbank().get(vn).map(|v| v.get_size()).unwrap_or(0)
 }
 fn vn_addr(data: &Funcdata, vn: VarnodeId) -> Address {
-    data.vbank().get(vn).expect("vn_addr: stale vn").get_addr().clone()
+    data.vbank()
+        .get(vn)
+        .expect("vn_addr: stale vn")
+        .get_addr()
+        .clone()
 }
 fn vn_space(data: &Funcdata, vn: VarnodeId) -> Option<Rc<AddrSpace>> {
-    data.vbank().get(vn).and_then(|v| v.get_addr().get_space().cloned())
+    data.vbank()
+        .get(vn)
+        .and_then(|v| v.get_addr().get_space().cloned())
 }
 
 // ---------------------------------------------------------------------------

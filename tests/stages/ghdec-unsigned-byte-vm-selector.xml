@@ -1,0 +1,44 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    RE-friction need `unsigned-byte-vm-selector`: lowered-switch label
+    signedness is metadata proven by the required range comparisons.
+
+    The XML wrapper only supplies the harness architecture. Both passes load
+    the exact unmodified KataVM_L1 fixture and decompile `sub_12d0`.
+
+    Pass 1 disables `loweredswitchlabels` and reproduces the legacy case-bit
+    guess: the unsigned-byte selector's 0x8b label becomes unreachable
+    `case -0x75`. Pass 2 uses the shipped default and carries unsigned
+    semantics from INT_LESS through the recovery restart and installation,
+    rendering `case 0x8b`. The low 0x1e label and recovered switch occur in
+    both passes, proving the intervention changes metadata rather than flow.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/katavm_level1_x86_64</com>
+  <com>option loweredswitchlabels off</com>
+  <com>read symbols</com>
+  <com>load function sub_12d0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/katavm_level1_x86_64</com>
+  <com>read symbols</com>
+  <com>load function sub_12d0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+  <!-- The raw stage console spells the CLI's `unsigned char` as `uint1`. -->
+  <stringmatch name="UNSIGNED-BYTE-VM-SELECTOR #1: the selector declaration remains in both passes" min="2" max="2">uint1\s+v16;</stringmatch>
+  <stringmatch name="UNSIGNED-BYTE-VM-SELECTOR #2: recovered switch remains in both passes" min="2" max="2">switch\(v16\)</stringmatch>
+<stringmatch name="UNSIGNED-BYTE-VM-SELECTOR #3: low case remains in both passes" min="2" max="2">case 0x1e:</stringmatch>
+<stringmatch name="UNSIGNED-BYTE-VM-SELECTOR #4: off reproduces the impossible negative label" min="1" max="1">case -0x75:</stringmatch>
+<stringmatch name="UNSIGNED-BYTE-VM-SELECTOR #5: default preserves the unsigned label" min="1" max="1">case 0x8b:</stringmatch>
+</decompilertest>

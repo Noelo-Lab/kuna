@@ -1045,10 +1045,22 @@ strand phi state:
   `funcdata_block.rs (Funcdata::kuna_install_lowered_switch)` replaces the
   cascade head's CBRANCH with a synthetic `BRANCHIND(V)`, rewires its
   out-edges to the case targets plus default, pushes a hand-built, pre-labelled
-  `JumpTable` (signed labels recorded when the recovered variable is signed)
+  `JumpTable` (signed labels recorded from the cascade's controlling comparisons)
   carrying a `JumpModelTrivial`, and sweeps the orphaned compare spine via
   unreachable-block removal. Heritage then rebuilds SSA over the corrected CFG
   and the ordinary structurer/printer emit the switch.
+
+  Label interpretation is recovered with the structure rather than inferred
+  later from case bits. `INT_SLESS`/`INT_SLESSEQUAL` range nodes prove signed
+  labels; `INT_LESS`/`INT_LESSEQUAL` prove unsigned labels. Detection reconciles
+  every controlling range node and records the one consistent result in the
+  restart-surviving side record. Mixed signed/unsigned evidence, or a range
+  without a supported interpretation, declines recovery instead of guessing.
+  Equality constants never participate: `0xffffffff` can be either unsigned or
+  signed -1, and the case bit pattern alone cannot decide. The default-on
+  `loweredswitchlabels` policy carries this proof to the installed jump table;
+  its explicit off arm exists only to reproduce the historical top-bit guess.
+  The generic P9 numeric printer is unchanged.
 
   The synthetic BRANCHIND is inserted through `Funcdata::op_insert`, not the
   bare block splice, because a p-code op is born on the dead list and only

@@ -1,0 +1,15 @@
+Reference comparison for the exact SHA-256
+95c300aedc728b643bf97c39b5e8db88e9ddc40bf4cf337cd6c777929684a5f9,
+function 0x12d0:
+
+- Ghidra decompilation keeps a one-byte unsigned selector.
+- Ghidra disassembly at 0x14b8 is `CMP AL,0x8b` followed by the handler branch.
+- Kuna before/default-ablation declared `unsigned char v16`, recovered a switch,
+  and emitted `case -0x75`.
+- Kuna after/default declares `unsigned char v16`, retains the same switch and
+  handlers, and emits `case 0x8b`.
+- Kuna reliable mode after uses the equivalent `uint1 v16` and `case 0x8b`.
+- Kuna with `loweredswitch off` retains `if (v17 != 0x8b)` and emits no switch.
+
+No angr rendering is claimed for this RE-friction witness. The file keeps the
+feature-bundle comparison slot while documenting the available Ghidra oracle.

@@ -2698,6 +2698,28 @@ tier = "transform"
 symptoms = "switch rendered as nested if/else-if compare tree over one variable|binary-search cascade of constant compares where source had a switch|flip off to keep the compiler's lowered compare-tree rendering"
 
 [[settable]]
+option = "loweredswitchlabels"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P2"
+subphase = "switch-model"
+strength = "HARD"
+rewind = "P2"
+issue = "re-unsigned-byte-vm-selector"
+summary = "Preserve the signedness proved by a recovered lowered switch's required range comparisons and selector-widening paths across the restart and synthesized jump-table install. Signed SLESS/SLESSEQUAL cascades render signed labels; unsigned LESS/LESSEQUAL cascades render unsigned labels; ZEXT proves the underlying selector unsigned and SEXT proves it signed. Equality constants never decide signedness, but safely normalize from the widened comparison width. Mixed range evidence, conflicting extension/opcode evidence, mixed extension paths, inconsistent effective widths, or shrinking SUBPIECE projections that the restart record cannot preserve decline recovery instead of guessing."
+use_when = "On by default (DIV-173): a case label and installed selector must preserve the same signed or unsigned interpretation and projection as the comparison cascade. Set off to reproduce full historical behavior: the original structural recovery runs without the new evidence checks, including its shrinking-SUBPIECE peel, then any selector-width case with its sign bit set makes every label signed."
+example = "option loweredswitchlabels off"
+source_decompiler = "ghidra-upstream"
+inspiration = "upstream JumpTable::getSwitchType signedness contract; RE-friction unsigned-byte-vm-selector, KataVM_L1 0x12d0"
+change_kind = "correctness-fix"
+tier = "core"
+symptoms = "an unsigned char switch has a negative case label|an unsigned selector's high-bit case is printed as a negative number|a lowered switch's case labels disagree with the signedness of its range comparisons"
+live_field = "lowered_switch_labels"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "evalcurrentproto"
 values = "on|off"
 default = "on"
