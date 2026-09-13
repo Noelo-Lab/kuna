@@ -50,6 +50,7 @@
 //! `run_default_analyses`.
 
 pub mod codeview;
+pub mod kuna_pdbinterior;
 pub mod locate;
 pub mod walk;
 
@@ -143,7 +144,7 @@ impl AnalysisPass for PdbPass {
 /// a rebuilt binary is otherwise indistinguishable from having no `.pdb` at all,
 /// and silence sends the user hunting for a pass that is working exactly as
 /// designed.
-fn open_fingerprint_matched(
+pub(crate) fn open_fingerprint_matched(
     candidates: &[std::path::PathBuf],
     cv: &codeview::CodeViewInfo,
 ) -> Option<pdb::PDB<'static, std::fs::File>> {
@@ -181,7 +182,7 @@ fn open_fingerprint_matched(
 /// typed `object` PE parser (the neutral `object::File` view does not expose it).
 /// `None` on a non-PE / unparsable image. Self-contained (the `rtti`
 /// `pe_image_base` shape, kept local so the two metadata passes do not couple).
-fn pe_image_base(bytes: &[u8]) -> Option<u64> {
+pub(crate) fn pe_image_base(bytes: &[u8]) -> Option<u64> {
     match FileKind::parse(bytes).ok()? {
         FileKind::Pe64 => Some(image_base_of(&PeFile64::parse(bytes).ok()?)),
         FileKind::Pe32 => Some(image_base_of(&PeFile32::parse(bytes).ok()?)),

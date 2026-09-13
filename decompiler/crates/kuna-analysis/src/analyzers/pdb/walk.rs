@@ -57,6 +57,58 @@ pub fn walk_functions(pdb: &mut pdb::PDB<'_, std::fs::File>, image_base: u64) ->
     out
 }
 
+/// The `S_LPROC32`/`S_GPROC32` record kinds (plain, `_ST`, `_ID` and DPC forms),
+/// checked before a record is parsed; the `pdb` crate does not export its kind
+/// constants, and a module stream is mostly locals and ranges.
+const PROCEDURE_KINDS: [u16; 8] = [0x100a, 0x100b, 0x110f, 0x1110, 0x1146, 0x1147, 0x1155, 0x1156];
+
+/// Walk every module stream of an opened `.pdb` and return each procedure's code
+/// extent `[start, start + len)` at absolute VMAs, sorted and deduplicated.
+///
+/// The global stream holds only references to procedures; the `S_GPROC32` /
+/// `S_LPROC32` records that carry a code length live in the per-module streams, so
+/// this is the only place a procedure's END is recorded. Zero-length records and
+/// unresolvable addresses are skipped; a module whose stream fails to parse
+/// contributes whatever it yielded before the failure.
+pub fn walk_procedure_extents(
+    pdb: &mut pdb::PDB<'_, std::fs::File>,
+    image_base: u64,
+) -> Vec<(u64, u64)> {
+    let mut out: Vec<(u64, u64)> = Vec::new();
+    let (Ok(address_map), Ok(dbi)) = (pdb.address_map(), pdb.debug_information()) else {
+        return out;
+    };
+    let Ok(mut modules) = dbi.modules() else {
+        return out;
+    };
+    while let Ok(Some(module)) = modules.next() {
+        let Ok(Some(info)) = pdb.module_info(&module) else {
+            continue;
+        };
+        let Ok(mut symbols) = info.symbols() else {
+            continue;
+        };
+        while let Ok(Some(symbol)) = symbols.next() {
+            if !PROCEDURE_KINDS.contains(&symbol.raw_kind()) {
+                continue;
+            }
+            let Ok(pdb::SymbolData::Procedure(proc)) = symbol.parse() else {
+                continue;
+            };
+            if proc.len == 0 {
+                continue;
+            }
+            if let Some(rva) = proc.offset.to_rva(&address_map) {
+                let start = image_base.wrapping_add(u64::from(rva.0));
+                out.push((start, start.saturating_add(u64::from(proc.len))));
+            }
+        }
+    }
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
 /// Collect the function symbols from one `SymbolTable` into `out`.
 fn collect_symbols(
     symbols: &pdb::SymbolTable<'_>,

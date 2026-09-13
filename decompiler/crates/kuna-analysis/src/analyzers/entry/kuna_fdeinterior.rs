@@ -92,16 +92,33 @@ impl AnalysisPass for FdeInteriorPass {
 /// Drop every discovered entry that falls strictly inside one of `bodies`.
 ///
 /// Entries at a body's first address are kept (that address IS the function), so
-/// this can only ever remove an entry no `.eh_frame` FDE endorses as a start.
-/// With `bodies` empty (the gate off, a non-ELF image, or no `.eh_frame`) it is a
+/// this can only ever remove an entry some body's own source does not endorse as a
+/// start. With `bodies` empty (every gate off, or no image-described body) it is a
 /// no-op.
+///
+/// `bodies` is the merged output of several passes, and on a PE two of them
+/// describe the same functions at different granularity: `.pdata` may split one
+/// function into chained records while its PDB procedure covers all of them. Each
+/// pass's list is disjoint but the union is not, so an entry is dropped when ANY
+/// body starts before it and ends after it (a running maximum of the ends over
+/// the start-sorted list), which equals [`is_interior`] on a disjoint list.
 pub fn suppress_interior_entries(entries: &mut Vec<u64>, bodies: &[(u64, u64)]) -> Vec<u64> {
     if bodies.is_empty() || entries.is_empty() {
         return Vec::new();
     }
+    let mut sorted = bodies.to_vec();
+    sorted.sort_unstable();
+    let reach: Vec<u64> = sorted
+        .iter()
+        .scan(0u64, |hi, &(_, end)| {
+            *hi = (*hi).max(end);
+            Some(*hi)
+        })
+        .collect();
     let mut dropped = Vec::new();
     entries.retain(|&vma| {
-        if is_interior(bodies, vma) {
+        let below = sorted.partition_point(|&(start, _)| start < vma);
+        if below > 0 && reach[below - 1] > vma {
             dropped.push(vma);
             false
         } else {
@@ -266,6 +283,18 @@ mod tests {
         let dropped = suppress_interior_entries(&mut entries, &bodies);
         assert_eq!(entries, vec![0x1000, 0x1100, 0x2000]);
         assert_eq!(dropped, vec![0x1010, 0x10f0]);
+    }
+
+    /// A PE's chained `.pdata` records sit inside the PDB procedure that covers
+    /// them. The chunk start at 0x1040 is AT one record's start but strictly inside
+    /// the procedure, which a nearest-range lookup over the merged list misses.
+    #[test]
+    fn suppress_handles_nested_bodies_from_two_sources() {
+        let bodies = vec![(0x1000, 0x1040), (0x1040, 0x1080), (0x1000, 0x1080), (0x2000, 0x2010)];
+        let mut entries = vec![0x1000, 0x1020, 0x1040, 0x1060, 0x1080, 0x2008];
+        let dropped = suppress_interior_entries(&mut entries, &bodies);
+        assert_eq!(dropped, vec![0x1020, 0x1040, 0x1060, 0x2008]);
+        assert_eq!(entries, vec![0x1000, 0x1080]);
     }
 
     #[test]

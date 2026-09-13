@@ -2337,6 +2337,31 @@ survives. x86/x64 PE only: the 8-byte ARM/ARM64 `RUNTIME_FUNCTION` carries no
 so the pass abstains on both rather than guess — the same stance the
 base-relocation oracle takes.
 
+**(kuna) Nor are the interiors of PDB procedures** (`pdbinterior`, default-**on**,
+DIV-172; `decompiler/crates/kuna-analysis/src/analyzers/pdb/kuna_pdbinterior.rs`).
+The exception table only describes functions that need unwind data, so a frameless
+leaf has no `RUNTIME_FUNCTION`, and when the compiler also inlined that leaf into
+its only caller the out-of-line copy has no caller either. Recursive descent never
+decodes it and its name comes only from the `.pdb` (§1.4), so the gap walk sees an
+undiscovered hole and accepts an aligned interior instruction whose prologue
+matches the image's common one: on an MSVC `/O2` switch cascade that is the
+`mov eax,imm ; mov edx,imm` fall-through of a CMOV-lowered case, and the
+fall-through bound then drops that case from the emitted C. Every
+`S_GPROC32`/`S_LPROC32` record in a procedure's module stream carries its code
+length, so the pass reads those streams from the same fingerprint-matched `.pdb`
+the naming pass found and reports `[start, start + len)` on the channel the two
+passes above share. Eligibility is the `.pdata` test with the PDB's own names
+added: no image symbol or PDB public strictly inside, no other procedure's start
+strictly inside, no overlap with the procedure kept before it. A `.pdata`
+`BeginAddress` inside a procedure does not disqualify it, because MSVC splits one
+function's unwind data across chained records and the procedure is the authority on
+where the function ends. That also means a PE's `.pdata` and PDB bodies nest, so
+the commit's suppression no longer assumes the merged list is disjoint: an entry
+is dropped when any body starts before it and ends after it. The bodies are
+committed only while `pdb` is also on. x86, x64 and ARM64 PE only; 32-bit ARM
+abstains because a Thumb entry may carry the interworking bit, which would put an
+entry that is a procedure's start one byte inside it.
+
 (kuna) **The PE CRT entry-function prototype** (`entrymainproto`, default-on;
 `decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_entrymainproto.rs
 (EntryMainProtoPass)`) is discovery's answer to a question the rest of the pipeline

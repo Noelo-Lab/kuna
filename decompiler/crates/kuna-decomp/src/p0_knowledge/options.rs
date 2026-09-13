@@ -485,6 +485,14 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // `BeginAddress` are used; an entry AT a `BeginAddress` is always kept.
     // Default-ON; off restores the previous discovery set exactly.
     "pdatainterior",
+    // (kuna) PDB-procedure-interior entry suppression: the PDB half of
+    // `pdatainterior`, for frameless leaves with no `.pdata` record.  Each
+    // `S_GPROC32` in the fingerprint-matched `.pdb` records its code length, so an
+    // entry strictly inside one is a point inside a body — `aif`'s gap walk mints
+    // them inside a leaf only the PDB names and `funcboundflow` then truncates the
+    // leaf there.  Only procedures holding no other named start and no other
+    // procedure's start are used.  Default-ON, applied only while `pdb` is on.
+    "pdbinterior",
     // (kuna) The full byte-pattern function-start pass (Ghidra FunctionStartAnalyzer
     // over the entire vendored pattern corpus), default-OFF (output-changing:
     // discovers more functions). A separate gate from `entry_disc` (whose always-on
