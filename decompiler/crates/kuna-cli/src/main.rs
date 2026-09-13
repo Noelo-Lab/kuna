@@ -234,6 +234,7 @@ fn cmd_catalog(argv: &[String]) -> i32 {
     let mut markdown = false;
     let mut check = false;
     let mut engine: Option<String> = None;
+    let mut decomp_dbg_flag = false;
     // --decomp-dbg / --sleighpath are accepted (Python had them); they map to the
     // env overrides paths.rs already honors, so just set them.
     let mut i = 0;
@@ -249,6 +250,7 @@ fn cmd_catalog(argv: &[String]) -> i32 {
             "--decomp-dbg" => {
                 if let Some(v) = take_value(argv, &mut i, "--decomp-dbg") {
                     std::env::set_var("KUNA_DECOMP_DBG", v);
+                    decomp_dbg_flag = true;
                 }
             }
             "--sleighpath" => {
@@ -277,15 +279,20 @@ fn cmd_catalog(argv: &[String]) -> i32 {
         return 2;
     }
     apply_engine(engine.as_deref());
+    let pinned_by = if decomp_dbg_flag {
+        Some("--decomp-dbg")
+    } else {
+        paths::pinned_by("KUNA_DECOMP_DBG")
+    };
 
     if check {
-        catalog::cmd_check()
+        catalog::cmd_check(pinned_by)
     } else if json {
-        catalog::cmd_json(option.as_deref())
+        catalog::cmd_json(option.as_deref(), pinned_by)
     } else if markdown {
         catalog::cmd_markdown(option.as_deref())
     } else {
-        catalog::cmd_text(option.as_deref(), tier.as_deref())
+        catalog::cmd_text(option.as_deref(), tier.as_deref(), pinned_by)
     }
 }
 

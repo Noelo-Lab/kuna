@@ -14,7 +14,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-use kuna_console::kuna_buildstamp::{identity, PARENT_ENV, REPLY};
+use kuna_console::kuna_buildstamp::{identity, ChildKind, PARENT_ENV, REPLY};
 
 const OTHER_BUILD: &str = "1.329 (source 0123456789abcdef)";
 
@@ -97,7 +97,7 @@ fn a_decomp_dbg_from_another_build_is_named_once_on_stderr() {
         "warning: decomp_dbg is a different build from this kuna"
     );
     assert!(
-        lines[1].starts_with("  kuna:") && lines[1].contains(identity()),
+        lines[1].starts_with("  kuna:") && lines[1].contains(identity(ChildKind::Engine)),
         "{stderr}"
     );
     assert!(
@@ -115,7 +115,7 @@ fn a_decomp_dbg_from_another_build_is_named_once_on_stderr() {
 
 #[test]
 fn a_decomp_dbg_from_this_build_prints_nothing() {
-    let child = decomp_dbg("same", Some(identity()));
+    let child = decomp_dbg("same", Some(identity(ChildKind::Engine)));
     let out = kuna(
         &[
             "decompile",
@@ -172,6 +172,31 @@ fn the_warning_stays_out_of_catalog_json() {
         stderr.starts_with("warning: decomp_dbg is a different build"),
         "{stderr}"
     );
+}
+
+#[test]
+fn a_catalog_flag_is_named_as_the_binary_selector() {
+    let child = stub(
+        "catalog_flag",
+        Some(OTHER_BUILD),
+        "cat > /dev/null\nprintf '[decomp]> phase catalog\\n[{\"option\": \"loweredswitch\"}]\\n'\n",
+    );
+    let out = kuna(
+        &[
+            "catalog",
+            "--json",
+            "--option",
+            "loweredswitch",
+            "--decomp-dbg",
+            child.to_str().unwrap(),
+        ],
+        &[],
+    );
+    let stderr = text(&out.stderr);
+    let _ = std::fs::remove_file(&child);
+    assert_eq!(out.status.code(), Some(0), "{stderr}");
+    assert!(stderr.contains("chosen by --decomp-dbg"), "{stderr}");
+    assert!(!stderr.contains("chosen by KUNA_DECOMP_DBG"), "{stderr}");
 }
 
 /// `decomp_test_dbg` reports unit tests on stderr, the stream the reply shares:

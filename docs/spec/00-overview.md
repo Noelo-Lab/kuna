@@ -721,17 +721,19 @@ document can be disturbed, and a child older than the handshake simply ignores t
 variable. The variable name and the reply prefix are read by builds that differ by
 definition, so they stay fixed.
 
-An identity is the version `kuna --version` prints plus a hash of the contents of
-`kuna-console` and every workspace crate it links through `[dependencies]`, and of
-`Cargo.lock` (`decompiler/crates/kuna-console/build.rs`); `tests`, `benches` and
-`examples` are excluded and CR bytes are skipped. The version alone cannot tell two
-source builds apart, since both report the workspace Cargo version. A git commit
-would miss uncommitted edits and needs a `.git` that a source tarball lacks, and a
-per-build nonce would make a checkout's debug `kuna` disagree with its release
-`decomp_dbg`. A content hash has none of these problems. The script watches only
-paths whose change recompiles `kuna-console` anyway, so it adds no rebuilds.
-`kuna-cli`'s own sources are outside the hash: they are not part of the engine a
-child runs.
+An identity is the version `kuna --version` prints plus a hash of the selected
+child's production source graph, the workspace `Cargo.toml` and `Cargo.lock`
+(`decompiler/crates/kuna-console/build.rs`). `decomp_dbg` is rooted at
+`kuna-console`; `decomp_test_dbg` is rooted at `kuna-harness`, so runner-only
+changes cannot masquerade as a matching test binary. `tests`, `benches` and
+`examples` are excluded and CR bytes are skipped. The version alone cannot tell
+two source builds apart, since both report the workspace Cargo version. A git
+commit would miss uncommitted edits and needs a `.git` that a source tarball
+lacks, and a per-build nonce would make a checkout's debug `kuna` disagree with
+its release child. A content hash has none of these problems. Every included
+input is a Cargo rerun trigger and an unreadable input fails the build rather than
+silently weakening the identity. `kuna-cli`'s own sources are outside both hashes:
+they are not part of either child.
 
 (kuna) **Loading a spec.** A `.sla` is a zlib stream behind a `sla\x04` header,
 inflated and checksum-verified in full before a single element is decoded

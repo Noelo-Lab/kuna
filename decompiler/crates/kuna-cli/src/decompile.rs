@@ -841,7 +841,10 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
 
         let mut cmd = Command::new(&bin_path);
         cmd.arg("-s").arg(&specs).env("SLEIGHHOME", &specs);
-        cmd.env(kuna_buildstamp::PARENT_ENV, kuna_buildstamp::identity());
+        cmd.env(
+            kuna_buildstamp::PARENT_ENV,
+            kuna_buildstamp::identity(kuna_buildstamp::ChildKind::Engine),
+        );
         match args.isa {
             Some(isa) => {
                 cmd.env(ARM_ISA_ENV, isa.as_str());
@@ -1027,6 +1030,7 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
 
         let stdout_text = String::from_utf8_lossy(&output.stdout).into_owned();
         let stderr_text = kuna_buildstamp::report(
+            kuna_buildstamp::ChildKind::Engine,
             String::from_utf8_lossy(&output.stderr).into_owned(),
             "decomp_dbg",
             &bin_path,

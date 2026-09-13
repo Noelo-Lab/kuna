@@ -101,12 +101,13 @@ warning: decomp_dbg is a different build from this kuna
 ```
 
 An identity is the version `kuna --version` prints plus a fingerprint of the
-engine sources the binary was built from (`kuna-console` and every crate it
-links). Two source builds of different trees therefore differ even though both
-report the workspace version, while a checkout's debug and release builds agree.
-Matching builds print nothing. The warning never goes to stdout, so a `--json`
-document stays clean. A `decomp_dbg` older than the handshake cannot answer: it
-runs as before, without a warning.
+child's production source graph, the workspace manifest and `Cargo.lock`.
+`decomp_dbg` uses the `kuna-console` engine graph; `decomp_test_dbg` adds the
+`kuna-harness` runner. Two source builds of different trees therefore differ even
+though both report the workspace version, while a checkout's debug and release
+builds agree. Matching builds print nothing. The warning never goes to stdout,
+so a `--json` document stays clean. A child older than the handshake cannot
+answer: it runs as before, without a warning.
 
 ## `kuna test` — the parity gates
 

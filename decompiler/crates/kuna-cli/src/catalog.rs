@@ -28,7 +28,7 @@ use crate::paths;
 
 /// Run `decomp_dbg phase catalog [<option>]` and return the parsed JSON value
 /// (an array, or a single object when `option` is given).
-fn run_catalog(option: Option<&str>) -> Result<Json, String> {
+fn run_catalog(option: Option<&str>, pinned_by: Option<&str>) -> Result<Json, String> {
     let bin = paths::decomp_dbg();
     if !bin.exists() {
         return Err(paths::missing_decomp_dbg());
@@ -43,7 +43,10 @@ fn run_catalog(option: Option<&str>) -> Result<Json, String> {
         .arg("-s")
         .arg(&specs)
         .env("SLEIGHHOME", &specs)
-        .env(kuna_buildstamp::PARENT_ENV, kuna_buildstamp::identity())
+        .env(
+            kuna_buildstamp::PARENT_ENV,
+            kuna_buildstamp::identity(kuna_buildstamp::ChildKind::Engine),
+        )
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -57,10 +60,11 @@ fn run_catalog(option: Option<&str>) -> Result<Json, String> {
         })
         .map_err(|e| format!("failed to run decomp_dbg: {e}"))?;
     kuna_buildstamp::report(
+        kuna_buildstamp::ChildKind::Engine,
         String::from_utf8_lossy(&output.stderr).into_owned(),
         "decomp_dbg",
         &bin,
-        paths::pinned_by("KUNA_DECOMP_DBG"),
+        pinned_by,
     );
 
     let out = String::from_utf8_lossy(&output.stdout);
@@ -132,8 +136,8 @@ fn arr_field(entry: &Json, key: &str) -> Vec<String> {
 }
 
 /// `--json`: byte-identical to `json.dumps(entries, indent=2)`.
-pub fn cmd_json(option: Option<&str>) -> i32 {
-    match run_catalog(option) {
+pub fn cmd_json(option: Option<&str>, pinned_by: Option<&str>) -> i32 {
+    match run_catalog(option, pinned_by) {
         Ok(v) => {
             // Python always re-dumps the *list* form (catalog() returns a list,
             // wrapping a single dict in `[data]`).
@@ -164,8 +168,8 @@ pub fn cmd_markdown(option: Option<&str>) -> i32 {
 
 /// (default) the human-readable table (port of catalog.main's text branch).
 /// `tier` filters to one of transform|analysis|core.
-pub fn cmd_text(option: Option<&str>, tier: Option<&str>) -> i32 {
-    let v = match run_catalog(option) {
+pub fn cmd_text(option: Option<&str>, tier: Option<&str>, pinned_by: Option<&str>) -> i32 {
+    let v = match run_catalog(option, pinned_by) {
         Ok(v) => v,
         Err(e) => {
             eprintln!("error: {e}");
@@ -225,8 +229,8 @@ pub fn cmd_text(option: Option<&str>, tier: Option<&str>) -> i32 {
 /// build-time codegen (`phases.toml` -> `SETTABLE_TABLE`) already fences the
 /// catalog/table consistency at compile time; this end-to-end check fences the
 /// catalog (what the binary emits) against the registration list.
-pub fn cmd_check() -> i32 {
-    let v = match run_catalog(None) {
+pub fn cmd_check(pinned_by: Option<&str>) -> i32 {
+    let v = match run_catalog(None, pinned_by) {
         Ok(v) => v,
         Err(e) => {
             eprintln!("error: {e}");

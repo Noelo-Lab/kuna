@@ -5,7 +5,7 @@
 //! that spawned it -- `KUNA_DECOMP_DBG` pointing at another install, or a sibling
 //! left behind when only `kuna` was rebuilt -- and nothing in the render says so.
 //!
-//! The parent exports its [`identity`] as [`PARENT_ENV`]. The child compares it
+//! The parent exports the matching [`identity`] as [`PARENT_ENV`]. The child compares it
 //! with its own at startup ([`answer_parent`]) and, only when they differ, writes
 //! one [`REPLY`] line carrying its own identity to stderr. The parent strips that
 //! line from the stderr it captured and names both builds in one warning
@@ -17,8 +17,8 @@
 //! definition, so neither may change.
 //!
 //! An identity is the version `kuna --version` prints plus a fingerprint of the
-//! engine sources this crate links (`build.rs`). The version alone cannot tell
-//! two source builds apart: every one reports the workspace Cargo version.
+//! selected child's production source graph (`build.rs`). `decomp_dbg` uses the
+//! engine graph; `decomp_test_dbg` adds `kuna-harness` to that graph.
 
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -30,6 +30,12 @@ pub const PARENT_ENV: &str = "KUNA_PARENT_BUILD";
 /// The stderr line prefix a mismatched child answers with.
 pub const REPLY: &str = "kuna-build-mismatch: ";
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ChildKind {
+    Engine,
+    Harness,
+}
+
 /// The release `MAJOR.MINOR` baked by release CI, else the workspace Cargo version.
 pub const VERSION: &str = match option_env!("KUNA_VERSION") {
     Some(v) => v,
@@ -37,16 +43,31 @@ pub const VERSION: &str = match option_env!("KUNA_VERSION") {
 };
 
 /// This build's identity: `<version> (source <fingerprint>)`.
-pub fn identity() -> &'static str {
-    static ID: OnceLock<String> = OnceLock::new();
-    ID.get_or_init(|| format!("{VERSION} (source {})", env!("KUNA_SOURCE_FINGERPRINT")))
+pub fn identity(kind: ChildKind) -> &'static str {
+    static ENGINE: OnceLock<String> = OnceLock::new();
+    static HARNESS: OnceLock<String> = OnceLock::new();
+    match kind {
+        ChildKind::Engine => ENGINE.get_or_init(|| {
+            format!(
+                "{VERSION} (source {})",
+                env!("KUNA_ENGINE_SOURCE_FINGERPRINT")
+            )
+        }),
+        ChildKind::Harness => HARNESS.get_or_init(|| {
+            format!(
+                "{VERSION} (source {})",
+                env!("KUNA_HARNESS_SOURCE_FINGERPRINT")
+            )
+        }),
+    }
 }
 
 /// The child half: answer a parent whose identity differs from ours.
-pub fn answer_parent() {
+pub fn answer_parent(kind: ChildKind) {
+    let ours = identity(kind);
     if let Some(parent) = std::env::var_os(PARENT_ENV) {
-        if parent != identity() {
-            eprintln!("{REPLY}{}", identity());
+        if parent != ours {
+            eprintln!("{REPLY}{ours}");
         }
     }
 }
@@ -71,6 +92,7 @@ pub fn take_reply(stderr: &str) -> (String, Option<String>) {
 /// The warning for a child that answered `theirs`. `pinned_by` names the flag or
 /// variable that chose the child, when one did.
 pub fn mismatch_warning(
+    kind: ChildKind,
     child_name: &str,
     child: &Path,
     theirs: &str,
@@ -88,7 +110,7 @@ pub fn mismatch_warning(
          \x20 {:<width$} {} {kuna}\n\
          \x20 {:<width$} {theirs} {}{pinned}\n",
         "kuna:",
-        identity(),
+        identity(kind),
         format!("{child_name}:"),
         child.display(),
     )
@@ -96,14 +118,20 @@ pub fn mismatch_warning(
 
 /// The parent half, after the child exited: strip its reply from `stderr` and,
 /// the first time in this process that a child answered, print the warning.
-pub fn report(stderr: String, child_name: &str, child: &Path, pinned_by: Option<&str>) -> String {
+pub fn report(
+    kind: ChildKind,
+    stderr: String,
+    child_name: &str,
+    child: &Path,
+    pinned_by: Option<&str>,
+) -> String {
     static WARNED: AtomicBool = AtomicBool::new(false);
     let (rest, theirs) = take_reply(&stderr);
     if let Some(theirs) = theirs {
         if !WARNED.swap(true, Ordering::Relaxed) {
             eprint!(
                 "{}",
-                mismatch_warning(child_name, child, &theirs, pinned_by)
+                mismatch_warning(kind, child_name, child, &theirs, pinned_by)
             );
         }
     }
@@ -139,6 +167,7 @@ mod tests {
     #[test]
     fn the_warning_names_both_builds_and_the_override() {
         let text = mismatch_warning(
+            ChildKind::Engine,
             "decomp_dbg",
             Path::new("/opt/kuna-v1.329/decomp_dbg"),
             "1.329 (source 00ff)",
@@ -151,7 +180,8 @@ mod tests {
             "warning: decomp_dbg is a different build from this kuna"
         );
         assert!(
-            lines[1].starts_with("  kuna:       ") && lines[1].contains(identity()),
+            lines[1].starts_with("  kuna:       ")
+                && lines[1].contains(identity(ChildKind::Engine)),
             "{text}"
         );
         assert_eq!(
@@ -162,14 +192,16 @@ mod tests {
 
     #[test]
     fn the_identity_carries_the_version_and_a_fingerprint() {
-        let id = identity();
-        assert!(id.starts_with(VERSION), "{id}");
-        let fp = id
-            .strip_prefix(&format!("{VERSION} (source "))
-            .and_then(|s| s.strip_suffix(')'));
-        assert!(
-            fp.is_some_and(|f| f.len() == 16 && f.chars().all(|c| c.is_ascii_hexdigit())),
-            "{id}"
-        );
+        for kind in [ChildKind::Engine, ChildKind::Harness] {
+            let id = identity(kind);
+            assert!(id.starts_with(VERSION), "{id}");
+            let fp = id
+                .strip_prefix(&format!("{VERSION} (source "))
+                .and_then(|s| s.strip_suffix(')'));
+            assert!(
+                fp.is_some_and(|f| f.len() == 16 && f.chars().all(|c| c.is_ascii_hexdigit())),
+                "{id}"
+            );
+        }
     }
 }
