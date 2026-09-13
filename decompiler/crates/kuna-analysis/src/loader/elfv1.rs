@@ -1,5 +1,5 @@
 //! Validated PowerPC64 ELFv1 function descriptors and per-entry TOC values.
-use object::{Architecture, BinaryFormat, FileFlags, Object, ObjectKind, ObjectSection, ObjectSymbol, SectionFlags, SymbolKind};
+use object::{Architecture, BinaryFormat, FileFlags, Object, ObjectKind, ObjectSection, ObjectSymbol, RelocationFlags, RelocationTarget, SectionFlags, SymbolKind};
 use std::collections::{BTreeMap, HashMap};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -26,12 +26,25 @@ impl Descriptors {
             .filter(|s| s.kind() == SymbolKind::Text && !s.is_undefined() && s.section_index() == Some(opd.index()))
             .map(|s| s.address()));
         addresses.sort_unstable();addresses.dedup();
+        let Some(opd_end) = opd.address().checked_add(bytes.len() as u64) else { return Self::default(); };
+        let relocations = descriptor_relocations(file, opd.address(), opd_end);
         let mut out = Vec::new();
-        for address in addresses {
+        'descriptors: for address in addresses {
             if address & 7 != 0 { continue; }
             let Some(offset) = address.checked_sub(opd.address()).and_then(|n| usize::try_from(n).ok()) else { continue; };
             let Some(end) = offset.checked_add(24) else { continue; };
-            let Some(record) = bytes.get(offset..end) else { continue; };
+            let Some(payload) = bytes.get(offset..end) else { continue; };
+            let Some(record_end) = address.checked_add(24) else { continue; };
+            let mut record: [u8; 24] = payload.try_into().unwrap();
+            for (&slot, &(width, value)) in relocations.range(address.saturating_sub(23)..record_end) {
+                let Some(write_end) = slot.checked_add(width) else { continue 'descriptors; };
+                if write_end <= address { continue; }
+                let Some(start) = slot.checked_sub(address).and_then(|n| usize::try_from(n).ok()) else { continue 'descriptors; };
+                let Some(value) = value else { continue 'descriptors; };
+                if width != 8 || start & 7 != 0 || start > 16 { continue 'descriptors; }
+                let word = if file.is_little_endian() { value.to_le_bytes() } else { value.to_be_bytes() };
+                record[start..start+8].copy_from_slice(&word);
+            }
             let word = |start| {
                 let b: [u8;8] = record[start..start+8].try_into().unwrap();
                 if file.is_little_endian() { u64::from_le_bytes(b) } else { u64::from_be_bytes(b) }
@@ -68,6 +81,33 @@ impl Descriptors {
         }
         self.0.sort_by_key(|d| d.address);
     }
+}
+
+/// Resolve RELA relative words at kuna's initial zero load bias; uncertain writes invalidate a record.
+fn descriptor_relocations(file: &object::File<'_>, begin: u64, end: u64) -> BTreeMap<u64, (u64, Option<u64>)> {
+    use object::elf;
+    let mut values: BTreeMap<u64, (u64, Option<u64>)> = BTreeMap::new();
+    if let Some(relocations) = file.dynamic_relocations() {
+        for (slot, relocation) in relocations {
+            let RelocationFlags::Elf { r_type } = relocation.flags() else { continue; };
+            if r_type == elf::R_PPC64_NONE { continue; }
+            let width = match r_type {
+                elf::R_PPC64_RELATIVE | elf::R_PPC64_ADDR64 | elf::R_PPC64_UADDR64
+                | elf::R_PPC64_GLOB_DAT | elf::R_PPC64_TOC => 8,
+                _ => match relocation.size() {
+                    1..=64 => u64::from(relocation.size()).div_ceil(8),
+                    _ => 24,
+                },
+            };
+            if slot >= end || slot.checked_add(width).is_some_and(|stop| stop <= begin) { continue; }
+            let value = (r_type == elf::R_PPC64_RELATIVE && !relocation.has_implicit_addend()
+                && matches!(relocation.target(), RelocationTarget::Absolute))
+                .then_some(relocation.addend() as u64);
+            values.entry(slot).and_modify(|old| { old.0 = old.0.max(width); old.1 = None; })
+                .or_insert((width, value));
+        }
+    }
+    values
 }
 
 #[cfg(test)]

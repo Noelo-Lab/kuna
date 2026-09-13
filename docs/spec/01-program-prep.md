@@ -7,6 +7,11 @@ and supplies its TOC as the function's initial `r2` value. Different entries may
 have different TOCs; conflicting descriptors for one code entry leave `r2`
 unknown. Explicit addresses remain literal. ELFv2, relocatable objects, truncated
 descriptors and non-executable targets do not receive this normalization.
+Descriptor words with dynamic RELA `R_PPC64_RELATIVE` relocations use the addend
+at the loader's initial zero bias, as specified by the ABI's `B + A` formula;
+ignored payload words do not select code or seed `r2`. A later VMA adjustment
+shifts the resolved addresses. Unsupported, overlapping, or conflicting writes
+leave the affected descriptors unnormalized and supply no TOC seed.
 The TOC metadata is merged into each function's snapshot of live tracked
 registers. Later range-less tracking remains visible, and user tracking of `r2`
 overrides the metadata without discarding seeds for other registers.

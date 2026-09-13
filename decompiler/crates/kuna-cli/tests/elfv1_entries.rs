@@ -13,6 +13,10 @@ fn image(abi: u32) -> Vec<u8> {
 }
 
 fn image_with_code(abi: u32, first: &[u8]) -> Vec<u8> {
+    image_with_relocations(abi, first, &[])
+}
+
+fn image_with_relocations(abi: u32, first: &[u8], relocations: &[(u64, u32, i64)]) -> Vec<u8> {
     let mut o = Object::new(BinaryFormat::Elf, Architecture::PowerPc64, Endianness::Big);
     let text = o.add_section(Vec::new(), b".text".to_vec(), SectionKind::Text);
     let mut code = first.to_vec();
@@ -29,6 +33,20 @@ fn image_with_code(abi: u32, first: &[u8]) -> Vec<u8> {
             kind:SymbolKind::Text, scope:SymbolScope::Linkage, weak:false,
             section:SymbolSection::Section(section), flags:SymbolFlags::None });
     }
+    if !relocations.is_empty() {
+        let strings = o.add_section(Vec::new(), b".dynstr".to_vec(), SectionKind::Metadata);
+        o.append_section_data(strings, &[0], 1);
+        let symbols = o.add_section(Vec::new(), b".dynsym".to_vec(), SectionKind::Metadata);
+        o.append_section_data(symbols, &[0; 24], 8);
+        let rela = o.add_section(Vec::new(), b".rela.dyn".to_vec(), SectionKind::Metadata);
+        let mut records = Vec::new();
+        for &(address, kind, addend) in relocations {
+            records.extend(address.to_be_bytes());
+            records.extend(u64::from(kind).to_be_bytes());
+            records.extend(addend.to_be_bytes());
+        }
+        o.append_section_data(rela, &records, 8);
+    }
     let mut b=o.write().unwrap();
     b[16..18].copy_from_slice(&2u16.to_be_bytes());
     b[48..52].copy_from_slice(&abi.to_be_bytes());
@@ -38,6 +56,16 @@ fn image_with_code(abi: u32, first: &[u8]) -> Vec<u8> {
     for i in 1..shnum {
         let sh=shoff+i*64;
         if i<=3 {put64(&mut b,sh+16,i as u64*0x1000);}
+        if !relocations.is_empty() && matches!(i, 4..=6) {
+            let (kind, link, stride) = match i {
+                4 => (object::elf::SHT_STRTAB, 0u32, 0),
+                5 => (object::elf::SHT_DYNSYM, 4, 24),
+                _ => (object::elf::SHT_RELA, 5, 24),
+            };
+            b[sh+4..sh+8].copy_from_slice(&kind.to_be_bytes());
+            b[sh+40..sh+44].copy_from_slice(&link.to_be_bytes());
+            put64(&mut b, sh+56, stride);
+        }
         if get32(&b,sh+4)==object::elf::SHT_SYMTAB {
             let start=get64(&b,sh+24) as usize;
             let end=start+get64(&b,sh+32) as usize;
@@ -55,6 +83,52 @@ fn image_with_code(abi: u32, first: &[u8]) -> Vec<u8> {
         for n in [offset,i as u64*0x1000,i as u64*0x1000,size,size,1] { b.extend(n.to_be_bytes()); }
     }
     b
+}
+
+#[test]
+fn descriptor_relocations_override_payloads_and_unknown_values_are_skipped() {
+    use kuna_analysis::loader::elfv1::Descriptors;
+    use object::{Object as _, ObjectSection as _};
+    let code = [0x88,0x62,0,0,0x4e,0x80,0,0x20];
+    let relative = object::elf::R_PPC64_RELATIVE;
+    let relocs = [(0x2000, relative, 0x1000), (0x2008, relative, 0x3000)];
+    for (entry_payload, toc_payload) in [(0x1008, 0x3001), (0x1000, 0)] {
+        let mut bytes = image_with_relocations(1, &code, &relocs);
+        bytes[16..18].copy_from_slice(&3u16.to_be_bytes());
+        let file = object::File::parse(&*bytes).unwrap();
+        assert_eq!(file.dynamic_relocations().unwrap().count(), 2);
+        let offset = file.section_by_name(".opd").unwrap().file_range().unwrap().0 as usize;
+        put64(&mut bytes, offset, entry_payload);
+        put64(&mut bytes, offset+8, toc_payload);
+        let loader = kuna_analysis::loadimage_object::ObjectLoadImage::from_bytes_silent("synthetic", &bytes).unwrap();
+        assert_eq!(loader.image_entry(), Some(0x1000));
+        assert_eq!(loader.elfv1_descriptors().entry_tocs().get(&0x1000), Some(&0x3000));
+        let mut shifted = loader.elfv1_descriptors().clone();
+        shifted.adjust_vma(0x10000);
+        assert_eq!(shifted.code_address(0x12000), 0x11000);
+        assert_eq!(shifted.entry_tocs().get(&0x11000), Some(&0x13000));
+        let path = common::scratch_file("elfv1-rela-descriptor", "elf");
+        std::fs::write(&path, bytes).unwrap();
+        let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
+            .args(["decompile", path.to_str().unwrap(), "answer", "--json", "--option", "readonly", "on"])
+            .output().unwrap();
+        let text = String::from_utf8_lossy(&out.stdout);
+        assert!(out.status.success(), "{text}\n{}", String::from_utf8_lossy(&out.stderr));
+        assert!(text.contains("\"address_hex\": \"0x1000\"") && text.contains("return 7;"), "{text}");
+        std::fs::remove_file(path).unwrap();
+    }
+    for bad_relocs in [
+        vec![(0x2000, object::elf::R_PPC64_ADDR64, 0x1000)],
+        vec![(0x2008, object::elf::R_PPC64_ADDR64, 0x3000)],
+        vec![(0x2004, relative, 0x1000)],
+        vec![(0x2000, relative, 0x1000), (0x2000, relative, 0x1008)],
+    ] {
+        let bytes = image_with_relocations(1, &code, &bad_relocs);
+        let file = object::File::parse(&*bytes).unwrap();
+        let descriptors = Descriptors::read(&file);
+        assert_eq!(descriptors.code_address(0x2000), 0x2000);
+        assert!(!descriptors.entry_tocs().contains_key(&0x1000));
+    }
 }
 
 #[test]
