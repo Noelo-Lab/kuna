@@ -1,0 +1,31 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/explicit_branch_assertion_pe_i386.exe",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/explicit_branch_assertion_pe_i386.exe",
+    "binary_sha256": "9031b8200481747e7ddb5cd5fc2a74030cd04052770bfa23d857a0662a58bc06",
+    "binary_size": 266240,
+    "binary_source": "in-repo"
+  },
+  "timeout_s": 60,
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "0x40d120",
+    "--addr",
+    "--assert",
+    "flow 0x40d126 branch"
+  ],
+  "expect": {
+    "exit_code": { "eq": 0 },
+    "stdout_matches": [
+      "0x40d12b",
+      "sub_40d21e\\(\\)"
+    ],
+    "stdout_absent": [
+      "// tail-call"
+    ]
+  }
+}
