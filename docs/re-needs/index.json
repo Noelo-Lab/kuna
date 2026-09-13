@@ -1,26 +1,27 @@
 {
   "schema": "re-needs-index/1",
   "generated_by": "scripts.repipe.needs",
-  "count": 197,
-  "rejected_count": 1,
+  "count": 196,
+  "rejected_count": 2,
   "by_status": {
     "blocked": 1,
-    "closed": 160,
-    "open": 36
+    "closed": 161,
+    "open": 34
   },
   "by_track": {
     "loader": 10,
     "perf": 4,
-    "quality": 129,
+    "quality": 128,
     "tooling": 54
   },
   "by_severity": {
     "blocker": 25,
-    "major": 147,
+    "major": 146,
     "minor": 25
   },
   "by_reject_reason": {
-    "duplicate of batch-silently-omits-explicitly: one root cause (the section-flag-only image_has_executable_content test in kuna-cli/src/decompile_all.rs:1628-1653), one command, one binary, one builder. Its acceptance demanded `decompile-all <BIN> --json` exit NONZERO, which the correct fix -- count > 0 on a binary kuna demonstrably decompiles -- can never satisfy, so held open it was an unclosable need that also invited a builder to ship an error path over working analysis. The mechanism and the residual diagnostic ask are recorded in the survivor's decision log.": 1
+    "duplicate of batch-silently-omits-explicitly: one root cause (the section-flag-only image_has_executable_content test in kuna-cli/src/decompile_all.rs:1628-1653), one command, one binary, one builder. Its acceptance demanded `decompile-all <BIN> --json` exit NONZERO, which the correct fix -- count > 0 on a binary kuna demonstrably decompiles -- can never satisfy, so held open it was an unclosable need that also invited a builder to ship an error path over working analysis. The mechanism and the residual diagnostic ask are recorded in the survivor's decision log.": 1,
+    "duplicate of string-copy-destination-incorrectly: the same KeyCheker.exe challenge, sub_140002240 command, target, probe, and acceptance were already filed in round 3. PR #575 closes the shared resolver-address defect; retain the earlier filing as the canonical closure and preserve this later filing only in the rejected ledger.": 1
   },
   "needs": [
     {
@@ -2821,38 +2822,6 @@
       "path": "docs/re-needs/default-function-boundary-truncates.md"
     },
     {
-      "need_id": "default-memmove-call-writes",
-      "title": "Default memmove call writes to zero instead of the destination parameter",
-      "track": "quality",
-      "status": "open",
-      "severity": "major",
-      "probe_id": "p-18068442ae53",
-      "acceptance_id": "a-f88ffa89ede1",
-      "hypothesis_status": "overturned",
-      "credibility": 0.7,
-      "instances": 1,
-      "challenges": [
-        "640a526833c5d447bc761899"
-      ],
-      "rounds": [
-        8
-      ],
-      "first_seen_round": 8,
-      "attempts": 0,
-      "covered_by_option": null,
-      "touches": [
-        "decompiler/crates/kuna-decomp"
-      ],
-      "scope": "small",
-      "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
-      "reject_reason": null,
-      "score": 13.862944,
-      "path": "docs/re-needs/default-memmove-call-writes.md"
-    },
-    {
       "need_id": "discovered-mapped-function-mislabeled",
       "title": "Discovered mapped function is mislabeled external",
       "track": "tooling",
@@ -4189,11 +4158,11 @@
       "need_id": "string-copy-destination-incorrectly",
       "title": "String copy destination incorrectly becomes a null pointer",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
       "probe_id": "p-18068442ae53",
-      "acceptance_id": "a-f88ffa89ede1",
-      "hypothesis_status": "inconclusive",
+      "acceptance_id": "a-045c2e212a05",
+      "hypothesis_status": "overturned",
       "credibility": 0.7,
       "instances": 1,
       "challenges": [
@@ -4204,15 +4173,15 @@
       ],
       "first_seen_round": 3,
       "attempts": 0,
-      "covered_by_option": null,
+      "covered_by_option": "libproto",
       "touches": [
-        "decompiler/crates/kuna-decomp"
+        "decompiler/crates/kuna-analysis"
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": "https://github.com/Noelo-Lab/kuna/pull/575",
+      "closed_in_round": 12,
+      "closing_pr": "575",
       "reject_reason": null,
       "score": 13.862944,
       "path": "docs/re-needs/string-copy-destination-incorrectly.md"
@@ -6449,6 +6418,38 @@
       "reject_reason": "duplicate of batch-silently-omits-explicitly: one root cause (the section-flag-only image_has_executable_content test in kuna-cli/src/decompile_all.rs:1628-1653), one command, one binary, one builder. Its acceptance demanded `decompile-all <BIN> --json` exit NONZERO, which the correct fix -- count > 0 on a binary kuna demonstrably decompiles -- can never satisfy, so held open it was an unclosable need that also invited a builder to ship an error path over working analysis. The mechanism and the residual diagnostic ask are recorded in the survivor's decision log.",
       "score": 13.862944,
       "path": "docs/re-needs/rejected/batch-decompilation-succeeds-bodies.md"
+    },
+    {
+      "need_id": "default-memmove-call-writes",
+      "title": "Default memmove call writes to zero instead of the destination parameter",
+      "track": "quality",
+      "status": "rejected",
+      "severity": "major",
+      "probe_id": "p-18068442ae53",
+      "acceptance_id": "a-f88ffa89ede1",
+      "hypothesis_status": "overturned",
+      "credibility": 0.7,
+      "instances": 1,
+      "challenges": [
+        "640a526833c5d447bc761899"
+      ],
+      "rounds": [
+        8
+      ],
+      "first_seen_round": 8,
+      "attempts": 0,
+      "covered_by_option": null,
+      "touches": [
+        "decompiler/crates/kuna-decomp"
+      ],
+      "scope": "small",
+      "regression_of": null,
+      "pr": null,
+      "closed_in_round": null,
+      "closing_pr": null,
+      "reject_reason": "duplicate of string-copy-destination-incorrectly: the same KeyCheker.exe challenge, sub_140002240 command, target, probe, and acceptance were already filed in round 3. PR #575 closes the shared resolver-address defect; retain the earlier filing as the canonical closure and preserve this later filing only in the rejected ledger.",
+      "score": 13.862944,
+      "path": "docs/re-needs/rejected/default-memmove-call-writes.md"
     }
   ]
 }
