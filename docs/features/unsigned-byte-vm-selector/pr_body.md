@@ -33,4 +33,5 @@ switch(v16) {
 The exact fixture acceptance now requires `case 0x8b`, and 37 focused tests
 cover unsigned and signed selectors, conflicting evidence, extension paths,
 and narrowing controls. The stage and promoted CLI suites pass 824/824 and
-157/157; catalog, strict spec, counters, and merge guards are also green.
+158/158; catalog, strict spec, counters, and merge guards are also green. PR
+#613 closes RE need `unsigned-byte-vm-selector` in round 12.

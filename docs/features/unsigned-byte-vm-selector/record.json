@@ -1,4 +1,8 @@
 {
+  "need_id": "unsigned-byte-vm-selector",
+  "pr": 613,
+  "pr_url": "https://github.com/Noelo-Lab/kuna/pull/613",
+  "closed_in_round": 12,
   "opportunity": "unsigned-byte-vm-selector::sub_12d0",
   "test_name": "RE-friction unsigned-byte-vm-selector exact fixture, acceptance, and two-pass stage control",
   "binary": "decompiler/crates/kuna-analysis/tests/fixtures/katavm_level1_x86_64",
@@ -29,19 +33,20 @@
     "policy": "loweredswitchlabels off restores legacy labels; loweredswitch off retains the original comparison chain"
   },
   "gates": {
-    "base": "rebased onto serialized main 510f90b32e35f6802309d1a8768540dbbe01821b (#610, containing #609, #607, and #608)",
+    "base": "rebased onto serialized main 47be3d7171db0151f8d8d2752207a74564bc08ae (#616 repair, containing #611, #610, #609, #607, and #608)",
     "make test": "PRE-REBASE candidate: 675/675 PARITY OK with docs/baseline.json unchanged; not repeated in the post-#608 worker gate set",
-    "make test-stages": "824/824 PARITY OK; exact regeneration from inherited 819 plus the five new exact-fixture assertions",
-    "make rust-test": "POST-REPAIR PRE-#609 CODE HEAD: the sole fresh full run on frozen ee57e72c passed 6719 / failed 0 / ignored 38 across 400 result blocks; workspace.log SHA-256 235d63c5fff3ef72c596e7833400c3f3519dae9a39d4f1860b1402067c6a8f45; archive SHA-256 dc7a4766f5858729e27a533be3265dc13827b259111296a1398c06fb5f3d3bc0. #609 adds only reviewed Objective-C test/CLI/need metadata and fixture changes, while #610 adds only RE-needs ledger composition; all feature and engine blobs remain byte-identical after rebase, so this transfers as code-head evidence. Hosted full CI is still required on the exact final head before merge.",
-    "make test-cli": "157/157 passed on the post-#609 composition",
-    "focused loweredswitch": "37/37 passed (prior 35 plus strict and option-off shrinking-SUBPIECE adversarial controls)",
-    "make check-spec": "OK in lenient and strict modes",
-    "kuna catalog --check": "catalog OK",
+    "make test-stages": "EXACT POST-#616 CODE HEAD: 824/824 PARITY OK; regenerated baseline is byte-identical with SHA-256 15dce3b4a2312c50e3885327623ec16234cadfba3085c62fe82f1da0a24d46f2.",
+    "make rust-test": "POST-REPAIR PRE-#609 CODE HEAD: the sole fresh full run on frozen ee57e72c passed 6719 / failed 0 / ignored 38 across 400 result blocks; workspace.log SHA-256 235d63c5fff3ef72c596e7833400c3f3519dae9a39d4f1860b1402067c6a8f45; archive SHA-256 dc7a4766f5858729e27a533be3265dc13827b259111296a1398c06fb5f3d3bc0. #609 adds reviewed Objective-C test/CLI/need metadata and fixture changes, #610 adds RE-needs ledger composition, and #616 repairs #611's build-identity CLI/console/harness implementation, tests, and docs. Every unsigned-feature and decompiler-engine blob remains byte-identical after rebase, so the archived run transfers only as unsigned feature-code evidence; hosted full CI is required on the exact final combined head before merge.",
+    "make test-cli": "EXACT POST-#616 CODE HEAD: 158/158 passed; the current corpus was independently derived as 158 JSON probes, including exact default-on and option-off selector/label bindings.",
+    "focused loweredswitch": "EXACT POST-#616 CODE HEAD: 37/37 passed (prior 35 plus strict and option-off shrinking-SUBPIECE adversarial controls).",
+    "make check-spec": "EXACT POST-#616 CODE HEAD: OK in lenient and strict modes",
+    "kuna catalog --check": "EXACT POST-#616 CODE HEAD: catalog OK; catalog byte compatibility 5/5",
     "counters": "no drift: 193 settables, tiers 62/72/59, 281 corpus files, next ElementId 4166",
-    "acceptance": "1/1 pass; transition closed, regressed 0",
+    "acceptance": "EXACT POST-#616 CODE HEAD: 1/1 passed for three repetitions; unchanged closed, regressed 0",
     "exact fixture": "SHA-256 95c300aedc728b643bf97c39b5e8db88e9ddc40bf4cf337cd6c777929684a5f9, 28682 bytes",
     "loweredswitch off": "no switch; unsigned char v17 and if (v17 != 0x8b) retained",
-    "unsafe audit": "no unsafe added; generic P9 numeric printer untouched"
+    "unsafe audit": "no unsafe added; generic P9 numeric printer untouched",
+    "post-#616 integration": "#609 Objective-C 3/3; #616 fingerprint unit/console/harness/CLI 5/5, 2/2, 1/1, and 6/6; all 15 non-history #616 repair blobs equal the base and history composes additively; the RE-needs sparse comparison preserves every non-target row and changes only this row plus by_status; mergecheck has 0 rejects. Hosted full CI is the exact combined-head workspace gate."
   },
   "speed_off_ms": 1239.06,
   "speed_on_ms": 1052.72,

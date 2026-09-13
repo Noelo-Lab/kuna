@@ -35,8 +35,9 @@ c3
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="UNSIGNED-BYTE-VM-SELECTOR #1: the selector declaration remains in both passes" min="2" max="2">v16;</stringmatch>
-<stringmatch name="UNSIGNED-BYTE-VM-SELECTOR #2: recovered switch remains in both passes" min="2" max="2">switch\(v[0-9]+\)</stringmatch>
+  <!-- The raw stage console spells the CLI's `unsigned char` as `uint1`. -->
+  <stringmatch name="UNSIGNED-BYTE-VM-SELECTOR #1: the selector declaration remains in both passes" min="2" max="2">uint1\s+v16;</stringmatch>
+  <stringmatch name="UNSIGNED-BYTE-VM-SELECTOR #2: recovered switch remains in both passes" min="2" max="2">switch\(v16\)</stringmatch>
 <stringmatch name="UNSIGNED-BYTE-VM-SELECTOR #3: low case remains in both passes" min="2" max="2">case 0x1e:</stringmatch>
 <stringmatch name="UNSIGNED-BYTE-VM-SELECTOR #4: off reproduces the impossible negative label" min="1" max="1">case -0x75:</stringmatch>
 <stringmatch name="UNSIGNED-BYTE-VM-SELECTOR #5: default preserves the unsigned label" min="1" max="1">case 0x8b:</stringmatch>

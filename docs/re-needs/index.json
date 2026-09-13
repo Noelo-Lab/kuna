@@ -5,8 +5,8 @@
   "rejected_count": 2,
   "by_status": {
     "blocked": 1,
-    "closed": 161,
-    "open": 34
+    "closed": 162,
+    "open": 33
   },
   "by_track": {
     "loader": 10,
@@ -4482,7 +4482,7 @@
       "need_id": "unsigned-byte-vm-selector",
       "title": "Unsigned-byte VM selector gets an unreachable negative case label",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
       "probe_id": "p-541ad2bd1eb0",
       "acceptance_id": "a-813d10d96aa3",
@@ -4493,10 +4493,11 @@
         "605443e333c5d42c3d016f59"
       ],
       "rounds": [
-        4
+        4,
+        12
       ],
       "first_seen_round": 4,
-      "attempts": 0,
+      "attempts": 1,
       "covered_by_option": "loweredswitchlabels",
       "touches": [
         "decompiler/crates/kuna-decomp/src/p2_lift/kuna_loweredswitch.rs",
@@ -4505,11 +4506,11 @@
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": "https://github.com/Noelo-Lab/kuna/pull/613",
+      "closed_in_round": 12,
+      "closing_pr": "613",
       "reject_reason": null,
-      "score": 13.862944,
+      "score": 9.241962,
       "path": "docs/re-needs/unsigned-byte-vm-selector.md"
     },
     {

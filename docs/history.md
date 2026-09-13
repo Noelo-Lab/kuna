@@ -306,10 +306,19 @@ is 157/157. The sole fresh post-repair full run on frozen pre-#609 code head
 `235d63c5fff3ef72c596e7833400c3f3519dae9a39d4f1860b1402067c6a8f45` and
 its archive SHA-256 is
 `dc7a4766f5858729e27a533be3265dc13827b259111296a1398c06fb5f3d3bc0`.
-The later rebase onto `252bd33c` (#609) preserves every feature and engine blob
-byte for byte and adds only reviewed Objective-C test/CLI/need metadata and
-fixture changes. The full therefore transfers as code-head evidence; hosted
-full CI remains required on the exact final head before merge.
+The later rebase onto `47be3d71` (#616, containing #611, #610 and #609)
+preserves every unsigned-feature and decompiler-engine blob byte for byte.
+#609 adds reviewed Objective-C test/CLI/need metadata and fixture changes, #610
+changes only RE-needs ledger composition, and #616 repairs #611's
+build-identity CLI/console/harness implementation, tests and docs. On the exact
+rebased code head, focused tests are 37/37, stages are 824/824 with a
+byte-identical regenerated baseline, CLI is 158/158, #609 Objective-C is 3/3,
+and #616's fingerprint unit/console/harness/CLI tests are 5/5, 2/2, 1/1 and
+6/6. The archived full therefore transfers only as unsigned feature-code
+evidence, while hosted full CI covers the exact final combined head. PR #613
+closes `unsigned-byte-vm-selector` in round 12 with probe
+`p-541ad2bd1eb0`, acceptance `a-813d10d96aa3`, and covering option
+`loweredswitchlabels`.
 
 **DIV-172 follow-up.** The original source identity covered only the `kuna-console`
 graph and `Cargo.lock`. It now uses a separate graph for each child:

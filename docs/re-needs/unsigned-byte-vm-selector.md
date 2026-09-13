@@ -2,7 +2,7 @@
 need_id: unsigned-byte-vm-selector
 title: Unsigned-byte VM selector gets an unreachable negative case label
 track: quality
-status: open
+status: closed
 severity: major
 probe_id: p-541ad2bd1eb0
 acceptance_id: a-813d10d96aa3
@@ -10,16 +10,16 @@ hypothesis_status: upheld
 credibility: 0.7
 instances: 1
 challenges: [605443e333c5d42c3d016f59]
-rounds: [4]
+rounds: [4, 12]
 first_seen_round: 4
-attempts: 0
+attempts: 1
 covered_by_option: loweredswitchlabels
 touches: [decompiler/crates/kuna-decomp/src/p2_lift/kuna_loweredswitch.rs, decompiler/crates/kuna-decomp/src/p2_lift/kuna_loweredswitchlabels.rs, decompiler/crates/kuna-decomp/src/substrate/funcdata_block.rs]
 scope: small
 regression_of: null
-pr: null
-closed_in_round: null
-closing_pr: null
+pr: https://github.com/Noelo-Lab/kuna/pull/613
+closed_in_round: 12
+closing_pr: "613"
 reject_reason: null
 ---
 
@@ -122,3 +122,5 @@ _none recorded_
 - candidate builder: vendored the exact 28,682-byte witness unchanged and retargeted both arms to its in-repo path so the probes are runnable without the private dataset.
 - candidate builder: changed the reproduction command to explicit `--option loweredswitchlabels off`, which preserves the historical negative-label behavior after the default-on repair, and strengthened acceptance to require `case 0x8b` while forbidding a negative case on the unsigned-byte switch. Because command/expect identity changed, the derived IDs move from `p-ada30c2012ba` / `a-08dc77c2147e` to `p-541ad2bd1eb0` / `a-813d10d96aa3`.
 - candidate builder: corrected `covered_by_option` and `touches` to the P2 recovery/metadata path; the generic P9 numeric printer remains untouched.
+- closed: acceptance a-813d10d96aa3 now PASSES at e2ae3f1b3a19
+- round 12 CLOSURE (PR #613): acceptance `a-813d10d96aa3` passes three repetitions on the exact 28,682-byte fixture and `p-541ad2bd1eb0` remains the option-off reproduction, now also pinned as a permanent executable CLI control. `loweredswitchlabels off` restores `case -0x75`; `loweredswitch off` removes the switch and restores `if (v17 != 0x8b)`. The rebased focused suite is 37/37, stages 824/824 with an exact regenerated baseline, CLI 158/158, and the catalog, strict spec, derived counters, and merge guards are green.
