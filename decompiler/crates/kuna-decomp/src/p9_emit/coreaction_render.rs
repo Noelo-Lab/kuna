@@ -1524,7 +1524,7 @@ impl Action for ActionRestructureVarnode {
         let aliasyes = self.numpass != 0;
         // l1->restructureVarnode(aliasyes): re-derive the stack-frame layout from
         // the live (stack, off) Varnodes that RuleLoad/StoreVarnode produced.
-        data.restructure_varnode(aliasyes);
+        count += data.restructure_varnode(aliasyes);
         // syncVarnodesWithSymbols(l1, /*updateDatatypes*/false, aliasyes): paint
         // mapped/addrtied flags onto the promoted Varnodes from the symbol map.
         if data.sync_varnodes_with_symbols(false, aliasyes) {

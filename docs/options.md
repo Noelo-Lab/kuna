@@ -544,6 +544,10 @@ Three tiers:
 | a variadic call renders with only its register arguments after the format string | [`cookiescramble`](#cookiescramble) |
 | a value stored to [rsp+0x20] right before a call never reaches the call | [`cookiescramble`](#cookiescramble) |
 | an argument-producing store survives as a dead assignment to a stack local | [`cookiescramble`](#cookiescramble) |
+| a pointer loop over a stack buffer ends at the address of an unrelated local (`while (v3 != v2)`) | [`endptrbound`](#endptrbound) |
+| a loop's `while (p != vN)` names a local declared at the stack offset just past the buffer the loop reads | [`endptrbound`](#endptrbound) |
+| an 8-byte stack buffer splits into two `unsigned int` scalars written as `v1._0_4_` and `v1._4_4_` | [`endptrbound`](#endptrbound) |
+| the walking pointer is typed after the neighbouring local instead of the bytes it reads | [`endptrbound`](#endptrbound) |
 | decompilation aborts with 'Unable to find unique hash for varnode' | [`dynamichashmax`](#dynamichashmax) |
 | dense unrolled simd/neon loop (aarch64, go) fails to decompile at symbol mapping | [`dynamichashmax`](#dynamichashmax) |
 | loop walks an array with a raw offset accumulator (iVar += 0x414) instead of an index | [`arraystride`](#arraystride) |
@@ -1943,6 +1947,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default (DIV-126). With it OFF, `xor rax,rsp` in an MSVC /GS prologue makes the raw stack pointer an escape site at frame offset 0, so `hasLocalAlias` answers yes for every stack location in the function and `checkInputTrialUse` scores every stack-passed call argument no-use: calls in /GS-protected functions truncate at the register budget (x86-64 Windows: four arguments), the variable tail of a `...` prototype never appears, and the dropped argument's computation is dead-code eliminated. GCC/Clang read the cookie from %fs:0x28 and never touch the stack pointer, so the flip is inert on ELF corpora. Flip OFF to restore upstream `gatherAdditiveBase` for a bisect or an ablation.
 - **Where / provenance:** P6/alias-facets · ghidra-upstream · correctness-fix · re-needs-variadic-prototype-still-drops
 - **Example:** `option cookiescramble off`
+
+### `endptrbound` -- on | off, default `on`
+
+- **Symptoms:** a pointer loop over a stack buffer ends at the address of an unrelated local (`while (v3 != v2)`); a loop's `while (p != vN)` names a local declared at the stack offset just past the buffer the loop reads; an 8-byte stack buffer splits into two `unsigned int` scalars written as `v1._0_4_` and `v1._4_4_`; the walking pointer is typed after the neighbouring local instead of the bytes it reads.
+- **What it does:** Recover a stack buffer walked by a pointer loop as one array spanning the walk, and express the loop's one-past-the-end bound on that buffer (`&buf[8]`) instead of as the address of whichever local happens to follow it.
+- **When to flip:** On by default. With it OFF, `for (p = buf; p != buf + 8; p++)` over a stack buffer renders its bound as the next local (`while (v3 != v2)`), so the trip count is not readable from the C; the neighbour's pointer type leaks into the walking pointer, and the walked bytes split into unrelated scalars (`unsigned int v1; ... v1._4_4_ = ...`). The walk is recognized only when the pointer starts at a stack address, steps by a constant, is dereferenced with exactly that width, and is compared (==, != or <) against a stack address a whole number of steps later; a frame hint that straddles the range, is type-locked, or holds a typed non-constant value vetoes it. Flip OFF to see the frame layout without the walk extent, for a bisect or an ablation.
+- **Where / provenance:** P6/stack-frame-layout · kuna · structure-recovery · GH-468
+- **Example:** `option endptrbound off`
 
 ### `dynamichashmax` -- on | off, default `on`
 

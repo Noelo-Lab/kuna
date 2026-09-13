@@ -464,6 +464,48 @@ failure mode is tolerance, not an abort — the layout keeps the conceded
 unknowns (upstream additionally emits a "Could not reconcile some variable
 overlaps" warning header; kuna stubs that diagnostic).
 
+**A pointer walk's buffer and its end bound (kuna `endptrbound`, default on).**
+A loop that walks a stack buffer with a pointer stops on the address one past
+the buffer's last element, and nothing in the hint sources above says that
+address belongs to the buffer. It is a spacebase-relative constant like any
+other, so type propagation resolves it to whatever Symbol starts there — the
+next local — and the bound renders as that local (`while (p != v2)`). The
+comparison then pulls the neighbour's pointer type into the walking pointer,
+the open hint the walk contributes takes that type, and the walked bytes merge
+into a scalar of the neighbour's width that the function writes piecewise
+(`unsigned int v1; ... v1._4_4_ = ...`). The trip count, which is the buffer
+size, is not recoverable from the C.
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_endptrbound.rs
+(find_pointer_walks)` recognizes the walk during `restructure_varnode`: a
+`MULTIEQUAL` whose inputs are one stack address `start` and the phi itself plus
+a positive constant `step` (looking through casts, copies and INDIRECT effects),
+dereferenced by a LOAD or STORE exactly `step` bytes wide, and compared by
+`==`, `!=` or `p < end` — either before or after the increment — against a stack
+address `end` at least two steps and a whole number of steps later. A bound held
+in a loop-invariant variable is followed back through its phi to the address
+that seeds it. For each walk, `kuna_endptrbound.rs (coalesce_hints)` runs after
+gathering and before the layout decision and replaces every hint that starts
+inside `[start, end)` with one fixed hint for an array of `(end - start) / step`
+elements, typed by the most specific `step`-wide scalar hint already in the
+range (so a `char` walk stays `char` and constant-sequence recovery still sees a
+character array) or by the unknown type of that width. The walk contributes
+nothing when that would contradict other evidence: a hint that straddles either
+edge, a type-locked Symbol, a fixed hint holding a typed value that is not a
+constant initializer, open-hint index evidence reaching past either edge, or a
+range outside the analyzed window. Overlapping walks are resolved widest-first
+from each start. Once the layout holds an array Symbol that covers exactly
+`[start, end)`, `kuna_endptrbound.rs (rebase_bounds)` rebuilds the compared
+address as `PTRSUB(sp, start) + (end - start)`, which renders `&buf[n]` — the
+array's slack makes the form stable against `RulePtrsubUndo`. The rewrite is
+made at the address's defining op when every use of it ends at that comparison
+(through casts, copies, INDIRECTs and phis), so a source-level `end` variable
+reads `end = &buf[8]`; otherwise a fresh expression is spliced in front of the
+comparison alone, and an address that also means the neighbour elsewhere — the
+same register handed to a call as that object — keeps naming the neighbour
+there. The value compared never changes, and a rewrite is counted as a change of
+`ActionRestructureVarnode` so the next inference pass types it. `option
+endptrbound off` restores the neighbour-bound layout.
+
 **Alias blocking.** The `varmap.rs (AliasChecker)` collects every pointer
 into the stack by walking additive expressions rooted at the spacebase input
 (`funcdata_spacebase.rs (Funcdata::gather_additive_base)`), converts each to a

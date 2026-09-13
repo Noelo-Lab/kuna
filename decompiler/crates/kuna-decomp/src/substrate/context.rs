@@ -866,6 +866,10 @@ pub struct ArchContext {
     /// Read by [`Funcdata::gather_additive_base`](crate::funcdata_spacebase)
     /// through [`crate::p6_variables::kuna_cookiescramble::is_escape_site`].
     pub cookie_scramble: bool,
+    /// (kuna) a stack pointer walk's one-past-the-end bound is expressed on the
+    /// walked buffer, which is recovered as one array (`endptrbound`).  Read by
+    /// [`crate::p6_variables::kuna_endptrbound::gather_walks`].
+    pub end_ptr_bound: bool,
     /// (kuna) read the caller's own stack discipline for the argument bytes a
     /// callee pops (`calleepop`).  Read by
     /// [`StackSolver::build`](crate::coreaction_stackptr) through
@@ -1482,6 +1486,9 @@ impl ArchContext {
             // cookiescramble only ever REMOVES a false escape site, so the
             // hand-built-fixture seam carries the same default the real path does.
             cookie_scramble: true,
+            // endptrbound only re-expresses an address the walk already compares
+            // against, so the fixture seam carries the real default.
+            end_ptr_bound: true,
             // calleepop only refines a guess the solver already had to make, so
             // the hand-built-fixture seam carries the same default.
             callee_pop: true,

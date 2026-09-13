@@ -2484,6 +2484,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "endptrbound"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P6"
+subphase = "stack-frame-layout"
+strength = "HARD"
+rewind = "P6"
+issue = "GH-468"
+summary = "Recover a stack buffer walked by a pointer loop as one array spanning the walk, and express the loop's one-past-the-end bound on that buffer (`&buf[8]`) instead of as the address of whichever local happens to follow it."
+use_when = "On by default. With it OFF, `for (p = buf; p != buf + 8; p++)` over a stack buffer renders its bound as the next local (`while (v3 != v2)`), so the trip count is not readable from the C; the neighbour's pointer type leaks into the walking pointer, and the walked bytes split into unrelated scalars (`unsigned int v1; ... v1._4_4_ = ...`). The walk is recognized only when the pointer starts at a stack address, steps by a constant, is dereferenced with exactly that width, and is compared (==, != or <) against a stack address a whole number of steps later; a frame hint that straddles the range, is type-locked, or holds a typed non-constant value vetoes it. Flip OFF to see the frame layout without the walk extent, for a bisect or an ablation."
+example = "option endptrbound off"
+source_decompiler = "kuna"
+inspiration = "GH-468 finding 7: a Win64 crackme's 8-byte password loop `lea rsi,[rbp+0x27] ... lea rax,[rbp+0x2f]; cmp rsi,rax` rendered `do { ... } while (v12 != v11);`"
+change_kind = "structure-recovery"
+tier = "core"
+symptoms = "a pointer loop over a stack buffer ends at the address of an unrelated local (`while (v3 != v2)`)|a loop's `while (p != vN)` names a local declared at the stack offset just past the buffer the loop reads|an 8-byte stack buffer splits into two `unsigned int` scalars written as `v1._0_4_` and `v1._4_4_`|the walking pointer is typed after the neighbouring local instead of the bytes it reads"
+live_field = "end_ptr_bound"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "dynamichashmax"
 values = "on|off"
 default = "on"

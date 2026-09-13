@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    819,
-    819
+    825,
+    825
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -133,6 +133,12 @@
     "data:EMPTYSTRCONST #2: an ordinary short literal beside it is untouched, in both passes",
     "data:EMPTYSTRCONST #3: a GENUINE empty literal, one that sits inside a run of string data, keeps its quotes in both passes",
     "data:EMPTYSTRCONST #4: emptystrconst off restores the empty-literal form for the blob (the filed bug), exactly once",
+    "data:ENDPTRBOUND #1: off, the loop bound is the object that follows the buffer",
+    "data:ENDPTRBOUND #2: off, the walking pointer is typed after that neighbour",
+    "data:ENDPTRBOUND #3: on, the walked bytes are one 8-byte buffer",
+    "data:ENDPTRBOUND #4: on, the bound is one past that buffer",
+    "data:ENDPTRBOUND #5: on, the call argument that means the neighbour still names it",
+    "data:ENDPTRBOUND #6: both passes, a store straddling the walk's end vetoes the buffer",
     "data:ENTRYRETDISPATCH #1: the default pass recovers the helper call while option off does not",
     "data:ENTRYRETDISPATCH #2: both passes retain one ordinary function return",
     "data:ENTRYTHUMBFLOW #1: off, the Thumb entry decodes as A32 and returns nothing",
