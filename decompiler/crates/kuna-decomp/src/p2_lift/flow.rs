@@ -369,7 +369,6 @@ pub trait FlowEnvironment {
         _fd: &Funcdata,
         _op: OpId,
         _dest: &Address,
-        _branch_override_applied: bool,
     ) -> bool {
         false
     }
@@ -633,6 +632,30 @@ pub struct FlowInfo<'a, E: FlowEnvironment> {
     /// the SAME entry must `cancel_inject_id` so the injection does not recurse.
     /// `None` outside a call-fixup injection (the user-op path passes NULL `fc`).
     injecting_entry: Option<Address>,
+}
+
+/// Apply explicit-flow precedence before consulting either inferred tail-call
+/// rule. The closures keep both classifiers lazy: an applied `BRANCH` fact does
+/// not merely discard their answers, it prevents them from running at all.
+pub(crate) fn select_inferred_tail_call<J, F>(
+    branch_override_applied: bool,
+    tailcalljump: J,
+    tailcallframe: F,
+) -> Option<&'static str>
+where
+    J: FnOnce() -> bool,
+    F: FnOnce() -> bool,
+{
+    if branch_override_applied {
+        return None;
+    }
+    if tailcalljump() {
+        return Some("tailcalljump");
+    }
+    if tailcallframe() {
+        return Some("tailcallframe");
+    }
+    None
 }
 
 impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
@@ -1482,17 +1505,11 @@ following this call as a branch"
             .get(op)
             .expect("tail_call_kind: stale op")
             .get_addr();
-        let branch_override_applied = self.applied_branch_overrides.contains(site);
-        if self
-            .env
-            .is_tail_call_branch(&self.data, op, dest, branch_override_applied)
-        {
-            return Some("tailcalljump");
-        }
-        if self.env.is_frame_teardown_tail_call(&self.data, op, dest) {
-            return Some("tailcallframe");
-        }
-        None
+        select_inferred_tail_call(
+            self.applied_branch_overrides.contains(site),
+            || self.env.is_tail_call_branch(&self.data, op, dest),
+            || self.env.is_frame_teardown_tail_call(&self.data, op, dest),
+        )
     }
 
     /// Generate p-code for a single machine instruction and process discovered

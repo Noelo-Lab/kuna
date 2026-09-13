@@ -71,7 +71,7 @@ fn gate_off_returns_false() {
     let mut fd = build_fd();
     let op = build_branch_op(&mut fd, OpCode::CPUI_BRANCH, 0x18d0);
     // gate=false: default-pipeline byte-identical, never fires.
-    assert!(!kuna_is_tail_call_branch(&fd, op, false, true, false, false));
+    assert!(!kuna_is_tail_call_branch(&fd, op, false, true, false));
 }
 
 #[test]
@@ -80,7 +80,7 @@ fn direct_branch_to_known_function_fires() {
     let op = build_branch_op(&mut fd, OpCode::CPUI_BRANCH, 0x18d0);
     // The canonical `jmp setlocale@plt` tail-jump shape: a direct BRANCH whose
     // target is another known function's entry.
-    assert!(kuna_is_tail_call_branch(&fd, op, true, true, false, false));
+    assert!(kuna_is_tail_call_branch(&fd, op, true, true, false));
 }
 
 #[test]
@@ -93,7 +93,14 @@ fn exact_branch_override_vetoes_tail_call_reinterpretation() {
 
     // `flow <site> branch` says that this instruction is intraprocedural.  A
     // known destination must not let the lower-priority inference undo it.
-    assert!(!kuna_is_tail_call_branch(&fd, op, true, true, false, true));
+    assert_eq!(
+        crate::flow::select_inferred_tail_call(
+            true,
+            || kuna_is_tail_call_branch(&fd, op, true, true, false),
+            || true,
+        ),
+        None
+    );
 }
 
 #[test]
@@ -106,7 +113,14 @@ fn branch_override_at_another_instruction_does_not_veto_tail_call() {
         crate::overrides::flow_type::BRANCH,
     );
 
-    assert!(kuna_is_tail_call_branch(&fd, op, true, true, false, false));
+    assert_eq!(
+        crate::flow::select_inferred_tail_call(
+            false,
+            || kuna_is_tail_call_branch(&fd, op, true, true, false),
+            || false,
+        ),
+        Some("tailcalljump")
+    );
 }
 
 #[test]
@@ -118,7 +132,14 @@ fn non_branch_override_at_same_instruction_does_not_veto_tail_call() {
         .insert_flow_override(site, crate::overrides::flow_type::CALL);
 
     // Only the semantically contradictory BRANCH assertion owns precedence.
-    assert!(kuna_is_tail_call_branch(&fd, op, true, true, false, false));
+    assert_eq!(
+        crate::flow::select_inferred_tail_call(
+            false,
+            || kuna_is_tail_call_branch(&fd, op, true, true, false),
+            || false,
+        ),
+        Some("tailcalljump")
+    );
 }
 
 #[test]
@@ -130,7 +151,14 @@ fn unapplied_branch_fact_does_not_veto_tail_call() {
         .insert_flow_override(site, crate::overrides::flow_type::BRANCH);
 
     // A raw fact that the follower refused must not change control flow.
-    assert!(kuna_is_tail_call_branch(&fd, op, true, true, false, false));
+    assert_eq!(
+        crate::flow::select_inferred_tail_call(
+            false,
+            || kuna_is_tail_call_branch(&fd, op, true, true, false),
+            || false,
+        ),
+        Some("tailcalljump")
+    );
 }
 
 #[test]
@@ -139,7 +167,7 @@ fn target_not_a_known_function_returns_false() {
     let op = build_branch_op(&mut fd, OpCode::CPUI_BRANCH, 0x1100);
     // An ordinary intraprocedural jump targets a mid-function address (no
     // function entry there) -> not a tail call.
-    assert!(!kuna_is_tail_call_branch(&fd, op, true, false, false, false));
+    assert!(!kuna_is_tail_call_branch(&fd, op, true, false, false));
 }
 
 #[test]
@@ -147,7 +175,7 @@ fn self_tail_recursion_excluded() {
     let mut fd = build_fd();
     let op = build_branch_op(&mut fd, OpCode::CPUI_BRANCH, 0x1000);
     // dest == the current function's own entry: left as an ordinary back-edge.
-    assert!(!kuna_is_tail_call_branch(&fd, op, true, true, true, false));
+    assert!(!kuna_is_tail_call_branch(&fd, op, true, true, true));
 }
 
 #[test]
@@ -155,7 +183,7 @@ fn indirect_branch_returns_false() {
     let mut fd = build_fd();
     // A BRANCHIND (indirect jump) is not a direct tail-call jmp.
     let op = build_branch_op(&mut fd, OpCode::CPUI_BRANCHIND, 0x18d0);
-    assert!(!kuna_is_tail_call_branch(&fd, op, true, true, false, false));
+    assert!(!kuna_is_tail_call_branch(&fd, op, true, true, false));
 }
 
 #[test]
@@ -163,7 +191,7 @@ fn call_returns_false() {
     let mut fd = build_fd();
     // A real CALL is already a call, not a jump to recover.
     let op = build_branch_op(&mut fd, OpCode::CPUI_CALL, 0x18d0);
-    assert!(!kuna_is_tail_call_branch(&fd, op, true, true, false, false));
+    assert!(!kuna_is_tail_call_branch(&fd, op, true, true, false));
 }
 
 #[test]

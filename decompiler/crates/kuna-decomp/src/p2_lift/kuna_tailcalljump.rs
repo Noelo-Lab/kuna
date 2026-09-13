@@ -107,10 +107,6 @@ impl TailCallJumpOption {
 ///   - `!dest_is_self` — the target is NOT the current function's own entry
 ///     (self-tail-recursion is left as an ordinary back-edge to keep the CFG
 ///     surgery narrow).
-///   - the instruction does NOT have a successfully applied, exact-address
-///     `BRANCH` flow override. Such an override is the caller's explicit
-///     intraprocedural classification, whereas tail-call recovery would
-///     reinterpret the same op as a call. Refused override facts do not count.
 ///
 /// A direct branch to another function's *entry* is, by definition, a tail call;
 /// ordinary intraprocedural jumps target mid-function addresses (no function
@@ -125,7 +121,6 @@ pub fn kuna_is_tail_call_branch(
     gate: bool,
     dest_is_known_function: bool,
     dest_is_self: bool,
-    branch_override_applied: bool,
 ) -> bool {
     // gate (default-off opt-in)
     if !gate {
@@ -142,9 +137,6 @@ pub fn kuna_is_tail_call_branch(
     };
     // a direct jump only
     if opref.code() != OpCode::CPUI_BRANCH {
-        return false;
-    }
-    if branch_override_applied {
         return false;
     }
     true

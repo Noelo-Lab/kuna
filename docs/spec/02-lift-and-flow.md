@@ -372,7 +372,9 @@ entry of a *known function* (including a PLT thunk) that is not the current
 function's own entry is a tail call, unless an exact-address `flow ... branch`
 override has already classified the instruction as intraprocedural. The explicit
 classification owns precedence over the inferred call; an override at another
-instruction or of another kind does not suppress recovery. The rewrite lives in the BRANCH arm of
+instruction or of another kind does not suppress recovery. This precedence is
+resolved before either `tailcalljump` or `tailcallframe` is consulted. The
+rewrite lives in the BRANCH arm of
 `flow.rs (FlowInfo::xref_control_flow)`: the BRANCH becomes a CALL with a full
 call spec, an artificial RETURN is planted after it (unless the callee is
 no-return, whose halt was already planted), and a

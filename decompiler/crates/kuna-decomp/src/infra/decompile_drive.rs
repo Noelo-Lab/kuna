@@ -476,7 +476,6 @@ impl FlowEnvironment for ArchFlowEnv {
         fd: &Funcdata,
         op: crate::context::OpId,
         dest: &Address,
-        branch_override_applied: bool,
     ) -> bool {
         // (kuna) tee-O2 tail-jump: wire the ported `kuna_is_tail_call_branch`
         // predicate.  The gate is the architecture-owned `tail_call_jumps` flag
@@ -498,7 +497,6 @@ impl FlowEnvironment for ArchFlowEnv {
             arch.tail_call_jumps,
             dest_is_known_function,
             dest_is_self,
-            branch_override_applied,
         )
     }
 

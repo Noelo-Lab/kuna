@@ -147,7 +147,7 @@ resolves against.
 
 Vendored the challenge's exact 266,240-byte PE32/i386 witness and made an
 explicit, successfully applied `flow 0x40d126 branch` take precedence over the
-lower-priority `tailcalljump` inference at that same instruction. Provenance is
+lower-priority tail-call inference rules at that same instruction. Provenance is
 recorded during flow following, so a refused raw override fact, a BRANCH at
 another address, or another override kind cannot suppress tail-call recovery.
 
@@ -158,7 +158,8 @@ to `0xd70`. The promoted acceptance therefore requires the stable positive
 witnesses `0x40d12b` and downstream `sub_40d21e()`, plus absence of the broken
 `// tail-call` stub.
 
-Focused evidence is 11/11 tail-call classifier tests and 3/3 executable CLI
+Focused evidence includes tail-call classifier tests (with a positive
+`tailcallframe` teardown control) and 3/3 executable CLI
 tests. A release A/B against parent `5fb5b031` was byte-identical for no
 assertion, explicit `tailcalljump off`, and same-site `callreturn` controls; only
 the target BRANCH assertion changed, from the tail-call stub to the full body.
