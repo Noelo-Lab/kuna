@@ -531,6 +531,10 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // load-time gate read via the `kuna_pdatachained` env var (the entry oracles
     // run inside `load file`). Default-ON.
     "pdatachained",
+    // (kuna) x86-64 PE REX-prefixed import-thunk rejection: a load-time gate read
+    // via the `kuna_rexthunk` env var (import names are resolved inside `load
+    // file`). Default-ON.
+    "rexthunk",
     // (kuna) Degenerate-symbol-name repair: a load-time gate read via the
     // `kuna_symbolnamerepair` env var (the symbol table is installed inside
     // `load file`). Default-ON.
