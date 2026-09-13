@@ -151,6 +151,14 @@ lower-priority tail-call inference rules at that same instruction. Provenance is
 recorded during flow following, so a refused raw override fact, a BRANCH at
 another address, or another override kind cannot suppress tail-call recovery.
 
+The first implementation suppressed `tailcalljump` at the call site but still
+allowed selection to fall through to `tailcallframe`; review caught that the
+explicit assertion therefore did not own precedence over the whole inference
+family. The repair centralizes tail-call selection and returns before consulting
+either inference rule. A hand-built positive frame-teardown control proves that
+`tailcallframe` would otherwise fire and that the assertion suppresses both
+closures, not merely the rule exercised by this binary.
+
 The historical `0xd68` acceptance witness was presentation drift rather than a
 semantic invariant. PR #528's call-trampoline following correctly incorporated
 the return-address-discarding fragment into frame recovery and moved that local
