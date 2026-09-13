@@ -7,6 +7,7 @@ use kuna_console::assertions::{self, Body, Directive};
 use kuna_console::engine::{ConsoleProgram, EntrySelector, bootstrap_from_object};
 use kuna_console::project::decompile_targets;
 use kuna_decomp::decompile_drive::build_and_follow_flow;
+use kuna_decomp::flow::flow_flags;
 use kuna_decomp::op::pcodeop_flags;
 use kuna_num::opcodes::OpCode;
 use kuna_num::pcoderaw::VarnodeData;
@@ -249,23 +250,29 @@ fn byte_overlays_remain_exclusive_and_repeated_flows_use_current_bytes() {
 
 #[test]
 fn recovered_flow_contains_no_instructions_from_unmapped_padding() {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../kuna-analysis/tests/fixtures/mapped_flow_boundary_32.elf");
-    let mut prog = load(&path);
-    let entry = address(&prog, 0x10000);
-    let fd = build_and_follow_flow(prog.arch_mut(), "sample", entry, 0).unwrap();
-    let mut missing = 0;
-    for (seq, id) in fd.obank().iter_all() {
-        let offset = seq.get_addr().get_offset();
-        let op = fd.obank().get(id).unwrap();
-        if offset >= 0x1000f {
-            assert_eq!(offset, 0x1000f);
-            assert_eq!(op.code(), OpCode::CPUI_RETURN);
-            assert_ne!(op.get_halt_type() & pcodeop_flags::missing, 0);
-            missing += 1;
+    for data in [
+        &[0x85, 0xc0, 0x75, 6, 0xb8, 7, 0, 0, 0, 0xc3, 0xbb, 5, 0, 0, 0][..],
+        &[0x85, 0xc0, 0x75, 6, 0xb8, 7, 0, 0, 0, 0xc3, 0x85, 0xdb, 0x75, 2, 0x90, 0x90][..],
+    ] {
+        let path = fixture(&[(0x10000, data, data.len() as u32)]);
+        let mut prog = load(&path);
+        let entry = address(&prog, 0x10000);
+        let fd = build_and_follow_flow(prog.arch_mut(), "sample", entry, 0).unwrap();
+        let end = 0x10000 + data.len() as u64;
+        let mut missing = 0;
+        for (seq, id) in fd.obank().iter_all() {
+            let offset = seq.get_addr().get_offset();
+            let op = fd.obank().get(id).unwrap();
+            if offset >= end {
+                assert_eq!(offset, end);
+                assert_eq!(op.code(), OpCode::CPUI_RETURN);
+                assert_ne!(op.get_halt_type() & pcodeop_flags::missing, 0);
+                missing += 1;
+            }
         }
+        assert_eq!(missing, 1);
+        std::fs::remove_file(path).unwrap();
     }
-    assert_eq!(missing, 1);
 }
 
 #[test]
@@ -345,6 +352,33 @@ fn a_known_function_bound_precedes_an_unmapped_fallthrough() {
             .any(|c| c.text.contains("funcboundflow:"))
     );
     std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn declared_boundary_policy_precedes_mapping_recovery() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../kuna-analysis/tests/fixtures/mapped_flow_boundary_32.elf");
+    for enabled in [false, true] {
+        for policy in [flow_flags::error_outofbounds, 0, flow_flags::ignore_outofbounds] {
+            let mut prog = load(&path);
+            prog.arch_mut().mapped_flow_boundary = enabled;
+            prog.arch_mut().flowoptions |= policy;
+            let entry = address(&prog, 0x10000);
+            let result = build_and_follow_flow(prog.arch_mut(), "sample", entry, 15);
+            if policy == flow_flags::error_outofbounds {
+                let err = result.err().expect("declared boundary must be fatal");
+                assert!(err.explain().contains("Function flow out of bounds"), "{err:?}");
+            } else {
+                result.unwrap();
+            }
+            let comments = prog.arch().commentdb.comments();
+            assert_eq!(
+                comments.iter().any(|c| c.text.contains("Function flows out of bounds")),
+                policy == 0,
+            );
+            assert!(comments.iter().all(|c| !c.text.contains("unmapped memory")));
+        }
+    }
 }
 
 #[test]

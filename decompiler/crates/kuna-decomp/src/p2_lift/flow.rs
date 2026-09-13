@@ -1738,11 +1738,14 @@ truncating the fall-through here"
                     curaddr,
                 );
                 isfallthru = false;
-            } else if self.env.mapped_flow_image().is_some_and(
-                |image| !crate::kuna_mappedflowboundary::mapped_start(image, &next)
-            ) {
+            } else if self.baddr <= next
+                && next <= self.eaddr
+                && self.env.mapped_flow_image().is_some_and(|image| {
+                    !crate::kuna_mappedflowboundary::mapped_start(image, &next)
+                })
+            {
                 self.handle_unmapped_target(curaddr, &next);
-                self.unprocessed.push(next.clone());
+                self.register_missing_halt(&next)?;
                 self.outofbounds.insert(next);
                 isfallthru = false;
             } else {
@@ -2017,6 +2020,32 @@ truncating the fall-through here"
         })
     }
 
+    /// Register a resolvable cutoff before queued paths can reach it through NOPs.
+    fn register_missing_halt(&mut self, addr: &Address) -> KunaResult<()> {
+        if let Some(op) = self.visited.get(addr).and_then(|stat| {
+            if stat.seqnum.get_addr().is_invalid() {
+                None
+            } else {
+                self.data.obank().find_op(&stat.seqnum)
+            }
+        }) {
+            self.op_mark_start_basic(op);
+            return Ok(());
+        }
+        let op = self.artificial_halt(addr, pcodeop_flags::missing)?;
+        self.op_mark_start_basic(op);
+        self.op_mark_start_instruction(op);
+        let seq = self
+            .data
+            .obank()
+            .get(op)
+            .expect("missing halt: stale op")
+            .get_seq_num()
+            .clone();
+        self.visited.insert(addr.clone(), VisitStat { seqnum: seq, size: 1 });
+        Ok(())
+    }
+
     /// Fill-in artificial HALT p-code for `unprocessed` addresses (C++
     /// `fillinBranchStubs`, `flow.cc:891`).
     fn fillin_branch_stubs(&mut self) -> KunaResult<()> {
@@ -2024,9 +2053,6 @@ truncating the fall-through here"
         self.dedup_unprocessed();
         let addrs: Vec<Address> = self.unprocessed.clone();
         for addr in addrs {
-            let op = self.artificial_halt(&addr, pcodeop_flags::missing)?;
-            self.op_mark_start_basic(op);
-            self.op_mark_start_instruction(op);
             // (kuna) A caller-declared extent (`--define-function START-END`) is the
             // only thing that narrows the flow range, and a branch that leaves it
             // leaves an address the walk deliberately never decoded.  `collect_edges`
@@ -2040,14 +2066,11 @@ truncating the fall-through here"
             // exist does not, and resolving it to a halt would truncate a function
             // instead of reporting the defect.
             if self.outofbounds.contains(&addr) || self.funcbound_clips(&addr) {
-                let seq = self
-                    .data
-                    .obank()
-                    .get(op)
-                    .expect("fillin_branch_stubs: stale stub")
-                    .get_seq_num()
-                    .clone();
-                self.visited.insert(addr.clone(), VisitStat { seqnum: seq, size: 1 });
+                self.register_missing_halt(&addr)?;
+            } else {
+                let op = self.artificial_halt(&addr, pcodeop_flags::missing)?;
+                self.op_mark_start_basic(op);
+                self.op_mark_start_instruction(op);
             }
         }
         Ok(())

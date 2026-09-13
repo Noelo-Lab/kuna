@@ -154,11 +154,14 @@ Mapped-start truncation and genuine decode errors retain the existing error
 policies below; no loader error is converted wholesale into a successful halt.
 
 After effective flow classification, including flow overrides and no-return
-facts, an unmapped fall-through is recorded as unprocessed and out of bounds.
-The existing missing-halt and unmapped-flow warnings terminate that edge;
-other queued mapped paths still run. Known-function bounds take precedence,
-and explicit branches can cross gaps into mapped destinations. Branch probes
-also use this authoritative map, so a warmed zero-filled loader window cannot
+facts, an unmapped fall-through inside the declared flow range receives an
+immediately registered missing halt and the existing unmapped-flow warnings.
+Queued branches can resolve through already decoded p-code-free instructions
+to that halt, and later stub filling reuses it. Other queued mapped paths
+still run. Known-function bounds take precedence, and flow outside a declared
+range retains the caller's fatal, warning or ignore policy before mapping
+recovery. Explicit branches can cross gaps into mapped destinations. Branch
+probes also use this authoritative map, so a warmed zero-filled loader window cannot
 invent a mapped target. This recovers incomplete flow without inferring a
 different ISA or claiming that an unavailable path returns.
 

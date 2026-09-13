@@ -169,4 +169,6 @@ A script command may use `<com expecterror="true">...</com>` when failure is
 the regression witness (for example, the option-off pass). Its actual console
 error is included in the matchable output, and the next command runs. The
 command must fail; success is a file error. Unexpected errors still abort.
+Output and expected diagnostics remain matchable if the script closes its
+output redirect; capturing them does not reopen it.
 Use direct commands rather than nested `source` scripts with this attribute.

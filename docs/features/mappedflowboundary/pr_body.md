@@ -20,5 +20,5 @@ kuna decompile edge.elf 0x10000 --addr --json
 
 ## Tests
 
-Synthetic ELF32/64 recovery, partial instructions, loader padding, overlays,
-flow overrides, and wrong-ISA/external controls; off still fails the example.
+Synthetic ELF32/64 recovery, partial instructions, queued NOPs, declared ranges,
+overlays, flow overrides and closed output streams; wrong-ISA/external controls.

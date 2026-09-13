@@ -598,6 +598,7 @@ impl FunctionTestCollection {
         // C++: console->optr = &midBuffer (discarded); console->fileoptr = &bulkout.
         self.console.optr = String::new(); // midBuffer
         self.console.fileoptr = Some(FileOut::default()); // bulkout
+        let mut bulkout = String::new();
         if self.expected_errors.iter().any(|&expected| expected) {
             for &expected in &self.expected_errors {
                 if self.console.is_stream_finished() {
@@ -606,10 +607,18 @@ impl FunctionTestCollection {
                 self.console.write_prompt();
                 let before = self.console.optr.len();
                 execute(&mut self.console);
+                let redirected = if let Some(file) = self.console.fileoptr.as_mut() {
+                    bulkout.push_str(&std::mem::take(&mut file.contents));
+                    true
+                } else {
+                    bulkout.push_str(&self.console.optr[before..]);
+                    false
+                };
                 if expected {
                     if self.console.is_in_error() {
-                        self.console.fileoptr.as_mut().unwrap().contents
-                            .push_str(&self.console.optr[before..]);
+                        if redirected {
+                            bulkout.push_str(&self.console.optr[before..]);
+                        }
                         self.console.inerror = false;
                         self.console.done = false;
                     } else {
@@ -624,7 +633,9 @@ impl FunctionTestCollection {
         }
         // C++ restores console->optr = origStream; fileoptr = origStream.
         let mid_buffer = std::mem::take(&mut self.console.optr);
-        let bulkout = self.console.close_file_redirect().map(|f| f.contents).unwrap_or_default();
+        if let Some(file) = self.console.close_file_redirect() {
+            bulkout.push_str(&file.contents);
+        }
 
         // KUNA_DUMP triage hook (the C++ (kuna) addition), even on error.
         let mut results = String::new();

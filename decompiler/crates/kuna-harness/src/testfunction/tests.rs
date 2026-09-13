@@ -540,14 +540,19 @@ fn loss007_escaped_angle_brackets_match_literally() {
 
 #[test]
 fn expected_command_error_is_matchable_and_the_next_command_runs() {
-    let xml = synth_xml(&["next-command"], &[
-        ("expected-error", 1, 1, "No image loaded"),
-        ("continued", 1, 1, "next-command"),
-    ]).replace("<script>", "<script><com expecterror=\"true\">load function missing</com>");
-    let file = write_tmp("expected-error.xml", &xml);
-    let mut out = String::new();
-    run_test_files(&[file], &mut out);
-    assert!(out.contains("Total passing tests = 2"), "{out}");
+    for (script, diagnostic, count) in [
+        ("<com expecterror=\"true\">load function missing</com>", "No image loaded", 1),
+        ("<com>closefile</com><com expecterror=\"true\">closefile</com><com expecterror=\"true\">closefile</com>", "No file open", 2),
+    ] {
+        let xml = synth_xml(&["next-command"], &[
+            ("expected-error", count, count, diagnostic),
+            ("continued", 1, 1, "^next-command$"),
+        ]).replace("<script>", &format!("<script>{script}"));
+        let file = write_tmp("expected-error.xml", &xml);
+        let mut out = String::new();
+        run_test_files(&[file], &mut out);
+        assert!(out.contains("Total passing tests = 2"), "{out}");
+    }
 }
 
 #[test]

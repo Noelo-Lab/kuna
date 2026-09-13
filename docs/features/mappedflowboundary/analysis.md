@@ -14,6 +14,13 @@ The image's live map, rather than executable flags or a cached loader probe,
 distinguishes zero-filled RAM from unmapped padding. Matching linked ELF x86
 metadata confines the new policy; ARM mode inference remains separate.
 
+The missing halt is registered during discovery, so queued targets can resolve
+through already decoded NOPs to the endpoint. Stub filling reuses that endpoint
+if an explicit branch also queued it. A declared range is checked before mapped
+recovery, preserving fatal, warning and ignore policies. The expected-error
+stage runner collects output independently of the console's mutable redirect,
+so closing it retains diagnostics and subsequent output without reopening it.
+
 The original upstream acceptance input is unavailable locally. These source-
 generated Apache-2.0 fixtures are behavioral reductions, not a claim that the
 registered default-entry need is closed. Upstream must replay its exact

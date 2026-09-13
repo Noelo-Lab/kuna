@@ -80,20 +80,23 @@ fn with_code(code: &[u8]) -> std::path::PathBuf {
 }
 
 #[test]
-fn a_return_queued_before_the_missing_edge_is_still_decoded() {
-    let path = with_code(&[
-        0xeb, 6, 0xb8, 7, 0, 0, 0, 0xc3, 0x85, 0xc0, 0x74, 0xf6, 0xbb, 5, 0, 0, 0,
-    ]);
-    let out = decompile(&path, &[]);
-    let text = String::from_utf8_lossy(&out.stdout);
-    assert!(
-        out.status.success(),
-        "{text}\n{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    assert!(text.contains("return 7;"), "{text}");
-    assert!(text.contains("halt_missing"), "{text}");
-    std::fs::remove_file(path).unwrap();
+fn queued_paths_resolve_before_and_after_a_missing_edge_is_cut() {
+    for code in [
+        &[0xeb, 6, 0xb8, 7, 0, 0, 0, 0xc3, 0x85, 0xc0, 0x74, 0xf6, 0xbb, 5, 0, 0, 0][..],
+        &[0x85, 0xc0, 0x75, 6, 0xb8, 7, 0, 0, 0, 0xc3, 0x85, 0xdb, 0x75, 1, 0x90, 0x90][..],
+    ] {
+        let path = with_code(code);
+        let out = decompile(&path, &[]);
+        let text = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            out.status.success(),
+            "{text}\n{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(text.contains("return 7;"), "{text}");
+        assert!(text.contains("halt_missing"), "{text}");
+        std::fs::remove_file(path).unwrap();
+    }
 }
 
 #[test]

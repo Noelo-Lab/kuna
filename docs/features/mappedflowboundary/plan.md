@@ -5,9 +5,10 @@
 3. Snapshot the loader's current shared bytes for each flow follow; release
    the snapshot before later overlays. Validate actual instruction bytes in
    SLEIGH before context commits or p-code emission, without another decode.
-4. After flow overrides and known-function bounds, terminate an unmapped
-   fall-through through existing warning and missing-halt machinery, then
-   drain other mapped worklist paths. Explicit branches may cross gaps.
+4. After flow overrides, known-function bounds and declared-range policy,
+   terminate an unmapped fall-through with a registered missing halt and
+   warnings before draining queued paths, including p-code-free chains.
+   Explicit branches may cross gaps; later stub filling reuses the endpoint.
 5. Cover partial instructions, warmed padding, touching/overlapping segments,
    mapped data tails, overlays, repeated flows, and wrong targets. Refresh
    only mapping warnings when eligible flow is rebuilt.
