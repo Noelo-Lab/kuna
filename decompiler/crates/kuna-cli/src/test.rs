@@ -292,7 +292,10 @@ fn run(args: &TestArgs) -> Result<RunResult, String> {
 
     let output = Command::new(&bin_path)
         .args(&argv)
-        .env(kuna_buildstamp::PARENT_ENV, kuna_buildstamp::identity())
+        .env(
+            kuna_buildstamp::PARENT_ENV,
+            kuna_buildstamp::identity(kuna_buildstamp::ChildKind::Harness),
+        )
         .output()
         .map_err(|e| format!("failed to run decomp_test_dbg: {e}"))?;
     let pinned_by = match &args.binary {
@@ -300,6 +303,7 @@ fn run(args: &TestArgs) -> Result<RunResult, String> {
         None => paths::pinned_by("KUNA_DECOMP_TEST"),
     };
     let stderr = kuna_buildstamp::report(
+        kuna_buildstamp::ChildKind::Harness,
         String::from_utf8_lossy(&output.stderr).into_owned(),
         "decomp_test_dbg",
         &bin_path,

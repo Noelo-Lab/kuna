@@ -5,7 +5,7 @@
 use std::io::Write;
 use std::process::{Command, Stdio};
 
-use kuna_console::kuna_buildstamp::{identity, PARENT_ENV, REPLY};
+use kuna_console::kuna_buildstamp::{identity, ChildKind, PARENT_ENV, REPLY};
 
 fn run(parent: Option<&str>) -> (String, String) {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_decomp_dbg"));
@@ -36,7 +36,7 @@ fn decomp_dbg_answers_a_parent_of_another_build() {
     let (stdout, stderr) = run(Some("1.329 (source 0123456789abcdef)"));
     assert_eq!(
         stderr.lines().next(),
-        Some(format!("{REPLY}{}", identity()).as_str()),
+        Some(format!("{REPLY}{}", identity(ChildKind::Engine)).as_str()),
         "{stderr}"
     );
     assert!(
@@ -47,7 +47,7 @@ fn decomp_dbg_answers_a_parent_of_another_build() {
 
 #[test]
 fn decomp_dbg_is_silent_to_a_matching_parent_and_to_no_parent() {
-    for parent in [Some(identity()), None] {
+    for parent in [Some(identity(ChildKind::Engine)), None] {
         let (stdout, stderr) = run(parent);
         assert!(
             !stderr.contains(REPLY) && !stdout.contains(REPLY),

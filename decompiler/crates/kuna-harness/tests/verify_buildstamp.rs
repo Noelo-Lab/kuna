@@ -3,7 +3,7 @@
 
 use std::process::Command;
 
-use kuna_console::kuna_buildstamp::{identity, PARENT_ENV, REPLY};
+use kuna_console::kuna_buildstamp::{identity, ChildKind, PARENT_ENV, REPLY};
 
 fn run(parent: Option<&str>) -> String {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_decomp_test_dbg"));
@@ -19,10 +19,10 @@ fn run(parent: Option<&str>) -> String {
 #[test]
 fn decomp_test_dbg_answers_only_a_parent_of_another_build() {
     let other = run(Some("1.329 (source 0123456789abcdef)"));
-    let quiet = run(Some(identity()));
+    let quiet = run(Some(identity(ChildKind::Harness)));
     assert_eq!(
         other.lines().next(),
-        Some(format!("{REPLY}{}", identity()).as_str()),
+        Some(format!("{REPLY}{}", identity(ChildKind::Harness)).as_str()),
         "{other}"
     );
     assert_eq!(

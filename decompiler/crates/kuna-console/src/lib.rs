@@ -31,6 +31,8 @@ pub mod kuna_retcallchain;
 pub mod kuna_console;
 pub mod kuna_hightarget;
 pub mod kuna_buildstamp;
+#[cfg(test)]
+mod kuna_buildstamp_fingerprint;
 pub mod assertions;
 pub mod grammar;
 pub mod rulecompile;
