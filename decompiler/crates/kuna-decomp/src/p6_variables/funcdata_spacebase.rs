@@ -888,6 +888,13 @@ impl Funcdata {
                         .and_then(|iv| self.vbank().get(iv).map(|x| x.is_constant()))
                         .unwrap_or(false);
                     let fl = if is_const { crate::varmap::COPY_CONSTANT } else { 0 };
+                    if is_const && self.get_arch().nul_terminator {
+                        let zero = in0
+                            .and_then(|iv| self.vbank().get(iv).map(|x| x.get_offset() == 0))
+                            .unwrap_or(false);
+                        let terminator = zero && !self.is_read_active(vn);
+                        state.note_terminator_store(offset, v.get_size(), terminator);
+                    }
                     state.add_fixed_type_pub(offset, vtype, fl, types);
                 }
                 Some(OpCode::CPUI_PIECE) => {

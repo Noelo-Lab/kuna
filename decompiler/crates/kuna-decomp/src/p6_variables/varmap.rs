@@ -1564,7 +1564,9 @@ impl ScopeLocal {
                 if cur.merge(&next, &self.space, types)? {
                     overlap_problems = true;
                 }
-            } else if !cur.attempt_join(&next) {
+            } else if !cur.attempt_join(&next)
+                && !crate::p6_variables::kuna_nulterminator::absorbs_terminator(&cur, &next, state)
+            {
                 if cur.range_type == RangeType::Open {
                     // C++ `cur.size = next->sstart - cur.sstart;` (intb diff
                     // truncated to int4); the gap is small and positive here.
@@ -2436,6 +2438,9 @@ pub struct MapState {
     default_type: Rc<Datatype>,
     /// A collection of pointer Varnodes into our address space (C++ `checker`).
     checker: AliasChecker,
+    /// (kuna `nulterminator`) Per constant-COPY `(offset, size)`: is every such
+    /// write an unread zero?  Empty unless the option is on.
+    terminator_stores: std::collections::BTreeMap<(uintb, int4), bool>,
 }
 
 impl MapState {
@@ -2453,7 +2458,15 @@ impl MapState {
         for r in pm.iter() {
             range.remove_range(Rc::clone(r.get_space()), r.get_first(), r.get_last());
         }
-        MapState { spaceid: spc, range, maplist: Vec::new(), iter: 0, default_type: dt, checker: AliasChecker::new() }
+        MapState {
+            spaceid: spc,
+            range,
+            maplist: Vec::new(),
+            iter: 0,
+            default_type: dt,
+            checker: AliasChecker::new(),
+            terminator_stores: std::collections::BTreeMap::new(),
+        }
     }
 
     /// Add a hint to the collection (C++ `addRange`, `varmap.cc:896-919`).
@@ -2673,6 +2686,19 @@ impl MapState {
         types: &dyn TypeFactory,
     ) {
         self.add_fixed_type(start, ct, flags, types);
+    }
+
+    /// (kuna `nulterminator`) Record one constant COPY into `(start, size)`;
+    /// `terminator` is whether it writes a zero no op reads directly.
+    pub fn note_terminator_store(&mut self, start: uintb, size: int4, terminator: bool) {
+        let entry = self.terminator_stores.entry((start, size)).or_insert(true);
+        *entry = *entry && terminator;
+    }
+
+    /// (kuna `nulterminator`) Is every constant COPY into `(start, size)` an
+    /// unread zero?
+    pub fn is_terminator_store(&self, start: uintb, size: int4) -> bool {
+        self.terminator_stores.get(&(start, size)).copied().unwrap_or(false)
     }
 
     /// Append an open/range hint directly (the public entry `gatherOpen` and

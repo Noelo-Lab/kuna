@@ -628,6 +628,10 @@ pub struct Architecture {
     /// (kuna) A stack-pointer scramble against a live value (MSVC's `/GS`
     /// cookie) does not open a local-alias escape site (option `cookiescramble`).
     pub cookie_scramble: bool,
+    /// (kuna) A zero store past an open stack array's index floor that nothing
+    /// reads directly is that array's terminator element (option
+    /// `nulterminator`).  See [`crate::p6_variables::kuna_nulterminator`].
+    pub nul_terminator: bool,
     /// (kuna) Read the caller's own stack discipline for the argument bytes a
     /// callee pops, instead of guessing that it pops none (option
     /// `calleepop`).  See [`crate::p6_variables::kuna_calleepop`].
@@ -2109,6 +2113,7 @@ impl Architecture {
             recover_lowered_switch: false,
             callsite_stack_args: true,
             cookie_scramble: true,
+            nul_terminator: false,
             callee_pop: true,
             callee_proto_stack: true,
             callee_dead_arg: true,
@@ -2358,6 +2363,7 @@ impl Architecture {
         self.recover_array_stride = true; // (kuna) DIV-3 default-on (GH-8724)
         self.recover_lowered_switch = true; // (kuna) default-on (angr port)
         self.callsite_stack_args = true; // (kuna) default-on: restores upstream fspec.cc:5618 (0/675 ablation)
+        self.nul_terminator = true; // (kuna) DIV-173 default-on: an unread zero store past an open stack array's index floor is the array's terminator, so `buf[63] = 0` after `strncpy(buf,s,63)` no longer shrinks `char buf[64]` to [63] plus a separate char (0/675 ablation); restore upstream's layout with `option nulterminator off`
         self.cookie_scramble = true; // (kuna) DIV-126 default-on: an `xor rax,rsp` cookie mix no longer collapses the local-alias boundary to the bottom of the frame (0/675 ablation)
         self.callee_proto_stack = true; // (kuna) default-on (0/675 ablation): a locked callee prototype states how much it pops and how much of the caller's stack it can reach
         self.callee_pop = true; // (kuna) default-on (0/675 ablation): an unknown extrapop is read off the caller's push run instead of guessed as "pops nothing" (0/675 ablation)
@@ -2987,6 +2993,7 @@ impl Architecture {
             "codescalar" => on_off!(codescalar, "code-pointee scalar-value guard"),
             "cortexmpriv" => on_off!(cortexmpriv, "Cortex-M privileged-mode guard folding"),
             "paramrefdecl" => on_off!(param_ref_decl, "address-taken parameter re-declaration guard"),
+            "nulterminator" => on_off!(nul_terminator, "stack array terminator absorption"),
             "declhightype" => {
                 let (val, msg) = crate::kuna_declhightype::OptionDeclHighType.apply(p1)?;
                 self.decl_high_type = val;
@@ -3732,6 +3739,7 @@ impl Architecture {
         ctx.recover_lowered_switch = self.recover_lowered_switch; // loweredswitch
         ctx.callsite_stack_args = self.callsite_stack_args; // callsitestackargs
         ctx.cookie_scramble = self.cookie_scramble; // cookiescramble
+        ctx.nul_terminator = self.nul_terminator; // nulterminator
         ctx.callee_pop = self.callee_pop; // calleepop
         ctx.callee_proto_stack = self.callee_proto_stack; // calleeprotostack
         ctx.callee_dead_arg = self.callee_dead_arg; // calleedeadarg

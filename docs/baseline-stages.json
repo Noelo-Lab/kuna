@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    819,
-    819
+    826,
+    826
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -393,6 +393,13 @@
     "data:MSVCSTACKGUARD-RETURN #2: option off retains the cookie read in both generic-policy passes",
     "data:MSVCSTACKGUARD-RETURN #3: option on keeps failure one and success zero with generic preservation off and on",
     "data:MSVCSTACKGUARD-RETURN #4: all passes retain both arm-specific side effects",
+    "data:NULTERMINATOR #1: option off declares the 64-byte buffer one element short",
+    "data:NULTERMINATOR #2: option on declares the whole 64-byte buffer",
+    "data:NULTERMINATOR #3: option on renders the terminator as the indexed store",
+    "data:NULTERMINATOR #4: the terminator is a separate char only with the option off, and read_back keeps its read local in both passes",
+    "data:NULTERMINATOR #5: both canary_check passes keep the bounded copy",
+    "data:NULTERMINATOR #6: a zero that is read back directly does not join the array in either pass",
+    "data:NULTERMINATOR #7: read_back returns the local it read in both passes",
     "data:OVERLAPBRANCH #1: the branch target wins, so the real add-chain stream is recovered in the default pass only",
     "data:OVERLAPBRANCH #2: the out-of-image call the swallowed decode invents survives only in the overlapbranch-off pass",
     "data:OVERLAPBRANCH #3: the bogus global the swallowed decode invents survives only in the overlapbranch-off pass",

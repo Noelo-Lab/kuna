@@ -464,6 +464,35 @@ failure mode is tolerance, not an abort — the layout keeps the conceded
 unknowns (upstream additionally emits a "Could not reconcile some variable
 overlaps" warning header; kuna stubs that diagnostic).
 
+**Terminator absorption** (`option nulterminator`, default on, DIV-173). The
+join above is bounded by the open hint's `highind`, which for an indexed
+pointer with no locked guard is the `gather_open` floor of 3. A buffer
+terminated past that floor therefore split: in `strncpy(buf, s, sizeof(buf) -
+1); buf[sizeof(buf) - 1] = 0;` heritage folds the constant-index terminator
+STORE into a direct one-byte frame store, a NUL-scan loop leaves
+`loadguardrange` no range to lock, and the frame printed `char buf[63]` beside
+a separate `char` assigned 0 and never read. With the option on,
+`funcdata_spacebase.rs (Funcdata::gather_varnodes)` records, for every frame
+slot a constant COPY writes, whether each such write is a zero that no op
+reads directly (`varmap.rs (MapState::note_terminator_store)`). After
+`attempt_join` declines, the restructure sweep asks
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_nulterminator.rs
+(absorbs_terminator)` whether the open range may continue over the hint
+instead. It may when the range is open and unlocked, its elements are one- or
+two-byte integers (`char`, a UTF-16 code unit), and the hint is a plain fixed
+constant-COPY hint of exactly one element at a whole-element distance whose
+slot holds only unread zeros. Like upstream's constant absorption (`varmap.rs
+(RangeHint::is_const_absorbable)`), a range whose element type is still
+unknown does not absorb. Such a slot has no reader except a pointer into the
+range, so it belongs to the range. Wider elements never absorb: a zeroed
+eight-byte slot after a two-word buffer is an MSVC `std::string` length field,
+not a terminator. The join does not raise `highind`, so a directly read local
+right after the terminator still starts a new variable. Any other hint at the
+terminator's own offset (a later version that is read, a wider access, an
+address taken there) is not a terminator hint and ends the range at that
+offset, as upstream would. The range then fills to the next hint like any open
+range. Off restores upstream's split.
+
 **Alias blocking.** The `varmap.rs (AliasChecker)` collects every pointer
 into the stack by walking additive expressions rooted at the spacebase input
 (`funcdata_spacebase.rs (Funcdata::gather_additive_base)`), converts each to a

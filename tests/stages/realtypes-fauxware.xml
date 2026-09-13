@@ -24,6 +24,10 @@
 <symbol space="ram" offset="0x400664" name="authenticate"/>
 </binaryimage>
 <script>
+  <!-- The buffer extent below predates `option nulterminator`, which keeps the
+       `stored_pw[8] = 0` terminator inside the array; this test is about type
+       spelling, so it pins that layout decision off. -->
+  <com>option nulterminator off</com>
   <com>lo fu authenticate</com>
   <com>decompile</com>
   <com>print C</com>

@@ -1,0 +1,108 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:windows">
+<!--
+    GH-468 (msvcstackguard follow-up): a 64-byte stack buffer terminated by an
+    explicit zero prints one element short, with the terminator as a separate
+    char.
+    Witness: canary_check from the reporter's ab_od.exe (MSVC /Od /GS /Zi),
+    the real 183 bytes at 0x140001160:
+
+        int canary_check(const char *in) {
+            char buf[64]; int acc = 0;
+            strncpy(buf, in, sizeof(buf) - 1);
+            buf[sizeof(buf) - 1] = 0;
+            for (int i = 0; buf[i]; i++) acc += (unsigned char)buf[i];
+            return acc;
+        }
+
+    buf is [rsp+0x30, rsp+0x70) against the /GS cookie at rsp+0x70.  The
+    terminator is `mov rax,[rsp+0x28]` (= 1*0x3f) then
+    `mov byte ptr [rsp+rax*1+0x30],0` at 0x1400011bf; heritage folds the
+    constant index into a direct one-byte store at rsp+0x6f (stack - 0x19),
+    and the scan loop's index is unbounded, so loadguardrange locks no range
+    and the open hint for buf keeps the gatherOpen index floor of 3.
+    RangeHint::attempt_join then rejects the store (63 > 3) and restructure
+    ends buf at stack - 0x19.
+    Stage: P6 stack-frame layout, option nulterminator on|off.  The zero is
+    never read directly (only the loop's indexed LOAD can reach it), so with
+    the option on the open range continues over it: `uint1 v [64]` and the
+    store renders as the indexed `v[0x3f] = 0`.  The option off pins the old
+    shape: `uint1 v [63]` beside a separate `char v; // stack - 0x19`.
+    strncpy carries the libc prototype the loader gives the real binary;
+    __report_rangecheckfailure and __security_check_cookie are shortened to
+    their fast-fail shapes, and the cookie global is 0x140074040.
+    read_back is a hand-assembled neighbour that stores the same zero at
+    rsp+0x6f, passes buf to fill(), and then returns the byte READ BACK:
+
+        sub  rsp,0x88
+        mov  byte [rsp+0x6f],0
+        lea  rcx,[rsp+0x30]
+        call fill
+        movsx eax,byte [rsp+0x6f]
+        add  rsp,0x88
+        ret
+
+    The read makes the byte a variable of its own, so both passes keep
+    `char v [63]` plus the separate char.
+    Assertion counts span all four passes.
+-->
+<bytechunk space="ram" offset="0x140001160" readonly="true">
+48894c24084881ec88000000488b05cd2e07004833c44889442470c744242400
+00000041b83f000000488b942490000000488d4c2430e875e3050090b8010000
+00486bc03f488944242848837c2428407302eb06e84703000090488b442428c6
+44043000c744242000000000eb0a8b442420ffc08944242048634424200fbe44
+043085c0741848634424200fb64404308b4c242403c88bc189442424ebd08b44
+2424488b4c24704833cce8a10300004881c488000000c3
+</bytechunk>
+<bytechunk space="ram" offset="0x140001500" readonly="true">
+b908000000cd29c3
+</bytechunk>
+<bytechunk space="ram" offset="0x1400015b0" readonly="true">
+483b0d892a07007501c3b908000000cd29c3
+</bytechunk>
+<bytechunk space="ram" offset="0x140002000" readonly="true">
+4881ec88000000c644246f00488d4c2430e8ea0000000fbe44246f4881c488000000c3
+</bytechunk>
+<bytechunk space="ram" offset="0x140002100" readonly="true">
+c3
+</bytechunk>
+<bytechunk space="ram" offset="0x14005f510" readonly="true">
+c3
+</bytechunk>
+<bytechunk space="ram" offset="0x140074040">
+32a2df2d992b0000
+</bytechunk>
+<symbol space="ram" offset="0x140001160" name="canary_check"/>
+<symbol space="ram" offset="0x140001500" name="__report_rangecheckfailure"/>
+<symbol space="ram" offset="0x1400015b0" name="__security_check_cookie"/>
+<symbol space="ram" offset="0x140002000" name="read_back"/>
+<symbol space="ram" offset="0x140002100" name="fill"/>
+<symbol space="ram" offset="0x14005f510" name="strncpy"/>
+</binaryimage>
+<script>
+  <com>parse line extern char *strncpy(char *dst,char *src,uint8 n);</com>
+  <com>parse line extern void fill(char *p);</com>
+  <com>option nulterminator off</com>
+  <com>lo fu canary_check</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option nulterminator on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option nulterminator off</com>
+  <com>lo fu read_back</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option nulterminator on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="NULTERMINATOR #1: option off declares the 64-byte buffer one element short" min="1" max="1">uint1 v[0-9]+ \[63\];</stringmatch>
+<stringmatch name="NULTERMINATOR #2: option on declares the whole 64-byte buffer" min="1" max="1">uint1 v[0-9]+ \[64\]; // stack - 0x58</stringmatch>
+<stringmatch name="NULTERMINATOR #3: option on renders the terminator as the indexed store" min="1" max="1">v[0-9]+\[0x3f\] = 0;</stringmatch>
+<stringmatch name="NULTERMINATOR #4: the terminator is a separate char only with the option off, and read_back keeps its read local in both passes" min="3" max="3">char v[0-9]+; // stack - 0x19</stringmatch>
+<stringmatch name="NULTERMINATOR #5: both canary_check passes keep the bounded copy" min="2" max="2">strncpy\(\(char \*\)v[0-9]+,a0,0x3f\);</stringmatch>
+<stringmatch name="NULTERMINATOR #6: a zero that is read back directly does not join the array in either pass" min="2" max="2">char v[0-9]+ \[63\];</stringmatch>
+<stringmatch name="NULTERMINATOR #7: read_back returns the local it read in both passes" min="2" max="2">return \(int4\)v[0-9]+;</stringmatch>
+</decompilertest>

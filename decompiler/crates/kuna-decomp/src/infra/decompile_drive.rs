@@ -1894,11 +1894,13 @@ fn high_matches_stack_variable(
     (0..high.num_instances()).any(|index| {
         let Some(varnode) = fd.vbank().get(high.get_instance(index)) else { return false };
         let Some(space) = varnode.get_addr().get_space() else { return false };
-        let is_stack_reference = space.get_index() == stack_space.get_index()
-            || space.get_type() == kuna_base::space::spacetype::IPTR_CONSTANT;
-        is_stack_reference
-            && signed_space_offset(stack_space, varnode.get_offset()) == stack_offset
-            && varnode.get_size() as i64 == variable.size
+        let offset = signed_space_offset(stack_space, varnode.get_offset());
+        if space.get_type() == kuna_base::space::spacetype::IPTR_CONSTANT {
+            return offset == stack_offset;
+        }
+        space.get_index() == stack_space.get_index()
+            && offset >= stack_offset
+            && offset + varnode.get_size() as i64 <= stack_offset + variable.size
     })
 }
 

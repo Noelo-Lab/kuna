@@ -99,13 +99,13 @@ fn caller_parameter_typed_from_the_callee_it_is_passed_to() {
 fn callee_return_type_reaches_the_local_that_holds_it() {
     let Some(off) = decompile("authenticate", "off") else { return };
     assert!(
-        off.contains("unsigned int v4;"),
+        off.contains("unsigned int v3;"),
         "gate off leaves the fd an unsigned int, got:\n{off}"
     );
 
     let on = decompile("authenticate", "on").expect("second pass bootstraps");
     assert!(
-        on.contains("int4 v4;"),
+        on.contains("int4 v3;"),
         "the default must carry `open`'s int return onto the fd, got:\n{on}"
     );
 }

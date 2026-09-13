@@ -12,7 +12,7 @@
 //! and inert is worse than one that errors, because an agent cannot tell.
 //!
 //! Fixture: `kuna-analysis/tests/fixtures/fauxware` — a small unstripped x86-64
-//! ELF whose `authenticate` has an 8-byte stack buffer (`v2`), two pointer
+//! ELF whose `authenticate` has a stack buffer (`v2`), two pointer
 //! parameters and a call to a named global (`sneaky`), so every directive has
 //! something observable to move.
 //!
@@ -125,7 +125,7 @@ fn all_applied(report: &[Outcome]) {
 fn the_baseline_names_nothing_the_directives_name() {
     let Some((code, report)) = decompile_with(Vec::new()) else { return };
     assert!(report.is_empty(), "no directives ⇒ no report rows");
-    assert!(code.contains("char v2 [8]"), "baseline lost its 8-byte buffer:\n{code}");
+    assert!(code.contains("char v2 [12]"), "baseline lost its buffer:\n{code}");
     assert!(!code.contains("credbuf"), "baseline already names credbuf:\n{code}");
     assert!(code.contains("sneaky"), "baseline lost the named global:\n{code}");
 }
@@ -160,7 +160,7 @@ fn prototype_type_and_name_all_reach_the_emitted_c() {
         "the declared signature did not reach the C:\n{code}"
     );
     assert!(code.contains("char credbuf [16];"), "the retype+rename did not land:\n{code}");
-    assert!(!code.contains("char v2 [8]"), "the original buffer survived:\n{code}");
+    assert!(!code.contains("char v2 [12]"), "the original buffer survived:\n{code}");
 }
 
 /// A directive is applied in the order it was given: `type` then `name` retypes
@@ -837,7 +837,7 @@ fn a_name_no_local_answers_to_is_still_no_symbol_named() {
 
 /// The scope owns the stack slots, so a directive that misses there because an
 /// EARLIER directive in the same batch renamed the Symbol must not fall through
-/// and map a second Symbol over the same slot.  `v2` is `char v2 [8]` on the
+/// and map a second Symbol over the same slot.  `v2` is `char v2 [12]` on the
 /// stack; after `name v2 credbuf` the high still reports `v2`, and the second
 /// directive has to be the rejection it always was.
 #[test]
