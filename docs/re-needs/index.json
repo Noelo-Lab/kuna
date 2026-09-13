@@ -5,8 +5,8 @@
   "rejected_count": 2,
   "by_status": {
     "blocked": 1,
-    "closed": 162,
-    "open": 33
+    "closed": 164,
+    "open": 31
   },
   "by_track": {
     "loader": 10,
@@ -2595,7 +2595,7 @@
       "need_id": "declared-checker-extent-suppress",
       "title": "Declared checker extent does not suppress interior function-boundary cuts",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
       "probe_id": "p-9d292ed0d0f9",
       "acceptance_id": "a-fed104002ff7",
@@ -2610,15 +2610,15 @@
       ],
       "first_seen_round": 9,
       "attempts": 0,
-      "covered_by_option": null,
+      "covered_by_option": "pdatainterior",
       "touches": [
-        "decompiler/crates/kuna-decomp"
+        "decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_pdatainterior.rs"
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": "https://github.com/Noelo-Lab/kuna/pull/557",
+      "closed_in_round": 12,
+      "closing_pr": "557",
       "reject_reason": null,
       "score": 13.862944,
       "path": "docs/re-needs/declared-checker-extent-suppress.md"
@@ -3088,7 +3088,7 @@
       "need_id": "false-function-entry-inside",
       "title": "False function entry inside an instruction splits the checker inventory",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
       "probe_id": "p-a508b5cf3d7c",
       "acceptance_id": "a-889458c51ba2",
@@ -3103,15 +3103,15 @@
       ],
       "first_seen_round": 3,
       "attempts": 0,
-      "covered_by_option": null,
+      "covered_by_option": "pdatainterior",
       "touches": [
-        "decompiler/crates/kuna-analysis/src/analyzers/entry/patterns"
+        "decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_pdatainterior.rs"
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": "https://github.com/Noelo-Lab/kuna/pull/557",
+      "closed_in_round": 12,
+      "closing_pr": "557",
       "reject_reason": null,
       "score": 13.862944,
       "path": "docs/re-needs/false-function-entry-inside.md"
