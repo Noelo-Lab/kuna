@@ -17,9 +17,9 @@ covered_by_option: tailcalljump
 touches: [decompiler/crates/kuna-decomp]
 scope: small
 regression_of: null
-pr: null
+pr: https://github.com/Noelo-Lab/kuna/pull/622
 closed_in_round: 12
-closing_pr: null
+closing_pr: "622"
 reject_reason: null
 ---
 
