@@ -1,0 +1,87 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--json",
+    "--max-fn-seconds",
+    "0",
+    "--jobs",
+    "2",
+    "--jobs-chunk",
+    "64"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}",
+    "KUNA_JOBS_FAULT": "panic:0x40071d"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/fauxware",
+    "binary_sha256": "c2d90645a45e99221593547e55c601a901b80f807ae96f94c60a7661df0b3e0b",
+    "binary_size": 8776,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/fauxware",
+    "selector": null,
+    "selector_kind": "none"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "stderr_matches": [
+      "\\[kuna --jobs\\] 21 functions, 1 chunk\\(s\\) of 21\\.\\.21, 1 worker process\\(es\\)",
+      "\\[kuna --jobs\\] 20 function\\(s\\) left unfinished by a failed worker process were re-run one at a time and recovered\\.",
+      "\\[kuna --jobs\\] warning: 1 function\\(s\\) have no result because their worker process failed .* 1 of them failed again when re-run on their own\\."
+    ],
+    "json": [
+      {
+        "path": "count",
+        "op": "eq",
+        "value": 21
+      },
+      {
+        "path": "functions[16].name",
+        "op": "eq",
+        "value": "main"
+      },
+      {
+        "path": "functions[16].error",
+        "op": "eq",
+        "value": "worker chunk failed (worker exited: exit status: 101)"
+      },
+      {
+        "path": "functions[13].name",
+        "op": "eq",
+        "value": "authenticate"
+      },
+      {
+        "path": "functions[13].error",
+        "op": "eq",
+        "value": null
+      },
+      {
+        "path": "functions[13].code",
+        "op": "contains",
+        "value": "authenticate("
+      },
+      {
+        "path": "functions[20].name",
+        "op": "eq",
+        "value": "_fini"
+      },
+      {
+        "path": "functions[20].error",
+        "op": "eq",
+        "value": null
+      }
+    ]
+  },
+  "notes": "KUNA_JOBS_FAULT panics the worker as it starts main, first in the single chunk. Before re-runs all 21 records were `worker chunk failed`; now only main is: the other 20 are re-run one per chunk and recovered, and main's own re-run crashes again. The workspace suite holds the full matrix; this is what a branch PR's CI runs."
+}

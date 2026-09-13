@@ -97,11 +97,56 @@
 //! happy/error/panic paths are covered by [`ScratchDir`]'s `Drop`; the one
 //! uncovered window — the parent killed after creating the directory but before
 //! any worker is up — is swept on the next run's [`sweep_stale_scratch`].
+//!
+//! ## A dead worker costs one function, not its chunk
+//!
+//! A worker decompiles its chunk in spec order and flushes a record per
+//! function, so when it dies the records it left are a prefix: the first target
+//! without one is the function it was running, and every target after that never
+//! started.  Writing all of them off let one panicking function take 26..512
+//! chunk-mates with it (456 of 601 failures on a 392,814-function export).  So
+//! the thread that served the chunk re-runs each undelivered target once, as a
+//! chunk of its own, before it asks for more work ([`retry_order`]): its
+//! bystanders come back, and the function that died is run again as the first
+//! function of a fresh worker, so its `error` record is what it does alone.
+//!
+//! Three failures are not re-run.  A worker killed by the stall watchdog had
+//! already run its function past four times the per-function budget, whose
+//! verdict in-process is a final `error` too, and a second attempt would cost
+//! another whole stall window.  A worker that never finished a chunk and never
+//! opened this one may have died in its own program load, which every re-run
+//! would repeat.  And a chunk no worker ran at all (a spec that cannot be
+//! written, a spawn the OS refuses) failed for a reason no target has.
+//!
+//! The price is one extra worker load for every function that fails again on
+//! its own, since its death takes the re-run worker with it.  Bystanders are
+//! re-run in an order spread across the chunk ([`spread`]), because the planner
+//! cuts chunks from a size-sorted order and functions that crash alike tend to
+//! sit side by side; a chunk's early re-runs then sample all of it.  A re-run is
+//! never re-run, and a chunk stops re-running (its remaining functions keep
+//! their record, marked as not re-run) at the first re-run that cannot start,
+//! once [`CHUNK_RERUN_STALLS`] of its re-runs have stalled, which caps the extra
+//! stall windows per chunk, or once [`CHUNK_RERUN_FAILURES`] of its bystanders
+//! have failed again and they outnumber the ones recovered.  [`RetryGate`] holds
+//! back any re-run that would start while [`RUN_RERUN_FAILURES`] or more re-runs
+//! have failed and they outnumber every record the workers have delivered,
+//! which is what workers that die on everything look like; it is asked afresh
+//! each time, so an early burst of crashes among the large functions the
+//! planner runs first does not switch re-running off for the rest of the run.
+//! Under `--stream` each re-run also rebuilds its worker's callee-hint table,
+//! one pass over the inventory.
+//!
+//! Re-runs stay on the thread whose worker died, one at a time.  That is the
+//! same serial path the chunk would have taken had nothing died, so the pool
+//! loses no parallelism, and termination needs no argument beyond the chunk
+//! itself: a thread re-runs at most the targets of the chunk it holds, never
+//! waits on another thread, and every target still reaches the sink exactly
+//! once.
 
 use std::io::{BufRead, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -165,6 +210,25 @@ const SCRATCH_PREFIX: &str = "kuna-jobs-";
 /// engine returns, and it never reaches a user: whoever would have read it is the
 /// process that just died.
 const EXIT_PARENT_GONE: i32 = 70;
+
+/// A chunk stops re-running once this many of its bystanders have failed again
+/// on their own and they outnumber the ones recovered.
+const CHUNK_RERUN_FAILURES: usize = 8;
+
+/// A chunk stops re-running once this many of its re-runs have stalled, each of
+/// which waited out a whole stall window.
+const CHUNK_RERUN_STALLS: usize = 2;
+
+/// No re-run starts while this many re-runs have failed and they outnumber
+/// every record the run's workers have delivered.
+const RUN_RERUN_FAILURES: usize = 16;
+
+/// Test-only fault injection, comma-separated: `panic:<addr>` panics a worker
+/// as it starts the target at `<addr>`, `panic-once:<addr>` only the first time
+/// in a run, `stall:<addr>` wedges it there until the stall watchdog kills it,
+/// and `spawn:<n>` refuses every worker spawn after the first `n`.  `<addr>` is
+/// a byte address (`0x` hex or decimal), or `*` for every target.
+pub(crate) const JOBS_FAULT_ENV: &str = "KUNA_JOBS_FAULT";
 
 /// One decompile target, flattened out of a [`kuna_console::engine::FunctionEntry`]
 /// so it can cross a thread and a process boundary (`Address` holds an `Rc`).
@@ -685,7 +749,7 @@ pub(crate) fn run_pool(
     let source = PlannedChunks { plan, cursor: AtomicUsize::new(0) };
 
     let slots: Mutex<Vec<Option<FuncResult>>> = Mutex::new((0..total).map(|_| None).collect());
-    let blocks = run_pool_with(
+    let (blocks, retries) = run_pool_with(
         cfg,
         targets,
         inventory,
@@ -705,7 +769,7 @@ pub(crate) fn run_pool(
         .zip(targets)
         .map(|(slot, t)| slot.unwrap_or_else(|| lost_result(t, NO_RECORD)))
         .collect();
-    warn_about_anomalies(&results, cfg.max_fn_seconds);
+    warn_about_anomalies(&results, cfg.max_fn_seconds, retries);
     // After the anomaly warnings, which report the run itself: the type-shard
     // disagreement is a note about one artifact.
     let types =
@@ -717,7 +781,8 @@ pub(crate) fn run_pool(
 /// [`ChunkSource`], with each finished chunk handed to `sink` as it lands
 /// instead of being filed into a slot table.  Returns each retired worker's
 /// type block, unmerged — the streamed caller decompiles the seeds itself and
-/// merges its own factory in as one more shard.
+/// merges its own factory in as one more shard — and what re-running a dead
+/// worker's targets recovered, for the caller's anomaly warnings.
 ///
 /// `done_base` is how many targets the caller already decompiled in-process, so
 /// the progress line counts them; `workers_out` reports how many workers the
@@ -734,10 +799,10 @@ pub(crate) fn run_pool_streaming(
     done_base: usize,
     workers_out: &AtomicUsize,
     sink: &(dyn Fn(&[usize], Vec<FuncResult>) + Sync),
-) -> Result<Vec<String>, String> {
+) -> Result<(Vec<String>, Retries), String> {
     let total = targets.len();
     if total == 0 {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), Retries::default()));
     }
     let workers = affordable_jobs(cfg, STREAM_TAG).min(total);
     workers_out.store(workers, Ordering::SeqCst);
@@ -770,10 +835,10 @@ struct PoolReport {
 }
 
 /// The pool itself: `report.workers` threads, each driving one worker process
-/// through chunk after chunk of `source` until it runs dry, with every finished
-/// chunk handed to `sink` as `(slot indices, results)`.  Returns one rendered
-/// user-defined type block per retired worker when `cfg.want_types` asked for
-/// them.
+/// through chunk after chunk of `source` until it runs dry, with every target's
+/// final record handed to `sink` exactly once as `(slot indices, results)`.
+/// Returns one rendered user-defined type block per retired worker when
+/// `cfg.want_types` asked for them, and what the re-runs recovered.
 fn run_pool_with(
     cfg: &PoolConfig,
     targets: &[TargetSpec],
@@ -781,7 +846,7 @@ fn run_pool_with(
     source: &dyn ChunkSource,
     report: &PoolReport,
     sink: &(dyn Fn(&[usize], Vec<FuncResult>) + Sync),
-) -> Result<Vec<String>, String> {
+) -> Result<(Vec<String>, Retries), String> {
     let workers = report.workers;
     let total = targets.len();
     let exe = std::env::current_exe().map_err(|e| format!("cannot locate the kuna binary: {e}"))?;
@@ -793,7 +858,18 @@ fn run_pool_with(
     }
     eprintln!("{}", report.banner);
 
-    let chunk_ids = AtomicUsize::new(0);
+    let pool = Pool {
+        cfg,
+        exe: &exe,
+        scratch: scratch.path(),
+        tag: report.tag,
+        chunk_ids: AtomicUsize::new(0),
+        spawned: AtomicUsize::new(0),
+        faults: Faults::from_env_reporting(report.tag),
+        gate: RetryGate::default(),
+        recovered: AtomicUsize::new(0),
+        failed_alone: AtomicUsize::new(0),
+    };
     let completed = AtomicUsize::new(report.done_base);
     let retired = AtomicUsize::new(0);
     let worker_ids = AtomicUsize::new(0);
@@ -814,14 +890,14 @@ fn run_pool_with(
                         type_blocks.lock().unwrap_or_else(|e| e.into_inner()).push(block);
                     }
                 };
+                let deliver = |indices: &[usize], results: Vec<FuncResult>| {
+                    sink(indices, results);
+                    let done = completed.fetch_add(indices.len(), Ordering::SeqCst) + indices.len();
+                    progress.report(worker_id, done, start);
+                };
                 loop {
                     let Some(indices) = source.next_chunk() else { break };
-                    let idx = chunk_ids.fetch_add(1, Ordering::SeqCst);
-                    let chunk: Vec<TargetSpec> =
-                        indices.iter().map(|&i| targets[i].clone()).collect();
-                    let produced =
-                        serve_chunk(&mut worker, cfg, &exe, scratch.path(), idx, &chunk);
-                    sink(&indices, produced);
+                    pool.serve_with_retries(&mut worker, targets, &indices, &deliver);
                     // Recycling returns a worker to the memory floor a process
                     // cannot reach on its own; it costs a whole program load, so
                     // it is a ceiling rather than a rhythm.
@@ -830,8 +906,6 @@ fn run_pool_with(
                             retire(w);
                         }
                     }
-                    let done = completed.fetch_add(indices.len(), Ordering::SeqCst) + indices.len();
-                    progress.report(worker_id, done, start);
                 }
                 if let Some(w) = worker.take() {
                     retire(w);
@@ -845,34 +919,327 @@ fn run_pool_with(
 
     // No block at all means no worker retired cleanly, which is a failed run, not
     // a program with no types: leave the caller its own factory to fall back on.
-    Ok(type_blocks.into_inner().unwrap_or_else(|e| e.into_inner()))
+    Ok((type_blocks.into_inner().unwrap_or_else(|e| e.into_inner()), pool.retries()))
 }
 
-/// Hand one chunk to this thread's worker, starting one first if the thread has
-/// none (its first chunk, or the one after a crash or a recycle).
-fn serve_chunk(
-    worker: &mut Option<Worker>,
-    cfg: &PoolConfig,
-    exe: &Path,
-    scratch: &Path,
-    idx: usize,
-    chunk: &[TargetSpec],
-) -> Vec<FuncResult> {
-    if let Err(e) = std::fs::write(scratch.join(spec_name(idx)), encode_spec(chunk)) {
-        return lost_chunk(chunk, &format!("{SPEC_WRITE_FAILED}: {e}"));
-    }
-    if worker.is_none() {
-        match Worker::spawn(cfg, exe, scratch) {
-            Ok(w) => *worker = Some(w),
-            Err(e) => return lost_chunk(chunk, &format!("{SPAWN_FAILED}: {e}")),
+/// What every pool thread shares besides the caller's source and sink.
+struct Pool<'r> {
+    cfg: &'r PoolConfig<'r>,
+    exe: &'r Path,
+    scratch: &'r Path,
+    tag: &'static str,
+    /// Names each chunk's spec and result files, so a re-run takes a fresh one.
+    chunk_ids: AtomicUsize,
+    spawned: AtomicUsize,
+    faults: Faults,
+    gate: RetryGate,
+    recovered: AtomicUsize,
+    failed_alone: AtomicUsize,
+}
+
+impl Pool<'_> {
+    /// Serve the chunk at `indices`, then re-run alone each target its worker
+    /// died before delivering, in [`retry_order`].  What will not be re-run
+    /// reaches `deliver` at once and each re-run as it lands, so every target
+    /// is delivered exactly once whatever happens to the re-runs; a target the
+    /// chunk stops before keeps its record, marked as not re-run.
+    fn serve_with_retries(
+        &self,
+        worker: &mut Option<Worker>,
+        targets: &[TargetSpec],
+        indices: &[usize],
+        deliver: &dyn Fn(&[usize], Vec<FuncResult>),
+    ) {
+        let chunk: Vec<TargetSpec> = indices.iter().map(|&i| targets[i].clone()).collect();
+        let served = self.serve(worker, &chunk);
+        let reruns = retry_order(served.ending, &served.delivered);
+        if reruns.is_empty() {
+            deliver(indices, served.results);
+            return;
+        }
+        let mut results: Vec<Option<FuncResult>> = served.results.into_iter().map(Some).collect();
+        let order: Vec<(usize, bool)> = reruns
+            .suspect
+            .map(|p| (p, true))
+            .into_iter()
+            .chain(reruns.bystanders.iter().map(|&p| (p, false)))
+            .collect();
+        let mut rerun = vec![false; chunk.len()];
+        for &(p, _) in &order {
+            rerun[p] = true;
+        }
+        let (now, landed): (Vec<usize>, Vec<FuncResult>) = (0..chunk.len())
+            .filter(|&p| !rerun[p])
+            .filter_map(|p| Some((indices[p], results[p].take()?)))
+            .unzip();
+        if !now.is_empty() {
+            deliver(&now, landed);
+        }
+
+        let (mut kept, mut kept_results) = (Vec::new(), Vec::new());
+        let mut stopped: Option<String> = None;
+        let mut tally = ChunkReruns::default();
+        for (p, suspect) in order {
+            let Some(original) = results[p].take() else { continue };
+            if let Some(why) = &stopped {
+                kept.push(indices[p]);
+                kept_results.push(not_rerun(original, why));
+                continue;
+            }
+            if !self.gate.allows() {
+                if self.gate.first_refusal() {
+                    eprintln!(
+                        "[kuna {}] warning: {RUN_RERUN_FAILURES} or more functions have failed \
+                         again when re-run on their own, more than the workers have delivered, \
+                         so functions a worker leaves unfinished are not re-run while that lasts.",
+                        self.tag
+                    );
+                }
+                kept.push(indices[p]);
+                kept_results.push(not_rerun(original, NOT_RERUN_RUN));
+                continue;
+            }
+            let solo = self.serve(worker, std::slice::from_ref(&chunk[p]));
+            if !solo.ending.started() {
+                let cause = solo.results[0].error.clone().unwrap_or_default();
+                let why = format!("its re-run could not start ({cause})");
+                kept.push(indices[p]);
+                kept_results.push(not_rerun(original, &why));
+                stopped = Some(why);
+                continue;
+            }
+            let recovered = solo.delivered[0];
+            if recovered {
+                self.recovered.fetch_add(1, Ordering::SeqCst);
+            } else {
+                self.failed_alone.fetch_add(1, Ordering::SeqCst);
+                self.gate.failed();
+            }
+            let stalled = matches!(solo.ending, Ending::Died { stalled: true, .. });
+            stopped = tally.record(suspect, recovered, stalled).map(str::to_string);
+            deliver(&[indices[p]], solo.results);
+        }
+        if !kept.is_empty() {
+            deliver(&kept, kept_results);
         }
     }
-    let w = worker.as_mut().expect("just spawned");
-    let (produced, reason, alive) = w.run_chunk(cfg, scratch, idx, chunk.len());
-    if !alive {
-        *worker = None;
+
+    /// Hand one chunk to this thread's worker, starting one first if the thread
+    /// has none (its first chunk, or the one after a crash or a recycle).
+    fn serve(&self, worker: &mut Option<Worker>, chunk: &[TargetSpec]) -> Served {
+        let idx = self.chunk_ids.fetch_add(1, Ordering::SeqCst);
+        if let Err(e) = std::fs::write(self.scratch.join(spec_name(idx)), encode_spec(chunk)) {
+            return Served::not_run(chunk, &format!("{SPEC_WRITE_FAILED}: {e}"));
+        }
+        if worker.is_none() {
+            match self.spawn() {
+                Ok(w) => *worker = Some(w),
+                Err(e) => {
+                    let _ = std::fs::remove_file(self.scratch.join(spec_name(idx)));
+                    return Served::not_run(chunk, &format!("{SPAWN_FAILED}: {e}"));
+                }
+            }
+        }
+        let w = worker.as_mut().expect("just spawned");
+        let (produced, reason, ending) = w.run_chunk(self.cfg, self.scratch, idx, chunk.len());
+        if ending != Ending::Finished {
+            *worker = None;
+        }
+        let (results, delivered) = merge_chunk(chunk, produced, &reason);
+        self.gate.delivered(delivered.iter().filter(|&&d| d).count());
+        Served { results, delivered, ending }
     }
-    merge_chunk(chunk, produced, &reason)
+
+    fn spawn(&self) -> std::io::Result<Worker> {
+        let n = self.spawned.fetch_add(1, Ordering::SeqCst);
+        if self.faults.refuses_spawn(n) {
+            return Err(std::io::Error::other(format!("{JOBS_FAULT_ENV} refused spawn {n}")));
+        }
+        Worker::spawn(self.cfg, self.exe, self.scratch)
+    }
+
+    fn retries(&self) -> Retries {
+        Retries {
+            recovered: self.recovered.load(Ordering::SeqCst),
+            failed_alone: self.failed_alone.load(Ordering::SeqCst),
+        }
+    }
+}
+
+/// What re-running a dead worker's targets came to over a run.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Retries {
+    /// Re-runs that came back with the worker's own record for the function.
+    pub(crate) recovered: usize,
+    /// Re-runs whose worker failed again, leaving that re-run's `error` record.
+    pub(crate) failed_alone: usize,
+}
+
+/// How a chunk handed to a worker ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Ending {
+    /// The worker acknowledged it.
+    Finished,
+    /// No worker ran it: its spec could not be written or no worker started.
+    NotRun,
+    /// The worker exited, or the stall watchdog killed it, first.  `started`:
+    /// it had opened this chunk's result file, which it does after its load,
+    /// its spec and its rehydration, just before its first target.  `warm`: it
+    /// had finished a chunk before this one.
+    Died { stalled: bool, started: bool, warm: bool },
+}
+
+impl Ending {
+    /// Did a worker get as far as the chunk's first target?
+    fn started(self) -> bool {
+        matches!(self, Ending::Finished | Ending::Died { started: true, .. })
+    }
+}
+
+/// One served chunk: a record per target in chunk order, and which of them a
+/// worker produced rather than the pool filling the gap.
+struct Served {
+    results: Vec<FuncResult>,
+    delivered: Vec<bool>,
+    ending: Ending,
+}
+
+impl Served {
+    fn not_run(chunk: &[TargetSpec], reason: &str) -> Self {
+        Served {
+            results: lost_chunk(chunk, reason),
+            delivered: vec![false; chunk.len()],
+            ending: Ending::NotRun,
+        }
+    }
+}
+
+/// Why the functions a chunk stops before are not re-run, appended to the
+/// record their chunk left them so [`count_anomalies`] still classifies it.
+const NOT_RERUN_STALLED: &str = "two functions re-run from its chunk stalled";
+const NOT_RERUN_CRASHING: &str = "most functions re-run from its chunk failed again";
+const NOT_RERUN_RUN: &str =
+    "re-runs in this run had failed more often than workers had delivered when it came up";
+
+fn not_rerun(mut r: FuncResult, why: &str) -> FuncResult {
+    if let Some(error) = r.error.as_mut() {
+        error.push_str("; not re-run: ");
+        error.push_str(why);
+    }
+    r
+}
+
+/// The positions of a chunk to re-run alone: the function its worker died in,
+/// then the ones that never started.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct Reruns {
+    suspect: Option<usize>,
+    bystanders: Vec<usize>,
+}
+
+impl Reruns {
+    fn is_empty(&self) -> bool {
+        self.suspect.is_none() && self.bystanders.is_empty()
+    }
+}
+
+/// What to re-run of a chunk whose worker ended as `ending`.
+///
+/// Only a worker that died leaves anything to re-run.  Its records are a prefix
+/// of the chunk, so the first position without one is the function it was on
+/// (the suspect) and every later one never started.  The suspect goes first,
+/// onto the fresh worker the thread spawns next, so a crash it repeats is its
+/// own; the bystanders follow in [`spread`] order.  A stalled suspect is not
+/// re-run: it already ran past four times the per-function budget, and a second
+/// attempt would cost the same stall window again.  A worker that never opened
+/// this chunk ran none of it, so its targets are all bystanders if it had served
+/// a chunk before — and none are re-run if it had not, because then it may have
+/// died in its own load.
+fn retry_order(ending: Ending, delivered: &[bool]) -> Reruns {
+    let Ending::Died { stalled, started, warm } = ending else { return Reruns::default() };
+    let missing: Vec<usize> = (0..delivered.len()).filter(|&p| !delivered[p]).collect();
+    let (suspect, rest) = match (started, missing.split_first()) {
+        (false, _) if !warm => return Reruns::default(),
+        (false, _) => (None, &missing[..]),
+        (true, None) => return Reruns::default(),
+        (true, Some((&first, rest))) => ((!stalled).then_some(first), rest),
+    };
+    Reruns { suspect, bystanders: spread(rest.len()).into_iter().map(|k| rest[k]).collect() }
+}
+
+/// `0..count` in bit-reversed order, so every prefix of it is spread across the
+/// whole range: a chunk's first re-runs sample all of it instead of one run of
+/// size-sorted neighbours.  The pattern it serves worst is a crasher at every
+/// other place, since its first half is the even offsets.
+fn spread(count: usize) -> Vec<usize> {
+    let span = count.next_power_of_two();
+    let bits = span.trailing_zeros();
+    (0..span)
+        .map(|k| if bits == 0 { k } else { k.reverse_bits() >> (usize::BITS - bits) })
+        .filter(|&k| k < count)
+        .collect()
+}
+
+/// One chunk's re-runs so far.  Stalls count whoever stalled, since each cost a
+/// window; failures and recoveries count bystanders only, since the function
+/// that was running is expected to fail again.
+#[derive(Default)]
+struct ChunkReruns {
+    failed: usize,
+    recovered: usize,
+    stalled: usize,
+}
+
+impl ChunkReruns {
+    /// Record one re-run; why the chunk stops re-running, once it does.
+    fn record(&mut self, suspect: bool, recovered: bool, stalled: bool) -> Option<&'static str> {
+        self.stalled += usize::from(stalled);
+        if !suspect {
+            if recovered {
+                self.recovered += 1;
+            } else {
+                self.failed += 1;
+            }
+        }
+        if self.stalled >= CHUNK_RERUN_STALLS {
+            return Some(NOT_RERUN_STALLED);
+        }
+        (self.failed >= CHUNK_RERUN_FAILURES && self.failed > self.recovered)
+            .then_some(NOT_RERUN_CRASHING)
+    }
+}
+
+/// The run-wide check on re-running, asked each time a re-run would start: no
+/// while [`RUN_RERUN_FAILURES`] or more re-runs have failed and they outnumber
+/// every record the workers delivered, planned or re-run.  Workers that die
+/// whatever they are given deliver nothing, so they pay a bounded number of
+/// extra loads; since held-back re-runs cannot fail, deliveries catch up and
+/// re-running resumes in a run whose workers mostly work.
+#[derive(Default)]
+struct RetryGate {
+    failed: AtomicUsize,
+    delivered: AtomicUsize,
+    refused: AtomicBool,
+}
+
+impl RetryGate {
+    fn allows(&self) -> bool {
+        let failed = self.failed.load(Ordering::SeqCst);
+        failed < RUN_RERUN_FAILURES || failed <= self.delivered.load(Ordering::SeqCst)
+    }
+
+    fn delivered(&self, records: usize) {
+        self.delivered.fetch_add(records, Ordering::SeqCst);
+    }
+
+    fn failed(&self) {
+        self.failed.fetch_add(1, Ordering::SeqCst);
+    }
+
+    /// `true` only the first time a re-run is held back, so the run warns once.
+    fn first_refusal(&self) -> bool {
+        !self.refused.swap(true, Ordering::SeqCst)
+    }
 }
 
 /// One live worker process, its assignment pipe and its acknowledgement channel.
@@ -988,38 +1355,49 @@ impl Worker {
     }
 
     /// Decompile chunk `idx`, returning what the worker delivered, the reason any
-    /// target of it is missing, and whether the worker is still usable.
+    /// target of it is missing, and how the chunk ended — anything but
+    /// [`Ending::Finished`] leaves the worker unusable.
     fn run_chunk(
         &mut self,
         cfg: &PoolConfig,
         scratch: &Path,
         idx: usize,
         len: usize,
-    ) -> (Vec<FuncResult>, String, bool) {
+    ) -> (Vec<FuncResult>, String, Ending) {
         self.functions_done += len;
+        let warm = self.warm;
         let out_path = scratch.join(result_name(idx));
         let assigned = writeln!(self.stdin, "{idx}").and_then(|()| self.stdin.flush());
         let outcome = match assigned {
             Ok(()) => self.await_chunk(cfg, idx, &out_path),
-            Err(e) => Wait::Failed(format!("cannot assign the chunk: {e}")),
+            Err(e) => {
+                let _ = self.child.kill();
+                let _ = self.child.wait();
+                Wait::Failed(format!("cannot assign the chunk: {e}"))
+            }
         };
-        let produced = std::fs::read(&out_path)
-            .ok()
-            .and_then(|b| decode_results(&b))
-            .unwrap_or_default();
+        // Read only once the worker is acknowledged or gone, so whether the file
+        // exists is final: the worker creates it just before its first target.
+        let file = std::fs::read(&out_path);
+        let started = file.is_ok();
+        let produced = file.ok().and_then(|b| decode_results(&b)).unwrap_or_default();
         let _ = std::fs::remove_file(scratch.join(spec_name(idx)));
         let _ = std::fs::remove_file(&out_path);
         match outcome {
             Wait::Done => {
                 self.warm = true;
-                (produced, format!("{NO_RECORD} for this function"), true)
+                (produced, format!("{NO_RECORD} for this function"), Ending::Finished)
             }
             Wait::Stalled => (
                 produced,
                 format!("{STALLED} ({}s); the worker was killed", cfg.max_fn_seconds),
-                false,
+                Ending::Died { stalled: true, started, warm },
             ),
-            Wait::Failed(why) => (produced, format!("{CHUNK_FAILED} ({why})"), false),
+            Wait::Failed(why) => (
+                produced,
+                format!("{CHUNK_FAILED} ({why})"),
+                Ending::Died { stalled: false, started, warm },
+            ),
         }
     }
 
@@ -1204,40 +1582,65 @@ fn count_error_anomalies<'a>(errors: impl Iterator<Item = &'a str>) -> (usize, u
 /// moves.
 ///
 /// A worker can also simply die (OOM killer, SIGSEGV, an operator's `kill`, or
-/// the parent's own stall kill), and every function of its chunk that had not
-/// been flushed becomes an `error` record.  The run legitimately continues — one
-/// bad function must not kill a 33,000-function export — but exiting 0 without a
-/// word about it is not reporting.
-fn warn_about_anomalies(results: &[FuncResult], max_fn_seconds: u64) {
-    warn_about_counts(count_anomalies(results), max_fn_seconds, JOBS_TAG);
+/// the parent's own stall kill).  The functions of its chunk it had not flushed
+/// are re-run on their own ([`retry_order`]), and whatever still has no result
+/// becomes an `error` record.  The run legitimately continues — one bad function
+/// must not kill a 33,000-function export — but exiting 0 without a word about
+/// it is not reporting, and neither is hiding that a worker died when every
+/// function it left behind was recovered.
+fn warn_about_anomalies(results: &[FuncResult], max_fn_seconds: u64, retries: Retries) {
+    for line in anomaly_lines(count_anomalies(results), max_fn_seconds, JOBS_TAG, retries) {
+        eprintln!("{line}");
+    }
 }
 
-/// The same two warnings for a run whose results were consumed as they landed
+/// The same warnings for a run whose results were consumed as they landed
 /// (`--stream`), which keeps only the error strings.
-pub(crate) fn warn_about_streamed_anomalies(errors: &[String], max_fn_seconds: u64) {
-    warn_about_counts(
-        count_error_anomalies(errors.iter().map(String::as_str)),
-        max_fn_seconds,
-        STREAM_TAG,
-    );
+pub(crate) fn warn_about_streamed_anomalies(
+    errors: &[String],
+    max_fn_seconds: u64,
+    retries: Retries,
+) {
+    let counts = count_error_anomalies(errors.iter().map(String::as_str));
+    for line in anomaly_lines(counts, max_fn_seconds, STREAM_TAG, retries) {
+        eprintln!("{line}");
+    }
 }
 
-fn warn_about_counts((tripped, lost): (usize, usize), max_fn_seconds: u64, tag: &str) {
+fn anomaly_lines(
+    (tripped, lost): (usize, usize),
+    max_fn_seconds: u64,
+    tag: &str,
+    retries: Retries,
+) -> Vec<String> {
+    let mut lines = Vec::new();
     if tripped > 0 && max_fn_seconds > 0 {
-        eprintln!(
+        lines.push(format!(
             "[kuna {tag}] warning: {tripped} function(s) hit the {max_fn_seconds}s per-function \
              watchdog. It is wall-clock, so heavy functions can trip it under parallel load that \
              would pass serially — re-run with a larger --max-fn-seconds (or 0) if you need them."
-        );
+        ));
+    }
+    if retries.recovered > 0 {
+        lines.push(format!(
+            "[kuna {tag}] {} function(s) left unfinished by a failed worker process were re-run \
+             one at a time and recovered.",
+            retries.recovered
+        ));
     }
     if lost > 0 {
-        eprintln!(
+        let again = match retries.failed_alone {
+            0 => String::new(),
+            n => format!(" {n} of them failed again when re-run on their own."),
+        };
+        lines.push(format!(
             "[kuna {tag}] warning: {lost} function(s) have no result because their worker process \
              failed (crash, OOM kill, an external signal, or the stall watchdog); they are `error` \
-             records in the output. Re-run those functions, with fewer --jobs if the machine ran \
-             out of memory."
-        );
+             records in the output.{again} Re-run those functions, with fewer --jobs if the \
+             machine ran out of memory."
+        ));
     }
+    lines
 }
 
 // --- how many workers, and what each one gets --------------------------------
@@ -1381,16 +1784,24 @@ fn plan_chunks(targets: &[TargetSpec], explicit: Option<usize>, jobs: usize) -> 
 const EXTENT_CAP: u64 = 0x8000;
 
 /// Line the worker's records back up with the chunk it was given, one result per
-/// target.  A worker that died hard (SIGSEGV/OOM) delivers only the prefix it
-/// flushed, so the rest degrade to `error` records and the run continues — one
-/// bad function must not kill a 33,000-function export.
-fn merge_chunk(chunk: &[TargetSpec], produced: Vec<FuncResult>, reason: &str) -> Vec<FuncResult> {
+/// target, and say which of them the worker produced.  A worker that died hard
+/// (SIGSEGV/OOM) delivers only the prefix it flushed, so the rest degrade to
+/// `error` records — which [`retry_order`] then decides whether to re-run — and
+/// the run continues: one bad function must not kill a 33,000-function export.
+fn merge_chunk(
+    chunk: &[TargetSpec],
+    produced: Vec<FuncResult>,
+    reason: &str,
+) -> (Vec<FuncResult>, Vec<bool>) {
     let mut by_addr: std::collections::HashMap<u64, FuncResult> =
         produced.into_iter().map(|r| (r.byte_address, r)).collect();
     chunk
         .iter()
-        .map(|t| by_addr.remove(&t.addr).unwrap_or_else(|| lost_result(t, reason)))
-        .collect()
+        .map(|t| match by_addr.remove(&t.addr) {
+            Some(r) => (r, true),
+            None => (lost_result(t, reason), false),
+        })
+        .unzip()
 }
 
 /// The `error` record a target gets when nothing produced one for it — the
@@ -1602,6 +2013,105 @@ pub(crate) fn ack_chunk(idx: usize) {
     let mut out = std::io::stdout();
     let _ = writeln!(out, "{ACK_PREFIX}{idx}");
     let _ = out.flush();
+}
+
+// --- test-only fault injection -------------------------------------------------
+
+/// The failures [`JOBS_FAULT_ENV`] asks for.  Empty in every real run, where
+/// each check below is a loop over nothing.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub(crate) struct Faults {
+    at: Vec<(Fault, Option<u64>)>,
+    spawn_after: Option<usize>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Fault {
+    Panic,
+    PanicOnce,
+    Stall,
+}
+
+impl Faults {
+    pub(crate) fn from_env() -> Faults {
+        std::env::var(JOBS_FAULT_ENV).map(|raw| Faults::parse(&raw).0).unwrap_or_default()
+    }
+
+    /// The parent's copy, which also says which directives it could not read,
+    /// once, so a mistyped fault cannot pass for a test that injected nothing.
+    fn from_env_reporting(tag: &str) -> Faults {
+        let Ok(raw) = std::env::var(JOBS_FAULT_ENV) else { return Faults::default() };
+        let (faults, rejected) = Faults::parse(&raw);
+        for directive in rejected {
+            eprintln!(
+                "[kuna {tag}] warning: ignoring unreadable {JOBS_FAULT_ENV} directive {directive:?}"
+            );
+        }
+        faults
+    }
+
+    fn parse(raw: &str) -> (Faults, Vec<String>) {
+        let mut faults = Faults::default();
+        let mut rejected = Vec::new();
+        for directive in raw.split(',').map(str::trim).filter(|d| !d.is_empty()) {
+            let parsed = directive.split_once(':').and_then(|(kind, arg)| {
+                let arg = arg.trim();
+                let fault = match kind.trim() {
+                    "spawn" => {
+                        faults.spawn_after = Some(arg.parse().ok()?);
+                        return Some(());
+                    }
+                    "panic" => Fault::Panic,
+                    "panic-once" => Fault::PanicOnce,
+                    "stall" => Fault::Stall,
+                    _ => return None,
+                };
+                let addr = match arg.strip_prefix("0x").or_else(|| arg.strip_prefix("0X")) {
+                    _ if arg == "*" => None,
+                    Some(hex) => Some(u64::from_str_radix(hex, 16).ok()?),
+                    None => Some(arg.parse().ok()?),
+                };
+                faults.at.push((fault, addr));
+                Some(())
+            });
+            if parsed.is_none() {
+                rejected.push(directive.to_string());
+            }
+        }
+        (faults, rejected)
+    }
+
+    /// Worker side, as the target at `addr` starts.  `panic-once` remembers
+    /// firing with a marker file in the pool's scratch directory, which every
+    /// worker of the run shares.
+    pub(crate) fn before_target(&self, scratch: &Path, addr: u64) {
+        for &(fault, at) in &self.at {
+            if at.is_some_and(|at| at != addr) {
+                continue;
+            }
+            match fault {
+                Fault::Panic => panic!("{JOBS_FAULT_ENV}: injected panic at {addr:#x}"),
+                Fault::PanicOnce => {
+                    let marker = scratch.join(format!("fault-once-{addr:x}"));
+                    if std::fs::OpenOptions::new().write(true).create_new(true).open(marker).is_ok()
+                    {
+                        panic!("{JOBS_FAULT_ENV}: injected panic at {addr:#x}");
+                    }
+                }
+                Fault::Stall => {
+                    eprintln!("{JOBS_FAULT_ENV}: injected stall at {addr:#x}");
+                    loop {
+                        std::thread::sleep(Duration::from_secs(3600));
+                    }
+                }
+            }
+        }
+    }
+
+    /// Parent side: does spawn number `n` (from 0) fail?
+    fn refuses_spawn(&self, n: usize) -> bool {
+        self.spawn_after.is_some_and(|after| n >= after)
+    }
 }
 
 // --- progress ----------------------------------------------------------------
@@ -1948,9 +2458,10 @@ mod tests {
         survived.byte_address = 0x2000;
         survived.name = "sub_2000".into();
 
-        let merged =
+        let (merged, delivered) =
             merge_chunk(&chunk, vec![survived], "worker chunk failed (signal: 11)");
         assert_eq!(merged.len(), 3);
+        assert_eq!(delivered, vec![false, true, false], "only the flushed record is the worker's");
         assert_eq!(
             merged.iter().map(|r| r.address).collect::<Vec<_>>(),
             vec![0x1000, 0x2000, 0x3000],
@@ -1963,9 +2474,205 @@ mod tests {
             // The parent's own inventory facts still describe the function.
             assert_eq!(lost.size, 0x20);
         }
-        let none = merge_chunk(&chunk, Vec::new(), "boom");
+        let (none, delivered) = merge_chunk(&chunk, Vec::new(), "boom");
         assert_eq!(none.len(), 3);
+        assert_eq!(delivered, vec![false; 3]);
         assert!(none.iter().all(|r| r.error.as_deref() == Some("boom")));
+    }
+
+    fn died(stalled: bool, started: bool, warm: bool) -> Ending {
+        Ending::Died { stalled, started, warm }
+    }
+
+    fn reruns(suspect: Option<usize>, bystanders: &[usize]) -> Reruns {
+        Reruns { suspect, bystanders: bystanders.to_vec() }
+    }
+
+    /// The re-run policy, case by case.  A crash re-runs the function it
+    /// happened in first and then everything that never started; a stall
+    /// re-runs only what never started; a worker that ran none of the chunk
+    /// re-runs all of it, unless it may have died in its own load.
+    #[test]
+    fn a_dead_worker_reruns_its_suspect_first_and_its_bystanders_after() {
+        let prefix = [true, true, false, false, false];
+        assert_eq!(retry_order(died(false, true, true), &prefix), reruns(Some(2), &[3, 4]));
+        assert_eq!(retry_order(died(false, true, false), &prefix), reruns(Some(2), &[3, 4]));
+        assert_eq!(
+            retry_order(died(true, true, true), &prefix),
+            reruns(None, &[3, 4]),
+            "a stalled suspect already ran four budgets; only its bystanders are re-run"
+        );
+        assert!(retry_order(died(true, true, false), &[false]).is_empty());
+        assert_eq!(
+            retry_order(died(false, true, false), &[false]),
+            reruns(Some(0), &[]),
+            "a planned singleton that crashed is run once more on a fresh worker"
+        );
+
+        let untouched = [false; 5];
+        assert_eq!(
+            retry_order(died(false, false, true), &untouched),
+            reruns(None, &[0, 4, 2, 1, 3]),
+            "a warm worker that died between chunks ran none of this one"
+        );
+        let everything = reruns(None, &[0, 4, 2, 1, 3]);
+        assert_eq!(retry_order(died(true, false, true), &untouched), everything);
+        assert!(
+            retry_order(died(false, false, false), &untouched).is_empty(),
+            "a worker that never finished a chunk may have died in its load"
+        );
+        assert!(retry_order(died(true, false, false), &untouched).is_empty());
+
+        for ending in [Ending::Finished, Ending::NotRun] {
+            assert!(retry_order(ending, &untouched).is_empty(), "{ending:?} re-runs nothing");
+        }
+        assert!(retry_order(died(false, true, true), &[true; 4]).is_empty());
+
+        // A re-run counts as run only once its worker reached the target; one
+        // that did not ends its chunk's re-runs instead of spawning for the rest.
+        assert!(Ending::Finished.started());
+        assert!(died(false, true, false).started() && died(true, true, true).started());
+        assert!(!Ending::NotRun.started());
+        assert!(!died(false, false, false).started() && !died(true, false, true).started());
+    }
+
+    /// Bystanders are visited in bit-reversed order, so any prefix of the visit
+    /// samples the whole chunk: a run of adjacent crashers is spread out among
+    /// the recoveries instead of arriving first.
+    #[test]
+    fn bystanders_are_visited_spread_across_the_chunk() {
+        for count in [0usize, 1, 2, 3, 7, 20, 64, 219, 512] {
+            let order = spread(count);
+            let mut sorted = order.clone();
+            sorted.sort_unstable();
+            assert_eq!(sorted, (0..count).collect::<Vec<_>>(), "a permutation of {count}");
+        }
+        assert_eq!(spread(8), vec![0, 4, 2, 6, 1, 5, 3, 7]);
+        let first: Vec<usize> = spread(219).into_iter().take(16).collect();
+        assert!(first.iter().filter(|&&k| k < 16).count() <= 2, "the first 16 re-runs: {first:?}");
+    }
+
+    /// A chunk stops once enough of its bystanders failed and they outnumber
+    /// the recovered ones, or once two of its re-runs stalled; neighbouring
+    /// crashers, the expected failure of the function that was running, and a
+    /// single stall never stop it.
+    #[test]
+    fn a_chunk_stops_rerunning_only_when_failures_dominate() {
+        let mut adjacent = ChunkReruns::default();
+        assert_eq!(adjacent.record(true, false, false), None, "the suspect does not count");
+        for _ in 0..CHUNK_RERUN_FAILURES - 1 {
+            assert_eq!(adjacent.record(false, false, false), None);
+        }
+        assert_eq!(adjacent.record(false, false, false), Some(NOT_RERUN_CRASHING));
+
+        let mut alternating = ChunkReruns::default();
+        for _ in 0..100 {
+            assert_eq!(alternating.record(false, true, false), None);
+            assert_eq!(alternating.record(false, false, false), None, "a tie never stops");
+        }
+
+        let mut mostly_failing = ChunkReruns::default();
+        let stops: Vec<_> =
+            (0..30).map(|i| mostly_failing.record(false, i % 3 == 0, false)).collect();
+        assert!(stops.contains(&Some(NOT_RERUN_CRASHING)), "two failures per recovery stop it");
+
+        let mut stalls = ChunkReruns::default();
+        assert_eq!(stalls.record(true, false, true), None, "one stall is a function");
+        for _ in 0..20 {
+            assert_eq!(stalls.record(false, true, false), None);
+        }
+        assert_eq!(stalls.record(false, false, true), Some(NOT_RERUN_STALLED), "the second stall");
+    }
+
+    /// The run-wide check needs both a floor of failed re-runs and more failures
+    /// than delivered records, and it is asked afresh: deliveries that catch up
+    /// let re-runs start again, and the warning is claimed once.
+    #[test]
+    fn the_retry_gate_holds_back_reruns_only_while_failures_outnumber_deliveries() {
+        let gate = RetryGate::default();
+        gate.delivered(3);
+        for _ in 0..RUN_RERUN_FAILURES - 1 {
+            gate.failed();
+        }
+        assert!(gate.allows(), "below the floor");
+        gate.failed();
+        assert!(!gate.allows(), "{RUN_RERUN_FAILURES} failures against 3 records");
+        assert!(gate.first_refusal() && !gate.first_refusal(), "warned once");
+        gate.delivered(RUN_RERUN_FAILURES - 3);
+        assert!(gate.allows(), "as many records as failures: re-running resumes");
+        gate.failed();
+        assert!(!gate.allows());
+
+        let working = RetryGate::default();
+        working.delivered(40);
+        for _ in 0..40 {
+            working.failed();
+        }
+        assert!(working.allows(), "workers that deliver as much as fails keep re-running");
+        working.failed();
+        assert!(!working.allows());
+    }
+
+    #[test]
+    fn the_fault_hook_parses_what_the_tests_inject_and_reports_the_rest() {
+        assert_eq!(Faults::parse(""), (Faults::default(), Vec::new()));
+        let (none, rejected) = Faults::parse("nonsense,panic:,stall:0xzz,spawn:x,boom:0x1");
+        assert_eq!(none, Faults::default());
+        assert_eq!(rejected, vec!["nonsense", "panic:", "stall:0xzz", "spawn:x", "boom:0x1"]);
+        let (f, rejected) =
+            Faults::parse(" panic:0x40071d , panic-once:4196064,stall:*,spawn:2,panic:0X10");
+        assert!(rejected.is_empty(), "{rejected:?}");
+        assert_eq!(
+            f.at,
+            vec![
+                (Fault::Panic, Some(0x40071d)),
+                (Fault::PanicOnce, Some(4196064)),
+                (Fault::Stall, None),
+                (Fault::Panic, Some(0x10))
+            ]
+        );
+        assert!(!f.refuses_spawn(1) && f.refuses_spawn(2) && f.refuses_spawn(9));
+        assert!(!Faults::default().refuses_spawn(0));
+
+        let dir = ScratchDir::create().unwrap();
+        Faults::default().before_target(dir.path(), 0x1000);
+        Faults::parse("panic:0x2000").0.before_target(dir.path(), 0x1000);
+        let once = Faults::parse("panic-once:0x1000").0;
+        assert!(std::panic::catch_unwind(|| once.before_target(dir.path(), 0x1000)).is_err());
+        once.before_target(dir.path(), 0x1000);
+
+        let lost = lost_result(&target(0x1000), "worker stalled past the per-function watchdog");
+        let marked = not_rerun(lost, NOT_RERUN_STALLED);
+        let error = marked.error.as_deref().unwrap();
+        assert!(error.ends_with(&format!("; not re-run: {NOT_RERUN_STALLED}")), "{error}");
+        assert_eq!(count_error_anomalies(std::iter::once(error)), (0, 1), "still classified");
+    }
+
+    /// The closing lines say how many functions the re-runs recovered and how
+    /// many are still lost, and a run whose re-runs recovered everything still
+    /// says a worker died.
+    #[test]
+    fn the_anomaly_lines_separate_recovered_from_lost() {
+        let none = Retries::default();
+        assert!(anomaly_lines((0, 0), 10, JOBS_TAG, none).is_empty());
+
+        let all_back =
+            anomaly_lines((0, 0), 10, JOBS_TAG, Retries { recovered: 20, failed_alone: 0 });
+        assert_eq!(all_back.len(), 1);
+        assert!(all_back[0].starts_with("[kuna --jobs] 20 function(s) left unfinished"));
+        assert!(!all_back[0].contains("warning"), "nothing is missing: {all_back:?}");
+
+        let mixed =
+            anomaly_lines((1, 3), 10, STREAM_TAG, Retries { recovered: 18, failed_alone: 2 });
+        assert_eq!(mixed.len(), 3, "{mixed:?}");
+        assert!(mixed[0].contains("1 function(s) hit the 10s per-function watchdog"));
+        assert!(mixed[1].starts_with("[kuna --stream] 18 function(s)"));
+        assert!(mixed[2].starts_with("[kuna --stream] warning: 3 function(s) have no result"));
+        assert!(mixed[2].contains(" 2 of them failed again when re-run on their own."));
+
+        let unretried = anomaly_lines((0, 5), 0, JOBS_TAG, none);
+        assert_eq!(unretried.len(), 1);
+        assert!(!unretried[0].contains("re-run on their own"), "{unretried:?}");
     }
 
     /// Cleanup is a `Drop`, not a step on the happy path: the directory holds the

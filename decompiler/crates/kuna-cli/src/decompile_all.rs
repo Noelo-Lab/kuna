@@ -954,6 +954,7 @@ fn run_jobs_worker(args: &Args) -> Result<(), String> {
     }
 
     let dir = std::path::Path::new(scratch);
+    let faults = jobs::Faults::from_env();
     while let Ok(assignment) = assignments.recv() {
         // The type block is rendered ONCE, when the parent retires this worker:
         // the factory accumulates over every chunk served, so only its final
@@ -996,7 +997,9 @@ fn run_jobs_worker(args: &Args) -> Result<(), String> {
                     if write_error.borrow().is_some() {
                         return None;
                     }
-                    pending.next()
+                    let entry = pending.next()?;
+                    faults.before_target(dir, entry.addr.get_offset());
+                    Some(entry)
                 },
                 &mut |r| {
                     let mut slot = write_error.borrow_mut();
