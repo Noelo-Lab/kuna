@@ -22,5 +22,5 @@ kuna decompile edge.elf 0x10000 --addr --json
 ## Tests
 
 Synthetic ELF32/64 recovery, partial/overlapping instructions, queued NOPs,
-declared ranges, overlays with recovery off/on, overrides and closed streams;
+declared ranges, failed reloads, overlays off/on, overrides and closed streams;
 wrong-ISA/external controls.

@@ -143,6 +143,9 @@ Mapping warnings from an earlier eligible flow are refreshed when it is
 rebuilt, including after recovery is disabled, so an intervening return override
 or byte overlay cannot leave a stale unmapped-flow warning on the new body.
 Other warnings are retained.
+Cleanup and publication of buffered flow comments occur only after all
+replacement flow steps succeed. A failed reload retains the previous selected
+body and its mapping diagnostics.
 
 On eligible flows, `Translate::one_instruction_checked` validates the
 actual decoded instruction span with `ImageBytes::mapped_covers` before

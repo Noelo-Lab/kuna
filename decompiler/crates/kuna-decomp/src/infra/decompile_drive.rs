@@ -749,9 +749,6 @@ pub fn build_and_follow_flow_with_override_and_protos(
 /// clear, so the re-flow rebuilds the CALLIND straight as a direct CALL).
 #[allow(clippy::mutable_key_type)]
 fn follow_flow_on_fd(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcdata> {
-    if arch.mapped_flow_boundary_image {
-        crate::kuna_mappedflowboundary::clear_stale_warnings(&mut arch.commentdb, fd.get_address());
-    }
     // C++ Funcdata::followFlow(baddr, eaddr): a function carrying a declared byte
     // extent restricts flow to it; size 0 keeps the unbounded default the whole
     // engine has used until now (`kuna_console::engine::UNBOUNDED_SIZE`), so this
@@ -807,15 +804,6 @@ fn follow_flow_on_fd(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcda
     // `FlowInfo::target`).  Drive it before the FlowInfo is consumed.
     let target_snapshot = flow.target_index_snapshot();
     let mut data = flow.data;
-    // Flush the analysis comments buffered during flow follow (C++
-    // `Funcdata::warning`/`warningHeader` write straight to `glb->commentdb`; the
-    // merged Rust tree buffers them on the `Funcdata` because the console owns the
-    // comment database, so re-deposit them now that `&mut Architecture` is in
-    // hand — the same re-seed model as `mapped_symbols`/`pending_prototypes`).
-    let func_addr = data.get_address().clone();
-    for (tp, ad, txt) in data.drain_pending_comments() {
-        arch.commentdb.add_comment_no_duplicate(tp, &func_addr, &ad, &txt);
-    }
     data.switch_over_jump_tables(|fd, addr| {
         crate::flow::target_in(fd, &target_snapshot, addr)
     })?;
@@ -834,6 +822,14 @@ fn follow_flow_on_fd(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcda
     // is true; the rest of startProcessing — sortCallSpecs / buildInfoList /
     // applyDeadCodeDelay — is a W4 stub or handled lazily in op_heritage).
     data.set_flag_raw(funcdata_flags::processing_started);
+    // Publish buffered flow comments only after replacement construction succeeds.
+    let func_addr = data.get_address().clone();
+    if arch.mapped_flow_boundary_image {
+        crate::kuna_mappedflowboundary::clear_stale_warnings(&mut arch.commentdb, &func_addr);
+    }
+    for (tp, ad, txt) in data.drain_pending_comments() {
+        arch.commentdb.add_comment_no_duplicate(tp, &func_addr, &ad, &txt);
+    }
     Ok(data)
 }
 

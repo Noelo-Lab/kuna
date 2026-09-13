@@ -26,6 +26,8 @@ stage runner collects output independently of the console's mutable redirect,
 so closing it retains diagnostics and subsequent output without reopening it.
 Rebuilding an eligible image refreshes its mapping warnings even after recovery
 is disabled, while retaining unrelated warnings.
+Cleanup and publication of buffered comments wait until replacement flow
+succeeds; a failed reload preserves the selected body's existing diagnostics.
 
 The original upstream acceptance input is unavailable locally. These source-
 generated Apache-2.0 fixtures are behavioral reductions, not a claim that the

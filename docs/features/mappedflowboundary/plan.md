@@ -14,6 +14,8 @@
 5. Cover partial instructions, warmed padding, touching/overlapping segments,
    mapped data tails, overlays, repeated flows, and wrong targets. Refresh
    only mapping warnings when eligible flow is rebuilt, including with recovery off.
+   Publish buffered comments and remove stale warnings only after replacement
+   flow succeeds; failed reloads preserve the selected body's diagnostics.
 6. Run unchanged 675 parity, stage parity, the workspace suite, spec/catalog
    checks, an interleaved off/on speed check, and the public ELF x86 sweep.
    Default on requires unchanged original expectations and <=5% slowdown.

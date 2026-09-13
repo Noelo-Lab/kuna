@@ -79,7 +79,7 @@ fn instruction_end(addr: &Address, step: i32) -> Option<u64> {
     (end - 1 <= addr.get_space()?.get_highest()).then_some(end)
 }
 
-/// Rebuild only mapping warnings: an earlier selection may predate overrides or overlays.
+/// Refresh stale mapping warnings after replacement flow succeeds.
 pub(crate) fn clear_stale_warnings(db: &mut crate::architecture::CommentDatabase, entry: &Address) {
     use crate::architecture::comment_type;
     db.retain_comments(|comment| {

@@ -5,6 +5,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use kuna_base::address::Address;
 use kuna_console::assertions::{self, Body, Directive};
 use kuna_console::engine::{ConsoleProgram, EntrySelector, bootstrap_from_object};
+use kuna_console::ifacedecomp::{DECOMPILE_MODULE, IfaceDecompData, register_decomp_commands};
+use kuna_console::ifaceterm::ConsoleCommands;
 use kuna_console::project::decompile_targets;
 use kuna_decomp::decompile_drive::build_and_follow_flow;
 use kuna_decomp::flow::flow_flags;
@@ -304,13 +306,11 @@ fn a_known_no_return_call_has_no_missing_fallthrough() {
 }
 
 #[test]
-fn an_overlay_removes_stale_mapping_warnings_but_keeps_other_warnings() {
+fn mapping_warnings_survive_failed_reloads_and_refresh_after_an_overlay() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../kuna-analysis/tests/fixtures/mapped_flow_boundary_32.elf");
     for enabled in [true, false] {
         let mut prog = load(&path);
-        prog.commit_pending_analysis().unwrap();
-        assert!(code(&mut prog).contains("unmapped memory"));
         let entry = address(&prog, 0x10000);
         prog.arch_mut().commentdb.add_comment_no_duplicate(
             kuna_decomp::architecture::comment_type::warningheader,
@@ -318,14 +318,85 @@ fn an_overlay_removes_stale_mapping_warnings_but_keeps_other_warnings() {
             &entry,
             "WARNING: retained warning",
         );
-        prog.arch()
+        let commands = [
+            "load addr 0x10000".to_string(),
+            "decompile".to_string(),
+            "print C".to_string(),
+            format!(
+                "option mappedflowboundary {}",
+                if enabled { "on" } else { "off" }
+            ),
+            "option maxinstruction 1".to_string(),
+            "load addr 0x10000".to_string(),
+            "print C".to_string(),
+            "option maxinstruction 100000".to_string(),
+            "load addr 0x10000".to_string(),
+            "decompile".to_string(),
+            "print C".to_string(),
+        ];
+        let mut status = ConsoleCommands::into_status(commands.into());
+        register_decomp_commands(&mut status);
+        status
+            .get_data_mut(DECOMPILE_MODULE)
+            .unwrap()
+            .as_any_mut()
+            .downcast_mut::<IfaceDecompData>()
+            .unwrap()
+            .conf = Some(prog);
+        for _ in 0..2 {
+            assert!(status.run_command().unwrap());
+        }
+        status.optr.clear();
+        assert!(status.run_command().unwrap());
+        let original = status.optr.clone();
+        assert!(original.contains("return 7;"), "{original}");
+        assert!(original.contains("halt_missing"), "{original}");
+        assert_eq!(
+            original
+                .matches("Function flows into unmapped memory")
+                .count(),
+            1
+        );
+        assert_eq!(
+            original
+                .matches("Function flow reaches unmapped memory:")
+                .count(),
+            1
+        );
+        for _ in 0..2 {
+            assert!(status.run_command().unwrap());
+        }
+        let error = status.run_command().unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("Flow exceeded maximum allowable instructions"),
+            "{error}"
+        );
+        status.optr.clear();
+        assert!(status.run_command().unwrap());
+        assert_eq!(status.optr, original);
+        let dcp = status
+            .get_data_mut(DECOMPILE_MODULE)
+            .unwrap()
+            .as_any_mut()
+            .downcast_mut::<IfaceDecompData>()
+            .unwrap();
+        dcp.conf
+            .as_ref()
+            .unwrap()
+            .arch()
             .translate()
             .loader_rc()
             .borrow_mut()
             .kuna_overlay_bytes(&entry, &[0xb8, 9, 0, 0, 0, 0xc3])
             .unwrap();
-        prog.arch_mut().mapped_flow_boundary = enabled;
-        let text = code(&mut prog);
+        for _ in 0..3 {
+            assert!(status.run_command().unwrap());
+        }
+        status.optr.clear();
+        assert!(status.run_command().unwrap());
+        let text = status.optr;
         assert!(text.contains("return 9;"), "{text}");
         assert!(!text.contains("unmapped memory"), "{text}");
         assert!(text.contains("retained warning"), "{text}");
