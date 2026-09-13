@@ -43,5 +43,29 @@ Focused evidence before the broad gates:
 - the representative declarations compile with
   `cc -std=c11 -Wall -Wextra -pedantic-errors -fsyntax-only`.
 
-Broad datatest, stage, CLI, corpus-differential, and full-workspace evidence is
-recorded in `record.json` once run on the final head.
+The implementation-head broad gates preserve 675/675 datatest assertions, 824/824 stage
+assertions, and 158/158 CLI probes. Both spec checks and catalog consistency
+pass. A deterministic before/after sweep covered 253 binaries and 2,949
+functions: every in-repo executable analysis fixture, 20 binaries from each of
+DecBench O0/O2/O2-noinline, and the exact witness. Of 253 outputs, 247 were
+byte-identical. The six changed outputs contain only three kinds of correction:
+
+- 15 cast/declaration occurrences gain required pointer-to-array grouping (the
+  seven witness occurrences appear twice because the exact bytes also exist as
+  an in-repo fixture, plus one `structreturn_x86_64` parameter declaration);
+- two known outer arrays of pointers lose the wrong grouping;
+- one nested array changes `[16][2]` to `[2][16]`, placing the outer dimension
+  next to the identifier as C requires.
+
+Four exported variable type strings move with those same corrections. No
+function inventory, address, body outside the declarator tokens, variable
+identity/storage, or run metadata changes. Every corrected shape compiles under
+strict C11. Exact unit assertions pin all four exported strings, and the existing
+`structreturn_x86_64` end-to-end control now pins the corrected `passthru`
+signature. `record.json` enumerates the affected functions and type strings.
+
+The complete release workspace was started after the pinned gates. A first run
+showed only missing generated `.sla` failures; after supplying all 148 generated
+specs, the rerun was stopped by the captain at the disk-safety threshold before
+completion. It is therefore deliberately not recorded as green; hosted full CI
+remains a merge gate.

@@ -386,6 +386,41 @@ mod w10_input_prototype_declarator {
         );
     }
 
+    /// Exact exported-type regressions found by the 253-binary differential.
+    /// These are abstract declarators (`front + back`, with no identifier), so
+    /// they exercise the same spelling consumed by JSON variable metadata.
+    #[test]
+    fn corpus_exported_type_strings_preserve_modifier_order() {
+        fn abstract_spelling(dt: &Rc<Datatype>) -> String {
+            let (front, back) = declarator_parts(dt, crate::printc::RealTypeCtx::OFF);
+            format!("{front}{back}")
+        }
+
+        let char_ty = named(1, type_metatype::TYPE_INT, "char");
+        let uchar_ty = named(1, type_metatype::TYPE_UINT, "unsigned char");
+
+        // arraycoverwidth_x86_64::vm v3: outer [2], inner [16].
+        assert_eq!(
+            abstract_spelling(&array_of(array_of(char_ty.clone(), 16), 2)),
+            "char[2][16]"
+        );
+        // katavm_level1_x86_64::sub_12d0 v32 and ptx.o's v16 are
+        // arrays of pointers, not pointers to arrays.
+        assert_eq!(
+            abstract_spelling(&array_of(ptr_to(uchar_ty), 2)),
+            "unsigned char *[2]"
+        );
+        assert_eq!(
+            abstract_spelling(&array_of(ptr_to(char_ty.clone()), 5)),
+            "char *[5]"
+        );
+        // structreturn_x86_64::passthru param_1 is the mirror type.
+        assert_eq!(
+            abstract_spelling(&ptr_to(array_of(char_ty, 16))),
+            "char (*)[16]"
+        );
+    }
+
     /// An anonymous base type with no name falls back to genericTypeName:
     /// TYPE_VOID -> "void", else "undefined<size>".  A pointer to an anonymous
     /// 4-byte type renders `undefined4 *`.

@@ -102,9 +102,11 @@ impl TypeSpeller for CSpeller {
     }
 
     /// The stack is built base-up exactly as `buildTypeStack`; pointer modifiers
-    /// go on the front (`*`), array/function modifiers on the tail (`[N]`/`(...)`),
-    /// and a `*` front nested inside an array/function tail is parenthesised --
-    /// the precedence the RPN `ptr_expr`/`array_expr` tokens encode.
+    /// go on the front (`*`), array modifiers on the tail (`[N]`), and a `*`
+    /// front nested inside an array tail is parenthesised -- the precedence the
+    /// RPN `ptr_expr`/`array_expr` tokens encode. `CDeclarator::postfix` is generic
+    /// enough for function suffixes, but Datatype traversal currently supplies
+    /// pointer and array modifiers only.
     fn declarator(&self, cx: &SpellCtx, ct: &Rc<Datatype>) -> (String, String) {
         // buildTypeStack: walk to the base (named) type, recording the modifiers.
         let mut stack: Vec<Rc<Datatype>> = Vec::new();
@@ -144,7 +146,7 @@ impl TypeSpeller for CSpeller {
 
         // Walk modifiers OUTERMOST-to-base (`stack[0]..stack[len-2]`).  This is
         // the order in which a C declarator is built around its identifier.  A
-        // pointer followed inward by an array/function postfix must be grouped;
+        // pointer followed inward by an array postfix must be grouped;
         // the mirror ordering is an array of pointers and must not be grouped.
         let mut decl = CDeclarator::default();
         for ct_mod in stack.iter().take(stack.len() - 1) {
@@ -152,8 +154,11 @@ impl TypeSpeller for CSpeller {
                 type_metatype::TYPE_PTR => decl.pointer(),
                 type_metatype::TYPE_ARRAY => {
                     let n = ct_mod.num_elements().unwrap_or_else(|| {
-                        let base =
-                            ct_mod.get_array_base().map(|b| b.get_size()).unwrap_or(1).max(1);
+                        let base = ct_mod
+                            .get_array_base()
+                            .map(|b| b.get_size())
+                            .unwrap_or(1)
+                            .max(1);
                         ct_mod.get_size() / base
                     });
                     decl.postfix(&format!("[{n}]"));
@@ -216,7 +221,11 @@ impl TypeSpeller for CSpeller {
                 }
             }
             _ => {
-                return if under_pointer { Some(Cow::Borrowed("void")) } else { None };
+                return if under_pointer {
+                    Some(Cow::Borrowed("void"))
+                } else {
+                    None
+                };
             }
         }))
     }
@@ -230,7 +239,7 @@ mod tests {
     enum Modifier {
         Pointer,
         Array(usize),
-        Function(&'static str),
+        SyntheticPostfix(&'static str),
     }
 
     fn spell(modifiers_outer_to_inner: &[Modifier]) -> String {
@@ -239,32 +248,33 @@ mod tests {
             match modifier {
                 Modifier::Pointer => decl.pointer(),
                 Modifier::Array(n) => decl.postfix(&format!("[{n}]")),
-                Modifier::Function(params) => decl.postfix(&format!("({params})")),
+                Modifier::SyntheticPostfix(suffix) => decl.postfix(suffix),
             }
         }
         format!("int {}x{}", decl.front, decl.back)
     }
 
-    /// Declarator precedence must distinguish every adjacent pointer/postfix
-    /// ordering.  The right-hand strings are declarations accepted by a C
-    /// compiler; importantly, none is the mirror type from the neighboring row.
+    /// The generic helper must distinguish every adjacent pointer/postfix
+    /// ordering. Datatype traversal currently supplies only array postfixes;
+    /// synthetic function suffixes here fence the helper's grouping rule. The
+    /// right-hand strings are declarations accepted by a C compiler.
     #[test]
     fn pointer_array_and_function_precedence_table() {
-        use Modifier::{Array as A, Function as F, Pointer as P};
+        use Modifier::{Array as A, Pointer as P, SyntheticPostfix as S};
 
         let cases: &[(&[Modifier], &str)] = &[
             (&[P], "int *x"),
             (&[A(2)], "int x[2]"),
             (&[P, A(2)], "int (*x)[2]"),
             (&[A(2), P], "int *x[2]"),
-            (&[P, F("void")], "int (*x)(void)"),
-            (&[F("void"), P], "int *x(void)"),
+            (&[P, S("(void)")], "int (*x)(void)"),
+            (&[S("(void)"), P], "int *x(void)"),
             (&[P, P, A(2)], "int (**x)[2]"),
             (&[P, A(2), P], "int *(*x)[2]"),
             (&[A(2), P, A(3)], "int (*x[2])[3]"),
-            (&[A(2), P, F("void")], "int (*x[2])(void)"),
-            (&[P, F("void"), P], "int *(*x)(void)"),
-            (&[P, F("void"), P, A(3)], "int (*(*x)(void))[3]"),
+            (&[A(2), P, S("(void)")], "int (*x[2])(void)"),
+            (&[P, S("(void)"), P], "int *(*x)(void)"),
+            (&[P, S("(void)"), P, A(3)], "int (*(*x)(void))[3]"),
         ];
 
         for (mods, expected) in cases {

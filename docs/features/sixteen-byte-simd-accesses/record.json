@@ -1,0 +1,83 @@
+{
+  "opportunity": "repipe:68b94ba38fac2855fe6fbada::sixteen-byte-simd-accesses",
+  "need_id": "sixteen-byte-simd-accesses",
+  "track": "quality",
+  "round": 11,
+  "binary_sha256": "16512154b0c419b2e4b064dbabd4932251ec5e0e11e14302d86821dca1ade1f0",
+  "selector": "sub_1400012f0",
+  "option": null,
+  "change_kind": "correctness-fix",
+  "source_decompiler": "kuna",
+  "default_on": null,
+  "scope": "small",
+  "branch": "fix/sixteen-byte-simd-declarators-sol",
+  "base": "ccc82a37812a1bbfd6c2eac43f1fa6597d631efa",
+  "files": [
+    "decompiler/crates/kuna-decomp/src/p9_emit/kuna_langc.rs",
+    "decompiler/crates/kuna-decomp/src/p9_emit/printc/tests.rs",
+    "decompiler/crates/kuna-console/src/grammar/tests.rs",
+    "decompiler/crates/kuna-console/tests/verify_return_uncomputed.rs",
+    "docs/spec/09-emission.md"
+  ],
+  "parity": "OK",
+  "gates": {
+    "acceptance a-9d336b0f3009": "PASS on final head: 1/1",
+    "focused declarator tests": "4/4 implementation-head tests PASS (each exact filter ran one test); final exact corpus assertions await hosted CI",
+    "strict C11 declarator shapes": "PASS with -Wall -Wextra -Werror -pedantic-errors",
+    "datatests": "PARITY OK 675/675",
+    "stages": "PARITY OK 824/824",
+    "CLI": "158/158 PASS",
+    "check_spec": "OK lenient and strict",
+    "catalog": "OK",
+    "release workspace": "NOT COMPLETE locally: captain stopped the run at the disk-safety threshold after generated specs were supplied; hosted full CI required"
+  },
+  "probe_flip": {
+    "acceptance_passes": true,
+    "before": "7 occurrences of *(char *[16]) in 630 lines",
+    "after": "0 malformed occurrences and 7 occurrences of *(char (*)[16]) in the same 630 lines",
+    "other_line_changes": 0
+  },
+  "sweep": {
+    "method": "decompile-all --json --sort addr --limit 25 --max-fn-seconds 5 using exact base and final release binaries",
+    "binaries": 253,
+    "functions": 2949,
+    "unchanged_binary_outputs": 247,
+    "unexpected_changes": 0,
+    "coverage": "all 192 in-repo executable analysis fixtures, 20 deterministic hashed-path samples from each of DecBench O0/O2/O2-noinline, plus the exact dataset witness",
+    "code_changes": [
+      {
+        "binary": "decompiler/crates/kuna-analysis/tests/fixtures/pe_void_cookie_multi_exit_x86_64.exe",
+        "function": "sub_1400012f0",
+        "occurrences": 7,
+        "change": "*(char *[16]) -> *(char (*)[16])"
+      },
+      {
+        "binary": "decompiler/crates/kuna-analysis/tests/fixtures/structreturn_x86_64",
+        "function": "passthru",
+        "occurrences": 1,
+        "change": "char *a0[16] -> char (*a0)[16]"
+      },
+      {
+        "binary": "dataset witness (byte-identical to pe_void_cookie_multi_exit_x86_64.exe)",
+        "function": "sub_1400012f0",
+        "occurrences": 7,
+        "change": "*(char *[16]) -> *(char (*)[16])"
+      }
+    ],
+    "exported_type_changes": [
+      "arraycoverwidth_x86_64 vm v3: char[16][2] -> char[2][16]",
+      "katavm_level1_x86_64 sub_12d0 v32: unsigned char (*)[2] -> unsigned char *[2]",
+      "ptx.o emit_ancillary_info.constprop.0 v16: char (*)[5] -> char *[5]",
+      "structreturn_x86_64 passthru param_1: char *[16] -> char (*)[16]"
+    ],
+    "classification": "all changes are the standard C consequence of consuming pointer/array modifiers outermost-to-base; no inventory, address, storage, variable identity, non-declarator body, or run metadata changed"
+  },
+  "decisions": [
+    "No option or DIV/ElementId: the old cast is invalid C and the mirror declaration changes the recovered type, so preserving it is not a useful policy choice.",
+    "A one-level parenthesis move was rejected because it corrupts deeper alternation; CDeclarator groups the complete accumulated declarator.",
+    "The Rust speller is independent.",
+    "The parser already represented pointer-to-array correctly; a parser-to-C-speller round trip now fences both mirror types.",
+    "The differential's four exported type strings are pinned exactly in a Datatype-level regression, and its non-witness passthru declaration is pinned by the existing end-to-end fixture test.",
+    "The low-mode review found no algorithmic correctness issue. Its production-function-postfix wording concern was resolved by documenting that Datatype traversal currently supplies pointer and array modifiers only."
+  ]
+}

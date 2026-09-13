@@ -963,12 +963,14 @@ Three artifacts make up the plane, all in
   verbatim out of `printc.rs`, which keeps thin dispatchers.
 
   C declarator modifiers are consumed outermost-to-base around the identifier.
-  A pointer prefixes the declarator; a later array/function postfix groups the
-  complete accumulated declarator before appending its suffix.  Thus a pointer
-  to an array is `T (*p)[N]`, an array of pointers is `T *p[N]`, and deeper
-  alternations preserve the same precedence instead of moving only the nearest
-  parenthesis.  Casts, parameters, locals, members, typedefs, and exported type
-  strings all share this speller.
+  A pointer prefixes the declarator; a later array postfix groups the complete
+  accumulated declarator before appending its suffix.  Thus a pointer to an
+  array is `T (*p)[N]`, an array of pointers is `T *p[N]`, and deeper
+  pointer/array alternations preserve the same precedence instead of moving only
+  the nearest parenthesis.  Casts, parameters, locals, members, typedefs, and
+  exported type strings all share this speller. The internal postfix builder is
+  generic enough to obey the same rule for a function suffix, although current
+  `Datatype` traversal supplies pointer and array modifiers only.
 
 The invariant that makes the seam free: every `LANG_C` field **is** the constant
 it replaces, asserted field-by-field — and by pointer identity for the tokens,

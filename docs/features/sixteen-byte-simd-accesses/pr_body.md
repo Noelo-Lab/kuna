@@ -14,8 +14,13 @@ allocates no phase or XML identifier.
 
 ## Validation
 
-- exact dataset acceptance `a-9d336b0f3009`: pending final-head rerun
-- focused C declarator tests: pending final-head rerun
-- strict C syntax/type validation: pending final-head rerun
-- datatests / stages / CLI / full workspace: pending final-head rerun
-- corpus declarator differential: pending final-head classification
+- exact dataset acceptance `a-9d336b0f3009`: PASS; 0 malformed and 7 corrected
+  casts in otherwise byte-identical 630-line output
+- focused C declarator tests: 4/4 implementation-head tests PASS; exact corpus
+  assertions added for hosted final-head CI; strict C11 shape check PASS
+- datatests 675/675; stages 824/824; CLI 158/158; spec lenient/strict and
+  catalog checks PASS
+- corpus differential: 253 binaries / 2,949 functions; 247 outputs identical,
+  six outputs contain only the enumerated declarator corrections
+- complete release workspace: local run stopped at the disk-safety threshold;
+  hosted full CI remains required before merge
