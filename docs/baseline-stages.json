@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    828,
-    828
+    833,
+    833
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -60,6 +60,10 @@
     "data:CALLRETPAIR #6: on, the recovered return stops being the garbage pointer the discarded half left behind",
     "data:CALLTRAMPOLINE #1: the junk store decoded at the unreachable return address appears only in the calltrampoline-off pass",
     "data:CALLTRAMPOLINE #2: the default pass flows through the fragment and recovers the real continuation",
+    "data:CANCELBYTEARITHMETIC #1: off keeps the computed byte between the two copies",
+    "data:CANCELBYTEARITHMETIC #2: off keeps the fifteen-byte prefix copy",
+    "data:CANCELBYTEARITHMETIC #3: off keeps the following five-byte suffix copy",
+    "data:CANCELBYTEARITHMETIC #4: on preserves every byte as one complete copy",
     "data:CLEANUPCODE #1: the drop glue call is gone by default; only the cleanupcode-off pass shows it (exactly one occurrence across both passes)",
     "data:CLEANUPCODE #2: the deallocation call is gone by default; the plain (non generic) name arm of the matcher",
     "data:CLEANUPCODE #3: the drop's argument setup dies with the call (pre-SSA seam), so the constant is only in the cleanupcode-off pass",
@@ -305,6 +309,7 @@
     "data:KUNA-ASSERT #2: kassert list reports the P3 config assertion with rewind scope",
     "data:KUNA-ASSERT #3: kassert list reports the cosmetic P9 assertion as HINT via HARD mechanism",
     "data:KUNA-CATALOG #10: fast whole-project discovery is default-off but live-toggleable",
+    "data:KUNA-CATALOG #11: mapped ELF x86 flow recovery is default-on in P2",
     "data:KUNA-CATALOG #1: compareform documented with its post-DIV-2 default and P3 address",
     "data:KUNA-CATALOG #2: arraynotation documented as default-on, P9 pointer-notation",
     "data:KUNA-CATALOG #3: returnpair flagged destructive-as-default so an agent keeps it opt-in",
@@ -378,6 +383,10 @@
     "data:LOWEREDSWITCH-SCRUTINEE #5: case 0x400b recovered",
     "data:LOWEREDSWITCH-SCRUTINEE #6: pass 1 keeps the compiler's chain over the same parameter",
     "data:LOWEREDSWITCH-SCRUTINEE #7: a case body is present in BOTH passes",
+    "data:MAPPED-FLOW #1: off loses the function to staged padding",
+    "data:MAPPED-FLOW #2: default retains the mapped return",
+    "data:MAPPED-FLOW #3: missing fall-through is explicit",
+    "data:MAPPED-FLOW #4: the recovered body warns about incomplete flow",
     "data:MSVCFPCONST #1: off, both operands of _scale are opaque -- the undefined x87 COMDAT and the defined IEEE-double one alike",
     "data:MSVCFPCONST #2: off, both operands of _fscale are opaque too",
     "data:MSVCFPCONST #3: on, _scale reads pi/4 from the undefined 20-hex x87 name and 0.1 from the defined 16-hex IEEE double",
@@ -454,10 +463,6 @@
     "data:SPLITSTOREKEEP #4: copy31 is five assignments at the default and one with the mark off, while the non-overlapping control copy32 is four in each pass",
     "data:SPLITSTOREKEEP #5: splitstorekeep off restores the filed bug, the head store with the middle fifteen bytes gone",
     "data:SPLITSTOREKEEP #6: the control's word at dst+0x18 is a plain eight-byte local in BOTH passes, so refinement never touched it",
-    "data:CANCELBYTEARITHMETIC #1: off keeps the computed byte between the two copies",
-    "data:CANCELBYTEARITHMETIC #2: off keeps the fifteen-byte prefix copy",
-    "data:CANCELBYTEARITHMETIC #3: off keeps the following five-byte suffix copy",
-    "data:CANCELBYTEARITHMETIC #4: on preserves every byte as one complete copy",
     "data:SWITCHSELECTOR #1: the re-rolled switch dispatches on the message parameter, and only the off pass re-rolls",
     "data:SWITCHSELECTOR #2: the case labels exist only in the pass that re-rolled",
     "data:SWITCHSELECTOR #3: with the option on the cascade survives as the compiler lowered it, over the same parameter",

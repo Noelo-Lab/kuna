@@ -5,7 +5,7 @@ use kuna_base::marshal::ElementId;
 use kuna_sleigh::loadimage::ImageBytes;
 use kuna_sleigh::translate::Translate;
 
-pub const ELEM_MAPPEDFLOWBOUNDARY: ElementId = ElementId::new("mappedflowboundary", 4166);
+pub const ELEM_MAPPEDFLOWBOUNDARY: ElementId = ElementId::new("mappedflowboundary", 4167);
 
 /// Only linked little-endian ELF images with a matching resolved x86 language qualify.
 pub fn eligible_elf(bytes: &[u8], language: &str) -> bool {

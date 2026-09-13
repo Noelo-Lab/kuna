@@ -11,9 +11,9 @@
   "angr_version": null,
   "option": "mappedflowboundary",
   "flag": "mapped_flow_boundary",
-  "element_id": 4166,
+  "element_id": 4167,
   "default_on": true,
-  "div": "DIV-171",
+  "div": "DIV-175",
   "phase": "P2",
   "subphase": "flow-classification",
   "change_kind": "correctness-fix",
@@ -22,8 +22,8 @@
   "inspiration": "Synthetic linked ELF x86 paths are lost when fall-through consumes unmapped loader padding.",
   "ablation_changed": 0,
   "parity": "OK",
-  "base": "c929c87e6416b368e409a9f3eff5598f398a97c6",
-  "acceptance_evidence": "Synthetic source-generated reductions only; the exact upstream acceptance input is unavailable. Upstream replay remains required before closure.",
+  "base": "5fb5b0319d520d3d2a8d59ae6ef243ea67403246",
+  "acceptance_evidence": "Synthetic source-generated reductions establish mapped-edge recovery. A subsequent upstream audit and local replay on the previous head still failed on a partial tail instruction in the original input. Resolution of the original default-entry failure remains unestablished.",
   "decisions": [
     "Limit recovery to matching linked little-endian ELF i386/x86-64 images.",
     "Snapshot current loader shared bytes only for the flow lifetime, preserving exclusive byte overlays.",
@@ -44,42 +44,55 @@
   },
   "gates": {
     "make test": "675/675 PARITY OK; docs/baseline.json unchanged",
-    "make test-stages": "818/818 PARITY OK; only five added passing keys",
-    "make rust-test": "full workspace and docs/options.md freshness green; RUST_TEST_THREADS=4; KUNA_DECOMP_TEST unset",
+    "make test-stages": "833/833 PARITY OK; all 828 upstream passing keys retained and only five mapped-boundary keys added",
+    "make rust-test": "6776 passing / 38 unchanged ignored; all 406 suites green, including 13 console, 7 mapped-flow CLI, 3 diagnostic CLI regressions and docs/options.md freshness; RUST_TEST_THREADS=4; KUNA_DECOMP_TEST unset",
     "make check-spec": "OK (lenient mode)",
-    "catalog and counters": "OK: 193 settables, 117 surfaces, tiers 61/73/59, 281 corpus files, next free ElementId 4167",
-    "source under test": "6661a0cd768b1ccb595c17b84f7813e2f7881142 plus staged corrections; branch-built tools and reused unchanged specs, inherited KUNA overrides cleared",
-    "acceptance": "synthetic ELF32/64 pass; exact upstream input unavailable, replay required before closure"
+    "catalog and counters": "OK: 195 settables, 118 surfaces, tiers 63/73/59, 283 corpus files, 78 live fields, next free ElementId 4168",
+    "source under test": "Rebased tree on 5fb5b0319d520d3d2a8d59ae6ef243ea67403246 with additive metadata corrections and ElementId 4167; Rust source hashes unchanged across all checks; branch-built tools and 148 reused unchanged specs, inherited KUNA overrides cleared",
+    "acceptance": "Synthetic ELF32/64 reductions pass. The previous head failed on the original input; no resolution of that failure is claimed by this rebase.",
+    "applicable CI": "make test-cli 161/161; shared counters and ElementId uniqueness green; release kuna-ghidra 56/56 with --include-ignored; console canary 15/15 and no missing-spec skips; browser Worker, error and dev-viz scripts green"
   },
   "sweep": {
-    "files": 114,
-    "functions": 6628,
-    "changed_records_initially": 12,
+    "files": 115,
+    "functions": 6642,
+    "changed_records_initially": 15,
     "recovered_functions": 10,
     "failure_diagnostic_changes": 1,
-    "deadline_differences_replayed": 1,
+    "deadline_differences_replayed": 4,
     "deadline_replay_identical": true,
     "remaining_body_losses": 0,
-    "method": "Every repository-tracked linked little-endian ELF x86 image plus two permanent synthetic witnesses and a local synthetic overlap witness, decompile-all default mode off/on; 2-second function budget. One deadline difference replays with identical off/on JSON at 60 seconds; no body loss remains. Other default-on bodies and diagnostics match the previous head.",
-    "changed_bodies_from_previous_head": 0
+    "method": "Every repository-tracked linked little-endian ELF x86 image plus two permanent synthetic witnesses and a local synthetic overlap witness, decompile-all default mode off/on; 2-second function budget. Four deadline differences replay with identical off/on JSON at 60 seconds; no body loss remains. Default-on bodies and diagnostics for all 114 pre-rebase images match the previous head, including the synthetic recovery witnesses. The newly added public image is identical off/on.",
+    "changed_bodies_from_previous_head": 0,
+    "base": "ccc82a37812a1bbfd6c2eac43f1fa6597d631efa",
+    "rebase_scope": "Historical corpus and speed measurements from the previous base; this rebase does not repeat the corpus sweep."
   },
-  "speed_off_ms": 181.18,
-  "speed_on_ms": 176.34,
-  "speed_delta_pct": -2.67,
+  "speed_off_ms": 192.64,
+  "speed_on_ms": 193.71,
+  "speed_delta_pct": 0.56,
   "speed_samples": 5,
   "speed_budget_pct": 5.0,
   "speed_within_budget": true,
   "speed_forced_off": false,
   "speed_binary": "decompiler/crates/kuna-analysis/tests/fixtures/regglobal_fmt_x86_64",
   "speed_selector": "main",
-  "speed_method": "one discarded warmup per setting, five interleaved samples; identical successful C",
+  "speed_method": "one discarded warmup per setting, five interleaved samples on one allowed CPU; identical successful C",
   "overlap_speed": {
     "code": "b80700000085db7501e8c3",
     "identical_json": true,
     "medians_ms": {
-      "off": 54.22,
-      "on": 55.05
+      "off": 57.87,
+      "on": 59.66
     },
-    "delta_pct": 1.53
+    "delta_pct": 3.09
+  },
+  "rebase": {
+    "previous_head": "ccdc7aa59d7eaa2b84d602b4e5893808dd3cfd74",
+    "target": "5fb5b0319d520d3d2a8d59ae6ef243ea67403246",
+    "original_commits_replayed": 5,
+    "catalog": "195 settables; 118 surfaces; tiers 63/73/59; 78 live fields",
+    "stages": "All 828 upstream passing keys retained; only five mapped-boundary passing keys added; no existing expectation changed",
+    "history": "Upstream DIV-174 preserved; mappedflowboundary assigned DIV-175",
+    "element_id": "Upstream uses 4166; mappedflowboundary reassigned to 4167",
+    "implementation": "Mapped-flow implementation and regressions are unchanged except for the option ElementId; upstream architecture, stack-use metadata and option changes retained"
   }
 }
