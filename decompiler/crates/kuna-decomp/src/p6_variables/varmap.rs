@@ -2739,6 +2739,17 @@ impl MapState {
     pub fn add_range_pub(&mut self, st: uintb, ct: Option<Rc<Datatype>>, fl: uint4, rt: RangeType, hi: int4) {
         self.add_range(st, ct, fl, rt, hi);
     }
+
+    /// The collected hints, for the kuna passes that rewrite them before
+    /// `restructure` (`kuna_endptrbound`).
+    pub fn hints_mut(&mut self) -> &mut Vec<RangeHint> {
+        &mut self.maplist
+    }
+
+    /// Is `[st, st+size)` inside the analyzed range (the `addRange` filter)?
+    pub fn covers(&self, st: uintb, size: int4) -> bool {
+        self.range.in_range(&Address::new(Rc::clone(&self.spaceid), st), size)
+    }
 }
 
 #[cfg(test)]

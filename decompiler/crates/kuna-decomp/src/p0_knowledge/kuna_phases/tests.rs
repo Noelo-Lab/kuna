@@ -138,6 +138,7 @@ fn settable_count_is_197() {
     // +1 for `pebnames` (P5 Windows TEB/PEB segment-base typing, DIV-175).
     // +1 for `mappedflowboundary` (P2 mapped ELF x86 flow boundaries, DIV-176).
     // +1 for `nulterminator` (P6 opt-in stack-array terminator absorption).
+    // +1 for `endptrbound` (P6 pointer-walk end bound on its buffer, DIV-177).
     assert_eq!(kuna_num_settables(), 197);
     assert_eq!(SETTABLE_TABLE.len(), 197);
 }
@@ -257,6 +258,7 @@ fn tier_counts_are_63_core_75_transform_59_analysis() {
     // transform 74 -> 75: +1 for `nulterminator` (P6 opt-in stack-array
     // terminator absorption, default off -- the struct-first-member idiom is
     // frame-indistinguishable, so it is not a default correctness fix).
+    // transform 73 -> 74: +1 for `endptrbound` (P6 pointer-walk end bound, DIV-177).
     assert_eq!((core, transform, analysis), (63, 75, 59));
 }
 
@@ -800,6 +802,7 @@ fn option_values_live_value_present_for_79() {
     // 76 -> 77: +1 for `cancelbytearithmetic` (live_field =
     // cancel_byte_arithmetic, DIV-174).
     // 78 -> 79: +1 for `nulterminator` (live_field = nul_terminator, opt-in).
+    // 77 -> 78: +1 for `endptrbound` (live_field = end_ptr_bound, DIV-177).
     assert_eq!(with_live, 79);
 }
 
@@ -946,6 +949,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // beside `funcboundflow`.
     // 195 -> 196: +1 for `nulterminator` (opt-in); its P6 row sits mid-table beside
     // `cookiescramble`, so it increments the comma-terminated catalog-row count.
+    // 194 -> 195: +1 for `endptrbound` (DIV-177); its P6 row sits mid-table.
     assert_eq!(json.matches("},\n").count(), 196);
 }
 

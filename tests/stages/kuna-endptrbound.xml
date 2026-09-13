@@ -1,0 +1,159 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:windows">
+<!--
+    (kuna) `option endptrbound` (P6 stack-frame-layout, default ON).  GH-468
+    finding 7: a pointer-walk loop's one-past-the-end bound is not derivable
+    from the C.
+
+    f, at 0x140001000, is the MSVC x64 shape from the report: an 8-byte stack
+    buffer built from two dword constants, walked bytewise, each byte handed to
+    a call next to a std::string-like object that lives right after the buffer:
+
+        140001021  mov  dword ptr [rbp+0x27],0x3e3c2f3e
+        140001028  mov  dword ptr [rbp+0x2b],0x2e383036
+        14000102f  lea  rsi,[rbp+0x27]          ; p = buf
+        140001033  movzx edx,byte ptr [rsi]      ; *p
+        140001036  lea  rcx,[rbp+0x2f]          ; &s
+        14000103a  call push_back
+        14000103f  inc  rsi
+        140001042  lea  rax,[rbp+0x2f]          ; buf + 8
+        140001046  cmp  rsi,rax
+        140001049  jne  140001033
+
+    [rbp+0x2f] is both one past the buffer and the address of s, so the frame
+    model binds the bound to s: the loop renders `while (v3 != v2)`, the
+    walking pointer takes s's element type, and the buffer becomes an
+    `unsigned int` written through `_4_4_`.  With the option on, the walk
+    (stack start, constant step, dereferenced with the step's width, compared
+    against a stack address a whole number of steps later) makes [rbp+0x27,
+    rbp+0x2f) one `char [8]`, and the bound is rebuilt on it as `&v1[8]`.
+
+    k, at 0x140001080, computes the end address once into RDI and uses the
+    same register as the call's `&s`.  The bound still renders on the buffer,
+    but the call argument, which really is s, keeps rendering as s.
+
+    g, at 0x140001100, is a NEGATIVE control: the walk has the same shape but
+    an 8-byte store at [rbp+0x2b] straddles the walk's end, so no buffer can
+    span the walk and g renders identically in both passes.
+
+    m, at 0x140001200, is a NEGATIVE control for the loop-exit proof.  EBX
+    counts 16 steps; the pointer is compared against [rbp+0x2f] only to skip
+    the call at that position:
+
+        140001239  movzx edx,byte ptr [rsi]
+        14000123c  lea  rax,[rbp+0x2f]
+        140001240  cmp  rsi,rax
+        140001243  je   14000124e             ; stays inside the loop
+        140001245  lea  rcx,[rbp+0x2f]
+        140001249  call push_back
+        14000124e  inc  rsi
+        140001251  dec  ebx
+        140001253  jne  140001239
+
+    Both edges of that branch stay in the loop, so the comparison bounds
+    nothing and must not make [rbp+0x27, rbp+0x2f) an array.
+
+    r, at 0x140001280, is a NEGATIVE control for the dereference proof: f's
+    walk, but each step also reads [rsi+1], so the last step reads the byte
+    after the would-be buffer and the walk proves no 8-byte extent.
+
+    c, at 0x140001300, is gcc -O0 code for a byte walk that clears an
+    int array before the function indexes it as ints:
+
+        int arr[4];
+        for (unsigned char *p = (unsigned char *)arr;
+             p != (unsigned char *)arr + sizeof arr; p++)
+            *p = 0;
+        for (int i = 0; i < n && i < 4; i++) arr[i] = i * 3 + n;
+
+    The walk is proven, but typed index evidence of another element width
+    lies inside it, so the frame keeps int4 v1 [4] and its indexing in both
+    passes (#10, #11); only the default pass rebuilds the bound on it (#12).
+
+    P0 assertion: `option endptrbound off|on`.  Pass 1 (off) pins the bug
+    (#1, #2), pass 2 (on) pins the fix (#3, #4, #5, #12), and #6 to #11 hold
+    in both.
+-->
+<bytechunk space="ram" offset="0x140001000">
+555657488d6c24994881eca000000031c04889452f4889453f48c745470f000000c745273e2f3c3ec7452b3630382e488d75270fb616488d4d2fe84101000048ffc6488d452f4839c675e84881c4a00000005f5e5dc3
+</bytechunk>
+<bytechunk space="ram" offset="0x140001080">
+555657488d6c24994881eca000000031c04889452f4889453f48c745470f000000c745273e2f3c3ec7452b3630382e488d7d2f488d75270fb6164889f9e8be00000048ffc64839fe75ed4881c4a00000005f5e5dc3
+</bytechunk>
+<bytechunk space="ram" offset="0x140001100">
+555657488d6c24994881eca0000000c745273e2f3c3e48894d2b488d75270fb616488d4d37e85600000048ffc6488d452f4839c675e8488b452b4881c4a00000005f5e5dc3
+</bytechunk>
+<bytechunk space="ram" offset="0x140001180">
+488b411088140148ffc048894110c3
+</bytechunk>
+<bytechunk space="ram" offset="0x140001200">
+55565753488d6c24994881eca000000031c04889452f4889453f48c745470f000000c745273e2f3c3ec7452b3630382e488d7527bb100000000fb616488d452f4839c67409488d4d2fe832ffffff48ffc6ffcb75e44881c4a00000005b5f5e5dc3
+</bytechunk>
+<bytechunk space="ram" offset="0x140001280">
+555657488d6c24994881eca000000031c04889452f4889453f48c745470f000000c745273e2f3c3ec7452b3630382e488d75270fb6160fb6460101c2488d4d2fe8bbfeffff48ffc6488d452f4839c675e24881c4a00000005f5e5dc3
+</bytechunk>
+<bytechunk space="ram" offset="0x140001300">
+554889e5897dcc488d45d0488945f8eb0c488b45f8c60000488345f801488d45d04883c010483945f875e6c745f400000000eb1b8b55f489d001c001c28b45cc01c28b45f44898895485d08345f4018b45f43b45cc7d06837df4037ed7c745f000000000c745ec00000000eb108b45ec48988b4485d00145f08345ec01837dec037eea8b45f05dc3
+</bytechunk>
+<symbol space="ram" offset="0x140001000" name="f"/>
+<symbol space="ram" offset="0x140001080" name="k"/>
+<symbol space="ram" offset="0x140001100" name="g"/>
+<symbol space="ram" offset="0x140001180" name="push_back"/>
+<symbol space="ram" offset="0x140001200" name="m"/>
+<symbol space="ram" offset="0x140001280" name="r"/>
+<symbol space="ram" offset="0x140001300" name="c"/>
+</binaryimage>
+<script>
+  <com>option endptrbound off</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu k</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu g</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu m</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu r</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu c</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option endptrbound on</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu k</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu g</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu m</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu r</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu c</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="ENDPTRBOUND #1: off, the loop bound is the object that follows the buffer" min="2" max="2">^  \} while \(v3 != v[12]\);$</stringmatch>
+<stringmatch name="ENDPTRBOUND #2: off, the walking pointer is typed after that neighbour" min="2" max="2">^  unsigned long long \*v3;$</stringmatch>
+<stringmatch name="ENDPTRBOUND #3: on, the walked bytes are one 8-byte buffer" min="2" max="2">^  char v1 \[8\]; // stack - 0x58$</stringmatch>
+<stringmatch name="ENDPTRBOUND #4: on, the bound is one past that buffer" min="2" max="2">^  \} while \(v3 != &amp;v1\[8\]\);$</stringmatch>
+<stringmatch name="ENDPTRBOUND #5: on, the call argument that means the neighbour still names it" min="2" max="2">^    push_back\(v2,\*v3\);$</stringmatch>
+<stringmatch name="ENDPTRBOUND #6: both passes, a store straddling the walk's end vetoes the buffer" min="2" max="2">^  unsigned long long v3; // stack - 0x54$</stringmatch>
+<stringmatch name="ENDPTRBOUND #7: both passes, a comparison that controls no loop exit keeps naming the neighbour" min="2" max="2">^    if \(v4 != v3\)$</stringmatch>
+<stringmatch name="ENDPTRBOUND #8: both passes, that comparison invents no buffer" min="2" max="2">^  unsigned int v2; // stack - 0x60$</stringmatch>
+<stringmatch name="ENDPTRBOUND #9: both passes, a walk that reads past its end is not bounded on a buffer" min="2" max="2">^  \} while \(v3 != \(uint1 \*\)v2\);$</stringmatch>
+<stringmatch name="ENDPTRBOUND #10: both passes, a byte walk over an int array keeps the int array" min="2" max="2">^  int4 v1 \[4\];$</stringmatch>
+<stringmatch name="ENDPTRBOUND #11: both passes, that array keeps its int indexing" min="2" max="2">^    v1\[v[56]\] = v[56] \* 3 \+ v[23];$</stringmatch>
+<stringmatch name="ENDPTRBOUND #12: on, the byte walk's bound is rebuilt on the int array" min="1" max="1">^  for \(v6 = v1; v6 != &amp;v1\[4\]; </stringmatch>
+</decompilertest>

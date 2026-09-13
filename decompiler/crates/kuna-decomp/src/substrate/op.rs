@@ -194,6 +194,12 @@ pub mod pcodeop_addlflags {
     /// option off (the pass never runs) the bit is never set and output is
     /// byte-identical.
     pub const kuna_iteboolean: uint4 = 0x4000;
+    /// (kuna) This `INT_ADD` is a pointer walk's end bound that `endptrbound`
+    /// rebuilt on the walked buffer (`&buf + span`).  Set by
+    /// [`crate::p6_variables::kuna_endptrbound::rebase_bounds`]; read back by
+    /// `anchor_rebuilt_bounds`, which gives every later frame layout the
+    /// reference at the bound that the rebuilt form no longer makes.
+    pub const kuna_endptrbound: uint4 = 0x8000;
 }
 
 // ---------------------------------------------------------------------------
