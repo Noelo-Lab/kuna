@@ -86,7 +86,7 @@ fn image_with_relocations(abi: u32, first: &[u8], relocations: &[(u64, u32, i64)
 }
 
 #[test]
-fn descriptor_relocations_override_payloads_and_unknown_values_are_skipped() {
+fn descriptor_relocations_override_payloads_and_uncertain_tocs_are_not_seeded() {
     use kuna_analysis::loader::elfv1::Descriptors;
     use object::{Object as _, ObjectSection as _};
     let code = [0x88,0x62,0,0,0x4e,0x80,0,0x20];
@@ -117,16 +117,42 @@ fn descriptor_relocations_override_payloads_and_unknown_values_are_skipped() {
         assert!(text.contains("\"address_hex\": \"0x1000\"") && text.contains("return 7;"), "{text}");
         std::fs::remove_file(path).unwrap();
     }
-    for bad_relocs in [
-        vec![(0x2000, object::elf::R_PPC64_ADDR64, 0x1000)],
-        vec![(0x2008, object::elf::R_PPC64_ADDR64, 0x3000)],
-        vec![(0x2004, relative, 0x1000)],
-        vec![(0x2000, relative, 0x1000), (0x2000, relative, 0x1008)],
+    for unknown_alias in [1, 0] {
+        let relocs = [(0x2000, relative, 0x1000), (0x2018, relative, 0x1000),
+            (0x2008 + unknown_alias * 24, object::elf::R_PPC64_ADDR64, 0x3000 + unknown_alias as i64)];
+        let mut bytes = image_with_relocations(1, &code, &relocs);
+        bytes[16..18].copy_from_slice(&3u16.to_be_bytes());
+        let file = object::File::parse(&*bytes).unwrap();
+        let descriptors = Descriptors::read(&file);
+        let path = common::scratch_file("elfv1-uncertain-alias", "elf");
+        std::fs::write(&path, bytes).unwrap();
+        let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
+            .args(["decompile", path.to_str().unwrap(), "0x1000", "--addr", "--json", "--option", "readonly", "on"])
+            .output().unwrap();
+        let text = String::from_utf8_lossy(&out.stdout);
+        assert!(out.status.success(), "{text}\n{}", String::from_utf8_lossy(&out.stderr));
+        assert!(descriptors.entry_tocs().is_empty(), "{text}");
+        assert_eq!(descriptors.code_address(0x2000), 0x1000);
+        assert_eq!(descriptors.code_address(0x2018), 0x1000);
+        assert_eq!(descriptors.0[unknown_alias as usize].toc, None);
+        let mut shifted = descriptors.clone();
+        shifted.adjust_vma(0x10000);
+        assert!(shifted.entry_tocs().is_empty());
+        assert_eq!(shifted.code_address(0x12018), 0x11000);
+        assert_eq!(shifted.0[unknown_alias as usize].toc, None);
+        assert!(text.contains("// r2") && text.contains("return *"), "{text}");
+        std::fs::remove_file(path).unwrap();
+    }
+    for (bad_relocs, entry) in [
+        (vec![(0x2000, object::elf::R_PPC64_ADDR64, 0x1000)], 0x2000),
+        (vec![(0x2008, object::elf::R_PPC64_ADDR64, 0x3000)], 0x1000),
+        (vec![(0x2004, relative, 0x1000)], 0x2000),
+        (vec![(0x2000, relative, 0x1000), (0x2000, relative, 0x1008)], 0x2000),
     ] {
         let bytes = image_with_relocations(1, &code, &bad_relocs);
         let file = object::File::parse(&*bytes).unwrap();
         let descriptors = Descriptors::read(&file);
-        assert_eq!(descriptors.code_address(0x2000), 0x2000);
+        assert_eq!(descriptors.code_address(0x2000), entry);
         assert!(!descriptors.entry_tocs().contains_key(&0x1000));
     }
 }

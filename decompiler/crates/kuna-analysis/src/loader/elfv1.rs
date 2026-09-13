@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, HashMap};
 pub struct Descriptor {
     pub address: u64,
     pub entry: u64,
-    pub toc: u64,
+    pub toc: Option<u64>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -29,27 +29,25 @@ impl Descriptors {
         let Some(opd_end) = opd.address().checked_add(bytes.len() as u64) else { return Self::default(); };
         let relocations = descriptor_relocations(file, opd.address(), opd_end);
         let mut out = Vec::new();
-        'descriptors: for address in addresses {
+        for address in addresses {
             if address & 7 != 0 { continue; }
             let Some(offset) = address.checked_sub(opd.address()).and_then(|n| usize::try_from(n).ok()) else { continue; };
             let Some(end) = offset.checked_add(24) else { continue; };
-            let Some(payload) = bytes.get(offset..end) else { continue; };
-            let Some(record_end) = address.checked_add(24) else { continue; };
-            let mut record: [u8; 24] = payload.try_into().unwrap();
-            for (&slot, &(width, value)) in relocations.range(address.saturating_sub(23)..record_end) {
-                let Some(write_end) = slot.checked_add(width) else { continue 'descriptors; };
-                if write_end <= address { continue; }
-                let Some(start) = slot.checked_sub(address).and_then(|n| usize::try_from(n).ok()) else { continue 'descriptors; };
-                let Some(value) = value else { continue 'descriptors; };
-                if width != 8 || start & 7 != 0 || start > 16 { continue 'descriptors; }
-                let word = if file.is_little_endian() { value.to_le_bytes() } else { value.to_be_bytes() };
-                record[start..start+8].copy_from_slice(&word);
-            }
+            let Some(record) = bytes.get(offset..end) else { continue; };
             let word = |start| {
                 let b: [u8;8] = record[start..start+8].try_into().unwrap();
-                if file.is_little_endian() { u64::from_le_bytes(b) } else { u64::from_be_bytes(b) }
+                let mut value = if file.is_little_endian() { u64::from_le_bytes(b) } else { u64::from_be_bytes(b) };
+                let begin = address.checked_add(start as u64)?;
+                let end = begin.checked_add(8)?;
+                for (&slot, &(width, resolved)) in relocations.range(begin.saturating_sub(23)..end) {
+                    if slot.checked_add(width)? <= begin { continue; }
+                    if slot != begin || width != 8 { return None; }
+                    value = resolved?;
+                }
+                Some(value)
             };
-            let (entry,toc) = (word(0),word(8));
+            let Some(entry) = word(0) else { continue; };
+            let toc = word(8);
             let mapped_code = entry & 3 == 0 && file.sections().any(|s| {
                 if !matches!(s.flags(), SectionFlags::Elf { sh_flags } if sh_flags & 6 == 6) { return false; }
                 let Some(n) = entry.checked_sub(s.address()).and_then(|n| usize::try_from(n).ok()) else { return false; };
@@ -64,11 +62,11 @@ impl Descriptors {
         self.0.binary_search_by_key(&address, |d| d.address).ok().map_or(address, |i| self.0[i].entry)
     }
 
-    /// Aliases may share code; conflicting TOCs cannot safely seed that entry.
+    /// Aliases may share code; conflicting or unresolved TOCs cannot safely seed that entry.
     pub fn entry_tocs(&self) -> BTreeMap<u64,u64> {
         let mut values: HashMap<u64,Option<u64>> = HashMap::new();
         for d in &self.0 {
-            values.entry(d.entry).and_modify(|old| { if *old != Some(d.toc) { *old = None; } }).or_insert(Some(d.toc));
+            values.entry(d.entry).and_modify(|old| { if *old != d.toc { *old = None; } }).or_insert(d.toc);
         }
         values.into_iter().filter_map(|(entry,toc)| toc.map(|toc| (entry,toc))).collect()
     }
@@ -77,13 +75,13 @@ impl Descriptors {
         for d in &mut self.0 {
             d.address = d.address.wrapping_add(delta);
             d.entry = d.entry.wrapping_add(delta);
-            d.toc = d.toc.wrapping_add(delta);
+            d.toc = d.toc.map(|toc| toc.wrapping_add(delta));
         }
         self.0.sort_by_key(|d| d.address);
     }
 }
 
-/// Resolve RELA relative words at kuna's initial zero load bias; uncertain writes invalidate a record.
+/// Resolve RELA relative words at kuna's initial zero load bias; uncertain writes invalidate affected words.
 fn descriptor_relocations(file: &object::File<'_>, begin: u64, end: u64) -> BTreeMap<u64, (u64, Option<u64>)> {
     use object::elf;
     let mut values: BTreeMap<u64, (u64, Option<u64>)> = BTreeMap::new();
