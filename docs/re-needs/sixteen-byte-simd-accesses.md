@@ -2,7 +2,7 @@
 need_id: sixteen-byte-simd-accesses
 title: Sixteen-byte SIMD accesses render as dereferenced arrays of pointers
 track: quality
-status: open
+status: closed
 severity: minor
 probe_id: p-624a130d8a14
 acceptance_id: a-9d336b0f3009
@@ -17,9 +17,9 @@ covered_by_option: null
 touches: [decompiler/crates/kuna-decomp]
 scope: small
 regression_of: null
-pr: null
-closed_in_round: null
-closing_pr: null
+pr: https://github.com/Noelo-Lab/kuna/pull/620
+closed_in_round: 12
+closing_pr: "620"
 reject_reason: null
 ---
 

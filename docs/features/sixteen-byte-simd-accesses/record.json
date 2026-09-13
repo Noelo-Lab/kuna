@@ -11,6 +11,7 @@
   "default_on": null,
   "scope": "small",
   "branch": "fix/sixteen-byte-simd-declarators-sol",
+  "pr": "https://github.com/Noelo-Lab/kuna/pull/620",
   "base": "ccc82a37812a1bbfd6c2eac43f1fa6597d631efa",
   "files": [
     "decompiler/crates/kuna-decomp/src/p9_emit/kuna_langc.rs",
