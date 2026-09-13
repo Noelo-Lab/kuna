@@ -1392,6 +1392,7 @@ fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
 /// corpus (real `if` statements now emit for boolless / ccmp / condconst /
 /// condexesub / skipnext2 / promotecompare).
 pub fn print_c(arch: &mut Architecture, fd: &Funcdata) -> String {
+    let cookie_calls = exact_cookie_call_evidence(fd, arch);
     // Drive the IR-coupled body emitter (C++ `IfcPrintC::execute` ->
     // `print->docFunction(fd)`): the real signature (recovered return type) plus
     // the structured-block body (the if/else hierarchy + per-statement RPN
@@ -1400,8 +1401,153 @@ pub fn print_c(arch: &mut Architecture, fd: &Funcdata) -> String {
     // resolution); split the borrows by moving the printer out, driving it, and
     // moving it back (the printer is owned by `arch`).
     let mut printer = arch.take_print();
-    let out = printer.doc_function_full(fd, arch);
+    let out = if cookie_calls.is_empty() {
+        printer.doc_function_full(fd, arch)
+    } else {
+        let (out, mut markup) =
+            printer.doc_function_full_with_statement_provenance(fd, arch);
+        rewrite_cookie_literal_returns(out, &cookie_calls, &mut markup)
+    };
     arch.put_print(printer);
+    out
+}
+
+/// Inline the caller's literal return assignment across a checker call only
+/// when P7 recorded that exact call occurrence as an MSVC `/GS` cookie check.
+/// Return-tail duplication can render one shared p-code tail in several
+/// structured leaves; the tied return register then prints as
+/// `v = K; checker(); return v;` even though the exact call proof already
+/// established that the checker preserves ABI output storage. Keeping the line
+/// slot blank preserves line numbering, while moving the assignment line's
+/// markup associations onto the return line keeps the synthesized literal tied
+/// to the instruction that produced it.
+///
+/// This is deliberately a final presentation rule: the three adjacent lines,
+/// the same local on assignment and return, a literal 0/1, a complete standalone
+/// call statement, and that line's exact marked call `opref` must all agree. A
+/// same-named unmarked call, trailing expression/statement, intervening
+/// statement, non-literal value, or absent P7 evidence leaves the text
+/// byte-for-byte unchanged.
+fn exact_cookie_call_evidence(
+    fd: &Funcdata,
+    arch: &Architecture,
+) -> BTreeMap<u64, BTreeSet<String>> {
+    let mut calls = BTreeMap::<u64, BTreeSet<String>>::new();
+    for i in 0..fd.num_calls() {
+        let call = fd.get_call_specs(i);
+        let Some(op) = fd.obank().get(call.get_op()) else { continue };
+        if !fd.get_override().is_msvc_cookie_call(op.get_addr()) {
+            continue;
+        }
+        let names = calls.entry(op.get_time() as u64).or_default();
+        if !call.get_name().is_empty() {
+            names.insert(call.get_name().to_string());
+        }
+        let printed = call.fspec_printed_name(arch.kuna_name_style());
+        if !printed.is_empty() {
+            names.insert(printed);
+        }
+    }
+    calls.retain(|_, names| !names.is_empty());
+    calls
+}
+
+/// True only for one complete call expression statement. A trailing `//`
+/// printer annotation is harmless, but any expression or second statement
+/// after the matching close parenthesis is a refusal.
+fn is_exact_call_statement(line: &str, callee: &str) -> bool {
+    let trimmed = line.trim();
+    let code = match trimmed.split_once("//") {
+        Some((before, _)) => before.trim_end(),
+        None => trimmed,
+    };
+    let Some(expression) = code.strip_suffix(';').map(str::trim_end) else {
+        return false;
+    };
+    let Some(rest) = expression.strip_prefix(callee) else {
+        return false;
+    };
+    if !rest.starts_with('(') {
+        return false;
+    }
+
+    let mut depth = 0usize;
+    for (index, ch) in rest.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => {
+                let Some(next_depth) = depth.checked_sub(1) else {
+                    return false;
+                };
+                depth = next_depth;
+                if depth == 0 && index + ch.len_utf8() != rest.len() {
+                    return false;
+                }
+            }
+            // Quotes and statement delimiters need a C parser to interpret
+            // safely. The `/GS` checker arguments do not need them, so decline.
+            '\'' | '"' | ';' | '{' | '}' => return false,
+            _ => {}
+        }
+    }
+    depth == 0
+}
+
+fn rewrite_cookie_literal_returns(
+    text: String,
+    calls: &BTreeMap<u64, BTreeSet<String>>,
+    markup: &mut crate::prettyprint::MarkupProvenance,
+) -> String {
+    if calls.is_empty() {
+        return text;
+    }
+
+    let trailing_newline = text.ends_with('\n');
+    let mut lines: Vec<String> = text.lines().map(str::to_string).collect();
+    // The printer starts documents with `tag_line()`: the text sink contains
+    // that initial newline, while both provenance emitters number the content
+    // after it as line 1. Translate raw split positions back to emitter lines.
+    let leading_sink_line = usize::from(text.starts_with('\n'));
+    for i in 0..lines.len().saturating_sub(2) {
+        let assignment = lines[i].trim();
+        let Some((name, value)) = assignment.split_once(" = ") else { continue };
+        if name.is_empty()
+            || !name.bytes().all(|b| b == b'_' || b.is_ascii_alphanumeric())
+            || !matches!(value, "0;" | "1;")
+        {
+            continue;
+        }
+        let call_line_number = i + 2 - leading_sink_line;
+        let exact_marked_call = markup
+            .associations
+            .iter()
+            .filter(|association| association.line_number == call_line_number)
+            .filter_map(|association| association.opref)
+            .filter_map(|opref| calls.get(&opref))
+            .flatten()
+            .any(|callee| is_exact_call_statement(&lines[i + 1], callee));
+        if !exact_marked_call {
+            continue;
+        }
+        if lines[i + 2].trim() != format!("return {name};") {
+            continue;
+        }
+        let literal = value.as_bytes()[0] as char;
+        let indent: String = lines[i].chars().take_while(|c| c.is_whitespace()).collect();
+        lines[i] = indent.clone();
+        lines[i + 2] = format!("{indent}return {literal};");
+        let assignment_line_number = i + 1 - leading_sink_line;
+        let return_line_number = i + 3 - leading_sink_line;
+        for association in &mut markup.associations {
+            if association.line_number == assignment_line_number {
+                association.line_number = return_line_number;
+            }
+        }
+    }
+    let mut out = lines.join("\n");
+    if trailing_newline {
+        out.push('\n');
+    }
     out
 }
 
@@ -1411,11 +1557,16 @@ pub fn print_c_with_provenance(
     arch: &mut Architecture,
     fd: &Funcdata,
 ) -> (String, CodeProvenance) {
+    let cookie_calls = exact_cookie_call_evidence(fd, arch);
     let mut printer = arch.take_print();
     let out = printer.doc_function_full(fd, arch);
-    let markup = printer.doc_function_provenance(fd, arch);
+    let mut markup = printer.doc_function_provenance(fd, arch);
     arch.put_print(printer);
-    (out, resolve_markup_provenance(fd, &markup))
+    let out = rewrite_cookie_literal_returns(out, &cookie_calls, &mut markup);
+    (
+        out,
+        resolve_markup_provenance(fd, &markup),
+    )
 }
 
 /// (kuna) Render every user-defined data-type in the architecture's type

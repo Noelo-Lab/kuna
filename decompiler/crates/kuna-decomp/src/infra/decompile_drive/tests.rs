@@ -6,11 +6,107 @@
 //! both downcasts failed and every error record read "panic with non-string
 //! payload".  These round-trips are the regression gate for that.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::prettyprint::{MarkupAssociation, MarkupProvenance};
 
-use super::{panic_message, resolve_markup_provenance_with_addresses};
+use super::{panic_message, resolve_markup_provenance_with_addresses, rewrite_cookie_literal_returns};
+
+fn cookie_calls(opref: u64) -> BTreeMap<u64, BTreeSet<String>> {
+    BTreeMap::from([(opref, BTreeSet::from(["security_check_cookie".into()]))])
+}
+
+#[test]
+fn exact_cookie_literal_return_rewrite_keeps_call_and_line_slots() {
+    // Real documents begin with the sink newline inserted by `tag_line()`, but
+    // emitter provenance numbers the following content as line 1.
+    let before =
+        "\n  v7 = 1;\n  security_check_cookie(cookie); // return-dupe\n  return v7;\n".to_string();
+    let mut markup = MarkupProvenance {
+        associations: vec![
+            MarkupAssociation { line_number: 1, opref: Some(5), varref: Some(70) },
+            MarkupAssociation { line_number: 2, opref: Some(7), varref: None },
+            MarkupAssociation { line_number: 3, opref: Some(9), varref: Some(70) },
+        ],
+    };
+    let after = rewrite_cookie_literal_returns(before, &cookie_calls(7), &mut markup);
+    assert_eq!(
+        after,
+        "\n  \n  security_check_cookie(cookie); // return-dupe\n  return 1;\n"
+    );
+
+    let provenance = resolve_markup_provenance_with_addresses(
+        &markup,
+        &BTreeMap::from([(5, 0x401000), (7, 0x401004), (9, 0x401008)]),
+    );
+    assert_eq!(
+        provenance.line_mappings,
+        vec![
+            super::LineMapping { line_number: 2, addresses: vec![0x401004] },
+            super::LineMapping {
+                line_number: 3,
+                addresses: vec![0x401000, 0x401008],
+            },
+        ]
+    );
+    assert_eq!(provenance.variable_uses[&70].line_numbers, vec![3]);
+    assert_eq!(provenance.variable_uses[&70].addresses, vec![0x401000, 0x401008]);
+}
+
+#[test]
+fn exact_cookie_literal_return_rewrite_binds_the_marked_call_occurrence() {
+    let before = concat!(
+        "  v7 = 1;\n",
+        "  security_check_cookie(cookie);\n",
+        "  return v7;\n",
+        "  v8 = 0;\n",
+        "  security_check_cookie(cookie);\n",
+        "  return v8;\n",
+    )
+    .to_string();
+    let mut markup = MarkupProvenance {
+        associations: vec![
+            MarkupAssociation { line_number: 2, opref: Some(8), varref: None },
+            MarkupAssociation { line_number: 5, opref: Some(7), varref: None },
+        ],
+    };
+    let after = rewrite_cookie_literal_returns(before, &cookie_calls(7), &mut markup);
+    assert_eq!(
+        after,
+        concat!(
+            "  v7 = 1;\n",
+            "  security_check_cookie(cookie);\n",
+            "  return v7;\n",
+            "  \n",
+            "  security_check_cookie(cookie);\n",
+            "  return 0;\n",
+        )
+    );
+}
+
+#[test]
+fn exact_cookie_literal_return_rewrite_declines_ambiguous_text() {
+    for text in [
+        "  v7 = x;\n  security_check_cookie(cookie);\n  return v7;\n",
+        "  v7 = 1;\n  other(cookie);\n  return v7;\n",
+        "  v7 = 1;\n  security_check_cookie(cookie);\n  return v8;\n",
+        "  v7 = 1;\n  side_effect();\n  security_check_cookie(cookie);\n  return v7;\n",
+        "  v7 = 1;\n  security_check_cookie(cookie); side_effect();\n  return v7;\n",
+        "  v7 = 1;\n  security_check_cookie(cookie) + side_effect();\n  return v7;\n",
+    ] {
+        let mut markup = MarkupProvenance {
+            associations: vec![MarkupAssociation {
+                line_number: 2,
+                opref: Some(7),
+                varref: None,
+            }],
+        };
+        assert_eq!(
+            rewrite_cookie_literal_returns(text.into(), &cookie_calls(7), &mut markup),
+            text
+        );
+    }
+}
 
 /// A `panic!("literal")` payload is a `&'static str`.
 #[test]

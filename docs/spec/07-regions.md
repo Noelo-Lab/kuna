@@ -422,7 +422,10 @@ frame agree. The saved value may reach the epilogue through a MULTIEQUAL join
 or a loop-carried phi. `kuna_msvcstackguard.rs (cookie_scramble_walk)` uses a
 cycle-aware fixed point: every non-backedge input must prove a scramble at the
 same offset and at least one seed must exist; a recursive backedge is neutral,
-not evidence. Value-preserving COPY/CAST/INDIRECT chains have a separate finite
+not evidence. Nested phis propagate that pending state upward instead of
+turning an inner, locally all-backedge SCC into a negative result. A seedless
+SCC therefore still fails at the top level, as do unknown entries and
+conflicting frame offsets. Value-preserving COPY/CAST/INDIRECT chains have a separate finite
 256-link peel budget because one INDIRECT can be introduced per intervening
 call. Three further gates keep the edit
 honest: the victim must be a direct `CPUI_CALL` (the checker is statically
@@ -451,12 +454,24 @@ positive facts before the unresolved edge. A STORE into a processor space used
 by an ABI output entry is a possible return write even when its runtime address
 cannot be resolved, and therefore vetoes preservation too; only an absence
 conclusion requires completeness. That retains caller definitions without
-making a claim about any other call or register. Preservation alone leaves all calls and cookie algebra intact; it is
+making a claim about any other call or register. Preservation alone leaves all
+calls and cookie algebra intact; it is
 caller-side algebraic evidence, not a relaxation of the generic body probe. In
-the destructive arm, P7 then uses `delete_call_specs` to
-drop the `FuncCallSpecs` record, then `op_destroy`. Nothing else is deleted by
-hand. The epilogue `INT_XOR` loses its last reader and dies in the following
-dead-code pass, and the repeating fullloop re-runs mainloop over the reduced
+the locked-void preservation arm, return-tail duplication may print the
+otherwise correct SSA as adjacent `v = 0|1; checker(); return v;` statements.
+The final C driver rewrites only that exact marked-checker triplet to a literal
+return. The checker evidence stays keyed by the call p-code `opref` through the
+markup presentation seam, so an unmarked occurrence with the same printed name
+cannot authorize a fold. The call line must be one complete standalone call
+statement; a different local, non-literal assignment, trailing expression or
+statement, intervening statement, or unmarked call is a refusal. The blanked
+assignment's markup associations move to the visible synthesized return, whose
+resolved line provenance combines the literal-producing instruction with the
+RET origin. The checker is never deleted. In the destructive arm, P7 then uses
+`delete_call_specs` to drop the `FuncCallSpecs` record, then `op_destroy`.
+Nothing else is deleted by hand. The epilogue `INT_XOR` loses its last reader
+and dies in the following dead-code pass, and the repeating fullloop re-runs
+mainloop over the reduced
 function before chapter 08 structures it. The entry-side scramble
 is released the same way §7.3 releases the glibc canary init:
 `kuna_msvcstackguard.rs (collect_cookie_slots)` runs a forward fixpoint from

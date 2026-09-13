@@ -1,0 +1,36 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "timeout_s": 60,
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "sub_1400012f0",
+    "--assert",
+    "prototype sub_140001c10 void security_check_cookie(unsigned long long cookie)"
+  ],
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_absent": [
+      "unsigned int (v[0-9]+); // eax(?:(?!\\b\\1\\s*=)[\\s\\S])*return \\1;"
+    ],
+    "stdout_matches": [
+      "return\\s+0\\s*;",
+      "return\\s+1\\s*;",
+      "(?m)^\\s*sub_140001c10\\(",
+      "(?s)sub_140001c10\\([^\\n]*\\);[^\\n]*\\n\\s*return\\s+1\\s*;.*sub_140001c10\\([^\\n]*\\);[^\\n]*\\n\\s*return\\s+1\\s*;.*sub_140001c10\\([^\\n]*\\);[^\\n]*\\n\\s*return\\s+0\\s*;"
+    ]
+  },
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/pe_void_cookie_multi_exit_x86_64.exe",
+    "binary_sha256": "16512154b0c419b2e4b064dbabd4932251ec5e0e11e14302d86821dca1ade1f0",
+    "binary_size": 16384,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/pe_void_cookie_multi_exit_x86_64.exe",
+    "selector": "sub_1400012f0",
+    "selector_kind": "name"
+  }
+}

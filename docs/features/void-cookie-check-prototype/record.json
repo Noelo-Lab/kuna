@@ -1,0 +1,47 @@
+{
+  "need_id": "void-cookie-check-prototype",
+  "opportunity": "void-cookie-check-prototype",
+  "binary": "decompiler/crates/kuna-analysis/tests/fixtures/pe_void_cookie_multi_exit_x86_64.exe",
+  "binary_sha256": "16512154b0c419b2e4b064dbabd4932251ec5e0e11e14302d86821dca1ade1f0",
+  "selector": "sub_1400012f0",
+  "func_addr": "0x1400012f0",
+  "option": "calleeretpreserves",
+  "flag": "callee_ret_preserves",
+  "element_id": 4153,
+  "phase": "P7/P4",
+  "change_kind": "correctness-fix",
+  "source_decompiler": "kuna",
+  "default_on": true,
+  "base_commit": "fe3d668e7b2b1d2cbb213eef709924f784d5cbc3",
+  "root_cause": "The exact /GS cookie walk treated an inner MULTIEQUAL whose inputs were locally all backedges as No instead of propagating Backedge to the outer fixed point, so the outer phi never reached its concrete stack-cookie scramble seed.",
+  "decisions": [
+    "Increasing the walk and peel budgets to 4096, separately and together, did not change the faithful output; this is fixed-point semantics, not exhaustion.",
+    "Pending nested phis propagate Backedge. The top level still requires one concrete seed, and unknown entries or conflicting frame offsets remain refusals.",
+    "The repair reuses the exact-call-site locked-void ABI preservation added for calleeretpreserves. Generic call modeling, write vetoes, effect overrides, and incomplete-body behavior are unchanged.",
+    "The checker is retained. Only an adjacent literal assignment, complete standalone checker statement whose markup opref identifies the exact P7-marked call occurrence, and return of the same local is folded in final C. The blanked assignment's associations move onto the visible return so its resolved provenance combines the literal-producing instruction and RET origins; every ambiguous shape declines.",
+    "The exact fixture is the original 16384-byte dataset witness promoted byte-for-byte. The option-off CLI probe restores the undefined EAX local and proves the acceptance depends on calleeretpreserves."
+  ],
+  "tests": {
+    "unit": "kuna_msvcstackguard nested multi-phi positive plus seedless/unknown/conflicting negatives; exact_cookie_literal_return_rewrite positive, same-name marked/unmarked occurrence isolation, full-statement refusals, and resolved provenance assertions",
+    "promoted_probe": "tests/cli/void-cookie-check-prototype.json",
+    "ablation_probe": "tests/cli/void-cookie-check-prototype-option-off.json",
+    "fixture": "decompiler/crates/kuna-analysis/tests/fixtures/pe_void_cookie_multi_exit_x86_64.exe"
+  },
+  "gates": {
+    "make test": "675/675 PARITY OK",
+    "make test-stages": "813/813 PARITY OK",
+    "make rust-test": "green (6696 passed, 0 failed; 38 ignored, including doctests)",
+    "make check-spec": "green (lenient and strict)",
+    "kuna catalog --check": "catalog OK",
+    "tests/cli": "153/153 passed",
+    "acceptance probe": "PASS (1/1; transition closed)"
+  },
+  "speed_method": "scripts.pipeline.timeit, interleaved single-function decompile on the exact fixture, median of 5",
+  "speed_off_ms": 556.65,
+  "speed_on_ms": 536.39,
+  "speed_delta_pct": -3.64,
+  "speed_samples": 5,
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": true,
+  "speed_forced_off": false
+}

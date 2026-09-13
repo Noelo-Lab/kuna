@@ -44,6 +44,10 @@
 //! value peel therefore has its own finite 256-link budget, and a
 //! `MULTIEQUAL` is accepted by a cycle-aware fixed point only when every
 //! non-backedge input proves the same scramble and at least one seed exists.
+//! A nested phi whose inputs are all pending backedges stays pending for its
+//! caller instead of becoming a negative result; a seedless SCC still reaches
+//! the top-level refusal, while an unknown entry or conflicting frame offset
+//! remains a hard refusal.
 //!
 //! The cost of a false positive is a deleted call and a deleted argument
 //! computation, which is why the envelope is narrow and the option ships OFF.
@@ -82,6 +86,13 @@
 //! visible. No generic callee-body claim is made, so a failure tail containing
 //! nested calls remains conservative. The normal SSA construction can then
 //! retain every reaching caller definition.
+//!
+//! Return-tail duplication can still print that correct SSA as three adjacent
+//! statements, `v = 0|1; checker(); return v;`. The final C driver folds only
+//! that exact marked-checker triplet to `checker(); return 0|1;`, leaving the
+//! assignment line blank so provenance line numbers remain stable. A different
+//! local, a non-literal, an intervening statement, or an unmarked call declines
+//! the fold. The checker itself is never removed by this preservation path.
 //!
 //! The stock pair `Funcdata::block_remove_internal` uses for a CALL inside a
 //! deleted block, and the pair `cleanupcode` uses for a Rust drop call:
@@ -353,6 +364,7 @@ fn cookie_scramble_uncached(
         OpCode::CPUI_MULTIEQUAL => {
             let n = dop.num_input();
             let mut off: Option<i64> = None;
+            let mut saw_backedge = false;
             for i in 0..n {
                 let Some(ini) = dop.get_in(i) else { return ScrambleWalk::No };
                 match cookie_scramble_walk(
@@ -369,11 +381,15 @@ fn cookie_scramble_uncached(
                         Some(prev) if prev == o => {}
                         Some(_) => return ScrambleWalk::No,
                     },
-                    ScrambleWalk::Backedge => {}
+                    ScrambleWalk::Backedge => saw_backedge = true,
                     ScrambleWalk::No => return ScrambleWalk::No,
                 }
             }
-            off.map(ScrambleWalk::Found).unwrap_or(ScrambleWalk::No)
+            match off {
+                Some(off) => ScrambleWalk::Found(off),
+                None if saw_backedge => ScrambleWalk::Backedge,
+                None => ScrambleWalk::No,
+            }
         }
         _ => ScrambleWalk::No,
     }

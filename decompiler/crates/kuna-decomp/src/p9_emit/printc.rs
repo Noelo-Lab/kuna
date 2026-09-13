@@ -1254,6 +1254,26 @@ impl PrintEmit {
             PrintEmit::Markup(e) => e.take_provenance(),
         }
     }
+    /// Take the root statement associations captured by the plain-text leaf.
+    pub fn take_plain_statement_provenance(&mut self) -> MarkupProvenance {
+        match self {
+            PrintEmit::NoMarkup(e) => e.take_statement_provenance(),
+            PrintEmit::Markup(_) => MarkupProvenance::default(),
+        }
+    }
+    /// Enable or disable the plain-text statement-root sidecar.
+    pub fn set_plain_statement_provenance(&mut self, val: bool) {
+        if let PrintEmit::NoMarkup(e) = self {
+            e.set_capture_statement_provenance(val);
+        }
+    }
+    /// Whether the plain-text statement-root sidecar is active.
+    pub fn captures_plain_statement_provenance(&self) -> bool {
+        match self {
+            PrintEmit::NoMarkup(e) => e.captures_statement_provenance(),
+            PrintEmit::Markup(_) => false,
+        }
+    }
 }
 
 // The FULL `Emit` surface (prettyprint.rs:235-492), each method static-delegated
@@ -1952,10 +1972,12 @@ impl PrintC {
 
     /// (kuna) The `MarkupRef` for a DIRECT tag site that already holds an `OpId`
     /// (C++ passes the `PcodeOp *`): `opref = op->getTime()`, the `<ast>`
-    /// `<seqnum uniq>`.  Gated on the active back-end so the plain-text datatest
-    /// path does no lookup and stays byte-identical.
+    /// `<seqnum uniq>`. Gated on the markup back-end or an explicitly requested
+    /// plain statement sidecar, so the ordinary plain-text path does no lookup.
     fn op_markup(&self, fd: &Funcdata, op: OpId) -> MarkupRef {
-        if !self.emit.emits_markup() {
+        if !self.emit.emits_markup()
+            && !self.emit.captures_plain_statement_provenance()
+        {
             return MarkupRef::none();
         }
         MarkupRef::op(fd.obank().get(op).map(|o| o.get_time() as uintb))
@@ -2146,6 +2168,23 @@ impl PrintC {
     pub fn doc_function_full(&mut self, fd: &Funcdata, arch: &Architecture) -> String {
         self.emit_function_document(fd, arch);
         self.emit.output_str().to_string()
+    }
+
+    /// Emit plain C and retain only each statement root's `opref` in the same
+    /// pass. This is intentionally smaller than token provenance: it exists so
+    /// exact-site presentation repairs can bind a rendered statement to one
+    /// p-code occurrence without paying for a second full markup render.
+    pub fn doc_function_full_with_statement_provenance(
+        &mut self,
+        fd: &Funcdata,
+        arch: &Architecture,
+    ) -> (String, MarkupProvenance) {
+        self.emit.set_plain_statement_provenance(true);
+        self.emit_function_document(fd, arch);
+        let text = self.emit.output_str().to_string();
+        let provenance = self.emit.take_plain_statement_provenance();
+        self.emit.set_plain_statement_provenance(false);
+        (text, provenance)
     }
 
     /// Select whether `PrintC` emits token-markup (C++

@@ -631,12 +631,21 @@ impl EmitBase {
 pub struct EmitNoMarkup {
     base: EmitBase,
     out: String,
+    line_number: usize,
+    capture_statement_provenance: bool,
+    statement_provenance: MarkupProvenance,
 }
 
 impl EmitNoMarkup {
     /// C++ `EmitNoMarkup::EmitNoMarkup()`.
     pub fn new() -> Self {
-        EmitNoMarkup { base: EmitBase::new(), out: String::new() }
+        EmitNoMarkup {
+            base: EmitBase::new(),
+            out: String::new(),
+            line_number: 0,
+            capture_statement_provenance: false,
+            statement_provenance: MarkupProvenance::default(),
+        }
     }
     /// Borrow the accumulated output (C++ would read the bound `ostream`).
     pub fn output(&self) -> &str {
@@ -646,9 +655,26 @@ impl EmitNoMarkup {
     pub fn take_output(&mut self) -> String {
         std::mem::take(&mut self.out)
     }
+    /// Take the root-op association recorded for each emitted statement.
+    /// Plain output needs no token markup, but this small sidecar lets a
+    /// presentation rule bind text to one exact p-code occurrence without a
+    /// second full render.
+    pub fn take_statement_provenance(&mut self) -> MarkupProvenance {
+        std::mem::take(&mut self.statement_provenance)
+    }
+    /// Enable the small statement-root sidecar for one plain-text render.
+    pub fn set_capture_statement_provenance(&mut self, val: bool) {
+        self.capture_statement_provenance = val;
+    }
+    /// Whether direct statement sites should resolve their p-code oprefs.
+    pub fn captures_statement_provenance(&self) -> bool {
+        self.capture_statement_provenance
+    }
     /// Reset the output buffer (C++ `setOutputStream`).
     pub fn set_output_stream(&mut self) {
         self.out.clear();
+        self.line_number = 0;
+        self.statement_provenance.associations.clear();
     }
 }
 
@@ -684,6 +710,7 @@ impl Emit for EmitNoMarkup {
         for _ in 0..self.base.indentlevel {
             self.out.push(' ');
         }
+        self.line_number += 1;
     }
     fn tag_line_indent(&mut self, indent: int4) {
         self.emit_pending();
@@ -691,6 +718,7 @@ impl Emit for EmitNoMarkup {
         for _ in 0..indent {
             self.out.push(' ');
         }
+        self.line_number += 1;
     }
 
     fn begin_return_type(&mut self, _markup: &MarkupRef) -> int4 {
@@ -701,7 +729,16 @@ impl Emit for EmitNoMarkup {
         0
     }
     fn end_var_decl(&mut self, _id: int4) {}
-    fn begin_statement(&mut self, _markup: &MarkupRef) -> int4 {
+    fn begin_statement(&mut self, markup: &MarkupRef) -> int4 {
+        if self.capture_statement_provenance
+            && (markup.opref.is_some() || markup.varref.is_some())
+        {
+            self.statement_provenance.associations.push(MarkupAssociation {
+                line_number: self.line_number,
+                opref: markup.opref,
+                varref: markup.varref,
+            });
+        }
         0
     }
     fn end_statement(&mut self, _id: int4) {}
