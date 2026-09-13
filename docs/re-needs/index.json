@@ -5,8 +5,8 @@
   "rejected_count": 2,
   "by_status": {
     "blocked": 1,
-    "closed": 164,
-    "open": 31
+    "closed": 165,
+    "open": 30
   },
   "by_track": {
     "loader": 10,
@@ -5355,7 +5355,7 @@
       "need_id": "address-taken-stack-buffers",
       "title": "Address-taken stack buffers lack JSON use locations",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "minor",
       "probe_id": "p-570c29173fd3",
       "acceptance_id": "a-afdbfc2ff960",
@@ -5369,16 +5369,16 @@
         12
       ],
       "first_seen_round": 12,
-      "attempts": 0,
+      "attempts": 1,
       "covered_by_option": null,
       "touches": [
         "decompiler/crates/kuna-decomp"
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": 619,
+      "closed_in_round": 12,
+      "closing_pr": "619",
       "reject_reason": null,
       "score": 6.931472,
       "path": "docs/re-needs/address-taken-stack-buffers.md"

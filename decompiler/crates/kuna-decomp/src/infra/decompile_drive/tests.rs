@@ -10,7 +10,24 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::prettyprint::{MarkupAssociation, MarkupProvenance};
 
-use super::{panic_message, resolve_markup_provenance_with_addresses, rewrite_cookie_literal_returns};
+use super::{
+    panic_message, resolve_markup_provenance_with_addresses, rewrite_cookie_literal_returns,
+    stack_storage_contains,
+};
+
+#[test]
+fn aggregate_stack_storage_accepts_only_fully_contained_pieces() {
+    assert!(stack_storage_contains(-88, 32, -88, 8));
+    assert!(stack_storage_contains(-88, 32, -64, 8));
+
+    // Partial overlaps on either edge belong to another slot, not this array.
+    assert!(!stack_storage_contains(-88, 32, -89, 8));
+    assert!(!stack_storage_contains(-88, 32, -64, 9));
+    // A piece beginning at the next slot is adjacent, not contained.
+    assert!(!stack_storage_contains(-88, 32, -56, 8));
+    assert!(!stack_storage_contains(-88, 32, -88, 0));
+    assert!(!stack_storage_contains(i64::MAX - 3, 8, i64::MAX - 3, 1));
+}
 
 fn cookie_calls(opref: u64) -> BTreeMap<u64, BTreeSet<String>> {
     BTreeMap::from([(opref, BTreeSet::from(["security_check_cookie".into()]))])

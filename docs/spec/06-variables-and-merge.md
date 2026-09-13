@@ -401,6 +401,16 @@ unconditionally (one map insert per stack symbol per pass) and read only by
 `extract_variables`: no p-code, no emitted C, so neither structure nor
 recompilation can move.
 
+The JSON use evidence is joined after extraction. A scalar high can be matched by
+its exact storage, but an array's emitted uses normally belong to smaller highs for
+individual elements or to constants representing the aggregate's base address.
+When several highs carry the same printed name, `decompile_drive.rs
+(high_matches_stack_variable)` therefore admits a stack Varnode only when its full
+byte range is contained by the reported variable, and admits an address constant
+only when it names the variable's base. Name plus containment prevents a
+fragment from a neighbouring frame object from acquiring the array's lines while
+preserving aggregate and element uses.
+
 **RangeHint gathering.** Each `mainloop` pass,
 `decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs
 (ActionRestructureVarnode)` rebuilds the frame layout from scratch:

@@ -1894,12 +1894,40 @@ fn high_matches_stack_variable(
     (0..high.num_instances()).any(|index| {
         let Some(varnode) = fd.vbank().get(high.get_instance(index)) else { return false };
         let Some(space) = varnode.get_addr().get_space() else { return false };
-        let is_stack_reference = space.get_index() == stack_space.get_index()
-            || space.get_type() == kuna_base::space::spacetype::IPTR_CONSTANT;
-        is_stack_reference
-            && signed_space_offset(stack_space, varnode.get_offset()) == stack_offset
-            && varnode.get_size() as i64 == variable.size
+        let offset = signed_space_offset(stack_space, varnode.get_offset());
+        // Constants represent `&aggregate`; their pointer width is not the
+        // aggregate's width, so only the exact base address is meaningful.
+        if space.get_type() == kuna_base::space::spacetype::IPTR_CONSTANT {
+            return offset == stack_offset;
+        }
+        space.get_index() == stack_space.get_index()
+            && stack_storage_contains(
+                stack_offset,
+                variable.size,
+                offset,
+                varnode.get_size() as i64,
+            )
     })
+}
+
+fn stack_storage_contains(
+    aggregate_offset: i64,
+    aggregate_size: i64,
+    piece_offset: i64,
+    piece_size: i64,
+) -> bool {
+    // Element highs count as aggregate uses, but a partial overlap would
+    // attribute a neighbouring frame object's evidence to this variable.
+    if aggregate_size <= 0 || piece_size <= 0 || piece_offset < aggregate_offset {
+        return false;
+    }
+    let (Some(aggregate_end), Some(piece_end)) = (
+        aggregate_offset.checked_add(aggregate_size),
+        piece_offset.checked_add(piece_size),
+    ) else {
+        return false;
+    };
+    piece_end <= aggregate_end
 }
 
 fn named_high_varrefs(fd: &Funcdata, variable: &VarInfo) -> BTreeSet<u64> {
