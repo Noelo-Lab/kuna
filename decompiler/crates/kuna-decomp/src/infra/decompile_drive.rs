@@ -471,7 +471,12 @@ impl FlowEnvironment for ArchFlowEnv {
         })
     }
 
-    fn is_tail_call_branch(&self, fd: &Funcdata, op: crate::context::OpId, dest: &Address) -> bool {
+    fn is_tail_call_branch(
+        &self,
+        fd: &Funcdata,
+        op: crate::context::OpId,
+        dest: &Address,
+    ) -> bool {
         // (kuna) tee-O2 tail-jump: wire the ported `kuna_is_tail_call_branch`
         // predicate.  The gate is the architecture-owned `tail_call_jumps` flag
         // (`option tailcalljump on|off`, default-off opt-in / default-pipeline

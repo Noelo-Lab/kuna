@@ -1,6 +1,7 @@
 //! Logic-level tests for `kuna_is_frame_teardown_tail_call`, exercising the
 //! prologue/epilogue stack-delta decision on hand-built raw IR.
 
+use std::cell::Cell;
 use std::rc::Rc;
 
 use kuna_base::address::Address;
@@ -197,6 +198,41 @@ fn exact_teardown_of_the_entry_frame_fires() {
     let sp = sp_loc(&fd);
     let (e, d) = (entry_addr(&fd), dest_addr(&fd, 0x2000));
     assert!(kuna_is_frame_teardown_tail_call(&fd, br, true, &e, &d, Some(&sp), true));
+}
+
+#[test]
+fn explicit_branch_precedence_suppresses_a_positive_frame_teardown() {
+    let mut fd = build_fd();
+    let br = build_teardown_shape(&mut fd, 0x2000);
+    let sp = sp_loc(&fd);
+    let (e, d) = (entry_addr(&fd), dest_addr(&fd, 0x2000));
+    let frame_matches = kuna_is_frame_teardown_tail_call(&fd, br, true, &e, &d, Some(&sp), true);
+    assert!(frame_matches, "control must positively trigger tailcallframe");
+
+    assert_eq!(
+        crate::flow::select_inferred_tail_call(false, || false, || frame_matches),
+        Some("tailcallframe"),
+        "without an applied assertion, classification must be unchanged"
+    );
+    let jump_consulted = Cell::new(false);
+    let frame_consulted = Cell::new(false);
+    assert_eq!(
+        crate::flow::select_inferred_tail_call(
+            true,
+            || {
+                jump_consulted.set(true);
+                true
+            },
+            || {
+                frame_consulted.set(true);
+                frame_matches
+            },
+        ),
+        None,
+        "an applied branch assertion owns precedence over both inference rules"
+    );
+    assert!(!jump_consulted.get(), "tailcalljump was still consulted");
+    assert!(!frame_consulted.get(), "tailcallframe was still consulted");
 }
 
 #[test]

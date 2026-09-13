@@ -42,6 +42,10 @@
 //!     entry?) and the **self-entry** check (`dest == fd.getAddress()`): both are
 //!     resolved by the caller (`decompile_drive.rs`, the v850 register-name
 //!     convention) and passed in as `dest_is_known_function` / `dest_is_self`.
+//!   - an exact-address `flow ... branch` override is authoritative evidence that
+//!     the user wants this instruction followed intraprocedurally.  It therefore
+//!     vetoes the lower-priority tail-call inference even when the destination is
+//!     also a known function entry.
 
 use crate::funcdata::Funcdata;
 use crate::context::OpId;

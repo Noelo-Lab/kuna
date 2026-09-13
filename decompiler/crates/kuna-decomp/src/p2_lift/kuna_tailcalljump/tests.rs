@@ -83,6 +83,29 @@ fn direct_branch_to_known_function_fires() {
     assert!(kuna_is_tail_call_branch(&fd, op, true, true, false));
 }
 
+/// Without an applied `flow ... branch` override the selection order is
+/// unchanged: `tailcalljump` claims first and `tailcallframe` is not consulted.
+/// The flow-level near misses (a refused branch fact, an applied one at another
+/// instruction) are end-to-end in `kuna-cli/tests/explicit_branch_assertion_cli.rs`.
+#[test]
+fn without_a_branch_override_tailcalljump_claims_first() {
+    let mut fd = build_fd();
+    let op = build_branch_op(&mut fd, OpCode::CPUI_BRANCH, 0x18d0);
+    let frame_consulted = std::cell::Cell::new(false);
+    assert_eq!(
+        crate::flow::select_inferred_tail_call(
+            false,
+            || kuna_is_tail_call_branch(&fd, op, true, true, false),
+            || {
+                frame_consulted.set(true);
+                true
+            },
+        ),
+        Some("tailcalljump")
+    );
+    assert!(!frame_consulted.get(), "tailcallframe was consulted after tailcalljump claimed");
+}
+
 #[test]
 fn target_not_a_known_function_returns_false() {
     let mut fd = build_fd();

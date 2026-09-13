@@ -369,7 +369,14 @@ most 8 cross-flow restarts before keeping the last analyzed IR.
 (kuna_is_tail_call_branch)`.** At `-O2` a "call X then return" tail compiles to
 a direct `jmp X`. Decision rule: a `CPUI_BRANCH` whose direct machine-address target is the
 entry of a *known function* (including a PLT thunk) that is not the current
-function's own entry is a tail call. The rewrite lives in the BRANCH arm of
+function's own entry is a tail call, unless an exact-address `flow ... branch`
+override was applied at that instruction, turning its call into this branch. The
+explicit classification owns precedence over the inferred call and is resolved
+before either `tailcalljump` or `tailcallframe` is consulted. An override at
+another instruction, of another kind, or refused does not suppress recovery; a
+`branch` override on an instruction that already branches (a tail `jmp`) has no
+call to rewrite and is refused. The
+rewrite lives in the BRANCH arm of
 `flow.rs (FlowInfo::xref_control_flow)`: the BRANCH becomes a CALL with a full
 call spec, an artificial RETURN is planted after it (unless the callee is
 no-return, whose halt was already planted), and a
