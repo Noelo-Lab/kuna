@@ -1626,14 +1626,27 @@ impl Heritage {
                         .expect("guardCalls: stale call")
                         .get_addr(),
                 );
+            let caller_declared_output_slice = fd.get_func_proto().is_output_locked()
+                && matches!(
+                    fd.get_func_proto()
+                        .characterize_as_output(&trans_addr, size),
+                    Containment::ContainsJustified | Containment::ContainsUnjustified
+                );
             let msvc_cookie_return = effecttype == effect_type::KILLEDBYCALL
                 && exact_cookie_site
-                && crate::p4_calls::kuna_calleeretpreserves::exact_cookie_preserves_return_storage(
-                    fd,
-                    fc,
-                    &trans_addr,
-                    size,
-                );
+                && (crate::p4_calls::kuna_calleeretpreserves::exact_cookie_preserves_return_storage(
+                        fd,
+                        fc,
+                        &trans_addr,
+                        size,
+                    )
+                    || (caller_declared_output_slice
+                        && crate::p4_calls::kuna_calleeretpreserves::exact_cookie_preserves_unjustified_return_slice(
+                            fd,
+                            fc,
+                            &trans_addr,
+                            size,
+                        )));
             let mut preserved = effecttype == effect_type::KILLEDBYCALL
                 && (crate::p4_calls::kuna_calleepreserves::callee_preserves_range(
                     fd,

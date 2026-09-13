@@ -5,8 +5,8 @@
   "rejected_count": 1,
   "by_status": {
     "blocked": 1,
-    "closed": 158,
-    "open": 38
+    "closed": 159,
+    "open": 37
   },
   "by_track": {
     "loader": 10,
@@ -3022,10 +3022,10 @@
       "need_id": "explicit-double-score-prototype",
       "title": "Explicit double score prototype returns unassigned XMM0 halves",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
-      "probe_id": "p-95533b0a4278",
-      "acceptance_id": "a-bc540935945e",
+      "probe_id": "p-f5ab11021f25",
+      "acceptance_id": "a-106f570103b3",
       "hypothesis_status": "upheld",
       "credibility": 0.85,
       "instances": 1,
@@ -3033,19 +3033,20 @@
         "69a54bd70f5b9757a6a5f72f"
       ],
       "rounds": [
-        9
+        9,
+        12
       ],
       "first_seen_round": 9,
-      "attempts": 0,
-      "covered_by_option": null,
+      "attempts": 1,
+      "covered_by_option": "calleeretpreserves",
       "touches": [
         "decompiler/crates/kuna-decomp"
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": 608,
+      "closed_in_round": 12,
+      "closing_pr": "608",
       "reject_reason": null,
       "score": 13.862944,
       "path": "docs/re-needs/explicit-double-score-prototype.md"
