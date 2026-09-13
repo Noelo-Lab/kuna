@@ -5,8 +5,8 @@
   "rejected_count": 2,
   "by_status": {
     "blocked": 1,
-    "closed": 166,
-    "open": 29
+    "closed": 167,
+    "open": 28
   },
   "by_track": {
     "loader": 10,
@@ -2959,10 +2959,10 @@
       "need_id": "explicit-branch-assertion-converted",
       "title": "Explicit branch assertion is converted back into a tail call",
       "track": "quality",
-      "status": "open",
+      "status": "closed",
       "severity": "major",
       "probe_id": "p-bc1cfbde3d40",
-      "acceptance_id": "a-c1c123d555d1",
+      "acceptance_id": "a-17e6917f0e3f",
       "hypothesis_status": "upheld",
       "credibility": 0.7,
       "instances": 1,
@@ -2970,21 +2970,22 @@
         "5ab77f5f33c5d40ad448c834"
       ],
       "rounds": [
-        9
+        9,
+        12
       ],
       "first_seen_round": 9,
-      "attempts": 0,
-      "covered_by_option": null,
+      "attempts": 1,
+      "covered_by_option": "tailcalljump",
       "touches": [
         "decompiler/crates/kuna-decomp"
       ],
       "scope": "small",
       "regression_of": null,
-      "pr": null,
-      "closed_in_round": null,
-      "closing_pr": null,
+      "pr": "https://github.com/Noelo-Lab/kuna/pull/623",
+      "closed_in_round": 12,
+      "closing_pr": "623",
       "reject_reason": null,
-      "score": 13.862944,
+      "score": 9.241962,
       "path": "docs/re-needs/explicit-branch-assertion-converted.md"
     },
     {

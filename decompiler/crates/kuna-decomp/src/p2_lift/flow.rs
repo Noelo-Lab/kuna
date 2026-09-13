@@ -368,7 +368,12 @@ pub trait FlowEnvironment {
     ///
     /// // STUB(W4): ArchOption tailcalljump — gated on `option tailcalljump
     /// on|off`, default \b false (default-pipeline byte-identical).
-    fn is_tail_call_branch(&self, _fd: &Funcdata, _op: OpId, _dest: &Address) -> bool {
+    fn is_tail_call_branch(
+        &self,
+        _fd: &Funcdata,
+        _op: OpId,
+        _dest: &Address,
+    ) -> bool {
         false
     }
 
@@ -586,6 +591,9 @@ pub struct FlowInfo<'a, E: FlowEnvironment> {
     /// Does the function have registered flow override instructions
     /// (C++ `flowoverride_present`).
     flowoverride_present: bool,
+    /// Exact instruction addresses where a `BRANCH` override applied during
+    /// this flow follow.
+    applied_branch_overrides: std::collections::BTreeSet<Address>,
     /// Boolean options for flow following (C++ `flags`).
     flags: uint4,
     /// Number of discovered call sites (C++ `qlst.size()`).
@@ -630,6 +638,30 @@ pub struct FlowInfo<'a, E: FlowEnvironment> {
     injecting_entry: Option<Address>,
 }
 
+/// Apply explicit-flow precedence before consulting either inferred tail-call
+/// rule. The closures keep both classifiers lazy: an applied `BRANCH` fact does
+/// not merely discard their answers, it prevents them from running at all.
+pub(crate) fn select_inferred_tail_call<J, F>(
+    branch_override_applied: bool,
+    tailcalljump: J,
+    tailcallframe: F,
+) -> Option<&'static str>
+where
+    J: FnOnce() -> bool,
+    F: FnOnce() -> bool,
+{
+    if branch_override_applied {
+        return None;
+    }
+    if tailcalljump() {
+        return Some("tailcalljump");
+    }
+    if tailcallframe() {
+        return Some("tailcallframe");
+    }
+    None
+}
+
 impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
     /// Prepare for tracing flow for a new function (C++ `FlowInfo::FlowInfo`,
     /// `flow.cc:28`).
@@ -665,6 +697,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             minaddr: entry.clone(),
             maxaddr: entry,
             flowoverride_present,
+            applied_branch_overrides: std::collections::BTreeSet::new(),
             flags: 0,
             qlst_count: 0,
             inline_head: None,
@@ -1496,13 +1529,17 @@ following this call as a branch"
     /// know.  The returned name is the option that fired, so the introduced call
     /// is attributable to the rule that introduced it.
     fn tail_call_kind(&self, op: OpId, dest: &Address) -> Option<&'static str> {
-        if self.env.is_tail_call_branch(&self.data, op, dest) {
-            return Some("tailcalljump");
-        }
-        if self.env.is_frame_teardown_tail_call(&self.data, op, dest) {
-            return Some("tailcallframe");
-        }
-        None
+        let site = self
+            .data
+            .obank()
+            .get(op)
+            .expect("tail_call_kind: stale op")
+            .get_addr();
+        select_inferred_tail_call(
+            self.applied_branch_overrides.contains(site),
+            || self.env.is_tail_call_branch(&self.data, op, dest),
+            || self.env.is_frame_teardown_tail_call(&self.data, op, dest),
+        )
     }
 
     /// Generate p-code for a single machine instruction and process discovered
@@ -1716,13 +1753,19 @@ truncating the fall-through here"
                 // report the refusal (`Funcdata::note_rejected_flow_override`).
                 // Aborting instead deleted the whole body and, on the text CLI,
                 // reported success for it.
-                if let Err(e) = self.data.override_flow(curaddr, flowoverride) {
-                    let reason = e.explain().to_string();
-                    self.data.note_rejected_flow_override(
-                        curaddr.clone(),
-                        flowoverride,
-                        &reason,
-                    );
+                match self.data.override_flow(curaddr, flowoverride) {
+                    Ok(()) if flowoverride == crate::overrides::flow_type::BRANCH => {
+                        self.applied_branch_overrides.insert(curaddr.clone());
+                    }
+                    Ok(()) => {}
+                    Err(e) => {
+                        let reason = e.explain().to_string();
+                        self.data.note_rejected_flow_override(
+                            curaddr.clone(),
+                            flowoverride,
+                            &reason,
+                        );
+                    }
                 }
             }
             self.xref_control_flow(Some(firstop), startbasic, &mut isfallthru)?;
