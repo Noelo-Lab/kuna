@@ -705,6 +705,34 @@ to is not an answer on a machine that has no checkout, and a missing SLEIGH tree
 is reported where it is resolved rather than as the engine's downstream
 `No sleigh specification` — which reads as a problem with the binary.
 
+(kuna) **Mixed builds.** The engine binary `kuna` runs can come from a different
+build than `kuna` itself (an override naming another install, or a sibling left
+behind when only `kuna` was rebuilt), and nothing in the output shows it. So every
+spawn of `decomp_dbg` or `decomp_test_dbg` exports the parent's identity as
+`KUNA_PARENT_BUILD`
+(`decompiler/crates/kuna-console/src/kuna_buildstamp.rs (identity, answer_parent, report)`).
+The child compares it with its own before reading its arguments and, only when the
+two differ, writes one `kuna-build-mismatch: <identity>` line to stderr. `kuna`
+removes that line from the captured stderr before anything reads it (`kuna test`
+parses the unit-test grammar from the same stream) and prints one warning per
+process naming both paths, both identities, and the flag or variable that chose the
+child. Stdout is not involved, so no transcript, datatest result or `--json`
+document can be disturbed, and a child older than the handshake simply ignores the
+variable. The variable name and the reply prefix are read by builds that differ by
+definition, so they stay fixed.
+
+An identity is the version `kuna --version` prints plus a hash of the contents of
+`kuna-console` and every workspace crate it links through `[dependencies]`, and of
+`Cargo.lock` (`decompiler/crates/kuna-console/build.rs`); `tests`, `benches` and
+`examples` are excluded and CR bytes are skipped. The version alone cannot tell two
+source builds apart, since both report the workspace Cargo version. A git commit
+would miss uncommitted edits and needs a `.git` that a source tarball lacks, and a
+per-build nonce would make a checkout's debug `kuna` disagree with its release
+`decomp_dbg`. A content hash has none of these problems. The script watches only
+paths whose change recompiles `kuna-console` anyway, so it adds no rebuilds.
+`kuna-cli`'s own sources are outside the hash: they are not part of the engine a
+child runs.
+
 (kuna) **Loading a spec.** A `.sla` is a zlib stream behind a `sla\x04` header,
 inflated and checksum-verified in full before a single element is decoded
 (`decompiler/crates/kuna-sleigh/src/slaformat.rs (FormatDecode::ingest_stream)`).

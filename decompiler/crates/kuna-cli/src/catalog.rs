@@ -19,6 +19,7 @@ use std::collections::BTreeSet;
 use std::fmt::Write as _;
 use std::process::Command;
 
+use kuna_console::kuna_buildstamp;
 use kuna_decomp::kuna_phases::emit_catalog_markdown;
 use kuna_decomp::options::KUNA_OPTION_NAMES;
 
@@ -42,6 +43,7 @@ fn run_catalog(option: Option<&str>) -> Result<Json, String> {
         .arg("-s")
         .arg(&specs)
         .env("SLEIGHHOME", &specs)
+        .env(kuna_buildstamp::PARENT_ENV, kuna_buildstamp::identity())
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -54,6 +56,12 @@ fn run_catalog(option: Option<&str>) -> Result<Json, String> {
             child.wait_with_output()
         })
         .map_err(|e| format!("failed to run decomp_dbg: {e}"))?;
+    kuna_buildstamp::report(
+        String::from_utf8_lossy(&output.stderr).into_owned(),
+        "decomp_dbg",
+        &bin,
+        paths::pinned_by("KUNA_DECOMP_DBG"),
+    );
 
     let out = String::from_utf8_lossy(&output.stdout);
     if out.contains("Unknown settable option") {

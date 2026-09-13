@@ -87,6 +87,27 @@ the directories it looked in.
 An override wins over both layouts, and one pointing at nothing is reported as
 such rather than silently re-probed.
 
+The engine binary can also come from a different build than `kuna`: an override
+pointing at another install, or a `decomp_dbg` left behind when only `kuna` was
+rebuilt. `kuna` passes its build identity to every `decomp_dbg` and
+`decomp_test_dbg` it runs (as `KUNA_PARENT_BUILD`). A child from another build
+answers, and `kuna` prints one warning on stderr naming both, then carries on:
+
+```
+$ KUNA_DECOMP_DBG=/opt/kuna-v1.329/decomp_dbg kuna decompile ./a.out main
+warning: decomp_dbg is a different build from this kuna
+  kuna:       0.1.0 (source 6cbd2f1a5e1f83af) /home/me/kuna/decompiler/target/release/kuna
+  decomp_dbg: 1.329 (source 91c04e7d2b3a5f60) /opt/kuna-v1.329/decomp_dbg, chosen by KUNA_DECOMP_DBG
+```
+
+An identity is the version `kuna --version` prints plus a fingerprint of the
+engine sources the binary was built from (`kuna-console` and every crate it
+links). Two source builds of different trees therefore differ even though both
+report the workspace version, while a checkout's debug and release builds agree.
+Matching builds print nothing. The warning never goes to stdout, so a `--json`
+document stays clean. A `decomp_dbg` older than the handshake cannot answer: it
+runs as before, without a warning.
+
 ## `kuna test` — the parity gates
 
 ```bash

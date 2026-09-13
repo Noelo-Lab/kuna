@@ -13,6 +13,8 @@ use std::io::Read;
 use std::path::PathBuf;
 use std::process::Command;
 
+use kuna_console::kuna_buildstamp;
+
 use crate::jsonfmt::{dumps_indent2_sorted, Json};
 use crate::paths;
 
@@ -290,11 +292,22 @@ fn run(args: &TestArgs) -> Result<RunResult, String> {
 
     let output = Command::new(&bin_path)
         .args(&argv)
+        .env(kuna_buildstamp::PARENT_ENV, kuna_buildstamp::identity())
         .output()
         .map_err(|e| format!("failed to run decomp_test_dbg: {e}"))?;
+    let pinned_by = match &args.binary {
+        Some(_) => Some("--binary"),
+        None => paths::pinned_by("KUNA_DECOMP_TEST"),
+    };
+    let stderr = kuna_buildstamp::report(
+        String::from_utf8_lossy(&output.stderr).into_owned(),
+        "decomp_test_dbg",
+        &bin_path,
+        pinned_by,
+    );
 
     let returncode = exit_code_of(&output);
-    let unit = parse_unit(&String::from_utf8_lossy(&output.stderr));
+    let unit = parse_unit(&stderr);
     let data = parse_data(&String::from_utf8_lossy(&output.stdout));
     Ok(RunResult { returncode, unit, data })
 }
