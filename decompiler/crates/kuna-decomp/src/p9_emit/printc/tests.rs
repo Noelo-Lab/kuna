@@ -339,42 +339,50 @@ mod w10_input_prototype_declarator {
         );
     }
 
-    /// DIVERGENCE (verdict F1 / LOSS): the pointer/array parenthesisation in
-    /// `declarator_parts` is INVERTED relative to the C++ `pushTypeStart` RPN
-    /// (`ptr_expr` vs `array_expr` precedence).
-    ///
-    /// C++ renders a *pointer-to-array* `int4 (*)[1]` as `int4 (*a)[1]`
-    /// (the `*` parenthesised inside the `[]`), and an *array-of-pointer*
-    /// `int4 *[1]` as `int4 *a[1]` (no parens).  The Rust `pending_ptr` walk
-    /// (base->outer) only wraps when an ARRAY modifier sees a *preceding*
-    /// pointer, which is the array-of-pointer ordering — so the two C nestings
-    /// come out SWAPPED:
-    ///   * pointer-to-array `int4 (*)[1]` -> WRONG `("int4 *", "[1]")`
-    ///     (renders `int4 *a[1]`, an array-of-pointer)
-    ///   * array-of-pointer `int4 *[1]`   -> WRONG `("int4 (*", ")[1]")`
-    ///     (renders `int4 (*a)[1]`, a pointer-to-array)
-    /// The doc-comment example on `declarator_parts` (`int4 (*)[1]` ->
-    /// `("int4 (*", ")[1]")`) describes the CORRECT C++ output, which the code
-    /// does NOT produce.  Latent: `ptrtoarray.xml` declares such params
-    /// (`int4 (*a)[1]`) but never emits them as a decompiled function HEADER,
-    /// so no passing assertion depends on it today.  This test pins the actual
-    /// (buggy) output so a future fix flips it deliberately.
+    /// Pointer-to-array and array-of-pointer are mirror types in C: the former
+    /// groups the pointer before applying the array suffix, while the latter
+    /// lets `[]` bind directly to the identifier.  This reached ordinary cast
+    /// output as invalid `*(char *[16])` for a pointer to a SIMD-sized array.
     #[test]
-    fn pointer_to_array_paren_inverted_divergence() {
+    fn pointer_to_array_parentheses_follow_c_precedence() {
         let base = named(4, type_metatype::TYPE_INT, "int4");
-        // pointer-to-array int4 (*)[1] — C++ would give ("int4 (*", ")[1]").
+        // pointer-to-array int4 (*)[1]
         let pta = ptr_to(array_of(base.clone(), 1));
         assert_eq!(
             declarator_parts(&pta, crate::printc::RealTypeCtx::OFF),
-            ("int4 *".to_string(), "[1]".to_string()),
-            "BUG: pointer-to-array renders as array-of-pointer (paren inverted)"
+            ("int4 (*".to_string(), ")[1]".to_string())
         );
-        // array-of-pointer int4 *[1] — C++ would give ("int4 *", "[1]").
+        // array-of-pointer int4 *[1]
         let aop = array_of(ptr_to(base), 1);
         assert_eq!(
             declarator_parts(&aop, crate::printc::RealTypeCtx::OFF),
-            ("int4 (*".to_string(), ")[1]".to_string()),
-            "BUG: array-of-pointer renders as pointer-to-array (paren inverted)"
+            ("int4 *".to_string(), "[1]".to_string())
+        );
+    }
+
+    /// Alternating modifiers require grouping the entire declarator already
+    /// accumulated, not just moving one close-parenthesis ahead of the first
+    /// array suffix.  These are the two three-modifier mirror cases that a
+    /// one-level pointer/array fix can accidentally corrupt.
+    #[test]
+    fn nested_pointer_array_parentheses_group_the_complete_declarator() {
+        let base = named(4, type_metatype::TYPE_INT, "int4");
+
+        // pointer to array[2] of pointer to int4: int4 *(*x)[2]
+        let pointer_to_array_of_pointer = ptr_to(array_of(ptr_to(base.clone()), 2));
+        assert_eq!(
+            declarator_parts(
+                &pointer_to_array_of_pointer,
+                crate::printc::RealTypeCtx::OFF
+            ),
+            ("int4 *(*".to_string(), ")[2]".to_string())
+        );
+
+        // array[2] of pointer to array[3] of int4: int4 (*x[2])[3]
+        let array_of_pointer_to_array = array_of(ptr_to(array_of(base, 3)), 2);
+        assert_eq!(
+            declarator_parts(&array_of_pointer_to_array, crate::printc::RealTypeCtx::OFF),
+            ("int4 (*".to_string(), "[2])[3]".to_string())
         );
     }
 

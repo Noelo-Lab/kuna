@@ -22,6 +22,44 @@ pub struct CSpeller;
 /// The singleton reached through `OutLang::C.speller()`.
 pub static C_SPELLER: CSpeller = CSpeller;
 
+/// The part of a C declarator that surrounds its identifier.
+///
+/// C's prefix (`*`) and postfix (`[]`/`()`) operators have opposite binding
+/// directions.  Keeping the two halves explicit lets us add modifiers from the
+/// outside of the type toward its base without losing that precedence.  In
+/// particular, a postfix applied after an ungrouped pointer must wrap the WHOLE
+/// declarator accumulated so far: `*a` + `[4]` becomes `(*a)[4]`, while
+/// `a[4]` + `*` becomes `*a[4]`.
+#[derive(Default)]
+struct CDeclarator {
+    front: String,
+    back: String,
+    /// A pointer prefix has been added since the last postfix grouped it.
+    ungrouped_pointer: bool,
+}
+
+impl CDeclarator {
+    fn pointer(&mut self) {
+        // We are walking from the outer type toward the base.  A newly reached
+        // pointer belongs nearest the base type, so it prefixes the complete
+        // declarator already accumulated around the identifier.
+        self.front.insert(0, '*');
+        self.ungrouped_pointer = true;
+    }
+
+    fn postfix(&mut self, suffix: &str) {
+        if self.ungrouped_pointer {
+            // Group the complete current declarator, including any postfixes
+            // already accumulated.  Closing before `self.back` would turn
+            // `*a[2]` + `[3]` into `(*a)[2][3]` instead of `(*a[2])[3]`.
+            self.front.insert(0, '(');
+            self.back.push(')');
+            self.ungrouped_pointer = false;
+        }
+        self.back.push_str(suffix);
+    }
+}
+
 impl TypeSpeller for CSpeller {
     /// Real C name for a residual `TYPE_UNKNOWN` base, or `None` when the gate is
     /// off / the type is not unknown. Conservative on sign (multi-byte unknowns
@@ -104,30 +142,21 @@ impl TypeSpeller for CSpeller {
             base.get_display_name().to_string()
         };
 
-        // Walk the modifiers from base toward the outermost (stack[len-2]..stack[0]),
-        // accumulating front (`*`) and back (`[N]`) declarator pieces. An array/
-        // function tail wraps any pending pointer front in parentheses.
-        let mut front = String::new();
-        let mut back = String::new();
-        let mut pending_ptr = false; // a `*` not yet absorbed by a tail
-        for ct_mod in stack.iter().rev().skip(1) {
+        // Walk modifiers OUTERMOST-to-base (`stack[0]..stack[len-2]`).  This is
+        // the order in which a C declarator is built around its identifier.  A
+        // pointer followed inward by an array/function postfix must be grouped;
+        // the mirror ordering is an array of pointers and must not be grouped.
+        let mut decl = CDeclarator::default();
+        for ct_mod in stack.iter().take(stack.len() - 1) {
             match ct_mod.get_metatype() {
-                type_metatype::TYPE_PTR => {
-                    front.push('*');
-                    pending_ptr = true;
-                }
+                type_metatype::TYPE_PTR => decl.pointer(),
                 type_metatype::TYPE_ARRAY => {
                     let n = ct_mod.num_elements().unwrap_or_else(|| {
                         let base =
                             ct_mod.get_array_base().map(|b| b.get_size()).unwrap_or(1).max(1);
                         ct_mod.get_size() / base
                     });
-                    if pending_ptr {
-                        front.insert(0, '(');
-                        back = format!("){}", back);
-                        pending_ptr = false;
-                    }
-                    back = format!("{}[{}]", back, n);
+                    decl.postfix(&format!("[{n}]"));
                 }
                 _ => {}
             }
@@ -135,9 +164,12 @@ impl TypeSpeller for CSpeller {
         // `<base> <front>` with a single separating space before any `*` modifiers
         // (the `type_expr_space` token); a bare base type has no trailing space
         // here (the caller adds the space before the identifier).
-        let front_full =
-            if front.is_empty() { base_name } else { format!("{base_name} {front}") };
-        (front_full, back)
+        let front_full = if decl.front.is_empty() {
+            base_name
+        } else {
+            format!("{base_name} {}", decl.front)
+        };
+        (front_full, decl.back)
     }
 
     fn type_name(&self, cx: &SpellCtx, t: &Rc<Datatype>) -> String {
@@ -187,5 +219,56 @@ impl TypeSpeller for CSpeller {
                 return if under_pointer { Some(Cow::Borrowed("void")) } else { None };
             }
         }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CDeclarator;
+
+    #[derive(Clone, Copy)]
+    enum Modifier {
+        Pointer,
+        Array(usize),
+        Function(&'static str),
+    }
+
+    fn spell(modifiers_outer_to_inner: &[Modifier]) -> String {
+        let mut decl = CDeclarator::default();
+        for modifier in modifiers_outer_to_inner {
+            match modifier {
+                Modifier::Pointer => decl.pointer(),
+                Modifier::Array(n) => decl.postfix(&format!("[{n}]")),
+                Modifier::Function(params) => decl.postfix(&format!("({params})")),
+            }
+        }
+        format!("int {}x{}", decl.front, decl.back)
+    }
+
+    /// Declarator precedence must distinguish every adjacent pointer/postfix
+    /// ordering.  The right-hand strings are declarations accepted by a C
+    /// compiler; importantly, none is the mirror type from the neighboring row.
+    #[test]
+    fn pointer_array_and_function_precedence_table() {
+        use Modifier::{Array as A, Function as F, Pointer as P};
+
+        let cases: &[(&[Modifier], &str)] = &[
+            (&[P], "int *x"),
+            (&[A(2)], "int x[2]"),
+            (&[P, A(2)], "int (*x)[2]"),
+            (&[A(2), P], "int *x[2]"),
+            (&[P, F("void")], "int (*x)(void)"),
+            (&[F("void"), P], "int *x(void)"),
+            (&[P, P, A(2)], "int (**x)[2]"),
+            (&[P, A(2), P], "int *(*x)[2]"),
+            (&[A(2), P, A(3)], "int (*x[2])[3]"),
+            (&[A(2), P, F("void")], "int (*x[2])(void)"),
+            (&[P, F("void"), P], "int *(*x)(void)"),
+            (&[P, F("void"), P, A(3)], "int (*(*x)(void))[3]"),
+        ];
+
+        for (mods, expected) in cases {
+            assert_eq!(spell(mods), *expected);
+        }
     }
 }
