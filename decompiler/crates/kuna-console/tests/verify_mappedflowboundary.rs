@@ -307,26 +307,29 @@ fn a_known_no_return_call_has_no_missing_fallthrough() {
 fn an_overlay_removes_stale_mapping_warnings_but_keeps_other_warnings() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../kuna-analysis/tests/fixtures/mapped_flow_boundary_32.elf");
-    let mut prog = load(&path);
-    prog.commit_pending_analysis().unwrap();
-    assert!(code(&mut prog).contains("unmapped memory"));
-    let entry = address(&prog, 0x10000);
-    prog.arch_mut().commentdb.add_comment_no_duplicate(
-        kuna_decomp::architecture::comment_type::warningheader,
-        &entry,
-        &entry,
-        "WARNING: retained warning",
-    );
-    prog.arch()
-        .translate()
-        .loader_rc()
-        .borrow_mut()
-        .kuna_overlay_bytes(&entry, &[0xb8, 9, 0, 0, 0, 0xc3])
-        .unwrap();
-    let text = code(&mut prog);
-    assert!(text.contains("return 9;"), "{text}");
-    assert!(!text.contains("unmapped memory"), "{text}");
-    assert!(text.contains("retained warning"), "{text}");
+    for enabled in [true, false] {
+        let mut prog = load(&path);
+        prog.commit_pending_analysis().unwrap();
+        assert!(code(&mut prog).contains("unmapped memory"));
+        let entry = address(&prog, 0x10000);
+        prog.arch_mut().commentdb.add_comment_no_duplicate(
+            kuna_decomp::architecture::comment_type::warningheader,
+            &entry,
+            &entry,
+            "WARNING: retained warning",
+        );
+        prog.arch()
+            .translate()
+            .loader_rc()
+            .borrow_mut()
+            .kuna_overlay_bytes(&entry, &[0xb8, 9, 0, 0, 0, 0xc3])
+            .unwrap();
+        prog.arch_mut().mapped_flow_boundary = enabled;
+        let text = code(&mut prog);
+        assert!(text.contains("return 9;"), "{text}");
+        assert!(!text.contains("unmapped memory"), "{text}");
+        assert!(text.contains("retained warning"), "{text}");
+    }
 }
 
 #[test]

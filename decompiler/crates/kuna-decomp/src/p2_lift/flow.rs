@@ -1576,7 +1576,23 @@ following this call as a branch"
                 }
             }
             Err(err) => {
-                step = self.handle_decode_error(curaddr, err)?;
+                let overlap_step = if matches!(err, KunaError::DataUnavail { .. }) {
+                    self.env.mapped_flow_image().and_then(|image| {
+                        crate::kuna_mappedflowboundary::unmapped_overlap_step(
+                            image,
+                            self.env.translate(),
+                            self.env.overlap_branch_enabled(),
+                            curaddr,
+                            &overlap_watch,
+                        )
+                    })
+                } else {
+                    None
+                };
+                step = match overlap_step {
+                    Some(step) => step,
+                    None => self.handle_decode_error(curaddr, err)?,
+                };
             }
         }
 

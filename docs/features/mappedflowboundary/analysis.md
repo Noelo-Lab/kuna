@@ -10,6 +10,10 @@ needs the same treatment using the authoritative map.
 This is P2 flow classification. Recovery ends only an effective fall-through
 whose successor is unmapped. Actual instruction spans are validated before
 context commits and p-code emission; a partial instruction is still an error.
+The existing overlapbranch policy may discard a partial fall-through only
+when a length-only probe proves its queued target is a complete mapped
+instruction with a different end. No p-code or context commits from the
+discarded stream are applied; incomplete targets and option-off remain errors.
 The image's live map, rather than executable flags or a cached loader probe,
 distinguishes zero-filled RAM from unmapped padding. Matching linked ELF x86
 metadata confines the new policy; ARM mode inference remains separate.
@@ -20,6 +24,8 @@ if an explicit branch also queued it. A declared range is checked before mapped
 recovery, preserving fatal, warning and ignore policies. The expected-error
 stage runner collects output independently of the console's mutable redirect,
 so closing it retains diagnostics and subsequent output without reopening it.
+Rebuilding an eligible image refreshes its mapping warnings even after recovery
+is disabled, while retaining unrelated warnings.
 
 The original upstream acceptance input is unavailable locally. These source-
 generated Apache-2.0 fixtures are behavioral reductions, not a claim that the

@@ -140,8 +140,9 @@ flow follow takes a fresh loader `ImageBytes` snapshot and releases it on
 completion, so byte overlays remain exclusive and later flows see current
 bytes. `option mappedflowboundary off` restores the staged-loader path.
 Mapping warnings from an earlier eligible flow are refreshed when it is
-rebuilt, so an intervening return override or byte overlay cannot leave a
-stale unmapped-flow warning on the new body. Other warnings are retained.
+rebuilt, including after recovery is disabled, so an intervening return override
+or byte overlay cannot leave a stale unmapped-flow warning on the new body.
+Other warnings are retained.
 
 On eligible flows, `Translate::one_instruction_checked` validates the
 actual decoded instruction span with `ImageBytes::mapped_covers` before
@@ -152,6 +153,15 @@ valid; an instruction spanning a gap is not. SLEIGH's checked entry point
 declines delay-slot instructions, which this x86 scope does not produce.
 Mapped-start truncation and genuine decode errors retain the existing error
 policies below; no loader error is converted wholesale into a successful halt.
+
+An unmapped instruction span may still be the losing stream of an existing
+`option overlapbranch on` overlap. A length-only decode must establish that
+the queued branch target lies strictly inside that span, its own complete
+instruction is mapped, and the two instruction ends differ. Flow then applies
+the existing overlap halt and warning without lifting the unmapped stream.
+These probes emit no p-code or context commits. An incomplete target or
+`option overlapbranch off` retains the mapping error; reconvergent prefix
+streams retain the existing overlap policy.
 
 After effective flow classification, including flow overrides and no-return
 facts, an unmapped fall-through inside the declared flow range receives an

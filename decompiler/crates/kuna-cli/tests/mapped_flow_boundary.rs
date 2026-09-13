@@ -81,12 +81,22 @@ fn with_code(code: &[u8]) -> std::path::PathBuf {
 
 #[test]
 fn queued_paths_resolve_before_and_after_a_missing_edge_is_cut() {
-    for code in [
-        &[0xeb, 6, 0xb8, 7, 0, 0, 0, 0xc3, 0x85, 0xc0, 0x74, 0xf6, 0xbb, 5, 0, 0, 0][..],
-        &[0x85, 0xc0, 0x75, 6, 0xb8, 7, 0, 0, 0, 0xc3, 0x85, 0xdb, 0x75, 1, 0x90, 0x90][..],
+    for (code, diagnostic) in [
+        (
+            &[0xeb, 6, 0xb8, 7, 0, 0, 0, 0xc3, 0x85, 0xc0, 0x74, 0xf6, 0xbb, 5, 0, 0, 0][..],
+            "halt_missing",
+        ),
+        (
+            &[0x85, 0xc0, 0x75, 6, 0xb8, 7, 0, 0, 0, 0xc3, 0x85, 0xdb, 0x75, 1, 0x90, 0x90][..],
+            "halt_missing",
+        ),
+        (
+            &[0xb8, 7, 0, 0, 0, 0x85, 0xdb, 0x75, 1, 0xe8, 0xc3][..],
+            "overlapbranch:",
+        ),
     ] {
         let path = with_code(code);
-        let out = decompile(&path, &[]);
+        let out = decompile(&path, &["--json"]);
         let text = String::from_utf8_lossy(&out.stdout);
         assert!(
             out.status.success(),
@@ -94,25 +104,38 @@ fn queued_paths_resolve_before_and_after_a_missing_edge_is_cut() {
             String::from_utf8_lossy(&out.stderr)
         );
         assert!(text.contains("return 7;"), "{text}");
-        assert!(text.contains("halt_missing"), "{text}");
+        assert!(text.contains(diagnostic), "{text}");
         std::fs::remove_file(path).unwrap();
     }
 }
 
 #[test]
 fn truncated_instruction_keeps_a_failure_in_text_and_json() {
-    let path = with_code(&[0xb8, 7, 0]);
-    for extra in [vec![], vec!["--json"]] {
-        let out = decompile(&path, &extra);
-        assert!(
-            !out.status.success(),
-            "{}",
-            String::from_utf8_lossy(&out.stdout)
-        );
-        assert!(String::from_utf8_lossy(&out.stderr).contains("not mapped"));
-        assert!(!String::from_utf8_lossy(&out.stdout).contains("external symbol"));
+    for (bytes, options) in [
+        (&[0xb8, 7, 0][..], &[][..]),
+        (&[0xb8, 7, 0, 0, 0, 0x85, 0xdb, 0x75, 1, 0xe8, 0xb8][..], &[][..]),
+        (
+            &[0xb8, 7, 0, 0, 0, 0x85, 0xdb, 0x75, 1, 0xe8, 0xc3][..],
+            &["--option", "overlapbranch", "off"][..],
+        ),
+    ] {
+        let path = with_code(bytes);
+        for json in [false, true] {
+            let mut extra = options.to_vec();
+            if json {
+                extra.push("--json");
+            }
+            let out = decompile(&path, &extra);
+            assert!(
+                !out.status.success(),
+                "{}",
+                String::from_utf8_lossy(&out.stdout)
+            );
+            assert!(String::from_utf8_lossy(&out.stderr).contains("not mapped"));
+            assert!(!String::from_utf8_lossy(&out.stdout).contains("external symbol"));
+        }
+        std::fs::remove_file(path).unwrap();
     }
-    std::fs::remove_file(path).unwrap();
 }
 
 #[test]

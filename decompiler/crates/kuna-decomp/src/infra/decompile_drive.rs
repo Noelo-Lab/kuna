@@ -749,7 +749,7 @@ pub fn build_and_follow_flow_with_override_and_protos(
 /// clear, so the re-flow rebuilds the CALLIND straight as a direct CALL).
 #[allow(clippy::mutable_key_type)]
 fn follow_flow_on_fd(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcdata> {
-    if arch.mapped_flow_boundary && arch.mapped_flow_boundary_image {
+    if arch.mapped_flow_boundary_image {
         crate::kuna_mappedflowboundary::clear_stale_warnings(&mut arch.commentdb, fd.get_address());
     }
     // C++ Funcdata::followFlow(baddr, eaddr): a function carrying a declared byte
