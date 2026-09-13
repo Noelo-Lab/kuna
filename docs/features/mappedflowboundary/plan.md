@@ -11,6 +11,9 @@
    terminate an unmapped fall-through with a registered missing halt and
    warnings before draining queued paths, including p-code-free chains.
    Explicit branches may cross gaps; later stub filling reuses the endpoint.
+   An instruction reached from decoded flow that starts mapped but runs past
+   the mapped run ends in a missing halt at its own address. The entry
+   instruction and in-lined callee flows keep the error.
 5. Cover partial instructions, warmed padding, touching/overlapping segments,
    mapped data tails, overlays, repeated flows, and wrong targets. Refresh
    only mapping warnings when eligible flow is rebuilt, including with recovery off.

@@ -16,11 +16,15 @@ kuna decompile edge.elf 0x10000 --addr --json
 
 - Check actual instruction bytes against the live map before emitting p-code.
   Preserve overlapbranch's complete mapped target without lifting padding.
-- End unmapped fall-through with a warning and missing halt; retain other paths.
+- End an unmapped fall-through, or an instruction whose bytes run past the
+  mapped image, with a warning and missing halt; retain other paths. A
+  truncated entry instruction, mapped read failures and in-lined callees keep
+  their errors.
 - Gate matching linked ELF x86 images with `mappedflowboundary` (default on).
 
 ## Tests
 
-Synthetic ELF32/64 recovery, partial/overlapping instructions, queued NOPs,
-declared ranges, failed reloads, overlays off/on, overrides and closed streams;
+Synthetic ELF32/64 recovery for a clean segment end and for trailing zero
+padding, partial/overlapping instructions, queued NOPs, declared ranges, failed
+reloads, overlays off/on, overrides, in-lining and closed streams;
 wrong-ISA/external controls.

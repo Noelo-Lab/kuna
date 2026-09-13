@@ -159,7 +159,8 @@ on a mapped byte and a genuine decode error keep their existing policies.
 
 An instruction that flow reaches from decoded code, whose first byte is mapped
 but whose encoding runs past the contiguous mapped run, is the same fact as a
-fall-through into unmapped memory one byte later. The check in
+fall-through into unmapped memory: the path cannot continue on image bytes.
+The check in
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_mappedflowboundary.rs (truncated_instruction)`
 re-derives it from the image with a length-only decode, so a failed read cannot
 qualify. That path then ends in a one-byte missing halt at the instruction's own
