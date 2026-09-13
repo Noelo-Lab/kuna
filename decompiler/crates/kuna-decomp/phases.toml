@@ -966,6 +966,12 @@ subphase = "simplification-quiescence"
 note = "(kuna GH-1282) fold (b<<k) s>> k boolean sign-extension-mask idioms"
 
 [[surface]]
+surface = "option cancelbytearithmetic"
+phase = "P3"
+subphase = "simplification-quiescence"
+note = "(kuna) fold an exact modulo-256 cancelling multiply/left-shift pair"
+
+[[surface]]
 surface = "option thumbfuncptr"
 phase = "P5"
 subphase = "const-pointer"
@@ -1606,6 +1612,28 @@ change_kind = "correctness-fix"
 tier = "core"
 symptoms = "want the raw (b<<k) s>> k sign-extension shift idiom visible instead of the folded comparison|flag-as-high-bit lowering (8051 style) hidden by the cleaned boolean compare"
 live_field = "fold_boolean_mask"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
+option = "cancelbytearithmetic"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P3"
+subphase = "simplification-quiescence"
+strength = "HARD"
+rewind = "P3"
+issue = "repipe-cancelling-byte-arithmetic-splits"
+summary = "Fold an exact one-byte multiply/left-shift pair whose coefficients cancel modulo 256."
+use_when = "On by default (DIV-174). Keep it on when byte arithmetic retains matching multiply and left-shift terms that provably cancel modulo 256. Flip off to retain the unsimplified arithmetic."
+example = "option cancelbytearithmetic off"
+source_decompiler = "kuna"
+inspiration = "repipe:cancelling-byte-arithmetic-splits, 69d7f15a8afd9d6c48b48871 crackme_shroud.exe sub_1406fa160; upstream RuleSubCommute's conservative INT_LEFT input gate"
+change_kind = "correctness-fix"
+tier = "core"
+symptoms = "byte arithmetic retains -2*x + (x << 1) instead of cancelling modulo 256|a string initializer is split by one computed byte even though its coefficients sum to zero|an exact low-byte multiply/left-shift cancellation remains unsimplified"
+live_field = "cancel_byte_arithmetic"
 live_true = "on"
 live_false = "off"
 

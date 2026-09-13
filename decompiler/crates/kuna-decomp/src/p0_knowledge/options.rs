@@ -254,6 +254,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "addcarrychain",
     "ovlesssimplify",
     "booleanmask",
+    "cancelbytearithmetic",
     "simdlane",
     "constspaceload",
     "declhightype",

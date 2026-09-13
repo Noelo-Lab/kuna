@@ -46,8 +46,14 @@ fn build_manager() -> AddrSpaceManager {
 }
 
 fn build_fd() -> Funcdata {
+    build_fd_with_cancel_byte_arithmetic(false)
+}
+
+fn build_fd_with_cancel_byte_arithmetic(gate: bool) -> Funcdata {
     let manage = build_manager();
-    let glb = Rc::new(ArchContext::new(manage));
+    let mut ctx = ArchContext::new(manage);
+    ctx.cancel_byte_arithmetic = gate;
+    let glb = Rc::new(ctx);
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let addr = Address::new(ram, 0x1000);
     Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()
@@ -151,6 +157,376 @@ fn clone_filters_on_group() {
     let outside = ActionGroupList::from_names(["other"]);
     assert!(RuleSubCancel::new().clone_rule(&inside).is_some());
     assert!(RuleSubCancel::new().clone_rule(&outside).is_none());
+}
+
+// ---------------------------------------------------------------------------
+// RuleSubCommute / cancelbytearithmetic
+// ---------------------------------------------------------------------------
+
+struct ByteCancellationFixture {
+    subpiece: OpId,
+    shift: OpId,
+    producer: OpId,
+    shifted: VarnodeId,
+    shifted_low: VarnodeId,
+    plain_low_op: OpId,
+    plain_low: VarnodeId,
+    mult_out: VarnodeId,
+    inner_out: VarnodeId,
+    root: OpId,
+    preserved: VarnodeId,
+}
+
+fn build_byte_cancellation(
+    fd: &mut Funcdata,
+    shift_amount: Option<u64>,
+    shift_offset: u64,
+    plain_offset: u64,
+    outsize: int4,
+    coefficient: Option<u64>,
+    permutation: u8,
+) -> ByteCancellationFixture {
+    let bl = mk_block(fd);
+    let lhs = mk_vn(fd, 4, 0x10);
+    let rhs = mk_vn(fd, 4, 0x18);
+    let (producer, source) = mk_def(fd, bl, OpCode::CPUI_INT_AND, 4, 0x20, &[lhs, rhs]);
+    let amount = shift_amount
+        .map(|value| fd.new_constant(4, value))
+        .unwrap_or_else(|| mk_vn(fd, 4, 0x28));
+    let (shift, shifted) = mk_def(fd, bl, OpCode::CPUI_INT_LEFT, 4, 0x30, &[source, amount]);
+    let byte_offset = fd.new_constant(4, shift_offset);
+    let (subpiece, shifted_low) = mk_def(
+        fd,
+        bl,
+        OpCode::CPUI_SUBPIECE,
+        outsize,
+        0x38,
+        &[shifted, byte_offset],
+    );
+    let plain_byte_offset = fd.new_constant(4, plain_offset);
+    let (plain_low_op, plain_low) = mk_def(
+        fd,
+        bl,
+        OpCode::CPUI_SUBPIECE,
+        outsize,
+        0x40,
+        &[source, plain_byte_offset],
+    );
+    let amount_for_coefficient = shift_amount.unwrap_or(1);
+    let coefficient = coefficient
+        .unwrap_or_else(|| 0u64.wrapping_sub(1u64 << amount_for_coefficient) & calc_mask(outsize));
+    let coefficient = fd.new_constant(outsize, coefficient);
+    let mult_inputs = if permutation & 1 == 0 {
+        [plain_low, coefficient]
+    } else {
+        [coefficient, plain_low]
+    };
+    let (_mult, mult_out) = mk_def(fd, bl, OpCode::CPUI_INT_MULT, outsize, 0x48, &mult_inputs);
+    let preserved = mk_vn(fd, outsize, 0x50);
+    let inner_inputs = if permutation & 2 == 0 {
+        [mult_out, preserved]
+    } else {
+        [preserved, mult_out]
+    };
+    let (_inner, inner_out) = mk_def(fd, bl, OpCode::CPUI_INT_ADD, outsize, 0x58, &inner_inputs);
+    let root_inputs = if permutation & 4 == 0 {
+        [inner_out, shifted_low]
+    } else {
+        [shifted_low, inner_out]
+    };
+    let (root, _root_out) = mk_def(fd, bl, OpCode::CPUI_INT_ADD, outsize, 0x60, &root_inputs);
+    ByteCancellationFixture {
+        subpiece,
+        shift,
+        producer,
+        shifted,
+        shifted_low,
+        plain_low_op,
+        plain_low,
+        mult_out,
+        inner_out,
+        root,
+        preserved,
+    }
+}
+
+fn attach_copy(fd: &mut Funcdata, input: VarnodeId, off: u64) {
+    let bl = fd
+        .vbank()
+        .get(input)
+        .and_then(|vn| vn.get_def())
+        .and_then(|op| fd.obank().get(op))
+        .and_then(|op| op.get_parent())
+        .unwrap();
+    let copy = mk_op(fd, 1, off, OpCode::CPUI_COPY);
+    fd.op_set_input(copy, input, 0).unwrap();
+    fd.op_insert(copy, bl, None);
+    let size = fd.vbank().get(input).unwrap().get_size();
+    let _copy_out = new_unique_out(fd, size, copy);
+}
+
+fn build_extension_shift_subpiece(fd: &mut Funcdata, extension: OpCode) -> (OpId, OpId) {
+    let bl = mk_block(fd);
+    let extended = match extension {
+        OpCode::CPUI_INT_ZEXT => {
+            let input = mk_vn(fd, 1, 0x10);
+            mk_def(fd, bl, extension, 4, 0x20, &[input]).1
+        }
+        OpCode::CPUI_PIECE => {
+            let hi = mk_vn(fd, 2, 0x10);
+            let lo = mk_vn(fd, 2, 0x18);
+            mk_def(fd, bl, extension, 4, 0x20, &[hi, lo]).1
+        }
+        _ => panic!("unsupported extension fixture"),
+    };
+    let variable_amount = mk_vn(fd, 4, 0x28);
+    let (shift, shifted) = mk_def(
+        fd,
+        bl,
+        OpCode::CPUI_INT_LEFT,
+        4,
+        0x30,
+        &[extended, variable_amount],
+    );
+    let offset = fd.new_constant(4, 0);
+    let (subpiece, _) = mk_def(
+        fd,
+        bl,
+        OpCode::CPUI_SUBPIECE,
+        1,
+        0x38,
+        &[shifted, offset],
+    );
+    (subpiece, shift)
+}
+
+fn build_divrem_subpiece(fd: &mut Funcdata, opcode: OpCode) -> (OpId, OpId, VarnodeId) {
+    let bl = mk_block(fd);
+    let lhs = mk_vn(fd, 1, 0x10);
+    let rhs = mk_vn(fd, 1, 0x18);
+    let (_zext_lhs, wide_lhs) = mk_def(fd, bl, OpCode::CPUI_INT_ZEXT, 4, 0x20, &[lhs]);
+    let (_zext_rhs, wide_rhs) = mk_def(fd, bl, OpCode::CPUI_INT_ZEXT, 4, 0x28, &[rhs]);
+    let (divrem, wide_result) = mk_def(fd, bl, opcode, 4, 0x30, &[wide_lhs, wide_rhs]);
+    let offset = fd.new_constant(4, 0);
+    let (subpiece, out) = mk_def(
+        fd,
+        bl,
+        OpCode::CPUI_SUBPIECE,
+        1,
+        0x38,
+        &[wide_result, offset],
+    );
+    (subpiece, divrem, out)
+}
+
+fn divrem_commute_fingerprint(gate: bool, opcode: OpCode) -> (int4, OpCode, bool, Vec<OpCode>) {
+    let mut fd = build_fd_with_cancel_byte_arithmetic(gate);
+    let (subpiece, divrem, out) = build_divrem_subpiece(&mut fd, opcode);
+    let changed = RuleSubCommute::new().apply_op(subpiece, &mut fd);
+    let op = fd.obank().get(divrem).unwrap();
+    let input_defs = (0..op.num_input())
+        .map(|slot| {
+            let input = op.get_in(slot).unwrap();
+            let def = fd.vbank().get(input).unwrap().get_def().unwrap();
+            fd.obank().get(def).unwrap().code()
+        })
+        .collect();
+    (changed, op.code(), op.get_out() == Some(out), input_defs)
+}
+
+#[test]
+fn cancelbytearithmetic_folds_all_shift_and_operand_permutations() {
+    for amount in 1..8 {
+        for permutation in 0..8 {
+            let mut fd = build_fd_with_cancel_byte_arithmetic(true);
+            let fixture =
+                build_byte_cancellation(&mut fd, Some(amount), 0, 0, 1, None, permutation);
+            assert_eq!(RuleSubCommute::new().apply_op(fixture.subpiece, &mut fd), 1);
+            let root = fd.obank().get(fixture.root).unwrap();
+            assert_eq!(root.code(), OpCode::CPUI_COPY);
+            assert_eq!(root.num_input(), 1);
+            assert_eq!(root.get_in(0), Some(fixture.preserved));
+            let shift = fd.obank().get(fixture.shift).unwrap();
+            assert_eq!(shift.code(), OpCode::CPUI_INT_LEFT);
+            assert_eq!(shift.get_out(), Some(fixture.shifted));
+        }
+    }
+}
+
+#[test]
+fn cancelbytearithmetic_off_restores_the_upstream_decline() {
+    let mut fd = build_fd_with_cancel_byte_arithmetic(false);
+    let fixture = build_byte_cancellation(&mut fd, Some(1), 0, 0, 1, None, 0);
+    assert_eq!(RuleSubCommute::new().apply_op(fixture.subpiece, &mut fd), 0);
+    assert_eq!(
+        fd.obank().get(fixture.root).unwrap().code(),
+        OpCode::CPUI_INT_ADD
+    );
+}
+
+#[test]
+fn cancelbytearithmetic_declines_shift_and_width_bounds() {
+    let cases = [
+        (Some(0), 0, 1),
+        (Some(1), 1, 1),
+        (None, 0, 1),
+        (Some(8), 0, 1),
+        (Some(1), 0, 2),
+    ];
+    for (amount, offset, width) in cases {
+        let mut fd = build_fd_with_cancel_byte_arithmetic(true);
+        let fixture = build_byte_cancellation(&mut fd, amount, offset, 0, width, None, 0);
+        assert_eq!(
+            RuleSubCommute::new().apply_op(fixture.subpiece, &mut fd),
+            0,
+            "amount={amount:?}, offset={offset}, width={width}"
+        );
+    }
+}
+
+#[test]
+fn cancelbytearithmetic_declines_wrong_coefficient_source_and_plain_offset() {
+    for case in 0..3 {
+        let mut fd = build_fd_with_cancel_byte_arithmetic(true);
+        let fixture = build_byte_cancellation(
+            &mut fd,
+            Some(3),
+            0,
+            if case == 2 { 1 } else { 0 },
+            1,
+            if case == 0 { Some(0xf9) } else { None },
+            0,
+        );
+        if case == 1 {
+            let other_source = mk_vn(&mut fd, 4, 0x68);
+            fd.op_set_input(fixture.plain_low_op, other_source, 0)
+                .unwrap();
+        }
+        assert_eq!(RuleSubCommute::new().apply_op(fixture.subpiece, &mut fd), 0);
+        assert_eq!(
+            fd.obank().get(fixture.root).unwrap().code(),
+            OpCode::CPUI_INT_ADD
+        );
+    }
+}
+
+#[test]
+fn cancelbytearithmetic_declines_constant_and_call_or_load_producers() {
+    for case in 0..3 {
+        let mut fd = build_fd_with_cancel_byte_arithmetic(true);
+        let fixture = build_byte_cancellation(&mut fd, Some(1), 0, 0, 1, None, 0);
+        if case == 0 {
+            let mask = fd.new_constant(4, 0xff);
+            fd.op_set_input(fixture.producer, mask, 1).unwrap();
+        } else {
+            set_opcode(
+                &mut fd,
+                fixture.producer,
+                if case == 1 {
+                    OpCode::CPUI_CALL
+                } else {
+                    OpCode::CPUI_LOAD
+                },
+            );
+        }
+        assert_eq!(RuleSubCommute::new().apply_op(fixture.subpiece, &mut fd), 0);
+        assert_eq!(
+            fd.obank().get(fixture.root).unwrap().code(),
+            OpCode::CPUI_INT_ADD
+        );
+        assert!(fd.obank().get(fixture.producer).is_some());
+    }
+}
+
+#[test]
+fn cancelbytearithmetic_preserves_both_precision_guards() {
+    for high in [false, true] {
+        let mut fd = build_fd_with_cancel_byte_arithmetic(true);
+        let fixture = build_byte_cancellation(&mut fd, Some(1), 0, 0, 1, None, 0);
+        if high {
+            fd.vbank_mut()
+                .get_mut(fixture.shifted_low)
+                .unwrap()
+                .set_precis_hi();
+        } else {
+            fd.vbank_mut()
+                .get_mut(fixture.shifted_low)
+                .unwrap()
+                .set_precis_lo();
+        }
+        assert_eq!(RuleSubCommute::new().apply_op(fixture.subpiece, &mut fd), 0);
+    }
+}
+
+#[test]
+fn cancelbytearithmetic_preserves_every_single_descendant_guard() {
+    for case in 0..5 {
+        let mut fd = build_fd_with_cancel_byte_arithmetic(true);
+        let fixture = build_byte_cancellation(&mut fd, Some(1), 0, 0, 1, None, 0);
+        let observed = match case {
+            0 => fixture.shifted,
+            1 => fixture.shifted_low,
+            2 => fixture.plain_low,
+            3 => fixture.mult_out,
+            _ => fixture.inner_out,
+        };
+        attach_copy(&mut fd, observed, 0x70 + case as u64);
+        assert_eq!(RuleSubCommute::new().apply_op(fixture.subpiece, &mut fd), 0);
+    }
+}
+
+#[test]
+fn cancelbytearithmetic_requires_exact_modulo_256_coefficient() {
+    for amount in 1..8 {
+        let expected = 0u64.wrapping_sub(1u64 << amount) & 0xff;
+        for coefficient in [
+            expected.wrapping_sub(1) & 0xff,
+            expected.wrapping_add(1) & 0xff,
+        ] {
+            let mut fd = build_fd_with_cancel_byte_arithmetic(true);
+            let fixture =
+                build_byte_cancellation(&mut fd, Some(amount), 0, 0, 1, Some(coefficient), 0);
+            assert_eq!(RuleSubCommute::new().apply_op(fixture.subpiece, &mut fd), 0);
+        }
+    }
+}
+
+#[test]
+fn cancelbytearithmetic_does_not_gate_legacy_zext_or_piece_paths() {
+    for extension in [OpCode::CPUI_INT_ZEXT, OpCode::CPUI_PIECE] {
+        let mut fd = build_fd_with_cancel_byte_arithmetic(false);
+        let (subpiece, _shift) = build_extension_shift_subpiece(&mut fd, extension);
+        assert_eq!(
+            RuleSubCommute::new().apply_op(subpiece, &mut fd),
+            1,
+            "legacy {extension:?} path"
+        );
+    }
+}
+
+#[test]
+fn cancelbytearithmetic_does_not_change_unsigned_division_or_remainder_arms() {
+    for opcode in [OpCode::CPUI_INT_DIV, OpCode::CPUI_INT_REM] {
+        let off = divrem_commute_fingerprint(false, opcode);
+        let on = divrem_commute_fingerprint(true, opcode);
+        assert_eq!(off, on, "{opcode:?} must be byte-identical across the gate");
+        assert_eq!(on.0, 1, "the legacy {opcode:?} commute must still apply");
+        assert_eq!(on.1, opcode);
+        assert!(on.2);
+        assert_eq!(on.3, vec![OpCode::CPUI_SUBPIECE, OpCode::CPUI_SUBPIECE]);
+    }
+}
+
+#[test]
+fn cancelbytearithmetic_reaches_a_one_step_fixed_point() {
+    let mut fd = build_fd_with_cancel_byte_arithmetic(true);
+    let fixture = build_byte_cancellation(&mut fd, Some(1), 0, 0, 1, None, 0);
+    assert_eq!(RuleSubCommute::new().apply_op(fixture.subpiece, &mut fd), 1);
+    assert_eq!(RuleSubCommute::new().apply_op(fixture.subpiece, &mut fd), 0);
+    assert_eq!(
+        fd.obank().get(fixture.root).unwrap().code(),
+        OpCode::CPUI_COPY
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -975,4 +1351,3 @@ fn condnegate_rejects_unflipped() {
     // boolean_flip not set -> early-out.
     assert_eq!(RuleCondNegate::new().apply_op(cb, &mut fd), 0);
 }
-

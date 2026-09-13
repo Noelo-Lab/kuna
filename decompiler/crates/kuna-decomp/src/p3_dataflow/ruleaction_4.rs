@@ -695,6 +695,7 @@ impl Rule for RuleSubCommute {
         let outsize = size_of(data, outvn);
         let longform = def_of(data, base);
         let mut j: int4 = -1;
+        let mut byte_cancellation = None;
         match code(data, longform) {
             OpCode::CPUI_INT_LEFT => {
                 j = 1; // Special processing for shift amount param
@@ -705,7 +706,13 @@ impl Rule for RuleSubCommute {
                 if is_written(data, lin0) {
                     let opc = code(data, def_of(data, lin0));
                     if opc != OpCode::CPUI_INT_ZEXT && opc != OpCode::CPUI_PIECE {
-                        return 0;
+                        byte_cancellation =
+                            crate::p3_dataflow::kuna_cancelbytearithmetic::find_cancellation(
+                                data, op, longform, outsize,
+                            );
+                        if byte_cancellation.is_none() {
+                            return 0;
+                        }
                     }
                 } else {
                     return 0;
@@ -831,6 +838,11 @@ impl Rule for RuleSubCommute {
                     return 0;
                 }
             }
+        }
+
+        if let Some(plan) = byte_cancellation {
+            crate::p3_dataflow::kuna_cancelbytearithmetic::apply_cancellation(data, plan);
+            return 1;
         }
 
         let numinput = data.obank().get(longform).expect("RuleSubCommute: stale longform").num_input();

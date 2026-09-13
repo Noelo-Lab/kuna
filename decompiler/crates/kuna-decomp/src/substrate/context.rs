@@ -794,6 +794,9 @@ pub struct ArchContext {
     /// (C++ `fold_boolean_mask`, DIV-2 default-on).  Read by
     /// [`RuleBoolSignShift`](crate::kuna_booleanmask::RuleBoolSignShift).
     pub fold_boolean_mask: bool,
+    /// (kuna) Fold an exact one-byte modular cancellation around a bounded
+    /// left shift (`option cancelbytearithmetic`).
+    pub cancel_byte_arithmetic: bool,
     /// (kuna) refuse to split a shared RETURN block that stores to GLOBALS
     /// (`retsplitglobal`).  Read by
     /// [`Funcdata::return_split_is_splittable`](crate::funcdata::Funcdata),
@@ -1465,6 +1468,7 @@ impl ArchContext {
             // registered `enabled=false` is inert there — matching the gate-off
             // unit tests (and the `infer_funcentry` stub-default convention).
             fold_boolean_mask: false,    // GH-1282 booleanmask
+            cancel_byte_arithmetic: false, // cancelbytearithmetic (the ArchSeam carries the real default)
             ret_split_global: false,     // retsplitglobal (the ArchSeam carries the real default)
             simd_lane_fold: false,       // simdlane (the ArchSeam carries the real default)
             const_space_load_fold: false, // constspaceload (the ArchSeam carries the real default)

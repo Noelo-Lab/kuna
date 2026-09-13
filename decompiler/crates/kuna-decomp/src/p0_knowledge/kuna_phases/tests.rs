@@ -68,12 +68,13 @@ fn surface_count_is_116() {
     // a teardown has to give back what the entry block saved, DIV-157).
     // +1 for the `option callpopret` surface row (kuna P2 flow-classification:
     // a call-over-data helper that returns through its caller's caller, DIV-163).
-    assert_eq!(kuna_num_surfaces(), 116);
-    assert_eq!(SURFACE_TABLE.len(), 116);
+    // +1 for `option cancelbytearithmetic` (P3 exact byte cancellation).
+    assert_eq!(kuna_num_surfaces(), 117);
+    assert_eq!(SURFACE_TABLE.len(), 117);
 }
 
 #[test]
-fn settable_count_is_193() {
+fn settable_count_is_194() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -133,12 +134,13 @@ fn settable_count_is_193() {
     // +1 for `pdatainterior` (P1 `.pdata` RUNTIME_FUNCTION-interior entry suppression).
     // +1 for `callretpair` (P4 two-register CALL output completion, DIV-162).
     // +1 for `loweredswitchlabels` (P2 comparison-derived label signedness).
-    assert_eq!(kuna_num_settables(), 193);
-    assert_eq!(SETTABLE_TABLE.len(), 193);
+    // +1 for `cancelbytearithmetic` (P3 exact byte cancellation, DIV-174).
+    assert_eq!(kuna_num_settables(), 194);
+    assert_eq!(SETTABLE_TABLE.len(), 194);
 }
 
 #[test]
-fn tier_counts_are_62_core_72_transform_59_analysis() {
+fn tier_counts_are_63_core_72_transform_59_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -244,7 +246,8 @@ fn tier_counts_are_62_core_72_transform_59_analysis() {
     // completion, DIV-162).
     // core 61 -> 62: +1 for `loweredswitchlabels` (P2 comparison-derived
     // label signedness, DIV-173).
-    assert_eq!((core, transform, analysis), (62, 72, 59));
+    // core 62 -> 63: +1 for `cancelbytearithmetic` (P3 exact modular identity).
+    assert_eq!((core, transform, analysis), (63, 72, 59));
 }
 
 #[test]
@@ -434,7 +437,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_75() {
+fn option_values_live_value_present_for_77() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -783,7 +786,9 @@ fn option_values_live_value_present_for_75() {
     // DIV-170).
     // 75 -> 76: +1 for `loweredswitchlabels` (live_field = lowered_switch_labels,
     // DIV-173).
-    assert_eq!(with_live, 76);
+    // 76 -> 77: +1 for `cancelbytearithmetic` (live_field =
+    // cancel_byte_arithmetic, DIV-174).
+    assert_eq!(with_live, 77);
 }
 
 #[test]
@@ -921,7 +926,9 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // beside `securitycheck`, so the tail does not move.
     // 180 -> 181: +1 for `entrythumbflow` (DIV-154); its P1 row sits mid-table
     // beside `tailcallentry`, so the tail does not move.
-    assert_eq!(json.matches("},\n").count(), 192);
+    // +1 for `cancelbytearithmetic` (DIV-174); its P3 row sits mid-table, so it
+    // increments the comma-terminated catalog-row count.
+    assert_eq!(json.matches("},\n").count(), 193);
 }
 
 #[test]

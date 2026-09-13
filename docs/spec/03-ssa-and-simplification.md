@@ -929,7 +929,7 @@ Catalog: [docs/options.md](../options.md).
 
 ## 3.5 kuna peephole rewrites
 
-Six kuna-added transforms live beside the upstream rules, each resolving an
+Kuna-added transforms live beside the upstream rules, each resolving an
 open upstream issue (the sanctioned `(kuna)`-tag exception: their
 `phases.toml` rows record `ghidra-upstream` as lineage because an upstream
 *issue*, not upstream code, specified them — the GH number is the row's
@@ -964,6 +964,29 @@ value's known-nonzero mask fits entirely below the shifted-out bits — i.e. `b`
 is a boolean being smeared across the word. Rewrite: `INT_2COMP(b)` (`0 - b`,
 giving 0 or all-ones), which the surrounding compare rules then clean to a
 plain boolean test. Settable `booleanmask`, shipped default **on** (DIV-2).
+
+**cancelbytearithmetic** (repipe `cancelling-byte-arithmetic-splits`) —
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_cancelbytearithmetic.rs`
+owns the option and exact graph matcher; a small hook remains in the
+upstream-derived `RuleSubCommute::apply_op` because the witness begins at its
+`SUBPIECE(INT_LEFT(...),0)` arm. Pattern: an outer one-byte add whose inputs are
+`low8(x << s)` and an inner add containing both an independent value and
+`low8(x) * (-2^s mod 256)`, for constant `1 <= s < 8`. The two terms cancel for
+every byte value, so the outer add is rewritten directly to a COPY of the
+independent value. The matcher requires the same `x`, byte width and zero
+offset in both SUBPIECEs, the exact modulo-256 coefficient, and a sole-consumer
+chain from each intermediate result to the root. It accepts either operand
+order for both adds and the multiply.
+
+The filed witness additionally requires `x` to be the pure result of an
+`INT_AND` with two nonconstant inputs. Constant masks and direct CALL/LOAD
+producers decline. Wrong coefficients, sources, widths or offsets; shared
+intermediates; variable or out-of-range shifts; and all unrelated
+RuleSubCommute arms also decline. The fold does not push a SUBPIECE through the
+shift and never creates narrow shift arithmetic, avoiding signed `char << s`
+in emitted C. The original INT_ZEXT/PIECE route ignores this gate and remains
+unchanged when the option is off. Settable `cancelbytearithmetic`, shipped
+default **on** (DIV-174).
 
 **simdlane** (repipe `simd-constant-string-initializer`) —
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_simdlane.rs

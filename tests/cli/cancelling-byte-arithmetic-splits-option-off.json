@@ -1,0 +1,52 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "timeout_s": 60,
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "0x1406fa160",
+    "--assert",
+    "data 0x1408f1c08 char usage[22]",
+    "--option",
+    "cancelbytearithmetic",
+    "off",
+    "--json"
+  ],
+  "expect": {
+    "stdout_is_json": true,
+    "json": [
+      {
+        "path": "functions[0].code",
+        "op": "matches",
+        "value": "builtin_strncpy\\(usage,\"Usage: %s <pass\",0xf\\);"
+      },
+      {
+        "path": "functions[0].code",
+        "op": "matches",
+        "value": "usage\\[0xf\\] = [^;]*dat_[0-9a-f]+[^;]*<< 1\\);"
+      },
+      {
+        "path": "functions[0].code",
+        "op": "matches",
+        "value": "builtin_strncpy\\(&usage\\[0x10\\],\"ord>\\\\n\",5\\);"
+      },
+      {
+        "path": "functions[0].code",
+        "op": "not_contains",
+        "value": "Usage: %s <password>"
+      }
+    ]
+  },
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/pe_subcommuteshift_x86_64.exe",
+    "binary_sha256": "a39bf9ded430fe75b3a84edebf55dec3ac299bc4428b838a041112a1f8c550fb",
+    "binary_size": 10240,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/pe_subcommuteshift_x86_64.exe",
+    "selector": "0x1406fa160",
+    "selector_kind": "addr"
+  },
+  "notes": "Option-off control for a-88e307f76db7. It pins all three original writes: the fifteen-byte prefix, the data-dependent middle byte, and the five-byte suffix."
+}

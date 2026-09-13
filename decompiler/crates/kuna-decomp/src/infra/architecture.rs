@@ -486,6 +486,9 @@ pub struct Architecture {
     /// (kuna GH-1282) Fold `(b<<k) s>> k` boolean sign-extension-mask idioms
     /// (C++ `fold_boolean_mask`).
     pub fold_boolean_mask: bool,
+    /// (kuna) Fold an exact one-byte modular cancellation around a bounded
+    /// left shift (option `cancelbytearithmetic`).
+    pub cancel_byte_arithmetic: bool,
     /// (kuna) Refuse to split a shared RETURN block that stores to GLOBALS, so
     /// a 72-store epilogue is not cloned into each predecessor (option
     /// `retsplitglobal`).  See [`crate::p8_structure::kuna_retsplitglobal`].
@@ -2083,6 +2086,7 @@ impl Architecture {
             sparc_struct_return: false,
             ov_less_simplify: false,
             fold_boolean_mask: false,
+            cancel_byte_arithmetic: false,
             simd_lane_fold: false,
             const_space_load_fold: false,
             ret_split_global: false,
@@ -2337,6 +2341,7 @@ impl Architecture {
         self.sparc_struct_return = false; // (kuna) default: upstream byte-identical (GH-6882)
         self.ov_less_simplify = true; // (kuna) DIV-2 default-on (GH-7190)
         self.fold_boolean_mask = true; // (kuna) DIV-2 default-on (GH-1282)
+        self.cancel_byte_arithmetic = true; // (kuna) DIV-174 default-on: exact low-byte modular cancellation; corpus evidence is recorded with the feature
         self.ret_split_global = true; // (kuna) DIV-PENDING default-on: a shared RETURN block that stores to GLOBALS is not the bare epilogue `ActionReturnSplit::isSplittable` assumes, so it is no longer cloned into every predecessor. One-directional (it can only decline a split) and byte-identical (0/675) on the datatest corpus; restore the upstream predicate with `option retsplitglobal off`
         self.simd_lane_fold = true; // (kuna) DIV-PENDING default-on: an exact identity (pshufb with a constant mask IS a byte permutation), so a lane read resolves to the source lane instead of an opaque CALLOTHER temporary. Byte-identical (0/675) on the datatest corpus; restore the opaque rendering with `option simdlane off`
         self.const_space_load_fold = true; // (kuna) DIV-PENDING default-on: a LOAD from the CONSTANT space is the address-is-value identity `RuleLoadVarnode` already applies to a constant pointer, and it does not stop holding for a temporary, so a SLEIGH dynamic const export is no longer left as a pointer-shaped LOAD for `ActionLaneDivide` to slice into near-null lane reads. Byte-identical (0/675) on the datatest corpus; restore the upstream rendering with `option constspaceload off`
@@ -2609,6 +2614,13 @@ impl Architecture {
             "addcarrychain" => on_off!(add_carry_chain, "Carry-chain wide-add recovery"),
             "ovlesssimplify" => on_off!(ov_less_simplify, "OV-flag signed-compare simplification"),
             "booleanmask" => on_off!(fold_boolean_mask, "Boolean sign-mask folding"),
+            "cancelbytearithmetic" => {
+                let (val, msg) =
+                    crate::p3_dataflow::kuna_cancelbytearithmetic::OptionCancelByteArithmetic
+                        .apply(p1)?;
+                self.cancel_byte_arithmetic = val;
+                Ok(msg)
+            }
             "retsplitglobal" => {
                 let (val, msg) =
                     crate::p8_structure::kuna_retsplitglobal::OptionRetSplitGlobal.apply(p1)?;
@@ -3720,6 +3732,7 @@ impl Architecture {
         // reads `data.get_arch().<flag>`; the rule is registered `enabled=false`
         // so the live flag drives both the DIV default and the toggle).
         ctx.fold_boolean_mask = self.fold_boolean_mask; // GH-1282 booleanmask
+        ctx.cancel_byte_arithmetic = self.cancel_byte_arithmetic; // cancelbytearithmetic
         ctx.simd_lane_fold = self.simd_lane_fold; // simdlane
         ctx.const_space_load_fold = self.const_space_load_fold; // constspaceload
         ctx.ret_split_global = self.ret_split_global; // retsplitglobal
