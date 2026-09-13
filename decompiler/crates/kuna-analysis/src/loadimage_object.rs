@@ -1087,10 +1087,13 @@ impl ObjectLoadImage {
     }
 
     /// The container's declared entry as a code address, if it declares one.
-    pub fn elfv1_descriptors(&self) -> &crate::loader::elfv1::Descriptors { &self.elfv1 }
-
     pub fn image_entry(&self) -> Option<u64> {
         self.image_entry
+    }
+
+    /// The validated PowerPC64 ELFv1 function descriptors; empty for every other image.
+    pub fn elfv1_descriptors(&self) -> &crate::loader::elfv1::Descriptors {
+        &self.elfv1
     }
 
     /// Executable `(vma, size)` extents. Sectionless ELF images use PF_X
