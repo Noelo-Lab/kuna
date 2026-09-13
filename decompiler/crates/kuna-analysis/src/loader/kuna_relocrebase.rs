@@ -418,6 +418,7 @@ pub fn retain_in_image(out: &mut AnalysisOutput, view: &RebasedView) {
     out.data_objects.retain(|d| keep(d.addr));
     out.entries.retain(|&a| keep(a));
     out.fde_bodies.retain(keep_range);
+    out.pdb_bodies.retain(keep_range);
     out.entry_names.retain(|(a, _)| keep(*a));
     for fact in &mut out.noreturn {
         if !keep(fact.addr) {

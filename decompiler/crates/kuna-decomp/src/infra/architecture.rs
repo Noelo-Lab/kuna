@@ -1294,6 +1294,19 @@ pub struct Architecture {
     /// always kept. Off restores the previous discovery set exactly; inert on
     /// ELF, on ARM/ARM64 PE and on any image with no exception directory.
     pub analysis_pdatainterior: bool,
+    /// (kuna) Reject a discovered function entry that falls strictly inside a
+    /// single-function PDB procedure (`pdbinterior`); default **on**. The PDB half
+    /// of [`Self::analysis_pdatainterior`], for the frameless leaves `.pdata` has
+    /// no record of: each `S_GPROC32`/`S_LPROC32` in the fingerprint-matched
+    /// `.pdb` carries its code length, so `aif`'s gap starts inside a leaf that
+    /// only the PDB names are rejected instead of truncating it through
+    /// `funcboundflow`. Only procedures inside one executable section, holding no
+    /// other named start and no other procedure's start, and whose own start is a
+    /// committed function are used, and inside one only the entries that
+    /// function's own decode reaches are rejected; an entry AT a procedure start is
+    /// always kept. Applied only while `pdb` is also on; off restores the previous
+    /// discovery set exactly.
+    pub analysis_pdbinterior: bool,
     /// (kuna) Gate the **full byte-pattern function-start** pass
     /// (`funcstart_patterns`); default **off** (output-changing: it discovers more
     /// functions). The faithful port of Ghidra's `FunctionStartAnalyzer` over the
@@ -2253,6 +2266,7 @@ impl Architecture {
             analysis_eh_frame_full: false,
             analysis_fdeinterior: false,
             analysis_pdatainterior: false,
+            analysis_pdbinterior: false,
             analysis_funcstart_patterns: false,
             analysis_cortexmvectors: false,
             analysis_ptrentry: false,
@@ -2527,6 +2541,8 @@ impl Architecture {
         self.analysis_fdeinterior = true;
         // (kuna) `.pdata` RUNTIME_FUNCTION-interior entry suppression — default-ON.
         self.analysis_pdatainterior = true;
+        // (kuna) PDB-procedure-interior entry suppression — default-ON.
+        self.analysis_pdbinterior = true;
         self.analysis_funcstart_patterns = false; // full byte-pattern starts default-off (output-changing)
         self.analysis_cortexmvectors = false; // (kuna) widened Cortex-M vector signature default-off (output-changing)
         self.analysis_ptrentry = false; // (kuna) pointer-referenced ARM entries default-off (output-changing)
@@ -3129,6 +3145,9 @@ impl Architecture {
             }
             "pdatainterior" => {
                 on_off!(analysis_pdatainterior, ".pdata RUNTIME_FUNCTION-interior entry suppression")
+            }
+            "pdbinterior" => {
+                on_off!(analysis_pdbinterior, "PDB procedure-interior entry suppression")
             }
             "funcstart_patterns" => {
                 on_off!(analysis_funcstart_patterns, "Full byte-pattern function-start pass")

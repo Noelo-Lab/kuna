@@ -57,6 +57,93 @@ pub fn walk_functions(pdb: &mut pdb::PDB<'_, std::fs::File>, image_base: u64) ->
     out
 }
 
+/// The `S_LPROC32`/`S_GPROC32` record kinds (plain, `_ST`, `_ID` and DPC forms),
+/// checked before a record is parsed; the `pdb` crate does not export its kind
+/// constants, and a module stream is mostly locals and ranges.
+const PROCEDURE_KINDS: [u16; 8] = [0x100a, 0x100b, 0x110f, 0x1110, 0x1146, 0x1147, 0x1155, 0x1156];
+
+/// One module-stream procedure record, global or local, at absolute VMAs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct PdbProcedure {
+    /// The procedure's first address.
+    pub start: u64,
+    /// One past its last code byte, or `None` when the record gives no usable
+    /// extent: a zero code length, a length that overflows the address space, or
+    /// code the PDB's address map does not place as one contiguous range.
+    pub end: Option<u64>,
+}
+
+/// Walk every module stream of an opened `.pdb` and return its procedure
+/// records, sorted and deduplicated.
+///
+/// The global stream holds only references to procedures; the records that carry a
+/// code length live in the per-module streams, so this is the only place a
+/// procedure's end is recorded. A record whose start does not resolve to an RVA is
+/// skipped; a module whose stream fails to parse contributes whatever it yielded
+/// before the failure.
+pub fn walk_procedures(
+    pdb: &mut pdb::PDB<'_, std::fs::File>,
+    image_base: u64,
+) -> Vec<PdbProcedure> {
+    let mut out: Vec<PdbProcedure> = Vec::new();
+    let (Ok(address_map), Ok(dbi)) = (pdb.address_map(), pdb.debug_information()) else {
+        return out;
+    };
+    let Ok(mut modules) = dbi.modules() else {
+        return out;
+    };
+    while let Ok(Some(module)) = modules.next() {
+        let Ok(Some(info)) = pdb.module_info(&module) else {
+            continue;
+        };
+        let Ok(mut symbols) = info.symbols() else {
+            continue;
+        };
+        while let Ok(Some(symbol)) = symbols.next() {
+            if !PROCEDURE_KINDS.contains(&symbol.raw_kind()) {
+                continue;
+            }
+            let Ok(pdb::SymbolData::Procedure(proc)) = symbol.parse() else {
+                continue;
+            };
+            let Some(internal) = proc.offset.to_internal_rva(&address_map) else {
+                continue;
+            };
+            let Some(rva) = internal.to_rva(&address_map) else {
+                continue;
+            };
+            let Some(start) = image_base.checked_add(u64::from(rva.0)) else {
+                continue;
+            };
+            let end = contiguous_length(&address_map, internal, rva, proc.len)
+                .and_then(|len| start.checked_add(len));
+            out.push(PdbProcedure { start, end });
+        }
+    }
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
+/// `len` when the `len` code bytes at PDB-internal `internal` map to exactly one
+/// range of the image beginning at `rva`. Without an OMAP that is every non-empty,
+/// non-overflowing record; with one, a procedure the post-link optimizer split or
+/// moved piecewise has no single extent.
+fn contiguous_length(
+    map: &pdb::AddressMap<'_>,
+    internal: pdb::PdbInternalRva,
+    rva: pdb::Rva,
+    len: u32,
+) -> Option<u64> {
+    let internal_end = pdb::PdbInternalRva(internal.0.checked_add(len)?);
+    let mut ranges = map.rva_ranges(internal..internal_end);
+    let only = ranges.next()?;
+    let whole = ranges.next().is_none()
+        && only.start == rva
+        && only.end.0.checked_sub(only.start.0) == Some(len);
+    (len != 0 && whole).then_some(u64::from(len))
+}
+
 /// Collect the function symbols from one `SymbolTable` into `out`.
 fn collect_symbols(
     symbols: &pdb::SymbolTable<'_>,
@@ -107,5 +194,25 @@ mod tests {
         let a = PdbFunc { vma: 0x401000, name: "main".into() };
         let b = PdbFunc { vma: 0x401000, name: "main".into() };
         assert_eq!(a, b);
+    }
+
+    /// Global and local procedure records both come back, and a code length that
+    /// overflows the RVA space yields a start with no end.
+    #[test]
+    fn procedures_carry_their_extent_or_none() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/pe_pdbinterior_x86_64.pdb");
+        let file = std::fs::File::open(path).expect("open the fixture pdb");
+        let mut pdb = pdb::PDB::open(file).expect("parse the fixture pdb");
+        let procs = walk_procedures(&mut pdb, 0x140000000);
+        assert_eq!(procs.len(), 34, "{procs:#x?}");
+        for (start, end) in [
+            (0x1400011c0, Some(0x1400011f8)),
+            (0x140001340, Some(0x140001378)),
+            (0x140001540, None),
+            (0x140001548, Some(0x140001568)),
+            (0x140002008, Some(0x140002010)),
+        ] {
+            assert!(procs.contains(&PdbProcedure { start, end }), "{start:#x}: {procs:#x?}");
+        }
     }
 }

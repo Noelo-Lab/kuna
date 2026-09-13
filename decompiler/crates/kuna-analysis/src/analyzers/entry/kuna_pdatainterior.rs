@@ -138,8 +138,9 @@ fn bodies_typed<Pe: ImageNtHeaders>(pe: &PeFile<Pe>, bytes: &[u8]) -> Vec<(u64, 
 /// inside, no other record starting strictly inside, and no overlap with the
 /// range kept before it (so the result stays disjoint for the binary search).
 ///
-/// `all` is sorted ascending; `named` is sorted ascending.
-fn eligible(all: &[(u64, u64)], named: &[u64]) -> Vec<(u64, u64)> {
+/// `all` is sorted ascending; `named` is sorted ascending. Shared with
+/// [`crate::pdb::kuna_pdbinterior`], whose procedure extents pass the same test.
+pub(crate) fn eligible(all: &[(u64, u64)], named: &[u64]) -> Vec<(u64, u64)> {
     let starts: Vec<u64> = all.iter().map(|&(b, _)| b).collect();
     let mut out: Vec<(u64, u64)> = Vec::with_capacity(all.len());
     for &(begin, end) in all {
