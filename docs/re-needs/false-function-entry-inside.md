@@ -2,7 +2,7 @@
 need_id: false-function-entry-inside
 title: False function entry inside an instruction splits the checker inventory
 track: quality
-status: open
+status: closed
 severity: major
 probe_id: p-a508b5cf3d7c
 acceptance_id: a-889458c51ba2
@@ -13,13 +13,13 @@ challenges: [6a0b84982b3df128c1df5c0d]
 rounds: [3]
 first_seen_round: 3
 attempts: 0
-covered_by_option: null
-touches: [decompiler/crates/kuna-analysis/src/analyzers/entry/patterns]
+covered_by_option: pdatainterior
+touches: [decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_pdatainterior.rs]
 scope: small
 regression_of: null
-pr: null
-closed_in_round: null
-closing_pr: null
+pr: https://github.com/Noelo-Lab/kuna/pull/557
+closed_in_round: 12
+closing_pr: "557"
 reject_reason: null
 ---
 
@@ -113,3 +113,15 @@ _none recorded_
 - filed by cluster.py from 1 observation(s)
 captain T_TRIAGE r3: touches CORRECTED kuna-decomp -> the discovery tier. The probe is `kuna functions --json` and the complaint is a fabricated entry inside an instruction, which is what the byte-pattern entry matcher does; T_REFUTE named funcstart_patterns as the prime suspect after measuring exactly that failure on a second binary. Track stays quality for the same reason as default-decompilation-fails-despite (a default-ON discovery pattern moves inventories corpus-wide). NOT merged with that need: different format (PE vs i386 ELF) and the shared cause is suspected, not measured -- but a builder taking one MUST read the other, since both would edit analyzers/entry/patterns and neither holds a lease on it.
 captain T_TRIAGE r3: repaired the missing probe/acceptance `target` block (binary_rel + sha256 + size, source dataset) -- without it {{BIN}} could not resolve and the need was unclosable by B_DONE and invisible to regression detection. Verified: acceptance now RUNS and FAILS on cf5234ac, which is the state a filed need must be in.
+- round 12 reconciliation: the current-main acceptance passed 3/3 at
+  `ccc82a37812a1bbfd6c2eac43f1fa6597d631efa`; the fabricated mid-instruction
+  entry `0x14000310c` was absent from all three inventories. The one-option
+  control, `--option pdatainterior off`, restored that exact entry and expanded
+  the function inventory from 896 to 914, directly identifying
+  `pdatainterior` as the covering pass. PR #557 (squash
+  `02b8ddc2efafc43eef6ac4e72480346ea3b6f846`) is the causal implementation and
+  is an ancestor of the verified main; the implementation file remains wholly
+  blamed to that commit. Canonical stale-reconciliation metadata keeps
+  `rounds: [3]` and `attempts: 0`, records `covered_by_option: pdatainterior`,
+  and closes in round 12 with `pr`/`closing_pr` pointing to #557 rather than the
+  later administrative PR #564.
