@@ -83,82 +83,27 @@ fn direct_branch_to_known_function_fires() {
     assert!(kuna_is_tail_call_branch(&fd, op, true, true, false));
 }
 
+/// Without an applied `flow ... branch` override the selection order is
+/// unchanged: `tailcalljump` claims first and `tailcallframe` is not consulted.
+/// The flow-level near misses (a refused branch fact, an applied one at another
+/// instruction) are end-to-end in `kuna-cli/tests/explicit_branch_assertion_cli.rs`.
 #[test]
-fn exact_branch_override_vetoes_tail_call_reinterpretation() {
+fn without_a_branch_override_tailcalljump_claims_first() {
     let mut fd = build_fd();
     let op = build_branch_op(&mut fd, OpCode::CPUI_BRANCH, 0x18d0);
-    let site = fd.obank().get(op).unwrap().get_addr().clone();
-    fd.get_override_mut()
-        .insert_flow_override(site, crate::overrides::flow_type::BRANCH);
-
-    // `flow <site> branch` says that this instruction is intraprocedural.  A
-    // known destination must not let the lower-priority inference undo it.
-    assert_eq!(
-        crate::flow::select_inferred_tail_call(
-            true,
-            || kuna_is_tail_call_branch(&fd, op, true, true, false),
-            || true,
-        ),
-        None
-    );
-}
-
-#[test]
-fn branch_override_at_another_instruction_does_not_veto_tail_call() {
-    let mut fd = build_fd();
-    let op = build_branch_op(&mut fd, OpCode::CPUI_BRANCH, 0x18d0);
-    let other_site = Address::new(proc_space(&fd), 0x1001);
-    fd.get_override_mut().insert_flow_override(
-        other_site,
-        crate::overrides::flow_type::BRANCH,
-    );
-
+    let frame_consulted = std::cell::Cell::new(false);
     assert_eq!(
         crate::flow::select_inferred_tail_call(
             false,
             || kuna_is_tail_call_branch(&fd, op, true, true, false),
-            || false,
+            || {
+                frame_consulted.set(true);
+                true
+            },
         ),
         Some("tailcalljump")
     );
-}
-
-#[test]
-fn non_branch_override_at_same_instruction_does_not_veto_tail_call() {
-    let mut fd = build_fd();
-    let op = build_branch_op(&mut fd, OpCode::CPUI_BRANCH, 0x18d0);
-    let site = fd.obank().get(op).unwrap().get_addr().clone();
-    fd.get_override_mut()
-        .insert_flow_override(site, crate::overrides::flow_type::CALL);
-
-    // Only the semantically contradictory BRANCH assertion owns precedence.
-    assert_eq!(
-        crate::flow::select_inferred_tail_call(
-            false,
-            || kuna_is_tail_call_branch(&fd, op, true, true, false),
-            || false,
-        ),
-        Some("tailcalljump")
-    );
-}
-
-#[test]
-fn unapplied_branch_fact_does_not_veto_tail_call() {
-    let mut fd = build_fd();
-    let op = build_branch_op(&mut fd, OpCode::CPUI_BRANCH, 0x18d0);
-    let site = fd.obank().get(op).unwrap().get_addr().clone();
-    fd.get_override_mut()
-        .insert_flow_override(site, crate::overrides::flow_type::BRANCH);
-
-    // A raw fact that the follower refused must not change control flow.
-    assert_eq!(
-        crate::flow::select_inferred_tail_call(
-            false,
-            || kuna_is_tail_call_branch(&fd, op, true, true, false),
-            || false,
-        ),
-        Some("tailcalljump")
-    );
+    assert!(!frame_consulted.get(), "tailcallframe was consulted after tailcalljump claimed");
 }
 
 #[test]
