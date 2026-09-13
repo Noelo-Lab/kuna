@@ -19,6 +19,8 @@ registers. Later range-less tracking remains visible, and user tracking of `r2`
 overrides the metadata without discarding seeds for other registers.
 Function summaries use the normalized entry from the loaded image metadata for
 both the displayed name/address and the root of the reachability calculation.
+Graph exports use the same metadata for `isEntryPoint`, with the inventory
+normalizing ARM's Thumb mode bit.
 
 
 ```yaml

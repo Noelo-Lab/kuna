@@ -236,7 +236,7 @@ fn invalid_descriptors_and_other_abis_keep_literal_addresses() {
 }
 
 #[test]
-fn function_summaries_use_the_normalized_entry_and_its_reachability() {
+fn entry_reports_use_normalized_code_and_reachability() {
     for abi in [0, 1] {
         let path = common::scratch_file("elfv1-entry-summary", "elf");
         // bl 0x1008; blr. The entry reaches the second function.
@@ -251,6 +251,17 @@ fn function_summaries_use_the_normalized_entry_and_its_reachability() {
         assert!(["answer", "alias", ".answer"].iter()
             .any(|name| entry.contains(&format!("\"name\": \"{name}\""))), "{text}");
         assert!(text.contains("\"reachable_from_entry\": 2"), "{text}");
+        let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
+            .args(["decompile-graph", path.to_str().unwrap()])
+            .output().unwrap();
+        let text = String::from_utf8_lossy(&out.stdout);
+        assert!(out.status.success(), "{text}\n{}", String::from_utf8_lossy(&out.stderr));
+        let flagged: Vec<&str> = text.split("\n    {").skip(1)
+            .map(|row| row.split("\n    }").next().unwrap())
+            .filter(|row| row.contains("\"isEntryPoint\": true"))
+            .collect();
+        assert_eq!(flagged.len(), 1, "{text}");
+        assert!(flagged[0].contains("\"address\": 4096,"), "{text}");
         std::fs::remove_file(path).unwrap();
     }
 }
