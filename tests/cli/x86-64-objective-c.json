@@ -7,17 +7,41 @@
     "decompile",
     "{{BIN}}",
     "-[Greeter greet:]",
+    "--option",
+    "objc",
+    "on",
     "--json"
   ],
   "expect": {
     "exit_code": {
       "eq": 0
     },
+    "stdout_is_json": true,
     "json": [
+      {
+        "path": "count",
+        "op": "eq",
+        "value": 1
+      },
       {
         "path": "functions[0].address",
         "op": "eq",
         "value": 4294968897
+      },
+      {
+        "path": "functions[0].size",
+        "op": "eq",
+        "value": 15
+      },
+      {
+        "path": "functions[0].error",
+        "op": "eq",
+        "value": null
+      },
+      {
+        "path": "functions[0].code",
+        "op": "contains",
+        "value": "return arg1 * 3 + 7;"
       }
     ]
   },
@@ -30,5 +54,5 @@
     "selector": "-[Greeter greet:]",
     "selector_kind": "name"
   },
-  "notes": "Vendored x86-64 twin of the reported Objective-C metadata defect. Its absolute method_t stores the valid odd IMP 0x100000641; the preceding even byte is padding. The dataset witness remains unchanged in Reproduction."
+  "notes": "Vendored x86-64 twin of the reported Objective-C metadata defect. Its absolute method_t stores the valid odd IMP 0x100000641; the preceding even byte is padding. The option-on selector proves metadata naming, while the exact 15-byte extent, null error, and `return arg1 * 3 + 7;` body prevent an address-only or naming-only pass. The dataset witness remains unchanged in Reproduction."
 }
