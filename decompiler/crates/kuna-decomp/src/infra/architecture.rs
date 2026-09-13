@@ -655,6 +655,10 @@ pub struct Architecture {
     /// (kuna) A stack-pointer scramble against a live value (MSVC's `/GS`
     /// cookie) does not open a local-alias escape site (option `cookiescramble`).
     pub cookie_scramble: bool,
+    /// (kuna) An unread zero element right after an open stack character
+    /// array is that array's terminator, and the array ends after it (option
+    /// `nulterminator`).  See [`crate::p6_variables::kuna_nulterminator`].
+    pub nul_terminator: bool,
     /// (kuna) Read the caller's own stack discipline for the argument bytes a
     /// callee pops, instead of guessing that it pops none (option
     /// `calleepop`).  See [`crate::p6_variables::kuna_calleepop`].
@@ -2143,6 +2147,7 @@ impl Architecture {
             lowered_switch_labels: false,
             callsite_stack_args: true,
             cookie_scramble: true,
+            nul_terminator: false,
             callee_pop: true,
             callee_proto_stack: true,
             callee_dead_arg: true,
@@ -3043,6 +3048,12 @@ impl Architecture {
             "codescalar" => on_off!(codescalar, "code-pointee scalar-value guard"),
             "cortexmpriv" => on_off!(cortexmpriv, "Cortex-M privileged-mode guard folding"),
             "paramrefdecl" => on_off!(param_ref_decl, "address-taken parameter re-declaration guard"),
+            "nulterminator" => {
+                let (val, msg) =
+                    crate::p6_variables::kuna_nulterminator::OptionNulTerminator.apply(p1)?;
+                self.nul_terminator = val;
+                Ok(msg)
+            }
             "declhightype" => {
                 let (val, msg) = crate::kuna_declhightype::OptionDeclHighType.apply(p1)?;
                 self.decl_high_type = val;
@@ -3794,6 +3805,7 @@ impl Architecture {
         ctx.lowered_switch_labels = self.lowered_switch_labels; // loweredswitchlabels
         ctx.callsite_stack_args = self.callsite_stack_args; // callsitestackargs
         ctx.cookie_scramble = self.cookie_scramble; // cookiescramble
+        ctx.nul_terminator = self.nul_terminator; // nulterminator
         ctx.callee_pop = self.callee_pop; // calleepop
         ctx.callee_proto_stack = self.callee_proto_stack; // calleeprotostack
         ctx.callee_dead_arg = self.callee_dead_arg; // calleedeadarg

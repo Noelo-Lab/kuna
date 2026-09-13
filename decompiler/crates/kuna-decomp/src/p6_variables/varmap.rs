@@ -1570,6 +1570,18 @@ impl ScopeLocal {
                     overlap_problems = true;
                 }
             } else if !cur.attempt_join(&next) {
+                if let Some(closed) = crate::p6_variables::kuna_nulterminator::close_at_terminator(
+                    &cur,
+                    &next,
+                    state.peek_after_next(),
+                    state,
+                ) {
+                    let mut fit = closed.clone();
+                    if self.adjust_fit(&mut fit) && fit.size == closed.size {
+                        cur = closed;
+                        continue;
+                    }
+                }
                 if cur.range_type == RangeType::Open {
                     // C++ `cur.size = next->sstart - cur.sstart;` (intb diff
                     // truncated to int4); the gap is small and positive here.
@@ -2441,6 +2453,9 @@ pub struct MapState {
     default_type: Rc<Datatype>,
     /// A collection of pointer Varnodes into our address space (C++ `checker`).
     checker: AliasChecker,
+    /// (kuna `nulterminator`) Per constant-COPY `(offset, size)`: is every such
+    /// write an unread zero?  Empty unless the option is on.
+    terminator_stores: std::collections::BTreeMap<(uintb, int4), bool>,
 }
 
 impl MapState {
@@ -2458,7 +2473,15 @@ impl MapState {
         for r in pm.iter() {
             range.remove_range(Rc::clone(r.get_space()), r.get_first(), r.get_last());
         }
-        MapState { spaceid: spc, range, maplist: Vec::new(), iter: 0, default_type: dt, checker: AliasChecker::new() }
+        MapState {
+            spaceid: spc,
+            range,
+            maplist: Vec::new(),
+            iter: 0,
+            default_type: dt,
+            checker: AliasChecker::new(),
+            terminator_stores: std::collections::BTreeMap::new(),
+        }
     }
 
     /// Add a hint to the collection (C++ `addRange`, `varmap.cc:896-919`).
@@ -2636,6 +2659,23 @@ impl MapState {
         self.iter != self.maplist.len()
     }
 
+    /// (kuna `nulterminator`) The hint sorted immediately after the current one.
+    pub fn peek_after_next(&self) -> Option<&RangeHint> {
+        self.maplist.get(self.iter + 1)
+    }
+
+    /// (kuna `nulterminator`) Does an open hint with no index evidence (a plain
+    /// address into the frame), sorted before the current one, start strictly
+    /// between `lo` and `hi`?
+    pub fn swept_address_inside(&self, lo: intb, hi: intb) -> bool {
+        self.maplist
+            .iter()
+            .take(self.iter)
+            .rev()
+            .take_while(|h| h.sstart > lo)
+            .any(|h| h.range_type == RangeType::Open && h.highind < 0 && h.sstart < hi)
+    }
+
     /// Sort the alias starting offsets (C++ `sortAlias`, `varmap.hh:196`).
     pub fn sort_alias(&mut self) {
         self.checker.sort_alias();
@@ -2678,6 +2718,19 @@ impl MapState {
         types: &dyn TypeFactory,
     ) {
         self.add_fixed_type(start, ct, flags, types);
+    }
+
+    /// (kuna `nulterminator`) Record one constant COPY into `(start, size)`;
+    /// `terminator` is whether it writes a zero no op reads directly.
+    pub fn note_terminator_store(&mut self, start: uintb, size: int4, terminator: bool) {
+        let entry = self.terminator_stores.entry((start, size)).or_insert(true);
+        *entry = *entry && terminator;
+    }
+
+    /// (kuna `nulterminator`) Is every constant COPY into `(start, size)` an
+    /// unread zero?
+    pub fn is_terminator_store(&self, start: uintb, size: int4) -> bool {
+        self.terminator_stores.get(&(start, size)).copied().unwrap_or(false)
     }
 
     /// Append an open/range hint directly (the public entry `gatherOpen` and

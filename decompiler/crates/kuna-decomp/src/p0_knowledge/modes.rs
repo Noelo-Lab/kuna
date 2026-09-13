@@ -409,9 +409,16 @@ mod tests {
         /// indirect call becoming the named syscall, and is byte-identical on the
         /// other nine and on the 675-assertion datatest corpus. It is excluded for
         /// the platform-assertion reason, not a measured one.
+        /// `nulterminator` folds a lone unread zero after an open stack `char`
+        /// array into the array, and the same frame shape is the struct-first-member
+        /// idiom (`strncpy(u.name, s, N); u.active = 0; f(&u);`): measured on gcc and
+        /// clang-12 at `-O0`/`-O2`, it grows a correctly-sized `char name[32]` to
+        /// `[33]` by absorbing the sibling field, and no frame-level signal separates
+        /// that field from a genuine terminator. In the preset it would be the
+        /// default output under 500 KiB, which is exactly what it is opt-in to avoid.
         const EXCLUDED_ON_PURPOSE: &[&str] =
             &["v850indirectbranch", "dwarf_lines", "formatstring", "ifuncfpret",
-              "aifcorroborate", "linuxsyscall"];
+              "aifcorroborate", "linuxsyscall", "nulterminator"];
 
         /// Default-off options that predate this test and are **not** in the preset,
         /// i.e. are currently unreachable on the default path. Each is a genuine open

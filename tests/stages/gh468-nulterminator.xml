@@ -1,0 +1,305 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:windows">
+<!--
+    GH-468: a stack char buffer terminated by an explicit zero at its last
+    element printed one element short, with the terminator as a separate
+    char nothing reads.  Stage: P6 stack-frame layout (ScopeLocal::restructure),
+    option nulterminator on|off.  Every function is decompiled twice, option
+    off then on; the assertion counts span all passes.
+
+    canary_check is the real 183 bytes at 0x140001160 of the reporter's
+    ab_od.exe (MSVC /Od /GS /Zi):
+
+        int canary_check(const char *in) {
+            char buf[64]; int acc = 0;
+            strncpy(buf, in, sizeof(buf) - 1);
+            buf[sizeof(buf) - 1] = 0;
+            for (int i = 0; buf[i]; i++) acc += (unsigned char)buf[i];
+            return acc;
+        }
+
+    buf is [rsp+0x30, rsp+0x70) against the /GS cookie at rsp+0x70.  Heritage
+    folds the constant-index terminator into a direct one-byte store at
+    stack - 0x19, and the scan loop's index is unbounded, so the open hint for
+    buf keeps the gatherOpen index floor of 3 and restructure ends buf at the
+    store.  Off: uint1 [63] beside char at stack - 0x19.  On: uint1 [64] and
+    the store renders as v[0x3f] = 0.  strncpy carries the libc prototype the
+    loader gives the real binary; __report_rangecheckfailure and
+    __security_check_cookie are shortened to their fast-fail shapes.
+
+    The other functions are hand-assembled (Windows x64, sub rsp,0x58, so
+    [rsp+X] is stack - (0x58 - X)); fill(char *), fill_int(int4 *) and
+    fill_wide(uint2 *) are `xor eax,eax; ret` stubs.
+
+    pad_after (the array is closed one element after its terminator, never
+    over the alignment padding that follows it):
+        lea rcx,[rsp+0x20]; call fill       ; char buf[34] at stack - 0x38
+        mov byte [rsp+0x41],0                ; buf[33] = 0, stack - 0x17
+        mov dword [rsp+0x48],eax             ; int after 6 bytes of padding
+        lea rcx,[rsp+0x20]; call fill; add eax,[rsp+0x48]
+    Off: char [33] + char at stack - 0x17.  On: char [34].  An array that
+    kept filling to the int would print [40].
+
+    gap_zero (a second zero two elements past the new end stays separate):
+        lea rcx,[rsp+0x20]; call fill       ; char buf[21]
+        mov byte [rsp+0x34],0                ; buf[20] = 0, stack - 0x24
+        mov byte [rsp+0x36],0                ; unread zero at stack - 0x22
+        mov dword [rsp+0x48],eax; lea rcx,[rsp+0x20]; call fill; add eax,[rsp+0x48]
+    Off: char [20] + two chars.  On: char [21] + the char at stack - 0x22.
+
+    pad_zero (a zero byte after alignment padding stays separate):
+        lea rcx,[rsp+0x20]; call fill       ; char buf[27]
+        mov byte [rsp+0x3a],0                ; buf[26] = 0, stack - 0x1e
+        mov byte [rsp+0x40],0                ; byte local at stack - 0x18
+        mov dword [rsp+0x48],eax; lea rcx,[rsp+0x20]; call fill; add eax,[rsp+0x48]
+    Off: char [26] + two chars.  On: char [27] + the char at stack - 0x18.
+
+    read_later (a zeroed local that is read later is not a terminator):
+        mov byte [rsp+0x37],0; lea rcx,[rsp+0x20]; call fill
+        movsx eax,byte [rsp+0x37]            ; return the local
+    Both passes: char [23] + char at stack - 0x21.
+
+    read_direct (a terminator slot the code also reads directly):
+        mov byte [rsp+0x38],0
+      l: lea rcx,[rsp+0x20]; call fill; cmp byte [rsp+0x38],0; je l
+    Both passes: char [24] + char at stack - 0x20.
+
+    nonzero (a non-zero store is not a terminator):
+        lea rcx,[rsp+0x20]; call fill; mov byte [rsp+0x32],0x78
+        mov dword [rsp+0x48],eax; lea rcx,[rsp+0x20]; call fill; add eax,[rsp+0x48]
+    Both passes: char [18] + char at stack - 0x26.
+
+    wide_elem (a zeroed element after an int4 array is not a terminator):
+        lea rcx,[rsp+0x20]; call fill_int; mov dword [rsp+0x30],0
+        lea rcx,[rsp+0x20]; call fill_int
+    Both passes: int4 [4] + unsigned int at stack - 0x28.
+
+    wide_zero (a zeroed two-byte slot after a char array is not a terminator):
+        lea rcx,[rsp+0x20]; call fill; mov word [rsp+0x31],0
+        mov dword [rsp+0x48],eax; lea rcx,[rsp+0x20]; call fill; add eax,[rsp+0x48]
+    Both passes: char [17] + unsigned short at stack - 0x27.
+
+    addr_taken (a zeroed byte whose address is taken is not a terminator):
+        mov byte [rsp+0x3f],0; lea rcx,[rsp+0x20]; call fill
+        lea rcx,[rsp+0x3f]; call fill
+    Both passes: char [31] + char [25] at stack - 0x19.
+
+    wide_str (a UTF-16 terminator):
+        lea rcx,[rsp+0x20]; call fill_wide   ; uint2 buf[15]
+        mov word [rsp+0x3c],0                ; buf[14] = 0, stack - 0x1c
+        mov dword [rsp+0x48],eax; lea rcx,[rsp+0x20]; call fill_wide; add eax,[rsp+0x48]
+    Off: uint2 [14] + unsigned short at stack - 0x1c.  On: uint2 [15].
+
+    two_literals (a zero after a pointer into the middle of the range belongs
+    to the second object, as in grep's
+    strcoll((char []){i, 0}, (char []){i + 1, 0})):
+        mov eax,ecx; add eax,1
+        mov byte [rsp+0x22],al; mov byte [rsp+0x23],0   ; b[2] = {c + 1, 0}
+        mov byte [rsp+0x20],cl; mov byte [rsp+0x21],0   ; a[2] = {c, 0}
+        lea rdx,[rsp+0x22]; lea rcx,[rsp+0x20]; call cmp2
+    Upstream already merges both literals into one char [3]; both passes keep
+    it and the char at stack - 0x35 rather than growing it to [4].
+-->
+<bytechunk space="ram" offset="0x140001160" readonly="true">
+48894c24084881ec88000000488b05cd2e07004833c44889442470c744242400
+00000041b83f000000488b942490000000488d4c2430e875e3050090b8010000
+00486bc03f488944242848837c2428407302eb06e84703000090488b442428c6
+44043000c744242000000000eb0a8b442420ffc08944242048634424200fbe44
+043085c0741848634424200fb64404308b4c242403c88bc189442424ebd08b44
+2424488b4c24704833cce8a10300004881c488000000c3
+</bytechunk>
+<bytechunk space="ram" offset="0x140001500" readonly="true">
+b908000000cd29c3
+</bytechunk>
+<bytechunk space="ram" offset="0x1400015b0" readonly="true">
+483b0d892a07007501c3b908000000cd29c3
+</bytechunk>
+<bytechunk space="ram" offset="0x140003000" readonly="true">
+4883ec58488d4c2420e8b2010000c64424410089442448488d4c2420e89f0100
+00034424484883c458c3cccccccccccc4883ec58488d4c2420e882010000c644
+243400c64424360089442448488d4c2420e86a010000034424484883c458c3cc
+4883ec58488d4c2420e852010000c644243a00c64424400089442448488d4c24
+20e83a010000034424484883c458c3cc4883ec58c644243700488d4c2420e81d
+0100000fbe4424374883c458c3cccccc4883ec58c644243800488d4c2420e8fd
+000000807c24380074ef4883c458c3cc4883ec58488d4c2420e8e2000000c644
+24327889442448488d4c2420e8cf000000034424484883c458c3cccccccccccc
+4883ec58488d4c2420e8b6000000c744243000000000488d4c2420e8a4000000
+4883c458c3cccccccccccccccccccccc4883ec58488d4c2420e88200000066c7
+442431000089442448488d4c2420e86d000000034424484883c458c3cccccccc
+4883ec58c644243f00488d4c2420e84d000000488d4c243fe8430000004883c4
+58c3cccccccccccccccccccccccccccc4883ec58488d4c2420e82a00000066c7
+44243c000089442448488d4c2420e815000000034424484883c458c3cccccccc
+31c0c3cc31c0c3cc31c0c3cccccccccc4883ec5889c883c00188442422c64424
+2300884c2420c644242100488d542422488d4c2420e8060000004883c458c3cc
+31c0c3cccccccccccccccccccccccccc4883ec58488d4c2420e8a2ffffffc644
+24500089442454488d4c2420e8070000004883c458c3cccc31c0c3
+</bytechunk>
+<bytechunk space="ram" offset="0x14005f510" readonly="true">
+c3
+</bytechunk>
+<bytechunk space="ram" offset="0x140074040">
+32a2df2d992b0000
+</bytechunk>
+<symbol space="ram" offset="0x140001160" name="canary_check"/>
+<symbol space="ram" offset="0x140001500" name="__report_rangecheckfailure"/>
+<symbol space="ram" offset="0x1400015b0" name="__security_check_cookie"/>
+<symbol space="ram" offset="0x140003000" name="pad_after"/>
+<symbol space="ram" offset="0x140003030" name="gap_zero"/>
+<symbol space="ram" offset="0x140003060" name="pad_zero"/>
+<symbol space="ram" offset="0x140003090" name="read_later"/>
+<symbol space="ram" offset="0x1400030b0" name="read_direct"/>
+<symbol space="ram" offset="0x1400030d0" name="nonzero"/>
+<symbol space="ram" offset="0x140003100" name="wide_elem"/>
+<symbol space="ram" offset="0x140003130" name="wide_zero"/>
+<symbol space="ram" offset="0x140003160" name="addr_taken"/>
+<symbol space="ram" offset="0x140003190" name="wide_str"/>
+<symbol space="ram" offset="0x1400031c0" name="fill"/>
+<symbol space="ram" offset="0x1400031c4" name="fill_int"/>
+<symbol space="ram" offset="0x1400031c8" name="fill_wide"/>
+<symbol space="ram" offset="0x1400031d0" name="two_literals"/>
+<symbol space="ram" offset="0x140003200" name="cmp2"/>
+<symbol space="ram" offset="0x140003210" name="struct_field"/>
+<symbol space="ram" offset="0x140003238" name="use_struct"/>
+<symbol space="ram" offset="0x14005f510" name="strncpy"/>
+</binaryimage>
+<script>
+  <com>parse line extern char *strncpy(char *dst,char *src,uint8 n);</com>
+  <com>parse line extern int4 fill(char *p);</com>
+  <com>parse line extern void fill_int(int4 *p);</com>
+  <com>parse line extern int4 fill_wide(uint2 *p);</com>
+  <com>parse line extern int4 cmp2(char *a,char *b);</com>
+  <com>parse line extern void use_struct(void *p);</com>
+  <com>option nulterminator off</com>
+  <com>lo fu canary_check</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option nulterminator on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option nulterminator off</com>
+  <com>lo fu pad_after</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option nulterminator on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option nulterminator off</com>
+  <com>lo fu gap_zero</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option nulterminator on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option nulterminator off</com>
+  <com>lo fu pad_zero</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option nulterminator on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option nulterminator off</com>
+  <com>lo fu read_later</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option nulterminator on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option nulterminator off</com>
+  <com>lo fu read_direct</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option nulterminator on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option nulterminator off</com>
+  <com>lo fu nonzero</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option nulterminator on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option nulterminator off</com>
+  <com>lo fu wide_elem</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option nulterminator on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option nulterminator off</com>
+  <com>lo fu wide_zero</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option nulterminator on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option nulterminator off</com>
+  <com>lo fu addr_taken</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option nulterminator on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option nulterminator off</com>
+  <com>lo fu wide_str</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option nulterminator on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option nulterminator off</com>
+  <com>lo fu two_literals</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option nulterminator on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option nulterminator off</com>
+  <com>lo fu struct_field</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option nulterminator on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="NULTERMINATOR #1: canary_check off declares the 64-byte buffer one element short" min="1" max="1">uint1 v[0-9]+ \[63\];</stringmatch>
+<stringmatch name="NULTERMINATOR #2: canary_check on declares the whole 64-byte buffer" min="1" max="1">uint1 v[0-9]+ \[64\]; // stack - 0x58</stringmatch>
+<stringmatch name="NULTERMINATOR #3: canary_check on renders the terminator as the indexed store" min="1" max="1">v[0-9]+\[0x3f\] = 0;</stringmatch>
+<stringmatch name="NULTERMINATOR #4: canary_check off splits the terminator into its own char" min="1" max="1">char v[0-9]+; // stack - 0x19</stringmatch>
+<stringmatch name="NULTERMINATOR #5: both canary_check passes keep the bounded copy" min="2" max="2">strncpy\(\(char \*\)v[0-9]+,a0,0x3f\);</stringmatch>
+<stringmatch name="NULTERMINATOR #6: pad_after off declares [33]" min="1" max="1">char v[0-9]+ \[33\];</stringmatch>
+<stringmatch name="NULTERMINATOR #7: pad_after on closes the array one element after the terminator" min="1" max="1">char v[0-9]+ \[34\]; // stack - 0x38</stringmatch>
+<stringmatch name="NULTERMINATOR #8: pad_after on renders buf[33] = 0" min="1" max="1">v[0-9]+\[0x21\] = 0;</stringmatch>
+<stringmatch name="NULTERMINATOR #9: pad_after off splits the terminator into its own char" min="1" max="1">char v[0-9]+; // stack - 0x17</stringmatch>
+<stringmatch name="NULTERMINATOR #10: no array grows over the padding or the locals after its terminator" min="0" max="0">\[40\]</stringmatch>
+<stringmatch name="NULTERMINATOR #11: gap_zero off declares [20]" min="1" max="1">char v[0-9]+ \[20\];</stringmatch>
+<stringmatch name="NULTERMINATOR #12: gap_zero on declares [21]" min="1" max="1">char v[0-9]+ \[21\]; // stack - 0x38</stringmatch>
+<stringmatch name="NULTERMINATOR #13: gap_zero splits its terminator only with the option off" min="1" max="1">char v[0-9]+; // stack - 0x24</stringmatch>
+<stringmatch name="NULTERMINATOR #14: gap_zero keeps the zero two elements past the end separate in both passes" min="2" max="2">char v[0-9]+; // stack - 0x22</stringmatch>
+<stringmatch name="NULTERMINATOR #15: pad_zero off declares [26]" min="1" max="1">char v[0-9]+ \[26\];</stringmatch>
+<stringmatch name="NULTERMINATOR #16: pad_zero on declares [27]" min="1" max="1">char v[0-9]+ \[27\]; // stack - 0x38</stringmatch>
+<stringmatch name="NULTERMINATOR #17: pad_zero splits its terminator only with the option off" min="1" max="1">char v[0-9]+; // stack - 0x1e</stringmatch>
+<stringmatch name="NULTERMINATOR #18: pad_zero keeps the byte after the padding separate in both passes" min="2" max="2">char v[0-9]+; // stack - 0x18</stringmatch>
+<stringmatch name="NULTERMINATOR #19: read_later keeps its array in both passes" min="2" max="2">char v[0-9]+ \[23\];</stringmatch>
+<stringmatch name="NULTERMINATOR #20: read_later keeps the zeroed local it reads later in both passes" min="2" max="2">char v[0-9]+; // stack - 0x21</stringmatch>
+<stringmatch name="NULTERMINATOR #21: read_direct keeps its array in both passes" min="2" max="2">char v[0-9]+ \[24\];</stringmatch>
+<stringmatch name="NULTERMINATOR #22: read_direct keeps the directly read slot in both passes" min="2" max="2">char v[0-9]+; // stack - 0x20</stringmatch>
+<stringmatch name="NULTERMINATOR #23: nonzero keeps its array in both passes" min="2" max="2">char v[0-9]+ \[18\];</stringmatch>
+<stringmatch name="NULTERMINATOR #24: nonzero keeps the non-zero store separate in both passes" min="2" max="2">char v[0-9]+; // stack - 0x26</stringmatch>
+<stringmatch name="NULTERMINATOR #25: wide_elem keeps its int4 array in both passes" min="2" max="2">int4 v[0-9]+ \[4\];</stringmatch>
+<stringmatch name="NULTERMINATOR #26: wide_elem keeps the zeroed int separate in both passes" min="2" max="2">unsigned int v[0-9]+; // stack - 0x28</stringmatch>
+<stringmatch name="NULTERMINATOR #27: wide_zero keeps its char array in both passes" min="2" max="2">char v[0-9]+ \[17\];</stringmatch>
+<stringmatch name="NULTERMINATOR #28: wide_zero keeps the zeroed two-byte slot separate in both passes" min="2" max="2">unsigned short v[0-9]+; // stack - 0x27</stringmatch>
+<stringmatch name="NULTERMINATOR #29: addr_taken keeps its array in both passes" min="2" max="2">char v[0-9]+ \[31\];</stringmatch>
+<stringmatch name="NULTERMINATOR #30: addr_taken keeps the address-taken byte its own variable in both passes" min="2" max="2">char v[0-9]+ \[25\]; // stack - 0x19</stringmatch>
+<stringmatch name="NULTERMINATOR #31: wide_str off declares [14]" min="1" max="1">uint2 v[0-9]+ \[14\];</stringmatch>
+<stringmatch name="NULTERMINATOR #32: wide_str on declares [15]" min="1" max="1">uint2 v[0-9]+ \[15\]; // stack - 0x38</stringmatch>
+<stringmatch name="NULTERMINATOR #33: wide_str splits its terminator only with the option off" min="1" max="1">unsigned short v[0-9]+; // stack - 0x1c</stringmatch>
+<stringmatch name="NULTERMINATOR #34: exactly two uint2 arrays, so wide_str never grows past [15]" min="2" max="2">uint2 v[0-9]+ \[</stringmatch>
+<stringmatch name="NULTERMINATOR #35: two_literals keeps the merged range at [3] in both passes" min="2" max="2">char v[0-9]+ \[3\]; // stack - 0x38</stringmatch>
+<stringmatch name="NULTERMINATOR #36: two_literals keeps the second literal's zero separate in both passes" min="2" max="2">char v[0-9]+; // stack - 0x35</stringmatch>
+<stringmatch name="NULTERMINATOR #37: struct_field OFF keeps the 48-byte member correctly sized (the sibling active field stays its own variable)" min="1" max="1">char v[0-9]+ \[48\];</stringmatch>
+<stringmatch name="NULTERMINATOR #38: opt-in ON over-extends the member by one, absorbing the sibling active field -- the documented false positive that keeps the option off by default" min="1" max="1">char v[0-9]+ \[49\]; // stack - 0x38</stringmatch>
+<stringmatch name="NULTERMINATOR #39: ON renders the absorbed active field as the array's 49th element" min="1" max="1">v[0-9]+\[0x30\] = 0;</stringmatch>
+<stringmatch name="NULTERMINATOR #40: the uid field beyond active survives in both passes" min="2" max="2">int4 v[0-9]+; // stack - 0x4</stringmatch>
+</decompilertest>

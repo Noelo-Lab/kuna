@@ -124,6 +124,10 @@ Three tiers:
 | dozens of garbage *v = *v + c; lines after a __stack_chk_fail call in a .o | [`noreturn_externmatch`](#noreturn_externmatch) |
 | inter-function alignment padding decoded as add [rax],al style instructions | [`noreturn_externmatch`](#noreturn_externmatch) |
 | flow runs past an undefined-extern abort or exit call in a relocatable object | [`noreturn_externmatch`](#noreturn_externmatch) |
+| a stack char buffer is declared one element short, e.g. [63] where the source has [64] | [`nulterminator`](#nulterminator) |
+| the NUL terminator after strncpy renders as an assignment to a separate char local | [`nulterminator`](#nulterminator) |
+| a stack char local is assigned 0 and never read, right after the end of an array | [`nulterminator`](#nulterminator) |
+| the buffer's last element is missing from the array and declared as its own variable | [`nulterminator`](#nulterminator) |
 | spurious uninitialized local (xStack_N) returned after storing through a pointer to a local | [`stackalias`](#stackalias) |
 | store through a take-address-of-local pointer dropped as dead so the later read is garbage | [`stackalias`](#stackalias) |
 | bogus (*pcVar1)() indirect call after calling a struct-returning function on sparc | [`sparcstructret`](#sparcstructret) |
@@ -989,6 +993,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default (DIV-13): applies the SAME vendored name list and global/std namespace guard as the already-default-on noreturn_known, just at the flow query seam to reach the ET_REL `.o` undefined extern the address-keyed scan structurally misses; a no-op on a normal dynamically-linked ELF (the proto flag is already set). Set OFF to restore the prior byte-identical rendering (dead `add`-padding after a `__stack_chk_fail`/`abort`/`exit` call reappears).
 - **Where / provenance:** P2/flow-follow · angr · correctness-fix · angr-incorrect-duplication-chcon
 - **Example:** `option noreturn_externmatch off`
+
+### `nulterminator` -- on | off, default `off`
+
+- **Symptoms:** a stack char buffer is declared one element short, e.g. [63] where the source has [64]; the NUL terminator after strncpy renders as an assignment to a separate char local; a stack char local is assigned 0 and never read, right after the end of an array; the buffer's last element is missing from the array and declared as its own variable.
+- **What it does:** Keep the zero element that terminates an open stack character array inside the array, and close the array right after it (opt-in). ScopeLocal::restructure (varmap.cc:1294) extends an open RangeHint over a following hint only through RangeHint::attemptJoin (varmap.cc:170): within its highind, or a constant COPY no further than highind (isConstAbsorbable, varmap.cc:30); otherwise the open range ends where the next hint starts, so `strncpy(buf, s, sizeof(buf) - 1); buf[sizeof(buf) - 1] = 0;` prints `char buf[63]` beside a separate never-read char. With the option on, when attemptJoin declines the hint an open, unlocked char/UTF-16 range would end at and that hint is a plain constant-COPY slot of one element at a whole-element offset holding only unread zeros, the range becomes a fixed range ending one element after the slot (provided adjustFit keeps the extent and no plain frame address starts inside the array). DEFAULT OFF: the same frame shape -- an open char array followed by a lone unread zero at the next whole-element offset -- is produced by the struct-first-member idiom `struct { char name[32]; bool active; ... } u; strncpy(u.name, s, 32); u.active = 0; ...; f(&u);`, where the zero is a sibling FIELD read only through the base pointer, not the array's terminator. A spilled scalar whose value is read from a register looks identical too, so there is no frame-level way to tell a genuine terminator from a following field, and on by default this over-extends a correctly-sized array by one element. Flip on when reverse-engineering a string-heavy target where the buffers are known to be NUL-terminated strings, not struct members.
+- **When to flip:** Off by default. Flip ON on a string-heavy target (an MSVC /GS function, a bounded strncpy/snprintf/read followed by an explicit NUL) to fold the terminator into the array: `char v3 [63]; char v8; // stack - 0x19` with `strncpy(v3,a0,0x3f); v8 = 0;` becomes `char v3 [64];` with `v3[0x3f] = 0;`. Keep it OFF on code with structs or records: the identical frame shape is also `struct { char name[N]; T field; }` initialized field by field then passed by pointer, and turning it on absorbs `field` into `name` (`char name[32]` -> `[33]`), inventing an element. gcc/clang and MSVC, every optimisation level. Inert unless a zero is stored at an open char array's next whole-element offset and never read directly.
+- **Where / provenance:** P6/stack-frame-layout · kuna · opt-in-tool · GH-468
+- **Example:** `option nulterminator on`
 
 ### `stackalias` -- on | off, default `off` (destructive opt-in)
 

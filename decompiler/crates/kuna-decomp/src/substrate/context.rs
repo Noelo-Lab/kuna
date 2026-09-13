@@ -872,6 +872,11 @@ pub struct ArchContext {
     /// Read by [`Funcdata::gather_additive_base`](crate::funcdata_spacebase)
     /// through [`crate::p6_variables::kuna_cookiescramble::is_escape_site`].
     pub cookie_scramble: bool,
+    /// (kuna) an unread zero element right after an open stack character array
+    /// is its terminator (`nulterminator`).  Read by
+    /// [`Funcdata::gather_varnodes`](crate::funcdata_spacebase) for
+    /// [`crate::p6_variables::kuna_nulterminator::close_at_terminator`].
+    pub nul_terminator: bool,
     /// (kuna) read the caller's own stack discipline for the argument bytes a
     /// callee pops (`calleepop`).  Read by
     /// [`StackSolver::build`](crate::coreaction_stackptr) through
@@ -1494,6 +1499,7 @@ impl ArchContext {
             // cookiescramble only ever REMOVES a false escape site, so the
             // hand-built-fixture seam carries the same default the real path does.
             cookie_scramble: true,
+            nul_terminator: false,
             // calleepop only refines a guess the solver already had to make, so
             // the hand-built-fixture seam carries the same default.
             callee_pop: true,
