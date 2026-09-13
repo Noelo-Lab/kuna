@@ -211,7 +211,23 @@ fn assert_two_state_recovery(fx: Fixture) -> bool {
         fx.bin, on.body
     );
 
-    // 3. The symbol name changed — the ObjC pass performed the rename.
+    // 3. Both modes retain the method's arithmetic body. ObjC type metadata also
+    //    gives parameters semantic names (`arg1` rather than the ABI `a2`), so the
+    //    complete C strings intentionally differ beyond the function header.
+    assert!(
+        off.body.contains("return a2 * 3 + 7;"),
+        "[{}] objc off must preserve the greet implementation:\n{}",
+        fx.bin,
+        off.body
+    );
+    assert!(
+        on.body.contains("return arg1 * 3 + 7;"),
+        "[{}] objc on must preserve the greet implementation:\n{}",
+        fx.bin,
+        on.body
+    );
+
+    // 4. The symbol name changed — the ObjC pass performed the rename.
     assert_ne!(
         off.name, on.name,
         "[{}] objc must change the IMP's name (the placeholder -> {GREET_NAME} rename)",
