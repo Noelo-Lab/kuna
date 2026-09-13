@@ -113,6 +113,9 @@ _none recorded_
 - filed by cluster.py from 1 observation(s)
 captain T_TRIAGE r3: touches CORRECTED kuna-decomp -> the discovery tier. The probe is `kuna functions --json` and the complaint is a fabricated entry inside an instruction, which is what the byte-pattern entry matcher does; T_REFUTE named funcstart_patterns as the prime suspect after measuring exactly that failure on a second binary. Track stays quality for the same reason as default-decompilation-fails-despite (a default-ON discovery pattern moves inventories corpus-wide). NOT merged with that need: different format (PE vs i386 ELF) and the shared cause is suspected, not measured -- but a builder taking one MUST read the other, since both would edit analyzers/entry/patterns and neither holds a lease on it.
 captain T_TRIAGE r3: repaired the missing probe/acceptance `target` block (binary_rel + sha256 + size, source dataset) -- without it {{BIN}} could not resolve and the need was unclosable by B_DONE and invisible to regression detection. Verified: acceptance now RUNS and FAILS on cf5234ac, which is the state a filed need must be in.
+- closed: acceptance a-889458c51ba2 now PASSES at 02b8ddc2efaf
+- REGRESSED: acceptance a-889458c51ba2 fails again at 3dc794bac7dc
+- closed: acceptance a-889458c51ba2 now PASSES at 7e151cfaade7
 - round 12 reconciliation: the current-main acceptance passed 3/3 at
   `ccc82a37812a1bbfd6c2eac43f1fa6597d631efa`; the fabricated mid-instruction
   entry `0x14000310c` was absent from all three inventories. The one-option
