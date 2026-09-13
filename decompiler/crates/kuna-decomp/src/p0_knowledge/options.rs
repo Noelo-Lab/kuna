@@ -288,6 +288,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "overlapbranch",
     "cleanupcode",
     "linuxsyscall",
+    "msvcstrappend",
     "switchselector",
     "noreturn_extern",
     "inputvarnodeadjust",

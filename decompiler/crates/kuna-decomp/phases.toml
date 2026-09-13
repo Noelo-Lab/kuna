@@ -2128,6 +2128,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "msvcstrappend"
+values = "on|off"
+default = "off"
+destructive = true
+phase = "P2"
+subphase = "flow-classification"
+strength = "HARD"
+rewind = "P2"
+issue = "GH-468"
+summary = "REMOVES CODE: collapses each inlined MSVC x64 `std::string` character append into one call. MSVC inlines `push_back` (which `operator+=(char)` is) and the literal form of `append(const char *, size_t)` at every call site as a capacity diamond over the string object: load `_Mysize` (+16) and `_Myres` (+24), and on the fast arm store `_Mysize + n`, pick the buffer with `_Myres > 15 ? _Bx._Ptr : _Bx._Buf`, and write the bytes plus a terminating zero at `ptr[_Mysize]`; on the slow arm call `_Reallocate_grow_by`. Every such append prints as the same five-to-ten-line `if`/`else` block, so a run of appends is a run of near-identical blocks whose count carries the meaning. The pass proves the diamond on the raw p-code before heritage, by symbolic execution of the head, every fast-arm path and the grow block: the head branches to the fast arm exactly when `_Mysize < _Myres` (or `_Myres - _Mysize >= n`), decided exactly over a test set complete for the comparisons it admits; each fast path stores `_Mysize + n` to the size slot and exactly `n` bytes and a zero at `ptr[_Mysize]` and nothing else, with `ptr` the object on every path taken only when `_Myres <= 15` and the loaded pointer on every path taken only when `_Myres > 15`, both kinds present; the grow block is one direct call receiving the object in `RCX` and the same character in `R9B` (or the count in `RDX` and, in `R9`, a pointer into read-only memory whose image bytes are the stored bytes); no register either arm writes is one the default model preserves; and no op after the join reads a register byte the rewrite changes before overwriting it, up to the next call or return. It then removes the fast-arm edge, replaces the grow block's argument setup, and gives its call a locked `void std::string::push_back(void *this, char c)` or `std::string::append(void *this, char *s, size_t n)` prototype that returns `this` only when every fast path left the object in `RAX`; a register the model kills at a call but no fast path writes is declared preserved by it, so later calls keep the argument evidence the fast path carried. The grow callee's body is never read: a call handed exactly the append's arguments on the capacity-exhausted edge is taken to be the reallocating append. Any unproven element leaves the diamond untouched: a small-string threshold other than 15, a grow call handed a different character, an extra store, a count the grow arm takes from a register set outside the head, a scratch register or flag read after the join. x86-64 under a Win64-shaped model (`RSI`/`RDI` preserved) only; inert on every other language and ABI."
+use_when = "Flip ON when reading an MSVC x64 C++ binary whose functions build strings character by character: each `s += c` / `s.push_back(c)` otherwise prints as its own capacity check, `// branch-flip` marker and grow call, and a password or format string assembled from several appends reads as a stack of identical blocks. Default OFF because it is destructive -- it deletes the inlined fast path's stores and renames the grow call to a library name the binary does not contain, trusting the grow call's argument shape rather than its body -- and because no MSVC C++ corpus in the tree can measure it. Off also restores the raw rendering when auditing the inlined code itself."
+example = "option msvcstrappend on"
+source_decompiler = "kuna"
+inspiration = "GH-468 finding 6: an MSVC C++ crackme whose `main` builds its password with four inlined `std::string::operator+=(char)` calls, miscounted as three from the C"
+change_kind = "opt-in-tool"
+tier = "transform"
+symptoms = "several near-identical if/else blocks in a row, each comparing two adjacent stack slots and either calling a helper with the same object or storing one character through a 16-byte-threshold pointer select|an msvc c++ function whose string-building code shows a `0x10 <= v` buffer select before every character store|a loop body that is a whole capacity check plus a grow call to append one byte to a std::string|counting inlined std::string appends from the c output gives the wrong number"
+live_field = "msvc_str_append"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "switchselector"
 values = "on|off"
 default = "off"

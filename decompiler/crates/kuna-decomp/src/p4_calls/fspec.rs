@@ -5847,9 +5847,8 @@ impl FuncProto {
         !self.effectlist.is_empty()
     }
 
-    /// Append an effect-record override and re-sort (test/builder hook, mirroring
+    /// Append an effect-record override and re-sort (mirroring
     /// [`ProtoModel::push_effect`]).
-    #[cfg(test)]
     pub fn push_effect_override(&mut self, eff: EffectRecord) {
         self.effectlist.push(eff);
         self.effectlist.sort_by(EffectRecord::compare_by_address);

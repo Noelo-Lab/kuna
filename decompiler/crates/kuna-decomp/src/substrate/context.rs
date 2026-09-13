@@ -1081,6 +1081,10 @@ pub struct ArchContext {
     /// the number in `EAX` selects.  Read by
     /// [`ActionLinuxSyscall`](crate::p2_lift::kuna_linuxsyscall::ActionLinuxSyscall).
     pub linux_syscall: bool,
+    /// (kuna) `option msvcstrappend`: collapse inlined MSVC `std::string`
+    /// appends into one call.  Read by
+    /// [`ActionMsvcStrAppend`](crate::p2_lift::kuna_msvcstrappend::ActionMsvcStrAppend).
+    pub msvc_str_append: bool,
     /// (kuna) `option x64syscall`: what register effects the x86-64 `SYSCALL`
     /// user-op carries.  Read by
     /// [`ActionX64Syscall`](crate::p2_lift::kuna_x64syscall::ActionX64Syscall).
@@ -1542,6 +1546,7 @@ impl ArchContext {
             outline_spec: String::new(), // outline (opt-in default-off; empty = off)
             remove_cleanup_code: true,   // cleanupcode (DIV-81 default-on; inert on a non-Rust binary)
             linux_syscall: false,        // linuxsyscall (opt-in default-off)
+            msvc_str_append: false,      // msvcstrappend (opt-in default-off)
             x64_syscall: crate::p2_lift::kuna_x64syscall::X64SyscallMode::Off, // x64syscall (opt-in default-off)
             x64_syscall_userops: Vec::new(),
             peb_names: false,

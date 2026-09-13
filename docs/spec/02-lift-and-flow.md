@@ -1517,3 +1517,117 @@ range was reserved for BASIC) and the engine has no OS/ABI channel it could
 consult at this seam. So the assertion is left to the operator, and
 `linuxsyscall` is a documented exclusion from the `aggressive` preset
 (`p0_knowledge/modes.rs`) rather than an unevaluated one.
+
+## 2.8 Inlined MSVC `std::string` appends
+
+**(kuna) `option msvcstrappend`, default off,
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_msvcstrappend.rs
+(ActionMsvcStrAppend)`.** MSVC inlines `std::string::push_back` — which is what
+`operator+=(char)` calls — and the literal form of `append(const char *,
+size_t)` at every call site. The x64 string object keeps its buffer or heap
+pointer at `+0`, `_Mysize` at `+16` and `_Myres` at `+24`, and each append lands
+as the same capacity diamond: a head that loads `_Mysize` and `_Myres` and
+branches on room; a fast arm that stores `_Mysize + n`, selects the buffer with
+`_Myres > 15 ? _Bx._Ptr : &_Bx._Buf` (a `CMOVA`, which SLEIGH lowers to its own
+two-block sub-diamond) and writes the bytes and a terminating zero at
+`ptr[_Mysize]`; and a grow block that calls `_Reallocate_grow_by`. Structured,
+every append prints as its own five-to-ten-line `if`/`else`, so a password built
+from four appends reads as four identical blocks whose count is the fact a
+reader needs.
+
+**The match is a proof over the raw p-code.** The Action runs in the universal
+group beside `ActionLinuxSyscall`, before `ActionDefaultParams` and
+`ActionFuncLink`, where every value is still register- or `LOAD`/`STORE`-level.
+Candidates are direct calls whose block has one predecessor ending in a
+`CBRANCH` and one successor (the join), with nothing after the call. `Engine`
+symbolically executes the head (from after its last call, which clears every
+register), the grow block, and every path through the fast arm — a single-entry
+DAG of at most six blocks and eight paths ending at the join
+(`kuna_msvcstrappend.rs (fast_paths)`). Values are linear combinations of
+opaque atoms modulo their width (`Val`): a register or temporary never written
+since the head or the last call, a `LOAD` tagged with the memory version it read
+at, or an opaque operation. Linear arithmetic folds, so `lea rax,[rcx+1]` and a
+store address `rax+rcx+2` compare exactly, and a narrow register read looks
+through the zero extension that wrote it. `kuna_msvcstrappend.rs (try_match)`
+then declines unless all of these hold for one object address `A`:
+
+- the fast arm stores, to its own load slot, `_Mysize + n` where `_Mysize` is a
+  head `LOAD` taken after the head's last store; that fixes `A` as the slot
+  minus 16, and `_Myres` must be the head's `LOAD` of `A + 24` at the same
+  version;
+- the head's branch takes the fast arm exactly when `_Mysize < _Myres`
+  (`push_back`, `n == 1`) or `_Myres - _Mysize >= n` (`append`). Conditions are
+  decided, not pattern-matched: `Syms::lang_ok` admits only boolean connectives
+  over 0/1 constants and comparisons that relate the two loads to each other, or
+  one value to constants, and for those languages evaluation at every ordering
+  of the two loads (`Syms::decide_two`), or at each constant and its neighbours
+  (`Syms::classify_one`), is complete. An `INT_SLESS`, an offset ordered compare
+  or a register from outside the head declines;
+- on every feasible fast path (`prove_fast_path`) the only stores are that size
+  store and exactly `n` bytes plus a zero at `ptr + _Mysize`, where `ptr` is `A`
+  on every path whose `_Myres` range lies at or below 15 and is one `LOAD` of `A`
+  (read with at most the size store before it) on every path whose range lies
+  above 15. A path whose range straddles 15 declines, and both kinds must exist
+  — that is `_Myptr()` with 15 as the small-string capacity. Every path must
+  store the same bytes;
+- the grow block's only effect before its call instruction is register writes
+  (and, for `append`, the fifth-argument count at `RSP + 0x20`), with `A` in
+  `RCX` and, for `push_back`, the stored character in `R9B` and `RDX` untouched
+  or 1; for `append`, `n` in `RDX` and in `R9` a constant pointer into read-only
+  memory whose image bytes are the stored bytes;
+- no register either arm writes is one the default model preserves. The Win64
+  cspec kills only `RAX` and `XMM0` and leaves the other volatile registers and
+  the flags unmentioned, so every register an arm may write is already one the
+  grow arm's call can clobber on its own path; a callee-saved write in either arm
+  declines, because a later call would carry it past the join;
+- nothing after the join reads a register byte the rewrite changes
+  (`kuna_msvcstrappend.rs (read_after_join)`): every byte either arm or the
+  rewrite writes, less `RAX` when the call returns `this`, must be overwritten
+  on every path before any op reads it, until the path reaches a call or a
+  return. A call ends the walk because each of those registers is one its callee
+  may clobber; a return ends it because the only one a caller reads is `RAX`.
+  An op that combines a register with itself into a value independent of it
+  (`xor ecx,ecx`, `sub eax,eax` and their flags) is not a read, and an indirect
+  branch or a walk longer than 4096 ops declines.
+
+The grow call's own body is never read: a call handed exactly the append's
+arguments on the capacity-exhausted edge is taken to be the library's
+reallocating append. A helper of the same shape that does something else on
+that edge would be misnamed; that trust is the reason the option ships off.
+
+**The rewrite keeps the grow call.** `kuna_msvcstrappend.rs (rewrite)` removes
+the head's fast-arm edge with `remove_branch`, destroys the grow block's ops
+before the call instruction, and inserts `RCX = <base> + k` and `DL = <char>`
+(or `RDX = <literal>`, `R8 = n`) re-derived from registers live at the head's
+exit — never `RCX`, `RDX` or `R8`, which it writes. The call instruction's own
+return-address push, and so its stack effect under the model's `extrapop`, is
+untouched. The call gets a fresh `FuncCallSpecs` with an invalid entry address,
+because it stands for no single body (so no callee-body probe answers for it),
+named `std::string::push_back` or `std::string::append` and carrying a locked
+`void (void *this, char c)` or `(void *this, char *s, size_t n)` prototype that
+returns `void *` in `RAX` only when every fast path left `A` there — the
+reference an `operator+` chain uses after the join. Its effect records are the
+model's, except that a register the model kills at a call and no fast path
+writes is declared unaffected: on the deleted path it keeps its value, and a
+definite kill on every path erases that value from the data flow parameter
+recovery reads at later calls — measured to drop a real argument from a later
+call whose first argument slot the callee ignores. `ActionFuncLink` materializes
+the arguments as for any declared callee, and the fast arm, now unreachable, is
+collected. A run of appends then prints one call per append:
+`std::string::push_back((void *)v1,'k');`.
+
+**Scope.** Inert unless the code space is eight bytes wide, the x86-64 register
+names resolve, and the default model preserves `RSI` and `RDI` (a Win64-shaped
+convention): the 32-bit MSVC layout and `__thiscall` argument passing are not
+matched, and neither is libstdc++, whose buffer pointer is loaded on every path.
+An `append` whose count the grow arm takes from a register set outside the head
+(`mov rdx,rsi`) is left unrolled, since nothing local proves it equals `n`.
+**Why it ships off:** it deletes the fast arm's stores and renames a call to a
+library name the image does not contain, on the strength of the grow call's
+argument shape alone, and no MSVC C++ corpus in the tree can measure it;
+`msvcstrappend` is on the `EXCLUDED_ON_PURPOSE` list in `p0_knowledge/modes.rs`,
+so `--mode aggressive` does not turn it on either. Exercised by `tests/stages/kuna-msvcstrappend.xml`: four constant appends, a loop
+appending a register-carried byte through a specialized grow helper, a two-byte
+literal append whose returned reference is used, an unprovable register-count
+append, a collapse whose continuation zeroes the changed registers, and 29 near
+misses, one defect each, that must stay unrolled in both passes.

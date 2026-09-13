@@ -137,8 +137,14 @@ not, and the invariant test's `EXCLUDED_ON_PURPOSE` list is the authority:
   tail call to them; it does not yet fix the `xmm0` return the feature exists for,
   so it stays an opt-in until the chain is complete.
 
-All four therefore stay manual per-run opt-ins (`--option v850indirectbranch on`,
-`--option dwarf_lines on`, `--option formatstring on`, `--option ifuncfpret on`)
+- **`msvcstrappend`** — it collapses an inlined MSVC `std::string` append into one
+  `std::string::push_back`/`append` call, deleting the fast arm's stores and naming
+  the grow call on the strength of its argument shape; the callee body is never
+  read. That trust is the operator's call to make about a binary, not a default.
+
+All five therefore stay manual per-run opt-ins (`--option v850indirectbranch on`,
+`--option dwarf_lines on`, `--option formatstring on`, `--option ifuncfpret on`,
+`--option msvcstrappend on`)
 even under `--mode aggressive`; a named `--option` still wins over the preset by
 last-write precedence.
 

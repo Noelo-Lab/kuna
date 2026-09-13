@@ -95,6 +95,7 @@ writeup, not here.
 | `kuna-subcommuteshift.xml` | RE-friction need `cancelling-byte-arithmetic-splits` | S3 simplification quiescence (exact modulo-256 multiply/shift cancellation) | `option cancelbytearithmetic on\|off` |
 | `re-checker-stack-aggregate.xml` | RE-friction need `checker-uses-stack-aggregate` | P9 declaration emission (constant address-reference highs are not whole storage representatives) | default correctness fix (no option) |
 | `ghdec-unsigned-byte-vm-selector.xml` | RE-friction need `unsigned-byte-vm-selector` | P2 switch model (range-comparison signedness carried through lowered-switch recovery) | `option loweredswitchlabels on\|off` |
+| `kuna-msvcstrappend.xml` | GH-468 finding 6 (inlined MSVC `std::string` appends) | P2 flow classification (a proven capacity diamond collapses to one `push_back`/`append` call; 29 one-defect near misses stay unrolled) | `option msvcstrappend on\|off` |
 
 | `gh8017-stackprobeloop.xml` | [GH-8017](https://github.com/NationalSecurityAgency/ghidra/issues/8017) | S2 stack-pointer normalization (stack-probe loop) | `option stackprobeloop on\|off` |
 

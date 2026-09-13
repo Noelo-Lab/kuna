@@ -74,7 +74,7 @@ fn surface_count_is_118() {
 }
 
 #[test]
-fn settable_count_is_200() {
+fn settable_count_is_201() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -141,12 +141,13 @@ fn settable_count_is_200() {
     // +1 for `endptrbound` (P6 pointer-walk end bound on its buffer, DIV-177).
     // +1 for `rexthunk` (P1 x86-64 PE REX-prefixed import-thunk rejection).
     // +1 for `pdbinterior` (P1 PDB-procedure-interior entry suppression, DIV-180).
-    assert_eq!(kuna_num_settables(), 200);
-    assert_eq!(SETTABLE_TABLE.len(), 200);
+    // +1 for `msvcstrappend` (P2 inlined MSVC std::string append collapse).
+    assert_eq!(kuna_num_settables(), 201);
+    assert_eq!(SETTABLE_TABLE.len(), 201);
 }
 
 #[test]
-fn tier_counts_are_63_core_76_transform_61_analysis() {
+fn tier_counts_are_63_core_77_transform_61_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -265,7 +266,9 @@ fn tier_counts_are_63_core_76_transform_61_analysis() {
     // import-thunk rejection).
     // analysis 60 -> 61: +1 for `pdbinterior` (P1 PDB-procedure-interior
     // entry suppression, DIV-180).
-    assert_eq!((core, transform, analysis), (63, 76, 61));
+    // transform 76 -> 77: +1 for `msvcstrappend` (P2 inlined MSVC
+    // std::string append collapse).
+    assert_eq!((core, transform, analysis), (63, 77, 61));
 }
 
 #[test]
@@ -455,7 +458,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_80() {
+fn option_values_live_value_present_for_81() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -817,7 +820,8 @@ fn option_values_live_value_present_for_80() {
     // cancel_byte_arithmetic, DIV-174).
     // 78 -> 79: +1 for `nulterminator` (live_field = nul_terminator, opt-in).
     // 79 -> 80: +1 for `endptrbound` (live_field = end_ptr_bound, DIV-177).
-    assert_eq!(with_live, 80);
+    // 80 -> 81: +1 for `msvcstrappend` (live_field = msvc_str_append).
+    assert_eq!(with_live, 81);
 }
 
 #[test]
@@ -968,7 +972,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // so it increments the comma-terminated catalog-row count.
     // 198 -> 199: +1 for `pdbinterior` (DIV-180); its P1 row sits mid-table beside
     // `pdatainterior`.
-    assert_eq!(json.matches("},\n").count(), 199);
+    // +1 for `msvcstrappend`; its P2 row sits mid-table.
+    assert_eq!(json.matches("},\n").count(), 200);
 }
 
 #[test]

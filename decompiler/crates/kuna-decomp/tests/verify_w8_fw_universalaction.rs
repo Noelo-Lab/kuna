@@ -206,27 +206,30 @@ fn w8_fw_universalaction_allgroups_full_order_count_head_tail() {
     // effects: also read off the RAW p-code, and adding a register read or
     // write is only legal before heritage); and `pebnames`, option-gated
     // default `auto`, directly after that (P5 Windows TEB segment-base type
-    // lock: the Symbol it maps must exist before heritage creates the input).)
+    // lock: the Symbol it maps must exist before heritage creates the input); and
+    // `msvcstrappend`, option-gated default-off, directly after that (S2 inlined
+    // MSVC std::string append collapse: proved over the RAW p-code, and its call
+    // spec is input-locked).)
     assert_eq!(
         UNPORTED_ALLOWLIST.len(),
         0,
         "all universalAction passes are ported; UNPORTED_ALLOWLIST must be empty"
     );
     assert_eq!(
-        nonblank, 281,
-        "full universal tree must render 252 C++ leaves + 22 kuna leaves (branchflip + cleanupcode + linuxsyscall + x64syscall + pebnames + outline + gotoreduce + taildup + ifelseflatten + crossjumprevert + dedupitetail + returndup + iteregion + iteboolean + earlyreturn + switchreturn + paramcopyhoist + removesecuritycheck + stripmsvcstackguard + rodatastringcopy + simdshufflelane + constspaceload) + 7 container headers"
+        nonblank, 282,
+        "full universal tree must render 252 C++ leaves + 23 kuna leaves (branchflip + cleanupcode + linuxsyscall + x64syscall + pebnames + msvcstrappend + outline + gotoreduce + taildup + ifelseflatten + crossjumprevert + dedupitetail + returndup + iteregion + iteboolean + earlyreturn + switchreturn + paramcopyhoist + removesecuritycheck + stripmsvcstackguard + rodatastringcopy + simdshufflelane + constspaceload) + 7 container headers"
     );
 
     // Head: the universal restart-group prelude, in C++ order.  Note
     // `normalizesetup` (normalanalysis) and `funclink_outonly` (noproto) are
     // PRESENT here but absent in the decompile oracle — the part of the order
     // the gate never sees.
-    let head: Vec<&str> = lines.iter().take(13).map(|l| name_of(l)).collect();
+    let head: Vec<&str> = lines.iter().take(14).map(|l| name_of(l)).collect();
     assert_eq!(
         head,
         vec![
             "universal", "start", "constbase", "linuxsyscall", "x64syscall", "pebnames",
-            "normalizesetup", "defaultparams", "extrapopsetup", "prototypetypes",
+            "msvcstrappend", "normalizesetup", "defaultparams", "extrapopsetup", "prototypetypes",
             "funclink", "funclink_outonly", "fullloop",
         ]
     );
