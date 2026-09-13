@@ -962,6 +962,14 @@ Three artifacts make up the plane, all in
   `buildTypeStack` and the `realtypes`/`ctypes` relabelling (DIV-5/DIV-6), moved
   verbatim out of `printc.rs`, which keeps thin dispatchers.
 
+  C declarator modifiers are consumed outermost-to-base around the identifier.
+  A pointer prefixes the declarator; a later array/function postfix groups the
+  complete accumulated declarator before appending its suffix.  Thus a pointer
+  to an array is `T (*p)[N]`, an array of pointers is `T *p[N]`, and deeper
+  alternations preserve the same precedence instead of moving only the nearest
+  parenthesis.  Casts, parameters, locals, members, typedefs, and exported type
+  strings all share this speller.
+
 The invariant that makes the seam free: every `LANG_C` field **is** the constant
 it replaces, asserted field-by-field — and by pointer identity for the tokens,
 since `printlanguage.rs (parentheses)` decides parenthesization with `ptr::eq`.
