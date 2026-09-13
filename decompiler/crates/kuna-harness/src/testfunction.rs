@@ -52,7 +52,7 @@ use kuna_base::xml::{DocumentStorage, Element};
 
 use kuna_console::engine::bootstrap_program;
 use kuna_console::ifacedecomp::{
-    mainloop, register_console_commands, register_decomp_commands, IfaceDecompData,
+    execute, mainloop, register_console_commands, register_decomp_commands, IfaceDecompData,
     DECOMPILE_MODULE,
 };
 use kuna_console::ifaceterm::ConsoleCommands;
@@ -306,6 +306,7 @@ pub struct FunctionTestCollection {
     test_list: Vec<FunctionTestProperty>,
     /// C++ `commands`: the console script for the current file.
     commands: Vec<String>,
+    expected_errors: Vec<bool>,
     /// C++ `console`: the decompiler console.  Rebuilt per file so the script
     /// feed is fresh (the faithful observable equivalent of the C++
     /// `commands`-by-reference + `console->reset()`; see module docs).
@@ -340,6 +341,7 @@ impl FunctionTestCollection {
             file_name: String::new(),
             test_list: Vec::new(),
             commands: Vec::new(),
+            expected_errors: Vec::new(),
             console,
             num_tests_applied: 0,
             num_tests_succeeded: 0,
@@ -375,6 +377,7 @@ impl FunctionTestCollection {
             dcp.clear_architecture();
         }
         self.commands.clear();
+        self.expected_errors.clear();
         self.test_list.clear();
         self.saw_program = false;
         self.console.reset();
@@ -403,10 +406,17 @@ impl FunctionTestCollection {
 
     /// C++ `restoreXmlCommands(const Element *el)`: the `<com>` children of
     /// `<script>` become the command list (each stripped of newlines).
-    fn restore_xml_commands(&mut self, el: &Element) {
+    fn restore_xml_commands(&mut self, el: &Element) -> TestResult<()> {
         for subel in el.get_children() {
+            let expected = match subel.get_attribute_value("expecterror") {
+                Ok(b"true") => true,
+                Ok(b"false") | Err(_) => false,
+                Ok(_) => return Err(TestError::Parse("expecterror must be true or false".into())),
+            };
+            self.expected_errors.push(expected);
             self.commands.push(Self::strip_newlines(subel.get_content()));
         }
+        Ok(())
     }
 
     /// C++ `buildProgram(DocumentStorage &docStorage)`: instantiate the program
@@ -478,7 +488,7 @@ impl FunctionTestCollection {
             match subel.get_name() {
                 "script" => {
                     saw_script = true;
-                    self.restore_xml_commands(subel);
+                    self.restore_xml_commands(subel)?;
                 }
                 "stringmatch" => {
                     saw_tests = true;
@@ -588,7 +598,30 @@ impl FunctionTestCollection {
         // C++: console->optr = &midBuffer (discarded); console->fileoptr = &bulkout.
         self.console.optr = String::new(); // midBuffer
         self.console.fileoptr = Some(FileOut::default()); // bulkout
-        mainloop(&mut self.console);
+        if self.expected_errors.iter().any(|&expected| expected) {
+            for &expected in &self.expected_errors {
+                if self.console.is_stream_finished() {
+                    break;
+                }
+                self.console.write_prompt();
+                let before = self.console.optr.len();
+                execute(&mut self.console);
+                if expected {
+                    if self.console.is_in_error() {
+                        self.console.fileoptr.as_mut().unwrap().contents
+                            .push_str(&self.console.optr[before..]);
+                        self.console.inerror = false;
+                        self.console.done = false;
+                    } else {
+                        self.console.out("Expected command to fail\n");
+                        self.console.inerror = true;
+                        self.console.done = true;
+                    }
+                }
+            }
+        } else {
+            mainloop(&mut self.console);
+        }
         // C++ restores console->optr = origStream; fileoptr = origStream.
         let mid_buffer = std::mem::take(&mut self.console.optr);
         let bulkout = self.console.close_file_redirect().map(|f| f.contents).unwrap_or_default();

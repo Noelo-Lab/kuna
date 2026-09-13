@@ -40,6 +40,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
+use std::sync::Arc;
 
 use kuna_base::address::Address;
 use kuna_base::error::{KunaError, KunaResult};
@@ -54,6 +55,7 @@ use crate::funcdata::{funcdata_flags, Funcdata};
 use crate::context::{HighVariableId, TypeOp};
 
 use kuna_sleigh::translate::Translate;
+use kuna_sleigh::loadimage::ImageBytes;
 
 /// A [`FlowEnvironment`] backed by a borrowed [`Architecture`] — the real
 /// engine-backed shape the C++ `FlowInfo` uses (`glb->translate` for the
@@ -64,6 +66,7 @@ use kuna_sleigh::translate::Translate;
 /// drives `resolve_typeop` so the built ops carry the correct
 /// branch/call/coderef/marker property flags.
 struct ArchFlowEnv {
+    mapped_image: Option<Arc<dyn ImageBytes>>,
     /// (kuna `calltrampoline` / `callpopret`) Memo of both return-address-
     /// discarding probes, keyed by direct-call target.  Both inspect the same
     /// bounded raw decode, so sharing the verdict also keeps the second option
@@ -90,6 +93,9 @@ impl ArchFlowEnv {
 }
 
 impl FlowEnvironment for ArchFlowEnv {
+    fn mapped_flow_image(&self) -> Option<&dyn ImageBytes> {
+        self.mapped_image.as_deref()
+    }
     fn translate(&self) -> &dyn Translate {
         self.arch().translate()
     }
@@ -743,6 +749,9 @@ pub fn build_and_follow_flow_with_override_and_protos(
 /// clear, so the re-flow rebuilds the CALLIND straight as a direct CALL).
 #[allow(clippy::mutable_key_type)]
 fn follow_flow_on_fd(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcdata> {
+    if arch.mapped_flow_boundary && arch.mapped_flow_boundary_image {
+        crate::kuna_mappedflowboundary::clear_stale_warnings(&mut arch.commentdb, fd.get_address());
+    }
     // C++ Funcdata::followFlow(baddr, eaddr): a function carrying a declared byte
     // extent restricts flow to it; size 0 keeps the unbounded default the whole
     // engine has used until now (`kuna_console::engine::UNBOUNDED_SIZE`), so this
@@ -755,6 +764,11 @@ fn follow_flow_on_fd(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcda
         Some((start.clone(), Address::new(space, last)))
     });
     let env = ArchFlowEnv {
+        mapped_image: if arch.mapped_flow_boundary && arch.mapped_flow_boundary_image {
+            arch.translate().loader_rc().borrow().shared_bytes()
+        } else {
+            None
+        },
         arch: arch as *const Architecture,
         return_discard_memo: Default::default(),
     };
@@ -840,6 +854,7 @@ fn run_jumptable_pipeline(
 ) -> KunaResult<()> {
     // Build the partial's basic blocks (partialflow.generateBlocks).
     let env = ArchFlowEnv {
+        mapped_image: None,
         arch: arch as *const Architecture,
         return_discard_memo: Default::default(),
     };

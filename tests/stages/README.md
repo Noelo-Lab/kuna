@@ -164,3 +164,9 @@ round-trips, and is inert on the XML path — PR1 of the Listing/xref tier).
 `ghdec-fast-funcdisc.xml` clears that wrapper architecture and loads a real PE
 twice: option off reproduces the missing direct callee, and option on discovers
 and decompiles its body.
+
+A script command may use `<com expecterror="true">...</com>` when failure is
+the regression witness (for example, the option-off pass). Its actual console
+error is included in the matchable output, and the next command runs. The
+command must fail; success is a file error. Unexpected errors still abort.
+Use direct commands rather than nested `source` scripts with this attribute.

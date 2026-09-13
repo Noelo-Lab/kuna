@@ -129,6 +129,39 @@ allowed range, and only an address with no bytes behind it can fail it, so no
 flow that previously decoded is cut: the change turns functions that produced
 nothing into functions that produce a body carrying the warnings above.
 
+**Mapped ELF x86 fall-through.** `option mappedflowboundary on` (default)
+retains decoded paths when another path falls through an image edge. The
+load-time predicate in
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_mappedflowboundary.rs (eligible_elf)`
+requires a linked little-endian ELF (ET_EXEC or ET_DYN), class/machine
+ELF32/i386 or ELF64/x86-64, and matching resolved SLEIGH processor, endian,
+and width. Other images and mismatched targets retain legacy flow. Each
+flow follow takes a fresh loader `ImageBytes` snapshot and releases it on
+completion, so byte overlays remain exclusive and later flows see current
+bytes. `option mappedflowboundary off` restores the staged-loader path.
+Mapping warnings from an earlier eligible flow are refreshed when it is
+rebuilt, so an intervening return override or byte overlay cannot leave a
+stale unmapped-flow warning on the new body. Other warnings are retained.
+
+On eligible flows, `Translate::one_instruction_checked` validates the
+actual decoded instruction span with `ImageBytes::mapped_covers` before
+context commits or p-code emission. A full prefetch need not be mapped: a
+one-byte RET at the final mapped byte is valid. Touching and overlapping
+mappings may supply one instruction, and mapped zero-filled data tails are
+valid; an instruction spanning a gap is not. SLEIGH's checked entry point
+declines delay-slot instructions, which this x86 scope does not produce.
+Mapped-start truncation and genuine decode errors retain the existing error
+policies below; no loader error is converted wholesale into a successful halt.
+
+After effective flow classification, including flow overrides and no-return
+facts, an unmapped fall-through is recorded as unprocessed and out of bounds.
+The existing missing-halt and unmapped-flow warnings terminate that edge;
+other queued mapped paths still run. Known-function bounds take precedence,
+and explicit branches can cross gaps into mapped destinations. Branch probes
+also use this authoritative map, so a warmed zero-filled loader window cannot
+invent a mapped target. This recovers incomplete flow without inferring a
+different ISA or claiming that an unavailable path returns.
+
 **Decode scratch storage.** Every SLEIGH translation checks out a parser
 context from the engine-local pool
 (`decompiler/crates/kuna-sleigh/src/sleigh.rs (Sleigh::checkout_context)`).

@@ -3495,6 +3495,8 @@ pub fn bootstrap_from_object_with_isa(
         Some(PendingEntryThumb { executable_ranges: loader.executable_ranges(), entry })
     }).flatten();
     drop(parsed);
+    sleigh.base_mut().unwrap().mapped_flow_boundary_image =
+        kuna_decomp::kuna_mappedflowboundary::eligible_elf(&bytes, &arch_id);
     let input_context_paints = install_input_isa(
         sleigh.base_mut().unwrap(),
         &arch_id,

@@ -1,0 +1,24 @@
+<decompilertest>
+<binaryimage arch="x86:LE:32:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/mapped_flow_boundary_32.elf</com>
+  <com>option mappedflowboundary off</com>
+  <com>read symbols</com>
+  <com expecterror="true">load addr 0x10000</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/mapped_flow_boundary_32.elf</com>
+  <com>read symbols</com>
+  <com>load addr 0x10000</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="MAPPED-FLOW #1: off loses the function to staged padding" min="1" max="1">Unable to load 512 bytes</stringmatch>
+<stringmatch name="MAPPED-FLOW #2: default retains the mapped return" min="1" max="1">return 7;</stringmatch>
+<stringmatch name="MAPPED-FLOW #3: missing fall-through is explicit" min="1" max="1">halt_missing\(\);</stringmatch>
+<stringmatch name="MAPPED-FLOW #4: the recovered body warns about incomplete flow" min="1" max="1">Function flows into unmapped memory</stringmatch>
+</decompilertest>

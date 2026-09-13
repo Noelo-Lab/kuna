@@ -185,6 +185,10 @@ pub type JtPipelineFn<'a> = dyn FnMut(&mut Funcdata, &VisitedMap) -> KunaResult<
 /// `Architecture`/`Override`-backed implementor; the algorithm bodies in this
 /// module never change.
 pub trait FlowEnvironment {
+    /// A flow-lifetime snapshot of the live map, available only for eligible images.
+    fn mapped_flow_image(&self) -> Option<&dyn kuna_sleigh::loadimage::ImageBytes> {
+        None
+    }
     /// The SLEIGH translator (C++ `glb->translate`).  W2 — *available*.
     ///
     /// `one_instruction(emit, baseaddr)` lifts one machine instruction's raw
@@ -967,7 +971,11 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         // and `load_fill` raises out of the whole flow follow, losing a function
         // whose own bytes disassemble cleanly.  End the path instead, exactly as a
         // target outside a declared extent ends it.
-        if !self.env.code_bytes_mapped(to) {
+        let mapped = self.env.mapped_flow_image().map_or_else(
+            || self.env.code_bytes_mapped(to),
+            |image| crate::kuna_mappedflowboundary::mapped_start(image, to),
+        );
+        if !mapped {
             let fromaddr =
                 self.data.obank().get(from).expect("new_address: stale from").get_addr().clone();
             self.handle_unmapped_target(&fromaddr, to);
@@ -1551,7 +1559,11 @@ following this call as a branch"
         };
 
         let mut emit = FlowEmit::new(&mut self.data, self.env);
-        match self.env.translate().one_instruction(&mut emit, curaddr) {
+        let decoded = match self.env.mapped_flow_image() {
+            Some(image) => self.env.translate().one_instruction_checked(&mut emit, curaddr, image),
+            None => self.env.translate().one_instruction(&mut emit, curaddr),
+        };
+        match decoded {
             Ok(s) => {
                 let emit_err = emit.error;
                 step = s;
@@ -1725,6 +1737,13 @@ truncating the fall-through here"
                     "funcboundflow: fall-through reached the next function entry; truncating flow here",
                     curaddr,
                 );
+                isfallthru = false;
+            } else if self.env.mapped_flow_image().is_some_and(
+                |image| !crate::kuna_mappedflowboundary::mapped_start(image, &next)
+            ) {
+                self.handle_unmapped_target(curaddr, &next);
+                self.unprocessed.push(next.clone());
+                self.outofbounds.insert(next);
                 isfallthru = false;
             } else {
                 self.addrlist.push(next);

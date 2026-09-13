@@ -283,6 +283,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "entryretdispatch",
     "pushimmediateret",
     "funcboundflow",
+    "mappedflowboundary",
     "overlapbranch",
     "cleanupcode",
     "linuxsyscall",
