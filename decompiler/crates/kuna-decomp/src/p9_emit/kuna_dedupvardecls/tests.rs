@@ -21,7 +21,7 @@ fn apply_rejects_garbage() {
 fn dedup_suppresses_only_repeats() {
     let mut d = DeclDedup::new();
     let sig = |t: &str, n: &str, off: u64| -> DeclSignature {
-        (t.to_string(), n.to_string(), None, Some(("stack".to_string(), off)))
+        (t.to_string(), String::new(), n.to_string(), None, Some(("stack".to_string(), off)))
     };
     // First occurrence: emit (not a duplicate).
     assert!(!d.is_duplicate(sig("int4", "option_index", 0x3c)));
@@ -34,7 +34,7 @@ fn dedup_suppresses_only_repeats() {
 fn dedup_keeps_distinct_signatures() {
     let mut d = DeclDedup::new();
     let sig = |t: &str, n: &str, off: u64| -> DeclSignature {
-        (t.to_string(), n.to_string(), None, Some(("stack".to_string(), off)))
+        (t.to_string(), String::new(), n.to_string(), None, Some(("stack".to_string(), off)))
     };
     // Same name + type, DIFFERENT storage slot -> distinct -> both emit.
     assert!(!d.is_duplicate(sig("int4", "v1", 0x10)));
@@ -47,12 +47,26 @@ fn dedup_keeps_distinct_signatures() {
 #[test]
 fn dedup_handles_array_adornment() {
     let mut d = DeclDedup::new();
-    let s1: DeclSignature = ("int2".into(), "arr".into(), Some(("int2".into(), 32)), None);
-    let s2: DeclSignature = ("int2".into(), "arr".into(), Some(("int2".into(), 32)), None);
-    let s3: DeclSignature = ("int2".into(), "arr".into(), Some(("int2".into(), 16)), None);
+    let s1: DeclSignature =
+        ("int2".into(), String::new(), "arr".into(), Some(("int2".into(), 32)), None);
+    let s2: DeclSignature =
+        ("int2".into(), String::new(), "arr".into(), Some(("int2".into(), 32)), None);
+    let s3: DeclSignature =
+        ("int2".into(), String::new(), "arr".into(), Some(("int2".into(), 16)), None);
     assert!(!d.is_duplicate(s1));
     assert!(d.is_duplicate(s2)); // identical array -> suppress
     assert!(!d.is_duplicate(s3)); // different count -> keep
+}
+
+#[test]
+fn dedup_keeps_distinct_declarator_suffixes() {
+    let mut d = DeclDedup::new();
+    let sig = |back: &str| -> DeclSignature {
+        ("char (*".into(), back.into(), "p".into(), None, Some(("rax".into(), 0)))
+    };
+    assert!(!d.is_duplicate(sig(")[16]")));
+    assert!(d.is_duplicate(sig(")[16]")));
+    assert!(!d.is_duplicate(sig(")[8]")));
 }
 
 #[test]

@@ -177,22 +177,23 @@ impl TypeSpeller for CSpeller {
         (front_full, decl.back)
     }
 
-    fn type_name(&self, cx: &SpellCtx, t: &Rc<Datatype>) -> String {
+    fn type_name(&self, cx: &SpellCtx, t: &Rc<Datatype>) -> (String, String) {
         // (kuna) realtypes: a scalar residual TYPE_UNKNOWN (the named `xunknownN`
         // core type or an anonymous `undefined<N>`) becomes its real C type by size.
         if let Some(n) = self.relabel(cx, t, false) {
-            return n.into_owned();
+            return (n.into_owned(), String::new());
         }
         let name = t.get_name();
         if !name.is_empty() {
-            return name.to_string();
+            return (name.to_string(), String::new());
         }
         match t.get_metatype() {
             // An anonymous pointer renders as `<pointee> *` (recursively), exactly
             // as `push_cast_type` does for a `(char *)` cast. `declarator` walks
-            // the modifier chain to the named base and lays out the `*` front.
-            type_metatype::TYPE_PTR => self.declarator(cx, t).0,
-            _ => self.anonymous(t),
+            // the modifier chain to the named base and lays out both halves; a
+            // pointer to an array keeps its `)[N]` suffix for after the name.
+            type_metatype::TYPE_PTR => self.declarator(cx, t),
+            _ => (self.anonymous(t), String::new()),
         }
     }
 

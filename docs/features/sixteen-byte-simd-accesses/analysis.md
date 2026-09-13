@@ -69,3 +69,40 @@ showed only missing generated `.sla` failures; after supplying all 148 generated
 specs, the rerun was stopped by the captain at the disk-safety threshold before
 completion. It is therefore deliberately not recorded as green; hosted full CI
 remains a merge gate.
+
+## Declaration positions
+
+The first repair corrected every place that receives both declarator halves
+(casts, parameters, members, typedefs, exported type strings) but not the three
+places that spelled a declared type in front of a name only: local
+declarations, the element type of an array local, and the function return
+type. They took `CSpeller::type_name`, which returned the declarator front. For
+a pointer to an array that front changed from the wrong but balanced `char *`
+to `char (*`, so a whole-binary sweep printed `char (*v1;` and
+`char (* sub_140024330(char (*a0)[32],...)` in 1,128 functions of 98 binaries
+(2,967 unbalanced lines). The original differential used `--limit 25` per
+binary and never reached those functions.
+
+`TypeSpeller::type_name` now returns the `(front, back)` pair; the back is
+empty except for a C pointer whose declarator needs a suffix. A local prints
+`<front><name>[ [count]]<back>`, so `char (*pair [2])[16];` keeps the count
+inside the group, and the prototype prints the back after the parameter list,
+`char (* get_row(int i))[16]`. The rendered-line declaration dedup keys on the
+back as well. The Rust speller returns an empty back and its output is
+byte-identical.
+
+Evidence on the final head:
+
+- every pointer/array chain up to five modifiers, spelled as a declaration,
+  abstract type, struct member, local and return type, compiles under gcc and
+  clang with a `__builtin_types_compatible_p` assertion against a typedef-built
+  reference (1,413 assertions); a console-parser round trip of the same shapes
+  to four modifiers is a unit test;
+- `ptrarraydecl_x86_64` (DWARF-typed return types, a pointer-to-array local, an
+  array of them, and an array-of-pointers control) is an end-to-end test; three
+  of its four cases fail on the first repair and the control passes on both;
+- a base/final sweep of 637 binaries and 186,030 functions changed 42,472 lines
+  in 2,224 functions: 39,505 move only declarator punctuation with identical
+  array dimensions, 2,660 local declarations and 307 prototypes gain the
+  pointed-to array suffix, and no other line changed. All 2,819 exported type
+  string changes reorder declarator punctuation with identical dimensions.

@@ -386,6 +386,41 @@ mod w10_input_prototype_declarator {
         );
     }
 
+    /// A declaration's type position (locals, array elements, return types) keeps
+    /// the suffix a pointer to an array needs after the name. With only the front
+    /// half, a local printed `int4 (*v1;` and a return type `int4 (* f(void)`.
+    #[test]
+    fn declaration_type_position_keeps_the_pointer_to_array_suffix() {
+        use crate::printc::{array_decl_parts, type_name_for_decl, RealTypeCtx};
+
+        let base = named(4, type_metatype::TYPE_INT, "int4");
+        let rt = RealTypeCtx::OFF;
+        let parts = |front: &str, back: &str| (front.to_string(), back.to_string());
+
+        assert_eq!(
+            type_name_for_decl(&ptr_to(array_of(base.clone(), 16)), rt),
+            parts("int4 (*", ")[16]")
+        );
+        assert_eq!(
+            type_name_for_decl(&ptr_to(array_of(ptr_to(base.clone()), 3)), rt),
+            parts("int4 *(*", ")[3]")
+        );
+        // array[2] of pointer to array[16]: `int4 (*v [2])[16]`
+        assert_eq!(
+            array_decl_parts(&array_of(ptr_to(array_of(base.clone(), 16)), 2), rt),
+            Some((parts("int4 (*", ")[16]"), 2))
+        );
+
+        // Near-misses carry no suffix: a named base, a plain pointer, and an array
+        // of pointers.
+        assert_eq!(type_name_for_decl(&base, rt), parts("int4", ""));
+        assert_eq!(type_name_for_decl(&ptr_to(ptr_to(base.clone())), rt), parts("int4 **", ""));
+        assert_eq!(
+            array_decl_parts(&array_of(ptr_to(base), 5), rt),
+            Some((parts("int4 *", ""), 5))
+        );
+    }
+
     /// Exact exported-type regressions found by the 253-binary differential.
     /// These are abstract declarators (`front + back`, with no identifier), so
     /// they exercise the same spelling consumed by JSON variable metadata.

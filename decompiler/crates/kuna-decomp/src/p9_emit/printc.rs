@@ -2430,13 +2430,13 @@ impl PrintC {
         // base (metatype UNKNOWN), rendered as `undefined<N>` — the documented
         // residual vs. the oracle's inferred `uint1`.
         let rt = self.rt_ctx;
-        let ret_type = if fd.get_func_proto().has_store() {
+        let (ret_type, ret_back) = if fd.get_func_proto().has_store() {
             fd.get_func_proto()
                 .get_output_type()
                 .map(|t| type_name_for_decl(t, rt))
-                .unwrap_or_else(|| "void".to_string())
+                .unwrap_or_else(|| ("void".to_string(), String::new()))
         } else {
-            "void".to_string()
+            ("void".to_string(), String::new())
         };
 
         let idp = self.emit.begin_func_proto();
@@ -2454,6 +2454,9 @@ impl PrintC {
         // surface, so the param's own stored name + type are used directly.
         self.emit_prototype_inputs(fd, arch, markup);
         self.emit.close_paren(")", id2);
+        if !ret_back.is_empty() {
+            self.emit.print(&ret_back, SyntaxHighlight::NoColor);
+        }
         self.emit.close_group(id1g);
         self.emit.end_func_proto(idp);
     }
@@ -2919,10 +2922,11 @@ impl PrintC {
         if arch.dedup_var_decls {
             let mut dedup = crate::kuna_dedupvardecls::DeclDedup::new();
             decls.retain(|(high, name)| {
-                let (mut decl_type, mut array_count, comment) =
+                let (mut decl_type, mut decl_back, mut array_count, comment) =
                     self.rendered_local_decl(fd, arch, *high);
-                if let Some((t, a)) = symbol_decl_type.get(high) {
+                if let Some((t, b, a)) = symbol_decl_type.get(high) {
                     decl_type = t.clone();
+                    decl_back = b.clone();
                     array_count = a.clone();
                 }
                 let array_sig = array_count.as_ref().map(|(t, c)| (t.clone(), *c));
@@ -2931,7 +2935,7 @@ impl PrintC {
                 } else {
                     None
                 };
-                !dedup.is_duplicate((decl_type, name.clone(), array_sig, comment_sig))
+                !dedup.is_duplicate((decl_type, decl_back, name.clone(), array_sig, comment_sig))
             });
         }
         // A VariableGroup can describe AL/AH/AX-style overlap without a mapped
@@ -3040,12 +3044,13 @@ impl PrintC {
                         .and_then(|h| fd.kuna_high_symbol_wire_id(h))
                 })
                 .or(decl_rep_index);
-            let (mut decl_type, mut array_count, comment) =
+            let (mut decl_type, mut decl_back, mut array_count, comment) =
                 self.rendered_local_decl(fd, arch, *high);
             // (kuna) The Symbol-keyed collapse arbitrated a type disagreement between
             // the several highs of one Symbol.
-            if let Some((t, a)) = symbol_decl_type.get(high) {
+            if let Some((t, b, a)) = symbol_decl_type.get(high) {
                 decl_type = t.clone();
+                decl_back = b.clone();
                 array_count = a.clone();
             }
             self.emit.tag_line();
@@ -3068,6 +3073,9 @@ impl PrintC {
                         self.emit.print("[", SyntaxHighlight::NoColor);
                         self.emit.print(&format!("{count}"), SyntaxHighlight::ConstColor);
                         self.emit.print("]", SyntaxHighlight::NoColor);
+                    }
+                    if !decl_back.is_empty() {
+                        self.emit.print(&decl_back, SyntaxHighlight::NoColor);
                     }
                 }
                 crate::kuna_lang::DeclForm::RustLetColon => {
@@ -3125,8 +3133,10 @@ impl PrintC {
     }
 
     /// (kuna) The fully-rendered declaration of one local high: the final declarator
-    /// type, the `[count]` array adornment (when the mapped Symbol — or the
-    /// declaration representative itself — is an array), and the storage comment.
+    /// type, the declarator suffix that follows the name (`)[16]` for a pointer to
+    /// an array, else empty), the `[count]` array adornment (when the mapped Symbol
+    /// — or the declaration representative itself — is an array), and the storage
+    /// comment.
     ///
     /// Shared by [`Self::collapse_symbol_decls`] and the emit loop so the collapse
     /// compares exactly the bytes the emit loop would write.
@@ -3135,8 +3145,12 @@ impl PrintC {
         fd: &Funcdata,
         arch: &Architecture,
         high: crate::context::HighVariableId,
-    ) -> (String, Option<(String, int4)>, Option<(String, std::rc::Rc<kuna_base::space::AddrSpace>, u64)>)
-    {
+    ) -> (
+        String,
+        String,
+        Option<(String, int4)>,
+        Option<(String, std::rc::Rc<kuna_base::space::AddrSpace>, u64)>,
+    ) {
         // Type: the high's recovered type name (W8-unknown -> `undefined<N>`).
         let (mut type_name, comment) = self.local_decl_type_and_comment(fd, arch, high);
         let rt = self.rt_ctx; // (kuna) realtypes ctx for the composite/array relabel
@@ -3167,7 +3181,7 @@ impl PrintC {
         // Array member: if the mapped Symbol is an array, declare the base
         // type and an `[count]` adornment after the name (C++ `emitVarDecl`'s
         // array branch).
-        let array_count = fd
+        let array_decl = fd
             .high_bank()
             .get(high)
             .and_then(|h| {
@@ -3184,8 +3198,11 @@ impl PrintC {
                 let v = decl_rep_varnode(fd, high).and_then(|vn| fd.vbank().get(vn))?;
                 array_decl_parts(v.get_type(), rt)
             });
-        let decl_type = array_count.as_ref().map(|(t, _)| t.clone()).unwrap_or(type_name);
-        (decl_type, array_count, comment)
+        let ((decl_type, decl_back), array_count) = match array_decl {
+            Some(((front, back), count)) => ((front.clone(), back), Some((front, count))),
+            None => (type_name, None),
+        };
+        (decl_type, decl_back, array_count, comment)
     }
 
     /// (kuna) Collapse the declarations of the several HighVariables that share one
@@ -3271,8 +3288,8 @@ impl PrintC {
             let rendered: Vec<DeclTypeOverride> = idxs
                 .iter()
                 .map(|&i| {
-                    let (t, a, _) = self.rendered_local_decl(fd, arch, decls[i].0);
-                    (t, a)
+                    let (t, b, a, _) = self.rendered_local_decl(fd, arch, decls[i].0);
+                    (t, b, a)
                 })
                 .collect();
             if rendered.iter().all(|r| *r == rendered[0]) {
@@ -3301,7 +3318,8 @@ impl PrintC {
             });
             match symbol_type {
                 Some(st) => {
-                    overrides.insert(decls[keep].0, (type_name_for_decl(st, self.rt_ctx), None));
+                    let (front, back) = type_name_for_decl(st, self.rt_ctx);
+                    overrides.insert(decls[keep].0, (front, back, None));
                 }
                 // No usable Symbol type: declare the widest member's own rendering.
                 None => {
@@ -3331,10 +3349,10 @@ impl PrintC {
         fd: &Funcdata,
         arch: &Architecture,
         high: crate::context::HighVariableId,
-    ) -> (String, Option<(String, std::rc::Rc<kuna_base::space::AddrSpace>, u64)>) {
+    ) -> ((String, String), Option<(String, std::rc::Rc<kuna_base::space::AddrSpace>, u64)>) {
         let h = match fd.high_bank().get(high) {
             Some(h) => h,
-            None => return ("undefined1".to_string(), None),
+            None => return (("undefined1".to_string(), String::new()), None),
         };
         // Type name + storage comment: from the high's storage representative -
         // the addr-tied (mapped, in-scope) member, which is the C++ symbol's
@@ -3392,7 +3410,7 @@ impl PrintC {
                 });
                 (tn, comment)
             }
-            None => ("undefined1".to_string(), None),
+            None => (("undefined1".to_string(), String::new()), None),
         };
         (type_name, comment)
     }
@@ -8841,9 +8859,10 @@ fn sblocks_basic_block_index(fd: &Funcdata, bb: BlockId) -> int4 {
 }
 
 /// (kuna) The declarator a Symbol-keyed collapse imposes on the surviving
-/// declaration: the final type text plus the `(base-type, count)` array adornment
-/// (`None` for a scalar).  Same shape as `rendered_local_decl`'s first two returns.
-type DeclTypeOverride = (String, Option<(String, int4)>);
+/// declaration: the final type text, its post-name declarator suffix, and the
+/// `(base-type, count)` array adornment (`None` for a scalar).  Same shape as
+/// `rendered_local_decl`'s first three returns.
+type DeclTypeOverride = (String, String, Option<(String, int4)>);
 
 /// (kuna) The declaration *representative* Varnode of a local high: the addr-tied
 /// (mapped, in-scope) storage member - the C++ symbol's `getFirstWholeMap()`
@@ -8863,13 +8882,14 @@ fn decl_rep_varnode(
 /// (kuna) If `ct` is a `TYPE_ARRAY`, the `(base_type_name, count)` pair that
 /// declares it `<base> name [count]` (C++ `emitVarDecl`'s array branch, where the
 /// declared type is the *element* type and the count adorns the identifier).  The
-/// base name is resolved with the realtypes context - so an anonymous
-/// `undefined1 [N]` array (e.g. a 32-byte oversize-unknown YMM FMA accumulator,
-/// GH-9184) declares its element type, not the whole-array `undefined<N>` scalar.
+/// base name is the element's [`type_name_for_decl`] halves, resolved with the
+/// realtypes context - so an anonymous `undefined1 [N]` array (e.g. a 32-byte
+/// oversize-unknown YMM FMA accumulator, GH-9184) declares its element type, not
+/// the whole-array `undefined<N>` scalar.
 fn array_decl_parts(
     ct: &std::rc::Rc<crate::dtype::Datatype>,
     rt: RealTypeCtx,
-) -> Option<(String, int4)> {
+) -> Option<((String, String), int4)> {
     if ct.get_metatype() != crate::dtype::type_metatype::TYPE_ARRAY {
         return None;
     }
@@ -9236,11 +9256,14 @@ fn render_type_definitions(
     out
 }
 
-/// The type token to render in a declaration's type position.
+/// The `(front, back)` type text to render around a declaration's name.
 ///
 /// The C body moved to `CSpeller::type_name` (`p9_emit/kuna_langc.rs`) when the
 /// output-language seam landed.
-fn type_name_for_decl(t: &std::rc::Rc<crate::dtype::Datatype>, rt: RealTypeCtx) -> String {
+fn type_name_for_decl(
+    t: &std::rc::Rc<crate::dtype::Datatype>,
+    rt: RealTypeCtx,
+) -> (String, String) {
     rt.speller().type_name(&rt, t)
 }
 

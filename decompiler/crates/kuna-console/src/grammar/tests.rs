@@ -457,6 +457,80 @@ fn pointer_array_types_round_trip_through_the_c_speller() {
     }
 }
 
+/// Every pointer/array nesting up to four modifiers deep reads back as the same
+/// type, both as a declarator (`<front><name><back>`) and in the declaration form
+/// a local takes, where an array's element halves surround `<name> [count]`.
+#[test]
+fn nested_pointer_array_declarations_round_trip_through_the_c_speller() {
+    use kuna_decomp::dtype::Datatype;
+    use kuna_decomp::kuna_langc::C_SPELLER;
+    use kuna_decomp::kuna_langtypes::{SpellCtx, TypeSpeller};
+    use std::rc::Rc;
+
+    fn same(a: &Rc<Datatype>, b: &Rc<Datatype>) -> bool {
+        if a.get_metatype() != b.get_metatype() || a.get_size() != b.get_size() {
+            return false;
+        }
+        match a.get_metatype() {
+            meta::TYPE_PTR => same(&a.get_ptr_to().unwrap(), &b.get_ptr_to().unwrap()),
+            meta::TYPE_ARRAY => {
+                a.num_elements() == b.num_elements()
+                    && same(&a.get_array_base().unwrap(), &b.get_array_base().unwrap())
+            }
+            _ => a.get_name() == b.get_name(),
+        }
+    }
+    fn parses_back(f: &TypeFactoryImpl, decl: &str, want: &Rc<Datatype>) {
+        let (ty, name) = parse_type(decl, f, org()).unwrap_or_else(|e| panic!("{decl}: {e:?}"));
+        assert_eq!(name, "x", "{decl}");
+        assert!(same(&ty, want), "{decl} parses as a different type");
+    }
+
+    let f = factory();
+    let int4 = f.find_by_name("int4").unwrap().unwrap();
+    let mut chains: Vec<Vec<Option<i32>>> = vec![Vec::new()];
+    let mut checked = 0;
+    for _ in 0..4 {
+        chains = chains
+            .iter()
+            .flat_map(|c| {
+                [None, Some(2), Some(3)].into_iter().map(move |m| {
+                    let mut c = c.clone();
+                    c.push(m);
+                    c
+                })
+            })
+            .collect();
+        for chain in &chains {
+            let mut ty = int4.clone();
+            for m in chain {
+                ty = match m {
+                    None => f.get_type_pointer(4, ty, 1).unwrap(),
+                    Some(n) => f.get_type_array(*n, ty).unwrap(),
+                };
+            }
+            let (front, back) = C_SPELLER.declarator(&SpellCtx::OFF, &ty);
+            let sep = if front.ends_with('*') { "" } else { " " };
+            parses_back(&f, &format!("{front}{sep}x{back}"), &ty);
+            match chain.last().unwrap() {
+                None => {
+                    let (front, back) = C_SPELLER.type_name(&SpellCtx::OFF, &ty);
+                    parses_back(&f, &format!("{front}x{back}"), &ty);
+                }
+                Some(n) if chain.len() == 1 || chain[chain.len() - 2].is_none() => {
+                    let elem = ty.get_array_base().unwrap();
+                    let (front, back) = C_SPELLER.type_name(&SpellCtx::OFF, &elem);
+                    let sep = if front.ends_with('*') { "" } else { " " };
+                    parses_back(&f, &format!("{front}{sep}x [{n}]{back}"), &ty);
+                }
+                Some(_) => {}
+            }
+            checked += 1;
+        }
+    }
+    assert_eq!(checked, 3 + 9 + 27 + 81);
+}
+
 #[test]
 fn parse_type_abstract_no_name() {
     // A bare type with no identifier (abstract declarator).
