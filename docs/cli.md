@@ -1059,7 +1059,10 @@ the live p-code IR, rather than inferred from the rendered text. The ordinary
 plain-text renderer still produces `code`, so its bytes are unchanged.
 Reported variables are joined to native varrefs by ABI or stack storage and recovered
 high-variable identity. Multiple high-variable fragments are combined only when they
-name the same exact stack location and size; ambiguous name-only matches stay empty.
+share the reported name and their stack storage lies inside the reported variable's byte
+range, or when a stack-address constant names its base. This lets element uses contribute
+to an array's evidence without crediting a same-named fragment from another frame object;
+ambiguous name-only matches stay empty.
 
 Per-function `size` is the entry's byte extent, and both surfaces report the same
 number with the same meaning — it is an **inventory** fact, measured without
