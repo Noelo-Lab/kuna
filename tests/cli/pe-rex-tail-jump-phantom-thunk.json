@@ -1,0 +1,75 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "functions",
+    "{{BIN}}",
+    "--json"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/pe_rexthunk_x86_64.exe",
+    "binary_sha256": "29043929b1b24babb13b4f9ecb594ef477014d4b7c0b960b19f7e36775779dc8",
+    "binary_size": 1536,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/pe_rexthunk_x86_64.exe",
+    "selector": null,
+    "selector_kind": "none"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "json": [
+      {
+        "path": "functions[*].address_hex",
+        "op": "ne",
+        "value": "0x140001038"
+      },
+      {
+        "path": "functions[1].address_hex",
+        "op": "eq",
+        "value": "0x140001030"
+      },
+      {
+        "path": "functions[1].size",
+        "op": "eq",
+        "value": 16
+      },
+      {
+        "path": "functions[2].address_hex",
+        "op": "eq",
+        "value": "0x140001040"
+      },
+      {
+        "path": "functions[2].name",
+        "op": "eq",
+        "value": "InitializeSListHead"
+      },
+      {
+        "path": "functions[4].address_hex",
+        "op": "eq",
+        "value": "0x140001057"
+      },
+      {
+        "path": "functions[4].name",
+        "op": "eq",
+        "value": "ExitProcess"
+      },
+      {
+        "path": "count",
+        "op": "eq",
+        "value": 7
+      }
+    ]
+  },
+  "notes": "0x140001030 ends in 48 ff 25 through the InitializeSListHead slot; 0x140001040 is the bare thunk. Unfixed, the scan also named 0x140001038, one byte into that jump, cutting 0x140001030 to 8 bytes (count 8). The called ExitProcess thunk at 0x140001057 follows 48 ff 60 48, so a 48 byte precedes it too, and it keeps its name."
+}

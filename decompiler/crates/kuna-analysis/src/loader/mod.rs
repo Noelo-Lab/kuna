@@ -67,6 +67,8 @@ pub mod format;
 // (kuna) PE/Mach-O import-slot call binding (`peimportcall`): `externref` over
 // typed import-pointer slots + upstream's strictly PE-only no-return API names.
 pub mod kuna_peimportcall;
+// (kuna) `rexthunk`: an x86-64 `REX FF 25` tail jump is not an import thunk.
+pub(crate) mod kuna_rexthunk;
 pub mod macho_fat;
 pub mod macho_stubs;
 pub mod mips_markers;

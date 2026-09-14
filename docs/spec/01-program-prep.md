@@ -96,6 +96,7 @@ bridged across the process by environment variables the CLI exports:
 `KUNA_RELOC_OBJECTS` (`relocobjects`), `KUNA_I386_PIE_PLT` (`i386_pie_plt`),
 `KUNA_RELOCREBASE` (`relocrebase`), `KUNA_DYNRELOCS` (`dynrelocs`),
 `KUNA_MSVCFPCONST` (`msvcfpconst`), `KUNA_PDATACHAINED` (`pdatachained`),
+`KUNA_REXTHUNK` (`rexthunk`),
 `KUNA_MACHO_ARM64E` (`macho-arm64e`),
 `KUNA_MACHO_SLICE` (`--slice`), `KUNA_ARM_ISA` (`--isa`). For those,
 the option rows exist for discoverability while the live gate is the env var. The
@@ -1007,6 +1008,61 @@ funcsym stream:
   through the read-only `.idata` page) and additionally decoding the MinGW `FF 25`
   thunk veneers so a direct `call thunk` also resolves. Import-by-ordinal
   synthesizes `<DLL>_Ordinal_<n>`.
+  (kuna) `rexthunk` (default-on, env-bridged,
+  `decompiler/crates/kuna-analysis/src/loader/kuna_rexthunk.rs (is_rex_tail)`)
+  keeps that thunk decode off compiler-emitted tail jumps. The decode is a byte
+  scan for `FF 25 <disp32>` whose target is an IAT slot, and every PE linker
+  (link.exe, lld-link, GNU ld) emits its import thunk bare, starting at the `FF`.
+  MSVC, GCC and clang instead put a REX.W prefix on an indirect tail jump through
+  `__imp_X` (`48 FF 25`), the epilogue form the Windows x64 unwinder recognises.
+  The scan's match is then one byte into that instruction, and the slot still
+  resolves, since a RIP-relative displacement counts from the end of the
+  instruction both readings share. Each such tail jump therefore became an
+  import-named function one byte into an instruction (35 in each of the MSVC `/Od`
+  and `/O2` images of GH-468), and the function ending in that jump reported a
+  size cut short at the phantom.
+  On x86-64 a match whose preceding byte is `40`-`4F` is a REX tail and is
+  dropped, unless one of two things makes the byte before a real thunk harmless.
+  If the six bytes before the match are themselves an `FF 25` through an IAT slot,
+  the byte is that neighbour's displacement high byte, as in a contiguous link.exe
+  thunk table; both ends of a displacement lie in one image, so that byte can be
+  `40`-`4F` only in an image spanning more than 1 GiB, and the look-back handles
+  that layout directly. Otherwise the match is kept when the image references its
+  `FF` byte
+  (`decompiler/crates/kuna-analysis/src/loader/kuna_rexthunk.rs (referenced)`): a
+  direct `call`, `jmp` or `jcc` rel32 or a RIP-relative `lea` in an executable
+  section, the address as an eight-byte little-endian value anywhere in a section
+  other than discardable data such as `.reloc` or MinGW's `.debug_*` (a relocated
+  pointer, a function table, a `mov reg, imm64`, a pointer that `litpoolconst`
+  folds), a `.pdata` `BeginAddress`, or an export. A real thunk can
+  directly follow a function ending in `jmp qword ptr [rax+0x48]` (`48 FF 60 48`),
+  and through any of those references it keeps its import name, so a call that
+  reaches it keeps the name and the import's no-return fact. A thunk reached only
+  in another way (a short branch, a 32-bit absolute or image-relative value, a
+  computed address) loses its import name; a short jump into one still renders the
+  import through the slot, as a plain call instead of a tail call. Short branches
+  are not counted as references because a random `EB` or `7x` byte within 128
+  bytes of a REX tail lands on it about once in 200 tails, which kept 13 of the
+  corpus's tails below, and COFF has no 8-bit branch relocation, so no linker thunk
+  is a short-branch target. A branch into a real REX tail at its `FF` would
+  execute the bare jump, so the name is right there too. The evidence scans run
+  once per image: `format::resolve_imports` is called about twenty times per load,
+  so the result is remembered under a hash of the scanned bytes, the section
+  addresses and the candidates, and a later call only rehashes.
+  The prefix byte is not named in the tail's place: a function whose whole body is
+  the tail jump is a compiler-emitted wrapper with a symbol of its own
+  (`my_lconv_init` in `pe_imports.exe`, the CRT's `__acrt_FlsFree`), reached by an
+  ordinary `call` and found by the call-target walk, and its body still renders the
+  import through the slot. The 32-bit arm is unchanged, because there `40`-`4F` are
+  the one-byte `inc`/`dec` instructions and say nothing about where the `FF 25`
+  starts, and non-x86 images never run the scan. Across 944 x86-64 PEs (the RE
+  dataset, Wine's MinGW-built DLLs, the other vendored fixtures, the GH-468
+  testbed) the option removes 2,589 entries, every one at a REX `FF 25` byte, and
+  adds or renames none. None of the 37,366 bare thunk matches in those images
+  follows a `40`-`4F` byte, and no REX tail there is referenced in any of the ways
+  above. Whole-binary decompiles of the affected images change no function's C;
+  only the phantoms and the enclosing functions' sizes differ.
+  `option rexthunk off` restores the previous inventory exactly.
 - **Mach-O stubs** (`decompiler/crates/kuna-analysis/src/loader/macho_stubs.rs`,
   the `MachoProgramBuilder.processIndirectSymbols` analog): the `LC_DYSYMTAB`
   indirect-symbol table indexed by each `__stubs`/symbol-pointer section's

@@ -1,0 +1,45 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "0x140001038",
+    "--addr",
+    "--json",
+    "--option",
+    "rexthunk",
+    "off"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/pe_rexthunk_x86_64.exe",
+    "binary_sha256": "29043929b1b24babb13b4f9ecb594ef477014d4b7c0b960b19f7e36775779dc8",
+    "binary_size": 1536,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/pe_rexthunk_x86_64.exe",
+    "selector": "0x140001038",
+    "selector_kind": "addr"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "json": [
+      {
+        "path": "functions[0].name",
+        "op": "eq",
+        "value": "InitializeSListHead"
+      }
+    ]
+  },
+  "notes": "--option rexthunk off must reach the decompile subprocess through the env bridge: 0x140001038, one byte into the 48 ff 25 tail jump, is named InitializeSListHead again (sub_140001038 at the default)."
+}

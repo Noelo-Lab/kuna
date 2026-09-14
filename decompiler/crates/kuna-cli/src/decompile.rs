@@ -926,6 +926,19 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
                 if on { "on" } else { "off" },
             );
         }
+        // (kuna) Load-time `rexthunk` gate: PE import names are resolved inside
+        // `load file`, so an `--option rexthunk off` must reach the subprocess as
+        // an env var set up front.
+        if let Some(value) = last_option_value(&args.options, "rexthunk") {
+            let on = !matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "off" | "0" | "false"
+            );
+            cmd.env(
+                kuna_decomp::kuna_rexthunk::REXTHUNK_ENV,
+                if on { "on" } else { "off" },
+            );
+        }
         // (kuna, DIV-96) Load-time `msvcfpconst` gate: the decoded `__real@`
         // bytes are materialised while the loader lays the object out, so an
         // `--option msvcfpconst off` must reach the subprocess as an env var set

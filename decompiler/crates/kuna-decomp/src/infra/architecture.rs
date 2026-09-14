@@ -1418,6 +1418,14 @@ pub struct Architecture {
     /// `load file`, upstream of `option`); this bool exists only for catalog
     /// visibility and the `phase catalog` live `current` field.
     pub analysis_pdatachained: bool,
+    /// (kuna) Gate the x86-64 PE REX-prefixed import-thunk rejection
+    /// (`rexthunk`); default **on**. A `48 FF 25` jump through an import slot is
+    /// a compiler-emitted tail jump inside a function, and the thunk scan used to
+    /// name the `FF 25` one byte into it as an import thunk entry. Read through
+    /// the [`crate::kuna_rexthunk`] **env var** (import names are resolved inside
+    /// `load file`, upstream of `option`); this bool exists only for catalog
+    /// visibility and the `phase catalog` live `current` field.
+    pub analysis_rexthunk: bool,
     /// (kuna) Gate degenerate-symbol-name repair (`symbolnamerepair`); default
     /// **on**. An empty `::` component in a loader symbol name is rejected by
     /// `Database::attach_scope`, and because the symbol table is installed inside
@@ -2257,6 +2265,7 @@ impl Architecture {
             analysis_relocrebase: false,
             analysis_dynrelocs: false,
             analysis_pdatachained: false,
+            analysis_rexthunk: false,
             analysis_symbolnamerepair: false,
             analysis_symbolnamechars: crate::kuna_symbolnamechars::NameChars::Off,
             analysis_symbolnamebound: None,
@@ -2529,6 +2538,7 @@ impl Architecture {
         self.analysis_relocrebase = true; // (kuna) DIV-79 relocatable-object analysis rebase default-ON (GH-289)
         self.analysis_dynrelocs = true; // (kuna) DIV-84 linked-image dynamic relocations default-ON
         self.analysis_pdatachained = true; // (kuna) DIV-117 GH-403: a chained-UNWIND_INFO .pdata record is an interior chunk, not a function
+        self.analysis_rexthunk = true; // (kuna) DIV-179: the `FF 25` one byte into a REX-prefixed tail jump through an import slot is not an import thunk
         self.analysis_symbolnamerepair = true; // (kuna) DIV: degenerate-symbol-name repair default-ON (it only fires where the load would otherwise fail outright)
         self.analysis_symbolnamechars = crate::kuna_symbolnamechars::NameChars::Safe; // (kuna) DIV-94: symbol-name sanitizing defaults to `safe` -- the structural set only, a measured no-op on every name a real toolchain emits
         self.analysis_symbolnamebound = Some(crate::kuna_symbolnamebound::DEFAULT_SCOPE_DEPTH); // (kuna) DIV-95 GH-338: symbol-name scope bound default 256 (3.2x the deepest :: nesting found in any real binary measured, 79; unbounded, one name turns 600 KB of .strtab into 292 MB)
@@ -3188,6 +3198,15 @@ impl Architecture {
                 crate::kuna_pdatachained::set_pdatachained_env(val);
                 Ok(format!(
                     "PE chained-UNWIND_INFO .pdata entry suppression turned {}",
+                    if val { "on" } else { "off" }
+                ))
+            }
+            "rexthunk" => {
+                let val = on_or_off(p1)?;
+                self.analysis_rexthunk = val;
+                crate::kuna_rexthunk::set_rexthunk_env(val);
+                Ok(format!(
+                    "x86-64 PE REX-prefixed import-thunk rejection turned {}",
                     if val { "on" } else { "off" }
                 ))
             }

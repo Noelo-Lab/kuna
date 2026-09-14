@@ -74,7 +74,7 @@ fn surface_count_is_118() {
 }
 
 #[test]
-fn settable_count_is_198() {
+fn settable_count_is_199() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -139,12 +139,13 @@ fn settable_count_is_198() {
     // +1 for `mappedflowboundary` (P2 mapped ELF x86 flow boundaries, DIV-176).
     // +1 for `nulterminator` (P6 opt-in stack-array terminator absorption).
     // +1 for `endptrbound` (P6 pointer-walk end bound on its buffer, DIV-177).
-    assert_eq!(kuna_num_settables(), 198);
-    assert_eq!(SETTABLE_TABLE.len(), 198);
+    // +1 for `rexthunk` (P1 x86-64 PE REX-prefixed import-thunk rejection).
+    assert_eq!(kuna_num_settables(), 199);
+    assert_eq!(SETTABLE_TABLE.len(), 199);
 }
 
 #[test]
-fn tier_counts_are_63_core_76_transform_59_analysis() {
+fn tier_counts_are_63_core_76_transform_60_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -259,7 +260,9 @@ fn tier_counts_are_63_core_76_transform_59_analysis() {
     // terminator absorption, default off -- the struct-first-member idiom is
     // frame-indistinguishable, so it is not a default correctness fix).
     // transform 75 -> 76: +1 for `endptrbound` (P6 pointer-walk end bound, DIV-177).
-    assert_eq!((core, transform, analysis), (63, 76, 59));
+    // analysis 59 -> 60: +1 for `rexthunk` (P1 x86-64 PE REX-prefixed
+    // import-thunk rejection).
+    assert_eq!((core, transform, analysis), (63, 76, 60));
 }
 
 #[test]
@@ -577,6 +580,10 @@ fn option_values_live_value_present_for_80() {
         // analysis-tier gate with no codegen live reader (read console-side via
         // kuna_live_value), like `ppclocalentry` above. Default-ON.
         "pdatachained",
+        // (kuna) x86-64 PE REX-prefixed import-thunk rejection -- a LOAD-time gate
+        // read from the `KUNA_REXTHUNK` env var, like `pdatachained` above.
+        // Default-ON.
+        "rexthunk",
         "aif",
         // (kuna, GH-299) The AIF gap-cursor aligned slide — an analysis-tier gate
         // with no codegen live reader (read console-side via kuna_live_value), like
@@ -950,7 +957,9 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // 195 -> 196: +1 for `nulterminator` (opt-in); its P6 row sits mid-table beside
     // `cookiescramble`, so it increments the comma-terminated catalog-row count.
     // 196 -> 197: +1 for `endptrbound` (DIV-177); its P6 row sits mid-table.
-    assert_eq!(json.matches("},\n").count(), 197);
+    // 197 -> 198: +1 for `rexthunk`; its P1 row sits mid-table beside `pdatachained`,
+    // so it increments the comma-terminated catalog-row count.
+    assert_eq!(json.matches("},\n").count(), 198);
 }
 
 #[test]
