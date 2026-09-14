@@ -4459,7 +4459,13 @@ impl PrintC {
                 // is signed (the lowered-switch install records this on the table;
                 // the C++ derives it from `getSwitchType()`'s signedness).
                 let signed = jt_index
-                    .map(|j| fd.get_jump_table(j as int4).kuna_has_signed_labels())
+                    .map(|j| {
+                        let jt = fd.get_jump_table(j as int4);
+                        match jt.get_indirect_op().and_then(|op| lowered_switch_label_form(fd, arch, op)) {
+                            Some((signed, _)) => signed,
+                            None => jt.kuna_has_signed_labels(),
+                        }
+                    })
                     .unwrap_or(false);
                 self.emit_numeric_case_label(
                     val,
@@ -5220,7 +5226,14 @@ impl PrintC {
                     self.emit.open_group()
                 };
                 if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(0)) {
+                    let cast = lowered_switch_label_form(fd, arch, op).and_then(|(_, cast)| cast);
+                    if let Some(ct) = &cast {
+                        self.push_cast_open(ct, op);
+                    }
                     self.push_vn_ir(fd, arch, vn, op);
+                    if let Some(ct) = &cast {
+                        self.push_cast_close(ct);
+                    }
                 }
                 if paren {
                     self.emit.close_paren(crate::printlanguage::CLOSE_PAREN, id);
@@ -9770,3 +9783,75 @@ fn to_emit_hl(hl: crate::printlanguage::SyntaxHighlight) -> SyntaxHighlight {
 
 #[cfg(test)]
 mod tests;
+
+/// How the case labels of a re-rolled lowered switch print: their signedness,
+/// and the cast its selector needs for them to name the values it routes.
+///
+/// (kuna `loweredswitchexact`) Over a one- or two-byte selector a label with the
+/// sign bit set names different values signed and unsigned once C promotes the
+/// selector (`case -0x7f:` never matches an `unsigned char`). The install records
+/// a signedness from the compare tree before any type is inferred, so a selector
+/// variable declared as an integer of the switch size gives the labels its own
+/// signedness, and any other selector is cast to the recorded one. `None` leaves
+/// the recorded signedness and no cast.
+fn lowered_switch_label_form(
+    fd: &Funcdata,
+    arch: &Architecture,
+    op: OpId,
+) -> Option<(bool, Option<std::rc::Rc<crate::dtype::Datatype>>)> {
+    use crate::dtype::type_metatype::{TYPE_INT, TYPE_UINT};
+    if !arch.lowered_switch_exact {
+        return None;
+    }
+    let jt = (0..fd.num_jump_tables()).map(|i| fd.get_jump_table(i)).find(|jt| jt.get_indirect_op() == Some(op))?;
+    jt.kuna_lowered_var()?;
+    let sz = fd.vbank().get(fd.obank().get(op)?.get_in(0)?)?.get_size();
+    if sz != 1 && sz != 2 {
+        return None;
+    }
+    let sign_bit: uintb = 1 << (8 * sz - 1);
+    if !(0..jt.num_entries()).any(|i| jt.get_label_by_index(i) & sign_bit != 0) {
+        return None;
+    }
+    if let Some(ct) = switch_variable_type(fd, arch, op) {
+        if ct.get_size() == sz && matches!(ct.get_metatype(), TYPE_INT | TYPE_UINT) {
+            return Some((ct.get_metatype() == TYPE_INT, None));
+        }
+    }
+    let signed = jt.kuna_has_signed_labels();
+    let cast = arch.types().get_base_no_char(sz, if signed { TYPE_INT } else { TYPE_UINT }).ok();
+    Some((signed, cast))
+}
+
+/// The declared type of the variable a `BRANCHIND` reads: a parameter's prototype
+/// type, or a local's declaration type. `None` for an expression.
+fn switch_variable_type(fd: &Funcdata, arch: &Architecture, op: OpId) -> Option<std::rc::Rc<crate::dtype::Datatype>> {
+    let vid = fd.obank().get(op)?.get_in(0)?;
+    let vn = fd.vbank().get(vid)?;
+    if vn.is_implied() {
+        return None;
+    }
+    let hid = vn.get_high()?;
+    let h = fd.high_bank().get(hid)?;
+    let proto = fd.get_func_proto();
+    for i in 0..h.num_instances() {
+        let m = match fd.vbank().get(h.get_instance(i)) {
+            Some(m) if m.is_input() => m,
+            _ => continue,
+        };
+        for p in 0..proto.num_params() {
+            if let Some(param) = proto.get_param(p) {
+                if param.get_address() == *m.get_addr() && param.get_size() == m.get_size() {
+                    return param.get_type().cloned();
+                }
+            }
+        }
+    }
+    let type_rep = if arch.decl_high_type {
+        crate::kuna_declhightype::type_representative(fd, hid).filter(|_| crate::kuna_declhightype::declares_from_high(fd, hid))
+    } else {
+        None
+    };
+    let rep = type_rep.or_else(|| decl_rep_varnode(fd, hid))?;
+    Some(fd.vbank().get(rep)?.get_type().clone())
+}

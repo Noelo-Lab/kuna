@@ -23,6 +23,7 @@ c3
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/katavm_level1_x86_64</com>
   <com>option loweredswitchlabels off</com>
+  <com>option loweredswitchexact off</com>
   <com>read symbols</com>
   <com>load function sub_12d0</com>
   <com>decompile</com>

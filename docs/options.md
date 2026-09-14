@@ -143,6 +143,9 @@ Three tiers:
 | switch rendered as nested if/else-if compare tree over one variable | [`loweredswitch`](#loweredswitch) |
 | binary-search cascade of constant compares where source had a switch | [`loweredswitch`](#loweredswitch) |
 | flip off to keep the compiler's lowered compare-tree rendering | [`loweredswitch`](#loweredswitch) |
+| a switch inlined into a larger function renders as an if/else or goto ladder into a shared join while the same switch in its own function re-rolls | [`loweredswitchheads`](#loweredswitchheads) |
+| every arm of a compare ladder assigns one variable and jumps to the same label | [`loweredswitchheads`](#loweredswitchheads) |
+| option loweredswitch off and on give byte-identical output on a binary-search compare tree preceded by another test of the same variable | [`loweredswitchheads`](#loweredswitchheads) |
 | call rendered with fewer arguments than the disassembly passes when the missing argument register is spilled to the frame before the call | [`spillargtrial`](#spillargtrial) |
 | floating-point argument dropped at the FIRST of several calls that reuse the same value | [`spillargtrial`](#spillargtrial) |
 | a spurious 4-byte stack local appears where a call argument should be | [`spillargtrial`](#spillargtrial) |
@@ -605,6 +608,10 @@ Three tiers:
 | a switch over a parameter renders over a local while option loweredswitch off shows the chain comparing the parameter | [`loweredswitchvalue`](#loweredswitchvalue) |
 | a re-rolled switch dispatches on a constant such as switch(6) | [`loweredswitchvalue`](#loweredswitchvalue) |
 | a parameter the compare tree tests disappears from the prototype when the switch re-rolls | [`loweredswitchvalue`](#loweredswitchvalue) |
+| two case values that share a body in the compare tree show only one case label and the other value takes the default | [`loweredswitchexact`](#loweredswitchexact) |
+| a re-rolled switch's default arm runs code the compare tree only reaches for one specific value | [`loweredswitchexact`](#loweredswitchexact) |
+| an assignment on one arm of a compare tree disappears when the tree re-rolls into a switch | [`loweredswitchexact`](#loweredswitchexact) |
+| a case body jumps to a join that reads a variable no case arm assigns | [`loweredswitchexact`](#loweredswitchexact) |
 | an x86 Windows function renders as (void) though it takes arguments | [`evalcurrentproto`](#evalcurrentproto) |
 | a local carrying a // ecx or // edx storage comment is read before it is ever written | [`evalcurrentproto`](#evalcurrentproto) |
 | __fastcall/__thiscall arguments missing from the signature | [`evalcurrentproto`](#evalcurrentproto) |
@@ -1068,6 +1075,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default (DIV-4); the required binary-search-structure guard (a range/jle split) keeps it off hand-written linear if/else-if chains. Set OFF to restore the upstream if/else-if rendering of a lowered switch.
 - **Where / provenance:** P2/switch-model · angr · structure-recovery · angr-LoweredSwitchSimplifier
 - **Example:** `option loweredswitch off`
+
+### `loweredswitchheads` -- on | off, default `on`
+
+- **Symptoms:** a switch inlined into a larger function renders as an if/else or goto ladder into a shared join while the same switch in its own function re-rolls; every arm of a compare ladder assigns one variable and jumps to the same label; option loweredswitch off and on give byte-identical output on a binary-search compare tree preceded by another test of the same variable.
+- **What it does:** Look for a lowered-switch cascade behind every head on the switch variable, not only the first one in block order. `loweredswitch` picks the most-compared variable and recovers a cascade from a head: a compare on that variable that no other compare on it continues into. Any unrelated test of the same variable is a head too, and when it comes first the cascade behind it was never tried. That is the inlined shape: MSVC /O2 inlines `and_chain(argc, argc*7)` and `cascade_switch(argc)` into `main`, so a `TEST EBX,EBX; JLE` on argc comes before the 15-case binary-search tree over the same argc, recovery from that single test finds no case, and the whole cascade renders as a goto ladder into a shared join. With this on, detection tries each head in block order (each past its leading all-ones sentinel guards) and records the first cascade that recovers. The first head keeps exactly the acceptance it had. A cascade found behind any later head is recorded only when the `loweredswitchexact` checks pass for it -- the compare tree replayed against the switch the install builds routes every value to the same block, and no block the install deletes computes anything used outside it -- whether or not `loweredswitchexact` itself is on, when its head block has one predecessor, and when no case body or default is entered from outside the compare tree.
+- **When to flip:** On by default (DIV-184). Turn off to try only the first compare on the switch variable as the cascade head, so a switch inlined after another test of its selector renders as an if/else or goto ladder.
+- **Where / provenance:** P2/switch-model · kuna · structure-recovery · GH-468
+- **Example:** `option loweredswitchheads off`
 
 ### `spillargtrial` -- off | reload | spill, default `off`
 
@@ -2124,6 +2139,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default (DIV-181). Turn off only to reproduce the unchecked rendering, where the synthesized switch reads the recorded storage at the cascade head whatever that storage holds by then.
 - **Where / provenance:** P2/switch-model · kuna · correctness-fix · GH-468
 - **Example:** `option loweredswitchvalue off`
+
+### `loweredswitchexact` -- on | off, default `on`
+
+- **Symptoms:** two case values that share a body in the compare tree show only one case label and the other value takes the default; a re-rolled switch's default arm runs code the compare tree only reaches for one specific value; an assignment on one arm of a compare tree disappears when the tree re-rolls into a switch; a case body jumps to a join that reads a variable no case arm assigns.
+- **What it does:** Install a re-rolled lowered switch only when it is the compare tree it replaces. Three things made the switch a different program. The install kept one case label per body, so of two values sharing a body only the first reached it and the second fell into the default. The recovered case map can route a value somewhere the tree does not: a range edge the binary search pins to a single value is neither a case nor a default candidate, and a tie between two default candidates is broken by address, so the default can be a case body. And the install deletes every compare block behind the head together with whatever a block computes for the code after it (`v = 0x8a;` before a shared join). With this on, every case value keeps its own label on its body, and detection keeps a recovered cascade only when two checks pass. The routing check replays the compare tree against the switch the install builds: each compare is an equality or a threshold against a constant over the switch variable, widened only by zero or sign extension, so its outcome is constant between the constant's neighbourhood and the variable's signed and unsigned wrap points, and each of those values must reach the block the switch sends it to. The statement check computes the blocks the install makes unreachable and requires every op in them to be a branch or to compute a value read only inside them; a store, a call, a return, an indirect branch or a value read elsewhere keeps the compare tree.
+- **When to flip:** On by default (DIV-183). Turn off only to reproduce the unchecked install, where values sharing a case body lose all labels but the first, and a switch that routes a value differently from the tree or drops a statement is still emitted.
+- **Where / provenance:** P2/switch-model · kuna · correctness-fix · GH-468
+- **Example:** `option loweredswitchexact off`
 
 ### `evalcurrentproto` -- on | off, default `on`
 

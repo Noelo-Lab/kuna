@@ -1855,7 +1855,7 @@ mod tests {
         // and kuna-msvcstrappend / inlined MSVC std::string appends collapse to
         // one call each (GH-468)
         // and kuna-tiedphitrim / loop-head aliased-read trim
-        assert_eq!(count, 290, "corpus file count drifted");
+        assert_eq!(count, 292, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

@@ -867,6 +867,13 @@ pub struct ArchContext {
     /// unless it reads the value its cascade compared.  Read by
     /// [`crate::p2_lift::kuna_loweredswitchvalue`] and the lowered-switch install.
     pub lowered_switch_value_check: bool,
+    /// (kuna) `option loweredswitchexact`: label every case value of a re-rolled
+    /// lowered switch and keep it only when it matches its compare tree.  Read by
+    /// [`crate::kuna_loweredswitch`] and the lowered-switch install.
+    pub lowered_switch_exact: bool,
+    /// (kuna) `option loweredswitchheads`: try every cascade head, not only the
+    /// first.  Read by [`crate::kuna_loweredswitch`]'s detect action.
+    pub lowered_switch_every_head: bool,
     /// (kuna) recover stack-passed call arguments (default-on; upstream-faithful).
     /// Read by [`check_input_trial_use`](crate::funcdata_callsite::check_input_trial_use)
     /// through [`crate::p4_calls::kuna_callsitestackargs::outside_caller_local_range`].
@@ -1510,6 +1517,8 @@ impl ArchContext {
             recover_lowered_switch: false, // loweredswitch
             lowered_switch_labels: true, // loweredswitchlabels
             lowered_switch_value_check: true, // loweredswitchvalue
+            lowered_switch_exact: true, // loweredswitchexact
+            lowered_switch_every_head: true, // loweredswitchheads
             // callsitestackargs is a correctness fix, not an opt-in transform, so the
             // hand-built-fixture seam carries the same default the real path does.
             callsite_stack_args: true,

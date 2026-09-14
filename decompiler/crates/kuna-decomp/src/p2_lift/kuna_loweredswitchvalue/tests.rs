@@ -326,6 +326,7 @@ fn install_fake_switch(fd: &mut Funcdata, input_vn: VarnodeId, read_head_operand
         default_target: a(0x3000),
         signed_labels: false,
         value: ValueCheck { read_head_operand, ..ValueCheck::default() },
+        later_head: false,
     };
     store.borrow_mut().push(fd, rec);
     store

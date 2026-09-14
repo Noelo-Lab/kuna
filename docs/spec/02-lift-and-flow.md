@@ -1267,6 +1267,91 @@ function that has already spent the pipeline's cross-flow restart budget
 (`run_pipeline`, eight re-flows) keeps the switch it last installed. Measured
 byte-identical on the 675-assertion datatest corpus with the value check off.
 
+### The switch is the compare tree — `option loweredswitchexact`, default on (DIV-183)
+
+Three things made a re-rolled switch a different program from the cascade it
+replaced. The install gave each case body one table entry and kept the first
+value that reached it, so of two values sharing a body the second lost its label
+and took the default. `recover_cascade` drops a range edge the binary search pins
+to one value (it is neither a case nor a default candidate) and breaks a tie
+between default candidates by address, so a value can reach a body in the tree
+and the default in the switch, or the default can be a case body. And the install
+removes every block that the new head edges make unreachable, with whatever those
+blocks compute for the code after the cascade (a `v = 0x8a;` on one arm before a
+shared join).
+
+With the option on, `funcdata_block.rs (Funcdata::kuna_install_lowered_switch)`
+pushes one table entry per case value, so shared bodies keep every label, and
+detection keeps a recovered record only when
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_loweredswitchexact.rs (record_is_exact)`
+holds. `kuna_loweredswitchexact.rs (switch_routes_like_cascade)` replays the
+compare tree against the switch the install builds. Every node compares the
+switch variable, widened only by zero or sign extension (or a same-width copy),
+with a constant under an equality or a signed or unsigned threshold, so each
+node's outcome only changes at its constant's neighbourhood or at the variable's
+signed and unsigned wrap points; the replay evaluates the tree at each of those
+values (every constant and its neighbours, 0, the all-ones value and both sides
+of the sign boundary, all at the variable's width) and requires the block reached
+to be the block the switch dispatches that value to. A narrowed operand, a label
+wider than the variable, a duplicate label or a spine that loops declines the
+record. `kuna_loweredswitchexact.rs (install_keeps_statements)` computes the
+blocks reachable now but not after the head's edges are replaced by edges to the
+case bodies and default, and requires every op in them to be a branch or to write
+a value read only inside them; a store, call, return, indirect branch or a value
+read elsewhere (a phi input at the join included) keeps the compare tree.
+
+Detection judges statements on the simplified graph, where a register a compare
+block loads for a case body has been propagated into its reader: gcc -Os puts
+`mov esi,7` inside the compare tree for `T: mov edi,esi ; jmp hv`, and on the
+simplified graph that is `hv(7)` with nothing left in the compare block. The
+install edits raw p-code and would delete the load. So the install itself also
+requires `kuna_loweredswitchexact.rs (raw_install_keeps_values)`: every storage
+location a deleted raw block writes (temporaries aside) must, on every path from a
+case body or the default, be written again (by an op, or by a call when the
+prototype model marks it killed by calls) before any op reads it, before a call or
+tail call that may take it as a parameter, and before a return that may return
+it. A declined record renders exactly as `option loweredswitch off` renders it, so
+the gate can only replace an inexact switch with the compiler's own tree.
+
+Labels carry a signedness the install records from the compare tree before any
+type is inferred, and over a one- or two-byte selector a label with the sign bit
+set names different values signed and unsigned once C promotes the selector
+(`case 0x81:` never matches a `char`). The printer
+(`decompiler/crates/kuna-decomp/src/p9_emit/printc.rs (lowered_switch_label_form)`)
+prints such labels with the signedness of the selector's declared type when it is
+an integer of the switch size, and otherwise casts the selector to the recorded
+signedness (`switch((unsigned char)a0)`). Measured
+byte-identical on the 675-assertion datatest corpus with the option off.
+
+### Every cascade head — `option loweredswitchheads`, default on (DIV-184)
+
+A head is any compare on the switch variable that no other compare on it
+continues into, and a variable is compared outside its switch as often as inside
+it. MSVC `/O2` inlines `and_chain(argc, argc*7)` and `cascade_switch(argc)` into
+`main`: the inlined `TEST EBX,EBX; JLE` comes first in block order, recovery from
+that single test finds no case, and the fifteen-case tree behind it rendered as a
+goto ladder into the shared join, because detection only ever tried the first
+head.
+
+With the option on,
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_loweredswitchheads.rs (cascade_heads)`
+lists every head in block order and detection tries each (past its leading
+all-ones sentinel guards), recording the first cascade that recovers. The first
+head keeps exactly the acceptance `loweredswitchexact` gives it. A cascade behind
+any later head is recorded only when `kuna_loweredswitchexact.rs (record_is_exact)`
+holds for it, whether or not `loweredswitchexact` is on, modelled on the install
+the current options will perform, and its install runs
+`kuna_loweredswitchexact.rs (raw_install_keeps_values)` either way (the record is
+marked as coming from a later head); when its head block has a single
+predecessor;
+and when `kuna_loweredswitchheads.rs (case_body_entered_elsewhere)` finds no case
+body or default entered from outside the compare tree (another case's body falling
+into it, or code after the switch jumping to it). The structurer renders a switch
+of either shape with a `goto` to a label it never declares, which is tolerated for
+the first head, as before, but never introduced by a later one. A record's
+dispatch value is then subject to `loweredswitchvalue` like any other. Measured byte-identical on the 675-assertion
+datatest corpus with the option off.
+
 ### Bound extensions: rescuing an unboundable table
 
 Four gated extensions run, in this order, only when JumpBasic's range exceeds

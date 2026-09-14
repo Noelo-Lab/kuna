@@ -657,6 +657,13 @@ pub struct Architecture {
     /// (kuna `loweredswitchvalue`) Withdraw a re-rolled lowered switch unless it is
     /// shown to dispatch on the value its cascade compared.
     pub lowered_switch_value_check: bool,
+    /// (kuna `loweredswitchexact`) Label every case value of a re-rolled lowered
+    /// switch and keep the switch only when it routes and computes as its compare
+    /// tree.
+    pub lowered_switch_exact: bool,
+    /// (kuna `loweredswitchheads`) Try a lowered-switch cascade behind every head on
+    /// the switch variable, not only the first.
+    pub lowered_switch_every_head: bool,
     /// (kuna) Recover stack-passed call arguments at call sites with an unlocked
     /// callee prototype (default-on; restores upstream `fspec.cc:5618`).
     pub callsite_stack_args: bool,
@@ -2184,6 +2191,8 @@ impl Architecture {
             recover_lowered_switch: false,
             lowered_switch_labels: false,
             lowered_switch_value_check: false,
+            lowered_switch_exact: false,
+            lowered_switch_every_head: false,
             callsite_stack_args: true,
             cookie_scramble: true,
             nul_terminator: false,
@@ -2445,6 +2454,8 @@ impl Architecture {
         self.recover_lowered_switch = true; // (kuna) default-on (angr port)
         self.lowered_switch_labels = true; // (kuna) default-on correctness fix: the cascade's range opcode, not a case's sign bit, determines label interpretation
         self.lowered_switch_value_check = true; // (kuna) DIV-181 default-on correctness fix: a re-rolled lowered switch reads what its head compare reads and is withdrawn unless its BRANCHIND input is the value the cascade compared
+        self.lowered_switch_every_head = true; // (kuna) DIV-184 default-on: a compare on the switch variable in front of an inlined switch no longer hides the cascade behind it; a cascade behind a later head must match its compare tree exactly
+        self.lowered_switch_exact = true; // (kuna) DIV-183 default-on correctness fix: a re-rolled lowered switch labels every case value and is kept only when it routes every value and keeps every statement as its compare tree does
         self.callsite_stack_args = true; // (kuna) default-on: restores upstream fspec.cc:5618 (0/675 ablation)
         self.end_ptr_bound = true; // (kuna) DIV-177 default-on: a pointer walk's end bound renders on its own buffer (0/675 ablation)
         self.cookie_scramble = true; // (kuna) DIV-126 default-on: an `xor rax,rsp` cookie mix no longer collapses the local-alias boundary to the bottom of the frame (0/675 ablation)
@@ -2809,6 +2820,8 @@ impl Architecture {
                 Ok(msg)
             }
             "loweredswitchvalue" => on_off!(lowered_switch_value_check, "Lowered-switch dispatch value check"),
+            "loweredswitchexact" => on_off!(lowered_switch_exact, "Exact lowered-switch recovery"),
+            "loweredswitchheads" => on_off!(lowered_switch_every_head, "Lowered-switch detection from every cascade head"),
             "callsitestackargs" => {
                 let (val, msg) =
                     crate::p4_calls::kuna_callsitestackargs::OptionCallsiteStackArgs.apply(p1)?;
@@ -3877,6 +3890,8 @@ impl Architecture {
         ctx.recover_lowered_switch = self.recover_lowered_switch; // loweredswitch
         ctx.lowered_switch_labels = self.lowered_switch_labels; // loweredswitchlabels
         ctx.lowered_switch_value_check = self.lowered_switch_value_check; // loweredswitchvalue
+        ctx.lowered_switch_exact = self.lowered_switch_exact; // loweredswitchexact
+        ctx.lowered_switch_every_head = self.lowered_switch_every_head; // loweredswitchheads
         ctx.callsite_stack_args = self.callsite_stack_args; // callsitestackargs
         ctx.cookie_scramble = self.cookie_scramble; // cookiescramble
         ctx.nul_terminator = self.nul_terminator; // nulterminator

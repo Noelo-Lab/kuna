@@ -1969,6 +1969,7 @@ impl Funcdata {
         default_target: &Address,
         signed_labels: bool,
         prefer_head_operand: bool,
+        check_values: bool,
     ) -> KunaResult<Option<(usize, bool)>> {
         use kuna_base::types::uintb;
 
@@ -1988,24 +1989,29 @@ impl Funcdata {
         // out-edge, a representative case label (the printer emits one `case` per
         // address-table entry; duplicate-valued cases collapse to the same edge,
         // and the C++ trivial recovery emits one label per edge).
+        // (kuna `loweredswitchexact`) keeps every label of a shared body instead.
+        let all_labels = self.get_arch().lowered_switch_exact;
         let mut out_targets: Vec<Address> = Vec::new();
-        let mut out_label: Vec<uintb> = Vec::new();
+        let mut out_labels: Vec<Vec<uintb>> = Vec::new();
         let mut out_is_default: Vec<bool> = Vec::new();
 
         for (i, tgt) in case_targets.iter().enumerate() {
             if tgt == default_target {
                 continue; // a case that coincides with the default folds away
             }
-            if out_targets.iter().any(|a| a == tgt) {
-                continue; // duplicate target: keep the first label
+            if let Some(k) = out_targets.iter().position(|a| a == tgt) {
+                if all_labels {
+                    out_labels[k].push(case_vals[i]);
+                }
+                continue; // duplicate target: one out-edge
             }
             out_targets.push(tgt.clone());
-            out_label.push(case_vals[i]);
+            out_labels.push(vec![case_vals[i]]);
             out_is_default.push(false);
         }
         // Default out-edge last.
         out_targets.push(default_target.clone());
-        out_label.push(0);
+        out_labels.push(vec![0]);
         out_is_default.push(true);
 
         // Resolve every target to a live basic block; if any is missing the CFG no
@@ -2027,6 +2033,11 @@ impl Funcdata {
         // sits down there, the cascade was a guard chain in front of a genuine
         // switch and installing would delete it — decline.
         if self.kuna_lowered_switch_strands_table(head, &out_blocks) {
+            return Ok(None);
+        }
+        // (kuna `loweredswitchexact`, and every later-head record) Nothing a deleted
+        // compare block writes may be read again on the raw p-code this edits.
+        if check_values && !crate::p2_lift::kuna_loweredswitchexact::raw_install_keeps_values(self, head, &out_blocks) {
             return Ok(None);
         }
 
@@ -2163,11 +2174,11 @@ impl Funcdata {
         for oi in 0..nout {
             let outbl = self.bblocks_ref().block(head).get_out(oi);
             let start = crate::block::block_get_start(&self.bblocks_ref().arena, outbl);
-            let mut lab: uintb = 0;
+            let mut labs: &[uintb] = &[0];
             let mut isdef = false;
             for k in 0..out_blocks.len() {
                 if out_blocks[k] == outbl {
-                    lab = out_label[k];
+                    labs = &out_labels[k];
                     isdef = out_is_default[k];
                     break;
                 }
@@ -2175,7 +2186,9 @@ impl Funcdata {
             if isdef {
                 default_out_index = oi;
             }
-            jt.kuna_push_entry(start, oi, lab);
+            for &lab in labs {
+                jt.kuna_push_entry(start.clone(), oi, lab);
+            }
         }
         jt.kuna_finalize(default_out_index);
         jt.mark_complete();

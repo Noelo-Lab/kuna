@@ -1,0 +1,69 @@
+<decompilertest>
+<!--
+    loweredswitchheads (GH-468 finding 4): look for a lowered-switch cascade
+    behind every head on the switch variable, not only the first in block order.
+
+    `loweredswitch` recovers a cascade from a head: a compare on the most-compared
+    variable that no other compare on it continues into. An unrelated test of that
+    same variable is a head too, and upstream tried only the first. MSVC /O2
+    inlines `and_chain(argc, argc*7)` and `cascade_switch(argc)` into `main`, so a
+    `TEST EBX,EBX; JLE` (the inlined and_chain) is the first compare on argc and
+    the 15-case binary-search tree over the same argc follows a loop mid-function;
+    recovery from the TEST head finds no case, so the tree rendered as a goto
+    ladder into a shared join.
+
+    Bytes: `main` of ab_o2.exe from the issue testbed (MSVC 18 /O2, x86-64, 640
+    bytes at 0x1400011e0), with the callees it names stubbed. argc is copied ECX
+    into callee-saved EBX at entry; each case arm is `MOV EDX,c; JMP join` and the
+    default is `MOV EDX,-1`, and the join prints EDX.
+
+    Pass 1 (option loweredswitchheads off): only the TEST head is tried, recovers
+    no case, and the tree renders as a goto ladder into the join.
+    Pass 2 (default, on): the cascade behind the later head is re-rolled into a
+    switch over argc with all fifteen cases and the default, each arm still
+    assigning the value the join prints.
+
+    The off pass runs first: the lowered-switch store is sticky across clear(), so
+    a declined detection leaves no record behind.
+-->
+<binaryimage arch="x86:LE:64:default:windows">
+<bytechunk space="ram" offset="0x1400011e0" readonly="true">
+48895c24084889742410574881ec90000000488b05072e07004833c448898424800000008bd9488b0a0fb6013caa7461
+3cbb74563ccc744b3cdd74400fb641013caa744d3cbb74423ccc74373cdd742c0fb641023caa74393cbb742e3ccc7423
+3cdd74180fb641033caa74253cbb741a3ccc740f3cdd740433ffeb1abf04000000eb13bf03000000eb0cbf02000000eb
+05bf0100000085db7e0d6bc307be2900000083f8647c05be2800000041b83f000000488d15f7000600488d4c2440e8fd
+e205004533c033d2448844247f3854244074240f1f4000660f1f8400000000004863c2ffc20fb64c04404863c24403c1
+807c04400075e981fb1d8000000f8f87000000747e81fb0b4000007f46743a81fb00100000742881fb03200000741681
+fb073000000f85b5000000ba4d000000e9c5000000ba21000000e9bb000000ba0a000000e9b1000000ba6f000000e9a7
+00000081fb0f500000742181fb13600000741281fb177000007575bae9000000e985000000bac7000000eb7eba9b0000
+00eb77ba2b010000eb7081fb35c000007f36742d81fb1f900000741e81fb29a00000740f81fb2fb000007534badd0100
+00eb47ba9b010000eb40ba37010000eb39ba15020000eb3281fb3bd00000742581fb3de00000741681fb43f000007407
+baffffffffeb13baa5020000eb0cba63020000eb05ba57020000448bce897c2420488d0db8ff0500e873000000b91000
+0000e8c95d0300488bf04885c07507b8feffffffeb31b920000000e8b05d03004885c0741433ff488bc885db400f9fc7
+ffcfe8895d0300eb048b7c2430488bcee87b5d03008bc7488b8c24800000004833cce8d90100004c8d9c249000000049
+8b5b10498b7318498be35fc3cccccccc
+</bytechunk>
+<symbol space="ram" offset="0x1400011e0" name="main"/>
+<symbol space="ram" offset="0x140001460" name="printf"/>
+<symbol space="ram" offset="0x140001620" name="__security_check_cookie"/>
+<symbol space="ram" offset="0x1400371b0" name="free"/>
+<symbol space="ram" offset="0x1400371c0" name="malloc"/>
+<symbol space="ram" offset="0x14005f5a0" name="strncpy"/>
+</binaryimage>
+<script>
+  <com>lo fu main</com>
+  <com>option loweredswitchheads off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option loweredswitchheads on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="LOWEREDSWITCHHEADS #1: the inlined cascade re-rolls into a switch over argc, in pass 2 only" min="1" max="1">switch\(a0\)</stringmatch>
+<stringmatch name="LOWEREDSWITCHHEADS #2: all fifteen case labels, in pass 2 only" min="15" max="15">case 0x[0-9a-f]+:</stringmatch>
+<stringmatch name="LOWEREDSWITCHHEADS #3: the default arm, in pass 2 only" min="1" max="1">    default:</stringmatch>
+<stringmatch name="LOWEREDSWITCHHEADS #4: pass 1 keeps the fifteen gotos into the join" min="15" max="15">goto label_1400013da;</stringmatch>
+<stringmatch name="LOWEREDSWITCHHEADS #5: the last case value is assigned in both passes" min="2" max="2">0x2a5;</stringmatch>
+<stringmatch name="LOWEREDSWITCHHEADS #6: the default value is assigned in both passes" min="2" max="2">0xffffffff;</stringmatch>
+</decompilertest>

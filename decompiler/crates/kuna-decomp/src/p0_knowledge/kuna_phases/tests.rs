@@ -75,7 +75,7 @@ fn surface_count_is_119() {
 }
 
 #[test]
-fn settable_count_is_203() {
+fn settable_count_is_205() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -145,12 +145,13 @@ fn settable_count_is_203() {
     // +1 for `msvcstrappend` (P2 inlined MSVC std::string append collapse).
     // +1 for `loweredswitchvalue` (P2 re-rolled switch dispatch value, DIV-181).
     // +1 for `tiedphitrim` (P6 loop-head aliased-read trim, DIV-182).
-    assert_eq!(kuna_num_settables(), 203);
-    assert_eq!(SETTABLE_TABLE.len(), 203);
+    // +1 for `loweredswitchexact` (P2 re-rolled switch matches its compare tree, DIV-183) and +1 for `loweredswitchheads` (P2 every lowered-switch cascade head, DIV-184).
+    assert_eq!(kuna_num_settables(), 205);
+    assert_eq!(SETTABLE_TABLE.len(), 205);
 }
 
 #[test]
-fn tier_counts_are_65_core_77_transform_61_analysis() {
+fn tier_counts_are_66_core_78_transform_61_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -275,7 +276,8 @@ fn tier_counts_are_65_core_77_transform_61_analysis() {
     // value, DIV-181).
     // core 64 -> 65: +1 for `tiedphitrim` (P6 loop-head aliased-read trim,
     // DIV-182).
-    assert_eq!((core, transform, analysis), (65, 77, 61));
+    // core 65 -> 66, transform 77 -> 78: +1 for `loweredswitchexact` (P2 re-rolled switch matches its compare tree, DIV-183) and +1 for `loweredswitchheads` (P2 every lowered-switch cascade head, DIV-184).
+    assert_eq!((core, transform, analysis), (66, 78, 61));
 }
 
 #[test]
@@ -465,7 +467,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_83() {
+fn option_values_live_value_present_for_85() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -831,7 +833,8 @@ fn option_values_live_value_present_for_83() {
     // 81 -> 82: +1 for `loweredswitchvalue` (live_field =
     // lowered_switch_value_check, DIV-181).
     // 82 -> 83: +1 for `tiedphitrim` (live_field = tied_phi_trim, DIV-182).
-    assert_eq!(with_live, 83);
+    // 83 -> 85: +1 for `loweredswitchexact` (P2 re-rolled switch matches its compare tree, DIV-183) and +1 for `loweredswitchheads` (P2 every lowered-switch cascade head, DIV-184).
+    assert_eq!(with_live, 85);
 }
 
 #[test]
@@ -987,7 +990,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // mid-table, so it increments the comma-terminated catalog-row count.
     // +1 for `tiedphitrim` (DIV-182); its P6 row sits mid-table beside
     // `paramcopyhoist`, so it increments the comma-terminated catalog-row count.
-    assert_eq!(json.matches("},\n").count(), 202);
+    // 202 -> 204: +1 for `loweredswitchexact` (P2 re-rolled switch matches its compare tree, DIV-183) and +1 for `loweredswitchheads` (P2 every lowered-switch cascade head, DIV-184).
+    assert_eq!(json.matches("},\n").count(), 204);
 }
 
 #[test]
