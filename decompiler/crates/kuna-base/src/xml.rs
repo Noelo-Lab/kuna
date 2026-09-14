@@ -1846,7 +1846,9 @@ mod tests {
         // and ghdec-unsigned-byte-vm-selector / lowered-switch labels retain the
         // signedness proved by the comparison cascade across restart/install
         // and kuna-cancelbytearithmetic / exact low-byte cancellation
-        assert_eq!(count, 282, "corpus file count drifted");
+        // and kuna-pebnames / kuna-pebnames-x86 type the Windows TEB segment
+        // base on x86-64 (GS) and x86 (FS) (GH-468)
+        assert_eq!(count, 284, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

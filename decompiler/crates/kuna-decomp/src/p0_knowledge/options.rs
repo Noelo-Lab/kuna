@@ -264,6 +264,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "fastfailnoreturn",
     "int3pad",
     "x64syscall",
+    "pebnames",
     "decodehalt",
     "msvcftol",
     "tailcalljump",

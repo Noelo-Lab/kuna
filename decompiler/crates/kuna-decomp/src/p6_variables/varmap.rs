@@ -1404,6 +1404,11 @@ impl ScopeLocal {
         self.db.set_attribute(sym, attr);
     }
 
+    /// C++ `ScopeInternal::removeSymbol` reached through this scope's symbol table.
+    pub fn remove_symbol(&mut self, sym: crate::database::SymbolId) {
+        self.db.remove_symbol(sym);
+    }
+
     /// C++ `Symbol::setIsolated(val)` reached through this scope's symbol table
     /// (`IfcTypeVarnode`: `sym->setIsolated(true)`).
     pub fn set_symbol_isolated(&mut self, sym: crate::database::SymbolId, val: bool) {
