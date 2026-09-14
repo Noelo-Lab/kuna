@@ -32,7 +32,8 @@ kuna decompile-project ./a.out
 kuna decompile ./a.out main --option compareform canonical
 ```
 
-When using it with an agent, use the built-in [skill](skills/kuna/SKILL.md) to inform your agent on its efficient usage.
+When using it with an agent, install the built-in [skill](skills/kuna/SKILL.md) to inform your agent on its efficient usage.
+It ships inside the binary, so `kuna install-skill` sets it up for Claude Code and Codex offline (`--dir DIR` for other agents, `--print` to just read it).
 
 ### Web Browser Usage
 Since Kuna is written in Rust, you can also use it in the web browser through WebAssembly.

@@ -28,6 +28,7 @@ const SUBCOMMANDS: &[&str] = &[
     "strings",
     "unpack",
     "docs",
+    "install-skill",
     "test",
     "catalog",
     "modes",
@@ -48,7 +49,7 @@ fn help_text(out: &Output) -> String {
     s
 }
 
-/// The need: exit 0 and a usage block, for both spellings, on all sixteen.
+/// The need: exit 0 and a usage block, for both spellings, on every subcommand.
 #[test]
 fn every_subcommand_answers_help() {
     for sub in SUBCOMMANDS {

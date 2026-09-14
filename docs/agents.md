@@ -70,6 +70,7 @@ The commands agents use most:
 
 ```bash
 kuna docs                                          # the embedded manual — cli, options, phases, modes
+kuna install-skill                                 # install the embedded agent skill (skills/kuna/SKILL.md)
 kuna decompile ./a.out main [--json]               # one function (or an address with --addr)
 kuna xrefs ./a.out --to 0x401030 --json            # what references this; --from for the reverse
 kuna unpack ./packed.bin                           # statically unpack a UPX image
