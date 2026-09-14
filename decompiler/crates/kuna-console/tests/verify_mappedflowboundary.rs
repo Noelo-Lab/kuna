@@ -569,3 +569,36 @@ fn an_inlined_callee_that_leaves_mapped_memory_stays_an_error() {
         std::fs::remove_file(path).unwrap();
     }
 }
+
+#[test]
+fn an_unmapped_first_byte_is_reported_from_the_map_even_with_a_cold_window() {
+    let path = fixture(&[(0x10000, &[0xb8, 7, 0, 0, 0, 0xc3], 6)]);
+    let prog = load(&path);
+    let tr = prog.arch().translate();
+    let image = tr.loader_rc().borrow().shared_bytes().unwrap();
+    let mut emit = Emit::default();
+    let err = tr
+        .one_instruction_checked(&mut emit, &address(&prog, 0x80000), image.as_ref())
+        .unwrap_err();
+    assert!(err.explain().contains("Instruction bytes at 0x80000 are not mapped"), "{err:?}");
+    assert!(emit.0.is_empty());
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn a_truncated_instruction_needs_a_mapped_first_byte_even_with_a_warm_window() {
+    use kuna_decomp::kuna_mappedflowboundary::truncated_instruction;
+    let path = fixture(&[(0x10000, &[0xb8, 7, 0, 0, 0, 0xc3, 0xb8, 7], 8)]);
+    let prog = load(&path);
+    let tr = prog.arch().translate();
+    tr.loader_rc()
+        .borrow_mut()
+        .load_fill(&mut [0; 64], &address(&prog, 0x10000))
+        .unwrap();
+    let image = tr.loader_rc().borrow().shared_bytes().unwrap();
+    assert!(!truncated_instruction(image.as_ref(), tr, &address(&prog, 0x10000)));
+    assert!(truncated_instruction(image.as_ref(), tr, &address(&prog, 0x10006)));
+    assert!(!truncated_instruction(image.as_ref(), tr, &address(&prog, 0x10008)));
+    assert!(!truncated_instruction(image.as_ref(), tr, &address(&prog, 0x1000a)));
+    std::fs::remove_file(path).unwrap();
+}

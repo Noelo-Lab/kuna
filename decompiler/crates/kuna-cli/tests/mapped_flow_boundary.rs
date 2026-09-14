@@ -258,3 +258,49 @@ fn shared_whole_image_and_project_paths_retain_the_recovered_body() {
     assert!(text.contains("halt_missing"), "{text}");
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn a_declared_range_exit_at_a_known_entry_keeps_its_own_out_of_bounds_stub() {
+    let mut code = vec![0x85, 0xc0, 0x74, 5, 0xe8, 0x17, 0, 0, 0, 0xb8, 7, 0, 0, 0, 0xc3];
+    code.resize(32, 0xcc);
+    code.extend_from_slice(&[0x31, 0xc0, 0xc3]);
+    let raw = common::scratch_file("funcbound-declared-range", "bin");
+    std::fs::write(&raw, &code).unwrap();
+    let elf = with_code(&code);
+    let bounds = [
+        "--define-function",
+        "0x10000-0x10009=f",
+        "--define-function",
+        "0x10009=g",
+        "--define-function",
+        "0x10020=die",
+    ];
+    let raw_args = ["--raw-image", "--target", "x86:LE:32:default:gcc", "--base", "0x10000"];
+    for (path, image) in [(&raw, &raw_args[..]), (&elf, &[][..])] {
+        let mut texts = Vec::new();
+        for value in ["on", "off"] {
+            let mut extra = image.to_vec();
+            extra.extend(bounds);
+            extra.extend(["--option", "mappedflowboundary", value]);
+            let out = decompile(path, &extra);
+            let text = String::from_utf8_lossy(&out.stdout).into_owned();
+            assert!(
+                out.status.success(),
+                "{text}\n{}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            assert!(text.contains("if (a0)"), "{text}");
+            assert!(text.contains("die();"), "{text}");
+            assert!(text.contains("halt_missing();"), "{text}");
+            assert!(
+                text.contains("Function flow out of bounds: r0x00010002 flows to r0x00010009"),
+                "{text}"
+            );
+            assert!(!text.contains("return-dupe"), "{text}");
+            texts.push(text);
+        }
+        assert_eq!(texts[0], texts[1]);
+    }
+    std::fs::remove_file(raw).unwrap();
+    std::fs::remove_file(elf).unwrap();
+}

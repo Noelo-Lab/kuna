@@ -334,7 +334,12 @@ Four front-ends drive one engine assembly:
   `UndefinedExternal` provenance. The text CLI recognizes only that diagnostic
   as an external. A named XML symbol outside its byte chunks still fails with
   `Selected entry has no mapped bytes`; a later byte-load error while decoding
-  a mapped entry also remains a failure, as it does in JSON output. A PE IAT slot
+  a mapped entry also remains a failure, as it does in JSON output. Because that
+  probe reads through the loader's 512-byte staging window, an unmapped address
+  just past mapped bytes can pass it; on a `mappedflowboundary` image it then
+  fails in the checked decode with `Instruction bytes at <addr> are not mapped`,
+  while an address far from any segment is refused by the CLI selector with
+  `address <addr> is not mapped in this input`. A PE IAT slot
   is different:
   its pointer bytes are mapped, so body selection consults the loader's import
   ranges and returns a non-success diagnostic naming the import and slot before

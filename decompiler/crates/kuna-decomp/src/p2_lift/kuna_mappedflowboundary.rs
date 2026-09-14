@@ -74,7 +74,7 @@ pub(crate) fn unmapped_overlap_step(
 }
 
 /// A decode that starts on a mapped byte but whose instruction runs past the mapped run.
-pub(crate) fn truncated_instruction(
+pub fn truncated_instruction(
     image: &dyn ImageBytes,
     translate: &dyn Translate,
     addr: &Address,

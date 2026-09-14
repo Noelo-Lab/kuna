@@ -151,8 +151,10 @@ On eligible flows, `Translate::one_instruction_checked` validates the
 actual decoded instruction span with `ImageBytes::mapped_covers` before
 context commits or p-code emission. A full prefetch need not be mapped: a
 one-byte RET at the final mapped byte is valid. Touching and overlapping
-mappings may supply one instruction, and mapped zero-filled data tails are
-valid; an instruction spanning a gap is not. SLEIGH's checked entry point
+mappings may supply one instruction, and mapped zero-filled data tails (the
+`p_memsz` excess the loader maps for non-executable segments only) are valid,
+so flow that branches into one lifts its zeros up to the mapped end; an
+instruction spanning a gap is not. SLEIGH's checked entry point
 declines delay-slot instructions, which this x86 scope does not produce.
 No loader error is converted wholesale into a successful halt: a read failure
 on a mapped byte and a genuine decode error keep their existing policies.
@@ -189,7 +191,10 @@ After effective flow classification, including flow overrides and no-return
 facts, an unmapped fall-through inside the declared flow range receives an
 immediately registered missing halt and the existing unmapped-flow warnings.
 Queued branches can resolve through already decoded p-code-free instructions
-to that halt, and later stub filling reuses it. Other queued mapped paths
+to that halt, and later stub filling reuses it. Stub filling shares an op
+already registered at a cut address only when it is a missing halt; any other
+op there, such as a `funcboundflow` no-return halt reached by fall-through, is
+left to its own edge and the branch gets a fresh stub. Other queued mapped paths
 still run. Known-function bounds take precedence, and flow outside a declared
 range retains the caller's fatal, warning or ignore policy before mapping
 recovery. Explicit branches can cross gaps into mapped destinations. Branch

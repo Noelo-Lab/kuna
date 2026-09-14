@@ -1120,13 +1120,13 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         }
     }
 
-    /// (kuna `mappedflowboundary`) Is this checked-decode failure an instruction that flow
-    /// reached on a mapped byte but whose encoding runs past the mapped run? The flow's own
-    /// entry has no decoded path to retain, and an in-lined callee's missing halt would be
-    /// cloned into a normal return, so both keep the error.
-    fn kuna_truncated_mapped_instruction(&self, curaddr: &Address, err: &KunaError) -> bool {
-        matches!(err, KunaError::DataUnavail { .. })
-            && !self.is_flow_for_inline()
+    /// (kuna `mappedflowboundary`) Did this checked decode fail on an instruction that flow
+    /// reached on a mapped byte but whose encoding runs past the mapped run? That is proved
+    /// from the image, whatever error the decode raised first. The flow's own entry has no
+    /// decoded path to retain, and an in-lined callee's missing halt would be cloned into a
+    /// normal return, so both keep the error.
+    fn kuna_truncated_mapped_instruction(&self, curaddr: &Address) -> bool {
+        !self.is_flow_for_inline()
             && curaddr != self.data.get_address()
             && self.env.mapped_flow_image().is_some_and(|image| {
                 crate::kuna_mappedflowboundary::truncated_instruction(
@@ -1650,7 +1650,7 @@ following this call as a branch"
                 };
                 step = match overlap_step {
                     Some(step) => step,
-                    None if self.kuna_truncated_mapped_instruction(curaddr, &err) => {
+                    None if self.kuna_truncated_mapped_instruction(curaddr) => {
                         self.artificial_halt(curaddr, pcodeop_flags::missing)?;
                         let msg = crate::kuna_mappedflowboundary::truncated_warning(curaddr);
                         self.note_unmapped_flow(&msg, curaddr);
@@ -2109,12 +2109,20 @@ truncating the fall-through here"
     }
 
     /// Register a resolvable cutoff before queued paths can reach it through NOPs.
+    /// Only an existing missing halt is shared; any other op at `addr` (a
+    /// `funcboundflow` no-return halt, say) belongs to another edge and is replaced
+    /// in `visited`, as upstream stub filling does.
     fn register_missing_halt(&mut self, addr: &Address) -> KunaResult<()> {
         if let Some(op) = self.visited.get(addr).and_then(|stat| {
             if stat.seqnum.get_addr().is_invalid() {
                 None
             } else {
-                self.data.obank().find_op(&stat.seqnum)
+                self.data.obank().find_op(&stat.seqnum).filter(|&op| {
+                    self.data
+                        .obank()
+                        .get(op)
+                        .is_some_and(|op| op.get_halt_type() & pcodeop_flags::missing != 0)
+                })
             }
         }) {
             self.op_mark_start_basic(op);
