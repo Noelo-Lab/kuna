@@ -43,3 +43,8 @@ workspace/
 # (docs/decbench/*.md), the triage queues and the triage records ARE committed.
 docs/decbench/cases*.json
 docs/decbench/novel.json
+
+private/
+**/*.DS_Store
+**/*.swp
+

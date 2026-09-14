@@ -1,0 +1,81 @@
+{
+  "opportunity": "repipe:68b94ba38fac2855fe6fbada::sixteen-byte-simd-accesses",
+  "need_id": "sixteen-byte-simd-accesses",
+  "track": "quality",
+  "round": 11,
+  "binary_sha256": "16512154b0c419b2e4b064dbabd4932251ec5e0e11e14302d86821dca1ade1f0",
+  "selector": "sub_1400012f0",
+  "option": null,
+  "change_kind": "correctness-fix",
+  "source_decompiler": "kuna",
+  "default_on": null,
+  "scope": "small",
+  "branch": "fix/sixteen-byte-simd-declarators-sol",
+  "pr": "https://github.com/Noelo-Lab/kuna/pull/620",
+  "base": "5fb5b0319d520d3d2a8d59ae6ef243ea67403246",
+  "files": [
+    "decompiler/crates/kuna-decomp/src/p9_emit/kuna_langc.rs",
+    "decompiler/crates/kuna-decomp/src/p9_emit/printc/tests.rs",
+    "decompiler/crates/kuna-console/src/grammar/tests.rs",
+    "decompiler/crates/kuna-console/tests/verify_return_uncomputed.rs",
+    "docs/spec/09-emission.md",
+    "decompiler/crates/kuna-decomp/src/p9_emit/kuna_langtypes.rs",
+    "decompiler/crates/kuna-decomp/src/p9_emit/kuna_rusttypes.rs",
+    "decompiler/crates/kuna-decomp/src/p9_emit/kuna_rusttypes/tests.rs",
+    "decompiler/crates/kuna-decomp/src/p9_emit/printc.rs",
+    "decompiler/crates/kuna-decomp/src/p9_emit/kuna_dedupvardecls.rs",
+    "decompiler/crates/kuna-decomp/src/p9_emit/kuna_dedupvardecls/tests.rs",
+    "decompiler/crates/kuna-console/tests/verify_ptrarray_declarators.rs",
+    "decompiler/crates/kuna-analysis/tests/fixtures/ptrarraydecl_x86_64",
+    "decompiler/crates/kuna-analysis/tests/fixtures/ptrarraydecl_x86_64.c",
+    "decompiler/crates/kuna-analysis/tests/fixtures/README.md"
+  ],
+  "parity": "OK",
+  "gates": {
+    "acceptance a-9d336b0f3009": "PASS: 0 malformed and 7 corrected casts in sub_1400012f0",
+    "declarator gcc check": "every pointer/array chain up to five modifiers as declaration, abstract type, member, local and return type: 1,413 __builtin_types_compatible_p assertions PASS under gcc and clang",
+    "datatests": "PARITY OK 675/675",
+    "stages": "PARITY OK 828/828",
+    "CLI": "159/161; the two failures are wall-clock probes (cold-load-xref-lookup, disassembling-40-instructions-takes) that fail identically on unpatched main under the same machine load",
+    "check_spec": "OK lenient and strict",
+    "catalog": "OK",
+    "counters": "no drift",
+    "ghidra-sim harness": "cargo test -p kuna-ghidra --release --include-ignored PASS",
+    "end-to-end": "verify_ptrarray_declarators 4/4 (3/4 fail on the first repair, the control passes) and verify_return_uncomputed 3/3"
+  },
+  "probe_flip": {
+    "acceptance_passes": true,
+    "before": "7 occurrences of *(char *[16]) in 630 lines",
+    "after": "0 malformed occurrences and 7 occurrences of *(char (*)[16]) in the same 630 lines",
+    "other_line_changes": 0
+  },
+  "sweep": {
+    "method": "decompile-all --json --max-fn-seconds 60, every function, base 5fb5b031 vs final head",
+    "binaries": 637,
+    "functions": 186030,
+    "coverage": "every in-repo analysis fixture plus the RE-challenge and mixed ELF/PE corpora under 1 MB, deduplicated by SHA-256; two binaries whose base run exceeded 1500 s excluded",
+    "changed_binaries": 223,
+    "changed_functions_code": 2224,
+    "changed_lines": 42472,
+    "line_classes": {
+      "declarator punctuation only, same array dimensions (casts, parameters, nested array order)": 39505,
+      "local declaration gains the pointed-to array suffix (char *v5; -> char (*v5)[16];)": 2660,
+      "prototype gains the returned pointer's array suffix (char * f(...) -> char (* f(...))[16])": 307
+    },
+    "exported_type_changes": 2819,
+    "exported_type_classes": "every change reorders declarator punctuation with identical dimensions, e.g. char *[32] -> char (*)[32] and unsigned long long (*)[2] -> unsigned long long *[2]",
+    "unexpected_changes": 0,
+    "notes": "one function (TBM.exe sub_140055950) exceeded the 60 s budget in one run under machine load; without a budget both builds print it identically",
+    "rust_output": "byte-identical base vs final head on the fixture and on PolyMLP.exe"
+  },
+  "decisions": [
+    "No option or DIV/ElementId: the old cast is invalid C and the mirror declaration changes the recovered type, so preserving it is not a useful policy choice.",
+    "A one-level parenthesis move was rejected because it corrupts deeper alternation; CDeclarator groups the complete accumulated declarator.",
+    "The Rust speller is independent.",
+    "The parser already represented pointer-to-array correctly; a parser-to-C-speller round trip now fences both mirror types.",
+    "The differential's four exported type strings are pinned exactly in a Datatype-level regression, and its non-witness passthru declaration is pinned by the existing end-to-end fixture test.",
+    "The low-mode review found no algorithmic correctness issue. Its production-function-postfix wording concern was resolved by documenting that Datatype traversal currently supplies pointer and array modifiers only.",
+    "Declaration positions (locals, array locals, return types) spelled only the declarator front, so the corrected pointer-to-array front printed unbalanced `char (*v1;` and `char (* f(int i)`. TypeSpeller::type_name now returns both halves; a local prints the back after its name and [count], a return type after the parameter list, and the rendered-line dedup keys on the back.",
+    "Every pointer/array chain up to five modifiers was spelled as a declaration, abstract type, member, local and return type and checked with gcc and clang __builtin_types_compatible_p against a typedef-built reference (1,413 assertions); the console parser round-trips the same shapes to four modifiers in a unit test."
+  ]
+}

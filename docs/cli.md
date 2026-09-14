@@ -2532,6 +2532,27 @@ on disk, so a rebuild cannot ship a stale catalog — the same hazard
 
 Exit codes: `0` ok, `2` unknown topic (the message lists the valid ones).
 
+## `kuna install-skill` — the agent skill, inside the binary
+
+```bash
+kuna install-skill                  # every agent whose config dir exists (~/.claude, ~/.codex)
+kuna install-skill --agent codex    # just one: claude | codex | all
+kuna install-skill --project        # ./.claude/skills and ./.agents/skills, to commit with a repo
+kuna install-skill --dir DIR        # DIR/kuna-decompiler/SKILL.md, for any other agent
+kuna install-skill --print          # write the skill to stdout, install nothing
+```
+
+`skills/kuna/SKILL.md` is embedded with `include_str!`, like the manual above, so the skill
+always matches the binary that installs it and needs no checkout or network. It lands in
+`<skills>/<name>/SKILL.md`, where `<name>` is the skill's frontmatter `name`. The user-level
+roots honor `CLAUDE_CONFIG_DIR` and `CODEX_HOME`. Each target is reported as `installed`,
+`updated` or `current`; an existing copy that differs (another kuna version, or local edits)
+is kept unless `--force` is given. A note on stderr says so when `kuna` is not on `PATH`,
+since the skill invokes it by that name.
+
+Exit codes: `0` installed or already current, `1` a write failed or a differing copy was
+kept, `2` usage error or no agent config directory found.
+
 ## `kuna catalog` — option discovery (the LLM control API)
 
 ```bash

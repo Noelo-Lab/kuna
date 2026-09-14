@@ -36,6 +36,7 @@ pub mod arm_markers;
 // therefore invisible.
 pub mod elf_dynseg;
 pub mod elf_plt;
+pub mod elfv1;
 // (kuna) ELF section-table tolerance: an image whose section headers are
 // unreadable still has program headers describing every loadable byte.
 pub mod elf_shdr;

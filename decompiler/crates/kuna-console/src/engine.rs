@@ -3546,6 +3546,7 @@ pub fn bootstrap_from_object_with_isa(
     // FunctionSymbol at each of them for call naming, and the whole-binary
     // enumeration needs to know those addresses hold a pointer, not a body.
     let import_slots: Vec<(u64, u64)> = loader.import_slot_ranges().to_vec();
+    let elfv1_tocs = loader.elfv1_descriptors().entry_tocs();
 
     // (kuna `litpoolconst`) The image's executable read-only regions, read off the
     // same loader: `r-x` memory cannot be written, so the literal-pool words the
@@ -3638,6 +3639,15 @@ pub fn bootstrap_from_object_with_isa(
     prog.analysis_image = Some((path.to_string(), bytes));
     prog.loader_data_objects = loader_data_objects;
     prog.import_slots = import_slots;
+    if let Ok(loc) = prog.arch().get_register_varnode(b"r2") {
+        if loc.size == 8 {
+            for (entry, val) in elfv1_tocs {
+                let begin = Address::new(Rc::clone(&code_space), entry);
+                prog.arch_mut().loader_entry_tracks.entry(begin).or_default()
+                    .push(kuna_sleigh::globalcontext::TrackedContext { loc: loc.clone(), val });
+            }
+        }
+    }
     prog.pending_entry_thumb = entry_thumb_walk;
     // conf->readLoaderSymbols("::"): install the ELF symbols as FunctionSymbols.
     // The deferred analysis commit at `read symbols` REQUIRES this to have run

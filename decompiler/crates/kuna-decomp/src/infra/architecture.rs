@@ -254,6 +254,10 @@ pub struct Architecture {
     /// File input explicitly selected ARM/Thumb state; metadata must not repaint TMode.
     pub input_arm_isa_override: bool,
 
+    /// Loader register seeds, merged with live user tracking at function creation.
+    pub loader_entry_tracks:
+        std::collections::BTreeMap<Address, kuna_sleigh::globalcontext::TrackedSet>,
+
     // --- Configuration data (architecture.hh:170-208) ---------------------
     /// How many levels to let parameter trims recurse (C++ `trim_recurse_max`).
     pub trim_recurse_max: int4,
@@ -2035,6 +2039,7 @@ impl Architecture {
         let mut arch = Architecture {
             archid: archid.to_string(),
             input_arm_isa_override: false,
+            loader_entry_tracks: std::collections::BTreeMap::new(),
 
             symbol_snapshots: RefCell::new(SymbolSnapshots::default()),
             kuna_snapshot_cache: std::env::var_os("KUNA_NO_SYMBOL_SNAPSHOT_CACHE").is_none(),
@@ -3644,7 +3649,7 @@ impl Architecture {
     /// `Translate::getUniqueStart(ANALYSIS)`.
     pub fn new_funcdata(&self, name: &str, addr: Address, size: int4) -> KunaResult<Funcdata> {
         let uniq_start = self.translate.get_unique_start(UniqueLayout::ANALYSIS);
-        let glb = self.build_arch_handle();
+        let glb = self.build_arch_handle_for_entry(Some(&addr));
         // C++: nm == "" => filled in by decode (localmap None); else a real name.
         Funcdata::new(name, name, glb, addr, uniq_start, size)
     }
@@ -3659,6 +3664,10 @@ impl Architecture {
     /// passes (heritage and downstream) key their per-space state by.  There is
     /// now one manager, faithful to the C++ `Architecture : AddrSpaceManager`.
     pub fn build_arch_handle(&self) -> ArchHandle {
+        self.build_arch_handle_for_entry(None)
+    }
+
+    fn build_arch_handle_for_entry(&self, entry: Option<&Address>) -> ArchHandle {
         let manage = self.translate.manager_rc();
         let mut ctx = ArchContext::new_shared(manage);
         ctx.min_laned_register_size = self.get_minimum_laned_register_size();
@@ -3954,6 +3963,20 @@ impl Architecture {
         // populated by `set track`) so `ActionConstbase` can query it for the
         // function entry address through the detached per-function skeleton.
         ctx.tracked_sets = self.with_context_db_mut(|db| db.clone_trackbase());
+        if let Some(entry) = entry {
+            if let Some(seeds) = self.loader_entry_tracks.get(entry) {
+                if let Some(stop) = entry.get_offset().checked_add(1) {
+                    let end = Address::new(Rc::clone(entry.get_space().unwrap()), stop);
+                    let mut track = ctx.tracked_sets.get_value(entry).clone();
+                    for seed in seeds {
+                        if !track.iter().any(|value| value.loc == seed.loc) {
+                            track.push(seed.clone());
+                        }
+                    }
+                    *ctx.tracked_sets.clear_range(entry, &end) = track;
+                }
+            }
+        }
         Rc::new(ctx)
     }
 

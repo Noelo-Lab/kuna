@@ -719,8 +719,9 @@ smaller than the object the body writes through would be a new defect rather
 than a faithful one.
 
 *By rendered line.* A declaration is then suppressed when its fully rendered
-signature — final declarator type, name, array adornment, and (under angr
-naming) the storage comment — is byte-identical to one already emitted
+signature — final declarator type and its post-name suffix, name, array
+adornment, and (under angr naming) the storage comment — is byte-identical to
+one already emitted
 (`decompiler/crates/kuna-decomp/src/p9_emit/kuna_dedupvardecls.rs
 (DeclDedup)`). Keying on the rendered bytes makes this step provably lossless:
 two same-named locals at different slots or types differ in signature and both
@@ -961,6 +962,28 @@ Three artifacts make up the plane, all in
   declarator algorithm transcribed from `pushTypeStart`/`pushTypeEnd`/
   `buildTypeStack` and the `realtypes`/`ctypes` relabelling (DIV-5/DIV-6), moved
   verbatim out of `printc.rs`, which keeps thin dispatchers.
+
+  C declarator modifiers are consumed outermost-to-base around the identifier.
+  A pointer prefixes the declarator; a later array postfix groups the complete
+  accumulated declarator before appending its suffix.  Thus a pointer to an
+  array is `T (*p)[N]`, an array of pointers is `T *p[N]`, and deeper
+  pointer/array alternations preserve the same precedence instead of moving only
+  the nearest parenthesis.  Casts, parameters, locals, members, typedefs, and
+  exported type strings all share this speller. The internal postfix builder is
+  generic enough to obey the same rule for a function suffix, although current
+  `Datatype` traversal supplies pointer and array modifiers only.
+
+  Every declaration places both halves around its name, because the front of a
+  pointer-to-array declarator (`T (*`) is not a type on its own.
+  `TypeSpeller::type_name`, the declaration-position spelling, therefore returns
+  the pair too, with an empty back for everything but a C pointer whose
+  declarator needs one. A cast or an exported type string is `<front><back>`
+  (`T (*)[N]`); a parameter or a struct member is `<front><name><back>`; a local
+  is `<front><name>[ [count]]<back>`, so an array of pointers to arrays keeps its
+  count inside the group (`T (*v [2])[N]`); and a return type puts its front
+  before the function name and its back after the parameter list
+  (`T (* f(int x))[N]`). The rendered-line collapse of §9.3 keys on the back as
+  well, so two locals differing only in it both survive.
 
 The invariant that makes the seam free: every `LANG_C` field **is** the constant
 it replaces, asserted field-by-field — and by pointer identity for the tokens,

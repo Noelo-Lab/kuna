@@ -34,6 +34,7 @@ mod optname;
 mod output;
 mod paths;
 mod project_stream;
+mod skill;
 mod specs;
 mod strings;
 mod test;
@@ -61,6 +62,7 @@ fn main() -> ExitCode {
         "test" => cmd_test(rest),
         "catalog" => cmd_catalog(rest),
         "docs" => docs::run(rest),
+        "install-skill" => skill::run(rest),
         "modes" => cmd_modes(rest),
         "specs" => specs::run(rest),
         "fid" => fid::run(rest),
@@ -95,7 +97,11 @@ fn main() -> ExitCode {
 
 fn usage() {
     eprintln!(
-        "usage: kuna <decompile|decompile-all|decompile-project|decompile-graph|functions|disassemble|read|xrefs|strings|unpack|docs|test|catalog|modes|specs|fid> ...\n\
+        "usage: kuna <decompile|decompile-all|decompile-project|decompile-graph|functions|disassemble|read|xrefs|strings|unpack|docs|install-skill|test|catalog|modes|specs|fid> ...\n\
+         \n\
+         LLM agents: run `kuna install-skill` once.  It installs the kuna skill -- how to drive\n\
+         this CLI well, embedded in the binary, no network -- for Claude Code and Codex\n\
+         (`--dir DIR` for other agents).  `kuna install-skill --print` shows it without installing.\n\
          \n\
          kuna decompile <binary> [--isa auto|arm|thumb] <func> [--addr] [--json] [--slice ARCH] [--language auto|c|rust] [--mode auto|reliable|aggressive|fast] [--option NAME VALUE]... [--kassert ARGS]... [--define-function S[-E][=N]|@FILE]... [--assert DIRECTIVE|@FILE]... [--raw-image --target T --base VMA]\n\
          kuna decompile-all <binary> [--isa auto|arm|thumb] [--json] [--functions a,b,..] [--addr 0xVMA]... [--no-vars] [--language auto|c|rust] [--max-fn-seconds N] [--mode auto|reliable|aggressive|fast] [--option N V]... [--define-function S[-E][=N]|@FILE]... [--assert DIRECTIVE|@FILE]... [--raw-image --target T --base VMA (--entry|--addr VMA)...]\n\
@@ -108,6 +114,7 @@ fn usage() {
          kuna disassemble <binary> [--isa auto|arm|thumb] <name|0xaddr|0xstart-0xend> [--addr] [--as code|data|auto] [--count N] [--bytes N] [--json] [--mode auto|reliable|aggressive|fast] [--option N V]... [--define-function S[-E][=N]|@FILE]... [--slice ARCH] [--target T] [--sleighpath D]\n\
          kuna read <binary> [--isa auto|arm|thumb] <name|0xaddr|0xstart-0xend> [--addr] [--bytes N] [--count N] [--json]   # the hexdump view of the same target\n\
          kuna docs [<topic>] [--json] [--all]\n\
+         kuna install-skill [--agent claude|codex|all] [--project | --dir DIR] [--force] [--print]\n\
          kuna test [--all|--unittests|--datatests] [--name N]... [--baseline F] [--save-baseline F] [--json]\n\
          kuna catalog [--json|--markdown|--check] [--option NAME] [--tier transform|analysis|core]\n\
          kuna modes [--json]\n\

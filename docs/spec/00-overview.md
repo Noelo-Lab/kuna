@@ -1950,6 +1950,15 @@ built. Two consequences:
   already followed (§0.8), and that adoption is refused the moment any command at
   all — an `option` among them — has run since the load.
 
+(kuna) The tracked-register snapshot is the context database's track base plus the
+loader's register seeds for the entry being built
+(`decompiler/crates/kuna-decomp/src/infra/architecture.rs (Architecture::loader_entry_tracks)`,
+today only the PowerPC64 ELFv1 TOC of §1.3). The seeds are merged into that one
+entry's snapshot at this copy rather than written into the track base at load, so a
+`set track` issued at any point before the build stays visible, and a register the
+live track base already pins at the entry keeps the user's value while the other
+seeds are added.
+
 Two of those snapshots — the global-symbol query and the callee-prototype list —
 are whole-database derivations, so re-deriving them once per function dominates
 per-function cost as soon as the symbol table is large. On an 18 MB Windows PE

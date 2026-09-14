@@ -1152,6 +1152,31 @@ prologue's `addu gp,gp,t9` folds to a real `$gp`. Both are doubly guarded: the p
 gates on its architecture, and the commit swallows an unregistered-variable /
 unknown-register error, so a paint on the wrong language is a faithful no-op.
 
+(kuna) **A PowerPC64 ELFv1 function symbol names a descriptor, not code**
+(`decompiler/crates/kuna-analysis/src/loader/elfv1.rs (Descriptors::read)`, the
+`.opd` half of Ghidra's `PowerPC64_ElfExtension`). Under ABI v1 a function symbol
+and the image entry both point at a 24-byte `.opd` record — code address, TOC base,
+environment — so selecting a function by name used to decode the record as
+instructions. For a linked (`ET_EXEC`/`ET_DYN`) PowerPC64 ELF whose `e_flags` ABI
+field is 0 or 1 and whose `.opd` is file-backed, the image entry and every
+8-aligned function symbol defined in `.opd` are read as descriptors. A descriptor
+is used only when its code word is 4-aligned and lands on file-backed bytes of an
+`SHF_ALLOC|SHF_EXECINSTR` section; the loader's symbol stream and image entry then
+carry that code address, and every name at it is kept as an alias, so `answer`,
+a `.answer` code symbol and a second descriptor for the same code select one
+function. A descriptor word covered by a dynamic relocation takes the relocation's
+value instead of the section bytes: an 8-byte RELA `R_PPC64_RELATIVE` resolves to
+its addend (a linked image is mapped at zero bias), and any other type, a partial
+overlap, or a second write to the word leaves it unresolved. An unresolved or
+implausible code word leaves the symbol at its descriptor address, as before, and
+ELFv2, 32-bit PowerPC, relocatable objects and every other machine read no
+descriptors at all. Explicit numeric selections (`--addr`) stay literal. The TOC
+word is the function's `r2` on entry, so the bootstrap records it per code entry as
+a loader register seed (§0.5's per-function snapshot) that the S3 constant-base
+action emits as `COPY #toc -> r2`, and a TOC-relative load resolves to the global
+it names. A code entry whose descriptors disagree about the TOC, or where any of
+them has an unresolved TOC word, gets no seed.
+
 The file front-ends also accept `--isa auto|arm|thumb`. An explicit ARM/Thumb
 choice paints `TMode` across mapped CODE sections before decoding. If an ELF has
 no section headers, it uses executable `PT_LOAD` memory extents, including their
@@ -2514,7 +2539,11 @@ reachability walk rooted there returns nothing. The helper rebases only the
 falls through to the raw field otherwise, so an `LC_UNIXTHREAD` image does not have
 `__TEXT.vmaddr` added to an address that already carries it. A `0` entry is
 reported as absent rather than as `0x0`, because a relocatable declares no entry
-and `0` is a real address there. The consumers are `kuna functions --summary`'s
+and `0` is a real address there. The loader keeps that answer, after the ELFv1
+descriptor resolution of §1.3 and the ARM Thumb-bit fold, as
+`decompiler/crates/kuna-analysis/src/loadimage_object.rs (ObjectLoadImage::image_entry)`,
+and every reporting surface reads it from the loaded program's image metadata
+instead of parsing the file again: `kuna functions --summary`'s
 `entry`/`reachable_from_entry`, `kuna decompile-graph`'s `isEntryPoint`, and the
 `kuna decompile-project` README's entry row.
 

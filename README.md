@@ -9,13 +9,15 @@ Kuna is written in Rust and was originally ported from [Ghidra](https://github.c
 This project is an _experiment_ to establish how far the autonomous refinement of decompilers can push research in the field.
 Learn more about this approach in this [post](https://noelo.org/blog/kuna-release/).
 
+🏆 Kuna has held the top position on [DecBench](https://decbench.com) against most modern decompilers for optimized C. Kuna is also one of the _fastest_ decompilers on the planet, decompiling a 140MB binary in under [3 minutes](https://github.com/Noelo-Lab/kuna/issues/510#issuecomment-5645307854). These wins are only possible thanks to our growing contributors and [sponsors](#acknowledgement) who keep Kuna improving. 
+
 **Questions? Join our Discord**:
 
 [![Discord](https://img.shields.io/discord/1542982153912975470?label=Discord&logo=discord&logoColor=white&color=5865F2&style=flat)](https://discord.gg/vAQ8BKUPXv)
 
 ## Install & Usage
 Kuna is distributed as a single Rust binary and can be run on most systems.
-It can be used either on the [CLI](#cli-usage), the [web browser](#web-browser-usage), or in the [Ghidra GUI](#ghidra-gui-usage) (as the decompiler backend).
+It can be used either on the [CLI](#cli-usage), the [web browser](#web-browser-usage), or in the [Ghidra GUI](#ghidra-gui-usage) (as the decompiler backend), most found in [releases](https://github.com/Noelo-Lab/kuna/releases).
 
 ### CLI Usage
 If building from source, you can find the `kuna` binary in `decompiler/target/release/kuna`.
@@ -28,10 +30,10 @@ kuna decompile ./stripped.bin 0x401040 --addr
 kuna decompile-project ./a.out
 # flip a feature internal to the decompiler (useful for LLMs)
 kuna decompile ./a.out main --option compareform canonical
-``` 
+```
 
-LLM agents should utilize the `./docs/options.md` file, which will inform them about the features which can be toggled in run-time associated with situations they may be helpful.
-If bugs are found during usage, please report them with an issue.
+When using it with an agent, install the built-in [skill](skills/kuna/SKILL.md) to inform your agent on its efficient usage.
+It ships inside the binary, so `kuna install-skill` sets it up for Claude Code and Codex offline (`--dir DIR` for other agents, `--print` to just read it).
 
 ### Web Browser Usage
 Since Kuna is written in Rust, you can also use it in the web browser through WebAssembly.
@@ -140,3 +142,8 @@ kuna is released under the [Apache License 2.0](LICENSE). It is derived from
 [Ghidra](https://github.com/NationalSecurityAgency/ghidra), developed at the National
 Security Agency and released under Apache-2.0 — see [NOTICE](NOTICE) for attribution
 (including the angr-ported portions, BSD-2-Clause).
+
+## Acknowledgement
+Kuna is only possible through the support it receives from the community and sponsors.
+We are especially grateful to the generous sponsorship from the [Air Force Research Lab](https://www.afrl.af.mil/) (VRFP, SA10032026051342),
+[Metalware](https://www.metalware.com/) (VRFP), and the Department of Defense.

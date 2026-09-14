@@ -475,6 +475,7 @@ pub struct ObjectLoadImage {
     /// a whole-binary enumeration needs to keep them out of the decompile set.
     /// Empty for every non-PE image and for a relocatable object.
     import_slots: Vec<(u64, u64)>,
+    elfv1: crate::loader::elfv1::Descriptors,
     /// The address space the file bytes map to (C++ `spaceid`, null until
     /// `attachToSpace`).
     spaceid: Option<Rc<AddrSpace>>,
@@ -764,7 +765,9 @@ impl ObjectLoadImage {
         }
         sections.extend(header);
         let arm32_decoder = is_arm32_language(&String::from_utf8_lossy(&archtype));
+        let elfv1 = crate::loader::elfv1::Descriptors::read(&file);
         let image_entry = crate::analyzers::entry::image_entry_vma(&file, bytes)
+            .map(|vma| elfv1.code_address(vma))
             .map(|vma| if arm32_decoder { vma & !1 } else { vma });
 
         // Snapshot the function symbols.  Three sources, deduped by address so an
@@ -809,7 +812,7 @@ impl ObjectLoadImage {
             if sym.is_undefined() {
                 continue; // UND / import placeholder, not a real code address
             }
-            let addr = sym.address();
+            let addr = elfv1.code_address(sym.address());
             let name = match sym.name_bytes() {
                 Ok(n) if !n.is_empty() => crate::loader::elf_plt::strip_version(n),
                 _ => continue,
@@ -818,7 +821,7 @@ impl ObjectLoadImage {
                 continue;
             }
             let name = demangle_funcsym_name(name, namechars);
-            if seen.insert(addr) {
+            if seen.insert(addr) || !elfv1.0.is_empty() {
                 funcsyms.push(FuncSym { addr, name });
             }
         }
@@ -847,7 +850,7 @@ impl ObjectLoadImage {
             if sym.is_undefined() {
                 continue; // UND import placeholder (mirrors source #1)
             }
-            let addr = sym.address();
+            let addr = elfv1.code_address(sym.address());
             let name = match sym.name_bytes() {
                 Ok(n) if !n.is_empty() => crate::loader::elf_plt::strip_version(n),
                 _ => continue,
@@ -856,9 +859,14 @@ impl ObjectLoadImage {
                 continue;
             }
             let name = demangle_funcsym_name(name, namechars);
-            if seen.insert(addr) {
+            if seen.insert(addr) || !elfv1.0.is_empty() {
                 funcsyms.push(FuncSym { addr, name });
             }
+        }
+
+        if !elfv1.0.is_empty() {
+            let mut aliases = HashSet::new();
+            funcsyms.retain(|s| aliases.insert((s.addr, s.name.clone())));
         }
 
         // (kuna) MIPS GOT external slots → constant ranges, so the engine folds the
@@ -906,6 +914,7 @@ impl ObjectLoadImage {
             const_ranges,
             dynreloc_const,
             import_slots,
+            elfv1,
             spaceid: None,
             buffer: RefCell::new(vec![0u8; BUFSIZE]),
             bufoffset: RefCell::new(!0u64), // ~((uintb)0)
@@ -1034,6 +1043,7 @@ impl ObjectLoadImage {
             // A pre-link object has no Import Address Table: its external calls
             // are relocations, resolved by the layout pass.
             import_slots: Vec::new(),
+            elfv1: Default::default(),
             spaceid: None,
             buffer: RefCell::new(vec![0u8; BUFSIZE]),
             bufoffset: RefCell::new(!0u64),
@@ -1079,6 +1089,11 @@ impl ObjectLoadImage {
     /// The container's declared entry as a code address, if it declares one.
     pub fn image_entry(&self) -> Option<u64> {
         self.image_entry
+    }
+
+    /// The validated PowerPC64 ELFv1 function descriptors; empty for every other image.
+    pub fn elfv1_descriptors(&self) -> &crate::loader::elfv1::Descriptors {
+        &self.elfv1
     }
 
     /// Executable `(vma, size)` extents. Sectionless ELF images use PF_X
@@ -1354,6 +1369,7 @@ impl LoadImage for ObjectLoadImage {
         for (vma, _) in &mut self.executable_segments {
             *vma = vma.wadd(badjust);
         }
+        self.elfv1.adjust_vma(badjust);
         for s in &mut self.funcsyms {
             s.addr = s.addr.wadd(badjust);
         }

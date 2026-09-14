@@ -102,8 +102,11 @@ pub trait TypeSpeller {
     /// empty `back`.
     fn declarator(&self, cx: &SpellCtx, ct: &Rc<Datatype>) -> (String, String);
 
-    /// The type token to render in a declaration's type position.
-    fn type_name(&self, cx: &SpellCtx, t: &Rc<Datatype>) -> String;
+    /// `(front, back)` for a declaration's type position: the identifier and any
+    /// `[count]` adornment go between them. Unlike [`TypeSpeller::declarator`], an
+    /// anonymous non-pointer type keeps its whole-object name. `back` is non-empty
+    /// only for a C pointer whose declarator needs a suffix (`char (*p)[16]`).
+    fn type_name(&self, cx: &SpellCtx, t: &Rc<Datatype>) -> (String, String);
 
     /// Real name for a residual unknown of `size` bytes, or `None` when the
     /// language has no natural single type of that width.
