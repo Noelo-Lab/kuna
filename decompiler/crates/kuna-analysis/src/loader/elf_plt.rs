@@ -177,6 +177,7 @@ fn resolve_from_sections(file: &object::File) -> Vec<PltSym> {
     // per-section scan above does not carry.  See [`decode_ppc64_text`].
     if matches!(arch, Architecture::PowerPc64 | Architecture::PowerPc) {
         decode_ppc_text(file, arch, &got_to_name, &mut out, &mut named_got);
+        out.extend(super::elfv1_imports::resolve(file));
     }
 
     out

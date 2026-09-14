@@ -37,6 +37,7 @@ pub mod arm_markers;
 pub mod elf_dynseg;
 pub mod elf_plt;
 pub mod elfv1;
+mod elfv1_imports;
 // (kuna) ELF section-table tolerance: an image whose section headers are
 // unreadable still has program headers describing every loadable byte.
 pub mod elf_shdr;
