@@ -105,6 +105,8 @@ use crate::kuna_loweredswitchlabels::{
 };
 use crate::options::on_or_off;
 use crate::p2_lift::kuna_loweredswitchvalue::{verify_installed_switch_values, ValueCheck};
+use crate::p2_lift::kuna_loweredswitchexact::record_is_exact;
+use crate::p2_lift::kuna_loweredswitchheads::{case_body_entered_elsewhere, cascade_heads};
 
 use kuna_base::marshal::ElementId;
 
@@ -136,6 +138,9 @@ pub struct KunaLoweredSwitchRecord {
     /// (kuna `loweredswitchvalue`) The compared value and whether the installed
     /// switch has been shown to read it.
     pub value: ValueCheck,
+    /// (kuna `loweredswitchheads`) Recovered behind a head after the first, so the
+    /// install checks it as `loweredswitchexact` would whatever that option says.
+    pub later_head: bool,
 }
 
 /// Side-table key: identifies a function without holding clearable handles
@@ -1043,6 +1048,7 @@ fn recover_cascade(
         default_target: def_addr,
         signed_labels,
         value: ValueCheck::for_value(data, swvar),
+        later_head: false,
     })
 }
 
@@ -1240,33 +1246,32 @@ impl ActionLowerSwitchDetect {
                 }
             }
         }
-        let mut head: Option<BlockId> = None;
-        for (bl, cn) in cmpmap.iter() {
-            if cn.var != Some(swvar) {
+        let spine: BTreeSet<BlockId> =
+            cmpmap.iter().filter(|(_, cn)| cn.var == Some(swvar)).map(|(bl, _)| *bl).collect();
+        let exact = data.get_arch().lowered_switch_exact;
+        let heads = cascade_heads(&spine, &is_child, data.get_arch().lowered_switch_every_head);
+        for (i, root) in heads.into_iter().enumerate() {
+            let head = advance_past_guards(data, root, &cmpmap, swvar);
+            let mut rec = match recover_cascade(data, head, &cmpmap, swvar) {
+                Some(r) => r,
+                None => continue,
+            };
+            rec.later_head = i > 0;
+            // (kuna `loweredswitchheads`) A head after the first is never taken on
+            // trust, whatever `loweredswitchexact` says.
+            if (exact || i > 0) && !record_is_exact(data, head, &spine, swvar, &rec, exact) {
                 continue;
             }
-            if is_child.contains(bl) {
+            if i > 0 && (data.bblocks_ref().block(head).size_in() > 1 || case_body_entered_elsewhere(data, head, &rec)) {
                 continue;
             }
-            head = Some(*bl);
-            break;
+            self.store.borrow_mut().push(data, rec);
+            data.set_restart_pending(true);
+            // STUB(W7): no &mut RestartLog in the Action::apply signature yet (the
+            //   heritage port threads it explicitly); the restart-pending flag is realized.
+            return 1; // a record was added (the C++ returns 0 to quiesce; see apply note)
         }
-        let head = match head {
-            Some(h) => h,
-            None => return 0,
-        };
-        let head = advance_past_guards(data, head, &cmpmap, swvar);
-
-        let rec = match recover_cascade(data, head, &cmpmap, swvar) {
-            Some(r) => r,
-            None => return 0,
-        };
-
-        self.store.borrow_mut().push(data, rec);
-        data.set_restart_pending(true);
-        // STUB(W7): no &mut RestartLog in the Action::apply signature yet (the
-        //   heritage port threads it explicitly); the restart-pending flag is realized.
-        1 // a record was added (the C++ returns 0 to quiesce; see apply note)
+        0
     }
 }
 
@@ -1450,6 +1455,7 @@ impl ActionLowerSwitchInstall {
                 &r.default_target,
                 r.signed_labels,
                 !read_home,
+                data.get_arch().lowered_switch_exact || r.later_head,
             ) {
                 Ok(Some((_idx, read_head_operand))) => {
                     if let Some(rec) = self.store.borrow_mut().record_mut(data, i) {

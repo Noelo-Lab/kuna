@@ -97,6 +97,8 @@ writeup, not here.
 | `ghdec-unsigned-byte-vm-selector.xml` | RE-friction need `unsigned-byte-vm-selector` | P2 switch model (range-comparison signedness carried through lowered-switch recovery) | `option loweredswitchlabels on\|off` |
 | `kuna-msvcstrappend.xml` | GH-468 finding 6 (inlined MSVC `std::string` appends) | P2 flow classification (a proven capacity diamond collapses to one `push_back`/`append` call; 29 one-defect near misses stay unrolled) | `option msvcstrappend on\|off` |
 | `kuna-loweredswitchvalue.xml` | GH-468 finding 4 (scrutinee soundness) | P2 switch model (a re-rolled lowered switch dispatches on the compared value, or is withdrawn) | `option loweredswitchvalue on\|off` |
+| `kuna-loweredswitchexact.xml` | GH-468 finding 4 (install soundness) | P2 switch model (every case value keeps its label; a switch that differs from its compare tree is declined) | `option loweredswitchexact on\|off` |
+| `kuna-loweredswitchheads.xml` | GH-468 finding 4 | P2 switch model (a cascade behind a later head on the switch variable is re-rolled) | `option loweredswitchheads on\|off` |
 
 | `gh8017-stackprobeloop.xml` | [GH-8017](https://github.com/NationalSecurityAgency/ghidra/issues/8017) | S2 stack-pointer normalization (stack-probe loop) | `option stackprobeloop on\|off` |
 

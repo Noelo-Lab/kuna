@@ -54,6 +54,9 @@ fn build_fd_with_label_signedness(enabled: bool) -> Funcdata {
     let manage = build_manager();
     let mut context = ArchContext::new(manage);
     context.lowered_switch_labels = enabled;
+    // These fixtures exercise recovery and label signedness over trees whose
+    // routing is not always self-consistent; `loweredswitchexact` has its own.
+    context.lowered_switch_exact = false;
     let glb = Rc::new(context);
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let addr = Address::new(ram, 0x1000);
@@ -912,6 +915,7 @@ fn sample_record(fd: &Funcdata) -> KunaLoweredSwitchRecord {
         default_target: a(0x3000),
         signed_labels: false,
         value: crate::p2_lift::kuna_loweredswitchvalue::ValueCheck::default(),
+        later_head: false,
     }
 }
 

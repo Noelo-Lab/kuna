@@ -1,0 +1,127 @@
+<decompilertest>
+<!--
+    loweredswitchexact (GH-468 finding 4 soundness): install a re-rolled lowered
+    switch only when it is the compare tree it replaces.
+
+    Two ways the install differed from the tree, both x86-64 gcc -O2 from the RE
+    corpus, with the tiny callees stubbed to return their first argument:
+
+    classify @ 0x2548b: a nested switch over minor() whose values 0x72 and 0x91
+    share one body (both return 0xfffffffc). The install kept one case label per
+    body, so value 0x91 lost its label and fell into the default. With the option
+    on every case value keeps its label.
+
+    pick_table @ 0x27e90: a CMOV-selected dispatch whose values 2 and 6 share one
+    body. The install kept one label per body, so value 6 lost its label, and it
+    deleted the compare block that zeroes R8D (`xor r8d,r8d ; cmp eax,6`) for the
+    default's `mov eax,r8d ; ret`, so pass 1's default returns an uninitialized
+    fifth argument (`return a4;`). With the option on the raw p-code check declines
+    the install and the compare tree returns 0.
+
+    g3 @ 0x401000: gcc 11 -O2 over an `unsigned char` switch with cases 129 and
+    200, linked with stub callees. The selector is typed `char` after the install
+    records unsigned labels, so pass 1 prints `switch(a0)` over `char a0` with
+    `case 0x81:`, a value a signed char never has. Pass 2 casts the selector to the
+    labels' signedness.
+
+    f @ 0x401059: hand-written x86-64 reduced from gcc -Os, where a compare block
+    loads a case body's argument (`mov esi,7 ; cmp edi,200 ; je T200` and
+    `T200: mov edi,esi ; jmp hv`, `T300: lea edi,[rsi+1] ; jmp hw`). The simplified
+    graph propagates the 7 into both bodies, so the load is no statement of the
+    compare block there, but the install edits raw p-code and deletes it. Pass 1
+    prints `hv(a1)` and `hw(a1 + 1)`; pass 2 declines the install.
+
+    rlater @ 0x402000: the same shape behind an unrelated guard and call, so its
+    cascade is found from a later head (`loweredswitchheads`). A later head is
+    checked as this option checks every cascade even when the option is off, so
+    both passes decline its install and print `hv(7)` and `hw(8)`.
+
+    Pass 1 (option loweredswitchexact off): classify shows only case 0x72,
+    pick_table returns a4, g3 switches on a signed char, f loses the loaded 7.
+    Pass 2 (default, on): classify labels both 0x72 and 0x91, pick_table keeps its
+    compare tree, g3 casts its selector, f passes 7 and 8.
+
+    The routing checks that decline a switch whose install would mis-route a value
+    are exercised by the module unit tests.
+-->
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x2548b" readonly="true">
+f30f1efa554889e54883ec1848897de8488b45e84889c7e80f1cffff8945fc488b45e84889c7e85a1bffff83f80d747c
+83f80d7f7e83f806743d83f80975748b45fc83e86583f8080f97c284d27521ba0901000089c148d3ea4889d083e00148
+85c00f95c084c07407b8d5ffffffeb48b8fcffffffeb41817dfc91000000741e817dfc910000007f1c837dfc64740883
+7dfc727409eb0eb8d5ffffffeb1ab8fcffffffeb13b8eaffffffeb0cb8fcffffffeb05b8eaffffffc9d9eed9eed9eed9
+eed9eed9eed9eed9eeddd8ddd8ddd8ddd8ddd8ddd8ddd8ddd831d231c931f631ff660fefc0660fefc9660fefd2660fef
+db660fefe4660fefed660feff6660fefff4531c04531c94531d24531db66450fefc066450fefc966450fefd266450fef
+db66450fefe466450fefed66450feff666450fefffc3
+</bytechunk>
+<bytechunk space="ram" offset="0x27e90" readonly="true">
+8b056ac5050085c00f440505cd050083f8057444772283f802742583f804754d488d05c978050041b801000000488947
+204489c0c30f1f004531c083f80675f1488d056979050041b801000000488947204489c0c30f1f00488d05f178050041
+b801000000488947204489c0c34531c0ebbf66662e0f1f8400000000000f1f00
+</bytechunk>
+<bytechunk space="ram" offset="0x17010" readonly="true">89f8c3</bytechunk>
+<bytechunk space="ram" offset="0x170b6" readonly="true">89f8c3</bytechunk>
+<bytechunk space="ram" offset="0x401000" readonly="true">4080ff7e743276184080ff8174324080ffc87531488d7e02e9030100000f1f004080ff17742a4080ff217519e9bf0000000f1f8000000000e9c30000000f1f00e99b000000e966000000660f1f440000488d7e0ae9c700000083ff6474257f0c83ff0a742383ff147423eb35be0700000081ffc8000000741981ff2c0100007418eb1ee938000000e943000000e94e00000089f7e9870000008d7e01e98f000000e90a000000662e0f1f84000000000048c705450f000064000000c30f1f400048c705350f000065000000c30f1f400048c705250f000066000000c30f1f400048c705150f000067000000c30f1f400048c705050f00006b000000c30f1f400048c705f50e00006c000000c30f1f400048c705e50e00006f000000c30f1f400048893dd90e0000c30f1f8400000000004881c7e803000048893dc20e0000c3</bytechunk>
+<symbol space="ram" offset="0x2548b" name="classify"/>
+<bytechunk space="ram" offset="0x402000" readonly="true">5389fb85db7e2fe804f1ffff83fb64742b7f0c83fb0a742a83fb14742beb40be0700000081fbc8000000742281fb2c0100007422eb295be9b4f0ffff5be97ef0ffff5be988f0ffff5be992f0ffff89f75be9caf0ffff8d7e015be9d1f0ffff5be94bf0ffff</bytechunk>
+<symbol space="ram" offset="0x402000" name="rlater"/>
+<symbol space="ram" offset="0x401000" name="g3"/>
+<symbol space="ram" offset="0x401059" name="f"/>
+<symbol space="ram" offset="0x4010b0" name="h0"/>
+<symbol space="ram" offset="0x4010c0" name="h1"/>
+<symbol space="ram" offset="0x4010d0" name="h2"/>
+<symbol space="ram" offset="0x4010e0" name="h3"/>
+<symbol space="ram" offset="0x4010f0" name="h7"/>
+<symbol space="ram" offset="0x401100" name="h8"/>
+<symbol space="ram" offset="0x401110" name="h11"/>
+<symbol space="ram" offset="0x401120" name="hv"/>
+<symbol space="ram" offset="0x401130" name="hw"/>
+<symbol space="ram" offset="0x27e90" name="pick_table"/>
+<symbol space="ram" offset="0x17010" name="major"/>
+<symbol space="ram" offset="0x170b6" name="minor"/>
+</binaryimage>
+<script>
+  <com>option loweredswitchexact off</com>
+  <com>lo fu classify</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pick_table</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu g3</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu rlater</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option loweredswitchexact on</com>
+  <com>lo fu classify</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pick_table</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu g3</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu rlater</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="LOWEREDSWITCHEXACT #1: the shared-body case label appears only with the option on" min="1" max="1">case 0x91:</stringmatch>
+<stringmatch name="LOWEREDSWITCHEXACT #2: its shared partner is labelled in both passes" min="2" max="2">case 0x72:</stringmatch>
+<stringmatch name="LOWEREDSWITCHEXACT #3: pass 1 pick_table returns the register a deleted compare block zeroed" min="1" max="1">return a4;</stringmatch>
+<stringmatch name="LOWEREDSWITCHEXACT #4: both passes label g3's 129 unsigned, which only pass 2's cast makes reachable" min="2" max="2">case 0x81:</stringmatch>
+<stringmatch name="LOWEREDSWITCHEXACT #5: pass 2 casts the selector to the labels' signedness" min="1" max="1">switch\(\((uint1|unsigned char)\)a0\)</stringmatch>
+<stringmatch name="LOWEREDSWITCHEXACT #6: pass 1 loses the argument a deleted compare block loaded" min="1" max="1">hv\(a1\);</stringmatch>
+<stringmatch name="LOWEREDSWITCHEXACT #7: pass 2 keeps it for f, and both passes for the later-head rlater" min="3" max="3">hv\(7\);</stringmatch>
+<stringmatch name="LOWEREDSWITCHEXACT #8: likewise the second body's argument" min="3" max="3">hw\(8\);</stringmatch>
+<stringmatch name="LOWEREDSWITCHEXACT #9: rlater never switches on its selector with the load deleted" min="0" max="0">hw\(a1 \+ 1\);\s+return;\s+case</stringmatch>
+</decompilertest>
