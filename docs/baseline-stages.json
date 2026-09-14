@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    970,
-    970
+    987,
+    987
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -635,6 +635,23 @@
     "data:TAILCALLSAVED #2: the false call is attributed to the rule that made it, in that pass only",
     "data:TAILCALLSAVED #3: only the default pass keeps the join block's own arithmetic inside the function",
     "data:TAILCALLSAVED #4: both passes keep the cdecl call whose arguments the add esp,8 discards, so the sole difference is the tail-call boundary",
+    "data:TIEDPHITRIM #10: both passes keep upstream's merge for accum_loop's computed loop value",
+    "data:TIEDPHITRIM #11: both passes keep xa11's upstream merge, the loop's x stored into buf[0] only after the loop",
+    "data:TIEDPHITRIM #12: both passes keep xa13's upstream merge, the loop's x stored into buf[0] only after the loop",
+    "data:TIEDPHITRIM #13: default, outparam_walk copies the filled head into its own loop variable",
+    "data:TIEDPHITRIM #14: option off, outparam_walk stores each next pointer into the stack slot getnode filled",
+    "data:TIEDPHITRIM #15: default, t8 keeps the loop variable out of buf[1] and stores the exit byte only after the loop",
+    "data:TIEDPHITRIM #16: default, t1 stores the exit byte into buf[1] only after the loop",
+    "data:TIEDPHITRIM #17: default, t1b stores the exit byte into buf[2] only after the loop",
+    "data:TIEDPHITRIM #1: default, MSVC: buf[0] is read once into its own variable and the loop reloads that variable from buf[i]",
+    "data:TIEDPHITRIM #2: option off, MSVC: the loop tests buf[0] and stores buf[i] into it",
+    "data:TIEDPHITRIM #3: default, gcc -O2: the guarded byte is copied into the loop variable before the loop",
+    "data:TIEDPHITRIM #4: option off, gcc -O2: each fetched byte is stored into the byte strncpy filled",
+    "data:TIEDPHITRIM #5: default, clang-12 -O2: the guarded byte is copied into the loop variable before the loop",
+    "data:TIEDPHITRIM #6: option off, clang-12 -O2: each fetched byte is stored into the byte strncpy filled",
+    "data:TIEDPHITRIM #7: both passes print store_loop's live store of each fetched byte into buf[0]",
+    "data:TIEDPHITRIM #8: both passes print store_join's store of the joined byte into buf[0]",
+    "data:TIEDPHITRIM #9: both passes keep upstream's merge at outparam_join's if/else join",
     "data:UNSIGNED-BYTE-VM-SELECTOR #1: the selector declaration remains in both passes",
     "data:UNSIGNED-BYTE-VM-SELECTOR #2: recovered switch remains in both passes",
     "data:UNSIGNED-BYTE-VM-SELECTOR #3: low case remains in both passes",

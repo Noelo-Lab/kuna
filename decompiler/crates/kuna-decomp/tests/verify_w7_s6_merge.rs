@@ -230,6 +230,9 @@ macro_rules! unused_mut {
 
 impl MergeContext for Mock {
     // --- reached by the tests -------------------------------------------------
+    fn kuna_tied_phi_trim(&self) -> bool {
+        false
+    }
     fn high_get_type(&mut self, h: HighVariableId) -> Rc<Datatype> {
         self.hs(h).type_.clone().expect("mock: high has no type")
     }
@@ -424,6 +427,8 @@ impl MergeContext for Mock {
         bblocks_get_block(int4) -> BlockId;
         block_ops(BlockId) -> Vec<OpId>;
         block_dominates(BlockId, BlockId) -> bool;
+        block_in(BlockId, int4) -> BlockId;
+        block_num_in(BlockId) -> int4;
         ops_alive() -> Vec<OpId>;
         single_read_cover(VarnodeId, OpId) -> Cover;
         copy_pair_range(OpId, OpId) -> Cover;

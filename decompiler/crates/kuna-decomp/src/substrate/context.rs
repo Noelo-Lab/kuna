@@ -1022,6 +1022,10 @@ pub struct ArchContext {
     /// it.  Read by
     /// [`crate::p3_dataflow::kuna_loopcounterstore::declines`].
     pub loop_counter_store: bool,
+    /// (kuna) `option tiedphitrim` (default-on, DIV-182): `Merge::mergeOp` trims a
+    /// loop head's direct read of an aliased location out of the forced merge.
+    /// Read through `MergeContext::kuna_tied_phi_trim`.
+    pub tied_phi_trim: bool,
     /// (kuna) `splitstorekeep` — carry `stack_store` onto refinement pieces.
     pub split_store_keep: bool,
     /// (kuna) region-based (Phoenix/SAILR) structurer: structure the CFG by
@@ -1542,6 +1546,7 @@ impl ArchContext {
             index_alias_guard: 1,        // indexaliasguard (load; Architecture::reset_defaults sets the shipped default)
             tied_store_keep: false,      // tiedstorekeep (Architecture::reset_defaults sets the shipped default: on)
             loop_counter_store: false,   // loopcounterstore (Architecture::reset_defaults sets the shipped default: on)
+            tied_phi_trim: false,        // tiedphitrim (Architecture::reset_defaults sets the shipped default: on)
             split_store_keep: false,     // splitstorekeep (Architecture::reset_defaults sets the shipped default: on)
             region_structure: false,     // regionstructure (opt-in default-off)
             guard_arm: false,            // guardarm (opt-in default-off)

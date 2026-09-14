@@ -218,7 +218,9 @@ forbids a forced merge, the machinery edits the data flow until it doesn't:
    so the forced merge goes through. The op itself trims one branch at a time,
    re-testing after each, and as a last resort trims its own output; if the
    required tests *still* fail after all trims, the sweep errors out ("Unable
-   to force merge of op"). *(kuna)* Where upstream lets that error abort the
+   to force merge of op"). *(kuna)* `option tiedphitrim` (§6.4) adds one trim
+   upstream never makes: a loop head's direct read of an aliased location
+   whose loop values are loaded from memory. *(kuna)* Where upstream lets that error abort the
    whole decompilation, `ActionMergeRequired` swallows it at the action
    boundary and keeps the partially merged state — the failure mode is a
    residual un-fused marker op, not a dead function.
@@ -912,6 +914,65 @@ toward rejecting. Finally, a high with more than one candidate is skipped
 entirely — the Cover test compares each move against where the *other*
 definitions sit today, so two definitions of one variable can both be admitted
 even though, once both have moved, the second kills the first on every path.
+
+**(kuna, GH-468) `option tiedphitrim` — a loop that reads memory does not
+store what it reads** (default **on**, DIV-182). A HighVariable that holds an
+address-tied instance *is* that location, so every other instance's definition
+prints as an assignment to it. `merge.rs (Merge::merge_op)` forces a
+MULTIEQUAL's output and inputs into one HighVariable and trims an input only when
+the required tests or the Covers forbid the merge. A loop that is entered with a
+direct read of an aliased slot and then walks memory has no such conflict: the
+entry read is dead once the loop starts, so upstream folds the loop variable into
+the slot and every value the loop loads prints as a store into it. MSVC `/O2`
+guards `for (i = 0; buf[i]; i++)` by reading `buf[0]` from the frame and latches
+through `[RSP+RAX+0x40]`, which prints `while (v10[0]) { ...; v10[0] = v10[v6]; }`;
+gcc and clang `-O2` carry the byte in a register and print `v2 = *v1;` into the
+buffer's first byte; a walk over a global list prints the global head being
+advanced. Upstream Ghidra 12.1 prints the same stores. When the buffer is read
+after the loop the C is wrong, not only misleading: an in-place lowercase loop
+followed by `strcmp(buf, name)` compares an empty string in the C, because every
+iteration stored into `buf[0]`.
+
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_tiedphitrim.rs
+(tied_slots)` runs inside `merge_op` after upstream's own trims. It fires on a
+MULTIEQUAL whose output is not address-tied when every address-tied input reads
+one location a pointer can observe and arrives from outside the loop, and some
+input arrives on a back edge and is read by a LOAD. A pointer can observe a
+global, or a frame local below the parameter area that is not proven unaliased
+(`Varnode::has_no_local_alias`); the function's entry value of either is left
+alone. An edge is a back edge when the MULTIEQUAL's block dominates its
+predecessor, and the LOAD may be reached through COPYs and MULTIEQUALs. Each
+address-tied input then gets upstream's trim COPY on its entering edge, so the
+loop reads the location once into its own variable. At an if/else join, and in a
+loop whose value is computed rather than loaded, the merged variable is usually
+the source's own local (`if (err) result = 0; return result;` after
+`get(&result)`), so those keep upstream's merge.
+
+The trim takes the loop-head read out of the location's HighVariable, and that
+read is what kept everything live in the loop out of the location. Two rules keep
+that exclusion. First, the trim declines when the location is written inside the
+loop, or written anywhere with a value that comes from inside it (a backward walk
+over the written value's definitions that stops at address-tied values). Without
+this, `c = buf[0]; while (c) { x = c + acc + 1; ...; c = buf[n - 1]; } buf[0] = x;`
+would let `x` merge into `buf[0]`, printing `buf[0] = x` inside the loop, where the
+loop's first `buf[n - 1]` reads it back. The loop blocks are those the head
+dominates and that reach the head again. Second, `Merge` records each trimmed loop
+variable with its location, and `merge.rs (Merge::merge)` and
+`merge.rs (Merge::merge_test)` test every merge into that location as if the
+location's variable still held the loop variable
+(`kuna_tiedphitrim.rs (intersects)`). No address-tied variable merges with the
+loop variable, at the trimmed location or any other: upstream's required test
+never merges two address-tied variables, and the loop variable used to be one.
+Without that, `buf[1] = c;` after a loop over `buf` would fold the loop variable
+into `buf[1]` through `merge_opcode`, printing the store before the loop, where
+the loop's first reload of `buf[1]` reads it back. Nothing whose Cover intersects
+the loop variable merges into its own location either. Every other merge is the
+one upstream makes, so the only change from upstream is that the loop variable's
+own definitions print as that variable instead of as stores.
+
+The trim never removes an operation and refusing a merge never removes one either,
+so a live store into the location keeps its statement. `off` is upstream's merge
+exactly.
 
 **(kuna) `option dynamichashmax`** — §6.3.
 

@@ -848,10 +848,20 @@ impl MergeContext for Funcdata {
     fn block_dominates(&self, dom: BlockId, sub: BlockId) -> bool {
         self.bblocks_ref().dominates(dom, Some(sub))
     }
+    fn block_in(&self, bl: BlockId, slot: int4) -> BlockId {
+        self.bblocks_ref().block(bl).get_in(slot)
+    }
+    fn block_num_in(&self, bl: BlockId) -> int4 {
+        self.bblocks_ref().block(bl).size_in()
+    }
 
     // --- Function-level op iteration --------------------------------------
     fn ops_alive(&self) -> Vec<OpId> {
         self.obank().iter_alive().collect()
+    }
+
+    fn kuna_tied_phi_trim(&self) -> bool {
+        self.get_arch().tied_phi_trim
     }
 
     // --- Cover construction for a single read -----------------------------
