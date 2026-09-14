@@ -2367,9 +2367,97 @@ impl ConsoleProgram {
             &mut merged.entries,
             &fde_bodies,
         );
+        // (kuna, `pdbinterior`) The same rejection inside PDB procedures, on its own
+        // terms: see `suppress_pdb_interior_entries`.
+        suppress_pdb_interior_entries(self.arch(), &code_space, &mut merged);
         merged.context_paints.extend(input_context_paints);
         commit_analysis_output(self, &code_space, merged)
     }
+}
+
+/// (kuna, `pdbinterior`) Reject the discovered entries inside `merged.pdb_bodies`
+/// that the procedure's own function decodes.
+///
+/// A procedure counts only when its start is a function this commit keeps: an
+/// entry that survived the FDE/`.pdata` suppression, a function symbol an enabled
+/// pass emits, or a function already in the symbol table. The walk from that start
+/// decodes through `arch`'s translator and does not fall through a call the
+/// decompiler will treat as no-return: a no-return fact this commit applies, a
+/// function already flagged no-return, or (under `noreturn_extern_match`) a callee
+/// whose name is on the known no-return list.
+fn suppress_pdb_interior_entries(
+    arch: &Architecture,
+    code_space: &Rc<AddrSpace>,
+    merged: &mut kuna_analysis::pass::AnalysisOutput,
+) {
+    use kuna_decomp::kuna_noreturn_externmatch::is_known_noreturn_name;
+
+    let bodies = std::mem::take(&mut merged.pdb_bodies);
+    if bodies.is_empty() {
+        return;
+    }
+    let cpp_symbols: &[kuna_analysis::pass::SymFact] =
+        if arch.analysis_cppproto { &merged.cpp_dwarf.symbols } else { &[] };
+    let mut named: Vec<(u64, String)> = merged
+        .symbols
+        .iter()
+        .chain(cpp_symbols)
+        .filter(|s| s.kind == kuna_analysis::pass::SymKind::Function)
+        .map(|s| (s.addr, s.name.clone()))
+        .collect();
+    named.sort_unstable();
+    let mut noreturn: Vec<u64> =
+        merged.noreturn.iter().map(|f| f.addr).filter(|&a| a != 0).collect();
+    noreturn.sort_unstable();
+    let at = |vma: u64| Address::new(Rc::clone(code_space), vma);
+    let names_at = |vma: u64| {
+        let lo = named.partition_point(|(a, _)| *a < vma);
+        named[lo..].iter().take_while(move |(a, _)| *a == vma).map(|(_, n)| n.as_str())
+    };
+    let is_function = |start: u64| {
+        names_at(start).next().is_some()
+            || arch.symboltab.find_function_across_scopes(&at(start)).is_some()
+    };
+    let no_return = |target: u64| {
+        noreturn.binary_search(&target).is_ok()
+            || arch.symboltab.function_is_no_return_across_scopes(&at(target))
+            || (arch.noreturn_extern_match
+                && (names_at(target).any(is_known_noreturn_name)
+                    || arch
+                        .symboltab
+                        .function_display_name_across_scopes(&at(target))
+                        .is_some_and(|n| is_known_noreturn_name(&n))))
+    };
+    let decode = |vma: u64| {
+        let insn = kuna_analysis::listing::decode::decode_one(
+            arch.translate(),
+            vma,
+            code_space,
+            false,
+            false,
+        )
+        .ok()?;
+        let classified = kuna_analysis::listing::classify::classify(&insn.ops, vma, insn.len);
+        let (calls, jumps) = if classified.flow.is_call {
+            (classified.flows, Vec::new())
+        } else {
+            (Vec::new(), classified.flows)
+        };
+        Some(kuna_analysis::pdb::kuna_pdbinterior::InsnFlow {
+            len: insn.len,
+            fall_through: classified.fall_through,
+            jumps,
+            calls,
+            is_call: classified.flow.is_call,
+        })
+    };
+    kuna_analysis::pdb::kuna_pdbinterior::suppress_owned_interior_entries(
+        &mut merged.entries,
+        &bodies,
+        is_function,
+        no_return,
+        decode,
+    );
 }
 
 /// (kuna) Read a `kuna_analysis` pass's per-run enable flag off the
@@ -2419,6 +2507,9 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // dropped here and the discovery set is exactly what it was before.
         "fdeinterior" => arch.analysis_fdeinterior,
         "pdatainterior" => arch.analysis_pdatainterior,
+        // (kuna) PDB-procedure-interior entry suppression — the extents come out of
+        // the `.pdb`, so switching `pdb` off withdraws them too.
+        "pdbinterior" => arch.analysis_pdb && arch.analysis_pdbinterior,
         // (kuna) The widened Cortex-M vector-table oracle — a standalone stashed
         // pass whose handler seeds + Thumb region paint are computed at LOAD but
         // COMMITTED only when this gate is on. Default-off (output-changing: adds

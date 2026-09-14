@@ -1,0 +1,39 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "timeout_s": 60,
+  "cmd": [
+    "{{KUNA}}",
+    "functions",
+    "{{BIN}}"
+  ],
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_absent": [
+      "sub_1400011d0"
+    ],
+    "stdout_matches": [
+      "(?m)^0x1400011c0\\tcascade_leaf$",
+      "(?m)^0x140001350\\tsub_140001350$",
+      "(?m)^0x1400013a0\\tsub_1400013a0$",
+      "(?m)^0x1400013d0\\tsub_1400013d0$",
+      "(?m)^0x140001410\\tsub_140001410$",
+      "(?m)^0x140001450\\tsub_140001450$",
+      "(?m)^0x140001490\\tsub_140001490$",
+      "(?m)^0x1400014d0\\tsub_1400014d0$",
+      "(?m)^0x140001510\\tpub_inside"
+    ]
+  },
+  "notes": "GH-468: a PDB procedure removes only gap-walk entries its own code reaches, without over-reaching. sub_1400011d0 (fall-through in cascade_leaf) goes; the entries in an admit-less static leaf, past a targetless call (sub_140001450 indirect, sub_140001490 int29), that a caller still calls (sub_1400014d0), or at an interior public (pub_inside) all stay.",
+  "target": {
+    "binary_rel": "pe_pdbinterior_x86_64.exe",
+    "binary_sha256": "9d572ee24504a476f0a343cba31b8f2579497f567a85afe25178c4c4c11af608",
+    "binary_size": 2560,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/pe_pdbinterior_x86_64.exe",
+    "selector": null,
+    "selector_kind": "none"
+  }
+}

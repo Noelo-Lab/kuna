@@ -74,7 +74,7 @@ fn surface_count_is_118() {
 }
 
 #[test]
-fn settable_count_is_199() {
+fn settable_count_is_200() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -140,12 +140,13 @@ fn settable_count_is_199() {
     // +1 for `nulterminator` (P6 opt-in stack-array terminator absorption).
     // +1 for `endptrbound` (P6 pointer-walk end bound on its buffer, DIV-177).
     // +1 for `rexthunk` (P1 x86-64 PE REX-prefixed import-thunk rejection).
-    assert_eq!(kuna_num_settables(), 199);
-    assert_eq!(SETTABLE_TABLE.len(), 199);
+    // +1 for `pdbinterior` (P1 PDB-procedure-interior entry suppression, DIV-180).
+    assert_eq!(kuna_num_settables(), 200);
+    assert_eq!(SETTABLE_TABLE.len(), 200);
 }
 
 #[test]
-fn tier_counts_are_63_core_76_transform_60_analysis() {
+fn tier_counts_are_63_core_76_transform_61_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -262,7 +263,9 @@ fn tier_counts_are_63_core_76_transform_60_analysis() {
     // transform 75 -> 76: +1 for `endptrbound` (P6 pointer-walk end bound, DIV-177).
     // analysis 59 -> 60: +1 for `rexthunk` (P1 x86-64 PE REX-prefixed
     // import-thunk rejection).
-    assert_eq!((core, transform, analysis), (63, 76, 60));
+    // analysis 60 -> 61: +1 for `pdbinterior` (P1 PDB-procedure-interior
+    // entry suppression, DIV-180).
+    assert_eq!((core, transform, analysis), (63, 76, 61));
 }
 
 #[test]
@@ -505,6 +508,10 @@ fn option_values_live_value_present_for_80() {
         // of `fdeinterior`, an analysis-pass gate with no codegen live reader.
         // Default-ON.
         "pdatainterior",
+        // (kuna) PDB-procedure-interior entry suppression — the PDB half of
+        // `pdatainterior`, an analysis-pass gate with no codegen live reader.
+        // Default-ON.
+        "pdbinterior",
         // (kuna) The full byte-pattern function-start pass — an analysis-pass gate
         // with no codegen live reader (read console-side via kuna_live_value), same
         // as the gates around it. Default-off.
@@ -959,7 +966,9 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // 196 -> 197: +1 for `endptrbound` (DIV-177); its P6 row sits mid-table.
     // 197 -> 198: +1 for `rexthunk`; its P1 row sits mid-table beside `pdatachained`,
     // so it increments the comma-terminated catalog-row count.
-    assert_eq!(json.matches("},\n").count(), 198);
+    // 198 -> 199: +1 for `pdbinterior` (DIV-180); its P1 row sits mid-table beside
+    // `pdatainterior`.
+    assert_eq!(json.matches("},\n").count(), 199);
 }
 
 #[test]

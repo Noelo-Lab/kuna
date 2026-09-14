@@ -2418,6 +2418,56 @@ survives. x86/x64 PE only: the 8-byte ARM/ARM64 `RUNTIME_FUNCTION` carries no
 so the pass abstains on both rather than guess — the same stance the
 base-relocation oracle takes.
 
+**(kuna) Nor are the interiors of PDB procedures** (`pdbinterior`, default-**on**,
+DIV-180; `decompiler/crates/kuna-analysis/src/analyzers/pdb/kuna_pdbinterior.rs`).
+The exception table only describes functions that need unwind data, so a frameless
+leaf has no `RUNTIME_FUNCTION`, and when the compiler also inlined that leaf into
+its only caller the out-of-line copy has no caller either. Recursive descent never
+decodes it and its name comes only from the `.pdb` (§1.4), so the gap walk sees an
+undiscovered hole and accepts an aligned interior instruction whose prologue
+matches the image's common one: on an MSVC `/O2` switch cascade that is the
+`mov eax,imm ; mov edx,imm` fall-through of a CMOV-lowered case, and the
+fall-through bound then drops that case from the emitted C. Every
+`S_GPROC32`/`S_LPROC32` record in a module stream carries the procedure's code
+length, so the pass reads those streams from the same fingerprint-matched `.pdb`
+the naming pass found. A record yields an extent `[start, start + len)` only when
+the length is non-zero, does not overflow, maps through the PDB's address map to
+one contiguous range (an OMAP-rewritten image can scatter a procedure), agrees with
+every other record at the same start, and lies inside one executable section of the
+image. Eligibility is then the `.pdata` test with the PDB's own starts added: no
+image symbol, PDB public or other procedure start strictly inside, no overlap with
+the procedure kept before it. A `.pdata` `BeginAddress` inside a procedure does not
+disqualify it, because MSVC splits one function's unwind data across chained
+records and the procedure is the authority on where the function ends. The extents
+travel on their own channel and are applied after the FDE/`.pdata` suppression,
+under two more conditions checked at the commit. First, a procedure rejects
+anything only when a function is committed at its start: an entry that survived
+the first suppression, a function symbol an enabled pass emits, or a function
+already in the symbol table. The naming pass admits starts from the publics, and a
+`static` function has an `S_LPROC32` but no public (756 of the 3,268 procedures in
+each GH-468 testbed image), so without that condition an entry inside a static
+function nothing else found would be removed and its code left with no function at
+all. Second, only the entries that function's own code reaches are rejected. The
+commit decodes from the procedure's start, following fall-through and jumps but
+never leaving the procedure, entering a callee, or falling through a call it cannot
+prove returns — one to a target the decompiler treats as no-return (a no-return
+fact this commit applies, a function already flagged no-return, or a callee whose
+name is on the known no-return list), or one with no resolvable target at all (an
+indirect `call [__imp_ExitProcess]` the exception these binaries take, or the
+`int 0x29` fastfail). An interior entry is dropped only when it lies inside an
+instruction some used procedure's walk decoded (at its first byte or in its middle)
+and no used procedure calls it — a callee even in another procedure stays a named
+function so its call site keeps naming it. Everything else inside the procedure keeps its entry, because nothing
+else renders that code: on a 32-bit MSVC image a `__finally` block, a `catch` block
+and the case bodies of a switch whose table the walk does not read all sit inside
+the parent's procedure, and hand-written CRT math routines call labels inside their
+own procedure. The procedures used are disjoint, so no used procedure's start lies
+inside another and the suppression cannot remove the entry that admitted one. The bodies are committed
+only while `pdb` is also on, and an image whose CodeView fingerprint does not match
+the `.pdb` gets none. x86, x64 and ARM64 PE only; 32-bit ARM abstains because a
+Thumb entry may carry the interworking bit, which would put an entry that is a
+procedure's start one byte inside it.
+
 (kuna) **The PE CRT entry-function prototype** (`entrymainproto`, default-on;
 `decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_entrymainproto.rs
 (EntryMainProtoPass)`) is discovery's answer to a question the rest of the pipeline
