@@ -2562,6 +2562,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "endptrbound"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P6"
+subphase = "stack-frame-layout"
+strength = "HARD"
+rewind = "P6"
+issue = "GH-468"
+summary = "Recover a stack buffer that a proven pointer loop walks as one array spanning the walk, and express the loop's one-past-the-end bound on that buffer (`&buf[8]`) instead of as the address of whichever local happens to follow it."
+use_when = "On by default. With it OFF, `for (p = buf; p != buf + 8; p++)` over a stack buffer renders its bound as the next local (`while (v3 != v2)`), so the trip count is not readable from the C, and the neighbour's pointer type leaks into the walking pointer and into the buffer's declaration (`unsigned int v1;` for eight bytes). A walk counts only when it is proven: the pointer is the header phi of a natural loop that starts at a stack address and steps by one positive constant on every back edge; a comparison of it against a stack address a whole number of steps later (==, !=, p < end or end <= p) drives the branch that leaves the loop, from a block every back edge passes through; and every dereference through the pointer fits inside one step, with no call, store, other phi or variable offset able to read past it. The frame is left as it was when a hint straddles the range or is type-locked, a non-constant value inside it is typed or not exactly one element wide, typed index evidence inside it uses another element width (a byte walk over an `int` array), or a second walk crosses it; the array never extends further than the frame would otherwise have extended it. Constant initializers that write the buffer in wider pieces keep that form (`v1._0_4_ = ...`). Flip OFF to see the frame layout without the walk extent, for a bisect or an ablation."
+example = "option endptrbound off"
+source_decompiler = "kuna"
+inspiration = "GH-468 finding 7: a Win64 crackme's 8-byte password loop `lea rsi,[rbp+0x27] ... lea rax,[rbp+0x2f]; cmp rsi,rax` rendered `do { ... } while (v12 != v11);`"
+change_kind = "structure-recovery"
+tier = "transform"
+symptoms = "a pointer loop over a stack buffer ends at the address of an unrelated local (`while (v3 != v2)`)|a loop's `while (p != vN)` names a local declared at the stack offset just past the buffer the loop reads|a stack buffer walked bytewise is declared as a scalar of the neighbour's width (`unsigned int v1;` for eight bytes)|the walking pointer is typed after the neighbouring local instead of the bytes it reads"
+live_field = "end_ptr_bound"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "dynamichashmax"
 values = "on|off"
 default = "on"

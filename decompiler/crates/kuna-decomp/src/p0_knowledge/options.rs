@@ -333,6 +333,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "callsitestackargs",
     "cookiescramble",
     "nulterminator",
+    "endptrbound",
     "calleepop",
     "calleeprotostack",
     "calleedeadarg",

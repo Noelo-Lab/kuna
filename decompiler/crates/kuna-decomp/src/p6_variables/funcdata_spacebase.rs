@@ -518,7 +518,7 @@ impl Funcdata {
     /// `markUnaliased`/`annotateRawStackPtr`) refines parameter and alias
     /// bookkeeping; the layout-creating core (gather + restructure) is realized
     /// here.
-    pub fn restructure_varnode(&mut self, aliasyes: bool) {
+    pub fn restructure_varnode(&mut self, aliasyes: bool) -> int4 {
         use crate::varmap::MapState;
 
         // C++ `restructureVarnode` head (varmap.cc:1259): clear out the unlocked
@@ -552,7 +552,7 @@ impl Funcdata {
         let (space, local_range, param_range, default_unknown, bounds) = {
             let lm = match self.get_scope_local() {
                 Some(lm) => lm,
-                None => return,
+                None => return 0,
             };
             let space = Rc::clone(lm.get_space_id());
             // MapState clears the proto's param range out of the analysis range;
@@ -561,12 +561,12 @@ impl Funcdata {
             let param_range = self.get_func_proto().get_param_range().clone();
             let types = match self.get_arch().types() {
                 Some(t) => t,
-                None => return,
+                None => return 0,
             };
             let default_unknown = match types.get_base(1, crate::dtype::type_metatype::TYPE_UNKNOWN)
             {
                 Ok(t) => t,
-                Err(_) => return,
+                Err(_) => return 0,
             };
             let bounds = proto_boundaries(self.get_func_proto());
             (space, rangetree, param_range, default_unknown, bounds)
@@ -585,12 +585,19 @@ impl Funcdata {
         };
         state.gather_symbols(&hints);
 
+        // (kuna) `endptrbound`: a stack pointer walk's `[start, end)` is one buffer.
+        let endptr_walks = crate::kuna_endptrbound::gather_walks(self, &space);
+        if let (false, Some(t)) = (endptr_walks.is_empty(), self.get_arch().types_rc()) {
+            crate::kuna_endptrbound::coalesce_hints(&mut state, &endptr_walks, &space, t.as_ref());
+        }
+
         // overlapProblems = restructure(state).  Clone the type factory `Rc` out
         // first so the &mut ScopeLocal borrow does not alias the &self arch read.
         let types_rc = self.get_arch().types_rc();
         if let (Some(t), Some(lm)) = (types_rc, self.get_scope_local_mut()) {
             let _ = lm.restructure(&mut state, t.as_ref());
         }
+        let rebased = crate::kuna_endptrbound::rebase_bounds(self, &space, &endptr_walks);
 
         // C++ `restructureVarnode` tail (varmap.cc:1272-1285).  The unlocked-category
         // cleanup / fake-input-symbol synthesis / `markUnaliased` are W4 ScopeLocal
@@ -634,6 +641,7 @@ impl Funcdata {
         // which is the only reader.  The config `Architecture` carrying that option
         // is not reachable from the per-function `ArchContext` seam here.
         self.record_frame_layout_pass(&space);
+        rebased
     }
 
     /// (kuna `framelayout`) Snapshot the NO_CATEGORY stack Symbols this pass

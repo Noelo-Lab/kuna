@@ -508,6 +508,94 @@ field, so on by default the pass over-extends a correctly-sized `char name[N]`
 to `[N+1]` in ordinary gcc/clang/MSVC output. It is therefore an opt-in tool:
 flip it on for a string-heavy target whose stack buffers are known to be
 NUL-terminated strings. Off, the layout is upstream's split.
+**A pointer walk's buffer and its end bound (kuna `endptrbound`, default on).**
+A loop that walks a stack buffer with a pointer stops on the address one past
+the buffer's last element, and nothing in the hint sources above says that
+address belongs to the buffer. It is a spacebase-relative constant like any
+other, so type propagation resolves it to whatever Symbol starts there — the
+next local — and the bound renders as that local (`while (p != v2)`). The
+comparison then pulls the neighbour's pointer type into the walking pointer,
+the open hint the walk contributes takes that type, and the walked bytes are
+declared as a scalar of the neighbour's width (`unsigned int v1;` for eight
+bytes). The trip count, which is the buffer size, is not recoverable from the
+C. (A constant initializer that writes the buffer in wider pieces keeps that
+form, `v1._0_4_ = ...`, whichever way the buffer is declared.)
+
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_endptrbound.rs
+(find_pointer_walks)` accepts a walk during `restructure_varnode` only when it
+can prove that every dereference through the pointer lands in `[start, end)`.
+The candidates are the `MULTIEQUAL`s that some LOAD or STORE reads through,
+possibly plus constants. `kuna_endptrbound.rs (walk_loop)` requires the phi to
+head a natural loop: every input arriving on an edge from a block the phi's
+block dominates (a back edge) is the phi plus one positive constant `step`,
+every other input is one stack address `start`, and the loop body is the header
+plus every block that reaches a back-edge source without passing the header.
+Casts and copies are looked through; an INDIRECT is not, anywhere, because the
+call it stands for may have changed the value. `kuna_endptrbound.rs
+(pointer_derefs)` then accounts for every use of the pointer: values at a known
+constant offset flow through casts, copies and constant additions; each
+dereference must fit inside one element (offset `0 <= off` and
+`off + width <= step`) and one must be exactly `step` bytes at offset 0;
+comparisons read no memory; a value narrower than a pointer, or the pointer's
+difference with a stack address, is an integer and is not followed. A variable
+offset that reaches a dereference, or the pointer reaching a call, an INDIRECT,
+a store as a value, a return, or any other phi, declines the walk.
+`kuna_endptrbound.rs (controlling_bounds)` looks for the comparison that bounds
+the loop: `t == end`, `t != end`, `t < end` or `end <= t`, where `t` is the
+pointer itself or the one value every back edge carries, and `end` is a stack
+address (followed through a loop-invariant phi to the address that seeds it).
+`kuna_endptrbound.rs (exit_branch)` requires the comparison to reach, through
+`BOOL_NEGATE` and copies, the condition of a `CBRANCH` in a loop block that
+dominates every back-edge source and whose one out-edge leaves the loop — the
+edge taken exactly when `t` reaches `end`, with the branch's boolean flip
+honoured — while the other stays inside. When `t` is the pointer itself, every
+dereference must also sit in a loop block that branch strictly dominates. By
+induction over the back edges the pointer is then `start + i * step` with the
+element `i` short of `end` at every dereference, whatever other exits the loop
+has. A comparison whose branch stays inside the loop (a midpoint test), leaves it
+the wrong way, can be bypassed on the way to a back edge, or feeds no branch at
+all proves nothing and is ignored. Every comparison that controls an exit this
+way must name the same `end`, at least one must keep the dereferences inside the
+walk on its own, and `end` must be at least two and a whole number of steps
+beyond `start`.
+
+For each walk, `kuna_endptrbound.rs (coalesce_hints)` runs after gathering and
+before the layout decision and replaces every hint that starts inside
+`[start, end)` with one array hint of `step`-byte elements, typed by the most
+specific `step`-wide scalar hint already in the range (so a `char` walk stays
+`char` and constant-sequence recovery still sees a character array) or by the
+unknown type of that width. The hint is open, with index evidence through the
+last element, so it extends exactly as far as the open hints it replaces would
+have: to the next frame reference, which a bound written as the frame address
+`end` itself provides. The walk never makes the array longer than the frame
+would otherwise have made it. The walk contributes nothing when that would
+contradict other evidence: a hint that straddles either edge (an open hint
+included), a type-locked Symbol, a fixed hint holding a non-constant value that
+is typed or is not exactly one element wide (a separately used variable, or the
+range also read as one wider value, as a union's scalar member is), typed
+open-hint index evidence inside the range whose element width is not the step
+(a byte walk that clears an `int` array the function also indexes as ints keeps
+`int v1 [4]` and its indexing), open-hint index evidence reaching past either
+edge, a range outside the analyzed window, or another walk that overlaps the
+range without one of the two containing the other. Nested walks resolve to the
+outermost: the array hint the outer walk leaves carries index evidence that
+reaches past the inner walk's edge. Once the layout holds an array
+Symbol that covers exactly `[start, end)` — this pass's or a locked one from
+debug information — `kuna_endptrbound.rs (rebase_bounds)` rebuilds a compared
+address written as `sp + end` into `PTRSUB(sp, start) + (end - start)`, which
+renders `&buf[n]`; the array's slack makes the form stable against
+`RulePtrsubUndo`, and a bound already in that form is not rebuilt again. The
+rewrite is made at the address's defining op when every use of it ends at that
+comparison (through casts, copies and phis), so a source-level `end` variable
+reads `end = &buf[8]`; otherwise a fresh expression is spliced in front of the
+comparison alone, and an address that also means the neighbour elsewhere — the
+same register handed to a call as that object — keeps naming the neighbour
+there. The value compared never changes, and a rewrite is counted as a change
+of `ActionRestructureVarnode` so the next inference pass types it. The rebuilt
+`PTRSUB(sp, start) + span` is itself an additive stack reference at `end`, so
+the alias gather still hands later layouts an open hint there and the rewrite
+never changes the layout that justified it. `option endptrbound off` restores
+the neighbour-bound layout.
 
 **Alias blocking.** The `varmap.rs (AliasChecker)` collects every pointer
 into the stack by walking additive expressions rooted at the spacebase input

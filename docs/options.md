@@ -128,6 +128,10 @@ Three tiers:
 | the NUL terminator after strncpy renders as an assignment to a separate char local | [`nulterminator`](#nulterminator) |
 | a stack char local is assigned 0 and never read, right after the end of an array | [`nulterminator`](#nulterminator) |
 | the buffer's last element is missing from the array and declared as its own variable | [`nulterminator`](#nulterminator) |
+| a pointer loop over a stack buffer ends at the address of an unrelated local (`while (v3 != v2)`) | [`endptrbound`](#endptrbound) |
+| a loop's `while (p != vN)` names a local declared at the stack offset just past the buffer the loop reads | [`endptrbound`](#endptrbound) |
+| a stack buffer walked bytewise is declared as a scalar of the neighbour's width (`unsigned int v1;` for eight bytes) | [`endptrbound`](#endptrbound) |
+| the walking pointer is typed after the neighbouring local instead of the bytes it reads | [`endptrbound`](#endptrbound) |
 | spurious uninitialized local (xStack_N) returned after storing through a pointer to a local | [`stackalias`](#stackalias) |
 | store through a take-address-of-local pointer dropped as dead so the later read is garbage | [`stackalias`](#stackalias) |
 | bogus (*pcVar1)() indirect call after calling a struct-returning function on sparc | [`sparcstructret`](#sparcstructret) |
@@ -1001,6 +1005,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** Off by default. Flip ON on a string-heavy target (an MSVC /GS function, a bounded strncpy/snprintf/read followed by an explicit NUL) to fold the terminator into the array: `char v3 [63]; char v8; // stack - 0x19` with `strncpy(v3,a0,0x3f); v8 = 0;` becomes `char v3 [64];` with `v3[0x3f] = 0;`. Keep it OFF on code with structs or records: the identical frame shape is also `struct { char name[N]; T field; }` initialized field by field then passed by pointer, and turning it on absorbs `field` into `name` (`char name[32]` -> `[33]`), inventing an element. gcc/clang and MSVC, every optimisation level. Inert unless a zero is stored at an open char array's next whole-element offset and never read directly.
 - **Where / provenance:** P6/stack-frame-layout · kuna · opt-in-tool · GH-468
 - **Example:** `option nulterminator on`
+
+### `endptrbound` -- on | off, default `on`
+
+- **Symptoms:** a pointer loop over a stack buffer ends at the address of an unrelated local (`while (v3 != v2)`); a loop's `while (p != vN)` names a local declared at the stack offset just past the buffer the loop reads; a stack buffer walked bytewise is declared as a scalar of the neighbour's width (`unsigned int v1;` for eight bytes); the walking pointer is typed after the neighbouring local instead of the bytes it reads.
+- **What it does:** Recover a stack buffer that a proven pointer loop walks as one array spanning the walk, and express the loop's one-past-the-end bound on that buffer (`&buf[8]`) instead of as the address of whichever local happens to follow it.
+- **When to flip:** On by default. With it OFF, `for (p = buf; p != buf + 8; p++)` over a stack buffer renders its bound as the next local (`while (v3 != v2)`), so the trip count is not readable from the C, and the neighbour's pointer type leaks into the walking pointer and into the buffer's declaration (`unsigned int v1;` for eight bytes). A walk counts only when it is proven: the pointer is the header phi of a natural loop that starts at a stack address and steps by one positive constant on every back edge; a comparison of it against a stack address a whole number of steps later (==, !=, p < end or end <= p) drives the branch that leaves the loop, from a block every back edge passes through; and every dereference through the pointer fits inside one step, with no call, store, other phi or variable offset able to read past it. The frame is left as it was when a hint straddles the range or is type-locked, a non-constant value inside it is typed or not exactly one element wide, typed index evidence inside it uses another element width (a byte walk over an `int` array), or a second walk crosses it; the array never extends further than the frame would otherwise have extended it. Constant initializers that write the buffer in wider pieces keep that form (`v1._0_4_ = ...`). Flip OFF to see the frame layout without the walk extent, for a bisect or an ablation.
+- **Where / provenance:** P6/stack-frame-layout · kuna · structure-recovery · GH-468
+- **Example:** `option endptrbound off`
 
 ### `stackalias` -- on | off, default `off` (destructive opt-in)
 

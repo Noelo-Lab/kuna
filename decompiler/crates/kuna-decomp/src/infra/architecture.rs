@@ -659,6 +659,9 @@ pub struct Architecture {
     /// array is that array's terminator, and the array ends after it (option
     /// `nulterminator`).  See [`crate::p6_variables::kuna_nulterminator`].
     pub nul_terminator: bool,
+    /// (kuna) A stack pointer walk's one-past-the-end bound renders on the walked
+    /// buffer, recovered as one array (option `endptrbound`).
+    pub end_ptr_bound: bool,
     /// (kuna) Read the caller's own stack discipline for the argument bytes a
     /// callee pops, instead of guessing that it pops none (option
     /// `calleepop`).  See [`crate::p6_variables::kuna_calleepop`].
@@ -2148,6 +2151,7 @@ impl Architecture {
             callsite_stack_args: true,
             cookie_scramble: true,
             nul_terminator: false,
+            end_ptr_bound: true,
             callee_pop: true,
             callee_proto_stack: true,
             callee_dead_arg: true,
@@ -2401,6 +2405,7 @@ impl Architecture {
         self.recover_lowered_switch = true; // (kuna) default-on (angr port)
         self.lowered_switch_labels = true; // (kuna) default-on correctness fix: the cascade's range opcode, not a case's sign bit, determines label interpretation
         self.callsite_stack_args = true; // (kuna) default-on: restores upstream fspec.cc:5618 (0/675 ablation)
+        self.end_ptr_bound = true; // (kuna) DIV-177 default-on: a pointer walk's end bound renders on its own buffer (0/675 ablation)
         self.cookie_scramble = true; // (kuna) DIV-126 default-on: an `xor rax,rsp` cookie mix no longer collapses the local-alias boundary to the bottom of the frame (0/675 ablation)
         self.callee_proto_stack = true; // (kuna) default-on (0/675 ablation): a locked callee prototype states how much it pops and how much of the caller's stack it can reach
         self.callee_pop = true; // (kuna) default-on (0/675 ablation): an unknown extrapop is read off the caller's push run instead of guessed as "pops nothing" (0/675 ablation)
@@ -2761,6 +2766,12 @@ impl Architecture {
                 let (val, msg) =
                     crate::p4_calls::kuna_callsitestackargs::OptionCallsiteStackArgs.apply(p1)?;
                 self.callsite_stack_args = val;
+                Ok(msg)
+            }
+            "endptrbound" => {
+                let (val, msg) =
+                    crate::p6_variables::kuna_endptrbound::OptionEndPtrBound.apply(p1)?;
+                self.end_ptr_bound = val;
                 Ok(msg)
             }
             "cookiescramble" => {
@@ -3806,6 +3817,7 @@ impl Architecture {
         ctx.callsite_stack_args = self.callsite_stack_args; // callsitestackargs
         ctx.cookie_scramble = self.cookie_scramble; // cookiescramble
         ctx.nul_terminator = self.nul_terminator; // nulterminator
+        ctx.end_ptr_bound = self.end_ptr_bound; // endptrbound
         ctx.callee_pop = self.callee_pop; // calleepop
         ctx.callee_proto_stack = self.callee_proto_stack; // calleeprotostack
         ctx.callee_dead_arg = self.callee_dead_arg; // calleedeadarg
