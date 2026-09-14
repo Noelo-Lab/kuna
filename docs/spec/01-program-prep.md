@@ -1236,8 +1236,11 @@ them has an unresolved TOC word, gets no seed.
 ELFv1 import markup recognizes complete descriptor-call stubs that save the
 caller's TOC at SP+40, load the entry and TOC, and transfer through CTR.
 A stub is named only when its decoded displacement and a validated function TOC
-identify the same `R_PPC64_JMP_SLOT` import for every possible TOC. Conflicting
-names and possible TOCs without a matching import relocation are declined: an
+identify the same `R_PPC64_JMP_SLOT` import for every possible TOC. Only explicit
+zero-addend relocations qualify: a nonzero addend selects the descriptor at
+symbol address plus addend, whose identity cannot be inferred from the symbol's
+name. Implicit addends are also unresolved here. Conflicting names and possible
+TOCs without a matching import relocation are declined: an
 unmatched TOC can select a returning local descriptor instead. Import matching
 scans every 8-aligned word in `.opd` for a resolved, plausible code entry, so
 symbol-less descriptors still contribute possible TOCs after stripping. It reads

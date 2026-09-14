@@ -12,7 +12,7 @@ fn put64(b: &mut [u8], p: usize, n: u64) { b[p..p+8].copy_from_slice(&n.to_be_by
 enum AliasToc { Conflicting, Symbolic, LocalDescriptor, HiddenLocalDescriptor }
 
 /// Synthetic linked ELFv1 with a descriptor-call stub and optional TOC aliases.
-fn image(abi: u32, import: &str, alias_toc: Option<AliasToc>) -> Vec<u8> {
+fn image(abi: u32, import: &str, alias_toc: Option<AliasToc>, import_addend: i64) -> Vec<u8> {
     let conflicting_aliases=alias_toc.is_some();
     let local=matches!(alias_toc,Some(AliasToc::LocalDescriptor|AliasToc::HiddenLocalDescriptor));
     let hidden=alias_toc==Some(AliasToc::HiddenLocalDescriptor);
@@ -47,7 +47,7 @@ fn image(abi: u32, import: &str, alias_toc: Option<AliasToc>) -> Vec<u8> {
     o.append_section_data(plt,&vec![0;if conflicting_aliases {48} else {24}],8);
     let sym=o.add_symbol(Symbol {name:import.as_bytes().to_vec(),value:0,size:0,kind:SymbolKind::Text,
         scope:SymbolScope::Linkage,weak:false,section:SymbolSection::Undefined,flags:SymbolFlags::None});
-    o.add_relocation(plt,Relocation {offset:0,symbol:sym,addend:0,flags:object::RelocationFlags::Elf {r_type:object::elf::R_PPC64_JMP_SLOT}}).unwrap();
+    o.add_relocation(plt,Relocation {offset:0,symbol:sym,addend:import_addend,flags:object::RelocationFlags::Elf {r_type:object::elf::R_PPC64_JMP_SLOT}}).unwrap();
     if conflicting_aliases && !local {
         let sym=o.add_symbol(Symbol {name:b"returning_import".to_vec(),value:0,size:0,kind:SymbolKind::Text,
             scope:SymbolScope::Linkage,weak:false,section:SymbolSection::Undefined,flags:SymbolFlags::None});
@@ -112,16 +112,22 @@ fn image(abi: u32, import: &str, alias_toc: Option<AliasToc>) -> Vec<u8> {
 }
 
 #[test]
-fn descriptor_import_names_and_noreturn_require_unambiguous_tocs() {
-    for (import,alias_toc) in [
-        ("__stack_chk_fail",None),("returning_import",None),
-        ("__stack_chk_fail",Some(AliasToc::Conflicting)),
-        ("__stack_chk_fail",Some(AliasToc::Symbolic)),
-        ("__stack_chk_fail",Some(AliasToc::LocalDescriptor)),
-        ("__stack_chk_fail",Some(AliasToc::HiddenLocalDescriptor)),
+fn descriptor_import_names_and_noreturn_require_unambiguous_targets() {
+    for (import,alias_toc,addend) in [
+        ("__stack_chk_fail",None,0),("returning_import",None,0),
+        ("__stack_chk_fail",Some(AliasToc::Conflicting),0),
+        ("__stack_chk_fail",Some(AliasToc::Symbolic),0),
+        ("__stack_chk_fail",Some(AliasToc::LocalDescriptor),0),
+        ("__stack_chk_fail",Some(AliasToc::HiddenLocalDescriptor),0),
+        ("__stack_chk_fail",None,24),("__stack_chk_fail",None,-24),
     ] {
         let conflicts=alias_toc.is_some();
-        let bytes=image(1,import,alias_toc);
+        let named=!conflicts && addend==0;
+        let bytes=image(1,import,alias_toc,addend);
+        let file=object::File::parse(&*bytes).unwrap();
+        assert!(file.dynamic_relocations().unwrap().any(|(slot,r)|
+            slot==0x3000 && r.addend()==addend && !r.has_implicit_addend()
+            && matches!(r.flags(),object::RelocationFlags::Elf {r_type} if r_type==object::elf::R_PPC64_JMP_SLOT)));
         if alias_toc==Some(AliasToc::Symbolic) {
             let file=object::File::parse(&*bytes).unwrap();
             let descriptors=kuna_analysis::loader::elfv1::Descriptors::read(&file);
@@ -150,12 +156,12 @@ fn descriptor_import_names_and_noreturn_require_unambiguous_tocs() {
         let out=command.output().unwrap();
         let text=String::from_utf8_lossy(&out.stdout);
         assert!(out.status.success(),"{text}\n{}",String::from_utf8_lossy(&out.stderr));
-        if conflicts {
+        if !named {
             assert!(!text.contains(&format!("{import}(")),"{text}");
             let file=object::File::parse(&*bytes).unwrap();
             assert!(kuna_analysis::loader::format::resolve_imports(&file,&bytes).is_empty());
         } else {assert!(text.contains(&format!("{import}(")),"{text}");}
-        if import=="__stack_chk_fail" && !conflicts {
+        if import=="__stack_chk_fail" && named {
             assert!(text.contains("return "),"{text}");
             assert!(text.contains("char") && text.contains("no-return"),"{text}");
         } else {
@@ -169,10 +175,10 @@ fn descriptor_import_names_and_noreturn_require_unambiguous_tocs() {
 #[test]
 fn other_abis_and_non_jump_relocations_do_not_name_descriptor_stubs() {
     for abi in [2,3] {
-        let bytes=image(abi,"__stack_chk_fail",None);let file=object::File::parse(&*bytes).unwrap();
+        let bytes=image(abi,"__stack_chk_fail",None,0);let file=object::File::parse(&*bytes).unwrap();
         assert!(kuna_analysis::loader::format::resolve_imports(&file,&bytes).is_empty());
     }
-    let mut bytes=image(1,"__stack_chk_fail",None);
+    let mut bytes=image(1,"__stack_chk_fail",None,0);
     let shoff=get64(&bytes,40) as usize;
     let shnum=u16::from_be_bytes(bytes[60..62].try_into().unwrap()) as usize;
     for i in 0..shnum {

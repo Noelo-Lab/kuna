@@ -14,6 +14,7 @@ pub(super) fn resolve(file: &object::File<'_>) -> Vec<PltSym> {
     if let Some(relocations)=file.dynamic_relocations() {
         for (slot,reloc) in relocations {
             if !matches!(reloc.flags(),RelocationFlags::Elf {r_type} if r_type==object::elf::R_PPC64_JMP_SLOT) {continue;}
+            if reloc.has_implicit_addend() || reloc.addend()!=0 {continue;}
             let RelocationTarget::Symbol(index)=reloc.target() else {continue;};
             if let Some(name)=names.get(&index.0) {slots.insert(slot,name.clone());}
         }
