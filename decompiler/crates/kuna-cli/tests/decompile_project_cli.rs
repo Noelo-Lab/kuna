@@ -999,6 +999,132 @@ fn streamed_blocks_follow_the_entry_point_not_the_address_order() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
+/// Run `kuna` with extra environment under a wall-clock cap, returning `None`
+/// when it had to be killed: the failure a fault-injecting run guards against
+/// is a pool that never finishes.
+fn run_kuna_env_with_timeout(
+    args: &[&str],
+    env: &[(&str, &str)],
+    cap: std::time::Duration,
+) -> Option<(String, String, bool)> {
+    use std::io::Read;
+    let mut child = Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .args(args)
+        .envs(env.iter().copied())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("failed to spawn the kuna binary");
+    let mut out = child.stdout.take().expect("stdout piped");
+    let mut err = child.stderr.take().expect("stderr piped");
+    let out = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = out.read_to_end(&mut buf);
+        buf
+    });
+    let err = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = err.read_to_end(&mut buf);
+        buf
+    });
+    let deadline = std::time::Instant::now() + cap;
+    let status = loop {
+        match child.try_wait().expect("try_wait on the kuna binary") {
+            Some(status) => break Some(status),
+            None if std::time::Instant::now() >= deadline => {
+                let _ = child.kill();
+                let _ = child.wait();
+                break None;
+            }
+            None => std::thread::sleep(std::time::Duration::from_millis(100)),
+        }
+    };
+    let out = String::from_utf8_lossy(&out.join().expect("stdout reader")).into_owned();
+    let err = String::from_utf8_lossy(&err.join().expect("stderr reader")).into_owned();
+    status.map(|s| (out, err, s.success()))
+}
+
+/// `--stream` hands its chunks to the same pool, so a worker that panics costs
+/// a streamed export only the function that panicked as well: the functions the
+/// dead worker never delivered are re-run on their own and land in the `.c` and
+/// `index.jsonl` like any other.  `__libc_start_main` is the first function of
+/// the first frontier chunk, so its worker dies before delivering anything.
+#[test]
+fn streamed_worker_panic_loses_only_the_function_that_panicked() {
+    let pool = ["--jobs", "2", "--jobs-chunk", "64"];
+    let Some(reference) = stream_project("fauxware", "stream_fault_reference", &pool) else {
+        return;
+    };
+    let dir = out_dir("stream_fault");
+    let bin = fixture("fauxware");
+    let specs = specs();
+    let mut args = vec![
+        "decompile-project",
+        bin.as_str(),
+        "-o",
+        dir.to_str().unwrap(),
+        "--stream",
+        "--max-fn-seconds",
+        "0",
+        "--sleighpath",
+        specs.as_str(),
+    ];
+    args.extend_from_slice(&pool);
+    let (_, stderr, ok) = run_kuna_env_with_timeout(
+        &args,
+        &[("KUNA_JOBS_FAULT", "panic:0x400540")],
+        std::time::Duration::from_secs(240),
+    )
+    .expect("a panicking worker wedged the streamed export");
+    assert!(ok, "one panicking function must not fail the export:\n{stderr}");
+
+    let index = |d: &std::path::Path| -> Vec<(String, String)> {
+        let text = std::fs::read_to_string(d.join("index.jsonl")).unwrap();
+        let mut rows: Vec<(String, String)> = text
+            .lines()
+            .map(|l| (json_field(l, "addr").to_string(), json_field(l, "error").to_string()))
+            .collect();
+        rows.sort();
+        rows
+    };
+    let want = index(&reference);
+    let got = index(&dir);
+    assert_eq!(got.len(), want.len(), "one index line per target");
+    assert!(want.iter().all(|(_, e)| e == "null"), "the reference export lost functions");
+    for ((addr, error), (want_addr, _)) in got.iter().zip(&want) {
+        assert_eq!(addr, want_addr, "the streamed function set moved");
+        let expected = if addr == "\"0x400540\"" {
+            "\"worker chunk failed (worker exited: exit status: 101)\""
+        } else {
+            "null"
+        };
+        assert_eq!(error, expected, "record {addr}");
+    }
+
+    let bodies = |d: &std::path::Path| -> Vec<String> {
+        let c = std::fs::read_to_string(d.join("fauxware.c")).unwrap();
+        c_blocks(&c)
+            .into_iter()
+            .filter(|b| !b.starts_with("// Function: __libc_start_main @"))
+            .collect()
+    };
+    assert_eq!(bodies(&dir), bodies(&reference), "a bystander's body moved");
+    assert_eq!(
+        stderr.matches("KUNA_JOBS_FAULT: injected panic at 0x400540").count(),
+        2,
+        "the function that panicked runs once in its chunk and once alone:\n{stderr}"
+    );
+    assert!(
+        stderr.lines().any(|l| l.starts_with("[kuna --stream] ")
+            && l.contains("left unfinished by a failed worker process were re-run")),
+        "the streamed run must say what it recovered:\n{stderr}"
+    );
+    assert!(stderr.contains("1 of them failed again when re-run on their own."), "{stderr}");
+    for d in [reference, dir] {
+        let _ = std::fs::remove_dir_all(d);
+    }
+}
+
 /// A selected export stays selected: a callee hint that names a function the
 /// run did not ask for is scheduling noise, not a target.
 #[test]

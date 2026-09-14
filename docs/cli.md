@@ -83,6 +83,7 @@ the directories it looked in.
 | `KUNA_DECODE_SELFCHECK` | `1` runs both walks, compares them field by field and returns the serial result; `abort` panics on a difference. Keeps the runtime's panic report, as `KUNA_DECODE_STATS` does. |
 | `KUNA_DECODE_STATS` | `1` prints one line of lane/interval/round/crossing/decode counts and the walk, merge and lane-memory figures. It also keeps the runtime's panic report for a lane fault, which the fallback otherwise silences. |
 | `KUNA_DECODE_FAULT` | Test-only: `<n>` panics lane `n` once, `spawn:<n>` makes lane `n`'s spawn fail — the two fallback paths. |
+| `KUNA_JOBS_FAULT` | Test-only, comma-separated: `panic:<addr>` / `panic-once:<addr>` / `stall:<addr>` make a `--jobs` worker panic (the first time only) or wedge as it starts the target at that byte address (`*` for every target), and `spawn:<n>` refuses every worker spawn after the first `n` — the pool's re-run paths. `stall` only ends when `--max-fn-seconds` is non-zero. |
 
 An override wins over both layouts, and one pointing at nothing is reported as
 such rather than silently re-probed.
@@ -1257,10 +1258,55 @@ Behaviors specific to `decompile-all`:
   - **The watchdog becomes a real one.** `--max-fn-seconds` is cooperative in
     process, so a function wedged where nothing polls the deadline runs through
     it; the parent, which is not the stuck process, kills a worker that has
-    produced no record for well past the budget and records its unfinished
-    functions as `error`. The same budget is a wall clock, so a function that
+    produced no record for well past the budget and records the function it was
+    running as `error`. The same budget is a wall clock, so a function that
     finished just inside it serially can miss it under N-way contention: the run
     reports how many did and points at `--max-fn-seconds`.
+  - **A worker that dies costs one function, not its chunk.** A worker
+    decompiles its chunk in order and writes each result as it finishes, so when
+    it dies — a panic, an OOM kill, a signal, the stall watchdog — the pool knows
+    which function it was on and which never started. The thread that gave it
+    the chunk re-runs every function the worker did not deliver, one function per
+    chunk: the one that was running first, on a fresh worker, so its `error`
+    record is the failure it repeats on its own, then the rest. Without this, one
+    panicking function took its whole chunk with it (26 to 512 functions wide on
+    a large binary). Three failures are not re-run: a function the stall
+    watchdog killed (it already ran four times past its budget, and a second try
+    costs the same window again); the functions of a worker that died before it
+    finished any chunk or opened this one, because its load may be what failed;
+    and a chunk no worker ran at all, because a spawn was refused or its spec
+    could not be written.
+
+    The cost is one extra worker load for every function that fails again on
+    its own, because its crash takes the re-run's worker with it; functions that
+    succeed share one worker. Chunks are cut from functions sorted by size, and
+    functions that crash alike tend to sit next to each other, so the functions
+    that never started are re-run in an order spread across the chunk rather
+    than one neighbour after another. A re-run is never re-run. A function
+    that stalls when re-run costs one stall window and the chunk carries on, as
+    a stall in a planned chunk costs one function. A chunk stops re-running at
+    the first re-run that cannot start (no worker spawns, or the new one dies in
+    its load), once two of its re-runs have stalled, so one chunk waits out at
+    most two extra stall windows, and once 8 of its re-runs (not counting the
+    function that was running) have failed again and they outnumber the ones
+    that came back. And no re-run starts while 16 or more re-runs have failed
+    and they outnumber every result the workers delivered, which is what workers
+    that die on everything look like; the run says so once, and re-running
+    resumes when deliveries catch up, so a burst of crashes among the large
+    functions a run starts with does not switch it off. Functions left behind
+    keep their `error`, with `; not re-run: <why>` appended. The closing lines
+    count both sides:
+
+    ```
+    [kuna --jobs] 18 function(s) left unfinished by a failed worker process were re-run one at a time and recovered.
+    [kuna --jobs] warning: 1 function(s) have no result because their worker process failed (crash, OOM kill, an external signal, or the stall watchdog); they are `error` records in the output. 1 of them failed again when re-run on their own. Re-run those functions, with fewer --jobs if the machine ran out of memory.
+    ```
+
+    A run where no worker dies is unchanged, byte for byte and in time. Re-runs
+    happen on the thread that owned the chunk, which was that chunk's serial
+    path anyway, so crashes cost worker loads, not parallelism. `--stream` uses
+    the same pool and the same rule; there a re-run also rebuilds its worker's
+    callee-hint table, one pass over the function inventory per re-run.
   - **Cancelling the run stops the pool.** Each worker's stdin is a pipe whose
     only write end its parent holds; end-of-pipe means the parent is gone by any
     route including SIGKILL, and the worker deletes the shared scratch directory
@@ -2326,11 +2372,13 @@ contents and only stderr and the exit code say the run failed.
 **Stopping takes a chunk.** When the writer dies the producers stop rather than
 decompile the rest of the binary into a channel nobody reads, but they stop at a
 boundary: `.streaming` flips to `failed` within a tick, while each worker first
-finishes the chunk it is holding — up to 64 functions apiece, so a `--jobs N` run
-ends within one chunk rather than instantly, and `--jobs-chunk K` bounds that
-directly. At `--jobs 1` the producer pulls one function at a time and stops at the
-next one. The pool's closing `done: N functions` line counts what it actually
-delivered, which on a run that stopped early is less than `functions_total`.
+finishes the chunk it is holding — up to 64 functions apiece, plus re-running
+the ones that chunk's worker died before finishing, which can start fresh workers
+and wait out one more stall window — so a `--jobs N` run ends within one chunk
+rather than instantly, and `--jobs-chunk K` bounds that directly. At
+`--jobs 1` the producer pulls one function at a time and stops at the next one.
+The pool's closing `done: N functions` line counts what it actually delivered,
+which on a run that stopped early is less than `functions_total`.
 
 Two things are deliberately not immediate run failures. Per-function failures — including a
 worker process that cannot be spawned, which degrades that whole chunk to error

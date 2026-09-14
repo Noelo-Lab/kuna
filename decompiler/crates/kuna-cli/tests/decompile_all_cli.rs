@@ -225,6 +225,7 @@ fn kuna_command(env: &[(&str, &str)]) -> Command {
     // turns the runtime's panic block back on, so it must not reach a child
     // whose whole assertion is that the block is absent.
     cmd.env_remove("RUST_BACKTRACE");
+    cmd.env_remove("KUNA_JOBS_FAULT");
     for name in DECODE_ENV {
         cmd.env_remove(name);
     }
@@ -2441,11 +2442,17 @@ fn jobs_leaves_no_scratch_directory_behind() {
 #[cfg(target_os = "linux")]
 #[test]
 fn killing_the_parent_takes_the_workers_and_the_scratch_dir_with_it() {
+    // Every thread's list: the workers are spawned by the pool threads, so the
+    // main thread's own `children` file is empty for the whole run.
     fn children_of(pid: u32) -> Vec<u32> {
-        std::fs::read_to_string(format!("/proc/{pid}/task/{pid}/children"))
-            .unwrap_or_default()
-            .split_whitespace()
-            .filter_map(|s| s.parse().ok())
+        std::fs::read_dir(format!("/proc/{pid}/task"))
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter_map(|task| std::fs::read_to_string(task.path().join("children")).ok())
+            .flat_map(|list| {
+                list.split_whitespace().filter_map(|s| s.parse().ok()).collect::<Vec<u32>>()
+            })
             .collect()
     }
     fn scratch_of(pid: u32) -> Vec<PathBuf> {
@@ -2494,7 +2501,10 @@ fn killing_the_parent_takes_the_workers_and_the_scratch_dir_with_it() {
         if Instant::now() >= deadline || child.try_wait().expect("try_wait").is_some() {
             let _ = child.kill();
             let _ = child.wait();
-            eprintln!("jobs cancellation: skipping (the pool never came up; likely no `.sla`)");
+            let sla =
+                PathBuf::from(specs()).join("Ghidra/Processors/x86/data/languages/x86-64.sla");
+            assert!(!sla.exists(), "the pool never came up although {} is built", sla.display());
+            eprintln!("jobs cancellation: skipping (the pool never came up; no `.sla`)");
             return;
         }
         std::thread::sleep(Duration::from_millis(100));
@@ -2520,6 +2530,306 @@ fn killing_the_parent_takes_the_workers_and_the_scratch_dir_with_it() {
         );
         std::thread::sleep(Duration::from_millis(200));
     }
+}
+
+// --- `--jobs N`: a dead worker costs one function --------------------------
+
+/// `decompile-all --json` records, split at their own indentation, so a record
+/// can be compared whole and named without a JSON parser.
+fn json_records(doc: &str) -> Vec<&str> {
+    doc.split("\n    {\n").skip(1).map(|r| r.split("\n    }").next().unwrap_or(r)).collect()
+}
+
+fn record_name(record: &str) -> &str {
+    let at = record.find("\"name\": \"").expect("a record has a name") + "\"name\": \"".len();
+    &record[at..at + record[at..].find('"').expect("a terminated name")]
+}
+
+/// The count a `[kuna <tag>] N function(s) left unfinished ... recovered.` line
+/// reports, or `None` when the run printed no such line.
+fn recovered_count(stderr: &str) -> Option<usize> {
+    let line = stderr.lines().find(|l| l.contains("left unfinished by a failed worker process"))?;
+    line.split("] ").nth(1)?.split(' ').next()?.parse().ok()
+}
+
+/// The serial `decompile-all --json` document of `fauxware`, or `None` on a
+/// specs-less skip.
+fn fauxware_serial_json() -> Option<String> {
+    let (want, stderr, ok) = run_kuna(&[
+        "decompile-all",
+        &fauxware(),
+        "--json",
+        "--max-fn-seconds",
+        "0",
+        "--sleighpath",
+        &specs(),
+    ]);
+    if !ok {
+        if is_specs_skip(&stderr) {
+            eprintln!("jobs faults: skipping (no `.sla`; run `make specs`): {stderr}");
+            return None;
+        }
+        panic!("kuna decompile-all failed: {stderr}");
+    }
+    Some(want)
+}
+
+/// A pooled `decompile-all --json` of `fauxware` in ONE chunk (so one worker
+/// serves every target and the dispatch order is the planner's longest-first
+/// order), under `KUNA_JOBS_FAULT=fault`.
+fn fauxware_pooled_with_fault(fault: &str, max_fn_seconds: &str) -> (String, String, bool) {
+    let bin = fauxware();
+    let sp = specs();
+    let args = [
+        "decompile-all",
+        bin.as_str(),
+        "--json",
+        "--max-fn-seconds",
+        max_fn_seconds,
+        "--sleighpath",
+        sp.as_str(),
+        "--jobs",
+        "2",
+        "--jobs-chunk",
+        "64",
+    ];
+    run_kuna_env_with_timeout(&args, &[("KUNA_JOBS_FAULT", fault)], Duration::from_secs(240))
+        .unwrap_or_else(|| panic!("KUNA_JOBS_FAULT={fault} wedged the pool"))
+}
+
+/// Every record but those named in `lost` must be the serial run's, byte for
+/// byte.
+fn assert_only_lost_differ(serial: &str, pooled: &str, lost: &[&str]) {
+    let want = json_records(serial);
+    let got = json_records(pooled);
+    assert_eq!(got.len(), want.len(), "one record per target:\n{pooled}");
+    for (w, g) in want.iter().zip(&got) {
+        assert_eq!(record_name(w), record_name(g), "target order moved");
+        if !lost.contains(&record_name(w)) {
+            assert_eq!(g, w, "{} is not the serial record", record_name(w));
+        }
+    }
+}
+
+/// The issue this exists for: one function panicking its worker used to turn
+/// every function of its chunk (26..512 wide on a large binary) into an `error`
+/// record.  The functions the dead worker never delivered are re-run on their
+/// own, so the document is the serial one except for the function that
+/// panicked, whose record is the crash it repeats when run alone -- once, not
+/// in a loop.  `main` is the fixture's largest function, so the planner puts it
+/// first and the worker dies before delivering anything (the worker had not
+/// finished a chunk yet, which is exactly when a death could also have been its
+/// load); `authenticate` comes third, after a delivered prefix.
+#[test]
+fn jobs_a_worker_panic_loses_only_the_function_that_panicked() {
+    let Some(serial) = fauxware_serial_json() else { return };
+    let total = json_records(&serial).len();
+    for (name, addr) in [("main", "0x40071d"), ("authenticate", "0x400664")] {
+        let (got, stderr, ok) = fauxware_pooled_with_fault(&format!("panic:{addr}"), "0");
+        assert!(ok, "one panicking function must not fail the run:\n{stderr}");
+        assert_only_lost_differ(&serial, &got, &[name]);
+        let lost = json_records(&got).into_iter().find(|r| record_name(r) == name).unwrap();
+        assert!(
+            lost.contains("\"error\": \"worker chunk failed (worker exited: exit status: 101)\""),
+            "{name} must carry its own crash:\n{lost}"
+        );
+        assert_eq!(
+            stderr.matches(&format!("KUNA_JOBS_FAULT: injected panic at {addr}")).count(),
+            2,
+            "{name} is run once in its chunk and once alone, never again:\n{stderr}"
+        );
+        let recovered =
+            recovered_count(&stderr).unwrap_or_else(|| panic!("no recovery line:\n{stderr}"));
+        if name == "main" {
+            assert_eq!(recovered, total - 1, "every other function was re-run:\n{stderr}");
+        } else {
+            assert!(recovered >= 1, "{name} was not first, so it had bystanders:\n{stderr}");
+        }
+        assert!(
+            stderr.contains(
+                "warning: 1 function(s) have no result because their worker process failed"
+            ) && stderr.contains("1 of them failed again when re-run on their own."),
+            "the warning must count only the function that failed alone:\n{stderr}"
+        );
+    }
+}
+
+/// A death that is not the function's own -- an OOM kill, a signal -- is
+/// recovered too: the function that was running is re-run first, and when it
+/// succeeds alone the document is the serial one and nothing is reported lost.
+#[test]
+fn jobs_a_transient_worker_death_loses_nothing() {
+    let Some(serial) = fauxware_serial_json() else { return };
+    let (got, stderr, ok) = fauxware_pooled_with_fault("panic-once:0x40071d", "0");
+    assert!(ok, "{stderr}");
+    assert_eq!(got, serial, "a recovered run must be the serial document");
+    assert_eq!(stderr.matches("KUNA_JOBS_FAULT: injected panic").count(), 1, "{stderr}");
+    assert_eq!(recovered_count(&stderr), Some(json_records(&serial).len()), "{stderr}");
+    assert!(!stderr.contains("have no result"), "nothing was lost:\n{stderr}");
+}
+
+/// The stall watchdog's kill is the other way a worker dies.  Its bystanders
+/// are re-run like a crash's, but the function it was running is not: it has
+/// already run four times past the per-function budget, and a second attempt
+/// would cost the same stall window again.  `rejected` comes after a delivered
+/// prefix, so the warm (4 s) stall window applies.
+///
+/// A bystander that stalls when re-run costs itself and the chunk re-runs on:
+/// stalls are common on large binaries, and a stall in a planned chunk costs
+/// one function too.  A second stalled re-run in the same chunk stops it, which
+/// caps the extra stall windows a chunk can wait out.  `read` and `strcmp` are
+/// the third and sixth re-runs, each after a recovered one, so both windows are
+/// warm too.
+#[test]
+fn jobs_a_stalled_worker_loses_only_the_function_that_stalled() {
+    let Some(serial) = fauxware_serial_json() else { return };
+    let (got, stderr, ok) = fauxware_pooled_with_fault("stall:0x4006fd", "1");
+    assert!(ok, "{stderr}");
+    assert_only_lost_differ(&serial, &got, &["rejected"]);
+    let lost = json_records(&got).into_iter().find(|r| record_name(r) == "rejected").unwrap();
+    assert!(
+        lost.contains("\"error\": \"worker stalled past the per-function watchdog (1s)"),
+        "{lost}"
+    );
+    assert_eq!(
+        stderr.matches("KUNA_JOBS_FAULT: injected stall at 0x4006fd").count(),
+        1,
+        "a stalled function is not re-run:\n{stderr}"
+    );
+    assert!(recovered_count(&stderr).is_some_and(|n| n >= 1), "{stderr}");
+    assert!(!stderr.contains("failed again"), "{stderr}");
+
+    let (got, stderr, ok) = fauxware_pooled_with_fault("stall:0x4006fd,stall:0x400530", "1");
+    assert!(ok, "{stderr}");
+    assert_only_lost_differ(&serial, &got, &["rejected", "read"]);
+    assert!(!got.contains("not re-run"), "one stalled re-run stops nothing:\n{got}");
+    assert_eq!(recovered_count(&stderr), Some(11), "{stderr}");
+
+    let stalls = "stall:0x4006fd,stall:0x400530,stall:0x400550";
+    let (got, stderr, ok) = fauxware_pooled_with_fault(stalls, "1");
+    assert!(ok, "{stderr}");
+    let not_rerun = ["sub_400500", "accepted", "__libc_start_main", "printf", "_fini", "open"];
+    let mut lost = vec!["rejected", "read", "strcmp"];
+    lost.extend(not_rerun);
+    assert_only_lost_differ(&serial, &got, &lost);
+    let stalled =
+        "\"error\": \"worker stalled past the per-function watchdog (1s); the worker was killed";
+    for r in json_records(&got).into_iter().filter(|r| lost.contains(&record_name(r))) {
+        assert!(r.contains(stalled), "{r}");
+        let marked = r.contains("; not re-run: two functions re-run from its chunk stalled\"");
+        assert_eq!(marked, not_rerun.contains(&record_name(r)), "{r}");
+    }
+    for addr in ["0x4006fd", "0x400530", "0x400550"] {
+        let fired = stderr.matches(&format!("KUNA_JOBS_FAULT: injected stall at {addr}")).count();
+        assert_eq!(fired, 1, "{addr} stalled once:\n{stderr}");
+    }
+    assert_eq!(recovered_count(&stderr), Some(4), "{stderr}");
+    assert!(
+        stderr.contains("warning: 9 function(s) have no result")
+            && stderr.contains("2 of them failed again when re-run on their own."),
+        "{stderr}"
+    );
+}
+
+/// The failure #578 exists for, at its worst: the planner cuts chunks from a
+/// size-sorted order, so functions that crash alike sit side by side.  Five
+/// crashers in the first five places of the chunk (the largest functions)
+/// must cost those five and nothing else, not the chunk.
+#[test]
+fn jobs_neighbouring_crashers_do_not_forfeit_their_chunk() {
+    let Some(serial) = fauxware_serial_json() else { return };
+    let crashers = [
+        ("main", "0x40071d"),
+        ("__libc_csu_init", "0x4007e0"),
+        ("authenticate", "0x400664"),
+        ("__do_global_dtors_aux", "0x4005d0"),
+        ("__do_global_ctors_aux", "0x400880"),
+    ];
+    let fault: Vec<String> = crashers.iter().map(|(_, a)| format!("panic:{a}")).collect();
+    let (got, stderr, ok) = fauxware_pooled_with_fault(&fault.join(","), "0");
+    assert!(ok, "sixteen functions came back, so the run succeeded:\n{stderr}");
+    let names: Vec<&str> = crashers.iter().map(|(n, _)| *n).collect();
+    assert_only_lost_differ(&serial, &got, &names);
+    assert!(!got.contains("not re-run"), "no function was given up:\n{got}");
+    assert_eq!(recovered_count(&stderr), Some(16), "{stderr}");
+    assert_eq!(
+        stderr.matches("KUNA_JOBS_FAULT: injected panic").count(),
+        6,
+        "the chunk's death, then one re-run apiece for the five crashers:\n{stderr}"
+    );
+    assert!(stderr.contains("5 of them failed again when re-run on their own."), "{stderr}");
+}
+
+/// Re-running must never become a loop, nor pay a load for every function of a
+/// run whose workers die on everything.  A spawn the OS refuses is not re-run at
+/// all; a re-run that cannot spawn ends its chunk's re-runs; a chunk whose
+/// re-run bystanders mostly fail stops after eight of them; and a run whose
+/// re-runs fail more often than its workers deliver stops re-running.  Each
+/// case must end, with exactly one record per target, and every function left
+/// behind says it was not re-run.
+#[test]
+fn jobs_rerunning_a_dead_worker_never_loops() {
+    let Some(serial) = fauxware_serial_json() else { return };
+    let total = json_records(&serial).len();
+    let every_record_failed = |doc: &str, prefix: &str| {
+        let records = json_records(doc);
+        assert_eq!(records.len(), total, "{doc}");
+        for r in records {
+            assert!(r.contains(&format!("\"error\": \"{prefix}")), "{}:\n{r}", record_name(r));
+        }
+    };
+    let crashed = "worker chunk failed (worker exited: exit status: 101)";
+    let panics = |stderr: &str| stderr.matches("KUNA_JOBS_FAULT: injected panic").count();
+
+    let (got, stderr, ok) = fauxware_pooled_with_fault("spawn:0", "0");
+    assert!(!ok, "a run that decompiled nothing must fail:\n{stderr}");
+    every_record_failed(&got, "cannot spawn worker");
+    assert!(recovered_count(&stderr).is_none() && !stderr.contains("failed again"), "{stderr}");
+
+    let (got, stderr, ok) = fauxware_pooled_with_fault("panic:0x40071d,spawn:1", "0");
+    assert!(!ok, "{stderr}");
+    every_record_failed(&got, crashed);
+    let could_not_start = "; not re-run: its re-run could not start (cannot spawn";
+    assert_eq!(got.matches(could_not_start).count(), total, "{got}");
+    assert_eq!(panics(&stderr), 1, "no re-run could start, so nothing ran twice:\n{stderr}");
+
+    let (got, stderr, ok) = fauxware_pooled_with_fault("panic:*", "0");
+    assert!(!ok, "{stderr}");
+    every_record_failed(&got, crashed);
+    assert_eq!(panics(&stderr), 10, "the chunk's death, main, then eight bystanders:\n{stderr}");
+    assert!(stderr.contains("9 of them failed again when re-run on their own."), "{stderr}");
+    let given_up = "; not re-run: most functions re-run from its chunk failed again";
+    assert_eq!(got.matches(given_up).count(), total - 9, "{got}");
+    assert!(!stderr.contains("not re-run while that lasts"), "{stderr}");
+
+    // One function per chunk on two threads: every chunk dies and so does its
+    // re-run, nothing is ever delivered, so no re-run starts after 16 have
+    // failed (17 when the other thread had one under way).
+    let bin = fauxware();
+    let sp = specs();
+    let args = [
+        "decompile-all",
+        bin.as_str(),
+        "--json",
+        "--max-fn-seconds",
+        "0",
+        "--sleighpath",
+        sp.as_str(),
+        "--jobs",
+        "2",
+        "--jobs-chunk",
+        "1",
+    ];
+    let cap = Duration::from_secs(240);
+    let (got, stderr, ok) = run_kuna_env_with_timeout(&args, &[("KUNA_JOBS_FAULT", "panic:*")], cap)
+        .expect("workers that die on everything wedged the pool");
+    assert!(!ok, "{stderr}");
+    every_record_failed(&got, crashed);
+    let reruns = panics(&stderr) - total;
+    assert!((16..=17).contains(&reruns), "16 or 17 failed re-runs, not {reruns}:\n{stderr}");
+    assert_eq!(stderr.matches("are not re-run while that lasts").count(), 1, "{stderr}");
+    let run_stopped = "; not re-run: re-runs in this run had failed more often than workers had";
+    assert_eq!(got.matches(run_stopped).count(), total - reruns, "{got}");
 }
 
 // --- `--jobs N`: the decode lanes --------------------------------------------

@@ -1024,14 +1024,64 @@ remaining function.
 A pool is also the first arrangement that can enforce the watchdog for real. The
 in-process deadline above is cooperative, so a function wedged where nothing probes
 it runs straight through; the parent, which is not the stuck process, kills a
-worker that has produced no record for well past the budget and records that
-chunk's unfinished functions as `error`. The same budget is a wall clock, so a
+worker that has produced no record for well past the budget and records the
+function it was running as `error`. The same budget is a wall clock, so a
 function that finished just inside it serially can miss it under N-way contention;
 the run counts those and says so, as it counts the functions lost to a worker that
 died. Cancellation runs the other way: each worker's stdin is a pipe whose only
 write end its parent holds, so end of pipe means the parent is gone by any route
 including SIGKILL, and the worker removes the pool's scratch directory and exits
 rather than running on reparented to init.
+
+A worker that dies — a panic no per-function guard catches, an OOM kill, a
+signal, or that stall kill — costs the function it was running and nothing else.
+A worker decompiles its chunk in spec order and flushes one record per function,
+so the records it leaves are a prefix: the first target without one is the
+function it was on, and every later target never started. Before it takes more
+work, the thread that served the chunk re-runs each of those targets once as a
+chunk of its own (`decompiler/crates/kuna-cli/src/jobs.rs (retry_order)`): the
+function that was running goes first, onto the fresh worker the thread starts
+next, so the `error` record it ends with is what it does alone, and the targets
+that never started follow. Three failures are not re-run, each because a re-run
+would repeat a cost no single target caused or one already paid. A function the
+stall watchdog killed has already run four times past its budget, and the
+in-process watchdog's verdict on such a function is final too. A worker that
+never finished a chunk and never opened this one ran none of it and may have died
+in its own program load, which every re-run would repeat; the worker opens the
+chunk's result file just before its first target, so the file's existence is what
+separates the two. And a chunk no worker ran, because its spec could not be
+written or no worker could be spawned, failed for a reason no target has. A
+re-run is never itself re-run. The cost is one extra worker load for every
+function that fails again on its own, since its crash takes the re-run's worker
+with it, and the stopping rules only cap that cost where re-running is futile.
+Chunks are cut from a size-sorted order and functions that crash alike sit side
+by side, so the targets that never started are re-run in bit-reversed order
+(`decompiler/crates/kuna-cli/src/jobs.rs (spread)`): every prefix of that order
+samples the whole chunk, and a run of neighbouring crashers cannot look like a
+chunk full of them (its weakest pattern is a crasher at every other place, since
+the first half of the order is the even offsets). A function that stalls when
+re-run costs one stall window and the chunk carries on, as a stall in a planned
+chunk costs one function. A chunk stops re-running, and its remaining targets
+keep their record with `; not re-run: <why>` appended, at the first re-run that
+cannot reach its target (no worker spawns, or the fresh one dies before opening
+its chunk), once two of its re-runs have stalled, which caps its extra stall
+windows at two, or once eight of those targets have failed again and outnumber
+the ones recovered (`decompiler/crates/kuna-cli/src/jobs.rs (ChunkReruns)`); the
+function that was running only counts toward the stalls, since it is expected to
+crash again. And a pool-wide check (`decompiler/crates/kuna-cli/src/jobs.rs
+(RetryGate)`), asked each time a re-run would start, holds it back while sixteen
+or more re-runs have failed and they outnumber every record the workers
+delivered, planned or re-run: workers that die on everything deliver nothing and
+so pay a bounded number of extra loads, and since a held-back re-run cannot
+fail, a run whose workers mostly work catches up and resumes re-running, even
+after a burst of crashes among the large functions the planner runs first.
+Re-runs stay on the thread whose worker died.
+That keeps termination structural — a thread re-runs at most the targets of the
+chunk it holds and never waits on another thread — and costs no parallelism,
+because that chunk was that thread's serial work to begin with. Every target
+still reaches the result sink exactly once, which the positional merge and the
+streamed writer below both depend on, and the closing warning reports what the
+re-runs recovered separately from what is still lost.
 
 (kuna) **The streamed export.** `decompile-project --stream`
 (`decompiler/crates/kuna-cli/src/project_stream.rs`) is the same pool and the

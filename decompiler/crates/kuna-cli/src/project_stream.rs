@@ -866,8 +866,8 @@ fn export(
         single_target: false,
     };
 
-    let (mut writer, mut type_blocks) = std::thread::scope(
-        |scope| -> Result<(ProjectWriter, Vec<String>), String> {
+    let (mut writer, (mut type_blocks, retries)) = std::thread::scope(
+        |scope| -> Result<(ProjectWriter, (Vec<String>, jobs::Retries)), String> {
             let writing = scope.spawn(move || writer_loop(writer, rx, run));
             let produced = if args.jobs > 1 {
                 let pooled = run_pooled(
@@ -881,14 +881,14 @@ fn export(
                     &mut prog, &targets, &scheduler, &opts, &tx, &mut sweep, &mut asm, run,
                 );
                 drop(tx);
-                serial.map(|()| Vec::new())
+                serial.map(|()| (Vec::new(), jobs::Retries::default()))
             };
             // The writer owns every artifact, so ITS error is why the run
             // stopped; a producer that only saw its channel close carries the
             // sentinel, and the writer is joined before either is propagated.
             let written = writing.join().map_err(|_| "the streaming writer panicked".to_string())?;
             match (produced, written) {
-                (Ok(blocks), Ok(writer)) => Ok((writer, blocks)),
+                (Ok(pooled), Ok(writer)) => Ok((writer, pooled)),
                 (_, Err(writer)) => Err(writer),
                 (Err(produced), Ok(_)) => Err(produced),
             }
@@ -906,7 +906,7 @@ fn export(
     }
     run.lock().status.phase = StreamPhase::Finalizing;
     run.publish_progress(false);
-    jobs::warn_about_streamed_anomalies(&writer.errors, args.max_fn_seconds);
+    jobs::warn_about_streamed_anomalies(&writer.errors, args.max_fn_seconds, retries);
 
     // The parent is one more type shard: at `--jobs N` it decompiled the seeds
     // itself, and whatever those interned lives only in its own factory.
@@ -1084,7 +1084,7 @@ fn run_pooled<'scope, 'env>(
     asm: &mut BufWriter<File>,
     run: &'env StreamRun,
     scope: &'scope std::thread::Scope<'scope, 'env>,
-) -> Result<Vec<String>, String> {
+) -> Result<(Vec<String>, jobs::Retries), String> {
     decompile_in_process(prog, seeds, targets, scheduler, opts, tx, run)?;
 
     let cfg = pool_config(
@@ -1117,9 +1117,9 @@ fn run_pooled<'scope, 'env>(
     });
 
     let swept = sweep_to_end(prog, sweep, asm, run);
-    let types = pool.join().map_err(|_| "the --stream worker pool panicked".to_string())?;
+    let pooled = pool.join().map_err(|_| "the --stream worker pool panicked".to_string())?;
     swept.map_err(|e| format!("cannot write {}.asm: {e}", layout.file_name))?;
-    types
+    pooled
 }
 
 /// `--jobs 1`: one thread alternating decompile batches with sweep steps, so
