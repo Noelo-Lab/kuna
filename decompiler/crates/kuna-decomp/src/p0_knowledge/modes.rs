@@ -416,9 +416,14 @@ mod tests {
         /// `[33]` by absorbing the sibling field, and no frame-level signal separates
         /// that field from a genuine terminator. In the preset it would be the
         /// default output under 500 KiB, which is exactly what it is opt-in to avoid.
+        /// `msvcstrappend` deletes an inlined MSVC `std::string` append's fast arm and
+        /// names the grow call `std::string::push_back`/`append` on the strength of
+        /// the call's argument shape; the callee body is never read. That trust is a
+        /// judgement the operator makes about the binary, not one the preset should
+        /// make as the default output under 500 KiB.
         const EXCLUDED_ON_PURPOSE: &[&str] =
             &["v850indirectbranch", "dwarf_lines", "formatstring", "ifuncfpret",
-              "aifcorroborate", "linuxsyscall", "nulterminator"];
+              "aifcorroborate", "linuxsyscall", "nulterminator", "msvcstrappend"];
 
         /// Default-off options that predate this test and are **not** in the preset,
         /// i.e. are currently unreachable on the default path. Each is a genuine open

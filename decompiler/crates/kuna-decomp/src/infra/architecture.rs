@@ -469,6 +469,11 @@ pub struct Architecture {
     /// declined whenever the number is not a locally-resolvable constant with a
     /// vetted table entry.  See [`crate::p2_lift::kuna_linuxsyscall`].
     pub linux_syscall: bool,
+    /// (kuna `msvcstrappend`) Collapse each inlined MSVC x64 `std::string`
+    /// `push_back` / literal `append` capacity diamond into one call on a locked
+    /// `std::string::push_back` / `std::string::append` prototype (`option
+    /// msvcstrappend`).  See [`crate::p2_lift::kuna_msvcstrappend`].
+    pub msvc_str_append: bool,
     /// (kuna `switchselector`) Refuse to install a recovered lowered-switch
     /// cascade whose synthesized BRANCHIND cannot be given the switch value as
     /// its selector, so the compiler's `if`/`else if` chain over the real
@@ -2135,6 +2140,7 @@ impl Architecture {
             overlap_branch: false, // (kuna) option overlapbranch; reset_defaults sets the shipped default
             remove_cleanup_code: false, // (kuna) option cleanupcode; reset_defaults sets the shipped default
             linux_syscall: false, // (kuna) option linuxsyscall; reset_defaults sets the shipped default
+            msvc_str_append: false, // (kuna) option msvcstrappend; reset_defaults sets the shipped default
             switch_selector_guard: false, // (kuna) option switchselector; reset_defaults sets the shipped default
             noreturn_extern_calls: false, // (kuna) option noreturn_extern, default off
             sparc_struct_return: false,
@@ -2396,6 +2402,7 @@ impl Architecture {
         self.overlap_branch = true; // (kuna) DIV-106 default-on: REMOVES CODE. Ends a conditional branch's fall-through in a halt when the branch's own target lies strictly inside that fall-through instruction's encoding (the anti-disassembly junk-lead-byte overlap), instead of letting the bogus decode swallow the target and desynchronise the stream. Two real instruction starts cannot sit at `next` and strictly inside `next`, so the trigger never matches well-formed code and is byte-identical (0/675) on the datatest corpus; restore the fall-through-wins decode with `option overlapbranch off`
         self.remove_cleanup_code = true; // (kuna) DIV-81 default-on: REMOVES CODE. Deletes the Rust drop/deallocate call sites (`core::ptr::drop_in_place`, `Drop::drop`, `alloc::raw_vec::RawVecInner::deallocate`, `__rust_dealloc`) and the argument setup that only feeds them. Structurally inert outside a Rust binary (no C ELF resolves a call to one of those names), so byte-identical (0/675) on the datatest corpus; keep the drop glue with `option cleanupcode off`
         self.switch_selector_guard = false; // (kuna) option switchselector, default-off: re-rolling a parameter-dispatch cascade into a switch is the better default; ON narrows `loweredswitch` to cascades whose selector the function itself computes
+        self.msvc_str_append = false; // (kuna) option msvcstrappend, default-off: it deletes the inlined fast path's stores and renames the grow call, and no MSVC C++ corpus in the tree can measure it
         self.linux_syscall = false; // (kuna) option linuxsyscall, default-off this round: it renames a call and locks a prototype, which is a judgement about the target OS that the vector alone does not prove
         self.noreturn_extern_calls = true; // (kuna) DIV-14 default-on: REMOVES CODE (drops the post-call fall-through after a matched extern no-return). Byte-identical (0/675) — no datatest call resolves to a known no-return name; overlaps `noreturn_known`'s name match for defined/imported symbols, restore upstream with `option noreturn_extern off`
         self.sparc_struct_return = false; // (kuna) default: upstream byte-identical (GH-6882)
@@ -2736,6 +2743,7 @@ impl Architecture {
             "overlapbranch" => on_off!(overlap_branch, "Overlapping-branch fall-through truncation"),
             "cleanupcode" => on_off!(remove_cleanup_code, "Rust drop/deallocate call removal"),
             "linuxsyscall" => on_off!(linux_syscall, "Linux int 0x80 syscall naming"),
+            "msvcstrappend" => on_off!(msvc_str_append, "MSVC std::string inlined append collapsing"),
             "switchselector" => on_off!(switch_selector_guard, "Lowered-switch in-function-selector restriction"),
             "noreturn_extern" => on_off!(noreturn_extern_calls, "Name-based extern no-return"),
             "inputvarnodeadjust" => on_off!(input_varnode_adjust, "Overlapping input-varnode adjustment"),
@@ -3887,6 +3895,7 @@ impl Architecture {
         ctx.outline_spec = self.outline_spec.clone(); // outline
         ctx.remove_cleanup_code = self.remove_cleanup_code; // cleanupcode
         ctx.linux_syscall = self.linux_syscall; // linuxsyscall
+        ctx.msvc_str_append = self.msvc_str_append; // msvcstrappend
         ctx.x64_syscall = self.x64_syscall; // (kuna) x64syscall
         ctx.peb_names = self.peb_names.fires(
             crate::kuna_fastfailnoreturn::archid_is_windows(self.get_description()),

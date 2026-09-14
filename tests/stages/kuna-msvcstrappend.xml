@@ -1,0 +1,526 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:windows">
+<!--
+    GH-468 finding 6: MSVC x64 inlines std::string::push_back (operator+=(char))
+    and the literal append(const char *, size_t) at every call site as a
+    capacity diamond, so a run of appends prints as a run of near-identical
+    if/else blocks.  Stage P2 flow-classification, P0 assertion
+    `option msvcstrappend on|off` (default off).
+
+    The image is hand-assembled (nasm) in the MSVC shape.  A string object s
+    is _Bx (16 bytes) / _Mysize at +16 / _Myres at +24:
+
+      build_password  four constant appends to a stack string:
+            mov rcx,[rsp+0x30]; mov rdx,[rsp+0x38]; cmp rcx,rdx; jae grow
+            lea rax,[rcx+1]; mov [rsp+0x30],rax
+            lea rax,[rsp+0x20]; cmp rdx,0xf; cmova rax,[rsp+0x20]
+            mov word [rax+rcx],'k'; jmp join
+      grow: mov r9b,'k'; mov edx,1; lea rcx,[rsp+0x20]; call grow
+      append_chars    loop: movzx r9d,byte [rsi]; push_back(r9b) on the
+                      string at RDI, grow helper taking only (RCX, R9B)
+      quote           string at RBX+8: append(" \"", 2) with the count
+                      visible and the reference in RAX used after the
+                      join; then append("\"", n) whose count is RSI, set
+                      outside the head (not provable)
+      near_miss       a 16-byte small-string threshold, and a grow arm
+                      handed a different char ('z' for a stored 'y')
+      nm_*            27 more near misses, one defect each, every one calling
+                      its own grow stub grow_nmN: the heap pointer or the
+                      capacity read from the wrong object or field, an
+                      extra store, the terminator in a local, missing or
+                      at the wrong index, a two-byte append storing one
+                      byte, a signed or inverted room check, a changed
+                      register or flag read after the join (on every path
+                      or on one), a callee-saved register written, the
+                      grow call handed another object or two bytes, the
+                      character stored through the small buffer on the
+                      heap path or differing between paths, a four-byte
+                      size store, a writable or mismatched literal, a
+                      mismatched outgoing count, a buffer pointer left in
+                      RAX and read, an arm or grow block entered from
+                      outside, and a grow block that keeps the result
+      pos_zeroes_after  a push_back followed by xor ecx,ecx / xor edx,edx:
+                      zeroing a changed register is not a read
+
+    Pass 1 (on) and pass 2 (off).  On is run first because a branchflip
+    warning recorded by an earlier decompile of the same function in one
+    console session is printed again on the later output.
+      #1 #2 #3 #4  the provable appends collapse (on)
+      #5           no std::string call is synthesized in the off pass
+      #6 #7        the off pass keeps every unrolled diamond; the
+                   unprovable register-count append stays unrolled in both
+      #8 #9        the original two near misses survive both passes
+      #10 - #36    every nm_* near miss keeps its grow call in both passes
+-->
+<bytechunk space="ram" offset="0x140001000" readonly="true">
+534883ec404889cb488d4c2420e84e020000488b4c2430488b5424384839d173
+20488d41014889442430488d4424204883fa0f480f4744242066c704086b00eb
+1241b16bba01000000488d4c2420e8ad010000488b4c2430488b5424384839d1
+7320488d41014889442430488d4424204883fa0f480f4744242066c704087500
+eb1241b175ba01000000488d4c2420e86c010000488b4c2430488b5424384839
+d17320488d41014889442430488d4424204883fa0f480f4744242066c704086e
+00eb1241b16eba01000000488d4c2420e82b010000488b4c2430488b54243848
+39d17320488d41014889442430488d4424204883fa0f480f4744242066c70408
+6100eb1241b161ba01000000488d4c2420e8ea000000488d5424204889d9e81d
+0100004883c4405bc3cccccccccccccccccccccccccccccccccccccccccccccc
+cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+5356574883ec204889cf4889d64c89c34885db743f440fb60e488b4f10488b57
+184839d1731e488d4101488947104889f84883fa0f480f470744880c08c64408
+0100eb084889f9e8b400000048ffc648ffcb75c14883c4205f5e5bc3cccccccc
+cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+534883ec204889cb488b41104801d04889411044884c01ffc60401004889d848
+83c4205bc3cccccccccccccccccccccccccccccccccccccccccccccccccccccc
+488b42104c8b024839c80f94c00fb6c0c3cccccccccccccccccccccccccccccc
+488b411848c7411003000000c60161c3cccccccccccccccccccccccccccccccc
+488b411048ffc04889411044884c01ff4889c8c3cccccccccccccccccccccccc
+53564883ec384889cbbe01000000488b4b18488b53204889d04829c84883f802
+7226488d410248894318488d43084883fa0f480f47430866c704082022c64408
+0200488d4308eb1e48c7442420020000004c8d0d08120000ba02000000488d4b
+08e87a0100004889c1e892010000488b4b18488b53204889d04829c84883f801
+7221488d410148894318488d43084883fa0f480f47430866c704082200488d43
+08eb1848897424204c8d0db41100004889f2488d4b08e8250100004889c1e83d
+0100004883c4385e5bc3cccccccccccccccccccccccccccccccccccccccccccc
+cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+534883ec40488d4c2420e8b1feffff488b4c2430488b5424384839d17320488d
+41014889442430488d4424204883fa10480f4744242066c704087800eb1241b1
+78ba01000000488d4c2420e810feffff488b4c2430488b5424384839d1732048
+8d41014889442430488d4424204883fa0f480f4744242066c704087900eb1241
+b17aba01000000488d4c2420e8cffdffff488d4c2420e8650000004883c4405b
+c3cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+488b41104801d0488941104889c8c3cccccccccccccccccccccccccccccccccc
+488b01c3cccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+534883ec50488d4c2420e851fdffff488b4c2430488b5424384839d17320488d
+41014889442430488d4424204883fa0f480f4744244066c704086b00eb1241b1
+6bba01000000488d4c2420e8b00d0000488d4c2420e846ffffff4883c4505bc3
+cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+534883ec50488d4c2420e8d1fcffff488b4c2430488b5424384839d17325488d
+41014889442430488d4424204883fa0f480f4744242066c704086b00c6442448
+01eb1241b16bba01000000488d4c2420e83b0d0000488d4c2420e8c1feffff48
+83c4505bc3cccccccccccccccccccccccccccccccccccccccccccccccccccccc
+534883ec50488d4c2420e851fcffff488b4c2430488b5424284839d17320488d
+41014889442430488d4424204883fa0f480f4744242066c704086b00eb1241b1
+6bba01000000488d4c2420e8d00c0000488d4c2420e846feffff4883c4505bc3
+cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+534883ec50488d4c2420e8d1fbffff488b4c2430488b5424384839d17320488d
+41014889442430488d4424204883fa0f480f4744242866c704086b00eb1241b1
+6bba01000000488d4c2420e8600c0000488d4c2420e8c6fdffff4883c4505bc3
+cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+534883ec50488d4c2420e851fbffff488b4c2430488b5424384839d17323488d
+41014889442430488d4424204883fa0f480f47442420c604086bc644244800eb
+1241b16bba01000000488d4c2420e8ed0b0000488d4c2420e843fdffff4883c4
+505bc3cccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+534883ec50488d4c2420e8d1faffff488b4c2430488b5424384839d1731e488d
+41014889442430488d4424204883fa0f480f47442420c604086beb1241b16bba
+01000000488d4c2420e8820b0000488d4c2420e8c8fcffff4883c4505bc3cccc
+cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+534883ec304889cb488b4b18488b53204889d04829c84883f8027221488d4102
+48894318488d43084883fa0f480f47430866c704082000488d4308eb1e48c744
+2420020000004c8d0db30c0000ba02000000488d4b08e8050b00004889c1e83d
+fcffff4883c4305bc3cccccccccccccccccccccccccccccccccccccccccccccc
+534883ec50488d4c2420e8d1f9ffff488b4c2430488b5424384839d17d20488d
+41014889442430488d4424204883fa0f480f4744242066c704086b00eb1241b1
+6bba01000000488d4c2420e8a00a0000488d4c2420e8c6fbffff4883c4505bc3
+cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+534883ec50488d4c2420e851f9ffff488b4c2430488b5424384839d17220488d
+41014889442430488d4424204883fa0f480f4744242066c704086b00eb1241b1
+6bba01000000488d4c2420e8300a0000488d4c2420e846fbffff4883c4505bc3
+cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+534883ec50488d4c2420e8d1f8ffff488b4c2430488b5424384839d17320488d
+41014889442430488d4424204883fa0f480f4744242066c704086b00eb1241b1
+6bba01000000488d4c2420e8c009000048894c2448488d4c2420e8c1faffff48
+83c4505bc3cccccccccccccccccccccccccccccccccccccccccccccccccccccc
+534883ec50488d4c2420e851f8ffff488b4c2430488b5424384839d17320488d
+41014889442430488d4424204883fa0f480f4744242066c704086b00eb1241b1
+6bba01000000488d4c2420e8500900000f96c088442448488d4c2420e83ffaff
+ff4883c4505bc3cccccccccccccccccccccccccccccccccccccccccccccccccc
+534883ec50488d4c2420e8d1f7ffff488b4c2430488b5424384839d17323488d
+41014889442430488d4424204883fa0f480f4744242066c704086b004889cbeb
+1241b16bba01000000488d4c2420e8dd080000488d4c2420e8c3f9ffff4883c4
+505bc3cccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+534883ec50488d4c2420e851f7ffff488b4c2430488b5424384839d17320488d
+41014889442430488d4424204883fa0f480f4744242066c704086b00eb1241b1
+6bba01000000488d4c2440e870080000488d4c2420e846f9ffff4883c4505bc3
+cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+534883ec50488d4c2420e8d1f6ffff488b4c2430488b5424384839d17320488d
+41014889442430488d4424204883fa0f480f4744242066c704086b00eb1241b1
+6bba02000000488d4c2420e800080000488d4c2420e8c6f8ffff4883c4505bc3
+cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+534883ec50488d4c2420e851f6ffff488b4c2430488b5424384839d17323488d
+41014889442430488d4424204883fa0f480f47442420c604086bc644080200eb
+1241b16bba01000000488d4c2420e88d070000488d4c2420e843f8ffff4883c4
+505bc3cccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+534883ec50488d4c2420e8d1f5ffff488b4c2430488b5424384839d17323488d
+41014889442430488d442420c604086b4883fa0f480f47442420c644080100eb
+1241b16bba01000000488d4c2420e81d070000488d4c2420e8c3f7ffff4883c4
+505bc3cccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+534883ec50488d4c2420e851f5ffff488b4c2430488b5424384839d17329488d
+410148894424304883fa0f770d488d44242066c704086b00eb1f488b44242066
+c704087100eb1241b16bba01000000488d4c2420e8a7060000488d4c2420e83d
+f7ffff4883c4505bc3cccccccccccccccccccccccccccccccccccccccccccccc
+534883ec50488d4c2420e8d1f4ffff488b4c2430488b5424384839d1731f488d
+410189442430488d4424204883fa0f480f4744242066c704086b00eb1241b16b
+ba01000000488d4c2420e841060000488d4c2420e8c7f6ffff4883c4505bc3cc
+cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+534883ec304889cb488b4b18488b53204889d04829c84883f8027226488d4102
+48894318488d43084883fa0f480f47430866c704082022c644080200488d4308
+eb1e48c7442420020000004c8d0dae210000ba02000000488d4b08e8c0050000
+4889c1e838f6ffff4883c4305bc3cccccccccccccccccccccccccccccccccccc
+534883ec304889cb488b4b18488b53204889d04829c84883f8027226488d4102
+48894318488d43084883fa0f480f47430866c704082022c644080200488d4308
+eb1e48c7442420020000004c8d0d33060000ba02000000488d4b08e850050000
+4889c1e8b8f5ffff4883c4305bc3cccccccccccccccccccccccccccccccccccc
+534883ec304889cb488b4b18488b53204889d04829c84883f8027222488d4102
+48894318488d43084883fa0f480f47430866c704082022c644080200eb1e48c7
+442420020000004c8d0db2050000ba02000000488d4b08e8e40400004889c1e8
+3cf5ffff4883c4305bc3cccccccccccccccccccccccccccccccccccccccccccc
+534883ec50488d4c2420e8d1f2ffff488b4c2430488b5424384839d173234883
+fa0f7710488d41014889442430488d442420eb05488b44242066c704086b00eb
+1241b16bba01000000488d4c2420e87d040000488d4c2420e8c3f4ffff4883c4
+505bc3cccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+534883ec50488d4c2420e851f2ffff4885db7527488b4c2430488b5424384839
+d17320488d41014889442430488d4424204883fa0f480f4744242066c704086b
+00eb1241b16bba01000000488d4c2420e80b040000488d4c2420e841f4ffff48
+83c4505bc3cccccccccccccccccccccccccccccccccccccccccccccccccccccc
+534883ec50488d4c2420e8d1f1ffff4885db752f488b4c2430488b5424384839
+d17320488d41014889442430488d4424204883fa0f480f4744242066c704086b
+00eb1241b16bba01000000488d4c2420e89b030000488d4c2420e8c1f3ffff48
+83c4505bc3cccccccccccccccccccccccccccccccccccccccccccccccccccccc
+534883ec50488d4c2420e851f1ffff488b4c2430488b5424384839d17320488d
+41014889442430488d4424204883fa0f480f4744242066c704086b00eb1741b1
+6bba01000000488d4c2420e8300300004889442448488d4c2420e841f3ffff48
+83c4505bc3cccccccccccccccccccccccccccccccccccccccccccccccccccccc
+534883ec304889cb488b4b18488b53204889d04829c84883f8027226488d4102
+48894318488d43084883fa0f480f47430866c704082022c644080200488d4308
+eb1e48c7442420030000004c8d0d2e030000ba02000000488d4b08e8b0020000
+4889c1e8b8f2ffff4883c4305bc3cccccccccccccccccccccccccccccccccccc
+534883ec50488d4c2420e851f0ffff488b4c2430488b5424384839d17320488d
+41014889442430488d4424204883fa0f480f4744242066c704086b00eb1241b1
+6bba01000000488d4c2420e8500200004885db7404884c2448488d4c2420e83d
+f2ffff4883c4505bc3cccccccccccccccccccccccccccccccccccccccccccccc
+534883ec50488d4c2420e8d1efffff488b4c2430488b5424384839d17320488d
+41014889442430488d4424204883fa0f480f4744242066c704086b00eb1241b1
+6bba01000000488d4c2420e8e001000031c931d2488d4c2420e8c2f1ffff4883
+c4505bc3cccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+4889c8c3cccccccccccccccccccccccc4889c8c3cccccccccccccccccccccccc
+4889c8c3cccccccccccccccccccccccc4889c8c3cccccccccccccccccccccccc
+4889c8c3cccccccccccccccccccccccc4889c8c3cccccccccccccccccccccccc
+4889c8c3cccccccccccccccccccccccc4889c8c3cccccccccccccccccccccccc
+4889c8c3cccccccccccccccccccccccc4889c8c3cccccccccccccccccccccccc
+4889c8c3cccccccccccccccccccccccc4889c8c3cccccccccccccccccccccccc
+4889c8c3cccccccccccccccccccccccc4889c8c3cccccccccccccccccccccccc
+4889c8c3cccccccccccccccccccccccc4889c8c3cccccccccccccccccccccccc
+4889c8c3cccccccccccccccccccccccc4889c8c3cccccccccccccccccccccccc
+4889c8c3cccccccccccccccccccccccc4889c8c3cccccccccccccccccccccccc
+4889c8c3cccccccccccccccccccccccc4889c8c3cccccccccccccccccccccccc
+4889c8c3cccccccccccccccccccccccc4889c8c3cccccccccccccccccccccccc
+4889c8c3cccccccccccccccccccccccc4889c8c3cccccccccccccccccccccccc
+4889c8c3cccccccccccccccccccccccc4889c8c3cccccccccccccccccccccccc
+0000000000000000000000000000000000000000000000000000000000000000
+0000000000000000000000000000000000000000000000000000000000000000
+2022002200787900
+</bytechunk>
+<bytechunk space="ram" offset="0x140004000">
+202200
+</bytechunk>
+<symbol space="ram" offset="0x140001500" name="nm_other_ptr_object"/>
+<symbol space="ram" offset="0x140001580" name="nm_extra_store"/>
+<symbol space="ram" offset="0x140001600" name="nm_other_capacity_field"/>
+<symbol space="ram" offset="0x140001680" name="nm_heap_wrong_field"/>
+<symbol space="ram" offset="0x140001700" name="nm_nul_to_local"/>
+<symbol space="ram" offset="0x140001780" name="nm_missing_nul"/>
+<symbol space="ram" offset="0x140001800" name="nm_append_stores_one"/>
+<symbol space="ram" offset="0x140001880" name="nm_signed_compare"/>
+<symbol space="ram" offset="0x140001900" name="nm_inverted_head"/>
+<symbol space="ram" offset="0x140001980" name="nm_reads_rcx_after"/>
+<symbol space="ram" offset="0x140001a00" name="nm_reads_flag_after"/>
+<symbol space="ram" offset="0x140001a80" name="nm_callee_saved"/>
+<symbol space="ram" offset="0x140001b00" name="nm_grow_other_object"/>
+<symbol space="ram" offset="0x140001b80" name="nm_grow_by_two"/>
+<symbol space="ram" offset="0x140001c00" name="nm_nul_wrong_index"/>
+<symbol space="ram" offset="0x140001c80" name="nm_char_before_select"/>
+<symbol space="ram" offset="0x140001d00" name="nm_char_differs_by_path"/>
+<symbol space="ram" offset="0x140001d80" name="nm_size_store_narrow"/>
+<symbol space="ram" offset="0x140001e00" name="nm_append_writable_literal"/>
+<symbol space="ram" offset="0x140001e80" name="nm_append_literal_mismatch"/>
+<symbol space="ram" offset="0x140001f00" name="nm_append_rax_not_this"/>
+<symbol space="ram" offset="0x140001f80" name="nm_size_only_small"/>
+<symbol space="ram" offset="0x140002000" name="nm_fast_arm_entered"/>
+<symbol space="ram" offset="0x140002080" name="nm_grow_entered"/>
+<symbol space="ram" offset="0x140002100" name="nm_grow_keeps_result"/>
+<symbol space="ram" offset="0x140002180" name="nm_append_count_mismatch"/>
+<symbol space="ram" offset="0x140002200" name="nm_reads_cl_on_one_path"/>
+<symbol space="ram" offset="0x140002280" name="pos_zeroes_after"/>
+<symbol space="ram" offset="0x140002300" name="grow_nm1"/>
+<symbol space="ram" offset="0x140002310" name="grow_nm2"/>
+<symbol space="ram" offset="0x140002320" name="grow_nm3"/>
+<symbol space="ram" offset="0x140002330" name="grow_nm4"/>
+<symbol space="ram" offset="0x140002340" name="grow_nm5"/>
+<symbol space="ram" offset="0x140002350" name="grow_nm6"/>
+<symbol space="ram" offset="0x140002360" name="grow_nm7"/>
+<symbol space="ram" offset="0x140002370" name="grow_nm8"/>
+<symbol space="ram" offset="0x140002380" name="grow_nm9"/>
+<symbol space="ram" offset="0x140002390" name="grow_nm10"/>
+<symbol space="ram" offset="0x1400023a0" name="grow_nm11"/>
+<symbol space="ram" offset="0x1400023b0" name="grow_nm12"/>
+<symbol space="ram" offset="0x1400023c0" name="grow_nm13"/>
+<symbol space="ram" offset="0x1400023d0" name="grow_nm14"/>
+<symbol space="ram" offset="0x1400023e0" name="grow_nm15"/>
+<symbol space="ram" offset="0x1400023f0" name="grow_nm16"/>
+<symbol space="ram" offset="0x140002400" name="grow_nm17"/>
+<symbol space="ram" offset="0x140002410" name="grow_nm18"/>
+<symbol space="ram" offset="0x140002420" name="grow_nm19"/>
+<symbol space="ram" offset="0x140002430" name="grow_nm20"/>
+<symbol space="ram" offset="0x140002440" name="grow_nm21"/>
+<symbol space="ram" offset="0x140002450" name="grow_nm22"/>
+<symbol space="ram" offset="0x140002460" name="grow_nm23"/>
+<symbol space="ram" offset="0x140002470" name="grow_nm24"/>
+<symbol space="ram" offset="0x140002480" name="grow_nm25"/>
+<symbol space="ram" offset="0x140002490" name="grow_nm26"/>
+<symbol space="ram" offset="0x1400024a0" name="grow_nm27"/>
+<symbol space="ram" offset="0x1400024b0" name="grow_pos1"/>
+<symbol space="ram" offset="0x140001000" name="build_password"/>
+<symbol space="ram" offset="0x140001180" name="append_chars"/>
+<symbol space="ram" offset="0x1400012a0" name="quote"/>
+<symbol space="ram" offset="0x1400013a0" name="near_miss"/>
+</binaryimage>
+<script>
+  <com>option msvcstrappend on</com>
+  <com>lo fu build_password</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu append_chars</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu quote</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu near_miss</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_other_ptr_object</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_extra_store</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_other_capacity_field</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_heap_wrong_field</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_nul_to_local</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_missing_nul</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_append_stores_one</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_signed_compare</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_inverted_head</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_reads_rcx_after</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_reads_flag_after</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_callee_saved</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_grow_other_object</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_grow_by_two</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_nul_wrong_index</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_char_before_select</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_char_differs_by_path</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_size_store_narrow</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_append_writable_literal</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_append_literal_mismatch</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_append_rax_not_this</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_size_only_small</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_fast_arm_entered</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_grow_entered</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_grow_keeps_result</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_append_count_mismatch</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_reads_cl_on_one_path</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pos_zeroes_after</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option msvcstrappend off</com>
+  <com>lo fu build_password</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu append_chars</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu quote</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu near_miss</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_other_ptr_object</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_extra_store</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_other_capacity_field</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_heap_wrong_field</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_nul_to_local</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_missing_nul</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_append_stores_one</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_signed_compare</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_inverted_head</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_reads_rcx_after</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_reads_flag_after</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_callee_saved</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_grow_other_object</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_grow_by_two</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_nul_wrong_index</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_char_before_select</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_char_differs_by_path</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_size_store_narrow</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_append_writable_literal</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_append_literal_mismatch</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_append_rax_not_this</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_size_only_small</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_fast_arm_entered</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_grow_entered</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_grow_keeps_result</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_append_count_mismatch</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nm_reads_cl_on_one_path</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pos_zeroes_after</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="MSVCSTRAPPEND #1: on - the four constant appends are four push_back calls in order" min="1" max="1">std::string::push_back\(\(void \*\)v1,'k'\);
+std::string::push_back\(\(void \*\)v1,'u'\);
+std::string::push_back\(\(void \*\)v1,'n'\);
+std::string::push_back\(\(void \*\)v1,'a'\);</stringmatch>
+<stringmatch name="MSVCSTRAPPEND #2: on - the loop appends the byte it read" min="1" max="1">std::string::push_back\(a0,\*a1\);</stringmatch>
+<stringmatch name="MSVCSTRAPPEND #3: on - the two-byte literal append returns the reference its caller uses" min="1" max="1">sub_1400014a0\(std::string::append\(\(void \*\)\(a0 \+ 8\)," \\"",2\)\);</stringmatch>
+<stringmatch name="MSVCSTRAPPEND #4: on - zeroing a changed register after the join does not block the collapse" min="1" max="1">grow_pos1\(</stringmatch>
+<stringmatch name="MSVCSTRAPPEND #5: seven synthesized calls, all in the on pass" min="7" max="7">std::string::</stringmatch>
+<stringmatch name="MSVCSTRAPPEND #6: off - four unrolled push_back grow calls, plus the two near misses in each pass" min="8" max="8">sub_140001200\(</stringmatch>
+<stringmatch name="MSVCSTRAPPEND #7: the register-count append keeps its grow call in both passes, the literal one only off" min="3" max="3">sub_140001480\(</stringmatch>
+<stringmatch name="MSVCSTRAPPEND #8: the 16-byte threshold diamond survives both passes" min="2" max="2">0x11 &lt;= </stringmatch>
+<stringmatch name="MSVCSTRAPPEND #9: the mismatched-char diamond survives both passes" min="2" max="2">= 0x79;</stringmatch>
+<stringmatch name="MSVCSTRAPPEND #10: kept in both passes - the heap pointer is loaded from another object" min="2" max="2">grow_nm1\(</stringmatch>
+<stringmatch name="MSVCSTRAPPEND #11: kept in both passes - the fast arm also writes a local" min="2" max="2">grow_nm2\(</stringmatch>
+<stringmatch name="MSVCSTRAPPEND #12: kept in both passes - the capacity is read from +8" min="2" max="2">grow_nm3\(</stringmatch>
+<stringmatch name="MSVCSTRAPPEND #13: kept in both passes - the heap pointer is loaded from +8 of the object" min="2" max="2">grow_nm4\(</stringmatch>
+<stringmatch name="MSVCSTRAPPEND #14: kept in both passes - the terminator is written to a local" min="2" max="2">grow_nm5\(</stringmatch>
+<stringmatch name="MSVCSTRAPPEND #15: kept in both passes - there is no terminator" min="2" max="2">grow_nm6\(</stringmatch>
+<stringmatch name="MSVCSTRAPPEND #16: kept in both passes - a two-byte append stores one byte and the terminator" min="2" max="2">grow_nm7\(</stringmatch>
+<stringmatch name="MSVCSTRAPPEND #17: kept in both passes - the room check is signed" min="2" max="2">grow_nm8\(</stringmatch>
+<stringmatch name="MSVCSTRAPPEND #18: kept in both passes - the fast arm runs when the string is full" min="2" max="2">grow_nm9\(</stringmatch>
+<stringmatch name="MSVCSTRAPPEND #19: kept in both passes - the index register is read after the join" min="2" max="2">grow_nm10\(</stringmatch>
+<stringmatch name="MSVCSTRAPPEND #20: kept in both passes - a flag the fast arm set is read after the join" min="2" max="2">grow_nm11\(</stringmatch>
+<stringmatch name="MSVCSTRAPPEND #21: kept in both passes - the fast arm writes a callee-saved register" min="2" max="2">grow_nm12\(</stringmatch>
+<stringmatch name="MSVCSTRAPPEND #22: kept in both passes - the grow call is handed another object" min="2" max="2">grow_nm13\(</stringmatch>
+<stringmatch name="MSVCSTRAPPEND #23: kept in both passes - the grow call is asked for two bytes" min="2" max="2">grow_nm14\(</stringmatch>
+<stringmatch name="MSVCSTRAPPEND #24: kept in both passes - the terminator skips a byte" min="2" max="2">grow_nm15\(</stringmatch>
+<stringmatch name="MSVCSTRAPPEND #25: kept in both passes - the heap path stores the character through the small buffer" min="2" max="2">grow_nm16\(</stringmatch>
+<stringmatch name="MSVCSTRAPPEND #26: kept in both passes - the two paths store different characters" min="2" max="2">grow_nm17\(</stringmatch>
+<stringmatch name="MSVCSTRAPPEND #27: kept in both passes - the size is stored four bytes wide" min="2" max="2">grow_nm18\(</stringmatch>
+<stringmatch name="MSVCSTRAPPEND #28: kept in both passes - the literal lives in writable memory" min="2" max="2">grow_nm19\(</stringmatch>
+<stringmatch name="MSVCSTRAPPEND #29: kept in both passes - the literal spells other bytes" min="2" max="2">grow_nm20\(</stringmatch>
+<stringmatch name="MSVCSTRAPPEND #30: kept in both passes - the buffer pointer left in RAX is read after the join" min="2" max="2">grow_nm21\(</stringmatch>
+<stringmatch name="MSVCSTRAPPEND #31: kept in both passes - only the small-string path stores the size" min="2" max="2">grow_nm22\(</stringmatch>
+<stringmatch name="MSVCSTRAPPEND #32: kept in both passes - another branch enters the fast arm" min="2" max="2">grow_nm23\(</stringmatch>
+<stringmatch name="MSVCSTRAPPEND #33: kept in both passes - another branch enters the grow block" min="2" max="2">grow_nm24\(</stringmatch>
+<stringmatch name="MSVCSTRAPPEND #34: kept in both passes - the grow block stores the call result" min="2" max="2">grow_nm25\(</stringmatch>
+<stringmatch name="MSVCSTRAPPEND #35: kept in both passes - the outgoing count disagrees with the bytes stored" min="2" max="2">grow_nm26\(</stringmatch>
+<stringmatch name="MSVCSTRAPPEND #36: kept in both passes - one path after the join reads the index register low byte" min="2" max="2">grow_nm27\(</stringmatch>
+</decompilertest>
