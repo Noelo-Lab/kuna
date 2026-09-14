@@ -43,4 +43,5 @@
 <stringmatch name="KUNA-CATALOG #8: the opt-in-tool change_kind aligns with the destructive options (returnpair counted twice; +switchguardbound, +switchsharedcase, +switchmultipred, +unrolledguard, +branchflip, +outline, +spillargtrial, +securitycheck, +msvcstackguard)" min="16" max="16">"change_kind": "opt-in-tool"</stringmatch>
 <stringmatch name="KUNA-CATALOG #9: every settable carries a machine-readable change_kind so an LLM can judge default-on eligibility" min="10" max="200">"change_kind": </stringmatch>
 <stringmatch name="KUNA-CATALOG #10: fast whole-project discovery is default-off but live-toggleable" min="1" max="1">"option": "fast_funcdisc", "values": \["on", "off"\], "default": "off", "current": "on", "destructive_as_default": false, "phase": "P1"</stringmatch>
+<stringmatch name="KUNA-CATALOG #11: mapped ELF x86 flow recovery is default-on in P2" min="1" max="1">"option": "mappedflowboundary", "values": \["on", "off"\], "default": "on", "current": "on", "destructive_as_default": false, "phase": "P2"</stringmatch>
 </decompilertest>

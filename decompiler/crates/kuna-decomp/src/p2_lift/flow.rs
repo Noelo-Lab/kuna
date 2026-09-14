@@ -185,6 +185,10 @@ pub type JtPipelineFn<'a> = dyn FnMut(&mut Funcdata, &VisitedMap) -> KunaResult<
 /// `Architecture`/`Override`-backed implementor; the algorithm bodies in this
 /// module never change.
 pub trait FlowEnvironment {
+    /// A flow-lifetime snapshot of the live map, available only for eligible images.
+    fn mapped_flow_image(&self) -> Option<&dyn kuna_sleigh::loadimage::ImageBytes> {
+        None
+    }
     /// The SLEIGH translator (C++ `glb->translate`).  W2 — *available*.
     ///
     /// `one_instruction(emit, baseaddr)` lifts one machine instruction's raw
@@ -1000,7 +1004,11 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         // and `load_fill` raises out of the whole flow follow, losing a function
         // whose own bytes disassemble cleanly.  End the path instead, exactly as a
         // target outside a declared extent ends it.
-        if !self.env.code_bytes_mapped(to) {
+        let mapped = self.env.mapped_flow_image().map_or_else(
+            || self.env.code_bytes_mapped(to),
+            |image| crate::kuna_mappedflowboundary::mapped_start(image, to),
+        );
+        if !mapped {
             let fromaddr =
                 self.data.obank().get(from).expect("new_address: stale from").get_addr().clone();
             self.handle_unmapped_target(&fromaddr, to);
@@ -1100,11 +1108,33 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         let mut raw2 = String::new();
         let _ = toaddr.print_raw(&mut raw2);
         msg.push_str(&raw2);
-        self.data.warning(&msg, toaddr);
+        self.note_unmapped_flow(&msg, toaddr);
+    }
+
+    /// (kuna) Warn at `addr`, and once per function in the header, that flow reached unmapped memory.
+    fn note_unmapped_flow(&mut self, msg: &str, addr: &Address) {
+        self.data.warning(msg, addr);
         if !self.has_unmapped_target() {
             self.flags |= flow_flags::unmappedtarget_present;
             self.data.warning_header("Function flows into unmapped memory");
         }
+    }
+
+    /// (kuna `mappedflowboundary`) Did this checked decode fail on an instruction that flow
+    /// reached on a mapped byte but whose encoding runs past the mapped run? That is proved
+    /// from the image, whatever error the decode raised first. The flow's own entry has no
+    /// decoded path to retain, and an in-lined callee's missing halt would be cloned into a
+    /// normal return, so both keep the error.
+    fn kuna_truncated_mapped_instruction(&self, curaddr: &Address) -> bool {
+        !self.is_flow_for_inline()
+            && curaddr != self.data.get_address()
+            && self.env.mapped_flow_image().is_some_and(|image| {
+                crate::kuna_mappedflowboundary::truncated_instruction(
+                    image,
+                    self.env.translate(),
+                    curaddr,
+                )
+            })
     }
 
     /// Build the C++ out-of-bounds error/warning string (`flow.cc:541-547`).
@@ -1588,7 +1618,11 @@ following this call as a branch"
         };
 
         let mut emit = FlowEmit::new(&mut self.data, self.env);
-        match self.env.translate().one_instruction(&mut emit, curaddr) {
+        let decoded = match self.env.mapped_flow_image() {
+            Some(image) => self.env.translate().one_instruction_checked(&mut emit, curaddr, image),
+            None => self.env.translate().one_instruction(&mut emit, curaddr),
+        };
+        match decoded {
             Ok(s) => {
                 let emit_err = emit.error;
                 step = s;
@@ -1601,7 +1635,29 @@ following this call as a branch"
                 }
             }
             Err(err) => {
-                step = self.handle_decode_error(curaddr, err)?;
+                let overlap_step = if matches!(err, KunaError::DataUnavail { .. }) {
+                    self.env.mapped_flow_image().and_then(|image| {
+                        crate::kuna_mappedflowboundary::unmapped_overlap_step(
+                            image,
+                            self.env.translate(),
+                            self.env.overlap_branch_enabled(),
+                            curaddr,
+                            &overlap_watch,
+                        )
+                    })
+                } else {
+                    None
+                };
+                step = match overlap_step {
+                    Some(step) => step,
+                    None if self.kuna_truncated_mapped_instruction(curaddr) => {
+                        self.artificial_halt(curaddr, pcodeop_flags::missing)?;
+                        let msg = crate::kuna_mappedflowboundary::truncated_warning(curaddr);
+                        self.note_unmapped_flow(&msg, curaddr);
+                        1
+                    }
+                    None => self.handle_decode_error(curaddr, err)?,
+                };
             }
         }
 
@@ -1768,6 +1824,17 @@ truncating the fall-through here"
                     "funcboundflow: fall-through reached the next function entry; truncating flow here",
                     curaddr,
                 );
+                isfallthru = false;
+            } else if self.baddr <= next
+                && next <= self.eaddr
+                && !self.is_flow_for_inline()
+                && self.env.mapped_flow_image().is_some_and(|image| {
+                    !crate::kuna_mappedflowboundary::mapped_start(image, &next)
+                })
+            {
+                self.handle_unmapped_target(curaddr, &next);
+                self.register_missing_halt(&next)?;
+                self.outofbounds.insert(next);
                 isfallthru = false;
             } else {
                 self.addrlist.push(next);
@@ -2041,6 +2108,40 @@ truncating the fall-through here"
         })
     }
 
+    /// Register a resolvable cutoff before queued paths can reach it through NOPs.
+    /// Only an existing missing halt is shared; any other op at `addr` (a
+    /// `funcboundflow` no-return halt, say) belongs to another edge and is replaced
+    /// in `visited`, as upstream stub filling does.
+    fn register_missing_halt(&mut self, addr: &Address) -> KunaResult<()> {
+        if let Some(op) = self.visited.get(addr).and_then(|stat| {
+            if stat.seqnum.get_addr().is_invalid() {
+                None
+            } else {
+                self.data.obank().find_op(&stat.seqnum).filter(|&op| {
+                    self.data
+                        .obank()
+                        .get(op)
+                        .is_some_and(|op| op.get_halt_type() & pcodeop_flags::missing != 0)
+                })
+            }
+        }) {
+            self.op_mark_start_basic(op);
+            return Ok(());
+        }
+        let op = self.artificial_halt(addr, pcodeop_flags::missing)?;
+        self.op_mark_start_basic(op);
+        self.op_mark_start_instruction(op);
+        let seq = self
+            .data
+            .obank()
+            .get(op)
+            .expect("missing halt: stale op")
+            .get_seq_num()
+            .clone();
+        self.visited.insert(addr.clone(), VisitStat { seqnum: seq, size: 1 });
+        Ok(())
+    }
+
     /// Fill-in artificial HALT p-code for `unprocessed` addresses (C++
     /// `fillinBranchStubs`, `flow.cc:891`).
     fn fillin_branch_stubs(&mut self) -> KunaResult<()> {
@@ -2048,9 +2149,6 @@ truncating the fall-through here"
         self.dedup_unprocessed();
         let addrs: Vec<Address> = self.unprocessed.clone();
         for addr in addrs {
-            let op = self.artificial_halt(&addr, pcodeop_flags::missing)?;
-            self.op_mark_start_basic(op);
-            self.op_mark_start_instruction(op);
             // (kuna) A caller-declared extent (`--define-function START-END`) is the
             // only thing that narrows the flow range, and a branch that leaves it
             // leaves an address the walk deliberately never decoded.  `collect_edges`
@@ -2064,14 +2162,11 @@ truncating the fall-through here"
             // exist does not, and resolving it to a halt would truncate a function
             // instead of reporting the defect.
             if self.outofbounds.contains(&addr) || self.funcbound_clips(&addr) {
-                let seq = self
-                    .data
-                    .obank()
-                    .get(op)
-                    .expect("fillin_branch_stubs: stale stub")
-                    .get_seq_num()
-                    .clone();
-                self.visited.insert(addr.clone(), VisitStat { seqnum: seq, size: 1 });
+                self.register_missing_halt(&addr)?;
+            } else {
+                let op = self.artificial_halt(&addr, pcodeop_flags::missing)?;
+                self.op_mark_start_basic(op);
+                self.op_mark_start_instruction(op);
             }
         }
         Ok(())

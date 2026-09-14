@@ -223,6 +223,10 @@ impl CommentDatabase {
         &self.comments
     }
 
+    pub(crate) fn retain_comments(&mut self, keep: impl FnMut(&ArchWarning) -> bool) {
+        self.comments.retain(keep);
+    }
+
     /// Clear all stored comments (C++ `CommentDatabase::clear`).
     pub fn clear(&mut self) {
         self.comments.clear();
@@ -478,6 +482,10 @@ pub struct Architecture {
     /// no-return), truncate flow with a no-return halt instead of decoding the
     /// next function's body into the current one (`option funcboundflow`).
     pub funcbound_flow: bool,
+    /// Recover mapped ELF x86 flow without decoding staged loader padding.
+    pub mapped_flow_boundary: bool,
+    /// Load-time container/target eligibility; XML, raw, and remote images abstain.
+    pub mapped_flow_boundary_image: bool,
     /// (kuna `overlapbranch`) Truncate a conditional branch's fall-through when the
     /// branch's own target lies strictly inside that fall-through instruction's
     /// encoding — the anti-disassembly junk-lead-byte idiom, where the fall-through
@@ -2094,6 +2102,8 @@ impl Architecture {
             entry_ret_dispatch: false, // (kuna) option entryretdispatch; reset_defaults sets the shipped default
             push_immediate_ret: false, // (kuna) option pushimmediateret; reset_defaults sets the shipped default
             funcbound_flow: false, // (kuna) option funcboundflow; reset_defaults sets the shipped default
+            mapped_flow_boundary: false,
+            mapped_flow_boundary_image: false,
             overlap_branch: false, // (kuna) option overlapbranch; reset_defaults sets the shipped default
             remove_cleanup_code: false, // (kuna) option cleanupcode; reset_defaults sets the shipped default
             linux_syscall: false, // (kuna) option linuxsyscall; reset_defaults sets the shipped default
@@ -2350,6 +2360,7 @@ impl Architecture {
         self.entry_ret_dispatch = true; // (kuna) DIV-168 default-on: restores an entry-point `push continuation; push callee; ret` chain as calls only when bounded, straight-line raw-p-code provenance proves the RET destination came from this run's adjacent store pair. Conditional flow, calls, aliasing writes and overwritten slots conservatively decline; explicit flow assertions win. Byte-identical (0/675) on the datatest corpus. Restore the bare-return rendering with `option entryretdispatch off`
         self.push_immediate_ret = true; // (kuna) DIV-170 default-on: RESTORES CODE. A RETURN that bounded raw-p-code provenance proves pops the sole current-run stack store of an immediate is a terminal branch to that immediate, so `push original_entry; ret` in an unpacking stub no longer loses the transfer after the unpacker call. Any second live stack store, call boundary, stack adjustment/overwrite, computed target, conditional/indirect flow, or unsupported userop declines; explicit flow assertions win. The target is not synthesized as a function because packed-image bytes can still be encrypted on disk. Byte-identical (0/675) on the datatest corpus. Restore the bare-return rendering with `option pushimmediateret off`
         self.funcbound_flow = true; // (kuna) DIV-67 default-on: REMOVES CODE. Truncates a fall-through that reaches another known function's entry (a function ending in an unnamed static no-return `exit`/`abort`/`die()` wrapper) instead of decoding the next function's body into it. Byte-identical (0/675) on the datatest corpus; restore upstream flow-into-callee with `option funcboundflow off`
+        self.mapped_flow_boundary = true; // (kuna) DIV-176 default-on: RESTORES CODE. On a linked ELF x86 image whose SLEIGH target matches its class, a path that falls through into unmapped memory or reaches an instruction running past the mapped bytes ends in a missing halt with a warning, instead of the whole function failing on staged loader padding; the flow's own entry, in-lined callees, read failures and decode errors keep their errors. Byte-identical (0/675) on the datatest corpus; restore the staged-loader flow with `option mappedflowboundary off`
         self.overlap_branch = true; // (kuna) DIV-106 default-on: REMOVES CODE. Ends a conditional branch's fall-through in a halt when the branch's own target lies strictly inside that fall-through instruction's encoding (the anti-disassembly junk-lead-byte overlap), instead of letting the bogus decode swallow the target and desynchronise the stream. Two real instruction starts cannot sit at `next` and strictly inside `next`, so the trigger never matches well-formed code and is byte-identical (0/675) on the datatest corpus; restore the fall-through-wins decode with `option overlapbranch off`
         self.remove_cleanup_code = true; // (kuna) DIV-81 default-on: REMOVES CODE. Deletes the Rust drop/deallocate call sites (`core::ptr::drop_in_place`, `Drop::drop`, `alloc::raw_vec::RawVecInner::deallocate`, `__rust_dealloc`) and the argument setup that only feeds them. Structurally inert outside a Rust binary (no C ELF resolves a call to one of those names), so byte-identical (0/675) on the datatest corpus; keep the drop glue with `option cleanupcode off`
         self.switch_selector_guard = false; // (kuna) option switchselector, default-off: re-rolling a parameter-dispatch cascade into a switch is the better default; ON narrows `loweredswitch` to cascades whose selector the function itself computes
@@ -2685,6 +2696,7 @@ impl Architecture {
             "entryretdispatch" => on_off!(entry_ret_dispatch, "Entry-point RET-dispatch call-chain recovery"),
             "pushimmediateret" => on_off!(push_immediate_ret, "Push-immediate RET tail-transfer recovery"),
             "funcboundflow" => on_off!(funcbound_flow, "Fall-through bound at function entries"),
+            "mappedflowboundary" => on_off!(mapped_flow_boundary, "Mapped ELF x86 flow boundaries"),
             "overlapbranch" => on_off!(overlap_branch, "Overlapping-branch fall-through truncation"),
             "cleanupcode" => on_off!(remove_cleanup_code, "Rust drop/deallocate call removal"),
             "linuxsyscall" => on_off!(linux_syscall, "Linux int 0x80 syscall naming"),

@@ -27,7 +27,7 @@ fn subphase_count_is_45() {
 }
 
 #[test]
-fn surface_count_is_116() {
+fn surface_count_is_118() {
     // +1 for the `option switchguardbound` surface row (angr missing-function-call),
     // +1 for the `option switchsharedcase` surface row (angr shared-case-node b2sum),
     // +1 for the `option switchmultipred` surface row (angr abnormal-switch-case-case3),
@@ -69,12 +69,12 @@ fn surface_count_is_116() {
     // +1 for the `option callpopret` surface row (kuna P2 flow-classification:
     // a call-over-data helper that returns through its caller's caller, DIV-163).
     // +1 for `option cancelbytearithmetic` (P3 exact byte cancellation).
-    assert_eq!(kuna_num_surfaces(), 117);
-    assert_eq!(SURFACE_TABLE.len(), 117);
+    assert_eq!(kuna_num_surfaces(), 118);
+    assert_eq!(SURFACE_TABLE.len(), 118);
 }
 
 #[test]
-fn settable_count_is_195() {
+fn settable_count_is_196() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -136,12 +136,13 @@ fn settable_count_is_195() {
     // +1 for `loweredswitchlabels` (P2 comparison-derived label signedness).
     // +1 for `cancelbytearithmetic` (P3 exact byte cancellation, DIV-174).
     // +1 for `pebnames` (P5 Windows TEB/PEB segment-base typing, DIV-175).
-    assert_eq!(kuna_num_settables(), 195);
-    assert_eq!(SETTABLE_TABLE.len(), 195);
+    // +1 for `mappedflowboundary` (P2 mapped ELF x86 flow boundaries, DIV-176).
+    assert_eq!(kuna_num_settables(), 196);
+    assert_eq!(SETTABLE_TABLE.len(), 196);
 }
 
 #[test]
-fn tier_counts_are_63_core_73_transform_59_analysis() {
+fn tier_counts_are_63_core_74_transform_59_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -250,7 +251,9 @@ fn tier_counts_are_63_core_73_transform_59_analysis() {
     // core 62 -> 63: +1 for `cancelbytearithmetic` (P3 exact modular identity).
     // transform 72 -> 73: +1 for `pebnames` (P5 Windows TEB/PEB segment-base
     // typing, DIV-175).
-    assert_eq!((core, transform, analysis), (63, 73, 59));
+    // transform 73 -> 74: +1 for `mappedflowboundary` (P2 mapped ELF x86 flow
+    // boundaries, DIV-176).
+    assert_eq!((core, transform, analysis), (63, 74, 59));
 }
 
 #[test]
@@ -440,7 +443,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_77() {
+fn option_values_live_value_present_for_78() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -792,7 +795,7 @@ fn option_values_live_value_present_for_77() {
     // DIV-173).
     // 76 -> 77: +1 for `cancelbytearithmetic` (live_field =
     // cancel_byte_arithmetic, DIV-174).
-    assert_eq!(with_live, 77);
+    assert_eq!(with_live, 78);
 }
 
 #[test]
@@ -934,7 +937,9 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // increments the comma-terminated catalog-row count.
     // 193 -> 194: +1 for `pebnames` (DIV-175); its P5 row sits mid-table beside
     // `codescalar`, so it increments the comma-terminated catalog-row count.
-    assert_eq!(json.matches("},\n").count(), 194);
+    // 194 -> 195: +1 for `mappedflowboundary` (DIV-176); its P2 row sits mid-table
+    // beside `funcboundflow`.
+    assert_eq!(json.matches("},\n").count(), 195);
 }
 
 #[test]

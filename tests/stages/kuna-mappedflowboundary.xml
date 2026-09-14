@@ -1,0 +1,38 @@
+<decompilertest>
+<binaryimage arch="x86:LE:32:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/mapped_flow_boundary_32.elf</com>
+  <com>option mappedflowboundary off</com>
+  <com>read symbols</com>
+  <com expecterror="true">load addr 0x10000</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/mapped_flow_boundary_32.elf</com>
+  <com>read symbols</com>
+  <com>load addr 0x10000</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/mapped_flow_straddle_32.elf</com>
+  <com>option mappedflowboundary off</com>
+  <com>read symbols</com>
+  <com expecterror="true">load addr 0x10000</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/mapped_flow_straddle_32.elf</com>
+  <com>read symbols</com>
+  <com>load addr 0x10000</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="MAPPED-FLOW #1: off loses both functions to staged padding" min="2" max="2">Unable to load 512 bytes</stringmatch>
+<stringmatch name="MAPPED-FLOW #2: default retains both mapped returns" min="2" max="2">return 7;</stringmatch>
+<stringmatch name="MAPPED-FLOW #3: each missing fall-through is explicit" min="2" max="2">halt_missing\(\);</stringmatch>
+<stringmatch name="MAPPED-FLOW #4: both recovered bodies warn about incomplete flow" min="2" max="2">Function flows into unmapped memory</stringmatch>
+<stringmatch name="MAPPED-FLOW #5: the fall-through that ends exactly at the mapped end names its successor" min="1" max="1">r0x0001000a flows to r0x0001000f</stringmatch>
+<stringmatch name="MAPPED-FLOW #6: the zero padding that is mapped is still lifted" min="1" max="1">\*a0 = \*a0 \+ \(char\)a0;</stringmatch>
+<stringmatch name="MAPPED-FLOW #7: the padding byte whose instruction runs past the mapped end is cut" min="1" max="1">the instruction at r0x00010011 runs past the mapped bytes</stringmatch>
+</decompilertest>

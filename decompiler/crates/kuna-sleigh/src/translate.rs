@@ -491,6 +491,17 @@ pub trait Translate: RegisterLookup {
     /// \return the number of bytes in the machine instruction
     fn one_instruction(&self, emit: &mut dyn PcodeEmit, baseaddr: &Address) -> KunaResult<i32>;
 
+    /// Validate the actual consumed bytes before committing context or emitting p-code.
+    /// Translators without this contract must explicitly decline checked decoding.
+    fn one_instruction_checked(
+        &self,
+        _emit: &mut dyn PcodeEmit,
+        _baseaddr: &Address,
+        _image: &dyn crate::loadimage::ImageBytes,
+    ) -> KunaResult<i32> {
+        Err(KunaError::lowlevel("Checked instruction translation is unsupported"))
+    }
+
     /// \brief Disassemble a single machine instruction
     ///
     /// This is the main interface to the disassembler for the processor.  It

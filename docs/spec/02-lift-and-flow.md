@@ -129,6 +129,79 @@ allowed range, and only an address with no bytes behind it can fail it, so no
 flow that previously decoded is cut: the change turns functions that produced
 nothing into functions that produce a body carrying the warnings above.
 
+**Mapped ELF x86 fall-through.** `option mappedflowboundary on` (default)
+retains decoded paths when another path falls through an image edge. The
+load-time predicate in
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_mappedflowboundary.rs (eligible_elf)`
+requires a linked little-endian ELF (ET_EXEC or ET_DYN), class/machine
+ELF32/i386 or ELF64/x86-64, and matching resolved SLEIGH processor, endian,
+and width. Other images and mismatched targets retain legacy flow. Each
+flow follow takes a fresh loader `ImageBytes` snapshot and releases it on
+completion, so byte overlays remain exclusive and later flows see current
+bytes. `option mappedflowboundary off` restores the staged-loader path.
+Mapping warnings from an earlier eligible flow are refreshed when it is
+rebuilt, including after recovery is disabled, so an intervening return override
+or byte overlay cannot leave a stale unmapped-flow warning on the new body.
+Other warnings are retained.
+Cleanup and publication of buffered flow comments occur only after all
+replacement flow steps succeed. A failed reload retains the previous selected
+body and its mapping diagnostics.
+
+On eligible flows, `Translate::one_instruction_checked` validates the
+actual decoded instruction span with `ImageBytes::mapped_covers` before
+context commits or p-code emission. A full prefetch need not be mapped: a
+one-byte RET at the final mapped byte is valid. Touching and overlapping
+mappings may supply one instruction, and mapped zero-filled data tails (the
+`p_memsz` excess the loader maps for non-executable segments only) are valid,
+so flow that branches into one lifts its zeros up to the mapped end; an
+instruction spanning a gap is not. SLEIGH's checked entry point
+declines delay-slot instructions, which this x86 scope does not produce.
+No loader error is converted wholesale into a successful halt: a read failure
+on a mapped byte and a genuine decode error keep their existing policies.
+
+An instruction that flow reaches from decoded code, whose first byte is mapped
+but whose encoding runs past the contiguous mapped run, is the same fact as a
+fall-through into unmapped memory: the path cannot continue on image bytes.
+The check in
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_mappedflowboundary.rs (truncated_instruction)`
+re-derives it from the image with a length-only decode, so a failed read cannot
+qualify. That path then ends in a one-byte missing halt at the instruction's own
+address with the warning `the instruction at <addr> runs past the mapped bytes`
+and the unmapped-memory header; nothing from the truncated encoding is lifted,
+and the mapped bytes before it (a zero padding `add [eax],al`, say) are decoded
+as usual. The flow's own entry instruction keeps the error, because there is
+no decoded path to retain.
+
+In-lined callee flows (`option inline`) take neither this cut nor the
+fall-through cut below. The in-line clone turns a callee's RETURN into a branch
+to the call's return address and the easy model stops at the first RETURN, so a
+missing halt inside the callee would read as a normal return in the caller. Such
+a callee keeps the mapping error instead.
+
+An unmapped instruction span may still be the losing stream of an existing
+`option overlapbranch on` overlap. A length-only decode must establish that
+the queued branch target lies strictly inside that span, its own complete
+instruction is mapped, and the two instruction ends differ. Flow then applies
+the existing overlap halt and warning without lifting the unmapped stream.
+These probes emit no p-code or context commits. With an incomplete target or
+`option overlapbranch off`, the losing stream is a truncated instruction as
+above; reconvergent prefix streams retain the existing overlap policy.
+
+After effective flow classification, including flow overrides and no-return
+facts, an unmapped fall-through inside the declared flow range receives an
+immediately registered missing halt and the existing unmapped-flow warnings.
+Queued branches can resolve through already decoded p-code-free instructions
+to that halt, and later stub filling reuses it. Stub filling shares an op
+already registered at a cut address only when it is a missing halt; any other
+op there, such as a `funcboundflow` no-return halt reached by fall-through, is
+left to its own edge and the branch gets a fresh stub. Other queued mapped paths
+still run. Known-function bounds take precedence, and flow outside a declared
+range retains the caller's fatal, warning or ignore policy before mapping
+recovery. Explicit branches can cross gaps into mapped destinations. Branch
+probes also use this authoritative map, so a warmed zero-filled loader window cannot
+invent a mapped target. This recovers incomplete flow without inferring a
+different ISA or claiming that an unavailable path returns.
+
 **Decode scratch storage.** Every SLEIGH translation checks out a parser
 context from the engine-local pool
 (`decompiler/crates/kuna-sleigh/src/sleigh.rs (Sleigh::checkout_context)`).

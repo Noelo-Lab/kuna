@@ -42,7 +42,7 @@ use kuna_num::pcoderaw::VarnodeData;
 
 use crate::context::FixedHandle;
 use crate::globalcontext::{ContextCache, ContextDatabase};
-use crate::loadimage::LoadImage;
+use crate::loadimage::{ImageBytes, LoadImage};
 use crate::semantics::{ConstructTpl, OpTpl, PcodeBuilder, VField, VarnodeTpl};
 use crate::sleighbase::SleighBase;
 use crate::slghpatexpress::{PatternExpression, PatternExpressionContext};
@@ -2472,6 +2472,39 @@ impl Sleigh {
         emit: &mut dyn PcodeEmit,
         baseaddr: &Address,
     ) -> KunaResult<i32> {
+        self.one_instruction_with_map(emit, baseaddr, None)
+    }
+
+    pub fn one_instruction_checked(
+        &self,
+        emit: &mut dyn PcodeEmit,
+        baseaddr: &Address,
+        image: &dyn ImageBytes,
+    ) -> KunaResult<i32> {
+        self.one_instruction_with_map(emit, baseaddr, Some(image))
+    }
+
+    fn check_mapped_instruction(image: &dyn ImageBytes, addr: &Address, len: i32) -> KunaResult<()> {
+        let lo = addr.get_offset();
+        let mapped = u64::try_from(len).ok().filter(|&len| len > 0)
+            .and_then(|len| lo.checked_add(len))
+            .is_some_and(|hi| {
+                addr.get_space().is_some_and(|space| hi - 1 <= space.get_highest())
+                    && image.mapped_covers(lo, hi)
+            });
+        if mapped {
+            Ok(())
+        } else {
+            Err(KunaError::data_unavail(format!("Instruction bytes at {lo:#x} are not mapped")))
+        }
+    }
+
+    fn one_instruction_with_map(
+        &self,
+        emit: &mut dyn PcodeEmit,
+        baseaddr: &Address,
+        image: Option<&dyn ImageBytes>,
+    ) -> KunaResult<i32> {
         let alignment = self.base.base.get_alignment();
         // C++ `(baseaddr.getOffset() % alignment) != 0`; clippy prefers the
         // is_multiple_of phrasing (alignment is a small positive int4).
@@ -2480,7 +2513,16 @@ impl Sleigh {
             baseaddr.print_raw(&mut s)?;
             return Err(KunaError::unimpl(format!("Instruction address not aligned: {s}"), 0));
         }
+        if let Some(image) = image {
+            Self::check_mapped_instruction(image, baseaddr, 1)?;
+        }
         let mut pos = self.obtain_context(baseaddr, ParseState::Pcode)?;
+        if let Some(image) = image {
+            Self::check_mapped_instruction(image, baseaddr, pos.get_length())?;
+            if pos.get_delay_slot() > 0 {
+                return Err(KunaError::lowlevel("Checked instruction translation does not support delay slots"));
+            }
+        }
         self.apply_commits(&pos)?;
         let mut fall_offset = pos.get_length();
 
@@ -2638,6 +2680,14 @@ impl Translate for Sleigh {
     }
     fn one_instruction(&self, emit: &mut dyn PcodeEmit, baseaddr: &Address) -> KunaResult<i32> {
         Sleigh::one_instruction(self, emit, baseaddr)
+    }
+    fn one_instruction_checked(
+        &self,
+        emit: &mut dyn PcodeEmit,
+        baseaddr: &Address,
+        image: &dyn ImageBytes,
+    ) -> KunaResult<i32> {
+        Sleigh::one_instruction_checked(self, emit, baseaddr, image)
     }
     fn print_assembly(&self, emit: &mut dyn AssemblyEmit, baseaddr: &Address) -> KunaResult<i32> {
         Sleigh::print_assembly(self, emit, baseaddr)

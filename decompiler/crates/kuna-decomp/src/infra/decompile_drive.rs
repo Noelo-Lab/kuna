@@ -40,6 +40,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
+use std::sync::Arc;
 
 use kuna_base::address::Address;
 use kuna_base::error::{KunaError, KunaResult};
@@ -54,6 +55,7 @@ use crate::funcdata::{funcdata_flags, Funcdata};
 use crate::context::{HighVariableId, TypeOp};
 
 use kuna_sleigh::translate::Translate;
+use kuna_sleigh::loadimage::ImageBytes;
 
 /// A [`FlowEnvironment`] backed by a borrowed [`Architecture`] — the real
 /// engine-backed shape the C++ `FlowInfo` uses (`glb->translate` for the
@@ -64,6 +66,7 @@ use kuna_sleigh::translate::Translate;
 /// drives `resolve_typeop` so the built ops carry the correct
 /// branch/call/coderef/marker property flags.
 struct ArchFlowEnv {
+    mapped_image: Option<Arc<dyn ImageBytes>>,
     /// (kuna `calltrampoline` / `callpopret`) Memo of both return-address-
     /// discarding probes, keyed by direct-call target.  Both inspect the same
     /// bounded raw decode, so sharing the verdict also keeps the second option
@@ -90,6 +93,9 @@ impl ArchFlowEnv {
 }
 
 impl FlowEnvironment for ArchFlowEnv {
+    fn mapped_flow_image(&self) -> Option<&dyn ImageBytes> {
+        self.mapped_image.as_deref()
+    }
     fn translate(&self) -> &dyn Translate {
         self.arch().translate()
     }
@@ -760,6 +766,11 @@ fn follow_flow_on_fd(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcda
         Some((start.clone(), Address::new(space, last)))
     });
     let env = ArchFlowEnv {
+        mapped_image: if arch.mapped_flow_boundary && arch.mapped_flow_boundary_image {
+            arch.translate().loader_rc().borrow().shared_bytes()
+        } else {
+            None
+        },
         arch: arch as *const Architecture,
         return_discard_memo: Default::default(),
     };
@@ -798,15 +809,6 @@ fn follow_flow_on_fd(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcda
     // `FlowInfo::target`).  Drive it before the FlowInfo is consumed.
     let target_snapshot = flow.target_index_snapshot();
     let mut data = flow.data;
-    // Flush the analysis comments buffered during flow follow (C++
-    // `Funcdata::warning`/`warningHeader` write straight to `glb->commentdb`; the
-    // merged Rust tree buffers them on the `Funcdata` because the console owns the
-    // comment database, so re-deposit them now that `&mut Architecture` is in
-    // hand — the same re-seed model as `mapped_symbols`/`pending_prototypes`).
-    let func_addr = data.get_address().clone();
-    for (tp, ad, txt) in data.drain_pending_comments() {
-        arch.commentdb.add_comment_no_duplicate(tp, &func_addr, &ad, &txt);
-    }
     data.switch_over_jump_tables(|fd, addr| {
         crate::flow::target_in(fd, &target_snapshot, addr)
     })?;
@@ -825,6 +827,14 @@ fn follow_flow_on_fd(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcda
     // is true; the rest of startProcessing — sortCallSpecs / buildInfoList /
     // applyDeadCodeDelay — is a W4 stub or handled lazily in op_heritage).
     data.set_flag_raw(funcdata_flags::processing_started);
+    // Publish buffered flow comments only after replacement construction succeeds.
+    let func_addr = data.get_address().clone();
+    if arch.mapped_flow_boundary_image {
+        crate::kuna_mappedflowboundary::clear_stale_warnings(&mut arch.commentdb, &func_addr);
+    }
+    for (tp, ad, txt) in data.drain_pending_comments() {
+        arch.commentdb.add_comment_no_duplicate(tp, &func_addr, &ad, &txt);
+    }
     Ok(data)
 }
 
@@ -845,6 +855,7 @@ fn run_jumptable_pipeline(
 ) -> KunaResult<()> {
     // Build the partial's basic blocks (partialflow.generateBlocks).
     let env = ArchFlowEnv {
+        mapped_image: None,
         arch: arch as *const Architecture,
         return_discard_memo: Default::default(),
     };

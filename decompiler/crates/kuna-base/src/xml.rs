@@ -1848,7 +1848,8 @@ mod tests {
         // and kuna-cancelbytearithmetic / exact low-byte cancellation
         // and kuna-pebnames / kuna-pebnames-x86 type the Windows TEB segment
         // base on x86-64 (GS) and x86 (FS) (GH-468)
-        assert_eq!(count, 284, "corpus file count drifted");
+        // and kuna-mappedflowboundary ends ELF x86 flow at the mapped image end
+        assert_eq!(count, 285, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

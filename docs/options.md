@@ -61,6 +61,10 @@ Three tiers:
 | an unpacker call remains but the original-entry transfer after it is missing | [`pushimmediateret`](#pushimmediateret) |
 | a manual flow branch assertion on a RET restores an indirect transfer to a constant address | [`pushimmediateret`](#pushimmediateret) |
 | a packed entry stub ends at ret even though it pushed a destination first | [`pushimmediateret`](#pushimmediateret) |
+| mapped return lost after another path leaves the image | [`mappedflowboundary`](#mappedflowboundary) |
+| decompile exits with Unable to load bytes at a segment edge | [`mappedflowboundary`](#mappedflowboundary) |
+| JSON code is null although a mapped branch returns | [`mappedflowboundary`](#mappedflowboundary) |
+| zero-padded instructions decoded beyond mapped memory | [`mappedflowboundary`](#mappedflowboundary) |
 | a function's tail is really the body of the NEXT function | [`funcboundflow`](#funcboundflow) |
 | dead/garbage code after a call to a die()/fatal()/throw wrapper that never returns | [`funcboundflow`](#funcboundflow) |
 | two adjacent functions merged into one, the second also decompiled on its own | [`funcboundflow`](#funcboundflow) |
@@ -841,6 +845,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default (DIV-170). A packer/unpacker entry calls a decoder and then disassembly ends `push <original-entry-address>; ret`, but emitted C contains only the decoder call and silently loses the final transfer. The default preserves the address as a terminal indirect transfer without treating encrypted on-disk target bytes as a function; use `option pushimmediateret off` to restore the bare RETURN.
 - **Where / provenance:** P2/flow-classification · kuna · correctness-fix · push-immediate-ret-transfer
 - **Example:** `option pushimmediateret off`
+
+### `mappedflowboundary` -- on | off, default `on`
+
+- **Symptoms:** mapped return lost after another path leaves the image; decompile exits with Unable to load bytes at a segment edge; JSON code is null although a mapped branch returns; zero-padded instructions decoded beyond mapped memory.
+- **What it does:** Retain decoded paths when another path falls through the mapped edge of a linked little-endian ELF x86 image. The resolved SLEIGH processor, endianness, and width must match the ELF class and machine. Check every actual instruction byte against the live image map before committing context or emitting p-code; staged prefetch padding is not evidence. Cut only an unmapped effective fall-through, emit the existing unmapped-flow warning and missing halt, and continue other queued paths. Explicit branches may cross gaps to mapped destinations. Touching mappings and the mapped zero tails (p_memsz excess) of non-executable segments remain valid, so flow that reaches such a tail lifts its zeros up to the mapped end. An instruction that decoded flow reaches on a mapped byte but whose encoding runs past the mapped bytes ends that path the same way; the entry instruction, in-lined callee flows, mapped read failures and genuine decoder errors keep their errors. Other formats, relocatable objects, and mismatched or non-x86 targets abstain.
+- **When to flip:** On (default) recovers meaningful C from mapped paths when another decoded path leaves the image. Flip off to restore legacy staged-byte flow. Recovery reports incomplete flow rather than proving the missing path returns or inferring another ISA.
+- **Where / provenance:** P2/flow-classification · kuna · correctness-fix · default-entry-decompilation-aborts
+- **Example:** `option mappedflowboundary off`
 
 ### `funcboundflow` -- on | off, default `on`
 

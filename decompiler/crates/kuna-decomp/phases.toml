@@ -1032,6 +1032,12 @@ subphase = "flow-classification"
 note = "(kuna) flow a `call` through a callee that pops the pushed return address and `ret`s through the word above it, instead of decoding the inline data the call jumped over as instructions"
 
 [[surface]]
+surface = "option mappedflowboundary"
+phase = "P2"
+subphase = "flow-classification"
+note = "(kuna) retain decoded ELF x86 paths when fall-through leaves mapped memory or reaches an instruction that runs past it; never lift unmapped padding"
+
+[[surface]]
 surface = "option funcboundflow"
 phase = "P2"
 subphase = "flow-classification"
@@ -2008,6 +2014,28 @@ change_kind = "correctness-fix"
 tier = "transform"
 symptoms = "a push immediate followed by ret disappears from emitted C|an unpacker call remains but the original-entry transfer after it is missing|a manual flow branch assertion on a RET restores an indirect transfer to a constant address|a packed entry stub ends at ret even though it pushed a destination first"
 live_field = "push_immediate_ret"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
+option = "mappedflowboundary"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P2"
+subphase = "flow-classification"
+strength = "HARD"
+rewind = "P2"
+issue = "default-entry-decompilation-aborts"
+summary = "Retain decoded paths when another path falls through the mapped edge of a linked little-endian ELF x86 image. The resolved SLEIGH processor, endianness, and width must match the ELF class and machine. Check every actual instruction byte against the live image map before committing context or emitting p-code; staged prefetch padding is not evidence. Cut only an unmapped effective fall-through, emit the existing unmapped-flow warning and missing halt, and continue other queued paths. Explicit branches may cross gaps to mapped destinations. Touching mappings and the mapped zero tails (p_memsz excess) of non-executable segments remain valid, so flow that reaches such a tail lifts its zeros up to the mapped end. An instruction that decoded flow reaches on a mapped byte but whose encoding runs past the mapped bytes ends that path the same way; the entry instruction, in-lined callee flows, mapped read failures and genuine decoder errors keep their errors. Other formats, relocatable objects, and mismatched or non-x86 targets abstain."
+use_when = "On (default) recovers meaningful C from mapped paths when another decoded path leaves the image. Flip off to restore legacy staged-byte flow. Recovery reports incomplete flow rather than proving the missing path returns or inferring another ISA."
+example = "option mappedflowboundary off"
+source_decompiler = "kuna"
+inspiration = "A synthetic ELF conditional return is lost when another path falls through the mapped segment end; the authoritative ImageBytes map already distinguishes loader padding from mapped memory."
+change_kind = "correctness-fix"
+tier = "transform"
+symptoms = "mapped return lost after another path leaves the image|decompile exits with Unable to load bytes at a segment edge|JSON code is null although a mapped branch returns|zero-padded instructions decoded beyond mapped memory"
+live_field = "mapped_flow_boundary"
 live_true = "on"
 live_false = "off"
 

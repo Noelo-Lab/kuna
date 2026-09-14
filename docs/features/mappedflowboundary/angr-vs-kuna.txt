@@ -1,0 +1,14 @@
+Synthetic reference: test eax,eax; jne missing-path; mov eax,7; ret; mov ebx,5.
+The valid branch returns 7; the other successor is outside the mapped image.
+No external reference decompiler was used.
+
+OPTION off (exit 1)
+error: Unable to load 512 bytes at r0x000101f1
+
+OPTION on (exit 0)
+unsigned int sub_10000(int a0) // warn: Function flows into unmapped memory
+{
+  if (!a0)
+    return 7;
+  halt_missing(); // warn: Function flow reaches unmapped memory: r0x0001000a flows to r0x0001000f
+}
