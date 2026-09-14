@@ -339,42 +339,120 @@ mod w10_input_prototype_declarator {
         );
     }
 
-    /// DIVERGENCE (verdict F1 / LOSS): the pointer/array parenthesisation in
-    /// `declarator_parts` is INVERTED relative to the C++ `pushTypeStart` RPN
-    /// (`ptr_expr` vs `array_expr` precedence).
-    ///
-    /// C++ renders a *pointer-to-array* `int4 (*)[1]` as `int4 (*a)[1]`
-    /// (the `*` parenthesised inside the `[]`), and an *array-of-pointer*
-    /// `int4 *[1]` as `int4 *a[1]` (no parens).  The Rust `pending_ptr` walk
-    /// (base->outer) only wraps when an ARRAY modifier sees a *preceding*
-    /// pointer, which is the array-of-pointer ordering — so the two C nestings
-    /// come out SWAPPED:
-    ///   * pointer-to-array `int4 (*)[1]` -> WRONG `("int4 *", "[1]")`
-    ///     (renders `int4 *a[1]`, an array-of-pointer)
-    ///   * array-of-pointer `int4 *[1]`   -> WRONG `("int4 (*", ")[1]")`
-    ///     (renders `int4 (*a)[1]`, a pointer-to-array)
-    /// The doc-comment example on `declarator_parts` (`int4 (*)[1]` ->
-    /// `("int4 (*", ")[1]")`) describes the CORRECT C++ output, which the code
-    /// does NOT produce.  Latent: `ptrtoarray.xml` declares such params
-    /// (`int4 (*a)[1]`) but never emits them as a decompiled function HEADER,
-    /// so no passing assertion depends on it today.  This test pins the actual
-    /// (buggy) output so a future fix flips it deliberately.
+    /// Pointer-to-array and array-of-pointer are mirror types in C: the former
+    /// groups the pointer before applying the array suffix, while the latter
+    /// lets `[]` bind directly to the identifier.  This reached ordinary cast
+    /// output as invalid `*(char *[16])` for a pointer to a SIMD-sized array.
     #[test]
-    fn pointer_to_array_paren_inverted_divergence() {
+    fn pointer_to_array_parentheses_follow_c_precedence() {
         let base = named(4, type_metatype::TYPE_INT, "int4");
-        // pointer-to-array int4 (*)[1] — C++ would give ("int4 (*", ")[1]").
+        // pointer-to-array int4 (*)[1]
         let pta = ptr_to(array_of(base.clone(), 1));
         assert_eq!(
             declarator_parts(&pta, crate::printc::RealTypeCtx::OFF),
-            ("int4 *".to_string(), "[1]".to_string()),
-            "BUG: pointer-to-array renders as array-of-pointer (paren inverted)"
+            ("int4 (*".to_string(), ")[1]".to_string())
         );
-        // array-of-pointer int4 *[1] — C++ would give ("int4 *", "[1]").
+        // array-of-pointer int4 *[1]
         let aop = array_of(ptr_to(base), 1);
         assert_eq!(
             declarator_parts(&aop, crate::printc::RealTypeCtx::OFF),
-            ("int4 (*".to_string(), ")[1]".to_string()),
-            "BUG: array-of-pointer renders as pointer-to-array (paren inverted)"
+            ("int4 *".to_string(), "[1]".to_string())
+        );
+    }
+
+    /// Alternating modifiers require grouping the entire declarator already
+    /// accumulated, not just moving one close-parenthesis ahead of the first
+    /// array suffix.  These are the two three-modifier mirror cases that a
+    /// one-level pointer/array fix can accidentally corrupt.
+    #[test]
+    fn nested_pointer_array_parentheses_group_the_complete_declarator() {
+        let base = named(4, type_metatype::TYPE_INT, "int4");
+
+        // pointer to array[2] of pointer to int4: int4 *(*x)[2]
+        let pointer_to_array_of_pointer = ptr_to(array_of(ptr_to(base.clone()), 2));
+        assert_eq!(
+            declarator_parts(
+                &pointer_to_array_of_pointer,
+                crate::printc::RealTypeCtx::OFF
+            ),
+            ("int4 *(*".to_string(), ")[2]".to_string())
+        );
+
+        // array[2] of pointer to array[3] of int4: int4 (*x[2])[3]
+        let array_of_pointer_to_array = array_of(ptr_to(array_of(base, 3)), 2);
+        assert_eq!(
+            declarator_parts(&array_of_pointer_to_array, crate::printc::RealTypeCtx::OFF),
+            ("int4 (*".to_string(), "[2])[3]".to_string())
+        );
+    }
+
+    /// A declaration's type position (locals, array elements, return types) keeps
+    /// the suffix a pointer to an array needs after the name. With only the front
+    /// half, a local printed `int4 (*v1;` and a return type `int4 (* f(void)`.
+    #[test]
+    fn declaration_type_position_keeps_the_pointer_to_array_suffix() {
+        use crate::printc::{array_decl_parts, type_name_for_decl, RealTypeCtx};
+
+        let base = named(4, type_metatype::TYPE_INT, "int4");
+        let rt = RealTypeCtx::OFF;
+        let parts = |front: &str, back: &str| (front.to_string(), back.to_string());
+
+        assert_eq!(
+            type_name_for_decl(&ptr_to(array_of(base.clone(), 16)), rt),
+            parts("int4 (*", ")[16]")
+        );
+        assert_eq!(
+            type_name_for_decl(&ptr_to(array_of(ptr_to(base.clone()), 3)), rt),
+            parts("int4 *(*", ")[3]")
+        );
+        // array[2] of pointer to array[16]: `int4 (*v [2])[16]`
+        assert_eq!(
+            array_decl_parts(&array_of(ptr_to(array_of(base.clone(), 16)), 2), rt),
+            Some((parts("int4 (*", ")[16]"), 2))
+        );
+
+        // Near-misses carry no suffix: a named base, a plain pointer, and an array
+        // of pointers.
+        assert_eq!(type_name_for_decl(&base, rt), parts("int4", ""));
+        assert_eq!(type_name_for_decl(&ptr_to(ptr_to(base.clone())), rt), parts("int4 **", ""));
+        assert_eq!(
+            array_decl_parts(&array_of(ptr_to(base), 5), rt),
+            Some((parts("int4 *", ""), 5))
+        );
+    }
+
+    /// Exact exported-type regressions found by the 253-binary differential.
+    /// These are abstract declarators (`front + back`, with no identifier), so
+    /// they exercise the same spelling consumed by JSON variable metadata.
+    #[test]
+    fn corpus_exported_type_strings_preserve_modifier_order() {
+        fn abstract_spelling(dt: &Rc<Datatype>) -> String {
+            let (front, back) = declarator_parts(dt, crate::printc::RealTypeCtx::OFF);
+            format!("{front}{back}")
+        }
+
+        let char_ty = named(1, type_metatype::TYPE_INT, "char");
+        let uchar_ty = named(1, type_metatype::TYPE_UINT, "unsigned char");
+
+        // arraycoverwidth_x86_64::vm v3: outer [2], inner [16].
+        assert_eq!(
+            abstract_spelling(&array_of(array_of(char_ty.clone(), 16), 2)),
+            "char[2][16]"
+        );
+        // katavm_level1_x86_64::sub_12d0 v32 and ptx.o's v16 are
+        // arrays of pointers, not pointers to arrays.
+        assert_eq!(
+            abstract_spelling(&array_of(ptr_to(uchar_ty), 2)),
+            "unsigned char *[2]"
+        );
+        assert_eq!(
+            abstract_spelling(&array_of(ptr_to(char_ty.clone()), 5)),
+            "char *[5]"
+        );
+        // structreturn_x86_64::passthru param_1 is the mirror type.
+        assert_eq!(
+            abstract_spelling(&ptr_to(array_of(char_ty, 16))),
+            "char (*)[16]"
         );
     }
 

@@ -273,8 +273,8 @@ impl TypeSpeller for RustSpeller {
         (self.type_expr(cx, ct, 0), String::new())
     }
 
-    fn type_name(&self, cx: &SpellCtx, t: &Rc<Datatype>) -> String {
-        self.type_expr(cx, t, 0)
+    fn type_name(&self, cx: &SpellCtx, t: &Rc<Datatype>) -> (String, String) {
+        (self.type_expr(cx, t, 0), String::new())
     }
 
     fn unknown_base(

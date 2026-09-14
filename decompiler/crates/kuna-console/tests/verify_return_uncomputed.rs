@@ -147,4 +147,12 @@ fn a_loaded_struct_pair_return_is_kept() {
         code.contains("undefined16"),
         "a pair loaded through a pointer must survive the repair; got:\n{code}",
     );
+    assert!(
+        code.contains("undefined16 passthru(char (*a0)[16])"),
+        "the pointer-to-16-byte-array parameter must retain C declarator precedence; got:\n{code}",
+    );
+    assert!(
+        !code.contains("char *a0[16]"),
+        "the parameter must not regress into an array of pointers; got:\n{code}",
+    );
 }

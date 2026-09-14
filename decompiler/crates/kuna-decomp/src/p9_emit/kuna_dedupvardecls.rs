@@ -81,12 +81,15 @@ impl OptionDedupVarDecls {
 ///
 /// * `decl_type` — the final declarator type string (after the composite/array
 ///   relabel), e.g. `"char *"`, `"int4"`, `"undefined8"`.
+/// * `decl_back` — the declarator suffix printed after the name, e.g. `")[16]"`
+///   for `char (*p)[16]`; empty for every other declaration.
 /// * `name` — the variable name.
 /// * `array` — the `(base-type, count)` array adornment, when the symbol is an array.
 /// * `comment` — the `(text, offset)` storage comment (`// stack - 0x3c`), present
 ///   only under angr naming.  Two locals at *different* slots carry different
 ///   comments and so are NOT collapsed.
-pub type DeclSignature = (String, String, Option<(String, i32)>, Option<(String, u64)>);
+pub type DeclSignature =
+    (String, String, String, Option<(String, i32)>, Option<(String, u64)>);
 
 /// Tracks the rendered signatures already emitted so duplicates can be suppressed.
 ///

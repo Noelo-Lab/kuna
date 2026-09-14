@@ -102,6 +102,9 @@ fn pointers_and_arrays_are_pure_prefixes() {
     // `back` is always empty, which is the contract a prefix language keeps.
     let (_, back) = RUST_SPELLER.declarator(&ctx(), &ptr_to(base(4, type_metatype::TYPE_INT)));
     assert!(back.is_empty());
+    let row = ptr_to(array_of(named(4, type_metatype::TYPE_INT, "int4"), 16));
+    let (front, back) = RUST_SPELLER.type_name(&ctx(), &row);
+    assert_eq!((front.as_str(), back.as_str()), ("*mut [i32; 16]", ""));
 }
 
 #[test]
