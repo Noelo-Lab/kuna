@@ -74,7 +74,7 @@ fn surface_count_is_118() {
 }
 
 #[test]
-fn settable_count_is_195() {
+fn settable_count_is_196() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -135,12 +135,14 @@ fn settable_count_is_195() {
     // +1 for `callretpair` (P4 two-register CALL output completion, DIV-162).
     // +1 for `loweredswitchlabels` (P2 comparison-derived label signedness).
     // +1 for `cancelbytearithmetic` (P3 exact byte cancellation, DIV-174).
-    assert_eq!(kuna_num_settables(), 195);
-    assert_eq!(SETTABLE_TABLE.len(), 195);
+    // +1 for `pebnames` (P5 Windows TEB/PEB segment-base typing, DIV-175).
+    // +1 for `mappedflowboundary` (P2 mapped ELF x86 flow boundaries, DIV-176).
+    assert_eq!(kuna_num_settables(), 196);
+    assert_eq!(SETTABLE_TABLE.len(), 196);
 }
 
 #[test]
-fn tier_counts_are_63_core_73_transform_59_analysis() {
+fn tier_counts_are_63_core_74_transform_59_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -247,7 +249,11 @@ fn tier_counts_are_63_core_73_transform_59_analysis() {
     // core 61 -> 62: +1 for `loweredswitchlabels` (P2 comparison-derived
     // label signedness, DIV-173).
     // core 62 -> 63: +1 for `cancelbytearithmetic` (P3 exact modular identity).
-    assert_eq!((core, transform, analysis), (63, 73, 59));
+    // transform 72 -> 73: +1 for `pebnames` (P5 Windows TEB/PEB segment-base
+    // typing, DIV-175).
+    // transform 73 -> 74: +1 for `mappedflowboundary` (P2 mapped ELF x86 flow
+    // boundaries, DIV-176).
+    assert_eq!((core, transform, analysis), (63, 74, 59));
 }
 
 #[test]
@@ -698,6 +704,7 @@ fn option_values_live_value_present_for_78() {
                             | "warnstyle"
                             | "int3pad"
                             | "x64syscall"
+                            | "pebnames"
                             | "arraycoverwidth"
                             | "emptystrconst"
                             | "callsitestackargs"
@@ -928,7 +935,11 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // beside `tailcallentry`, so the tail does not move.
     // +1 for `cancelbytearithmetic` (DIV-174); its P3 row sits mid-table, so it
     // increments the comma-terminated catalog-row count.
-    assert_eq!(json.matches("},\n").count(), 194);
+    // 193 -> 194: +1 for `pebnames` (DIV-175); its P5 row sits mid-table beside
+    // `codescalar`, so it increments the comma-terminated catalog-row count.
+    // 194 -> 195: +1 for `mappedflowboundary` (DIV-176); its P2 row sits mid-table
+    // beside `funcboundflow`.
+    assert_eq!(json.matches("},\n").count(), 195);
 }
 
 #[test]

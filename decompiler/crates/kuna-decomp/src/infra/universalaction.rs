@@ -764,6 +764,11 @@ pub fn universal_sched(
             // it is only legal before heritage builds SSA.  Inert on every
             // language but x86-64 and on any function with no SYSCALL.
             act!(crate::p2_lift::kuna_x64syscall::ActionX64Syscall::boxed("protorecovery")),
+            // (kuna) pebnames (option `pebnames`, default `auto`): map `TEB *teb`
+            // over the Windows segment-base register input.  Here because the
+            // Symbol must exist before heritage creates the input Varnode, which
+            // is when its type and name locks are read.
+            act!(crate::p5_types::kuna_pebnames::ActionPebNames::boxed("typerecovery")),
             act!(ActionNormalizeSetup::boxed("normalanalysis")),
             act!(ActionDefaultParams::boxed("base")),
             SchedNode::Action(Box::new(move || {

@@ -1,0 +1,122 @@
+<decompilertest>
+<binaryimage arch="x86:LE:32:default:windows">
+<!--
+    pebnames, the x86 twin of kuna-pebnames.xml: on x86 the TEB is at the FS base,
+    the PEB pointer is TEB+0x30, TEB.Self is +0x18, and NtGlobalFlag is PEB+0x68.
+
+    Layout (x86 Windows):
+      0x401000  64 a1 30 00 00 00                     mov eax,fs:[0x30]   ; TEB.ProcessEnvironmentBlock
+      0x401006  0f b6 48 02 / 85 c9 / 75 1b           movzx ecx,byte [eax+2] ; test ; jne dbg
+      0x40100e  8b 48 68 / 83 e1 70 / 83 f9 70 / 74 10  mov ecx,[eax+0x68] ; and ; cmp ; je dbg
+      0x401019  64 a1 18 00 00 00                     mov eax,fs:[0x18]   ; TEB.Self
+      0x40101f  8b 40 30 / 8b 40 18 / 8b 40 40 / c3   ->PEB ; ->ProcessHeap ; heap+0x40 ; ret
+      0x401029  b8 01 00 00 00 / c3                   dbg: mov eax,1 ; ret
+
+    Pass 1 (pebnames off, the bug): the FS base is an untyped register and every
+    read is a magic offset.
+    Pass 2 (pebnames on, the fix): TEB *teb // fs_offset, and the probes read by name.
+
+    A function that writes through the base is left untyped. Every x86 function
+    with an exception handler links a registration record into TEB.ExceptionList
+    and unlinks it on exit, and the record's stack layout is inferred from how the
+    untyped base is used, so typing the base would rearrange that frame:
+      0x401040  55 / 89 e5 / 6a ff / 68 00 12 40 00   push ebp ; mov ebp,esp ; push -1 ; push handler
+      0x40104a  64 a1 00 00 00 00 / 50                mov eax,fs:[0] ; push eax
+      0x401051  64 89 25 00 00 00 00                  mov fs:[0],esp      ; link the record
+      0x401058  64 a1 30 00 00 00 / 0f b6 40 02       mov eax,fs:[0x30] ; movzx eax,byte [eax+2]
+      0x401062  8b 4d f4 / 64 89 0d 00 00 00 00       mov ecx,[ebp-0xc] ; mov fs:[0],ecx
+      0x40106c  89 ec / 5d / c3                       mov esp,ebp ; pop ebp ; ret
+    Passes 3 and 4 decompile it off and on, and the two renders must agree: the
+    12-byte record stays one object and the PEB read stays an array element of
+    the base. Passes 5 and 6 do the same for MSVC's C++ EH prologue, whose
+    record {Next, handler, state} is linked through a pointer taken after the
+    /GS cookie push; typing the base there split the record into three unrelated
+    scalars:
+      0x401080  6a ff / 68 00 13 40 00 / 64 a1 00 00 00 00 / 50   push -1 ; push handler ; push fs:[0]
+      0x40108e  51 / 56 / a1 10 20 40 00 / 31 e0 / 50            push ecx ; push esi ; cookie ^ esp
+      0x401098  8d 44 24 0c / 64 a3 00 00 00 00                  lea eax,[esp+0xc] ; mov fs:[0],eax
+      0x4010a2  ... call 0x401400 ...                             body
+      0x4010be  8b 4c 24 0c / 64 89 0d 00 00 00 00               mov ecx,[esp+0xc] ; mov fs:[0],ecx
+
+    Near misses, decompiled under pebnames on, none of which may gain a name:
+      0x401100  mov eax,fs:[0x1010]       ; inside the Windows 11 WOW64 TEB32 (0x1038 bytes)
+      0x401110  mov eax,fs:[0x1040]       ; 0x1038 + 8: past the largest TEB32, lined up
+                                          ; with StackLimit
+      0x401120  mov ecx,fs:[0x30]
+                movzx eax,byte [ecx+3]    ; SpareBool on XP, BitField after it
+                add eax,[ecx+0x38]        ; ApiSetMap from Windows 7, FreeList before it
+      0x401130  mov eax,fs:[0x30]
+                mov eax,[eax+0x490]       ; 0x488 + 8: past the largest PEB32, lined up
+                                          ; with ImageBaseAddress
+      0x401140  mov eax,gs:[0x14]         ; GS is not the TEB on x86
+-->
+<bytechunk space="ram" offset="0x401000" readonly="true">64a1300000000fb6480285c9751b8b486883e17083f970741064a1180000008b40308b40188b4040c3b801000000c3cccccccccccccccccccccccccccccccccc5589e56aff680012400064a100000000506489250000000064a1300000000fb640028b4df464890d0000000089ec5dc3cccccccccccccccccccccccccccccccc6aff680013400064a100000000505156a11020400031e0508d44240c64a30000000089ce89742408e853030000c744241400000000c7060021400089f08b4c240c64890d00000000595e83c410c3cccc</bytechunk>
+<symbol space="ram" offset="0x401000" name="anti_debug32"/>
+<symbol space="ram" offset="0x401040" name="seh_frame32"/>
+<symbol space="ram" offset="0x401080" name="eh_frame32"/>
+<bytechunk space="ram" offset="0x401100" readonly="true">64a110100000c3cccccccccccccccccc64a140100000c3cccccccccccccccccc648b0d300000000fb64103034138c3cc64a1300000008b8090040000c3cccccc65a114000000c3cccccccccccccccccc</bytechunk>
+<symbol space="ram" offset="0x401100" name="hole_1010"/>
+<symbol space="ram" offset="0x401110" name="past_end32"/>
+<symbol space="ram" offset="0x401120" name="version_holes32"/>
+<symbol space="ram" offset="0x401130" name="peb_past_end32"/>
+<symbol space="ram" offset="0x401140" name="gs_32"/>
+</binaryimage>
+<script>
+  <com>option pebnames off</com>
+  <com>lo fu anti_debug32</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option pebnames on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option pebnames off</com>
+  <com>lo fu seh_frame32</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option pebnames on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option pebnames off</com>
+  <com>lo fu eh_frame32</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option pebnames on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu hole_1010</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu past_end32</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu version_holes32</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu peb_past_end32</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu gs_32</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="PEBNAMES-X86 #1: BeingDebugged is read through FS:[0x30] by name (on pass only)" min="1" max="1">\(!teb-&gt;ProcessEnvironmentBlock-&gt;BeingDebugged\)</stringmatch>
+<stringmatch name="PEBNAMES-X86 #2: NtGlobalFlag sits at PEB+0x68 on x86 (on pass only)" min="1" max="1">\(teb-&gt;ProcessEnvironmentBlock-&gt;NtGlobalFlag &amp; 0x70\) != 0x70</stringmatch>
+<stringmatch name="PEBNAMES-X86 #3: FS:[0x18] is TEB.Self and chains on to the ProcessHeap (on pass only)" min="1" max="1">teb-&gt;Self-&gt;ProcessEnvironmentBlock-&gt;ProcessHeap \+ 0x40</stringmatch>
+<stringmatch name="PEBNAMES-X86 #4: the magic-offset read of BeingDebugged (off pass only)" min="1" max="1">!\*\(char \*\)\(\*\(int4 \*\)\(v[0-9]+ \+ 0x30\) \+ 2\)</stringmatch>
+<stringmatch name="PEBNAMES-X86 #5: the TEB pointer is declared for the reader and every near miss, never for the function that writes the base" min="5" max="5">TEB \*teb; // fs_offset</stringmatch>
+<stringmatch name="PEBNAMES-X86 #6: the function that links an SEH record keeps its PEB read untyped under on" min="2" max="2">\*\(char \*\)\(v[0-9]+\[0xc\] \+ 2\)</stringmatch>
+<stringmatch name="PEBNAMES-X86 #7: the SEH registration record stays one 12-byte object under on" min="2" max="2">char v[0-9]+ \[12\];</stringmatch>
+<stringmatch name="PEBNAMES-X86 #8: the record is linked and unlinked through the untyped base in both passes" min="4" max="4">\*v[0-9]+ = v[0-9]+;</stringmatch>
+<stringmatch name="PEBNAMES-X86 #9: the register storage comment survives in every pass" min="10" max="10">; // fs_offset</stringmatch>
+<stringmatch name="PEBNAMES-X86 #10: fs:[0x1010] lies inside the Windows 11 WOW64 TEB32 and is offset-named, not a field of a phantom neighbour" min="1" max="1">\*\(unsigned int \*\)&amp;teb-&gt;field_0x1010;</stringmatch>
+<stringmatch name="PEBNAMES-X86 #11: a read past the largest TEB32 stays an integer addition" min="1" max="1">\*\(unsigned int \*\)\(\(int4\)teb \+ 0x1040\);</stringmatch>
+<stringmatch name="PEBNAMES-X86 #12: no read is split into an index of a neighbouring TEB or PEB" min="0" max="0">(teb|ProcessEnvironmentBlock|Self)\[</stringmatch>
+<stringmatch name="PEBNAMES-X86 #13: PEB+3 and PEB+0x38 changed meaning between Windows releases and stay offset-named" min="1" max="1">teb-&gt;ProcessEnvironmentBlock-&gt;field_0x3 \+ \*\(int4 \*\)&amp;teb-&gt;ProcessEnvironmentBlock-&gt;field_0x38;</stringmatch>
+<stringmatch name="PEBNAMES-X86 #14: no version-dependent PEB name is ever printed" min="0" max="0">BitField|SpareBool|ApiSetMap|CrossProcessFlags|FreeList</stringmatch>
+<stringmatch name="PEBNAMES-X86 #15: a read past the largest PEB32 stays an integer addition" min="1" max="1">\*\(unsigned int \*\)\(\(int4\)teb-&gt;ProcessEnvironmentBlock \+ 0x490\);</stringmatch>
+<stringmatch name="PEBNAMES-X86 #16: GS is not the TEB on x86, so gs:[0x14] stays an untyped register read under on" min="1" max="1">return \*\(unsigned int \*\)\(v[0-9]+ \+ 0x14\);</stringmatch>
+<stringmatch name="PEBNAMES-X86 #17: the GS base keeps an untyped declaration on x86" min="1" max="1">int4 v[0-9]+; // gs_offset</stringmatch>
+<stringmatch name="PEBNAMES-X86 #18: the C++ EH registration record keeps its three-slot extent under on" min="2" max="2">int4 v[0-9]+ \[3\]; // stack - 0xc</stringmatch>
+<stringmatch name="PEBNAMES-X86 #19: the C++ EH record's address is linked through the untyped base in both passes" min="2" max="2">\*v[0-9]+ = \(int4\)v[0-9]+;</stringmatch>
+</decompilertest>

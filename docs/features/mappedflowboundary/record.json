@@ -13,7 +13,7 @@
   "flag": "mapped_flow_boundary",
   "element_id": 4167,
   "default_on": true,
-  "div": "DIV-175",
+  "div": "DIV-176",
   "phase": "P2",
   "subphase": "flow-classification",
   "change_kind": "correctness-fix",
@@ -22,7 +22,7 @@
   "inspiration": "Synthetic linked ELF x86 paths are lost when fall-through consumes unmapped loader padding.",
   "ablation_changed": 0,
   "parity": "OK",
-  "base": "92d952d1323db92d45be18553e93356ea12b413f",
+  "base": "f09c52870e6a801a67d824c925bedd5b5b117b1c",
   "acceptance_evidence": "The registered input (5ee1f28c, SHA-256 506fc3c8a43d480bdb877c8dd192e3a6c062013c5dd88a119e6c7cedf5ced890) failed on the earlier head at a partial tail instruction: its text ends mov cs,eax and three zero padding bytes, the last of which needs a ModRM byte past the mapped end. With truncated-instruction recovery, kuna decompile keygenme 0x804834c --addr --json exits 0 with code and a null error (1,018,172 characters, the whole movfuscated text as one function); option off still exits 1 at r0x080d1955.",
   "decisions": [
     "Limit recovery to matching linked little-endian ELF i386/x86-64 images.",
@@ -46,10 +46,10 @@
   },
   "gates": {
     "make test": "675/675 PARITY OK; docs/baseline.json unchanged",
-    "make test-stages": "836/836 PARITY OK; all 828 upstream passing keys retained, eight mapped-boundary and catalog keys added",
+    "make test-stages": "873/873 PARITY OK; every upstream passing key retained, eight mapped-boundary and catalog keys added",
     "make rust-test": "6815 passed / 0 failed / 38 ignored across 410 suites, including 17 console, 9 mapped-flow CLI and 3 diagnostic CLI tests and docs/options.md freshness; KUNA_DECOMP_TEST unset",
     "make check-spec": "OK (lenient and strict)",
-    "catalog and counters": "OK: 195 settables, tiers 63/73/59, 283 corpus files, next free ElementId 4168",
+    "catalog and counters": "OK: 196 settables, tiers 63/74/59, 285 corpus files, next free ElementId 4168",
     "acceptance": "Registered input replayed: exit 0, non-empty code, null error; option off exit 1 at r0x080d1955.",
     "applicable CI": "make test-cli 162/162; kuna catalog --check and shared counters green; mergecheck against origin/main clean"
   },
@@ -111,10 +111,10 @@
     "previous_head": "ccdc7aa59d7eaa2b84d602b4e5893808dd3cfd74",
     "target": "5fb5b0319d520d3d2a8d59ae6ef243ea67403246",
     "original_commits_replayed": 5,
-    "catalog": "195 settables; 118 surfaces; tiers 63/73/59; 78 live fields",
-    "stages": "All 828 upstream passing keys retained; eight mapped-boundary and catalog passing keys added; no existing expectation changed",
-    "history": "Upstream DIV-174 preserved; mappedflowboundary assigned DIV-175",
-    "element_id": "Upstream uses 4166; mappedflowboundary reassigned to 4167",
+    "catalog": "196 settables; tiers 63/74/59",
+    "stages": "All upstream passing keys retained; eight mapped-boundary and catalog passing keys added; no existing expectation changed",
+    "history": "Upstream DIV-175 (pebnames) preserved; mappedflowboundary assigned DIV-176",
+    "element_id": "mappedflowboundary keeps 4167",
     "implementation": "Mapped-flow implementation and regressions are unchanged except for the option ElementId; upstream architecture, stack-use metadata and option changes retained"
   }
 }

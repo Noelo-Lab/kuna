@@ -19,3 +19,4 @@ pub mod kuna_memsetsequence;
 pub mod kuna_rodatastring;
 pub mod kuna_ptrdepth;
 pub mod kuna_codescalar;
+pub mod kuna_pebnames; // (kuna) type the Windows TEB segment base so PEB/TEB field reads are named

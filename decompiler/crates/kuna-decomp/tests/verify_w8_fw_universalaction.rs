@@ -204,26 +204,28 @@ fn w8_fw_universalaction_allgroups_full_order_count_head_tail() {
     // is input-locked, so it has to precede `funclink`); and `x64syscall`,
     // option-gated default-off, directly after it (S2 x86-64 SYSCALL ABI
     // effects: also read off the RAW p-code, and adding a register read or
-    // write is only legal before heritage).)
+    // write is only legal before heritage); and `pebnames`, option-gated
+    // default `auto`, directly after that (P5 Windows TEB segment-base type
+    // lock: the Symbol it maps must exist before heritage creates the input).)
     assert_eq!(
         UNPORTED_ALLOWLIST.len(),
         0,
         "all universalAction passes are ported; UNPORTED_ALLOWLIST must be empty"
     );
     assert_eq!(
-        nonblank, 280,
-        "full universal tree must render 252 C++ leaves + 21 kuna leaves (branchflip + cleanupcode + linuxsyscall + x64syscall + outline + gotoreduce + taildup + ifelseflatten + crossjumprevert + dedupitetail + returndup + iteregion + iteboolean + earlyreturn + switchreturn + paramcopyhoist + removesecuritycheck + stripmsvcstackguard + rodatastringcopy + simdshufflelane + constspaceload) + 7 container headers"
+        nonblank, 281,
+        "full universal tree must render 252 C++ leaves + 22 kuna leaves (branchflip + cleanupcode + linuxsyscall + x64syscall + pebnames + outline + gotoreduce + taildup + ifelseflatten + crossjumprevert + dedupitetail + returndup + iteregion + iteboolean + earlyreturn + switchreturn + paramcopyhoist + removesecuritycheck + stripmsvcstackguard + rodatastringcopy + simdshufflelane + constspaceload) + 7 container headers"
     );
 
     // Head: the universal restart-group prelude, in C++ order.  Note
     // `normalizesetup` (normalanalysis) and `funclink_outonly` (noproto) are
     // PRESENT here but absent in the decompile oracle — the part of the order
     // the gate never sees.
-    let head: Vec<&str> = lines.iter().take(12).map(|l| name_of(l)).collect();
+    let head: Vec<&str> = lines.iter().take(13).map(|l| name_of(l)).collect();
     assert_eq!(
         head,
         vec![
-            "universal", "start", "constbase", "linuxsyscall", "x64syscall",
+            "universal", "start", "constbase", "linuxsyscall", "x64syscall", "pebnames",
             "normalizesetup", "defaultparams", "extrapopsetup", "prototypetypes",
             "funclink", "funclink_outonly", "fullloop",
         ]
