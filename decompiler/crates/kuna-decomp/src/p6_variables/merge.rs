@@ -372,10 +372,17 @@ pub trait MergeContext: HighContext {
     fn block_ops(&self, bl: crate::context::BlockId) -> Vec<OpId>;
     /// `domBlock->dominates(subBlock)`.
     fn block_dominates(&self, dom: crate::context::BlockId, sub: crate::context::BlockId) -> bool;
+    /// `bl->getIn(slot)`.
+    fn block_in(&self, bl: crate::context::BlockId, slot: int4) -> crate::context::BlockId;
+    /// `bl->sizeIn()` — number of in-flow (predecessor) edges.
+    fn block_num_in(&self, bl: crate::context::BlockId) -> int4;
 
     // --- Function-level op iteration ---------------------------------------
     /// `data.beginOpAlive()..endOpAlive()` — the alive-op list in C++ order.
     fn ops_alive(&self) -> Vec<OpId>;
+
+    /// (kuna) `option tiedphitrim`: [`crate::p6_variables::kuna_tiedphitrim`].
+    fn kuna_tied_phi_trim(&self) -> bool;
 
     // --- Cover construction for a single read (eliminateIntersect) --------
     /// Build the [`Cover`] of the single read of `vn` by `op` (the C++
@@ -1000,6 +1007,9 @@ pub struct Merge {
     copy_trims: Vec<OpId>,
     /// Roots of unmapped CONCAT trees (C++ `protoPartial`).
     proto_partial: Vec<OpId>,
+    /// (kuna) The outputs of the MULTIEQUALs `tiedphitrim` trimmed, with the
+    /// storage each was trimmed away from.
+    tied_phis: Vec<(VarnodeId, kuna_base::address::Address)>,
 }
 
 impl Merge {
@@ -1010,7 +1020,7 @@ impl Merge {
     /// here the affecting-ops `PcodeOpSet` is supplied already wired (it is the
     /// `StackAffectingOps` populated from the function's CALL/STORE ops).
     pub fn new(test_cache: HighIntersectTest) -> Merge {
-        Merge { test_cache, copy_trims: Vec::new(), proto_partial: Vec::new() }
+        Merge { test_cache, copy_trims: Vec::new(), proto_partial: Vec::new(), tied_phis: Vec::new() }
     }
 
     /// Borrow the intersection-test cache.
@@ -1024,6 +1034,7 @@ impl Merge {
         self.test_cache.clear();
         self.copy_trims.clear();
         self.proto_partial.clear();
+        self.tied_phis.clear();
         self.test_cache.affecting_ops_mut().clear();
     }
 
@@ -1079,7 +1090,9 @@ impl Merge {
         if high1 == high2 {
             return Ok(true); // Already merged
         }
-        if MergeIntersect::intersection(ctx, &mut self.test_cache, high1, high2) {
+        if MergeIntersect::intersection(ctx, &mut self.test_cache, high1, high2)
+            || crate::p6_variables::kuna_tiedphitrim::intersects(&self.tied_phis, ctx, &mut self.test_cache, high1, high2)
+        {
             return Ok(false);
         }
         ctx.bank_merge_highs(high1, high2, isspeculative, &mut self.test_cache)?;
@@ -1149,7 +1162,9 @@ impl Merge {
         }
         let others: Vec<HighVariableId> = tmplist.clone();
         for a in others {
-            if MergeIntersect::intersection(ctx, &mut self.test_cache, a, high) {
+            if MergeIntersect::intersection(ctx, &mut self.test_cache, a, high)
+                || crate::p6_variables::kuna_tiedphitrim::intersects(&self.tied_phis, ctx, &mut self.test_cache, a, high)
+            {
                 return false;
             }
         }
@@ -1460,6 +1475,13 @@ impl Merge {
             if nexttrim == max {
                 self.trim_op_output(ctx, op)?; // one last trim
             }
+        }
+
+        if let Some((slots, storage)) = crate::p6_variables::kuna_tiedphitrim::tied_slots(ctx, op) {
+            for slot in slots {
+                self.trim_op_input(ctx, op, slot)?;
+            }
+            self.tied_phis.push((ctx.op_out(op).expect("mergeOp: op has no output"), storage));
         }
 
         // Try to merge everything for real now.
@@ -2782,8 +2804,17 @@ mod tests {
         fn block_dominates(&self, _dom: crate::context::BlockId, _sub: crate::context::BlockId) -> bool {
             false
         }
+        fn block_in(&self, bl: crate::context::BlockId, _slot: int4) -> crate::context::BlockId {
+            bl
+        }
+        fn block_num_in(&self, _bl: crate::context::BlockId) -> int4 {
+            0
+        }
         fn ops_alive(&self) -> Vec<OpId> {
             Vec::new()
+        }
+        fn kuna_tied_phi_trim(&self) -> bool {
+            false
         }
         fn single_read_cover(&self, _vn: VarnodeId, _op: OpId) -> Cover {
             Cover::new()

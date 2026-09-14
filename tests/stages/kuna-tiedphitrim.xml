@@ -1,0 +1,421 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    GH-468 follow-up: a loop that only reads memory must not print a store
+    into the aliased stack slot it was entered from.  The three sum
+    functions fill a 64-byte stack buffer through a call and then walk it.
+
+    sum_gcc and sum_clang are canary_check from ab_test.c built with gcc 11
+    and clang-12 at -O2 -fno-stack-protector on x86-64, byte for byte at
+    their link addresses (the strncpy import is a stub that writes [rdi]).
+    The gcc loop:
+
+        movzbl (%rsp),%eax         ; buf[0], straight from the frame
+        test   %al,%al
+        je     zero
+        lea    0x1(%rsp),%rdx
+        xor    %r8d,%r8d
+      loop:
+        add    $0x1,%rdx
+        add    %eax,%r8d
+        movzbl -0x1(%rdx),%eax     ; next byte, through the pointer
+        test   %al,%al
+        jne    loop
+
+    sum_msvc is the MSVC /O2 loop from ab_o2.exe main (0x1400012a3), the
+    same instructions with the call's arguments in rdi/rsi/edx: the guard
+    reads buf[0] with `cmp byte [rsp+0x20],dl` and the latch reloads
+    buf[i] with `cmp byte [rsp+rax+0x20],0`.
+
+    In all three the loop variable is MULTIEQUAL(buf[0], LOAD) at the loop
+    head.  Stage: P6 forced merge (Merge::mergeOp).  P0 assertion: option
+    tiedphitrim on|off.  With the option off, Merge puts the buf[0] read and
+    the LOAD into one HighVariable, which is the frame slot, so every byte
+    the loop fetches prints as a store into buf[0].  With the option on (the
+    default, pass 1) the loop-head input is trimmed into a copy on the
+    entering edge and the loop variable is its own.
+
+    Negative controls, identical in both passes:
+    - store_loop really stores each fetched byte into buf[0] inside the loop
+      and passes buf to a call after it, so the store is live and must print;
+      the write into buf[0] inside the loop declines the trim.
+    - store_join stores the joined value into buf[0] after an if, not a loop,
+      and passes buf on.
+    - outparam_join fills an int local through a call and joins it with a
+      LOAD at an if/else, not at a loop head.
+    - accum_loop fills an int local through a call and enters a loop whose
+      value is computed from it, not read from memory.
+    - xa11 and xa13 (gcc 11 -O2, byte for byte) enter a byte loop from buf[0]
+      and reload it through a LOAD, but also compute x in the loop and store
+      it into buf[0] after the loop.  The trim would let x merge into buf[0],
+      printing a store inside the loop that the loop's first reload reads
+      back, so the loop keeps upstream's merge.
+
+    t8, t1 and t1b (gcc 11 -O2, byte for byte; their callees are stubs and
+    each group sits at its link addresses plus a constant, so the rel32 calls
+    are unchanged) walk buf from buf[0] and store the loop's exit byte into a
+    neighbouring slot, buf[1] or buf[2], after the loop; the loop's first
+    reload reads that slot's original byte.  The trimmed loop variable must not
+    merge into that neighbouring slot either, or the store would print before
+    the loop and the reload would read it back.
+
+    outparam_walk (gcc 11 -O2, byte for byte) walks a list whose head a call
+    fills into a stack slot.  The default pass copies the head into its own
+    variable; only with the option off does each next pointer print as a store
+    into the slot.  It fails if Merge folds the loop variable back into the
+    slot after the trim.
+-->
+<bytechunk space="ram" offset="0x1050" readonly="true">
+c60741c3
+</bytechunk>
+<bytechunk space="ram" offset="0x1060" readonly="true">
+c70705000000c3
+</bytechunk>
+<bytechunk space="ram" offset="0x1160" readonly="true">
+f30f1efa4883ec484889feba3f0000004889e7e8d8feffff0fb60424c644243f
+0084c0742b488d5424014531c00f1f004883c2014101c00fb642ff84c075f144
+89c04883c448c3660f1f8400000000004531c04883c4484489c0c3
+</bytechunk>
+<bytechunk space="ram" offset="0x2000" readonly="true">
+4883ec684889fe488d7c2420ba3f000000e83af0ffff4531c031d2448844245f
+3854242074174863c2ffc20fb64c04204863c24101c8807c04200075e94489c0
+4883c468c3
+</bytechunk>
+<bytechunk space="ram" offset="0x2100" readonly="true">
+534883ec604889fe488d7c2420ba3f000000e839efffff31db0fb644242084c0
+7417488d5424214883c20101c30fb642ff8844242084c075ee488d7c2420e80d
+efffff89d84883c4605bc3
+</bytechunk>
+<bytechunk space="ram" offset="0x2200" readonly="true">
+53554883ec584889fb89f5488d7c2420ba3f000000e836eeffff0fb644242085
+ed74030fb60388442420488d7c2420e81ceeffff4883c4585d5bc3
+</bytechunk>
+<bytechunk space="ram" offset="0x2300" readonly="true">
+53554883ec284889fb89f5488d7c2410e84bedffff8b44241085ed74028b0348
+83c4285d5bc3
+</bytechunk>
+<bytechunk space="ram" offset="0x2400" readonly="true">
+534883ec2089fb488d7c2410e84fecffff8b44241085db740a6bc01f83c007ff
+cb75f64883c4205bc3
+</bytechunk>
+<bytechunk space="ram" offset="0x401030" readonly="true">
+c60741c3
+</bytechunk>
+<bytechunk space="ram" offset="0x401130" readonly="true">
+4883ec484889fe4889e7ba3f000000e8ecfeffffc644243f008a0c2484c97425
+488d54240131c0660f1f8400000000000fb6c901c80fb60a4883c20184c975f0
+4883c448c331c04883c448c3
+</bytechunk>
+<bytechunk space="ram" offset="0x1220" readonly="true">
+f30f1efa554889fe5331db4883ec484889e54889efe8160100000fbe04244889
+ea31c9488d74241feb1c660f1f4400008d4c18018d1c5b4883c20101c30fbe42
+ff4839f2740484c075e64889ef880c24e84b0100004883c44801d85b5dc3
+</bytechunk>
+<bytechunk space="ram" offset="0x12e0" readonly="true">
+f30f1efa41545589f54889fe5331db4883ec404989e44c89e7e8520000000fbe
+042431d231c9eb240f1f8400000000008d4c180101ea8d1c5b01c389d083e03f
+0fbe040481fba08601007f0484c075e04c89e7880c24e8850000004883c44001
+d85b5d415cc3
+</bytechunk>
+<bytechunk space="ram" offset="0x1350" readonly="true">
+c60741c3
+</bytechunk>
+<bytechunk space="ram" offset="0x13c0" readonly="true">
+b801000000c3
+</bytechunk>
+<bytechunk space="ram" offset="0x1b40" readonly="true">
+f30f1efa4883ec18488d7c2408e83e010000488b5424084885d2741c31c06690
+034208488b124885d275f583c0014883c418c30f1f440000b8010000004883c4
+18c3
+</bytechunk>
+<bytechunk space="ram" offset="0x1c90" readonly="true">
+48c70700000000c3
+</bytechunk>
+<symbol space="ram" offset="0x1050" name="strncpy"/>
+<symbol space="ram" offset="0x1060" name="fill_int"/>
+<symbol space="ram" offset="0x1160" name="sum_gcc"/>
+<symbol space="ram" offset="0x2000" name="sum_msvc"/>
+<symbol space="ram" offset="0x2100" name="store_loop"/>
+<symbol space="ram" offset="0x2200" name="store_join"/>
+<symbol space="ram" offset="0x2300" name="outparam_join"/>
+<symbol space="ram" offset="0x2400" name="accum_loop"/>
+<symbol space="ram" offset="0x401030" name="strncpy2"/>
+<symbol space="ram" offset="0x401130" name="sum_clang"/>
+<symbol space="ram" offset="0x1220" name="xa11"/>
+<symbol space="ram" offset="0x12e0" name="xa13"/>
+<symbol space="ram" offset="0x1350" name="fill"/>
+<symbol space="ram" offset="0x13c0" name="use"/>
+<symbol space="ram" offset="0x1b40" name="outparam_walk"/>
+<symbol space="ram" offset="0x1c90" name="getnode"/>
+<bytechunk space="ram" offset="0x21180" readonly="true">
+f30f1efa534889fe4883ec404889e34889dfe8590000000fbe042484c0744931
+c931f64889da662e0f1f8400000000004883c20101c683c1010fbe0284c07405
+83f91d7eeb69dee8030000488d7c240188442401e8870000004883c44001d85b
+c30f1f800000000031dbebdf
+</bytechunk>
+<bytechunk space="ram" offset="0x211f0" readonly="true">
+c60741c3
+</bytechunk>
+<bytechunk space="ram" offset="0x21260" readonly="true">
+b801000000c3
+</bytechunk>
+<bytechunk space="ram" offset="0x311e0" readonly="true">
+f30f1efa554889fe534883ec484889e54889efe8880300000fbe042484c07440
+31c931db4889ea660f1f8400000000004883c20101c383c1010fbe0284c07405
+83f91d7eeb4889ef88442401e8bf0300004883c44801d85b5dc3660f1f440000
+31dbebe1
+</bytechunk>
+<bytechunk space="ram" offset="0x31250" readonly="true">
+f30f1efa554889fe534883ec484889e54889efe8180300000fbe042484c07448
+ba0100000031db660f1f8400000000008d1c5b01c30fbe44150084c0400f95c6
+83fa1d0f9ec14883c2014084ce75e14889ef88442402e8450300004883c44801
+d85b5dc30f1f400031dbebe3
+</bytechunk>
+<bytechunk space="ram" offset="0x31580" readonly="true">
+c60741c3
+</bytechunk>
+<bytechunk space="ram" offset="0x315f0" readonly="true">
+b801000000c3
+</bytechunk>
+<symbol space="ram" offset="0x21180" name="t8"/>
+<symbol space="ram" offset="0x211f0" name="fill8"/>
+<symbol space="ram" offset="0x21260" name="use8"/>
+<symbol space="ram" offset="0x311e0" name="t1"/>
+<symbol space="ram" offset="0x31250" name="t1b"/>
+<symbol space="ram" offset="0x31580" name="fill9"/>
+<symbol space="ram" offset="0x315f0" name="use9"/>
+</binaryimage>
+<script>
+  <com>lo fu sum_msvc</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu sum_gcc</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu sum_clang</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu store_loop</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu store_join</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu outparam_join</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu accum_loop</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu xa11</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu xa13</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu outparam_walk</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu t8</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu t1</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu t1b</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option tiedphitrim off</com>
+  <com>lo fu sum_msvc</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu sum_gcc</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu sum_clang</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu store_loop</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu store_join</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu outparam_join</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu accum_loop</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu xa11</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu xa13</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu outparam_walk</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu t8</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu t1</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu t1b</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="TIEDPHITRIM #1: default, MSVC: buf[0] is read once into its own variable and the loop reloads that variable from buf[i]" min="1" max="1">strncpy\(v4,a0,0x3f\);
+v5 = 0;
+v3 = 0;
+v6 = 0;
+v1 = v4\[0\];
+while \(v1\) \{
+v2 = \(int8\)v3;
+v3 \+= 1;
+v5 \+= \(uint4\)v4\[v2\];
+v1 = v4\[v3\];
+\}</stringmatch>
+<stringmatch name="TIEDPHITRIM #2: option off, MSVC: the loop tests buf[0] and stores buf[i] into it" min="1" max="1">strncpy\(v3,a0,0x3f\);
+v4 = 0;
+v2 = 0;
+v5 = 0;
+while \(v3\[0\]\) \{
+v1 = \(int8\)v2;
+v2 \+= 1;
+v4 \+= \(uint4\)v3\[v1\];
+v3\[0\] = v3\[v2\];
+\}</stringmatch>
+<stringmatch name="TIEDPHITRIM #3: default, gcc -O2: the guarded byte is copied into the loop variable before the loop" min="1" max="1">strncpy\(&amp;v3,a0,0x3f\);
+v5 = 0;
+if \(v3\) \{
+v4 = 0;
+v1 = v3;
+do \{
+v2 = &amp;v2\[1\];
+v4 \+= \(uint4\)v1;
+v1 = \*v2;
+\} while \(v1\);</stringmatch>
+<stringmatch name="TIEDPHITRIM #4: option off, gcc -O2: each fetched byte is stored into the byte strncpy filled" min="1" max="1">strncpy\(&amp;v2,a0,0x3f\);
+v4 = 0;
+if \(v2\) \{
+v3 = 0;
+do \{
+v1 = &amp;v1\[1\];
+v3 \+= \(uint4\)v2;
+v2 = \*v1;
+\} while \(v2\);</stringmatch>
+<stringmatch name="TIEDPHITRIM #5: default, clang-12 -O2: the guarded byte is copied into the loop variable before the loop" min="1" max="1">strncpy2\(&amp;v4,a0,0x3f\);
+v5 = 0;
+if \(v4\) \{
+v1 = 0;
+v2 = v4;
+do \{
+v3 = &amp;v3\[1\];
+v1 \+= \(uint4\)v2;
+v2 = \*v3;
+\} while \(v2\);</stringmatch>
+<stringmatch name="TIEDPHITRIM #6: option off, clang-12 -O2: each fetched byte is stored into the byte strncpy filled" min="1" max="1">strncpy2\(&amp;v3,a0,0x3f\);
+v4 = 0;
+if \(v3\) \{
+v1 = 0;
+do \{
+v2 = &amp;v2\[1\];
+v1 \+= \(uint4\)v3;
+v3 = \*v2;
+\} while \(v3\);</stringmatch>
+<stringmatch name="TIEDPHITRIM #7: both passes print store_loop's live store of each fetched byte into buf[0]" min="2" max="2">strncpy\(&amp;v4,a0,0x3f\);
+v3 = 0;
+if \(v4\) \{
+v2 = v5;
+do \{
+v1 = &amp;v2\[1\];
+v3 \+= \(uint4\)v4;
+v4 = \*v2;
+v2 = v1;
+\} while \(v4\);
+\}
+strncpy\(&amp;v4\);</stringmatch>
+<stringmatch name="TIEDPHITRIM #8: both passes print store_join's store of the joined byte into buf[0]" min="2" max="2">strncpy\(v1,a1,0x3f\);
+if \(a1\)
+v1\[0\] = \*a0;
+strncpy\(v1\);</stringmatch>
+<stringmatch name="TIEDPHITRIM #9: both passes keep upstream's merge at outparam_join's if/else join" min="2" max="2">fill_int\(v1\);
+if \(a1\)
+v1\[0\] = \*a0;
+return v1\[0\];</stringmatch>
+<stringmatch name="TIEDPHITRIM #10: both passes keep upstream's merge for accum_loop's computed loop value" min="2" max="2">fill_int\(v1\);
+for \(; a0; a0 = a0 \+ -1\) \{
+v1\[0\] = v1\[0\] \* 0x1f \+ 7;
+\}
+return v1\[0\];</stringmatch>
+<stringmatch name="TIEDPHITRIM #11: both passes keep xa11's upstream merge, the loop's x stored into buf[0] only after the loop" min="2" max="2">while \(v1 = \(char\)v2, v6\[0\]\) \{
+v2 = v6\[0\] \+ 1 \+ v5;
+v3 = &amp;v4\[1\];
+v5 = v5 \* 3 \+ \(int4\)v6\[0\];
+v6\[0\] = \*v4;
+v4 = v3;
+v1 = \(char\)v2;
+if \(v3 == &amp;v6\[0x1f\]\) break;
+\}
+v6\[0\] = v1;</stringmatch>
+<stringmatch name="TIEDPHITRIM #12: both passes keep xa13's upstream merge, the loop's x stored into buf[0] only after the loop" min="2" max="2">v5\[0\] = v5\[v3 &amp; 0x3f\];
+v1 = \(char\)v2;
+if \(100000 &lt; v4\) break;
+\}
+v5\[0\] = v1;</stringmatch>
+<stringmatch name="TIEDPHITRIM #13: default, outparam_walk copies the filled head into its own loop variable" min="1" max="1">getnode\(v3\);
+if \(v3\[0\]\) \{
+v1 = 0;
+v2 = v3\[0\];
+do \{
+v1 \+= \(int4\)v2\[1\];
+v2 = \(int8 \*\)\*v2;
+\} while \(v2\);</stringmatch>
+<stringmatch name="TIEDPHITRIM #14: option off, outparam_walk stores each next pointer into the stack slot getnode filled" min="1" max="1">do \{
+v1 \+= \(int4\)v2\[0\]\[1\];
+v2\[0\] = \(int8 \*\)\*v2\[0\];
+\} while \(v2\[0\]\);</stringmatch>
+<stringmatch name="TIEDPHITRIM #15: default, t8 keeps the loop variable out of buf[1] and stores the exit byte only after the loop" min="1" max="1">v1 = v4;
+do \{
+v3 = &amp;v3\[1\];
+v6 \+= v1;
+v2 \+= 1;
+v1 = \*v3;
+if \(!v1\) break;
+\} while \(v2 &lt;= 0x1d\);
+v6 \*= 1000;
+\}
+else \{
+v6 = 0;
+v1 = '\\0';
+\}
+v5\[0\] = v1;
+return use8\(v5\) \+ v6;</stringmatch>
+<stringmatch name="TIEDPHITRIM #16: default, t1 stores the exit byte into buf[1] only after the loop" min="1" max="1">v1 = \*v3;
+if \(!v1\) break;
+\} while \(v2 &lt;= 0x1d\);
+\}
+else \{
+v4 = 0;
+v1 = '\\0';
+\}
+v6\[0\] = v1;
+return use9\(&amp;v5\) \+ v4;</stringmatch>
+<stringmatch name="TIEDPHITRIM #17: default, t1b stores the exit byte into buf[2] only after the loop" min="1" max="1">v1 = v5\[0\];
+do \{
+v4 = v4 \* 3 \+ \(int4\)v1;
+v1 = v5\[v3\];
+v2 = \(int4\)v3;
+v3 \+= 1;
+\} while \(v1 &amp;&amp; v2 &lt;= 0x1d\);
+\}
+else \{
+v4 = 0;
+v1 = '\\0';
+\}
+v5\[2\] = v1;
+return use9\(v5\) \+ v4;</stringmatch>
+</decompilertest>

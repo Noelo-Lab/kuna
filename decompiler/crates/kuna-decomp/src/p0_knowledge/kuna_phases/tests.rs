@@ -27,7 +27,7 @@ fn subphase_count_is_45() {
 }
 
 #[test]
-fn surface_count_is_118() {
+fn surface_count_is_119() {
     // +1 for the `option switchguardbound` surface row (angr missing-function-call),
     // +1 for the `option switchsharedcase` surface row (angr shared-case-node b2sum),
     // +1 for the `option switchmultipred` surface row (angr abnormal-switch-case-case3),
@@ -69,12 +69,13 @@ fn surface_count_is_118() {
     // +1 for the `option callpopret` surface row (kuna P2 flow-classification:
     // a call-over-data helper that returns through its caller's caller, DIV-163).
     // +1 for `option cancelbytearithmetic` (P3 exact byte cancellation).
-    assert_eq!(kuna_num_surfaces(), 118);
-    assert_eq!(SURFACE_TABLE.len(), 118);
+    // +1 for `option tiedphitrim` (P6 loop-head aliased-read trim, DIV-182).
+    assert_eq!(kuna_num_surfaces(), 119);
+    assert_eq!(SURFACE_TABLE.len(), 119);
 }
 
 #[test]
-fn settable_count_is_202() {
+fn settable_count_is_203() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -143,12 +144,13 @@ fn settable_count_is_202() {
     // +1 for `pdbinterior` (P1 PDB-procedure-interior entry suppression, DIV-180).
     // +1 for `msvcstrappend` (P2 inlined MSVC std::string append collapse).
     // +1 for `loweredswitchvalue` (P2 re-rolled switch dispatch value, DIV-181).
-    assert_eq!(kuna_num_settables(), 202);
-    assert_eq!(SETTABLE_TABLE.len(), 202);
+    // +1 for `tiedphitrim` (P6 loop-head aliased-read trim, DIV-182).
+    assert_eq!(kuna_num_settables(), 203);
+    assert_eq!(SETTABLE_TABLE.len(), 203);
 }
 
 #[test]
-fn tier_counts_are_64_core_77_transform_61_analysis() {
+fn tier_counts_are_65_core_77_transform_61_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -271,7 +273,9 @@ fn tier_counts_are_64_core_77_transform_61_analysis() {
     // std::string append collapse).
     // core 63 -> 64: +1 for `loweredswitchvalue` (P2 re-rolled switch dispatch
     // value, DIV-181).
-    assert_eq!((core, transform, analysis), (64, 77, 61));
+    // core 64 -> 65: +1 for `tiedphitrim` (P6 loop-head aliased-read trim,
+    // DIV-182).
+    assert_eq!((core, transform, analysis), (65, 77, 61));
 }
 
 #[test]
@@ -461,7 +465,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_82() {
+fn option_values_live_value_present_for_83() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -826,7 +830,8 @@ fn option_values_live_value_present_for_82() {
     // 80 -> 81: +1 for `msvcstrappend` (live_field = msvc_str_append).
     // 81 -> 82: +1 for `loweredswitchvalue` (live_field =
     // lowered_switch_value_check, DIV-181).
-    assert_eq!(with_live, 82);
+    // 82 -> 83: +1 for `tiedphitrim` (live_field = tied_phi_trim, DIV-182).
+    assert_eq!(with_live, 83);
 }
 
 #[test]
@@ -980,7 +985,9 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `msvcstrappend`; its P2 row sits mid-table.
     // 200 -> 201: +1 for `loweredswitchvalue` (DIV-181); its P2 row sits
     // mid-table, so it increments the comma-terminated catalog-row count.
-    assert_eq!(json.matches("},\n").count(), 201);
+    // +1 for `tiedphitrim` (DIV-182); its P6 row sits mid-table beside
+    // `paramcopyhoist`, so it increments the comma-terminated catalog-row count.
+    assert_eq!(json.matches("},\n").count(), 202);
 }
 
 #[test]

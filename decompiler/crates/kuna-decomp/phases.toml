@@ -1230,6 +1230,12 @@ subphase = "merge-aggressiveness"
 note = "Symbol::setIsolated"
 
 [[surface]]
+surface = "option tiedphitrim"
+phase = "P6"
+subphase = "merge-aggressiveness"
+note = "(kuna GH-468) trim a loop head's direct read of an aliased location out of the forced merge"
+
+[[surface]]
 surface = "set context"
 phase = "P2"
 subphase = "decode-context"
@@ -5278,6 +5284,31 @@ inspiration = "test_decompiling_ptx_fix_output_parameters; CLE ELF relocatable b
 change_kind = "structure-recovery"
 tier = "analysis"
 symptoms = "a .o relocatable object fails with 'Unable to load N bytes at ...'|ET_REL object maps zero bytes so nothing decompiles|a COFF .obj lists only its first function (the rest collide at address 0)"
+# ---------------------------------------------------------------------------
+# tiedphitrim: the P6 loop-head trim of an aliased location's direct read.
+# ---------------------------------------------------------------------------
+[[settable]]
+option = "tiedphitrim"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P6"
+subphase = "merge-aggressiveness"
+strength = "HARD"
+rewind = "P6"
+issue = "GH-468"
+summary = "Give a loop that reads memory its own loop variable instead of printing every value it reads as a store into the stack slot or global it was entered from. Merge::mergeOp (merge.cc:719) forces a MULTIEQUAL's output and every input it has not trimmed into one HighVariable; when one input is a direct read of an address-tied location that HighVariable is the location, so each other input's definition prints as an assignment to it. Upstream trims an input only when the required tests or the Covers forbid the merge, and a read that is dead once the loop is entered conflicts with nothing. The witness is a byte loop over a stack buffer: MSVC /O2 guards `for (i = 0; buf[i]; i++)` by reading buf[0] from the frame and latches through `[RSP+RAX+0x40]`, and the loop prints `while (v10[0]) { ...; v10[0] = v10[v6]; }`; gcc and clang -O2 carry the byte in a register and print `v2 = *v1;` into the buffer's first byte. Upstream Ghidra 12.1 prints the same stores. ON acts in Merge::mergeOp after upstream's own trims, on a MULTIEQUAL whose output is not address-tied when every address-tied input reads one location a pointer can observe (a global, or a frame local below the parameter area that is not proven unaliased; never the function's entry value) and enters the loop from outside it, and some input on a back edge is read by a LOAD (directly or through COPYs and MULTIEQUALs). It declines when the location is written inside the loop, or written anywhere with a value that comes from inside the loop: the trim takes the loop-head read out of the location's variable, and without it a later merge could fold that in-loop value into the location, printing a store inside the loop that the loop's own LOAD reads back. Each accepted input gets upstream's trim COPY on its entering edge, so the loop reads the location once into its own variable. Every later merge test then treats the loop variable as still address-tied to the location: no address-tied variable (at that location or any other) merges with it, and nothing whose Cover intersects it merges into the location, so every other merge is the one upstream makes. OFF is upstream Ghidra's behavior exactly."
+use_when = "On by default (DIV-182). The OFF symptom is a loop that only reads memory printing a store into the location it started from: `while (v10[0]) { ...; v10[0] = v10[v6]; }` over a stack buffer, `v2 = *v1; } while (v2);` with `v2` declared at a stack offset, or `while (dat_293a0) { ...; dat_293a0 = (long *)dat_293a0[3]; }` over a global list head. When the buffer is used after such a loop the OFF C is also wrong, not just misleading: an in-place lowercase loop followed by `strcmp(buf, name)` compares an empty string because every iteration stored into buf[0]. The ON form reads the location once on the way in (`v3 = v10[0]; while (v3) { ...; v3 = v10[v6]; }`). A store the loop really performs and something later reads still prints; one that nothing reads is removed by dead-code elimination before merging, so ON no longer shows it through the merge. Flip OFF to reproduce upstream Ghidra's merge, or to bisect whether a `v = location;` copy before a loop came from this trim."
+example = "option tiedphitrim off"
+source_decompiler = "kuna"
+inspiration = "GH-468 follow-up: MSVC /O2 ab_o2.exe main, the inlined canary_check byte-sum loop, and the same loop from gcc -O2 and clang-12 -O2; upstream Merge::mergeOp (merge.cc:719), Merge::trimOpInput (merge.cc:692) and Merge::mergeOpcode (merge.cc:326)"
+change_kind = "correctness-fix"
+tier = "core"
+symptoms = "a loop that only reads a stack buffer prints a store into its first element|a while condition tests buf[0] and the loop body assigns a later element into buf[0]|a byte fetched through a pointer is assigned to a stack-offset variable the binary never writes|a loop over a global linked list advances the global head although the binary only reads it|strcmp or strlen after an in-place string loop reads a buffer the C already overwrote"
+live_field = "tied_phi_trim"
+live_true = "on"
+live_false = "off"
+
 # ---------------------------------------------------------------------------
 # paramcopyhoist: the P6 trim-COPY anchor for an unmodified incoming parameter.
 # ---------------------------------------------------------------------------
