@@ -74,7 +74,7 @@ fn surface_count_is_118() {
 }
 
 #[test]
-fn settable_count_is_201() {
+fn settable_count_is_202() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -142,12 +142,13 @@ fn settable_count_is_201() {
     // +1 for `rexthunk` (P1 x86-64 PE REX-prefixed import-thunk rejection).
     // +1 for `pdbinterior` (P1 PDB-procedure-interior entry suppression, DIV-180).
     // +1 for `msvcstrappend` (P2 inlined MSVC std::string append collapse).
-    assert_eq!(kuna_num_settables(), 201);
-    assert_eq!(SETTABLE_TABLE.len(), 201);
+    // +1 for `loweredswitchvalue` (P2 re-rolled switch dispatch value, DIV-181).
+    assert_eq!(kuna_num_settables(), 202);
+    assert_eq!(SETTABLE_TABLE.len(), 202);
 }
 
 #[test]
-fn tier_counts_are_63_core_77_transform_61_analysis() {
+fn tier_counts_are_64_core_77_transform_61_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -268,7 +269,9 @@ fn tier_counts_are_63_core_77_transform_61_analysis() {
     // entry suppression, DIV-180).
     // transform 76 -> 77: +1 for `msvcstrappend` (P2 inlined MSVC
     // std::string append collapse).
-    assert_eq!((core, transform, analysis), (63, 77, 61));
+    // core 63 -> 64: +1 for `loweredswitchvalue` (P2 re-rolled switch dispatch
+    // value, DIV-181).
+    assert_eq!((core, transform, analysis), (64, 77, 61));
 }
 
 #[test]
@@ -458,7 +461,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_81() {
+fn option_values_live_value_present_for_82() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -821,7 +824,9 @@ fn option_values_live_value_present_for_81() {
     // 78 -> 79: +1 for `nulterminator` (live_field = nul_terminator, opt-in).
     // 79 -> 80: +1 for `endptrbound` (live_field = end_ptr_bound, DIV-177).
     // 80 -> 81: +1 for `msvcstrappend` (live_field = msvc_str_append).
-    assert_eq!(with_live, 81);
+    // 81 -> 82: +1 for `loweredswitchvalue` (live_field =
+    // lowered_switch_value_check, DIV-181).
+    assert_eq!(with_live, 82);
 }
 
 #[test]
@@ -973,7 +978,9 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // 198 -> 199: +1 for `pdbinterior` (DIV-180); its P1 row sits mid-table beside
     // `pdatainterior`.
     // +1 for `msvcstrappend`; its P2 row sits mid-table.
-    assert_eq!(json.matches("},\n").count(), 200);
+    // 200 -> 201: +1 for `loweredswitchvalue` (DIV-181); its P2 row sits
+    // mid-table, so it increments the comma-terminated catalog-row count.
+    assert_eq!(json.matches("},\n").count(), 201);
 }
 
 #[test]

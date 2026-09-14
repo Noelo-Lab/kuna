@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    961,
-    961
+    970,
+    970
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -395,6 +395,15 @@
     "data:LOWEREDSWITCH-SCRUTINEE #5: case 0x400b recovered",
     "data:LOWEREDSWITCH-SCRUTINEE #6: pass 1 keeps the compiler's chain over the same parameter",
     "data:LOWEREDSWITCH-SCRUTINEE #7: a case body is present in BOTH passes",
+    "data:LOWEREDSWITCHVALUE #1: pass 2 dispatches on the compared first parameter",
+    "data:LOWEREDSWITCHVALUE #2: pass 1 dispatches both functions on a local holding a clobbered register",
+    "data:LOWEREDSWITCHVALUE #3: pass 1's local is the second parameter",
+    "data:LOWEREDSWITCHVALUE #4: pass 2 keeps the dispatched-on parameter in the prototype",
+    "data:LOWEREDSWITCHVALUE #5: a case body is present in both passes",
+    "data:LOWEREDSWITCHVALUE #6: big_consts switches only in pass 1, on the second parameter",
+    "data:LOWEREDSWITCHVALUE #7: pass 1 copies the second parameter for it",
+    "data:LOWEREDSWITCHVALUE #8: pass 2 keeps the compare over the first parameter",
+    "data:LOWEREDSWITCHVALUE #9: a case body is present in both passes",
     "data:MAPPED-FLOW #1: off loses both functions to staged padding",
     "data:MAPPED-FLOW #2: default retains both mapped returns",
     "data:MAPPED-FLOW #3: each missing fall-through is explicit",

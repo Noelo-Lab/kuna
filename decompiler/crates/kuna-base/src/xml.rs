@@ -1854,7 +1854,7 @@ mod tests {
         // and kuna-endptrbound / a pointer walk's end bound names its own buffer
         // and kuna-msvcstrappend / inlined MSVC std::string appends collapse to
         // one call each (GH-468)
-        assert_eq!(count, 288, "corpus file count drifted");
+        assert_eq!(count, 289, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

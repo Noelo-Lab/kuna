@@ -2842,6 +2842,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "loweredswitchvalue"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P2"
+subphase = "switch-model"
+strength = "HARD"
+rewind = "P2"
+issue = "GH-468"
+summary = "Keep a re-rolled lowered switch only when it dispatches on the value its comparison cascade compared. Detection sees the simplified SSA graph and records the storage of the value every compare reads; the install re-lifts raw p-code on the restart and has the new BRANCHIND read storage at the cascade head. That storage need not hold the value there: a parameter copied into another register before its own register is reused as a call argument, or a call result that a later call has overwritten, and the switch then dispatches on the argument or the later result (`v1 = (unsigned int)a1; switch(v1)` for a switch over the first parameter, or `switch(6)` where a guard pinned the overwriting value). With this on, detection gives the compared value a restart-stable name -- the function input at a storage, the effect of the call at an address, or the output of an op of one opcode at an address that is the only such definition -- and the install reads what the head's own compare instruction reads. On the restarted run the BRANCHIND input is named the same way, through copies, casts, extensions, zero-offset truncations and identity arithmetic that keep every byte. A switch reading the recorded value is verified for the read it was made over. A switch reading a provably different value -- another uniquely-defined value or a constant -- costs a restart: it is installed once more over the recorded storage, and if that also differs it is withdrawn and the cascade renders as `option loweredswitch off` renders it. A value SSA construction defines (a phi) or one with no unique definition has no name: its switch reads the recorded storage exactly as `loweredswitch` alone does and is never withdrawn, and an input that is only unnameable is never taken as evidence of a wrong dispatch."
+use_when = "On by default (DIV-181). Turn off only to reproduce the unchecked rendering, where the synthesized switch reads the recorded storage at the cascade head whatever that storage holds by then."
+example = "option loweredswitchvalue off"
+source_decompiler = "kuna"
+inspiration = "GH-468 finding 4: the switch inlined into MSVC /O2 main compares EBX after argc's own register ECX has been reused; gcc -O2 `mov eax,edi; mov rdi,rsi; cmp eax,3` dispatchers"
+change_kind = "correctness-fix"
+tier = "core"
+symptoms = "a re-rolled switch dispatches on a variable assigned just before it that the cascade never compared|switch(v) where v was loaded as a call argument or holds an unrelated call result|a switch over a parameter renders over a local while option loweredswitch off shows the chain comparing the parameter|a re-rolled switch dispatches on a constant such as switch(6)|a parameter the compare tree tests disappears from the prototype when the switch re-rolls"
+live_field = "lowered_switch_value_check"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "evalcurrentproto"
 values = "on|off"
 default = "on"
