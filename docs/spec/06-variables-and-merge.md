@@ -578,7 +578,8 @@ open-hint index evidence inside the range whose element width is not the step
 `int v1 [4]` and its indexing), open-hint index evidence reaching past either
 edge, a range outside the analyzed window, or another walk that overlaps the
 range without one of the two containing the other. Nested walks resolve to the
-outermost. Once the layout holds an array
+outermost: the array hint the outer walk leaves carries index evidence that
+reaches past the inner walk's edge. Once the layout holds an array
 Symbol that covers exactly `[start, end)` — this pass's or a locked one from
 debug information — `kuna_endptrbound.rs (rebase_bounds)` rebuilds a compared
 address written as `sp + end` into `PTRSUB(sp, start) + (end - start)`, which
@@ -591,11 +592,10 @@ comparison alone, and an address that also means the neighbour elsewhere — the
 same register handed to a call as that object — keeps naming the neighbour
 there. The value compared never changes, and a rewrite is counted as a change
 of `ActionRestructureVarnode` so the next inference pass types it. The rebuilt
-op carries the `kuna_endptrbound` addlflag, and before every later layout
-`kuna_endptrbound.rs (anchor_rebuilt_bounds)` adds back the open hint at `end`
-that the original `sp + end` expression produced, so the rewrite never changes
-the layout that justified it, even in a pass where the walk is no longer
-proven. `option endptrbound off` restores the neighbour-bound layout.
+`PTRSUB(sp, start) + span` is itself an additive stack reference at `end`, so
+the alias gather still hands later layouts an open hint there and the rewrite
+never changes the layout that justified it. `option endptrbound off` restores
+the neighbour-bound layout.
 
 **Alias blocking.** The `varmap.rs (AliasChecker)` collects every pointer
 into the stack by walking additive expressions rooted at the spacebase input

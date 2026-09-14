@@ -586,7 +586,6 @@ impl Funcdata {
         state.gather_symbols(&hints);
 
         // (kuna) `endptrbound`: a stack pointer walk's `[start, end)` is one buffer.
-        crate::kuna_endptrbound::anchor_rebuilt_bounds(self, &mut state, &space);
         let endptr_walks = crate::kuna_endptrbound::gather_walks(self, &space);
         if let (false, Some(t)) = (endptr_walks.is_empty(), self.get_arch().types_rc()) {
             crate::kuna_endptrbound::coalesce_hints(&mut state, &endptr_walks, &space, t.as_ref());

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    913,
-    913
+    925,
+    925
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -137,6 +137,18 @@
     "data:EMPTYSTRCONST #2: an ordinary short literal beside it is untouched, in both passes",
     "data:EMPTYSTRCONST #3: a GENUINE empty literal, one that sits inside a run of string data, keeps its quotes in both passes",
     "data:EMPTYSTRCONST #4: emptystrconst off restores the empty-literal form for the blob (the filed bug), exactly once",
+    "data:ENDPTRBOUND #10: both passes, a byte walk over an int array keeps the int array",
+    "data:ENDPTRBOUND #11: both passes, that array keeps its int indexing",
+    "data:ENDPTRBOUND #12: on, the byte walk's bound is rebuilt on the int array",
+    "data:ENDPTRBOUND #1: off, the loop bound is the object that follows the buffer",
+    "data:ENDPTRBOUND #2: off, the walking pointer is typed after that neighbour",
+    "data:ENDPTRBOUND #3: on, the walked bytes are one 8-byte buffer",
+    "data:ENDPTRBOUND #4: on, the bound is one past that buffer",
+    "data:ENDPTRBOUND #5: on, the call argument that means the neighbour still names it",
+    "data:ENDPTRBOUND #6: both passes, a store straddling the walk's end vetoes the buffer",
+    "data:ENDPTRBOUND #7: both passes, a comparison that controls no loop exit keeps naming the neighbour",
+    "data:ENDPTRBOUND #8: both passes, that comparison invents no buffer",
+    "data:ENDPTRBOUND #9: both passes, a walk that reads past its end is not bounded on a buffer",
     "data:ENTRYRETDISPATCH #1: the default pass recovers the helper call while option off does not",
     "data:ENTRYRETDISPATCH #2: both passes retain one ordinary function return",
     "data:ENTRYTHUMBFLOW #1: off, the Thumb entry decodes as A32 and returns nothing",
@@ -316,7 +328,7 @@
     "data:KUNA-CATALOG #4: v850indirectbranch is the other opt-in (off, destructive global)",
     "data:KUNA-CATALOG #5: each settable carries symptom-keyed use_when guidance for the operator",
     "data:KUNA-CATALOG #6: angr-derived features carry source_decompiler provenance (loweredswitch, namestyle, stackguard, branchflip, foldcallret, dedupvardecls, relocobjects, i386_pie_plt, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, taildup, dedupitetail, returndup, iteregion, iteexpr, switchguardbound, switchsharedcase, switchmultipred, unrolledguard, tailcalljump, regionstructure, regionlooprefine, regionedgeorder, ifelseflatten, noreturn_extern, noreturn_externmatch, earlyreturn, switchreturn, condfold, securitycheck)",
-    "data:KUNA-CATALOG #7: change_kind structure-recovery tags the switch/array/loader/loop/tail-call reconstructors (loweredswitch, switchselector, constselectjump, arraystride, relocobjects, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, taildup, dedupitetail, returndup, iteregion, iteexpr, tailcalljump, regionstructure, regionlooprefine, regionedgeorder, ifelseflatten, earlyreturn, switchreturn, condfold, iteboolean, paramcopyhoist, itecondlist, guardarm, loopcondhoist, orchain)",
+    "data:KUNA-CATALOG #7: change_kind structure-recovery tags the switch/array/loader/loop/tail-call reconstructors (loweredswitch, switchselector, constselectjump, arraystride, relocobjects, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, taildup, dedupitetail, returndup, iteregion, iteexpr, tailcalljump, regionstructure, regionlooprefine, regionedgeorder, ifelseflatten, earlyreturn, switchreturn, condfold, iteboolean, paramcopyhoist, itecondlist, guardarm, loopcondhoist, orchain, endptrbound)",
     "data:KUNA-CATALOG #8: the opt-in-tool change_kind aligns with the destructive options (returnpair counted twice; +switchguardbound, +switchsharedcase, +switchmultipred, +unrolledguard, +branchflip, +outline, +spillargtrial, +securitycheck, +msvcstackguard, +nulterminator)",
     "data:KUNA-CATALOG #9: every settable carries a machine-readable change_kind so an LLM can judge default-on eligibility",
     "data:KUNA-CONSOLE #1: phase list shows Band B membership",

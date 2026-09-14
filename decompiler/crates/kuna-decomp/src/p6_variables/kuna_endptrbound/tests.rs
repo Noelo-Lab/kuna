@@ -18,8 +18,8 @@ use crate::op::pcodeop_flags;
 use crate::varmap::{MapState, RangeType, COPY_CONSTANT, TYPELOCK};
 
 use super::{
-    anchor_rebuilt_bounds, coalesce_hints, find_pointer_walks, gather_walks, rebase_bounds, OptionEndPtrBound,
-    PointerWalk, ELEM_ENDPTRBOUND,
+    coalesce_hints, find_pointer_walks, gather_walks, rebase_bounds, OptionEndPtrBound, PointerWalk,
+    ELEM_ENDPTRBOUND,
 };
 
 const SP_OFF: u64 = 0x20;
@@ -688,14 +688,10 @@ fn walk(start: i64, end: i64, step: i64) -> PointerWalk {
     PointerWalk { cmp: OpId::default(), slot: 1, start, end, step }
 }
 
-fn layout(state: &mut MapState) -> Vec<(i64, i32, RangeType)> {
-    let mut v: Vec<_> = state.hints_mut().iter().map(|h| (h.sstart, h.size, h.range_type)).collect();
+fn layout(state: &mut MapState) -> Vec<(i64, i32, RangeType, i32)> {
+    let mut v: Vec<_> = state.hints_mut().iter().map(|h| (h.sstart, h.size, h.range_type, h.highind)).collect();
     v.sort();
     v
-}
-
-fn highind(state: &mut MapState, at: i64) -> i32 {
-    state.hints_mut().iter().find(|h| h.sstart == at).unwrap().highind
 }
 
 #[test]
@@ -708,8 +704,7 @@ fn constant_initializers_and_pointer_hints_become_one_buffer() {
     st.add_range_pub(0x20, Some(Rc::clone(&char1)), 0, RangeType::Open, -1);
     st.add_range_pub(0x28, Some(base(8, type_metatype::TYPE_UINT)), 0, RangeType::Fixed, -1);
     coalesce_hints(&mut st, &[walk(0x20, 0x28, 1)], &space, &types);
-    assert_eq!(layout(&mut st), vec![(0x20, 1, RangeType::Open), (0x28, 8, RangeType::Fixed)]);
-    assert_eq!(highind(&mut st, 0x20), 7);
+    assert_eq!(layout(&mut st), vec![(0x20, 1, RangeType::Open, 7), (0x28, 8, RangeType::Fixed, -1)]);
     let buf = st.hints_mut().iter().find(|h| h.sstart == 0x20).unwrap().type_.clone();
     assert!(Rc::ptr_eq(&buf, &char1), "the element type comes from the walk's own byte hint");
 }
@@ -742,8 +737,7 @@ fn a_fresh_walk_leaves_the_buffer_open_to_the_next_hint() {
     st.add_range_pub(0x24, Some(base(4, type_metatype::TYPE_UNKNOWN)), COPY_CONSTANT, RangeType::Fixed, -1);
     st.add_range_pub(0x28, Some(base(1, type_metatype::TYPE_UNKNOWN)), 0, RangeType::Open, -1);
     coalesce_hints(&mut st, &[walk(0x20, 0x28, 1)], &space, &types);
-    assert_eq!(layout(&mut st), vec![(0x20, 1, RangeType::Open), (0x28, 1, RangeType::Open)]);
-    assert_eq!(highind(&mut st, 0x20), 7);
+    assert_eq!(layout(&mut st), vec![(0x20, 1, RangeType::Open, 7), (0x28, 1, RangeType::Open, -1)]);
 }
 
 #[test]
@@ -779,7 +773,7 @@ fn a_non_constant_access_that_is_not_one_element_vetoes_the_buffer() {
     let mut st = state(&space, &types);
     st.add_range_pub(0x23, Some(base(1, type_metatype::TYPE_UNKNOWN)), 0, RangeType::Fixed, -1);
     coalesce_hints(&mut st, &[walk(0x20, 0x28, 1)], &space, &types);
-    assert_eq!(layout(&mut st), vec![(0x20, 1, RangeType::Open)], "an untyped one-element access is an element");
+    assert_eq!(layout(&mut st), vec![(0x20, 1, RangeType::Open, 7)], "an untyped one-element access is an element");
 }
 
 #[test]
@@ -797,8 +791,7 @@ fn the_widest_nested_walk_wins_and_the_window_bounds_it() {
     let (space, types) = (stack_space(), factory());
     let mut st = state(&space, &types);
     coalesce_hints(&mut st, &[walk(0x20, 0x28, 1), walk(0x20, 0x30, 1), walk(0xf8, 0x108, 4)], &space, &types);
-    assert_eq!(layout(&mut st), vec![(0x20, 1, RangeType::Open)]);
-    assert_eq!(highind(&mut st, 0x20), 15);
+    assert_eq!(layout(&mut st), vec![(0x20, 1, RangeType::Open, 15)]);
 }
 
 #[test]
@@ -1031,43 +1024,43 @@ fn a_read_before_the_pointer_is_not_a_walk() {
     assert_eq!(back_one.fx.walks().len(), 1, "p + 1 - 1 is the element itself");
 }
 
+/// The end address also reaches something other than the comparison: a call
+/// with or without a result, or a length computed from it.
 #[test]
-fn a_bound_also_passed_on_keeps_its_definition() {
-    let mut dw = do_while(START, END, 1, 1, false, |fx, bl, _p, p1, e| {
-        let target = fx.konst(0x401000);
-        fx.emit(bl, OpCode::CPUI_CALL, &[target, e], None);
-        fx.cmp(bl, OpCode::CPUI_INT_NOTEQUAL, p1, e)
-    });
-    map_local(&mut dw.fx, START, char_array(8));
-    assert!(dw.fx.fd.start_type_recovery());
-    let (walks, stack) = (dw.fx.walks(), dw.fx.stack());
-    let e = dw.fx.fd.obank().get(dw.cmp).unwrap().get_in(1).unwrap();
-    assert_eq!(rebase_bounds(&mut dw.fx.fd, &stack, &walks), 1);
-    assert_eq!(bound_def(&dw.fx, dw.cmp, 1), (OpCode::CPUI_INT_ADD, Some(8)));
-    let def = dw.fx.fd.vbank().get(e).unwrap().get_def().unwrap();
-    assert_eq!(dw.fx.fd.obank().get(def).unwrap().code(), OpCode::CPUI_PTRSUB, "the call still reads the address");
-    assert!(dw.fx.fd.vbank().get(e).unwrap().descend_iter().any(|d| dw.fx.fd.obank().get(d).unwrap().code() == OpCode::CPUI_CALL));
-}
-
-#[test]
-fn a_rebuilt_bound_gives_the_layout_its_end_back() {
-    let mut dw = do_while(START, END, 1, 1, false, not_equal);
-    map_local(&mut dw.fx, START, char_array(8));
-    assert!(dw.fx.fd.start_type_recovery());
-    let stack = dw.fx.stack();
-    let types = factory();
-    let anchors = |fx: &Fx| {
-        let mut rn = RangeList::new();
-        rn.insert_range(Rc::clone(&stack), stack.wrap_offset((START - 0x40) as u64), stack.wrap_offset(u64::MAX));
-        let dflt = types.get_base(1, type_metatype::TYPE_UNKNOWN).unwrap();
-        let mut st = MapState::new(Rc::clone(&stack), &rn, &RangeList::new(), dflt);
-        anchor_rebuilt_bounds(&fx.fd, &mut st, &stack);
-        layout(&mut st)
-    };
-    assert!(anchors(&dw.fx).is_empty(), "nothing is anchored before a rebuild");
-    let walks = dw.fx.walks();
-    assert_eq!(rebase_bounds(&mut dw.fx.fd, &stack, &walks), 1);
-    assert_eq!(anchors(&dw.fx), vec![(END, 1, RangeType::Open)]);
+fn a_bound_also_used_elsewhere_keeps_its_definition() {
+    let uses: [fn(&mut Fx, BlockId, VarnodeId, VarnodeId) -> OpCode; 3] = [
+        |fx, bl, _p1, e| {
+            let target = fx.konst(0x401000);
+            fx.emit(bl, OpCode::CPUI_CALL, &[target, e], None);
+            OpCode::CPUI_CALL
+        },
+        |fx, bl, _p1, e| {
+            let target = fx.konst(0x401000);
+            fx.emit(bl, OpCode::CPUI_CALL, &[target, e], Some(8));
+            OpCode::CPUI_CALL
+        },
+        |fx, bl, p1, e| {
+            fx.val(bl, OpCode::CPUI_INT_SUB, &[e, p1], 8);
+            OpCode::CPUI_INT_SUB
+        },
+    ];
+    for other in uses {
+        let mut used = None;
+        let mut dw = do_while(START, END, 1, 1, false, |fx, bl, _p, p1, e| {
+            used = Some(other(fx, bl, p1, e));
+            fx.cmp(bl, OpCode::CPUI_INT_NOTEQUAL, p1, e)
+        });
+        map_local(&mut dw.fx, START, char_array(8));
+        assert!(dw.fx.fd.start_type_recovery());
+        let (walks, stack) = (dw.fx.walks(), dw.fx.stack());
+        let e = dw.fx.fd.obank().get(dw.cmp).unwrap().get_in(1).unwrap();
+        assert_eq!(rebase_bounds(&mut dw.fx.fd, &stack, &walks), 1);
+        assert_eq!(bound_def(&dw.fx, dw.cmp, 1), (OpCode::CPUI_INT_ADD, Some(8)));
+        let def = dw.fx.fd.vbank().get(e).unwrap().get_def().unwrap();
+        assert_eq!(dw.fx.fd.obank().get(def).unwrap().code(), OpCode::CPUI_PTRSUB, "{used:?} still reads the address");
+        let fd = &dw.fx.fd;
+        assert!(fd.vbank().get(e).unwrap().descend_iter().any(|d| Some(fd.obank().get(d).unwrap().code()) == used));
+    }
 }
 
 #[test]
@@ -1084,19 +1077,19 @@ fn typed_index_evidence_of_another_width_vetoes_the_buffer() {
     let mut st = state(&space, &types);
     st.add_range_pub(0x20, Some(Rc::clone(&int4)), 0, RangeType::Open, 3);
     coalesce_hints(&mut st, &[walk(0x20, 0x30, 4)], &space, &types);
-    assert_eq!(layout(&mut st), vec![(0x20, 4, RangeType::Open)]);
+    assert_eq!(layout(&mut st), vec![(0x20, 4, RangeType::Open, 3)]);
     let elem = st.hints_mut()[0].type_.clone();
     assert!(Rc::ptr_eq(&elem, &int4), "same-width index evidence types the elements");
 
     let mut st = state(&space, &types);
     st.add_range_pub(0x20, Some(base(4, type_metatype::TYPE_UNKNOWN)), 0, RangeType::Open, 3);
     coalesce_hints(&mut st, &[walk(0x20, 0x30, 1)], &space, &types);
-    assert_eq!(layout(&mut st), vec![(0x20, 1, RangeType::Open)], "untyped index evidence is not a type");
+    assert_eq!(layout(&mut st), vec![(0x20, 1, RangeType::Open, 15)], "untyped index evidence is not a type");
 }
 
 #[test]
 fn option_identity() {
-    assert_eq!(ELEM_ENDPTRBOUND.get_id(), 4167);
+    assert_eq!(ELEM_ENDPTRBOUND.get_id(), 4169);
     assert_eq!(OptionEndPtrBound::NAME, "endptrbound");
     assert!(OptionEndPtrBound.apply("on").unwrap().0);
     assert!(!OptionEndPtrBound.apply("off").unwrap().0);

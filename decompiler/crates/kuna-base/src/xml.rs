@@ -1852,7 +1852,7 @@ mod tests {
         // and gh468-nulterminator / a stack char array keeps its adjacent NUL
         // terminator element
         // and kuna-endptrbound / a pointer walk's end bound names its own buffer
-        assert_eq!(count, 286, "corpus file count drifted");
+        assert_eq!(count, 287, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

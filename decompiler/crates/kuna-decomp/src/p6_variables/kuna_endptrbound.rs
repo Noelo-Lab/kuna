@@ -58,8 +58,9 @@
 //!   The rewrite happens at the address's definition when nothing but the
 //!   comparison consumes it (through copies, casts and phi plumbing), and in
 //!   front of the comparison otherwise, so an address that also means the
-//!   neighbour elsewhere keeps rendering as the neighbour there.  Every later
-//!   layout gets the reference at `end` back as a hint, so the rewrite never
+//!   neighbour elsewhere keeps rendering as the neighbour there.  The rebuilt
+//!   `PTRSUB(sp, start) + span` is still an additive stack reference at `end`,
+//!   so later layouts see the same frame reference and the rewrite never
 //!   changes the frame.
 //!
 //! The value compared is unchanged; only the base it is expressed on moves.
@@ -77,13 +78,12 @@ use kuna_num::opcodes::OpCode;
 use crate::context::{BlockId, OpId, VarnodeId};
 use crate::dtype::{type_metatype, Datatype, TypeFactory};
 use crate::funcdata::Funcdata;
-use crate::op::pcodeop_addlflags;
 use crate::p0_knowledge::options::on_or_off;
 use crate::varmap::{MapState, RangeHint, RangeType, COPY_CONSTANT};
 
-/// Marshaling element `<endptrbound>` (kuna 4000+ range; 4166 was the previous
+/// Marshaling element `<endptrbound>` (kuna 4000+ range; 4168 was the previous
 /// high-water mark).
-pub const ELEM_ENDPTRBOUND: ElementId = ElementId::new("endptrbound", 4167);
+pub const ELEM_ENDPTRBOUND: ElementId = ElementId::new("endptrbound", 4169);
 
 /// (kuna) Bind a pointer walk's end address to the walked buffer: `endptrbound on|off`.
 pub struct OptionEndPtrBound;
@@ -609,7 +609,8 @@ fn element_type(hints: &[RangeHint], w: &PointerWalk) -> Option<Rc<Datatype>> {
 /// The hint is open, with index evidence through the last element, so like the
 /// open hints it replaces it runs on to the next hint: the frame reference at
 /// `end` stops it there, and without one the array keeps whatever extent the
-/// frame already gave it.
+/// frame already gave it.  A walk nested in one already coalesced is vetoed by
+/// that hint's index evidence, so the outermost walk wins.
 pub fn coalesce_hints(
     state: &mut MapState,
     walks: &[PointerWalk],
@@ -618,13 +619,12 @@ pub fn coalesce_hints(
 ) {
     let mut ordered: Vec<&PointerWalk> = walks.iter().collect();
     ordered.sort_by_key(|w| (w.start, std::cmp::Reverse(w.end)));
-    let mut done: Vec<(i64, i64)> = Vec::new();
     for w in ordered.iter().copied() {
         let crossed = ordered.iter().any(|o| {
             let nested = (o.start <= w.start && w.end <= o.end) || (w.start <= o.start && o.end <= w.end);
             o.start < w.end && w.start < o.end && !nested
         });
-        if crossed || done.iter().any(|(s, e)| *s < w.end && w.start < *e) {
+        if crossed {
             continue;
         }
         let start = space.wrap_offset(w.start as uintb);
@@ -646,28 +646,6 @@ pub fn coalesce_hints(
         hints.retain(|h| h.sstart < w.start || h.sstart >= w.end);
         let last = ((w.end - w.start) / w.step - 1) as int4;
         hints.push(RangeHint::new(start, w.step as int4, w.start, elem, 0, RangeType::Open, last));
-        done.push((w.start, w.end));
-    }
-}
-
-/// Give the layout back the frame reference at `end` that each bound
-/// [`rebase_bounds`] rebuilt used to be, as the open hint `sp + end` produced, so
-/// rebuilding a bound never changes the layout that justified it -- including a
-/// pass in which the walk itself is no longer proven.
-pub fn anchor_rebuilt_bounds(fd: &Funcdata, state: &mut MapState, space: &Rc<AddrSpace>) {
-    if !fd.get_arch().end_ptr_bound {
-        return;
-    }
-    let Some(sp) = fd.find_spacebase_input(space) else { return };
-    let ends: Vec<i64> = fd
-        .obank()
-        .iter_alive()
-        .filter_map(|op| fd.obank().get(op))
-        .filter(|o| o.get_addlflags() & pcodeop_addlflags::kuna_endptrbound != 0)
-        .filter_map(|o| stack_offset(fd, o.get_out()?, sp, WALK_DEPTH))
-        .collect();
-    for end in ends {
-        state.add_range_pub(space.wrap_offset(end as uintb), None, 0, RangeType::Open, -1);
     }
 }
 
@@ -739,7 +717,6 @@ pub fn rebase_bounds(fd: &mut Funcdata, space: &Rc<AddrSpace>, walks: &[PointerW
             let Some(base_out) = fd.obank().get(base).and_then(|o| o.get_out()) else { continue };
             if let Some(o) = fd.obank_mut().get_mut(def) {
                 o.clear_stop_type_propagation();
-                o.set_additional_flag(pcodeop_addlflags::kuna_endptrbound);
             }
             fd.op_set_opcode_code(def, OpCode::CPUI_INT_ADD);
             if fd.op_set_input(def, base_out, 0).is_ok() && fd.op_set_input(def, span_c, 1).is_ok() {
@@ -749,9 +726,6 @@ pub fn rebase_bounds(fd: &mut Funcdata, space: &Rc<AddrSpace>, walks: &[PointerW
             let base = fd.new_op_before(w.cmp, OpCode::CPUI_PTRSUB, sp, start_c, None);
             let Some(base_out) = fd.obank().get(base).and_then(|o| o.get_out()) else { continue };
             let add = fd.new_op_before(w.cmp, OpCode::CPUI_INT_ADD, base_out, span_c, None);
-            if let Some(o) = fd.obank_mut().get_mut(add) {
-                o.set_additional_flag(pcodeop_addlflags::kuna_endptrbound);
-            }
             let Some(add_out) = fd.obank().get(add).and_then(|o| o.get_out()) else { continue };
             if fd.op_set_input(w.cmp, add_out, w.slot).is_ok() {
                 count += 1;
