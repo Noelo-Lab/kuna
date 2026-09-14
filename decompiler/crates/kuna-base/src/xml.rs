@@ -1849,7 +1849,9 @@ mod tests {
         // and kuna-pebnames / kuna-pebnames-x86 type the Windows TEB segment
         // base on x86-64 (GS) and x86 (FS) (GH-468)
         // and kuna-mappedflowboundary ends ELF x86 flow at the mapped image end
-        assert_eq!(count, 285, "corpus file count drifted");
+        // and gh468-nulterminator / a stack char array keeps its adjacent NUL
+        // terminator element
+        assert_eq!(count, 286, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

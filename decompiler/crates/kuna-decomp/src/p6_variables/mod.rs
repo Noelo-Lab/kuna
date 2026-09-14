@@ -20,3 +20,4 @@ pub mod coreaction_stackptr;
 pub mod kuna_paramcopyhoist;
 pub mod kuna_calleepop;
 pub mod kuna_cookiescramble;
+pub mod kuna_nulterminator;

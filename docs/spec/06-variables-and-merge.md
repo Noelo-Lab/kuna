@@ -474,6 +474,41 @@ failure mode is tolerance, not an abort — the layout keeps the conceded
 unknowns (upstream additionally emits a "Could not reconcile some variable
 overlaps" warning header; kuna stubs that diagnostic).
 
+**Terminator absorption** (`option nulterminator`, **opt-in, default off**). An
+open hint that `attempt_join` cannot extend ends where the next hint starts, so
+`strncpy(buf, s, sizeof(buf) - 1); buf[sizeof(buf) - 1] = 0;` splits into `char
+buf[63]` plus a separate `char` assigned 0 and never read: the terminator's
+constant index is folded into a direct frame store, and a NUL-scan loop leaves
+`loadguardrange` no range to lock. With the option on,
+`funcdata_spacebase.rs (Funcdata::gather_varnodes)` records, for every frame
+slot a constant COPY writes, whether each such write is a zero that no op reads
+directly (`varmap.rs (MapState::note_terminator_store)`), and after
+`attempt_join` declines a hint,
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_nulterminator.rs
+(close_at_terminator)` closes the open range into a *fixed* range ending one
+element after that hint -- when the range is open and unlocked with one- or
+two-byte integer elements, the hint is a plain fixed constant-COPY slot of
+exactly one element at a whole-element offset whose every write is an unread
+zero, the hint after it starts at or past the slot's end, no plain frame
+address (an open hint with no index, `varmap.rs
+(MapState::swept_address_inside)`) starts strictly inside the array, and
+`adjust_fit` keeps the extent. The result is footprint-identical to upstream's
+`char[N]` plus the trailing `char`: it merges two adjacent declarations and
+never reaches padding or a non-adjacent slot.
+
+**Why it is off by default.** The same frame shape -- an open `char` array
+followed by a lone unread zero at the next whole-element offset -- is produced
+by the struct-first-member idiom `struct { char name[N]; T field; } u;
+strncpy(u.name, s, N); u.field = 0; ...; f(&u);`, where the zero is a sibling
+*field* the callee reads through `&u`, not the array's terminator; a spilled
+scalar whose value is read from a register is indistinguishable too (its stack
+slot is written but never read *from the stack*). There is no sound frame-level
+signal that separates a genuine `buf[N-1] = 0` terminator from a following
+field, so on by default the pass over-extends a correctly-sized `char name[N]`
+to `[N+1]` in ordinary gcc/clang/MSVC output. It is therefore an opt-in tool:
+flip it on for a string-heavy target whose stack buffers are known to be
+NUL-terminated strings. Off, the layout is upstream's split.
+
 **Alias blocking.** The `varmap.rs (AliasChecker)` collects every pointer
 into the stack by walking additive expressions rooted at the spacebase input
 (`funcdata_spacebase.rs (Funcdata::gather_additive_base)`), converts each to a

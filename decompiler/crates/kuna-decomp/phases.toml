@@ -2540,6 +2540,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "nulterminator"
+values = "on|off"
+default = "off"
+destructive = false
+phase = "P6"
+subphase = "stack-frame-layout"
+strength = "HARD"
+rewind = "P6"
+issue = "GH-468"
+summary = "Keep the zero element that terminates an open stack character array inside the array, and close the array right after it (opt-in). ScopeLocal::restructure (varmap.cc:1294) extends an open RangeHint over a following hint only through RangeHint::attemptJoin (varmap.cc:170): within its highind, or a constant COPY no further than highind (isConstAbsorbable, varmap.cc:30); otherwise the open range ends where the next hint starts, so `strncpy(buf, s, sizeof(buf) - 1); buf[sizeof(buf) - 1] = 0;` prints `char buf[63]` beside a separate never-read char. With the option on, when attemptJoin declines the hint an open, unlocked char/UTF-16 range would end at and that hint is a plain constant-COPY slot of one element at a whole-element offset holding only unread zeros, the range becomes a fixed range ending one element after the slot (provided adjustFit keeps the extent and no plain frame address starts inside the array). DEFAULT OFF: the same frame shape -- an open char array followed by a lone unread zero at the next whole-element offset -- is produced by the struct-first-member idiom `struct { char name[32]; bool active; ... } u; strncpy(u.name, s, 32); u.active = 0; ...; f(&u);`, where the zero is a sibling FIELD read only through the base pointer, not the array's terminator. A spilled scalar whose value is read from a register looks identical too, so there is no frame-level way to tell a genuine terminator from a following field, and on by default this over-extends a correctly-sized array by one element. Flip on when reverse-engineering a string-heavy target where the buffers are known to be NUL-terminated strings, not struct members."
+use_when = "Off by default. Flip ON on a string-heavy target (an MSVC /GS function, a bounded strncpy/snprintf/read followed by an explicit NUL) to fold the terminator into the array: `char v3 [63]; char v8; // stack - 0x19` with `strncpy(v3,a0,0x3f); v8 = 0;` becomes `char v3 [64];` with `v3[0x3f] = 0;`. Keep it OFF on code with structs or records: the identical frame shape is also `struct { char name[N]; T field; }` initialized field by field then passed by pointer, and turning it on absorbs `field` into `name` (`char name[32]` -> `[33]`), inventing an element. gcc/clang and MSVC, every optimisation level. Inert unless a zero is stored at an open char array's next whole-element offset and never read directly."
+example = "option nulterminator on"
+source_decompiler = "kuna"
+inspiration = "GH-468 (MSVC /Od and /O2 canary_check: `char buf[64]` printed as `unsigned char v3 [63]` plus a separate never-read `char v8 = 0`); the struct-first-member false positive (`strncpy(u.name, s, sizeof u.name); u.active = 0` over-extends `name` by one) is why it is opt-in; upstream RangeHint::attemptJoin (varmap.cc:170), isConstAbsorbable (varmap.cc:30), MapState::gatherOpen min_items (varmap.cc:1233)"
+change_kind = "opt-in-tool"
+tier = "transform"
+symptoms = "a stack char buffer is declared one element short, e.g. [63] where the source has [64]|the NUL terminator after strncpy renders as an assignment to a separate char local|a stack char local is assigned 0 and never read, right after the end of an array|the buffer's last element is missing from the array and declared as its own variable"
+live_field = "nul_terminator"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "dynamichashmax"
 values = "on|off"
 default = "on"

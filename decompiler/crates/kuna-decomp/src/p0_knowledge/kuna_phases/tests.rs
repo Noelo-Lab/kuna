@@ -74,7 +74,7 @@ fn surface_count_is_118() {
 }
 
 #[test]
-fn settable_count_is_196() {
+fn settable_count_is_197() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -137,12 +137,13 @@ fn settable_count_is_196() {
     // +1 for `cancelbytearithmetic` (P3 exact byte cancellation, DIV-174).
     // +1 for `pebnames` (P5 Windows TEB/PEB segment-base typing, DIV-175).
     // +1 for `mappedflowboundary` (P2 mapped ELF x86 flow boundaries, DIV-176).
-    assert_eq!(kuna_num_settables(), 196);
-    assert_eq!(SETTABLE_TABLE.len(), 196);
+    // +1 for `nulterminator` (P6 opt-in stack-array terminator absorption).
+    assert_eq!(kuna_num_settables(), 197);
+    assert_eq!(SETTABLE_TABLE.len(), 197);
 }
 
 #[test]
-fn tier_counts_are_63_core_74_transform_59_analysis() {
+fn tier_counts_are_63_core_75_transform_59_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -253,7 +254,10 @@ fn tier_counts_are_63_core_74_transform_59_analysis() {
     // typing, DIV-175).
     // transform 73 -> 74: +1 for `mappedflowboundary` (P2 mapped ELF x86 flow
     // boundaries, DIV-176).
-    assert_eq!((core, transform, analysis), (63, 74, 59));
+    // transform 74 -> 75: +1 for `nulterminator` (P6 opt-in stack-array
+    // terminator absorption, default off -- the struct-first-member idiom is
+    // frame-indistinguishable, so it is not a default correctness fix).
+    assert_eq!((core, transform, analysis), (63, 75, 59));
 }
 
 #[test]
@@ -443,7 +447,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_78() {
+fn option_values_live_value_present_for_79() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -795,7 +799,8 @@ fn option_values_live_value_present_for_78() {
     // DIV-173).
     // 76 -> 77: +1 for `cancelbytearithmetic` (live_field =
     // cancel_byte_arithmetic, DIV-174).
-    assert_eq!(with_live, 78);
+    // 78 -> 79: +1 for `nulterminator` (live_field = nul_terminator, opt-in).
+    assert_eq!(with_live, 79);
 }
 
 #[test]
@@ -939,7 +944,9 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // `codescalar`, so it increments the comma-terminated catalog-row count.
     // 194 -> 195: +1 for `mappedflowboundary` (DIV-176); its P2 row sits mid-table
     // beside `funcboundflow`.
-    assert_eq!(json.matches("},\n").count(), 195);
+    // 195 -> 196: +1 for `nulterminator` (opt-in); its P6 row sits mid-table beside
+    // `cookiescramble`, so it increments the comma-terminated catalog-row count.
+    assert_eq!(json.matches("},\n").count(), 196);
 }
 
 #[test]
