@@ -1253,7 +1253,13 @@ TOCs include aliases that disagree and cannot seed their shared code entry.
 This resolver declines all descriptor-stub names if any validated descriptor's
 TOC remains unresolved: without a caller-specific TOC, the unknown value could
 select a different import and invalidate a no-return fact.
-Both full environment-word and lazy-resolution forms are supported.
+Both full environment-word and GNU lazy-resolution forms are supported. A lazy
+stub's zero-TOC branch must reach the matching import's resolver entry: its
+relocation index, branch to the common glink code, and the common code's load of
+`DT_PLTGOT` are validated against `DT_PPC64_GLINK` and `DT_JMPREL`. Returning
+fallbacks, entries for another slot, and unknown resolver code or metadata are
+declined. Currently only the two-instruction resolver entries with indices below
+32768 qualify. The full environment-word form needs no lazy resolver.
 The existing known-no-return pass consumes these names, so a guard failure
 import no longer introduces false fall-through or consumes the normal return.
 ELFv2 decoding and ordinary returning imports retain their existing behavior.
