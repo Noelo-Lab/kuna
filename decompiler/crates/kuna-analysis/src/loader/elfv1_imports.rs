@@ -4,9 +4,9 @@ use std::collections::{BTreeSet, HashMap};
 use super::{elf_plt::PltSym, elfv1::Descriptors};
 
 pub(super) fn resolve(file: &object::File<'_>) -> Vec<PltSym> {
-    let descriptors=Descriptors::read(file);
+    let descriptors=Descriptors::read_for_imports(file);
     if descriptors.0.is_empty() {return Vec::new();}
-    let tocs: BTreeSet<_>=descriptors.entry_tocs().into_values().collect();
+    let Some(tocs): Option<BTreeSet<_>>=descriptors.0.iter().map(|d|d.toc).collect() else {return Vec::new();};
     let names: HashMap<_,_>=file.dynamic_symbols().filter_map(|s|
         s.name_bytes().ok().filter(|n|!n.is_empty()).map(|n|(s.index().0,super::elf_plt::strip_version(n)))
     ).collect();
@@ -42,7 +42,7 @@ pub(super) fn resolve(file: &object::File<'_>) -> Vec<PltSym> {
 }
 
 fn unique_import(delta: i64, tocs: &BTreeSet<u64>, slots: &HashMap<u64,Vec<u8>>) -> Option<Vec<u8>> {
-    let matches: BTreeSet<_>=tocs.iter().filter_map(|toc|slots.get(&toc.wrapping_add(delta as u64))).collect();
+    let matches: BTreeSet<_>=tocs.iter().map(|toc|slots.get(&toc.wrapping_add(delta as u64))).collect::<Option<_>>()?;
     (matches.len()==1).then(||(*matches.first().unwrap()).clone())
 }
 
@@ -94,6 +94,8 @@ mod tests {
         assert_eq!(unique_import(0x20,&tocs,&slots),None);
         slots.insert(0x4020,b"exit".to_vec());
         assert_eq!(unique_import(0x20,&tocs,&slots),Some(b"exit".to_vec()));
+        slots.remove(&0x4020);
+        assert_eq!(unique_import(0x20,&tocs,&slots),None);
         assert_eq!(unique_import(0x28,&tocs,&slots),None);
     }
     #[test]

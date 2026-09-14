@@ -1236,8 +1236,21 @@ them has an unresolved TOC word, gets no seed.
 ELFv1 import markup recognizes complete descriptor-call stubs that save the
 caller's TOC at SP+40, load the entry and TOC, and transfer through CTR.
 A stub is named only when its decoded displacement and a validated function TOC
-identify an `R_PPC64_JMP_SLOT` import. Conflicting names across possible TOCs are
-declined. Both full environment-word and lazy-resolution forms are supported.
+identify the same `R_PPC64_JMP_SLOT` import for every possible TOC. Conflicting
+names and possible TOCs without a matching import relocation are declined: an
+unmatched TOC can select a returning local descriptor instead. Import matching
+scans every 8-aligned word in `.opd` for a resolved, plausible code entry, so
+symbol-less descriptors still contribute possible TOCs after stripping. It reads
+the following TOC word without requiring an environment word; an unavailable
+TOC is ambiguous. Unresolved potential code words also decline all these names
+because they cannot exclude a descriptor. This conservative scan supplies only
+import ambiguity, while symbol normalization and register seeding use the
+validated image-entry and symbol-derived descriptors described above. Possible
+TOCs include aliases that disagree and cannot seed their shared code entry.
+This resolver declines all descriptor-stub names if any validated descriptor's
+TOC remains unresolved: without a caller-specific TOC, the unknown value could
+select a different import and invalidate a no-return fact.
+Both full environment-word and lazy-resolution forms are supported.
 The existing known-no-return pass consumes these names, so a guard failure
 import no longer introduces false fall-through or consumes the normal return.
 ELFv2 decoding and ordinary returning imports retain their existing behavior.
