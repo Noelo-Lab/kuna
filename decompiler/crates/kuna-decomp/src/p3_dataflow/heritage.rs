@@ -3389,7 +3389,9 @@ impl Heritage {
                             let nv = crate::p3_dataflow::kuna_inputtile::new_tiled_input(
                                 fd, in_size, &key,
                             )
-                            .expect("rename_recurse: set_input_varnode (empty stack)");
+                            .unwrap_or_else(|e| {
+                                panic!("rename_recurse: set_input_varnode (empty stack): {e}")
+                            });
                             varstack.entry(key.clone()).or_default().push(nv);
                             nv
                         }
@@ -3419,7 +3421,11 @@ impl Heritage {
                                 let nv = crate::p3_dataflow::kuna_inputtile::new_tiled_input(
                                     fd, in_size, &key,
                                 )
-                                .expect("rename_recurse: set_input_varnode (indirect same-time)");
+                                .unwrap_or_else(|e| {
+                                    panic!(
+                                        "rename_recurse: set_input_varnode (indirect same-time): {e}"
+                                    )
+                                });
                                 varstack.entry(key.clone()).or_default().insert(0, nv);
                                 vnnew = nv;
                             } else {
@@ -3489,7 +3495,9 @@ impl Heritage {
                         let nv = crate::p3_dataflow::kuna_inputtile::new_tiled_input(
                             fd, in_size, &key,
                         )
-                        .expect("rename_recurse: set_input_varnode (multi empty stack)");
+                        .unwrap_or_else(|e| {
+                            panic!("rename_recurse: set_input_varnode (multi empty stack): {e}")
+                        });
                         varstack.entry(key.clone()).or_default().push(nv);
                         nv
                     }
