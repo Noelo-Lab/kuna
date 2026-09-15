@@ -12,18 +12,20 @@ use crate::output;
 
 pub const BODY: &str = include_str!("../../../../skills/kuna/SKILL.md");
 
-const USAGE: &str = "usage: kuna install-skill [--agent claude|codex|all] [--project | --dir DIR] [--force]\n\
+const USAGE: &str = "usage: kuna install-skill [--agent claude|codex|opencode|all] [--project | --dir DIR] [--force]\n\
                      \x20      kuna install-skill --print\n\
                      \n\
                      Install the kuna agent skill -- a guide to driving this CLI, embedded in the\n\
                      binary -- where coding agents load skills.  Nothing is downloaded.\n\
                      \n\
-                     --agent A     claude: $CLAUDE_CONFIG_DIR/skills (default ~/.claude/skills)\n\
-                     \x20             codex:  $CODEX_HOME/skills (default ~/.codex/skills)\n\
-                     \x20             all:    both.  Without --agent, every agent whose config\n\
+                     --agent A     claude:   $CLAUDE_CONFIG_DIR/skills (default ~/.claude/skills)\n\
+                     \x20             codex:    $CODEX_HOME/skills (default ~/.codex/skills)\n\
+                     \x20             opencode: $OPENCODE_CONFIG_DIR/skills, otherwise\n\
+                     \x20                       $XDG_CONFIG_HOME/opencode/skills (default ~/.config/opencode/skills)\n\
+                     \x20             all:      all three.  Without --agent, every agent whose config\n\
                      \x20             directory exists is chosen.\n\
                      --project     install into the current directory instead (.claude/skills,\n\
-                     \x20             .agents/skills), to commit alongside a repo.\n\
+                     \x20             .agents/skills, .opencode/skills), to commit alongside a repo.\n\
                      --dir DIR     install into DIR/<skill-name>/ for any other agent.\n\
                      --force       replace an installed copy that differs (another kuna version,\n\
                      \x20             or local edits).  An identical copy is left alone.\n\
@@ -36,15 +38,17 @@ const USAGE: &str = "usage: kuna install-skill [--agent claude|codex|all] [--pro
 enum Agent {
     Claude,
     Codex,
+    OpenCode,
 }
 
 impl Agent {
-    const ALL: [Agent; 2] = [Agent::Claude, Agent::Codex];
+    const ALL: [Agent; 3] = [Agent::Claude, Agent::Codex, Agent::OpenCode];
 
     fn label(self) -> &'static str {
         match self {
             Agent::Claude => "claude",
             Agent::Codex => "codex",
+            Agent::OpenCode => "opencode",
         }
     }
 
@@ -52,17 +56,24 @@ impl Agent {
         let (var, default) = match self {
             Agent::Claude => ("CLAUDE_CONFIG_DIR", ".claude"),
             Agent::Codex => ("CODEX_HOME", ".codex"),
+            Agent::OpenCode => ("OPENCODE_CONFIG_DIR", ".config/opencode"),
         };
-        match std::env::var_os(var) {
-            Some(v) if !v.is_empty() => Some(PathBuf::from(v)),
-            _ => home_dir().map(|h| h.join(default)),
+        if let Some(v) = std::env::var_os(var).filter(|v| !v.is_empty()) {
+            return Some(PathBuf::from(v));
         }
+        if self == Agent::OpenCode {
+            if let Some(v) = std::env::var_os("XDG_CONFIG_HOME").filter(|v| !v.is_empty()) {
+                return Some(PathBuf::from(v).join("opencode"));
+            }
+        }
+        home_dir().map(|h| h.join(default))
     }
 
     fn project_dir(self) -> &'static str {
         match self {
             Agent::Claude => ".claude",
             Agent::Codex => ".agents",
+            Agent::OpenCode => ".opencode",
         }
     }
 }
@@ -82,9 +93,10 @@ pub fn run(argv: &[String]) -> i32 {
                 agents = Some(match v.as_str() {
                     "claude" => vec![Agent::Claude],
                     "codex" => vec![Agent::Codex],
+                    "opencode" => vec![Agent::OpenCode],
                     "all" => Agent::ALL.to_vec(),
                     other => {
-                        eprintln!("error: unknown agent {other:?} (expected claude, codex or all)");
+                        eprintln!("error: unknown agent {other:?} (expected claude, codex, opencode or all)");
                         return 2;
                     }
                 });
@@ -134,8 +146,8 @@ pub fn run(argv: &[String]) -> i32 {
         });
         if chosen.is_empty() {
             eprintln!(
-                "error: found no agent config directory (~/.claude, ~/.codex); pass --agent \
-                 claude|codex, or --dir DIR for another agent (--print shows the skill)"
+                "error: found no agent config directory (~/.claude, ~/.codex, ~/.config/opencode); \
+                 pass --agent claude|codex|opencode, or --dir DIR for another agent (--print shows the skill)"
             );
             return 2;
         }
