@@ -129,6 +129,14 @@ tier one.
 
 ## 0.2 Front-ends and the decompile-all walk
 
+`kuna install-skill` (`decompiler/crates/kuna-cli/src/skill.rs`) installs the embedded
+agent skill for Claude Code, Codex, or OpenCode. OpenCode uses
+`$OPENCODE_CONFIG_DIR/skills` when set and nonempty, otherwise
+`$XDG_CONFIG_HOME/opencode/skills`, with `~/.config` as the default config root.
+It participates in config-directory detection and `--agent all`; explicit
+`--agent opencode --project` installs into `./.opencode/skills` regardless of
+global config overrides. All targets use the same overwrite protection and skill body.
+
 Four front-ends drive one engine assembly:
 
 - **The console** — `decomp_dbg`

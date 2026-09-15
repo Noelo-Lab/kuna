@@ -2583,9 +2583,9 @@ Exit codes: `0` ok, `2` unknown topic (the message lists the valid ones).
 ## `kuna install-skill` — the agent skill, inside the binary
 
 ```bash
-kuna install-skill                  # every agent whose config dir exists (~/.claude, ~/.codex)
-kuna install-skill --agent codex    # just one: claude | codex | all
-kuna install-skill --project        # ./.claude/skills and ./.agents/skills, to commit with a repo
+kuna install-skill                  # every agent whose config dir exists (~/.claude, ~/.codex, ~/.config/opencode)
+kuna install-skill --agent opencode # just one: claude | codex | opencode | all
+kuna install-skill --project        # ./.claude/skills, ./.agents/skills, ./.opencode/skills, to commit with a repo
 kuna install-skill --dir DIR        # DIR/kuna-decompiler/SKILL.md, for any other agent
 kuna install-skill --print          # write the skill to stdout, install nothing
 ```
@@ -2593,7 +2593,12 @@ kuna install-skill --print          # write the skill to stdout, install nothing
 `skills/kuna/SKILL.md` is embedded with `include_str!`, like the manual above, so the skill
 always matches the binary that installs it and needs no checkout or network. It lands in
 `<skills>/<name>/SKILL.md`, where `<name>` is the skill's frontmatter `name`. The user-level
-roots honor `CLAUDE_CONFIG_DIR` and `CODEX_HOME`. Each target is reported as `installed`,
+roots honor `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, and `OPENCODE_CONFIG_DIR`. Without a
+nonempty `OPENCODE_CONFIG_DIR`, OpenCode uses `$XDG_CONFIG_HOME/opencode`, falling back
+to `~/.config/opencode` when `XDG_CONFIG_HOME` is unset or empty, matching its
+[config directory resolution](https://github.com/anomalyco/opencode/blob/dev/packages/core/src/global.ts).
+`--agent all` selects all three agents; `--project` uses their project paths regardless
+of config overrides. Each target is reported as `installed`,
 `updated` or `current`; an existing copy that differs (another kuna version, or local edits)
 is kept unless `--force` is given. A note on stderr says so when `kuna` is not on `PATH`,
 since the skill invokes it by that name.
