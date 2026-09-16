@@ -1,0 +1,120 @@
+{
+  "opportunity": "A call's TRAILING register argument can be a value a previous call's clobber left behind: Heritage::guard_calls plants an INDIRECT creation for a killed-by-call register that is also a possible OUTPUT location of the callee's model (rdx on x86-64, because a 16-byte value returns in rax:rdx), AncestorRealistic::enter_node answers realistic for it and records ind_create_formed, and fillin_map_standard marks every active trial used. Upstream reads that bit back on the RETURN list only (fillin_map_standard_out), so the evidence that disqualifies a return value is ignored for an argument. coreutils fmt -O2 main renders sub_3700(stdin,\"-\",v10) against a DWARF prototype of two parameters, with two `// rdx` locals that are never assigned.",
+  "test_name": "tests/stages/kuna-argclobber.xml (3 two-pass assertions on a hand-assembled x86-64 bytechunk) + tests/stages/kuna-argclobber-guards.xml (the callee-reads clause, x86-64) + tests/stages/kuna-argclobber-armreturn.xml (the same-register clause, ARM, the u-boot repro reduced)",
+  "binary": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O2/coreutils/stripped/fmt",
+  "selector": "0x26a0",
+  "func_addr": "0x26a0",
+  "angr_version": null,
+  "option": "argclobber",
+  "flag": "arg_clobber",
+  "element_id": 4173,
+  "change_kind": "correctness-fix",
+  "tier": "core",
+  "source_decompiler": "ghidra",
+  "inspiration": "upstream ParamListStandardOut::fillinMap (fspec.cc:1721) applied to the input list; witness coreutils fmt -O2 main 0x26a0 -> fmt 0x3700 at 0x2ac1",
+  "default_on": false,
+  "ablation_changed": 0,
+  "parity": "OK",
+  "root_cause": "Not a kuna scheduling divergence and not the is_checked() guard. Instrumented (KUNA_DBG_TRIAL) on the witness call: the RDX trial is checked on ActionActiveParam pass 0, the three-input MULTIEQUAL already exists at that point, AncestorRealistic returns realistic=1 solid=0 and sets ind_create_formed=1, and the trial is active+used from then on. The bit IS set (contradicting the refuter's inference, which mis-anchored fspec.rs:3249/:3264-3267 to fillin_map_standard; those lines are inside fillin_map_standard_out, fn at :3235). The input list simply has no reader of the bit, faithfully to upstream: stock Ghidra emits the same three-argument call on the same binary and names the phantoms extraout_RDX/extraout_RDX_00.",
+  "upstream_faithful": true,
+  "ghidra_reference": "decbench full_run_address_2026-09-11/O2/coreutils/decompiled/ghidra_fmt.c: `bVar2 = FUN_00103700(stdin,&DAT_00108792,uVar11);` with `ulong extraout_RDX; ulong extraout_RDX_00;`",
+  "witness": {
+    "before": "v12 = sub_3700(stdin,\"-\",v10);  /  v3 = sub_3700(stdin,v6);  /  v12 &= sub_3700(v5);   (3/2/1 arguments, `unsigned long v9; // rdx` and `unsigned long v11; // rdx` never assigned)",
+    "after": "v9 = sub_3700(stdin,\"-\");  /  v3 = sub_3700(stdin,v6);  /  v9 &= sub_3700(v5,v6);   (2/2/2, DWARF says fmt(FILE *, char const *))",
+    "declarations": "15 -> 12 locals in fmt::main"
+  },
+  "corpus_sweep": {
+    "method": "kuna decompile-all, whole binary, option off vs on, per-function diff with vN renumbering normalized; every changed call group then classified against the callee's OWN recovered prototype arity. Artifact: docs/features/phantomargs/sweep-2026-09-16.txt",
+    "binaries": 33,
+    "projects": [
+      "coreutils (fmt/ls/sort/du, O0+O2+O2-noinline)",
+      "grep (O0+O2)",
+      "gzip (O0+O2)",
+      "bzip2",
+      "diffutils",
+      "findutils",
+      "tar",
+      "dpkg",
+      "e2fsprogs",
+      "bash",
+      "dash",
+      "cronie",
+      "kmod",
+      "iproute2",
+      "libedit",
+      "rsyslog",
+      "shadow",
+      "zlib",
+      "openssh-portable (ssh/sshd/ssh-keygen)",
+      "u-boot (ARM)",
+      "betaflight (ARM Cortex-M)",
+      "riot-os (ARM Cortex-M)",
+      "mirai"
+    ],
+    "functions_scanned": 27512,
+    "functions_changed": 45,
+    "call_groups_changed": 47,
+    "binaries_byte_identical": 22,
+    "shape": "every changed site loses exactly one TRAILING argument (3->2, or 2->1 on ARM). No call site appears or disappears, no statement moves, no control-flow change.",
+    "ground_truth": "at every changed site the arity landed on is the arity of the callee's own recovered prototype. The three named imports are confirmed against DWARF on the unstripped twins: xrealloc(void *, size_t), ext2fs_dblist_sort2(dblist, sortfunc), e2fsck_use_inode_shortcuts(ctx, bool). u-boot's two are get_ticks (0 params) and sub_6086752c (1 param, 60+ other sites pass 1). betaflight's sub_8032628 is called with one argument at ~40 other sites.",
+    "statement_moves": 0,
+    "control_flow_changes": 0,
+    "false_positive_avoided": "tar parse_datetime2 @0x48e10 -> str_days @0x46550 (DWARF: 3 params). Its RDX trial is MULTIEQUAL(COPY, MULTIEQUAL) -- the clobber is one phi deeper -- so the direct-clobber clause declines it and the real argument is kept.",
+    "option_off_is_inert": "kuna decompile-all with the option OFF is byte-identical to the pinned main binary on all 8 binaries the option changes (fmt, grep, u-boot, ssh-keygen, dpkg, e2fsck, betaflight, bash): 0 differing lines each."
+  },
+  "ground_truth_check": {
+    "method": "readelf --debug-dump=info on the unstripped decbench twin, DW_TAG_formal_parameter count at the callee's DW_AT_low_pc",
+    "fmt 0x3700": "fmt, 2 params (kuna rendered 3 at one site)",
+    "grep 0xb420": "2 params (kuna rendered 3 at four sites; the option drops two of them and clauses 2 and 7 decline the other two)",
+    "tar 0x46550": "str_days, 3 params (declined by the direct-clobber clause)",
+    "u-boot 0x60871420": "get_ticks, 0 params (readelf on the decbench O2/u-boot twin)",
+    "u-boot 0x608715f0": "__udelay, 1 formal parameter `usec` -- the second parameter kuna recovered was fabricated, and the option removes it",
+    "u-boot 0x6086752c": "1 parameter by kuna's own recovery; 60+ other call sites in the image pass one",
+    "u-boot 0x60873270 / 0x6086b998 / 0x6086609c": "printf and two readers of the argument register -- all declined, see review_counterexamples_closed"
+  },
+  "benchmark": {
+    "method": "kuna decompile-all --addr <fn> --json, variables[] rows (kind, stack_offset, size, type) compared off vs on, on ALL 45 functions the sweep changes. The earlier claim that this is structurally zero was wrong and the review was right to falsify it: the pass can delete a `kind: arg` row when the dropped argument was the caller's own parameter's only use.",
+    "functions_checked": 45,
+    "variables_identical": 43,
+    "variables_changed": 2,
+    "changed_rows": {
+      "u-boot 0x608715f0": "one `kind: arg` row removed (unsigned int, 4 bytes): the prototype narrows from (uint4, unsigned int) to (uint4). DWARF says __udelay takes ONE parameter, so this is a type_match GAIN, not a loss.",
+      "bash 0xe30d0 (expand_prompt)": "one `kind: stack` row at -160 goes undefined8 -> char *. DWARF for expand_prompt declares its fbreg locals at -168 and -176, so -160 is a spill slot; the change replaces an untyped 8-byte slot with a typed pointer."
+    }
+  },
+  "speed_off_ms": 222.4,
+  "speed_on_ms": 226.9,
+  "speed_delta_pct": 2.03,
+  "speed_samples": 21,
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": true,
+  "speed_forced_off": false,
+  "speed": {
+    "method": "interleaved off/on pairs, MINIMUM of 21 pairs, `kuna decompile-all <bin> --addr <fn> --option argclobber off|on` (the CLI surface that rejects a bad option value). Re-measured after the review clauses landed; the box was running the workspace suite throughout, so these are pessimistic.",
+    "rows": {
+      "kuna decompile-all fmt O2 main 0x26a0 (the option fires)": "222.4 -> 226.9 ms (+2.03%)",
+      "kuna decompile-all ls O2 main 0x5b50 (control: never fires)": "319.1 -> 320.4 ms (+0.40%)"
+    },
+    "worst_delta_pct": 2.03,
+    "within_budget": true,
+    "why": "with the option off the first statement returns on a bool. With it on the added work is two reads of an already-built summary: the same-register test walks one join's inputs, and the callee test is a lookup in the per-image CalleeEntryDead map calleedeadarg (default on) already populates. The control binary's +0.40% is the measurement floor on a loaded box."
+  },
+  "clauses": [
+    "register trial carrying is_ind_create_formed",
+    "the clobber reaches the call directly: the defining op is the indirect creation, or a MULTIEQUAL one of whose immediate inputs is one",
+    "every one of those indirect creations is a creation of THE ARGUMENT REGISTER ITSELF (added after review; the first return register of every ABI is also killed-by-call and a possible output location, so a preceding call's result is an indirect creation too)",
+    "the callee's own body does not read those register bytes before writing them (CalleeEntryDead::proves_input; added after review)",
+    "trailing: no used trial follows it",
+    "at least one used argument remains",
+    "no already-final sibling call to the same callee entry in this function passed an argument in that storage"
+  ],
+  "review_counterexamples_closed": {
+    "u-boot 0x60827fa4 -> printf 0x60873270 (r3)": "declined by the same-register clause: the creations are at r0, the return of ofnode_read_u32_default, carried into r3 by predicated movs. Also declined by the callee clause (printf proves_input(r3)).",
+    "u-boot 0x6085512c -> printf 0x60873270 (r1)": "declined by the same-register clause (creation at r0) and by the callee clause.",
+    "u-boot 0x6080b504 -> sub_6086609c (r1)": "declined by the same-register clause (creation at r0) and by the callee clause; the `if (*p == 0x2f) p = &p[1];` guard the drop had deleted is back.",
+    "u-boot 0x6083af40 -> sub_6086b998 (r2)": "declined by the same-register clause (creation at r0, strlen's return) and by the callee clause (sub_6086b998 reads r2 before writing it).",
+    "u-boot 0x608715f0 -> sub_60871420 (r1)": "STILL FIRES, and it is correct: readelf on the decbench u-boot twin says 0x60871420 is get_ticks, DW_TAG_formal_parameter count 0, and 0x608715f0 is __udelay with ONE formal parameter (`usec`). The `kind: arg` row the review saw deleted was itself fabricated; the narrowed prototype matches DWARF.",
+    "unmodelled-variadic callee (the required change)": "answered structurally by the callee clause, not by a per-function scan: u-boot's printf spills r1-r3 into the va_list save area, so proves_input holds for every one of its 1,924 sites at once."
+  },
+  "ablation": "MEASURED, not asserted: with the default flipped to `true` in Architecture and ArchContext and the tree rebuilt, `kuna test --datatests --baseline docs/baseline.json` is 675/675 PARITY OK and `--datatests-dir tests/stages --baseline docs/baseline-stages.json` is 1018/1018 PARITY OK. The flip was reverted; the shipped default is off, and it is off because of the rax:rdx return shape no clause can see, not because of the corpora."
+}

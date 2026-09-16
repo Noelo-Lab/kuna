@@ -1,0 +1,110 @@
+argclobber whole-corpus sweep, 2026-09-16 (post-review)
+kuna decompile-all, whole binary, option off vs on, per-function diff with vN renumbering normalized.
+Corpus: decbench results/full_run_address_2026-09-11.  33 binaries, 27,512 functions.
+
+PER BINARY (only the ones that change; the other 22 are byte-identical off vs on)
+binary                                         functions  changed
+O2/openssh-portable/stripped/ssh                   1510       12
+O2/openssh-portable/stripped/sshd                  1680       11
+O2/openssh-portable/stripped/ssh-keygen            1042        7
+O2/betaflight/stripped/betaflight_STM32F405.elf     5797        5
+O2/dpkg/stripped/dpkg                               800        2
+O2/e2fsprogs/stripped/e2fsck                       1421        2
+O2/u-boot/stripped/u-boot                          1727        2
+O2/bash/stripped/bash                              2538        1
+O2/coreutils/stripped/fmt                           151        1
+O2/grep/stripped/grep                               449        1
+O2-noinline/coreutils/stripped/fmt                  201        1
+O0/coreutils/stripped/fmt                           191        0
+O0/coreutils/stripped/ls                            589        0
+O0/grep/stripped/grep                               642        0
+O0/gzip/stripped/gzip                               248        0
+O2/bzip2/stripped/bzip2                             114        0
+O2/coreutils/stripped/du                            320        0
+O2/coreutils/stripped/ls                            404        0
+O2/coreutils/stripped/sort                          343        0
+O2/cronie/stripped/crond                            180        0
+O2/dash/stripped/dash                               335        0
+O2/diffutils/stripped/diff                          398        0
+O2/findutils/stripped/find                          658        0
+O2/gzip/stripped/gzip                               204        0
+O2/iproute2/stripped/ip                            1008        0
+O2/kmod/stripped/kmod                               394        0
+O2/libedit/stripped/libedit.so.0.0.70               664        0
+O2/mirai/stripped/mirai                             123        0
+O2/riot-os/stripped/hello-world.elf                 129        0
+O2/rsyslog/stripped/rsyslogd                       1535        0
+O2/shadow/stripped/useradd                          427        0
+O2/tar/stripped/tar                                1125        0
+O2/zlib/stripped/minigzip                           165        0
+
+EVERY CHANGED CALL GROUP, with the callee's OWN recovered prototype arity
+binary                                 caller       callee         off->on  callee_proto_params
+O2-noinline_coreutils_stripped_fmt     0x26e0       sub_3a30       [1, 3]->[2]  proto=2
+O2_bash_stripped_bash                  0xe30d0      xrealloc       [3]->[2]  proto=None
+O2_betaflight_stripped_betaflight_STM3 0x8028164    sub_8017b20    [2]->[1]  proto=1
+O2_betaflight_stripped_betaflight_STM3 0x802977a    sub_8017b20    [2]->[1]  proto=1
+O2_betaflight_stripped_betaflight_STM3 0x8029aea    sub_8017ad0    [2]->[1]  proto=1
+O2_betaflight_stripped_betaflight_STM3 0x802f5b4    sub_8032628    [2]->[1]  proto=4
+O2_betaflight_stripped_betaflight_STM3 0x802fb3e    sub_8032628    [2]->[1]  proto=4
+O2_coreutils_stripped_fmt              0x26a0       sub_3700       [1, 3]->[2]  proto=2
+O2_dpkg_stripped_dpkg                  0x192b0      sub_29a30      [3]->[2]  proto=2
+O2_dpkg_stripped_dpkg                  0x318d0      sub_1d940      [3]->[2]  proto=2
+O2_e2fsprogs_stripped_e2fsck           0x27f30      ext2fs_dblist_sort2 [3]->[2]  proto=None
+O2_e2fsprogs_stripped_e2fsck           0x312f0      e2fsck_use_inode_shortcuts [3]->[2]  proto=None
+O2_grep_stripped_grep                  0xcec0       sub_b420       [3]->[2]  proto=2
+O2_openssh-portable_stripped_ssh-keyge 0x9b20       sub_41ec0      [3]->[2]  proto=2
+O2_openssh-portable_stripped_ssh-keyge 0xe770       sub_21ba0      [3]->[2]  proto=2
+O2_openssh-portable_stripped_ssh-keyge 0x37770      sub_364d0      [3]->[2]  proto=2
+O2_openssh-portable_stripped_ssh-keyge 0x37ad0      sub_364d0      [3]->[2]  proto=2
+O2_openssh-portable_stripped_ssh-keyge 0x506c0      sub_636e0      [3]->[2]  proto=2
+O2_openssh-portable_stripped_ssh-keyge 0x57820      sub_636e0      [3]->[2]  proto=2
+O2_openssh-portable_stripped_ssh-keyge 0x63790      sub_67b30      [3]->[2]  proto=2
+O2_openssh-portable_stripped_ssh       0x1e940      sub_81da0      [3]->[2]  proto=2
+O2_openssh-portable_stripped_ssh       0x20810      sub_3d9d0      [3]->[2]  proto=1
+O2_openssh-portable_stripped_ssh       0x21f30      sub_3ffa0      [3]->[2]  proto=2
+O2_openssh-portable_stripped_ssh       0x2bfa0      sub_afeb0      [3]->[2]  proto=2
+O2_openssh-portable_stripped_ssh       0x4e9b0      sub_4d710      [3]->[2]  proto=2
+O2_openssh-portable_stripped_ssh       0x4ed10      sub_4d710      [3]->[2]  proto=2
+O2_openssh-portable_stripped_ssh       0x596d0      sub_58bb0      [3]->[2]  proto=2
+O2_openssh-portable_stripped_ssh       0x738c0      sub_4ae40      [3]->[2]  proto=2
+O2_openssh-portable_stripped_ssh       0x85b80      sub_afeb0      [3]->[2]  proto=2
+O2_openssh-portable_stripped_ssh       0x8fb90      sub_afeb0      [3]->[2]  proto=2
+O2_openssh-portable_stripped_ssh       0x95380      sub_91c40      [3]->[2]  proto=2
+O2_openssh-portable_stripped_ssh       0xaff60      sub_b6620      [3]->[2]  proto=2
+O2_openssh-portable_stripped_sshd      0xd000       sub_4a200      [3]->[2]  proto=2
+O2_openssh-portable_stripped_sshd      0xd000       sub_c2610      [3]->[2]  proto=2
+O2_openssh-portable_stripped_sshd      0x29010      sub_c2610      [3]->[2]  proto=2
+O2_openssh-portable_stripped_sshd      0x31970      sub_bce60      [3]->[2]  proto=2
+O2_openssh-portable_stripped_sshd      0x611b0      sub_5ff10      [3]->[2]  proto=2
+O2_openssh-portable_stripped_sshd      0x61510      sub_5ff10      [3]->[2]  proto=2
+O2_openssh-portable_stripped_sshd      0x6bed0      sub_6b3b0      [3]->[2]  proto=2
+O2_openssh-portable_stripped_sshd      0x85090      sub_5d640      [3]->[2]  proto=2
+O2_openssh-portable_stripped_sshd      0x98030      sub_bce60      [3]->[2]  proto=2
+O2_openssh-portable_stripped_sshd      0x9e430      sub_bce60      [3]->[2]  proto=2
+O2_openssh-portable_stripped_sshd      0xa3c20      sub_a04e0      [3]->[2]  proto=2
+O2_openssh-portable_stripped_sshd      0xbcf10      sub_c2650      [3]->[2]  proto=2
+O2_u-boot_stripped_u-boot              0x6082f428   sub_6086752c   [2]->[1]  proto=1
+O2_u-boot_stripped_u-boot              0x608715f0   sub_60871420   [2]->[1]  proto=0
+O2_u-boot_stripped_u-boot              0x608715f0   sub_608715f0   [2]->[1]  proto=2
+
+47 changed call groups
+
+OPTION OFF IS INERT
+Whole-binary `kuna decompile-all` with the option OFF is byte-identical to the
+pinned main binary (/home/mahaloz/kwt/_baseline/kuna) on every binary the option
+changes, plus two controls:
+  O2/coreutils/stripped/fmt                        0 differing lines
+  O2/grep/stripped/grep                            0 differing lines
+  O2/u-boot/stripped/u-boot                        0 differing lines
+  O2/openssh-portable/stripped/ssh-keygen          0 differing lines
+  O2/dpkg/stripped/dpkg                            0 differing lines
+  O2/e2fsprogs/stripped/e2fsck                     0 differing lines
+  O2/betaflight/stripped/betaflight_STM32F405.elf  0 differing lines
+  O2/bash/stripped/bash                            0 differing lines
+
+ABLATION (default flipped ON, tree rebuilt, then reverted)
+  kuna test --datatests --baseline docs/baseline.json          675/675   PARITY OK
+  kuna test --datatests-dir tests/stages --baseline ...json   1018/1018  PARITY OK
+So the 0/675 requirement for a default-on proposal is met; the option stays off
+because of the rax:rdx-return shape no clause can see, not because of the corpora.

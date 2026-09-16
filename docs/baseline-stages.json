@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1021,
-    1021
+    1018,
+    1018
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -133,14 +133,6 @@
     "data:DWARFVARIANTS #7: on, and so does variant B, so three variants are not two",
     "data:DWARFVARIANTS #8: a plain C-shaped struct in the same image renders identically in BOTH passes",
     "data:DWARFVARIANTS #9: and so does a fieldless enum, which rustc emits as an enumeration type this pass never sees",
-    "data:ELFMAIN #1: off, the entry is an anonymous sub with a body-driven signature",
-    "data:ELFMAIN #2: off, the argument vector has no element type, so the string it holds is an integer",
-    "data:ELFMAIN #3: default, the libc-start argument is named and declared, in both images",
-    "data:ELFMAIN #4: default, the declared element type reaches the call site",
-    "data:ELFMAIN #5: off, an argument register past the third is recovered as a parameter",
-    "data:ELFMAIN #6: off, the fabricated slots are what the body forwards",
-    "data:ELFMAIN #7: default, the stored register beyond the third becomes a local nothing assigns",
-    "data:ELFMAIN #8: default, the forwarded register beyond the third is dropped from the call",
     "data:EMPTYSTRCONST #1: the blob pointer keeps its address instead of becoming an empty literal",
     "data:EMPTYSTRCONST #2: an ordinary short literal beside it is untouched, in both passes",
     "data:EMPTYSTRCONST #3: a GENUINE empty literal, one that sits inside a run of string data, keeps its quotes in both passes",
@@ -734,6 +726,11 @@
     "data:angr-taildup #1 (bug, off): one residual goto to the shared free();return; tail",
     "data:angr-taildup #2 (bug, off): goto label reference + label definition present, none on",
     "data:angr-taildup #3 (fix, on): free();return; tail duplicated (1 free off + 2 free on)",
+    "data:argclobber #1: option off passes a third argument built out of the previous call's clobber (bug reproduced)",
+    "data:argclobber #2: option on drops the trailing argument the caller never wrote for this call",
+    "data:argclobber #3: the phantom rdx local the fabricated argument read is gone with the option on (only the buggy pass declares it)",
+    "data:argclobber-armreturn #1: the clobber is of r0 and the argument register is r3, so the trailing argument survives both passes",
+    "data:argclobber-guards #1: the callee reads rdx before writing it, so the trailing argument survives both passes",
     "data:calleearity #1: option off drops the argument at the call site whose guard branches on it (bug reproduced)",
     "data:calleearity #2: option on gives both call sites of one callee the same arity",
     "data:calleearitycut #1: five of the six renderings are an empty argument list -- all three sites in pass 1 (bug reproduced) and the two discriminators again in pass 2",

@@ -549,6 +549,75 @@ never a misplaced one — and the site the rule fires on rendered no arguments a
 all, so it trades an empty list for a prefix the callee's own body proves it
 reads. Inert unless `calleearitycut` is also on.
 
+Every rule above is additive: each one can only put an argument back. The
+opposite error is just as real, and its evidence is already on the trial.
+`Heritage::guard_calls` plants an INDIRECT *creation* for a killed-by-call
+register that is also a possible **output** location of the callee's model — on
+x86-64 `rdx` is one, because a 16-byte value returns in `rax:rdx` — and
+`AncestorRealistic::enter_node` answers realistic for exactly that op, recording
+`set_ind_create_formed` on the trial as it passes. With `only_op_use` satisfied
+the trial scores active and `fillin_map` marks every active trial used, so a
+register the caller never wrote for this call becomes its trailing argument and
+the local it reads is assigned nowhere in the function. coreutils `fmt` -O2
+renders `sub_3700(stdin,"-",v10)` against a DWARF prototype of two parameters,
+with `unsigned long v9; // rdx` and `unsigned long v11; // rdx` never written;
+stock Ghidra emits the same three-argument call and names the phantom
+`extraout_RDX`. The `ind_create_formed` bit is read back on the **return** side
+only (the remainder-formed and indirect-creation-formed rejection in
+`fillin_map_standard_out`, below): the input list has no such test, so the
+evidence that disqualifies a return value is ignored for an argument.
+
+(kuna) `argclobber` (default **off**,
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_argclobber.rs`) applies that
+same sentence to the input list, bounded by six clauses.
+
+The clobber must reach the call **directly** — the trial's defining op is the
+indirect creation, or a MULTIEQUAL one of whose immediate inputs is one — because
+a clobber that merges in behind a further join says nothing about the argument:
+tar's `str_days(pc,buffer,n)` is called with `n` live from a dominating block and
+a clobber joining in one phi deeper, and that argument is real.
+
+Every one of those indirect creations must be a creation of **the argument
+register itself**. This is the clause that separates a clobber from a *return
+value*, and the distinction is not visible in the bit: on every ABI the first
+return register is also killed-by-call and a possible output location, so until
+the output seam resolves it a preceding call's result is an indirect creation
+exactly like a clobber is. When the caller then moves that result into an
+argument register, copy propagation puts the creation straight into the
+argument's join — at its own address, not the argument's. u-boot -O2
+`sub_60827fa4` is that shape: `r0` holds
+`ofnode_read_u32_default(dev->node,"bus-width",1)`, three `cmp`s test it, and a
+pair of predicated `mov r3,r0` carry it into
+`printf("%s %s: Invalid \"bus-width\" value %u!\n",dev,name,width)` as the value
+`%u` prints. A register the caller wrote is a register the caller is passing,
+whatever the value in it came from.
+
+The **callee's own body** must not read those register bytes before writing them.
+That is the `proves_input` half of the per-image entry-liveness summary
+`calleedeadarg` (below) already builds, and it settles the case the caller's side
+cannot: bytes the callee reads at entry are a parameter however the value got
+into the register. It is also what answers for a callee kuna never recovered as
+variadic — u-boot's `printf` is called from 1,924 sites, and its prologue
+spilling `r1`–`r3` into the `va_list` save area speaks for all of them at once,
+which no per-function sibling scan can.
+
+The trial must be **trailing**, so the list keeps its positional shape and no
+other argument moves. At least one argument must remain, since an empty list is
+`calleearityfwd`'s failure shape and not this one's. And no already-final call to
+the same callee entry in this function may have passed an argument in that
+storage — the subtractive twin of `calleearity`'s witness rule, and the statement
+of how this pass is ordered against the additive family: it runs immediately
+after `unify_with_sibling_call` in `build_input_from_trials`, and a slot the
+sibling rule promoted outranks the clobber evidence here. The drop is
+`mark_no_use`, which every deferred member of the family reads as
+definitely-not-used, so none of them puts the argument back.
+
+What no clause can see is a callee that really returns a 16-byte value in
+`rax:rdx` and forwards the high half as the next call's trailing argument: it
+writes nothing into `rdx` itself, so it keeps the phantom's shape on both counts,
+and only the callee probe can decline it — and only where the probe covers that
+callee's entry. That is why it is opt-in.
+
 The `Register` (unordered) variant skips all ordering logic: every active
 trial that lands justified in an entry is a parameter
 (`fillin_map_register`). The output variant first lets the model rules claim

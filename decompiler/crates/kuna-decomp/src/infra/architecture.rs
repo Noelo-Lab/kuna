@@ -684,6 +684,9 @@ pub struct Architecture {
     /// (kuna) Read a declared callee's stack contract off its locked prototype
     /// (`calleeprotostack`).  See [`crate::p4_calls::kuna_calleeprotostack`].
     pub callee_proto_stack: bool,
+    /// (kuna) Drop a trailing register argument a previous call's clobber put
+    /// there (option `argclobber`).  See [`crate::p4_calls::kuna_argclobber`].
+    pub arg_clobber: bool,
     /// (kuna) Let a bounded decode of the callee's own body veto a register
     /// argument the callee provably never reads (option `calleedeadarg`).
     pub callee_dead_arg: bool,
@@ -2229,6 +2232,7 @@ impl Architecture {
             end_ptr_bound: true,
             callee_pop: true,
             callee_proto_stack: true,
+            arg_clobber: false, // (kuna) argclobber: opt-in
             callee_dead_arg: true,
             callee_preserves: true,
             callee_ret_preserves: true,
@@ -2897,6 +2901,11 @@ impl Architecture {
                 let (val, msg) =
                     crate::p4_calls::kuna_inputparamgap::OptionInputParamGap.apply(p1)?;
                 self.input_param_gap = val;
+                Ok(msg)
+            }
+            "argclobber" => {
+                let (val, msg) = crate::p4_calls::kuna_argclobber::OptionArgClobber.apply(p1)?;
+                self.arg_clobber = val;
                 Ok(msg)
             }
             "calleedeadarg" => {
@@ -3947,6 +3956,7 @@ impl Architecture {
         ctx.end_ptr_bound = self.end_ptr_bound; // endptrbound
         ctx.callee_pop = self.callee_pop; // calleepop
         ctx.callee_proto_stack = self.callee_proto_stack; // calleeprotostack
+        ctx.arg_clobber = self.arg_clobber; // argclobber
         ctx.callee_dead_arg = self.callee_dead_arg; // calleedeadarg
         ctx.callee_preserves = self.callee_preserves; // calleepreserves
         ctx.callee_ret_preserves = self.callee_ret_preserves; // calleeretpreserves

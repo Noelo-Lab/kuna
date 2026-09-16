@@ -147,12 +147,13 @@ fn settable_count_is_209() {
     // +1 for `tiedphitrim` (P6 loop-head aliased-read trim, DIV-182).
     // +1 for `loweredswitchexact` (P2 re-rolled switch matches its compare tree, DIV-183) and +1 for `loweredswitchheads` (P2 every lowered-switch cascade head, DIV-184).
     // +1 for `bytehonest` (P6 uncommitted byte on the JSON variables surface) and +1 for `elfmain` (P1 ELF libc-start main naming + prototype).
-    assert_eq!(kuna_num_settables(), 209);
-    assert_eq!(SETTABLE_TABLE.len(), 209);
+    // +1 for `argclobber` (P4 trailing clobber-argument drop).
+    assert_eq!(kuna_num_settables(), 210);
+    assert_eq!(SETTABLE_TABLE.len(), 210);
 }
 
 #[test]
-fn tier_counts_are_67_core_80_transform_62_analysis() {
+fn tier_counts_are_68_core_80_transform_62_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -281,7 +282,8 @@ fn tier_counts_are_67_core_80_transform_62_analysis() {
     // core 66 -> 67: +1 for `bytehonest` (P6 uncommitted byte on the JSON
     // variables surface). analysis 61 -> 62: +1 for `elfmain` (P1 ELF
     // libc-start main naming + prototype).
-    assert_eq!((core, transform, analysis), (67, 80, 62));
+    // core 67 -> 68: +1 for `argclobber` (P4 trailing clobber-argument drop).
+    assert_eq!((core, transform, analysis), (68, 80, 62));
 }
 
 #[test]
@@ -471,7 +473,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_86() {
+fn option_values_live_value_present_for_87() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -852,7 +854,8 @@ fn option_values_live_value_present_for_86() {
     // 82 -> 83: +1 for `tiedphitrim` (live_field = tied_phi_trim, DIV-182).
     // 83 -> 85: +1 for `loweredswitchexact` (P2 re-rolled switch matches its compare tree, DIV-183) and +1 for `loweredswitchheads` (P2 every lowered-switch cascade head, DIV-184).
     // 85 -> 86: +1 for `bytehonest` (live_field = byte_honest).
-    assert_eq!(with_live, 86);
+    // 86 -> 87: +1 for `argclobber` (live_field = arg_clobber, opt-in).
+    assert_eq!(with_live, 87);
 }
 
 #[test]

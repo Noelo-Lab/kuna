@@ -900,6 +900,11 @@ pub struct ArchContext {
     /// (kuna) `calleeprotostack` — a declared callee's locked prototype states
     /// its stack contract.  See [`crate::p4_calls::kuna_calleeprotostack`].
     pub callee_proto_stack: bool,
+    /// (kuna) drop a trailing register argument a previous call's clobber put
+    /// there (`argclobber`).  Read by
+    /// [`crate::p4_calls::kuna_argclobber::drop_clobber_tail_arg`]; off by
+    /// default, so the fixture seam carries `false`.
+    pub arg_clobber: bool,
     /// (kuna) let a bounded decode of the callee's own body veto a register
     /// argument the callee provably never reads (`calleedeadarg`).  Read by
     /// [`check_input_trial_use`](crate::funcdata_callsite::check_input_trial_use)
@@ -1533,6 +1538,9 @@ impl ArchContext {
             // the hand-built-fixture seam carries the same default.
             callee_pop: true,
             callee_proto_stack: true,
+            // argclobber is opt-in (it can drop a real argument at a callee
+            // that returns a 16-byte value), so the fixture seam is off too.
+            arg_clobber: false,
             // calleedeadarg only ever REMOVES an argument, and only against a
             // decoded callee body; the fixture seam carries the real default.
             callee_dead_arg: true,

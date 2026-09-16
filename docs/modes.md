@@ -142,9 +142,20 @@ not, and the invariant test's `EXCLUDED_ON_PURPOSE` list is the authority:
   the grow call on the strength of its argument shape; the callee body is never
   read. That trust is the operator's call to make about a binary, not a default.
 
-All five therefore stay manual per-run opt-ins (`--option v850indirectbranch on`,
+- **`argclobber`** — it *deletes* a recovered call argument when a previous call's
+  clobber is what put a value in the trailing argument register. The evidence is
+  one-sided by construction: the register it drops is a possible *output* location
+  of the callee's model, which is why the INDIRECT creation it reads exists at
+  all. Two clauses keep it off a real argument — the creation has to be of the
+  argument register itself, and the callee's own body must not read those bytes
+  before writing them — and what neither can see is a callee that really returns a
+  16-byte value in `rax:rdx` and forwards the high half into the next call.
+  Deleting an argument as the default rendering under 500 KiB is the operator's
+  call.
+
+All six therefore stay manual per-run opt-ins (`--option v850indirectbranch on`,
 `--option dwarf_lines on`, `--option formatstring on`, `--option ifuncfpret on`,
-`--option msvcstrappend on`)
+`--option msvcstrappend on`, `--option argclobber on`)
 even under `--mode aggressive`; a named `--option` still wins over the preset by
 last-write precedence.
 
