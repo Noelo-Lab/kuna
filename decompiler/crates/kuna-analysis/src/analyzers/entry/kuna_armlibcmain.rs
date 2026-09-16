@@ -102,7 +102,10 @@ impl AnalysisPass for ArmLibcMainPass {
 /// The VMA the non-PIE crt1 hands to `__libc_start_main`, once every refusal in
 /// the module header has been applied. `None` means this pass contributes
 /// nothing and the commit is byte-identical to before.
-fn main_vma(file: &object::File, bytes: &[u8]) -> Option<u64> {
+///
+/// Visible to the sibling [`super::kuna_elfmain`], which parks the
+/// `int main(int, char **)` prototype on the name this pass installs.
+pub(super) fn main_vma(file: &object::File, bytes: &[u8]) -> Option<u64> {
     if file.architecture() != object::Architecture::Arm {
         return None;
     }

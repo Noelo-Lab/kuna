@@ -587,6 +587,10 @@ fn option_values_live_value_present_for_85() {
         // of `machomain` above and the same seam: an analysis-tier gate with no
         // codegen live reader, read console-side via kuna_live_value. Default-ON.
         "armlibcmain",
+        // (kuna) ELF libc-start `main` naming + prototype -- the ELF counterpart of
+        // `machomain` above and the same seam: an analysis-tier gate with no
+        // codegen live reader, read console-side via kuna_live_value. Default-ON.
+        "elfmain",
         // (kuna) Unmapped-CALL-target entry suppression -- an analysis-tier gate with
         // no codegen live reader (read console-side via kuna_live_value), like the
         // discovery gates around it. Default-ON.

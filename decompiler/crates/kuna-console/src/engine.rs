@@ -2501,6 +2501,11 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // pass whose one entry and one name are computed at LOAD but COMMITTED only
         // when this gate is on. Default-ON; off restores the previous inventory.
         "armlibcmain" => arch.analysis_armlibcmain,
+        // (kuna) ELF libc-start `main` naming + prototype — a standalone stashed
+        // pass whose one name and one prototype are computed at LOAD but
+        // COMMITTED only when this gate is on. Default-ON; off restores the
+        // `sub_<addr>` / width-only form exactly.
+        "elfmain" => arch.analysis_elfmain,
         // (kuna) `.eh_frame` FDE-interior entry suppression — the pass reports the
         // single-function FDE bodies and the commit rejects any discovered entry
         // strictly inside one. Default-ON; with the gate off the fact stream is
