@@ -98,6 +98,16 @@ by anything else — a different width, a zero-width forward declaration, a
 non-struct — declines the signature. This table never completes, re-keys or
 alters a type it did not establish.
 
+**What the adopted spelling costs on the metric (nothing today, something
+later).** decbench's `normalize_type` accepts `FILE *` for a ground-truth
+`FILE *` and does NOT accept `_IO_FILE *` — `_POINTEE_MAP` in
+`decbench/metrics/type_match.py` has no alias row for it, so the intersection is
+empty. Every number in `record.json` is measured on STRIPPED images, where no
+DWARF type is held and the table mints and prints the bare `FILE`, so none of
+them is affected. A future measurement over `-g` images would score each adopted
+stream slot a miss; the answer there is an alias row in the metric, not a second
+spelling of a type the image itself defines.
+
 **Why the order is the correctness condition, not a preference.** A pointee is
 captured as an `Rc<Datatype>` when the signature is built, and completing a
 struct RE-KEYS it into a new `Rc` (`TypeFactory::set_fields_struct`; the C++
@@ -224,6 +234,15 @@ in `corpus-hunk-classification.txt`. Summary:
   a field of a named pointee, 129 the same store or load through a different
   stack-slot decomposition, 50 one aggregate slot read as a sub-piece, 23 a
   named declaration or cast, 1 block skew.
+* The one line shape that goes measurably UP is the piece accessor
+  `vN._off_size_`: 1,002 -> 1,231 over the seven binaries (+22.9%; tar
+  615 -> 699, grep 79 -> 116, find 37 -> 83, diff 14 -> 58, gzip 19 -> 38, fmt
+  flat, ls 149 -> 148). It is the cost of a fieldless shell — an 8-byte slot of
+  `FILE` has no field to name, so the emitter prints the piece where it printed a
+  cast — and it is what the follow-up `glibc` value (real `_IO_FILE` field names)
+  retires. The neighbouring functional forms barely move: `SUBxy(` 214 -> 215,
+  `CONCATxy(` 266 -> 268 (find +2, tar -1/+2), and `PTRSUB(` stays 0 in both
+  arms, which is the form the sizing rule exists to prevent.
 * 140 of 3,702 functions (3.8%) differ in the skeleton, every inspected one
   because an offset constant became a field name or an `&` appeared where a cast
   was. Two representative cases, both improvements:

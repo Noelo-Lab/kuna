@@ -118,7 +118,8 @@
    "on": 1725.97,
    "delta": 64.1
   },
-  "note": "re-measured after the DWARF-order fix: identical (+39 perfect, 0 moved off perfect, 347 improved-not-perfect, 0 worsened). The scored surface is stripped binaries, and `decompile-all` output there is byte-identical before and after that fix on all 7 sweep binaries, in both arms."
+  "note": "re-measured after the DWARF-order fix: identical (+39 perfect, 0 moved off perfect, 386 improved of which 39 reached perfect, 0 worsened). The scored surface is stripped binaries, and `decompile-all` output there is byte-identical before and after that fix on all 7 sweep binaries, in both arms.",
+  "spelling_and_the_metric": "The scored surface is the STRIPPED image (typesweep decompiles `stripped_of(unstripped)` and takes ground truth from the twin), and there no DWARF type is held, so the table mints and prints the bare `FILE` -- `normalize_type('FILE *') & normalize_type('FILE *')` = {'FILE *','FILE*'}, a match. On a `-g` image the adopted definition is the platform's own and prints under ITS tag, `_IO_FILE *`; that spelling is NOT accepted for a ground-truth `FILE *` -- decbench/metrics/type_match.py `_POINTEE_MAP` (built from TYPE_MAP) has no `_IO_FILE` row, so `normalize_type('_IO_FILE *') & normalize_type('FILE *')` is empty. No measurement in this record runs on an unstripped image, so nothing here is affected; a future one over `-g` images would score every adopted stream slot a miss, and the fix for that is the metric's alias table, not a second spelling of the type."
  },
  "corpus_sweep": {
   "method": "`kuna decompile-all` off vs opaque over 7 stripped binaries (fmt/ls/grep/gzip/tar O2, find/diff O0), every changed line put in a bucket plus a control-flow/call/constant skeleton comparison per function; full output and the residual-bucket shape histogram in corpus-hunk-classification.txt",
@@ -137,6 +138,112 @@
    "one aggregate slot read as a sub-piece (vN._off_size_)": 50,
    "a named aggregate declared or cast": 23,
    "block skew beside a retyped slot": 1
+  },
+  "piece_accessor_form": {
+   "what": "`vN._off_size_`, an aggregate slot read as a sub-piece -- legal C only against a declared field, so it is a readability cost the sized fieldless shell buys: an 8-byte slot of the shell has no field to name, and the emitter falls back to the piece accessor where off it printed a cast.",
+   "counts_off_on_by_binary": {
+    "O2 coreutils fmt": [
+     89,
+     89
+    ],
+    "O2 coreutils ls": [
+     149,
+     148
+    ],
+    "O2 grep grep": [
+     79,
+     116
+    ],
+    "O2 gzip gzip": [
+     19,
+     38
+    ],
+    "O2 tar tar": [
+     615,
+     699
+    ],
+    "O0 findutils find": [
+     37,
+     83
+    ],
+    "O0 diffutils diff": [
+     14,
+     58
+    ]
+   },
+   "total_off": 1002,
+   "total_on": 1231,
+   "reading": "+229 (+22.9%) over the 7 sweep binaries, concentrated in tar/grep/gzip/find/diff; ls goes DOWN by one. It is the same class as the `field_0x` count in the -g sweep -- an offset that was a cast becoming a slot of a named pointee -- and it is the strongest argument for the follow-up `glibc` value, which gives the stream shell real field names and retires most of these."
+  },
+  "intrinsic_form": {
+   "what": "`SUBxy(`/`CONCATxy(` -- the functional forms the printer falls back to for a sub-piece or a concatenation it cannot spell as C. Counted because `PTRSUB(` alone does not cover the class.",
+   "sub_off_on": {
+    "O2 coreutils fmt": [
+     25,
+     25
+    ],
+    "O2 coreutils ls": [
+     30,
+     30
+    ],
+    "O2 grep grep": [
+     11,
+     11
+    ],
+    "O2 gzip gzip": [
+     2,
+     2
+    ],
+    "O2 tar tar": [
+     69,
+     68
+    ],
+    "O0 findutils find": [
+     73,
+     75
+    ],
+    "O0 diffutils diff": [
+     4,
+     4
+    ]
+   },
+   "concat_off_on": {
+    "O2 coreutils fmt": [
+     9,
+     9
+    ],
+    "O2 coreutils ls": [
+     32,
+     32
+    ],
+    "O2 grep grep": [
+     25,
+     25
+    ],
+    "O2 gzip gzip": [
+     14,
+     14
+    ],
+    "O2 tar tar": [
+     122,
+     124
+    ],
+    "O0 findutils find": [
+     44,
+     44
+    ],
+    "O0 diffutils diff": [
+     20,
+     20
+    ]
+   },
+   "totals": {
+    "sub_off": 214,
+    "sub_on": 215,
+    "concat_off": 266,
+    "concat_on": 268
+   },
+   "reading": "net +3 across 3,702 functions (find +2 SUB, tar -1 SUB / +2 CONCAT): the same slot read through a different decomposition, never a new one. `PTRSUB(` stays 0/0 everywhere, which is the form the sizing rule exists to prevent."
   }
  },
  "gates": {
