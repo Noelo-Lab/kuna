@@ -227,3 +227,22 @@ fn other_abis_and_non_jump_relocations_do_not_name_descriptor_stubs() {
     let file=object::File::parse(&*bytes).unwrap();
     assert!(kuna_analysis::loader::format::resolve_imports(&file,&bytes).is_empty());
 }
+
+/// The case above keeps `li r3,7` on the failure branch, which holds the return
+/// type up on its own; nop that tail out so the restored return is the assertion.
+#[test]
+fn a_valueless_failure_branch_recovers_its_return() {
+    let mut bytes=image(1,"__stack_chk_fail",None,0,Transfer::Lazy);
+    let tail=[0x48u8,0x00,0x00,0xf1,0x38,0x60,0x00,0x07];
+    let at=bytes.windows(tail.len()).position(|w|w==tail).expect("caller tail");
+    bytes[at+4..at+8].copy_from_slice(&0x60000000u32.to_be_bytes());
+    let path=common::scratch_file("elfv1-import-void","elf");std::fs::write(&path,&bytes).unwrap();
+    let out=Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .args(["decompile",path.to_str().unwrap(),"get_byte","--json"]).output().unwrap();
+    let text=String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(),"{text}\n{}",String::from_utf8_lossy(&out.stderr));
+    assert!(text.contains("return *a0;"),"{text}");
+    assert!(text.contains("char get_byte(") && !text.contains("void get_byte("),"{text}");
+    assert!(text.contains("__stack_chk_fail(") && text.contains("no-return"),"{text}");
+    std::fs::remove_file(path).unwrap();
+}
