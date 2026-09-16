@@ -95,6 +95,37 @@ Every MISS is a refusal working as designed: an `.so` has no `main`, and a
 libopencm3 / ChibiOS / FreeRTOS / betaflight firmware image has no glibc crt1, so
 the `__libc_start_main` evidence the claim rests on is absent.
 
+## 3b. What the locked prototype costs
+
+The same population, asked the opposite question: what happens to a `main` whose
+body recovers a parameter PAST the third? 775 stripped images, 645 with a `main`
+this pass names, both arms decompiled at that address:
+
+| | count |
+|---|---:|
+| body-driven signature has more than three parameters | 28 |
+| of those, the default arm gains a register local nothing assigns | 13 |
+| of those, no new never-assigned local | 15 |
+
+The extra slots are not real parameters. An undefined register read has nowhere
+else to go, so recovery makes it one and fills in the slots before it to reach
+it; the unstripped twins of the two loudest cases — openssh `sftp` `-O2` @0x5250
+and shadow `login` `-O2` @0x3d20 — both declare `int main(int argc, char **argv)`
+in DWARF. Locking the three the runtime passes takes the read's home away, and it
+is then dropped from the call site it was being handed to
+(`sub_1e0d0("sftp.c","main",0x9b9,0,1,0,"…",a4)` loses its `a4`) or, when the
+body stores it, declared as a local nothing assigns (`unsigned long v23; // r8`
+in `sftp`, `unsigned long v22; // r9` in `login`). On the 15 without such a local
+the body also writes that register somewhere, so the demoted slot becomes an
+ordinary assigned local (shadow `usermod` @0x6340: `a5 = *v13`), and on coreutils
+`true`/`false` the fabricated slot was the cause of an `undefined16` return whose
+body ended `return v2._0_16_ << 0x40` — the locked prototype gives `return 0`.
+
+Both shapes are pinned by the in-repo fixture `elfmainextra_x86_64` @0x1026
+(`tests/stages/kuna-elfmain.xml` §§5-8, `tests/cli/elf-main-extra-register-args.json`),
+so whichever way call-site argument recovery removes the fabrication, the
+assertions move. Rows: `sweep-params/{summary.txt,population.txt,extra-parameter-uses.txt}`.
+
 ## 4. Metric effect, measured
 
 Approximately zero, as predicted, and non-negative on the metric this campaign is
