@@ -87,6 +87,18 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // `--option libcsigs on|off` via `engine.rs::analysis_pass_enabled`, so `off`
         // is byte-identical to the base table alone.
         Box::new(crate::protos::kuna_libcsigs::LibcSigsPass),
+        // S1 named libc/POSIX aggregate types (`libctypes`): the same signatures
+        // the two tables above carry, with their aggregate slots spelled by name
+        // (`FILE *`, `stat *`, `DIR *`, `option *`) instead of the width-stable
+        // `void *`, plus the stdio names neither table carries (`__uflow` and
+        // friends). Registered LAST of the three so its prototypes are merged
+        // last and therefore committed last, winning for every name it restates.
+        // The pass SELF-GATES on the `libctypes` env bridge rather than on the
+        // commit boundary: it interns the named shells into the type factory as
+        // it builds the signatures, and with the gate off not one of them may
+        // exist. `engine.rs::analysis_pass_enabled` still carries the matching
+        // arm as the second, defensive gate.
+        Box::new(crate::protos::kuna_libctypes::LibcTypesPass),
         // S1 built-in Win32 API signatures (`win32sigs`): the Windows half of the
         // `.gdt` stand-in, which nothing in the tree carried. PE/COFF only, and
         // keyed by ENTRY ADDRESS rather than by name -- a PE import is TWO

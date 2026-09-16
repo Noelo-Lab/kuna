@@ -1,0 +1,328 @@
+//! (kuna `libctypes`) Named libc/POSIX aggregate types in the built-in prototype
+//! tables — `FILE *` where the width-stable vocabulary can only say `void *`.
+//!
+//! [`super::Ty`] is width-stable by construction, so every aggregate pointer in
+//! the two shipped tables is spelled `void *`: `fopen` returns one, `fclose`
+//! takes one, `stat` fills one, `getopt_long` reads one. That is honest about
+//! the width and silent about the pointee, and the pointee is the one thing the
+//! table actually knows — `int fclose(FILE *)` is a declaration, not an
+//! inference. This module carries the same signatures with the aggregate slots
+//! named, plus the stdio entries whose only purpose is to name a parameter
+//! (`int __uflow(FILE *)` is the sole type evidence a `-O2` coreutils reader
+//! loop has for its stream argument).
+//!
+//! ## The shells are SIZED, and still incomplete
+//!
+//! A named shell of size 0 is not opaque, it is broken. `AddTreeState` has no
+//! size-0 early out, and `RulePtrsubUndo`'s no-field arm short-circuits on
+//! `typesize != 0` (`substrate/dtype.rs`), so a `PTRSUB` into a zero-size
+//! pointee is declared MATCHING and survives to the printer, which renders it in
+//! FUNCTIONAL form — literal `PTRSUB(p,0x28)` inside the C, on exactly the
+//! `stdout + 0x28` and `f + 8` accesses this table exists to type. So each shell
+//! carries its real glibc x86-64 width (`sizeof`/`_Alignof`, [`NAMED_AGGREGATES`]),
+//! which makes an in-range access render `p->field_0x28` and an out-of-range one
+//! fall back to the cast form.
+//!
+//! The shells are nevertheless kept INCOMPLETE (`flags::type_incomplete` is
+//! passed back through `set_fields_struct_raw`, which re-ORs it). Two things
+//! depend on that: the `.h` emitter prints `typedef struct FILE FILE;` with no
+//! body, and the DWARF importer's own name resolution
+//! (`analyzers::dwarf::kuna_dwarfstructs::intern_aggregate`) treats a held
+//! *incomplete* aggregate as a shell it may COMPLETE IN PLACE — so on a `-g`
+//! binary the real `struct stat` layout still lands under the same bare name
+//! instead of colliding with it.
+//!
+//! The widths are the glibc **x86-64** ones, which is the ABI of the corpus this
+//! option was measured on. On another ABI a width can be a few bytes off, and the
+//! only thing that can change is whether an access at a given offset renders as a
+//! field or as a cast — the NAME, which is the whole point, is ABI-independent,
+//! and a wrong width can never make a pointer point at the wrong thing. Where the
+//! platform's own definition is available (a `-g` binary), it is adopted instead,
+//! width and layout and all.
+//!
+//! ## Names are the bare DWARF spelling
+//!
+//! `FILE`, `stat`, `passwd`, … — not `struct stat`. kuna's printer spells a
+//! named base bare and its `.h` emitter supplies the matching
+//! `typedef struct stat stat;`, so the bare form is the one that round-trips
+//! through `decompile-project`.
+//!
+//! ## Provenance
+//!
+//! Same rule as [`super::kuna_libcsigs`]: no signature here was written from
+//! memory. The retargets restate a signature already in the shipped tables with
+//! its aggregate slots named; each name new to this module was reduced from
+//! `gcc -aux-info` over the platform headers with `_GNU_SOURCE` +
+//! `_FORTIFY_SOURCE=2`. `__underflow` was REJECTED for want of one: glibc
+//! declares it only in its internal `libioP.h`, which is not installed, so there
+//! is no machine-readable declaration to reduce. `fgetc_unlocked` and `fmemopen`
+//! were rejected on evidence instead — zero call sites across the 524 stripped
+//! O0+O2 decbench ELFs, where every name kept here has at least 17 (`rewind` 117,
+//! `__uflow` 77, `fgetc` 57; the census is in `docs/features/libctypes/`).
+//!
+//! The `v*printf` family is the trap this table must not fall into: the last
+//! `void *` of `vasprintf`, `vsnprintf`, `__vasprintf_chk`, `__vfprintf_chk`,
+//! `__vsnprintf_chk`, `verr` and `vwarn` is a `va_list`, not a `FILE *`. A
+//! blanket `VoidPtr -> NamedPtr` retarget would assert a false type at every one
+//! of those call sites, so the retarget is enumerated by hand, slot by slot.
+
+use std::rc::Rc;
+
+use kuna_base::error::{KunaError, KunaResult};
+use kuna_base::types::int4;
+use kuna_decomp::dtype::{flags, type_metatype, Datatype, TypeFactory};
+
+use super::{
+    resolved_import_addrs, seed_named_prototypes, seed_resolved_prototypes,
+    unambiguous_imported_function_names, unambiguous_present_function_names, Sig, Ty,
+};
+use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
+
+/// Seed the named-aggregate libc signatures. Registered after
+/// [`super::LibProtoPass`] and [`super::kuna_libcsigs::LibcSigsPass`] so its
+/// prototypes are committed last and win for the names it restates.
+pub struct LibcTypesPass;
+
+/// Whether the named libc aggregate types are enabled for this process (the
+/// `libctypes` env bridge — the shells are interned inside `load file`, upstream
+/// of every `option` command).
+pub(super) fn enabled() -> bool {
+    kuna_decomp::kuna_libctypes::libctypes_enabled()
+}
+
+/// A named aggregate the table may point at: its bare DWARF spelling and its
+/// glibc x86-64 ABI width and alignment (`sizeof`/`_Alignof`, measured with the
+/// platform headers — see `docs/features/libctypes/analysis.md`).
+///
+/// `DIR` is the one true opaque: glibc publishes no layout for it at all, so it
+/// takes width 1 — a non-zero width, which is the only property the pointer
+/// arithmetic seam needs.
+pub(super) struct NamedAggregate {
+    /// The bare name the type is interned and printed under.
+    pub name: &'static str,
+    /// Byte width of the aggregate.
+    pub size: int4,
+    /// Byte alignment of the aggregate.
+    pub align: int4,
+}
+
+/// Every aggregate [`Ty::NamedPtr`] may name. Sorted by name; the table is
+/// searched linearly (16 rows, a handful of times per load).
+pub(super) const NAMED_AGGREGATES: &[NamedAggregate] = &[
+    NamedAggregate { name: "DIR", size: 1, align: 1 },
+    NamedAggregate { name: "FILE", size: 216, align: 8 },
+    NamedAggregate { name: "dirent", size: 280, align: 8 },
+    NamedAggregate { name: "group", size: 32, align: 8 },
+    NamedAggregate { name: "mbstate_t", size: 8, align: 4 },
+    NamedAggregate { name: "option", size: 32, align: 8 },
+    NamedAggregate { name: "passwd", size: 48, align: 8 },
+    NamedAggregate { name: "pthread_mutex_t", size: 40, align: 8 },
+    NamedAggregate { name: "sigaction", size: 152, align: 8 },
+    NamedAggregate { name: "sigset_t", size: 128, align: 8 },
+    NamedAggregate { name: "sockaddr", size: 16, align: 2 },
+    NamedAggregate { name: "stat", size: 144, align: 8 },
+    NamedAggregate { name: "termios", size: 60, align: 4 },
+    NamedAggregate { name: "timespec", size: 16, align: 8 },
+    NamedAggregate { name: "timeval", size: 16, align: 8 },
+    NamedAggregate { name: "tm", size: 56, align: 8 },
+];
+
+/// Intern (or find) the named, sized, still-incomplete aggregate shell for `name`.
+///
+/// Idempotent by construction: the second call finds the interned type by name
+/// and hands back the same `Rc`, so every `FILE *` in the table is the same
+/// pointee object. A name already held by something that is not a struct, or by
+/// a COMPLETE struct (a DWARF import that ran first, or the operator's own
+/// `--assert typedef`), is left exactly as it is — this table never alters a
+/// definition somebody else established.
+pub(super) fn named_aggregate(name: &str, types: &dyn TypeFactory) -> KunaResult<Rc<Datatype>> {
+    let Some(agg) = NAMED_AGGREGATES.iter().find(|a| a.name == name) else {
+        return Err(KunaError::lowlevel(format!(
+            "libctypes: no width is known for `{name}`"
+        )));
+    };
+    if let Some(held) = types.find_by_name(name)? {
+        // A held COMPLETE aggregate of the declared width is the platform's own
+        // (a DWARF import that ran first): adopt it, layout and all. One of a
+        // DIFFERENT width is a program's own type that merely shares the
+        // spelling, and pointing a libc signature at it would assert a type
+        // instead of withholding one, so the whole signature is declined.
+        let usable = held.get_metatype() == type_metatype::TYPE_STRUCT
+            && (held.is_incomplete() || held.get_size() == agg.size);
+        if !usable {
+            return Err(KunaError::lowlevel(format!(
+                "libctypes: `{name}` is already held by a different type"
+            )));
+        }
+        return Ok(held);
+    };
+    let shell = types.get_type_struct(name)?;
+    // The width is the point (a zero-size pointee survives RulePtrsubUndo and
+    // prints as functional `PTRSUB(p,off)`); `type_incomplete` is passed back so
+    // the DWARF importer may still complete this shell in place.
+    types.set_fields_struct_raw(
+        &shell,
+        Vec::new(),
+        Vec::new(),
+        agg.size,
+        agg.align,
+        flags::type_incomplete,
+    )
+}
+
+/// Retargets of [`super::LIBC`] entries — matched, like that table, against the
+/// names the image carries at all (defined or imported), with the same
+/// ambiguity guard.
+pub(super) const LIBC_NAMED: &[(&str, Sig)] = &[
+    ("fopen", Sig { ret: Ty::NamedPtr("FILE"), params: &[Ty::CharPtr, Ty::CharPtr], vararg: -1 }),
+    ("fprintf", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("FILE"), Ty::CharPtr], vararg: 2 }),
+    ("fputs", Sig { ret: Ty::Int, params: &[Ty::CharPtr, Ty::NamedPtr("FILE")], vararg: -1 }),
+];
+
+/// Retargets of [`super::kuna_libcsigs::LIBC_EXT`] entries, plus the stdio names
+/// neither shipped table carries. Matched, like `LIBC_EXT`, against IMPORTED
+/// names only: a coincidental spelling the image defines itself must not be
+/// retyped, and that judgement does not change because the pointee got a name.
+pub(super) const LIBC_EXT_NAMED: &[(&str, Sig)] = &[
+    // stdio.h — the retargets
+    ("__fpending", Sig { ret: Ty::Size, params: &[Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("__fprintf_chk", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("FILE"), Ty::Int, Ty::CharPtr], vararg: 3 }),
+    ("__fpurge", Sig { ret: Ty::Void, params: &[Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("__freading", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("__isoc99_fscanf", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("FILE"), Ty::CharPtr], vararg: 2 }),
+    ("__overflow", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("FILE"), Ty::Int], vararg: -1 }),
+    // `__vfprintf_chk(FILE *, int, const char *, va_list)` — p0 only; the LAST
+    // slot is the `va_list` and stays `void *`.
+    ("__vfprintf_chk", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("FILE"), Ty::Int, Ty::CharPtr, Ty::VoidPtr], vararg: -1 }),
+    ("clearerr_unlocked", Sig { ret: Ty::Void, params: &[Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("fclose", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("fdopen", Sig { ret: Ty::NamedPtr("FILE"), params: &[Ty::Int, Ty::CharPtr], vararg: -1 }),
+    ("feof", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("ferror", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("ferror_unlocked", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("fflush", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("fflush_unlocked", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("fgets", Sig { ret: Ty::CharPtr, params: &[Ty::CharPtr, Ty::Int, Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("fileno", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("fputc", Sig { ret: Ty::Int, params: &[Ty::Int, Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("fputs_unlocked", Sig { ret: Ty::Int, params: &[Ty::CharPtr, Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("fread", Sig { ret: Ty::Size, params: &[Ty::VoidPtr, Ty::Size, Ty::Size, Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("fscanf", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("FILE"), Ty::CharPtr], vararg: 2 }),
+    ("fseek", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("FILE"), Ty::Long, Ty::Int], vararg: -1 }),
+    ("ftell", Sig { ret: Ty::Long, params: &[Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("fwrite", Sig { ret: Ty::Size, params: &[Ty::VoidPtr, Ty::Size, Ty::Size, Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("fwrite_unlocked", Sig { ret: Ty::Size, params: &[Ty::VoidPtr, Ty::Size, Ty::Size, Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("getc", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("getc_unlocked", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("getline", Sig { ret: Ty::Long, params: &[Ty::CharPtrPtr, Ty::VoidPtr, Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("putc", Sig { ret: Ty::Int, params: &[Ty::Int, Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("putc_unlocked", Sig { ret: Ty::Int, params: &[Ty::Int, Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("setvbuf", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("FILE"), Ty::CharPtr, Ty::Int, Ty::Size], vararg: -1 }),
+    ("ungetc", Sig { ret: Ty::Int, params: &[Ty::Int, Ty::NamedPtr("FILE")], vararg: -1 }),
+    // stdio.h — names neither shipped table carries. `int __uflow(FILE *)` is the
+    // whole reason a `-O2` coreutils reader loop can be told what its stream
+    // argument is: the inlined `getc` refill path calls it and nothing else in
+    // the body says `FILE`.
+    ("__uflow", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("fgetc", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("flockfile", Sig { ret: Ty::Void, params: &[Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("freopen", Sig { ret: Ty::NamedPtr("FILE"), params: &[Ty::CharPtr, Ty::CharPtr, Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("funlockfile", Sig { ret: Ty::Void, params: &[Ty::NamedPtr("FILE")], vararg: -1 }),
+    // `ssize_t getdelim(char **, size_t *, int delim, FILE *)` — the stream is the
+    // FOURTH slot (the delimiter sits where `getline` has none).
+    ("getdelim", Sig { ret: Ty::Long, params: &[Ty::CharPtrPtr, Ty::VoidPtr, Ty::Int, Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("pclose", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("popen", Sig { ret: Ty::NamedPtr("FILE"), params: &[Ty::CharPtr, Ty::CharPtr], vararg: -1 }),
+    ("rewind", Sig { ret: Ty::Void, params: &[Ty::NamedPtr("FILE")], vararg: -1 }),
+    // dirent.h
+    ("closedir", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("DIR")], vararg: -1 }),
+    ("dirfd", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("DIR")], vararg: -1 }),
+    ("fdopendir", Sig { ret: Ty::NamedPtr("DIR"), params: &[Ty::Int], vararg: -1 }),
+    ("opendir", Sig { ret: Ty::NamedPtr("DIR"), params: &[Ty::CharPtr], vararg: -1 }),
+    ("readdir", Sig { ret: Ty::NamedPtr("dirent"), params: &[Ty::NamedPtr("DIR")], vararg: -1 }),
+    // sys/stat.h
+    ("fstat", Sig { ret: Ty::Int, params: &[Ty::Int, Ty::NamedPtr("stat")], vararg: -1 }),
+    ("fstatat", Sig { ret: Ty::Int, params: &[Ty::Int, Ty::CharPtr, Ty::NamedPtr("stat"), Ty::Int], vararg: -1 }),
+    ("lstat", Sig { ret: Ty::Int, params: &[Ty::CharPtr, Ty::NamedPtr("stat")], vararg: -1 }),
+    ("stat", Sig { ret: Ty::Int, params: &[Ty::CharPtr, Ty::NamedPtr("stat")], vararg: -1 }),
+    // pwd.h / grp.h
+    ("getgrgid", Sig { ret: Ty::NamedPtr("group"), params: &[Ty::UInt], vararg: -1 }),
+    ("getgrnam", Sig { ret: Ty::NamedPtr("group"), params: &[Ty::CharPtr], vararg: -1 }),
+    ("getpwnam", Sig { ret: Ty::NamedPtr("passwd"), params: &[Ty::CharPtr], vararg: -1 }),
+    ("getpwuid", Sig { ret: Ty::NamedPtr("passwd"), params: &[Ty::UInt], vararg: -1 }),
+    // time.h — `localtime`'s ARGUMENT is a `const time_t *`, which has no
+    // width-stable spelling, so only the results and the explicit `struct tm *`
+    // slots are named.
+    ("localtime", Sig { ret: Ty::NamedPtr("tm"), params: &[Ty::VoidPtr], vararg: -1 }),
+    ("localtime_r", Sig { ret: Ty::NamedPtr("tm"), params: &[Ty::VoidPtr, Ty::NamedPtr("tm")], vararg: -1 }),
+    ("strftime", Sig { ret: Ty::Size, params: &[Ty::CharPtr, Ty::Size, Ty::CharPtr, Ty::NamedPtr("tm")], vararg: -1 }),
+    ("clock_gettime", Sig { ret: Ty::Int, params: &[Ty::Int, Ty::NamedPtr("timespec")], vararg: -1 }),
+    ("gettimeofday", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("timeval"), Ty::VoidPtr], vararg: -1 }),
+    // getopt.h — the `(void *)0x…` constant a coreutils `main` passes is the
+    // long-option table.
+    ("getopt_long", Sig { ret: Ty::Int, params: &[Ty::Int, Ty::CharPtrPtr, Ty::CharPtr, Ty::NamedPtr("option"), Ty::IntPtr], vararg: -1 }),
+    // wchar.h — `mbrtowc`'s first slot is a `wchar_t *`, already spelled by
+    // `WCharPtr` nowhere in this table's reach; it stays as the shipped entry has it.
+    ("mbrlen", Sig { ret: Ty::Size, params: &[Ty::CharPtr, Ty::Size, Ty::NamedPtr("mbstate_t")], vararg: -1 }),
+    ("mbrtowc", Sig { ret: Ty::Size, params: &[Ty::VoidPtr, Ty::CharPtr, Ty::Size, Ty::NamedPtr("mbstate_t")], vararg: -1 }),
+    ("mbsinit", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("mbstate_t")], vararg: -1 }),
+    // signal.h
+    ("sigaction", Sig { ret: Ty::Int, params: &[Ty::Int, Ty::NamedPtr("sigaction"), Ty::NamedPtr("sigaction")], vararg: -1 }),
+    ("sigaddset", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("sigset_t"), Ty::Int], vararg: -1 }),
+    ("sigemptyset", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("sigset_t")], vararg: -1 }),
+    ("sigprocmask", Sig { ret: Ty::Int, params: &[Ty::Int, Ty::NamedPtr("sigset_t"), Ty::NamedPtr("sigset_t")], vararg: -1 }),
+    // termios.h / sys/socket.h / pthread.h
+    ("getnameinfo", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("sockaddr"), Ty::UInt, Ty::CharPtr, Ty::UInt, Ty::CharPtr, Ty::UInt, Ty::Int], vararg: -1 }),
+    ("pthread_mutex_lock", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("pthread_mutex_t")], vararg: -1 }),
+    ("pthread_mutex_unlock", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("pthread_mutex_t")], vararg: -1 }),
+    ("tcsetattr", Sig { ret: Ty::Int, params: &[Ty::Int, Ty::Int, Ty::NamedPtr("termios")], vararg: -1 }),
+];
+
+/// The built-in signature for a name the OPERATOR declared, in its named-type
+/// form. `None` when the gate is off or neither named table knows the name, in
+/// which case [`super::declared_libc_prototype`] answers from the `void *`
+/// tables exactly as before.
+pub(super) fn declared_named_prototype(name: &str) -> Option<&'static Sig> {
+    if !enabled() {
+        return None;
+    }
+    LIBC_NAMED
+        .iter()
+        .chain(LIBC_EXT_NAMED.iter())
+        .find(|(n, _)| *n == name)
+        .map(|(_, sig)| sig)
+}
+
+impl AnalysisPass for LibcTypesPass {
+    fn phase(&self) -> Phase {
+        Phase::P1
+    }
+
+    fn id(&self) -> &'static str {
+        "libctypes"
+    }
+
+    fn run(&self, ctx: &AnalysisCtx) -> AnalysisOutput {
+        let mut out = AnalysisOutput::default();
+        // The gate is read HERE, not at the commit: the shells are interned into
+        // the type factory by `build_pieces` below, and with the gate off not one
+        // of them may exist (an interned `stat` is exactly what the DWARF
+        // importer would meet). Off is therefore the shipped tables, untouched.
+        if !enabled() {
+            return out;
+        }
+        let types = ctx.arch.types();
+        let (_addr_size, word_size) = ctx.arch.data_org();
+        let resolved = resolved_import_addrs(ctx.file, ctx.bytes);
+        let present = unambiguous_present_function_names(ctx.file, ctx.bytes);
+        seed_named_prototypes(&mut out, &present, LIBC_NAMED, types, word_size);
+        seed_resolved_prototypes(&mut out, &resolved, LIBC_NAMED, types, word_size);
+        let imported = unambiguous_imported_function_names(ctx.file, ctx.bytes);
+        seed_named_prototypes(&mut out, &imported, LIBC_EXT_NAMED, types, word_size);
+        seed_resolved_prototypes(&mut out, &resolved, LIBC_EXT_NAMED, types, word_size);
+        out
+    }
+}
+
+#[cfg(test)]
+mod tests;

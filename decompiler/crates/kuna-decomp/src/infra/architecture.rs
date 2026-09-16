@@ -1213,6 +1213,12 @@ pub struct Architecture {
     pub analysis_libproto: bool,
     /// (kuna) Gate the measured libc signature extension (`libcsigs`); default on.
     pub analysis_libcsigs: bool,
+    /// (kuna) Gate the named libc/POSIX aggregate types in the prototype tables
+    /// (`libctypes`); default off. Catalog-visible twin of the load-time
+    /// [`crate::kuna_libctypes`] **env var** (the named shells are interned at
+    /// `load file`, upstream of every `option` command), exactly as
+    /// `analysis_dwarfstructs` is for its own gate.
+    pub analysis_libctypes: bool,
     /// (kuna) Gate the built-in Win32 API signature table (`win32sigs`); default
     /// on.  PE/COFF only; the facts are keyed by entry address, not by name.
     pub analysis_win32sigs: bool,
@@ -2312,6 +2318,7 @@ impl Architecture {
             analysis_peimportcall: false,
             analysis_libproto: false,
             analysis_libcsigs: false,
+            analysis_libctypes: false,
             analysis_win32sigs: false,
             analysis_declaredlibcproto: false,
             analysis_unmappedentry: false,
@@ -3202,6 +3209,26 @@ impl Architecture {
             "peimportcall" => on_off!(analysis_peimportcall, "PE/Mach-O import-slot call binding"),
             "libproto" => on_off!(analysis_libproto, "Library-prototype analysis pass"),
             "libcsigs" => on_off!(analysis_libcsigs, "Measured libc signature extension"),
+            // (kuna) Load-time gate, same env bridge as `dwarfstructs` below: the
+            // named aggregate shells are interned by the prototype pass at `load
+            // file`, upstream of this `option`.
+            "libctypes" => {
+                let val = match p1.trim().to_ascii_lowercase().as_str() {
+                    "opaque" | "on" | "1" | "true" => true,
+                    "off" | "0" | "false" => false,
+                    other => {
+                        return Err(KunaError::lowlevel(format!(
+                            "libctypes: expected `off` or `opaque`, got `{other}`"
+                        )))
+                    }
+                };
+                self.analysis_libctypes = val;
+                crate::kuna_libctypes::set_libctypes_env(val);
+                Ok(format!(
+                    "Named libc aggregate types turned {}",
+                    if val { "on (opaque)" } else { "off" }
+                ))
+            }
             "win32sigs" => on_off!(analysis_win32sigs, "Built-in Win32 API signature table"),
             "declaredlibcproto" => {
                 on_off!(analysis_declaredlibcproto, "Declared-name libc prototype lookup")

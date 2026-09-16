@@ -39,6 +39,7 @@ use kuna_decomp::fspec::PrototypePieces;
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
 
 pub mod kuna_libcsigs;
+pub mod kuna_libctypes;
 pub mod kuna_win32sigs;
 
 /// Port of `ApplyDataArchiveAnalyzer`: seed built-in libc prototypes onto matching
@@ -75,6 +76,19 @@ enum Ty {
     WCharPtr,
     /// `void *` (also used for `FILE *`, opaque handles).
     VoidPtr,
+    /// (kuna `libctypes`) A pointer to the NAMED libc/POSIX aggregate spelled by
+    /// the payload (`FILE`, `stat`, `DIR`, ...), sized from
+    /// [`kuna_libctypes::NAMED_AGGREGATES`].
+    ///
+    /// Pointer-ONLY on purpose. A named slot that could be taken by value, or
+    /// returned by value, would reintroduce the two hazards
+    /// `analyzers::dwarf::kuna_dwarfstructs` documents — a by-value aggregate
+    /// whose width the ABI classifier cannot see degrades to a raw integer, and
+    /// an aggregate RETURN of unknown width is classified as a hidden-return-
+    /// buffer call, which grows a phantom first parameter and shifts every real
+    /// one. With the only named variant being a pointer, both states are
+    /// unrepresentable rather than merely avoided.
+    NamedPtr(&'static str),
 }
 
 /// A built-in libc signature: return type, parameter types, and the first
@@ -165,6 +179,10 @@ fn build_ty(t: Ty, types: &dyn TypeFactory, word_size: uint4) -> KunaResult<Rc<D
         Ty::VoidPtr => {
             let v = types.get_type_void()?;
             types.get_type_pointer(ptr, v, word_size)
+        }
+        Ty::NamedPtr(n) => {
+            let s = kuna_libctypes::named_aggregate(n, types)?;
+            types.get_type_pointer(ptr, s, word_size)
         }
     }
 }
@@ -261,11 +279,18 @@ pub fn declared_libc_prototype(
     types: &dyn TypeFactory,
     word_size: uint4,
 ) -> Option<PrototypePieces> {
-    let sig = LIBC
-        .iter()
-        .chain(kuna_libcsigs::LIBC_EXT.iter())
-        .find(|(n, _)| *n == name)
-        .map(|(_, sig)| sig)?;
+    // (kuna `libctypes`) The named-aggregate form of the same signature when that
+    // gate is on, so a declared `fopen` agrees with what the load-time pass parks
+    // on an imported one. Off, or a name only the width-stable tables carry, falls
+    // straight through to them.
+    let sig = match kuna_libctypes::declared_named_prototype(name) {
+        Some(sig) => sig,
+        None => LIBC
+            .iter()
+            .chain(kuna_libcsigs::LIBC_EXT.iter())
+            .find(|(n, _)| *n == name)
+            .map(|(_, sig)| sig)?,
+    };
     build_pieces(name, sig, types, word_size).ok()
 }
 

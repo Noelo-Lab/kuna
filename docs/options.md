@@ -298,6 +298,12 @@ Three tiers:
 | a wrapper around a libc function loses its return value or return type | [`libcsigs`](#libcsigs) |
 | __printf_chk / __fprintf_chk arguments are shifted by the fortify flag | [`libcsigs`](#libcsigs) |
 | an exit or __stack_chk_fail call shows phantom arguments | [`libcsigs`](#libcsigs) |
+| a function that only ever passes its argument to a libc stdio call still declares it long or unsigned long | [`libctypes`](#libctypes) |
+| a fopen or fdopen result is a void * that nothing can name | [`libctypes`](#libctypes) |
+| a stat or lstat call fills an untyped void * buffer | [`libctypes`](#libctypes) |
+| getopt_long takes a bare (void *)0x... long-option table | [`libctypes`](#libctypes) |
+| readdir returns a void * whose fields are casts and offsets | [`libctypes`](#libctypes) |
+| a stream parameter is void * where the ground truth is FILE * | [`libctypes`](#libctypes) |
 | a Windows API call renders with an empty argument list | [`win32sigs`](#win32sigs) |
 | LoadLibraryExW() or CreateFileW() has no arguments but the pushes are visible above it | [`win32sigs`](#win32sigs) |
 | a PE function declares dozens of stack locals that only ever hold outgoing call arguments | [`win32sigs`](#win32sigs) |
@@ -1461,6 +1467,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On (default) types the arguments of every common libc call, so a caller whose parameter only flows into one gets a concrete type (char *path) instead of the inferred unsigned long, and the callee's return type is known. Flip OFF when a binary links a private library that reuses libc spellings with different signatures and is NOT statically linked (the pass already skips any name the image defines), or to ablate this table's contribution to a type-recovery difference; off is byte-identical to the 27-entry base table alone.
 - **Where / provenance:** P1/external-refinement · kuna · correctness-fix · kuna-analysis-libcsigs
 - **Example:** `option libcsigs off`
+
+### `libctypes` -- off | opaque, default `off`
+
+- **Symptoms:** a function that only ever passes its argument to a libc stdio call still declares it long or unsigned long; a fopen or fdopen result is a void * that nothing can name; a stat or lstat call fills an untyped void * buffer; getopt_long takes a bare (void *)0x... long-option table; readdir returns a void * whose fields are casts and offsets; a stream parameter is void * where the ground truth is FILE *.
+- **What it does:** Spell the libc/POSIX aggregate pointers in the built-in prototype tables by NAME instead of void *: FILE *, DIR *, stat *, dirent *, passwd *, group *, tm *, option *, timespec *, timeval *, sigaction *, sigset_t *, mbstate_t *, termios *, sockaddr *, pthread_mutex_t *. The Ty vocabulary of those tables is width-stable, so every aggregate pointer in them is a void * today - honest about the width and silent about the pointee, which is the one thing a declaration actually knows. The retarget is enumerated slot by slot (a blanket void *->FILE * would type the va_list of vasprintf/vsnprintf/__vfprintf_chk/verr as a stream), and it brings the stdio names neither shipped table carries: __uflow, fgetc, fgetc_unlocked, rewind, freopen, popen, pclose, getdelim, flockfile, funlockfile, fmemopen. Each named type is interned as a shell carrying its real glibc x86-64 width (FILE 216, stat 144, dirent 280, ...), never width 0 - a zero-width pointee keeps a PTRSUB alive through RulePtrsubUndo and the printer then emits the functional PTRSUB(p,0x28) form - and is left INCOMPLETE so a -g run's DWARF importer still completes the same bare name in place.
+- **When to flip:** Turn to opaque to get a named pointee wherever the callee is a libc function that declares one: get_prefix(FILE *f) instead of sub_2f30(long a0) on a stripped -O2 coreutils reader, fopen/fdopen/popen results as FILE *, stat/lstat/fstat filling a stat *, getopt_long reading an option * table, readdir returning a dirent *. The default is OFF only because the flip is its own PR: the bidirectional decbench typesweep over 214 slices and 5,298 scored functions is +39 perfect, 386 improved, 0 worsened, with the 675 datatests and the 1,013 stage assertions both PARITY OK under the gate forced on - the one thing the flip still has to carry is a promoted CLI probe that pins the old void * spelling of a parameter this option correctly renames FILE *. Flip back to off to ablate the named types: off is byte-identical to the shipped tables, because with the gate off the pass does not run and not one named shell is interned.
+- **Where / provenance:** P1/external-refinement · ghidra · analysis-enablement · kuna-analysis-libctypes
+- **Example:** `option libctypes opaque`
 
 ### `win32sigs` -- on | off, default `on`
 

@@ -1,0 +1,117 @@
+== O0_diffutils_stripped_diff {'pointee-named': 92, 'OTHER': 188, 'unpaired-removed': 61, 'unpaired-added': 42, 'var-renumber': 516}
+    OTHER off: long v12 [3]; // stack - 0x278
+          on : stat v12 [2]; // stack - 0x278
+    OTHER off: unsigned int v15 [2]; // stack - 0x260
+          on : char *v15; // stack - 0x310
+    OTHER off: long v16 [31]; // stack - 0x250
+          on : char *v16; // stack - 0x308
+    OTHER off: char *v17; // stack - 0x310
+          on : int v17; // stack - 0x2f4
+    OTHER off: char *v18; // stack - 0x308
+          on : char *v18; // stack - 0x2e0
+    OTHER off: int v19; // stack - 0x2f4
+          on : char *v19; // stack - 0x2d8
+== O0_findutils_stripped_find {'pointee-named': 140, 'OTHER': 198, 'unpaired-removed': 52, 'unpaired-added': 23, 'var-renumber': 443, 'field-form': 4, 'cast-width': 2}
+    OTHER off: void getdelim(void)
+          on : long getdelim(char **a0,void *a1,int a2,FILE *a3)
+    OTHER off: <<  (*dat_48f28)(); // jump-as-call
+          on : >>  long v1; // rax |    |   v1 = (*dat_48f28)(); // jump-as-call
+    OTHER off: long v13; // stack - 0x148
+          on : stat v13; // stack - 0x148
+    OTHER off: long v14; // stack - 0xb8
+          on : stat v14; // stack - 0xb8
+    OTHER off: <<  long v24; // stack - 0x140 |   long v25; // stack - 0xb0
+          on : >>
+    OTHER off: if ((((dat_499b8) && (v4 = fstat(v18,&v13), !v4)) && (!fstat(0,&v14))) && ((v24 == v25 && (v13 == v14)))) {
+          on : if ((((dat_499b8) && (v4 = fstat(v18,&v13), !v4)) && (!fstat(0,&v14))) && ((v13._8_8_ == v14._8_8_ && (v13._0_
+== O2_coreutils_stripped_ls {'pointee-named': 60, 'OTHER': 137, 'unpaired-added': 23, 'var-renumber': 532, 'unpaired-removed': 36, 'field-form': 61}
+    OTHER off: unsigned char v10;
+          on : FILE *v10;
+    OTHER off: int v11;
+          on : unsigned char v11;
+    OTHER off: unsigned int v12;
+          on : int v12;
+    OTHER off: int v13; // eax
+          on : unsigned int v13;
+    OTHER off: unsigned long *v14; // rax
+          on : int v14; // eax
+    OTHER off: void *v15;
+          on : unsigned long *v15; // rax
+== O2_grep_stripped_grep {'pointee-named': 62, 'OTHER': 95, 'unpaired-removed': 48, 'unpaired-added': 42, 'var-renumber': 300, 'field-form': 6}
+    OTHER off: long *v1;
+          on : unsigned int *v1;
+    OTHER off: int v11;
+          on : char *v11;
+    OTHER off: char *v12;
+          on : FILE *v12;
+    OTHER off: unsigned int *v2;
+          on : char v2;
+    OTHER off: char v3;
+          on : unsigned int v3;
+    OTHER off: long v30; // stack - 0x188
+          on : stat v30; // stack - 0x188
+== O2_gzip_stripped_gzip {'pointee-named': 53, 'OTHER': 59, 'unpaired-removed': 13, 'var-renumber': 10}
+    OTHER off: unsigned int v21; // stack - 0x50
+          on : undefined4 v21; // stack - 0x50
+    OTHER off: sigaction(v4,NULL,&v13);
+          on : sigaction(v4,NULL,(sigaction *)&v13);
+    OTHER off: sigaction(v4,&v13,NULL);
+          on : sigaction(v4,(sigaction *)&v13,NULL);
+    OTHER off: char v6 [128];
+          on : sigset_t v6;
+    OTHER off: sigprocmask(0,(void *)0xdc940,v6);
+          on : sigprocmask(0,(sigset_t *)0xdc940,&v6);
+    OTHER off: sigprocmask(2,v6,NULL); // return-dupe
+          on : sigprocmask(2,&v6,NULL); // return-dupe
+== O2_tar_stripped_tar {'OTHER': 490, 'unpaired-removed': 309, 'unpaired-added': 272, 'pointee-named': 156, 'var-renumber': 1136, 'field-form': 6}
+    OTHER off: void __uflow(void)
+          on : int4 __uflow(FILE *a0)
+    OTHER off: <<  (*dat_7e980)(); // jump-as-call |   return;
+          on : >>  int4 v1; // eax |    |   v1 = (*dat_7e980)(); // jump-as-call
+    OTHER off: void funlockfile(void)
+          on : void funlockfile(FILE *a0)
+    OTHER off: void flockfile(void)
+          on : void flockfile(FILE *a0)
+    OTHER off: if (((*stderr & 0x20) || (v8 = fclose(stderr), v8)) && (dat_82d58 <= 1))
+          on : if (((*(uint1 *)stderr & 0x20) || (v8 = fclose(stderr), v8)) && (dat_82d58 <= 1))
+    OTHER off: <<  char v2 [24]; |   uint4 v3; // stack - 0x90
+          on : >>  stat v2; // stack - 0xa8
+== fmt_off.c {}
+O0_diffutils_stripped_diff funcs=507 skeleton-differs=8 missing=0
+    0xa746 first divergence at 80 : ['num:38', 'num:1', '&&', '*', '*', '+'] -> ['num:304', 'num:8', '&&', '*', '*', '*']
+    0xbde2 first divergence at 39 : ['num:19', '*', '+', 'call:strlen', 'num:19', 'num:1'] -> ['&', '-', '>', 'call:strlen', 'num:1', '&']
+    0x10d14 first divergence at 10 : ['if', '/', '/', '-', 'num:1', '-'] -> ['&', 'if', '/', '/', '-', 'num:1']
+    0x10e15 first divergence at 19 : ['&', 'if', 'num:1', '!=', '*', 'call:sigaddset'] -> ['*', 'if', 'num:0', 'num:1', '!=', '*']
+    0x16d35 first divergence at 36 : ['&', 'return', 'call:__assert_fail', 'call:mbsinit', 'num:143', '&'] -> ['*', '&', 'return', 'call:__assert_fail', 'call:mbsinit', 'num:143']
+O0_findutils_stripped_find funcs=862 skeleton-differs=23 missing=0
+    0x71d0 first divergence at 2 : ['/', '/', '-', '-'] -> ['*', '*', '*', '*', '/', '/']
+    0x91f4 first divergence at 81 : ['num:19', 'num:20', 'num:20', 'num:21', '*', '*'] -> ['-', '>', '!=', '||', '-', '>']
+    0x11c89 first divergence at 18 : ['num:1', 'num:2', 'num:3', 'num:4', 'num:5', 'num:6'] -> ['*', '*', '&', '-', '>', '*']
+    0x123c8 first divergence at 12 : ['num:6', 'num:1', '<=', '-', 'return', 'call:__assert_fail'] -> ['num:1', '*', '*', '&', '-', '>']
+    0x129e7 first divergence at 162 : ['if', '/', '/', '-', 'if', 'call:__errno_location'] -> ['&', 'if', '/', '/', '-', 'if']
+O2_coreutils_stripped_ls funcs=404 skeleton-differs=23 missing=0
+    0x4d10 first divergence at 1216 : ['num:40', '*', '*', '*', '+', 'if'] -> ['*', '*', '*', '&', '-', '>']
+    0x7360 first divergence at 8 : ['num:40', '*', '*', '*', '+', 'if'] -> ['*', '*', '*', '&', '-', '>']
+    0x7450 first divergence at 84 : ['num:40', '*', '*', '*', '+', 'if'] -> ['*', '*', '*', '&', '-', '>']
+    0x76b0 first divergence at 16 : ['&', 'if', 'num:1', '!=', '*', 'call:sigaddset'] -> ['*', 'if', 'num:0', 'num:1', '!=', '*']
+    0x84f0 first divergence at 13 : ['if', '/', '/', '-', 'num:1', '-'] -> ['&', 'if', '/', '/', '-', 'num:1']
+O2_grep_stripped_grep funcs=449 skeleton-differs=8 missing=0
+    0x4ff0 first divergence at 258 : ['&', '/', '/', '-', 'if', 'call:error'] -> ['*', '&', '/', '/', '-', 'if']
+    0x7e70 first divergence at 5 : ['num:40', '*', '*', '*', '+', 'if'] -> ['*', '*', '*', '&', '-', '>']
+    0x9130 first divergence at 259 : ['<<', '^', 'call:sub_8cb0', 'call:__errno_location', '*', 'if'] -> ['&', '<<', '^', 'call:sub_8cb0', 'call:__errno_location', '*']
+    0xf2c0 first divergence at 26 : ['num:40', '*', '*', '*', '+', 'if'] -> ['*', '*', '*', '&', '-', '>']
+    0x17ed0 first divergence at 386 : ['num:19', 'num:20', 'num:20', 'num:46', '*', '*'] -> ['num:46', '*', '*', '&', '&', '||']
+O2_gzip_stripped_gzip funcs=204 skeleton-differs=10 missing=0
+    0x39a0 first divergence at 138 : ['&', 'if', 'num:1', '!=', '*', 'call:sigaddset'] -> ['*', '&', 'if', 'num:1', '!=', '*']
+    0x5530 first divergence at 14 : ['if', 'num:1', '<=', '-', 'return', 'call:sigprocmask'] -> ['&', 'if', 'num:1', '<=', '-', 'return']
+    0x65d0 first divergence at 75 : ['num:16', 'num:4', 'num:12', 'num:8', 'num:4', '%'] -> ['num:4', '%', '%', '%', '%', '&']
+    0x6e90 first divergence at 766 : ['num:1', '&', '*', 'do', 'while', 'if'] -> ['*', 'do', 'while', 'if', 'call:free', 'call:strlen']
+    0xe3e0 first divergence at 8 : ['&', 'call:sub_e430', 'num:0', 'num:1', 'call:fflush', '/'] -> ['*', '&', 'call:sub_e430', 'num:0', 'num:1', 'call:fflush']
+O2_tar_stripped_tar funcs=1125 skeleton-differs=57 missing=0
+    0x9d30 first divergence at 2 : ['/', '/', '-', '-'] -> ['*', '/', '/', '-', '-']
+    0x9de0 first divergence at 2 : ['/', '/', '-', '-'] -> ['*', '/', '/', '-', '-']
+    0xa240 first divergence at 2 : ['/', '/', '-', '-'] -> ['*', '/', '/', '-', '-']
+    0xa9f0 first divergence at 975 : ['&', '||', '&&', '<=', 'num:2', 'else'] -> ['*', '&', '||', '&&', '<=', 'num:2']
+    0xc350 first divergence at 19 : ['num:61440', 'num:32768', '&', '==', 'num:0'] -> ['&', 'num:61440', 'num:32768', '&', '==', 'num:0']
+fmt_off.c funcs=151 skeleton-differs=0 missing=0
+TOTAL {'funcs': 3702, 'diff': 129, 'missing': 0}

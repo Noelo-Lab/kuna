@@ -1782,6 +1782,7 @@ pub(crate) fn is_loadtime_gate(name: &str) -> bool {
             | "macho-arm64e"
             | "typedepth"
             | "dwarfstructs"
+            | "libctypes"
             | "ifuncfpret"
             | "symbolnamerepair"
             | "symbolnamechars"
@@ -1969,6 +1970,18 @@ fn apply_loadtime_env(
             "off" | "0" | "false"
         );
         env.set(kuna_decomp::kuna_typedepth::TYPEDEPTH_ENV, if on { "on" } else { "off" });
+    }
+    // (kuna) The named libc aggregate shells are interned by the prototype pass
+    // inside `bootstrap_from_object`, upstream of `apply_runtime_options`.
+    if let Some(value) = last_option_value(options, "libctypes") {
+        let on = matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "opaque" | "on" | "1" | "true"
+        );
+        env.set(
+            kuna_decomp::kuna_libctypes::LIBCTYPES_ENV,
+            if on { "opaque" } else { "off" },
+        );
     }
     if let Some(value) = last_option_value(options, "dwarfstructs") {
         let on = !matches!(

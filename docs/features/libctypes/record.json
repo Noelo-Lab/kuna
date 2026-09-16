@@ -1,0 +1,208 @@
+{
+ "opportunity": "kuna's built-in prototype tables share one width-stable type vocabulary, so all 108 aggregate-pointer slots in them are spelled `void *`. `void *` never matches a ground-truth `FILE *` (the metric's width-only generosity has no pointer entry), and named-struct pointers are 22.5% of matchable GT variables -- a class kuna scores 0.0% on while ida scores 432 / ghidra 382 / binja 523 TP on the same 92-binary sample. The libc/POSIX-namable slice of it is ~4.1% of matchable GT (FILE 605 occurrences, stat 255, passwd 136).",
+ "test_name": "tests/stages/kuna-libctypes.xml (6 two-pass assertions over a real ELF via `load file`) + 10 table-invariant unit tests in analyzers::protos::kuna_libctypes::tests",
+ "binary": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O2/coreutils/stripped/fmt",
+ "selector": "0x2f30",
+ "func_addr": "0x2f30",
+ "option": "libctypes",
+ "flag": "KUNA_LIBCTYPES (load-time env bridge) + Architecture::analysis_libctypes (catalog visibility)",
+ "element_id": null,
+ "change_kind": "analysis-enablement",
+ "tier": "analysis",
+ "source_decompiler": "ghidra",
+ "inspiration": "Ghidra ApplyDataArchiveAnalyzer applying generic_clib_64.gdt, whose FILE */struct stat * slots carry the header's own pointee; signatures reduced from `gcc -aux-info` over the platform headers (_GNU_SOURCE + _FORTIFY_SOURCE=2); widths from sizeof/_Alignof",
+ "values": "off|opaque",
+ "ablation_changed": 0,
+ "parity": "OK",
+ "table": {
+  "named_aggregates": 16,
+  "named_aggregate_widths": {
+   "FILE": 216,
+   "stat": 144,
+   "dirent": 280,
+   "sigaction": 152,
+   "sigset_t": 128,
+   "passwd": 48,
+   "pthread_mutex_t": 40,
+   "group": 32,
+   "option": 32,
+   "tm": 56,
+   "timespec": 16,
+   "timeval": 16,
+   "sockaddr": 16,
+   "termios": 60,
+   "mbstate_t": 8,
+   "DIR": 1
+  },
+  "retargeted_base_LIBC_entries": 3,
+  "retargeted_LIBC_EXT_entries": 62,
+  "new_names": 9,
+  "named_slots": 75,
+  "va_list_slots_deliberately_untouched": 7,
+  "held_name_rule": "a name already held is adopted only when it is a struct that is either INCOMPLETE (our own shell, or a DWARF forward declaration) or COMPLETE at the declared width (the platform's own definition on a -g binary); a complete struct of a different width is a program's own type sharing the spelling, and the whole signature is declined rather than pointed at it.",
+  "width_abi": "glibc x86-64 (sizeof/_Alignof). On another ABI a width can be a few bytes off, which can only change whether an access renders as a field or as a cast; the name is ABI-independent and a wrong width cannot make a pointer point at the wrong thing."
+ },
+ "selection_rule": "a retarget restates a shipped signature with the same arity and variadic slot, so it needs no new evidence; a NEW name needs a machine-readable declaration (`gcc -aux-info`) AND corpus weight, measured as PLT call sites over the 524 stripped O0+O2 decbench ELFs. Kept: rewind 117, __uflow 77, fgetc 57, freopen 32, funlockfile 20, getdelim 18, flockfile 18, popen 17, pclose 17. Rejected: fgetc_unlocked 0, fmemopen 0, __underflow 0 (and no installed declaration to reduce).",
+ "benchmark": {
+  "instrument": "scripts.decbench.typesweep (decbench main's TypeMatchMetric), DECBENCH_NO_CACHE=1, KUNA_BIN pinned to this branch's release build",
+  "corpus": "results/full_run_address_2026-09-11, O0+O2, 6 projects, 214 slices, 5298 scored functions",
+  "control": "baseline arm vs the tree's published type_match: 5158 agree / 140 differ (97.36%)",
+  "projects": {
+   "bzip2": {
+    "n": 164,
+    "perfect_off": 14,
+    "perfect_on": 18,
+    "mean_off": 0.4359,
+    "mean_on": 0.4622,
+    "improved": 24,
+    "worse": 0
+   },
+   "coreutils": {
+    "n": 3986,
+    "perfect_off": 412,
+    "perfect_on": 436,
+    "mean_off": 0.3044,
+    "mean_on": 0.3147,
+    "improved": 273,
+    "worse": 0
+   },
+   "diffutils": {
+    "n": 262,
+    "perfect_off": 31,
+    "perfect_on": 36,
+    "mean_off": 0.416,
+    "mean_on": 0.443,
+    "improved": 33,
+    "worse": 0
+   },
+   "findutils": {
+    "n": 500,
+    "perfect_off": 20,
+    "perfect_on": 22,
+    "mean_off": 0.1578,
+    "mean_on": 0.1708,
+    "improved": 32,
+    "worse": 0
+   },
+   "grep": {
+    "n": 153,
+    "perfect_off": 23,
+    "perfect_on": 23,
+    "mean_off": 0.4033,
+    "mean_on": 0.4065,
+    "improved": 4,
+    "worse": 0
+   },
+   "gzip": {
+    "n": 233,
+    "perfect_off": 66,
+    "perfect_on": 70,
+    "mean_off": 0.5475,
+    "mean_on": 0.5674,
+    "improved": 20,
+    "worse": 0
+   }
+  },
+  "pooled": {
+   "n": 5298,
+   "perfect_off": 566,
+   "perfect_on": 605,
+   "mean_off": 0.3137,
+   "mean_on": 0.3258,
+   "improved": 386,
+   "worse": 0
+  },
+  "aggregate_type_match": {
+   "off": 1661.88,
+   "on": 1725.97,
+   "delta": 64.1
+  }
+ },
+ "corpus_sweep": {
+  "method": "`kuna decompile-all` off vs opaque over 7 binaries (fmt/ls/grep/gzip/tar O2, find/diff O0), every changed line classified plus a control-flow/call/constant skeleton comparison per function; raw output in corpus-hunk-classification.txt",
+  "functions": 3702,
+  "functions_gained_or_lost": 0,
+  "ptrsub_functional_form_off": 0,
+  "ptrsub_functional_form_on": 0,
+  "skeleton_differs": 129,
+  "classification": "every inspected skeleton difference is an offset constant becoming a field name or an `&` replacing a cast; two representative cases are improvements (diffutils 0x10e15 collapses 20 scattered stack slots into one on-stack struct sigaction; gzip 0x65d0 types the localtime result `tm *`). No wrong-output hunk found."
+ },
+ "gates": {
+  "make test": "datatests: 675/675 assertions passed -- PARITY OK (and 675/675 PARITY OK again with the gate forced on)",
+  "make test-stages": "datatests: 1013/1013 assertions passed -- PARITY OK (baseline re-recorded for the new file only; 1013/1013 PARITY OK again with the gate forced on)",
+  "make test-cli": "tests/cli: 170/170 passed (169/170 with the gate forced on -- see default_decision.blocker)",
+  "make check-spec": "check-spec OK (lenient mode) / check-spec OK (strict mode)",
+  "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
+  "counters --check": "no drift: every hard-coded site agrees with the derived truth",
+  "docs/options.md": "regenerated from `kuna catalog --markdown`",
+  "make rust-test": "RUST_TEST_RC=0 (cargo test --workspace --no-fail-fast; 414 `test result: ok` lines, 0 FAILED)"
+ },
+ "catalog_counts": {
+  "settables": 206,
+  "tiers": "66 core / 78 transform / 62 analysis",
+  "catalog_json_rows": 205,
+  "bytecompat_fixture": 206,
+  "corpus_files": 294
+ },
+ "files": [
+  "decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_libctypes.rs",
+  "decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_libctypes/tests.rs",
+  "decompiler/crates/kuna-analysis/src/analyzers/protos/mod.rs",
+  "decompiler/crates/kuna-analysis/src/passes.rs",
+  "decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_libctypes.rs",
+  "decompiler/crates/kuna-decomp/src/infra/architecture.rs",
+  "decompiler/crates/kuna-console/src/engine.rs",
+  "decompiler/crates/kuna-console/src/kuna_console.rs",
+  "decompiler/crates/kuna-cli/src/decompile.rs",
+  "decompiler/crates/kuna-cli/src/decompile_all.rs",
+  "decompiler/crates/kuna-decomp/phases.toml",
+  "tests/stages/kuna-libctypes.xml",
+  "docs/spec/01-program-prep.md"
+ ],
+ "notes": "The gate is read INSIDE the pass through the load-time env bridge, not at the commit boundary: the pass interns its named shells into the type factory while building the signatures, and a commit-boundary arch flag additionally drops facts after `clear architecture` + `load file` (measured -- it made pass 2 of the stage test render `fclose(void *)`). stdin/stdout/stderr as typed FILE * data symbols, and a `glibc` value installing the public _IO_FILE field names, are follow-ups.",
+ "default_on": false,
+ "default_value": "off",
+ "default_decision": {
+  "verdict": "ship default-OFF in this PR; the flip is a separate PR (campaign Stage 3)",
+  "evidence_for_on": "typesweep 214 slices / 5298 functions: +39 perfect, 0 moved off perfect, 386 improved, 0 worsened; make test 675/675 PARITY OK with the gate forced on (KUNA_LIBCTYPES=opaque); make test-stages 1013/1013 PARITY OK with the gate forced on; whole-binary sweep over 7 binaries shows no wrong-output hunk and no change in the PTRSUB( count; speed flat (see speed).",
+  "blocker": "`make test-cli` goes 169/170 with the gate forced on: the promoted probe tests/cli/changing-namestyle-invalidates-discovered.json pins `sub_1249(void *param_1)` on decompiler/crates/kuna-analysis/tests/fixtures/stripped_dynamic_x86_64, and that parameter becomes `FILE *`. The new spelling is CORRECT -- the body is fclose(param_1) / fread(...,param_1) -- but rewriting another feature's regression probe belongs in the flip PR with that justification, not in the PR that introduces the option."
+ },
+ "speed": {
+  "method": "interleaved off/opaque pairs through the load-time env bridge (`kuna decompile-all --option libctypes off|opaque`), MINIMUM and median of 15 pairs each, alternating which arm runs first; the MINIMUM is the honest read because the box was shared with a concurrent gate run",
+  "rows": [
+   {
+    "case": "fmt decompile-all (152 fn)",
+    "min_off_ms": 4214.0,
+    "min_on_ms": 4225.8,
+    "min_delta_pct": 0.28,
+    "median_delta_pct": -0.61
+   },
+   {
+    "case": "ls decompile-all (404 fn)",
+    "min_off_ms": 13797.1,
+    "min_on_ms": 14104.3,
+    "min_delta_pct": 2.23,
+    "median_delta_pct": 3.3
+   },
+   {
+    "case": "fmt functions (load + the whole pass list, no body decompiled)",
+    "min_off_ms": 149.1,
+    "min_on_ms": 149.3,
+    "min_delta_pct": 0.08,
+    "median_delta_pct": 14.92
+   },
+   {
+    "case": "fmt get_prefix (one function)",
+    "min_off_ms": 157.5,
+    "min_on_ms": 157.5,
+    "min_delta_pct": 0.02,
+    "median_delta_pct": 2.34
+   }
+  ],
+  "worst_delta_pct": 2.23,
+  "budget_pct": 5.0,
+  "within_budget": true,
+  "why": "the load-time cost is ~20 `get_type_struct`/`find_by_name` calls (the `fmt functions` row, +0.08% on the minimum, is that cost in isolation). The whole-binary rows carry the real cost: a named 216-byte pointee participates in type propagation where a `void *` did not. The `fmt functions` median (+14.92% against a +0.08% minimum) and the `ls` median are contention from a concurrent gate run, not signal."
+ },
+ "ablation_evidence": "`kuna decompile-all` over the whole O2/coreutils/stripped/fmt: this branch with `--option libctypes off` is byte-identical to the main tree's own build (0 of 4,069 lines differ)."
+}

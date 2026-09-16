@@ -1,0 +1,76 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Named libc/POSIX aggregate types in the prototype tables (`option libctypes
+    off|opaque`).
+
+    The built-in prototype tables' type vocabulary is width-stable, so every
+    aggregate pointer in them is spelled `void *`: `fopen` returns one, `fclose`
+    takes one, `__uflow` takes one. That is honest about the width and silent
+    about the pointee, and the pointee is the one thing a declaration actually
+    knows.
+
+    The XML wrapper only supplies the harness architecture (the `option` command
+    needs one before the first `load file`). Both passes clear it and load the
+    same real x86-64 coreutils `fmt`, whose imports include `fclose`, `fopen` and
+    `__uflow`.
+
+    Pass 1 (`option libctypes off`, the shipped default) reproduces the opaque
+    vocabulary: `fclose(void *)`, `void * fopen(...)`.
+
+    Pass 2 (`option libctypes opaque`) spells the same slots by name: the gate is
+    a load-time env bridge, so it is set BEFORE `load file` in each pass.
+
+    The fixture carries DWARF, which gives the third function a COMPLETE
+    `_IO_FILE` under a bare name the named table also mints a shell for. It
+    prints identically in both passes, with its real field layout, because the
+    libctypes shells are left INCOMPLETE and the DWARF importer completes one in
+    place instead of colliding with it.
+
+    The script restores the default in its last command: the gate is a process
+    environment variable, and the corpus runs in one process.
+
+    Assertions span the combined output of both passes.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>option libctypes off</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/regglobal_fmt_x86_64</com>
+  <com>read symbols</com>
+  <com>load function fclose</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function fopen</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function get_prefix</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option libctypes opaque</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/regglobal_fmt_x86_64</com>
+  <com>read symbols</com>
+  <com>load function fclose</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function fopen</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function get_prefix</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option libctypes off</com>
+  <com>quit</com>
+</script>
+<stringmatch name="LIBCTYPES #1: off, the stream parameter is an opaque void *" min="1" max="1">int4 fclose\(void \*a0\)</stringmatch>
+<stringmatch name="LIBCTYPES #2: on, the same parameter is a named FILE *" min="1" max="1">int4 fclose\(FILE \*a0\)</stringmatch>
+<stringmatch name="LIBCTYPES #3: off, the fopen result is an opaque void *" min="1" max="1">void \* fopen\(char \*a0,char \*a1\)</stringmatch>
+<stringmatch name="LIBCTYPES #4: on, the fopen result is a named FILE *" min="1" max="1">FILE \* fopen\(char \*a0,char \*a1\)</stringmatch>
+<stringmatch name="LIBCTYPES #5: the DWARF definition of the same bare name still wins, in both passes" min="2" max="2">int4 get_prefix\(_IO_FILE \*f\)</stringmatch>
+<stringmatch name="LIBCTYPES #6: and keeps its real field layout, so no name collision truncated it" min="2" max="2">f-&gt;_IO_read_end &lt;= v4</stringmatch>
+</decompilertest>

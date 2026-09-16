@@ -1413,6 +1413,75 @@ moves.
   address-keyed copy at each resolver address. Thus an IAT slot and veneer remain
   typed even when a same-spelled export suppresses the global key; the export
   itself remains untouched.
+- **(kuna) Named libc aggregate types** (`libctypes`, values `off|opaque`,
+  default off,
+  `decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_libctypes.rs (LibcTypesPass)`):
+  the two tables above share one type vocabulary, and that vocabulary is
+  width-stable by construction, so every aggregate pointer in them is spelled
+  `void *`. `fopen` returns one, `fclose` takes one, `stat` fills one,
+  `getopt_long` reads one. That is honest about the width and silent about the
+  pointee — and the pointee is the one thing the table actually knows, because
+  `int fclose(FILE *)` is a declaration, not an inference. Turned to `opaque`,
+  this pass restates the same signatures with their aggregate slots named:
+  `FILE`, `DIR`, `dirent`, `stat`, `passwd`, `group`, `tm`, `option`,
+  `timespec`, `timeval`, `sigaction`, `sigset_t`, `mbstate_t`, `termios`,
+  `sockaddr`, `pthread_mutex_t`. It also carries the stdio names neither shipped
+  table has — `__uflow`, `fgetc`, `rewind`, `freopen`, `popen`, `pclose`,
+  `getdelim`, `flockfile`, `funlockfile` — for the same reason: on a `-O2`
+  coreutils reader loop the inlined `getc` refill path calls `__uflow` and
+  nothing else in the body says what the stream argument is, so that one
+  declaration is the whole evidence for the enclosing function's first parameter.
+
+  Four decisions shape the pass.
+
+  *The retarget is enumerated slot by slot, never applied in bulk.* The last
+  `void *` of `vasprintf`, `vsnprintf`, `__vasprintf_chk`, `__vfprintf_chk`,
+  `__vsnprintf_chk`, `verr` and `vwarn` is a `va_list`, not a stream; a blanket
+  `void * -> FILE *` would assert a false type at every one of those call sites,
+  which is exactly the wrongness the `libcsigs` rejection rule exists to avoid.
+  Each named table entry restates a shipped one with the same arity and the same
+  variadic slot, so no argument can shift.
+
+  *Each named type is a shell carrying its real width, never width 0.* A
+  zero-width pointee is not opaque, it is broken: the pointer-arithmetic seam has
+  no size-0 early out and `RulePtrsubUndo`'s no-field arm short-circuits when the
+  pointee size is zero, so the `PTRSUB` survives to the printer and renders in
+  FUNCTIONAL form — a literal `PTRSUB(p,0x28)` inside the C, on exactly the
+  `stdout + 0x28` and `f + 8` accesses this table exists to type. The widths are
+  the platform ABI's own (`FILE` 216, `stat` 144, `dirent` 280, `sigaction` 152,
+  `sigset_t` 128, `option` 32, `tm` 56, `passwd` 48, …, and 1 for `DIR`, whose
+  layout the platform publishes nowhere). With a real width, an in-range access
+  renders `f->field_0x8` and an out-of-range one falls back to the cast form.
+
+  *The shells stay incomplete, and the names are bare.* Keeping
+  `type_incomplete` set on a sized shell is what lets the DWARF importer meet a
+  held `stat` and COMPLETE IT IN PLACE rather than collide with it: the factory
+  refuses a second, different definition of a name it already holds, and DWARF
+  interns `stat`, `passwd`, `tm` and `option` under the identical bare spelling.
+  So a `-g` binary keeps its real layouts and this table quietly yields, while a
+  stripped one — which is the case the option is for — keeps the opaque shell.
+  The names are the bare DWARF spelling (`stat`, not `struct stat`) because
+  that is what the printer spells for a named base and what the project
+  exporter's `typedef struct stat stat;` makes valid C.
+
+  *The gate is read at load time, inside the pass.* The named shells are interned
+  into the type factory while the signatures are built, which happens during
+  `load file` — upstream of every `option` command and, in `decompile-all`,
+  upstream of the runtime option pass. An architecture flag read inside the pass
+  would therefore see the constructor default whatever the operator asked for, so
+  the gate is a process environment variable that the console's `option` arm and
+  both CLI surfaces set before the load, the same bridge `dwarfstructs` and
+  `typedepth` use. With the gate off the pass returns immediately: not one shell
+  is interned and the output is the shipped tables, byte for byte. The same gate
+  answers the operator's declared-name lookup (`declaredlibcproto`), so
+  `--define-function 0x…=fopen` agrees with what the pass parks on an imported
+  `fopen`.
+
+  The default is off in the release that introduced it: the table asserts a
+  pointee where the width-stable vocabulary asserted only a width, and the
+  evidence for a default is the corpus type-recovery sweep, not the absence of a
+  datatest change — no datatest loads a file, so the 675 are structurally
+  untouched by anything in this tier.
 - **(kuna) Win32 API signatures** (`win32sigs`,
   `decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_win32sigs.rs (Win32SigsPass)`):
   the Windows half of the same `.gdt` stand-in, which the tree did not carry at all.
