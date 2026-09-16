@@ -1,0 +1,112 @@
+{
+  "need_id": "elfmain",
+  "track": "quality",
+  "route": "type-recovery campaign (docs/decbench/typecampaign), Stage 1 item F4",
+  "opportunity": "elfmain",
+  "witness": "decbench coreutils fmt built -O2 and stripped (full_run_address_2026-09-11/O2/coreutils/stripped/fmt), main @0x26a0",
+  "selector": "0x26a0",
+  "source_decompiler": "kuna",
+  "phase": "P1 (program prep, entry discovery / prototype source)",
+  "module": "decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_elfmain.rs (ElfMainPass)",
+  "change_kind": "correctness-fix",
+  "tier": "analysis",
+  "option": "elfmain",
+  "default_on": true,
+  "gated": true,
+  "gating_rationale": "It changes emitted C (the declaration line, the argv element type that reaches call sites, and the return statement of a tail call), and AGENTS.md's rule is that anything that can ships behind a named option. Default-ON is the same call machomain made: the name and the declaration are a restatement of the C runtime's contract, not a judgment call, and the ablation restores the previous output exactly.",
+  "scope": "small",
+  "decisions": [
+    "The address is oracle 4's own (libc_start_main_target), never a second decode, so the pass cannot disagree with the entry discovery already contains and every architecture oracle 4 covers is covered by construction.",
+    "int / char ** is the honest spelling here, unlike entrymainproto's call-site widths: a glibc crt1's first argument is the POSIX main by definition, where the same recovered PE shape can be wmain's wchar_t **.",
+    "envp is not declared -- glibc passes a third argument, but the extra unused slot costs more noise than it buys (machomain's call, for the same reason).",
+    "The image must name __libc_start_main somewhere in its static or dynamic symbol names. Oracle 4's evidence is enough to ADD an entry (a wrong one costs one sub_<addr>) but not to assert the function IS the C main; a fully stripped static image states nothing that separates a glibc crt1 from a hand-rolled entry point and is refused.",
+    "The non-PIE ARM32 shape oracle 4 cannot see stays armlibcmain's: elfmain contributes only the prototype there (named_here == false), and because the park is by name, `--option armlibcmain off` leaves nothing for it to land on.",
+    "A caller's --define-function name now outranks every discovered name at the same address (declared_names), because naming an address a second time made entry_name_rank's length tie-break decide between an assertion and a discovery."
+  ],
+  "acceptance": {
+    "probe_id": "tests/cli/elf-libc-start-main-unnamed.json",
+    "command": "kuna decompile-all decompiler/crates/kuna-analysis/tests/fixtures/stripped_dynamic_x86_64 --addr 0x1405 --json",
+    "before": "functions[0].name == \"sub_1405\", code `unsigned long sub_1405(int a0,unsigned long *a1)`, the argument vector untyped so `sub_1357(a1[1])`",
+    "after": "functions[0].name == \"main\", code `int main(int argc,char **argv)` and `sub_1357(argv[1])`",
+    "verify": "make test-cli => tests/cli: 171/171 passed",
+    "promoted_to": "tests/cli/elf-libc-start-main-unnamed.json"
+  },
+  "ablation": {
+    "method": "--option elfmain off on the witness and on every in-repo ELF fixture the pass fires on",
+    "result": "the previous output returns exactly: no `main` symbol, the sub_<addr> declaration and the body-driven signature, byte for byte (the whole-corpus sweep below is the proof -- 130 of 143 fixtures are byte-identical in both arms and the 13 that differ differ only in the hunks classified there)"
+  },
+  "oracle_check": {
+    "method": "kuna functions on every stripped decbench ELF that has an unstripped twin, comparing the address named `main` against the twin's `main` from nm",
+    "images": 758,
+    "match": 645,
+    "mismatch": 0,
+    "miss": 113,
+    "miss_classification": "90 are bare-metal firmware with no glibc crt1 (libopencm3 69, crazyflie 6, riot-os 3, freertos 3, cleanflight 3, chibios 3, betaflight 3) -- the __libc_start_main refusal; 23 are shared libraries whose twin has no `main` either."
+  },
+  "regression_sweep": {
+    "method": "kuna decompile-all in both arms over every in-repo ELF fixture under 300 KB (143 images), whole-binary diff, every hunk read",
+    "fired_on": 13,
+    "fired": [
+      "aif_gap_x86_64",
+      "armdiscseed_le32",
+      "armlibcmain_got_le32",
+      "armlibcmain_le32",
+      "datasyms_faillog_x86_64",
+      "eh_lsda_x86_64",
+      "emptystrconst_x86_64",
+      "entrymain_aarch64",
+      "entrymain_arm",
+      "entrymain_riscv64",
+      "funcstart_patterns_x86_64",
+      "stripped_dynamic_x86_64",
+      "tailcallframe_x86_64"
+    ],
+    "inert_elsewhere": "130 of 143 are byte-identical in both arms",
+    "hunk_classes": [
+      "naming (13/13): the definition header and the `(*dat_3fd8)(sub_<addr>,...)` argument inside _start's __libc_start_main call both become `main`",
+      "declaration (13/13): the width-only or void signature becomes `int main(int argc,char **argv)`",
+      "argv element type (5): `*a1` -> `*argv`, `a1[1]` -> `argv[1]`, so the string the vector holds reaches a char * use instead of an integer one",
+      "return statement (4): a tail call that was emitted as a bare statement is now `return sub_<addr>(...)`, because main's result is no longer void",
+      "local renumbering (3): declaring two parameters shifts vN and, on the two ARM fixtures, demotes the uninitialised third vararg register from the parameter `a2` to the local `unsigned int v4; // r2` -- the same value, spelled as what it is"
+    ],
+    "classification": "every hunk is the intended consequence of the name, the declaration or the return type; no statement is deleted, moved or re-anchored, and no function other than main and its _start caller changes in any image"
+  },
+  "metric": {
+    "expected": "~0 on decbench type_match, stated up front",
+    "why": "type_match scores variables[] (arguments + stack symbols). On the functions this fires on, argc/argv are already true positives at the recovered widths wherever the body reads them; return types are not scored and neither is the function name. The gain is the caller-visible return type, the char * element type that reaches argv[i] uses, and a main an agent can ask for by name."
+  },
+  "speed": {
+    "method": "interleaved alternating runs, min of N (the box is shared; median and mean are dominated by other tenants)",
+    "witness_function": "decbench fmt O2 `kuna decompile-all --addr 0x26a0`, min of 31: off=236 ms, on=238 ms, delta +0.85%",
+    "control": "fauxware `authenticate` (unstripped, the pass refuses), min of 31: off=107 ms, on=106 ms, delta -0.93% -- the noise floor",
+    "whole_binary": "stripped_dynamic_x86_64 `kuna decompile-all`, min of 21: off=127 ms, on=129 ms, delta +1.57%",
+    "budget_pct": 5.0,
+    "within_budget": true
+  },
+  "tests": {
+    "unit": "decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_elfmain.rs (5 tests over main_claim: both x86-64 encodings, all four oracle-4 architectures, the two non-PIE ARM shapes, the unstripped-ELF refusal, the non-ELF and no-crt1 refusals)",
+    "stage_test": "tests/stages/kuna-elfmain.xml (4 assertions, two-pass: `option elfmain off` = the bug, default = the fix, over the full load file -> decompile path on stripped_dynamic_x86_64)",
+    "cli": "tests/cli/elf-libc-start-main-unnamed.json -- make test-cli 171/171",
+    "corpus_count": "decompiler/crates/kuna-base/src/xml.rs 293 -> 294; docs/baseline-stages.json re-recorded, 1007 -> 1011 keys, purely additive"
+  },
+  "counts": {
+    "settables": "205 -> 206 (phases.toml, kuna_phases/tests.rs, catalog_bytecompat.rs, phase_catalog.json recaptured)",
+    "tiers": "(66, 78, 61) -> (66, 78, 62)",
+    "catalog_buckets": "unchanged (source_decompiler kuna, change_kind correctness-fix)",
+    "live_value": "unchanged -- no live_field, so the PASS_GATES allowlist is the site instead"
+  },
+  "gates": {
+    "make test": "datatests: 675/675 assertions passed / PARITY OK (docs/baseline.json NOT re-pinned)",
+    "make test-stages": "PENDING",
+    "make rust-test": "PENDING",
+    "make check-spec": "check-spec OK (lenient) + check-spec OK (strict mode)",
+    "make test-cli": "tests/cli: 171/171 passed",
+    "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
+    "counters --check": "no drift: every hard-coded site agrees with the derived truth"
+  },
+  "docs": {
+    "spec": "docs/spec/01-program-prep.md -- a new section after the armlibcmain one, in prose",
+    "options": "docs/options.md regenerated",
+    "bundle": "docs/features/elfmain/{analysis.md,plan.md,record.json}"
+  }
+}

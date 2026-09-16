@@ -1638,3 +1638,164 @@ test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running tests/ctypes_per_arch.rs (target/debug/deps/ctypes_per_arch-c67f7da3bd079936)
 
 running 4 tests
+test off_keeps_the_ghidra_vocabulary ... ok
+test eight_byte_integers_spell_per_data_model ... ok
+test no_ghidra_type_name_survives_on_any_target ... ok
+test the_two_vocabularies_no_longer_coexist ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 24.48s
+
+     Running tests/decompile_all_cli.rs (target/debug/deps/decompile_all_cli-900fe13a90836896)
+
+running 57 tests
+test decompile_mode_requires_a_value ... ok
+test modes_command_lists_auto_policy_and_fast_preset ... ok
+test raw_text_unknown_format_hint_handles_a_leading_lt_byte ... ok
+test jobs_refuses_what_a_pool_cannot_carry ... ok
+test te_input_errors_preserve_format_and_target_diagnostics ... ok
+test raw_image_rejects_missing_metadata_and_object_only_surfaces ... ok
+test raw_project_preserves_byte_addressed_data_coordinates ... ok
+test decompile_all_functions_filter_resolves_an_alias ... ok
+test decompile_all_reports_each_entry_once ... ok
+test raw_image_supported_surfaces_share_seed_and_base_semantics ... ok
+test arm_thumb_pe_functions_and_address_decompile ... ok
+test raw_address_directives_use_target_units ... ok
+test decompile_all_emits_json_for_main ... ok
+test decompile_all_refuses_an_executable_section_iat_slot ... ok
+test functions_takes_jobs_with_a_raw_image ... ok
+test raw_text_decode_failure_is_not_reported_as_an_external ... ok
+test functions_lists_main ... ok
+test raw_image_decompile_scales_word_addressed_selector ... ok
+test arm_decompile_all_raw_thumb_prologue_seed_non_destructive ... ok
+test decompile_all_addr_tolerates_the_arm_thumb_bit ... ok
+test jobs_decode_lanes_decline_on_a_context_committing_language ... ok
+test arm_decompile_all_defaults_aif_on ... ok
+test functions_json_carries_a_ranking_extent ... ok
+test arm_decompile_all_defaults_funcstart_patterns_on ... ok
+test fast_discovery_finds_the_pointer_only_target ... ok
+test arm_functions_inventory_covers_every_decompile_all_entry ... ok
+test te_object_view_commands_report_capability_errors ... ok
+test instruction_budget_overrun_truncates_instead_of_failing ... ok
+test decompile_all_error_nonzero_does_not_absorb_next_function ... ok
+test aggregate_exit_distinguishes_all_failed_from_partial_success ... ok
+test omitted_and_explicit_auto_match_aggressive_on_a_small_binary ... ok
+test decompile_all_listing_default_collapses_noreturn_wrapper ... ok
+test x86_64_functions_inventory_is_unchanged_and_covers_decompile_all ... ok
+test fast_mode_matches_explicit_options_and_user_override_wins ... ok
+test kuna_decompile_single_error_nonzero_does_not_absorb_next_function ... ok
+test functions_and_decompile_all_agree_on_size ... ok
+test jobs_leaves_no_scratch_directory_behind ... ok
+test jobs_full_load_agrees_with_the_inventory_handoff ... ok
+test dwarf_source_line_comments_stay_opt_in_under_every_mode ... ok
+test functions_takes_jobs_with_an_assert_overlay ... ok
+test te_image_auto_detects_entry_mapping_and_thumb_context ... ok
+test jobs_decode_lanes_agree_with_serial_on_decompile_all ... ok
+test a_refused_lane_spawn_falls_back_to_the_serial_walk ... ok
+test jobs_a_transient_worker_death_loses_nothing ... ok
+test a_dead_lane_falls_back_to_the_serial_walk ... ok
+test jobs_auto_and_the_plain_c_surface_match_serial ... ok
+test decompile_all_converges_on_past_pathological_function ... ok
+test decompile_all_watchdog_quiet_on_healthy_function ... ok
+test jobs_preserves_namespaced_cpp_callee_names ... ok
+test jobs_neighbouring_crashers_do_not_forfeit_their_chunk ... ok
+test jobs_output_is_byte_identical_to_serial ... ok
+test jobs_a_worker_panic_loses_only_the_function_that_panicked ... ok
+test killing_the_parent_takes_the_workers_and_the_scratch_dir_with_it ... ok
+test jobs_decode_lanes_are_byte_identical_to_serial ... ok
+test inventory_and_decompile_all_include_nested_dialog_callbacks ... ok
+test jobs_rerunning_a_dead_worker_never_loops ... ok
+test jobs_a_stalled_worker_loses_only_the_function_that_stalled ... ok
+
+test result: ok. 57 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 35.42s
+
+     Running tests/decompile_cli.rs (target/debug/deps/decompile_cli-0afd6ec81d454402)
+
+running 22 tests
+test a_reasonless_load_failure_keeps_the_generic_wording ... ok
+test analysis_commit_failure_is_reported_and_exits_nonzero ... ok
+test an_unrelated_console_diagnostic_is_not_a_commit_failure ... ok
+test arm_isa_override_reaches_single_function_engine ... ok
+test empty_output_still_errors ... ok
+test pipeline_abort_reports_the_reason_and_exits_nonzero ... ok
+test raw_image_flags_reach_single_function_engine_with_quoted_path ... ok
+test clean_run_still_exits_zero ... ok
+test a_name_that_already_resolved_is_not_re_decompiled_wider ... ok
+test pe_iat_json_selection_is_a_non_success_without_code ... ok
+test an_unselected_address_that_starts_no_function_is_still_rejected ... ok
+test a_prototype_address_that_starts_no_function_is_rejected ... ok
+test a_prototype_binds_to_the_address_the_run_selected ... ok
+test a_generated_name_the_inventory_prints_is_selectable_by_decompile ... ok
+test a_binary_under_a_spaced_directory_decompiles ... ok
+test a_spaced_temp_dir_still_yields_c ... ok
+test a_prototype_declared_under_another_name_binds_on_both_surfaces ... ok
+test every_surface_reports_the_same_load_failure ... ok
+test a_call_that_finalizes_before_its_witness_recovers_its_argument ... ok
+test pe_import_thunk_and_real_function_still_decompile_with_named_prototypes ... ok
+test a_prototype_at_an_entry_address_binds_on_both_surfaces ... ok
+test pe_iat_body_selection_refuses_name_address_and_adjacent_slots ... ok
+
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.67s
+
+     Running tests/decompile_graph_cli.rs (target/debug/deps/decompile_graph_cli-9b4e3396f9adf23c)
+
+running 11 tests
+test a_rust_binary_is_still_exported_as_c ... ok
+test a_macho_entry_point_row_is_flagged ... ok
+test an_address_taken_callee_is_still_an_edge ... ok
+test a_file_export_writes_nothing_to_stdout ... ok
+test the_document_carries_the_schema_and_both_arrays ... ok
+test a_non_c_output_language_is_refused ... ok
+test forwarding_veneers_are_jump_edges_to_import_rows_on_pe_and_elf ... ok
+test an_explicitly_named_import_slot_still_gets_no_body ... ok
+test a_pe_import_slot_gets_a_label_not_a_body ... ok
+test every_edge_endpoint_is_a_function_row ... ok
+test two_runs_produce_the_same_bytes ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 46.35s
+
+     Running tests/decompile_json_cli.rs (target/debug/deps/decompile_json_cli-657567bcae98b696)
+
+running 9 tests
+test json_refuses_the_flags_it_cannot_honor ... ok
+test a_packed_image_is_named_as_packed ... ok
+test an_image_with_no_code_keeps_its_empty_success ... ok
+test an_unresolved_selector_answers_with_an_error_envelope ... ok
+test a_run_that_finds_functions_still_exits_zero ... ok
+test decompile_json_emits_the_record_shape_for_one_function ... ok
+test decompile_json_is_byte_identical_to_decompile_all_for_one_function ... ok
+test decompile_json_selects_by_address_too ... ok
+test a_total_discovery_failure_is_reported_as_a_failure ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.80s
+
+     Running tests/decompile_project_cli.rs (target/debug/deps/decompile_project_cli-06844c0357064ae7)
+
+running 30 tests
+test a_missing_binary_creates_no_folder ... ok
+test stream_refuses_an_assertion_and_is_not_a_whole_binary_flag ... ok
+test a_failed_load_into_an_empty_folder_leaves_a_failed_readme ... ok
+test arm_thumb_project_smoke ... ok
+test arm_thumb_readme_entry_point_is_the_even_inventory_address ... ok
+test fast_selected_project_does_not_expand_to_callees ... ok
+test relocatable_readme_has_no_entry_and_lists_laid_out_sections ... ok
+test selected_project_refuses_an_executable_section_iat_slot ... ok
+test macho_readme_entry_point_is_a_vma ... ok
+test streamed_selected_project_does_not_expand_to_callees ... ok
+test fast_project_does_not_promote_switch_case_labels ... ok
+test a_failed_load_reports_itself_and_spares_a_previous_export ... ok
+test dat_labels_cross_referenced ... ok
+test asm_has_stack_comment_for_main ... ok
+test project_folder_written_for_fauxware ... ok
+test asm_labels_match_c_function_names ... ok
+test header_syntax_checks_with_cc ... ok
+test streamed_blocks_follow_the_entry_point_not_the_address_order ... ok
+test a_sectionless_image_never_reports_a_sweeping_asm_at_jobs_1 ... ok
+test fast_project_discovers_real_function_bodies ... ok
+test streamed_project_can_select_nested_dialog_callbacks ... ok
+test fast_project_discovers_indirect_pointer_target ... ok
+test project_exit_distinguishes_all_failed_from_partial_success ... ok
+test a_binary_with_a_string_over_the_load_window_still_exports ... ok
+test streamed_artifacts_match_the_non_stream_export ... ok
+test a_streamed_seed_runs_in_a_worker_and_costs_only_its_own_record ... ok
+test streamed_worker_panic_loses_only_the_function_that_panicked ... ok
+test jobs_project_artifacts_are_byte_identical_to_serial ... ok

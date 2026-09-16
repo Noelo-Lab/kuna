@@ -1,21 +1,19 @@
 # F4 elfmain — state
 
 - slug: elfmain / branch: feat/elfmain / worktree /home/mahaloz/kwt/elfmain
-- PR: (not opened yet)
+- PR: NOT OPENED YET (open with gh pr create ... --body-file .scratch/pr_body.md, then add full-ci label)
 
 ## Done
-- read COMMON_BRIEF + plan Stage 1/orchestration
-- specs symlinked (148 .sla), SLEIGHHOME=/home/mahaloz/kwt/elfmain/specs
-- baseline `make binaries` green
-- baseline witness captured: `kuna decompile-all <decbench O2 fmt> --addr 0x26a0`
-  -> `unsigned long sub_26a0(int a0,char **a1)`
-- surveyed machomain/armlibcmain, entry oracle 4, commit seam, all count sites
+- kuna_elfmain.rs (ElfMainPass) + full gate wiring + PASS_GATES + counters + options.md
+- tests/stages/kuna-elfmain.xml (4 asserts), xml.rs 293->294, baseline-stages re-recorded (additive)
+- tests/cli/elf-libc-start-main-unnamed.json
+- declared_names precedence fix in kuna-console/src/engine.rs (--define-function name wins)
+- docs/spec/01-program-prep.md section; docs/features/elfmain/{analysis,plan,record}
+- evidence: .scratch/sweep/{summary.txt,diff/,oracle.txt}
+- GATES: make test 675/675 PARITY OK; check-spec OK + strict OK; test-cli 171/171;
+  catalog --check OK; counters --check no drift
+- PENDING: make test-stages (running), make rust-test (lane running, .scratch/rust-test.log)
 
 ## Next
-1. write kuna-analysis/src/analyzers/entry/kuna_elfmain.rs
-2. register pass (passes.rs), gate (engine.rs, architecture.rs, kuna_console.rs,
-   options.rs, phases.toml, PASS_GATES tests.rs)
-3. verify_elfmain.rs + stages XML + tests/cli probes audit
-4. counters --rederive/--fix, options.md, baseline-stages re-record
-5. spec 01-program-prep.md, docs/features/elfmain/
-6. gates
+1. confirm test-stages + rust-test green, paste lines into record.json gates
+2. commit, push, open PR, add full-ci label. DO NOT MERGE.
