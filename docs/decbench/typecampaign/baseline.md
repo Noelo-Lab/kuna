@@ -47,7 +47,8 @@ Margin tiers L/M/S are GED sizes, so on a 0..1 metric they are empty by
 construction and the whole queue comes from the artifact tier plus tier `X`.
 With the margins there all but tied, `X` is ordered by how many optimisation
 levels the group is imperfect at and then by group id — a coverage order, not a
-severity ranking.
+severity ranking. It bites: 18 of the 20 picked groups are imperfect at all
+three levels, out of a pool that is 602/826 single-level.
 
 The degenerate-source exclusion that keeps a 1-node-CFG function out of a GED
 queue does **not** apply here: 609 of the 1,575 type cases (243 of the 826
