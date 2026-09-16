@@ -11,8 +11,8 @@
 //! * before the load — `README.md` and `.streaming` (phase `loading`), and
 //!   nothing else, so a previous export's `.c`/`.h`/`.asm` survive a failed load;
 //! * once the program is loaded — the four artifacts plus `index.jsonl` are
-//!   created, the image entry point and `main` are decompiled in-process as
-//!   SEEDS, and their callee hints become the scheduler's frontier;
+//!   created and the image entry point and `main` become the scheduler's opening
+//!   frontier as SEEDS, ahead of everything else;
 //! * then the decompile (a worker pool at `--jobs N`, the main thread at
 //!   `--jobs 1`), the `.asm` sweep and the writer run concurrently, each function
 //!   appended to the `.c` and then announced in `index.jsonl`;
@@ -480,17 +480,6 @@ impl Scheduler {
         }
     }
 
-    /// Claim `indices` for a caller that will decompile them itself.
-    fn claim(&self, indices: &[usize]) {
-        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
-        for &i in indices {
-            if !state.claimed[i] {
-                state.claimed[i] = true;
-                state.claimed_count += 1;
-            }
-        }
-    }
-
     /// One target, frontier first — the serial loop's pull.
     fn claim_one(&self) -> Option<usize> {
         if self.abort.stopped() {
@@ -871,8 +860,8 @@ fn export(
             let writing = scope.spawn(move || writer_loop(writer, rx, run));
             let produced = if args.jobs > 1 {
                 let pooled = run_pooled(
-                    args, layout, &mut prog, &targets, &specs, &scheduler, &seeds, &opts, &tx,
-                    load_seconds, &mut sweep, &mut asm, run, scope,
+                    args, layout, &prog, &specs, &scheduler, &tx, load_seconds, &mut sweep,
+                    &mut asm, run, scope,
                 );
                 drop(tx);
                 pooled
@@ -908,8 +897,8 @@ fn export(
     run.publish_progress(false);
     jobs::warn_about_streamed_anomalies(&writer.errors, args.max_fn_seconds, retries);
 
-    // The parent is one more type shard: at `--jobs N` it decompiled the seeds
-    // itself, and whatever those interned lives only in its own factory.
+    // The parent is one more type shard: its own factory holds whatever the load
+    // interned, and at `--jobs 1` everything the serial loop did.
     type_blocks.push(print_c_types(prog.arch_mut()));
     let types = jobs::merge_type_definitions(&type_blocks, jobs::STREAM_TAG);
     writer.write_header(Some(&types))?;
@@ -1066,18 +1055,27 @@ fn writer_died(run: &StreamRun, error: String) -> String {
     error
 }
 
-/// `--jobs N`: the seeds in-process, then the worker pool on its own thread
-/// while the main thread sweeps the `.asm`.
+/// `--jobs N`: the worker pool on its own thread while the main thread sweeps
+/// the `.asm`.
+///
+/// The parent decompiles nothing here, the seeds included.  A function can take
+/// the process down with it — a deep enough expression overflows the stack, and
+/// a stack overflow aborts, it does not unwind — and a worker is the only place
+/// where that costs one record instead of the export.
+///
+/// The seeds are still the scheduler's opening frontier, so they are handed out
+/// first, but nothing now fills that frontier before the pool starts: until
+/// their results arrive the other pullers have only the address cursor to take.
+/// The `.c`'s interleaving at `--jobs N` was already completion order and
+/// already not reproducible; what moved is that the seeds' neighbourhood is no
+/// longer near the front of it.
 #[allow(clippy::too_many_arguments)]
 fn run_pooled<'scope, 'env>(
     args: &'env Args,
     layout: &'env Layout,
-    prog: &mut ConsoleProgram,
-    targets: &[FunctionEntry],
+    prog: &ConsoleProgram,
     specs: &'env [TargetSpec],
     scheduler: &'env Scheduler,
-    seeds: &[usize],
-    opts: &DecompileOptions,
     tx: &mpsc::Sender<Vec<FuncResult>>,
     load_seconds: f64,
     sweep: &mut AsmSweep,
@@ -1085,8 +1083,6 @@ fn run_pooled<'scope, 'env>(
     run: &'env StreamRun,
     scope: &'scope std::thread::Scope<'scope, 'env>,
 ) -> Result<(Vec<String>, jobs::Retries), String> {
-    decompile_in_process(prog, seeds, targets, scheduler, opts, tx, run)?;
-
     let cfg = pool_config(
         args,
         /* want_proto= */ true,
@@ -1097,7 +1093,6 @@ fn run_pooled<'scope, 'env>(
     );
     let inventory = flatten_targets(&prog.function_entries_canonical());
     let send = Mutex::new(tx.clone());
-    let done_base = seeds.len();
     let pool = scope.spawn(move || {
         let sink = |_indices: &[usize], produced: Vec<FuncResult>| {
             scheduler.on_results(&produced);
@@ -1110,7 +1105,6 @@ fn run_pooled<'scope, 'env>(
             specs,
             &inventory,
             scheduler,
-            done_base,
             &run.workers,
             &sink,
         )
@@ -1188,39 +1182,7 @@ fn run_serial(
     }
 }
 
-/// Decompile `indices` on this thread, claiming them first so the pool never
-/// repeats them, and file their hints as the scheduler's opening frontier.
-fn decompile_in_process(
-    prog: &mut ConsoleProgram,
-    indices: &[usize],
-    targets: &[FunctionEntry],
-    scheduler: &Scheduler,
-    opts: &DecompileOptions,
-    tx: &mpsc::Sender<Vec<FuncResult>>,
-    run: &StreamRun,
-) -> Result<(), String> {
-    if indices.is_empty() {
-        return Ok(());
-    }
-    scheduler.claim(indices);
-    let mut pending = indices.iter().map(|&i| targets[i].clone()).collect::<Vec<_>>().into_iter();
-    decompile_pulled(
-        prog,
-        opts,
-        &mut || if run.abort.stopped() { None } else { pending.next() },
-        &mut |r| {
-            scheduler.on_results(std::slice::from_ref(&r));
-            if tx.send(vec![r]).is_err() {
-                run.abort.stop(None);
-            }
-        },
-    );
-    if run.abort.stopped() {
-        return Err(run.abort.reason());
-    }
-    Ok(())
-}
-
+/// Finish the `.asm` sweep in one go, whatever is left of it.
 fn sweep_to_end(
     prog: &ConsoleProgram,
     sweep: &mut AsmSweep,
@@ -1314,6 +1276,10 @@ mod tests {
         assert_eq!(sched.claim_one(), Some(0));
         assert_eq!(sched.claim_one(), Some(2));
     }
+
+
+
+
 
     /// Every target exactly once, whatever the hints claim.
     #[test]
