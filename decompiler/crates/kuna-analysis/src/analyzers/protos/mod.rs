@@ -80,14 +80,25 @@ enum Ty {
     /// the payload (`FILE`, `stat`, `DIR`, ...), sized from
     /// [`kuna_libctypes::NAMED_AGGREGATES`].
     ///
-    /// Pointer-ONLY on purpose. A named slot that could be taken by value, or
-    /// returned by value, would reintroduce the two hazards
-    /// `analyzers::dwarf::kuna_dwarfstructs` documents — a by-value aggregate
-    /// whose width the ABI classifier cannot see degrades to a raw integer, and
-    /// an aggregate RETURN of unknown width is classified as a hidden-return-
-    /// buffer call, which grows a phantom first parameter and shifts every real
-    /// one. With the only named variant being a pointer, both states are
-    /// unrepresentable rather than merely avoided.
+    /// Pointer-only: no slot these tables name is taken or returned BY VALUE,
+    /// because no libc declaration restated here does that. That is a property
+    /// of the TABLE, not a guarantee about the emitted C. Ordinary type
+    /// propagation can still carry a named type into a by-value position, and
+    /// does — on `-O2` coreutils `ls` the gnulib `gettime` wrapper renders
+    /// `timespec sub_10210(void) { timespec v1; clock_gettime(0,&v1); return
+    /// v1; }` from the `timespec *` slot alone.
+    ///
+    /// What makes that rendering right is the WIDTH, not the pointer. Both
+    /// hazards `analyzers::dwarf::kuna_dwarfstructs` documents are hazards of a
+    /// SIZELESS aggregate: a by-value parameter the ABI classifier cannot size
+    /// degrades to a raw integer, and a sizeless RETURN is classified as a
+    /// hidden-return-buffer call, which grows a phantom first parameter and
+    /// shifts every real one. Every name here carries its real ABI width, so
+    /// the classifier answers correctly — a 16-byte `timespec` really is
+    /// returned in a register pair. `rethidden` appears nowhere in the sweep
+    /// corpus, where those three `gettime` wrappers are the only by-value named
+    /// returns at all and nothing wider than a register pair reaches a return
+    /// slot.
     NamedPtr(&'static str),
 }
 

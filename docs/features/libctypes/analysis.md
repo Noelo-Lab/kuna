@@ -27,12 +27,20 @@ An option `libctypes` (`off|opaque`, default **off**), a P1 analysis-tier
 enablement, owning one new module
 `kuna-analysis/src/analyzers/protos/kuna_libctypes.rs` and one new `Ty` variant.
 
-* **One new variant, pointer-only.** `Ty::NamedPtr(&'static str)`. There is no
-  by-value and no return-by-value named variant, so the two hazards
-  `kuna_dwarfstructs.rs` documents — a by-value aggregate of unknown width
-  degrading to a raw integer, and a sizeless aggregate RETURN being classified as
-  a hidden-return-buffer call that grows a phantom first parameter — are
-  **unrepresentable**, not merely avoided.
+* **One new variant, pointer-only.** `Ty::NamedPtr(&'static str)`. No slot in
+  these tables is taken or returned by value, because no libc declaration
+  restated here does that — but that is a property of the TABLE, not of the
+  emitted C, and it is the WIDTH that makes the by-value case safe. Both hazards
+  `kuna_dwarfstructs.rs` documents are hazards of a SIZELESS aggregate: a
+  by-value parameter of unknown width degrades to a raw integer, and a sizeless
+  aggregate RETURN is classified as a hidden-return-buffer call that grows a
+  phantom first parameter. Type propagation does reach by-value positions on its
+  own — `timespec sub_10210(void) { timespec v1; clock_gettime(0,&v1); return
+  v1; }` on `-O2` `ls`, correctly, since a 16-byte `timespec` is returned in a
+  register pair. Measured over the 6-binary sweep: 3 by-value named returns
+  (`ls`/`gzip`/`tar`, all that same gnulib `gettime` wrapper), 0 by-value named
+  parameters, 0 `rethidden` in either arm, and nothing wider than a register
+  pair in any return slot. See §"By-value named aggregates" below.
 * **17 aggregate names**, the bare DWARF spelling: `FILE`, `DIR`, `dirent`,
   `stat`, `passwd`, `group`, `tm`, `option`, `timespec`, `timeval`, `sigaction`,
   `sigset_t`, `mbstate_t`, `termios`, `sockaddr`, `pthread_mutex_t`.
@@ -216,6 +224,42 @@ those call sites. The retarget is enumerated slot by slot; a unit test asserts
 the whole `v*` family is absent from the table and that `__vfprintf_chk` names
 only its p0.
 
+### 7. By-value named aggregates — what is and is not guaranteed
+
+The table only ever names a POINTER slot, but that does not make a by-value
+named aggregate impossible in the output, and the earlier phrasing of this
+document claimed it did. Type propagation reaches by-value positions on its own:
+
+```
+$ kuna decompile-all <O2/coreutils/stripped/ls> --addr 0x10210 --option libctypes off
+undefined16 sub_10210(void)  { char v1 [16]; clock_gettime(0,v1); return v1._0_16_; }
+$ kuna decompile-all <O2/coreutils/stripped/ls> --addr 0x10210 --option libctypes opaque
+timespec sub_10210(void)     { timespec v1;  clock_gettime(0,&v1); return v1; }
+```
+
+The `on` rendering is right: gnulib's `gettime` really does return a
+`struct timespec`, 16 bytes, in `RAX:RDX`. It is right because the shell is
+SIZED — both hazards in §2's neighbour (`kuna_dwarfstructs.rs`) are hazards of a
+SIZELESS aggregate, and the second of them is exactly this slot: an aggregate
+RETURN whose width the ABI classifier cannot see is classified as a
+hidden-return-buffer call, which grows a phantom `rethidden` first parameter and
+shifts every real one. A width-0 shell here would have produced that.
+
+Measured over the 6 sweep binaries (`ls`/`grep`/`gzip`/`tar` O2,
+`find`/`diff` O0), grepping every `.on.c` for a named aggregate in a declarator
+position:
+
+| shape | off | on |
+|---|---:|---:|
+| named aggregate returned BY VALUE | 0 | 3 (`ls` 0x10210, `gzip` 0x10bb0, `tar` 0x43230 — all the same `gettime` wrapper, all `timespec`) | 
+| named aggregate as a by-value PARAMETER | 0 | 0 |
+| `rethidden` anywhere | 0 | 0 |
+
+Nothing wider than a register pair reaches a return slot anywhere in the corpus
+— no `stat` (144), `sigaction` (152) or `FILE` (216) does — but that is a
+corpus observation, not an invariant the table enforces. The invariant is the
+width: whichever way the classifier is asked, it has the real number.
+
 ## Whole-corpus behavior (`decompile-all`, 6 binaries + fmt, 3,702 functions)
 
 Per-line classification and a control-flow/call/constant skeleton comparison are
@@ -283,7 +327,7 @@ Ground truth for both is `int get_prefix(FILE *f)` / `get_line(FILE *f, int c)`.
 lines each). With the gate off the pass returns before it interns anything, so
 there is no named shell in the type factory for anything downstream to find.
 
-## The project export stays valid C
+## The project export: the `.h` stays valid C, the `.c` does not
 
 `kuna decompile-project <bin> --option libctypes opaque` on
 `tests/fixtures/stripped_dynamic_x86_64`:
@@ -325,6 +369,42 @@ the file depends on it, while the prototype is one line and is still printed:
 `decompiler/crates/kuna-cli/tests/decompile_project_cli.rs
 (header_syntax_checks_when_a_type_shares_a_name_with_a_function)` runs
 `cc -std=c99 -fsyntax-only` over the generated header in both arms.
+
+**That claim is about the `.h` only, and the `.c` is where the cost lands.** The
+exported body was never compilable — the export is a reading aid, not a
+rebuildable source tree — but turning this option on makes it measurably less
+so, because the shells stay `type_incomplete`: the `.h` says
+`typedef struct FILE FILE; /* opaque */` while the `.c` declares objects of that
+type and reads fields out of them.
+
+```
+$ kuna decompile-project <O2/coreutils/stripped/ls> -o D --option libctypes off
+$ cc -std=c99 -fsyntax-only -I D D/ls.c 2>&1 | grep -c 'error:'
+911
+$ kuna decompile-project <O2/coreutils/stripped/ls> -o D --option libctypes opaque
+$ cc -std=c99 -fsyntax-only -I D D/ls.c 2>&1 | grep -c 'error:'
+969
+```
+
++58 errors in 15 classes that appear only with the option on. Three of them
+follow directly from the incomplete shell and are the bulk of it:
+
+| class | count |
+|---|---:|
+| `invalid use of incomplete typedef` (`tm` 32, `FILE` 6, `dirent` 5, `passwd` 1, `group` 1) | 45 |
+| `storage size of 'vN' isn't known` | 5 |
+| `return type is an incomplete type` | 1 |
+
+The rest are the type-name/function-name clash arriving in the body, where the
+header's fix does not reach — `ls.c:177` `'sigaction' redeclared as different
+kind of symbol`, `ls.c:558` the same for `stat`, and `ls.c:2375`
+`sigaction(v6,NULL,(sigaction *)v3);` failing to parse for the same reason. The
+`.h` itself is 0 errors in BOTH arms.
+
+The follow-up `glibc` value, which installs the public field layouts instead of
+an opaque shell, retires the three incomplete-typedef classes; the
+name-clash-in-the-body half is a `build_body` question the header fix in this PR
+does not answer.
 
 ## Out of scope here
 

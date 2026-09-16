@@ -20,8 +20,11 @@ scores (`kuna decompile-all --json`'s `variables[]`), where every such slot is
 ## Steps taken
 
 1. `Ty::NamedPtr(&'static str)` in `protos/mod.rs` plus one `build_ty` arm —
-   pointer-only, so a sizeless by-value or by-value-return slot is
-   unrepresentable.
+   pointer-only, because no libc declaration restated here passes or returns an
+   aggregate by value. That is a property of the table: propagation still
+   reaches by-value positions (`timespec sub_10210(void)` on `-O2` `ls`), and it
+   is the real WIDTH on every shell, not the pointer, that keeps the ABI
+   classifier out of the hidden-return-buffer case. See analysis.md §7.
 2. `NAMED_AGGREGATES`: 16 names with the platform's own `sizeof`/`_Alignof`,
    plus `DIR` at width 1. Minted through `get_type_struct` +
    `set_fields_struct_raw` with an EMPTY field list, the real width and

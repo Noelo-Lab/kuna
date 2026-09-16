@@ -1453,6 +1453,22 @@ moves.
   layout the platform publishes nowhere). With a real width, an in-range access
   renders `f->field_0x8` and an out-of-range one falls back to the cast form.
 
+  The width carries a second load, and it is the one worth stating precisely.
+  Every slot these tables name is a POINTER — no libc declaration restated here
+  passes or returns an aggregate by value — but that is a property of the table,
+  not of the emitted C. Ordinary type propagation still carries a named type
+  into a by-value position, and does: `timespec sub_10210(void) { timespec v1;
+  clock_gettime(0,&v1); return v1; }` on `-O2` coreutils `ls`, from the
+  `timespec *` slot of `clock_gettime` alone. That rendering is correct — a
+  16-byte `timespec` is returned in a register pair — and it is correct because
+  the shell is SIZED. A width-0 shell in the same slot is exactly the
+  hidden-return-buffer case: an aggregate return the ABI classifier cannot size
+  grows a phantom first parameter and shifts every real one. Across the sweep
+  corpus those three `gettime` wrappers are the only by-value named returns at
+  all, nothing wider than a register pair reaches a return slot, and no
+  `rethidden` appears in either arm — but the table does not forbid the wider
+  case, the width is what would answer it correctly.
+
   *The shells stay incomplete, and the names are bare.* `type_incomplete` stays
   set on the sized shell so the project exporter declares it
   `typedef struct FILE FILE; /* opaque */` rather than as a struct with a width

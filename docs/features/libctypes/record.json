@@ -175,6 +175,29 @@
    "total_on": 1231,
    "reading": "+229 (+22.9%) over the 7 sweep binaries, concentrated in tar/grep/gzip/find/diff; ls goes DOWN by one. Same class as the `field_0x` count in the -g sweep -- an offset that was a cast becoming a slot of a named pointee. The follow-up `glibc` value, which gives the stream shell real field names, retires the stdio half of it."
   },
+  "export_c_cost": {
+   "what": "`kuna decompile-project` writes a `.c` alongside the `.h`. The exported body has never compiled (it is a reading aid, not a rebuildable source tree), but this option makes it measurably less so: the named shells stay `type_incomplete`, so the `.h` declares `typedef struct FILE FILE; /* opaque */` while the `.c` declares objects of that type and reads fields out of them. The PR's export claim covers the `.h` only.",
+   "method": "kuna decompile-project <O2/coreutils/stripped/ls> -o D --option libctypes off|opaque ; cc -std=c99 -fsyntax-only -I D D/ls.c 2>&1 | grep -c 'error:'",
+   "errors_off": 911,
+   "errors_on": 969,
+   "delta": 58,
+   "new_error_classes": 15,
+   "from_the_incomplete_shell": {
+    "invalid use of incomplete typedef": 45,
+    "invalid use of incomplete typedef, by name": {
+     "tm": 32,
+     "FILE": 6,
+     "dirent": 5,
+     "passwd": 1,
+     "group": 1
+    },
+    "storage size of 'vN' isn't known": 5,
+    "return type is an incomplete type": 1
+   },
+   "from_the_type_name_function_name_clash_in_the_body": "ls.c:177 `'sigaction' redeclared as different kind of symbol`, ls.c:558 the same for `stat`, ls.c:2375 `sigaction(v6,NULL,(sigaction *)v3);` failing to parse. The header fix in this PR resolves the clash in `build_header` only; `build_body` still emits the colliding definition.",
+   "header_unaffected": "`cc -std=c99 -fsyntax-only` on the exported .h: 0 errors in BOTH arms here, and on the UNSTRIPPED ls the header fix takes the default arm from 15 header errors to 8. That claim stands; it is the .c that is not covered by it.",
+   "retired_by": "the follow-up `glibc` value (public `_IO_FILE`/`stat` field layouts instead of an opaque shell) retires the three incomplete-typedef classes; the name-clash-in-the-body half is a `build_body` question this PR does not answer."
+  },
   "intrinsic_form": {
    "what": "`SUBxy(`/`CONCATxy(` -- the functional forms the printer falls back to for a sub-piece or a concatenation it cannot spell as C. Counted because `PTRSUB(` alone does not cover the class.",
    "sub_off_on": {
@@ -244,6 +267,19 @@
     "concat_on": 268
    },
    "reading": "net +3 across 3,702 functions (find +2 SUB, tar -1 SUB / +2 CONCAT): the same slot read through a different decomposition, never a new one. `PTRSUB(` stays 0/0 everywhere, which is the form the sizing rule exists to prevent."
+  },
+  "by_value_named_aggregates": {
+   "what": "`Ty::NamedPtr` is pointer-only, but that is a property of the TABLE, not of the emitted C: propagation still carries a named type into a by-value position. The sized shell, not the pointer, is what keeps that out of the hidden-return-buffer classification.",
+   "method": "grep every sweep `.on.c`/`.off.c` for a named aggregate in a declarator position, and for `rethidden`",
+   "by_value_returns_off": 0,
+   "by_value_returns_on": 3,
+   "by_value_returns_on_detail": "ls 0x10210, gzip 0x10bb0, tar 0x43230 -- all the same gnulib `gettime` wrapper, all `timespec`, all correct: a 16-byte timespec is returned in RAX:RDX. off renders the same function `undefined16 sub_10210(void) { char v1 [16]; ... return v1._0_16_; }`.",
+   "by_value_parameters_on": 0,
+   "rethidden_off_on": [
+    0,
+    0
+   ],
+   "widest_named_type_in_a_return_slot": "16 (timespec). No stat (144), sigaction (152) or FILE (216) reaches one anywhere in the corpus -- a corpus observation, not an invariant the table enforces."
   }
  },
  "gates": {
