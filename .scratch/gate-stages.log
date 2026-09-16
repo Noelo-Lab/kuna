@@ -1,8 +1,0 @@
-cd /home/mahaloz/kwt/elfmain && /home/mahaloz/kwt/elfmain/decompiler/target/release/kuna test --datatests \
-  --datatests-dir tests/stages --baseline docs/baseline-stages.json
-datatests: 1011/1011 assertions passed
-exit: 0
-
-=== baseline parity ===
-PARITY OK
-STAGES_RC=0
