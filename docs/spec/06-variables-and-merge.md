@@ -425,6 +425,33 @@ unconditionally (one map insert per stack symbol per pass) and read only by
 `extract_variables`: no p-code, no emitted C, so neither structure nor
 recompilation can move.
 
+**Reporting an uncommitted byte (`option bytehonest`).** The same distinction
+applies one type at a time, to the parameters and surviving stack locals of
+sections 1 and 2. A one-byte value the type system never committed to is carried
+as a size-1 `TYPE_UNKNOWN`, and the default `realtypes` rendering spells that
+carrier `char` — the only one-byte C type that reads as a value, and therefore
+the right choice for the emitted C. On a machine-readable surface it is the wrong
+one: it asserts an element type the recovery never established, where the
+program's own type may as well be `_Bool`, `unsigned char`, a one-byte enum or one
+byte of a struct nobody split. Under `option bytehonest` (default ON)
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_bytehonest.rs
+(exported_type_name)` reports the width instead — `undefined1`, the spelling
+Ghidra uses for the same fact and the analogue of IDA's `_BYTE`. The predicate
+(`is_uncommitted_byte`) reads the datatype's own metatype and size, never its
+spelling, so it behaves identically with `realtypes` off (where the row would
+otherwise export kuna's internal `xunknown1`); it is deliberately narrower than
+the frame-slot speller above, which also rewrites an array of unknown: size 1
+exactly and never an array, because `char[264]` is a buffer whose array-ness is
+the honest part of the answer and `undefined264` would drop it. The exported
+`size` is the datatype's size, unchanged.
+
+This is the one place where the two surfaces of the same variable disagree on
+purpose: the `.c` text says `char a0` and `variables[]` says `undefined1` for the
+same parameter. The divergence is the point — the C text is a *rendering* that
+must be legal C, while `variables[]` is a *report* of what the recovery
+established — so the option changes no p-code and no emitted C, and a consumer
+that wants the printer's spelling on both surfaces flips it off.
+
 The JSON use evidence is joined after extraction. A scalar high can be matched by
 its exact storage, but an array's emitted uses normally belong to smaller highs for
 individual elements or to constants representing the aggregate's base address.

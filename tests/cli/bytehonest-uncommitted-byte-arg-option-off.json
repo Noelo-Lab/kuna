@@ -1,0 +1,57 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "timeout_s": 60,
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "close_stdout_set_ignore_EPIPE",
+    "--json",
+    "--option",
+    "bytehonest",
+    "off"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "json": [
+      {
+        "path": "functions[0].variables[0].name",
+        "op": "eq",
+        "value": "param_1"
+      },
+      {
+        "path": "functions[0].variables[0].type",
+        "op": "eq",
+        "value": "char"
+      },
+      {
+        "path": "functions[0].variables[0].size",
+        "op": "eq",
+        "value": 1
+      },
+      {
+        "path": "functions[0].code",
+        "op": "contains",
+        "value": "close_stdout_set_ignore_EPIPE(char a0)"
+      }
+    ]
+  },
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/i386_pie_nl",
+    "binary_sha256": "2cc72cbd21561b5907af240cc9b5396f20821e7cbc5fabd2588319cf01c6d30b",
+    "binary_size": 48024,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/i386_pie_nl",
+    "selector": "close_stdout_set_ignore_EPIPE",
+    "selector_kind": "name"
+  },
+  "notes": "Option-off control for bytehonest: the pre-feature surface, where the same argument is reported as the char its residual TYPE_UNKNOWN carrier renders as. The two probes differ only in this flag, so together they are the two-pass gate a stages XML cannot give a JSON-only surface."
+}

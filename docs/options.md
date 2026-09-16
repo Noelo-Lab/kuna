@@ -743,6 +743,10 @@ Three tiers:
 | a stack slot the disassembly writes is missing from variables | [`framelayout`](#framelayout) |
 | a recovered slot is typed char[N] rather than N bytes of unknown type | [`framelayout`](#framelayout) |
 | a variable is named $$undef00000000 | [`framelayout`](#framelayout) |
+| a JSON variable is typed char although the decompiler never established an element type | [`bytehonest`](#bytehonest) |
+| a one-byte parameter of a boolean-valued function is reported as char | [`bytehonest`](#bytehonest) |
+| the variables array claims a committed type the C text only picked for legibility | [`bytehonest`](#bytehonest) |
+| xunknown1 appears as a type name with realtypes off | [`bytehonest`](#bytehonest) |
 | int4/uint1/uint4/float8/float10 appear in the emitted C instead of C type names | [`ctypes`](#ctypes) |
 | the same function mixes `unsigned int` with `int4` | [`ctypes`](#ctypes) |
 | `code *` appears as a function-pointer type | [`ctypes`](#ctypes) |
@@ -2378,6 +2382,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default (DIV-97). A consumer wants the recovered stack FRAME rather than the printed declarations -- the `decompile-all --json` `variables` array, which is what decbench's type_match metric reads and what IDA's stack view and Binary Ninja's variable list are the analogues of. Most visible at -O0, where every local is a spill slot and a constant-folded function ends up with an empty `variables` array although its frame has named slots. Flip OFF to restore the pre-DIV-97 surface: parameters plus only the stack symbols still live at the final restructure pass.
 - **Where / provenance:** P6/naming-policy · kuna · presentation-default · kuna-framelayout
 - **Example:** `option framelayout off`
+
+### `bytehonest` -- on | off, default `on`
+
+- **Symptoms:** a JSON variable is typed char although the decompiler never established an element type; a one-byte parameter of a boolean-valued function is reported as char; the variables array claims a committed type the C text only picked for legibility; xunknown1 appears as a type name with realtypes off.
+- **What it does:** Spell a one-byte value the type system never committed to as the width-only `undefined1` on the `decompile-all --json` `variables` surface, instead of the `char` that `realtypes` renders its residual TYPE_UNKNOWN carrier as. `char` is the right rendering for the C TEXT -- it is the one-byte C type that reads as a value -- but on a machine-readable surface it asserts an element type the recovery never established: the program's own type there may as well be `_Bool`, `unsigned char`, a one-byte enum or one byte of a struct nobody split. The predicate is the datatype's own metatype and size (TYPE_UNKNOWN, size 1 exactly, never an array, so a `char[264]` buffer keeps its array-ness), not its spelling, so it holds with `realtypes` off too -- where the same row otherwise exports kuna's internal `xunknown1`. Parameters and stack locals only; the exported `size` stays 1 and the emitted C is byte-identical, so the same variable can read `char` in the `.c` text and `undefined1` in `variables[]`.
+- **When to flip:** On by default. A consumer reads `variables[]` as a report of what kuna RECOVERED rather than as C source -- the `decompile-all --json`/`decompile-project` surface, which is what decbench's type_match metric scores and what IDA's stack view and Binary Ninja's variable list are the analogues of. Flip OFF to get the pre-feature surface, where an uncommitted byte is spelled exactly as the printer spells it (`char` under the default `realtypes`, `xunknown1` with `realtypes off`). The emitted C never changes either way.
+- **Where / provenance:** P6/naming-policy · kuna · presentation-default · kuna-bytehonest
+- **Example:** `option bytehonest off`
 
 ### `ctypes` -- on | off, default `off`
 
