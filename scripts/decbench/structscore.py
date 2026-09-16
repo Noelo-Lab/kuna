@@ -24,21 +24,35 @@ denominator it is 0 out of.
 `uint64_t` scores `char*` 1, `struct{…}` 3, `double` 4, `int64_t` 5, `uint64_t`
 6. Scored over kuna's `--json variables[]` (the surface decbench scores) against
 `decbench.metrics.type_match.extract_ground_truth_types`, paired by the same
-three passes the metric uses (arg index, calibrated stack offset, name). Two
-judgement calls, both flagged: an *uncommitted* spelling (`undefined8`,
-`xunknown8`, `_QWORD`) counts as **defined** but of unknown primitive class, so
-it can pass the pointer/struct steps and never the primitive ones
-(`--strict-defined` scores it 0 instead); and a step neither side can be judged
-on -- the primitive steps when both sides are structs -- passes, which is
-exactly the blindness RecStruct §5 charges the metric with. Report the two
-together and neither can hide the other.
+three passes the metric uses (arg index, calibrated stack offset, name).
+
+The last step is the only one that turns on signedness, and decbench's ground
+truth cannot answer it: `normalize_type` strips the `unsigned` qualifier, so a
+DWARF `long unsigned int` and a `long int` arrive spelled the same way. The sign
+therefore comes from the twin's own `DW_AT_encoding` (the DIE walk is already
+there for the layouts). Where DWARF carries no encoding the step is scored as
+failed and counted in `sign_unjudged`, which makes `mean` a lower bound;
+`mean_0_5` drops the step entirely and is exact for every variable — it is the
+number to quote for anything that is not a signedness claim.
+
+Two further judgement calls, both flagged: an *uncommitted* spelling
+(`undefined8`, `xunknown8`, `_QWORD`) counts as **defined** but of unknown
+primitive class, so it can pass the pointer/struct steps and never the primitive
+ones (`--strict-defined` scores it 0 instead); and a step neither side can be
+judged on -- the primitive steps when both sides are structs -- passes, which is
+exactly the blindness RecStruct §5 charges the metric with. Report them together
+and none can hide the others.
 
 **--census** (the opportunity ceiling). Over the same run's C text, a *base* is
-a parameter or declared local dereferenced at two or more distinct constant
-offsets (`*(T *)(B + K)`, `B[k]`, `*B`, `B->f`) — a struct candidate. Then,
-using the ground truth, how many of those candidates' types kuna **already**
-gets right: that is the match->miss channel a synthesis pass would spend, and it
-is what makes struct synthesis a *quality* feature rather than a metric one.
+a parameter or declared local *accessed* at two or more distinct offsets or
+fields (`*(T *)(B + K)`, `B[k]`, `*B`, `B->f`) — a struct candidate. Declaration
+and prototype lines are dropped first: the `*` in `char *v1;` is not a
+dereference. A field name that encodes an offset (`field_0x28`) is keyed by that
+offset and any other field name by the name itself, so nothing depends on
+PYTHONHASHSEED. Then, using the ground truth, how many of those candidates'
+types kuna **already** gets right: that is the match->miss channel a synthesis
+pass would spend, and it is what makes struct synthesis a *quality* feature
+rather than a metric one.
 
 Usage (needs the decbench venv python)::
 
@@ -172,17 +186,28 @@ TREX_STEPS = ("defined", "is_c_pointer", "pointer_level", "is_c_struct",
               "sign_ignored_primitive", "c_primitive")
 
 
-def trex_predicates(pred: dict | None, gt: dict, strict_defined: bool = False) -> list[bool]:
+def trex_predicates(pred: dict | None, gt: dict, strict_defined: bool = False,
+                    gt_sign: bool | None = None) -> tuple[list[bool], bool]:
     """The six Figure-6 predicates, in order, for one variable.
+
+    Returns ``(passed, sign_unknown)``. ``gt_sign`` is the ground truth's
+    signedness and must come from DWARF ``DW_AT_encoding``, NOT from the form
+    list: decbench's ``normalize_type`` strips the ``unsigned`` qualifier and
+    returns a sorted set, so a DWARF ``long unsigned int`` arrives as
+    ``['long int', 'long long', 'long unsigned int']`` and reading a sign off it
+    resolves to "signed" every time — which would score the wrong spelling 6 and
+    the right one 5. When the sign is unknown the last step is not judged: it is
+    reported as failed (so the mean is a lower bound) and counted separately.
 
     A step both sides cannot be judged on (the primitive steps when neither side
     is a primitive) passes — RecStruct §5's complaint about this metric, kept
     deliberately so the number is comparable to the published ones.
     """
     if pred is None or pred["kind"] == "none":
-        return [False] * 6
+        return [False] * 6, False
     if strict_defined and pred["kind"] == "uncommitted":
-        return [False] * 6
+        return [False] * 6, False
+    sign_unknown = False
     p = [True]
     p.append((pred["ptr"] > 0) == (gt["ptr"] > 0))
     p.append(pred["ptr"] == gt["ptr"])
@@ -197,13 +222,14 @@ def trex_predicates(pred: dict | None, gt: dict, strict_defined: bool = False) -
         gk = PRIMITIVES.get(gt["base"])
         same = pk is not None and pk == gk
         p.append(same)
-        p.append(same and pred["unsigned"] == gt["unsigned"])
+        sign_unknown = same and gt_sign is None
+        p.append(same and gt_sign is not None and pred["unsigned"] == gt_sign)
     out = []
     alive = True
     for value in p:
         out.append(bool(value) and alive)
         alive = alive and bool(value)
-    return out
+    return out, sign_unknown and all(out[:5])
 
 
 def trex_score(passed: list[bool]) -> int:
@@ -294,6 +320,59 @@ def _member_offset(die) -> int | None:
     return None
 
 
+# DWARF base-type encodings (DWARF5 §7.8). Only these decide a signedness; a
+# pointer/struct/array base has none, and neither does an enum without an
+# explicit underlying type.
+_UNSIGNED_ENCODINGS = {0x02, 0x07, 0x08, 0x10}   # boolean, unsigned, unsigned_char, UTF
+_SIGNED_ENCODINGS = {0x05, 0x06, 0x0D}           # signed, signed_char, signed_fixed
+
+
+def die_sign(die, depth: int = 0) -> bool | None:
+    """The DWARF signedness of the scalar a DIE resolves to, or None.
+
+    This is the ground truth the last TRex step needs. It cannot be read off
+    decbench's form list: ``normalize_type`` strips ``unsigned``, so an unsigned
+    GT type and its signed twin arrive spelled the same way.
+    """
+    base, _ = _resolve(die)
+    if base is None or depth > 8:
+        return None
+    if base.tag == "DW_TAG_enumeration_type":
+        inner = _type_die(base)
+        return die_sign(inner, depth + 1) if inner is not None else None
+    if base.tag != "DW_TAG_base_type":
+        return None
+    enc = _attr(base, "DW_AT_encoding")
+    enc = int(enc) if isinstance(enc, int) else None
+    if enc in _UNSIGNED_ENCODINGS:
+        return True
+    if enc in _SIGNED_ENCODINGS:
+        return False
+    return None
+
+
+def _collect_signs(die, out: dict, depth: int = 0) -> None:
+    """name -> signedness for every parameter/local under one subprogram DIE.
+
+    Two same-named locals in different lexical blocks that disagree leave the
+    name unsigned-unknown rather than guessing which one decbench paired.
+    """
+    if depth > 8:
+        return
+    for child in die.iter_children():
+        if child.tag in ("DW_TAG_formal_parameter", "DW_TAG_variable"):
+            name = _name(child)
+            if not name:
+                continue
+            sign = die_sign(_type_die(child))
+            if name in out and out[name] != sign:
+                out[name] = None
+            else:
+                out.setdefault(name, sign)
+        elif child.tag in ("DW_TAG_lexical_block", "DW_TAG_inlined_subroutine"):
+            _collect_signs(child, out, depth + 1)
+
+
 def struct_identity(die) -> str:
     name = _name(die)
     if name:
@@ -362,10 +441,12 @@ def struct_layout(die, depth: int = 0) -> dict | None:
 
 
 def dwarf_functions(unstripped: Path) -> dict:
-    """{low_pc: {name, params: [{index, name, ptr, struct}]}} from the twin.
+    """{low_pc: {name, params, var_signs}} from the twin.
 
     Only ``DW_TAG_subprogram`` DIEs with a ``DW_AT_low_pc``; the parameter index
     is declaration order, exactly what decbench's ``arg_index`` means.
+    ``var_signs`` maps each parameter/local name to its DWARF signedness, which
+    is the only sound source for the last TRex step.
     """
     from decbench.utils import binfmt
     out: dict[int, dict] = {}
@@ -386,7 +467,10 @@ def dwarf_functions(unstripped: Path) -> dict:
                 layout = struct_layout(base) if ptr >= 1 else None
                 params.append({"index": index, "name": _name(child), "ptr": ptr,
                                "struct": layout})
-            out[int(low)] = {"name": _name(die) or f"sub_{low:x}", "params": params}
+            signs: dict[str, bool | None] = {}
+            _collect_signs(die, signs)
+            out[int(low)] = {"name": _name(die) or f"sub_{low:x}", "params": params,
+                             "var_signs": signs}
     return out
 
 
@@ -561,16 +645,26 @@ def gt_matches_kuna(pred_type: str, pred_size, gt_forms: list[str]) -> bool:
 # --------------------------------------------------------------------------
 
 def measure_trex(payload: dict, gt_by_name: dict, addr2name: dict,
-                 strict_defined: bool) -> dict:
+                 strict_defined: bool, signs_by_name: dict | None = None) -> dict:
+    """The Fig. 6 mean, plus the sign-free 0-5 mean the sign step cannot move.
+
+    ``mean`` is the full 0-6 score with the ground-truth signedness read from
+    DWARF; where DWARF carries no encoding the last step is scored as failed, so
+    ``mean`` is a lower bound and ``sign_unjudged`` says over how many variables.
+    ``mean_0_5`` drops the last step entirely and is exact for every variable —
+    quote it for any claim that is not about signedness.
+    """
+    signs_by_name = signs_by_name or {}
     steps = {s: {"reached": 0, "passed": 0} for s in TREX_STEPS}
-    total = scored = 0
-    unmatched = 0
+    total = scored = scored5 = 0
+    unmatched = sign_unjudged = 0
     histogram = {i: 0 for i in range(7)}
     for fn in payload.get("functions") or []:
         name = addr2name.get(int(fn.get("address") or -1))
         gt_vars = gt_by_name.get(name or "")
         if not gt_vars:
             continue
+        signs = signs_by_name.get(name or "") or {}
         variables = fn.get("variables") or []
         pairs = pair_variables(variables, gt_vars)
         for gi, gv in enumerate(gt_vars):
@@ -579,10 +673,13 @@ def measure_trex(payload: dict, gt_by_name: dict, addr2name: dict,
             pred = parse_type(variables[i].get("type")) if i is not None else None
             if pred is None:
                 unmatched += 1
-            passed = trex_predicates(pred, gt, strict_defined)
+            passed, unknown = trex_predicates(pred, gt, strict_defined,
+                                              signs.get(gv.get("name") or ""))
             value = trex_score(passed)
             total += 1
             scored += value
+            scored5 += trex_score(passed[:5])
+            sign_unjudged += int(unknown)
             histogram[value] += 1
             reached = True
             for step, ok in zip(TREX_STEPS, passed):
@@ -595,6 +692,9 @@ def measure_trex(payload: dict, gt_by_name: dict, addr2name: dict,
         "gt_variables": total,
         "unmatched_gt_variables": unmatched,
         "mean": round(scored / total, 4) if total else 0.0,
+        "mean_0_5": round(scored5 / total, 4) if total else 0.0,
+        "sign_source": "DWARF DW_AT_encoding",
+        "sign_unjudged": sign_unjudged,
         "score_histogram": {str(k): v for k, v in histogram.items()},
         "steps": {s: {**v, "rate": round(v["passed"] / v["reached"], 4) if v["reached"] else 0.0}
                   for s, v in steps.items()},
@@ -668,30 +768,63 @@ def measure_layout(payload: dict, header: str, functions: dict) -> dict:
 DEREF_PATTERNS = (
     re.compile(r"\*\s*\(\s*[\w\s*]+\*\s*\)\s*\(\s*(?P<base>[A-Za-z_]\w*)\s*\+\s*"
                r"(?P<off>0x[0-9a-fA-F]+|\d+)\s*\)"),
-    re.compile(r"(?P<base>[A-Za-z_]\w*)\s*->\s*\w*_?(?P<off>0x[0-9a-fA-F]+|\d+)"),
     re.compile(r"(?P<base>[A-Za-z_]\w*)\s*\[\s*(?P<off>0x[0-9a-fA-F]+|\d+)\s*\]"),
 )
 ZERO_DEREF = re.compile(r"\*\s*\(\s*[\w\s*]+\*\s*\)\s*(?P<base>[A-Za-z_]\w*)\b|"
                         r"\*(?P<base2>[A-Za-z_]\w*)\b")
 ARROW_FIELD = re.compile(r"(?P<base>[A-Za-z_]\w*)\s*->\s*(?P<field>\w+)")
+# `field_0x28` / `_pad4` carry their own offset; any other field name does not,
+# and is keyed by the name itself rather than by a number invented for it.
+OFFSET_FIELD = re.compile(r"^(?:field|_pad|off)?_?(0x[0-9a-fA-F]+|\d+)$")
+# A declaration (`char *v1;`) and a prototype (`void f(struct_0 *a0)`) both
+# carry a `*` that is not a dereference. Neither is an access, so neither may
+# create the offset-0 access that turns a one-offset base into a candidate.
+DECL_LINE = re.compile(
+    r"^\s*(?!return\b|goto\b|break\b|continue\b|else\b|do\b|case\b|default\b)"
+    r"[A-Za-z_]\w*(?:\s+[A-Za-z_]\w*)*\s*\**\s*"
+    r"[A-Za-z_]\w*\s*(?:\[\s*\d*\s*\])?\s*;\s*$")
+
+
+def _access_key(text: str) -> str:
+    """A constant offset -> ``0x10``; anything else is keyed by its own name."""
+    return f"{int(text, 0):#x}"
+
+
+def census_body(chunk: str) -> str:
+    """The statements of one `// Function:` chunk — no marker, prototype or decls.
+
+    Everything up to and including the opening brace is the prototype, and a
+    declaration line is not an access; both would otherwise contribute a bogus
+    offset-0 dereference through the bare ``*B`` arm of ``ZERO_DEREF``.
+    """
+    lines = [l.split("//")[0] for l in chunk.split("\n")[1:]]
+    start = next((i + 1 for i, l in enumerate(lines) if l.strip() == "{"), 0)
+    return "\n".join(l for l in lines[start:] if not DECL_LINE.match(l))
 
 
 def census_function(chunk: str) -> dict:
-    """Bases dereferenced at >= 2 distinct constant offsets in one function."""
-    lines = chunk.split("\n")
-    body = "\n".join(l.split("//")[0] for l in lines[1:])
-    offsets: dict[str, set] = {}
+    """Bases accessed at >= 2 distinct offsets/fields in one function.
+
+    An access is a constant-offset dereference (``*(T *)(B + K)``, ``B[k]``,
+    ``*B``) keyed by that offset, or an arrow field (``B->f``) keyed by its
+    offset when the name encodes one (``field_0x28``) and by the field name
+    otherwise. Keys are strings so the two kinds never collide and the result
+    does not depend on PYTHONHASHSEED.
+    """
+    body = census_body(chunk)
+    offsets: dict[str, set[str]] = {}
     for pattern in DEREF_PATTERNS:
         for m in pattern.finditer(body):
-            offsets.setdefault(m.group("base"), set()).add(int(m.group("off"), 0))
+            offsets.setdefault(m.group("base"), set()).add(_access_key(m.group("off")))
     for m in ZERO_DEREF.finditer(body):
         base = m.group("base") or m.group("base2")
         if base:
-            offsets.setdefault(base, set()).add(0)
+            offsets.setdefault(base, set()).add("0x0")
     for m in ARROW_FIELD.finditer(body):
-        offsets.setdefault(m.group("base"), set()).add(hash(m.group("field")) & 0xFFFF)
-    header = lines[0].strip()
-    addr = re.search(r"@ (0x[0-9a-fA-F]+)", header)
+        named = OFFSET_FIELD.match(m.group("field"))
+        key = _access_key(named.group(1)) if named else f".{m.group('field')}"
+        offsets.setdefault(m.group("base"), set()).add(key)
+    addr = re.search(r"@ (0x[0-9a-fA-F]+)", chunk.split("\n")[0].strip())
     return {
         "address": int(addr.group(1), 16) if addr else None,
         "candidates": {b: sorted(o) for b, o in offsets.items() if len(o) >= 2},
@@ -778,7 +911,10 @@ def measure(binary: Path, unstripped: Path, modes: set, options, timeout: int,
     payload = run_json(binary, options, timeout)
     out["kuna_functions"] = len(payload.get("functions") or [])
     if "trex" in modes:
-        out["trex"] = measure_trex(payload, gt_by_name, addr2name, strict_defined)
+        signs_by_name = {info["name"]: info.get("var_signs") or {}
+                         for info in functions.values()}
+        out["trex"] = measure_trex(payload, gt_by_name, addr2name, strict_defined,
+                                   signs_by_name)
     if "layout" in modes:
         out["layout"] = measure_layout(payload, run_header(binary, options, timeout),
                                        functions)
@@ -791,10 +927,10 @@ def measure(binary: Path, unstripped: Path, modes: set, options, timeout: int,
 def report(rows: list[dict]) -> str:
     lines = ["# structscore", ""]
     if any("trex" in r for r in rows):
-        lines += ["## TRex Fig. 6 (mean per binary, 0-6)", "",
-                  "| binary | GT vars | unpaired | mean | " +
+        lines += ["## TRex Fig. 6 (mean per binary; sign from DWARF DW_AT_encoding)", "",
+                  "| binary | GT vars | unpaired | mean 0-6 | mean 0-5 | sign unjudged | " +
                   " | ".join(TREX_STEPS) + " |",
-                  "|---|" + "---|" * (3 + len(TREX_STEPS))]
+                  "|---|" + "---|" * (5 + len(TREX_STEPS))]
         for r in rows:
             t = r.get("trex")
             if not t:
@@ -802,7 +938,8 @@ def report(rows: list[dict]) -> str:
             rates = " | ".join(f"{t['steps'][s]['passed']}/{t['steps'][s]['reached']}"
                                for s in TREX_STEPS)
             lines.append(f"| {Path(r['binary']).name} | {t['gt_variables']} | "
-                         f"{t['unmatched_gt_variables']} | {t['mean']} | {rates} |")
+                         f"{t['unmatched_gt_variables']} | {t['mean']} | "
+                         f"{t.get('mean_0_5')} | {t.get('sign_unjudged')} | {rates} |")
         lines.append("")
     if any("layout" in r for r in rows):
         lines += ["## layout / nesting F1 vs DWARF (pointer-to-struct parameters)", "",
@@ -857,12 +994,37 @@ void sub_3000(long a0)
 }
 """
 
+SELFTEST_DECL = """// Function: sub_4000 @ 0x4000
+long sub_4000(long a0)
+{
+  char *v1;
+  v1 = (char *)sub_5000();
+  return *(int *)(v1 + 0x10);
+}
+"""
+
+SELFTEST_ARROW = """// Function: sub_4300 @ 0x4300
+void sub_4300(struct_0 *a0)
+{
+  a0->field_0x28 = 1;
+  a0->next = 0;
+}
+"""
+
+
+def _score(spelling: str, gt: dict, strict=False, gt_sign=None) -> int:
+    return trex_score(trex_predicates(parse_type(spelling), gt, strict, gt_sign)[0])
+
 
 def selftest() -> int:
     gt_u64 = {"ptr": 0, "base": "unsigned long", "kind": "primitive",
               "unsigned": True, "size": 8}
-    scores = {spelling: trex_score(trex_predicates(parse_type(spelling), gt_u64))
+    scores = {spelling: _score(spelling, gt_u64, gt_sign=True)
               for spelling in ("char *", "struct_0", "double", "long", "unsigned long")}
+    # Exactly the reviewer's case: decbench hands back a sign-stripped, sorted
+    # form list for a DWARF `long unsigned int`. Reading the sign off that list
+    # scored the WRONG spelling 6; with the sign from DWARF it scores 5.
+    gt_stripped = gt_parse_forms(["long int", "long long", "long unsigned int"])
     header = header_layouts(SELFTEST_HEADER)
     census = census_function(SELFTEST_TEXT.split("// Function: ")[1])
     checks = [
@@ -873,15 +1035,25 @@ def selftest() -> int:
         ("Figure 6 example: double scores 4", scores["double"] == 4),
         ("Figure 6 example: the signed twin scores 5", scores["long"] == 5),
         ("Figure 6 example: the exact type scores 6", scores["unsigned long"] == 6),
-        ("an unmatched variable scores 0", trex_score(trex_predicates(None, gt_u64)) == 0),
+        ("an unmatched variable scores 0",
+         trex_score(trex_predicates(None, gt_u64)[0]) == 0),
         ("undefined8 is defined but commits to no primitive",
-         trex_score(trex_predicates(parse_type("undefined8"), gt_u64)) == 4),
+         _score("undefined8", gt_u64, gt_sign=True) == 4),
         ("--strict-defined scores it 0",
-         trex_score(trex_predicates(parse_type("undefined8"), gt_u64, True)) == 0),
+         _score("undefined8", gt_u64, strict=True, gt_sign=True) == 0),
         ("a pointer level mismatch stops at step 2",
-         trex_score(trex_predicates(parse_type("char **"),
-                                    {"ptr": 1, "base": "char", "kind": "primitive",
-                                     "unsigned": False, "size": 8})) == 2),
+         _score("char **", {"ptr": 1, "base": "char", "kind": "primitive",
+                            "unsigned": False, "size": 8}, gt_sign=False) == 2),
+        ("the DWARF sign decides the last step, not the form list",
+         (_score("unsigned long", gt_stripped, gt_sign=True),
+          _score("long", gt_stripped, gt_sign=True)) == (6, 5)),
+        ("an unknown sign caps the score at 5 and is counted",
+         (lambda r: trex_score(r[0]) == 5 and r[1] is True)(
+             trex_predicates(parse_type("unsigned long"), gt_stripped, False, None))),
+        ("mean_0_5 is blind to the sign",
+         trex_score(trex_predicates(parse_type("long"), gt_u64, False, True)[0][:5])
+         == trex_score(trex_predicates(parse_type("unsigned long"), gt_u64,
+                                       False, True)[0][:5]) == 5),
         ("GT forms prefer the resolved primitive over the typedef name",
          gt_parse_forms(["size_t", "unsigned long"])["kind"] == "primitive"),
         ("GT pointer-to-struct is composite",
@@ -891,7 +1063,12 @@ def selftest() -> int:
         ("a struct-pointer member records its pointee",
          header["nest_1"]["fields"][0]["pointee"] == "struct_0"),
         ("a base with 3 distinct offsets is a candidate",
-         census["candidates"].get("a0") == [0, 8, 12]),
+         census["candidates"].get("a0") == ["0x0", "0x8", "0xc"]),
+        ("a declaration's star is not a dereference",
+         census_function(SELFTEST_DECL.split("// Function: ")[1])["candidates"] == {}),
+        ("an offset-named field keeps its own offset, a plain one its name",
+         census_function(SELFTEST_ARROW.split("// Function: ")[1])["candidates"]
+         == {"a0": [".next", "0x28"]}),
         ("f(p) is p1*(1+p2*(1+...))", trex_score([True] * 6) == 6
          and trex_score([True, True, False, True, True, True]) == 2),
     ]

@@ -6,9 +6,12 @@ it move off?* — in the same shape, so the answers can be read side by side. Th
 runs that measurement for a feature bundle and emits the ``benchmark`` block of
 ``docs/features/libcsigs/record.json``:
 
-    per project: n, perfect_off, perfect_on, mean_off, mean_on, improved, worse
-    plus the same seven pooled, the decbench commit the metric came from, and
-    the DECBENCH_NO_CACHE note.
+    projects: {<project>: n, perfect_off, perfect_on, mean_off, mean_on,
+               improved, worse}          (projects only — pooled is its own key)
+    pooled:   the same seven over every project
+    control:  the harness controls, of which only
+              ``identical_variables_scored_differently`` can invalidate a run
+    plus the decbench commit the metric came from and the DECBENCH_NO_CACHE note.
 
 The measurement itself is ``scripts.decbench.typesweep`` — the same workers, the
 same ``TypeMatchMetric.compute_for_binary`` call, the same harness controls. The
@@ -96,17 +99,19 @@ def arm_values(record: dict, off: str | None, on: str | None) -> tuple[str, str]
 def corpus(record: dict, projects: list[str], opts: list[str]) -> tuple[list[str], list[str]]:
     if not projects:
         prior = ((record.get("benchmark") or {}).get("projects") or {})
-        projects = [p for p in prior if p != "pooled"] or list(DEFAULT_PROJECTS)
+        projects = list(prior) or list(DEFAULT_PROJECTS)
     return sorted(projects), sorted(opts or DEFAULT_OPTS)
 
 
-def summarize(rows: dict) -> dict:
-    """typesweep rows -> the record's ``benchmark.projects`` block.
+def summarize(rows: dict) -> tuple[dict, dict]:
+    """typesweep rows -> ``(benchmark.projects, benchmark.pooled)``.
 
     ``base`` is the option's OFF arm and ``test`` its ON arm (typescore hands
     both arms an explicit value). A function counts only when both arms scored
     it; ``improved``/``worse`` are the functions whose score moved either way,
-    perfect or not.
+    perfect or not. ``projects`` carries the projects and nothing else — the
+    pooled row is returned separately because the libcsigs record keeps it at
+    the top level, and anything that sums ``projects`` must not double-count it.
     """
     per: dict[str, dict] = {}
     for key, arms in sorted(rows.items()):
@@ -132,10 +137,10 @@ def summarize(rows: dict) -> dict:
     for acc in per.values():
         for k in pooled:
             pooled[k] += acc[k]
-    out = {}
-    for name, acc in list(per.items()) + [("pooled", pooled)]:
+
+    def row(acc: dict) -> dict:
         n = max(1, acc["n"])
-        out[name] = {
+        return {
             "n": acc["n"],
             "perfect_off": acc["perfect_off"],
             "perfect_on": acc["perfect_on"],
@@ -144,37 +149,72 @@ def summarize(rows: dict) -> dict:
             "improved": acc["improved"],
             "worse": acc["worse"],
         }
+
+    return {name: row(acc) for name, acc in per.items()}, row(pooled)
+
+
+def control(rows: dict, published: dict | None = None) -> dict:
+    """typesweep's two harness controls, carried into the block.
+
+    Only ``identical_variables_scored_differently`` can invalidate a run. Two
+    arms that handed the metric byte-identical ``variables`` — the same names,
+    types, sizes, stack offsets and argument positions, in the same order — must
+    produce the same score; anything else means the numbers came from somewhere
+    other than the option. It must be 0.
+
+    The other two fields are descriptive, not gates. ``retyped_functions``
+    counts the functions the option actually rewrote, which is the *expected*
+    signal for a retyping option and says nothing about validity;
+    ``off_arm_vs_published`` is typesweep's second control, the off arm against
+    the tree's stored ``type_match`` verdict. It agrees only where the off arm
+    is what the tree was scored with, so a low rate means kuna has moved since
+    (or the off value is not the default), not that the run is bad.
+    """
+    identical = identical_diff = retyped = unknown = 0
+    for arms in rows.values():
+        off, on = arms.get("base") or {}, arms.get("test") or {}
+        off_sig, on_sig = off.get("vars_sig") or {}, on.get("vars_sig") or {}
+        for fn, ov in (off.get("values") or {}).items():
+            tv = (on.get("values") or {}).get(fn)
+            if tv is None:
+                continue
+            a, b = off_sig.get(fn), on_sig.get(fn)
+            if a is None or b is None:
+                unknown += 1
+            elif a == b:
+                identical += 1
+                identical_diff += int(abs(tv - ov) >= 1e-9)
+            else:
+                retyped += 1
+    out = {
+        "identical_variables_functions": identical,
+        "identical_variables_scored_differently": identical_diff,
+        "retyped_functions": retyped,
+        "functions_without_a_variable_signature": unknown,
+    }
+    if published is not None:
+        agree = differ = 0
+        for key, arms in rows.items():
+            for fn, ov in ((arms.get("base") or {}).get("values") or {}).items():
+                pv = published.get(f"{key}::{fn}")
+                if pv is None:
+                    continue
+                if abs(pv - ov) < 1e-9:
+                    agree += 1
+                else:
+                    differ += 1
+        out["off_arm_vs_published"] = {
+            "agree": agree, "differ": differ,
+            "rate": round(agree / (agree + differ), 4) if agree + differ else None,
+        }
     return out
 
 
-def control(rows: dict) -> dict:
-    """typesweep's two harness controls, carried into the block.
-
-    ``identical_vars_scored_identically`` is the one that invalidates a run: two
-    arms with the same variable count scoring differently means the numbers came
-    from somewhere other than the option.
-    """
-    same = diff = 0
-    for arms in rows.values():
-        off, on = arms.get("base") or {}, arms.get("test") or {}
-        for fn, nv in (off.get("nvars") or {}).items():
-            if (on.get("nvars") or {}).get(fn) != nv:
-                continue
-            ov = (off.get("values") or {}).get(fn)
-            tv = (on.get("values") or {}).get(fn)
-            if ov is None or tv is None:
-                continue
-            if ov == tv:
-                same += 1
-            else:
-                diff += 1
-    return {"same_variable_count_functions": same + diff,
-            "same_variable_count_scored_differently": diff}
-
-
 def benchmark_block(rows: dict, option: str, off: str, on: str,
-                    projects: list[str], opts: list[str], errors: list[str]) -> dict:
+                    projects: list[str], opts: list[str], errors: list[str],
+                    published: dict | None = None) -> dict:
     dc = decbench_commit()
+    per_project, pooled = summarize(rows)
     return {
         "corpus": (f"decbench corpus at {config.results_root()}, optimisation levels "
                    f"{', '.join(opts)}, projects {', '.join(projects)}, scored with "
@@ -182,9 +222,9 @@ def benchmark_block(rows: dict, option: str, off: str, on: str,
         "metric": "type_match",
         "option": f"{option} {off} (off arm) vs {option} {on} (on arm)",
         "kuna_bin": config.kuna_bin(),
-        "projects": summarize(rows),
-        "pooled": summarize(rows).get("pooled", {}),
-        "control": control(rows),
+        "projects": per_project,
+        "pooled": pooled,
+        "control": control(rows, published),
         "note": ("Both arms pass the option explicitly, so the numbers do not depend on "
                  "the build's default. DECBENCH_NO_CACHE=1 is set by typescore itself -- "
                  "the metric's content-addressed cache otherwise serves a stored value. "
@@ -236,22 +276,33 @@ def splice(record_path: Path, block: dict) -> None:
     record_path.write_text(json.dumps(record, indent=2) + "\n")
 
 
+class _V:
+    """The two fields a variable signature needs in the selftest."""
+
+    def __init__(self, name, type_):
+        self.name, self.type = name, type_
+        self.size = self.stack_offset = self.arg_index = self.kind = None
+
+
 def selftest() -> int:
     """Aggregation-only checks; they need no decbench, no corpus and no kuna."""
     rows = {
         "grep::O0::grep": {
+            # `a` keeps its variables (a harness bug if it moves), `b` and `c`
+            # are retyped, `only_off` is scored by one arm only.
             "base": {"values": {"a": 1.0, "b": 0.5, "c": 0.0, "only_off": 0.25},
-                     "nvars": {"a": 3, "b": 3, "c": 3}},
+                     "vars_sig": {"a": "aa", "b": "bb", "c": "cc"}},
             "test": {"values": {"a": 0.75, "b": 1.0, "c": 0.0},
-                     "nvars": {"a": 3, "b": 4, "c": 3}},
+                     "vars_sig": {"a": "aa", "b": "b2", "c": "c2"}},
         },
         "gzip::O2::gzip": {
-            "base": {"values": {"d": 0.0}, "nvars": {"d": 2}},
-            "test": {"values": {"d": 1.0}, "nvars": {"d": 2}},
+            "base": {"values": {"d": 0.0}, "vars_sig": {"d": "dd"}},
+            "test": {"values": {"d": 1.0}, "vars_sig": {"d": "d2"}},
         },
     }
-    got = summarize(rows)
-    ctl = control(rows)
+    got, pooled = summarize(rows)
+    ctl = control(rows, {"grep::O0::grep::a": 1.0, "grep::O0::grep::b": 0.25})
+    sig = typesweep.variables_signature
     checks = [
         ("a function only one arm scored is excluded", got["grep"]["n"] == 3),
         ("perfect counted per arm",
@@ -261,11 +312,19 @@ def selftest() -> int:
         ("improved/worse count both directions",
          (got["grep"]["improved"], got["grep"]["worse"]) == (1, 1)),
         ("pooled sums the projects",
-         (got["pooled"]["n"], got["pooled"]["perfect_on"], got["pooled"]["improved"])
-         == (4, 2, 2)),
-        ("the control only looks at same-variable-count functions",
-         (ctl["same_variable_count_functions"],
-          ctl["same_variable_count_scored_differently"]) == (3, 2)),
+         (pooled["n"], pooled["perfect_on"], pooled["improved"]) == (4, 2, 2)),
+        ("pooled is NOT an entry of projects", set(got) == {"grep", "gzip"}),
+        ("the control flags only byte-identical variables that moved",
+         (ctl["identical_variables_functions"],
+          ctl["identical_variables_scored_differently"],
+          ctl["retyped_functions"]) == (1, 1, 3)),
+        ("the published control compares the off arm",
+         (ctl["off_arm_vs_published"]["agree"],
+          ctl["off_arm_vs_published"]["differ"]) == (1, 1)),
+        ("a variable signature is order- and field-sensitive",
+         sig([_V("a", "int"), _V("b", "char *")]) != sig([_V("b", "char *"), _V("a", "int")])
+         and sig([_V("a", "int")]) != sig([_V("a", "long")])
+         and sig([_V("a", "int")]) == sig([_V("a", "int")])),
         ("off/on values from a record",
          arm_values({"values": "on|off", "default_value": "on"}, None, None) == ("off", "on")),
         ("a three-valued option picks the first non-off",
@@ -273,7 +332,7 @@ def selftest() -> int:
         ("an explicit on-value wins",
          arm_values({"values": "off|byte|void"}, None, "void") == ("off", "void")),
         ("corpus falls back to the record's own projects",
-         corpus({"benchmark": {"projects": {"gzip": {}, "pooled": {}}}}, [], [])
+         corpus({"benchmark": {"projects": {"gzip": {}}}}, [], [])
          == (["gzip"], sorted(DEFAULT_OPTS))),
     ]
     for name, ok in checks:
@@ -322,7 +381,13 @@ def main(argv=None) -> int:
     out = args.out or (WORKDIR / f"{option}-{off}-{on}")
     rows, errors = run(option, off, on, projects, opts, out, args.workers,
                        args.timeout, args.limit, args.report_only)
-    block = benchmark_block(rows, option, off, on, projects, opts, errors)
+    try:
+        pub = typesweep.published(config.results_root())
+    except Exception as e:  # noqa: BLE001
+        print(f"[typescore] no published verdicts to control against ({e})",
+              file=sys.stderr)
+        pub = None
+    block = benchmark_block(rows, option, off, on, projects, opts, errors, pub)
     print(json.dumps(block, indent=2))
     if args.write:
         if not args.record:

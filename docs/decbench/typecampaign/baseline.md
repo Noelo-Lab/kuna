@@ -44,7 +44,16 @@ provenance key. A non-GED pool writes `-<metric>`-suffixed siblings, so the GED
 pools cannot be overwritten by a type run.
 
 Margin tiers L/M/S are GED sizes, so on a 0..1 metric they are empty by
-construction and the queue is the ranked remainder plus the artifact tier.
+construction and the whole queue comes from the artifact tier plus tier `X`.
+With the margins there all but tied, `X` is ordered by how many optimisation
+levels the group is imperfect at and then by group id — a coverage order, not a
+severity ranking.
+
+The degenerate-source exclusion that keeps a 1-node-CFG function out of a GED
+queue does **not** apply here: 609 of the 1,575 type cases (243 of the 826
+groups, 29.4%) have a degenerate source CFG, and a straight-line function's
+types are exactly as scoreable as any other's. 4 of the 20 queued groups are
+such cases.
 
 ### 2. `typescore` — the record's benchmark block
 
@@ -59,9 +68,16 @@ Control run against a block that already exists:
 
 `n`, `improved` and `worse` reproduce exactly; the absolute levels are higher
 because the pinned kuna is ~75 commits newer than the one libcsigs was measured
-on. Harness control on the same run: 266 functions had the same variable count in
-both arms and 8 of them scored differently — i.e. the option changed types
-without changing the variable count, which is what `libcsigs` does.
+on. `projects` carries the projects only — `pooled` is its own top-level key, as
+in the libcsigs record — so anything summing `projects` cannot double-count.
+
+The `control` block on the same run:
+
+| field | value | what it means |
+|---|---|---|
+| `identical_variables_scored_differently` | **0** | the only invalidating check: both arms handed the metric byte-identical `variables[]` for 217 functions and every one scored the same |
+| `retyped_functions` | 50 | the functions the option actually rewrote — the expected signal, of which 8 improved and 0 worsened |
+| `off_arm_vs_published` | 195 / 72 (73.0%) | the off arm against the tree's stored verdict. It disagrees on purpose here: the tree was scored with `libcsigs` at its default (on) and with a kuna ~75 commits older |
 
 ### 3. `varcensus` — declared variables
 
@@ -72,7 +88,11 @@ function whose body carries kuna's `jump-as-call` marker.
 coreutils `fmt` -O2, **unstripped twin** (`compiled/fmt` — this is the run the
 design lane's numbers came from):
 
-| config | functions | declarations | non-thunk | single-def/single-read | `[16]` blobs |
+`declarations` is over every function and `non-thunk` excludes the thunks;
+`single-def/single-read` below is the **non-thunk** count (`varcensus` prints
+both — the all-function value for the default row is 68, the non-thunk one 31):
+
+| config | functions | declarations | non-thunk | single-def/single-read (non-thunk) | `[16]` blobs |
 |---|---|---|---|---|---|
 | default | 152 | 332 | 295 | 31 | 23 |
 | `--option foldcallret off` | 152 | 367 | 330 | 52 | 23 |
@@ -87,7 +107,7 @@ from — agree exactly (+35 declarations, +21 single-def/single-read from
 
 The **stripped** copies (what decbench scores) at -O2:
 
-| binary | functions | declarations | non-thunk | single-def/single-read | `[16]` blobs | JSON vars | useless stack slots |
+| binary | functions | declarations | non-thunk | single-def/single-read (non-thunk) | `[16]` blobs | JSON vars | useless stack slots |
 |---|---|---|---|---|---|---|---|
 | fmt | 151 | 369 | 332 | 38 | 23 | 736 | 328 |
 | ls | 404 | 1,355 | 1,278 | 178 | 33 | 2,135 | 1,016 |
@@ -98,25 +118,35 @@ The **stripped** copies (what decbench scores) at -O2:
 
 `structscore <stripped>... --all`, coreutils fmt/ls/sort/du, O0 and O2.
 
-**TRex Fig. 6 prioritized score** (0–6, mean per binary; `unpaired` is GT
+**TRex Fig. 6 prioritized score** (mean per binary; `unpaired` is GT
 variables kuna's JSON surface has nothing to pair with, which is where the
-never-exported register locals land):
+never-exported register locals land). The ground-truth signedness the last step
+needs comes from the twin's `DW_AT_encoding`, because decbench's form list has
+the qualifier stripped out of it; `mean` is the full 0–6 score and `mean 0-5`
+the same score without that step, exact for every variable. `sign?` counts the
+variables that reached the last step with no DWARF encoding to judge it by —
+they score 5, so `mean` is a lower bound by at most that many sixths:
 
-| opt | binary | GT vars | unpaired | mean | defined | is_c_pointer | pointer_level | is_c_struct | sign_ignored | c_primitive |
-|---|---|---|---|---|---|---|---|---|---|---|
-| O0 | fmt | 413 | 5 | **3.719** | 408/413 | 292/408 | 288/292 | 259/288 | 207/259 | 82/207 |
-| O0 | ls | 1,859 | 44 | **3.411** | 1815/1859 | 1220/1815 | 1208/1220 | 1064/1208 | 671/1064 | 363/671 |
-| O0 | sort | 1,510 | 28 | **3.386** | 1482/1510 | 995/1482 | 980/995 | 849/980 | 553/849 | 254/553 |
-| O0 | du | 1,434 | 42 | **3.513** | 1392/1434 | 1010/1392 | 997/1010 | 855/997 | 534/855 | 249/534 |
-| O2 | fmt | 422 | 234 | **1.654** | 188/422 | 136/188 | 133/136 | 112/133 | 93/112 | 36/93 |
-| O2 | ls | 1,600 | 976 | **1.395** | 624/1600 | 452/624 | 436/452 | 374/436 | 234/374 | 112/234 |
-| O2 | sort | 1,214 | 678 | **1.544** | 536/1214 | 375/536 | 359/375 | 286/359 | 217/286 | 101/217 |
-| O2 | du | 1,177 | 679 | **1.554** | 498/1177 | 371/498 | 357/371 | 281/357 | 216/281 | 106/216 |
+| opt | binary | GT vars | unpaired | mean 0-6 | mean 0-5 | sign? | defined | is_c_pointer | pointer_level | is_c_struct | sign_ignored | c_primitive |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| O0 | fmt | 413 | 5 | **3.857** | 3.521 | 7 | 408/413 | 292/408 | 288/292 | 259/288 | 207/259 | 139/207 |
+| O0 | ls | 1,859 | 44 | **3.484** | 3.216 | 13 | 1815/1859 | 1220/1815 | 1208/1220 | 1064/1208 | 671/1064 | 498/671 |
+| O0 | sort | 1,510 | 28 | **3.474** | 3.218 | 18 | 1482/1510 | 995/1482 | 980/995 | 849/980 | 553/849 | 386/553 |
+| O0 | du | 1,434 | 42 | **3.598** | 3.339 | 13 | 1392/1434 | 1010/1392 | 997/1010 | 855/997 | 534/855 | 372/534 |
+| O2 | fmt | 422 | 234 | **1.706** | 1.569 | 8 | 188/422 | 136/188 | 133/136 | 112/133 | 93/112 | 58/93 |
+| O2 | ls | 1,600 | 976 | **1.419** | 1.325 | 25 | 624/1600 | 452/624 | 436/452 | 374/436 | 234/374 | 151/234 |
+| O2 | sort | 1,214 | 678 | **1.574** | 1.461 | 20 | 536/1214 | 375/536 | 359/375 | 286/359 | 217/286 | 138/217 |
+| O2 | du | 1,177 | 679 | **1.578** | 1.464 | 16 | 498/1177 | 371/498 | 357/371 | 281/357 | 216/281 | 134/216 |
 
-Read the steps, not only the mean: at O0 nearly every GT variable is paired and
-the score is lost at the last two steps (the primitive itself), while at O2 55–61%
-of GT variables have nothing to pair with at all and the mean collapses. The
-O0→O2 drop is the same shape TRex reports for Ghidra (2.99→2.17).
+Read the steps, not only the mean. At O0 nearly every GT variable is paired and
+the loss is concentrated in one step: `is_c_struct` → `sign_ignored_primitive`
+drops 259→207 on fmt and 1064→671 on ls, which is the pointer/struct gap the
+metric lane is already chasing. The last step is comparatively cheap once its
+ground truth is right — 139 of 207 on fmt, 67% — so **signedness is not where
+this score is lost**, and a signedness PR should expect a small `mean` move and
+no `mean 0-5` move at all. At O2 55–61% of GT variables have nothing to pair
+with and the mean collapses; the O0→O2 drop is the same shape TRex reports for
+Ghidra (2.99→2.17).
 
 *Not comparable to the published TRex table* (different corpus, different
 pairing, different normalization) — it is a before-number for kuna, not a
@@ -137,36 +167,41 @@ record is the denominator:
 | O2 | sort | 95 | 0 | 1,113 | 0.0 | 215 | 0.0 |
 | O2 | du | 100 | 0 | 1,106 | 0.0 | 245 | 0.0 |
 
-**Struct-candidate census** (a base dereferenced at ≥2 distinct constant offsets):
+Over both levels that is **835 pointer-to-struct parameters, 9,443 GT fields and
+1,660 GT nestings** (O0 alone: 538 / 6,022 / 1,010).
+
+**Struct-candidate census** (a base accessed at ≥2 distinct offsets or fields;
+declaration and prototype lines are excluded, so the `*` in `char *v1;` and in
+`void f(struct_0 *a0)` is not counted as a dereference):
 
 | opt | binary | functions | with a candidate | candidates | paired to GT | already right | GT is `struct *` |
 |---|---|---|---|---|---|---|---|
-| O0 | fmt | 191 | 24 | 31 | 23 | 9 | 11 |
-| O0 | ls | 589 | 122 | 198 | 149 | 37 | 96 |
-| O0 | sort | 479 | 112 | 191 | 141 | 27 | 95 |
-| O0 | du | 441 | 112 | 188 | 129 | 15 | 100 |
-| **O0 total** | | **1,700** | **370 (21.8%)** | **608** | **442** | **88 (19.9%)** | **302 (68.3%)** |
-| O2 | fmt | 151 | 29 | 50 | 13 | 2 | 10 |
-| O2 | ls | 404 | 161 | 325 | 160 | 15 | 42 |
-| O2 | sort | 343 | 89 | 191 | 67 | 14 | 47 |
-| O2 | du | 320 | 100 | 204 | 72 | 9 | 56 |
-| **O2 total** | | **1,218** | **379 (31.1%)** | **770** | **312** | **40 (12.8%)** | **155 (49.7%)** |
+| O0 | fmt | 191 | 24 | 30 | 22 | 8 | 11 |
+| O0 | ls | 589 | 120 | 190 | 143 | 35 | 96 |
+| O0 | sort | 479 | 109 | 181 | 132 | 26 | 94 |
+| O0 | du | 441 | 111 | 171 | 118 | 13 | 99 |
+| **O0 total** | | **1,700** | **364 (21.4%)** | **572** | **415** | **82 (19.8%)** | **300 (72.3%)** |
+| O2 | fmt | 151 | 29 | 48 | 12 | 1 | 10 |
+| O2 | ls | 404 | 161 | 319 | 159 | 14 | 42 |
+| O2 | sort | 343 | 88 | 184 | 64 | 12 | 47 |
+| O2 | du | 320 | 99 | 187 | 69 | 8 | 56 |
+| **O2 total** | | **1,218** | **377 (31.0%)** | **738** | **304** | **35 (11.5%)** | **155 (51.0%)** |
 
 Two things this settles before any struct work starts:
 
-* **The O0 pool really is smaller** — 21.8% of functions carry a candidate at O0
-  against 31.1% at O2, and 0.36 candidates per function against 0.63. That was the
+* **The O0 pool really is smaller** — 21.4% of functions carry a candidate at O0
+  against 31.0% at O2, and 0.34 candidates per function against 0.61. That was the
   design lane's guess and it holds. What flips the other way is how much of the
-  pool is *judgeable*: 442 of 608 O0 candidates (72.7%) pair with a ground-truth
-  variable against 312 of 770 (40.5%) at O2, because at O2 the base is often a
+  pool is *judgeable*: 415 of 572 O0 candidates (72.6%) pair with a ground-truth
+  variable against 304 of 738 (41.2%) at O2, because at O2 the base is often a
   register kuna never exports.
-* **The match→miss channel is small but real**: 88 of 442 paired candidates at O0
-  (19.9%) and 40 of 312 at O2 (12.8%) are variables kuna *already* types to
+* **The match→miss channel is small but real**: 82 of 415 paired candidates at O0
+  (19.8%) and 35 of 304 at O2 (11.5%) are variables kuna *already* types to
   DWARF's satisfaction, so a synthesis pass that fires on them spends a match. On
-  the other side, 68.3% (O0) and 49.7% (O2) of paired candidates really are
+  the other side, 72.3% (O0) and 51.0% (O2) of paired candidates really are
   pointer-to-struct in the source. The design lane's 637 candidates / 332 of 1,218
   O2 functions is the same measurement with a narrower pattern set; this one also
-  counts `B->field` and a bare `*B`, hence 770 / 379.
+  counts `B->field` and a bare `*B`, hence 738 / 377.
 
 Reproduce (about 4 minutes for all eight binaries):
 

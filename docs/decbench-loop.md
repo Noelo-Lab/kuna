@@ -355,6 +355,14 @@ Three things to know before quoting any of them:
   stripped, an uncommitted same-width spelling matches any scalar). Pointers with the
   right pointee are what moves it. A primitives/variables change is therefore priced by
   `varcensus` and the TRex score, and says "0 either way" on `type_match` **with** the run.
+  The TRex score takes its ground-truth signedness from the twin's DWARF
+  `DW_AT_encoding`, not from decbench's form list, which has the qualifier stripped out
+  of it — quote `mean` for a signedness claim and `mean_0_5` (the same score without the
+  last step) for anything else.
+* **`typescore`'s one invalidating control is `identical_variables_scored_differently`**,
+  which must be 0: two arms that handed the metric byte-identical `variables[]` cannot
+  legitimately score differently. `retyped_functions` next to it is the count the option
+  actually changed — the expected signal, not a warning.
 * **`structscore` reports 0 layout-F1 today by construction** — kuna synthesizes no
   structs, so the number to record before any struct work is the *denominator*: how many
   pointer-to-struct parameters and GT fields exist to be recovered at all.

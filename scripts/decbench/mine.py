@@ -33,9 +33,12 @@ Buckets (cross-decompiler consensus, computed vs the same function's scores):
     no-ghidra       ghidra has no finite score
 An ``artifact_suspect`` flag marks cases where the score is unlikely to reflect a
 real kuna deficit: kuna is no worse than the best of the other production
-decompilers while only the base scores 0, or the SOURCE CFG is degenerate
-(<= 1 node — nothing structural left to match; run ``scripts.decbench.srcsizes``
-to populate that cache).
+decompilers while only the base scores 0, or — on ``ged`` only — the SOURCE CFG
+is degenerate (<= 1 node, nothing structural left to match; run
+``scripts.decbench.srcsizes`` to populate that cache). A degenerate source CFG
+is recorded for every metric but only *excludes* a group from the ``--select``
+queue on ``ged``; on ``type_match`` a straight-line function's types are as
+scoreable as any other's.
 """
 from __future__ import annotations
 
@@ -241,11 +244,21 @@ def _pick_representative(cs: list[dict]) -> dict:
 def select_queue(cases_doc: dict, want: int) -> list[dict]:
     """Stratified, deterministic pick of triage cases (see docs/decbench-loop.md).
 
-    The margin tiers below are GED sizes. On a 0..1 metric every margin is <= 1,
-    so tiers L/M/S are empty by construction and the queue is the ranked
-    remainder (tier ``X``) plus the artifact tier — deliberate: a type case's
-    interest is not proportional to its margin.
+    The margin tiers below are GED sizes. On ``type_match`` every margin is
+    <= 1, so tiers L/M/S are empty by construction and the whole queue comes
+    from the artifact tier plus tier ``X`` — and since the margins there are all
+    but tied, X is ordered by how many optimisation levels the group is
+    imperfect at (the broadest evidence first), then by group id. That is a
+    *coverage* order, not a severity ranking; a type case's interest is not
+    proportional to its margin.
+
+    The degenerate-source exclusion below is likewise GED-only: a 1-node source
+    CFG means there is no structure left to match, which says nothing about
+    whether the recovered types are right. Applying it to ``type_match`` would
+    hide 243 of the pool's 826 groups.
     """
+    metric = cases_doc.get("metric", "ged")
+    structural = metric == "ged"
     groups: dict[str, list[dict]] = defaultdict(list)
     for c in cases_doc["cases"]:
         groups[c["group_id"]].append(c)
@@ -262,9 +275,9 @@ def select_queue(cases_doc: dict, want: int) -> list[dict]:
         proj = reps[gid]["project"]
         if per_project[proj] >= 4 or any(g == gid for _, g in picked):
             return False
-        # A degenerate source CFG makes the score meaningless — only the
-        # artifact tier, whose whole job is to confirm that, may take one.
-        if tier != "A" and reps[gid].get("degenerate_source"):
+        # A degenerate source CFG makes a STRUCTURAL score meaningless — only
+        # the artifact tier, whose whole job is to confirm that, may take one.
+        if structural and tier != "A" and reps[gid].get("degenerate_source"):
             return False
         picked.append((tier, gid))
         per_project[proj] += 1
@@ -329,8 +342,15 @@ def select_queue(cases_doc: dict, want: int) -> list[dict]:
             break
         take(g, "A")
 
-    # Top up to the requested size from the ranked remainder.
-    for g in order(gmargin, key=lambda g: (-gmargin[g], g)):
+    # Top up to the requested size from the remainder: by margin, then (on a
+    # metric whose margins are all but tied) by how many optimisation levels the
+    # group is imperfect at, then by group id so the pick is reproducible.
+    def x_key(g):
+        if structural:
+            return (-gmargin[g], g)
+        return (-gmargin[g], -len({c["opt_level"] for c in groups[g]}), g)
+
+    for g in order(gmargin, key=x_key):
         if len(picked) >= want:
             break
         take(g, "X")
