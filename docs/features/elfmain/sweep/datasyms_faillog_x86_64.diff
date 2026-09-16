@@ -1,5 +1,5 @@
---- /home/mahaloz/kwt/elfmain/.scratch/sweep/off/datasyms_faillog_x86_64.c	2026-09-16 19:24:18.025040652 +0000
-+++ /home/mahaloz/kwt/elfmain/.scratch/sweep/on/datasyms_faillog_x86_64.c	2026-09-16 19:24:17.336038871 +0000
+--- datasyms_faillog_x86_64 (option elfmain off)
++++ datasyms_faillog_x86_64 (default)
 @@ -405,8 +405,8 @@
    return v1;
  }

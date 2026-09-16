@@ -1,5 +1,5 @@
---- /home/mahaloz/kwt/elfmain/.scratch/sweep/off/entrymain_arm.c	2026-09-16 19:24:23.853055719 +0000
-+++ /home/mahaloz/kwt/elfmain/.scratch/sweep/on/entrymain_arm.c	2026-09-16 19:24:23.759055476 +0000
+--- entrymain_arm (option elfmain off)
++++ entrymain_arm (default)
 @@ -101,10 +101,10 @@
    software_interrupt(0xe7c4);
  }

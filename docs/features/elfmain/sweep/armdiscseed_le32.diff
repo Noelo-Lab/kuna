@@ -1,5 +1,5 @@
---- /home/mahaloz/kwt/elfmain/.scratch/sweep/off/armdiscseed_le32.c	2026-09-16 19:24:06.398010594 +0000
-+++ /home/mahaloz/kwt/elfmain/.scratch/sweep/on/armdiscseed_le32.c	2026-09-16 19:24:06.282010294 +0000
+--- armdiscseed_le32 (option elfmain off)
++++ armdiscseed_le32 (default)
 @@ -11,7 +11,7 @@
  }
  

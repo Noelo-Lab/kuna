@@ -1,5 +1,5 @@
---- /home/mahaloz/kwt/elfmain/.scratch/sweep/off/entrymain_riscv64.c	2026-09-16 19:24:23.964056006 +0000
-+++ /home/mahaloz/kwt/elfmain/.scratch/sweep/on/entrymain_riscv64.c	2026-09-16 19:24:23.905055853 +0000
+--- entrymain_riscv64 (option elfmain off)
++++ entrymain_riscv64 (default)
 @@ -37,9 +37,9 @@
    dat_2048 = 1;
  }

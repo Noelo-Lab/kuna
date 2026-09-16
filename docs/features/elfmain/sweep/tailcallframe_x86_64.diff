@@ -1,5 +1,5 @@
---- /home/mahaloz/kwt/elfmain/.scratch/sweep/off/tailcallframe_x86_64.c	2026-09-16 19:25:05.485163342 +0000
-+++ /home/mahaloz/kwt/elfmain/.scratch/sweep/on/tailcallframe_x86_64.c	2026-09-16 19:25:05.337162959 +0000
+--- tailcallframe_x86_64 (option elfmain off)
++++ tailcallframe_x86_64 (default)
 @@ -27,8 +27,8 @@
    (*dat_3ff8)(); // jump-as-call
  }

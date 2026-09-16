@@ -1,5 +1,5 @@
---- /home/mahaloz/kwt/elfmain/.scratch/sweep/off/entrymain_aarch64.c	2026-09-16 19:24:23.630055142 +0000
-+++ /home/mahaloz/kwt/elfmain/.scratch/sweep/on/entrymain_aarch64.c	2026-09-16 19:24:23.433054633 +0000
+--- entrymain_aarch64 (option elfmain off)
++++ entrymain_aarch64 (default)
 @@ -75,10 +75,10 @@
    sub_680(); // tail-call
  }

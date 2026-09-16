@@ -1,5 +1,5 @@
---- /home/mahaloz/kwt/elfmain/.scratch/sweep/off/eh_lsda_x86_64.c	2026-09-16 19:24:22.831053077 +0000
-+++ /home/mahaloz/kwt/elfmain/.scratch/sweep/on/eh_lsda_x86_64.c	2026-09-16 19:24:22.654052619 +0000
+--- eh_lsda_x86_64 (option elfmain off)
++++ eh_lsda_x86_64 (default)
 @@ -81,7 +81,7 @@
    char v1 [8];
    unsigned long v2; // stack + 0x0

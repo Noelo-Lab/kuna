@@ -1,5 +1,5 @@
---- /home/mahaloz/kwt/elfmain/.scratch/sweep/off/emptystrconst_x86_64.c	2026-09-16 19:24:23.223054090 +0000
-+++ /home/mahaloz/kwt/elfmain/.scratch/sweep/on/emptystrconst_x86_64.c	2026-09-16 19:24:23.010053539 +0000
+--- emptystrconst_x86_64 (option elfmain off)
++++ emptystrconst_x86_64 (default)
 @@ -27,7 +27,7 @@
    char v1 [8];
    unsigned long v2; // stack + 0x0

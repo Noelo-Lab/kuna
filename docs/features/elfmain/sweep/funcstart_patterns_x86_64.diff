@@ -1,5 +1,5 @@
---- /home/mahaloz/kwt/elfmain/.scratch/sweep/off/funcstart_patterns_x86_64.c	2026-09-16 19:24:28.602067996 +0000
-+++ /home/mahaloz/kwt/elfmain/.scratch/sweep/on/funcstart_patterns_x86_64.c	2026-09-16 19:24:28.416067515 +0000
+--- funcstart_patterns_x86_64 (option elfmain off)
++++ funcstart_patterns_x86_64 (default)
 @@ -6,10 +6,13 @@
    (*dat_403ff8)();
  }

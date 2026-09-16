@@ -1,5 +1,5 @@
---- /home/mahaloz/kwt/elfmain/.scratch/sweep/off/aif_gap_x86_64.c	2026-09-16 19:24:05.573008461 +0000
-+++ /home/mahaloz/kwt/elfmain/.scratch/sweep/on/aif_gap_x86_64.c	2026-09-16 19:24:05.363007918 +0000
+--- aif_gap_x86_64 (option elfmain off)
++++ aif_gap_x86_64 (default)
 @@ -24,7 +24,7 @@
    char v1 [8];
    unsigned long v2; // stack + 0x0

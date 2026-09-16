@@ -1,5 +1,5 @@
---- /home/mahaloz/kwt/elfmain/.scratch/sweep/off/armlibcmain_le32.c	2026-09-16 19:24:06.811011662 +0000
-+++ /home/mahaloz/kwt/elfmain/.scratch/sweep/on/armlibcmain_le32.c	2026-09-16 19:24:06.733011460 +0000
+--- armlibcmain_le32 (option elfmain off)
++++ armlibcmain_le32 (default)
 @@ -47,27 +47,30 @@
  }
  
