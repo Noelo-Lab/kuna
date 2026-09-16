@@ -4,6 +4,65 @@ Numbers every lane in the campaign is measured against. Each section says exactl
 what produced it, so a later run can disagree with it on purpose rather than by
 accident.
 
+## Canonical typesweep baseline (444 slices)
+
+Captured 2026-09-16 with the pinned binary `/home/mahaloz/kwt/_baseline/kuna` (main `809712e9`, rebuilt 18:54),
+`scripts.decbench.typesweep --baseline-only`, `DECBENCH_NO_CACHE=1`, results tree `full_run_address_2026-09-11`,
+projects coreutils grep gzip diffutils bzip2 findutils tar shadow × O0/O2/O2-noinline = 444 slices, 10,748 scored functions.
+Control: 96.90% agreement with the tree's published per-function verdicts (10415 agree / 333 differ — the tree was scored
+by the PR#48 address-mode matcher and an older kuna, so <100% is expected). Raw rows: `/home/mahaloz/kwt/_baseline/rows.json`
+(re-report with `typesweep --report-only --out <dir>`).
+
+| slice | functions | perfect | perfect % | mean |
+|---|---:|---:|---:|---:|
+| ALL | 10748 | 848 | 7.89% | 0.2645 |
+| opt:O0 | 4286 | 612 | 14.28% | 0.4167 |
+| opt:O2 | 2394 | 42 | 1.75% | 0.1330 |
+| opt:O2-noinline | 4068 | 194 | 4.77% | 0.1817 |
+| proj:bzip2 | 267 | 15 | 5.62% | 0.3441 |
+| proj:coreutils | 6422 | 525 | 8.18% | 0.2560 |
+| proj:diffutils | 420 | 43 | 10.24% | 0.3592 |
+| proj:findutils | 790 | 31 | 3.92% | 0.1444 |
+| proj:grep | 247 | 37 | 14.98% | 0.3614 |
+| proj:gzip | 368 | 83 | 22.55% | 0.4654 |
+| proj:shadow | 686 | 20 | 2.92% | 0.2619 |
+| proj:tar | 1548 | 94 | 6.07% | 0.2600 |
+
+<details><summary>per project × opt</summary>
+
+| slice | functions | perfect | perfect % | mean |
+|---|---:|---:|---:|---:|
+| proj:bzip2@O0 | 108 | 14 | 12.96% | 0.5661 |
+| proj:bzip2@O2 | 56 | 0 | 0.00% | 0.1847 |
+| proj:bzip2@O2-noinline | 103 | 1 | 0.97% | 0.1979 |
+| proj:coreutils@O0 | 2585 | 400 | 15.47% | 0.4067 |
+| proj:coreutils@O2 | 1401 | 12 | 0.86% | 0.1156 |
+| proj:coreutils@O2-noinline | 2436 | 113 | 4.64% | 0.1768 |
+| proj:diffutils@O0 | 165 | 25 | 15.15% | 0.5209 |
+| proj:diffutils@O2 | 97 | 6 | 6.19% | 0.2377 |
+| proj:diffutils@O2-noinline | 158 | 12 | 7.59% | 0.2651 |
+| proj:findutils@O0 | 306 | 19 | 6.21% | 0.2164 |
+| proj:findutils@O2 | 194 | 1 | 0.52% | 0.0654 |
+| proj:findutils@O2-noinline | 290 | 11 | 3.79% | 0.1212 |
+| proj:grep@O0 | 101 | 22 | 21.78% | 0.5141 |
+| proj:grep@O2 | 52 | 1 | 1.92% | 0.1881 |
+| proj:grep@O2-noinline | 94 | 14 | 14.89% | 0.2932 |
+| proj:gzip@O0 | 134 | 56 | 41.79% | 0.7179 |
+| proj:gzip@O2 | 99 | 10 | 10.10% | 0.3167 |
+| proj:gzip@O2-noinline | 135 | 17 | 12.59% | 0.3236 |
+| proj:shadow@O0 | 270 | 15 | 5.56% | 0.4837 |
+| proj:shadow@O2 | 131 | 2 | 1.53% | 0.1186 |
+| proj:shadow@O2-noinline | 285 | 3 | 1.05% | 0.1177 |
+| proj:tar@O0 | 617 | 61 | 9.89% | 0.3930 |
+| proj:tar@O2 | 364 | 10 | 2.75% | 0.1473 |
+| proj:tar@O2-noinline | 567 | 23 | 4.06% | 0.1876 |
+
+</details>
+
+Reference (E3 canonical recompute on a 14-project sample, same metric): binja 9.64% / .346, ida 7.40% / .282, kuna 6.09% / .277, ghidra 5.30% / .243.
+Pre-tooling census on the same binary (fmt/ls/sort/du O2): see `/home/mahaloz/kwt/_baseline/census0.json`.
+Every campaign PR reports its typesweep block against THIS binary and THIS slice set (or a subset of it).
+
 ## Census (F3 tooling)
 
 The four instruments landed together (`scripts.decbench.mine --metric`,
