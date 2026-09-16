@@ -431,8 +431,9 @@ fn style_normalize(c: &str) -> String {
 // faillog — the fast default fixture (x86-64 PIE, stripped, 23 KB)
 // ===========================================================================
 
-/// The three fixed targets: `sub_2620` is `main` (call/global/switch-heavy),
-/// `sub_3320`/`sub_3ad0` are mid-size leaf-ish functions.
+/// The three fixed targets: `0x2620` is `main` (call/global/switch-heavy) and
+/// resolves under either name, `sub_3320`/`sub_3ad0` are mid-size leaf-ish
+/// functions.
 const FAILLOG_TARGETS: &[&str] = &["sub_2620", "sub_3320", "sub_3ad0"];
 
 // ---- TODAY's measured PHASE-3 pins (see "Pin discipline" above) -----------
@@ -453,7 +454,11 @@ const PIN_FAILLOG_UNIQUE_TOKENS: [usize; 3] = [0, 0, 0];
 // (defects a/b).  The survivors are entities the ORACLE has no name for
 // either (stripped local functions, unnamed .bss objects) — the ghidra-mode
 // output now names everything the host can name.
-const PIN_FAILLOG_PLACEHOLDERS: [usize; 3] = [27, 4, 3];
+// 27 -> 26 on the first target with `elfmain`: 0x2620 is the address this
+// image's crt1 hands `__libc_start_main`, so it is `main` and no longer a
+// placeholder. Every other measurement on this fixture is unchanged, including
+// the line count and the getPcode traffic.
+const PIN_FAILLOG_PLACEHOLDERS: [usize; 3] = [26, 4, 3];
 // …of which the loader KNOWS a real name — ZERO: every PLT import
 // (localtime, getopt_long, dcgettext, …) resolves through getMappedSymbols.
 const PIN_FAILLOG_RESOLVABLE: [usize; 3] = [0, 0, 0];

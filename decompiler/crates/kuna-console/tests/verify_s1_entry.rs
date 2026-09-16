@@ -64,6 +64,12 @@ fn discovered_main_decompiles_without_supplied_address() {
     // the per-pass `--option <id> on|off` flags), not eagerly at bootstrap — so a
     // direct `bootstrap_from_object` consumer must trigger the commit before the
     // entry symbols are visible. This is exactly what `IfcReadSymbols` does.
+    // This gate's subject is the generated NAME (`kuna_function_name`, no leading
+    // zeros) that discovery gives an entry with no symbol, so `elfmain` — which
+    // replaces exactly that name at exactly this address with `main` — is turned
+    // off here. The default path on this same fixture is gated by
+    // `tests/stages/kuna-elfmain.xml` and `verify_crossarch_entry_main`.
+    prog.arch_mut().set_kuna_option("elfmain", "off").expect("elfmain flips");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
 
     // The discovery pass + commit seam registered the entries by their angr-style
