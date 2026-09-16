@@ -1,0 +1,94 @@
+{
+  "opportunity": "kuna decompile accepted a --option NAME VALUE pair whose VALUE the engine refuses, exited 0, and printed the default C byte-identically to a run with no --option at all, while decompile-all/functions/xrefs on the same pair exited 1 with `option <name>: <reason>`. Every ablation run through `kuna decompile` was therefore unfalsifiable: a mistyped value reads as `flipping this decision changed nothing`.",
+  "test_name": "tests/cli/option-value-silently-ignored.json + tests/cli/option-value-accepted-still.json (make test-cli), plus 5 kuna-cli transcript unit tests",
+  "binary": "decompiler/crates/kuna-analysis/tests/fixtures/fauxware",
+  "selector": "main",
+  "func_addr": null,
+  "angr_version": null,
+  "option": null,
+  "flag": null,
+  "element_id": null,
+  "change_kind": "strict-correctness-fix",
+  "tier": "driver",
+  "source_decompiler": "kuna",
+  "inspiration": null,
+  "default_on": true,
+  "ablation_changed": 0,
+  "parity": "OK",
+  "why_no_option_row": "Nothing that can change emitted C moves. A run whose options the engine accepts produces the same bytes it produced before; a run that now fails produced C that did not reflect what was asked for. The refusal itself already existed inside the engine and on every in-process surface -- this only makes it observable on the subprocess surface. Gating it would mean shipping an option whose off position is `keep lying about the exit code`.",
+  "why_no_speed_block": "No option to ablate, and nothing measurable to ablate it against: the change adds one extra pass over the same in-memory decomp_dbg transcript that check_errors already scans three times (a few KB) once per invocation, against a ~300 ms subprocess decompile. The interleaved min-of-15 below is reported only to show it is inside this box's noise.",
+  "root_cause": "kuna decompile holds no error object -- it pipes a decomp_dbg script on stdin and recovers failures from the transcript (decompile.rs check_errors). IfcOption::execute DOES report the refusal as `Execution error: <reason>`, but errorisdone is forced only for a PUSHED script (kuna-console/src/interface.rs push_script_state), so a stdin script survives the raise and runs on to `print C`. check_errors had arms for load file / read symbols / load function, and none for option.",
+  "fix": "option_failure(out) in kuna-cli/src/decompile.rs, modelled on read_symbols_failure: attribute a CONSOLE_DIAGNOSTICS-prefixed line to the `option ...` echo above it and answer `option <name>: <reason>`. Called from check_errors after the architecture arm (a dead image makes every option line answer `No load image present`) and before the analysis-commit arm (an option line runs first). The discovery-widening retry additionally requires option_failure(&combined).is_none(), because `option noreturn <not a function>` puts `Unknown function name:` in the transcript.",
+  "witness": {
+    "command": "kuna decompile <decbench O2/coreutils/stripped/fmt> 0x26a0 --addr --option realtypes zzz",
+    "before": "rc=0, stdout = the full default C (byte-identical to the same command without --option)",
+    "after": "rc=1, stdout empty, stderr `error: option realtypes: Must specify toggle value, on/off`",
+    "parity_target": "kuna decompile-all <same> --addr 0x26a0 --option realtypes zzz -> rc=1, same stderr byte for byte",
+    "unchanged": "--option realtypes off -> rc=0 and the same C as before; --option togglerule \"subright off\" (two-parameter form) -> rc=0; an unknown NAME still exits 2 via optname.rs"
+  },
+  "verification": {
+    "false_positive_sweep": {
+      "catalogued_options_at_default_value": 205,
+      "diagnostic_lines": 0,
+      "mode_override_pairs_swept": 70,
+      "driver_default_and_assert_injected_pairs": 5,
+      "injected_diagnostic_lines": 0,
+      "end_to_end": "one `kuna decompile fauxware main` carrying ALL 205 catalogued options at their catalogued default value -> rc=0; each of --mode auto|reliable|aggressive|fast, alone and with --assert 'readonly 0x404028+8' (which injects `option readonly on`) -> rc=0",
+      "per_pair_end_to_end": "one `kuna decompile` per pair over every catalogued option x every catalogued value: 420 invocations, 418 exit 0; the 2 non-zero are the catalog's placeholder tokens `symbolnamebound <n>` and `outline <fn>:<head>-<exit>[;...]`, which are not values"
+    },
+    "prefix_coverage_sweep": {
+      "catalogued_options_fed_zzzbadvalue": 205,
+      "refused": 205,
+      "accepted": 0,
+      "distinct_console_prefixes": [
+        "Execution error: "
+      ],
+      "distinct_wordings": 17,
+      "multi_line_reasons": 0,
+      "non_diagnostic_output_after_an_option_echo": 0,
+      "upstream_optiondatabase_names_swept": 37,
+      "upstream_refusals_are_single_line_execution_error": true,
+      "upstream_names_that_tolerate_garbage": [
+        "extrapop",
+        "maxlinewidth",
+        "indentincrement",
+        "commentindent",
+        "commentstyle",
+        "integerformat",
+        "setaction",
+        "maxinstruction"
+      ],
+      "tolerant_names_note": "upstream's own lenient parsers print a success line; unchanged here and tolerated identically by decompile-all",
+      "static_confirmation": "IfcOption maps BOTH set_kuna_option's and OptionDatabase::set's error unconditionally to IfaceError::execution, so the prefix is always `Execution error: ` whatever the KunaError kind; and no option setter's message contains a newline (the only multi-line KunaError in kuna-decomp is p2_lift/flow.rs `Basic blocks already calculated`, not an option path). The two console parse errors (`Missing option name`, `Too many option parameters`) arrive under `Command parsing error: `, also in CONSOLE_DIAGNOSTICS."
+    },
+    "nothing_relied_on_the_old_behaviour": {
+      "tests_cli_option_pairs_audited": 51,
+      "invalid_values_found": 0,
+      "deliberate_bad_NAME_probe": "tests/cli/unknown-option-name-silently.json (already expects a non-zero exit)",
+      "docs_hits": "docs/decbench/triage/audit-uncatalogued-options.md only, which DOCUMENTS these errors as decompile-all output",
+      "tests_stages_hits": "`option togglerule <rule> off` and `option braceformat function skip` are valid three-token forms on the datatest driver, not this path"
+    }
+  },
+  "speed": {
+    "method": "interleaved min-of-15, patched kuna vs origin/main's kuna at the same commit (809712e9), `decompile <fmt O2 stripped> 0x26a0 --addr`",
+    "before_min_ms": 282.4,
+    "after_min_ms": 270.6,
+    "delta_pct": -4.17,
+    "within_budget": true,
+    "why_flat": "one extra linear scan of a few-KB string per invocation, inside a ~300 ms subprocess decompile; the negative sign is box contention, not a speedup"
+  },
+  "benchmark": {
+    "typesweep": "not applicable -- emitted C and the --json variables[] are unchanged on every run that succeeds, so no decbench metric can move",
+    "verified": "byte-identical output before vs after: `decompile-all` over fauxware (whole file), `decompile` over its first 20 functions, and `decompile` over fmt O2's first 40 functions plus the six named witnesses -- 0 differences in 69 comparisons"
+  },
+  "gates": {
+    "make test": "datatests: 675/675 assertions passed -- PARITY OK",
+    "make test-stages": "datatests: 1007/1007 assertions passed -- PARITY OK",
+    "make check-spec": "check-spec OK (lenient mode) + check-spec OK (strict mode)",
+    "make test-cli": "tests/cli: 172/172 passed",
+    "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
+    "counters --check": "no drift: every hard-coded site agrees with the derived truth",
+    "docs/options.md": "byte-fresh (no option row added)",
+    "make rust-test": "RUST_TEST_RC=0 -- 414 `test result: ok` blocks, 0 `test result: FAILED`, incl. options_md_matches_the_generator_byte_for_byte"
+  }
+}

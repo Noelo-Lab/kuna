@@ -378,6 +378,49 @@ fn arch_failure_reason(out: &str) -> Option<String> {
     None
 }
 
+/// The reason an `option` command failed, recovered from the transcript.
+///
+/// `IfcOption` hands a kuna stage-model name to `Architecture::set_kuna_option`
+/// and an upstream one to `OptionDatabase::set`, and reports either one's
+/// refusal of the VALUE as an `Execution error:`. The script this driver pipes
+/// on stdin is not a *pushed* script, though, and `errorisdone` is only forced
+/// for those (`kuna_console::interface (push_script_state)`), so the session
+/// survives the refusal and `print C` still renders C — built without the
+/// decision the run asked for. The in-process surfaces refuse the same value
+/// outright (`decompile_all.rs (apply_one_option)`); this is the wording they
+/// use, so both answer a bad `--option NAME VALUE` the same way.
+///
+/// The NAME comes from the command echo rather than from the caller's list, so
+/// the answer always names the pair that was actually refused.
+fn option_failure(out: &str) -> Option<String> {
+    let mut option: Option<&str> = None;
+    for raw in out.lines() {
+        let trimmed = raw.trim();
+        let line = console_text(trimmed);
+        if line.is_empty() {
+            continue;
+        }
+        if trimmed.starts_with(CONSOLE_PROMPT) {
+            option = line
+                .strip_prefix("option ")
+                .and_then(|rest| rest.split_whitespace().next());
+            continue;
+        }
+        let Some(name) = option else {
+            continue;
+        };
+        for prefix in CONSOLE_DIAGNOSTICS {
+            if let Some(reason) = line.strip_prefix(prefix) {
+                let reason = reason.trim();
+                if !reason.is_empty() {
+                    return Some(format!("option {name}: {reason}"));
+                }
+            }
+        }
+    }
+    None
+}
+
 /// The reason the analysis commit failed, recovered from the transcript.
 ///
 /// `IfcReadSymbols` maps a failed `commit_pending_analysis` to an
@@ -464,8 +507,11 @@ fn selection_failure(out: &str) -> Option<String> {
 /// The architecture arm must stay ahead of the analysis-commit arm: a failed
 /// `load file` leaves no image, so every later command — `read symbols`
 /// included — answers `No load image present`, which is a consequence, not the
-/// reason. `allow_external` is false for raw images because their entries must
-/// have mapped bytes.
+/// reason. The option arm sits between the two, for that reason in both
+/// directions: a dead image answers every `option` line the same way, and a
+/// refused option is the earliest thing that can make a later command fail.
+/// `allow_external` is false for raw images because their entries must have
+/// mapped bytes.
 fn check_errors(
     out: &str,
     target: &str,
@@ -496,6 +542,9 @@ fn check_errors(
                 "could not build an architecture for {binary} (unsupported/!recognized binary)"
             ),
         });
+    }
+    if let Some(reason) = option_failure(out) {
+        return Some(reason);
     }
     if let Some(reason) = read_symbols_failure(out) {
         return Some(format!("read symbols (analysis commit) failed: {reason}"));
@@ -1048,7 +1097,13 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
             by_address,
             !args.raw_image,
         ) {
-            return Err((msg, !by_address && is_unknown_function(&combined)));
+            // Widening the inventory cannot rescue a refused `--option`, and one
+            // can look like a name miss: `option noreturn <not a function>`
+            // puts `Unknown function name:` in the transcript.
+            let retryable = !by_address
+                && is_unknown_function(&combined)
+                && option_failure(&combined).is_none();
+            return Err((msg, retryable));
         }
 
         let mut c_text = String::new();
@@ -1692,7 +1747,8 @@ mod tests {
     use super::{
         arch_failure_reason, build_script, check_errors, command_failure, console_path,
         decompile_all, decompile_command_failure, decompiling_name, find_pipeline_failure,
-        is_unknown_function, pipeline_refusal, read_symbols_failure, reject_unquotable,
+        is_unknown_function, option_failure, pipeline_refusal, read_symbols_failure,
+        reject_unquotable,
     };
     use std::borrow::Cow;
 
@@ -1756,6 +1812,22 @@ Execution error: g_a symbol created with zero size type
 [decomp]> decompile
 Clearing old decompilation
 Decompiling main
+Decompilation complete
+[decomp]> quit
+";
+
+    /// Recorded transcript: `--option realtypes zzz` on a healthy load. The
+    /// console refuses the VALUE, says so, and carries on to print C.
+    const BAD_OPTION_VALUE: &str = "\
+[decomp]> load file /x/fmt
+/x/fmt successfully loaded: x86:LE:64:default:gcc
+[decomp]> option realtypes zzz
+Execution error: Must specify toggle value, on/off
+[decomp]> read symbols
+[decomp]> load addr 0x26a0
+[decomp]> decompile
+Clearing old decompilation
+Decompiling sub_26a0
 Decompilation complete
 [decomp]> quit
 ";
@@ -1844,7 +1916,88 @@ Execution error: Unknown function name: nosuch
         );
     }
 
-    /// A healthy transcript is untouched by both recoveries.
+    /// A refused `--option` VALUE is a failed run, not a silent one: the option
+    /// never took, so the C that follows is the default decompilation. The
+    /// wording is `decompile_all.rs (apply_one_option)`'s, so both surfaces
+    /// answer one bad pair the same way.
+    #[test]
+    fn reports_a_refused_option_value() {
+        assert_eq!(
+            option_failure(BAD_OPTION_VALUE).as_deref(),
+            Some("option realtypes: Must specify toggle value, on/off")
+        );
+        assert_eq!(
+            check_errors(BAD_OPTION_VALUE, "0x26a0", "/x/fmt", true, true).as_deref(),
+            Some("option realtypes: Must specify toggle value, on/off")
+        );
+    }
+
+    /// Every refusal `set_kuna_option` and `OptionDatabase::set` can raise
+    /// arrives under one of the console's diagnostic prefixes and names its own
+    /// option, whatever the value grammar was.
+    #[test]
+    fn reports_each_option_value_grammar() {
+        // The last row echoes no name at all, so there is nothing to attribute
+        // the diagnostic to and the arm declines.
+        for (line, diagnostic, expected) in [
+            (
+                "option namestyle zzz",
+                "Execution error: namestyle must be \"angr\" or \"ghidra\"",
+                Some("option namestyle: namestyle must be \"angr\" or \"ghidra\""),
+            ),
+            (
+                "option splitdatatype off",
+                "Execution error: Unknown data-type split option: off",
+                Some("option splitdatatype: Unknown data-type split option: off"),
+            ),
+            (
+                "option jumptablemax x",
+                "Execution error: Must specify integer maximum",
+                Some("option jumptablemax: Must specify integer maximum"),
+            ),
+            ("option", "Command parsing error: Missing option name", None),
+        ] {
+            let out = format!(
+                "[decomp]> load file /x/a.out\n[decomp]> {line}\n{diagnostic}\n[decomp]> quit\n"
+            );
+            assert_eq!(option_failure(&out).as_deref(), expected, "{line}");
+        }
+    }
+
+    /// The option arm sits behind the architecture arm: a dead image makes every
+    /// later `option` line answer `No load image present`, which is the load
+    /// failure's consequence and not a bad value.
+    #[test]
+    fn a_dead_image_is_not_reported_as_a_bad_option() {
+        assert_eq!(
+            option_failure(EMPTY_SCOPE).as_deref(),
+            Some("option listing: No load image present"),
+            "the transcript does say it"
+        );
+        assert!(
+            check_errors(EMPTY_SCOPE, "main", "/x/hostile_scope_x86_64", false, true)
+                .expect("still an error")
+                .starts_with("could not build an architecture"),
+            "but the load failure is the reason"
+        );
+    }
+
+    /// An accepted option is not a failure, and a diagnostic raised by a later
+    /// command is not attributed to the option that preceded it.
+    #[test]
+    fn an_accepted_option_reports_nothing() {
+        assert_eq!(option_failure(COMMIT_FAILED), None);
+        let later = "\
+[decomp]> option listing on
+Listing/xref disassembly tier turned on
+[decomp]> load function nosuch
+Execution error: Unknown function name: nosuch
+[decomp]> quit
+";
+        assert_eq!(option_failure(later), None);
+    }
+
+    /// A healthy transcript is untouched by every recovery.
     #[test]
     fn a_clean_transcript_reports_nothing() {
         let out = "\
@@ -1857,6 +2010,7 @@ Decompilation complete
 ";
         assert_eq!(read_symbols_failure(out), None);
         assert_eq!(arch_failure_reason(out), None);
+        assert_eq!(option_failure(out), None);
         assert_eq!(check_errors(out, "main", "/x/a.out", false, true), None);
     }
 
