@@ -2717,6 +2717,9 @@ one of two ways — dropped from the call site it was being handed to, or, when 
 body stores it, declared as a local that nothing assigns. Over the 775 stripped
 decbench ELFs, 645 have a `main` this pass names, 28 of those recover more than
 three parameters from the body, and 13 of the 28 render at least one such local.
+On the other 15 the body also writes that register somewhere, so the demoted slot
+becomes an ordinary assigned local (shadow `usermod` @0x6340 assigns its `a5`
+from `*v13` on five paths) or goes away with the fabrication entirely.
 None of the extra slots is a real parameter: the runtime passes three, and on the
 two loudest cases — openssh `sftp` `-O2` @0x5250 and shadow `login` `-O2` @0x3d20
 — the unstripped twin's DWARF declares `int main(int argc, char **argv)` for

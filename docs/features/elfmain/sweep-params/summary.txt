@@ -36,4 +36,6 @@ O2/shadow/stripped/newgrp                            0x3a20   params=4 new_unass
 O2/shadow/stripped/newusers                          0x5080   params=6 new_unassigned=-
 O2/shadow/stripped/usermod                           0x6340   params=6 new_unassigned=-
 O2/libexpat/stripped/xmlwf                           0x2890   params=6 new_unassigned=r8,r9
-# gained a never-assigned local = 13, no new local (the value is dropped at its call site) = 15, total = 28
+# gained a never-assigned local = 13; no new never-assigned local = 15, where the body also writes that register
+# somewhere (the demoted slot becomes an ordinary assigned local, e.g. shadow usermod @0x6340 `a5 = *v13`) or the
+# value goes away with the fabricated slot (coreutils true/false, which improves). Total = 28.
