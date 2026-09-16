@@ -6,10 +6,14 @@ its output into the kuna repo so the campaign has a stable, committed signal:
     python3 -m scripts.decbench.mine                # snapshot + rank (base: angr)
     python3 -m scripts.decbench.mine --select 28    # also emit the triage queue
     python3 -m scripts.decbench.mine --base ida --select 20   # the ida-perfect pool
+    python3 -m scripts.decbench.mine --base ida --metric type_match --select 20
 
 ``--base`` picks the reference decompiler whose perfect scores define the pool.
-The angr pool keeps the original unsuffixed filenames; any other base writes
-``<name>-<base>`` siblings so pools coexist.
+``--metric`` picks what "perfect" means: ``ged`` (the default, lower is better,
+perfect 0) or ``type_match`` (higher is better, perfect 1.0) — the type-recovery
+campaign's pool. The angr GED pool keeps the original unsuffixed filenames; any
+other base writes ``<name>-<base>`` siblings and any other metric appends
+``-<metric>`` on top, so the GED pools are never overwritten by a type run.
 
 Outputs (all under docs/decbench/):
     cases.json         the full base-perfect / kuna-nonzero pool, one row per
@@ -47,6 +51,14 @@ from pathlib import Path
 from . import config
 
 PRODUCTION = ("angr", "ghidra", "ida", "binja", "phoenix")
+METRICS = ("ged", "type_match")
+
+# Per-metric direction and the "same score, really" tolerance used to bucket a
+# case against the other decompilers. GED is an unbounded edit distance (2 nodes
+# of slack); type_match is a 0..1 ratio whose steps are 1/(tp+fp+fn), so a tenth
+# of a variable is the equivalent slack.
+_LOWER_IS_BETTER = {"ged": True, "type_match": False}
+_BUCKET_TOL = {"ged": 2.0, "type_match": 0.1}
 
 
 def _others(base: str) -> tuple[str, ...]:
@@ -54,12 +66,13 @@ def _others(base: str) -> tuple[str, ...]:
     return tuple(d for d in PRODUCTION if d != base)
 
 
-def _run_improvements(extra: list[str], base: str = "angr") -> list[dict]:
+def _run_improvements(extra: list[str], base: str = "angr",
+                      metric: str = "ged") -> list[dict]:
     cmd = [
         config.decbench_cli(),
         "improvements",
         str(config.results_root()),
-        "-b", base, "-t", "kuna", "-m", "ged",
+        "-b", base, "-t", "kuna", "-m", metric,
         "--limit", "0", "-f", "json",
     ] + extra
     out = subprocess.run(cmd, capture_output=True, text=True, cwd=config.decbench_repo())
@@ -72,8 +85,8 @@ def _load_function_results() -> dict:
     return json.loads((config.results_root() / "function_results.json").read_text())
 
 
-def _other_geds(fr: dict, base: str) -> dict:
-    """(project, opt, binary, function) -> {dec: ged} for the non-base/kuna decs."""
+def _other_scores(fr: dict, base: str, metric: str) -> dict:
+    """(project, opt, binary, function) -> {dec: score} for the non-base/kuna decs."""
     table: dict[tuple, dict] = {}
     kuna_scored: dict[tuple, int] = defaultdict(int)
     for g in fr["groups"]:
@@ -81,36 +94,45 @@ def _other_geds(fr: dict, base: str) -> dict:
             key = (g["project"], g["opt_level"], g["binary"], f["function"])
             row = {}
             for dec in _others(base):
-                v = f["values"].get(dec, {}).get("ged")
+                v = f["values"].get(dec, {}).get(metric)
                 if v is not None and math.isfinite(v):
                     row[dec] = v
             table[key] = row
-            kv = f["values"].get("kuna", {}).get("ged")
+            kv = f["values"].get("kuna", {}).get(metric)
             if kv is not None and math.isfinite(kv):
                 kuna_scored[(g["project"], g["opt_level"], g["binary"])] += 1
     table["__kuna_scored__"] = kuna_scored  # type: ignore[assignment]
     return table
 
 
-def _bucket(kuna: float, others: dict) -> tuple[str, bool]:
+def _deficit(kuna: float, other: float, metric: str) -> float:
+    """How much worse kuna is than ``other``, in the metric's own units."""
+    return kuna - other if _LOWER_IS_BETTER[metric] else other - kuna
+
+
+def _bucket(kuna: float, others: dict, metric: str = "ged") -> tuple[str, bool]:
+    tol = _BUCKET_TOL[metric]
     gh = others.get("ghidra")
     if gh is None:
         bucket = "no-ghidra"
-    elif kuna > gh + 2:
+    elif _deficit(kuna, gh, metric) > tol:
         bucket = "kuna-specific"
-    elif abs(kuna - gh) <= 2:
+    elif abs(kuna - gh) <= tol:
         bucket = "inherited"
     else:
         bucket = "ahead"
     consensus = [others[d] for d in ("ghidra", "ida", "binja") if d in others]
-    suspect = bool(consensus) and min(consensus) >= kuna - 1
+    # kuna is no worse than the best of the production rivals (half a tolerance
+    # of slack), yet only the base scored perfect -- the score is suspect.
+    suspect = bool(consensus) and all(
+        _deficit(kuna, v, metric) <= tol / 2 for v in consensus)
     return bucket, suspect
 
 
-def build_cases(base: str = "angr") -> tuple[dict, dict]:
-    rows = _run_improvements(["--perfect-only"], base)
+def build_cases(base: str = "angr", metric: str = "ged") -> tuple[dict, dict]:
+    rows = _run_improvements(["--perfect-only"], base, metric)
     fr = _load_function_results()
-    others = _other_geds(fr, base)
+    others = _other_scores(fr, base, metric)
     kuna_scored = others.pop("__kuna_scored__")
     src_sizes = config.load_src_sizes()
 
@@ -119,18 +141,20 @@ def build_cases(base: str = "angr") -> tuple[dict, dict]:
     for r in rows:
         key = (r["project"], r["opt_level"], r["binary"], r["function"])
         odict = others.get(key, {})
-        bucket, suspect = _bucket(r["target_value"], odict)
+        bucket, suspect = _bucket(r["target_value"], odict, metric)
         c = dict(r)
         c["case_id"] = config.case_id(r["opt_level"], r["project"], r["binary"], r["function"])
         c["group_id"] = config.group_id(r["project"], r["function"])
         c["stripped_path"] = config.stripped_path(r["binary_path"]) if r.get("binary_path") else None
-        c["others_ged"] = odict
+        c[f"others_{metric}"] = odict
         c["bucket"] = bucket
         src = config.source_cfg(src_sizes, r["opt_level"], r["project"],
                                 r["binary"], r["function"])
         c.update(src)
         c["degenerate_source"] = src["source_nodes"] is not None and src["source_nodes"] <= 1
-        c["artifact_suspect"] = suspect or c["degenerate_source"]
+        # A degenerate source CFG only invalidates a *structural* score; it says
+        # nothing about whether the recovered types are right.
+        c["artifact_suspect"] = suspect or (metric == "ged" and c["degenerate_source"])
         cases.append(c)
         groups[c["group_id"]].append(c)
     for c in cases:
@@ -138,7 +162,7 @@ def build_cases(base: str = "angr") -> tuple[dict, dict]:
 
     # The kuna-missing pool: everything the base scored that kuna has no usable
     # GED for. Not part of case triage (the hang-fix workstream owns it).
-    missing_rows = [r for r in _run_improvements(["--include-target-missing"], base)
+    missing_rows = [r for r in _run_improvements(["--include-target-missing"], base, metric)
                     if r["target_missing"]]
     whole_binary = sorted(
         f"{opt}/{proj}/{binary}"
@@ -146,7 +170,7 @@ def build_cases(base: str = "angr") -> tuple[dict, dict]:
         for (proj, opt, binary) in [(g["project"], g["opt_level"], g["binary"])]
         if kuna_scored.get((proj, opt, binary), 0) == 0
         and any(
-            v.get("ged") is not None and math.isfinite(v["ged"])
+            v.get(metric) is not None and math.isfinite(v[metric])
             for f in g["functions"]
             for v in [f["values"].get(base, {})]
         )
@@ -155,6 +179,7 @@ def build_cases(base: str = "angr") -> tuple[dict, dict]:
     meta = {
         "schema": 1,
         "base": base,
+        "metric": metric,
         "snapshot_date": str(date.today()),
         "results_root": str(config.results_root()),
         "run_versions": fr.get("decompiler_versions", {}),
@@ -179,10 +204,14 @@ def write_backlog(cases_doc: dict) -> str:
         key=lambda kv: (-max(c["margin"] for c in kv[1]), kv[0]),
     )
     base = cases_doc.get("base", "angr")
+    metric = cases_doc.get("metric", "ged")
+    label = "GED" if metric == "ged" else metric
+    imperfect = "nonzero" if metric == "ged" else "imperfect"
+    flag = "" if metric == "ged" else f" --metric {metric}"
     lines = [
-        f"# decbench backlog — {base} GED-perfect, kuna nonzero",
+        f"# decbench backlog — {base} {label}-perfect, kuna {imperfect}",
         "",
-        f"Generated by `python3 -m scripts.decbench.mine --base {base}` from "
+        f"Generated by `python3 -m scripts.decbench.mine --base {base}{flag}` from "
         f"`{cases_doc['results_root']}`",
         f"({cases_doc['snapshot_date']}). One row per dedup group (same project+function);",
         f"{cases_doc['totals']['cases']} cases in {cases_doc['totals']['groups']} groups. Do not edit by hand.",
@@ -210,7 +239,13 @@ def _pick_representative(cs: list[dict]) -> dict:
 
 
 def select_queue(cases_doc: dict, want: int) -> list[dict]:
-    """Stratified, deterministic pick of triage cases (see docs/decbench-loop.md)."""
+    """Stratified, deterministic pick of triage cases (see docs/decbench-loop.md).
+
+    The margin tiers below are GED sizes. On a 0..1 metric every margin is <= 1,
+    so tiers L/M/S are empty by construction and the queue is the ranked
+    remainder (tier ``X``) plus the artifact tier — deliberate: a type case's
+    interest is not proportional to its margin.
+    """
     groups: dict[str, list[dict]] = defaultdict(list)
     for c in cases_doc["cases"]:
         groups[c["group_id"]].append(c)
@@ -300,6 +335,15 @@ def select_queue(cases_doc: dict, want: int) -> list[dict]:
             break
         take(g, "X")
 
+    fields = (
+        "case_id", "project", "opt_level", "binary", "binary_path",
+        "stripped_path", "function", "address", "address_hex", "margin",
+        "base", "base_value", "target_value",
+        f"others_{cases_doc.get('metric', 'ged')}", "bucket",
+        "artifact_suspect", "degenerate_source", "source_nodes",
+        "source_edges", "source_exact", "source_ambiguous",
+        "approximated", "labels", "siblings",
+    )
     queue = []
     for tier, gid in picked[:want]:
         rep = reps[gid]
@@ -307,14 +351,7 @@ def select_queue(cases_doc: dict, want: int) -> list[dict]:
             "tier": tier,
             "group_id": gid,
             "group_margin": gmargin[gid],
-            **{k: rep[k] for k in (
-                "case_id", "project", "opt_level", "binary", "binary_path",
-                "stripped_path", "function", "address", "address_hex", "margin",
-                "base", "base_value", "target_value", "others_ged", "bucket",
-                "artifact_suspect", "degenerate_source", "source_nodes",
-                "source_edges", "source_exact", "source_ambiguous",
-                "approximated", "labels", "siblings",
-            )},
+            **{k: rep[k] for k in fields if k in rep},
         })
     return queue
 
@@ -324,37 +361,42 @@ def main(argv=None) -> None:
     ap.add_argument("--select", type=int, default=0, metavar="N",
                     help="also write triage-queue.json with N stratified picks")
     ap.add_argument("--base", default="angr", choices=PRODUCTION,
-                    help="reference decompiler whose GED-perfect scores define the pool")
+                    help="reference decompiler whose perfect scores define the pool")
+    ap.add_argument("--metric", default="ged", choices=METRICS,
+                    help="metric the pool is mined on (default ged)")
     args = ap.parse_args(argv)
 
-    base = args.base
+    base, metric = args.base, args.metric
     config.campaign_dir().mkdir(parents=True, exist_ok=True)
-    if not config.src_sizes_path().is_file():
+    if metric == "ged" and not config.src_sizes_path().is_file():
         print(f"[mine] WARNING: no source-CFG size cache at {config.src_sizes_path()} — "
               f"degenerate-source artifacts will not be flagged (run "
               f"`{config.decbench_python()} -m scripts.decbench.srcsizes`)", file=sys.stderr)
-    cases_doc, missing_doc = build_cases(base)
-    config.cases_path(base).write_text(json.dumps(cases_doc, indent=1) + "\n")
-    config.missing_path(base).write_text(json.dumps(missing_doc, indent=1) + "\n")
-    config.backlog_path(base).write_text(write_backlog(cases_doc))
+    cases_doc, missing_doc = build_cases(base, metric)
+    config.cases_path(base, metric).write_text(json.dumps(cases_doc, indent=1) + "\n")
+    config.missing_path(base, metric).write_text(json.dumps(missing_doc, indent=1) + "\n")
+    config.backlog_path(base, metric).write_text(write_backlog(cases_doc))
     t = cases_doc["totals"]
     degen = sum(1 for c in cases_doc["cases"] if c.get("degenerate_source"))
-    print(f"[mine] base={base}: {t['cases']} cases in {t['groups']} groups "
-          f"({degen} degenerate-source) -> {config.cases_path(base)}")
+    # A degenerate source CFG is a GED artifact only; do not advertise it elsewhere.
+    note = f"({degen} degenerate-source) " if metric == "ged" else ""
+    print(f"[mine] base={base} metric={metric}: {t['cases']} cases in {t['groups']} groups "
+          f"{note}-> {config.cases_path(base, metric)}")
     print(f"[mine] {missing_doc['totals']['missing_functions']} kuna-missing functions, "
           f"{missing_doc['totals']['whole_binary_failures']} whole-binary failures "
-          f"-> {config.missing_path(base)}")
+          f"-> {config.missing_path(base, metric)}")
 
     if args.select:
         queue = select_queue(cases_doc, args.select)
-        config.queue_path(base).write_text(json.dumps(
-            {"schema": 1, "base": base, "snapshot_date": cases_doc["snapshot_date"],
+        config.queue_path(base, metric).write_text(json.dumps(
+            {"schema": 1, "base": base, "metric": metric,
+             "snapshot_date": cases_doc["snapshot_date"],
              "queue": queue}, indent=1) + "\n")
         by_tier = defaultdict(int)
         for q in queue:
             by_tier[q["tier"]] += 1
         print(f"[mine] queue: {len(queue)} cases {dict(sorted(by_tier.items()))} "
-              f"-> {config.queue_path(base)}")
+              f"-> {config.queue_path(base, metric)}")
         for q in queue:
             print(f"   [{q['tier']}] {q['case_id']}  Δ{q['margin']:g} {q['bucket']}"
                   f"{' ARTIFACT?' if q['artifact_suspect'] else ''}")

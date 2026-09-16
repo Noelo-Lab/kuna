@@ -118,7 +118,8 @@ def main(argv=None) -> None:
     else:
         print(f"- recorded: {base} GED={case['base_value']:g}*  "
               f"kuna GED={case['target_value']:g}  margin Δ{case['margin']:g}")
-    print(f"- others: {case.get('others_ged', {})}  bucket: {case.get('bucket')}"
+    others = next((v for k, v in case.items() if k.startswith("others_")), {})
+    print(f"- others: {others}  bucket: {case.get('bucket')}"
           f"{'  ARTIFACT-SUSPECT' if case.get('artifact_suspect') else ''}")
     src_n = case.get("source_nodes")
     if src_n is not None:

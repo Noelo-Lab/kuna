@@ -51,25 +51,30 @@ def campaign_dir() -> Path:
     return repo_root() / "docs" / "decbench"
 
 
-def _suffix(base: str) -> str:
-    """Pool file suffix: the angr pool keeps the original unsuffixed names."""
-    return "" if base == "angr" else f"-{base}"
+def _suffix(base: str, metric: str = "ged") -> str:
+    """Pool file suffix: the angr GED pool keeps the original unsuffixed names.
+
+    A different base appends ``-<base>`` (the historic rule) and a different
+    metric appends ``-<metric>`` on top, so a ``type_match`` pool can never
+    overwrite the GED pool it was mined beside.
+    """
+    return ("" if base == "angr" else f"-{base}") + ("" if metric == "ged" else f"-{metric}")
 
 
-def cases_path(base: str = "angr") -> Path:
-    return campaign_dir() / f"cases{_suffix(base)}.json"
+def cases_path(base: str = "angr", metric: str = "ged") -> Path:
+    return campaign_dir() / f"cases{_suffix(base, metric)}.json"
 
 
-def missing_path(base: str = "angr") -> Path:
-    return campaign_dir() / f"cases-missing{_suffix(base)}.json"
+def missing_path(base: str = "angr", metric: str = "ged") -> Path:
+    return campaign_dir() / f"cases-missing{_suffix(base, metric)}.json"
 
 
-def queue_path(base: str = "angr") -> Path:
-    return campaign_dir() / f"triage-queue{_suffix(base)}.json"
+def queue_path(base: str = "angr", metric: str = "ged") -> Path:
+    return campaign_dir() / f"triage-queue{_suffix(base, metric)}.json"
 
 
-def backlog_path(base: str = "angr") -> Path:
-    return campaign_dir() / f"backlog{_suffix(base)}.md"
+def backlog_path(base: str = "angr", metric: str = "ged") -> Path:
+    return campaign_dir() / f"backlog{_suffix(base, metric)}.md"
 
 
 def novel_path() -> Path:
