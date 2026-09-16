@@ -400,6 +400,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "realtypes",
     "ctypes",
     "framelayout",
+    "bytehonest",
     "voidtailreturn",
     "ptrdepthcap",
     "codescalar",
