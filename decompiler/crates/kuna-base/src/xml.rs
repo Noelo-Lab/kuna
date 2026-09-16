@@ -1857,7 +1857,7 @@ mod tests {
         // and kuna-tiedphitrim / loop-head aliased-read trim
         // and kuna-floatgrouping / float * and + keep their grouping
         // and kuna-elfmain / the ELF libc-start main is named and declared
-        assert_eq!(count, 294, "corpus file count drifted");
+        assert_eq!(count, 295, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

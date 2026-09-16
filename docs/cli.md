@@ -152,6 +152,17 @@ kuna decompile ./a.out main --option LOWEREDSWITCH off
 #          `kuna catalog` lists every settable name
 ```
 
+The **value** is the engine's to judge — each option owns its own grammar — so it is
+answered at the point of application rather than in the parser, and a refused one
+exits 1 on every surface with the reason the engine gave:
+
+```bash
+kuna decompile ./a.out main --option realtypes zzz
+#   error: option realtypes: Must specify toggle value, on/off
+```
+
+`kuna catalog` lists each option's accepted values.
+
 **A generated name is a selector.** kuna calls a function no symbol covers
 `sub_<addr>`, and it prints such a name for entries the whole-binary inventory
 does not hold — a recovered tail call renders `sub_1170(a0)`, and `kuna strings`

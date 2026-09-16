@@ -385,6 +385,8 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "earlyreturn",
     "switchreturn",
     "foldcallret",
+    "impliedrefs",
+    "termdup",
     "stackguard",
     "msvcstackguard",
     "securitycheck",

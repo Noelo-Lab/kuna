@@ -23,3 +23,4 @@ pub mod kuna_calleepop;
 pub mod kuna_cookiescramble;
 pub mod kuna_nulterminator;
 pub mod kuna_endptrbound;
+pub mod kuna_impliedrefs;

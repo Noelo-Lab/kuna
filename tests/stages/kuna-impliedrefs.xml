@@ -1,0 +1,71 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    impliedrefs / termdup: the two thresholds that decide whether a computed
+    value is declared as its own local or inlined at every use.
+
+    ActionMarkExplicit asks two numeric questions about every value:
+      * baseExplicit counts the descendants and forces the value explicit once
+        the count exceeds Architecture::max_implied_ref (shipped 2);
+      * processMultiplier counts the terminal terms the expression would
+        duplicate at each use and forces the value explicit once that count
+        exceeds Architecture::max_term_duplication (shipped 2).
+    Both shipped as hard-coded constants with no command reaching them.
+    `option impliedrefs <n>` and `option termdup <n>` expose them.
+
+    Sources (gcc -O2 -fno-pic, bytes lifted verbatim from the .o):
+
+        int f(int **pp) { int *q = pp[1]; return q[0] + q[1] + q[2]; }
+            q has exactly THREE readers, so at the shipped bound 2 it is
+            declared; the expression behind it (pp, 8) is two terms, so
+            termdup never touches it. This is the impliedrefs witness.
+
+        int h(int a, int b, int c) { int t = a + b + c; return t * t; }
+            t has exactly TWO readers, so impliedrefs never touches it; the
+            expression behind it is three terms (a, b, c), so at the shipped
+            bound 2 processMultiplier declares it. This is the termdup witness.
+
+    Pass 1 (default, asserts #1/#2): `int4 *v1;` is declared and read at all
+        three uses.
+    Pass 2 (`option impliedrefs 4`, assert #3): the declaration is gone and the
+        load is written out at each use.
+    Pass 3 (default, asserts #4/#5): the three-term sum is forced explicit and
+        gets its own statement, read by name at both multiplicand positions.
+    Pass 4 (`option termdup 3`, assert #6): the statement is gone and the sum is
+        duplicated at both uses.
+
+    Stage model: P6 / explicit-marking, tier transform, change_kind
+    opt-in-tool. Both default to the shipped constant, so the defaults are
+    byte-identical (675/675 datatests, stages PARITY OK).
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+488b57088b42040302034208c30f1f008d043701d00fafc0c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="f"/>
+<symbol space="ram" offset="0x100010" name="h"/>
+</binaryimage>
+<script>
+  <com>parse line extern int4 f(int4 **pp);</com>
+  <com>parse line extern int4 h(int4 a, int4 b, int4 c);</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option impliedrefs 4</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option impliedrefs 2</com>
+  <com>lo fu h</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option termdup 3</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="IMPLIEDREFS #1: at the shipped bound 2 a value with three readers is declared" min="1" max="1">int4 \*v1;</stringmatch>
+<stringmatch name="IMPLIEDREFS #2: the declared value is then read at all three uses" min="1" max="1">return v1\[1\] \+ \*v1 \+ v1\[2\];</stringmatch>
+<stringmatch name="IMPLIEDREFS #3: `option impliedrefs 4` drops the declaration and inlines the load at each use" min="1" max="1">return pp\[1\]\[1\] \+ \*pp\[1\] \+ pp\[1\]\[2\];</stringmatch>
+<stringmatch name="TERMDUP #4: at the shipped bound 2 a three-term expression is forced explicit and gets its own statement" min="1" max="1">c = a \+ b \+ c;</stringmatch>
+<stringmatch name="TERMDUP #5: the explicit sum is then read at both multiplicand positions by name" min="1" max="1">return c \* c;</stringmatch>
+<stringmatch name="TERMDUP #6: `option termdup 3` drops the statement and duplicates the three-term sum at both uses" min="1" max="1">return \(a \+ b \+ c\) \* \(a \+ b \+ c\);</stringmatch>
+</decompilertest>

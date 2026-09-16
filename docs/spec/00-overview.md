@@ -166,7 +166,9 @@ Four front-ends drive one engine assembly:
   thing left to distinguish a program whose debug facts were dropped from a
   binary that never had any: each console diagnostic is attributed to the command
   echo above it, and one belonging to `read symbols` is reported with the
-  in-process surfaces' message and exit code rather than the C.
+  in-process surfaces' message and exit code rather than the C. A refused
+  `option` line is read the same way and reported ahead of it (`option_failure`,
+  below).
 - (kuna) **`kuna decompile-all` / `kuna functions`**
   (`decompiler/crates/kuna-cli/src/decompile_all.rs (run, decompile_all)`) — the
   whole-binary, machine-readable surface: load and analyze **once** in-process
@@ -782,6 +784,31 @@ flipped. The subprocess surface could not learn it any other way — the console
 reports an unknown name as an `Execution error:` on **stdout** while keeping the
 session alive and exiting 0, and the driver deliberately does not treat a console
 diagnostic as a verdict (§0.2), so the rejection had nowhere to surface.
+
+(kuna) **The option-value contract.** The VALUE is the engine's to judge — each
+option owns its grammar (`on`/`off`, a closed word set, a count, a prototype
+model name) and only `Architecture::set_kuna_option` and `OptionDatabase::set`
+know it — so, unlike the NAME, it cannot be checked in the parser. The in-process
+surfaces get the refusal as a `Result` and stop
+(`decompiler/crates/kuna-cli/src/decompile_all.rs (apply_one_option)`), while the
+subprocess surface has only the transcript: the console reports the refusal as an
+`Execution error:` and, because the driver's script arrives on **stdin** rather
+than as a pushed script — `errorisdone` is set only by
+`decompiler/crates/kuna-console/src/interface.rs (push_script_state)` — the
+session simply runs on. The run then printed the DEFAULT C and exited 0, which is
+the same false evidence the name check exists to prevent, and worse for being
+indistinguishable from a decision point that genuinely changes nothing. So
+`decompile.rs (option_failure)` attributes a diagnostic to the `option` echo
+above it exactly as the analysis-commit arm does, and answers with
+`option <name>: <reason>` and exit 1 — the wording and the status
+`apply_one_option` already uses. This is a narrow exception to §0.2's rule that a
+console diagnostic is not a verdict, and it stays narrow by attribution: only a
+diagnostic whose own command was an `option` line is one, and the arm sits behind
+the architecture arm, since a failed `load file` makes every later `option`
+answer `No load image present` — a consequence, not a bad value. A value the
+engine accepts, including one upstream's own lenient parsers tolerate, is
+untouched; so is a two-parameter form such as `--option togglerule "subright
+off"`, which reaches the console as the three tokens it wants.
 
 (kuna) **Surfacing a failed function.** A per-function pipeline abort is
 *recoverable*: the drive catches the unwind and returns the reason as an error
