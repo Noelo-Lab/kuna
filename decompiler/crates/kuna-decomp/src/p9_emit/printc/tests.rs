@@ -1015,6 +1015,64 @@ fn parentheses_uses_printc_token_precedence() {
     assert!(parentheses(&top, &BINARY_MINUS, None));
 }
 
+/// The IEEE-754 pair is written out rather than derived from the integer one, so
+/// EVERY field is compared here: a drifted precedence would change how float
+/// arithmetic nests inside every other operator, and a drifted `bump` would wrap
+/// the same `*` differently depending on the type of its operands.
+#[test]
+fn float_tokens_match_their_integer_twins_except_for_grouping() {
+    use tokens::*;
+    for (float_tok, int_tok) in [(&FLOAT_MULTIPLY, &MULTIPLY), (&FLOAT_PLUS, &BINARY_PLUS)] {
+        assert_eq!(float_tok.print1, int_tok.print1);
+        assert_eq!(float_tok.print2, int_tok.print2);
+        assert_eq!(float_tok.precedence, int_tok.precedence);
+        assert_eq!(float_tok.stage, int_tok.stage);
+        assert_eq!(float_tok.spacing, int_tok.spacing);
+        assert_eq!(float_tok.bump, int_tok.bump);
+        assert_eq!(float_tok.token_type, int_tok.token_type);
+        assert_eq!(float_tok.paren_before_angle, int_tok.paren_before_angle);
+        assert!(float_tok.negate.is_none() && int_tok.negate.is_none());
+        assert!(int_tok.associative && !int_tok.left_to_right_only);
+        assert!(float_tok.left_to_right_only && !float_tok.associative);
+    }
+}
+
+/// GH-641: `a * (b * c)` and `(a * b) * c` round differently, so the float
+/// tokens parenthesize a same-token RIGHT operand and leave a left one bare.
+#[test]
+fn parentheses_keeps_float_grouping() {
+    use tokens::*;
+    for tok in [&FLOAT_MULTIPLY, &FLOAT_PLUS] {
+        assert!(!parentheses(&rpn(tok, 0), tok, None), "a * b * c must stay flat");
+        assert!(parentheses(&rpn(tok, 1), tok, None), "a * (b * c) must keep its parens");
+    }
+    // The integer twins are unchanged: associative on both sides.
+    assert!(!parentheses(&rpn(&MULTIPLY, 1), &MULTIPLY, None));
+    assert!(!parentheses(&rpn(&BINARY_PLUS, 1), &BINARY_PLUS, None));
+}
+
+/// End to end through the RPN engine, the shape the printer actually emits.
+#[test]
+fn rpn_float_chain_parenthesizes_only_the_right_operand() {
+    let left = emit_expr(|p| {
+        p.push_op(&tokens::FLOAT_MULTIPLY, None);
+        p.push_op(&tokens::FLOAT_MULTIPLY, None);
+        p.push_atom(&var_atom("a"));
+        p.push_atom(&var_atom("b"));
+        p.push_atom(&var_atom("c"));
+    });
+    assert_eq!(left, "a * b * c");
+
+    let right = emit_expr(|p| {
+        p.push_op(&tokens::FLOAT_MULTIPLY, None);
+        p.push_atom(&var_atom("a"));
+        p.push_op(&tokens::FLOAT_MULTIPLY, None);
+        p.push_atom(&var_atom("b"));
+        p.push_atom(&var_atom("c"));
+    });
+    assert_eq!(right, "a * (b * c)");
+}
+
 #[test]
 fn parentheses_unary_adjacent_sign_kuna_fix() {
     use tokens::*;

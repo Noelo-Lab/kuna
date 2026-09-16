@@ -434,8 +434,30 @@ pure predicate `printlanguage.rs (parentheses)`: compare the enclosing token's
 precedence/associativity/type against the incoming one, with special stages
 for pre/post-surround tokens (calls, subscripts, casts) and the (kuna, DIV-1,
 GH-2786) rule that adjacent identical `-`/`+` prefix tokens always
-parenthesize so they cannot merge into `--`/`++`. `printc.rs
-(PrintC::push_atom)` emits a leaf and then unwinds every operator whose
+parenthesize so they cannot merge into `--`/`++`.
+
+Two of those tokens are not the ones integer arithmetic uses. `*` and `+` are
+associative over the integers, so an operand built by the same token needs no
+parentheses on either side and a chain of them flattens to `a * b * c`. IEEE-754
+arithmetic is not associative: `a * (b * c)` rounds at different points than
+`(a * b) * c` and can differ in the last bit, so flattening a float chain emits C
+that computes a different value than the p-code it came from. `CPUI_FLOAT_MULT`
+and `CPUI_FLOAT_ADD` therefore push their own tokens, `printc.rs
+(tokens::FLOAT_MULTIPLY)` and `printc.rs (tokens::FLOAT_PLUS)`, spelled and
+ranked exactly like the integer pair but carrying `left_to_right_only` instead of
+`associative`. That flag is the third answer `printlanguage.rs (parentheses)` can
+give a same-token operand: `associative` leaves both operands bare, a plain
+non-associative token (`-`, `/`) parenthesizes both, and `left_to_right_only`
+leaves the first bare and parenthesizes the second. It is the exact rule, because
+C already groups `*` and `+` left-to-right: a left operand re-parses into the
+tree it came from, and only a right operand needs the parentheses to survive the
+round trip. So the two orderings a compiler can emit stay distinguishable in the
+output -- `a * b * c` for the left-grouped one and `a * (b * c)` for the
+right-grouped one -- where before they printed identically
+(`tests/stages/kuna-floatgrouping.xml`). Float subtraction and division already
+reached the right answer through the non-associative integer tokens they share.
+
+`printc.rs (PrintC::push_atom)` emits a leaf and then unwinds every operator whose
 operand count is now satisfied (`emit_op` prints each operator's text at the
 right visit stage — between operands for binary tokens, at open/close for
 surrounds). Contextual rendering flows through a modifier word saved and

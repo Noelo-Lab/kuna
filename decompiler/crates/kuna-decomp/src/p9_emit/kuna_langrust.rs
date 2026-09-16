@@ -126,6 +126,7 @@ pub mod rust_tokens {
             bump: 0,
             negate,
             paren_before_angle: false,
+            left_to_right_only: false,
         }
     }
 
@@ -165,6 +166,7 @@ pub mod rust_tokens {
         bump: 0,
         negate: None,
         paren_before_angle: false,
+        left_to_right_only: false,
     };
 
     /// Rust spells logical xor `^`, which is the same operator as the bitwise
@@ -185,6 +187,7 @@ pub mod rust_tokens {
         bump: 0,
         negate: None,
         paren_before_angle: false,
+        left_to_right_only: false,
     };
 
     /// `expr as T` — postfix-typed rather than C's prefix `(T)expr`. Binds
@@ -201,6 +204,7 @@ pub mod rust_tokens {
         negate: None,
         // `x as i32 < 5` does not parse; see `OpToken::paren_before_angle`.
         paren_before_angle: true,
+        left_to_right_only: false,
     };
 }
 

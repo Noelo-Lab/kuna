@@ -105,6 +105,8 @@ fn c_token_mapping_is_the_identity() {
         &tokens::TYPECAST,
         &tokens::MULTIPLY,
         &tokens::BINARY_PLUS,
+        &tokens::FLOAT_MULTIPLY,
+        &tokens::FLOAT_PLUS,
         &tokens::SHIFT_LEFT,
         &tokens::ASSIGNMENT,
     ] {

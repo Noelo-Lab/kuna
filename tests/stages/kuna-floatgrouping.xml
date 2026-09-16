@@ -1,0 +1,67 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna GH-641: "floating point associativity" (reported with a hand-written
+    x86-64 fixture and a native-execution witness).
+    https://github.com/Noelo-Lab/kuna/issues/641
+
+    CPUI_FLOAT_MULT and CPUI_FLOAT_ADD pushed the same MULTIPLY / BINARY_PLUS
+    tokens integer arithmetic uses, and those are marked associative, so the
+    printer dropped the parentheses around a same-token right operand.  Both
+    groupings a compiler can emit then printed as one flat chain: `a * b * c`
+    for the `a * (b * c)` the p-code computes as well as for the `(a * b) * c`
+    it computes elsewhere.  The two round differently (the reporter's pair
+    returns 0x4103a6a4 and 0x4103a6a3 from the same arguments), so one of the
+    two renderings was C that computes a different value than the function it
+    came from.
+
+    Stage model: P9 emit, the operator-token table and the parentheses()
+    binary case (printc.rs, printlanguage.rs).
+
+    This is a kuna DEFAULT-FLIP, like GH-2786: emitting an expression that
+    re-reads as a different computation is an unambiguous bug, so the fix is
+    unconditional rather than behind an option, and the usual
+    bug-reproduces-by-default pass is impossible by design.  Assertions #1/#3
+    prove the fixed form; #2/#4 prove the flat chain now belongs to exactly one
+    of the two functions, where before this change it matched both.
+
+    Bytes: four register-only leaf functions, assembled here.
+      right_grouped: mulss %xmm2,%xmm1; mulss %xmm1,%xmm0; ret
+      left_grouped:  mulss %xmm1,%xmm0; mulss %xmm2,%xmm0; ret
+      right_sum:     addss %xmm2,%xmm1; addss %xmm1,%xmm0; ret
+      left_sum:      addss %xmm1,%xmm0; addss %xmm2,%xmm0; ret
+-->
+<bytechunk space="ram" offset="0x100000">
+f30f59caf30f59c1c3f30f59c1f30f59
+c2c3f30f58caf30f58c1c3f30f58c1f3
+0f58c2c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="right_grouped"/>
+<symbol space="ram" offset="0x100009" name="left_grouped"/>
+<symbol space="ram" offset="0x100012" name="right_sum"/>
+<symbol space="ram" offset="0x10001b" name="left_sum"/>
+</binaryimage>
+<script>
+  <com>parse line extern float right_grouped(float a,float b,float c);</com>
+  <com>parse line extern float left_grouped(float a,float b,float c);</com>
+  <com>parse line extern float right_sum(float a,float b,float c);</com>
+  <com>parse line extern float left_sum(float a,float b,float c);</com>
+  <com>lo fu right_grouped</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu left_grouped</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu right_sum</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu left_sum</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="FLOATGROUPING #1: the right-grouped product keeps its grouping" min="1" max="1">return a \* \(b \* c\);</stringmatch>
+<stringmatch name="FLOATGROUPING #2: exactly one of the two products prints as a flat chain" min="1" max="1">return a \* b \* c;</stringmatch>
+<stringmatch name="FLOATGROUPING #3: the right-grouped sum keeps its grouping" min="1" max="1">return a \+ \(b \+ c\);</stringmatch>
+<stringmatch name="FLOATGROUPING #4: exactly one of the two sums prints as a flat chain" min="1" max="1">return a \+ b \+ c;</stringmatch>
+</decompilertest>

@@ -294,6 +294,7 @@ fn mk(print1: &'static str, prec: int4, assoc: bool, tt: TokenType) -> OpToken {
         bump: 0,
         negate: None,
         paren_before_angle: false,
+        left_to_right_only: false,
     }
 }
 
