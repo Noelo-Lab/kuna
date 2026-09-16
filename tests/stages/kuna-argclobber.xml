@@ -28,25 +28,33 @@
     Ghidra emits the identical three-argument call and names the phantom
     `extraout_RDX`.
 
+    The fixture is the same construct, hand assembled.  rdx at the call is a
+    two-input join and NEITHER input is a value the caller put there for this
+    call: on one path `clobber` destroyed the register (and its own first act is
+    a call, so `calleepreserves` cannot narrow the killed set), on the other an
+    `idivl` left its remainder in edx while the caller went on to use only the
+    quotient.  That second half is the `% 200` term of the fmt witness, and it
+    is the only non-clobber shape the rule accepts: upstream scores a trial
+    formed by a remainder exactly like one formed by an indirect creation, on
+    the return side (`ParamListStandardOut::fillinMap`, fspec.cc:1721).
+    `target`'s first act is a call, so `calleedeadarg` cannot prove rdx dead
+    there either.
+
     Stage / sub-stage: P4 "active-input-trial-scoring".  The P0 assertion
     `option argclobber on|off` decides whether the trailing argument of a call
-    may be dropped when a previous call's clobber is what put a value in its
+    may be dropped when nothing on the caller's side put a value in its
     register.
 
-    The fixture is the same construct, hand assembled: `caller` either calls
-    `clobber` (which destroys rdx, and whose own first act is a call, so
-    `calleepreserves` cannot narrow the killed set) or sets edx itself, joins
-    the two paths, and calls `target` with rdi/rsi loaded.  `target`'s first act
-    is a call too, so `calleedeadarg` cannot prove rdx dead there either.
-
     Pass 1 (`option argclobber off`, the shipped default) reproduces the BUG:
-    `target` takes a third argument built out of the clobber.
-    Pass 2 (`option argclobber on`) is the FIX: the trailing argument is gone
-    and the two real ones are untouched.
+    `target` takes a third argument built out of the clobber and the dead
+    remainder.
+    Pass 2 (`option argclobber on`) is the FIX: the trailing argument is gone,
+    the dead remainder goes with it, and the quotient the caller really uses is
+    untouched.
 -->
 <bytechunk space="ram" offset="0x100000">
-534889fb4885db7407e822000000eb05ba070000004889dfbe05000000e81e00
-00005bc3cccccccccccccccccccccccce81b000000c3cccccccccccccccccccc
+534889fb4885f67407e822000000eb0c89d899b9c8000000f7f989c34889dfbe
+05000000e8170000005bc3cccccccccce81b000000c3cccccccccccccccccccc
 534889fbe8070000004889d85bc3ccccc3
 </bytechunk>
 <symbol space="ram" offset="0x100000" name="caller"/>
@@ -64,7 +72,8 @@
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="argclobber #1: option off passes a third argument built out of the previous call's clobber (bug reproduced)" min="1" max="1">target\(a0,5,v[0-9]+\)</stringmatch>
-<stringmatch name="argclobber #2: option on drops the trailing argument the caller never wrote for this call" min="1" max="1">target\(a0,5\)</stringmatch>
-<stringmatch name="argclobber #3: the phantom rdx local the fabricated argument read is gone with the option on (only the buggy pass declares it)" min="1" max="1">unsigned long v[0-9]+; // rdx</stringmatch>
+<stringmatch name="argclobber #1: option off passes a third argument built out of the previous call's clobber and a dead idiv remainder (bug reproduced)" min="1" max="1">target\(a0,5,v[0-9]+\)</stringmatch>
+<stringmatch name="argclobber #2: option on drops the trailing argument, whose every incoming value is a clobber or a division by-product" min="1" max="1">target\(a0,5\)</stringmatch>
+<stringmatch name="argclobber #3: the dead remainder that fed the fabricated argument is gone with the option on (only the buggy pass computes it)" min="1" max="1">% 200</stringmatch>
+<stringmatch name="argclobber #4: the quotient the caller really uses survives both passes" min="2" max="2">/ 200</stringmatch>
 </decompilertest>

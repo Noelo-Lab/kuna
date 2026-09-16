@@ -58,6 +58,11 @@
 //!   phi, and that argument is real;
 //! * every one of those indirect creations is a creation of **this same
 //!   register** ([`clobber_of_this_register_reaches`]);
+//! * **every other input of that join is a division by-product**
+//!   ([`is_division_byproduct`]) — the value an `idiv` leaves in the remainder
+//!   register while the caller goes on to use only the quotient. Nothing else
+//!   qualifies: a join input the caller wrote is an argument on the path that
+//!   wrote it, and one clobber among the inputs does not change that;
 //! * the callee's own body does not **read** those register bytes before writing
 //!   them;
 //! * it is **trailing** -- no used trial follows it -- so the argument list keeps
@@ -75,17 +80,14 @@
 //! definitely-not-used and none of them puts the argument back
 //! (`calleearitylive`'s `capture_partial_call` skips such a trial explicitly).
 //!
-//! # The two clauses that are not about the clobber's shape
-//!
-//! Both were bought with wrong output on u-boot -O2 (ARM, 1,727 functions),
-//! which is in decbench's corpus and was outside the first sweep.
+//! # The three clauses that are not about the clobber's shape
 //!
 //! **Which register was clobbered.** On every ABI the first return register is
 //! also killed-by-call and a possible output location, so until the output seam
 //! resolves it a preceding call's RESULT is an indirect creation exactly like a
 //! clobber is; when the caller moves that result into an argument register, copy
 //! propagation puts the creation into the argument's join at its own address.
-//! u-boot `sub_60827fa4` is that shape: `r0` holds
+//! u-boot -O2 `sub_60827fa4` is that shape: `r0` holds
 //! `ofnode_read_u32_default(dev->node,"bus-width",1)`, three `cmp`s test it, and
 //! a pair of predicated `mov r3,r0` carry it into
 //!
@@ -96,13 +98,24 @@
 //! where it is the value `%u` prints. Requiring the creation to be at the
 //! trial's own address is what declines it, and the statement is simple: a
 //! register the caller wrote is a register the caller is passing, whatever the
-//! value in it came from. Four more u-boot sites have the same shape, including
-//! one where the drop also deleted the `if (*p == '/') p++;` that computed the
-//! argument.
+//! value in it came from.
+//!
+//! **The other inputs of the join.** The same statement settles a join. One
+//! clobber among a phi's inputs says nothing about the other paths, so every
+//! other input has to be positively classified as a value nobody placed either,
+//! and the division by-product is the only class that qualifies — upstream
+//! scores a trial formed by a remainder exactly like one formed by an indirect
+//! creation, on the return side (`ParamListStandardOut::fillinMap`,
+//! `fspec.cc:1721`). Without this clause the rule deletes an argument the
+//! caller demonstrably writes: a caller that forwards its own second parameter
+//! (`mov %r12,%rdx`) on the non-clobber path loses both the argument and the
+//! parameter, and `void caller(long,unsigned long)` becomes `void
+//! caller(long)`. That shape is
+//! `tests/stages/kuna-argclobber-forward.xml`.
 //!
 //! **The callee.** That still leaves a register the caller never wrote.
-//! `sub_6083af40` reaches `sub_6086b998(node,name,len)` with `len` computed as
-//! `p - s` on one path and left as a clobber on the other, and `sub_6086b998`
+//! u-boot `sub_6083af40` reaches `sub_6086b998(node,name,len)` with `len`
+//! computed on one path and left as a clobber on the other, and `sub_6086b998`
 //! reads `r2` before writing it. The callee's body outranks everything on the
 //! caller's side: bytes it reads at entry are a parameter however the value got
 //! into the register. [`crate::p4_calls::kuna_calleedeadarg`] already decodes
@@ -116,9 +129,13 @@
 //!
 //! A callee that really returns a 16-byte value in `rax:rdx` and forwards the
 //! high half as the next call's trailing argument writes nothing into `rdx`
-//! itself, so it keeps the phantom's shape through both clauses above; only the
-//! callee probe can decline it, and only when it covers that callee's entry. The
-//! option is off by default for that reason.
+//! itself, so it keeps the phantom's shape through every clause above; only the
+//! callee probe can decline it, and only when it covers that callee's entry.
+//!
+//! The option is off by default for that reason, and because what it drops is an
+//! argument: every wrong drop is a deleted expression, which is the kind of
+//! wrong output a reader cannot see. The corpus measurement that bounds it is in
+//! `docs/features/phantomargs/sweep-2026-09-16.txt`.
 
 use kuna_base::address::Address;
 use kuna_base::error::KunaResult;
@@ -152,16 +169,74 @@ impl OptionArgClobber {
     }
 }
 
-/// Is `vn` a value a previous call's clobber of **this same register** put
-/// there?
+/// Depth bound for [`is_division_byproduct`]'s walk.  The `fmt` witness needs
+/// three hops (a mask, a zero extension, a `SUBPIECE` of the low half) and no
+/// plausible width adjustment needs more.
+const BYPRODUCT_WALK_DEPTH: u32 = 6;
+
+/// Is `vn` the by-product half of a division — the value an `idiv` leaves in
+/// the remainder register because the instruction writes it, not because
+/// anybody wanted it there?
 ///
-/// Two halves.
+/// This is the only non-clobber shape a join input may have.  Upstream scores
+/// it as exactly the same kind of evidence on the RETURN side:
+/// `ParamListStandardOut::fillinMap` (`fspec.cc:1721`) marks a trial no-use
+/// when `isRemFormed() || isIndCreateFormed()` and its `ParamEntry` is not
+/// first in its class, and `AncestorRealistic` sets `RemFormed` for precisely
+/// this chain (`funcdata_varnode.cc`, the `CPUI_SUBPIECE` arm).
 ///
-/// *Shape*: `vn` is defined by an indirect creation, or by a MULTIEQUAL one of
-/// whose immediate inputs is one.  A clobber that reaches the call only through
-/// a further join is left alone: tar's `str_days(pc, buffer, n)` is called with
-/// `n` live from a dominating block and a clobber merging in behind a second
-/// phi, and that argument is real.
+/// The walk follows only the width adjustments a compiler puts between the
+/// `INT_REM` and the register.  A join, a load, a call result or any other
+/// arithmetic is a value the caller computed, and declines.
+fn is_division_byproduct(data: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
+    if depth == 0 {
+        return false;
+    }
+    let Some(vv) = data.vbank().get(vn) else { return false };
+    let Some(def) = vv.get_def() else { return false };
+    let Some(op) = data.obank().get(def) else { return false };
+    match op.code() {
+        OpCode::CPUI_INT_REM | OpCode::CPUI_INT_SREM => true,
+        OpCode::CPUI_COPY | OpCode::CPUI_INT_ZEXT | OpCode::CPUI_INT_SEXT => op
+            .get_in(0)
+            .map(|i| is_division_byproduct(data, i, depth - 1))
+            .unwrap_or(false),
+        OpCode::CPUI_SUBPIECE => {
+            let low = op
+                .get_in(1)
+                .and_then(|v| data.vbank().get(v))
+                .map(|v| v.is_constant() && v.get_offset() == 0)
+                .unwrap_or(false);
+            low && op
+                .get_in(0)
+                .map(|i| is_division_byproduct(data, i, depth - 1))
+                .unwrap_or(false)
+        }
+        OpCode::CPUI_INT_AND => {
+            let masked = op
+                .get_in(1)
+                .and_then(|v| data.vbank().get(v))
+                .map(|v| v.is_constant())
+                .unwrap_or(false);
+            masked
+                && op
+                    .get_in(0)
+                    .map(|i| is_division_byproduct(data, i, depth - 1))
+                    .unwrap_or(false)
+        }
+        _ => false,
+    }
+}
+
+/// Is `vn` a value nothing on the caller's side put there for this call?
+///
+/// Three halves.
+///
+/// *Shape*: `vn` is defined by an indirect creation, or by a MULTIEQUAL, and at
+/// least one of the join's **immediate** inputs is one.  A clobber that reaches
+/// the call only through a further join is left alone: tar's
+/// `str_days(pc, buffer, n)` is called with `n` live from a dominating block
+/// and a clobber merging in behind a second phi, and that argument is real.
 ///
 /// *Storage*: every indirect creation among those inputs is a creation of
 /// `addr` itself — the register the argument is passed in.  This is the half
@@ -175,6 +250,13 @@ impl OptionArgClobber {
 /// it, and a pair of predicated `mov r3,r0` carry it into `printf`'s fourth
 /// slot, where it is the value `%u` prints.  A register the caller wrote is a
 /// register the caller is passing, whatever the value in it came from.
+///
+/// *Every other input*: [`is_division_byproduct`].  A join input that is not a
+/// clobber has to be positively classified as one the caller did not mean to
+/// write either, and the division by-product is the only such class.  Without
+/// this half one clobber input condemns the whole join, and a value the caller
+/// demonstrably wrote on another path — a constant, its own parameter — is
+/// deleted along with it.
 fn clobber_of_this_register_reaches(data: &Funcdata, vn: VarnodeId, addr: &Address) -> bool {
     let is_creation_here = |v: VarnodeId| -> Option<bool> {
         let vv = data.vbank().get(v)?;
@@ -197,8 +279,15 @@ fn clobber_of_this_register_reaches(data: &Funcdata, vn: VarnodeId, addr: &Addre
     for i in 0..n {
         let Some(iv) = data.obank().get(def).and_then(|o| o.get_in(i)) else { return false };
         let Some(vv) = data.vbank().get(iv) else { return false };
-        let Some(d) = vv.get_def().and_then(|d| data.obank().get(d)) else { continue };
-        if !d.is_indirect_creation() {
+        let creation = vv
+            .get_def()
+            .and_then(|d| data.obank().get(d))
+            .map(|d| d.is_indirect_creation())
+            .unwrap_or(false);
+        if !creation {
+            if !is_division_byproduct(data, iv, BYPRODUCT_WALK_DEPTH) {
+                return false;
+            }
             continue;
         }
         if vv.get_addr() != addr {

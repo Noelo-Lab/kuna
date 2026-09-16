@@ -8,8 +8,10 @@
     The caller here is byte-for-byte the shape the option is FOR, the same one
     tests/stages/kuna-argclobber.xml drops: one path calls `clobber` (which
     destroys rdx and whose own first act is a call, so `calleepreserves` cannot
-    narrow the killed set), the other sets edx itself, the two join at the call.
-    The only difference is the callee:
+    narrow the killed set), the other leaves an `idivl` remainder in edx while
+    using only the quotient, and the two join at the call.  Every incoming value
+    for rdx is therefore one the caller did not put there for this call, and the
+    only difference from the positive fixture is the callee:
 
         reader: mov %rdx, %rax ; ret
 
@@ -22,17 +24,15 @@
     This is the clause that answers for a callee kuna never recovered as
     variadic. u-boot -O2 `sub_60873270` is printf, called from 1,924 sites, and
     its prologue spilling r1-r3 into the va_list save area settles every one of
-    them at once; without this clause
-    `printf("%s %s: Invalid \"bus-width\" value %u!\n",dev,name,width)` at
-    0x60828000 loses the value %u prints.
+    them at once.
 
     Stage / sub-stage: P4 "active-input-trial-scoring".  Both passes must
-    render the same four-argument call, so the assertion counts 2.
+    render the same three-argument call, so the assertion counts 2.
 -->
 <bytechunk space="ram" offset="0x100000">
-534889fb4885db7407e822000000eb05ba070000004889dfbe05000000e82e00
-00005bc3cccccccccccccccccccccccce80b000000c3cccccccccccccccccccc
-c3cccccccccccccccccccccccccccccc4889d0c3cccccccccccccccccccccccc
+534889fb4885f67407e822000000eb0c89d899b9c8000000f7f989c34889dfbe
+05000000e8270000005bc3cccccccccce80b000000c3cccccccccccccccccccc
+c3cccccccccccccccccccccccccccccc4889d0c3
 </bytechunk>
 <symbol space="ram" offset="0x100000" name="caller3"/>
 <symbol space="ram" offset="0x100030" name="clobber"/>
