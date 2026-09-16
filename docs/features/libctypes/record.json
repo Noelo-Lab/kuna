@@ -141,20 +141,21 @@
  },
  "gates": {
   "make test": "datatests: 675/675 assertions passed -- PARITY OK (and 675/675 PARITY OK again with the gate forced on)",
-  "make test-stages": "datatests: 1016/1016 assertions passed -- PARITY OK (baseline re-recorded for this file's assertion set)",
-  "make test-cli": "tests/cli: 170/170 passed",
+  "make test-stages": "datatests: 1022/1022 assertions passed -- PARITY OK",
+  "make test-cli": "tests/cli: 172/172 passed",
   "make check-spec": "check-spec OK (lenient mode) / check-spec OK (strict mode)",
   "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
   "counters --check": "no drift: every hard-coded site agrees with the derived truth",
   "docs/options.md": "regenerated from `kuna catalog --markdown`",
-  "make rust-test": "RUST_TEST_RC=0 (cargo test --workspace --no-fail-fast; 414 `test result: ok` lines, 0 FAILED)"
+  "make rust-test": "RUST_TEST_RC=0 (cargo test --workspace --no-fail-fast on the rebased tree; 414 `test result: ok` blocks, 0 FAILED)"
  },
  "catalog_counts": {
-  "settables": 206,
-  "tiers": "66 core / 78 transform / 62 analysis",
-  "catalog_json_rows": 205,
-  "bytecompat_fixture": 206,
-  "corpus_files": 294
+  "settables": 208,
+  "tiers": "66 core / 80 transform / 62 analysis",
+  "catalog_json_rows": 207,
+  "bytecompat_fixture": 208,
+  "corpus_files": 295,
+  "note": "re-derived with scripts.repipe.counters --fix on a freshly built tree after rebasing onto #647/#648"
  },
  "files": [
   "decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_libctypes.rs",
@@ -181,42 +182,42 @@
  "default_value": "off",
  "default_decision": {
   "verdict": "ship default-OFF in this PR; the flip is a separate PR (campaign Stage 3)",
-  "evidence_for_on": "typesweep 214 slices / 5298 functions: +39 perfect, 0 moved off perfect, 386 improved, 0 worsened; make test 675/675 PARITY OK with the gate forced on (KUNA_LIBCTYPES=opaque); make test-stages 1016/1016 PARITY OK with the gate forced on; whole-binary sweep over 7 binaries shows no wrong-output hunk and no change in the PTRSUB( count; speed flat (see speed).",
-  "blocker": "`make test-cli` goes 169/170 with the gate forced on: the promoted probe tests/cli/changing-namestyle-invalidates-discovered.json pins `sub_1249(void *param_1)` on decompiler/crates/kuna-analysis/tests/fixtures/stripped_dynamic_x86_64, and that parameter becomes `FILE *`. The new spelling is CORRECT -- the body is fclose(param_1) / fread(...,param_1) -- but rewriting another feature's regression probe belongs in the flip PR with that justification, not in the PR that introduces the option."
+  "evidence_for_on": "typesweep 214 slices / 5298 functions: +39 perfect, 0 moved off perfect, 386 improved, 0 worsened; make test 675/675 PARITY OK with the gate forced on (KUNA_LIBCTYPES=opaque); make test-stages 1022/1022 PARITY OK with the gate forced on; whole-binary sweep over 7 stripped binaries shows no wrong-output hunk and no change in the PTRSUB( count; six unstripped twins keep or gain named-field accesses; speed worst +2.01% on the minimum.",
+  "blocker": "`make test-cli` goes 171/172 with the gate forced on: the promoted probe tests/cli/changing-namestyle-invalidates-discovered.json pins `sub_1249(void *param_1)` on decompiler/crates/kuna-analysis/tests/fixtures/stripped_dynamic_x86_64, and that parameter becomes `FILE *`. The new spelling is CORRECT -- the body is fclose(param_1) / fread(...,param_1) -- but rewriting another feature's regression probe belongs in the flip PR with that justification, not in the PR that introduces the option."
  },
  "speed": {
-  "method": "interleaved off/opaque pairs through the load-time env bridge (`kuna decompile-all --option libctypes off|opaque`), MINIMUM and median of 15 pairs each, alternating which arm runs first; the MINIMUM is the honest read because the box was shared with a concurrent gate run",
+  "method": "interleaved off/opaque pairs through the load-time env bridge (`kuna decompile-all --option libctypes off|opaque`), MINIMUM and median of 15 pairs each, alternating which arm runs first; the MINIMUM is the honest read because the box is shared. Re-measured on the rebased tree after the DWARF-order fix.",
   "rows": [
    {
     "case": "fmt decompile-all (152 fn)",
-    "min_off_ms": 4214.0,
-    "min_on_ms": 4225.8,
-    "min_delta_pct": 0.28,
-    "median_delta_pct": -0.61
+    "min_off_ms": 4477.9,
+    "min_on_ms": 4526.3,
+    "min_delta_pct": 1.08,
+    "median_delta_pct": -2.08
    },
    {
     "case": "ls decompile-all (404 fn)",
-    "min_off_ms": 13797.1,
-    "min_on_ms": 14104.3,
-    "min_delta_pct": 2.23,
-    "median_delta_pct": 3.3
+    "min_off_ms": 14415.4,
+    "min_on_ms": 14580.7,
+    "min_delta_pct": 1.15,
+    "median_delta_pct": -0.92
    },
    {
-    "case": "fmt functions (load + the whole pass list, no body decompiled)",
-    "min_off_ms": 149.1,
-    "min_on_ms": 149.3,
-    "min_delta_pct": 0.08,
-    "median_delta_pct": 14.92
+    "case": "fmt functions (load only)",
+    "min_off_ms": 154.0,
+    "min_on_ms": 154.1,
+    "min_delta_pct": 0.06,
+    "median_delta_pct": 2.41
    },
    {
-    "case": "fmt get_prefix (one function)",
-    "min_off_ms": 157.5,
-    "min_on_ms": 157.5,
-    "min_delta_pct": 0.02,
-    "median_delta_pct": 2.34
+    "case": "fmt get_prefix (one fn)",
+    "min_off_ms": 162.7,
+    "min_on_ms": 166.0,
+    "min_delta_pct": 2.01,
+    "median_delta_pct": -1.43
    }
   ],
-  "worst_delta_pct": 2.23,
+  "worst_delta_pct": 2.01,
   "budget_pct": 5.0,
   "within_budget": true,
   "why": "the load-time cost is ~20 `get_type_struct`/`find_by_name` calls (the `fmt functions` row, +0.08% on the minimum, is that cost in isolation). The whole-binary rows carry the real cost: a named 216-byte pointee participates in type propagation where a `void *` did not. The `fmt functions` median (+14.92% against a +0.08% minimum) and the `ls` median are contention from a concurrent gate run, not signal."
