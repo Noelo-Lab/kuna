@@ -113,6 +113,14 @@ function — and every other `main` the rewrite touched scores identically. The
 blast radius is measured rather than asserted: outside those 18 `main`s, 1349
 bodies are byte-identical in both arms and score identically.
 
+What the rewrite is, read statement by statement on that function: both arms make
+the same 114 calls to the same 64 distinct callees — the only differing token is
+the function's own name — and keep the same 3 loops, 16 gotos and 7 labels. 66
+declarations and 599 statement lines become 62 and 487; what goes is casts and
+single-use temporaries (`v14 = (long)optind; v14 = (unsigned long *)(a1 + v14*8);
+v37 = *(char **)v14;` becomes `v33 = argv[optind];`), and one `if` becomes a
+ternary because a single-exit `int` return lets its two `return`s re-roll.
+
 decbench's `type_match` scores `variables[]` — arguments plus stack symbols — and
 on the functions this pass fires on, `argc`/`argv` are already true positives at
 the recovered widths wherever the body reads them. Return types are not scored at

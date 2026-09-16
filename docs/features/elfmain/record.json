@@ -42,11 +42,13 @@
     "excluded_pass_refuses": 33,
     "excluded_why": "33 of the 758 are stripped only of .symtab and still export `main` from .dynsym, so main_claim() returns None and the name comes from the symbol table exactly as it did before this option existed -- bash plus its six build tools (bashversion, man2html, mkbuiltins, mksignames, mksyntax, psize.aux), e2fsprogs/e2fsck, iproute2/ip, iproute2/rtmon and rsyslog/rsyslogd, at all three optimisation levels. Confirmed on O0/bash/bashversion: `kuna decompile-all` is byte-identical with and without `--option elfmain off`. Those rows are not evidence about this pass and are not counted.",
     "images_the_pass_can_fire_on": 725,
+    "images_the_pass_actually_fires_on": 612,
     "match": 612,
     "mismatch": 0,
     "miss": 113,
     "miss_classification": "90 are bare-metal firmware with no glibc crt1 (libopencm3 69, crazyflie 6, riot-os 3, freertos 3, cleanflight 3, chibios 3, betaflight 3) -- the __libc_start_main refusal; 23 are shared libraries whose twin has no `main` either.",
-    "raw": "docs/features/elfmain/sweep/decbench-main-oracle.txt (all 758 rows, MATCH/MISMATCH/MISS as first measured)"
+    "raw": "docs/features/elfmain/sweep/decbench-main-oracle.txt (all 758 rows, MATCH/MISMATCH/MISS as first measured)",
+    "match_rate": "612/612 of the images the pass fires on are the twin's own `main`; on the other 113 it declines and kuna reports no `main` at all, exactly as it did before the option existed."
   },
   "regression_sweep": {
     "fixtures": {
@@ -85,7 +87,7 @@
       "argument spelling at uses: `*a1` -> `*argv`, `a1[optind]` -> `argv[optind]`, `a0` -> `argc`, and on the two ARM fixtures the third register `a2` -> `envp`",
       "return statement: a tail call emitted as a bare statement becomes `return f(...)`, and a widened `return (long)a0` becomes `return argc`, because main's result is no longer void or guessed",
       "local renumbering: declaring the parameters shifts the vN numbering of the remaining locals",
-      "expression re-anchoring downstream of the two typed facts -- THIS is the class the in-repo fixtures nearly hide and the real binaries are full of. A `char **argv` instead of an untyped `long` collapses pointer arithmetic into indexing (`v = (long)optind; v = (unsigned long *)(a1 + v*8); v37 = *(char **)v;` becomes `v33 = argv[optind];`), removes casts, and folds a single-use temporary into its use (`v14 = gettext(\"...\"); error(2,0,v14);` becomes `error(2,0,gettext(\"...\"))`); a locked `int` return collapses the early-return shape the guessed width produced (`v = 1; return v;` becomes `return 1;`, and stripped_dynamic_x86_64's two-exit body becomes one). Statements ARE folded, moved and re-anchored by this; every one that moves recomputes the same value, and no side-effecting call, store or branch is added or dropped -- grep O0 main loses 116 lines and all of them are temporaries and casts."
+      "expression re-anchoring downstream of the two typed facts -- THIS is the class the in-repo fixtures nearly hide and the real binaries are full of. A `char **argv` instead of an untyped `long` collapses pointer arithmetic into indexing (`v = (long)optind; v = (unsigned long *)(a1 + v*8); v37 = *(char **)v;` becomes `v33 = argv[optind];`), removes casts, and folds a single-use temporary into its use (`v14 = gettext(\"...\"); error(2,0,v14);` becomes `error(2,0,gettext(\"...\"))`); a locked `int` return collapses the early-return shape the guessed width produced (`v = 1; return v;` becomes `return 1;`, and stripped_dynamic_x86_64's two-exit body becomes one). Statements ARE folded, moved and re-anchored by this, and the claim that they are not was wrong. What is measured on the loudest case, grep O0 main: 66 declarations / 599 statement lines become 62 / 487; both arms make the SAME 114 calls to the same 64 distinct callees (the only differing token is the function's own name in its declaration), and keep the same 3 loops, 16 gotos and 7 labels; one `if` becomes a ternary (the header marker goes `ternary x2` -> `ternary x3`) because a single-exit int return lets its two returns re-roll."
     ],
     "classification": "Every hunk is a consequence of the name, the three declared parameters or the int return. The two typed facts propagate, so on a real main the change is not confined to the declaration line: expressions fold and the region shape can change. It is bounded to main and its _start in all 21 images swept."
   },
