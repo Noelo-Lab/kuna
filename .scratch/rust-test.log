@@ -1,0 +1,1640 @@
+LANE: start 2026-09-16T19:34:51Z in /home/mahaloz/kwt/elfmain
+cd /home/mahaloz/kwt/elfmain/decompiler && cargo test --workspace --no-fail-fast
+   Compiling unicode-ident v1.0.24
+   Compiling proc-macro2 v1.0.106
+   Compiling quote v1.0.45
+   Compiling cfg-if v1.0.4
+   Compiling crc32fast v1.5.0
+   Compiling thiserror v2.0.18
+   Compiling adler2 v2.0.1
+   Compiling simd-adler32 v0.3.9
+   Compiling version_check v0.9.5
+   Compiling memchr v2.8.2
+   Compiling kuna-decomp v0.1.0 (/home/mahaloz/kwt/elfmain/decompiler/crates/kuna-decomp)
+   Compiling smallvec v1.15.1
+   Compiling regex-syntax v0.8.11
+   Compiling foldhash v0.2.0
+   Compiling object v0.39.1
+   Compiling cpp_demangle v0.5.1
+   Compiling equivalent v1.0.2
+   Compiling scroll v0.11.0
+   Compiling bitflags v2.13.0
+   Compiling uuid v1.23.4
+   Compiling hashbrown v0.17.1
+   Compiling miniz_oxide v0.8.9
+   Compiling itoa v1.0.18
+   Compiling fallible-iterator v0.2.0
+   Compiling rustc-demangle v0.1.27
+   Compiling gimli v0.33.0
+   Compiling slotmap v1.1.1
+   Compiling msvc-demangler v0.11.0
+   Compiling kuna-console v0.1.0 (/home/mahaloz/kwt/elfmain/decompiler/crates/kuna-console)
+   Compiling pdb v0.8.0
+   Compiling aho-corasick v1.1.4
+   Compiling flate2 v1.1.9
+   Compiling indexmap v2.14.0
+   Compiling syn v2.0.117
+   Compiling regex-automata v0.4.14
+   Compiling thiserror-impl v2.0.18
+   Compiling kuna-base v0.1.0 (/home/mahaloz/kwt/elfmain/decompiler/crates/kuna-base)
+   Compiling regex v1.12.4
+   Compiling kuna-num v0.1.0 (/home/mahaloz/kwt/elfmain/decompiler/crates/kuna-num)
+   Compiling kuna-sleigh v0.1.0 (/home/mahaloz/kwt/elfmain/decompiler/crates/kuna-sleigh)
+   Compiling kuna-slacomp v0.1.0 (/home/mahaloz/kwt/elfmain/decompiler/crates/kuna-slacomp)
+warning: unused import: `Encoder`
+  --> crates/kuna-sleigh/tests/ws4a_pattern_build_golden.rs:20:26
+   |
+20 | use kuna_base::marshal::{Encoder, XmlEncode};
+   |                          ^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+warning: `kuna-sleigh` (test "ws4a_pattern_build_golden") generated 1 warning (run `cargo fix --test "ws4a_pattern_build_golden"` to apply 1 suggestion)
+warning: unused import: `type_metatype::*`
+    --> crates/kuna-decomp/src/substrate/dtype.rs:8355:13
+     |
+8355 |         use type_metatype::*;
+     |             ^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `SeqNum`
+  --> crates/kuna-decomp/src/p3_dataflow/ruleaction_4/tests.rs:17:35
+   |
+17 | use kuna_base::address::{Address, SeqNum};
+   |                                   ^^^^^^
+
+warning: unused import: `SeqNum`
+  --> crates/kuna-decomp/src/p3_dataflow/ruleaction_5/tests.rs:15:35
+   |
+15 | use kuna_base::address::{Address, SeqNum};
+   |                                   ^^^^^^
+
+warning: unused import: `type_metatype::*`
+  --> crates/kuna-decomp/src/p5_types/typeop/tests.rs:12:5
+   |
+12 | use type_metatype::*;
+   |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `SeqNum`
+    --> crates/kuna-decomp/src/p5_types/double.rs:5420:39
+     |
+5420 |     use kuna_base::address::{Address, SeqNum};
+     |                                       ^^^^^^
+
+warning: unused import: `super::*`
+ --> crates/kuna-decomp/src/p9_emit/kuna_langrust/tests.rs:3:5
+  |
+3 | use super::*;
+  |     ^^^^^^^^
+
+warning: unused import: `ATTRIB_METATYPE`
+  --> crates/kuna-decomp/src/infra/remote_provider/tests.rs:10:5
+   |
+10 |     ATTRIB_METATYPE, ATTRIB_MODEL, ATTRIB_NAME, ATTRIB_NAMELOCK, ATTRIB_READONLY, ATTRIB_SIZE,
+   |     ^^^^^^^^^^^^^^^
+
+warning: value assigned to `isflipped` is never read
+   --> crates/kuna-decomp/src/p3_dataflow/ruleaction_3.rs:285:17
+    |
+285 |         let mut isflipped = false;
+    |                 ^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+    = note: `#[warn(unused_assignments)]` on by default
+
+warning: unused import: `super`
+ --> crates/kuna-decomp/src/p4_calls/kuna_langabi/tests.rs:3:5
+  |
+3 | use super::*;
+  |     ^^^^^
+
+warning: variable does not need to be mutable
+    --> crates/kuna-decomp/src/substrate/funcdata_block.rs:5041:13
+     |
+5041 |         let mut make_phi = |fd: &mut Funcdata, out_off: u64| {
+     |             ----^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+     |
+     = note: `#[warn(unused_mut)]` on by default
+
+warning: function `input_is_recorded_value` is never used
+   --> crates/kuna-decomp/src/p2_lift/kuna_loweredswitchvalue.rs:356:15
+    |
+356 | pub(crate) fn input_is_recorded_value(data: &Funcdata, input: VarnodeId, recorded: &ValueName, size: int4) -> bool {
+    |               ^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` on by default
+
+warning: function `unimplemented_stub` is never used
+    --> crates/kuna-decomp/src/p3_dataflow/heritage.rs:5013:4
+     |
+5013 | fn unimplemented_stub(what: &str) -> ! {
+     |    ^^^^^^^^^^^^^^^^^^
+
+warning: function `computes_a_value` is never used
+   --> crates/kuna-decomp/src/p4_calls/kuna_returnuncomputed.rs:101:4
+    |
+101 | fn computes_a_value(data: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
+    |    ^^^^^^^^^^^^^^^^
+
+warning: field `sink` is never read
+   --> crates/kuna-decomp/src/p8_structure/kuna_outline.rs:701:5
+    |
+697 | struct Scratch {
+    |        ------- field in this struct
+...
+701 |     sink: KunaNodeId,
+    |     ^^^^
+
+   Compiling kuna-analysis v0.1.0 (/home/mahaloz/kwt/elfmain/decompiler/crates/kuna-analysis)
+   Compiling kuna-ghidra v0.1.0 (/home/mahaloz/kwt/elfmain/decompiler/crates/kuna-ghidra)
+warning: unused variable: `mgr`
+    --> crates/kuna-decomp/src/p4_calls/fspec/tests.rs:2212:9
+     |
+2212 |     let mgr = AddrSpaceManager::new();
+     |         ^^^ help: if this is intentional, prefix it with an underscore: `_mgr`
+     |
+     = note: `#[warn(unused_variables)]` on by default
+
+warning: variable does not need to be mutable
+   --> crates/kuna-decomp/src/p4_calls/kuna_rustabi/tests.rs:352:9
+    |
+352 |     let mut mk_half = |fd: &mut Funcdata, off: u64| -> VarnodeId {
+    |         ----^^^^^^^
+    |         |
+    |         help: remove this `mut`
+
+warning: `kuna-decomp` (lib) generated 5 warnings
+warning: unused import: `RegisterLookup`
+  --> crates/kuna-decomp/tests/print_b5_boolless.rs:24:42
+   |
+24 | use kuna_base::space::{AddrSpaceManager, RegisterLookup};
+   |                                          ^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+warning: method `index` is never used
+   --> crates/kuna-analysis/src/listing/kuna_pdecode.rs:249:14
+    |
+214 | impl Refusal {
+    | ------------ method in this implementation
+...
+249 |     const fn index(self) -> usize {
+    |              ^^^^^
+    |
+    = note: `#[warn(dead_code)]` on by default
+
+warning: constant `DIR_TLS` is never used
+  --> crates/kuna-analysis/src/upx/pe.rs:55:7
+   |
+55 | const DIR_TLS: usize = 9;
+   |       ^^^^^^^
+
+warning: `kuna-decomp` (test "print_b5_boolless") generated 1 warning
+warning: unused import: `RegisterLookup`
+  --> crates/kuna-decomp/tests/deadcode_b4.rs:22:42
+   |
+22 | use kuna_base::space::{AddrSpaceManager, RegisterLookup};
+   |                                          ^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `RegisterLookup`
+  --> crates/kuna-decomp/tests/proto_b4.rs:23:42
+   |
+23 | use kuna_base::space::{AddrSpaceManager, RegisterLookup};
+   |                                          ^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+warning: `kuna-decomp` (test "deadcode_b4") generated 1 warning
+warning: `kuna-decomp` (test "proto_b4") generated 1 warning
+warning: unused import: `RegisterLookup`
+  --> crates/kuna-decomp/tests/heritage_b3.rs:34:53
+   |
+34 | use kuna_base::space::{AddrSpace, AddrSpaceManager, RegisterLookup};
+   |                                                     ^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `Translate`
+  --> crates/kuna-decomp/tests/heritage_b3.rs:45:54
+   |
+45 | use kuna_sleigh::translate::{register_translate_ids, Translate};
+   |                                                      ^^^^^^^^^
+
+warning: `kuna-decomp` (test "heritage_b3") generated 2 warnings
+warning: function `unimplemented_stub` is never used
+    --> crates/kuna-decomp/src/p3_dataflow/heritage.rs:5013:4
+     |
+5013 | fn unimplemented_stub(what: &str) -> ! {
+     |    ^^^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` on by default
+
+warning: function `groups` is never used
+    --> crates/kuna-decomp/src/p3_dataflow/ruleaction_8.rs:1977:8
+     |
+1977 |     fn groups() -> ActionGroupList {
+     |        ^^^^^^
+
+warning: method `count` is never used
+   --> crates/kuna-decomp/src/infra/remote_provider/tests.rs:541:8
+    |
+540 | impl MockFetch {
+    | -------------- method in this implementation
+541 |     fn count(&self, what: &'static str) -> usize {
+    |        ^^^^^
+
+warning: unused `Result` that must be used
+  --> crates/kuna-decomp/src/p4_calls/kuna_retinputhalf/tests.rs:77:5
+   |
+77 |     fd.op_set_input(op, src, 0);
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: this `Result` may be an `Err` variant, which should be handled
+   = note: `#[warn(unused_must_use)]` on by default
+help: use `let _ = ...` to ignore the resulting value
+   |
+77 |     let _ = fd.op_set_input(op, src, 0);
+   |     +++++++
+
+warning: unused `Result` that must be used
+  --> crates/kuna-decomp/src/p4_calls/kuna_returnuncomputed/tests.rs:64:9
+   |
+64 |         fd.op_set_input(op, vn, i as int4);
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: this `Result` may be an `Err` variant, which should be handled
+help: use `let _ = ...` to ignore the resulting value
+   |
+64 |         let _ = fd.op_set_input(op, vn, i as int4);
+   |         +++++++
+
+   Compiling kuna-harness v0.1.0 (/home/mahaloz/kwt/elfmain/decompiler/crates/kuna-harness)
+   Compiling kuna-wasm v0.1.0 (/home/mahaloz/kwt/elfmain/decompiler/crates/kuna-wasm)
+warning: `kuna-analysis` (lib) generated 2 warnings
+   Compiling kuna-cli v0.1.0 (/home/mahaloz/kwt/elfmain/decompiler/crates/kuna-cli)
+warning: constant `DIR_TLS` is never used
+  --> crates/kuna-analysis/src/upx/pe.rs:55:7
+   |
+55 | const DIR_TLS: usize = 9;
+   |       ^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` on by default
+
+   Compiling kuna-lift-diff v0.1.0 (/home/mahaloz/kwt/elfmain/decompiler/crates/kuna-lift-diff)
+warning: `kuna-analysis` (lib test) generated 1 warning
+warning: `kuna-decomp` (lib test) generated 18 warnings (2 duplicates) (run `cargo fix --lib -p kuna-decomp --tests` to apply 9 suggestions)
+    Finished `test` profile [unoptimized] target(s) in 43.12s
+     Running unittests src/lib.rs (target/debug/deps/kuna_analysis-524f4a87f7168536)
+
+running 822 tests
+test analyzers::addrtable::tests::read_ptr_endianness ... ok
+test analyzers::addrtable::tests::string_guard_rejects_printable_runs ... ok
+test analyzers::addrtable::tests::pass_emits_a_data_symbol_and_readonly_range_for_the_table ... ok
+test analyzers::addrtable::tests::fauxware_has_no_pointer_table_over_its_real_data ... ok
+test analyzers::addrtable::tests::finds_the_8_entry_table_in_switchtab ... ok
+test analyzers::addrtable::tests::short_run_below_min_is_rejected ... ok
+test analyzers::addrtable::tests::every_element_points_inside_an_executable_section ... ok
+test analyzers::aif::kuna_aifcorroborate::tests::corroboration_or_a_large_shared_prologue ... ok
+test analyzers::aif::kuna_aifstrict::tests::aligned_slide_snaps_to_the_next_multiple_of_four ... ok
+test analyzers::aif::kuna_aifcorroborate::tests::threshold_is_the_upstream_literal ... ok
+test analyzers::aif::kuna_aifstrict::tests::slide_alignment_is_four_not_sixteen ... ok
+test analyzers::aif::kuna_poolentry::tests::follows_return_wants_a_return_class_terminal ... ok
+test analyzers::aif::kuna_poolentry::tests::only_a_bare_absolute_bracket_is_a_literal_reference ... ok
+test analyzers::aif::kuna_poolentry::tests::pcrel_reads_the_immediate_form_only ... ok
+test analyzers::aif::kuna_poolentry::tests::runs_are_exactly_adjacent ... ok
+test analyzers::aif::kuna_ptrentry::tests::a_target_outside_the_executable_ranges_is_not_a_candidate ... ok
+test analyzers::aif::kuna_ptrentry::tests::collects_every_code_pointer_with_its_site ... ok
+test analyzers::aif::kuna_ptrentry::tests::non_arm_is_gated_before_the_scan ... ok
+test analyzers::aif::tests::a_relaxed_redecode_declines_rather_than_mixing_two_instructions ... ok
+test analyzers::aif::tests::fingerprint_is_operand_insensitive_by_construction ... ok
+test analyzers::aif::tests::pass_identity_wiring ... ok
+test analyzers::aif::tests::strict_candidate_instruction_cannot_cross_into_known_code ... ok
+test analyzers::aif::tests::thumb_function_prologue_matcher ... ok
+test analyzers::aif::tests::thresholds_match_ghidra ... ok
+test analyzers::aif::tests::thumb_lr_prologue_matcher ... ok
+test analyzers::callfixup::tests::direct_target_matches ... ok
+test analyzers::callfixup::tests::lib_conflict_prefix_is_stripped ... ok
+test analyzers::callfixup::tests::unrelated_names_do_not_match ... ok
+test analyzers::callfixup::tests::underscore_retries_match ... ok
+test analyzers::demangle::kuna_cppsig::tests::cv_ref_only_accepts_exactly_the_member_suffixes ... ok
+test analyzers::demangle::kuna_cppsig::tests::a_data_symbol_is_not_a_declaration ... ok
+test analyzers::demangle::kuna_cppsig::tests::const_member_is_a_proven_this ... ok
+test analyzers::demangle::kuna_cppsig::tests::destructor_is_a_proven_this ... ok
+test analyzers::demangle::kuna_cppsig::tests::last_token_drops_a_return_type_but_not_a_template_space ... ok
+test analyzers::demangle::kuna_cppsig::tests::constructor_is_a_proven_this ... ok
+test analyzers::demangle::kuna_cppsig::tests::msvc_32bit_thiscall_is_refused_not_misplaced ... ok
+test analyzers::demangle::kuna_cppsig::tests::msvc_states_access_and_static_outright ... ok
+test analyzers::demangle::kuna_cppsig::tests::qualifier_word_strip_respects_identifier_boundaries ... ok
+test analyzers::demangle::kuna_cppsig::tests::namespaced_free_function_is_ambiguous_not_proven ... ok
+test analyzers::demangle::kuna_cppsig::tests::signature_parens_finds_the_top_level_group ... ok
+test analyzers::demangle::kuna_cppsig::tests::plain_nested_member_is_ambiguous ... ok
+test analyzers::demangle::kuna_cppsig::tests::strip_template_args_leaves_the_bare_name ... ok
+test analyzers::demangle::kuna_cppsig::tests::split_params_respects_template_commas ... ok
+test analyzers::demangle::kuna_cppsig::tests::overloaded_operators_are_refused ... ok
+test analyzers::demangle::kuna_cppsig::tests::reference_parameters_become_pointers ... ok
+test analyzers::demangle::kuna_cppsig::tests::unqualified_name_proves_there_is_no_this ... ok
+test analyzers::demangle::kuna_cppsig::tests::varargs_slot_is_recorded ... ok
+test analyzers::demangle::tests::legacy_rust_hash_is_stripped ... ok
+test analyzers::demangle::tests::anonymous_namespace_fixture_symbols ... ok
+test analyzers::demangle::kuna_cppsig::tests::explicit_function_template_specializations_are_refused ... ok
+test analyzers::demangle::tests::anonymous_namespace_collides_across_units_by_design ... ok
+test analyzers::demangle::tests::msvc_anonymous_namespace_is_the_same_identifier ... ok
+test analyzers::demangle::tests::msvc_data_symbol ... ok
+test analyzers::demangle::tests::msvc_deeply_nested_and_constructor ... ok
+test analyzers::demangle::tests::demangle_name_keeps_operator_spellings ... ok
+test analyzers::demangle::tests::msvc_free_function ... ok
+test analyzers::demangle::tests::msvc_member_function_name_only ... ok
+test analyzers::demangle::tests::msvc_namespaced_function ... ok
+test analyzers::demangle::tests::msvc_question_mark_not_routed_to_itanium ... ok
+test analyzers::demangle::tests::msvc_raw_keeps_full_form ... ok
+test analyzers::demangle::tests::name_only_nested_itanium ... ok
+test analyzers::demangle::tests::plain_c_names_not_demangled ... ok
+test analyzers::demangle::tests::normalize_rust_name_resolves_generics_and_qualifiers ... ok
+test analyzers::demangle::tests::raw_keeps_full_signature ... ok
+test analyzers::demangle::tests::rust_v0_symbol_demangles ... ok
+test analyzers::demangle::tests::strip_bracket_groups_handles_nested_and_unbalanced ... ok
+test analyzers::demangle::tests::rtti_class_name_msvc_typeinfo ... ok
+test analyzers::demangle::tests::strip_bracket_groups_keeps_operator_spellings ... ok
+test analyzers::demangle::tests::anonymous_namespace_is_named_not_deleted ... ok
+test analyzers::demangle::tests::triple_underscore_skipped ... ok
+test analyzers::demangle::tests::versioned_symbol_skipped ... ok
+test analyzers::demangle::tests::templated_symbol_reduces_to_clean_name ... ok
+test analyzers::callfixup::tests::scan_runs_over_pe_symbols ... ok
+test analyzers::dwarf::kuna_dwarfvariants::tests::a_member_past_the_end_seals_instead_of_leaving_a_zero_size_shell ... ok
+test analyzers::demangle::tests::typeinfo_name_itanium ... ok
+test analyzers::dwarf::kuna_dwarfvariants::tests::a_generic_enum_at_two_instantiations_keeps_both ... ok
+test analyzers::dwarf::kuna_dwarfvariants::tests::agreeing_field_names_survive_even_when_the_facet_does_not ... ok
+test analyzers::dwarf::kuna_dwarfvariants::tests::builds_niche_option_box ... ok
+test analyzers::dwarf::kuna_dwarfvariants::tests::builds_option_with_a_fieldless_variant ... ok
+test analyzers::dwarf::kuna_dwarfvariants::tests::builds_multi_field_variant ... ok
+test analyzers::dwarf::kuna_dwarfvariants::tests::builds_three_variants ... ok
+test analyzers::dwarf::kuna_dwarfvariants::tests::builds_five_variants ... ok
+test analyzers::dwarf::kuna_dwarfvariants::tests::refuses_a_cpp_std_variant ... ok
+test analyzers::dwarf::kuna_dwarfvariants::tests::builds_niche_option_without_a_tag_field ... ok
+test analyzers::dwarf::kuna_dwarfvariants::tests::default_variant_is_suppressed_when_it_overlays_another ... ok
+test analyzers::dwarf::kuna_dwarfvariants::tests::refuses_declaration_only ... ok
+test analyzers::dwarf::kuna_dwarfvariants::tests::refuses_discr_that_is_not_a_member ... ok
+test analyzers::dwarf::kuna_dwarfvariants::tests::refuses_missing_discr ... ok
+test analyzers::dwarf::kuna_dwarfvariants::tests::refuses_sizeless_enum ... ok
+test analyzers::dwarf::kuna_typedepth::tests::aggregate_claim_is_path_local ... ok
+test analyzers::dwarf::kuna_typedepth::tests::cycle_guard_admits_chains_and_refuses_cycles ... ok
+test analyzers::dwarf::kuna_typedepth::tests::depth_guard_reproduces_the_budget ... ok
+test analyzers::dwarf::kuna_dwarfvariants::tests::tree_style_overlay_names_no_variant_but_keeps_the_uncontested_field ... ok
+test analyzers::dwarf::tests::ordinary_declaration_survives_only_the_cycle_guard ... ok
+test analyzers::dwarf::tests::forged_type_cycles_terminate ... ok
+test analyzers::entry::kuna_cortexmvectors::tests::committed_fixture_is_the_widened_shape ... ok
+test analyzers::entry::kuna_cortexmvectors::tests::ram_relocated_table_below_its_handlers_still_harvests ... ok
+test analyzers::entry::kuna_armlibcmain::tests::claims_main_from_the_literal_pool_of_a_non_pie_start ... ok
+test analyzers::dwarf::kuna_dwarfvariants::tests::option_keeps_its_only_payload_variant_name ... ok
+test analyzers::entry::kuna_pdatainterior::tests::non_pe_abstains ... ok
+test analyzers::entry::kuna_pdatainterior::tests::interior_of_a_runtime_function_is_not_a_start ... ok
+test analyzers::entry::kuna_pdatainterior::tests::no_exception_directory_abstains ... ok
+test analyzers::dwarf::kuna_dwarfvariants::tests::refuses_two_default_variants ... ok
+test analyzers::dwarf::kuna_dwarfvariants::tests::disjoint_payload_variants_keep_both_names ... ok
+test analyzers::entry::kuna_pdatainterior::tests::non_x86_machine_abstains ... ok
+test analyzers::entry::kuna_pdatainterior::tests::range_containing_another_start_is_not_eligible ... ok
+test analyzers::dwarf::kuna_dwarfvariants::tests::refuses_repeated_discr_value ... ok
+test analyzers::entry::kuna_pdatainterior::tests::range_containing_a_named_function_is_not_eligible ... ok
+test analyzers::entry::kuna_pdatainterior::tests::suppression_drops_only_the_interior_entry ... ok
+test analyzers::entry::kuna_pereloccode::tests::no_exception_directory_abstains ... ok
+test analyzers::entry::macho_entry::tests::lc_main_entry_vma_x64 ... ok
+test analyzers::entry::kuna_pereloccode::tests::relocated_data_pointer_is_not_a_function ... ok
+test analyzers::entry::kuna_pereloccode::tests::relocated_pointer_finds_address_taken_function ... ok
+test analyzers::entry::kuna_pereloccode::tests::unvouched_executable_address_is_not_a_function ... ok
+test analyzers::dwarf::kuna_dwarfvariants::tests::refuses_two_variant_parts ... ok
+test analyzers::dwarf::kuna_dwarfvariants::tests::refuses_variant_with_wrong_member_count ... ok
+test analyzers::entry::kuna_fdeinterior::tests::suppress_keeps_starts_and_gaps ... ok
+test analyzers::entry::kuna_fdeinterior::tests::interior_is_strict ... ok
+test analyzers::entry::kuna_cortexmvectors::tests::sram_first_word_alone_is_not_a_table ... ok
+test analyzers::dwarf::kuna_dwarfvariants::tests::refuses_a_c_union ... ok
+test analyzers::entry::pe_entry::tests::pdata_form_dispatches_on_machine ... ok
+test analyzers::entry::pe_entry::tests::pdata_unsupported_machine_is_not_parsed ... ok
+test analyzers::entry::tests::call_follows_reads_the_modrm_extension ... ok
+test analyzers::entry::tests::a_thumb_pe_entry_is_discovered_at_its_even_address ... ok
+test analyzers::dwarf::kuna_dwarfvariants::tests::plain_struct_is_not_a_variant_part ... ok
+test analyzers::dwarf::kuna_dwarfvariants::tests::records_the_layout_side_table ... ok
+test analyzers::dwarf::kuna_dwarfvariants::tests::refuses_a_plain_gcc_struct ... ok
+test analyzers::dwarf::kuna_dwarfvariants::tests::refuses_nested_variant_part ... ok
+test analyzers::dwarf::kuna_dwarfvariants::tests::refuses_non_struct_payload ... ok
+test analyzers::dwarf::kuna_dwarfvariants::tests::result_overlays_so_neither_variant_is_named ... ok
+test analyzers::dwarf::kuna_dwarfvariants::tests::refuses_non_integer_discriminant ... ok
+test analyzers::dwarf::kuna_typedepth::tests::cycle_guard_bounds_nesting ... ok
+test analyzers::dwarf::kuna_dwarfvariants::tests::same_named_different_sized_variants_both_survive ... ok
+test analyzers::dwarf::kuna_dwarfvariants::tests::recursive_enum_terminates ... ok
+test analyzers::dwarf::kuna_dwarfvariants::tests::refuses_when_every_facet_field_is_unbuildable ... ok
+test analyzers::dwarf::tests::sleb128_decodes_signed_values ... ok
+test analyzers::entry::kuna_cortexmvectors::tests::non_arm_is_a_strict_no_op ... ok
+test analyzers::dwarf::kuna_dwarfvariants::tests::seals_when_the_overlay_union_name_is_exhausted ... ok
+test analyzers::entry::kuna_armlibcmain::tests::defers_to_the_pie_and_static_arm_shapes ... ok
+test analyzers::entry::kuna_armlibcmain::tests::decodes_the_a32_words_the_idiom_is_built_from ... ok
+test analyzers::dwarf::tests::forged_type_cycles_terminate_with_the_budget ... ok
+test analyzers::entry::kuna_cortexmvectors::tests::ccm_stack_in_a_readonly_load_is_confirmed_only_when_widened ... ok
+test analyzers::dwarf::lines::tests::end_sequence_row_is_skipped ... ok
+test analyzers::callfixup::tests::scan_flags_mcount_in_fixture ... ok
+test analyzers::entry::kuna_cortexmvectors::tests::reset_word_need_not_equal_e_entry ... ok
+test analyzers::dwarf::kuna_dwarfvariants::tests::gate_defaults_on_and_honours_off ... ok
+test analyzers::entry::macho_entry::tests::function_starts_delta_decode ... ok
+test analyzers::entry::kuna_cortexmvectors::tests::shipped_match_wins_over_the_widened_scan ... ok
+test analyzers::entry::macho_entry::tests::macho_x64_function_starts ... ok
+test analyzers::entry::patterns::tests::ditted_hex_and_binary_parse ... ok
+test analyzers::dwarf::tests::dwarf_stripped_recovers_function_names_and_addrs ... ok
+test analyzers::dwarf::kuna_dwarfvariants::tests::reads_result_variant_part ... ok
+test analyzers::dwarf::kuna_dwarfvariants::tests::refuses_variant_part_with_no_payload_anywhere ... ok
+test analyzers::dwarf::kuna_dwarfvariants::tests::refuses_repeated_variant_name ... ok
+test analyzers::entry::tests::cortexm_vector_harvest ... ok
+test analyzers::entry::tests::ditted_matcher_basics ... ok
+test analyzers::entry::tests::cortexm_vector_table_exec_section_unchanged ... ok
+test analyzers::entry::kuna_armlibcmain::tests::claims_main_from_a_statically_filled_got_slot ... ok
+test analyzers::entry::tests::cortexm_vector_table_requires_executable_load ... ok
+test analyzers::entry::kuna_fdeinterior::tests::no_bodies_is_a_no_op ... ok
+test analyzers::entry::tests::dynamic_entry_points_is_named_projection ... ok
+test analyzers::entry::kuna_elfmain::tests::contributes_only_the_prototype_on_the_non_pie_arm_shape ... ok
+test analyzers::entry::tests::cortexm_vector_table_in_nonexec_section ... ok
+test analyzers::entry::kuna_elfmain::tests::claims_it_on_every_architecture_oracle_4_decodes ... ok
+test analyzers::entry::pe_entry::tests::pdata_arm64_uses_the_eight_byte_record ... ok
+test analyzers::entry::patterns::tests::x86_64_set_parses_and_has_pairs ... ok
+test analyzers::entry::pe_entry::tests::a_data_section_entry_is_not_discovered ... ok
+test analyzers::dwarf::kuna_dwarfvariants::tests::seals_when_every_suppressed_facet_name_is_taken ... ok
+test analyzers::entry::patterns::tests::no_match_without_prepattern ... ok
+test analyzers::entry::pe_entry::tests::pdata_chained_record_is_not_a_function_start ... ok
+test analyzers::entry::pe_entry::tests::a_header_page_entry_is_discovered ... ok
+test analyzers::entry::patterns::tests::star_mark_offset_is_parsed_and_applied ... ok
+test analyzers::entry::tests::dynamic_entry_points_stripped ... ok
+test analyzers::entry::macho_entry::tests::lc_main_entry_vma_survives_stripping ... ok
+test analyzers::entry::tests::collect_entries_stripped_includes_entry_and_main ... ok
+test analyzers::entry::patterns::tests::x86_64_pairs_catch_push_rbx_after_nop ... ok
+test analyzers::entry::tests::eh_frame_landing_pads_eh_lsda ... ok
+test analyzers::entry::tests::eh_frame_starts_fauxware ... ok
+test analyzers::entry::tests::image_entry_vma_reports_no_entry_as_none ... ok
+test analyzers::dwarf::kuna_dwarfvariants::tests::reads_niche_default_variant ... ok
+test analyzers::entry::macho_entry::tests::lc_main_entry_vma_refuses_non_macho ... ok
+test analyzers::entry::tests::dynamic_entry_names_stripped ... ok
+test analyzers::entry::kuna_elfmain::tests::contributes_nothing_without_the_libc_runtime ... ok
+test analyzers::entry::tests::libc_start_main_idiom_stripped ... ok
+test analyzers::entry::tests::libc_start_main_idiom_riscv ... ok
+test analyzers::entry::tests::prologue_pattern_matches_endbr64_frame ... ok
+test analyzers::entry::tests::libc_start_main_idiom_arm ... ok
+test analyzers::entry::tests::landing_pads_are_not_fde_starts ... ok
+test analyzers::entry::kuna_machomain::tests::contributes_nothing_off_mach_o ... ok
+test analyzers::fast_funcdisc::tests::oversized_tables_are_ignored ... ok
+test analyzers::entry::tests::collect_entry_names_matches_collected_entries ... ok
+test analyzers::fid::db::tests::bad_magic_is_error ... ok
+test analyzers::fid::db::tests::bad_name_offset_is_error ... ok
+test analyzers::entry::tests::landing_pads_empty_without_except_table ... ok
+test analyzers::entry::tests::packed_image_does_not_take_the_segment_fallback ... ok
+test analyzers::fid::db::tests::collision_bucket_keeps_all_records ... ok
+test analyzers::fid::db::tests::empty_db_round_trips ... ok
+test analyzers::fid::db::tests::empty_input_is_error_not_panic ... ok
+test analyzers::fid::db::tests::names_are_interned ... ok
+test analyzers::entry::tests::collect_entries_fauxware_skips_named_functions ... ok
+test analyzers::entry::tests::libc_start_main_idiom_absolute_immediate ... ok
+test analyzers::fid::db::tests::wrong_version_is_error ... ok
+test analyzers::fid::extent::tests::empty_clip_when_no_instructions_in_range ... ok
+test analyzers::entry::tests::section_less_image_falls_back_to_its_load_segments ... ok
+test analyzers::entry::tests::leb128_roundtrip ... ok
+test analyzers::fid::extent::tests::clips_between_consecutive_function_entries ... ok
+test analyzers::fid::db::tests::truncated_record_table_is_error ... ok
+test analyzers::fid::extent::tests::instructions_before_entry_excluded ... ok
+test analyzers::fid::hash::tests::extent_below_four_returns_none ... ok
+test analyzers::fid::extent::tests::last_function_runs_to_end_of_map ... ok
+test analyzers::fid::hash::tests::fnv_digest_long_resets_to_basis ... ok
+test analyzers::fid::hash::tests::fnv_known_vectors ... ok
+test analyzers::fid::hash::tests::fnv_offset_basis_is_empty_string ... ok
+test analyzers::fid::hash::tests::hand_computed_quad_matches_reference ... ok
+test analyzers::fid::hash::tests::hash_is_deterministic_across_runs ... ok
+test analyzers::fid::hash::tests::quad_field_values_are_as_expected ... ok
+test analyzers::entry::tests::lsda_call_site_table_parse_synthetic ... ok
+test analyzers::fid::hash::tests::relocation_suppresses_scalar_in_specific_count ... ok
+test analyzers::entry::tests::libc_start_main_idiom_aarch64 ... ok
+test analyzers::fid::hash::tests::update_i32_is_big_endian ... ok
+test analyzers::fid::hash::tests::update_i32_negative_value ... ok
+test analyzers::fid::skipper::tests::length_must_match_exactly ... ok
+test analyzers::fid::skipper::tests::non_x86_empty_set_never_skips ... ok
+test analyzers::dwarf::lines::tests::cet_pie_debug_line_maps_pc_to_source_line ... ok
+test analyzers::dwarf::tests::cet_pie_fbreg_locals_and_cfa_offsets ... ok
+test analyzers::fid::skipper::tests::skips_multibyte_nops ... ok
+test analyzers::fid::skipper::tests::skips_single_byte_nop ... ok
+test analyzers::fid::skipper::tests::trailing_bytes_in_buffer_ignored_beyond_size ... ok
+test analyzers::fid::tests::collapsing_aliases_yield_the_shared_name ... ok
+test analyzers::dwarf::lines::tests::comments_attach_to_owning_function_entry ... ok
+test analyzers::fid::tests::empty_bucket_yields_nothing ... ok
+test analyzers::fid::tests::genuine_multi_name_bucket_is_a_tie_no_guess ... ok
+test analyzers::entry::tests::sectioned_image_keeps_its_section_ranges ... ok
+test analyzers::entry::kuna_machomain::tests::claims_the_lc_main_entry_of_a_stripped_executable ... ok
+test analyzers::entry::tests::segment_fallback_is_empty_without_elf_program_headers ... ok
+test analyzers::fid::db::tests::round_trip_preserves_records_and_index ... ok
+test analyzers::entry::tests::eh_frame_first_fde_pcrel_math ... ok
+test analyzers::entry::tests::image_entry_vma_passes_through_a_vma_entry ... ok
+test analyzers::entry::tests::collect_entries_crossarch_includes_main ... ok
+test analyzers::entry::patterns::tests::arches_with_unconditional_funcstart_have_a_set ... ok
+test analyzers::fid::tests::unique_single_record_yields_its_name ... ok
+test analyzers::formatstring::apply::tests::classify_non_variadic_none ... ok
+test analyzers::fid::tests::pass_identity ... ok
+test analyzers::entry::tests::immediate_main_guards ... ok
+test analyzers::formatstring::apply::tests::classify_printf_family_output ... ok
+test analyzers::entry::tests::image_entry_vma_rebases_a_macho_lc_main ... ok
+test analyzers::entry::kuna_elfmain::tests::claims_the_libc_start_main_argument_of_a_stripped_elf ... ok
+test analyzers::entry::kuna_elfmain::tests::defers_to_an_image_that_names_its_own_main ... ok
+test analyzers::entry::pe_entry::tests::pe_stripped_pdata_recovers_functions ... ok
+test analyzers::formatstring::apply::tests::classify_scanf_family_input ... ok
+test analyzers::formatstring::tests::brief_examples ... ok
+test analyzers::addrtable::tests::scan_runs_over_pe_and_macho ... ok
+test analyzers::formatstring::tests::float_family_is_double ... ok
+test analyzers::entry::tests::collect_entries_macho_function_starts_oracle ... ok
+test analyzers::formatstring::tests::literal_percent_consumes_no_arg ... ok
+test analyzers::formatstring::tests::multiple_specifiers_mixed ... ok
+test analyzers::formatstring::tests::n_with_length_modifier_widens_pointee ... ok
+test analyzers::formatstring::tests::length_modifiers ... ok
+test analyzers::formatstring::tests::malformed_truncated_no_panic ... ok
+test analyzers::formatstring::tests::no_specifiers_is_empty ... ok
+test analyzers::formatstring::tests::basic_printf_specs ... ok
+test analyzers::formatstring::tests::positional_arguments ... ok
+test analyzers::formatstring::tests::scanf_p_is_wrapped ... ok
+test analyzers::formatstring::tests::scanf_star_suppresses_next_arg ... ok
+test analyzers::formatstring::tests::unicode_in_literal_text_no_panic ... ok
+test analyzers::formatstring::tests::scanf_wraps_non_pointers ... ok
+test analyzers::entry::macho_entry::tests::macho_arm64_function_starts ... ok
+test analyzers::noreturn_propagate::tests::arg0_nonzero_const_rejects_zero_and_nonconst_and_intervening_call ... ok
+test analyzers::noreturn_propagate::tests::arg0_reg_is_the_x86_64_first_int_arg ... ok
+test analyzers::formatstring::tests::flags_width_precision ... ok
+test analyzers::noreturn_propagate::tests::empty_listing_consumer_is_inert_via_pass ... ok
+test analyzers::noreturn_propagate::tests::pass_identity_wiring ... ok
+test analyzers::noreturn_propagate::tests::parse_imm_reads_hex_and_decimal ... ok
+test analyzers::noreturn_propagate::tests::reach_call_with_no_fallthrough_to_returning_callee_is_rejected ... ok
+test analyzers::formatstring::tests::fmtarg_intermediate_pairs ... ok
+test analyzers::noreturn_propagate::tests::reach_escape_to_returning_neighbour_is_rejected ... ok
+test analyzers::noreturn_propagate::tests::reach_live_return_on_one_branch_is_not_noreturn ... ok
+test analyzers::noreturn_propagate::tests::reach_midbody_noreturn_with_dead_tail_is_noreturn ... ok
+test analyzers::formatstring::tests::integer_conversion_table ... ok
+test analyzers::noreturn_propagate::tests::reach_returning_function_is_not_noreturn ... ok
+test analyzers::noreturn_propagate::tests::reach_switch_of_noreturn_is_noreturn ... ok
+test analyzers::noreturn_propagate::tests::reach_tail_noreturn_call_is_noreturn ... ok
+test analyzers::noreturn_propagate::tests::reach_unresolved_indirect_jump_is_rejected ... ok
+test analyzers::noreturn_disc::tests::empty_listing_consumer_is_inert_via_pass ... ok
+test analyzers::formatstring::tests::wide_string_and_char ... ok
+test analyzers::noreturn_propagate::tests::reach_walk_follows_conditional_jump_fallthrough_to_ret ... ok
+test analyzers::objc::encoding::tests::decode_greet_method ... ok
+test analyzers::noreturn_disc::tests::threshold_is_three ... ok
+test analyzers::objc::methods::tests::arm32_odd_imp_carries_thumb_state ... ok
+test analyzers::noreturn_propagate::tests::arg0_nonzero_const_recognizes_mov_edi_imm ... ok
+test analyzers::objc::methods::tests::x86_64_odd_imp_is_an_address ... ok
+test analyzers::objc::tests::pass_identity ... ok
+test analyzers::objc::encoding::tests::decode_ivar_long ... ok
+test analyzers::objc::tests::sanitize_selector_replaces_colons ... ok
+test analyzers::objc::tests::preserves_odd_x86_64_imp_from_metadata ... ok
+test analyzers::operand_refs::tests::readonly_partition_classifies_sections ... ok
+test analyzers::operand_refs::tests::readonly_string_recognizer ... ok
+test analyzers::operand_refs::tests::got_plt_exclusion_is_recognized ... ok
+test analyzers::objc::encoding::tests::empty_encoding_is_none ... ok
+test analyzers::objc::encoding::tests::decode_void_return_double_arg ... ok
+test analyzers::operand_refs::tests::value_filter_matches_ghidra ... ok
+test analyzers::pclntab::tests::decodes_go118_64bit_le ... ok
+test analyzers::pclntab::tests::decodes_go116_64bit_le_absolute_entries ... ok
+test analyzers::operand_refs::tests::scan_over_fauxware_finds_only_readonly_targets ... ok
+test analyzers::pclntab::tests::go118_ignores_buildid_sentinel_name ... ok
+test analyzers::pclntab::tests::decodes_go12_legacy_64bit_le ... ok
+test analyzers::entry::kuna_machomain::tests::defers_to_an_entry_that_already_carries_a_symbol ... ok
+test analyzers::pclntab::tests::go118_skips_inline_sentinel_entry ... ok
+test analyzers::pclntab::tests::image_read_cstr_bounds ... ok
+test analyzers::pclntab::tests::probe_detects_big_endian_via_magic ... ok
+test analyzers::pclntab::tests::probe_recognizes_all_four_magics_little_endian ... ok
+test analyzers::objc::encoding::tests::decode_pointers ... ok
+test analyzers::objc::tests::walks_macho_objc_fixture_metadata ... ok
+test analyzers::pclntab::tests::truncated_table_does_not_panic ... ok
+test analyzers::pclntab::tests::unknown_magic_yields_empty_via_locate_miss ... ok
+test analyzers::pclntab::tests::decodes_go118_big_endian ... ok
+test analyzers::pdb::codeview::tests::extract_non_pe_is_none ... ok
+test analyzers::objc::tests::resolver_is_noop_on_non_chained_fixup_macho ... ok
+test analyzers::pdb::codeview::tests::parse_nb10_record ... ok
+test analyzers::pdb::codeview::tests::extract_pdb_min_exe_rsds_record ... ok
+test analyzers::pdb::codeview::tests::parse_rejects_unknown_and_truncated ... ok
+test analyzers::pclntab::tests::probe_rejects_malformed_headers ... ok
+test analyzers::pdb::codeview::tests::parse_rsds_record ... ok
+test analyzers::entry::kuna_armlibcmain::tests::contributes_nothing_off_arm32_elf ... ok
+test analyzers::pdb::kuna_pdbinterior::tests::a_cross_procedure_call_target_is_kept ... ok
+test analyzers::dwarf::tests::cet_pie_recovers_elaborate_debug_symbol ... ok
+test analyzers::pdb::kuna_pdbinterior::tests::a_targetless_call_does_not_fall_through ... ok
+test analyzers::pdb::kuna_pdbinterior::tests::a_call_target_on_the_flow_is_kept ... ok
+test analyzers::pdb::kuna_pdbinterior::tests::conflicting_records_for_one_start_are_not_used ... ok
+test analyzers::pdb::kuna_pdbinterior::tests::arm32_abstains ... ok
+test analyzers::pdb::kuna_pdbinterior::tests::inside_one_range_rejects_empty_and_straddling_extents ... ok
+test analyzers::pdb::kuna_pdbinterior::tests::only_entries_the_owner_decodes_are_dropped ... ok
+test analyzers::pdb::kuna_pdbinterior::tests::a_no_return_call_does_not_fall_through ... ok
+test analyzers::pdb::locate::tests::candidates_are_env_then_record_then_stem ... ok
+test analyzers::pdb::kuna_pdbinterior::tests::the_walk_stays_inside_the_procedure ... ok
+test analyzers::pdb::locate::tests::candidates_dedupe_and_need_no_env ... ok
+test analyzers::pdb::kuna_pdbinterior::tests::only_owned_bodies_reject_their_interior ... ok
+test analyzers::pdb::locate::tests::candidates_fall_back_to_the_stem_when_the_record_is_unusable ... ok
+test analyzers::pdb::locate::tests::matching_guid_and_age_passes ... ok
+test analyzers::pdb::locate::tests::mismatched_age_fails ... ok
+test analyzers::pdb::locate::tests::mismatched_guid_fails ... ok
+test analyzers::pdb::locate::tests::nb10_record_has_no_guid_to_match ... ok
+test analyzers::pdb::kuna_pdbinterior::tests::no_sidecar_abstains ... ok
+test analyzers::pdb::locate::tests::recorded_name_keeps_only_the_basename ... ok
+test analyzers::pdb::locate::tests::recorded_name_rejects_traversal_and_non_pdb ... ok
+test analyzers::pdb::tests::pass_identity ... ok
+test analyzers::pdb::tests::pe_image_base_non_pe_is_none ... ok
+test analyzers::pdb::locate::tests::env_unset_or_empty_is_none ... ok
+test analyzers::pdb::walk::tests::pdb_func_eq ... ok
+test analyzers::pdb::kuna_pdbinterior::tests::extents_outside_one_executable_section_are_rejected ... ok
+test analyzers::pdb::tests::pe_image_base_reads_pdb_min ... ok
+test analyzers::protos::kuna_libcsigs::tests::fortify_printf_family_carries_the_extra_flag_parameter ... ok
+test analyzers::pdb::kuna_pdbinterior::tests::vouched_extents_need_one_executable_section ... ok
+test analyzers::pdb::kuna_pdbinterior::tests::entries_the_owner_does_not_decode_stay_in_the_fixture ... ok
+test analyzers::fast_funcdisc::tests::large_inventories_require_distinct_table_references ... ok
+test analyzers::pdb::walk::tests::procedures_carry_their_extent_or_none ... ok
+test analyzers::pdb::kuna_pdbinterior::tests::a_local_procedure_whose_start_nothing_admits_keeps_its_only_entry ... ok
+test analyzers::objc::tests::walks_macho_objc_arm64_chained_fixups ... ok
+test analyzers::protos::kuna_libcsigs::tests::table_is_disjoint_from_base ... ok
+test analyzers::protos::kuna_libcsigs::tests::vararg_slots_are_the_slot_past_the_fixed_parameters ... ok
+test analyzers::pdb::kuna_pdbinterior::tests::the_leaf_extent_comes_from_the_pdb ... ok
+test analyzers::protos::kuna_win32sigs::tests::an_elf_yields_nothing ... ok
+test analyzers::protos::tests::ptrace_is_the_four_slot_documented_call_form ... ok
+test analyzers::protos::kuna_win32sigs::tests::table_names_are_unique_and_sorted_within_groups ... ok
+test analyzers::protos::kuna_libcsigs::tests::table_names_are_unique ... ok
+test analyzers::protos::tests::base_by_name_matching_suppresses_only_import_definition_collisions ... ok
+test analyzers::protos::tests::setlocale_signature_is_char_ptr_int_char_ptr ... ok
+test analyzers::protos::tests::table_entries_are_well_formed ... ok
+test analyzers::rtti::kuna_itaniumrtti::tests::abi_vtable_names_map_to_flavours ... ok
+test analyzers::pdb::kuna_pdbinterior::tests::a_fingerprint_mismatched_pdb_abstains ... ok
+test analyzers::protos::tests::macho_present_names_include_stub_import ... ok
+test analyzers::protos::kuna_libcsigs::tests::only_imported_names_are_seeded ... ok
+test analyzers::rtti::kuna_itaniumrtti::tests::offset_to_top_sign_extends_per_width ... ok
+test analyzers::rtti::kuna_itaniumrtti::tests::class_names_sanitize_to_distinct_identifier_chains ... ok
+test analyzers::rtti::kuna_itaniumrtti::tests::pass_identity ... ok
+test analyzers::protos::tests::fauxware_seeds_puts_printf_strcmp ... ok
+test analyzers::rtti::models::tests::find_ptrs_locates_type_descriptors ... ok
+test analyzers::rtti::kuna_itaniumrtti::tests::secondary_subvtable_is_named_for_its_base ... ok
+test analyzers::rtti::refkind::tests::x64_refs_are_ibo32_name_at_16 ... ok
+test analyzers::protos::tests::pe_import_prototype_is_seeded_at_iat_and_veneer_but_not_export ... ok
+test analyzers::rtti::models::tests::x64_chain_decodes ... ok
+test analyzers::rtti::refkind::tests::x86_refs_are_raw_va_name_at_8 ... ok
+test analyzers::rtti::tests::common_type_info_needs_agreement ... ok
+test analyzers::rtti::tests::virtual_method_is_named_after_the_function_not_the_table ... ok
+test analyzers::rtti::tests::pass_identity ... ok
+test analyzers::rtti::kuna_itaniumrtti::tests::inherited_slot_is_attributed_to_the_defining_base ... ok
+test analyzers::rtti::vftable::tests::one_slot_table ... ok
+test analyzers::rtti::kuna_itaniumrtti::tests::decodes_class_names_and_single_inheritance ... ok
+test analyzers::rtti::vftable::tests::rejects_base_with_no_code_slot ... ok
+test analyzers::rtti::vftable::tests::walks_to_null_boundary ... ok
+test analyzers::rtti::kuna_itaniumrtti::tests::recovers_both_vtables_and_rejects_the_base_pointer ... ok
+test analyzers::sourcelang::tests::comment_rust_vs_gcc_vs_clang ... ok
+test analyzers::sourcelang::tests::coff_object_stays_unknown_without_rust_signal ... ok
+test analyzers::sourcelang::tests::detects_clang_on_macho_object ... ok
+test analyzers::sourcelang::tests::golang_section_predicate ... ok
+test analyzers::sourcelang::tests::rodata_signature_scan ... ok
+test analyzers::sourcelang::tests::rust_mangled_name_recognition ... ok
+test analyzers::sourcelang::tests::rich_header_msvc_vs_clang ... ok
+test analyzers::strings::kuna_stringinv::tests::a_length_prefixed_name_table_needs_the_relaxed_ending ... ok
+test analyzers::strings::kuna_stringinv::tests::a_run_reaching_the_end_of_a_region_is_a_text_run_only ... ok
+test analyzers::sourcelang::tests::rust_noreturn_list_parses_with_wildcards ... ok
+test analyzers::sourcelang::tests::detects_rustc_on_rust_fixture ... ok
+test analyzers::strings::kuna_stringinv::tests::section_operand_tolerates_a_missing_dot ... ok
+test analyzers::sourcelang::tests::golang_noreturn_list_carries_runtime_names ... ok
+test analyzers::protos::kuna_win32sigs::tests::no_entry_is_variadic ... ok
+test analyzers::protos::kuna_win32sigs::tests::no_crt_spelling_is_admitted ... ok
+test analyzers::strings::kuna_stringinv::tests::the_wide_width_takes_the_same_ending_policy ... ok
+test analyzers::strings::kuna_stringinv::tests::utf16_matcher_mirrors_the_ascii_one ... ok
+test analyzers::strings::kuna_stringinv::tests::utf16_requires_a_null_end_and_the_minimum ... ok
+test analyzers::strings::kuna_stringinv::tests::utf16_units_stay_on_even_addresses ... ok
+test analyzers::sourcelang::tests::detects_gcc_on_c_fixtures ... ok
+test analyzers::strings::kuna_stringinv::tests::the_utf8_reading_recovers_a_multi_byte_prefix ... ok
+test analyzers::strings::kuna_utf8strings::tests::a_multi_byte_prefix_no_longer_moves_the_start ... ok
+test analyzers::strings::kuna_utf8strings::tests::a_sequence_truncated_by_the_end_of_a_region_is_not_a_character ... ok
+test analyzers::strings::kuna_utf8strings::tests::an_ill_formed_sequence_closes_the_run_without_eating_ascii ... ok
+test analyzers::strings::kuna_utf8strings::tests::overlongs_surrogates_and_controls_are_declined ... ok
+test analyzers::strings::kuna_stringinv::tests::a_section_filter_narrows_the_inventory ... ok
+test analyzers::strings::kuna_utf8strings::tests::the_minimum_length_counts_characters_not_bytes ... ok
+test analyzers::strings::kuna_utf8strings::tests::pure_ascii_reads_exactly_as_the_1_byte_matcher ... ok
+test analyzers::strings::kuna_stringinv::tests::inventory_over_fauxware_reads_the_pass_back_as_text ... ok
+test analyzers::strings::kuna_widestrings::tests::an_ascii_literal_is_never_read_as_a_wide_one ... ok
+test analyzers::protos::kuna_win32sigs::tests::the_resource_loader_family_carries_its_documented_arity ... ok
+test analyzers::strings::kuna_widestrings::tests::scan_wide_strings_over_the_pe_fixture ... ok
+test analyzers::protos::kuna_win32sigs::tests::a_pe_import_yields_one_address_per_resolver_entry ... ok
+test analyzers::strings::kuna_widestrings::tests::short_and_unterminated_wide_runs_are_rejected ... ok
+test analyzers::strings::kuna_stringinv::tests::the_relaxed_ending_keeps_every_terminated_row_intact ... ok
+test analyzers::strings::kuna_widestrings::tests::units_are_read_on_even_addresses ... ok
+test analyzers::strings::tests::matcher_basic ... ok
+test analyzers::protos::tests::a_declared_name_is_answered_out_of_either_table ... ok
+test analyzers::strings::kuna_widestrings::tests::utf16_run_is_the_ascii_matcher_widened ... ok
+test analyzers::strings::tests::min_length_boundary ... ok
+test analyzers::strings::tests::non_terminated_run_rejected ... ok
+test analyzers::entry::tests::collect_entries_pe_stripped_finds_functions ... ok
+test listing::classify::tests::branchind_is_computed_no_target ... ok
+test listing::classify::tests::call_target_falls_through ... ok
+test analyzers::protos::kuna_win32sigs::tests::table_is_disjoint_from_libc ... ok
+test listing::classify::tests::callind_is_computed_falls_through ... ok
+test listing::classify::tests::cbranch_target_and_fallthrough ... ok
+test analyzers::strings::tests::charset_recognizer ... ok
+test listing::classify::tests::cbranch_then_trailing_op_keeps_fallthrough ... ok
+test listing::classify::tests::constant_space_branch_in0_is_not_a_target ... ok
+test listing::classify::tests::return_is_terminal ... ok
+test listing::classify::tests::plain_instruction_falls_through ... ok
+test analyzers::strings::tests::elf_section_selection_is_unchanged ... ok
+test analyzers::strings::tests::scan_strings_over_fauxware ... ok
+test listing::classify::tests::unconditional_branch_no_fallthrough ... ok
+test listing::kuna_callbackentry::tests::instruction_interior_is_not_a_candidate ... ok
+test listing::kuna_callbackentry::tests::pushed_executable_pointer_reaching_a_call_is_a_candidate ... ok
+test listing::kuna_callbackentry::tests::pushed_pointer_without_a_following_call_is_not_a_candidate ... ok
+test listing::kuna_pdecode::tests::a_seed_record_beats_a_discovered_one_and_duplicates_collapse ... ok
+test listing::kuna_pdecode::tests::a_single_interval_owns_everything ... ok
+test analyzers::protos::tests::base_table_imports_keep_name_matching_and_gain_address_keys ... ok
+test analyzers::strings::kuna_stringinv::tests::the_utf8_reading_is_a_superset_of_the_ascii_one ... ok
+test listing::kuna_pdecode::tests::an_absurd_interval_count_collapses_instead_of_overflowing ... ok
+test listing::kuna_pdecode::tests::every_refusal_has_a_distinct_spelling ... ok
+test listing::kuna_pdecode::tests::overlapping_executable_ranges_are_counted_once ... ok
+test listing::kuna_pdecode::tests::the_lane_excess_is_never_larger_than_the_lanes_themselves ... ok
+test listing::kuna_pdecode::tests::every_refusal_is_in_the_all_list ... ok
+test listing::kuna_pdecode::tests::the_lane_excess_prices_out_the_map_the_serial_walk_would_hold ... ok
+test listing::kuna_pdecode::tests::owner_is_total_and_agrees_with_the_bounds ... ok
+test listing::kuna_pdecode::tests::the_router_keeps_what_it_owns_and_hands_over_the_rest ... ok
+test listing::kuna_pdecode::tests::the_merge_refuses_two_shards_that_claim_one_address ... ok
+test listing::kuna_picbase::tests::a_plain_constant_move_cannot_establish_a_base ... ok
+test listing::kuna_picbase::tests::a_partial_write_to_the_base_invalidates_the_whole_register ... ok
+test listing::kuna_pdecode::tests::more_intervals_than_seeds_collapses_instead_of_splitting_nothing ... ok
+test listing::kuna_pdecode::tests::merged_references_equal_a_pre_merged_walk ... ok
+test listing::kuna_picbase::tests::an_indexed_access_reports_nothing_rather_than_its_array_base ... ok
+test listing::kuna_picbase::tests::sign_extension_reads_a_negative_displacement ... ok
+test listing::kuna_picbase::tests::an_unmapped_or_small_result_is_not_a_reference ... ok
+test listing::kuna_picpool::tests::a_call_ends_the_tracked_word ... ok
+test listing::kuna_picbase::tests::the_stack_carries_a_pushed_return_address_back_into_a_register ... ok
+test listing::kuna_picpool::tests::a_narrow_pool_read_is_not_a_displacement ... ok
+test listing::kuna_picpool::tests::a_composed_address_that_stays_in_a_temporary_files_nothing ... ok
+test listing::kuna_picpool::tests::a_pool_displacement_added_to_the_pc_is_the_address_it_forms ... ok
+test listing::kuna_picpool::tests::a_word_is_not_believed_forever ... ok
+test listing::kuna_picpool::tests::a_write_to_the_register_ends_the_tracked_word ... ok
+test listing::kuna_poolref::tests::a_location_outside_every_read_only_range_reads_nothing ... ok
+test listing::kuna_poolref::tests::a_narrow_read_of_a_pool_word_is_not_a_pointer_dereference ... ok
+test listing::kuna_poolref::tests::a_pointer_sized_read_of_a_read_only_word_follows_it ... ok
+test listing::kuna_poolref::tests::a_word_that_is_not_plausibly_an_address_is_not_followed ... ok
+test listing::kuna_picpool::tests::the_add_may_sit_a_few_instructions_past_the_load ... ok
+test listing::kuna_picpool::tests::arithmetic_without_the_pc_a_pointer_word_and_an_unmapped_sum_are_declined ... ok
+test listing::kuna_poolref::tests::a_word_that_lands_nowhere_is_not_followed ... ok
+test listing::kuna_poolref::tests::a_word_that_overruns_its_section_reads_nothing ... ok
+test listing::kuna_poolref::tests::an_image_with_no_read_only_section_declines_to_exist ... ok
+test listing::kuna_poolref::tests::an_unaligned_location_is_not_a_pool_word ... ok
+test listing::kuna_poolref::tests::the_word_is_read_in_the_images_own_byte_order ... ok
+test listing::kuna_ppclocalentry::tests::local_entry_offset_decodes_the_st_other_field ... ok
+test listing::kuna_switchtable::tests::a_base_that_is_not_a_readable_word_reads_no_table ... ok
+test listing::kuna_switchtable::tests::a_delta_table_composes_every_entry_with_its_base ... ok
+test listing::kuna_switchtable::tests::a_delta_table_reads_from_a_base_that_is_not_the_table ... ok
+test listing::kuna_switchtable::tests::a_dispatch_in_no_executable_section_reads_no_table ... ok
+test listing::kuna_ppclocalentry::tests::non_ppc64_images_fold_nothing ... ok
+test listing::kuna_switchtable::tests::a_run_shorter_than_two_entries_is_not_a_table ... ok
+test analyzers::protos::tests::stripped_pe_present_names_from_resolver_only ... ok
+test listing::kuna_switchtable::tests::a_word_outside_the_dispatchers_own_section_ends_the_table ... ok
+test listing::kuna_switchtable::tests::a_table_of_code_addresses_yields_every_case_body ... ok
+test listing::kuna_switchtable::tests::the_case_count_stops_the_scan_at_the_end_of_the_table ... ok
+test listing::kuna_tailcallentry::tests::region_lookup_is_entry_ordered ... ok
+test listing::tests::instruction_ranges_are_start_inclusive_and_end_exclusive ... ok
+test listing::xrefs::tests::a_calls_own_return_address_is_never_a_data_reference ... ok
+test listing::xrefs::tests::a_call_through_a_slot_is_a_call_edge_across_the_copy ... ok
+test listing::kuna_picbase::tests::a_base_relative_lea_is_a_data_reference ... ok
+test listing::xrefs::tests::a_computed_call_is_attributed_to_the_function_containing_it ... ok
+test listing::xrefs::tests::a_direct_ram_read_of_a_pool_word_follows_it_too ... ok
+test listing::xrefs::tests::a_direct_data_space_varnode_is_a_read_or_a_write ... ok
+test listing::xrefs::tests::a_flow_ops_target_is_not_a_data_reference ... ok
+test listing::xrefs::tests::a_literal_pool_load_also_references_what_the_pool_word_holds ... ok
+test listing::xrefs::tests::a_materialized_code_address_is_a_data_reference ... ok
+test listing::xrefs::tests::a_narrow_load_of_a_pool_word_files_only_the_read ... ok
+test listing::xrefs::tests::an_indirect_flow_ops_operand_is_the_slot_it_reads ... ok
+test listing::xrefs::tests::duplicate_edges_from_one_site_collapse ... ok
+test listing::xrefs::tests::load_through_a_constant_pointer_is_a_read ... ok
+test listing::xrefs::tests::a_plain_target_is_unaffected_by_unification ... ok
+test listing::xrefs::tests::a_veneer_and_its_slot_are_one_alias_class ... ok
+test listing::kuna_picbase::tests::a_calls_own_return_address_is_not_a_reference ... ok
+test listing::xrefs::tests::both_ends_of_an_import_answer_with_every_real_reference ... ok
+test listing::kuna_picbase::tests::a_base_relative_load_is_a_read_and_a_store_a_write ... ok
+test listing::xrefs::tests::mapped_ranges_answers_from_the_sections_when_there_are_some ... ok
+test listing::kuna_pdecode::tests::a_poisoned_gate_wakes_every_waiter ... ok
+test listing::kuna_tailcallentry::tests::containment_is_the_region_crossing ... ok
+test listing::kuna_switchtable::tests::the_scan_stops_at_the_first_word_that_is_not_code ... ok
+test analyzers::sourcelang::tests::detects_clang_on_macho_fixtures ... ok
+test listing::kuna_tailcallentry::tests::epilogue_starts_are_recognised ... ok
+test listing::xrefs::tests::small_integers_byte_masks_and_unmapped_values_are_not_addresses ... ok
+test listing::xrefs::tests::mapped_ranges_falls_back_to_load_segments_without_a_section_table ... ok
+test listing::xrefs::tests::the_copy_chain_to_a_slot_is_bounded ... ok
+test listing::xrefs::tests::store_reports_the_pointer_it_writes_through ... ok
+test listing::xrefs::tests::varnodes_outside_the_data_and_constant_spaces_are_ignored ... ok
+test listing::xrefs::tests::no_pool_image_leaves_every_reference_as_it_was ... ok
+test loader::arm_markers::tests::arm_markers_emit_thumb_facts ... ok
+test loader::arm_markers::tests::marker_name_classification ... ok
+test loader::elf_dynseg::tests::exec_segments_are_the_executable_loads_only ... ok
+test listing::kuna_ppclocalentry::tests::fixture_declares_a_local_entry_for_every_crtstuff_routine ... ok
+test loader::arm_markers::tests::non_arm_object_emits_nothing ... ok
+test loader::elf_dynseg::tests::fixture_has_no_sections_for_object_to_read ... ok
+test loader::elf_dynseg::tests::non_elf_is_refused ... ok
+test loader::elf_dynseg::tests::names_both_got_slots_from_pt_dynamic ... ok
+test loader::elf_dynseg::tests::oversized_relocation_table_size_is_bounded ... ok
+test loader::elf_dynseg::tests::resolves_stub_names_without_naming_the_code_after_them ... ok
+test loader::elf_dynseg::tests::sectionless_static_image_yields_nothing ... ok
+test loader::elf_plt::tests::aarch64_plt_decode ... ok
+test loader::elf_plt::tests::arm_plt_decode ... ok
+test loader::elf_plt::tests::i386_pie_plt_decode ... ok
+test loader::elf_plt::tests::ppc64_plt_decode ... ok
+test loader::elf_plt::tests::riscv_plt_decode ... ok
+test loader::elf_plt::tests::sparc_plt_decode ... ok
+test loader::elf_plt::tests::x86_64_ifunc_stub_naming ... ok
+test loader::elf_shdr::tests::no_section_table_at_all_is_returned_verbatim ... ok
+test loader::elf_shdr::tests::non_elf_input_is_untouched ... ok
+test loader::elf_shdr::tests::out_of_range_section_table_is_cleared_and_program_headers_survive ... ok
+test loader::elf_shdr::tests::out_of_range_shstrndx_is_cleared ... ok
+test loader::elf_shdr::tests::read_image_leaves_a_thin_image_alone ... ok
+test loader::elf_shdr::tests::unrepairable_image_keeps_its_original_bytes ... ok
+test loader::elf_shdr::tests::usable_section_table_is_returned_verbatim ... ok
+test loader::elf_shdr::tests::zeroed_shstrndx_is_cleared ... ok
+test loader::elf_shdr::tests::wrong_entry_size_is_cleared ... ok
+test loader::elfv1_imports::tests::full_environment_and_small_toc_forms_are_recognized ... ok
+test loader::elfv1_imports::tests::conflicting_toc_resolutions_are_declined ... ok
+test loader::elfv1_imports::tests::lazy_descriptor_stubs_validate_the_full_transfer ... ok
+test loader::elfv1::tests::conflicting_tocs_are_not_arbitrarily_chosen ... ok
+test loader::format::coff::tests::coff_compiler_model_is_windows ... ok
+test loader::format::coff::tests::coff_section_bits_reuse_pe ... ok
+test loader::format::elf::tests::elf_compiler_model_matches_today ... ok
+test loader::format::elf::tests::elf_section_bits_text_is_code_readonly ... ok
+test loader::format::macho::chained::tests::decode_arm64e_auth_rebase_strips_pac ... ok
+test loader::format::macho::chained::tests::decode_arm64e_plain_rebase ... ok
+test analyzers::sourcelang::tests::detects_gcc_on_mingw_pe_fixture ... ok
+test loader::format::macho::chained::tests::decode_arm64e_userland_offset ... ok
+test loader::format::macho::chained::tests::decode_ptr64_bind_is_out_of_scope ... ok
+test loader::format::macho::chained::tests::decode_ptr64_offset_adds_imagebase ... ok
+test loader::format::macho::chained::tests::decode_ptr64_rebase_strips_next ... ok
+test loader::format::macho::chained::tests::decode_unknown_format_is_inert ... ok
+test loader::format::macho::chained::tests::resolver_noop_on_non_macho ... ok
+test loader::format::macho::tests::apple_silicon_id_gated_and_arm64e_only ... ok
+test loader::format::macho::tests::is_arm64e_detects_only_arm64e_subtype ... ok
+test loader::format::macho::tests::macho_compiler_model_per_arch ... ok
+test loader::elf_shdr::tests::read_image_peels_a_universal_macho_to_one_slice ... ok
+test loader::format::macho::tests::macho_section_bits_text_and_bss ... ok
+test loader::format::pe::tests::pe_compiler_model_is_windows ... ok
+test loader::format::pe::tests::pe_section_bits_text_is_code_readonly ... ok
+test loader::format::pe::tests::user_mode_image_is_gui_or_console_pe_only ... ok
+test loader::kuna_dynrelocs::tests::x86_64_relative_and_globdat_apply_import_is_skipped ... ok
+test loader::kuna_msvcfpconst::tests::decodes_the_constants_from_a_real_msvc_object ... ok
+test loader::kuna_msvcfpconst::tests::negative_constants_decode ... ok
+test loader::kuna_dynrelocs::tests::aarch64_uses_its_own_reloc_numbering ... ok
+test loader::kuna_dynrelocs::tests::i386_rel_table_reads_the_implicit_addend_from_the_slot ... ok
+test loader::kuna_msvcfpconst::tests::non_fp_constant_symbols_are_refused ... ok
+test loader::kuna_dynrelocs::tests::unhandled_machine_is_inert ... ok
+test loader::kuna_msvcfpconst::tests::the_bare_ieee_forms_decode ... ok
+test loader::kuna_msvcfpconst::tests::the_size_field_selects_the_storage_width ... ok
+test loader::kuna_msvcfpconst::tests::unrepresentable_x87_encodings_are_refused ... ok
+test loader::kuna_peimportcall::tests::win32_list_names_the_api_exits ... ok
+test loader::kuna_peimportcall::tests::win32_list_omits_returning_apis ... ok
+test loader::kuna_rexthunk::tests::a_reference_from_another_section_counts ... ok
+test analyzers::protos::tests::pe_present_names_include_imports_for_proto_typing ... ok
+test loader::kuna_relocrebase::tests::coff_obj_sections_are_rebased ... ok
+test loader::kuna_rexthunk::tests::a_rex_byte_before_ff25_is_a_tail_and_padding_is_not ... ok
+test loader::kuna_rexthunk::tests::a_thunk_after_a_far_thunk_of_the_same_table_is_not_a_tail ... ok
+test loader::kuna_rexthunk::tests::eight_byte_pointers_and_declared_starts_are_references ... ok
+test loader::kuna_rexthunk::tests::cached_answers_follow_the_image_bytes ... ok
+test loader::kuna_rexthunk::tests::rel32_branches_and_rip_relative_lea_are_references ... ok
+test analyzers::fast_funcdisc::tests::pointer_validation_work_has_a_global_cap ... ok
+test loader::macho_fat::tests::is_fat_rejects_non_fat ... ok
+test loader::macho_fat::tests::peel_returns_a_non_fat_image_verbatim ... ok
+test loader::macho_fat::tests::slice_pref_parses_arch_names_and_target_ids ... ok
+test loader::macho_fat::tests::slice_pref_prefers_an_explicit_slice_over_a_target_stem ... ok
+test loader::macho_stubs::tests::external_import_slot_eligibility_is_exact ... ok
+test loader::macho_stubs::tests::import_slot_ranges_exclude_objc_message_refs ... ok
+test loader::macho_stubs::tests::synthetic_pointer_slot_naming ... ok
+test loader::macho_stubs::tests::synthetic_stub_naming ... ok
+test loader::macho_stubs::tests::underscore_strip ... ok
+test loader::mips_markers::tests::mips16_isa_mode_painted_at_m16_function ... ok
+test loader::mips_markers::tests::mips_markers_emit_t9_facts ... ok
+test loader::mips_markers::tests::mips_gp_value_recovered_and_bias_holds ... ok
+test loader::mips_markers::tests::non_mips_object_emits_no_isa_paints ... ok
+test loader::mips_markers::tests::non_mips_object_emits_nothing ... ok
+test loader::noreturn::tests::compiler_field_selects_extra_list ... ok
+test loader::mips_markers::tests::st_other_form_emits_no_rehome_but_paints ... ok
+test loader::noreturn::tests::div21_unconditional_noreturn_family_present_warn_absent ... ok
+test loader::noreturn::tests::does_not_flag_unlisted_names ... ok
+test loader::noreturn::tests::list_parses_to_exact_names_and_cxx_throw_wildcards ... ok
+test loader::noreturn::tests::pe_mac_list_flags_windows_and_shared_noreturns ... ok
+test loader::noreturn::tests::cpp_mangled_noreturn_emits_plt_stub_address ... ok
+test loader::noreturn::tests::div78_cxx_throw_family_present_both_spellings ... ok
+test loader::noreturn::tests::namespace_guard_blocks_class_methods_but_allows_std ... ok
+test loader::noreturn::tests::cxx_throw_family_emits_plt_stub_address ... ok
+test loader::noreturn::tests::strips_all_leading_underscores ... ok
+test loader::pe_datadirs::tests::an_unrepairable_image_keeps_the_clamp_and_reports_no_note ... ok
+test loader::pe_datadirs::tests::count_that_fits_is_returned_verbatim ... ok
+test loader::pe_datadirs::tests::non_pe_input_is_untouched ... ok
+test loader::pe_datadirs::tests::the_clamp_boundary_is_what_the_optional_header_holds ... ok
+test loader::pe_datadirs::tests::unknown_optional_header_magic_is_untouched ... ok
+test loader::pe_datadirs::tests::trashed_count_is_clamped_and_the_real_import_directory_survives ... ok
+test loader::pe_datadirs::tests::trashed_count_is_clamped_on_pe32_plus ... ok
+test loader::noreturn::tests::golang_list_gated_on_go_detection ... ok
+test loader::noreturn::tests::rust_list_gated_on_rust_detection ... ok
+test loader::pe_headers::tests::a_non_pe_has_no_header_page ... ok
+test loader::pe_headers::tests::a_zero_entry_rva_declares_nothing ... ok
+test loader::noreturn::tests::run_over_fauxware_flags_exit_only ... ok
+test loader::pe_headers::tests::an_entry_in_the_header_page_is_code ... ok
+test loader::pe_headers::tests::a_section_at_rva_zero_leaves_no_header_page ... ok
+test loader::pe_headers::tests::the_packed_witness_declares_its_header_page_code ... ok
+test loader::pe_headers::tests::a_compiler_header_page_is_data ... ok
+test loader::pe_headers::tests::size_of_headers_is_clamped_to_the_first_section ... ok
+test loader::pe_iat::tests::ff25_unknown_slot_is_ignored ... ok
+test loader::pe_headers::tests::an_entry_past_the_header_page_is_not_in_it ... ok
+test loader::pe_headers::tests::size_of_headers_is_clamped_to_the_file_length ... ok
+test loader::pe_iat::tests::ff25_x64_thunk_decode ... ok
+test loader::pe_iat::tests::ff25_x86_thunk_decode ... ok
+test loader::pe_headers::tests::well_formed_pe_publishes_size_of_headers_at_image_base ... ok
+test loader::pe_iat::tests::called_thunk_after_a_rex_valued_byte_keeps_its_name ... ok
+test loader::pe_iat::tests::ordinal_name_synthesis ... ok
+test loader::pe_iat::tests::rex_tail_jump_is_not_a_thunk ... ok
+test loader::reloc_apply::tests::aarch64_call_and_page_pair_keep_opcode_register_bits ... ok
+test loader::pe_iat::tests::x86_thunk_after_inc_dec_byte_is_kept ... ok
+test loader::reloc_apply::tests::aarch64_jump_unchecked_page_and_every_low12_scale_apply ... ok
+test loader::reloc_apply::tests::aarch64_low12_rejects_instructions_outside_its_encoding ... ok
+test loader::reloc_apply::tests::arm_blx_with_the_halfword_bit_set_is_not_a_conditional_bl ... ok
+test loader::reloc_apply::tests::arm_call_preserves_opcode_and_encodes_implicit_addend ... ok
+test loader::reloc_apply::tests::arm_data_relocations_preserve_addends_and_prel31_flag_bit ... ok
+test loader::reloc_apply::tests::arm_jump_out_of_range_does_not_mutate_opcode ... ok
+test loader::reloc_apply::tests::arm_rel32_truncates_instead_of_reporting_an_overflow ... ok
+test loader::reloc_apply::tests::arm_calls_convert_between_bl_and_blx_for_typed_targets ... ok
+test loader::reloc_apply::tests::arm_thumb_call_encodes_split_immediate_without_touching_opcode_bits ... ok
+test loader::reloc_apply::tests::aarch64_call_checks_alignment_and_range ... ok
+test loader::reloc_apply::tests::generic_relocations_cover_kinds_endianness_and_bounds ... ok
+test loader::reloc_apply::tests::cross_state_jumps_require_a_veneer_without_mutating_code ... ok
+test loader::reloc_apply::tests::invalid_instruction_encodings_do_not_mutate_fields ... ok
+test loader::reloc_apply::tests::no_op_and_generic_classification_cover_the_supported_widths ... ok
+test loader::reloc_apply::tests::ppc64_rel24_and_checked_toc_ds_reject_out_of_range_values ... ok
+test loader::reloc_apply::tests::ppc64_rel24_callness_comes_from_the_link_bit ... ok
+test loader::reloc_apply::tests::ppc64_toc_family_covers_every_form_and_missing_toc ... ok
+test loader::reloc_apply::tests::ppc64_toc_split_fields_are_big_endian ... ok
+test loader::reloc_apply::tests::thumb_blx_reports_a_misaligned_displacement_instead_of_rounding_it ... ok
+test loader::reloc_apply::tests::ppc64_rel24_is_big_endian_and_preserves_link_bit ... ok
+test loader::reloc_apply::tests::thumb_call_converts_bl_to_blx_and_aligns_its_pc_base ... ok
+test loader::reloc_apply::tests::thumb_branch_forms_are_validated_before_the_immediate_is_rewritten ... ok
+test loader::reloc_object::tests::arm_tail_call_to_an_undefined_symbol_binds_an_extern_function ... ok
+test loader::reloc_object::tests::aarch64_tail_call_to_an_undefined_symbol_binds_an_extern_function ... ok
+test loader::reloc_object::tests::aarch64_calls_and_low12_relocations_apply_together ... ok
+test loader::reloc_object::tests::aarch64_low12_resolves_a_symbol_on_a_later_page ... ok
+test loader::reloc_object::tests::arm_calls_bind_local_and_untyped_external_targets ... ok
+test loader::reloc_object::tests::arm_jump24_link_instruction_binds_untyped_external_call ... ok
+test loader::reloc_object::tests::et_rel_layout_relocations_and_symbols ... ok
+test loader::reloc_object::tests::ppc64_big_endian_calls_and_toc_family_apply ... ok
+test loader::reloc_object::tests::arm_typed_calls_interwork_in_both_directions ... ok
+test loader::reloc_object::tests::ppc64_rel24_binds_external_targets_for_branches_and_calls_alike ... ok
+test loader::reloc_object::tests::past_section_relocations_are_counted_without_touching_bytes ... ok
+test loadimage_object::tests::a_pe_maps_the_zero_filled_tail_of_a_section ... ok
+test loadimage_object::tests::a_virtual_tail_stops_at_the_next_segment ... ok
+test loadimage_object::tests::a_pe_maps_its_header_page_read_only ... ok
+test loadimage_object::tests::a_big_read_off_the_end_zero_fills_and_an_unmapped_one_raises ... ok
+test loader::reloc_object::tests::relocation_diagnostics_render_every_reason_and_cap_groups_deterministically ... ok
+test loadimage_object::tests::a_read_larger_than_the_staging_buffer_is_served_whole ... ok
+test loadimage_object::tests::an_overlay_may_reach_into_a_zero_filled_tail ... ok
+test loadimage_object::tests::an_elf_bss_tail_reads_as_zeroes ... ok
+test loadimage_object::tests::an_overlay_replaces_what_every_later_read_returns ... ok
+test loadimage_object::tests::elf_arch_type_is_x86_64_language_id ... ok
+test loadimage_object::tests::elf_adjust_vma_shifts_segments_and_symbols ... ok
+test loadimage_object::tests::elf_symbols_iterate ... ok
+test loadimage_object::tests::elf_wrong_space_is_data_unavail ... ok
+test loadimage_object::tests::cpp_mangled_symbol_is_demangled_name_only ... ok
+test loadimage_object::tests::elf_load_fill_exact_and_gap_fill ... ok
+test loadimage_object::tests::a_sectioned_image_reports_segments_as_well ... ok
+test loadimage_object::tests::default_target_preserves_detected_language_and_fallback ... ok
+test loadimage_object::tests::executable_ranges_prefer_sections_to_broader_segments ... ok
+test loadimage_object::tests::explicit_target_keeps_pe_mapping_across_an_endian_conflict ... ok
+test loadimage_object::tests::cet_plt_sec_imports_resolve_at_call_targets ... ok
+test loadimage_object::tests::executable_ranges_use_sectionless_load_segments_and_rebase ... ok
+test loadimage_object::tests::format_language_ids_pair_with_default_model_fallback ... ok
+test loadimage_object::tests::mips_got_const_ranges_cover_external_slots ... ok
+test loadimage_object::tests::msvc_mangled_coff_symbols_are_demangled_name_only ... ok
+test loadimage_object::tests::explicit_decoder_width_preserves_elf_container_mapping ... ok
+test loadimage_object::tests::segments_carry_the_load_permissions_of_a_sectionless_image ... ok
+test loadimage_object::tests::target_endian_note_fires_only_on_a_real_conflict ... ok
+test loadimage_object::tests::non_elf_is_rejected ... ok
+test loadimage_object::tests::thumb_coff_typed_parser_rejects_truncated_headers_and_sections ... ok
+test loadimage_object::tests::the_arm_mode_policy_is_one_table_read_per_container_family ... ok
+test loadimage_object::tests::mips_stub_imports_resolve_to_named_functions ... ok
+test loader::elf_dynseg::tests::truncated_images_never_panic ... ok
+test loadimage_te::tests::a_file_aligned_image_maps_its_header_with_a_zero_tail ... ok
+test loadimage_object::tests::thumb_coff_typed_parser_preserves_machine_and_mapping ... ok
+test loadimage_te::tests::a_read_starting_inside_an_unbacked_tail_reads_zeros ... ok
+test loadimage_te::tests::an_overlay_materializes_a_mapped_virtual_tail ... ok
+test loadimage_object::tests::faillog_data_symbols_carry_the_copy_reloc_externs ... ok
+test loadimage_te::tests::an_overlay_replaces_a_complete_mapped_span_atomically ... ok
+test loadimage_te::tests::ignores_zero_extent_section_records ... ok
+test loadimage_object::tests::thumb_machine_pe_maps_with_explicit_language ... ok
+test loadimage_te::tests::machine_table_composes_the_shared_language_ids ... ok
+test loadimage_te::tests::rejects_an_unbacked_retained_header ... ok
+test loadimage_object::tests::fauxware_plt_imports_resolve_to_named_functions ... ok
+test loadimage_te::tests::parses_stripped_offsets_and_loads_original_vma ... ok
+test loadimage_te::tests::publishes_every_te_mapping_as_a_segment ... ok
+test loadimage_object::tests::shared_reader_matches_owner_and_blocks_late_overlays ... ok
+test loadimage_te::tests::rejects_section_raw_data_inside_the_retained_header ... ok
+test loadimage_te::tests::explicit_target_must_match_container_width_and_endian ... ok
+test loadimage_object::tests::stripped_dynamic_plt_imports_resolve_without_symtab ... ok
+test loadimage_te::tests::the_format_probe_reads_more_than_the_signature ... ok
+test loadimage_te::tests::the_stage_fixture_is_the_builders_output ... ok
+test loadimage_te::tests::the_entry_bit_is_read_by_the_decoding_language ... ok
+test loadimage_te::tests::te_defaults_to_uefi_abis_and_honors_explicit_windows_models ... ok
+test loadimage_te::tests::rejects_malformed_header_section_and_entry_ranges ... ok
+test neolite::tests::a_64_bit_image_is_declined_by_name ... ok
+test neolite::tests::a_file_with_no_loader_section_is_not_neolite ... ok
+test loadimage_te::tests::virtual_size_excludes_raw_file_alignment_padding ... ok
+test loadimage_object::tests::pie_dynamic_relocations_are_applied_and_relro_slots_are_constant ... ok
+test loadimage_te::tests::retained_header_is_mapped_at_its_stripped_load_address ... ok
+test loadimage_te::tests::virtual_tail_is_zero_filled_and_zero_virtual_size_uses_raw_extent ... ok
+test loadimage_te::tests::section_flags_follow_the_pe_rule ... ok
+test loader::kuna_relocrebase::tests::et_rel_debug_sections_are_relocated ... ok
+test neolite::tests::the_loader_section_must_own_the_entry_point ... ok
+test passes::tests::disabled_dispatch_does_not_invoke_consumer ... ok
+test neolite::tests::plaintext_is_not_mistaken_for_a_stream ... ok
+test passes::tests::go_adds_only_gopclntab_pass ... ok
+test neolite::tests::an_incomplete_code_table_is_refused ... ok
+test passes::tests::itaniumrtti_pass_is_elf_gated ... ok
+test passes::tests::non_go_compilers_have_same_pass_ids ... ok
+test passes::tests::arch_marker_passes_registered ... ok
+test passes::tests::image_on_disk_path_needs_a_real_file ... ok
+test upx::filter::tests::cto32_leaves_untagged_branches_alone ... ok
+test passes::tests::unknown_matches_default_passes ... ok
+test passes::tests::peimportcall_pass_is_pe_coff_macho_gated ... ok
+test passes::tests::rtti_pass_is_pe_gated ... ok
+test upx::lzma::tests::a_nonzero_range_init_byte_is_refused ... ok
+test passes::tests::listing_consumer_schedule_pairs_each_pass_with_its_option ... ok
+test upx::lzma::tests::a_short_block_is_refused ... ok
+test passes::tests::pdb_pass_is_pe_gated ... ok
+test upx::filter::tests::cto32_restores_a_tagged_call ... ok
+test upx::lzma::tests::a_length_less_decode_that_hits_the_cap_says_so ... ok
+test upx::lzma::tests::out_of_range_properties_are_refused_not_allocated ... ok
+test upx::nrv::tests::a_declared_length_that_is_too_small_is_rejected ... ok
+test upx::lzma::tests::upx_property_bytes_decode_to_the_default_triple ... ok
+test upx::nrv::tests::a_short_block_is_an_error_not_a_short_read ... ok
+test passes::tests::objc_pass_registered_only_for_macho ... ok
+test upx::filter::tests::unimplemented_ids_are_refused_not_ignored ... ok
+test upx::pe::tests::a_dll_imported_by_several_descriptors_still_matches_its_loader_table ... ok
+test upx::pe::tests::a_table_whose_names_differ_is_rejected ... ok
+test upx::nrv::tests::nrv2b_le32_decodes_the_fixtures_elf_header_block ... ok
+test upx::pe::tests::an_empty_relocation_block_is_written_back ... ok
+test upx::lzma::tests::a_truncated_stream_is_an_error_not_a_short_read ... ok
+test upx::tests::a_bare_magic_without_a_valid_checksum_is_not_a_pack_header ... ok
+test upx::lzma::tests::the_vendored_witness_first_block_decodes ... ok
+test upx::lzma::tests::a_length_less_decode_ends_on_the_input_and_finds_the_same_bytes ... ok
+test upx::tests::adler32_matches_the_rfc1950_vector ... ok
+test upx::pe::tests::an_image_without_relocations_needs_nothing ... ok
+test upx::tests::an_unpacked_file_is_not_packed ... ok
+test upx::lzma::tests::a_declared_length_still_refuses_a_stream_that_misses_it ... ok
+test upx::pe::tests::one_descriptor_per_dll_still_matches ... ok
+test upx::tests::unknown_ids_report_as_unknown_rather_than_a_neighbour ... ok
+test upx::pe::tests::kept_relocations_are_refused ... ok
+test upx::tests::a_plain_pe_with_a_stray_magic_is_not_packed ... ok
+test upx::pe::tests::stripped_relocations_are_zeroed_not_refused ... ok
+test loader::reloc_object::tests::relocation_diagnostic_detail_is_bounded_but_counts_are_exact ... ok
+test upx::tests::detects_the_pe_witness_in_its_header_padding ... ok
+test upx::tests::detects_the_lzma_witness ... ok
+test upx::tests::detects_the_vendored_witness ... ok
+test upx::tests::a_corrupted_block_header_is_refused ... ok
+test neolite::tests::the_original_import_directory_is_found_and_pointed_at ... ok
+test neolite::tests::the_entry_section_is_restored_as_code ... ok
+test upx::tests::a_corrupted_lzma_literal_is_refused ... ok
+test upx::tests::unpacks_the_vendored_witness_to_a_usable_elf ... ok
+test upx::tests::a_corrupted_pe_literal_is_caught_by_the_checksum ... ok
+test neolite::tests::the_fixture_unpacks_to_its_original_sections ... ok
+test loadimage_object::tests::pe_import_slots_are_reported_in_code_and_data_sections ... ok
+test upx::tests::unpacks_the_pe_witness_to_a_usable_pe ... ok
+test loadimage_object::tests::the_header_page_never_overlaps_a_section ... ok
+test upx::tests::a_corrupted_literal_is_caught_by_the_checksum ... ok
+test neolite::tests::a_section_the_packer_stored_is_carried_through_verbatim ... ok
+test loader::kuna_relocrebase::tests::et_rel_sections_and_symbols_are_rebased ... ok
+test analyzers::strings::tests::scan_strings_over_pe_finds_hello ... ok
+test upx::tests::unpacks_the_lzma_witness_byte_for_byte ... ok
+test listing::walk::tests::callback_evidence_cap_is_deduplicated_and_order_independent ... ok
+test loadimage_object::tests::et_rel_ptx_fix_output_parameters_loads_and_rebases ... ok
+test loader::kuna_relocrebase::tests::gate_off_declines ... ok
+test loader::kuna_relocrebase::tests::linked_image_is_untouched ... ok
+test upx::tests::the_loader_import_table_is_found_without_the_data_directory ... ok
+test listing::kuna_pdecode::tests::callback_evidence_survives_the_split_and_the_cap ... ok
+test analyzers::pdb::kuna_pdbinterior::tests::a_dropped_entry_always_lies_in_its_owners_decoded_code ... ok
+test loader::noreturn::tests::real_go_binary_detected_and_flags_runtime_gopanic ... ok
+test listing::decode::tests::decoded_x86_push_absolute_memory_does_not_harvest_the_load_address ... ok
+test listing::decode::tests::decoded_x86_push_immediate_harvests_the_stored_value ... ok
+
+test result: ok. 822 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.61s
+
+     Running tests/verify_deferred_entry.rs (target/debug/deps/verify_deferred_entry-28a5810991d075fc)
+
+running 2 tests
+test funcstart_patterns_is_deferred_not_registered_at_load ... ok
+test deferred_entry_pass_rebases_a_relocatable_object ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/verify_dynrelocs_gate.rs (target/debug/deps/verify_dynrelocs_gate-37d7831495d275b2)
+
+running 1 test
+test gate_off_is_inert_and_default_on_applies ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/kuna_base-42e248d53004225a)
+
+running 131 tests
+test address::tests::sort_key_orders_identically_to_cmp ... ok
+test address::tests::test_address_arithmetic_wraps ... ok
+test address::tests::test_address_compare_and_extremes ... ok
+test address::tests::test_address_helper_functions ... ok
+test address::tests::test_address_overlap_and_containment ... ok
+test address::tests::test_bitrange_semantics ... ok
+test address::tests::test_range_get_last_signed_range ... ok
+test address::tests::test_address_encode_decode_roundtrip ... ok
+test address::tests::test_range_last_addr_open ... ok
+test address::tests::test_range_list_insert_merge ... ok
+test address::tests::test_range_list_queries ... ok
+test address::tests::test_range_list_remove_splits ... ok
+test address::tests::test_rangelist_encode_decode_roundtrip ... ok
+test address::tests::test_seqnum_ordering ... ok
+test cfmt::tests::test_cfmt_default_basic ... ok
+test cfmt::tests::test_cfmt_default_subnormals_and_extremes ... ok
+test cfmt::tests::test_cfmt_default_boundaries_of_scientific ... ok
+test cfmt::tests::test_cfmt_general_precision_sweep ... ok
+test cfmt::tests::test_cfmt_special_values ... ok
+test cfmt::tests::test_cfmt_scientific_keeps_trailing_zeros ... ok
+test cfmt::tests::test_cfmt_ties_round_to_even ... ok
+test compression::tests::test_compression_corrupt_stream_errors ... ok
+test crc32::tests::test_crc32_known_answer_check_string ... ok
+test compression::tests::test_compression_decompress_c_zlib_oracle_stream ... ok
+test crc32::tests::test_crc32_table_known_entries_from_cpp_source ... ok
+test crc32::tests::test_crc32_update_masks_val_to_low_byte ... ok
+test crc32::tests::test_crc32_update_raw_register_vectors ... ok
+test crc32::tests::test_crc32_table_matches_generator_polynomial ... ok
+test error::tests::test_error_decoder_outside_lowlevel_hierarchy ... ok
+test error::tests::test_error_display_is_bare_explain ... ok
+test error::tests::test_error_java_carries_class_type ... ok
+test compression::tests::test_compression_zlib_header_default_level ... ok
+test compression::tests::test_compression_invalid_level_rejected ... ok
+test filemanage::tests::test_filemanage_add_dir_2_path_separator_handling ... ok
+test filemanage::tests::test_filemanage_is_absolute_path_and_separator ... ok
+test filemanage::tests::test_filemanage_directory_list_follows_symlinks ... ok
+test filemanage::tests::test_filemanage_split_path_vectors ... ok
+test marshal::tests::test_marshal_cxx_integer_parsing ... ok
+test filemanage::tests::test_filemanage_directory_list_dirs_only ... ok
+test marshal::tests::test_marshal_cxx_num_get_u32_dec ... ok
+test filemanage::tests::test_filemanage_match_list_accumulates_across_paths ... ok
+test marshal::tests::test_marshal_owned_ingestion_preserves_truncated_integer_errors ... ok
+test filemanage::tests::test_filemanage_is_directory ... ok
+test filemanage::tests::test_filemanage_discover_ghidra_root_install_layout ... ok
+test filemanage::tests::test_filemanage_discover_ghidra_root_development_layout ... ok
+test filemanage::tests::test_filemanage_discover_ghidra_root_not_found ... ok
+test filemanage::tests::test_filemanage_find_file_search_order_and_absolute ... ok
+test marshal::tests::test_marshal_packed_byte_cursor_bounds ... ok
+test marshal::tests::test_marshal_owned_ingestion_reuses_all_full_chunks ... ok
+test marshal::tests::test_marshal_packed_exact_bytes ... ok
+test compression::tests::test_compression_buffer_matches_direct_compress ... ok
+test filemanage::tests::test_filemanage_scan_directory_recursive_depth_and_no_descend ... ok
+test marshal::tests::test_marshal_packed_bufferpad ... ok
+test filemanage::tests::test_filemanage_match_list_dir_suffix_and_prefix ... ok
+test marshal::tests::test_marshal_packed_signed_roundtrip_boundaries ... ok
+test marshal::tests::test_marshal_packed_string_and_space_roundtrip ... ok
+test marshal::tests::test_marshal_xml_encode_formatting ... ok
+test marshal::tests::test_marshal_packed_unexpected_eof ... ok
+test marshal::tests::test_marshal_packed_integer_at_every_chunk_edge ... ok
+test marshal::tests::test_marshal_packed_integer_fast_path_matches_chunked_reads ... ok
+test marshal::tests::test_marshal_packed_unsigned_roundtrip_boundaries ... ok
+test partmap::tests::test_partmap_boundaries_at_u64_max ... ok
+test marshal::tests::test_marshal_xml_roundtrip ... ok
+test partmap::tests::test_partmap_bounds_valid_codes ... ok
+test partmap::tests::test_partmap_clear_range ... ok
+test partmap::tests::test_partmap_get_value_default_when_empty ... ok
+test partmap::tests::test_partmap_iter_from_is_lower_bound ... ok
+test partmap::tests::test_partmap_split_copies_previous_value ... ok
+test partmap::tests::test_partmap_upstream_doc_example ... ok
+test rangemap::tests::test_rangemap_clear_and_handle_reuse ... ok
+test rangemap::tests::test_rangemap_empty_container ... ok
+test rangemap::tests::test_rangemap_erase_interior_record_rezips ... ok
+test rangemap::tests::test_rangemap_find_begin_end_iteration ... ok
+test rangemap::tests::test_rangemap_find_subsorts_matches_cpp ... ok
+test rangemap::tests::test_rangemap_find_overlap_matches_cpp ... ok
+test rangemap::tests::test_rangemap_overlap_refinement ... ok
+test rangemap::tests::test_rangemap_identical_ranges_subsort_order ... ok
+test rangemap::tests::test_rangemap_full_range_record ... ok
+test rangemap::tests::test_rangemap_single_record ... ok
+test space::tests::test_space_istream_hex ... ok
+test rangemap::tests::test_rangemap_boundaries_at_u64_max ... ok
+test space::tests::test_space_manager_insert_errors ... ok
+test space::tests::test_space_join_record_ord ... ok
+test space::tests::test_space_manager_insert_and_shortcuts ... ok
+test space::tests::test_space_print_raw_padding ... ok
+test space::tests::test_space_varnode_storage_compare ... ok
+test space::tests::test_space_read_offsets ... ok
+test space::tests::test_space_wrap_offset ... ok
+test types::tests::test_host_endian_value ... ok
+test types::tests::test_wrap_shift_counts_mask_like_x86 ... ok
+test types::tests::test_wrap_unsigned_wraparound ... ok
+test xml::tests::test_xml_char_ref_high_bytes_appended_raw ... ok
+test xml::tests::test_xml_comments_discarded ... ok
+test xml::tests::test_xml_char_refs_decimal_and_hex ... ok
+test xml::tests::test_xml_document_storage_open_missing_file ... ok
+test xml::tests::test_xml_document_storage_register_and_get ... ok
+test rangemap::tests::test_rangemap_right_boundary_duplicate_matches_cpp ... ok
+test rangemap::tests::test_rangemap_record_list_splice_order ... ok
+test xml::tests::test_xml_element_tree_and_attributes ... ok
+test xml::tests::test_xml_malformed_doctype_rejected ... ok
+test xml::tests::test_xml_malformed_plain_syntax_errors ... ok
+test compression::tests::test_compression_round_trip_chunked ... ok
+test xml::tests::test_xml_unknown_entity_becomes_byte_ff ... ok
+test types::tests::test_wrap_signed_wraparound ... ok
+test xml::tests::test_xml_whitespace_only_reference_dropped_in_content_kept_in_attribute ... ok
+test space::tests::test_space_calc_scale_mask ... ok
+test xml::tests::test_xml_cdata_sections ... ok
+test xml::tests::test_xml_attribute_value_whitespace_preserved ... ok
+test xml::tests::test_xml_malformed_processing_instructions_rejected ... ok
+test xml::tests::test_xml_convert_entity_and_char_ref ... ok
+test xml::tests::test_xml_escape_and_attribute_writers ... ok
+test xml::tests::test_xml_element_duplicate_attribute_returns_first ... ok
+test xml::tests::test_xml_char_ref_truncates_to_low_byte ... ok
+test xml::tests::test_xml_document_without_trailing_newline_parses ... ok
+test xml::tests::test_xml_element_unknown_attribute_is_decoder_error ... ok
+test xml::tests::test_xml_parse_document_error_is_decoder ... ok
+test xml::tests::test_xml_sax_event_sequence ... ok
+test xml::tests::test_xml_attributes_missing_value_returns_bogus_uri ... ok
+test xml::tests::test_xml_prolog_comments_and_decl ... ok
+test xml::tests::test_xml_named_entities_in_content_and_attributes ... ok
+test xml::tests::test_xml_mixed_content_and_tag_whitespace ... ok
+test xml::tests::test_xml_readbool ... ok
+test xml::tests::test_xml_sax_error_reported_via_set_error ... ok
+test xml::tests::test_xml_mismatched_close_tag_accepted ... ok
+test xml::tests::test_xml_malformed_trailing_comment_never_accepted ... ok
+test marshal::tests::test_marshal_owned_ingestion_matches_borrowed_stream ... ok
+test rangemap::tests::test_rangemap_differential_digest_vs_cpp_oracle ... ok
+test xml::tests::test_xml_document_storage_open_document ... ok
+test xml::tests::test_xml_bytechunk_payload_roundtrips_byte_identically ... ok
+test xml::tests::test_xml_corpus_processor_spec_files ... ok
+test xml::tests::test_xml_corpus_datatests_and_stage_tests ... ok
+
+test result: ok. 131 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+     Running tests/golden_addrsort.rs (target/debug/deps/golden_addrsort-ce49a0f304ea2036)
+
+running 1 test
+test golden_addrsort_comparator_decisions ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/testmarshal.rs (target/debug/deps/testmarshal-b140ef8b01993f22)
+
+running 18 tests
+test marshal_attribs_packed ... ok
+test marshal_bufferpad ... ok
+test marshal_hierarchy_packed ... ok
+test marshal_closemismatch_packed ... ok
+test marshal_attribs_xml ... ok
+test marshal_hierarchy_xml ... ok
+test marshal_mixed_packed ... ok
+test marshal_noremaining_packed ... ok
+test marshal_mixed_xml ... ok
+test marshal_openmismatch_packed ... ok
+test marshal_noremaining_xml ... ok
+test marshal_signed_packed ... ok
+test marshal_unexpected_packed ... ok
+test marshal_openmismatch_xml ... ok
+test marshal_unexpected_xml ... ok
+test marshal_unsigned_packed ... ok
+test marshal_signed_xml ... ok
+test marshal_unsigned_xml ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/verify_w1_base_foundation.rs (target/debug/deps/verify_w1_base_foundation-72fd3a0d598994bb)
+
+running 6 tests
+test verify_defensive_ub_divergence_paths ... ok
+test verify_partmap_matches_cpp_oracle ... ok
+test verify_rangemap_equal_keys_matches_cpp_oracle ... ok
+test verify_rangemap_same_subsort_overlap_matches_cpp_oracle ... ok
+test verify_rangemap_subsort_windows_matches_cpp_oracle ... ok
+test verify_rangemap_random45_matches_cpp_oracle ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/verify_w1_base_marshal.rs (target/debug/deps/verify_w1_base_marshal-4a5b50dcba39a8c3)
+
+running 8 tests
+test verify_marshal_packed_expect_string_paths ... ok
+test verify_marshal_indexed_attr_dec_suffix_matches_cpp_oracle_f1 ... ok
+test verify_marshal_indexed_attr_wraps_like_cpp_on_huge_index_f1 ... ok
+test verify_marshal_packed_ingest_nul_truncation_and_empty ... ok
+test verify_marshal_packed_extended_header_straddles_chunk_boundary ... ok
+test verify_marshal_indexed_attr_happy_and_error_paths ... ok
+test verify_marshal_packed_string_spans_three_chunks ... ok
+test verify_marshal_xml_content_tagstatus_exact_bytes ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/verify_w1_base_marshal_r2.rs (target/debug/deps/verify_w1_base_marshal_r2-f93dbd4353522c2d)
+
+running 4 tests
+test verify_marshal_packed_write_string_indexed_id_wrap_r2 ... ok
+test verify_marshal_indexed_attr_negative_overflow_boundary_r2 ... ok
+test verify_marshal_indexed_attr_suffix_stops_at_first_nondigit_r2 ... ok
+test verify_marshal_xml_write_string_indexed_index_wrap_bytes_r2 ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/verify_w1_base_space_address.rs (target/debug/deps/verify_w1_base_space_address-602dd7b0de72247a)
+
+running 6 tests
+test verify_calc_scale_mask_wordsize_zero_uint4_wrap_f1 ... ignored, F1 w1-base-space-address: ws==0 wraps at u64 width, C++ wraps at uint4 (space.cc:38)
+test verify_address_overlap_signedness_and_pointer_identity ... ok
+test verify_addrspace_read_strtoul_quirks ... ok
+test verify_calc_scale_mask_wordsize_scaling_cpp_oracle ... ok
+test verify_rangelist_boundary_merge_and_top_edge ... ok
+test verify_shortcut_collision_walk_and_signed_char_key ... ok
+
+test result: ok. 5 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/verify_w1_base_space_address_r2.rs (target/debug/deps/verify_w1_base_space_address_r2-3832bd24308b9fa2)
+
+running 5 tests
+test verify_bitrange_getmask_undefined_and_oversize_cpp_oracle ... ok
+test verify_bitrange_mutators_cpp_oracle ... ok
+test verify_bitrange_overlap_matrix_big_endian_cpp_oracle ... ok
+test verify_sign_extend_sized_and_signbit_negative_cpp_oracle ... ok
+test verify_rangelist_merge_last_signed_and_nonchaining_inrange ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/verify_w1_base_util.rs (target/debug/deps/verify_w1_base_util-58c85a7c8ca25e59)
+
+running 7 tests
+test verify_crc32_raw_register_vectors_match_cpp_oracle ... ok
+test verify_filemanage_split_path_matches_cpp_oracle ... ok
+test verify_filemanage_component_walk_matches_cpp_oracle ... ok
+test verify_compression_deflate_byte_parity_edges_match_cpp_oracle ... ok
+test verify_filemanage_fs_layouts_match_cpp_oracle ... ok
+test verify_compression_inflate_trace_matches_cpp_zlib_oracle ... ok
+test verify_compression_default_level_stream_interop_loss010 ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/verify_w1_base_xml.rs (target/debug/deps/verify_w1_base_xml-797a1e7643b235c4)
+
+running 6 tests
+test dump_corpus ... ignored
+test verify_xml_escape_all_bytes_matches_cpp_oracle ... ok
+test verify_xml_handpicked_traces_match_cpp_oracle ... ok
+test verify_xml_fuzz_traces_match_cpp_oracle ... ok
+test verify_xml_deep_nesting_beyond_oracle_envelope_f1 ... ok
+test verify_xml_deep_nesting_oracle_accepted_envelope ... ok
+
+test result: ok. 5 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/verify_w1_base_xml_r2.rs (target/debug/deps/verify_w1_base_xml_r2-37ac67581a2b1869)
+
+running 5 tests
+test verify_xml_r2_shared_subtree_survives_parent_drop_then_drops_safely ... ok
+test verify_xml_r2_tagmap_shared_handles_both_drop_orders ... ok
+test verify_xml_r2_wide_deep_comb_parse_and_drop ... ok
+test verify_xml_r2_error_path_discards_deep_partial_dom_safely ... ok
+test verify_xml_r2_depth_200k_and_loss010_boundary ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.43s
+
+     Running tests/verify_w1_harness_unittests.rs (target/debug/deps/verify_w1_harness_unittests-4c188a60bd4d9f28)
+
+running 3 tests
+test verify_close_element_skipping_whole_document_parity ... ok
+test verify_signed_extremes_roundtrip_both_codecs ... ok
+test verify_bufferpad_off_by_one_and_two_buffer_cells ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/debug/deps/kuna-dc0b5e4344af9162)
+
+running 187 tests
+test assertdecl::tests::a_directive_may_name_the_function_it_binds_to ... ok
+test assertdecl::tests::a_bytes_directive_without_usable_hex_is_rejected ... ok
+test assertdecl::tests::a_missing_file_is_an_error_naming_the_path ... ok
+test assertdecl::tests::a_prototype_that_renames_the_function_still_names_its_target ... ok
+test assertdecl::tests::a_malformed_directive_is_rejected_naming_itself ... ok
+test assertdecl::tests::a_qualified_body_directive_naming_another_function_is_rejected ... ok
+test assertdecl::tests::a_qualified_param_lowers_against_the_function_it_names ... ok
+test assertdecl::tests::a_range_directive_takes_an_address_and_a_size ... ok
+test assertdecl::tests::addresses_are_hex_with_or_without_the_prefix ... ok
+test assertdecl::tests::a_file_holds_one_directive_per_line_with_comments ... ok
+test assertdecl::tests::a_range_directive_without_a_usable_size_is_rejected ... ok
+test assertdecl::tests::bytes_lowers_to_the_console_overlay_in_the_image_slot ... ok
+test assertdecl::tests::flow_takes_an_address_and_one_of_four_words ... ok
+test assertdecl::tests::directives_lower_to_their_console_commands ... ok
+test assertdecl::tests::function_is_the_define_function_spelling ... ok
+test assertdecl::tests::param_and_return_carry_storage_and_a_type ... ok
+test assertdecl::tests::only_a_symbol_scoped_directive_forces_a_second_pass ... ok
+test assertdecl::tests::only_a_readonly_range_implies_read_only_propagation ... ok
+test assertdecl::tests::bytes_takes_an_address_and_hex_or_a_file ... ok
+test assertdecl::tests::the_three_directives_of_the_acceptance_probe ... ok
+test decompile::tests::a_bare_trigger_keeps_the_generic_wording ... ok
+test decompile::tests::a_clean_or_unreached_decompile_is_not_an_abort ... ok
+test decompile::tests::a_declared_start_is_not_re_declared_without_its_extent ... ok
+test decompile::tests::a_clean_transcript_reports_nothing ... ok
+test decompile::tests::a_deferred_directive_refusal_is_paired_back_to_its_command ... ok
+test decompile::tests::a_newline_in_the_path_is_diagnosed_not_quoted ... ok
+test decompile::tests::a_diagnostic_is_attributed_to_its_own_command ... ok
+test decompile::tests::a_spaced_path_is_one_argument_in_the_load_file_line ... ok
+test decompile::tests::a_range_directive_precedes_read_symbols_and_turns_readonly_on ... ok
+test decompile::tests::body_text_is_not_a_failure ... ok
+test decompile::tests::an_unreached_directive_is_rejected_not_assumed_applied ... ok
+test decompile::tests::assertion_outcomes_read_the_console_diagnostic_under_each_echo ... ok
+test decompile::tests::build_script_declares_boundaries_between_read_symbols_and_the_load ... ok
+test decompile::tests::build_script_emits_one_decompile_without_a_symbol_scoped_assertion ... ok
+test decompile::tests::build_script_is_unchanged_for_ordinary_paths ... ok
+test decompile::tests::build_script_quotes_spaced_paths ... ok
+test decompile::tests::build_script_puts_each_assertion_in_its_own_slot ... ok
+test decompile::tests::build_script_quotes_the_path_after_a_bfd_target ... ok
+test decompile::tests::build_script_without_declarations_emits_no_boundary_lines ... ok
+test decompile::tests::build_script_symbols_the_entry_a_by_address_run_selected ... ok
+test decompile::tests::clean_transcript_has_no_failure ... ok
+test decompile::tests::console_path_leaves_ordinary_paths_alone ... ok
+test decompile::tests::console_path_quotes_whitespace ... ok
+test decompile::tests::console_path_round_trips_through_the_console_reader ... ok
+test decompile::tests::finds_a_prompt_prefixed_notice ... ok
+test decompile::tests::finds_a_raised_decompile_abort ... ok
+test decompile::tests::finds_the_console_abort_notice ... ok
+test decompile::tests::load_failure_matches_the_in_process_wording ... ok
+test decompile::tests::no_range_directive_leaves_the_readonly_option_alone ... ok
+test decompile::tests::only_a_name_miss_is_retryable ... ok
+test decompile::tests::only_an_addressed_selection_gets_an_implicit_symbol ... ok
+test decompile::tests::recovers_the_real_load_failure_reason ... ok
+test decompile::tests::reports_the_analysis_commit_failure ... ok
+test decompile::tests::the_command_echo_is_not_mistaken_for_a_reason ... ok
+test decompile::tests::the_bundle_yields_to_a_named_option ... ok
+test decompile::tests::the_widened_script_puts_the_bundle_before_the_commit ... ok
+test decompile::tests::the_retry_widens_to_the_in_process_drivers_bundle ... ok
+test decompile::tests::there_is_no_retry_to_make_on_x86_64 ... ok
+test decompile_all::discovery_tests::an_unparseable_image_is_still_a_failure ... ok
+test decompile_all::discovery_tests::the_document_reports_the_selected_language ... ok
+test decompile_all::discovery_tests::an_entry_point_in_a_data_section_is_still_executable_content ... ok
+test decompile_all::discovery_tests::an_image_with_no_code_keeps_its_honest_empty_answer ... ok
+test decompile_all::discovery_tests::the_run_level_error_field_is_always_present ... ok
+test decompile_all::discovery_tests::the_upx_magic_is_recognized_and_nothing_else_is ... ok
+test decompile_all::discovery_tests::a_packed_image_names_the_packer_in_the_failure ... ok
+test decompile_all::mode_tests::loadtime_gates_use_the_last_named_option ... ok
+test decompile_all::mode_tests::explicit_concrete_mode_ignores_binary_metadata ... ok
+test decompile_all::mode_tests::address_selection_skips_preset_discovery_but_names_do_not ... ok
+test decompile_all::mode_tests::omitted_and_explicit_auto_select_the_same_concrete_presets ... ok
+test decompile_all::discovery_tests::a_real_fixture_carries_executable_content ... ok
+test decompile_all::provenance_json_tests::result_schema_adds_line_and_variable_provenance ... ok
+test decompile_all::mode_tests::shared_surfaces_parse_arm_isa_override ... ok
+test disassemble::tests::a_byte_row_spells_every_byte_it_covers ... ok
+test decompile_all::triage_tests::the_size_buckets_partition_every_extent ... ok
+test decompile_all::triage_tests::decompile_project_rejects_the_triage_flags ... ok
+test disassemble::tests::a_skipped_target_is_one_inside_the_listing_that_no_row_starts_at ... ok
+test disassemble::tests::a_window_is_the_callers_when_count_bytes_or_a_range_bounds_it ... ok
+test disassemble::tests::the_byte_header_counts_bytes_and_the_rows_are_xxd_shaped ... ok
+test disassemble::tests::the_header_names_the_target_and_the_extent ... ok
+test disassemble::tests::the_view_choice_believes_the_caller_then_the_section_flags ... ok
+test disassemble::tests::the_skipped_note_names_the_addresses_and_the_move_that_fixes_them ... ok
+test disassemble::tests::the_windowed_load_turns_the_discovery_walk_off_unless_the_caller_named_it ... ok
+test docs::tests::every_topic_is_embedded_and_nonempty ... ok
+test funcdecl::tests::a_missing_file_is_an_error_naming_the_path ... ok
+test decompile_all::triage_tests::bad_triage_values_are_rejected_at_parse_time ... ok
+test funcdecl::tests::a_non_hex_token_is_rejected ... ok
+test funcdecl::tests::parses_start_end_and_name ... ok
+test funcdecl::tests::the_extent_is_end_exclusive ... ok
+test jobs::tests::a_dead_worker_reruns_its_suspect_first_and_its_bystanders_after ... ok
+test jobs::tests::a_worker_recognizes_only_its_own_scratch_dir ... ok
+test jobs::tests::the_retry_gate_holds_back_reruns_only_while_failures_outnumber_deliveries ... ok
+test jobs::tests::auto_yields_to_free_memory_and_an_explicit_count_does_not ... ok
+test jsonfmt::tests::empty_containers ... ok
+test litpool::tests::a_target_outside_the_span_is_never_folded ... ok
+test litpool::tests::a_read_that_does_not_tile_whole_rows_is_declined ... ok
+test optname::tests::a_catalogued_name_from_either_table_is_accepted ... ok
+test decompile_all::triage_tests::sort_keys_are_the_three_documented_ones ... ok
+test funcdecl::tests::an_end_at_or_below_the_start_is_rejected ... ok
+test jobs::tests::worker_failures_are_counted_not_just_budget_trips ... ok
+test paths::tests::only_an_in_tree_layout_yields_a_repo_root ... ok
+test project_stream::tests::a_hint_outside_the_target_set_is_ignored ... ok
+test project_stream::tests::the_status_pid_is_readable_back_out_of_the_line ... ok
+test disassemble::tests::the_image_bound_clips_the_walk_and_explains_itself_once ... ok
+test project_stream::tests::an_index_line_slices_the_c_to_its_block ... ok
+test disassemble::tests::the_resume_grid_is_the_alignment_the_decoded_rows_share ... ok
+test strings::tests::a_bad_pattern_is_rejected_not_reinterpreted ... ok
+test project_stream::tests::the_status_file_carries_the_documented_schema ... ok
+test disassemble::tests::addresses_parse_with_or_without_the_prefix ... ok
+test funcdecl::tests::a_bare_hex_address_needs_no_prefix ... ok
+test disassemble::tests::the_target_and_the_binary_are_the_only_positionals ... ok
+test docs::tests::topics_are_unique_and_resolvable ... ok
+test jobs::tests::a_chunk_source_is_drained_exactly_once ... ok
+test docs::tests::lookup_forgives_the_shapes_agents_type ... ok
+test disassemble::tests::a_range_operand_needs_both_ends ... ok
+test jobs::tests::a_dead_worker_degrades_only_its_own_missing_functions ... ok
+test disassemble::tests::bytes_render_as_contiguous_lowercase_hex ... ok
+test jobs::tests::jobs_values_parse ... ok
+test funcdecl::tests::lowers_to_the_console_command ... ok
+test disassemble::tests::a_recovery_row_spans_to_the_next_grid_boundary ... ok
+test jobs::tests::a_chunk_stops_rerunning_only_when_failures_dominate ... ok
+test disassemble::tests::instruction_text_carries_exactly_one_space ... ok
+test disassemble::tests::the_image_bound_is_the_end_of_the_run_holding_the_address ... ok
+test jobs::tests::expensive_functions_go_first_and_alone_cheap_ones_batch ... ok
+test disassemble::tests::the_windowed_answer_stands_only_when_the_walk_could_not_have_changed_it ... ok
+test disassemble::tests::the_view_flag_takes_three_spellings_and_nothing_else ... ok
+test jobs::tests::progress_waits_for_every_worker_then_resets_its_rate_baseline ... ok
+test funcdecl::tests::end_and_name_are_each_optional ... ok
+test jobs::tests::the_worker_estimate_ignores_what_the_decode_lanes_added ... ok
+test jobs::tests::spec_round_trips_and_rejects_garbage ... ok
+test jobs::tests::bystanders_are_visited_spread_across_the_chunk ... ok
+test jobs::tests::the_stall_window_allows_a_load_then_tightens ... ok
+test litpool::tests::an_unaligned_or_odd_width_target_is_never_folded ... ok
+test litpool::tests::a_word_reads_in_the_programs_own_byte_order_padded_to_its_width ... ok
+test jsonfmt::tests::roundtrip_object_preserves_key_order ... ok
+test optname::tests::every_name_the_engine_dispatches_on_is_accepted ... ok
+test jobs::tests::the_worker_estimate_is_not_priced_low_by_an_over_reported_lane_excess ... ok
+test output::tests::any_other_write_failure_forces_one ... ok
+test jsonfmt::tests::ascii_escape_high_chars ... ok
+test output::tests::a_broken_pipe_keeps_the_verdict ... ok
+test litpool::tests::a_slot_the_program_refuses_is_never_folded ... ok
+test disassemble::tests::a_data_row_spells_its_bytes_three_ways ... ok
+test litpool::tests::a_branch_target_is_never_folded ... ok
+test litpool::tests::a_word_the_range_reads_at_a_fixed_address_is_a_pool_word ... ok
+test output::tests::propagates_non_broken_pipe_write_errors ... ok
+test jsonfmt::tests::extract_span_skips_prompt_brackets ... ok
+test project_stream::tests::a_repeated_hint_is_queued_once ... ok
+test project_stream::tests::the_chunk_size_is_fixed_by_the_flag_and_adaptive_without_it ... ok
+test paths::tests::an_extracted_archive_has_no_repo_root ... ok
+test strings::tests::case_folding_reaches_classes_and_ranges ... ok
+test strings::tests::case_insensitive_prefix ... ok
+test project_stream::tests::an_aborted_run_hands_out_no_more_work ... ok
+test strings::tests::text_is_escaped_onto_one_line ... ok
+test strings::tests::literal_and_anchors ... ok
+test project_stream::tests::an_abort_without_a_writer_error_reports_the_sentinel ... ok
+test project_stream::tests::the_scheduler_runs_the_frontier_before_the_address_cursor ... ok
+test strings::tests::classes_repeats_and_alternation ... ok
+test jobs::tests::the_anomaly_lines_separate_recovered_from_lost ... ok
+test jobs::tests::the_type_block_is_the_shards_agreement_or_their_union ... ok
+test strings::tests::the_serial_format_is_findable_by_its_own_syntax ... ok
+test skill::tests::the_embedded_skill_names_itself ... ok
+test test::tests::data_stream_parses_success_fail_footer ... ok
+test test::tests::dedup_keys_disambiguates_repeats_in_order ... ok
+test test::tests::unit_stream_parses_pass_fail_footer ... ok
+test test::tests::data_error_forms_named_xml_files ... ok
+test test::tests::baseline_json_sorted_record_shape ... ok
+test project_stream::tests::every_target_is_claimed_exactly_once ... ok
+test decompile_all::triage_tests::a_bare_run_narrows_nothing ... ok
+test optname::tests::the_reported_near_misses_each_suggest_the_real_name ... ok
+test funcdecl::tests::a_file_holds_one_declaration_per_line_with_comments ... ok
+test paths::tests::the_probe_finds_a_windows_named_sibling ... ok
+test project_stream::tests::an_atomic_write_names_its_temp_after_the_process ... ok
+test paths::tests::a_directory_is_not_a_binary ... ok
+test paths::tests::the_bare_name_is_still_preferred ... ok
+test paths::tests::the_specs_probe_accepts_an_archive_layout ... ok
+test decompile_all::triage_tests::the_triage_flags_parse_on_both_whole_binary_surfaces ... ok
+test decompile_all::mode_tests::shared_parsers_default_to_auto_and_keep_user_options_last ... ok
+test optname::tests::an_unrecognized_name_is_rejected_and_names_itself ... ok
+test project_stream::tests::a_second_export_refuses_a_folder_a_live_one_is_writing ... ok
+test decompile_all::mode_tests::unfiltered_fast_batches_default_to_ten_seconds_per_function ... ok
+test docs::tests::all_carries_every_body_verbatim ... ok
+test jobs::tests::the_plan_covers_every_target_exactly_once ... ok
+test strings::tests::a_pathological_pattern_gives_up_instead_of_hanging ... ok
+test jobs::tests::a_truncated_result_file_keeps_every_complete_frame ... ok
+test jobs::tests::result_frames_round_trip_byte_exactly ... ok
+test jobs::tests::the_fault_hook_parses_what_the_tests_inject_and_reports_the_rest ... ok
+test jobs::tests::the_scratch_dir_is_private_and_removed_on_every_path ... ok
+test jobs::tests::the_sweep_spares_a_live_owner ... ok
+
+test result: ok. 187 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.55s
+
+     Running tests/arm_isa_cli.rs (target/debug/deps/arm_isa_cli-b6ef46108d9a245d)
+
+running 11 tests
+test strings_refuses_an_isa_it_would_never_apply ... ok
+test explicit_thumb_controls_disassembly_and_read_code_view ... ok
+test explicit_thumb_reaches_single_function_json_and_graph ... ok
+test armnt_machine_decodes_thumb_without_flags ... ok
+test thumb_coff_project_keeps_section_metadata ... ok
+test explicit_arm_survives_thumb_metadata_in_graph ... ok
+test auto_preserves_mixed_arm_thumb_metadata ... ok
+test explicit_thumb_applies_without_elf_section_headers ... ok
+test explicit_thumb_survives_graph_xrefs_and_discovery ... ok
+test thumb_coff_reaches_loading_and_inspection_surfaces ... ok
+test inspection_commands_forward_isa_to_target_validation ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.58s
+
+     Running tests/broken_pipe.rs (target/debug/deps/broken_pipe-330a994d20052b91)
+
+running 3 tests
+test closed_stdout_is_a_quiet_terminal_condition ... ok
+test a_closed_reader_does_not_turn_a_failing_gate_green ... ok
+test functions_json_tolerates_a_closed_reader ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.04s
+
+     Running tests/buildstamp_cli.rs (target/debug/deps/buildstamp_cli-5ad4a121ff718986)
+
+running 6 tests
+test a_decomp_test_dbg_from_another_build_is_named_and_its_results_still_parse ... ok
+test a_decomp_dbg_from_another_build_is_named_once_on_stderr ... ok
+test a_catalog_flag_is_named_as_the_binary_selector ... ok
+test a_decomp_dbg_that_predates_the_handshake_prints_nothing ... ok
+test the_warning_stays_out_of_catalog_json ... ok
+test a_decomp_dbg_from_this_build_prints_nothing ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/ctypes_per_arch.rs (target/debug/deps/ctypes_per_arch-c67f7da3bd079936)
+
+running 4 tests

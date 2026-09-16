@@ -1,0 +1,144 @@
+CHANGED aif_gap_x86_64 lines=6
+same    alignednew_x86_64
+same    anon_namespace_x86_64
+CHANGED armdiscseed_le32 lines=2
+CHANGED armlibcmain_got_le32 lines=23
+CHANGED armlibcmain_le32 lines=23
+same    armpoolgrid_le32
+same    arm_thumb_le32.o
+same    arm_thumb_linked_le32
+same    arm_thumb_switch_le32
+same    arraycoverwidth_x86_64
+same    assertranges_x86_64
+same    calleearitybody_x86_64
+same    calleearitycut_x86_64
+same    calleearitylive_x86_64
+same    calleearityscratch_x86_64
+same    calleescratchbody_x86_64
+same    callpopret_i386
+same    callretmulti_x86_64
+same    callretpair_x86_64
+same    calltrampoline_i386
+same    cet_pie_x86_64
+same    checker_stack_aggregate_x86_64
+same    codescalar_x86_64
+same    constselectjump_x86_64
+same    corruptshdr_i386
+same    cortexm_aifcorroborate_le32
+same    cortexm_aifstrict_le32
+same    cortexm_ccm_vectors_le32
+same    cortexm_poolentry_le32
+same    cortexm_ptrentry_le32
+same    cortexm_tailcall_le32
+same    covercopy_x86_64
+same    covertrim_x86_64
+same    cpp_mangled_x86_64
+same    cpp_noreturn_x86_64
+same    cppproto_x86_64
+same    cppsig_x86_64.so
+same    cxxthrow_noreturn_x86_64
+CHANGED datasyms_faillog_x86_64 lines=16
+same    declaredlibcproto_i386
+same    declmerge_x86_64
+same    decodehalt_x86_64
+same    deep_scope_x86_64
+same    deferredentry_rel_x86_64.o
+same    dwarf_enums_x86_64
+same    dwarf_globals_x86_64
+same    dwarf_stripped_x86_64
+same    dwarfstructs_x86_64
+same    dwarfvariants_overlay_x86_64
+same    dwarfvariants_x86_64
+same    dynseg_plt_x86_64
+CHANGED eh_lsda_x86_64 lines=10
+CHANGED emptystrconst_x86_64 lines=8
+CHANGED entrymain_aarch64 lines=6
+CHANGED entrymain_arm lines=6
+CHANGED entrymain_riscv64 lines=6
+same    entry_ret_dispatch_i386
+same    entry_selectors_x86_64.o
+same    et_rel_status_aarch64.o
+same    et_rel_status_arm.o
+same    exclusivearguse_x86_64
+same    fauxware
+same    fid_lib_x86_64.o
+same    fmt_aarch64
+same    fmt_arm
+same    fmt_riscv64
+same    fmt_x86_64
+same    funcbound_cutoff_i386
+CHANGED funcstart_patterns_x86_64 lines=11
+same    function_boundary_return_x86_64
+same    getpcthunk_i386
+same    gscookie_x86_64
+same    hostile_scope_x86_64
+same    hostile_size_low32_x86_64
+same    hostile_size_neg_x86_64
+same    hostile_size_sane_x86_64
+same    hostile_symname_x86_64
+same    i386_pie_nl
+same    indexaliasguard_i386
+same    inputparamgap_x86_64
+same    itaniumrtti_x86_64.so
+same    jumpoverdecoy_i386
+same    katavm_level1_x86_64
+same    mapped_flow_boundary_32.elf
+same    mapped_flow_boundary_64.elf
+same    mapped_flow_straddle_32.elf
+same    mapped_flow_straddle_64.elf
+same    midstring_x86_64
+same    mips16_le32
+same    mips_gp_le32
+same    nametable_x86_64
+same    neonimm_arm_le32
+same    noreturn_discstrict_x86_64
+same    noreturn_disc_x86_64
+same    noreturn_error_x86_64
+same    noreturn_propagate_x86_64
+same    noshdr_x86_64
+same    operand_refs_x86_64
+same    overlapbranch_i386
+same    overlaplocals_i386
+same    paramrefdecl_i386
+same    picbase_i386
+same    picpool_arm_le32
+same    plt_aarch64
+same    plt_mips32
+same    plt_ppc64le
+same    plt_riscv64
+same    plt_sparc64
+same    poolref_arm_le32
+same    ptrarraydecl_x86_64
+same    ptx.o
+same    push_immediate_ret_i386
+same    rdtsc_zero_extend_x86_64
+same    regglobal_fmt_x86_64
+same    retcallchain_i386
+same    retpushedhalf_x86_64
+same    rust_clobber_pair_x86_64
+same    rust_hello_x86_64
+same    rust_scalarpair_x86_64
+same    sectionless_x86_64
+same    segmentgap_i386
+same    simdlane_x86_64
+same    splitstorekeep_x86_64
+same    stackarggap_x86_64
+same    stacklocal_x86_64
+same    stringops_x86_64
+CHANGED stripped_dynamic_x86_64 lines=17
+same    structreturn_x86_64
+same    switchtable_i386
+same    switchtable_pic_x86_64
+same    switchtable_x86_64
+same    switchtab_x86_64
+CHANGED tailcallframe_x86_64 lines=6
+same    tailcallsaved_i386
+same    typedepth_x86_64
+same    unmapped_branch_x86_64
+same    unmapped_call_x86_64
+same    upx_packed_lzma_x86_64
+same    upx_packed_x86_64
+same    utf8prompt_x86_64
+same    x64syscall_x86_64
+same    zeroidiomuse_x86_64
+SWEEP_DONE

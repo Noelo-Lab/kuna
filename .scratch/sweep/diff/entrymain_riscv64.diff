@@ -1,0 +1,15 @@
+--- /home/mahaloz/kwt/elfmain/.scratch/sweep/off/entrymain_riscv64.c	2026-09-16 19:24:23.964056006 +0000
++++ /home/mahaloz/kwt/elfmain/.scratch/sweep/on/entrymain_riscv64.c	2026-09-16 19:24:23.905055853 +0000
+@@ -37,9 +37,9 @@
+   dat_2048 = 1;
+ }
+ 
+-// Function: sub_608 @ 0x608
+-long sub_608(int a0)
++// Function: main @ 0x608
++int main(int argc,char **argv)
+ {
+-  return (long)a0;
++  return argc;
+ }
+ 

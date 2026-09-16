@@ -1,0 +1,16 @@
+--- /home/mahaloz/kwt/elfmain/.scratch/sweep/off/entrymain_arm.c	2026-09-16 19:24:23.853055719 +0000
++++ /home/mahaloz/kwt/elfmain/.scratch/sweep/on/entrymain_arm.c	2026-09-16 19:24:23.759055476 +0000
+@@ -101,10 +101,10 @@
+   software_interrupt(0xe7c4);
+ }
+ 
+-// Function: sub_4d8 @ 0x4d8
+-unsigned int sub_4d8(unsigned int a0)
++// Function: main @ 0x4d8
++int main(int argc,char **argv)
+ {
+-  return a0;
++  return argc;
+ }
+ 
+ // Function: _DT_FINI @ 0x4f0  (error: Unable to load 512 bytes at r0x000006e0)
