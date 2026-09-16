@@ -4078,6 +4078,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "bytehonest"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P6"
+subphase = "naming-policy"
+strength = "HARD"
+rewind = "P6"
+issue = "kuna-bytehonest"
+summary = "Spell a one-byte value the type system never committed to as the width-only `undefined1` on the `decompile-all --json` `variables` surface, instead of the `char` that `realtypes` renders its residual TYPE_UNKNOWN carrier as. `char` is the right rendering for the C TEXT -- it is the one-byte C type that reads as a value -- but on a machine-readable surface it asserts an element type the recovery never established: the program's own type there may as well be `_Bool`, `unsigned char`, a one-byte enum or one byte of a struct nobody split. The predicate is the datatype's own metatype and size (TYPE_UNKNOWN, size 1 exactly, never an array, so a `char[264]` buffer keeps its array-ness), not its spelling, so it holds with `realtypes` off too -- where the same row otherwise exports kuna's internal `xunknown1`. Parameters and stack locals only; the exported `size` stays 1 and the emitted C is byte-identical, so the same variable can read `char` in the `.c` text and `undefined1` in `variables[]`."
+use_when = "On by default. A consumer reads `variables[]` as a report of what kuna RECOVERED rather than as C source -- the `decompile-all --json`/`decompile-project` surface, which is what decbench's type_match metric scores and what IDA's stack view and Binary Ninja's variable list are the analogues of. Flip OFF to get the pre-feature surface, where an uncommitted byte is spelled exactly as the printer spells it (`char` under the default `realtypes`, `xunknown1` with `realtypes off`). The emitted C never changes either way."
+example = "option bytehonest off"
+source_decompiler = "kuna"
+inspiration = "decbench type_match: `undefined1` is scored as an uncommitted width and matches a ground-truth `char` AND `_Bool`, where the committed `char` matches only `char`; over 1,390 scored coreutils functions (fmt/ls/sort, O0+O2) it took perfect functions 193 -> 201 with 21 improved and 0 regressed. Ghidra reports the same fact as `undefined1` and IDA exports `_BYTE`"
+change_kind = "presentation-default"
+tier = "core"
+symptoms = "a JSON variable is typed char although the decompiler never established an element type|a one-byte parameter of a boolean-valued function is reported as char|the variables array claims a committed type the C text only picked for legibility|xunknown1 appears as a type name with realtypes off"
+live_field = "byte_honest"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "ctypes"
 values = "on|off"
 default = "off"
