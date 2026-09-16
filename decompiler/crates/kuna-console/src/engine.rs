@@ -509,6 +509,17 @@ pub struct ConsoleProgram {
     /// that this address IS a function, so it outranks the section-flag test
     /// that list otherwise filters by.
     declared_entries: BTreeSet<u64>,
+    /// (kuna) The name `--define-function <start>[-<end>]=<name>` gave each
+    /// declared entry, keyed by the same normalized VMA as
+    /// [`Self::declared_entries`].
+    ///
+    /// The declaration is an assertion, so it has to outrank every name
+    /// discovery registered at that address -- otherwise which name is reported
+    /// is decided by [`entry_name_rank`]'s length tie-break, and an analysis
+    /// pass that names the same address something shorter silently wins
+    /// (`elfmain` naming a libc-start `main` at an address the caller declared
+    /// `stage1`). The discovered names stay as aliases; only the report changes.
+    declared_names: BTreeMap<u64, String>,
     /// (kuna `--assert`) The caller-supplied assertions this program was loaded
     /// with, in the order they were given -- the one override plane an agent
     /// states facts through (`crate::assertions`).  Empty for every invocation
@@ -744,11 +755,12 @@ impl ConsoleProgram {
 
         let mut entries: Vec<FunctionEntry> = groups
             .into_iter()
-            .map(|(_, (addr, mut records))| {
-                // Most informative first — see `entry_name_rank`.
+            .map(|(vma, (addr, mut records))| {
+                // A caller's declaration first, then the most informative name —
+                // see `is_not_declared_name` and `entry_name_rank`.
                 records.sort_by(|a, b| {
-                    entry_name_rank(&a.name)
-                        .cmp(&entry_name_rank(&b.name))
+                    (self.is_not_declared_name(vma, &a.name), entry_name_rank(&a.name))
+                        .cmp(&(self.is_not_declared_name(vma, &b.name), entry_name_rank(&b.name)))
                         .then_with(|| a.name.cmp(&b.name))
                 });
                 let canonical = records.remove(0);
@@ -1133,9 +1145,10 @@ impl ConsoleProgram {
         if records.is_empty() {
             return None;
         }
+        let vma = address.get_offset();
         records.sort_by(|a, b| {
-            entry_name_rank(&a.name)
-                .cmp(&entry_name_rank(&b.name))
+            (self.is_not_declared_name(vma, &a.name), entry_name_rank(&a.name))
+                .cmp(&(self.is_not_declared_name(vma, &b.name), entry_name_rank(&b.name)))
                 .then_with(|| a.name.cmp(&b.name))
         });
         let canonical = records.remove(0);
@@ -1859,6 +1872,14 @@ impl ConsoleProgram {
         self.declared_entries.contains(&self.thumb_normalized(vma))
     }
 
+    /// (kuna) Whether `name` is NOT the one the caller declared at `vma`.
+    /// `false` sorts first, so a `--define-function <addr>=<name>` spelling is
+    /// the reported name of that entry and every other registration at the same
+    /// address becomes an alias.
+    fn is_not_declared_name(&self, vma: u64, name: &str) -> bool {
+        self.declared_names.get(&self.thumb_normalized(vma)).map(String::as_str) != Some(name)
+    }
+
     // --- the `--assert` override plane (see `crate::assertions`) -------------
 
     /// Install the caller's assertions.  One outcome slot is reserved per
@@ -1968,6 +1989,9 @@ impl ConsoleProgram {
         self.register_symbol(&name, addr.clone());
         self.declare_extent(vma, size);
         self.declared_entries.insert(vma);
+        if explicit.is_some() {
+            self.declared_names.insert(vma, name.clone());
+        }
         if explicit.is_some() {
             self.seed_declared_libc_prototype(&name, &addr);
         }
@@ -3145,6 +3169,7 @@ fn empty_program(
         loader_data_objects: Vec::new(),
         declared_extents: BTreeMap::new(),
         declared_entries: BTreeSet::new(),
+        declared_names: BTreeMap::new(),
         assertions: Vec::new(),
         assertion_outcomes: Vec::new(),
         pending_prototypes: BTreeMap::new(),

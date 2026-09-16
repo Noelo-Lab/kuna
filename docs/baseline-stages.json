@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1007,
-    1007
+    1011,
+    1011
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -133,6 +133,10 @@
     "data:DWARFVARIANTS #7: on, and so does variant B, so three variants are not two",
     "data:DWARFVARIANTS #8: a plain C-shaped struct in the same image renders identically in BOTH passes",
     "data:DWARFVARIANTS #9: and so does a fieldless enum, which rustc emits as an enumeration type this pass never sees",
+    "data:ELFMAIN #1: off, the entry is an anonymous sub with a body-driven signature",
+    "data:ELFMAIN #2: off, the argument vector has no element type, so the string it holds is an integer",
+    "data:ELFMAIN #3: default, the libc-start argument is named and declared",
+    "data:ELFMAIN #4: default, the declared element type reaches the call site",
     "data:EMPTYSTRCONST #1: the blob pointer keeps its address instead of becoming an empty literal",
     "data:EMPTYSTRCONST #2: an ordinary short literal beside it is untouched, in both passes",
     "data:EMPTYSTRCONST #3: a GENUINE empty literal, one that sits inside a run of string data, keeps its quotes in both passes",

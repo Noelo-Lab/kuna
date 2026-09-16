@@ -131,7 +131,11 @@ fn main_claim(file: &object::File, bytes: &[u8]) -> Option<(u64, bool)> {
     if file.format() != object::BinaryFormat::Elf {
         return None;
     }
-    if !names_libc_start_main(file) {
+    // Both refusals come off one pass over the symbol names, and both are
+    // cheaper than the decode and the section scans below -- on a large image
+    // that already names its own `main` this is the whole cost of the pass.
+    let (names_runtime, names_main) = scan_runtime_names(file);
+    if !names_runtime || names_main {
         return None;
     }
     let entry = file.entry();
@@ -155,28 +159,33 @@ fn main_claim(file: &object::File, bytes: &[u8]) -> Option<(u64, bool)> {
     if existing_function_addrs(file, bytes).binary_search(&vma).is_ok() {
         return None;
     }
-    if defines_main(file) {
-        return None;
-    }
     Some((vma, named_here))
 }
 
-/// True when any symbol in the image — imported or defined, with or without a
-/// GNU version suffix — is the C runtime entry crt1 calls.
-fn names_libc_start_main(file: &object::File) -> bool {
-    file.symbols().chain(file.dynamic_symbols()).any(|s| {
-        s.name_bytes()
-            .map(|n| crate::loader::elf_plt::strip_version(n) == LIBC_START_MAIN)
-            .unwrap_or(false)
-    })
-}
-
-/// True when the image already spells a symbol `main`, which is what makes the
-/// by-name prototype park unambiguous when it does not.
-fn defines_main(file: &object::File) -> bool {
-    file.symbols()
-        .chain(file.dynamic_symbols())
-        .any(|s| s.name_bytes() == Ok(MAIN.as_bytes()))
+/// `(the image names __libc_start_main, the image names main)`, from one pass
+/// over the static and dynamic symbol names.
+///
+/// The first is the evidence that `_start` really is a glibc crt1, and so that
+/// its first argument is `main` rather than whatever a hand-rolled entry point
+/// puts in that register. The second is what would make the by-name prototype
+/// park ambiguous, and it is also how a non-stripped ELF says it has a better
+/// name for this address already. The GNU version suffix is stripped because a
+/// versioned import spells the name `__libc_start_main@GLIBC_2.34`.
+fn scan_runtime_names(file: &object::File) -> (bool, bool) {
+    let mut runtime = false;
+    let mut main = false;
+    for sym in file.symbols().chain(file.dynamic_symbols()) {
+        let Ok(name) = sym.name_bytes() else { continue };
+        if name == MAIN.as_bytes() {
+            main = true;
+        } else if !runtime && crate::loader::elf_plt::strip_version(name) == LIBC_START_MAIN {
+            runtime = true;
+        }
+        if runtime && main {
+            break;
+        }
+    }
+    (runtime, main)
 }
 
 /// `int main(int argc, char **argv)` — the declaration the C runtime's call

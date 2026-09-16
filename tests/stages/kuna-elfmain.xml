@@ -1,0 +1,48 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    The ELF libc-start `main` naming + prototype (`option elfmain on|off`,
+    default on).
+
+    The XML wrapper only provides the harness architecture. Both passes clear
+    it and load the same stripped in-tree ELF fixture through the CLI's own
+    loader. It is a position-independent x86-64 executable whose crt1 hands
+    `main` to `__libc_start_main` as a PC-relative `lea rdi,[rip+0x286]`, so
+    entry oracle 4 recovers 0x1405 in both passes and the ONLY difference is
+    what is said about that address.
+
+    Pass 1 (`elfmain off`) reproduces the defect: the program's own starting
+    point is one more `sub_<addr>` in the inventory, declared with whatever
+    reading its body alone produces - a guessed return width and one anonymous
+    slot, because this `main` reads `argc` but never `argv`.
+
+    Pass 2 (the shipped default) applies the two things the C runtime's
+    contract states about that address: the name `main`, and the declaration
+    `int main(int argc, char **argv)`.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/stripped_dynamic_x86_64</com>
+  <com>option elfmain off</com>
+  <com>read symbols</com>
+  <com>load function sub_1405</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/stripped_dynamic_x86_64</com>
+  <com>read symbols</com>
+  <com>load function main</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="ELFMAIN #1: off, the entry is an anonymous sub with a body-driven signature" min="1" max="1">unsigned long sub_1405\(int4 a0,unsigned long \*a1\)</stringmatch>
+<stringmatch name="ELFMAIN #2: off, the argument vector has no element type, so the string it holds is an integer" min="1" max="1">sub_1357\(a1\[1\]\)</stringmatch>
+<stringmatch name="ELFMAIN #3: default, the libc-start argument is named and declared" min="1" max="1">int4 main\(int4 argc,char \*\*argv\)</stringmatch>
+<stringmatch name="ELFMAIN #4: default, the declared element type reaches the call site" min="1" max="1">sub_1357\(argv\[1\]\)</stringmatch>
+</decompilertest>
