@@ -270,7 +270,7 @@
   },
   "by_value_named_aggregates": {
    "what": "`Ty::NamedPtr` is pointer-only, but that is a property of the TABLE, not of the emitted C: propagation still carries a named type into a by-value position. The sized shell, not the pointer, is what keeps that out of the hidden-return-buffer classification.",
-   "method": "grep every sweep `.on.c`/`.off.c` for a named aggregate in a declarator position, and for `rethidden`",
+   "method": "grep each arm's whole-binary output over the same 7 sweep binaries for a named aggregate in a declarator position, and for `rethidden`",
    "by_value_returns_off": 0,
    "by_value_returns_on": 3,
    "by_value_returns_on_detail": "ls 0x10210, gzip 0x10bb0, tar 0x43230 -- all the same gnulib `gettime` wrapper, all `timespec`, all correct: a 16-byte timespec is returned in RAX:RDX. off renders the same function `undefined16 sub_10210(void) { char v1 [16]; ... return v1._0_16_; }`.",

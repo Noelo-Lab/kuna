@@ -239,21 +239,24 @@ timespec sub_10210(void)     { timespec v1;  clock_gettime(0,&v1); return v1; }
 
 The `on` rendering is right: gnulib's `gettime` really does return a
 `struct timespec`, 16 bytes, in `RAX:RDX`. It is right because the shell is
-SIZED — both hazards in §2's neighbour (`kuna_dwarfstructs.rs`) are hazards of a
+SIZED — both hazards `kuna_dwarfstructs.rs` documents are hazards of a
 SIZELESS aggregate, and the second of them is exactly this slot: an aggregate
 RETURN whose width the ABI classifier cannot see is classified as a
 hidden-return-buffer call, which grows a phantom `rethidden` first parameter and
 shifts every real one. A width-0 shell here would have produced that.
 
-Measured over the 6 sweep binaries (`ls`/`grep`/`gzip`/`tar` O2,
-`find`/`diff` O0), grepping every `.on.c` for a named aggregate in a declarator
-position:
+Measured over the same 7 sweep binaries as the corpus section below
+(`fmt`/`ls`/`grep`/`gzip`/`tar` O2, `find`/`diff` O0), grepping each arm's
+whole-binary output for a named aggregate in a declarator position:
 
 | shape | off | on |
 |---|---:|---:|
-| named aggregate returned BY VALUE | 0 | 3 (`ls` 0x10210, `gzip` 0x10bb0, `tar` 0x43230 — all the same `gettime` wrapper, all `timespec`) | 
+| named aggregate returned BY VALUE | 0 | 3 (`ls` 0x10210, `gzip` 0x10bb0, `tar` 0x43230) |
 | named aggregate as a by-value PARAMETER | 0 | 0 |
 | `rethidden` anywhere | 0 | 0 |
+
+All three by-value returns are the same gnulib `gettime` wrapper and all three
+are `timespec`.
 
 Nothing wider than a register pair reaches a return slot anywhere in the corpus
 — no `stat` (144), `sigaction` (152) or `FILE` (216) does — but that is a
