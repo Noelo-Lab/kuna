@@ -3092,6 +3092,16 @@ impl Architecture {
                 self.fold_call_returns = val;
                 Ok(msg)
             }
+            "impliedrefs" => {
+                let (val, msg) = crate::kuna_impliedrefs::OptionImpliedRefs.apply(p1)?;
+                self.max_implied_ref = val;
+                Ok(msg)
+            }
+            "termdup" => {
+                let (val, msg) = crate::kuna_impliedrefs::OptionTermDup.apply(p1)?;
+                self.max_term_duplication = val;
+                Ok(msg)
+            }
             "stackguard" => on_off!(strip_stack_guard, "Stack-guard canary stripping"),
             "msvcstackguard" => {
                 on_off!(strip_msvc_stack_guard, "MSVC /GS frame-cookie stripping")

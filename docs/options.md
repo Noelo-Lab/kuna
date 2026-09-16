@@ -219,6 +219,13 @@ Three tiers:
 | call result spilled to a temp used exactly once: v5 = f(); if (v5 < 0) | [`foldcallret`](#foldcallret) |
 | single-use call return not inlined into its use site | [`foldcallret`](#foldcallret) |
 | flip off to force every call output into a named temporary (ghidra style) | [`foldcallret`](#foldcallret) |
+| too many single-use temporaries: v7 = v3 + 8 declared and read once | [`impliedrefs`](#impliedrefs) |
+| a value read three times is written out three times instead of being declared | [`impliedrefs`](#impliedrefs) |
+| want to ablate the implied-expression threshold without rebuilding | [`impliedrefs`](#impliedrefs) |
+| expressions are too deeply nested to read and every sub-term should get a name | [`impliedrefs`](#impliedrefs) |
+| a two-term expression is declared as a temporary instead of being inlined at its two uses | [`termdup`](#termdup) |
+| want to ablate the term-duplication threshold without rebuilding | [`termdup`](#termdup) |
+| raising impliedrefs did not inline an expression because the expression itself is too wide | [`termdup`](#termdup) |
 | stack-protector canary compare against fs:0x28 and a __stack_chk_fail branch cluttering the epilogue | [`stackguard`](#stackguard) |
 | shared-return goto forced by the canary check block | [`stackguard`](#stackguard) |
 | flip off to keep the real canary instructions for auditing the protector | [`stackguard`](#stackguard) |
@@ -1259,6 +1266,22 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** kuna spills a call result to a `vN = call(); use(vN)` pair that is used exactly once where angr folds the call expression into its use site. On by default (DIV-14); flip OFF to restore the upstream explicit-temporary form (Ghidra forces every call output explicit). Only folds when the single use is in the same block with no intervening call/load/store, so the call's evaluation order is preserved.
 - **Where / provenance:** P6/explicit-marking · angr · presentation-default · angr-call-return-variable-folding
 - **Example:** `option foldcallret on`
+
+### `impliedrefs` -- 2 | 3 | 4 | <n>, default `2`
+
+- **Symptoms:** too many single-use temporaries: v7 = v3 + 8 declared and read once; a value read three times is written out three times instead of being declared; want to ablate the implied-expression threshold without rebuilding; expressions are too deeply nested to read and every sub-term should get a name.
+- **What it does:** How many times a computed value may be read and still be inlined at each use instead of being declared as its own local. ActionMarkExplicit::baseExplicit counts a Varnode's descendants and forces the value explicit once the count exceeds this bound, so the bound is exactly the line between `v3 = a + b;` used three times and `a + b` written out three times. It shipped as a hard-coded 2 whose own upstream comment reads `2 is best, in specific cases a higher number might be good`, with no way to reach it from a command. Raising it trades declarations for expression size: measured on coreutils fmt -O2 (decompile-all, 151 functions), the emitted C declares 369 locals at the shipped 2, 366 at 3 and 363 at 4, and in the other direction 384 at 1 and 630 at 0, where nothing stays implied and every computation gets its own statement. The bound is a program-wide tunable, not private to the explicit-marking pass: BlockBasic::isComplex (the `ruleBlockOr` OR-clause absorb test) and `condfold`'s printed-width test read the same field, so raising it also lets a slightly larger block fold into a condition.
+- **When to flip:** An ablation lever, and a readability knob for a listing that is either too fragmented or too dense. Raise to 3 or 4 when kuna declares a swarm of single-expression temporaries that each carry no meaning (`v7 = v3 + 8;` read three times); lower to 1 to force every multiply-read value into a named local when you are hand-tracing data flow, or to 0 to see one statement per computation. Leave at the shipped 2 for output that matches every other kuna run and the datatest baselines -- this is a per-run judgement, not a defect fix, so nothing here is more correct than the default.
+- **Where / provenance:** P6/explicit-marking · ghidra-upstream · opt-in-tool · kuna-impliedrefs
+- **Example:** `option impliedrefs 4`
+
+### `termdup` -- 2 | 3 | 4 | <n>, default `2`
+
+- **Symptoms:** a two-term expression is declared as a temporary instead of being inlined at its two uses; want to ablate the term-duplication threshold without rebuilding; raising impliedrefs did not inline an expression because the expression itself is too wide.
+- **What it does:** How many terminal terms one implied expression may duplicate at each use before the value is declared instead. A value that survived the `impliedrefs` descendant test with more than one reader is walked by ActionMarkExplicit::processMultiplier, which counts the leaf terms (the explicit variables and constants, spacebase excluded) the expression would re-print at every use and forces the value explicit once that count exceeds this bound. It shipped as a hard-coded 2 whose own upstream comment reads `2 and 3 (4) are reasonable`, with no way to reach it from a command. It is the second, independent half of the same decision: `impliedrefs` bounds how MANY places an expression is copied to, `termdup` bounds how BIG the copied expression may be. Measured on coreutils fmt -O2 (decompile-all, 151 functions), the emitted C declares 369 locals at the shipped 2, 366 at 3, 363 at 4 and 362 at 6, and in the other direction 380 at 1 and 385 at 0.
+- **When to flip:** Raise to 3 or 4 together with (or instead of) `impliedrefs` when the listing is full of two-term temporaries whose expression is small enough to read at each use; leave at the shipped 2 for output that matches every other kuna run. It has no effect on a value with a single reader, so it is the finer of the two levers -- reach for `impliedrefs` first and use this one to let the slightly larger expressions through.
+- **Where / provenance:** P6/explicit-marking · ghidra-upstream · opt-in-tool · kuna-impliedrefs
+- **Example:** `option termdup 3`
 
 ### `stackguard` -- on | off, default `on` (destructive opt-in)
 

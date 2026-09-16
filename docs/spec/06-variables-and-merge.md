@@ -262,16 +262,38 @@ decides per Varnode via `coreaction_cleanup.rs (base_explicit)`: explicit
 (gets its own statement/declaration) if it is an input or marker/call output
 (but see `foldcallret`, §6.4), belongs to a multi-instance high, is
 address-tied or mapped or a proto-partial, has no or too many readers —
-more than `max_implied_ref` = 2 descendants
+more than `max_implied_ref` descendants, which ships at 2
 (`decompiler/crates/kuna-decomp/src/infra/architecture.rs
 (reset_defaults_internal)`; a PTRSUB off the spacebase lifts the cap to
 1000000 so stack addresses always fold). A multi-reader implied candidate is
 then re-examined for *term duplication*
 (`coreaction_cleanup.rs (process_multiplier)`, `(multiple_interaction)`):
 inlining it would print its whole expression at every use, so if the
-duplicated terminal count exceeds `max_term_duplication` = 2 (same anchor), or
-two marked candidates interact through a bool/extension/PTRADD op, it is
-forced explicit. `coreaction_cleanup.rs (ActionMarkImplied)` then walks each
+duplicated terminal count exceeds `max_term_duplication`, which also ships at 2
+(same anchor), or two marked candidates interact through a bool/extension/PTRADD
+op, it is forced explicit.
+
+Both bounds are settable per run rather than compiled in
+(`kuna_impliedrefs.rs (OptionImpliedRefs)`, `(OptionTermDup)`): `option
+impliedrefs <n>` writes the descendant bound and `option termdup <n>` the
+terminal-term bound, each taking a decimal count from 0 to 1000000 (the value
+`base_explicit` already uses as its never-explicit sentinel). The two are
+independent halves of one decision — `impliedrefs` bounds how many places an
+expression is copied to, `termdup` how large the copied expression may be — and
+the shipped 2/2 is the value upstream's own comments call "best, in specific
+cases a higher number might be good" and "2 and 3 (4) are reasonable", so the
+defaults are byte-identical to the compiled-in behaviour. Raising either trades
+declarations for expression size: on coreutils `fmt` -O2 (`decompile-all`, 151
+functions) the emitted C declares 369 locals at 2, 366 at 3 and 363 at 4, and
+384 at 1 and 630 at 0 in the other direction, where nothing stays implied.
+`max_implied_ref` is a program-wide tunable rather than a private constant of
+this pass: `funcdata_block.rs (Funcdata::bb_is_complex)` — upstream
+`BlockBasic::isComplex`, the OR-clause absorb test of `blockaction.rs
+(CollapseStructure::rule_block_or)` — and `kuna_condfold.rs` read the same field
+to bound how many printed statements a condition block may carry, so
+`impliedrefs` loosens those two structure tests along with the marking.
+
+`coreaction_cleanup.rs (ActionMarkImplied)` then walks each
 remaining Varnode's expression tree depth-first and marks it implied unless
 inlining would be *semantically* unsafe
 (`coreaction_cleanup.rs (check_implied_cover)`): a LOAD whose cover crosses a
