@@ -201,7 +201,7 @@
     "conflicting types for 'sub_N'": 1,
     "sites": "ls.c:177 (sigaction), ls.c:558 (stat), ls.c:2375 `sigaction(v6,NULL,(sigaction *)v3);`, ls.c:2405. The header fix in this PR resolves the clash in `build_header` only; `build_body` still emits the colliding definition."
    },
-   "header_unaffected": "`cc -std=c99 -fsyntax-only` on the exported .h: 0 errors in BOTH arms here, and on the UNSTRIPPED ls the header fix takes the default arm from 15 header errors to 8. That claim stands; it is the .c that is not covered by it.",
+   "header_unaffected": "`cc -std=c99 -fsyntax-only` on the exported .h: 0 errors in BOTH arms on the stripped ls. The header fix itself was re-verified on the UNSTRIPPED ls with the DEFAULT arm, this branch's binary against the main tree's: 15 header errors -> 8, the 7 removed being `stat`/`statx` `redeclared as different kind of symbol` and the 5 `expected declaration specifiers ... before 'stat'` that follow it. The 8 that remain are one pre-existing class in both trees (a `.`-bearing DWARF name in a declarator). That claim stands; it is the .c that is not covered by it.",
    "retired_by": "the follow-up `glibc` value (public `_IO_FILE`/`stat` field layouts instead of an opaque shell) retires the three incomplete-typedef classes; the name-clash-in-the-body half is a `build_body` question this PR does not answer."
   },
   "intrinsic_form": {
