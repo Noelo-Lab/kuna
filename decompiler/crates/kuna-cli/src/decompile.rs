@@ -507,10 +507,11 @@ fn selection_failure(out: &str) -> Option<String> {
 /// The architecture arm must stay ahead of the analysis-commit arm: a failed
 /// `load file` leaves no image, so every later command — `read symbols`
 /// included — answers `No load image present`, which is a consequence, not the
-/// reason. The option arm sits between the two for the same reason in
-/// both directions: a dead image answers every `option` line the same way, and
-/// a refused option is the earliest thing that can make a later command fail. `allow_external` is false for raw images because their entries must
-/// have mapped bytes.
+/// reason. The option arm sits between the two, for that reason in both
+/// directions: a dead image answers every `option` line the same way, and a
+/// refused option is the earliest thing that can make a later command fail.
+/// `allow_external` is false for raw images because their entries must have
+/// mapped bytes.
 fn check_errors(
     out: &str,
     target: &str,
