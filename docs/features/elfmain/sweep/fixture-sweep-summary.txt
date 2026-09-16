@@ -1,9 +1,20 @@
+# kuna decompile-all, --option elfmain on vs off, over every in-repo ELF fixture under 300 KB
+# 143 images: 13 CHANGED (diffs beside this file, all hunks classified in record.json), 130 byte-identical
 CHANGED aif_gap_x86_64 lines=6
-same    alignednew_x86_64
-same    anon_namespace_x86_64
 CHANGED armdiscseed_le32 lines=2
 CHANGED armlibcmain_got_le32 lines=23
 CHANGED armlibcmain_le32 lines=23
+CHANGED datasyms_faillog_x86_64 lines=16
+CHANGED eh_lsda_x86_64 lines=10
+CHANGED emptystrconst_x86_64 lines=8
+CHANGED entrymain_aarch64 lines=6
+CHANGED entrymain_arm lines=6
+CHANGED entrymain_riscv64 lines=6
+CHANGED funcstart_patterns_x86_64 lines=11
+CHANGED stripped_dynamic_x86_64 lines=17
+CHANGED tailcallframe_x86_64 lines=6
+same    alignednew_x86_64
+same    anon_namespace_x86_64
 same    armpoolgrid_le32
 same    arm_thumb_le32.o
 same    arm_thumb_linked_le32
@@ -37,7 +48,6 @@ same    cpp_noreturn_x86_64
 same    cppproto_x86_64
 same    cppsig_x86_64.so
 same    cxxthrow_noreturn_x86_64
-CHANGED datasyms_faillog_x86_64 lines=16
 same    declaredlibcproto_i386
 same    declmerge_x86_64
 same    decodehalt_x86_64
@@ -50,11 +60,6 @@ same    dwarfstructs_x86_64
 same    dwarfvariants_overlay_x86_64
 same    dwarfvariants_x86_64
 same    dynseg_plt_x86_64
-CHANGED eh_lsda_x86_64 lines=10
-CHANGED emptystrconst_x86_64 lines=8
-CHANGED entrymain_aarch64 lines=6
-CHANGED entrymain_arm lines=6
-CHANGED entrymain_riscv64 lines=6
 same    entry_ret_dispatch_i386
 same    entry_selectors_x86_64.o
 same    et_rel_status_aarch64.o
@@ -67,7 +72,6 @@ same    fmt_arm
 same    fmt_riscv64
 same    fmt_x86_64
 same    funcbound_cutoff_i386
-CHANGED funcstart_patterns_x86_64 lines=11
 same    function_boundary_return_x86_64
 same    getpcthunk_i386
 same    gscookie_x86_64
@@ -125,13 +129,11 @@ same    splitstorekeep_x86_64
 same    stackarggap_x86_64
 same    stacklocal_x86_64
 same    stringops_x86_64
-CHANGED stripped_dynamic_x86_64 lines=17
 same    structreturn_x86_64
 same    switchtable_i386
 same    switchtable_pic_x86_64
 same    switchtable_x86_64
 same    switchtab_x86_64
-CHANGED tailcallframe_x86_64 lines=6
 same    tailcallsaved_i386
 same    typedepth_x86_64
 same    unmapped_branch_x86_64
@@ -141,4 +143,3 @@ same    upx_packed_x86_64
 same    utf8prompt_x86_64
 same    x64syscall_x86_64
 same    zeroidiomuse_x86_64
-SWEEP_DONE
