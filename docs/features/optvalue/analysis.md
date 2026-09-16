@@ -121,6 +121,11 @@ End to end: one `kuna decompile fauxware main` carrying all 205 options at
 their default value exits 0, as does each of `--mode auto|reliable|aggressive|fast`,
 alone and with an `--assert` range.
 
+And one `kuna decompile` per pair, over every catalogued option crossed with
+every catalogued value — 420 invocations — exits 0 on 418. The two that do not
+are the catalog's placeholder tokens, `symbolnamebound <n>` and
+`outline <fn>:<head>-<exit>[;...]`, which are not values.
+
 **Full prefix coverage.** All 205 catalogued options fed `zzzbadvalue`: 205/205
 answered with a single-line `Execution error: ` — the first entry of
 `CONSOLE_DIAGNOSTICS` — 0 accepted it, and none printed a non-diagnostic line
@@ -142,6 +147,24 @@ three-token forms and run through the datatest driver, not this path.
 
 **Multi-parameter options still work.** `--option togglerule "subright off"`
 lowers to the three tokens the console wants and is accepted, before and after.
+
+**Read statically, not just swept.** `IfcOption` maps both setters' errors
+unconditionally to `IfaceError::execution`, so the prefix is always
+`Execution error: ` whatever the `KunaError` kind, and no option setter's
+message contains a newline (the only multi-line `KunaError` in `kuna-decomp` is
+`p2_lift/flow.rs`'s `Basic blocks already calculated`). The two parse errors the
+command itself can raise (`Missing option name`, `Too many option parameters`)
+arrive under `Command parsing error:`, also in `CONSOLE_DIAGNOSTICS`.
+
+**Output is unchanged.** `decompile-all` over fauxware, `decompile` over its
+first 20 functions, and `decompile` over `fmt` O2's first 40 functions plus the
+six named witnesses: 0 byte differences in 69 comparisons, old binary vs new.
+
+One existing test moved deliberately.
+`decompile_cli.rs (an_unrelated_console_diagnostic_is_not_a_commit_failure)`
+used an `option` diagnostic as its "unrelated" witness — which the new arm now
+claims by design. It is re-witnessed on `rename v2 buf`, a command no arm
+claims, and the option case gets its own end-to-end test beside it.
 
 ## 6. Speed
 

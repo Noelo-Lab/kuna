@@ -33,7 +33,8 @@
       "mode_override_pairs_swept": 70,
       "driver_default_and_assert_injected_pairs": 5,
       "injected_diagnostic_lines": 0,
-      "end_to_end": "one `kuna decompile fauxware main` carrying ALL 205 catalogued options at their catalogued default value -> rc=0; each of --mode auto|reliable|aggressive|fast, alone and with --assert 'readonly 0x404028+8' (which injects `option readonly on`) -> rc=0"
+      "end_to_end": "one `kuna decompile fauxware main` carrying ALL 205 catalogued options at their catalogued default value -> rc=0; each of --mode auto|reliable|aggressive|fast, alone and with --assert 'readonly 0x404028+8' (which injects `option readonly on`) -> rc=0",
+      "per_pair_end_to_end": "one `kuna decompile` per pair over every catalogued option x every catalogued value: 420 invocations, 418 exit 0; the 2 non-zero are the catalog's placeholder tokens `symbolnamebound <n>` and `outline <fn>:<head>-<exit>[;...]`, which are not values"
     },
     "prefix_coverage_sweep": {
       "catalogued_options_fed_zzzbadvalue": 205,
@@ -81,13 +82,13 @@
     "verified": "byte-identical output before vs after: `decompile-all` over fauxware (whole file), `decompile` over its first 20 functions, and `decompile` over fmt O2's first 40 functions plus the six named witnesses -- 0 differences in 69 comparisons"
   },
   "gates": {
-    "make test": "PARITY OK (675/675)",
-    "make test-stages": "PARITY OK",
-    "make check-spec": "OK (lenient + strict)",
-    "make test-cli": "172/172",
-    "make rust-test": "green",
-    "kuna catalog --check": "OK",
-    "counters --check": "OK",
-    "docs/options.md": "unchanged (no option row added)"
+    "make test": "datatests: 675/675 assertions passed -- PARITY OK",
+    "make test-stages": "datatests: 1007/1007 assertions passed -- PARITY OK",
+    "make check-spec": "check-spec OK (lenient mode) + check-spec OK (strict mode)",
+    "make test-cli": "tests/cli: 172/172 passed",
+    "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
+    "counters --check": "no drift: every hard-coded site agrees with the derived truth",
+    "docs/options.md": "byte-fresh (no option row added)",
+    "make rust-test": "RUST_TEST_RC=0 -- 414 `test result: ok` blocks, 0 `test result: FAILED`, incl. options_md_matches_the_generator_byte_for_byte"
   }
 }
