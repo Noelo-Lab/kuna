@@ -298,7 +298,10 @@ def score_slice(task):
         install_decision_recorder(sink)
     out = {}
     for arm in arms:
-        opts = [] if arm == "base" else options
+        # ``arms`` is either the legacy name list (base = the build's defaults,
+        # anything else = ``options``) or a {arm: option list} map, which is how
+        # ``scripts.decbench.typescore`` asks for an explicit off/on A/B.
+        opts = arms[arm] if isinstance(arms, dict) else ([] if arm == "base" else options)
         try:
             payload = run_kuna(stripped, opts, timeout)
         except Exception as e:  # noqa: BLE001
