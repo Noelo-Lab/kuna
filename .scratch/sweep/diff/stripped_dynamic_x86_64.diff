@@ -1,0 +1,36 @@
+--- /home/mahaloz/kwt/elfmain/.scratch/sweep/off/stripped_dynamic_x86_64.c	2026-09-16 20:45:39.129534993 +0000
++++ /home/mahaloz/kwt/elfmain/.scratch/sweep/on/stripped_dynamic_x86_64.c	2026-09-16 20:45:39.004534739 +0000
+@@ -99,7 +99,7 @@
+   char v1 [8];
+   unsigned long v2; // stack + 0x0
+   
+-  (*dat_3fd8)(sub_1405,v2,&Stack0000000000000008,0,0,a2,v1);
++  (*dat_3fd8)(main,v2,&Stack0000000000000008,0,0,a2,v1);
+   do {
+   } while( true );
+ }
+@@ -176,16 +176,17 @@
+   return 0;
+ }
+ 
+-// Function: sub_1405 @ 0x1405
+-unsigned long sub_1405(int a0,unsigned long *a1) // early-return
++// Function: main @ 0x1405
++int main(int argc,char **argv,char **envp)
+ {
+-  unsigned long v1; // rax
++  int v1; // eax
+   
+-  if (a0 <= 1) {
+-    fprintf(stderr,"Usage: %s <binary>\n",*a1);
+-    return 1;
++  if (2 <= argc) // branch-flip
++    v1 = sub_1357(argv[1]);
++  else {
++    fprintf(stderr,"Usage: %s <binary>\n",*argv);
++    v1 = 1;
+   }
+-  v1 = sub_1357(a1[1]);
+   return v1;
+ }
+ 

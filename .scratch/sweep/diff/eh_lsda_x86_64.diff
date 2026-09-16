@@ -1,0 +1,35 @@
+--- /home/mahaloz/kwt/elfmain/.scratch/sweep/off/eh_lsda_x86_64.c	2026-09-16 20:45:06.894469459 +0000
++++ /home/mahaloz/kwt/elfmain/.scratch/sweep/on/eh_lsda_x86_64.c	2026-09-16 20:45:06.737469139 +0000
+@@ -81,7 +81,7 @@
+   char v1 [8];
+   unsigned long v2; // stack + 0x0
+   
+-  (*dat_403fe8)(sub_40137a,v2,&Stack0000000000000008,0,0,a2,v1);
++  (*dat_403fe8)(main,v2,&Stack0000000000000008,0,0,a2,v1);
+   do {
+   } while( true );
+ }
+@@ -138,19 +138,19 @@
+   sub_401256();
+ }
+ 
+-// Function: sub_40137a @ 0x40137a
+-unsigned int sub_40137a(int a0)
++// Function: main @ 0x40137a
++int main(int argc,char **argv,char **envp)
+ {
+   int v1; // ebx
+   unsigned int v2; // ebp
+   
+-  if (1 <= a0) { // branch-flip
++  if (1 <= argc) { // branch-flip
+     v1 = -1;
+     v2 = 0;
+     do {
+       v2 += sub_4012d6(v1);
+       v1 += 1;
+-    } while (v1 != a0 + -1);
++    } while (v1 != argc + -1);
+   }
+   else {
+     v2 = 0;

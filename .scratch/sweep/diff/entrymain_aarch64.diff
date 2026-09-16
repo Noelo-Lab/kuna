@@ -1,0 +1,16 @@
+--- /home/mahaloz/kwt/elfmain/.scratch/sweep/off/entrymain_aarch64.c	2026-09-16 20:45:07.496470686 +0000
++++ /home/mahaloz/kwt/elfmain/.scratch/sweep/on/entrymain_aarch64.c	2026-09-16 20:45:07.357470402 +0000
+@@ -75,10 +75,10 @@
+   sub_680(); // tail-call
+ }
+ 
+-// Function: sub_714 @ 0x714
+-unsigned int sub_714(unsigned int a0)
++// Function: main @ 0x714
++int main(int argc,char **argv,char **envp)
+ {
+-  return a0;
++  return argc;
+ }
+ 
+ // Function: _DT_FINI @ 0x72c

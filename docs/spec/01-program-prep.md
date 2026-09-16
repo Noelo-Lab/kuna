@@ -2682,14 +2682,32 @@ supply, and it is the half that is visible at every call site: `main`'s value is
 consumed by `__libc_start_main`, outside the image, so nothing in the object
 constrains it and kuna types it from the widest register write it can see. The
 parameters are the half it supplies only by accident. Both are stated by the C
-runtime's contract — the first argument to `__libc_start_main` IS `main`, and the
-POSIX declaration of `main` is `int main(int, char **)` — so this pass applies the
+runtime's contract — the first argument to `__libc_start_main` IS `main`, and what
+that runtime then calls is `main(argc, argv, envp)` — so this pass applies the
 name through the `entry_names` overlay (§1.6) and parks that prototype by it,
 exactly as `machomain` does from `LC_MAIN`, and for the same reason it spells the
 real `int`/`char **` rather than `entrymainproto`'s call-site widths: a glibc
 crt1's first argument is the POSIX `main` by definition, where a recovered PE call
-site of the same shape can be `wmain`'s `wchar_t **`. `envp` is again not
-declared.
+site of the same shape can be `wmain`'s `wchar_t **`.
+
+All three of those arguments are declared, including the `envp` most programs
+ignore, and the reason is that the parked prototype is applied LOCKED. Declaring
+two parameters is not a smaller claim than declaring three: it asserts that there
+is no third one, and on a `main` that does read `envp` that assertion deletes a
+parameter recovery had already found. The entry value stops being an input, the
+read of it becomes an uninitialised local, and the emitted C passes that
+undefined local on — which is what the in-tree ARM fixture `armlibcmain_le32`
+@0x103dc did under the two-argument form, rendering `unsigned int v4; // r2` with
+no assignment anywhere and still handing it to `__printf_chk`. Nothing readable at
+load time separates that `main` from one that truly ignores its third argument:
+it never touches `r2` at all, it sets up `r0`/`r1` and branches, and the only
+evidence that `r2` carries a value is the callee's own signature. So a body walk
+looking for a read of the third argument register would see nothing in either
+case, and of the two mistakes only one is wrong output — an `envp` the program
+ignores is an unused parameter in a declaration that is true of every hosted C
+program, while an `envp` dropped from a program that uses it is a lie. The
+declaration the runtime actually makes is therefore the one applied, which is also
+what IDA Pro reports at the same address.
 
 The address is oracle 4's own (`libc_start_main_target`), never a second decode,
 so the pass cannot disagree with the entry the discovery set already contains.

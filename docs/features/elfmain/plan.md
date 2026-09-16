@@ -11,7 +11,7 @@ is on, so `--option elfmain off` restores the previous output exactly.
 ```rust
 fn main_claim(file, bytes) -> Option<(u64, bool)>   // (main's VMA, do we name it?)
 fn scan_runtime_names(file) -> (bool, bool)         // (names __libc_start_main, names main)
-fn main_prototype(ctx) -> Option<PrototypePieces>   // int main(int argc, char **argv)
+fn main_prototype(ctx) -> Option<PrototypePieces>   // int main(int argc, char **argv, char **envp)
 ```
 
 `run` pushes the VMA into `out.entries` and `(vma, "main")` into `out.entry_names`

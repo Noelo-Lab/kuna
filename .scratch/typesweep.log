@@ -1,0 +1,37 @@
+slices: 18 total, 18 to run, arms=['base', 'test']
+[1/18] bzip2::O0::bzip2recover
+[2/18] bzip2::O2::bzip2recover
+[3/18] diffutils::O0::sdiff
+[4/18] diffutils::O0::cmp
+[5/18] diffutils::O2::cmp
+[6/18] diffutils::O0::diff3
+[7/18] diffutils::O2::sdiff
+[8/18] diffutils::O2::diff3
+[9/18] diffutils::O0::diff
+[10/18] bzip2::O2::bzip2
+[11/18] bzip2::O0::bzip2
+[12/18] gzip::O0::gzip
+[13/18] grep::O0::grep
+[14/18] findutils::O0::find
+[15/18] gzip::O2::gzip
+[16/18] diffutils::O2::diff
+[17/18] findutils::O2::find
+[18/18] grep::O2::grep
+# typesweep elfmain=off
+
+slices scored: 18
+functions scored: 1312
+
+## control
+
+- baseline vs published type_match: 1260 agree / 52 differ (96.04% agreement)
+
+## result
+
+- type_match PERFECT: base 154 -> test 154 (+0)
+- aggregate type_match: base 449.38 -> test 448.67 (-0.72)
+- moved ONTO perfect: 0
+- moved OFF perfect: 0
+- improved (not perfect): 0
+- worsened (not perfect): 7
+

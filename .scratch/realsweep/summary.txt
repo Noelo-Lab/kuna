@@ -1,0 +1,9 @@
+CHANGED	O0_grep_grep	lines=682	control=IDENTICAL
+CHANGED	O2_tar_tar	lines=496	control=IDENTICAL
+CHANGED	O2-noinline_diffutils_cmp	lines=112	control=IDENTICAL
+CHANGED	O2_gzip_gzip	lines=24	control=IDENTICAL
+CHANGED	O0_coreutils_ls	lines=18	control=IDENTICAL
+CHANGED	O2_findutils_find	lines=42	control=IDENTICAL
+CHANGED	O0_dash_dash	lines=8	control=IDENTICAL
+CHANGED	O2_coreutils_fmt	lines=92	control=IDENTICAL
+REALSWEEP_DONE

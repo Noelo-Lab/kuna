@@ -18,7 +18,10 @@
 
     Pass 2 (the shipped default) applies the two things the C runtime's
     contract states about that address: the name `main`, and the declaration
-    `int main(int argc, char **argv)`.
+    `int main(int argc, char **argv, char **envp)` - all three arguments of the
+    call glibc's `__libc_start_main` makes, because the prototype is applied
+    locked and declaring two would assert that a `main` reading `envp` has no
+    third parameter.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -43,6 +46,6 @@ c3
 </script>
 <stringmatch name="ELFMAIN #1: off, the entry is an anonymous sub with a body-driven signature" min="1" max="1">unsigned long sub_1405\(int4 a0,unsigned long \*a1\)</stringmatch>
 <stringmatch name="ELFMAIN #2: off, the argument vector has no element type, so the string it holds is an integer" min="1" max="1">sub_1357\(a1\[1\]\)</stringmatch>
-<stringmatch name="ELFMAIN #3: default, the libc-start argument is named and declared" min="1" max="1">int4 main\(int4 argc,char \*\*argv\)</stringmatch>
+<stringmatch name="ELFMAIN #3: default, the libc-start argument is named and declared" min="1" max="1">int4 main\(int4 argc,char \*\*argv,char \*\*envp\)</stringmatch>
 <stringmatch name="ELFMAIN #4: default, the declared element type reaches the call site" min="1" max="1">sub_1357\(argv\[1\]\)</stringmatch>
 </decompilertest>

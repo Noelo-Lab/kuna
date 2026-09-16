@@ -7,7 +7,7 @@
 -// Function: sub_401020 @ 0x401020
 -void sub_401020(int a0,unsigned long *a1)
 +// Function: main @ 0x401020
-+int main(int argc,char **argv)
++int main(int argc,char **argv,char **envp)
  {
 -  sub_401130((long)(*(char *)*a1 + a0));
 +  char v1;

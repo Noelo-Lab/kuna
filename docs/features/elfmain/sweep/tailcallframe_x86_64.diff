@@ -7,7 +7,7 @@
 -// Function: sub_1050 @ 0x1050
 -int sub_1050(void)
 +// Function: main @ 0x1050
-+int main(int argc,char **argv)
++int main(int argc,char **argv,char **envp)
  {
    (*(void *)*dat_4010)(0x4040,3);
    return dat_4048 + dat_4044 + dat_404c;

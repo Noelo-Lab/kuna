@@ -297,8 +297,9 @@ fn flags_off_does_not_discover_the_gap_function() {
     let main_body = decompile(off, "main");
     eprintln!("---- main @0x13c9 (AIF off / default) ----\n{main_body}");
     assert!(
-        main_body.contains("main"),
-        "default main body must name main:\n{main_body}"
+        main_body.contains("(**(code **)") && main_body.contains("0x3df0"),
+        "default main must still render the call through the 0x3df0 table as an \
+         unresolved (code **) deref:\n{main_body}"
     );
     // The hidden function is NOT named in the default main body (the indirect call
     // resolves to a `(code **)` deref, not a `sub_13ae(` call).

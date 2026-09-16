@@ -18,7 +18,7 @@
   "decisions": [
     "The address is oracle 4's own (libc_start_main_target), never a second decode, so the pass cannot disagree with the entry discovery already contains and every architecture oracle 4 covers is covered by construction.",
     "int / char ** is the honest spelling here, unlike entrymainproto's call-site widths: a glibc crt1's first argument is the POSIX main by definition, where the same recovered PE shape can be wmain's wchar_t **.",
-    "envp is not declared -- glibc passes a third argument, but the extra unused slot costs more noise than it buys (machomain's call, for the same reason).",
+    "All three arguments the C runtime passes are declared, `envp` included, because the prototype is applied LOCKED: two parameters is not a weaker claim than three, it asserts there is no third one. On a `main` that reads `envp` that deletes a parameter recovery had already found -- the entry value stops being an input, the read becomes an uninitialised local, and the body still hands it on (armlibcmain_le32 @0x103dc rendered `unsigned int v4; // r2` assigned nowhere and passed to __printf_chk). Nothing readable at load time separates that program from one that truly ignores its third argument: it never touches r2, it forwards it, and only the CALLEE's signature says the register carries a value -- so a read-based body walk sees nothing in either case. Of the two mistakes only one is wrong output. IDA Pro declares the same three at the same address.",
     "The image must name __libc_start_main somewhere in its static or dynamic symbol names. Oracle 4's evidence is enough to ADD an entry (a wrong one costs one sub_<addr>) but not to assert the function IS the C main; a fully stripped static image states nothing that separates a glibc crt1 from a hand-rolled entry point and is refused.",
     "The non-PIE ARM32 shape oracle 4 cannot see stays armlibcmain's: elfmain contributes only the prototype there (named_here == false), and because the park is by name, `--option armlibcmain off` leaves nothing for it to land on.",
     "A caller's --define-function name now outranks every discovered name at the same address (declared_names), because naming an address a second time made entry_name_rank's length tie-break decide between an assertion and a discovery."
@@ -27,7 +27,7 @@
     "probe_id": "tests/cli/elf-libc-start-main-unnamed.json",
     "command": "kuna decompile-all decompiler/crates/kuna-analysis/tests/fixtures/stripped_dynamic_x86_64 --addr 0x1405 --json",
     "before": "functions[0].name == \"sub_1405\", code `unsigned long sub_1405(int a0,unsigned long *a1)`, the argument vector untyped so `sub_1357(a1[1])`",
-    "after": "functions[0].name == \"main\", code `int main(int argc,char **argv)` and `sub_1357(argv[1])`",
+    "after": "functions[0].name == \"main\", code `int main(int argc,char **argv,char **envp)` and `sub_1357(argv[1])`",
     "verify": "make test-cli => tests/cli: 171/171 passed",
     "promoted_to": "tests/cli/elf-libc-start-main-unnamed.json"
   },
@@ -38,43 +38,61 @@
   },
   "oracle_check": {
     "method": "kuna functions on every stripped decbench ELF that has an unstripped twin, comparing the address named `main` against the twin's `main` from nm",
-    "images": 758,
-    "match": 645,
+    "images_with_a_twin": 758,
+    "excluded_pass_refuses": 33,
+    "excluded_why": "33 of the 758 are stripped only of .symtab and still export `main` from .dynsym, so main_claim() returns None and the name comes from the symbol table exactly as it did before this option existed -- bash plus its six build tools (bashversion, man2html, mkbuiltins, mksignames, mksyntax, psize.aux), e2fsprogs/e2fsck, iproute2/ip, iproute2/rtmon and rsyslog/rsyslogd, at all three optimisation levels. Confirmed on O0/bash/bashversion: `kuna decompile-all` is byte-identical with and without `--option elfmain off`. Those rows are not evidence about this pass and are not counted.",
+    "images_the_pass_can_fire_on": 725,
+    "match": 612,
     "mismatch": 0,
     "miss": 113,
-    "miss_classification": "90 are bare-metal firmware with no glibc crt1 (libopencm3 69, crazyflie 6, riot-os 3, freertos 3, cleanflight 3, chibios 3, betaflight 3) -- the __libc_start_main refusal; 23 are shared libraries whose twin has no `main` either."
+    "miss_classification": "90 are bare-metal firmware with no glibc crt1 (libopencm3 69, crazyflie 6, riot-os 3, freertos 3, cleanflight 3, chibios 3, betaflight 3) -- the __libc_start_main refusal; 23 are shared libraries whose twin has no `main` either.",
+    "raw": "docs/features/elfmain/sweep/decbench-main-oracle.txt (all 758 rows, MATCH/MISMATCH/MISS as first measured)"
   },
   "regression_sweep": {
-    "method": "kuna decompile-all in both arms over every in-repo ELF fixture under 300 KB (143 images), whole-binary diff, every hunk read",
-    "fired_on": 13,
-    "fired": [
-      "aif_gap_x86_64",
-      "armdiscseed_le32",
-      "armlibcmain_got_le32",
-      "armlibcmain_le32",
-      "datasyms_faillog_x86_64",
-      "eh_lsda_x86_64",
-      "emptystrconst_x86_64",
-      "entrymain_aarch64",
-      "entrymain_arm",
-      "entrymain_riscv64",
-      "funcstart_patterns_x86_64",
-      "stripped_dynamic_x86_64",
-      "tailcallframe_x86_64"
-    ],
-    "inert_elsewhere": "130 of 143 are byte-identical in both arms",
+    "fixtures": {
+      "method": "kuna decompile-all in both arms over every in-repo ELF fixture under 300 KB (143 images), whole-binary diff, every hunk read",
+      "fired_on": 13,
+      "fired": [
+        "aif_gap_x86_64",
+        "armdiscseed_le32",
+        "armlibcmain_got_le32",
+        "armlibcmain_le32",
+        "datasyms_faillog_x86_64",
+        "eh_lsda_x86_64",
+        "emptystrconst_x86_64",
+        "entrymain_aarch64",
+        "entrymain_arm",
+        "entrymain_riscv64",
+        "funcstart_patterns_x86_64",
+        "stripped_dynamic_x86_64",
+        "tailcallframe_x86_64"
+      ],
+      "inert_elsewhere": "130 of 143 are byte-identical in both arms",
+      "diffs": "docs/features/elfmain/sweep/*.diff"
+    },
+    "real_binaries": {
+      "why": "The fixture mains are a few statements long, so they cannot show what the option does to a main of a few hundred lines. Same command, eight stripped decbench binaries.",
+      "method": "kuna decompile-all in both arms on O0/grep/grep, O2/tar/tar, O2-noinline/diffutils/cmp, O2/gzip/gzip, O0/coreutils/ls, O2/findutils/find, O0/dash/dash and O2/coreutils/fmt; every changed line attributed back to its enclosing function",
+      "changed_lines": "grep O0 682, tar O2 496, cmp O2-noinline 112, fmt O2 92, find O2 42, gzip O2 24, ls O0 18, dash O0 8",
+      "blast_radius": "In all eight, exactly two functions change: `main` itself and the `_start` that passes it to __libc_start_main (2 lines: the argument is now spelled `main`). No other function moves a byte.",
+      "largest_case": "grep O0 main @0xa7d1: the body goes 670 -> 554 lines",
+      "diffs": "docs/features/elfmain/sweep-real/*.diff",
+      "cross_build_control": "On all eight, this branch's OFF arm is byte-identical to the base-commit binary (809712e9) over the whole image."
+    },
     "hunk_classes": [
-      "naming (13/13): the definition header and the `(*dat_3fd8)(sub_<addr>,...)` argument inside _start's __libc_start_main call both become `main`",
-      "declaration (13/13): the width-only or void signature becomes `int main(int argc,char **argv)`",
-      "argv element type (5): `*a1` -> `*argv`, `a1[1]` -> `argv[1]`, so the string the vector holds reaches a char * use instead of an integer one",
-      "return statement (4): a tail call that was emitted as a bare statement is now `return sub_<addr>(...)`, because main's result is no longer void",
-      "local renumbering (3): declaring two parameters shifts vN and, on the two ARM fixtures, demotes the uninitialised third vararg register from the parameter `a2` to the local `unsigned int v4; // r2` -- the same value, spelled as what it is"
+      "naming (all): the definition header and the `(*dat_<got>)(sub_<addr>,...)` argument inside _start's __libc_start_main call both become `main`",
+      "declaration (all): the width-only or void signature becomes `int main(int argc,char **argv,char **envp)`",
+      "argument spelling at uses: `*a1` -> `*argv`, `a1[optind]` -> `argv[optind]`, `a0` -> `argc`, and on the two ARM fixtures the third register `a2` -> `envp`",
+      "return statement: a tail call emitted as a bare statement becomes `return f(...)`, and a widened `return (long)a0` becomes `return argc`, because main's result is no longer void or guessed",
+      "local renumbering: declaring the parameters shifts the vN numbering of the remaining locals",
+      "expression re-anchoring downstream of the two typed facts -- THIS is the class the in-repo fixtures nearly hide and the real binaries are full of. A `char **argv` instead of an untyped `long` collapses pointer arithmetic into indexing (`v = (long)optind; v = (unsigned long *)(a1 + v*8); v37 = *(char **)v;` becomes `v33 = argv[optind];`), removes casts, and folds a single-use temporary into its use (`v14 = gettext(\"...\"); error(2,0,v14);` becomes `error(2,0,gettext(\"...\"))`); a locked `int` return collapses the early-return shape the guessed width produced (`v = 1; return v;` becomes `return 1;`, and stripped_dynamic_x86_64's two-exit body becomes one). Statements ARE folded, moved and re-anchored by this; every one that moves recomputes the same value, and no side-effecting call, store or branch is added or dropped -- grep O0 main loses 116 lines and all of them are temporaries and casts."
     ],
-    "classification": "every hunk is the intended consequence of the name, the declaration or the return type; no statement is deleted, moved or re-anchored, and no function other than main and its _start caller changes in any image"
+    "classification": "Every hunk is a consequence of the name, the three declared parameters or the int return. The two typed facts propagate, so on a real main the change is not confined to the declaration line: expressions fold and the region shape can change. It is bounded to main and its _start in all 21 images swept."
   },
   "metric": {
     "expected": "~0 on decbench type_match, stated up front",
-    "why": "type_match scores variables[] (arguments + stack symbols). On the functions this fires on, argc/argv are already true positives at the recovered widths wherever the body reads them; return types are not scored and neither is the function name. The gain is the caller-visible return type, the char * element type that reaches argv[i] uses, and a main an agent can ask for by name."
+    "why": "type_match scores variables[] (arguments + stack symbols). On the functions this fires on, argc/argv are already true positives at the recovered widths wherever the body reads them; return types are not scored and neither is the function name. The gain is the caller-visible return type, the char * element type that reaches argv[i] uses, and a main an agent can ask for by name.",
+    "measured": "PENDING"
   },
   "speed": {
     "method": "interleaved alternating runs, min of N (the box is shared; median and mean are dominated by other tenants)",
@@ -93,7 +111,7 @@
       "decompiler/crates/kuna-console/tests/verify_crossarch_entry_main.rs -- now runs BOTH arms: with elfmain off it is the pre-existing oracle-4 gate verbatim (sub_<addr>, return a0), and by default it is main / return argc at the same address.",
       "decompiler/crates/kuna-console/tests/verify_s1_entry.rs -- its subject is the generated sub_<addr> name format, so it runs with the option off; the default path on that same fixture is gated by tests/stages/kuna-elfmain.xml.",
       "decompiler/crates/kuna-console/tests/verify_assertflow.rs -- the qualified directive names aif_gap's 0x13c9 `main`, which is what it is.",
-      "decompiler/crates/kuna-console/tests/verify_aif.rs -- same fixture, same address, same rename.",
+      "decompiler/crates/kuna-console/tests/verify_aif.rs -- same fixture, same address, same rename. Its default-arm assertion is now pinned on the thing that test is actually about: that the call through the 0x3df0 function-pointer table is still an unresolved `(**(code **)` deref when the gate is off.",
       "decompiler/crates/kuna-ghidra/tests/ghidra_sim_e2e.rs -- PIN_FAILLOG_PLACEHOLDERS[0] 27 -> 26: 0x2620 is no longer an unnamed entity. Every other faillog measurement is unchanged, including c_lines 285, the getPcode traffic (2121 / 1044 decoded) and getMappedSymbols 1448."
     ],
     "no_cli_probe_expectation_changed": "None of the ~50 tests/cli probes pinning a literal sub_<addr> needed editing. The one that broke, no-cli-function-boundary-override, was reporting `main` for a function the caller had declared `stage1`; that is the declared-name precedence fix, not an expectation change."

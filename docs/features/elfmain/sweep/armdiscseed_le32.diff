@@ -5,7 +5,7 @@
  
  // Function: main @ 0x10180
 -unsigned int main(void)
-+int main(int argc,char **argv)
++int main(int argc,char **argv,char **envp)
  {
    sub_10190();
    return 0;

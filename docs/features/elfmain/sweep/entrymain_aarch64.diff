@@ -7,7 +7,7 @@
 -// Function: sub_714 @ 0x714
 -unsigned int sub_714(unsigned int a0)
 +// Function: main @ 0x714
-+int main(int argc,char **argv)
++int main(int argc,char **argv,char **envp)
  {
 -  return a0;
 +  return argc;

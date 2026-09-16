@@ -1,0 +1,47 @@
+--- /home/mahaloz/kwt/elfmain/.scratch/sweep/off/datasyms_faillog_x86_64.c	2026-09-16 20:45:02.921461357 +0000
++++ /home/mahaloz/kwt/elfmain/.scratch/sweep/on/datasyms_faillog_x86_64.c	2026-09-16 20:45:02.305460101 +0000
+@@ -405,8 +405,8 @@
+   return v1;
+ }
+ 
+-// Function: sub_2620 @ 0x2620
+-void sub_2620(int a0,char **a1)
++// Function: main @ 0x2620
++int main(int argc,char **argv,char **envp)
+ {
+   unsigned int v1;
+   unsigned long v10; // stack - 0x58
+@@ -429,19 +429,19 @@
+   v16 = *(unsigned long *)(v15 + 0x28);
+   v10 = 0;
+   v11 = 0;
+-  dat_61c0 = sub_38d0(*a1);
++  dat_61c0 = sub_38d0(*argv);
+   sub_3e60(dat_61c0);
+   sub_3e80(stderr);
+   setlocale(6,"");
+   bindtextdomain("shadow","/usr/share/locale");
+   textdomain("shadow");
+-  sub_3ad0("-R",a0,a1);
++  sub_3ad0("-R",argc,argv);
+ label_26d3:
+-  v4 = getopt_long(a0,a1,"ahl:m:rR:t:u:",(void *)0x6020,NULL);
++  v4 = getopt_long(argc,argv,"ahl:m:rR:t:u:",(void *)0x6020,NULL);
+   v2 = dat_61c0;
+   if (v4 == -1) {
+-    if (optind < a0) {
+-      v7 = a1[optind];
++    if (optind < argc) {
++      v7 = argv[optind];
+       __fprintf_chk(stderr,1,dcgettext(NULL,"%s: unexpected argument: %s\n",5),v2,v7);
+       sub_3050(1); // no-return
+     }
+@@ -699,7 +699,7 @@
+   char v1 [8];
+   unsigned long v2; // stack + 0x0
+   
+-  (*dat_5fd0)(sub_2620,v2,&Stack0000000000000008,0,0,a2,v1);
++  (*dat_5fd0)(main,v2,&Stack0000000000000008,0,0,a2,v1);
+   do {
+   } while( true );
+ }

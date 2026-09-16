@@ -39,7 +39,7 @@
       {
         "path": "functions[0].code",
         "op": "contains",
-        "value": "int main(int argc,char **argv)"
+        "value": "int main(int argc,char **argv,char **envp)"
       },
       {
         "path": "functions[0].code",
@@ -53,5 +53,5 @@
       }
     ]
   },
-  "notes": "Acceptance of elfmain on the in-repo stripped PIE fixture: crt1 hands main to __libc_start_main as `lea rdi,[rip+0x286]`, which entry oracle 4 already decoded to 0x1405 before this option existed. Before: `unsigned long sub_1405(int a0,unsigned long *a1)`, the argument vector untyped. The last clause pins the declared element type reaching a call site, not just the declaration line."
+  "notes": "Acceptance of elfmain on the in-repo stripped PIE fixture: crt1 hands main to __libc_start_main as `lea rdi,[rip+0x286]`, which entry oracle 4 already decoded to 0x1405 before this option existed. Before: `unsigned long sub_1405(int a0,unsigned long *a1)`, the argument vector untyped. The third parameter is declared because the parked prototype is locked and a two-parameter form deletes a live `envp` (armlibcmain_le32 @0x103dc). The last clause pins the declared element type reaching a call site, not just the declaration line."
 }

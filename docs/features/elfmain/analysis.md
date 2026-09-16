@@ -39,9 +39,31 @@ the half that is visible at every call site.
 ## 2. What the container states
 
 The C runtime's contract states all three. glibc's `__libc_start_main` takes
-`main` as its first argument and the POSIX declaration of `main` is
-`int main(int, char **)`. That is a restatement of the runtime, not an inference,
-and it is exactly the shape `machomain` already applies on Mach-O from `LC_MAIN`.
+`main` as its first argument, and what it then calls is `main(argc, argv, envp)`.
+That is a restatement of the runtime, not an inference, and it is the shape
+`machomain` already applies on Mach-O from `LC_MAIN`.
+
+All three arguments are declared, `envp` included, because the parked prototype is
+applied LOCKED. Declaring two parameters is not a weaker version of the same
+claim — it asserts that there is no third one, and on a `main` that reads `envp`
+that deletes a parameter recovery had already found: the entry value stops being
+an input, the read becomes an uninitialised local, and the emitted C hands that
+undefined local on. The in-tree fixture `armlibcmain_le32` @0x103dc is exactly
+that program, and under a two-argument declaration it rendered
+
+```c
+  unsigned int v4; // r2        <-- assigned nowhere in the body
+  __printf_chk(2,"kuna armlibcmain prompt",v4,0);
+```
+
+Nothing readable at load time tells that `main` apart from one that truly ignores
+its third argument. It never touches `r2`: it sets up `r0`/`r1`, branches to
+`__printf_chk`, and the only thing that says `r2` carries a value is the callee's
+signature. A body walk looking for a read of the third argument register finds
+nothing in either program. Of the two possible mistakes only one is wrong output —
+an unused `envp` is a parameter in a declaration that is true of every hosted C
+program — so the declaration the runtime makes is the one applied. IDA Pro reports
+the same three at the same address.
 
 The claim is stronger than "oracle 4 found an address", so it needs stronger
 evidence than oracle 4 needs. Its x86-64 arm matches an argument-setup encoding
@@ -56,11 +78,19 @@ version suffix stripped.
 `kuna functions` on every stripped ELF of the decbench corpus that has an
 unstripped twin, against the twin's `main` from `nm`:
 
+758 images have a twin. 33 of them are stripped only of `.symtab` and still export
+`main` from `.dynsym`, so the pass refuses and the name comes from the symbol
+table as it always did (`bash` and its six build tools, `e2fsck`, `ip`, `rtmon`,
+`rsyslogd`, at all three optimisation levels). They are not evidence about this
+pass and are excluded; `kuna decompile-all` on one of them is byte-identical with
+and without `--option elfmain off`. That leaves **725** images where the pass is
+the only thing that could supply the name:
+
 | verdict | count |
 |---|---:|
-| MATCH (the address named `main` is the twin's `main`) | see record.json |
+| MATCH (the address named `main` is the twin's `main`) | 612 |
 | MISMATCH (named a different address) | 0 |
-| MISS (declined) | bare-metal firmware and shared libraries |
+| MISS (declined) | 113 |
 
 Every MISS is a refusal working as designed: an `.so` has no `main`, and a
 libopencm3 / ChibiOS / FreeRTOS / betaflight firmware image has no glibc crt1, so

@@ -16,7 +16,7 @@
 -// Function: sub_1405 @ 0x1405
 -unsigned long sub_1405(int a0,unsigned long *a1) // early-return
 +// Function: main @ 0x1405
-+int main(int argc,char **argv)
++int main(int argc,char **argv,char **envp)
  {
 -  unsigned long v1; // rax
 +  int v1; // eax

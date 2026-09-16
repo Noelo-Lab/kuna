@@ -1,0 +1,22 @@
+--- /home/mahaloz/kwt/elfmain/.scratch/sweep/off/aif_gap_x86_64.c	2026-09-16 20:44:51.923438903 +0000
++++ /home/mahaloz/kwt/elfmain/.scratch/sweep/on/aif_gap_x86_64.c	2026-09-16 20:44:51.720438488 +0000
+@@ -24,7 +24,7 @@
+   char v1 [8];
+   unsigned long v2; // stack + 0x0
+   
+-  (*dat_3fd8)(sub_13c9,v2,&Stack0000000000000008,0,0,a2,v1);
++  (*dat_3fd8)(main,v2,&Stack0000000000000008,0,0,a2,v1);
+   do {
+   } while( true );
+ }
+@@ -203,8 +203,8 @@
+   return (a0 + 0x40) * 2 + 9;
+ }
+ 
+-// Function: sub_13c9 @ 0x13c9
+-int sub_13c9(void)
++// Function: main @ 0x13c9
++int main(int argc,char **argv,char **envp)
+ {
+   unsigned int v1;
+   int v10; // eax

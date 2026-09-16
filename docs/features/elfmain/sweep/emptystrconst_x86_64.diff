@@ -16,7 +16,7 @@
 -// Function: sub_401189 @ 0x401189
 -void sub_401189(void)
 +// Function: main @ 0x401189
-+int main(int argc,char **argv)
++int main(int argc,char **argv,char **envp)
  {
 -  sub_401136();
 +  return sub_401136();

@@ -1,0 +1,812 @@
+--- O2/tar/stripped/tar (option elfmain off)
++++ O2/tar/stripped/tar (default)
+@@ -1720,59 +1720,61 @@
+   return;
+ }
+ 
+-// Function: sub_a9f0 @ 0xa9f0
+-int4 sub_a9f0(int4 a0,unsigned long *a1) // ternary
++// Function: main @ 0xa9f0
++int4 main(int4 argc,char **argv,char **envp) // ternary
+ {
+   int8 *v1;
+-  int8 v10; // rax
+-  char *v11; // rax
+-  void *v12; // rax
+-  unsigned long v13;
+-  uint4 v14;
+-  unsigned long *v15;
+-  unsigned long *v16;
+-  int4 v17 [2]; // stack - 0x1a8
+-  int4 *v18; // stack - 0x168
+-  int4 v19 [2]; // stack - 0x188
+-  unsigned long *v2;
+-  int8 v20; // stack - 0x138
+-  char v21 [4];
+-  char v22; // stack - 0x43
+-  unsigned long *v23;
+-  unsigned long *v24;
+-  uint8 v25; // r12
++  int4 v10; // eax
++  char *v11;
++  int8 v12; // rax
++  char *v13;
++  void *v14; // rax
++  unsigned long v15;
++  uint4 v16;
++  char **v17;
++  char **v18;
++  int4 v19 [2]; // stack - 0x1a8
++  char **v2;
++  int4 *v20; // stack - 0x168
++  int4 v21 [2]; // stack - 0x188
++  int8 v22; // stack - 0x138
++  char v23 [4];
++  char v24; // stack - 0x43
++  char **v25;
+   unsigned long *v26;
+-  uint8 v27; // rax
+-  int8 v28;
+-  unsigned long *v29; // stack - 0x1c0
+-  unsigned short v3;
+-  unsigned long v30; // stack - 0x1a0
+-  unsigned long v31; // stack - 0x198
+-  unsigned long v32; // stack - 0x190
+-  char *v33; // stack - 0x180
+-  unsigned long v34; // stack - 0x178
+-  unsigned long v35; // stack - 0x170
+-  unsigned long *v36; // stack - 0x160
+-  unsigned short v37; // stack - 0x158
+-  char v38; // stack - 0x156
+-  char *v39; // stack - 0x150
+-  int8 *v4;
+-  unsigned long v40; // stack - 0x148
+-  unsigned long *v41; // stack - 0x130
+-  unsigned long v42; // stack - 0x128
+-  char v43; // stack - 0x42
+-  char v44; // stack - 0x41
+-  int8 v45; // stack - 0x40
+-  uint4 v5;
+-  int4 *v6;
+-  char v7;
+-  int4 v8; // eax
+-  char *v9;
++  uint8 v27; // r12
++  char **v28;
++  uint8 v29; // rax
++  char **v3;
++  int8 v30;
++  char **v31; // stack - 0x1c0
++  unsigned long v32; // stack - 0x1a0
++  unsigned long v33; // stack - 0x198
++  unsigned long v34; // stack - 0x190
++  char *v35; // stack - 0x180
++  unsigned long v36; // stack - 0x178
++  unsigned long v37; // stack - 0x170
++  unsigned long *v38; // stack - 0x160
++  unsigned short v39; // stack - 0x158
++  unsigned long *v4;
++  char v40; // stack - 0x156
++  char *v41; // stack - 0x150
++  unsigned long v42; // stack - 0x148
++  unsigned long *v43; // stack - 0x130
++  unsigned long v44; // stack - 0x128
++  char v45; // stack - 0x42
++  char v46; // stack - 0x41
++  int8 v47; // stack - 0x40
++  unsigned short v5;
++  int8 *v6;
++  uint4 v7;
++  int4 *v8;
++  char v9;
+   
+-  v27 = (uint8)a0;
+-  v45 = *(int8 *)(v28 + 0x28);
++  v29 = (uint8)argc;
++  v47 = *(int8 *)(v30 + 0x28);
+   sub_c740();
+-  sub_4af40(*a1);
++  sub_4af40(*argv);
+   setlocale(6,"");
+   bindtextdomain("tar","/usr/local/share/locale");
+   textdomain("tar");
+@@ -1784,27 +1786,27 @@
+   if (sub_4e3a0()) {
+     if (dat_82d50)
+       (*dat_82d50)();
+-    v9 = dcgettext(NULL,"failed to assert availability of the standard file descriptors",5);
+-    v11 = "%s";
+-    error(0,0,v11,v9); // return-dupe
++    v11 = dcgettext(NULL,"failed to assert availability of the standard file descriptors",5);
++    v13 = "%s";
++    error(0,0,v13,v11); // return-dupe
+     sub_16fd0(); // no-return
+   }
+   dat_82c18 = 10;
+   dat_82838 = (int8 *)sub_4ecc0(0x50);
+   dat_82830 = 0;
+   signal(0x11,0);
+-  v18 = v17;
+-  v37 = 0;
+-  v17[0] = 1;
+-  v30 = 0;
+-  v31 = 0;
++  v20 = v19;
++  v39 = 0;
++  v19[0] = 1;
+   v32 = 0;
+-  v36 = NULL;
+-  v38 = '\0';
+-  v39 = NULL;
+-  v40 = 0;
++  v33 = 0;
++  v34 = 0;
++  v38 = NULL;
++  v40 = '\0';
++  v41 = NULL;
++  v42 = 0;
+   sub_3f7c0("tar",0x7fb00);
+-  v39 = getenv("SIMPLE_BACKUP_SUFFIX");
++  v41 = getenv("SIMPLE_BACKUP_SUFFIX");
+   dat_82ba8 = 0;
+   dat_82ba4 = 0;
+   dat_82a38 = getenv("POSIXLY_CORRECT") != NULL;
+@@ -1828,155 +1830,155 @@
+   dat_82b20 = 1;
+   dat_82b24 = -1;
+   dat_827fc = 0xffffffff;
+-  if ((2 <= a0) && (v9 = (char *)a1[1], *v9 != '-')) {
+-    v22 = 0x2d;
+-    v26 = &a1[2];
+-    v44 = 0;
+-    a0 = (int4)strlen(v9) + a0;
+-    v29 = (unsigned long *)sub_4ecc0((int8)a0 * 8);
+-    v9 = (char *)a1[1];
+-    v16 = &v29[1];
+-    *v29 = *a1;
+-    v7 = *v9;
+-    a1 = &a1[v27];
+-    if (v7) {
+-      v15 = v16;
++  if ((2 <= argc) && (v11 = argv[1], *v11 != '-')) {
++    v24 = 0x2d;
++    v28 = &argv[2];
++    v46 = 0;
++    argc = (int4)strlen(v11) + argc;
++    v31 = (char **)sub_4ecc0((int8)argc * 8);
++    v11 = argv[1];
++    v18 = &v31[1];
++    *v31 = *argv;
++    v9 = *v11;
++    argv = &argv[v29];
++    if (v9) {
++      v17 = v18;
+       do {
+         while( true ) {
+-          v16 = &v15[1];
+-          v43 = v7;
+-          *v15 = sub_4ee30(&v22);
+-          v10 = sub_2d3c0(dat_7fb20,(int4)*v9);
+-          if (v10) break;
++          v18 = &v17[1];
++          v45 = v9;
++          *v17 = (char *)sub_4ee30(&v24);
++          v12 = sub_2d3c0(dat_7fb20,(int4)*v11);
++          if (v12) break;
+           if (dat_7fb40) {
+-            v24 = dat_7fb40;
+-            for (v23 = (unsigned long *)*dat_7fb40; v23; v23 = (unsigned long *)*v23) {
+-              v10 = sub_2d3c0(*v23);
+-              if (v10) goto label_b2c8;
+-              v23 = &v24[4];
+-              v24 = &v24[4];
++            v26 = dat_7fb40;
++            for (v4 = (unsigned long *)*dat_7fb40; v4; v4 = (unsigned long *)*v4) {
++              v12 = sub_2d3c0(*v4);
++              if (v12) goto label_b2c8;
++              v4 = &v26[4];
++              v26 = &v26[4];
+             }
+           }
+ label_b35e:
+-          v7 = v9[1];
+-          v9 = &v9[1];
+-          v15 = v16;
+-          if (!v7) goto label_b36d;
++          v9 = v11[1];
++          v11 = &v11[1];
++          v17 = v18;
++          if (!v9) goto label_b36d;
+         }
+ label_b2c8:
+-        if (!*(int8 *)(v10 + 0x10)) goto label_b35e;
+-        if (a1 <= v26) {
++        if (!*(int8 *)(v12 + 0x10)) goto label_b35e;
++        if (argv <= v28) {
+           if (dat_82d50)
+             (*dat_82d50)();
+-          v7 = *v9;
+-          error(0,0,dcgettext(NULL,"Old option \'%c\' requires an argument.",5),(uint8)(uint4)(int4)v7);
++          v9 = *v11;
++          error(0,0,dcgettext(NULL,"Old option \'%c\' requires an argument.",5),(uint8)(uint4)(int4)v9);
+           sub_2dea0(2); // no-return
+         }
+-        v13 = *v26;
+-        v9 = &v9[1];
+-        v16 = &v15[2];
+-        v26 = &v26[1];
+-        v15[1] = v13;
+-        v7 = *v9;
+-        v15 = v16;
+-      } while (v7);
++        v13 = *v28;
++        v11 = &v11[1];
++        v18 = &v17[2];
++        v28 = &v28[1];
++        v17[1] = v13;
++        v9 = *v11;
++        v17 = v18;
++      } while (v9);
+     }
+ label_b36d:
+-    if (v26 < a1) {
+-      v15 = v26;
+-      v23 = v16;
++    if (v28 < argv) {
++      v17 = v28;
++      v25 = v18;
+       do {
+-        v2 = &v23[1];
+-        v24 = &v15[1];
+-        *v23 = *v15;
+-        v15 = v24;
+-        v23 = v2;
+-      } while (v24 < a1);
+-      v16 = (unsigned long *)((int8)v16 + ((int8)a1 + (0xffffffffffffffffU - (int8)v26) & 0xfffffffffffffff8U) + 8);
+-    }
+-    *v16 = 0;
+-    v27 = (uint8)(uint4)(a0 - 1);
+-    a1 = v29;
+-  }
+-  v9 = getenv("TAR_OPTIONS");
+-  v33 = "TAR_OPTIONS";
+-  v19[0] = 0;
+-  v34 = 0;
+-  v35 = 0;
+-  if (v9) {
+-    v42 = 1;
+-    v8 = sub_375a0(v9,&v20,0x2000e46);
+-    v6 = v18;
+-    if (v8) {
++        v3 = &v25[1];
++        v2 = &v17[1];
++        *v25 = *v17;
++        v17 = v2;
++        v25 = v3;
++      } while (v2 < argv);
++      v18 = (char **)((int8)v18 + ((int8)argv + (0xffffffffffffffffU - (int8)v28) & 0xfffffffffffffff8U) + 8);
++    }
++    *v18 = NULL;
++    v29 = (uint8)(uint4)(argc - 1);
++    argv = v31;
++  }
++  v11 = getenv("TAR_OPTIONS");
++  v35 = "TAR_OPTIONS";
++  v21[0] = 0;
++  v36 = 0;
++  v37 = 0;
++  if (v11) {
++    v44 = 1;
++    v10 = sub_375a0(v11,&v22,0x2000e46);
++    v8 = v20;
++    if (v10) {
+       if (dat_82d50)
+         (*dat_82d50)();
+-      v9 = (char *)sub_358f0(&v20);
+-      v11 = dcgettext(NULL,"cannot split TAR_OPTIONS: %s",5);
+-      error(0,0,v11,v9);
++      v11 = (char *)sub_358f0(&v22);
++      v13 = dcgettext(NULL,"cannot split TAR_OPTIONS: %s",5);
++      error(0,0,v13,v11);
+       sub_16fd0();
+     }
+-    if (v20) {
+-      v18 = v19;
+-      v8 = (int4)v20 + (int4)v42;
+-      *v41 = dat_82dd0;
+-      if (argp_parse(0x7fb20,v8,v41,0x28,v21,&v18))
++    if (v22) {
++      v20 = v21;
++      v10 = (int4)v22 + (int4)v44;
++      *v43 = dat_82dd0;
++      if (argp_parse(0x7fb20,v10,v43,0x28,v23,&v20))
+         abort(); // no-return
+       if (dat_82630) {
+-        v18 = v6;
++        v20 = v8;
+         if (dat_82d50)
+           (*dat_82d50)();
+-        v9 = v33;
+-        error(0,0,dcgettext(NULL,"non-option arguments in %s",5),v9);
++        v11 = v35;
++        error(0,0,dcgettext(NULL,"non-option arguments in %s",5),v11);
+         sub_2dea0(2); // no-return
+       }
+-      v20 = 0;
++      v22 = 0;
+     }
+-    v18 = v6;
+-    sub_35800(&v20);
++    v20 = v8;
++    sub_35800(&v22);
+   }
+-  if (argp_parse(0x7fb20,v27 & 0xffffffff,a1,8,v19,&v18))
++  if (argp_parse(0x7fb20,v29 & 0xffffffff,argv,8,v21,&v20))
+     exit(2); // no-return
+   v1 = dat_82838;
+-  v3 = v37;
+-  if ((char)v37) {
++  v5 = v39;
++  if ((char)v39) {
+     if (dat_82ba8 != 3) // branch-flip
+       dat_82aa8 = 0xffffffff;
+     else {
+       sub_2e430(0x673ec);
+       v1 = dat_82838;
+-      v3 = v37;
++      v5 = v39;
+     }
+   }
+   while( true ) {
+     dat_82838 = v1;
+-    v37 = v3;
+-    if (v19[0] >= (int4)v27) break;
+-    sub_28130(a1[v19[0]]);
+-    v19[0] += 1;
++    v39 = v5;
++    if (v21[0] >= (int4)v29) break;
++    sub_28130(argv[v21[0]]);
++    v21[0] += 1;
+     v1 = dat_82838;
+-    v3 = v37;
++    v5 = v39;
+   }
+   if (!dat_82ba4) {
+-    v37._1_1_ = (char)((uint2)v3 >> 8);
+-    dat_82ba4 = (v37._1_1_) ? 4 : 6; // branch-flip
++    v39._1_1_ = (char)((uint2)v5 >> 8);
++    dat_82ba4 = (v39._1_1_) ? 4 : 6; // branch-flip
+   }
+   if (((((dat_82a40) && (dat_82ba8 == 3)) || (dat_82b50)) || ((dat_82b10 || (dat_82a88)))) && (!(1 << ((uint1)dat_82ba4 & 0x1f) & 0x54U))) {
+     if (dat_82d50)
+       (*dat_82d50)();
+-    v9 = "GNU features wanted on incompatible archive format";
++    v11 = "GNU features wanted on incompatible archive format";
+     goto label_bae2;
+   }
+   if (dat_82b38) {
+     if (!dat_82630) {
+       if (dat_82d50)
+         (*dat_82d50)();
+-      v9 = "--occurrence is meaningless without a file list";
++      v11 = "--occurrence is meaningless without a file list";
+       goto label_bae2;
+     }
+-    v27 = (uint8)dat_82ba8;
+-    if (!(*(uint1 *)(v27 * 4 + 0x69a60) & 0x10)) {
++    v29 = (uint8)dat_82ba8;
++    if (!(*(uint1 *)(v29 * 4 + 0x69a60) & 0x10)) {
+       if ((dat_82bc8) && (*dat_82bc8 == 1))
+-        sub_2e2f0("--occurrence",sub_2dd30(v27)); // no-return
++        sub_2e2f0("--occurrence",sub_2dd30(v29)); // no-return
+       dat_82b38 = 0;
+     }
+   }
+@@ -1986,19 +1988,19 @@
+     if (!*dat_82838)
+       *dat_82838 = 0x6b716;
+   }
+-  v6 = dat_82bd0;
++  v8 = dat_82bd0;
+   if ((2 <= dat_82830) && (!dat_82b10)) {
+     if (dat_82d50)
+       (*dat_82d50)();
+-    v9 = "Multiple archive files require \'-M\' option";
++    v11 = "Multiple archive files require \'-M\' option";
+     goto label_bae2;
+   }
+   if (dat_82b28) { // branch-flip
+     if (0 <= dat_82b08) {
+-      v8 = sub_2dca0(dat_82bd0,dat_82bd8);
+-      if (v8)
++      v10 = sub_2dca0(dat_82bd0,dat_82bd8);
++      if (v10)
+         sub_2e2f0("--listed-incremental","--newer"); // no-return
+-      if (*v6 == 1) {
++      if (*v8 == 1) {
+         dat_82b28 = 0;
+         goto label_aef1;
+       }
+@@ -2013,38 +2015,38 @@
+       error(0,0,dcgettext(NULL,"--level is meaningless without --listed-incremental",5));
+     }
+   }
+-  v9 = dat_82a40;
++  v11 = dat_82a40;
+   if ((dat_82a40) && ((dat_82ba4 & 0xfffffffb) == 2)) {
+-    v25 = (uint8)(-(uint4)(dat_82b10 == '\0') & 0x12) + 0x51;
+-    v27 = strlen(dat_82a40);
+-    if (v25 < v27) {
++    v27 = (uint8)(-(uint4)(dat_82b10 == '\0') & 0x12) + 0x51;
++    v29 = strlen(dat_82a40);
++    if (v27 < v29) {
+       if (dat_82d50) {
+         (*dat_82d50)();
+-        v9 = dat_82a40;
++        v11 = dat_82a40;
+       }
+-      v13 = sub_4ce40(v9);
+-      error(0,0,(char *)dcngettext(0,"%s: Volume label is too long (limit is %lu byte)","%s: Volume label is too long (limit is %lu bytes)",v25,5),v13,v25);
++      v15 = sub_4ce40(v11);
++      error(0,0,(char *)dcngettext(0,"%s: Volume label is too long (limit is %lu byte)","%s: Volume label is too long (limit is %lu bytes)",v27,5),v15,v27);
+       sub_2dea0(2); // no-return
+     }
+   }
+-  v6 = dat_82bf8;
++  v8 = dat_82bf8;
+   if (dat_82a50) { // branch-flip
+     if (dat_82b10) {
+       if (dat_82d50)
+         (*dat_82d50)();
+-      v9 = "Cannot verify multi-volume archives";
++      v11 = "Cannot verify multi-volume archives";
+       goto label_bae2;
+     }
+     if (dat_82b70) {
+       if (dat_82d50)
+         (*dat_82d50)();
+-      v9 = "Cannot verify compressed archives";
++      v11 = "Cannot verify compressed archives";
+       goto label_bae2;
+     }
+-    v27 = (uint8)dat_82ba8;
+-    if (!(*(uint1 *)(v27 * 4 + 0x69a60) & 2)) {
++    v29 = (uint8)dat_82ba8;
++    if (!(*(uint1 *)(v29 * 4 + 0x69a60) & 2)) {
+       if ((dat_82be0) && (*dat_82be0 == 1))
+-        sub_2e2f0("--verify",sub_2dd30(v27)); // no-return
++        sub_2e2f0("--verify",sub_2dd30(v29)); // no-return
+       dat_82a50 = '\0';
+     }
+   }
+@@ -2052,33 +2054,33 @@
+     if (dat_82b10) {
+       if (dat_82d50)
+         (*dat_82d50)();
+-      v9 = "Cannot use multi-volume compressed archives";
++      v11 = "Cannot use multi-volume compressed archives";
+       goto label_bae2;
+     }
+     if (*(uint1 *)((uint8)dat_82ba8 * 4 + 0x69a60) & 4) {
+       if (dat_82d50)
+         (*dat_82d50)();
+-      v9 = "Cannot update compressed archives";
++      v11 = "Cannot update compressed archives";
+       goto label_bae2;
+     }
+     if (dat_82ba8 == 2) {
+       if (dat_82d50)
+         (*dat_82d50)();
+-      v9 = "Cannot concatenate compressed archives";
++      v11 = "Cannot concatenate compressed archives";
+       goto label_bae2;
+     }
+   }
+   if ((dat_82af0 == 2) && (dat_82ae8 <= -1)) {
+     if (dat_82d50)
+       (*dat_82d50)();
+-    v9 = "--clamp-mtime needs a date specified using --mtime";
++    v11 = "--clamp-mtime needs a date specified using --mtime";
+     goto label_bae2;
+   }
+-  if ((v37._1_1_) && (dat_82ba4 != 4)) {
++  if ((v39._1_1_) && (dat_82ba4 != 4)) {
+     if (!(*(uint1 *)((uint8)dat_82ba8 * 4 + 0x69a60) & 1)) {
+       if (dat_82d50)
+         (*dat_82d50)();
+-      v9 = "--pax-option can be used only on POSIX archives";
++      v11 = "--pax-option can be used only on POSIX archives";
+       goto label_bae2;
+     }
+     if (1 <= dat_82a9c) { // branch-flip
+@@ -2091,7 +2093,7 @@
+       if (!(*(uint1 *)((uint8)dat_82ba8 * 4 + 0x69a60) & 1)) {
+         if (dat_82d50)
+           (*dat_82d50)();
+-        v9 = "--selinux can be used only on POSIX archives";
++        v11 = "--selinux can be used only on POSIX archives";
+         goto label_bae2;
+       }
+     }
+@@ -2101,8 +2103,8 @@
+     if ((dat_82aac) && (!(*(uint1 *)((uint8)dat_82ba8 * 4 + 0x69a60) & 1))) {
+ label_b050:
+       if ((dat_82bf0) && (*dat_82bf0 == 1)) {
+-        v13 = sub_2dd30(dat_82ba8);
+-        sub_2e2f0("--same-order",v13); // no-return
++        v15 = sub_2dd30(dat_82ba8);
++        sub_2e2f0("--same-order",v15); // no-return
+       }
+       dat_82aac = '\0';
+     }
+@@ -2113,7 +2115,7 @@
+         if (!(*(uint1 *)((uint8)dat_82ba8 * 4 + 0x69a60) & 1)) {
+           if (dat_82d50)
+             (*dat_82d50)();
+-          v9 = "--acls can be used only on POSIX archives";
++          v11 = "--acls can be used only on POSIX archives";
+           goto label_bae2;
+         }
+         goto label_b01b;
+@@ -2129,17 +2131,17 @@
+         if (!(*(uint1 *)((uint8)dat_82ba8 * 4 + 0x69a60) & 1)) {
+           if (dat_82d50)
+             (*dat_82d50)();
+-          v9 = "--xattrs can be used only on POSIX archives";
++          v11 = "--xattrs can be used only on POSIX archives";
+           goto label_bae2;
+         }
+         goto label_b028;
+       }
+     }
+     if (!dat_82a78) goto label_b031;
+-    v27 = (uint8)dat_82ba8;
+-    if (!(*(uint1 *)(v27 * 4 + 0x69a60) & 1)) {
++    v29 = (uint8)dat_82ba8;
++    if (!(*(uint1 *)(v29 * 4 + 0x69a60) & 1)) {
+       if ((dat_82be8) && (*dat_82be8 == 1))
+-        sub_2e2f0("--starting-file",sub_2dd30(v27)); // no-return
++        sub_2e2f0("--starting-file",sub_2dd30(v29)); // no-return
+       dat_82a78 = '\0';
+       if (!dat_82aac) goto label_b06c;
+       goto label_b050;
+@@ -2148,30 +2150,30 @@
+ label_b06c:
+   if (dat_82ad0) {
+     if (dat_82b92) {
+-      v8 = sub_2dca0(dat_82bf8,dat_82c00);
+-      if (v8)
++      v10 = sub_2dca0(dat_82bf8,dat_82c00);
++      if (v10)
+         sub_2e2f0("--one-top-level","--absolute-names"); // no-return
+-      if (*v6 != 1) {
++      if (*v8 != 1) {
+         dat_82ad0 = '\0';
+         goto label_b0b8;
+       }
+       dat_82b92 = '\0';
+     }
+     if (!dat_82ac8) {
+-      v12 = (void *)sub_40250(*dat_82838);
+-      dat_82ac8 = sub_2b8b0(v12);
+-      free(v12);
++      v14 = (void *)sub_40250(*dat_82838);
++      dat_82ac8 = sub_2b8b0(v14);
++      free(v14);
+       if (!dat_82ac8) {
+         if (dat_82d50)
+           (*dat_82d50)();
+-        v9 = "Cannot deduce top-level directory name; please set it explicitly with --one-top-level=DIR";
++        v11 = "Cannot deduce top-level directory name; please set it explicitly with --one-top-level=DIR";
+         goto label_bae2;
+       }
+     }
+   }
+ label_b0b8:
+-  v6 = dat_82bf0;
+-  v5 = dat_82ba8;
++  v8 = dat_82bf0;
++  v7 = dat_82ba8;
+   if (dat_82aba)
+     dat_82b34 = 3;
+   if (dat_82b69) { // branch-flip
+@@ -2181,9 +2183,9 @@
+       dat_82800 = 0;
+     }
+     else {
+-      v14 = 0x40000;
++      v16 = 0x40000;
+ label_b7a6:
+-      dat_82808 |= v14;
++      dat_82808 |= v16;
+       dat_82800 = (dat_82b69 ^ 1) << 8;
+       dat_82804 = dat_82808 | 0x10000;
+     }
+@@ -2191,7 +2193,7 @@
+   else {
+     if (dat_82b88 != 2) {
+       dat_82808 = 0xa0900;
+-      v14 = 0;
++      v16 = 0;
+       goto label_b7a6;
+     }
+     dat_82808 = 0xe0900;
+@@ -2207,52 +2209,52 @@
+   if ((dat_82a70 != dat_63748) && (dat_82a70 < (float8)dat_82b98)) {
+     if (dat_82d50)
+       (*dat_82d50)();
+-    v9 = "Volume length cannot be less than record size";
++    v11 = "Volume length cannot be less than record size";
+ label_bae2:
+-    error(0,0,dcgettext(NULL,v9,5));
++    error(0,0,dcgettext(NULL,v11,5));
+     sub_2dea0(2); // no-return
+   }
+   if ((dat_82aac) && (dat_82b28)) {
+-    v8 = sub_2dca0(dat_82bf0,dat_82bd0);
+-    if (v8)
++    v10 = sub_2dca0(dat_82bf0,dat_82bd0);
++    if (v10)
+       sub_2e2f0("--preserve-order","--listed-incremental"); // no-return
+-    if (*v6 != 1) // branch-flip
++    if (*v8 != 1) // branch-flip
+       dat_82aac = '\0';
+     else {
+       dat_82b28 = 0;
+     }
+   }
+-  switch(v5) {
++  switch(v7) {
+     case 1:
+     case 2:
+     case 8:
+       v1 = &dat_82838[dat_82830];
+       dat_82828 = dat_82838;
+-      v4 = dat_82838;
+-      while (v4 < v1) {
+-        v9 = (char *)*v4;
+-        dat_82828 = v4;
+-        if (!strcmp(v9,"-")) {
++      v6 = dat_82838;
++      while (v6 < v1) {
++        v11 = (char *)*v6;
++        dat_82828 = v6;
++        if (!strcmp(v11,"-")) {
+           if (dat_82d50)
+             (*dat_82d50)();
+-          v9 = "Options \'-Aru\' are incompatible with \'-f -\'";
++          v11 = "Options \'-Aru\' are incompatible with \'-f -\'";
+           goto label_bae2;
+         }
+-        dat_82828 = &v4[1];
+-        v4 = dat_82828;
++        dat_82828 = &v6[1];
++        v6 = dat_82828;
+       }
+       break;
+     case 3:
+       if (!dat_82630) {
+         if (dat_82d50)
+           (*dat_82d50)();
+-        v9 = "Cowardly refusing to create an empty archive";
++        v11 = "Cowardly refusing to create an empty archive";
+         goto label_bae2;
+       }
+-      if ((v38) && (dat_82830)) {
+-        v9 = (char *)*dat_82838;
+-        if (strcmp(v9,"-"))
+-          sub_2b880(v9,dat_82b70);
++      if ((v40) && (dat_82830)) {
++        v11 = (char *)*dat_82838;
++        if (strcmp(v11,"-"))
++          sub_2b880(v11,dat_82b70);
+       }
+       break;
+     case 5:
+@@ -2261,14 +2263,14 @@
+     case 9:
+       v1 = &dat_82838[dat_82830];
+       dat_82828 = dat_82838;
+-      v4 = dat_82838;
+-      while (v4 < v1) {
+-        v9 = (char *)*v4;
+-        dat_82828 = v4;
+-        if (!strcmp(v9,"-"))
++      v6 = dat_82838;
++      while (v6 < v1) {
++        v11 = (char *)*v6;
++        dat_82828 = v6;
++        if (!strcmp(v11,"-"))
+           sub_2df30(0x66f36);
+-        dat_82828 = &v4[1];
+-        v4 = dat_82828;
++        dat_82828 = &v6[1];
++        v6 = dat_82828;
+       }
+     
+   }
+@@ -2283,33 +2285,33 @@
+     dat_81f28 = stdout;
+   }
+   dat_82828 = dat_82838;
+-  if (v39)
+-    dat_82db8 = sub_4ee30(v39);
+-  if ((dat_82b84) && (((dat_82b80 = sub_40040("--backup",v40), !dat_82b80 || (dat_82a6a)) || (dat_82a60))))
++  if (v41)
++    dat_82db8 = sub_4ee30(v41);
++  if ((dat_82b84) && (((dat_82b80 = sub_40040("--backup",v42), !dat_82b80 || (dat_82a6a)) || (dat_82a60))))
+     dat_82b84 = '\0';
+   sub_10ba0();
+-  v26 = v36;
+-  while (v26) {
+-    v16 = (unsigned long *)*v26;
++  v4 = v38;
++  while (v4) {
++    v26 = (unsigned long *)*v4;
+     if (dat_82a54) { // branch-flip
+-      v11 = (char *)sub_23240(v26[1],v26[2],1);
+-      v9 = (char *)v26[4];
+-      if (strcmp(v9,v11)) {
++      v13 = (char *)sub_23240(v4[1],v4[2],1);
++      v11 = (char *)v4[4];
++      if (strcmp(v11,v13)) {
+         if (dat_82d50) {
+           (*dat_82d50)();
+-          v9 = (char *)v26[4];
++          v11 = (char *)v4[4];
+         }
+-        v13 = v26[3];
+-        error(0,0,dcgettext(NULL,"Option %s: Treating date \'%s\' as %s",5),v13,v9,v11);
+-        v9 = (char *)v26[4]; // crossjump-dupe
++        v15 = v4[3];
++        error(0,0,dcgettext(NULL,"Option %s: Treating date \'%s\' as %s",5),v15,v11,v13);
++        v11 = (char *)v4[4]; // crossjump-dupe
+       }
+     }
+     else {
+-      v9 = (char *)v26[4];
++      v11 = (char *)v4[4];
+     }
+-    free(v9);
+-    free(v26);
+-    v26 = v16;
++    free(v11);
++    free(v4);
++    v4 = v26;
+   }
+   sub_28180();
+   if (dat_82a48)
+@@ -2318,7 +2320,7 @@
+     case 0:
+       if (dat_82d50)
+         (*dat_82d50)();
+-      v9 = "You must specify one of the \'-Acdtrux\', \'--delete\' or \'--test-label\' options";
++      v11 = "You must specify one of the \'-Acdtrux\', \'--delete\' or \'--test-label\' options";
+       goto label_bae2;
+     case 1:
+     case 2:
+@@ -2360,13 +2362,13 @@
+   if (dat_82d58 == 2)
+     error(0,0,dcgettext(NULL,"Exiting with failure status due to previous errors",5));
+   if (dat_81f28 != stdout) { // branch-flip
+-    if (((*stderr & 0x20) || (v8 = fclose(stderr), v8)) && (dat_82d58 <= 1))
++    if (((*stderr & 0x20) || (v10 = fclose(stderr), v10)) && (dat_82d58 <= 1))
+       dat_82d58 = 2;
+   }
+   else {
+     sub_40180();
+   }
+-  if (v45 != *(int8 *)(v28 + 0x28))
++  if (v47 != *(int8 *)(v30 + 0x28))
+     __stack_chk_fail(); // no-return
+   return dat_82d58;
+ }
+@@ -2377,7 +2379,7 @@
+   char v1 [8];
+   unsigned long v2; // stack + 0x0
+   
+-  (*dat_7efd0)(sub_a9f0,v2,&Stack0000000000000008,0,0,a2,v1);
++  (*dat_7efd0)(main,v2,&Stack0000000000000008,0,0,a2,v1);
+   do {
+   } while( true );
+ }

@@ -1,0 +1,7 @@
+cd /home/mahaloz/kwt/elfmain && /home/mahaloz/kwt/elfmain/decompiler/target/release/kuna test --datatests --baseline docs/baseline.json
+datatests: 675/675 assertions passed
+exit: 0
+
+=== baseline parity ===
+PARITY OK
+MAKE_TEST_RC=0

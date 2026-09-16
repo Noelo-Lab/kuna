@@ -16,7 +16,7 @@
 -// Function: sub_13c9 @ 0x13c9
 -int sub_13c9(void)
 +// Function: main @ 0x13c9
-+int main(int argc,char **argv)
++int main(int argc,char **argv,char **envp)
  {
    unsigned int v1;
    int v10; // eax

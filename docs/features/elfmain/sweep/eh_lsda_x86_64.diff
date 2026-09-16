@@ -16,7 +16,7 @@
 -// Function: sub_40137a @ 0x40137a
 -unsigned int sub_40137a(int a0)
 +// Function: main @ 0x40137a
-+int main(int argc,char **argv)
++int main(int argc,char **argv,char **envp)
  {
    int v1; // ebx
    unsigned int v2; // ebp
