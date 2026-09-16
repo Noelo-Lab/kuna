@@ -2706,8 +2706,7 @@ looking for a read of the third argument register would see nothing in either
 case, and of the two mistakes only one is wrong output — an `envp` the program
 ignores is an unused parameter in a declaration that is true of every hosted C
 program, while an `envp` dropped from a program that uses it is a lie. The
-declaration the runtime actually makes is therefore the one applied, which is also
-what IDA Pro reports at the same address.
+declaration the runtime actually makes is therefore the one applied.
 
 The address is oracle 4's own (`libc_start_main_target`), never a second decode,
 so the pass cannot disagree with the entry the discovery set already contains.

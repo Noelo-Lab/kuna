@@ -1,5 +1,6 @@
 //! (kuna) `elfmain` — name the ELF routine crt1 hands to `__libc_start_main`
-//! `main`, and declare it `int main(int argc, char **argv)` (P1 program prep).
+//! `main`, and declare it `int main(int argc, char **argv, char **envp)`
+//! (P1 program prep).
 //!
 //! kuna already finds this address. Entry-discovery oracle 4 decodes the
 //! `_start` → `__libc_start_main(main, …)` idiom on x86-64, AArch64, ARM and
@@ -13,14 +14,15 @@
 //! points at, that the value handed back is the process exit status — is absent.
 //!
 //! The container states all of it. The C runtime's contract is that the first
-//! argument to `__libc_start_main` is `main`, and the POSIX declaration of
-//! `main` is `int main(int, char **)`. So this pass applies two things that come
+//! argument to `__libc_start_main` is `main`, and what that runtime then calls
+//! is `main(argc, argv, envp)`. So this pass applies two things that come
 //! from the same fact, exactly as its Mach-O counterpart
 //! [`super::kuna_machomain`] applies them from `LC_MAIN`:
 //!
 //! - the **name** `main`, through the `entry_names` overlay the commit boundary
 //!   already consults for the `_INIT_<i>`/`_DT_INIT` names;
-//! - the **prototype** `int main(int argc, char **argv)`, parked by that name.
+//! - the **prototype** `int main(int argc, char **argv, char **envp)`, parked
+//!   by that name.
 //!
 //! The return type is the half body-driven recovery can never supply: `main`'s
 //! value is consumed by `__libc_start_main`, outside the image, so kuna types it
@@ -51,9 +53,7 @@
 //! and the two mistakes are not symmetric. An `envp` the program ignores is one
 //! unused parameter in a declaration that is true of every hosted C program;
 //! an `envp` dropped from a program that uses it is wrong output. So the
-//! declaration the C runtime actually makes is the one applied, which is also
-//! what IDA Pro reports for the same address
-//! (`int __cdecl main(int argc, const char **argv, const char **envp)`).
+//! declaration the C runtime actually makes is the one applied.
 //!
 //! ## Where the address comes from
 //!

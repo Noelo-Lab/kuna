@@ -62,8 +62,7 @@ its third argument. It never touches `r2`: it sets up `r0`/`r1`, branches to
 signature. A body walk looking for a read of the third argument register finds
 nothing in either program. Of the two possible mistakes only one is wrong output —
 an unused `envp` is a parameter in a declaration that is true of every hosted C
-program — so the declaration the runtime makes is the one applied. IDA Pro reports
-the same three at the same address.
+program — so the declaration the runtime makes is the one applied.
 
 The claim is stronger than "oracle 4 found an address", so it needs stronger
 evidence than oracle 4 needs. Its x86-64 arm matches an argument-setup encoding
@@ -96,12 +95,27 @@ Every MISS is a refusal working as designed: an `.so` has no `main`, and a
 libopencm3 / ChibiOS / FreeRTOS / betaflight firmware image has no glibc crt1, so
 the `__libc_start_main` evidence the claim rests on is absent.
 
-## 4. Metric effect
+## 4. Metric effect, measured
 
-Approximately zero, and that is expected rather than disappointing. decbench's
-`type_match` scores `variables[]` — arguments plus stack symbols — and on the
-functions this pass fires on, `argc`/`argv` are already true positives at the
-recovered widths wherever the body reads them. Return types are not scored at all,
-and neither is the function's name. What this buys is the caller-visible return
-type, the `char *` element type that reaches `argv[i]` uses, and a `main` an agent
-can ask for by name.
+Approximately zero, as predicted, and non-negative on the metric this campaign is
+judged by. Both arms of `--option elfmain off`, 18 slices of grep/gzip/diffutils/
+bzip2/findutils at O0 and O2:
+
+| instrument | n | result |
+|---|---:|---|
+| `typesweep` (type_match) | 1312 fns | perfect 154 → 154; aggregate 449.38 (default) vs 448.67 (off). **7 functions move, every one of them `main`, and all 7 are worse with the option off.** None is worse with it on. |
+| `optsweep` (GED) | 1367 fns | **18 bodies change and all 18 are `main`.** Total GED 28772 (default) vs 28770 (off): the default costs +2 over the corpus, 0.007%, and the whole +2 is grep's `main` (113→112 at O0, 112→111 at O2, against a 291-node source graph). perfect 527 → 527, nothing moved on or off. |
+
+The GED number is the interesting one, because it is the answer to "the typed
+`argv` rewrote 682 lines of grep's `main`, is that better or worse?". Measured
+against the ground-truth CFG it is worth one edit, in the wrong direction, in one
+function — and every other `main` the rewrite touched scores identically. The
+blast radius is measured rather than asserted: outside those 18 `main`s, 1349
+bodies are byte-identical in both arms and score identically.
+
+decbench's `type_match` scores `variables[]` — arguments plus stack symbols — and
+on the functions this pass fires on, `argc`/`argv` are already true positives at
+the recovered widths wherever the body reads them. Return types are not scored at
+all, and neither is the function's name. What this buys is the caller-visible
+return type, the `char *` element type that reaches `argv[i]` uses, and a `main`
+an agent can ask for by name.
