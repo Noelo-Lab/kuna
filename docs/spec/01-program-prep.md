@@ -1474,16 +1474,15 @@ moves.
   `typedef struct FILE FILE; /* opaque */` rather than as a struct with a width
   and no members. The names are the bare DWARF spelling (`stat`, not
   `struct stat`) because that is what the printer spells for a named base and
-  what that same `typedef` makes valid C. What that buys in the header it spends in
-  the body: the exported `.c` declares objects of a type its own `.h` says is
+  what that same `typedef` makes valid C. What that buys in the header it spends
+  in the body: the exported `.c` declares objects of a type its own `.h` calls
   incomplete, so `cc -fsyntax-only` over an exported `ls.c` gains 58 errors with
-  the option on (911 to 969), 51 of them `invalid use of incomplete typedef`,
-  `storage size … isn't known` and `return type is an incomplete type`; the rest
-  are the type-name/function-name clash below arriving in the body, where the
-  header's own fix does not reach. The
-  exported body has never compiled; the header does, in both arms, and it is the
-  header that carries the declarations everything else in the export depends
-  on.
+  the option on (911 to 969) — 51 of them `invalid use of incomplete typedef`,
+  `storage size … isn't known` and `return type is an incomplete type`, the rest
+  the type-name/function-name clash of §9.7 arriving in the body, which
+  `build_header`'s fix does not reach. The exported body has never compiled; the
+  header does, in both arms, and it is the header that carries the declarations
+  the rest of the export depends on.
 
   *An image with debug info already has the real thing, and gets it.* DWARF
   interns `stat`, `passwd`, `tm` and `option` under the identical bare spelling,

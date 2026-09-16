@@ -1200,7 +1200,10 @@ after it fails too. `decompiler/crates/kuna-console/src/project.rs
 is one of the header's typedef names (`project.rs (typedef_names)`) has its
 prototype emitted as a comment carrying the full signature, instead of as a
 declaration. The type is what every other signature in the file depends on; the
-suppressed prototype is one line, and it is still printed.
+suppressed prototype is one line, and it is still printed. The rule is the
+header's alone: the body still spells a call to such a function and a cast to
+such a type with the one name they share, so the exported `.c` keeps the clash
+the header sheds.
 
 **The prototype — one token stream, two documents.** The prototype segment of
 §9.2's document walk was extracted verbatim into `printc.rs
