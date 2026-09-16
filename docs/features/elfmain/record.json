@@ -87,7 +87,15 @@
     "unit": "decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_elfmain.rs (5 tests over main_claim: both x86-64 encodings, all four oracle-4 architectures, the two non-PIE ARM shapes, the unstripped-ELF refusal, the non-ELF and no-crt1 refusals)",
     "stage_test": "tests/stages/kuna-elfmain.xml (4 assertions, two-pass: `option elfmain off` = the bug, default = the fix, over the full load file -> decompile path on stripped_dynamic_x86_64)",
     "cli": "tests/cli/elf-libc-start-main-unnamed.json -- make test-cli 171/171",
-    "corpus_count": "decompiler/crates/kuna-base/src/xml.rs 293 -> 294; docs/baseline-stages.json re-recorded, 1007 -> 1011 keys, purely additive"
+    "corpus_count": "decompiler/crates/kuna-base/src/xml.rs 293 -> 294; docs/baseline-stages.json re-recorded, 1007 -> 1011 keys, purely additive",
+    "moved_expectations": [
+      "decompiler/crates/kuna-console/tests/verify_crossarch_entry_main.rs -- now runs BOTH arms: with elfmain off it is the pre-existing oracle-4 gate verbatim (sub_<addr>, return a0), and by default it is main / return argc at the same address.",
+      "decompiler/crates/kuna-console/tests/verify_s1_entry.rs -- its subject is the generated sub_<addr> name format, so it runs with the option off; the default path on that same fixture is gated by tests/stages/kuna-elfmain.xml.",
+      "decompiler/crates/kuna-console/tests/verify_assertflow.rs -- the qualified directive names aif_gap's 0x13c9 `main`, which is what it is.",
+      "decompiler/crates/kuna-console/tests/verify_aif.rs -- same fixture, same address, same rename.",
+      "decompiler/crates/kuna-ghidra/tests/ghidra_sim_e2e.rs -- PIN_FAILLOG_PLACEHOLDERS[0] 27 -> 26: 0x2620 is no longer an unnamed entity. Every other faillog measurement is unchanged, including c_lines 285, the getPcode traffic (2121 / 1044 decoded) and getMappedSymbols 1448."
+    ],
+    "no_cli_probe_expectation_changed": "None of the ~50 tests/cli probes pinning a literal sub_<addr> needed editing. The one that broke, no-cli-function-boundary-override, was reporting `main` for a function the caller had declared `stage1`; that is the declared-name precedence fix, not an expectation change."
   },
   "counts": {
     "settables": "205 -> 206 (phases.toml, kuna_phases/tests.rs, catalog_bytecompat.rs, phase_catalog.json recaptured)",

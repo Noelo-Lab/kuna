@@ -1991,8 +1991,6 @@ impl ConsoleProgram {
         self.declared_entries.insert(vma);
         if explicit.is_some() {
             self.declared_names.insert(vma, name.clone());
-        }
-        if explicit.is_some() {
             self.seed_declared_libc_prototype(&name, &addr);
         }
         Ok(name)
