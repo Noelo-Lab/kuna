@@ -1112,8 +1112,17 @@ artifact, they are not what `kuna decompile-graph` or `--reachable-from`
 traverse — that is `decompiler/crates/kuna-cli/src/decompile_all.rs
 (CallGraph::callees_of)`, built from the reference index — and intersecting
 rather than unioning is what keeps an `--addr`/`--functions` export from growing
-callees it was not asked for. Second, the contract is **deliberately
-observable**: the `.c` is in decompile order, and under `--jobs N` its
+callees it was not asked for. The seeds are pool chunks like any other, which is
+what keeps one function from ending the export: a stack overflow aborts rather
+than unwinding, so a seed decompiled in the parent took the whole run down with
+it, where a seed decompiled in a worker costs its own record and nothing else.
+That is paid for in the order. Nothing fills the frontier before the pool
+starts, so at `--jobs N` the workers that do not draw the seeds spend the first
+round on the address cursor and the seeds' neighbourhood lands later in the `.c`
+than it did when the parent decompiled them; `--jobs 1`, which keeps the
+breadth-first walk exactly, is the setting for a reader who wants the
+neighbourhood first, and is also the one setting a dying function can still end.
+Second, the contract is **deliberately observable**: the `.c` is in decompile order, and under `--jobs N` its
 interleaving is worker completion order and is not reproducible. That is the
 feature, not a leak — a reader gets the entry point's neighbourhood in seconds —
 and it is paid for by `index.jsonl`, the append-only address-to-offset index

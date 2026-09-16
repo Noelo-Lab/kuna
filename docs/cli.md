@@ -2265,9 +2265,22 @@ stderr and the order is address order throughout. Under `--jobs N` the frontier 
 served to N workers and the `.c` interleaves in completion order, which is not
 reproducible run to run — and a frontier only leads while it is deep enough to feed
 the pool. The 147 MB image's entry point calls three functions, which fills one chunk,
-so at `--jobs 14` the other workers start on the address cursor at once and the seed
+so once the seeds report, at `--jobs 14` the other workers start on the address cursor and the seed
 neighbourhood is a short prefix of the `.c` rather than its whole first wave. At
 `--jobs 1` the order is the plain breadth-first walk.
+
+At `--jobs N` the seeds are handed to a worker like every other function, rather than
+decompiled by the parent before the pool starts. A function can take its process down
+with it — a deep enough expression overflows the stack, and a stack overflow aborts
+rather than unwinding — and in a worker that costs the seed's own record, where in the
+parent it cost the whole export. The seeds still lead, because they are still the head
+of the frontier, but their neighbourhood no longer does: nothing fills the frontier
+until their results arrive, so the other workers spend that first round on the address
+cursor. Measured on the `fauxware` fixture at `--jobs 2`, `main`'s direct callees move
+from the fourth block of the `.c` to the last. Ask for `--jobs 1` when the
+entry-point-first order is what you are here for. That is also the one job count this
+does not protect: with no pool, the parent decompiles every function itself and one of
+them can still end the export.
 
 **How the artifacts differ.** The function set is identical to a non-stream export of
 the same selection; the layout differences below are what append-only costs, and they

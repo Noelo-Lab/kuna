@@ -1047,8 +1047,9 @@ fn run_kuna_env_with_timeout(
 /// `--stream` hands its chunks to the same pool, so a worker that panics costs
 /// a streamed export only the function that panicked as well: the functions the
 /// dead worker never delivered are re-run on their own and land in the `.c` and
-/// `index.jsonl` like any other.  `__libc_start_main` is the first function of
-/// the first frontier chunk, so its worker dies before delivering anything.
+/// `index.jsonl` like any other.  `__libc_start_main` is the first function the
+/// seeds' hints put on the frontier, so its worker dies before delivering
+/// anything.
 #[test]
 fn streamed_worker_panic_loses_only_the_function_that_panicked() {
     let pool = ["--jobs", "2", "--jobs-chunk", "64"];
@@ -1120,6 +1121,83 @@ fn streamed_worker_panic_loses_only_the_function_that_panicked() {
         "the streamed run must say what it recovered:\n{stderr}"
     );
     assert!(stderr.contains("1 of them failed again when re-run on their own."), "{stderr}");
+    for d in [reference, dir] {
+        let _ = std::fs::remove_dir_all(d);
+    }
+}
+
+/// GH-636: the seeds used to be decompiled in the PARENT, before the pool
+/// started, so a seed that took its process down took the whole export with it
+/// -- and a stack overflow, which is what found this, aborts rather than
+/// unwinds.  They go through the pool like every other function now.
+///
+/// `KUNA_JOBS_FAULT` fires in the worker, which is exactly what makes the change
+/// observable: a panic armed at the image entry point used to fire nowhere at
+/// all, because the one process that decompiled it carried no fault hook, and
+/// the export came back with 1,031 clean records instead of 1,030 and a loss.
+#[test]
+fn a_streamed_seed_runs_in_a_worker_and_costs_only_its_own_record() {
+    const ENTRY: &str = "0x400580";
+    let pool = ["--jobs", "2", "--jobs-chunk", "64"];
+    let Some(reference) = stream_project("fauxware", "stream_seed_reference", &pool) else {
+        return;
+    };
+    let dir = out_dir("stream_seed_fault");
+    let bin = fixture("fauxware");
+    let specs = specs();
+    let mut args = vec![
+        "decompile-project",
+        bin.as_str(),
+        "-o",
+        dir.to_str().unwrap(),
+        "--stream",
+        "--max-fn-seconds",
+        "0",
+        "--sleighpath",
+        specs.as_str(),
+    ];
+    args.extend_from_slice(&pool);
+    let (_, stderr, ok) = run_kuna_env_with_timeout(
+        &args,
+        &[("KUNA_JOBS_FAULT", &format!("panic:{ENTRY}"))],
+        std::time::Duration::from_secs(240),
+    )
+    .expect("a panicking seed wedged the streamed export");
+    assert!(ok, "a seed that dies must not fail the export:\n{stderr}");
+    assert!(
+        stderr.contains(&format!("injected panic at {ENTRY}")),
+        "the seed must be decompiled by a worker, where the fault hook lives:\n{stderr}"
+    );
+
+    let index = |d: &std::path::Path| -> Vec<(String, String)> {
+        let text = std::fs::read_to_string(d.join("index.jsonl")).unwrap();
+        let mut rows: Vec<(String, String)> = text
+            .lines()
+            .map(|l| (json_field(l, "addr").to_string(), json_field(l, "error").to_string()))
+            .collect();
+        rows.sort();
+        rows
+    };
+    let want = index(&reference);
+    let got = index(&dir);
+    assert!(want.iter().all(|(_, e)| e == "null"), "the reference export lost functions");
+    assert_eq!(got.len(), want.len(), "one index line per target, seed loss included");
+    for ((addr, error), (want_addr, _)) in got.iter().zip(&want) {
+        assert_eq!(addr, want_addr, "the streamed function set moved");
+        let expected = if addr == &format!("\"{ENTRY}\"") {
+            "\"worker chunk failed (worker exited: exit status: 101)\""
+        } else {
+            "null"
+        };
+        assert_eq!(error, expected, "record {addr}");
+    }
+
+    // The rest of the export is untouched: only the seed's own block is gone.
+    let bodies = |d: &std::path::Path| -> Vec<String> {
+        let c = std::fs::read_to_string(d.join("fauxware.c")).unwrap();
+        c_blocks(&c).into_iter().filter(|b| !b.starts_with("// Function: _start @")).collect()
+    };
+    assert_eq!(bodies(&dir), bodies(&reference), "a bystander's body moved");
     for d in [reference, dir] {
         let _ = std::fs::remove_dir_all(d);
     }

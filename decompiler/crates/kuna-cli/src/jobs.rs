@@ -754,7 +754,7 @@ pub(crate) fn run_pool(
         targets,
         inventory,
         &source,
-        &PoolReport { tag: JOBS_TAG, banner, workers, done_base: 0, finish_delivered: false },
+        &PoolReport { tag: JOBS_TAG, banner, workers, finish_delivered: false },
         &|indices: &[usize], produced: Vec<FuncResult>| {
             let mut slots = slots.lock().unwrap_or_else(|e| e.into_inner());
             for (&slot, r) in indices.iter().zip(produced) {
@@ -780,23 +780,20 @@ pub(crate) fn run_pool(
 /// The `--stream` pool: the same workers over a caller-supplied dynamic
 /// [`ChunkSource`], with each finished chunk handed to `sink` as it lands
 /// instead of being filed into a slot table.  Returns each retired worker's
-/// type block, unmerged — the streamed caller decompiles the seeds itself and
-/// merges its own factory in as one more shard — and what re-running a dead
-/// worker's targets recovered, for the caller's anomaly warnings.
+/// type block, unmerged — the streamed caller merges its own factory in as one
+/// more shard — and what re-running a dead worker's targets recovered, for the
+/// caller's anomaly warnings.
 ///
-/// `done_base` is how many targets the caller already decompiled in-process, so
-/// the progress line counts them; `workers_out` reports how many workers the
-/// memory trim actually left, which is what `.streaming` publishes.
+/// `workers_out` reports how many workers the memory trim actually left, which
+/// is what `.streaming` publishes.
 ///
-/// The caller owns the record keeping a streamed run needs (one record per
-/// target, the anomaly warnings, the end-of-run reconciliation), because it is
-/// the same bookkeeping its own in-process results go through.
+/// The caller owns the record keeping a streamed run needs: one record per
+/// target, the anomaly warnings and the end-of-run reconciliation.
 pub(crate) fn run_pool_streaming(
     cfg: &PoolConfig,
     targets: &[TargetSpec],
     inventory: &[TargetSpec],
     source: &dyn ChunkSource,
-    done_base: usize,
     workers_out: &AtomicUsize,
     sink: &(dyn Fn(&[usize], Vec<FuncResult>) + Sync),
 ) -> Result<(Vec<String>, Retries), String> {
@@ -815,18 +812,17 @@ pub(crate) fn run_pool_streaming(
         targets,
         inventory,
         source,
-        &PoolReport { tag: STREAM_TAG, banner, workers, done_base, finish_delivered: true },
+        &PoolReport { tag: STREAM_TAG, banner, workers, finish_delivered: true },
         sink,
     )
 }
 
-/// The stderr brand of a pool run, and where its progress line starts counting.
+/// The stderr brand of a pool run.
 struct PoolReport {
     /// `--jobs` or `--stream`: every line this run prints is `[kuna <tag>]`.
     tag: &'static str,
     banner: String,
     workers: usize,
-    done_base: usize,
     /// Does the closing line count the targets asked for, or the results that
     /// came back?  A `--jobs` run serves every chunk it planned, so the two are
     /// the same; a streamed one stops where its writer died, and `done: <every
@@ -870,7 +866,7 @@ fn run_pool_with(
         recovered: AtomicUsize::new(0),
         failed_alone: AtomicUsize::new(0),
     };
-    let completed = AtomicUsize::new(report.done_base);
+    let completed = AtomicUsize::new(0);
     let retired = AtomicUsize::new(0);
     let worker_ids = AtomicUsize::new(0);
     let type_blocks: Mutex<Vec<String>> = Mutex::new(Vec::new());
