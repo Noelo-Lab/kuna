@@ -142,7 +142,16 @@
       "binaries_differing": 0
     }
   },
-  "gates": {},
+  "gates": {
+    "make test": "datatests: 675/675 assertions passed / PARITY OK",
+    "make test-stages": "datatests: 1013/1013 assertions passed / PARITY OK",
+    "make test-cli": "tests/cli: 170/170 passed",
+    "make rust-test": "RUST_TEST_RC=0 (414 suites ok, 0 FAILED)",
+    "make check-spec": "check-spec OK (lenient mode) + check-spec OK (strict mode)",
+    "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
+    "counters --check": "no drift: every hard-coded site agrees with the derived truth",
+    "docs/options.md": "byte-fresh against `kuna catalog --markdown`"
+  },
   "catalog_counts": {
     "settables": "205 -> 207",
     "tiers": "core 66 / transform 78 -> 80 / analysis 61",
@@ -172,5 +181,20 @@
   ],
   "div_row": null,
   "notes": "No tests/cli probe: this is an engine option, not a CLI-surface change, and the two-pass stage test covers the whole binary->decompile path. Verified by hand that the option reaches both CLI entry points (`kuna decompile --addr`, which forks decomp_dbg, and `kuna decompile-all --addr`) and that a bad value exits 1 with `error: option impliedrefs: Bad implied-reference bound: \"wide\" is not a decimal count`.",
-  "speed": {}
+  "speed": {
+    "method": "interleaved arms, MINIMUM of 21 runs each, `kuna decompile-all <fmt> --addr 0x26a0 [--option N V]`; measured after the workspace suite finished so the box was quiet (a first attempt under a concurrent `cargo test --workspace` showed +6.4% between two logically IDENTICAL arms and was discarded as contention)",
+    "binary": "decbench full_run_address_2026-09-11/O2/coreutils/stripped/fmt, sub_26a0 (main)",
+    "budget_pct": 5.0,
+    "rows": {
+      "default (no option)": "211.4 ms (baseline)",
+      "--option impliedrefs 2 (= the default, explicitly)": "211.6 ms (+0.10%)",
+      "--option termdup 2 (= the default, explicitly)": "211.8 ms (+0.20%)",
+      "--option impliedrefs 4": "212.8 ms (+0.63%)",
+      "--option termdup 3": "210.8 ms (-0.28%)",
+      "--option impliedrefs 0": "210.4 ms (-0.46%)"
+    },
+    "worst_delta_pct": 0.63,
+    "within_budget": true,
+    "why_flat": "at the defaults nothing runs that did not run before -- the pass reads the same two arch fields it always read, and the option bodies only execute when a value is given. Moving a bound changes which values are marked explicit, not how much work the marking does; even `impliedrefs 0`, which rewrites 76 of 151 functions, is inside the noise."
+  }
 }
