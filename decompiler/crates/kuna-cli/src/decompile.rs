@@ -1937,23 +1937,30 @@ Execution error: Unknown function name: nosuch
     /// option, whatever the value grammar was.
     #[test]
     fn reports_each_option_value_grammar() {
+        // The last row echoes no name at all, so there is nothing to attribute
+        // the diagnostic to and the arm declines.
         for (line, diagnostic, expected) in [
-            ("option namestyle zzz", "Execution error: namestyle must be \"angr\" or \"ghidra\"",
-             "option namestyle: namestyle must be \"angr\" or \"ghidra\""),
-            ("option splitdatatype off", "Execution error: Unknown data-type split option: off",
-             "option splitdatatype: Unknown data-type split option: off"),
-            ("option jumptablemax x", "Execution error: Must specify integer maximum",
-             "option jumptablemax: Must specify integer maximum"),
-            ("option ", "Command parsing error: Missing option name", "option : Missing option name"),
+            (
+                "option namestyle zzz",
+                "Execution error: namestyle must be \"angr\" or \"ghidra\"",
+                Some("option namestyle: namestyle must be \"angr\" or \"ghidra\""),
+            ),
+            (
+                "option splitdatatype off",
+                "Execution error: Unknown data-type split option: off",
+                Some("option splitdatatype: Unknown data-type split option: off"),
+            ),
+            (
+                "option jumptablemax x",
+                "Execution error: Must specify integer maximum",
+                Some("option jumptablemax: Must specify integer maximum"),
+            ),
+            ("option", "Command parsing error: Missing option name", None),
         ] {
-            let out = format!("[decomp]> load file /x/a.out\n[decomp]> {line}\n{diagnostic}\n[decomp]> quit\n");
-            let answer = option_failure(&out);
-            if line.trim() == "option" {
-                // No name was echoed, so there is nothing to attribute it to.
-                assert_eq!(answer, None, "{line}");
-                continue;
-            }
-            assert_eq!(answer.as_deref(), Some(expected), "{line}");
+            let out = format!(
+                "[decomp]> load file /x/a.out\n[decomp]> {line}\n{diagnostic}\n[decomp]> quit\n"
+            );
+            assert_eq!(option_failure(&out).as_deref(), expected, "{line}");
         }
     }
 
@@ -1990,7 +1997,7 @@ Execution error: Unknown function name: nosuch
         assert_eq!(option_failure(later), None);
     }
 
-    /// A healthy transcript is untouched by both recoveries.
+    /// A healthy transcript is untouched by every recovery.
     #[test]
     fn a_clean_transcript_reports_nothing() {
         let out = "\
