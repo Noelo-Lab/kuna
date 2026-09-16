@@ -1,6 +1,6 @@
 {
  "opportunity": "kuna's built-in prototype tables share one width-stable type vocabulary, so all 108 aggregate-pointer slots in them are spelled `void *`. `void *` never matches a ground-truth `FILE *` (the metric's width-only generosity has no pointer entry), and named-struct pointers are 22.5% of matchable GT variables -- a class kuna scores 0.0% on while ida scores 432 / ghidra 382 / binja 523 TP on the same 92-binary sample. The libc/POSIX-namable slice of it is ~4.1% of matchable GT (FILE 605 occurrences, stat 255, passwd 136).",
- "test_name": "tests/stages/kuna-libctypes.xml (6 two-pass assertions over a real ELF via `load file`) + 10 table-invariant unit tests in analyzers::protos::kuna_libctypes::tests",
+ "test_name": "tests/stages/kuna-libctypes.xml (9 assertions over three `load file` passes on two real ELFs; #5/#6 pin that the DWARF layout of `stat` survives the option being on) + 13 table-invariant unit tests in analyzers::protos::kuna_libctypes::tests + kuna-cli/tests/decompile_project_cli.rs (header_syntax_checks_when_a_type_shares_a_name_with_a_function)",
  "binary": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O2/coreutils/stripped/fmt",
  "selector": "0x2f30",
  "func_addr": "0x2f30",
@@ -39,8 +39,9 @@
   "new_names": 9,
   "named_slots": 75,
   "va_list_slots_deliberately_untouched": 7,
-  "held_name_rule": "a name already held is adopted only when it is a struct that is either INCOMPLETE (our own shell, or a DWARF forward declaration) or COMPLETE at the declared width (the platform's own definition on a -g binary); a complete struct of a different width is a program's own type sharing the spelling, and the whole signature is declined rather than pointed at it.",
-  "width_abi": "glibc x86-64 (sizeof/_Alignof). On another ABI a width can be a few bytes off, which can only change whether an access renders as a field or as a cast; the name is ABI-independent and a wrong width cannot make a pointer point at the wrong thing."
+  "held_name_rule": "the pass runs AFTER DwarfPass, so a name already held is the platform's own. It is adopted when it is a struct of the DECLARED WIDTH -- under the name, or under the spelling the platform's headers use for it (FILE -> _IO_FILE). Anything else declines the signature: a different width is a program's own type sharing the spelling, a zero-width forward declaration would restore the PTRSUB hazard, and completing or re-keying another owner's shell would strand every pointer already minted against it (set_fields_struct clones into a new Rc).",
+  "width_abi": "glibc x86-64 (sizeof/_Alignof). On another ABI a width can be a few bytes off, which can only change whether an access renders as a field or as a cast; the name is ABI-independent and a wrong width cannot make a pointer point at the wrong thing.",
+  "pass_order_rule": "registered after DwarfPass and seeded from IMPORTED names only (LibProtoPass also matches a name the image DEFINES), so a DWARF-defined function's prototype is never outranked by a table entry."
  },
  "selection_rule": "a retarget restates a shipped signature with the same arity and variadic slot, so it needs no new evidence; a NEW name needs a machine-readable declaration (`gcc -aux-info`) AND corpus weight, measured as PLT call sites over the 524 stripped O0+O2 decbench ELFs. Kept: rewind 117, __uflow 77, fgetc 57, freopen 32, funlockfile 20, getdelim 18, flockfile 18, popen 17, pclose 17. Rejected: fgetc_unlocked 0, fmemopen 0, __underflow 0 (and no installed declaration to reduce).",
  "benchmark": {
@@ -116,21 +117,32 @@
    "off": 1661.88,
    "on": 1725.97,
    "delta": 64.1
-  }
+  },
+  "note": "re-measured after the DWARF-order fix: identical (+39 perfect, 0 moved off perfect, 347 improved-not-perfect, 0 worsened). The scored surface is stripped binaries, and `decompile-all` output there is byte-identical before and after that fix on all 7 sweep binaries, in both arms."
  },
  "corpus_sweep": {
-  "method": "`kuna decompile-all` off vs opaque over 7 binaries (fmt/ls/grep/gzip/tar O2, find/diff O0), every changed line classified plus a control-flow/call/constant skeleton comparison per function; raw output in corpus-hunk-classification.txt",
+  "method": "`kuna decompile-all` off vs opaque over 7 stripped binaries (fmt/ls/grep/gzip/tar O2, find/diff O0), every changed line put in a bucket plus a control-flow/call/constant skeleton comparison per function; full output and the residual-bucket shape histogram in corpus-hunk-classification.txt",
   "functions": 3702,
   "functions_gained_or_lost": 0,
   "ptrsub_functional_form_off": 0,
   "ptrsub_functional_form_on": 0,
-  "skeleton_differs": 129,
-  "classification": "every inspected skeleton difference is an offset constant becoming a field name or an `&` replacing a cast; two representative cases are improvements (diffutils 0x10e15 collapses 20 scattered stack slots into one on-stack struct sigaction; gzip 0x65d0 types the localtime result `tm *`). No wrong-output hunk found."
+  "skeleton_differs": 140,
+  "classification": "every inspected skeleton difference is an offset constant becoming a field name or an `&` replacing a cast; two representative cases are improvements (diffutils 0x10e15 collapses 20 scattered stack slots into one on-stack struct sigaction; gzip 0x65d0 types the localtime result `tm *`). No hunk changes a call target, a control-flow edge or a numeric literal.",
+  "changed_lines": 5517,
+  "classified_lines": 5155,
+  "residual_other_lines": 362,
+  "residual_shapes": {
+   "a constant offset spelled as a field of a named pointee": 159,
+   "the same store/load through a different stack-slot decomposition": 129,
+   "one aggregate slot read as a sub-piece (vN._off_size_)": 50,
+   "a named aggregate declared or cast": 23,
+   "block skew beside a retyped slot": 1
+  }
  },
  "gates": {
   "make test": "datatests: 675/675 assertions passed -- PARITY OK (and 675/675 PARITY OK again with the gate forced on)",
-  "make test-stages": "datatests: 1013/1013 assertions passed -- PARITY OK (baseline re-recorded for the new file only; 1013/1013 PARITY OK again with the gate forced on)",
-  "make test-cli": "tests/cli: 170/170 passed (169/170 with the gate forced on -- see default_decision.blocker)",
+  "make test-stages": "datatests: 1016/1016 assertions passed -- PARITY OK (baseline re-recorded for this file's assertion set)",
+  "make test-cli": "tests/cli: 170/170 passed",
   "make check-spec": "check-spec OK (lenient mode) / check-spec OK (strict mode)",
   "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
   "counters --check": "no drift: every hard-coded site agrees with the derived truth",
@@ -149,22 +161,27 @@
   "decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_libctypes/tests.rs",
   "decompiler/crates/kuna-analysis/src/analyzers/protos/mod.rs",
   "decompiler/crates/kuna-analysis/src/passes.rs",
-  "decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_libctypes.rs",
-  "decompiler/crates/kuna-decomp/src/infra/architecture.rs",
-  "decompiler/crates/kuna-console/src/engine.rs",
-  "decompiler/crates/kuna-console/src/kuna_console.rs",
+  "decompiler/crates/kuna-analysis/tests/fixtures/libctypes_stat_x86_64",
+  "decompiler/crates/kuna-analysis/tests/fixtures/libctypes_stat_x86_64.c",
   "decompiler/crates/kuna-cli/src/decompile.rs",
   "decompiler/crates/kuna-cli/src/decompile_all.rs",
+  "decompiler/crates/kuna-cli/tests/decompile_project_cli.rs",
+  "decompiler/crates/kuna-console/src/engine.rs",
+  "decompiler/crates/kuna-console/src/kuna_console.rs",
+  "decompiler/crates/kuna-console/src/project.rs",
   "decompiler/crates/kuna-decomp/phases.toml",
-  "tests/stages/kuna-libctypes.xml",
-  "docs/spec/01-program-prep.md"
+  "decompiler/crates/kuna-decomp/src/infra/architecture.rs",
+  "decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_libctypes.rs",
+  "docs/spec/01-program-prep.md",
+  "docs/spec/09-emission.md",
+  "tests/stages/kuna-libctypes.xml"
  ],
  "notes": "The gate is read INSIDE the pass through the load-time env bridge, not at the commit boundary: the pass interns its named shells into the type factory while building the signatures, and a commit-boundary arch flag additionally drops facts after `clear architecture` + `load file` (measured -- it made pass 2 of the stage test render `fclose(void *)`). stdin/stdout/stderr as typed FILE * data symbols, and a `glibc` value installing the public _IO_FILE field names, are follow-ups.",
  "default_on": false,
  "default_value": "off",
  "default_decision": {
   "verdict": "ship default-OFF in this PR; the flip is a separate PR (campaign Stage 3)",
-  "evidence_for_on": "typesweep 214 slices / 5298 functions: +39 perfect, 0 moved off perfect, 386 improved, 0 worsened; make test 675/675 PARITY OK with the gate forced on (KUNA_LIBCTYPES=opaque); make test-stages 1013/1013 PARITY OK with the gate forced on; whole-binary sweep over 7 binaries shows no wrong-output hunk and no change in the PTRSUB( count; speed flat (see speed).",
+  "evidence_for_on": "typesweep 214 slices / 5298 functions: +39 perfect, 0 moved off perfect, 386 improved, 0 worsened; make test 675/675 PARITY OK with the gate forced on (KUNA_LIBCTYPES=opaque); make test-stages 1016/1016 PARITY OK with the gate forced on; whole-binary sweep over 7 binaries shows no wrong-output hunk and no change in the PTRSUB( count; speed flat (see speed).",
   "blocker": "`make test-cli` goes 169/170 with the gate forced on: the promoted probe tests/cli/changing-namestyle-invalidates-discovered.json pins `sub_1249(void *param_1)` on decompiler/crates/kuna-analysis/tests/fixtures/stripped_dynamic_x86_64, and that parameter becomes `FILE *`. The new spelling is CORRECT -- the body is fclose(param_1) / fread(...,param_1) -- but rewriting another feature's regression probe belongs in the flip PR with that justification, not in the PR that introduces the option."
  },
  "speed": {
@@ -204,5 +221,67 @@
   "within_budget": true,
   "why": "the load-time cost is ~20 `get_type_struct`/`find_by_name` calls (the `fmt functions` row, +0.08% on the minimum, is that cost in isolation). The whole-binary rows carry the real cost: a named 216-byte pointee participates in type propagation where a `void *` did not. The `fmt functions` median (+14.92% against a +0.08% minimum) and the `ls` median are contention from a concurrent gate run, not signal."
  },
- "ablation_evidence": "`kuna decompile-all` over the whole O2/coreutils/stripped/fmt: this branch with `--option libctypes off` is byte-identical to the main tree's own build (0 of 4,069 lines differ)."
+ "ablation_evidence": "`kuna decompile-all` over the whole O2/coreutils/stripped/fmt: this branch with `--option libctypes off` is byte-identical to the main tree's own build (0 of 4,069 lines differ).",
+ "dwarf_sweep": {
+  "method": "`kuna decompile-all` off vs opaque over 6 UNSTRIPPED (-g) twins; `named field` = a `->name` access that is not `->field_0xNN`",
+  "rows": [
+   {
+    "twin": "O0 findutils find",
+    "named_off": 2722,
+    "named_on": 2748,
+    "field_0x_off": 4,
+    "field_0x_on": 23,
+    "file_casts_off": 0,
+    "file_casts_on": 0
+   },
+   {
+    "twin": "O2 coreutils du",
+    "named_off": 1007,
+    "named_on": 1048,
+    "field_0x_off": 0,
+    "field_0x_on": 7,
+    "file_casts_off": 0,
+    "file_casts_on": 0
+   },
+   {
+    "twin": "O2 coreutils ls",
+    "named_off": 625,
+    "named_on": 718,
+    "field_0x_off": 0,
+    "field_0x_on": 8,
+    "file_casts_off": 0,
+    "file_casts_on": 0
+   },
+   {
+    "twin": "O0 coreutils ls",
+    "named_off": 819,
+    "named_on": 826,
+    "field_0x_off": 3,
+    "field_0x_on": 3,
+    "file_casts_off": 0,
+    "file_casts_on": 0
+   },
+   {
+    "twin": "O2 coreutils sort",
+    "named_off": 876,
+    "named_on": 888,
+    "field_0x_off": 0,
+    "field_0x_on": 0,
+    "file_casts_off": 0,
+    "file_casts_on": 0
+   },
+   {
+    "twin": "O0 diffutils diff",
+    "named_off": 983,
+    "named_on": 983,
+    "field_0x_off": 1,
+    "field_0x_on": 6,
+    "file_casts_off": 0,
+    "file_casts_on": 0
+   }
+  ],
+  "field_0x_introduced": 39,
+  "field_0x_introduced_on_a_base_that_had_a_named_field_off": 0,
+  "reading": "named-field accesses rise or stay flat on every twin: the adopted definitions are the platform's own, so a `stat *` keeps `st_mode`. Every `field_0x` the option introduces replaces RAW POINTER ARITHMETIC in the off arm on a type DWARF never interned in that binary, never a DWARF field."
+ }
 }

@@ -83,24 +83,60 @@ and the accesses render as the field form instead:
 +      v4 = *(unsigned char **)&stdout->field_0x28;
 ```
 
-### 3. Why the shells stay INCOMPLETE
+### 3. What happens on a binary that has real debug info
 
-`set_fields_struct` re-ORs the extra flags it is given, so passing
-`flags::type_incomplete` back produces a **sized but still incomplete** struct.
-That is what lets the DWARF importer complete the same bare name IN PLACE:
-`analyzers::dwarf::kuna_dwarfstructs::intern_aggregate` looks the name up with
-`find_by_name`, returns a COMPLETE hit verbatim, and populates an INCOMPLETE one.
-The factory refuses a second, different definition of a held name
-(`find_add`: "Trying to alter definition of type"), and DWARF interns `stat`,
-`passwd`, `tm` and `option` under the identical bare spelling — so without this,
-a `-g` run would lose the real layouts or error.
+An image built `-g` already carries the platform's own `struct stat`, and DWARF
+interns it under the identical bare spelling. Two things had to be settled: who
+wins, and what happens to the pointers.
 
-Proof, `--option dwarf on --option libctypes opaque` on the UNSTRIPPED twins:
+**Who wins: DWARF, and it is not close.** The pass is registered AFTER
+`DwarfPass` (`kuna-analysis/src/passes.rs`) and `named_aggregate` adopts a held
+aggregate of the declared width — under the name, or under the spelling the
+platform's headers use for it (`FILE` -> `struct _IO_FILE`; without that alias
+the image carries two stream types and the body casts between them). A name held
+by anything else — a different width, a zero-width forward declaration, a
+non-struct — declines the signature. This table never completes, re-keys or
+alters a type it did not establish.
 
+**Why the order is the correctness condition, not a preference.** A pointee is
+captured as an `Rc<Datatype>` when the signature is built, and completing a
+struct RE-KEYS it into a new `Rc` (`TypeFactory::set_fields_struct`; the C++
+mutates a `TypeStruct` in place, the Rust clones). A shell minted first and
+completed by DWARF afterwards is therefore completed for everyone EXCEPT the
+pointers this table already built. Measured on the first cut of this PR, which
+minted first:
+
+```c
+/* int f(const char *p, struct stat *st) built with gcc -g -O1 */
+off:    v1 = (stat(p,st)) ? -1 : st->st_mode + (int)st->st_size;
+minted: v1 = (stat(p,st)) ? -1 : *(int *)&st->field_0x18 + *(int *)&st->field_0x30;
 ```
-fmt  @0x2f30   int get_prefix(_IO_FILE *f)   ...  f->_IO_read_ptr    (no error)
-ls   @0xd820   stat v13; // stack - 0x368               (no error)
-```
+
+`type_incomplete` is still passed back through `set_fields_struct_raw` for a
+shell this table mints itself, for one remaining reason: the `.h` emitter prints
+`typedef struct FILE FILE; /* opaque */` with no body instead of a struct with a
+width and no members.
+
+**Measured, `decompile-all` over the UNSTRIPPED twins** (`off` vs `opaque`;
+"named field" = a `->name` access that is not `->field_0xNN`):
+
+| twin | named field off -> on | `field_0x` off -> on | `(FILE *)` casts off -> on |
+|---|---|---|---|
+| findutils O0 find | 2722 -> 2748 | 4 -> 23 | 0 -> 0 |
+| coreutils O2 du   | 1007 -> 1048 | 0 -> 7  | 0 -> 0 |
+| coreutils O2 ls   | 625 -> 718   | 0 -> 8  | 0 -> 0 |
+| coreutils O0 ls   | 819 -> 826   | 3 -> 3  | 0 -> 0 |
+| coreutils O2 sort | 876 -> 888   | 0 -> 0  | 0 -> 0 |
+| diffutils O0 diff | 983 -> 983   | 1 -> 6  | 0 -> 0 |
+
+Named-field accesses go UP or stay flat on every twin: the adopted definitions
+are the platform's, so a `stat *` parameter keeps `st_mode`. The `field_0x`
+count also rises, and every one of those is an access that was RAW POINTER
+ARITHMETIC in the `off` arm — `*(char *)((long)v4 + 0x14)` becoming
+`v4->field_0x14` on a `dirent *` that DWARF never interned here, because no
+DWARF-described variable in that binary has the type. Checked mechanically: of
+the 39 `field_0x` accesses the option introduces across the six twins, **0** are
+on a base that had a NAMED field in the `off` arm.
 
 ### 4. Gate shape — the env bridge, not a flag read in the pass
 
@@ -180,7 +216,15 @@ in `corpus-hunk-classification.txt`. Summary:
   `field-form` (`*(T **)(p + 8)` -> `*(T **)&p->field_0x8`) and `var-renumber`
   (a renumbered local — the scored JSON surface excludes register locals, so this
   is cosmetic).
-* 129 of 3,702 functions (3.5%) differ in the skeleton, every inspected one
+* 5,517 changed lines, of which 5,155 land in a named bucket (`pointee-named`
+  589, `var-renumber` 3,077, `decl-block` 617, `field-form` 222,
+  `aggregate-slot` 164, `const-offset-access` 126, `proto-line` 109,
+  `cast-width` 46, added/removed 105). The residual 362 are dumped in full in
+  the attached file with a shape histogram: 159 are a constant offset spelled as
+  a field of a named pointee, 129 the same store or load through a different
+  stack-slot decomposition, 50 one aggregate slot read as a sub-piece, 23 a
+  named declaration or cast, 1 block skew.
+* 140 of 3,702 functions (3.8%) differ in the skeleton, every inspected one
   because an offset constant became a field name or an `&` appeared where a cast
   was. Two representative cases, both improvements:
 
@@ -236,6 +280,31 @@ FILE * fopen(char *a0,char *a1);
 The bare name is what round-trips: the printer spells a named base bare, and the
 `.h` emitter's own `typedef struct X X;` line (which skips the body for an
 incomplete struct) is what makes it a declared type rather than a tag-only one.
+
+One thing that typedef cannot coexist with is a FUNCTION of the same name, and
+POSIX supplies several: `stat`, `sigaction` and `group` are each a struct tag and
+a function. C keeps both in one file-scope namespace, so the header stopped
+parsing at the clash — and took every declaration after it down. That is not new
+to this option; it reproduces on `main` with any `-g` image that calls `stat()`:
+
+```
+$ gcc -g -O1 -o t2g t2.c && kuna decompile-project t2g -o P    # main, no options
+$ cc -std=c99 -fsyntax-only P/t2g.h
+P/t2g.h:67:5: error: 'sigaction' redeclared as different kind of symbol
+   67 | int sigaction(int a0,void *a1,void *a2);
+P/t2g.h:43:26: note: previous declaration of 'sigaction' with type 'sigaction'
+```
+
+`build_header` now resolves it in favour of the TYPE — every other signature in
+the file depends on it, while the prototype is one line and is still printed:
+
+```c
+/* `sigaction` is a type name above; prototype omitted: int sigaction(int a0,sigaction *a1,sigaction *a2); */
+```
+
+`decompiler/crates/kuna-cli/tests/decompile_project_cli.rs
+(header_syntax_checks_when_a_type_shares_a_name_with_a_function)` runs
+`cc -std=c99 -fsyntax-only` over the generated header in both arms.
 
 ## Out of scope here
 

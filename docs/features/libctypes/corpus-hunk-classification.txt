@@ -1,82 +1,169 @@
-== O0_diffutils_stripped_diff {'pointee-named': 92, 'OTHER': 188, 'unpaired-removed': 61, 'unpaired-added': 42, 'var-renumber': 516}
-    OTHER off: long v12 [3]; // stack - 0x278
-          on : stat v12 [2]; // stack - 0x278
-    OTHER off: unsigned int v15 [2]; // stack - 0x260
-          on : char *v15; // stack - 0x310
-    OTHER off: long v16 [31]; // stack - 0x250
-          on : char *v16; // stack - 0x308
-    OTHER off: char *v17; // stack - 0x310
-          on : int v17; // stack - 0x2f4
-    OTHER off: char *v18; // stack - 0x308
-          on : char *v18; // stack - 0x2e0
-    OTHER off: int v19; // stack - 0x2f4
-          on : char *v19; // stack - 0x2d8
-== O0_findutils_stripped_find {'pointee-named': 140, 'OTHER': 198, 'unpaired-removed': 52, 'unpaired-added': 23, 'var-renumber': 443, 'field-form': 4, 'cast-width': 2}
-    OTHER off: void getdelim(void)
-          on : long getdelim(char **a0,void *a1,int a2,FILE *a3)
-    OTHER off: <<  (*dat_48f28)(); // jump-as-call
-          on : >>  long v1; // rax |    |   v1 = (*dat_48f28)(); // jump-as-call
-    OTHER off: long v13; // stack - 0x148
-          on : stat v13; // stack - 0x148
-    OTHER off: long v14; // stack - 0xb8
-          on : stat v14; // stack - 0xb8
-    OTHER off: <<  long v24; // stack - 0x140 |   long v25; // stack - 0xb0
-          on : >>
-    OTHER off: if ((((dat_499b8) && (v4 = fstat(v18,&v13), !v4)) && (!fstat(0,&v14))) && ((v24 == v25 && (v13 == v14)))) {
-          on : if ((((dat_499b8) && (v4 = fstat(v18,&v13), !v4)) && (!fstat(0,&v14))) && ((v13._8_8_ == v14._8_8_ && (v13._0_
-== O2_coreutils_stripped_ls {'pointee-named': 60, 'OTHER': 137, 'unpaired-added': 23, 'var-renumber': 532, 'unpaired-removed': 36, 'field-form': 61}
-    OTHER off: unsigned char v10;
-          on : FILE *v10;
-    OTHER off: int v11;
-          on : unsigned char v11;
-    OTHER off: unsigned int v12;
-          on : int v12;
-    OTHER off: int v13; // eax
-          on : unsigned int v13;
-    OTHER off: unsigned long *v14; // rax
-          on : int v14; // eax
-    OTHER off: void *v15;
-          on : unsigned long *v15; // rax
-== O2_grep_stripped_grep {'pointee-named': 62, 'OTHER': 95, 'unpaired-removed': 48, 'unpaired-added': 42, 'var-renumber': 300, 'field-form': 6}
-    OTHER off: long *v1;
-          on : unsigned int *v1;
-    OTHER off: int v11;
-          on : char *v11;
-    OTHER off: char *v12;
-          on : FILE *v12;
-    OTHER off: unsigned int *v2;
-          on : char v2;
-    OTHER off: char v3;
-          on : unsigned int v3;
-    OTHER off: long v30; // stack - 0x188
-          on : stat v30; // stack - 0x188
-== O2_gzip_stripped_gzip {'pointee-named': 53, 'OTHER': 59, 'unpaired-removed': 13, 'var-renumber': 10}
-    OTHER off: unsigned int v21; // stack - 0x50
-          on : undefined4 v21; // stack - 0x50
-    OTHER off: sigaction(v4,NULL,&v13);
-          on : sigaction(v4,NULL,(sigaction *)&v13);
-    OTHER off: sigaction(v4,&v13,NULL);
-          on : sigaction(v4,(sigaction *)&v13,NULL);
-    OTHER off: char v6 [128];
-          on : sigset_t v6;
-    OTHER off: sigprocmask(0,(void *)0xdc940,v6);
-          on : sigprocmask(0,(sigset_t *)0xdc940,&v6);
-    OTHER off: sigprocmask(2,v6,NULL); // return-dupe
-          on : sigprocmask(2,&v6,NULL); // return-dupe
-== O2_tar_stripped_tar {'OTHER': 490, 'unpaired-removed': 309, 'unpaired-added': 272, 'pointee-named': 156, 'var-renumber': 1136, 'field-form': 6}
-    OTHER off: void __uflow(void)
-          on : int4 __uflow(FILE *a0)
-    OTHER off: <<  (*dat_7e980)(); // jump-as-call |   return;
-          on : >>  int4 v1; // eax |    |   v1 = (*dat_7e980)(); // jump-as-call
-    OTHER off: void funlockfile(void)
-          on : void funlockfile(FILE *a0)
-    OTHER off: void flockfile(void)
-          on : void flockfile(FILE *a0)
-    OTHER off: if (((*stderr & 0x20) || (v8 = fclose(stderr), v8)) && (dat_82d58 <= 1))
-          on : if (((*(uint1 *)stderr & 0x20) || (v8 = fclose(stderr), v8)) && (dat_82d58 <= 1))
-    OTHER off: <<  char v2 [24]; |   uint4 v3; // stack - 0x90
-          on : >>  stat v2; // stack - 0xa8
-== fmt_off.c {}
+Whole-binary `kuna decompile-all --option libctypes off` vs `opaque`, 7 stripped
+ELFs (fmt/ls/grep/gzip/tar O2, find/diff O0), every changed line put in a bucket.
+
+The buckets, in the order the classifier tries them:
+
+  pointee-named        a `void *` became a named aggregate pointer, nothing else moved
+  field-form           `(p + 0x28)` became `&p->field_0x28`, offsets provably equal
+  var-renumber         identical up to the vN local numbering the retype shifted
+  cast-width           differs only by a width cast the named type made redundant
+  decl-block           both sides are local DECLARATION lines
+  proto-line           both sides are function signature lines
+  aggregate-slot       one stack slot now read as sub-pieces (`vN._24_8_`) or passed by address
+  blob-resized         a `char vN[K]` byte blob resized by a neighbouring slot acquiring a type
+  const-offset-access  a CONSTANT-offset access respelled between `&p[n]` / `p->field_0xh` /
+                       `((long)p + 0xh)`. This bucket says the access FORM changed; it does
+                       not re-verify the offset, which is a base-type scale apart.
+  OTHER                residual, dumped below with a shape histogram
+
+`OTHER` is not zero and is not claimed to be. What IS claimed, and is checked
+separately by the skeleton comparison (control flow + call targets + numeric
+literals per function, identifiers and types normalised away), is that no hunk
+changes what the code does.
+
+== O0_diffutils_stripped_diff {'OTHER': 103, 'aggregate-slot': 2, 'cast-width': 2, 'const-offset-access': 9, 'decl-block': 76, 'decl-block-removed': 20, 'line-added': 5, 'line-removed': 4, 'pointee-named': 92, 'proto-line': 31, 'var-renumber': 518}
+    OTHER off: if ((v4) && (v2 = strcmp((char *)v12[(long)v4 * 0x26 + -1],v22), !v2)) {
+          on : if ((v4) && (v2 = strcmp(*(char **)((long)v12 + (long)v4 * 0x130 + -8),v20), !v2)) {
+    OTHER off: v9 = (long)v4;
+          on : v5 = (long)v4 * 0x130;
+    OTHER off: v12[v9 * 0x26] = v12[0];
+          on : *(unsigned long *)((long)v12 + v5) = v12[0]._0_8_;
+    OTHER off: v12[v9 * 0x26 + 1] = v12[1];
+          on : *(unsigned long *)((long)v12 + v5 + 8) = v12[0]._8_8_;
+    OTHER off: v12[v9 * 0x26 + 2] = v12[2];
+          on : *(unsigned long *)((long)v12 + v5 + 0x10) = v12[0]._16_8_;
+    OTHER off: *(unsigned long *)&v15[v9 * 0x4c] = CONCAT44(v15[1],v15[0]);
+          on : *(unsigned long *)((long)v12 + v5 + 0x18) = CONCAT44(v12[0]._28_4_,v12[0]._24_4_);
+    OTHER off: v16[v9 * 0x26 + -1] = CONCAT44(v35._4_4_,(int)v35);
+          on : *(unsigned long *)((long)v12 + v5 + 0x20) = CONCAT44(v12[0]._36_4_,v12[0]._32_4_);
+    OTHER off: v16[v9 * 0x26] = v16[0];
+          on : *(unsigned long *)((long)v12 + v5 + 0x28) = v12[0]._40_8_;
+    OTHER off: v16[v9 * 0x26 + 1] = v16[1];
+          on : *(unsigned long *)((long)v12 + v5 + 0x30) = v12[0]._48_8_;
+    OTHER off: v16[v9 * 0x26 + 2] = v16[2];
+          on : *(unsigned long *)((long)v12 + v5 + 0x38) = v12[0]._56_8_;
+    ... 93 more residual pairs (shape histogram at the end)
+== O0_findutils_stripped_find {'OTHER': 62, 'aggregate-slot': 39, 'cast-width': 11, 'const-offset-access': 11, 'decl-block': 87, 'decl-block-added': 1, 'decl-block-removed': 32, 'field-form': 4, 'line-added': 2, 'pointee-named': 140, 'proto-line': 10, 'var-renumber': 443}
+    OTHER off: (*dat_48f28)(); // jump-as-call
+          on : long v1; // rax
+    OTHER off: if ((*(char *)((long)v6 + 0x13) != '.') || ((*(char *)((long)v6 + 0x14) && ((*(char *)((long)v6 + 0x14) != '.' || (*(char *)((long)v6 + 0x15))))))) {
+          on : if ((v6->field_0x13 != '.') || ((v6->field_0x14 && ((v6->field_0x14 != '.' || (v6->field_0x15)))))) {
+    OTHER off: v12 = a1[1];
+          on : v2._8_8_ = *(unsigned long *)&a1->field_0x8;
+    OTHER off: v13 = a1[2];
+          on : v2._16_8_ = *(unsigned long *)&a1->field_0x10;
+    OTHER off: v14 = a1[3];
+          on : v2._24_8_ = *(unsigned long *)&a1->field_0x18;
+    OTHER off: v15 = a1[4];
+          on : v2._32_8_ = *(unsigned long *)&a1->field_0x20;
+    OTHER off: v16 = a1[5];
+          on : v2._40_8_ = *(unsigned long *)&a1->field_0x28;
+    OTHER off: v17 = a1[6];
+          on : v2._48_8_ = *(unsigned long *)&a1->field_0x30;
+    OTHER off: v2 = (int)*a1;
+          on : v2._0_4_ = SUB84(*(unsigned long *)a1,0);
+    OTHER off: v11 = (unsigned int)((unsigned long)*a1 >> 0x20); // branch-flip
+          on : v2._4_4_ = SUB84((unsigned long)*(unsigned long *)a1 >> 0x20,0); // branch-flip
+    ... 52 more residual pairs (shape histogram at the end)
+== O2_coreutils_stripped_fmt {'OTHER': 5, 'cast-width': 5, 'const-offset-access': 5, 'decl-block': 1, 'decl-block-added': 1, 'decl-block-removed': 1, 'field-form': 38, 'line-added': 2, 'line-removed': 1, 'pointee-named': 24, 'proto-line': 8}
+    OTHER off: (*dat_be40)(); // jump-as-call
+          on : int v1; // eax
+    OTHER off: while ((int)v3 != 0x20) {
+          on : while (a1 != 0x20) {
+    OTHER off: if ((int)v3 != 9)
+          on : if (a1 != 9)
+    OTHER off: v3 = __uflow(a0);
+          on : a1 = __uflow(a0);
+    OTHER off: v3 = (unsigned long)*v2;
+          on : a1 = (unsigned int)*v2;
+== O2_coreutils_stripped_ls {'OTHER': 49, 'aggregate-slot': 3, 'cast-width': 6, 'const-offset-access': 21, 'decl-block': 62, 'decl-block-added': 2, 'decl-block-removed': 16, 'field-form': 61, 'line-added': 2, 'line-removed': 1, 'pointee-named': 60, 'proto-line': 11, 'var-renumber': 536}
+    OTHER off: v36 = -1;
+          on : v31 = 0xffffffff;
+    OTHER off: v30 = 0xffffffff;
+          on : v30 = 0;
+    OTHER off: v29 = 0;
+          on : v35 = NULL;
+    OTHER off: if (v3 != (void *)0x1)
+          on : if (v3[0] != (void *)0x1)
+    OTHER off: v7 = dat_26220;
+          on : v3[1] = (void *)dat_26220;
+    OTHER off: v8 = dat_26228;
+          on : v3[2] = (void *)dat_26228;
+    OTHER off: v9 = dat_26230;
+          on : v3[3] = (void *)dat_26230;
+    OTHER off: v10 = dat_26238;
+          on : v3[4] = (void *)dat_26238;
+    OTHER off: v11 = dat_26240;
+          on : v3[5] = (void *)dat_26240;
+    OTHER off: v12 = dat_26248;
+          on : v3[6] = (void *)dat_26248;
+    ... 39 more residual pairs (shape histogram at the end)
+== O2_grep_stripped_grep {'OTHER': 12, 'aggregate-slot': 25, 'cast-width': 1, 'const-offset-access': 6, 'decl-block': 49, 'decl-block-added': 1, 'decl-block-removed': 7, 'field-form': 6, 'line-added': 1, 'line-removed': 1, 'pointee-named': 64, 'proto-line': 22, 'var-renumber': 318}
+    OTHER off: if (((stat("/dev/null",v32)) || (v51 != v32[1])) || (v30 != v32[0]))
+          on : if (((stat("/dev/null",&v32)) || (v30._8_8_ != v32._8_8_)) || (v30._0_8_ != v32._0_8_))
+    OTHER off: v38 = v1;
+          on : v35 = (stat *)v41;
+    OTHER off: v43 = (char *)((long)v32 + (long)v11 * 4);
+          on : v43 = &(&v32.field_0x0)[(long)v10 * 4];
+    OTHER off: } while (&v34[(unsigned long)(unsigned int)(v11 - 1) * -4 + (long)v11 * 4] != v43);
+          on : } while ((char *)((long)&v30 + (unsigned long)(unsigned int)(v10 - 1) * -4 + (long)v10 * 4 + 0x8c) != v43);
+    OTHER off: v32[0] = 0;
+          on : v32._0_8_ = 0;
+    OTHER off: v32[0] = 0;
+          on : v32._0_8_ = 0;
+    OTHER off: v32[0] = 0;
+          on : v32._0_8_ = 0;
+    OTHER off: if (((*(unsigned char *)&a0[9] & 0x20) || (*(char *)((long)v9 + 0x13) != '.')) || ((*(char *)((long)v9 + 0x14) && (*(short *)((long)v9 + 0x14) != 0x2e
+          on : if (((*(unsigned char *)&a0[9] & 0x20) || (v10->field_0x13 != '.')) || ((v10->field_0x14 && (*(short *)&v10->field_0x14 != 0x2e)))) break;
+    OTHER off: v1 = *(unsigned char *)((long)v9 + 0x12);
+          on : v1 = v10->field_0x12;
+    OTHER off: if (!mbsinit(&a0[4]))
+          on : if (!mbsinit((mbstate_t *)&a0[4]))
+    ... 2 more residual pairs (shape histogram at the end)
+== O2_gzip_stripped_gzip {'OTHER': 5, 'aggregate-slot': 30, 'cast-width': 2, 'const-offset-access': 3, 'decl-block': 9, 'decl-block-removed': 12, 'field-form': 1, 'line-removed': 1, 'pointee-named': 53, 'proto-line': 9, 'var-renumber': 10}
+    OTHER off: if ((*(char *)sub_dfd0(v9)) && (v12[v8] != '/')) {
+          on : if ((*(char *)sub_dfd0(v12)) && (v12[v8 - 1] != '/')) {
+    OTHER off: v12[v8 + 1] = '/';
+          on : v12[v8] = '/';
+    OTHER off: v3 = *(char *)((long)v5 + 0x13);
+          on : v3 = v5->field_0x13;
+    OTHER off: if ((v3 == '.') && (v3 = *(char *)((long)v5 + 0x14), v3 == '.'))
+          on : if ((v3 == '.') && (v3 = v5->field_0x14, v3 == '.'))
+    OTHER off: v3 = *(char *)((long)v5 + 0x15);
+          on : v3 = v5->field_0x15;
+== O2_tar_stripped_tar {'OTHER': 126, 'aggregate-slot': 65, 'cast-width': 19, 'const-offset-access': 71, 'decl-block': 194, 'decl-block-added': 3, 'decl-block-removed': 43, 'field-form': 112, 'line-added': 44, 'line-removed': 41, 'pointee-named': 156, 'proto-line': 18, 'var-renumber': 1252}
+    OTHER off: (*dat_7e980)(); // jump-as-call
+          on : int4 v1; // eax
+    OTHER off: return;
+          on : 
+    OTHER off: v8 = fstatat(v11,a1,&a0[0xb],dat_82800);
+          on : v8 = fstatat(v11,a1,(stat *)&a0[0xb],dat_82800);
+    OTHER off: if (fstat(v8,&a0[0xb])) {
+          on : if (fstat(v8,(stat *)&a0[0xb])) {
+    OTHER off: a3 = (uint4)v11;
+          on : a3 = v3._24_4_;
+    OTHER off: *(uint4 *)&v8[9] = v20;
+          on : *(unsigned int *)&v8[9] = v11._24_4_;
+    OTHER off: v10 = (char *)((uint8)v1 & 0xffffffff);
+          on : v2 = (uint1 *)CONCAT44(dat_4,v1);
+    OTHER off: v8 = SUB81(v10,0);
+          on : if (!v10 && v16) {
+    OTHER off: if (!v11 && v17) {
+          on : v2 = *(uint1 **)&a0->field_0x8;
+    OTHER off: v1 = *(uint1 **)&a0[8];
+          on : v12[0] = v9;
+    ... 116 more residual pairs (shape histogram at the end)
+
+== TOTAL {'OTHER': 362, 'aggregate-slot': 164, 'cast-width': 46, 'const-offset-access': 126, 'decl-block': 478, 'decl-block-added': 8, 'decl-block-removed': 131, 'field-form': 222, 'line-added': 56, 'line-removed': 49, 'pointee-named': 589, 'proto-line': 109, 'var-renumber': 3077}
+
+== RESIDUAL `OTHER` SHAPES (362 lines)
+    159  the ON side spells a constant offset as a field of a named pointee
+    129  same store/load through a different stack-slot decomposition
+     50  the ON side reads one aggregate slot as a sub-piece (vN._off_size_)
+     23  the ON side declares/casts a named aggregate
+      1  block skew (a line added or removed beside a retyped slot)
+
+== SKELETON COMPARISON (control flow + calls + constants, identifiers/types normalised)
 O0_diffutils_stripped_diff funcs=507 skeleton-differs=8 missing=0
     0xa746 first divergence at 80 : ['num:38', 'num:1', '&&', '*', '*', '+'] -> ['num:304', 'num:8', '&&', '*', '*', '*']
     0xbde2 first divergence at 39 : ['num:19', '*', '+', 'call:strlen', 'num:19', 'num:1'] -> ['&', '-', '>', 'call:strlen', 'num:1', '&']
@@ -89,6 +176,12 @@ O0_findutils_stripped_find funcs=862 skeleton-differs=23 missing=0
     0x11c89 first divergence at 18 : ['num:1', 'num:2', 'num:3', 'num:4', 'num:5', 'num:6'] -> ['*', '*', '&', '-', '>', '*']
     0x123c8 first divergence at 12 : ['num:6', 'num:1', '<=', '-', 'return', 'call:__assert_fail'] -> ['num:1', '*', '*', '&', '-', '>']
     0x129e7 first divergence at 162 : ['if', '/', '/', '-', 'if', 'call:__errno_location'] -> ['&', 'if', '/', '/', '-', 'if']
+O2_coreutils_stripped_fmt funcs=151 skeleton-differs=11 missing=0
+    0x2370 first divergence at 2 : ['/', '/', '-', '-'] -> ['*', '/', '/', '-', '-']
+    0x2ea0 first divergence at 1 : ['do', 'while', 'num:32', '!=', 'if', 'num:9'] -> ['*', 'do', 'while', 'num:32', '!=', 'if']
+    0x2f30 first divergence at 2 : ['/', '/', '-', 'num:8', '*', '*'] -> ['*', '/', '/', '-', '*', '*']
+    0x3000 first divergence at 14 : ['num:40', '*', '*', '*', '+', 'if'] -> ['*', '*', '*', '&', '-', '>']
+    0x3060 first divergence at 20 : ['num:40', '*', '*', '*', '+', 'if'] -> ['*', '*', '*', '&', '-', '>']
 O2_coreutils_stripped_ls funcs=404 skeleton-differs=23 missing=0
     0x4d10 first divergence at 1216 : ['num:40', '*', '*', '*', '+', 'if'] -> ['*', '*', '*', '&', '-', '>']
     0x7360 first divergence at 8 : ['num:40', '*', '*', '*', '+', 'if'] -> ['*', '*', '*', '&', '-', '>']
@@ -113,5 +206,4 @@ O2_tar_stripped_tar funcs=1125 skeleton-differs=57 missing=0
     0xa240 first divergence at 2 : ['/', '/', '-', '-'] -> ['*', '/', '/', '-', '-']
     0xa9f0 first divergence at 975 : ['&', '||', '&&', '<=', 'num:2', 'else'] -> ['*', '&', '||', '&&', '<=', 'num:2']
     0xc350 first divergence at 19 : ['num:61440', 'num:32768', '&', '==', 'num:0'] -> ['&', 'num:61440', 'num:32768', '&', '==', 'num:0']
-fmt_off.c funcs=151 skeleton-differs=0 missing=0
-TOTAL {'funcs': 3702, 'diff': 129, 'missing': 0}
+TOTAL {'funcs': 3702, 'diff': 140, 'missing': 0}
