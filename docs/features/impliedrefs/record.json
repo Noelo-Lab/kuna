@@ -1,0 +1,176 @@
+{
+  "opportunity": "The two thresholds ActionMarkExplicit uses to decide whether a computed value gets its own declared local or is inlined at every use (Architecture::max_implied_ref and max_term_duplication) were compiled-in constants, both 2, with no command reaching either. Upstream's own comments next to them read '2 is best, in specific cases a higher number might be good' and '2 and 3 (4) are reasonable' -- values it expects to be tried. Exposing them turns a rebuild into a per-run flag, and gives the variable-count lane its ablation lever.",
+  "test_name": "tests/stages/kuna-impliedrefs.xml (6 assertions, two synthetic gcc -O2 functions, four passes) + 3 unit tests in p6_variables/kuna_impliedrefs.rs",
+  "binary": "decbench full_run_address_2026-09-11/O2/coreutils/stripped/fmt",
+  "selector": "0x26a0",
+  "func_addr": "0x26a0",
+  "angr_version": null,
+  "option": [
+    "impliedrefs",
+    "termdup"
+  ],
+  "flag": [
+    "Architecture::max_implied_ref",
+    "Architecture::max_term_duplication"
+  ],
+  "element_id": null,
+  "change_kind": "opt-in-tool",
+  "tier": "transform",
+  "phase": "P6",
+  "subphase": "explicit-marking",
+  "source_decompiler": "ghidra-upstream",
+  "inspiration": "Ghidra's own comments on max_implied_ref / max_term_duplication in Architecture::resetDefaultsInternal",
+  "default_on": false,
+  "values": "2|3|4|<n> (decimal, 0..=1000000), default 2 for both",
+  "ablation_changed": 0,
+  "parity": "OK",
+  "root_cause": "Not a defect: the constants were simply never surfaced. The reading sites (base_explicit, process_multiplier) already took both off the per-function ArchSeam context, which Architecture refreshes from these fields at every function, so the options write the fields and the pass is untouched.",
+  "coupling": "max_implied_ref is a program-wide tunable, not private to explicit-marking: Funcdata::bb_is_complex (upstream BlockBasic::isComplex, the OR-clause absorb test of CollapseStructure::rule_block_or) and p8_structure/kuna_condfold.rs bound a condition block's printed statements with the same field, so `impliedrefs` loosens those two structure tests along with the marking. Stated in the catalog row and docs/spec/06-variables-and-merge.md rather than split into a second field.",
+  "ablation": {
+    "method": "kuna decompile-all <bin> --option <name> <value>, declared locals counted out of the emitted C (a declaration-block line naming a vN local); functions_changed is per-function text inequality against the default dump",
+    "binary": "decbench full_run_address_2026-09-11/O2/coreutils/stripped/fmt (151 functions in decompile-all)",
+    "baseline": {
+      "declared_locals": 369,
+      "statements": 1749
+    },
+    "impliedrefs": {
+      "0": {
+        "declared_locals": 630,
+        "statements": 3134,
+        "functions_changed": 76
+      },
+      "1": {
+        "declared_locals": 384,
+        "statements": 1794,
+        "functions_changed": 19
+      },
+      "2": {
+        "declared_locals": 369,
+        "statements": 1749,
+        "functions_changed": 0
+      },
+      "3": {
+        "declared_locals": 366,
+        "statements": 1746,
+        "functions_changed": 6
+      },
+      "4": {
+        "declared_locals": 363,
+        "statements": 1742,
+        "functions_changed": 8
+      },
+      "6": {
+        "declared_locals": 364,
+        "statements": 1743,
+        "functions_changed": 9
+      }
+    },
+    "termdup": {
+      "0": {
+        "declared_locals": 385,
+        "statements": 1789,
+        "functions_changed": 19
+      },
+      "1": {
+        "declared_locals": 380,
+        "statements": 1777,
+        "functions_changed": 18
+      },
+      "2": {
+        "declared_locals": 369,
+        "statements": 1749,
+        "functions_changed": 0
+      },
+      "3": {
+        "declared_locals": 366,
+        "statements": 1743,
+        "functions_changed": 6
+      },
+      "4": {
+        "declared_locals": 363,
+        "statements": 1740,
+        "functions_changed": 9
+      },
+      "6": {
+        "declared_locals": 362,
+        "statements": 1738,
+        "functions_changed": 11
+      }
+    },
+    "note": "impliedrefs 6 declaring MORE than impliedrefs 4 is real, not noise: letting a wider value stay implied inflates its Cover, which changes what the speculative merges can combine, so the declaration count is not monotone in the bound.",
+    "hunk_classification_impliedrefs_4": {
+      "functions_changed": 8,
+      "kind": "every changed function is declaration-removal plus local renumbering; no statement is re-anchored across a control-flow boundary and no call site is gained or lost",
+      "per_function_decls": {
+        "sub_26a0": "29 -> 28",
+        "sub_2cb0": "18 -> 16",
+        "sub_3200": "24 -> 23",
+        "sub_3420": "25 -> 25",
+        "sub_4350": "4 -> 3",
+        "sub_44d0": "147 -> 141",
+        "sub_5960": "19 -> 15",
+        "sub_74d0": "60 -> 58"
+      }
+    },
+    "hunk_classification_termdup_3": {
+      "functions_changed": 6,
+      "per_function_decls": {
+        "sub_2cb0": "18 -> 17",
+        "sub_3060": "6 -> 6",
+        "sub_5960": "19 -> 18",
+        "sub_5cf0": "7 -> 7",
+        "sub_7010": "4 -> 2",
+        "sub_70a0": "5 -> 3"
+      }
+    }
+  },
+  "witness": {
+    "binary": "decbench O2/coreutils/stripped/fmt, sub_26a0 (main) @0x26a0",
+    "before": "if (((2 <= a0) && (v6 = a1[1], *v6 == '-')) && ((unsigned int)((int)v6[1] - 0x30U) <= 9)) {\\n    v15 = &v6[1];",
+    "after_impliedrefs_4": "if (((2 <= a0) && (*a1[1] == '-')) && ((unsigned int)((int)a1[1][1] - 0x30U) <= 9)) {\\n    v15 = &a1[1][1];",
+    "why": "v6 has exactly three readers, one over the shipped bound of 2"
+  },
+  "default_identity": {
+    "datatests": "675/675, PARITY OK",
+    "stages": "1013/1013, PARITY OK",
+    "self_check": "kuna decompile-all fmt with no options == --option impliedrefs 2 == --option termdup 2, byte for byte",
+    "cross_binary": {
+      "corpus": "20 decbench stripped ELFs (12 O2: coreutils od/libstdbuf.so/nproc/expr/getlimits, bzip2, chibios ch.elf, sysvinit halt/killall5, shadow groupmod/login/chfn; 8 O0: diffutils sdiff, chibios ch.elf, dpkg dpkg-divert/dpkg-statoverride, coreutils [ /cat/chgrp, e2fsprogs e2fsck)",
+      "arms": "this branch's kuna vs the main build, both `decompile-all` at shipped defaults",
+      "lines_of_c": 152308,
+      "binaries_identical": 20,
+      "binaries_differing": 0
+    }
+  },
+  "gates": {},
+  "catalog_counts": {
+    "settables": "205 -> 207",
+    "tiers": "core 66 / transform 78 -> 80 / analysis 61",
+    "catalog_json_rows": "204 -> 206",
+    "bytecompat_fixture": "recaptured from the fresh decomp_dbg build",
+    "kuna-catalog.xml bucket #8 (opt-in-tool)": "18 -> 20",
+    "stage corpus files (kuna-base/src/xml.rs)": "293 -> 294",
+    "baseline-stages keys": "1007 -> 1013",
+    "option_values_live_value_present_for_85": "unchanged -- a 3+-valued option carries no live_field (the codegen live reader is a bool ternary), so both names join the no-live-reader allow-list next to int3pad/warnstyle/namestyle"
+  },
+  "files": [
+    "decompiler/crates/kuna-decomp/src/p6_variables/kuna_impliedrefs.rs (new)",
+    "decompiler/crates/kuna-decomp/src/p6_variables/mod.rs",
+    "decompiler/crates/kuna-decomp/src/infra/architecture.rs",
+    "decompiler/crates/kuna-decomp/src/p0_knowledge/options.rs",
+    "decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_phases/tests.rs",
+    "decompiler/crates/kuna-decomp/phases.toml",
+    "decompiler/crates/kuna-decomp/tests/catalog_bytecompat.rs",
+    "decompiler/crates/kuna-decomp/tests/fixtures/phase_catalog.json",
+    "decompiler/crates/kuna-base/src/xml.rs",
+    "tests/stages/kuna-impliedrefs.xml (new)",
+    "tests/stages/kuna-catalog.xml",
+    "docs/baseline-stages.json",
+    "docs/options.md",
+    "docs/spec/06-variables-and-merge.md",
+    "docs/features/impliedrefs/{analysis.md,plan.md,record.json} (new)"
+  ],
+  "div_row": null,
+  "notes": "No tests/cli probe: this is an engine option, not a CLI-surface change, and the two-pass stage test covers the whole binary->decompile path. Verified by hand that the option reaches both CLI entry points (`kuna decompile --addr`, which forks decomp_dbg, and `kuna decompile-all --addr`) and that a bad value exits 1 with `error: option impliedrefs: Bad implied-reference bound: \"wide\" is not a decimal count`.",
+  "speed": {}
+}

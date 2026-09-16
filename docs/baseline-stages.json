@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1007,
-    1007
+    1013,
+    1013
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -307,6 +307,9 @@
     "data:GUARDARM #1: OFF inverts the guard and nests the body one level deeper (pass 1 only)",
     "data:GUARDARM #2: ON keeps the guard flat with the fatal call as its clause (pass 2 only)",
     "data:GUARDARM #3: the no-return clause call is emitted in BOTH passes",
+    "data:IMPLIEDREFS #1: at the shipped bound 2 a value with three readers is declared",
+    "data:IMPLIEDREFS #2: the declared value is then read at all three uses",
+    "data:IMPLIEDREFS #3: `option impliedrefs 4` drops the declaration and inlines the load at each use",
     "data:INDEXALIASGUARD #1: both passes recover the same four-word stack accumulator, so only its initialisation is in question",
     "data:INDEXALIASGUARD #2: both passes XOR it through the walking pointer, so the reads never moved",
     "data:INDEXALIASGUARD #3: both passes read the finished accumulator bit by bit",
@@ -654,6 +657,9 @@
     "data:TAILCALLSAVED #2: the false call is attributed to the rule that made it, in that pass only",
     "data:TAILCALLSAVED #3: only the default pass keeps the join block's own arithmetic inside the function",
     "data:TAILCALLSAVED #4: both passes keep the cdecl call whose arguments the add esp,8 discards, so the sole difference is the tail-call boundary",
+    "data:TERMDUP #4: at the shipped bound 2 a three-term expression is forced explicit and gets its own statement",
+    "data:TERMDUP #5: the explicit sum is then read at both multiplicand positions by name",
+    "data:TERMDUP #6: `option termdup 3` drops the statement and duplicates the three-term sum at both uses",
     "data:TIEDPHITRIM #10: both passes keep upstream's merge for accum_loop's computed loop value",
     "data:TIEDPHITRIM #11: both passes keep xa11's upstream merge, the loop's x stored into buf[0] only after the loop",
     "data:TIEDPHITRIM #12: both passes keep xa13's upstream merge, the loop's x stored into buf[0] only after the loop",

@@ -75,7 +75,7 @@ fn surface_count_is_119() {
 }
 
 #[test]
-fn settable_count_is_205() {
+fn settable_count_is_207() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -146,12 +146,12 @@ fn settable_count_is_205() {
     // +1 for `loweredswitchvalue` (P2 re-rolled switch dispatch value, DIV-181).
     // +1 for `tiedphitrim` (P6 loop-head aliased-read trim, DIV-182).
     // +1 for `loweredswitchexact` (P2 re-rolled switch matches its compare tree, DIV-183) and +1 for `loweredswitchheads` (P2 every lowered-switch cascade head, DIV-184).
-    assert_eq!(kuna_num_settables(), 205);
-    assert_eq!(SETTABLE_TABLE.len(), 205);
+    assert_eq!(kuna_num_settables(), 207);
+    assert_eq!(SETTABLE_TABLE.len(), 207);
 }
 
 #[test]
-fn tier_counts_are_66_core_78_transform_61_analysis() {
+fn tier_counts_are_66_core_80_transform_61_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -277,7 +277,7 @@ fn tier_counts_are_66_core_78_transform_61_analysis() {
     // core 64 -> 65: +1 for `tiedphitrim` (P6 loop-head aliased-read trim,
     // DIV-182).
     // core 65 -> 66, transform 77 -> 78: +1 for `loweredswitchexact` (P2 re-rolled switch matches its compare tree, DIV-183) and +1 for `loweredswitchheads` (P2 every lowered-switch cascade head, DIV-184).
-    assert_eq!((core, transform, analysis), (66, 78, 61));
+    assert_eq!((core, transform, analysis), (66, 80, 61));
 }
 
 #[test]
@@ -759,6 +759,15 @@ fn option_values_live_value_present_for_85() {
                             | "guardarm"
                             | "loopcondhoist"
                             | "rustabi"
+                            // (kuna) `impliedrefs`/`termdup` take an INTEGER
+                            // (`2|3|4|<n>`), which the codegen live reader (a
+                            // bool `live_true`/`live_false` pair) cannot
+                            // express -- the same reason `int3pad`, `warnstyle`
+                            // and `namestyle` are here. Their live values are
+                            // `Architecture::max_implied_ref` /
+                            // `max_term_duplication`.
+                            | "impliedrefs"
+                            | "termdup"
                     ) || PASS_GATES.contains(&st.option),
                     "unexpected option with no live reader: {}",
                     st.option
@@ -991,7 +1000,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `tiedphitrim` (DIV-182); its P6 row sits mid-table beside
     // `paramcopyhoist`, so it increments the comma-terminated catalog-row count.
     // 202 -> 204: +1 for `loweredswitchexact` (P2 re-rolled switch matches its compare tree, DIV-183) and +1 for `loweredswitchheads` (P2 every lowered-switch cascade head, DIV-184).
-    assert_eq!(json.matches("},\n").count(), 204);
+    assert_eq!(json.matches("},\n").count(), 206);
 }
 
 #[test]
