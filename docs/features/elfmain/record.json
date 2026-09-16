@@ -153,9 +153,9 @@
     "fixture": "decompiler/crates/kuna-analysis/tests/fixtures/elfmainextra_x86_64 (+ elfmainextra_x86_64.s, the assembler source and the two-line build command): a stripped x86-64 PIE with the crt1 idiom whose main forwards r8 into a call argument and stores r9 to a global, so the body-driven signature has six parameters"
   },
   "counts": {
-    "settables": "206 -> 208 after merging origin/main, which added two of its own in the same window; phases.toml, kuna_phases/tests.rs, catalog_bytecompat.rs, tests/fixtures/phase_catalog.json recaptured. `counters --rederive` agrees: settables 208, drift []",
-    "tiers": "(66, 78, 61) -> (66, 80, 62): +2 transform from origin/main, +1 analysis from this branch",
-    "catalog_rows": "205 -> 207 comma-terminated rows",
+    "settables": "206 -> 209 after two rounds of merging origin/main, which added three options of its own in the same window (impliedrefs/termdup, then bytehonest); phases.toml, kuna_phases/tests.rs, catalog_bytecompat.rs and tests/fixtures/phase_catalog.json all re-derived on a fresh build with `counters --rederive`/`--fix`, never by arithmetic. The bytehonest merge's settable assert auto-merged SILENTLY at 208 on both sides (the known trap) and was resolved to 209.",
+    "tiers": "(66, 78, 61) -> (67, 80, 62): +2 transform (impliedrefs/termdup) and +1 core (bytehonest) from origin/main, +1 analysis from this branch",
+    "catalog_rows": "205 -> 208 comma-terminated rows",
     "catalog_buckets": "unchanged (source_decompiler kuna, change_kind correctness-fix)",
     "live_value": "unchanged -- no live_field, so the PASS_GATES allowlist is the site instead"
   },
@@ -164,9 +164,9 @@
     "make test-stages": "datatests: 1021/1021 assertions passed / PARITY OK. The baseline was re-recorded when the second fixture's four assertions landed: 1017 -> 1021, additive except ELFMAIN #3, which was RENAMED (its declaration now appears in both images, min/max 1 -> 2). Nothing was removed and no assertion moved.",
     "make rust-test": "RUST_TEST_RC=0 via the serialized lane on the round-3 tree (LANE: done rc=0 2026-09-16T23:22:48Z, 414 `test result: ok` lines, none with a non-zero failure count). The run before it died rc=2 on ONE target, kuna-console --test verify_symbolnamebound :: the_original_name_still_resolves_through_the_fold, which passes on its own (`cargo test -p kuna-console --test verify_symbolnamebound` 4/4) and is a race between tests in that binary: verify_symbolnamebound.rs:194 calls bound_scope_path OUTSIDE the GATE mutex, so it re-reads the KUNA_SYMBOLNAMEBOUND env var while a sibling test has it flipped. Nothing in this branch touches that code.",
     "make check-spec": "check-spec OK (lenient mode) + check-spec OK (strict mode)",
-    "make test-cli": "tests/cli: 176/176 passed (two probes added in round 3: the cost class and the declared-name precedence; no existing probe edited)",
+    "make test-cli": "tests/cli: 178/178 passed after the merge (176 on this branch alone: two probes added in round 3, the cost class and the declared-name precedence; no existing probe edited)",
     "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
-    "counters --check": "no drift: every hard-coded site agrees with the derived truth",
+    "counters --check": "no drift: every hard-coded site agrees with the derived truth (re-run after the bytehonest merge)",
     "docs/options.md": "byte-fresh (`kuna catalog --markdown` reproduces it)",
     "CI": "parity gates PASS; full-ci label added so the cargo workspace suite runs there too. origin/main merged in, so the PR is mergeable."
   },
