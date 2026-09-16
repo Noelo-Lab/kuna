@@ -29,10 +29,31 @@
 //! its arguments reads neither argument register and is declared `void(void)`,
 //! and one that reads only `argc` declares one anonymous slot.
 //!
-//! `envp` is deliberately NOT declared, for the reason `machomain` gives: glibc
-//! does pass a third argument, but the extra unused slot costs more noise than
-//! it buys, and a `main` that really reads `envp` still shows the third argument
-//! register in its body.
+//! ## Why three parameters and not two
+//!
+//! glibc's `__libc_start_main` calls `main(argc, argv, envp)`, and the third
+//! argument is declared here even though most programs ignore it. The two-
+//! argument form is not a smaller version of the same claim — because the
+//! prototype is applied LOCKED, declaring two parameters asserts that there is
+//! no third one, and on a `main` that does read `envp` that assertion deletes a
+//! live parameter: the entry value stops being an input, the read becomes an
+//! uninitialised local, and the emitted C passes that undefined local on. The
+//! in-repo ARM fixture `armlibcmain_le32` @0x103dc is one — it forwards its
+//! third argument register straight to `__printf_chk` — and the two-argument
+//! form rendered `unsigned int v4; // r2` with no assignment anywhere, still
+//! passed as `__printf_chk(2,"…",v4,0)`.
+//!
+//! Nothing readable at load time separates the two cases. That fixture's `main`
+//! never touches `r2`: it sets up `r0`/`r1`, branches to `__printf_chk`, and the
+//! only evidence that `r2` carries a value is the CALLEE's signature. A body
+//! walk looking for a read of the third argument register sees nothing there and
+//! nothing in a `main` that truly ignores `envp`, so it cannot tell them apart —
+//! and the two mistakes are not symmetric. An `envp` the program ignores is one
+//! unused parameter in a declaration that is true of every hosted C program;
+//! an `envp` dropped from a program that uses it is wrong output. So the
+//! declaration the C runtime actually makes is the one applied, which is also
+//! what IDA Pro reports for the same address
+//! (`int __cdecl main(int argc, const char **argv, const char **envp)`).
 //!
 //! ## Where the address comes from
 //!
@@ -188,8 +209,9 @@ fn scan_runtime_names(file: &object::File) -> (bool, bool) {
     (runtime, main)
 }
 
-/// `int main(int argc, char **argv)` — the declaration the C runtime's call
-/// licenses.
+/// `int main(int argc, char **argv, char **envp)` — the declaration the C
+/// runtime's call licenses, all three arguments of it (see the module header for
+/// why the third one is not optional).
 fn main_prototype(ctx: &AnalysisCtx) -> Option<PrototypePieces> {
     let (_addr_size, word_size) = ctx.arch.data_org();
     let types = ctx.arch.types();
@@ -201,8 +223,8 @@ fn main_prototype(ctx: &AnalysisCtx) -> Option<PrototypePieces> {
     Some(PrototypePieces {
         name: MAIN.to_string(),
         outtype: Some(std::rc::Rc::clone(&int4)),
-        intypes: vec![int4, charpp],
-        innames: vec!["argc".to_string(), "argv".to_string()],
+        intypes: vec![int4, std::rc::Rc::clone(&charpp), charpp],
+        innames: vec!["argc".to_string(), "argv".to_string(), "envp".to_string()],
         first_var_arg_slot: -1,
         output_storage: None,
         input_storage: Vec::new(),
