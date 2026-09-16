@@ -1233,6 +1233,37 @@ action emits as `COPY #toc -> r2`, and a TOC-relative load resolves to the globa
 it names. A code entry whose descriptors disagree about the TOC, or where any of
 them has an unresolved TOC word, gets no seed.
 
+ELFv1 import markup recognizes complete descriptor-call stubs that save the
+caller's TOC at SP+40, load the entry and TOC, and transfer through CTR.
+A stub is named only when its decoded displacement and a validated function TOC
+identify the same `R_PPC64_JMP_SLOT` import for every possible TOC. Only explicit
+zero-addend relocations qualify: a nonzero addend selects the descriptor at
+symbol address plus addend, whose identity cannot be inferred from the symbol's
+name. Implicit addends are also unresolved here. Conflicting names and possible
+TOCs without a matching import relocation are declined: an
+unmatched TOC can select a returning local descriptor instead. Import matching
+scans every 8-aligned word in `.opd` for a resolved, plausible code entry, so
+symbol-less descriptors still contribute possible TOCs after stripping. It reads
+the following TOC word without requiring an environment word; an unavailable
+TOC is ambiguous. Unresolved potential code words also decline all these names
+because they cannot exclude a descriptor. This conservative scan supplies only
+import ambiguity, while symbol normalization and register seeding use the
+validated image-entry and symbol-derived descriptors described above. Possible
+TOCs include aliases that disagree and cannot seed their shared code entry.
+This resolver declines all descriptor-stub names if any validated descriptor's
+TOC remains unresolved: without a caller-specific TOC, the unknown value could
+select a different import and invalidate a no-return fact.
+Both full environment-word and GNU lazy-resolution forms are supported. A lazy
+stub's zero-TOC branch must reach the matching import's resolver entry: its
+relocation index, branch to the common glink code, and the common code's load of
+`DT_PLTGOT` are validated against `DT_PPC64_GLINK` and `DT_JMPREL`. Returning
+fallbacks, entries for another slot, and unknown resolver code or metadata are
+declined. Currently only the two-instruction resolver entries with indices below
+32768 qualify. The full environment-word form needs no lazy resolver.
+The existing known-no-return pass consumes these names, so a guard failure
+import no longer introduces false fall-through or consumes the normal return.
+ELFv2 decoding and ordinary returning imports retain their existing behavior.
+
 The file front-ends also accept `--isa auto|arm|thumb`. An explicit ARM/Thumb
 choice paints `TMode` across mapped CODE sections before decoding. If an ELF has
 no section headers, it uses executable `PT_LOAD` memory extents, including their
