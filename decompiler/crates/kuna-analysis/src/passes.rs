@@ -87,18 +87,6 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // `--option libcsigs on|off` via `engine.rs::analysis_pass_enabled`, so `off`
         // is byte-identical to the base table alone.
         Box::new(crate::protos::kuna_libcsigs::LibcSigsPass),
-        // S1 named libc/POSIX aggregate types (`libctypes`): the same signatures
-        // the two tables above carry, with their aggregate slots spelled by name
-        // (`FILE *`, `stat *`, `DIR *`, `option *`) instead of the width-stable
-        // `void *`, plus the stdio names neither table carries (`__uflow` and
-        // friends). Registered LAST of the three so its prototypes are merged
-        // last and therefore committed last, winning for every name it restates.
-        // The pass SELF-GATES on the `libctypes` env bridge rather than on the
-        // commit boundary: it interns the named shells into the type factory as
-        // it builds the signatures, and with the gate off not one of them may
-        // exist. `engine.rs::analysis_pass_enabled` still carries the matching
-        // arm as the second, defensive gate.
-        Box::new(crate::protos::kuna_libctypes::LibcTypesPass),
         // S1 built-in Win32 API signatures (`win32sigs`): the Windows half of the
         // `.gdt` stand-in, which nothing in the tree carried. PE/COFF only, and
         // keyed by ENTRY ADDRESS rather than by name -- a PE import is TWO
@@ -278,6 +266,28 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // via `engine.rs::analysis_pass_enabled` + `commit_analysis_output`.
         Box::new(crate::demangle::kuna_cppsig::CppSigPass),
         Box::new(crate::dwarf::DwarfPass),
+        // S1 named libc/POSIX aggregate types (`libctypes`): the signatures
+        // `LibProtoPass`/`LibcSigsPass` carry, with their aggregate slots spelled
+        // by name (`FILE *`, `stat *`, `DIR *`, `option *`) instead of the
+        // width-stable `void *`, plus the stdio names neither table carries
+        // (`__uflow` and friends). Merged after those two, so its prototypes are
+        // committed last and win for every name it restates.
+        //
+        // Registered after `DwarfPass` ON PURPOSE, and this is load-bearing: the
+        // pass INTERNS a named shell per aggregate as it builds the signatures,
+        // and a `Rc<Datatype>` pointee is captured by value. `TypeFactory`
+        // completion re-keys a struct into a NEW `Rc` (`set_fields_struct`), so a
+        // pointer minted against an empty shell keeps pointing at the empty shell
+        // even after DWARF completes the same name. Running second, the pass sees
+        // the platform's real `struct stat` already interned and points at THAT
+        // (`kuna_libctypes::named_aggregate`); the names DWARF did not define it
+        // mints itself. The order also keeps the prototype precedence right — a
+        // DWARF-defined function outranks a table entry.
+        //
+        // The pass SELF-GATES on the `libctypes` env bridge rather than on the
+        // commit boundary, because with the gate off not one of those shells may
+        // exist, interned or not.
+        Box::new(crate::protos::kuna_libctypes::LibcTypesPass),
         // S1 DWARF source lines: parse `.debug_line` and surface each
         // instruction's `file:line` as a `Comment::user2` on the decompiled
         // output (the kuna analog of Ghidra's `DWARFLineInfoCommentScript`).

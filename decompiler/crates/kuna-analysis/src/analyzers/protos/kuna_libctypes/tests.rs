@@ -78,6 +78,35 @@ fn a_different_type_under_the_same_name_declines() {
     assert!(named_aggregate("option", &types).is_err(), "declined, not adopted");
 }
 
+/// glibc spells `FILE` as `struct _IO_FILE`, so that is the tag a `-g` image
+/// defines the layout under. The table adopts it rather than minting a second,
+/// empty stream type beside the real one.
+#[test]
+fn the_platform_spelling_of_the_same_type_is_adopted() {
+    let types = factory();
+    let shell = types.get_type_struct("_IO_FILE").expect("shell");
+    let int4t = types.get_base(4, type_metatype::TYPE_INT).expect("int");
+    let field = kuna_decomp::dtype::TypeField::new(0, 0, "_flags", int4t);
+    let complete = types
+        .set_fields_struct_raw(&shell, vec![field], Vec::new(), 216, 8, 0)
+        .expect("complete _IO_FILE");
+    let got = named_aggregate("FILE", &types).expect("adopt the platform spelling");
+    assert!(Rc::ptr_eq(&complete, &got), "`FILE` resolves to the held `_IO_FILE`");
+    assert_eq!(got.get_name(), "_IO_FILE");
+}
+
+/// A DWARF forward declaration (`DW_AT_declaration`, no `DW_AT_byte_size`) is
+/// interned at width 0. Pointing at it is the one thing a sized shell exists to
+/// prevent — `RulePtrsubUndo` keeps the `PTRSUB` alive on a zero-width pointee
+/// and the printer emits it in functional form — and completing it here would
+/// re-key somebody else's type. So the signature is declined instead.
+#[test]
+fn a_zero_width_forward_declaration_declines() {
+    let types = factory();
+    types.get_type_struct("stat").expect("a width-0 forward declaration");
+    assert!(named_aggregate("stat", &types).is_err(), "declined, not completed");
+}
+
 /// Every `NamedPtr` in either table must name a row of `NAMED_AGGREGATES` —
 /// otherwise `build_ty` has no width for it and the signature is dropped
 /// silently.

@@ -326,6 +326,68 @@ fn header_syntax_checks_with_cc() {
     );
 }
 
+/// (kuna) `stat` and `sigaction` are each a POSIX struct tag AND a POSIX
+/// function, and C keeps typedefs and functions in one file-scope namespace. The
+/// export must not emit both spellings as declarations, or the header stops
+/// parsing at the clash and every declaration after it fails too.
+///
+/// `libctypes_stat_x86_64` imports `stat` and carries `struct stat` in its DWARF,
+/// so the clash is reachable with the named tables OFF (the DWARF import alone)
+/// and with them on (`stat *` from the prototype table as well).
+#[test]
+fn header_syntax_checks_when_a_type_shares_a_name_with_a_function() {
+    if Command::new("cc").arg("--version").output().map(|o| !o.status.success()).unwrap_or(true) {
+        eprintln!("header_syntax_checks_when_a_type_shares_a_name_with_a_function: no `cc`");
+        return;
+    }
+    for arm in ["off", "opaque"] {
+        let bin = fixture("libctypes_stat_x86_64");
+        let dir = out_dir(&format!("typefnclash_{arm}"));
+        let (_stdout, stderr, ok) = run_kuna(&[
+            "decompile-project",
+            &bin,
+            "-o",
+            dir.to_str().unwrap(),
+            "--option",
+            "libctypes",
+            arm,
+            "--sleighpath",
+            &specs(),
+        ]);
+        if !ok {
+            if is_specs_skip(&stderr) {
+                eprintln!("decompile_project_cli: skipping (no `.sla`): {stderr}");
+                return;
+            }
+            panic!("kuna decompile-project failed (libctypes {arm}): {stderr}");
+        }
+        let (_c, h, _asm, _r) = artifacts(&dir, "libctypes_stat_x86_64");
+        let text = std::fs::read_to_string(&h).unwrap();
+        assert!(
+            text.contains("prototype omitted: int stat("),
+            "libctypes {arm}: the `stat` prototype should be suppressed, not declared:\n{text}"
+        );
+        let stub = dir.join("hcheck.c");
+        std::fs::write(
+            &stub,
+            format!(
+                "#define main kuna_recovered_main\n#include \"{}\"\nint stub_entry(void){{return 0;}}\n",
+                h.display()
+            ),
+        )
+        .unwrap();
+        let out = Command::new("cc")
+            .args(["-std=c99", "-fsyntax-only", stub.to_str().unwrap()])
+            .output()
+            .expect("spawn cc");
+        assert!(
+            out.status.success(),
+            "libctypes {arm}: generated .h failed cc -fsyntax-only:\n{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+}
+
 #[test]
 fn arm_thumb_project_smoke() {
     let Some(dir) = project("arm_thumb_linked_le32", "arm") else { return };

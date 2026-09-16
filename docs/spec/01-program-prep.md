@@ -1453,16 +1453,35 @@ moves.
   layout the platform publishes nowhere). With a real width, an in-range access
   renders `f->field_0x8` and an out-of-range one falls back to the cast form.
 
-  *The shells stay incomplete, and the names are bare.* Keeping
-  `type_incomplete` set on a sized shell is what lets the DWARF importer meet a
-  held `stat` and COMPLETE IT IN PLACE rather than collide with it: the factory
-  refuses a second, different definition of a name it already holds, and DWARF
-  interns `stat`, `passwd`, `tm` and `option` under the identical bare spelling.
-  So a `-g` binary keeps its real layouts and this table quietly yields, while a
-  stripped one — which is the case the option is for — keeps the opaque shell.
-  The names are the bare DWARF spelling (`stat`, not `struct stat`) because
-  that is what the printer spells for a named base and what the project
-  exporter's `typedef struct stat stat;` makes valid C.
+  *The shells stay incomplete, and the names are bare.* `type_incomplete` stays
+  set on the sized shell so the project exporter declares it
+  `typedef struct FILE FILE; /* opaque */` rather than as a struct with a width
+  and no members. The names are the bare DWARF spelling (`stat`, not
+  `struct stat`) because that is what the printer spells for a named base and
+  what that same `typedef` makes valid C.
+
+  *An image with debug info already has the real thing, and gets it.* DWARF
+  interns `stat`, `passwd`, `tm` and `option` under the identical bare spelling,
+  with their true layouts, so this table has nothing to add there and must not
+  get in the way. It runs AFTER the DWARF importer and adopts whatever complete
+  aggregate of the declared width is already held under the name — or under the
+  spelling the platform's own headers use for it, which for `FILE` is
+  `struct _IO_FILE`. A name held by anything else — a different width, an
+  incomplete shell someone else is populating, a non-struct — declines the
+  signature: this table never completes, re-keys or alters a definition it did
+  not establish.
+
+  The order is not a preference, it is the correctness condition. A pointee is
+  captured as a reference when the signature is built, and completing a struct
+  re-keys it into a NEW object (`TypeFactory::setFields` mutates in place in the
+  C++; the Rust factory clones). A shell minted first and completed by DWARF
+  afterwards is completed for everyone EXCEPT the pointers already built against
+  it, so `st->st_mode` would silently degrade to `*(int *)&st->field_0x18` on
+  exactly the `-g` binaries that have the answer. Running second closes that
+  window. For the same reason the named tables match IMPORTED names only, where
+  the shipped `LibProtoPass` also matches a name the image defines: a defined
+  `fopen` is that image's own function and its DWARF prototype outranks a table
+  entry.
 
   *The gate is read at load time, inside the pass.* The named shells are interned
   into the type factory while the signatures are built, which happens during

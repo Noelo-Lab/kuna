@@ -649,10 +649,51 @@ pub fn sanitize_guard(file_name: &str) -> String {
     s
 }
 
+/// (kuna) Every name the type block introduces as a TYPEDEF name.
+///
+/// C has one ordinary-identifier namespace, so a typedef and a function cannot
+/// share a spelling at file scope — and `stat`, `sigaction` and `group` are all
+/// three a POSIX struct tag AND a POSIX function. [`build_header`] uses this set
+/// to keep the exported header compilable; see there.
+///
+/// Reads the rendered block rather than the type objects because that is what
+/// this composer is handed. A typedef line is `typedef <base> <name>;` possibly
+/// followed by a `/* … */` annotation, one per line
+/// (`printc::render_type_definitions`), so the name is the last identifier
+/// before the first `;`.
+fn typedef_names(types: &str) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    for line in types.lines() {
+        let Some(rest) = line.trim_start().strip_prefix("typedef ") else { continue };
+        let Some(decl) = rest.split(';').next() else { continue };
+        let name: String = decl
+            .chars()
+            .rev()
+            .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect();
+        if !name.is_empty() {
+            out.insert(name);
+        }
+    }
+    out
+}
+
 /// `<name>.h`: include guard + recompile prelude + user type definitions +
 /// the prototype section (successes in address order; failures as comments).
+///
+/// A function whose name is also one of the header's typedef names has its
+/// prototype COMMENTED OUT rather than declared: `int stat(const char *, stat *)`
+/// next to `typedef struct stat stat;` is `error: 'stat' redeclared as a
+/// different kind of symbol`, and it takes the declarations after it down with
+/// it. The type is the more valuable of the two — every other signature that
+/// mentions it depends on it, while the suppressed prototype is one line, still
+/// printed verbatim in the comment.
 pub fn build_header(file_name: &str, prelude: &str, types: &str, results: &[FuncResult]) -> String {
     let guard = sanitize_guard(file_name);
+    let shadowed = typedef_names(types);
     let mut out = String::new();
     out.push_str(&format!("#ifndef {guard}\n#define {guard}\n\n"));
     out.push_str(prelude);
@@ -663,6 +704,13 @@ pub fn build_header(file_name: &str, prelude: &str, types: &str, results: &[Func
     out.push_str("\n/* function prototypes */\n");
     for r in results {
         match (&r.proto, &r.error) {
+            (Some(proto), None) if shadowed.contains(&r.name) => {
+                out.push_str(&format!(
+                    "/* `{}` is a type name above; prototype omitted: {} */\n",
+                    r.name,
+                    proto.trim().replace("/*", "/ *").replace("*/", "* /")
+                ));
+            }
             (Some(proto), None) => {
                 out.push_str(proto);
                 if !proto.ends_with('\n') {

@@ -24,21 +24,35 @@
 //! fall back to the cast form.
 //!
 //! The shells are nevertheless kept INCOMPLETE (`flags::type_incomplete` is
-//! passed back through `set_fields_struct_raw`, which re-ORs it). Two things
-//! depend on that: the `.h` emitter prints `typedef struct FILE FILE;` with no
-//! body, and the DWARF importer's own name resolution
-//! (`analyzers::dwarf::kuna_dwarfstructs::intern_aggregate`) treats a held
-//! *incomplete* aggregate as a shell it may COMPLETE IN PLACE — so on a `-g`
-//! binary the real `struct stat` layout still lands under the same bare name
-//! instead of colliding with it.
+//! passed back through `set_fields_struct_raw`, which re-ORs it), so the `.h`
+//! emitter prints `typedef struct FILE FILE; /* opaque */` with no body rather
+//! than a struct with a width and no members.
 //!
 //! The widths are the glibc **x86-64** ones, which is the ABI of the corpus this
 //! option was measured on. On another ABI a width can be a few bytes off, and the
 //! only thing that can change is whether an access at a given offset renders as a
 //! field or as a cast — the NAME, which is the whole point, is ABI-independent,
-//! and a wrong width can never make a pointer point at the wrong thing. Where the
-//! platform's own definition is available (a `-g` binary), it is adopted instead,
-//! width and layout and all.
+//! and a wrong width can never make a pointer point at the wrong thing.
+//!
+//! ## A `-g` image already has the real thing
+//!
+//! On an image that carries debug info the platform's own `struct stat` is
+//! interned with its real layout, and THAT is what this table points at — the
+//! pass runs after `DwarfPass` for exactly that reason (`passes.rs`), and
+//! [`named_aggregate`] adopts a held complete aggregate of the declared width
+//! instead of minting a shell. glibc spells `FILE` as `struct _IO_FILE`, so that
+//! alias is tried too; without it the image would carry two stream types and the
+//! body would cast between them.
+//!
+//! The order is not cosmetic. A pointee is captured as an `Rc<Datatype>` when the
+//! signature is built, and completing a struct re-keys it into a NEW `Rc`
+//! (`TypeFactory::set_fields_struct` — the C++ mutates a `TypeStruct` in place,
+//! the Rust clones). A shell minted first and completed by DWARF afterwards is
+//! therefore completed for everyone EXCEPT the pointers this table already
+//! built, and `st->st_mode` degrades to `*(int *)&st->field_0x18`. Running
+//! second removes the window: this table never completes, re-keys or alters a
+//! type it did not establish, and declines the signature outright when the name
+//! is held by something else.
 //!
 //! ## Names are the bare DWARF spelling
 //!
@@ -74,7 +88,7 @@ use kuna_decomp::dtype::{flags, type_metatype, Datatype, TypeFactory};
 
 use super::{
     resolved_import_addrs, seed_named_prototypes, seed_resolved_prototypes,
-    unambiguous_imported_function_names, unambiguous_present_function_names, Sig, Ty,
+    unambiguous_imported_function_names, Sig, Ty,
 };
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
 
@@ -100,6 +114,12 @@ pub(super) fn enabled() -> bool {
 pub(super) struct NamedAggregate {
     /// The bare name the type is interned and printed under.
     pub name: &'static str,
+    /// The spelling the platform's own debug info uses for the same aggregate,
+    /// when it differs. glibc's `FILE` is a typedef of `struct _IO_FILE`, so a
+    /// `-g` image defines the layout under THAT tag; adopting it is what keeps
+    /// one type where there would otherwise be two (and the decompiled body free
+    /// of `(FILE *)` casts between them).
+    pub dwarf_alias: Option<&'static str>,
     /// Byte width of the aggregate.
     pub size: int4,
     /// Byte alignment of the aggregate.
@@ -109,53 +129,74 @@ pub(super) struct NamedAggregate {
 /// Every aggregate [`Ty::NamedPtr`] may name. Sorted by name; the table is
 /// searched linearly (16 rows, a handful of times per load).
 pub(super) const NAMED_AGGREGATES: &[NamedAggregate] = &[
-    NamedAggregate { name: "DIR", size: 1, align: 1 },
-    NamedAggregate { name: "FILE", size: 216, align: 8 },
-    NamedAggregate { name: "dirent", size: 280, align: 8 },
-    NamedAggregate { name: "group", size: 32, align: 8 },
-    NamedAggregate { name: "mbstate_t", size: 8, align: 4 },
-    NamedAggregate { name: "option", size: 32, align: 8 },
-    NamedAggregate { name: "passwd", size: 48, align: 8 },
-    NamedAggregate { name: "pthread_mutex_t", size: 40, align: 8 },
-    NamedAggregate { name: "sigaction", size: 152, align: 8 },
-    NamedAggregate { name: "sigset_t", size: 128, align: 8 },
-    NamedAggregate { name: "sockaddr", size: 16, align: 2 },
-    NamedAggregate { name: "stat", size: 144, align: 8 },
-    NamedAggregate { name: "termios", size: 60, align: 4 },
-    NamedAggregate { name: "timespec", size: 16, align: 8 },
-    NamedAggregate { name: "timeval", size: 16, align: 8 },
-    NamedAggregate { name: "tm", size: 56, align: 8 },
+    NamedAggregate { name: "DIR", dwarf_alias: None, size: 1, align: 1 },
+    NamedAggregate { name: "FILE", dwarf_alias: Some("_IO_FILE"), size: 216, align: 8 },
+    NamedAggregate { name: "dirent", dwarf_alias: None, size: 280, align: 8 },
+    NamedAggregate { name: "group", dwarf_alias: None, size: 32, align: 8 },
+    NamedAggregate { name: "mbstate_t", dwarf_alias: None, size: 8, align: 4 },
+    NamedAggregate { name: "option", dwarf_alias: None, size: 32, align: 8 },
+    NamedAggregate { name: "passwd", dwarf_alias: None, size: 48, align: 8 },
+    NamedAggregate { name: "pthread_mutex_t", dwarf_alias: None, size: 40, align: 8 },
+    NamedAggregate { name: "sigaction", dwarf_alias: None, size: 152, align: 8 },
+    NamedAggregate { name: "sigset_t", dwarf_alias: None, size: 128, align: 8 },
+    NamedAggregate { name: "sockaddr", dwarf_alias: None, size: 16, align: 2 },
+    NamedAggregate { name: "stat", dwarf_alias: None, size: 144, align: 8 },
+    NamedAggregate { name: "termios", dwarf_alias: None, size: 60, align: 4 },
+    NamedAggregate { name: "timespec", dwarf_alias: None, size: 16, align: 8 },
+    NamedAggregate { name: "timeval", dwarf_alias: None, size: 16, align: 8 },
+    NamedAggregate { name: "tm", dwarf_alias: None, size: 56, align: 8 },
 ];
 
-/// Intern (or find) the named, sized, still-incomplete aggregate shell for `name`.
+/// The aggregate this table will point at for `name`: the platform's own
+/// definition when the image carries one, else a named, sized, empty shell.
+///
+/// The pass runs after `DwarfPass`, so "the platform's own" means simply
+/// "already interned". Three outcomes:
+///
+/// * a COMPLETE struct of the declared width is held under `name` or under its
+///   [`NamedAggregate::dwarf_alias`] — that is the real `struct stat` the file
+///   was built against, fields and all, and it is adopted verbatim;
+/// * anything else is held under `name` — a struct of a different width, an
+///   incomplete shell somebody else is populating, a non-struct — and the whole
+///   signature is declined. This table never alters, completes or re-keys a
+///   definition it did not establish: completion mints a NEW `Rc`
+///   (`TypeFactory::set_fields_struct`), so re-keying another owner's shell
+///   would strand every pointer already minted against it;
+/// * nothing is held — mint the sized, still-incomplete shell.
 ///
 /// Idempotent by construction: the second call finds the interned type by name
 /// and hands back the same `Rc`, so every `FILE *` in the table is the same
-/// pointee object. A name already held by something that is not a struct, or by
-/// a COMPLETE struct (a DWARF import that ran first, or the operator's own
-/// `--assert typedef`), is left exactly as it is — this table never alters a
-/// definition somebody else established.
+/// pointee object.
 pub(super) fn named_aggregate(name: &str, types: &dyn TypeFactory) -> KunaResult<Rc<Datatype>> {
     let Some(agg) = NAMED_AGGREGATES.iter().find(|a| a.name == name) else {
         return Err(KunaError::lowlevel(format!(
             "libctypes: no width is known for `{name}`"
         )));
     };
+    // The declared width is the identity test. A struct of that width under that
+    // name is either the platform's own definition (complete, with its fields) or
+    // the shell an earlier slot of this same table minted — adopt either. Anything
+    // else is somebody else's `stat`: a program type that shares the spelling, a
+    // non-struct, or a zero-width forward declaration whose pointee would survive
+    // `RulePtrsubUndo` as a functional `PTRSUB`.
+    let usable = |held: &Rc<Datatype>| {
+        held.get_metatype() == type_metatype::TYPE_STRUCT && held.get_size() == agg.size
+    };
     if let Some(held) = types.find_by_name(name)? {
-        // A held COMPLETE aggregate of the declared width is the platform's own
-        // (a DWARF import that ran first): adopt it, layout and all. One of a
-        // DIFFERENT width is a program's own type that merely shares the
-        // spelling, and pointing a libc signature at it would assert a type
-        // instead of withholding one, so the whole signature is declined.
-        let usable = held.get_metatype() == type_metatype::TYPE_STRUCT
-            && (held.is_incomplete() || held.get_size() == agg.size);
-        if !usable {
+        if !usable(&held) {
             return Err(KunaError::lowlevel(format!(
                 "libctypes: `{name}` is already held by a different type"
             )));
         }
         return Ok(held);
     };
+    if let Some(alias) = agg.dwarf_alias {
+        if let Some(held) = types.find_by_name(alias)? {
+            if usable(&held) {
+                return Ok(held);
+            }
+        }
+    }
     let shell = types.get_type_struct(name)?;
     // The width is the point (a zero-size pointee survives RulePtrsubUndo and
     // prints as functional `PTRSUB(p,off)`); `type_incomplete` is passed back so
@@ -170,9 +211,9 @@ pub(super) fn named_aggregate(name: &str, types: &dyn TypeFactory) -> KunaResult
     )
 }
 
-/// Retargets of [`super::LIBC`] entries — matched, like that table, against the
-/// names the image carries at all (defined or imported), with the same
-/// ambiguity guard.
+/// Retargets of [`super::LIBC`] entries — matched against IMPORTED names, with
+/// the same ambiguity guard (see [`LibcTypesPass::run`] for why this table is
+/// stricter than the one it restates).
 pub(super) const LIBC_NAMED: &[(&str, Sig)] = &[
     ("fopen", Sig { ret: Ty::NamedPtr("FILE"), params: &[Ty::CharPtr, Ty::CharPtr], vararg: -1 }),
     ("fprintf", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("FILE"), Ty::CharPtr], vararg: 2 }),
@@ -313,11 +354,15 @@ impl AnalysisPass for LibcTypesPass {
         }
         let types = ctx.arch.types();
         let (_addr_size, word_size) = ctx.arch.data_org();
+        // IMPORTED names only, for both tables — where `LibProtoPass` also matches
+        // a name the image DEFINES. A defined `fopen` is this image's own
+        // function, and on a `-g` image it has a DWARF prototype that this pass,
+        // merged after `DwarfPass`, would otherwise outrank. Retargeting the
+        // import is the whole job; the definition belongs to whoever declared it.
         let resolved = resolved_import_addrs(ctx.file, ctx.bytes);
-        let present = unambiguous_present_function_names(ctx.file, ctx.bytes);
-        seed_named_prototypes(&mut out, &present, LIBC_NAMED, types, word_size);
-        seed_resolved_prototypes(&mut out, &resolved, LIBC_NAMED, types, word_size);
         let imported = unambiguous_imported_function_names(ctx.file, ctx.bytes);
+        seed_named_prototypes(&mut out, &imported, LIBC_NAMED, types, word_size);
+        seed_resolved_prototypes(&mut out, &resolved, LIBC_NAMED, types, word_size);
         seed_named_prototypes(&mut out, &imported, LIBC_EXT_NAMED, types, word_size);
         seed_resolved_prototypes(&mut out, &resolved, LIBC_EXT_NAMED, types, word_size);
         out
