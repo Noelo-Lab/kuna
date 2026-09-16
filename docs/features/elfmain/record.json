@@ -115,12 +115,13 @@
     }
   },
   "speed": {
-    "method": "interleaved alternating runs, min of N (the box is shared; median and mean are dominated by other tenants)",
-    "witness_function": "decbench fmt O2 `kuna decompile-all --addr 0x26a0`, min of 31: off=236 ms, on=238 ms, delta +0.85%",
-    "control": "fauxware `authenticate` (unstripped, the pass refuses), min of 31: off=107 ms, on=106 ms, delta -0.93% -- the noise floor",
-    "whole_binary": "stripped_dynamic_x86_64 `kuna decompile-all`, min of 21: off=127 ms, on=129 ms, delta +1.57%",
+    "method": "Order-alternating paired runs: each iteration times both arms back to back and flips which arm goes first, so a drifting machine cancels; the reported number is the MEDIAN of the per-pair deltas. min-of-N was tried first and rejected -- on this contended box (load average 14, six other worktrees building) the control's min-of-41 delta came out +4.7%, i.e. larger than anything being measured.",
+    "witness_function": "decbench fmt O2 `kuna decompile-all --addr 0x26a0`, 41 pairs: -0.07%",
+    "control": "fauxware `authenticate` (unstripped, the pass refuses, so the true delta is 0), 41 pairs: -0.43% -- the noise floor",
+    "whole_binary": "stripped_dynamic_x86_64 `kuna decompile-all`, 41 pairs: +0.17%",
     "budget_pct": 5.0,
-    "within_budget": true
+    "within_budget": true,
+    "reading": "All three are inside +-0.5%, and the witness is closer to zero than the control. The pass's per-load work is one pass over the symbol names (which the refusals need anyway) and one more entry in a locked prototype."
   },
   "tests": {
     "unit": "decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_elfmain.rs (5 tests over main_claim: both x86-64 encodings, all four oracle-4 architectures, the two non-PIE ARM shapes, the unstripped-ELF refusal, the non-ELF and no-crt1 refusals)",
@@ -145,7 +146,7 @@
   "gates": {
     "make test": "datatests: 675/675 assertions passed / PARITY OK (docs/baseline.json NOT re-pinned)",
     "make test-stages": "datatests: 1011/1011 assertions passed / PARITY OK (baseline re-recorded, additive only: the 4 ELFMAIN keys, no existing assertion moved)",
-    "make rust-test": "RUST_TEST_RC=0 (via the serialized lane; 414 `test result: ok`, 0 failures). A first run found 5 failures in 3 files, all of them expectation moves this option makes; they are fixed in the branch and listed under tests.moved_expectations.",
+    "make rust-test": "RUST_TEST_RC=0 via the serialized lane (414 `test result: ok`, 0 failures). The first round-2 lane run found exactly one failing target, `kuna-decomp --test catalog_bytecompat`, because the option's reworded summary changed the catalog bytes; the fixture was recaptured and the lane re-run green on the final tree.",
     "make check-spec": "check-spec OK (lenient mode) + check-spec OK (strict mode)",
     "make test-cli": "tests/cli: 172/172 passed",
     "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
