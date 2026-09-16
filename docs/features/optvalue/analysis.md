@@ -117,6 +117,10 @@ driver-injected bundles — `RELIABLE_OVERRIDES` / `AGGRESSIVE_OVERRIDES` /
 `aif on`, and the `option readonly on` an `--assert` range implies: **0**
 diagnostics. So no `--mode` and no `--assert` can synthesize a fatal line.
 
+End to end: one `kuna decompile fauxware main` carrying all 205 options at
+their default value exits 0, as does each of `--mode auto|reliable|aggressive|fast`,
+alone and with an `--assert` range.
+
 **Full prefix coverage.** All 205 catalogued options fed `zzzbadvalue`: 205/205
 answered with a single-line `Execution error: ` — the first entry of
 `CONSOLE_DIAGNOSTICS` — 0 accepted it, and none printed a non-diagnostic line

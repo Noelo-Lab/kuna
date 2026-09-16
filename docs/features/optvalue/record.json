@@ -32,19 +32,31 @@
       "diagnostic_lines": 0,
       "mode_override_pairs_swept": 70,
       "driver_default_and_assert_injected_pairs": 5,
-      "injected_diagnostic_lines": 0
+      "injected_diagnostic_lines": 0,
+      "end_to_end": "one `kuna decompile fauxware main` carrying ALL 205 catalogued options at their catalogued default value -> rc=0; each of --mode auto|reliable|aggressive|fast, alone and with --assert 'readonly 0x404028+8' (which injects `option readonly on`) -> rc=0"
     },
     "prefix_coverage_sweep": {
       "catalogued_options_fed_zzzbadvalue": 205,
       "refused": 205,
       "accepted": 0,
-      "distinct_console_prefixes": ["Execution error: "],
+      "distinct_console_prefixes": [
+        "Execution error: "
+      ],
       "distinct_wordings": 17,
       "multi_line_reasons": 0,
       "non_diagnostic_output_after_an_option_echo": 0,
       "upstream_optiondatabase_names_swept": 37,
       "upstream_refusals_are_single_line_execution_error": true,
-      "upstream_names_that_tolerate_garbage": ["extrapop", "maxlinewidth", "indentincrement", "commentindent", "commentstyle", "integerformat", "setaction", "maxinstruction"],
+      "upstream_names_that_tolerate_garbage": [
+        "extrapop",
+        "maxlinewidth",
+        "indentincrement",
+        "commentindent",
+        "commentstyle",
+        "integerformat",
+        "setaction",
+        "maxinstruction"
+      ],
       "tolerant_names_note": "upstream's own lenient parsers print a success line; unchanged here and tolerated identically by decompile-all"
     },
     "nothing_relied_on_the_old_behaviour": {
