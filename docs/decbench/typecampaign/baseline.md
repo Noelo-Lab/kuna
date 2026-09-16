@@ -129,20 +129,20 @@ they score 5, so `mean` is a lower bound by at most that many sixths:
 
 | opt | binary | GT vars | unpaired | mean 0-6 | mean 0-5 | sign? | defined | is_c_pointer | pointer_level | is_c_struct | sign_ignored | c_primitive |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| O0 | fmt | 413 | 5 | **3.857** | 3.521 | 7 | 408/413 | 292/408 | 288/292 | 259/288 | 207/259 | 139/207 |
-| O0 | ls | 1,859 | 44 | **3.484** | 3.216 | 13 | 1815/1859 | 1220/1815 | 1208/1220 | 1064/1208 | 671/1064 | 498/671 |
-| O0 | sort | 1,510 | 28 | **3.474** | 3.218 | 18 | 1482/1510 | 995/1482 | 980/995 | 849/980 | 553/849 | 386/553 |
-| O0 | du | 1,434 | 42 | **3.598** | 3.339 | 13 | 1392/1434 | 1010/1392 | 997/1010 | 855/997 | 534/855 | 372/534 |
+| O0 | fmt | 413 | 5 | **3.860** | 3.521 | 7 | 408/413 | 292/408 | 288/292 | 259/288 | 207/259 | 140/207 |
+| O0 | ls | 1,859 | 44 | **3.486** | 3.216 | 12 | 1815/1859 | 1220/1815 | 1208/1220 | 1064/1208 | 671/1064 | 503/671 |
+| O0 | sort | 1,510 | 28 | **3.476** | 3.218 | 14 | 1482/1510 | 995/1482 | 980/995 | 849/980 | 553/849 | 390/553 |
+| O0 | du | 1,434 | 42 | **3.603** | 3.339 | 12 | 1392/1434 | 1010/1392 | 997/1010 | 855/997 | 534/855 | 378/534 |
 | O2 | fmt | 422 | 234 | **1.706** | 1.569 | 8 | 188/422 | 136/188 | 133/136 | 112/133 | 93/112 | 58/93 |
 | O2 | ls | 1,600 | 976 | **1.419** | 1.325 | 25 | 624/1600 | 452/624 | 436/452 | 374/436 | 234/374 | 151/234 |
-| O2 | sort | 1,214 | 678 | **1.574** | 1.461 | 20 | 536/1214 | 375/536 | 359/375 | 286/359 | 217/286 | 138/217 |
-| O2 | du | 1,177 | 679 | **1.578** | 1.464 | 16 | 498/1177 | 371/498 | 357/371 | 281/357 | 216/281 | 134/216 |
+| O2 | sort | 1,214 | 678 | **1.577** | 1.461 | 17 | 536/1214 | 375/536 | 359/375 | 286/359 | 217/286 | 141/217 |
+| O2 | du | 1,177 | 679 | **1.579** | 1.464 | 16 | 498/1177 | 371/498 | 357/371 | 281/357 | 216/281 | 136/216 |
 
 Read the steps, not only the mean. At O0 nearly every GT variable is paired and
 the loss is concentrated in one step: `is_c_struct` → `sign_ignored_primitive`
 drops 259→207 on fmt and 1064→671 on ls, which is the pointer/struct gap the
 metric lane is already chasing. The last step is comparatively cheap once its
-ground truth is right — 139 of 207 on fmt, 67% — so **signedness is not where
+ground truth is right — 140 of 207 on fmt, 68% — so **signedness is not where
 this score is lost**, and a signedness PR should expect a small `mean` move and
 no `mean 0-5` move at all. At O2 55–61% of GT variables have nothing to pair
 with and the mean collapses; the O0→O2 drop is the same shape TRex reports for

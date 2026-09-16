@@ -320,15 +320,19 @@ def _member_offset(die) -> int | None:
     return None
 
 
-# DWARF base-type encodings (DWARF5 §7.8). Only these decide a signedness; a
-# pointer/struct/array base has none, and neither does an enum without an
-# explicit underlying type.
-_UNSIGNED_ENCODINGS = {0x02, 0x07, 0x08, 0x10}   # boolean, unsigned, unsigned_char, UTF
-_SIGNED_ENCODINGS = {0x05, 0x06, 0x0D}           # signed, signed_char, signed_fixed
+# DWARF base-type encodings (DWARF5 §7.8) grouped by the question the last TRex
+# step actually asks: does the ground truth's own C spelling carry `unsigned`?
+# `unsigned char` does and `char`, `_Bool` and `double` do not, whatever their
+# representation. A pointer/struct/array base answers nothing, and neither does
+# an enum with no explicit underlying type.
+_UNSIGNED_ENCODINGS = {0x07, 0x08, 0x0E}         # unsigned, unsigned_char, unsigned_fixed
+_SIGNED_ENCODINGS = {0x01, 0x02, 0x03, 0x04,     # address, boolean, complex, float
+                     0x05, 0x06, 0x0D, 0x0F,     # signed, signed_char, signed_fixed, decimal
+                     0x10, 0x11, 0x12}           # UTF, UCS, ASCII
 
 
 def die_sign(die, depth: int = 0) -> bool | None:
-    """The DWARF signedness of the scalar a DIE resolves to, or None.
+    """Does the DWARF type a DIE resolves to spell itself ``unsigned``? Or None.
 
     This is the ground truth the last TRex step needs. It cannot be read off
     decbench's form list: ``normalize_type`` strips ``unsigned``, so an unsigned
