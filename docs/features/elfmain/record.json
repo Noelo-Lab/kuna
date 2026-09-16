@@ -28,8 +28,8 @@
     "command": "kuna decompile-all decompiler/crates/kuna-analysis/tests/fixtures/stripped_dynamic_x86_64 --addr 0x1405 --json",
     "before": "functions[0].name == \"sub_1405\", code `unsigned long sub_1405(int a0,unsigned long *a1)`, the argument vector untyped so `sub_1357(a1[1])`",
     "after": "functions[0].name == \"main\", code `int main(int argc,char **argv,char **envp)` and `sub_1357(argv[1])`",
-    "verify": "make test-cli => tests/cli: 171/171 passed",
-    "promoted_to": "tests/cli/elf-libc-start-main-unnamed.json"
+    "verify": "make test-cli => tests/cli: 172/172 passed",
+    "promoted_to": "tests/cli/elf-libc-start-main-unnamed.json + tests/cli/elf-libc-start-main-drops.json"
   },
   "ablation": {
     "method": "--option elfmain off on the witness and on every in-repo ELF fixture the pass fires on",
@@ -125,7 +125,7 @@
   "tests": {
     "unit": "decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_elfmain.rs (5 tests over main_claim: both x86-64 encodings, all four oracle-4 architectures, the two non-PIE ARM shapes, the unstripped-ELF refusal, the non-ELF and no-crt1 refusals)",
     "stage_test": "tests/stages/kuna-elfmain.xml (4 assertions, two-pass: `option elfmain off` = the bug, default = the fix, over the full load file -> decompile path on stripped_dynamic_x86_64)",
-    "cli": "tests/cli/elf-libc-start-main-unnamed.json -- make test-cli 171/171",
+    "cli": "tests/cli/elf-libc-start-main-unnamed.json (the x86-64 acceptance) and tests/cli/elf-libc-start-main-drops.json (the ARM regression the review found: a main that FORWARDS its third argument register without touching it -- a two-parameter park deleted that parameter and left `unsigned int v4; // r2` assigned nowhere, still passed to __printf_chk). make test-cli 172/172",
     "corpus_count": "decompiler/crates/kuna-base/src/xml.rs 293 -> 294; docs/baseline-stages.json re-recorded, 1007 -> 1011 keys, purely additive",
     "moved_expectations": [
       "decompiler/crates/kuna-console/tests/verify_crossarch_entry_main.rs -- now runs BOTH arms: with elfmain off it is the pre-existing oracle-4 gate verbatim (sub_<addr>, return a0), and by default it is main / return argc at the same address.",
@@ -147,7 +147,7 @@
     "make test-stages": "datatests: 1011/1011 assertions passed / PARITY OK (baseline re-recorded, additive only: the 4 ELFMAIN keys, no existing assertion moved)",
     "make rust-test": "RUST_TEST_RC=0 (via the serialized lane; 414 `test result: ok`, 0 failures). A first run found 5 failures in 3 files, all of them expectation moves this option makes; they are fixed in the branch and listed under tests.moved_expectations.",
     "make check-spec": "check-spec OK (lenient mode) + check-spec OK (strict mode)",
-    "make test-cli": "tests/cli: 171/171 passed",
+    "make test-cli": "tests/cli: 172/172 passed",
     "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
     "counters --check": "no drift: every hard-coded site agrees with the derived truth",
     "docs/options.md": "byte-fresh (`kuna catalog --markdown` reproduces it)",
