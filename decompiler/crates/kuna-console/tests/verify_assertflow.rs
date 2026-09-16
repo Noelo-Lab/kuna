@@ -11,9 +11,11 @@
 //! printed "Successfully added override" and changed nothing since it was
 //! ported.
 //!
-//! Fixture: `kuna-analysis/tests/fixtures/aif_gap_x86_64`. `sub_13c9` reaches an
-//! indirect `call *%rdx` at `0x1405` and then twenty-four more calls; declaring
-//! that instruction a `return` cuts the body to its first statement.
+//! Fixture: `kuna-analysis/tests/fixtures/aif_gap_x86_64`. The function at
+//! `0x13c9` -- `main`, which is the address this stripped image's crt1 hands
+//! `__libc_start_main` -- reaches an indirect `call *%rdx` at `0x1405` and then
+//! twenty-four more calls; declaring that instruction a `return` cuts the body
+//! to its first statement.
 //!
 //! ## `.sla` precondition
 //!
@@ -248,16 +250,13 @@ fn an_unqualified_directive_is_rejected_on_a_multi_target_run() {
 }
 
 /// ...and the qualified spelling is how a whole-binary run states the same fact.
+/// The function is spelled `main` rather than `sub_13c9` because `0x13c9` is the
+/// address this image's crt1 hands `__libc_start_main`, which `elfmain` names.
 #[test]
 fn a_qualified_directive_binds_on_a_multi_target_run() {
     let Some((code, report)) = decompile_with(
         &[SUB_13C9, 0x1129],
-        vec![flow(
-            "flow sub_13c9::0x1405 return",
-            Some("sub_13c9"),
-            INDIRECT_CALL,
-            "return",
-        )],
+        vec![flow("flow main::0x1405 return", Some("main"), INDIRECT_CALL, "return")],
     ) else {
         return;
     };

@@ -12,11 +12,18 @@
 //! `auipc a0;ld a0`).
 //!
 //! The proof per arch: `main` is NOT in any symbol table; the discovery pass +
-//! commit seam register it as `sub_<addr>` (angr-style naming), and a
-//! `load function sub_<addr>` → `decompile` → `print C` WITHOUT a supplied
-//! `--addr` produces a real body. The ARM case additionally exercises the
-//! Thumb-mode (`TMode=1`) decode-mode paint the discovery pass derives from the
-//! GOT pointer's Thumb LSB (no `$t` mapping symbol survives stripping).
+//! commit seam register it anyway, and a `load function <name>` → `decompile` →
+//! `print C` WITHOUT a supplied `--addr` produces a real body. The ARM case
+//! additionally exercises the Thumb-mode (`TMode=1`) decode-mode paint the
+//! discovery pass derives from the GOT pointer's Thumb LSB (no `$t` mapping
+//! symbol survives stripping).
+//!
+//! Both arms of `elfmain` are run, so the file gates oracle 4 exactly as it did
+//! before that option existed AND the naming built on top of it: with the option
+//! off the entry is the angr-style `sub_<addr>` returning the anonymous `a0`,
+//! and by default it is `main` returning `argc`. The addresses are the same in
+//! both arms, which is the point -- the option changes what is said about the
+//! address oracle 4 recovered, never which address that is.
 //!
 //! ## `.sla` precondition
 //!
@@ -42,11 +49,22 @@ fn fixture(name: &str) -> PathBuf {
     repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures").join(name)
 }
 
-/// Bootstrap `fixture`, commit analysis, and assert the discovered `main`
-/// (`sub_<main_vma>`) is registered and decompiles to a real body without a
-/// supplied address. Returns `false` (visible skip) only when the `.sla` is
-/// absent (bootstrap fails). Any other failure is a hard assertion.
+/// Bootstrap `fixture` in both `elfmain` arms and assert the discovered `main` is
+/// registered and decompiles to a real body without a supplied address. Returns
+/// `false` (visible skip) only when the `.sla` is absent (bootstrap fails). Any
+/// other failure is a hard assertion.
 fn assert_discovered_main_decompiles(fixture_name: &str, main_vma: u64) -> bool {
+    // `off` is the pre-`elfmain` expectation, verbatim; the default is the one
+    // built on it.
+    assert_discovered_main_decompiles_arm(fixture_name, main_vma, false)
+        && assert_discovered_main_decompiles_arm(fixture_name, main_vma, true)
+}
+
+fn assert_discovered_main_decompiles_arm(
+    fixture_name: &str,
+    main_vma: u64,
+    elfmain: bool,
+) -> bool {
     let root = repo_root();
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
@@ -68,17 +86,28 @@ fn assert_discovered_main_decompiles(fixture_name: &str, main_vma: u64) -> bool 
         }
     };
 
+    prog.arch_mut()
+        .set_kuna_option("elfmain", if elfmain { "on" } else { "off" })
+        .expect("elfmain flips");
     // The analysis facts (entries + ARM TMode paints) are committed at the
     // `read symbols` seam, not eagerly at bootstrap.
     prog.commit_pending_analysis().expect("analysis commit succeeds");
 
-    // The discovered `main` is registered under its angr-style `sub_<addr>` name
-    // even though it is in NO symbol table of this stripped, hidden-visibility
-    // binary — recovered purely by the `_start`→`main` libc-start idiom.
-    let sym = format!("sub_{main_vma:x}");
+    // The discovered `main` is registered even though it is in NO symbol table of
+    // this stripped, hidden-visibility binary — recovered purely by the
+    // `_start`→`main` libc-start idiom. Which name it carries is `elfmain`'s
+    // half: the angr-style `sub_<addr>` with the option off, the C name with it
+    // on.
+    let sym = if elfmain { MAIN.to_string() } else { format!("sub_{main_vma:x}") };
     assert!(
         prog.lookup_symbol(&sym).is_some(),
         "[{fixture_name}] discovered main ({sym}) not registered — oracle 4 failed"
+    );
+    // The option never moves the address, only the name at it.
+    assert_eq!(
+        prog.lookup_symbol(&sym).map(|a| a.get_offset()),
+        Some(main_vma),
+        "[{fixture_name}] {sym} must sit at the address oracle 4 recovered"
     );
 
     let cmds: Vec<String> = [format!("load function {sym}"), "decompile".into(), "print C".into()]
@@ -115,12 +144,18 @@ fn assert_discovered_main_decompiles(fixture_name: &str, main_vma: u64) -> bool 
     // a real (non-degenerate) body returns `a0` rather than `void`/`return;`.
     // (ARM relies on the Thumb `TMode=1` paint here, else the A32 misdecode emits
     // a `void … {return;}` stub.)
+    let returned = if elfmain { "argc" } else { "a0" };
     assert!(
-        out.contains("return a0") || out.contains("return (int8)a0"),
-        "[{fixture_name}] expected `return a0` body (the recovered main), got:\n{out}"
+        out.contains(&format!("return {returned}"))
+            || out.contains(&format!("return (int8){returned}")),
+        "[{fixture_name}] expected `return {returned}` body (the recovered main), \
+         got:\n{out}"
     );
     true
 }
+
+/// The name `elfmain` installs at the address oracle 4 recovered.
+const MAIN: &str = "main";
 
 /// AArch64: `_start` (0x600) → `main` (0x714) via `adrp x0,0x10000; ldr x0,[x0,#4080]`
 /// → GOT slot 0x10ff0 (`R_AARCH64_RELATIVE` addend 0x714).
